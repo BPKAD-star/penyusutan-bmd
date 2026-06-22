@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
 
-const PERIODE_LIST = ['2026-S1', '2026-S2']
+const PERIODE_LIST = ['2025-S2', '2026-S1', '2026-S2']
 
 type RekapRow = {
   nama: string
