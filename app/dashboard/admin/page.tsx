@@ -6,26 +6,41 @@ type Profile = {
   id: string
   email: string
   nama: string
+  nip: string | null
+  pangkat_golongan: string | null
+  username: string | null
   role: string
+  skpd_id: number | null
   created_at: string
+  skpd: { nama: string } | null
+}
+
+const FORM_KOSONG = {
+  email: '', password: '', nama: '', nip: '', pangkat_golongan: '',
+  username: '', role: 'user', skpd_id: '' as number | '',
 }
 
 export default function AdminPage() {
   const supabase = createClient()
   const [profiles, setProfiles] = useState<Profile[]>([])
+  const [skpdList, setSkpdList] = useState<{ id: number; nama: string; level: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ email: '', password: '', nama: '', role: 'user' })
+  const [form, setForm] = useState(FORM_KOSONG)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
   async function loadProfiles() {
-    const { data } = await supabase.from('profiles').select('*').order('created_at')
-    setProfiles(data || [])
+    const { data } = await supabase.from('profiles').select('*,skpd(nama)').order('created_at')
+    setProfiles((data as never as Profile[]) || [])
     setLoading(false)
   }
 
-  useEffect(() => { loadProfiles() }, [])
+  useEffect(() => {
+    loadProfiles()
+    supabase.from('skpd').select('id,nama,level').order('nama').limit(1000)
+      .then(({ data }) => setSkpdList(data || []))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -35,7 +50,7 @@ export default function AdminPage() {
     const res = await fetch('/api/admin/create-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, skpd_id: form.skpd_id || null }),
     })
     const json = await res.json()
 
@@ -43,7 +58,7 @@ export default function AdminPage() {
       setMsg(`Error: ${json.error}`)
     } else {
       setMsg('User berhasil dibuat.')
-      setForm({ email: '', password: '', nama: '', role: 'user' })
+      setForm(FORM_KOSONG)
       setShowForm(false)
       loadProfiles()
     }
@@ -65,12 +80,17 @@ export default function AdminPage() {
     loadProfiles()
   }
 
+  async function handleChangeSkpd(id: string, skpdId: string) {
+    await supabase.from('profiles').update({ skpd_id: skpdId ? Number(skpdId) : null }).eq('id', id)
+    loadProfiles()
+  }
+
   return (
-    <div className="p-6 max-w-4xl">
+    <div className="p-6 max-w-6xl">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Manajemen User</h1>
-          <p className="text-gray-500 text-sm mt-1">Kelola akses pengguna sistem</p>
+          <p className="text-gray-500 text-sm mt-1">Operator SKPD hanya melihat & meng-entry aset SKPD-nya sendiri</p>
         </div>
         <button onClick={() => setShowForm(v => !v)} className="btn-primary">
           {showForm ? 'Batal' : '+ Tambah User'}
@@ -83,7 +103,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Form tambah user */}
       {showForm && (
         <div className="card p-6 mb-6">
           <h2 className="text-base font-semibold text-gray-800 mb-4">Tambah User Baru</h2>
@@ -94,7 +113,22 @@ export default function AdminPage() {
                 onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Email</label>
+              <label className="block text-xs text-gray-500 mb-1">NIP</label>
+              <input required className="select-filter w-full" value={form.nip}
+                onChange={e => setForm(f => ({ ...f, nip: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Pangkat / Golongan</label>
+              <input required className="select-filter w-full" value={form.pangkat_golongan}
+                onChange={e => setForm(f => ({ ...f, pangkat_golongan: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Username</label>
+              <input required className="select-filter w-full" value={form.username}
+                onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Email (untuk login)</label>
               <input type="email" required className="select-filter w-full" value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
             </div>
@@ -104,11 +138,19 @@ export default function AdminPage() {
                 onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
             </div>
             <div>
+              <label className="block text-xs text-gray-500 mb-1">SKPD</label>
+              <select className="select-filter w-full" value={form.skpd_id}
+                onChange={e => setForm(f => ({ ...f, skpd_id: e.target.value ? Number(e.target.value) : '' }))}>
+                <option value="">— tanpa SKPD (pusat/BKAD) —</option>
+                {skpdList.map(s => <option key={s.id} value={s.id}>{'—'.repeat(s.level - 1)} {s.nama}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="block text-xs text-gray-500 mb-1">Role</label>
               <select className="select-filter w-full" value={form.role}
                 onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
+                <option value="user">Operator SKPD</option>
+                <option value="admin">Admin BKAD</option>
               </select>
             </div>
             <div className="col-span-2">
@@ -120,50 +162,58 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Table */}
       <div className="card overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="table-th">Nama</th>
-              <th className="table-th">Email</th>
-              <th className="table-th">Role</th>
-              <th className="table-th">Dibuat</th>
-              <th className="table-th">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {loading ? (
-              <tr><td colSpan={5} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
-            ) : profiles.map(p => (
-              <tr key={p.id}>
-                <td className="table-td font-medium">{p.nama}</td>
-                <td className="table-td text-gray-500">{p.email}</td>
-                <td className="table-td">
-                  <select
-                    className="select-filter text-xs py-1"
-                    value={p.role}
-                    onChange={e => handleChangeRole(p.id, e.target.value)}
-                  >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </td>
-                <td className="table-td text-gray-400 text-xs">
-                  {new Date(p.created_at).toLocaleDateString('id-ID')}
-                </td>
-                <td className="table-td">
-                  <button
-                    onClick={() => handleDelete(p.id, p.email)}
-                    className="text-red-500 hover:text-red-700 text-xs font-medium"
-                  >
-                    Hapus
-                  </button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="table-th">Nama / NIP</th>
+                <th className="table-th">Email</th>
+                <th className="table-th">SKPD</th>
+                <th className="table-th">Role</th>
+                <th className="table-th">Aksi</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {loading ? (
+                <tr><td colSpan={5} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+              ) : profiles.map(p => (
+                <tr key={p.id}>
+                  <td className="table-td">
+                    <p className="font-medium text-sm">{p.nama}</p>
+                    <p className="text-xs text-gray-400">
+                      {p.nip || 'NIP -'}{p.pangkat_golongan ? ` · ${p.pangkat_golongan}` : ''}
+                    </p>
+                  </td>
+                  <td className="table-td text-gray-500 text-xs">{p.email}<br />
+                    <span className="text-gray-400">{p.username || ''}</span>
+                  </td>
+                  <td className="table-td">
+                    <select className="select-filter text-xs py-1 max-w-[220px]"
+                      value={p.skpd_id ?? ''}
+                      onChange={e => handleChangeSkpd(p.id, e.target.value)}>
+                      <option value="">— tanpa SKPD —</option>
+                      {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
+                    </select>
+                  </td>
+                  <td className="table-td">
+                    <select className="select-filter text-xs py-1" value={p.role}
+                      onChange={e => handleChangeRole(p.id, e.target.value)}>
+                      <option value="user">Operator</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </td>
+                  <td className="table-td">
+                    <button onClick={() => handleDelete(p.id, p.email)}
+                      className="text-red-500 hover:text-red-700 text-xs font-medium">
+                      Hapus
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

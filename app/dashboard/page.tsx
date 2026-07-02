@@ -25,7 +25,7 @@ export default async function DashboardHome() {
   // Aggregate per SKPD
   const skpdMap: Record<string, { nama: string; beban: number }> = {}
   for (const r of topSkpd.data || []) {
-    const skpdData = r.skpd as { nama: string } | null
+    const skpdData = r.skpd as unknown as { nama: string } | null
     const nama = skpdData?.nama || '-'
     if (!skpdMap[nama]) skpdMap[nama] = { nama, beban: 0 }
     skpdMap[nama].beban += r.beban_penyusutan || 0
@@ -41,8 +41,8 @@ export default async function DashboardHome() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Beranda</h1>
-        <p className="text-gray-500 text-sm mt-1">Ringkasan penyusutan BMD Kabupaten Kediri — Periode {PERIODE}</p>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-gray-500 text-sm mt-1">Ringkasan BMD Kabupaten Kediri — Periode {PERIODE}</p>
       </div>
 
       {/* KPI Cards */}

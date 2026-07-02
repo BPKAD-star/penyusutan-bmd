@@ -1,0 +1,242 @@
+// ============================================================================
+// Engine Penyusutan — event-driven dari ledger transaksi (PLAN §1.2, §6, §7)
+//
+// Prinsip yang WAJIB (dikonfirmasi user, PLAN §6.3):
+//   - sisa_semester = counter INTEGER, dikurangi 1 tiap periode.
+//     TIDAK dihitung dari nilai_buku / beban (rawan desimal — sumber kekacauan e-bmd).
+//   - Beban dibulatkan ke rupiah penuh; selisih pembulatan diserap di semester
+//     terakhir (nilai buku dipaksa 0 saat umur habis).
+//   - Masa manfaat di DB = TAHUN (canonical Perbup). Konversi ×2 hanya di sini.
+// ============================================================================
+import { perlakuanKode, periodeRange, comparePeriode, kodeLevel3 } from '@/lib/bmd'
+
+export type TrxLedger = {
+  jenis: string
+  periode: string
+  tanggal: string
+  nilai: number
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export type AsetEngine = {
+  id: string
+  kode: string
+  nilai_perolehan: number
+  intra_ekstra: string | null
+  tgl_perolehan: string | null
+}
+
+export type BandOverhaul = {
+  kode_prefix: string
+  band_no: number
+  pct_min: number
+  pct_max: number | null
+  tambahan_tahun: number
+}
+
+export type HasilSemester = {
+  aset_id: string
+  periode: string
+  metode: 'penyusutan' | 'amortisasi' | 'tidak'
+  nilai_perolehan: number
+  nilai_buku_awal: number
+  beban: number
+  akumulasi: number
+  nilai_buku_akhir: number
+  sisa_semester: number
+  masa_manfaat_tahun: number | null
+}
+
+const PERIODE_BASELINE = '2025-S2' // cutoff saldo awal e-bmd
+
+/** Lookup band: prefix terpanjang yang match kode aset. */
+export function cariBand(bands: BandOverhaul[], kode: string, persenRehab: number): BandOverhaul | null {
+  const prefixes = new Map<string, BandOverhaul[]>()
+  for (const b of bands) {
+    if (!kode.startsWith(b.kode_prefix)) continue
+    const arr = prefixes.get(b.kode_prefix) || []
+    arr.push(b)
+    prefixes.set(b.kode_prefix, arr)
+  }
+  if (prefixes.size === 0) return null
+  const bestPrefix = [...prefixes.keys()].sort((a, b) => b.length - a.length)[0]
+  const kandidat = prefixes.get(bestPrefix)!.sort((a, b) => a.band_no - b.band_no)
+  // Match by batas atas: band pertama yang pct_max >= persen; kalau lewat semua → band terakhir (open-ended).
+  for (const b of kandidat) {
+    if (persenRehab <= (b.pct_max ?? Infinity)) return b
+  }
+  return kandidat[kandidat.length - 1]
+}
+
+/**
+ * Replay ledger satu aset → jadwal penyusutan per semester sampai targetPeriode.
+ * Return [] kalau aset tidak disusutkan (tanah, ATL, KDP, ekstrakomptabel, dst).
+ */
+export function hitungJadwalAset(
+  aset: AsetEngine,
+  trxs: TrxLedger[],
+  masaManfaatKode: Map<string, number>, // kode lengkap → masa manfaat TAHUN (dari kodefikasi_bmd)
+  bands: BandOverhaul[],
+  targetPeriode: string,
+): HasilSemester[] {
+  // Urutkan ledger: periode → tanggal → created_at (append order)
+  const ledger = [...trxs].sort((a, b) =>
+    comparePeriode(a.periode, b.periode) || a.tanggal.localeCompare(b.tanggal) || a.created_at.localeCompare(b.created_at))
+
+  const ekstra = (aset.intra_ekstra || '').toLowerCase() === 'ekstra'
+  if (ekstra) return []
+
+  // ── State awal dari transaksi baseline/perolehan ──────────────────────────
+  let kode = aset.kode
+  let perlakuan = perlakuanKode(kode)
+  let nilaiPerolehan = 0
+  let nilaiBuku = 0
+  let akumulasi = 0
+  let sisaSmt = 0
+  let beban = 0            // beban per semester berjalan (rupiah penuh)
+  let masaTahun: number | null = null
+  let mulaiSetelah: string | null = null // periode baseline; iterasi mulai periode berikutnya
+  let berhenti = false     // penghapusan / reklas ke aset lain-lain
+
+  const saldoAwal = ledger.find(t => t.jenis === 'saldo_awal')
+  const perolehan = ledger.find(t =>
+    ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya'].includes(t.jenis))
+
+  if (saldoAwal) {
+    const p = saldoAwal.payload as Record<string, number | null>
+    nilaiPerolehan = Number(saldoAwal.nilai || 0)
+    nilaiBuku = Number(p.nilai_buku_awal ?? 0)
+    akumulasi = Number(p.akumulasi_2025 ?? 0)
+    sisaSmt = Math.max(0, Math.trunc(Number(p.sisa_masa_manfaat_smt ?? 0)))
+    beban = Math.round(Number(p.beban_per_smt ?? 0))
+    masaTahun = p.masa_manfaat_smt ? Number(p.masa_manfaat_smt) / 2 : (masaManfaatKode.get(kode) ?? null)
+    mulaiSetelah = PERIODE_BASELINE
+  } else if (perolehan) {
+    nilaiPerolehan = Number(perolehan.nilai || 0)
+    nilaiBuku = nilaiPerolehan
+    akumulasi = 0
+    masaTahun = masaManfaatKode.get(kode) ?? 0
+    sisaSmt = Math.max(0, Math.round((masaTahun || 0) * 2)) // ×2 hanya di engine (§6 step 3)
+    beban = sisaSmt > 0 ? Math.round(nilaiPerolehan / sisaSmt) : 0
+    // Penyusutan mulai semester perolehan itu sendiri → baseline = periode sebelumnya
+    const prev = comparePeriode(perolehan.periode, '2026-S1') <= 0 ? PERIODE_BASELINE : null
+    mulaiSetelah = prev ?? prevPeriodeOf(perolehan.periode)
+  } else {
+    return [] // tidak ada baseline — belum masuk ledger
+  }
+
+  if (perlakuan === 'tidak') return []
+
+  // ── Replay maju per semester ──────────────────────────────────────────────
+  const hasil: HasilSemester[] = []
+  const semesters = periodeRange(mulaiSetelah, targetPeriode)
+
+  for (const periode of semesters) {
+    const nbAwal = nilaiBuku
+    const events = ledger.filter(t => t.periode === periode && t.jenis !== 'saldo_awal')
+
+    for (const ev of events) {
+      switch (ev.jenis) {
+        case 'kapitalisasi': {
+          // §6.2 — CONFIRMED rules, ikuti persis.
+          const rehab = Number(ev.nilai || 0)
+          if (rehab <= 0 || nilaiPerolehan <= 0) break
+          // Step 1: penyebut = NILAI PEROLEHAN (bukan nilai buku)
+          const persen = (rehab / nilaiPerolehan) * 100
+          const band = cariBand(bands, kode, persen)
+          const tambahan = band ? band.tambahan_tahun : 0
+          // Step 2: cap ke masa manfaat max (TAHUN)
+          const maxTahun = masaManfaatKode.get(kode) ?? masaTahun ?? 0
+          const sisaTahun = sisaSmt / 2
+          const masaBaruTahun = Math.min(sisaTahun + tambahan, maxTahun)
+          // Step 3: ×2 di engine, counter integer
+          sisaSmt = Math.max(1, Math.round(masaBaruTahun * 2))
+          // Step 4-6
+          nilaiPerolehan += rehab
+          nilaiBuku += rehab
+          beban = Math.round(nilaiBuku / sisaSmt)
+          masaTahun = maxTahun
+          break
+        }
+        case 'koreksi_nilai': {
+          // Delta ± pada nilai perolehan; beban disebar ulang ke sisa umur.
+          const delta = Number(ev.nilai || 0)
+          nilaiPerolehan += delta
+          nilaiBuku += delta
+          if (nilaiBuku < 0) nilaiBuku = 0
+          if (sisaSmt > 0) beban = Math.round(nilaiBuku / sisaSmt)
+          break
+        }
+        case 'reklas_kode': {
+          const kodeBaru = String((ev.payload as Record<string, unknown>).kode_baru || '')
+          if (!kodeBaru) break
+          const perlakuanLama = perlakuan
+          kode = kodeBaru
+          perlakuan = perlakuanKode(kode)
+          // §7: reklas aset tetap → aset lain-lain = penyusutan BERHENTI sejak periode ini
+          if (perlakuan === 'lain_lain' && perlakuanLama !== 'lain_lain') berhenti = true
+          if (perlakuan === 'tidak') berhenti = true
+          break
+        }
+        case 'penghapusan_pemindahtanganan':
+        case 'penghapusan_sebab_lain':
+          berhenti = true // §5 no.11: penyusutan berhenti; barang hilang dari laporan, tetap di DB
+          break
+        // mutasi_internal / pengalihan_status / koreksi_spesifikasi: tanpa efek finansial
+        // reklas_komptabel / koreksi_kuantitas: DEFERRED (PLAN §12) — jangan implementasi
+        default:
+          break
+      }
+    }
+
+    // ── Akrual semester ini ─────────────────────────────────────────────────
+    let bebanPeriode = 0
+    if (!berhenti && sisaSmt > 0 && beban > 0 && nilaiBuku > 0) {
+      if (sisaSmt === 1) {
+        bebanPeriode = nilaiBuku // serap selisih pembulatan: paksa NB = 0 (§6.3)
+      } else {
+        bebanPeriode = Math.min(Math.round(beban), nilaiBuku)
+      }
+      nilaiBuku -= bebanPeriode
+      akumulasi += bebanPeriode
+      sisaSmt -= 1
+    }
+
+    hasil.push({
+      aset_id: aset.id,
+      periode,
+      metode: perlakuan === 'amortisasi' ? 'amortisasi' : perlakuan === 'tidak' ? 'tidak' : 'penyusutan',
+      nilai_perolehan: nilaiPerolehan,
+      nilai_buku_awal: nbAwal,
+      beban: bebanPeriode,
+      akumulasi,
+      nilai_buku_akhir: nilaiBuku,
+      sisa_semester: sisaSmt,
+      masa_manfaat_tahun: masaTahun,
+    })
+
+    // Kendali (§6.3) — cross-check doang, BUKAN sumber angka.
+    if (bebanPeriode > 0 && sisaSmt > 0 && masaTahun) {
+      if (sisaSmt > Math.round(masaTahun * 2)) {
+        console.warn(`[kendali] ${aset.id} ${periode}: sisa_semester ${sisaSmt} > max ${masaTahun * 2}`)
+      }
+    }
+  }
+
+  return hasil
+}
+
+function prevPeriodeOf(p: string): string {
+  const m = p.match(/^(\d{4})-S([12])$/)
+  if (!m) return PERIODE_BASELINE
+  const tahun = parseInt(m[1], 10), smt = parseInt(m[2], 10)
+  return smt === 2 ? `${tahun}-S1` : `${tahun - 1}-S2`
+}
+
+/** Kategori kode buat exclusion cepat di caller (§8). */
+export function kodeDisusutkan(kode: string): boolean {
+  return perlakuanKode(kode) !== 'tidak'
+}
+
+export { kodeLevel3 }

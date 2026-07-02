@@ -36,8 +36,8 @@ export default function LoginPage() {
                 d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-white">Penyusutan BMD</h1>
-          <p className="text-navy-light/60 text-sm mt-1">Kabupaten Kediri</p>
+          <h1 className="text-2xl font-bold text-white">BMD Kabupaten Kediri</h1>
+          <p className="text-navy-light/60 text-sm mt-1">Sistem Pengelolaan Barang Milik Daerah</p>
         </div>
 
         {/* Card */}

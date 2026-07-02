@@ -33,7 +33,7 @@ export default function RekapPage() {
           .eq('periode', periode)
           .range(from, from + 999)
         if (!data || data.length === 0) break
-        allRows.push(...(data as typeof allRows))
+        allRows.push(...(data as unknown as typeof allRows))
         if (data.length < 1000) break
         from += 1000
       }
