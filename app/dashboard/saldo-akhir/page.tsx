@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 const ITEMS = [
-  { href: '/dashboard/pelaporan/saldo-akhir/rekapitulasi', label: 'Rekapitulasi', desc: 'Rekap nilai & penyusutan per golongan s.d. akhir tahun berjalan' },
+  { href: '/dashboard/saldo-akhir/rekapitulasi', label: 'Rekapitulasi', desc: 'Rekap nilai & penyusutan per golongan s.d. akhir tahun berjalan' },
 ]
 
 export default function Page() {

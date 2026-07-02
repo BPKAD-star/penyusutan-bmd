@@ -1,41 +1,80 @@
 import { createClient } from '@/lib/supabase/server'
+import { GOLONGAN_REKAP } from '@/lib/bmd'
 
 const PERIODE = '2026-S1'
 
 function formatRp(val: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val)
 }
+const nf = (n: number) => n.toLocaleString('id-ID')
+
+type SB = ReturnType<typeof createClient>
+
+// Count aman: kalau tabel belum ada (mis. transaksi_bmd belum di-migrate) → 0.
+async function safeCount(build: PromiseLike<{ count: number | null; error: unknown }>): Promise<number> {
+  try {
+    const { count, error } = await build
+    return error ? 0 : (count || 0)
+  } catch {
+    return 0
+  }
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function countTrx(sb: SB, apply: (q: any) => any): Promise<number> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const base: any = sb.from('transaksi_bmd').select('*', { count: 'exact', head: true })
+  return safeCount(apply(base))
+}
 
 export default async function DashboardHome() {
   const supabase = createClient()
 
+  // ── KPI existing (dari penyusutan_periode) ────────────────────────────────
   const [totalBeban, totalNilaiBuku, totalAset, topSkpd] = await Promise.all([
     supabase.from('penyusutan_periode').select('beban_penyusutan').eq('periode', PERIODE),
     supabase.from('penyusutan_periode').select('nilai_buku_akhir').eq('periode', PERIODE),
     supabase.from('penyusutan_periode').select('nibar', { count: 'exact', head: true }).eq('periode', PERIODE),
-    supabase.from('penyusutan_periode')
-      .select('skpd_id, beban_penyusutan, skpd(nama)')
-      .eq('periode', PERIODE)
-      .limit(1000),
+    supabase.from('penyusutan_periode').select('skpd_id, beban_penyusutan, skpd(nama)').eq('periode', PERIODE).limit(1000),
   ])
-
   const sumBeban = (totalBeban.data || []).reduce((s, r) => s + (r.beban_penyusutan || 0), 0)
   const sumNilaiBuku = (totalNilaiBuku.data || []).reduce((s, r) => s + (r.nilai_buku_akhir || 0), 0)
 
-  // Aggregate per SKPD
   const skpdMap: Record<string, { nama: string; beban: number }> = {}
   for (const r of topSkpd.data || []) {
-    const skpdData = r.skpd as unknown as { nama: string } | null
-    const nama = skpdData?.nama || '-'
+    const nama = (r.skpd as unknown as { nama: string } | null)?.nama || '-'
     if (!skpdMap[nama]) skpdMap[nama] = { nama, beban: 0 }
     skpdMap[nama].beban += r.beban_penyusutan || 0
   }
   const top5 = Object.values(skpdMap).sort((a, b) => b.beban - a.beban).slice(0, 5)
 
-  const cards = [
+  // ── Aset per jenis (dari saldo_awal_2026) ──────────────────────────────────
+  const golCounts = await Promise.all(GOLONGAN_REKAP.map(g =>
+    safeCount(supabase.from('saldo_awal_2026').select('*', { count: 'exact', head: true }).like('kode_barang', `${g.kode}.%`) as never)))
+  const totalRegister = golCounts.reduce((s, n) => s + n, 0)
+
+  // ── Perolehan / mutasi / penghapusan (dari ledger transaksi_bmd) ───────────
+  const [
+    perPengadaan, perHibah, perInv, perLain,
+    transfer, mutasiInternal,
+    hapusTotalPemindah, hapusHibah, hapusJual, hapusSebabLain,
+  ] = await Promise.all([
+    countTrx(supabase, q => q.eq('jenis', 'pengadaan')),
+    countTrx(supabase, q => q.eq('jenis', 'hibah_masuk')),
+    countTrx(supabase, q => q.eq('jenis', 'hasil_inventarisasi')),
+    countTrx(supabase, q => q.eq('jenis', 'perolehan_lainnya')),
+    countTrx(supabase, q => q.eq('jenis', 'pengalihan_status')),
+    countTrx(supabase, q => q.eq('jenis', 'mutasi_internal')),
+    countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan')),
+    countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan').eq('payload->>sub_jenis', 'hibah')),
+    countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan').eq('payload->>sub_jenis', 'penjualan')),
+    countTrx(supabase, q => q.eq('jenis', 'penghapusan_sebab_lain')),
+  ])
+  const hapusSebabLainnya = hapusSebabLain + Math.max(0, hapusTotalPemindah - hapusHibah - hapusJual)
+
+  const kpi = [
     { label: 'Total Beban Penyusutan', value: formatRp(sumBeban), sub: `Periode ${PERIODE}`, color: 'bg-teal' },
     { label: 'Total Nilai Buku', value: formatRp(sumNilaiBuku), sub: 'Setelah penyusutan', color: 'bg-navy' },
-    { label: 'Total Aset', value: (totalAset.count || 0).toLocaleString('id-ID'), sub: 'Aset aktif', color: 'bg-amber-500' },
+    { label: 'Total Aset', value: nf(totalAset.count || 0), sub: 'Aset aktif', color: 'bg-amber-500' },
   ]
 
   return (
@@ -45,9 +84,9 @@ export default async function DashboardHome() {
         <p className="text-gray-500 text-sm mt-1">Ringkasan BMD Kabupaten Kediri — Periode {PERIODE}</p>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI utama */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        {cards.map(c => (
+        {kpi.map(c => (
           <div key={c.label} className={`${c.color} rounded-xl p-5 text-white`}>
             <p className="text-white/70 text-xs font-medium uppercase tracking-wider">{c.label}</p>
             <p className="text-2xl font-bold mt-2 leading-tight">{c.value}</p>
@@ -56,8 +95,50 @@ export default async function DashboardHome() {
         ))}
       </div>
 
+      {/* Total aset per jenis */}
+      <Section title="Total Aset per Jenis" sub={`Register BMD — total ${nf(totalRegister)} aset`}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {GOLONGAN_REKAP.map((g, i) => (
+            <div key={g.kode} className="card p-4">
+              <p className="text-[11px] text-gray-400 font-mono">{g.kode}</p>
+              <p className="text-xs text-gray-600 leading-tight mt-0.5 h-8">{g.uraian}</p>
+              <p className="text-xl font-bold text-gray-900 mt-1">{nf(golCounts[i])}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* Perolehan */}
+      <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard label="Pengadaan" value={perPengadaan} />
+          <StatCard label="Hibah" value={perHibah} />
+          <StatCard label="Hasil Inventarisasi" value={perInv} />
+          <StatCard label="Perolehan Lainnya" value={perLain} />
+        </div>
+      </Section>
+
+      {/* Mutasi & transfer */}
+      <Section title="Mutasi & Transfer" sub="Perpindahan barang antar / dalam SKPD">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard label="Transfer Keluar SKPD" value={transfer} note="Pengalihan status (penghapusan)" />
+          <StatCard label="Transfer Masuk SKPD" value={transfer} note="Sisi terima pengalihan status" />
+          <StatCard label="Pengeluaran Internal" value={mutasiInternal} note="Mutasi antar sub-SKPD" />
+          <StatCard label="Penerimaan Internal" value={mutasiInternal} note="Sisi terima mutasi internal" />
+        </div>
+      </Section>
+
+      {/* Penghapusan */}
+      <Section title="Penghapusan Barang" sub="Barang yang dihapus dari laporan (data tetap tersimpan)">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <StatCard label="Karena Hibah" value={hapusHibah} />
+          <StatCard label="Karena Penjualan" value={hapusJual} />
+          <StatCard label="Karena Sebab Lainnya" value={hapusSebabLainnya} note="Tukar-menukar, penyertaan modal, force majeure" />
+        </div>
+      </Section>
+
       {/* Top 5 SKPD */}
-      <div className="card p-6">
+      <div className="card p-6 mt-8">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Top 5 SKPD — Beban Penyusutan Tertinggi</h2>
         <div className="space-y-3">
           {top5.map((s, i) => {
@@ -76,6 +157,28 @@ export default async function DashboardHome() {
           })}
         </div>
       </div>
+    </div>
+  )
+}
+
+function Section({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-8">
+      <div className="mb-3">
+        <h2 className="text-base font-semibold text-gray-800">{title}</h2>
+        <p className="text-xs text-gray-400">{sub}</p>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function StatCard({ label, value, note }: { label: string; value: number; note?: string }) {
+  return (
+    <div className="card p-4">
+      <p className="text-xs text-gray-600 leading-tight h-8">{label}</p>
+      <p className="text-xl font-bold text-gray-900 mt-1">{value.toLocaleString('id-ID')}</p>
+      {note && <p className="text-[11px] text-gray-400 mt-1 leading-tight">{note}</p>}
     </div>
   )
 }

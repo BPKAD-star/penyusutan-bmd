@@ -79,12 +79,12 @@ const navTree: NavNode[] = [
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/penghapusan', label: 'Laporan Penghapusan' },
         ],
       },
-      {
-        type: 'group', label: 'Saldo Akhir', children: [
-          { type: 'leaf', href: '/dashboard/pelaporan/saldo-akhir/rekapitulasi', label: 'Rekapitulasi' },
-        ],
-      },
       { type: 'leaf', href: '/dashboard/pelaporan/bmd', label: 'Laporan BMD' },
+    ],
+  },
+  {
+    type: 'group', label: 'Saldo Akhir', icon: ICON.saldo, children: [
+      { type: 'leaf', href: '/dashboard/saldo-akhir/rekapitulasi', label: 'Rekapitulasi' },
     ],
   },
   { type: 'leaf', href: 'https://ipabmdkabkediri.vercel.app/login', label: 'IPA', external: true },
