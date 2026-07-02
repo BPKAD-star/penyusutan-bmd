@@ -183,6 +183,9 @@ export function hitungJadwalAset(
         case 'penghapusan_sebab_lain':
           berhenti = true // §5 no.11: penyusutan berhenti; barang hilang dari laporan, tetap di DB
           break
+        case 'batal_penghapusan':
+          berhenti = false // kebalikan penghapusan: penyusutan lanjut sejak periode ini
+          break
         // mutasi_internal / pengalihan_status / koreksi_spesifikasi: tanpa efek finansial
         // reklas_komptabel / koreksi_kuantitas: DEFERRED (PLAN §12) — jangan implementasi
         default:

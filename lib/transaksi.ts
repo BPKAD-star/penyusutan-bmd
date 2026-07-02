@@ -65,6 +65,9 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
     case 'penghapusan_sebab_lain':
       // Soft-delete: hilang dari laporan, tetap tersimpan di DB (§5 no.11)
       return { status: 'dihapus' }
+    case 'batal_penghapusan':
+      // Kebalikan penghapusan: barang kembali aktif, penyusutan lanjut lagi.
+      return { status: 'aktif' }
     default:
       return null
   }
