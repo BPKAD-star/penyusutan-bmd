@@ -311,23 +311,24 @@ export default function PenyusutanPage() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <th className="table-th">SKPD</th>
-                  <th className="table-th">Nama Barang</th>
                   <th className="table-th">Kode Barang</th>
+                  <th className="table-th">Nama Barang</th>
                   <th className="table-th">Tgl Perolehan</th>
+                  <th className="table-th text-center">Komptabel</th>
+                  <th className="table-th text-center">Masa Manfaat (Smt)</th>
                   <th className="table-th text-right">Nilai Perolehan</th>
                   <th className="table-th text-right">Beban</th>
                   <th className="table-th text-right">Akumulasi</th>
                   <th className="table-th text-right">Nilai Buku Akhir</th>
-                  <th className="table-th text-center">Masa Manfaat (Smt)</th>
                   <th className="table-th text-center">Sisa (Smt)</th>
                   <th className="table-th text-center w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
-                  <tr><td colSpan={11} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                  <tr><td colSpan={12} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={11} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={12} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
                 ) : rows.map((r, i) => {
                   const susut = perlakuanKode(r.kode_barang) !== 'tidak'
                   const p = r.p
@@ -336,16 +337,18 @@ export default function PenyusutanPage() {
                   return (
                     <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                       <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
+                      <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
                       <td className="table-td">
                         <p className={`text-xs ${kap ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>{r.nama_barang || '-'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
                       </td>
-                      <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
                       <td className="table-td text-xs text-gray-600">{r.tgl_perolehan || '-'}</td>
+                      <td className="table-td text-center text-xs capitalize">{r.intra_ekstra || '-'}</td>
+                      <td className="table-td text-center text-xs">{susut ? (masaSmt ?? <span className="text-gray-300">-</span>) : <span className="text-gray-300">-</span>}</td>
                       <td className="table-td text-right text-xs">{angka(p ? p.nilai_perolehan : r.nilai_perolehan)}</td>
                       <td className="table-td text-right text-xs font-medium text-teal">{dash(angka(p?.beban), susut && !!p)}</td>
                       <td className="table-td text-right text-xs">{dash(angka(p?.akumulasi), susut && !!p)}</td>
                       <td className="table-td text-right text-xs">{susut && p ? angka(p.nilai_buku_akhir) : angka(r.nilai_perolehan)}</td>
-                      <td className="table-td text-center text-xs">{susut ? (masaSmt ?? <span className="text-gray-300">-</span>) : <span className="text-gray-300">-</span>}</td>
                       <td className="table-td text-center text-xs">{dash(p?.sisa_semester, susut && !!p)}</td>
                       <td className="table-td text-center">
                         {kap && (
@@ -360,12 +363,11 @@ export default function PenyusutanPage() {
               {!loading && rows.length > 0 && (
                 <tfoot>
                   <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
-                    <td className="table-td text-xs" colSpan={4}>TOTAL ({rows.length.toLocaleString('id-ID')} aset)</td>
+                    <td className="table-td text-xs" colSpan={6}>TOTAL ({rows.length.toLocaleString('id-ID')} aset)</td>
                     <td className="table-td text-right text-xs">{angka(tot.perolehan)}</td>
                     <td className="table-td text-right text-xs text-teal">{angka(tot.beban)}</td>
                     <td className="table-td text-right text-xs">{angka(tot.akum)}</td>
                     <td className="table-td text-right text-xs">{angka(tot.nba)}</td>
-                    <td className="table-td" />
                     <td className="table-td" />
                     <td className="table-td" />
                   </tr>

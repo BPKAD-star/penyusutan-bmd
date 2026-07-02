@@ -48,17 +48,18 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
   nilai: { header: 'Nilai Perolehan', align: 'right' }, keterangan: { header: 'Keterangan' },
 }
+// Urutan: SKPD · Kode · Uraian · Nama · [spesifikasi lainnya] · Tgl · Komptabel · Nilai · Keterangan
 const COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'nama', 'kode', 'uraian', 'tgl', 'nilai', 'keterangan'],                                     // Tanah — tanpa komptabel
-  '1.3.2': ['skpd', 'nama', 'kode', 'uraian', 'merek', 'spesifikasi', 'komptabel', 'tgl', 'nilai', 'keterangan'],// Peralatan & Mesin
-  '1.3.3': ['skpd', 'nama', 'kode', 'uraian', 'spesifikasi', 'komptabel', 'tgl', 'nilai', 'keterangan'],         // Gedung & Bangunan
-  '1.3.4': ['skpd', 'nama', 'kode', 'uraian', 'spesifikasi', 'komptabel', 'tgl', 'nilai', 'keterangan'],         // Jalan, Jaringan, Irigasi
-  '1.3.5': ['skpd', 'nama', 'kode', 'uraian', 'merek', 'komptabel', 'tgl', 'nilai', 'keterangan'],               // Aset Tetap Lainnya
-  '1.3.6': ['skpd', 'nama', 'kode', 'uraian', 'komptabel', 'tgl', 'nilai', 'keterangan'],                        // KDP
-  '1.5.3': ['skpd', 'nama', 'kode', 'uraian', 'spesifikasi', 'komptabel', 'tgl', 'nilai', 'keterangan'],         // Aset Tidak Berwujud
-  '1.5.4': ['skpd', 'nama', 'kode', 'uraian', 'komptabel', 'tgl', 'nilai', 'keterangan'],                        // Aset Lain-Lain
+  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'nilai', 'keterangan'],                                     // Tanah — tanpa komptabel
+  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],// Peralatan & Mesin
+  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],         // Gedung & Bangunan
+  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],         // Jalan, Jaringan, Irigasi
+  '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'keterangan'],               // Aset Tetap Lainnya
+  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan'],                        // KDP
+  '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],         // Aset Tidak Berwujud
+  '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan'],                        // Aset Lain-Lain
 }
-const DEFAULT_COLS = ['skpd', 'nama', 'kode', 'uraian', 'komptabel', 'tgl', 'nilai', 'keterangan']
+const DEFAULT_COLS = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan']
 const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
 
 function thClass(key: string) {

@@ -1,9 +1,12 @@
 'use client'
-// Saldo Awal → Daftar Barang Awal. Daftar per-aset pada posisi saldo awal 2026
-// (= saldo akhir 2025), sumber saldo_awal_2026.
+// Saldo Awal → Daftar Barang Awal. Gabungan Daftar Barang + Penyusutan pada posisi
+// saldo awal 2026 (= saldo akhir 2025), sumber saldo_awal_2026 (angka penyusutan
+// baseline: masa manfaat, beban/smt, akumulasi 2025, nilai buku awal, sisa).
+// Urutan: SKPD · Kode · Nama(+NIBAR) · Komptabel · Tgl · Masa Manfaat · Nilai ·
+// Beban · Akumulasi · Nilai Buku · Sisa · Keterangan.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
 import KomptabelRadio from '@/components/KomptabelRadio'
@@ -12,10 +15,14 @@ const PAGE_SIZE = 50
 
 type Row = {
   nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
-  intra_ekstra: string | null; nilai_perolehan: number; akumulasi_2025: number
-  nilai_buku_awal: number; sisa_masa_manfaat_smt: number
+  intra_ekstra: string | null; tgl_perolehan: string | null; nilai_perolehan: number
+  akumulasi_2025: number; nilai_buku_awal: number; sisa_masa_manfaat_smt: number
+  masa_manfaat_smt: number | null; beban_penyusutan_per_smt: number | null
 }
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; search: string }
+
+const angka = (v: number | null | undefined) =>
+  v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 export default function Page() {
   const supabase = createClient()
@@ -25,6 +32,7 @@ export default function Page() {
   const [search, setSearch] = useState('')
   const [applied, setApplied] = useState<Applied | null>(null)
   const [rows, setRows] = useState<Row[]>([])
+  const [ketMap, setKetMap] = useState<Record<string, string>>({})
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -46,7 +54,7 @@ export default function Page() {
 
   function buildQuery(f: Applied, withCount: boolean) {
     let q = supabase.from('saldo_awal_2026')
-      .select('nibar,kode_barang,nama_barang,skpd_id,intra_ekstra,nilai_perolehan,akumulasi_2025,nilai_buku_awal,sisa_masa_manfaat_smt',
+      .select('nibar,kode_barang,nama_barang,skpd_id,intra_ekstra,tgl_perolehan,nilai_perolehan,akumulasi_2025,nilai_buku_awal,sisa_masa_manfaat_smt,masa_manfaat_smt,beban_penyusutan_per_smt',
         withCount ? { count: 'exact' } : undefined)
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
     if (f.golongan) q = q.like('kode_barang', `${f.golongan}.%`)
@@ -55,11 +63,23 @@ export default function Page() {
     return q.order('nilai_perolehan', { ascending: false })
   }
 
+  // Keterangan diambil dari register aset (saldo_awal_2026 tak simpan keterangan).
+  async function fetchKet(nibars: string[]) {
+    const map: Record<string, string> = {}
+    for (let i = 0; i < nibars.length; i += 300) {
+      const { data } = await supabase.from('aset').select('nibar,keterangan').in('nibar', nibars.slice(i, i + 300))
+      for (const a of (data || []) as { nibar: string | null; keterangan: string | null }[]) if (a.nibar && a.keterangan) map[a.nibar] = a.keterangan
+    }
+    return map
+  }
+
   async function load(f: Applied, pg: number) {
     setLoading(true)
     const { data, count } = await buildQuery(f, true).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
-    setRows((data as Row[]) || [])
+    const rs = (data as Row[]) || []
+    setRows(rs)
     setTotal(count || 0)
+    setKetMap(await fetchKet(rs.map(r => r.nibar)))
     setLoading(false)
   }
 
@@ -79,11 +99,13 @@ export default function Page() {
       all.push(...(data as Row[]))
       if (data.length < 1000) break
     }
+    const ket = await fetchKet(all.map(r => r.nibar))
     exportToExcel(all.map(r => ({
-      'NIBAR': r.nibar, 'Kode': r.kode_barang, 'Nama Barang': r.nama_barang,
-      'SKPD': skpdNama[r.skpd_id] || '', 'Komptabel': r.intra_ekstra || '',
-      'Nilai Perolehan': r.nilai_perolehan, 'Akumulasi 2025': r.akumulasi_2025,
-      'Nilai Buku Awal': r.nilai_buku_awal, 'Sisa (Smt)': r.sisa_masa_manfaat_smt,
+      'SKPD': skpdNama[r.skpd_id] || '', 'Kode Barang': r.kode_barang, 'Nama Barang': r.nama_barang, 'NIBAR': r.nibar,
+      'Komptabel': r.intra_ekstra || '', 'Tgl Perolehan': r.tgl_perolehan || '',
+      'Masa Manfaat (Smt)': r.masa_manfaat_smt ?? '', 'Nilai Perolehan': r.nilai_perolehan,
+      'Beban / Smt': r.beban_penyusutan_per_smt ?? '', 'Akumulasi 2025': r.akumulasi_2025,
+      'Nilai Buku Awal': r.nilai_buku_awal, 'Sisa (Smt)': r.sisa_masa_manfaat_smt, 'Keterangan': ket[r.nibar] || '',
     })), 'Daftar_Barang_Awal_2026', 'Daftar Barang Awal')
     setExporting(false)
   }
@@ -94,7 +116,7 @@ export default function Page() {
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Daftar Barang Awal</h1>
-        <p className="text-gray-500 text-sm mt-1">Daftar aset pada posisi saldo awal 2026 (= saldo akhir 2025).</p>
+        <p className="text-gray-500 text-sm mt-1">Daftar aset + penyusutan pada posisi saldo awal 2026 (= saldo akhir 2025).</p>
       </div>
 
       <div className="card p-5 mb-4">
@@ -141,32 +163,42 @@ export default function Page() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="table-th">Barang</th>
                   <th className="table-th">SKPD</th>
+                  <th className="table-th">Kode Barang</th>
+                  <th className="table-th">Nama Barang</th>
                   <th className="table-th text-center">Komptabel</th>
+                  <th className="table-th">Tgl Perolehan</th>
+                  <th className="table-th text-center">Masa Manfaat (Smt)</th>
                   <th className="table-th text-right">Nilai Perolehan</th>
+                  <th className="table-th text-right">Beban / Smt</th>
                   <th className="table-th text-right">Akumulasi 2025</th>
                   <th className="table-th text-right">Nilai Buku Awal</th>
                   <th className="table-th text-center">Sisa (Smt)</th>
+                  <th className="table-th">Keterangan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
-                  <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                  <tr><td colSpan={12} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={12} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
                 ) : rows.map((r, i) => (
                   <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                    <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
+                    <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
                     <td className="table-td">
                       <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">{r.nibar} · {r.kode_barang}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
                     </td>
-                    <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
                     <td className="table-td text-center text-xs capitalize">{r.intra_ekstra || '-'}</td>
-                    <td className="table-td text-right text-xs">{formatRupiah(r.nilai_perolehan)}</td>
-                    <td className="table-td text-right text-xs">{formatRupiah(r.akumulasi_2025)}</td>
-                    <td className="table-td text-right text-xs">{formatRupiah(r.nilai_buku_awal)}</td>
+                    <td className="table-td text-xs text-gray-600">{r.tgl_perolehan || '-'}</td>
+                    <td className="table-td text-center text-xs">{r.masa_manfaat_smt ?? <span className="text-gray-300">-</span>}</td>
+                    <td className="table-td text-right text-xs">{angka(r.nilai_perolehan)}</td>
+                    <td className="table-td text-right text-xs">{r.beban_penyusutan_per_smt != null ? angka(r.beban_penyusutan_per_smt) : <span className="text-gray-300">-</span>}</td>
+                    <td className="table-td text-right text-xs">{angka(r.akumulasi_2025)}</td>
+                    <td className="table-td text-right text-xs">{angka(r.nilai_buku_awal)}</td>
                     <td className="table-td text-center text-xs">{r.sisa_masa_manfaat_smt}</td>
+                    <td className="table-td text-xs text-gray-600">{ketMap[r.nibar] || '-'}</td>
                   </tr>
                 ))}
               </tbody>
