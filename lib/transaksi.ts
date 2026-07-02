@@ -68,6 +68,9 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
     case 'batal_penghapusan':
       // Kebalikan penghapusan: barang kembali aktif, penyusutan lanjut lagi.
       return { status: 'aktif' }
+    case 'kapitalisasi_serap':
+      // Barang anak diserap ke induk: hilang dari laporan, penyusutan berhenti.
+      return { status: 'dihapus' }
     default:
       return null
   }
