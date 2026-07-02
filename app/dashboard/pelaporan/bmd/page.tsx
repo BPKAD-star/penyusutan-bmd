@@ -120,7 +120,7 @@ export default function LaporanBmdPage() {
                 {golCols.map(g => (
                   <th key={g} className="table-th text-right whitespace-nowrap">
                     <span className="block">{labels[g] || g}</span>
-                    <span className="block text-gray-400 font-mono font-normal">{g}</span>
+                    <span className="block text-gray-400 font-normal">{g}</span>
                   </th>
                 ))}
                 <th className="table-th text-right">Total</th>

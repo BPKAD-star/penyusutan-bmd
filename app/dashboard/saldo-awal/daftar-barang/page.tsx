@@ -159,7 +159,7 @@ export default function Page() {
                   <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                     <td className="table-td">
                       <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
-                      <p className="text-gray-400 text-xs mt-0.5 font-mono">{r.nibar} · {r.kode_barang}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">{r.nibar} · {r.kode_barang}</p>
                     </td>
                     <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
                     <td className="table-td text-center text-xs capitalize">{r.intra_ekstra || '-'}</td>

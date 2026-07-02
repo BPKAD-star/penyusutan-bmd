@@ -258,8 +258,8 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
                 {rows.map((r, i) => (
                   <tr key={i} className={r.valid ? '' : 'bg-red-50/50'}>
                     <td className="table-td text-xs">{r.valid ? <span className="text-green-600">OK</span> : <span className="text-red-500">{r.masalah.join(', ')}</span>}</td>
-                    <td className="table-td text-xs font-mono">{r.kode}</td>
-                    <td className="table-td text-xs font-mono">{r.nibar}</td>
+                    <td className="table-td text-xs">{r.kode}</td>
+                    <td className="table-td text-xs">{r.nibar}</td>
                     <td className="table-td text-xs">{r.nama_barang}</td>
                     <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
                     <td className="table-td text-xs">{r.tgl_perolehan || '-'}</td>

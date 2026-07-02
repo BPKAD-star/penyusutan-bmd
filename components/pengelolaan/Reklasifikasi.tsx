@@ -50,7 +50,7 @@ export default function Reklasifikasi() {
             <label className="block text-xs text-gray-500 mb-1">Kode Baru (dari kodefikasi BMD)</label>
             {kodeBaru ? (
               <div className="flex items-center justify-between p-3 bg-teal/5 border border-teal/30 rounded-lg text-sm">
-                <span className="font-mono text-xs">{kodeBaru.kode} — {kodeBaru.uraian}</span>
+                <span className="text-xs">{kodeBaru.kode} — {kodeBaru.uraian}</span>
                 <button type="button" className="btn-secondary text-xs" onClick={() => setKodeBaru(null)}>Ganti</button>
               </div>
             ) : (
@@ -66,7 +66,7 @@ export default function Reklasifikasi() {
                     {kandidat.map(k => (
                       <button key={k.kode} type="button" onClick={() => { setKodeBaru(k); setKandidat([]) }}
                         className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs">
-                        <span className="font-mono">{k.kode}</span> — {k.uraian}
+                        <span>{k.kode}</span> — {k.uraian}
                         <span className="text-gray-400"> (MM {k.masa_manfaat_tahun} th)</span>
                       </button>
                     ))}

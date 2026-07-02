@@ -46,7 +46,7 @@ export default function RekapTable({ rows, loading, labelAkumulasi, labelBeban }
               <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
             ) : rows.map(r => (
               <tr key={r.kode}>
-                <td className="table-td text-xs font-mono">{r.kode}</td>
+                <td className="table-td text-xs">{r.kode}</td>
                 <td className="table-td text-xs font-medium">{r.uraian}</td>
                 <td className="table-td text-right text-xs">{formatRupiah(r.perolehan)}</td>
                 <td className="table-td text-right text-xs">{dash(r.akumulasi, r.disusutkan)}</td>

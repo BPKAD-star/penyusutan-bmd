@@ -86,7 +86,7 @@ export default async function DashboardHome() {
             const d = gol[g.kode] || { count: 0, nilai: 0 }
             return (
               <div key={g.kode} className="card p-4">
-                <p className="text-[11px] text-gray-400 font-mono">{g.kode}</p>
+                <p className="text-[11px] text-gray-400">{g.kode}</p>
                 <p className="text-xs text-gray-600 leading-tight mt-0.5 h-8">{g.uraian}</p>
                 <p className="text-xl font-bold text-gray-900 mt-1">{nf(d.count)} <span className="text-xs font-normal text-gray-400">unit</span></p>
                 <p className="text-xs font-medium text-teal mt-1">{formatRp(d.nilai)}</p>

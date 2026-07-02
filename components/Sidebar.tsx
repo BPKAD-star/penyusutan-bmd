@@ -156,7 +156,7 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
         <button
           onClick={() => setOpen(o => ({ ...o, [node.label]: !(o[node.label] ?? active) }))}
           className={`w-full flex items-center gap-3 pr-3 py-2 rounded-lg text-sm transition-colors ${
-            active ? 'text-white font-medium' : 'text-white/60 hover:text-white hover:bg-white/10'
+            active ? 'bg-white/10 text-white font-medium' : 'text-white/60 hover:text-white hover:bg-white/10'
           }`}
           style={pad}
         >

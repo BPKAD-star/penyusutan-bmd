@@ -177,7 +177,7 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
                   <td className="table-td text-xs">{JENIS_TRANSAKSI_LABEL[r.jenis] || r.jenis}</td>
                   <td className="table-td text-xs">
                     <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
-                    <p className="text-gray-400 font-mono">{r.aset?.nibar || '-'}</p>
+                    <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
                   </td>
                   <td className="table-td text-xs">
                     {r.asal?.nama && <p>Dari: {r.asal.nama}</p>}

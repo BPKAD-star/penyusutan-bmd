@@ -218,7 +218,7 @@ export default function DaftarBarangPage() {
                   <tr key={row.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                     <td className="table-td">
                       <p className="font-medium text-gray-800 text-xs">{row.nama_barang || '-'}</p>
-                      <p className="text-gray-400 text-xs mt-0.5 font-mono">{row.nibar || '-'} · {row.kode}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">{row.nibar || '-'} · {row.kode}</p>
                     </td>
                     <td className="table-td text-xs">{golonganLabels[kodeLevel3(row.kode)] || kodeLevel3(row.kode)}</td>
                     <td className="table-td text-xs text-gray-600">{row.skpd?.nama || '-'}</td>
