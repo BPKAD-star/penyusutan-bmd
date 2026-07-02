@@ -2,10 +2,15 @@
 // Daftar Barang — alur filter-lalu-tampilkan (mirip e-SIMBADA):
 // SKPD → Jenis Aset → Komptabel (intra/ekstra) → Cari → klik Tampilkan.
 // Data baru di-fetch setelah tombol Tampilkan ditekan.
+//
+// Kolom: SKPD (paling kiri) · Nama Barang · Kode Barang · Uraian (nama baku dari
+// kodefikasi) · Komptabel · Tgl Perolehan · Nilai Perolehan · Keterangan.
+// Angka tanpa "Rp" (enak di-copas ke Excel) + baris TOTAL grand-total nilai
+// perolehan seluruh hasil filter (bukan cuma halaman ini).
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
-import { GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
+import { exportToExcel } from '@/lib/export'
+import { GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
 
 const PAGE_SIZE = 50
 
@@ -22,11 +27,16 @@ type Row = {
   tgl_perolehan: string | null
   cara_perolehan: string
   intra_ekstra: string | null
+  keterangan: string | null
   status: string
   skpd: { nama: string } | null
 }
 
 type Applied = { skpd: string; golongan: string; komptabel: string; search: string }
+
+// Angka polos bergaya id-ID tanpa "Rp" (enak di-copas ke Excel).
+const angka = (v: number | null | undefined) =>
+  v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 export default function DaftarBarangPage() {
   const supabase = createClient()
@@ -43,7 +53,9 @@ export default function DaftarBarangPage() {
   const [applied, setApplied] = useState<Applied | null>(null)
 
   const [data, setData] = useState<Row[]>([])
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [total, setTotal] = useState(0)
+  const [grandTotal, setGrandTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -65,31 +77,65 @@ export default function DaftarBarangPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Filter dipisah agar dipakai bareng query utama, query hitung total, & export.
+  const applyFilters = useCallback(<T,>(q: T, f: Applied): T => {
+    // @ts-expect-error — chain PostgREST builder
+    let b = q.eq('status', 'aktif')
+    if (f.skpd) b = b.eq('skpd_id', f.skpd)
+    if (f.golongan) b = b.like('kode', `${f.golongan}.%`)
+    if (f.komptabel) b = b.eq('intra_ekstra', f.komptabel)
+    if (f.search) b = b.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
+    return b
+  }, [])
+
   const buildQuery = useCallback((f: Applied, withCount: boolean) => {
-    let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,jumlah,satuan,nilai_perolehan,tgl_perolehan,cara_perolehan,intra_ekstra,status,skpd(nama)',
+    const q = supabase.from('aset')
+      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,jumlah,satuan,nilai_perolehan,tgl_perolehan,cara_perolehan,intra_ekstra,keterangan,status,skpd(nama)',
         withCount ? { count: 'exact' } : undefined)
-      .eq('status', 'aktif')
-    if (f.skpd) q = q.eq('skpd_id', f.skpd)
-    if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
-    if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
-    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
-    return q.order('nilai_perolehan', { ascending: false })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    return applyFilters(q, f).order('nilai_perolehan', { ascending: false })
+  }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Uraian (nama baku) per kode, diambil dari kodefikasi_bmd untuk kode di halaman ini.
+  async function fetchUraian(kodes: string[]) {
+    const uniq = [...new Set(kodes)]
+    const map: Record<string, string> = {}
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data } = await supabase.from('kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
+    }
+    return map
+  }
+
+  // Grand total nilai perolehan SELURUH hasil filter (bukan cuma halaman ini).
+  const fetchGrandTotal = useCallback(async (f: Applied) => {
+    let sum = 0
+    for (let from = 0; ; from += 1000) {
+      const b = applyFilters(supabase.from('aset').select('nilai_perolehan'), f)
+      const { data } = await b.range(from, from + 999)
+      if (!data || data.length === 0) break
+      for (const r of data as { nilai_perolehan: number }[]) sum += r.nilai_perolehan || 0
+      if (data.length < 1000) break
+    }
+    return sum
+  }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = useCallback(async (f: Applied, pg: number) => {
     setLoading(true)
     const { data, count } = await buildQuery(f, true).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
-    setData((data as unknown as Row[]) || [])
+    const rows = (data as unknown as Row[]) || []
+    setData(rows)
     setTotal(count || 0)
+    setUraianMap(await fetchUraian(rows.map(r => r.kode)))
     setLoading(false)
-  }, [buildQuery])
+  }, [buildQuery]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleTampilkan() {
     const f: Applied = { skpd: fSkpd, golongan: fGolongan, komptabel: fKomptabel, search: fSearch }
     setApplied(f)
     setPage(0)
+    setGrandTotal(0)
     fetchData(f, 0)
+    fetchGrandTotal(f).then(setGrandTotal)
   }
 
   function goPage(pg: number) {
@@ -108,20 +154,17 @@ export default function DaftarBarangPage() {
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
     }
+    const uraian = await fetchUraian(all.map(r => r.kode))
     exportToExcel(all.map(r => ({
-      'NIBAR': r.nibar || '',
-      'Kode': r.kode,
-      'Golongan': golonganLabels[kodeLevel3(r.kode)] || kodeLevel3(r.kode),
-      'Nama Barang': r.nama_barang || '',
-      'Spesifikasi': r.spesifikasi || '',
-      'Merek/Tipe': r.merek_tipe || '',
-      'Jumlah': r.jumlah,
-      'Satuan': r.satuan || '',
-      'Komptabel': r.intra_ekstra || '',
-      'Nilai Perolehan (Rp)': r.nilai_perolehan,
-      'Tgl Perolehan': r.tgl_perolehan || '',
-      'Cara Perolehan': r.cara_perolehan,
       'SKPD': r.skpd?.nama || '',
+      'Nama Barang': r.nama_barang || '',
+      'NIBAR': r.nibar || '',
+      'Kode Barang': r.kode,
+      'Uraian': uraian[r.kode] || '',
+      'Komptabel': r.intra_ekstra || '',
+      'Tgl Perolehan': r.tgl_perolehan || '',
+      'Nilai Perolehan': r.nilai_perolehan,
+      'Keterangan': r.keterangan || '',
     })), `Daftar_Barang_BMD${applied.golongan ? '_' + applied.golongan : ''}`, 'Daftar Barang')
     setExporting(false)
   }
@@ -201,36 +244,46 @@ export default function DaftarBarangPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="table-th">Barang</th>
-                  <th className="table-th">Golongan</th>
                   <th className="table-th">SKPD</th>
+                  <th className="table-th">Nama Barang</th>
+                  <th className="table-th">Kode Barang</th>
+                  <th className="table-th">Uraian</th>
                   <th className="table-th text-center">Komptabel</th>
+                  <th className="table-th">Tgl Perolehan</th>
                   <th className="table-th text-right">Nilai Perolehan</th>
-                  <th className="table-th">Perolehan</th>
+                  <th className="table-th">Keterangan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
-                  <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                  <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                 ) : data.length === 0 ? (
-                  <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
                 ) : data.map((row, i) => (
                   <tr key={row.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                    <td className="table-td text-xs text-gray-600">{row.skpd?.nama || '-'}</td>
                     <td className="table-td">
                       <p className="font-medium text-gray-800 text-xs">{row.nama_barang || '-'}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">{row.nibar || '-'} · {row.kode}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">{row.nibar || '-'}</p>
                     </td>
-                    <td className="table-td text-xs">{golonganLabels[kodeLevel3(row.kode)] || kodeLevel3(row.kode)}</td>
-                    <td className="table-td text-xs text-gray-600">{row.skpd?.nama || '-'}</td>
+                    <td className="table-td text-xs text-gray-600">{row.kode}</td>
+                    <td className="table-td text-xs text-gray-600">{uraianMap[row.kode] || '-'}</td>
                     <td className="table-td text-center text-xs capitalize">{row.intra_ekstra || '-'}</td>
-                    <td className="table-td text-right text-xs">{formatRupiah(row.nilai_perolehan)}</td>
-                    <td className="table-td text-xs">
-                      {row.cara_perolehan.replace(/_/g, ' ')}
-                      {row.tgl_perolehan && <span className="text-gray-400"> · {row.tgl_perolehan}</span>}
-                    </td>
+                    <td className="table-td text-xs text-gray-600">{row.tgl_perolehan || '-'}</td>
+                    <td className="table-td text-right text-xs">{angka(row.nilai_perolehan)}</td>
+                    <td className="table-td text-xs text-gray-600">{row.keterangan || '-'}</td>
                   </tr>
                 ))}
               </tbody>
+              {!loading && data.length > 0 && (
+                <tfoot>
+                  <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
+                    <td className="table-td text-xs" colSpan={6}>TOTAL ({total.toLocaleString('id-ID')} barang)</td>
+                    <td className="table-td text-right text-xs">{grandTotal ? angka(grandTotal) : '…'}</td>
+                    <td className="table-td" />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
           {totalPages > 1 && (

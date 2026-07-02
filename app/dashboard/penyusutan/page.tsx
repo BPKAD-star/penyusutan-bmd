@@ -217,9 +217,9 @@ export default function PenyusutanPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
+                  <th className="table-th">SKPD</th>
                   <th className="table-th">Nama Barang</th>
                   <th className="table-th">Kode Barang</th>
-                  <th className="table-th">SKPD</th>
                   <th className="table-th">Tgl Perolehan</th>
                   <th className="table-th text-right">Nilai Perolehan</th>
                   <th className="table-th text-right">Beban</th>
@@ -239,12 +239,12 @@ export default function PenyusutanPage() {
                   const p = r.p
                   return (
                     <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                      <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
                       <td className="table-td">
                         <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
                         <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
                       </td>
                       <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
-                      <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
                       <td className="table-td text-xs text-gray-600">{r.tgl_perolehan || '-'}</td>
                       <td className="table-td text-right text-xs">{angka(r.nilai_perolehan)}</td>
                       <td className="table-td text-right text-xs font-medium text-teal">{dash(angka(p?.beban_penyusutan), susut && !!p)}</td>
