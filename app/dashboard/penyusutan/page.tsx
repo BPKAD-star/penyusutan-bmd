@@ -46,6 +46,8 @@ export default function PenyusutanPage() {
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
   const [kapMap, setKapMap] = useState<Record<string, KapItem[]>>({})
   const [detail, setDetail] = useState<{ nama: string; items: KapItem[] } | null>(null)
+  const [engineRunning, setEngineRunning] = useState(false)
+  const [engineMsg, setEngineMsg] = useState('')
 
   useEffect(() => {
     (async () => {
@@ -127,6 +129,26 @@ export default function PenyusutanPage() {
   function tampilkan() {
     const f: Applied = { org, golongan, komptabel, periode: `${tahun}-S${smt}`, search }
     setApplied(f); load(f)
+  }
+
+  // Jalankan engine penyusutan untuk periode terpilih (admin-only di sisi server).
+  // Menghitung ulang SEMUA aset untuk periode itu, lalu refresh tabel bila cocok.
+  async function runEngine() {
+    const periode = `${tahun}-S${smt}`
+    if (!confirm(`Jalankan engine penyusutan untuk periode ${periode}?\nMenghitung ulang SEMUA aset (bisa beberapa menit). Aman diulang.`)) return
+    setEngineRunning(true); setEngineMsg('')
+    try {
+      const res = await fetch('/api/engine/run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periode }),
+      })
+      const j = await res.json()
+      if (!res.ok) { setEngineMsg(`Error: ${j.error || `HTTP ${res.status}`}`); setEngineRunning(false); return }
+      setEngineMsg(`✓ Engine selesai untuk ${periode} — ${Number(j.disusutkan || 0).toLocaleString('id-ID')} aset disusutkan, total beban ${angka(j.total_beban)}.`)
+      if (applied && applied.periode === periode) load(applied)
+    } catch (e) {
+      setEngineMsg(`Error: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    setEngineRunning(false)
   }
 
   async function handleExport() {
@@ -220,7 +242,16 @@ export default function PenyusutanPage() {
           <div className="flex items-center gap-3">
             <span className="w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
+            <button className="btn-secondary" onClick={runEngine} disabled={engineRunning} title="Hitung ulang penyusutan semua aset untuk periode terpilih (admin)">
+              {engineRunning ? 'Menghitung…' : `⚙ Jalankan Engine (${tahun}-S${smt})`}
+            </button>
           </div>
+          {engineMsg && (
+            <div className="flex items-start gap-3">
+              <span className="w-40 flex-shrink-0" />
+              <p className={`text-xs ${engineMsg.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>{engineMsg}</p>
+            </div>
+          )}
         </div>
       </div>
 
