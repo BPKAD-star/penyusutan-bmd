@@ -168,18 +168,6 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
 
   return (
     <aside className="w-64 bg-navy flex flex-col h-full flex-shrink-0">
-      <div className="px-6 py-5 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-teal rounded-lg flex items-center justify-center flex-shrink-0">
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">{ICON.building}</svg>
-          </div>
-          <div>
-            <p className="text-white text-sm font-semibold leading-tight">BMD Kab. Kediri</p>
-            <p className="text-white/40 text-xs">Barang Milik Daerah</p>
-          </div>
-        </div>
-      </div>
-
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <p className="text-white/30 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Menu</p>
         {navTree.map(n => renderNode(n, 0))}

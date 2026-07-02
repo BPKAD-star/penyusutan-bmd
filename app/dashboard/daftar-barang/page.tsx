@@ -1,7 +1,7 @@
 'use client'
-// Daftar Barang — full register SEMUA golongan BMD (PLAN §8).
-// Label golongan diambil dari data (kodefikasi_bmd → jenis_aset), tidak di-hardcode.
-// Exclusion penyusutan urusan engine, bukan halaman ini.
+// Daftar Barang — alur filter-lalu-tampilkan (mirip e-SIMBADA):
+// SKPD → Jenis Aset → Komptabel (intra/ekstra) → Cari → klik Tampilkan.
+// Data baru di-fetch setelah tombol Tampilkan ditekan.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
@@ -21,30 +21,36 @@ type Row = {
   nilai_perolehan: number
   tgl_perolehan: string | null
   cara_perolehan: string
+  intra_ekstra: string | null
   status: string
   skpd: { nama: string } | null
 }
 
+type Applied = { skpd: string; golongan: string; komptabel: string; search: string }
+
 export default function DaftarBarangPage() {
   const supabase = createClient()
+
+  // ── Nilai filter (belum diterapkan) ──
+  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
+  const [fSkpd, setFSkpd] = useState('')
+  const [fGolongan, setFGolongan] = useState('')
+  const [fKomptabel, setFKomptabel] = useState('')
+  const [fSearch, setFSearch] = useState('')
+
+  // ── Filter yang sudah diterapkan (dipakai query) ──
+  const [applied, setApplied] = useState<Applied | null>(null)
+
   const [data, setData] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
-
-  const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
-  const [golongan, setGolongan] = useState('')
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
-  const [selectedSkpd, setSelectedSkpd] = useState('')
-  const [status, setStatus] = useState('aktif')
-  const [search, setSearch] = useState('')
-  const [searchInput, setSearchInput] = useState('')
 
   useEffect(() => {
     supabase.from('skpd').select('id,nama').eq('level', 1).order('nama')
       .then(({ data }) => setSkpdList(data || []))
-    // Label golongan dari data: kodefikasi_bmd.jenis_aset_id → jenis_aset.nama
     ;(async () => {
       const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
@@ -59,32 +65,45 @@ export default function DaftarBarangPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const buildQuery = useCallback((withCount: boolean) => {
+  const buildQuery = useCallback((f: Applied, withCount: boolean) => {
     let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,jumlah,satuan,nilai_perolehan,tgl_perolehan,cara_perolehan,status,skpd(nama)',
+      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,jumlah,satuan,nilai_perolehan,tgl_perolehan,cara_perolehan,intra_ekstra,status,skpd(nama)',
         withCount ? { count: 'exact' } : undefined)
-    if (status !== 'semua') q = q.eq('status', status)
-    if (golongan) q = q.like('kode', `${golongan}.%`)
-    if (selectedSkpd) q = q.eq('skpd_id', selectedSkpd)
-    if (search) q = q.or(`nama_barang.ilike.%${search}%,nibar.ilike.%${search}%,kode.ilike.${search}%`)
+      .eq('status', 'aktif')
+    if (f.skpd) q = q.eq('skpd_id', f.skpd)
+    if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
+    if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
+    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
     return q.order('nilai_perolehan', { ascending: false })
-  }, [status, golongan, selectedSkpd, search]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (f: Applied, pg: number) => {
     setLoading(true)
-    const { data, count } = await buildQuery(true).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+    const { data, count } = await buildQuery(f, true).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
     setData((data as unknown as Row[]) || [])
     setTotal(count || 0)
     setLoading(false)
-  }, [buildQuery, page])
+  }, [buildQuery])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  function handleTampilkan() {
+    const f: Applied = { skpd: fSkpd, golongan: fGolongan, komptabel: fKomptabel, search: fSearch }
+    setApplied(f)
+    setPage(0)
+    fetchData(f, 0)
+  }
+
+  function goPage(pg: number) {
+    if (!applied) return
+    setPage(pg)
+    fetchData(applied, pg)
+  }
 
   async function handleExport() {
+    if (!applied) return
     setExporting(true)
     const all: Row[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await buildQuery(false).range(from, from + 999)
+      const { data } = await buildQuery(applied, false).range(from, from + 999)
       if (!data || data.length === 0) break
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
@@ -98,120 +117,130 @@ export default function DaftarBarangPage() {
       'Merek/Tipe': r.merek_tipe || '',
       'Jumlah': r.jumlah,
       'Satuan': r.satuan || '',
+      'Komptabel': r.intra_ekstra || '',
       'Nilai Perolehan (Rp)': r.nilai_perolehan,
       'Tgl Perolehan': r.tgl_perolehan || '',
       'Cara Perolehan': r.cara_perolehan,
       'SKPD': r.skpd?.nama || '',
-      'Status': r.status,
-    })), `Daftar_Barang_BMD${golongan ? '_' + golongan : ''}`, 'Daftar Barang')
+    })), `Daftar_Barang_BMD${applied.golongan ? '_' + applied.golongan : ''}`, 'Daftar Barang')
     setExporting(false)
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
+  const skpdNama = skpdList.find(s => String(s.id) === applied?.skpd)?.nama
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Daftar Barang</h1>
-          <p className="text-gray-500 text-sm mt-1">Register seluruh golongan BMD</p>
-        </div>
-        <button onClick={handleExport} disabled={exporting} className="btn-primary">
-          {exporting ? 'Mengekspor...' : 'Export Excel'}
-        </button>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Daftar Barang</h1>
+        <p className="text-gray-500 text-sm mt-1">Register seluruh golongan BMD — pilih filter lalu klik Tampilkan.</p>
       </div>
 
-      {/* Filters */}
-      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Golongan</label>
-          <select className="select-filter" value={golongan} onChange={e => { setGolongan(e.target.value); setPage(0) }}>
-            <option value="">Semua Golongan</option>
-            {GOLONGAN_DAFTAR_BARANG.map(g => (
-              <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">SKPD</label>
-          <select className="select-filter" value={selectedSkpd} onChange={e => { setSelectedSkpd(e.target.value); setPage(0) }}>
-            <option value="">Semua SKPD</option>
-            {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Status</label>
-          <select className="select-filter" value={status} onChange={e => { setStatus(e.target.value); setPage(0) }}>
-            <option value="aktif">Aktif</option>
-            <option value="dihapus">Dihapus</option>
-            <option value="semua">Semua</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Cari (nama / NIBAR / kode)</label>
-          <div className="flex gap-2">
-            <input className="select-filter" placeholder="Ketik lalu Enter..." value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { setSearch(searchInput); setPage(0) } }} />
-            <button className="btn-secondary" onClick={() => { setSearch(searchInput); setPage(0) }}>Cari</button>
-            {search && <button className="btn-secondary" onClick={() => { setSearch(''); setSearchInput(''); setPage(0) }}>Reset</button>}
+      {/* Filter data */}
+      <div className="card p-5 mb-4">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
+        <div className="space-y-3 max-w-3xl">
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
+            <select className="select-filter flex-1" value={fSkpd} onChange={e => setFSkpd(e.target.value)}>
+              <option value="">Semua SKPD</option>
+              {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
+            </select>
           </div>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="card overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <span className="text-sm text-gray-500">{total.toLocaleString('id-ID')} barang</span>
-          <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="table-th">Barang</th>
-                <th className="table-th">Golongan</th>
-                <th className="table-th">SKPD</th>
-                <th className="table-th text-right">Nilai Perolehan</th>
-                <th className="table-th">Perolehan</th>
-                <th className="table-th text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
-              ) : data.length === 0 ? (
-                <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Tidak ada data</td></tr>
-              ) : data.map((row, i) => (
-                <tr key={row.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                  <td className="table-td">
-                    <p className="font-medium text-gray-800 text-xs">{row.nama_barang || '-'}</p>
-                    <p className="text-gray-400 text-xs mt-0.5 font-mono">{row.nibar || '-'} · {row.kode}</p>
-                  </td>
-                  <td className="table-td text-xs">{golonganLabels[kodeLevel3(row.kode)] || kodeLevel3(row.kode)}</td>
-                  <td className="table-td text-xs text-gray-600">{row.skpd?.nama || '-'}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(row.nilai_perolehan)}</td>
-                  <td className="table-td text-xs">
-                    {row.cara_perolehan.replace(/_/g, ' ')}
-                    {row.tgl_perolehan && <span className="text-gray-400"> · {row.tgl_perolehan}</span>}
-                  </td>
-                  <td className="table-td text-center">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      row.status === 'aktif' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
-                    }`}>{row.status}</span>
-                  </td>
-                </tr>
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Kode Jenis :</label>
+            <select className="select-filter flex-1" value={fGolongan} onChange={e => setFGolongan(e.target.value)}>
+              <option value="">Semua Jenis Aset</option>
+              {GOLONGAN_DAFTAR_BARANG.map(g => (
+                <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>
               ))}
-            </tbody>
-          </table>
-        </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <button className="btn-secondary" disabled={page === 0} onClick={() => setPage(p => p - 1)}>← Sebelumnya</button>
-            <button className="btn-secondary" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Berikutnya →</button>
+            </select>
           </div>
-        )}
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Komptabel :</label>
+            <select className="select-filter flex-1" value={fKomptabel} onChange={e => setFKomptabel(e.target.value)}>
+              <option value="">Semua</option>
+              <option value="intra">Intrakomptabel</option>
+              <option value="ekstra">Ekstrakomptabel</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Cari :</label>
+            <input className="select-filter flex-1" placeholder="Nama barang / NIBAR / kode..."
+              value={fSearch} onChange={e => setFSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleTampilkan() }} />
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="w-40 flex-shrink-0" />
+            <button className="btn-primary" onClick={handleTampilkan} disabled={loading}>
+              {loading ? 'Memuat...' : 'Tampilkan'}
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Hasil */}
+      {applied === null ? (
+        <div className="card p-12 text-center text-gray-400 text-sm">
+          Silakan atur filter di atas lalu klik <span className="font-medium text-gray-600">Tampilkan</span> untuk melihat daftar barang.
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm text-gray-500">
+              {total.toLocaleString('id-ID')} barang{skpdNama ? ` — ${skpdNama}` : ''}
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>
+              <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs">
+                {exporting ? 'Mengekspor...' : 'Export Excel'}
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="table-th">Barang</th>
+                  <th className="table-th">Golongan</th>
+                  <th className="table-th">SKPD</th>
+                  <th className="table-th text-center">Komptabel</th>
+                  <th className="table-th text-right">Nilai Perolehan</th>
+                  <th className="table-th">Perolehan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading ? (
+                  <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                ) : data.length === 0 ? (
+                  <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                ) : data.map((row, i) => (
+                  <tr key={row.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                    <td className="table-td">
+                      <p className="font-medium text-gray-800 text-xs">{row.nama_barang || '-'}</p>
+                      <p className="text-gray-400 text-xs mt-0.5 font-mono">{row.nibar || '-'} · {row.kode}</p>
+                    </td>
+                    <td className="table-td text-xs">{golonganLabels[kodeLevel3(row.kode)] || kodeLevel3(row.kode)}</td>
+                    <td className="table-td text-xs text-gray-600">{row.skpd?.nama || '-'}</td>
+                    <td className="table-td text-center text-xs capitalize">{row.intra_ekstra || '-'}</td>
+                    <td className="table-td text-right text-xs">{formatRupiah(row.nilai_perolehan)}</td>
+                    <td className="table-td text-xs">
+                      {row.cara_perolehan.replace(/_/g, ' ')}
+                      {row.tgl_perolehan && <span className="text-gray-400"> · {row.tgl_perolehan}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+              <button className="btn-secondary" disabled={page === 0} onClick={() => goPage(page - 1)}>← Sebelumnya</button>
+              <button className="btn-secondary" disabled={page >= totalPages - 1} onClick={() => goPage(page + 1)}>Berikutnya →</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
