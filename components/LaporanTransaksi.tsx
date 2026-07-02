@@ -120,13 +120,15 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
             {periodeList.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Jenis</label>
-          <select className="select-filter" value={jenis} onChange={e => setJenis(e.target.value)}>
-            <option value="">Semua Jenis</option>
-            {jenisList.map(j => <option key={j} value={j}>{JENIS_TRANSAKSI_LABEL[j] || j}</option>)}
-          </select>
-        </div>
+        {jenisList.length > 1 && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Jenis</label>
+            <select className="select-filter" value={jenis} onChange={e => setJenis(e.target.value)}>
+              <option value="">Semua Jenis</option>
+              {jenisList.map(j => <option key={j} value={j}>{JENIS_TRANSAKSI_LABEL[j] || j}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-xs text-gray-500 mb-1">SKPD</label>
           <select className="select-filter" value={skpd} onChange={e => setSkpd(e.target.value)}>
