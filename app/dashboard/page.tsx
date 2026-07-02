@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { GOLONGAN_REKAP } from '@/lib/bmd'
+import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 
 const PERIODE = '2026-S1'
 
@@ -26,38 +26,36 @@ async function countTrx(sb: SB, apply: (q: any) => any): Promise<number> {
   return safeCount(apply(base))
 }
 
+// Rekap per golongan dari register aset: jumlah unit + total nilai perolehan.
+async function rekapPerGolongan(sb: SB): Promise<Record<string, { count: number; nilai: number }>> {
+  const agg: Record<string, { count: number; nilai: number }> = {}
+  try {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from('aset')
+        .select('kode,nilai_perolehan').eq('status', 'aktif').range(from, from + 999)
+      if (error || !data || data.length === 0) break
+      for (const r of data as { kode: string; nilai_perolehan: number }[]) {
+        const g = kodeLevel3(r.kode)
+        agg[g] ??= { count: 0, nilai: 0 }
+        agg[g].count += 1
+        agg[g].nilai += r.nilai_perolehan || 0
+      }
+      if (data.length < 1000) break
+    }
+  } catch { /* tabel aset belum ada → kosong */ }
+  return agg
+}
+
 export default async function DashboardHome() {
   const supabase = createClient()
 
-  // ── KPI existing (dari penyusutan_periode) ────────────────────────────────
-  const [totalBeban, totalNilaiBuku, totalAset, topSkpd] = await Promise.all([
-    supabase.from('penyusutan_periode').select('beban_penyusutan').eq('periode', PERIODE),
-    supabase.from('penyusutan_periode').select('nilai_buku_akhir').eq('periode', PERIODE),
-    supabase.from('penyusutan_periode').select('nibar', { count: 'exact', head: true }).eq('periode', PERIODE),
-    supabase.from('penyusutan_periode').select('skpd_id, beban_penyusutan, skpd(nama)').eq('periode', PERIODE).limit(1000),
-  ])
-  const sumBeban = (totalBeban.data || []).reduce((s, r) => s + (r.beban_penyusutan || 0), 0)
-  const sumNilaiBuku = (totalNilaiBuku.data || []).reduce((s, r) => s + (r.nilai_buku_akhir || 0), 0)
-
-  const skpdMap: Record<string, { nama: string; beban: number }> = {}
-  for (const r of topSkpd.data || []) {
-    const nama = (r.skpd as unknown as { nama: string } | null)?.nama || '-'
-    if (!skpdMap[nama]) skpdMap[nama] = { nama, beban: 0 }
-    skpdMap[nama].beban += r.beban_penyusutan || 0
-  }
-  const top5 = Object.values(skpdMap).sort((a, b) => b.beban - a.beban).slice(0, 5)
-
-  // ── Aset per jenis (dari saldo_awal_2026) ──────────────────────────────────
-  const golCounts = await Promise.all(GOLONGAN_REKAP.map(g =>
-    safeCount(supabase.from('saldo_awal_2026').select('*', { count: 'exact', head: true }).like('kode_barang', `${g.kode}.%`) as never)))
-  const totalRegister = golCounts.reduce((s, n) => s + n, 0)
-
-  // ── Perolehan / mutasi / penghapusan (dari ledger transaksi_bmd) ───────────
   const [
+    gol,
     perPengadaan, perHibah, perInv, perLain,
     transfer, mutasiInternal,
     hapusTotalPemindah, hapusHibah, hapusJual, hapusSebabLain,
   ] = await Promise.all([
+    rekapPerGolongan(supabase),
     countTrx(supabase, q => q.eq('jenis', 'pengadaan')),
     countTrx(supabase, q => q.eq('jenis', 'hibah_masuk')),
     countTrx(supabase, q => q.eq('jenis', 'hasil_inventarisasi')),
@@ -70,12 +68,8 @@ export default async function DashboardHome() {
     countTrx(supabase, q => q.eq('jenis', 'penghapusan_sebab_lain')),
   ])
   const hapusSebabLainnya = hapusSebabLain + Math.max(0, hapusTotalPemindah - hapusHibah - hapusJual)
-
-  const kpi = [
-    { label: 'Total Beban Penyusutan', value: formatRp(sumBeban), sub: `Periode ${PERIODE}`, color: 'bg-teal' },
-    { label: 'Total Nilai Buku', value: formatRp(sumNilaiBuku), sub: 'Setelah penyusutan', color: 'bg-navy' },
-    { label: 'Total Aset', value: nf(totalAset.count || 0), sub: 'Aset aktif', color: 'bg-amber-500' },
-  ]
+  const totalRegister = Object.values(gol).reduce((s, v) => s + v.count, 0)
+  const totalNilai = Object.values(gol).reduce((s, v) => s + v.nilai, 0)
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -84,27 +78,21 @@ export default async function DashboardHome() {
         <p className="text-gray-500 text-sm mt-1">Ringkasan BMD Kabupaten Kediri — Periode {PERIODE}</p>
       </div>
 
-      {/* KPI utama */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        {kpi.map(c => (
-          <div key={c.label} className={`${c.color} rounded-xl p-5 text-white`}>
-            <p className="text-white/70 text-xs font-medium uppercase tracking-wider">{c.label}</p>
-            <p className="text-2xl font-bold mt-2 leading-tight">{c.value}</p>
-            <p className="text-white/60 text-xs mt-1">{c.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Total aset per jenis */}
-      <Section title="Total Aset per Jenis" sub={`Register BMD — total ${nf(totalRegister)} aset`}>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {GOLONGAN_REKAP.map((g, i) => (
-            <div key={g.kode} className="card p-4">
-              <p className="text-[11px] text-gray-400 font-mono">{g.kode}</p>
-              <p className="text-xs text-gray-600 leading-tight mt-0.5 h-8">{g.uraian}</p>
-              <p className="text-xl font-bold text-gray-900 mt-1">{nf(golCounts[i])}</p>
-            </div>
-          ))}
+      {/* Total aset per jenis: jumlah unit + nilai rekapitulasi (harga perolehan) */}
+      <Section title="Total Aset per Jenis"
+        sub={`Register BMD — ${nf(totalRegister)} aset · ${formatRp(totalNilai)}`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {GOLONGAN_REKAP.map(g => {
+            const d = gol[g.kode] || { count: 0, nilai: 0 }
+            return (
+              <div key={g.kode} className="card p-4">
+                <p className="text-[11px] text-gray-400 font-mono">{g.kode}</p>
+                <p className="text-xs text-gray-600 leading-tight mt-0.5 h-8">{g.uraian}</p>
+                <p className="text-xl font-bold text-gray-900 mt-1">{nf(d.count)} <span className="text-xs font-normal text-gray-400">unit</span></p>
+                <p className="text-xs font-medium text-teal mt-1">{formatRp(d.nilai)}</p>
+              </div>
+            )
+          })}
         </div>
       </Section>
 
@@ -136,27 +124,6 @@ export default async function DashboardHome() {
           <StatCard label="Karena Sebab Lainnya" value={hapusSebabLainnya} note="Tukar-menukar, penyertaan modal, force majeure" />
         </div>
       </Section>
-
-      {/* Top 5 SKPD */}
-      <div className="card p-6 mt-8">
-        <h2 className="text-base font-semibold text-gray-800 mb-4">Top 5 SKPD — Beban Penyusutan Tertinggi</h2>
-        <div className="space-y-3">
-          {top5.map((s, i) => {
-            const pct = sumBeban > 0 ? (s.beban / sumBeban) * 100 : 0
-            return (
-              <div key={s.nama}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-700 font-medium">{i + 1}. {s.nama}</span>
-                  <span className="text-gray-500">{formatRp(s.beban)}</span>
-                </div>
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-teal rounded-full" style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
     </div>
   )
 }
