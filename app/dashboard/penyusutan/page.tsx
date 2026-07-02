@@ -7,19 +7,26 @@
 // periode mana yang ditampilkan; perhitungan beban/akumulasi tetap tanggung jawab
 // engine. Register aset (semua golongan) diambil dari saldo_awal_2026; angka
 // penyusutan dari penyusutan_periode. Golongan tanpa penyusutan → kolom "-".
+//
+// Tampilan: SEMUA baris hasil filter ditampilkan sekaligus (tanpa halaman) +
+// baris TOTAL di bawah. Angka polos tanpa "Rp" agar mudah di-copy ke Excel.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
-import { GOLONGAN_REKAP, kodeLevel3, perlakuanKode } from '@/lib/bmd'
+import { exportToExcel } from '@/lib/export'
+import { GOLONGAN_REKAP, perlakuanKode } from '@/lib/bmd'
 import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
 
-const PAGE_SIZE = 50
-
-type Base = { nibar: string; kode_barang: string; nama_barang: string; skpd_id: number; nilai_perolehan: number; intra_ekstra: string | null }
+type Base = {
+  nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
+  nilai_perolehan: number; intra_ekstra: string | null
+  tgl_perolehan: string | null; masa_manfaat_smt: number | null
+}
 type Peny = { nilai_buku_awal: number; beban_penyusutan: number; akumulasi_akhir: number; nilai_buku_akhir: number; sisa_masa_manfaat_smt: number }
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; periode: string; search: string }
 
-const METODE_LABEL: Record<string, string> = { penyusutan: 'Penyusutan', amortisasi: 'Amortisasi', lain_lain: 'Penyusutan', tidak: '-' }
+// Angka polos bergaya id-ID tanpa "Rp" (enak di-copas ke Excel).
+const angka = (v: number | null | undefined) =>
+  v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 export default function PenyusutanPage() {
   const supabase = createClient()
@@ -33,8 +40,6 @@ export default function PenyusutanPage() {
 
   const [applied, setApplied] = useState<Applied | null>(null)
   const [rows, setRows] = useState<(Base & { p?: Peny })[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
@@ -52,9 +57,9 @@ export default function PenyusutanPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function baseQuery(f: Applied, withCount: boolean) {
+  function baseQuery(f: Applied) {
     let q = supabase.from('saldo_awal_2026')
-      .select('nibar,kode_barang,nama_barang,skpd_id,nilai_perolehan,intra_ekstra', withCount ? { count: 'exact' } : undefined)
+      .select('nibar,kode_barang,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,masa_manfaat_smt')
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
     if (f.golongan) q = q.like('kode_barang', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
@@ -73,44 +78,48 @@ export default function PenyusutanPage() {
     return map
   }
 
-  async function load(f: Applied, pg: number) {
+  // Ambil SEMUA baris hasil filter (loop 1000-an) lalu gabung angka penyusutan.
+  async function fetchAllBase(f: Applied) {
+    const base: Base[] = []
+    for (let from = 0; ; from += 1000) {
+      const { data } = await baseQuery(f).range(from, from + 999)
+      if (!data || data.length === 0) break
+      base.push(...(data as Base[]))
+      if (data.length < 1000) break
+    }
+    return base
+  }
+
+  async function load(f: Applied) {
     setLoading(true)
-    const { data, count } = await baseQuery(f, true).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
-    const base = (data as Base[]) || []
+    const base = await fetchAllBase(f)
     const pmap = await fetchPeny(base.map(b => b.nibar), f.periode)
     setRows(base.map(b => ({ ...b, p: pmap.get(b.nibar) })))
-    setTotal(count || 0)
     setLoading(false)
   }
 
   function tampilkan() {
     const f: Applied = { org, golongan, komptabel, periode: `${tahun}-S${smt}`, search }
-    setApplied(f); setPage(0); load(f, 0)
+    setApplied(f); load(f)
   }
-  function goPage(pg: number) { if (applied) { setPage(pg); load(applied, pg) } }
 
   async function handleExport() {
     if (!applied) return
     setExporting(true)
-    const base: Base[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data } = await baseQuery(applied, false).range(from, from + 999)
-      if (!data || data.length === 0) break
-      base.push(...(data as Base[]))
-      if (data.length < 1000) break
-    }
+    const base = await fetchAllBase(applied)
     const pmap = await fetchPeny(base.map(b => b.nibar), applied.periode)
     exportToExcel(base.map(b => {
       const p = pmap.get(b.nibar)
       const susut = perlakuanKode(b.kode_barang) !== 'tidak'
       return {
-        'NIBAR': b.nibar, 'Nama Barang': b.nama_barang, 'Kode': b.kode_barang,
+        'NIBAR': b.nibar, 'Nama Barang': b.nama_barang, 'Kode Barang': b.kode_barang,
         'SKPD': skpdNama[b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
-        'Metode': METODE_LABEL[perlakuanKode(b.kode_barang)],
-        'Nilai Buku Awal': susut && p ? p.nilai_buku_awal : '',
+        'Tgl Perolehan': b.tgl_perolehan || '',
+        'Nilai Perolehan': b.nilai_perolehan,
         'Beban': susut && p ? p.beban_penyusutan : '',
         'Akumulasi': susut && p ? p.akumulasi_akhir : '',
         'Nilai Buku Akhir': susut && p ? p.nilai_buku_akhir : b.nilai_perolehan,
+        'Masa Manfaat (Smt)': susut ? (b.masa_manfaat_smt ?? '') : '',
         'Sisa (Smt)': susut && p ? p.sisa_masa_manfaat_smt : '',
         'Periode': applied.periode,
       }
@@ -118,8 +127,17 @@ export default function PenyusutanPage() {
     setExporting(false)
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
   const dash = (v: React.ReactNode, ok: boolean) => (ok ? v : <span className="text-gray-300">-</span>)
+
+  // Total kolom angka untuk baris TOTAL di bawah tabel.
+  const tot = rows.reduce((a, r) => {
+    const susut = perlakuanKode(r.kode_barang) !== 'tidak'
+    const p = r.p
+    a.perolehan += r.nilai_perolehan || 0
+    if (susut && p) { a.beban += p.beban_penyusutan; a.akum += p.akumulasi_akhir }
+    a.nba += (susut && p) ? p.nilai_buku_akhir : (r.nilai_perolehan || 0)
+    return a
+  }, { perolehan: 0, beban: 0, akum: 0, nba: 0 })
 
   return (
     <div className="p-6">
@@ -188,35 +206,34 @@ export default function PenyusutanPage() {
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
-              {total.toLocaleString('id-ID')} aset · periode {applied.periode}
+              {rows.length.toLocaleString('id-ID')} aset · periode {applied.periode}
               {applied.org.skpdId && skpdNama[applied.org.skpdId] ? ` · ${skpdNama[applied.org.skpdId]}` : ''}
             </span>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>
-              <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs">
-                {exporting ? 'Mengekspor...' : 'Export Excel'}
-              </button>
-            </div>
+            <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-secondary text-xs">
+              {exporting ? 'Mengekspor...' : 'Export Excel'}
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="table-th">Barang</th>
+                  <th className="table-th">Nama Barang</th>
+                  <th className="table-th">Kode Barang</th>
                   <th className="table-th">SKPD</th>
-                  <th className="table-th text-center">Metode</th>
-                  <th className="table-th text-right">Nilai Buku Awal</th>
+                  <th className="table-th">Tgl Perolehan</th>
+                  <th className="table-th text-right">Nilai Perolehan</th>
                   <th className="table-th text-right">Beban</th>
                   <th className="table-th text-right">Akumulasi</th>
                   <th className="table-th text-right">Nilai Buku Akhir</th>
+                  <th className="table-th text-center">Masa Manfaat (Smt)</th>
                   <th className="table-th text-center">Sisa (Smt)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
-                  <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                  <tr><td colSpan={10} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={10} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
                 ) : rows.map((r, i) => {
                   const susut = perlakuanKode(r.kode_barang) !== 'tidak'
                   const p = r.p
@@ -224,27 +241,36 @@ export default function PenyusutanPage() {
                     <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                       <td className="table-td">
                         <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{r.nibar} · {r.kode_barang}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
                       </td>
+                      <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
                       <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
-                      <td className="table-td text-center text-xs">{METODE_LABEL[perlakuanKode(r.kode_barang)]}</td>
-                      <td className="table-td text-right text-xs">{dash(p ? formatRupiah(p.nilai_buku_awal) : '-', susut && !!p)}</td>
-                      <td className="table-td text-right text-xs font-medium text-teal">{dash(p ? formatRupiah(p.beban_penyusutan) : '-', susut && !!p)}</td>
-                      <td className="table-td text-right text-xs">{dash(p ? formatRupiah(p.akumulasi_akhir) : '-', susut && !!p)}</td>
-                      <td className="table-td text-right text-xs">{susut && p ? formatRupiah(p.nilai_buku_akhir) : formatRupiah(r.nilai_perolehan)}</td>
-                      <td className="table-td text-center text-xs">{dash(p ? p.sisa_masa_manfaat_smt : '-', susut && !!p)}</td>
+                      <td className="table-td text-xs text-gray-600">{r.tgl_perolehan || '-'}</td>
+                      <td className="table-td text-right text-xs">{angka(r.nilai_perolehan)}</td>
+                      <td className="table-td text-right text-xs font-medium text-teal">{dash(angka(p?.beban_penyusutan), susut && !!p)}</td>
+                      <td className="table-td text-right text-xs">{dash(angka(p?.akumulasi_akhir), susut && !!p)}</td>
+                      <td className="table-td text-right text-xs">{susut && p ? angka(p.nilai_buku_akhir) : angka(r.nilai_perolehan)}</td>
+                      <td className="table-td text-center text-xs">{susut ? (r.masa_manfaat_smt ?? <span className="text-gray-300">-</span>) : <span className="text-gray-300">-</span>}</td>
+                      <td className="table-td text-center text-xs">{dash(p?.sisa_masa_manfaat_smt, susut && !!p)}</td>
                     </tr>
                   )
                 })}
               </tbody>
+              {!loading && rows.length > 0 && (
+                <tfoot>
+                  <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
+                    <td className="table-td text-xs" colSpan={4}>TOTAL ({rows.length.toLocaleString('id-ID')} aset)</td>
+                    <td className="table-td text-right text-xs">{angka(tot.perolehan)}</td>
+                    <td className="table-td text-right text-xs text-teal">{angka(tot.beban)}</td>
+                    <td className="table-td text-right text-xs">{angka(tot.akum)}</td>
+                    <td className="table-td text-right text-xs">{angka(tot.nba)}</td>
+                    <td className="table-td" />
+                    <td className="table-td" />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-              <button className="btn-secondary" disabled={page === 0} onClick={() => goPage(page - 1)}>← Sebelumnya</button>
-              <button className="btn-secondary" disabled={page >= totalPages - 1} onClick={() => goPage(page + 1)}>Berikutnya →</button>
-            </div>
-          )}
         </div>
       )}
     </div>
