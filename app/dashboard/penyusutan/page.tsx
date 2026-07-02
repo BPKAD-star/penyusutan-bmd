@@ -2,18 +2,17 @@
 // Penyusutan — filter ala e-SIMBADA: organisasi (SKPD/Sub OPD/Sub Sub OPD) →
 // jenis aset → komptabel → semester → Tampilkan.
 //
-// Semester & engine: penyusutan dihitung PER SEMESTER (tiap periode YYYY-S1/S2
-// adalah dataset hasil engine tersendiri). Filter semester di sini hanya MEMILIH
-// periode mana yang ditampilkan; perhitungan beban/akumulasi tetap tanggung jawab
-// engine. Register aset (semua golongan) diambil dari saldo_awal_2026; angka
-// penyusutan dari penyusutan_periode. Golongan tanpa penyusutan → kolom "-".
-//
-// Tampilan: SEMUA baris hasil filter ditampilkan sekaligus (tanpa halaman) +
-// baris TOTAL di bawah. Angka polos tanpa "Rp" agar mudah di-copy ke Excel.
+// Sumber angka = HASIL ENGINE (penyusutan_semester, per aset_id per periode),
+// bukan baseline e-bmd. Jadi kapitalisasi ikut tercermin & period-aware:
+//   - Induk yang di-kapitalisasi tampil dengan nilai/beban/akumulasi/masa manfaat BARU.
+//   - Barang anak yang sudah diserap (atau aset dihapus) DISEMBUNYIKAN untuk periode
+//     saat/kaset­elah penyerapan; kalau lihat periode SEBELUM penyerapan, tetap tampil.
+// Register (daftar aset per golongan) tetap dari saldo_awal_2026; angka & visibilitas
+// disesuaikan engine + histori transaksi. Angka polos tanpa "Rp" (enak di-Excel).
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_REKAP, perlakuanKode } from '@/lib/bmd'
+import { GOLONGAN_REKAP, perlakuanKode, comparePeriode } from '@/lib/bmd'
 import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 
@@ -22,12 +21,16 @@ type Base = {
   nilai_perolehan: number; intra_ekstra: string | null
   tgl_perolehan: string | null; masa_manfaat_smt: number | null
 }
-type Peny = { nilai_buku_awal: number; beban_penyusutan: number; akumulasi_akhir: number; nilai_buku_akhir: number; sisa_masa_manfaat_smt: number }
+// Hasil engine (penyusutan_semester) — angka period-aware.
+type Peny = { nilai_perolehan: number; beban: number; akumulasi: number; nilai_buku_akhir: number; sisa_semester: number; masa_manfaat_tahun: number | null }
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; periode: string; search: string }
 
-// Angka polos bergaya id-ID tanpa "Rp" (enak di-copas ke Excel).
 const angka = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
+
+// Event yang menyembunyikan / memunculkan kembali aset (serap/hapus vs batal).
+const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
+const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan']
 
 export default function PenyusutanPage() {
   const supabase = createClient()
@@ -72,18 +75,6 @@ export default function PenyusutanPage() {
     return q.order('nilai_perolehan', { ascending: false })
   }
 
-  async function fetchPeny(nibars: string[], periode: string) {
-    const map = new Map<string, Peny>()
-    for (let i = 0; i < nibars.length; i += 200) {
-      const { data } = await supabase.from('penyusutan_periode')
-        .select('nibar,nilai_buku_awal,beban_penyusutan,akumulasi_akhir,nilai_buku_akhir,sisa_masa_manfaat_smt')
-        .eq('periode', periode).in('nibar', nibars.slice(i, i + 200))
-      for (const r of data || []) map.set(r.nibar, r as Peny)
-    }
-    return map
-  }
-
-  // Ambil SEMUA baris hasil filter (loop 1000-an) lalu gabung angka penyusutan.
   async function fetchAllBase(f: Applied) {
     const base: Base[] = []
     for (let from = 0; ; from += 1000) {
@@ -95,33 +86,83 @@ export default function PenyusutanPage() {
     return base
   }
 
-  // Peta kapitalisasi per NIBAR induk (buang yang sudah dibatalkan), urut tertua→termuda.
+  // nibar → { id (aset), status }
+  async function fetchAsetMap(nibars: string[]) {
+    const map = new Map<string, { id: string; status: string }>()
+    for (let i = 0; i < nibars.length; i += 300) {
+      const { data } = await supabase.from('aset').select('id,nibar,status').in('nibar', nibars.slice(i, i + 300))
+      for (const a of (data || []) as { id: string; nibar: string | null; status: string }[]) if (a.nibar) map.set(a.nibar, { id: a.id, status: a.status })
+    }
+    return map
+  }
+
+  // Hasil engine per aset_id untuk periode terpilih.
+  async function fetchPeny(ids: string[], periode: string) {
+    const map = new Map<string, Peny>()
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await supabase.from('penyusutan_semester')
+        .select('aset_id,nilai_perolehan,beban,akumulasi,nilai_buku_akhir,sisa_semester,masa_manfaat_tahun')
+        .eq('periode', periode).in('aset_id', ids.slice(i, i + 200))
+      for (const r of (data || []) as (Peny & { aset_id: string })[]) map.set(r.aset_id, r)
+    }
+    return map
+  }
+
+  // aset_id yang tersembunyi PER periode (serap/hapus dgn periode <= viewed, dikurangi batal).
+  async function fetchHiddenIds(ids: string[], periode: string) {
+    const evByAset = new Map<string, { periode: string; jenis: string }[]>()
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
+      for (const e of (data || []) as { aset_id: string; jenis: string; periode: string }[]) {
+        const arr = evByAset.get(e.aset_id) || []; arr.push({ periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
+      }
+    }
+    const hidden = new Set<string>()
+    for (const [id, evs] of evByAset) {
+      let h = false
+      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode))) {
+        if (SEMBUNYI.includes(e.jenis)) h = true
+        else if (MUNCUL.includes(e.jenis)) h = false
+      }
+      if (h) hidden.add(id)
+    }
+    return hidden
+  }
+
+  // Kapitalisasi per NIBAR induk (buang yang dibatalkan), urut tertua→termuda.
   async function fetchKap(f: Applied) {
     let kq = supabase.from('transaksi_bmd').select('id,tanggal,keterangan,payload,aset:aset_id(nibar)').eq('jenis', 'kapitalisasi')
     let bq = supabase.from('transaksi_bmd').select('payload').eq('jenis', 'batal_kapitalisasi')
     if (f.org.descendantIds) { kq = kq.in('skpd_asal', f.org.descendantIds); bq = bq.in('skpd_asal', f.org.descendantIds) }
     const [{ data: kap }, { data: batal }] = await Promise.all([kq.order('id', { ascending: true }), bq])
     const cancelled = new Set<number>()
-    for (const b of (batal || []) as { payload: { target_trx_id?: number } }[]) {
-      const t = Number(b.payload?.target_trx_id); if (Number.isFinite(t)) cancelled.add(t)
-    }
+    for (const b of (batal || []) as { payload: { target_trx_id?: number } }[]) { const t = Number(b.payload?.target_trx_id); if (Number.isFinite(t)) cancelled.add(t) }
     const map: Record<string, KapItem[]> = {}
     for (const r of (kap || []) as unknown as {
       id: number; tanggal: string; keterangan: string | null
       payload: { no_dokumen?: string; anak?: KapItem['anak']; snapshot?: KapItem['snapshot'] }; aset: { nibar: string | null } | null
     }[]) {
       if (cancelled.has(r.id) || !r.aset?.nibar) continue
-      const item: KapItem = { no_dokumen: r.payload?.no_dokumen || '(tanpa no. dok)', tanggal: r.tanggal, keterangan: r.keterangan, snapshot: r.payload?.snapshot || null, anak: r.payload?.anak || [] }
-      ;(map[r.aset.nibar] ||= []).push(item)
+      ;(map[r.aset.nibar] ||= []).push({ no_dokumen: r.payload?.no_dokumen || '(tanpa no. dok)', tanggal: r.tanggal, keterangan: r.keterangan, snapshot: r.payload?.snapshot || null, anak: r.payload?.anak || [] })
     }
     return map
   }
 
+  // Susun baris tampil: register − yang tersembunyi, digabung angka engine.
+  async function assembleRows(f: Applied): Promise<(Base & { p?: Peny })[]> {
+    const base = await fetchAllBase(f)
+    const asetMap = await fetchAsetMap(base.map(b => b.nibar))
+    const ids = base.map(b => asetMap.get(b.nibar)?.id).filter((x): x is string => !!x)
+    const [pmap, hidden] = await Promise.all([fetchPeny(ids, f.periode), fetchHiddenIds(ids, f.periode)])
+    return base
+      .filter(b => { const id = asetMap.get(b.nibar)?.id; return !id || !hidden.has(id) })
+      .map(b => ({ ...b, p: pmap.get(asetMap.get(b.nibar)?.id ?? '') }))
+  }
+
   async function load(f: Applied) {
     setLoading(true)
-    const base = await fetchAllBase(f)
-    const pmap = await fetchPeny(base.map(b => b.nibar), f.periode)
-    setRows(base.map(b => ({ ...b, p: pmap.get(b.nibar) })))
+    setRows(await assembleRows(f))
     setKapMap(await fetchKap(f))
     setLoading(false)
   }
@@ -131,16 +172,12 @@ export default function PenyusutanPage() {
     setApplied(f); load(f)
   }
 
-  // Jalankan engine penyusutan untuk periode terpilih (admin-only di sisi server).
-  // Menghitung ulang SEMUA aset untuk periode itu, lalu refresh tabel bila cocok.
   async function runEngine() {
     const periode = `${tahun}-S${smt}`
     if (!confirm(`Jalankan engine penyusutan untuk periode ${periode}?\nMenghitung ulang SEMUA aset (bisa beberapa menit). Aman diulang.`)) return
     setEngineRunning(true); setEngineMsg('')
     try {
-      const res = await fetch('/api/engine/run', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periode }),
-      })
+      const res = await fetch('/api/engine/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periode }) })
       const j = await res.json()
       if (!res.ok) { setEngineMsg(`Error: ${j.error || `HTTP ${res.status}`}`); setEngineRunning(false); return }
       setEngineMsg(`✓ Engine selesai untuk ${periode} — ${Number(j.disusutkan || 0).toLocaleString('id-ID')} aset disusutkan, total beban ${angka(j.total_beban)}.`)
@@ -154,21 +191,20 @@ export default function PenyusutanPage() {
   async function handleExport() {
     if (!applied) return
     setExporting(true)
-    const base = await fetchAllBase(applied)
-    const pmap = await fetchPeny(base.map(b => b.nibar), applied.periode)
-    exportToExcel(base.map(b => {
-      const p = pmap.get(b.nibar)
+    const data = await assembleRows(applied)
+    exportToExcel(data.map(b => {
+      const p = b.p
       const susut = perlakuanKode(b.kode_barang) !== 'tidak'
       return {
         'NIBAR': b.nibar, 'Nama Barang': b.nama_barang, 'Kode Barang': b.kode_barang,
         'SKPD': skpdNama[b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
         'Tgl Perolehan': b.tgl_perolehan || '',
-        'Nilai Perolehan': b.nilai_perolehan,
-        'Beban': susut && p ? p.beban_penyusutan : '',
-        'Akumulasi': susut && p ? p.akumulasi_akhir : '',
+        'Nilai Perolehan': p ? p.nilai_perolehan : b.nilai_perolehan,
+        'Beban': susut && p ? p.beban : '',
+        'Akumulasi': susut && p ? p.akumulasi : '',
         'Nilai Buku Akhir': susut && p ? p.nilai_buku_akhir : b.nilai_perolehan,
-        'Masa Manfaat (Smt)': susut ? (b.masa_manfaat_smt ?? '') : '',
-        'Sisa (Smt)': susut && p ? p.sisa_masa_manfaat_smt : '',
+        'Masa Manfaat (Smt)': susut ? (p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : (b.masa_manfaat_smt ?? '')) : '',
+        'Sisa (Smt)': susut && p ? p.sisa_semester : '',
         'Periode': applied.periode,
       }
     }), `Penyusutan_${applied.periode}`, 'Penyusutan')
@@ -177,12 +213,12 @@ export default function PenyusutanPage() {
 
   const dash = (v: React.ReactNode, ok: boolean) => (ok ? v : <span className="text-gray-300">-</span>)
 
-  // Total kolom angka untuk baris TOTAL di bawah tabel.
+  // Total kolom (pakai angka engine).
   const tot = rows.reduce((a, r) => {
     const susut = perlakuanKode(r.kode_barang) !== 'tidak'
     const p = r.p
-    a.perolehan += r.nilai_perolehan || 0
-    if (susut && p) { a.beban += p.beban_penyusutan; a.akum += p.akumulasi_akhir }
+    a.perolehan += p ? p.nilai_perolehan : (r.nilai_perolehan || 0)
+    if (susut && p) { a.beban += p.beban; a.akum += p.akumulasi }
     a.nba += (susut && p) ? p.nilai_buku_akhir : (r.nilai_perolehan || 0)
     return a
   }, { perolehan: 0, beban: 0, akum: 0, nba: 0 })
@@ -191,7 +227,7 @@ export default function PenyusutanPage() {
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Penyusutan BMD</h1>
-        <p className="text-gray-500 text-sm mt-1">Detail penyusutan & amortisasi per aset per semester</p>
+        <p className="text-gray-500 text-sm mt-1">Detail penyusutan & amortisasi per aset per semester (hasil engine)</p>
       </div>
 
       <div className="card p-5 mb-4">
@@ -296,21 +332,21 @@ export default function PenyusutanPage() {
                   const susut = perlakuanKode(r.kode_barang) !== 'tidak'
                   const p = r.p
                   const kap = kapMap[r.nibar]
+                  const masaSmt = p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : r.masa_manfaat_smt
                   return (
                     <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                       <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
                       <td className="table-td">
                         <p className={`text-xs ${kap ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>{r.nama_barang || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
                       </td>
                       <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
                       <td className="table-td text-xs text-gray-600">{r.tgl_perolehan || '-'}</td>
-                      <td className="table-td text-right text-xs">{angka(r.nilai_perolehan)}</td>
-                      <td className="table-td text-right text-xs font-medium text-teal">{dash(angka(p?.beban_penyusutan), susut && !!p)}</td>
-                      <td className="table-td text-right text-xs">{dash(angka(p?.akumulasi_akhir), susut && !!p)}</td>
+                      <td className="table-td text-right text-xs">{angka(p ? p.nilai_perolehan : r.nilai_perolehan)}</td>
+                      <td className="table-td text-right text-xs font-medium text-teal">{dash(angka(p?.beban), susut && !!p)}</td>
+                      <td className="table-td text-right text-xs">{dash(angka(p?.akumulasi), susut && !!p)}</td>
                       <td className="table-td text-right text-xs">{susut && p ? angka(p.nilai_buku_akhir) : angka(r.nilai_perolehan)}</td>
-                      <td className="table-td text-center text-xs">{susut ? (r.masa_manfaat_smt ?? <span className="text-gray-300">-</span>) : <span className="text-gray-300">-</span>}</td>
-                      <td className="table-td text-center text-xs">{dash(p?.sisa_masa_manfaat_smt, susut && !!p)}</td>
+                      <td className="table-td text-center text-xs">{susut ? (masaSmt ?? <span className="text-gray-300">-</span>) : <span className="text-gray-300">-</span>}</td>
+                      <td className="table-td text-center text-xs">{dash(p?.sisa_semester, susut && !!p)}</td>
                       <td className="table-td text-center">
                         {kap && (
                           <button title="Lihat rincian kapitalisasi/rehab" onClick={() => setDetail({ nama: r.nama_barang || r.nibar, items: kap })}

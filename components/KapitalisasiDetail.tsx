@@ -17,9 +17,9 @@ export type KapItem = { no_dokumen: string; tanggal: string; keterangan?: string
 
 function Row({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 py-1">
-      <span className="text-xs text-gray-500">{label}</span>
-      <span className={`text-xs tabular-nums ${strong ? 'font-semibold text-gray-900' : 'text-gray-800'}`}>{value}</span>
+    <div className="flex items-baseline justify-between gap-3 py-1 min-w-0">
+      <span className="text-xs text-gray-500 min-w-0">{label}</span>
+      <span className={`text-xs tabular-nums whitespace-nowrap flex-shrink-0 ${strong ? 'font-semibold text-gray-900' : 'text-gray-800'}`}>{value}</span>
     </div>
   )
 }
@@ -38,7 +38,7 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Sebelum */}
-          <div className="border border-gray-200 rounded-lg p-3">
+          <div className="border border-gray-200 rounded-lg p-3 min-w-0">
             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Induk — Sebelum</p>
             <Row label="Nilai perolehan induk" value={formatRupiah(s.np_lama)} />
             <Row label="Beban penyusutan / smt" value={formatRupiah(s.beban_lama)} />
@@ -49,13 +49,13 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
           </div>
 
           {/* Penambahan */}
-          <div className="border border-gray-200 rounded-lg p-3">
+          <div className="border border-gray-200 rounded-lg p-3 min-w-0">
             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Penambahan (Anak)</p>
             <ul className="mb-2 space-y-1">
               {item.anak.map(a => (
-                <li key={a.id} className="text-xs text-gray-700 flex justify-between gap-2">
-                  <span>{a.nama || '-'} <span className="text-gray-400">· {a.nibar || '-'}{a.tgl ? ` · ${a.tgl}` : ''}</span></span>
-                  <span className="tabular-nums">{formatRupiah(a.nilai)}</span>
+                <li key={a.id} className="text-xs text-gray-700 flex justify-between gap-3 min-w-0">
+                  <span className="min-w-0 break-words">{a.nama || '-'}{a.tgl ? <span className="text-gray-400"> · {a.tgl}</span> : null}</span>
+                  <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah(a.nilai)}</span>
                 </li>
               ))}
             </ul>
@@ -65,7 +65,7 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
           </div>
 
           {/* Sesudah */}
-          <div className="border border-teal/40 bg-teal/5 rounded-lg p-3">
+          <div className="border border-teal/40 bg-teal/5 rounded-lg p-3 min-w-0">
             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Induk — Sesudah</p>
             <Row label="Nilai perolehan baru" value={formatRupiah(s.np_baru)} strong />
             <Row label="Nilai buku baru" value={formatRupiah(s.nb_baru)} strong />
