@@ -1,420 +1,252 @@
 'use client'
-// Penyusutan — dua sumber:
-//   1. Engine Ledger (baru): penyusutan_semester, dihitung event-driven dari transaksi_bmd
-//   2. Data Lama (G&B): penyusutan_periode, hasil engine batch lama — dipertahankan (PLAN §11)
-import { useEffect, useState, useCallback } from 'react'
+// Penyusutan — filter ala e-SIMBADA: organisasi (SKPD/Sub OPD/Sub Sub OPD) →
+// jenis aset → komptabel → semester → Tampilkan.
+//
+// Semester & engine: penyusutan dihitung PER SEMESTER (tiap periode YYYY-S1/S2
+// adalah dataset hasil engine tersendiri). Filter semester di sini hanya MEMILIH
+// periode mana yang ditampilkan; perhitungan beban/akumulasi tetap tanggung jawab
+// engine. Register aset (semua golongan) diambil dari saldo_awal_2026; angka
+// penyusutan dari penyusutan_periode. Golongan tanpa penyusutan → kolom "-".
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { GOLONGAN_REKAP, kodeLevel3, perlakuanKode } from '@/lib/bmd'
+import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
 
 const PAGE_SIZE = 50
-const PERIODE_LIST_LAMA = ['2025-S2', '2026-S1', '2026-S2']
+
+type Base = { nibar: string; kode_barang: string; nama_barang: string; skpd_id: number; nilai_perolehan: number; intra_ekstra: string | null }
+type Peny = { nilai_buku_awal: number; beban_penyusutan: number; akumulasi_akhir: number; nilai_buku_akhir: number; sisa_masa_manfaat_smt: number }
+type Applied = { org: OrgSelection; golongan: string; komptabel: string; periode: string; search: string }
+
+const METODE_LABEL: Record<string, string> = { penyusutan: 'Penyusutan', amortisasi: 'Amortisasi', lain_lain: 'Penyusutan', tidak: '-' }
 
 export default function PenyusutanPage() {
-  const [sumber, setSumber] = useState<'ledger' | 'lama'>('ledger')
-  const [isAdmin, setIsAdmin] = useState(false)
   const supabase = createClient()
+
+  const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
+  const [golongan, setGolongan] = useState('')
+  const [komptabel, setKomptabel] = useState('')
+  const [tahun, setTahun] = useState('2026')
+  const [smt, setSmt] = useState('1')
+  const [search, setSearch] = useState('')
+
+  const [applied, setApplied] = useState<Applied | null>(null)
+  const [rows, setRows] = useState<(Base & { p?: Peny })[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
 
   useEffect(() => {
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-      setIsAdmin(data?.role === 'admin')
+      const map: Record<number, string> = {}
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        if (!data || data.length === 0) break
+        for (const s of data) map[s.id] = s.nama
+        if (data.length < 1000) break
+      }
+      setSkpdNama(map)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  function baseQuery(f: Applied, withCount: boolean) {
+    let q = supabase.from('saldo_awal_2026')
+      .select('nibar,kode_barang,nama_barang,skpd_id,nilai_perolehan,intra_ekstra', withCount ? { count: 'exact' } : undefined)
+    if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
+    if (f.golongan) q = q.like('kode_barang', `${f.golongan}.%`)
+    if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
+    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode_barang.ilike.${f.search}%`)
+    return q.order('nilai_perolehan', { ascending: false })
+  }
+
+  async function fetchPeny(nibars: string[], periode: string) {
+    const map = new Map<string, Peny>()
+    for (let i = 0; i < nibars.length; i += 200) {
+      const { data } = await supabase.from('penyusutan_periode')
+        .select('nibar,nilai_buku_awal,beban_penyusutan,akumulasi_akhir,nilai_buku_akhir,sisa_masa_manfaat_smt')
+        .eq('periode', periode).in('nibar', nibars.slice(i, i + 200))
+      for (const r of data || []) map.set(r.nibar, r as Peny)
+    }
+    return map
+  }
+
+  async function load(f: Applied, pg: number) {
+    setLoading(true)
+    const { data, count } = await baseQuery(f, true).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
+    const base = (data as Base[]) || []
+    const pmap = await fetchPeny(base.map(b => b.nibar), f.periode)
+    setRows(base.map(b => ({ ...b, p: pmap.get(b.nibar) })))
+    setTotal(count || 0)
+    setLoading(false)
+  }
+
+  function tampilkan() {
+    const f: Applied = { org, golongan, komptabel, periode: `${tahun}-S${smt}`, search }
+    setApplied(f); setPage(0); load(f, 0)
+  }
+  function goPage(pg: number) { if (applied) { setPage(pg); load(applied, pg) } }
+
+  async function handleExport() {
+    if (!applied) return
+    setExporting(true)
+    const base: Base[] = []
+    for (let from = 0; ; from += 1000) {
+      const { data } = await baseQuery(applied, false).range(from, from + 999)
+      if (!data || data.length === 0) break
+      base.push(...(data as Base[]))
+      if (data.length < 1000) break
+    }
+    const pmap = await fetchPeny(base.map(b => b.nibar), applied.periode)
+    exportToExcel(base.map(b => {
+      const p = pmap.get(b.nibar)
+      const susut = perlakuanKode(b.kode_barang) !== 'tidak'
+      return {
+        'NIBAR': b.nibar, 'Nama Barang': b.nama_barang, 'Kode': b.kode_barang,
+        'SKPD': skpdNama[b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
+        'Metode': METODE_LABEL[perlakuanKode(b.kode_barang)],
+        'Nilai Buku Awal': susut && p ? p.nilai_buku_awal : '',
+        'Beban': susut && p ? p.beban_penyusutan : '',
+        'Akumulasi': susut && p ? p.akumulasi_akhir : '',
+        'Nilai Buku Akhir': susut && p ? p.nilai_buku_akhir : b.nilai_perolehan,
+        'Sisa (Smt)': susut && p ? p.sisa_masa_manfaat_smt : '',
+        'Periode': applied.periode,
+      }
+    }), `Penyusutan_${applied.periode}`, 'Penyusutan')
+    setExporting(false)
+  }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+  const dash = (v: React.ReactNode, ok: boolean) => (ok ? v : <span className="text-gray-300">-</span>)
+
   return (
     <div className="p-6">
-      <div className="mb-4">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Penyusutan BMD</h1>
         <p className="text-gray-500 text-sm mt-1">Detail penyusutan & amortisasi per aset per semester</p>
       </div>
-      <div className="flex gap-1 mb-4 border-b border-gray-200">
-        {([['ledger', 'Engine Ledger'], ['lama', 'Data Lama (G&B)']] as const).map(([k, label]) => (
-          <button key={k} onClick={() => setSumber(k)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              sumber === k ? 'border-teal text-teal' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}>
-            {label}
-          </button>
-        ))}
+
+      <div className="card p-5 mb-4">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
+        <div className="space-y-3 max-w-3xl">
+          <OrgFilter onChange={setOrg} />
+
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Jenis Aset :</label>
+            <select className="select-filter flex-1" value={golongan} onChange={e => setGolongan(e.target.value)}>
+              <option value="">Semua Jenis (KIB Tanah s.d. Aset Lain-Lain)</option>
+              {GOLONGAN_REKAP.map(g => <option key={g.kode} value={g.kode}>{g.kode} — {g.uraian}</option>)}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Komptabel :</label>
+            <div className="flex gap-4">
+              {[['', 'Semua'], ['intra', 'Intrakomptabel'], ['ekstra', 'Ekstrakomptabel']].map(([v, l]) => (
+                <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="komptabel" checked={komptabel === v} onChange={() => setKomptabel(v)} />{l}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Semester :</label>
+            <select className="select-filter w-28" value={tahun} onChange={e => setTahun(e.target.value)}>
+              {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <div className="flex gap-4">
+              {[['1', 'Semester I'], ['2', 'Semester II']].map(([v, l]) => (
+                <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="smt" checked={smt === v} onChange={() => setSmt(v)} />{l}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Cari :</label>
+            <input className="select-filter flex-1" placeholder="Nama barang / NIBAR / kode..."
+              value={search} onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="w-40 flex-shrink-0" />
+            <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
+          </div>
+        </div>
       </div>
-      {sumber === 'ledger' ? <PenyusutanLedger isAdmin={isAdmin} /> : <PenyusutanLama />}
-    </div>
-  )
-}
 
-// ── Sumber baru: penyusutan_semester (event-driven) ─────────────────────────
-type RowLedger = {
-  periode: string
-  metode: string
-  nilai_perolehan: number
-  nilai_buku_awal: number
-  beban: number
-  akumulasi: number
-  nilai_buku_akhir: number
-  sisa_semester: number
-  aset: { nibar: string | null; nama_barang: string | null; kode: string; skpd: { nama: string } | null } | null
-}
-
-function PenyusutanLedger({ isAdmin }: { isAdmin: boolean }) {
-  const supabase = createClient()
-  const [data, setData] = useState<RowLedger[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [exporting, setExporting] = useState(false)
-  const [running, setRunning] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [periodeList, setPeriodeList] = useState<string[]>([])
-  const [periode, setPeriode] = useState('2026-S1')
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
-  const [selectedSkpd, setSelectedSkpd] = useState('')
-  const [search, setSearch] = useState('')
-  const [searchInput, setSearchInput] = useState('')
-
-  useEffect(() => {
-    supabase.from('skpd').select('id,nama').eq('level', 1).order('nama')
-      .then(({ data }) => setSkpdList(data || []))
-    supabase.from('penyusutan_semester').select('periode').order('periode', { ascending: false }).limit(1000)
-      .then(({ data }) => {
-        const uniq = [...new Set((data || []).map(r => r.periode))]
-        setPeriodeList(uniq.length ? uniq : ['2026-S1'])
-        if (uniq.length && !uniq.includes('2026-S1')) setPeriode(uniq[0])
-      })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const buildQuery = useCallback((withCount: boolean) => {
-    let q = supabase.from('penyusutan_semester')
-      .select('periode,metode,nilai_perolehan,nilai_buku_awal,beban,akumulasi,nilai_buku_akhir,sisa_semester,aset!inner(nibar,nama_barang,kode,skpd_id,skpd(nama))',
-        withCount ? { count: 'exact' } : undefined)
-      .eq('periode', periode)
-      .order('beban', { ascending: false })
-    if (selectedSkpd) q = q.eq('aset.skpd_id', selectedSkpd)
-    if (search) q = q.ilike('aset.nama_barang', `%${search}%`)
-    return q
-  }, [periode, selectedSkpd, search]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    const { data, count } = await buildQuery(true).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-    setData((data as never as RowLedger[]) || [])
-    setTotal(count || 0)
-    setLoading(false)
-  }, [buildQuery, page])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
-  async function runEngine() {
-    if (!confirm(`Hitung ulang penyusutan sampai periode ${periode} dari ledger transaksi?`)) return
-    setRunning(true)
-    setMsg('')
-    try {
-      const res = await fetch('/api/engine/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ periode }),
-      })
-      const json = await res.json()
-      if (json.error) setMsg(`Error: ${json.error}`)
-      else {
-        setMsg(`Engine selesai — ${json.disusutkan.toLocaleString('id-ID')} aset disusutkan, total beban ${formatRupiah(json.total_beban)} (${periode}).`)
-        fetchData()
-        if (!periodeList.includes(periode)) setPeriodeList(p => [periode, ...p])
-      }
-    } catch (e) {
-      setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`)
-    }
-    setRunning(false)
-  }
-
-  async function handleExport() {
-    setExporting(true)
-    const all: RowLedger[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data } = await buildQuery(false).range(from, from + 999)
-      if (!data || data.length === 0) break
-      all.push(...(data as never as RowLedger[]))
-      if (data.length < 1000) break
-    }
-    exportToExcel(all.map(r => ({
-      'NIBAR': r.aset?.nibar || '',
-      'Nama Barang': r.aset?.nama_barang || '',
-      'Kode': r.aset?.kode || '',
-      'SKPD': r.aset?.skpd?.nama || '',
-      'Metode': r.metode,
-      'Nilai Perolehan (Rp)': r.nilai_perolehan,
-      'Nilai Buku Awal (Rp)': r.nilai_buku_awal,
-      'Beban (Rp)': r.beban,
-      'Akumulasi (Rp)': r.akumulasi,
-      'Nilai Buku Akhir (Rp)': r.nilai_buku_akhir,
-      'Sisa (Smt)': r.sisa_semester,
-      'Periode': r.periode,
-    })), `Penyusutan_BMD_${periode}`, 'Penyusutan')
-    setExporting(false)
-  }
-
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-
-  return (
-    <div>
-      {msg && (
-        <div className={`mb-4 p-3 rounded-lg text-sm ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-          {msg}
+      {applied === null ? (
+        <div className="card p-12 text-center text-gray-400 text-sm">
+          Atur filter lalu klik <span className="font-medium text-gray-600">Tampilkan</span>.
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <span className="text-sm text-gray-500">
+              {total.toLocaleString('id-ID')} aset · periode {applied.periode}
+              {applied.org.skpdId && skpdNama[applied.org.skpdId] ? ` · ${skpdNama[applied.org.skpdId]}` : ''}
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>
+              <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs">
+                {exporting ? 'Mengekspor...' : 'Export Excel'}
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="table-th">Barang</th>
+                  <th className="table-th">SKPD</th>
+                  <th className="table-th text-center">Metode</th>
+                  <th className="table-th text-right">Nilai Buku Awal</th>
+                  <th className="table-th text-right">Beban</th>
+                  <th className="table-th text-right">Akumulasi</th>
+                  <th className="table-th text-right">Nilai Buku Akhir</th>
+                  <th className="table-th text-center">Sisa (Smt)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading ? (
+                  <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                ) : rows.map((r, i) => {
+                  const susut = perlakuanKode(r.kode_barang) !== 'tidak'
+                  const p = r.p
+                  return (
+                    <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                      <td className="table-td">
+                        <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5 font-mono">{r.nibar} · {r.kode_barang}</p>
+                      </td>
+                      <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
+                      <td className="table-td text-center text-xs">{METODE_LABEL[perlakuanKode(r.kode_barang)]}</td>
+                      <td className="table-td text-right text-xs">{dash(p ? formatRupiah(p.nilai_buku_awal) : '-', susut && !!p)}</td>
+                      <td className="table-td text-right text-xs font-medium text-teal">{dash(p ? formatRupiah(p.beban_penyusutan) : '-', susut && !!p)}</td>
+                      <td className="table-td text-right text-xs">{dash(p ? formatRupiah(p.akumulasi_akhir) : '-', susut && !!p)}</td>
+                      <td className="table-td text-right text-xs">{susut && p ? formatRupiah(p.nilai_buku_akhir) : formatRupiah(r.nilai_perolehan)}</td>
+                      <td className="table-td text-center text-xs">{dash(p ? p.sisa_masa_manfaat_smt : '-', susut && !!p)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+              <button className="btn-secondary" disabled={page === 0} onClick={() => goPage(page - 1)}>← Sebelumnya</button>
+              <button className="btn-secondary" disabled={page >= totalPages - 1} onClick={() => goPage(page + 1)}>Berikutnya →</button>
+            </div>
+          )}
         </div>
       )}
-      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Periode</label>
-          <select className="select-filter" value={periode} onChange={e => { setPeriode(e.target.value); setPage(0) }}>
-            {[...new Set([...periodeList, '2026-S1', '2026-S2', '2027-S1'])].sort().map(p =>
-              <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">SKPD</label>
-          <select className="select-filter" value={selectedSkpd} onChange={e => { setSelectedSkpd(e.target.value); setPage(0) }}>
-            <option value="">Semua SKPD</option>
-            {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Cari Nama Barang</label>
-          <div className="flex gap-2">
-            <input className="select-filter" placeholder="Ketik lalu Enter..." value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { setSearch(searchInput); setPage(0) } }} />
-            <button className="btn-secondary" onClick={() => { setSearch(searchInput); setPage(0) }}>Cari</button>
-          </div>
-        </div>
-        <div className="ml-auto flex gap-2">
-          {isAdmin && (
-            <button className="btn-secondary" onClick={runEngine} disabled={running}>
-              {running ? 'Menghitung...' : 'Jalankan Engine'}
-            </button>
-          )}
-          <button onClick={handleExport} disabled={exporting} className="btn-primary">
-            {exporting ? 'Mengekspor...' : 'Export Excel'}
-          </button>
-        </div>
-      </div>
-
-      <div className="card overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <span className="text-sm text-gray-500">{total.toLocaleString('id-ID')} aset</span>
-          <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="table-th">Barang</th>
-                <th className="table-th">SKPD</th>
-                <th className="table-th text-center">Metode</th>
-                <th className="table-th text-right">Nilai Buku Awal</th>
-                <th className="table-th text-right">Beban</th>
-                <th className="table-th text-right">Akumulasi</th>
-                <th className="table-th text-right">Nilai Buku Akhir</th>
-                <th className="table-th text-center">Sisa (Smt)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
-              ) : data.length === 0 ? (
-                <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">
-                  Belum ada hasil untuk periode ini{isAdmin ? ' — klik "Jalankan Engine"' : ''}
-                </td></tr>
-              ) : data.map((row, i) => (
-                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                  <td className="table-td">
-                    <p className="font-medium text-gray-800 text-xs">{row.aset?.nama_barang || '-'}</p>
-                    <p className="text-gray-400 text-xs mt-0.5 font-mono">{row.aset?.nibar || '-'}</p>
-                  </td>
-                  <td className="table-td text-xs text-gray-600">{row.aset?.skpd?.nama || '-'}</td>
-                  <td className="table-td text-center text-xs">{row.metode}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(row.nilai_buku_awal)}</td>
-                  <td className="table-td text-right text-xs font-medium text-teal">{formatRupiah(row.beban)}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(row.akumulasi)}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(row.nilai_buku_akhir)}</td>
-                  <td className="table-td text-center text-xs">{row.sisa_semester}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <button className="btn-secondary" disabled={page === 0} onClick={() => setPage(p => p - 1)}>← Sebelumnya</button>
-            <button className="btn-secondary" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Berikutnya →</button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Sumber lama: penyusutan_periode (dipertahankan, read-only) ───────────────
-type RowLama = {
-  nibar: string
-  nama_barang: string
-  kode_barang: string
-  periode: string
-  nilai_buku_awal: number
-  beban_penyusutan: number
-  akumulasi_akhir: number
-  nilai_buku_akhir: number
-  sisa_masa_manfaat_smt: number
-  skpd: { nama: string } | null
-}
-
-function PenyusutanLama() {
-  const supabase = createClient()
-  const [data, setData] = useState<RowLama[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [exporting, setExporting] = useState(false)
-  const [periode, setPeriode] = useState('2026-S1')
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
-  const [selectedSkpd, setSelectedSkpd] = useState('')
-  const [search, setSearch] = useState('')
-  const [searchInput, setSearchInput] = useState('')
-
-  useEffect(() => {
-    supabase.from('skpd').select('id,nama').eq('level', 1).order('nama')
-      .then(({ data }) => setSkpdList(data || []))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    let query = supabase
-      .from('penyusutan_periode')
-      .select('nibar,nama_barang,kode_barang,periode,nilai_buku_awal,beban_penyusutan,akumulasi_akhir,nilai_buku_akhir,sisa_masa_manfaat_smt,skpd(nama)', { count: 'exact' })
-      .eq('periode', periode)
-      .order('beban_penyusutan', { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-    if (selectedSkpd) query = query.eq('skpd_id', selectedSkpd)
-    if (search) query = query.ilike('nama_barang', `%${search}%`)
-    const { data, count } = await query
-    setData((data as never as RowLama[]) || [])
-    setTotal(count || 0)
-    setLoading(false)
-  }, [periode, selectedSkpd, search, page]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => { fetchData() }, [fetchData])
-
-  async function handleExport() {
-    setExporting(true)
-    const all: RowLama[] = []
-    for (let from = 0; ; from += 1000) {
-      let query = supabase
-        .from('penyusutan_periode')
-        .select('nibar,nama_barang,kode_barang,periode,nilai_buku_awal,beban_penyusutan,akumulasi_akhir,nilai_buku_akhir,sisa_masa_manfaat_smt,skpd(nama)')
-        .eq('periode', periode)
-        .order('beban_penyusutan', { ascending: false })
-        .range(from, from + 999)
-      if (selectedSkpd) query = query.eq('skpd_id', selectedSkpd)
-      if (search) query = query.ilike('nama_barang', `%${search}%`)
-      const { data } = await query
-      if (!data || data.length === 0) break
-      all.push(...(data as never as RowLama[]))
-      if (data.length < 1000) break
-    }
-    exportToExcel(all.map(r => ({
-      'NIBAR': r.nibar,
-      'Nama Barang': r.nama_barang,
-      'Kode Barang': r.kode_barang,
-      'SKPD': r.skpd?.nama || '',
-      'Nilai Buku Awal (Rp)': r.nilai_buku_awal,
-      'Beban Penyusutan (Rp)': r.beban_penyusutan,
-      'Akumulasi Akhir (Rp)': r.akumulasi_akhir,
-      'Nilai Buku Akhir (Rp)': r.nilai_buku_akhir,
-      'Sisa Masa Manfaat (Smt)': r.sisa_masa_manfaat_smt,
-      'Periode': r.periode,
-    })), `Penyusutan_BMD_Lama_${periode}`, 'Penyusutan')
-    setExporting(false)
-  }
-
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-
-  return (
-    <div>
-      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Periode</label>
-          <select className="select-filter" value={periode} onChange={e => { setPeriode(e.target.value); setPage(0) }}>
-            {PERIODE_LIST_LAMA.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">SKPD</label>
-          <select className="select-filter" value={selectedSkpd} onChange={e => { setSelectedSkpd(e.target.value); setPage(0) }}>
-            <option value="">Semua SKPD</option>
-            {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Cari Nama Barang</label>
-          <div className="flex gap-2">
-            <input className="select-filter" placeholder="Ketik lalu Enter..." value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { setSearch(searchInput); setPage(0) } }} />
-            <button className="btn-secondary" onClick={() => { setSearch(searchInput); setPage(0) }}>Cari</button>
-          </div>
-        </div>
-        <button onClick={handleExport} disabled={exporting} className="btn-primary ml-auto">
-          {exporting ? 'Mengekspor...' : 'Export Excel'}
-        </button>
-      </div>
-
-      <div className="card overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <span className="text-sm text-gray-500">{total.toLocaleString('id-ID')} aset ditemukan</span>
-          <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="table-th">Nama Barang</th>
-                <th className="table-th">SKPD</th>
-                <th className="table-th text-right">Nilai Buku Awal</th>
-                <th className="table-th text-right">Beban Penyusutan</th>
-                <th className="table-th text-right">Akumulasi</th>
-                <th className="table-th text-right">Nilai Buku Akhir</th>
-                <th className="table-th text-center">Sisa (Smt)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
-              ) : data.length === 0 ? (
-                <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Tidak ada data</td></tr>
-              ) : data.map((row, i) => (
-                <tr key={row.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                  <td className="table-td">
-                    <p className="font-medium text-gray-800 text-xs">{row.nama_barang || '-'}</p>
-                    <p className="text-gray-400 text-xs mt-0.5">{row.nibar}</p>
-                  </td>
-                  <td className="table-td text-xs text-gray-600">{row.skpd?.nama || '-'}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(row.nilai_buku_awal)}</td>
-                  <td className="table-td text-right text-xs font-medium text-teal">{formatRupiah(row.beban_penyusutan)}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(row.akumulasi_akhir)}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(row.nilai_buku_akhir)}</td>
-                  <td className="table-td text-center text-xs">{row.sisa_masa_manfaat_smt}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-            <button className="btn-secondary" disabled={page === 0} onClick={() => setPage(p => p - 1)}>← Sebelumnya</button>
-            <button className="btn-secondary" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>Berikutnya →</button>
-          </div>
-        )}
-      </div>
     </div>
   )
 }

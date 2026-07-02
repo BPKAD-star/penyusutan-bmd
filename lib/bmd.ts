@@ -29,6 +29,22 @@ export function perlakuanKode(kode: string): Perlakuan {
 /** Golongan yang tampil di Daftar Barang (PLAN §8) — label diambil dari data. */
 export const GOLONGAN_DAFTAR_BARANG = ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']
 
+/**
+ * Golongan untuk rekapitulasi penyusutan (KIB Tanah s.d. Aset Lain-Lain).
+ * Uraian = penamaan kanonik Permendagri 108/2016 (dipakai sebagai header laporan).
+ * `disusutkan=false` → kolom beban & akumulasi ditampilkan "-".
+ */
+export const GOLONGAN_REKAP: { kode: string; uraian: string; disusutkan: boolean }[] = [
+  { kode: '1.3.1', uraian: 'Tanah', disusutkan: false },
+  { kode: '1.3.2', uraian: 'Peralatan dan Mesin', disusutkan: true },
+  { kode: '1.3.3', uraian: 'Gedung dan Bangunan', disusutkan: true },
+  { kode: '1.3.4', uraian: 'Jalan, Jaringan dan Irigasi', disusutkan: true },
+  { kode: '1.3.5', uraian: 'Aset Tetap Lainnya', disusutkan: false },
+  { kode: '1.3.6', uraian: 'Konstruksi Dalam Pengerjaan', disusutkan: false },
+  { kode: '1.5.3', uraian: 'Aset Tidak Berwujud', disusutkan: true },
+  { kode: '1.5.4', uraian: 'Aset Lain-Lain', disusutkan: true },
+]
+
 // ── Periode semesteran ──────────────────────────────────────────────────────
 export type Periode = { tahun: number; smt: 1 | 2 }
 
