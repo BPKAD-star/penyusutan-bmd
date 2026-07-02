@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     fetchAll<{ id: string; kode: string; nilai_perolehan: number; intra_ekstra: string | null; tgl_perolehan: string | null }>(
       (f, t) => db.from('aset').select('id,kode,nilai_perolehan,intra_ekstra,tgl_perolehan').range(f, t)),
     fetchAll<TrxLedger & { aset_id: string }>(
-      (f, t) => db.from('transaksi_bmd').select('aset_id,jenis,periode,tanggal,nilai,payload,created_at').order('id').range(f, t)),
+      (f, t) => db.from('transaksi_bmd').select('id,aset_id,jenis,periode,tanggal,nilai,payload,created_at').order('id').range(f, t)),
     fetchAll<{ kode: string; masa_manfaat_tahun: number | null }>(
       (f, t) => db.from('kodefikasi_bmd').select('kode,masa_manfaat_tahun').range(f, t)),
     fetchAll<BandOverhaul>(

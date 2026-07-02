@@ -71,6 +71,13 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
     case 'kapitalisasi_serap':
       // Barang anak diserap ke induk: hilang dari laporan, penyusutan berhenti.
       return { status: 'dihapus' }
+    case 'batal_kapitalisasi': {
+      // Batal kapitalisasi: induk → nilai perolehan kembali (payload.nilai_perolehan_baru),
+      // barang anak → status aktif lagi. Keduanya di-set aktif (induk memang sudah aktif).
+      const patch: Record<string, unknown> = { status: 'aktif' }
+      if (typeof p.nilai_perolehan_baru === 'number') patch.nilai_perolehan = p.nilai_perolehan_baru
+      return patch
+    }
     default:
       return null
   }

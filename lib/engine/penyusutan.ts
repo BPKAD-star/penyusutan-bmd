@@ -11,6 +11,7 @@
 import { perlakuanKode, periodeRange, comparePeriode, kodeLevel3 } from '@/lib/bmd'
 
 export type TrxLedger = {
+  id?: number
   jenis: string
   periode: string
   tanggal: string
@@ -84,6 +85,15 @@ export function hitungJadwalAset(
   const ledger = [...trxs].sort((a, b) =>
     comparePeriode(a.periode, b.periode) || a.tanggal.localeCompare(b.tanggal) || a.created_at.localeCompare(b.created_at))
 
+  // Kapitalisasi yang dibatalkan (batal_kapitalisasi.payload.target_trx_id) diabaikan
+  // saat replay → nilai & masa manfaat induk kembali seperti sebelum kapitalisasi.
+  const kapDibatalkan = new Set<number>()
+  for (const t of ledger) {
+    if (t.jenis !== 'batal_kapitalisasi') continue
+    const tid = Number((t.payload as Record<string, unknown>)?.target_trx_id)
+    if (Number.isFinite(tid)) kapDibatalkan.add(tid)
+  }
+
   const ekstra = (aset.intra_ekstra || '').toLowerCase() === 'ekstra'
   if (ekstra) return []
 
@@ -139,6 +149,7 @@ export function hitungJadwalAset(
     for (const ev of events) {
       switch (ev.jenis) {
         case 'kapitalisasi': {
+          if (ev.id != null && kapDibatalkan.has(ev.id)) break // dibatalkan → abaikan
           // §6.2 — CONFIRMED rules, ikuti persis.
           const rehab = Number(ev.nilai || 0)
           if (rehab <= 0 || nilaiPerolehan <= 0) break
@@ -188,6 +199,9 @@ export function hitungJadwalAset(
           break
         case 'kapitalisasi_serap':
           berhenti = true // barang anak diserap ke induk: penyusutannya sendiri berhenti
+          break
+        case 'batal_kapitalisasi':
+          berhenti = false // batal serap: barang anak disusutkan lagi (di induk = tanpa efek)
           break
         // mutasi_internal / pengalihan_status / koreksi_spesifikasi: tanpa efek finansial
         // reklas_komptabel / koreksi_kuantitas: DEFERRED (PLAN §12) — jangan implementasi

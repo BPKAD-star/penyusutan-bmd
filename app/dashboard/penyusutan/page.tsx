@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, perlakuanKode } from '@/lib/bmd'
 import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
+import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 
 type Base = {
   nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
@@ -43,6 +44,8 @@ export default function PenyusutanPage() {
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
+  const [kapMap, setKapMap] = useState<Record<string, KapItem[]>>({})
+  const [detail, setDetail] = useState<{ nama: string; items: KapItem[] } | null>(null)
 
   useEffect(() => {
     (async () => {
@@ -90,11 +93,34 @@ export default function PenyusutanPage() {
     return base
   }
 
+  // Peta kapitalisasi per NIBAR induk (buang yang sudah dibatalkan), urut tertua→termuda.
+  async function fetchKap(f: Applied) {
+    let kq = supabase.from('transaksi_bmd').select('id,tanggal,keterangan,payload,aset:aset_id(nibar)').eq('jenis', 'kapitalisasi')
+    let bq = supabase.from('transaksi_bmd').select('payload').eq('jenis', 'batal_kapitalisasi')
+    if (f.org.descendantIds) { kq = kq.in('skpd_asal', f.org.descendantIds); bq = bq.in('skpd_asal', f.org.descendantIds) }
+    const [{ data: kap }, { data: batal }] = await Promise.all([kq.order('id', { ascending: true }), bq])
+    const cancelled = new Set<number>()
+    for (const b of (batal || []) as { payload: { target_trx_id?: number } }[]) {
+      const t = Number(b.payload?.target_trx_id); if (Number.isFinite(t)) cancelled.add(t)
+    }
+    const map: Record<string, KapItem[]> = {}
+    for (const r of (kap || []) as unknown as {
+      id: number; tanggal: string; keterangan: string | null
+      payload: { no_dokumen?: string; anak?: KapItem['anak']; snapshot?: KapItem['snapshot'] }; aset: { nibar: string | null } | null
+    }[]) {
+      if (cancelled.has(r.id) || !r.aset?.nibar) continue
+      const item: KapItem = { no_dokumen: r.payload?.no_dokumen || '(tanpa no. dok)', tanggal: r.tanggal, keterangan: r.keterangan, snapshot: r.payload?.snapshot || null, anak: r.payload?.anak || [] }
+      ;(map[r.aset.nibar] ||= []).push(item)
+    }
+    return map
+  }
+
   async function load(f: Applied) {
     setLoading(true)
     const base = await fetchAllBase(f)
     const pmap = await fetchPeny(base.map(b => b.nibar), f.periode)
     setRows(base.map(b => ({ ...b, p: pmap.get(b.nibar) })))
+    setKapMap(await fetchKap(f))
     setLoading(false)
   }
 
@@ -227,21 +253,23 @@ export default function PenyusutanPage() {
                   <th className="table-th text-right">Nilai Buku Akhir</th>
                   <th className="table-th text-center">Masa Manfaat (Smt)</th>
                   <th className="table-th text-center">Sisa (Smt)</th>
+                  <th className="table-th text-center w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
-                  <tr><td colSpan={10} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                  <tr><td colSpan={11} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={10} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={11} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
                 ) : rows.map((r, i) => {
                   const susut = perlakuanKode(r.kode_barang) !== 'tidak'
                   const p = r.p
+                  const kap = kapMap[r.nibar]
                   return (
                     <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                       <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
                       <td className="table-td">
-                        <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
+                        <p className={`text-xs ${kap ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>{r.nama_barang || '-'}</p>
                         <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
                       </td>
                       <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
@@ -252,6 +280,12 @@ export default function PenyusutanPage() {
                       <td className="table-td text-right text-xs">{susut && p ? angka(p.nilai_buku_akhir) : angka(r.nilai_perolehan)}</td>
                       <td className="table-td text-center text-xs">{susut ? (r.masa_manfaat_smt ?? <span className="text-gray-300">-</span>) : <span className="text-gray-300">-</span>}</td>
                       <td className="table-td text-center text-xs">{dash(p?.sisa_masa_manfaat_smt, susut && !!p)}</td>
+                      <td className="table-td text-center">
+                        {kap && (
+                          <button title="Lihat rincian kapitalisasi/rehab" onClick={() => setDetail({ nama: r.nama_barang || r.nibar, items: kap })}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">👁</button>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -266,6 +300,7 @@ export default function PenyusutanPage() {
                     <td className="table-td text-right text-xs">{angka(tot.nba)}</td>
                     <td className="table-td" />
                     <td className="table-td" />
+                    <td className="table-td" />
                   </tr>
                 </tfoot>
               )}
@@ -273,6 +308,8 @@ export default function PenyusutanPage() {
           </div>
         </div>
       )}
+
+      {detail && <KapitalisasiDetailModal title={`Rincian Kapitalisasi — ${detail.nama}`} items={detail.items} onClose={() => setDetail(null)} />}
     </div>
   )
 }
