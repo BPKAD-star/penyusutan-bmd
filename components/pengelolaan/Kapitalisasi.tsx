@@ -104,15 +104,18 @@ export default function Kapitalisasi() {
     // Nilai perolehan induk dikembalikan: nilai sekarang − rehab transaksi ini.
     const { data: a } = await supabase.from('aset').select('nilai_perolehan,skpd_id').eq('id', j.aset_id).single()
     const npRestore = (a?.nilai_perolehan ?? 0) - j.nilai
+    // Batal = koreksi kesalahan → reversal DICATAT DI PERIODE TRANSAKSI ASLI (j.tanggal),
+    // bukan hari ini. Kalau pakai hari ini, batal jatuh di semester berbeda dari kapitalisasi
+    // sehingga di view periode asli aset tetap "terserap" (beda dgn Daftar Barang yg langsung).
     const { error } = await catatTransaksi(supabase, {
-      asetId: j.aset_id, jenis: 'batal_kapitalisasi', tanggal: today(), nilai: j.nilai, skpdAsal: a?.skpd_id ?? Number(skpd),
+      asetId: j.aset_id, jenis: 'batal_kapitalisasi', tanggal: j.tanggal, nilai: j.nilai, skpdAsal: a?.skpd_id ?? Number(skpd),
       payload: { target_trx_id: j.id, nilai_perolehan_baru: npRestore, no_dokumen: j.no_dokumen },
       keterangan: `Pembatalan kapitalisasi ${j.no_dokumen}`,
     })
     if (error) { setMsg(`Error: ${error}`); return }
     for (const a2 of j.anak) {
       const { error: e2 } = await catatTransaksi(supabase, {
-        asetId: a2.id, jenis: 'batal_kapitalisasi', tanggal: today(), nilai: a2.nilai, skpdAsal: Number(skpd),
+        asetId: a2.id, jenis: 'batal_kapitalisasi', tanggal: j.tanggal, nilai: a2.nilai, skpdAsal: Number(skpd),
         payload: { induk_id: j.aset_id, no_dokumen: j.no_dokumen }, keterangan: `Batal serap dari ${j.no_dokumen}`,
       })
       if (e2) { setMsg(`Sebagian batal gagal: ${e2}`); loadList(skpd); return }

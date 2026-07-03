@@ -121,7 +121,10 @@ export default function PenyusutanPage() {
     const hidden = new Set<string>()
     for (const [id, evs] of evByAset) {
       let h = false
-      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode))) {
+      // Urut periode; dalam periode yang SAMA, proses SEMBUNYI dulu baru MUNCUL,
+      // supaya batal (serap/hapus) di periode yang sama membuat aset muncul lagi.
+      const rank = (j: string) => (SEMBUNYI.includes(j) ? 0 : 1)
+      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || rank(a.jenis) - rank(b.jenis))) {
         if (SEMBUNYI.includes(e.jenis)) h = true
         else if (MUNCUL.includes(e.jenis)) h = false
       }

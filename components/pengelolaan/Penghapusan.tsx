@@ -131,10 +131,12 @@ export default function Penghapusan() {
 
   useEffect(() => { loadJurnals(skpd); setMode('list') }, [skpd, loadJurnals])
 
-  async function hapusBarang(asetId: string, noSk: string) {
+  async function hapusBarang(asetId: string, noSk: string, tglAsli: string) {
     if (!confirm('Batalkan penghapusan barang ini? Barang akan kembali aktif dan penyusutan dilanjutkan.')) return
+    // Reversal dicatat di PERIODE penghapusan asli (tglAsli), bukan hari ini — supaya di
+    // view periode itu barang langsung kembali muncul (konsisten dgn Daftar Barang).
     const { error } = await catatTransaksi(supabase, {
-      asetId, jenis: 'batal_penghapusan',
+      asetId, jenis: 'batal_penghapusan', tanggal: tglAsli,
       keterangan: `Pembatalan dari jurnal ${noSk}`,
     })
     if (error) { setMsg(`Error: ${error}`); return }
@@ -214,7 +216,7 @@ export default function Penghapusan() {
                       <tr key={l.aset_id}>
                         <td className="table-td text-center">
                           <button
-                            onClick={() => hapusBarang(l.aset_id, j.no_sk)}
+                            onClick={() => hapusBarang(l.aset_id, j.no_sk, j.tanggal)}
                             title="Batalkan penghapusan barang ini"
                             className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white"
                           >🗑</button>
