@@ -24,6 +24,7 @@ type Row = {
   id: string
   nibar: string | null
   kode: string
+  golongan: string
   nama_barang: string | null
   spesifikasi: string | null
   merek_tipe: string | null
@@ -32,7 +33,12 @@ type Row = {
   intra_ekstra: string | null
   keterangan: string | null
   status: string
-  skpd: { nama: string } | null
+  skpd: string | null
+  // Jejak penghapusan (dari v_daftar_barang) — dipakai mode export Audit.
+  tgl_hapus: string | null
+  no_sk_hapus: string | null
+  jenis_hapus: string | null
+  ket_hapus: string | null
 }
 
 type Applied = { skpd: string; golongan: string; komptabel: string; search: string }
@@ -61,6 +67,12 @@ const COLS: Record<string, string[]> = {
 }
 const DEFAULT_COLS = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan']
 const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
+
+// Label jenis penghapusan untuk export Audit.
+const HAPUS_LABEL: Record<string, string> = {
+  penghapusan_pemindahtanganan: 'Pemindahtanganan',
+  penghapusan_sebab_lain: 'Sebab Lain',
+}
 
 function thClass(key: string) {
   const a = COL_META[key]?.align
@@ -114,21 +126,23 @@ export default function DaftarBarangPage() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter dipisah agar dipakai bareng query utama, query total, & export.
-  const applyFilters = useCallback(<T,>(q: T, f: Applied): T => {
+  // includeDeleted=false → hanya barang aktif (posisi terkini, default & untuk layar).
+  // includeDeleted=true  → termasuk yang dihapus (mode export Audit/Mutasi buat BPK).
+  const applyFilters = useCallback(<T,>(q: T, f: Applied, includeDeleted = false): T => {
     // @ts-expect-error — chain PostgREST builder
-    let b = q.eq('status', 'aktif')
+    let b = includeDeleted ? q : q.eq('aktif', true)
     if (f.skpd) b = b.eq('skpd_id', f.skpd)
-    if (f.golongan) b = b.like('kode', `${f.golongan}.%`)
+    if (f.golongan) b = b.eq('golongan', f.golongan)
     if (f.komptabel) b = b.eq('intra_ekstra', f.komptabel)
     if (f.search) b = b.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
     return b
   }, [])
 
-  const buildQuery = useCallback((f: Applied, withCount: boolean) => {
-    const q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd(nama)',
+  const buildQuery = useCallback((f: Applied, withCount: boolean, includeDeleted = false) => {
+    const q = supabase.from('v_daftar_barang')
+      .select('id,nibar,kode,golongan,nama_barang,spesifikasi,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd,tgl_hapus,no_sk_hapus,jenis_hapus,ket_hapus',
         withCount ? { count: 'exact' } : undefined)
-    return applyFilters(q, f).order('nilai_perolehan', { ascending: false })
+    return applyFilters(q, f, includeDeleted).order('nilai_perolehan', { ascending: false })
   }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Uraian (nama baku) per kode dari kodefikasi_bmd.
@@ -142,10 +156,10 @@ export default function DaftarBarangPage() {
     return map
   }
 
-  async function fetchAllRows(f: Applied) {
+  async function fetchAllRows(f: Applied, includeDeleted = false) {
     const all: Row[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await buildQuery(f, false).range(from, from + 999)
+      const { data } = await buildQuery(f, false, includeDeleted).range(from, from + 999)
       if (!data || data.length === 0) break
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
@@ -157,7 +171,7 @@ export default function DaftarBarangPage() {
   const fetchGrandTotal = useCallback(async (f: Applied) => {
     let sum = 0
     for (let from = 0; ; from += 1000) {
-      const b = applyFilters(supabase.from('aset').select('nilai_perolehan'), f)
+      const b = applyFilters(supabase.from('v_daftar_barang').select('nilai_perolehan'), f)
       const { data } = await b.range(from, from + 999)
       if (!data || data.length === 0) break
       for (const r of data as { nilai_perolehan: number }[]) sum += r.nilai_perolehan || 0
@@ -212,7 +226,7 @@ export default function DaftarBarangPage() {
     exportToExcel(all.map(r => {
       const cell = (key: string): string | number => {
         switch (key) {
-          case 'skpd': return r.skpd?.nama || ''
+          case 'skpd': return r.skpd || ''
           case 'nama': return r.nama_barang || ''
           case 'kode': return r.kode
           case 'uraian': return uraian[r.kode] || ''
@@ -232,6 +246,42 @@ export default function DaftarBarangPage() {
     setExporting(false)
   }
 
+  // Export Audit/Mutasi (BPK): SEMUA barang termasuk yang dihapus, + kolom jejak
+  // penghapusan (status, no. SK, tanggal, alasan). Barang aktif → kolom hapus kosong.
+  async function handleExportAudit() {
+    if (!applied) return
+    setExporting(true)
+    const all = await fetchAllRows(applied, true)
+    const uraian = await fetchUraian(all.map(r => r.kode))
+    const keys = colsFor(applied.golongan)
+    exportToExcel(all.map(r => {
+      const cell = (key: string): string | number => {
+        switch (key) {
+          case 'skpd': return r.skpd || ''
+          case 'nama': return r.nama_barang || ''
+          case 'kode': return r.kode
+          case 'uraian': return uraian[r.kode] || ''
+          case 'merek': return r.merek_tipe || ''
+          case 'spesifikasi': return r.spesifikasi || ''
+          case 'komptabel': return r.intra_ekstra || ''
+          case 'tgl': return r.tgl_perolehan || ''
+          case 'nilai': return r.nilai_perolehan
+          case 'keterangan': return r.keterangan || ''
+          default: return ''
+        }
+      }
+      const obj: Record<string, string | number> = { NIBAR: r.nibar || '' }
+      for (const k of keys) obj[COL_META[k].header] = cell(k)
+      obj['Status'] = r.status === 'aktif' ? 'Aktif' : 'Dihapus'
+      obj['Tgl Penghapusan'] = r.tgl_hapus || ''
+      obj['No. SK Penghapusan'] = r.no_sk_hapus || ''
+      obj['Jenis Penghapusan'] = HAPUS_LABEL[r.jenis_hapus || ''] || ''
+      obj['Alasan Penghapusan'] = r.ket_hapus || ''
+      return obj
+    }), `Daftar_Barang_${applied.golongan}_AUDIT`, 'Daftar Barang (Audit)')
+    setExporting(false)
+  }
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const skpdNama = skpdList.find(s => String(s.id) === applied?.skpd)?.nama
   const cols = applied ? colsFor(applied.golongan) : DEFAULT_COLS
@@ -239,7 +289,7 @@ export default function DaftarBarangPage() {
 
   function cellContent(key: string, r: Row): React.ReactNode {
     switch (key) {
-      case 'skpd': return r.skpd?.nama || '-'
+      case 'skpd': return r.skpd || '-'
       case 'nama': return (
         <>
           <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
@@ -325,8 +375,13 @@ export default function DaftarBarangPage() {
             </span>
             <div className="flex items-center gap-3">
               {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>}
-              <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs">
+              <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs"
+                title="Posisi terkini — hanya barang aktif (laporan resmi)">
                 {exporting ? 'Mengekspor...' : 'Export Excel'}
+              </button>
+              <button onClick={handleExportAudit} disabled={exporting} className="btn-secondary text-xs"
+                title="Audit/Mutasi — termasuk barang dihapus + jejak SK penghapusan (untuk BPK)">
+                {exporting ? '...' : 'Export Audit'}
               </button>
             </div>
           </div>
