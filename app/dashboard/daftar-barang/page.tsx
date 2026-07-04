@@ -3,11 +3,13 @@
 // SKPD → Jenis Aset (WAJIB pilih satu) → Komptabel → Cari → klik Tampilkan.
 //
 // Kolom menyesuaikan jenis aset (KIB) memakai field yang tersedia di DB:
-//   - Tanah (1.3.1): tanpa kolom Komptabel (semua intrakomptabel)
+//   - Tanah (1.3.1): tanpa kolom Komptabel (semua intrakomptabel); + Luas,
+//     No/Tgl Sertifikat, Atas Nama Sertifikat, Hak Kepemilikan (diedit lewat
+//     menu Koreksi → Spesifikasi, muncul otomatis untuk kode 1.3.1)
 //   - Peralatan & Mesin (1.3.2): + Merek/Tipe + Spesifikasi
 //   - Gedung / Jalan / ATB: + Spesifikasi
-// Catatan: field khusus (no. sertifikat, nopol, no rangka/mesin) belum ada kolom
-// terstruktur di DB — sementara pakai Keterangan/Spesifikasi bila terisi.
+// Catatan: field kendaraan (nopol, no rangka/mesin) belum ada kolom terstruktur
+// di DB — sementara pakai Keterangan/Spesifikasi bila terisi.
 //
 // Tampilan: kalau hasil filter ≤ SHOW_ALL_MAX baris → tampilkan SEMUA (tanpa
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
@@ -38,6 +40,11 @@ type Row = {
   keterangan: string | null
   status: string
   skpd_id: number | null
+  luas_tanah: number | null
+  no_sertifikat: string | null
+  tgl_sertifikat: string | null
+  atas_nama_sertifikat: string | null
+  hak_kepemilikan: string | null
 }
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
@@ -54,10 +61,13 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   uraian: { header: 'Uraian' }, merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi' },
   komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
   nilai: { header: 'Nilai Perolehan', align: 'right' }, keterangan: { header: 'Keterangan' },
+  luas: { header: 'Luas Tanah (m²)', align: 'right' }, no_sertifikat: { header: 'No. Sertifikat' },
+  tgl_sertifikat: { header: 'Tgl Sertifikat' }, atas_nama: { header: 'Atas Nama Sertifikat' },
+  hak: { header: 'Hak Kepemilikan' },
 }
 // Urutan: SKPD · Kode · Uraian · Nama · [spesifikasi lainnya] · Tgl · Komptabel · Nilai · Keterangan
 const COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'nilai', 'keterangan'],                                     // Tanah — tanpa komptabel
+  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'nilai', 'keterangan'], // Tanah — tanpa komptabel
   '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],// Peralatan & Mesin
   '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],         // Gedung & Bangunan
   '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],         // Jalan, Jaringan, Irigasi
@@ -81,7 +91,7 @@ function thClass(key: string) {
 }
 function tdClass(key: string) {
   if (key === 'nama') return 'table-td'
-  if (key === 'nilai') return 'table-td text-right text-xs'
+  if (key === 'nilai' || key === 'luas') return 'table-td text-right text-xs'
   if (key === 'komptabel') return 'table-td text-center text-xs capitalize'
   return 'table-td text-xs text-gray-600'
 }
@@ -158,7 +168,7 @@ export default function DaftarBarangPage() {
 
   const buildQuery = useCallback((f: Applied, withCount: boolean, includeDeleted = false) => {
     const q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id',
+      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas_tanah,no_sertifikat,tgl_sertifikat,atas_nama_sertifikat,hak_kepemilikan',
         withCount ? { count: 'exact' } : undefined)
     return applyFilters(q, f, includeDeleted).order('nilai_perolehan', { ascending: false })
   }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -282,6 +292,11 @@ export default function DaftarBarangPage() {
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
           case 'keterangan': return r.keterangan || ''
+          case 'luas': return r.luas_tanah ?? ''
+          case 'no_sertifikat': return r.no_sertifikat || ''
+          case 'tgl_sertifikat': return r.tgl_sertifikat || ''
+          case 'atas_nama': return r.atas_nama_sertifikat || ''
+          case 'hak': return r.hak_kepemilikan || ''
           default: return ''
         }
       }
@@ -314,6 +329,11 @@ export default function DaftarBarangPage() {
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
           case 'keterangan': return r.keterangan || ''
+          case 'luas': return r.luas_tanah ?? ''
+          case 'no_sertifikat': return r.no_sertifikat || ''
+          case 'tgl_sertifikat': return r.tgl_sertifikat || ''
+          case 'atas_nama': return r.atas_nama_sertifikat || ''
+          case 'hak': return r.hak_kepemilikan || ''
           default: return ''
         }
       }
@@ -352,6 +372,11 @@ export default function DaftarBarangPage() {
       case 'tgl': return r.tgl_perolehan || '-'
       case 'nilai': return angka(r.nilai_perolehan)
       case 'keterangan': return r.keterangan || '-'
+      case 'luas': return r.luas_tanah != null ? angka(r.luas_tanah) : '-'
+      case 'no_sertifikat': return r.no_sertifikat || '-'
+      case 'tgl_sertifikat': return r.tgl_sertifikat || '-'
+      case 'atas_nama': return r.atas_nama_sertifikat || '-'
+      case 'hak': return r.hak_kepemilikan || '-'
       default: return '-'
     }
   }

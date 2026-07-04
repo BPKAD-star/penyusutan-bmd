@@ -54,9 +54,13 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       return typeof p.nilai_perolehan_baru === 'number' ? { nilai_perolehan: p.nilai_perolehan_baru } : null
     case 'koreksi_spesifikasi': {
       const patch: Record<string, unknown> = {}
-      for (const k of ['nama_barang', 'spesifikasi', 'merek_tipe', 'satuan'] as const) {
+      for (const k of [
+        'nama_barang', 'spesifikasi', 'merek_tipe', 'satuan',
+        'no_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan', 'tgl_sertifikat',
+      ] as const) {
         if (typeof p[k] === 'string' && p[k]) patch[k] = p[k]
       }
+      if (typeof p.luas_tanah === 'number' && p.luas_tanah > 0) patch.luas_tanah = p.luas_tanah
       return Object.keys(patch).length ? patch : null
     }
     case 'kapitalisasi':
