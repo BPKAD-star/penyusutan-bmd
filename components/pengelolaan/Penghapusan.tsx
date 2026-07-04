@@ -137,7 +137,10 @@ export default function Penghapusan() {
         j.total += r.nilai
       }
     }
-    setJurnals([...jmap.values()])
+    // Sembunyikan jurnal tanpa barang (auto-ilang): entah karena semua barang
+    // sudah dibatalkan, atau header orphan sisa entry yang gagal. Header tetap di
+    // DB (baris ledger yg pernah ada memblok DELETE via FK), cukup tak ditampilkan.
+    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -416,6 +419,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     setErr(''); setSaving(true)
 
     let h = header
+    const headerBaru = !header
     if (!h) {
       // Buat header baru dulu.
       if (!noSk.trim()) { setErr('No. SK / dasar penghapusan wajib diisi.'); setSaving(false); return }
@@ -429,7 +433,12 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     }
 
     const e = await insertLines(h)
-    if (e) { setErr(e); setSaving(false); return }
+    if (e) {
+      // Header baru + gagal isi barang → hapus header supaya tak jadi orphan
+      // (kartu jurnal kosong). Header lama (tambah barang) dibiarkan utuh.
+      if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
+      setErr(e); setSaving(false); return
+    }
     setSaving(false)
     onSaved(selList.length)
   }
