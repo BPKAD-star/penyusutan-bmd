@@ -24,8 +24,11 @@ apa pun yang menyentuh ledger atau engine.
   v_trx_*, v_anomali_saldo_awal, dst.) SUDAH DIHAPUS. Menu register/daftar baca
   `aset` + `transaksi_bmd` (+ `skpd`, `jurnal_header`) langsung. Kunci: `aset.id`
   = `transaksi_bmd.aset_id`, dipakai untuk **visibilitas period-aware** (replay
-  event `SEMBUNYI`=[kapitalisasi_serap, penghapusan_*] vs `MUNCUL`=[batal_*],
-  filter `comparePeriode(e.periode, periode) <= 0`). Jangan buat/andalkan view lagi
+  event `SEMBUNYI`=[kapitalisasi_serap, penghapusan_*, batal_pengadaan] vs
+  `MUNCUL`=[batal_penghapusan, batal_kapitalisasi], filter
+  `comparePeriode(e.periode, periode) <= 0`, diurutkan by **id ledger** — BUKAN
+  dikelompokkan sembunyi-dulu-baru-muncul — supaya siklus hapus→batal→hapus lagi
+  dalam periode yang sama tetap ikut aksi TERAKHIR). Jangan buat/andalkan view lagi
   tanpa alasan kuat — dulu Daftar Barang pakai `v_daftar_barang` yang `id`-nya BUKAN
   aset.id → filter sembunyi tak nyambung (barang dihapus tetap kehitung). Turunan
   yang dulu dari view direplikasi: golongan dari `kode` (`like 'x.%'`), nama SKPD
@@ -56,6 +59,38 @@ memakai tabel **`jurnal_header`** (migrasi `20260704_07_jurnal_header.sql`):
 
 Saat membangun menu ber-SK berikutnya (Koreksi ber-SK, Reklasifikasi ber-SK, dll.)
 gunakan pola `jurnal_header` yang sama + aturan kunci-semester di atas.
+
+## Pola APPROVAL untuk menu Cara Perolehan (Pengadaan, Hibah, dst.)
+
+Menu **Cara Perolehan** (Pengadaan sekarang; Hibah/Hasil Inventarisasi/Perolehan
+Lainnya menyusul dgn pola sama — migrasi `20260704_12_approval_pengadaan.sql`)
+butuh persetujuan admin sebelum barang resmi tercatat. Karena ledger append-only
+mutlak (trigger nolak UPDATE/DELETE apa pun, termasuk barang yang "masih pending"),
+solusinya BUKAN nulis ke `aset`/`transaksi_bmd` lalu filter visibility di semua
+halaman pembaca — itu berisiko bocor kalau ada satu halaman yang kelupaan difilter.
+
+Yang dipakai: **draft dulu, ledger ditulis saat approve**:
+- Barang yang diinput operator ditampung di `jurnal_header.payload.draft_items`
+  (JSON array) — BUKAN ledger asli. Bebas diedit/dihapus/diubah kuantitas selama
+  masih `approval_status='pending'`, karena cuma UPDATE kolom biasa (jurnal_header
+  bukan tabel append-only, cuma baris ledgernya yang beku).
+- `jurnal_header.approval_status` ∈ {`pending`,`disetujui`,`ditolak`}. Default
+  kolom = `disetujui` (supaya baris lama/kategori lain tak berubah perilaku) —
+  kategori Cara Perolehan yang baru WAJIB insert eksplisit `approval_status:'pending'`.
+- **Approve** (admin only, `fn_is_admin()`, ditegakkan trigger
+  `fn_jurnal_header_approval_guard`): materialize `draft_items` → insert `aset`
+  (kuantitas>1 di-split jadi N baris jumlah=1) + `transaksi_bmd` sekaligus, pakai
+  **tanggal BAST** (atau tanggal setara serah terima) sbg tgl perolehan efektif —
+  bukan tanggal kontrak, bukan tanggal approve. Baru sesudah ini barang muncul di
+  Daftar Barang/Penyusutan/Laporan/Engine — otomatis, tanpa perlu filter tambahan
+  di halaman-halaman itu, karena sebelumnya memang belum pernah ada di sana.
+- **Reject**: set `approval_status='ditolak'`, tidak pernah menyentuh ledger.
+- **Koreksi PASCA-approve** (mis. kelebihan kuantitas baru ketahuan setelah
+  disetujui): pakai jenis ledger `batal_pengadaan` (soft-delete `aset.status=
+  'dihapus'`, `berhenti=true` di engine, masuk `SEMBUNYI`). Beda dari
+  `penghapusan_*` (itu utk disposal sungguhan) — ini murni koreksi input, DICATAT
+  MUNDUR ke tanggal pengadaan aslinya (bukan hari ini) supaya barang dianggap
+  tidak pernah ada sejak awal, bukan cuma berhenti dari sekarang.
 
 ## Layout UI
 

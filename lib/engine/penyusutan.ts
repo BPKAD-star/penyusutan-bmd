@@ -194,6 +194,9 @@ export function hitungJadwalAset(
         case 'penghapusan_sebab_lain':
           berhenti = true // §5 no.11: penyusutan berhenti; barang hilang dari laporan, tetap di DB
           break
+        case 'batal_pengadaan':
+          berhenti = true // koreksi input pasca-approve: dianggap tidak pernah ada, hilang dari laporan
+          break
         case 'batal_penghapusan':
           berhenti = false // kebalikan penghapusan: penyusutan lanjut sejak periode ini
           break

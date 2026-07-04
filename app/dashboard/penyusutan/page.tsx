@@ -31,7 +31,7 @@ const angka = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 // Event yang menyembunyikan / memunculkan kembali aset (serap/hapus vs batal).
-const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
+const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan']
 const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan']
 
 export default function PenyusutanPage() {
