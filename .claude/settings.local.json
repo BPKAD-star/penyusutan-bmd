@@ -15,7 +15,8 @@
       "Bash(python3 -c ' *)",
       "Bash(grep -n \"aset\" \"/mnt/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad/atb_xlsx_extract\" 2>/dev/null; echo done)",
       "mcp__307ed301-1921-4647-b2e7-26ca407e1223__list_organizations",
-      "Bash(ls \"/mnt/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad\" 2>/dev/null; echo \"---\"; find / -maxdepth 1 2>/dev/null | head -1)"
+      "Bash(ls \"/mnt/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad\" 2>/dev/null; echo \"---\"; find / -maxdepth 1 2>/dev/null | head -1)",
+      "Bash(grep -iE \"recharts|chart\\\\.js|victory|nivo|d3\" \"/mnt/c/Users/ASUS/OneDrive/Documents\" 2>/dev/null; echo done)"
     ]
   }
 }

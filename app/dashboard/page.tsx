@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
+import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 
 const PERIODE = '2026-S1'
 
@@ -97,13 +98,8 @@ export default async function DashboardHome() {
       </Section>
 
       {/* Perolehan */}
-      <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Pengadaan" value={perPengadaan} />
-          <StatCard label="Hibah" value={perHibah} />
-          <StatCard label="Hasil Inventarisasi" value={perInv} />
-          <StatCard label="Perolehan Lainnya" value={perLain} />
-        </div>
+      <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan — klik utk rincian disetujui/menunggu">
+        <CaraPerolehanCards approved={{ pengadaan: perPengadaan, hibah: perHibah, inventarisasi: perInv, lainnya: perLain }} />
       </Section>
 
       {/* Mutasi & transfer */}

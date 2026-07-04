@@ -35,9 +35,12 @@ const SUMBER_OPT: { value: SumberPengadaan; label: string }[] = [
 ]
 const sumberLabel = (v: string) => SUMBER_OPT.find(o => o.value === v)?.label || v
 
+// Satu DraftItem = satu unit barang (kuantitas SUDAH dipecah saat ditambahkan,
+// bukan saat approve) — supaya tiap unit bisa beda spesifikasi/no. seri/foto
+// (mis. pengadaan 5 kendaraan, tiap unit beda nomor rangka/mesin).
 type DraftItem = {
   key: string; golongan: string; kode: string; nama: string; spesifikasi: string
-  satuan: string; qty: string; harga: string
+  satuan: string; harga: string
 }
 type HeaderPayload = {
   program?: string; kegiatan?: string; sub_kegiatan?: string
@@ -62,8 +65,7 @@ type Jurnal = Header & { lines: JurnalLine[]; total: number }
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
-const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toInt(i.qty) * toNum(i.harga), 0)
-const draftUnits = (items: DraftItem[]) => items.reduce((s, i) => s + toInt(i.qty), 0)
+const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toNum(i.harga), 0)
 
 export default function Pengadaan() {
   const supabase = createClient()
@@ -167,13 +169,13 @@ export default function Pengadaan() {
     return true
   }
 
-  async function tambahDraftItem(h: Jurnal, item: DraftItem) {
-    const items = [...(h.payload.draft_items || []), item]
+  async function tambahDraftItems(h: Jurnal, newItems: DraftItem[]) {
+    const items = [...(h.payload.draft_items || []), ...newItems]
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
   }
   async function hapusDraftItem(h: Jurnal, key: string) {
-    if (!confirm('Hapus baris ini dari draft?')) return
+    if (!confirm('Hapus barang ini dari draft?')) return
     const items = (h.payload.draft_items || []).filter(i => i.key !== key)
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
@@ -183,34 +185,34 @@ export default function Pengadaan() {
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
   }
+  // Terapkan satu teks spesifikasi ke banyak barang sekaligus (dicentang via checklist).
+  async function bulkSetSpesifikasi(h: Jurnal, keys: string[], spesifikasi: string) {
+    const items = (h.payload.draft_items || []).map(i => keys.includes(i.key) ? { ...i, spesifikasi } : i)
+    const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
+    if (ok) loadJurnals(skpd)
+  }
 
   // ── Approve: materialize draft_items → aset + transaksi_bmd ────────────────
+  // Draft sudah per-unit (dipecah saat ditambahkan) jadi tinggal 1:1 ke aset.
   async function approveHeader(h: Jurnal) {
     const items = h.payload.draft_items || []
     if (items.length === 0) { setMsg('Error: kontrak ini belum ada barangnya — tambahkan dulu sebelum disetujui.'); return }
     for (const it of items) {
-      if (!it.kode) { setMsg('Error: ada baris draft tanpa kode barang.'); return }
-      if (toInt(it.qty) < 1) { setMsg(`Error: kuantitas "${it.nama || it.kode}" minimal 1.`); return }
+      if (!it.kode) { setMsg('Error: ada barang draft tanpa kode.'); return }
       if (toNum(it.harga) <= 0) { setMsg(`Error: harga "${it.nama || it.kode}" harus > 0.`); return }
     }
     const perolehanDate = h.payload.tgl_bast || h.tanggal
-    if (!confirm(`Setujui kontrak ${h.no_sk}?\n${items.length} baris (${draftUnits(items)} unit) akan dicatat resmi dgn tgl perolehan ${perolehanDate}.`)) return
+    if (!confirm(`Setujui kontrak ${h.no_sk}?\n${items.length} barang akan dicatat resmi dgn tgl perolehan ${perolehanDate}.`)) return
 
     setBusyId(h.id); setMsg('')
     const periode = periodeDariTanggal(perolehanDate)
-    const asetRows: Record<string, unknown>[] = []
-    for (const it of items) {
-      const qty = toInt(it.qty), harga = toNum(it.harga)
-      for (let i = 0; i < qty; i++) {
-        asetRows.push({
-          nibar: null, kode: it.kode, nama_barang: it.nama.trim() || null,
-          spesifikasi: it.spesifikasi.trim() || null, merek_tipe: null, jumlah: 1,
-          satuan: it.satuan.trim() || null, harga_satuan: harga, nilai_perolehan: harga,
-          tgl_perolehan: perolehanDate, skpd_id: Number(skpd), intra_ekstra: 'intra',
-          cara_perolehan: 'pengadaan', status: 'aktif',
-        })
-      }
-    }
+    const asetRows = items.map(it => ({
+      nibar: null, kode: it.kode, nama_barang: it.nama.trim() || null,
+      spesifikasi: it.spesifikasi.trim() || null, merek_tipe: null, jumlah: 1,
+      satuan: it.satuan.trim() || null, harga_satuan: toNum(it.harga), nilai_perolehan: toNum(it.harga),
+      tgl_perolehan: perolehanDate, skpd_id: Number(skpd), intra_ekstra: 'intra',
+      cara_perolehan: 'pengadaan', status: 'aktif',
+    }))
     const { data: inserted, error: asetErr } = await supabase.from('aset').insert(asetRows).select('id,nilai_perolehan')
     if (asetErr || !inserted) { setMsg(`Error: gagal membuat barang: ${asetErr?.message}`); setBusyId(null); return }
 
@@ -308,9 +310,10 @@ export default function Pengadaan() {
                     <PendingCard key={h.id} h={h} isAdmin={isAdmin} busy={busyId === h.id}
                       golonganLabels={golonganLabels}
                       onEditHeader={() => setEditing(h)}
-                      onTambah={item => tambahDraftItem(h, item)}
+                      onTambah={items => tambahDraftItems(h, items)}
                       onHapusItem={key => hapusDraftItem(h, key)}
                       onUpdateItem={(key, patch) => updateDraftItem(h, key, patch)}
+                      onBulkSpes={(keys, spesifikasi) => bulkSetSpesifikasi(h, keys, spesifikasi)}
                       onApprove={() => approveHeader(h)}
                       onReject={() => rejectHeader(h)}
                     />
@@ -362,17 +365,37 @@ export default function Pengadaan() {
   )
 }
 
-// ── Kartu "Menunggu Persetujuan": draft_items (editable) + tambah barang ────
-function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onTambah, onHapusItem, onUpdateItem, onApprove, onReject }: {
+// ── Kartu "Menunggu Persetujuan": draft_items (editable, per-unit) + tambah ──
+function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onTambah, onHapusItem, onUpdateItem, onBulkSpes, onApprove, onReject }: {
   h: Jurnal; isAdmin: boolean; busy: boolean; golonganLabels: Record<string, string>
   onEditHeader: () => void
-  onTambah: (item: DraftItem) => void
+  onTambah: (items: DraftItem[]) => void
   onHapusItem: (key: string) => void
   onUpdateItem: (key: string, patch: Partial<DraftItem>) => void
+  onBulkSpes: (keys: string[], spesifikasi: string) => void
   onApprove: () => void; onReject: () => void
 }) {
   const items = h.payload.draft_items || []
   const [showTambah, setShowTambah] = useState(items.length === 0)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [bulkSpes, setBulkSpes] = useState('')
+
+  const allChecked = items.length > 0 && items.every(i => checked.has(i.key))
+  function toggleAll() {
+    setChecked(allChecked ? new Set() : new Set(items.map(i => i.key)))
+  }
+  function toggleOne(key: string) {
+    setChecked(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+  function terapkanBulkSpes() {
+    if (checked.size === 0 || !bulkSpes.trim()) return
+    onBulkSpes([...checked], bulkSpes.trim())
+    setBulkSpes(''); setChecked(new Set())
+  }
 
   return (
     <div className="card overflow-hidden border-amber-200">
@@ -399,35 +422,44 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onTambah,
         </div>
       </div>
 
-      {/* Draft items */}
+      {/* Draft items — sudah per-unit; checklist utk isi spesifikasi massal */}
       {items.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="table-th w-10 text-center">Aksi</th>
-                <th className="table-th">Barang</th>
-                <th className="table-th w-24 text-center">Satuan</th>
-                <th className="table-th w-20 text-center">Qty</th>
-                <th className="table-th w-32 text-right">Harga/item</th>
-                <th className="table-th w-32 text-right">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {items.map(it => (
-                <DraftRow key={it.key} item={it}
-                  onChange={patch => onUpdateItem(it.key, patch)}
-                  onDelete={() => onHapusItem(it.key)} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="table-th w-10 text-center"><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
+                  <th className="table-th w-10 text-center">Aksi</th>
+                  <th className="table-th">Barang & Spesifikasi</th>
+                  <th className="table-th w-24 text-center">Satuan</th>
+                  <th className="table-th w-32 text-right">Harga</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {items.map(it => (
+                  <DraftRow key={it.key} item={it} checked={checked.has(it.key)}
+                    onToggle={() => toggleOne(it.key)}
+                    onChange={patch => onUpdateItem(it.key, patch)}
+                    onDelete={() => onHapusItem(it.key)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {checked.size > 0 && (
+            <div className="px-5 py-3 border-t border-gray-100 bg-teal/5 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-gray-600 flex-shrink-0">{checked.size} barang dicentang — isi spesifikasi sekaligus:</span>
+              <input className="select-filter flex-1 min-w-[200px] text-xs" value={bulkSpes} onChange={e => setBulkSpes(e.target.value)} placeholder="mis. Nomor rangka MH1... / Nomor mesin JB1..." />
+              <button className="btn-primary text-xs" onClick={terapkanBulkSpes} disabled={!bulkSpes.trim()}>Terapkan</button>
+            </div>
+          )}
+        </>
       )}
 
       <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40">
         {showTambah ? (
           <TambahBarangPanel golonganLabels={golonganLabels}
-            onTambah={item => { onTambah(item); setShowTambah(false) }}
+            onTambah={newItems => { onTambah(newItems); setShowTambah(false) }}
             onCancel={() => setShowTambah(false)} />
         ) : (
           <button className="btn-secondary text-xs" onClick={() => setShowTambah(true)}>+ Tambah Barang</button>
@@ -435,7 +467,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onTambah,
       </div>
 
       <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-        <span className="text-xs text-gray-500">{items.length} baris · {draftUnits(items)} unit</span>
+        <span className="text-xs text-gray-500">{items.length} barang</span>
         {isAdmin ? (
           <div className="flex gap-2">
             <button className="btn-secondary text-xs" disabled={busy} onClick={onReject}>Tolak</button>
@@ -451,38 +483,40 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onTambah,
   )
 }
 
-// Satu baris draft — qty/harga/nama/spesifikasi editable inline, delete langsung.
-function DraftRow({ item, onChange, onDelete }: {
-  item: DraftItem; onChange: (patch: Partial<DraftItem>) => void; onDelete: () => void
+// Satu unit draft — nama/spesifikasi/satuan/harga editable inline, checklist + delete langsung.
+function DraftRow({ item, checked, onToggle, onChange, onDelete }: {
+  item: DraftItem; checked: boolean; onToggle: () => void
+  onChange: (patch: Partial<DraftItem>) => void; onDelete: () => void
 }) {
   const [local, setLocal] = useState(item)
   const dirty = JSON.stringify(local) !== JSON.stringify(item)
 
   return (
     <tr>
+      <td className="table-td text-center"><input type="checkbox" checked={checked} onChange={onToggle} /></td>
       <td className="table-td text-center">
-        <button onClick={onDelete} title="Hapus baris" className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+        <button onClick={onDelete} title="Hapus barang ini" className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
       </td>
       <td className="table-td">
         <input className="select-filter w-full text-xs mb-1" value={local.nama} onChange={e => setLocal({ ...local, nama: e.target.value })} placeholder="nama barang" />
-        <input className="select-filter w-full text-xs" value={local.spesifikasi} onChange={e => setLocal({ ...local, spesifikasi: e.target.value })} placeholder="spesifikasi" />
+        <input className="select-filter w-full text-xs" value={local.spesifikasi} onChange={e => setLocal({ ...local, spesifikasi: e.target.value })} placeholder="spesifikasi / no. rangka / no. mesin" />
         <p className="text-gray-400 text-xs mt-0.5">{item.kode}</p>
         {!local.spesifikasi.trim() && <p className="text-amber-600 text-xs mt-0.5">⚠ Spesifikasi belum diisi.</p>}
         <p className="text-gray-300 text-xs">Foto belum diisi (menyusul).</p>
         {dirty && <button onClick={() => onChange(local)} className="text-xs text-teal font-medium mt-1">✓ Simpan perubahan</button>}
       </td>
       <td className="table-td"><input className="select-filter w-full text-xs text-center" value={local.satuan} onChange={e => setLocal({ ...local, satuan: e.target.value })} onBlur={() => dirty && onChange(local)} /></td>
-      <td className="table-td"><input className="select-filter w-full text-xs text-center" inputMode="numeric" value={local.qty} onChange={e => setLocal({ ...local, qty: e.target.value })} onBlur={() => dirty && onChange(local)} /></td>
       <td className="table-td"><input className="select-filter w-full text-xs text-right" inputMode="numeric" value={local.harga} onChange={e => setLocal({ ...local, harga: e.target.value })} onBlur={() => dirty && onChange(local)} /></td>
-      <td className="table-td text-right text-xs text-gray-600">{formatRupiah(toInt(local.qty) * toNum(local.harga))}</td>
     </tr>
   )
 }
 
-// Panel "+ Tambah Barang": pilih Jenis BMD dulu → cari kode → isi detail → simpan.
+// Panel "+ Tambah Barang": pilih Jenis BMD dulu → cari kode → isi satuan/qty/harga.
+// Spesifikasi TIDAK di sini — diisi belakangan per-unit (atau massal via checklist)
+// setelah barang di-split, karena tiap unit bisa beda (no. rangka/mesin, dst).
 function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   golonganLabels: Record<string, string>
-  onTambah: (item: DraftItem) => void
+  onTambah: (items: DraftItem[]) => void
   onCancel: () => void
 }) {
   const supabase = createClient()
@@ -492,7 +526,6 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const [searching, setSearching] = useState(false)
   const [picked, setPicked] = useState<{ kode: string; uraian: string } | null>(null)
   const [nama, setNama] = useState('')
-  const [spesifikasi, setSpesifikasi] = useState('')
   const [satuan, setSatuan] = useState('')
   const [qty, setQty] = useState('1')
   const [harga, setHarga] = useState('')
@@ -516,9 +549,15 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
 
   function simpan() {
     if (!picked) { setErr('Pilih kode barang dulu.'); return }
-    if (toInt(qty) < 1) { setErr('Kuantitas minimal 1.'); return }
+    const n = toInt(qty)
+    if (n < 1) { setErr('Kuantitas minimal 1.'); return }
     if (toNum(harga) <= 0) { setErr('Harga harus > 0.'); return }
-    onTambah({ key: newKey(), golongan, kode: picked.kode, nama: nama.trim() || picked.uraian, spesifikasi: spesifikasi.trim(), satuan: satuan.trim(), qty, harga })
+    // Split langsung jadi N unit terpisah — tiap unit nanti bisa beda spesifikasi/foto.
+    const items: DraftItem[] = Array.from({ length: n }, () => ({
+      key: newKey(), golongan, kode: picked.kode, nama: nama.trim() || picked.uraian,
+      spesifikasi: '', satuan: satuan.trim(), harga,
+    }))
+    onTambah(items)
   }
 
   return (
@@ -555,13 +594,12 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
         <div className="bg-white border border-gray-100 rounded-lg p-3 space-y-3">
           <p className="text-xs text-gray-500">Kode: <span className="font-medium text-gray-700">{picked.kode}</span></p>
           <div><label className="block text-xs text-gray-500 mb-1">Nama Barang</label><input className="select-filter w-full text-sm" value={nama} onChange={e => setNama(e.target.value)} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Spesifikasi</label><input className="select-filter w-full text-sm" value={spesifikasi} onChange={e => setSpesifikasi(e.target.value)} placeholder="opsional, tapi disarankan diisi" /></div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="block text-xs text-gray-500 mb-1">Satuan</label><input className="select-filter w-full text-sm" value={satuan} onChange={e => setSatuan(e.target.value)} placeholder="unit" /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Harga / item</label><input className="select-filter w-full text-sm" inputMode="numeric" value={harga} onChange={e => setHarga(e.target.value)} /></div>
           </div>
-          <p className="text-xs text-gray-400">Kuantitas &gt; 1 akan otomatis dipecah jadi beberapa barang terpisah saat disetujui.</p>
+          <p className="text-xs text-gray-400">Kuantitas &gt; 1 langsung dipecah jadi beberapa barang terpisah — spesifikasi & foto diisi per-unit setelah ini (atau massal via checklist kalau sama semua).</p>
           {err && <p className="text-xs text-red-600">{err}</p>}
           <button className="btn-primary text-xs" onClick={simpan}>Tambah ke Draft</button>
         </div>
