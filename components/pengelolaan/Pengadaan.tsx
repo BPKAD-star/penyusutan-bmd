@@ -40,6 +40,7 @@ const sumberLabel = (v: string) => SUMBER_OPT.find(o => o.value === v)?.label ||
 // saat approve) — tiap unit bisa beda spesifikasi/no. rangka-mesin/foto.
 type DraftItem = {
   key: string; golongan: string; kode: string; nama: string
+  rekening: string                 // kode rekening belanja (mis. 5.2.01.01.001) — teks bebas dulu
   satuan: string; harga: string
   fields: Record<string, string>   // field spesifikasi sesuai golongan (lib/asetFields.ts)
   foto: string[]                    // path di storage bucket aset-foto
@@ -60,6 +61,7 @@ type Header = {
 type JurnalLine = {
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
   satuan: string | null; intra_ekstra: string | null; nilai: number; tanggal: string
+  rekening: string
   foto_paths: string[]
   fields: Record<string, string>
 }
@@ -79,7 +81,7 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
   const out: DraftItem[] = []
   for (const r of raw as Record<string, unknown>[]) {
     if (r && typeof r === 'object' && r.fields && typeof r.fields === 'object' && Array.isArray(r.foto)) {
-      out.push(r as unknown as DraftItem) // sudah bentuk baru
+      out.push({ rekening: '', ...(r as unknown as DraftItem) }) // sudah bentuk baru (rekening default utk data lama)
       continue
     }
     const qty = Math.max(1, toInt(String(r?.qty ?? '1')) || 1)
@@ -87,6 +89,7 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
       out.push({
         key: newKey(),
         golongan: String(r?.golongan ?? ''), kode: String(r?.kode ?? ''), nama: String(r?.nama ?? ''),
+        rekening: String(r?.rekening ?? ''),
         satuan: String(r?.satuan ?? ''), harga: String(r?.harga ?? '0'),
         fields: r?.spesifikasi ? { spesifikasi: String(r.spesifikasi) } : {},
         foto: [],
@@ -169,11 +172,9 @@ export default function Pengadaan() {
   // Edit spesifikasi selalu lewat checklist (1 atau banyak barang dicentang) →
   // popup. keys.length===1 → replace penuh (bisa mengosongkan field). >1 →
   // cuma menerapkan field yang diisi (non-kosong), field lain per barang tak disentuh.
-  const [specEdit, setSpecEdit] = useState<
-    | { mode: 'draft'; header: Jurnal; keys: string[] }
-    | { mode: 'approved'; jurnal: Jurnal; asetIds: string[] }
-    | null
-  >(null)
+  // Edit spesifikasi HANYA untuk draft (kontrak disetujui dikunci — harus unapprove
+  // dulu). keys.length===1 → replace penuh; >1 → cuma terapkan field non-kosong.
+  const [specEdit, setSpecEdit] = useState<{ header: Jurnal; keys: string[] } | null>(null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -236,13 +237,13 @@ export default function Pengadaan() {
     const disetujuiIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
     if (disetujuiIds.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select(`id,header_id,nilai,tanggal,aset:aset_id(id,nibar,nama_barang,kode,satuan,intra_ekstra,status,foto_paths,${ASET_FIELD_COLS.join(',')})`)
+        .select(`id,header_id,nilai,tanggal,payload,aset:aset_id(id,nibar,nama_barang,kode,satuan,intra_ekstra,status,foto_paths,${ASET_FIELD_COLS.join(',')})`)
         .eq('jenis', 'pengadaan')
         .in('header_id', disetujuiIds)
         .order('id', { ascending: false })
 
       const rows = (data || []) as unknown as {
-        id: number; header_id: string; nilai: number; tanggal: string
+        id: number; header_id: string; nilai: number; tanggal: string; payload: { kode_rekening?: string } | null
         aset: ({
           id: string; nibar: string | null; nama_barang: string | null; kode: string
           satuan: string | null; intra_ekstra: string | null; status: string; foto_paths: string[]
@@ -260,7 +261,7 @@ export default function Pengadaan() {
         j.lines.push({
           aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           satuan: r.aset.satuan, intra_ekstra: r.aset.intra_ekstra, nilai: r.nilai, tanggal: r.tanggal,
-          foto_paths: r.aset.foto_paths || [], fields,
+          rekening: r.payload?.kode_rekening || '', foto_paths: r.aset.foto_paths || [], fields,
         })
         j.total += r.nilai
       }
@@ -328,28 +329,6 @@ export default function Pengadaan() {
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
   }
-  // Sama utk barang yang sudah disetujui (langsung update tabel aset).
-  async function applyApprovedFields(asetIds: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }, existingFoto: Record<string, string[]>) {
-    setMsg('')
-    for (const id of asetIds) {
-      const patch: Record<string, unknown> = {}
-      if (asetIds.length === 1) {
-        for (const k of ASET_FIELD_COLS) patch[k] = k === 'luas_tanah' ? (fields[k] ? toNum(fields[k]) : null) : (fields[k] || null)
-        if (foto.replace !== undefined) patch.foto_paths = foto.replace
-      } else {
-        for (const [k, v] of Object.entries(fields)) {
-          if (!v || !v.trim()) continue
-          patch[k] = k === 'luas_tanah' ? toNum(v) : v
-        }
-        if (foto.append && foto.append.length > 0) patch.foto_paths = [...(existingFoto[id] || []), ...foto.append]
-        if (Object.keys(patch).length === 0) continue
-      }
-      const { error } = await supabase.from('aset').update(patch).eq('id', id)
-      if (error) { setMsg(`Error: gagal menyimpan spesifikasi: ${error.message}`); return }
-    }
-    setMsg('Spesifikasi barang diperbarui.')
-    loadJurnals(skpd)
-  }
   async function hapusKontrak(h: Jurnal) {
     if (!confirm(`Hapus kontrak ${h.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`)) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', h.id)
@@ -398,10 +377,11 @@ export default function Pengadaan() {
     const { data: inserted, error: asetErr } = await supabase.from('aset').insert(asetRows).select('id,nilai_perolehan')
     if (asetErr || !inserted) { setMsg(`Error: gagal membuat barang: ${asetErr?.message}`); setBusyId(null); return }
 
-    const trxRows = (inserted as { id: string; nilai_perolehan: number }[]).map(a => ({
+    // inserted[i] sejajar dengan items[i] (PostgREST kembalikan dlm urutan insert).
+    const trxRows = (inserted as { id: string; nilai_perolehan: number }[]).map((a, i) => ({
       aset_id: a.id, jenis: 'pengadaan', periode, tanggal: perolehanDate, nilai: a.nilai_perolehan,
       skpd_tujuan: Number(skpd), header_id: h.id,
-      payload: { sumber: h.jenis, no_bast: h.payload.no_bast || null },
+      payload: { sumber: h.jenis, no_bast: h.payload.no_bast || null, kode_rekening: items[i]?.rekening || null },
     }))
     const { error: trxErr } = await supabase.from('transaksi_bmd').insert(trxRows)
     if (trxErr) {
@@ -432,14 +412,31 @@ export default function Pengadaan() {
     loadJurnals(skpd)
   }
 
-  async function batalkanBarang(l: JurnalLine, h: Jurnal) {
-    if (!confirm(`Batalkan pengadaan barang ini?\nDipakai untuk koreksi kesalahan input — barang akan dianggap TIDAK PERNAH ADA sejak ${l.tanggal}.`)) return
-    const { error } = await catatTransaksi(supabase, {
-      asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal,
-      keterangan: `Koreksi input pengadaan — kontrak ${h.no_sk}`,
-    })
-    if (error) { setMsg(`Error: ${error}`); return }
-    setMsg('Barang dibatalkan (koreksi input) — dianggap tidak pernah ada di semua periode.')
+  // Buka kunci (unapprove): kembalikan kontrak disetujui ke draft. Karena ledger
+  // append-only, semua barang di-batal_pengadaan (soft-delete, retroaktif → hilang
+  // dari Daftar Barang/Penyusutan), lalu draft_items direkonstruksi dari barang tsb
+  // supaya bisa diedit. NIBAR digenerate ULANG saat disetujui lagi (yang lama tetap
+  // tersimpan sbg 'dihapus' untuk audit). Admin only.
+  async function unapproveHeader(j: Jurnal) {
+    if (!confirm(`Buka kunci kontrak ${j.no_sk}?\n${j.lines.length} barang dikembalikan ke draft & DIHAPUS dari Daftar Barang/Penyusutan sampai disetujui lagi. NIBAR akan digenerate ulang saat approve berikutnya.`)) return
+    setBusyId(j.id); setMsg('')
+    for (const l of j.lines) {
+      const { error } = await catatTransaksi(supabase, {
+        asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal,
+        keterangan: `Unapprove kontrak ${j.no_sk} — dikembalikan ke draft`,
+      })
+      if (error) { setMsg(`Error: ${error}`); setBusyId(null); return }
+    }
+    const draftItems: DraftItem[] = j.lines.map(l => ({
+      key: newKey(), golongan: kodeLevel3(l.kode), kode: l.kode, nama: l.nama_barang || '',
+      rekening: l.rekening || '', satuan: l.satuan || '', harga: String(l.nilai), fields: l.fields || {}, foto: l.foto_paths || [],
+    }))
+    const { error } = await supabase.from('jurnal_header')
+      .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...j.payload, draft_items: draftItems } })
+      .eq('id', j.id)
+    if (error) { setMsg(`Error: gagal buka kunci: ${error.message}`); setBusyId(null); return }
+    setMsg(`Kontrak ${j.no_sk} dibuka kunci — kembali ke draft. Edit lalu setujui ulang.`)
+    setBusyId(null)
     loadJurnals(skpd)
   }
 
@@ -497,7 +494,7 @@ export default function Pengadaan() {
                       onHapusKontrak={() => hapusKontrak(h)}
                       onTambah={items => tambahDraftItems(h, items)}
                       onHapusItem={key => hapusDraftItem(h, key)}
-                      onEditSpes={keys => setSpecEdit({ mode: 'draft', header: h, keys })}
+                      onEditSpes={keys => setSpecEdit({ header: h, keys })}
                       onApprove={() => approveHeader(h)}
                       onReject={() => rejectHeader(h)}
                     />
@@ -508,10 +505,8 @@ export default function Pengadaan() {
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujui.length})</h3>
                   {disetujui.map(j => (
-                    <ApprovedCard key={j.id} j={j}
-                      onEditHeader={() => setEditing(j)}
-                      onEditSpes={asetIds => setSpecEdit({ mode: 'approved', jurnal: j, asetIds })}
-                      onBatalkan={line => batalkanBarang(line, j)}
+                    <ApprovedCard key={j.id} j={j} isAdmin={isAdmin} busy={busyId === j.id}
+                      onUnapprove={() => unapproveHeader(j)}
                     />
                   ))}
                 </section>
@@ -543,7 +538,7 @@ export default function Pengadaan() {
           onSaved={() => { setEditing(null); setMsg('Header kontrak diperbarui.'); loadJurnals(skpd) }}
         />
       )}
-      {specEdit?.mode === 'draft' && (() => {
+      {specEdit && (() => {
         const items = (specEdit.header.payload.draft_items || []).filter(i => specEdit.keys.includes(i.key))
         const single = items.length === 1 ? items[0] : null
         return (
@@ -557,27 +552,6 @@ export default function Pengadaan() {
             onClose={() => setSpecEdit(null)}
             onSave={async (fields, foto) => {
               await applyDraftFields(specEdit.header, specEdit.keys, fields, foto)
-              setSpecEdit(null)
-            }}
-          />
-        )
-      })()}
-      {specEdit?.mode === 'approved' && (() => {
-        const lines = specEdit.jurnal.lines.filter(l => specEdit.asetIds.includes(l.aset_id))
-        const single = lines.length === 1 ? lines[0] : null
-        const existingFoto: Record<string, string[]> = {}
-        for (const l of lines) existingFoto[l.aset_id] = l.foto_paths
-        return (
-          <EditSpesifikasiModal
-            title={single ? (single.nama_barang || single.kode) : `${lines.length} barang dicentang`}
-            fieldKeys={unionFieldsForKodes(lines.map(l => l.kode))}
-            initialFields={single ? single.fields : {}}
-            initialFoto={single ? single.foto_paths : []}
-            single={!!single}
-            storagePrefix={single ? single.aset_id : specEdit.jurnal.id}
-            onClose={() => setSpecEdit(null)}
-            onSave={async (fields, foto) => {
-              await applyApprovedFields(specEdit.asetIds, fields, foto, existingFoto)
               setSpecEdit(null)
             }}
           />
@@ -740,7 +714,7 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
       </td>
       <td className="table-td">
         <p className="text-xs text-gray-800 font-medium truncate max-w-[220px]">{item.nama || '-'}</p>
-        <p className="text-[11px] text-gray-400">{item.kode}</p>
+        <p className="text-[11px] text-gray-400">{item.kode}{item.rekening ? ` · Rek ${item.rekening}` : ''}</p>
       </td>
       <td className="table-td">
         <p className="text-xs text-gray-600 truncate max-w-[200px]" title={spesifikasi}>
@@ -777,6 +751,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const [results, setResults] = useState<{ kode: string; uraian: string | null }[]>([])
   const [searching, setSearching] = useState(false)
   const [picked, setPicked] = useState<{ kode: string; uraian: string } | null>(null)
+  const [rekening, setRekening] = useState('')
   const [nama, setNama] = useState('')
   const [satuan, setSatuan] = useState('')
   const [qty, setQty] = useState('1')
@@ -806,13 +781,17 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     if (toNum(harga) <= 0) { setErr('Harga harus > 0.'); return }
     const items: DraftItem[] = Array.from({ length: n }, () => ({
       key: newKey(), golongan, kode: picked.kode, nama: nama.trim() || picked.uraian,
-      satuan: satuan.trim(), harga, fields: {}, foto: [],
+      rekening: rekening.trim(), satuan: satuan.trim(), harga, fields: {}, foto: [],
     }))
     onTambah(items)
   }
 
   return (
     <div className="space-y-3">
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-gray-400">(mis. 5.2.01.01.001 — teks bebas)</span></label>
+        <input className="select-filter w-full sm:w-80" value={rekening} onChange={e => setRekening(e.target.value)} placeholder="kode rekening belanja..." />
+      </div>
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Jenis BMD</label>
@@ -860,20 +839,13 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   )
 }
 
-// ── Kartu "Disetujui" ────────────────────────────────────────────────────────
-function ApprovedCard({ j, onEditHeader, onEditSpes, onBatalkan }: {
-  j: Jurnal
-  onEditHeader: () => void
-  onEditSpes: (asetIds: string[]) => void
-  onBatalkan: (line: JurnalLine) => void
+// ── Kartu "Disetujui" — READ-ONLY (terkunci). Utk mengubah, admin harus "Buka
+// Kunci" (unapprove) dulu → kembali ke draft, edit, setujui ulang. ─────────────
+function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
+  j: Jurnal; isAdmin: boolean; busy: boolean
+  onUnapprove: () => void
 }) {
-  const [checked, setChecked] = useState<Set<string>>(new Set())
   const fotoUrls = useFirstFotoUrls(j.lines.map(l => l.foto_paths[0]).filter(Boolean))
-  const allChecked = j.lines.length > 0 && j.lines.every(l => checked.has(l.aset_id))
-  function toggleAll() { setChecked(allChecked ? new Set() : new Set(j.lines.map(l => l.aset_id))) }
-  function toggleOne(id: string) {
-    setChecked(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
-  }
 
   return (
     <div className="card overflow-hidden">
@@ -906,8 +878,12 @@ function ApprovedCard({ j, onEditHeader, onEditSpes, onBatalkan }: {
               <p className="text-xs text-gray-400">Total Pengadaan</p>
               <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
             </div>
-            <button title="Edit kontrak / BAST" onClick={onEditHeader}
-              className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 mt-2">✎</button>
+            {isAdmin ? (
+              <button title="Buka kunci (unapprove) — kembalikan ke draft utk diedit" onClick={onUnapprove} disabled={busy}
+                className="btn-secondary text-xs mt-2">{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>
+            ) : (
+              <span className="text-[11px] text-gray-400 mt-2">🔒 Terkunci</span>
+            )}
           </div>
         </div>
       </div>
@@ -915,8 +891,6 @@ function ApprovedCard({ j, onEditHeader, onEditSpes, onBatalkan }: {
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              <th className="table-th w-8 text-center"><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
-              <th className="table-th w-8 text-center"></th>
               <th className="table-th">Uraian Barang / NIBAR</th>
               <th className="table-th">Spesifikasi</th>
               <th className="table-th">Merek</th>
@@ -934,13 +908,9 @@ function ApprovedCard({ j, onEditHeader, onEditSpes, onBatalkan }: {
               const fotoUrl = l.foto_paths[0] ? fotoUrls[l.foto_paths[0]] : undefined
               return (
                 <tr key={l.aset_id}>
-                  <td className="table-td text-center"><input type="checkbox" checked={checked.has(l.aset_id)} onChange={() => toggleOne(l.aset_id)} /></td>
-                  <td className="table-td text-center">
-                    <button onClick={() => onBatalkan(l)} title="Batalkan (koreksi kesalahan input)" className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
-                  </td>
                   <td className="table-td">
                     <p className="font-medium text-gray-800 text-xs truncate max-w-[220px]">{l.nama_barang || '-'}</p>
-                    <p className="text-[11px] text-gray-400">{l.kode} · {l.nibar || '(NIBAR belum diisi)'}</p>
+                    <p className="text-[11px] text-gray-400">{l.kode} · {l.nibar || '(NIBAR belum diisi)'}{l.rekening ? ` · Rek ${l.rekening}` : ''}</p>
                   </td>
                   <td className="table-td">
                     <p className="text-xs text-gray-600 truncate max-w-[200px]" title={spesifikasi}>
@@ -968,12 +938,6 @@ function ApprovedCard({ j, onEditHeader, onEditSpes, onBatalkan }: {
           </tbody>
         </table>
       </div>
-      {checked.size > 0 && (
-        <div className="px-5 py-3 border-t border-gray-100 bg-teal/5 flex items-center justify-between">
-          <span className="text-xs text-gray-600">{checked.size} barang dicentang</span>
-          <button className="btn-primary text-xs" onClick={() => onEditSpes([...checked])}>✎ Edit Spesifikasi ({checked.size})</button>
-        </div>
-      )}
     </div>
   )
 }

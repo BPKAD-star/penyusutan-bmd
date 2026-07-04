@@ -24,7 +24,10 @@ const nf = (n: number) => n.toLocaleString('id-ID')
 type DraftItemLite = { kode?: string; nama?: string; harga?: string }
 type PendingHeaderLite = { id: string; no_sk: string; tanggal: string; skpd_id: number; payload: { draft_items?: DraftItemLite[] } }
 
-export default function CaraPerolehanCards({ approved }: { approved: Record<string, number> }) {
+export default function CaraPerolehanCards({ approved, approvedNilai }: {
+  approved: Record<string, number>
+  approvedNilai?: Record<string, number>
+}) {
   const supabase = createClient()
   const [pending, setPending] = useState<Record<string, number>>({})
   const [detail, setDetail] = useState<{ mode: 'approved' | 'pending'; cara: CaraConfig } | null>(null)
@@ -55,7 +58,7 @@ export default function CaraPerolehanCards({ approved }: { approved: Record<stri
           const disetujui = approved[c.key] || 0
           const belum = pending[c.key] || 0
           return (
-            <CaraCard key={c.key} cara={c} disetujui={disetujui} belum={belum}
+            <CaraCard key={c.key} cara={c} disetujui={disetujui} belum={belum} nilai={approvedNilai?.[c.key] || 0}
               onClickApproved={() => setDetail({ mode: 'approved', cara: c })}
               onClickPending={() => setDetail({ mode: 'pending', cara: c })} />
           )
@@ -71,15 +74,16 @@ export default function CaraPerolehanCards({ approved }: { approved: Record<stri
   )
 }
 
-function CaraCard({ cara, disetujui, belum, onClickApproved, onClickPending }: {
-  cara: CaraConfig; disetujui: number; belum: number
+function CaraCard({ cara, disetujui, belum, nilai, onClickApproved, onClickPending }: {
+  cara: CaraConfig; disetujui: number; belum: number; nilai: number
   onClickApproved: () => void; onClickPending: () => void
 }) {
   const total = disetujui + belum
   const pct = total > 0 ? Math.round((disetujui / total) * 100) : 100
   return (
     <div className="card p-4">
-      <p className="text-xs text-gray-600 leading-tight h-8">{cara.label}</p>
+      <p className="text-xs text-gray-600 leading-tight">{cara.label}</p>
+      <p className="text-sm font-bold text-teal mb-1 truncate" title={formatRp(nilai)}>{formatRp(nilai)}</p>
       <div className="flex items-center gap-3 mt-1">
         <div
           className="relative flex-shrink-0"
