@@ -26,10 +26,9 @@ const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghap
 const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan']
 
 type Row = {
-  id: string
+  id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
   nibar: string | null
   kode: string
-  golongan: string
   nama_barang: string | null
   spesifikasi: string | null
   merek_tipe: string | null
@@ -38,13 +37,10 @@ type Row = {
   intra_ekstra: string | null
   keterangan: string | null
   status: string
-  skpd: string | null
-  // Jejak penghapusan (dari v_daftar_barang) — dipakai mode export Audit.
-  tgl_hapus: string | null
-  no_sk_hapus: string | null
-  jenis_hapus: string | null
-  ket_hapus: string | null
+  skpd_id: number | null
 }
+// Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
+type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
 
 type Applied = { skpd: string; golongan: string; komptabel: string; search: string; periode: string }
 
@@ -95,6 +91,7 @@ export default function DaftarBarangPage() {
 
   // ── Nilai filter (belum diterapkan) ──
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  const [skpdMap, setSkpdMap] = useState<Record<number, string>>({}) // id→nama semua level (resolve nama SKPD baris)
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [fSkpd, setFSkpd] = useState('')
   const [fGolongan, setFGolongan] = useState('')
@@ -121,6 +118,16 @@ export default function DaftarBarangPage() {
     supabase.from('skpd').select('id,nama').eq('level', 1).order('nama')
       .then(({ data }) => setSkpdList(data || []))
     ;(async () => {
+      const map: Record<number, string> = {}
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        if (!data || data.length === 0) break
+        for (const s of data) map[s.id] = s.nama
+        if (data.length < 1000) break
+      }
+      setSkpdMap(map)
+    })()
+    ;(async () => {
       const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const labels: Record<string, string> = {}
@@ -134,22 +141,24 @@ export default function DaftarBarangPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Filter dipisah agar dipakai bareng query utama, query total, & export.
-  // includeDeleted=false → hanya barang aktif (posisi terkini, default & untuk layar).
-  // includeDeleted=true  → termasuk yang dihapus (mode export Audit/Mutasi buat BPK).
+  // Filter dipisah agar dipakai bareng query utama & export. Sumber = tabel utama
+  // `aset` (bukan view) supaya `id` = aset.id, sehingga filter sembunyi period-aware
+  // (transaksi_bmd.aset_id) cocok. golongan diturunkan dari `kode`, nama SKPD dari skpdMap.
+  //   includeDeleted=false → hanya barang aktif (posisi terkini, default & untuk layar).
+  //   includeDeleted=true  → termasuk yang dihapus (mode export Audit/Mutasi buat BPK).
   const applyFilters = useCallback(<T,>(q: T, f: Applied, includeDeleted = false): T => {
     // @ts-expect-error — chain PostgREST builder
-    let b = includeDeleted ? q : q.eq('aktif', true)
+    let b = includeDeleted ? q : q.eq('status', 'aktif')
     if (f.skpd) b = b.eq('skpd_id', f.skpd)
-    if (f.golongan) b = b.eq('golongan', f.golongan)
+    if (f.golongan) b = b.like('kode', `${f.golongan}.%`)
     if (f.komptabel) b = b.eq('intra_ekstra', f.komptabel)
     if (f.search) b = b.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
     return b
   }, [])
 
   const buildQuery = useCallback((f: Applied, withCount: boolean, includeDeleted = false) => {
-    const q = supabase.from('v_daftar_barang')
-      .select('id,nibar,kode,golongan,nama_barang,spesifikasi,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd,tgl_hapus,no_sk_hapus,jenis_hapus,ket_hapus',
+    const q = supabase.from('aset')
+      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id',
         withCount ? { count: 'exact' } : undefined)
     return applyFilters(q, f, includeDeleted).order('nilai_perolehan', { ascending: false })
   }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -205,6 +214,24 @@ export default function DaftarBarangPage() {
     return hidden
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Jejak penghapusan per aset (untuk export Audit): No SK, tanggal, jenis, alasan —
+  // dari ledger + jurnal_header. Penghapusan TERBARU per aset (id desc) yang menang.
+  const fetchHapusInfo = useCallback(async (ids: string[]) => {
+    const info = new Map<string, HapusInfo>()
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('aset_id,tanggal,jenis,header:header_id(no_sk,keterangan)')
+        .in('jenis', ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain'] as never)
+        .in('aset_id', ids.slice(i, i + 200))
+        .order('id', { ascending: false })
+      for (const r of (data || []) as unknown as { aset_id: string; tanggal: string; jenis: string; header: { no_sk: string | null; keterangan: string | null } | null }[]) {
+        if (info.has(r.aset_id)) continue
+        info.set(r.aset_id, { tgl: r.tanggal, no_sk: r.header?.no_sk ?? null, jenis: r.jenis, ket: r.header?.keterangan ?? null })
+      }
+    }
+    return info
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Render halaman (client-side) dari kumpulan baris visible.
   function showPage(all: Row[], pg: number) {
     setData(all.length <= SHOW_ALL_MAX ? all : all.slice(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE))
@@ -244,7 +271,7 @@ export default function DaftarBarangPage() {
     exportToExcel(all.map(r => {
       const cell = (key: string): string | number => {
         switch (key) {
-          case 'skpd': return r.skpd || ''
+          case 'skpd': return skpdMap[r.skpd_id ?? -1] || ''
           case 'nama': return r.nama_barang || ''
           case 'kode': return r.kode
           case 'uraian': return uraian[r.kode] || ''
@@ -271,11 +298,12 @@ export default function DaftarBarangPage() {
     setExporting(true)
     const all = await fetchAllRows(applied, true)
     const uraian = await fetchUraian(all.map(r => r.kode))
+    const hapus = await fetchHapusInfo(all.filter(r => r.status !== 'aktif').map(r => r.id))
     const keys = colsFor(applied.golongan)
     exportToExcel(all.map(r => {
       const cell = (key: string): string | number => {
         switch (key) {
-          case 'skpd': return r.skpd || ''
+          case 'skpd': return skpdMap[r.skpd_id ?? -1] || ''
           case 'nama': return r.nama_barang || ''
           case 'kode': return r.kode
           case 'uraian': return uraian[r.kode] || ''
@@ -290,11 +318,12 @@ export default function DaftarBarangPage() {
       }
       const obj: Record<string, string | number> = { NIBAR: r.nibar || '' }
       for (const k of keys) obj[COL_META[k].header] = cell(k)
+      const hi = hapus.get(r.id)
       obj['Status'] = r.status === 'aktif' ? 'Aktif' : 'Dihapus'
-      obj['Tgl Penghapusan'] = r.tgl_hapus || ''
-      obj['No. SK Penghapusan'] = r.no_sk_hapus || ''
-      obj['Jenis Penghapusan'] = HAPUS_LABEL[r.jenis_hapus || ''] || ''
-      obj['Alasan Penghapusan'] = r.ket_hapus || ''
+      obj['Tgl Penghapusan'] = hi?.tgl || ''
+      obj['No. SK Penghapusan'] = hi?.no_sk || ''
+      obj['Jenis Penghapusan'] = HAPUS_LABEL[hi?.jenis || ''] || ''
+      obj['Alasan Penghapusan'] = hi?.ket || ''
       return obj
     }), `Daftar_Barang_${applied.golongan}_AUDIT`, 'Daftar Barang (Audit)')
     setExporting(false)
@@ -307,7 +336,7 @@ export default function DaftarBarangPage() {
 
   function cellContent(key: string, r: Row): React.ReactNode {
     switch (key) {
-      case 'skpd': return r.skpd || '-'
+      case 'skpd': return skpdMap[r.skpd_id ?? -1] || '-'
       case 'nama': return (
         <>
           <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
