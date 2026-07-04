@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_REKAP, perlakuanKode, comparePeriode } from '@/lib/bmd'
+import { GOLONGAN_REKAP, perlakuanKode, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 
@@ -147,13 +147,15 @@ export default function PenyusutanPage() {
     return map
   }
 
-  // Susun baris tampil: register − yang tersembunyi, digabung angka engine.
+  // Susun baris tampil: register − yang tersembunyi − yang belum diperoleh di
+  // periode ini (tgl perolehan > periode), digabung angka engine.
   async function assembleRows(f: Applied): Promise<(Base & { p?: Peny })[]> {
     const base = await fetchAllBase(f)
     const ids = base.map(b => b.id)
     const [pmap, hidden] = await Promise.all([fetchPeny(ids, f.periode), fetchHiddenIds(ids, f.periode)])
+    const belumAda = (b: Base) => !!b.tgl_perolehan && comparePeriode(periodeDariTanggal(b.tgl_perolehan), f.periode) > 0
     return base
-      .filter(b => !hidden.has(b.id))
+      .filter(b => !hidden.has(b.id) && !belumAda(b))
       .map(b => ({ ...b, p: pmap.get(b.id) }))
   }
 

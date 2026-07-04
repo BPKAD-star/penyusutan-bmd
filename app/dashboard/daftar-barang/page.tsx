@@ -252,10 +252,14 @@ export default function DaftarBarangPage() {
     setApplied(f); setPage(0); setGrandTotal(0)
     setLoading(true)
 
-    // Ambil SEMUA baris (aktif + dihapus), lalu saring yang tersembunyi di periode.
+    // Ambil SEMUA baris (aktif + dihapus), lalu saring:
+    //   (a) yang tersembunyi krn dihapus/diserap di periode, DAN
+    //   (b) yang BELUM diperoleh pada periode ini (tgl perolehan > periode) —
+    //       supaya barang yang dibeli di semester DEPAN tak muncul di posisi lampau.
     const all = await fetchAllRows(f, true)
     const hidden = await fetchHiddenIds(all.map(r => r.id), f.periode)
-    const visible = all.filter(r => !hidden.has(r.id))
+    const belumAda = (r: Row) => !!r.tgl_perolehan && comparePeriode(periodeDariTanggal(r.tgl_perolehan), f.periode) > 0
+    const visible = all.filter(r => !hidden.has(r.id) && !belumAda(r))
 
     setAllVisible(visible)
     setTotal(visible.length)
