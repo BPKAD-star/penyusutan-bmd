@@ -20,6 +20,16 @@ apa pun yang menyentuh ledger atau engine.
   event-driven replay ledger per aset.
 - **Baseline beku**: `saldo_awal_2026` = foto saldo akhir 2025, display-only,
   tak pernah disentuh transaksi.
+- **Baca dari tabel utama, bukan view.** Semua `v_*` (v_daftar_barang, v_dbar_*,
+  v_trx_*, v_anomali_saldo_awal, dst.) SUDAH DIHAPUS. Menu register/daftar baca
+  `aset` + `transaksi_bmd` (+ `skpd`, `jurnal_header`) langsung. Kunci: `aset.id`
+  = `transaksi_bmd.aset_id`, dipakai untuk **visibilitas period-aware** (replay
+  event `SEMBUNYI`=[kapitalisasi_serap, penghapusan_*] vs `MUNCUL`=[batal_*],
+  filter `comparePeriode(e.periode, periode) <= 0`). Jangan buat/andalkan view lagi
+  tanpa alasan kuat — dulu Daftar Barang pakai `v_daftar_barang` yang `id`-nya BUKAN
+  aset.id → filter sembunyi tak nyambung (barang dihapus tetap kehitung). Turunan
+  yang dulu dari view direplikasi: golongan dari `kode` (`like 'x.%'`), nama SKPD
+  dari `skpd`, jejak penghapusan dari ledger+`jurnal_header`.
 
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
