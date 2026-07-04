@@ -106,7 +106,7 @@ const ASET_FIELD_COLS = ['spesifikasi', 'merek_tipe', 'no_polisi', 'no_bpkb', 'n
 // "12" & "5306" konstan (app ini khusus Kab. Kediri). Nomor urut lanjut dari
 // NIBAR lain yang 36 digit pertamanya sama persis (lokasi+kode+tahun sama).
 const KODE_PROVINSI_KAB = '12'
-const KODE_WILAYAH_KEDIRI = '5306'
+const KODE_WILAYAH_KEDIRI = '3506' // Kab. Kediri (Jatim 35, Kediri Kab 06)
 const INTRA_EKSTRA_KODE: Record<string, string> = { intra: '01', ekstra: '02' }
 
 function digitsPad(s: string, len: number): string {

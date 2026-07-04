@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
-import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
+import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
 import RekapTable, { type RekapRow } from '@/components/RekapTable'
 import RekapMatrixTable, { METRIC_LABEL, type MatrixRow, type MetricOrAll, type Metric } from '@/components/RekapMatrixTable'
@@ -111,7 +111,10 @@ export default function Page() {
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
           <RekapModelControls model={model} onModel={setModel} metric={metric} onMetric={setMetric} />
-          <OrgFilter onChange={setOrg} />
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
+            <SkpdCombobox onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
+          </div>
           <KomptabelRadio value={komptabel} onChange={setKomptabel} />
           <div className="flex items-center gap-3">
             <span className="w-40 flex-shrink-0" />

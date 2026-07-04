@@ -16,6 +16,7 @@
 // selalu menjumlahkan nilai perolehan SELURUH hasil filter. Angka tanpa "Rp".
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
 
@@ -49,7 +50,7 @@ type Row = {
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
 
-type Applied = { skpd: string; golongan: string; komptabel: string; search: string; periode: string }
+type Applied = { descIds: number[] | null; skpdId: number | null; golongan: string; komptabel: string; search: string; periode: string }
 
 // Angka polos bergaya id-ID tanpa "Rp" (enak di-copas ke Excel).
 const angka = (v: number | null | undefined) =>
@@ -100,10 +101,9 @@ export default function DaftarBarangPage() {
   const supabase = createClient()
 
   // ── Nilai filter (belum diterapkan) ──
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [skpdMap, setSkpdMap] = useState<Record<number, string>>({}) // id→nama semua level (resolve nama SKPD baris)
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
-  const [fSkpd, setFSkpd] = useState('')
+  const [fSel, setFSel] = useState<{ skpdId: number | null; descIds: number[] | null }>({ skpdId: null, descIds: null })
   const [fGolongan, setFGolongan] = useState('')
   const [fKomptabel, setFKomptabel] = useState('')
   const [fSearch, setFSearch] = useState('')
@@ -125,8 +125,6 @@ export default function DaftarBarangPage() {
   const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
-    supabase.from('skpd').select('id,nama').eq('level', 1).order('nama')
-      .then(({ data }) => setSkpdList(data || []))
     ;(async () => {
       const map: Record<number, string> = {}
       for (let from = 0; ; from += 1000) {
@@ -159,7 +157,7 @@ export default function DaftarBarangPage() {
   const applyFilters = useCallback(<T,>(q: T, f: Applied, includeDeleted = false): T => {
     // @ts-expect-error — chain PostgREST builder
     let b = includeDeleted ? q : q.eq('status', 'aktif')
-    if (f.skpd) b = b.eq('skpd_id', f.skpd)
+    if (f.descIds && f.descIds.length > 0) b = b.in('skpd_id', f.descIds)
     if (f.golongan) b = b.like('kode', `${f.golongan}.%`)
     if (f.komptabel) b = b.eq('intra_ekstra', f.komptabel)
     if (f.search) b = b.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
@@ -250,7 +248,7 @@ export default function DaftarBarangPage() {
 
   async function handleTampilkan() {
     if (!fGolongan) return // wajib pilih jenis aset dulu
-    const f: Applied = { skpd: fSkpd, golongan: fGolongan, komptabel: fKomptabel, search: fSearch, periode: `${fTahun}-S${fSmt}` }
+    const f: Applied = { descIds: fSel.descIds, skpdId: fSel.skpdId, golongan: fGolongan, komptabel: fKomptabel, search: fSearch, periode: `${fTahun}-S${fSmt}` }
     setApplied(f); setPage(0); setGrandTotal(0)
     setLoading(true)
 
@@ -351,7 +349,7 @@ export default function DaftarBarangPage() {
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
-  const skpdNama = skpdList.find(s => String(s.id) === applied?.skpd)?.nama
+  const skpdNama = applied?.skpdId ? skpdMap[applied.skpdId] : undefined
   const cols = applied ? colsFor(applied.golongan) : DEFAULT_COLS
   const nilaiIdx = cols.indexOf('nilai')
 
@@ -394,10 +392,8 @@ export default function DaftarBarangPage() {
         <div className="space-y-3 max-w-3xl">
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
-            <select className="select-filter flex-1" value={fSkpd} onChange={e => setFSkpd(e.target.value)}>
-              <option value="">Semua SKPD</option>
-              {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-            </select>
+            <SkpdCombobox onChangeSelection={sel => setFSel({ skpdId: sel.skpdId, descIds: sel.descendantIds })} allowClear
+              placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Jenis Aset :</label>

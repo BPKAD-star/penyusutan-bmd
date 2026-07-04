@@ -27,6 +27,7 @@ const ICON = {
 
 const navTree: NavNode[] = [
   { type: 'leaf', href: '/dashboard', label: 'Dashboard' },
+  { type: 'leaf', href: '/dashboard/rkbmd', label: 'RKBMD' },
   {
     type: 'group', label: 'Saldo Awal', icon: ICON.saldo, children: [
       { type: 'leaf', href: '/dashboard/saldo-awal/rekapitulasi', label: 'Rekapitulasi' },
@@ -87,6 +88,8 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/saldo-akhir/rekapitulasi', label: 'Rekapitulasi' },
     ],
   },
+  { type: 'leaf', href: '/dashboard/inventarisasi', label: 'Inventarisasi' },
+  { type: 'leaf', href: '/dashboard/wasdal', label: 'WasDal' },
   { type: 'leaf', href: 'https://ipabmdkabkediri.vercel.app/login', label: 'IPA', external: true },
   { type: 'leaf', href: 'https://gisbmdkabkediri.vercel.app/', label: 'GIS BMD', external: true },
 ]
@@ -97,6 +100,9 @@ const iconFor = (label: string): React.ReactNode => {
   if (label === 'Daftar Barang') return ICON.daftar
   if (label === 'Penyusutan') return ICON.penyusutan
   if (label === 'Dashboard') return ICON.dashboard
+  if (label === 'RKBMD') return ICON.pelaporan
+  if (label === 'Inventarisasi') return ICON.daftar
+  if (label === 'WasDal') return ICON.building
   return null
 }
 

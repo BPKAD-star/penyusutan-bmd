@@ -16,6 +16,7 @@ import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bm
 import { cariBand, type BandOverhaul } from '@/lib/engine/penyusutan'
 import { KapitalisasiRincian, KapitalisasiDetailModal, type KapSnapshot, type KapAnak, type KapItem } from '@/components/KapitalisasiDetail'
 import FormShell from './FormShell'
+import SkpdCombobox from '@/components/SkpdCombobox'
 
 type Barang = { id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai_perolehan: number; skpd_id: number | null; tgl_perolehan: string | null }
 type IndukFig = { npLama: number; nbLama: number; akumLama: number; bebanLama: number; sisaLamaSmt: number; masaMaks: number | null }
@@ -58,7 +59,16 @@ export default function Kapitalisasi() {
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
-    supabase.from('skpd').select('id,nama').eq('level', 1).order('nama').then(({ data }) => setSkpdList(data || []))
+    ;(async () => {
+      const rows: { id: number; nama: string }[] = []
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        if (!data || data.length === 0) break
+        rows.push(...data)
+        if (data.length < 1000) break
+      }
+      setSkpdList(rows)
+    })()
     supabase.from('overhaul_band').select('kode_prefix,band_no,pct_min,pct_max,tambahan_tahun').then(({ data }) => setBands((data as BandOverhaul[]) || []))
     ;(async () => {
       const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
@@ -132,10 +142,8 @@ export default function Kapitalisasi() {
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
-          <select className="select-filter flex-1" value={skpd} onChange={e => { setSkpd(e.target.value); setMsg('') }}>
-            <option value="">— pilih SKPD —</option>
-            {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-          </select>
+          <SkpdCombobox value={skpd} onChange={id => { setSkpd(id); setMsg('') }}
+            placeholder="Ketik nama SKPD / Sub OPD / Lokasi..." />
         </div>
       </div>
 
