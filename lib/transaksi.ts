@@ -57,10 +57,12 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       for (const k of [
         'nama_barang', 'spesifikasi', 'merek_tipe', 'satuan',
         'no_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan', 'tgl_sertifikat',
+        'titik_koordinat', 'lokasi', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
       ] as const) {
         if (typeof p[k] === 'string' && p[k]) patch[k] = p[k]
       }
       if (typeof p.luas_tanah === 'number' && p.luas_tanah > 0) patch.luas_tanah = p.luas_tanah
+      if (Array.isArray(p.foto_paths)) patch.foto_paths = p.foto_paths
       return Object.keys(patch).length ? patch : null
     }
     case 'kapitalisasi':

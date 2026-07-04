@@ -91,6 +91,31 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   `penghapusan_*` (itu utk disposal sungguhan) — ini murni koreksi input, DICATAT
   MUNDUR ke tanggal pengadaan aslinya (bukan hari ini) supaya barang dianggap
   tidak pernah ada sejak awal, bukan cuma berhenti dari sekarang.
+- Draft item sudah **per-unit** sejak ditambahkan (kuantitas dipecah saat itu
+  juga, bukan saat approve) — supaya tiap unit bisa beda spesifikasi/no. seri/
+  foto sebelum di-approve (mis. 5 kendaraan beda nomor rangka/mesin).
+
+## Spesifikasi barang: wide table + field per golongan (lib/asetFields.ts)
+
+Field spesifikasi (mis. no. rangka/mesin utk Peralatan&Mesin, no. sertifikat/
+titik koordinat utk Tanah) disimpan sbg kolom **nullable lebar di `aset`**
+(satu tabel utk semua golongan — migrasi `20260704_13_kolom_spesifikasi_dan_foto.sql`),
+BUKAN tabel terpisah per jenis aset. `lib/asetFields.ts` (`GOLONGAN_FIELDS`)
+menentukan field mana yang relevan/ditampilkan per golongan (`kodeLevel3(kode)`);
+laporan tinggal `SELECT` kolom yang relevan, kolom lain diabaikan. Golongan yang
+belum py kebutuhan spesifik pakai `DEFAULT_FIELDS` (fallback generik).
+Form edit spesifikasi selalu lewat **popup** (`EditSpesifikasiModal`) — field-nya
+bisa banyak & beda per golongan, jangan taruh inline di baris tabel (bikin
+panjang/scroll). Baris tabel cukup ringkasan satu baris (`ringkasanFields()`)
++ tombol buka popup.
+
+## Foto barang (Supabase Storage)
+
+Bucket `aset-foto` (privat, limit 10MB, hanya image/jpeg|png|webp — lihat migrasi
+13). Path disimpan di `aset.foto_paths text[]`. Karena bucket privat, tampilkan
+foto pakai **signed URL** (`createSignedUrl`/`createSignedUrls`, expiry ~1 jam),
+BUKAN public URL. Draft (belum py `aset.id`) pakai prefix `draft/<key-client>/...`
+— aman dipakai selamanya, tidak perlu dipindah saat materialize ke aset asli.
 
 ## Layout UI
 
