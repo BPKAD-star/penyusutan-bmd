@@ -99,6 +99,49 @@ const ASET_FIELD_COLS = ['spesifikasi', 'merek_tipe', 'no_polisi', 'no_bpkb', 'n
   'luas_tanah', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan',
   'titik_koordinat', 'lokasi', 'keterangan'] as const
 
+// ── Generator NIBAR ──────────────────────────────────────────────────────────
+// Skema (dikonfirmasi user): [12=Prov/Kab][01/02=Intra-Ekstra][5306=Kode Kab
+// Kediri][12 digit=kode lokasi SKPD, dari skpd.kode tanpa titik][4 digit=tahun
+// perolehan][12 digit=kode barang tanpa titik][7 digit=nomor urut].
+// "12" & "5306" konstan (app ini khusus Kab. Kediri). Nomor urut lanjut dari
+// NIBAR lain yang 36 digit pertamanya sama persis (lokasi+kode+tahun sama).
+const KODE_PROVINSI_KAB = '12'
+const KODE_WILAYAH_KEDIRI = '5306'
+const INTRA_EKSTRA_KODE: Record<string, string> = { intra: '01', ekstra: '02' }
+
+function digitsPad(s: string, len: number): string {
+  const clean = (s || '').replace(/\D/g, '')
+  return clean.length >= len ? clean.slice(0, len) : clean.padEnd(len, '0')
+}
+
+async function generateNibars(
+  supabase: ReturnType<typeof createClient>,
+  items: { key: string; kode: string }[], kodeLokasiRaw: string, tahun: string, intraEkstra: string
+): Promise<Map<string, string>> {
+  const kodeLokasi = digitsPad(kodeLokasiRaw, 12)
+  const intraKode = INTRA_EKSTRA_KODE[intraEkstra] || '01'
+  const out = new Map<string, string>()
+  const byKodeBarang = new Map<string, { key: string; kode: string }[]>()
+  for (const it of items) {
+    const kb = digitsPad(it.kode, 12)
+    const arr = byKodeBarang.get(kb) || []
+    arr.push(it)
+    byKodeBarang.set(kb, arr)
+  }
+  for (const [kodeBarang, group] of byKodeBarang) {
+    const prefix36 = KODE_PROVINSI_KAB + intraKode + KODE_WILAYAH_KEDIRI + kodeLokasi + tahun + kodeBarang
+    const { data } = await supabase.from('aset').select('nibar')
+      .like('nibar', `${prefix36}%`).order('nibar', { ascending: false }).limit(1)
+    let seq = 0
+    if (data && data[0]?.nibar) seq = parseInt(data[0].nibar.slice(-7), 10) || 0
+    for (const it of group) {
+      seq += 1
+      out.set(it.key, prefix36 + String(seq).padStart(7, '0'))
+    }
+  }
+  return out
+}
+
 export default function Pengadaan() {
   const supabase = createClient()
 
@@ -259,33 +302,36 @@ export default function Pengadaan() {
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
   }
-  // Edit spesifikasi draft — 1 barang dicentang → replace penuh (bisa mengosongkan
-  // field). >1 dicentang → cuma terapkan field yang diisi (non-kosong) ke semua,
-  // field lain per barang tak disentuh (supaya tidak menimpa data yg sudah beda-beda).
-  async function applyDraftFields(h: Jurnal, keys: string[], fields: Record<string, string>, foto?: string[]) {
+  // Edit spesifikasi draft. foto.replace (mode 1 barang) = ganti penuh set foto.
+  // foto.append (mode banyak barang) = TAMBAH foto baru ke tiap barang yg dicentang
+  // (di-"split" ke semua yg dipilih, tanpa menghapus foto lama masing-masing).
+  // Field: 1 barang → replace penuh; >1 → cuma terapkan field non-kosong.
+  async function applyDraftFields(h: Jurnal, keys: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
     const items = (h.payload.draft_items || []).map(i => {
       if (!keys.includes(i.key)) return i
-      if (keys.length === 1) return { ...i, fields: { ...fields }, foto: foto !== undefined ? foto : i.foto }
+      if (keys.length === 1) return { ...i, fields: { ...fields }, foto: foto.replace ?? i.foto }
       const nonEmpty: Record<string, string> = {}
       for (const [k, v] of Object.entries(fields)) if (v && v.trim()) nonEmpty[k] = v
-      return { ...i, fields: { ...i.fields, ...nonEmpty } }
+      const foBaru = foto.append && foto.append.length > 0 ? [...i.foto, ...foto.append] : i.foto
+      return { ...i, fields: { ...i.fields, ...nonEmpty }, foto: foBaru }
     })
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
   }
   // Sama utk barang yang sudah disetujui (langsung update tabel aset).
-  async function applyApprovedFields(asetIds: string[], fields: Record<string, string>, foto?: string[]) {
+  async function applyApprovedFields(asetIds: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }, existingFoto: Record<string, string[]>) {
     setMsg('')
     for (const id of asetIds) {
       const patch: Record<string, unknown> = {}
       if (asetIds.length === 1) {
         for (const k of ASET_FIELD_COLS) patch[k] = k === 'luas_tanah' ? (fields[k] ? toNum(fields[k]) : null) : (fields[k] || null)
-        if (foto !== undefined) patch.foto_paths = foto
+        if (foto.replace !== undefined) patch.foto_paths = foto.replace
       } else {
         for (const [k, v] of Object.entries(fields)) {
           if (!v || !v.trim()) continue
           patch[k] = k === 'luas_tanah' ? toNum(v) : v
         }
+        if (foto.append && foto.append.length > 0) patch.foto_paths = [...(existingFoto[id] || []), ...foto.append]
         if (Object.keys(patch).length === 0) continue
       }
       const { error } = await supabase.from('aset').update(patch).eq('id', id)
@@ -315,9 +361,19 @@ export default function Pengadaan() {
 
     setBusyId(h.id); setMsg('')
     const periode = periodeDariTanggal(perolehanDate)
+
+    // Generate NIBAR otomatis — perlu kode lokasi SKPD (skpd.kode_skpd, ber-titik).
+    const { data: skpdRow, error: skpdErr } = await supabase.from('skpd').select('kode_skpd').eq('id', Number(skpd)).single()
+    if (skpdErr || !skpdRow?.kode_skpd) {
+      setMsg(`Error: gagal ambil kode lokasi SKPD utk generate NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`)
+      setBusyId(null); return
+    }
+    const tahun = String(new Date(perolehanDate).getFullYear())
+    const nibarMap = await generateNibars(supabase, items, skpdRow.kode_skpd, tahun, 'intra')
+
     const asetRows = items.map(it => {
       const row: Record<string, unknown> = {
-        nibar: null, kode: it.kode, nama_barang: it.nama.trim() || null, jumlah: 1,
+        nibar: nibarMap.get(it.key) || null, kode: it.kode, nama_barang: it.nama.trim() || null, jumlah: 1,
         satuan: it.satuan.trim() || null, harga_satuan: toNum(it.harga), nilai_perolehan: toNum(it.harga),
         tgl_perolehan: perolehanDate, skpd_id: Number(skpd), intra_ekstra: 'intra',
         cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: it.foto,
@@ -486,11 +542,11 @@ export default function Pengadaan() {
             fieldKeys={unionFieldsForKodes(items.map(i => i.kode))}
             initialFields={single ? single.fields : {}}
             initialFoto={single ? single.foto : []}
-            fotoEditable={!!single}
-            storagePrefix={single ? `draft/${single.key}` : 'draft/bulk'}
+            single={!!single}
+            storagePrefix={single ? `draft/${single.key}` : `draft/${specEdit.header.id}`}
             onClose={() => setSpecEdit(null)}
             onSave={async (fields, foto) => {
-              await applyDraftFields(specEdit.header, specEdit.keys, fields, single ? foto : undefined)
+              await applyDraftFields(specEdit.header, specEdit.keys, fields, foto)
               setSpecEdit(null)
             }}
           />
@@ -499,17 +555,19 @@ export default function Pengadaan() {
       {specEdit?.mode === 'approved' && (() => {
         const lines = specEdit.jurnal.lines.filter(l => specEdit.asetIds.includes(l.aset_id))
         const single = lines.length === 1 ? lines[0] : null
+        const existingFoto: Record<string, string[]> = {}
+        for (const l of lines) existingFoto[l.aset_id] = l.foto_paths
         return (
           <EditSpesifikasiModal
             title={single ? (single.nama_barang || single.kode) : `${lines.length} barang dicentang`}
             fieldKeys={unionFieldsForKodes(lines.map(l => l.kode))}
             initialFields={single ? single.fields : {}}
             initialFoto={single ? single.foto_paths : []}
-            fotoEditable={!!single}
-            storagePrefix={single ? single.aset_id : 'bulk'}
+            single={!!single}
+            storagePrefix={single ? single.aset_id : specEdit.jurnal.id}
             onClose={() => setSpecEdit(null)}
             onSave={async (fields, foto) => {
-              await applyApprovedFields(specEdit.asetIds, fields, single ? foto : undefined)
+              await applyApprovedFields(specEdit.asetIds, fields, foto, existingFoto)
               setSpecEdit(null)
             }}
           />
@@ -598,13 +656,15 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="table-th w-10 text-center"><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
-                  <th className="table-th">Aksi / Kode</th>
-                  <th className="table-th">Nama</th>
-                  <th className="table-th w-20 text-center">Satuan</th>
-                  <th className="table-th w-28 text-right">Harga</th>
+                  <th className="table-th w-8 text-center"><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
+                  <th className="table-th w-8 text-center"></th>
+                  <th className="table-th">Uraian Barang</th>
                   <th className="table-th">Spesifikasi</th>
-                  <th className="table-th w-14 text-center">Foto</th>
+                  <th className="table-th">Merek</th>
+                  <th className="table-th w-12 text-center">Foto</th>
+                  <th className="table-th w-16 text-center">Satuan</th>
+                  <th className="table-th w-28 text-right">Harga/item</th>
+                  <th className="table-th">Keterangan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -660,24 +720,24 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
   item: DraftItem; checked: boolean; onToggle: () => void
   onDelete: () => void; fotoUrl?: string
 }) {
-  const ringkasan = ringkasanFields(item.kode, item.fields)
+  const f = item.fields || {}
+  const spesifikasi = f.spesifikasi || ringkasanFields(item.kode, f)
   return (
     <tr>
       <td className="table-td text-center"><input type="checkbox" checked={checked} onChange={onToggle} /></td>
-      <td className="table-td">
-        <div className="flex items-center gap-2">
-          <button onClick={onDelete} title="Hapus barang ini" className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white flex-shrink-0">🗑</button>
-          <span className="text-[11px] text-gray-400 whitespace-nowrap">{item.kode}</span>
-        </div>
+      <td className="table-td text-center">
+        <button onClick={onDelete} title="Hapus barang ini" className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
       </td>
-      <td className="table-td text-xs text-gray-800">{item.nama || '-'}</td>
-      <td className="table-td text-center text-xs text-gray-600">{item.satuan || '-'}</td>
-      <td className="table-td text-right text-xs text-gray-600">{formatRupiah(toNum(item.harga))}</td>
       <td className="table-td">
-        <p className="text-xs text-gray-600 truncate max-w-xs" title={ringkasan}>
-          {ringkasan || <span className="text-amber-600">⚠ Belum diisi</span>}
+        <p className="text-xs text-gray-800 font-medium truncate max-w-[220px]">{item.nama || '-'}</p>
+        <p className="text-[11px] text-gray-400">{item.kode}</p>
+      </td>
+      <td className="table-td">
+        <p className="text-xs text-gray-600 truncate max-w-[200px]" title={spesifikasi}>
+          {spesifikasi || <span className="text-amber-600">⚠ Belum diisi</span>}
         </p>
       </td>
+      <td className="table-td text-xs text-gray-600 truncate max-w-[120px]">{f.merek_tipe || '-'}</td>
       <td className="table-td text-center">
         {fotoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -688,6 +748,9 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
           <span className="text-[10px] text-gray-300">-</span>
         )}
       </td>
+      <td className="table-td text-center text-xs text-gray-600">{item.satuan || '-'}</td>
+      <td className="table-td text-right text-xs text-gray-600">{formatRupiah(toNum(item.harga))}</td>
+      <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{f.keterangan || '-'}</td>
     </tr>
   )
 }
@@ -842,19 +905,22 @@ function ApprovedCard({ j, onEditHeader, onEditSpes, onBatalkan }: {
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              <th className="table-th w-10 text-center"><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
-              <th className="table-th w-10 text-center">Aksi</th>
-              <th className="table-th">Kode / NIBAR / Nama</th>
-              <th className="table-th w-20 text-center">Satuan</th>
-              <th className="table-th w-24 text-center">Komptabel</th>
-              <th className="table-th w-28 text-right">Nilai</th>
+              <th className="table-th w-8 text-center"><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
+              <th className="table-th w-8 text-center"></th>
+              <th className="table-th">Uraian Barang / NIBAR</th>
               <th className="table-th">Spesifikasi</th>
-              <th className="table-th w-14 text-center">Foto</th>
+              <th className="table-th">Merek</th>
+              <th className="table-th w-12 text-center">Foto</th>
+              <th className="table-th w-16 text-center">Satuan</th>
+              <th className="table-th w-20 text-center">Komptabel</th>
+              <th className="table-th w-28 text-right">Nilai</th>
+              <th className="table-th">Keterangan</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {j.lines.map(l => {
-              const ringkasan = ringkasanFields(l.kode, l.fields)
+              const f = l.fields || {}
+              const spesifikasi = f.spesifikasi || ringkasanFields(l.kode, f)
               const fotoUrl = l.foto_paths[0] ? fotoUrls[l.foto_paths[0]] : undefined
               return (
                 <tr key={l.aset_id}>
@@ -863,17 +929,15 @@ function ApprovedCard({ j, onEditHeader, onEditSpes, onBatalkan }: {
                     <button onClick={() => onBatalkan(l)} title="Batalkan (koreksi kesalahan input)" className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
                   </td>
                   <td className="table-td">
-                    <p className="text-[11px] text-gray-400">{l.kode}</p>
-                    <p className="font-medium text-gray-800 text-xs truncate max-w-xs">{l.nama_barang || '-'} <span className="text-gray-400 font-normal">· {l.nibar || '(NIBAR belum diisi)'}</span></p>
+                    <p className="font-medium text-gray-800 text-xs truncate max-w-[220px]">{l.nama_barang || '-'}</p>
+                    <p className="text-[11px] text-gray-400">{l.kode} · {l.nibar || '(NIBAR belum diisi)'}</p>
                   </td>
-                  <td className="table-td text-center text-xs">{l.satuan || '-'}</td>
-                  <td className="table-td text-center text-xs capitalize">{l.intra_ekstra || '-'}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
                   <td className="table-td">
-                    <p className="text-xs text-gray-600 truncate max-w-xs" title={ringkasan}>
-                      {ringkasan || <span className="text-amber-600">⚠ Belum diisi</span>}
+                    <p className="text-xs text-gray-600 truncate max-w-[200px]" title={spesifikasi}>
+                      {spesifikasi || <span className="text-amber-600">⚠ Belum diisi</span>}
                     </p>
                   </td>
+                  <td className="table-td text-xs text-gray-600 truncate max-w-[120px]">{f.merek_tipe || '-'}</td>
                   <td className="table-td text-center">
                     {fotoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -884,6 +948,10 @@ function ApprovedCard({ j, onEditHeader, onEditSpes, onBatalkan }: {
                       <span className="text-[10px] text-gray-300">-</span>
                     )}
                   </td>
+                  <td className="table-td text-center text-xs">{l.satuan || '-'}</td>
+                  <td className="table-td text-center text-xs capitalize">{l.intra_ekstra || '-'}</td>
+                  <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                  <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{f.keterangan || '-'}</td>
                 </tr>
               )
             })}
@@ -1094,20 +1162,24 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
 
 // ── Popup Edit Spesifikasi (golongan-aware) + Foto ──────────────────────────
 // Dipakai lewat checklist (1 atau banyak barang dicentang) di kartu draft/
-// disetujui — bukan tombol edit per-baris. fieldKeys = union field yang relevan
-// (kalau yang dicentang beda golongan, semua field yg relevan tetap muncul).
-// fotoEditable=false ketika >1 barang dicentang (foto memang beda per unit,
-// jangan ditimpa sama rata).
-function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, initialFoto, fotoEditable, onSave, onClose }: {
+// disetujui. fieldKeys = union field yang relevan (kalau beda golongan, semua
+// field relevan tetap muncul).
+//   single=true  → 1 barang: field & foto REPLACE penuh (bisa hapus/kosongkan).
+//   single=false → banyak barang: field yang diisi diterapkan ke semua (yg kosong
+//                  tak menimpa); foto yang diupload di-APPEND ("split") ke semua
+//                  barang yang dicentang, tanpa menghapus foto lama masing-masing.
+function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, initialFoto, single, onSave, onClose }: {
   title: string; fieldKeys: FieldKey[]; storagePrefix: string
-  initialFields: Record<string, string>; initialFoto: string[]; fotoEditable: boolean
-  onSave: (fields: Record<string, string>, fotoPaths: string[]) => Promise<void> | void
+  initialFields: Record<string, string>; initialFoto: string[]; single: boolean
+  onSave: (fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) => Promise<void> | void
   onClose: () => void
 }) {
   const supabase = createClient()
   const keys = fieldKeys
   const [values, setValues] = useState<Record<string, string>>(initialFields)
-  const [fotoPaths, setFotoPaths] = useState<string[]>(initialFoto)
+  // single: fotoPaths = daftar penuh (di-replace). bulk: fotoPaths = foto BARU
+  // yang bakal di-append ke semua barang dicentang (mulai kosong).
+  const [fotoPaths, setFotoPaths] = useState<string[]>(single ? initialFoto : [])
   const [fotoUrls, setFotoUrls] = useState<Record<string, string>>({})
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1115,8 +1187,8 @@ function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, 
 
   useEffect(() => {
     (async () => {
-      if (fotoPaths.length === 0) return
-      const { data } = await supabase.storage.from('aset-foto').createSignedUrls(fotoPaths, 3600)
+      if (!single || initialFoto.length === 0) return
+      const { data } = await supabase.storage.from('aset-foto').createSignedUrls(initialFoto, 3600)
       const map: Record<string, string> = {}
       for (const d of data || []) if (d.signedUrl && d.path) map[d.path] = d.signedUrl
       setFotoUrls(map)
@@ -1141,13 +1213,13 @@ function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, 
 
   async function hapusFoto(path: string) {
     if (!confirm('Hapus foto ini?')) return
-    await supabase.storage.from('aset-foto').remove([path])
+    if (single) await supabase.storage.from('aset-foto').remove([path]) // bulk: file dipakai bersama, jangan hapus fisiknya
     setFotoPaths(prev => prev.filter(p => p !== path))
   }
 
   async function simpan() {
     setSaving(true)
-    await onSave(values, fotoPaths)
+    await onSave(values, single ? { replace: fotoPaths } : { append: fotoPaths })
     setSaving(false)
   }
 
@@ -1159,9 +1231,9 @@ function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, 
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
         </div>
         <div className="p-5 space-y-4">
-          {!fotoEditable && (
+          {!single && (
             <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
-              Field yang diisi di sini akan diterapkan ke SEMUA barang yang dicentang. Field yang dikosongkan TIDAK menimpa nilai yang sudah ada per barang.
+              Diterapkan ke SEMUA barang yang dicentang. Field yang dikosongkan tidak menimpa nilai per barang; foto yang diupload ditambahkan ke tiap barang.
             </p>
           )}
           {keys.map(k => {
@@ -1178,26 +1250,24 @@ function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, 
               </div>
             )
           })}
-          {fotoEditable ? (
-            <div className="pt-2 border-t border-gray-100">
-              <label className="block text-xs text-gray-500 mb-2">Foto Barang (maks 10MB/foto)</label>
-              {fotoPaths.length > 0 && (
-                <div className="grid grid-cols-3 gap-2 mb-2">
-                  {fotoPaths.map(p => (
-                    <div key={p} className="relative group">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      {fotoUrls[p] ? <img src={fotoUrls[p]} alt="Foto barang" className="w-full h-20 object-cover rounded border border-gray-200" /> : <div className="w-full h-20 bg-gray-100 rounded animate-pulse" />}
-                      <button onClick={() => hapusFoto(p)} title="Hapus foto" className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white text-xs leading-none">×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <input type="file" accept="image/*" multiple onChange={e => uploadFoto(e.target.files)} disabled={uploading} className="text-xs" />
-              {uploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-            </div>
-          ) : (
-            <p className="text-xs text-gray-400 pt-2 border-t border-gray-100">Foto cuma bisa diedit kalau 1 barang dicentang (foto beda per unit).</p>
-          )}
+          <div className="pt-2 border-t border-gray-100">
+            <label className="block text-xs text-gray-500 mb-2">
+              Foto Barang (maks 10MB/foto){!single && <span className="text-gray-400"> — foto baru ditambahkan ke semua barang dicentang</span>}
+            </label>
+            {fotoPaths.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                {fotoPaths.map(p => (
+                  <div key={p} className="relative group">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {fotoUrls[p] ? <img src={fotoUrls[p]} alt="Foto barang" className="w-full h-20 object-cover rounded border border-gray-200" /> : <div className="w-full h-20 bg-gray-100 rounded animate-pulse" />}
+                    <button onClick={() => hapusFoto(p)} title="Hapus foto" className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white text-xs leading-none">×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input type="file" accept="image/*" multiple onChange={e => uploadFoto(e.target.files)} disabled={uploading} className="text-xs" />
+            {uploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
+          </div>
           {err && <p className="text-xs text-red-600">{err}</p>}
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white">
