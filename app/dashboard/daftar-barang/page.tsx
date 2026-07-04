@@ -15,10 +15,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
+import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
 
 const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
+
+// Event yang menyembunyikan / memunculkan kembali aset (serap/hapus vs batal) —
+// sama dgn menu Penyusutan. Dipakai untuk visibilitas period-aware.
+const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
+const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan']
 
 type Row = {
   id: string
@@ -41,7 +46,7 @@ type Row = {
   ket_hapus: string | null
 }
 
-type Applied = { skpd: string; golongan: string; komptabel: string; search: string }
+type Applied = { skpd: string; golongan: string; komptabel: string; search: string; periode: string }
 
 // Angka polos bergaya id-ID tanpa "Rp" (enak di-copas ke Excel).
 const angka = (v: number | null | undefined) =>
@@ -95,11 +100,15 @@ export default function DaftarBarangPage() {
   const [fGolongan, setFGolongan] = useState('')
   const [fKomptabel, setFKomptabel] = useState('')
   const [fSearch, setFSearch] = useState('')
+  const now = periodeDariTanggal(new Date().toISOString().slice(0, 10))
+  const [fTahun, setFTahun] = useState(now.slice(0, 4))
+  const [fSmt, setFSmt] = useState(now.slice(-1))
 
   // ── Filter yang sudah diterapkan (dipakai query) ──
   const [applied, setApplied] = useState<Applied | null>(null)
 
-  const [data, setData] = useState<Row[]>([])
+  const [data, setData] = useState<Row[]>([])          // baris yang tampil (halaman aktif / semua)
+  const [allVisible, setAllVisible] = useState<Row[]>([]) // seluruh baris visible di periode (utk paginasi & export)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [total, setTotal] = useState(0)
   const [grandTotal, setGrandTotal] = useState(0)
@@ -167,60 +176,69 @@ export default function DaftarBarangPage() {
     return all
   }
 
-  // Grand total nilai perolehan SELURUH hasil filter (kolom tunggal, ringan).
-  const fetchGrandTotal = useCallback(async (f: Applied) => {
-    let sum = 0
-    for (let from = 0; ; from += 1000) {
-      const b = applyFilters(supabase.from('v_daftar_barang').select('nilai_perolehan'), f)
-      const { data } = await b.range(from, from + 999)
-      if (!data || data.length === 0) break
-      for (const r of data as { nilai_perolehan: number }[]) sum += r.nilai_perolehan || 0
-      if (data.length < 1000) break
+  // aset_id yang tersembunyi PADA periode terpilih (serap/hapus dgn periode <=
+  // periode, dikurangi batal). Sama persis dgn logika menu Penyusutan, supaya
+  // Daftar Barang menampilkan posisi barang sesuai semester yang dipilih:
+  //   - barang yang dihapus di semester DEPAN tetap muncul saat lihat semester lalu;
+  //   - barang anak yang diserap kapitalisasi disembunyikan sejak periode serap.
+  const fetchHiddenIds = useCallback(async (ids: string[], periode: string) => {
+    const evByAset = new Map<string, { periode: string; jenis: string }[]>()
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
+      for (const e of (data || []) as { aset_id: string; jenis: string; periode: string }[]) {
+        const arr = evByAset.get(e.aset_id) || []; arr.push({ periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
+      }
     }
-    return sum
-  }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
+    const hidden = new Set<string>()
+    for (const [id, evs] of evByAset) {
+      let h = false
+      // Dalam periode yang sama: proses SEMBUNYI dulu baru MUNCUL, agar batal di
+      // periode yang sama membuat aset muncul lagi.
+      const rank = (j: string) => (SEMBUNYI.includes(j) ? 0 : 1)
+      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || rank(a.jenis) - rank(b.jenis))) {
+        if (SEMBUNYI.includes(e.jenis)) h = true
+        else if (MUNCUL.includes(e.jenis)) h = false
+      }
+      if (h) hidden.add(id)
+    }
+    return hidden
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function fetchPage(f: Applied, pg: number) {
-    const { data, count } = await buildQuery(f, true).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
-    const rows = (data as unknown as Row[]) || []
-    setData(rows)
-    setUraianMap(await fetchUraian(rows.map(r => r.kode)))
-    return { rows, count: count || 0 }
+  // Render halaman (client-side) dari kumpulan baris visible.
+  function showPage(all: Row[], pg: number) {
+    setData(all.length <= SHOW_ALL_MAX ? all : all.slice(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE))
   }
 
   async function handleTampilkan() {
     if (!fGolongan) return // wajib pilih jenis aset dulu
-    const f: Applied = { skpd: fSkpd, golongan: fGolongan, komptabel: fKomptabel, search: fSearch }
+    const f: Applied = { skpd: fSkpd, golongan: fGolongan, komptabel: fKomptabel, search: fSearch, periode: `${fTahun}-S${fSmt}` }
     setApplied(f); setPage(0); setGrandTotal(0)
     setLoading(true)
 
-    const { count } = await fetchPage(f, 0) // halaman awal + hitung total
-    setTotal(count)
+    // Ambil SEMUA baris (aktif + dihapus), lalu saring yang tersembunyi di periode.
+    const all = await fetchAllRows(f, true)
+    const hidden = await fetchHiddenIds(all.map(r => r.id), f.periode)
+    const visible = all.filter(r => !hidden.has(r.id))
 
-    if (count <= SHOW_ALL_MAX) {
-      const all = await fetchAllRows(f)
-      setData(all); setShowAll(true)
-      setUraianMap(await fetchUraian(all.map(r => r.kode)))
-      setGrandTotal(all.reduce((s, r) => s + (r.nilai_perolehan || 0), 0))
-    } else {
-      setShowAll(false)
-      fetchGrandTotal(f).then(setGrandTotal)
-    }
+    setAllVisible(visible)
+    setTotal(visible.length)
+    setGrandTotal(visible.reduce((s, r) => s + (r.nilai_perolehan || 0), 0))
+    setShowAll(visible.length <= SHOW_ALL_MAX)
+    showPage(visible, 0)
+    setUraianMap(await fetchUraian(visible.map(r => r.kode)))
     setLoading(false)
   }
 
-  async function goPage(pg: number) {
-    if (!applied) return
-    setLoading(true)
+  function goPage(pg: number) {
     setPage(pg)
-    await fetchPage(applied, pg)
-    setLoading(false)
+    showPage(allVisible, pg)
   }
 
   async function handleExport() {
     if (!applied) return
     setExporting(true)
-    const all = await fetchAllRows(applied)
+    const all = allVisible // posisi sesuai periode terpilih (period-aware)
     const uraian = await fetchUraian(all.map(r => r.kode))
     const keys = colsFor(applied.golongan)
     exportToExcel(all.map(r => {
@@ -346,6 +364,19 @@ export default function DaftarBarangPage() {
             </div>
           )}
           <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Posisi Semester :</label>
+            <select className="select-filter w-28" value={fTahun} onChange={e => setFTahun(e.target.value)}>
+              {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <div className="flex gap-4">
+              {[['1', 'Semester I'], ['2', 'Semester II']].map(([v, l]) => (
+                <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="db_smt" checked={fSmt === v} onChange={() => setFSmt(v)} />{l}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Cari :</label>
             <input className="select-filter flex-1" placeholder="Nama barang / NIBAR / kode..."
               value={fSearch} onChange={e => setFSearch(e.target.value)}
@@ -372,15 +403,16 @@ export default function DaftarBarangPage() {
             <span className="text-sm text-gray-500">
               {total.toLocaleString('id-ID')} barang{skpdNama ? ` — ${skpdNama}` : ''}
               {applied.golongan ? ` · ${applied.golongan} ${golonganLabels[applied.golongan] || ''}` : ''}
+              {` · posisi ${applied.periode}`}
             </span>
             <div className="flex items-center gap-3">
               {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>}
               <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs"
-                title="Posisi terkini — hanya barang aktif (laporan resmi)">
+                title={`Posisi barang pada ${applied.periode} (sesuai filter semester)`}>
                 {exporting ? 'Mengekspor...' : 'Export Excel'}
               </button>
               <button onClick={handleExportAudit} disabled={exporting} className="btn-secondary text-xs"
-                title="Audit/Mutasi — termasuk barang dihapus + jejak SK penghapusan (untuk BPK)">
+                title="Audit/Mutasi — SEMUA barang termasuk yang dihapus + jejak SK penghapusan (untuk BPK, lintas periode)">
                 {exporting ? '...' : 'Export Audit'}
               </button>
             </div>

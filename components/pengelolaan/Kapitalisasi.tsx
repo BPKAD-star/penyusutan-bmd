@@ -129,7 +129,7 @@ export default function Kapitalisasi() {
   return (
     <FormShell judul="Kapitalisasi" msg={msg}
       deskripsi="Pilih SKPD, buat transaksi kapitalisasi: barang induk + barang anak (penambahan masa manfaat). Nilai anak diserap ke induk.">
-      <div className="card p-5 mb-4 max-w-3xl">
+      <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
           <select className="select-filter flex-1" value={skpd} onChange={e => { setSkpd(e.target.value); setMsg('') }}>
