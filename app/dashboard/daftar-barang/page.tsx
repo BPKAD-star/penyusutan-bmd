@@ -33,7 +33,7 @@ type Row = {
   nibar: string | null
   kode: string
   nama_barang: string | null
-  spesifikasi: string | null
+  spesifikasi_lainnya: string | null
   merek_tipe: string | null
   nilai_perolehan: number
   tgl_perolehan: string | null
@@ -41,11 +41,11 @@ type Row = {
   keterangan: string | null
   status: string
   skpd_id: number | null
-  luas_tanah: number | null
-  no_sertifikat: string | null
-  tgl_sertifikat: string | null
-  atas_nama_sertifikat: string | null
-  hak_kepemilikan: string | null
+  luas: number | null
+  nomor_dokumen_kepemilikan: string | null
+  tanggal_dokumen_kepemilikan: string | null
+  nama_dokumen_kepemilikan: string | null
+  jenis_hak: string | null
 }
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
@@ -59,12 +59,12 @@ const angka = (v: number | null | undefined) =>
 // ── Kolom per jenis aset (pakai field yang tersedia) ────────────────────────
 const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> = {
   skpd: { header: 'SKPD' }, nama: { header: 'Nama Barang' }, kode: { header: 'Kode Barang' },
-  uraian: { header: 'Uraian' }, merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi' },
+  uraian: { header: 'Uraian' }, merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
   komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
   nilai: { header: 'Nilai Perolehan', align: 'right' }, keterangan: { header: 'Keterangan' },
-  luas: { header: 'Luas Tanah (m²)', align: 'right' }, no_sertifikat: { header: 'No. Sertifikat' },
-  tgl_sertifikat: { header: 'Tgl Sertifikat' }, atas_nama: { header: 'Atas Nama Sertifikat' },
-  hak: { header: 'Hak Kepemilikan' },
+  luas: { header: 'Luas (m²)', align: 'right' }, no_sertifikat: { header: 'Nomor Dokumen Kepemilikan' },
+  tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' }, atas_nama: { header: 'Nama Dokumen Kepemilikan' },
+  hak: { header: 'Jenis Hak' },
 }
 // Urutan: SKPD · Kode · Uraian · Nama · [spesifikasi lainnya] · Tgl · Komptabel · Nilai · Keterangan
 const COLS: Record<string, string[]> = {
@@ -166,7 +166,7 @@ export default function DaftarBarangPage() {
 
   const buildQuery = useCallback((f: Applied, withCount: boolean, includeDeleted = false) => {
     const q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas_tanah,no_sertifikat,tgl_sertifikat,atas_nama_sertifikat,hak_kepemilikan',
+      .select('id,nibar,kode,nama_barang,spesifikasi_lainnya,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak',
         withCount ? { count: 'exact' } : undefined)
     return applyFilters(q, f, includeDeleted).order('nilai_perolehan', { ascending: false })
   }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -289,16 +289,16 @@ export default function DaftarBarangPage() {
           case 'kode': return r.kode
           case 'uraian': return uraian[r.kode] || ''
           case 'merek': return r.merek_tipe || ''
-          case 'spesifikasi': return r.spesifikasi || ''
+          case 'spesifikasi': return r.spesifikasi_lainnya || ''
           case 'komptabel': return r.intra_ekstra || ''
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
           case 'keterangan': return r.keterangan || ''
-          case 'luas': return r.luas_tanah ?? ''
-          case 'no_sertifikat': return r.no_sertifikat || ''
-          case 'tgl_sertifikat': return r.tgl_sertifikat || ''
-          case 'atas_nama': return r.atas_nama_sertifikat || ''
-          case 'hak': return r.hak_kepemilikan || ''
+          case 'luas': return r.luas ?? ''
+          case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
+          case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
+          case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
+          case 'hak': return r.jenis_hak || ''
           default: return ''
         }
       }
@@ -326,16 +326,16 @@ export default function DaftarBarangPage() {
           case 'kode': return r.kode
           case 'uraian': return uraian[r.kode] || ''
           case 'merek': return r.merek_tipe || ''
-          case 'spesifikasi': return r.spesifikasi || ''
+          case 'spesifikasi': return r.spesifikasi_lainnya || ''
           case 'komptabel': return r.intra_ekstra || ''
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
           case 'keterangan': return r.keterangan || ''
-          case 'luas': return r.luas_tanah ?? ''
-          case 'no_sertifikat': return r.no_sertifikat || ''
-          case 'tgl_sertifikat': return r.tgl_sertifikat || ''
-          case 'atas_nama': return r.atas_nama_sertifikat || ''
-          case 'hak': return r.hak_kepemilikan || ''
+          case 'luas': return r.luas ?? ''
+          case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
+          case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
+          case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
+          case 'hak': return r.jenis_hak || ''
           default: return ''
         }
       }
@@ -369,16 +369,16 @@ export default function DaftarBarangPage() {
       case 'kode': return r.kode
       case 'uraian': return uraianMap[r.kode] || '-'
       case 'merek': return r.merek_tipe || '-'
-      case 'spesifikasi': return r.spesifikasi || '-'
+      case 'spesifikasi': return r.spesifikasi_lainnya || '-'
       case 'komptabel': return r.intra_ekstra || '-'
       case 'tgl': return r.tgl_perolehan || '-'
       case 'nilai': return angka(r.nilai_perolehan)
       case 'keterangan': return r.keterangan || '-'
-      case 'luas': return r.luas_tanah != null ? angka(r.luas_tanah) : '-'
-      case 'no_sertifikat': return r.no_sertifikat || '-'
-      case 'tgl_sertifikat': return r.tgl_sertifikat || '-'
-      case 'atas_nama': return r.atas_nama_sertifikat || '-'
-      case 'hak': return r.hak_kepemilikan || '-'
+      case 'luas': return r.luas != null ? angka(r.luas) : '-'
+      case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || '-'
+      case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || '-'
+      case 'atas_nama': return r.nama_dokumen_kepemilikan || '-'
+      case 'hak': return r.jenis_hak || '-'
       default: return '-'
     }
   }

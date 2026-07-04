@@ -163,7 +163,7 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
       const chunk = valid.slice(i, i + 100)
       const { data: inserted, error } = await supabase.from('aset').insert(chunk.map(r => ({
         nibar: r.nibar, kode: r.kode, nama_barang: r.nama_barang,
-        spesifikasi: r.spesifikasi || null, merek_tipe: r.merek_tipe || null,
+        spesifikasi_lainnya: r.spesifikasi || null, merek_tipe: r.merek_tipe || null,
         jumlah: r.jumlah, satuan: r.satuan || null, harga_satuan: r.harga_satuan || null,
         nilai_perolehan: r.nilai, tgl_perolehan: r.tgl_perolehan,
         skpd_id: targetSkpd, cara_perolehan: jenis, keterangan: r.keterangan || null,

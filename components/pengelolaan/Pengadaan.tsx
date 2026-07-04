@@ -76,12 +76,23 @@ const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toNum(i.ha
 // ditambahkan — masih pakai {qty, spesifikasi string}). Item lama diekspansi
 // sesuai qty-nya jadi N unit terpisah (bukan cuma dihindari crash-nya), supaya
 // data lama yg sempat dientry tidak hilang diam-diam.
+// Rename kolom aset (migrasi 16) → key lama di draft_items JSON lama perlu
+// dipetakan ke key baru supaya spesifikasi yg sudah dientry tidak "hilang".
+const FIELD_KEY_RENAME: Record<string, string> = {
+  spesifikasi: 'spesifikasi_lainnya', luas_tanah: 'luas', no_sertifikat: 'nomor_dokumen_kepemilikan',
+  tgl_sertifikat: 'tanggal_dokumen_kepemilikan', atas_nama_sertifikat: 'nama_dokumen_kepemilikan', hak_kepemilikan: 'jenis_hak',
+}
+function remapFieldKeys(fields: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(fields || {})) out[FIELD_KEY_RENAME[k] || k] = v
+  return out
+}
 function normalizeDraftItems(raw: unknown): DraftItem[] {
   if (!Array.isArray(raw)) return []
   const out: DraftItem[] = []
   for (const r of raw as Record<string, unknown>[]) {
     if (r && typeof r === 'object' && r.fields && typeof r.fields === 'object' && Array.isArray(r.foto)) {
-      out.push({ rekening: '', ...(r as unknown as DraftItem) }) // sudah bentuk baru (rekening default utk data lama)
+      out.push({ rekening: '', ...(r as unknown as DraftItem), fields: remapFieldKeys(r.fields as Record<string, string>) }) // rekening default + field key lama dipetakan ke baru
       continue
     }
     const qty = Math.max(1, toInt(String(r?.qty ?? '1')) || 1)
@@ -91,18 +102,18 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
         golongan: String(r?.golongan ?? ''), kode: String(r?.kode ?? ''), nama: String(r?.nama ?? ''),
         rekening: String(r?.rekening ?? ''),
         satuan: String(r?.satuan ?? ''), harga: String(r?.harga ?? '0'),
-        fields: r?.spesifikasi ? { spesifikasi: String(r.spesifikasi) } : {},
+        fields: r?.spesifikasi ? { spesifikasi_lainnya: String(r.spesifikasi) } : {},
         foto: [],
       })
     }
   }
   return out
 }
-const ASET_FIELD_COLS = ['spesifikasi', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
-  'luas_tanah', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan',
+const ASET_FIELD_COLS = ['spesifikasi_lainnya', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
+  'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak',
   'latitude', 'longitude', 'lokasi', 'keterangan'] as const
 // Kolom spesifikasi yang bertipe numeric di DB → di-cast toNum saat materialize.
-const ASET_NUM_COLS = new Set(['luas_tanah', 'latitude', 'longitude'])
+const ASET_NUM_COLS = new Set(['luas', 'latitude', 'longitude'])
 
 // ── Generator NIBAR ──────────────────────────────────────────────────────────
 // Skema (dikonfirmasi user): [12=Prov/Kab][01/02=Intra-Ekstra][5306=Kode Kab
@@ -707,7 +718,7 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
   onDelete: () => void; fotoUrl?: string
 }) {
   const f = item.fields || {}
-  const spesifikasi = f.spesifikasi || ringkasanFields(item.kode, f)
+  const spesifikasi = f.spesifikasi_lainnya || ringkasanFields(item.kode, f)
   return (
     <tr>
       <td className="table-td text-center"><input type="checkbox" checked={checked} onChange={onToggle} /></td>
@@ -906,7 +917,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
           <tbody className="divide-y divide-gray-50">
             {j.lines.map(l => {
               const f = l.fields || {}
-              const spesifikasi = f.spesifikasi || ringkasanFields(l.kode, f)
+              const spesifikasi = f.spesifikasi_lainnya || ringkasanFields(l.kode, f)
               const fotoUrl = l.foto_paths[0] ? fotoUrls[l.foto_paths[0]] : undefined
               return (
                 <tr key={l.aset_id}>

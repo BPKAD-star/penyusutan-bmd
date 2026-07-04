@@ -55,13 +55,13 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
     case 'koreksi_spesifikasi': {
       const patch: Record<string, unknown> = {}
       for (const k of [
-        'nama_barang', 'spesifikasi', 'merek_tipe', 'satuan',
-        'no_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan', 'tgl_sertifikat',
+        'nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'satuan',
+        'nomor_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak', 'tanggal_dokumen_kepemilikan',
         'titik_koordinat', 'lokasi', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
       ] as const) {
         if (typeof p[k] === 'string' && p[k]) patch[k] = p[k]
       }
-      if (typeof p.luas_tanah === 'number' && p.luas_tanah > 0) patch.luas_tanah = p.luas_tanah
+      if (typeof p.luas === 'number' && p.luas > 0) patch.luas = p.luas
       if (Array.isArray(p.foto_paths)) patch.foto_paths = p.foto_paths
       return Object.keys(patch).length ? patch : null
     }
