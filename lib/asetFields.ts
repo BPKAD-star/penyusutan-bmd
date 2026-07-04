@@ -46,9 +46,23 @@ export function fieldsForKode(kode: string): FieldKey[] {
   return GOLONGAN_FIELDS[kodeLevel3(kode)] || DEFAULT_FIELDS
 }
 
+// Union field-key dari beberapa kode sekaligus (dipakai popup bulk-edit ketika
+// barang yang dicentang beda golongan) — urut sesuai kemunculan pertama.
+export function unionFieldsForKodes(kodes: string[]): FieldKey[] {
+  const out: FieldKey[] = []
+  const seen = new Set<FieldKey>()
+  for (const kode of kodes) {
+    for (const k of fieldsForKode(kode)) {
+      if (!seen.has(k)) { seen.add(k); out.push(k) }
+    }
+  }
+  return out
+}
+
 // Ringkasan satu-baris (kompak, biar list tidak panjang) — ambil field "utama"
 // pertama yang terisi, prioritas spesifikasi > field lain.
-export function ringkasanFields(kode: string, values: Record<string, string>): string {
+export function ringkasanFields(kode: string, values: Record<string, string> | undefined | null): string {
+  if (!values) return ''
   const keys = fieldsForKode(kode)
   const prioritas: FieldKey[] = ['spesifikasi', 'no_sertifikat', 'merek_tipe', 'lokasi', 'keterangan']
   for (const k of prioritas) {
