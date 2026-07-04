@@ -114,11 +114,21 @@ function digitsPad(s: string, len: number): string {
   return clean.length >= len ? clean.slice(0, len) : clean.padEnd(len, '0')
 }
 
+// Segmen lokasi NIBAR (12 digit) dari skpd.kode_skpd. Format kode_skpd =
+// s1.s2.s3.s4.s5 (2.2.2.4.4 = 14 digit). NIBAR pakai s1.s2.s4.s5 (BUANG segmen
+// ke-3) = xx.xx.xxxx.xxxx = 12 digit — mempertahankan digit kuasa & lokasi
+// sehingga bisa membedakan sampai level lokasi terdalam.
+function kodeLokasiNibar(kodeSkpd: string): string {
+  const segs = (kodeSkpd || '').split('.')
+  const picked = segs.length >= 5 ? [segs[0], segs[1], segs[3], segs[4]] : segs
+  return digitsPad(picked.join(''), 12)
+}
+
 async function generateNibars(
   supabase: ReturnType<typeof createClient>,
-  items: { key: string; kode: string }[], kodeLokasiRaw: string, tahun: string, intraEkstra: string
+  items: { key: string; kode: string }[], kodeSkpdRaw: string, tahun: string, intraEkstra: string
 ): Promise<Map<string, string>> {
-  const kodeLokasi = digitsPad(kodeLokasiRaw, 12)
+  const kodeLokasi = kodeLokasiNibar(kodeSkpdRaw)
   const intraKode = INTRA_EKSTRA_KODE[intraEkstra] || '01'
   const out = new Map<string, string>()
   const byKodeBarang = new Map<string, { key: string; kode: string }[]>()
