@@ -25,6 +25,7 @@ import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bm
 import { fieldsForKode, ringkasanFields, FIELD_LABEL, FIELD_TYPE, type FieldKey } from '@/lib/asetFields'
 import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
+import SkpdCombobox from '@/components/SkpdCombobox'
 
 type SumberPengadaan = 'kwitansi' | 'bukti_pembelian' | 'surat_pesanan' | 'spk'
 const SUMBER_OPT: { value: SumberPengadaan; label: string }[] = [
@@ -68,6 +69,32 @@ const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
 const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toNum(i.harga), 0)
+
+// Normalisasi draft_items lama (dari versi sebelum draft di-split per-unit sejak
+// ditambahkan — masih pakai {qty, spesifikasi string}). Item lama diekspansi
+// sesuai qty-nya jadi N unit terpisah (bukan cuma dihindari crash-nya), supaya
+// data lama yg sempat dientry tidak hilang diam-diam.
+function normalizeDraftItems(raw: unknown): DraftItem[] {
+  if (!Array.isArray(raw)) return []
+  const out: DraftItem[] = []
+  for (const r of raw as Record<string, unknown>[]) {
+    if (r && typeof r === 'object' && r.fields && typeof r.fields === 'object' && Array.isArray(r.foto)) {
+      out.push(r as unknown as DraftItem) // sudah bentuk baru
+      continue
+    }
+    const qty = Math.max(1, toInt(String(r?.qty ?? '1')) || 1)
+    for (let i = 0; i < qty; i++) {
+      out.push({
+        key: newKey(),
+        golongan: String(r?.golongan ?? ''), kode: String(r?.kode ?? ''), nama: String(r?.nama ?? ''),
+        satuan: String(r?.satuan ?? ''), harga: String(r?.harga ?? '0'),
+        fields: r?.spesifikasi ? { spesifikasi: String(r.spesifikasi) } : {},
+        foto: [],
+      })
+    }
+  }
+  return out
+}
 const ASET_FIELD_COLS = ['spesifikasi', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
   'luas_tanah', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan',
   'titik_koordinat', 'lokasi', 'keterangan'] as const
@@ -75,7 +102,7 @@ const ASET_FIELD_COLS = ['spesifikasi', 'merek_tipe', 'no_polisi', 'no_bpkb', 'n
 export default function Pengadaan() {
   const supabase = createClient()
 
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  const [skpdPathMap, setSkpdPathMap] = useState<Record<number, string>>({})
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [skpd, setSkpd] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
@@ -94,8 +121,26 @@ export default function Pengadaan() {
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
-    supabase.from('skpd').select('id,nama').eq('level', 1).order('nama')
-      .then(({ data }) => setSkpdList(data || []))
+    (async () => {
+      type SkpdRow = { id: number; nama: string; level: number; parent_id: number | null }
+      const rows: SkpdRow[] = []
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('skpd').select('id,nama,level,parent_id').range(from, from + 999)
+        if (!data || data.length === 0) break
+        rows.push(...(data as SkpdRow[]))
+        if (data.length < 1000) break
+      }
+      const byId = new Map(rows.map(s => [s.id, s]))
+      const paths: Record<number, string> = {}
+      for (const s of rows) {
+        const parts: string[] = []
+        let cur: SkpdRow | undefined = s
+        const seen = new Set<number>()
+        while (cur && !seen.has(cur.id)) { seen.add(cur.id); parts.unshift(cur.nama); cur = cur.parent_id != null ? byId.get(cur.parent_id) : undefined }
+        paths[s.id] = parts.join(' › ')
+      }
+      setSkpdPathMap(paths)
+    })()
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -127,7 +172,10 @@ export default function Pengadaan() {
     const hs = (headers || []) as Header[]
 
     const jmap = new Map<string, Jurnal>()
-    for (const h of hs) jmap.set(h.id, { ...h, payload: h.payload || {}, lines: [], total: 0 })
+    for (const h of hs) {
+      const payload = h.payload || {}
+      jmap.set(h.id, { ...h, payload: { ...payload, draft_items: normalizeDraftItems(payload.draft_items) }, lines: [], total: 0 })
+    }
 
     const disetujuiIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
     if (disetujuiIds.length > 0) {
@@ -167,7 +215,7 @@ export default function Pengadaan() {
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setEditing(null) }, [skpd, loadJurnals])
 
-  const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
+  const skpdNama = skpd ? skpdPathMap[Number(skpd)] : undefined
 
   // Total semua pengadaan utk SKPD ini (disetujui + estimasi draft; ditolak tidak dihitung).
   const totalSemua = jurnals.reduce((s, j) => {
@@ -317,10 +365,8 @@ export default function Pengadaan() {
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
-          <select className="select-filter flex-1" value={skpd} onChange={e => { setSkpd(e.target.value); setMsg('') }}>
-            <option value="">— pilih SKPD —</option>
-            {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-          </select>
+          <SkpdCombobox value={skpd} onChange={id => { setSkpd(id); setMsg('') }}
+            placeholder="Ketik nama SKPD / Sub OPD / Lokasi..." />
         </div>
       </div>
 
