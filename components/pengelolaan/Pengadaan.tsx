@@ -100,7 +100,9 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
 }
 const ASET_FIELD_COLS = ['spesifikasi', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
   'luas_tanah', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan',
-  'titik_koordinat', 'lokasi', 'keterangan'] as const
+  'latitude', 'longitude', 'lokasi', 'keterangan'] as const
+// Kolom spesifikasi yang bertipe numeric di DB → di-cast toNum saat materialize.
+const ASET_NUM_COLS = new Set(['luas_tanah', 'latitude', 'longitude'])
 
 // ── Generator NIBAR ──────────────────────────────────────────────────────────
 // Skema (dikonfirmasi user): [12=Prov/Kab][01/02=Intra-Ekstra][5306=Kode Kab
@@ -370,7 +372,7 @@ export default function Pengadaan() {
       for (const k of ASET_FIELD_COLS) {
         const v = it.fields[k]
         if (!v) continue
-        row[k] = k === 'luas_tanah' ? toNum(v) : v
+        row[k] = ASET_NUM_COLS.has(k) ? toNum(v) : v
       }
       return row
     })

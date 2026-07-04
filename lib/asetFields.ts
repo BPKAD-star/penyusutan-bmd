@@ -8,21 +8,25 @@ import { kodeLevel3 } from '@/lib/bmd'
 export type FieldKey =
   | 'spesifikasi' | 'merek_tipe' | 'no_polisi' | 'no_bpkb' | 'no_rangka' | 'no_mesin'
   | 'luas_tanah' | 'no_sertifikat' | 'tgl_sertifikat' | 'atas_nama_sertifikat' | 'hak_kepemilikan'
-  | 'titik_koordinat' | 'lokasi' | 'keterangan'
+  | 'latitude' | 'longitude' | 'titik_koordinat' | 'lokasi' | 'keterangan'
 
+// CATATAN: sebagian nama kolom DB sengaja tetap (mis. no_sertifikat, luas_tanah)
+// walau label tampil sudah diganti — menghindari rename kolom di data live.
 export const FIELD_LABEL: Record<FieldKey, string> = {
-  spesifikasi: 'Spesifikasi',
+  spesifikasi: 'Spesifikasi Lainnya',
   merek_tipe: 'Merek / Tipe',
   no_polisi: 'Nomor Polisi',
   no_bpkb: 'Nomor BPKB',
   no_rangka: 'Nomor Rangka',
   no_mesin: 'Nomor Mesin',
-  luas_tanah: 'Luas Tanah (m²)',
-  no_sertifikat: 'Nomor Sertifikat',
-  tgl_sertifikat: 'Tanggal Sertifikat',
-  atas_nama_sertifikat: 'Nama Pemegang Hak',
-  hak_kepemilikan: 'Jenis Hak (mis. Hak Milik / Hak Pakai)',
-  titik_koordinat: 'Titik Koordinat',
+  luas_tanah: 'Luas',
+  no_sertifikat: 'Nomor Dokumen Kepemilikan',
+  tgl_sertifikat: 'Tanggal Dokumen Kepemilikan',
+  atas_nama_sertifikat: 'Nama Dokumen Kepemilikan',
+  hak_kepemilikan: 'Jenis Hak',
+  latitude: 'Latitude',
+  longitude: 'Longitude',
+  titik_koordinat: 'Titik Koordinat', // legacy — tak dipakai lagi (dipecah lat/long)
   lokasi: 'Lokasi / Alamat',
   keterangan: 'Keterangan',
 }
@@ -30,12 +34,16 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
 export const FIELD_TYPE: Partial<Record<FieldKey, 'date' | 'number' | 'textarea'>> = {
   tgl_sertifikat: 'date',
   luas_tanah: 'number',
+  latitude: 'number',
+  longitude: 'number',
   keterangan: 'textarea',
 }
 
 // Golongan level-3 (dari kodeLevel3) → field yang relevan, urut tampil.
+// (`lokasi` sementara masih dipakai; akan diganti pemilih Wilayah berjenjang +
+//  alamat_detail setelah tabel `wilayah` di-seed.)
 export const GOLONGAN_FIELDS: Record<string, FieldKey[]> = {
-  '1.3.1': ['titik_koordinat', 'luas_tanah', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan', 'lokasi', 'keterangan'],
+  '1.3.1': ['latitude', 'longitude', 'luas_tanah', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama_sertifikat', 'hak_kepemilikan', 'lokasi', 'keterangan'],
   '1.3.2': ['spesifikasi', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin', 'keterangan'],
 }
 // Golongan lain (Gedung, Jalan/Jaringan, ATL, KDP, ATB, Aset Lain-Lain) — belum

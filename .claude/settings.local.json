@@ -16,7 +16,22 @@
       "Bash(grep -n \"aset\" \"/mnt/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad/atb_xlsx_extract\" 2>/dev/null; echo done)",
       "mcp__307ed301-1921-4647-b2e7-26ca407e1223__list_organizations",
       "Bash(ls \"/mnt/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad\" 2>/dev/null; echo \"---\"; find / -maxdepth 1 2>/dev/null | head -1)",
-      "Bash(grep -iE \"recharts|chart\\\\.js|victory|nivo|d3\" \"/mnt/c/Users/ASUS/OneDrive/Documents\" 2>/dev/null; echo done)"
+      "Bash(grep -iE \"recharts|chart\\\\.js|victory|nivo|d3\" \"/mnt/c/Users/ASUS/OneDrive/Documents\" 2>/dev/null; echo done)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -sI https://raw.githubusercontent.com/cahyadsn/wilayah/master/wilayah.sql --max-time 10)",
+      "Bash(curl -s \"https://api.github.com/repos/cahyadsn/wilayah/git/trees/master?recursive=1\" --max-time 15)",
+      "Bash(curl -s \"https://api.github.com/repos/cahyadsn/wilayah/git/trees/master?recursive=1\" --max-time 15 -o /tmp/tree.json)",
+      "Read(//tmp/**)",
+      "Bash(grep -oE '\"path\": ?\"[^\"]*\\\\.\\(sql|csv\\)\"' /tmp/tree.json)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/cahyadsn/wilayah/master/db/wilayah.sql\" --max-time 30 -o /tmp/wilayah.sql)",
+      "Bash(awk --version)",
+      "Bash(awk '-F\\\\t' ' *)",
+      "Bash(awk -F'\\\\t' 'NR>1{c[$3]++} END{for\\(k in c\\) print \"level\",k,\":\",c[k]}' /tmp/wilayah_kediri.tsv)",
+      "Bash(awk -F'\\\\t' 'NR>1{ *)",
+      "Bash(ls \"/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad/\" 2>&1 || ls /tmp)",
+      "Bash(SCRATCH=\"/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad\" *)",
+      "Bash(grep -c \"'\\);$\" supabase/migrations/20260704_15_seed_wilayah_kediri.sql)"
     ]
   }
 }
