@@ -7,8 +7,10 @@
 //   - Induk yang di-kapitalisasi tampil dengan nilai/beban/akumulasi/masa manfaat BARU.
 //   - Barang anak yang sudah diserap (atau aset dihapus) DISEMBUNYIKAN untuk periode
 //     saat/kaset­elah penyerapan; kalau lihat periode SEBELUM penyerapan, tetap tampil.
-// Register (daftar aset per golongan) tetap dari saldo_awal_2026; angka & visibilitas
-// disesuaikan engine + histori transaksi. Angka polos tanpa "Rp" (enak di-Excel).
+// Register (daftar aset per golongan) dari tabel aset (hidup) — bukan cuma baseline
+// beku saldo_awal_2026, supaya barang yang diimport/ditambah SETELAH baseline (mis.
+// perolehan baru, atau backfill saldo_awal susulan) ikut kebaca di sini. Angka &
+// visibilitas tetap disesuaikan engine + histori transaksi. Angka polos tanpa "Rp".
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
@@ -17,9 +19,9 @@ import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 
 type Base = {
-  nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
+  id: string; nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
   nilai_perolehan: number; intra_ekstra: string | null
-  tgl_perolehan: string | null; masa_manfaat_smt: number | null
+  tgl_perolehan: string | null
 }
 // Hasil engine (penyusutan_semester) — angka period-aware.
 type Peny = { nilai_perolehan: number; beban: number; akumulasi: number; nilai_buku_akhir: number; sisa_semester: number; masa_manfaat_tahun: number | null }
@@ -65,13 +67,15 @@ export default function PenyusutanPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Sumber register = tabel aset (hidup, includeDeleted implisit — visibilitas
+  // period-aware diserahkan ke fetchHiddenIds di bawah, sama seperti Daftar Barang).
   function baseQuery(f: Applied) {
-    let q = supabase.from('saldo_awal_2026')
-      .select('nibar,kode_barang,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,masa_manfaat_smt')
+    let q = supabase.from('aset')
+      .select('id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan')
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
-    if (f.golongan) q = q.like('kode_barang', `${f.golongan}.%`)
+    if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
-    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode_barang.ilike.${f.search}%`)
+    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
     return q.order('nilai_perolehan', { ascending: false })
   }
 
@@ -80,20 +84,10 @@ export default function PenyusutanPage() {
     for (let from = 0; ; from += 1000) {
       const { data } = await baseQuery(f).range(from, from + 999)
       if (!data || data.length === 0) break
-      base.push(...(data as Base[]))
+      base.push(...(data as unknown as Base[]))
       if (data.length < 1000) break
     }
     return base
-  }
-
-  // nibar → { id (aset), status }
-  async function fetchAsetMap(nibars: string[]) {
-    const map = new Map<string, { id: string; status: string }>()
-    for (let i = 0; i < nibars.length; i += 300) {
-      const { data } = await supabase.from('aset').select('id,nibar,status').in('nibar', nibars.slice(i, i + 300))
-      for (const a of (data || []) as { id: string; nibar: string | null; status: string }[]) if (a.nibar) map.set(a.nibar, { id: a.id, status: a.status })
-    }
-    return map
   }
 
   // Hasil engine per aset_id untuk periode terpilih.
@@ -156,12 +150,11 @@ export default function PenyusutanPage() {
   // Susun baris tampil: register − yang tersembunyi, digabung angka engine.
   async function assembleRows(f: Applied): Promise<(Base & { p?: Peny })[]> {
     const base = await fetchAllBase(f)
-    const asetMap = await fetchAsetMap(base.map(b => b.nibar))
-    const ids = base.map(b => asetMap.get(b.nibar)?.id).filter((x): x is string => !!x)
+    const ids = base.map(b => b.id)
     const [pmap, hidden] = await Promise.all([fetchPeny(ids, f.periode), fetchHiddenIds(ids, f.periode)])
     return base
-      .filter(b => { const id = asetMap.get(b.nibar)?.id; return !id || !hidden.has(id) })
-      .map(b => ({ ...b, p: pmap.get(asetMap.get(b.nibar)?.id ?? '') }))
+      .filter(b => !hidden.has(b.id))
+      .map(b => ({ ...b, p: pmap.get(b.id) }))
   }
 
   async function load(f: Applied) {
@@ -207,7 +200,7 @@ export default function PenyusutanPage() {
         'Beban': susut && p ? p.beban : '',
         'Akumulasi': susut && p ? p.akumulasi : '',
         'Nilai Buku Akhir': susut && p ? p.nilai_buku_akhir : b.nilai_perolehan,
-        'Masa Manfaat (Smt)': susut ? (p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : (b.masa_manfaat_smt ?? '')) : '',
+        'Masa Manfaat (Smt)': susut && p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : '',
         'Sisa (Smt)': susut && p ? p.sisa_semester : '',
         'Periode': applied.periode,
       }
@@ -337,9 +330,9 @@ export default function PenyusutanPage() {
                   const susut = perlakuanKode(r.kode_barang) !== 'tidak'
                   const p = r.p
                   const kap = kapMap[r.nibar]
-                  const masaSmt = p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : r.masa_manfaat_smt
+                  const masaSmt = p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : null
                   return (
-                    <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                    <tr key={r.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                       <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
                       <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
                       <td className="table-td">

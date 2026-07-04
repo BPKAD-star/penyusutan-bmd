@@ -8,7 +8,12 @@
       "Bash(wsl -d ubuntu-26.04 bash -lc \"cd /home/asus/penyusutan-bmd && ls node_modules/.bin/ 2>/dev/null | head; echo '---'; which node npm npx 2>/dev/null; node -v 2>/dev/null\")",
       "mcp__307ed301-1921-4647-b2e7-26ca407e1223__list_projects",
       "mcp__307ed301-1921-4647-b2e7-26ca407e1223__execute_sql",
-      "mcp__307ed301-1921-4647-b2e7-26ca407e1223__list_tables"
+      "mcp__307ed301-1921-4647-b2e7-26ca407e1223__list_tables",
+      "Bash(extract-text \"/c/Users/ASUS/OneDrive/Documents/BMD  2025/Import ATB.xlsx\")",
+      "Bash(command -v python3)",
+      "Bash(command -v python)",
+      "Bash(python3 -c ' *)",
+      "Bash(grep -n \"aset\" \"/mnt/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad/atb_xlsx_extract\" 2>/dev/null; echo done)"
     ]
   }
 }
