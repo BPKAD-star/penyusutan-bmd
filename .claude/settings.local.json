@@ -7,7 +7,8 @@
       "Bash(wsl -d ubuntu-26.04 bash -lc \"cd /home/asus/penyusutan-bmd && ./node_modules/.bin/tsc --noEmit 2>&1 | head -40\")",
       "Bash(wsl -d ubuntu-26.04 bash -lc \"cd /home/asus/penyusutan-bmd && ls node_modules/.bin/ 2>/dev/null | head; echo '---'; which node npm npx 2>/dev/null; node -v 2>/dev/null\")",
       "mcp__307ed301-1921-4647-b2e7-26ca407e1223__list_projects",
-      "mcp__307ed301-1921-4647-b2e7-26ca407e1223__execute_sql"
+      "mcp__307ed301-1921-4647-b2e7-26ca407e1223__execute_sql",
+      "mcp__307ed301-1921-4647-b2e7-26ca407e1223__list_tables"
     ]
   }
 }

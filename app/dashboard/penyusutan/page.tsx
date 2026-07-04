@@ -110,21 +110,22 @@ export default function PenyusutanPage() {
 
   // aset_id yang tersembunyi PER periode (serap/hapus dgn periode <= viewed, dikurangi batal).
   async function fetchHiddenIds(ids: string[], periode: string) {
-    const evByAset = new Map<string, { periode: string; jenis: string }[]>()
+    const evByAset = new Map<string, { id: number; periode: string; jenis: string }[]>()
     for (let i = 0; i < ids.length; i += 200) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select('aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
-      for (const e of (data || []) as { aset_id: string; jenis: string; periode: string }[]) {
-        const arr = evByAset.get(e.aset_id) || []; arr.push({ periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
+        .select('id,aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
+      for (const e of (data || []) as { id: number; aset_id: string; jenis: string; periode: string }[]) {
+        const arr = evByAset.get(e.aset_id) || []; arr.push({ id: e.id, periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
       }
     }
     const hidden = new Set<string>()
     for (const [id, evs] of evByAset) {
       let h = false
-      // Urut periode; dalam periode yang SAMA, proses SEMBUNYI dulu baru MUNCUL,
-      // supaya batal (serap/hapus) di periode yang sama membuat aset muncul lagi.
-      const rank = (j: string) => (SEMBUNYI.includes(j) ? 0 : 1)
-      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || rank(a.jenis) - rank(b.jenis))) {
+      // Urut kronologis SUNGGUHAN (periode lalu id ledger — append-only jadi id = urutan
+      // insert asli), BUKAN dikelompokkan SEMBUNYI-dulu-baru-MUNCUL. Pengelompokan lama
+      // salah kalau dalam satu periode ada siklus hapus→batal→hapus lagi (mis. dari testing
+      // di hari yang sama): hasil akhir harus ikut aksi TERAKHIR, bukan selalu "batal menang".
+      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || a.id - b.id)) {
         if (SEMBUNYI.includes(e.jenis)) h = true
         else if (MUNCUL.includes(e.jenis)) h = false
       }
