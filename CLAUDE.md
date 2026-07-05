@@ -9,7 +9,17 @@ apa pun yang menyentuh ledger atau engine.
 
 - **Ledger append-only.** `transaksi_bmd` tidak pernah di-UPDATE/DELETE (dijaga
   trigger `fn_transaksi_bmd_immutable`). Koreksi = transaksi baru yang membalik
-  (mis. `batal_penghapusan`, `batal_kapitalisasi`).
+  (mis. `batal_penghapusan`, `batal_kapitalisasi`). UPDATE terlarang MUTLAK tanpa
+  pengecualian. DELETE punya **satu escape hatch sempit** (migrasi
+  `20260704_17_hapus_kontrak_ledger_reset.sql`): boleh HANYA kalau jenis
+  `pengadaan`/`batal_pengadaan` DAN `jurnal_header` terkait (`header_id`)
+  berstatus `pending` DAN aset yg dirujuk sudah `status='dihapus'` — dipakai utk
+  "Hapus Kontrak Sepenuhnya" (kontrak Cara Perolehan yg pernah disetujui lalu
+  dibuka kunci/unapprove, dan mau dibuang total drpd disetujui ulang; No SK/BAST
+  jadi bisa dipakai lagi). `aset` TIDAK ikut dihapus (baris soft-deleted tetap
+  ada, jadi "yatim" tanpa jejak ledger — sama spt penghapusan biasa, data tak
+  pernah betul-betul lenyap). Berlaku jg utk Hibah/Hasil Inventarisasi/Perolehan
+  Lainnya kalau nanti pakai alur draft-approve serupa (lihat pola di bawah).
 - **Soft-delete.** Penghapusan barang = `aset.status='dihapus'` + transaksi, bukan
   DELETE. Tidak ada policy DELETE di `aset`.
 - **Masa manfaat disimpan dalam TAHUN** di DB; konversi ×2 (ke semester) HANYA di
@@ -77,6 +87,11 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
 - `jurnal_header.approval_status` ∈ {`pending`,`disetujui`,`ditolak`}. Default
   kolom = `disetujui` (supaya baris lama/kategori lain tak berubah perilaku) —
   kategori Cara Perolehan yang baru WAJIB insert eksplisit `approval_status:'pending'`.
+  `'ditolak'` = LEGACY SAJA (fitur Tolak sudah DIHAPUS dari UI Pengadaan — alurnya
+  disederhanakan jadi: user input → admin verifikasi → (salah) edit draft →
+  Setujui; TIDAK ADA cabang tolak). Baris lama berstatus `ditolak` disaring dari
+  tampilan & dari cek keunikan No SK/BAST (`.neq('approval_status','ditolak')`),
+  tapi tak pernah dibuat baru.
 - **Approve** (admin only, `fn_is_admin()`, ditegakkan trigger
   `fn_jurnal_header_approval_guard`): materialize `draft_items` → insert `aset`
   (kuantitas>1 di-split jadi N baris jumlah=1) + `transaksi_bmd` sekaligus, pakai
@@ -84,30 +99,63 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   bukan tanggal kontrak, bukan tanggal approve. Baru sesudah ini barang muncul di
   Daftar Barang/Penyusutan/Laporan/Engine — otomatis, tanpa perlu filter tambahan
   di halaman-halaman itu, karena sebelumnya memang belum pernah ada di sana.
-- **Reject**: set `approval_status='ditolak'`, tidak pernah menyentuh ledger.
+  Klasifikasi `intra_ekstra` per barang DIHITUNG OTOMATIS saat approve: nilai
+  item vs `kodefikasi_bmd.batas_kapitalisasi` (`lib/bmd.ts`
+  `klasifikasiKomptabel()` — nilai >= batas → intra, < batas → ekstra; tanpa
+  batas terdaftar → default intra). Berlaku jg di `PerolehanImport.tsx`
+  (Hibah/Hasil Inventarisasi/Perolehan Lainnya + Import Excel Pengadaan).
+- **Kontrak DISETUJUI terkunci total** (read-only, tak ada edit/batal per-baris
+  spt sebelumnya). Untuk mengubah: admin **"Buka Kunci"** (unapprove) →
+  semua barang di `batal_pengadaan` (soft-delete retroaktif ke tgl asli,
+  headerId disertakan di ledger reversal-nya supaya bisa dilacak balik) →
+  kontrak balik ke draft (`draft_items` direkonstruksi dari barang yg dibatalkan)
+  → edit → **Setujui ulang** (NIBAR digenerate ULANG, yg lama tetap tersimpan di
+  aset yg sudah dihapus itu, utk audit).
+- **Hapus kontrak**: draft murni (belum pernah disetujui) → hapus biasa, aman.
+  Kontrak yg PERNAH disetujui-lalu-dibuka-kunci (punya jejak ledger) → "Hapus
+  Kontrak Sepenuhnya" pakai escape hatch DELETE di atas (hapus baris ledger
+  dulu, baru header) — No SK/BAST jadi bisa dipakai ulang. UI: satu tombol 🗑
+  yang sama, pesan konfirmasi menyesuaikan (`h.hasLedger`).
 - **Koreksi PASCA-approve** (mis. kelebihan kuantitas baru ketahuan setelah
-  disetujui): pakai jenis ledger `batal_pengadaan` (soft-delete `aset.status=
-  'dihapus'`, `berhenti=true` di engine, masuk `SEMBUNYI`). Beda dari
-  `penghapusan_*` (itu utk disposal sungguhan) — ini murni koreksi input, DICATAT
-  MUNDUR ke tanggal pengadaan aslinya (bukan hari ini) supaya barang dianggap
-  tidak pernah ada sejak awal, bukan cuma berhenti dari sekarang.
+  disetujui, TANPA lewat unapprove): pakai jenis ledger `batal_pengadaan`
+  (soft-delete `aset.status='dihapus'`, `berhenti=true` di engine, masuk
+  `SEMBUNYI`). Beda dari `penghapusan_*` (itu utk disposal sungguhan) — ini
+  murni koreksi input, DICATAT MUNDUR ke tanggal pengadaan aslinya (bukan hari
+  ini) supaya barang dianggap tidak pernah ada sejak awal, bukan cuma berhenti
+  dari sekarang.
 - Draft item sudah **per-unit** sejak ditambahkan (kuantitas dipecah saat itu
   juga, bukan saat approve) — supaya tiap unit bisa beda spesifikasi/no. seri/
-  foto sebelum di-approve (mis. 5 kendaraan beda nomor rangka/mesin).
+  foto sebelum di-approve (mis. 5 kendaraan beda nomor rangka/mesin). Field
+  spesifikasi (termasuk `nama_barang`, "Spesifikasi Nama Barang") ikut sistem
+  `fields` generik yg sama (lihat bagian wide-table di bawah) — semua diedit
+  lewat checklist+popup, TIDAK ada field yang cuma bisa diisi sekali di form
+  tambah barang (kecuali `uraian_barang`, yg baku dari kodefikasi & memang
+  sengaja read-only). Centang barang **beda golongan** sekaligus → tombol Edit
+  Spesifikasi disabled (`allSameGolongan()`, lib/asetFields.ts) — kolomnya beda,
+  tak boleh digabung/union.
 
 ## Spesifikasi barang: wide table + field per golongan (lib/asetFields.ts)
 
-Field spesifikasi (mis. no. rangka/mesin utk Peralatan&Mesin, no. sertifikat/
-titik koordinat utk Tanah) disimpan sbg kolom **nullable lebar di `aset`**
-(satu tabel utk semua golongan — migrasi `20260704_13_kolom_spesifikasi_dan_foto.sql`),
-BUKAN tabel terpisah per jenis aset. `lib/asetFields.ts` (`GOLONGAN_FIELDS`)
-menentukan field mana yang relevan/ditampilkan per golongan (`kodeLevel3(kode)`);
-laporan tinggal `SELECT` kolom yang relevan, kolom lain diabaikan. Golongan yang
-belum py kebutuhan spesifik pakai `DEFAULT_FIELDS` (fallback generik).
-Form edit spesifikasi selalu lewat **popup** (`EditSpesifikasiModal`) — field-nya
-bisa banyak & beda per golongan, jangan taruh inline di baris tabel (bikin
-panjang/scroll). Baris tabel cukup ringkasan satu baris (`ringkasanFields()`)
-+ tombol buka popup.
+Field spesifikasi (mis. no. rangka/mesin utk Peralatan&Mesin, dokumen
+kepemilikan/lokasi utk Tanah) disimpan sbg kolom **nullable lebar di `aset`**
+(satu tabel utk semua golongan — migrasi `20260704_13`, `_14`, `_16`), BUKAN
+tabel terpisah per jenis aset. `FieldKey` (lib/asetFields.ts) = nama kolom DB
+PERSIS 1:1 (termasuk `nama_barang` — bukan lagi top-level field terpisah,
+lihat pola APPROVAL di atas) — jaga tetap sinkron kalau ada rename kolom lagi.
+`GOLONGAN_FIELDS` cuma py **3 template** dipetakan ke 8 golongan: TANAH-like
+(Tanah/Gedung&Bangunan/Jalan-Jaringan-Irigasi — py dokumen kepemilikan +
+`jenis_hak` dropdown + lokasi), PERALATAN_MESIN (kendaraan, no. rangka/mesin/
+polisi/BPKB), ASET_LAINNYA-like (ATL/KDP/ATB/Aset Lain-Lain — versi ringkas
+tanpa no. kendaraan). Field lokasi fisik = `wilayah_kode` (FK ke tabel
+`wilayah`, dipilih via `WilayahPicker` berjenjang Provinsi→Kab→Kec→Desa,
+data di-seed migrasi `_15` khusus Jatim+Kab.Kediri) + `alamat_detail` (jalan)
++ `latitude`/`longitude` (dipilih via `MapPicker`, Leaflet+OpenStreetMap,
+WAJIB di-`next/dynamic({ssr:false})` krn butuh `window`). Kolom lama
+`titik_koordinat`/`lokasi` DEPRECATED (tak dipakai di form baru, data lama
+dibiarkan). Form edit spesifikasi selalu lewat **popup**
+(`EditSpesifikasiModal`) — field-nya bisa banyak & beda per golongan, jangan
+taruh inline di baris tabel (bikin panjang/scroll). Baris tabel cukup
+ringkasan satu baris + tombol buka popup.
 
 ## Foto barang (Supabase Storage)
 

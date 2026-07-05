@@ -11,6 +11,7 @@ export type TransaksiInput = {
   nilai?: number
   skpdAsal?: number | null
   skpdTujuan?: number | null
+  headerId?: string | null  // jurnal_header terkait (mis. batal_pengadaan → header kontrak aslinya, utk lacak balik saat "hapus kontrak sepenuhnya")
   payload?: Record<string, unknown>
   keterangan?: string
 }
@@ -27,6 +28,7 @@ export async function catatTransaksi(supabase: SupabaseClient, t: TransaksiInput
     nilai: t.nilai ?? 0,
     skpd_asal: t.skpdAsal ?? null,
     skpd_tujuan: t.skpdTujuan ?? null,
+    header_id: t.headerId ?? null,
     payload: t.payload ?? {},
     keterangan: t.keterangan ?? null,
   })

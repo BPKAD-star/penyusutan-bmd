@@ -381,21 +381,21 @@ export default function Pengadaan() {
     if (ok) loadJurnals(skpd)
   }
   async function hapusKontrak(h: Jurnal) {
-    if (!confirm(`Hapus kontrak ${h.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`)) return
-    const { error } = await supabase.from('jurnal_header').delete().eq('id', h.id)
-    if (error) {
-      // FK ke transaksi_bmd.header_id: kontrak ini pernah disetujui lalu dibuka
-      // kunci (unapprove) — ledger append-only tetap menyimpan baris transaksi
-      // asli yg nempel ke header ini, jadi header tak boleh dihapus permanen
-      // (akan membuat baris ledger itu kehilangan konteks No SK/tanggal).
-      if (error.message.includes('transaksi_bmd_header_id_fkey')) {
-        setMsg(`Kontrak ${h.no_sk} tidak bisa dihapus — kontrak ini pernah disetujui (punya jejak ledger permanen), lalu dibuka kunci. Ledger append-only tak boleh kehilangan konteks header-nya. Kalau memang tidak diperlukan lagi, gunakan "Tolak" (aman, tak menyentuh ledger) daripada hapus.`)
-      } else {
-        setMsg(`Error: gagal menghapus kontrak: ${error.message}`)
-      }
-      return
+    // Kontrak dgn jejak ledger (pernah disetujui lalu dibuka kunci): DB
+    // mengizinkan hapus baris ledgernya via escape hatch sempit (migrasi 17—
+    // hanya kalau kontrak pending & semua barangnya sudah soft-deleted).
+    // aset tetap ada (jadi "yatim" tanpa jejak ledger, spt penghapusan biasa).
+    const warn = h.hasLedger
+      ? `Hapus kontrak ${h.no_sk} SEPENUHNYA? Kontrak ini pernah disetujui — riwayat ledgernya (barang yg sudah dibatalkan) ikut terhapus permanen. No. Kontrak/BAST bisa dipakai lagi setelah ini. Tidak bisa dibatalkan.`
+      : `Hapus kontrak ${h.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`
+    if (!confirm(warn)) return
+    if (h.hasLedger) {
+      const { error: ledgerErr } = await supabase.from('transaksi_bmd').delete().eq('header_id', h.id)
+      if (ledgerErr) { setMsg(`Kontrak ${h.no_sk} tidak bisa dihapus — masih ada barang aktif terkait (bukan cuma yg sudah dibatalkan). Error: ${ledgerErr.message}`); return }
     }
-    setMsg(`Kontrak ${h.no_sk} dihapus.`)
+    const { error } = await supabase.from('jurnal_header').delete().eq('id', h.id)
+    if (error) { setMsg(`Error: gagal menghapus kontrak: ${error.message}`); return }
+    setMsg(`Kontrak ${h.no_sk} dihapus${h.hasLedger ? ' beserta riwayat ledgernya' : ''}.`)
     loadJurnals(skpd)
   }
 
@@ -478,7 +478,7 @@ export default function Pengadaan() {
     setBusyId(j.id); setMsg('')
     for (const l of j.lines) {
       const { error } = await catatTransaksi(supabase, {
-        asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal,
+        asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal, headerId: j.id,
         keterangan: `Unapprove kontrak ${j.no_sk} — dikembalikan ke draft`,
       })
       if (error) { setMsg(`Error: ${error}`); setBusyId(null); return }
@@ -665,13 +665,9 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
             <div className="flex items-center gap-2 mt-2">
               <button title="Edit kontrak / BAST" onClick={onEditHeader}
                 className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
-              {h.hasLedger ? (
-                <span title="Kontrak ini pernah disetujui lalu dibuka kunci — punya jejak ledger permanen, tak bisa dihapus. Edit lalu setujui ulang."
-                  className="text-[11px] text-amber-600 whitespace-nowrap">🔓 dibuka kunci</span>
-              ) : (
-                <button title="Hapus draft kontrak ini" onClick={onHapusKontrak}
-                  className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
-              )}
+              <button title={h.hasLedger ? 'Hapus kontrak ini sepenuhnya (termasuk riwayat ledgernya)' : 'Hapus draft kontrak ini'}
+                onClick={onHapusKontrak}
+                className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
             </div>
           </div>
         </div>
