@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
-import { periodeDariTanggal } from '@/lib/bmd'
+import { periodeDariTanggal, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 
 type RowImport = {
   kode: string
@@ -159,6 +159,9 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
     if (valid.length === 0) return
     setImporting(true); setMsg('')
     let sukses = 0, gagal = ''
+    // Klasifikasi intra/ekstrakomptabel: nilai PER UNIT (nilai/jumlah) vs
+    // batas_kapitalisasi (kodefikasi_bmd) — >= batas -> intra, < batas -> ekstra.
+    const batasMap = await fetchBatasKapitalisasi(supabase, valid.map(r => r.kode))
     for (let i = 0; i < valid.length; i += 100) {
       const chunk = valid.slice(i, i + 100)
       const { data: inserted, error } = await supabase.from('aset').insert(chunk.map(r => ({
@@ -167,6 +170,7 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
         jumlah: r.jumlah, satuan: r.satuan || null, harga_satuan: r.harga_satuan || null,
         nilai_perolehan: r.nilai, tgl_perolehan: r.tgl_perolehan,
         skpd_id: targetSkpd, cara_perolehan: jenis, keterangan: r.keterangan || null,
+        intra_ekstra: klasifikasiKomptabel(r.jumlah > 0 ? r.nilai / r.jumlah : r.nilai, batasMap.get(r.kode)),
       }))).select('id,nibar')
       if (error) { gagal = `Error saat insert aset: ${error.message}`; break }
       const idByNibar = new Map((inserted || []).map(a => [a.nibar, a.id]))

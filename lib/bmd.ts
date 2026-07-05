@@ -1,8 +1,32 @@
 // Helper domain BMD — kategori, periode, konstanta bersama.
 // Kategori TIDAK di-hardcode label-nya: label diambil dari kodefikasi_bmd;
 // di sini cuma aturan perlakuan per prefix kode level-3 (PLAN §8).
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type Perlakuan = 'penyusutan' | 'amortisasi' | 'tidak' | 'lain_lain'
+
+/** Ambil batas_kapitalisasi (kodefikasi_bmd) utk sekumpulan kode sekaligus — batch, hindari N+1. */
+export async function fetchBatasKapitalisasi(supabase: SupabaseClient, kodes: string[]): Promise<Map<string, number | null>> {
+  const map = new Map<string, number | null>()
+  const distinct = [...new Set(kodes)]
+  for (let i = 0; i < distinct.length; i += 300) {
+    const { data } = await supabase.from('kodefikasi_bmd').select('kode,batas_kapitalisasi').in('kode', distinct.slice(i, i + 300))
+    for (const r of (data || []) as { kode: string; batas_kapitalisasi: number | null }[]) map.set(r.kode, r.batas_kapitalisasi)
+  }
+  return map
+}
+
+/**
+ * Klasifikasi intra/ekstrakomptabel: nilai per item vs batas_kapitalisasi
+ * (kodefikasi_bmd, Permendagri 108). nilai >= batas → intra; nilai < batas →
+ * ekstra. Kode tanpa batas terdaftar (null/tak ketemu) → default 'intra'
+ * (aman, konsisten dgn mayoritas data existing yg belum diklasifikasi ulang).
+ * Berlaku HANYA utk entry BARU (Pengadaan/Hibah/dll) — data lama tak disentuh.
+ */
+export function klasifikasiKomptabel(nilai: number, batas: number | null | undefined): 'intra' | 'ekstra' {
+  if (batas == null) return 'intra'
+  return nilai >= batas ? 'intra' : 'ekstra'
+}
 
 /** Prefix level-3 dari kode lengkap, mis. '1.3.2.05.01.05.068' → '1.3.2' */
 export function kodeLevel3(kode: string): string {

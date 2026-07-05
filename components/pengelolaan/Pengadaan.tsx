@@ -22,7 +22,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
-import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
+import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { fieldsForKode, allSameGolongan, FIELD_LABEL, FIELD_TYPE, FIELD_OPTIONS, type FieldKey } from '@/lib/asetFields'
 import dynamic from 'next/dynamic'
 import WilayahPicker from '@/components/WilayahPicker'
@@ -135,11 +135,12 @@ const ASET_FIELD_COLS = ['nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'no
 const ASET_NUM_COLS = new Set(['luas', 'latitude', 'longitude'])
 
 // ── Generator NIBAR ──────────────────────────────────────────────────────────
-// Skema (dikonfirmasi user): [12=Prov/Kab][01/02=Intra-Ekstra][5306=Kode Kab
-// Kediri][12 digit=kode lokasi SKPD, dari skpd.kode tanpa titik][4 digit=tahun
-// perolehan][12 digit=kode barang tanpa titik][7 digit=nomor urut].
-// "12" & "5306" konstan (app ini khusus Kab. Kediri). Nomor urut lanjut dari
-// NIBAR lain yang 36 digit pertamanya sama persis (lokasi+kode+tahun sama).
+// Skema (dikonfirmasi user): [12=Prov/Kab][01/02=Intra-Ekstra][3506=Kode Kab
+// Kediri][14 digit=kode lokasi, FULL skpd.kode_skpd tanpa titik (5 segmen,
+// tak ada yg dibuang)][4 digit=tahun perolehan][12 digit=kode barang tanpa
+// titik][7 digit=nomor urut]. "12" & "3506" konstan (app ini khusus Kab.
+// Kediri). Nomor urut lanjut dari NIBAR lain yang 38 digit pertamanya sama
+// persis (lokasi+kode+tahun sama).
 const KODE_PROVINSI_KAB = '12'
 const KODE_WILAYAH_KEDIRI = '3506' // Kab. Kediri (Jatim 35, Kediri Kab 06)
 const INTRA_EKSTRA_KODE: Record<string, string> = { intra: '01', ekstra: '02' }
@@ -149,39 +150,41 @@ function digitsPad(s: string, len: number): string {
   return clean.length >= len ? clean.slice(0, len) : clean.padEnd(len, '0')
 }
 
-// Segmen lokasi NIBAR (12 digit) dari skpd.kode_skpd. Format kode_skpd =
-// s1.s2.s3.s4.s5 (2.2.2.4.4 = 14 digit). NIBAR pakai s1.s2.s4.s5 (BUANG segmen
-// ke-3) = xx.xx.xxxx.xxxx = 12 digit — mempertahankan digit kuasa & lokasi
-// sehingga bisa membedakan sampai level lokasi terdalam.
+// Segmen lokasi NIBAR (14 digit) dari skpd.kode_skpd. Format kode_skpd =
+// s1.s2.s3.s4.s5 (2.2.2.4.4 = 14 digit) — dipakai FULL apa adanya (tanpa buang
+// segmen mana pun), sesuai konfirmasi. digitsPad sudah menangani strip titik +
+// pad/potong ke 14 digit.
 function kodeLokasiNibar(kodeSkpd: string): string {
-  const segs = (kodeSkpd || '').split('.')
-  const picked = segs.length >= 5 ? [segs[0], segs[1], segs[3], segs[4]] : segs
-  return digitsPad(picked.join(''), 12)
+  return digitsPad(kodeSkpd, 14)
 }
 
 async function generateNibars(
   supabase: ReturnType<typeof createClient>,
-  items: { key: string; kode: string }[], kodeSkpdRaw: string, tahun: string, intraEkstra: string
+  items: { key: string; kode: string; intraEkstra: 'intra' | 'ekstra' }[], kodeSkpdRaw: string, tahun: string
 ): Promise<Map<string, string>> {
   const kodeLokasi = kodeLokasiNibar(kodeSkpdRaw)
-  const intraKode = INTRA_EKSTRA_KODE[intraEkstra] || '01'
   const out = new Map<string, string>()
-  const byKodeBarang = new Map<string, { key: string; kode: string }[]>()
+  // Grup by (kode barang + intra/ekstra) — segmen intra/ekstra NIBAR (01/02)
+  // beda per barang sekarang (tergantung batas_kapitalisasi per item).
+  const byGroup = new Map<string, { key: string; kode: string; intraEkstra: 'intra' | 'ekstra' }[]>()
   for (const it of items) {
     const kb = digitsPad(it.kode, 12)
-    const arr = byKodeBarang.get(kb) || []
+    const gk = `${kb}|${it.intraEkstra}`
+    const arr = byGroup.get(gk) || []
     arr.push(it)
-    byKodeBarang.set(kb, arr)
+    byGroup.set(gk, arr)
   }
-  for (const [kodeBarang, group] of byKodeBarang) {
-    const prefix36 = KODE_PROVINSI_KAB + intraKode + KODE_WILAYAH_KEDIRI + kodeLokasi + tahun + kodeBarang
+  for (const [, group] of byGroup) {
+    const kodeBarang = digitsPad(group[0].kode, 12)
+    const intraKode = INTRA_EKSTRA_KODE[group[0].intraEkstra] || '01'
+    const prefix38 = KODE_PROVINSI_KAB + intraKode + KODE_WILAYAH_KEDIRI + kodeLokasi + tahun + kodeBarang
     const { data } = await supabase.from('aset').select('nibar')
-      .like('nibar', `${prefix36}%`).order('nibar', { ascending: false }).limit(1)
+      .like('nibar', `${prefix38}%`).order('nibar', { ascending: false }).limit(1)
     let seq = 0
     if (data && data[0]?.nibar) seq = parseInt(data[0].nibar.slice(-7), 10) || 0
     for (const it of group) {
       seq += 1
-      out.set(it.key, prefix36 + String(seq).padStart(7, '0'))
+      out.set(it.key, prefix38 + String(seq).padStart(7, '0'))
     }
   }
   return out
@@ -417,13 +420,19 @@ export default function Pengadaan() {
       setBusyId(null); return
     }
     const tahun = String(new Date(perolehanDate).getFullYear())
-    const nibarMap = await generateNibars(supabase, items, skpdRow.kode_skpd, tahun, 'intra')
 
-    const asetRows = items.map(it => {
+    // Klasifikasi intra/ekstrakomptabel per barang: nilai vs batas_kapitalisasi
+    // (kodefikasi_bmd) — >= batas → intra, < batas → ekstra (lib/bmd.ts).
+    const batasMap = await fetchBatasKapitalisasi(supabase, items.map(it => it.kode))
+    const itemsWithKlas = items.map(it => ({ ...it, intraEkstra: klasifikasiKomptabel(toNum(it.harga), batasMap.get(it.kode)) }))
+
+    const nibarMap = await generateNibars(supabase, itemsWithKlas, skpdRow.kode_skpd, tahun)
+
+    const asetRows = itemsWithKlas.map(it => {
       const row: Record<string, unknown> = {
         nibar: nibarMap.get(it.key) || null, kode: it.kode, uraian_barang: it.uraianBarang || null, jumlah: 1,
         satuan: it.satuan.trim() || null, harga_satuan: toNum(it.harga), nilai_perolehan: toNum(it.harga),
-        tgl_perolehan: perolehanDate, skpd_id: Number(skpd), intra_ekstra: 'intra',
+        tgl_perolehan: perolehanDate, skpd_id: Number(skpd), intra_ekstra: it.intraEkstra,
         cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: it.foto,
       }
       for (const k of ASET_FIELD_COLS) {
