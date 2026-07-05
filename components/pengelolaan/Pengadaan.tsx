@@ -345,7 +345,18 @@ export default function Pengadaan() {
   async function hapusKontrak(h: Jurnal) {
     if (!confirm(`Hapus kontrak ${h.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`)) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', h.id)
-    if (error) { setMsg(`Error: gagal menghapus kontrak: ${error.message}`); return }
+    if (error) {
+      // FK ke transaksi_bmd.header_id: kontrak ini pernah disetujui lalu dibuka
+      // kunci (unapprove) — ledger append-only tetap menyimpan baris transaksi
+      // asli yg nempel ke header ini, jadi header tak boleh dihapus permanen
+      // (akan membuat baris ledger itu kehilangan konteks No SK/tanggal).
+      if (error.message.includes('transaksi_bmd_header_id_fkey')) {
+        setMsg(`Kontrak ${h.no_sk} tidak bisa dihapus — kontrak ini pernah disetujui (punya jejak ledger permanen), lalu dibuka kunci. Ledger append-only tak boleh kehilangan konteks header-nya. Kalau memang tidak diperlukan lagi, gunakan "Tolak" (aman, tak menyentuh ledger) daripada hapus.`)
+      } else {
+        setMsg(`Error: gagal menghapus kontrak: ${error.message}`)
+      }
+      return
+    }
     setMsg(`Kontrak ${h.no_sk} dihapus.`)
     loadJurnals(skpd)
   }
