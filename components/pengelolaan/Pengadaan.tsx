@@ -762,7 +762,7 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
       </td>
       <td className="table-td text-center text-xs text-gray-600">{item.satuan || '-'}</td>
       <td className="table-td text-right text-xs text-gray-600">{formatRupiah(toNum(item.harga))}</td>
-      <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{f.keterangan || '-'}</td>
+      <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{item.fields?.keterangan || '-'}</td>
     </tr>
   )
 }
