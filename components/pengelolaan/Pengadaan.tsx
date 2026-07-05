@@ -788,7 +788,6 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const [searching, setSearching] = useState(false)
   const [picked, setPicked] = useState<{ kode: string; uraian: string } | null>(null)
   const [rekening, setRekening] = useState('')
-  const [nama, setNama] = useState('')
   const [satuan, setSatuan] = useState('')
   const [qty, setQty] = useState('1')
   const [harga, setHarga] = useState('')
@@ -806,7 +805,6 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
 
   function pilih(r: { kode: string; uraian: string | null }) {
     setPicked({ kode: r.kode, uraian: r.uraian || '' })
-    setNama(r.uraian || '')
     setResults([])
   }
 
@@ -815,10 +813,11 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     const n = toInt(qty)
     if (n < 1) { setErr('Kuantitas minimal 1.'); return }
     if (toNum(harga) <= 0) { setErr('Harga harus > 0.'); return }
+    // nama_barang default = uraian baku, diedit belakangan lewat ✎ Edit Spesifikasi.
     const items: DraftItem[] = Array.from({ length: n }, () => ({
       key: newKey(), golongan, kode: picked.kode, uraianBarang: picked.uraian,
       rekening: rekening.trim(), satuan: satuan.trim(), harga,
-      fields: { nama_barang: nama.trim() || picked.uraian }, foto: [],
+      fields: { nama_barang: picked.uraian }, foto: [],
     }))
     onTambah(items)
   }
@@ -860,7 +859,6 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
       {picked && (
         <div className="bg-white border border-gray-100 rounded-lg p-3 space-y-3">
           <p className="text-xs text-gray-500">Kode: <span className="font-medium text-gray-700">{picked.kode}</span></p>
-          <div><label className="block text-xs text-gray-500 mb-1">Spesifikasi Nama Barang</label><input className="select-filter w-full text-sm" value={nama} onChange={e => setNama(e.target.value)} /></div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="block text-xs text-gray-500 mb-1">Satuan</label><input className="select-filter w-full text-sm" value={satuan} onChange={e => setSatuan(e.target.value)} placeholder="unit" /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
