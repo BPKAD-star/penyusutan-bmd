@@ -29,7 +29,7 @@ const navTree: NavNode[] = [
   { type: 'leaf', href: '/dashboard', label: 'Dashboard' },
   { type: 'leaf', href: '/dashboard/rkbmd', label: 'RKBMD' },
   {
-    type: 'group', label: 'Saldo Awal', icon: ICON.saldo, children: [
+    type: 'group', label: 'Daftar Barang + Penyusutan', icon: ICON.saldo, children: [
       { type: 'leaf', href: '/dashboard/saldo-awal/rekapitulasi', label: 'Rekapitulasi' },
       { type: 'leaf', href: '/dashboard/saldo-awal/daftar-barang', label: 'Daftar Barang Awal' },
     ],
@@ -59,6 +59,7 @@ const navTree: NavNode[] = [
   },
   { type: 'leaf', href: '/dashboard/daftar-barang', label: 'Daftar Barang' },
   { type: 'leaf', href: '/dashboard/penyusutan', label: 'Penyusutan' },
+  { type: 'leaf', href: '/dashboard/saldo-akhir/rekapitulasi', label: 'Rekapitulasi' },
   {
     type: 'group', label: 'Pelaporan', icon: ICON.pelaporan, children: [
       {
@@ -81,11 +82,6 @@ const navTree: NavNode[] = [
         ],
       },
       { type: 'leaf', href: '/dashboard/pelaporan/bmd', label: 'Laporan BMD' },
-    ],
-  },
-  {
-    type: 'group', label: 'Saldo Akhir', icon: ICON.saldo, children: [
-      { type: 'leaf', href: '/dashboard/saldo-akhir/rekapitulasi', label: 'Rekapitulasi' },
     ],
   },
   { type: 'leaf', href: '/dashboard/inventarisasi', label: 'Inventarisasi' },

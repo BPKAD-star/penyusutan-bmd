@@ -49,6 +49,33 @@ apa pun yang menyentuh ledger atau engine.
   yang dulu dari view direplikasi: golongan dari `kode` (`like 'x.%'`), nama SKPD
   dari `skpd`, jejak penghapusan dari ledger+`jurnal_header`.
 
+## Pengalihan Status Penggunaan (transfer antar SKPD, migrasi 21)
+
+Jenis ketiga di menu Penghapusan (sisi KELUAR) + persetujuan SKPD tujuan di menu
+Penggunaan (sisi MASUK, `PenggunaanMasuk.tsx`). Gabungan dua pola yang sudah ada:
+kartu ber-SK (`jurnal_header` kategori `pengalihan_status`, WAJIB `skpd_tujuan`
+level SKPD induk — combobox `rootOnly`) + draft-approve (barang di
+`payload.draft_items`, `approval_status='pending'`; ledger & `aset` TIDAK
+disentuh sampai SKPD tujuan menerima). Poin penting:
+
+- **Mutasi lintas-SKPD lewat RPC SECURITY DEFINER**, bukan insert/update client:
+  `fn_terima_pengalihan` (materialize: ledger `pengalihan_status` + pindah
+  `aset.skpd_id`, atomik), `fn_tolak_pengalihan` (status `ditolak`+alasan, ini
+  status AKTIF di kategori ini — beda dgn Pengadaan yg legacy), dan
+  `fn_batal_pengalihan_barang` (pasca-setuju: transaksi balik ber-payload
+  `{reversal:true}` + aset kembali ke asal). Alasannya: RLS `aset`/`transaksi_bmd`
+  menolak operator menulis di luar subtree SKPD-nya — jangan coba bypass dgn
+  policy longgar.
+- `pengalihan_status` TANPA efek finansial di engine (penyusutan jalan terus)
+  dan BUKAN event SEMBUNYI — barang cuma pindah pemegang. Keanggotaan kartu:
+  baris ledger TERBARU per (header, aset); `payload.reversal` = keluar.
+- Selama pending: draft bebas diedit, jurnal boleh DELETE utuh (belum ada
+  ledger). Pindah semester = hapus & entry ulang (guard semester sama spt
+  ber-SK lain). `skpd_tujuan` terkunci begitu status bukan pending.
+- Dokumen sumber (foto/PDF) → bucket **`dokumen-sumber`** (privat, 10MB,
+  image+pdf — beda dari `aset-foto` yg image-only), path di
+  `payload.dokumen_paths`, tampilkan via signed URL.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang

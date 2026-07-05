@@ -11,12 +11,13 @@ import { createClient } from '@/lib/supabase/client'
 type SkpdRow = { id: number; nama: string; level: number; parent_id: number | null }
 export type SkpdSelection = { skpdId: number | null; descendantIds: number[] | null }
 
-export default function SkpdCombobox({ value, onChange, onChangeSelection, placeholder, allowClear }: {
+export default function SkpdCombobox({ value, onChange, onChangeSelection, placeholder, allowClear, rootOnly }: {
   value: string
   onChange?: (id: string) => void
   onChangeSelection?: (sel: SkpdSelection) => void
   placeholder?: string
   allowClear?: boolean
+  rootOnly?: boolean // hanya SKPD induk (parent_id null) — dipakai target Pengalihan Status
 }) {
   const supabase = createClient()
   const [all, setAll] = useState<SkpdRow[]>([])
@@ -62,8 +63,9 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
   }
 
   const options = useMemo(
-    () => all.map(s => ({ id: s.id, label: pathOf(s.id) })).sort((a, b) => a.label.localeCompare(b.label)),
-    [all, byId] // eslint-disable-line react-hooks/exhaustive-deps
+    () => all.filter(s => !rootOnly || s.parent_id == null)
+      .map(s => ({ id: s.id, label: pathOf(s.id) })).sort((a, b) => a.label.localeCompare(b.label)),
+    [all, byId, rootOnly] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   useEffect(() => {

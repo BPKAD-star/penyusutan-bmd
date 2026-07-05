@@ -32,7 +32,9 @@
       "Bash(ls \"/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad/\" 2>&1 || ls /tmp)",
       "Bash(SCRATCH=\"/c/Users/ASUS/AppData/Local/Temp/claude/--wsl-localhost-ubuntu-26-04-home-asus-penyusutan-bmd/6d62034a-62d5-492b-b044-1e4cb014626b/scratchpad\" *)",
       "Bash(grep -c \"'\\);$\" supabase/migrations/20260704_15_seed_wilayah_kediri.sql)",
-      "Bash(npm --version)"
+      "Bash(npm --version)",
+      "Bash(git status *)",
+      "Bash(git branch *)"
     ]
   }
 }
