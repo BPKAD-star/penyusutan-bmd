@@ -43,13 +43,14 @@ const sumberLabel = (v: string) => SUMBER_OPT.find(o => o.value === v)?.label ||
 // Satu DraftItem = satu unit barang (kuantitas dipecah saat ditambahkan, bukan
 // saat approve) — tiap unit bisa beda spesifikasi/no. rangka-mesin/foto.
 // uraianBarang = uraian BAKU dari kodefikasi_bmd (kolom aset.uraian_barang),
-// diambil sekali saat kode dipilih, TIDAK bisa diedit user (beda dari `nama` =
-// nama spesifik/"Spesifikasi Nama Barang", kolom aset.nama_barang, editable).
+// diambil sekali saat kode dipilih, TIDAK bisa diedit user — beda dari nama
+// spesifik ("Spesifikasi Nama Barang", kolom aset.nama_barang) yang ikut
+// sistem `fields` generik (editable lewat checklist+popup, spt field lain).
 type DraftItem = {
-  key: string; golongan: string; kode: string; uraianBarang: string; nama: string
+  key: string; golongan: string; kode: string; uraianBarang: string
   rekening: string                 // kode rekening belanja (mis. 5.2.01.01.001) — teks bebas dulu
   satuan: string; harga: string
-  fields: Record<string, string>   // field spesifikasi sesuai golongan (lib/asetFields.ts)
+  fields: Record<string, string>   // field spesifikasi sesuai golongan (lib/asetFields.ts), termasuk nama_barang
   foto: string[]                    // path di storage bucket aset-foto
 }
 type HeaderPayload = {
@@ -103,24 +104,31 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
   const out: DraftItem[] = []
   for (const r of raw as Record<string, unknown>[]) {
     if (r && typeof r === 'object' && r.fields && typeof r.fields === 'object' && Array.isArray(r.foto)) {
-      out.push({ rekening: '', uraianBarang: '', ...(r as unknown as DraftItem), fields: remapFieldKeys(r.fields as Record<string, string>) }) // rekening/uraianBarang default (data lama sblm field ini ada) + field key lama dipetakan ke baru
+      const fields = remapFieldKeys(r.fields as Record<string, string>)
+      // Data sebelum nama_barang masuk sistem `fields` (top-level `r.nama`) →
+      // pindahkan ke fields.nama_barang supaya tak hilang & bisa diedit via popup.
+      if (!fields.nama_barang && typeof r.nama === 'string' && r.nama) fields.nama_barang = r.nama
+      out.push({ rekening: '', uraianBarang: '', ...(r as unknown as DraftItem), fields })
       continue
     }
     const qty = Math.max(1, toInt(String(r?.qty ?? '1')) || 1)
     for (let i = 0; i < qty; i++) {
       out.push({
         key: newKey(),
-        golongan: String(r?.golongan ?? ''), kode: String(r?.kode ?? ''), uraianBarang: '', nama: String(r?.nama ?? ''),
+        golongan: String(r?.golongan ?? ''), kode: String(r?.kode ?? ''), uraianBarang: '',
         rekening: String(r?.rekening ?? ''),
         satuan: String(r?.satuan ?? ''), harga: String(r?.harga ?? '0'),
-        fields: r?.spesifikasi ? { spesifikasi_lainnya: String(r.spesifikasi) } : {},
+        fields: {
+          ...(r?.nama ? { nama_barang: String(r.nama) } : {}),
+          ...(r?.spesifikasi ? { spesifikasi_lainnya: String(r.spesifikasi) } : {}),
+        },
         foto: [],
       })
     }
   }
   return out
 }
-const ASET_FIELD_COLS = ['spesifikasi_lainnya', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
+const ASET_FIELD_COLS = ['nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
   'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak',
   'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'keterangan'] as const
 // Kolom spesifikasi yang bertipe numeric di DB → di-cast toNum saat materialize.
@@ -270,7 +278,7 @@ export default function Pengadaan() {
     const disetujuiIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
     if (disetujuiIds.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select(`id,header_id,nilai,tanggal,payload,aset:aset_id(id,nibar,nama_barang,uraian_barang,kode,satuan,intra_ekstra,status,foto_paths,${ASET_FIELD_COLS.join(',')})`)
+        .select(`id,header_id,nilai,tanggal,payload,aset:aset_id(id,nibar,uraian_barang,kode,satuan,intra_ekstra,status,foto_paths,${ASET_FIELD_COLS.join(',')})`)
         .eq('jenis', 'pengadaan')
         .in('header_id', disetujuiIds)
         .order('id', { ascending: false })
@@ -394,7 +402,7 @@ export default function Pengadaan() {
     if (items.length === 0) { setMsg('Error: kontrak ini belum ada barangnya — tambahkan dulu sebelum disetujui.'); return }
     for (const it of items) {
       if (!it.kode) { setMsg('Error: ada barang draft tanpa kode.'); return }
-      if (toNum(it.harga) <= 0) { setMsg(`Error: harga "${it.nama || it.kode}" harus > 0.`); return }
+      if (toNum(it.harga) <= 0) { setMsg(`Error: harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
     }
     const perolehanDate = h.payload.tgl_bast || h.tanggal
     if (!confirm(`Setujui kontrak ${h.no_sk}?\n${items.length} barang akan dicatat resmi dgn tgl perolehan ${perolehanDate}.`)) return
@@ -413,7 +421,7 @@ export default function Pengadaan() {
 
     const asetRows = items.map(it => {
       const row: Record<string, unknown> = {
-        nibar: nibarMap.get(it.key) || null, kode: it.kode, uraian_barang: it.uraianBarang || null, nama_barang: it.nama.trim() || null, jumlah: 1,
+        nibar: nibarMap.get(it.key) || null, kode: it.kode, uraian_barang: it.uraianBarang || null, jumlah: 1,
         satuan: it.satuan.trim() || null, harga_satuan: toNum(it.harga), nilai_perolehan: toNum(it.harga),
         tgl_perolehan: perolehanDate, skpd_id: Number(skpd), intra_ekstra: 'intra',
         cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: it.foto,
@@ -467,7 +475,7 @@ export default function Pengadaan() {
       if (error) { setMsg(`Error: ${error}`); setBusyId(null); return }
     }
     const draftItems: DraftItem[] = j.lines.map(l => ({
-      key: newKey(), golongan: kodeLevel3(l.kode), kode: l.kode, uraianBarang: l.uraian_barang || '', nama: l.nama_barang || '',
+      key: newKey(), golongan: kodeLevel3(l.kode), kode: l.kode, uraianBarang: l.uraian_barang || '',
       rekening: l.rekening || '', satuan: l.satuan || '', harga: String(l.nilai), fields: l.fields || {}, foto: l.foto_paths || [],
     }))
     const { error } = await supabase.from('jurnal_header')
@@ -564,7 +572,7 @@ export default function Pengadaan() {
         const single = items.length === 1 ? items[0] : null
         return (
           <EditSpesifikasiModal
-            title={single ? (single.nama || single.kode) : `${items.length} barang dicentang`}
+            title={single ? (single.fields.nama_barang || single.kode) : `${items.length} barang dicentang`}
             fieldKeys={fieldsForKode(items[0]?.kode || '')}
             initialFields={single ? single.fields : {}}
             initialFoto={single ? single.foto : []}
@@ -745,8 +753,8 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
         <p className="text-[11px] text-gray-400">{item.kode}{item.rekening ? ` · Rek ${item.rekening}` : ''}</p>
       </td>
       <td className="table-td">
-        <p className="text-xs text-gray-600 truncate max-w-[200px]" title={item.nama}>
-          {item.nama || <span className="text-amber-600">⚠ Belum diisi</span>}
+        <p className="text-xs text-gray-600 truncate max-w-[200px]" title={item.fields?.nama_barang || ''}>
+          {item.fields?.nama_barang || <span className="text-amber-600">⚠ Belum diisi</span>}
         </p>
       </td>
       <td className="table-td text-xs text-gray-600 truncate max-w-[120px]">{item.fields?.merek_tipe || '-'}</td>
@@ -808,8 +816,9 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     if (n < 1) { setErr('Kuantitas minimal 1.'); return }
     if (toNum(harga) <= 0) { setErr('Harga harus > 0.'); return }
     const items: DraftItem[] = Array.from({ length: n }, () => ({
-      key: newKey(), golongan, kode: picked.kode, uraianBarang: picked.uraian, nama: nama.trim() || picked.uraian,
-      rekening: rekening.trim(), satuan: satuan.trim(), harga, fields: {}, foto: [],
+      key: newKey(), golongan, kode: picked.kode, uraianBarang: picked.uraian,
+      rekening: rekening.trim(), satuan: satuan.trim(), harga,
+      fields: { nama_barang: nama.trim() || picked.uraian }, foto: [],
     }))
     onTambah(items)
   }
@@ -851,7 +860,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
       {picked && (
         <div className="bg-white border border-gray-100 rounded-lg p-3 space-y-3">
           <p className="text-xs text-gray-500">Kode: <span className="font-medium text-gray-700">{picked.kode}</span></p>
-          <div><label className="block text-xs text-gray-500 mb-1">Nama Barang</label><input className="select-filter w-full text-sm" value={nama} onChange={e => setNama(e.target.value)} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Spesifikasi Nama Barang</label><input className="select-filter w-full text-sm" value={nama} onChange={e => setNama(e.target.value)} /></div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="block text-xs text-gray-500 mb-1">Satuan</label><input className="select-filter w-full text-sm" value={satuan} onChange={e => setSatuan(e.target.value)} placeholder="unit" /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>

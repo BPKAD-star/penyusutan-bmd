@@ -8,11 +8,12 @@
 import { kodeLevel3 } from '@/lib/bmd'
 
 export type FieldKey =
-  | 'spesifikasi_lainnya' | 'merek_tipe' | 'no_polisi' | 'no_bpkb' | 'no_rangka' | 'no_mesin'
+  | 'nama_barang' | 'spesifikasi_lainnya' | 'merek_tipe' | 'no_polisi' | 'no_bpkb' | 'no_rangka' | 'no_mesin'
   | 'luas' | 'nomor_dokumen_kepemilikan' | 'tanggal_dokumen_kepemilikan' | 'nama_dokumen_kepemilikan' | 'jenis_hak'
   | 'wilayah_kode' | 'alamat_detail' | 'latitude' | 'longitude' | 'keterangan'
 
 export const FIELD_LABEL: Record<FieldKey, string> = {
+  nama_barang: 'Spesifikasi Nama Barang',
   spesifikasi_lainnya: 'Spesifikasi Lainnya',
   merek_tipe: 'Merek / Tipe',
   no_polisi: 'Nomor Polisi',
@@ -55,19 +56,19 @@ export const FIELD_OPTIONS: Partial<Record<FieldKey, string[]>> = {
 // TANAH-like: Tanah, Gedung&Bangunan, Jalan/Jaringan/Irigasi (semua bisa py
 // dokumen kepemilikan lahan + titik lokasi).
 const TEMPLATE_TANAH: FieldKey[] = [
-  'spesifikasi_lainnya', 'jenis_hak', 'luas',
+  'nama_barang', 'spesifikasi_lainnya', 'jenis_hak', 'luas',
   'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
   'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'keterangan',
 ]
 // PERALATAN & MESIN: kendaraan dkk (nomor rangka/mesin/polisi/BPKB) + lokasi.
 const TEMPLATE_PERALATAN_MESIN: FieldKey[] = [
-  'merek_tipe', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi', 'spesifikasi_lainnya',
+  'nama_barang', 'merek_tipe', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi', 'spesifikasi_lainnya',
   'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'keterangan',
 ]
 // ASET LAINNYA-like: Aset Tetap Lainnya, KDP, ATB, Aset Lain-Lain — sama seperti
 // Peralatan&Mesin tanpa nomor kendaraan.
 const TEMPLATE_ASET_LAINNYA: FieldKey[] = [
-  'merek_tipe', 'spesifikasi_lainnya', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'keterangan',
+  'nama_barang', 'merek_tipe', 'spesifikasi_lainnya', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'keterangan',
 ]
 
 // Golongan level-3 (dari kodeLevel3) → field yang relevan, urut tampil.
