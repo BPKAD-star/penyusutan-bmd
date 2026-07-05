@@ -7,19 +7,24 @@ apa pun yang menyentuh ledger atau engine.
 
 ## Prinsip inti (jangan dilanggar)
 
-- **Ledger append-only.** `transaksi_bmd` tidak pernah di-UPDATE/DELETE (dijaga
-  trigger `fn_transaksi_bmd_immutable`). Koreksi = transaksi baru yang membalik
-  (mis. `batal_penghapusan`, `batal_kapitalisasi`). UPDATE terlarang MUTLAK tanpa
-  pengecualian. DELETE punya **satu escape hatch sempit** (migrasi
-  `20260704_17_hapus_kontrak_ledger_reset.sql`): boleh HANYA kalau jenis
-  `pengadaan`/`batal_pengadaan` DAN `jurnal_header` terkait (`header_id`)
-  berstatus `pending` DAN aset yg dirujuk sudah `status='dihapus'` — dipakai utk
-  "Hapus Kontrak Sepenuhnya" (kontrak Cara Perolehan yg pernah disetujui lalu
-  dibuka kunci/unapprove, dan mau dibuang total drpd disetujui ulang; No SK/BAST
-  jadi bisa dipakai lagi). `aset` TIDAK ikut dihapus (baris soft-deleted tetap
-  ada, jadi "yatim" tanpa jejak ledger — sama spt penghapusan biasa, data tak
-  pernah betul-betul lenyap). Berlaku jg utk Hibah/Hasil Inventarisasi/Perolehan
-  Lainnya kalau nanti pakai alur draft-approve serupa (lihat pola di bawah).
+- **Ledger append-only, TANPA PENGECUALIAN.** `transaksi_bmd` tidak pernah
+  di-UPDATE/DELETE (dijaga trigger `fn_transaksi_bmd_immutable`) — ini prinsip
+  MUTLAK, sudah pernah dicoba dilonggarkan (migrasi 17/18: escape hatch DELETE
+  sempit utk "Hapus Kontrak Sepenuhnya") dan **terbukti berbahaya**: Daftar
+  Barang & Penyusutan menyembunyikan barang BUKAN dengan cek `aset.status`
+  langsung, tapi dgn **replay event ledger** (`SEMBUNYI` termasuk
+  `batal_pengadaan`, lihat poin di bawah). Begitu baris `batal_pengadaan`
+  (bukti "barang ini harus disembunyikan") ikut terhapus, replay-nya kehilangan
+  jejak — barang yg sudah `status='dihapus'` MUNCUL LAGI di kedua laporan itu.
+  Direvert migrasi `20260704_19_revert_hapus_ledger.sql` (+ perbaikan data yg
+  sudah kena dampak: insert ulang `batal_pengadaan` utk aset yatim tanpa jejak
+  ledger sama sekali). Koreksi = SELALU transaksi baru yang membalik (mis.
+  `batal_penghapusan`, `batal_kapitalisasi`), tidak pernah hapus baris lama.
+  **Kalau butuh "buang kontrak" tanpa nyentuh ledger**: arsipkan
+  (`jurnal_header.approval_status='ditolak'`) — sudah otomatis disaring dari
+  tampilan Pengadaan & dikecualikan dari cek No SK/BAST dipakai (lihat pola
+  APPROVAL di bawah, fungsi `hapusKontrak` di Pengadaan.tsx). JANGAN bikin
+  escape hatch DELETE lagi ke `transaksi_bmd` apapun alasannya.
 - **Soft-delete.** Penghapusan barang = `aset.status='dihapus'` + transaksi, bukan
   DELETE. Tidak ada policy DELETE di `aset`.
 - **Masa manfaat disimpan dalam TAHUN** di DB; konversi ×2 (ke semester) HANYA di
@@ -111,11 +116,15 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   kontrak balik ke draft (`draft_items` direkonstruksi dari barang yg dibatalkan)
   → edit → **Setujui ulang** (NIBAR digenerate ULANG, yg lama tetap tersimpan di
   aset yg sudah dihapus itu, utk audit).
-- **Hapus kontrak**: draft murni (belum pernah disetujui) → hapus biasa, aman.
-  Kontrak yg PERNAH disetujui-lalu-dibuka-kunci (punya jejak ledger) → "Hapus
-  Kontrak Sepenuhnya" pakai escape hatch DELETE di atas (hapus baris ledger
-  dulu, baru header) — No SK/BAST jadi bisa dipakai ulang. UI: satu tombol 🗑
-  yang sama, pesan konfirmasi menyesuaikan (`h.hasLedger`).
+- **Hapus kontrak**: draft murni (belum pernah disetujui) → hapus biasa, aman
+  (`DELETE jurnal_header`, tak ada baris ledger yg nyantol). Kontrak yg PERNAH
+  disetujui-lalu-dibuka-kunci (`hasLedger=true`, punya jejak ledger) → **TIDAK
+  BOLEH dihapus** — diarsipkan (`UPDATE jurnal_header SET
+  approval_status='ditolak'`) sbg gantinya: ledger tetap utuh (append-only
+  aman), kontrak otomatis hilang dari tampilan Pengadaan, No SK/BAST bebas
+  dipakai ulang (uniqueness check sudah `.neq('approval_status','ditolak')`).
+  UI: satu tombol 🗑 yang sama (`hapusKontrak`), perilaku menyesuaikan
+  `h.hasLedger` (arsipkan vs hapus beneran).
 - **Koreksi PASCA-approve** (mis. kelebihan kuantitas baru ketahuan setelah
   disetujui, TANPA lewat unapprove): pakai jenis ledger `batal_pengadaan`
   (soft-delete `aset.status='dihapus'`, `berhenti=true` di engine, masuk

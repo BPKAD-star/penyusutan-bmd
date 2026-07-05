@@ -381,21 +381,26 @@ export default function Pengadaan() {
     if (ok) loadJurnals(skpd)
   }
   async function hapusKontrak(h: Jurnal) {
-    // Kontrak dgn jejak ledger (pernah disetujui lalu dibuka kunci): DB
-    // mengizinkan hapus baris ledgernya via escape hatch sempit (migrasi 17—
-    // hanya kalau kontrak pending & semua barangnya sudah soft-deleted).
-    // aset tetap ada (jadi "yatim" tanpa jejak ledger, spt penghapusan biasa).
-    const warn = h.hasLedger
-      ? `Hapus kontrak ${h.no_sk} SEPENUHNYA? Kontrak ini pernah disetujui — riwayat ledgernya (barang yg sudah dibatalkan) ikut terhapus permanen. No. Kontrak/BAST bisa dipakai lagi setelah ini. Tidak bisa dibatalkan.`
-      : `Hapus kontrak ${h.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`
-    if (!confirm(warn)) return
+    // Kontrak dgn jejak ledger (pernah disetujui lalu dibuka kunci): TIDAK
+    // BOLEH hapus baris transaksi_bmd (pernah dicoba, ternyata merusak replay
+    // SEMBUNYI di Daftar Barang/Penyusutan yg justru bergantung pd baris
+    // batal_pengadaan itu utk tau barang mana yg harus disembunyikan — lihat
+    // migrasi 19). Sebagai gantinya: ARSIPKAN (approval_status='ditolak') —
+    // kontrak otomatis hilang dari tampilan Pengadaan + No SK/BAST bebas
+    // dipakai ulang (uniqueness check sudah mengecualikan 'ditolak'), TANPA
+    // menyentuh ledger sama sekali.
     if (h.hasLedger) {
-      const { error: ledgerErr } = await supabase.from('transaksi_bmd').delete().eq('header_id', h.id)
-      if (ledgerErr) { setMsg(`Kontrak ${h.no_sk} tidak bisa dihapus — masih ada barang aktif terkait (bukan cuma yg sudah dibatalkan). Error: ${ledgerErr.message}`); return }
+      if (!confirm(`Arsipkan kontrak ${h.no_sk}? Kontrak ini pernah disetujui — riwayat ledgernya (barang yg sudah dibatalkan) TETAP tersimpan (append-only, tak bisa dihapus). Kontrak akan hilang dari daftar & No. Kontrak/BAST bisa dipakai lagi. Tidak bisa dibatalkan.`)) return
+      const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', h.id)
+      if (error) { setMsg(`Error: gagal mengarsipkan kontrak: ${error.message}`); return }
+      setMsg(`Kontrak ${h.no_sk} diarsipkan — No. Kontrak/BAST bisa dipakai lagi.`)
+      loadJurnals(skpd)
+      return
     }
+    if (!confirm(`Hapus kontrak ${h.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`)) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', h.id)
     if (error) { setMsg(`Error: gagal menghapus kontrak: ${error.message}`); return }
-    setMsg(`Kontrak ${h.no_sk} dihapus${h.hasLedger ? ' beserta riwayat ledgernya' : ''}.`)
+    setMsg(`Kontrak ${h.no_sk} dihapus.`)
     loadJurnals(skpd)
   }
 
@@ -665,7 +670,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
             <div className="flex items-center gap-2 mt-2">
               <button title="Edit kontrak / BAST" onClick={onEditHeader}
                 className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
-              <button title={h.hasLedger ? 'Hapus kontrak ini sepenuhnya (termasuk riwayat ledgernya)' : 'Hapus draft kontrak ini'}
+              <button title={h.hasLedger ? 'Arsipkan kontrak ini (ledger tetap tersimpan, No SK/BAST bisa dipakai lagi)' : 'Hapus draft kontrak ini'}
                 onClick={onHapusKontrak}
                 className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
             </div>
