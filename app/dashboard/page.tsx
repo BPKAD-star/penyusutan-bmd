@@ -28,13 +28,20 @@ async function countTrx(sb: SB, apply: (q: any) => any): Promise<number> {
 }
 
 // Satu kali scan register aset (aktif): rekap per golongan (unit + nilai) DAN
-// total nilai per cara_perolehan (utk dashboard donut) — hemat, tanpa query ekstra.
+// count+nilai per cara_perolehan (utk dashboard donut) — hemat, tanpa query ekstra.
+// PENTING: "disetujui" count HARUS dari aset aktif, BUKAN dari jumlah baris ledger
+// jenis='pengadaan' (append-only, permanen — tak berkurang walau barangnya di-
+// batal_pengadaan/unapprove kemudian, krn itu cuma nambah baris baru, bukan hapus
+// baris lama). Register aset (status='aktif') adalah satu-satunya sumber yg
+// mencerminkan kondisi TERKINI (sudah dikurangi soft-delete).
 async function scanAset(sb: SB): Promise<{
   gol: Record<string, { count: number; nilai: number }>
   caraNilai: Record<string, number>
+  caraCount: Record<string, number>
 }> {
   const gol: Record<string, { count: number; nilai: number }> = {}
   const caraNilai: Record<string, number> = {}
+  const caraCount: Record<string, number> = {}
   try {
     for (let from = 0; ; from += 1000) {
       const { data, error } = await sb.from('aset')
@@ -47,11 +54,12 @@ async function scanAset(sb: SB): Promise<{
         gol[g].count += 1
         gol[g].nilai += v
         caraNilai[r.cara_perolehan] = (caraNilai[r.cara_perolehan] || 0) + v
+        caraCount[r.cara_perolehan] = (caraCount[r.cara_perolehan] || 0) + 1
       }
       if (data.length < 1000) break
     }
   } catch { /* tabel aset belum ada → kosong */ }
-  return { gol, caraNilai }
+  return { gol, caraNilai, caraCount }
 }
 
 export default async function DashboardHome() {
@@ -59,15 +67,10 @@ export default async function DashboardHome() {
 
   const [
     scan,
-    perPengadaan, perHibah, perInv, perLain,
     transfer, mutasiInternal,
     hapusTotalPemindah, hapusHibah, hapusJual, hapusSebabLain,
   ] = await Promise.all([
     scanAset(supabase),
-    countTrx(supabase, q => q.eq('jenis', 'pengadaan')),
-    countTrx(supabase, q => q.eq('jenis', 'hibah_masuk')),
-    countTrx(supabase, q => q.eq('jenis', 'hasil_inventarisasi')),
-    countTrx(supabase, q => q.eq('jenis', 'perolehan_lainnya')),
     countTrx(supabase, q => q.eq('jenis', 'pengalihan_status')),
     countTrx(supabase, q => q.eq('jenis', 'mutasi_internal')),
     countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan')),
@@ -77,6 +80,7 @@ export default async function DashboardHome() {
   ])
   const gol = scan.gol
   const cn = scan.caraNilai
+  const cc = scan.caraCount
   const hapusSebabLainnya = hapusSebabLain + Math.max(0, hapusTotalPemindah - hapusHibah - hapusJual)
   const totalRegister = Object.values(gol).reduce((s, v) => s + v.count, 0)
   const totalNilai = Object.values(gol).reduce((s, v) => s + v.nilai, 0)
@@ -109,7 +113,7 @@ export default async function DashboardHome() {
       {/* Perolehan */}
       <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan — klik utk rincian disetujui/menunggu">
         <CaraPerolehanCards
-          approved={{ pengadaan: perPengadaan, hibah: perHibah, inventarisasi: perInv, lainnya: perLain }}
+          approved={{ pengadaan: cc['pengadaan'] || 0, hibah: cc['hibah_masuk'] || 0, inventarisasi: cc['hasil_inventarisasi'] || 0, lainnya: cc['perolehan_lainnya'] || 0 }}
           approvedNilai={{ pengadaan: cn['pengadaan'] || 0, hibah: cn['hibah_masuk'] || 0, inventarisasi: cn['hasil_inventarisasi'] || 0, lainnya: cn['perolehan_lainnya'] || 0 }} />
       </Section>
 
