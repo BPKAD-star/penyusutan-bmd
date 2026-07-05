@@ -12,12 +12,13 @@
 //      Spesifikasi (field-nya menyesuaikan golongan — lihat lib/asetFields.ts),
 //      satu-satu atau massal via checklist.
 //   4. Admin klik "Setujui" → BARU semua draft di-materialize ke aset+ledger,
-//      pakai TANGGAL BAST sbg tgl perolehan efektif. "Tolak" → tidak pernah
-//      menyentuh ledger. Kontrak pending/ditolak bisa dihapus penuh (aman,
-//      belum pernah ada ledger); kontrak disetujui TIDAK BISA dihapus (FK ke
-//      ledger) — koreksi lewat batalkan per-barang (batal_pengadaan).
-//   5. Barang yang SUDAH disetujui bisa diedit spesifikasinya (popup sama) +
-//      dibatalkan per-unit (koreksi pasca-approve, retroaktif ke tgl asli).
+//      pakai TANGGAL BAST sbg tgl perolehan efektif. TIDAK ADA "Tolak" — alurnya
+//      cukup: user input → admin verifikasi → (kalau salah, edit draft) → setujui.
+//   5. Kontrak DISETUJUI terkunci total (read-only). Untuk mengubah/menghapus,
+//      admin "Buka Kunci" (unapprove) → kembali ke draft, edit, lalu setujui
+//      ulang (acuan tgl tetap tgl BAST). Kontrak yang pernah disetujui punya
+//      jejak ledger permanen (append-only) → tak bisa dihapus penuh; hanya
+//      draft murni (belum pernah disetujui) yang bisa dihapus.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
@@ -51,11 +52,13 @@ type HeaderPayload = {
   no_bast?: string; tgl_bast?: string; ket_bast?: string
   draft_items?: DraftItem[]
 }
+// 'ditolak' = LEGACY (fitur Tolak sudah dihapus) — baris lama tetap ditangani
+// (disaring dari tampilan) supaya tak error, tapi tak pernah dibuat baru.
 type ApprovalStatus = 'pending' | 'disetujui' | 'ditolak'
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string; jenis: string
   keterangan: string | null; payload: HeaderPayload
-  approval_status: ApprovalStatus; approved_at: string | null; rejected_reason: string | null
+  approval_status: ApprovalStatus; approved_at: string | null
 }
 // Barang yang SUDAH disetujui (dibaca dari aset+ledger, bukan draft).
 type JurnalLine = {
@@ -65,7 +68,9 @@ type JurnalLine = {
   foto_paths: string[]
   fields: Record<string, string>
 }
-type Jurnal = Header & { lines: JurnalLine[]; total: number }
+// hasLedger = kontrak ini punya baris di transaksi_bmd (pernah disetujui, walau
+// kini pending karena dibuka kunci) → tak boleh dihapus penuh (FK + append-only).
+type Jurnal = Header & { lines: JurnalLine[]; total: number; hasLedger: boolean }
 
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
@@ -236,7 +241,7 @@ export default function Pengadaan() {
     setLoadingJurnal(true)
 
     const { data: headers } = await supabase.from('jurnal_header')
-      .select('id,no_sk,tanggal,periode,jenis,keterangan,payload,approval_status,approved_at,rejected_reason')
+      .select('id,no_sk,tanggal,periode,jenis,keterangan,payload,approval_status,approved_at')
       .eq('kategori', 'pengadaan').eq('skpd_id', Number(skpdId))
       .order('tanggal', { ascending: false })
     const hs = (headers || []) as Header[]
@@ -244,7 +249,16 @@ export default function Pengadaan() {
     const jmap = new Map<string, Jurnal>()
     for (const h of hs) {
       const payload = h.payload || {}
-      jmap.set(h.id, { ...h, payload: { ...payload, draft_items: normalizeDraftItems(payload.draft_items) }, lines: [], total: 0 })
+      jmap.set(h.id, { ...h, payload: { ...payload, draft_items: normalizeDraftItems(payload.draft_items) }, lines: [], total: 0, hasLedger: false })
+    }
+
+    // Deteksi kontrak yg punya jejak ledger (pernah disetujui) → tak bisa dihapus.
+    const pendingIds = hs.filter(h => h.approval_status === 'pending').map(h => h.id)
+    if (pendingIds.length > 0) {
+      const { data: led } = await supabase.from('transaksi_bmd').select('header_id').in('header_id', pendingIds)
+      for (const r of (led || []) as { header_id: string | null }[]) {
+        const j = r.header_id && jmap.get(r.header_id); if (j) j.hasLedger = true
+      }
     }
 
     const disetujuiIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
@@ -279,7 +293,10 @@ export default function Pengadaan() {
         j.total += r.nilai
       }
     }
-    setJurnals([...jmap.values()].filter(j => j.approval_status !== 'disetujui' || j.lines.length > 0))
+    // Tampilkan hanya pending & disetujui(berisi). Baris 'ditolak' legacy disaring
+    // (fitur Tolak sudah dihapus) — tetap ada di DB tapi tak ditampilkan.
+    setJurnals([...jmap.values()].filter(j =>
+      j.approval_status === 'pending' || (j.approval_status === 'disetujui' && j.lines.length > 0)))
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -287,7 +304,7 @@ export default function Pengadaan() {
 
   const skpdNama = skpd ? skpdPathMap[Number(skpd)] : undefined
 
-  // Total semua pengadaan utk SKPD ini (disetujui + estimasi draft; ditolak tidak dihitung).
+  // Total semua pengadaan utk SKPD ini (disetujui + estimasi draft pending).
   const totalSemua = jurnals.reduce((s, j) => {
     if (j.approval_status === 'disetujui') return s + j.total
     if (j.approval_status === 'pending') return s + draftTotal(j.payload.draft_items || [])
@@ -424,18 +441,6 @@ export default function Pengadaan() {
     loadJurnals(skpd)
   }
 
-  async function rejectHeader(h: Jurnal) {
-    if (!confirm(`Tolak kontrak ${h.no_sk}? Barang tidak akan dicatat sama sekali.`)) return
-    const reason = window.prompt('Alasan penolakan (opsional):') || null
-    setBusyId(h.id)
-    const { error } = await supabase.from('jurnal_header')
-      .update({ approval_status: 'ditolak', rejected_reason: reason }).eq('id', h.id)
-    if (error) { setMsg(`Error: ${error.message}`); setBusyId(null); return }
-    setMsg(`Kontrak ${h.no_sk} ditolak.`)
-    setBusyId(null)
-    loadJurnals(skpd)
-  }
-
   // Buka kunci (unapprove): kembalikan kontrak disetujui ke draft. Karena ledger
   // append-only, semua barang di-batal_pengadaan (soft-delete, retroaktif → hilang
   // dari Daftar Barang/Penyusutan), lalu draft_items direkonstruksi dari barang tsb
@@ -466,7 +471,6 @@ export default function Pengadaan() {
 
   const pending = jurnals.filter(j => j.approval_status === 'pending')
   const disetujui = jurnals.filter(j => j.approval_status === 'disetujui')
-  const ditolak = jurnals.filter(j => j.approval_status === 'ditolak')
 
   return (
     <FormShell judul="Pengadaan" msg={msg}
@@ -520,7 +524,6 @@ export default function Pengadaan() {
                       onHapusItem={key => hapusDraftItem(h, key)}
                       onEditSpes={keys => setSpecEdit({ header: h, keys })}
                       onApprove={() => approveHeader(h)}
-                      onReject={() => rejectHeader(h)}
                     />
                   ))}
                 </section>
@@ -532,22 +535,6 @@ export default function Pengadaan() {
                     <ApprovedCard key={j.id} j={j} isAdmin={isAdmin} busy={busyId === j.id}
                       onUnapprove={() => unapproveHeader(j)}
                     />
-                  ))}
-                </section>
-              )}
-              {ditolak.length > 0 && (
-                <section className="space-y-3">
-                  <h3 className="text-sm font-semibold text-gray-400">✕ Ditolak ({ditolak.length})</h3>
-                  {ditolak.map(h => (
-                    <div key={h.id} className="card p-4 bg-gray-50/50 opacity-75 flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-medium text-gray-600">Kontrak: {h.no_sk} · {sumberLabel(h.jenis)}</p>
-                        <p className="text-xs text-gray-400">Tgl kontrak {h.tanggal} · {h.periode}</p>
-                        {h.rejected_reason && <p className="text-xs text-gray-500 mt-1">Alasan: {h.rejected_reason}</p>}
-                      </div>
-                      <button onClick={() => hapusKontrak(h)} title="Hapus kontrak ini"
-                        className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white flex-shrink-0">🗑</button>
-                    </div>
                   ))}
                 </section>
               )}
@@ -603,13 +590,13 @@ function useFirstFotoUrls(paths: string[]) {
 }
 
 // ── Kartu "Menunggu Persetujuan" ─────────────────────────────────────────────
-function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKontrak, onTambah, onHapusItem, onEditSpes, onApprove, onReject }: {
+function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKontrak, onTambah, onHapusItem, onEditSpes, onApprove }: {
   h: Jurnal; isAdmin: boolean; busy: boolean; golonganLabels: Record<string, string>
   onEditHeader: () => void; onHapusKontrak: () => void
   onTambah: (items: DraftItem[]) => void
   onHapusItem: (key: string) => void
   onEditSpes: (keys: string[]) => void
-  onApprove: () => void; onReject: () => void
+  onApprove: () => void
 }) {
   const items = h.payload.draft_items || []
   const [showTambah, setShowTambah] = useState(items.length === 0)
@@ -651,8 +638,13 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
             <div className="flex items-center gap-2 mt-2">
               <button title="Edit kontrak / BAST" onClick={onEditHeader}
                 className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
-              <button title="Hapus kontrak ini" onClick={onHapusKontrak}
-                className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+              {h.hasLedger ? (
+                <span title="Kontrak ini pernah disetujui lalu dibuka kunci — punya jejak ledger permanen, tak bisa dihapus. Edit lalu setujui ulang."
+                  className="text-[11px] text-amber-600 whitespace-nowrap">🔓 dibuka kunci</span>
+              ) : (
+                <button title="Hapus draft kontrak ini" onClick={onHapusKontrak}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+              )}
             </div>
           </div>
         </div>
@@ -707,12 +699,9 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
       <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
         <span className="text-xs text-gray-500">{items.length} barang</span>
         {isAdmin ? (
-          <div className="flex gap-2">
-            <button className="btn-secondary text-xs" disabled={busy} onClick={onReject}>Tolak</button>
-            <button className="btn-primary text-xs" disabled={busy || items.length === 0} onClick={onApprove}>
-              {busy ? 'Memproses...' : '✓ Setujui'}
-            </button>
-          </div>
+          <button className="btn-primary text-xs" disabled={busy || items.length === 0} onClick={onApprove}>
+            {busy ? 'Memproses...' : '✓ Setujui'}
+          </button>
         ) : (
           <span className="text-xs text-gray-400">Menunggu tinjauan admin.</span>
         )}
