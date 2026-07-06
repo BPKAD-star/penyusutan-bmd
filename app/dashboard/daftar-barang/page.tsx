@@ -19,6 +19,7 @@ import { createClient } from '@/lib/supabase/client'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
+import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
 
 const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
@@ -27,6 +28,8 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 // sama dgn menu Penyusutan. Dipakai untuk visibilitas period-aware.
 const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan']
 const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan']
+
+const SELECT_COLS = 'id,nibar,kode,nama_barang,spesifikasi_lainnya,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -117,6 +120,7 @@ export default function DaftarBarangPage() {
   const [data, setData] = useState<Row[]>([])          // baris yang tampil (halaman aktif / semua)
   const [allVisible, setAllVisible] = useState<Row[]>([]) // seluruh baris visible di periode (utk paginasi & export)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
+  const [ownerOverride, setOwnerOverride] = useState<Map<string, number | null>>(new Map()) // aset_id → SKPD pemilik period-aware
   const [total, setTotal] = useState(0)
   const [grandTotal, setGrandTotal] = useState(0)
   const [showAll, setShowAll] = useState(false)
@@ -166,10 +170,26 @@ export default function DaftarBarangPage() {
 
   const buildQuery = useCallback((f: Applied, withCount: boolean, includeDeleted = false) => {
     const q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi_lainnya,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak',
-        withCount ? { count: 'exact' } : undefined)
+      .select(SELECT_COLS, withCount ? { count: 'exact' } : undefined)
     return applyFilters(q, f, includeDeleted).order('nilai_perolehan', { ascending: false })
   }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ambil baris aset berdasar daftar id (utk barang yang PADA periode terpilih
+  // milik SKPD terpilih tapi kini sudah pindah keluar — period-aware). Filter
+  // golongan/komptabel/search tetap diterapkan; filter SKPD TIDAK (justru id-id
+  // ini di luar scope skpd terkini). includeDeleted=true.
+  const fetchRowsByIds = useCallback(async (ids: string[], f: Applied): Promise<Row[]> => {
+    const out: Row[] = []
+    for (let i = 0; i < ids.length; i += 200) {
+      let q = supabase.from('aset').select(SELECT_COLS).in('id', ids.slice(i, i + 200))
+      if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
+      if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
+      if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
+      const { data } = await q
+      out.push(...((data as unknown as Row[]) || []))
+    }
+    return out
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Uraian (nama baku) per kode dari kodefikasi_bmd.
   async function fetchUraian(kodes: string[]) {
@@ -252,14 +272,31 @@ export default function DaftarBarangPage() {
     setApplied(f); setPage(0); setGrandTotal(0)
     setLoading(true)
 
-    // Ambil SEMUA baris (aktif + dihapus), lalu saring:
-    //   (a) yang tersembunyi krn dihapus/diserap di periode, DAN
-    //   (b) yang BELUM diperoleh pada periode ini (tgl perolehan > periode) —
+    // Ambil SEMUA baris (aktif + dihapus) yg kini di scope SKPD, lalu:
+    //   (0) sesuaikan kepemilikan PERIOD-AWARE (transfer antar SKPD): buang yg
+    //       pada periode ini milik SKPD lain, tambah yg pada periode ini milik
+    //       scope tapi kini sudah pindah keluar. Lihat lib/pengalihan.ts.
+    //   (a) buang yang tersembunyi krn dihapus/diserap di periode, DAN
+    //   (b) buang yang BELUM diperoleh pada periode ini (tgl perolehan > periode) —
     //       supaya barang yang dibeli di semester DEPAN tak muncul di posisi lampau.
-    const all = await fetchAllRows(f, true)
-    const hidden = await fetchHiddenIds(all.map(r => r.id), f.periode)
+    const base = await fetchAllRows(f, true)
+    const owners = await fetchOwnerOverrides(supabase, f.periode)
+    setOwnerOverride(owners)
+
+    let combined = base
+    if (f.descIds && f.descIds.length > 0) {
+      const scope = new Set(f.descIds)
+      const curSkpd = new Map<string, number | null>(base.map(r => [r.id, r.skpd_id]))
+      const { keepIds, addIds } = partitionByPeriodOwner(base.map(r => r.id), owners, curSkpd, scope)
+      const kept = base.filter(r => keepIds.has(r.id))
+      const added = addIds.length > 0 ? await fetchRowsByIds(addIds, f) : []
+      combined = [...kept, ...added]
+    }
+
+    const hidden = await fetchHiddenIds(combined.map(r => r.id), f.periode)
     const belumAda = (r: Row) => !!r.tgl_perolehan && comparePeriode(periodeDariTanggal(r.tgl_perolehan), f.periode) > 0
-    const visible = all.filter(r => !hidden.has(r.id) && !belumAda(r))
+    const visible = combined.filter(r => !hidden.has(r.id) && !belumAda(r))
+      .sort((a, b) => (b.nilai_perolehan || 0) - (a.nilai_perolehan || 0))
 
     setAllVisible(visible)
     setTotal(visible.length)
@@ -284,7 +321,7 @@ export default function DaftarBarangPage() {
     exportToExcel(all.map(r => {
       const cell = (key: string): string | number => {
         switch (key) {
-          case 'skpd': return skpdMap[r.skpd_id ?? -1] || ''
+          case 'skpd': return skpdMap[ownerSkpd(r) ?? -1] || ''
           case 'nama': return r.nama_barang || ''
           case 'kode': return r.kode
           case 'uraian': return uraian[r.kode] || ''
@@ -357,9 +394,13 @@ export default function DaftarBarangPage() {
   const cols = applied ? colsFor(applied.golongan) : DEFAULT_COLS
   const nilaiIdx = cols.indexOf('nilai')
 
+  // SKPD pemilik pada periode terpilih (period-aware): override kalau barang
+  // pernah dialihkan; kalau tidak, pakai skpd_id terkini.
+  const ownerSkpd = (r: Row): number | null => ownerOverride.get(r.id) ?? r.skpd_id
+
   function cellContent(key: string, r: Row): React.ReactNode {
     switch (key) {
-      case 'skpd': return skpdMap[r.skpd_id ?? -1] || '-'
+      case 'skpd': return skpdMap[ownerSkpd(r) ?? -1] || '-'
       case 'nama': return (
         <>
           <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>

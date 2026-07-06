@@ -49,7 +49,7 @@ apa pun yang menyentuh ledger atau engine.
   yang dulu dari view direplikasi: golongan dari `kode` (`like 'x.%'`), nama SKPD
   dari `skpd`, jejak penghapusan dari ledger+`jurnal_header`.
 
-## Pengalihan Status Penggunaan (transfer antar SKPD, migrasi 21)
+## Pengalihan Status Penggunaan (transfer antar SKPD, migrasi 21 + 22)
 
 Jenis ketiga di menu Penghapusan (sisi KELUAR) + persetujuan SKPD tujuan di menu
 Penggunaan (sisi MASUK, `PenggunaanMasuk.tsx`). Gabungan dua pola yang sudah ada:
@@ -58,17 +58,35 @@ level SKPD induk — combobox `rootOnly`) + draft-approve (barang di
 `payload.draft_items`, `approval_status='pending'`; ledger & `aset` TIDAK
 disentuh sampai SKPD tujuan menerima). Poin penting:
 
+- **SATU PINTU (migrasi 22).** Begitu SKPD tujuan MENERIMA, SKPD asal (pengirim)
+  TIDAK bisa apa-apa lagi — kartunya read-only. Pengembalian barang HANYA lewat
+  SKPD PENERIMA (tombol "Kembalikan" per barang di `PenggunaanMasuk.tsx`).
 - **Mutasi lintas-SKPD lewat RPC SECURITY DEFINER**, bukan insert/update client:
   `fn_terima_pengalihan` (materialize: ledger `pengalihan_status` + pindah
   `aset.skpd_id`, atomik), `fn_tolak_pengalihan` (status `ditolak`+alasan, ini
   status AKTIF di kategori ini — beda dgn Pengadaan yg legacy), dan
-  `fn_batal_pengalihan_barang` (pasca-setuju: transaksi balik ber-payload
-  `{reversal:true}` + aset kembali ke asal). Alasannya: RLS `aset`/`transaksi_bmd`
-  menolak operator menulis di luar subtree SKPD-nya — jangan coba bypass dgn
-  policy longgar.
+  `fn_kembalikan_pengalihan_barang` (penerima/admin ONLY: transaksi balik
+  ber-payload `{reversal:true}` + aset kembali ke asal). Alasannya: RLS
+  `aset`/`transaksi_bmd` menolak operator menulis di luar subtree SKPD-nya —
+  jangan coba bypass dgn policy longgar. (`fn_batal_pengalihan_barang` LAMA
+  di-DROP migrasi 22 — jangan dipakai lagi.)
+- **Pengembalian = peristiwa BARU di periode BERJALAN** (`current_date`), BUKAN
+  dibekukan ke periode jurnal asli. Supaya laporan periode ANTARA terima &
+  kembali tetap menunjukkan barang di SKPD penerima; sejak periode kembali,
+  balik ke SKPD asal.
 - `pengalihan_status` TANPA efek finansial di engine (penyusutan jalan terus)
   dan BUKAN event SEMBUNYI — barang cuma pindah pemegang. Keanggotaan kartu:
   baris ledger TERBARU per (header, aset); `payload.reversal` = keluar.
+- **Kepemilikan PERIOD-AWARE (`lib/pengalihan.ts`).** Daftar Barang & Penyusutan
+  meng-atribusi SKPD per periode dgn replay ledger, BUKAN `aset.skpd_id` terkini:
+  `fetchOwnerOverrides(periode)` → map aset_id→SKPD pemilik pd periode itu
+  (skpd_tujuan baris terakhir dgn periode<=V; sebelum transfer pertama = skpd_asal
+  awal). `partitionByPeriodOwner` menyesuaikan set saat filter SKPD: BUANG barang
+  yg kini di scope tapi saat itu milik SKPD lain, TAMBAH barang yg saat itu milik
+  scope tapi kini sudah pindah keluar (di-fetch by id, RLS `aset_select` diperluas
+  migrasi 22 via `fn_aset_pernah_dikelola` supaya pengirim tetap bisa baca aset yg
+  sudah pindah). Angka penyusutan engine tak berubah — hanya kolom/atribusi SKPD.
+  ⚠️ Rekapitulasi Saldo Akhir (per SKPD) BELUM period-aware utk pengalihan.
 - Selama pending: draft bebas diedit, jurnal boleh DELETE utuh (belum ada
   ledger). Pindah semester = hapus & entry ulang (guard semester sama spt
   ber-SK lain). `skpd_tujuan` terkunci begitu status bukan pending.

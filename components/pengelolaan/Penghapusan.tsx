@@ -9,15 +9,15 @@
 // diizinkan lewat edit → dijaga trigger DB + validasi UI (lihat CLAUDE.md).
 //
 // Jenis ketiga: PENGALIHAN STATUS PENGGUNAAN (transfer keluar antar SKPD) —
-// beda mekanika dari penghapusan biasa (migrasi 21):
+// beda mekanika dari penghapusan biasa (migrasi 21 + 22):
 //   - Butuh SKPD tujuan (level SKPD induk saja) + dokumen sumber (foto/PDF).
 //   - Barang ditampung sbg DRAFT di payload.draft_items (approval_status
 //     'pending') — ledger & aset TIDAK disentuh sampai SKPD tujuan menyetujui
 //     lewat menu Penggunaan (RPC fn_terima_pengalihan).
 //   - Selama pending: barang bebas ditambah/dihapus, header bebas diedit
 //     (semester sama), jurnal bisa dihapus utuh (belum ada jejak ledger).
-//   - Setelah disetujui: batal per barang = transaksi balik (RPC
-//     fn_batal_pengalihan_barang), append-only aman.
+//   - SATU PINTU: setelah disetujui, kartu di sisi PENGIRIM jadi read-only.
+//     Pengembalian barang HANYA lewat SKPD penerima (menu Penggunaan).
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
@@ -211,26 +211,22 @@ export default function Penghapusan() {
 
   async function hapusBarang(l: JurnalLine, j: Jurnal) {
     if (j.kategori === 'pengalihan_status') {
-      if (j.approval_status === 'pending') {
-        // Draft murni — cukup keluarkan dari payload.draft_items.
-        const sisa = (j.payload?.draft_items || []).filter(d => d.aset_id !== l.aset_id)
-        if (sisa.length === 0) {
-          if (!confirm('Ini barang terakhir di jurnal — jurnal pengalihan akan dihapus seluruhnya. Lanjutkan?')) return
-          const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
-          if (error) { setMsg(`Error: ${error.message}`); return }
-          setMsg('Jurnal pengalihan dihapus.')
-        } else {
-          if (!confirm('Keluarkan barang ini dari draft pengalihan?')) return
-          const { error } = await supabase.from('jurnal_header')
-            .update({ payload: { ...(j.payload || {}), draft_items: sisa } }).eq('id', j.id)
-          if (error) { setMsg(`Error: ${error.message}`); return }
-          setMsg('Barang dikeluarkan dari draft pengalihan.')
-        }
-      } else if (j.approval_status === 'disetujui') {
-        if (!confirm('Batalkan pengalihan barang ini? Barang akan kembali ke SKPD asal (dicatat sebagai transaksi balik).')) return
-        const { error } = await supabase.rpc('fn_batal_pengalihan_barang', { p_header_id: j.id, p_aset_id: l.aset_id })
+      // SATU PINTU: pengirim hanya boleh mengutak-atik selama masih pending
+      // (draft, belum ada ledger). Setelah disetujui SKPD tujuan, pengirim tak
+      // bisa apa-apa lagi — pengembalian dilakukan SKPD penerima (menu Penggunaan).
+      if (j.approval_status !== 'pending') return
+      const sisa = (j.payload?.draft_items || []).filter(d => d.aset_id !== l.aset_id)
+      if (sisa.length === 0) {
+        if (!confirm('Ini barang terakhir di jurnal — jurnal pengalihan akan dihapus seluruhnya. Lanjutkan?')) return
+        const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
         if (error) { setMsg(`Error: ${error.message}`); return }
-        setMsg('Pengalihan barang dibatalkan — barang kembali ke SKPD asal.')
+        setMsg('Jurnal pengalihan dihapus.')
+      } else {
+        if (!confirm('Keluarkan barang ini dari draft pengalihan?')) return
+        const { error } = await supabase.from('jurnal_header')
+          .update({ payload: { ...(j.payload || {}), draft_items: sisa } }).eq('id', j.id)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg('Barang dikeluarkan dari draft pengalihan.')
       }
       loadJurnals(skpd)
       return
@@ -314,7 +310,10 @@ export default function Penghapusan() {
             const isAlih = j.kategori === 'pengalihan_status'
             const pending = isAlih && j.approval_status === 'pending'
             const ditolak = isAlih && j.approval_status === 'ditolak'
-            const bolehHapusLine = !isAlih || pending || j.approval_status === 'disetujui'
+            const disetujui = isAlih && j.approval_status === 'disetujui'
+            // Satu pintu: baris pengalihan hanya bisa diutak-atik saat pending.
+            // Disetujui → read-only di sisi pengirim (pengembalian ada di penerima).
+            const bolehHapusLine = !isAlih || pending
             return (
             <div key={j.id} className="card overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
@@ -350,6 +349,9 @@ export default function Penghapusan() {
                             className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
                         ))}
                       </p>
+                    )}
+                    {disetujui && (
+                      <p className="text-xs text-gray-400 italic">Sudah diterima SKPD tujuan — read-only. Pengembalian dilakukan SKPD tujuan lewat menu Penggunaan.</p>
                     )}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
@@ -395,9 +397,7 @@ export default function Penghapusan() {
                           {bolehHapusLine ? (
                             <button
                               onClick={() => hapusBarang(l, j)}
-                              title={isAlih
-                                ? (pending ? 'Keluarkan barang dari draft pengalihan' : 'Batalkan pengalihan barang ini (kembali ke SKPD asal)')
-                                : 'Batalkan penghapusan barang ini'}
+                              title={isAlih ? 'Keluarkan barang dari draft pengalihan' : 'Batalkan penghapusan barang ini'}
                               className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white"
                             >🗑</button>
                           ) : <span className="text-gray-300 text-xs">—</span>}

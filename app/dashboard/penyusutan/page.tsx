@@ -17,6 +17,9 @@ import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, perlakuanKode, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
+import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+
+const BASE_COLS = 'id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan'
 
 type Base = {
   id: string; nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
@@ -45,7 +48,7 @@ export default function PenyusutanPage() {
   const [search, setSearch] = useState('')
 
   const [applied, setApplied] = useState<Applied | null>(null)
-  const [rows, setRows] = useState<(Base & { p?: Peny })[]>([])
+  const [rows, setRows] = useState<(Base & { p?: Peny; ownerSkpd?: number | null })[]>([])
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
@@ -70,8 +73,7 @@ export default function PenyusutanPage() {
   // Sumber register = tabel aset (hidup, includeDeleted implisit — visibilitas
   // period-aware diserahkan ke fetchHiddenIds di bawah, sama seperti Daftar Barang).
   function baseQuery(f: Applied) {
-    let q = supabase.from('aset')
-      .select('id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan')
+    let q = supabase.from('aset').select(BASE_COLS)
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
     if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
@@ -88,6 +90,22 @@ export default function PenyusutanPage() {
       if (data.length < 1000) break
     }
     return base
+  }
+
+  // Ambil aset per daftar id (period-aware: barang yg pada periode terpilih milik
+  // SKPD terpilih tapi kini sudah pindah keluar). Filter golongan/komptabel/search
+  // tetap; filter SKPD tidak.
+  async function fetchBaseByIds(ids: string[], f: Applied): Promise<Base[]> {
+    const out: Base[] = []
+    for (let i = 0; i < ids.length; i += 200) {
+      let q = supabase.from('aset').select(BASE_COLS).in('id', ids.slice(i, i + 200))
+      if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
+      if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
+      if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
+      const { data } = await q
+      out.push(...((data as unknown as Base[]) || []))
+    }
+    return out
   }
 
   // Hasil engine per aset_id untuk periode terpilih.
@@ -148,15 +166,30 @@ export default function PenyusutanPage() {
   }
 
   // Susun baris tampil: register − yang tersembunyi − yang belum diperoleh di
-  // periode ini (tgl perolehan > periode), digabung angka engine.
-  async function assembleRows(f: Applied): Promise<(Base & { p?: Peny })[]> {
+  // periode ini (tgl perolehan > periode), disesuaikan kepemilikan PERIOD-AWARE
+  // (transfer antar SKPD: barang yg pindah di semester depan tetap di SKPD asal
+  // saat lihat semester lampau), digabung angka engine. `ownerSkpd` = pemilik
+  // pada periode terpilih (utk tampilan/atribusi SKPD).
+  async function assembleRows(f: Applied): Promise<(Base & { p?: Peny; ownerSkpd?: number | null })[]> {
     const base = await fetchAllBase(f)
-    const ids = base.map(b => b.id)
+    const owners = await fetchOwnerOverrides(supabase, f.periode)
+
+    let combined = base
+    if (f.org.descendantIds && f.org.descendantIds.length > 0) {
+      const scope = new Set(f.org.descendantIds)
+      const curSkpd = new Map<string, number | null>(base.map(b => [b.id, b.skpd_id]))
+      const { keepIds, addIds } = partitionByPeriodOwner(base.map(b => b.id), owners, curSkpd, scope)
+      const kept = base.filter(b => keepIds.has(b.id))
+      const added = addIds.length > 0 ? await fetchBaseByIds(addIds, f) : []
+      combined = [...kept, ...added]
+    }
+
+    const ids = combined.map(b => b.id)
     const [pmap, hidden] = await Promise.all([fetchPeny(ids, f.periode), fetchHiddenIds(ids, f.periode)])
     const belumAda = (b: Base) => !!b.tgl_perolehan && comparePeriode(periodeDariTanggal(b.tgl_perolehan), f.periode) > 0
-    return base
+    return combined
       .filter(b => !hidden.has(b.id) && !belumAda(b))
-      .map(b => ({ ...b, p: pmap.get(b.id) }))
+      .map(b => ({ ...b, p: pmap.get(b.id), ownerSkpd: owners.get(b.id) ?? b.skpd_id }))
   }
 
   async function load(f: Applied) {
@@ -196,7 +229,7 @@ export default function PenyusutanPage() {
       const susut = perlakuanKode(b.kode_barang) !== 'tidak'
       return {
         'NIBAR': b.nibar, 'Nama Barang': b.nama_barang, 'Kode Barang': b.kode_barang,
-        'SKPD': skpdNama[b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
+        'SKPD': skpdNama[b.ownerSkpd ?? b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
         'Tgl Perolehan': b.tgl_perolehan || '',
         'Nilai Perolehan': p ? p.nilai_perolehan : b.nilai_perolehan,
         'Beban': susut && p ? p.beban : '',
@@ -339,7 +372,7 @@ export default function PenyusutanPage() {
                   const masaSmt = p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : null
                   return (
                     <tr key={r.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                      <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
+                      <td className="table-td text-xs text-gray-600">{skpdNama[r.ownerSkpd ?? r.skpd_id] || '-'}</td>
                       <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
                       <td className="table-td">
                         <p className={`text-xs ${kap ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>{r.nama_barang || '-'}</p>

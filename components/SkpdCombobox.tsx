@@ -12,7 +12,7 @@ type SkpdRow = { id: number; nama: string; level: number; parent_id: number | nu
 export type SkpdSelection = { skpdId: number | null; descendantIds: number[] | null }
 
 export default function SkpdCombobox({ value, onChange, onChangeSelection, placeholder, allowClear, rootOnly }: {
-  value: string
+  value?: string
   onChange?: (id: string) => void
   onChangeSelection?: (sel: SkpdSelection) => void
   placeholder?: string

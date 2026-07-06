@@ -131,6 +131,19 @@ export default function PenggunaanMasuk() {
     load(skpd)
   }
 
+  // Kembalikan barang ke SKPD asal — hak SKPD penerima (satu pintu). Dicatat
+  // sebagai peristiwa baru di periode BERJALAN (bukan periode jurnal asli),
+  // jadi laporan periode antara terima & kembali tetap menunjukkan barang di sini.
+  async function kembalikan(j: Jurnal, l: Line) {
+    if (!confirm(`Kembalikan "${l.nama_barang || l.nibar || 'barang ini'}" ke ${namaSkpd(j.skpd_id)}? Barang dicatat balik ke SKPD asal pada periode berjalan.`)) return
+    setBusy(true)
+    const { error } = await supabase.rpc('fn_kembalikan_pengalihan_barang', { p_header_id: j.id, p_aset_id: l.aset_id })
+    setBusy(false)
+    if (error) { setMsg(`Error: ${error.message}`); return }
+    setMsg(`Barang dikembalikan ke ${namaSkpd(j.skpd_id)}.`)
+    load(skpd)
+  }
+
   async function bukaDokumen(path: string) {
     const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
@@ -146,7 +159,7 @@ export default function PenggunaanMasuk() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Penggunaan</h1>
         <p className="text-gray-500 text-sm mt-1">
-          BMD masuk dari SKPD lain (Pengalihan Status Penggunaan). Jurnal pending menunggu persetujuan SKPD ini — periksa barang & dokumen sumber, lalu Terima atau Tolak.
+          BMD masuk dari SKPD lain (Pengalihan Status Penggunaan). Jurnal pending menunggu persetujuan SKPD ini — periksa barang & dokumen sumber, lalu Terima atau Tolak. Barang yang sudah diterima bisa dikembalikan ke SKPD asal kapan pun lewat tombol Kembalikan.
         </p>
       </div>
 
@@ -171,6 +184,7 @@ export default function PenggunaanMasuk() {
           {[...pendings, ...riwayat].map(j => {
             const pending = j.approval_status === 'pending'
             const ditolak = j.approval_status === 'ditolak'
+            const disetujui = j.approval_status === 'disetujui'
             return (
               <div key={j.id} className={`card overflow-hidden ${pending ? 'border-amber-300' : ''}`}>
                 <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
@@ -231,6 +245,7 @@ export default function PenggunaanMasuk() {
                         <th className="table-th">Merek / Tipe</th>
                         <th className="table-th text-center">Jumlah</th>
                         <th className="table-th text-right">Nilai</th>
+                        {disetujui && <th className="table-th text-center w-28">Aksi</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -243,6 +258,15 @@ export default function PenggunaanMasuk() {
                           <td className="table-td text-xs text-gray-600">{l.merek_tipe || '-'}</td>
                           <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
                           <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                          {disetujui && (
+                            <td className="table-td text-center">
+                              <button disabled={busy} onClick={() => kembalikan(j, l)}
+                                title="Kembalikan barang ini ke SKPD asal (dicatat di periode berjalan)"
+                                className="px-3 py-1 rounded text-xs bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50">
+                                Kembalikan
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
