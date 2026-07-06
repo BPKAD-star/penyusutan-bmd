@@ -113,7 +113,9 @@ export default function Koreksi() {
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Tanggal Dokumen Kepemilikan</label>
-                      <input type="date" className="select-filter w-full" value={tanah.tanggal_dokumen_kepemilikan}
+                      {/* Tanggal SERTIFIKAT (bisa historis, bukan tanggal transaksi ledger) — cuma dibatasi tak boleh di masa depan, TIDAK dibatasi tahun_buku. */}
+                      <input type="date" className="select-filter w-full" max={new Date().toISOString().slice(0, 10)}
+                        value={tanah.tanggal_dokumen_kepemilikan}
                         onChange={e => setTanah(s => ({ ...s, tanggal_dokumen_kepemilikan: e.target.value }))} />
                     </div>
                     <div>

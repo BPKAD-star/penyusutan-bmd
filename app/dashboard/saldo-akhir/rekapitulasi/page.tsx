@@ -13,6 +13,7 @@ import RekapTable, { type RekapRow } from '@/components/RekapTable'
 import RekapMatrixTable, { METRIC_LABEL, type MatrixRow, type MatrixCell, type MetricOrAll, type Metric } from '@/components/RekapMatrixTable'
 import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
 
@@ -183,6 +184,8 @@ export default function Page() {
           </div>
         </div>
       </div>
+
+      <TahunTerkunciNote tahun={Number(tahun)} />
 
       {rows === null ? (
         <div className="card p-12 text-center text-gray-400 text-sm">

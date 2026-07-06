@@ -49,6 +49,97 @@ apa pun yang menyentuh ledger atau engine.
   yang dulu dari view direplikasi: golongan dari `kode` (`like 'x.%'`), nama SKPD
   dari `skpd`, jejak penghapusan dari ledger+`jurnal_header`.
 
+## Tahun Buku (kunci tahun akuntansi, migrasi 23)
+
+Tabel kontrol `tahun_buku` (tahun, status terbuka/terkunci) + log append-only
+`tahun_buku_log`. **Model data TETAP satu ledger kontinu** — `transaksi_bmd`/
+`aset` TIDAK dipecah per tahun, tidak ada `saldo_awal_2027` dst sebagai tabel
+baru. Ini murni tabel kontrol yang dibaca trigger, sama pola dengan
+`fn_jurnal_header_guard` (kunci semester) — cuma naik level ke tahun.
+
+- **Dua guard mutlak** (`fn_cek_tahun_buku`, trigger BEFORE INSERT di
+  `transaksi_bmd` DAN `jurnal_header`): (1) tanggal **tidak boleh** di masa
+  depan (`> current_date`), TANPA KECUALI APA PUN; (2) tanggal **tidak boleh**
+  jatuh di tahun `terkunci` — KECUALI whitelist jenis retroaktif di bawah.
+- **Tahun yang belum terdaftar di `tahun_buku` = default TERKUNCI** (fail-closed,
+  bukan fail-open) — lebih aman. Makanya migrasi 23 WAJIB langsung seed baris
+  tahun berjalan saat itu (2025=terkunci baseline, 2026=terbuka), supaya kerja
+  normal tidak mendadak terblokir begitu migrasi di-deploy. **Tahun baru HARUS
+  di-seed manual (INSERT status terbuka) sebelum tanggal masuk ke tahun itu** —
+  ini nanti jadi bagian dari aksi "Tutup Tahun" (belum dibangun, lihat di bawah).
+- **Whitelist retroaktif** (di `fn_cek_tahun_buku`, cuma utk `transaksi_bmd`):
+  `batal_pengadaan`, `batal_penghapusan`, `batal_kapitalisasi` — tiga ini SUDAH
+  sengaja dicatat mundur ke tanggal kejadian asli (lihat `lib/transaksi.ts`,
+  `Kapitalisasi.tsx`, `Penghapusan.tsx`) supaya replay engine period-correct.
+  **Daftar ini BELUM tentu final** — kalau nambah jenis baru yang perlu backdate
+  ke tahun terkunci, tambahkan di sini, jangan bikin bypass umum.
+  `pengalihan_status` **TIDAK** masuk whitelist ini — lihat poin
+  `fn_terima_pengalihan` di bawah, itu ditutup dengan cara lain.
+- **`fn_terima_pengalihan` pakai tanggal HARI INI, bukan tanggal dokumen**
+  (migrasi 24, keputusan user 2026-07-07): pengalihan dianggap resmi terjadi
+  pada tanggal SKPD tujuan klik Terima — persis pola `fn_kembalikan_pengalihan_
+  barang` (migrasi 22), BUKAN pola Pengadaan (yg pakai tanggal BAST/dokumen
+  walau di-approve belakangan). Ini SENGAJA beda dari pola Pengadaan supaya gap
+  tahun-terkunci tertutup total (hari ini selalu di tahun terbuka, tak pernah
+  butuh whitelist). Konsekuensi yg diterima: kalau approval telat berbulan-
+  bulan, atribusi SKPD di `lib/pengalihan.ts` baru pindah pas tanggal Terima,
+  bukan tanggal dokumen sumber. Tanggal dokumen asli tetap disimpan di
+  `payload.tgl_dokumen_sumber` utk jejak audit.
+- **Opsi B (checkpoint) — SUDAH DIBANGUN (migrasi 25).** Jenis ledger baru
+  `saldo_awal_checkpoint` (BEDA dari `saldo_awal` yg khusus baseline impor
+  e-BMD 2025 asli — bukan tabel `saldo_awal_20XX` baru, itu anti-pattern sama
+  seperti tabel per-semester yg sudah ditolak). Payload REUSE persis struktur
+  `saldo_awal` lama (`nilai_buku_awal`, `akumulasi_2025`, `sisa_masa_manfaat_smt`,
+  `masa_manfaat_smt`, `beban_per_smt`) — disalin LANGSUNG dari
+  `penyusutan_semester` periode S2 tahun yg ditutup (sudah final, tidak
+  dihitung ulang).
+  - `hitungJadwalAset` (lib/engine/penyusutan.ts) sekarang cari checkpoint
+    TERBARU di antara `saldo_awal`/`saldo_awal_checkpoint` (bukan `.find()`
+    ambil yg pertama lagi) dan `mulaiSetelah` dibaca dari periode baris itu
+    sendiri (bukan konstanta `PERIODE_BASELINE` hardcoded) — replay tahun
+    berikutnya mulai dari checkpoint, bukan dari 2025 lagi. Perubahan ini
+    backward-compatible: utk aset yg belum pernah di-checkpoint (cuma py
+    `saldo_awal` asli), hasilnya identik dgn sebelumnya.
+  - **RPC `fn_tutup_tahun(p_tahun, p_catatan)`** (admin only, atomik):
+    validasi tahun `terbuka` + SUDAH benar² berakhir (31 Des tahun itu <=
+    hari ini — guard no-forward-date migrasi 23 otomatis menolak kalau belum,
+    fungsi ini kasih pesan lebih jelas) → **BLOKIR TOTAL** kalau masih ada
+    `jurnal_header` `approval_status='pending'` bertanggal di tahun itu
+    (keputusan user 2026-07-07: blokir, bukan sekadar warning — supaya tidak
+    ada barang "menggantung" yg later masuk ledger dgn tanggal tahun yg
+    katanya sudah final) → checkpoint massal (`INSERT...SELECT` dari
+    `penyusutan_semester`, cuma aset `status='aktif'`) → kunci tahun ini +
+    buka tahun berikutnya (`tahun_buku`) → catat `tahun_buku_log`.
+  - **RPC `fn_preview_tutup_tahun(p_tahun)`**: list jurnal pending (dipakai UI
+    [app/dashboard/admin/tutup-tahun/page.tsx](app/dashboard/admin/tutup-tahun/page.tsx)
+    sebelum admin coba menutup, biar bukan cuma exception mentah).
+- Data referensi (`kodefikasi_bmd`, `overhaul_band`, `skpd`, dll) **satu kopi
+  dibagi lintas tahun** (bukan per tahun) — TAPI editnya bisa ripple ke angka
+  tahun lampau kalau engine di-run ulang tanpa proteksi.
+- **`/api/engine/run` sudah dilindungi (migrasi tidak perlu, ini di kode API)**:
+  (1) tolak total kalau tahun dari periode TARGET terkunci; (2) `hitungJadwalAset`
+  selalu replay dari baseline sampai target — jadi walau target-nya tahun
+  terbuka, replay bisa MELINTASI tahun terkunci di tengah (mis. run 2027 setelah
+  2026 ditutup). Baris hasil utk periode di tahun terkunci di-FILTER SEBELUM
+  upsert (`rowsDitulis`), jadi tetap dihitung di memori tapi TIDAK menimpa
+  baris tersimpan tahun terkunci. Respons API sertakan
+  `rows_dilindungi_tahun_terkunci` biar admin tahu kalau ada yg dilindungi.
+
+**UI (selesai — badge + banner, BUKAN context global):**
+- `components/useTahunBuku.ts` — `useDateBounds()` (min/max utk `<input
+  type="date">` yg mengisi TANGGAL LEDGER, JANGAN dipakai utk field atribut/
+  dokumen historis) & `useTahunBukuMap()` (map tahun→status).
+- `components/TahunKerjaBadge.tsx` — badge "Tahun Kerja {tahun}" di TopBar,
+  ambil MAX tahun berstatus terbuka.
+- `components/TahunTerkunciNote.tsx` — banner info (bukan larangan — laporan
+  tahun terkunci itu justru angka final/teraudit) di halaman yg punya
+  pemilih tahun/semester: Daftar Barang, Penyusutan (juga dekat tombol
+  "Jalankan Engine" — tombolnya sendiri SUDAH diblokir server-side, lihat poin di
+  atas), Rekapitulasi Saldo Akhir.
+- **BUKAN context global** — tiap halaman tetap kelola filter tahun/semester
+  sendiri-sendiri seperti sebelumnya (keputusan sengaja, biar tidak refactor
+  besar ~15 halaman sekaligus).
+
 ## Pengalihan Status Penggunaan (transfer antar SKPD, migrasi 21 + 22)
 
 Jenis ketiga di menu Penghapusan (sisi KELUAR) + persetujuan SKPD tujuan di menu

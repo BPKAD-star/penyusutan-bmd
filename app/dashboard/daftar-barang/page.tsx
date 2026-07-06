@@ -20,6 +20,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 
 const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
@@ -494,6 +495,8 @@ export default function DaftarBarangPage() {
           Pilih <span className="font-medium text-gray-600">jenis aset</span> di atas lalu klik <span className="font-medium text-gray-600">Tampilkan</span>.
         </div>
       ) : (
+        <>
+        <TahunTerkunciNote tahun={Number(applied.periode.slice(0, 4))} />
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
@@ -547,6 +550,7 @@ export default function DaftarBarangPage() {
             </div>
           )}
         </div>
+        </>
       )}
     </div>
   )

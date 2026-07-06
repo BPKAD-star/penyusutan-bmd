@@ -17,6 +17,7 @@ import { cariBand, type BandOverhaul } from '@/lib/engine/penyusutan'
 import { KapitalisasiRincian, KapitalisasiDetailModal, type KapSnapshot, type KapAnak, type KapItem } from '@/components/KapitalisasiDetail'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useDateBounds } from '@/components/useTahunBuku'
 
 type Barang = { id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai_perolehan: number; skpd_id: number | null; tgl_perolehan: string | null }
 type IndukFig = { npLama: number; nbLama: number; akumLama: number; bebanLama: number; sisaLamaSmt: number; masaMaks: number | null }
@@ -217,6 +218,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
   onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
+  const dateBounds = useDateBounds()
   const [noDok, setNoDok] = useState('')
   const [tgl, setTgl] = useState(today())
   const [ket, setKet] = useState('')
@@ -303,7 +305,8 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Tanggal Dokumen</label>
-            <input type="date" className="select-filter w-full" value={tgl} onChange={e => setTgl(e.target.value)} />
+            <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max}
+              value={tgl} onChange={e => setTgl(e.target.value)} />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs text-gray-500 mb-1">Keterangan / No. kontrak rehab</label>

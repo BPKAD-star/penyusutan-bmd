@@ -201,6 +201,16 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
               <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">{ICON.user}</svg>
               Manajemen User
             </Link>
+            <Link
+              href="/dashboard/admin/tutup-tahun"
+              className={`flex items-center gap-3 pr-3 py-2 rounded-lg text-sm transition-colors ${
+                isActive('/dashboard/admin/tutup-tahun') ? 'bg-teal text-white font-medium' : 'text-white/60 hover:text-white hover:bg-white/10'
+              }`}
+              style={{ paddingLeft: '0.75rem' }}
+            >
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">{ICON.saldo}</svg>
+              Tutup Tahun
+            </Link>
           </>
         )}
       </nav>

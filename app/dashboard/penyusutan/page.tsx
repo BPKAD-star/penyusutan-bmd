@@ -18,6 +18,8 @@ import { GOLONGAN_REKAP, perlakuanKode, comparePeriode, periodeDariTanggal } fro
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+import { useTahunBukuMap } from '@/components/useTahunBuku'
+import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 
 const BASE_COLS = 'id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan'
 
@@ -39,6 +41,7 @@ const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan']
 
 export default function PenyusutanPage() {
   const supabase = createClient()
+  const tahunBukuMap = useTahunBukuMap()
 
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [golongan, setGolongan] = useState('')
@@ -212,7 +215,10 @@ export default function PenyusutanPage() {
       const res = await fetch('/api/engine/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periode }) })
       const j = await res.json()
       if (!res.ok) { setEngineMsg(`Error: ${j.error || `HTTP ${res.status}`}`); setEngineRunning(false); return }
-      setEngineMsg(`✓ Engine selesai untuk ${periode} — ${Number(j.disusutkan || 0).toLocaleString('id-ID')} aset disusutkan, total beban ${angka(j.total_beban)}.`)
+      const proteksi = j.rows_dilindungi_tahun_terkunci > 0
+        ? ` (${Number(j.rows_dilindungi_tahun_terkunci).toLocaleString('id-ID')} baris di tahun terkunci dilindungi, tidak ditimpa.)`
+        : ''
+      setEngineMsg(`✓ Engine selesai untuk ${periode} — ${Number(j.disusutkan || 0).toLocaleString('id-ID')} aset disusutkan, total beban ${angka(j.total_beban)}.${proteksi}`)
       if (applied && applied.periode === periode) load(applied)
     } catch (e) {
       setEngineMsg(`Error: ${e instanceof Error ? e.message : String(e)}`)
@@ -318,6 +324,12 @@ export default function PenyusutanPage() {
               {engineRunning ? 'Menghitung…' : `⚙ Jalankan Engine (${tahun}-S${smt})`}
             </button>
           </div>
+          {tahunBukuMap[Number(tahun)] === 'terkunci' && (
+            <div className="flex items-start gap-3">
+              <span className="w-40 flex-shrink-0" />
+              <TahunTerkunciNote tahun={Number(tahun)} />
+            </div>
+          )}
           {engineMsg && (
             <div className="flex items-start gap-3">
               <span className="w-40 flex-shrink-0" />
@@ -333,6 +345,11 @@ export default function PenyusutanPage() {
         </div>
       ) : (
         <div className="card overflow-hidden">
+          {tahunBukuMap[Number(applied.periode.slice(0, 4))] === 'terkunci' && (
+            <div className="px-4 pt-3">
+              <TahunTerkunciNote tahun={Number(applied.periode.slice(0, 4))} />
+            </div>
+          )}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
               {rows.length.toLocaleString('id-ID')} aset · periode {applied.periode}

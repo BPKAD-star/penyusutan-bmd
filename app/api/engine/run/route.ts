@@ -23,8 +23,9 @@ async function fetchAll<T>(query: (from: number, to: number) => PromiseLike<{ da
 
 export async function POST(req: Request) {
   const { periode } = await req.json()
+  let tahunTarget: number
   try {
-    parsePeriode(periode)
+    tahunTarget = parsePeriode(periode).tahun
   } catch {
     return NextResponse.json({ error: 'Periode tidak valid (format YYYY-S1/YYYY-S2)' }, { status: 400 })
   }
@@ -35,6 +36,14 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: profile } = await session.from('profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'admin') return NextResponse.json({ error: 'Hanya admin' }, { status: 403 })
+
+  // Tahun terkunci (tutup buku) = angka final/teraudit, engine tak boleh
+  // menimpanya lagi (lihat CLAUDE.md — Tahun Buku). Tahun tak terdaftar di
+  // tahun_buku dianggap terkunci juga (fail-closed, sama seperti guard ledger).
+  const { data: tb } = await session.from('tahun_buku').select('status').eq('tahun', tahunTarget).single()
+  if ((tb?.status ?? 'terkunci') === 'terkunci') {
+    return NextResponse.json({ error: `Tahun ${tahunTarget} sudah tutup buku (terkunci) — engine tidak bisa dijalankan ulang untuk periode ini.` }, { status: 403 })
+  }
 
   const db: SupabaseAdmin = createAdminClient()
 
@@ -69,15 +78,28 @@ export async function POST(req: Request) {
     rows.push(...jadwal)
   }
 
+  // 2b. Jangan timpa periode yg tahunnya SUDAH terkunci (tutup buku), walau
+  // ikut terhitung ulang di memori krn replay selalu mulai dari baseline.
+  // Cek target periode di atas cuma cegah run kalau TARGET-nya sendiri
+  // terkunci — tapi replay tetap melintasi tahun² sebelumnya yg mungkin
+  // sudah dikunci (mis. run 2027 setelah 2026 ditutup). Filter di sini yg
+  // benar-benar melindungi baris tersimpan tahun terkunci dari tertimpa.
+  const tahunTerlibat = [...new Set(rows.map(r => Number(r.periode.slice(0, 4))))]
+  const { data: tbRows } = await db.from('tahun_buku').select('tahun,status').in('tahun', tahunTerlibat)
+  const statusTahun = new Map((tbRows || []).map(r => [r.tahun, r.status]))
+  const isTerkunci = (periodeRow: string) => (statusTahun.get(Number(periodeRow.slice(0, 4))) ?? 'terkunci') === 'terkunci'
+  const rowsDitulis = rows.filter(r => !isTerkunci(r.periode))
+  const dilewatiTerkunci = rows.length - rowsDitulis.length
+
   // 3. Upsert hasil (safe re-run)
   const BATCH = 500
-  for (let i = 0; i < rows.length; i += BATCH) {
+  for (let i = 0; i < rowsDitulis.length; i += BATCH) {
     const { error } = await db.from('penyusutan_semester')
-      .upsert(rows.slice(i, i + BATCH), { onConflict: 'aset_id,periode' })
+      .upsert(rowsDitulis.slice(i, i + BATCH), { onConflict: 'aset_id,periode' })
     if (error) return NextResponse.json({ error: `Upsert gagal: ${error.message}` }, { status: 500 })
   }
 
-  const periodeTarget = rows.filter(r => r.periode === periode)
+  const periodeTarget = rowsDitulis.filter(r => r.periode === periode)
   return NextResponse.json({
     success: true,
     periode,
@@ -85,6 +107,7 @@ export async function POST(req: Request) {
     disusutkan: periodeTarget.filter(r => r.beban > 0).length,
     tidak_disusutkan: dilewati,
     total_beban: periodeTarget.reduce((s, r) => s + r.beban, 0),
-    rows_ditulis: rows.length,
+    rows_ditulis: rowsDitulis.length,
+    rows_dilindungi_tahun_terkunci: dilewatiTerkunci,
   })
 }

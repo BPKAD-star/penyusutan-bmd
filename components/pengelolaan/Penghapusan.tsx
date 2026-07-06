@@ -25,6 +25,7 @@ import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bm
 import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useDateBounds } from '@/components/useTahunBuku'
 
 type JenisHapus = 'penghapusan_pemindahtanganan' | 'penghapusan_sebab_lain' | 'pengalihan_status'
 
@@ -434,6 +435,7 @@ function EditHeaderModal({ header, onClose, onSaved }: {
   header: Header; onClose: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const dateBounds = useDateBounds()
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
   const [ket, setKet] = useState(header.keterangan || '')
@@ -472,7 +474,7 @@ function EditHeaderModal({ header, onClose, onSaved }: {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Tanggal <span className="text-gray-400">(harus tetap di {header.periode})</span></label>
-            <input type="date" className="select-filter w-full" value={tgl} onChange={e => setTgl(e.target.value)} />
+            <input type="date" className="select-filter w-full" max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
             {pindahSemester && (
               <p className="text-xs text-red-600 mt-1">
                 Tanggal ini masuk {tglPeriode} — di luar semester jurnal. Ganti tanggal, atau {isAlih ? 'hapus jurnal ini seluruhnya lalu entry ulang' : 'batalkan & entry ulang'}.
@@ -503,6 +505,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   header: Header | null; onCancel: () => void; onSaved: (n: number, pengalihan: boolean) => void
 }) {
   const supabase = createClient()
+  const dateBounds = useDateBounds()
 
   const [jenis, setJenis] = useState<JenisHapus>('penghapusan_pemindahtanganan')
   const [subJenis, setSubJenis] = useState('hibah')
@@ -697,7 +700,8 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">{isAlih ? 'Tanggal Dokumen Sumber' : 'Tanggal'}</label>
-              <input type="date" className="select-filter w-full" value={tgl} onChange={e => setTgl(e.target.value)} />
+              <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max}
+                value={tgl} onChange={e => setTgl(e.target.value)} />
               <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tgl)}</p>
             </div>
             <div className="sm:col-span-2">

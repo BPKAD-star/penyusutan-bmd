@@ -30,6 +30,7 @@ const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false, 
 import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useDateBounds } from '@/components/useTahunBuku'
 
 type SumberPengadaan = 'kwitansi' | 'bukti_pembelian' | 'surat_pesanan' | 'spk'
 const SUMBER_OPT: { value: SumberPengadaan; label: string }[] = [
@@ -993,6 +994,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
   onCancel: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const dateBounds = useDateBounds()
   const [sumber, setSumber] = useState<SumberPengadaan>('spk')
   const [noKontrak, setNoKontrak] = useState('')
   const [tglKontrak, setTglKontrak] = useState(new Date().toISOString().slice(0, 10))
@@ -1051,7 +1053,8 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs text-gray-500 mb-1">Tgl Kontrak</label>
-            <input type="date" className="select-filter w-full sm:w-64" value={tglKontrak} onChange={e => setTglKontrak(e.target.value)} />
+            <input type="date" className="select-filter w-full sm:w-64" min={dateBounds.min} max={dateBounds.max}
+              value={tglKontrak} onChange={e => setTglKontrak(e.target.value)} />
             <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tglKontrak)}</p>
           </div>
           <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Program</label><input className="select-filter w-full" value={program} onChange={e => setProgram(e.target.value)} placeholder="teks bebas (dropdown menyusul)" /></div>
@@ -1069,7 +1072,8 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
           <div><label className="block text-xs text-gray-500 mb-1">No. BAST</label><input className="select-filter w-full" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Tgl BAST <span className="text-gray-400">(= tgl perolehan efektif, tidak boleh &lt; tgl kontrak)</span></label>
-            <input type="date" className="select-filter w-full" min={tglKontrak} value={tglBast} onChange={e => setTglBast(e.target.value)} />
+            <input type="date" className="select-filter w-full" min={tglKontrak || dateBounds.min} max={dateBounds.max}
+              value={tglBast} onChange={e => setTglBast(e.target.value)} />
             <p className="text-xs text-gray-400 mt-1">Kosong → pakai tgl kontrak saat disetujui.</p>
           </div>
           <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Keterangan BAST</label><input className="select-filter w-full" value={ketBast} onChange={e => setKetBast(e.target.value)} /></div>
@@ -1091,6 +1095,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
   onClose: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const dateBounds = useDateBounds()
   const p = header.payload || {}
   const [noKontrak, setNoKontrak] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
@@ -1145,7 +1150,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Tgl Kontrak <span className="text-gray-400">(tetap di {header.periode})</span></label>
-            <input type="date" className="select-filter w-full sm:w-64" value={tgl} onChange={e => setTgl(e.target.value)} />
+            <input type="date" className="select-filter w-full sm:w-64" max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
             {pindahSemester && <p className="text-xs text-red-600 mt-1">Tanggal ini masuk {periodeDariTanggal(tgl)} — di luar semester jurnal.</p>}
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Program</label><input className="select-filter w-full" value={program} onChange={e => setProgram(e.target.value)} /></div>
@@ -1160,7 +1165,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
             <p className="text-xs font-semibold text-gray-600 mb-2">Berita Acara Serah Terima (BAST)</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="block text-xs text-gray-500 mb-1">No. BAST</label><input className="select-filter w-full" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
-              <div><label className="block text-xs text-gray-500 mb-1">Tgl BAST <span className="text-gray-400">(tidak boleh &lt; tgl kontrak)</span></label><input type="date" className="select-filter w-full" min={tgl} value={tglBast} onChange={e => setTglBast(e.target.value)} /></div>
+              <div><label className="block text-xs text-gray-500 mb-1">Tgl BAST <span className="text-gray-400">(tidak boleh &lt; tgl kontrak)</span></label><input type="date" className="select-filter w-full" min={tgl} max={dateBounds.max} value={tglBast} onChange={e => setTglBast(e.target.value)} /></div>
             </div>
             <div className="mt-4"><label className="block text-xs text-gray-500 mb-1">Keterangan BAST</label><input className="select-filter w-full" value={ketBast} onChange={e => setKetBast(e.target.value)} /></div>
             {header.approval_status === 'disetujui' && (
