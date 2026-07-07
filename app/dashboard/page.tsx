@@ -27,6 +27,58 @@ async function countTrx(sb: SB, apply: (q: any) => any): Promise<number> {
   return safeCount(apply(base))
 }
 
+// transaksi_bmd bersifat append-only: batal (pengalihan/penghapusan) DICATAT
+// sebagai baris baru, bukan menghapus baris lama — jadi hitung baris mentah
+// bisa kebesaran (baris yang sudah "dibatalkan" tetap ikut terhitung). Untuk
+// dapat angka yang mencerminkan kondisi TERKINI, cek balik ke status/skpd_id
+// aset saat ini (satu-satunya sumber yang sudah dikurangi efek pembatalan).
+
+// Pengalihan status: transfer masih "berlaku" kalau skpd_id aset SEKARANG
+// sama dengan skpd_tujuan baris transaksi itu (kalau sudah dibatalkan,
+// aset.skpd_id sudah kembali ke skpd_asal — baris lama otomatis tak terhitung).
+async function countPengalihanAktif(sb: SB): Promise<number> {
+  let n = 0
+  try {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from('transaksi_bmd')
+        .select('skpd_tujuan, aset(skpd_id)')
+        .eq('jenis', 'pengalihan_status')
+        .range(from, from + 999)
+      if (error || !data || data.length === 0) break
+      for (const r of data as unknown as { skpd_tujuan: number; aset: { skpd_id: number } | null }[]) {
+        if (r.aset && r.aset.skpd_id === r.skpd_tujuan) n++
+      }
+      if (data.length < 1000) break
+    }
+  } catch { /* transaksi_bmd/aset belum ada → 0 */ }
+  return n
+}
+
+// Penghapusan: hanya hitung baris yang aset-nya MASIH status 'dihapus' saat
+// ini (kalau sudah di-batal_penghapusan, aset kembali 'aktif' — tak terhitung).
+async function countPenghapusan(sb: SB): Promise<{ hibah: number; jual: number; sebabLain: number }> {
+  const out = { hibah: 0, jual: 0, sebabLain: 0 }
+  try {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from('transaksi_bmd')
+        .select('jenis, payload, aset(status)')
+        .in('jenis', ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain'])
+        .range(from, from + 999)
+      if (error || !data || data.length === 0) break
+      for (const r of data as unknown as { jenis: string; payload: { sub_jenis?: string }; aset: { status: string } | null }[]) {
+        if (r.aset?.status !== 'dihapus') continue
+        if (r.jenis === 'penghapusan_sebab_lain') { out.sebabLain++; continue }
+        const sub = r.payload?.sub_jenis
+        if (sub === 'hibah') out.hibah++
+        else if (sub === 'penjualan') out.jual++
+        else out.sebabLain++ // tukar_menukar, penyertaan_modal
+      }
+      if (data.length < 1000) break
+    }
+  } catch { /* transaksi_bmd/aset belum ada → 0 */ }
+  return out
+}
+
 // Satu kali scan register aset (aktif): rekap per golongan (unit + nilai) DAN
 // count+nilai per cara_perolehan (utk dashboard donut) — hemat, tanpa query ekstra.
 // PENTING: "disetujui" count HARUS dari aset aktif, BUKAN dari jumlah baris ledger
@@ -68,20 +120,16 @@ export default async function DashboardHome() {
   const [
     scan,
     transfer, mutasiInternal,
-    hapusTotalPemindah, hapusHibah, hapusJual, hapusSebabLain,
+    hapus,
   ] = await Promise.all([
     scanAset(supabase),
-    countTrx(supabase, q => q.eq('jenis', 'pengalihan_status')),
+    countPengalihanAktif(supabase),
     countTrx(supabase, q => q.eq('jenis', 'mutasi_internal')),
-    countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan')),
-    countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan').eq('payload->>sub_jenis', 'hibah')),
-    countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan').eq('payload->>sub_jenis', 'penjualan')),
-    countTrx(supabase, q => q.eq('jenis', 'penghapusan_sebab_lain')),
+    countPenghapusan(supabase),
   ])
   const gol = scan.gol
   const cn = scan.caraNilai
   const cc = scan.caraCount
-  const hapusSebabLainnya = hapusSebabLain + Math.max(0, hapusTotalPemindah - hapusHibah - hapusJual)
   const totalRegister = Object.values(gol).reduce((s, v) => s + v.count, 0)
   const totalNilai = Object.values(gol).reduce((s, v) => s + v.nilai, 0)
 
@@ -130,9 +178,9 @@ export default async function DashboardHome() {
       {/* Penghapusan */}
       <Section title="Penghapusan Barang" sub="Barang yang dihapus dari laporan (data tetap tersimpan)">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <StatCard label="Karena Hibah" value={hapusHibah} />
-          <StatCard label="Karena Penjualan" value={hapusJual} />
-          <StatCard label="Karena Sebab Lainnya" value={hapusSebabLainnya} note="Tukar-menukar, penyertaan modal, force majeure" />
+          <StatCard label="Karena Hibah" value={hapus.hibah} />
+          <StatCard label="Karena Penjualan" value={hapus.jual} />
+          <StatCard label="Karena Sebab Lainnya" value={hapus.sebabLain} note="Tukar-menukar, penyertaan modal, force majeure" />
         </div>
       </Section>
     </div>

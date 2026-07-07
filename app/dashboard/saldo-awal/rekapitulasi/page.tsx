@@ -30,7 +30,7 @@ export default function Page() {
   async function proses() {
     setLoading(true)
     setRows([])
-    const agg: Record<string, { perolehan: number; akumulasi: number; beban: number; nilaiBuku: number }> = {}
+    const agg: Record<string, { kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilaiBuku: number }> = {}
     const mtx: Record<number, MatrixRow> = {}
     for (let from = 0; ; from += 1000) {
       let q = supabase.from('saldo_awal_2026')
@@ -46,7 +46,8 @@ export default function Page() {
         const beban = r.beban_penyusutan_per_smt || 0
         const nilaiBuku = r.nilai_buku_awal || perolehan
         // Model 1: per golongan
-        agg[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 }
+        agg[g] ??= { kuantitas: 0, perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 }
+        agg[g].kuantitas += 1
         agg[g].perolehan += perolehan; agg[g].akumulasi += akumulasi
         agg[g].beban += beban; agg[g].nilaiBuku += nilaiBuku
         // Model 2: per SKPD (root) per golongan
@@ -61,6 +62,7 @@ export default function Page() {
     }
     setRows(GOLONGAN_REKAP.map(g => ({
       kode: g.kode, uraian: g.uraian, disusutkan: g.disusutkan,
+      kuantitas: agg[g.kode]?.kuantitas || 0,
       perolehan: agg[g.kode]?.perolehan || 0,
       akumulasi: agg[g.kode]?.akumulasi || 0,
       beban: agg[g.kode]?.beban || 0,
@@ -75,6 +77,7 @@ export default function Page() {
       if (!rows) return
       exportToExcel(rows.map(r => ({
         'Kode Jenis': r.kode, 'Uraian': r.uraian,
+        'Kuantitas': r.kuantitas,
         'Harga Perolehan': r.perolehan,
         'Akumulasi Penyusutan (Saldo Awal)': r.disusutkan ? r.akumulasi : '',
         'Beban Penyusutan / Smt': r.disusutkan ? r.beban : '',

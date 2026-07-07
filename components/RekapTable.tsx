@@ -7,6 +7,7 @@ export type RekapRow = {
   kode: string
   uraian: string
   disusutkan: boolean
+  kuantitas: number
   perolehan: number
   akumulasi: number
   beban: number
@@ -21,11 +22,12 @@ export default function RekapTable({ rows, loading, labelAkumulasi, labelBeban }
 }) {
   const dash = (v: number, show: boolean) => (show ? formatRupiah(v) : <span className="text-gray-300">-</span>)
   const tot = rows.reduce((a, r) => ({
+    kuantitas: a.kuantitas + r.kuantitas,
     perolehan: a.perolehan + r.perolehan,
     akumulasi: a.akumulasi + r.akumulasi,
     beban: a.beban + r.beban,
     nilaiBuku: a.nilaiBuku + r.nilaiBuku,
-  }), { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
+  }), { kuantitas: 0, perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
 
   return (
     <div className="card overflow-hidden">
@@ -35,6 +37,7 @@ export default function RekapTable({ rows, loading, labelAkumulasi, labelBeban }
             <tr>
               <th className="table-th">Kode Jenis</th>
               <th className="table-th">Uraian</th>
+              <th className="table-th text-right">Kuantitas</th>
               <th className="table-th text-right">Harga Perolehan</th>
               <th className="table-th text-right">{labelAkumulasi}</th>
               <th className="table-th text-right">{labelBeban}</th>
@@ -43,11 +46,12 @@ export default function RekapTable({ rows, loading, labelAkumulasi, labelBeban }
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+              <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
             ) : rows.map(r => (
               <tr key={r.kode}>
                 <td className="table-td text-xs">{r.kode}</td>
                 <td className="table-td text-xs font-medium">{r.uraian}</td>
+                <td className="table-td text-right text-xs">{r.kuantitas.toLocaleString('id-ID')}</td>
                 <td className="table-td text-right text-xs">{formatRupiah(r.perolehan)}</td>
                 <td className="table-td text-right text-xs">{dash(r.akumulasi, r.disusutkan)}</td>
                 <td className="table-td text-right text-xs">{dash(r.beban, r.disusutkan)}</td>
@@ -59,6 +63,7 @@ export default function RekapTable({ rows, loading, labelAkumulasi, labelBeban }
             <tfoot className="bg-gray-100 border-t-2 border-gray-200">
               <tr>
                 <td className="table-td text-xs font-bold" colSpan={2}>TOTAL</td>
+                <td className="table-td text-right text-xs font-bold">{tot.kuantitas.toLocaleString('id-ID')}</td>
                 <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.perolehan)}</td>
                 <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.akumulasi)}</td>
                 <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.beban)}</td>

@@ -55,6 +55,7 @@ export default function Page() {
     //    Simpan aset_id → {golongan, skpd_id} utk join hasil engine di step 2.
     const asetInfo = new Map<string, { g: string; skpd_id: number }>()
     const perolehan: Record<string, number> = {}
+    const kuantitas: Record<string, number> = {}
     for (let from = 0; ; from += 1000) {
       let q = supabase.from('aset').select('id,kode,nilai_perolehan,skpd_id,tgl_perolehan,intra_ekstra,status')
       if (org.descendantIds) q = q.in('skpd_id', org.descendantIds)
@@ -67,6 +68,7 @@ export default function Page() {
         const g = kodeLevel3(r.kode)
         const v = r.nilai_perolehan || 0
         perolehan[g] = (perolehan[g] || 0) + v
+        kuantitas[g] = (kuantitas[g] || 0) + 1
         ensureCell(mtx, r.skpd_id, g).perolehan += v
         asetInfo.set(r.id, { g, skpd_id: r.skpd_id })
       }
@@ -111,11 +113,12 @@ export default function Page() {
 
     setRows(GOLONGAN_REKAP.map(g => {
       const hp = perolehan[g.kode] || 0
+      const kt = kuantitas[g.kode] || 0
       const p = peny[g.kode]
       if (g.disusutkan && p) {
-        return { kode: g.kode, uraian: g.uraian, disusutkan: true, perolehan: hp, akumulasi: p.akumulasi, beban: p.beban, nilaiBuku: p.nilaiBuku }
+        return { kode: g.kode, uraian: g.uraian, disusutkan: true, kuantitas: kt, perolehan: hp, akumulasi: p.akumulasi, beban: p.beban, nilaiBuku: p.nilaiBuku }
       }
-      return { kode: g.kode, uraian: g.uraian, disusutkan: g.disusutkan, perolehan: hp, akumulasi: 0, beban: 0, nilaiBuku: hp }
+      return { kode: g.kode, uraian: g.uraian, disusutkan: g.disusutkan, kuantitas: kt, perolehan: hp, akumulasi: 0, beban: 0, nilaiBuku: hp }
     }))
     setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
     setLoading(false)
@@ -125,7 +128,7 @@ export default function Page() {
     if (model === 1) {
       if (!rows) return
       exportToExcel(rows.map(r => ({
-        'Kode Jenis': r.kode, 'Uraian': r.uraian, 'Harga Perolehan': r.perolehan,
+        'Kode Jenis': r.kode, 'Uraian': r.uraian, 'Kuantitas': r.kuantitas, 'Harga Perolehan': r.perolehan,
         [`Akumulasi Penyusutan s.d. ${periode}`]: r.disusutkan ? r.akumulasi : '',
         [`Beban Penyusutan ${periode}`]: r.disusutkan ? r.beban : '',
         'Nilai Buku': r.nilaiBuku,
