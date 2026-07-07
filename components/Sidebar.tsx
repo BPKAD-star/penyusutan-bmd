@@ -84,6 +84,7 @@ const navTree: NavNode[] = [
         ],
       },
       { type: 'leaf', href: '/dashboard/pelaporan/bmd', label: 'Laporan BMD' },
+      { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
     ],
   },
   { type: 'leaf', href: '/dashboard/inventarisasi', label: 'Inventarisasi' },
