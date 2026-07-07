@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
+import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 
 const PERIODE = '2026-S1'
 
@@ -26,40 +27,50 @@ async function countTrx(sb: SB, apply: (q: any) => any): Promise<number> {
   return safeCount(apply(base))
 }
 
-// Rekap per golongan dari register aset: jumlah unit + total nilai perolehan.
-async function rekapPerGolongan(sb: SB): Promise<Record<string, { count: number; nilai: number }>> {
-  const agg: Record<string, { count: number; nilai: number }> = {}
+// Satu kali scan register aset (aktif): rekap per golongan (unit + nilai) DAN
+// count+nilai per cara_perolehan (utk dashboard donut) — hemat, tanpa query ekstra.
+// PENTING: "disetujui" count HARUS dari aset aktif, BUKAN dari jumlah baris ledger
+// jenis='pengadaan' (append-only, permanen — tak berkurang walau barangnya di-
+// batal_pengadaan/unapprove kemudian, krn itu cuma nambah baris baru, bukan hapus
+// baris lama). Register aset (status='aktif') adalah satu-satunya sumber yg
+// mencerminkan kondisi TERKINI (sudah dikurangi soft-delete).
+async function scanAset(sb: SB): Promise<{
+  gol: Record<string, { count: number; nilai: number }>
+  caraNilai: Record<string, number>
+  caraCount: Record<string, number>
+}> {
+  const gol: Record<string, { count: number; nilai: number }> = {}
+  const caraNilai: Record<string, number> = {}
+  const caraCount: Record<string, number> = {}
   try {
     for (let from = 0; ; from += 1000) {
       const { data, error } = await sb.from('aset')
-        .select('kode,nilai_perolehan').eq('status', 'aktif').range(from, from + 999)
+        .select('kode,nilai_perolehan,cara_perolehan').eq('status', 'aktif').range(from, from + 999)
       if (error || !data || data.length === 0) break
-      for (const r of data as { kode: string; nilai_perolehan: number }[]) {
+      for (const r of data as { kode: string; nilai_perolehan: number; cara_perolehan: string }[]) {
         const g = kodeLevel3(r.kode)
-        agg[g] ??= { count: 0, nilai: 0 }
-        agg[g].count += 1
-        agg[g].nilai += r.nilai_perolehan || 0
+        const v = r.nilai_perolehan || 0
+        gol[g] ??= { count: 0, nilai: 0 }
+        gol[g].count += 1
+        gol[g].nilai += v
+        caraNilai[r.cara_perolehan] = (caraNilai[r.cara_perolehan] || 0) + v
+        caraCount[r.cara_perolehan] = (caraCount[r.cara_perolehan] || 0) + 1
       }
       if (data.length < 1000) break
     }
   } catch { /* tabel aset belum ada → kosong */ }
-  return agg
+  return { gol, caraNilai, caraCount }
 }
 
 export default async function DashboardHome() {
   const supabase = createClient()
 
   const [
-    gol,
-    perPengadaan, perHibah, perInv, perLain,
+    scan,
     transfer, mutasiInternal,
     hapusTotalPemindah, hapusHibah, hapusJual, hapusSebabLain,
   ] = await Promise.all([
-    rekapPerGolongan(supabase),
-    countTrx(supabase, q => q.eq('jenis', 'pengadaan')),
-    countTrx(supabase, q => q.eq('jenis', 'hibah_masuk')),
-    countTrx(supabase, q => q.eq('jenis', 'hasil_inventarisasi')),
-    countTrx(supabase, q => q.eq('jenis', 'perolehan_lainnya')),
+    scanAset(supabase),
     countTrx(supabase, q => q.eq('jenis', 'pengalihan_status')),
     countTrx(supabase, q => q.eq('jenis', 'mutasi_internal')),
     countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan')),
@@ -67,6 +78,9 @@ export default async function DashboardHome() {
     countTrx(supabase, q => q.eq('jenis', 'penghapusan_pemindahtanganan').eq('payload->>sub_jenis', 'penjualan')),
     countTrx(supabase, q => q.eq('jenis', 'penghapusan_sebab_lain')),
   ])
+  const gol = scan.gol
+  const cn = scan.caraNilai
+  const cc = scan.caraCount
   const hapusSebabLainnya = hapusSebabLain + Math.max(0, hapusTotalPemindah - hapusHibah - hapusJual)
   const totalRegister = Object.values(gol).reduce((s, v) => s + v.count, 0)
   const totalNilai = Object.values(gol).reduce((s, v) => s + v.nilai, 0)
@@ -97,13 +111,10 @@ export default async function DashboardHome() {
       </Section>
 
       {/* Perolehan */}
-      <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Pengadaan" value={perPengadaan} />
-          <StatCard label="Hibah" value={perHibah} />
-          <StatCard label="Hasil Inventarisasi" value={perInv} />
-          <StatCard label="Perolehan Lainnya" value={perLain} />
-        </div>
+      <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan — klik utk rincian disetujui/menunggu">
+        <CaraPerolehanCards
+          approved={{ pengadaan: cc['pengadaan'] || 0, hibah: cc['hibah_masuk'] || 0, inventarisasi: cc['hasil_inventarisasi'] || 0, lainnya: cc['perolehan_lainnya'] || 0 }}
+          approvedNilai={{ pengadaan: cn['pengadaan'] || 0, hibah: cn['hibah_masuk'] || 0, inventarisasi: cn['hasil_inventarisasi'] || 0, lainnya: cn['perolehan_lainnya'] || 0 }} />
       </Section>
 
       {/* Mutasi & transfer */}

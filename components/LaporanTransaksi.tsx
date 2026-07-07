@@ -4,9 +4,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
 import { JENIS_TRANSAKSI_LABEL } from '@/lib/bmd'
+import SkpdCombobox from '@/components/SkpdCombobox'
 
 type Trx = {
   id: number
+  aset_id: string
   jenis: string
   periode: string
   tanggal: string
@@ -18,12 +20,28 @@ type Trx = {
   tujuan: { nama: string } | null
 }
 
-export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePrefix, sembunyikanAsetDihapus }: {
+// Dari kumpulan baris (jenisList = suatu aksi + kebalikannya, mis. penghapusan/batal_penghapusan),
+// sisakan baris TERBARU per aset (id desc — ledger append-only), dan hanya kalau status aset
+// SEKARANG masih mencerminkan aksi itu. Ini mencegah rekap dobel-hitung ketika satu barang
+// sempat dicoba berkali-kali (aksi → batal → aksi lagi) sebelum mencapai status akhirnya.
+function efektifPerAset(rows: Trx[], statusEfektif: string): Trx[] {
+  const seen = new Set<string>()
+  return rows.filter(r => {
+    if (!r.aset_id || seen.has(r.aset_id)) return false
+    seen.add(r.aset_id)
+    return r.aset?.status === statusEfektif
+  })
+}
+
+export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePrefix, sembunyikanAsetDihapus, efektifPerAsetStatus }: {
   judul: string
   deskripsi: string
   jenisList: string[]
   filePrefix: string
   sembunyikanAsetDihapus?: boolean
+  /** Kalau diisi (mis. 'dihapus'): sisakan hanya baris terbaru per aset yang status-nya SEKARANG
+   *  masih itu — supaya percobaan yang sudah dibatalkan/ditumpuk tidak dobel-hitung di rekap. */
+  efektifPerAsetStatus?: string
 }) {
   const supabase = createClient()
   const [rows, setRows] = useState<Trx[]>([])
@@ -32,12 +50,9 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
   const [periodeList, setPeriodeList] = useState<string[]>([])
   const [periode, setPeriode] = useState('')
   const [jenis, setJenis] = useState('')
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
-  const [skpd, setSkpd] = useState('')
+  const [descIds, setDescIds] = useState<number[] | null>(null)
 
   useEffect(() => {
-    supabase.from('skpd').select('id,nama').eq('level', 1).order('nama')
-      .then(({ data }) => setSkpdList(data || []))
     // daftar periode yang ada transaksi (dropdown dinamis)
     supabase.from('transaksi_bmd').select('periode').in('jenis', jenisList as never)
       .order('periode', { ascending: false }).limit(1000)
@@ -46,13 +61,16 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,jenis,periode,tanggal,nilai,keterangan,payload,aset(nibar,nama_barang,kode,status),asal:skpd_asal(nama),tujuan:skpd_tujuan(nama)')
+      .select('id,aset_id,jenis,periode,tanggal,nilai,keterangan,payload,aset(nibar,nama_barang,kode,status),asal:skpd_asal(nama),tujuan:skpd_tujuan(nama)')
       .in('jenis', (jenis ? [jenis] : jenisList) as never)
       .order('id', { ascending: false })
     if (periode) q = q.eq('periode', periode)
-    if (skpd) q = q.or(`skpd_asal.eq.${skpd},skpd_tujuan.eq.${skpd}`)
+    if (descIds && descIds.length > 0) {
+      const list = descIds.join(',')
+      q = q.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)
+    }
     return q
-  }, [jenis, periode, skpd, jenisList]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [jenis, periode, descIds, jenisList]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     (async () => {
@@ -60,10 +78,11 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       const { data } = await buildQuery().limit(500)
       let hasil = (data as never as Trx[]) || []
       if (sembunyikanAsetDihapus) hasil = hasil.filter(r => r.aset?.status !== 'dihapus')
+      if (efektifPerAsetStatus) hasil = efektifPerAset(hasil, efektifPerAsetStatus)
       setRows(hasil)
       setLoading(false)
     })()
-  }, [buildQuery, sembunyikanAsetDihapus])
+  }, [buildQuery, sembunyikanAsetDihapus, efektifPerAsetStatus])
 
   // Rekap per jenis
   const rekap = new Map<string, { n: number; nilai: number }>()
@@ -83,7 +102,8 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       all.push(...(data as never as Trx[]))
       if (data.length < 1000) break
     }
-    const hasil = sembunyikanAsetDihapus ? all.filter(r => r.aset?.status !== 'dihapus') : all
+    let hasil = sembunyikanAsetDihapus ? all.filter(r => r.aset?.status !== 'dihapus') : all
+    if (efektifPerAsetStatus) hasil = efektifPerAset(hasil, efektifPerAsetStatus)
     exportToExcel(hasil.map(r => ({
       'Tanggal': r.tanggal,
       'Periode': r.periode,
@@ -129,12 +149,10 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
             </select>
           </div>
         )}
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">SKPD</label>
-          <select className="select-filter" value={skpd} onChange={e => setSkpd(e.target.value)}>
-            <option value="">Semua SKPD</option>
-            {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-          </select>
+        <div className="min-w-[280px]">
+          <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
+          <SkpdCombobox onChangeSelection={sel => setDescIds(sel.descendantIds)} allowClear
+            placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
         </div>
       </div>
 

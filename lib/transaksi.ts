@@ -11,6 +11,7 @@ export type TransaksiInput = {
   nilai?: number
   skpdAsal?: number | null
   skpdTujuan?: number | null
+  headerId?: string | null  // jurnal_header terkait (mis. batal_pengadaan → header kontrak aslinya, utk lacak balik saat "hapus kontrak sepenuhnya")
   payload?: Record<string, unknown>
   keterangan?: string
 }
@@ -27,6 +28,7 @@ export async function catatTransaksi(supabase: SupabaseClient, t: TransaksiInput
     nilai: t.nilai ?? 0,
     skpd_asal: t.skpdAsal ?? null,
     skpd_tujuan: t.skpdTujuan ?? null,
+    header_id: t.headerId ?? null,
     payload: t.payload ?? {},
     keterangan: t.keterangan ?? null,
   })
@@ -54,9 +56,15 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       return typeof p.nilai_perolehan_baru === 'number' ? { nilai_perolehan: p.nilai_perolehan_baru } : null
     case 'koreksi_spesifikasi': {
       const patch: Record<string, unknown> = {}
-      for (const k of ['nama_barang', 'spesifikasi', 'merek_tipe', 'satuan'] as const) {
+      for (const k of [
+        'nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'satuan',
+        'nomor_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak', 'tanggal_dokumen_kepemilikan',
+        'titik_koordinat', 'lokasi', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
+      ] as const) {
         if (typeof p[k] === 'string' && p[k]) patch[k] = p[k]
       }
+      if (typeof p.luas === 'number' && p.luas > 0) patch.luas = p.luas
+      if (Array.isArray(p.foto_paths)) patch.foto_paths = p.foto_paths
       return Object.keys(patch).length ? patch : null
     }
     case 'kapitalisasi':
@@ -64,6 +72,11 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
     case 'penghapusan_pemindahtanganan':
     case 'penghapusan_sebab_lain':
       // Soft-delete: hilang dari laporan, tetap tersimpan di DB (§5 no.11)
+      return { status: 'dihapus' }
+    case 'batal_pengadaan':
+      // Koreksi input pasca-approve (mis. kelebihan kuantitas dari Pengadaan):
+      // barang dianggap tidak pernah ada — soft-delete, dicatat mundur ke tgl
+      // pengadaan aslinya (bukan hari ini) supaya hilang dari SEMUA periode.
       return { status: 'dihapus' }
     case 'batal_penghapusan':
       // Kebalikan penghapusan: barang kembali aktif, penyusutan lanjut lagi.

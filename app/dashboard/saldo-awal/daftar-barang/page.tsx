@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
-import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
+import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
 
 const PAGE_SIZE = 50
@@ -122,7 +122,10 @@ export default function Page() {
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
-          <OrgFilter onChange={setOrg} />
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
+            <SkpdCombobox onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
+          </div>
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Jenis Aset :</label>
             <select className="select-filter flex-1" value={golongan} onChange={e => setGolongan(e.target.value)}>

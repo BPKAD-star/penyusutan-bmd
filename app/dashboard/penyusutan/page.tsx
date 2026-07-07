@@ -7,19 +7,27 @@
 //   - Induk yang di-kapitalisasi tampil dengan nilai/beban/akumulasi/masa manfaat BARU.
 //   - Barang anak yang sudah diserap (atau aset dihapus) DISEMBUNYIKAN untuk periode
 //     saat/kaset­elah penyerapan; kalau lihat periode SEBELUM penyerapan, tetap tampil.
-// Register (daftar aset per golongan) tetap dari saldo_awal_2026; angka & visibilitas
-// disesuaikan engine + histori transaksi. Angka polos tanpa "Rp" (enak di-Excel).
+// Register (daftar aset per golongan) dari tabel aset (hidup) — bukan cuma baseline
+// beku saldo_awal_2026, supaya barang yang diimport/ditambah SETELAH baseline (mis.
+// perolehan baru, atau backfill saldo_awal susulan) ikut kebaca di sini. Angka &
+// visibilitas tetap disesuaikan engine + histori transaksi. Angka polos tanpa "Rp".
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_REKAP, perlakuanKode, comparePeriode } from '@/lib/bmd'
-import OrgFilter, { type OrgSelection } from '@/components/OrgFilter'
+import { GOLONGAN_REKAP, perlakuanKode, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
+import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
+import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+import { useTahunBukuMap } from '@/components/useTahunBuku'
+import TahunTerkunciNote from '@/components/TahunTerkunciNote'
+import { tahunAwal } from '@/lib/tahunKerja'
+
+const BASE_COLS = 'id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan'
 
 type Base = {
-  nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
+  id: string; nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
   nilai_perolehan: number; intra_ekstra: string | null
-  tgl_perolehan: string | null; masa_manfaat_smt: number | null
+  tgl_perolehan: string | null
 }
 // Hasil engine (penyusutan_semester) — angka period-aware.
 type Peny = { nilai_perolehan: number; beban: number; akumulasi: number; nilai_buku_akhir: number; sisa_semester: number; masa_manfaat_tahun: number | null }
@@ -29,21 +37,22 @@ const angka = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 // Event yang menyembunyikan / memunculkan kembali aset (serap/hapus vs batal).
-const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
+const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan']
 const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan']
 
 export default function PenyusutanPage() {
   const supabase = createClient()
+  const tahunBukuMap = useTahunBukuMap()
 
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [golongan, setGolongan] = useState('')
   const [komptabel, setKomptabel] = useState('')
-  const [tahun, setTahun] = useState('2026')
+  const [tahun, setTahun] = useState(() => tahunAwal('2026'))
   const [smt, setSmt] = useState('1')
   const [search, setSearch] = useState('')
 
   const [applied, setApplied] = useState<Applied | null>(null)
-  const [rows, setRows] = useState<(Base & { p?: Peny })[]>([])
+  const [rows, setRows] = useState<(Base & { p?: Peny; ownerSkpd?: number | null })[]>([])
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
@@ -65,13 +74,14 @@ export default function PenyusutanPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Sumber register = tabel aset (hidup, includeDeleted implisit — visibilitas
+  // period-aware diserahkan ke fetchHiddenIds di bawah, sama seperti Daftar Barang).
   function baseQuery(f: Applied) {
-    let q = supabase.from('saldo_awal_2026')
-      .select('nibar,kode_barang,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,masa_manfaat_smt')
+    let q = supabase.from('aset').select(BASE_COLS)
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
-    if (f.golongan) q = q.like('kode_barang', `${f.golongan}.%`)
+    if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
-    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode_barang.ilike.${f.search}%`)
+    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
     return q.order('nilai_perolehan', { ascending: false })
   }
 
@@ -80,20 +90,26 @@ export default function PenyusutanPage() {
     for (let from = 0; ; from += 1000) {
       const { data } = await baseQuery(f).range(from, from + 999)
       if (!data || data.length === 0) break
-      base.push(...(data as Base[]))
+      base.push(...(data as unknown as Base[]))
       if (data.length < 1000) break
     }
     return base
   }
 
-  // nibar → { id (aset), status }
-  async function fetchAsetMap(nibars: string[]) {
-    const map = new Map<string, { id: string; status: string }>()
-    for (let i = 0; i < nibars.length; i += 300) {
-      const { data } = await supabase.from('aset').select('id,nibar,status').in('nibar', nibars.slice(i, i + 300))
-      for (const a of (data || []) as { id: string; nibar: string | null; status: string }[]) if (a.nibar) map.set(a.nibar, { id: a.id, status: a.status })
+  // Ambil aset per daftar id (period-aware: barang yg pada periode terpilih milik
+  // SKPD terpilih tapi kini sudah pindah keluar). Filter golongan/komptabel/search
+  // tetap; filter SKPD tidak.
+  async function fetchBaseByIds(ids: string[], f: Applied): Promise<Base[]> {
+    const out: Base[] = []
+    for (let i = 0; i < ids.length; i += 200) {
+      let q = supabase.from('aset').select(BASE_COLS).in('id', ids.slice(i, i + 200))
+      if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
+      if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
+      if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
+      const { data } = await q
+      out.push(...((data as unknown as Base[]) || []))
     }
-    return map
+    return out
   }
 
   // Hasil engine per aset_id untuk periode terpilih.
@@ -110,21 +126,22 @@ export default function PenyusutanPage() {
 
   // aset_id yang tersembunyi PER periode (serap/hapus dgn periode <= viewed, dikurangi batal).
   async function fetchHiddenIds(ids: string[], periode: string) {
-    const evByAset = new Map<string, { periode: string; jenis: string }[]>()
+    const evByAset = new Map<string, { id: number; periode: string; jenis: string }[]>()
     for (let i = 0; i < ids.length; i += 200) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select('aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
-      for (const e of (data || []) as { aset_id: string; jenis: string; periode: string }[]) {
-        const arr = evByAset.get(e.aset_id) || []; arr.push({ periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
+        .select('id,aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
+      for (const e of (data || []) as { id: number; aset_id: string; jenis: string; periode: string }[]) {
+        const arr = evByAset.get(e.aset_id) || []; arr.push({ id: e.id, periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
       }
     }
     const hidden = new Set<string>()
     for (const [id, evs] of evByAset) {
       let h = false
-      // Urut periode; dalam periode yang SAMA, proses SEMBUNYI dulu baru MUNCUL,
-      // supaya batal (serap/hapus) di periode yang sama membuat aset muncul lagi.
-      const rank = (j: string) => (SEMBUNYI.includes(j) ? 0 : 1)
-      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || rank(a.jenis) - rank(b.jenis))) {
+      // Urut kronologis SUNGGUHAN (periode lalu id ledger — append-only jadi id = urutan
+      // insert asli), BUKAN dikelompokkan SEMBUNYI-dulu-baru-MUNCUL. Pengelompokan lama
+      // salah kalau dalam satu periode ada siklus hapus→batal→hapus lagi (mis. dari testing
+      // di hari yang sama): hasil akhir harus ikut aksi TERAKHIR, bukan selalu "batal menang".
+      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || a.id - b.id)) {
         if (SEMBUNYI.includes(e.jenis)) h = true
         else if (MUNCUL.includes(e.jenis)) h = false
       }
@@ -152,15 +169,31 @@ export default function PenyusutanPage() {
     return map
   }
 
-  // Susun baris tampil: register − yang tersembunyi, digabung angka engine.
-  async function assembleRows(f: Applied): Promise<(Base & { p?: Peny })[]> {
+  // Susun baris tampil: register − yang tersembunyi − yang belum diperoleh di
+  // periode ini (tgl perolehan > periode), disesuaikan kepemilikan PERIOD-AWARE
+  // (transfer antar SKPD: barang yg pindah di semester depan tetap di SKPD asal
+  // saat lihat semester lampau), digabung angka engine. `ownerSkpd` = pemilik
+  // pada periode terpilih (utk tampilan/atribusi SKPD).
+  async function assembleRows(f: Applied): Promise<(Base & { p?: Peny; ownerSkpd?: number | null })[]> {
     const base = await fetchAllBase(f)
-    const asetMap = await fetchAsetMap(base.map(b => b.nibar))
-    const ids = base.map(b => asetMap.get(b.nibar)?.id).filter((x): x is string => !!x)
+    const owners = await fetchOwnerOverrides(supabase, f.periode)
+
+    let combined = base
+    if (f.org.descendantIds && f.org.descendantIds.length > 0) {
+      const scope = new Set(f.org.descendantIds)
+      const curSkpd = new Map<string, number | null>(base.map(b => [b.id, b.skpd_id]))
+      const { keepIds, addIds } = partitionByPeriodOwner(base.map(b => b.id), owners, curSkpd, scope)
+      const kept = base.filter(b => keepIds.has(b.id))
+      const added = addIds.length > 0 ? await fetchBaseByIds(addIds, f) : []
+      combined = [...kept, ...added]
+    }
+
+    const ids = combined.map(b => b.id)
     const [pmap, hidden] = await Promise.all([fetchPeny(ids, f.periode), fetchHiddenIds(ids, f.periode)])
-    return base
-      .filter(b => { const id = asetMap.get(b.nibar)?.id; return !id || !hidden.has(id) })
-      .map(b => ({ ...b, p: pmap.get(asetMap.get(b.nibar)?.id ?? '') }))
+    const belumAda = (b: Base) => !!b.tgl_perolehan && comparePeriode(periodeDariTanggal(b.tgl_perolehan), f.periode) > 0
+    return combined
+      .filter(b => !hidden.has(b.id) && !belumAda(b))
+      .map(b => ({ ...b, p: pmap.get(b.id), ownerSkpd: owners.get(b.id) ?? b.skpd_id }))
   }
 
   async function load(f: Applied) {
@@ -183,7 +216,10 @@ export default function PenyusutanPage() {
       const res = await fetch('/api/engine/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periode }) })
       const j = await res.json()
       if (!res.ok) { setEngineMsg(`Error: ${j.error || `HTTP ${res.status}`}`); setEngineRunning(false); return }
-      setEngineMsg(`✓ Engine selesai untuk ${periode} — ${Number(j.disusutkan || 0).toLocaleString('id-ID')} aset disusutkan, total beban ${angka(j.total_beban)}.`)
+      const proteksi = j.rows_dilindungi_tahun_terkunci > 0
+        ? ` (${Number(j.rows_dilindungi_tahun_terkunci).toLocaleString('id-ID')} baris di tahun terkunci dilindungi, tidak ditimpa.)`
+        : ''
+      setEngineMsg(`✓ Engine selesai untuk ${periode} — ${Number(j.disusutkan || 0).toLocaleString('id-ID')} aset disusutkan, total beban ${angka(j.total_beban)}.${proteksi}`)
       if (applied && applied.periode === periode) load(applied)
     } catch (e) {
       setEngineMsg(`Error: ${e instanceof Error ? e.message : String(e)}`)
@@ -200,13 +236,13 @@ export default function PenyusutanPage() {
       const susut = perlakuanKode(b.kode_barang) !== 'tidak'
       return {
         'NIBAR': b.nibar, 'Nama Barang': b.nama_barang, 'Kode Barang': b.kode_barang,
-        'SKPD': skpdNama[b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
+        'SKPD': skpdNama[b.ownerSkpd ?? b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
         'Tgl Perolehan': b.tgl_perolehan || '',
         'Nilai Perolehan': p ? p.nilai_perolehan : b.nilai_perolehan,
         'Beban': susut && p ? p.beban : '',
         'Akumulasi': susut && p ? p.akumulasi : '',
         'Nilai Buku Akhir': susut && p ? p.nilai_buku_akhir : b.nilai_perolehan,
-        'Masa Manfaat (Smt)': susut ? (p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : (b.masa_manfaat_smt ?? '')) : '',
+        'Masa Manfaat (Smt)': susut && p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : '',
         'Sisa (Smt)': susut && p ? p.sisa_semester : '',
         'Periode': applied.periode,
       }
@@ -236,7 +272,11 @@ export default function PenyusutanPage() {
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
-          <OrgFilter onChange={setOrg} />
+          <div className="flex items-center gap-3">
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
+            <SkpdCombobox onChangeSelection={setOrg} allowClear
+              placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
+          </div>
 
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Jenis Aset :</label>
@@ -285,6 +325,12 @@ export default function PenyusutanPage() {
               {engineRunning ? 'Menghitung…' : `⚙ Jalankan Engine (${tahun}-S${smt})`}
             </button>
           </div>
+          {tahunBukuMap[Number(tahun)] === 'terkunci' && (
+            <div className="flex items-start gap-3">
+              <span className="w-40 flex-shrink-0" />
+              <TahunTerkunciNote tahun={Number(tahun)} />
+            </div>
+          )}
           {engineMsg && (
             <div className="flex items-start gap-3">
               <span className="w-40 flex-shrink-0" />
@@ -300,6 +346,11 @@ export default function PenyusutanPage() {
         </div>
       ) : (
         <div className="card overflow-hidden">
+          {tahunBukuMap[Number(applied.periode.slice(0, 4))] === 'terkunci' && (
+            <div className="px-4 pt-3">
+              <TahunTerkunciNote tahun={Number(applied.periode.slice(0, 4))} />
+            </div>
+          )}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
               {rows.length.toLocaleString('id-ID')} aset · periode {applied.periode}
@@ -336,10 +387,10 @@ export default function PenyusutanPage() {
                   const susut = perlakuanKode(r.kode_barang) !== 'tidak'
                   const p = r.p
                   const kap = kapMap[r.nibar]
-                  const masaSmt = p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : r.masa_manfaat_smt
+                  const masaSmt = p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : null
                   return (
-                    <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                      <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
+                    <tr key={r.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                      <td className="table-td text-xs text-gray-600">{skpdNama[r.ownerSkpd ?? r.skpd_id] || '-'}</td>
                       <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
                       <td className="table-td">
                         <p className={`text-xs ${kap ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>{r.nama_barang || '-'}</p>

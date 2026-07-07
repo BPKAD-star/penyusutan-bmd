@@ -1,23 +1,38 @@
 'use client'
-// No.11: Penghapusan — alur jurnal ala e-SIMBADA.
+// No.11: Penghapusan — alur jurnal ala e-SIMBADA, dengan header editable.
 //   1. Pilih SKPD.
-//   2. Tambah jurnal: No SK, tanggal, jenis + bentuk, keterangan (header).
-//   3. Centang barang dari daftar terfilter (SKPD/golongan/komptabel/cari) → simpan.
-//   4. Jurnal tampil dengan header + tabel barang; ikon sampah membatalkan
-//      penghapusan barang (transaksi batal_penghapusan → aset aktif lagi).
-// Grouping jurnal via payload.no_sk (tanpa tabel baru); ledger tetap append-only.
+//   2. Tambah jurnal: No SK, tanggal, jenis + bentuk, keterangan (→ jurnal_header).
+//   3. Centang barang → simpan sebagai baris ledger ber-header_id (append-only).
+//   4. Kartu jurnal: ikon edit (ganti No SK/tanggal, WAJIB semester sama),
+//      ikon + (tambah barang ke SK yang sama), ikon sampah per barang (batal).
+// Header (No SK/tanggal) boleh diedit; ledger tetap beku. Pindah semester tak
+// diizinkan lewat edit → dijaga trigger DB + validasi UI (lihat CLAUDE.md).
+//
+// Jenis ketiga: PENGALIHAN STATUS PENGGUNAAN (transfer keluar antar SKPD) —
+// beda mekanika dari penghapusan biasa (migrasi 21 + 22):
+//   - Butuh SKPD tujuan (level SKPD induk saja) + dokumen sumber (foto/PDF).
+//   - Barang ditampung sbg DRAFT di payload.draft_items (approval_status
+//     'pending') — ledger & aset TIDAK disentuh sampai SKPD tujuan menyetujui
+//     lewat menu Penggunaan (RPC fn_terima_pengalihan).
+//   - Selama pending: barang bebas ditambah/dihapus, header bebas diedit
+//     (semester sama), jurnal bisa dihapus utuh (belum ada jejak ledger).
+//   - SATU PINTU: setelah disetujui, kartu di sisi PENGIRIM jadi read-only.
+//     Pengembalian barang HANYA lewat SKPD penerima (menu Penggunaan).
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
+import SkpdCombobox from '@/components/SkpdCombobox'
+import { useDateBounds } from '@/components/useTahunBuku'
 
-type JenisHapus = 'penghapusan_pemindahtanganan' | 'penghapusan_sebab_lain'
+type JenisHapus = 'penghapusan_pemindahtanganan' | 'penghapusan_sebab_lain' | 'pengalihan_status'
 
 const JENIS_OPT: { value: JenisHapus; label: string }[] = [
   { value: 'penghapusan_pemindahtanganan', label: 'Pemindahtanganan' },
   { value: 'penghapusan_sebab_lain', label: 'Sebab Lain (force majeure)' },
+  { value: 'pengalihan_status', label: 'Pengalihan Status Penggunaan (Transfer Keluar)' },
 ]
 const SUBJENIS_OPT = [
   { value: 'hibah', label: 'Hibah' },
@@ -25,6 +40,8 @@ const SUBJENIS_OPT = [
   { value: 'tukar_menukar', label: 'Tukar-Menukar' },
   { value: 'penyertaan_modal', label: 'Penyertaan Modal Pemerintah' },
 ]
+
+const PENGHAPUSAN_JENIS = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
 
 type Barang = {
   id: string
@@ -38,6 +55,30 @@ type Barang = {
   skpd_id: number | null
 }
 
+// Snapshot barang di draft pengalihan (payload.draft_items) — dipakai tampilan;
+// nilai otoritatif dibaca ulang dari aset oleh RPC saat SKPD tujuan menerima.
+type DraftItem = {
+  aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
+  merek_tipe: string | null; jumlah: number; satuan: string | null; nilai: number
+}
+type HeaderPayload = { dokumen_paths?: string[]; draft_items?: DraftItem[] }
+
+// Header jurnal (jurnal_header) + baris barang (dari transaksi_bmd ber-header_id
+// utk kategori penghapusan / pengalihan disetujui; dari draft_items utk pending).
+type Header = {
+  id: string
+  no_sk: string
+  tanggal: string
+  periode: string
+  jenis: JenisHapus
+  sub_jenis: string | null
+  keterangan: string | null
+  kategori: 'penghapusan' | 'pengalihan_status'
+  approval_status: string | null
+  skpd_tujuan: number | null
+  rejected_reason: string | null
+  payload: HeaderPayload | null
+}
 type JurnalLine = {
   aset_id: string
   nibar: string | null
@@ -48,17 +89,11 @@ type JurnalLine = {
   satuan: string | null
   nilai: number
 }
-type Jurnal = {
-  no_sk: string
-  tanggal: string
-  jenis: JenisHapus
-  sub_jenis: string | null
-  keterangan: string | null
-  lines: JurnalLine[]
-  total: number
-}
+type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
-const PENGHAPUSAN_JENIS = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
+const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,sub_jenis,keterangan,kategori,approval_status,skpd_tujuan,rejected_reason,payload'
+
+const namaFile = (path: string) => path.split('/').pop() || path
 
 export default function Penghapusan() {
   const supabase = createClient()
@@ -71,12 +106,22 @@ export default function Penghapusan() {
   const [loadingJurnal, setLoadingJurnal] = useState(false)
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
+  const [addTo, setAddTo] = useState<Header | null>(null)   // "+" tambah barang ke jurnal ini
+  const [editing, setEditing] = useState<Header | null>(null) // edit header
   const [msg, setMsg] = useState('')
 
   // ── Referensi awal ──
   useEffect(() => {
-    supabase.from('skpd').select('id,nama').eq('level', 1).order('nama')
-      .then(({ data }) => setSkpdList(data || []))
+    ;(async () => {
+      const rows: { id: number; nama: string }[] = []
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        if (!data || data.length === 0) break
+        rows.push(...data)
+        if (data.length < 1000) break
+      }
+      setSkpdList(rows)
+    })()
     ;(async () => {
       const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
@@ -91,112 +136,245 @@ export default function Penghapusan() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Muat jurnal penghapusan milik SKPD terpilih ──
+  // ── Muat jurnal penghapusan + pengalihan milik SKPD terpilih ──
   const loadJurnals = useCallback(async (skpdId: string) => {
     if (!skpdId) { setJurnals([]); return }
     setLoadingJurnal(true)
-    const { data } = await supabase.from('transaksi_bmd')
-      .select('id,jenis,tanggal,keterangan,payload,nilai,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan,nilai_perolehan,status)')
-      .in('jenis', PENGHAPUSAN_JENIS as never)
-      .eq('skpd_asal', Number(skpdId))
-      .order('id', { ascending: false })
 
-    const rows = (data || []) as unknown as {
-      id: number; jenis: JenisHapus; tanggal: string; keterangan: string | null
-      payload: { no_sk?: string; sub_jenis?: string }; nilai: number
-      aset: (Barang & { status: string }) | null
-    }[]
+    const { data: headers } = await supabase.from('jurnal_header')
+      .select(HEADER_COLS)
+      .in('kategori', ['penghapusan', 'pengalihan_status'])
+      .eq('skpd_id', Number(skpdId))
+      .order('tanggal', { ascending: false })
+    const hs = (headers || []) as unknown as Header[]
 
-    const map = new Map<string, Jurnal>()
-    const seenAset = new Set<string>()
-    for (const r of rows) {
-      // Hanya barang yang masih berstatus dihapus = anggota jurnal saat ini.
-      if (!r.aset || r.aset.status !== 'dihapus' || seenAset.has(r.aset.id)) continue
-      seenAset.add(r.aset.id)
-      const key = r.payload?.no_sk || '(tanpa no. SK)'
-      let j = map.get(key)
-      if (!j) {
-        j = { no_sk: key, tanggal: r.tanggal, jenis: r.jenis, sub_jenis: r.payload?.sub_jenis || null, keterangan: r.keterangan, lines: [], total: 0 }
-        map.set(key, j)
+    const jmap = new Map<string, Jurnal>()
+    for (const h of hs) jmap.set(h.id, { ...h, lines: [], total: 0 })
+
+    // Pengalihan pending/ditolak: barang = draft (belum ada ledger).
+    for (const j of jmap.values()) {
+      if (j.kategori === 'pengalihan_status' && j.approval_status !== 'disetujui') {
+        for (const d of j.payload?.draft_items || []) {
+          j.lines.push({ ...d })
+          j.total += d.nilai
+        }
       }
-      j.lines.push({
-        aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
-        merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
-      })
-      j.total += r.nilai
     }
-    setJurnals([...map.values()])
+
+    // Baris ledger: penghapusan (semua) + pengalihan yang sudah disetujui.
+    const ledgerIds = hs.filter(h => h.kategori === 'penghapusan' || h.approval_status === 'disetujui').map(h => h.id)
+    if (ledgerIds.length > 0) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan,status)')
+        .in('jenis', [...PENGHAPUSAN_JENIS, 'pengalihan_status'] as never)
+        .in('header_id', ledgerIds)
+        .order('id', { ascending: false })
+
+      const rows = (data || []) as unknown as {
+        id: number; header_id: string; nilai: number; payload: { reversal?: boolean } | null
+        aset: (Barang & { status: string }) | null
+      }[]
+      // Dedup per aset: baris TERBARU (id desc) menentukan keanggotaan.
+      // Penghapusan: dedup global by aset (barang cuma bisa 'dihapus' di satu
+      // jurnal). Pengalihan: dedup per header+aset (barang sah pindah berkali-
+      // kali lewat jurnal berbeda); baris terbaru reversal = keluar dari kartu.
+      const seenHapus = new Set<string>()
+      const seenAlih = new Set<string>()
+      for (const r of rows) {
+        if (!r.aset) continue
+        const j = jmap.get(r.header_id)
+        if (!j) continue
+        if (j.kategori === 'penghapusan') {
+          if (seenHapus.has(r.aset.id)) continue
+          seenHapus.add(r.aset.id)
+          if (r.aset.status !== 'dihapus') continue
+        } else {
+          const key = `${r.header_id}|${r.aset.id}`
+          if (seenAlih.has(key)) continue
+          seenAlih.add(key)
+          if (r.payload?.reversal) continue
+        }
+        j.lines.push({
+          aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
+          merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
+        })
+        j.total += r.nilai
+      }
+    }
+    // Sembunyikan jurnal tanpa barang (auto-ilang): entah karena semua barang
+    // sudah dibatalkan, atau header orphan sisa entry yang gagal. Header tetap di
+    // DB (baris ledger yg pernah ada memblok DELETE via FK), cukup tak ditampilkan.
+    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadJurnals(skpd); setMode('list') }, [skpd, loadJurnals])
+  useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null) }, [skpd, loadJurnals])
 
-  async function hapusBarang(asetId: string, noSk: string, tglAsli: string) {
+  async function hapusBarang(l: JurnalLine, j: Jurnal) {
+    if (j.kategori === 'pengalihan_status') {
+      // SATU PINTU: pengirim hanya boleh mengutak-atik selama masih pending
+      // (draft, belum ada ledger). Setelah disetujui SKPD tujuan, pengirim tak
+      // bisa apa-apa lagi — pengembalian dilakukan SKPD penerima (menu Penggunaan).
+      if (j.approval_status !== 'pending') return
+      const sisa = (j.payload?.draft_items || []).filter(d => d.aset_id !== l.aset_id)
+      if (sisa.length === 0) {
+        if (!confirm('Ini barang terakhir di jurnal — jurnal pengalihan akan dihapus seluruhnya. Lanjutkan?')) return
+        const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg('Jurnal pengalihan dihapus.')
+      } else {
+        if (!confirm('Keluarkan barang ini dari draft pengalihan?')) return
+        const { error } = await supabase.from('jurnal_header')
+          .update({ payload: { ...(j.payload || {}), draft_items: sisa } }).eq('id', j.id)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg('Barang dikeluarkan dari draft pengalihan.')
+      }
+      loadJurnals(skpd)
+      return
+    }
     if (!confirm('Batalkan penghapusan barang ini? Barang akan kembali aktif dan penyusutan dilanjutkan.')) return
-    // Reversal dicatat di PERIODE penghapusan asli (tglAsli), bukan hari ini — supaya di
-    // view periode itu barang langsung kembali muncul (konsisten dgn Daftar Barang).
+    // Reversal dicatat di PERIODE penghapusan asli (header.tanggal), bukan hari ini —
+    // supaya di view periode itu barang langsung kembali muncul (konsisten Daftar Barang).
     const { error } = await catatTransaksi(supabase, {
-      asetId, jenis: 'batal_penghapusan', tanggal: tglAsli,
-      keterangan: `Pembatalan dari jurnal ${noSk}`,
+      asetId: l.aset_id, jenis: 'batal_penghapusan', tanggal: j.tanggal,
+      keterangan: `Pembatalan dari jurnal ${j.no_sk}`,
     })
     if (error) { setMsg(`Error: ${error}`); return }
     setMsg('Barang dikeluarkan dari jurnal — kembali aktif, penyusutan dilanjutkan.')
     loadJurnals(skpd)
   }
 
+  // Hapus jurnal pengalihan utuh — hanya selama belum disetujui (belum ada
+  // jejak ledger). Jalan keluar utk salah semester: hapus, entry ulang.
+  async function hapusJurnal(j: Jurnal) {
+    if (!confirm(`Hapus jurnal pengalihan "${j.no_sk}" seluruhnya (${j.lines.length} barang)? Barang tetap utuh di SKPD ini.`)) return
+    const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
+    if (error) { setMsg(`Error: ${error.message}`); return }
+    setMsg('Jurnal pengalihan dihapus.')
+    loadJurnals(skpd)
+  }
+
+  async function bukaDokumen(path: string) {
+    const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
+  const namaSkpdById = (id: number | null) => skpdList.find(s => s.id === id)?.nama || '-'
 
   return (
     <FormShell judul="Penghapusan" msg={msg}
-      deskripsi="Pilih SKPD, buat jurnal penghapusan (No SK/tanggal), lalu centang barang. Soft-delete: data & histori tetap tersimpan.">
+      deskripsi="Pilih SKPD, buat jurnal (No SK/tanggal), lalu centang barang. Penghapusan = soft-delete; Pengalihan Status = transfer ke SKPD lain, menunggu persetujuan SKPD tujuan.">
       {/* Pilih SKPD */}
-      <div className="card p-5 mb-4 max-w-3xl">
+      <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
-          <select className="select-filter flex-1" value={skpd} onChange={e => { setSkpd(e.target.value); setMsg('') }}>
-            <option value="">— pilih SKPD —</option>
-            {skpdList.map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
-          </select>
+          <SkpdCombobox value={skpd} onChange={id => { setSkpd(id); setMsg('') }}
+            placeholder="Ketik nama SKPD / Sub OPD / Lokasi..." />
         </div>
       </div>
 
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">
-          Pilih SKPD di atas untuk melihat & membuat jurnal penghapusan.
+          Pilih SKPD di atas untuk melihat & membuat jurnal penghapusan / pengalihan status.
         </div>
       ) : mode === 'tambah' ? (
-        <TambahJurnal
-          skpdId={Number(skpd)} skpdNama={skpdNama || ''} golonganLabels={golonganLabels}
+        <BarangForm
+          skpdId={Number(skpd)} skpdNama={skpdNama || ''} golonganLabels={golonganLabels} header={null}
           onCancel={() => setMode('list')}
-          onSaved={(n) => { setMode('list'); setMsg(`Jurnal tersimpan — ${n} barang dihapus dari laporan (penyusutan berhenti).`); loadJurnals(skpd) }}
+          onSaved={(n, pengalihan) => {
+            setMode('list')
+            setMsg(pengalihan
+              ? `Jurnal pengalihan tersimpan — ${n} barang menunggu persetujuan SKPD tujuan.`
+              : `Jurnal tersimpan — ${n} barang dihapus dari laporan (penyusutan berhenti).`)
+            loadJurnals(skpd)
+          }}
+        />
+      ) : addTo ? (
+        <BarangForm
+          skpdId={Number(skpd)} skpdNama={skpdNama || ''} golonganLabels={golonganLabels} header={addTo}
+          onCancel={() => setAddTo(null)}
+          onSaved={(n) => { setAddTo(null); setMsg(`${n} barang ditambahkan ke jurnal ${addTo.no_sk}.`); loadJurnals(skpd) }}
         />
       ) : (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} jurnal penghapusan</span>
+            <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} jurnal</span>
             <button className="btn-primary" onClick={() => { setMsg(''); setMode('tambah') }}>+ Tambah Jurnal</button>
           </div>
 
           {loadingJurnal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
           ) : jurnals.length === 0 ? (
-            <div className="card p-12 text-center text-gray-400 text-sm">Belum ada penghapusan untuk SKPD ini.</div>
-          ) : jurnals.map(j => (
-            <div key={j.no_sk} className="card overflow-hidden">
+            <div className="card p-12 text-center text-gray-400 text-sm">Belum ada penghapusan / pengalihan untuk SKPD ini.</div>
+          ) : jurnals.map(j => {
+            const isAlih = j.kategori === 'pengalihan_status'
+            const pending = isAlih && j.approval_status === 'pending'
+            const ditolak = isAlih && j.approval_status === 'ditolak'
+            const disetujui = isAlih && j.approval_status === 'disetujui'
+            // Satu pintu: baris pengalihan hanya bisa diutak-atik saat pending.
+            // Disetujui → read-only di sisi pengirim (pengembalian ada di penerima).
+            const bolehHapusLine = !isAlih || pending
+            return (
+            <div key={j.id} className="card overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
                 <div className="flex items-start justify-between gap-4">
                   <div className="text-sm space-y-0.5">
-                    <p className="font-semibold text-gray-800">No. SK: {j.no_sk}</p>
+                    <p className="font-semibold text-gray-800">
+                      No. {isAlih ? 'Dokumen' : 'SK'}: {j.no_sk}
+                      {isAlih && (
+                        <span className={`ml-2 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                          pending ? 'bg-amber-100 text-amber-700'
+                          : ditolak ? 'bg-red-100 text-red-700'
+                          : 'bg-green-100 text-green-700'
+                        }`}>
+                          {pending ? 'Menunggu Persetujuan' : ditolak ? 'Ditolak' : 'Disetujui'}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-gray-500">
                       {JENIS_OPT.find(o => o.value === j.jenis)?.label}
+                      {isAlih && ` → ${namaSkpdById(j.skpd_tujuan)}`}
                       {j.sub_jenis && ` · ${SUBJENIS_OPT.find(o => o.value === j.sub_jenis)?.label || j.sub_jenis}`}
-                      {' · '}Tgl. {j.tanggal}
+                      {' · '}Tgl. {j.tanggal} · {j.periode}
                     </p>
                     {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
+                    {ditolak && j.rejected_reason && (
+                      <p className="text-xs text-red-600">Alasan penolakan: {j.rejected_reason}</p>
+                    )}
+                    {isAlih && (j.payload?.dokumen_paths?.length || 0) > 0 && (
+                      <p className="text-xs text-gray-500">
+                        Dokumen:{' '}
+                        {j.payload!.dokumen_paths!.map(p => (
+                          <button key={p} onClick={() => bukaDokumen(p)}
+                            className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
+                        ))}
+                      </p>
+                    )}
+                    {disetujui && (
+                      <p className="text-xs text-gray-400 italic">Sudah diterima SKPD tujuan — read-only. Pengembalian dilakukan SKPD tujuan lewat menu Penggunaan.</p>
+                    )}
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-xs text-gray-400">Total Penghapusan</p>
-                    <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400">{isAlih ? 'Total Nilai' : 'Total Penghapusan'}</p>
+                      <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+                    </div>
+                    {(!isAlih || pending) && (
+                      <button title="Edit No dokumen / tanggal (dalam semester yang sama)"
+                        onClick={() => { setMsg(''); setEditing(j) }}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
+                    )}
+                    {(!isAlih || pending) && (
+                      <button title="Tambah barang ke jurnal ini"
+                        onClick={() => { setMsg(''); setAddTo(j) }}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded bg-teal hover:opacity-90 text-white">+</button>
+                    )}
+                    {(pending || ditolak) && (
+                      <button title="Hapus jurnal pengalihan ini seluruhnya (belum ada jejak ledger)"
+                        onClick={() => hapusJurnal(j)}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -212,14 +390,18 @@ export default function Penghapusan() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {j.lines.map(l => (
+                    {j.lines.length === 0 ? (
+                      <tr><td colSpan={5} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada barang — klik + untuk menambah.</td></tr>
+                    ) : j.lines.map(l => (
                       <tr key={l.aset_id}>
                         <td className="table-td text-center">
-                          <button
-                            onClick={() => hapusBarang(l.aset_id, j.no_sk, j.tanggal)}
-                            title="Batalkan penghapusan barang ini"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white"
-                          >🗑</button>
+                          {bolehHapusLine ? (
+                            <button
+                              onClick={() => hapusBarang(l, j)}
+                              title={isAlih ? 'Keluarkan barang dari draft pengalihan' : 'Batalkan penghapusan barang ini'}
+                              className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white"
+                            >🗑</button>
+                          ) : <span className="text-gray-300 text-xs">—</span>}
                         </td>
                         <td className="table-td">
                           <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
@@ -234,25 +416,105 @@ export default function Penghapusan() {
                 </table>
               </div>
             </div>
-          ))}
+          )})}
         </div>
+      )}
+
+      {editing && (
+        <EditHeaderModal header={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); setMsg('Header jurnal diperbarui.'); loadJurnals(skpd) }}
+        />
       )}
     </FormShell>
   )
 }
 
-// ── Sub-view: header jurnal + pemilihan barang (centang) ───────────────────
-function TambahJurnal({ skpdId, skpdNama, golonganLabels, onCancel, onSaved }: {
-  skpdId: number; skpdNama: string; golonganLabels: Record<string, string>
-  onCancel: () => void; onSaved: (n: number) => void
+// ── Modal edit header: No SK + tanggal (kunci semester sama) + keterangan ────
+function EditHeaderModal({ header, onClose, onSaved }: {
+  header: Header; onClose: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const dateBounds = useDateBounds()
+  const [noSk, setNoSk] = useState(header.no_sk)
+  const [tgl, setTgl] = useState(header.tanggal)
+  const [ket, setKet] = useState(header.keterangan || '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const isAlih = header.kategori === 'pengalihan_status'
+  const tglPeriode = periodeDariTanggal(tgl)
+  const pindahSemester = tglPeriode !== header.periode
+
+  async function simpan() {
+    if (!noSk.trim()) { setErr(`No. ${isAlih ? 'dokumen' : 'SK'} wajib diisi.`); return }
+    if (pindahSemester) {
+      setErr(`Tanggal masuk ${tglPeriode}, sedangkan jurnal ini di ${header.periode}. Pindah semester tidak diizinkan — ${isAlih ? 'hapus jurnal & entry ulang' : 'batalkan & buat jurnal baru'}.`)
+      return
+    }
+    setErr(''); setSaving(true)
+    const { error } = await supabase.from('jurnal_header')
+      .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null })
+      .eq('id', header.id)
+    if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
+    setSaving(false); onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="card w-full max-w-lg" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-semibold text-gray-800">Edit Header Jurnal</h3>
+          <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">{isAlih ? 'No. Dokumen Sumber' : 'No. SK / BA Penghapusan'}</label>
+            <input className="select-filter w-full" value={noSk} onChange={e => setNoSk(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Tanggal <span className="text-gray-400">(harus tetap di {header.periode})</span></label>
+            <input type="date" className="select-filter w-full" max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
+            {pindahSemester && (
+              <p className="text-xs text-red-600 mt-1">
+                Tanggal ini masuk {tglPeriode} — di luar semester jurnal. Ganti tanggal, atau {isAlih ? 'hapus jurnal ini seluruhnya lalu entry ulang' : 'batalkan & entry ulang'}.
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
+            <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
+          </div>
+          {err && <p className="text-sm text-red-600">{err}</p>}
+        </div>
+        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button className="btn-secondary" onClick={onClose}>Batal</button>
+          <button className="btn-primary" onClick={simpan} disabled={saving || pindahSemester}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Sub-view: (opsional header baru) + pemilihan barang (centang) ───────────
+// header=null → buat jurnal baru (bikin jurnal_header dulu). header=… → tambah
+// barang ke jurnal yang sudah ada: penghapusan = insert baris ledger ber-
+// header_id sama; pengalihan pending = merge ke payload.draft_items.
+function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSaved }: {
+  skpdId: number; skpdNama: string; golonganLabels: Record<string, string>
+  header: Header | null; onCancel: () => void; onSaved: (n: number, pengalihan: boolean) => void
+}) {
+  const supabase = createClient()
+  const dateBounds = useDateBounds()
 
   const [jenis, setJenis] = useState<JenisHapus>('penghapusan_pemindahtanganan')
   const [subJenis, setSubJenis] = useState('hibah')
   const [noSk, setNoSk] = useState('')
   const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
   const [ket, setKet] = useState('')
+  const [tujuan, setTujuan] = useState('')          // SKPD tujuan (pengalihan)
+  const [dokPaths, setDokPaths] = useState<string[]>([]) // dokumen sumber (pengalihan)
+  const [dokUploading, setDokUploading] = useState(false)
 
   const [fGolongan, setFGolongan] = useState('')
   const [fKomptabel, setFKomptabel] = useState('')
@@ -264,6 +526,8 @@ function TambahJurnal({ skpdId, skpdNama, golonganLabels, onCancel, onSaved }: {
   const [sel, setSel] = useState<Record<string, Barang>>({})
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  const isAlih = header ? header.kategori === 'pengalihan_status' : jenis === 'pengalihan_status'
 
   async function tampilkan() {
     setLoading(true)
@@ -277,6 +541,23 @@ function TambahJurnal({ skpdId, skpdNama, golonganLabels, onCancel, onSaved }: {
     setRows((data as unknown as Barang[]) || [])
     setLoaded(true)
     setLoading(false)
+  }
+
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `pengalihan/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
   }
 
   function toggle(b: Barang) {
@@ -299,65 +580,155 @@ function TambahJurnal({ skpdId, skpdNama, golonganLabels, onCancel, onSaved }: {
   const selList = Object.values(sel)
   const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
 
-  async function simpan() {
-    if (!noSk.trim()) { setErr('No. SK / dasar penghapusan wajib diisi.'); return }
-    if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }
-    setErr('')
-    setSaving(true)
-    const periode = periodeDariTanggal(tgl)
-    const payloadBase = jenis === 'penghapusan_pemindahtanganan'
-      ? { no_sk: noSk.trim(), sub_jenis: subJenis }
-      : { no_sk: noSk.trim() }
+  const draftDari = (b: Barang): DraftItem => ({
+    aset_id: b.id, nibar: b.nibar, kode: b.kode, nama_barang: b.nama_barang,
+    merek_tipe: b.merek_tipe, jumlah: b.jumlah, satuan: b.satuan, nilai: b.nilai_perolehan,
+  })
+
+  // Insert baris penghapusan untuk header tertentu.
+  async function insertLines(h: Header): Promise<string | null> {
     const trxRows = selList.map(b => ({
-      aset_id: b.id, jenis, periode, tanggal: tgl, nilai: b.nilai_perolehan,
-      skpd_asal: b.skpd_id, payload: payloadBase, keterangan: ket.trim() || null,
+      aset_id: b.id, jenis: h.jenis, periode: h.periode, tanggal: h.tanggal, nilai: b.nilai_perolehan,
+      skpd_asal: b.skpd_id, header_id: h.id, payload: {},
     }))
     const { error } = await supabase.from('transaksi_bmd').insert(trxRows)
-    if (error) { setErr(`Gagal mencatat transaksi: ${error.message}`); setSaving(false); return }
+    if (error) return `Gagal mencatat transaksi: ${error.message}`
     const { error: e2 } = await supabase.from('aset').update({ status: 'dihapus' }).in('id', selList.map(b => b.id))
-    if (e2) { setErr(`Transaksi tercatat, tapi update status aset gagal: ${e2.message}`); setSaving(false); return }
+    if (e2) return `Transaksi tercatat, tapi update status aset gagal: ${e2.message}`
+    return null
+  }
+
+  async function simpan() {
+    if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }
+    setErr(''); setSaving(true)
+
+    // ── PENGALIHAN: draft-only, ledger & aset TIDAK disentuh sampai disetujui ──
+    if (isAlih) {
+      if (header) {
+        // Tambah barang ke draft pengalihan pending (merge, dedup by aset_id).
+        const lama = header.payload?.draft_items || []
+        const ada = new Set(lama.map(d => d.aset_id))
+        const gabung = [...lama, ...selList.filter(b => !ada.has(b.id)).map(draftDari)]
+        const { error } = await supabase.from('jurnal_header')
+          .update({ payload: { ...(header.payload || {}), draft_items: gabung } }).eq('id', header.id)
+        if (error) { setErr(`Gagal menambah barang: ${error.message}`); setSaving(false); return }
+        setSaving(false); onSaved(selList.length, true); return
+      }
+      if (!noSk.trim()) { setErr('No. dokumen sumber wajib diisi.'); setSaving(false); return }
+      if (!tujuan) { setErr('SKPD tujuan wajib dipilih.'); setSaving(false); return }
+      if (Number(tujuan) === skpdId) { setErr('SKPD tujuan tidak boleh sama dengan SKPD asal.'); setSaving(false); return }
+      const { error } = await supabase.from('jurnal_header').insert({
+        skpd_id: skpdId, kategori: 'pengalihan_status', jenis: 'pengalihan_status', sub_jenis: null,
+        no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+        skpd_tujuan: Number(tujuan), approval_status: 'pending',
+        payload: { dokumen_paths: dokPaths, draft_items: selList.map(draftDari) },
+      })
+      if (error) { setErr(`Gagal membuat jurnal pengalihan: ${error.message}`); setSaving(false); return }
+      setSaving(false); onSaved(selList.length, true); return
+    }
+
+    // ── PENGHAPUSAN: alur lama (ledger + soft-delete langsung) ──
+    let h = header
+    const headerBaru = !header
+    if (!h) {
+      // Buat header baru dulu.
+      if (!noSk.trim()) { setErr('No. SK / dasar penghapusan wajib diisi.'); setSaving(false); return }
+      const { data, error } = await supabase.from('jurnal_header').insert({
+        skpd_id: skpdId, kategori: 'penghapusan', jenis,
+        sub_jenis: jenis === 'penghapusan_pemindahtanganan' ? subJenis : null,
+        no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+      }).select(HEADER_COLS).single()
+      if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
+      h = data as unknown as Header
+    }
+
+    const e = await insertLines(h)
+    if (e) {
+      // Header baru + gagal isi barang → hapus header supaya tak jadi orphan
+      // (kartu jurnal kosong). Header lama (tambah barang) dibiarkan utuh.
+      if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
+      setErr(e); setSaving(false); return
+    }
     setSaving(false)
-    onSaved(selList.length)
+    onSaved(selList.length, false)
   }
 
   const allSelected = rows.length > 0 && rows.every(r => sel[r.id])
 
   return (
     <div className="space-y-4">
-      {/* Header jurnal */}
-      <div className="card p-5 max-w-3xl">
+      {/* Header jurnal — form (baru) atau ringkasan read-only (tambah barang) */}
+      <div className="card p-5">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-800">Jurnal Penghapusan Baru — {skpdNama}</h2>
+          <h2 className="text-base font-semibold text-gray-800">
+            {header ? `Tambah Barang — ${header.no_sk}` : `Jurnal Baru — ${skpdNama}`}
+          </h2>
           <button className="btn-secondary text-xs" onClick={onCancel}>← Kembali</button>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Jenis Penghapusan</label>
-            <select className="select-filter w-full" value={jenis} onChange={e => setJenis(e.target.value as JenisHapus)}>
-              {JENIS_OPT.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-          {jenis === 'penghapusan_pemindahtanganan' && (
+
+        {header ? (
+          <p className="text-sm text-gray-500">
+            {JENIS_OPT.find(o => o.value === header.jenis)?.label}
+            {header.sub_jenis && ` · ${SUBJENIS_OPT.find(o => o.value === header.sub_jenis)?.label || header.sub_jenis}`}
+            {' · '}Tgl. {header.tanggal} · {header.periode}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Bentuk Pemindahtanganan</label>
-              <select className="select-filter w-full" value={subJenis} onChange={e => setSubJenis(e.target.value)}>
-                {SUBJENIS_OPT.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              <label className="block text-xs text-gray-500 mb-1">Jenis</label>
+              <select className="select-filter w-full" value={jenis} onChange={e => setJenis(e.target.value as JenisHapus)}>
+                {JENIS_OPT.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
-          )}
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">No. SK / BA Penghapusan</label>
-            <input className="select-filter w-full" value={noSk} onChange={e => setNoSk(e.target.value)} placeholder="mis. 100.3.3.2/74/418.08/2024" />
+            {jenis === 'penghapusan_pemindahtanganan' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Bentuk Pemindahtanganan</label>
+                <select className="select-filter w-full" value={subJenis} onChange={e => setSubJenis(e.target.value)}>
+                  {SUBJENIS_OPT.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
+            {jenis === 'pengalihan_status' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">SKPD Tujuan <span className="text-gray-400">(level SKPD induk)</span></label>
+                <SkpdCombobox value={tujuan} onChange={setTujuan} rootOnly placeholder="Ketik nama SKPD tujuan..." />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">{isAlih ? 'No. Dokumen Sumber' : 'No. SK / BA Penghapusan'}</label>
+              <input className="select-filter w-full" value={noSk} onChange={e => setNoSk(e.target.value)} placeholder="mis. 100.3.3.2/74/418.08/2024" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">{isAlih ? 'Tanggal Dokumen Sumber' : 'Tanggal'}</label>
+              <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max}
+                value={tgl} onChange={e => setTgl(e.target.value)} />
+              <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tgl)}</p>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
+              <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)}
+                placeholder={isAlih ? 'mis. Pengalihan kendaraan dinas ke Dinas Kesehatan' : 'mis. Penghapusan Lelang'} />
+            </div>
+            {jenis === 'pengalihan_status' && (
+              <div className="sm:col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Dokumen Sumber (foto / PDF, bisa lebih dari satu)</label>
+                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
+                  onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
+                {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
+                {dokPaths.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {dokPaths.map(p => (
+                      <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
+                        <span className="truncate">{namaFile(p)}</span>
+                        <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Tanggal</label>
-            <input type="date" className="select-filter w-full" value={tgl} onChange={e => setTgl(e.target.value)} />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
-            <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} placeholder="mis. Penghapusan Lelang" />
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Filter & pilih barang */}
@@ -435,7 +806,7 @@ function TambahJurnal({ skpdId, skpdNama, golonganLabels, onCancel, onSaved }: {
             {selList.length} barang dipilih · <span className="font-medium">{formatRupiah(selTotal)}</span>
           </span>
           <button className="btn-primary" onClick={simpan} disabled={saving || selList.length === 0}>
-            {saving ? 'Menyimpan...' : 'Simpan Penghapusan'}
+            {saving ? 'Menyimpan...' : header ? 'Tambah ke Jurnal' : isAlih ? 'Simpan Pengalihan (Menunggu Persetujuan)' : 'Simpan Penghapusan'}
           </button>
         </div>
       </div>

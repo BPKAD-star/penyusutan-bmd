@@ -109,7 +109,16 @@ export function hitungJadwalAset(
   let mulaiSetelah: string | null = null // periode baseline; iterasi mulai periode berikutnya
   let berhenti = false     // penghapusan / reklas ke aset lain-lain
 
-  const saldoAwal = ledger.find(t => t.jenis === 'saldo_awal')
+  // Titik mulai replay = checkpoint TERBARU (baseline asli 'saldo_awal' ATAU
+  // hasil 'saldo_awal_checkpoint' dari aksi Tutup Tahun — migrasi 25, Opsi B).
+  // Payload dua-duanya struktur SAMA, jadi cara baca di bawah tak berubah;
+  // yang berubah cuma cara MEMILIH baris mana + mulaiSetelah dari periode
+  // baris itu sendiri (bukan konstanta PERIODE_BASELINE lagi), supaya replay
+  // tahun yang sudah dikunci tidak diulang dari 2025 tiap kali.
+  const saldoAwalKandidat = ledger.filter(t => t.jenis === 'saldo_awal' || t.jenis === 'saldo_awal_checkpoint')
+  const saldoAwal = saldoAwalKandidat.length > 0
+    ? saldoAwalKandidat.reduce((terbaru, t) => (comparePeriode(t.periode, terbaru.periode) > 0 ? t : terbaru))
+    : undefined
   const perolehan = ledger.find(t =>
     ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya'].includes(t.jenis))
 
@@ -121,7 +130,7 @@ export function hitungJadwalAset(
     sisaSmt = Math.max(0, Math.trunc(Number(p.sisa_masa_manfaat_smt ?? 0)))
     beban = Math.round(Number(p.beban_per_smt ?? 0))
     masaTahun = p.masa_manfaat_smt ? Number(p.masa_manfaat_smt) / 2 : (masaManfaatKode.get(kode) ?? null)
-    mulaiSetelah = PERIODE_BASELINE
+    mulaiSetelah = saldoAwal.periode
   } else if (perolehan) {
     nilaiPerolehan = Number(perolehan.nilai || 0)
     nilaiBuku = nilaiPerolehan
@@ -193,6 +202,9 @@ export function hitungJadwalAset(
         case 'penghapusan_pemindahtanganan':
         case 'penghapusan_sebab_lain':
           berhenti = true // §5 no.11: penyusutan berhenti; barang hilang dari laporan, tetap di DB
+          break
+        case 'batal_pengadaan':
+          berhenti = true // koreksi input pasca-approve: dianggap tidak pernah ada, hilang dari laporan
           break
         case 'batal_penghapusan':
           berhenti = false // kebalikan penghapusan: penyusutan lanjut sejak periode ini
