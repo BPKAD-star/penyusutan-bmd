@@ -9,13 +9,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('nama, role')
+    .select('role, pegawai(nama)')
     .eq('id', user.id)
     .single()
 
   return (
     <DashboardChrome
-      userName={profile?.nama || user.email || ''}
+      userName={(profile?.pegawai as { nama?: string } | null)?.nama || user.email || ''}
       userRole={profile?.role || 'user'}
     >
       {children}
