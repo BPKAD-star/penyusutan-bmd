@@ -25,7 +25,7 @@ export const metadata = {
 type Admin = ReturnType<typeof createAdminClient>
 
 const formatRp = (v: number | null | undefined) =>
-  v == null ? '-' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(v)
+  v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 const fmtTgl = (s: string | null | undefined) => s
   ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
   : '-'

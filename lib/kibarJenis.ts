@@ -39,7 +39,7 @@ const SUB_JENIS_LABEL: Record<string, string> = {
   hibah: 'Hibah', penjualan: 'Penjualan', tukar_menukar: 'Tukar Menukar', penyertaan_modal: 'Penyertaan Modal',
 }
 
-const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(v)
+const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 
 // Ringkasan 1 baris dari payload, spesifik per jenis — dipakai KIBAR biar
 // timeline-nya nggak cuma nampilin "keterangan" mentah. Tidak exhaustive utk

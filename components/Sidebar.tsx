@@ -94,15 +94,17 @@ const navTree: NavNode[] = [
   { type: 'leaf', href: 'https://gisbmdkabkediri.vercel.app/', label: 'GIS BMD', external: true },
 ]
 
-const adminLinks: NavNode[] = [
-  { type: 'leaf', href: '/dashboard/admin/kodefikasi', label: 'Kodefikasi BMD' },
-  { type: 'leaf', href: '/dashboard/admin/overhaul', label: 'Overhaul Band' },
-  { type: 'leaf', href: '/dashboard/admin/skpd', label: 'SKPD' },
-  { type: 'leaf', href: '/dashboard/admin/pegawai', label: 'Daftar Pegawai' },
-  { type: 'leaf', href: '/dashboard/admin/user', label: 'Daftar User' },
-  { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
-  { type: 'leaf', href: '/dashboard/admin/tutup-tahun', label: 'Tutup Tahun' },
-]
+const adminGroup: NavNode = {
+  type: 'group', label: 'Admin', icon: ICON.user, children: [
+    { type: 'leaf', href: '/dashboard/admin/skpd', label: 'SKPD' },
+    { type: 'leaf', href: '/dashboard/admin/pegawai', label: 'Daftar Pegawai' },
+    { type: 'leaf', href: '/dashboard/admin/user', label: 'Daftar User' },
+    { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
+    { type: 'leaf', href: '/dashboard/admin/kodefikasi', label: 'Kodefikasi BMD' },
+    { type: 'leaf', href: '/dashboard/admin/overhaul', label: 'Overhaul Band' },
+    { type: 'leaf', href: '/dashboard/admin/tutup-tahun', label: 'Tutup Tahun' },
+  ],
+}
 
 const iconFor = (label: string): React.ReactNode => {
   if (label === 'IPA') return ICON.ipa
@@ -137,6 +139,7 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
     href === '/dashboard' ? pathname === '/dashboard' : pathname === href || pathname.startsWith(href + '/')
 
   const groupActive = (node: NavNode) => leafHrefs(node).some(h => !h.startsWith('http') && isActive(h))
+  const menuTree = userRole === 'admin' ? [...navTree, adminGroup] : navTree
 
   function renderNode(node: NavNode, depth: number): React.ReactNode {
     const pad = { paddingLeft: `${0.75 + depth * 0.85}rem` }
@@ -199,14 +202,7 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
     <aside className="w-64 bg-navy flex flex-col h-full flex-shrink-0">
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <p className="text-white/30 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Menu</p>
-        {navTree.map(n => renderNode(n, 0))}
-
-        {userRole === 'admin' && (
-          <>
-            <p className="text-white/30 text-xs font-semibold uppercase tracking-wider px-3 mb-2 mt-6">Admin</p>
-            {adminLinks.map(n => renderNode(n, 0))}
-          </>
-        )}
+        {menuTree.map(n => renderNode(n, 0))}
       </nav>
     </aside>
   )

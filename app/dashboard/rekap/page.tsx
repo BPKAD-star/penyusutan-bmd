@@ -112,9 +112,9 @@ export default function RekapPage() {
                 <th className="table-th w-8">No</th>
                 <th className="table-th">Nama SKPD</th>
                 <th className="table-th text-center">Jml Aset</th>
-                <th className="table-th text-right">Total Beban (Rp)</th>
-                <th className="table-th text-right">Total Akumulasi (Rp)</th>
-                <th className="table-th text-right">Total Nilai Buku (Rp)</th>
+                <th className="table-th text-right">Total Beban</th>
+                <th className="table-th text-right">Total Akumulasi</th>
+                <th className="table-th text-right">Total Nilai Buku</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">

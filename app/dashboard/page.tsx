@@ -2,11 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
+import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/PenghapusanCards'
 
 const PERIODE = '2026-S1'
 
 function formatRp(val: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val)
+  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(val)
 }
 const nf = (n: number) => n.toLocaleString('id-ID')
 
@@ -43,22 +44,30 @@ async function countTransferAktif(sb: SB, jenis: string): Promise<number> {
 
 // Penghapusan: hanya hitung baris yang aset-nya MASIH status 'dihapus' saat
 // ini (kalau sudah di-batal_penghapusan, aset kembali 'aktif' — tak terhitung).
-async function countPenghapusan(sb: SB): Promise<{ hibah: number; jual: number; sebabLain: number }> {
-  const out = { hibah: 0, jual: 0, sebabLain: 0 }
+// 5 kategori: 4 mekanisme pemindahtanganan (sub_jenis) + 1 sebab lainnya (jenis
+// sendiri, force majeure dkk) — masing-masing dgn jumlah barang & total nilai.
+async function countPenghapusan(sb: SB): Promise<PenghapusanData> {
+  const out: PenghapusanData = {
+    hibah: { n: 0, nilai: 0 }, jual: { n: 0, nilai: 0 }, tukar: { n: 0, nilai: 0 },
+    modal: { n: 0, nilai: 0 }, sebabLain: { n: 0, nilai: 0 },
+  }
   try {
     for (let from = 0; ; from += 1000) {
       const { data, error } = await sb.from('transaksi_bmd')
-        .select('jenis, payload, aset(status)')
+        .select('jenis, nilai, payload, aset(status)')
         .in('jenis', ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain'])
         .range(from, from + 999)
       if (error || !data || data.length === 0) break
-      for (const r of data as unknown as { jenis: string; payload: { sub_jenis?: string }; aset: { status: string } | null }[]) {
+      for (const r of data as unknown as { jenis: string; nilai: number; payload: { sub_jenis?: string }; aset: { status: string } | null }[]) {
         if (r.aset?.status !== 'dihapus') continue
-        if (r.jenis === 'penghapusan_sebab_lain') { out.sebabLain++; continue }
+        const nilai = r.nilai || 0
+        if (r.jenis === 'penghapusan_sebab_lain') { out.sebabLain.n++; out.sebabLain.nilai += nilai; continue }
         const sub = r.payload?.sub_jenis
-        if (sub === 'hibah') out.hibah++
-        else if (sub === 'penjualan') out.jual++
-        else out.sebabLain++ // tukar_menukar, penyertaan_modal
+        if (sub === 'hibah') { out.hibah.n++; out.hibah.nilai += nilai }
+        else if (sub === 'penjualan') { out.jual.n++; out.jual.nilai += nilai }
+        else if (sub === 'tukar_menukar') { out.tukar.n++; out.tukar.nilai += nilai }
+        else if (sub === 'penyertaan_modal') { out.modal.n++; out.modal.nilai += nilai }
+        else { out.sebabLain.n++; out.sebabLain.nilai += nilai } // fallback data lama tanpa sub_jenis dikenal
       }
       if (data.length < 1000) break
     }
@@ -122,9 +131,15 @@ export default async function DashboardHome() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 text-sm mt-1">Ringkasan BMD Kabupaten Kediri — Periode {PERIODE}</p>
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-gray-500 text-sm mt-1">Ringkasan BMD Kabupaten Kediri — Periode {PERIODE}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-gray-400">Total Nilai BMD</p>
+          <p className="text-2xl font-bold text-teal">{formatRp(totalNilai)}</p>
+        </div>
       </div>
 
       {/* Total aset per jenis: jumlah unit + nilai rekapitulasi (harga perolehan) */}
@@ -158,12 +173,8 @@ export default async function DashboardHome() {
       </Section>
 
       {/* Penghapusan */}
-      <Section title="Penghapusan Barang" sub="Barang yang dihapus dari laporan (data tetap tersimpan)">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <StatCard label="Karena Hibah" value={hapus.hibah} />
-          <StatCard label="Karena Penjualan" value={hapus.jual} />
-          <StatCard label="Karena Sebab Lainnya" value={hapus.sebabLain} note="Tukar-menukar, penyertaan modal, force majeure" />
-        </div>
+      <Section title="Penghapusan Barang" sub="Barang yang dihapus dari laporan (data tetap tersimpan) — klik utk rincian per SKPD">
+        <PenghapusanCards data={hapus} />
       </Section>
     </div>
   )
@@ -177,16 +188,6 @@ function Section({ title, sub, children }: { title: string; sub: string; childre
         <p className="text-xs text-gray-400">{sub}</p>
       </div>
       {children}
-    </div>
-  )
-}
-
-function StatCard({ label, value, note }: { label: string; value: number; note?: string }) {
-  return (
-    <div className="card p-4">
-      <p className="text-xs text-gray-600 leading-tight h-8">{label}</p>
-      <p className="text-xl font-bold text-gray-900 mt-1">{value.toLocaleString('id-ID')}</p>
-      {note && <p className="text-[11px] text-gray-400 mt-1 leading-tight">{note}</p>}
     </div>
   )
 }

@@ -18,7 +18,7 @@ const CARA_LIST: CaraConfig[] = [
   { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: null },
 ]
 
-const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(v)
+const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 const nf = (n: number) => n.toLocaleString('id-ID')
 
 type DraftItemLite = { kode?: string; nama?: string; harga?: string }

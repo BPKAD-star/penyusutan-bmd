@@ -14,7 +14,9 @@ export function exportToExcel(data: Record<string, unknown>[], filename: string,
   XLSX.writeFile(wb, `${filename}.xlsx`)
 }
 
+// Angka polos id-ID (titik ribuan, koma desimal kalau ada) — TANPA "Rp", biar
+// gak berisik dibaca di tabel yang padat (keputusan user 2026-07-08).
 export function formatRupiah(val: number | null | undefined): string {
   if (val == null) return '-'
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val)
+  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(val)
 }

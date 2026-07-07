@@ -725,7 +725,7 @@ function KoreksiSpesifikasi() {
         {mode === 'nilai' ? (
           <div>
             <label className="block text-xs text-gray-500 mb-1">
-              Nilai Perolehan Baru (Rp) {aset && <span className="text-gray-400">— sekarang {formatRupiah(aset.nilai_perolehan)}</span>}
+              Nilai Perolehan Baru {aset && <span className="text-gray-400">— sekarang {formatRupiah(aset.nilai_perolehan)}</span>}
             </label>
             <input type="number" min="0" step="1" className="select-filter w-full" value={nilaiBaru}
               onChange={e => setNilaiBaru(e.target.value)} required />
