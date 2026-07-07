@@ -2,7 +2,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
-  const { email, password, nama, role, nip, pangkat_golongan, username, skpd_id } = await req.json()
+  const { email, password, pegawai_id, role, username } = await req.json()
 
   // Hanya admin yang boleh membuat user
   const session = createClient()
@@ -12,6 +12,10 @@ export async function POST(req: Request) {
   if (me?.role !== 'admin') return NextResponse.json({ error: 'Hanya admin' }, { status: 403 })
 
   const supabase = createAdminClient()
+
+  const { data: pegawai, error: pegawaiError } = await supabase
+    .from('pegawai').select('id,skpd_id').eq('id', pegawai_id).single()
+  if (pegawaiError || !pegawai) return NextResponse.json({ error: 'Pegawai tidak ditemukan' })
 
   const { data, error } = await supabase.auth.admin.createUser({
     email,
@@ -24,12 +28,10 @@ export async function POST(req: Request) {
   const { error: profileError } = await supabase.from('profiles').insert({
     id: data.user.id,
     email,
-    nama,
     role,
-    nip: nip || null,
-    pangkat_golongan: pangkat_golongan || null,
     username: username || null,
-    skpd_id: skpd_id || null,
+    pegawai_id: pegawai.id,
+    skpd_id: pegawai.skpd_id,
   })
 
   if (profileError) return NextResponse.json({ error: profileError.message })
