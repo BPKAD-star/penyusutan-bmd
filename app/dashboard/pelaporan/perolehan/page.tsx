@@ -3,6 +3,7 @@ import Link from 'next/link'
 const ITEMS = [
   { href: '/dashboard/pelaporan/perolehan/pengadaan', label: 'Laporan Pengadaan' },
   { href: '/dashboard/pelaporan/perolehan/hibah', label: 'Laporan Hibah' },
+  { href: '/dashboard/pelaporan/perolehan/tukar-menukar', label: 'Laporan Tukar Menukar' },
   { href: '/dashboard/pelaporan/perolehan/inventarisasi', label: 'Laporan Hasil Inventarisasi' },
   { href: '/dashboard/pelaporan/perolehan/lainnya', label: 'Laporan Perolehan Lainnya' },
 ]

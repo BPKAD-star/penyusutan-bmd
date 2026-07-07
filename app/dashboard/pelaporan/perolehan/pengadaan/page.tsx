@@ -1,6 +1,6 @@
 'use client'
-import LaporanTransaksi from '@/components/LaporanTransaksi'
+import LaporanPerolehan from '@/components/LaporanPerolehan'
 export default function Page() {
-  return <LaporanTransaksi judul="Laporan Pengadaan" deskripsi="Rekap perolehan via pengadaan per periode & SKPD."
-    jenisList={['pengadaan']} filePrefix="Laporan_Pengadaan" sembunyikanAsetDihapus />
+  return <LaporanPerolehan judul="Laporan Pengadaan" deskripsi="Rekap perolehan via pengadaan per periode & SKPD."
+    jenis="pengadaan" filePrefix="Laporan_Pengadaan" />
 }
