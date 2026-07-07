@@ -21,7 +21,7 @@ const SPEK_KOSONG = { nama_barang: '', spesifikasi_lainnya: '', merek_tipe: '', 
 const TANAH_KOSONG = { luas: '', nomor_dokumen_kepemilikan: '', tanggal_dokumen_kepemilikan: '', nama_dokumen_kepemilikan: '', jenis_hak: '' }
 const ATRIBUT_KOSONG = { asal_usul: '', kondisi_barang: '', tahun_pengadaan: '' }
 const HAK_OPT = ['HM (Hak Milik)', 'HGB (Hak Guna Bangunan)', 'HP (Hak Pakai)', 'HGU (Hak Guna Usaha)', 'HPL (Hak Pengelolaan)']
-const KONDISI_OPT = ['Baik', 'Rusak Ringan', 'Rusak Berat']
+const KONDISI_OPT = ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang', 'Tidak Ditemukan']
 
 // ── Koreksi Transaksi (BARU, ber-SK) ────────────────────────────────────────
 type Alasan = 'nilai_perolehan' | 'kuantitas_bertambah' | 'pencatatan_ganda'

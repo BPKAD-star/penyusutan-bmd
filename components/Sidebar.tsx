@@ -51,6 +51,8 @@ const navTree: NavNode[] = [
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/penggunaan', label: 'Penggunaan' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/penerimaan', label: 'Penerimaan Internal' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/pengeluaran', label: 'Pengeluaran Internal' },
+          { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/pemanfaatan', label: 'Pemanfaatan' },
+          { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/pengamanan', label: 'Pengamanan' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/reklasifikasi', label: 'Reklasifikasi' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/koreksi', label: 'Koreksi' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/kapitalisasi', label: 'Kapitalisasi' },
