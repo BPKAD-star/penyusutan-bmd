@@ -35,7 +35,7 @@ type DraftItem = {
   fields: Record<string, string>
   foto: string[]
 }
-type HeaderPayload = { pihak?: string; draft_items?: DraftItem[] }
+type HeaderPayload = { pihak?: string; dokumen_paths?: string[]; draft_items?: DraftItem[] }
 type ApprovalStatus = 'pending' | 'disetujui' | 'ditolak'
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string
@@ -50,6 +50,7 @@ type JurnalLine = {
 }
 type Jurnal = Header & { lines: JurnalLine[]; total: number; hasLedger: boolean }
 
+const namaFile = (path: string) => path.split('/').pop() || path
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
@@ -404,7 +405,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       )}
 
       {editing && (
-        <EditHeaderModal header={editing} judul={judul} pihakLabel={pihakLabel} cekNomorDipakai={cekNomorDipakai}
+        <EditHeaderModal header={editing} judul={judul} pihakLabel={pihakLabel} kategori={kategori} cekNomorDipakai={cekNomorDipakai}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); setMsg('Header dokumen diperbarui.'); loadJurnals(skpd) }}
         />
@@ -429,6 +430,24 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
         )
       })()}
     </FormShell>
+  )
+}
+
+async function bukaDokumen(path: string) {
+  const supabase = createClient()
+  const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
+  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+}
+
+function DokumenLinks({ paths }: { paths: string[] }) {
+  if (paths.length === 0) return null
+  return (
+    <p className="text-xs text-gray-500 mt-1">
+      Dokumen:{' '}
+      {paths.map(p => (
+        <button key={p} onClick={() => bukaDokumen(p)} className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
+      ))}
+    </p>
   )
 }
 
@@ -480,6 +499,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
               <p className="text-xs text-gray-500 mt-1">{pihakLabel}: {h.payload.pihak}</p>
             )}
             {h.keterangan && <p className="text-xs text-gray-400 mt-1">{h.keterangan}</p>}
+            <DokumenLinks paths={h.payload?.dokumen_paths || []} />
           </div>
           <div className="flex flex-col items-end justify-between">
             <div className="text-right">
@@ -611,11 +631,16 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const [results, setResults] = useState<{ kode: string; uraian: string | null }[]>([])
   const [searching, setSearching] = useState(false)
   const [picked, setPicked] = useState<{ kode: string; uraian: string } | null>(null)
+  const [satuanList, setSatuanList] = useState<{ id: number; nama: string }[]>([])
   const [satuan, setSatuan] = useState('')
   const [qty, setQty] = useState('1')
   const [harga, setHarga] = useState('')
   const [tglPerolehan, setTglPerolehan] = useState(todayStr())
   const [err, setErr] = useState('')
+
+  useEffect(() => {
+    supabase.from('satuan_bmd').select('id,nama').order('nama').then(({ data }) => setSatuanList(data || []))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function cari() {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
@@ -681,7 +706,13 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
         <div className="bg-white border border-gray-100 rounded-lg p-3 space-y-3">
           <p className="text-xs text-gray-500">Kode: <span className="font-medium text-gray-700">{picked.kode}</span></p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div><label className="block text-xs text-gray-500 mb-1">Satuan</label><input className="select-filter w-full text-sm" value={satuan} onChange={e => setSatuan(e.target.value)} placeholder="unit" /></div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Satuan</label>
+              <select className="select-filter w-full text-sm" value={satuan} onChange={e => setSatuan(e.target.value)}>
+                <option value="">— pilih satuan —</option>
+                {satuanList.map(s => <option key={s.id} value={s.nama}>{s.nama}</option>)}
+              </select>
+            </div>
             <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Nilai / item</label><input className="select-filter w-full text-sm" inputMode="numeric" value={harga} onChange={e => setHarga(e.target.value)} /></div>
             <div>
@@ -715,6 +746,7 @@ function ApprovedCard({ j, isAdmin, busy, pihakLabel, onUnapprove }: {
             <p className="text-sm font-semibold text-gray-800">{j.no_sk}</p>
             <p className="text-xs text-gray-500">Tgl {j.tanggal} · {j.periode}</p>
             {pihakLabel && j.payload?.pihak && <p className="text-xs text-gray-500 mt-1">{pihakLabel}: {j.payload.pihak}</p>}
+            <DokumenLinks paths={j.payload?.dokumen_paths || []} />
             {j.approved_at && <p className="text-xs text-teal mt-1">Disetujui {j.approved_at.slice(0, 10)}</p>}
           </div>
           <div className="flex flex-col items-end justify-between">
@@ -794,8 +826,26 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
   const [tglDok, setTglDok] = useState(todayStr())
   const [pihak, setPihak] = useState('')
   const [ket, setKet] = useState('')
+  const [dokPaths, setDokPaths] = useState<string[]>([])
+  const [dokUploading, setDokUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `${kategori}/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
 
   async function simpan() {
     if (!noDok.trim()) { setErr('No. Dokumen wajib diisi.'); return }
@@ -803,7 +853,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
     setErr(''); setSaving(true)
     const dup = await cekNomorDipakai(noDok.trim())
     if (dup) { setErr(dup); setSaving(false); return }
-    const payload: HeaderPayload = { pihak: pihak.trim() || undefined, draft_items: [] }
+    const payload: HeaderPayload = { pihak: pihak.trim() || undefined, dokumen_paths: dokPaths, draft_items: [] }
     const { error } = await supabase.from('jurnal_header').insert({
       skpd_id: skpdId, kategori, jenis: null, sub_jenis: null,
       no_sk: noDok.trim(), tanggal: tglDok, keterangan: ket.trim() || null,
@@ -840,6 +890,22 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
           <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
           <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
         </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>
+          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
+            onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
+          {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
+          {dokPaths.length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {dokPaths.map(p => (
+                <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
+                  <span className="truncate">{namaFile(p)}</span>
+                  <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
       {err && <p className="text-sm text-red-600">{err}</p>}
       <div className="flex justify-end pt-2">
@@ -850,8 +916,8 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
 }
 
 // ── Modal edit header ────────────────────────────────────────────────────────
-function EditHeaderModal({ header, judul, pihakLabel, cekNomorDipakai, onClose, onSaved }: {
-  header: Header; judul: string; pihakLabel: string | null
+function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai, onClose, onSaved }: {
+  header: Header; judul: string; pihakLabel: string | null; kategori: KategoriPerolehan
   cekNomorDipakai: (noSk: string, excludeId?: string) => Promise<string | null>
   onClose: () => void; onSaved: () => void
 }) {
@@ -862,10 +928,28 @@ function EditHeaderModal({ header, judul, pihakLabel, cekNomorDipakai, onClose, 
   const [tgl, setTgl] = useState(header.tanggal)
   const [ket, setKet] = useState(header.keterangan || '')
   const [pihak, setPihak] = useState(p.pihak || '')
+  const [dokPaths, setDokPaths] = useState<string[]>(p.dokumen_paths || [])
+  const [dokUploading, setDokUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
   const pindahSemester = periodeDariTanggal(tgl) !== header.periode
+
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `${kategori}/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
 
   async function simpan() {
     if (!noDok.trim()) { setErr('No. Dokumen wajib diisi.'); return }
@@ -877,7 +961,7 @@ function EditHeaderModal({ header, judul, pihakLabel, cekNomorDipakai, onClose, 
     setErr(''); setSaving(true)
     const dup = await cekNomorDipakai(noDok.trim(), header.id)
     if (dup) { setErr(dup); setSaving(false); return }
-    const payload: HeaderPayload = { ...header.payload, pihak: pihak.trim() || undefined }
+    const payload: HeaderPayload = { ...header.payload, pihak: pihak.trim() || undefined, dokumen_paths: dokPaths }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noDok.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload })
       .eq('id', header.id)
@@ -906,6 +990,22 @@ function EditHeaderModal({ header, judul, pihakLabel, cekNomorDipakai, onClose, 
             <div><label className="block text-xs text-gray-500 mb-1">{pihakLabel}</label><input className="select-filter w-full" value={pihak} onChange={e => setPihak(e.target.value)} /></div>
           )}
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>
+            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
+              onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
+            {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
+            {dokPaths.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {dokPaths.map(p => (
+                  <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
+                    <span className="truncate">{namaFile(p)}</span>
+                    <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           {err && <p className="text-sm text-red-600">{err}</p>}
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white">

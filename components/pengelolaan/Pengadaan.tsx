@@ -57,6 +57,7 @@ type HeaderPayload = {
   program?: string; kegiatan?: string; sub_kegiatan?: string
   nama_penyedia?: string; nama_ppk?: string
   no_bast?: string; tgl_bast?: string; ket_bast?: string
+  dokumen_paths?: string[]
   draft_items?: DraftItem[]
 }
 // 'ditolak' = LEGACY (fitur Tolak sudah dihapus) — baris lama tetap ditangani
@@ -79,6 +80,7 @@ type JurnalLine = {
 // kini pending karena dibuka kunci) → tak boleh dihapus penuh (FK + append-only).
 type Jurnal = Header & { lines: JurnalLine[]; total: number; hasLedger: boolean }
 
+const namaFile = (path: string) => path.split('/').pop() || path
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
@@ -542,6 +544,24 @@ export default function Pengadaan() {
   )
 }
 
+async function bukaDokumen(path: string) {
+  const supabase = createClient()
+  const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
+  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+}
+
+function DokumenLinks({ paths }: { paths: string[] }) {
+  if (paths.length === 0) return null
+  return (
+    <p className="text-xs text-gray-500 mt-1">
+      Dokumen:{' '}
+      {paths.map(p => (
+        <button key={p} onClick={() => bukaDokumen(p)} className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
+      ))}
+    </p>
+  )
+}
+
 // Ambil signed URL foto pertama tiap path (bucket privat) — dipakai preview kecil di baris.
 function useFirstFotoUrls(paths: string[]) {
   const supabase = createClient()
@@ -599,6 +619,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                 <p className="text-xs text-gray-500">Tgl {h.payload.tgl_bast || '-'}</p>
               </>
             ) : <p className="text-xs text-gray-400">Belum diisi</p>}
+            <DokumenLinks paths={h.payload?.dokumen_paths || []} />
           </div>
           <div className="flex flex-col items-end justify-between">
             <div className="text-right">
@@ -736,10 +757,15 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const [searching, setSearching] = useState(false)
   const [picked, setPicked] = useState<{ kode: string; uraian: string } | null>(null)
   const [rekening, setRekening] = useState('')
+  const [satuanList, setSatuanList] = useState<{ id: number; nama: string }[]>([])
   const [satuan, setSatuan] = useState('')
   const [qty, setQty] = useState('1')
   const [harga, setHarga] = useState('')
   const [err, setErr] = useState('')
+
+  useEffect(() => {
+    supabase.from('satuan_bmd').select('id,nama').order('nama').then(({ data }) => setSatuanList(data || []))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function cari() {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
@@ -808,7 +834,13 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
         <div className="bg-white border border-gray-100 rounded-lg p-3 space-y-3">
           <p className="text-xs text-gray-500">Kode: <span className="font-medium text-gray-700">{picked.kode}</span></p>
           <div className="grid grid-cols-3 gap-3">
-            <div><label className="block text-xs text-gray-500 mb-1">Satuan</label><input className="select-filter w-full text-sm" value={satuan} onChange={e => setSatuan(e.target.value)} placeholder="unit" /></div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Satuan</label>
+              <select className="select-filter w-full text-sm" value={satuan} onChange={e => setSatuan(e.target.value)}>
+                <option value="">— pilih satuan —</option>
+                {satuanList.map(s => <option key={s.id} value={s.nama}>{s.nama}</option>)}
+              </select>
+            </div>
             <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Harga / item</label><input className="select-filter w-full text-sm" inputMode="numeric" value={harga} onChange={e => setHarga(e.target.value)} /></div>
           </div>
@@ -854,6 +886,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
                 <p className="text-xs text-gray-500">Tgl {j.payload.tgl_bast || '-'}</p>
               </>
             ) : <p className="text-xs text-gray-400">-</p>}
+            <DokumenLinks paths={j.payload?.dokumen_paths || []} />
             {j.approved_at && <p className="text-xs text-teal mt-1">Disetujui {j.approved_at.slice(0, 10)}</p>}
           </div>
           <div className="flex flex-col items-end justify-between">
@@ -944,8 +977,32 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
   const [noBast, setNoBast] = useState('')
   const [tglBast, setTglBast] = useState('')
   const [ketBast, setKetBast] = useState('')
+  const [dokPaths, setDokPaths] = useState<string[]>([])
+  const [dokUploading, setDokUploading] = useState(false)
+  const [pegawaiList, setPegawaiList] = useState<{ id: string; nama: string; nip: string; jabatan: string | null }[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  useEffect(() => {
+    supabase.from('pegawai').select('id,nama,nip,jabatan').order('nama')
+      .then(({ data }) => setPegawaiList(data || []))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `pengadaan/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
 
   async function simpan() {
     if (!noKontrak.trim()) { setErr('No. Kontrak wajib diisi.'); return }
@@ -957,7 +1014,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
       program: program.trim() || undefined, kegiatan: kegiatan.trim() || undefined, sub_kegiatan: subKeg.trim() || undefined,
       nama_penyedia: penyedia.trim() || undefined, nama_ppk: ppk.trim() || undefined,
       no_bast: noBast.trim() || undefined, tgl_bast: tglBast || undefined, ket_bast: ketBast.trim() || undefined,
-      draft_items: [],
+      dokumen_paths: dokPaths, draft_items: [],
     }
     const { error } = await supabase.from('jurnal_header').insert({
       skpd_id: skpdId, kategori: 'pengadaan', jenis: sumber, sub_jenis: null,
@@ -998,7 +1055,13 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
           <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Kegiatan</label><input className="select-filter w-full" value={kegiatan} onChange={e => setKegiatan(e.target.value)} /></div>
           <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label><input className="select-filter w-full" value={subKeg} onChange={e => setSubKeg(e.target.value)} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label><input className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)} /></div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
+            <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
+              <option value="">— pilih pegawai —</option>
+              {pegawaiList.map(p => <option key={p.id} value={p.nama}>{p.nama} — {p.nip}{p.jabatan ? ` · ${p.jabatan}` : ''}</option>)}
+            </select>
+          </div>
           <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ketKontrak} onChange={e => setKetKontrak(e.target.value)} /></div>
         </div>
       </div>
@@ -1014,6 +1077,22 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
             <p className="text-xs text-gray-400 mt-1">Kosong → pakai tgl kontrak saat disetujui.</p>
           </div>
           <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Keterangan BAST</label><input className="select-filter w-full" value={ketBast} onChange={e => setKetBast(e.target.value)} /></div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>
+            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
+              onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
+            {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
+            {dokPaths.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {dokPaths.map(p => (
+                  <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
+                    <span className="truncate">{namaFile(p)}</span>
+                    <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1045,10 +1124,34 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
   const [noBast, setNoBast] = useState(p.no_bast || '')
   const [tglBast, setTglBast] = useState(p.tgl_bast || '')
   const [ketBast, setKetBast] = useState(p.ket_bast || '')
+  const [dokPaths, setDokPaths] = useState<string[]>(p.dokumen_paths || [])
+  const [dokUploading, setDokUploading] = useState(false)
+  const [pegawaiList, setPegawaiList] = useState<{ id: string; nama: string; nip: string; jabatan: string | null }[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
+  useEffect(() => {
+    supabase.from('pegawai').select('id,nama,nip,jabatan').order('nama')
+      .then(({ data }) => setPegawaiList(data || []))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const pindahSemester = periodeDariTanggal(tgl) !== header.periode
+
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `pengadaan/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
 
   async function simpan() {
     if (!noKontrak.trim()) { setErr('No. Kontrak wajib diisi.'); return }
@@ -1065,6 +1168,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
       program: program.trim() || undefined, kegiatan: kegiatan.trim() || undefined, sub_kegiatan: subKeg.trim() || undefined,
       nama_penyedia: penyedia.trim() || undefined, nama_ppk: ppk.trim() || undefined,
       no_bast: noBast.trim() || undefined, tgl_bast: tglBast || undefined, ket_bast: ketBast.trim() || undefined,
+      dokumen_paths: dokPaths,
     }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noKontrak.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload })
@@ -1095,7 +1199,13 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
           <div><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label><input className="select-filter w-full" value={subKeg} onChange={e => setSubKeg(e.target.value)} /></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
-            <div><label className="block text-xs text-gray-500 mb-1">Nama PPK</label><input className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)} /></div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Nama PPK</label>
+              <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
+                <option value="">— pilih pegawai —</option>
+                {pegawaiList.map(pg => <option key={pg.id} value={pg.nama}>{pg.nama} — {pg.nip}{pg.jabatan ? ` · ${pg.jabatan}` : ''}</option>)}
+              </select>
+            </div>
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>
           <div className="pt-2 border-t border-gray-100">
@@ -1105,6 +1215,22 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
               <div><label className="block text-xs text-gray-500 mb-1">Tgl BAST <span className="text-gray-400">(tidak boleh &lt; tgl kontrak)</span></label><input type="date" className="select-filter w-full" min={tgl} max={dateBounds.max} value={tglBast} onChange={e => setTglBast(e.target.value)} /></div>
             </div>
             <div className="mt-4"><label className="block text-xs text-gray-500 mb-1">Keterangan BAST</label><input className="select-filter w-full" value={ketBast} onChange={e => setKetBast(e.target.value)} /></div>
+            <div className="mt-4">
+              <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>
+              <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
+                onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
+              {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
+              {dokPaths.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {dokPaths.map(pth => (
+                    <li key={pth} className="flex items-center gap-2 text-xs text-gray-600">
+                      <span className="truncate">{namaFile(pth)}</span>
+                      <button onClick={() => hapusDokumen(pth)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             {header.approval_status === 'disetujui' && (
               <p className="text-xs text-gray-400 mt-2">Kontrak sudah disetujui — ubah tgl BAST di sini TIDAK memindahkan tgl perolehan barang yang sudah tercatat (ledger beku).</p>
             )}
