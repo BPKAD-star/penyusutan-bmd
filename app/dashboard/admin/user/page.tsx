@@ -8,9 +8,14 @@ type Profile = {
   username: string | null
   role: string
   skpd_id: number | null
+  ipa_role: string | null
   created_at: string
   skpd: { nama: string } | null
   pegawai: { nama: string; nip: string; jabatan: string | null } | null
+}
+
+const LABEL_IPA_ROLE: Record<string, string> = {
+  pb_admin: 'Pengurus Barang', bkad_verifier: 'Verifikator BKAD', bkad_admin: 'Admin BKAD',
 }
 
 type Pegawai = { id: string; nip: string; nama: string; jabatan: string | null }
@@ -84,6 +89,11 @@ export default function AdminUserPage() {
 
   async function handleChangeSkpd(id: string, skpdId: string) {
     await supabase.from('profiles').update({ skpd_id: skpdId ? Number(skpdId) : null }).eq('id', id)
+    loadProfiles()
+  }
+
+  async function handleChangeIpaRole(id: string, ipaRole: string) {
+    await supabase.from('profiles').update({ ipa_role: ipaRole || null }).eq('id', id)
     loadProfiles()
   }
 
@@ -161,12 +171,13 @@ export default function AdminUserPage() {
                 <th className="table-th">Email</th>
                 <th className="table-th">SKPD</th>
                 <th className="table-th">Role</th>
+                <th className="table-th">Role IPA</th>
                 <th className="table-th">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={5} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+                <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
               ) : profiles.map(p => (
                 <tr key={p.id}>
                   <td className="table-td">
@@ -191,6 +202,13 @@ export default function AdminUserPage() {
                       onChange={e => handleChangeRole(p.id, e.target.value)}>
                       <option value="user">Operator</option>
                       <option value="admin">Admin</option>
+                    </select>
+                  </td>
+                  <td className="table-td">
+                    <select className="select-filter text-xs py-1" value={p.ipa_role ?? ''}
+                      onChange={e => handleChangeIpaRole(p.id, e.target.value)}>
+                      <option value="">— tidak ikut —</option>
+                      {Object.entries(LABEL_IPA_ROLE).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                     </select>
                   </td>
                   <td className="table-td">

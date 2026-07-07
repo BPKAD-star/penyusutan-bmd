@@ -90,7 +90,12 @@ const navTree: NavNode[] = [
   },
   { type: 'leaf', href: '/dashboard/inventarisasi', label: 'Inventarisasi' },
   { type: 'leaf', href: '/dashboard/wasdal', label: 'WasDal' },
-  { type: 'leaf', href: 'https://ipabmdkabkediri.vercel.app/login', label: 'IPA', external: true },
+  {
+    type: 'group', label: 'IPA', icon: ICON.ipa, children: [
+      { type: 'leaf', href: '/dashboard/ipa', label: 'Dashboard IPA' },
+      { type: 'leaf', href: '/dashboard/ipa/penilaian', label: 'Input Penilaian' },
+    ],
+  },
   { type: 'leaf', href: '/dashboard/gis', label: 'GIS BMD' },
 ]
 
