@@ -1,15 +1,34 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { setTahunKerjaTersimpan, getTahunKerjaTersimpan } from '@/lib/tahunKerja'
+
+type TahunRow = { tahun: number; status: 'terbuka' | 'terkunci' }
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [tahunList, setTahunList] = useState<TahunRow[]>([])
+  const [tahunKerja, setTahunKerjaState] = useState('')
   const router = useRouter()
   const supabase = createClient()
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('tahun_buku').select('tahun,status').order('tahun', { ascending: false })
+      const rows = (data as TahunRow[]) || []
+      setTahunList(rows)
+      const tersimpan = getTahunKerjaTersimpan()
+      const terbuka = rows.filter(r => r.status === 'terbuka').map(r => r.tahun)
+      const defaultTahun = tersimpan && rows.some(r => String(r.tahun) === tersimpan)
+        ? tersimpan
+        : (terbuka.length > 0 ? String(Math.max(...terbuka)) : rows[0] ? String(rows[0].tahun) : '')
+      setTahunKerjaState(defaultTahun)
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -20,6 +39,7 @@ export default function LoginPage() {
       setError('Email atau password salah.')
       setLoading(false)
     } else {
+      if (tahunKerja) setTahunKerjaTersimpan(tahunKerja)
       router.push('/dashboard')
       router.refresh()
     }
@@ -66,6 +86,25 @@ export default function LoginPage() {
                 placeholder="••••••••"
               />
             </div>
+            {tahunList.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tahun Kerja</label>
+                <select
+                  value={tahunKerja}
+                  onChange={e => setTahunKerjaState(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal/30"
+                >
+                  {tahunList.map(r => (
+                    <option key={r.tahun} value={r.tahun}>
+                      {r.tahun} — {r.status === 'terbuka' ? 'Terbuka' : 'Terkunci (final/teraudit)'}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Menentukan tampilan default laporan setelah masuk — bukan pembatas. Bisa diganti kapan saja di tiap menu.
+                </p>
+              </div>
+            )}
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <button
               type="submit"

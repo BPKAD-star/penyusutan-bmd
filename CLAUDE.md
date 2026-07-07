@@ -139,6 +139,16 @@ baru. Ini murni tabel kontrol yang dibaca trigger, sama pola dengan
 - **BUKAN context global** — tiap halaman tetap kelola filter tahun/semester
   sendiri-sendiri seperti sebelumnya (keputusan sengaja, biar tidak refactor
   besar ~15 halaman sekaligus).
+- **Pemilih "Tahun Kerja" di halaman login** (`app/login/page.tsx`, migrasi 26
+  buka RLS `tahun_buku` utk `anon` — tak ada data sensitif di situ, cuma
+  tahun/status/catatan admin): pilihan disimpan di `localStorage`
+  (`lib/tahunKerja.ts`, key `bmd_tahun_kerja_pilihan`), dipakai sbg
+  **DEFAULT AWAL** (`useState(() => tahunAwal(...))`) di 3 halaman yg py
+  pemilih tahun: Daftar Barang, Penyusutan, Rekapitulasi Saldo Akhir.
+  **BUKAN gerbang keamanan** — user tetap bebas ganti tahun apa pun di tiap
+  halaman kapan saja, dan tetap bisa lihat tahun terkunci (memang gunanya).
+  Penegak sesungguhnya tetap `tahun_buku` + trigger di server, terpisah total
+  dari preferensi UI ini.
 
 ## Pengalihan Status Penggunaan (transfer antar SKPD, migrasi 21 + 22)
 

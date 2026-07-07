@@ -20,6 +20,7 @@ import { KapitalisasiDetailModal, type KapItem } from '@/components/Kapitalisasi
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
+import { tahunAwal } from '@/lib/tahunKerja'
 
 const BASE_COLS = 'id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan'
 
@@ -46,7 +47,7 @@ export default function PenyusutanPage() {
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [golongan, setGolongan] = useState('')
   const [komptabel, setKomptabel] = useState('')
-  const [tahun, setTahun] = useState('2026')
+  const [tahun, setTahun] = useState(() => tahunAwal('2026'))
   const [smt, setSmt] = useState('1')
   const [search, setSearch] = useState('')
 

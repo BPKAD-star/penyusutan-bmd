@@ -14,6 +14,7 @@ import RekapMatrixTable, { METRIC_LABEL, type MatrixRow, type MatrixCell, type M
 import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
+import { tahunAwal } from '@/lib/tahunKerja'
 
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
 
@@ -22,7 +23,7 @@ export default function Page() {
   const { rootOf } = useSkpdTree()
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [komptabel, setKomptabel] = useState('')
-  const [tahun, setTahun] = useState('2026')
+  const [tahun, setTahun] = useState(() => tahunAwal('2026'))
   const [smt, setSmt] = useState('2')
   const [model, setModel] = useState<1 | 2>(1)
   const [metric, setMetric] = useState<MetricOrAll>('perolehan')

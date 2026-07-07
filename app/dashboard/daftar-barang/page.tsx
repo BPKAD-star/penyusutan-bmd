@@ -21,6 +21,7 @@ import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
+import { tahunAwal } from '@/lib/tahunKerja'
 
 const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
@@ -112,7 +113,7 @@ export default function DaftarBarangPage() {
   const [fKomptabel, setFKomptabel] = useState('')
   const [fSearch, setFSearch] = useState('')
   const now = periodeDariTanggal(new Date().toISOString().slice(0, 10))
-  const [fTahun, setFTahun] = useState(now.slice(0, 4))
+  const [fTahun, setFTahun] = useState(() => tahunAwal(now.slice(0, 4)))
   const [fSmt, setFSmt] = useState(now.slice(-1))
 
   // ── Filter yang sudah diterapkan (dipakai query) ──
