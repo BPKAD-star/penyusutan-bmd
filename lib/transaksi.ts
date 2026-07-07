@@ -67,10 +67,12 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
         'nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'satuan',
         'nomor_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak', 'tanggal_dokumen_kepemilikan',
         'titik_koordinat', 'lokasi', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
+        'asal_usul', 'kondisi_barang',
       ] as const) {
         if (typeof p[k] === 'string' && p[k]) patch[k] = p[k]
       }
       if (typeof p.luas === 'number' && p.luas > 0) patch.luas = p.luas
+      if (typeof p.tahun_pengadaan === 'number' && p.tahun_pengadaan > 0) patch.tahun_pengadaan = p.tahun_pengadaan
       if (Array.isArray(p.foto_paths)) patch.foto_paths = p.foto_paths
       return Object.keys(patch).length ? patch : null
     }
@@ -84,6 +86,11 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       // Koreksi input pasca-approve (mis. kelebihan kuantitas dari Pengadaan):
       // barang dianggap tidak pernah ada — soft-delete, dicatat mundur ke tgl
       // pengadaan aslinya (bukan hari ini) supaya hilang dari SEMUA periode.
+      return { status: 'dihapus' }
+    case 'koreksi_pencatatan_ganda':
+      // Gabung barang duplikat: yang BUKAN survivor soft-delete, dicatat
+      // mundur ke tgl perolehan aslinya sendiri (bukan hari ini) — sama pola
+      // dgn batal_pengadaan, cuma beda jenis ledger biar kebeda di audit.
       return { status: 'dihapus' }
     case 'batal_penghapusan':
       // Kebalikan penghapusan: barang kembali aktif, penyusutan lanjut lagi.

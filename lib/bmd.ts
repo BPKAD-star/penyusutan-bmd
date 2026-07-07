@@ -126,6 +126,7 @@ export const JENIS_TRANSAKSI_LABEL: Record<string, string> = {
   koreksi_nilai: 'Koreksi Nilai',
   koreksi_spesifikasi: 'Koreksi Spesifikasi',
   koreksi_kuantitas: 'Koreksi Kuantitas',
+  koreksi_pencatatan_ganda: 'Koreksi Pencatatan Ganda (Duplikat)',
   kapitalisasi: 'Kapitalisasi / Penambahan Masa Manfaat',
   penghapusan_pemindahtanganan: 'Penghapusan — Pemindahtanganan',
   penghapusan_sebab_lain: 'Penghapusan — Sebab Lain',

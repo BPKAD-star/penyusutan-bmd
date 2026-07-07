@@ -15,11 +15,13 @@ export const KIBAR_JENIS_LABEL: Record<string, { label: string; tone: Tone }> = 
   perolehan_lainnya: { label: 'Perolehan Lainnya', tone: 'masuk' },
   mutasi_internal: { label: 'Mutasi Internal (antar sub-SKPD)', tone: 'netral' },
   pengalihan_status: { label: 'Pengalihan Status Penggunaan (antar SKPD)', tone: 'netral' },
-  reklas_kode: { label: 'Reklasifikasi Kode Barang', tone: 'netral' },
+  reklas_kode: { label: 'Reklasifikasi Kesalahan Kodefikasi', tone: 'netral' },
   reklas_komptabel: { label: 'Reklasifikasi Komptabel', tone: 'netral' },
+  reklas_golongan: { label: 'Reklasifikasi Perubahan Fungsi BMD', tone: 'netral' },
   koreksi_nilai: { label: 'Koreksi Nilai', tone: 'netral' },
   koreksi_spesifikasi: { label: 'Koreksi Spesifikasi', tone: 'netral' },
   koreksi_kuantitas: { label: 'Koreksi Kuantitas', tone: 'netral' },
+  koreksi_pencatatan_ganda: { label: 'Koreksi Pencatatan Ganda (Digabung — Duplikat)', tone: 'keluar' },
   kapitalisasi: { label: 'Kapitalisasi (Rehab/Penambahan Nilai)', tone: 'masuk' },
   kapitalisasi_serap: { label: 'Diserap ke Aset Induk (Kapitalisasi)', tone: 'keluar' },
   penghapusan_pemindahtanganan: { label: 'Penghapusan — Pemindahtanganan', tone: 'keluar' },
@@ -66,7 +68,10 @@ export function kibarDetail(
       return SUB_JENIS_LABEL[sub] || sub || null
     }
     case 'reklas_kode':
+    case 'reklas_golongan':
       return p.kode_baru ? `Kode baru: ${p.kode_baru}` : null
+    case 'koreksi_pencatatan_ganda':
+      return p.survivor_nibar ? `Digabung ke NIBAR: ${p.survivor_nibar}` : null
     case 'kapitalisasi_serap':
       return p.induk_nibar ? `Diserap ke NIBAR induk: ${p.induk_nibar}` : null
     case 'batal_kapitalisasi':
