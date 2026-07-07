@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
+import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
 
 const PERIODE = '2026-S1'
 
@@ -11,38 +12,24 @@ const nf = (n: number) => n.toLocaleString('id-ID')
 
 type SB = ReturnType<typeof createClient>
 
-// Count aman: kalau tabel belum ada (mis. transaksi_bmd belum di-migrate) → 0.
-async function safeCount(build: PromiseLike<{ count: number | null; error: unknown }>): Promise<number> {
-  try {
-    const { count, error } = await build
-    return error ? 0 : (count || 0)
-  } catch {
-    return 0
-  }
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function countTrx(sb: SB, apply: (q: any) => any): Promise<number> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const base: any = sb.from('transaksi_bmd').select('*', { count: 'exact', head: true })
-  return safeCount(apply(base))
-}
-
 // transaksi_bmd bersifat append-only: batal (pengalihan/penghapusan) DICATAT
 // sebagai baris baru, bukan menghapus baris lama — jadi hitung baris mentah
 // bisa kebesaran (baris yang sudah "dibatalkan" tetap ikut terhitung). Untuk
 // dapat angka yang mencerminkan kondisi TERKINI, cek balik ke status/skpd_id
 // aset saat ini (satu-satunya sumber yang sudah dikurangi efek pembatalan).
 
-// Pengalihan status: transfer masih "berlaku" kalau skpd_id aset SEKARANG
-// sama dengan skpd_tujuan baris transaksi itu (kalau sudah dibatalkan,
-// aset.skpd_id sudah kembali ke skpd_asal — baris lama otomatis tak terhitung).
-async function countPengalihanAktif(sb: SB): Promise<number> {
+// Transfer masih "berlaku" kalau skpd_id aset SEKARANG sama dengan skpd_tujuan
+// baris transaksi itu (kalau sudah dibatalkan/dikembalikan, aset.skpd_id sudah
+// kembali ke skpd_asal — baris lama otomatis tak terhitung). Dipakai utk kedua
+// jenis transfer: 'pengalihan_status' (lintas SKPD induk) & 'mutasi_internal'
+// (dalam satu SKPD induk).
+async function countTransferAktif(sb: SB, jenis: string): Promise<number> {
   let n = 0
   try {
     for (let from = 0; ; from += 1000) {
       const { data, error } = await sb.from('transaksi_bmd')
         .select('skpd_tujuan, aset(skpd_id)')
-        .eq('jenis', 'pengalihan_status')
+        .eq('jenis', jenis)
         .range(from, from + 999)
       if (error || !data || data.length === 0) break
       for (const r of data as unknown as { skpd_tujuan: number; aset: { skpd_id: number } | null }[]) {
@@ -123,8 +110,8 @@ export default async function DashboardHome() {
     hapus,
   ] = await Promise.all([
     scanAset(supabase),
-    countPengalihanAktif(supabase),
-    countTrx(supabase, q => q.eq('jenis', 'mutasi_internal')),
+    countTransferAktif(supabase, 'pengalihan_status'),
+    countTransferAktif(supabase, 'mutasi_internal'),
     countPenghapusan(supabase),
   ])
   const gol = scan.gol
@@ -166,13 +153,8 @@ export default async function DashboardHome() {
       </Section>
 
       {/* Mutasi & transfer */}
-      <Section title="Mutasi & Transfer" sub="Perpindahan barang antar / dalam SKPD">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Transfer Keluar SKPD" value={transfer} note="Pengalihan status (penghapusan)" />
-          <StatCard label="Transfer Masuk SKPD" value={transfer} note="Sisi terima pengalihan status" />
-          <StatCard label="Pengeluaran Internal" value={mutasiInternal} note="Mutasi antar sub-SKPD" />
-          <StatCard label="Penerimaan Internal" value={mutasiInternal} note="Sisi terima mutasi internal" />
-        </div>
+      <Section title="Mutasi & Transfer" sub="Perpindahan barang antar / dalam SKPD — proporsi sudah di-acc vs masih menunggu persetujuan">
+        <MutasiTransferCards approved={{ transfer, mutasiInternal }} />
       </Section>
 
       {/* Penghapusan */}
