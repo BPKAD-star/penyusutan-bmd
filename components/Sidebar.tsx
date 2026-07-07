@@ -91,7 +91,7 @@ const navTree: NavNode[] = [
   { type: 'leaf', href: '/dashboard/inventarisasi', label: 'Inventarisasi' },
   { type: 'leaf', href: '/dashboard/wasdal', label: 'WasDal' },
   { type: 'leaf', href: 'https://ipabmdkabkediri.vercel.app/login', label: 'IPA', external: true },
-  { type: 'leaf', href: 'https://gisbmdkabkediri.vercel.app/', label: 'GIS BMD', external: true },
+  { type: 'leaf', href: '/dashboard/gis', label: 'GIS BMD' },
 ]
 
 const adminGroup: NavNode = {
