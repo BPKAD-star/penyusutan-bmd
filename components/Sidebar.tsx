@@ -41,6 +41,7 @@ const navTree: NavNode[] = [
         type: 'group', label: 'Cara Perolehan', children: [
           { type: 'leaf', href: '/dashboard/pembukuan/perolehan/pengadaan', label: 'Pengadaan' },
           { type: 'leaf', href: '/dashboard/pembukuan/perolehan/hibah', label: 'Hibah' },
+          { type: 'leaf', href: '/dashboard/pembukuan/perolehan/tukar-menukar', label: 'Tukar Menukar' },
           { type: 'leaf', href: '/dashboard/pembukuan/perolehan/inventarisasi', label: 'Hasil Inventarisasi' },
           { type: 'leaf', href: '/dashboard/pembukuan/perolehan/lainnya', label: 'Perolehan Lainnya' },
         ],

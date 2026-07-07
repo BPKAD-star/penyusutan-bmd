@@ -20,8 +20,8 @@ export default function Page() {
         </div>
       </div>
       {mode === 'manual'
-        ? <PerolehanManual kategori="hibah_masuk" judul="Hibah" pihakLabel="Pihak Pemberi Hibah" />
-        : <PerolehanImport jenis="hibah_masuk" label="Hibah" />}
+        ? <PerolehanManual kategori="tukar_menukar" judul="Tukar Menukar" pihakLabel="Pihak Tukar Menukar" />
+        : <PerolehanImport jenis="tukar_menukar" label="Tukar Menukar" />}
     </div>
   )
 }
