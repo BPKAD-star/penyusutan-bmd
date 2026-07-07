@@ -14,6 +14,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { fieldsForKode, FIELD_LABEL } from '@/lib/asetFields'
 import { KIBAR_JENIS_LABEL, kibarDetail } from '@/lib/kibarJenis'
 import PrintLabelButton from '@/components/kibar/PrintLabelButton'
+import PrintPageButton from '@/components/kibar/PrintPageButton'
 
 export const dynamic = 'force-dynamic'
 export const metadata = {
@@ -96,7 +97,18 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
-      <div className="max-w-3xl mx-auto space-y-4">
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #kibar-print-area, #kibar-print-area * { visibility: visible; }
+          #kibar-print-area { position: absolute; top: 0; left: 0; width: 100%; }
+          .kibar-no-print { display: none !important; }
+        }
+      `}</style>
+      <div className="max-w-3xl mx-auto mb-3 flex justify-end kibar-no-print">
+        <PrintPageButton />
+      </div>
+      <div id="kibar-print-area" className="max-w-3xl mx-auto space-y-4">
 
         {/* Identitas */}
         <div className="card p-5">
@@ -117,12 +129,14 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
             </div>
             <div className="flex flex-col items-center gap-2 flex-shrink-0">
               <div className="w-[140px] h-[140px]" dangerouslySetInnerHTML={{ __html: qrSvg }} />
-              <PrintLabelButton item={{
-                nibar: aset.nibar || '-',
-                namaBarang: aset.nama_barang || aset.uraian_barang || '-',
-                skpdNama: skpdNama[aset.skpd_id] || '-',
-                tglPerolehan: aset.tgl_perolehan,
-              }} />
+              <div className="kibar-no-print">
+                <PrintLabelButton item={{
+                  nibar: aset.nibar || '-',
+                  namaBarang: aset.nama_barang || aset.uraian_barang || '-',
+                  skpdNama: skpdNama[aset.skpd_id] || '-',
+                  tglPerolehan: aset.tgl_perolehan,
+                }} />
+              </div>
             </div>
           </div>
         </div>
