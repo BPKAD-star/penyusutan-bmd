@@ -51,6 +51,13 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       return t.skpdTujuan ? { skpd_id: t.skpdTujuan } : null
     case 'reklas_kode':
       return p.kode_baru ? { kode: p.kode_baru } : null
+    case 'reklas_golongan':
+      // Perubahan Fungsi BMD (lintas golongan) — patch kode SAMA seperti
+      // reklas_kode; bedanya cuma di engine (fresh-start vs retroaktif,
+      // lihat lib/engine/penyusutan.ts).
+      return p.kode_baru ? { kode: p.kode_baru } : null
+    case 'reklas_komptabel':
+      return typeof p.intra_ekstra === 'string' ? { intra_ekstra: p.intra_ekstra } : null
     case 'koreksi_nilai':
       // nilai = delta ±; nilai_perolehan baru dikirim caller (menghindari race)
       return typeof p.nilai_perolehan_baru === 'number' ? { nilai_perolehan: p.nilai_perolehan_baru } : null

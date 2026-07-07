@@ -98,7 +98,19 @@ export function hitungJadwalAset(
   if (ekstra) return []
 
   // ── State awal dari transaksi baseline/perolehan ──────────────────────────
+  // Default: kode TERKINI aset (retroaktif — cocok utk reklas_kode/Kesalahan
+  // Kodefikasi, lihat case 'reklas_kode' di bawah). TAPI kalau ada riwayat
+  // 'reklas_golongan' (Perubahan Fungsi BMD, mis. KDP→Gedung), seed pakai
+  // kode_lama dari event PALING AWAL — supaya masa_manfaat/perlakuan baseline
+  // reflect kondisi ASLI (mis. KDP = tidak disusutkan) sebelum reklas terjadi,
+  // bukan retroaktif ikut kode akhir. reklas_golongan = fresh-start dari
+  // tanggal reklas, BUKAN recompute dari tanggal perolehan (beda sengaja dari
+  // reklas_kode).
   let kode = aset.kode
+  const reklasGolonganEvents = ledger.filter(t => t.jenis === 'reklas_golongan')
+  if (reklasGolonganEvents.length > 0) {
+    kode = String((reklasGolonganEvents[0].payload as Record<string, unknown>)?.kode_lama || aset.kode)
+  }
   let perlakuan = perlakuanKode(kode)
   let nilaiPerolehan = 0
   let nilaiBuku = 0
@@ -145,7 +157,12 @@ export function hitungJadwalAset(
     return [] // tidak ada baseline — belum masuk ledger
   }
 
-  if (perlakuan === 'tidak') return []
+  // Bail-out pakai kode FINAL (aset.kode) — BUKAN `perlakuan` di atas, yang
+  // sengaja bisa 'tidak' sementara (mis. KDP) kalau ada reklas_golongan
+  // pending yang nanti mengubahnya jadi disusutkan. Aset yang kode TERKINI-nya
+  // masih golongan tak-disusutkan (Tanah/ATL/KDP tanpa reklas/dst) tetap benar
+  // bail-out di sini seperti sebelumnya.
+  if (perlakuanKode(aset.kode) === 'tidak') return []
 
   // ── Replay maju per semester ──────────────────────────────────────────────
   const hasil: HasilSemester[] = []
@@ -199,6 +216,25 @@ export function hitungJadwalAset(
           if (perlakuan === 'tidak') berhenti = true
           break
         }
+        case 'reklas_golongan': {
+          // Perubahan Fungsi BMD (lintas golongan/rumpun) — FRESH START, beda
+          // dari reklas_kode di atas (yang retroaktif). masa manfaat direset
+          // penuh dari kodefikasi tujuan; nilaiBuku/akumulasi TIDAK direset
+          // (utk KDP tetap = nilaiPerolehan krn memang belum pernah
+          // disusutkan; utk golongan lain, nilai buku yg sudah terakru tetap
+          // jadi basis — cuma jam masa manfaatnya yang di-restart).
+          const kodeBaru = String((ev.payload as Record<string, unknown>).kode_baru || '')
+          if (!kodeBaru) break
+          kode = kodeBaru
+          perlakuan = perlakuanKode(kode)
+          const masaBaru = masaManfaatKode.get(kode) ?? 0
+          sisaSmt = Math.max(0, Math.round(masaBaru * 2))
+          beban = sisaSmt > 0 ? Math.round(nilaiBuku / sisaSmt) : 0
+          masaTahun = masaBaru
+          if (perlakuan === 'lain_lain' || perlakuan === 'tidak') berhenti = true
+          else berhenti = false
+          break
+        }
         case 'penghapusan_pemindahtanganan':
         case 'penghapusan_sebab_lain':
           berhenti = true // §5 no.11: penyusutan berhenti; barang hilang dari laporan, tetap di DB
@@ -216,15 +252,24 @@ export function hitungJadwalAset(
           berhenti = false // batal serap: barang anak disusutkan lagi (di induk = tanpa efek)
           break
         // mutasi_internal / pengalihan_status / koreksi_spesifikasi: tanpa efek finansial
-        // reklas_komptabel / koreksi_kuantitas: DEFERRED (PLAN §12) — jangan implementasi
+        // reklas_komptabel: TIDAK butuh case di sini — efeknya cuma flip
+        // aset.intra_ekstra (patchAsetDari), sudah otomatis ditangani oleh
+        // early-return `if (ekstra) return []` di atas (baris ~97-98) begitu
+        // replay berikutnya jalan dgn intra_ekstra yang sudah ke-update.
+        // koreksi_kuantitas: masih DEFERRED (PLAN §12) — jangan implementasi
         default:
           break
       }
     }
 
     // ── Akrual semester ini ─────────────────────────────────────────────────
+    // Guard `perlakuan !== 'tidak'` no-op utk semua alur lama (kalau perlakuan
+    // awal 'tidak', function SUDAH bail-out duluan di atas) — cuma relevan
+    // sekarang utk periode KDP SEBELUM reklas_golongan terjadi (lihat state
+    // awal di atas), yang secara alami sudah sisaSmt=0/beban=0 (KDP nggak
+    // punya masa_manfaat di kodefikasi) tapi ini jaga-jaga eksplisit.
     let bebanPeriode = 0
-    if (!berhenti && sisaSmt > 0 && beban > 0 && nilaiBuku > 0) {
+    if (!berhenti && perlakuan !== 'tidak' && sisaSmt > 0 && beban > 0 && nilaiBuku > 0) {
       if (sisaSmt === 1) {
         bebanPeriode = nilaiBuku // serap selisih pembulatan: paksa NB = 0 (§6.3)
       } else {
