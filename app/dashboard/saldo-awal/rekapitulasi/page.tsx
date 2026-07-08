@@ -21,7 +21,7 @@ export default function Page() {
   const { rootOf } = useSkpdTree()
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [komptabel, setKomptabel] = useState('')
-  const [model, setModel] = useState<1 | 2>(1)
+  const [model, setModel] = useState<1 | 2 | 3>(1) // Model 3 tidak dipakai di halaman ini (RekapModelControls default models=[1,2])
   const [metric, setMetric] = useState<MetricOrAll>('perolehan')
   const [rows, setRows] = useState<RekapRow[] | null>(null)
   const [matrix, setMatrix] = useState<MatrixRow[]>([])

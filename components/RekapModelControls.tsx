@@ -8,21 +8,28 @@ const METRIC_OPTIONS: { value: MetricOrAll; label: string }[] = [
   { value: 'semua', label: 'Semua nilai' },
 ]
 
-export default function RekapModelControls({ model, onModel, metric, onMetric }: {
-  model: 1 | 2
-  onModel: (m: 1 | 2) => void
+const MODEL_LABEL: Record<1 | 2 | 3, string> = {
+  1: 'Model 1 — per golongan',
+  2: 'Model 2 — per SKPD per jenis',
+  3: 'Model 3 — mutasi (saldo awal/akhir)',
+}
+
+export default function RekapModelControls({ model, onModel, metric, onMetric, models = [1, 2] }: {
+  model: 1 | 2 | 3
+  onModel: (m: 1 | 2 | 3) => void
   metric: MetricOrAll
   onMetric: (m: MetricOrAll) => void
+  models?: readonly (1 | 2 | 3)[] // opsi Model 3 (mutasi) cuma relevan di Saldo Akhir, bukan Saldo Awal
 }) {
   return (
     <>
       <div className="flex items-center gap-3">
         <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Model tampilan :</label>
         <div className="flex gap-4">
-          {[[1, 'Model 1 — per golongan'], [2, 'Model 2 — per SKPD per jenis']].map(([v, l]) => (
+          {models.map(v => (
             <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
-              <input type="radio" name="rekap-model" checked={model === v} onChange={() => onModel(v as 1 | 2)} />
-              {l}
+              <input type="radio" name="rekap-model" checked={model === v} onChange={() => onModel(v)} />
+              {MODEL_LABEL[v]}
             </label>
           ))}
         </div>

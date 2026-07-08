@@ -86,6 +86,10 @@ export function nextPeriode(p: Periode): Periode {
   return p.smt === 1 ? { tahun: p.tahun, smt: 2 } : { tahun: p.tahun + 1, smt: 1 }
 }
 
+export function previousPeriode(p: Periode): Periode {
+  return p.smt === 2 ? { tahun: p.tahun, smt: 1 } : { tahun: p.tahun - 1, smt: 2 }
+}
+
 /** -1 kalau a<b, 0 sama, 1 a>b */
 export function comparePeriode(a: string, b: string): number {
   const pa = parsePeriode(a), pb = parsePeriode(b)
