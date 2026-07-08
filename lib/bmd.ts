@@ -10,7 +10,7 @@ export async function fetchBatasKapitalisasi(supabase: SupabaseClient, kodes: st
   const map = new Map<string, number | null>()
   const distinct = [...new Set(kodes)]
   for (let i = 0; i < distinct.length; i += 300) {
-    const { data } = await supabase.from('kodefikasi_bmd').select('kode,batas_kapitalisasi').in('kode', distinct.slice(i, i + 300))
+    const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,batas_kapitalisasi').in('kode', distinct.slice(i, i + 300))
     for (const r of (data || []) as { kode: string; batas_kapitalisasi: number | null }[]) map.set(r.kode, r.batas_kapitalisasi)
   }
   return map

@@ -21,7 +21,7 @@ export default function WilayahPicker({ value, onChange }: {
     (async () => {
       const rows: WRow[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('wilayah').select('kode,nama,level,parent_kode').range(from, from + 999)
+        const { data } = await supabase.from('admin_wilayah').select('kode,nama,level,parent_kode').range(from, from + 999)
         if (!data || data.length === 0) break
         rows.push(...(data as WRow[]))
         if (data.length < 1000) break

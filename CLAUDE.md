@@ -33,8 +33,9 @@ apa pun yang menyentuh ledger atau engine.
   `periodeDariTanggal` (lib/bmd.ts) & `fn_periode_dari_tanggal` (SQL).
 - **penyusutan_semester = hasil engine** (turunan), bukan mirror `aset`. Engine
   event-driven replay ledger per aset.
-- **Baseline beku**: `saldo_awal_2026` = foto saldo akhir 2025, display-only,
-  tak pernah disentuh transaksi.
+- **Baseline beku**: `aset_awal_2026` (di-rename dari `saldo_awal_2026`,
+  migrasi `20260710_03`) = foto saldo akhir 2025, display-only, tak pernah
+  disentuh transaksi.
 - **Baca dari tabel utama, bukan view.** Semua `v_*` (v_daftar_barang, v_dbar_*,
   v_trx_*, v_anomali_saldo_awal, dst.) SUDAH DIHAPUS. Menu register/daftar baca
   `aset` + `transaksi_bmd` (+ `skpd`, `jurnal_header`) langsung. Kunci: `aset.id`
@@ -113,7 +114,7 @@ baru. Ini murni tabel kontrol yang dibaca trigger, sama pola dengan
   - **RPC `fn_preview_tutup_tahun(p_tahun)`**: list jurnal pending (dipakai UI
     [app/dashboard/admin/tutup-tahun/page.tsx](app/dashboard/admin/tutup-tahun/page.tsx)
     sebelum admin coba menutup, biar bukan cuma exception mentah).
-- Data referensi (`kodefikasi_bmd`, `overhaul_band`, `skpd`, dll) **satu kopi
+- Data referensi (`admin_kodefikasi_bmd`, `admin_overhaul_band`, `skpd`, dll) **satu kopi
   dibagi lintas tahun** (bukan per tahun) — TAPI editnya bisa ripple ke angka
   tahun lampau kalau engine di-run ulang tanpa proteksi.
 - **`/api/engine/run` sudah dilindungi (migrasi tidak perlu, ini di kode API)**:
@@ -302,12 +303,14 @@ lihat pola APPROVAL di atas) — jaga tetap sinkron kalau ada rename kolom lagi.
 `jenis_hak` dropdown + lokasi), PERALATAN_MESIN (kendaraan, no. rangka/mesin/
 polisi/BPKB), ASET_LAINNYA-like (ATL/KDP/ATB/Aset Lain-Lain — versi ringkas
 tanpa no. kendaraan). Field lokasi fisik = `wilayah_kode` (FK ke tabel
-`wilayah`, dipilih via `WilayahPicker` berjenjang Provinsi→Kab→Kec→Desa,
+`admin_wilayah`, dipilih via `WilayahPicker` berjenjang Provinsi→Kab→Kec→Desa,
 data di-seed migrasi `_15` khusus Jatim+Kab.Kediri) + `alamat_detail` (jalan)
 + `latitude`/`longitude` (dipilih via `MapPicker`, Leaflet+OpenStreetMap,
 WAJIB di-`next/dynamic({ssr:false})` krn butuh `window`). Kolom lama
-`titik_koordinat`/`lokasi` DEPRECATED (tak dipakai di form baru, data lama
-dibiarkan). Form edit spesifikasi selalu lewat **popup**
+`titik_koordinat`/`lokasi` sudah DI-DROP (migrasi
+`20260710_04_drop_titik_koordinat_lokasi.sql`) — dikonfirmasi kosong di
+seluruh baris live sebelum di-drop, tidak ada data yang hilang. Form edit
+spesifikasi selalu lewat **popup**
 (`EditSpesifikasiModal`) — field-nya bisa banyak & beda per golongan, jangan
 taruh inline di baris tabel (bikin panjang/scroll). Baris tabel cukup
 ringkasan satu baris + tombol buka popup.

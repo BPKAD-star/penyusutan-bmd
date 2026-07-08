@@ -10,7 +10,7 @@ import { kodeLevel3 } from '@/lib/bmd'
 export type FieldKey =
   | 'nama_barang' | 'spesifikasi_lainnya' | 'merek_tipe' | 'no_polisi' | 'no_bpkb' | 'no_rangka' | 'no_mesin'
   | 'luas' | 'nomor_dokumen_kepemilikan' | 'tanggal_dokumen_kepemilikan' | 'nama_dokumen_kepemilikan' | 'jenis_hak'
-  | 'wilayah_kode' | 'alamat_detail' | 'latitude' | 'longitude' | 'penggunaan' | 'keterangan'
+  | 'wilayah_kode' | 'alamat_detail' | 'latitude' | 'longitude' | 'penggunaan_pengamanan' | 'keterangan'
 
 export const FIELD_LABEL: Record<FieldKey, string> = {
   nama_barang: 'Spesifikasi Nama Barang',
@@ -29,7 +29,7 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   alamat_detail: 'Detail Alamat (Jalan)',
   latitude: 'Latitude',
   longitude: 'Longitude',
-  penggunaan: 'Penggunaan',
+  penggunaan_pengamanan: 'Penggunaan',
   keterangan: 'Keterangan',
 }
 
@@ -59,17 +59,17 @@ export const FIELD_OPTIONS: Partial<Record<FieldKey, string[]>> = {
 const TEMPLATE_TANAH: FieldKey[] = [
   'nama_barang', 'spesifikasi_lainnya', 'jenis_hak', 'luas',
   'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
-  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan', 'keterangan',
+  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan_pengamanan', 'keterangan',
 ]
 // PERALATAN & MESIN: kendaraan dkk (nomor rangka/mesin/polisi/BPKB) + lokasi.
 const TEMPLATE_PERALATAN_MESIN: FieldKey[] = [
   'nama_barang', 'merek_tipe', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi', 'spesifikasi_lainnya',
-  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan', 'keterangan',
+  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan_pengamanan', 'keterangan',
 ]
 // ASET LAINNYA-like: Aset Tetap Lainnya, KDP, ATB, Aset Lain-Lain — sama seperti
 // Peralatan&Mesin tanpa nomor kendaraan.
 const TEMPLATE_ASET_LAINNYA: FieldKey[] = [
-  'nama_barang', 'merek_tipe', 'spesifikasi_lainnya', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan', 'keterangan',
+  'nama_barang', 'merek_tipe', 'spesifikasi_lainnya', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan_pengamanan', 'keterangan',
 ]
 
 // Golongan level-3 (dari kodeLevel3) → field yang relevan, urut tampil.
@@ -101,6 +101,6 @@ export function allSameGolongan(kodes: string[]): boolean {
 // dipakai saat materialize draft → aset (Pengadaan & PerolehanManual).
 export const ASET_FIELD_COLS = ['nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
   'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak',
-  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan', 'keterangan'] as const
+  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan_pengamanan', 'keterangan'] as const
 // Kolom spesifikasi yang bertipe numeric di DB → di-cast toNum saat materialize.
 export const ASET_NUM_COLS = new Set(['luas', 'latitude', 'longitude'])

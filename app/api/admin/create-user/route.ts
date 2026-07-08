@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   const supabase = createAdminClient()
 
   const { data: pegawai, error: pegawaiError } = await supabase
-    .from('pegawai').select('id,skpd_id').eq('id', pegawai_id).single()
+    .from('admin_pegawai').select('id,skpd_id').eq('id', pegawai_id).single()
   if (pegawaiError || !pegawai) return NextResponse.json({ error: 'Pegawai tidak ditemukan' })
 
   const { data, error } = await supabase.auth.admin.createUser({

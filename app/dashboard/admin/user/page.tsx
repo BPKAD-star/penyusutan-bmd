@@ -36,7 +36,7 @@ export default function AdminUserPage() {
   const [msg, setMsg] = useState('')
 
   async function loadProfiles() {
-    const { data } = await supabase.from('profiles').select('*,skpd(nama),pegawai(nama,nip,jabatan)').order('created_at')
+    const { data } = await supabase.from('profiles').select('*,skpd(nama),pegawai:admin_pegawai(nama,nip,jabatan)').order('created_at')
     setProfiles((data as never as Profile[]) || [])
     setLoading(false)
   }
@@ -45,7 +45,7 @@ export default function AdminUserPage() {
     loadProfiles()
     supabase.from('skpd').select('id,nama,level').order('nama').limit(1000)
       .then(({ data }) => setSkpdList(data || []))
-    supabase.from('pegawai').select('id,nip,nama,jabatan').order('nama').limit(1000)
+    supabase.from('admin_pegawai').select('id,nip,nama,jabatan').order('nama').limit(1000)
       .then(({ data }) => setPegawaiList(data || []))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

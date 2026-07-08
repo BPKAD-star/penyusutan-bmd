@@ -40,7 +40,7 @@ export default function AdminPegawaiPage() {
   const [msg, setMsg] = useState('')
 
   async function load() {
-    const { data } = await supabase.from('pegawai').select('*,skpd(nama)').order('nama')
+    const { data } = await supabase.from('admin_pegawai').select('*,skpd(nama)').order('nama')
     setList((data as never as Pegawai[]) || [])
     setLoading(false)
   }
@@ -78,8 +78,8 @@ export default function AdminPegawaiPage() {
     }
 
     const { error } = editId
-      ? await supabase.from('pegawai').update(payload).eq('id', editId)
-      : await supabase.from('pegawai').insert(payload)
+      ? await supabase.from('admin_pegawai').update(payload).eq('id', editId)
+      : await supabase.from('admin_pegawai').insert(payload)
 
     if (error) {
       setMsg(`Error: ${error.message}`)
@@ -95,7 +95,7 @@ export default function AdminPegawaiPage() {
 
   async function handleDelete(id: string, nama: string) {
     if (!confirm(`Hapus data pegawai ${nama}? Akun login (kalau ada) tidak ikut terhapus.`)) return
-    const { error } = await supabase.from('pegawai').delete().eq('id', id)
+    const { error } = await supabase.from('admin_pegawai').delete().eq('id', id)
     if (error) setMsg(`Error: ${error.message}`)
     load()
   }

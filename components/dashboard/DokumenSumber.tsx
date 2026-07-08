@@ -3,7 +3,8 @@
 // Siklus BMD (lihat lib/dokumenSiklus.ts utk daftar 11 siklus). Drill-down:
 // kartu Tahun -> kartu Siklus -> isi (pull read-only dari modul lain, upload
 // generik, atau placeholder kosong). Role 3 tingkat diturunkan dari struktur
-// SKPD (lihat migrasi 20260710_01_dokumen_siklus.sql):
+// SKPD (lihat migrasi 20260710_01_dokumen_siklus.sql, di-rename ke
+// admin_dokumen oleh migrasi 20260710_02):
 //   - Super Admin (BKAD)            -> upload semua siklus generik.
 //   - Admin SKPD induk (py sub-OPD) -> upload HANYA siklus Pengamanan, subtree sendiri.
 //   - Non-admin                     -> lihat & download saja.
@@ -204,7 +205,7 @@ function PullSection({ tahun, label, kategori, skpdMap }: {
   )
 }
 
-// ── Sumber generik: upload baru ke tabel dokumen_siklus ─────────────────────
+// ── Sumber generik: upload baru ke tabel admin_dokumen ──────────────────────
 function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap }: {
   tahun: number
   sumber: Extract<SumberDokumen, { tipe: 'generic' }>
@@ -226,7 +227,7 @@ function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap 
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.from('dokumen_siklus')
+    const { data } = await supabase.from('admin_dokumen')
       .select('id,sub_jenis,skpd_id,judul,keterangan,file_path,created_at')
       .eq('tahun', tahun).eq('siklus', sumber.dbSiklus)
       .order('created_at', { ascending: false })
@@ -246,7 +247,7 @@ function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap 
     setErr(''); setSaving(true)
     const { path, error: upErr } = await uploadDokumenSiklus(file, tahun, sumber.dbSiklus)
     if (upErr) { setErr(`Gagal upload: ${upErr.message}`); setSaving(false); return }
-    const { error } = await supabase.from('dokumen_siklus').insert({
+    const { error } = await supabase.from('admin_dokumen').insert({
       tahun, siklus: sumber.dbSiklus,
       sub_jenis: sumber.subJenisOptions ? subJenis : null,
       skpd_id: sumber.scope === 'per_skpd' ? Number(docSkpd) : null,
@@ -260,7 +261,7 @@ function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap 
   async function hapus(d: GenericDoc) {
     if (!confirm(`Hapus dokumen "${d.judul}"?`)) return
     await hapusFileDokumen(d.file_path)
-    const { error } = await supabase.from('dokumen_siklus').delete().eq('id', d.id)
+    const { error } = await supabase.from('admin_dokumen').delete().eq('id', d.id)
     if (error) { setErr(error.message); return }
     load()
   }

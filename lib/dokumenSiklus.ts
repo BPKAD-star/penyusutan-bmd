@@ -5,9 +5,10 @@
 // Tiga jenis "sumber" per siklus:
 //   - pull_*   : dokumen SUDAH ada di modul lain (Pengadaan/Pengalihan Status/
 //                Penghapusan) — dibaca read-only dari jurnal_header.payload.
-//                dokumen_paths, TIDAK disalin ke tabel dokumen_siklus.
+//                dokumen_paths, TIDAK disalin ke tabel admin_dokumen.
 //   - generic  : belum ada modul/penyimpanan sendiri — upload baru ke tabel
-//                dokumen_siklus (lihat migrasi 20260710_01_dokumen_siklus.sql).
+//                admin_dokumen (lihat migrasi 20260710_01_dokumen_siklus.sql,
+//                di-rename dari dokumen_siklus oleh migrasi 20260710_02).
 //                scope 'global' = kabupaten-wide (skpd_id NULL, hanya Super
 //                Admin/BKAD yang boleh upload); scope 'per_skpd' = terikat SKPD
 //                (hanya siklus Pengamanan — admin SKPD induk boleh upload utk
@@ -20,7 +21,7 @@ export type SumberDokumen =
       tipe: 'generic'
       label: string
       scope: 'global' | 'per_skpd'
-      dbSiklus: string // harus cocok dgn CHECK constraint dokumen_siklus.siklus
+      dbSiklus: string // harus cocok dgn CHECK constraint admin_dokumen.siklus
       subJenisOptions?: { value: string; label: string }[]
     }
   | { tipe: 'kosong'; label: string }

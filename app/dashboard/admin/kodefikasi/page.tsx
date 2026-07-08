@@ -25,7 +25,7 @@ export default function AdminKodefikasiPage() {
   async function load() {
     const rowsAll: Kodefikasi[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('kodefikasi_bmd').select('*').order('kode').range(from, from + 999)
+      const { data } = await supabase.from('admin_kodefikasi_bmd').select('*').order('kode').range(from, from + 999)
       if (!data || data.length === 0) break
       rowsAll.push(...(data as Kodefikasi[]))
       if (data.length < 1000) break
@@ -36,7 +36,7 @@ export default function AdminKodefikasiPage() {
 
   useEffect(() => {
     load()
-    supabase.from('jenis_aset').select('id,uraian').order('uraian').then(({ data }) => setJenisList(data || []))
+    supabase.from('admin_jenis_aset').select('id,uraian').order('uraian').then(({ data }) => setJenisList(data || []))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
@@ -52,7 +52,7 @@ export default function AdminKodefikasiPage() {
   async function handleSave(row: Kodefikasi) {
     setSavingKode(row.kode)
     setMsg('')
-    const { error } = await supabase.from('kodefikasi_bmd').update({
+    const { error } = await supabase.from('admin_kodefikasi_bmd').update({
       jenis_aset_id: row.jenis_aset_id,
       masa_manfaat_tahun: row.masa_manfaat_tahun,
     }).eq('kode', row.kode)

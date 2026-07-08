@@ -33,7 +33,7 @@ export default function Page() {
     const agg: Record<string, { kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilaiBuku: number }> = {}
     const mtx: Record<number, MatrixRow> = {}
     for (let from = 0; ; from += 1000) {
-      let q = supabase.from('saldo_awal_2026')
+      let q = supabase.from('aset_awal_2026')
         .select('skpd_id,kode_barang,nilai_perolehan,akumulasi_2025,beban_penyusutan_per_smt,nilai_buku_awal')
       if (org.descendantIds) q = q.in('skpd_id', org.descendantIds)
       if (komptabel) q = q.eq('intra_ekstra', komptabel)

@@ -16,7 +16,7 @@ export default function AdminSatuanPage() {
   const [msg, setMsg] = useState('')
 
   async function load() {
-    const { data } = await supabase.from('satuan_bmd').select('*').order('nama')
+    const { data } = await supabase.from('admin_satuan_bmd').select('*').order('nama')
     setList(data || [])
     setLoading(false)
   }
@@ -42,8 +42,8 @@ export default function AdminSatuanPage() {
 
     const payload = { nama, keterangan: keterangan || null }
     const { error } = editId
-      ? await supabase.from('satuan_bmd').update(payload).eq('id', editId)
-      : await supabase.from('satuan_bmd').insert(payload)
+      ? await supabase.from('admin_satuan_bmd').update(payload).eq('id', editId)
+      : await supabase.from('admin_satuan_bmd').insert(payload)
 
     if (error) {
       setMsg(`Error: ${error.message}`)
@@ -57,7 +57,7 @@ export default function AdminSatuanPage() {
 
   async function handleDelete(id: number, nm: string) {
     if (!confirm(`Hapus satuan "${nm}"?`)) return
-    const { error } = await supabase.from('satuan_bmd').delete().eq('id', id)
+    const { error } = await supabase.from('admin_satuan_bmd').delete().eq('id', id)
     if (error) setMsg(`Error: ${error.message}`)
     load()
   }

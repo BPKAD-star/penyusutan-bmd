@@ -53,7 +53,7 @@ export default function Page() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function buildQuery(f: Applied, withCount: boolean) {
-    let q = supabase.from('saldo_awal_2026')
+    let q = supabase.from('aset_awal_2026')
       .select('nibar,kode_barang,nama_barang,skpd_id,intra_ekstra,tgl_perolehan,nilai_perolehan,akumulasi_2025,nilai_buku_awal,sisa_masa_manfaat_smt,masa_manfaat_smt,beban_penyusutan_per_smt',
         withCount ? { count: 'exact' } : undefined)
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)

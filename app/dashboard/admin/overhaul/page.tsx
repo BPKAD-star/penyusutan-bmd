@@ -31,7 +31,7 @@ export default function AdminOverhaulPage() {
   async function load() {
     const rowsAll: Band[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('overhaul_band').select('*')
+      const { data } = await supabase.from('admin_overhaul_band').select('*')
         .order('kode_prefix').order('band_no').range(from, from + 999)
       if (!data || data.length === 0) break
       rowsAll.push(...(data as Band[]))
@@ -56,7 +56,7 @@ export default function AdminOverhaulPage() {
   async function handleSave(row: Band) {
     setSavingId(row.id)
     setMsg('')
-    const { error } = await supabase.from('overhaul_band').update({
+    const { error } = await supabase.from('admin_overhaul_band').update({
       uraian: row.uraian, label: row.label,
       pct_min: row.pct_min, pct_max: row.pct_max, tambahan_tahun: row.tambahan_tahun,
     }).eq('id', row.id)
@@ -67,7 +67,7 @@ export default function AdminOverhaulPage() {
 
   async function handleDelete(row: Band) {
     if (!confirm(`Hapus band ${row.kode_prefix} #${row.band_no}?`)) return
-    const { error } = await supabase.from('overhaul_band').delete().eq('id', row.id)
+    const { error } = await supabase.from('admin_overhaul_band').delete().eq('id', row.id)
     if (error) { setMsg(`Error: ${error.message}`); return }
     load()
   }
@@ -75,7 +75,7 @@ export default function AdminOverhaulPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setMsg('')
-    const { error } = await supabase.from('overhaul_band').insert({
+    const { error } = await supabase.from('admin_overhaul_band').insert({
       kode_prefix: form.kode_prefix,
       uraian: form.uraian || null,
       band_no: Number(form.band_no),
