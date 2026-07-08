@@ -342,7 +342,7 @@ export default function Penghapusan() {
                     {ditolak && j.rejected_reason && (
                       <p className="text-xs text-red-600">Alasan penolakan: {j.rejected_reason}</p>
                     )}
-                    {isAlih && (j.payload?.dokumen_paths?.length || 0) > 0 && (
+                    {(j.payload?.dokumen_paths?.length || 0) > 0 && (
                       <p className="text-xs text-gray-500">
                         Dokumen:{' '}
                         {j.payload!.dokumen_paths!.map(p => (
@@ -546,8 +546,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   async function uploadDokumen(files: FileList | null) {
     if (!files || files.length === 0) return
     setDokUploading(true)
+    const prefix = isAlih ? 'pengalihan' : 'penghapusan'
     for (const file of Array.from(files)) {
-      const path = `pengalihan/${crypto.randomUUID()}/${file.name}`
+      const path = `${prefix}/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
       if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
@@ -637,6 +638,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         skpd_id: skpdId, kategori: 'penghapusan', jenis,
         sub_jenis: jenis === 'penghapusan_pemindahtanganan' ? subJenis : null,
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+        payload: { dokumen_paths: dokPaths },
       }).select(HEADER_COLS).single()
       if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
       h = data as unknown as Header
@@ -709,24 +711,22 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
               <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)}
                 placeholder={isAlih ? 'mis. Pengalihan kendaraan dinas ke Dinas Kesehatan' : 'mis. Penghapusan Lelang'} />
             </div>
-            {jenis === 'pengalihan_status' && (
-              <div className="sm:col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Dokumen Sumber (foto / PDF, bisa lebih dari satu)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-                  onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
-                {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-                {dokPaths.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {dokPaths.map(p => (
-                      <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
-                        <span className="truncate">{namaFile(p)}</span>
-                        <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Dokumen Sumber (foto / PDF, bisa lebih dari satu)</label>
+              <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
+                onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
+              {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
+              {dokPaths.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {dokPaths.map(p => (
+                    <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
+                      <span className="truncate">{namaFile(p)}</span>
+                      <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         )}
       </div>
