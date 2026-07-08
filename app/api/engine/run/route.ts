@@ -54,9 +54,9 @@ export async function POST(req: Request) {
     fetchAll<TrxLedger & { aset_id: string }>(
       (f, t) => db.from('transaksi_bmd').select('id,aset_id,jenis,periode,tanggal,nilai,payload,created_at').order('id').range(f, t)),
     fetchAll<{ kode: string; masa_manfaat_tahun: number | null }>(
-      (f, t) => db.from('kodefikasi_bmd').select('kode,masa_manfaat_tahun').range(f, t)),
+      (f, t) => db.from('admin_kodefikasi_bmd').select('kode,masa_manfaat_tahun').range(f, t)),
     fetchAll<BandOverhaul>(
-      (f, t) => db.from('overhaul_band').select('kode_prefix,band_no,pct_min,pct_max,tambahan_tahun').range(f, t)),
+      (f, t) => db.from('admin_overhaul_band').select('kode_prefix,band_no,pct_min,pct_max,tambahan_tahun').range(f, t)),
   ])
 
   const masaMap = new Map<string, number>()

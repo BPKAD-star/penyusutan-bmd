@@ -103,11 +103,11 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       setIsAdmin(profile?.role === 'admin')
     })()
     ;(async () => {
-      const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
+      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const labels: Record<string, string> = {}
       await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('kodefikasi_bmd')
+        const { data } = await supabase.from('admin_kodefikasi_bmd')
           .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
         const id = data?.[0]?.jenis_aset_id
         labels[prefix] = (id != null && namaById.get(id)) || prefix
@@ -639,13 +639,13 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    supabase.from('satuan_bmd').select('id,nama').order('nama').then(({ data }) => setSatuanList(data || []))
+    supabase.from('admin_satuan_bmd').select('id,nama').order('nama').then(({ data }) => setSatuanList(data || []))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function cari() {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
     setErr(''); setSearching(true)
-    let q = supabase.from('kodefikasi_bmd').select('kode,uraian').like('kode', `${golongan}.%`)
+    let q = supabase.from('admin_kodefikasi_bmd').select('kode,uraian').like('kode', `${golongan}.%`)
     if (search.trim()) q = q.or(`kode.ilike.${search.trim()}%,uraian.ilike.%${search.trim()}%`)
     const { data } = await q.limit(30)
     setResults((data || []) as { kode: string; uraian: string | null }[])

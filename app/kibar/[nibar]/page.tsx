@@ -36,7 +36,7 @@ async function resolveWilayah(admin: Admin, kode: string): Promise<string | null
   const parts: string[] = []
   let cur: string | null = kode
   for (let i = 0; i < 5 && cur; i++) {
-    const { data } = await admin.from('wilayah').select('nama,parent_kode').eq('kode', cur).maybeSingle()
+    const { data } = await admin.from('admin_wilayah').select('nama,parent_kode').eq('kode', cur).maybeSingle()
     if (!data) break
     parts.unshift(data.nama)
     cur = data.parent_kode

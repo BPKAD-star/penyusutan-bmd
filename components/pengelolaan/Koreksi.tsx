@@ -16,19 +16,20 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import FormShell from './FormShell'
 
-// ── Koreksi Spesifikasi (LAMA, tidak berubah) ───────────────────────────────
+// ── Field spesifikasi (dipakai alasan "Spesifikasi Barang" di bawah) ────────
 const SPEK_KOSONG = { nama_barang: '', spesifikasi_lainnya: '', merek_tipe: '', satuan: '' }
 const TANAH_KOSONG = { luas: '', nomor_dokumen_kepemilikan: '', tanggal_dokumen_kepemilikan: '', nama_dokumen_kepemilikan: '', jenis_hak: '' }
 const ATRIBUT_KOSONG = { asal_usul: '', kondisi_barang: '', tahun_pengadaan: '' }
 const HAK_OPT = ['HM (Hak Milik)', 'HGB (Hak Guna Bangunan)', 'HP (Hak Pakai)', 'HGU (Hak Guna Usaha)', 'HPL (Hak Pengelolaan)']
 const KONDISI_OPT = ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang', 'Tidak Ditemukan']
 
-// ── Koreksi Transaksi (BARU, ber-SK) ────────────────────────────────────────
-type Alasan = 'nilai_perolehan' | 'kuantitas_bertambah' | 'pencatatan_ganda'
+// ── Koreksi — satu alur ber-SK, 4 alasan ─────────────────────────────────────
+type Alasan = 'nilai_perolehan' | 'kuantitas_bertambah' | 'pencatatan_ganda' | 'spesifikasi'
 const ALASAN_OPT: { value: Alasan; label: string; deskripsi: string; disabled?: boolean }[] = [
   { value: 'nilai_perolehan', label: 'Nilai Perolehan', deskripsi: 'Koreksi nilai perolehan barang — beban penyusutan disebar ulang ke sisa umur oleh engine.' },
   { value: 'kuantitas_bertambah', label: 'Kuantitas Bertambah (Pemecahan)', deskripsi: 'Belum tersedia — rumus alokasi proporsional (nilai buku/akumulasi/beban) masih disiapkan.', disabled: true },
   { value: 'pencatatan_ganda', label: 'Pencatatan Ganda (Gabung Duplikat)', deskripsi: 'Gabungkan barang yang kecatat dua kali jadi satu register — kode barang harus identik.' },
+  { value: 'spesifikasi', label: 'Spesifikasi Barang', deskripsi: 'Koreksi field spesifikasi (nama, dokumen, kondisi, dll) satu barang — tanpa efek nilai/penyusutan.' },
 ]
 const ALASAN_LABEL = Object.fromEntries(ALASAN_OPT.map(a => [a.value, a.label])) as Record<Alasan, string>
 const tahunDari = (tgl: string | null) => tgl ? tgl.slice(0, 4) : '-'
@@ -54,35 +55,28 @@ type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori'
 
-function ringkasanBaris(l: JurnalLine): string {
+function ringkasanBaris(l: JurnalLine, jenis: Alasan): string {
   const p = l.payload || {}
+  if (jenis === 'spesifikasi') {
+    const fields = Object.keys(p)
+    return fields.length ? `Spesifikasi diubah: ${fields.join(', ')}` : '-'
+  }
   if (p.nilai_perolehan_baru != null) return `${formatRupiah(p.nilai_lama || 0)} → ${formatRupiah(p.nilai_perolehan_baru)}`
   if (p.survivor_nibar) return `Digabung ke NIBAR ${p.survivor_nibar}`
   return '-'
 }
 
 export default function Koreksi() {
-  const supabase = createClient()
-  const [modeUtama, setModeUtama] = useState<'transaksi' | 'spesifikasi'>('transaksi')
-
   return (
     <FormShell judul="Koreksi" msg=""
-      deskripsi="Koreksi transaksi (nilai perolehan, pencatatan ganda) lewat jurnal ber-SK, atau koreksi spesifikasi barang satuan.">
-      <div className="mb-4 flex gap-2">
-        {(['transaksi', 'spesifikasi'] as const).map(m => (
-          <button key={m} type="button" onClick={() => setModeUtama(m)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${modeUtama === m ? 'bg-teal text-white' : 'bg-gray-100 text-gray-600'}`}>
-            Koreksi {m === 'transaksi' ? 'Transaksi' : 'Spesifikasi'}
-          </button>
-        ))}
-      </div>
-      {modeUtama === 'transaksi' ? <KoreksiTransaksi /> : <KoreksiSpesifikasi />}
+      deskripsi="Koreksi lewat jurnal ber-SK: nilai perolehan, spesifikasi barang, atau pencatatan ganda.">
+      <KoreksiTransaksi />
     </FormShell>
   )
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// Koreksi Transaksi — alur ber-SK
+// Koreksi — alur ber-SK, satu-satunya alur (4 alasan)
 // ════════════════════════════════════════════════════════════════════════
 function KoreksiTransaksi() {
   const supabase = createClient()
@@ -110,11 +104,11 @@ function KoreksiTransaksi() {
       setSkpdList(rows)
     })()
     ;(async () => {
-      const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
+      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const labels: Record<string, string> = {}
       await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('kodefikasi_bmd')
+        const { data } = await supabase.from('admin_kodefikasi_bmd')
           .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
         const id = data?.[0]?.jenis_aset_id
         labels[prefix] = (id != null && namaById.get(id)) || prefix
@@ -137,7 +131,7 @@ function KoreksiTransaksi() {
     if (headerIds.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
         .select('header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode)')
-        .in('jenis', ['koreksi_nilai', 'koreksi_pencatatan_ganda'] as never)
+        .in('jenis', ['koreksi_nilai', 'koreksi_pencatatan_ganda', 'koreksi_spesifikasi'] as never)
         .in('header_id', headerIds)
         .order('id', { ascending: true })
       const rows = (data || []) as unknown as {
@@ -233,7 +227,7 @@ function KoreksiTransaksi() {
                           <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
                           <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
                         </td>
-                        <td className="table-td text-xs text-gray-600">{ringkasanBaris(l)}</td>
+                        <td className="table-td text-xs text-gray-600">{ringkasanBaris(l, j.jenis)}</td>
                         <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
                       </tr>
                     ))}
@@ -343,6 +337,13 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   const [kandidat, setKandidat] = useState<Kandidat[]>([])
   const [survivorId, setSurvivorId] = useState<string | null>(null)
 
+  // ── Spesifikasi: satu barang + field yang diubah ──
+  const [aset, setAset] = useState<AsetRingkas | null>(null)
+  const [spek, setSpek] = useState(SPEK_KOSONG)
+  const [tanah, setTanah] = useState(TANAH_KOSONG)
+  const [atribut, setAtribut] = useState(ATRIBUT_KOSONG)
+  const isTanah = aset?.kode.startsWith('1.3.1') ?? false
+
   async function tampilkan() {
     setLoading(true)
     let q = supabase.from('aset')
@@ -430,6 +431,34 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       setSaving(false); onSaved(items.length); return
     }
 
+    if (alasan === 'spesifikasi') {
+      if (!aset) { setErr('Pilih barang yang dikoreksi.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+      const isiTeks = Object.fromEntries(Object.entries(spek).filter(([, v]) => v.trim() !== ''))
+      const isiTanah: Record<string, unknown> = {}
+      if (isTanah) {
+        if (tanah.nomor_dokumen_kepemilikan.trim()) isiTanah.nomor_dokumen_kepemilikan = tanah.nomor_dokumen_kepemilikan.trim()
+        if (tanah.tanggal_dokumen_kepemilikan) isiTanah.tanggal_dokumen_kepemilikan = tanah.tanggal_dokumen_kepemilikan
+        if (tanah.nama_dokumen_kepemilikan.trim()) isiTanah.nama_dokumen_kepemilikan = tanah.nama_dokumen_kepemilikan.trim()
+        if (tanah.jenis_hak.trim()) isiTanah.jenis_hak = tanah.jenis_hak.trim()
+        const luas = parseFloat(tanah.luas)
+        if (!isNaN(luas) && luas > 0) isiTanah.luas = luas
+      }
+      const isiAtribut: Record<string, unknown> = {}
+      if (atribut.asal_usul.trim()) isiAtribut.asal_usul = atribut.asal_usul.trim()
+      if (atribut.kondisi_barang) isiAtribut.kondisi_barang = atribut.kondisi_barang
+      if (atribut.tahun_pengadaan.trim()) {
+        const th = parseInt(atribut.tahun_pengadaan, 10)
+        if (!isNaN(th) && th > 0) isiAtribut.tahun_pengadaan = th
+      }
+      const isi = { ...isiTeks, ...isiTanah, ...isiAtribut }
+      if (Object.keys(isi).length === 0) { setErr('Tidak ada field yang diubah.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+      const { error } = await catatTransaksi(supabase, {
+        asetId: aset.id, jenis: 'koreksi_spesifikasi', headerId: h.id, payload: isi, keterangan: h.keterangan || undefined,
+      })
+      if (error) { setErr(error); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+      setSaving(false); onSaved(1); return
+    }
+
     // pencatatan_ganda
     if (kandidat.length < 2) { setErr('Pilih minimal 2 barang kandidat duplikat.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
     if (!survivorId) { setErr('Pilih salah satu sebagai barang yang dipertahankan.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
@@ -467,7 +496,10 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                 {ALASAN_OPT.map(o => (
                   <label key={o.value} className={`flex items-start gap-2 p-2.5 rounded-lg border text-sm ${o.disabled ? 'opacity-50 cursor-not-allowed border-gray-200' : alasan === o.value ? 'border-teal bg-teal/5 cursor-pointer' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'}`}>
                     <input type="radio" className="mt-0.5" checked={alasan === o.value} disabled={o.disabled}
-                      onChange={() => { setAlasan(o.value); setSelNilai({}); setKandidat([]); setSurvivorId(null); setRows([]); setLoaded(false) }} />
+                      onChange={() => {
+                        setAlasan(o.value); setSelNilai({}); setKandidat([]); setSurvivorId(null); setRows([]); setLoaded(false)
+                        setAset(null); setSpek(SPEK_KOSONG); setTanah(TANAH_KOSONG); setAtribut(ATRIBUT_KOSONG)
+                      }} />
                     <span>
                       <span className="font-medium text-gray-800">{o.label}</span>
                       <span className="block text-xs text-gray-500 mt-0.5">{o.deskripsi}</span>
@@ -637,105 +669,14 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
         </div>
       )}
 
-      {alasanAktif === 'kuantitas_bertambah' && (
-        <div className="card p-8 text-center text-gray-400 text-sm">Alasan ini belum tersedia.</div>
-      )}
-    </div>
-  )
-}
-
-// ════════════════════════════════════════════════════════════════════════
-// Koreksi Spesifikasi — alur lama, standalone single-item (tidak berubah)
-// ════════════════════════════════════════════════════════════════════════
-function KoreksiSpesifikasi() {
-  const supabase = createClient()
-  const [aset, setAset] = useState<AsetRingkas | null>(null)
-  const [mode, setMode] = useState<'nilai' | 'spesifikasi'>('spesifikasi')
-  const [nilaiBaru, setNilaiBaru] = useState('')
-  const [spek, setSpek] = useState(SPEK_KOSONG)
-  const [tanah, setTanah] = useState(TANAH_KOSONG)
-  const [atribut, setAtribut] = useState(ATRIBUT_KOSONG)
-  const [ket, setKet] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState('')
-
-  const isTanah = aset?.kode.startsWith('1.3.1') ?? false
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!aset) return
-    setSaving(true)
-    let error: string | undefined
-    if (mode === 'nilai') {
-      const baru = parseFloat(nilaiBaru)
-      if (isNaN(baru) || baru < 0) { setMsg('Error: nilai baru tidak valid.'); setSaving(false); return }
-      const delta = baru - aset.nilai_perolehan
-      ;({ error } = await catatTransaksi(supabase, {
-        asetId: aset.id, jenis: 'koreksi_nilai', nilai: delta,
-        payload: { nilai_lama: aset.nilai_perolehan, nilai_perolehan_baru: baru, delta },
-        keterangan: ket || undefined,
-      }))
-    } else {
-      const isiTeks = Object.fromEntries(Object.entries(spek).filter(([, v]) => v.trim() !== ''))
-      const isiTanah: Record<string, unknown> = {}
-      if (isTanah) {
-        if (tanah.nomor_dokumen_kepemilikan.trim()) isiTanah.nomor_dokumen_kepemilikan = tanah.nomor_dokumen_kepemilikan.trim()
-        if (tanah.tanggal_dokumen_kepemilikan) isiTanah.tanggal_dokumen_kepemilikan = tanah.tanggal_dokumen_kepemilikan
-        if (tanah.nama_dokumen_kepemilikan.trim()) isiTanah.nama_dokumen_kepemilikan = tanah.nama_dokumen_kepemilikan.trim()
-        if (tanah.jenis_hak.trim()) isiTanah.jenis_hak = tanah.jenis_hak.trim()
-        const luas = parseFloat(tanah.luas)
-        if (!isNaN(luas) && luas > 0) isiTanah.luas = luas
-      }
-      const isiAtribut: Record<string, unknown> = {}
-      if (atribut.asal_usul.trim()) isiAtribut.asal_usul = atribut.asal_usul.trim()
-      if (atribut.kondisi_barang) isiAtribut.kondisi_barang = atribut.kondisi_barang
-      if (atribut.tahun_pengadaan.trim()) {
-        const th = parseInt(atribut.tahun_pengadaan, 10)
-        if (!isNaN(th) && th > 0) isiAtribut.tahun_pengadaan = th
-      }
-      const isi = { ...isiTeks, ...isiTanah, ...isiAtribut }
-      if (Object.keys(isi).length === 0) { setMsg('Error: tidak ada field yang diubah.'); setSaving(false); return }
-      ;({ error } = await catatTransaksi(supabase, {
-        asetId: aset.id, jenis: 'koreksi_spesifikasi', payload: isi, keterangan: ket || undefined,
-      }))
-    }
-    setMsg(error ? `Error: ${error}` : 'Koreksi tercatat di ledger.')
-    if (!error) { setAset(null); setNilaiBaru(''); setSpek(SPEK_KOSONG); setTanah(TANAH_KOSONG); setAtribut(ATRIBUT_KOSONG); setKet('') }
-    setSaving(false)
-  }
-
-  return (
-    <div className="space-y-4 max-w-2xl">
-      {msg && (
-        <div className={`p-3 rounded-lg text-sm ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
-      )}
-      <form onSubmit={submit} className="card p-6 space-y-4">
-        <div className="flex gap-2">
-          {(['spesifikasi', 'nilai'] as const).map(m => (
-            <button key={m} type="button" onClick={() => setMode(m)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${mode === m ? 'bg-teal text-white' : 'bg-gray-100 text-gray-600'}`}>
-              {m === 'nilai' ? 'Nilai (satu barang)' : 'Spesifikasi'}
-            </button>
-          ))}
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Aset</label>
-          <AsetPicker selected={aset} onSelect={setAset} />
-        </div>
-        {mode === 'nilai' ? (
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">
-              Nilai Perolehan Baru {aset && <span className="text-gray-400">— sekarang {formatRupiah(aset.nilai_perolehan)}</span>}
-            </label>
-            <input type="number" min="0" step="1" className="select-filter w-full" value={nilaiBaru}
-              onChange={e => setNilaiBaru(e.target.value)} required />
-            <p className="text-xs text-gray-400 mt-1">
-              Buat koreksi banyak barang sekaligus (ber-SK), pakai tab &quot;Koreksi Transaksi&quot; di atas. Ini buat satu
-              barang cepat tanpa jurnal.
-            </p>
-          </div>
-        ) : (
+      {alasanAktif === 'spesifikasi' && (
+        <div className="card p-5">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">Barang &amp; Field yang Diubah</h2>
           <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Aset</label>
+              <AsetPicker selected={aset} onSelect={setAset} />
+            </div>
             <div className="grid grid-cols-2 gap-3">
               {(Object.keys(spek) as (keyof typeof spek)[]).map(k => (
                 <div key={k}>
@@ -805,13 +746,20 @@ function KoreksiSpesifikasi() {
               </div>
             </div>
           </div>
-        )}
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Keterangan / dasar koreksi</label>
-          <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
+          {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+            <span className="text-sm text-gray-600">{aset ? `1 barang dipilih — ${aset.nama_barang || aset.nibar || '-'}` : 'Belum pilih barang'}</span>
+            <button className="btn-primary" onClick={simpan} disabled={saving || !aset}>
+              {saving ? 'Menyimpan...' : header ? 'Tambah ke Jurnal' : 'Simpan Koreksi'}
+            </button>
+          </div>
         </div>
-        <button className="btn-primary" disabled={saving || !aset}>{saving ? 'Menyimpan...' : 'Catat Koreksi'}</button>
-      </form>
+      )}
+
+      {alasanAktif === 'kuantitas_bertambah' && (
+        <div className="card p-8 text-center text-gray-400 text-sm">Alasan ini belum tersedia.</div>
+      )}
     </div>
   )
 }
+

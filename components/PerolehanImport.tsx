@@ -129,7 +129,7 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
       const kodeSet = [...new Set(parsed.map(p => p.kode).filter(Boolean))]
       const kodeValid = new Set<string>()
       for (let i = 0; i < kodeSet.length; i += 200) {
-        const { data } = await supabase.from('kodefikasi_bmd').select('kode').in('kode', kodeSet.slice(i, i + 200))
+        const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode').in('kode', kodeSet.slice(i, i + 200))
         for (const k of data || []) kodeValid.add(k.kode)
       }
       const nibarSet = [...new Set(parsed.map(p => p.nibar).filter(Boolean))]
