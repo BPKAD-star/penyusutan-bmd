@@ -34,7 +34,22 @@
       "Bash(grep -c \"'\\);$\" supabase/migrations/20260704_15_seed_wilayah_kediri.sql)",
       "Bash(npm --version)",
       "Bash(git status *)",
-      "Bash(git branch *)"
+      "Bash(git branch *)",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && ls node_modules/.bin/tsc 2>/dev/null && echo HAS_TSC || echo NO_TSC')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && ./node_modules/.bin/tsc --noEmit 2>&1 | head -60')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && git rev-parse --abbrev-ref HEAD && echo \"---\" && git status --short')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && git log --oneline -8 && echo \"===SIDEBAR DIFF===\" && git diff --stat components/Sidebar.tsx && echo \"===PENGHAPUSAN IN HEAD?===\" && git log --oneline -1 -- components/pengelolaan/PenggunaanMasuk.tsx')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && git diff components/Sidebar.tsx && echo \"===SETTINGS===\" && git diff --stat .claude/settings.local.json package-lock.json')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && ./node_modules/.bin/tsc --noEmit 2>&1 | head -30')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && git rev-parse --abbrev-ref HEAD && echo \"---status---\" && git status --short')",
+      "Read(//mnt/c/Users/DESKTOP/.claude/**)",
+      "Read(///wsl.localhost/ubuntu-24.04/home/adimas/penyusutan-bmd/supabase/**)",
+      "Bash(ls \"//wsl.localhost/ubuntu-24.04/home/adimas/penyusutan-bmd/supabase/migrations/\" 2>/dev/null | tail -5)",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && ./node_modules/.bin/tsc --noEmit 2>&1 | head -40')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && git diff --stat components/Sidebar.tsx')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && git status --short && echo \"---log---\" && git log --oneline -5')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && git status --short')",
+      "Bash(wsl.exe -d Ubuntu-24.04 bash -c 'cd /home/adimas/penyusutan-bmd && git log --oneline -8 && echo \"---\" && git log --oneline -1 -- supabase/migrations/20260704_20_saldo_awal_2026_kolom_aset.sql')"
     ]
   }
 }
