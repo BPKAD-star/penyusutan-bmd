@@ -114,7 +114,7 @@ export default function DashboardIPAPage() {
     let role: string | null = null
     if (user) {
       setUserId(user.id)
-      const { data: profile } = await supabase.from('profiles').select('role,ipa_role').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('admin_profiles').select('role,ipa_role').eq('id', user.id).single()
       admin = profile?.role === 'admin'
       role = (profile?.ipa_role as string | null) ?? null
       setIsAdminUmum(admin)
@@ -127,7 +127,7 @@ export default function DashboardIPAPage() {
     const aktif = ((tahunRows as TahunRow[]) || []).find(t => t.is_active) || null
     setTahunAktif(aktif)
 
-    const { count } = await supabase.from('skpd').select('id', { count: 'exact', head: true }).eq('jabatan', 'pengguna barang')
+    const { count } = await supabase.from('admin_skpd').select('id', { count: 'exact', head: true }).eq('jabatan', 'pengguna barang')
     setTotalSkpd(count ?? 0)
 
     if (aktif) {

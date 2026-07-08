@@ -40,14 +40,14 @@ export default function AdminPegawaiPage() {
   const [msg, setMsg] = useState('')
 
   async function load() {
-    const { data } = await supabase.from('admin_pegawai').select('*,skpd(nama)').order('nama')
+    const { data } = await supabase.from('admin_pegawai').select('*,skpd:admin_skpd(nama)').order('nama')
     setList((data as never as Pegawai[]) || [])
     setLoading(false)
   }
 
   useEffect(() => {
     load()
-    supabase.from('skpd').select('id,nama,level').order('nama').limit(1000)
+    supabase.from('admin_skpd').select('id,nama,level').order('nama').limit(1000)
       .then(({ data }) => setSkpdList(data || []))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

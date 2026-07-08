@@ -33,7 +33,7 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
     (async () => {
       const rows: SkpdRow[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('skpd').select('id,nama,level,parent_id').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id').range(from, from + 999)
         if (!data || data.length === 0) break
         rows.push(...(data as SkpdRow[]))
         if (data.length < 1000) break

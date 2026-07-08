@@ -8,7 +8,7 @@ export async function POST(req: Request) {
   const session = createClient()
   const { data: { user } } = await session.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { data: me } = await session.from('profiles').select('role').eq('id', user.id).single()
+  const { data: me } = await session.from('admin_profiles').select('role').eq('id', user.id).single()
   if (me?.role !== 'admin') return NextResponse.json({ error: 'Hanya admin' }, { status: 403 })
 
   const supabase = createAdminClient()
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message })
 
-  const { error: profileError } = await supabase.from('profiles').insert({
+  const { error: profileError } = await supabase.from('admin_profiles').insert({
     id: data.user.id,
     email,
     role,

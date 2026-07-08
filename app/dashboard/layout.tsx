@@ -8,7 +8,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect('/login')
 
   const { data: profile } = await supabase
-    .from('profiles')
+    .from('admin_profiles')
     .select('role, pegawai:admin_pegawai(nama)')
     .eq('id', user.id)
     .single()

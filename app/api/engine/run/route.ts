@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   const session = createClient()
   const { data: { user } } = await session.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { data: profile } = await session.from('profiles').select('role').eq('id', user.id).single()
+  const { data: profile } = await session.from('admin_profiles').select('role').eq('id', user.id).single()
   if (profile?.role !== 'admin') return NextResponse.json({ error: 'Hanya admin' }, { status: 403 })
 
   // Tahun terkunci (tutup buku) = angka final/teraudit, engine tak boleh
@@ -54,9 +54,9 @@ export async function POST(req: Request) {
     fetchAll<TrxLedger & { aset_id: string }>(
       (f, t) => db.from('transaksi_bmd').select('id,aset_id,jenis,periode,tanggal,nilai,payload,created_at').order('id').range(f, t)),
     fetchAll<{ kode: string; masa_manfaat_tahun: number | null }>(
-      (f, t) => db.from('admin_kodefikasi_bmd').select('kode,masa_manfaat_tahun').range(f, t)),
+      (f, t) => db.from('kodefikasi_bmd').select('kode,masa_manfaat_tahun').range(f, t)),
     fetchAll<BandOverhaul>(
-      (f, t) => db.from('admin_overhaul_band').select('kode_prefix,band_no,pct_min,pct_max,tambahan_tahun').range(f, t)),
+      (f, t) => db.from('overhaul_band').select('kode_prefix,band_no,pct_min,pct_max,tambahan_tahun').range(f, t)),
   ])
 
   const masaMap = new Map<string, number>()

@@ -64,12 +64,12 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: profile } = await supabase.from('profiles').select('role,skpd_id').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('admin_profiles').select('role,skpd_id').eq('id', user.id).single()
       const admin = profile?.role === 'admin'
       setIsAdmin(admin)
       setMySkpdId(profile?.skpd_id ?? null)
       if (!admin && profile?.skpd_id) setTargetSkpd(profile.skpd_id)
-      const { data: skpd } = await supabase.from('skpd').select('id,nama').order('nama').limit(1000)
+      const { data: skpd } = await supabase.from('admin_skpd').select('id,nama').order('nama').limit(1000)
       setSkpdList(skpd || [])
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -129,7 +129,7 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
       const kodeSet = [...new Set(parsed.map(p => p.kode).filter(Boolean))]
       const kodeValid = new Set<string>()
       for (let i = 0; i < kodeSet.length; i += 200) {
-        const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode').in('kode', kodeSet.slice(i, i + 200))
+        const { data } = await supabase.from('kodefikasi_bmd').select('kode').in('kode', kodeSet.slice(i, i + 200))
         for (const k of data || []) kodeValid.add(k.kode)
       }
       const nibarSet = [...new Set(parsed.map(p => p.nibar).filter(Boolean))]

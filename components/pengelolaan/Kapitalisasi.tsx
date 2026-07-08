@@ -63,20 +63,20 @@ export default function Kapitalisasi() {
     ;(async () => {
       const rows: { id: number; nama: string }[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
         if (!data || data.length === 0) break
         rows.push(...data)
         if (data.length < 1000) break
       }
       setSkpdList(rows)
     })()
-    supabase.from('admin_overhaul_band').select('kode_prefix,band_no,pct_min,pct_max,tambahan_tahun').then(({ data }) => setBands((data as BandOverhaul[]) || []))
+    supabase.from('overhaul_band').select('kode_prefix,band_no,pct_min,pct_max,tambahan_tahun').then(({ data }) => setBands((data as BandOverhaul[]) || []))
     ;(async () => {
-      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
+      const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const labels: Record<string, string> = {}
       await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('admin_kodefikasi_bmd').select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
+        const { data } = await supabase.from('kodefikasi_bmd').select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
         const id = data?.[0]?.jenis_aset_id
         labels[prefix] = (id != null && namaById.get(id)) || prefix
       }))
@@ -233,7 +233,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
     setFig(null)
     if (!induk) return
     (async () => {
-      const { data: k } = await supabase.from('admin_kodefikasi_bmd').select('masa_manfaat_tahun').eq('kode', induk.kode).single()
+      const { data: k } = await supabase.from('kodefikasi_bmd').select('masa_manfaat_tahun').eq('kode', induk.kode).single()
       const masaMaks = k?.masa_manfaat_tahun ?? null
       const { data: ps } = await supabase.from('penyusutan_semester')
         .select('nilai_buku_akhir,akumulasi,beban,sisa_semester,periode').eq('aset_id', induk.id).order('periode', { ascending: false }).limit(1)

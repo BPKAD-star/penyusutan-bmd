@@ -22,11 +22,11 @@ export default function LaporanBmdPage() {
       setLoading(true)
 
       // Label golongan dari data
-      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
+      const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const lbl: Record<string, string> = {}
       await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('admin_kodefikasi_bmd')
+        const { data } = await supabase.from('kodefikasi_bmd')
           .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
         const id = data?.[0]?.jenis_aset_id
         lbl[prefix] = (id != null && namaById.get(id)) || prefix
@@ -36,7 +36,7 @@ export default function LaporanBmdPage() {
       // Hierarki SKPD → map ke induk level 1
       const allSkpd: Skpd[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('skpd').select('id,nama,parent_id,level').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama,parent_id,level').range(from, from + 999)
         if (!data || data.length === 0) break
         allSkpd.push(...(data as Skpd[]))
         if (data.length < 1000) break

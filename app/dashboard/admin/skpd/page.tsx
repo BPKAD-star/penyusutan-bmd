@@ -20,7 +20,7 @@ export default function AdminSkpdPage() {
   async function load() {
     const rows: Skpd[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('skpd').select('id,nama,level,parent_id').range(from, from + 999)
+      const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id').range(from, from + 999)
       if (!data || data.length === 0) break
       rows.push(...(data as Skpd[]))
       if (data.length < 1000) break
@@ -87,8 +87,8 @@ export default function AdminSkpdPage() {
 
     const payload = { nama: form.nama, parent_id: form.parent_id === '' ? null : Number(form.parent_id) }
     const { error } = editId
-      ? await supabase.from('skpd').update(payload).eq('id', editId)
-      : await supabase.from('skpd').insert(payload)
+      ? await supabase.from('admin_skpd').update(payload).eq('id', editId)
+      : await supabase.from('admin_skpd').insert(payload)
 
     if (error) {
       setMsg(`Error: ${error.message}`)
@@ -108,7 +108,7 @@ export default function AdminSkpdPage() {
       return
     }
     if (!confirm(`Hapus SKPD "${s.nama}"? Aset/pegawai/user yang masih terkait akan menolak penghapusan ini.`)) return
-    const { error } = await supabase.from('skpd').delete().eq('id', s.id)
+    const { error } = await supabase.from('admin_skpd').delete().eq('id', s.id)
     if (error) setMsg(`Error: ${error.message}`)
     else load()
   }

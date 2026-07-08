@@ -29,7 +29,7 @@ export default function RekapPage() {
       while (true) {
         const { data } = await supabase
           .from('penyusutan_periode')
-          .select('skpd(nama),beban_penyusutan,akumulasi_akhir,nilai_buku_akhir')
+          .select('skpd:admin_skpd(nama),beban_penyusutan,akumulasi_akhir,nilai_buku_akhir')
           .eq('periode', periode)
           .range(from, from + 999)
         if (!data || data.length === 0) break

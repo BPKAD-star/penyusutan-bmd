@@ -36,7 +36,7 @@ async function resolveWilayah(admin: Admin, kode: string): Promise<string | null
   const parts: string[] = []
   let cur: string | null = kode
   for (let i = 0; i < 5 && cur; i++) {
-    const { data } = await admin.from('admin_wilayah').select('nama,parent_kode').eq('kode', cur).maybeSingle()
+    const { data } = await admin.from('wilayah').select('nama,parent_kode').eq('kode', cur).maybeSingle()
     if (!data) break
     parts.unshift(data.nama)
     cur = data.parent_kode
@@ -76,7 +76,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   if (aset.skpd_id) skpdIds.add(aset.skpd_id)
   for (const t of trx) { if (t.skpd_asal) skpdIds.add(t.skpd_asal); if (t.skpd_tujuan) skpdIds.add(t.skpd_tujuan) }
   const { data: skpdRows } = skpdIds.size
-    ? await admin.from('skpd').select('id,nama').in('id', [...skpdIds])
+    ? await admin.from('admin_skpd').select('id,nama').in('id', [...skpdIds])
     : { data: [] as { id: number; nama: string }[] }
   const skpdNama: Record<number, string> = Object.fromEntries((skpdRows || []).map(s => [s.id, s.nama]))
 

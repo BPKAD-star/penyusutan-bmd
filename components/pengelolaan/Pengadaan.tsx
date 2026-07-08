@@ -157,7 +157,7 @@ export default function Pengadaan() {
       type SkpdRow = { id: number; nama: string; level: number; parent_id: number | null }
       const rows: SkpdRow[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('skpd').select('id,nama,level,parent_id').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id').range(from, from + 999)
         if (!data || data.length === 0) break
         rows.push(...(data as SkpdRow[]))
         if (data.length < 1000) break
@@ -176,15 +176,15 @@ export default function Pengadaan() {
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const { data: profile } = await supabase.from('admin_profiles').select('role').eq('id', user.id).single()
       setIsAdmin(profile?.role === 'admin')
     })()
     ;(async () => {
-      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
+      const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const labels: Record<string, string> = {}
       await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('admin_kodefikasi_bmd')
+        const { data } = await supabase.from('kodefikasi_bmd')
           .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
         const id = data?.[0]?.jenis_aset_id
         labels[prefix] = (id != null && namaById.get(id)) || prefix
@@ -359,7 +359,7 @@ export default function Pengadaan() {
     const periode = periodeDariTanggal(perolehanDate)
 
     // Generate NIBAR otomatis — perlu kode lokasi SKPD (skpd.kode_skpd, ber-titik).
-    const { data: skpdRow, error: skpdErr } = await supabase.from('skpd').select('kode_skpd').eq('id', Number(skpd)).single()
+    const { data: skpdRow, error: skpdErr } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', Number(skpd)).single()
     if (skpdErr || !skpdRow?.kode_skpd) {
       setMsg(`Error: gagal ambil kode lokasi SKPD utk generate NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`)
       setBusyId(null); return
@@ -764,13 +764,13 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const [err, setErr] = useState('')
 
   useEffect(() => {
-    supabase.from('admin_satuan_bmd').select('id,nama').order('nama').then(({ data }) => setSatuanList(data || []))
+    supabase.from('satuan_bmd').select('id,nama').order('nama').then(({ data }) => setSatuanList(data || []))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function cari() {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
     setErr(''); setSearching(true)
-    let q = supabase.from('admin_kodefikasi_bmd').select('kode,uraian').like('kode', `${golongan}.%`)
+    let q = supabase.from('kodefikasi_bmd').select('kode,uraian').like('kode', `${golongan}.%`)
     if (search.trim()) q = q.or(`kode.ilike.${search.trim()}%,uraian.ilike.%${search.trim()}%`)
     const { data } = await q.limit(30)
     setResults((data || []) as { kode: string; uraian: string | null }[])

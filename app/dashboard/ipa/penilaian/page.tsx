@@ -21,7 +21,7 @@ export default function PenilaianIPAPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { setLoading(false); return }
 
-      const { data: profile } = await supabase.from('profiles')
+      const { data: profile } = await supabase.from('admin_profiles')
         .select('role,skpd_id,ipa_role').eq('id', user.id).single()
 
       const isAdminBmd = profile?.role === 'admin'
@@ -36,11 +36,11 @@ export default function PenilaianIPAPage() {
 
       if (tahun) {
         if (ipaRole === 'pb_admin' && profile?.skpd_id) {
-          const { data } = await supabase.from('skpd')
+          const { data } = await supabase.from('admin_skpd')
             .select('id,kode_lokasi,nama,kelompok_fpk').eq('id', profile.skpd_id).single()
           if (data) { setSkpdList([data as SKPDItem]); setLockedSkpdId(String(profile.skpd_id)) }
         } else {
-          const { data } = await supabase.from('skpd')
+          const { data } = await supabase.from('admin_skpd')
             .select('id,kode_lokasi,nama,kelompok_fpk').eq('jabatan', 'pengguna barang').order('kode_lokasi').limit(1000)
           setSkpdList((data as SKPDItem[]) || [])
         }

@@ -134,7 +134,7 @@ export default function DaftarBarangPage() {
     ;(async () => {
       const map: Record<number, string> = {}
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
         if (!data || data.length === 0) break
         for (const s of data) map[s.id] = s.nama
         if (data.length < 1000) break
@@ -142,11 +142,11 @@ export default function DaftarBarangPage() {
       setSkpdMap(map)
     })()
     ;(async () => {
-      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
+      const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const labels: Record<string, string> = {}
       await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('admin_kodefikasi_bmd')
+        const { data } = await supabase.from('kodefikasi_bmd')
           .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
         const id = data?.[0]?.jenis_aset_id
         labels[prefix] = (id != null && namaById.get(id)) || prefix
@@ -198,7 +198,7 @@ export default function DaftarBarangPage() {
     const uniq = [...new Set(kodes)]
     const map: Record<string, string> = {}
     for (let i = 0; i < uniq.length; i += 200) {
-      const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      const { data } = await supabase.from('kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
       for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
     }
     return map

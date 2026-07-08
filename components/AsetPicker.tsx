@@ -29,7 +29,7 @@ export default function AsetPicker({ selected, onSelect }: {
     setSearching(true)
     const { data } = await supabase
       .from('aset')
-      .select('id,nibar,kode,nama_barang,nilai_perolehan,skpd_id,status,skpd(nama)')
+      .select('id,nibar,kode,nama_barang,nilai_perolehan,skpd_id,status,skpd:admin_skpd(nama)')
       .eq('status', 'aktif')
       .or(`nibar.ilike.%${q}%,nama_barang.ilike.%${q}%,kode.ilike.%${q}%`)
       .limit(20)

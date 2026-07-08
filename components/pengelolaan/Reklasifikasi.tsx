@@ -117,7 +117,7 @@ export default function Reklasifikasi() {
     ;(async () => {
       const rows: { id: number; nama: string }[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
         if (!data || data.length === 0) break
         rows.push(...data)
         if (data.length < 1000) break
@@ -125,11 +125,11 @@ export default function Reklasifikasi() {
       setSkpdList(rows)
     })()
     ;(async () => {
-      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
+      const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const labels: Record<string, string> = {}
       await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('admin_kodefikasi_bmd')
+        const { data } = await supabase.from('kodefikasi_bmd')
           .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
         const id = data?.[0]?.jenis_aset_id
         labels[prefix] = (id != null && namaById.get(id)) || prefix
@@ -386,7 +386,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const filterAwal = filterKomptabelAwal(alasan)
 
   async function cariKode() {
-    const { data } = await supabase.from('admin_kodefikasi_bmd')
+    const { data } = await supabase.from('kodefikasi_bmd')
       .select('kode,uraian,masa_manfaat_tahun')
       .or(`kode.ilike.${qKode}%,uraian.ilike.%${qKode}%`).limit(20)
     setKandidatKode(data || [])

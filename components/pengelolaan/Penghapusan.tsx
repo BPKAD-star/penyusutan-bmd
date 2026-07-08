@@ -115,7 +115,7 @@ export default function Penghapusan() {
     ;(async () => {
       const rows: { id: number; nama: string }[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
         if (!data || data.length === 0) break
         rows.push(...data)
         if (data.length < 1000) break
@@ -123,11 +123,11 @@ export default function Penghapusan() {
       setSkpdList(rows)
     })()
     ;(async () => {
-      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
+      const { data: jenis } = await supabase.from('jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
       const labels: Record<string, string> = {}
       await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('admin_kodefikasi_bmd')
+        const { data } = await supabase.from('kodefikasi_bmd')
           .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
         const id = data?.[0]?.jenis_aset_id
         labels[prefix] = (id != null && namaById.get(id)) || prefix
@@ -342,7 +342,7 @@ export default function Penghapusan() {
                     {ditolak && j.rejected_reason && (
                       <p className="text-xs text-red-600">Alasan penolakan: {j.rejected_reason}</p>
                     )}
-                    {(j.payload?.dokumen_paths?.length || 0) > 0 && (
+                    {isAlih && (j.payload?.dokumen_paths?.length || 0) > 0 && (
                       <p className="text-xs text-gray-500">
                         Dokumen:{' '}
                         {j.payload!.dokumen_paths!.map(p => (
@@ -546,9 +546,8 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   async function uploadDokumen(files: FileList | null) {
     if (!files || files.length === 0) return
     setDokUploading(true)
-    const prefix = isAlih ? 'pengalihan' : 'penghapusan'
     for (const file of Array.from(files)) {
-      const path = `${prefix}/${crypto.randomUUID()}/${file.name}`
+      const path = `pengalihan/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
       if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
@@ -638,7 +637,6 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         skpd_id: skpdId, kategori: 'penghapusan', jenis,
         sub_jenis: jenis === 'penghapusan_pemindahtanganan' ? subJenis : null,
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
-        payload: { dokumen_paths: dokPaths },
       }).select(HEADER_COLS).single()
       if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
       h = data as unknown as Header
@@ -711,22 +709,24 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
               <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)}
                 placeholder={isAlih ? 'mis. Pengalihan kendaraan dinas ke Dinas Kesehatan' : 'mis. Penghapusan Lelang'} />
             </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs text-gray-500 mb-1">Dokumen Sumber (foto / PDF, bisa lebih dari satu)</label>
-              <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-                onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
-              {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-              {dokPaths.length > 0 && (
-                <ul className="mt-2 space-y-1">
-                  {dokPaths.map(p => (
-                    <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
-                      <span className="truncate">{namaFile(p)}</span>
-                      <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            {jenis === 'pengalihan_status' && (
+              <div className="sm:col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Dokumen Sumber (foto / PDF, bisa lebih dari satu)</label>
+                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
+                  onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
+                {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
+                {dokPaths.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {dokPaths.map(p => (
+                      <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
+                        <span className="truncate">{namaFile(p)}</span>
+                        <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
