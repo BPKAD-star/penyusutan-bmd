@@ -14,7 +14,7 @@ import KomptabelRadio from '@/components/KomptabelRadio'
 const PAGE_SIZE = 50
 
 type Row = {
-  nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
+  nibar: string; kode: string; nama_barang: string; skpd_id: number
   intra_ekstra: string | null; tgl_perolehan: string | null; nilai_perolehan: number
   akumulasi_2025: number; nilai_buku_awal: number; sisa_masa_manfaat_smt: number
   masa_manfaat_smt: number | null; beban_penyusutan_per_smt: number | null
@@ -54,12 +54,12 @@ export default function Page() {
 
   function buildQuery(f: Applied, withCount: boolean) {
     let q = supabase.from('aset_awal_2026')
-      .select('nibar,kode_barang,nama_barang,skpd_id,intra_ekstra,tgl_perolehan,nilai_perolehan,akumulasi_2025,nilai_buku_awal,sisa_masa_manfaat_smt,masa_manfaat_smt,beban_penyusutan_per_smt',
+      .select('nibar,kode,nama_barang,skpd_id,intra_ekstra,tgl_perolehan,nilai_perolehan,akumulasi_2025,nilai_buku_awal,sisa_masa_manfaat_smt,masa_manfaat_smt,beban_penyusutan_per_smt',
         withCount ? { count: 'exact' } : undefined)
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
-    if (f.golongan) q = q.like('kode_barang', `${f.golongan}.%`)
+    if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
-    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode_barang.ilike.${f.search}%`)
+    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
     return q.order('nilai_perolehan', { ascending: false })
   }
 
@@ -101,7 +101,7 @@ export default function Page() {
     }
     const ket = await fetchKet(all.map(r => r.nibar))
     exportToExcel(all.map(r => ({
-      'SKPD': skpdNama[r.skpd_id] || '', 'Kode Barang': r.kode_barang, 'Nama Barang': r.nama_barang, 'NIBAR': r.nibar,
+      'SKPD': skpdNama[r.skpd_id] || '', 'Kode Barang': r.kode, 'Nama Barang': r.nama_barang, 'NIBAR': r.nibar,
       'Komptabel': r.intra_ekstra || '', 'Tgl Perolehan': r.tgl_perolehan || '',
       'Masa Manfaat (Smt)': r.masa_manfaat_smt ?? '', 'Nilai Perolehan': r.nilai_perolehan,
       'Beban / Smt': r.beban_penyusutan_per_smt ?? '', 'Akumulasi 2025': r.akumulasi_2025,
@@ -188,7 +188,7 @@ export default function Page() {
                 ) : rows.map((r, i) => (
                   <tr key={r.nibar} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                     <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
-                    <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
+                    <td className="table-td text-xs text-gray-600">{r.kode}</td>
                     <td className="table-td">
                       <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
                       <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>

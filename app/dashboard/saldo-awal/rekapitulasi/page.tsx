@@ -13,7 +13,7 @@ import RekapMatrixTable, { METRIC_LABEL, type MatrixRow, type MetricOrAll, type 
 import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
 
-type SA = { skpd_id: number; kode_barang: string; nilai_perolehan: number; akumulasi_2025: number; beban_penyusutan_per_smt: number; nilai_buku_awal: number }
+type SA = { skpd_id: number; kode: string; nilai_perolehan: number; akumulasi_2025: number; beban_penyusutan_per_smt: number; nilai_buku_awal: number }
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
 
 export default function Page() {
@@ -34,13 +34,13 @@ export default function Page() {
     const mtx: Record<number, MatrixRow> = {}
     for (let from = 0; ; from += 1000) {
       let q = supabase.from('aset_awal_2026')
-        .select('skpd_id,kode_barang,nilai_perolehan,akumulasi_2025,beban_penyusutan_per_smt,nilai_buku_awal')
+        .select('skpd_id,kode,nilai_perolehan,akumulasi_2025,beban_penyusutan_per_smt,nilai_buku_awal')
       if (org.descendantIds) q = q.in('skpd_id', org.descendantIds)
       if (komptabel) q = q.eq('intra_ekstra', komptabel)
       const { data } = await q.range(from, from + 999)
       if (!data || data.length === 0) break
       for (const r of data as SA[]) {
-        const g = kodeLevel3(r.kode_barang)
+        const g = kodeLevel3(r.kode)
         const perolehan = r.nilai_perolehan || 0
         const akumulasi = r.akumulasi_2025 || 0
         const beban = r.beban_penyusutan_per_smt || 0
