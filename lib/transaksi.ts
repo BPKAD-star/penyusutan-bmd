@@ -66,7 +66,7 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       for (const k of [
         'nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'satuan',
         'nomor_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak', 'tanggal_dokumen_kepemilikan',
-        'titik_koordinat', 'lokasi', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
+        'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
         'asal_usul', 'kondisi_barang',
       ] as const) {
         if (typeof p[k] === 'string' && p[k]) patch[k] = p[k]
