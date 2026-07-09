@@ -18,10 +18,10 @@ import FormShell from './FormShell'
 
 // ── Field spesifikasi (dipakai alasan "Spesifikasi Barang" di bawah) ────────
 const SPEK_KOSONG = { nama_barang: '', spesifikasi_lainnya: '', merek_tipe: '', satuan: '' }
-const TANAH_KOSONG = { luas: '', nomor_dokumen_kepemilikan: '', tanggal_dokumen_kepemilikan: '', nama_dokumen_kepemilikan: '', jenis_hak: '' }
 const ATRIBUT_KOSONG = { asal_usul: '', kondisi_barang: '', tahun_pengadaan: '' }
-const HAK_OPT = ['HM (Hak Milik)', 'HGB (Hak Guna Bangunan)', 'HP (Hak Pakai)', 'HGU (Hak Guna Usaha)', 'HPL (Hak Pengelolaan)']
 const KONDISI_OPT = ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang', 'Tidak Ditemukan']
+// Field identitas tanah (nomor/jenis hak/luas/dll) TIDAK diedit di sini lagi —
+// dikelola khusus di menu GIS BMD (aset_bidang_tanah), biar gak ada 2 sumber.
 
 // ── Koreksi — satu alur ber-SK, 4 alasan ─────────────────────────────────────
 type Alasan = 'nilai_perolehan' | 'kuantitas_bertambah' | 'pencatatan_ganda' | 'spesifikasi'
@@ -340,9 +340,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   // ── Spesifikasi: satu barang + field yang diubah ──
   const [aset, setAset] = useState<AsetRingkas | null>(null)
   const [spek, setSpek] = useState(SPEK_KOSONG)
-  const [tanah, setTanah] = useState(TANAH_KOSONG)
   const [atribut, setAtribut] = useState(ATRIBUT_KOSONG)
-  const isTanah = aset?.kode.startsWith('1.3.1') ?? false
 
   async function tampilkan() {
     setLoading(true)
@@ -434,15 +432,6 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
     if (alasan === 'spesifikasi') {
       if (!aset) { setErr('Pilih barang yang dikoreksi.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
       const isiTeks = Object.fromEntries(Object.entries(spek).filter(([, v]) => v.trim() !== ''))
-      const isiTanah: Record<string, unknown> = {}
-      if (isTanah) {
-        if (tanah.nomor_dokumen_kepemilikan.trim()) isiTanah.nomor_dokumen_kepemilikan = tanah.nomor_dokumen_kepemilikan.trim()
-        if (tanah.tanggal_dokumen_kepemilikan) isiTanah.tanggal_dokumen_kepemilikan = tanah.tanggal_dokumen_kepemilikan
-        if (tanah.nama_dokumen_kepemilikan.trim()) isiTanah.nama_dokumen_kepemilikan = tanah.nama_dokumen_kepemilikan.trim()
-        if (tanah.jenis_hak.trim()) isiTanah.jenis_hak = tanah.jenis_hak.trim()
-        const luas = parseFloat(tanah.luas)
-        if (!isNaN(luas) && luas > 0) isiTanah.luas = luas
-      }
       const isiAtribut: Record<string, unknown> = {}
       if (atribut.asal_usul.trim()) isiAtribut.asal_usul = atribut.asal_usul.trim()
       if (atribut.kondisi_barang) isiAtribut.kondisi_barang = atribut.kondisi_barang
@@ -450,7 +439,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
         const th = parseInt(atribut.tahun_pengadaan, 10)
         if (!isNaN(th) && th > 0) isiAtribut.tahun_pengadaan = th
       }
-      const isi = { ...isiTeks, ...isiTanah, ...isiAtribut }
+      const isi = { ...isiTeks, ...isiAtribut }
       if (Object.keys(isi).length === 0) { setErr('Tidak ada field yang diubah.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
       const { error } = await catatTransaksi(supabase, {
         asetId: aset.id, jenis: 'koreksi_spesifikasi', headerId: h.id, payload: isi, keterangan: h.keterangan || undefined,
@@ -498,7 +487,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                     <input type="radio" className="mt-0.5" checked={alasan === o.value} disabled={o.disabled}
                       onChange={() => {
                         setAlasan(o.value); setSelNilai({}); setKandidat([]); setSurvivorId(null); setRows([]); setLoaded(false)
-                        setAset(null); setSpek(SPEK_KOSONG); setTanah(TANAH_KOSONG); setAtribut(ATRIBUT_KOSONG)
+                        setAset(null); setSpek(SPEK_KOSONG); setAtribut(ATRIBUT_KOSONG)
                       }} />
                     <span>
                       <span className="font-medium text-gray-800">{o.label}</span>
@@ -686,40 +675,13 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                 </div>
               ))}
             </div>
-            {isTanah && (
+            {(aset?.kode.startsWith('1.3.1') ?? false) && (
               <div className="pt-3 border-t border-gray-100">
-                <p className="text-xs font-medium text-gray-600 mb-2">Data Tanah (kode 1.3.1)</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Luas (m²)</label>
-                    <input type="number" min="0" step="0.01" className="select-filter w-full" value={tanah.luas}
-                      placeholder="(kosongkan jika tidak berubah)" onChange={e => setTanah(s => ({ ...s, luas: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Nomor Dokumen Kepemilikan</label>
-                    <input className="select-filter w-full" value={tanah.nomor_dokumen_kepemilikan} placeholder="(kosongkan jika tidak berubah)"
-                      onChange={e => setTanah(s => ({ ...s, nomor_dokumen_kepemilikan: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Tanggal Dokumen Kepemilikan</label>
-                    <input type="date" className="select-filter w-full" max={new Date().toISOString().slice(0, 10)}
-                      value={tanah.tanggal_dokumen_kepemilikan}
-                      onChange={e => setTanah(s => ({ ...s, tanggal_dokumen_kepemilikan: e.target.value }))} />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Nama Dokumen Kepemilikan</label>
-                    <input className="select-filter w-full" value={tanah.nama_dokumen_kepemilikan} placeholder="(kosongkan jika tidak berubah)"
-                      onChange={e => setTanah(s => ({ ...s, nama_dokumen_kepemilikan: e.target.value }))} />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs text-gray-500 mb-1">Jenis Hak</label>
-                    <select className="select-filter w-full" value={tanah.jenis_hak}
-                      onChange={e => setTanah(s => ({ ...s, jenis_hak: e.target.value }))}>
-                      <option value="">(kosongkan jika tidak berubah)</option>
-                      {HAK_OPT.map(h => <option key={h} value={h}>{h}</option>)}
-                    </select>
-                  </div>
-                </div>
+                <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
+                  Field identitas tanah (luas, nomor & jenis hak, dokumen kepemilikan, titik koordinat)
+                  dikelola di menu <span className="font-medium text-gray-700">GIS BMD</span> — termasuk
+                  pemecahan per bidang tanah. Di sini cukup untuk nama/spesifikasi umum.
+                </p>
               </div>
             )}
             <div className="pt-3 border-t border-gray-100">

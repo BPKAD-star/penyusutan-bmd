@@ -15,6 +15,7 @@
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
 // selalu menjumlahkan nilai perolehan SELURUH hasil filter. Angka tanpa "Rp".
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel } from '@/lib/export'
@@ -122,6 +123,7 @@ export default function DaftarBarangPage() {
   const [data, setData] = useState<Row[]>([])          // baris yang tampil (halaman aktif / semua)
   const [allVisible, setAllVisible] = useState<Row[]>([]) // seluruh baris visible di periode (utk paginasi & export)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
+  const [bidangCount, setBidangCount] = useState<Record<string, number>>({}) // aset_id → jumlah bidang (Tanah, dari aset_bidang_tanah)
   const [ownerOverride, setOwnerOverride] = useState<Map<string, number | null>>(new Map()) // aset_id → SKPD pemilik period-aware
   const [total, setTotal] = useState(0)
   const [grandTotal, setGrandTotal] = useState(0)
@@ -191,6 +193,17 @@ export default function DaftarBarangPage() {
       out.push(...((data as unknown as Row[]) || []))
     }
     return out
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Jumlah bidang tanah per aset (aset_bidang_tanah) — utk badge di Daftar
+  // Barang golongan Tanah. Identitas per bidang dikelola di menu GIS BMD.
+  const fetchBidangCount = useCallback(async (ids: string[]) => {
+    const cnt: Record<string, number> = {}
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await supabase.from('aset_bidang_tanah').select('aset_id').in('aset_id', ids.slice(i, i + 200))
+      for (const b of (data || []) as { aset_id: string }[]) cnt[b.aset_id] = (cnt[b.aset_id] || 0) + 1
+    }
+    return cnt
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Uraian (nama baku) per kode dari kodefikasi_bmd.
@@ -306,6 +319,7 @@ export default function DaftarBarangPage() {
     setShowAll(visible.length <= SHOW_ALL_MAX)
     showPage(visible, 0)
     setUraianMap(await fetchUraian(visible.map(r => r.kode)))
+    setBidangCount(f.golongan === '1.3.1' ? await fetchBidangCount(visible.map(r => r.id)) : {})
     setLoading(false)
   }
 
@@ -407,6 +421,13 @@ export default function DaftarBarangPage() {
         <>
           <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
           <p className="text-gray-400 text-xs mt-0.5">{r.nibar || '-'}</p>
+          {(bidangCount[r.id] || 0) > 0 && (
+            <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar || '')}`}
+              className="inline-flex items-center gap-1 mt-1 text-[11px] text-teal hover:underline"
+              title="Tanah ini terbagi beberapa bidang/sertifikat — kelola & lihat di GIS BMD">
+              🗺 {bidangCount[r.id]} bidang
+            </Link>
+          )}
         </>
       )
       case 'kode': return r.kode

@@ -57,7 +57,20 @@ export default function GisPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Deep-link dari Daftar Barang (badge "🗺 N bidang"): ?cari=<nibar> → prefill
+  // pencarian supaya list langsung nyaring ke tanah itu. Baca dari window (bukan
+  // useSearchParams) biar gak butuh Suspense boundary. Sekali saja saat mount.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('cari')
+    if (c) setSearch(c)
+  }, [])
+
   const selected = rows.find(r => r.id === selectedId) || null
+
+  // Auto-pilih kalau hasil pencarian (mis. dari deep-link) tepat 1 aset.
+  useEffect(() => {
+    if (!selectedId && rows.length === 1) setSelectedId(rows[0].id)
+  }, [rows, selectedId])
 
   // Warna marker: merah (sengketa) > kuning (ada titik, belum ada sertifikat)
   // > hijau (ada titik + minimal 1 bidang/sertifikat). Tanpa titik = gak dipin.
