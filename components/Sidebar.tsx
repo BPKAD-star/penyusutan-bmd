@@ -23,12 +23,13 @@ const ICON = {
   building: ic('M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4'),
   rekap: ic('M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'),
   external: ic('M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'),
-  dokumen: ic('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'),
   logout: ic('M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1'),
+  chat: ic('M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z'),
 }
 
 const navTree: NavNode[] = [
   { type: 'leaf', href: '/dashboard', label: 'Dashboard' },
+  { type: 'leaf', href: '/dashboard/chat', label: 'Chat Grup' },
   { type: 'leaf', href: '/dashboard/rkbmd', label: 'RKBMD' },
   {
     type: 'group', label: 'Saldo Awal', icon: ICON.saldo, children: [
@@ -100,7 +101,6 @@ const navTree: NavNode[] = [
     ],
   },
   { type: 'leaf', href: '/dashboard/gis', label: 'GIS BMD' },
-  { type: 'leaf', href: '/dashboard/dokumen-sumber', label: 'Dokumen Sumber' },
 ]
 
 const adminGroup: NavNode = {
@@ -121,11 +121,11 @@ const iconFor = (label: string): React.ReactNode => {
   if (label === 'Daftar Barang') return ICON.daftar
   if (label === 'Penyusutan') return ICON.penyusutan
   if (label === 'Dashboard') return ICON.dashboard
+  if (label === 'Chat Grup') return ICON.chat
   if (label === 'RKBMD') return ICON.pelaporan
   if (label === 'Inventarisasi') return ICON.daftar
   if (label === 'WasDal') return ICON.building
   if (label === 'Rekapitulasi') return ICON.rekap
-  if (label === 'Dokumen Sumber') return ICON.dokumen
   return null
 }
 
