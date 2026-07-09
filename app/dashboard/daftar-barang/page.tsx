@@ -29,7 +29,7 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 
 // Event yang menyembunyikan / memunculkan kembali aset (serap/hapus vs batal) —
 // sama dgn menu Penyusutan. Dipakai untuk visibilitas period-aware.
-const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan']
+const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan', 'koreksi_pencatatan_ganda']
 const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan']
 
 const SELECT_COLS = 'id,nibar,kode,nama_barang,spesifikasi_lainnya,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
