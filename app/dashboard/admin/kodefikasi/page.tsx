@@ -1,12 +1,15 @@
 'use client'
-// Admin > Kodefikasi BMD — filter dulu (jenis + search), baru klik Tampilkan
-// (pola sama Rekapitulasi), biar nggak load ribuan baris sekaligus & default
-// view nggak kebanjiran baris "tanpa jenis" (unclassified) — opsi "Semua"
-// SENGAJA cuma nyaring yang SUDAH berjenis, baris tanpa jenis nggak pernah
-// otomatis muncul (tetap ada di DB, cuma disembunyikan dari tampilan default).
-import { useEffect, useState } from 'react'
+// Admin > Kodefikasi BMD — filter dulu (golongan/kode_jenis + search), baru
+// klik Tampilkan (pola sama Rekapitulasi), biar nggak load ribuan baris
+// sekaligus & default view nggak kebanjiran baris "tanpa jenis" (kode_jenis
+// di luar 9 golongan resmi). Golongan diambil LANGSUNG dari kolom kode_jenis
+// (BUKAN jenis_aset_id — kolom itu di admin_kodefikasi_bmd nyaris semua NULL,
+// cuma dipakai app di tempat lain sbg lookup label per golongan, lihat
+// GOLONGAN_DAFTAR_BARANG di lib/bmd.ts).
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
+import { GOLONGAN_REKAP } from '@/lib/bmd'
 
 type Kodefikasi = {
   kode: string
@@ -14,35 +17,33 @@ type Kodefikasi = {
   kode_objek: string | null
   kode_rincian: string | null
   kode_sub_rincian: string | null
-  jenis_aset_id: number | null
   masa_manfaat_tahun: number | null
   batas_kapitalisasi: number | null
 }
 
-type JenisAset = { id: number; uraian: string }
+// Persediaan (1.1.7) + 8 golongan aset tetap resmi (Permendagri 108/2016).
+const GOLONGAN_KODEFIKASI: { kode: string; uraian: string }[] = [
+  { kode: '1.1.7', uraian: 'Persediaan' },
+  ...GOLONGAN_REKAP.map(g => ({ kode: g.kode, uraian: g.uraian })),
+]
 
-const KOLOM = 'kode,uraian,kode_objek,kode_rincian,kode_sub_rincian,jenis_aset_id,masa_manfaat_tahun,batas_kapitalisasi'
+const KOLOM = 'kode,uraian,kode_objek,kode_rincian,kode_sub_rincian,masa_manfaat_tahun,batas_kapitalisasi'
 const MAX_HASIL = 500
 
 export default function AdminKodefikasiPage() {
   const supabase = createClient()
-  const [jenisList, setJenisList] = useState<JenisAset[]>([])
-  const [jenisFilter, setJenisFilter] = useState('ALL') // 'ALL' = semua yang SUDAH berjenis; angka = id spesifik
+  const [jenisFilter, setJenisFilter] = useState('ALL') // 'ALL' = 9 golongan resmi; atau kode_jenis spesifik
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<Kodefikasi[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [savingKode, setSavingKode] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
 
-  useEffect(() => {
-    supabase.from('admin_jenis_aset').select('id,uraian').order('uraian').then(({ data }) => setJenisList(data || []))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   async function tampilkan() {
     setLoading(true); setMsg('')
     let q = supabase.from('admin_kodefikasi_bmd').select(KOLOM)
-    if (jenisFilter === 'ALL') q = q.not('jenis_aset_id', 'is', null)
-    else q = q.eq('jenis_aset_id', Number(jenisFilter))
+    if (jenisFilter === 'ALL') q = q.in('kode_jenis', GOLONGAN_KODEFIKASI.map(g => g.kode))
+    else q = q.eq('kode_jenis', jenisFilter)
     if (search.trim()) q = q.or(`kode.ilike.%${search.trim()}%,uraian.ilike.%${search.trim()}%`)
     const { data, error } = await q.order('kode').limit(MAX_HASIL)
     if (error) { setMsg(`Error: ${error.message}`); setLoading(false); return }
@@ -58,7 +59,6 @@ export default function AdminKodefikasiPage() {
     setSavingKode(row.kode)
     setMsg('')
     const { error } = await supabase.from('admin_kodefikasi_bmd').update({
-      jenis_aset_id: row.jenis_aset_id,
       masa_manfaat_tahun: row.masa_manfaat_tahun,
       batas_kapitalisasi: row.batas_kapitalisasi,
     }).eq('kode', row.kode)
@@ -74,8 +74,8 @@ export default function AdminKodefikasiPage() {
           <div>
             <label className="block text-xs text-gray-500 mb-1">Jenis Aset</label>
             <select className="select-filter" value={jenisFilter} onChange={e => setJenisFilter(e.target.value)}>
-              <option value="ALL">— Semua (yang sudah berjenis) —</option>
-              {jenisList.map(j => <option key={j.id} value={j.id}>{j.uraian}</option>)}
+              <option value="ALL">— Semua (9 golongan resmi) —</option>
+              {GOLONGAN_KODEFIKASI.map(g => <option key={g.kode} value={g.kode}>{g.kode} — {g.uraian}</option>)}
             </select>
           </div>
           <div className="flex-1 min-w-[220px]">
@@ -102,7 +102,6 @@ export default function AdminKodefikasiPage() {
                   <th className="table-th">Rincian Objek</th>
                   <th className="table-th">Sub Rincian Objek</th>
                   <th className="table-th">Uraian Barang</th>
-                  <th className="table-th">Jenis Aset</th>
                   <th className="table-th">Masa Manfaat (th)</th>
                   <th className="table-th">Nilai Kapitalisasi</th>
                   <th className="table-th">Aksi</th>
@@ -110,7 +109,7 @@ export default function AdminKodefikasiPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {rows.length === 0 ? (
-                  <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Tidak ada hasil.</td></tr>
+                  <tr><td colSpan={8} className="table-td text-center py-8 text-gray-400">Tidak ada hasil.</td></tr>
                 ) : rows.map(row => (
                   <tr key={row.kode}>
                     <td className="table-td text-xs font-mono">{row.kode}</td>
@@ -118,13 +117,6 @@ export default function AdminKodefikasiPage() {
                     <td className="table-td text-xs font-mono text-gray-500">{row.kode_rincian || '-'}</td>
                     <td className="table-td text-xs font-mono text-gray-500">{row.kode_sub_rincian || '-'}</td>
                     <td className="table-td text-xs text-gray-600 max-w-xs truncate" title={row.uraian || ''}>{row.uraian}</td>
-                    <td className="table-td">
-                      <select className="select-filter text-xs py-1" value={row.jenis_aset_id ?? ''}
-                        onChange={e => updateRow(row.kode, { jenis_aset_id: e.target.value ? Number(e.target.value) : null })}>
-                        <option value="">— tanpa jenis —</option>
-                        {jenisList.map(j => <option key={j.id} value={j.id}>{j.uraian}</option>)}
-                      </select>
-                    </td>
                     <td className="table-td">
                       <input type="number" className="select-filter text-xs py-1 w-20" value={row.masa_manfaat_tahun ?? ''}
                         onChange={e => updateRow(row.kode, { masa_manfaat_tahun: e.target.value === '' ? null : Number(e.target.value) })} />
