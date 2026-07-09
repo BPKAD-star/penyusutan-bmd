@@ -7,8 +7,12 @@
 // SENGAJA TANPA clustering (keputusan user 2026-07-10): titik disebar apa
 // adanya walau ribuan (~4300+ bidang termasuk jalan) — bukan pola GIS yang
 // diinginkan kalau dikelompokkan jadi bubble angka.
+//
+// Full-bleed (ngisi 100% parent, BUKAN tinggi tetap px) — dipakai sbg layer
+// dasar halaman GIS yang sekarang full-frame, panel kiri/kanan overlay di
+// atasnya. Zoom control digeser ke bottomright biar gak numpuk panel kiri.
 import { useEffect, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, ZoomControl, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -63,19 +67,18 @@ export default function GisMap({ markers, onSelect }: { markers: GisMarker[]; on
   }, []) // eslint-disable-line react-hooks/exhaustive-deps — cuma posisi AWAL; re-center berikutnya via FocusActive
 
   return (
-    <div className="rounded-lg overflow-hidden border border-gray-200" style={{ height: 520 }}>
-      <MapContainer center={initialCenter} zoom={markers.length > 0 ? 13 : 11} style={{ height: '100%', width: '100%' }}>
-        <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        {markers.map((m, i) => (
-          <Marker key={`${m.id}-${i}`} position={[m.lat, m.lng]} icon={dotIcon(m.color, m.active)} eventHandlers={{ click: () => onSelect(m.id) }}>
-            <Popup>
-              <p className="font-medium text-sm">{m.title}</p>
-              <p className="text-xs text-gray-500">{m.sub}</p>
-            </Popup>
-          </Marker>
-        ))}
-        <FocusActive markers={markers} />
-      </MapContainer>
-    </div>
+    <MapContainer center={initialCenter} zoom={markers.length > 0 ? 13 : 11} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+      <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <ZoomControl position="bottomright" />
+      {markers.map((m, i) => (
+        <Marker key={`${m.id}-${i}`} position={[m.lat, m.lng]} icon={dotIcon(m.color, m.active)} eventHandlers={{ click: () => onSelect(m.id) }}>
+          <Popup>
+            <p className="font-medium text-sm">{m.title}</p>
+            <p className="text-xs text-gray-500">{m.sub}</p>
+          </Popup>
+        </Marker>
+      ))}
+      <FocusActive markers={markers} />
+    </MapContainer>
   )
 }
