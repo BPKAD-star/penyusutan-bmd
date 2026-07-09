@@ -12,7 +12,7 @@
 // dasar halaman GIS yang sekarang full-frame, panel kiri/kanan overlay di
 // atasnya. Zoom control digeser ke bottomright biar gak numpuk panel kiri.
 import { useEffect, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, ZoomControl, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, ZoomControl, LayersControl, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -68,7 +68,14 @@ export default function GisMap({ markers, onSelect }: { markers: GisMarker[]; on
 
   return (
     <MapContainer center={initialCenter} zoom={markers.length > 0 ? 13 : 11} zoomControl={false} style={{ height: '100%', width: '100%' }}>
-      <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <LayersControl position="topright">
+        <LayersControl.BaseLayer checked name="Jalan">
+          <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        </LayersControl.BaseLayer>
+        <LayersControl.BaseLayer name="Satelit">
+          <TileLayer attribution='Tiles &copy; Esri' url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+        </LayersControl.BaseLayer>
+      </LayersControl>
       <ZoomControl position="bottomright" />
       {markers.map((m, i) => (
         <Marker key={`${m.id}-${i}`} position={[m.lat, m.lng]} icon={dotIcon(m.color, m.active)} eventHandlers={{ click: () => onSelect(m.id) }}>
