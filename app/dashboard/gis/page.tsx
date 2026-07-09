@@ -32,8 +32,9 @@ const GisMap = dynamic(() => import('@/components/gis/GisMap'), {
 })
 
 type AsetRow = {
-  id: string; nibar: string | null; kode: string; nama_barang: string | null
+  id: string; nibar: string | null; kode: string; nama_barang: string | null; uraian_barang: string | null
   spesifikasi_lainnya: string | null; jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null
+  nama_dokumen_kepemilikan: string | null; tanggal_dokumen_kepemilikan: string | null
   tgl_perolehan: string | null; nilai_perolehan: number; luas: number | null
   latitude: number | null; longitude: number | null
   skpd_id: number | null; skpd: { nama: string } | null
@@ -41,7 +42,7 @@ type AsetRow = {
 type BidangRingkas = { aset_id: string; jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null; latitude: number | null; longitude: number | null }
 type Status = 'sengketa' | 'proses' | 'bersertifikat'
 
-const SELECT_COLS = 'id,nibar,kode,nama_barang,spesifikasi_lainnya,jenis_hak,nomor_dokumen_kepemilikan,tgl_perolehan,nilai_perolehan,luas,latitude,longitude,skpd_id,skpd:skpd_id(nama)'
+const SELECT_COLS = 'id,nibar,kode,nama_barang,uraian_barang,spesifikasi_lainnya,jenis_hak,nomor_dokumen_kepemilikan,nama_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,tgl_perolehan,nilai_perolehan,luas,latitude,longitude,skpd_id,skpd:skpd_id(nama)'
 const fmtTgl = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
 const fmtLuas = (v: number | null) => v == null ? '-' : `${new Intl.NumberFormat('id-ID').format(v)} m²`
 
@@ -170,7 +171,7 @@ export default function GisPage() {
             placeholder="Semua SKPD..." />
         </div>
 
-        <div className="flex-1 overflow-y-auto pointer-events-auto space-y-2 pr-0.5">
+        <div className="flex-1 overflow-y-auto scrollbar-hide pointer-events-auto space-y-2 pr-0.5">
           {loading ? (
             <p className="text-xs text-gray-400 text-center py-8 bg-white/90 rounded-lg">Memuat...</p>
           ) : filtered.length === 0 ? (
@@ -219,23 +220,23 @@ export default function GisPage() {
               </div>
               <button onClick={() => setSelectedId(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
             </div>
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div><p className="text-gray-400">SKPD</p><p className="text-gray-700 mt-0.5">{selected.skpd?.nama || '-'}</p></div>
-              <div><p className="text-gray-400">Kode Barang</p><p className="text-gray-700 mt-0.5 font-mono">{selected.kode}</p></div>
-              <div><p className="text-gray-400">NIBAR</p><p className="text-gray-700 mt-0.5 font-mono break-all">{selected.nibar || '-'}</p></div>
-              <div><p className="text-gray-400">Spesifikasi</p><p className="text-gray-700 mt-0.5">{selected.spesifikasi_lainnya || '-'}</p></div>
-              <div><p className="text-gray-400">Luas</p><p className="text-gray-700 mt-0.5">{fmtLuas(selected.luas)}</p></div>
-              <div><p className="text-gray-400">Tgl Perolehan</p><p className="text-gray-700 mt-0.5">{fmtTgl(selected.tgl_perolehan)}</p></div>
-              <div className="col-span-2"><p className="text-gray-400">Nilai Perolehan</p><p className="text-gray-700 mt-0.5">{formatRupiah(selected.nilai_perolehan)}</p></div>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between gap-3"><span className="text-gray-400">SKPD</span><span className="text-gray-700 text-right">{selected.skpd?.nama || '-'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400">Kode Barang</span><span className="text-gray-700 font-mono text-right">{selected.kode}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400">NIBAR</span><span className="text-gray-700 font-mono text-right break-all">{selected.nibar || '-'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Uraian Barang</span><span className="text-gray-700 text-right">{selected.uraian_barang || '-'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Spesifikasi Nama Barang</span><span className="text-gray-700 text-right">{selected.spesifikasi_lainnya || '-'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400">Luas</span><span className="text-gray-700 text-right">{fmtLuas(selected.luas)}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400">Tanggal Perolehan</span><span className="text-gray-700 text-right">{fmtTgl(selected.tgl_perolehan)}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400">Nilai Perolehan</span><span className="text-gray-700 text-right">{formatRupiah(selected.nilai_perolehan)}</span></div>
             </div>
           </div>
-          <div className="shadow-lg rounded-xl">
-            <KelolaBidangPanel asetId={selected.id} asetNama={selected.nama_barang || '-'} asetNibar={selected.nibar}
-              onChanged={() => { /* re-fetch bidang aset ini aja, list utama gak perlu di-reload penuh */
-                supabase.from('aset_bidang_tanah').select('aset_id,jenis_hak,nomor_dokumen_kepemilikan,latitude,longitude').eq('aset_id', selected.id)
-                  .then(({ data }) => setBidangByAset(prev => ({ ...prev, [selected.id]: (data as BidangRingkas[]) || [] })))
-              }} />
-          </div>
+          <KelolaBidangPanel asetId={selected.id}
+            asetDokumen={{ jenis_hak: selected.jenis_hak, nomor_dokumen_kepemilikan: selected.nomor_dokumen_kepemilikan, nama_dokumen_kepemilikan: selected.nama_dokumen_kepemilikan, tanggal_dokumen_kepemilikan: selected.tanggal_dokumen_kepemilikan }}
+            onChanged={() => {
+              supabase.from('aset_bidang_tanah').select('aset_id,jenis_hak,nomor_dokumen_kepemilikan,latitude,longitude').eq('aset_id', selected.id)
+                .then(({ data }) => setBidangByAset(prev => ({ ...prev, [selected.id]: (data as BidangRingkas[]) || [] })))
+            }} />
         </div>
       )}
     </div>

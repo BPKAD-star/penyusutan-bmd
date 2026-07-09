@@ -1,8 +1,14 @@
 'use client'
-// Panel Kelola Bidang — daftar + tambah/edit/hapus baris aset_bidang_tanah
-// milik 1 aset Tanah terpilih. BUKAN ledger (data referensi/deskriptif),
-// jadi CRUD langsung (insert/update/delete), TANPA jurnal_header/catatTransaksi
-// — bobot & pola sama persis app/dashboard/admin/skpd/page.tsx.
+// Panel Kelola Bidang — tabel ringkas dokumen kepemilikan (jenis hak/nama/
+// nomor/tanggal/PDF) + tambah/edit/hapus baris aset_bidang_tanah milik 1 aset
+// Tanah terpilih. BUKAN ledger (data referensi/deskriptif), jadi CRUD
+// langsung (insert/update/delete), TANPA jurnal_header/catatTransaksi.
+//
+// Baris "virtual": kalau aset ini BELUM punya baris aset_bidang_tanah sama
+// sekali tapi kolom dokumen kepemilikan di `aset` sendiri (asetDokumen prop)
+// sudah keisi (data lama sebelum sistem bidang ada), tampilkan sebagai 1 baris
+// non-editable dengan tombol "Lengkapi" — begitu diisi, jadi baris bidang
+// resmi pertama (form ke-prefill dari data aset itu).
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
@@ -16,6 +22,10 @@ type Bidang = {
   tanggal_berakhir_hak: string | null; alamat_detail: string | null; latitude: number | null; longitude: number | null
   sertifikat_path: string | null; keterangan: string | null
 }
+type AsetDokumen = {
+  jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null
+  nama_dokumen_kepemilikan: string | null; tanggal_dokumen_kepemilikan: string | null
+}
 
 const FORM_KOSONG = {
   nama_bidang: '', luas: '', jenis_hak: '', nomor_dokumen_kepemilikan: '', tanggal_dokumen_kepemilikan: '',
@@ -23,9 +33,10 @@ const FORM_KOSONG = {
 }
 
 const namaFile = (path: string) => path.split('/').pop() || path
+const fmtTgl = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
 
-export default function KelolaBidangPanel({ asetId, asetNama, asetNibar, onChanged }: {
-  asetId: string; asetNama: string; asetNibar: string | null; onChanged?: () => void
+export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
+  asetId: string; asetDokumen?: AsetDokumen | null; onChanged?: () => void
 }) {
   const supabase = createClient()
   const [rows, setRows] = useState<Bidang[]>([])
@@ -63,6 +74,19 @@ export default function KelolaBidangPanel({ asetId, asetNama, asetNibar, onChang
       keterangan: b.keterangan || '',
     })
     setSertifikatPath(b.sertifikat_path)
+    setShowForm(true)
+  }
+  // Lengkapi data lama (dari kolom aset) jadi baris bidang resmi pertama.
+  function openLengkapi() {
+    setEditId(null)
+    setForm({
+      ...FORM_KOSONG,
+      jenis_hak: asetDokumen?.jenis_hak || '',
+      nomor_dokumen_kepemilikan: asetDokumen?.nomor_dokumen_kepemilikan || '',
+      nama_dokumen_kepemilikan: asetDokumen?.nama_dokumen_kepemilikan || '',
+      tanggal_dokumen_kepemilikan: asetDokumen?.tanggal_dokumen_kepemilikan || '',
+    })
+    setSertifikatPath(null)
     setShowForm(true)
   }
 
@@ -128,21 +152,77 @@ export default function KelolaBidangPanel({ asetId, asetNama, asetNibar, onChang
     else { load(); onChanged?.() }
   }
 
+  const adaDataLama = !!(asetDokumen?.jenis_hak || asetDokumen?.nomor_dokumen_kepemilikan || asetDokumen?.nama_dokumen_kepemilikan)
+  const tampilkanVirtual = !loading && rows.length === 0 && adaDataLama
+
   return (
-    <div className="card p-5">
-      <div className="flex items-start justify-between mb-1">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-800">{asetNama}</h3>
-          <p className="text-xs text-gray-400">{asetNibar || '-'}</p>
-        </div>
-        <button className="btn-primary text-xs" onClick={() => (showForm ? setShowForm(false) : openCreate())}>
-          {showForm ? 'Batal' : '+ Tambah Bidang'}
-        </button>
-      </div>
+    <div className="card p-4">
+      <p className="text-sm font-semibold text-gray-800 mb-3">Dokumen Kepemilikan</p>
 
       {msg && (
-        <div className={`mt-3 p-2 rounded-lg text-xs ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
+        <div className={`mb-3 p-2 rounded-lg text-xs ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
       )}
+
+      {loading ? (
+        <p className="text-xs text-gray-400 text-center py-4">Memuat...</p>
+      ) : (
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-gray-400 border-b border-gray-100">
+                <th className="font-medium py-1.5 px-1">Jenis Hak</th>
+                <th className="font-medium py-1.5 px-1">Nama</th>
+                <th className="font-medium py-1.5 px-1">Nomor</th>
+                <th className="font-medium py-1.5 px-1">Tanggal</th>
+                <th className="font-medium py-1.5 px-1">PDF</th>
+                <th className="font-medium py-1.5 px-1 text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.length === 0 && !tampilkanVirtual && (
+                <tr><td colSpan={6} className="text-center text-gray-400 py-4">Belum ada data kepemilikan.</td></tr>
+              )}
+              {tampilkanVirtual && (
+                <tr className="text-gray-500 italic">
+                  <td className="py-1.5 px-1">{asetDokumen?.jenis_hak || '-'}</td>
+                  <td className="py-1.5 px-1">{asetDokumen?.nama_dokumen_kepemilikan || '-'}</td>
+                  <td className="py-1.5 px-1">{asetDokumen?.nomor_dokumen_kepemilikan || '-'}</td>
+                  <td className="py-1.5 px-1">{fmtTgl(asetDokumen?.tanggal_dokumen_kepemilikan || null)}</td>
+                  <td className="py-1.5 px-1">-</td>
+                  <td className="py-1.5 px-1 text-right">
+                    <button onClick={openLengkapi} className="text-teal hover:underline not-italic">Lengkapi</button>
+                  </td>
+                </tr>
+              )}
+              {rows.map(b => (
+                <tr key={b.id} className="text-gray-700">
+                  <td className="py-1.5 px-1">{b.jenis_hak || '-'}</td>
+                  <td className="py-1.5 px-1">{b.nama_dokumen_kepemilikan || '-'}</td>
+                  <td className="py-1.5 px-1">{b.nomor_dokumen_kepemilikan || '-'}</td>
+                  <td className="py-1.5 px-1">{fmtTgl(b.tanggal_dokumen_kepemilikan)}</td>
+                  <td className="py-1.5 px-1">
+                    {b.sertifikat_path ? (
+                      <button onClick={() => lihatSertifikat(b.sertifikat_path!)} className="text-teal hover:underline">Lihat</button>
+                    ) : '-'}
+                  </td>
+                  <td className="py-1.5 px-1 text-right whitespace-nowrap">
+                    <button onClick={() => openEdit(b)} className="text-teal hover:underline mr-2">Edit</button>
+                    <button onClick={() => handleDelete(b)} className="text-red-500 hover:underline">Hapus</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="mt-3 flex justify-center">
+        <button onClick={() => (showForm ? setShowForm(false) : openCreate())}
+          title={showForm ? 'Batal' : 'Tambah bidang'}
+          className="w-7 h-7 rounded-full bg-teal text-white flex items-center justify-center text-base leading-none hover:bg-teal-light transition-colors">
+          {showForm ? '×' : '+'}
+        </button>
+      </div>
 
       {showForm && (
         <form onSubmit={handleSubmit} className="mt-4 space-y-3 border-t border-gray-100 pt-4">
@@ -219,34 +299,6 @@ export default function KelolaBidangPanel({ asetId, asetNama, asetNibar, onChang
           <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Menyimpan...' : 'Simpan Bidang'}</button>
         </form>
       )}
-
-      <div className="mt-4 border-t border-gray-100 pt-3">
-        {loading ? (
-          <p className="text-xs text-gray-400 text-center py-4">Memuat...</p>
-        ) : rows.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-4">Belum ada bidang tercatat.</p>
-        ) : (
-          <ul className="space-y-2">
-            {rows.map(b => (
-              <li key={b.id} className="border border-gray-100 rounded-lg p-3 text-xs">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-gray-800">{b.nama_bidang || '(tanpa nama)'}</p>
-                    <p className="text-gray-500 mt-0.5">
-                      {b.nomor_dokumen_kepemilikan || 'Belum ada sertifikat'} · {b.jenis_hak || '-'} · {b.luas != null ? `${b.luas} m²` : '-'}
-                    </p>
-                    {b.tanggal_berakhir_hak && <p className="text-gray-400 mt-0.5">Berakhir: {b.tanggal_berakhir_hak}</p>}
-                  </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button onClick={() => openEdit(b)} className="text-teal hover:underline">Edit</button>
-                    <button onClick={() => handleDelete(b)} className="text-red-500 hover:underline">Hapus</button>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   )
 }
