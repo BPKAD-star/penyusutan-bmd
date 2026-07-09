@@ -3,9 +3,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 
-type Skpd = { id: number; nama: string; level: number; parent_id: number | null; kode_lokasi: string | null }
+type Skpd = { id: number; nama: string; level: number; parent_id: number | null; kode_skpd: string | null }
 
-const FORM_KOSONG = { nama: '', kode_lokasi: '', parent_id: '' as number | '' }
+const FORM_KOSONG = { nama: '', kode_skpd: '', parent_id: '' as number | '' }
 
 export default function AdminSkpdPage() {
   const supabase = createClient()
@@ -20,7 +20,7 @@ export default function AdminSkpdPage() {
   async function load() {
     const rows: Skpd[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id,kode_lokasi').range(from, from + 999)
+      const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id,kode_skpd').range(from, from + 999)
       if (!data || data.length === 0) break
       rows.push(...(data as Skpd[]))
       if (data.length < 1000) break
@@ -64,13 +64,13 @@ export default function AdminSkpdPage() {
 
   function openCreate(parentId: number | null) {
     setEditId(null)
-    setForm({ nama: '', kode_lokasi: '', parent_id: parentId ?? '' })
+    setForm({ nama: '', kode_skpd: '', parent_id: parentId ?? '' })
     setShowForm(true)
   }
 
   function openEdit(s: Skpd) {
     setEditId(s.id)
-    setForm({ nama: s.nama, kode_lokasi: s.kode_lokasi || '', parent_id: s.parent_id ?? '' })
+    setForm({ nama: s.nama, kode_skpd: s.kode_skpd || '', parent_id: s.parent_id ?? '' })
     setShowForm(true)
   }
 
@@ -86,7 +86,7 @@ export default function AdminSkpdPage() {
     }
 
     const payload = {
-      nama: form.nama, kode_lokasi: form.kode_lokasi.trim() || null,
+      nama: form.nama, kode_skpd: form.kode_skpd.trim() || null,
       parent_id: form.parent_id === '' ? null : Number(form.parent_id),
     }
     const { error } = editId
@@ -135,8 +135,9 @@ export default function AdminSkpdPage() {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Kode SKPD</label>
-              <input className="select-filter w-full font-mono" placeholder="mis. 01.02.03.4567.8901" value={form.kode_lokasi}
-                onChange={e => setForm(f => ({ ...f, kode_lokasi: e.target.value }))} />
+              <input className="select-filter w-full font-mono" placeholder="mis. 01.02.03.4567.8901" value={form.kode_skpd}
+                onChange={e => setForm(f => ({ ...f, kode_skpd: e.target.value }))} />
+              <p className="text-xs text-amber-600 mt-1">Hati-hati: dipakai buat generate NIBAR barang baru (Pengadaan/PerolehanManual). Barang lama yang sudah py NIBAR TIDAK ikut berubah kalau kode ini diedit.</p>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Induk (Parent)</label>
@@ -173,7 +174,7 @@ export default function AdminSkpdPage() {
               <tr><td colSpan={4} className="table-td text-center py-8 text-gray-400">Belum ada SKPD.</td></tr>
             ) : flatTree.map(s => (
               <tr key={s.id}>
-                <td className="table-td text-xs font-mono text-gray-500">{s.kode_lokasi || '-'}</td>
+                <td className="table-td text-xs font-mono text-gray-500">{s.kode_skpd || '-'}</td>
                 <td className="table-td text-sm" style={{ paddingLeft: `${1 + s.depth * 1.25}rem` }}>{s.nama}</td>
                 <td className="table-td text-xs text-gray-400">{s.level}</td>
                 <td className="table-td whitespace-nowrap">
