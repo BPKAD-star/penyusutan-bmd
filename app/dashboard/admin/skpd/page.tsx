@@ -3,9 +3,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 
-type Skpd = { id: number; nama: string; level: number; parent_id: number | null }
+type Skpd = { id: number; nama: string; level: number; parent_id: number | null; kode_lokasi: string | null }
 
-const FORM_KOSONG = { nama: '', parent_id: '' as number | '' }
+const FORM_KOSONG = { nama: '', kode_lokasi: '', parent_id: '' as number | '' }
 
 export default function AdminSkpdPage() {
   const supabase = createClient()
@@ -20,7 +20,7 @@ export default function AdminSkpdPage() {
   async function load() {
     const rows: Skpd[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id').range(from, from + 999)
+      const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id,kode_lokasi').range(from, from + 999)
       if (!data || data.length === 0) break
       rows.push(...(data as Skpd[]))
       if (data.length < 1000) break
@@ -64,13 +64,13 @@ export default function AdminSkpdPage() {
 
   function openCreate(parentId: number | null) {
     setEditId(null)
-    setForm({ nama: '', parent_id: parentId ?? '' })
+    setForm({ nama: '', kode_lokasi: '', parent_id: parentId ?? '' })
     setShowForm(true)
   }
 
   function openEdit(s: Skpd) {
     setEditId(s.id)
-    setForm({ nama: s.nama, parent_id: s.parent_id ?? '' })
+    setForm({ nama: s.nama, kode_lokasi: s.kode_lokasi || '', parent_id: s.parent_id ?? '' })
     setShowForm(true)
   }
 
@@ -85,7 +85,10 @@ export default function AdminSkpdPage() {
       return
     }
 
-    const payload = { nama: form.nama, parent_id: form.parent_id === '' ? null : Number(form.parent_id) }
+    const payload = {
+      nama: form.nama, kode_lokasi: form.kode_lokasi.trim() || null,
+      parent_id: form.parent_id === '' ? null : Number(form.parent_id),
+    }
     const { error } = editId
       ? await supabase.from('admin_skpd').update(payload).eq('id', editId)
       : await supabase.from('admin_skpd').insert(payload)
@@ -131,6 +134,11 @@ export default function AdminSkpdPage() {
                 onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} />
             </div>
             <div>
+              <label className="block text-xs text-gray-500 mb-1">Kode SKPD</label>
+              <input className="select-filter w-full font-mono" placeholder="mis. 01.02.03.4567.8901" value={form.kode_lokasi}
+                onChange={e => setForm(f => ({ ...f, kode_lokasi: e.target.value }))} />
+            </div>
+            <div>
               <label className="block text-xs text-gray-500 mb-1">Induk (Parent)</label>
               <select className="select-filter w-full" value={form.parent_id}
                 onChange={e => setForm(f => ({ ...f, parent_id: e.target.value ? Number(e.target.value) : '' }))}>
@@ -152,6 +160,7 @@ export default function AdminSkpdPage() {
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
+              <th className="table-th">Kode SKPD</th>
               <th className="table-th">Nama</th>
               <th className="table-th">Level</th>
               <th className="table-th">Aksi</th>
@@ -159,11 +168,12 @@ export default function AdminSkpdPage() {
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={3} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+              <tr><td colSpan={4} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
             ) : flatTree.length === 0 ? (
-              <tr><td colSpan={3} className="table-td text-center py-8 text-gray-400">Belum ada SKPD.</td></tr>
+              <tr><td colSpan={4} className="table-td text-center py-8 text-gray-400">Belum ada SKPD.</td></tr>
             ) : flatTree.map(s => (
               <tr key={s.id}>
+                <td className="table-td text-xs font-mono text-gray-500">{s.kode_lokasi || '-'}</td>
                 <td className="table-td text-sm" style={{ paddingLeft: `${1 + s.depth * 1.25}rem` }}>{s.nama}</td>
                 <td className="table-td text-xs text-gray-400">{s.level}</td>
                 <td className="table-td whitespace-nowrap">
