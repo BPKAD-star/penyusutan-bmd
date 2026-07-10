@@ -1,22 +1,24 @@
 'use client'
-// Admin > Kodefikasi BMD — filter dulu (golongan/kode_jenis + search), baru
-// klik Tampilkan (pola sama Rekapitulasi), biar nggak load ribuan baris
-// sekaligus & default view nggak kebanjiran baris "tanpa jenis" (kode_jenis
-// di luar 9 golongan resmi). Golongan diambil LANGSUNG dari kolom kode_jenis
-// (BUKAN jenis_aset_id — kolom itu di admin_kodefikasi_bmd nyaris semua NULL,
-// cuma dipakai app di tempat lain sbg lookup label per golongan, lihat
-// GOLONGAN_DAFTAR_BARANG di lib/bmd.ts).
+// Admin > Kodefikasi BMD — VIEW ONLY. Ini kebijakan akuntansi baku (Permendagri
+// 108/2016), bukan data yang admin lain boleh utak-atik sembarangan — dulu ada
+// form edit masa_manfaat_tahun/batas_kapitalisasi di sini, sengaja dicabut
+// (keputusan user 2026-07-10) supaya nggak ada admin yang nggak sengaja
+// ngerusak angka yang jadi basis engine penyusutan.
+// Objek/Rincian Objek/Sub Rincian Objek ditampilkan pakai NAMA (nama_objek/
+// nama_rincian/nama_sub_rincian, migrasi 20260710_16), bukan kode mentahnya —
+// jadi bukan lagi font-mono spt kolom Kode (yg masih kode asli).
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
+import { formatRupiah } from '@/lib/export'
 
 type Kodefikasi = {
   kode: string
   uraian: string | null
-  kode_objek: string | null
-  kode_rincian: string | null
-  kode_sub_rincian: string | null
+  nama_objek: string | null
+  nama_rincian: string | null
+  nama_sub_rincian: string | null
   masa_manfaat_tahun: number | null
   batas_kapitalisasi: number | null
 }
@@ -27,7 +29,7 @@ const GOLONGAN_KODEFIKASI: { kode: string; uraian: string }[] = [
   ...GOLONGAN_REKAP.map(g => ({ kode: g.kode, uraian: g.uraian })),
 ]
 
-const KOLOM = 'kode,uraian,kode_objek,kode_rincian,kode_sub_rincian,masa_manfaat_tahun,batas_kapitalisasi'
+const KOLOM = 'kode,uraian,nama_objek,nama_rincian,nama_sub_rincian,masa_manfaat_tahun,batas_kapitalisasi'
 const MAX_HASIL = 500
 
 export default function AdminKodefikasiPage() {
@@ -36,7 +38,6 @@ export default function AdminKodefikasiPage() {
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<Kodefikasi[] | null>(null)
   const [loading, setLoading] = useState(false)
-  const [savingKode, setSavingKode] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
 
   async function tampilkan() {
@@ -51,24 +52,8 @@ export default function AdminKodefikasiPage() {
     setLoading(false)
   }
 
-  function updateRow(kode: string, patch: Partial<Kodefikasi>) {
-    setRows(rs => rs && rs.map(r => (r.kode === kode ? { ...r, ...patch } : r)))
-  }
-
-  async function handleSave(row: Kodefikasi) {
-    setSavingKode(row.kode)
-    setMsg('')
-    const { error } = await supabase.from('admin_kodefikasi_bmd').update({
-      masa_manfaat_tahun: row.masa_manfaat_tahun,
-      batas_kapitalisasi: row.batas_kapitalisasi,
-    }).eq('kode', row.kode)
-    if (error) setMsg(`Error: ${error.message}`)
-    else setMsg(`Kode ${row.kode} disimpan.`)
-    setSavingKode(null)
-  }
-
   return (
-    <FormShell judul="Kodefikasi BMD" deskripsi="Kategori aset & masa manfaat — dipakai engine penyusutan, hati-hati mengubah jenis_aset" msg={msg}>
+    <FormShell judul="Kodefikasi BMD" deskripsi="Kategori aset & masa manfaat baku (Permendagri 108/2016) — view only, dasar perhitungan engine penyusutan" msg={msg}>
       <div className="card p-5 mb-4">
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -104,33 +89,20 @@ export default function AdminKodefikasiPage() {
                   <th className="table-th">Uraian Barang</th>
                   <th className="table-th">Masa Manfaat (th)</th>
                   <th className="table-th">Nilai Kapitalisasi</th>
-                  <th className="table-th">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {rows.length === 0 ? (
-                  <tr><td colSpan={8} className="table-td text-center py-8 text-gray-400">Tidak ada hasil.</td></tr>
+                  <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Tidak ada hasil.</td></tr>
                 ) : rows.map(row => (
                   <tr key={row.kode}>
                     <td className="table-td text-xs font-mono">{row.kode}</td>
-                    <td className="table-td text-xs font-mono text-gray-500">{row.kode_objek || '-'}</td>
-                    <td className="table-td text-xs font-mono text-gray-500">{row.kode_rincian || '-'}</td>
-                    <td className="table-td text-xs font-mono text-gray-500">{row.kode_sub_rincian || '-'}</td>
-                    <td className="table-td text-xs text-gray-600 max-w-xs truncate" title={row.uraian || ''}>{row.uraian}</td>
-                    <td className="table-td">
-                      <input type="number" className="select-filter text-xs py-1 w-20" value={row.masa_manfaat_tahun ?? ''}
-                        onChange={e => updateRow(row.kode, { masa_manfaat_tahun: e.target.value === '' ? null : Number(e.target.value) })} />
-                    </td>
-                    <td className="table-td">
-                      <input type="number" className="select-filter text-xs py-1 w-28" value={row.batas_kapitalisasi ?? ''}
-                        onChange={e => updateRow(row.kode, { batas_kapitalisasi: e.target.value === '' ? null : Number(e.target.value) })} />
-                    </td>
-                    <td className="table-td">
-                      <button disabled={savingKode === row.kode} onClick={() => handleSave(row)}
-                        className="text-teal hover:underline text-xs font-medium">
-                        {savingKode === row.kode ? 'Menyimpan...' : 'Simpan'}
-                      </button>
-                    </td>
+                    <td className="table-td text-xs text-gray-600">{row.nama_objek || '-'}</td>
+                    <td className="table-td text-xs text-gray-600">{row.nama_rincian || '-'}</td>
+                    <td className="table-td text-xs text-gray-600">{row.nama_sub_rincian || '-'}</td>
+                    <td className="table-td text-xs text-gray-800 max-w-xs truncate" title={row.uraian || ''}>{row.uraian || '-'}</td>
+                    <td className="table-td text-xs text-gray-600">{row.masa_manfaat_tahun ?? '-'}</td>
+                    <td className="table-td text-xs text-gray-600">{formatRupiah(row.batas_kapitalisasi)}</td>
                   </tr>
                 ))}
               </tbody>

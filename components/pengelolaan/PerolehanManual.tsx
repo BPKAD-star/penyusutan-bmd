@@ -35,6 +35,10 @@ type DraftItem = {
   fields: Record<string, string>
   foto: string[]
 }
+type KodefikasiHasil = {
+  kode: string; uraian: string | null
+  nama_objek: string | null; nama_rincian: string | null; nama_sub_rincian: string | null
+}
 type HeaderPayload = { pihak?: string; dokumen_paths?: string[]; draft_items?: DraftItem[] }
 type ApprovalStatus = 'pending' | 'disetujui' | 'ditolak'
 type Header = {
@@ -628,14 +632,14 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const supabase = createClient()
   const [golongan, setGolongan] = useState('')
   const [search, setSearch] = useState('')
-  const [results, setResults] = useState<{ kode: string; uraian: string | null }[]>([])
+  const [results, setResults] = useState<KodefikasiHasil[]>([])
   const [searching, setSearching] = useState(false)
-  const [picked, setPicked] = useState<{ kode: string; uraian: string } | null>(null)
+  const [picked, setPicked] = useState<KodefikasiHasil | null>(null)
   const [satuanList, setSatuanList] = useState<{ id: number; nama: string }[]>([])
   const [satuan, setSatuan] = useState('')
   const [qty, setQty] = useState('1')
   const [harga, setHarga] = useState('')
-  const [tglPerolehan, setTglPerolehan] = useState(todayStr())
+  const [tglPerolehan, setTglPerolehan] = useState('')
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -645,15 +649,16 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   async function cari() {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
     setErr(''); setSearching(true)
-    let q = supabase.from('admin_kodefikasi_bmd').select('kode,uraian').like('kode', `${golongan}.%`)
+    let q = supabase.from('admin_kodefikasi_bmd')
+      .select('kode,uraian,nama_objek,nama_rincian,nama_sub_rincian').like('kode', `${golongan}.%`)
     if (search.trim()) q = q.or(`kode.ilike.${search.trim()}%,uraian.ilike.%${search.trim()}%`)
     const { data } = await q.limit(30)
-    setResults((data || []) as { kode: string; uraian: string | null }[])
+    setResults((data || []) as KodefikasiHasil[])
     setSearching(false)
   }
 
-  function pilih(r: { kode: string; uraian: string | null }) {
-    setPicked({ kode: r.kode, uraian: r.uraian || '' })
+  function pilih(r: KodefikasiHasil) {
+    setPicked(r)
     setResults([])
   }
 
@@ -664,10 +669,11 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     if (toNum(harga) <= 0) { setErr('Nilai harus > 0.'); return }
     if (!tglPerolehan) { setErr('Tanggal perolehan wajib diisi.'); return }
     if (tglPerolehan > todayStr()) { setErr('Tanggal perolehan tidak boleh di masa depan.'); return }
+    const uraian = picked.uraian || ''
     const items: DraftItem[] = Array.from({ length: n }, () => ({
-      key: newKey(), golongan, kode: picked.kode, uraianBarang: picked.uraian,
+      key: newKey(), golongan, kode: picked.kode, uraianBarang: uraian,
       tglPerolehan, satuan: satuan.trim(), harga,
-      fields: { nama_barang: picked.uraian }, foto: [],
+      fields: { nama_barang: uraian }, foto: [],
     }))
     onTambah(items)
   }
@@ -704,7 +710,12 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
 
       {picked && (
         <div className="bg-white border border-gray-100 rounded-lg p-3 space-y-3">
-          <p className="text-xs text-gray-500">Kode: <span className="font-medium text-gray-700">{picked.kode}</span></p>
+          <div className="text-xs text-gray-500 space-y-0.5">
+            <p>Objek: <span className="font-medium text-gray-700">{picked.nama_objek || '-'}</span></p>
+            <p>Rincian Objek: <span className="font-medium text-gray-700">{picked.nama_rincian || '-'}</span></p>
+            <p>Sub Rincian Objek: <span className="font-medium text-gray-700">{picked.nama_sub_rincian || '-'}</span></p>
+            <p>Uraian: <span className="font-medium text-gray-700">{picked.uraian || '-'}</span> <span className="text-gray-400">({picked.kode})</span></p>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Satuan</label>
@@ -717,7 +728,8 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
             <div><label className="block text-xs text-gray-500 mb-1">Nilai / item</label><input className="select-filter w-full text-sm" inputMode="numeric" value={harga} onChange={e => setHarga(e.target.value)} /></div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Tgl Perolehan</label>
-              <input type="date" className="select-filter w-full text-sm" max={todayStr()} value={tglPerolehan} onChange={e => setTglPerolehan(e.target.value)} />
+              <input type="date" className="select-filter w-full text-sm" max={todayStr()} value={tglPerolehan}
+                onChange={e => setTglPerolehan(e.target.value)} placeholder="Wajib diisi" />
             </div>
           </div>
           <p className="text-xs text-gray-400">Tgl Perolehan boleh backdate ke tahun lama — penyusutannya dihitung mundur otomatis saat engine dijalankan ulang. Kuantitas &gt; 1 langsung dipecah jadi beberapa barang terpisah — spesifikasi & foto diisi per-unit setelah ini (✎ Edit Spesifikasi).</p>
