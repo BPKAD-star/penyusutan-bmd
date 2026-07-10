@@ -21,9 +21,14 @@ import { tahunAwal } from '@/lib/tahunKerja'
 // perolehan) — diverifikasi ke kode asli tiap alur (Pengadaan/PerolehanManual/
 // Penghapusan/Reklasifikasi), lihat plan. `mutasi_internal` sengaja tidak
 // diikutkan (tidak diminta user, netral kalau scope "Semua" spt pengalihan_status).
+// batal_pengadaan/batal_hibah_masuk/dst & koreksi_pencatatan_ganda SENGAJA
+// TIDAK dihitung sebagai Pengurangan (keputusan user 2026-07-10) — itu koreksi
+// "barang dianggap tidak pernah ada" (salah input/duplikat), bukan pengurangan
+// riil dari register yang sebelumnya benar. Saldo Awal/Akhir tetap akurat krn
+// keduanya dihitung langsung dari snapshot `aset` LIVE (status='aktif'), tidak
+// bergantung pada breakdown Penambahan/Pengurangan ini.
 const JENIS_CARA_PEROLEHAN = ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya']
 const JENIS_PENGHAPUSAN_M3 = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
-const JENIS_PEMBATALAN_INPUT = ['batal_pengadaan', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'koreksi_pencatatan_ganda']
 
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
 
@@ -227,15 +232,6 @@ export default function Page() {
       if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       addLine(kurang, 'kurang', kodeLevel3(r.aset.kode), {
         kategori: 'Penghapusan', tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
-        namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
-      })
-    }
-
-    // Pembatalan Input (koreksi retroaktif, disetujui masuk Pengurangan)
-    for (const r of await fetchLedgerM3(JENIS_PEMBATALAN_INPUT)) {
-      if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
-      addLine(kurang, 'kurang', kodeLevel3(r.aset.kode), {
-        kategori: 'Pembatalan Input / Duplikat', tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
       })
     }
