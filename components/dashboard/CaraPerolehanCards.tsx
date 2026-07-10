@@ -3,9 +3,10 @@
 // Basis donut = JUMLAH BARANG (unit), bukan rupiah. Angka "disetujui" dipasok dari
 // server (page.tsx, hitungan transaksi_bmd yg sudah ada — otomatis benar karena
 // draft belum pernah masuk situ). Angka "pending" dihitung di client dari
-// jurnal_header.payload.draft_items (hanya utk kategori yang sudah pakai pola
-// approval — sekarang baru Pengadaan; Hibah/Hasil Inventarisasi/Perolehan Lainnya
-// belum, jadi pending-nya selalu 0 sampai menu itu dibangun ulang dgn pola sama).
+// jurnal_header.payload.draft_items — SEMUA 5 kategori Cara Perolehan sudah
+// pakai pola draft+approval yang sama (Hibah/Tukar Menukar/Hasil Inventarisasi/
+// Perolehan Lainnya lewat PerolehanManual.tsx), jadi kategoriJurnal-nya diisi
+// semua (dulu cuma Pengadaan sebelum menu2 itu dibangun ulang dgn pola sama).
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
@@ -13,9 +14,10 @@ import { GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 type CaraConfig = { key: string; label: string; jenisTransaksi: string; kategoriJurnal: string | null }
 const CARA_LIST: CaraConfig[] = [
   { key: 'pengadaan', label: 'Pengadaan', jenisTransaksi: 'pengadaan', kategoriJurnal: 'pengadaan' },
-  { key: 'hibah', label: 'Hibah', jenisTransaksi: 'hibah_masuk', kategoriJurnal: null },
-  { key: 'inventarisasi', label: 'Hasil Inventarisasi', jenisTransaksi: 'hasil_inventarisasi', kategoriJurnal: null },
-  { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: null },
+  { key: 'hibah', label: 'Hibah', jenisTransaksi: 'hibah_masuk', kategoriJurnal: 'hibah_masuk' },
+  { key: 'tukarMenukar', label: 'Tukar Menukar', jenisTransaksi: 'tukar_menukar', kategoriJurnal: 'tukar_menukar' },
+  { key: 'inventarisasi', label: 'Hasil Inventarisasi', jenisTransaksi: 'hasil_inventarisasi', kategoriJurnal: 'hasil_inventarisasi' },
+  { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: 'perolehan_lainnya' },
 ]
 
 const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
@@ -53,7 +55,7 @@ export default function CaraPerolehanCards({ approved, approvedNilai }: {
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         {CARA_LIST.map(c => {
           const disetujui = approved[c.key] || 0
           const belum = pending[c.key] || 0

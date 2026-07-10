@@ -242,6 +242,12 @@ export function hitungJadwalAset(
         case 'batal_pengadaan':
           berhenti = true // koreksi input pasca-approve: dianggap tidak pernah ada, hilang dari laporan
           break
+        case 'batal_hibah_masuk':
+        case 'batal_tukar_menukar':
+        case 'batal_hasil_inventarisasi':
+        case 'batal_perolehan_lainnya':
+          berhenti = true // unapprove (Buka Kunci) — sama pola dgn batal_pengadaan
+          break
         case 'koreksi_pencatatan_ganda':
           berhenti = true // gabung duplikat: barang ini digabung ke survivor, sendiri hilang dari laporan
           break

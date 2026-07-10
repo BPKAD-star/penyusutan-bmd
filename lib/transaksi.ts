@@ -87,6 +87,13 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       // barang dianggap tidak pernah ada — soft-delete, dicatat mundur ke tgl
       // pengadaan aslinya (bukan hari ini) supaya hilang dari SEMUA periode.
       return { status: 'dihapus' }
+    case 'batal_hibah_masuk':
+    case 'batal_tukar_menukar':
+    case 'batal_hasil_inventarisasi':
+    case 'batal_perolehan_lainnya':
+      // Unapprove (Buka Kunci) dokumen Hibah/Tukar Menukar/Hasil Inventarisasi/
+      // Perolehan Lainnya — sama pola persis dgn batal_pengadaan di atas.
+      return { status: 'dihapus' }
     case 'koreksi_pencatatan_ganda':
       // Gabung barang duplikat: yang BUKAN survivor soft-delete, dicatat
       // mundur ke tgl perolehan aslinya sendiri (bukan hari ini) — sama pola
