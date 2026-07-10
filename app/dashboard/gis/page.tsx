@@ -244,6 +244,11 @@ export default function GisPage() {
             onChanged={() => {
               supabase.from('aset_bidang_tanah').select('aset_id,jenis_hak,nomor_dokumen_kepemilikan,latitude,longitude').eq('aset_id', selected.id)
                 .then(({ data }) => setBidangByAset(prev => ({ ...prev, [selected.id]: (data as BidangRingkas[]) || [] })))
+              // Kelola Bidang ikut sinkron sebagian kolom aset (identitas dokumen +
+              // NULL-kan titik aset kalau bidang py titik sendiri) — refresh baris
+              // aset ini juga biar panel kanan & peta nggak nampilin data basi.
+              supabase.from('aset').select(SELECT_COLS).eq('id', selected.id).single()
+                .then(({ data }) => { if (data) setRows(prev => prev.map(r => (r.id === selected.id ? (data as unknown as AsetRow) : r))) })
             }} />
         </div>
       )}

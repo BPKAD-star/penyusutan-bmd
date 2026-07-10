@@ -116,6 +116,8 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true); setMsg('')
+    const latitude = form.latitude.trim() ? parseFloat(form.latitude) : null
+    const longitude = form.longitude.trim() ? parseFloat(form.longitude) : null
     const payload = {
       aset_id: asetId,
       nama_bidang: form.nama_bidang.trim() || null,
@@ -126,8 +128,7 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
       nama_dokumen_kepemilikan: form.nama_dokumen_kepemilikan.trim() || null,
       tanggal_berakhir_hak: form.tanggal_berakhir_hak || null,
       alamat_detail: form.alamat_detail.trim() || null,
-      latitude: form.latitude.trim() ? parseFloat(form.latitude) : null,
-      longitude: form.longitude.trim() ? parseFloat(form.longitude) : null,
+      latitude, longitude,
       sertifikat_path: sertifikatPath,
       keterangan: form.keterangan.trim() || null,
     }
@@ -136,11 +137,30 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
       : await supabase.from('aset_bidang_tanah').insert(payload)
     if (error) {
       setMsg(`Error: ${error.message}`)
+      setSaving(false)
+      return
+    }
+    // Ikutkan sinkron ke aset: identitas dokumen (nama/nomor/tanggal/jenis hak)
+    // supaya halaman lain yang baca langsung dari `aset` (Daftar Barang, Koreksi
+    // Spesifikasi, dll.) nggak ketinggalan info terbaru. Titik koordinat aset
+    // di-NULL-kan begitu bidang ini py titik sendiri — bidang jadi satu-satunya
+    // sumber lokasi, aset.latitude/longitude nggak lagi dipakai/aktif utk aset
+    // ini (keputusan user 2026-07-10).
+    const asetPatch: Record<string, unknown> = {
+      jenis_hak: payload.jenis_hak,
+      nomor_dokumen_kepemilikan: payload.nomor_dokumen_kepemilikan,
+      nama_dokumen_kepemilikan: payload.nama_dokumen_kepemilikan,
+      tanggal_dokumen_kepemilikan: payload.tanggal_dokumen_kepemilikan,
+    }
+    if (latitude != null && longitude != null) { asetPatch.latitude = null; asetPatch.longitude = null }
+    const { error: asetErr } = await supabase.from('aset').update(asetPatch).eq('id', asetId)
+    if (asetErr) {
+      setMsg(`Bidang tersimpan, tapi gagal sinkron ke data aset: ${asetErr.message}`)
     } else {
       setMsg(editId ? 'Bidang diperbarui.' : 'Bidang ditambahkan.')
       setShowForm(false); setEditId(null); setForm(FORM_KOSONG); setSertifikatPath(null)
-      load(); onChanged?.()
     }
+    load(); onChanged?.()
     setSaving(false)
   }
 
