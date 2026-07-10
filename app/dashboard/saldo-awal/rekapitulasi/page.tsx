@@ -44,7 +44,10 @@ export default function Page() {
         const perolehan = r.nilai_perolehan || 0
         const akumulasi = r.akumulasi_2025 || 0
         const beban = r.beban_penyusutan_per_smt || 0
-        const nilaiBuku = r.nilai_buku_awal || perolehan
+        // ?? bukan ||: nilai_buku_awal = 0 itu SAH (gedung sudah habis
+        // disusutkan) — || salah menggantinya jadi perolehan penuh → nilai buku
+        // menggelembung. Fallback ke perolehan HANYA saat null (baseline tak ada).
+        const nilaiBuku = r.nilai_buku_awal ?? perolehan
         // Model 1: per golongan
         agg[g] ??= { kuantitas: 0, perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 }
         agg[g].kuantitas += 1
@@ -66,7 +69,7 @@ export default function Page() {
       perolehan: agg[g.kode]?.perolehan || 0,
       akumulasi: agg[g.kode]?.akumulasi || 0,
       beban: agg[g.kode]?.beban || 0,
-      nilaiBuku: agg[g.kode]?.nilaiBuku || (agg[g.kode]?.perolehan || 0),
+      nilaiBuku: agg[g.kode]?.nilaiBuku ?? 0,
     })))
     setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
     setLoading(false)
