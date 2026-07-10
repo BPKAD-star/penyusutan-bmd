@@ -1,12 +1,16 @@
 'use client'
-// Admin > Kodefikasi BMD — VIEW ONLY. Ini kebijakan akuntansi baku (Permendagri
-// 108/2016), bukan data yang admin lain boleh utak-atik sembarangan — dulu ada
-// form edit masa_manfaat_tahun/batas_kapitalisasi di sini, sengaja dicabut
-// (keputusan user 2026-07-10) supaya nggak ada admin yang nggak sengaja
-// ngerusak angka yang jadi basis engine penyusutan.
+// Admin > Kodefikasi BMD — VIEW ONLY utk kolom akuntansi (Permendagri 108/2016)
+// — dulu ada form edit masa_manfaat_tahun/batas_kapitalisasi di sini, sengaja
+// dicabut (keputusan user 2026-07-10) supaya nggak ada admin yang nggak
+// sengaja ngerusak angka yang jadi basis engine penyusutan.
 // Objek/Rincian Objek/Sub Rincian Objek ditampilkan pakai NAMA (nama_objek/
-// nama_rincian/nama_sub_rincian, migrasi 20260710_16), bukan kode mentahnya —
-// jadi bukan lagi font-mono spt kolom Kode (yg masih kode asli).
+// nama_rincian/nama_sub_rincian, migrasi 20260710_16), bukan kode mentahnya.
+// Kode ikut font normal (Inter) juga, bukan font-mono lagi.
+//
+// SATU field yang masih boleh diubah: `aktif` (migrasi 20260710_17) — toggle
+// nonaktifkan kode yang membingungkan (mis. "printer" nyasar ke rincian objek
+// yang salah) supaya nggak muncul lagi di pencarian kode saat entry Cara
+// Perolehan/Pengelolaan. Tidak memengaruhi barang yang sudah tercatat.
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
@@ -21,6 +25,7 @@ type Kodefikasi = {
   nama_sub_rincian: string | null
   masa_manfaat_tahun: number | null
   batas_kapitalisasi: number | null
+  aktif: boolean
 }
 
 // Persediaan (1.1.7) + 8 golongan aset tetap resmi (Permendagri 108/2016).
@@ -29,7 +34,7 @@ const GOLONGAN_KODEFIKASI: { kode: string; uraian: string }[] = [
   ...GOLONGAN_REKAP.map(g => ({ kode: g.kode, uraian: g.uraian })),
 ]
 
-const KOLOM = 'kode,uraian,nama_objek,nama_rincian,nama_sub_rincian,masa_manfaat_tahun,batas_kapitalisasi'
+const KOLOM = 'kode,uraian,nama_objek,nama_rincian,nama_sub_rincian,masa_manfaat_tahun,batas_kapitalisasi,aktif'
 const MAX_HASIL = 500
 
 export default function AdminKodefikasiPage() {
@@ -38,6 +43,7 @@ export default function AdminKodefikasiPage() {
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<Kodefikasi[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [togglingKode, setTogglingKode] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
 
   async function tampilkan() {
@@ -50,6 +56,14 @@ export default function AdminKodefikasiPage() {
     if (error) { setMsg(`Error: ${error.message}`); setLoading(false); return }
     setRows((data as Kodefikasi[]) || [])
     setLoading(false)
+  }
+
+  async function toggleAktif(row: Kodefikasi) {
+    setTogglingKode(row.kode); setMsg('')
+    const { error } = await supabase.from('admin_kodefikasi_bmd').update({ aktif: !row.aktif }).eq('kode', row.kode)
+    if (error) { setMsg(`Error: ${error.message}`); setTogglingKode(null); return }
+    setRows(rs => rs && rs.map(r => (r.kode === row.kode ? { ...r, aktif: !r.aktif } : r)))
+    setTogglingKode(null)
   }
 
   return (
@@ -89,20 +103,30 @@ export default function AdminKodefikasiPage() {
                   <th className="table-th">Uraian Barang</th>
                   <th className="table-th">Masa Manfaat (th)</th>
                   <th className="table-th">Nilai Kapitalisasi</th>
+                  <th className="table-th">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {rows.length === 0 ? (
-                  <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Tidak ada hasil.</td></tr>
+                  <tr><td colSpan={8} className="table-td text-center py-8 text-gray-400">Tidak ada hasil.</td></tr>
                 ) : rows.map(row => (
-                  <tr key={row.kode}>
-                    <td className="table-td text-xs font-mono">{row.kode}</td>
+                  <tr key={row.kode} className={row.aktif ? undefined : 'bg-gray-50/60'}>
+                    <td className="table-td text-xs">{row.kode}</td>
                     <td className="table-td text-xs text-gray-600">{row.nama_objek || '-'}</td>
                     <td className="table-td text-xs text-gray-600">{row.nama_rincian || '-'}</td>
                     <td className="table-td text-xs text-gray-600">{row.nama_sub_rincian || '-'}</td>
                     <td className="table-td text-xs text-gray-800 max-w-xs truncate" title={row.uraian || ''}>{row.uraian || '-'}</td>
                     <td className="table-td text-xs text-gray-600">{row.masa_manfaat_tahun ?? '-'}</td>
                     <td className="table-td text-xs text-gray-600">{formatRupiah(row.batas_kapitalisasi)}</td>
+                    <td className="table-td">
+                      <button onClick={() => toggleAktif(row)} disabled={togglingKode === row.kode}
+                        title="Nonaktifkan = kode ini tidak muncul lagi di pencarian kode saat entry Cara Perolehan/Pengelolaan"
+                        className={`text-xs font-medium px-2 py-1 rounded-full ${
+                          row.aktif ? 'bg-teal/10 text-teal hover:bg-teal/20' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                        }`}>
+                        {togglingKode === row.kode ? '...' : row.aktif ? 'Aktif' : 'Nonaktif'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

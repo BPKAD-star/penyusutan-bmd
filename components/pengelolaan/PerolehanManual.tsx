@@ -650,7 +650,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
     setErr(''); setSearching(true)
     let q = supabase.from('admin_kodefikasi_bmd')
-      .select('kode,uraian,nama_objek,nama_rincian,nama_sub_rincian').like('kode', `${golongan}.%`)
+      .select('kode,uraian,nama_objek,nama_rincian,nama_sub_rincian').eq('aktif', true).like('kode', `${golongan}.%`)
     if (search.trim()) q = q.or(`kode.ilike.${search.trim()}%,uraian.ilike.%${search.trim()}%`)
     const { data } = await q.limit(30)
     setResults((data || []) as KodefikasiHasil[])

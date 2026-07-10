@@ -388,6 +388,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   async function cariKode() {
     const { data } = await supabase.from('admin_kodefikasi_bmd')
       .select('kode,uraian,masa_manfaat_tahun')
+      .eq('aktif', true)
       .or(`kode.ilike.${qKode}%,uraian.ilike.%${qKode}%`).limit(20)
     setKandidatKode(data || [])
   }

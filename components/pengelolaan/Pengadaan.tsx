@@ -770,7 +770,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   async function cari() {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
     setErr(''); setSearching(true)
-    let q = supabase.from('admin_kodefikasi_bmd').select('kode,uraian').like('kode', `${golongan}.%`)
+    let q = supabase.from('admin_kodefikasi_bmd').select('kode,uraian').eq('aktif', true).like('kode', `${golongan}.%`)
     if (search.trim()) q = q.or(`kode.ilike.${search.trim()}%,uraian.ilike.%${search.trim()}%`)
     const { data } = await q.limit(30)
     setResults((data || []) as { kode: string; uraian: string | null }[])
