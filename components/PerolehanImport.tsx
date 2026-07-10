@@ -128,9 +128,10 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
 
       const kodeSet = [...new Set(parsed.map(p => p.kode).filter(Boolean))]
       const kodeValid = new Set<string>()
+      const kodeNonaktif = new Set<string>()
       for (let i = 0; i < kodeSet.length; i += 200) {
-        const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode').in('kode', kodeSet.slice(i, i + 200))
-        for (const k of data || []) kodeValid.add(k.kode)
+        const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,aktif').in('kode', kodeSet.slice(i, i + 200))
+        for (const k of data || []) { if (k.aktif) kodeValid.add(k.kode); else kodeNonaktif.add(k.kode) }
       }
       const nibarSet = [...new Set(parsed.map(p => p.nibar).filter(Boolean))]
       const nibarAda = new Set<string>()
@@ -140,6 +141,7 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
       }
       for (const p of parsed) {
         if (!p.kode) p.masalah.push('kode kosong')
+        else if (kodeNonaktif.has(p.kode)) p.masalah.push('kode sudah dinonaktifkan admin')
         else if (!kodeValid.has(p.kode)) p.masalah.push('kode tidak ada di kodefikasi')
         if (!p.nibar) p.masalah.push('NIBAR kosong')
         else if (nibarAda.has(p.nibar)) p.masalah.push('NIBAR sudah terdaftar')
