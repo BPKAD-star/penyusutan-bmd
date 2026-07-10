@@ -53,6 +53,11 @@ type DraftItem = {
   fields: Record<string, string>   // field spesifikasi sesuai golongan (lib/asetFields.ts), termasuk nama_barang
   foto: string[]                    // path di storage bucket aset-foto
 }
+type KodefikasiHasil = {
+  kode: string; uraian: string | null
+  nama_objek: string | null; nama_rincian: string | null; nama_sub_rincian: string | null
+  masa_manfaat_tahun: number | null; batas_kapitalisasi: number | null
+}
 type HeaderPayload = {
   program?: string; kegiatan?: string; sub_kegiatan?: string
   nama_penyedia?: string; nama_ppk?: string
@@ -753,9 +758,9 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const supabase = createClient()
   const [golongan, setGolongan] = useState('')
   const [search, setSearch] = useState('')
-  const [results, setResults] = useState<{ kode: string; uraian: string | null }[]>([])
+  const [results, setResults] = useState<KodefikasiHasil[]>([])
   const [searching, setSearching] = useState(false)
-  const [picked, setPicked] = useState<{ kode: string; uraian: string } | null>(null)
+  const [picked, setPicked] = useState<KodefikasiHasil | null>(null)
   const [rekening, setRekening] = useState('')
   const [satuanList, setSatuanList] = useState<{ id: number; nama: string }[]>([])
   const [satuan, setSatuan] = useState('')
@@ -770,15 +775,16 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   async function cari() {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
     setErr(''); setSearching(true)
-    let q = supabase.from('admin_kodefikasi_bmd').select('kode,uraian').eq('aktif', true).like('kode', `${golongan}.%`)
+    let q = supabase.from('admin_kodefikasi_bmd')
+      .select('kode,uraian,nama_objek,nama_rincian,nama_sub_rincian,masa_manfaat_tahun,batas_kapitalisasi').eq('aktif', true).like('kode', `${golongan}.%`)
     if (search.trim()) q = q.or(`kode.ilike.${search.trim()}%,uraian.ilike.%${search.trim()}%`)
     const { data } = await q.limit(30)
-    setResults((data || []) as { kode: string; uraian: string | null }[])
+    setResults((data || []) as KodefikasiHasil[])
     setSearching(false)
   }
 
-  function pilih(r: { kode: string; uraian: string | null }) {
-    setPicked({ kode: r.kode, uraian: r.uraian || '' })
+  function pilih(r: KodefikasiHasil) {
+    setPicked(r)
     setResults([])
   }
 
@@ -788,10 +794,11 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     if (n < 1) { setErr('Kuantitas minimal 1.'); return }
     if (toNum(harga) <= 0) { setErr('Harga harus > 0.'); return }
     // nama_barang default = uraian baku, diedit belakangan lewat ✎ Edit Spesifikasi.
+    const uraian = picked.uraian || ''
     const items: DraftItem[] = Array.from({ length: n }, () => ({
-      key: newKey(), golongan, kode: picked.kode, uraianBarang: picked.uraian,
+      key: newKey(), golongan, kode: picked.kode, uraianBarang: uraian,
       rekening: rekening.trim(), satuan: satuan.trim(), harga,
-      fields: { nama_barang: picked.uraian }, foto: [],
+      fields: { nama_barang: uraian }, foto: [],
     }))
     onTambah(items)
   }
@@ -832,7 +839,15 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
 
       {picked && (
         <div className="bg-white border border-gray-100 rounded-lg p-3 space-y-3">
-          <p className="text-xs text-gray-500">Kode: <span className="font-medium text-gray-700">{picked.kode}</span></p>
+          <div className="grid grid-cols-[140px_1fr] gap-y-1 text-xs">
+            <span className="text-gray-500">Kode</span><span className="font-medium text-gray-700">{picked.kode}</span>
+            <span className="text-gray-500">Objek</span><span className="font-medium text-gray-700">{picked.nama_objek || '-'}</span>
+            <span className="text-gray-500">Rincian Objek</span><span className="font-medium text-gray-700">{picked.nama_rincian || '-'}</span>
+            <span className="text-gray-500">Sub Rincian Objek</span><span className="font-medium text-gray-700">{picked.nama_sub_rincian || '-'}</span>
+            <span className="text-gray-500">Uraian Barang</span><span className="font-medium text-gray-700">{picked.uraian || '-'}</span>
+            <span className="text-gray-500">Masa Manfaat</span><span className="font-medium text-gray-700">{picked.masa_manfaat_tahun != null ? `${picked.masa_manfaat_tahun} tahun` : '-'}</span>
+            <span className="text-gray-500">Nilai Kapitalisasi</span><span className="font-medium text-gray-700">{formatRupiah(picked.batas_kapitalisasi)}</span>
+          </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Satuan</label>

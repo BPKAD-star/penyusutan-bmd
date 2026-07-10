@@ -38,6 +38,7 @@ type DraftItem = {
 type KodefikasiHasil = {
   kode: string; uraian: string | null
   nama_objek: string | null; nama_rincian: string | null; nama_sub_rincian: string | null
+  masa_manfaat_tahun: number | null; batas_kapitalisasi: number | null
 }
 type HeaderPayload = { pihak?: string; dokumen_paths?: string[]; draft_items?: DraftItem[] }
 type ApprovalStatus = 'pending' | 'disetujui' | 'ditolak'
@@ -650,7 +651,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     if (!golongan) { setErr('Pilih Jenis BMD dulu.'); return }
     setErr(''); setSearching(true)
     let q = supabase.from('admin_kodefikasi_bmd')
-      .select('kode,uraian,nama_objek,nama_rincian,nama_sub_rincian').eq('aktif', true).like('kode', `${golongan}.%`)
+      .select('kode,uraian,nama_objek,nama_rincian,nama_sub_rincian,masa_manfaat_tahun,batas_kapitalisasi').eq('aktif', true).like('kode', `${golongan}.%`)
     if (search.trim()) q = q.or(`kode.ilike.${search.trim()}%,uraian.ilike.%${search.trim()}%`)
     const { data } = await q.limit(30)
     setResults((data || []) as KodefikasiHasil[])
@@ -710,11 +711,14 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
 
       {picked && (
         <div className="bg-white border border-gray-100 rounded-lg p-3 space-y-3">
-          <div className="text-xs text-gray-500 space-y-0.5">
-            <p>Objek: <span className="font-medium text-gray-700">{picked.nama_objek || '-'}</span></p>
-            <p>Rincian Objek: <span className="font-medium text-gray-700">{picked.nama_rincian || '-'}</span></p>
-            <p>Sub Rincian Objek: <span className="font-medium text-gray-700">{picked.nama_sub_rincian || '-'}</span></p>
-            <p>Uraian: <span className="font-medium text-gray-700">{picked.uraian || '-'}</span> <span className="text-gray-400">({picked.kode})</span></p>
+          <div className="grid grid-cols-[140px_1fr] gap-y-1 text-xs">
+            <span className="text-gray-500">Kode</span><span className="font-medium text-gray-700">{picked.kode}</span>
+            <span className="text-gray-500">Objek</span><span className="font-medium text-gray-700">{picked.nama_objek || '-'}</span>
+            <span className="text-gray-500">Rincian Objek</span><span className="font-medium text-gray-700">{picked.nama_rincian || '-'}</span>
+            <span className="text-gray-500">Sub Rincian Objek</span><span className="font-medium text-gray-700">{picked.nama_sub_rincian || '-'}</span>
+            <span className="text-gray-500">Uraian Barang</span><span className="font-medium text-gray-700">{picked.uraian || '-'}</span>
+            <span className="text-gray-500">Masa Manfaat</span><span className="font-medium text-gray-700">{picked.masa_manfaat_tahun != null ? `${picked.masa_manfaat_tahun} tahun` : '-'}</span>
+            <span className="text-gray-500">Nilai Kapitalisasi</span><span className="font-medium text-gray-700">{formatRupiah(picked.batas_kapitalisasi)}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
