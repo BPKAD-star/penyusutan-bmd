@@ -117,19 +117,27 @@ export default function GisPage() {
 
   const selected = rows.find(r => r.id === selectedId) || null
 
+  // Titik lokasi ada di 2 sumber independen (aset.latitude/longitude — dari
+  // import awal — DAN aset_bidang_tanah.latitude/longitude per bidang), yang
+  // nggak saling sinkron krn KelolaBidangPanel cuma nulis ke aset_bidang_tanah
+  // (aset TIDAK pernah ikut ke-update — lihat komponen itu). Begitu 1 aset
+  // sudah py minimal 1 bidang berkoordinat, bidang itu JADI SATU-SATUNYA
+  // sumber titik (dianggap lebih presisi/terkini) — titik umum aset di-skip,
+  // supaya nggak dobel utk lokasi yg sama (keputusan user 2026-07-10).
   const markers = useMemo<GisMarker[]>(() => {
     const out: GisMarker[] = []
     for (const r of filtered) {
       const bidangList = bidangByAset[r.id] || []
-      const st = statusOf(r)
-      const color: GisMarker['color'] = st === 'sengketa' ? 'red' : st === 'bersertifikat' ? 'teal' : 'amber'
-      if (r.latitude != null && r.longitude != null) {
+      const bidangBerkoordinat = bidangList.filter(b => b.latitude != null && b.longitude != null)
+      if (bidangBerkoordinat.length > 0) {
+        for (const b of bidangBerkoordinat) {
+          const bColor: GisMarker['color'] = b.jenis_hak === 'Sengketa' ? 'red' : b.nomor_dokumen_kepemilikan ? 'teal' : 'amber'
+          out.push({ id: r.id, lat: b.latitude!, lng: b.longitude!, color: bColor, title: r.nama_barang || '-', sub: `${r.nibar || '-'} (bidang)`, active: r.id === selectedId })
+        }
+      } else if (r.latitude != null && r.longitude != null) {
+        const st = statusOf(r)
+        const color: GisMarker['color'] = st === 'sengketa' ? 'red' : st === 'bersertifikat' ? 'teal' : 'amber'
         out.push({ id: r.id, lat: r.latitude, lng: r.longitude, color, title: r.nama_barang || '-', sub: r.nibar || '-', active: r.id === selectedId })
-      }
-      for (const b of bidangList) {
-        if (b.latitude == null || b.longitude == null) continue
-        const bColor: GisMarker['color'] = b.jenis_hak === 'Sengketa' ? 'red' : b.nomor_dokumen_kepemilikan ? 'teal' : 'amber'
-        out.push({ id: r.id, lat: b.latitude, lng: b.longitude, color: bColor, title: r.nama_barang || '-', sub: `${r.nibar || '-'} (bidang)`, active: r.id === selectedId })
       }
     }
     return out
