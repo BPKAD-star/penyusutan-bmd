@@ -15,9 +15,10 @@ export type AsetRingkas = {
   skpd: { nama: string } | null
 }
 
-export default function AsetPicker({ selected, onSelect }: {
+export default function AsetPicker({ selected, onSelect, skpdId }: {
   selected: AsetRingkas | null
   onSelect: (a: AsetRingkas | null) => void
+  skpdId?: number // opsional: batasi pencarian ke SKPD ini (dipakai RKBMD)
 }) {
   const supabase = createClient()
   const [q, setQ] = useState('')
@@ -27,10 +28,12 @@ export default function AsetPicker({ selected, onSelect }: {
   async function cari() {
     if (!q.trim()) return
     setSearching(true)
-    const { data } = await supabase
+    let query = supabase
       .from('aset')
       .select('id,nibar,kode,nama_barang,nilai_perolehan,skpd_id,status,skpd:admin_skpd(nama)')
       .eq('status', 'aktif')
+    if (skpdId != null) query = query.eq('skpd_id', skpdId)
+    const { data } = await query
       .or(`nibar.ilike.%${q}%,nama_barang.ilike.%${q}%,kode.ilike.%${q}%`)
       .limit(20)
     setResults((data as unknown as AsetRingkas[]) || [])

@@ -1,4 +1,5 @@
-import ComingSoon from '@/components/ComingSoon'
+'use client'
+import RkbmdWorkspace from '@/components/rkbmd/RkbmdWorkspace'
 export default function Page() {
-  return <ComingSoon judul="RKBMD" deskripsi="Rencana Kebutuhan Barang Milik Daerah." />
+  return <RkbmdWorkspace />
 }

@@ -107,6 +107,8 @@ const adminGroup: NavNode = {
     { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
     { type: 'leaf', href: '/dashboard/admin/kodefikasi', label: 'Kodefikasi BMD' },
     { type: 'leaf', href: '/dashboard/admin/overhaul', label: 'Overhaul Band' },
+    { type: 'leaf', href: '/dashboard/admin/rkbmd-ssh', label: 'Standar Harga (SSH)' },
+    { type: 'leaf', href: '/dashboard/admin/rkbmd-sbsk', label: 'Standar Kebutuhan (SBSK)' },
     { type: 'leaf', href: '/dashboard/dokumen-sumber', label: 'Dokumen Sumber' },
     { type: 'leaf', href: '/dashboard/admin/tutup-tahun', label: 'Tutup Tahun' },
   ],
