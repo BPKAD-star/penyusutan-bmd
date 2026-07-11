@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
+import SkpdCombobox from '@/components/SkpdCombobox'
 
 type Pegawai = {
   id: string
@@ -23,15 +24,44 @@ const ROLE_BMD = [
   { value: 'penyimpan_barang', label: 'Penyimpan Barang' },
 ]
 
+// Pangkat & golongan/ruang PNS baku (PP 11/2017 jo. PP 99/2000). Pangkat
+// otomatis mengikuti golongan yang dipilih — operator tidak isi manual lagi.
+const GOLONGAN_PANGKAT: { golongan: string; pangkat: string }[] = [
+  { golongan: 'I/a',   pangkat: 'Juru Muda' },
+  { golongan: 'I/b',   pangkat: 'Juru Muda Tingkat I' },
+  { golongan: 'I/c',   pangkat: 'Juru' },
+  { golongan: 'I/d',   pangkat: 'Juru Tingkat I' },
+  { golongan: 'II/a',  pangkat: 'Pengatur Muda' },
+  { golongan: 'II/b',  pangkat: 'Pengatur Muda Tingkat I' },
+  { golongan: 'II/c',  pangkat: 'Pengatur' },
+  { golongan: 'II/d',  pangkat: 'Pengatur Tingkat I' },
+  { golongan: 'III/a', pangkat: 'Penata Muda' },
+  { golongan: 'III/b', pangkat: 'Penata Muda Tingkat I' },
+  { golongan: 'III/c', pangkat: 'Penata' },
+  { golongan: 'III/d', pangkat: 'Penata Tingkat I' },
+  { golongan: 'IV/a',  pangkat: 'Pembina' },
+  { golongan: 'IV/b',  pangkat: 'Pembina Tingkat I' },
+  { golongan: 'IV/c',  pangkat: 'Pembina Utama Muda' },
+  { golongan: 'IV/d',  pangkat: 'Pembina Utama Madya' },
+  { golongan: 'IV/e',  pangkat: 'Pembina Utama' },
+]
+const pangkatDariGolongan = (g: string) => GOLONGAN_PANGKAT.find(x => x.golongan === g)?.pangkat || ''
+
+// Data lama boleh tersimpan format bebas (mis. "III-b", "iv/e") — normalisasi
+// supaya tetap kepilih di dropdown saat Edit.
+function normalisasiGolongan(g: string): string {
+  const m = g.trim().match(/^(I|II|III|IV)[\s/-]?([a-eA-E])$/)
+  return m ? `${m[1]}/${m[2].toLowerCase()}` : g
+}
+
 const FORM_KOSONG = {
-  nip: '', nama: '', pangkat: '', golongan: '', jabatan: '',
-  role_bmd: 'pengurus_barang', skpd_id: '' as number | '',
+  nip: '', nama: '', golongan: '', jabatan: '',
+  role_bmd: 'pengurus_barang', skpd_id: '',
 }
 
 export default function AdminPegawaiPage() {
   const supabase = createClient()
   const [list, setList] = useState<Pegawai[]>([])
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string; level: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -45,11 +75,7 @@ export default function AdminPegawaiPage() {
     setLoading(false)
   }
 
-  useEffect(() => {
-    load()
-    supabase.from('admin_skpd').select('id,nama,level').order('nama').limit(1000)
-      .then(({ data }) => setSkpdList(data || []))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openCreate() {
     setEditId(null)
@@ -59,9 +85,11 @@ export default function AdminPegawaiPage() {
 
   function openEdit(p: Pegawai) {
     setEditId(p.id)
+    const golonganNormal = p.golongan ? normalisasiGolongan(p.golongan) : ''
     setForm({
-      nip: p.nip, nama: p.nama, pangkat: p.pangkat || '', golongan: p.golongan || '',
-      jabatan: p.jabatan || '', role_bmd: p.role_bmd, skpd_id: p.skpd_id ?? '',
+      nip: p.nip, nama: p.nama,
+      golongan: GOLONGAN_PANGKAT.some(g => g.golongan === golonganNormal) ? golonganNormal : '',
+      jabatan: p.jabatan || '', role_bmd: p.role_bmd, skpd_id: p.skpd_id != null ? String(p.skpd_id) : '',
     })
     setShowForm(true)
   }
@@ -73,8 +101,9 @@ export default function AdminPegawaiPage() {
 
     const payload = {
       nip: form.nip, nama: form.nama,
-      pangkat: form.pangkat || null, golongan: form.golongan || null, jabatan: form.jabatan || null,
-      role_bmd: form.role_bmd, skpd_id: form.skpd_id || null,
+      pangkat: pangkatDariGolongan(form.golongan) || null, golongan: form.golongan || null,
+      jabatan: form.jabatan || null,
+      role_bmd: form.role_bmd, skpd_id: form.skpd_id ? Number(form.skpd_id) : null,
     }
 
     const { error } = editId
@@ -123,14 +152,13 @@ export default function AdminPegawaiPage() {
                 onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Pangkat</label>
-              <input className="select-filter w-full" value={form.pangkat}
-                onChange={e => setForm(f => ({ ...f, pangkat: e.target.value }))} />
-            </div>
-            <div>
               <label className="block text-xs text-gray-500 mb-1">Golongan</label>
-              <input className="select-filter w-full" value={form.golongan}
-                onChange={e => setForm(f => ({ ...f, golongan: e.target.value }))} />
+              <select className="select-filter w-full" value={form.golongan}
+                onChange={e => setForm(f => ({ ...f, golongan: e.target.value }))}>
+                <option value="">— pilih golongan —</option>
+                {GOLONGAN_PANGKAT.map(g => <option key={g.golongan} value={g.golongan}>{g.golongan} — {g.pangkat}</option>)}
+              </select>
+              {form.golongan && <p className="text-xs text-gray-400 mt-1">Pangkat: {pangkatDariGolongan(form.golongan)}</p>}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
@@ -146,11 +174,8 @@ export default function AdminPegawaiPage() {
             </div>
             <div className="col-span-2">
               <label className="block text-xs text-gray-500 mb-1">SKPD</label>
-              <select className="select-filter w-full" value={form.skpd_id}
-                onChange={e => setForm(f => ({ ...f, skpd_id: e.target.value ? Number(e.target.value) : '' }))}>
-                <option value="">— tanpa SKPD —</option>
-                {skpdList.map(s => <option key={s.id} value={s.id}>{'—'.repeat(s.level - 1)} {s.nama}</option>)}
-              </select>
+              <SkpdCombobox value={form.skpd_id} onChange={id => setForm(f => ({ ...f, skpd_id: id }))}
+                placeholder="Ketik nama SKPD... (kosongkan jika tanpa SKPD)" allowClear />
             </div>
             <div className="col-span-2">
               <button type="submit" disabled={saving} className="btn-primary">
