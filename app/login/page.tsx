@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { setTahunKerjaTersimpan, getTahunKerjaTersimpan } from '@/lib/tahunKerja'
+import { toAuthEmail } from '@/lib/authIdentifier'
 
 type TahunRow = { tahun: number; status: 'terbuka' | 'terkunci' }
 
@@ -34,9 +35,9 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: toAuthEmail(email), password })
     if (error) {
-      setError('Email atau password salah.')
+      setError('Username/email atau password salah.')
       setLoading(false)
     } else {
       if (tahunKerja) setTahunKerjaTersimpan(tahunKerja)
@@ -65,14 +66,13 @@ export default function LoginPage() {
           <h2 className="text-lg font-semibold text-gray-800 mb-6">Masuk ke Sistem</h2>
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username / Email</label>
               <input
-                type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal/30"
-                placeholder="email@example.com"
+                placeholder="username atau email@example.com"
               />
             </div>
             <div>

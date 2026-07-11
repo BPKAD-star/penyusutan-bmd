@@ -1,8 +1,10 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { toAuthEmail } from '@/lib/authIdentifier'
 import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
-  const { email, password, pegawai_id, role, username } = await req.json()
+  const { email: rawIdentifier, password, pegawai_id, role, username } = await req.json()
+  const email = toAuthEmail(rawIdentifier)
 
   // Hanya admin yang boleh membuat user
   const session = createClient()

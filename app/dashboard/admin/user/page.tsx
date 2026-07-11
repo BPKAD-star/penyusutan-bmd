@@ -136,9 +136,11 @@ export default function AdminUserPage() {
                 onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Email (untuk login)</label>
-              <input type="email" required className="select-filter w-full" value={form.email}
+              <label className="block text-xs text-gray-500 mb-1">Username / Email (untuk login)</label>
+              <input required className="select-filter w-full" value={form.email}
+                placeholder="mis. pengurusadimas atau nama@email.com"
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+              <p className="text-xs text-gray-400 mt-1">Boleh username bebas (tanpa @) atau email asli.</p>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Password</label>
