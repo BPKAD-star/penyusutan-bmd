@@ -29,10 +29,10 @@ export async function POST(req: Request) {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'OPENROUTER_API_KEY belum diset di server (env Vercel).' }, { status: 500 })
 
-  const { error: insErr } = await supabase.from('ai_chat_messages').insert({ user_id: user.id, role: 'user', content })
+  const { error: insErr } = await supabase.from('chat_messages_ai').insert({ user_id: user.id, role: 'user', content })
   if (insErr) return NextResponse.json({ error: `Gagal menyimpan pesan: ${insErr.message}` }, { status: 500 })
 
-  const { data: history } = await supabase.from('ai_chat_messages')
+  const { data: history } = await supabase.from('chat_messages_ai')
     .select('role,content').eq('user_id', user.id).order('id', { ascending: false }).limit(HISTORY_LIMIT)
   const ordered = ((history || []) as { role: 'user' | 'assistant'; content: string }[]).reverse()
 
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     reply = `Maaf, AI sedang bermasalah: ${e instanceof Error ? e.message : String(e)}`
   }
 
-  const { data: saved, error: saveErr } = await supabase.from('ai_chat_messages')
+  const { data: saved, error: saveErr } = await supabase.from('chat_messages_ai')
     .insert({ user_id: user.id, role: 'assistant', content: reply })
     .select('id,role,content,created_at').single()
   if (saveErr) return NextResponse.json({ error: `Gagal menyimpan balasan: ${saveErr.message}` }, { status: 500 })

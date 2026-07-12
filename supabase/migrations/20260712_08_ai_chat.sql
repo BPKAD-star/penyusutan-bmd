@@ -6,7 +6,7 @@
 -- supaya tak perlu bikin baris admin_profiles palsu utk "user AI", dan supaya
 -- RLS-nya sederhana: tiap user cuma boleh lihat/insert/hapus barisnya sendiri.
 -- ============================================================================
-CREATE TABLE IF NOT EXISTS ai_chat_messages (
+CREATE TABLE IF NOT EXISTS chat_messages_ai (
   id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id     uuid NOT NULL REFERENCES admin_profiles(id) ON DELETE CASCADE,
   role        text NOT NULL CHECK (role IN ('user', 'assistant')),
@@ -14,18 +14,18 @@ CREATE TABLE IF NOT EXISTS ai_chat_messages (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_user ON ai_chat_messages(user_id, id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_ai_user ON chat_messages_ai(user_id, id);
 
-ALTER TABLE ai_chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages_ai ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS ai_chat_select ON ai_chat_messages;
-CREATE POLICY ai_chat_select ON ai_chat_messages FOR SELECT
+DROP POLICY IF EXISTS chat_messages_ai_select ON chat_messages_ai;
+CREATE POLICY chat_messages_ai_select ON chat_messages_ai FOR SELECT
   USING (user_id = auth.uid());
 
-DROP POLICY IF EXISTS ai_chat_insert ON ai_chat_messages;
-CREATE POLICY ai_chat_insert ON ai_chat_messages FOR INSERT
+DROP POLICY IF EXISTS chat_messages_ai_insert ON chat_messages_ai;
+CREATE POLICY chat_messages_ai_insert ON chat_messages_ai FOR INSERT
   WITH CHECK (user_id = auth.uid());
 
-DROP POLICY IF EXISTS ai_chat_delete ON ai_chat_messages;
-CREATE POLICY ai_chat_delete ON ai_chat_messages FOR DELETE
+DROP POLICY IF EXISTS chat_messages_ai_delete ON chat_messages_ai;
+CREATE POLICY chat_messages_ai_delete ON chat_messages_ai FOR DELETE
   USING (user_id = auth.uid());

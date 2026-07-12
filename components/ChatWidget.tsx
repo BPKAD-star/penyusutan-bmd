@@ -26,7 +26,7 @@ export default function ChatWidget() {
   const [publicMsgs, setPublicMsgs] = useState<Msg[]>([])
   const [dmMsgs, setDmMsgs] = useState<Msg[]>([]) // pesan DM utk seluruh kontak (dipakai list preview + thread aktif)
   const [dmLoaded, setDmLoaded] = useState(false)
-  const [aiMsgs, setAiMsgs] = useState<AiMsg[]>([]) // percakapan pribadi dgn Asisten AI (tabel ai_chat_messages, terpisah dari chat_messages)
+  const [aiMsgs, setAiMsgs] = useState<AiMsg[]>([]) // percakapan pribadi dgn Asisten AI (tabel chat_messages_ai, terpisah dari chat_messages)
   const [aiLoaded, setAiLoaded] = useState(false)
   const [aiBusy, setAiBusy] = useState(false) // true selagi menunggu balasan OpenRouter
   const [lastRead, setLastRead] = useState<Record<string, number>>({}) // room_key -> last_read_id
@@ -84,7 +84,7 @@ export default function ChatWidget() {
   useEffect(() => {
     if (!open || aiLoaded || !myId) return
     ;(async () => {
-      const { data } = await supabase.from('ai_chat_messages')
+      const { data } = await supabase.from('chat_messages_ai')
         .select('id,role,content,created_at').eq('user_id', myId).order('id', { ascending: true }).limit(300)
       setAiMsgs((data as AiMsg[]) || [])
       setAiLoaded(true)
@@ -199,7 +199,7 @@ export default function ChatWidget() {
   async function hapusAi(id: number) {
     if (id < 0) { setAiMsgs(prev => prev.filter(m => m.id !== id)); return } // pesan lokal (gagal simpan), belum ada di DB
     if (!confirm('Hapus pesan ini?')) return
-    const { error } = await supabase.from('ai_chat_messages').delete().eq('id', id)
+    const { error } = await supabase.from('chat_messages_ai').delete().eq('id', id)
     if (error) { alert(`Gagal hapus: ${error.message}`); return }
     setAiMsgs(prev => prev.filter(m => m.id !== id))
   }
