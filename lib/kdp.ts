@@ -156,7 +156,9 @@ export async function hapusBarang(supabase: SupabaseClient, barangId: string): P
   const asetId = await asetDariBarang(supabase, barangId)
   const { error } = await supabase.from('proyek_barang').delete().eq('id', barangId) // cascade termin draft
   if (error) return { error: `Gagal menghapus barang: ${error.message}` }
-  if (asetId) await supabase.from('aset').update({ status: 'dihapus' }).eq('id', asetId)
+  // Barang belum resmi (tanpa ledger) → set 'draft' supaya TERSEMBUNYI dari Daftar
+  // Barang (yang saring 'draft'). 'dihapus' malah tetap tampil krn tak ada event SEMBUNYI.
+  if (asetId) await supabase.from('aset').update({ status: 'draft' }).eq('id', asetId)
   return {}
 }
 
@@ -172,7 +174,8 @@ export async function hapusPaket(supabase: SupabaseClient, proyekId: string): Pr
   if (kdpLama) asetIds.push(kdpLama)
   const { error } = await supabase.from('proyek_konstruksi').delete().eq('id', proyekId) // cascade barang+termin
   if (error) return { error: `Gagal menghapus paket: ${error.message}` }
-  if (asetIds.length) await supabase.from('aset').update({ status: 'dihapus' }).in('id', asetIds)
+  // 'draft' → tersembunyi dari Daftar Barang (barang belum resmi / tanpa ledger).
+  if (asetIds.length) await supabase.from('aset').update({ status: 'draft' }).in('id', asetIds)
   return {}
 }
 
