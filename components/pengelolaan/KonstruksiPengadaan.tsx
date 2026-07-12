@@ -26,7 +26,12 @@ const komponenLabel = (v: string) => KOMPONEN.find(k => k.value === v)?.label ||
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const FIELDS_KDP = GOLONGAN_FIELDS['1.3.1']
 
-export default function KonstruksiPengadaan({ skpdProp, embedded }: { skpdProp?: string; embedded?: boolean } = {}) {
+export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, openId, onExit }: {
+  skpdProp?: string; embedded?: boolean
+  // Mode "drill" dari PengadaanEntry (daftar gabungan): buka 1 kontrak / mulai buat baru,
+  // tombol kembali balik ke daftar gabungan. onExit != null = mode drill.
+  startCreate?: boolean; openId?: string; onExit?: () => void
+} = {}) {
   const supabase = createClient()
   const [isAdmin, setIsAdmin] = useState(false)
   const [skpdInternal, setSkpdInternal] = useState('')
@@ -52,11 +57,37 @@ export default function KonstruksiPengadaan({ skpdProp, embedded }: { skpdProp?:
     setList((data || []) as Kontrak[])
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(skpd); setSelected(null); setShowCreate(false) }, [skpd, load])
+  // Mode drill: buka kontrak yang diminta induk begitu daftar termuat.
+  useEffect(() => { if (openId) { const found = list.find(k => k.id === openId); if (found) setSelected(found) } }, [openId, list])
 
   const refreshSelected = async () => {
     if (!selected) return
     const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload').eq('id', selected.id).single()
     if (data) setSelected(data as Kontrak)
+  }
+
+  // ── Mode drill (dipanggil dari daftar gabungan PengadaanEntry) ──────────────
+  if (onExit) {
+    return (
+      <div className="space-y-4">
+        {msg && (
+          <div className={`p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
+        )}
+        {selected ? (
+          <KontrakDetail kontrak={selected} isAdmin={isAdmin} onBack={onExit}
+            onMsg={setMsg} onChanged={async () => { await refreshSelected(); load(skpd) }} />
+        ) : startCreate ? (
+          <>
+            <button onClick={onExit} className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>Kembali ke daftar
+            </button>
+            <CreateKontrak skpdId={Number(skpd)} onSaved={k => { load(skpd); setSelected(k); setMsg('Kontrak dibuat (draft) — lengkapi rincian pembayaran di bawah lalu tunggu approval.') }} onErr={setMsg} />
+          </>
+        ) : (
+          <div className="card p-8 text-center text-gray-400 text-sm">Memuat kontrak…</div>
+        )}
+      </div>
+    )
   }
 
   const body = (

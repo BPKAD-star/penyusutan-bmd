@@ -135,7 +135,12 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
   }
   return out
 }
-export default function Pengadaan({ skpdProp, embedded }: { skpdProp?: string; embedded?: boolean } = {}) {
+export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onExit }: {
+  skpdProp?: string; embedded?: boolean
+  // Mode "drill" dari PengadaanEntry (daftar gabungan): mulai buat baru (startCreate)
+  // atau buka 1 kontrak (openId) saja, tombol kembali balik ke daftar. onExit != null = drill.
+  startCreate?: boolean; openId?: string; onExit?: () => void
+} = {}) {
   const supabase = createClient()
 
   const [skpdPathMap, setSkpdPathMap] = useState<Record<number, string>>({})
@@ -450,6 +455,72 @@ export default function Pengadaan({ skpdProp, embedded }: { skpdProp?: string; e
 
   const pending = jurnals.filter(j => j.approval_status === 'pending')
   const disetujui = jurnals.filter(j => j.approval_status === 'disetujui')
+
+  // ── Mode drill (dipanggil dari daftar gabungan PengadaanEntry) ──────────────
+  if (onExit) {
+    const fp = openId ? pending.filter(h => h.id === openId) : pending
+    const fd = openId ? disetujui.filter(j => j.id === openId) : disetujui
+    return (
+      <div className="space-y-4">
+        <button onClick={onExit} className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>Kembali ke daftar
+        </button>
+        {msg && (
+          <div className={`p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
+        )}
+        {startCreate ? (
+          <KontrakForm skpdNama={skpdNama || ''} skpdId={Number(skpd)} cekNomorDipakai={cekNomorDipakai}
+            onCancel={onExit}
+            onSaved={() => { loadJurnals(skpd); onExit() }} />
+        ) : loadingJurnal ? (
+          <div className="card p-12 text-center text-gray-400 text-sm">Memuat...</div>
+        ) : (fp.length + fd.length) === 0 ? (
+          <div className="card p-12 text-center text-gray-400 text-sm">Kontrak tidak ditemukan (mungkin sudah dihapus).</div>
+        ) : (
+          <div className="space-y-6">
+            {fp.map(h => (
+              <PendingCard key={h.id} h={h} isAdmin={isAdmin} busy={busyId === h.id}
+                golonganLabels={golonganLabels}
+                onEditHeader={() => setEditing(h)}
+                onHapusKontrak={() => hapusKontrak(h)}
+                onTambah={items => tambahDraftItems(h, items)}
+                onHapusItem={key => hapusDraftItem(h, key)}
+                onEditSpes={keys => setSpecEdit({ header: h, keys })}
+                onApprove={() => approveHeader(h)}
+              />
+            ))}
+            {fd.map(j => (
+              <ApprovedCard key={j.id} j={j} isAdmin={isAdmin} busy={busyId === j.id}
+                onUnapprove={() => unapproveHeader(j)}
+              />
+            ))}
+          </div>
+        )}
+        {editing && (
+          <EditHeaderModal header={editing} cekNomorDipakai={cekNomorDipakai}
+            onClose={() => setEditing(null)}
+            onSaved={() => { setEditing(null); setMsg('Header kontrak diperbarui.'); loadJurnals(skpd) }}
+          />
+        )}
+        {specEdit && (() => {
+          const items = (specEdit.header.payload.draft_items || []).filter(i => specEdit.keys.includes(i.key))
+          const single = items.length === 1 ? items[0] : null
+          return (
+            <EditSpesifikasiModal
+              title={single ? (single.fields.nama_barang || single.kode) : `${items.length} barang dicentang`}
+              fieldKeys={fieldsForKode(items[0]?.kode || '')}
+              initialFields={single ? single.fields : {}}
+              initialFoto={single ? single.foto : []}
+              single={!!single}
+              storagePrefix={single ? `draft/${single.key}` : `draft/${specEdit.header.id}`}
+              onClose={() => setSpecEdit(null)}
+              onSave={async (fields, foto) => { await applyDraftFields(specEdit.header, specEdit.keys, fields, foto); setSpecEdit(null) }}
+            />
+          )
+        })()}
+      </div>
+    )
+  }
 
   const body = (
     <>
