@@ -9,7 +9,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
+import { useSkpdTree } from '@/components/useSkpdTree'
 
 type Trx = {
   id: number
@@ -19,6 +22,7 @@ type Trx = {
   keterangan: string | null
   payload: { pihak?: string } | null
   header: { no_sk: string } | null
+  skpd_tujuan: number | null
   aset: {
     kode: string; uraian_barang: string | null; nama_barang: string | null; nibar: string | null
     merek_tipe: string | null; spesifikasi_lainnya: string | null; intra_ekstra: string | null; status: string
@@ -34,12 +38,17 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   pihakLabel?: string | null
 }) {
   const supabase = createClient()
+  const { rootOf, loaded: skpdLoaded } = useSkpdTree()
   const [rows, setRows] = useState<Trx[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [periodeList, setPeriodeList] = useState<string[]>([])
   const [periode, setPeriode] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
+  // Model 2: rekap matriks per SKPD (root) x per golongan — dibangun lazy saat view dipindah.
+  const [view, setView] = useState<'list' | 'matrix'>('list')
+  const [matrix, setMatrix] = useState<MatrixRow[]>([])
+  const [matrixLoading, setMatrixLoading] = useState(false)
 
   useEffect(() => {
     supabase.from('transaksi_bmd').select('periode').eq('jenis', jenis)
@@ -49,7 +58,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,periode,tanggal,nilai,keterangan,payload,header:header_id(no_sk),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
+      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,header:header_id(no_sk),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
     if (periode) q = q.eq('periode', periode)
@@ -71,6 +80,46 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   }, [buildQuery])
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
+
+  // Model 2: rekap matriks SKPD (root) x golongan — dibangun full (tak dibatasi 500 spt daftar transaksi).
+  useEffect(() => {
+    if (view !== 'matrix' || !skpdLoaded) return
+    ;(async () => {
+      setMatrixLoading(true)
+      const mtx: Record<number, MatrixRow> = {}
+      for (let from = 0; ; from += 1000) {
+        const { data } = await buildQuery().range(from, from + 999)
+        if (!data || data.length === 0) break
+        for (const r of (data as never as Trx[])) {
+          if (r.aset?.status === 'dihapus' || !r.skpd_tujuan) continue
+          const root = rootOf(r.skpd_tujuan)
+          const rid = root?.id ?? r.skpd_tujuan
+          const rnama = root?.nama ?? `SKPD #${r.skpd_tujuan}`
+          const g = kodeLevel3(r.aset?.kode || '')
+          mtx[rid] ??= { skpdId: rid, skpdNama: rnama, cells: {} }
+          const c = (mtx[rid].cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
+          c.perolehan += r.nilai || 0
+        }
+        if (data.length < 1000) break
+      }
+      setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
+      setMatrixLoading(false)
+    })()
+  }, [view, buildQuery, skpdLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleExportMatrix() {
+    exportToExcel(matrix.map(r => {
+      const row: Record<string, unknown> = { SKPD: r.skpdNama }
+      let total = 0
+      for (const g of GOLONGAN_REKAP) {
+        const v = r.cells[g.kode]?.perolehan || 0
+        row[g.uraian] = v
+        total += v
+      }
+      row['Total'] = total
+      return row
+    }), `${filePrefix}_per_SKPD${periode ? '_' + periode : ''}`, 'Rekap per SKPD')
+  }
 
   async function handleExport() {
     setExporting(true)
@@ -107,8 +156,20 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           <h1 className="text-2xl font-bold text-gray-900">{judul}</h1>
           <p className="text-gray-500 text-sm mt-1">{deskripsi}</p>
         </div>
-        <button onClick={handleExport} disabled={exporting} className="btn-primary">
-          {exporting ? 'Mengekspor...' : 'Export Excel'}
+        <button onClick={view === 'list' ? handleExport : handleExportMatrix}
+          disabled={view === 'list' ? exporting : matrix.length === 0} className="btn-primary">
+          {view === 'list' ? (exporting ? 'Mengekspor...' : 'Export Excel') : 'Export Excel'}
+        </button>
+      </div>
+
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
+        <button onClick={() => setView('list')}
+          className={`px-4 py-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+          Daftar Transaksi
+        </button>
+        <button onClick={() => setView('matrix')}
+          className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+          Rekap per SKPD (Model 2)
         </button>
       </div>
 
@@ -127,60 +188,66 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         </div>
       </div>
 
-      <div className="card p-4 mb-4 max-w-xs">
-        <p className="text-xs text-gray-500">{judul}</p>
-        <p className="text-lg font-bold text-gray-900 mt-1">{rows.length.toLocaleString('id-ID')} <span className="text-xs font-normal text-gray-400">transaksi</span></p>
-        <p className="text-xs text-teal font-medium">{formatRupiah(totalNilai)}</p>
-      </div>
+      {view === 'matrix' ? (
+        <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={matrixLoading} />
+      ) : (
+        <>
+          <div className="card p-4 mb-4 max-w-xs">
+            <p className="text-xs text-gray-500">{judul}</p>
+            <p className="text-lg font-bold text-gray-900 mt-1">{rows.length.toLocaleString('id-ID')} <span className="text-xs font-normal text-gray-400">transaksi</span></p>
+            <p className="text-xs text-teal font-medium">{formatRupiah(totalNilai)}</p>
+          </div>
 
-      <div className="card overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
-          <span className="text-sm text-gray-500">{rows.length} transaksi (maks. 500 ditampilkan — export untuk semua)</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                {pihakLabel && <th className="table-th">{pihakLabel}</th>}
-                <th className="table-th">Kode Barang</th>
-                <th className="table-th">Uraian Barang</th>
-                <th className="table-th">Spesifikasi Nama Barang / NIBAR</th>
-                <th className="table-th">Merk/Tipe</th>
-                <th className="table-th">Spesifikasi Lainnya</th>
-                <th className="table-th">Komptabel</th>
-                <th className="table-th">No. Dokumen Sumber</th>
-                <th className="table-th">Tgl Perolehan (BAST)</th>
-                <th className="table-th text-right">Nilai Perolehan</th>
-                <th className="table-th">Keterangan</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr><td colSpan={pihakLabel ? 11 : 10} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={pihakLabel ? 11 : 10} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-              ) : rows.map(r => (
-                <tr key={r.id}>
-                  {pihakLabel && <td className="table-td text-xs">{r.payload?.pihak || '-'}</td>}
-                  <td className="table-td text-xs">{r.aset?.kode || '-'}</td>
-                  <td className="table-td text-xs">{r.aset?.uraian_barang || '-'}</td>
-                  <td className="table-td text-xs">
-                    <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
-                    <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
-                  </td>
-                  <td className="table-td text-xs">{r.aset?.merek_tipe || '-'}</td>
-                  <td className="table-td text-xs">{r.aset?.spesifikasi_lainnya || '-'}</td>
-                  <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
-                  <td className="table-td text-xs">{r.header?.no_sk || '-'}</td>
-                  <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
-                  <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
-                  <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.keterangan || '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          <div className="card overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100">
+              <span className="text-sm text-gray-500">{rows.length} transaksi (maks. 500 ditampilkan — export untuk semua)</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {pihakLabel && <th className="table-th">{pihakLabel}</th>}
+                    <th className="table-th">Kode Barang</th>
+                    <th className="table-th">Uraian Barang</th>
+                    <th className="table-th">Spesifikasi Nama Barang / NIBAR</th>
+                    <th className="table-th">Merk/Tipe</th>
+                    <th className="table-th">Spesifikasi Lainnya</th>
+                    <th className="table-th">Komptabel</th>
+                    <th className="table-th">No. Dokumen Sumber</th>
+                    <th className="table-th">Tgl Perolehan (BAST)</th>
+                    <th className="table-th text-right">Nilai Perolehan</th>
+                    <th className="table-th">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {loading ? (
+                    <tr><td colSpan={pihakLabel ? 11 : 10} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                  ) : rows.length === 0 ? (
+                    <tr><td colSpan={pihakLabel ? 11 : 10} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
+                  ) : rows.map(r => (
+                    <tr key={r.id}>
+                      {pihakLabel && <td className="table-td text-xs">{r.payload?.pihak || '-'}</td>}
+                      <td className="table-td text-xs">{r.aset?.kode || '-'}</td>
+                      <td className="table-td text-xs">{r.aset?.uraian_barang || '-'}</td>
+                      <td className="table-td text-xs">
+                        <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
+                        <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
+                      </td>
+                      <td className="table-td text-xs">{r.aset?.merek_tipe || '-'}</td>
+                      <td className="table-td text-xs">{r.aset?.spesifikasi_lainnya || '-'}</td>
+                      <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
+                      <td className="table-td text-xs">{r.header?.no_sk || '-'}</td>
+                      <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
+                      <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
+                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.keterangan || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
