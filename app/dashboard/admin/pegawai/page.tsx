@@ -11,6 +11,7 @@ type Pegawai = {
   pangkat: string | null
   golongan: string | null
   jabatan: string | null
+  jenis_kelamin: string | null
   role_bmd: string
   skpd_id: number | null
   skpd: { nama: string } | null
@@ -55,7 +56,7 @@ function normalisasiGolongan(g: string): string {
 }
 
 const FORM_KOSONG = {
-  nip: '', nama: '', golongan: '', jabatan: '',
+  nip: '', nama: '', golongan: '', jabatan: '', jenis_kelamin: '',
   role_bmd: 'pengurus_barang', skpd_id: '',
 }
 
@@ -89,7 +90,8 @@ export default function AdminPegawaiPage() {
     setForm({
       nip: p.nip, nama: p.nama,
       golongan: GOLONGAN_PANGKAT.some(g => g.golongan === golonganNormal) ? golonganNormal : '',
-      jabatan: p.jabatan || '', role_bmd: p.role_bmd, skpd_id: p.skpd_id != null ? String(p.skpd_id) : '',
+      jabatan: p.jabatan || '', jenis_kelamin: p.jenis_kelamin || '',
+      role_bmd: p.role_bmd, skpd_id: p.skpd_id != null ? String(p.skpd_id) : '',
     })
     setShowForm(true)
   }
@@ -102,7 +104,7 @@ export default function AdminPegawaiPage() {
     const payload = {
       nip: form.nip, nama: form.nama,
       pangkat: pangkatDariGolongan(form.golongan) || null, golongan: form.golongan || null,
-      jabatan: form.jabatan || null,
+      jabatan: form.jabatan || null, jenis_kelamin: form.jenis_kelamin || null,
       role_bmd: form.role_bmd, skpd_id: form.skpd_id ? Number(form.skpd_id) : null,
     }
 
@@ -164,6 +166,15 @@ export default function AdminPegawaiPage() {
               <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
               <input className="select-filter w-full" value={form.jabatan}
                 onChange={e => setForm(f => ({ ...f, jabatan: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Jenis Kelamin</label>
+              <select className="select-filter w-full" value={form.jenis_kelamin}
+                onChange={e => setForm(f => ({ ...f, jenis_kelamin: e.target.value }))}>
+                <option value="">— pilih —</option>
+                <option value="L">Laki-laki</option>
+                <option value="P">Perempuan</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Role BMD</label>
