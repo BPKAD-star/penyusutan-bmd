@@ -8,10 +8,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 type Msg = { id: number; sender_id: string; recipient_id: string | null; content: string; created_at: string }
+type AiMsg = { id: number; role: 'user' | 'assistant'; content: string; created_at: string }
 type Profile = { id: string; nama: string; skpd: string | null }
 type ProfileRow = { id: string; email: string | null; pegawai: { nama: string } | null; skpd: { nama: string } | null }
 
 const ICON_CHAT = 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z'
+const ICON_AI = 'M13 10V3L4 14h7v7l9-11h-7z'
 
 const fmtJam = (s: string) => new Date(s).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
 const fmtTgl = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -24,6 +26,9 @@ export default function ChatWidget() {
   const [publicMsgs, setPublicMsgs] = useState<Msg[]>([])
   const [dmMsgs, setDmMsgs] = useState<Msg[]>([]) // pesan DM utk seluruh kontak (dipakai list preview + thread aktif)
   const [dmLoaded, setDmLoaded] = useState(false)
+  const [aiMsgs, setAiMsgs] = useState<AiMsg[]>([]) // percakapan pribadi dgn Asisten AI (tabel ai_chat_messages, terpisah dari chat_messages)
+  const [aiLoaded, setAiLoaded] = useState(false)
+  const [aiBusy, setAiBusy] = useState(false) // true selagi menunggu balasan OpenRouter
   const [lastRead, setLastRead] = useState<Record<string, number>>({}) // room_key -> last_read_id
   const [activeRoom, setActiveRoom] = useState<'public' | string | null>(null) // null = list view
   const [search, setSearch] = useState('')
@@ -75,6 +80,17 @@ export default function ChatWidget() {
     })()
   }, [open, dmLoaded, myId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Muat riwayat chat AI (pribadi, tak perlu realtime — balasan datang langsung dari respons API)
+  useEffect(() => {
+    if (!open || aiLoaded || !myId) return
+    ;(async () => {
+      const { data } = await supabase.from('ai_chat_messages')
+        .select('id,role,content,created_at').eq('user_id', myId).order('id', { ascending: true }).limit(300)
+      setAiMsgs((data as AiMsg[]) || [])
+      setAiLoaded(true)
+    })()
+  }, [open, aiLoaded, myId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!myId) return
     const channel = supabase.channel('chat_messages_rt')
@@ -95,7 +111,7 @@ export default function ChatWidget() {
     return () => { supabase.removeChannel(channel) }
   }, [myId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [publicMsgs.length, dmMsgs.length, activeRoom])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [publicMsgs.length, dmMsgs.length, aiMsgs.length, aiBusy, activeRoom])
 
   // Tandai room aktif sudah dibaca sampai pesan terakhir yang terlihat.
   useEffect(() => {
@@ -140,12 +156,12 @@ export default function ChatWidget() {
   const unreadPublic = publicMsgs.filter(m => m.id > (lastRead.public || 0) && m.sender_id !== myId).length
   const unreadTotal = unreadPublic + kontakList.reduce((sum, k) => sum + k.unread, 0)
 
-  const threadMsgs = activeRoom === null ? [] : activeRoom === 'public' ? publicMsgs : (dmByPeer[activeRoom] || [])
-  const threadTitle = activeRoom === null ? '' : activeRoom === 'public' ? 'Publik / Chat Grup' : (profiles[activeRoom]?.nama || 'User')
+  const threadMsgs = activeRoom === null || activeRoom === 'ai' ? [] : activeRoom === 'public' ? publicMsgs : (dmByPeer[activeRoom] || [])
+  const threadTitle = activeRoom === null ? '' : activeRoom === 'ai' ? 'Asisten AI' : activeRoom === 'public' ? 'Publik / Chat Grup' : (profiles[activeRoom]?.nama || 'User')
 
   async function kirim() {
     const content = text.trim()
-    if (!content || !myId || sending || activeRoom === null) return
+    if (!content || !myId || sending || activeRoom === null || activeRoom === 'ai') return
     setSending(true)
     setText('')
     const recipient_id = activeRoom === 'public' ? null : activeRoom
@@ -158,6 +174,34 @@ export default function ChatWidget() {
     if (!confirm('Hapus pesan ini?')) return
     const { error } = await supabase.from('chat_messages').delete().eq('id', id)
     if (error) alert(`Gagal hapus: ${error.message}`)
+  }
+
+  // ── Chat AI: kirim ke /api/ai-chat (server, simpan API key aman) lalu tampilkan balasan ──
+  async function kirimAi() {
+    const content = text.trim()
+    if (!content || aiBusy) return
+    setText('')
+    setAiBusy(true)
+    setAiMsgs(prev => [...prev, { id: -Date.now(), role: 'user', content, created_at: new Date().toISOString() }])
+    try {
+      const res = await fetch('/api/ai-chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || 'Gagal menghubungi AI.')
+      setAiMsgs(prev => [...prev, json.message as AiMsg])
+    } catch (e) {
+      setAiMsgs(prev => [...prev, { id: -Date.now(), role: 'assistant', content: `Maaf, gagal menghubungi AI: ${e instanceof Error ? e.message : String(e)}`, created_at: new Date().toISOString() }])
+    }
+    setAiBusy(false)
+  }
+
+  async function hapusAi(id: number) {
+    if (id < 0) { setAiMsgs(prev => prev.filter(m => m.id !== id)); return } // pesan lokal (gagal simpan), belum ada di DB
+    if (!confirm('Hapus pesan ini?')) return
+    const { error } = await supabase.from('ai_chat_messages').delete().eq('id', id)
+    if (error) { alert(`Gagal hapus: ${error.message}`); return }
+    setAiMsgs(prev => prev.filter(m => m.id !== id))
   }
 
   if (!myId) return null
@@ -198,6 +242,20 @@ export default function ChatWidget() {
                 <input className="select-filter w-full text-sm" placeholder="Cari user / SKPD..."
                   value={search} onChange={e => setSearch(e.target.value)} />
               </div>
+              <button onClick={() => setActiveRoom('ai')}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50">
+                <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={ICON_AI} />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800">Asisten AI</p>
+                  <p className="text-xs text-gray-400 truncate">
+                    {aiMsgs.length > 0 ? aiMsgs[aiMsgs.length - 1].content : 'Tanya apa saja'}
+                  </p>
+                </div>
+              </button>
               <button onClick={() => setActiveRoom('public')}
                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50">
                 <div className="w-9 h-9 rounded-full bg-teal/10 text-teal flex items-center justify-center flex-shrink-0">
@@ -234,6 +292,47 @@ export default function ChatWidget() {
                 <p className="text-xs text-gray-400 text-center py-6">Tidak ada user yang cocok.</p>
               )}
             </div>
+          ) : activeRoom === 'ai' ? (
+            <>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+                {aiMsgs.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-8">Belum ada percakapan. Tanya apa saja ke Asisten AI!</p>
+                ) : aiMsgs.map((m, i) => {
+                  const mine = m.role === 'user'
+                  const prev = aiMsgs[i - 1]
+                  const tglBaru = !prev || fmtTgl(prev.created_at) !== fmtTgl(m.created_at)
+                  return (
+                    <div key={m.id}>
+                      {tglBaru && <p className="text-center text-[11px] text-gray-400 my-3">{fmtTgl(m.created_at)}</p>}
+                      <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`group max-w-[75%] rounded-lg px-3 py-2 text-sm relative ${mine ? 'bg-teal text-white' : 'bg-indigo-50 text-gray-800'}`}>
+                          {!mine && <p className="text-[11px] font-medium text-indigo-600 mb-0.5">Asisten AI</p>}
+                          <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>{fmtJam(m.created_at)}</p>
+                            <button onClick={() => hapusAi(m.id)}
+                              className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${mine ? 'text-white/70 hover:text-white' : 'text-gray-400 hover:text-gray-600'}`}>
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {aiBusy && (
+                  <div className="flex justify-start">
+                    <div className="bg-indigo-50 text-gray-500 rounded-lg px-3 py-2 text-sm italic">Asisten AI sedang mengetik...</div>
+                  </div>
+                )}
+                <div ref={bottomRef} />
+              </div>
+              <form onSubmit={e => { e.preventDefault(); kirimAi() }} className="border-t border-gray-100 p-2 flex gap-2 flex-shrink-0">
+                <input className="select-filter flex-1 text-sm" placeholder="Tanya sesuatu ke AI..." value={text}
+                  onChange={e => setText(e.target.value)} maxLength={4000} disabled={aiBusy} />
+                <button type="submit" disabled={aiBusy || !text.trim()} className="btn-primary text-sm px-3">Kirim</button>
+              </form>
+            </>
           ) : (
             <>
               <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">

@@ -25,7 +25,9 @@ supabase/migrations/20260702_03_saldo_awal_ke_ledger.sql (migrasi 6.518 aset exi
 NEXT_PUBLIC_SUPABASE_URL=https://gvwparkboopglytnjbad.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+OPENROUTER_API_KEY=your-openrouter-api-key
 ```
+`OPENROUTER_API_KEY` dipakai server-side saja (`app/api/ai-chat/route.ts`) untuk opsi "Asisten AI" di ChatWidget — jangan diberi prefix `NEXT_PUBLIC_`.
 
 ### 3. Install & jalankan
 ```bash
