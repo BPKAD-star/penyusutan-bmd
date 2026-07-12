@@ -1,0 +1,313 @@
+'use client'
+// Pekerjaan Fisik (Konstruksi) — sub-mode di Pengadaan Entry Manual.
+// 1 kontrak = 1 kartu jurnal_header (kategori 'konstruksi'), approval per kontrak,
+// materialize 1 KDP saat approve. Semua entry dalam satu form berurutan.
+import { useCallback, useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import FormShell from './FormShell'
+import SkpdCombobox from '@/components/SkpdCombobox'
+import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
+import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
+import EditSpesifikasiModal from './EditSpesifikasiModal'
+import { useDateBounds } from '@/components/useTahunBuku'
+import { formatRupiah } from '@/lib/export'
+import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
+import {
+  approveKontrakKonstruksi, unapproveKontrakKonstruksi,
+  type KontrakKonstruksiPayload, type PembayaranKdp,
+} from '@/lib/kdp'
+
+type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload }
+const KOMPONEN = [
+  { value: 'perencanaan', label: 'Perencanaan' }, { value: 'fisik', label: 'Fisik' },
+  { value: 'biaya_umum', label: 'Biaya Umum' }, { value: 'pengawasan', label: 'Pengawasan' },
+]
+const komponenLabel = (v: string) => KOMPONEN.find(k => k.value === v)?.label || v
+const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
+const FIELDS_KDP = GOLONGAN_FIELDS['1.3.1']
+
+export default function KonstruksiPengadaan() {
+  const supabase = createClient()
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [skpd, setSkpd] = useState('')
+  const [list, setList] = useState<Kontrak[]>([])
+  const [selected, setSelected] = useState<Kontrak | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from('admin_profiles').select('role').eq('id', user.id).single()
+      setIsAdmin((data as { role?: string } | null)?.role === 'admin')
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const load = useCallback(async (skpdId: string) => {
+    if (!skpdId) { setList([]); return }
+    const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload')
+      .eq('kategori', 'konstruksi').eq('skpd_id', Number(skpdId)).order('created_at', { ascending: false })
+    setList((data || []) as Kontrak[])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(skpd); setSelected(null); setShowCreate(false) }, [skpd, load])
+
+  const refreshSelected = async () => {
+    if (!selected) return
+    const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload').eq('id', selected.id).single()
+    if (data) setSelected(data as Kontrak)
+  }
+
+  return (
+    <FormShell judul="Pekerjaan Fisik (Konstruksi)" deskripsi="Kontrak konstruksi → rincian pembayaran menumpuk jadi 1 KDP; approval per kontrak." msg={msg}>
+      <div className="card p-5 mb-4">
+        <label className="block text-xs text-gray-500 mb-1">Lokasi / SKPD</label>
+        <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpd(id); setMsg('') }} placeholder="Ketik nama SKPD..." />
+      </div>
+
+      {!skpd ? (
+        <div className="card p-12 text-center text-gray-400 text-sm">Pilih SKPD untuk mulai.</div>
+      ) : selected ? (
+        <KontrakDetail kontrak={selected} isAdmin={isAdmin} onBack={() => { setSelected(null); load(skpd) }}
+          onMsg={setMsg} onChanged={async () => { await refreshSelected(); load(skpd) }} />
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-500">{list.length} kontrak</span>
+            <button className="btn-primary" onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Batal' : '+ Buat Kontrak'}</button>
+          </div>
+          {showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={() => { setShowCreate(false); load(skpd); setMsg('Kontrak dibuat (draft) — lengkapi rincian pembayaran lalu tunggu approval.') }} onErr={setMsg} />}
+          <div className="card overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100"><tr>
+                <th className="table-th">Pekerjaan</th><th className="table-th">No Kontrak</th><th className="table-th">Status</th><th className="table-th"></th>
+              </tr></thead>
+              <tbody className="divide-y divide-gray-50">
+                {list.length === 0 ? <tr><td colSpan={4} className="table-td text-center py-8 text-gray-400">Belum ada kontrak.</td></tr>
+                  : list.map(k => (
+                    <tr key={k.id}>
+                      <td className="table-td text-sm font-medium">{k.payload?.nama_pekerjaan || '—'}</td>
+                      <td className="table-td text-xs text-gray-500">{k.no_sk}</td>
+                      <td className="table-td"><span className={`text-xs px-2 py-0.5 rounded-full ${k.approval_status === 'disetujui' ? 'bg-teal/10 text-teal' : 'bg-amber-100 text-amber-700'}`}>{k.approval_status === 'disetujui' ? 'Disetujui' : 'Draft'}</span></td>
+                      <td className="table-td text-right"><button className="text-teal hover:underline text-xs font-medium" onClick={() => setSelected(k)}>Buka</button></td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </FormShell>
+  )
+}
+
+// ── Form buat kontrak (berurutan) ───────────────────────────────────────────
+function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: () => void; onErr: (m: string) => void }) {
+  const supabase = createClient()
+  const bounds = useDateBounds()
+  const [f, setF] = useState({ nama: '', noKontrak: '', tglKontrak: '', program: '', kegiatan: '', subKeg: '', penyedia: '', nilaiKontrak: '', keterangan: '' })
+  const [ppk, setPpk] = useState('')
+  const [kode, setKode] = useState<KodefikasiHasil | null>(null)
+  const [pegawai, setPegawai] = useState<{ nama: string; nip: string }[]>([])
+  const [kapYa, setKapYa] = useState(false)
+  const [target, setTarget] = useState<AsetRingkas | null>(null)
+  const [saving, setSaving] = useState(false)
+  const set = (k: keyof typeof f, v: string) => setF(s => ({ ...s, [k]: v }))
+
+  useEffect(() => { supabase.from('admin_pegawai').select('nama,nip').order('nama').then(({ data }) => setPegawai((data || []) as { nama: string; nip: string }[])) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!f.nama.trim()) { onErr('Error: nama pekerjaan wajib.'); return }
+    if (!f.noKontrak.trim() || !f.tglKontrak) { onErr('Error: No & Tgl Kontrak wajib.'); return }
+    if (!kode) { onErr('Error: pilih Kode Barang KDP (1.3.6).'); return }
+    setSaving(true)
+    const payload: KontrakKonstruksiPayload = {
+      nama_pekerjaan: f.nama, sumber: 'spk',
+      program: f.program || null, kegiatan: f.kegiatan || null, sub_kegiatan: f.subKeg || null,
+      ppk: ppk || null, penyedia: f.penyedia || null, nilai_kontrak: f.nilaiKontrak ? Number(f.nilaiKontrak) : null,
+      kode_kdp: kode.kode, keterangan: f.keterangan || null,
+      kap_info: kapYa ? { menambah: true, target_aset_id: target?.id || null, target_nama: target?.nama_barang || null } : { menambah: false },
+      pembayaran: [],
+    }
+    const { error } = await supabase.from('jurnal_header').insert({
+      skpd_id: skpdId, kategori: 'konstruksi', no_sk: f.noKontrak.trim(), tanggal: f.tglKontrak,
+      keterangan: f.keterangan || null, approval_status: 'pending', payload,
+    })
+    setSaving(false)
+    if (error) onErr(`Error: ${error.message}`); else onSaved()
+  }
+
+  const fld = (label: string, k: keyof typeof f, type = 'text') => (
+    <div><label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <input type={type} className="select-filter w-full" value={f[k]} onChange={e => set(k, e.target.value)} /></div>
+  )
+  return (
+    <form onSubmit={submit} className="card p-5 mb-4 space-y-4 max-w-2xl">
+      {fld('Nama Pekerjaan', 'nama')}
+      <div><label className="block text-xs text-gray-500 mb-1">Sumber Pekerjaan (Dokumen Sumber)</label>
+        <input className="select-filter w-full bg-gray-100 text-gray-600" value="Surat Perintah Kerja (SPK)" readOnly /></div>
+      {fld('No. Dokumen Kontrak', 'noKontrak')}
+      <div><label className="block text-xs text-gray-500 mb-1">Tgl Dokumen Kontrak</label>
+        <input type="date" min={bounds.min} max={bounds.max} className="select-filter w-full" value={f.tglKontrak} onChange={e => set('tglKontrak', e.target.value)} /></div>
+      {fld('Program', 'program')}
+      {fld('Kegiatan', 'kegiatan')}
+      {fld('Sub Kegiatan', 'subKeg')}
+      <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
+        <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
+          <option value="">— pilih pegawai —</option>
+          {pegawai.map((p, i) => <option key={i} value={p.nama}>{p.nama} — {p.nip}</option>)}
+        </select></div>
+      {fld('Nama Penyedia', 'penyedia')}
+      <div><label className="block text-xs text-gray-500 mb-1">Kode Barang (jenis KDP — golongan 1.3.6)</label>
+        <KodefikasiPicker picked={kode} onPick={setKode} golonganTetap="1.3.6" /></div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Menambah masa manfaat aset yang sudah tercatat? <span className="text-gray-400">(info — reklas & kapitalisasi tetap manual nanti)</span></label>
+        <div className="flex gap-4 text-sm">
+          <label className="flex items-center gap-1"><input type="radio" checked={!kapYa} onChange={() => { setKapYa(false); setTarget(null) }} /> Tidak</label>
+          <label className="flex items-center gap-1"><input type="radio" checked={kapYa} onChange={() => setKapYa(true)} /> Ya</label>
+        </div>
+        {kapYa && <div className="mt-2"><AsetPicker selected={target} onSelect={setTarget} skpdId={skpdId} /></div>}
+      </div>
+      {fld('Nilai Kontrak Pekerjaan (Rp)', 'nilaiKontrak', 'number')}
+      {fld('Keterangan Kontrak', 'keterangan')}
+      <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Menyimpan...' : 'Simpan Kontrak'}</button>
+    </form>
+  )
+}
+
+// ── Detail kontrak: rincian pembayaran + spec + approval ────────────────────
+function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg }: {
+  kontrak: Kontrak; isAdmin: boolean; onBack: () => void; onChanged: () => void; onMsg: (m: string) => void
+}) {
+  const supabase = createClient()
+  const bounds = useDateBounds()
+  const [busy, setBusy] = useState(false)
+  const [showSpec, setShowSpec] = useState(false)
+  const p = kontrak.payload || ({} as KontrakKonstruksiPayload)
+  const pembayaran = p.pembayaran || []
+  const total = pembayaran.reduce((s, b) => s + Number(b.nominal || 0), 0)
+  const pending = kontrak.approval_status !== 'disetujui'
+  // form rincian
+  const [komponen, setKomponen] = useState('fisik')
+  const [noBast, setNoBast] = useState('')
+  const [tgl, setTgl] = useState('')
+  const [rekening, setRekening] = useState('')
+  const [nominal, setNominal] = useState('')
+  const [ket, setKet] = useState('')
+
+  async function savePayload(next: KontrakKonstruksiPayload) {
+    const { error } = await supabase.from('jurnal_header').update({ payload: next }).eq('id', kontrak.id)
+    if (error) onMsg(`Error: ${error.message}`); else onChanged()
+  }
+  async function tambahRincian(e: React.FormEvent) {
+    e.preventDefault()
+    if (!tgl || !nominal) { onMsg('Error: Tgl BAST & nominal wajib.'); return }
+    const item: PembayaranKdp = { komponen: komponen as PembayaranKdp['komponen'], no_bast: noBast || null, tgl_bast: tgl, kode_rekening: rekening || null, nominal: Number(nominal), keterangan: ket || null }
+    await savePayload({ ...p, pembayaran: [...pembayaran, item] })
+    setNoBast(''); setNominal(''); setKet('')
+  }
+  async function hapusRincian(i: number) { await savePayload({ ...p, pembayaran: pembayaran.filter((_, j) => j !== i) }) }
+  async function saveSpec(fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
+    const spec: Record<string, string> = {}
+    for (const k of ASET_FIELD_COLS) { const v = fields[k]; if (v) spec[k] = ASET_NUM_COLS.has(k) ? String(toNum(v)) : v }
+    await savePayload({ ...p, spec, foto: foto.replace ?? p.foto ?? [] })
+    setShowSpec(false); onMsg('Spesifikasi disimpan.')
+  }
+  async function approve() {
+    if (!confirm(`Setujui kontrak ${kontrak.no_sk}? ${pembayaran.length} pembayaran → 1 KDP ${formatRupiah(total)} resmi tercatat.`)) return
+    setBusy(true); onMsg('')
+    const { error } = await approveKontrakKonstruksi(supabase, kontrak.id)
+    setBusy(false)
+    if (error) onMsg(`Error: ${error}`); else { onMsg('Kontrak disetujui — KDP resmi tercatat.'); onChanged() }
+  }
+  async function unapprove() {
+    if (!confirm('Buka kunci? KDP disembunyikan dari Daftar Barang & kontrak kembali draft.')) return
+    setBusy(true); onMsg('')
+    const { error } = await unapproveKontrakKonstruksi(supabase, kontrak.id)
+    setBusy(false)
+    if (error) onMsg(`Error: ${error}`); else { onMsg('Kontrak dibuka kunci — kembali draft.'); onChanged() }
+  }
+  async function hapus() {
+    if (!confirm('Hapus kontrak draft ini?')) return
+    const { error } = await supabase.from('jurnal_header').delete().eq('id', kontrak.id)
+    if (error) onMsg(`Error: ${error.message}`); else onBack()
+  }
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} title="Kembali" className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>Kembali
+      </button>
+
+      <div className="card p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">{p.nama_pekerjaan}</h2>
+            <div className="mt-1 text-xs text-gray-500 space-y-0.5">
+              <p>SPK {kontrak.no_sk} · {kontrak.tanggal} · KDP {p.kode_kdp}</p>
+              {(p.program || p.kegiatan) && <p>Program: {p.program || '—'} · Kegiatan: {p.kegiatan || '—'}{p.sub_kegiatan ? ` · Sub: ${p.sub_kegiatan}` : ''}</p>}
+              {(p.penyedia || p.ppk) && <p>Penyedia: {p.penyedia || '—'} · PPK: {p.ppk || '—'}</p>}
+              {p.kap_info?.menambah && <p className="text-amber-600">Catatan: menambah masa manfaat aset {p.kap_info.target_nama || '(dipilih)'} — reklas & kapitalisasi manual nanti.</p>}
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Total Pembayaran (KDP)</p>
+            <p className="text-lg font-bold text-navy">{formatRupiah(total)}</p>
+            {p.nilai_kontrak ? <p className="text-[11px] text-gray-400">Nilai kontrak {formatRupiah(p.nilai_kontrak)}</p> : null}
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="text-sm text-teal hover:underline" onClick={() => setShowSpec(true)}>Edit Spesifikasi Barang</button>
+          {pending && isAdmin && pembayaran.length > 0 && <button className="btn-primary" onClick={approve} disabled={busy}>Setujui Kontrak</button>}
+          {pending && <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={hapus}>Hapus</button>}
+          {!pending && isAdmin && <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200" onClick={unapprove} disabled={busy}>Buka Kunci</button>}
+        </div>
+        {!pending && <p className="mt-2 text-sm text-teal">Disetujui — KDP resmi tercatat di Daftar Barang.</p>}
+      </div>
+
+      {pending && (
+        <form onSubmit={tambahRincian} className="card p-5 space-y-3 max-w-2xl">
+          <h3 className="text-sm font-semibold text-gray-800">Tambah Rincian / Pembayaran</h3>
+          <div><label className="block text-xs text-gray-500 mb-1">Komponen</label>
+            <select className="select-filter w-full" value={komponen} onChange={e => setKomponen(e.target.value)}>{KOMPONEN.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}</select></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Nomor BAST</label><input className="select-filter w-full" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST</label><input type="date" min={bounds.min} max={bounds.max} className="select-filter w-full" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Kode Rekening Pembayaran</label><input className="select-filter w-full" value={rekening} onChange={e => setRekening(e.target.value)} placeholder="free-form" /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Nominal Pembayaran (Rp)</label><input type="number" className="select-filter w-full" value={nominal} onChange={e => setNominal(e.target.value)} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>
+          <button type="submit" className="btn-primary text-sm py-1.5">+ Tambah Rincian</button>
+        </form>
+      )}
+
+      <div className="card overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-gray-100"><h3 className="text-sm font-semibold text-gray-700">Rincian Pembayaran</h3></div>
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-100"><tr>
+            <th className="table-th">Komponen</th><th className="table-th">No BAST</th><th className="table-th">Tgl</th><th className="table-th">Rekening</th><th className="table-th">Keterangan</th><th className="table-th text-right">Nominal</th>{pending && <th className="table-th"></th>}
+          </tr></thead>
+          <tbody className="divide-y divide-gray-50">
+            {pembayaran.length === 0 ? <tr><td colSpan={7} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada pembayaran.</td></tr>
+              : pembayaran.map((b, i) => (
+                <tr key={i}>
+                  <td className="table-td text-xs">{komponenLabel(b.komponen)}</td>
+                  <td className="table-td text-xs text-gray-500">{b.no_bast || '—'}</td>
+                  <td className="table-td text-xs text-gray-500">{b.tgl_bast}</td>
+                  <td className="table-td text-xs text-gray-500">{b.kode_rekening || '—'}</td>
+                  <td className="table-td text-xs text-gray-600">{b.keterangan || '—'}</td>
+                  <td className="table-td text-xs text-right">{formatRupiah(b.nominal)}</td>
+                  {pending && <td className="table-td text-right"><button className="text-red-500 hover:text-red-700 text-xs" onClick={() => hapusRincian(i)}>Hapus</button></td>}
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showSpec && (
+        <EditSpesifikasiModal title={`Spesifikasi — ${p.nama_pekerjaan}`} fieldKeys={FIELDS_KDP}
+          storagePrefix={`draft/konstruksi/${kontrak.id}`} initialFields={p.spec || {}} initialFoto={p.foto || []}
+          single onSave={saveSpec} onClose={() => setShowSpec(false)} />
+      )}
+    </div>
+  )
+}
