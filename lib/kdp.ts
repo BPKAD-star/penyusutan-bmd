@@ -166,6 +166,10 @@ export async function hapusPaket(supabase: SupabaseClient, proyekId: string): Pr
   if (appr && appr.length > 0) return { error: 'Ada termin disetujui — batalkan dulu sebelum menghapus paket.' }
   const { data: barangs } = await supabase.from('proyek_barang').select('aset_id').eq('proyek_id', proyekId)
   const asetIds = ((barangs || []) as { aset_id: string }[]).map(b => b.aset_id)
+  // Jaga transisi: paket model LAMA (gumpalan) punya aset_kdp_id, bukan proyek_barang.
+  const { data: pk } = await supabase.from('proyek_konstruksi').select('aset_kdp_id').eq('id', proyekId).single()
+  const kdpLama = (pk as { aset_kdp_id?: string | null } | null)?.aset_kdp_id
+  if (kdpLama) asetIds.push(kdpLama)
   const { error } = await supabase.from('proyek_konstruksi').delete().eq('id', proyekId) // cascade barang+termin
   if (error) return { error: `Gagal menghapus paket: ${error.message}` }
   if (asetIds.length) await supabase.from('aset').update({ status: 'dihapus' }).in('id', asetIds)
