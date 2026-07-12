@@ -11,7 +11,7 @@ import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { formatRupiah } from '@/lib/export'
 import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
-import { buatPaket, setujuiTermin, batalTermin, selesaikanProyek, hitungAlokasi, type OutputKdp } from '@/lib/kdp'
+import { buatPaket, hapusPaket, setujuiTermin, batalTermin, selesaikanProyek, hitungAlokasi, type OutputKdp } from '@/lib/kdp'
 
 type Proyek = {
   id: string; skpd_id: number; no_kontrak: string | null; tgl_kontrak: string | null
@@ -60,6 +60,12 @@ export default function Konstruksi() {
 
   useEffect(() => { loadProyek(skpd); setSelected(null); setShowCreate(false) }, [skpd, loadProyek])
 
+  async function hapus(p: Proyek) {
+    if (!confirm(`Hapus paket "${p.nama_pekerjaan}"? (hanya bisa jika belum ada termin disetujui)`)) return
+    const { error } = await hapusPaket(supabase, p.id)
+    if (error) setMsg(`Error: ${error}`); else { setMsg('Paket dihapus.'); loadProyek(skpd) }
+  }
+
   return (
     <FormShell judul="Pekerjaan Konstruksi (KDP)"
       deskripsi="Paket pekerjaan fisik: biaya menumpuk jadi KDP, saat BAPP direklas ke aset tetap (bisa sebagian)." msg={msg}>
@@ -104,8 +110,9 @@ export default function Konstruksi() {
                         {p.status === 'selesai' ? 'Selesai' : 'Berjalan'}
                       </span>
                     </td>
-                    <td className="table-td text-right">
-                      <button className="text-teal hover:underline text-xs font-medium" onClick={() => setSelected(p)}>Buka</button>
+                    <td className="table-td text-right whitespace-nowrap">
+                      <button className="text-teal hover:underline text-xs font-medium mr-3" onClick={() => setSelected(p)}>Buka</button>
+                      {p.status === 'berjalan' && <button className="text-red-500 hover:text-red-700 text-xs font-medium" onClick={() => hapus(p)}>Hapus</button>}
                     </td>
                   </tr>
                 ))}

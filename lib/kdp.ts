@@ -61,6 +61,26 @@ export async function buatPaket(supabase: SupabaseClient, args: {
   return { proyekId }
 }
 
+/**
+ * Hapus paket (hanya kalau BELUM ada termin disetujui = belum ada jejak ledger).
+ * Aset KDP-nya masih Rp0 tanpa transaksi → di-soft-delete (status='dihapus').
+ * Kalau sudah ada termin disetujui, tolak: batalkan dulu (append-only, ledger
+ * tak bisa hilang).
+ */
+export async function hapusPaket(supabase: SupabaseClient, proyekId: string): Promise<{ error?: string }> {
+  const { data: appr } = await supabase.from('proyek_termin')
+    .select('id').eq('proyek_id', proyekId).eq('status', 'disetujui').limit(1)
+  if (appr && appr.length > 0) {
+    return { error: 'Ada termin yang sudah disetujui — batalkan dulu sebelum menghapus paket.' }
+  }
+  const { data: p } = await supabase.from('proyek_konstruksi').select('aset_kdp_id').eq('id', proyekId).single()
+  const asetId = (p as { aset_kdp_id?: string | null } | null)?.aset_kdp_id
+  const { error } = await supabase.from('proyek_konstruksi').delete().eq('id', proyekId) // cascade termin draft
+  if (error) return { error: `Gagal menghapus paket: ${error.message}` }
+  if (asetId) await supabase.from('aset').update({ status: 'dihapus' }).eq('id', asetId) // shell KDP Rp0, tanpa ledger
+  return {}
+}
+
 /** Setujui satu termin (admin) → materialize: buat/naikkan KDP + event akumulasi. */
 export async function setujuiTermin(supabase: SupabaseClient, terminId: string): Promise<{ error?: string }> {
   const { data: tRow } = await supabase.from('proyek_termin')
