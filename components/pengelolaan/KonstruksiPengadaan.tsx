@@ -26,10 +26,11 @@ const komponenLabel = (v: string) => KOMPONEN.find(k => k.value === v)?.label ||
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const FIELDS_KDP = GOLONGAN_FIELDS['1.3.1']
 
-export default function KonstruksiPengadaan() {
+export default function KonstruksiPengadaan({ skpdProp, embedded }: { skpdProp?: string; embedded?: boolean } = {}) {
   const supabase = createClient()
   const [isAdmin, setIsAdmin] = useState(false)
-  const [skpd, setSkpd] = useState('')
+  const [skpdInternal, setSkpdInternal] = useState('')
+  const skpd = skpdProp !== undefined ? skpdProp : skpdInternal // SKPD boleh dikontrol induk (satu tampilan Pengadaan)
   const [list, setList] = useState<Kontrak[]>([])
   const [selected, setSelected] = useState<Kontrak | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -58,12 +59,17 @@ export default function KonstruksiPengadaan() {
     if (data) setSelected(data as Kontrak)
   }
 
-  return (
-    <FormShell judul="Pekerjaan Fisik (Konstruksi)" deskripsi="Kontrak konstruksi → rincian pembayaran menumpuk jadi 1 KDP; approval per kontrak." msg={msg}>
-      <div className="card p-5 mb-4">
-        <label className="block text-xs text-gray-500 mb-1">Lokasi / SKPD</label>
-        <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpd(id); setMsg('') }} placeholder="Ketik nama SKPD..." />
-      </div>
+  const body = (
+    <>
+      {skpdProp === undefined && (
+        <div className="card p-5 mb-4">
+          <label className="block text-xs text-gray-500 mb-1">Lokasi / SKPD</label>
+          <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpdInternal(id); setMsg('') }} placeholder="Ketik nama SKPD..." />
+        </div>
+      )}
+      {embedded && msg && (
+        <div className={`mb-4 p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
+      )}
 
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Pilih SKPD untuk mulai.</div>
@@ -76,7 +82,7 @@ export default function KonstruksiPengadaan() {
             <span className="text-sm text-gray-500">{list.length} kontrak</span>
             <button className="btn-primary" onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Batal' : '+ Buat Kontrak'}</button>
           </div>
-          {showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={() => { setShowCreate(false); load(skpd); setMsg('Kontrak dibuat (draft) — lengkapi rincian pembayaran lalu tunggu approval.') }} onErr={setMsg} />}
+          {showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={k => { setShowCreate(false); load(skpd); setSelected(k); setMsg('Kontrak dibuat (draft) — lengkapi rincian pembayaran di bawah lalu tunggu approval.') }} onErr={setMsg} />}
           <div className="card overflow-hidden">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100"><tr>
@@ -97,12 +103,15 @@ export default function KonstruksiPengadaan() {
           </div>
         </>
       )}
-    </FormShell>
+    </>
+  )
+  return embedded ? body : (
+    <FormShell judul="Pekerjaan Fisik (Konstruksi)" deskripsi="Kontrak konstruksi → rincian pembayaran menumpuk jadi 1 KDP; approval per kontrak." msg={msg}>{body}</FormShell>
   )
 }
 
 // ── Form buat kontrak (berurutan) ───────────────────────────────────────────
-function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: () => void; onErr: (m: string) => void }) {
+function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k: Kontrak) => void; onErr: (m: string) => void }) {
   const supabase = createClient()
   const bounds = useDateBounds()
   const [f, setF] = useState({ nama: '', noKontrak: '', tglKontrak: '', program: '', kegiatan: '', subKeg: '', penyedia: '', nilaiKontrak: '', keterangan: '' })
@@ -110,6 +119,7 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: ()
   const [kode, setKode] = useState<KodefikasiHasil | null>(null)
   const [pegawai, setPegawai] = useState<{ nama: string; nip: string }[]>([])
   const [kapYa, setKapYa] = useState(false)
+  const [jenisTarget, setJenisTarget] = useState('') // golongan aset induk (1.3.3 / 1.3.4) — dipilih dulu sebelum cari barang
   const [target, setTarget] = useState<AsetRingkas | null>(null)
   const [saving, setSaving] = useState(false)
   const set = (k: keyof typeof f, v: string) => setF(s => ({ ...s, [k]: v }))
@@ -130,12 +140,12 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: ()
       kap_info: kapYa ? { menambah: true, target_aset_id: target?.id || null, target_nama: target?.nama_barang || null } : { menambah: false },
       pembayaran: [],
     }
-    const { error } = await supabase.from('jurnal_header').insert({
+    const { data, error } = await supabase.from('jurnal_header').insert({
       skpd_id: skpdId, kategori: 'konstruksi', no_sk: f.noKontrak.trim(), tanggal: f.tglKontrak,
       keterangan: f.keterangan || null, approval_status: 'pending', payload,
-    })
+    }).select('id,skpd_id,no_sk,tanggal,approval_status,payload').single()
     setSaving(false)
-    if (error) onErr(`Error: ${error.message}`); else onSaved()
+    if (error || !data) onErr(`Error: ${error?.message}`); else onSaved(data as Kontrak)
   }
 
   const fld = (label: string, k: keyof typeof f, type = 'text') => (
@@ -164,10 +174,19 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: ()
       <div>
         <label className="block text-xs text-gray-500 mb-1">Menambah masa manfaat aset yang sudah tercatat? <span className="text-gray-400">(info — reklas & kapitalisasi tetap manual nanti)</span></label>
         <div className="flex gap-4 text-sm">
-          <label className="flex items-center gap-1"><input type="radio" checked={!kapYa} onChange={() => { setKapYa(false); setTarget(null) }} /> Tidak</label>
+          <label className="flex items-center gap-1"><input type="radio" checked={!kapYa} onChange={() => { setKapYa(false); setTarget(null); setJenisTarget('') }} /> Tidak</label>
           <label className="flex items-center gap-1"><input type="radio" checked={kapYa} onChange={() => setKapYa(true)} /> Ya</label>
         </div>
-        {kapYa && <div className="mt-2"><AsetPicker selected={target} onSelect={setTarget} skpdId={skpdId} /></div>}
+        {kapYa && (
+          <div className="mt-2 space-y-2">
+            <select className="select-filter w-full" value={jenisTarget} onChange={e => { setJenisTarget(e.target.value); setTarget(null) }}>
+              <option value="">— pilih jenis aset induk —</option>
+              <option value="1.3.3">Gedung dan Bangunan</option>
+              <option value="1.3.4">Jalan, Irigasi dan Jaringan</option>
+            </select>
+            {jenisTarget && <AsetPicker selected={target} onSelect={setTarget} skpdId={skpdId} kodePrefix={jenisTarget} />}
+          </div>
+        )}
       </div>
       {fld('Nilai Kontrak Pekerjaan (Rp)', 'nilaiKontrak', 'number')}
       {fld('Keterangan Kontrak', 'keterangan')}

@@ -135,12 +135,14 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
   }
   return out
 }
-export default function Pengadaan() {
+export default function Pengadaan({ skpdProp, embedded }: { skpdProp?: string; embedded?: boolean } = {}) {
   const supabase = createClient()
 
   const [skpdPathMap, setSkpdPathMap] = useState<Record<number, string>>({})
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
-  const [skpd, setSkpd] = useState('')
+  // SKPD boleh dikontrol induk (satu tampilan Pengadaan: SKPD dipilih sekali di atas).
+  const [skpdInternal, setSkpdInternal] = useState('')
+  const skpd = skpdProp !== undefined ? skpdProp : skpdInternal
   const [isAdmin, setIsAdmin] = useState(false)
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
@@ -449,22 +451,28 @@ export default function Pengadaan() {
   const pending = jurnals.filter(j => j.approval_status === 'pending')
   const disetujui = jurnals.filter(j => j.approval_status === 'disetujui')
 
-  return (
-    <FormShell judul="Pengadaan" msg={msg}
-      deskripsi="Pilih SKPD, buat kontrak (draft), lengkapi barang, lalu tunggu persetujuan admin."
-      headerRight={skpd ? (
-        <div className="text-right flex-shrink-0">
-          <p className="text-xs text-gray-400">Total Pengadaan ({skpdNama})</p>
-          <p className="text-lg font-bold text-gray-900">{formatRupiah(totalSemua)}</p>
+  const body = (
+    <>
+      {skpdProp === undefined && (
+        <div className="card p-5 mb-4">
+          <div className="flex items-center gap-3">
+            <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
+            <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpdInternal(id); setMsg('') }}
+              placeholder="Ketik nama SKPD / Sub OPD / Lokasi..." />
+          </div>
         </div>
-      ) : undefined}>
-      <div className="card p-5 mb-4">
-        <div className="flex items-center gap-3">
-          <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
-          <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpd(id); setMsg('') }}
-            placeholder="Ketik nama SKPD / Sub OPD / Lokasi..." />
+      )}
+      {embedded && msg && (
+        <div className={`mb-4 p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
+      )}
+      {embedded && skpd && (
+        <div className="flex justify-end mb-4">
+          <div className="text-right">
+            <p className="text-xs text-gray-400">Total Pengadaan ({skpdNama})</p>
+            <p className="text-lg font-bold text-gray-900">{formatRupiah(totalSemua)}</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">
@@ -545,7 +553,17 @@ export default function Pengadaan() {
           />
         )
       })()}
-    </FormShell>
+    </>
+  )
+  return embedded ? body : (
+    <FormShell judul="Pengadaan" msg={msg}
+      deskripsi="Pilih SKPD, buat kontrak (draft), lengkapi barang, lalu tunggu persetujuan admin."
+      headerRight={skpd ? (
+        <div className="text-right flex-shrink-0">
+          <p className="text-xs text-gray-400">Total Pengadaan ({skpdNama})</p>
+          <p className="text-lg font-bold text-gray-900">{formatRupiah(totalSemua)}</p>
+        </div>
+      ) : undefined}>{body}</FormShell>
   )
 }
 

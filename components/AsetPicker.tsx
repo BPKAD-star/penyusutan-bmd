@@ -15,10 +15,11 @@ export type AsetRingkas = {
   skpd: { nama: string } | null
 }
 
-export default function AsetPicker({ selected, onSelect, skpdId }: {
+export default function AsetPicker({ selected, onSelect, skpdId, kodePrefix }: {
   selected: AsetRingkas | null
   onSelect: (a: AsetRingkas | null) => void
   skpdId?: number // opsional: batasi pencarian ke SKPD ini (dipakai RKBMD)
+  kodePrefix?: string // opsional: batasi ke golongan tertentu, mis. '1.3.3' (dipakai Konstruksi)
 }) {
   const supabase = createClient()
   const [q, setQ] = useState('')
@@ -33,6 +34,7 @@ export default function AsetPicker({ selected, onSelect, skpdId }: {
       .select('id,nibar,kode,nama_barang,nilai_perolehan,skpd_id,status,skpd:admin_skpd(nama)')
       .eq('status', 'aktif')
     if (skpdId != null) query = query.eq('skpd_id', skpdId)
+    if (kodePrefix) query = query.like('kode', `${kodePrefix}%`)
     const { data } = await query
       .or(`nibar.ilike.%${q}%,nama_barang.ilike.%${q}%,kode.ilike.%${q}%`)
       .limit(20)
