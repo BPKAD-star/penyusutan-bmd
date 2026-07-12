@@ -982,7 +982,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
   const dateBounds = useDateBounds()
   const [sumber, setSumber] = useState<SumberPengadaan>('spk')
   const [noKontrak, setNoKontrak] = useState('')
-  const [tglKontrak, setTglKontrak] = useState(new Date().toISOString().slice(0, 10))
+  const [tglKontrak, setTglKontrak] = useState('')
   const [program, setProgram] = useState('')
   const [kegiatan, setKegiatan] = useState('')
   const [subKeg, setSubKeg] = useState('')
@@ -1049,7 +1049,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
 
       <div>
         <p className="text-xs font-semibold text-gray-600 mb-2">Kartu 1 — Kontrak</p>
-        <div className="grid grid-cols-1 gap-4">
+        <div className="space-y-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Sumber Pengadaan</label>
             <select className="select-filter w-full" value={sumber} onChange={e => setSumber(e.target.value as SumberPengadaan)}>
@@ -1064,7 +1064,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
             <label className="block text-xs text-gray-500 mb-1">Tgl Kontrak</label>
             <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max}
               value={tglKontrak} onChange={e => setTglKontrak(e.target.value)} />
-            <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tglKontrak)}</p>
+            {tglKontrak && <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tglKontrak)}</p>}
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Program</label><input className="select-filter w-full" value={program} onChange={e => setProgram(e.target.value)} placeholder="teks bebas (dropdown menyusul)" /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Kegiatan</label><input className="select-filter w-full" value={kegiatan} onChange={e => setKegiatan(e.target.value)} /></div>
@@ -1083,7 +1083,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
 
       <div className="pt-2 border-t border-gray-100">
         <p className="text-xs font-semibold text-gray-600 mb-2">Kartu 2 — Berita Acara Serah Terima (BAST)</p>
-        <div className="grid grid-cols-1 gap-4">
+        <div className="space-y-4">
           <div><label className="block text-xs text-gray-500 mb-1">No. BAST</label><input className="select-filter w-full" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Tgl BAST <span className="text-gray-400">(= tgl perolehan efektif, tidak boleh &lt; tgl kontrak)</span></label>
@@ -1212,7 +1212,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
           <div><label className="block text-xs text-gray-500 mb-1">Program</label><input className="select-filter w-full" value={program} onChange={e => setProgram(e.target.value)} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Kegiatan</label><input className="select-filter w-full" value={kegiatan} onChange={e => setKegiatan(e.target.value)} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label><input className="select-filter w-full" value={subKeg} onChange={e => setSubKeg(e.target.value)} /></div>
-          <div className="grid grid-cols-1 gap-4">
+          <div className="space-y-4">
             <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Nama PPK</label>
@@ -1225,7 +1225,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>
           <div className="pt-2 border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-600 mb-2">Berita Acara Serah Terima (BAST)</p>
-            <div className="grid grid-cols-1 gap-4">
+            <div className="space-y-4">
               <div><label className="block text-xs text-gray-500 mb-1">No. BAST</label><input className="select-filter w-full" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
               <div><label className="block text-xs text-gray-500 mb-1">Tgl BAST <span className="text-gray-400">(tidak boleh &lt; tgl kontrak)</span></label><input type="date" className="select-filter w-full" min={tgl} max={dateBounds.max} value={tglBast} onChange={e => setTglBast(e.target.value)} /></div>
             </div>

@@ -885,7 +885,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
         <h2 className="text-base font-semibold text-gray-800">{judul} Baru — {skpdNama}</h2>
         <button className="btn-secondary text-xs" onClick={onCancel}>← Kembali</button>
       </div>
-      <div className="grid grid-cols-1 gap-4">
+      <div className="space-y-4">
         <div>
           <label className="block text-xs text-gray-500 mb-1">No. Dokumen (BAST)</label>
           <input className="select-filter w-full" value={noDok} onChange={e => setNoDok(e.target.value)} />
