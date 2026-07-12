@@ -4,26 +4,28 @@
 import { useState } from 'react'
 import Pengadaan from '@/components/pengelolaan/Pengadaan'
 import PerolehanImport from '@/components/PerolehanImport'
+import Konstruksi from '@/components/pengelolaan/Konstruksi'
 
 export default function Page() {
-  const [mode, setMode] = useState<'manual' | 'import'>('manual')
+  const [mode, setMode] = useState<'manual' | 'import' | 'konstruksi'>('manual')
+  const tab = (v: typeof mode, label: string) => (
+    <button
+      onClick={() => setMode(v)}
+      className={`px-4 py-1.5 rounded-md transition-colors ${mode === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+    >{label}</button>
+  )
   return (
     <div>
       <div className="px-6 pt-6">
         <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
-          <button
-            onClick={() => setMode('manual')}
-            className={`px-4 py-1.5 rounded-md transition-colors ${mode === 'manual' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
-          >Entry Manual</button>
-          <button
-            onClick={() => setMode('import')}
-            className={`px-4 py-1.5 rounded-md transition-colors ${mode === 'import' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
-          >Import Excel</button>
+          {tab('manual', 'Entry Manual')}
+          {tab('import', 'Import Excel')}
+          {tab('konstruksi', 'Pekerjaan Konstruksi')}
         </div>
       </div>
-      {mode === 'manual'
-        ? <Pengadaan />
-        : <PerolehanImport jenis="pengadaan" label="Pengadaan" kontrakRelevan />}
+      {mode === 'manual' && <Pengadaan />}
+      {mode === 'import' && <PerolehanImport jenis="pengadaan" label="Pengadaan" kontrakRelevan />}
+      {mode === 'konstruksi' && <Konstruksi />}
     </div>
   )
 }

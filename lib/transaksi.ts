@@ -78,6 +78,16 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
     }
     case 'kapitalisasi':
       return typeof p.nilai_perolehan_baru === 'number' ? { nilai_perolehan: p.nilai_perolehan_baru } : null
+    case 'akumulasi_kdp':
+    case 'batal_akumulasi_kdp':
+    case 'kdp_selesai_keluar':
+      // Nilai KDP (aset 1.3.6) naik/turun; saldo baru dikirim caller (hindari race),
+      // sama pola dgn kapitalisasi/koreksi_nilai. KDP tak disusutkan → cuma nilai.
+      return typeof p.nilai_perolehan_baru === 'number' ? { nilai_perolehan: p.nilai_perolehan_baru } : null
+    case 'kdp_selesai_masuk':
+      // Event pada aset tetap BARU hasil carve-out. Aset sudah dibuat lengkap dgn
+      // nilai_perolehan-nya, jadi tak perlu patch tambahan di sini.
+      return null
     case 'penghapusan_pemindahtanganan':
     case 'penghapusan_sebab_lain':
       // Soft-delete: hilang dari laporan, tetap tersimpan di DB (§5 no.11)

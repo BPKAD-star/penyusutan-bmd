@@ -132,7 +132,10 @@ export function hitungJadwalAset(
     ? saldoAwalKandidat.reduce((terbaru, t) => (comparePeriode(t.periode, terbaru.periode) > 0 ? t : terbaru))
     : undefined
   const perolehan = ledger.find(t =>
-    ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya'].includes(t.jenis))
+    // 'kdp_selesai_masuk' = aset tetap hasil carve-out KDP saat BAPP → jadi baseline
+    // perolehan aset BARU ini, penyusutan mulai dari periode BAPP (fresh, seperti
+    // perolehan biasa). KDP-nya sendiri (1.3.6) tetap perlakuan 'tidak' → bail-out.
+    ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya', 'kdp_selesai_masuk'].includes(t.jenis))
 
   if (saldoAwal) {
     const p = saldoAwal.payload as Record<string, number | null>
