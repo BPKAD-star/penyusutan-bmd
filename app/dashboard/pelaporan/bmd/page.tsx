@@ -355,7 +355,7 @@ export default function LaporanBmdPage() {
           <RekapModelControls model={model} onModel={setModel} metric={metric} onMetric={setMetric} models={[1, 2, 3]} />
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
-            <SkpdCombobox onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
+            <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
           <KomptabelRadio value={komptabel} onChange={setKomptabel} />
           <div className="flex items-center gap-3">

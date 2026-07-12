@@ -295,7 +295,7 @@ function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap 
           {sumber.scope === 'per_skpd' && (
             <div>
               <label className="block text-xs text-gray-500 mb-1">SKPD</label>
-              <SkpdCombobox value={docSkpd} onChange={setDocSkpd} placeholder="Ketik nama SKPD..." />
+              <SkpdCombobox lockToOperator value={docSkpd} onChange={setDocSkpd} placeholder="Ketik nama SKPD..." />
             </div>
           )}
           <div>

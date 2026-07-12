@@ -122,7 +122,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         </div>
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-          <SkpdCombobox onChangeSelection={sel => setDescIds(sel.descendantIds)} allowClear
+          <SkpdCombobox lockToOperator onChangeSelection={sel => setDescIds(sel.descendantIds)} allowClear
             placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
         </div>
       </div>

@@ -175,7 +175,7 @@ export default function GisPage() {
           <p className="text-sm font-semibold text-gray-800 mb-2">GIS BMD — Tanah &amp; Jalan</p>
           <input className="select-filter w-full text-sm mb-2" placeholder="Cari nama / NIBAR / kode..."
             value={search} onChange={e => setSearch(e.target.value)} />
-          <SkpdCombobox onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} allowClear
+          <SkpdCombobox lockToOperator onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} allowClear
             placeholder="Semua SKPD..." />
         </div>
 

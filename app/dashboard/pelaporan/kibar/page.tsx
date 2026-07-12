@@ -113,7 +113,7 @@ export default function KibarSearchPage() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[220px]">
             <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-            <SkpdCombobox onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} allowClear
+            <SkpdCombobox lockToOperator onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} allowClear
               placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
           <div>

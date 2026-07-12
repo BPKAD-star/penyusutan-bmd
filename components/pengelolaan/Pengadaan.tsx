@@ -461,7 +461,7 @@ export default function Pengadaan() {
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
-          <SkpdCombobox value={skpd} onChange={id => { setSkpd(id); setMsg('') }}
+          <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpd(id); setMsg('') }}
             placeholder="Ketik nama SKPD / Sub OPD / Lokasi..." />
         </div>
       </div>

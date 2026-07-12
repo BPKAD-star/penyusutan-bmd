@@ -11,13 +11,19 @@ import { createClient } from '@/lib/supabase/client'
 type SkpdRow = { id: number; nama: string; level: number; parent_id: number | null }
 export type SkpdSelection = { skpdId: number | null; descendantIds: number[] | null }
 
-export default function SkpdCombobox({ value, onChange, onChangeSelection, placeholder, allowClear, rootOnly }: {
+export default function SkpdCombobox({ value, onChange, onChangeSelection, placeholder, allowClear, rootOnly, lockToOperator }: {
   value?: string
   onChange?: (id: string) => void
   onChangeSelection?: (sel: SkpdSelection) => void
   placeholder?: string
   allowClear?: boolean
   rootOnly?: boolean // hanya SKPD induk (parent_id null) — dipakai target Pengalihan Status
+  // Kalau true DAN user login non-admin: combobox otomatis terisi & TERKUNCI ke
+  // SKPD yang melekat pada user (tidak bisa pilih SKPD lain). Admin tetap bebas.
+  // RLS tetap penjaga sesungguhnya; ini murni UX supaya operator tidak bingung
+  // melihat pilihan "Semua"/SKPD lain padahal datanya sudah dibatasi. JANGAN
+  // pasang di picker "tujuan" (Pengalihan Status) — operator memang pilih SKPD lain.
+  lockToOperator?: boolean
 }) {
   const supabase = createClient()
   const [all, setAll] = useState<SkpdRow[]>([])
@@ -25,6 +31,8 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
   const [open, setOpen] = useState(false)
   const [hi, setHi] = useState(0)
   const [internalId, setInternalId] = useState('') // dipakai kalau `value` tak dikontrol (menu laporan)
+  const [lockSkpd, setLockSkpd] = useState<number | null>(null) // SKPD operator utk mode terkunci
+  const appliedRef = useRef(false)
   const boxRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const effectiveId = value !== undefined ? value : internalId
@@ -41,6 +49,31 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
       setAll(rows)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mode terkunci: cari role + skpd_id user. Hanya kunci utk non-admin ber-SKPD.
+  useEffect(() => {
+    if (!lockToOperator) return
+    let alive = true
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !alive) return
+      const { data } = await supabase.from('admin_profiles').select('role,skpd_id').eq('id', user.id).single()
+      if (!alive) return
+      const p = data as { role?: string; skpd_id?: number | null } | null
+      if (p && p.role !== 'admin' && p.skpd_id) setLockSkpd(p.skpd_id)
+    })()
+    return () => { alive = false }
+  }, [lockToOperator]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Begitu daftar SKPD termuat & user terkunci diketahui, set pilihan sekali.
+  useEffect(() => {
+    if (lockSkpd == null || appliedRef.current || all.length === 0) return
+    if (!all.some(s => s.id === lockSkpd)) return
+    appliedRef.current = true
+    setInternalId(String(lockSkpd))
+    onChange?.(String(lockSkpd))
+    onChangeSelection?.({ skpdId: lockSkpd, descendantIds: descendants(lockSkpd) })
+  }, [lockSkpd, all]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const byId = useMemo(() => new Map(all.map(s => [s.id, s])), [all])
   const childrenOf = useMemo(() => {
@@ -109,6 +142,20 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
     const el = listRef.current.children[hi] as HTMLElement | undefined
     el?.scrollIntoView({ block: 'nearest' })
   }, [hi, open])
+
+  // Mode terkunci (operator non-admin): tampilkan SKPD-nya, tak bisa diubah.
+  if (lockSkpd != null) {
+    return (
+      <div className="relative flex-1">
+        <input
+          readOnly disabled
+          className="select-filter w-full bg-gray-100 text-gray-600 cursor-not-allowed"
+          title="Terkunci ke SKPD Anda"
+          value={all.length ? pathOf(lockSkpd) : 'Memuat...'}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="relative flex-1" ref={boxRef}>

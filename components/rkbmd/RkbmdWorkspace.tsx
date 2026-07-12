@@ -129,7 +129,7 @@ export default function RkbmdWorkspace() {
           </div>
           <div className="min-w-[280px]">
             <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-            <SkpdCombobox value={skpd} onChange={id => { setSkpd(id); setMsg('') }} placeholder="Ketik nama SKPD..." />
+            <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpd(id); setMsg('') }} placeholder="Ketik nama SKPD..." />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Versi</label>

@@ -168,7 +168,7 @@ export default function PenggunaanMasuk() {
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">SKPD Penerima :</label>
-          <SkpdCombobox value={skpd} onChange={id => { setSkpd(id); setMsg('') }} rootOnly
+          <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpd(id); setMsg('') }} rootOnly
             placeholder="Ketik nama SKPD..." />
         </div>
       </div>

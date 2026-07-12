@@ -124,7 +124,7 @@ export default function Page() {
         <div className="space-y-3 max-w-3xl">
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
-            <SkpdCombobox onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
+            <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Jenis Aset :</label>
