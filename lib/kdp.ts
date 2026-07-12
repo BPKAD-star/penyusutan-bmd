@@ -79,6 +79,27 @@ export async function tambahTermin(supabase: SupabaseClient, args: {
   return {}
 }
 
+/**
+ * Satu langkah: cari barang KDP (per proyek+komponen+kode) — kalau belum ada
+ * dibuatin, lalu catat termin/BAST-nya. Nama barang default dari uraian kode
+ * (diedit belakangan di Spesifikasi). Barang dikelompokkan by kode+komponen.
+ */
+export async function tambahRincian(supabase: SupabaseClient, args: {
+  proyekId: string; skpdId: number; komponen: string; kode: string; namaDefault: string
+  noBast?: string | null; tglBast: string; kodeRekening?: string | null; nominal: number; keterangan?: string | null
+}): Promise<{ error?: string }> {
+  const { data: existing } = await supabase.from('proyek_barang')
+    .select('id,aset:aset_id(kode)').eq('proyek_id', args.proyekId).eq('komponen', args.komponen).eq('status', 'kdp')
+  let barangId = ((existing || []) as unknown as { id: string; aset: { kode: string } | null }[])
+    .find(b => b.aset?.kode === args.kode)?.id
+  if (!barangId) {
+    const r = await tambahBarang(supabase, { proyekId: args.proyekId, skpdId: args.skpdId, komponen: args.komponen, kode: args.kode, namaBarang: args.namaDefault })
+    if (r.error || !r.barangId) return { error: r.error || 'Gagal membuat barang.' }
+    barangId = r.barangId
+  }
+  return tambahTermin(supabase, { proyekId: args.proyekId, barangId, komponen: args.komponen, noBast: args.noBast, tglBast: args.tglBast, kodeRekening: args.kodeRekening, nominal: args.nominal, keterangan: args.keterangan })
+}
+
 async function asetDariBarang(supabase: SupabaseClient, barangId: string): Promise<string | null> {
   const { data } = await supabase.from('proyek_barang').select('aset_id').eq('id', barangId).single()
   return (data as { aset_id?: string } | null)?.aset_id || null

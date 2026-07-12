@@ -12,7 +12,7 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import { formatRupiah } from '@/lib/export'
 import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import {
-  buatPaket, hapusPaket, tambahBarang, tambahTermin, setujuiTermin, batalTermin, hapusBarang,
+  buatPaket, hapusPaket, tambahRincian, setujuiTermin, batalTermin, hapusBarang,
   reklasKdp, type ReklasOutput,
 } from '@/lib/kdp'
 
@@ -199,6 +199,8 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
 
   const total = barangs.reduce((s, b) => s + (b.aset?.nilai_perolehan || 0), 0)
   const barangKdp = barangs.filter(b => b.status === 'kdp' && (b.aset?.nilai_perolehan || 0) > 0)
+  const earliestOf = (bid: string) => termins.filter(t => t.barang_id === bid).reduce((min, t) => (t.tanggal < min ? t.tanggal : min), '9999-99-99')
+  const barangsSorted = [...barangs].sort((a, b) => earliestOf(a.id).localeCompare(earliestOf(b.id)))
 
   async function saveSpec(fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
     if (!specBarang?.aset) return
@@ -211,7 +213,11 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-700">← Kembali ke daftar paket</button>
+      <button onClick={onBack} title="Kembali ke daftar paket"
+        className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+        Kembali
+      </button>
 
       <div className="card p-5">
         <div className="flex items-start justify-between gap-4">
@@ -236,23 +242,29 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
       </div>
 
       {proyek.status === 'berjalan' && (
-        <RincianForm proyek={proyek} barangs={barangs} bounds={bounds} onMsg={onMsg}
-          onSaved={() => load()} />
+        <RincianForm proyek={proyek} bounds={bounds} onMsg={onMsg} onSaved={() => load()} />
       )}
 
-      {/* Daftar barang KDP + termin-nya */}
+      {/* Daftar barang KDP + termin-nya (urut tgl BAST paling muda) */}
       <div className="space-y-3">
         {barangs.length === 0 ? (
           <div className="card p-8 text-center text-gray-400 text-sm">Belum ada barang. Tambah rincian/BAST di atas.</div>
-        ) : barangs.map(b => {
+        ) : barangsSorted.map(b => {
           const bt = termins.filter(t => t.barang_id === b.id)
           const hasApproved = bt.some(t => t.status === 'disetujui')
           return (
             <div key={b.id} className="card overflow-hidden">
               <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-800">{b.aset?.nama_barang as string || '—'} <span className="text-xs text-gray-400">· {komponenLabel(b.komponen)}</span></p>
+                  <p className="text-sm font-medium text-gray-800">{String(b.aset?.nama_barang || '—')} <span className="text-xs text-gray-400">· {komponenLabel(b.komponen)}</span></p>
                   <p className="text-xs text-gray-400">{b.aset?.kode} · Nilai {formatRupiah(b.aset?.nilai_perolehan || 0)}{b.status === 'selesai' ? ' · sudah direklas' : ''}</p>
+                  {(b.aset?.spesifikasi_lainnya || b.aset?.alamat_detail) && (
+                    <p className="text-xs text-gray-400">
+                      {b.aset?.spesifikasi_lainnya ? `Spesifikasi: ${String(b.aset.spesifikasi_lainnya)}` : ''}
+                      {b.aset?.spesifikasi_lainnya && b.aset?.alamat_detail ? ' · ' : ''}
+                      {b.aset?.alamat_detail ? `Lokasi: ${String(b.aset.alamat_detail)}` : ''}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                   {b.status === 'kdp' && <button className="text-teal hover:underline font-medium" onClick={() => setSpecBarang(b)}>Spesifikasi</button>}
@@ -309,39 +321,32 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
   )
 }
 
-// ── Form Tambah Rincian / BAST ──────────────────────────────────────────────
-function RincianForm({ proyek, barangs, bounds, onSaved, onMsg }: {
-  proyek: Proyek; barangs: Barang[]; bounds: { min: string; max: string }; onSaved: () => void; onMsg: (m: string) => void
+// ── Form Tambah Rincian / BAST (langsung pilih kode KDP; barang auto by kode+komponen) ──
+function RincianForm({ proyek, bounds, onSaved, onMsg }: {
+  proyek: Proyek; bounds: { min: string; max: string }; onSaved: () => void; onMsg: (m: string) => void
 }) {
   const supabase = createClient()
   const [komponen, setKomponen] = useState('fisik')
   const [noBast, setNoBast] = useState('')
   const [tgl, setTgl] = useState('')
   const [rekening, setRekening] = useState('')
-  const [barangSel, setBarangSel] = useState('new') // 'new' atau barangId
   const [kode, setKode] = useState<KodefikasiHasil | null>(null)
-  const [namaBarang, setNamaBarang] = useState('')
   const [nominal, setNominal] = useState('')
   const [keterangan, setKeterangan] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const existing = barangs.filter(b => b.status === 'kdp' && b.komponen === komponen)
-
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (!tgl || !nominal) { onMsg('Error: tgl BAST & nominal wajib.'); return }
+    if (!kode) { onMsg('Error: pilih Kode Barang (jenis KDP 1.3.6).'); return }
     setSaving(true)
-    let barangId = barangSel
-    if (barangSel === 'new') {
-      if (!kode) { onMsg('Error: pilih kode barang (KDP 1.3.6).'); setSaving(false); return }
-      const { error, barangId: bId } = await tambahBarang(supabase, { proyekId: proyek.id, skpdId: proyek.skpd_id, komponen, kode: kode.kode, namaBarang: namaBarang || kode.uraian || kode.kode })
-      if (error || !bId) { onMsg(`Error: ${error}`); setSaving(false); return }
-      barangId = bId
-    }
-    const { error } = await tambahTermin(supabase, { proyekId: proyek.id, barangId, komponen, noBast, tglBast: tgl, kodeRekening: rekening, nominal: Number(nominal), keterangan })
+    const { error } = await tambahRincian(supabase, {
+      proyekId: proyek.id, skpdId: proyek.skpd_id, komponen, kode: kode.kode, namaDefault: kode.uraian || kode.kode,
+      noBast, tglBast: tgl, kodeRekening: rekening, nominal: Number(nominal), keterangan,
+    })
     setSaving(false)
     if (error) { onMsg(`Error: ${error}`); return }
-    setNoBast(''); setNominal(''); setKeterangan(''); setKode(null); setNamaBarang(''); setBarangSel('new')
+    setNoBast(''); setNominal(''); setKeterangan(''); setKode(null)
     onSaved()
   }
 
@@ -350,7 +355,7 @@ function RincianForm({ proyek, barangs, bounds, onSaved, onMsg }: {
       <h3 className="text-sm font-semibold text-gray-800">Tambah Rincian / BAST</h3>
       <div>
         <label className="block text-xs text-gray-500 mb-1">Komponen</label>
-        <select className="select-filter w-full" value={komponen} onChange={e => { setKomponen(e.target.value); setBarangSel('new') }}>
+        <select className="select-filter w-full" value={komponen} onChange={e => setKomponen(e.target.value)}>
           {KOMPONEN.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
         </select>
       </div>
@@ -361,26 +366,14 @@ function RincianForm({ proyek, barangs, bounds, onSaved, onMsg }: {
       <div><label className="block text-xs text-gray-500 mb-1">Kode Rekening</label>
         <input className="select-filter w-full" value={rekening} onChange={e => setRekening(e.target.value)} placeholder="free-form (tabel belum ada)" /></div>
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Barang KDP</label>
-        <select className="select-filter w-full" value={barangSel} onChange={e => setBarangSel(e.target.value)}>
-          <option value="new">+ Barang baru</option>
-          {existing.map(b => <option key={b.id} value={b.id}>{b.aset?.nama_barang as string || b.aset?.kode} — {formatRupiah(b.aset?.nilai_perolehan || 0)}</option>)}
-        </select>
+        <label className="block text-xs text-gray-500 mb-1">Kode Barang (jenis KDP — golongan 1.3.6)</label>
+        <KodefikasiPicker picked={kode} onPick={setKode} golonganTetap="1.3.6" />
       </div>
-      {barangSel === 'new' && (
-        <>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Kode Barang (jenis KDP — golongan 1.3.6)</label>
-            <KodefikasiPicker picked={kode} onPick={setKode} golonganTetap="1.3.6" />
-          </div>
-          <div><label className="block text-xs text-gray-500 mb-1">Nama Barang</label>
-            <input className="select-filter w-full" value={namaBarang} onChange={e => setNamaBarang(e.target.value)} placeholder="mis. Fisik Ruas Jalan A" /></div>
-        </>
-      )}
       <div><label className="block text-xs text-gray-500 mb-1">Nominal (Rp)</label>
         <input type="number" className="select-filter w-full" value={nominal} onChange={e => setNominal(e.target.value)} /></div>
       <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label>
         <input className="select-filter w-full" value={keterangan} onChange={e => setKeterangan(e.target.value)} /></div>
+      <p className="text-[11px] text-gray-400">Nama & spesifikasi barang diisi lewat tombol Spesifikasi di kartu barang setelah ditambahkan.</p>
       <button type="submit" disabled={saving} className="btn-primary text-sm py-1.5">{saving ? 'Menyimpan...' : '+ Tambah Rincian'}</button>
     </form>
   )
