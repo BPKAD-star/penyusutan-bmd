@@ -1060,16 +1060,15 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
             <label className="block text-xs text-gray-500 mb-1">No. Kontrak</label>
             <input className="select-filter w-full" value={noKontrak} onChange={e => setNoKontrak(e.target.value)} placeholder="mis. 027/123/418.xx/2026" />
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <label className="block text-xs text-gray-500 mb-1">Tgl Kontrak</label>
-            <input type="date" className="select-filter w-full sm:w-64" min={dateBounds.min} max={dateBounds.max}
+            <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max}
               value={tglKontrak} onChange={e => setTglKontrak(e.target.value)} />
             <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tglKontrak)}</p>
           </div>
-          <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Program</label><input className="select-filter w-full" value={program} onChange={e => setProgram(e.target.value)} placeholder="teks bebas (dropdown menyusul)" /></div>
-          <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Kegiatan</label><input className="select-filter w-full" value={kegiatan} onChange={e => setKegiatan(e.target.value)} /></div>
-          <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label><input className="select-filter w-full" value={subKeg} onChange={e => setSubKeg(e.target.value)} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Program</label><input className="select-filter w-full" value={program} onChange={e => setProgram(e.target.value)} placeholder="teks bebas (dropdown menyusul)" /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Kegiatan</label><input className="select-filter w-full" value={kegiatan} onChange={e => setKegiatan(e.target.value)} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label><input className="select-filter w-full" value={subKeg} onChange={e => setSubKeg(e.target.value)} /></div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
             <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
@@ -1077,7 +1076,8 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
               {pegawaiList.map(p => <option key={p.id} value={p.nama}>{p.nama} — {p.nip}{p.jabatan ? ` · ${p.jabatan}` : ''}</option>)}
             </select>
           </div>
-          <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ketKontrak} onChange={e => setKetKontrak(e.target.value)} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ketKontrak} onChange={e => setKetKontrak(e.target.value)} /></div>
         </div>
       </div>
 
