@@ -55,7 +55,7 @@ export async function tambahBarang(supabase: SupabaseClient, args: {
     nibar: nibarMap.get('b') || null, kode: args.kode,
     uraian_barang: args.namaBarang, nama_barang: args.namaBarang,
     jumlah: 1, nilai_perolehan: 0, tgl_perolehan: hariIni(), skpd_id: args.skpdId,
-    intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'aktif',
+    intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'draft', // tersembunyi dari Daftar Barang sampai termin disetujui
   }).select('id').single()
   if (error || !aset) return { error: `Gagal membuat barang KDP: ${error?.message}` }
   const asetId = (aset as { id: string }).id
@@ -121,7 +121,8 @@ export async function setujuiTermin(supabase: SupabaseClient, terminId: string):
     nilai: Number(termin.nilai || 0), payload: { termin_id: termin.id, nilai_perolehan_baru: saldoBaru },
   }).select('id').single()
   if (error || !trx) return { error: `Gagal mencatat akumulasi: ${error?.message}` }
-  await supabase.from('aset').update({ nilai_perolehan: saldoBaru }).eq('id', asetId)
+  // Nilai naik + barang jadi RESMI (draft → aktif) → mulai tampil di Daftar Barang.
+  await supabase.from('aset').update({ nilai_perolehan: saldoBaru, status: 'aktif' }).eq('id', asetId)
   const { error: tErr } = await supabase.from('proyek_termin').update({ status: 'disetujui', trx_id: (trx as { id: number }).id }).eq('id', termin.id)
   if (tErr) return { error: `Akumulasi tercatat, tapi status termin gagal: ${tErr.message}` }
   return {}
@@ -249,7 +250,8 @@ export async function reklasKdp(supabase: SupabaseClient, args: {
 
   const consumedBarangIds = [...outputs.map(o => o.fisikBarangId), ...bersamaBarangIds]
   const consumedAsetIds = consumedBarangIds.map(id => asetOf.get(id)!)
-  await supabase.from('aset').update({ nilai_perolehan: 0 }).in('id', consumedAsetIds)
+  // Barang KDP habis diserap ke aset tetap → soft-delete (hilang dari Daftar Barang).
+  await supabase.from('aset').update({ nilai_perolehan: 0, status: 'dihapus' }).in('id', consumedAsetIds)
   await supabase.from('proyek_barang').update({ status: 'selesai' }).in('id', consumedBarangIds)
 
   const { data: sisaKdp } = await supabase.from('proyek_barang').select('id').eq('proyek_id', proyekId).eq('status', 'kdp').limit(1)
