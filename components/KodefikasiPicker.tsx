@@ -24,12 +24,13 @@ const GOLONGAN: { kode: string; uraian: string }[] = [
   ...GOLONGAN_REKAP.map(g => ({ kode: g.kode, uraian: g.uraian })),
 ]
 
-export default function KodefikasiPicker({ picked, onPick }: {
+export default function KodefikasiPicker({ picked, onPick, golonganTetap }: {
   picked: KodefikasiHasil | null
   onPick: (r: KodefikasiHasil | null) => void
+  golonganTetap?: string // kunci ke satu golongan (mis. '1.3.6' KDP) — dropdown golongan disembunyikan
 }) {
   const supabase = createClient()
-  const [golongan, setGolongan] = useState('')
+  const [golongan, setGolongan] = useState(golonganTetap || '')
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<KodefikasiHasil[]>([])
   const [searching, setSearching] = useState(false)
@@ -63,13 +64,15 @@ export default function KodefikasiPicker({ picked, onPick }: {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-2">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Golongan</label>
-          <select className="select-filter" value={golongan} onChange={e => setGolongan(e.target.value)}>
-            <option value="">— pilih —</option>
-            {GOLONGAN.map(g => <option key={g.kode} value={g.kode}>{g.kode} — {g.uraian}</option>)}
-          </select>
-        </div>
+        {!golonganTetap && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Golongan</label>
+            <select className="select-filter" value={golongan} onChange={e => setGolongan(e.target.value)}>
+              <option value="">— pilih —</option>
+              {GOLONGAN.map(g => <option key={g.kode} value={g.kode}>{g.kode} — {g.uraian}</option>)}
+            </select>
+          </div>
+        )}
         <div className="flex-1 min-w-[180px]">
           <label className="block text-xs text-gray-500 mb-1">Cari kode / uraian</label>
           <input className="select-filter w-full" value={search} onChange={e => setSearch(e.target.value)}

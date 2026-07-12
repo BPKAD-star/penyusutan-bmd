@@ -25,6 +25,42 @@ async function nilaiKdp(supabase: SupabaseClient, asetId: string): Promise<numbe
   return Number((data as { nilai_perolehan?: number } | null)?.nilai_perolehan || 0)
 }
 
+const hariIni = () => new Date().toISOString().slice(0, 10)
+
+/**
+ * Buat paket + aset KDP (1.3.6, nilai 0) sekaligus. Aset dibuat di awal supaya
+ * spesifikasi (Tanah-like) bisa diisi lewat EditSpesifikasiModal SEBELUM termin
+ * disetujui. Termin cukup menambah nilai lewat event akumulasi.
+ */
+export async function buatPaket(supabase: SupabaseClient, args: {
+  skpdId: number; namaPekerjaan: string; kodeKdp: string
+  noKontrak?: string | null; tglKontrak?: string | null; nilaiKontrak?: number | null
+  program?: string | null; kegiatan?: string | null; subKegiatan?: string | null
+  namaPenyedia?: string | null; ppk?: string | null
+}): Promise<{ error?: string; proyekId?: string }> {
+  const { data: pRow, error: pErr } = await supabase.from('proyek_konstruksi').insert({
+    skpd_id: args.skpdId, nama_pekerjaan: args.namaPekerjaan, kode_kdp: args.kodeKdp,
+    no_kontrak: args.noKontrak || null, tgl_kontrak: args.tglKontrak || null, nilai_kontrak: args.nilaiKontrak ?? null,
+    program: args.program || null, kegiatan: args.kegiatan || null, sub_kegiatan: args.subKegiatan || null,
+    nama_penyedia: args.namaPenyedia || null, ppk: args.ppk || null,
+  }).select('id').single()
+  if (pErr || !pRow) return { error: `Gagal membuat paket: ${pErr?.message}` }
+  const proyekId = (pRow as { id: string }).id
+
+  const kodeSkpd = await skpdKode(supabase, args.skpdId)
+  const tahun = String(new Date(args.tglKontrak || hariIni()).getFullYear())
+  const nibarMap = await generateNibars(supabase as never, [{ key: 'kdp', kode: args.kodeKdp, intraEkstra: 'intra', tahun }], kodeSkpd)
+  const { data: aset, error: aErr } = await supabase.from('aset').insert({
+    nibar: nibarMap.get('kdp') || null, kode: args.kodeKdp,
+    uraian_barang: args.namaPekerjaan, nama_barang: args.namaPekerjaan,
+    jumlah: 1, nilai_perolehan: 0, tgl_perolehan: args.tglKontrak || hariIni(),
+    skpd_id: args.skpdId, intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'aktif',
+  }).select('id').single()
+  if (aErr || !aset) return { error: `Paket dibuat, tapi aset KDP gagal: ${aErr?.message}`, proyekId }
+  await supabase.from('proyek_konstruksi').update({ aset_kdp_id: (aset as { id: string }).id }).eq('id', proyekId)
+  return { proyekId }
+}
+
 /** Setujui satu termin (admin) → materialize: buat/naikkan KDP + event akumulasi. */
 export async function setujuiTermin(supabase: SupabaseClient, terminId: string): Promise<{ error?: string }> {
   const { data: tRow } = await supabase.from('proyek_termin')
@@ -37,40 +73,9 @@ export async function setujuiTermin(supabase: SupabaseClient, terminId: string):
     .select('id,skpd_id,aset_kdp_id,kode_kdp,nama_pekerjaan').eq('id', termin.proyek_id).single()
   const proyek = pRow as Proyek | null
   if (!proyek) return { error: 'Paket tidak ditemukan.' }
-  if (!proyek.kode_kdp) return { error: 'Kode KDP (golongan 1.3.6) belum diisi di paket.' }
-
-  // Pastikan aset KDP ada (buat saat termin pertama).
-  let kdpAsetId = proyek.aset_kdp_id
-  let saldo = 0
-  if (!kdpAsetId) {
-    const kodeSkpd = await skpdKode(supabase, proyek.skpd_id)
-    const tahun = String(new Date(termin.tanggal).getFullYear())
-    const nibarMap = await generateNibars(
-      supabase as never,
-      [{ key: 'kdp', kode: proyek.kode_kdp, intraEkstra: 'intra', tahun }],
-      kodeSkpd,
-    )
-    const { data: aset, error: aErr } = await supabase.from('aset').insert({
-      nibar: nibarMap.get('kdp') || null,
-      kode: proyek.kode_kdp,
-      uraian_barang: proyek.nama_pekerjaan,
-      nama_barang: proyek.nama_pekerjaan,
-      jumlah: 1,
-      nilai_perolehan: 0,                 // akan dinaikkan oleh event akumulasi di bawah
-      tgl_perolehan: termin.tanggal,
-      skpd_id: proyek.skpd_id,
-      intra_ekstra: 'intra',              // KDP = belanja modal (intrakomptabel)
-      cara_perolehan: 'pengadaan',
-      status: 'aktif',
-    }).select('id').single()
-    if (aErr || !aset) return { error: `Gagal membuat aset KDP: ${aErr?.message}` }
-    kdpAsetId = (aset as { id: string }).id
-    const { error: upErr } = await supabase.from('proyek_konstruksi').update({ aset_kdp_id: kdpAsetId }).eq('id', proyek.id)
-    if (upErr) return { error: `Gagal menautkan aset KDP: ${upErr.message}` }
-  } else {
-    saldo = await nilaiKdp(supabase, kdpAsetId)
-  }
-
+  const kdpAsetId = proyek.aset_kdp_id
+  if (!kdpAsetId) return { error: 'Aset KDP belum ada pada paket ini.' }
+  const saldo = await nilaiKdp(supabase, kdpAsetId)
   const saldoBaru = saldo + Number(termin.nilai || 0)
 
   // Event ledger akumulasi (period-correct dari tgl termin) → dapat id utk tautan.

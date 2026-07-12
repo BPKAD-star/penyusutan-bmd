@@ -7,16 +7,23 @@ import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
+import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { formatRupiah } from '@/lib/export'
-import { setujuiTermin, batalTermin, selesaikanProyek, hitungAlokasi, type OutputKdp } from '@/lib/kdp'
+import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
+import { buatPaket, setujuiTermin, batalTermin, selesaikanProyek, hitungAlokasi, type OutputKdp } from '@/lib/kdp'
 
 type Proyek = {
   id: string; skpd_id: number; no_kontrak: string | null; tgl_kontrak: string | null
   nama_pekerjaan: string; nilai_kontrak: number | null; kode_kdp: string | null
   aset_kdp_id: string | null; status: 'berjalan' | 'selesai'
+  program: string | null; kegiatan: string | null; sub_kegiatan: string | null
+  nama_penyedia: string | null; ppk: string | null
 }
-type Termin = { id: string; komponen: string; uraian: string | null; tanggal: string; nilai: number; status: string }
+type Termin = { id: string; komponen: string; uraian: string | null; tanggal: string; nilai: number; status: string; no_bast: string | null }
+
+const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
+const FIELDS_KDP = GOLONGAN_FIELDS['1.3.1'] // spesifikasi Tanah-like utk aset KDP
 
 const KOMPONEN = [
   { value: 'perencanaan', label: 'Perencanaan' },
@@ -114,25 +121,28 @@ export default function Konstruksi() {
 // ── Form buat paket ─────────────────────────────────────────────────────────
 function CreateProyek({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: () => void; onErr: (m: string) => void }) {
   const supabase = createClient()
-  const [nama, setNama] = useState('')
-  const [noKontrak, setNoKontrak] = useState('')
-  const [tglKontrak, setTglKontrak] = useState('')
-  const [nilaiKontrak, setNilaiKontrak] = useState('')
+  const [f, setF] = useState({
+    nama: '', program: '', kegiatan: '', subKegiatan: '', noKontrak: '', tglKontrak: '',
+    nilaiKontrak: '', penyedia: '', ppk: '',
+  })
   const [kdp, setKdp] = useState<KodefikasiHasil | null>(null)
   const [saving, setSaving] = useState(false)
+  const set = (k: keyof typeof f, v: string) => setF(s => ({ ...s, [k]: v }))
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!nama.trim()) { onErr('Error: nama pekerjaan wajib.'); return }
-    if (!kdp) { onErr('Error: pilih kode KDP (golongan 1.3.6) dulu.'); return }
+    if (!f.nama.trim()) { onErr('Error: nama pekerjaan wajib.'); return }
+    if (!kdp) { onErr('Error: pilih jenis KDP (sub rincian objek golongan 1.3.6) dulu.'); return }
     setSaving(true)
-    const { error } = await supabase.from('proyek_konstruksi').insert({
-      skpd_id: skpdId, nama_pekerjaan: nama, no_kontrak: noKontrak || null,
-      tgl_kontrak: tglKontrak || null, nilai_kontrak: nilaiKontrak ? Number(nilaiKontrak) : null,
-      kode_kdp: kdp.kode,
+    const { error } = await buatPaket(supabase, {
+      skpdId, namaPekerjaan: f.nama, kodeKdp: kdp.kode,
+      noKontrak: f.noKontrak || null, tglKontrak: f.tglKontrak || null,
+      nilaiKontrak: f.nilaiKontrak ? Number(f.nilaiKontrak) : null,
+      program: f.program || null, kegiatan: f.kegiatan || null, subKegiatan: f.subKegiatan || null,
+      namaPenyedia: f.penyedia || null, ppk: f.ppk || null,
     })
     setSaving(false)
-    if (error) onErr(`Error: ${error.message}`); else onSaved()
+    if (error) onErr(`Error: ${error}`); else onSaved()
   }
 
   return (
@@ -140,24 +150,28 @@ function CreateProyek({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: () 
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
           <label className="block text-xs text-gray-500 mb-1">Nama Pekerjaan</label>
-          <input required className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} />
+          <input required className="select-filter w-full" value={f.nama} onChange={e => set('nama', e.target.value)} />
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">No Kontrak</label>
-          <input className="select-filter w-full" value={noKontrak} onChange={e => setNoKontrak(e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Tgl Kontrak</label>
-          <input type="date" className="select-filter w-full" value={tglKontrak} onChange={e => setTglKontrak(e.target.value)} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Nilai Kontrak (Rp, opsional)</label>
-          <input type="number" className="select-filter w-full" value={nilaiKontrak} onChange={e => setNilaiKontrak(e.target.value)} />
-        </div>
+        <div><label className="block text-xs text-gray-500 mb-1">Program</label>
+          <input className="select-filter w-full" value={f.program} onChange={e => set('program', e.target.value)} /></div>
+        <div><label className="block text-xs text-gray-500 mb-1">Kegiatan</label>
+          <input className="select-filter w-full" value={f.kegiatan} onChange={e => set('kegiatan', e.target.value)} /></div>
+        <div className="col-span-2"><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label>
+          <input className="select-filter w-full" value={f.subKegiatan} onChange={e => set('subKegiatan', e.target.value)} /></div>
+        <div><label className="block text-xs text-gray-500 mb-1">No Kontrak</label>
+          <input className="select-filter w-full" value={f.noKontrak} onChange={e => set('noKontrak', e.target.value)} /></div>
+        <div><label className="block text-xs text-gray-500 mb-1">Tgl Kontrak</label>
+          <input type="date" className="select-filter w-full" value={f.tglKontrak} onChange={e => set('tglKontrak', e.target.value)} /></div>
+        <div><label className="block text-xs text-gray-500 mb-1">Nilai Kontrak (Rp, opsional)</label>
+          <input type="number" className="select-filter w-full" value={f.nilaiKontrak} onChange={e => set('nilaiKontrak', e.target.value)} /></div>
+        <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label>
+          <input className="select-filter w-full" value={f.penyedia} onChange={e => set('penyedia', e.target.value)} /></div>
+        <div className="col-span-2"><label className="block text-xs text-gray-500 mb-1">Pejabat Pembuat Komitmen (PPK)</label>
+          <input className="select-filter w-full" value={f.ppk} onChange={e => set('ppk', e.target.value)} /></div>
       </div>
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Kode KDP (pilih golongan 1.3.6 — Konstruksi Dalam Pengerjaan)</label>
-        <KodefikasiPicker picked={kdp} onPick={setKdp} />
+        <label className="block text-xs text-gray-500 mb-1">Jenis KDP (sub rincian objek — golongan 1.3.6 Konstruksi Dalam Pengerjaan)</label>
+        <KodefikasiPicker picked={kdp} onPick={setKdp} golonganTetap="1.3.6" />
       </div>
       <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Menyimpan...' : 'Buat Paket'}</button>
     </form>
@@ -174,9 +188,12 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
   const [saldo, setSaldo] = useState(0)
   const [busy, setBusy] = useState(false)
   const [showBapp, setShowBapp] = useState(false)
+  const [showSpec, setShowSpec] = useState(false)
+  const [specInit, setSpecInit] = useState<{ fields: Record<string, string>; foto: string[] }>({ fields: {}, foto: [] })
   // form termin
   const [komponen, setKomponen] = useState('fisik')
   const [uraian, setUraian] = useState('')
+  const [noBast, setNoBast] = useState('')
   const [tanggal, setTanggal] = useState('')
   const [nilai, setNilai] = useState('')
 
@@ -184,8 +201,12 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
     const { data } = await supabase.from('proyek_termin').select('*').eq('proyek_id', proyek.id).order('tanggal')
     setTermins((data || []) as Termin[])
     if (proyek.aset_kdp_id) {
-      const { data: a } = await supabase.from('aset').select('nilai_perolehan').eq('id', proyek.aset_kdp_id).single()
-      setSaldo(Number((a as { nilai_perolehan?: number } | null)?.nilai_perolehan || 0))
+      const { data: a } = await supabase.from('aset').select(`nilai_perolehan,foto_paths,${ASET_FIELD_COLS.join(',')}`).eq('id', proyek.aset_kdp_id).single()
+      const row = (a || {}) as Record<string, unknown>
+      setSaldo(Number(row.nilai_perolehan || 0))
+      const fields: Record<string, string> = {}
+      for (const k of ASET_FIELD_COLS) { const v = row[k]; if (v != null && v !== '') fields[k] = String(v) }
+      setSpecInit({ fields, foto: (row.foto_paths as string[]) || [] })
     } else setSaldo(0)
   }, [proyek.id, proyek.aset_kdp_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -196,11 +217,23 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
     if (!tanggal || !nilai) { onMsg('Error: tanggal & nilai termin wajib.'); return }
     setBusy(true)
     const { error } = await supabase.from('proyek_termin').insert({
-      proyek_id: proyek.id, komponen, uraian: uraian || null, tanggal, nilai: Number(nilai),
+      proyek_id: proyek.id, komponen, uraian: uraian || null, tanggal, nilai: Number(nilai), no_bast: noBast || null,
     })
     setBusy(false)
     if (error) { onMsg(`Error: ${error.message}`); return }
-    setUraian(''); setNilai(''); load()
+    setUraian(''); setNilai(''); setNoBast(''); load()
+  }
+
+  async function simpanSpec(fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
+    if (!proyek.aset_kdp_id) return
+    const patch: Record<string, unknown> = {}
+    for (const k of ASET_FIELD_COLS) {
+      const v = fields[k]
+      patch[k] = v ? (ASET_NUM_COLS.has(k) ? toNum(v) : v) : null
+    }
+    if (foto.replace) patch.foto_paths = foto.replace
+    await supabase.from('aset').update(patch).eq('id', proyek.aset_kdp_id)
+    setShowSpec(false); onMsg('Spesifikasi KDP disimpan.'); load()
   }
 
   async function approve(id: string) {
@@ -233,6 +266,11 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
           <div>
             <h2 className="text-lg font-semibold text-gray-800">{proyek.nama_pekerjaan}</h2>
             <p className="text-xs text-gray-500 mt-0.5">{proyek.no_kontrak || 'tanpa no kontrak'} · KDP {proyek.kode_kdp || '—'}</p>
+            <div className="mt-2 text-xs text-gray-500 space-y-0.5">
+              {(proyek.program || proyek.kegiatan) && <p>Program: {proyek.program || '—'} · Kegiatan: {proyek.kegiatan || '—'}</p>}
+              {proyek.sub_kegiatan && <p>Sub Kegiatan: {proyek.sub_kegiatan}</p>}
+              {(proyek.nama_penyedia || proyek.ppk) && <p>Penyedia: {proyek.nama_penyedia || '—'} · PPK: {proyek.ppk || '—'}</p>}
+            </div>
           </div>
           <div className="text-right">
             <p className="text-xs text-gray-400">Saldo KDP</p>
@@ -240,17 +278,21 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
             <p className="text-[11px] text-gray-400">akumulasi disetujui {formatRupiah(totalDisetujui)}</p>
           </div>
         </div>
-        {proyek.status === 'berjalan' && isAdmin && saldo > 0 && (
-          <div className="mt-3">
+        <div className="mt-3 flex flex-wrap gap-2">
+          {proyek.aset_kdp_id && <button className="text-sm text-teal hover:underline" onClick={() => setShowSpec(true)}>Edit Spesifikasi KDP</button>}
+          {proyek.status === 'berjalan' && isAdmin && saldo > 0 && (
             <button className="btn-primary" onClick={() => setShowBapp(true)}>Selesaikan (BAPP) →</button>
-          </div>
+          )}
+        </div>
+        {Object.keys(specInit.fields).length === 0 && proyek.status === 'berjalan' && (
+          <p className="mt-2 text-[11px] text-amber-600">Lengkapi Spesifikasi KDP sebelum menyetujui termin.</p>
         )}
         {proyek.status === 'selesai' && <p className="mt-3 text-sm text-teal">Paket selesai — saldo KDP habis direklas ke aset tetap.</p>}
       </div>
 
       {/* Tambah termin (selama berjalan) */}
       {proyek.status === 'berjalan' && (
-        <form onSubmit={tambahTermin} className="card p-5 grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
+        <form onSubmit={tambahTermin} className="card p-5 grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Komponen</label>
             <select className="select-filter w-full" value={komponen} onChange={e => setKomponen(e.target.value)}>
@@ -262,14 +304,18 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
             <input className="select-filter w-full" value={uraian} onChange={e => setUraian(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Tanggal</label>
+            <label className="block text-xs text-gray-500 mb-1">No BAST</label>
+            <input className="select-filter w-full" value={noBast} onChange={e => setNoBast(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Tgl BAST</label>
             <input type="date" min={bounds.min} max={bounds.max} className="select-filter w-full" value={tanggal} onChange={e => setTanggal(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Nilai (Rp)</label>
+            <label className="block text-xs text-gray-500 mb-1">Nilai Bayar (Rp)</label>
             <input type="number" className="select-filter w-full" value={nilai} onChange={e => setNilai(e.target.value)} />
           </div>
-          <div className="col-span-2 md:col-span-5">
+          <div className="col-span-2 md:col-span-6">
             <button type="submit" disabled={busy} className="btn-primary text-sm py-1.5">+ Tambah Termin (draft)</button>
           </div>
         </form>
@@ -281,17 +327,18 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
               <th className="table-th">Komponen</th><th className="table-th">Uraian</th>
-              <th className="table-th">Tanggal</th><th className="table-th text-right">Nilai</th>
+              <th className="table-th">No BAST</th><th className="table-th">Tgl BAST</th><th className="table-th text-right">Bayar</th>
               <th className="table-th">Status</th><th className="table-th">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {termins.length === 0 ? (
-              <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">Belum ada termin.</td></tr>
+              <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Belum ada termin.</td></tr>
             ) : termins.map(t => (
               <tr key={t.id}>
                 <td className="table-td text-xs">{komponenLabel(t.komponen)}</td>
                 <td className="table-td text-xs text-gray-600">{t.uraian || '—'}</td>
+                <td className="table-td text-xs text-gray-500">{t.no_bast || '—'}</td>
                 <td className="table-td text-xs text-gray-500">{t.tanggal}</td>
                 <td className="table-td text-xs text-right">{formatRupiah(t.nilai)}</td>
                 <td className="table-td">
@@ -319,6 +366,19 @@ function ProyekDetail({ proyek, isAdmin, onBack, onChanged, onMsg }: {
         <PenyelesaianModal proyekId={proyek.id} saldo={saldo} bounds={bounds}
           onClose={() => setShowBapp(false)}
           onDone={async (m) => { setShowBapp(false); onMsg(m); await load(); onChanged() }} onErr={onMsg} />
+      )}
+
+      {showSpec && proyek.aset_kdp_id && (
+        <EditSpesifikasiModal
+          title={`Spesifikasi KDP — ${proyek.nama_pekerjaan}`}
+          fieldKeys={FIELDS_KDP}
+          storagePrefix={`kdp/${proyek.aset_kdp_id}`}
+          initialFields={specInit.fields}
+          initialFoto={specInit.foto}
+          single
+          onSave={simpanSpec}
+          onClose={() => setShowSpec(false)}
+        />
       )}
     </div>
   )
