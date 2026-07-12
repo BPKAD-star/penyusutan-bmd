@@ -114,6 +114,16 @@ const adminGroup: NavNode = {
   ],
 }
 
+// Admin terbatas utk operator SKPD (role 'user'): hanya Kodefikasi (view-only,
+// tombol toggle disembunyikan) & Dokumen Sumber (view/download; upload Pengamanan
+// per-SKPD tetap jalan lewat canUpload di komponennya).
+const adminGroupOperator: NavNode = {
+  type: 'group', label: 'Admin', icon: ICON.user, children: [
+    { type: 'leaf', href: '/dashboard/admin/kodefikasi', label: 'Kodefikasi BMD' },
+    { type: 'leaf', href: '/dashboard/dokumen-sumber', label: 'Dokumen Sumber' },
+  ],
+}
+
 const iconFor = (label: string): React.ReactNode => {
   if (label === 'IPA') return ICON.ipa
   if (label === 'GIS BMD') return ICON.gis
@@ -146,7 +156,7 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
     href === '/dashboard' ? pathname === '/dashboard' : pathname === href || pathname.startsWith(href + '/')
 
   const groupActive = (node: NavNode) => leafHrefs(node).some(h => !h.startsWith('http') && isActive(h))
-  const menuTree = userRole === 'admin' ? [...navTree, adminGroup] : navTree
+  const menuTree = userRole === 'admin' ? [...navTree, adminGroup] : [...navTree, adminGroupOperator]
 
   function renderNode(node: NavNode, depth: number): React.ReactNode {
     const pad = { paddingLeft: `${0.75 + depth * 0.85}rem` }

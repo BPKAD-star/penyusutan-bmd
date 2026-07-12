@@ -11,7 +11,7 @@
 // nonaktifkan kode yang membingungkan (mis. "printer" nyasar ke rincian objek
 // yang salah) supaya nggak muncul lagi di pencarian kode saat entry Cara
 // Perolehan/Pengelolaan. Tidak memengaruhi barang yang sudah tercatat.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
@@ -44,7 +44,19 @@ export default function AdminKodefikasiPage() {
   const [rows, setRows] = useState<Kodefikasi[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [togglingKode, setTogglingKode] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [msg, setMsg] = useState('')
+
+  // Deteksi role: toggle Aktif/Nonaktif hanya utk admin (RLS juga sudah admin-only,
+  // ini agar operator SKPD melihat halaman ini murni view-only tanpa tombol).
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from('admin_profiles').select('role').eq('id', user.id).single()
+      setIsAdmin((data as { role?: string } | null)?.role === 'admin')
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function tampilkan() {
     setLoading(true); setMsg('')
@@ -119,13 +131,21 @@ export default function AdminKodefikasiPage() {
                     <td className="table-td text-xs text-gray-600">{row.masa_manfaat_tahun ?? '-'}</td>
                     <td className="table-td text-xs text-gray-600">{formatRupiah(row.batas_kapitalisasi)}</td>
                     <td className="table-td">
-                      <button onClick={() => toggleAktif(row)} disabled={togglingKode === row.kode}
-                        title="Nonaktifkan = kode ini tidak muncul lagi di pencarian kode saat entry Cara Perolehan/Pengelolaan"
-                        className={`text-xs font-medium px-2 py-1 rounded-full ${
-                          row.aktif ? 'bg-teal/10 text-teal hover:bg-teal/20' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                      {isAdmin ? (
+                        <button onClick={() => toggleAktif(row)} disabled={togglingKode === row.kode}
+                          title="Nonaktifkan = kode ini tidak muncul lagi di pencarian kode saat entry Cara Perolehan/Pengelolaan"
+                          className={`text-xs font-medium px-2 py-1 rounded-full ${
+                            row.aktif ? 'bg-teal/10 text-teal hover:bg-teal/20' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                          }`}>
+                          {togglingKode === row.kode ? '...' : row.aktif ? 'Aktif' : 'Nonaktif'}
+                        </button>
+                      ) : (
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                          row.aktif ? 'bg-teal/10 text-teal' : 'bg-gray-200 text-gray-500'
                         }`}>
-                        {togglingKode === row.kode ? '...' : row.aktif ? 'Aktif' : 'Nonaktif'}
-                      </button>
+                          {row.aktif ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
