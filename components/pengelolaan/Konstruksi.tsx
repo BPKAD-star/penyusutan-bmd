@@ -152,30 +152,23 @@ function CreateProyek({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: () 
     if (error) onErr(`Error: ${error}`); else onSaved()
   }
 
+  const fld = (label: string, k: keyof typeof f, type = 'text') => (
+    <div>
+      <label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <input type={type} required={k === 'nama'} className="select-filter w-full" value={f[k]} onChange={e => set(k, e.target.value)} />
+    </div>
+  )
   return (
     <form onSubmit={submit} className="card p-5 mb-4 space-y-4 max-w-2xl">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2">
-          <label className="block text-xs text-gray-500 mb-1">Nama Pekerjaan</label>
-          <input required className="select-filter w-full" value={f.nama} onChange={e => set('nama', e.target.value)} />
-        </div>
-        <div><label className="block text-xs text-gray-500 mb-1">Program</label>
-          <input className="select-filter w-full" value={f.program} onChange={e => set('program', e.target.value)} /></div>
-        <div><label className="block text-xs text-gray-500 mb-1">Kegiatan</label>
-          <input className="select-filter w-full" value={f.kegiatan} onChange={e => set('kegiatan', e.target.value)} /></div>
-        <div className="col-span-2"><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label>
-          <input className="select-filter w-full" value={f.subKegiatan} onChange={e => set('subKegiatan', e.target.value)} /></div>
-        <div><label className="block text-xs text-gray-500 mb-1">No Kontrak</label>
-          <input className="select-filter w-full" value={f.noKontrak} onChange={e => set('noKontrak', e.target.value)} /></div>
-        <div><label className="block text-xs text-gray-500 mb-1">Tgl Kontrak</label>
-          <input type="date" className="select-filter w-full" value={f.tglKontrak} onChange={e => set('tglKontrak', e.target.value)} /></div>
-        <div><label className="block text-xs text-gray-500 mb-1">Nilai Kontrak (Rp, opsional)</label>
-          <input type="number" className="select-filter w-full" value={f.nilaiKontrak} onChange={e => set('nilaiKontrak', e.target.value)} /></div>
-        <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label>
-          <input className="select-filter w-full" value={f.penyedia} onChange={e => set('penyedia', e.target.value)} /></div>
-        <div className="col-span-2"><label className="block text-xs text-gray-500 mb-1">Pejabat Pembuat Komitmen (PPK)</label>
-          <input className="select-filter w-full" value={f.ppk} onChange={e => set('ppk', e.target.value)} /></div>
-      </div>
+      {fld('Nama Pekerjaan', 'nama')}
+      {fld('Program', 'program')}
+      {fld('Kegiatan', 'kegiatan')}
+      {fld('Sub Kegiatan', 'subKegiatan')}
+      {fld('No Kontrak', 'noKontrak')}
+      {fld('Tgl Kontrak', 'tglKontrak', 'date')}
+      {fld('Nama Penyedia', 'penyedia')}
+      {fld('Pejabat Pembuat Komitmen (PPK)', 'ppk')}
+      {fld('Nilai Kontrak (Rp, opsional)', 'nilaiKontrak', 'number')}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Jenis KDP (sub rincian objek — golongan 1.3.6 Konstruksi Dalam Pengerjaan)</label>
         <KodefikasiPicker picked={kdp} onPick={setKdp} golonganTetap="1.3.6" />
