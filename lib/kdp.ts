@@ -98,7 +98,11 @@ export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerI
   }
 
   const kodeSkpd = await skpdKode(supabase, h.skpd_id)
-  const tglBarang = (b: BarangKdp) => (b.pembayaran || []).map(x => x.tgl_bast).sort()[0] || h.tanggal
+  // tgl_perolehan KDP = tgl BAST TERAKHIR (termin paling akhir) — keputusan user
+  // 2026-07-13. KDP tak disusutkan; ini murni pencatatan, baseline penyusutan
+  // sesungguhnya ditetapkan saat reklas ke aset tetap (tgl BAPP). Tahun NIBAR
+  // ikut tahun tgl ini juga.
+  const tglBarang = (b: BarangKdp) => (b.pembayaran || []).map(x => x.tgl_bast).sort().slice(-1)[0] || h.tanggal
   const nibarInput = barangs.map(b => ({ key: b.key, kode: b.kode, intraEkstra: 'intra' as const, tahun: String(new Date(tglBarang(b)).getFullYear()) }))
   const nibarMap = await generateNibars(supabase as never, nibarInput, kodeSkpd)
 
