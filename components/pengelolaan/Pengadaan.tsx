@@ -555,14 +555,6 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
       {embedded && msg && (
         <div className={`mb-4 p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
       )}
-      {embedded && skpd && (
-        <div className="flex justify-end mb-4">
-          <div className="text-right">
-            <p className="text-xs text-gray-400">Total Pengadaan ({skpdNama})</p>
-            <p className="text-lg font-bold text-gray-900">{formatRupiah(totalSemua)}</p>
-          </div>
-        </div>
-      )}
 
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">
