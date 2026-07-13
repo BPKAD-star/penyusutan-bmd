@@ -336,20 +336,16 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-semibold text-gray-800 mb-2">{p.nama_pekerjaan}</h2>
-              <div className="grid sm:grid-cols-2 gap-x-6">
-                <div className="space-y-0.5">
-                  <Baris label="Jenis Kontrak" value="Surat Perintah Kerja (SPK)" />
-                  <Baris label="Nomor Kontrak" value={kontrak.no_sk} />
-                  <Baris label="Tanggal Kontrak" value={kontrak.tanggal} />
-                  <Baris label="Program" value={p.program} />
-                  <Baris label="Kegiatan" value={p.kegiatan} />
-                </div>
-                <div className="space-y-0.5">
-                  <Baris label="Sub Kegiatan" value={p.sub_kegiatan} />
-                  <Baris label="Keterangan" value={p.keterangan} />
-                  <Baris label="Nama Penyedia" value={p.penyedia} />
-                  <Baris label="Nama PPKom" value={p.ppk} />
-                </div>
+              <div className="space-y-0.5">
+                <Baris label="Jenis Kontrak" value="Surat Perintah Kerja (SPK)" />
+                <Baris label="Nomor Kontrak" value={kontrak.no_sk} />
+                <Baris label="Tanggal Kontrak" value={kontrak.tanggal} />
+                <Baris label="Program" value={p.program} />
+                <Baris label="Kegiatan" value={p.kegiatan} />
+                <Baris label="Sub Kegiatan" value={p.sub_kegiatan} />
+                <Baris label="Keterangan" value={p.keterangan} />
+                <Baris label="Nama Penyedia" value={p.penyedia} />
+                <Baris label="Nama PPKom" value={p.ppk} />
               </div>
               {p.kap_info?.menambah && <p className="text-xs text-amber-600 mt-1">Catatan: menambah masa manfaat aset {p.kap_info.target_nama || '(dipilih)'} — reklas & kapitalisasi manual nanti.</p>}
             </div>
@@ -357,14 +353,15 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
               <p className="text-xs text-gray-400">Total ({barangs.length} barang KDP) · {periodeDariTanggal(kontrak.tanggal)}</p>
               <p className="text-lg font-bold text-navy">{formatRupiah(total)}</p>
               {p.nilai_kontrak ? <p className="text-[11px] text-gray-400">Nilai kontrak {formatRupiah(p.nilai_kontrak)}</p> : null}
+              {pending && (
+                <div className="flex items-center justify-end gap-2 mt-2">
+                  <button title="Edit Kontrak" onClick={() => setShowEdit(true)}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
+                  <button title="Hapus / arsipkan kontrak" onClick={hapus}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+                </div>
+              )}
             </div>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {pending && isAdmin && barangs.length > 0 && <button className="btn-primary" onClick={approve} disabled={busy}>{busy ? 'Memproses...' : 'Setujui Kontrak'}</button>}
-            {pending && <button className="text-sm text-gray-700 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200" onClick={() => setShowEdit(true)}>✎ Edit Kontrak</button>}
-            {pending && <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={hapus}>Hapus Kontrak</button>}
-            {!pending && isAdmin && <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200" onClick={unapprove} disabled={busy}>{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>}
-            {!pending && !isAdmin && <span className="text-[11px] text-gray-400">🔒 Terkunci</span>}
           </div>
           {!pending && <p className="mt-2 text-sm text-teal">Disetujui — {barangs.length} barang KDP resmi tercatat di Daftar Barang.</p>}
         </div>
@@ -388,6 +385,14 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
               : <button className="btn-secondary text-sm" onClick={() => setShowAddBarang(true)}>+ Tambah Barang KDP</button>}
           </div>
         )}
+
+        <div className="p-4 border-t border-gray-100 flex justify-end items-center gap-3">
+          {pending && isAdmin && barangs.length > 0 && <button className="btn-primary" onClick={approve} disabled={busy}>{busy ? 'Memproses...' : '✓ Setujui Kontrak'}</button>}
+          {pending && isAdmin && barangs.length === 0 && <span className="text-xs text-gray-400">Tambah minimal 1 barang KDP untuk bisa disetujui.</span>}
+          {pending && !isAdmin && <span className="text-xs text-gray-400">Menunggu tinjauan admin.</span>}
+          {!pending && isAdmin && <button className="btn-secondary text-sm" onClick={unapprove} disabled={busy}>{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>}
+          {!pending && !isAdmin && <span className="text-[11px] text-gray-400">🔒 Terkunci</span>}
+        </div>
       </div>
 
       {specBarang && (
@@ -555,16 +560,20 @@ function BarangCard({ barang, pending, tglKontrak, onHapusBarang, onEditSpec, on
   return (
     <div className="border-t border-gray-100">
       <div className="px-5 py-3 bg-gray-50/60 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-gray-800">{barang.nama}</p>
-          <p className="text-[11px] text-gray-400">{barang.kode}</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800">{barang.nama} <span className="text-[11px] text-gray-400 font-normal">· {barang.kode}</span></p>
+          <div className="mt-1 space-y-0.5">
+            <Baris label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
+            <Baris label="Lokasi" value={barang.spec?.alamat_detail} />
+            <Baris label="Keterangan" value={barang.spec?.keterangan} />
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3 flex-shrink-0">
           <div className="text-right">
             <p className="text-[11px] text-gray-400">Nilai (Σ termin)</p>
             <p className="font-semibold text-gray-800">{formatRupiah(total)}</p>
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 items-end">
             <button className="text-xs text-teal hover:underline" onClick={onEditSpec}>Edit Spesifikasi</button>
             {pending && <button className="text-xs text-red-500 hover:text-red-700" onClick={onHapusBarang}>Hapus Barang</button>}
           </div>
