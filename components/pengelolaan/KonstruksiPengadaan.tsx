@@ -14,6 +14,7 @@ import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiP
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
+import { periodeDariTanggal } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import {
@@ -239,6 +240,7 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
   const supabase = createClient()
   const [busy, setBusy] = useState(false)
   const [showAddBarang, setShowAddBarang] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
   const [specBarang, setSpecBarang] = useState<BarangKdp | null>(null)
   const p = kontrak.payload || ({} as KontrakKonstruksiPayload)
   const barangs = barangKdpList(p)
@@ -321,6 +323,7 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {pending && isAdmin && barangs.length > 0 && <button className="btn-primary" onClick={approve} disabled={busy}>{busy ? 'Memproses...' : 'Setujui Kontrak'}</button>}
+          {pending && <button className="text-sm text-gray-700 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200" onClick={() => setShowEdit(true)}>✎ Edit Kontrak</button>}
           {pending && <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={hapus}>Hapus Kontrak</button>}
           {!pending && isAdmin && <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200" onClick={unapprove} disabled={busy}>{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>}
           {!pending && !isAdmin && <span className="text-[11px] text-gray-400">🔒 Terkunci</span>}
@@ -351,6 +354,105 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
           storagePrefix={`draft/konstruksi/${kontrak.id}/${specBarang.key}`} initialFields={specBarang.spec || {}} initialFoto={specBarang.foto || []}
           single onSave={(fields, foto) => saveSpec(specBarang.key, fields, foto)} onClose={() => setSpecBarang(null)} />
       )}
+      {showEdit && (
+        <EditKontrakModal kontrak={kontrak}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); onMsg('Header kontrak diperbarui.'); onChanged() }}
+          onErr={onMsg} />
+      )}
+    </div>
+  )
+}
+
+// ── Modal edit header kontrak konstruksi (hanya saat draft) ─────────────────
+// Pola sama non-fisik: No SPK/tgl/dll boleh diubah selama tetap di semester yang
+// sama (fn_jurnal_header_guard); pindah semester → batalkan & buat baru. Tgl
+// kontrak tak boleh lebih baru dari termin paling awal (jaga aturan BAST ≥ tgl).
+function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
+  kontrak: Kontrak; onClose: () => void; onSaved: () => void; onErr: (m: string) => void
+}) {
+  const supabase = createClient()
+  const bounds = useDateBounds()
+  const p = kontrak.payload || ({} as KontrakKonstruksiPayload)
+  const [nama, setNama] = useState(p.nama_pekerjaan || '')
+  const [noKontrak, setNoKontrak] = useState(kontrak.no_sk)
+  const [tgl, setTgl] = useState(kontrak.tanggal)
+  const [program, setProgram] = useState(p.program || '')
+  const [kegiatan, setKegiatan] = useState(p.kegiatan || '')
+  const [subKeg, setSubKeg] = useState(p.sub_kegiatan || '')
+  const [penyedia, setPenyedia] = useState(p.penyedia || '')
+  const [ppk, setPpk] = useState(p.ppk || '')
+  const [nilaiKontrak, setNilaiKontrak] = useState(p.nilai_kontrak != null ? String(p.nilai_kontrak) : '')
+  const [keterangan, setKeterangan] = useState(p.keterangan || kontrak.keterangan || '')
+  const [pegawai, setPegawai] = useState<{ nama: string; nip: string }[]>([])
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => { supabase.from('admin_pegawai').select('nama,nip').order('nama').then(({ data }) => setPegawai((data || []) as { nama: string; nip: string }[])) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const periodeAsli = periodeDariTanggal(kontrak.tanggal)
+  const pindahSemester = periodeDariTanggal(tgl) !== periodeAsli
+  // Termin paling awal — tgl kontrak baru tak boleh lebih baru dari ini.
+  const terminTerawal = barangKdpList(p).flatMap(b => (b.pembayaran || []).map(x => x.tgl_bast)).sort()[0]
+
+  async function simpan() {
+    if (!nama.trim()) { setErr('Nama pekerjaan wajib diisi.'); return }
+    if (!noKontrak.trim() || !tgl) { setErr('No. & Tgl Kontrak wajib diisi.'); return }
+    if (pindahSemester) { setErr(`Tanggal masuk ${periodeDariTanggal(tgl)}, sedangkan kontrak ini di ${periodeAsli}. Pindah semester tidak diizinkan — batalkan & buat kontrak baru.`); return }
+    if (terminTerawal && tgl > terminTerawal) { setErr(`Tgl kontrak (${tgl}) tidak boleh lebih baru dari termin paling awal (${terminTerawal}) — sesuaikan termin dulu.`); return }
+    setErr(''); setSaving(true)
+    const payload: KontrakKonstruksiPayload = {
+      ...p, nama_pekerjaan: nama.trim(),
+      program: program.trim() || null, kegiatan: kegiatan.trim() || null, sub_kegiatan: subKeg.trim() || null,
+      penyedia: penyedia.trim() || null, ppk: ppk || null,
+      nilai_kontrak: nilaiKontrak ? Number(nilaiKontrak) : null, keterangan: keterangan.trim() || null,
+    }
+    const { error } = await supabase.from('jurnal_header')
+      .update({ no_sk: noKontrak.trim(), tanggal: tgl, keterangan: keterangan.trim() || null, payload })
+      .eq('id', kontrak.id)
+    setSaving(false)
+    if (error) { setErr(`Gagal menyimpan: ${error.message}`); onErr(`Error: ${error.message}`); return }
+    onSaved()
+  }
+
+  const fld = (label: string, val: string, setVal: (v: string) => void, type = 'text') => (
+    <div><label className="block text-xs text-gray-500 mb-1">{label}</label>
+      <input type={type} className="select-filter w-full" value={val} onChange={e => setVal(e.target.value)} /></div>
+  )
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
+          <h3 className="font-semibold text-gray-800">Edit Kontrak Konstruksi</h3>
+          <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>
+        </div>
+        <div className="p-5 space-y-4">
+          {fld('Nama Pekerjaan', nama, setNama)}
+          {fld('No. Kontrak (SPK)', noKontrak, setNoKontrak)}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Tgl Kontrak <span className="text-gray-400">(tetap di {periodeAsli})</span></label>
+            <input type="date" className="select-filter w-full sm:w-64" max={bounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
+            {pindahSemester && <p className="text-xs text-red-600 mt-1">Tanggal ini masuk {periodeDariTanggal(tgl)} — di luar semester kontrak.</p>}
+          </div>
+          {fld('Program', program, setProgram)}
+          {fld('Kegiatan', kegiatan, setKegiatan)}
+          {fld('Sub Kegiatan', subKeg, setSubKeg)}
+          <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
+            <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
+              <option value="">— pilih pegawai —</option>
+              {ppk && !pegawai.some(pg => pg.nama === ppk) && <option value={ppk}>{ppk}</option>}
+              {pegawai.map((pg, i) => <option key={i} value={pg.nama}>{pg.nama} — {pg.nip}</option>)}
+            </select></div>
+          {fld('Nama Penyedia', penyedia, setPenyedia)}
+          {fld('Nilai Kontrak Pekerjaan (Rp)', nilaiKontrak, setNilaiKontrak, 'number')}
+          {fld('Keterangan Kontrak', keterangan, setKeterangan)}
+          {err && <p className="text-sm text-red-600">{err}</p>}
+        </div>
+        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white">
+          <button className="btn-secondary" onClick={onClose}>Batal</button>
+          <button className="btn-primary" onClick={simpan} disabled={saving || pindahSemester}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
+        </div>
+      </div>
     </div>
   )
 }
