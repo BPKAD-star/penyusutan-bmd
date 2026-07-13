@@ -254,8 +254,21 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   Klasifikasi `intra_ekstra` per barang DIHITUNG OTOMATIS saat approve: nilai
   item vs `kodefikasi_bmd.batas_kapitalisasi` (`lib/bmd.ts`
   `klasifikasiKomptabel()` — nilai >= batas → intra, < batas → ekstra; tanpa
-  batas terdaftar → default intra). Berlaku jg di `PerolehanImport.tsx`
-  (Hibah/Hasil Inventarisasi/Perolehan Lainnya + Import Excel Pengadaan).
+  batas terdaftar → default intra).
+- **Import Excel (`PerolehanImport.tsx`, dipakai kelima menu Cara Perolehan)
+  IKUT alur approval ini — TIDAK menulis langsung ke ledger** (sejak
+  2026-07-13; dulu ia insert `aset`+`transaksi_bmd` langsung → barang loncat ke
+  Daftar Barang tanpa approve & tak pernah muncul sbg kartu, tak bisa
+  di-unapprove). Sekarang baris valid ditampung sbg `jurnal_header` draft
+  `pending`, **dikelompokkan per No. BAST/Dokumen** (1 dokumen = 1 kartu),
+  `draft_items`-nya mengikuti shape DraftItem menu tujuan (Pengadaan pakai
+  `rekening` + tgl BAST header; Hibah dsb pakai `tglPerolehan` per item). NIBAR
+  & `intra_ekstra` tetap DIGENERATE/DIHITUNG saat approve (kolom NIBAR di file
+  Excel diabaikan — keputusan user 2026-07-13). Header pengadaan bertanggal =
+  tgl BAST (jadi backdate ke tahun terkunci ditolak guard, sama spt entry
+  manual pengadaan); header Hibah/dll bertanggal hari ini (tahun terbuka),
+  tanggal perolehan asli tetap di item. No. Dokumen yg sudah ada dilewati
+  (hindari kartu ganda).
 - **Kontrak DISETUJUI terkunci total** (read-only, tak ada edit/batal per-baris
   spt sebelumnya). Untuk mengubah: admin **"Buka Kunci"** (unapprove) →
   semua barang di `batal_pengadaan` (soft-delete retroaktif ke tgl asli,
