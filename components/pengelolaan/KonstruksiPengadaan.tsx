@@ -34,10 +34,21 @@ const FIELDS_KDP = GOLONGAN_FIELDS['1.3.1']
 const barangTotal = (b: BarangKdp) => (b.pembayaran || []).reduce((s, x) => s + Number(x.nominal || 0), 0)
 const kontrakTotal = (p: KontrakKonstruksiPayload) => barangKdpList(p).reduce((s, b) => s + barangTotal(b), 0)
 
-export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, openId, onExit, onDataChange }: {
+// Baris label:value ringkas utk header kartu kontrak.
+function Baris({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex text-xs leading-relaxed">
+      <span className="text-gray-400 w-28 flex-shrink-0">{label}</span>
+      <span className="text-gray-700">: {value || '-'}</span>
+    </div>
+  )
+}
+
+export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, openId, onExit, onDataChange, hideAdd }: {
   skpdProp?: string; embedded?: boolean
   startCreate?: boolean; openId?: string; onExit?: () => void
   onDataChange?: () => void // dipanggil tiap list berubah — utk refresh total induk (ref, stabil)
+  hideAdd?: boolean         // sembunyikan "+ Buat Kontrak" internal (induk yg sediakan tombol tambah)
 } = {}) {
   const supabase = createClient()
   const onDataChangeRef = useRef(onDataChange)
@@ -63,7 +74,8 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
     if (!skpdId) { setList([]); return }
     const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload')
       .eq('kategori', 'konstruksi').eq('skpd_id', Number(skpdId)).order('created_at', { ascending: false })
-    setList((data || []) as Kontrak[])
+    // 'ditolak' = kontrak diarsipkan (pernah disetujui, tak bisa hard-delete) → disembunyikan.
+    setList(((data || []) as Kontrak[]).filter(k => k.approval_status !== 'ditolak'))
     onDataChangeRef.current?.()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(skpd); setSelected(null); setShowCreate(false) }, [skpd, load])
@@ -91,7 +103,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
             <button onClick={onExit} className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>Kembali ke daftar
             </button>
-            <CreateKontrak skpdId={Number(skpd)} onSaved={k => { load(skpd); setSelected(k); setMsg('Kontrak dibuat (draft) — tambah barang KDP & rincian pembayaran di bawah lalu tunggu approval.') }} onErr={setMsg} />
+            <CreateKontrak skpdId={Number(skpd)} onSaved={() => { load(skpd); onExit() }} onErr={setMsg} />
           </>
         ) : (
           <div className="card p-8 text-center text-gray-400 text-sm">Memuat kontrak…</div>
@@ -121,9 +133,9 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">{list.length} kontrak konstruksi · {formatRupiah(list.reduce((s, k) => s + kontrakTotal(k.payload), 0))}</span>
-            <button className="btn-primary" onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Batal' : '+ Buat Kontrak'}</button>
+            {!hideAdd && <button className="btn-primary" onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Batal' : '+ Buat Kontrak'}</button>}
           </div>
-          {showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={() => { setShowCreate(false); load(skpd); setMsg('Kontrak dibuat (draft) — tambah barang KDP & rincian pembayaran lalu tunggu approval.') }} onErr={setMsg} />}
+          {!hideAdd && showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={() => { setShowCreate(false); load(skpd); setMsg('Kontrak dibuat (draft) — tambah barang KDP & rincian pembayaran lalu tunggu approval.') }} onErr={setMsg} />}
           {list.length === 0 ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Belum ada kontrak konstruksi untuk SKPD ini.</div>
           ) : (
@@ -291,6 +303,21 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
     if (error) onMsg(`Error: ${error}`); else { onMsg('Kontrak dibuka kunci — semua barang KDP kembali draft.'); onChanged() }
   }
   async function hapus() {
+    // Kontrak yg PERNAH disetujui punya jejak ledger (akumulasi_kdp/batal_ yg
+    // ber-header_id) → hard-DELETE jurnal_header ditolak FK. Arsipkan saja
+    // (approval_status='ditolak'): ledger tetap utuh (append-only), kontrak
+    // hilang dari daftar, No. SPK bebas dipakai lagi. Draft murni (tanpa jejak
+    // ledger) → hapus biasa aman.
+    const { data: led } = await supabase.from('transaksi_bmd').select('id').eq('header_id', kontrak.id).limit(1)
+    const hasLedger = !!(led && led.length > 0)
+    if (hasLedger) {
+      if (!confirm(`Arsipkan kontrak ${kontrak.no_sk}? Kontrak ini pernah disetujui — riwayat ledgernya TETAP tersimpan (append-only, tak bisa dihapus). Kontrak hilang dari daftar & No. SPK bisa dipakai lagi. Tidak bisa dibatalkan.`)) return
+      const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', kontrak.id)
+      if (error) { onMsg(`Error: gagal mengarsipkan kontrak: ${error.message}`); return }
+      onMsg(`Kontrak ${kontrak.no_sk} diarsipkan — No. SPK bisa dipakai lagi.`)
+      onBack()
+      return
+    }
     if (!confirm('Hapus kontrak draft ini?')) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', kontrak.id)
     if (error) onMsg(`Error: ${error.message}`); else onBack()
@@ -304,50 +331,64 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
         </button>
       )}
 
-      <div className="card p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-800">{p.nama_pekerjaan}</h2>
-            <div className="mt-1 text-xs text-gray-500 space-y-0.5">
-              <p>SPK {kontrak.no_sk} · {kontrak.tanggal}</p>
-              {(p.program || p.kegiatan) && <p>Program: {p.program || '—'} · Kegiatan: {p.kegiatan || '—'}{p.sub_kegiatan ? ` · Sub: ${p.sub_kegiatan}` : ''}</p>}
-              {(p.penyedia || p.ppk) && <p>Penyedia: {p.penyedia || '—'} · PPK: {p.ppk || '—'}</p>}
-              {p.kap_info?.menambah && <p className="text-amber-600">Catatan: menambah masa manfaat aset {p.kap_info.target_nama || '(dipilih)'} — reklas & kapitalisasi manual nanti.</p>}
+      <div className="card overflow-hidden">
+        <div className="p-5 border-b border-gray-100">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">{p.nama_pekerjaan}</h2>
+              <div className="grid sm:grid-cols-2 gap-x-6">
+                <div className="space-y-0.5">
+                  <Baris label="Jenis Kontrak" value="Surat Perintah Kerja (SPK)" />
+                  <Baris label="Nomor Kontrak" value={kontrak.no_sk} />
+                  <Baris label="Tanggal Kontrak" value={kontrak.tanggal} />
+                  <Baris label="Program" value={p.program} />
+                  <Baris label="Kegiatan" value={p.kegiatan} />
+                </div>
+                <div className="space-y-0.5">
+                  <Baris label="Sub Kegiatan" value={p.sub_kegiatan} />
+                  <Baris label="Keterangan" value={p.keterangan} />
+                  <Baris label="Nama Penyedia" value={p.penyedia} />
+                  <Baris label="Nama PPKom" value={p.ppk} />
+                </div>
+              </div>
+              {p.kap_info?.menambah && <p className="text-xs text-amber-600 mt-1">Catatan: menambah masa manfaat aset {p.kap_info.target_nama || '(dipilih)'} — reklas & kapitalisasi manual nanti.</p>}
+            </div>
+            <div className="text-right flex-shrink-0">
+              <p className="text-xs text-gray-400">Total ({barangs.length} barang KDP) · {periodeDariTanggal(kontrak.tanggal)}</p>
+              <p className="text-lg font-bold text-navy">{formatRupiah(total)}</p>
+              {p.nilai_kontrak ? <p className="text-[11px] text-gray-400">Nilai kontrak {formatRupiah(p.nilai_kontrak)}</p> : null}
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-400">Total ({barangs.length} barang KDP)</p>
-            <p className="text-lg font-bold text-navy">{formatRupiah(total)}</p>
-            {p.nilai_kontrak ? <p className="text-[11px] text-gray-400">Nilai kontrak {formatRupiah(p.nilai_kontrak)}</p> : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {pending && isAdmin && barangs.length > 0 && <button className="btn-primary" onClick={approve} disabled={busy}>{busy ? 'Memproses...' : 'Setujui Kontrak'}</button>}
+            {pending && <button className="text-sm text-gray-700 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200" onClick={() => setShowEdit(true)}>✎ Edit Kontrak</button>}
+            {pending && <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={hapus}>Hapus Kontrak</button>}
+            {!pending && isAdmin && <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200" onClick={unapprove} disabled={busy}>{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>}
+            {!pending && !isAdmin && <span className="text-[11px] text-gray-400">🔒 Terkunci</span>}
           </div>
+          {!pending && <p className="mt-2 text-sm text-teal">Disetujui — {barangs.length} barang KDP resmi tercatat di Daftar Barang.</p>}
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {pending && isAdmin && barangs.length > 0 && <button className="btn-primary" onClick={approve} disabled={busy}>{busy ? 'Memproses...' : 'Setujui Kontrak'}</button>}
-          {pending && <button className="text-sm text-gray-700 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200" onClick={() => setShowEdit(true)}>✎ Edit Kontrak</button>}
-          {pending && <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={hapus}>Hapus Kontrak</button>}
-          {!pending && isAdmin && <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200" onClick={unapprove} disabled={busy}>{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>}
-          {!pending && !isAdmin && <span className="text-[11px] text-gray-400">🔒 Terkunci</span>}
-        </div>
-        {!pending && <p className="mt-2 text-sm text-teal">Disetujui — {barangs.length} barang KDP resmi tercatat di Daftar Barang.</p>}
+
+        {barangs.length === 0 ? (
+          <div className="p-6 text-center text-gray-400 text-sm">Belum ada barang KDP. Tambahkan minimal satu barang untuk bisa disetujui.</div>
+        ) : (
+          barangs.map(b => (
+            <BarangCard key={b.key} barang={b} pending={pending} tglKontrak={kontrak.tanggal}
+              onHapusBarang={() => hapusBarang(b.key)}
+              onEditSpec={() => setSpecBarang(b)}
+              onTambahTermin={item => tambahTermin(b.key, item)}
+              onHapusTermin={idx => hapusTermin(b.key, idx)} />
+          ))
+        )}
+
+        {pending && (
+          <div className="p-4 border-t border-gray-100 bg-gray-50/40">
+            {showAddBarang
+              ? <TambahBarangPanel onTambah={tambahBarang} onCancel={() => setShowAddBarang(false)} onErr={onMsg} />
+              : <button className="btn-secondary text-sm" onClick={() => setShowAddBarang(true)}>+ Tambah Barang KDP</button>}
+          </div>
+        )}
       </div>
-
-      {barangs.length === 0 ? (
-        <div className="card p-8 text-center text-gray-400 text-sm">Belum ada barang KDP. Tambahkan minimal satu barang untuk bisa disetujui.</div>
-      ) : (
-        barangs.map(b => (
-          <BarangCard key={b.key} barang={b} pending={pending} tglKontrak={kontrak.tanggal}
-            onHapusBarang={() => hapusBarang(b.key)}
-            onEditSpec={() => setSpecBarang(b)}
-            onTambahTermin={item => tambahTermin(b.key, item)}
-            onHapusTermin={idx => hapusTermin(b.key, idx)} />
-        ))
-      )}
-
-      {pending && (
-        showAddBarang
-          ? <TambahBarangPanel onTambah={tambahBarang} onCancel={() => setShowAddBarang(false)} onErr={onMsg} />
-          : <button className="btn-secondary text-sm" onClick={() => setShowAddBarang(true)}>+ Tambah Barang KDP</button>
-      )}
 
       {specBarang && (
         <EditSpesifikasiModal title={`Spesifikasi — ${specBarang.nama}`} fieldKeys={FIELDS_KDP}
@@ -464,7 +505,7 @@ function TambahBarangPanel({ onTambah, onCancel, onErr }: {
   const [kode, setKode] = useState<KodefikasiHasil | null>(null)
   const [nama, setNama] = useState('')
   return (
-    <div className="card p-5 space-y-3 max-w-2xl">
+    <div className="space-y-3 max-w-2xl">
       <h3 className="text-sm font-semibold text-gray-800">Tambah Barang KDP</h3>
       <div><label className="block text-xs text-gray-500 mb-1">Kode Barang (jenis KDP — golongan 1.3.6)</label>
         <KodefikasiPicker picked={kode} onPick={k => { setKode(k); if (!nama) setNama(k?.uraian || '') }} golonganTetap="1.3.6" /></div>
@@ -512,8 +553,8 @@ function BarangCard({ barang, pending, tglKontrak, onHapusBarang, onEditSpec, on
   }
 
   return (
-    <div className="card overflow-hidden">
-      <div className="p-4 border-b border-gray-100 bg-gray-50/60 flex items-start justify-between gap-3">
+    <div className="border-t border-gray-100">
+      <div className="px-5 py-3 bg-gray-50/60 flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-gray-800">{barang.nama}</p>
           <p className="text-[11px] text-gray-400">{barang.kode}</p>
