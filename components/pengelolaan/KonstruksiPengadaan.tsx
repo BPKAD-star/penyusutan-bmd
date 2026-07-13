@@ -326,7 +326,7 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg }: {
         <div className="card p-8 text-center text-gray-400 text-sm">Belum ada barang KDP. Tambahkan minimal satu barang untuk bisa disetujui.</div>
       ) : (
         barangs.map(b => (
-          <BarangCard key={b.key} barang={b} pending={pending}
+          <BarangCard key={b.key} barang={b} pending={pending} tglKontrak={kontrak.tanggal}
             onHapusBarang={() => hapusBarang(b.key)}
             onEditSpec={() => setSpecBarang(b)}
             onTambahTermin={item => tambahTermin(b.key, item)}
@@ -375,8 +375,8 @@ function TambahBarangPanel({ onTambah, onCancel, onErr }: {
 }
 
 // ── Kartu satu barang KDP: header + termin + (draft) form tambah termin ─────
-function BarangCard({ barang, pending, onHapusBarang, onEditSpec, onTambahTermin, onHapusTermin }: {
-  barang: BarangKdp; pending: boolean
+function BarangCard({ barang, pending, tglKontrak, onHapusBarang, onEditSpec, onTambahTermin, onHapusTermin }: {
+  barang: BarangKdp; pending: boolean; tglKontrak: string
   onHapusBarang: () => void; onEditSpec: () => void
   onTambahTermin: (item: PembayaranKdp) => void; onHapusTermin: (idx: number) => void
 }) {
@@ -389,11 +389,16 @@ function BarangCard({ barang, pending, onHapusBarang, onEditSpec, onTambahTermin
   const [rekening, setRekening] = useState('')
   const [nominal, setNominal] = useState('')
   const [ket, setKet] = useState('')
+  const [err, setErr] = useState('')
   const [showForm, setShowForm] = useState(false)
+  // Tgl BAST tak boleh lebih tua dari tgl kontrak (juga hormati batas tahun buku).
+  const minTgl = [bounds.min, tglKontrak].filter(Boolean).sort().slice(-1)[0]
 
   function submitTermin(e: React.FormEvent) {
     e.preventDefault()
-    if (!tgl || !nominal) return
+    if (!tgl || !nominal) { setErr('Tgl BAST & nominal wajib diisi.'); return }
+    if (tglKontrak && tgl < tglKontrak) { setErr(`Tgl BAST (${tgl}) tidak boleh lebih tua dari tgl kontrak (${tglKontrak}).`); return }
+    setErr('')
     onTambahTermin({ komponen: komponen as PembayaranKdp['komponen'], no_bast: noBast || null, tgl_bast: tgl, kode_rekening: rekening || null, nominal: Number(nominal), keterangan: ket || null })
     setNoBast(''); setNominal(''); setKet(''); setShowForm(false)
   }
@@ -448,14 +453,15 @@ function BarangCard({ barang, pending, onHapusBarang, onEditSpec, onTambahTermin
                 <div><label className="block text-xs text-gray-500 mb-1">Komponen</label>
                   <select className="select-filter w-full text-sm" value={komponen} onChange={e => setKomponen(e.target.value)}>{KOMPONEN.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}</select></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Nomor BAST</label><input className="select-filter w-full text-sm" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST</label><input type="date" min={bounds.min} max={bounds.max} className="select-filter w-full text-sm" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
+                <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST <span className="text-gray-400">(≥ tgl kontrak {tglKontrak})</span></label><input type="date" min={minTgl} max={bounds.max} className="select-filter w-full text-sm" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Kode Rekening</label><input className="select-filter w-full text-sm" value={rekening} onChange={e => setRekening(e.target.value)} placeholder="free-form" /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Nominal (Rp)</label><input type="number" className="select-filter w-full text-sm" value={nominal} onChange={e => setNominal(e.target.value)} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full text-sm" value={ket} onChange={e => setKet(e.target.value)} /></div>
               </div>
+              {err && <p className="text-xs text-red-600">{err}</p>}
               <div className="flex gap-2">
                 <button type="submit" className="btn-primary text-sm py-1.5">+ Tambah Rincian</button>
-                <button type="button" className="btn-secondary text-sm py-1.5" onClick={() => setShowForm(false)}>Batal</button>
+                <button type="button" className="btn-secondary text-sm py-1.5" onClick={() => { setShowForm(false); setErr('') }}>Batal</button>
               </div>
             </form>
           ) : (
