@@ -7,6 +7,13 @@
 //   - Beban dibulatkan ke rupiah penuh; selisih pembulatan diserap di semester
 //     terakhir (nilai buku dipaksa 0 saat umur habis).
 //   - Masa manfaat di DB = TAHUN (canonical Perbup). Konversi ×2 hanya di sini.
+//   - EKSTRAKOMPTABEL IKUT DISUSUTKAN (keputusan user 2026-07-13; dulu engine
+//     skip total). Aturan hitungnya SAMA persis dgn intra — pemisahan "yang
+//     masuk neraca cuma intra" terjadi di LAPORAN (filter Komptabel, default
+//     'intra'), bukan di engine.
+//   - Golongan 1.5.4 Aset Lain-Lain TIDAK akrual (beku sejak baseline 2025;
+//     keputusan user 2026-07-13) — baik yg dari sononya 1.5.4 maupun yg
+//     direklas masuk. Akumulasi lama tetap tampil, beban baru = 0.
 // ============================================================================
 import { perlakuanKode, periodeRange, comparePeriode, kodeLevel3 } from '@/lib/bmd'
 
@@ -94,8 +101,10 @@ export function hitungJadwalAset(
     if (Number.isFinite(tid)) kapDibatalkan.add(tid)
   }
 
-  const ekstra = (aset.intra_ekstra || '').toLowerCase() === 'ekstra'
-  if (ekstra) return []
+  // CATATAN (2026-07-13): dulu ada bail-out `if (ekstra) return []` di sini —
+  // DIHAPUS. Ekstrakomptabel ikut disusutkan dgn aturan sama; neraca disaring
+  // intra di laporan. Konsekuensi: reklas_komptabel (flip intra↔ekstra) kini
+  // TANPA efek perhitungan sama sekali — murni pindah keranjang laporan.
 
   // ── State awal dari transaksi baseline/perolehan ──────────────────────────
   // Default: kode TERKINI aset (retroaktif — cocok utk reklas_kode/Kesalahan
@@ -264,10 +273,9 @@ export function hitungJadwalAset(
           berhenti = false // batal serap: barang anak disusutkan lagi (di induk = tanpa efek)
           break
         // mutasi_internal / pengalihan_status / koreksi_spesifikasi: tanpa efek finansial
-        // reklas_komptabel: TIDAK butuh case di sini — efeknya cuma flip
-        // aset.intra_ekstra (patchAsetDari), sudah otomatis ditangani oleh
-        // early-return `if (ekstra) return []` di atas (baris ~97-98) begitu
-        // replay berikutnya jalan dgn intra_ekstra yang sudah ke-update.
+        // reklas_komptabel: TIDAK butuh case di sini — sejak ekstra ikut
+        // disusutkan (2026-07-13), flip intra↔ekstra murni pindah keranjang
+        // laporan (filter Komptabel), nol efek ke perhitungan.
         // koreksi_kuantitas: masih DEFERRED (PLAN §12) — jangan implementasi
         default:
           break
@@ -280,8 +288,13 @@ export function hitungJadwalAset(
     // sekarang utk periode KDP SEBELUM reklas_golongan terjadi (lihat state
     // awal di atas), yang secara alami sudah sisaSmt=0/beban=0 (KDP nggak
     // punya masa_manfaat di kodefikasi) tapi ini jaga-jaga eksplisit.
+    // Guard `perlakuan !== 'lain_lain'` (2026-07-13): 1.5.4 Aset Lain-Lain
+    // BEKU — tidak pernah akrual, dari mana pun asalnya (bawaan baseline
+    // maupun reklas masuk; termasuk kalau berhenti=false lagi gara-gara
+    // batal_penghapusan/batal_kapitalisasi). Reklas KELUAR dari 1.5.4
+    // (reklas_golongan) mengganti `perlakuan` → akrual hidup lagi normal.
     let bebanPeriode = 0
-    if (!berhenti && perlakuan !== 'tidak' && sisaSmt > 0 && beban > 0 && nilaiBuku > 0) {
+    if (!berhenti && perlakuan !== 'tidak' && perlakuan !== 'lain_lain' && sisaSmt > 0 && beban > 0 && nilaiBuku > 0) {
       if (sisaSmt === 1) {
         bebanPeriode = nilaiBuku // serap selisih pembulatan: paksa NB = 0 (§6.3)
       } else {

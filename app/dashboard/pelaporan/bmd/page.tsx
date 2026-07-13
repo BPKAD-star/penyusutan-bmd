@@ -47,7 +47,9 @@ export default function LaporanBmdPage() {
   const supabase = createClient()
   const { rootOf } = useSkpdTree()
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
-  const [komptabel, setKomptabel] = useState('')
+  // Default 'intra' (angka neraca) — sejak ekstra ikut disusutkan (2026-07-13),
+  // "Semua" = campuran intra+ekstra, bukan lagi tampilan default yang aman.
+  const [komptabel, setKomptabel] = useState('intra')
   const [tahun, setTahun] = useState(() => tahunAwal('2026'))
   const [smt, setSmt] = useState('2')
   const [model, setModel] = useState<1 | 2 | 3>(1)

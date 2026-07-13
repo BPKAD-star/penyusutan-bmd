@@ -33,6 +33,15 @@ apa pun yang menyentuh ledger atau engine.
   `periodeDariTanggal` (lib/bmd.ts) & `fn_periode_dari_tanggal` (SQL).
 - **penyusutan_semester = hasil engine** (turunan), bukan mirror `aset`. Engine
   event-driven replay ledger per aset.
+- **Ekstrakomptabel IKUT disusutkan** (keputusan user 2026-07-13; dulu engine
+  bail-out `if (ekstra) return []` — sudah dihapus). Aturan hitung sama persis
+  dgn intra; pemisahan "neraca cuma intra" ada di LAPORAN (filter Komptabel,
+  default 'intra' di Penyusutan & Laporan BMD). Konsekuensi: `reklas_komptabel`
+  kini nol efek perhitungan — murni pindah keranjang laporan. Golongan 1.5.4
+  Aset Lain-Lain BEKU (tak pernah akrual, dari mana pun asalnya — guard
+  `perlakuan !== 'lain_lain'` di akrual); reklas keluar dari 1.5.4
+  menghidupkan lagi. Setelah deploy perubahan ini, engine WAJIB di-run ulang
+  utk periode 2026 supaya baris ekstra terisi.
 - **Baseline beku**: `aset_awal_2026` (di-rename dari `saldo_awal_2026`,
   migrasi `20260710_03`) = foto saldo akhir 2025, display-only, tak pernah
   disentuh transaksi.

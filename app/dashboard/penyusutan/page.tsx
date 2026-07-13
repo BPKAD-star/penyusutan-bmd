@@ -46,7 +46,9 @@ export default function PenyusutanPage() {
 
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [golongan, setGolongan] = useState('')
-  const [komptabel, setKomptabel] = useState('')
+  // Default 'intra' (angka neraca) — sejak ekstra ikut disusutkan (2026-07-13),
+  // "Semua" = campuran intra+ekstra, bukan lagi tampilan default yang aman.
+  const [komptabel, setKomptabel] = useState('intra')
   const [tahun, setTahun] = useState(() => tahunAwal('2026'))
   const [smt, setSmt] = useState('1')
   const [search, setSearch] = useState('')
