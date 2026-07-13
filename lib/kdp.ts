@@ -23,86 +23,156 @@ export type PembayaranKdp = {
   komponen: 'perencanaan' | 'fisik' | 'biaya_umum' | 'pengawasan'
   no_bast?: string | null; tgl_bast: string; kode_rekening?: string | null; nominal: number; keterangan?: string | null
 }
+// Satu barang KDP dalam kontrak (redesign multi-KDP 2026-07-13): 1 kontrak
+// konstruksi bisa berisi BEBERAPA barang (mis. paket jalan → beberapa ruas),
+// tiap barang = 1 aset KDP (1.3.6) dgn rincian termin sendiri. Nilai barang =
+// TOTAL termin-nya. Approve/unapprove ATOMIK per kontrak (semua barang sekaligus).
+export type BarangKdp = {
+  key: string
+  kode: string                       // kode kodefikasi KDP (golongan 1.3.6)
+  nama: string                       // nama barang KDP
+  spec?: Record<string, string>      // spesifikasi (Tanah-like)
+  foto?: string[]
+  pembayaran: PembayaranKdp[]        // termin/BAST barang ini
+  aset_id?: string | null            // diisi saat approve (utk unapprove)
+}
 export type KontrakKonstruksiPayload = {
   nama_pekerjaan: string; sumber?: string
   program?: string | null; kegiatan?: string | null; sub_kegiatan?: string | null
   ppk?: string | null; penyedia?: string | null; nilai_kontrak?: number | null
-  kode_kdp: string; keterangan?: string | null
+  keterangan?: string | null
   // INFO saja (bukan auto-kapitalisasi) — reklas & kapitalisasi tetap manual nanti.
   kap_info?: { menambah: boolean; target_aset_id?: string | null; target_nama?: string | null }
-  pembayaran: PembayaranKdp[]
-  spec?: Record<string, string>      // spesifikasi barang KDP (Tanah-like)
+  barang?: BarangKdp[]               // MODEL BARU (multi-KDP)
+  // ── LEGACY single-KDP (payload versi lama) — dibaca utk kompat & migrasi-on-read ──
+  kode_kdp?: string
+  pembayaran?: PembayaranKdp[]
+  spec?: Record<string, string>
   foto?: string[]
-  aset_id?: string | null            // diisi saat approve (utk unapprove)
+  aset_id?: string | null
+}
+
+const newKeyKdp = () => Math.random().toString(36).slice(2)
+
+// Normalisasi payload (lama/baru) → array barang. Payload lama (single-KDP:
+// kode_kdp + pembayaran flat) dipetakan jadi SATU barang implisit supaya kontrak
+// lama tetap tampil/diproses benar tanpa migrasi data.
+export function barangKdpList(p: KontrakKonstruksiPayload): BarangKdp[] {
+  if (Array.isArray(p.barang)) return p.barang
+  if (p.kode_kdp) return [{
+    key: 'legacy', kode: p.kode_kdp, nama: p.nama_pekerjaan,
+    spec: p.spec, foto: p.foto, pembayaran: p.pembayaran || [], aset_id: p.aset_id ?? null,
+  }]
+  return []
+}
+
+// Payload tanpa field legacy singleton (dipakai saat menulis ulang payload versi
+// baru supaya tak ada dua sumber kebenaran yang ambigu).
+function stripLegacy(p: KontrakKonstruksiPayload): KontrakKonstruksiPayload {
+  const { kode_kdp: _k, pembayaran: _p, spec: _s, foto: _f, aset_id: _a, ...rest } = p
+  return rest
 }
 
 const toNumStr = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 
-/** Approve 1 kontrak konstruksi → materialize 1 aset KDP + event akumulasi per pembayaran. */
+/**
+ * Approve 1 kontrak konstruksi → materialize SEMUA barang KDP sekaligus (atomik):
+ * tiap barang = 1 aset KDP (1.3.6) senilai total termin-nya + event akumulasi_kdp
+ * per pembayaran. Aset dibuat dulu semua, lalu SELURUH event ledger di-insert
+ * dalam satu batch (all-or-nothing) — kalau gagal, semua aset yg terlanjur dibuat
+ * disembunyikan (status 'draft') & belum ada satu pun event ledger yg tertulis.
+ */
 export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerId: string): Promise<{ error?: string }> {
   const { data: hRow } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,payload,approval_status').eq('id', headerId).single()
   const h = hRow as { id: string; skpd_id: number; no_sk: string; tanggal: string; payload: KontrakKonstruksiPayload; approval_status: string } | null
   if (!h) return { error: 'Kontrak tidak ditemukan.' }
   if (h.approval_status === 'disetujui') return { error: 'Kontrak sudah disetujui.' }
   const p = h.payload
-  if (!p.kode_kdp) return { error: 'Kode barang KDP belum diisi.' }
-  const bayar = p.pembayaran || []
-  if (bayar.length === 0) return { error: 'Belum ada rincian pembayaran — tambahkan dulu.' }
-  const total = bayar.reduce((s, b) => s + Number(b.nominal || 0), 0)
-  if (total <= 0) return { error: 'Total pembayaran harus > 0.' }
-
-  const tglPerolehan = bayar.map(b => b.tgl_bast).sort()[0] || h.tanggal
-  const kodeSkpd = await skpdKode(supabase, h.skpd_id)
-  const tahun = String(new Date(tglPerolehan).getFullYear())
-  const nibarMap = await generateNibars(supabase as never, [{ key: 'kdp', kode: p.kode_kdp, intraEkstra: 'intra', tahun }], kodeSkpd)
-
-  const asetRow: Record<string, unknown> = {
-    nibar: nibarMap.get('kdp') || null, kode: p.kode_kdp,
-    uraian_barang: p.nama_pekerjaan, nama_barang: p.nama_pekerjaan,
-    jumlah: 1, nilai_perolehan: total, tgl_perolehan: tglPerolehan, skpd_id: h.skpd_id,
-    intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: p.foto || [],
+  const barangs = barangKdpList(p)
+  if (barangs.length === 0) return { error: 'Belum ada barang KDP — tambahkan dulu.' }
+  for (const b of barangs) {
+    if (!b.kode) return { error: 'Ada barang tanpa kode KDP.' }
+    const bayar = b.pembayaran || []
+    const total = bayar.reduce((s, x) => s + Number(x.nominal || 0), 0)
+    if (bayar.length === 0 || total <= 0) return { error: `Barang "${b.nama || b.kode}" belum ada pembayaran (nilai 0) — lengkapi atau hapus dulu.` }
   }
-  for (const k of ASET_FIELD_COLS) { const v = p.spec?.[k]; if (v) asetRow[k] = ASET_NUM_COLS.has(k) ? toNumStr(v) : v }
-  const { data: aset, error: aErr } = await supabase.from('aset').insert(asetRow).select('id').single()
-  if (aErr || !aset) return { error: `Gagal membuat aset KDP: ${aErr?.message}` }
-  const asetId = (aset as { id: string }).id
 
-  const trxRows = bayar.map(b => ({
-    aset_id: asetId, jenis: 'akumulasi_kdp', periode: periodeDariTanggal(b.tgl_bast), tanggal: b.tgl_bast,
-    nilai: Number(b.nominal || 0), skpd_tujuan: h.skpd_id, header_id: headerId,
-    payload: { komponen: b.komponen, no_bast: b.no_bast || null, kode_rekening: b.kode_rekening || null },
-  }))
+  const kodeSkpd = await skpdKode(supabase, h.skpd_id)
+  const tglBarang = (b: BarangKdp) => (b.pembayaran || []).map(x => x.tgl_bast).sort()[0] || h.tanggal
+  const nibarInput = barangs.map(b => ({ key: b.key, kode: b.kode, intraEkstra: 'intra' as const, tahun: String(new Date(tglBarang(b)).getFullYear()) }))
+  const nibarMap = await generateNibars(supabase as never, nibarInput, kodeSkpd)
+
+  // Pass 1: buat semua aset KDP (belum ada ledger — aman kalau gagal di tengah).
+  const createdAsetIds: string[] = []
+  const asetIdByKey = new Map<string, string>()
+  for (const b of barangs) {
+    const total = (b.pembayaran || []).reduce((s, x) => s + Number(x.nominal || 0), 0)
+    const asetRow: Record<string, unknown> = {
+      nibar: nibarMap.get(b.key) || null, kode: b.kode,
+      uraian_barang: b.nama, nama_barang: b.nama,
+      jumlah: 1, nilai_perolehan: total, tgl_perolehan: tglBarang(b), skpd_id: h.skpd_id,
+      intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: b.foto || [],
+    }
+    for (const k of ASET_FIELD_COLS) { const v = b.spec?.[k]; if (v) asetRow[k] = ASET_NUM_COLS.has(k) ? toNumStr(v) : v }
+    const { data: aset, error: aErr } = await supabase.from('aset').insert(asetRow).select('id').single()
+    if (aErr || !aset) {
+      if (createdAsetIds.length) await supabase.from('aset').update({ status: 'draft' }).in('id', createdAsetIds)
+      return { error: `Gagal membuat aset KDP "${b.nama}": ${aErr?.message}` }
+    }
+    const id = (aset as { id: string }).id
+    createdAsetIds.push(id); asetIdByKey.set(b.key, id)
+  }
+
+  // Pass 2: SEMUA event akumulasi_kdp dalam satu insert (all-or-nothing).
+  const trxRows = barangs.flatMap(b => (b.pembayaran || []).map(x => ({
+    aset_id: asetIdByKey.get(b.key), jenis: 'akumulasi_kdp', periode: periodeDariTanggal(x.tgl_bast), tanggal: x.tgl_bast,
+    nilai: Number(x.nominal || 0), skpd_tujuan: h.skpd_id, header_id: headerId,
+    payload: { komponen: x.komponen, no_bast: x.no_bast || null, kode_rekening: x.kode_rekening || null },
+  })))
   const { error: tErr } = await supabase.from('transaksi_bmd').insert(trxRows)
-  if (tErr) { await supabase.from('aset').update({ status: 'draft' }).eq('id', asetId); return { error: `Gagal mencatat pembayaran: ${tErr.message}` } }
+  if (tErr) { await supabase.from('aset').update({ status: 'draft' }).in('id', createdAsetIds); return { error: `Gagal mencatat pembayaran: ${tErr.message}` } }
 
+  const barangOut: BarangKdp[] = barangs.map(b => ({ ...b, aset_id: asetIdByKey.get(b.key) || null }))
   const { data: { user } } = await supabase.auth.getUser()
   const { error: uErr } = await supabase.from('jurnal_header')
-    .update({ approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString(), payload: { ...p, aset_id: asetId } })
+    .update({ approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString(), payload: { ...stripLegacy(p), barang: barangOut } })
     .eq('id', headerId)
   if (uErr) return { error: `Aset tercatat, tapi status kontrak gagal: ${uErr.message}` }
   return {}
 }
 
-/** Buka kunci (unapprove) → balik pembayaran (batal_akumulasi_kdp) + sembunyikan aset KDP; kontrak → pending. */
+/**
+ * Buka kunci (unapprove) → untuk SEMUA barang KDP: balik tiap pembayaran
+ * (batal_akumulasi_kdp) + sembunyikan asetnya (status 'draft'). Kalau kontrak
+ * punya 10 barang, ke-10-nya hilang dari Daftar Barang/Penyusutan sampai
+ * disetujui ulang. Kontrak → pending, aset_id tiap barang dikosongkan.
+ */
 export async function unapproveKontrakKonstruksi(supabase: SupabaseClient, headerId: string): Promise<{ error?: string }> {
   const { data: hRow } = await supabase.from('jurnal_header').select('id,payload,approval_status').eq('id', headerId).single()
   const h = hRow as { id: string; payload: KontrakKonstruksiPayload; approval_status: string } | null
   if (!h) return { error: 'Kontrak tidak ditemukan.' }
   if (h.approval_status !== 'disetujui') return { error: 'Kontrak belum disetujui.' }
-  const asetId = h.payload?.aset_id
-  if (asetId) {
-    // event balik per akumulasi (append-only) + sembunyikan aset (status 'draft' → tersaring Daftar Barang)
-    const { data: trxs } = await supabase.from('transaksi_bmd').select('tanggal,nilai').eq('aset_id', asetId).eq('jenis', 'akumulasi_kdp')
-    const balik = ((trxs || []) as { tanggal: string; nilai: number }[]).map(t => ({
-      aset_id: asetId, jenis: 'batal_akumulasi_kdp', periode: periodeDariTanggal(t.tanggal), tanggal: t.tanggal,
+  const barangs = barangKdpList(h.payload)
+  const asetIds = barangs.map(b => b.aset_id).filter((x): x is string => !!x)
+
+  if (asetIds.length) {
+    // Event balik per akumulasi (append-only), satu batch utk semua barang.
+    const { data: trxs } = await supabase.from('transaksi_bmd').select('aset_id,tanggal,nilai').in('aset_id', asetIds).eq('jenis', 'akumulasi_kdp')
+    const balik = ((trxs || []) as { aset_id: string; tanggal: string; nilai: number }[]).map(t => ({
+      aset_id: t.aset_id, jenis: 'batal_akumulasi_kdp', periode: periodeDariTanggal(t.tanggal), tanggal: t.tanggal,
       nilai: -Number(t.nilai || 0), header_id: headerId, payload: {},
     }))
-    if (balik.length) await supabase.from('transaksi_bmd').insert(balik)
-    await supabase.from('aset').update({ status: 'draft', nilai_perolehan: 0 }).eq('id', asetId)
+    if (balik.length) {
+      const { error: bErr } = await supabase.from('transaksi_bmd').insert(balik)
+      if (bErr) return { error: `Gagal mencatat pembatalan: ${bErr.message}` }
+    }
+    await supabase.from('aset').update({ status: 'draft', nilai_perolehan: 0 }).in('id', asetIds)
   }
-  const { aset_id: _drop, ...rest } = h.payload || ({} as KontrakKonstruksiPayload)
+
+  const barangCleared: BarangKdp[] = barangs.map(b => ({ ...b, aset_id: null }))
   const { error } = await supabase.from('jurnal_header')
-    .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: rest }).eq('id', headerId)
+    .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...stripLegacy(h.payload), barang: barangCleared } })
+    .eq('id', headerId)
   if (error) return { error: `Gagal buka kunci: ${error.message}` }
   return {}
 }

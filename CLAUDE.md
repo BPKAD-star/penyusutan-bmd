@@ -269,6 +269,27 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   manual pengadaan); header Hibah/dll bertanggal hari ini (tahun terbuka),
   tanggal perolehan asli tetap di item. No. Dokumen yg sudah ada dilewati
   (hindari kartu ganda).
+- **Pengadaan Konstruksi = MULTI-KDP** (`KonstruksiPengadaan.tsx` + `lib/kdp.ts`,
+  redesign 2026-07-13). 1 kontrak konstruksi (kategori `konstruksi`) bisa berisi
+  **beberapa barang KDP** (mis. paket jalan → beberapa ruas) — semua di
+  `payload.barang[]` (JSON, TANPA kolom/tabel baru). Tiap barang = 1 aset KDP
+  (1.3.6) dgn rincian termin sendiri (`pembayaran[]`: perencanaan/fisik/
+  biaya_umum/pengawasan); **nilai barang = Σ termin**. Approve/unapprove
+  **ATOMIK per kontrak**: `approveKontrakKonstruksi` materialize SEMUA barang
+  sekaligus (aset dibuat dulu semua → seluruh event `akumulasi_kdp` di-insert
+  satu batch, all-or-nothing); `unapproveKontrakKonstruksi` balik SEMUA termin
+  (`batal_akumulasi_kdp`) + sembunyikan SEMUA aset (`status='draft'`) → kalau
+  10 barang, ke-10-nya hilang dari Daftar Barang sampai disetujui ulang. NIBAR
+  digenerate ulang saat approve. **Kompat mundur**: payload single-KDP lama
+  (`kode_kdp`+`pembayaran` flat) dibaca via `barangKdpList()` sbg 1 barang
+  implisit; begitu di-save/unapprove, dinormalisasi ke `barang[]`. ⚠️ Backdate
+  termin ke tahun terkunci ditolak guard (`akumulasi_kdp`/`batal_akumulasi_kdp`
+  BELUM di-whitelist `fn_cek_tahun_buku`) — sama kendala pre-existing single-KDP.
+  Tabel per-termin lama `proyek_konstruksi`/`proyek_barang`/`proyek_termin`
+  (Opsi B, migrasi 20260712_01..04) TAK PERNAH dipakai UI → di-drop migrasi
+  `20260713_01` (defensif: batal kalau ada isinya). Fungsi dead di `lib/kdp.ts`
+  (`buatPaket`/`tambahBarang`/`tambahTermin`/`setujuiTermin`/`batalTermin`/
+  `reklasKdp`/dll) belum dihapus — aman krn tak diimpor mana pun, bersihkan nanti.
 - **Kontrak DISETUJUI terkunci total** (read-only, tak ada edit/batal per-baris
   spt sebelumnya). Untuk mengubah: admin **"Buka Kunci"** (unapprove) →
   semua barang di `batal_pengadaan` (soft-delete retroaktif ke tgl asli,

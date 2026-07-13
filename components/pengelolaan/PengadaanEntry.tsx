@@ -12,6 +12,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { formatRupiah } from '@/lib/export'
 import Pengadaan from './Pengadaan'
 import KonstruksiPengadaan from './KonstruksiPengadaan'
+import { barangKdpList, type KontrakKonstruksiPayload } from '@/lib/kdp'
 
 type Jenis = 'nonfisik' | 'fisik'
 type Row = { id: string; jenis: Jenis; nama: string; sub: string; status: string; nilai: number }
@@ -41,7 +42,7 @@ export default function PengadaanEntry() {
         .eq('kategori', 'konstruksi').eq('skpd_id', sid).order('tanggal', { ascending: false }),
     ])
     type NfH = { id: string; no_sk: string; jenis: string; payload: { draft_items?: { harga?: string; qty?: string | number }[] } | null; approval_status: string }
-    type KH = { id: string; no_sk: string; payload: { nama_pekerjaan?: string; pembayaran?: { nominal?: number }[] } | null; approval_status: string }
+    type KH = { id: string; no_sk: string; payload: KontrakKonstruksiPayload | null; approval_status: string }
     const nfHs = (nf || []) as NfH[]
     const kHs = (k || []) as KH[]
 
@@ -68,8 +69,10 @@ export default function PengadaanEntry() {
       out.push({ id: h.id, jenis: 'nonfisik', nama: SUMBER_LABEL[h.jenis] || 'Pengadaan', sub: `${h.no_sk} · ${items.length} barang`, status: h.approval_status, nilai })
     }
     for (const h of kHs) {
-      const nilai = (h.payload?.pembayaran || []).reduce((s, b) => s + Number(b.nominal || 0), 0)
-      out.push({ id: h.id, jenis: 'fisik', nama: h.payload?.nama_pekerjaan || '(tanpa nama)', sub: `${h.no_sk} · konstruksi`, status: h.approval_status, nilai })
+      // Konstruksi multi-KDP: nilai = Σ termin semua barang (kompat payload lama via barangKdpList).
+      const barangs = h.payload ? barangKdpList(h.payload) : []
+      const nilai = barangs.reduce((s, b) => s + (b.pembayaran || []).reduce((t, x) => t + Number(x.nominal || 0), 0), 0)
+      out.push({ id: h.id, jenis: 'fisik', nama: h.payload?.nama_pekerjaan || '(tanpa nama)', sub: `${h.no_sk} · ${barangs.length} barang KDP`, status: h.approval_status, nilai })
     }
     setRows(out)
     setLoading(false)
