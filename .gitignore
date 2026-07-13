@@ -5,3 +5,5 @@ out/
 .env
 *.tsbuildinfo
 .DS_Store
+# Arsip file sumber import (xlsx/csv berisi data aset live pemda — jangan di-commit)
+arsip-import/

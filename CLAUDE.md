@@ -288,8 +288,9 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   Tabel per-termin lama `proyek_konstruksi`/`proyek_barang`/`proyek_termin`
   (Opsi B, migrasi 20260712_01..04) TAK PERNAH dipakai UI → di-drop migrasi
   `20260713_01` (defensif: batal kalau ada isinya). Fungsi dead di `lib/kdp.ts`
-  (`buatPaket`/`tambahBarang`/`tambahTermin`/`setujuiTermin`/`batalTermin`/
-  `reklasKdp`/dll) belum dihapus — aman krn tak diimpor mana pun, bersihkan nanti.
+  (`buatPaket`/`tambahBarang`/`setujuiTermin`/`reklasKdp`/dll) SUDAH dihapus
+  2026-07-13 — yang tersisa cuma model merge-ke-Pengadaan (`barangKdpList`,
+  `approveKontrakKonstruksi`, `unapproveKontrakKonstruksi`).
 - **Kontrak DISETUJUI terkunci total** (read-only, tak ada edit/batal per-baris
   spt sebelumnya). Untuk mengubah: admin **"Buka Kunci"** (unapprove) →
   semua barang di `batal_pengadaan` (soft-delete retroaktif ke tgl asli,
