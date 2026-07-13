@@ -6,7 +6,7 @@
 // nilai barang = total termin-nya. Approval PER KONTRAK (atomik): saat approve
 // SEMUA barang di-materialize sekaligus; saat unapprove SEMUA barang hilang dari
 // Daftar Barang sampai disetujui ulang. Semua data di payload JSON (no DDL).
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -33,11 +33,14 @@ const FIELDS_KDP = GOLONGAN_FIELDS['1.3.1']
 const barangTotal = (b: BarangKdp) => (b.pembayaran || []).reduce((s, x) => s + Number(x.nominal || 0), 0)
 const kontrakTotal = (p: KontrakKonstruksiPayload) => barangKdpList(p).reduce((s, b) => s + barangTotal(b), 0)
 
-export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, openId, onExit }: {
+export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, openId, onExit, onDataChange }: {
   skpdProp?: string; embedded?: boolean
   startCreate?: boolean; openId?: string; onExit?: () => void
+  onDataChange?: () => void // dipanggil tiap list berubah — utk refresh total induk (ref, stabil)
 } = {}) {
   const supabase = createClient()
+  const onDataChangeRef = useRef(onDataChange)
+  onDataChangeRef.current = onDataChange
   const [isAdmin, setIsAdmin] = useState(false)
   const [skpdInternal, setSkpdInternal] = useState('')
   const skpd = skpdProp !== undefined ? skpdProp : skpdInternal // SKPD boleh dikontrol induk (satu tampilan Pengadaan)
@@ -60,6 +63,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
     const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload')
       .eq('kategori', 'konstruksi').eq('skpd_id', Number(skpdId)).order('created_at', { ascending: false })
     setList((data || []) as Kontrak[])
+    onDataChangeRef.current?.()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(skpd); setSelected(null); setShowCreate(false) }, [skpd, load])
   // Mode drill: buka kontrak yang diminta induk begitu daftar termuat.
@@ -95,6 +99,9 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
     )
   }
 
+  const pendingK = list.filter(k => k.approval_status !== 'disetujui')
+  const disetujuiK = list.filter(k => k.approval_status === 'disetujui')
+
   const body = (
     <>
       {skpdProp === undefined && (
@@ -109,36 +116,32 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
 
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Pilih SKPD untuk mulai.</div>
-      ) : selected ? (
-        <KontrakDetail kontrak={selected} isAdmin={isAdmin} onBack={() => { setSelected(null); load(skpd) }}
-          onMsg={setMsg} onChanged={async () => { await refreshSelected(); load(skpd) }} />
       ) : (
-        <>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-gray-500">{list.length} kontrak</span>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-500">{list.length} kontrak konstruksi · {formatRupiah(list.reduce((s, k) => s + kontrakTotal(k.payload), 0))}</span>
             <button className="btn-primary" onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Batal' : '+ Buat Kontrak'}</button>
           </div>
-          {showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={k => { setShowCreate(false); load(skpd); setSelected(k); setMsg('Kontrak dibuat (draft) — tambah barang KDP & rincian pembayaran di bawah lalu tunggu approval.') }} onErr={setMsg} />}
-          <div className="card overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-100"><tr>
-                <th className="table-th">Pekerjaan</th><th className="table-th">No Kontrak</th><th className="table-th text-right">Nilai</th><th className="table-th">Status</th><th className="table-th"></th>
-              </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                {list.length === 0 ? <tr><td colSpan={5} className="table-td text-center py-8 text-gray-400">Belum ada kontrak.</td></tr>
-                  : list.map(k => (
-                    <tr key={k.id}>
-                      <td className="table-td text-sm font-medium">{k.payload?.nama_pekerjaan || '—'}<div className="text-xs text-gray-400 font-normal">{barangKdpList(k.payload).length} barang KDP</div></td>
-                      <td className="table-td text-xs text-gray-500">{k.no_sk}</td>
-                      <td className="table-td text-xs text-right">{formatRupiah(kontrakTotal(k.payload))}</td>
-                      <td className="table-td"><span className={`text-xs px-2 py-0.5 rounded-full ${k.approval_status === 'disetujui' ? 'bg-teal/10 text-teal' : 'bg-amber-100 text-amber-700'}`}>{k.approval_status === 'disetujui' ? 'Disetujui' : 'Draft'}</span></td>
-                      <td className="table-td text-right"><button className="text-teal hover:underline text-xs font-medium" onClick={() => setSelected(k)}>Buka</button></td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+          {showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={() => { setShowCreate(false); load(skpd); setMsg('Kontrak dibuat (draft) — tambah barang KDP & rincian pembayaran lalu tunggu approval.') }} onErr={setMsg} />}
+          {list.length === 0 ? (
+            <div className="card p-12 text-center text-gray-400 text-sm">Belum ada kontrak konstruksi untuk SKPD ini.</div>
+          ) : (
+            <>
+              {pendingK.length > 0 && (
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold text-amber-700">⏳ Menunggu Persetujuan ({pendingK.length})</h3>
+                  {pendingK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={isAdmin} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
+                </section>
+              )}
+              {disetujuiK.length > 0 && (
+                <section className="space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujuiK.length})</h3>
+                  {disetujuiK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={isAdmin} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
+                </section>
+              )}
+            </>
+          )}
+        </div>
       )}
     </>
   )
@@ -229,8 +232,9 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
 }
 
 // ── Detail kontrak: daftar barang KDP (tiap barang punya termin) + approval ──
-function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg }: {
+function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
   kontrak: Kontrak; isAdmin: boolean; onBack: () => void; onChanged: () => void; onMsg: (m: string) => void
+  inline?: boolean // dipakai di halaman gabungan (banyak kartu sekaligus) — sembunyikan tombol "Kembali"
 }) {
   const supabase = createClient()
   const [busy, setBusy] = useState(false)
@@ -292,9 +296,11 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg }: {
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} title="Kembali" className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>Kembali
-      </button>
+      {!inline && (
+        <button onClick={onBack} title="Kembali" className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>Kembali
+        </button>
+      )}
 
       <div className="card p-5">
         <div className="flex items-start justify-between gap-4">

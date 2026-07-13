@@ -19,7 +19,7 @@
 //      ulang (acuan tgl tetap tgl BAST). Kontrak yang pernah disetujui punya
 //      jejak ledger permanen (append-only) → tak bisa dihapus penuh; hanya
 //      draft murni (belum pernah disetujui) yang bisa dihapus.
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
@@ -135,13 +135,18 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
   }
   return out
 }
-export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onExit }: {
+export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onExit, onDataChange }: {
   skpdProp?: string; embedded?: boolean
   // Mode "drill" dari PengadaanEntry (daftar gabungan): mulai buat baru (startCreate)
   // atau buka 1 kontrak (openId) saja, tombol kembali balik ke daftar. onExit != null = drill.
   startCreate?: boolean; openId?: string; onExit?: () => void
+  // Dipanggil tiap data jurnal berubah (mount/mutasi) — dipakai induk (PengadaanEntry)
+  // utk menyegarkan total gabungan. Disimpan di ref supaya loadJurnals tetap stabil.
+  onDataChange?: () => void
 } = {}) {
   const supabase = createClient()
+  const onDataChangeRef = useRef(onDataChange)
+  onDataChangeRef.current = onDataChange
 
   const [skpdPathMap, setSkpdPathMap] = useState<Record<number, string>>({})
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
@@ -267,6 +272,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
     setJurnals([...jmap.values()].filter(j =>
       j.approval_status === 'pending' || (j.approval_status === 'disetujui' && j.lines.length > 0)))
     setLoadingJurnal(false)
+    onDataChangeRef.current?.()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setEditing(null) }, [skpd, loadJurnals])
