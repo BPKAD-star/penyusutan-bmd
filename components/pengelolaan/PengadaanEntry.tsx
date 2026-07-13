@@ -1,12 +1,9 @@
 'use client'
-// Pengadaan Entry Manual — SATU halaman, SEMUA kartu ter-expand inline
-// (keputusan user 2026-07-13). Pilih SKPD → dua section muncul lengkap:
-//   • Pengadaan Non-fisik (komponen Pengadaan, mode embedded) — kartu Kontrak+BAST
-//     + tabel barang, dgn tombol tambah/approve/unapprove sendiri.
-//   • Pekerjaan Fisik Konstruksi (komponen KonstruksiPengadaan, embedded) — tiap
-//     kontrak = kartu penuh berisi barang KDP + termin.
-// Tak ada lagi daftar-baris + "Buka" (drill). Total atas = gabungan keduanya,
-// disegarkan otomatis via onDataChange tiap ada perubahan di salah satu section.
+// Pengadaan Entry Manual — SATU halaman, semua kartu ter-expand inline
+// (Non-fisik + Konstruksi jadi satu daftar, tanpa dibedakan). Menambah lewat
+// SATU tombol "+ Tambah Pengadaan" → pilih Non-fisik / Pekerjaan Konstruksi →
+// form-nya muncul & daftar disembunyikan (pola page non-fisik). Total atas =
+// gabungan keduanya, auto-refresh via onDataChange.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
@@ -17,16 +14,19 @@ import KonstruksiPengadaan from './KonstruksiPengadaan'
 import { barangKdpList, type KontrakKonstruksiPayload } from '@/lib/kdp'
 
 const toNum = (s: unknown) => { const n = parseFloat(String(s ?? '').replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
+type Creating = null | 'nonfisik' | 'konstruksi'
 
 export default function PengadaanEntry() {
   const supabase = createClient()
   const [skpd, setSkpd] = useState('')
   const [total, setTotal] = useState(0)
+  const [creating, setCreating] = useState<Creating>(null)
+  const [pickOpen, setPickOpen] = useState(false)
   const skpdRef = useRef(skpd); skpdRef.current = skpd
 
-  // Hitung total gabungan (Non-fisik + Konstruksi) utk header. Non-fisik disetujui
-  // dibaca dari ledger (dedup aset aktif) spt Pengadaan; draft dari estimasi
-  // draft_items; konstruksi = Σ termin semua barang (kompat payload lama).
+  // Total gabungan (Non-fisik + Konstruksi) utk header. Non-fisik disetujui dari
+  // ledger (dedup aset aktif); draft dari estimasi draft_items; konstruksi = Σ
+  // termin semua barang (kompat payload lama via barangKdpList).
   const loadTotal = useCallback(async (skpdId: string) => {
     if (!skpdId) { setTotal(0); return }
     const sid = Number(skpdId)
@@ -65,13 +65,12 @@ export default function PengadaanEntry() {
     setTotal(t)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadTotal(skpd) }, [skpd, loadTotal])
-  // Callback stabil (baca skpd via ref) — dipanggil section anak tiap datanya berubah.
+  useEffect(() => { loadTotal(skpd); setCreating(null); setPickOpen(false) }, [skpd, loadTotal])
   const refresh = useCallback(() => loadTotal(skpdRef.current), [loadTotal])
 
   return (
     <FormShell judul="Pengadaan" msg=""
-      deskripsi="Pilih SKPD — semua pengadaan (Non-fisik & Pekerjaan Fisik Konstruksi) tampil lengkap di satu halaman."
+      deskripsi="Pilih SKPD — semua pengadaan (Non-fisik & Pekerjaan Fisik Konstruksi) tampil dalam satu daftar."
       headerRight={skpd ? (
         <div className="text-right flex-shrink-0">
           <p className="text-xs text-gray-400">Total Pengadaan</p>
@@ -87,16 +86,25 @@ export default function PengadaanEntry() {
 
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Pilih SKPD di atas untuk melihat & membuat pengadaan.</div>
+      ) : creating === 'nonfisik' ? (
+        <Pengadaan skpdProp={skpd} embedded startCreate onExit={() => setCreating(null)} onDataChange={refresh} />
+      ) : creating === 'konstruksi' ? (
+        <KonstruksiPengadaan skpdProp={skpd} embedded startCreate onExit={() => setCreating(null)} onDataChange={refresh} />
       ) : (
-        <div className="space-y-10">
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold text-gray-800 border-b border-gray-100 pb-2">Pengadaan Non-fisik</h2>
-            <Pengadaan skpdProp={skpd} embedded onDataChange={refresh} />
-          </section>
-          <section className="space-y-3">
-            <h2 className="text-base font-semibold text-gray-800 border-b border-gray-100 pb-2">Pekerjaan Fisik (Konstruksi)</h2>
-            <KonstruksiPengadaan skpdProp={skpd} embedded onDataChange={refresh} />
-          </section>
+        <div className="space-y-6">
+          <div className="flex justify-end">
+            <div className="relative">
+              <button className="btn-primary" onClick={() => setPickOpen(v => !v)}>+ Tambah Pengadaan</button>
+              {pickOpen && (
+                <div className="absolute right-0 top-full mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden text-sm">
+                  <button className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 whitespace-nowrap" onClick={() => { setPickOpen(false); setCreating('nonfisik') }}>Non-fisik (barang biasa)</button>
+                  <button className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 whitespace-nowrap border-t border-gray-100" onClick={() => { setPickOpen(false); setCreating('konstruksi') }}>Pekerjaan Fisik Konstruksi</button>
+                </div>
+              )}
+            </div>
+          </div>
+          <Pengadaan skpdProp={skpd} embedded hideAdd onDataChange={refresh} />
+          <KonstruksiPengadaan skpdProp={skpd} embedded hideAdd onDataChange={refresh} />
         </div>
       )}
     </FormShell>

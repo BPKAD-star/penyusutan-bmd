@@ -91,6 +91,16 @@ const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, '
 const newKey = () => Math.random().toString(36).slice(2)
 const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toNum(i.harga), 0)
 
+// Baris label:value ringkas utk header kartu kontrak (Pengadaan & konstruksi).
+function Baris({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex text-xs leading-relaxed">
+      <span className="text-gray-400 w-24 flex-shrink-0">{label}</span>
+      <span className="text-gray-700">: {value || '-'}</span>
+    </div>
+  )
+}
+
 // Normalisasi draft_items lama (dari versi sebelum draft di-split per-unit sejak
 // ditambahkan — masih pakai {qty, spesifikasi string}). Item lama diekspansi
 // sesuai qty-nya jadi N unit terpisah (bukan cuma dihindari crash-nya), supaya
@@ -135,7 +145,7 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
   }
   return out
 }
-export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onExit, onDataChange }: {
+export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onExit, onDataChange, hideAdd }: {
   skpdProp?: string; embedded?: boolean
   // Mode "drill" dari PengadaanEntry (daftar gabungan): mulai buat baru (startCreate)
   // atau buka 1 kontrak (openId) saja, tombol kembali balik ke daftar. onExit != null = drill.
@@ -143,6 +153,9 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
   // Dipanggil tiap data jurnal berubah (mount/mutasi) — dipakai induk (PengadaanEntry)
   // utk menyegarkan total gabungan. Disimpan di ref supaya loadJurnals tetap stabil.
   onDataChange?: () => void
+  // Sembunyikan tombol "+ Tambah Pengadaan" internal — dipakai saat induk
+  // (PengadaanEntry) yang menyediakan satu tombol tambah gabungan.
+  hideAdd?: boolean
 } = {}) {
   const supabase = createClient()
   const onDataChangeRef = useRef(onDataChange)
@@ -565,7 +578,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} kontrak pengadaan</span>
-            <button className="btn-primary" onClick={() => { setMsg(''); setMode('kontrak-baru') }}>+ Tambah Pengadaan</button>
+            {!hideAdd && <button className="btn-primary" onClick={() => { setMsg(''); setMode('kontrak-baru') }}>+ Tambah Pengadaan</button>}
           </div>
 
           {loadingJurnal ? (
@@ -703,22 +716,23 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
     <div className="card overflow-hidden border-amber-200">
       <div className="p-4 border-b border-gray-100 bg-amber-50/40">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
-          <div className="bg-white rounded-lg border border-gray-100 p-3">
-            <p className="text-[11px] font-semibold text-gray-500 mb-1">KONTRAK</p>
-            <p className="text-sm font-semibold text-gray-800">{h.no_sk} <span className="font-normal text-gray-400 text-xs">· {sumberLabel(h.jenis)}</span></p>
-            <p className="text-xs text-gray-500">Tgl {h.tanggal} · {h.periode}</p>
-            {(h.payload?.program || h.payload?.kegiatan || h.payload?.sub_kegiatan) && (
-              <p className="text-xs text-gray-500 mt-1">{[h.payload.program, h.payload.kegiatan, h.payload.sub_kegiatan].filter(Boolean).join(' › ')}</p>
-            )}
+          <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
+            <p className="text-[11px] font-semibold text-gray-500 mb-1">KONTRAK · <span className="text-gray-400">{h.periode}</span></p>
+            <Baris label="Jenis Kontrak" value={sumberLabel(h.jenis)} />
+            <Baris label="Nomor Kontrak" value={h.no_sk} />
+            <Baris label="Tanggal Kontrak" value={h.tanggal} />
+            <Baris label="Program" value={h.payload?.program} />
+            <Baris label="Kegiatan" value={h.payload?.kegiatan} />
+            <Baris label="Sub Kegiatan" value={h.payload?.sub_kegiatan} />
+            <Baris label="Keterangan" value={h.keterangan} />
+            <Baris label="Nama Penyedia" value={h.payload?.nama_penyedia} />
+            <Baris label="Nama PPKom" value={h.payload?.nama_ppk} />
           </div>
-          <div className="bg-white rounded-lg border border-gray-100 p-3">
+          <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
             <p className="text-[11px] font-semibold text-gray-500 mb-1">BAST</p>
-            {h.payload?.no_bast ? (
-              <>
-                <p className="text-sm font-medium text-gray-800">{h.payload.no_bast}</p>
-                <p className="text-xs text-gray-500">Tgl {h.payload.tgl_bast || '-'}</p>
-              </>
-            ) : <p className="text-xs text-gray-400">Belum diisi</p>}
+            <Baris label="Nomor BAST" value={h.payload?.no_bast} />
+            <Baris label="Tanggal BAST" value={h.payload?.tgl_bast} />
+            <Baris label="Keterangan BAST" value={h.payload?.ket_bast} />
             <DokumenLinks paths={h.payload?.dokumen_paths || []} />
           </div>
           <div className="flex flex-col items-end justify-between">
@@ -976,26 +990,23 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
     <div className="card overflow-hidden">
       <div className="p-4 border-b border-gray-100 bg-gray-50/60">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
-          <div className="bg-white rounded-lg border border-gray-100 p-3">
-            <p className="text-[11px] font-semibold text-gray-500 mb-1">KONTRAK</p>
-            <p className="text-sm font-semibold text-gray-800">{j.no_sk} <span className="font-normal text-gray-400 text-xs">· {sumberLabel(j.jenis)}</span></p>
-            <p className="text-xs text-gray-500">Tgl {j.tanggal} · {j.periode}</p>
-            {(j.payload?.nama_penyedia || j.payload?.nama_ppk) && (
-              <p className="text-xs text-gray-500 mt-1">
-                {j.payload.nama_penyedia && `Penyedia: ${j.payload.nama_penyedia}`}
-                {j.payload.nama_penyedia && j.payload.nama_ppk && ' · '}
-                {j.payload.nama_ppk && `PPK: ${j.payload.nama_ppk}`}
-              </p>
-            )}
+          <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
+            <p className="text-[11px] font-semibold text-gray-500 mb-1">KONTRAK · <span className="text-gray-400">{j.periode}</span></p>
+            <Baris label="Jenis Kontrak" value={sumberLabel(j.jenis)} />
+            <Baris label="Nomor Kontrak" value={j.no_sk} />
+            <Baris label="Tanggal Kontrak" value={j.tanggal} />
+            <Baris label="Program" value={j.payload?.program} />
+            <Baris label="Kegiatan" value={j.payload?.kegiatan} />
+            <Baris label="Sub Kegiatan" value={j.payload?.sub_kegiatan} />
+            <Baris label="Keterangan" value={j.keterangan} />
+            <Baris label="Nama Penyedia" value={j.payload?.nama_penyedia} />
+            <Baris label="Nama PPKom" value={j.payload?.nama_ppk} />
           </div>
-          <div className="bg-white rounded-lg border border-gray-100 p-3">
+          <div className="bg-white rounded-lg border border-gray-100 p-3 space-y-0.5">
             <p className="text-[11px] font-semibold text-gray-500 mb-1">BAST</p>
-            {j.payload?.no_bast ? (
-              <>
-                <p className="text-sm font-medium text-gray-800">{j.payload.no_bast}</p>
-                <p className="text-xs text-gray-500">Tgl {j.payload.tgl_bast || '-'}</p>
-              </>
-            ) : <p className="text-xs text-gray-400">-</p>}
+            <Baris label="Nomor BAST" value={j.payload?.no_bast} />
+            <Baris label="Tanggal BAST" value={j.payload?.tgl_bast} />
+            <Baris label="Keterangan BAST" value={j.payload?.ket_bast} />
             <DokumenLinks paths={j.payload?.dokumen_paths || []} />
             {j.approved_at && <p className="text-xs text-teal mt-1">Disetujui {j.approved_at.slice(0, 10)}</p>}
           </div>
