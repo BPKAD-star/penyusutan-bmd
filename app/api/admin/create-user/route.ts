@@ -1,10 +1,14 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { toAuthEmail } from '@/lib/authIdentifier'
+import { ROLE_VALUES } from '@/lib/roles'
 import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
   const { email: rawIdentifier, password, pegawai_id, role, username } = await req.json()
   const email = toAuthEmail(rawIdentifier)
+  if (!(ROLE_VALUES as readonly string[]).includes(role)) {
+    return NextResponse.json({ error: 'Role tidak valid' }, { status: 400 })
+  }
 
   // Hanya admin yang boleh membuat user
   const session = createClient()

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { ROLE_LABEL, ROLE_VALUES } from '@/lib/roles'
 
 type Profile = {
   id: string
@@ -21,7 +22,7 @@ const LABEL_IPA_ROLE: Record<string, string> = {
 type Pegawai = { id: string; nip: string; nama: string; jabatan: string | null }
 
 const FORM_KOSONG = {
-  email: '', password: '', username: '', role: 'user', pegawai_id: '',
+  email: '', password: '', username: '', role: 'pengurus_pembantu', pegawai_id: '',
 }
 
 export default function AdminUserPage() {
@@ -151,8 +152,7 @@ export default function AdminUserPage() {
               <label className="block text-xs text-gray-500 mb-1">Role</label>
               <select className="select-filter w-full" value={form.role}
                 onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-                <option value="user">Operator SKPD</option>
-                <option value="admin">Admin BKAD</option>
+                {ROLE_VALUES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
               </select>
             </div>
             <div className="col-span-2">
@@ -202,8 +202,7 @@ export default function AdminUserPage() {
                   <td className="table-td">
                     <select className="select-filter text-xs py-1" value={p.role}
                       onChange={e => handleChangeRole(p.id, e.target.value)}>
-                      <option value="user">Operator</option>
-                      <option value="admin">Admin</option>
+                      {ROLE_VALUES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                     </select>
                   </td>
                   <td className="table-td">

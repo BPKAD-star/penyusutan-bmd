@@ -21,6 +21,7 @@ import {
   approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList,
   type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
 } from '@/lib/kdp'
+import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
 
 type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload }
 const KOMPONEN = [
@@ -98,9 +99,12 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
   const supabase = createClient()
   const onDataChangeRef = useRef(onDataChange)
   onDataChangeRef.current = onDataChange
-  const [isAdmin, setIsAdmin] = useState(false)
+  // Boleh approve utk SKPD terpilih? admin = semua; pengurus_barang = hanya
+  // sub-OPD strict di bawah nodenya (penegak asli: trigger approval guard di DB).
+  const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
   const [skpdInternal, setSkpdInternal] = useState('')
   const skpd = skpdProp !== undefined ? skpdProp : skpdInternal // SKPD boleh dikontrol induk (satu tampilan Pengadaan)
+  const bolehACC = bolehSetujuiSkpd(scope, skpd)
   const [list, setList] = useState<Kontrak[]>([])
   const [selected, setSelected] = useState<Kontrak | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -108,10 +112,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
 
   useEffect(() => {
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase.from('admin_profiles').select('role').eq('id', user.id).single()
-      setIsAdmin((data as { role?: string } | null)?.role === 'admin')
+      setScope(await fetchApprovalScope(supabase))
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -141,7 +142,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
           <div className={`p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
         )}
         {selected ? (
-          <KontrakDetail kontrak={selected} isAdmin={isAdmin} onBack={onExit}
+          <KontrakDetail kontrak={selected} isAdmin={bolehACC} onBack={onExit}
             onMsg={setMsg} onChanged={async () => { await refreshSelected(); load(skpd) }} />
         ) : startCreate ? (
           <>
@@ -188,13 +189,13 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
               {pendingK.length > 0 && (
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-amber-700">⏳ Menunggu Persetujuan ({pendingK.length})</h3>
-                  {pendingK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={isAdmin} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
+                  {pendingK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={bolehACC} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
                 </section>
               )}
               {disetujuiK.length > 0 && (
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujuiK.length})</h3>
-                  {disetujuiK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={isAdmin} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
+                  {disetujuiK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={bolehACC} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
                 </section>
               )}
             </>

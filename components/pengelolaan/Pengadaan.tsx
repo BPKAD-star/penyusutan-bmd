@@ -26,6 +26,7 @@ import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapit
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
 import { formatRupiah } from '@/lib/export'
+import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
 import FormShell from './FormShell'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -166,7 +167,10 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
   // SKPD boleh dikontrol induk (satu tampilan Pengadaan: SKPD dipilih sekali di atas).
   const [skpdInternal, setSkpdInternal] = useState('')
   const skpd = skpdProp !== undefined ? skpdProp : skpdInternal
-  const [isAdmin, setIsAdmin] = useState(false)
+  // Boleh approve utk SKPD terpilih? admin = semua; pengurus_barang = hanya
+  // sub-OPD strict di bawah nodenya (penegak asli: trigger approval guard di DB).
+  const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
+  const bolehACC = bolehSetujuiSkpd(scope, skpd)
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
@@ -204,10 +208,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
       setSkpdPathMap(paths)
     })()
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: profile } = await supabase.from('admin_profiles').select('role').eq('id', user.id).single()
-      setIsAdmin(profile?.role === 'admin')
+      setScope(await fetchApprovalScope(supabase))
     })()
     ;(async () => {
       const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
@@ -498,7 +499,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
         ) : (
           <div className="space-y-6">
             {fp.map(h => (
-              <PendingCard key={h.id} h={h} isAdmin={isAdmin} busy={busyId === h.id}
+              <PendingCard key={h.id} h={h} isAdmin={bolehACC} busy={busyId === h.id}
                 golonganLabels={golonganLabels}
                 onEditHeader={() => setEditing(h)}
                 onHapusKontrak={() => hapusKontrak(h)}
@@ -509,7 +510,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
               />
             ))}
             {fd.map(j => (
-              <ApprovedCard key={j.id} j={j} isAdmin={isAdmin} busy={busyId === j.id}
+              <ApprovedCard key={j.id} j={j} isAdmin={bolehACC} busy={busyId === j.id}
                 onUnapprove={() => unapproveHeader(j)}
               />
             ))}
@@ -583,7 +584,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-amber-700">⏳ Menunggu Persetujuan ({pending.length})</h3>
                   {pending.map(h => (
-                    <PendingCard key={h.id} h={h} isAdmin={isAdmin} busy={busyId === h.id}
+                    <PendingCard key={h.id} h={h} isAdmin={bolehACC} busy={busyId === h.id}
                       golonganLabels={golonganLabels}
                       onEditHeader={() => setEditing(h)}
                       onHapusKontrak={() => hapusKontrak(h)}
@@ -599,7 +600,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujui.length})</h3>
                   {disetujui.map(j => (
-                    <ApprovedCard key={j.id} j={j} isAdmin={isAdmin} busy={busyId === j.id}
+                    <ApprovedCard key={j.id} j={j} isAdmin={bolehACC} busy={busyId === j.id}
                       onUnapprove={() => unapproveHeader(j)}
                     />
                   ))}
