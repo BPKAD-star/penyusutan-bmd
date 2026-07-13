@@ -26,8 +26,9 @@ export default function AsetPicker({ selected, onSelect, skpdId, kodePrefix }: {
   const [results, setResults] = useState<AsetRingkas[]>([])
   const [searching, setSearching] = useState(false)
 
+  // Query kosong = tampilkan semua barang yg cocok skpdId/kodePrefix (browse-all),
+  // bukan cuma pencarian teks — supaya bisa "lihat semua barang di SKPD ini".
   async function cari() {
-    if (!q.trim()) return
     setSearching(true)
     let query = supabase
       .from('aset')
@@ -35,9 +36,8 @@ export default function AsetPicker({ selected, onSelect, skpdId, kodePrefix }: {
       .eq('status', 'aktif')
     if (skpdId != null) query = query.eq('skpd_id', skpdId)
     if (kodePrefix) query = query.like('kode', `${kodePrefix}%`)
-    const { data } = await query
-      .or(`nibar.ilike.%${q}%,nama_barang.ilike.%${q}%,kode.ilike.%${q}%`)
-      .limit(20)
+    if (q.trim()) query = query.or(`nibar.ilike.%${q}%,nama_barang.ilike.%${q}%,kode.ilike.%${q}%`)
+    const { data } = await query.order('nama_barang').limit(50)
     setResults((data as unknown as AsetRingkas[]) || [])
     setSearching(false)
   }

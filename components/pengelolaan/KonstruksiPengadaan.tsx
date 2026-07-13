@@ -19,7 +19,7 @@ import { formatRupiah } from '@/lib/export'
 import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import {
   approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList,
-  type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp,
+  type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
 } from '@/lib/kdp'
 
 type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload }
@@ -40,6 +40,51 @@ function Baris({ label, value }: { label: string; value?: string | null }) {
     <div className="flex text-xs leading-relaxed">
       <span className="text-gray-400 w-28 flex-shrink-0">{label}</span>
       <span className="text-gray-700">: {value || '-'}</span>
+    </div>
+  )
+}
+
+// ── Picker "Menambah masa manfaat aset yang sudah tercatat?" — PER BARANG KDP.
+// Dipakai saat tambah barang (draft lokal) & saat ubah belakangan (langsung
+// tersimpan). Search AsetPicker sudah bisa browse semua barang di SKPD (query
+// kosong = tampilkan semua, dibatasi golongan GB/JIJ yg dipilih).
+function KapInfoPicker({ skpdId, value, onChange }: {
+  skpdId: number; value: KapInfo | null | undefined; onChange: (v: KapInfo | null) => void
+}) {
+  const menambah = !!value?.menambah
+  const [golongan, setGolongan] = useState('')
+  const [target, setTarget] = useState<AsetRingkas | null>(null)
+
+  return (
+    <div>
+      <label className="block text-xs text-gray-500 mb-1">Menambah masa manfaat aset yang sudah tercatat? <span className="text-gray-400">(info — reklas & kapitalisasi tetap manual nanti)</span></label>
+      <div className="flex gap-4 text-sm">
+        <label className="flex items-center gap-1"><input type="radio" checked={!menambah} onChange={() => { onChange(null); setGolongan(''); setTarget(null) }} /> Tidak</label>
+        <label className="flex items-center gap-1"><input type="radio" checked={menambah} onChange={() => onChange({ menambah: true, target_aset_id: value?.target_aset_id ?? null, target_nama: value?.target_nama ?? null })} /> Ya</label>
+      </div>
+      {menambah && (
+        <div className="mt-2 space-y-2">
+          {value?.target_aset_id ? (
+            <div className="flex items-center justify-between gap-3 p-2 bg-teal/5 border border-teal/30 rounded-lg text-sm">
+              <span className="text-gray-800">{value.target_nama || '(aset terpilih)'}</span>
+              <button type="button" className="text-xs text-teal hover:underline flex-shrink-0"
+                onClick={() => { onChange({ menambah: true, target_aset_id: null, target_nama: null }); setTarget(null) }}>Ganti</button>
+            </div>
+          ) : (
+            <>
+              <select className="select-filter w-full" value={golongan} onChange={e => { setGolongan(e.target.value); setTarget(null) }}>
+                <option value="">— pilih jenis aset induk —</option>
+                <option value="1.3.3">Gedung dan Bangunan</option>
+                <option value="1.3.4">Jalan, Irigasi dan Jaringan</option>
+              </select>
+              {golongan && (
+                <AsetPicker selected={target} skpdId={skpdId} kodePrefix={golongan}
+                  onSelect={a => { setTarget(a); onChange(a ? { menambah: true, target_aset_id: a.id, target_nama: a.nama_barang } : null) }} />
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -170,9 +215,6 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
   const [f, setF] = useState({ nama: '', noKontrak: '', tglKontrak: '', program: '', kegiatan: '', subKeg: '', penyedia: '', nilaiKontrak: '', keterangan: '' })
   const [ppk, setPpk] = useState('')
   const [pegawai, setPegawai] = useState<{ nama: string; nip: string }[]>([])
-  const [kapYa, setKapYa] = useState(false)
-  const [jenisTarget, setJenisTarget] = useState('') // golongan aset induk (1.3.3 / 1.3.4)
-  const [target, setTarget] = useState<AsetRingkas | null>(null)
   const [saving, setSaving] = useState(false)
   const set = (k: keyof typeof f, v: string) => setF(s => ({ ...s, [k]: v }))
 
@@ -188,7 +230,6 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
       program: f.program || null, kegiatan: f.kegiatan || null, sub_kegiatan: f.subKeg || null,
       ppk: ppk || null, penyedia: f.penyedia || null, nilai_kontrak: f.nilaiKontrak ? Number(f.nilaiKontrak) : null,
       keterangan: f.keterangan || null,
-      kap_info: kapYa ? { menambah: true, target_aset_id: target?.id || null, target_nama: target?.nama_barang || null } : { menambah: false },
       barang: [],
     }
     const { data, error } = await supabase.from('jurnal_header').insert({
@@ -220,23 +261,6 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
           {pegawai.map((p, i) => <option key={i} value={p.nama}>{p.nama} — {p.nip}</option>)}
         </select></div>
       {fld('Nama Penyedia', 'penyedia')}
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Menambah masa manfaat aset yang sudah tercatat? <span className="text-gray-400">(info — reklas & kapitalisasi tetap manual nanti)</span></label>
-        <div className="flex gap-4 text-sm">
-          <label className="flex items-center gap-1"><input type="radio" checked={!kapYa} onChange={() => { setKapYa(false); setTarget(null); setJenisTarget('') }} /> Tidak</label>
-          <label className="flex items-center gap-1"><input type="radio" checked={kapYa} onChange={() => setKapYa(true)} /> Ya</label>
-        </div>
-        {kapYa && (
-          <div className="mt-2 space-y-2">
-            <select className="select-filter w-full" value={jenisTarget} onChange={e => { setJenisTarget(e.target.value); setTarget(null) }}>
-              <option value="">— pilih jenis aset induk —</option>
-              <option value="1.3.3">Gedung dan Bangunan</option>
-              <option value="1.3.4">Jalan, Irigasi dan Jaringan</option>
-            </select>
-            {jenisTarget && <AsetPicker selected={target} onSelect={setTarget} skpdId={skpdId} kodePrefix={jenisTarget} />}
-          </div>
-        )}
-      </div>
       {fld('Nilai Kontrak Pekerjaan (Rp)', 'nilaiKontrak', 'number')}
       {fld('Keterangan Kontrak', 'keterangan')}
       <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Menyimpan...' : 'Simpan Kontrak'}</button>
@@ -267,13 +291,16 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
     const { error } = await supabase.from('jurnal_header').update({ payload: { ...rest, barang: next } }).eq('id', kontrak.id)
     if (error) onMsg(`Error: ${error.message}`); else onChanged()
   }
-  async function tambahBarang(kode: string, nama: string) {
-    await saveBarang([...barangs, { key: newKey(), kode, nama, pembayaran: [] }])
+  async function tambahBarang(kode: string, nama: string, kapInfo: KapInfo | null) {
+    await saveBarang([...barangs, { key: newKey(), kode, nama, pembayaran: [], kap_info: kapInfo }])
     setShowAddBarang(false)
   }
   async function hapusBarang(key: string) {
     if (!confirm('Hapus barang KDP ini beserta semua terminnya dari draft?')) return
     await saveBarang(barangs.filter(b => b.key !== key))
+  }
+  async function ubahKapInfo(key: string, kapInfo: KapInfo | null) {
+    await saveBarang(barangs.map(b => b.key === key ? { ...b, kap_info: kapInfo } : b))
   }
   async function tambahTermin(key: string, item: PembayaranKdp) {
     await saveBarang(barangs.map(b => b.key === key ? { ...b, pembayaran: [...(b.pembayaran || []), item] } : b))
@@ -347,7 +374,6 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
                 <Baris label="Nama Penyedia" value={p.penyedia} />
                 <Baris label="Nama PPKom" value={p.ppk} />
               </div>
-              {p.kap_info?.menambah && <p className="text-xs text-amber-600 mt-1">Catatan: menambah masa manfaat aset {p.kap_info.target_nama || '(dipilih)'} — reklas & kapitalisasi manual nanti.</p>}
             </div>
             <div className="text-right flex-shrink-0">
               <p className="text-xs text-gray-400">Total ({barangs.length} barang KDP) · {periodeDariTanggal(kontrak.tanggal)}</p>
@@ -370,18 +396,19 @@ function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
           <div className="p-6 text-center text-gray-400 text-sm">Belum ada barang KDP. Tambahkan minimal satu barang untuk bisa disetujui.</div>
         ) : (
           barangs.map(b => (
-            <BarangCard key={b.key} barang={b} pending={pending} tglKontrak={kontrak.tanggal}
+            <BarangCard key={b.key} barang={b} pending={pending} tglKontrak={kontrak.tanggal} skpdId={kontrak.skpd_id}
               onHapusBarang={() => hapusBarang(b.key)}
               onEditSpec={() => setSpecBarang(b)}
               onTambahTermin={item => tambahTermin(b.key, item)}
-              onHapusTermin={idx => hapusTermin(b.key, idx)} />
+              onHapusTermin={idx => hapusTermin(b.key, idx)}
+              onUbahKapInfo={kapInfo => ubahKapInfo(b.key, kapInfo)} />
           ))
         )}
 
         {pending && (
           <div className="p-4 border-t border-gray-100 bg-gray-50/40">
             {showAddBarang
-              ? <TambahBarangPanel onTambah={tambahBarang} onCancel={() => setShowAddBarang(false)} onErr={onMsg} />
+              ? <TambahBarangPanel skpdId={kontrak.skpd_id} onTambah={tambahBarang} onCancel={() => setShowAddBarang(false)} onErr={onMsg} />
               : <button className="btn-secondary text-sm" onClick={() => setShowAddBarang(true)}>+ Tambah Barang KDP</button>}
           </div>
         )}
@@ -503,12 +530,14 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
   )
 }
 
-// ── Panel tambah barang KDP (pilih kode 1.3.6 + nama) ───────────────────────
-function TambahBarangPanel({ onTambah, onCancel, onErr }: {
-  onTambah: (kode: string, nama: string) => void; onCancel: () => void; onErr: (m: string) => void
+// ── Panel tambah barang KDP (pilih kode 1.3.6 + nama + opsional induk aset) ─
+function TambahBarangPanel({ skpdId, onTambah, onCancel, onErr }: {
+  skpdId: number
+  onTambah: (kode: string, nama: string, kapInfo: KapInfo | null) => void; onCancel: () => void; onErr: (m: string) => void
 }) {
   const [kode, setKode] = useState<KodefikasiHasil | null>(null)
   const [nama, setNama] = useState('')
+  const [kapInfo, setKapInfo] = useState<KapInfo | null>(null)
   return (
     <div className="space-y-3 max-w-2xl">
       <h3 className="text-sm font-semibold text-gray-800">Tambah Barang KDP</h3>
@@ -516,11 +545,12 @@ function TambahBarangPanel({ onTambah, onCancel, onErr }: {
         <KodefikasiPicker picked={kode} onPick={k => { setKode(k); if (!nama) setNama(k?.uraian || '') }} golonganTetap="1.3.6" /></div>
       <div><label className="block text-xs text-gray-500 mb-1">Nama Barang KDP</label>
         <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} placeholder="mis. Rehab ruas jalan A" /></div>
+      <KapInfoPicker skpdId={skpdId} value={kapInfo} onChange={setKapInfo} />
       <div className="flex gap-2">
         <button className="btn-primary text-sm" onClick={() => {
           if (!kode) { onErr('Error: pilih kode barang KDP dulu.'); return }
           if (!nama.trim()) { onErr('Error: nama barang KDP wajib.'); return }
-          onTambah(kode.kode, nama.trim())
+          onTambah(kode.kode, nama.trim(), kapInfo)
         }}>+ Tambah</button>
         <button className="btn-secondary text-sm" onClick={onCancel}>Batal</button>
       </div>
@@ -529,10 +559,11 @@ function TambahBarangPanel({ onTambah, onCancel, onErr }: {
 }
 
 // ── Kartu satu barang KDP: header + termin + (draft) form tambah termin ─────
-function BarangCard({ barang, pending, tglKontrak, onHapusBarang, onEditSpec, onTambahTermin, onHapusTermin }: {
-  barang: BarangKdp; pending: boolean; tglKontrak: string
+function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEditSpec, onTambahTermin, onHapusTermin, onUbahKapInfo }: {
+  barang: BarangKdp; pending: boolean; tglKontrak: string; skpdId: number
   onHapusBarang: () => void; onEditSpec: () => void
   onTambahTermin: (item: PembayaranKdp) => void; onHapusTermin: (idx: number) => void
+  onUbahKapInfo: (kapInfo: KapInfo | null) => void
 }) {
   const bounds = useDateBounds()
   const pembayaran = barang.pembayaran || []
@@ -545,6 +576,8 @@ function BarangCard({ barang, pending, tglKontrak, onHapusBarang, onEditSpec, on
   const [ket, setKet] = useState('')
   const [err, setErr] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [showKapInfo, setShowKapInfo] = useState(false)
+  const [draftKapInfo, setDraftKapInfo] = useState<KapInfo | null>(barang.kap_info ?? null)
   // Tgl BAST tak boleh lebih tua dari tgl kontrak (juga hormati batas tahun buku).
   const minTgl = [bounds.min, tglKontrak].filter(Boolean).sort().slice(-1)[0]
 
@@ -566,6 +599,7 @@ function BarangCard({ barang, pending, tglKontrak, onHapusBarang, onEditSpec, on
             <Baris label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
             <Baris label="Lokasi" value={barang.spec?.alamat_detail} />
             <Baris label="Keterangan" value={barang.spec?.keterangan} />
+            {barang.kap_info?.menambah && <Baris label="Menambah Manfaat" value={barang.kap_info.target_nama || '(aset dipilih)'} />}
           </div>
         </div>
         <div className="flex items-start gap-3 flex-shrink-0">
@@ -575,10 +609,21 @@ function BarangCard({ barang, pending, tglKontrak, onHapusBarang, onEditSpec, on
           </div>
           <div className="flex flex-col gap-1 items-end">
             <button className="text-xs text-teal hover:underline" onClick={onEditSpec}>Edit Spesifikasi</button>
+            {pending && <button className="text-xs text-teal hover:underline" onClick={() => { setDraftKapInfo(barang.kap_info ?? null); setShowKapInfo(v => !v) }}>Ubah Induk Aset</button>}
             {pending && <button className="text-xs text-red-500 hover:text-red-700" onClick={onHapusBarang}>Hapus Barang</button>}
           </div>
         </div>
       </div>
+
+      {showKapInfo && (
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40 space-y-3">
+          <KapInfoPicker skpdId={skpdId} value={draftKapInfo} onChange={setDraftKapInfo} />
+          <div className="flex gap-2">
+            <button className="btn-primary text-sm py-1.5" onClick={() => { onUbahKapInfo(draftKapInfo); setShowKapInfo(false) }}>Simpan</button>
+            <button className="btn-secondary text-sm py-1.5" onClick={() => setShowKapInfo(false)}>Batal</button>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full">

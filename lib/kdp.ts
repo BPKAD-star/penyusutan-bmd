@@ -27,6 +27,11 @@ export type PembayaranKdp = {
 // konstruksi bisa berisi BEBERAPA barang (mis. paket jalan → beberapa ruas),
 // tiap barang = 1 aset KDP (1.3.6) dgn rincian termin sendiri. Nilai barang =
 // TOTAL termin-nya. Approve/unapprove ATOMIK per kontrak (semua barang sekaligus).
+// Info "menambah masa manfaat aset existing" — INFO saja (bukan auto-kapitalisasi),
+// reklas & kapitalisasi tetap manual nanti (menu Reklasifikasi). PER-BARANG sejak
+// redesign 2026-07-13 (dulu per-kontrak): 1 kontrak bisa berisi banyak KDP, tiap
+// KDP bisa menambah manfaat aset induk yg BEDA (mis. 2 ruas jalan berbeda).
+export type KapInfo = { menambah: boolean; target_aset_id?: string | null; target_nama?: string | null }
 export type BarangKdp = {
   key: string
   kode: string                       // kode kodefikasi KDP (golongan 1.3.6)
@@ -34,6 +39,7 @@ export type BarangKdp = {
   spec?: Record<string, string>      // spesifikasi (Tanah-like)
   foto?: string[]
   pembayaran: PembayaranKdp[]        // termin/BAST barang ini
+  kap_info?: KapInfo | null          // aset induk (GB/JIJ) yg ditambah manfaatnya, kalau ada
   aset_id?: string | null            // diisi saat approve (utk unapprove)
 }
 export type KontrakKonstruksiPayload = {
@@ -41,8 +47,6 @@ export type KontrakKonstruksiPayload = {
   program?: string | null; kegiatan?: string | null; sub_kegiatan?: string | null
   ppk?: string | null; penyedia?: string | null; nilai_kontrak?: number | null
   keterangan?: string | null
-  // INFO saja (bukan auto-kapitalisasi) — reklas & kapitalisasi tetap manual nanti.
-  kap_info?: { menambah: boolean; target_aset_id?: string | null; target_nama?: string | null }
   barang?: BarangKdp[]               // MODEL BARU (multi-KDP)
   // ── LEGACY single-KDP (payload versi lama) — dibaca utk kompat & migrasi-on-read ──
   kode_kdp?: string
@@ -50,6 +54,7 @@ export type KontrakKonstruksiPayload = {
   spec?: Record<string, string>
   foto?: string[]
   aset_id?: string | null
+  kap_info?: KapInfo                 // legacy: dulu per-kontrak, sekarang per-barang (BarangKdp.kap_info)
 }
 
 const newKeyKdp = () => Math.random().toString(36).slice(2)
@@ -61,7 +66,7 @@ export function barangKdpList(p: KontrakKonstruksiPayload): BarangKdp[] {
   if (Array.isArray(p.barang)) return p.barang
   if (p.kode_kdp) return [{
     key: 'legacy', kode: p.kode_kdp, nama: p.nama_pekerjaan,
-    spec: p.spec, foto: p.foto, pembayaran: p.pembayaran || [], aset_id: p.aset_id ?? null,
+    spec: p.spec, foto: p.foto, pembayaran: p.pembayaran || [], kap_info: p.kap_info, aset_id: p.aset_id ?? null,
   }]
   return []
 }
@@ -69,7 +74,7 @@ export function barangKdpList(p: KontrakKonstruksiPayload): BarangKdp[] {
 // Payload tanpa field legacy singleton (dipakai saat menulis ulang payload versi
 // baru supaya tak ada dua sumber kebenaran yang ambigu).
 function stripLegacy(p: KontrakKonstruksiPayload): KontrakKonstruksiPayload {
-  const { kode_kdp: _k, pembayaran: _p, spec: _s, foto: _f, aset_id: _a, ...rest } = p
+  const { kode_kdp: _k, pembayaran: _p, spec: _s, foto: _f, aset_id: _a, kap_info: _ki, ...rest } = p
   return rest
 }
 
