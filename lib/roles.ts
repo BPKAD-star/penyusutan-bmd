@@ -13,17 +13,22 @@ export const ROLE_LABEL: Record<string, string> = {
   admin: 'Pengelola Barang (Admin Pemda)',
   pengurus_barang: 'Pengurus Barang (SKPD)',
   pengurus_pembantu: 'Pengurus Barang Pembantu',
+  pengawas: 'Pengawas (Baca-saja) — Akuntansi/Auditor',
 }
-export const ROLE_VALUES = ['admin', 'pengurus_barang', 'pengurus_pembantu'] as const
+export const ROLE_VALUES = ['admin', 'pengurus_barang', 'pengurus_pembantu', 'pengawas'] as const
 
 export type ApprovalScope = {
   isAdmin: boolean
+  /** role 'pengawas' = view-only lintas SKPD (baca semua, tidak boleh menulis).
+   *  Ditegakkan DB (fn_skpd_visible=false utk pengawas); ini cuma utk sembunyikan
+   *  tombol tulis di UI supaya tidak klik → error. */
+  isViewer: boolean
   role: string | null
   skpdId: number | null
   /** id SKPD STRICT di bawah node user (node sendiri TIDAK termasuk) — hanya diisi utk pengurus_barang. */
   bawahan: Set<number>
 }
-export const SCOPE_KOSONG: ApprovalScope = { isAdmin: false, role: null, skpdId: null, bawahan: new Set() }
+export const SCOPE_KOSONG: ApprovalScope = { isAdmin: false, isViewer: false, role: null, skpdId: null, bawahan: new Set() }
 
 /** Ambil role + (utk pengurus_barang) daftar sub-OPD di bawah nodenya — sekali per mount. */
 export async function fetchApprovalScope(supabase: SupabaseClient): Promise<ApprovalScope> {
@@ -31,7 +36,7 @@ export async function fetchApprovalScope(supabase: SupabaseClient): Promise<Appr
   if (!user) return SCOPE_KOSONG
   const { data: p } = await supabase.from('admin_profiles').select('role,skpd_id').eq('id', user.id).single()
   if (!p) return SCOPE_KOSONG
-  const scope: ApprovalScope = { isAdmin: p.role === 'admin', role: p.role, skpdId: p.skpd_id, bawahan: new Set() }
+  const scope: ApprovalScope = { isAdmin: p.role === 'admin', isViewer: p.role === 'pengawas', role: p.role, skpdId: p.skpd_id, bawahan: new Set() }
   if (p.role === 'pengurus_barang' && p.skpd_id != null) {
     // Turunan dihitung dari parent_id (BFS) — cukup id+parent_id, ~ratusan baris.
     const { data: rows } = await supabase.from('admin_skpd').select('id,parent_id').limit(5000)

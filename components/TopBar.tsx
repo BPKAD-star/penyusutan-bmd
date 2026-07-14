@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import TahunKerjaBadge from './TahunKerjaBadge'
+import { useIsViewer } from './useIsViewer'
 
 export default function TopBar({ userName, onToggleSidebar }: {
   userName: string
@@ -11,6 +12,7 @@ export default function TopBar({ userName, onToggleSidebar }: {
   const router = useRouter()
   const supabase = createClient()
   const [menuOpen, setMenuOpen] = useState(false)
+  const isViewer = useIsViewer()
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -42,6 +44,11 @@ export default function TopBar({ userName, onToggleSidebar }: {
 
       {/* Kanan: badge tahun kerja + user dropdown */}
       <div className="flex items-center gap-3">
+        {isViewer && (
+          <span className="text-[11px] font-semibold bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg flex items-center gap-1" title="Akun Pengawas: hanya bisa melihat, tidak bisa mengubah data">
+            👁 Baca-saja
+          </span>
+        )}
         <TahunKerjaBadge />
         <div className="relative">
           <button onClick={() => setMenuOpen(v => !v)}
