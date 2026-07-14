@@ -33,10 +33,16 @@ const ROLE_BMD = [
 // urutan array ini SUDAH persis hierarki organisasi BMD: Pengelola → Pengguna → Sub-unit.
 const ROLE_ORDER = new Map(ROLE_BMD.map((r, i) => [r.value, i]))
 
-// ── Urutan SKPD sesuai menu Admin > SKPD (lib/tree walk: induk dulu, lalu
-// anak-anaknya, tiap level diurutkan alfabetis by nama) — BUKAN urut kode. Dipakai
-// utk mengelompokkan Daftar Pegawai per SKPD sesuai hierarki organisasi yg sama.
-type SkpdTreeRow = { id: number; nama: string; parent_id: number | null }
+// ── Urutan SKPD sesuai menu Admin > SKPD (tree walk: induk dulu, lalu
+// anak-anaknya; tiap level diurutkan by Kode SKPD — bukan alfabetis nama).
+// Dipakai utk mengelompokkan Daftar Pegawai per SKPD sesuai hierarki yg sama.
+type SkpdTreeRow = { id: number; nama: string; parent_id: number | null; kode_skpd: string | null }
+function compareSkpd(a: SkpdTreeRow, b: SkpdTreeRow): number {
+  if (a.kode_skpd == null && b.kode_skpd == null) return a.nama.localeCompare(b.nama)
+  if (a.kode_skpd == null) return 1
+  if (b.kode_skpd == null) return -1
+  return a.kode_skpd.localeCompare(b.kode_skpd) || a.nama.localeCompare(b.nama)
+}
 function buildSkpdOrder(rows: SkpdTreeRow[]): Map<number, number> {
   const childrenOf = new Map<number, SkpdTreeRow[]>()
   for (const s of rows) {
@@ -45,7 +51,7 @@ function buildSkpdOrder(rows: SkpdTreeRow[]): Map<number, number> {
     arr.push(s)
     childrenOf.set(s.parent_id, arr)
   }
-  for (const arr of childrenOf.values()) arr.sort((a, b) => a.nama.localeCompare(b.nama))
+  for (const arr of childrenOf.values()) arr.sort(compareSkpd)
 
   const order = new Map<number, number>()
   let i = 0
@@ -53,7 +59,7 @@ function buildSkpdOrder(rows: SkpdTreeRow[]): Map<number, number> {
     order.set(node.id, i++)
     for (const c of childrenOf.get(node.id) || []) walk(c)
   }
-  for (const r of rows.filter(s => s.parent_id == null).sort((a, b) => a.nama.localeCompare(b.nama))) walk(r)
+  for (const r of rows.filter(s => s.parent_id == null).sort(compareSkpd)) walk(r)
   return order
 }
 
@@ -152,7 +158,7 @@ export default function AdminPegawaiPage() {
   async function loadSkpdOrder() {
     const rows: SkpdTreeRow[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('admin_skpd').select('id,nama,parent_id').range(from, from + 999)
+      const { data } = await supabase.from('admin_skpd').select('id,nama,parent_id,kode_skpd').range(from, from + 999)
       if (!data || data.length === 0) break
       rows.push(...(data as SkpdTreeRow[]))
       if (data.length < 1000) break

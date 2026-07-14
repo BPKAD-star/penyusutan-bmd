@@ -7,6 +7,16 @@ type Skpd = { id: number; nama: string; level: number; parent_id: number | null;
 
 const FORM_KOSONG = { nama: '', kode_skpd: '', parent_id: '' as number | '' }
 
+// Urutan sibling: by Kode SKPD (bukan alfabetis nama) — kode sudah zero-padded
+// per segmen (mis. "02.00.00.0003.0000") jadi localeCompare string = urutan
+// numerik yg benar. SKPD tanpa kode (belum diisi) ditaruh paling akhir, urut nama.
+function compareSkpd(a: Skpd, b: Skpd): number {
+  if (a.kode_skpd == null && b.kode_skpd == null) return a.nama.localeCompare(b.nama)
+  if (a.kode_skpd == null) return 1
+  if (b.kode_skpd == null) return -1
+  return a.kode_skpd.localeCompare(b.kode_skpd) || a.nama.localeCompare(b.nama)
+}
+
 export default function AdminSkpdPage() {
   const supabase = createClient()
   const [all, setAll] = useState<Skpd[]>([])
@@ -39,13 +49,13 @@ export default function AdminSkpdPage() {
       arr.push(s)
       m.set(s.parent_id, arr)
     }
-    for (const arr of m.values()) arr.sort((a, b) => a.nama.localeCompare(b.nama))
+    for (const arr of m.values()) arr.sort(compareSkpd)
     return m
   }, [all])
 
   const flatTree = useMemo(() => {
     const out: (Skpd & { depth: number })[] = []
-    const roots = all.filter(s => s.parent_id == null).sort((a, b) => a.nama.localeCompare(b.nama))
+    const roots = all.filter(s => s.parent_id == null).sort(compareSkpd)
     function walk(node: Skpd, depth: number) {
       out.push({ ...node, depth })
       for (const c of childrenOf.get(node.id) || []) walk(c, depth + 1)
