@@ -135,10 +135,18 @@ export default function AdminPegawaiPage() {
   const [list, setList] = useState<Pegawai[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [closingForm, setClosingForm] = useState(false) // true selama animasi bubble-out, sebelum unmount
   const [editId, setEditId] = useState<string | null>(null)
   const [form, setForm] = useState(FORM_KOSONG)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+
+  // Popup Tambah/Edit Pegawai ditutup lewat animasi (bubble-out + fade-out,
+  // lihat tailwind.config.ts) — tunda unmount sampai animasi selesai.
+  function closeForm() {
+    setClosingForm(true)
+    setTimeout(() => { setShowForm(false); setClosingForm(false) }, 160)
+  }
 
   const [showImport, setShowImport] = useState(false)
   const [importRows, setImportRows] = useState<ImportRow[]>([])
@@ -166,6 +174,16 @@ export default function AdminPegawaiPage() {
     setSkpdOrder(buildSkpdOrder(rows))
   }
 
+  // Statistik ringkas pengganti deskripsi statis — 3 role operator lapangan yg
+  // paling sering ditanyakan (beda dari role pengelola tingkat atas).
+  const deskripsiStat = useMemo(() => {
+    const total = list.length
+    const cPengurus = list.filter(p => p.role_bmd === 'pengurus_barang').length
+    const cPengurusPembantu = list.filter(p => p.role_bmd === 'pengurus_barang_pembantu').length
+    const cPembantuPengurus = list.filter(p => p.role_bmd === 'pembantu_pengurus_barang').length
+    return `${total} pegawai — Pengurus Barang: ${cPengurus} · Pengurus Barang Pembantu: ${cPengurusPembantu} · Pembantu Pengurus Barang: ${cPembantuPengurus}`
+  }, [list])
+
   // Urutan tampil: per SKPD sesuai hierarki menu Admin > SKPD, lalu per Role BMD
   // sesuai hierarki organisasi (lihat ROLE_ORDER), lalu nama sbg tie-breaker.
   const sortedList = useMemo(() => {
@@ -185,10 +203,12 @@ export default function AdminPegawaiPage() {
   function openCreate() {
     setEditId(null)
     setForm(FORM_KOSONG)
+    setClosingForm(false)
     setShowForm(true)
   }
 
   function openEdit(p: Pegawai) {
+    setClosingForm(false)
     setEditId(p.id)
     const golonganNormal = p.golongan ? normalisasiGolongan(p.golongan) : ''
     setForm({
@@ -221,7 +241,7 @@ export default function AdminPegawaiPage() {
       setMsg(`Error: ${error.message}`)
     } else {
       setMsg(editId ? 'Pegawai berhasil diperbarui.' : 'Pegawai berhasil ditambahkan.')
-      setShowForm(false)
+      closeForm()
       setForm(FORM_KOSONG)
       setEditId(null)
       load()
@@ -335,16 +355,16 @@ export default function AdminPegawaiPage() {
   }
 
   return (
-    <FormShell judul="Daftar Pegawai" deskripsi="Master data pegawai — jadi sumber saat membuat akun di Daftar User" msg={msg}>
+    <FormShell judul="Daftar Pegawai" deskripsi={deskripsiStat} msg={msg}>
       <div className="flex justify-end gap-2 mb-4">
         <button
-          onClick={() => { setShowImport(v => !v); setShowForm(false) }}
+          onClick={() => { setShowImport(v => !v); if (showForm) closeForm() }}
           className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50"
         >
           {showImport ? 'Batal Import' : 'Import Excel'}
         </button>
         <button
-          onClick={() => { setShowImport(false); if (showForm) setShowForm(false); else openCreate() }}
+          onClick={() => { setShowImport(false); if (showForm) closeForm(); else openCreate() }}
           className="btn-primary"
         >
           {showForm ? 'Batal' : '+ Tambah Pegawai'}
@@ -408,67 +428,78 @@ export default function AdminPegawaiPage() {
       )}
 
       {showForm && (
-        <div className="card p-6 mb-6">
-          <h2 className="text-base font-semibold text-gray-800 mb-4">{editId ? 'Edit Pegawai' : 'Tambah Pegawai Baru'}</h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">NIP</label>
-              <input required className="select-filter w-full" value={form.nip}
-                onChange={e => setForm(f => ({ ...f, nip: e.target.value }))} />
+        <div
+          className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 ${closingForm ? 'animate-fade-out' : 'animate-fade-in'}`}
+          onClick={closeForm}
+        >
+          <div
+            className={`bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto ${closingForm ? 'animate-bubble-out' : 'animate-bubble-in'}`}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
+              <h2 className="text-base font-semibold text-gray-800">{editId ? 'Edit Pegawai' : 'Tambah Pegawai Baru'}</h2>
+              <button onClick={closeForm} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Nama Lengkap</label>
-              <input required className="select-filter w-full" value={form.nama}
-                onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Golongan</label>
-              <select className="select-filter w-full" value={form.golongan}
-                onChange={e => setForm(f => ({ ...f, golongan: e.target.value }))}>
-                <option value="">— pilih golongan —</option>
-                <optgroup label="PNS">
-                  {GOLONGAN_PANGKAT.map(g => <option key={g.golongan} value={g.golongan}>{g.golongan} — {g.pangkat}</option>)}
-                </optgroup>
-                <optgroup label="PPPK">
-                  {GOLONGAN_PPPK.map(g => <option key={`pppk-${g}`} value={g}>Golongan {g} (PPPK)</option>)}
-                </optgroup>
-              </select>
-              {pangkatDariGolongan(form.golongan)
-                ? <p className="text-xs text-gray-400 mt-1">Pangkat: {pangkatDariGolongan(form.golongan)}</p>
-                : isGolonganPppk(form.golongan) && <p className="text-xs text-gray-400 mt-1">PPPK — Golongan {form.golongan}</p>}
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
-              <input className="select-filter w-full" value={form.jabatan}
-                onChange={e => setForm(f => ({ ...f, jabatan: e.target.value }))} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Jenis Kelamin</label>
-              <select className="select-filter w-full" value={form.jenis_kelamin}
-                onChange={e => setForm(f => ({ ...f, jenis_kelamin: e.target.value }))}>
-                <option value="">— pilih —</option>
-                <option value="L">Laki-laki</option>
-                <option value="P">Perempuan</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Role BMD</label>
-              <select className="select-filter w-full" value={form.role_bmd}
-                onChange={e => setForm(f => ({ ...f, role_bmd: e.target.value }))}>
-                {ROLE_BMD.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-            <div className="col-span-2">
-              <label className="block text-xs text-gray-500 mb-1">SKPD</label>
-              <SkpdCombobox value={form.skpd_id} onChange={id => setForm(f => ({ ...f, skpd_id: id }))}
-                placeholder="Ketik nama SKPD... (kosongkan jika tanpa SKPD)" allowClear />
-            </div>
-            <div className="col-span-2">
-              <button type="submit" disabled={saving} className="btn-primary">
-                {saving ? 'Menyimpan...' : 'Simpan'}
-              </button>
-            </div>
-          </form>
+            <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 p-6">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">NIP</label>
+                <input required className="select-filter w-full" value={form.nip}
+                  onChange={e => setForm(f => ({ ...f, nip: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Nama Lengkap</label>
+                <input required className="select-filter w-full" value={form.nama}
+                  onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Golongan</label>
+                <select className="select-filter w-full" value={form.golongan}
+                  onChange={e => setForm(f => ({ ...f, golongan: e.target.value }))}>
+                  <option value="">— pilih golongan —</option>
+                  <optgroup label="PNS">
+                    {GOLONGAN_PANGKAT.map(g => <option key={g.golongan} value={g.golongan}>{g.golongan} — {g.pangkat}</option>)}
+                  </optgroup>
+                  <optgroup label="PPPK">
+                    {GOLONGAN_PPPK.map(g => <option key={`pppk-${g}`} value={g}>Golongan {g} (PPPK)</option>)}
+                  </optgroup>
+                </select>
+                {pangkatDariGolongan(form.golongan)
+                  ? <p className="text-xs text-gray-400 mt-1">Pangkat: {pangkatDariGolongan(form.golongan)}</p>
+                  : isGolonganPppk(form.golongan) && <p className="text-xs text-gray-400 mt-1">PPPK — Golongan {form.golongan}</p>}
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
+                <input className="select-filter w-full" value={form.jabatan}
+                  onChange={e => setForm(f => ({ ...f, jabatan: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Jenis Kelamin</label>
+                <select className="select-filter w-full" value={form.jenis_kelamin}
+                  onChange={e => setForm(f => ({ ...f, jenis_kelamin: e.target.value }))}>
+                  <option value="">— pilih —</option>
+                  <option value="L">Laki-laki</option>
+                  <option value="P">Perempuan</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Role BMD</label>
+                <select className="select-filter w-full" value={form.role_bmd}
+                  onChange={e => setForm(f => ({ ...f, role_bmd: e.target.value }))}>
+                  {ROLE_BMD.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">SKPD</label>
+                <SkpdCombobox value={form.skpd_id} onChange={id => setForm(f => ({ ...f, skpd_id: id }))}
+                  placeholder="Ketik nama SKPD... (kosongkan jika tanpa SKPD)" allowClear />
+              </div>
+              <div className="col-span-2">
+                <button type="submit" disabled={saving} className="btn-primary">
+                  {saving ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -483,6 +514,7 @@ export default function AdminPegawaiPage() {
                 <th className="table-th whitespace-nowrap">Golongan</th>
                 <th className="table-th whitespace-nowrap">Pangkat</th>
                 <th className="table-th whitespace-nowrap">Jabatan</th>
+                <th className="table-th whitespace-nowrap">Gender</th>
                 <th className="table-th whitespace-nowrap">Role BMD</th>
                 <th className="table-th whitespace-nowrap">Edit</th>
                 <th className="table-th whitespace-nowrap">Hapus</th>
@@ -490,9 +522,9 @@ export default function AdminPegawaiPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+                <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
               ) : sortedList.length === 0 ? (
-                <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Belum ada pegawai.</td></tr>
+                <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">Belum ada pegawai.</td></tr>
               ) : sortedList.map(p => (
                 <tr key={p.id}>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.skpd?.nama || '—'}</td>
@@ -503,6 +535,7 @@ export default function AdminPegawaiPage() {
                   </td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.pangkat || '—'}</td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.jabatan || '—'}</td>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.jenis_kelamin === 'L' ? 'Laki-laki' : p.jenis_kelamin === 'P' ? 'Perempuan' : '—'}</td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{ROLE_BMD.find(r => r.value === p.role_bmd)?.label || p.role_bmd}</td>
                   <td className="table-td whitespace-nowrap">
                     <button onClick={() => openEdit(p)} className="text-teal hover:underline text-xs font-medium">Edit</button>
