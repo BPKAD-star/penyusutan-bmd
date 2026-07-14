@@ -22,7 +22,7 @@ const LABEL_IPA_ROLE: Record<string, string> = {
 type Pegawai = { id: string; nip: string; nama: string; jabatan: string | null }
 
 const FORM_KOSONG = {
-  email: '', password: '', username: '', role: 'pengurus_pembantu', pegawai_id: '',
+  email: '', password: '', role: 'pengurus_pembantu', ipa_role: '', pegawai_id: '',
 }
 
 function EyeToggleButton({ shown, onClick }: { shown: boolean; onClick: () => void }) {
@@ -186,17 +186,12 @@ export default function AdminUserPage() {
               </select>
               <p className="text-xs text-gray-400 mt-1">Belum ada di daftar? Tambahkan dulu di menu Daftar Pegawai.</p>
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Username</label>
-              <input required className="select-filter w-full" value={form.username}
-                onChange={e => setForm(f => ({ ...f, username: e.target.value }))} />
-            </div>
-            <div>
+            <div className="col-span-2">
               <label className="block text-xs text-gray-500 mb-1">Username / Email (untuk login)</label>
               <input required className="select-filter w-full" value={form.email}
                 placeholder="mis. pengurusadimas atau nama@email.com"
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-              <p className="text-xs text-gray-400 mt-1">Boleh username bebas (tanpa @) atau email asli.</p>
+              <p className="text-xs text-gray-400 mt-1">Boleh username bebas (tanpa @, otomatis dipakai jadi nama login) atau email asli.</p>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Password</label>
@@ -212,6 +207,14 @@ export default function AdminUserPage() {
               <select className="select-filter w-full" value={form.role}
                 onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
                 {ROLE_VALUES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs text-gray-500 mb-1">Role IPA <span className="text-gray-400">(opsional — modul Penilaian IPA)</span></label>
+              <select className="select-filter w-full" value={form.ipa_role}
+                onChange={e => setForm(f => ({ ...f, ipa_role: e.target.value }))}>
+                <option value="">— tidak ikut —</option>
+                {Object.entries(LABEL_IPA_ROLE).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
               </select>
             </div>
             <div className="col-span-2">

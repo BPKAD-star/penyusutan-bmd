@@ -4,11 +4,14 @@ import { ROLE_VALUES } from '@/lib/roles'
 import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
-  const { email: rawIdentifier, password, pegawai_id, role, username } = await req.json()
+  const { email: rawIdentifier, password, pegawai_id, role, ipa_role } = await req.json()
   const email = toAuthEmail(rawIdentifier)
   if (!(ROLE_VALUES as readonly string[]).includes(role)) {
     return NextResponse.json({ error: 'Role tidak valid' }, { status: 400 })
   }
+  // Nama login yang diketik operator (sebelum ditempeli domain sintetis) dipakai
+  // sbg username tampilan — tak ada lagi field Username terpisah.
+  const username = String(rawIdentifier || '').trim() || null
 
   // Hanya admin yang boleh membuat user
   const session = createClient()
@@ -35,7 +38,8 @@ export async function POST(req: Request) {
     id: data.user.id,
     email,
     role,
-    username: username || null,
+    ipa_role: ipa_role || null,
+    username,
     pegawai_id: pegawai.id,
     skpd_id: pegawai.skpd_id,
   })
