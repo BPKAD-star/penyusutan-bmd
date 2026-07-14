@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
@@ -29,6 +29,33 @@ const ROLE_BMD = [
   { value: 'kuasa_pengguna_barang', label: 'Kuasa Pengguna Barang' },
   { value: 'pengurus_barang_pembantu', label: 'Pengurus Barang Pembantu' },
 ]
+// Posisi tiap role di hierarki (dipakai utk urutan tampil, BUKAN cuma dropdown) —
+// urutan array ini SUDAH persis hierarki organisasi BMD: Pengelola → Pengguna → Sub-unit.
+const ROLE_ORDER = new Map(ROLE_BMD.map((r, i) => [r.value, i]))
+
+// ── Urutan SKPD sesuai menu Admin > SKPD (lib/tree walk: induk dulu, lalu
+// anak-anaknya, tiap level diurutkan alfabetis by nama) — BUKAN urut kode. Dipakai
+// utk mengelompokkan Daftar Pegawai per SKPD sesuai hierarki organisasi yg sama.
+type SkpdTreeRow = { id: number; nama: string; parent_id: number | null }
+function buildSkpdOrder(rows: SkpdTreeRow[]): Map<number, number> {
+  const childrenOf = new Map<number, SkpdTreeRow[]>()
+  for (const s of rows) {
+    if (s.parent_id == null) continue
+    const arr = childrenOf.get(s.parent_id) || []
+    arr.push(s)
+    childrenOf.set(s.parent_id, arr)
+  }
+  for (const arr of childrenOf.values()) arr.sort((a, b) => a.nama.localeCompare(b.nama))
+
+  const order = new Map<number, number>()
+  let i = 0
+  function walk(node: SkpdTreeRow) {
+    order.set(node.id, i++)
+    for (const c of childrenOf.get(node.id) || []) walk(c)
+  }
+  for (const r of rows.filter(s => s.parent_id == null).sort((a, b) => a.nama.localeCompare(b.nama))) walk(r)
+  return order
+}
 
 // Pangkat & golongan/ruang PNS baku (PP 11/2017 jo. PP 99/2000). Pangkat
 // otomatis mengikuti golongan yang dipilih — operator tidak isi manual lagi.
@@ -114,13 +141,40 @@ export default function AdminPegawaiPage() {
   const [committingImport, setCommittingImport] = useState(false)
   const [importMsg, setImportMsg] = useState('')
 
+  const [skpdOrder, setSkpdOrder] = useState<Map<number, number>>(new Map())
+
   async function load() {
     const { data } = await supabase.from('admin_pegawai').select('*,skpd:admin_skpd(nama)').order('nama')
     setList((data as never as Pegawai[]) || [])
     setLoading(false)
   }
 
-  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  async function loadSkpdOrder() {
+    const rows: SkpdTreeRow[] = []
+    for (let from = 0; ; from += 1000) {
+      const { data } = await supabase.from('admin_skpd').select('id,nama,parent_id').range(from, from + 999)
+      if (!data || data.length === 0) break
+      rows.push(...(data as SkpdTreeRow[]))
+      if (data.length < 1000) break
+    }
+    setSkpdOrder(buildSkpdOrder(rows))
+  }
+
+  // Urutan tampil: per SKPD sesuai hierarki menu Admin > SKPD, lalu per Role BMD
+  // sesuai hierarki organisasi (lihat ROLE_ORDER), lalu nama sbg tie-breaker.
+  const sortedList = useMemo(() => {
+    return [...list].sort((a, b) => {
+      const oa = a.skpd_id != null ? skpdOrder.get(a.skpd_id) ?? Infinity : Infinity
+      const ob = b.skpd_id != null ? skpdOrder.get(b.skpd_id) ?? Infinity : Infinity
+      if (oa !== ob) return oa - ob
+      const ra = ROLE_ORDER.get(a.role_bmd) ?? ROLE_BMD.length
+      const rb = ROLE_ORDER.get(b.role_bmd) ?? ROLE_BMD.length
+      if (ra !== rb) return ra - rb
+      return a.nama.localeCompare(b.nama)
+    })
+  }, [list, skpdOrder])
+
+  useEffect(() => { load(); loadSkpdOrder() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openCreate() {
     setEditId(null)
@@ -431,9 +485,9 @@ export default function AdminPegawaiPage() {
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
-              ) : list.length === 0 ? (
+              ) : sortedList.length === 0 ? (
                 <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Belum ada pegawai.</td></tr>
-              ) : list.map(p => (
+              ) : sortedList.map(p => (
                 <tr key={p.id}>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.skpd?.nama || '—'}</td>
                   <td className="table-td whitespace-nowrap text-sm font-medium">{p.nama}</td>
