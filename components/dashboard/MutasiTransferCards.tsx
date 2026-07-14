@@ -117,9 +117,9 @@ async function fetchSkpdMap(supabase: ReturnType<typeof createClient>): Promise<
 }
 
 // ── Popup "Disetujui": kelompok per SKPD (asal utk arah keluar, tujuan utk
-// arah masuk) — hanya baris yang MASIH berlaku (aset.skpd_id === skpd_tujuan
-// baris itu, sama persis logika count di server, lihat app/dashboard/page.tsx
-// countTransferAktif).
+// arah masuk) — hanya aset yang event TERAKHIR-nya masih transfer maju yg berlaku
+// (bukan pembalik, & aset kini di skpd_tujuan). Sama persis logika count di server,
+// lihat app/dashboard/page.tsx countTransferAktif.
 function DisetujuiModal({ kategori, arah, label, onClose }: { kategori: Kategori; arah: Arah; label: string; onClose: () => void }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
@@ -128,18 +128,27 @@ function DisetujuiModal({ kategori, arah, label, onClose }: { kategori: Kategori
   useEffect(() => {
     (async () => {
       const skpdMap = await fetchSkpdMap(supabase)
-      const rows: { skpd_asal: number; skpd_tujuan: number; nilai: number; aset: { id: string; nibar: string | null; nama_barang: string | null; skpd_id: number } | null }[] = []
+      const rows: { id: number; skpd_asal: number; skpd_tujuan: number; nilai: number; payload: { reversal?: boolean } | null; aset: { id: string; nibar: string | null; nama_barang: string | null; skpd_id: number } | null }[] = []
       for (let from = 0; ; from += 1000) {
         const { data } = await supabase.from('transaksi_bmd')
-          .select('skpd_asal,skpd_tujuan,nilai,aset:aset_id(id,nibar,nama_barang,skpd_id)')
+          .select('id,skpd_asal,skpd_tujuan,nilai,payload,aset:aset_id(id,nibar,nama_barang,skpd_id)')
           .eq('jenis', kategori).range(from, from + 999)
         if (!data || data.length === 0) break
         rows.push(...(data as unknown as typeof rows))
         if (data.length < 1000) break
       }
-      const groupMap = new Map<number, { total: number; lines: { lawan: number; nama_barang: string | null; nibar: string | null; nilai: number }[] }>()
+      // Ambil event TERAKHIR per aset (id terbesar) — sama logika dgn countTransferAktif
+      // di app/dashboard/page.tsx: baris pembalik (payload.reversal) & aset yg sudah
+      // balik ke asal TIDAK ditampilkan sbg transfer aktif.
+      const latest = new Map<string, typeof rows[number]>()
       for (const r of rows) {
-        if (!r.aset || r.aset.skpd_id !== r.skpd_tujuan) continue
+        if (!r.aset) continue
+        const prev = latest.get(r.aset.id)
+        if (!prev || r.id > prev.id) latest.set(r.aset.id, r)
+      }
+      const groupMap = new Map<number, { total: number; lines: { lawan: number; nama_barang: string | null; nibar: string | null; nilai: number }[] }>()
+      for (const r of latest.values()) {
+        if (r.payload?.reversal === true || !r.aset || r.aset.skpd_id !== r.skpd_tujuan) continue
         const ownerId = arah === 'keluar' ? r.skpd_asal : r.skpd_tujuan
         const lawanId = arah === 'keluar' ? r.skpd_tujuan : r.skpd_asal
         const g = groupMap.get(ownerId) || { total: 0, lines: [] }

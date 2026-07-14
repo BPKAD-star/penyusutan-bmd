@@ -25,20 +25,32 @@ type SB = ReturnType<typeof createClient>
 // jenis transfer: 'pengalihan_status' (lintas SKPD induk) & 'mutasi_internal'
 // (dalam satu SKPD induk).
 async function countTransferAktif(sb: SB, jenis: string): Promise<number> {
-  let n = 0
+  // Hitung aset yang SEDANG berpindah akibat transfer. Kunci: baca event TERAKHIR
+  // per aset (id ledger terbesar — append-only jadi id = urutan kejadian). Aset
+  // dihitung hanya kalau event terakhirnya BUKAN pembalik (payload.reversal, dipakai
+  // baik pengalihan_status maupun mutasi_internal) DAN aset kini benar-benar di
+  // skpd_tujuan event itu. Tanpa cek ini, baris pengembalian (skpd_tujuan = SKPD
+  // asal, tempat barang balik) ikut kehitung karena aset.skpd_id kebetulan sama dgn
+  // skpd_tujuan-nya — bikin transfer yg SUDAH dikembalikan tetap tampil "aktif".
+  const latest = new Map<string, { id: number; tujuan: number; reversal: boolean; cur: number | null }>()
   try {
     for (let from = 0; ; from += 1000) {
       const { data, error } = await sb.from('transaksi_bmd')
-        .select('skpd_tujuan, aset(skpd_id)')
+        .select('id, aset_id, skpd_tujuan, payload, aset(skpd_id)')
         .eq('jenis', jenis)
         .range(from, from + 999)
       if (error || !data || data.length === 0) break
-      for (const r of data as unknown as { skpd_tujuan: number; aset: { skpd_id: number } | null }[]) {
-        if (r.aset && r.aset.skpd_id === r.skpd_tujuan) n++
+      for (const r of data as unknown as { id: number; aset_id: string; skpd_tujuan: number; payload: { reversal?: boolean } | null; aset: { skpd_id: number } | null }[]) {
+        const prev = latest.get(r.aset_id)
+        if (!prev || r.id > prev.id) {
+          latest.set(r.aset_id, { id: r.id, tujuan: r.skpd_tujuan, reversal: r.payload?.reversal === true, cur: r.aset?.skpd_id ?? null })
+        }
       }
       if (data.length < 1000) break
     }
   } catch { /* transaksi_bmd/aset belum ada → 0 */ }
+  let n = 0
+  for (const v of latest.values()) if (!v.reversal && v.cur === v.tujuan) n++
   return n
 }
 
