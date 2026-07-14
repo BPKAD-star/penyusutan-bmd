@@ -138,6 +138,10 @@ export const JENIS_TRANSAKSI_LABEL: Record<string, string> = {
   kapitalisasi_serap: 'Kapitalisasi — Barang Anak Terserap',
   batal_kapitalisasi: 'Pembatalan Kapitalisasi',
   batal_pengadaan: 'Pembatalan Pengadaan (Koreksi Input)',
+  pemecahan_keluar: 'Pemecahan Barang — Induk Dipecah',
+  pemecahan_masuk: 'Pemecahan Barang — Pecahan Baru',
+  batal_pemecahan: 'Pembatalan Pemecahan — Induk Kembali',
+  batal_pemecahan_masuk: 'Pembatalan Pemecahan — Pecahan Dibuang',
 }
 
 export const JENIS_PEROLEHAN = ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya'] as const

@@ -109,6 +109,21 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       // mundur ke tgl perolehan aslinya sendiri (bukan hari ini) — sama pola
       // dgn batal_pengadaan, cuma beda jenis ledger biar kebeda di audit.
       return { status: 'dihapus' }
+    case 'pemecahan_keluar':
+      // Pemecahan Barang: INDUK di-retire (soft-delete). Penyusutan berhenti
+      // sejak periode pemecahan; induk hilang dari laporan (SEMBUNYI).
+      return { status: 'dihapus' }
+    case 'pemecahan_masuk':
+      // Pecahan (aset BARU) sudah dibuat lengkap dgn nilai_perolehan-nya sebelum
+      // event ini — sama pola dgn kdp_selesai_masuk. Tak perlu patch tambahan.
+      return null
+    case 'batal_pemecahan':
+      // Batal pemecahan: INDUK aktif lagi (penyusutan lanjut di engine).
+      return { status: 'aktif' }
+    case 'batal_pemecahan_masuk':
+      // Batal pemecahan: PECAHAN dibuang (soft-delete). Ledger pemecahan_masuk-nya
+      // tetap tersimpan utk audit (append-only).
+      return { status: 'dihapus' }
     case 'batal_penghapusan':
       // Kebalikan penghapusan: barang kembali aktif, penyusutan lanjut lagi.
       return { status: 'aktif' }

@@ -33,6 +33,10 @@ export const KIBAR_JENIS_LABEL: Record<string, { label: string; tone: Tone }> = 
   batal_tukar_menukar: { label: 'Pembatalan Tukar Menukar (Koreksi)', tone: 'keluar' },
   batal_penghapusan: { label: 'Pembatalan Penghapusan (Muncul Kembali)', tone: 'masuk' },
   batal_kapitalisasi: { label: 'Pembatalan Kapitalisasi', tone: 'netral' },
+  pemecahan_keluar: { label: 'Pemecahan Barang (Induk Dipecah)', tone: 'keluar' },
+  pemecahan_masuk: { label: 'Pemecahan Barang (Pecahan Baru)', tone: 'masuk' },
+  batal_pemecahan: { label: 'Pembatalan Pemecahan (Induk Kembali)', tone: 'masuk' },
+  batal_pemecahan_masuk: { label: 'Pembatalan Pemecahan (Pecahan Dibuang)', tone: 'keluar' },
 }
 
 const SUB_JENIS_LABEL: Record<string, string> = {
@@ -74,6 +78,11 @@ export function kibarDetail(
       return p.survivor_nibar ? `Digabung ke NIBAR: ${p.survivor_nibar}` : null
     case 'kapitalisasi_serap':
       return p.induk_nibar ? `Diserap ke NIBAR induk: ${p.induk_nibar}` : null
+    case 'pemecahan_keluar':
+      return p.jumlah_pecahan ? `Dipecah jadi ${p.jumlah_pecahan} pecahan` : null
+    case 'pemecahan_masuk':
+    case 'batal_pemecahan':
+      return p.induk_nibar ? `Induk: NIBAR ${p.induk_nibar}` : null
     case 'batal_kapitalisasi':
       return p.no_dokumen ? `Dokumen: ${p.no_dokumen}` : null
     case 'pengalihan_status':

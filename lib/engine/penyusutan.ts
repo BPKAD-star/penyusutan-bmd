@@ -146,6 +146,14 @@ export function hitungJadwalAset(
     // perolehan biasa). KDP-nya sendiri (1.3.6) tetap perlakuan 'tidak' → bail-out.
     ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya', 'kdp_selesai_masuk'].includes(t.jenis))
 
+  // Pecahan hasil Pemecahan Barang: baseline MID-LIFE. Payload bentuk checkpoint
+  // (nilai buku/akumulasi/sisa masa manfaat/beban) hasil alokasi proporsional dari
+  // induk. Beda dari saldo_awal_checkpoint: mulaiSetelah = periode SEBELUM event,
+  // supaya pecahan mulai akrual TEPAT di periode pemecahan (nyambung dgn induk yg
+  // berhenti di periode itu — tanpa gap/overlap). Kalah prioritas dari saldoAwal
+  // (kalau pecahan sudah pernah lewat Tutup Tahun, checkpoint yg lebih baru menang).
+  const pemecahanMasuk = ledger.find(t => t.jenis === 'pemecahan_masuk')
+
   if (saldoAwal) {
     const p = saldoAwal.payload as Record<string, number | null>
     nilaiPerolehan = Number(saldoAwal.nilai || 0)
@@ -155,6 +163,16 @@ export function hitungJadwalAset(
     beban = Math.round(Number(p.beban_per_smt ?? 0))
     masaTahun = p.masa_manfaat_smt ? Number(p.masa_manfaat_smt) / 2 : (masaManfaatKode.get(kode) ?? null)
     mulaiSetelah = saldoAwal.periode
+  } else if (pemecahanMasuk) {
+    const p = pemecahanMasuk.payload as Record<string, number | null>
+    nilaiPerolehan = Number(pemecahanMasuk.nilai || 0)
+    nilaiBuku = Number(p.nilai_buku_awal ?? 0)
+    akumulasi = Number(p.akumulasi ?? 0)
+    sisaSmt = Math.max(0, Math.trunc(Number(p.sisa_masa_manfaat_smt ?? 0)))
+    beban = Math.round(Number(p.beban_per_smt ?? 0))
+    masaTahun = p.masa_manfaat_smt ? Number(p.masa_manfaat_smt) / 2 : (masaManfaatKode.get(kode) ?? null)
+    // Akrual mulai TEPAT di periode pemecahan → baseline = periode sebelumnya.
+    mulaiSetelah = prevPeriodeOf(pemecahanMasuk.periode)
   } else if (perolehan) {
     nilaiPerolehan = Number(perolehan.nilai || 0)
     nilaiBuku = nilaiPerolehan
@@ -263,6 +281,16 @@ export function hitungJadwalAset(
         case 'koreksi_pencatatan_ganda':
           berhenti = true // gabung duplikat: barang ini digabung ke survivor, sendiri hilang dari laporan
           break
+        case 'pemecahan_keluar':
+          berhenti = true // induk dipecah jadi N pecahan: penyusutan berhenti, induk hilang dari laporan
+          break
+        case 'batal_pemecahan_masuk':
+          berhenti = true // pecahan dibatalkan: hilang dari laporan (ledger pemecahan_masuk tetap tersimpan)
+          break
+        case 'batal_pemecahan':
+          berhenti = false // batal pemecahan: induk aktif lagi, penyusutan lanjut sejak periode ini
+          break
+        // pemecahan_masuk: BUKAN event di sini — dibaca sbg seed baseline di atas.
         case 'batal_penghapusan':
           berhenti = false // kebalikan penghapusan: penyusutan lanjut sejak periode ini
           break

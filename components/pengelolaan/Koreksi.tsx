@@ -10,10 +10,12 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah } from '@/lib/export'
-import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
+import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
+import { generateNibars } from '@/lib/nibar'
+import { ASET_FIELD_COLS } from '@/lib/asetFields'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { useDateBounds } from '@/components/useTahunBuku'
+import { useDateBounds, useTahunBukuMap } from '@/components/useTahunBuku'
 import FormShell from './FormShell'
 
 // ── Field spesifikasi (dipakai alasan "Spesifikasi Barang" di bawah) ────────
@@ -24,13 +26,14 @@ const KONDISI_OPT = ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang', 'Tidak Dit
 // dikelola khusus di menu GIS BMD (aset_bidang_tanah), biar gak ada 2 sumber.
 
 // ── Koreksi — satu alur ber-SK, 4 alasan ─────────────────────────────────────
-type Alasan = 'nilai_perolehan' | 'kuantitas_bertambah' | 'pencatatan_ganda' | 'spesifikasi'
+type Alasan = 'nilai_perolehan' | 'pencatatan_ganda' | 'spesifikasi'
 const ALASAN_OPT: { value: Alasan; label: string; deskripsi: string; disabled?: boolean }[] = [
   { value: 'nilai_perolehan', label: 'Nilai Perolehan', deskripsi: 'Koreksi nilai perolehan barang — beban penyusutan disebar ulang ke sisa umur oleh engine.' },
-  { value: 'kuantitas_bertambah', label: 'Kuantitas Bertambah (Pemecahan)', deskripsi: 'Belum tersedia — rumus alokasi proporsional (nilai buku/akumulasi/beban) masih disiapkan.', disabled: true },
   { value: 'pencatatan_ganda', label: 'Pencatatan Ganda (Gabung Duplikat)', deskripsi: 'Gabungkan barang yang kecatat dua kali jadi satu register — kode barang harus identik.' },
   { value: 'spesifikasi', label: 'Spesifikasi Barang', deskripsi: 'Koreksi field spesifikasi (nama, dokumen, kondisi, dll) satu barang — tanpa efek nilai/penyusutan.' },
 ]
+// Pemecahan Barang punya alur sendiri (1 induk → N pecahan), BUKAN salah satu
+// "alasan" pilih-barang di atas — lihat PemecahanPanel & tombol "+ Pemecahan Barang".
 const ALASAN_LABEL = Object.fromEntries(ALASAN_OPT.map(a => [a.value, a.label])) as Record<Alasan, string>
 const tahunDari = (tgl: string | null) => tgl ? tgl.slice(0, 4) : '-'
 
@@ -52,6 +55,11 @@ type JurnalLine = {
   nilai: number; payload: LinePayload | null
 }
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
+
+// ── Pemecahan Barang (alur sendiri: 1 induk → N pecahan) ────────────────────
+type PemecahanHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null }
+type PemecahanRow = { aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; jumlah: number; nilai: number }
+type PemecahanJurnal = PemecahanHeader & { induk: PemecahanRow | null; pecahan: PemecahanRow[]; total: number; dibatalkan: boolean }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori'
 
@@ -80,16 +88,19 @@ export default function Koreksi() {
 // ════════════════════════════════════════════════════════════════════════
 function KoreksiTransaksi() {
   const supabase = createClient()
+  const tahunMap = useTahunBukuMap()
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [skpd, setSkpd] = useState('')
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
+  const [pemecahanJurnals, setPemecahanJurnals] = useState<PemecahanJurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
 
-  const [mode, setMode] = useState<'list' | 'tambah'>('list')
+  const [mode, setMode] = useState<'list' | 'tambah' | 'pemecahan'>('list')
   const [addTo, setAddTo] = useState<Header | null>(null)
   const [editing, setEditing] = useState<Header | null>(null)
+  const [batalId, setBatalId] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -118,12 +129,15 @@ function KoreksiTransaksi() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadJurnals = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setJurnals([]); return }
+    if (!skpdId) { setJurnals([]); setPemecahanJurnals([]); return }
     setLoadingJurnal(true)
     const { data: headers } = await supabase.from('jurnal_header')
       .select(HEADER_COLS).eq('kategori', 'koreksi').eq('skpd_id', Number(skpdId))
       .order('tanggal', { ascending: false })
-    const hs = (headers || []) as unknown as Header[]
+    const allHeaders = (headers || []) as unknown as (Header & { jenis: string })[]
+    const hs = allHeaders.filter(h => h.jenis !== 'pemecahan') as unknown as Header[]
+    const pemHeaders = allHeaders.filter(h => h.jenis === 'pemecahan') as unknown as PemecahanHeader[]
+
     const jmap = new Map<string, Jurnal>()
     for (const h of hs) jmap.set(h.id, { ...h, lines: [], total: 0 })
 
@@ -147,12 +161,70 @@ function KoreksiTransaksi() {
       }
     }
     setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
+
+    // ── Jurnal Pemecahan: induk (pemecahan_keluar) + pecahan (pemecahan_masuk) ──
+    const pmap = new Map<string, PemecahanJurnal>()
+    for (const h of pemHeaders) pmap.set(h.id, { ...h, induk: null, pecahan: [], total: 0, dibatalkan: false })
+    const pemIds = pemHeaders.map(h => h.id)
+    if (pemIds.length > 0) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('header_id,jenis,nilai,aset:aset_id(id,nibar,nama_barang,kode,jumlah)')
+        .in('jenis', ['pemecahan_keluar', 'pemecahan_masuk', 'batal_pemecahan'] as never)
+        .in('header_id', pemIds)
+        .order('id', { ascending: true })
+      const rows = (data || []) as unknown as {
+        header_id: string; jenis: string; nilai: number
+        aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; jumlah: number } | null
+      }[]
+      for (const r of rows) {
+        const j = pmap.get(r.header_id)
+        if (!j) continue
+        if (r.jenis === 'batal_pemecahan') { j.dibatalkan = true; continue }
+        if (!r.aset) continue
+        const row: PemecahanRow = { aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, jumlah: r.aset.jumlah, nilai: r.nilai }
+        if (r.jenis === 'pemecahan_keluar') j.induk = row
+        else { j.pecahan.push(row); j.total += r.nilai }
+      }
+    }
+    setPemecahanJurnals([...pmap.values()].filter(j => j.induk || j.pecahan.length > 0))
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null) }, [skpd, loadJurnals])
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
+
+  // Batal Pemecahan: induk aktif lagi (batal_pemecahan) + pecahan dibuang
+  // (batal_pemecahan_masuk). Dicatat mundur ke tanggal pemecahan asli supaya
+  // period-correct. Hanya boleh selama tahun pemecahan masih TERBUKA (guard DB
+  // juga menolak kalau terkunci — ini fail-fast di UI).
+  async function handleBatalPemecahan(j: PemecahanJurnal) {
+    const tahun = parsePeriode(j.periode).tahun
+    if (tahunMap[tahun] !== 'terbuka') {
+      setMsg(`Error: Tahun ${tahun} sudah terkunci — pemecahan tidak bisa dibatalkan. Koreksi lewat pemecahan/gabung baru di periode berjalan.`)
+      return
+    }
+    if (!confirm(`Batalkan pemecahan No. ${j.no_sk}? Induk akan aktif kembali dan ${j.pecahan.length} pecahan dibuang.`)) return
+    setBatalId(j.id)
+    setMsg('')
+    if (j.induk) {
+      const { error } = await catatTransaksi(supabase, {
+        asetId: j.induk.aset_id, jenis: 'batal_pemecahan', tanggal: j.tanggal, nilai: j.induk.nilai, headerId: j.id,
+        payload: { induk_nibar: j.induk.nibar }, keterangan: `Pembatalan pemecahan ${j.no_sk}`,
+      })
+      if (error) { setMsg(`Error: ${error}`); setBatalId(null); return }
+    }
+    for (const p of j.pecahan) {
+      const { error } = await catatTransaksi(supabase, {
+        asetId: p.aset_id, jenis: 'batal_pemecahan_masuk', tanggal: j.tanggal, nilai: p.nilai, headerId: j.id,
+        payload: { induk_nibar: j.induk?.nibar || null }, keterangan: `Pembatalan pemecahan ${j.no_sk}`,
+      })
+      if (error) { setMsg(`Sebagian batal gagal: ${error} — ulangi untuk menuntaskan.`); setBatalId(null); loadJurnals(skpd); return }
+    }
+    setBatalId(null)
+    setMsg(`Pemecahan ${j.no_sk} dibatalkan — induk kembali aktif. Jalankan engine untuk memperbarui penyusutan.`)
+    loadJurnals(skpd)
+  }
 
   return (
     <>
@@ -178,17 +250,30 @@ function KoreksiTransaksi() {
         <KoreksiForm skpdId={Number(skpd)} skpdNama={skpdNama || ''} golonganLabels={golonganLabels} header={addTo}
           onCancel={() => setAddTo(null)}
           onSaved={n => { setAddTo(null); setMsg(`${n} barang ditambahkan ke jurnal ${addTo.no_sk}.`); loadJurnals(skpd) }} />
+      ) : mode === 'pemecahan' ? (
+        <PemecahanPanel skpdId={Number(skpd)} skpdNama={skpdNama || ''}
+          onCancel={() => setMode('list')}
+          onSaved={(n, no) => { setMode('list'); setMsg(`Pemecahan ${no} tersimpan — induk dipecah jadi ${n} pecahan. Jalankan engine untuk mengisi angka penyusutan pecahan.`); loadJurnals(skpd) }} />
       ) : (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} jurnal</span>
-            <button className="btn-primary" onClick={() => { setMsg(''); setMode('tambah') }}>+ Tambah Jurnal</button>
+            <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} koreksi · {pemecahanJurnals.length} pemecahan</span>
+            <div className="flex items-center gap-2">
+              <button className="btn-secondary" onClick={() => { setMsg(''); setMode('pemecahan') }}>+ Pemecahan Barang</button>
+              <button className="btn-primary" onClick={() => { setMsg(''); setMode('tambah') }}>+ Tambah Jurnal</button>
+            </div>
           </div>
           {loadingJurnal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
-          ) : jurnals.length === 0 ? (
+          ) : (jurnals.length === 0 && pemecahanJurnals.length === 0) ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Belum ada koreksi transaksi untuk SKPD ini.</div>
-          ) : jurnals.map(j => (
+          ) : (<>
+            {pemecahanJurnals.map(j => (
+              <PemecahanCard key={j.id} j={j} busy={batalId === j.id}
+                bisaBatal={tahunMap[parsePeriode(j.periode).tahun] === 'terbuka'}
+                onBatal={() => handleBatalPemecahan(j)} />
+            ))}
+            {jurnals.map(j => (
             <div key={j.id} className="card overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
                 <div className="flex items-start justify-between gap-4">
@@ -235,7 +320,8 @@ function KoreksiTransaksi() {
                 </table>
               </div>
             </div>
-          ))}
+            ))}
+          </>)}
         </div>
       )}
 
@@ -392,7 +478,6 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
 
   async function simpan() {
     setErr('')
-    if (alasan === 'kuantitas_bertambah') { setErr('Alasan ini belum tersedia.'); return }
 
     let h = header
     const headerBaru = !header
@@ -718,9 +803,406 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
         </div>
       )}
 
-      {alasanAktif === 'kuantitas_bertambah' && (
-        <div className="card p-8 text-center text-gray-400 text-sm">Alasan ini belum tersedia.</div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Pemecahan Barang — kartu tampil (induk retire + N pecahan) + tombol Batal
+// ════════════════════════════════════════════════════════════════════════
+function PemecahanCard({ j, busy, bisaBatal, onBatal }: {
+  j: PemecahanJurnal; busy: boolean; bisaBatal: boolean; onBatal: () => void
+}) {
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+        <div className="flex items-start justify-between gap-4">
+          <div className="text-sm space-y-0.5">
+            <p className="font-semibold text-gray-800">
+              Pemecahan Barang · No. {j.no_sk}
+              {j.dibatalkan && <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded">Dibatalkan</span>}
+            </p>
+            <p className="text-xs text-gray-500">Tgl. {j.tanggal} · {j.periode} · {j.pecahan.length} pecahan</p>
+            {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
+          </div>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Total Nilai Pecahan</p>
+              <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+            </div>
+            {!j.dibatalkan && (
+              <button disabled={busy || !bisaBatal} onClick={onBatal}
+                title={bisaBatal ? 'Batalkan pemecahan — induk kembali aktif' : 'Tahun sudah terkunci — tidak bisa dibatalkan'}
+                className="text-xs font-medium text-red-600 hover:text-red-700 border border-red-200 rounded px-2.5 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                {busy ? 'Membatalkan...' : 'Batal Pemecahan'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              <th className="table-th w-24">Peran</th>
+              <th className="table-th">Kode Register / Nama Barang</th>
+              <th className="table-th text-center">Jumlah</th>
+              <th className="table-th text-right">Nilai Perolehan</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {j.induk && (
+              <tr className="bg-amber-50/40">
+                <td className="table-td text-xs font-medium text-amber-700">Induk</td>
+                <td className="table-td">
+                  <p className="font-medium text-gray-800 text-xs">{j.induk.nama_barang || '-'}</p>
+                  <p className="text-gray-400 text-xs mt-0.5">{j.induk.nibar || '-'} · {j.induk.kode}</p>
+                </td>
+                <td className="table-td text-center text-xs">{j.induk.jumlah}</td>
+                <td className="table-td text-right text-xs">{formatRupiah(j.induk.nilai)}</td>
+              </tr>
+            )}
+            {j.pecahan.map(p => (
+              <tr key={p.aset_id}>
+                <td className="table-td text-xs text-gray-500">Pecahan</td>
+                <td className="table-td">
+                  <p className="font-medium text-gray-800 text-xs">{p.nama_barang || '-'}</p>
+                  <p className="text-gray-400 text-xs mt-0.5">{p.nibar || '-'} · {p.kode}</p>
+                </td>
+                <td className="table-td text-center text-xs">{p.jumlah}</td>
+                <td className="table-td text-right text-xs">{formatRupiah(p.nilai)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Pemecahan Barang — form buat: 1 induk → N pecahan (jumlah + nilai bebas,
+// total NILAI wajib = induk). Alokasi nilai buku/akumulasi PROPORSIONAL by
+// nilai; sisa pembulatan diserap di pecahan terakhir. Basis = state engine
+// induk pada semester SEBELUM cutover (penyusutan_semester).
+// ════════════════════════════════════════════════════════════════════════
+type IndukPecah = { id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai_perolehan: number; jumlah: number; tgl_perolehan: string | null; cara_perolehan: string | null }
+type BasisPecah = { nilai_buku: number; akumulasi: number; sisa_smt: number; masa_tahun: number | null; disusutkan: boolean }
+type Pecahan = { key: string; jumlah: string; nilai: string }
+const newKey = () => Math.random().toString(36).slice(2)
+
+function PemecahanPanel({ skpdId, skpdNama, onCancel, onSaved }: {
+  skpdId: number; skpdNama: string; onCancel: () => void; onSaved: (n: number, noSk: string) => void
+}) {
+  const supabase = createClient()
+  const dateBounds = useDateBounds()
+
+  const [noSk, setNoSk] = useState('')
+  const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
+  const [ket, setKet] = useState('')
+
+  const [qInduk, setQInduk] = useState('')
+  const [hasilInduk, setHasilInduk] = useState<IndukPecah[]>([])
+  const [induk, setInduk] = useState<IndukPecah | null>(null)
+  const [basis, setBasis] = useState<BasisPecah | null>(null)
+  const [basisErr, setBasisErr] = useState('')
+  const [basisLoading, setBasisLoading] = useState(false)
+
+  const [pieces, setPieces] = useState<Pecahan[]>([{ key: newKey(), jumlah: '1', nilai: '' }, { key: newKey(), jumlah: '1', nilai: '' }])
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  // Basis alokasi induk: state engine di semester SEBELUM cutover (dari tgl dok).
+  useEffect(() => {
+    if (!induk) { setBasis(null); setBasisErr(''); return }
+    ;(async () => {
+      setBasisLoading(true); setBasisErr(''); setBasis(null)
+      const cutover = periodeDariTanggal(tgl)
+      const basisPeriode = formatPeriode(previousPeriode(parsePeriode(cutover)))
+      const { data } = await supabase.from('penyusutan_semester')
+        .select('nilai_buku_akhir,akumulasi,sisa_semester,masa_manfaat_tahun')
+        .eq('aset_id', induk.id).eq('periode', basisPeriode).maybeSingle()
+      if (data) {
+        const d = data as { nilai_buku_akhir: number; akumulasi: number; sisa_semester: number; masa_manfaat_tahun: number | null }
+        setBasis({ nilai_buku: d.nilai_buku_akhir, akumulasi: d.akumulasi, sisa_smt: d.sisa_semester, masa_tahun: d.masa_manfaat_tahun, disusutkan: true })
+      } else if (perlakuanKode(induk.kode) === 'tidak') {
+        // Non-disusutkan (mis. ATL 1.3.5): tak ada baris engine — basis = nilai murni.
+        setBasis({ nilai_buku: induk.nilai_perolehan, akumulasi: 0, sisa_smt: 0, masa_tahun: null, disusutkan: false })
+      } else {
+        setBasisErr(`Belum ada data penyusutan induk untuk periode ${basisPeriode}. Jalankan engine dulu untuk periode itu, atau pilih tanggal dokumen di semester berikutnya.`)
+      }
+      setBasisLoading(false)
+    })()
+  }, [induk, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function cariInduk() {
+    if (!qInduk.trim()) return
+    const { data } = await supabase.from('aset')
+      .select('id,nibar,kode,nama_barang,nilai_perolehan,jumlah,tgl_perolehan,cara_perolehan')
+      .eq('status', 'aktif').eq('skpd_id', skpdId)
+      .or(`nibar.ilike.%${qInduk}%,nama_barang.ilike.%${qInduk}%,kode.ilike.%${qInduk}%`)
+      .limit(15)
+    // Tanah (1.3.1) & KDP (1.3.6) dikecualikan — punya alur sendiri (GIS BMD / Konstruksi).
+    const rows = ((data as IndukPecah[]) || []).filter(r => !['1.3.1', '1.3.6'].includes(kodeLevel3(r.kode)))
+    setHasilInduk(rows)
+  }
+
+  function setPiece(key: string, patch: Partial<Pecahan>) {
+    setPieces(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p))
+  }
+  function addPiece() { setPieces(prev => [...prev, { key: newKey(), jumlah: '1', nilai: '' }]) }
+  function removePiece(key: string) { setPieces(prev => prev.length <= 2 ? prev : prev.filter(p => p.key !== key)) }
+
+  // Alokasi proporsional by nilai; sisa pembulatan (NB/akumulasi) diserap di
+  // pecahan TERAKHIR supaya total kekal persis.
+  const alokasi = (() => {
+    if (!induk || !basis) return [] as { np: number; nb: number; ak: number; beban: number; valid: boolean }[]
+    const totalNP = Math.round(induk.nilai_perolehan)
+    let accNB = 0, accAk = 0
+    return pieces.map((p, i) => {
+      const jumlah = parseInt(p.jumlah, 10)
+      const np = Math.round(parseFloat(p.nilai))
+      const valid = Number.isFinite(jumlah) && jumlah >= 1 && Number.isFinite(np) && np > 0
+      const prop = totalNP > 0 && Number.isFinite(np) ? np / totalNP : 0
+      const last = i === pieces.length - 1
+      const nb = last ? basis.nilai_buku - accNB : Math.round(prop * basis.nilai_buku)
+      const ak = last ? basis.akumulasi - accAk : Math.round(prop * basis.akumulasi)
+      accNB += nb; accAk += ak
+      const beban = basis.sisa_smt > 0 ? Math.round(nb / basis.sisa_smt) : 0
+      return { np: Number.isFinite(np) ? np : 0, nb, ak, beban, valid }
+    })
+  })()
+
+  const totalNP = induk ? Math.round(induk.nilai_perolehan) : 0
+  const sumNP = alokasi.reduce((s, a) => s + a.np, 0)
+  const balance = induk != null && sumNP === totalNP
+  const semuaValid = alokasi.length >= 2 && alokasi.every(a => a.valid)
+
+  async function simpan() {
+    setErr('')
+    if (!noSk.trim()) { setErr('No. Dokumen Pemecahan wajib diisi.'); return }
+    if (!induk) { setErr('Pilih barang induk yang dipecah.'); return }
+    if (basisErr) { setErr(basisErr); return }
+    if (!basis) { setErr('Basis alokasi belum termuat. Tunggu sebentar / cek tanggal dokumen.'); return }
+    if (pieces.length < 2) { setErr('Minimal 2 pecahan.'); return }
+    if (!semuaValid) { setErr('Tiap pecahan wajib: jumlah ≥ 1 dan nilai perolehan > 0.'); return }
+    if (!balance) { setErr(`Total nilai pecahan (${formatRupiah(sumNP)}) harus SAMA dengan nilai perolehan induk (${formatRupiah(totalNP)}). Selisih ${formatRupiah(sumNP - totalNP)}.`); return }
+
+    setSaving(true)
+    // 1. Header jurnal pemecahan (kategori 'koreksi', jenis 'pemecahan').
+    const { data: hData, error: hErr } = await supabase.from('jurnal_header').insert({
+      skpd_id: skpdId, kategori: 'koreksi', jenis: 'pemecahan',
+      no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+    }).select('id').single()
+    if (hErr || !hData) { setErr(`Gagal membuat header: ${hErr?.message}`); setSaving(false); return }
+    const headerId = (hData as { id: string }).id
+    const abort = async (m: string) => { setErr(m); await supabase.from('jurnal_header').delete().eq('id', headerId); setSaving(false) }
+
+    // 2. Ambil spesifikasi induk (utk diwariskan ke pecahan) + kode lokasi SKPD (NIBAR).
+    const { data: indukFull } = await supabase.from('aset')
+      .select(`nama_barang,merek_tipe,satuan,uraian_barang,foto_paths,${ASET_FIELD_COLS.join(',')}`).eq('id', induk.id).single()
+    const { data: skpdRow, error: skpdErr } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', skpdId).single()
+    if (skpdErr || !(skpdRow as { kode_skpd?: string } | null)?.kode_skpd) { await abort(`Gagal ambil kode lokasi SKPD utk NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`); return }
+    const kodeSkpd = (skpdRow as { kode_skpd: string }).kode_skpd
+
+    // 3. Intra/ekstra per pecahan (by nilai vs batas kapitalisasi) + generate NIBAR.
+    const batas = (await fetchBatasKapitalisasi(supabase, [induk.kode])).get(induk.kode)
+    const tahun = (induk.tgl_perolehan || tgl).slice(0, 4)
+    const nibarItems = alokasi.map((a, i) => ({ key: String(i), kode: induk.kode, intraEkstra: klasifikasiKomptabel(a.np, batas), tahun }))
+    const nibarMap = await generateNibars(supabase, nibarItems, kodeSkpd)
+
+    // 4. Buat aset pecahan — status 'draft' (tersembunyi) sampai commit di langkah 7.
+    const spec: Record<string, unknown> = {}
+    if (indukFull) for (const k of ['nama_barang', 'merek_tipe', 'satuan', 'uraian_barang', ...ASET_FIELD_COLS]) {
+      const v = (indukFull as Record<string, unknown>)[k]; if (v != null) spec[k] = v
+    }
+    const foto = (indukFull as { foto_paths?: string[] } | null)?.foto_paths || []
+    const asetRows: Record<string, unknown>[] = alokasi.map((a, i) => {
+      const jumlah = parseInt(pieces[i].jumlah, 10)
+      return {
+        ...spec,
+        nibar: nibarMap.get(String(i)) || null, kode: induk.kode, jumlah,
+        harga_satuan: a.np / Math.max(1, jumlah), nilai_perolehan: a.np,
+        tgl_perolehan: induk.tgl_perolehan, skpd_id: skpdId,
+        intra_ekstra: klasifikasiKomptabel(a.np, batas),
+        cara_perolehan: induk.cara_perolehan || 'pemecahan', foto_paths: foto, status: 'draft',
+      }
+    })
+    const { data: inserted, error: insErr } = await supabase.from('aset').insert(asetRows).select('id')
+    if (insErr || !inserted) { await abort(`Gagal membuat pecahan: ${insErr?.message}`); return }
+    const pieceIds = (inserted as { id: string }[]).map(r => r.id)
+
+    // 5. Seed pemecahan_masuk per pecahan (induk MASIH aktif → belum ada risiko double).
+    const masaSmt = basis.masa_tahun ? Math.round(basis.masa_tahun * 2) : 0
+    for (let i = 0; i < alokasi.length; i++) {
+      const a = alokasi[i]
+      const { error } = await catatTransaksi(supabase, {
+        asetId: pieceIds[i], jenis: 'pemecahan_masuk', tanggal: tgl, nilai: a.np, headerId,
+        payload: {
+          nilai_buku_awal: a.nb, akumulasi: a.ak, sisa_masa_manfaat_smt: basis.sisa_smt,
+          masa_manfaat_smt: masaSmt, beban_per_smt: a.beban, induk_aset_id: induk.id, induk_nibar: induk.nibar,
+        },
+        keterangan: `Pecahan dari ${induk.nibar || induk.nama_barang || 'induk'} (${noSk.trim()})`,
+      })
+      if (error) {
+        // Pecahan yg terlanjur berledger dibiarkan (draft → tersembunyi). Induk masih
+        // aktif → nilai tetap utuh, TIDAK double. Bisa dituntaskan lewat Batal Pemecahan.
+        setErr(`Gagal mencatat pecahan ke-${i + 1}: ${error}. Induk tetap utuh; buka jurnal ini lalu klik Batal Pemecahan untuk membersihkan.`)
+        setSaving(false); return
+      }
+    }
+
+    // 6. Retire induk (pemecahan_keluar) — induk hilang dari laporan sejak periode ini.
+    const { error: keluarErr } = await catatTransaksi(supabase, {
+      asetId: induk.id, jenis: 'pemecahan_keluar', tanggal: tgl, nilai: induk.nilai_perolehan, headerId,
+      payload: { jumlah_pecahan: alokasi.length, pecahan_ids: pieceIds, pecahan_nibars: alokasi.map((_, i) => nibarMap.get(String(i)) || null) },
+      keterangan: `Dipecah jadi ${alokasi.length} pecahan (${noSk.trim()})`,
+    })
+    if (keluarErr) { setErr(`Gagal me-retire induk: ${keluarErr}. Buka jurnal ini lalu klik Batal Pemecahan untuk membersihkan.`); setSaving(false); return }
+
+    // 7. Commit: pecahan draft → aktif.
+    const { error: flipErr } = await supabase.from('aset').update({ status: 'aktif' }).in('id', pieceIds)
+    if (flipErr) { setErr(`Pemecahan hampir selesai tapi aktivasi pecahan gagal: ${flipErr.message}. Induk sudah di-retire — hubungi admin untuk mengaktifkan pecahan, atau Batal Pemecahan lalu ulangi.`); setSaving(false); return }
+
+    setSaving(false)
+    onSaved(alokasi.length, noSk.trim())
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-800">Pemecahan Barang — {skpdNama}</h2>
+          <button className="btn-secondary text-xs" onClick={onCancel}>← Kembali</button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">No. Dokumen Pemecahan</label>
+            <input className="select-filter w-full" value={noSk} onChange={e => setNoSk(e.target.value)} placeholder="mis. 030/123/418.xx/2026" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Tanggal Dokumen</label>
+            <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
+            <p className="text-xs text-gray-400 mt-1">Periode efektif: {periodeDariTanggal(tgl)}</p>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs text-gray-500 mb-1">Keterangan / Justifikasi</label>
+            <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <h2 className="text-base font-semibold text-gray-800 mb-3">Barang Induk (yang Dipecah)</h2>
+        {induk ? (
+          <div className="flex items-start justify-between gap-4 border border-teal/30 bg-teal/5 rounded-lg p-3">
+            <div className="text-sm">
+              <p className="font-medium text-gray-800">{induk.nama_barang || '-'}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{induk.nibar || '-'} · {induk.kode} · Jumlah {induk.jumlah}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Nilai perolehan: <span className="font-medium">{formatRupiah(induk.nilai_perolehan)}</span></p>
+              {basisLoading ? <p className="text-xs text-gray-400 mt-1">Memuat basis alokasi…</p>
+                : basisErr ? <p className="text-xs text-red-600 mt-1">{basisErr}</p>
+                : basis ? (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Basis (akhir {formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))}):
+                    nilai buku {formatRupiah(basis.nilai_buku)} · akumulasi {formatRupiah(basis.akumulasi)} · sisa {basis.sisa_smt} smt
+                    {!basis.disusutkan && ' (tidak disusutkan)'}
+                  </p>
+                ) : null}
+            </div>
+            <button className="text-xs text-gray-500 hover:text-red-600" onClick={() => { setInduk(null); setBasis(null); setBasisErr('') }}>Ganti</button>
+          </div>
+        ) : (
+          <div>
+            <div className="flex gap-2">
+              <input className="select-filter flex-1" value={qInduk} onChange={e => setQInduk(e.target.value)}
+                placeholder="Cari induk: NIBAR / nama / kode…"
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); cariInduk() } }} />
+              <button type="button" className="btn-secondary" onClick={cariInduk}>Cari</button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Tanah &amp; KDP dikecualikan (dikelola di GIS BMD / Konstruksi).</p>
+            {hasilInduk.length > 0 && (
+              <div className="mt-2 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                {hasilInduk.map(k => (
+                  <button key={k.id} type="button" onClick={() => { setInduk(k); setHasilInduk([]); setQInduk('') }}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs">
+                    <span className="font-medium text-gray-800">{k.nama_barang || '-'}</span>
+                    <span className="text-gray-400"> — {k.nibar || '-'} · {k.kode} · {formatRupiah(k.nilai_perolehan)} · jml {k.jumlah}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {induk && basis && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-gray-800">Pecahan &amp; Alokasi</h2>
+            <button type="button" className="btn-secondary text-xs" onClick={addPiece}>+ Tambah Pecahan</button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="table-th w-12 text-center">#</th>
+                  <th className="table-th w-24 text-center">Jumlah</th>
+                  <th className="table-th text-right w-44">Nilai Perolehan</th>
+                  <th className="table-th text-right">Nilai Buku</th>
+                  <th className="table-th text-right">Akumulasi</th>
+                  <th className="table-th text-right">Beban/Smt</th>
+                  <th className="table-th w-10 text-center"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {pieces.map((p, i) => {
+                  const a = alokasi[i]
+                  return (
+                    <tr key={p.key}>
+                      <td className="table-td text-center text-xs text-gray-400">{i + 1}</td>
+                      <td className="table-td text-center">
+                        <input type="number" min="1" step="1" className="select-filter w-full text-center"
+                          value={p.jumlah} onChange={e => setPiece(p.key, { jumlah: e.target.value })} />
+                      </td>
+                      <td className="table-td text-right">
+                        <input type="number" min="0" step="1" className="select-filter w-full text-right"
+                          value={p.nilai} placeholder="0" onChange={e => setPiece(p.key, { nilai: e.target.value })} />
+                      </td>
+                      <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.nb) : '-'}</td>
+                      <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.ak) : '-'}</td>
+                      <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.beban) : '-'}</td>
+                      <td className="table-td text-center">
+                        <button type="button" disabled={pieces.length <= 2} onClick={() => removePiece(p.key)}
+                          className="text-red-500 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed">×</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr className={`border-t border-gray-200 ${balance ? '' : 'bg-red-50'}`}>
+                  <td className="table-td text-xs font-medium" colSpan={2}>Total</td>
+                  <td className={`table-td text-right text-xs font-semibold ${balance ? 'text-gray-800' : 'text-red-700'}`}>{formatRupiah(sumNP)}</td>
+                  <td className="table-td text-right text-xs text-gray-500" colSpan={3}>Induk: {formatRupiah(totalNP)}</td>
+                  <td className="table-td"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {!balance && <p className="mt-2 text-xs text-red-600">Total nilai pecahan harus sama dengan nilai perolehan induk. Selisih {formatRupiah(sumNP - totalNP)}.</p>}
+          <p className="mt-2 text-xs text-gray-400">Pecahan mewarisi spesifikasi &amp; foto induk sebagai titik awal (bisa diedit di Daftar Barang). NIBAR digenerate baru.</p>
+        </div>
       )}
+
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      <div className="flex items-center justify-end gap-2">
+        <button className="btn-secondary" onClick={onCancel}>Batal</button>
+        <button className="btn-primary" onClick={simpan}
+          disabled={saving || !induk || !basis || !!basisErr || !semuaValid || !balance}>
+          {saving ? 'Menyimpan…' : `Pecah jadi ${pieces.length} Barang`}
+        </button>
+      </div>
     </div>
   )
 }
