@@ -18,11 +18,15 @@ type Pegawai = {
 }
 
 const ROLE_BMD = [
+  { value: 'pengelola_barang', label: 'Pengelola Barang' },
+  { value: 'penatausahaan_barang_pengelola', label: 'Penatausahaan Barang Pengelola' },
+  { value: 'pengurus_barang_pengelola', label: 'Pengurus Barang Pengelola' },
   { value: 'pengguna_barang', label: 'Pengguna Barang' },
-  { value: 'kuasa_pengguna_barang', label: 'Kuasa Pengguna Barang' },
+  { value: 'penatausahaan_barang_pengguna', label: 'Penatausahaan Barang Pengguna' },
   { value: 'pengurus_barang', label: 'Pengurus Barang' },
   { value: 'pembantu_pengurus_barang', label: 'Pembantu Pengurus Barang' },
-  { value: 'penyimpan_barang', label: 'Penyimpan Barang' },
+  { value: 'kuasa_pengguna_barang', label: 'Kuasa Pengguna Barang' },
+  { value: 'pengurus_barang_pembantu', label: 'Pengurus Barang Pembantu' },
 ]
 
 // Pangkat & golongan/ruang PNS baku (PP 11/2017 jo. PP 99/2000). Pangkat
@@ -47,6 +51,12 @@ const GOLONGAN_PANGKAT: { golongan: string; pangkat: string }[] = [
   { golongan: 'IV/e',  pangkat: 'Pembina Utama' },
 ]
 const pangkatDariGolongan = (g: string) => GOLONGAN_PANGKAT.find(x => x.golongan === g)?.pangkat || ''
+
+// Golongan PPPK (angka Romawi, tanpa pangkat gaya PNS). Disimpan apa adanya di
+// kolom `golongan`; `pangkat` dikosongkan untuk PPPK. Tidak bentrok dgn golongan
+// PNS karena PNS selalu ber-format "X/y" (ada garis miring).
+const GOLONGAN_PPPK = ['I', 'IV', 'V', 'VI', 'VII', 'IX', 'X', 'XI']
+const isGolonganPppk = (g: string) => GOLONGAN_PPPK.includes(g.trim())
 
 // Data lama boleh tersimpan format bebas (mis. "III-b", "iv/e") — normalisasi
 // supaya tetap kepilih di dropdown saat Edit.
@@ -89,7 +99,8 @@ export default function AdminPegawaiPage() {
     const golonganNormal = p.golongan ? normalisasiGolongan(p.golongan) : ''
     setForm({
       nip: p.nip, nama: p.nama,
-      golongan: GOLONGAN_PANGKAT.some(g => g.golongan === golonganNormal) ? golonganNormal : '',
+      golongan: GOLONGAN_PANGKAT.some(g => g.golongan === golonganNormal) ? golonganNormal
+        : isGolonganPppk(p.golongan || '') ? (p.golongan || '').trim() : '',
       jabatan: p.jabatan || '', jenis_kelamin: p.jenis_kelamin || '',
       role_bmd: p.role_bmd, skpd_id: p.skpd_id != null ? String(p.skpd_id) : '',
     })
@@ -158,9 +169,16 @@ export default function AdminPegawaiPage() {
               <select className="select-filter w-full" value={form.golongan}
                 onChange={e => setForm(f => ({ ...f, golongan: e.target.value }))}>
                 <option value="">— pilih golongan —</option>
-                {GOLONGAN_PANGKAT.map(g => <option key={g.golongan} value={g.golongan}>{g.golongan} — {g.pangkat}</option>)}
+                <optgroup label="PNS">
+                  {GOLONGAN_PANGKAT.map(g => <option key={g.golongan} value={g.golongan}>{g.golongan} — {g.pangkat}</option>)}
+                </optgroup>
+                <optgroup label="PPPK">
+                  {GOLONGAN_PPPK.map(g => <option key={`pppk-${g}`} value={g}>Golongan {g} (PPPK)</option>)}
+                </optgroup>
               </select>
-              {form.golongan && <p className="text-xs text-gray-400 mt-1">Pangkat: {pangkatDariGolongan(form.golongan)}</p>}
+              {pangkatDariGolongan(form.golongan)
+                ? <p className="text-xs text-gray-400 mt-1">Pangkat: {pangkatDariGolongan(form.golongan)}</p>
+                : isGolonganPppk(form.golongan) && <p className="text-xs text-gray-400 mt-1">PPPK — Golongan {form.golongan}</p>}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
@@ -221,7 +239,7 @@ export default function AdminPegawaiPage() {
                     <p className="font-medium text-sm">{p.nama}</p>
                     <p className="text-xs text-gray-400">{p.nip}</p>
                   </td>
-                  <td className="table-td text-xs text-gray-500">{[p.pangkat, p.golongan].filter(Boolean).join(' / ') || '—'}</td>
+                  <td className="table-td text-xs text-gray-500">{p.golongan && isGolonganPppk(p.golongan) ? `Gol. ${p.golongan} (PPPK)` : [p.pangkat, p.golongan].filter(Boolean).join(' / ') || '—'}</td>
                   <td className="table-td text-xs text-gray-500">{p.jabatan || '—'}</td>
                   <td className="table-td text-xs text-gray-500">{ROLE_BMD.find(r => r.value === p.role_bmd)?.label || p.role_bmd}</td>
                   <td className="table-td text-xs text-gray-500">{p.skpd?.nama || '—'}</td>
