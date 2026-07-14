@@ -62,6 +62,19 @@ export default function PenyusutanPage() {
   const [detail, setDetail] = useState<{ nama: string; items: KapItem[] } | null>(null)
   const [engineRunning, setEngineRunning] = useState(false)
   const [engineMsg, setEngineMsg] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  // "Jalankan Engine" khusus admin pemda (Pengelola Barang) — server (/api/engine/run)
+  // sudah menolak non-admin (403), ini cuma menyembunyikan tombolnya di UI supaya
+  // pengurus_barang/pengurus_pembantu tidak klik lalu dapat error.
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: profile } = await supabase.from('admin_profiles').select('role').eq('id', user.id).single()
+      setIsAdmin(profile?.role === 'admin')
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     (async () => {
@@ -323,9 +336,11 @@ export default function PenyusutanPage() {
           <div className="flex items-center gap-3">
             <span className="w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
-            <button className="btn-secondary" onClick={runEngine} disabled={engineRunning} title="Hitung ulang penyusutan semua aset untuk periode terpilih (admin)">
-              {engineRunning ? 'Menghitung…' : `⚙ Jalankan Engine (${tahun}-S${smt})`}
-            </button>
+            {isAdmin && (
+              <button className="btn-secondary" onClick={runEngine} disabled={engineRunning} title="Hitung ulang penyusutan semua aset untuk periode terpilih (admin)">
+                {engineRunning ? 'Menghitung…' : `⚙ Jalankan Engine (${tahun}-S${smt})`}
+              </button>
+            )}
           </div>
           {tahunBukuMap[Number(tahun)] === 'terkunci' && (
             <div className="flex items-start gap-3">
