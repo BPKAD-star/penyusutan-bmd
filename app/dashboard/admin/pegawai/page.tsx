@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -70,6 +71,32 @@ const FORM_KOSONG = {
   role_bmd: 'pengurus_barang', skpd_id: '',
 }
 
+// ── Import Excel (upsert by NIP) ────────────────────────────────────────────
+// Master data murni (bukan ledger) — commit LANGSUNG upsert ke admin_pegawai,
+// tanpa draft/approval spt PerolehanImport (itu perlu krn nyentuh ledger; ini
+// tidak). NIP yg sudah ada di-UPDATE (keputusan user 2026-07-14) — pas utk
+// file "data terbaru dari BKD" yg dikirim berkala.
+type ImportRow = {
+  nip: string; nama: string; pangkat: string; golongan: string; jabatan: string
+  jenis_kelamin: string; role_bmd: string; skpd_id: number | null
+  valid: boolean; masalah: string[]
+}
+
+function normHeader(s: unknown): string {
+  return String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+// Kolom Role BMD di Excel boleh berisi slug ('pengurus_barang') atau label
+// tampilan ('Pengurus Barang') — kosong → default sama dgn FORM_KOSONG/DB.
+function mapRoleBmd(raw: string): string | null {
+  const s = raw.trim()
+  if (!s) return 'pengurus_barang'
+  const byValue = ROLE_BMD.find(r => r.value === s)
+  if (byValue) return byValue.value
+  const byLabel = ROLE_BMD.find(r => r.label.toLowerCase() === s.toLowerCase())
+  return byLabel ? byLabel.value : null
+}
+
 export default function AdminPegawaiPage() {
   const supabase = createClient()
   const [list, setList] = useState<Pegawai[]>([])
@@ -79,6 +106,13 @@ export default function AdminPegawaiPage() {
   const [form, setForm] = useState(FORM_KOSONG)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+
+  const [showImport, setShowImport] = useState(false)
+  const [importRows, setImportRows] = useState<ImportRow[]>([])
+  const [importFileName, setImportFileName] = useState('')
+  const [parsingImport, setParsingImport] = useState(false)
+  const [committingImport, setCommittingImport] = useState(false)
+  const [importMsg, setImportMsg] = useState('')
 
   async function load() {
     const { data } = await supabase.from('admin_pegawai').select('*,skpd:admin_skpd(nama)').order('nama')
@@ -142,13 +176,176 @@ export default function AdminPegawaiPage() {
     load()
   }
 
+  async function handleImportFile(f: File) {
+    setParsingImport(true); setImportMsg(''); setImportFileName(f.name); setImportRows([])
+    try {
+      const buf = await f.arrayBuffer()
+      const wb = XLSX.read(buf, { cellDates: true })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const grid: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+      const headerIdx = grid.findIndex(r => r.some(c => normHeader(c).includes('nip')))
+      if (headerIdx < 0) throw new Error("Header 'NIP' tidak ditemukan di file.")
+      const header = grid[headerIdx].map(normHeader)
+      const col = (...names: string[]) => {
+        for (const n of names) { const i = header.findIndex(h => h.includes(n)); if (i >= 0) return i }
+        return -1
+      }
+      const cNip = col('nip'), cNama = col('nama', 'namalengkap')
+      const cGolongan = col('golongan'), cJabatan = col('jabatan')
+      const cGender = col('jeniskelamin', 'gender'), cRole = col('rolebmd', 'role')
+      const cSkpd = col('skpdid', 'idskpd', 'skpd')
+      const str = (r: unknown[], i: number) => (i >= 0 ? String(r[i] ?? '').trim() : '')
+
+      const parsed: ImportRow[] = []
+      for (const r of grid.slice(headerIdx + 1)) {
+        const nip = str(r, cNip)
+        if (!nip) continue
+        const golonganRaw = str(r, cGolongan)
+        const golongan = golonganRaw ? normalisasiGolongan(golonganRaw) : ''
+        const skpdRaw = str(r, cSkpd)
+        const skpdNum = skpdRaw ? Number(skpdRaw) : NaN
+        parsed.push({
+          nip, nama: str(r, cNama),
+          pangkat: pangkatDariGolongan(golongan) || '',
+          golongan, jabatan: str(r, cJabatan),
+          jenis_kelamin: str(r, cGender).toUpperCase(),
+          role_bmd: str(r, cRole),
+          skpd_id: skpdRaw && !isNaN(skpdNum) ? skpdNum : null,
+          valid: true, masalah: [],
+        })
+      }
+      if (parsed.length === 0) throw new Error('Tidak ada baris data terbaca.')
+
+      // NIP dobel DALAM file yang sama (bukan yg sudah ada di DB — itu sengaja
+      // di-upsert/update, lihat komentar di atas FORM_KOSONG).
+      const nipCount = new Map<string, number>()
+      for (const p of parsed) nipCount.set(p.nip, (nipCount.get(p.nip) || 0) + 1)
+
+      // Validasi skpd_id ke admin_skpd (format kolom = ID numerik, bukan nama).
+      const skpdIds = [...new Set(parsed.map(p => p.skpd_id).filter((x): x is number => x != null))]
+      const skpdValid = new Set<number>()
+      for (let i = 0; i < skpdIds.length; i += 200) {
+        const { data } = await supabase.from('admin_skpd').select('id').in('id', skpdIds.slice(i, i + 200))
+        for (const s of (data || []) as { id: number }[]) skpdValid.add(s.id)
+      }
+
+      for (const p of parsed) {
+        if ((nipCount.get(p.nip) || 0) > 1) p.masalah.push('NIP dobel dalam file ini')
+        if (!p.nama) p.masalah.push('nama kosong')
+        const roleResolved = mapRoleBmd(p.role_bmd)
+        if (roleResolved === null) p.masalah.push(`role_bmd tidak dikenali: "${p.role_bmd}"`)
+        else p.role_bmd = roleResolved
+        if (p.jenis_kelamin && !['L', 'P'].includes(p.jenis_kelamin)) p.masalah.push(`jenis kelamin harus L/P: "${p.jenis_kelamin}"`)
+        if (p.skpd_id != null && !skpdValid.has(p.skpd_id)) p.masalah.push(`SKPD id ${p.skpd_id} tidak ditemukan`)
+        p.valid = p.masalah.length === 0
+      }
+      setImportRows(parsed)
+    } catch (e) {
+      setImportMsg(`Error: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    setParsingImport(false)
+  }
+
+  async function handleImportCommit() {
+    const valid = importRows.filter(r => r.valid)
+    if (valid.length === 0) return
+    setCommittingImport(true); setImportMsg('')
+
+    const payload = valid.map(r => ({
+      nip: r.nip, nama: r.nama, pangkat: r.pangkat || null, golongan: r.golongan || null,
+      jabatan: r.jabatan || null, jenis_kelamin: r.jenis_kelamin || null,
+      role_bmd: r.role_bmd, skpd_id: r.skpd_id,
+    }))
+
+    let sukses = 0
+    const gagal: string[] = []
+    for (let i = 0; i < payload.length; i += 200) {
+      const chunk = payload.slice(i, i + 200)
+      const { error } = await supabase.from('admin_pegawai').upsert(chunk, { onConflict: 'nip' })
+      if (error) gagal.push(error.message)
+      else sukses += chunk.length
+    }
+
+    setImportMsg(gagal.length
+      ? `Error: ${sukses} baris berhasil, gagal: ${gagal.join(' | ')}`
+      : `${sukses} pegawai berhasil diimpor (dibuat baru atau diperbarui berdasarkan NIP).`)
+    if (sukses > 0) { setImportRows([]); setImportFileName(''); setShowImport(false); load() }
+    setCommittingImport(false)
+  }
+
   return (
     <FormShell judul="Daftar Pegawai" deskripsi="Master data pegawai — jadi sumber saat membuat akun di Daftar User" msg={msg}>
-      <div className="flex justify-end mb-4">
-        <button onClick={() => (showForm ? setShowForm(false) : openCreate())} className="btn-primary">
+      <div className="flex justify-end gap-2 mb-4">
+        <button
+          onClick={() => { setShowImport(v => !v); setShowForm(false) }}
+          className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50"
+        >
+          {showImport ? 'Batal Import' : 'Import Excel'}
+        </button>
+        <button
+          onClick={() => { setShowImport(false); if (showForm) setShowForm(false); else openCreate() }}
+          className="btn-primary"
+        >
           {showForm ? 'Batal' : '+ Tambah Pegawai'}
         </button>
       </div>
+
+      {showImport && (
+        <div className="card p-6 mb-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-1">Import Excel</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Kolom yang dibaca: <b>NIP</b> (wajib), Nama, Golongan, Jabatan, Jenis Kelamin (L/P),
+            Role BMD (slug atau label), SKPD ID (angka — id SKPD, bukan nama). NIP yang sudah ada
+            di database akan <b>diperbarui</b>; NIP baru akan dibuat.
+          </p>
+          <input type="file" accept=".xlsx,.xls" className="text-sm mb-4"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f) }} />
+          {parsingImport && <p className="text-sm text-gray-400">Membaca file...</p>}
+          {importMsg && (
+            <div className={`mb-4 p-3 rounded-lg text-sm ${importMsg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{importMsg}</div>
+          )}
+          {importRows.length > 0 && (
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-gray-600">
+                  {importRows.length} baris terbaca dari {importFileName} —{' '}
+                  <span className="text-green-600 font-medium">{importRows.filter(r => r.valid).length} valid</span>
+                  {importRows.some(r => !r.valid) && (
+                    <span className="text-red-500"> · {importRows.filter(r => !r.valid).length} bermasalah</span>
+                  )}
+                </span>
+                <button className="btn-primary" disabled={committingImport || importRows.filter(r => r.valid).length === 0}
+                  onClick={handleImportCommit}>
+                  {committingImport ? 'Memproses...' : `Import ${importRows.filter(r => r.valid).length} Baris`}
+                </button>
+              </div>
+              <div className="overflow-x-auto max-h-96 overflow-y-auto border border-gray-100 rounded-lg">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
+                    <tr>
+                      <th className="table-th">Status</th><th className="table-th">NIP</th><th className="table-th">Nama</th>
+                      <th className="table-th">Golongan</th><th className="table-th">Role BMD</th><th className="table-th">SKPD ID</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {importRows.map((r, i) => (
+                      <tr key={i} className={r.valid ? '' : 'bg-red-50/50'}>
+                        <td className="table-td text-xs">{r.valid ? <span className="text-green-600">OK</span> : <span className="text-red-500">{r.masalah.join(', ')}</span>}</td>
+                        <td className="table-td text-xs">{r.nip}</td>
+                        <td className="table-td text-xs">{r.nama}</td>
+                        <td className="table-td text-xs">{r.golongan || '-'}</td>
+                        <td className="table-td text-xs">{ROLE_BMD.find(x => x.value === r.role_bmd)?.label || r.role_bmd}</td>
+                        <td className="table-td text-xs">{r.skpd_id ?? '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {showForm && (
         <div className="card p-6 mb-6">
@@ -220,31 +417,37 @@ export default function AdminPegawaiPage() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                <th className="table-th">Nama / NIP</th>
-                <th className="table-th">Pangkat / Golongan</th>
-                <th className="table-th">Jabatan</th>
-                <th className="table-th">Role BMD</th>
-                <th className="table-th">SKPD</th>
-                <th className="table-th">Aksi</th>
+                <th className="table-th whitespace-nowrap">SKPD</th>
+                <th className="table-th whitespace-nowrap">Nama</th>
+                <th className="table-th whitespace-nowrap">NIP</th>
+                <th className="table-th whitespace-nowrap">Golongan</th>
+                <th className="table-th whitespace-nowrap">Pangkat</th>
+                <th className="table-th whitespace-nowrap">Jabatan</th>
+                <th className="table-th whitespace-nowrap">Role BMD</th>
+                <th className="table-th whitespace-nowrap">Edit</th>
+                <th className="table-th whitespace-nowrap">Hapus</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+                <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
               ) : list.length === 0 ? (
-                <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">Belum ada pegawai.</td></tr>
+                <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Belum ada pegawai.</td></tr>
               ) : list.map(p => (
                 <tr key={p.id}>
-                  <td className="table-td">
-                    <p className="font-medium text-sm">{p.nama}</p>
-                    <p className="text-xs text-gray-400">{p.nip}</p>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.skpd?.nama || '—'}</td>
+                  <td className="table-td whitespace-nowrap text-sm font-medium">{p.nama}</td>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-400">{p.nip}</td>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-500">
+                    {p.golongan ? (isGolonganPppk(p.golongan) ? `${p.golongan} (PPPK)` : p.golongan) : '—'}
                   </td>
-                  <td className="table-td text-xs text-gray-500">{p.golongan && isGolonganPppk(p.golongan) ? `Gol. ${p.golongan} (PPPK)` : [p.pangkat, p.golongan].filter(Boolean).join(' / ') || '—'}</td>
-                  <td className="table-td text-xs text-gray-500">{p.jabatan || '—'}</td>
-                  <td className="table-td text-xs text-gray-500">{ROLE_BMD.find(r => r.value === p.role_bmd)?.label || p.role_bmd}</td>
-                  <td className="table-td text-xs text-gray-500">{p.skpd?.nama || '—'}</td>
-                  <td className="table-td">
-                    <button onClick={() => openEdit(p)} className="text-teal hover:underline text-xs font-medium mr-3">Edit</button>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.pangkat || '—'}</td>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.jabatan || '—'}</td>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-500">{ROLE_BMD.find(r => r.value === p.role_bmd)?.label || p.role_bmd}</td>
+                  <td className="table-td whitespace-nowrap">
+                    <button onClick={() => openEdit(p)} className="text-teal hover:underline text-xs font-medium">Edit</button>
+                  </td>
+                  <td className="table-td whitespace-nowrap">
                     <button onClick={() => handleDelete(p.id, p.nama)} className="text-red-500 hover:text-red-700 text-xs font-medium">Hapus</button>
                   </td>
                 </tr>
