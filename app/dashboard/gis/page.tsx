@@ -1,21 +1,24 @@
 'use client'
-// GIS BMD — peta Tanah + Jalan/Jaringan/Irigasi internal, gantiin link
-// eksternal lama (yg nembak database aset_tanah terpisah, bikin dual-entry).
-// Golongan 1.3.1 (Tanah) DAN 1.3.4 (Jalan) diikutkan — keduanya bisa punya
-// dokumen kepemilikan lahan + banyak bidang/sertifikat per register (lihat
-// TEMPLATE_TANAH di lib/asetFields.ts, dipakai kedua golongan itu). Data
-// langsung dari `aset` + tabel anak aset_bidang_tanah (1 NIBAR bisa banyak
-// bidang). Edit field spesifikasi umum (nama/dll) tetap lewat menu Koreksi
-// Spesifikasi — halaman ini KHUSUS kelola bidang + identitas dokumen
-// kepemilikan per bidang + lihat peta, bukan duplikat alur ledger.
+// GIS BMD — peta Tanah (golongan 1.3.1 SAJA), gantiin link eksternal lama (yg
+// nembak database aset_tanah terpisah, bikin dual-entry). WHITELIST 1.3.1: dulu
+// sempat ikut narik 1.3.4 (Jalan/Jaringan/Irigasi), tapi begitu data JIJ
+// diimport lengkap (migrasi 20260713_02) isinya banyak yg bukan bidang lahan
+// (drainase, jaringan komputer, SIMDA online) & nyampah di peta — keputusan
+// user 2026-07-15: GIS khusus TANAH. Filter whitelist (bukan blacklist) ini
+// sekaligus jamin import golongan lain ke depan (1.3.2/1.3.5/1.5.4) TIDAK ikut
+// nyangkut. Tanah tetap bisa punya dokumen kepemilikan + banyak bidang/
+// sertifikat per register (TEMPLATE_TANAH di lib/asetFields.ts). Data langsung
+// dari `aset` + tabel anak aset_bidang_tanah (1 NIBAR bisa banyak bidang). Edit
+// field spesifikasi umum (nama/dll) tetap lewat menu Koreksi Spesifikasi —
+// halaman ini KHUSUS kelola bidang + identitas dokumen kepemilikan per bidang +
+// lihat peta, bukan duplikat alur ledger.
 //
 // Layout full-frame (keputusan user 2026-07-10, terinspirasi app GIS BMD lama
 // yg terpisah): peta ngisi penuh `<main>`, panel kiri (filter+list+statistik)
 // & kanan (detail register terpilih) OVERLAY mengambang di atas peta — bukan
 // grid kolom biasa. Semua data dimuat SEKALI saat mount (paginated, tanpa
 // cap), filter SKPD & pencarian selanjutnya INSTAN di client (gak nge-query
-// ulang) — dataset ~2700-an sekarang, ~4300+ nanti (termasuk jalan) masih
-// murah buat filter di memori.
+// ulang) — dataset tanah ~2700-an, masih murah buat filter di memori.
 //
 // SENGAJA TANPA marker clustering: titik disebar apa adanya, bukan
 // dikelompokkan jadi bubble angka — lihat components/gis/GisMap.tsx.
@@ -68,7 +71,7 @@ export default function GisPage() {
       for (let from = 0; ; from += 1000) {
         const { data } = await supabase.from('aset')
           .select(SELECT_COLS)
-          .or('kode.like.1.3.1.%,kode.like.1.3.4.%')
+          .like('kode', '1.3.1.%')
           .eq('status', 'aktif')
           .order('nama_barang', { ascending: true }).range(from, from + 999)
         if (!data || data.length === 0) break
@@ -172,7 +175,7 @@ export default function GisPage() {
       {/* Panel kiri: filter + list register (card) + statistik — mengambang di atas peta */}
       <div className="absolute top-4 left-4 bottom-4 w-[340px] z-[1000] flex flex-col gap-3 pointer-events-none">
         <div className="card p-3 shadow-lg pointer-events-auto">
-          <p className="text-sm font-semibold text-gray-800 mb-2">GIS BMD — Tanah &amp; Jalan</p>
+          <p className="text-sm font-semibold text-gray-800 mb-2">GIS BMD — Tanah</p>
           <input className="select-filter w-full text-sm mb-2" placeholder="Cari nama / NIBAR / kode..."
             value={search} onChange={e => setSearch(e.target.value)} />
           <SkpdCombobox lockToOperator onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} allowClear
