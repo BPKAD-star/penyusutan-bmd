@@ -12,7 +12,7 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
-import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode } from '@/lib/asetFields'
+import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode, type FieldKey } from '@/lib/asetFields'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
@@ -46,6 +46,14 @@ type Barang = {
 type BasisPecah = { nilai_buku: number; akumulasi: number; sisa_smt: number; masa_tahun: number | null; disusutkan: boolean }
 type PecahanItem = { key: string; jumlah: string; nilai: string; fields: Record<string, string>; foto: string[] }
 const newKey = () => Math.random().toString(36).slice(2)
+// Tanah: dokumen kepemilikan/sertifikat & jenis hak per-BIDANG → diisi di GIS BMD
+// (Kelola Bidang) setelah pemecahan, BUKAN di form ini (satu sumber). Field ini
+// disembunyikan dari modal spesifikasi pecahan tanah & tidak diwarisi dari induk.
+const TANAH_DOK_FIELDS: FieldKey[] = ['jenis_hak', 'nomor_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan']
+function pieceFieldKeys(kode: string): FieldKey[] {
+  const base = fieldsForKode(kode)
+  return kodeLevel3(kode) === '1.3.1' ? base.filter(k => !TANAH_DOK_FIELDS.includes(k)) : base
+}
 type Kandidat = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null
   spesifikasi_lainnya: string | null; nilai_perolehan: number; tgl_perolehan: string | null
@@ -462,6 +470,8 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
     const { data } = await supabase.from('aset').select(ASET_FIELD_COLS.join(',')).eq('id', b.id).single()
     const f: Record<string, string> = {}
     if (data) for (const k of ASET_FIELD_COLS) { const v = (data as Record<string, unknown>)[k]; if (v != null) f[k] = String(v) }
+    // Tanah: sertifikat/jenis hak TIDAK diwarisi — tiap pecahan sertifikatnya sendiri, diisi di GIS.
+    if (kodeLevel3(b.kode) === '1.3.1') for (const k of TANAH_DOK_FIELDS) delete f[k]
     setIndukFields(f)
     setPecahan([
       { key: newKey(), jumlah: '1', nilai: '', fields: { ...f }, foto: [] },
@@ -950,7 +960,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                   <label className="block text-xs text-gray-500 mb-1">Kode Jenis</label>
                   <select className="select-filter" value={fGolongan} onChange={e => setFGolongan(e.target.value)}>
                     <option value="">Semua Jenis Aset</option>
-                    {GOLONGAN_DAFTAR_BARANG.filter(g => !['1.3.1', '1.3.6'].includes(g)).map(g => <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>)}
+                    {GOLONGAN_DAFTAR_BARANG.map(g => <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>)}
                   </select>
                 </div>
                 <div className="flex-1 min-w-[180px]">
@@ -960,7 +970,6 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                 </div>
                 <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
               </div>
-              <p className="text-xs text-gray-400 mb-2">Tanah &amp; KDP dikecualikan (dikelola di GIS BMD / Konstruksi).</p>
               {!loaded ? (
                 <div className="py-10 text-center text-gray-400 text-sm">Atur filter lalu klik Tampilkan untuk memilih induk.</div>
               ) : (
@@ -976,9 +985,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {rows.filter(b => !['1.3.1', '1.3.6'].includes(kodeLevel3(b.kode))).length === 0 ? (
+                        {rows.length === 0 ? (
                           <tr><td colSpan={4} className="table-td text-center py-10 text-gray-400">Tidak ada barang untuk filter ini.</td></tr>
-                        ) : rows.filter(b => !['1.3.1', '1.3.6'].includes(kodeLevel3(b.kode))).map(b => (
+                        ) : rows.map(b => (
                           <tr key={b.id}>
                             <td className="table-td">
                               <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
@@ -1080,6 +1089,12 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
               </div>
               {!balancePecah && <p className="mt-2 text-xs text-red-600">Total nilai pecahan harus sama dengan nilai perolehan induk. Selisih {formatRupiah(sumNPPecah - totalNPInduk)}.</p>}
               <p className="mt-2 text-xs text-gray-400">Klik nama di kolom Spesifikasi untuk isi/ubah spesifikasi tiap pecahan (format per golongan, sama seperti Cara Perolehan). Nilai awal diwarisi dari induk. NIBAR digenerate baru.</p>
+              {kodeLevel3(indukPecah.kode) === '1.3.1' && (
+                <p className="mt-1 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">
+                  Tanah: sertifikat, jenis hak &amp; bidang TIDAK diisi di sini — tiap pecahan otomatis muncul di
+                  <span className="font-medium"> GIS BMD → Kelola Bidang</span>, isi dokumen kepemilikan &amp; bidang (1 atau banyak) di situ setelah pemecahan.
+                </p>
+              )}
             </div>
           )}
 
@@ -1097,7 +1112,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       {editPecahIdx != null && indukPecah && pecahan[editPecahIdx] && (
         <EditSpesifikasiModal
           title={`Spesifikasi Pecahan #${editPecahIdx + 1}`}
-          fieldKeys={fieldsForKode(indukPecah.kode)}
+          fieldKeys={pieceFieldKeys(indukPecah.kode)}
           storagePrefix={`draft/pecah-${pecahan[editPecahIdx].key}`}
           initialFields={pecahan[editPecahIdx].fields}
           initialFoto={pecahan[editPecahIdx].foto}
