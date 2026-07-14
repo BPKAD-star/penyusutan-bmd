@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import ChatWidget from './ChatWidget'
+import BroadcastPopup from './BroadcastPopup'
 
 export default function DashboardChrome({ userName, userRole, children }: {
   userName: string
@@ -19,6 +20,7 @@ export default function DashboardChrome({ userName, userRole, children }: {
         <main className="flex-1 overflow-auto bg-gray-50 min-w-0">{children}</main>
       </div>
       <ChatWidget />
+      <BroadcastPopup userRole={userRole} />
     </div>
   )
 }

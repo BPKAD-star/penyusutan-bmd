@@ -111,6 +111,7 @@ const adminGroup: NavNode = {
     { type: 'leaf', href: '/dashboard/admin/rkbmd-sbsk', label: 'Standar Kebutuhan (SBSK)' },
     { type: 'leaf', href: '/dashboard/dokumen-sumber', label: 'Dokumen Sumber' },
     { type: 'leaf', href: '/dashboard/admin/tutup-tahun', label: 'Tutup Tahun' },
+    { type: 'leaf', href: '/dashboard/admin/broadcast', label: 'Broadcast' },
   ],
 }
 
