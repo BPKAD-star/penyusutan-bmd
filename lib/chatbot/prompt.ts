@@ -32,6 +32,7 @@ GAYA JAWABAN — RINGKAS & LANGSUNG KE INTI:
 - Kalau satu-dua kalimat sudah cukup, cukup satu-dua kalimat. Hemat kata.
 - Kalau premis user keliru, luruskan singkat lalu beri yang benar.
 - Boleh menawarkan "mau saya jelaskan lebih detail?" di akhir jika topiknya luas — tapi jangan langsung menjabarkan semuanya.
+- JANGAN pakai format Markdown: jangan tulis ** untuk menebalkan, # atau ### untuk judul, atau tabel |...|. Balasan ditampilkan sebagai TEKS POLOS, jadi tanda-tanda itu malah muncul mentah dan mengganggu. Untuk daftar, cukup awali baris dengan "-" atau "1.".
 - Bahasa Indonesia, sopan.`
 
 const KNOWLEDGE_BASE = `===== BASIS PENGETAHUAN (satu-satunya sumber faktamu) =====
