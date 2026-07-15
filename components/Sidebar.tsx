@@ -217,37 +217,8 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
   }
 
   return (
-    <aside className="relative overflow-hidden w-64 bg-gradient-to-b from-navy-light via-navy to-navy-dark flex flex-col h-full flex-shrink-0">
-      <svg viewBox="0 0 180 220" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"
-        className="absolute -right-6 bottom-0 w-40 h-48 text-white opacity-50 pointer-events-none select-none">
-        {/* crane */}
-        <line x1="20" y1="18" x2="20" y2="150" />
-        <line x1="20" y1="18" x2="150" y2="18" />
-        <line x1="20" y1="18" x2="4" y2="18" />
-        <line x1="20" y1="40" x2="4" y2="18" />
-        <line x1="20" y1="40" x2="150" y2="18" />
-        <line x1="130" y1="18" x2="130" y2="55" />
-        <rect x="124" y="55" width="12" height="10" rx="1.5" />
-        <line x1="10" y1="150" x2="30" y2="150" />
-        {/* gedung 1 */}
-        <rect x="35" y="95" width="48" height="115" rx="2" />
-        <line x1="35" y1="115" x2="83" y2="115" />
-        <line x1="35" y1="135" x2="83" y2="135" />
-        <line x1="35" y1="155" x2="83" y2="155" />
-        <line x1="35" y1="175" x2="83" y2="175" />
-        <line x1="35" y1="195" x2="83" y2="195" />
-        <line x1="59" y1="95" x2="59" y2="210" />
-        {/* gedung 2 */}
-        <rect x="90" y="120" width="42" height="90" rx="2" />
-        <line x1="90" y1="138" x2="132" y2="138" />
-        <line x1="90" y1="156" x2="132" y2="156" />
-        <line x1="90" y1="174" x2="132" y2="174" />
-        <line x1="90" y1="192" x2="132" y2="192" />
-        <line x1="111" y1="120" x2="111" y2="210" />
-        {/* garis tanah */}
-        <line x1="4" y1="210" x2="170" y2="210" />
-      </svg>
-      <nav className="relative z-10 flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+    <aside className="w-64 bg-gradient-to-b from-navy-dark via-navy to-navy-light flex flex-col h-full flex-shrink-0">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <p className="text-white/30 text-xs font-semibold uppercase tracking-wider px-3 mb-2">Menu</p>
         {menuTree.map(n => renderNode(n, 0))}
       </nav>
