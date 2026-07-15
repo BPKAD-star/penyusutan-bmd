@@ -38,7 +38,7 @@ export default function TopBar({ userName, onToggleSidebar }: {
         </div>
         <div className="flex items-center gap-2">
           <span className="font-bold text-gray-800 text-lg leading-none">BMD last game</span>
-          <span className="text-[10px] font-semibold bg-amber-400 text-white px-1.5 py-0.5 rounded">Kediri</span>
+          <span className="text-[10px] font-semibold bg-amber-400 text-white px-1.5 py-0.5 rounded">Kabupaten Kediri</span>
         </div>
       </div>
 
