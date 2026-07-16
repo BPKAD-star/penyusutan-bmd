@@ -226,15 +226,34 @@ export default function PenyusutanPage() {
   async function runEngine() {
     const periode = `${tahun}-S${smt}`
     if (!confirm(`Jalankan engine penyusutan untuk periode ${periode}?\nMenghitung ulang SEMUA aset (bisa beberapa menit). Aman diulang.`)) return
-    setEngineRunning(true); setEngineMsg('')
+    setEngineRunning(true); setEngineMsg('Memproses… 0 aset')
+    // Engine di-BATCH per-aset di server (keyset by id). Client loop tiap batch
+    // sampai `done`, akumulasi statistik + tampilkan progress. Mencegah timeout
+    // serverless yang dulu bikin respons kosong ("Unexpected end of JSON input").
     try {
-      const res = await fetch('/api/engine/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ periode }) })
-      const j = await res.json()
-      if (!res.ok) { setEngineMsg(`Error: ${j.error || `HTTP ${res.status}`}`); setEngineRunning(false); return }
-      const proteksi = j.rows_dilindungi_tahun_terkunci > 0
-        ? ` (${Number(j.rows_dilindungi_tahun_terkunci).toLocaleString('id-ID')} baris di tahun terkunci dilindungi, tidak ditimpa.)`
+      let afterId = ''
+      let totalProses = 0, totalDisusutkan = 0, totalBeban = 0, totalDilindungi = 0
+      // batas iterasi jaga-jaga (218rb / 3000 ≈ 73; 1000 lebih dari cukup)
+      for (let guard = 0; guard < 1000; guard++) {
+        const res = await fetch('/api/engine/run', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ periode, after_id: afterId }),
+        })
+        const j = await res.json()
+        if (!res.ok) { setEngineMsg(`Error: ${j.error || `HTTP ${res.status}`}`); setEngineRunning(false); return }
+        totalProses += Number(j.processed || 0)
+        totalDisusutkan += Number(j.disusutkan || 0)
+        totalBeban += Number(j.total_beban || 0)
+        totalDilindungi += Number(j.rows_dilindungi_tahun_terkunci || 0)
+        setEngineMsg(`Memproses… ${totalProses.toLocaleString('id-ID')} aset`)
+        if (j.done) break
+        afterId = j.last_id
+        if (!afterId) break // jaga-jaga: tak ada kursor → hentikan
+      }
+      const proteksi = totalDilindungi > 0
+        ? ` (${totalDilindungi.toLocaleString('id-ID')} baris di tahun terkunci dilindungi, tidak ditimpa.)`
         : ''
-      setEngineMsg(`✓ Engine selesai untuk ${periode} — ${Number(j.disusutkan || 0).toLocaleString('id-ID')} aset disusutkan, total beban ${angka(j.total_beban)}.${proteksi}`)
+      setEngineMsg(`✓ Engine selesai untuk ${periode} — ${totalProses.toLocaleString('id-ID')} aset diproses, ${totalDisusutkan.toLocaleString('id-ID')} disusutkan, total beban ${angka(totalBeban)}.${proteksi}`)
       if (applied && applied.periode === periode) load(applied)
     } catch (e) {
       setEngineMsg(`Error: ${e instanceof Error ? e.message : String(e)}`)
