@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
+import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
 import RekapTable, { type RekapRow } from '@/components/RekapTable'
@@ -13,7 +13,6 @@ import RekapMatrixTable, { METRIC_LABEL, type MatrixRow, type MetricOrAll, type 
 import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
 
-type SA = { skpd_id: number; kode: string; nilai_perolehan: number; akumulasi_2025: number; beban_penyusutan_per_smt: number; nilai_buku_awal: number }
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
 
 export default function Page() {
@@ -32,36 +31,31 @@ export default function Page() {
     setRows([])
     const agg: Record<string, { kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilaiBuku: number }> = {}
     const mtx: Record<number, MatrixRow> = {}
-    for (let from = 0; ; from += 1000) {
-      let q = supabase.from('aset_awal_2026')
-        .select('skpd_id,kode,nilai_perolehan,akumulasi_2025,beban_penyusutan_per_smt,nilai_buku_awal')
-      if (org.descendantIds) q = q.in('skpd_id', org.descendantIds)
-      if (komptabel) q = q.eq('intra_ekstra', komptabel)
-      const { data } = await q.range(from, from + 999)
-      if (!data || data.length === 0) break
-      for (const r of data as SA[]) {
-        const g = kodeLevel3(r.kode)
-        const perolehan = r.nilai_perolehan || 0
-        const akumulasi = r.akumulasi_2025 || 0
-        const beban = r.beban_penyusutan_per_smt || 0
-        // ?? bukan ||: nilai_buku_awal = 0 itu SAH (gedung sudah habis
-        // disusutkan) — || salah menggantinya jadi perolehan penuh → nilai buku
-        // menggelembung. Fallback ke perolehan HANYA saat null (baseline tak ada).
-        const nilaiBuku = r.nilai_buku_awal ?? perolehan
-        // Model 1: per golongan
-        agg[g] ??= { kuantitas: 0, perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 }
-        agg[g].kuantitas += 1
-        agg[g].perolehan += perolehan; agg[g].akumulasi += akumulasi
-        agg[g].beban += beban; agg[g].nilaiBuku += nilaiBuku
-        // Model 2: per SKPD (root) per golongan
-        const root = rootOf(r.skpd_id)
-        const rid = root?.id ?? r.skpd_id
-        const rnama = root?.nama ?? `SKPD #${r.skpd_id}`
-        mtx[rid] ??= { skpdId: rid, skpdNama: rnama, cells: {} }
-        const c = (mtx[rid].cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
-        c.perolehan += perolehan; c.akumulasi += akumulasi; c.beban += beban; c.nilaiBuku += nilaiBuku
-      }
-      if (data.length < 1000) break
+    // Agregasi per (skpd_id, golongan) dilakukan di DB via RPC (satu query
+    // GROUP BY) — BUKAN lagi paging seluruh aset_awal_2026 ke browser lalu
+    // jumlah di JS (ratusan request se-kabupaten sejak import 218rb baris P&M).
+    // nilai_buku sudah = COALESCE(nilai_buku_awal, nilai_perolehan) di SQL.
+    // Rollup ke SKPD induk (rootOf) & mapping GOLONGAN_REKAP tetap di client.
+    const { data } = await supabase.rpc('fn_rekap_saldo_awal', {
+      p_skpd_ids: org.descendantIds ?? null,
+      p_komptabel: komptabel || null,
+    })
+    for (const r of (data || []) as { skpd_id: number; golongan: string; kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilai_buku: number }[]) {
+      const g = r.golongan
+      const kuantitas = Number(r.kuantitas); const perolehan = Number(r.perolehan)
+      const akumulasi = Number(r.akumulasi); const beban = Number(r.beban); const nilaiBuku = Number(r.nilai_buku)
+      // Model 1: per golongan
+      agg[g] ??= { kuantitas: 0, perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 }
+      agg[g].kuantitas += kuantitas
+      agg[g].perolehan += perolehan; agg[g].akumulasi += akumulasi
+      agg[g].beban += beban; agg[g].nilaiBuku += nilaiBuku
+      // Model 2: per SKPD (root) per golongan
+      const root = rootOf(r.skpd_id)
+      const rid = root?.id ?? r.skpd_id
+      const rnama = root?.nama ?? `SKPD #${r.skpd_id}`
+      mtx[rid] ??= { skpdId: rid, skpdNama: rnama, cells: {} }
+      const c = (mtx[rid].cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
+      c.perolehan += perolehan; c.akumulasi += akumulasi; c.beban += beban; c.nilaiBuku += nilaiBuku
     }
     setRows(GOLONGAN_REKAP.map(g => ({
       kode: g.kode, uraian: g.uraian, disusutkan: g.disusutkan,

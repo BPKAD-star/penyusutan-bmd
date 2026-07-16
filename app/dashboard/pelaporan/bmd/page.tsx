@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_REKAP, kodeLevel3, comparePeriode, periodeDariTanggal, parsePeriode, formatPeriode, previousPeriode } from '@/lib/bmd'
+import { GOLONGAN_REKAP, kodeLevel3, parsePeriode, formatPeriode, previousPeriode } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
 import RekapTable, { type RekapRow } from '@/components/RekapTable'
@@ -79,54 +79,40 @@ export default function LaporanBmdPage() {
     const mtx: Record<number, MatrixRow> = {}
     const disusutkanKode = new Set(GOLONGAN_REKAP.filter(g => g.disusutkan).map(g => g.kode))
     const hasPeny = new Set<string>() // `${rid}|${golongan}` yg punya hasil engine
-
-    // 1. Harga perolehan dari tabel `aset` LIVE (baseline + perolehan baru),
-    //    period-aware: hanya barang yang SUDAH diperoleh s.d. periode & masih aktif.
-    //    Simpan aset_id → {golongan, skpd_id} utk join hasil engine di step 2.
-    const asetInfo = new Map<string, { g: string; skpd_id: number }>()
     const perolehan: Record<string, number> = {}
     const kuantitas: Record<string, number> = {}
-    for (let from = 0; ; from += 1000) {
-      let q = supabase.from('aset').select('id,kode,nilai_perolehan,skpd_id,tgl_perolehan,intra_ekstra,status')
-      if (org.descendantIds) q = q.in('skpd_id', org.descendantIds)
-      if (komptabel) q = q.eq('intra_ekstra', komptabel)
-      const { data } = await q.range(from, from + 999)
-      if (!data || data.length === 0) break
-      for (const r of data as { id: string; kode: string; nilai_perolehan: number; skpd_id: number; tgl_perolehan: string | null; status: string }[]) {
-        if (r.status !== 'aktif') continue
-        if (r.tgl_perolehan && comparePeriode(periodeDariTanggal(r.tgl_perolehan), periode) > 0) continue
-        const g = kodeLevel3(r.kode)
-        const v = r.nilai_perolehan || 0
-        perolehan[g] = (perolehan[g] || 0) + v
-        kuantitas[g] = (kuantitas[g] || 0) + 1
-        ensureCell(mtx, r.skpd_id, g).perolehan += v
-        asetInfo.set(r.id, { g, skpd_id: r.skpd_id })
-      }
-      if (data.length < 1000) break
-    }
-
-    // 2. Penyusutan kumulatif dari engine (penyusutan_semester) pada periode,
-    //    di-join ke golongan/SKPD lewat asetInfo. Nilai buku dari nilai_buku_akhir.
     const peny: Record<string, { akumulasi: number; beban: number; nilaiBuku: number }> = {}
-    for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('penyusutan_semester')
-        .select('aset_id,beban,akumulasi,nilai_buku_akhir').eq('periode', periode).range(from, from + 999)
-      if (!data || data.length === 0) break
-      for (const r of data as { aset_id: string; beban: number; akumulasi: number; nilai_buku_akhir: number }[]) {
-        const info = asetInfo.get(r.aset_id)
-        if (!info) continue // aset di luar filter (skpd/komptabel/periode) — abaikan
-        const g = info.g
+
+    // Agregasi (perolehan + penyusutan engine) per (skpd_id, golongan) dilakukan
+    // di DB via RPC fn_rekap_bmd (satu query: aset LIVE ⋈ penyusutan_semester,
+    // period-aware & komptabel di SQL) — BUKAN lagi paging seluruh aset +
+    // penyusutan_semester ke browser (ratusan request se-kabupaten sejak import
+    // 218rb baris P&M). count_peny > 0 = sel punya hasil engine (hasPeny). Semua
+    // rollup SKPD induk + rekonsiliasi nilai buku di bawah TETAP di client.
+    const { data } = await supabase.rpc('fn_rekap_bmd', {
+      p_periode: periode,
+      p_skpd_ids: org.descendantIds ?? null,
+      p_komptabel: komptabel || null,
+    })
+    for (const r of (data || []) as { skpd_id: number; golongan: string; kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilai_buku_akhir: number; count_peny: number }[]) {
+      const g = r.golongan
+      const v = Number(r.perolehan)
+      perolehan[g] = (perolehan[g] || 0) + v
+      kuantitas[g] = (kuantitas[g] || 0) + Number(r.kuantitas)
+      const c = ensureCell(mtx, r.skpd_id, g)
+      c.perolehan += v
+      // akumulasi/beban/nilai_buku_akhir sudah 0 utk sel tanpa hasil engine
+      // (LEFT JOIN) — akumulasi tanpa syarat aman. hasPeny dari count_peny.
+      c.akumulasi += Number(r.akumulasi)
+      c.beban += Number(r.beban)
+      c.nilaiBuku += Number(r.nilai_buku_akhir)
+      if (Number(r.count_peny) > 0) {
         peny[g] ??= { akumulasi: 0, beban: 0, nilaiBuku: 0 }
-        peny[g].akumulasi += r.akumulasi || 0
-        peny[g].beban += r.beban || 0
-        peny[g].nilaiBuku += r.nilai_buku_akhir || 0
-        const c = ensureCell(mtx, info.skpd_id, g)
-        c.akumulasi += r.akumulasi || 0
-        c.beban += r.beban || 0
-        c.nilaiBuku += r.nilai_buku_akhir || 0
-        hasPeny.add(mtxKey(info.skpd_id, g))
+        peny[g].akumulasi += Number(r.akumulasi)
+        peny[g].beban += Number(r.beban)
+        peny[g].nilaiBuku += Number(r.nilai_buku_akhir)
+        hasPeny.add(mtxKey(r.skpd_id, g))
       }
-      if (data.length < 1000) break
     }
 
     // Rekonsiliasi nilai buku sel: golongan disusutkan dgn hasil engine → pakai
@@ -161,19 +147,15 @@ export default function LaporanBmdPage() {
   // di atas, tanpa join penyusutan (Model 3 cuma butuh nilai perolehan).
   async function snapshotPerolehan(pPeriode: string): Promise<Record<string, number>> {
     const out: Record<string, number> = {}
-    for (let from = 0; ; from += 1000) {
-      let q = supabase.from('aset').select('kode,nilai_perolehan,skpd_id,tgl_perolehan,intra_ekstra,status')
-      if (org.descendantIds) q = q.in('skpd_id', org.descendantIds)
-      if (komptabel) q = q.eq('intra_ekstra', komptabel)
-      const { data } = await q.range(from, from + 999)
-      if (!data || data.length === 0) break
-      for (const r of data as { kode: string; nilai_perolehan: number; tgl_perolehan: string | null; status: string }[]) {
-        if (r.status !== 'aktif') continue
-        if (r.tgl_perolehan && comparePeriode(periodeDariTanggal(r.tgl_perolehan), pPeriode) > 0) continue
-        const g = kodeLevel3(r.kode)
-        out[g] = (out[g] || 0) + (r.nilai_perolehan || 0)
-      }
-      if (data.length < 1000) break
+    // Reuse fn_rekap_bmd (period-aware perolehan per golongan sudah dihitung di
+    // SQL); Model 3 cuma butuh kolom perolehan-nya, penyusutan diabaikan.
+    const { data } = await supabase.rpc('fn_rekap_bmd', {
+      p_periode: pPeriode,
+      p_skpd_ids: org.descendantIds ?? null,
+      p_komptabel: komptabel || null,
+    })
+    for (const r of (data || []) as { golongan: string; perolehan: number }[]) {
+      out[r.golongan] = (out[r.golongan] || 0) + Number(r.perolehan)
     }
     return out
   }
