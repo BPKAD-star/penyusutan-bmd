@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
+import { GOLONGAN_REKAP } from '@/lib/bmd'
 import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
 import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/PenghapusanCards'
@@ -87,8 +87,13 @@ async function countPenghapusan(sb: SB): Promise<PenghapusanData> {
   return out
 }
 
-// Satu kali scan register aset (aktif): rekap per golongan (unit + nilai) DAN
-// count+nilai per cara_perolehan (utk dashboard donut) — hemat, tanpa query ekstra.
+// Rekap register aset (aktif): count+nilai per golongan DAN per cara_perolehan
+// (utk kartu jenis + donut cara perolehan). Agregasi dilakukan di DB lewat RPC
+// fn_dashboard_rekap() (satu query GROUP BY) — BUKAN lagi paging seluruh tabel
+// aset ke serverless lalu jumlah di JS. Perubahan 2026-07-16: setelah import
+// Peralatan & Mesin (218rb baris) scan lama butuh ~230 request berurutan dalam
+// satu invocation → 504 FUNCTION_INVOCATION_TIMEOUT. RPC SECURITY INVOKER, jadi
+// tetap tunduk RLS pemanggil (hasil sama persis dgn scan lama).
 // PENTING: "disetujui" count HARUS dari aset aktif, BUKAN dari jumlah baris ledger
 // jenis='pengadaan' (append-only, permanen — tak berkurang walau barangnya di-
 // batal_pengadaan/unapprove kemudian, krn itu cuma nambah baris baru, bukan hapus
@@ -103,22 +108,19 @@ async function scanAset(sb: SB): Promise<{
   const caraNilai: Record<string, number> = {}
   const caraCount: Record<string, number> = {}
   try {
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await sb.from('aset')
-        .select('kode,nilai_perolehan,cara_perolehan').eq('status', 'aktif').range(from, from + 999)
-      if (error || !data || data.length === 0) break
-      for (const r of data as { kode: string; nilai_perolehan: number; cara_perolehan: string }[]) {
-        const g = kodeLevel3(r.kode)
-        const v = r.nilai_perolehan || 0
-        gol[g] ??= { count: 0, nilai: 0 }
-        gol[g].count += 1
-        gol[g].nilai += v
-        caraNilai[r.cara_perolehan] = (caraNilai[r.cara_perolehan] || 0) + v
-        caraCount[r.cara_perolehan] = (caraCount[r.cara_perolehan] || 0) + 1
+    const { data, error } = await sb.rpc('fn_dashboard_rekap')
+    if (!error && data) {
+      const d = data as {
+        gol: { golongan: string; count: number; nilai: number }[]
+        cara: { cara_perolehan: string; count: number; nilai: number }[]
       }
-      if (data.length < 1000) break
+      for (const r of d.gol || []) gol[r.golongan] = { count: Number(r.count), nilai: Number(r.nilai) }
+      for (const r of d.cara || []) {
+        caraCount[r.cara_perolehan] = Number(r.count)
+        caraNilai[r.cara_perolehan] = Number(r.nilai)
+      }
     }
-  } catch { /* tabel aset belum ada → kosong */ }
+  } catch { /* tabel aset / fungsi belum ada → kosong */ }
   return { gol, caraNilai, caraCount }
 }
 
