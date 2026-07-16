@@ -23,7 +23,7 @@ import {
 } from '@/lib/kdp'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
 
-type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload }
+export type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload }
 const KOMPONEN = [
   { value: 'perencanaan', label: 'Perencanaan' }, { value: 'fisik', label: 'Fisik' },
   { value: 'biaya_umum', label: 'Biaya Umum' }, { value: 'pengawasan', label: 'Pengawasan' },
@@ -33,7 +33,16 @@ const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g
 const newKey = () => Math.random().toString(36).slice(2)
 const FIELDS_KDP = GOLONGAN_FIELDS['1.3.1']
 const barangTotal = (b: BarangKdp) => (b.pembayaran || []).reduce((s, x) => s + Number(x.nominal || 0), 0)
-const kontrakTotal = (p: KontrakKonstruksiPayload) => barangKdpList(p).reduce((s, b) => s + barangTotal(b), 0)
+export const kontrakTotal = (p: KontrakKonstruksiPayload) => barangKdpList(p).reduce((s, b) => s + barangTotal(b), 0)
+
+// Loader dipakai bersama: daftar internal komponen ini & daftar gabungan
+// (PengadaanEntry). 'ditolak' = kontrak diarsipkan → disembunyikan.
+export async function fetchKonstruksiKontraks(supabase: ReturnType<typeof createClient>, skpdId: string | number): Promise<Kontrak[]> {
+  if (!skpdId) return []
+  const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload')
+    .eq('kategori', 'konstruksi').eq('skpd_id', Number(skpdId)).order('created_at', { ascending: false })
+  return ((data || []) as Kontrak[]).filter(k => k.approval_status !== 'ditolak')
+}
 
 // Baris label:value ringkas utk header kartu kontrak.
 function Baris({ label, value }: { label: string; value?: string | null }) {
@@ -118,10 +127,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
 
   const load = useCallback(async (skpdId: string) => {
     if (!skpdId) { setList([]); return }
-    const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload')
-      .eq('kategori', 'konstruksi').eq('skpd_id', Number(skpdId)).order('created_at', { ascending: false })
-    // 'ditolak' = kontrak diarsipkan (pernah disetujui, tak bisa hard-delete) → disembunyikan.
-    setList(((data || []) as Kontrak[]).filter(k => k.approval_status !== 'ditolak'))
+    setList(await fetchKonstruksiKontraks(supabase, skpdId))
     onDataChangeRef.current?.()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(skpd); setSelected(null); setShowCreate(false) }, [skpd, load])
@@ -270,7 +276,8 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
 }
 
 // ── Detail kontrak: daftar barang KDP (tiap barang punya termin) + approval ──
-function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
+// Diekspor supaya bisa dipakai sbg kartu mandiri di daftar gabungan (PengadaanEntry).
+export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
   kontrak: Kontrak; isAdmin: boolean; onBack: () => void; onChanged: () => void; onMsg: (m: string) => void
   inline?: boolean // dipakai di halaman gabungan (banyak kartu sekaligus) — sembunyikan tombol "Kembali"
 }) {

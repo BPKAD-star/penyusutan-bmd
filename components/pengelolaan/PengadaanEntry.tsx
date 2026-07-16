@@ -1,76 +1,89 @@
 'use client'
-// Pengadaan Entry Manual — SATU halaman, semua kartu ter-expand inline
-// (Non-fisik + Konstruksi jadi satu daftar, tanpa dibedakan). Menambah lewat
-// SATU tombol "+ Tambah Pengadaan" → pilih Non-fisik / Pekerjaan Konstruksi →
-// form-nya muncul & daftar disembunyikan (pola page non-fisik). Total atas =
-// gabungan keduanya, auto-refresh via onDataChange.
+// Pengadaan Entry Manual — SATU halaman, SATU daftar gabungan.
+// Non-fisik & Pekerjaan Konstruksi TIDAK lagi dipisah per-section: keduanya
+// tampil dalam satu daftar yang diurutkan berdasarkan TANGGAL DOKUMEN KONTRAK
+// (terbaru dulu). Jenis kontrak dibedakan lewat badge + layout kartunya sendiri
+// (non-fisik: kartu 2 kolom Kontrak/BAST; konstruksi: kartu barang KDP + termin).
+// Menambah lewat SATU tombol "+ Tambah Pengadaan" → pilih Non-fisik / Pekerjaan
+// Konstruksi → form-nya muncul & daftar disembunyikan. Total atas = gabungan.
+//
+// Data + kartunya di-render langsung di sini memakai komponen mandiri yang
+// diekspor tiap modul (PengadaanCard, KontrakDetail) + loader bersama
+// (fetchPengadaanJurnals, fetchKonstruksiKontraks) supaya bisa di-interleave.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { formatRupiah } from '@/lib/export'
-import Pengadaan from './Pengadaan'
-import KonstruksiPengadaan from './KonstruksiPengadaan'
-import { barangKdpList, type KontrakKonstruksiPayload } from '@/lib/kdp'
+import Pengadaan, { PengadaanCard, fetchPengadaanJurnals, useGolonganLabels, draftTotal, type Jurnal } from './Pengadaan'
+import KonstruksiPengadaan, { KontrakDetail, fetchKonstruksiKontraks, kontrakTotal, type Kontrak } from './KonstruksiPengadaan'
+import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
 
-const toNum = (s: unknown) => { const n = parseFloat(String(s ?? '').replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 type Creating = null | 'nonfisik' | 'konstruksi'
+type MergedItem =
+  | { type: 'nonfisik'; id: string; tanggal: string; j: Jurnal }
+  | { type: 'konstruksi'; id: string; tanggal: string; k: Kontrak }
+
+// Badge + garis tepi berwarna supaya jenis kontrak langsung kelihatan di daftar
+// gabungan (permintaan: dibedakan lewat layout saja, bukan section terpisah).
+function TypeBadge({ konstruksi }: { konstruksi: boolean }) {
+  return konstruksi ? (
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+      🏗️ Pekerjaan Konstruksi
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal/10 text-teal border border-teal/20">
+      📦 Pengadaan Non-fisik
+    </span>
+  )
+}
 
 export default function PengadaanEntry() {
   const supabase = createClient()
   const [skpd, setSkpd] = useState('')
-  const [total, setTotal] = useState(0)
   const [creating, setCreating] = useState<Creating>(null)
   const [pickOpen, setPickOpen] = useState(false)
+  const [nfJurnals, setNfJurnals] = useState<Jurnal[]>([])
+  const [kKontraks, setKKontraks] = useState<Kontrak[]>([])
+  const [loading, setLoading] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
+  const golonganLabels = useGolonganLabels()
+  const bolehACC = bolehSetujuiSkpd(scope, skpd)
   const skpdRef = useRef(skpd); skpdRef.current = skpd
 
-  // Total gabungan (Non-fisik + Konstruksi) utk header. Non-fisik disetujui dari
-  // ledger (dedup aset aktif); draft dari estimasi draft_items; konstruksi = Σ
-  // termin semua barang (kompat payload lama via barangKdpList).
-  const loadTotal = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setTotal(0); return }
-    const sid = Number(skpdId)
-    const [{ data: nf }, { data: k }] = await Promise.all([
-      supabase.from('jurnal_header').select('id,jenis,payload,approval_status').eq('kategori', 'pengadaan').eq('skpd_id', sid),
-      supabase.from('jurnal_header').select('id,payload,approval_status').eq('kategori', 'konstruksi').eq('skpd_id', sid),
+  useEffect(() => { (async () => setScope(await fetchApprovalScope(supabase)))() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reload = useCallback(async (skpdId: string) => {
+    if (!skpdId) { setNfJurnals([]); setKKontraks([]); return }
+    setLoading(true)
+    const [nf, k] = await Promise.all([
+      fetchPengadaanJurnals(supabase, skpdId),
+      fetchKonstruksiKontraks(supabase, skpdId),
     ])
-    type NfH = { id: string; jenis: string; payload: { draft_items?: { harga?: string; qty?: string | number }[] } | null; approval_status: string }
-    type KH = { id: string; payload: KontrakKonstruksiPayload | null; approval_status: string }
-    const nfHs = (nf || []) as NfH[]
-    const kHs = (k || []) as KH[]
-
-    const disIds = nfHs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
-    const ledger = new Map<string, number>()
-    if (disIds.length) {
-      const { data: led } = await supabase.from('transaksi_bmd')
-        .select('header_id,nilai,aset:aset_id(id,status)').eq('jenis', 'pengadaan').in('header_id', disIds).order('id', { ascending: false })
-      const seen = new Set<string>()
-      for (const r of (led || []) as unknown as { header_id: string; nilai: number; aset: { id: string; status: string } | null }[]) {
-        if (!r.aset || seen.has(r.aset.id) || r.aset.status !== 'aktif') continue
-        seen.add(r.aset.id); ledger.set(r.header_id, (ledger.get(r.header_id) || 0) + Number(r.nilai || 0))
-      }
-    }
-
-    let t = 0
-    for (const h of nfHs) {
-      if (h.approval_status === 'ditolak') continue
-      if (h.approval_status === 'disetujui') t += ledger.get(h.id) || 0
-      else t += (h.payload?.draft_items || []).reduce((s, i) => s + toNum(i.harga) * Math.max(1, Math.floor(toNum(i.qty)) || 1), 0)
-    }
-    for (const h of kHs) {
-      if (h.approval_status === 'ditolak') continue
-      const barangs = h.payload ? barangKdpList(h.payload) : []
-      t += barangs.reduce((s, b) => s + (b.pembayaran || []).reduce((u, x) => u + Number(x.nominal || 0), 0), 0)
-    }
-    setTotal(t)
+    setNfJurnals(nf); setKKontraks(k); setLoading(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadTotal(skpd); setCreating(null); setPickOpen(false) }, [skpd, loadTotal])
-  const refresh = useCallback(() => loadTotal(skpdRef.current), [loadTotal])
+  useEffect(() => { reload(skpd); setCreating(null); setPickOpen(false); setMsg('') }, [skpd, reload])
+  const refresh = useCallback(() => reload(skpdRef.current), [reload])
+  const exitCreate = () => { setCreating(null); refresh() }
+
+  // Total gabungan (Non-fisik + Konstruksi): non-fisik disetujui dari ledger
+  // (sudah dedup di loader → j.total); draft dari estimasi draft_items;
+  // konstruksi = Σ termin semua barang KDP.
+  const total =
+    nfJurnals.reduce((s, j) => s + (j.approval_status === 'disetujui' ? j.total : draftTotal(j.payload.draft_items || [])), 0) +
+    kKontraks.reduce((s, k) => s + kontrakTotal(k.payload), 0)
+
+  // Satu daftar, diurutkan by tanggal dokumen kontrak (terbaru dulu).
+  const merged: MergedItem[] = [
+    ...nfJurnals.map((j): MergedItem => ({ type: 'nonfisik', id: j.id, tanggal: j.tanggal, j })),
+    ...kKontraks.map((k): MergedItem => ({ type: 'konstruksi', id: k.id, tanggal: k.tanggal, k })),
+  ].sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0))
 
   return (
     <FormShell judul="Pengadaan" msg=""
-      deskripsi="Pilih SKPD — semua pengadaan (Non-fisik & Pekerjaan Fisik Konstruksi) tampil dalam satu daftar."
+      deskripsi="Pilih SKPD — semua pengadaan (Non-fisik & Pekerjaan Fisik Konstruksi) tampil dalam satu daftar, diurutkan berdasarkan tanggal dokumen kontrak."
       headerRight={skpd ? (
         <div className="text-right flex-shrink-0">
           <p className="text-xs text-gray-400">Total Pengadaan</p>
@@ -87,12 +100,16 @@ export default function PengadaanEntry() {
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Pilih SKPD di atas untuk melihat & membuat pengadaan.</div>
       ) : creating === 'nonfisik' ? (
-        <Pengadaan skpdProp={skpd} embedded startCreate onExit={() => setCreating(null)} onDataChange={refresh} />
+        <Pengadaan skpdProp={skpd} embedded startCreate onExit={exitCreate} />
       ) : creating === 'konstruksi' ? (
-        <KonstruksiPengadaan skpdProp={skpd} embedded startCreate onExit={() => setCreating(null)} onDataChange={refresh} />
+        <KonstruksiPengadaan skpdProp={skpd} embedded startCreate onExit={exitCreate} />
       ) : (
         <div className="space-y-6">
-          <div className="flex justify-end">
+          {msg && (
+            <div className={`p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
+          )}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-500">{merged.length} kontrak pengadaan</span>
             <div className="relative">
               <button className="btn-primary" onClick={() => setPickOpen(v => !v)}>+ Tambah Pengadaan</button>
               {pickOpen && (
@@ -103,8 +120,27 @@ export default function PengadaanEntry() {
               )}
             </div>
           </div>
-          <Pengadaan skpdProp={skpd} embedded hideAdd onDataChange={refresh} />
-          <KonstruksiPengadaan skpdProp={skpd} embedded hideAdd onDataChange={refresh} />
+
+          {loading ? (
+            <div className="card p-12 text-center text-gray-400 text-sm">Memuat pengadaan...</div>
+          ) : merged.length === 0 ? (
+            <div className="card p-12 text-center text-gray-400 text-sm">Belum ada pengadaan untuk SKPD ini.</div>
+          ) : (
+            <div className="space-y-5">
+              {merged.map(it => (
+                <div key={`${it.type}-${it.id}`} className="space-y-1.5">
+                  <TypeBadge konstruksi={it.type === 'konstruksi'} />
+                  {it.type === 'nonfisik' ? (
+                    <PengadaanCard j={it.j} skpdId={Number(skpd)} golonganLabels={golonganLabels}
+                      isAdmin={bolehACC} onChanged={refresh} onMsg={setMsg} />
+                  ) : (
+                    <KontrakDetail inline kontrak={it.k} isAdmin={bolehACC}
+                      onBack={refresh} onChanged={refresh} onMsg={setMsg} />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </FormShell>

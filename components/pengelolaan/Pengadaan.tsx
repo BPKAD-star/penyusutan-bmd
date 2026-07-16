@@ -84,13 +84,13 @@ type JurnalLine = {
 }
 // hasLedger = kontrak ini punya baris di transaksi_bmd (pernah disetujui, walau
 // kini pending karena dibuka kunci) → tak boleh dihapus penuh (FK + append-only).
-type Jurnal = Header & { lines: JurnalLine[]; total: number; hasLedger: boolean }
+export type Jurnal = Header & { lines: JurnalLine[]; total: number; hasLedger: boolean }
 
 const namaFile = (path: string) => path.split('/').pop() || path
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
-const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toNum(i.harga), 0)
+export const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toNum(i.harga), 0)
 
 // Baris label:value ringkas utk header kartu kontrak (Pengadaan & konstruksi).
 function Baris({ label, value }: { label: string; value?: string | null }) {
@@ -146,6 +146,108 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
   }
   return out
 }
+// Loader dipakai bersama: daftar internal komponen ini & daftar gabungan
+// (PengadaanEntry). Kembalikan hanya kontrak pending & disetujui(berisi) —
+// baris 'ditolak' legacy disaring. Barang disetujui dibaca dari aset+ledger
+// (dedup aset aktif), draft dari payload.draft_items (dinormalisasi per-unit).
+export async function fetchPengadaanJurnals(supabase: ReturnType<typeof createClient>, skpdId: string | number): Promise<Jurnal[]> {
+  if (!skpdId) return []
+  const { data: headers } = await supabase.from('jurnal_header')
+    .select('id,no_sk,tanggal,periode,jenis,keterangan,payload,approval_status,approved_at')
+    .eq('kategori', 'pengadaan').eq('skpd_id', Number(skpdId))
+    .order('tanggal', { ascending: false })
+  const hs = (headers || []) as Header[]
+
+  const jmap = new Map<string, Jurnal>()
+  for (const h of hs) {
+    const payload = h.payload || {}
+    jmap.set(h.id, { ...h, payload: { ...payload, draft_items: normalizeDraftItems(payload.draft_items) }, lines: [], total: 0, hasLedger: false })
+  }
+
+  // Deteksi kontrak yg punya jejak ledger (pernah disetujui) → tak bisa dihapus.
+  const pendingIds = hs.filter(h => h.approval_status === 'pending').map(h => h.id)
+  if (pendingIds.length > 0) {
+    const { data: led } = await supabase.from('transaksi_bmd').select('header_id').in('header_id', pendingIds)
+    for (const r of (led || []) as { header_id: string | null }[]) {
+      const j = r.header_id && jmap.get(r.header_id); if (j) j.hasLedger = true
+    }
+  }
+
+  const disetujuiIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
+  if (disetujuiIds.length > 0) {
+    const { data } = await supabase.from('transaksi_bmd')
+      .select(`id,header_id,nilai,tanggal,payload,aset:aset_id(id,nibar,uraian_barang,kode,satuan,intra_ekstra,status,foto_paths,${ASET_FIELD_COLS.join(',')})`)
+      .eq('jenis', 'pengadaan')
+      .in('header_id', disetujuiIds)
+      .order('id', { ascending: false })
+
+    const rows = (data || []) as unknown as {
+      id: number; header_id: string; nilai: number; tanggal: string; payload: { kode_rekening?: string } | null
+      aset: ({
+        id: string; nibar: string | null; nama_barang: string | null; uraian_barang: string | null; kode: string
+        satuan: string | null; intra_ekstra: string | null; status: string; foto_paths: string[]
+      } & Record<string, string | number | null>) | null
+    }[]
+    const seen = new Set<string>()
+    for (const r of rows) {
+      if (!r.aset || seen.has(r.aset.id)) continue
+      seen.add(r.aset.id)
+      if (r.aset.status !== 'aktif') continue
+      const j = jmap.get(r.header_id)
+      if (!j) continue
+      const fields: Record<string, string> = {}
+      for (const k of ASET_FIELD_COLS) { const v = r.aset[k]; if (v != null) fields[k] = String(v) }
+      j.lines.push({
+        aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, uraian_barang: r.aset.uraian_barang, nama_barang: r.aset.nama_barang,
+        satuan: r.aset.satuan, intra_ekstra: r.aset.intra_ekstra, nilai: r.nilai, tanggal: r.tanggal,
+        rekening: r.payload?.kode_rekening || '', foto_paths: r.aset.foto_paths || [], fields,
+      })
+      j.total += r.nilai
+    }
+  }
+  // Tampilkan hanya pending & disetujui(berisi). Baris 'ditolak' legacy disaring.
+  return [...jmap.values()].filter(j =>
+    j.approval_status === 'pending' || (j.approval_status === 'disetujui' && j.lines.length > 0))
+}
+
+// Cek No. Kontrak / No. BAST belum dipakai (per SKPD, kategori pengadaan).
+// 'ditolak' (legacy/arsip) dikecualikan — nomornya bebas dipakai ulang.
+export async function cekNomorPengadaanDipakai(supabase: ReturnType<typeof createClient>, skpdId: number, noSk: string, noBast: string | undefined, excludeId?: string): Promise<string | null> {
+  let qSk = supabase.from('jurnal_header').select('id').eq('kategori', 'pengadaan').eq('skpd_id', skpdId).eq('no_sk', noSk).neq('approval_status', 'ditolak')
+  if (excludeId) qSk = qSk.neq('id', excludeId)
+  const { data: dupSk } = await qSk.limit(1)
+  if (dupSk && dupSk.length > 0) return `No. Kontrak "${noSk}" sudah dipakai kontrak lain di SKPD ini.`
+  if (noBast) {
+    let qBast = supabase.from('jurnal_header').select('id').eq('kategori', 'pengadaan').eq('skpd_id', skpdId).eq('payload->>no_bast', noBast).neq('approval_status', 'ditolak')
+    if (excludeId) qBast = qBast.neq('id', excludeId)
+    const { data: dupBast } = await qBast.limit(1)
+    if (dupBast && dupBast.length > 0) return `No. BAST "${noBast}" sudah dipakai kontrak lain di SKPD ini.`
+  }
+  return null
+}
+
+// Label jenis BMD per golongan (mis. "1.3.2 — Peralatan dan Mesin"). Hook supaya
+// dipakai bersama komponen ini & daftar gabungan (PengadaanEntry).
+export function useGolonganLabels(): Record<string, string> {
+  const supabase = createClient()
+  const [labels, setLabels] = useState<Record<string, string>>({})
+  useEffect(() => {
+    (async () => {
+      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
+      const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
+      const out: Record<string, string> = {}
+      await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
+        const { data } = await supabase.from('admin_kodefikasi_bmd')
+          .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
+        const id = data?.[0]?.jenis_aset_id
+        out[prefix] = (id != null && namaById.get(id)) || prefix
+      }))
+      setLabels(out)
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return labels
+}
+
 export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onExit, onDataChange, hideAdd }: {
   skpdProp?: string; embedded?: boolean
   // Mode "drill" dari PengadaanEntry (daftar gabungan): mulai buat baru (startCreate)
@@ -163,7 +265,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
   onDataChangeRef.current = onDataChange
 
   const [skpdPathMap, setSkpdPathMap] = useState<Record<number, string>>({})
-  const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
+  const golonganLabels = useGolonganLabels()
   // SKPD boleh dikontrol induk (satu tampilan Pengadaan: SKPD dipilih sekali di atas).
   const [skpdInternal, setSkpdInternal] = useState('')
   const skpd = skpdProp !== undefined ? skpdProp : skpdInternal
@@ -174,16 +276,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
-  const [busyId, setBusyId] = useState<string | null>(null)
-
   const [mode, setMode] = useState<'list' | 'kontrak-baru'>('list')
-  const [editing, setEditing] = useState<Header | null>(null)
-  // Edit spesifikasi selalu lewat checklist (1 atau banyak barang dicentang) →
-  // popup. keys.length===1 → replace penuh (bisa mengosongkan field). >1 →
-  // cuma menerapkan field yang diisi (non-kosong), field lain per barang tak disentuh.
-  // Edit spesifikasi HANYA untuk draft (kontrak disetujui dikunci — harus unapprove
-  // dulu). keys.length===1 → replace penuh; >1 → cuma terapkan field non-kosong.
-  const [specEdit, setSpecEdit] = useState<{ header: Jurnal; keys: string[] } | null>(null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -210,86 +303,17 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
     ;(async () => {
       setScope(await fetchApprovalScope(supabase))
     })()
-    ;(async () => {
-      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
-      const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
-      const labels: Record<string, string> = {}
-      await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('admin_kodefikasi_bmd')
-          .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
-        const id = data?.[0]?.jenis_aset_id
-        labels[prefix] = (id != null && namaById.get(id)) || prefix
-      }))
-      setGolonganLabels(labels)
-    })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadJurnals = useCallback(async (skpdId: string) => {
     if (!skpdId) { setJurnals([]); return }
     setLoadingJurnal(true)
-
-    const { data: headers } = await supabase.from('jurnal_header')
-      .select('id,no_sk,tanggal,periode,jenis,keterangan,payload,approval_status,approved_at')
-      .eq('kategori', 'pengadaan').eq('skpd_id', Number(skpdId))
-      .order('tanggal', { ascending: false })
-    const hs = (headers || []) as Header[]
-
-    const jmap = new Map<string, Jurnal>()
-    for (const h of hs) {
-      const payload = h.payload || {}
-      jmap.set(h.id, { ...h, payload: { ...payload, draft_items: normalizeDraftItems(payload.draft_items) }, lines: [], total: 0, hasLedger: false })
-    }
-
-    // Deteksi kontrak yg punya jejak ledger (pernah disetujui) → tak bisa dihapus.
-    const pendingIds = hs.filter(h => h.approval_status === 'pending').map(h => h.id)
-    if (pendingIds.length > 0) {
-      const { data: led } = await supabase.from('transaksi_bmd').select('header_id').in('header_id', pendingIds)
-      for (const r of (led || []) as { header_id: string | null }[]) {
-        const j = r.header_id && jmap.get(r.header_id); if (j) j.hasLedger = true
-      }
-    }
-
-    const disetujuiIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
-    if (disetujuiIds.length > 0) {
-      const { data } = await supabase.from('transaksi_bmd')
-        .select(`id,header_id,nilai,tanggal,payload,aset:aset_id(id,nibar,uraian_barang,kode,satuan,intra_ekstra,status,foto_paths,${ASET_FIELD_COLS.join(',')})`)
-        .eq('jenis', 'pengadaan')
-        .in('header_id', disetujuiIds)
-        .order('id', { ascending: false })
-
-      const rows = (data || []) as unknown as {
-        id: number; header_id: string; nilai: number; tanggal: string; payload: { kode_rekening?: string } | null
-        aset: ({
-          id: string; nibar: string | null; nama_barang: string | null; uraian_barang: string | null; kode: string
-          satuan: string | null; intra_ekstra: string | null; status: string; foto_paths: string[]
-        } & Record<string, string | number | null>) | null
-      }[]
-      const seen = new Set<string>()
-      for (const r of rows) {
-        if (!r.aset || seen.has(r.aset.id)) continue
-        seen.add(r.aset.id)
-        if (r.aset.status !== 'aktif') continue
-        const j = jmap.get(r.header_id)
-        if (!j) continue
-        const fields: Record<string, string> = {}
-        for (const k of ASET_FIELD_COLS) { const v = r.aset[k]; if (v != null) fields[k] = String(v) }
-        j.lines.push({
-          aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, uraian_barang: r.aset.uraian_barang, nama_barang: r.aset.nama_barang,
-          satuan: r.aset.satuan, intra_ekstra: r.aset.intra_ekstra, nilai: r.nilai, tanggal: r.tanggal,
-          rekening: r.payload?.kode_rekening || '', foto_paths: r.aset.foto_paths || [], fields,
-        })
-        j.total += r.nilai
-      }
-    }
-    // Tampilkan hanya pending & disetujui(berisi). Baris 'ditolak' legacy disaring
-    // (fitur Tolak sudah dihapus) — tetap ada di DB tapi tak ditampilkan.
-    setJurnals([...jmap.values()].filter(j =>
-      j.approval_status === 'pending' || (j.approval_status === 'disetujui' && j.lines.length > 0)))
+    setJurnals(await fetchPengadaanJurnals(supabase, skpdId))
     setLoadingJurnal(false)
     onDataChangeRef.current?.()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadJurnals(skpd); setMode('list'); setEditing(null) }, [skpd, loadJurnals])
+  useEffect(() => { loadJurnals(skpd); setMode('list') }, [skpd, loadJurnals])
 
   const skpdNama = skpd ? skpdPathMap[Number(skpd)] : undefined
 
@@ -300,178 +324,11 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
     return s
   }, 0)
 
-  // ── Cek No. Kontrak / No. BAST belum dipakai (per SKPD, kategori pengadaan) ─
-  // 'ditolak' (legacy, fitur Tolak sudah dihapus & disembunyikan dari tampilan)
-  // dikecualikan dari cek keunikan — kontrak itu sudah mati/tak bisa diapa-apakan
-  // lagi, nomornya bebas dipakai ulang. Kontrak yang beneran dihapus (hapusKontrak)
-  // otomatis tak ketemu lagi krn barisnya sudah tak ada di tabel.
-  async function cekNomorDipakai(noSk: string, noBast: string | undefined, excludeId?: string) {
-    let qSk = supabase.from('jurnal_header').select('id').eq('kategori', 'pengadaan').eq('skpd_id', Number(skpd)).eq('no_sk', noSk).neq('approval_status', 'ditolak')
-    if (excludeId) qSk = qSk.neq('id', excludeId)
-    const { data: dupSk } = await qSk.limit(1)
-    if (dupSk && dupSk.length > 0) return `No. Kontrak "${noSk}" sudah dipakai kontrak lain di SKPD ini.`
-    if (noBast) {
-      let qBast = supabase.from('jurnal_header').select('id').eq('kategori', 'pengadaan').eq('skpd_id', Number(skpd)).eq('payload->>no_bast', noBast).neq('approval_status', 'ditolak')
-      if (excludeId) qBast = qBast.neq('id', excludeId)
-      const { data: dupBast } = await qBast.limit(1)
-      if (dupBast && dupBast.length > 0) return `No. BAST "${noBast}" sudah dipakai kontrak lain di SKPD ini.`
-    }
-    return null
-  }
-
-  // ── Persist perubahan draft_items ke jurnal_header.payload ────────────────
-  async function savePayload(headerId: string, payload: HeaderPayload) {
-    const { error } = await supabase.from('jurnal_header').update({ payload }).eq('id', headerId)
-    if (error) { setMsg(`Error: gagal menyimpan draft: ${error.message}`); return false }
-    return true
-  }
-  async function tambahDraftItems(h: Jurnal, newItems: DraftItem[]) {
-    const items = [...(h.payload.draft_items || []), ...newItems]
-    const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
-    if (ok) loadJurnals(skpd)
-  }
-  async function hapusDraftItem(h: Jurnal, key: string) {
-    if (!confirm('Hapus barang ini dari draft?')) return
-    const items = (h.payload.draft_items || []).filter(i => i.key !== key)
-    const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
-    if (ok) loadJurnals(skpd)
-  }
-  // Edit spesifikasi draft. foto.replace (mode 1 barang) = ganti penuh set foto.
-  // foto.append (mode banyak barang) = TAMBAH foto baru ke tiap barang yg dicentang
-  // (di-"split" ke semua yg dipilih, tanpa menghapus foto lama masing-masing).
-  // Field: 1 barang → replace penuh; >1 → cuma terapkan field non-kosong.
-  async function applyDraftFields(h: Jurnal, keys: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
-    const items = (h.payload.draft_items || []).map(i => {
-      if (!keys.includes(i.key)) return i
-      if (keys.length === 1) return { ...i, fields: { ...fields }, foto: foto.replace ?? i.foto }
-      const nonEmpty: Record<string, string> = {}
-      for (const [k, v] of Object.entries(fields)) if (v && v.trim()) nonEmpty[k] = v
-      const foBaru = foto.append && foto.append.length > 0 ? [...i.foto, ...foto.append] : i.foto
-      return { ...i, fields: { ...i.fields, ...nonEmpty }, foto: foBaru }
-    })
-    const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
-    if (ok) loadJurnals(skpd)
-  }
-  async function hapusKontrak(h: Jurnal) {
-    // Kontrak dgn jejak ledger (pernah disetujui lalu dibuka kunci): TIDAK
-    // BOLEH hapus baris transaksi_bmd (pernah dicoba, ternyata merusak replay
-    // SEMBUNYI di Daftar Barang/Penyusutan yg justru bergantung pd baris
-    // batal_pengadaan itu utk tau barang mana yg harus disembunyikan — lihat
-    // migrasi 19). Sebagai gantinya: ARSIPKAN (approval_status='ditolak') —
-    // kontrak otomatis hilang dari tampilan Pengadaan + No SK/BAST bebas
-    // dipakai ulang (uniqueness check sudah mengecualikan 'ditolak'), TANPA
-    // menyentuh ledger sama sekali.
-    if (h.hasLedger) {
-      if (!confirm(`Arsipkan kontrak ${h.no_sk}? Kontrak ini pernah disetujui — riwayat ledgernya (barang yg sudah dibatalkan) TETAP tersimpan (append-only, tak bisa dihapus). Kontrak akan hilang dari daftar & No. Kontrak/BAST bisa dipakai lagi. Tidak bisa dibatalkan.`)) return
-      const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', h.id)
-      if (error) { setMsg(`Error: gagal mengarsipkan kontrak: ${error.message}`); return }
-      setMsg(`Kontrak ${h.no_sk} diarsipkan — No. Kontrak/BAST bisa dipakai lagi.`)
-      loadJurnals(skpd)
-      return
-    }
-    if (!confirm(`Hapus kontrak ${h.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`)) return
-    const { error } = await supabase.from('jurnal_header').delete().eq('id', h.id)
-    if (error) { setMsg(`Error: gagal menghapus kontrak: ${error.message}`); return }
-    setMsg(`Kontrak ${h.no_sk} dihapus.`)
-    loadJurnals(skpd)
-  }
-
-  // ── Approve: materialize draft_items → aset + transaksi_bmd ────────────────
-  async function approveHeader(h: Jurnal) {
-    const items = h.payload.draft_items || []
-    if (items.length === 0) { setMsg('Error: kontrak ini belum ada barangnya — tambahkan dulu sebelum disetujui.'); return }
-    for (const it of items) {
-      if (!it.kode) { setMsg('Error: ada barang draft tanpa kode.'); return }
-      if (toNum(it.harga) <= 0) { setMsg(`Error: harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
-    }
-    const perolehanDate = h.payload.tgl_bast || h.tanggal
-    if (!confirm(`Setujui kontrak ${h.no_sk}?\n${items.length} barang akan dicatat resmi dgn tgl perolehan ${perolehanDate}.`)) return
-
-    setBusyId(h.id); setMsg('')
-    const periode = periodeDariTanggal(perolehanDate)
-
-    // Generate NIBAR otomatis — perlu kode lokasi SKPD (skpd.kode_skpd, ber-titik).
-    const { data: skpdRow, error: skpdErr } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', Number(skpd)).single()
-    if (skpdErr || !skpdRow?.kode_skpd) {
-      setMsg(`Error: gagal ambil kode lokasi SKPD utk generate NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`)
-      setBusyId(null); return
-    }
-    const tahun = String(new Date(perolehanDate).getFullYear())
-
-    // Klasifikasi intra/ekstrakomptabel per barang: nilai vs batas_kapitalisasi
-    // (kodefikasi_bmd) — >= batas → intra, < batas → ekstra (lib/bmd.ts).
-    const batasMap = await fetchBatasKapitalisasi(supabase, items.map(it => it.kode))
-    const itemsWithKlas = items.map(it => ({ ...it, intraEkstra: klasifikasiKomptabel(toNum(it.harga), batasMap.get(it.kode)) }))
-
-    const nibarMap = await generateNibars(supabase, itemsWithKlas.map(it => ({ ...it, tahun })), skpdRow.kode_skpd)
-
-    const asetRows = itemsWithKlas.map(it => {
-      const row: Record<string, unknown> = {
-        nibar: nibarMap.get(it.key) || null, kode: it.kode, uraian_barang: it.uraianBarang || null, jumlah: 1,
-        satuan: it.satuan.trim() || null, harga_satuan: toNum(it.harga), nilai_perolehan: toNum(it.harga),
-        tgl_perolehan: perolehanDate, skpd_id: Number(skpd), intra_ekstra: it.intraEkstra,
-        cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: it.foto,
-      }
-      for (const k of ASET_FIELD_COLS) {
-        const v = it.fields[k]
-        if (!v) continue
-        row[k] = ASET_NUM_COLS.has(k) ? toNum(v) : v
-      }
-      return row
-    })
-    const { data: inserted, error: asetErr } = await supabase.from('aset').insert(asetRows).select('id,nilai_perolehan')
-    if (asetErr || !inserted) { setMsg(`Error: gagal membuat barang: ${asetErr?.message}`); setBusyId(null); return }
-
-    // inserted[i] sejajar dengan items[i] (PostgREST kembalikan dlm urutan insert).
-    const trxRows = (inserted as { id: string; nilai_perolehan: number }[]).map((a, i) => ({
-      aset_id: a.id, jenis: 'pengadaan', periode, tanggal: perolehanDate, nilai: a.nilai_perolehan,
-      skpd_tujuan: Number(skpd), header_id: h.id,
-      payload: { sumber: h.jenis, no_bast: h.payload.no_bast || null, kode_rekening: items[i]?.rekening || null },
-    }))
-    const { error: trxErr } = await supabase.from('transaksi_bmd').insert(trxRows)
-    if (trxErr) {
-      await supabase.from('aset').update({ status: 'dihapus' }).in('id', (inserted as { id: string }[]).map(a => a.id))
-      setMsg(`Error: gagal mencatat transaksi: ${trxErr.message}`); setBusyId(null); return
-    }
-
-    const { data: { user } } = await supabase.auth.getUser()
-    const { error: appErr } = await supabase.from('jurnal_header')
-      .update({ approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString() })
-      .eq('id', h.id)
-    if (appErr) { setMsg(`Barang sudah tercatat, tapi status approval gagal diupdate: ${appErr.message}`); setBusyId(null); loadJurnals(skpd); return }
-
-    setMsg(`Kontrak ${h.no_sk} disetujui — ${asetRows.length} barang resmi tercatat (tgl perolehan ${perolehanDate}).`)
-    setBusyId(null)
-    loadJurnals(skpd)
-  }
-
-  // Buka kunci (unapprove): kembalikan kontrak disetujui ke draft. Karena ledger
-  // append-only, semua barang di-batal_pengadaan (soft-delete, retroaktif → hilang
-  // dari Daftar Barang/Penyusutan), lalu draft_items direkonstruksi dari barang tsb
-  // supaya bisa diedit. NIBAR digenerate ULANG saat disetujui lagi (yang lama tetap
-  // tersimpan sbg 'dihapus' untuk audit). Admin only.
-  async function unapproveHeader(j: Jurnal) {
-    if (!confirm(`Buka kunci kontrak ${j.no_sk}?\n${j.lines.length} barang dikembalikan ke draft & DIHAPUS dari Daftar Barang/Penyusutan sampai disetujui lagi. NIBAR akan digenerate ulang saat approve berikutnya.`)) return
-    setBusyId(j.id); setMsg('')
-    for (const l of j.lines) {
-      const { error } = await catatTransaksi(supabase, {
-        asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal, headerId: j.id,
-        keterangan: `Unapprove kontrak ${j.no_sk} — dikembalikan ke draft`,
-      })
-      if (error) { setMsg(`Error: ${error}`); setBusyId(null); return }
-    }
-    const draftItems: DraftItem[] = j.lines.map(l => ({
-      key: newKey(), golongan: kodeLevel3(l.kode), kode: l.kode, uraianBarang: l.uraian_barang || '',
-      rekening: l.rekening || '', satuan: l.satuan || '', harga: String(l.nilai), fields: l.fields || {}, foto: l.foto_paths || [],
-    }))
-    const { error } = await supabase.from('jurnal_header')
-      .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...j.payload, draft_items: draftItems } })
-      .eq('id', j.id)
-    if (error) { setMsg(`Error: gagal buka kunci: ${error.message}`); setBusyId(null); return }
-    setMsg(`Kontrak ${j.no_sk} dibuka kunci — kembali ke draft. Edit lalu setujui ulang.`)
-    setBusyId(null)
-    loadJurnals(skpd)
-  }
+  // Cek No. Kontrak/BAST belum dipakai — thin wrapper ke helper modul (dipakai
+  // KontrakForm & EditHeaderModal). Handler per-kontrak (approve/unapprove/edit
+  // draft) sekarang di komponen mandiri PengadaanCard (lihat bawah).
+  const cekNomorDipakai = (noSk: string, noBast: string | undefined, excludeId?: string) =>
+    cekNomorPengadaanDipakai(supabase, Number(skpd), noSk, noBast, excludeId)
 
   const pending = jurnals.filter(j => j.approval_status === 'pending')
   const disetujui = jurnals.filter(j => j.approval_status === 'disetujui')
@@ -498,46 +355,12 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
           <div className="card p-12 text-center text-gray-400 text-sm">Kontrak tidak ditemukan (mungkin sudah dihapus).</div>
         ) : (
           <div className="space-y-6">
-            {fp.map(h => (
-              <PendingCard key={h.id} h={h} isAdmin={bolehACC} busy={busyId === h.id}
-                golonganLabels={golonganLabels}
-                onEditHeader={() => setEditing(h)}
-                onHapusKontrak={() => hapusKontrak(h)}
-                onTambah={items => tambahDraftItems(h, items)}
-                onHapusItem={key => hapusDraftItem(h, key)}
-                onEditSpes={keys => setSpecEdit({ header: h, keys })}
-                onApprove={() => approveHeader(h)}
-              />
-            ))}
-            {fd.map(j => (
-              <ApprovedCard key={j.id} j={j} isAdmin={bolehACC} busy={busyId === j.id}
-                onUnapprove={() => unapproveHeader(j)}
-              />
+            {[...fp, ...fd].map(h => (
+              <PengadaanCard key={h.id} j={h} skpdId={Number(skpd)} golonganLabels={golonganLabels}
+                isAdmin={bolehACC} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
             ))}
           </div>
         )}
-        {editing && (
-          <EditHeaderModal header={editing} cekNomorDipakai={cekNomorDipakai}
-            onClose={() => setEditing(null)}
-            onSaved={() => { setEditing(null); setMsg('Header kontrak diperbarui.'); loadJurnals(skpd) }}
-          />
-        )}
-        {specEdit && (() => {
-          const items = (specEdit.header.payload.draft_items || []).filter(i => specEdit.keys.includes(i.key))
-          const single = items.length === 1 ? items[0] : null
-          return (
-            <EditSpesifikasiModal
-              title={single ? (single.fields.nama_barang || single.kode) : `${items.length} barang dicentang`}
-              fieldKeys={fieldsForKode(items[0]?.kode || '')}
-              initialFields={single ? single.fields : {}}
-              initialFoto={single ? single.foto : []}
-              single={!!single}
-              storagePrefix={single ? `draft/${single.key}` : `draft/${specEdit.header.id}`}
-              onClose={() => setSpecEdit(null)}
-              onSave={async (fields, foto) => { await applyDraftFields(specEdit.header, specEdit.keys, fields, foto); setSpecEdit(null) }}
-            />
-          )
-        })()}
       </div>
     )
   }
@@ -584,15 +407,8 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-amber-700">⏳ Menunggu Persetujuan ({pending.length})</h3>
                   {pending.map(h => (
-                    <PendingCard key={h.id} h={h} isAdmin={bolehACC} busy={busyId === h.id}
-                      golonganLabels={golonganLabels}
-                      onEditHeader={() => setEditing(h)}
-                      onHapusKontrak={() => hapusKontrak(h)}
-                      onTambah={items => tambahDraftItems(h, items)}
-                      onHapusItem={key => hapusDraftItem(h, key)}
-                      onEditSpes={keys => setSpecEdit({ header: h, keys })}
-                      onApprove={() => approveHeader(h)}
-                    />
+                    <PengadaanCard key={h.id} j={h} skpdId={Number(skpd)} golonganLabels={golonganLabels}
+                      isAdmin={bolehACC} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
                   ))}
                 </section>
               )}
@@ -600,9 +416,8 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujui.length})</h3>
                   {disetujui.map(j => (
-                    <ApprovedCard key={j.id} j={j} isAdmin={bolehACC} busy={busyId === j.id}
-                      onUnapprove={() => unapproveHeader(j)}
-                    />
+                    <PengadaanCard key={j.id} j={j} skpdId={Number(skpd)} golonganLabels={golonganLabels}
+                      isAdmin={bolehACC} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
                   ))}
                 </section>
               )}
@@ -610,32 +425,6 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
           )}
         </div>
       )}
-
-      {editing && (
-        <EditHeaderModal header={editing} cekNomorDipakai={cekNomorDipakai}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); setMsg('Header kontrak diperbarui.'); loadJurnals(skpd) }}
-        />
-      )}
-      {specEdit && (() => {
-        const items = (specEdit.header.payload.draft_items || []).filter(i => specEdit.keys.includes(i.key))
-        const single = items.length === 1 ? items[0] : null
-        return (
-          <EditSpesifikasiModal
-            title={single ? (single.fields.nama_barang || single.kode) : `${items.length} barang dicentang`}
-            fieldKeys={fieldsForKode(items[0]?.kode || '')}
-            initialFields={single ? single.fields : {}}
-            initialFoto={single ? single.foto : []}
-            single={!!single}
-            storagePrefix={single ? `draft/${single.key}` : `draft/${specEdit.header.id}`}
-            onClose={() => setSpecEdit(null)}
-            onSave={async (fields, foto) => {
-              await applyDraftFields(specEdit.header, specEdit.keys, fields, foto)
-              setSpecEdit(null)
-            }}
-          />
-        )
-      })()}
     </>
   )
   return embedded ? body : (
@@ -647,6 +436,213 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
           <p className="text-lg font-bold text-gray-900">{formatRupiah(totalSemua)}</p>
         </div>
       ) : undefined}>{body}</FormShell>
+  )
+}
+
+// ── Kartu satu kontrak pengadaan non-fisik (mandiri) ────────────────────────
+// Merangkum PendingCard/ApprovedCard + seluruh handler per-kontrak (approve/
+// unapprove/edit draft/edit header/spesifikasi) supaya bisa dipakai baik oleh
+// daftar internal komponen Pengadaan maupun daftar gabungan (PengadaanEntry).
+// Materialize approve TIDAK berubah dari sebelumnya — cuma dipindah ke sini.
+export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, onMsg }: {
+  j: Jurnal; skpdId: number; golonganLabels: Record<string, string>
+  isAdmin: boolean; onChanged: () => void; onMsg: (m: string) => void
+}) {
+  const supabase = createClient()
+  const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [specKeys, setSpecKeys] = useState<string[] | null>(null)
+
+  const cekNomorDipakai = (noSk: string, noBast: string | undefined, excludeId?: string) =>
+    cekNomorPengadaanDipakai(supabase, skpdId, noSk, noBast, excludeId)
+
+  // ── Persist perubahan draft_items ke jurnal_header.payload ────────────────
+  async function savePayload(payload: HeaderPayload) {
+    const { error } = await supabase.from('jurnal_header').update({ payload }).eq('id', j.id)
+    if (error) { onMsg(`Error: gagal menyimpan draft: ${error.message}`); return false }
+    return true
+  }
+  async function tambahDraftItems(newItems: DraftItem[]) {
+    const items = [...(j.payload.draft_items || []), ...newItems]
+    if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
+  }
+  async function hapusDraftItem(key: string) {
+    if (!confirm('Hapus barang ini dari draft?')) return
+    const items = (j.payload.draft_items || []).filter(i => i.key !== key)
+    if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
+  }
+  // Edit spesifikasi draft. foto.replace (mode 1 barang) = ganti penuh set foto.
+  // foto.append (mode banyak barang) = TAMBAH foto baru ke tiap barang yg dicentang
+  // (di-"split" ke semua yg dipilih, tanpa menghapus foto lama masing-masing).
+  // Field: 1 barang → replace penuh; >1 → cuma terapkan field non-kosong.
+  async function applyDraftFields(keys: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
+    const items = (j.payload.draft_items || []).map(i => {
+      if (!keys.includes(i.key)) return i
+      if (keys.length === 1) return { ...i, fields: { ...fields }, foto: foto.replace ?? i.foto }
+      const nonEmpty: Record<string, string> = {}
+      for (const [k, v] of Object.entries(fields)) if (v && v.trim()) nonEmpty[k] = v
+      const foBaru = foto.append && foto.append.length > 0 ? [...i.foto, ...foto.append] : i.foto
+      return { ...i, fields: { ...i.fields, ...nonEmpty }, foto: foBaru }
+    })
+    if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
+  }
+  async function hapusKontrak() {
+    // Kontrak dgn jejak ledger (pernah disetujui lalu dibuka kunci): TIDAK
+    // BOLEH hapus baris transaksi_bmd (pernah dicoba, ternyata merusak replay
+    // SEMBUNYI di Daftar Barang/Penyusutan yg justru bergantung pd baris
+    // batal_pengadaan itu utk tau barang mana yg harus disembunyikan — lihat
+    // migrasi 19). Sebagai gantinya: ARSIPKAN (approval_status='ditolak') —
+    // kontrak otomatis hilang dari tampilan Pengadaan + No SK/BAST bebas
+    // dipakai ulang (uniqueness check sudah mengecualikan 'ditolak'), TANPA
+    // menyentuh ledger sama sekali.
+    if (j.hasLedger) {
+      if (!confirm(`Arsipkan kontrak ${j.no_sk}? Kontrak ini pernah disetujui — riwayat ledgernya (barang yg sudah dibatalkan) TETAP tersimpan (append-only, tak bisa dihapus). Kontrak akan hilang dari daftar & No. Kontrak/BAST bisa dipakai lagi. Tidak bisa dibatalkan.`)) return
+      const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', j.id)
+      if (error) { onMsg(`Error: gagal mengarsipkan kontrak: ${error.message}`); return }
+      onMsg(`Kontrak ${j.no_sk} diarsipkan — No. Kontrak/BAST bisa dipakai lagi.`)
+      onChanged()
+      return
+    }
+    if (!confirm(`Hapus kontrak ${j.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`)) return
+    const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
+    if (error) { onMsg(`Error: gagal menghapus kontrak: ${error.message}`); return }
+    onMsg(`Kontrak ${j.no_sk} dihapus.`)
+    onChanged()
+  }
+
+  // ── Approve: materialize draft_items → aset + transaksi_bmd ────────────────
+  async function approveHeader() {
+    const items = j.payload.draft_items || []
+    if (items.length === 0) { onMsg('Error: kontrak ini belum ada barangnya — tambahkan dulu sebelum disetujui.'); return }
+    for (const it of items) {
+      if (!it.kode) { onMsg('Error: ada barang draft tanpa kode.'); return }
+      if (toNum(it.harga) <= 0) { onMsg(`Error: harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
+    }
+    const perolehanDate = j.payload.tgl_bast || j.tanggal
+    if (!confirm(`Setujui kontrak ${j.no_sk}?\n${items.length} barang akan dicatat resmi dgn tgl perolehan ${perolehanDate}.`)) return
+
+    setBusy(true); onMsg('')
+    const periode = periodeDariTanggal(perolehanDate)
+
+    // Generate NIBAR otomatis — perlu kode lokasi SKPD (skpd.kode_skpd, ber-titik).
+    const { data: skpdRow, error: skpdErr } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', skpdId).single()
+    if (skpdErr || !skpdRow?.kode_skpd) {
+      onMsg(`Error: gagal ambil kode lokasi SKPD utk generate NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`)
+      setBusy(false); return
+    }
+    const tahun = String(new Date(perolehanDate).getFullYear())
+
+    // Klasifikasi intra/ekstrakomptabel per barang: nilai vs batas_kapitalisasi
+    // (kodefikasi_bmd) — >= batas → intra, < batas → ekstra (lib/bmd.ts).
+    const batasMap = await fetchBatasKapitalisasi(supabase, items.map(it => it.kode))
+    const itemsWithKlas = items.map(it => ({ ...it, intraEkstra: klasifikasiKomptabel(toNum(it.harga), batasMap.get(it.kode)) }))
+
+    const nibarMap = await generateNibars(supabase, itemsWithKlas.map(it => ({ ...it, tahun })), skpdRow.kode_skpd)
+
+    const asetRows = itemsWithKlas.map(it => {
+      const row: Record<string, unknown> = {
+        nibar: nibarMap.get(it.key) || null, kode: it.kode, uraian_barang: it.uraianBarang || null, jumlah: 1,
+        satuan: it.satuan.trim() || null, harga_satuan: toNum(it.harga), nilai_perolehan: toNum(it.harga),
+        tgl_perolehan: perolehanDate, skpd_id: skpdId, intra_ekstra: it.intraEkstra,
+        cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: it.foto,
+      }
+      for (const k of ASET_FIELD_COLS) {
+        const v = it.fields[k]
+        if (!v) continue
+        row[k] = ASET_NUM_COLS.has(k) ? toNum(v) : v
+      }
+      return row
+    })
+    const { data: inserted, error: asetErr } = await supabase.from('aset').insert(asetRows).select('id,nilai_perolehan')
+    if (asetErr || !inserted) { onMsg(`Error: gagal membuat barang: ${asetErr?.message}`); setBusy(false); return }
+
+    // inserted[i] sejajar dengan items[i] (PostgREST kembalikan dlm urutan insert).
+    const trxRows = (inserted as { id: string; nilai_perolehan: number }[]).map((a, i) => ({
+      aset_id: a.id, jenis: 'pengadaan', periode, tanggal: perolehanDate, nilai: a.nilai_perolehan,
+      skpd_tujuan: skpdId, header_id: j.id,
+      payload: { sumber: j.jenis, no_bast: j.payload.no_bast || null, kode_rekening: items[i]?.rekening || null },
+    }))
+    const { error: trxErr } = await supabase.from('transaksi_bmd').insert(trxRows)
+    if (trxErr) {
+      await supabase.from('aset').update({ status: 'dihapus' }).in('id', (inserted as { id: string }[]).map(a => a.id))
+      onMsg(`Error: gagal mencatat transaksi: ${trxErr.message}`); setBusy(false); return
+    }
+
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error: appErr } = await supabase.from('jurnal_header')
+      .update({ approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString() })
+      .eq('id', j.id)
+    if (appErr) { onMsg(`Barang sudah tercatat, tapi status approval gagal diupdate: ${appErr.message}`); setBusy(false); onChanged(); return }
+
+    onMsg(`Kontrak ${j.no_sk} disetujui — ${asetRows.length} barang resmi tercatat (tgl perolehan ${perolehanDate}).`)
+    setBusy(false)
+    onChanged()
+  }
+
+  // Buka kunci (unapprove): kembalikan kontrak disetujui ke draft. Karena ledger
+  // append-only, semua barang di-batal_pengadaan (soft-delete, retroaktif → hilang
+  // dari Daftar Barang/Penyusutan), lalu draft_items direkonstruksi dari barang tsb
+  // supaya bisa diedit. NIBAR digenerate ULANG saat disetujui lagi (yang lama tetap
+  // tersimpan sbg 'dihapus' untuk audit). Admin only.
+  async function unapproveHeader() {
+    if (!confirm(`Buka kunci kontrak ${j.no_sk}?\n${j.lines.length} barang dikembalikan ke draft & DIHAPUS dari Daftar Barang/Penyusutan sampai disetujui lagi. NIBAR akan digenerate ulang saat approve berikutnya.`)) return
+    setBusy(true); onMsg('')
+    for (const l of j.lines) {
+      const { error } = await catatTransaksi(supabase, {
+        asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal, headerId: j.id,
+        keterangan: `Unapprove kontrak ${j.no_sk} — dikembalikan ke draft`,
+      })
+      if (error) { onMsg(`Error: ${error}`); setBusy(false); return }
+    }
+    const draftItems: DraftItem[] = j.lines.map(l => ({
+      key: newKey(), golongan: kodeLevel3(l.kode), kode: l.kode, uraianBarang: l.uraian_barang || '',
+      rekening: l.rekening || '', satuan: l.satuan || '', harga: String(l.nilai), fields: l.fields || {}, foto: l.foto_paths || [],
+    }))
+    const { error } = await supabase.from('jurnal_header')
+      .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...j.payload, draft_items: draftItems } })
+      .eq('id', j.id)
+    if (error) { onMsg(`Error: gagal buka kunci: ${error.message}`); setBusy(false); return }
+    onMsg(`Kontrak ${j.no_sk} dibuka kunci — kembali ke draft. Edit lalu setujui ulang.`)
+    setBusy(false)
+    onChanged()
+  }
+
+  const specItems = specKeys ? (j.payload.draft_items || []).filter(i => specKeys.includes(i.key)) : []
+  const single = specItems.length === 1 ? specItems[0] : null
+
+  return (
+    <>
+      {j.approval_status === 'pending' ? (
+        <PendingCard h={j} isAdmin={isAdmin} busy={busy} golonganLabels={golonganLabels}
+          onEditHeader={() => setEditing(true)}
+          onHapusKontrak={hapusKontrak}
+          onTambah={tambahDraftItems}
+          onHapusItem={hapusDraftItem}
+          onEditSpes={keys => setSpecKeys(keys)}
+          onApprove={approveHeader}
+        />
+      ) : (
+        <ApprovedCard j={j} isAdmin={isAdmin} busy={busy} onUnapprove={unapproveHeader} />
+      )}
+      {editing && (
+        <EditHeaderModal header={j} cekNomorDipakai={cekNomorDipakai}
+          onClose={() => setEditing(false)}
+          onSaved={() => { setEditing(false); onMsg('Header kontrak diperbarui.'); onChanged() }}
+        />
+      )}
+      {specKeys && (
+        <EditSpesifikasiModal
+          title={single ? (single.fields.nama_barang || single.kode) : `${specItems.length} barang dicentang`}
+          fieldKeys={fieldsForKode(specItems[0]?.kode || '')}
+          initialFields={single ? single.fields : {}}
+          initialFoto={single ? single.foto : []}
+          single={!!single}
+          storagePrefix={single ? `draft/${single.key}` : `draft/${j.id}`}
+          onClose={() => setSpecKeys(null)}
+          onSave={async (fields, foto) => { await applyDraftFields(specKeys, fields, foto); setSpecKeys(null) }}
+        />
+      )}
+    </>
   )
 }
 
