@@ -1,0 +1,68 @@
+-- ============================================================================
+-- Index prefix untuk `aset.kode` — perbaiki "canceling statement due to
+-- statement timeout" di GIS Tanah / Kendaraan / halaman lain (2026-07-17).
+--
+-- GEJALA: sejak import Peralatan & Mesin (218.251 baris, migrasi 20260716_03,
+-- masuk 2026-07-16 14:55) tabel `aset` melonjak ~41rb → 259.630 baris. GIS
+-- Tanah mendadak kosong ("Tidak ada aset ditemukan") padahal datanya utuh
+-- (2.733 tanah aktif). Yang terjadi: query-nya TIMEOUT, bukan datanya hilang —
+-- error-nya cuma tidak pernah ditampilkan (sudah diperbaiki terpisah di
+-- app/dashboard/gis/page.tsx & kendaraan/page.tsx: `error` kini dibaca).
+--
+-- AKAR MASALAH: hampir semua halaman memfilter golongan dengan
+-- `kode LIKE '1.3.1.%'` (Daftar Barang, Penyusutan, GIS, Kendaraan, Laporan).
+-- Index `idx_aset_kode ON aset(kode)` (migrasi 01) TIDAK BISA dipakai untuk
+-- LIKE prefix, karena B-tree default memakai collation non-C (en_US.UTF-8) —
+-- urutan collation ini tidak sama dengan urutan byte, jadi Postgres tidak bisa
+-- menerjemahkan prefix LIKE jadi range scan. Akibatnya SEQ SCAN 259rb baris
+-- tiap kali. Waktu `aset` masih 41rb, seq scan masih lolos di bawah batas
+-- statement_timeout; di 259rb sudah tidak.
+--
+-- BUKTI (diukur 2026-07-17, service_role, 3x rata-rata, hasil 2.733 baris
+-- IDENTIK di kedua bentuk query):
+--   kode LIKE '1.3.1.%'                    → 2.226 s   (seq scan)
+--   kode >= '1.3.1.' AND kode < '1.3.2'    → 0.385 s   (index scan)  ~5.8x
+-- Itu TANPA RLS. Lewat browser, RLS `aset_select` (fn_is_admin OR
+-- fn_skpd_visible OR fn_aset_pernah_dikelola) menambah beban di atas angka itu
+-- sampai menembus statement_timeout → 500 → halaman tampak kosong.
+--
+-- SOLUSI: index tambahan dengan opclass `text_pattern_ops`, yang mengurutkan
+-- per byte (bukan collation) sehingga LIKE prefix BISA jadi range scan.
+-- Ini menyembuhkan SEMUA halaman yang pakai `LIKE kode` sekaligus — tanpa ubah
+-- satu baris pun kode aplikasi, tanpa sentuh data/ledger/RLS.
+--
+-- AMAN: cuma menambah index. Tidak mengubah data, skema kolom, maupun policy.
+-- Reversible penuh: DROP INDEX IF EXISTS idx_aset_kode_pattern;
+-- `idx_aset_kode` LAMA TETAP DIBIARKAN — masih dipakai untuk `kode = '...'`
+-- (equality) dan ORDER BY kode yang memang butuh urutan collation.
+--
+-- CONCURRENTLY dipakai supaya tabel TIDAK terkunci untuk tulis selama index
+-- dibangun (data pemda live, ~259rb baris, perlu beberapa detik).
+-- ⚠️ CREATE INDEX CONCURRENTLY TIDAK BOLEH jalan di dalam transaction block.
+-- Kalau Supabase SQL Editor menolak dengan "cannot run inside a transaction
+-- block", jalankan versi non-concurrent di bagian bawah file ini (kuncinya
+-- singkat, hitungan detik — lakukan saat jam sepi).
+-- ============================================================================
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_aset_kode_pattern
+  ON aset (kode text_pattern_ops);
+
+-- Sesudah CREATE INDEX CONCURRENTLY, WAJIB cek index-nya jadi (bukan INVALID).
+-- Kalau pembuatan gagal di tengah, Postgres meninggalkan index INVALID yang
+-- tidak dipakai planner tapi tetap membebani INSERT/UPDATE:
+--   SELECT indexrelid::regclass AS index, indisvalid
+--   FROM pg_index WHERE indexrelid = 'idx_aset_kode_pattern'::regclass;
+--   -- indisvalid HARUS true. Kalau false:
+--   --   DROP INDEX idx_aset_kode_pattern;  lalu ulangi (atau pakai versi
+--   --   non-concurrent di bawah).
+
+-- Verifikasi index benar-benar dipakai (harus muncul "Bitmap Index Scan on
+-- idx_aset_kode_pattern" atau "Index Scan", BUKAN "Seq Scan on aset"):
+--   EXPLAIN ANALYZE
+--   SELECT id FROM aset WHERE kode LIKE '1.3.1.%' AND status = 'aktif';
+
+-- ── ALTERNATIF kalau CONCURRENTLY ditolak SQL Editor ────────────────────────
+-- Hapus komentar 2 baris di bawah, dan JANGAN jalankan yang CONCURRENTLY di
+-- atas. Mengunci tabel `aset` untuk tulis selama beberapa detik.
+--   CREATE INDEX IF NOT EXISTS idx_aset_kode_pattern
+--     ON aset (kode text_pattern_ops);
