@@ -62,6 +62,7 @@ export default function GisPage() {
   const [rows, setRows] = useState<AsetRow[]>([])
   const [bidangByAset, setBidangByAset] = useState<Record<string, BidangRingkas[]>>({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -69,11 +70,16 @@ export default function GisPage() {
       setLoading(true)
       const all: AsetRow[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('aset')
+        // `error` WAJIB dibaca. Sebelumnya tidak: kalau query gagal (mis. RLS
+        // `aset` berat → statement timeout → 500), `data` cuma null dan panel
+        // diam² bilang "Tidak ada aset ditemukan" seolah tanahnya memang tidak
+        // ada — bikin salah sangka datanya hilang, padahal query yang gagal.
+        const { data, error } = await supabase.from('aset')
           .select(SELECT_COLS)
           .like('kode', '1.3.1.%')
           .eq('status', 'aktif')
           .order('nama_barang', { ascending: true }).range(from, from + 999)
+        if (error) { setError(error.message); break }
         if (!data || data.length === 0) break
         all.push(...(data as unknown as AsetRow[]))
         if (data.length < 1000) break
@@ -185,6 +191,11 @@ export default function GisPage() {
         <div className="flex-1 overflow-y-auto scrollbar-hide pointer-events-auto space-y-2 pr-0.5">
           {loading ? (
             <p className="text-xs text-gray-400 text-center py-8 bg-white/90 rounded-lg">Memuat...</p>
+          ) : error ? (
+            <div className="text-center py-6 px-3 bg-white/95 rounded-lg">
+              <p className="text-xs font-medium text-rose-700">Gagal memuat data tanah.</p>
+              <p className="text-[10px] text-gray-500 mt-1 break-words">{error}</p>
+            </div>
           ) : filtered.length === 0 ? (
             <p className="text-xs text-gray-400 text-center py-8 bg-white/90 rounded-lg">Tidak ada aset ditemukan.</p>
           ) : filtered.map(r => {

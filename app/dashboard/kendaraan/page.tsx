@@ -26,7 +26,6 @@
 // posisi TERKINI (status='aktif'), bukan laporan per periode.
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel } from '@/lib/export'
 
 const PREFIX_ALAT_ANGKUTAN = '1.3.2.02.'
@@ -49,11 +48,15 @@ type Row = {
   kondisi_barang: string | null
   keterangan: string | null
   skpd_id: number | null
-  skpd: { nama: string } | null
 }
 
+// Nama SKPD SENGAJA tidak di-embed (`skpd:skpd_id(nama)`) seperti GIS: embed
+// bikin query utama makin berat, padahal tabel `aset` sudah 259rb baris dan
+// RLS-nya (fn_aset_pernah_dikelola per baris) sudah jadi beban. Nama SKPD
+// diresolve dari map id→nama yang di-fetch sekali dari admin_skpd (ratusan
+// baris, murah) — pola yang sama dengan Daftar Barang.
 const SELECT_COLS =
-  'id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,keterangan,skpd_id,skpd:skpd_id(nama)'
+  'id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,keterangan,skpd_id'
 
 // Angka polos bergaya id-ID tanpa "Rp" — sama dengan Daftar Barang (enak di-copas ke Excel).
 const angka = (v: number | null | undefined) =>
@@ -69,22 +72,38 @@ const isiKosong = (v: string | null) => {
 
 export default function KendaraanPage() {
   const supabase = createClient()
-  const [skpdSel, setSkpdSel] = useState<{ skpdId: number | null; descendantIds: number[] | null }>({ skpdId: null, descendantIds: null })
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<Row[]>([])
+  const [skpdMap, setSkpdMap] = useState<Record<number, string>>({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    ;(async () => {
+      const map: Record<number, string> = {}
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
+        if (!data || data.length === 0) break
+        for (const s of data) map[s.id] = s.nama
+        if (data.length < 1000) break
+      }
+      setSkpdMap(map)
+    })()
     ;(async () => {
       setLoading(true)
       const all: Row[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('aset')
+        // `error` WAJIB dibaca: kalau query gagal (mis. RLS aset yang berat bikin
+        // statement timeout → 500), `data` cuma null dan tanpa ini halaman diam²
+        // tampil "tidak ada kendaraan" seolah datanya memang kosong — persis
+        // gejala yang bikin bingung di GIS Tanah.
+        const { data, error } = await supabase.from('aset')
           .select(SELECT_COLS)
           .like('kode', `${PREFIX_ALAT_ANGKUTAN}%`)
           .eq('status', 'aktif')
           .order('nilai_perolehan', { ascending: false })
           .range(from, from + 999)
+        if (error) { setError(error.message); break }
         if (!data || data.length === 0) break
         all.push(...(data as unknown as Row[]))
         if (data.length < 1000) break
@@ -94,21 +113,20 @@ export default function KendaraanPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Filter INSTAN di client (SKPD + cari). Pencarian mencakup field yang diminta
-  // user: SKPD, No. Rangka, No. Mesin, No. Polisi, Spesifikasi — plus nama/kode/
-  // NIBAR/merek/BPKB karena sama-sama identitas kendaraan yang wajar dicari.
+  const namaSkpd = (r: Row) => (r.skpd_id != null && skpdMap[r.skpd_id]) || '-'
+
+  // SATU kotak pencarian untuk semua (keputusan user 2026-07-17 — tanpa pemilih
+  // SKPD terpisah): ketik nama SKPD → keluar semua kendaraan di SKPD itu; ketik
+  // No. Polisi / No. Rangka / No. Mesin / merek / spesifikasi → keluar yang cocok.
+  // Semua dicocokkan sebagai substring (case-insensitive) di satu daftar field.
   const filtered = useMemo(() => {
-    const scope = skpdSel.descendantIds ? new Set(skpdSel.descendantIds) : null
     const q = search.trim().toLowerCase()
-    return rows.filter(r => {
-      if (scope && !(r.skpd_id != null && scope.has(r.skpd_id))) return false
-      if (!q) return true
-      return [
-        r.skpd?.nama, r.nama_barang, r.uraian_barang, r.nibar, r.kode, r.merek_tipe,
-        r.spesifikasi_lainnya, r.no_polisi, r.no_rangka, r.no_mesin, r.no_bpkb, r.keterangan,
-      ].some(v => v != null && String(v).toLowerCase().includes(q))
-    })
-  }, [rows, skpdSel, search])
+    if (!q) return rows
+    return rows.filter(r => [
+      namaSkpd(r), r.nama_barang, r.uraian_barang, r.nibar, r.kode, r.merek_tipe,
+      r.spesifikasi_lainnya, r.no_polisi, r.no_rangka, r.no_mesin, r.no_bpkb, r.keterangan,
+    ].some(v => v != null && String(v).toLowerCase().includes(q)))
+  }, [rows, search, skpdMap]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = useMemo(() => {
     let nilai = 0, lengkap = 0
@@ -122,7 +140,7 @@ export default function KendaraanPage() {
   function handleExport() {
     exportToExcel(
       filtered.map(r => ({
-        'Lokasi / SKPD': teks(r.skpd?.nama),
+        'Lokasi / SKPD': teks(namaSkpd(r)),
         'Kode Barang': r.kode,
         'NIBAR': teks(r.nibar),
         'Uraian': teks(r.uraian_barang),
@@ -154,19 +172,9 @@ export default function KendaraanPage() {
       </div>
 
       <div className="card">
-        <div className="grid gap-3 md:grid-cols-2">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Lokasi / SKPD</label>
-            <SkpdCombobox lockToOperator allowClear placeholder="Semua SKPD..."
-              onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Cari</label>
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="No. Polisi / No. Rangka / No. Mesin / nama / merek / spesifikasi..."
-              className="select-filter w-full" />
-          </div>
-        </div>
+        <input value={search} onChange={e => setSearch(e.target.value)} autoFocus
+          placeholder="Cari SKPD / No. Polisi / No. Rangka / No. Mesin / merek / nama / spesifikasi..."
+          className="select-filter w-full" />
 
         <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-100">
           <div className="text-sm text-gray-600">
@@ -189,9 +197,14 @@ export default function KendaraanPage() {
       <div className="card overflow-x-auto">
         {loading ? (
           <p className="text-sm text-gray-500 py-8 text-center">Memuat data kendaraan...</p>
+        ) : error ? (
+          <div className="py-8 text-center">
+            <p className="text-sm text-rose-700 font-medium">Gagal memuat data kendaraan.</p>
+            <p className="text-xs text-gray-500 mt-1">{error}</p>
+          </div>
         ) : filtered.length === 0 ? (
           <p className="text-sm text-gray-500 py-8 text-center">
-            {rows.length === 0 ? 'Belum ada data kendaraan.' : 'Tidak ada kendaraan yang cocok dengan filter.'}
+            {rows.length === 0 ? 'Belum ada data kendaraan.' : 'Tidak ada kendaraan yang cocok dengan pencarian.'}
           </p>
         ) : (
           <table className="min-w-full">
@@ -216,7 +229,7 @@ export default function KendaraanPage() {
                 const belumLengkap = isiKosong(r.no_polisi) && isiKosong(r.no_rangka) && isiKosong(r.no_mesin)
                 return (
                   <tr key={r.id}>
-                    <td className="table-td text-xs text-gray-600">{teks(r.skpd?.nama)}</td>
+                    <td className="table-td text-xs text-gray-600">{teks(namaSkpd(r))}</td>
                     <td className="table-td text-xs text-gray-600">
                       <div>{r.kode}</div>
                       {r.nibar && <div className="text-[10px] text-gray-400 font-mono">{r.nibar}</div>}
