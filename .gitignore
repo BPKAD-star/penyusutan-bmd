@@ -7,3 +7,6 @@ out/
 .DS_Store
 # Arsip file sumber import (xlsx/csv berisi data aset live pemda — jangan di-commit)
 arsip-import/
+# Setelan lokal Claude Code: per-mesin, dan allowlist-nya bisa memuat
+# kredensial (mis. service_role key yang ikut terekam dari perintah curl)
+.claude/settings.local.json
