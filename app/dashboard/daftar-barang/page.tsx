@@ -426,7 +426,7 @@ export default function DaftarBarangPage() {
           {(bidangCount[r.id] || 0) > 0 && (
             <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar || '')}`}
               className="inline-flex items-center gap-1 mt-1 text-[11px] text-teal hover:underline"
-              title="Tanah ini terbagi beberapa bidang/sertifikat — kelola & lihat di GIS BMD">
+              title="Tanah ini terbagi beberapa bidang/sertifikat — kelola & lihat di GIS Tanah">
               🗺 {bidangCount[r.id]} bidang
             </Link>
           )}

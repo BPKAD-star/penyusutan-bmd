@@ -18,6 +18,7 @@ const ICON = {
   pelaporan: ic('M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'),
   ipa: ic('M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9'),
   gis: ic('M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7'),
+  kendaraan: ic('M8 17a2 2 0 11-4 0 2 2 0 014 0zm12 0a2 2 0 11-4 0 2 2 0 014 0zM4 17H3v-4m0 0l2-5h9l4 5m-15 0h15m0 0h2v4h-1M13 8V5a1 1 0 00-1-1H4'),
   user: ic('M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z'),
   saldo: ic('M9 7h1m-1 4h1m4-4h1m-1 4h1m-6 8V5a2 2 0 012-2h6a2 2 0 012 2v14M5 21h14M9 21v-4a1 1 0 011-1h4a1 1 0 011 1v4'),
   building: ic('M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4'),
@@ -62,6 +63,8 @@ const navTree: NavNode[] = [
   },
   { type: 'leaf', href: '/dashboard/daftar-barang', label: 'Daftar Barang' },
   { type: 'leaf', href: '/dashboard/penyusutan', label: 'Penyusutan' },
+  { type: 'leaf', href: '/dashboard/gis', label: 'GIS Tanah' },
+  { type: 'leaf', href: '/dashboard/kendaraan', label: 'Kendaraan' },
   {
     type: 'group', label: 'Pelaporan', icon: ICON.pelaporan, children: [
       {
@@ -96,7 +99,6 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/ipa/penilaian', label: 'Input Penilaian' },
     ],
   },
-  { type: 'leaf', href: '/dashboard/gis', label: 'GIS BMD' },
 ]
 
 const adminGroup: NavNode = {
@@ -127,7 +129,8 @@ const adminGroupOperator: NavNode = {
 
 const iconFor = (label: string): React.ReactNode => {
   if (label === 'IPA') return ICON.ipa
-  if (label === 'GIS BMD') return ICON.gis
+  if (label === 'GIS Tanah') return ICON.gis
+  if (label === 'Kendaraan') return ICON.kendaraan
   if (label === 'Daftar Barang') return ICON.daftar
   if (label === 'Penyusutan') return ICON.penyusutan
   if (label === 'Dashboard') return ICON.dashboard

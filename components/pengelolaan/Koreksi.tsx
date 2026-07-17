@@ -911,7 +911,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
               <div className="pt-3 border-t border-gray-100">
                 <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
                   Field identitas tanah (luas, nomor & jenis hak, dokumen kepemilikan, titik koordinat)
-                  dikelola di menu <span className="font-medium text-gray-700">GIS BMD</span> — termasuk
+                  dikelola di menu <span className="font-medium text-gray-700">GIS Tanah</span> — termasuk
                   pemecahan per bidang tanah. Di sini cukup untuk nama/spesifikasi umum.
                 </p>
               </div>
@@ -1092,7 +1092,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
               {kodeLevel3(indukPecah.kode) === '1.3.1' && (
                 <p className="mt-1 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">
                   Tanah: sertifikat, jenis hak &amp; bidang TIDAK diisi di sini — tiap pecahan otomatis muncul di
-                  <span className="font-medium"> GIS BMD → Kelola Bidang</span>, isi dokumen kepemilikan &amp; bidang (1 atau banyak) di situ setelah pemecahan.
+                  <span className="font-medium"> GIS Tanah → Kelola Bidang</span>, isi dokumen kepemilikan &amp; bidang (1 atau banyak) di situ setelah pemecahan.
                 </p>
               )}
             </div>

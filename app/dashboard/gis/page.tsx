@@ -175,7 +175,7 @@ export default function GisPage() {
       {/* Panel kiri: filter + list register (card) + statistik — mengambang di atas peta */}
       <div className="absolute top-4 left-4 bottom-4 w-[340px] z-[1000] flex flex-col gap-3 pointer-events-none">
         <div className="card p-3 shadow-lg pointer-events-auto">
-          <p className="text-sm font-semibold text-gray-800 mb-2">GIS BMD — Tanah</p>
+          <p className="text-sm font-semibold text-gray-800 mb-2">GIS Tanah</p>
           <input className="select-filter w-full text-sm mb-2" placeholder="Cari nama / NIBAR / kode..."
             value={search} onChange={e => setSearch(e.target.value)} />
           <SkpdCombobox lockToOperator onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} allowClear
