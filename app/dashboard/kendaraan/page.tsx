@@ -171,7 +171,7 @@ export default function KendaraanPage() {
         </p>
       </div>
 
-      <div className="card">
+      <div className="card p-5">
         <input value={search} onChange={e => setSearch(e.target.value)} autoFocus
           placeholder="Cari SKPD / No. Polisi / No. Rangka / No. Mesin / merek / nama / spesifikasi..."
           className="select-filter w-full" />
@@ -194,74 +194,86 @@ export default function KendaraanPage() {
         </div>
       </div>
 
-      <div className="card overflow-x-auto">
-        {loading ? (
-          <p className="text-sm text-gray-500 py-8 text-center">Memuat data kendaraan...</p>
-        ) : error ? (
-          <div className="py-8 text-center">
-            <p className="text-sm text-rose-700 font-medium">Gagal memuat data kendaraan.</p>
-            <p className="text-xs text-gray-500 mt-1">{error}</p>
+      {loading ? (
+        <div className="card p-12 text-center text-gray-400 text-sm">Memuat data kendaraan...</div>
+      ) : error ? (
+        <div className="card p-12 text-center">
+          <p className="text-sm text-rose-700 font-medium">Gagal memuat data kendaraan.</p>
+          <p className="text-xs text-gray-500 mt-1">{error}</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="card p-12 text-center text-gray-400 text-sm">
+          {rows.length === 0 ? 'Belum ada data kendaraan.' : 'Tidak ada kendaraan yang cocok dengan pencarian.'}
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          {/* Kolom identitas (kode, nopol, rangka, mesin, nilai) di-nowrap supaya
+              tidak terpotong jadi 2 baris; tabel dibiarkan melebar dan digeser
+              lewat scroll horizontal — lebih terbaca daripada dipaksa muat. */}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="table-th whitespace-nowrap">Lokasi / SKPD</th>
+                  <th className="table-th whitespace-nowrap">Kode Register</th>
+                  <th className="table-th whitespace-nowrap">Nama Barang</th>
+                  <th className="table-th whitespace-nowrap">Merek / Tipe</th>
+                  <th className="table-th whitespace-nowrap text-center">Tahun</th>
+                  <th className="table-th whitespace-nowrap">No. BPKB</th>
+                  <th className="table-th whitespace-nowrap">No. Polisi</th>
+                  <th className="table-th whitespace-nowrap">No. Rangka</th>
+                  <th className="table-th whitespace-nowrap">No. Mesin</th>
+                  <th className="table-th whitespace-nowrap text-right">Nilai Perolehan</th>
+                  <th className="table-th whitespace-nowrap text-center">Kondisi</th>
+                  <th className="table-th whitespace-nowrap">Keterangan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filtered.map(r => {
+                  const belumLengkap = isiKosong(r.no_polisi) && isiKosong(r.no_rangka) && isiKosong(r.no_mesin)
+                  const spek = r.spesifikasi_lainnya
+                  return (
+                    <tr key={r.id} className="hover:bg-gray-50/60 align-top">
+                      <td className="table-td text-xs text-gray-600 min-w-[150px] max-w-[220px]">{teks(namaSkpd(r))}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">
+                        <div>{r.kode}</div>
+                        {r.nibar && (
+                          <div className="text-[10px] text-gray-400 font-mono truncate max-w-[150px]" title={r.nibar}>
+                            {r.nibar}
+                          </div>
+                        )}
+                      </td>
+                      <td className="table-td min-w-[180px] max-w-[260px]">
+                        <div>{teks(r.nama_barang || r.uraian_barang)}</div>
+                        {spek && !isiKosong(spek) && (
+                          <div className="text-[11px] text-gray-500 mt-0.5 truncate" title={spek}>{spek}</div>
+                        )}
+                        {belumLengkap && (
+                          <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700 whitespace-nowrap"
+                            title="No. Polisi, No. Rangka, dan No. Mesin semuanya kosong — lengkapi lewat Koreksi → Spesifikasi">
+                            Data belum lengkap
+                          </span>
+                        )}
+                      </td>
+                      <td className="table-td text-xs text-gray-600 min-w-[120px] max-w-[180px]">{teks(r.merek_tipe)}</td>
+                      <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.tahun_pengadaan)}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_bpkb)}</td>
+                      <td className="table-td text-xs text-gray-800 font-medium whitespace-nowrap">{teks(r.no_polisi)}</td>
+                      <td className="table-td text-xs text-gray-600 font-mono whitespace-nowrap">{teks(r.no_rangka)}</td>
+                      <td className="table-td text-xs text-gray-600 font-mono whitespace-nowrap">{teks(r.no_mesin)}</td>
+                      <td className="table-td text-right text-xs whitespace-nowrap tabular-nums">{angka(r.nilai_perolehan)}</td>
+                      <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.kondisi_barang)}</td>
+                      <td className="table-td text-xs text-gray-600 max-w-[220px]">
+                        <div className="truncate" title={r.keterangan || undefined}>{teks(r.keterangan)}</div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-        ) : filtered.length === 0 ? (
-          <p className="text-sm text-gray-500 py-8 text-center">
-            {rows.length === 0 ? 'Belum ada data kendaraan.' : 'Tidak ada kendaraan yang cocok dengan pencarian.'}
-          </p>
-        ) : (
-          <table className="min-w-full">
-            <thead>
-              <tr>
-                <th className="table-th">Lokasi / SKPD</th>
-                <th className="table-th">Kode Register</th>
-                <th className="table-th">Nama Barang</th>
-                <th className="table-th">Merek / Tipe</th>
-                <th className="table-th text-center">Tahun</th>
-                <th className="table-th">No. BPKB</th>
-                <th className="table-th">No. Polisi</th>
-                <th className="table-th">No. Rangka</th>
-                <th className="table-th">No. Mesin</th>
-                <th className="table-th text-right">Nilai Perolehan</th>
-                <th className="table-th text-center">Kondisi</th>
-                <th className="table-th">Keterangan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(r => {
-                const belumLengkap = isiKosong(r.no_polisi) && isiKosong(r.no_rangka) && isiKosong(r.no_mesin)
-                return (
-                  <tr key={r.id}>
-                    <td className="table-td text-xs text-gray-600">{teks(namaSkpd(r))}</td>
-                    <td className="table-td text-xs text-gray-600">
-                      <div>{r.kode}</div>
-                      {r.nibar && <div className="text-[10px] text-gray-400 font-mono">{r.nibar}</div>}
-                    </td>
-                    <td className="table-td">
-                      <div>{teks(r.nama_barang || r.uraian_barang)}</div>
-                      {belumLengkap && (
-                        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700"
-                          title="No. Polisi, No. Rangka, dan No. Mesin semuanya kosong — lengkapi lewat Koreksi → Spesifikasi">
-                          Data belum lengkap
-                        </span>
-                      )}
-                      {r.spesifikasi_lainnya && !isiKosong(r.spesifikasi_lainnya) && (
-                        <div className="text-[11px] text-gray-500 mt-0.5">{r.spesifikasi_lainnya}</div>
-                      )}
-                    </td>
-                    <td className="table-td text-xs text-gray-600">{teks(r.merek_tipe)}</td>
-                    <td className="table-td text-xs text-gray-600 text-center">{teks(r.tahun_pengadaan)}</td>
-                    <td className="table-td text-xs text-gray-600">{teks(r.no_bpkb)}</td>
-                    <td className="table-td text-xs text-gray-600 font-medium">{teks(r.no_polisi)}</td>
-                    <td className="table-td text-xs text-gray-600 font-mono">{teks(r.no_rangka)}</td>
-                    <td className="table-td text-xs text-gray-600 font-mono">{teks(r.no_mesin)}</td>
-                    <td className="table-td text-right text-xs">{angka(r.nilai_perolehan)}</td>
-                    <td className="table-td text-xs text-gray-600 text-center">{teks(r.kondisi_barang)}</td>
-                    <td className="table-td text-xs text-gray-600">{teks(r.keterangan)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
