@@ -175,14 +175,14 @@ export default function LaporanBmdPage() {
   // grup jenis, dalam periode terpilih.
   async function fetchLedgerM3(jenisList: string[]) {
     type Row = {
-      aset_id: string; nilai: number; tanggal: string; skpd_asal: number | null; skpd_tujuan: number | null
+      id: number; aset_id: string; nilai: number; tanggal: string; skpd_asal: number | null; skpd_tujuan: number | null
       payload: Record<string, unknown> | null
       aset: { kode: string; nama_barang: string | null; nibar: string | null; skpd_id: number; intra_ekstra: string | null } | null
     }
     const out: Row[] = []
     for (let from = 0; ; from += 1000) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select('aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
+        .select('id,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
         .eq('periode', periode).in('jenis', jenisList as never)
         .range(from, from + 999)
       if (!data || data.length === 0) break
@@ -207,17 +207,34 @@ export default function LaporanBmdPage() {
     return out
   }
 
+  // trx_id reklas yang DIBATALKAN (batal_reklas.payload.target_trx_id) — supaya
+  // reklas_golongan yg sudah dibatalkan TIDAK ikut kehitung sbg mutasi hantu.
+  async function fetchReklasDibatalkan(): Promise<Set<number>> {
+    const out = new Set<number>()
+    for (let from = 0; ; from += 1000) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('payload').eq('jenis', 'batal_reklas' as never).range(from, from + 999)
+      if (!data || data.length === 0) break
+      for (const r of data as { payload: { target_trx_id?: number } | null }[]) {
+        const t = Number(r.payload?.target_trx_id); if (Number.isFinite(t)) out.add(t)
+      }
+      if (data.length < 1000) break
+    }
+    return out
+  }
+
   async function prosesMutasi() {
     setLoading(true); setMutasiRows(null)
 
     const inScope = (skpdId: number | null) => skpdId != null && (org.descendantIds === null || org.descendantIds.includes(skpdId))
     const lolosKomptabel = (ie: string | null) => !komptabel || ie === komptabel
 
-    const [saldoAwal, saldoAkhir, skpdMap, voided] = await Promise.all([
+    const [saldoAwal, saldoAkhir, skpdMap, voided, reklasDibatalkan] = await Promise.all([
       snapshotPerolehan(periodeSebelumnya),
       snapshotPerolehan(periode),
       fetchSkpdMapM3(),
       fetchVoidedAsetIds(),
+      fetchReklasDibatalkan(),
     ])
 
     const tambah: Record<string, number> = {}
@@ -266,7 +283,7 @@ export default function LaporanBmdPage() {
     // Reklasifikasi Perubahan Fungsi BMD: golongan ASAL (payload.kode_lama)
     // → Pengurangan, golongan TUJUAN (payload.kode_baru) → Penambahan.
     for (const r of await fetchLedgerM3(['reklas_golongan'])) {
-      if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
+      if (!r.aset || reklasDibatalkan.has(r.id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       const kodeLama = typeof r.payload?.kode_lama === 'string' ? r.payload.kode_lama : null
       const kodeBaru = typeof r.payload?.kode_baru === 'string' ? r.payload.kode_baru : null
       if (!kodeLama || !kodeBaru) continue
