@@ -1,0 +1,28 @@
+-- ============================================================================
+-- Batal Reklasifikasi — jenis ledger baru 'batal_reklas' (2026-07-19).
+--
+-- Membalik reklas (kode/golongan) TANPA hapus baris (append-only mutlak).
+-- Pola SAMA dgn batal_kapitalisasi: engine (lib/engine/penyusutan.ts)
+-- mengumpulkan target_trx_id dari baris batal_reklas → MENGABAIKAN event reklas
+-- itu saat replay, jadi aset kembali ke posisi SEBELUM reklas (jadwal
+-- penyusutan asli pulih; fresh-start lintas-golongan dibatalkan, BUKAN
+-- fresh-start dobel spt "reklas balik").
+--
+-- Aturan (lihat CLAUDE.md "Aturan lintas-fitur"):
+--   - Dicatat tanggal HARI INI (current_date) → selalu di tahun terbuka, TIDAK
+--     perlu whitelist retroaktif di fn_cek_tahun_buku. Efeknya tetap retroaktif
+--     (event reklas diabaikan di SEMUA periode) — baris tahun terkunci tetap
+--     dilindungi filter engine yg sudah ada.
+--   - UI WAJIB blokir batal kalau aset punya transaksi LEBIH BARU setelah reklas
+--     yg dibatalkan (guard rantai — sah cuma utk event terbaru aset).
+--   - BUKAN event SEMBUNYI/MUNCUL: barang tetap tampil, cuma kode/intra_ekstra
+--     dikembalikan ke nilai lama (dikerjakan di sisi aset saat batal).
+--   - WAJIB "Jalankan Engine" ulang setelah batal supaya penyusutan_semester
+--     dihitung ulang.
+--
+-- File sendirian: nilai enum baru tidak aman dipakai dalam DML pada transaksi
+-- yang sama saat ditambahkan (sama catatan migrasi 20260714_01). Jalankan
+-- migrasi ini sendiri, sebelum UI Batal Reklas dipakai.
+-- ============================================================================
+
+ALTER TYPE jenis_transaksi_bmd ADD VALUE IF NOT EXISTS 'batal_reklas';

@@ -101,6 +101,21 @@ export function hitungJadwalAset(
     if (Number.isFinite(tid)) kapDibatalkan.add(tid)
   }
 
+  // Reklas (kode/golongan) yang dibatalkan (batal_reklas.payload.target_trx_id).
+  // Pola SAMA dgn kapDibatalkan: event reklas yg id-nya di sini DIABAIKAN saat
+  // replay → aset kembali ke posisi SEBELUM reklas itu (jadwal penyusutan asli
+  // pulih utuh). Ini yg bikin batal LINTAS-golongan benar: fresh-start di-skip,
+  // BUKAN fresh-start dobel spt kalau "reklas balik". batal_reklas dicatat
+  // tanggal HARI INI tapi efeknya retroaktif (event asli diabaikan di SEMUA
+  // periode). Reklas_komptabel tak butuh skip di sini (nol efek perhitungan) —
+  // pemulihan intra_ekstra terjadi di aset (bukan engine).
+  const reklasDibatalkan = new Set<number>()
+  for (const t of ledger) {
+    if (t.jenis !== 'batal_reklas') continue
+    const tid = Number((t.payload as Record<string, unknown>)?.target_trx_id)
+    if (Number.isFinite(tid)) reklasDibatalkan.add(tid)
+  }
+
   // CATATAN (2026-07-13): dulu ada bail-out `if (ekstra) return []` di sini —
   // DIHAPUS. Ekstrakomptabel ikut disusutkan dgn aturan sama; neraca disaring
   // intra di laporan. Konsekuensi: reklas_komptabel (flip intra↔ekstra) kini
@@ -116,7 +131,11 @@ export function hitungJadwalAset(
   // tanggal reklas, BUKAN recompute dari tanggal perolehan (beda sengaja dari
   // reklas_kode).
   let kode = aset.kode
-  const reklasGolonganEvents = ledger.filter(t => t.jenis === 'reklas_golongan')
+  // Exclude reklas_golongan yg DIBATALKAN dari seeding — supaya kode awal balik
+  // ke aset.kode (yg sudah dikembalikan ke kode lama saat batal), bukan seed
+  // dari kode_lama event yg sudah tak berlaku.
+  const reklasGolonganEvents = ledger.filter(t =>
+    t.jenis === 'reklas_golongan' && !(t.id != null && reklasDibatalkan.has(t.id)))
   if (reklasGolonganEvents.length > 0) {
     kode = String((reklasGolonganEvents[0].payload as Record<string, unknown>)?.kode_lama || aset.kode)
   }
@@ -236,6 +255,7 @@ export function hitungJadwalAset(
           break
         }
         case 'reklas_kode': {
+          if (ev.id != null && reklasDibatalkan.has(ev.id)) break // dibatalkan → abaikan
           const kodeBaru = String((ev.payload as Record<string, unknown>).kode_baru || '')
           if (!kodeBaru) break
           const perlakuanLama = perlakuan
@@ -253,6 +273,7 @@ export function hitungJadwalAset(
           // (utk KDP tetap = nilaiPerolehan krn memang belum pernah
           // disusutkan; utk golongan lain, nilai buku yg sudah terakru tetap
           // jadi basis — cuma jam masa manfaatnya yang di-restart).
+          if (ev.id != null && reklasDibatalkan.has(ev.id)) break // dibatalkan → abaikan (fresh-start dibatalkan)
           const kodeBaru = String((ev.payload as Record<string, unknown>).kode_baru || '')
           if (!kodeBaru) break
           kode = kodeBaru
