@@ -2,12 +2,13 @@
 // Daftar Barang — alur filter-lalu-tampilkan (mirip e-SIMBADA):
 // SKPD → Jenis Aset (WAJIB pilih satu) → Komptabel → Cari → klik Tampilkan.
 //
-// Kolom menyesuaikan jenis aset (KIB) memakai field yang tersedia di DB:
-//   - Tanah (1.3.1): tanpa kolom Komptabel (semua intrakomptabel); + Luas,
-//     No/Tgl Sertifikat, Atas Nama Sertifikat, Hak Kepemilikan (diedit lewat
-//     menu Koreksi → Spesifikasi, muncul otomatis untuk kode 1.3.1)
+// Kolom menyesuaikan jenis aset (KIB) memakai field yang tersedia di DB. Layar
+// DIRINGKAS (lihat COLS): `uraian` ditumpuk di bawah `kode`, `nibar` di bawah
+// `nama`. Tanah/Gedung/Jalan/KDP/Aset Lain-Lain + Spesifikasi Lainnya & Lokasi
+// (alamat_detail) setelah nama. Tanah: dokumen kepemilikan TIDAK di layar (per
+// bidang di GIS — badge "N bidang"), tetap ada di Export (EXPORT_COLS, utk BPK).
+//   - Tanah (1.3.1): tanpa kolom Komptabel (semua intrakomptabel); + Luas & Jenis Hak
 //   - Peralatan & Mesin (1.3.2): + Merek/Tipe + Spesifikasi
-//   - Gedung / Jalan / ATB: + Spesifikasi
 // Catatan: field kendaraan (nopol, no rangka/mesin) belum ada kolom terstruktur
 // di DB — sementara pakai Keterangan/Spesifikasi bila terisi.
 //
@@ -32,7 +33,7 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan', 'koreksi_pencatatan_ganda', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'kdp_selesai_keluar', 'pemecahan_keluar', 'batal_pemecahan_masuk']
 const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan']
 
-const SELECT_COLS = 'id,nibar,kode,nama_barang,spesifikasi_lainnya,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
+const SELECT_COLS = 'id,nibar,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -40,6 +41,7 @@ type Row = {
   kode: string
   nama_barang: string | null
   spesifikasi_lainnya: string | null
+  alamat_detail: string | null
   merek_tipe: string | null
   nilai_perolehan: number
   tgl_perolehan: string | null
@@ -66,25 +68,48 @@ const angka = (v: number | null | undefined) =>
 const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> = {
   skpd: { header: 'SKPD' }, nama: { header: 'Nama Barang' }, kode: { header: 'Kode Barang' },
   uraian: { header: 'Uraian' }, merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
-  komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
+  lokasi: { header: 'Lokasi' }, komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
   nilai: { header: 'Nilai Perolehan', align: 'right' }, keterangan: { header: 'Keterangan' },
   luas: { header: 'Luas (m²)', align: 'right' }, no_sertifikat: { header: 'Nomor Dokumen Kepemilikan' },
   tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' }, atas_nama: { header: 'Nama Dokumen Kepemilikan' },
   hak: { header: 'Jenis Hak' },
 }
-// Urutan: SKPD · Kode · Uraian · Nama · [spesifikasi lainnya] · Tgl · Komptabel · Nilai · Keterangan
+// ── Kolom TAMPILAN LAYAR (diringkas 2026-07-19) ─────────────────────────────
+// - `uraian` TIDAK jadi kolom sendiri lagi → ditumpuk di bawah `kode` (spt nibar
+//   di bawah nama). Lihat cellContent('kode').
+// - Tanah/Gedung/Jalan/KDP/Aset Lain-Lain: + `spesifikasi` (Spesifikasi Lainnya)
+//   & `lokasi` (alamat_detail) setelah nama.
+// - Tanah: kolom Dokumen Kepemilikan (no/tgl/atas nama) SENGAJA tidak di layar —
+//   satu register bisa banyak bidang & dokumennya dikelola per-bidang di GIS
+//   (badge "🗺 N bidang" di sel nama link ke sana). TETAP ada di Export (BPK).
 const COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'nilai', 'keterangan'], // Tanah — tanpa komptabel
-  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],// Peralatan & Mesin
-  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],         // Gedung & Bangunan
-  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],         // Jalan, Jaringan, Irigasi
-  '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'keterangan'],               // Aset Tetap Lainnya
-  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan'],                        // KDP
-  '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],         // Aset Tidak Berwujud
-  '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan'],                        // Aset Lain-Lain
+  '1.3.1': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'keterangan'], // Tanah — tanpa komptabel; dokumen kepemilikan → GIS/Export
+  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],    // Peralatan & Mesin
+  '1.3.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],   // Gedung & Bangunan
+  '1.3.4': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],   // Jalan, Jaringan, Irigasi
+  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'keterangan'],                   // Aset Tetap Lainnya
+  '1.3.6': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],   // KDP
+  '1.5.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],             // Aset Tidak Berwujud
+  '1.5.4': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],   // Aset Lain-Lain
 }
-const DEFAULT_COLS = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan']
+const DEFAULT_COLS = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan']
 const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
+
+// ── Kolom EKSPOR (Excel/BPK) — TETAP flat & lengkap: `uraian` jadi kolom
+// sendiri, dan Tanah tetap membawa Dokumen Kepemilikan (no/tgl/atas nama).
+// Sengaja beda dari tampilan layar yang diringkas.
+const EXPORT_COLS: Record<string, string[]> = {
+  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'nilai', 'keterangan'],
+  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
+  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
+  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
+  '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'keterangan'],
+  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
+  '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
+  '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
+}
+const EXPORT_DEFAULT = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan']
+const exportColsFor = (golongan: string) => EXPORT_COLS[golongan] || EXPORT_DEFAULT
 
 // Label jenis penghapusan untuk export Audit.
 const HAPUS_LABEL: Record<string, string> = {
@@ -97,10 +122,10 @@ function thClass(key: string) {
   return `table-th${a === 'right' ? ' text-right' : a === 'center' ? ' text-center' : ''}`
 }
 function tdClass(key: string) {
-  if (key === 'nama') return 'table-td'
+  if (key === 'nama' || key === 'kode') return 'table-td align-top'
   if (key === 'nilai' || key === 'luas') return 'table-td text-right text-xs'
   if (key === 'komptabel') return 'table-td text-center text-xs capitalize'
-  return 'table-td text-xs text-gray-600'
+  return 'table-td text-xs text-gray-600 align-top'
 }
 
 export default function DaftarBarangPage() {
@@ -335,7 +360,7 @@ export default function DaftarBarangPage() {
     setExporting(true)
     const all = allVisible // posisi sesuai periode terpilih (period-aware)
     const uraian = await fetchUraian(all.map(r => r.kode))
-    const keys = colsFor(applied.golongan)
+    const keys = exportColsFor(applied.golongan)
     exportToExcel(all.map(r => {
       const cell = (key: string): string | number => {
         switch (key) {
@@ -345,6 +370,7 @@ export default function DaftarBarangPage() {
           case 'uraian': return uraian[r.kode] || ''
           case 'merek': return r.merek_tipe || ''
           case 'spesifikasi': return r.spesifikasi_lainnya || ''
+          case 'lokasi': return r.alamat_detail || ''
           case 'komptabel': return r.intra_ekstra || ''
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
@@ -372,7 +398,7 @@ export default function DaftarBarangPage() {
     const all = await fetchAllRows(applied, true)
     const uraian = await fetchUraian(all.map(r => r.kode))
     const hapus = await fetchHapusInfo(all.filter(r => r.status !== 'aktif').map(r => r.id))
-    const keys = colsFor(applied.golongan)
+    const keys = exportColsFor(applied.golongan)
     exportToExcel(all.map(r => {
       const cell = (key: string): string | number => {
         switch (key) {
@@ -382,6 +408,7 @@ export default function DaftarBarangPage() {
           case 'uraian': return uraian[r.kode] || ''
           case 'merek': return r.merek_tipe || ''
           case 'spesifikasi': return r.spesifikasi_lainnya || ''
+          case 'lokasi': return r.alamat_detail || ''
           case 'komptabel': return r.intra_ekstra || ''
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
@@ -432,10 +459,16 @@ export default function DaftarBarangPage() {
           )}
         </>
       )
-      case 'kode': return r.kode
+      case 'kode': return (
+        <>
+          <p className="font-medium text-gray-700 text-xs">{r.kode}</p>
+          <p className="text-gray-400 text-xs mt-0.5">{uraianMap[r.kode] || '-'}</p>
+        </>
+      )
       case 'uraian': return uraianMap[r.kode] || '-'
       case 'merek': return r.merek_tipe || '-'
       case 'spesifikasi': return r.spesifikasi_lainnya || '-'
+      case 'lokasi': return r.alamat_detail || '-'
       case 'komptabel': return r.intra_ekstra || '-'
       case 'tgl': return r.tgl_perolehan || '-'
       case 'nilai': return angka(r.nilai_perolehan)
