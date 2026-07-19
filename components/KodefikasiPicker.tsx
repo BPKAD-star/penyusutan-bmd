@@ -5,6 +5,16 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
+import { formatRupiah } from '@/lib/export'
+
+// Baris info Masa Manfaat + Batas Kapitalisasi (ditampilkan di kandidat & hasil).
+function MetaMM({ mm, kap }: { mm: number | null; kap: number | null }) {
+  return (
+    <p className="text-[11px] text-gray-400">
+      Masa manfaat: {mm != null ? `${mm} th` : '-'} · Batas kapitalisasi: {kap != null ? formatRupiah(kap) : '-'}
+    </p>
+  )
+}
 
 export type KodefikasiHasil = {
   kode: string
@@ -55,6 +65,7 @@ export default function KodefikasiPicker({ picked, onPick, golonganTetap }: {
           <p className="text-[11px] text-gray-500 truncate">
             {[picked.nama_objek, picked.nama_rincian, picked.nama_sub_rincian].filter(Boolean).join(' › ') || '—'}
           </p>
+          <MetaMM mm={picked.masa_manfaat_tahun} kap={picked.batas_kapitalisasi} />
         </div>
         <button type="button" onClick={() => onPick(null)} className="text-xs text-gray-500 hover:text-gray-700 flex-shrink-0">Ganti</button>
       </div>
@@ -92,6 +103,7 @@ export default function KodefikasiPicker({ picked, onPick, golonganTetap }: {
               <p className="text-[11px] text-gray-500">
                 {[r.nama_objek, r.nama_rincian, r.nama_sub_rincian].filter(Boolean).join(' › ') || '—'}
               </p>
+              <MetaMM mm={r.masa_manfaat_tahun} kap={r.batas_kapitalisasi} />
             </button>
           ))}
         </div>

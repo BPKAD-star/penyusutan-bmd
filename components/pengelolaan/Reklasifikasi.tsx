@@ -26,6 +26,7 @@ import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bm
 import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import { useDateBounds } from '@/components/useTahunBuku'
 
 type Alasan = 'komptabel_ke_ekstra' | 'komptabel_ke_intra' | 'golongan' | 'kode'
@@ -64,6 +65,7 @@ type Barang = {
 type LinePayload = {
   intra_ekstra_lama?: string; intra_ekstra?: string
   kode_lama?: string; kode_baru?: string; uraian_baru?: string
+  nama_lama?: string | null; nama_baru?: string
 }
 type HeaderPayload = { kode_tujuan?: string; uraian_tujuan?: string }
 type Header = {
@@ -93,8 +95,9 @@ const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori,payload'
 
 function ringkasanBaris(l: JurnalLine): string {
   const p = l.payload || {}
-  if (p.kode_baru) return `${p.kode_lama || l.kode} → ${p.kode_baru}`
-  if (p.intra_ekstra) return `${(p.intra_ekstra_lama || '-').toUpperCase()} → ${p.intra_ekstra.toUpperCase()}`
+  const nama = p.nama_baru ? ` · nama: "${p.nama_lama || '-'}" → "${p.nama_baru}"` : ''
+  if (p.kode_baru) return `${p.kode_lama || l.kode} → ${p.kode_baru}${nama}`
+  if (p.intra_ekstra) return `${(p.intra_ekstra_lama || '-').toUpperCase()} → ${p.intra_ekstra.toUpperCase()}${nama}`
   return '-'
 }
 
@@ -353,7 +356,8 @@ function EditHeaderModal({ header, onClose, onSaved }: {
   )
 }
 
-// ── Sub-view: (opsional header baru) + pemilihan barang (centang) ───────────
+// ── Sub-view: dokumen → pilih barang → reklas jadi apa → nama barang ────────
+// Urutan SENGAJA: barang dulu BARU target ("barang INI jadi INI"), lalu nama.
 function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSaved }: {
   skpdId: number; skpdNama: string; golonganLabels: Record<string, string>
   header: Header | null; onCancel: () => void; onSaved: (n: number) => void
@@ -366,11 +370,12 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
   const [ket, setKet] = useState('')
 
-  // Kode tujuan (kasus golongan/kode) — tetap dari header kalau tambah barang.
-  const [qKode, setQKode] = useState('')
-  const [kandidatKode, setKandidatKode] = useState<{ kode: string; uraian: string; masa_manfaat_tahun: number }[]>([])
-  const [kodeTujuan, setKodeTujuan] = useState<{ kode: string; uraian: string } | null>(
-    header?.payload?.kode_tujuan ? { kode: header.payload.kode_tujuan, uraian: header.payload.uraian_tujuan || '' } : null
+  // Kode tujuan (kasus golongan/kode) — dari header kalau tambah barang.
+  const [kodeTujuan, setKodeTujuan] = useState<KodefikasiHasil | null>(
+    header?.payload?.kode_tujuan
+      ? { kode: header.payload.kode_tujuan, uraian: header.payload.uraian_tujuan || '',
+          nama_objek: null, nama_rincian: null, nama_sub_rincian: null, masa_manfaat_tahun: null, batas_kapitalisasi: null }
+      : null
   )
 
   const [fGolongan, setFGolongan] = useState('')
@@ -379,19 +384,17 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [sel, setSel] = useState<Record<string, Barang>>({})
+
+  // Edit nama barang — per-barang, opt-in (centang dulu baru muncul field).
+  const [editNama, setEditNama] = useState<Record<string, boolean>>({})
+  const [namaBaru, setNamaBaru] = useState<Record<string, string>>({})
+
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
   const butuhKodeTujuan = perluKodeTujuan(alasan)
   const filterAwal = filterKomptabelAwal(alasan)
-
-  async function cariKode() {
-    const { data } = await supabase.from('admin_kodefikasi_bmd')
-      .select('kode,uraian,masa_manfaat_tahun')
-      .eq('aktif', true)
-      .or(`kode.ilike.${qKode}%,uraian.ilike.%${qKode}%`).limit(20)
-    setKandidatKode(data || [])
-  }
+  const targetKode = header?.payload?.kode_tujuan || kodeTujuan?.kode || null
 
   async function tampilkan() {
     setLoading(true)
@@ -407,21 +410,23 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     setLoading(false)
   }
 
-  // Validasi per baris — kasus 'golongan' butuh rumpun BEDA, kasus 'kode' butuh rumpun SAMA.
+  // Validasi barang vs target — 'golongan' butuh rumpun BEDA, 'kode' butuh rumpun SAMA.
+  // Dipanggil SETELAH target dipilih (sebelum itu return null → semua boleh dicentang).
   function invalidReason(b: Barang): string | null {
-    if (!butuhKodeTujuan || !kodeTujuan) return null
-    const samaRumpun = kodeLevel3(b.kode) === kodeLevel3(kodeTujuan.kode)
-    if (b.kode === kodeTujuan.kode) return 'Sudah kode ini'
+    if (!butuhKodeTujuan || !targetKode) return null
+    const samaRumpun = kodeLevel3(b.kode) === kodeLevel3(targetKode)
+    if (b.kode === targetKode) return 'Sudah kode ini'
     if (alasan === 'golongan' && samaRumpun) return 'Masih satu rumpun — pakai alasan Kesalahan Kodefikasi'
     if (alasan === 'kode' && !samaRumpun) return 'Beda rumpun — pakai alasan Perubahan Fungsi BMD'
     return null
   }
 
   function toggle(b: Barang) {
-    if (invalidReason(b)) return
     setSel(prev => {
       const next = { ...prev }
-      if (next[b.id]) delete next[b.id]; else next[b.id] = b
+      if (next[b.id]) { delete next[b.id]; return next }  // buang centang: selalu boleh
+      if (invalidReason(b)) return prev                    // tambah: cegah kalau tak cocok
+      next[b.id] = b
       return next
     })
   }
@@ -438,35 +443,48 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
 
   const selList = Object.values(sel)
   const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
+  const invalidSel = selList.filter(b => invalidReason(b))
 
   async function insertLines(h: Header): Promise<string | null> {
     const jenisLedger = LEDGER_JENIS[h.jenis]
+    const namaEdited = (b: Barang) =>
+      editNama[b.id] && namaBaru[b.id]?.trim() && namaBaru[b.id].trim() !== (b.nama_barang || '')
     const trxRows = selList.map(b => ({
       aset_id: b.id, jenis: jenisLedger, periode: h.periode, tanggal: h.tanggal, nilai: b.nilai_perolehan,
       header_id: h.id,
       payload: butuhKodeTujuan
-        ? { kode_lama: b.kode, kode_baru: h.payload?.kode_tujuan, uraian_baru: h.payload?.uraian_tujuan }
-        : { intra_ekstra_lama: b.intra_ekstra, intra_ekstra: targetKomptabel(h.jenis) },
+        ? { kode_lama: b.kode, kode_baru: h.payload?.kode_tujuan, uraian_baru: h.payload?.uraian_tujuan,
+            ...(namaEdited(b) ? { nama_lama: b.nama_barang, nama_baru: namaBaru[b.id].trim() } : {}) }
+        : { intra_ekstra_lama: b.intra_ekstra, intra_ekstra: targetKomptabel(h.jenis),
+            ...(namaEdited(b) ? { nama_lama: b.nama_barang, nama_baru: namaBaru[b.id].trim() } : {}) },
     }))
     const { error } = await supabase.from('transaksi_bmd').insert(trxRows)
     if (error) return `Gagal mencatat transaksi: ${error.message}`
+    // Update kode / intra sekaligus utk semua barang terpilih.
     const patch = butuhKodeTujuan
       ? { kode: h.payload?.kode_tujuan }
       : { intra_ekstra: targetKomptabel(h.jenis) }
     const { error: e2 } = await supabase.from('aset').update(patch).in('id', selList.map(b => b.id))
     if (e2) return `Transaksi tercatat, tapi update aset gagal: ${e2.message}`
+    // Update nama_barang per-barang (hanya yang di-edit) — bukan ledger, kolom biasa.
+    for (const b of selList) {
+      if (!namaEdited(b)) continue
+      const { error: e3 } = await supabase.from('aset').update({ nama_barang: namaBaru[b.id].trim() }).eq('id', b.id)
+      if (e3) return `Kode ter-update, tapi ganti nama "${b.nama_barang || b.nibar}" gagal: ${e3.message}`
+    }
     return null
   }
 
   async function simpan() {
     if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }
+    if (butuhKodeTujuan && !header && !kodeTujuan) { setErr('Pilih kode tujuan (reklas jadi apa) dulu.'); return }
+    if (invalidSel.length > 0) { setErr(`${invalidSel.length} barang terpilih tidak cocok dengan kode tujuan — buang centangnya dulu.`); return }
     setErr(''); setSaving(true)
 
     let h = header
     const headerBaru = !header
     if (!h) {
       if (!noSk.trim()) { setErr('No. dokumen sumber wajib diisi.'); setSaving(false); return }
-      if (butuhKodeTujuan && !kodeTujuan) { setErr('Kode tujuan wajib dipilih.'); setSaving(false); return }
       const { data, error } = await supabase.from('jurnal_header').insert({
         skpd_id: skpdId, kategori: 'reklasifikasi', jenis: alasan,
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
@@ -490,6 +508,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
 
   return (
     <div className="space-y-4">
+      {/* 1. Dokumen sumber (alasan + no/tgl/ket). Kalau tambah ke jurnal ada → ringkasan. */}
       <div className="card p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-800">
@@ -501,7 +520,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         {header ? (
           <p className="text-sm text-gray-500">
             {ALASAN_LABEL[header.jenis]}
-            {header.payload?.kode_tujuan && ` → ${header.payload.kode_tujuan}`}
+            {header.payload?.kode_tujuan && ` → ${header.payload.kode_tujuan}${header.payload.uraian_tujuan ? ' — ' + header.payload.uraian_tujuan : ''}`}
             {' · '}Tgl. {header.tanggal} · {header.periode}
           </p>
         ) : (
@@ -514,7 +533,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                     alasan === o.value ? 'border-teal bg-teal/5' : 'border-gray-200 hover:bg-gray-50'
                   }`}>
                     <input type="radio" className="mt-0.5" checked={alasan === o.value}
-                      onChange={() => { setAlasan(o.value); setKodeTujuan(null); setSel({}); setRows([]); setLoaded(false) }} />
+                      onChange={() => { setAlasan(o.value); setKodeTujuan(null); setSel({}); setEditNama({}); setNamaBaru({}) }} />
                     <span>
                       <span className="font-medium text-gray-800">{o.label}</span>
                       <span className="block text-xs text-gray-500 mt-0.5">{o.deskripsi}</span>
@@ -523,43 +542,6 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                 ))}
               </div>
             </div>
-
-            {butuhKodeTujuan && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Kode Tujuan (dari kodefikasi BMD)</label>
-                {kodeTujuan ? (
-                  <div className="flex items-center justify-between p-3 bg-teal/5 border border-teal/30 rounded-lg text-sm">
-                    <span className="text-xs">{kodeTujuan.kode} — {kodeTujuan.uraian}</span>
-                    <button type="button" className="btn-secondary text-xs" onClick={() => { setKodeTujuan(null); setSel({}) }}>Ganti</button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex gap-2">
-                      <input className="select-filter flex-1" placeholder="Cari kode / uraian..." value={qKode}
-                        onChange={e => setQKode(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); cariKode() } }} />
-                      <button type="button" className="btn-secondary" onClick={cariKode}>Cari</button>
-                    </div>
-                    {kandidatKode.length > 0 && (
-                      <div className="mt-2 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
-                        {kandidatKode.map(k => (
-                          <button key={k.kode} type="button" onClick={() => { setKodeTujuan(k); setKandidatKode([]) }}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs">
-                            <span>{k.kode}</span> — {k.uraian}
-                            <span className="text-gray-400"> (MM {k.masa_manfaat_tahun} th)</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-                <p className="text-xs text-gray-400 mt-1">
-                  {alasan === 'golongan'
-                    ? 'Harus BEDA rumpun/golongan dari kode barang saat ini.'
-                    : 'Harus SATU rumpun/golongan yang sama dengan kode barang saat ini.'}
-                </p>
-              </div>
-            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -582,82 +564,128 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         )}
       </div>
 
+      {/* 2. Pilih barang yang mau direklas */}
       <div className="card p-5">
-        <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang</h2>
-        {butuhKodeTujuan && !kodeTujuan ? (
-          <div className="py-10 text-center text-gray-400 text-sm">Pilih kode tujuan dulu di atas.</div>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-end gap-3 mb-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Kode Jenis</label>
-                <select className="select-filter" value={fGolongan} onChange={e => setFGolongan(e.target.value)}>
-                  <option value="">Semua Jenis Aset</option>
-                  {GOLONGAN_DAFTAR_BARANG.map(g => <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>)}
-                </select>
-              </div>
-              <div className="flex-1 min-w-[180px]">
-                <label className="block text-xs text-gray-500 mb-1">Cari</label>
-                <input className="select-filter w-full" placeholder="Nama barang / NIBAR / kode..."
-                  value={fSearch} onChange={e => setFSearch(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
-              </div>
-              <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
-            </div>
+        <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang yang Mau Direklas</h2>
+        <div className="flex flex-wrap items-end gap-3 mb-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Kode Jenis</label>
+            <select className="select-filter" value={fGolongan} onChange={e => setFGolongan(e.target.value)}>
+              <option value="">Semua Jenis Aset</option>
+              {GOLONGAN_DAFTAR_BARANG.map(g => <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-xs text-gray-500 mb-1">Cari</label>
+            <input className="select-filter w-full" placeholder="Nama barang / NIBAR / kode..."
+              value={fSearch} onChange={e => setFSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
+          </div>
+          <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
+        </div>
 
-            {!loaded ? (
-              <div className="py-10 text-center text-gray-400 text-sm">Atur filter lalu klik Tampilkan untuk memilih barang.</div>
-            ) : (
-              <div className="border border-gray-100 rounded-lg overflow-hidden">
-                <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
-                      <tr>
-                        <th className="table-th w-10 text-center">
-                          <input type="checkbox" checked={allSelected} onChange={toggleAll} />
-                        </th>
-                        <th className="table-th">Barang</th>
-                        <th className="table-th">Komptabel</th>
-                        <th className="table-th text-center">Jumlah</th>
-                        <th className="table-th text-right">Nilai Perolehan</th>
+        {!loaded ? (
+          <div className="py-10 text-center text-gray-400 text-sm">Atur filter lalu klik Tampilkan (kosongkan filter = semua barang di SKPD ini).</div>
+        ) : (
+          <div className="border border-gray-100 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
+                  <tr>
+                    <th className="table-th w-10 text-center">
+                      <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                    </th>
+                    <th className="table-th">Barang</th>
+                    <th className="table-th">Komptabel</th>
+                    <th className="table-th text-center">Jumlah</th>
+                    <th className="table-th text-right">Nilai Perolehan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {rows.length === 0 ? (
+                    <tr><td colSpan={5} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
+                  ) : rows.map(b => {
+                    const invalid = invalidReason(b)
+                    return (
+                      <tr key={b.id} className={invalid ? 'opacity-40' : sel[b.id] ? 'bg-teal/5' : ''}>
+                        <td className="table-td text-center">
+                          <input type="checkbox" checked={!!sel[b.id]} disabled={!!invalid && !sel[b.id]} onChange={() => toggle(b)} />
+                        </td>
+                        <td className="table-td">
+                          <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode} · {golonganLabels[kodeLevel3(b.kode)] || kodeLevel3(b.kode)}</p>
+                          {invalid && <p className="text-red-500 text-[11px] mt-0.5">{invalid}</p>}
+                        </td>
+                        <td className="table-td text-xs text-gray-600">{(b.intra_ekstra || '-').toUpperCase()}</td>
+                        <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
+                        <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {rows.length === 0 ? (
-                        <tr><td colSpan={5} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
-                      ) : rows.map(b => {
-                        const invalid = invalidReason(b)
-                        return (
-                          <tr key={b.id} className={invalid ? 'opacity-40' : sel[b.id] ? 'bg-teal/5' : ''}>
-                            <td className="table-td text-center">
-                              <input type="checkbox" checked={!!sel[b.id]} disabled={!!invalid} onChange={() => toggle(b)} />
-                            </td>
-                            <td className="table-td">
-                              <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
-                              <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode} · {golonganLabels[kodeLevel3(b.kode)] || kodeLevel3(b.kode)}</p>
-                              {invalid && <p className="text-red-500 text-[11px] mt-0.5">{invalid}</p>}
-                            </td>
-                            <td className="table-td text-xs text-gray-600">{(b.intra_ekstra || '-').toUpperCase()}</td>
-                            <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
-                            <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        <p className="mt-3 text-sm text-gray-600">
+          {selList.length} barang dipilih · <span className="font-medium">{formatRupiah(selTotal)}</span>
+        </p>
+      </div>
+
+      {/* 3. Reklas jadi apa (kode tujuan berjenjang) — hanya golongan/kode & jurnal baru */}
+      {butuhKodeTujuan && !header && (
+        <div className="card p-5">
+          <h2 className="text-base font-semibold text-gray-800 mb-1">Reklas Jadi (Kode Tujuan)</h2>
+          <p className="text-xs text-gray-500 mb-3">
+            {alasan === 'golongan'
+              ? 'Pilih kode tujuan — harus BEDA rumpun/golongan dari barang terpilih.'
+              : 'Pilih kode tujuan — harus SATU rumpun/golongan yang sama dengan barang terpilih.'}
+          </p>
+          <KodefikasiPicker picked={kodeTujuan} onPick={setKodeTujuan} />
+          {kodeTujuan && invalidSel.length > 0 && (
+            <p className="mt-2 text-sm text-red-600">
+              {invalidSel.length} barang terpilih tidak cocok dengan kode tujuan ini (tanda merah di daftar barang di atas) — buang centangnya sebelum simpan.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* 4. Nama barang — per-barang, opt-in */}
+      {selList.length > 0 && (
+        <div className="card p-5">
+          <h2 className="text-base font-semibold text-gray-800 mb-1">Nama Barang <span className="text-xs font-normal text-gray-400">(opsional)</span></h2>
+          <p className="text-xs text-gray-500 mb-3">Centang barang yang namanya mau diganti sekalian. Yang tidak dicentang, namanya tetap.</p>
+          <div className="border border-gray-100 rounded-lg divide-y divide-gray-50 max-h-[360px] overflow-y-auto">
+            {selList.map(b => (
+              <div key={b.id} className="px-3 py-2.5 flex items-start gap-3">
+                <input type="checkbox" className="mt-1 flex-shrink-0" checked={!!editNama[b.id]}
+                  onChange={() => setEditNama(p => ({ ...p, [b.id]: !p[b.id] }))} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-gray-400">{b.nibar || '-'} · {b.kode}</p>
+                  {editNama[b.id] ? (
+                    <input className="select-filter w-full mt-1 text-sm"
+                      value={namaBaru[b.id] ?? (b.nama_barang || '')}
+                      onChange={e => setNamaBaru(p => ({ ...p, [b.id]: e.target.value }))}
+                      placeholder="Nama barang baru" />
+                  ) : (
+                    <p className="text-sm text-gray-800 truncate">{b.nama_barang || '-'}</p>
+                  )}
                 </div>
               </div>
-            )}
-          </>
-        )}
+            ))}
+          </div>
+        </div>
+      )}
 
-        {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
-
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+      {/* Footer: simpan */}
+      <div className="card p-4">
+        {err && <p className="mb-3 text-sm text-red-600">{err}</p>}
+        <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">
             {selList.length} barang dipilih · <span className="font-medium">{formatRupiah(selTotal)}</span>
           </span>
-          <button className="btn-primary" onClick={simpan} disabled={saving || selList.length === 0}>
+          <button className="btn-primary" onClick={simpan}
+            disabled={saving || selList.length === 0 || (butuhKodeTujuan && !header && !kodeTujuan) || invalidSel.length > 0}>
             {saving ? 'Menyimpan...' : header ? 'Tambah ke Jurnal' : 'Simpan Reklasifikasi'}
           </button>
         </div>
