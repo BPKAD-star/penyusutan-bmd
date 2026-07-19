@@ -5,6 +5,34 @@ React 18 + TypeScript + Tailwind + Supabase. Scope: LIVE data pemerintah daerah,
 jadi **integritas data di atas segalanya** — hati-hati dengan perubahan skema &
 apa pun yang menyentuh ledger atau engine.
 
+## Aturan lintas-fitur (2026-07-19, JANGAN dilanggar)
+
+- **PERFORMA Daftar Barang & Penyusutan — JANGAN diturunkan.** Setelah import
+  massal (Peralatan & Mesin 218rb, dst → total aset ~227rb), dua halaman ini
+  sempat 504/timeout/freeze. Yang MENYELAMATKAN & bikin stabil (bukan sekadar
+  cepat): **(1) semua fn di RLS dibungkus InitPlan** — `(SELECT fn_is_admin())`,
+  `(SELECT fn_is_viewer())` — supaya dievaluasi SEKALI bukan per-baris (policy
+  `aset_select`, `trx_select`, `*_viewer_select`; migrasi 20260717_02,
+  20260718_05/06); **(2) index `idx_aset_kode_pattern` (text_pattern_ops)** utk
+  `kode LIKE 'gol.%'` (migrasi 20260718_06, PLAIN bukan CONCURRENTLY — Supabase
+  SQL Editor bungkus transaksi jadi CONCURRENTLY gagal senyap). Saat bikin fitur
+  baru: **JANGAN** ubah/copot policy RLS jadi fn telanjang lagi, JANGAN drop
+  index kode, JANGAN bikin query yang narik semua baris golongan ke browser
+  (paginasi/agregasi di server via RPC — pola `fn_daftar_barang`,
+  `fn_rekap_bmd`, `fn_dashboard_rekap`). Kalau perlu tambah policy/fn di path
+  panas, bungkus InitPlan.
+
+- **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
+  setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
+  (batal_reklas, batal_penghapusan, batal_kapitalisasi, dst). Alasan: rantai
+  event per-aset direplay kronologis di engine — membatalkan event di TENGAH
+  rantai (mis. reklas lalu ada kapitalisasi di atasnya) merusak state. Batal
+  hanya sah untuk event TERBARU aset itu. Pola batal = SELALU transaksi baru
+  (`batal_*`, append-only) + engine mengabaikan event yang dibatalkan lewat
+  `payload.target_trx_id` (pola `kapDibatalkan` di lib/engine/penyusutan.ts) —
+  BUKAN hapus baris & BUKAN reklas-balik (reklas-balik salah utk lintas-golongan
+  krn fresh-start dobel).
+
 ## Prinsip inti (jangan dilanggar)
 
 - **Ledger append-only, TANPA PENGECUALIAN.** `transaksi_bmd` tidak pernah
