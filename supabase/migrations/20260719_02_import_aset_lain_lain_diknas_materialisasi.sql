@@ -53,7 +53,11 @@ INSERT INTO aset_awal_2026 (
   tahun_pengadaan, golongan
 )
 SELECT
-  s.nibar, s.kode, s.nama_barang, s.skpd_id, s.nilai_perolehan,
+  s.nibar, s.kode,
+  -- nama_barang NOT NULL, tapi 7 baris file kosong → pakai uraian_barang
+  -- (terisi 100%), fallback kode. Pola sama import ATL (20260716_01).
+  COALESCE(NULLIF(s.nama_barang, ''), NULLIF(s.uraian_barang, ''), s.kode),
+  s.skpd_id, s.nilai_perolehan,
   COALESCE(NULLIF(s.intra_ekstra, ''), 'intra'), s.tgl_perolehan,
   -- aset_awal_2026.akumulasi_2025 NOT NULL, tapi 2.512/6.701 baris file ini
   -- kosong (barang belum pernah disusutkan, mis. buku ATL). Turunkan dari
