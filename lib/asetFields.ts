@@ -11,6 +11,7 @@ export type FieldKey =
   | 'nama_barang' | 'spesifikasi_lainnya' | 'merek_tipe' | 'no_polisi' | 'no_bpkb' | 'no_rangka' | 'no_mesin'
   | 'luas' | 'nomor_dokumen_kepemilikan' | 'tanggal_dokumen_kepemilikan' | 'nama_dokumen_kepemilikan' | 'jenis_hak'
   | 'wilayah_kode' | 'alamat_detail' | 'latitude' | 'longitude' | 'penggunaan_pengamanan' | 'keterangan'
+  | 'satuan' | 'asal_usul' | 'tahun_pengadaan' | 'kondisi_barang'
 
 export const FIELD_LABEL: Record<FieldKey, string> = {
   nama_barang: 'Spesifikasi Nama Barang',
@@ -31,6 +32,12 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   longitude: 'Longitude',
   penggunaan_pengamanan: 'Penggunaan',
   keterangan: 'Keterangan',
+  // Atribut tambahan — TIDAK masuk template golongan (form Pengadaan tak berubah);
+  // dipakai HANYA oleh menu Koreksi Spesifikasi yang menambahkannya secara eksplisit.
+  satuan: 'Satuan',
+  asal_usul: 'Asal Usul',
+  tahun_pengadaan: 'Tahun Pengadaan',
+  kondisi_barang: 'Kondisi Barang',
 }
 
 // Tipe field khusus — 'select' butuh FIELD_OPTIONS; 'wilayah' & 'latlong' dirender
@@ -45,12 +52,15 @@ export const FIELD_TYPE: Partial<Record<FieldKey, 'date' | 'number' | 'textarea'
   wilayah_kode: 'wilayah',
   latitude: 'latlong',
   keterangan: 'textarea',
+  tahun_pengadaan: 'number',
+  kondisi_barang: 'select',
 }
 
 export const FIELD_OPTIONS: Partial<Record<FieldKey, string[]>> = {
   // BMD milik pemda — tidak ada "Hak Milik" (itu utk perseorangan). "Sengketa"
   // = status lahan bermasalah/red zone, ditambahkan atas permintaan user.
   jenis_hak: ['Hak Pengelolaan', 'Hak Pakai', 'Hak Guna Usaha', 'Hak Guna Bangunan', 'Lainnya', 'Sengketa'],
+  kondisi_barang: ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang', 'Tidak Ditemukan'],
 }
 
 // ── 3 template field, dipetakan ke 8 golongan (lib/bmd GOLONGAN_REKAP) ──────

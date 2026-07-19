@@ -68,11 +68,16 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
         'nomor_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak', 'tanggal_dokumen_kepemilikan',
         'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
         'asal_usul', 'kondisi_barang',
+        // Lokasi (menu Koreksi Spesifikasi — non-tanah; tanah tetap lewat GIS).
+        'wilayah_kode', 'alamat_detail', 'penggunaan_pengamanan', 'keterangan',
       ] as const) {
         if (typeof p[k] === 'string' && p[k]) patch[k] = p[k]
       }
       if (typeof p.luas === 'number' && p.luas > 0) patch.luas = p.luas
       if (typeof p.tahun_pengadaan === 'number' && p.tahun_pengadaan > 0) patch.tahun_pengadaan = p.tahun_pengadaan
+      // Koordinat peta (numeric) — caller mengirim number; 0 valid utk latitude khatulistiwa.
+      if (typeof p.latitude === 'number') patch.latitude = p.latitude
+      if (typeof p.longitude === 'number') patch.longitude = p.longitude
       if (Array.isArray(p.foto_paths)) patch.foto_paths = p.foto_paths
       return Object.keys(patch).length ? patch : null
     }

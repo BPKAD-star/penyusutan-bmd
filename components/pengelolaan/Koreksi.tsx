@@ -12,19 +12,24 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
-import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode, type FieldKey } from '@/lib/asetFields'
-import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
+import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode, allSameGolongan, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds, useTahunBukuMap } from '@/components/useTahunBuku'
 import FormShell from './FormShell'
 
-// ── Field spesifikasi (dipakai alasan "Spesifikasi Barang" di bawah) ────────
-const SPEK_KOSONG = { nama_barang: '', spesifikasi_lainnya: '', merek_tipe: '', satuan: '' }
-const ATRIBUT_KOSONG = { asal_usul: '', kondisi_barang: '', tahun_pengadaan: '' }
-const KONDISI_OPT = ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang', 'Tidak Ditemukan']
-// Field identitas tanah (nomor/jenis hak/luas/dll) TIDAK diedit di sini lagi —
-// dikelola khusus di menu GIS BMD (aset_bidang_tanah), biar gak ada 2 sumber.
+// ── Field alasan "Spesifikasi Barang" — golongan-aware (popup EditSpesifikasiModal,
+// sama seperti Pengadaan) + atribut lama (satuan/asal usul/tahun/kondisi). Tanah
+// (1.3.1): dokumen kepemilikan, jenis hak, luas & lokasi/koordinat TIDAK diedit
+// di sini — dikelola khusus di menu GIS BMD (aset_bidang_tanah), biar gak ada 2
+// sumber. Golongan lain (termasuk Gedung/Jalan) boleh koreksi dokumen & lokasi.
+const TANAH_GIS_FIELDS: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude']
+const ATRIBUT_KOREKSI: FieldKey[] = ['satuan', 'asal_usul', 'tahun_pengadaan', 'kondisi_barang']
+function koreksiFieldKeys(kode: string): FieldKey[] {
+  let keys = fieldsForKode(kode)
+  if (kodeLevel3(kode) === '1.3.1') keys = keys.filter(k => !TANAH_GIS_FIELDS.includes(k))
+  return [...keys, ...ATRIBUT_KOREKSI.filter(k => !keys.includes(k))]
+}
 
 // ── Koreksi — satu alur ber-SK, 4 alasan ─────────────────────────────────────
 type Alasan = 'nilai_perolehan' | 'pencatatan_ganda' | 'spesifikasi' | 'pemecahan'
@@ -40,8 +45,10 @@ const tahunDari = (tgl: string | null) => tgl ? tgl.slice(0, 4) : '-'
 type Barang = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null
   merek_tipe: string | null; jumlah: number; satuan: string | null; nilai_perolehan: number; skpd_id: number | null
-  tgl_perolehan: string | null; cara_perolehan: string | null
+  tgl_perolehan: string | null; cara_perolehan: string | null; foto_paths: string[] | null
 }
+// Edit spesifikasi yang disusun di popup, menunggu di-commit oleh Simpan.
+type SpekEdit = { fields: Record<string, string>; foto: { replace?: string[]; append?: string[] } }
 // ── Pemecahan: baris pecahan (jumlah + nilai + spesifikasi per barang) ───────
 type BasisPecah = { nilai_buku: number; akumulasi: number; sisa_smt: number; masa_tahun: number | null; disusutkan: boolean }
 type PecahanItem = { key: string; jumlah: string; nilai: string; fields: Record<string, string>; foto: string[] }
@@ -79,8 +86,9 @@ const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori'
 function ringkasanBaris(l: JurnalLine, jenis: Alasan): string {
   const p = l.payload || {}
   if (jenis === 'spesifikasi') {
-    const fields = Object.keys(p)
-    return fields.length ? `Spesifikasi diubah: ${fields.join(', ')}` : '-'
+    const labels = Object.keys(p).filter(k => k !== 'foto_paths').map(k => FIELD_LABEL[k as FieldKey] || k)
+    if ('foto_paths' in p) labels.push('Foto')
+    return labels.length ? `Spesifikasi diubah: ${labels.join(', ')}` : '-'
   }
   if (p.nilai_perolehan_baru != null) return `${formatRupiah(p.nilai_lama || 0)} → ${formatRupiah(p.nilai_perolehan_baru)}`
   if (p.survivor_nibar) return `Digabung ke NIBAR ${p.survivor_nibar}`
@@ -429,10 +437,13 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   const [kandidat, setKandidat] = useState<Kandidat[]>([])
   const [survivorId, setSurvivorId] = useState<string | null>(null)
 
-  // ── Spesifikasi: satu barang + field yang diubah ──
-  const [aset, setAset] = useState<AsetRingkas | null>(null)
-  const [spek, setSpek] = useState(SPEK_KOSONG)
-  const [atribut, setAtribut] = useState(ATRIBUT_KOSONG)
+  // ── Spesifikasi: pilih barang (golongan → list → centang) + edit lewat popup ──
+  const [selSpek, setSelSpek] = useState<Record<string, Barang>>({})
+  const [spekModalOpen, setSpekModalOpen] = useState(false)
+  const [spekInitFields, setSpekInitFields] = useState<Record<string, string>>({})
+  const [spekInitFoto, setSpekInitFoto] = useState<string[]>([])
+  const [spekPrefix, setSpekPrefix] = useState('')
+  const [spekEdit, setSpekEdit] = useState<SpekEdit | null>(null)
 
   // ── Pemecahan: 1 induk → N pecahan (jumlah + nilai + spesifikasi per barang) ──
   const [indukPecah, setIndukPecah] = useState<Barang | null>(null)
@@ -510,7 +521,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   async function tampilkan() {
     setLoading(true)
     let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id,tgl_perolehan,cara_perolehan')
+      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id,tgl_perolehan,cara_perolehan,foto_paths')
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
     if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
@@ -529,6 +540,37 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   }
   function ubahNilaiBaru(id: string, v: string) {
     setSelNilai(prev => prev[id] ? { ...prev, [id]: { ...prev[id], nilaiBaru: v } } : prev)
+  }
+
+  // ── Spesifikasi: centang barang (multi) → popup EditSpesifikasiModal ──
+  function toggleSpek(b: Barang) {
+    setSelSpek(prev => {
+      const next = { ...prev }
+      if (next[b.id]) delete next[b.id]; else next[b.id] = b
+      return next
+    })
+    setSpekEdit(null) // seleksi berubah → edit tersusun tak lagi valid
+  }
+  const selSpekList = Object.values(selSpek)
+  const spekSameGol = allSameGolongan(selSpekList.map(b => b.kode))
+  // Buka popup: single → prefill nilai field & foto barang; bulk → kosong.
+  async function openSpekModal() {
+    if (selSpekList.length === 0 || !spekSameGol) return
+    const single = selSpekList.length === 1
+    setSpekPrefix(`draft/koreksi-spek/${single ? selSpekList[0].id : newKey()}`)
+    if (single) {
+      const b = selSpekList[0]
+      const keys = koreksiFieldKeys(b.kode)
+      const { data } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
+      const row = (data || {}) as Record<string, unknown>
+      const f: Record<string, string> = {}
+      for (const k of keys) { const v = row[k]; if (v != null) f[k] = String(v) }
+      setSpekInitFields(f)
+      setSpekInitFoto(Array.isArray(row.foto_paths) ? (row.foto_paths as string[]) : [])
+    } else {
+      setSpekInitFields({}); setSpekInitFoto([])
+    }
+    setSpekModalOpen(true)
   }
 
   async function cariKandidat() {
@@ -594,22 +636,38 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
     }
 
     if (alasan === 'spesifikasi') {
-      if (!aset) { setErr('Pilih barang yang dikoreksi.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
-      const isiTeks = Object.fromEntries(Object.entries(spek).filter(([, v]) => v.trim() !== ''))
-      const isiAtribut: Record<string, unknown> = {}
-      if (atribut.asal_usul.trim()) isiAtribut.asal_usul = atribut.asal_usul.trim()
-      if (atribut.kondisi_barang) isiAtribut.kondisi_barang = atribut.kondisi_barang
-      if (atribut.tahun_pengadaan.trim()) {
-        const th = parseInt(atribut.tahun_pengadaan, 10)
-        if (!isNaN(th) && th > 0) isiAtribut.tahun_pengadaan = th
+      const delHeader = async () => { if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h!.id) }
+      const list = Object.values(selSpek)
+      if (list.length === 0) { setErr('Centang minimal satu barang.'); await delHeader(); setSaving(false); return }
+      if (!allSameGolongan(list.map(b => b.kode))) { setErr('Barang beda jenis aset — pisahkan per jenis (field spesifikasinya beda).'); await delHeader(); setSaving(false); return }
+      if (!spekEdit) { setErr('Klik "Edit Spesifikasi" lalu isi field yang diubah dulu.'); await delHeader(); setSaving(false); return }
+      const single = list.length === 1
+      // Payload field non-kosong (cast numeric utk luas/lat/long/tahun). Single:
+      // modal prefill nilai sekarang, jadi rekam HANYA yang BERUBAH dari nilai awal
+      // (biar tak ada entri ledger "berubah" padahal nilainya sama). Bulk: initial
+      // kosong → semua yang diisi = perubahan (diterapkan ke semua barang).
+      const initial = single ? spekInitFields : {}
+      const base: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(spekEdit.fields)) {
+        const val = (v ?? '').toString().trim()
+        if (val === '' || val === (initial[k] ?? '').toString().trim()) continue
+        if (ASET_NUM_COLS.has(k) || k === 'tahun_pengadaan') { const n = Number(val); if (Number.isFinite(n)) base[k] = n }
+        else base[k] = val
       }
-      const isi = { ...isiTeks, ...isiAtribut }
-      if (Object.keys(isi).length === 0) { setErr('Tidak ada field yang diubah.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
-      const { error } = await catatTransaksi(supabase, {
-        asetId: aset.id, jenis: 'koreksi_spesifikasi', headerId: h.id, payload: isi, keterangan: h.keterangan || undefined,
-      })
-      if (error) { setErr(error); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
-      setSaving(false); onSaved(1); return
+      const fotoReplace = single ? (spekEdit.foto.replace || []) : null
+      const fotoAppend = !single ? (spekEdit.foto.append || []) : null
+      const fotoBerubah = single ? JSON.stringify(fotoReplace) !== JSON.stringify(spekInitFoto) : (fotoAppend?.length ?? 0) > 0
+      if (Object.keys(base).length === 0 && !fotoBerubah) { setErr('Tidak ada field yang diubah.'); await delHeader(); setSaving(false); return }
+      for (const b of list) {
+        const payload: Record<string, unknown> = { ...base }
+        if (single && fotoBerubah) payload.foto_paths = fotoReplace
+        else if (!single && fotoAppend && fotoAppend.length) payload.foto_paths = [...(b.foto_paths || []), ...fotoAppend]
+        const { error } = await catatTransaksi(supabase, {
+          asetId: b.id, jenis: 'koreksi_spesifikasi', headerId: h.id, payload, keterangan: h.keterangan || undefined,
+        })
+        if (error) { setErr(error); setSaving(false); return }
+      }
+      setSaving(false); onSaved(list.length); return
     }
 
     if (alasan === 'pemecahan') {
@@ -718,7 +776,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                     <input type="radio" className="mt-0.5" checked={alasan === o.value} disabled={o.disabled}
                       onChange={() => {
                         setAlasan(o.value); setSelNilai({}); setKandidat([]); setSurvivorId(null); setRows([]); setLoaded(false)
-                        setAset(null); setSpek(SPEK_KOSONG); setAtribut(ATRIBUT_KOSONG)
+                        setSelSpek({}); setSpekEdit(null); setSpekModalOpen(false)
                         setIndukPecah(null); setBasisPecah(null); setBasisPecahErr(''); setPecahan([]); setIndukFields({}); setEditPecahIdx(null)
                       }} />
                     <span>
@@ -892,60 +950,78 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
 
       {alasanAktif === 'spesifikasi' && (
         <div className="card p-5">
-          <h2 className="text-base font-semibold text-gray-800 mb-4">Barang &amp; Field yang Diubah</h2>
-          <div className="space-y-3">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang &amp; Edit Spesifikasi</h2>
+          <div className="flex flex-wrap items-end gap-3 mb-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Aset</label>
-              <AsetPicker selected={aset} onSelect={setAset} />
+              <label className="block text-xs text-gray-500 mb-1">Jenis Aset</label>
+              <select className="select-filter" value={fGolongan} onChange={e => setFGolongan(e.target.value)}>
+                <option value="">Semua Jenis Aset</option>
+                {GOLONGAN_DAFTAR_BARANG.map(g => <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>)}
+              </select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              {(Object.keys(spek) as (keyof typeof spek)[]).map(k => (
-                <div key={k}>
-                  <label className="block text-xs text-gray-500 mb-1 capitalize">{k.replace('_', ' ')}</label>
-                  <input className="select-filter w-full" value={spek[k]} placeholder="(kosongkan jika tidak berubah)"
-                    onChange={e => setSpek(s => ({ ...s, [k]: e.target.value }))} />
-                </div>
-              ))}
+            <div className="flex-1 min-w-[180px]">
+              <label className="block text-xs text-gray-500 mb-1">Cari</label>
+              <input className="select-filter w-full" placeholder="Nama barang / NIBAR / kode..." value={fSearch}
+                onChange={e => setFSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
             </div>
-            {(aset?.kode.startsWith('1.3.1') ?? false) && (
-              <div className="pt-3 border-t border-gray-100">
-                <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3">
-                  Field identitas tanah (luas, nomor & jenis hak, dokumen kepemilikan, titik koordinat)
-                  dikelola di menu <span className="font-medium text-gray-700">GIS Tanah</span> — termasuk
-                  pemecahan per bidang tanah. Di sini cukup untuk nama/spesifikasi umum.
-                </p>
-              </div>
-            )}
-            <div className="pt-3 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-600 mb-2">Atribut Tambahan</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Asal Usul</label>
-                  <input className="select-filter w-full" value={atribut.asal_usul} placeholder="(kosongkan jika tidak berubah)"
-                    onChange={e => setAtribut(s => ({ ...s, asal_usul: e.target.value }))} />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Kondisi Barang</label>
-                  <select className="select-filter w-full" value={atribut.kondisi_barang}
-                    onChange={e => setAtribut(s => ({ ...s, kondisi_barang: e.target.value }))}>
-                    <option value="">(kosongkan jika tidak berubah)</option>
-                    {KONDISI_OPT.map(k => <option key={k} value={k}>{k}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Tahun Pengadaan</label>
-                  <input type="number" min="1900" max="2100" step="1" className="select-filter w-full" value={atribut.tahun_pengadaan}
-                    placeholder="(kosongkan jika tidak berubah)" onChange={e => setAtribut(s => ({ ...s, tahun_pengadaan: e.target.value }))} />
-                </div>
-              </div>
-            </div>
+            <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
           </div>
+          {!loaded ? (
+            <div className="py-10 text-center text-gray-400 text-sm">Atur filter lalu klik Tampilkan untuk memilih barang.</div>
+          ) : (
+            <div className="border border-gray-100 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
+                    <tr>
+                      <th className="table-th w-10 text-center"></th>
+                      <th className="table-th">Barang</th>
+                      <th className="table-th">Jenis</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {rows.length === 0 ? (
+                      <tr><td colSpan={3} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
+                    ) : rows.map(b => (
+                      <tr key={b.id} className={selSpek[b.id] ? 'bg-teal/5' : ''}>
+                        <td className="table-td text-center">
+                          <input type="checkbox" checked={!!selSpek[b.id]} onChange={() => toggleSpek(b)} />
+                        </td>
+                        <td className="table-td">
+                          <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode}</p>
+                        </td>
+                        <td className="table-td text-xs text-gray-600">{golonganLabels[kodeLevel3(b.kode)] || kodeLevel3(b.kode)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {selSpekList.length > 0 && !spekSameGol && (
+            <p className="mt-3 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+              Barang yang dicentang beda jenis aset — field spesifikasinya beda kolom, tidak bisa diedit sekaligus. Pilih satu jenis saja.
+            </p>
+          )}
+          {spekEdit && spekSameGol && (
+            <p className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+              {selSpekList.length === 1
+                ? 'Edit spesifikasi tersusun — klik Simpan untuk menerapkan perubahannya.'
+                : <>Akan diterapkan ke {selSpekList.length} barang: <span className="font-medium">{Object.keys(spekEdit.fields).filter(k => spekEdit.fields[k]?.trim()).map(k => FIELD_LABEL[k as FieldKey] || k).join(', ') || '(hanya foto)'}</span></>}
+            </p>
+          )}
           {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-            <span className="text-sm text-gray-600">{aset ? `1 barang dipilih — ${aset.nama_barang || aset.nibar || '-'}` : 'Belum pilih barang'}</span>
-            <button className="btn-primary" onClick={simpan} disabled={saving || !aset}>
-              {saving ? 'Menyimpan...' : header ? 'Tambah ke Jurnal' : 'Simpan Koreksi'}
-            </button>
+            <span className="text-sm text-gray-600">{selSpekList.length} barang dipilih</span>
+            <div className="flex items-center gap-2">
+              <button className="btn-secondary" onClick={openSpekModal} disabled={selSpekList.length === 0 || !spekSameGol}>
+                {spekEdit ? '✎ Ubah Field...' : '✎ Edit Spesifikasi...'}
+              </button>
+              <button className="btn-primary" onClick={simpan} disabled={saving || selSpekList.length === 0 || !spekSameGol || !spekEdit}>
+                {saving ? 'Menyimpan...' : header ? 'Tambah ke Jurnal' : 'Simpan Koreksi'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1123,6 +1199,21 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
             setEditPecahIdx(null)
           }}
           onClose={() => setEditPecahIdx(null)}
+        />
+      )}
+
+      {spekModalOpen && selSpekList.length > 0 && (
+        <EditSpesifikasiModal
+          title={selSpekList.length === 1
+            ? (selSpekList[0].nama_barang || selSpekList[0].nibar || '1 barang')
+            : `${selSpekList.length} barang — ${golonganLabels[kodeLevel3(selSpekList[0].kode)] || kodeLevel3(selSpekList[0].kode)}`}
+          fieldKeys={koreksiFieldKeys(selSpekList[0].kode)}
+          storagePrefix={spekPrefix}
+          initialFields={spekInitFields}
+          initialFoto={spekInitFoto}
+          single={selSpekList.length === 1}
+          onSave={(fields, foto) => { setSpekEdit({ fields, foto }); setSpekModalOpen(false) }}
+          onClose={() => setSpekModalOpen(false)}
         />
       )}
 
