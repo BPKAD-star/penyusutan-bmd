@@ -55,7 +55,12 @@ INSERT INTO aset_awal_2026 (
 SELECT
   s.nibar, s.kode, s.nama_barang, s.skpd_id, s.nilai_perolehan,
   COALESCE(NULLIF(s.intra_ekstra, ''), 'intra'), s.tgl_perolehan,
-  s.akumulasi_2025, s.nilai_buku_awal, NULLIF(s.spesifikasi_lainnya, ''),
+  -- aset_awal_2026.akumulasi_2025 NOT NULL, tapi 2.512/6.701 baris file ini
+  -- kosong (barang belum pernah disusutkan, mis. buku ATL). Turunkan dari
+  -- identitas nilai_buku = perolehan - akumulasi → akumulasi = perolehan -
+  -- nilai_buku (konsisten; utk yg nilai_buku=perolehan hasilnya 0).
+  COALESCE(s.akumulasi_2025, s.nilai_perolehan - s.nilai_buku_awal),
+  s.nilai_buku_awal, NULLIF(s.spesifikasi_lainnya, ''),
   NULLIF(s.merek_tipe, ''), NULLIF(s.no_polisi, ''), NULLIF(s.no_bpkb, ''),
   NULLIF(s.no_rangka, ''), NULLIF(s.no_mesin, ''), NULLIF(s.nomor_dokumen_kepemilikan, ''),
   s.tanggal_dokumen_kepemilikan, NULLIF(s.nama_dokumen_kepemilikan, ''),
