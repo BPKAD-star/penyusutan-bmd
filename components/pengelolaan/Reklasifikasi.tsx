@@ -55,6 +55,8 @@ type Barang = {
   nibar: string | null
   kode: string
   nama_barang: string | null
+  uraian_barang?: string | null
+  tgl_perolehan?: string | null
   merek_tipe: string | null
   jumlah: number
   satuan: string | null
@@ -399,7 +401,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   async function tampilkan() {
     setLoading(true)
     let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,intra_ekstra,skpd_id')
+      .select('id,nibar,kode,nama_barang,uraian_barang,tgl_perolehan,merek_tipe,jumlah,satuan,nilai_perolehan,intra_ekstra,skpd_id')
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
     if (filterAwal) q = q.eq('intra_ekstra', filterAwal)
@@ -444,6 +446,9 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const selList = Object.values(sel)
   const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
   const invalidSel = selList.filter(b => invalidReason(b))
+  // Kesalahan Kodefikasi = tetap satu jenis BMD → kunci Jenis BMD picker ke
+  // golongan barang terpilih (tak bisa keluar jenis). Perubahan Fungsi = bebas.
+  const lockGolongan = alasan === 'kode' && selList.length > 0 ? kodeLevel3(selList[0].kode) : undefined
 
   async function insertLines(h: Header): Promise<string | null> {
     const jenisLedger = LEDGER_JENIS[h.jenis]
@@ -597,7 +602,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                     </th>
                     <th className="table-th">Barang</th>
                     <th className="table-th">Komptabel</th>
-                    <th className="table-th text-center">Jumlah</th>
+                    <th className="table-th">Tgl Perolehan</th>
                     <th className="table-th text-right">Nilai Perolehan</th>
                   </tr>
                 </thead>
@@ -612,12 +617,14 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                           <input type="checkbox" checked={!!sel[b.id]} disabled={!!invalid && !sel[b.id]} onChange={() => toggle(b)} />
                         </td>
                         <td className="table-td">
+                          <p className="text-xs text-gray-500">{b.kode}</p>
+                          <p className="text-xs text-gray-600">{b.uraian_barang || '-'}</p>
                           <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode} · {golonganLabels[kodeLevel3(b.kode)] || kodeLevel3(b.kode)}</p>
+                          <p className="text-gray-400 text-[11px] mt-0.5">{b.nibar || '-'}</p>
                           {invalid && <p className="text-red-500 text-[11px] mt-0.5">{invalid}</p>}
                         </td>
                         <td className="table-td text-xs text-gray-600">{(b.intra_ekstra || '-').toUpperCase()}</td>
-                        <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
+                        <td className="table-td text-xs text-gray-600">{b.tgl_perolehan || '-'}</td>
                         <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
                       </tr>
                     )
@@ -632,16 +639,18 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         </p>
       </div>
 
-      {/* 3. Reklas jadi apa (kode tujuan berjenjang) — hanya golongan/kode & jurnal baru */}
-      {butuhKodeTujuan && !header && (
+      {/* 3. Reklas jadi apa (kode tujuan berjenjang) — muncul setelah ada barang
+             dicentang (barang DULU baru target), hanya golongan/kode & jurnal baru */}
+      {butuhKodeTujuan && !header && selList.length > 0 && (
         <div className="card p-5">
           <h2 className="text-base font-semibold text-gray-800 mb-1">Reklas Jadi (Kode Tujuan)</h2>
           <p className="text-xs text-gray-500 mb-3">
             {alasan === 'golongan'
-              ? 'Pilih kode tujuan — harus BEDA rumpun/golongan dari barang terpilih.'
-              : 'Pilih kode tujuan — harus SATU rumpun/golongan yang sama dengan barang terpilih.'}
+              ? 'Pilih kode tujuan — harus BEDA jenis BMD dari barang terpilih (lintas jenis).'
+              : `Pilih kode tujuan — tetap DALAM jenis BMD yang sama${lockGolongan ? ` (${lockGolongan} — ${golonganLabels[lockGolongan] || ''})` : ''}.`}
           </p>
-          <KodefikasiPicker picked={kodeTujuan} onPick={setKodeTujuan} />
+          <KodefikasiPicker key={lockGolongan || 'free'} picked={kodeTujuan} onPick={setKodeTujuan}
+            golonganTetap={lockGolongan} detail />
           {kodeTujuan && invalidSel.length > 0 && (
             <p className="mt-2 text-sm text-red-600">
               {invalidSel.length} barang terpilih tidak cocok dengan kode tujuan ini (tanda merah di daftar barang di atas) — buang centangnya sebelum simpan.
