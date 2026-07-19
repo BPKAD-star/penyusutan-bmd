@@ -81,6 +81,7 @@ type Header = {
   payload: HeaderPayload | null
 }
 type JurnalLine = {
+  trx_id: number         // id baris ledger reklas — dipakai target_trx_id saat batal
   aset_id: string
   nibar: string | null
   kode: string
@@ -117,6 +118,53 @@ export default function Reklasifikasi() {
   const [addTo, setAddTo] = useState<Header | null>(null)
   const [editing, setEditing] = useState<Header | null>(null)
   const [msg, setMsg] = useState('')
+
+  // Batal reklas — pilih baris (per trx_id), lalu batalkan.
+  const [selBatal, setSelBatal] = useState<Record<number, boolean>>({})
+  const [batalling, setBatalling] = useState(false)
+
+  // Balikkan reklas terpilih ke posisi semula: guard (tak boleh ada transaksi
+  // lebih baru) → insert batal_reklas (append-only) + kembalikan kode/intra/nama
+  // aset ke nilai lama. Engine mengabaikan reklas via target_trx_id saat replay.
+  async function batalReklas(j: Jurnal, lines: JurnalLine[]) {
+    if (lines.length === 0) { setMsg('Centang minimal satu baris untuk dibatalkan.'); return }
+    if (!confirm(`Batalkan reklasifikasi ${lines.length} barang? Barang kembali ke kode/posisi semula. Jalankan Engine lagi setelah ini.`)) return
+    setBatalling(true); setMsg('')
+    // Guard rantai: tolak kalau ada transaksi lebih baru dari baris reklas ini.
+    for (const l of lines) {
+      const { count } = await supabase.from('transaksi_bmd')
+        .select('id', { count: 'exact', head: true }).eq('aset_id', l.aset_id).gt('id', l.trx_id)
+      if ((count || 0) > 0) {
+        setMsg(`Batal diblokir: "${l.nama_barang || l.nibar}" punya transaksi LEBIH BARU setelah reklas ini — batalkan yang lebih baru dulu.`)
+        setBatalling(false); return
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10)
+    const periode = periodeDariTanggal(today)
+    const trxRows = lines.map(l => ({
+      aset_id: l.aset_id, jenis: 'batal_reklas', periode, tanggal: today, nilai: 0, header_id: j.id,
+      payload: { target_trx_id: l.trx_id, kode_dikembalikan: l.payload?.kode_lama || null,
+        intra_dikembalikan: l.payload?.intra_ekstra_lama || null },
+      keterangan: `Batal reklas (${ALASAN_LABEL[j.jenis]})`,
+    }))
+    const { error } = await supabase.from('transaksi_bmd').insert(trxRows as never)
+    if (error) { setMsg(`Gagal mencatat pembatalan: ${error.message}`); setBatalling(false); return }
+    // Kembalikan aset ke nilai lama, per baris.
+    for (const l of lines) {
+      const p = l.payload || {}
+      const patch: Record<string, unknown> = {}
+      if (p.kode_lama) patch.kode = p.kode_lama                      // reklas kode/golongan
+      if (p.intra_ekstra_lama) patch.intra_ekstra = p.intra_ekstra_lama // reklas komptabel
+      if (p.nama_baru && p.nama_lama) patch.nama_barang = p.nama_lama // nama juga dikembalikan (kalau tadi diedit)
+      if (Object.keys(patch).length === 0) continue
+      const { error: e2 } = await supabase.from('aset').update(patch).eq('id', l.aset_id)
+      if (e2) { setMsg(`Pembatalan tercatat, tapi kembalikan aset "${l.nama_barang || l.nibar}" gagal: ${e2.message}`); setBatalling(false); loadJurnals(skpd); return }
+    }
+    setBatalling(false)
+    setSelBatal({})
+    setMsg(`${lines.length} reklasifikasi dibatalkan — barang kembali ke posisi semula. Jalankan Engine (Penyusutan) untuk menghitung ulang.`)
+    loadJurnals(skpd)
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -159,27 +207,36 @@ export default function Reklasifikasi() {
 
     const headerIds = hs.map(h => h.id)
     if (headerIds.length > 0) {
+      // Baris batal_reklas → kumpulkan target_trx_id yg sudah dibatalkan.
+      const { data: batalRows } = await supabase.from('transaksi_bmd')
+        .select('payload').eq('jenis', 'batal_reklas' as never).in('header_id', headerIds)
+      const dibatalkan = new Set<number>()
+      for (const b of (batalRows || []) as { payload: { target_trx_id?: number } | null }[]) {
+        const t = Number(b.payload?.target_trx_id); if (Number.isFinite(t)) dibatalkan.add(t)
+      }
+
       const { data } = await supabase.from('transaksi_bmd')
-        .select('header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
+        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
         .in('jenis', ['reklas_kode', 'reklas_komptabel', 'reklas_golongan'] as never)
         .in('header_id', headerIds)
         .order('id', { ascending: true })
       const rows = (data || []) as unknown as {
-        header_id: string; nilai: number; payload: LinePayload | null
+        id: number; header_id: string; nilai: number; payload: LinePayload | null
         aset: Barang | null
       }[]
       for (const r of rows) {
-        if (!r.aset) continue
+        if (!r.aset || dibatalkan.has(r.id)) continue // baris yg dibatalkan → sembunyikan
         const j = jmap.get(r.header_id)
         if (!j) continue
         j.lines.push({
-          aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
+          trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
           payload: r.payload,
         })
         j.total += r.nilai
       }
     }
+    // Jurnal yg SEMUA barisnya dibatalkan → lines kosong → otomatis tersembunyi.
     setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -226,7 +283,16 @@ export default function Reklasifikasi() {
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
           ) : jurnals.length === 0 ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Belum ada reklasifikasi untuk SKPD ini.</div>
-          ) : jurnals.map(j => (
+          ) : jurnals.map(j => {
+            const selLines = j.lines.filter(l => selBatal[l.trx_id])
+            const allSel = j.lines.length > 0 && j.lines.every(l => selBatal[l.trx_id])
+            const toggleAllJ = () => setSelBatal(prev => {
+              const next = { ...prev }
+              if (allSel) { for (const l of j.lines) delete next[l.trx_id]; return next }
+              for (const l of j.lines) next[l.trx_id] = true
+              return next
+            })
+            return (
             <div key={j.id} className="card overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
                 <div className="flex items-start justify-between gap-4">
@@ -244,6 +310,13 @@ export default function Reklasifikasi() {
                       <p className="text-xs text-gray-400">Total Nilai</p>
                       <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
                     </div>
+                    {selLines.length > 0 && (
+                      <button title="Batalkan reklas baris terpilih (kembali ke posisi semula)"
+                        onClick={() => batalReklas(j, selLines)} disabled={batalling}
+                        className="btn-secondary text-xs text-red-600 border-red-200 hover:bg-red-50">
+                        {batalling ? '...' : `Batal (${selLines.length})`}
+                      </button>
+                    )}
                     <button title="Edit No dokumen / tanggal (dalam semester yang sama)"
                       onClick={() => { setMsg(''); setEditing(j) }}
                       className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
@@ -257,6 +330,7 @@ export default function Reklasifikasi() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
+                      <th className="table-th w-10 text-center"><input type="checkbox" checked={allSel} onChange={toggleAllJ} title="Pilih semua (untuk batal)" /></th>
                       <th className="table-th">Kode Register / Nama Barang</th>
                       <th className="table-th">Perubahan</th>
                       <th className="table-th text-center">Jumlah</th>
@@ -265,7 +339,11 @@ export default function Reklasifikasi() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {j.lines.map(l => (
-                      <tr key={l.aset_id}>
+                      <tr key={l.aset_id} className={selBatal[l.trx_id] ? 'bg-red-50/50' : ''}>
+                        <td className="table-td text-center">
+                          <input type="checkbox" checked={!!selBatal[l.trx_id]}
+                            onChange={() => setSelBatal(prev => { const n = { ...prev }; if (n[l.trx_id]) delete n[l.trx_id]; else n[l.trx_id] = true; return n })} />
+                        </td>
                         <td className="table-td">
                           <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
                           <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
@@ -279,7 +357,8 @@ export default function Reklasifikasi() {
                 </table>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
