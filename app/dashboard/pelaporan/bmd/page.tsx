@@ -223,18 +223,49 @@ export default function LaporanBmdPage() {
     return out
   }
 
+  // aset_id yang NET-terhapus (penghapusan_* belum dibatalkan). batal_penghapusan
+  // dicatat per-aset (bukan target_trx_id) & di-backdate ke periode penghapusan
+  // asal, jadi tak bisa dipetakan per-trx spt reklas — pakai replay "event
+  // TERAKHIR menang" (periode DESC, id DESC) yg sama dgn model visibilitas app:
+  // kalau event terakhir penghapusan → net-terhapus (masuk Pengurangan); kalau
+  // batal_penghapusan → net-aktif kembali (JANGAN dihitung sbg Pengurangan,
+  // supaya hapus→batal netto nol & Model 3 rekonsiliasi). Tanpa ini, penghapusan
+  // yg sudah dibatalkan tetap nyantol sbg Pengurangan hantu (SaldoAwal=SaldoAkhir
+  // tapi Pengurangan≠0).
+  async function fetchPenghapusanNetRemoved(): Promise<Set<string>> {
+    const latest = new Map<string, { periode: string; id: number; removed: boolean }>()
+    for (let from = 0; ; from += 1000) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('id,aset_id,periode,jenis')
+        .in('jenis', [...JENIS_PENGHAPUSAN_M3, 'batal_penghapusan'] as never)
+        .range(from, from + 999)
+      if (!data || data.length === 0) break
+      for (const r of data as { id: number; aset_id: string; periode: string; jenis: string }[]) {
+        // periode 'YYYY-SN' urut secara leksikal (S1<S2, 2026<2027).
+        const cur = latest.get(r.aset_id)
+        const menang = !cur || r.periode > cur.periode || (r.periode === cur.periode && r.id > cur.id)
+        if (menang) latest.set(r.aset_id, { periode: r.periode, id: r.id, removed: r.jenis !== 'batal_penghapusan' })
+      }
+      if (data.length < 1000) break
+    }
+    const out = new Set<string>()
+    for (const [asetId, s] of latest) if (s.removed) out.add(asetId)
+    return out
+  }
+
   async function prosesMutasi() {
     setLoading(true); setMutasiRows(null)
 
     const inScope = (skpdId: number | null) => skpdId != null && (org.descendantIds === null || org.descendantIds.includes(skpdId))
     const lolosKomptabel = (ie: string | null) => !komptabel || ie === komptabel
 
-    const [saldoAwal, saldoAkhir, skpdMap, voided, reklasDibatalkan] = await Promise.all([
+    const [saldoAwal, saldoAkhir, skpdMap, voided, reklasDibatalkan, penghapusanNetRemoved] = await Promise.all([
       snapshotPerolehan(periodeSebelumnya),
       snapshotPerolehan(periode),
       fetchSkpdMapM3(),
       fetchVoidedAsetIds(),
       fetchReklasDibatalkan(),
+      fetchPenghapusanNetRemoved(),
     ])
 
     const tambah: Record<string, number> = {}
@@ -256,9 +287,14 @@ export default function LaporanBmdPage() {
       })
     }
 
-    // Penghapusan → Pengurangan
+    // Penghapusan → Pengurangan. Hanya yg NET-terhapus (belum dibatalkan) yg
+    // dihitung; dedup per aset supaya siklus hapus→batal→hapus (>1 event
+    // penghapusan seperiode) tak dobel-hitung nilainya.
+    const hapusSeen = new Set<string>()
     for (const r of await fetchLedgerM3(JENIS_PENGHAPUSAN_M3)) {
       if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
+      if (!penghapusanNetRemoved.has(r.aset_id) || hapusSeen.has(r.aset_id)) continue
+      hapusSeen.add(r.aset_id)
       addLine(kurang, 'kurang', kodeLevel3(r.aset.kode), {
         kategori: 'Penghapusan', tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
