@@ -204,6 +204,16 @@ export default function LaporanBmdPage() {
       for (const r of data as { aset_id: string }[]) out.add(r.aset_id)
       if (data.length < 1000) break
     }
+    // Un-void: koreksi_pencatatan_ganda yang DIBATALKAN (barang duplikat aktif
+    // lagi) harus muncul kembali sbg Penambahan. Guard batal (tak boleh ada trx
+    // lebih baru) menjamin batal = keadaan TERAKHIR, jadi cukup buang dari set.
+    for (let from = 0; ; from += 1000) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('aset_id').eq('jenis', 'batal_koreksi_pencatatan_ganda' as never).range(from, from + 999)
+      if (!data || data.length === 0) break
+      for (const r of data as { aset_id: string }[]) out.delete(r.aset_id)
+      if (data.length < 1000) break
+    }
     return out
   }
 

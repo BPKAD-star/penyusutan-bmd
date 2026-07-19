@@ -65,12 +65,14 @@ type Kandidat = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null
   spesifikasi_lainnya: string | null; nilai_perolehan: number; tgl_perolehan: string | null
 }
-type LinePayload = { nilai_lama?: number; nilai_perolehan_baru?: number; survivor_nibar?: string }
+// prev = nilai field SEBELUM koreksi_spesifikasi (utk restore saat batal).
+type LinePayload = { nilai_lama?: number; nilai_perolehan_baru?: number; survivor_nibar?: string; prev?: Record<string, unknown> } & Record<string, unknown>
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string; jenis: Alasan
   keterangan: string | null; kategori: 'koreksi'
 }
 type JurnalLine = {
+  trx_id: number         // id baris ledger koreksi — dipakai target_trx_id saat batal
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
   nilai: number; payload: LinePayload | null
 }
@@ -86,7 +88,7 @@ const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori'
 function ringkasanBaris(l: JurnalLine, jenis: Alasan): string {
   const p = l.payload || {}
   if (jenis === 'spesifikasi') {
-    const labels = Object.keys(p).filter(k => k !== 'foto_paths').map(k => FIELD_LABEL[k as FieldKey] || k)
+    const labels = Object.keys(p).filter(k => k !== 'foto_paths' && k !== 'prev').map(k => FIELD_LABEL[k as FieldKey] || k)
     if ('foto_paths' in p) labels.push('Foto')
     return labels.length ? `Spesifikasi diubah: ${labels.join(', ')}` : '-'
   }
@@ -122,6 +124,9 @@ function KoreksiTransaksi() {
   const [addTo, setAddTo] = useState<Header | null>(null)
   const [editing, setEditing] = useState<Header | null>(null)
   const [batalId, setBatalId] = useState<string | null>(null)
+  // Batal koreksi — pilih baris (per trx_id), lalu batalkan.
+  const [selBatal, setSelBatal] = useState<Record<number, boolean>>({})
+  const [batalling, setBatalling] = useState(false)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -164,23 +169,35 @@ function KoreksiTransaksi() {
 
     const headerIds = hs.map(h => h.id)
     if (headerIds.length > 0) {
+      // Baris batal_koreksi_* → kumpulkan target_trx_id yg sudah dibatalkan (utk
+      // disembunyikan dari kartu, pola sama dgn Reklasifikasi).
+      const { data: batalRows } = await supabase.from('transaksi_bmd')
+        .select('payload')
+        .in('jenis', ['batal_koreksi_nilai', 'batal_koreksi_spesifikasi', 'batal_koreksi_pencatatan_ganda'] as never)
+        .in('header_id', headerIds)
+      const dibatalkan = new Set<number>()
+      for (const b of (batalRows || []) as { payload: { target_trx_id?: number } | null }[]) {
+        const t = Number(b.payload?.target_trx_id); if (Number.isFinite(t)) dibatalkan.add(t)
+      }
+
       const { data } = await supabase.from('transaksi_bmd')
-        .select('header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode)')
+        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode)')
         .in('jenis', ['koreksi_nilai', 'koreksi_pencatatan_ganda', 'koreksi_spesifikasi'] as never)
         .in('header_id', headerIds)
         .order('id', { ascending: true })
       const rows = (data || []) as unknown as {
-        header_id: string; nilai: number; payload: LinePayload | null
+        id: number; header_id: string; nilai: number; payload: LinePayload | null
         aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string } | null
       }[]
       for (const r of rows) {
-        if (!r.aset) continue
+        if (!r.aset || dibatalkan.has(r.id)) continue // baris yg dibatalkan → sembunyikan
         const j = jmap.get(r.header_id)
         if (!j) continue
-        j.lines.push({ aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, nilai: r.nilai, payload: r.payload })
+        j.lines.push({ trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, nilai: r.nilai, payload: r.payload })
         j.total += r.nilai
       }
     }
+    // Jurnal yg SEMUA barisnya dibatalkan → lines kosong → otomatis tersembunyi.
     setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
 
     // ── Jurnal Pemecahan: induk (pemecahan_keluar) + pecahan (pemecahan_masuk) ──
@@ -211,9 +228,51 @@ function KoreksiTransaksi() {
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null) }, [skpd, loadJurnals])
+  useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null); setSelBatal({}) }, [skpd, loadJurnals])
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
+
+  // Batal Koreksi (Nilai / Spesifikasi / Pencatatan Ganda) — transaksi pembalik
+  // append-only, dicatat HARI INI. Guard: barang tak boleh punya transaksi LEBIH
+  // BARU setelah koreksi ini (delta nilai berantai → cuma yg terakhir yg sah
+  // dibatalkan). Engine WAJIB di-run ulang setelah ini.
+  async function batalKoreksi(j: Jurnal, lines: JurnalLine[]) {
+    if (lines.length === 0) { setMsg('Centang minimal satu baris untuk dibatalkan.'); return }
+    const label = ALASAN_LABEL[j.jenis]
+    if (!confirm(`Batalkan koreksi (${label}) ${lines.length} barang? Barang kembali ke keadaan sebelum koreksi. Jalankan Engine lagi setelah ini.`)) return
+    setBatalling(true); setMsg('')
+    // Guard rantai: tolak kalau ada transaksi lebih baru pada aset itu.
+    for (const l of lines) {
+      const { count } = await supabase.from('transaksi_bmd')
+        .select('id', { count: 'exact', head: true }).eq('aset_id', l.aset_id).gt('id', l.trx_id)
+      if ((count || 0) > 0) {
+        setMsg(`Batal diblokir: "${l.nama_barang || l.nibar}" punya transaksi LEBIH BARU setelah koreksi ini — batalkan yang lebih baru dulu.`)
+        setBatalling(false); return
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10)
+    for (const l of lines) {
+      let jenis: string
+      const payload: Record<string, unknown> = { target_trx_id: l.trx_id }
+      if (j.jenis === 'nilai_perolehan') {
+        jenis = 'batal_koreksi_nilai'
+        payload.nilai_perolehan_baru = l.payload?.nilai_lama ?? null // kembalikan nilai_perolehan ke nilai_lama
+      } else if (j.jenis === 'spesifikasi') {
+        jenis = 'batal_koreksi_spesifikasi'
+        payload.prev = l.payload?.prev ?? {} // kembalikan field ke nilai sebelum koreksi
+      } else {
+        jenis = 'batal_koreksi_pencatatan_ganda' // barang duplikat aktif & muncul lagi
+      }
+      const { error } = await catatTransaksi(supabase, {
+        asetId: l.aset_id, jenis, tanggal: today, headerId: j.id, payload,
+        keterangan: `Batal koreksi (${label})`,
+      })
+      if (error) { setMsg(`Error: ${error} — sebagian mungkin sudah dibatalkan, muat ulang.`); setBatalling(false); loadJurnals(skpd); return }
+    }
+    setBatalling(false); setSelBatal({})
+    setMsg(`${lines.length} koreksi (${label}) dibatalkan. Jalankan Engine lagi untuk memperbarui penyusutan.`)
+    loadJurnals(skpd)
+  }
 
   // Batal Pemecahan: induk aktif lagi (batal_pemecahan) + pecahan dibuang
   // (batal_pemecahan_masuk). Dicatat mundur ke tanggal pemecahan asli supaya
@@ -287,7 +346,16 @@ function KoreksiTransaksi() {
                 bisaBatal={tahunMap[parsePeriode(j.periode).tahun] === 'terbuka'}
                 onBatal={() => handleBatalPemecahan(j)} />
             ))}
-            {jurnals.map(j => (
+            {jurnals.map(j => {
+            const selLines = j.lines.filter(l => selBatal[l.trx_id])
+            const allSel = j.lines.length > 0 && j.lines.every(l => selBatal[l.trx_id])
+            const toggleAllJ = () => setSelBatal(prev => {
+              const next = { ...prev }
+              if (allSel) { for (const l of j.lines) delete next[l.trx_id]; return next }
+              for (const l of j.lines) next[l.trx_id] = true
+              return next
+            })
+            return (
             <div key={j.id} className="card overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
                 <div className="flex items-start justify-between gap-4">
@@ -301,6 +369,13 @@ function KoreksiTransaksi() {
                       <p className="text-xs text-gray-400">Total Nilai</p>
                       <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
                     </div>
+                    {selLines.length > 0 && (
+                      <button title="Batalkan koreksi baris terpilih (kembali ke keadaan semula)"
+                        onClick={() => batalKoreksi(j, selLines)} disabled={batalling}
+                        className="inline-flex items-center justify-center px-3 h-8 rounded text-xs font-medium text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-40">
+                        {batalling ? '...' : `Batal (${selLines.length})`}
+                      </button>
+                    )}
                     <button title="Edit No dokumen / tanggal (dalam semester yang sama)"
                       onClick={() => { setMsg(''); setEditing(j) }}
                       className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
@@ -314,6 +389,9 @@ function KoreksiTransaksi() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
+                      <th className="table-th w-10 text-center">
+                        <input type="checkbox" checked={allSel} onChange={toggleAllJ} title="Pilih semua utk dibatalkan" />
+                      </th>
                       <th className="table-th">Kode Register / Nama Barang</th>
                       <th className="table-th">Perubahan</th>
                       <th className="table-th text-right">Nilai</th>
@@ -321,7 +399,11 @@ function KoreksiTransaksi() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {j.lines.map(l => (
-                      <tr key={l.aset_id}>
+                      <tr key={l.aset_id} className={selBatal[l.trx_id] ? 'bg-red-50/50' : ''}>
+                        <td className="table-td text-center">
+                          <input type="checkbox" checked={!!selBatal[l.trx_id]}
+                            onChange={() => setSelBatal(prev => { const n = { ...prev }; if (n[l.trx_id]) delete n[l.trx_id]; else n[l.trx_id] = true; return n })} />
+                        </td>
                         <td className="table-td">
                           <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
                           <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
@@ -334,7 +416,7 @@ function KoreksiTransaksi() {
                 </table>
               </div>
             </div>
-            ))}
+            )})}
           </>)}
         </div>
       )}
@@ -658,8 +740,19 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       const fotoAppend = !single ? (spekEdit.foto.append || []) : null
       const fotoBerubah = single ? JSON.stringify(fotoReplace) !== JSON.stringify(spekInitFoto) : (fotoAppend?.length ?? 0) > 0
       if (Object.keys(base).length === 0 && !fotoBerubah) { setErr('Tidak ada field yang diubah.'); await delHeader(); setSaving(false); return }
+      // Ambil nilai LAMA field yg diubah (per aset) SEBELUM update — disimpan di
+      // payload.prev supaya koreksi ini bisa dibatalkan (restore ke nilai semula).
+      const prevCols = [...new Set([...Object.keys(base), ...(fotoBerubah ? ['foto_paths'] : [])])]
+      const prevByAset = new Map<string, Record<string, unknown>>()
+      if (prevCols.length > 0) {
+        const { data: prevRows } = await supabase.from('aset').select(['id', ...prevCols].join(',')).in('id', list.map(b => b.id))
+        for (const r of (prevRows || []) as Record<string, unknown>[]) prevByAset.set(String(r.id), r)
+      }
       for (const b of list) {
-        const payload: Record<string, unknown> = { ...base }
+        const prevRow = prevByAset.get(b.id) || {}
+        const prev: Record<string, unknown> = {}
+        for (const k of prevCols) prev[k] = prevRow[k] ?? null
+        const payload: Record<string, unknown> = { ...base, prev }
         if (single && fotoBerubah) payload.foto_paths = fotoReplace
         else if (!single && fotoAppend && fotoAppend.length) payload.foto_paths = [...(b.foto_paths || []), ...fotoAppend]
         const { error } = await catatTransaksi(supabase, {

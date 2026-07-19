@@ -24,14 +24,34 @@ apa pun yang menyentuh ledger atau engine.
 
 - **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
   setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
-  (batal_reklas, batal_penghapusan, batal_kapitalisasi, dst). Alasan: rantai
-  event per-aset direplay kronologis di engine — membatalkan event di TENGAH
-  rantai (mis. reklas lalu ada kapitalisasi di atasnya) merusak state. Batal
-  hanya sah untuk event TERBARU aset itu. Pola batal = SELALU transaksi baru
-  (`batal_*`, append-only) + engine mengabaikan event yang dibatalkan lewat
-  `payload.target_trx_id` (pola `kapDibatalkan` di lib/engine/penyusutan.ts) —
-  BUKAN hapus baris & BUKAN reklas-balik (reklas-balik salah utk lintas-golongan
-  krn fresh-start dobel).
+  (batal_reklas, batal_penghapusan, batal_kapitalisasi, batal_koreksi_*, dst).
+  Alasan: rantai event per-aset direplay kronologis di engine — membatalkan
+  event di TENGAH rantai (mis. reklas lalu ada kapitalisasi di atasnya) merusak
+  state. Batal hanya sah untuk event TERBARU aset itu. Pola batal = SELALU
+  transaksi baru (`batal_*`, append-only) + engine mengabaikan event yang
+  dibatalkan lewat `payload.target_trx_id` (pola `kapDibatalkan` di
+  lib/engine/penyusutan.ts) — BUKAN hapus baris & BUKAN reklas-balik (reklas-
+  balik salah utk lintas-golongan krn fresh-start dobel).
+
+- **Batal Koreksi (migrasi 20260719_04) — 3 jenis, mekanik beda:** Menu Koreksi
+  (Nilai/Spesifikasi/Pencatatan Ganda) punya tombol Batal per baris (kartu
+  jurnal), pola UI = Reklasifikasi (centang trx_id → hide baris dibatalkan di
+  loadJurnals). Semua dicatat HARI INI (tak backdate → tak perlu whitelist
+  `fn_cek_tahun_buku`). (1) `batal_koreksi_nilai`: engine mengabaikan
+  koreksi_nilai target (`koreksiNilaiDibatalkan`, target_trx_id) + aset.
+  nilai_perolehan balik ke nilai_lama. (2) `batal_koreksi_spesifikasi`:
+  kembalikan field ke `payload.prev` — nilai LAMA yang WAJIB disimpan
+  saat koreksi_spesifikasi dibuat (Koreksi.tsx fetch nilai lama sebelum update);
+  null diizinkan (restore ke kosong, beda dari koreksi_spesifikasi yg cuma timpa
+  non-kosong) → patch khusus di `patchAsetDari` pakai whitelist `KOREKSI_SPEK_COLS`.
+  (3) `batal_koreksi_pencatatan_ganda`: barang duplikat aktif & MUNCUL lagi (pola
+  batal_penghapusan) — engine `berhenti=false`, `MUNCUL` di Daftar Barang &
+  Penyusutan, aset.status='aktif', DAN di-un-void di Model 3 laporan BMD
+  (`fetchVoidedAsetIds` buang aset yg py batal ini dari set voided).
+  ⚠️ **Deploy-ordering: migrasi 20260719_04 (ADD VALUE enum) WAJIB dijalankan
+  SEBELUM deploy kode** — halaman baca (Daftar Barang/Penyusutan `MUNCUL`,
+  Laporan BMD) sudah memfilter `jenis` pakai nilai enum baru; kalau enum belum
+  ada, filter `.in/.eq('jenis', ...)` error → halaman rusak.
 
 ## Prinsip inti (jangan dilanggar)
 

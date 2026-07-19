@@ -38,7 +38,7 @@ const angka = (v: number | null | undefined) =>
 
 // Event yang menyembunyikan / memunculkan kembali aset (serap/hapus vs batal).
 const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan', 'koreksi_pencatatan_ganda', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'pemecahan_keluar', 'batal_pemecahan_masuk']
-const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan']
+const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan', 'batal_koreksi_pencatatan_ganda']
 
 export default function PenyusutanPage() {
   const supabase = createClient()

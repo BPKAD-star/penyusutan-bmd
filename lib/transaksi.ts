@@ -43,6 +43,17 @@ export async function catatTransaksi(supabase: SupabaseClient, t: TransaksiInput
   return {}
 }
 
+// Kolom aset yang boleh dikembalikan oleh batal_koreksi_spesifikasi (dari
+// payload.prev). Sama cakupan dgn field yang bisa diubah koreksi_spesifikasi +
+// foto_paths. Null DIIZINKAN (kembalikan field ke kosong).
+const KOREKSI_SPEK_COLS = new Set([
+  'nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'satuan',
+  'nomor_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak', 'tanggal_dokumen_kepemilikan',
+  'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin', 'asal_usul', 'kondisi_barang',
+  'wilayah_kode', 'alamat_detail', 'penggunaan_pengamanan', 'keterangan',
+  'luas', 'tahun_pengadaan', 'latitude', 'longitude', 'foto_paths',
+])
+
 function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
   const p = t.payload ?? {}
   switch (t.jenis) {
@@ -142,6 +153,25 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       if (typeof p.nilai_perolehan_baru === 'number') patch.nilai_perolehan = p.nilai_perolehan_baru
       return patch
     }
+    case 'batal_koreksi_nilai':
+      // Batal koreksi nilai: kembalikan nilai_perolehan ke nilai_lama (dikirim
+      // caller sbg nilai_perolehan_baru). Engine juga mengabaikan koreksi_nilai
+      // target (target_trx_id) supaya beban penyusutan ikut kembali.
+      return typeof p.nilai_perolehan_baru === 'number' ? { nilai_perolehan: p.nilai_perolehan_baru } : null
+    case 'batal_koreksi_spesifikasi': {
+      // Kembalikan field aset ke nilai SEBELUM koreksi (payload.prev). Null
+      // DIIZINKAN (kembalikan ke kosong) — beda dari koreksi_spesifikasi yg cuma
+      // menimpa nilai non-kosong.
+      const prev = (p.prev && typeof p.prev === 'object' && !Array.isArray(p.prev)) ? p.prev as Record<string, unknown> : null
+      if (!prev) return null
+      const patch: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(prev)) if (KOREKSI_SPEK_COLS.has(k)) patch[k] = v
+      return Object.keys(patch).length ? patch : null
+    }
+    case 'batal_koreksi_pencatatan_ganda':
+      // Kebalikan gabung duplikat: barang yg tadinya di-soft-delete aktif lagi
+      // (pola SAMA batal_penghapusan). Engine berhenti=false + MUNCUL di Daftar Barang.
+      return { status: 'aktif' }
     default:
       return null
   }

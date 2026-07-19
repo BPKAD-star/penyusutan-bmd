@@ -116,6 +116,18 @@ export function hitungJadwalAset(
     if (Number.isFinite(tid)) reklasDibatalkan.add(tid)
   }
 
+  // Koreksi nilai yang dibatalkan (batal_koreksi_nilai.payload.target_trx_id).
+  // Pola SAMA dgn reklasDibatalkan: event koreksi_nilai yg id-nya di sini
+  // DIABAIKAN saat replay → nilai perolehan (dan beban) kembali ke sebelum
+  // koreksi. UI hanya mengizinkan batal koreksi TERAKHIR per aset (delta
+  // berantai), jadi skip ini selalu period-correct.
+  const koreksiNilaiDibatalkan = new Set<number>()
+  for (const t of ledger) {
+    if (t.jenis !== 'batal_koreksi_nilai') continue
+    const tid = Number((t.payload as Record<string, unknown>)?.target_trx_id)
+    if (Number.isFinite(tid)) koreksiNilaiDibatalkan.add(tid)
+  }
+
   // CATATAN (2026-07-13): dulu ada bail-out `if (ekstra) return []` di sini —
   // DIHAPUS. Ekstrakomptabel ikut disusutkan dgn aturan sama; neraca disaring
   // intra di laporan. Konsekuensi: reklas_komptabel (flip intra↔ekstra) kini
@@ -246,6 +258,7 @@ export function hitungJadwalAset(
           break
         }
         case 'koreksi_nilai': {
+          if (ev.id != null && koreksiNilaiDibatalkan.has(ev.id)) break // dibatalkan → abaikan
           // Delta ± pada nilai perolehan; beban disebar ulang ke sisa umur.
           const delta = Number(ev.nilai || 0)
           nilaiPerolehan += delta
@@ -301,6 +314,9 @@ export function hitungJadwalAset(
           break
         case 'koreksi_pencatatan_ganda':
           berhenti = true // gabung duplikat: barang ini digabung ke survivor, sendiri hilang dari laporan
+          break
+        case 'batal_koreksi_pencatatan_ganda':
+          berhenti = false // batal gabung: barang duplikat muncul & disusutkan lagi (pola batal_penghapusan)
           break
         case 'pemecahan_keluar':
           berhenti = true // induk dipecah jadi N pecahan: penyusutan berhenti, induk hilang dari laporan
