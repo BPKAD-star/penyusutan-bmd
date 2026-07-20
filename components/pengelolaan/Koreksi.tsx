@@ -25,9 +25,17 @@ import FormShell from './FormShell'
 // sumber. Golongan lain (termasuk Gedung/Jalan) boleh koreksi dokumen & lokasi.
 const TANAH_GIS_FIELDS: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude']
 const ATRIBUT_KOREKSI: FieldKey[] = ['satuan', 'asal_usul', 'tahun_pengadaan', 'kondisi_barang']
+// Aset Lain-Lain (1.5.4) isinya campuran — ada yg mirip Tanah (butuh dokumen
+// kepemilikan/jenis hak/luas), ada yg mirip kendaraan Peralatan & Mesin (butuh
+// no rangka/mesin/polisi/BPKB). Field templatenya sendiri (TEMPLATE_ASET_LAINNYA
+// di lib/asetFields.ts, dipakai bareng Pengadaan) SENGAJA tetap ringkas — field
+// tambahan ini HANYA muncul di form Koreksi Spesifikasi (pola sama dgn
+// ATRIBUT_KOREKSI di atas), bukan di form input awal Pengadaan.
+const ASET_LAIN_LAIN_EXTRA: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi']
 function koreksiFieldKeys(kode: string): FieldKey[] {
   let keys = fieldsForKode(kode)
   if (kodeLevel3(kode) === '1.3.1') keys = keys.filter(k => !TANAH_GIS_FIELDS.includes(k))
+  else if (kodeLevel3(kode) === '1.5.4') keys = [...keys, ...ASET_LAIN_LAIN_EXTRA.filter(k => !keys.includes(k))]
   return [...keys, ...ATRIBUT_KOREKSI.filter(k => !keys.includes(k))]
 }
 
@@ -46,6 +54,7 @@ type Barang = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null
   merek_tipe: string | null; jumlah: number; satuan: string | null; nilai_perolehan: number; skpd_id: number | null
   tgl_perolehan: string | null; cara_perolehan: string | null; foto_paths: string[] | null
+  intra_ekstra: string | null
 }
 // Edit spesifikasi yang disusun di popup, menunggu di-commit oleh Simpan.
 type SpekEdit = { fields: Record<string, string>; foto: { replace?: string[]; append?: string[] } }
@@ -512,6 +521,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [selNilai, setSelNilai] = useState<Record<string, { barang: Barang; nilaiBaru: string }>>({})
+  // Uraian (nama baku per kode) — dipakai tabel pilih barang di tab Spesifikasi
+  // (kolom Kode Barang, sama pola dgn Daftar Barang).
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   // ── Pencatatan Ganda: cari & tambah kandidat ──
   const [qGanda, setQGanda] = useState('')
@@ -603,14 +615,28 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   async function tampilkan() {
     setLoading(true)
     let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id,tgl_perolehan,cara_perolehan,foto_paths')
+      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id,tgl_perolehan,cara_perolehan,foto_paths,intra_ekstra')
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
     if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
     const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
-    setRows((data as unknown as Barang[]) || [])
+    const list = (data as unknown as Barang[]) || []
+    setRows(list)
+    if (alasan === 'spesifikasi') setUraianMap(await fetchUraian(list.map(b => b.kode)))
     setLoaded(true)
     setLoading(false)
+  }
+
+  // Uraian baku per kode (admin_kodefikasi_bmd) — utk kolom Kode Barang di tabel
+  // pilih barang tab Spesifikasi.
+  async function fetchUraian(kodes: string[]) {
+    const uniq = [...new Set(kodes)]
+    const map: Record<string, string> = {}
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
+    }
+    return map
   }
   function toggleNilai(b: Barang) {
     setSelNilai(prev => {
@@ -1068,23 +1094,30 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                   <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
                     <tr>
                       <th className="table-th w-10 text-center"></th>
-                      <th className="table-th">Barang</th>
-                      <th className="table-th">Jenis</th>
+                      <th className="table-th">Kode Barang</th>
+                      <th className="table-th">Nama Barang</th>
+                      <th className="table-th text-center">Komptabel</th>
+                      <th className="table-th text-right">Nilai Perolehan</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {rows.length === 0 ? (
-                      <tr><td colSpan={3} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
+                      <tr><td colSpan={5} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
                     ) : rows.map(b => (
                       <tr key={b.id} className={selSpek[b.id] ? 'bg-teal/5' : ''}>
                         <td className="table-td text-center">
                           <input type="checkbox" checked={!!selSpek[b.id]} onChange={() => toggleSpek(b)} />
                         </td>
-                        <td className="table-td">
-                          <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode}</p>
+                        <td className="table-td align-top">
+                          <p className="font-medium text-gray-700 text-xs">{b.kode}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{uraianMap[b.kode] || '-'}</p>
                         </td>
-                        <td className="table-td text-xs text-gray-600">{golonganLabels[kodeLevel3(b.kode)] || kodeLevel3(b.kode)}</td>
+                        <td className="table-td align-top">
+                          <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'}</p>
+                        </td>
+                        <td className="table-td text-center text-xs capitalize">{b.intra_ekstra || '-'}</td>
+                        <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
                       </tr>
                     ))}
                   </tbody>
