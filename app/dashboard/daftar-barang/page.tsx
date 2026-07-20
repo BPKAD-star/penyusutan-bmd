@@ -33,7 +33,7 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan', 'koreksi_pencatatan_ganda', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'kdp_selesai_keluar', 'pemecahan_keluar', 'batal_pemecahan_masuk']
 const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan', 'batal_koreksi_pencatatan_ganda']
 
-const SELECT_COLS = 'id,nibar,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
+const SELECT_COLS = 'id,nibar,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -46,6 +46,8 @@ type Row = {
   nilai_perolehan: number
   tgl_perolehan: string | null
   intra_ekstra: string | null
+  asal_usul: string | null
+  penggunaan_pengamanan: string | null   // kolom label "Penggunaan" (lihat lib/asetFields.ts)
   keterangan: string | null
   status: string
   skpd_id: number | null
@@ -70,6 +72,7 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   uraian: { header: 'Uraian' }, merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
   lokasi: { header: 'Lokasi' }, komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
   nilai: { header: 'Nilai Perolehan', align: 'right' }, keterangan: { header: 'Keterangan' },
+  asal_usul: { header: 'Asal Usul' }, penggunaan: { header: 'Penggunaan' },
   luas: { header: 'Luas (m²)', align: 'right' }, no_sertifikat: { header: 'Nomor Dokumen Kepemilikan' },
   tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' }, atas_nama: { header: 'Nama Dokumen Kepemilikan' },
   hak: { header: 'Jenis Hak' },
@@ -77,22 +80,26 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 // ── Kolom TAMPILAN LAYAR (diringkas 2026-07-19) ─────────────────────────────
 // - `uraian` TIDAK jadi kolom sendiri lagi → ditumpuk di bawah `kode` (spt nibar
 //   di bawah nama). Lihat cellContent('kode').
-// - Tanah/Gedung/Jalan/KDP/Aset Lain-Lain: + `spesifikasi` (Spesifikasi Lainnya)
-//   & `lokasi` (alamat_detail) setelah nama.
+// - `spesifikasi` (Spesifikasi Lainnya) HANYA utk Peralatan & Mesin di layar.
+//   Golongan lain (Tanah/Gedung/Jalan/KDP/ATB/Aset Lain-Lain) TIDAK menampilkan
+//   Spesifikasi Lainnya di layar (2026-07-20) — masih ada di Export (EXPORT_COLS).
+// - `lokasi` (alamat_detail) tetap setelah nama utk golongan berlokasi.
+// - `asal_usul` (Asal Usul) & `penggunaan` (Penggunaan → kolom penggunaan_pengamanan)
+//   ditampilkan sebelum Keterangan di SEMUA jenis aset (2026-07-20).
 // - Tanah: kolom Dokumen Kepemilikan (no/tgl/atas nama) SENGAJA tidak di layar —
 //   satu register bisa banyak bidang & dokumennya dikelola per-bidang di GIS
 //   (badge "🗺 N bidang" di sel nama link ke sana). TETAP ada di Export (BPK).
 const COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'keterangan'], // Tanah — tanpa komptabel; dokumen kepemilikan → GIS/Export
-  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],    // Peralatan & Mesin
-  '1.3.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],   // Gedung & Bangunan
-  '1.3.4': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],   // Jalan, Jaringan, Irigasi
-  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'keterangan'],                   // Aset Tetap Lainnya
-  '1.3.6': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],   // KDP
-  '1.5.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],             // Aset Tidak Berwujud
-  '1.5.4': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],   // Aset Lain-Lain
+  '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel; dokumen kepemilikan → GIS/Export
+  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],    // Peralatan & Mesin
+  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Gedung & Bangunan
+  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Jalan, Jaringan, Irigasi
+  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],                   // Aset Tetap Lainnya
+  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // KDP
+  '1.5.3': ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],             // Aset Tidak Berwujud
+  '1.5.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Aset Lain-Lain
 }
-const DEFAULT_COLS = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan']
+const DEFAULT_COLS = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
 const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
 
 // ── Kolom EKSPOR (Excel/BPK) — TETAP flat & lengkap: `uraian` jadi kolom
@@ -472,6 +479,8 @@ export default function DaftarBarangPage() {
       case 'komptabel': return r.intra_ekstra || '-'
       case 'tgl': return r.tgl_perolehan || '-'
       case 'nilai': return angka(r.nilai_perolehan)
+      case 'asal_usul': return r.asal_usul || '-'
+      case 'penggunaan': return r.penggunaan_pengamanan || '-'
       case 'keterangan': return r.keterangan || '-'
       case 'luas': return r.luas != null ? angka(r.luas) : '-'
       case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || '-'
