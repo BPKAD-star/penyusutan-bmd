@@ -19,11 +19,11 @@
 // (lib/asetFields.ts) supaya bisa diisi lewat Koreksi → Spesifikasi, baru
 // tampilkan di sini.
 //
-// Pola muat data = GIS Tanah: semua baris di-fetch SEKALI saat mount
-// (paginated, tanpa cap), filter SKPD & pencarian selanjutnya INSTAN di client
-// tanpa query ulang — dataset Alat Angkutan ~2.200 baris, murah difilter di
-// memori. Tidak period-aware (beda dgn Daftar Barang/Penyusutan): ini register
-// posisi TERKINI (status='aktif'), bukan laporan per periode.
+// Muat data (2026-07-20, gaya Daftar Barang): TIDAK auto-fetch saat mount —
+// baru narik seluruh baris Alat Angkutan (~2.200, paginated tanpa cap) begitu
+// user klik "Tampilkan" (atau Enter di kotak cari) pertama kali. Sesudah termuat,
+// pencarian berikutnya INSTAN di client tanpa query ulang. Tidak period-aware
+// (beda dgn Daftar Barang/Penyusutan): ini register posisi TERKINI (status='aktif').
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
@@ -75,7 +75,9 @@ export default function KendaraanPage() {
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<Row[]>([])
   const [skpdMap, setSkpdMap] = useState<Record<number, string>>({})
-  const [loading, setLoading] = useState(true)
+  const [applied, setApplied] = useState(false) // gerbang "Tampilkan" — belum ada tabel sebelum diklik
+  const [loaded, setLoaded] = useState(false)    // sudah pernah fetch rows sekali
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -89,29 +91,37 @@ export default function KendaraanPage() {
       }
       setSkpdMap(map)
     })()
-    ;(async () => {
-      setLoading(true)
-      const all: Row[] = []
-      for (let from = 0; ; from += 1000) {
-        // `error` WAJIB dibaca: kalau query gagal (mis. RLS aset yang berat bikin
-        // statement timeout → 500), `data` cuma null dan tanpa ini halaman diam²
-        // tampil "tidak ada kendaraan" seolah datanya memang kosong — persis
-        // gejala yang bikin bingung di GIS Tanah.
-        const { data, error } = await supabase.from('aset')
-          .select(SELECT_COLS)
-          .like('kode', `${PREFIX_ALAT_ANGKUTAN}%`)
-          .eq('status', 'aktif')
-          .order('nilai_perolehan', { ascending: false })
-          .range(from, from + 999)
-        if (error) { setError(error.message); break }
-        if (!data || data.length === 0) break
-        all.push(...(data as unknown as Row[]))
-        if (data.length < 1000) break
-      }
-      setRows(all)
-      setLoading(false)
-    })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function fetchRows() {
+    setLoading(true)
+    setError(null)
+    const all: Row[] = []
+    for (let from = 0; ; from += 1000) {
+      // `error` WAJIB dibaca: kalau query gagal (mis. RLS aset yang berat bikin
+      // statement timeout → 500), `data` cuma null dan tanpa ini halaman diam²
+      // tampil "tidak ada kendaraan" seolah datanya memang kosong — persis
+      // gejala yang bikin bingung di GIS Tanah.
+      const { data, error } = await supabase.from('aset')
+        .select(SELECT_COLS)
+        .like('kode', `${PREFIX_ALAT_ANGKUTAN}%`)
+        .eq('status', 'aktif')
+        .order('nilai_perolehan', { ascending: false })
+        .range(from, from + 999)
+      if (error) { setError(error.message); break }
+      if (!data || data.length === 0) break
+      all.push(...(data as unknown as Row[]))
+      if (data.length < 1000) break
+    }
+    setRows(all)
+    setLoaded(true)
+    setLoading(false)
+  }
+
+  function handleTampilkan() {
+    setApplied(true)
+    if (!loaded) fetchRows()
+  }
 
   const namaSkpd = (r: Row) => (r.skpd_id != null && skpdMap[r.skpd_id]) || '-'
 
@@ -162,116 +172,135 @@ export default function KendaraanPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
+    <div className="p-6">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Kendaraan</h1>
-        <p className="text-sm text-gray-600 mt-1">
-          Register kendaraan dinas (Alat Angkutan, kode {PREFIX_ALAT_ANGKUTAN}*) — posisi terkini. Cari
-          berdasarkan SKPD, No. Polisi, No. Rangka, No. Mesin, atau spesifikasi.
+        <p className="text-gray-500 text-sm mt-1">
+          Register kendaraan dinas (Alat Angkutan, kode {PREFIX_ALAT_ANGKUTAN}*) — posisi terkini.
         </p>
       </div>
 
-      <div className="card p-5">
-        <input value={search} onChange={e => setSearch(e.target.value)} autoFocus
-          placeholder="Cari SKPD / No. Polisi / No. Rangka / No. Mesin / merek / nama / spesifikasi..."
-          className="select-filter w-full" />
-
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-100">
-          <div className="text-sm text-gray-600">
-            <span className="font-semibold text-gray-900">{angka(stats.jumlah)}</span> kendaraan
-            <span className="text-gray-300 mx-2">|</span>
-            nilai perolehan <span className="font-semibold text-gray-900">{angka(stats.nilai)}</span>
-            {stats.belum > 0 && (
-              <>
-                <span className="text-gray-300 mx-2">|</span>
-                <span className="text-amber-700">{angka(stats.belum)} belum lengkap</span>
-              </>
-            )}
-          </div>
-          <button onClick={handleExport} disabled={loading || filtered.length === 0} className="btn-secondary">
-            Export Excel
+      <div className="card p-5 mb-4">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">Cari kendaraan</h2>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input value={search} onChange={e => setSearch(e.target.value)} autoFocus
+            placeholder="SKPD / No. Polisi / No. Rangka / No. Mesin / merek / nama / spesifikasi..."
+            className="select-filter flex-1"
+            onKeyDown={e => { if (e.key === 'Enter') handleTampilkan() }} />
+          <button className="btn-primary" onClick={handleTampilkan} disabled={loading}>
+            {loading ? 'Memuat...' : 'Tampilkan'}
           </button>
         </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Kosongkan pencarian lalu klik Tampilkan untuk melihat semua kendaraan, atau ketik dulu untuk mempersempit.
+        </p>
       </div>
 
-      {loading ? (
-        <div className="card p-12 text-center text-gray-400 text-sm">Memuat data kendaraan...</div>
-      ) : error ? (
-        <div className="card p-12 text-center">
-          <p className="text-sm text-rose-700 font-medium">Gagal memuat data kendaraan.</p>
-          <p className="text-xs text-gray-500 mt-1">{error}</p>
-        </div>
-      ) : filtered.length === 0 ? (
+      {!applied ? (
         <div className="card p-12 text-center text-gray-400 text-sm">
-          {rows.length === 0 ? 'Belum ada data kendaraan.' : 'Tidak ada kendaraan yang cocok dengan pencarian.'}
+          Ketik pencarian (opsional) lalu klik <span className="font-medium text-gray-600">Tampilkan</span>.
         </div>
       ) : (
         <div className="card overflow-hidden">
-          {/* Kolom identitas (kode, nopol, rangka, mesin, nilai) di-nowrap supaya
-              tidak terpotong jadi 2 baris; tabel dibiarkan melebar dan digeser
-              lewat scroll horizontal — lebih terbaca daripada dipaksa muat. */}
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="table-th whitespace-nowrap">Lokasi / SKPD</th>
-                  <th className="table-th whitespace-nowrap">Kode Register</th>
-                  <th className="table-th whitespace-nowrap">Nama Barang</th>
-                  <th className="table-th whitespace-nowrap">Merek / Tipe</th>
-                  <th className="table-th whitespace-nowrap text-center">Tahun</th>
-                  <th className="table-th whitespace-nowrap">No. BPKB</th>
-                  <th className="table-th whitespace-nowrap">No. Polisi</th>
-                  <th className="table-th whitespace-nowrap">No. Rangka</th>
-                  <th className="table-th whitespace-nowrap">No. Mesin</th>
-                  <th className="table-th whitespace-nowrap text-right">Nilai Perolehan</th>
-                  <th className="table-th whitespace-nowrap text-center">Kondisi</th>
-                  <th className="table-th whitespace-nowrap">Keterangan</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map(r => {
-                  const belumLengkap = isiKosong(r.no_polisi) && isiKosong(r.no_rangka) && isiKosong(r.no_mesin)
-                  const spek = r.spesifikasi_lainnya
-                  return (
-                    <tr key={r.id} className="hover:bg-gray-50/60 align-top">
-                      <td className="table-td text-xs text-gray-600 min-w-[150px] max-w-[220px]">{teks(namaSkpd(r))}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">
-                        <div>{r.kode}</div>
-                        {r.nibar && (
-                          <div className="text-[10px] text-gray-400 font-mono truncate max-w-[150px]" title={r.nibar}>
-                            {r.nibar}
-                          </div>
-                        )}
-                      </td>
-                      <td className="table-td min-w-[180px] max-w-[260px]">
-                        <div>{teks(r.nama_barang || r.uraian_barang)}</div>
-                        {spek && !isiKosong(spek) && (
-                          <div className="text-[11px] text-gray-500 mt-0.5 truncate" title={spek}>{spek}</div>
-                        )}
-                        {belumLengkap && (
-                          <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700 whitespace-nowrap"
-                            title="No. Polisi, No. Rangka, dan No. Mesin semuanya kosong — lengkapi lewat Koreksi → Spesifikasi">
-                            Data belum lengkap
-                          </span>
-                        )}
-                      </td>
-                      <td className="table-td text-xs text-gray-600 min-w-[120px] max-w-[180px]">{teks(r.merek_tipe)}</td>
-                      <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.tahun_pengadaan)}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_bpkb)}</td>
-                      <td className="table-td text-xs text-gray-800 font-medium whitespace-nowrap">{teks(r.no_polisi)}</td>
-                      <td className="table-td text-xs text-gray-600 font-mono whitespace-nowrap">{teks(r.no_rangka)}</td>
-                      <td className="table-td text-xs text-gray-600 font-mono whitespace-nowrap">{teks(r.no_mesin)}</td>
-                      <td className="table-td text-right text-xs whitespace-nowrap tabular-nums">{angka(r.nilai_perolehan)}</td>
-                      <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.kondisi_barang)}</td>
-                      <td className="table-td text-xs text-gray-600 max-w-[220px]">
-                        <div className="truncate" title={r.keterangan || undefined}>{teks(r.keterangan)}</div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100">
+            <span className="text-sm text-gray-500">
+              {loading ? 'Memuat...' : (
+                <>
+                  <span className="font-semibold text-gray-900">{angka(stats.jumlah)}</span> kendaraan
+                  <span className="text-gray-300 mx-2">·</span>
+                  nilai perolehan <span className="font-semibold text-gray-900">{angka(stats.nilai)}</span>
+                  {stats.belum > 0 && (
+                    <>
+                      <span className="text-gray-300 mx-2">·</span>
+                      <span className="text-amber-700">{angka(stats.belum)} belum lengkap</span>
+                    </>
+                  )}
+                </>
+              )}
+            </span>
+            <button onClick={handleExport} disabled={loading || filtered.length === 0} className="btn-secondary text-xs">
+              Export Excel
+            </button>
           </div>
+
+          {loading ? (
+            <div className="p-12 text-center text-gray-400 text-sm">Memuat data kendaraan...</div>
+          ) : error ? (
+            <div className="p-12 text-center">
+              <p className="text-sm text-rose-700 font-medium">Gagal memuat data kendaraan.</p>
+              <p className="text-xs text-gray-500 mt-1">{error}</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-12 text-center text-gray-400 text-sm">
+              {rows.length === 0 ? 'Belum ada data kendaraan.' : 'Tidak ada kendaraan yang cocok dengan pencarian.'}
+            </div>
+          ) : (
+            // Kolom identitas (kode, nopol, rangka, mesin, nilai) di-nowrap supaya
+            // tidak terpotong jadi 2 baris; tabel dibiarkan melebar dan digeser
+            // lewat scroll horizontal — lebih terbaca daripada dipaksa muat.
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="table-th whitespace-nowrap">Lokasi / SKPD</th>
+                    <th className="table-th whitespace-nowrap">Kode Register</th>
+                    <th className="table-th whitespace-nowrap">Nama Barang</th>
+                    <th className="table-th whitespace-nowrap">Merek / Tipe</th>
+                    <th className="table-th whitespace-nowrap text-center">Tahun</th>
+                    <th className="table-th whitespace-nowrap">No. BPKB</th>
+                    <th className="table-th whitespace-nowrap">No. Polisi</th>
+                    <th className="table-th whitespace-nowrap">No. Rangka</th>
+                    <th className="table-th whitespace-nowrap">No. Mesin</th>
+                    <th className="table-th whitespace-nowrap text-right">Nilai Perolehan</th>
+                    <th className="table-th whitespace-nowrap text-center">Kondisi</th>
+                    <th className="table-th whitespace-nowrap">Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filtered.map(r => {
+                    const belumLengkap = isiKosong(r.no_polisi) && isiKosong(r.no_rangka) && isiKosong(r.no_mesin)
+                    const spek = r.spesifikasi_lainnya
+                    return (
+                      <tr key={r.id} className="hover:bg-gray-50/60 align-top">
+                        <td className="table-td text-xs text-gray-600 min-w-[150px] max-w-[220px]">{teks(namaSkpd(r))}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">
+                          <div>{r.kode}</div>
+                          {r.nibar && (
+                            <div className="text-[10px] text-gray-400 font-mono truncate max-w-[150px]" title={r.nibar}>
+                              {r.nibar}
+                            </div>
+                          )}
+                        </td>
+                        <td className="table-td min-w-[180px] max-w-[260px]">
+                          <div>{teks(r.nama_barang || r.uraian_barang)}</div>
+                          {spek && !isiKosong(spek) && (
+                            <div className="text-[11px] text-gray-500 mt-0.5 truncate" title={spek}>{spek}</div>
+                          )}
+                          {belumLengkap && (
+                            <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700 whitespace-nowrap"
+                              title="No. Polisi, No. Rangka, dan No. Mesin semuanya kosong — lengkapi lewat Koreksi → Spesifikasi">
+                              Data belum lengkap
+                            </span>
+                          )}
+                        </td>
+                        <td className="table-td text-xs text-gray-600 min-w-[120px] max-w-[180px]">{teks(r.merek_tipe)}</td>
+                        <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.tahun_pengadaan)}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_bpkb)}</td>
+                        <td className="table-td text-xs text-gray-800 font-medium whitespace-nowrap">{teks(r.no_polisi)}</td>
+                        <td className="table-td text-xs text-gray-600 font-mono whitespace-nowrap">{teks(r.no_rangka)}</td>
+                        <td className="table-td text-xs text-gray-600 font-mono whitespace-nowrap">{teks(r.no_mesin)}</td>
+                        <td className="table-td text-right text-xs whitespace-nowrap tabular-nums">{angka(r.nilai_perolehan)}</td>
+                        <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.kondisi_barang)}</td>
+                        <td className="table-td text-xs text-gray-600 max-w-[220px]">
+                          <div className="truncate" title={r.keterangan || undefined}>{teks(r.keterangan)}</div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
