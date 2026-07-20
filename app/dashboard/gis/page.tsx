@@ -68,17 +68,25 @@ export default function GisPage() {
   useEffect(() => {
     ;(async () => {
       setLoading(true)
+      // Scope SKPD operator utk mempercepat query (bukan gerbang keamanan — RLS
+      // tetap penjaga akhir). Non-admin → array skpd_id subtree; disuntik
+      // .in('skpd_id', ...) supaya planner pakai idx_aset_skpd. Tanpa ini,
+      // `kode LIKE '1.3.1.%'` tak bisa jadi index-cond di bawah RLS (operator
+      // ~~ tak leakproof) → Seq Scan 400rb+ baris → statement timeout (500) buat
+      // pengurus_barang. Admin → null → tanpa filter (lihat se-kabupaten).
+      const { data: scope } = await supabase.rpc('fn_my_skpd_scope')
       const all: AsetRow[] = []
       for (let from = 0; ; from += 1000) {
         // `error` WAJIB dibaca. Sebelumnya tidak: kalau query gagal (mis. RLS
         // `aset` berat → statement timeout → 500), `data` cuma null dan panel
         // diam² bilang "Tidak ada aset ditemukan" seolah tanahnya memang tidak
         // ada — bikin salah sangka datanya hilang, padahal query yang gagal.
-        const { data, error } = await supabase.from('aset')
+        let q = supabase.from('aset')
           .select(SELECT_COLS)
           .like('kode', '1.3.1.%')
           .eq('status', 'aktif')
-          .order('nama_barang', { ascending: true }).range(from, from + 999)
+        if (Array.isArray(scope) && scope.length) q = q.in('skpd_id', scope)
+        const { data, error } = await q.order('nama_barang', { ascending: true }).range(from, from + 999)
         if (error) { setError(error.message); break }
         if (!data || data.length === 0) break
         all.push(...(data as unknown as AsetRow[]))

@@ -96,16 +96,24 @@ export default function KendaraanPage() {
   async function fetchRows() {
     setLoading(true)
     setError(null)
+    // Scope SKPD operator (subtree) utk mempercepat — bukan gerbang keamanan,
+    // RLS tetap penjaga akhir. Non-admin disuntik .in('skpd_id', ...) supaya
+    // idx_aset_skpd kepakai; tanpa ini `kode LIKE` tak bisa jadi index-cond di
+    // bawah RLS (operator ~~ tak leakproof) → Seq Scan 400rb+ baris → statement
+    // timeout (500) buat pengurus_barang. Admin → null → tanpa filter.
+    const { data: scope } = await supabase.rpc('fn_my_skpd_scope')
     const all: Row[] = []
     for (let from = 0; ; from += 1000) {
       // `error` WAJIB dibaca: kalau query gagal (mis. RLS aset yang berat bikin
       // statement timeout → 500), `data` cuma null dan tanpa ini halaman diam²
       // tampil "tidak ada kendaraan" seolah datanya memang kosong — persis
       // gejala yang bikin bingung di GIS Tanah.
-      const { data, error } = await supabase.from('aset')
+      let q = supabase.from('aset')
         .select(SELECT_COLS)
         .like('kode', `${PREFIX_ALAT_ANGKUTAN}%`)
         .eq('status', 'aktif')
+      if (Array.isArray(scope) && scope.length) q = q.in('skpd_id', scope)
+      const { data, error } = await q
         .order('nilai_perolehan', { ascending: false })
         .range(from, from + 999)
       if (error) { setError(error.message); break }
