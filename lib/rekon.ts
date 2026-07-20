@@ -166,16 +166,18 @@ const VOID_JENIS = ['batal_pengadaan', 'batal_hibah_masuk', 'batal_tukar_menukar
 const JENIS_HAPUS = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
 
 type LedRow = {
-  id: number; jenis: string; aset_id: string; nilai: number; skpd_asal: number | null; skpd_tujuan: number | null
+  id: number; jenis: string; aset_id: string; nilai: number; tanggal: string
+  skpd_asal: number | null; skpd_tujuan: number | null
   payload: Record<string, unknown> | null
-  aset: { kode: string; skpd_id: number | null; intra_ekstra: string | null } | null
+  aset: { kode: string; skpd_id: number | null; intra_ekstra: string | null; nibar: string | null; nama_barang: string | null } | null
+  header: { no_sk: string | null } | null
 }
 
 async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: string): Promise<LedRow[]> {
   const out: LedRow[] = []
   for (let from = 0; ; from += 1000) {
     const { data } = await supabase.from('transaksi_bmd')
-      .select('id,jenis,aset_id,nilai,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,skpd_id,intra_ekstra)')
+      .select('id,jenis,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,skpd_id,intra_ekstra,nibar,nama_barang),header:header_id(no_sk)')
       .eq('periode', periode).in('jenis', jenisList as never).range(from, from + 999)
     if (!data || data.length === 0) break
     out.push(...(data as unknown as LedRow[]))
@@ -235,19 +237,48 @@ async function fetchNetRemoved(supabase: SupabaseClient): Promise<Set<string>> {
   return out
 }
 
-export async function fetchMutasi(
+// ── Baris rinci (bukti dukung): 1 transaksi = 1 baris (reklas = 2: keluar+masuk). ──
+export type MutasiArah = 'tambah' | 'kurang'
+export type MutasiLine = {
+  golongan: string; komp: Komptabel; kategori: MutasiKey; arah: MutasiArah
+  aset_id: string; nibar: string | null; kode: string; nama: string | null
+  skpd_id: number | null; tanggal: string; nilai: number; jenis: string; no_dokumen: string | null
+}
+
+const KURANG_KEYS = new Set<MutasiKey>([
+  'hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
+  'pengalihan_keluar', 'koreksi_kurang', 'reklas_fungsi_keluar', 'reklas_kode_keluar',
+])
+
+export const KATEGORI_LABEL: Record<MutasiKey, string> = {
+  pengadaan: 'Pengadaan', belanja_jasa: 'Perolehan dari rekening Belanja Jasa',
+  hibah: 'Hibah', tukar: 'Tukar Menukar', inventarisasi: 'Hasil Inventarisasi', lainnya: 'Perolehan Lainnya',
+  penggunaan_masuk: 'Penggunaan (transfer masuk)', kapitalisasi: 'Kapitalisasi', koreksi_tambah: 'Koreksi Nilai (Tambah)',
+  reklas_fungsi_masuk: 'Reklas Perubahan Fungsi (Masuk)', reklas_kode_masuk: 'Reklas Kesalahan Kodefikasi (Masuk)',
+  hapus_penjualan: 'Penghapusan Pemindahtanganan — Penjualan', hapus_hibah: 'Penghapusan Pemindahtanganan — Hibah',
+  hapus_tukar: 'Penghapusan Pemindahtanganan — Tukar Menukar', hapus_penyertaan: 'Penghapusan Pemindahtanganan — Penyertaan Modal',
+  hapus_sebab_lain: 'Penghapusan Sebab Lain', pengalihan_keluar: 'Penghapusan Pengalihan (transfer keluar)',
+  koreksi_kurang: 'Koreksi Kurang', reklas_fungsi_keluar: 'Reklas Perubahan Fungsi (Keluar)', reklas_kode_keluar: 'Reklas Kesalahan Kodefikasi (Keluar)',
+}
+
+// Inti: hitung SEMUA baris mutasi (rinci). fetchMutasi (agregat) & halaman rincian
+// berbagi fungsi ini — satu sumber kebenaran, angka pasti konsisten.
+async function computeMutasiLines(
   supabase: SupabaseClient, periode: string, descendantIds: number[] | null
-): Promise<Mutasi> {
+): Promise<MutasiLine[]> {
   const scope = descendantIds ? new Set(descendantIds) : null
   const inScope = (skpdId: number | null) => skpdId != null && (scope === null || scope.has(skpdId))
-  const mut: Mutasi = {}
-  const add = (gol: string, komp: Komptabel, key: MutasiKey, nilai: number) => {
+  const lines: MutasiLine[] = []
+  const push = (gol: string, komp: Komptabel, kategori: MutasiKey, nilai: number, r: LedRow, skpd?: number | null) => {
     if (!nilai) return
-    const cell = (mut[gol] ??= { intra: {}, ekstra: {} })[komp]
-    cell[key] = (cell[key] || 0) + nilai
+    lines.push({
+      golongan: gol, komp, kategori, arah: KURANG_KEYS.has(kategori) ? 'kurang' : 'tambah',
+      aset_id: r.aset_id, nibar: r.aset?.nibar ?? null, kode: r.aset?.kode ?? '', nama: r.aset?.nama_barang ?? null,
+      skpd_id: skpd ?? r.aset?.skpd_id ?? null, tanggal: r.tanggal, nilai, jenis: r.jenis, no_dokumen: r.header?.no_sk ?? null,
+    })
   }
 
-  const [cara, alih, kap, kapBatal, kor, korBatal, reklasG, reklasK, reklasBatal, voided, netRemoved] = await Promise.all([
+  const [cara, alih, kap, kapBatal, kor, korBatal, reklasG, reklasK, reklasBatal, voided, netRemoved, hapus] = await Promise.all([
     fetchLed(supabase, JENIS_CARA, periode),
     fetchLed(supabase, ['pengalihan_status'], periode),
     fetchLed(supabase, ['kapitalisasi'], periode),
@@ -259,57 +290,56 @@ export async function fetchMutasi(
     fetchBatalTargets(supabase, ['batal_reklas']),
     fetchVoided(supabase),
     fetchNetRemoved(supabase),
+    fetchLed(supabase, JENIS_HAPUS, periode),
   ])
 
-  // Cara Perolehan (+ split Belanja Jasa 5.1) — Penambahan. jenis dari ledger.
+  // Cara Perolehan (+ split Belanja Jasa 5.1). jenis dari ledger.
   const caraKey: Record<string, MutasiKey> = { hibah_masuk: 'hibah', tukar_menukar: 'tukar', hasil_inventarisasi: 'inventarisasi', perolehan_lainnya: 'lainnya' }
   for (const r of cara) {
     if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id)) continue
     const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
     if (r.jenis === 'pengadaan') {
       const rek = typeof r.payload?.kode_rekening === 'string' ? r.payload.kode_rekening : null
-      add(gol, komp, rek?.trim().startsWith('5.1') ? 'belanja_jasa' : 'pengadaan', r.nilai)
-    } else {
-      add(gol, komp, caraKey[r.jenis] || 'lainnya', r.nilai)
-    }
+      push(gol, komp, rek?.trim().startsWith('5.1') ? 'belanja_jasa' : 'pengadaan', r.nilai, r)
+    } else push(gol, komp, caraKey[r.jenis] || 'lainnya', r.nilai, r)
   }
 
-  // Kapitalisasi — Penambahan (nilai = rehab), buang yg dibatalkan.
+  // Kapitalisasi (nilai = rehab), buang yg dibatalkan.
   for (const r of kap) {
     if (!r.aset || kapBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
-    add(kodeLevel3(r.aset.kode), kompOf(r.aset.intra_ekstra), 'kapitalisasi', r.nilai)
+    push(kodeLevel3(r.aset.kode), kompOf(r.aset.intra_ekstra), 'kapitalisasi', r.nilai, r)
   }
 
-  // Koreksi Nilai (delta ±) — Penambahan (>0) / Pengurangan (<0), buang yg dibatalkan.
+  // Koreksi Nilai (delta ±) — tambah (>0) / kurang (<0), buang yg dibatalkan.
   for (const r of kor) {
     if (!r.aset || korBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
     const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
-    if (r.nilai >= 0) add(gol, komp, 'koreksi_tambah', r.nilai)
-    else add(gol, komp, 'koreksi_kurang', -r.nilai)
+    if (r.nilai >= 0) push(gol, komp, 'koreksi_tambah', r.nilai, r)
+    else push(gol, komp, 'koreksi_kurang', -r.nilai, r)
   }
 
-  // Pengalihan Status — masuk (Penggunaan) / keluar.
+  // Pengalihan Status — masuk (Penggunaan) / keluar. skpd_id = sisi in-scope.
   for (const r of alih) {
     if (!r.aset) continue
     const asalIn = inScope(r.skpd_asal), tujuanIn = inScope(r.skpd_tujuan)
     const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
-    if (tujuanIn && !asalIn) add(gol, komp, 'penggunaan_masuk', r.nilai)
-    else if (asalIn && !tujuanIn) add(gol, komp, 'pengalihan_keluar', r.nilai)
+    if (tujuanIn && !asalIn) push(gol, komp, 'penggunaan_masuk', r.nilai, r, r.skpd_tujuan)
+    else if (asalIn && !tujuanIn) push(gol, komp, 'pengalihan_keluar', r.nilai, r, r.skpd_asal)
   }
 
-  // Penghapusan — Pengurangan (hanya net-removed; dedup per aset).
+  // Penghapusan — hanya net-removed; dedup per aset.
   const seen = new Set<string>()
-  for (const r of await fetchLed(supabase, JENIS_HAPUS, periode)) {
+  for (const r of hapus) {
     if (!r.aset || !inScope(r.aset.skpd_id) || !netRemoved.has(r.aset_id) || seen.has(r.aset_id)) continue
     seen.add(r.aset_id)
     const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
     const sub = typeof r.payload?.sub_jenis === 'string' ? r.payload.sub_jenis : null
     const key: MutasiKey = sub === 'penjualan' ? 'hapus_penjualan' : sub === 'hibah' ? 'hapus_hibah'
       : sub === 'tukar_menukar' ? 'hapus_tukar' : sub === 'penyertaan_modal' ? 'hapus_penyertaan' : 'hapus_sebab_lain'
-    add(gol, komp, key, r.nilai)
+    push(gol, komp, key, r.nilai, r)
   }
 
-  // Reklas Perubahan Fungsi (golongan) & Kesalahan Kodefikasi (kode) — keluar gol asal, masuk gol tujuan.
+  // Reklas Perubahan Fungsi (golongan) & Kesalahan Kodefikasi (kode).
   const doReklas = (rows: LedRow[], masuk: MutasiKey, keluar: MutasiKey) => {
     for (const r of rows) {
       if (!r.aset || reklasBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
@@ -317,14 +347,35 @@ export async function fetchMutasi(
       const kodeLama = typeof r.payload?.kode_lama === 'string' ? r.payload.kode_lama : null
       const kodeBaru = typeof r.payload?.kode_baru === 'string' ? r.payload.kode_baru : null
       if (!kodeLama || !kodeBaru) continue
-      add(kodeLevel3(kodeLama), komp, keluar, r.nilai)
-      add(kodeLevel3(kodeBaru), komp, masuk, r.nilai)
+      push(kodeLevel3(kodeLama), komp, keluar, r.nilai, r)
+      push(kodeLevel3(kodeBaru), komp, masuk, r.nilai, r)
     }
   }
   doReklas(reklasG, 'reklas_fungsi_masuk', 'reklas_fungsi_keluar')
   doReklas(reklasK, 'reklas_kode_masuk', 'reklas_kode_keluar')
 
+  return lines
+}
+
+export async function fetchMutasi(
+  supabase: SupabaseClient, periode: string, descendantIds: number[] | null
+): Promise<Mutasi> {
+  const lines = await computeMutasiLines(supabase, periode, descendantIds)
+  const mut: Mutasi = {}
+  for (const l of lines) {
+    const cell = (mut[l.golongan] ??= { intra: {}, ekstra: {} })[l.komp]
+    cell[l.kategori] = (cell[l.kategori] || 0) + l.nilai
+  }
   return mut
+}
+
+// Daftar rinci utk halaman Bukti Dukung — semua transaksi AKTIF yg memengaruhi
+// Rekonsiliasi pada periode. Se-pemda (desc=null) atau per SKPD. Sumber sama
+// dgn fetchMutasi → angka rincian pasti menjumlah ke agregat Rekonsiliasi.
+export async function fetchMutasiLines(
+  supabase: SupabaseClient, periode: string, descendantIds: number[] | null
+): Promise<MutasiLine[]> {
+  return computeMutasiLines(supabase, periode, descendantIds)
 }
 
 export function mutasiCellOf(mut: Mutasi | undefined, golongan: string, komp: Komptabel): MutasiCell {
