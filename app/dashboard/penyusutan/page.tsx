@@ -22,13 +22,22 @@ import { useTahunBukuMap } from '@/components/useTahunBuku'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 
-const BASE_COLS = 'id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan'
+const BASE_COLS = 'id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,merek_tipe,alamat_detail'
 
 type Base = {
   id: string; nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
   nilai_perolehan: number; intra_ekstra: string | null
   tgl_perolehan: string | null
+  merek_tipe: string | null; alamat_detail: string | null
 }
+
+// Kolom Merek & Lokasi (2026-07-20) — kondisional per jenis aset yg difilter
+// (tabel di halaman ini satu set kolom, bukan per-golongan spt Daftar Barang):
+//   - Merek (merek_tipe): Peralatan & Mesin, Aset Tidak Berwujud, Aset Lain-Lain.
+//   - Lokasi (alamat_detail): Tanah, Gedung&Bangunan, Jalan/Jaringan/Irigasi, KDP, Aset Lain-Lain.
+// "Semua Jenis" (golongan kosong) → tidak ada kolom tambahan (data akan campur golongan).
+const GOL_MEREK = ['1.3.2', '1.5.3', '1.5.4']
+const GOL_LOKASI = ['1.3.1', '1.3.3', '1.3.4', '1.3.6', '1.5.4']
 // Hasil engine (penyusutan_semester) — angka period-aware.
 type Peny = { nilai_perolehan: number; beban: number; akumulasi: number; nilai_buku_akhir: number; sisa_semester: number; masa_manfaat_tahun: number | null }
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; periode: string; search: string }
@@ -286,6 +295,10 @@ export default function PenyusutanPage() {
 
   const dash = (v: React.ReactNode, ok: boolean) => (ok ? v : <span className="text-gray-300">-</span>)
 
+  const showMerek = !!applied && GOL_MEREK.includes(applied.golongan)
+  const showLokasi = !!applied && GOL_LOKASI.includes(applied.golongan)
+  const colCount = 12 + (showMerek ? 1 : 0) + (showLokasi ? 1 : 0)
+
   // Total kolom (pakai angka engine).
   const tot = rows.reduce((a, r) => {
     const susut = perlakuanKode(r.kode_barang) !== 'tidak'
@@ -403,6 +416,8 @@ export default function PenyusutanPage() {
                   <th className="table-th">SKPD</th>
                   <th className="table-th">Kode Barang</th>
                   <th className="table-th">Nama Barang</th>
+                  {showMerek && <th className="table-th">Merek</th>}
+                  {showLokasi && <th className="table-th">Lokasi</th>}
                   <th className="table-th">Tgl Perolehan</th>
                   <th className="table-th text-center">Komptabel</th>
                   <th className="table-th text-center">Masa Manfaat (Smt)</th>
@@ -416,9 +431,9 @@ export default function PenyusutanPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
-                  <tr><td colSpan={12} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                  <tr><td colSpan={colCount} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={12} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={colCount} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
                 ) : rows.map((r, i) => {
                   const susut = perlakuanKode(r.kode_barang) !== 'tidak'
                   const p = r.p
@@ -432,6 +447,8 @@ export default function PenyusutanPage() {
                         <p className={`text-xs ${kap ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>{r.nama_barang || '-'}</p>
                         <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
                       </td>
+                      {showMerek && <td className="table-td text-xs text-gray-600">{r.merek_tipe || '-'}</td>}
+                      {showLokasi && <td className="table-td text-xs text-gray-600">{r.alamat_detail || '-'}</td>}
                       <td className="table-td text-xs text-gray-600">{r.tgl_perolehan || '-'}</td>
                       <td className="table-td text-center text-xs capitalize">{r.intra_ekstra || '-'}</td>
                       <td className="table-td text-center text-xs">{susut ? (masaSmt ?? <span className="text-gray-300">-</span>) : <span className="text-gray-300">-</span>}</td>
@@ -453,7 +470,7 @@ export default function PenyusutanPage() {
               {!loading && rows.length > 0 && (
                 <tfoot>
                   <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
-                    <td className="table-td text-xs" colSpan={6}>TOTAL ({rows.length.toLocaleString('id-ID')} aset)</td>
+                    <td className="table-td text-xs" colSpan={6 + (showMerek ? 1 : 0) + (showLokasi ? 1 : 0)}>TOTAL ({rows.length.toLocaleString('id-ID')} aset)</td>
                     <td className="table-td text-right text-xs">{angka(tot.perolehan)}</td>
                     <td className="table-td text-right text-xs text-teal">{angka(tot.beban)}</td>
                     <td className="table-td text-right text-xs">{angka(tot.akum)}</td>
