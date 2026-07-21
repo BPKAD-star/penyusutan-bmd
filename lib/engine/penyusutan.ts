@@ -341,6 +341,8 @@ export function hitungJadwalAset(
         // pemanfaatan / pemanfaatan_selesai / batal_pemanfaatan: overlay atribut
         // (sewa/pinjam pakai/KSP/BGS-BSG/KSPI) — barang tetap disusutkan normal,
         // TIDAK menghentikan.
+        // pengamanan / pengembalian_pengamanan / batal_pengamanan: overlay
+        // kustodi fisik (penanggung jawab pegawai) — juga netral, tetap disusutkan.
         // reklas_komptabel: TIDAK butuh case di sini — sejak ekstra ikut
         // disusutkan (2026-07-13), flip intra↔ekstra murni pindah keranjang
         // laporan (filter Komptabel), nol efek ke perhitungan.

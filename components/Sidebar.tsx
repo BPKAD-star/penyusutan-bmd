@@ -85,6 +85,8 @@ const navTree: NavNode[] = [
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/koreksi', label: 'Laporan Koreksi' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/kapitalisasi', label: 'Laporan Kapitalisasi' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/penghapusan', label: 'Laporan Penghapusan' },
+          { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/pemanfaatan', label: 'Laporan Pemanfaatan' },
+          { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/pengamanan', label: 'Laporan Pengamanan' },
         ],
       },
       { type: 'leaf', href: '/dashboard/pelaporan/bmd', label: 'Laporan BMD' },

@@ -1,4 +1,3 @@
-import ComingSoon from '@/components/ComingSoon'
-export default function Page() {
-  return <ComingSoon judul="Pengamanan" deskripsi="Pengamanan Barang Milik Daerah (fisik, administrasi, hukum)." />
-}
+'use client'
+import Pengamanan from '@/components/pengelolaan/Pengamanan'
+export default function Page() { return <Pengamanan /> }

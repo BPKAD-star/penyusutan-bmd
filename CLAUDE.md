@@ -310,6 +310,45 @@ barang (`{lingkup:'seluruh'|'sebagian', bagian}`) di payload baris.
   WAJIB jalan SEBELUM deploy kode — KIBAR & komponen sudah memfilter
   `.in('jenis', ['pemanfaatan','pemanfaatan_selesai'])` (pola 20260719_04).
 
+## Pengamanan BMD (kustodi fisik ke pegawai, migrasi 20260722_01+02)
+
+Menu Pembukuan → Pengelolaan → Pengamanan (`components/pengelolaan/Pengamanan.tsx`,
+`lib/pengamanan.ts`). Penyerahan kustodi fisik barang ke seorang **pegawai
+penanggung jawab** via BAST + Pakta Integritas. Pola jurnal ber-dokumen
+(`jurnal_header` kategori `'pengamanan'` + ledger), TANPA approval & TANPA
+lintas-SKPD. Header payload: `nama_pegawai, nip, pangkat_golongan, jabatan,
+pakta_no, pakta_tgl, bast_paths[], pakta_paths[]` (REUSE `no_sk`=No BAST,
+`tanggal`=Tgl BAST). Berkas PDF/gambar → bucket **`dokumen-sumber`** (sama spt
+Pengalihan), prefix `pengamanan-bast/` & `pengamanan-pakta/`, tampilkan via
+signed URL.
+
+- **NETRAL, BUKAN SEMBUNYI** — engine `default: break` mengabaikan `pengamanan`/
+  `pengembalian_pengamanan`/`batal_pengamanan`; barang tetap muncul & disusutkan.
+- **Golongan**: hanya Peralatan & Mesin (1.3.2) + Gedung & Bangunan (1.3.3)
+  (`PENGAMANAN_ELIGIBLE_GOLONGAN`, keputusan user 2026-07-22 "lebih ke ... aja").
+  Picker eligible-only. Longgarkan dgn tambah kode golongan di lib kalau perlu.
+- **Kustodi tunggal + serah ke orang baru**: barang cuma boleh ke SATU pegawai.
+  Picker filter `.is('pengamanan', null)` (kolom cache) → hanya barang belum
+  berkustodi. Serah ke pegawai lain = **⤺ Kembalikan** dulu
+  (`pengembalian_pengamanan` → barang tetap tampil "Dikembalikan" sbg riwayat,
+  cache di-null) → barang bebas → buat BAST pengamanan baru utk pegawai lain.
+- **🗑 Batal** (`batal_pengamanan`, pola batal_pemanfaatan) = koreksi salah catat
+  → barang hilang dari kartu. + "Batal Seluruh BAST" per kartu. Keanggotaan
+  kartu = replay per (header, aset), baris terakhir menentukan: pengamanan set,
+  pengembalian_pengamanan → dikembalikan=true (tetap), batal_pengamanan → buang.
+- **`aset.pengamanan` = CACHE** kustodian saat ini (mis. "Budi (NIP …)"), di-set
+  saat serah, di-null saat kembali/batal. Bukan sumber kebenaran (ledger yg
+  otoritatif). Kolom ditambah migrasi 20260722_02.
+- **Laporan** `components/pelaporan/LaporanPengamanan.tsx` (se-kab bila SKPD
+  kosong; per-SKPD via `descendantIds`) + filter status Diamankan/Dikembalikan.
+- ⚠️ **Deploy-ordering:** migrasi enum (20260722_01) + kategori/kolom
+  (20260722_02) WAJIB jalan SEBELUM deploy kode.
+
+**Laporan Pemanfaatan** (`components/pelaporan/LaporanPemanfaatan.tsx`): se-kab/
+per-SKPD + **filter jenis pemanfaatan** (Sewa/Pinjam Pakai/KSP/BGS-BSG/KSPI dari
+`payload.jenis_pemanfaatan`). Keduanya baca `jurnal_header`+ledger, hitung
+keanggotaan per (header, aset) baris-terakhir, export Excel.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang
