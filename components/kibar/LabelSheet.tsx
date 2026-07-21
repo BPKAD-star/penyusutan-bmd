@@ -11,6 +11,7 @@ import QRCode from 'qrcode'
 export type LabelItem = {
   nibar: string
   namaBarang: string
+  merekTipe?: string | null
   skpdNama: string
   tglPerolehan: string | null
 }
@@ -63,7 +64,8 @@ export default function LabelSheet({ items, onClose }: { items: LabelItem[]; onC
               <div className="text-[11px] leading-tight space-y-0.5 min-w-0">
                 <p className="font-semibold text-gray-800 truncate">{it.skpdNama}</p>
                 <p className="text-gray-700 truncate">{it.namaBarang}</p>
-                <p className="font-mono text-gray-600 break-all">{it.nibar}</p>
+                {it.merekTipe && <p className="text-gray-500 truncate">{it.merekTipe}</p>}
+                <p className="font-mono text-gray-600 text-[8px] leading-tight">{it.nibar}</p>
                 <p className="text-gray-500">{fmtTgl(it.tglPerolehan)}</p>
               </div>
             </div>

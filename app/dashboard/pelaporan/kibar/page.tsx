@@ -98,6 +98,7 @@ export default function KibarSearchPage() {
     .map(r => ({
       nibar: r.nibar || '-',
       namaBarang: r.nama_barang || r.uraian_barang || '-',
+      merekTipe: r.merek_tipe,
       skpdNama: skpdMap[r.skpd_id ?? -1] || '-',
       tglPerolehan: r.tgl_perolehan,
     }))

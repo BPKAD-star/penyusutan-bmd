@@ -239,6 +239,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
               <PrintLabelButton item={{
                 nibar: aset.nibar || '-',
                 namaBarang: aset.nama_barang || aset.uraian_barang || '-',
+                merekTipe: aset.merek_tipe,
                 skpdNama: pemegang,
                 tglPerolehan: aset.tgl_perolehan,
               }} />
