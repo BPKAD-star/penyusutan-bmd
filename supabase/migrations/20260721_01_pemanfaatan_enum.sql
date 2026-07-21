@@ -6,10 +6,15 @@
 --                            mengubah nilai/penyusutan, BUKAN event SEMBUNYI —
 --                            barang tetap muncul & tetap disusutkan (persis
 --                            pola pengalihan_status). Cuma overlay atribut.
---   • pemanfaatan_selesai  → pemanfaatan berakhir / diakhiri lebih awal
---                            (append-only, pola batal). Mengeluarkan barang
---                            dari kartu pemanfaatan & meng-null cache
---                            aset.pemanfaatan.
+--   • pemanfaatan_selesai  → pemanfaatan berakhir / diakhiri SAH (masa habis
+--                            atau diakhiri lebih awal). Barang TETAP jadi
+--                            riwayat pemanfaatan yang pernah ada (tampil
+--                            "Selesai" di KIBAR). Null cache aset.pemanfaatan.
+--   • batal_pemanfaatan     → KOREKSI salah catat (append-only, pola
+--                            batal_pengadaan). Barang dianggap TAK PERNAH
+--                            dimanfaatkan → hilang total dari kartu & KIBAR
+--                            bagian VII. Null cache. Beda dari pemanfaatan_
+--                            selesai yang justru menyimpannya sbg riwayat sah.
 --
 -- ⚠️ DEPLOY-ORDERING: file ini WAJIB dijalankan SEBELUM deploy kode — komponen
 -- Pemanfaatan & KIBAR sudah memfilter jenis pakai nilai enum baru ini. ADD VALUE
@@ -20,3 +25,4 @@
 
 ALTER TYPE jenis_transaksi_bmd ADD VALUE IF NOT EXISTS 'pemanfaatan';
 ALTER TYPE jenis_transaksi_bmd ADD VALUE IF NOT EXISTS 'pemanfaatan_selesai';
+ALTER TYPE jenis_transaksi_bmd ADD VALUE IF NOT EXISTS 'batal_pemanfaatan';

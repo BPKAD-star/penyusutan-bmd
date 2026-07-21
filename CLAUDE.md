@@ -277,12 +277,23 @@ barang (`{lingkup:'seluruh'|'sebagian', bagian}`) di payload baris.
   `isPemanfaatanEligible` client-side). Kasus "gedung sebagian" (mis. 1 ruang
   disewa Bank Jatim) diselesaikan lewat **Lingkup=Sebagian** + teks bagian,
   BUKAN pemecahan nilai / reklas.
-- **Akhiri** (per barang) = baris `pemanfaatan_selesai` append-only (tanggal
-  HARI INI, di tahun terbuka → lolos guard) + null cache. Keanggotaan kartu =
-  replay kronologis per (header, aset): baris terakhir menentukan (siklus
-  manfaat→selesai→manfaat lagi didukung). Backdate `pemanfaatan` ke tahun
-  terkunci ditolak guard (belum di-whitelist `fn_cek_tahun_buku` — konsisten
-  Penghapusan; whitelist kalau nanti perlu).
+- **Dua aksi penghentian, BEDA semantik** (keputusan user 2026-07-21), keduanya
+  append-only tanggal HARI INI (tahun terbuka → lolos guard) + null cache:
+  - **⏹ Akhiri** = `pemanfaatan_selesai`. Pemanfaatan SAH lalu berakhir/diakhiri
+    lebih awal. Barang **tetap tampil** sbg riwayat (badge "Selesai" di kartu,
+    status "Selesai" di KIBAR VII).
+  - **🗑 Batal** = `batal_pemanfaatan` (pola `batal_pengadaan`). KOREKSI salah
+    catat → barang **hilang total** dari kartu & KIBAR VII (dianggap tak pernah
+    dimanfaatkan). Ada juga "Batal Seluruh Perjanjian" (batal semua barang kartu
+    → kartu hilang). JANGAN pakai Akhiri utk salah catat (nanti ada pemanfaatan
+    hantu "Selesai" di KIBAR).
+  Keanggotaan kartu = replay kronologis per (header, aset): `pemanfaatan` set
+  baris, `pemanfaatan_selesai` → selesai=true (tetap), `batal_pemanfaatan` →
+  buang dari kartu. KIBAR VII keying per-header: header hidup dgn baris
+  `pemanfaatan` ber-id tertinggi (kalau terbaru dibatalkan, jatuh ke perjanjian
+  sah sebelumnya). Siklus manfaat→selesai/batal→manfaat lagi didukung. Backdate
+  `pemanfaatan` ke tahun terkunci ditolak guard (belum di-whitelist
+  `fn_cek_tahun_buku` — konsisten Penghapusan; whitelist kalau nanti perlu).
 - **Kolom `aset.pemanfaatan` = CACHE ringkas** (badge/filter cepat), BUKAN sumber
   kebenaran — sumber kebenaran tetap ledger. Di-set string
   (`pemanfaatanCache`, mis. "Sewa — Bank Jatim (s.d. 12 Agu 2027)") saat catat,

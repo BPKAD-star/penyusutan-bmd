@@ -126,7 +126,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
 
   const [{ data: trxRaw }, wilayahParts, skpdChain] = await Promise.all([
     admin.from('transaksi_bmd')
-      .select('id,jenis,periode,tanggal,nilai,skpd_asal,skpd_tujuan,payload,keterangan,jurnal_header(no_sk,tanggal,kategori,payload)')
+      .select('id,jenis,periode,tanggal,nilai,skpd_asal,skpd_tujuan,payload,keterangan,header_id,jurnal_header(no_sk,tanggal,kategori,payload)')
       .eq('aset_id', aset.id).order('id', { ascending: true }),
     aset.wilayah_kode ? resolveWilayah(admin, aset.wilayah_kode) : Promise.resolve([] as string[]),
     aset.skpd_id ? resolveSkpdChain(admin, aset.skpd_id) : Promise.resolve([] as SkpdNode[]),
@@ -134,7 +134,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   const trx = (trxRaw || []) as unknown as {
     id: number; jenis: string; periode: string; tanggal: string; nilai: number
     skpd_asal: number | null; skpd_tujuan: number | null
-    payload: Record<string, unknown> | null; keterangan: string | null
+    payload: Record<string, unknown> | null; keterangan: string | null; header_id: string | null
     jurnal_header: { no_sk: string; tanggal: string; kategori: string; payload: Record<string, unknown> | null } | null
   }[]
 
@@ -175,13 +175,22 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   const kapitalisasi = lastOf(j => j === 'kapitalisasi')
   const penghapusan = lastOf(j => PENGHAPUSAN.has(j))
 
-  // Pemanfaatan: replay kronologis — baris 'pemanfaatan' terakhir = perjanjian
-  // aktif; 'pemanfaatan_selesai' sesudahnya = sudah diakhiri.
+  // Pemanfaatan (per header): 'pemanfaatan' = perjanjian; 'pemanfaatan_selesai'
+  // = berakhir sah (tetap tampil); 'batal_pemanfaatan' = salah catat → header
+  // itu diabaikan total. "Terakhir" = header hidup dgn baris pemanfaatan ber-id
+  // tertinggi (kalau yg terbaru dibatalkan, jatuh ke perjanjian sah sebelumnya).
+  const pemMap = new Map<string, { row: (typeof trx)[number]; selesai: boolean; alive: boolean }>()
+  for (const t of trx) {
+    if (!t.header_id) continue
+    if (t.jenis === 'pemanfaatan') pemMap.set(t.header_id, { row: t, selesai: false, alive: true })
+    else if (t.jenis === 'pemanfaatan_selesai') { const e = pemMap.get(t.header_id); if (e) e.selesai = true }
+    else if (t.jenis === 'batal_pemanfaatan') { const e = pemMap.get(t.header_id); if (e) e.alive = false }
+  }
   let lastPem: (typeof trx)[number] | null = null
   let pemEnded = false
-  for (const t of trx) {
-    if (t.jenis === 'pemanfaatan') { lastPem = t; pemEnded = false }
-    else if (t.jenis === 'pemanfaatan_selesai' && lastPem) pemEnded = true
+  for (const e of pemMap.values()) {
+    if (!e.alive) continue
+    if (!lastPem || e.row.id > lastPem.id) { lastPem = e.row; pemEnded = e.selesai }
   }
   const todayISO = new Date().toISOString().slice(0, 10)
 

@@ -104,7 +104,7 @@ export default function Pemanfaatan() {
     if (hs.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
         .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
-        .in('jenis', ['pemanfaatan', 'pemanfaatan_selesai'] as never)
+        .in('jenis', ['pemanfaatan', 'pemanfaatan_selesai', 'batal_pemanfaatan'] as never)
         .in('header_id', hs.map(h => h.id))
         .order('id', { ascending: true })
       const rows = (data || []) as unknown as {
@@ -112,9 +112,12 @@ export default function Pemanfaatan() {
         payload: { lingkup?: Lingkup; bagian?: string | null } | null
         aset: Omit<Barang, 'nilai_perolehan'> | null
       }[]
-      // Akumulasi kronologis per (header, aset): baris 'pemanfaatan' set
-      // lingkup/bagian & selesai=false; 'pemanfaatan_selesai' → selesai=true.
-      // Baris terakhir menentukan keadaan (siklus manfaat→selesai→manfaat lagi).
+      // Akumulasi kronologis per (header, aset), baris terakhir menentukan:
+      //   'pemanfaatan'         → set lingkup/bagian, selesai=false
+      //   'pemanfaatan_selesai' → selesai=true (tetap tampil sbg riwayat sah)
+      //   'batal_pemanfaatan'   → hapus dari kartu (koreksi salah catat, seolah
+      //                           tak pernah ada). Siklus manfaat→batal→manfaat
+      //                           lagi didukung (set ulang di baris berikutnya).
       const acc = new Map<string, Line>()
       for (const r of rows) {
         if (!r.aset) continue
@@ -125,9 +128,11 @@ export default function Pemanfaatan() {
             merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
             lingkup: (r.payload?.lingkup as Lingkup) || 'seluruh', bagian: r.payload?.bagian ?? null, selesai: false,
           })
-        } else {
+        } else if (r.jenis === 'pemanfaatan_selesai') {
           const cur = acc.get(key)
           if (cur) cur.selesai = true
+        } else { // batal_pemanfaatan
+          acc.delete(key)
         }
       }
       for (const [key, line] of acc) {
@@ -153,6 +158,37 @@ export default function Pemanfaatan() {
     if (error) { setMsg(`Error: ${error.message}`); return }
     await supabase.from('aset').update({ pemanfaatan: null }).eq('id', l.aset_id)
     setMsg('Pemanfaatan barang diakhiri.')
+    loadJurnals(skpd)
+  }
+
+  // Batal (koreksi salah catat): baris batal_pemanfaatan → barang hilang total
+  // dari kartu & KIBAR (dianggap tak pernah dimanfaatkan). Beda dari Akhiri.
+  async function batalBarang(l: Line, j: Jurnal) {
+    if (!confirm(`Batalkan (salah catat) pemanfaatan "${l.nama_barang || l.nibar}"? Barang dianggap TAK PERNAH dimanfaatkan — hilang dari kartu ini & KIBAR. Untuk pengakhiran normal pakai ⏹ Akhiri.`)) return
+    const tgl = todayStr()
+    const { error } = await supabase.from('transaksi_bmd').insert({
+      aset_id: l.aset_id, jenis: 'batal_pemanfaatan', periode: periodeDariTanggal(tgl), tanggal: tgl,
+      nilai: 0, header_id: j.id, payload: {},
+    })
+    if (error) { setMsg(`Error: ${error.message}`); return }
+    await supabase.from('aset').update({ pemanfaatan: null }).eq('id', l.aset_id)
+    setMsg('Pemanfaatan barang dibatalkan (salah catat).')
+    loadJurnals(skpd)
+  }
+
+  // Batal seluruh perjanjian salah catat: batal_pemanfaatan utk SEMUA barang di
+  // kartu → kartu hilang (auto-filter lines.length===0). Bukan pengakhiran normal.
+  async function batalSeluruh(j: Jurnal) {
+    if (!confirm(`Batalkan SELURUH perjanjian "${j.no_sk}" (${j.lines.length} barang)? Semua barang dianggap tak pernah dimanfaatkan — kartu hilang. HANYA untuk koreksi salah catat, BUKAN pengakhiran normal (pakai ⏹ Akhiri per barang).`)) return
+    const tgl = todayStr()
+    const rows = j.lines.map(l => ({
+      aset_id: l.aset_id, jenis: 'batal_pemanfaatan', periode: periodeDariTanggal(tgl), tanggal: tgl,
+      nilai: 0, header_id: j.id, payload: {},
+    }))
+    const { error } = await supabase.from('transaksi_bmd').insert(rows)
+    if (error) { setMsg(`Error: ${error.message}`); return }
+    await supabase.from('aset').update({ pemanfaatan: null }).in('id', j.lines.map(l => l.aset_id))
+    setMsg('Seluruh perjanjian pemanfaatan dibatalkan (salah catat).')
     loadJurnals(skpd)
   }
 
@@ -219,6 +255,9 @@ export default function Pemanfaatan() {
                       <button title="Tambah barang ke pemanfaatan ini"
                         onClick={() => { setMsg(''); setAddTo(j) }}
                         className="inline-flex items-center justify-center w-8 h-8 rounded bg-teal hover:opacity-90 text-white">+</button>
+                      <button title="Batalkan SELURUH perjanjian (salah catat) — kartu hilang"
+                        onClick={() => batalSeluruh(j)}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
                     </div>
                   </div>
                 </div>
@@ -226,7 +265,7 @@ export default function Pemanfaatan() {
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        <th className="table-th w-10 text-center">Aksi</th>
+                        <th className="table-th w-20 text-center">Aksi</th>
                         <th className="table-th">Kode Register / Nama Barang</th>
                         <th className="table-th">Lingkup</th>
                         <th className="table-th text-center">Jumlah</th>
@@ -237,12 +276,14 @@ export default function Pemanfaatan() {
                       {j.lines.map(l => (
                         <tr key={l.aset_id} className={l.selesai ? 'opacity-50' : ''}>
                           <td className="table-td text-center">
-                            {l.selesai ? (
-                              <span className="text-gray-300 text-xs" title="Sudah diakhiri">—</span>
-                            ) : (
-                              <button onClick={() => akhiriBarang(l, j)} title="Akhiri pemanfaatan barang ini"
-                                className="inline-flex items-center justify-center w-7 h-7 rounded bg-amber-500 hover:bg-amber-600 text-white">⏹</button>
-                            )}
+                            <div className="flex items-center justify-center gap-1">
+                              {!l.selesai && (
+                                <button onClick={() => akhiriBarang(l, j)} title="Akhiri pemanfaatan (berakhir sah — tetap jadi riwayat)"
+                                  className="inline-flex items-center justify-center w-7 h-7 rounded bg-amber-500 hover:bg-amber-600 text-white">⏹</button>
+                              )}
+                              <button onClick={() => batalBarang(l, j)} title="Batalkan (salah catat) — hilang dari kartu & KIBAR"
+                                className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+                            </div>
                           </td>
                           <td className="table-td">
                             <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}{l.selesai && <span className="ml-2 text-[10px] text-gray-400">(selesai)</span>}</p>

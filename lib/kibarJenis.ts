@@ -24,6 +24,7 @@ export const KIBAR_JENIS_LABEL: Record<string, { label: string; tone: Tone }> = 
   koreksi_pencatatan_ganda: { label: 'Koreksi Pencatatan Ganda (Digabung — Duplikat)', tone: 'keluar' },
   pemanfaatan: { label: 'Pemanfaatan (Sewa/Pinjam Pakai/KSP/BGS-BSG/KSPI)', tone: 'netral' },
   pemanfaatan_selesai: { label: 'Pemanfaatan Selesai / Diakhiri', tone: 'netral' },
+  batal_pemanfaatan: { label: 'Pembatalan Pemanfaatan (Koreksi Salah Catat)', tone: 'keluar' },
   kapitalisasi: { label: 'Kapitalisasi (Rehab/Penambahan Nilai)', tone: 'masuk' },
   kapitalisasi_serap: { label: 'Diserap ke Aset Induk (Kapitalisasi)', tone: 'keluar' },
   penghapusan_pemindahtanganan: { label: 'Penghapusan — Pemindahtanganan', tone: 'keluar' },
