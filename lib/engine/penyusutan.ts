@@ -338,6 +338,8 @@ export function hitungJadwalAset(
           berhenti = false // batal serap: barang anak disusutkan lagi (di induk = tanpa efek)
           break
         // mutasi_internal / pengalihan_status / koreksi_spesifikasi: tanpa efek finansial
+        // pemanfaatan / pemanfaatan_selesai: overlay atribut (sewa/pinjam pakai/
+        // KSP/BGS-BSG/KSPI) — barang tetap disusutkan normal, TIDAK menghentikan.
         // reklas_komptabel: TIDAK butuh case di sini — sejak ekstra ikut
         // disusutkan (2026-07-13), flip intra↔ekstra murni pindah keranjang
         // laporan (filter Komptabel), nol efek ke perhitungan.

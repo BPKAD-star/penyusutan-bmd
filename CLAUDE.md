@@ -253,6 +253,52 @@ disentuh sampai SKPD tujuan menerima). Poin penting:
   image+pdf — beda dari `aset-foto` yg image-only), path di
   `payload.dokumen_paths`, tampilkan via signed URL.
 
+## Pemanfaatan BMD (sewa/pinjam pakai/KSP/BGS-BSG/KSPI, migrasi 20260721_01+02)
+
+Menu Pembukuan → Pengelolaan → Pemanfaatan (`components/pengelolaan/Pemanfaatan.tsx`,
+`lib/pemanfaatan.ts`). Pola jurnal ber-dokumen (`jurnal_header` kategori
+`'pemanfaatan'` + ledger), **TANPA approval & TANPA lintas-SKPD** — pengurus
+barang catat langsung di SKPD-nya (pola Penghapusan, bukan Pengalihan). 1
+perjanjian = 1 header; field header (jenis, mitra, alamat, mulai, masa tahun,
+berakhir, peruntukan, jenis/no/tgl dokumen) disimpan di `jurnal_header.payload`
+(REUSE kolom `no_sk`=no dokumen, `tanggal`=tgl dokumen, `keterangan`). Barang =
+baris `transaksi_bmd` jenis `'pemanfaatan'` ber-`header_id` sama; lingkup per
+barang (`{lingkup:'seluruh'|'sebagian', bagian}`) di payload baris.
+
+- **NETRAL, BUKAN event SEMBUNYI** — persis `pengalihan_status`: tidak mengubah
+  nilai/penyusutan (engine `default: break` mengabaikan `pemanfaatan` &
+  `pemanfaatan_selesai`), barang **tetap muncul** di Daftar Barang & Penyusutan
+  dan **tetap disusutkan**. Jangan tambahkan ke SEMBUNYI/MUNCUL.
+- **BLOKIR KERAS golongan** (keputusan user 2026-07-21,
+  `PEMANFAATAN_ELIGIBLE_GOLONGAN`): hanya real estate (Tanah 1.3.1, Gedung 1.3.3,
+  Jalan/Jaringan/Irigasi 1.3.4) + Aset Lain-Lain (1.5.4) yang boleh dipilih.
+  Barang bergerak (Peralatan&Mesin 1.3.2, ATL 1.3.5, dll) WAJIB direklas ke
+  1.5.4 dulu — picker tak menampilkannya (filter query eligible-only + guard
+  `isPemanfaatanEligible` client-side). Kasus "gedung sebagian" (mis. 1 ruang
+  disewa Bank Jatim) diselesaikan lewat **Lingkup=Sebagian** + teks bagian,
+  BUKAN pemecahan nilai / reklas.
+- **Akhiri** (per barang) = baris `pemanfaatan_selesai` append-only (tanggal
+  HARI INI, di tahun terbuka → lolos guard) + null cache. Keanggotaan kartu =
+  replay kronologis per (header, aset): baris terakhir menentukan (siklus
+  manfaat→selesai→manfaat lagi didukung). Backdate `pemanfaatan` ke tahun
+  terkunci ditolak guard (belum di-whitelist `fn_cek_tahun_buku` — konsisten
+  Penghapusan; whitelist kalau nanti perlu).
+- **Kolom `aset.pemanfaatan` = CACHE ringkas** (badge/filter cepat), BUKAN sumber
+  kebenaran — sumber kebenaran tetap ledger. Di-set string
+  (`pemanfaatanCache`, mis. "Sewa — Bank Jatim (s.d. 12 Agu 2027)") saat catat,
+  di-null saat Akhiri. Kolom sudah ada sejak migrasi 20260707_04 (placeholder).
+  RLS: update `aset` & insert `transaksi_bmd`/`jurnal_header` dicek lewat
+  kepemilikan aset/skpd_id (bukan skpd_asal) → aman di-client per-SKPD.
+  ⚠️ **Keterbatasan MVP:** cache TIDAK auto-null saat masa berakhir lewat (tak
+  ada cron) — barang expired tetap terkunci dari pemanfaatan baru sampai
+  di-Akhiri manual; status di KIBAR/badge tetap benar (dihitung dari tgl
+  berakhir vs hari ini).
+- **KIBAR bagian VII** diturunkan dari ledger (baris `pemanfaatan` terakhir +
+  `jurnal_header.payload`), pola sama IV/VIII/IX — bukan dari kolom `aset`.
+- ⚠️ **Deploy-ordering:** migrasi enum (20260721_01) + kategori (20260721_02)
+  WAJIB jalan SEBELUM deploy kode — KIBAR & komponen sudah memfilter
+  `.in('jenis', ['pemanfaatan','pemanfaatan_selesai'])` (pola 20260719_04).
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang

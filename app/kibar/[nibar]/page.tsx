@@ -24,6 +24,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { fieldsForKode, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { KIBAR_JENIS_LABEL, kibarDetail } from '@/lib/kibarJenis'
+import { JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
 import PrintLabelButton from '@/components/kibar/PrintLabelButton'
 import PrintPageButton from '@/components/kibar/PrintPageButton'
 
@@ -125,7 +126,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
 
   const [{ data: trxRaw }, wilayahParts, skpdChain] = await Promise.all([
     admin.from('transaksi_bmd')
-      .select('id,jenis,periode,tanggal,nilai,skpd_asal,skpd_tujuan,payload,keterangan,jurnal_header(no_sk,tanggal,kategori)')
+      .select('id,jenis,periode,tanggal,nilai,skpd_asal,skpd_tujuan,payload,keterangan,jurnal_header(no_sk,tanggal,kategori,payload)')
       .eq('aset_id', aset.id).order('id', { ascending: true }),
     aset.wilayah_kode ? resolveWilayah(admin, aset.wilayah_kode) : Promise.resolve([] as string[]),
     aset.skpd_id ? resolveSkpdChain(admin, aset.skpd_id) : Promise.resolve([] as SkpdNode[]),
@@ -134,7 +135,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
     id: number; jenis: string; periode: string; tanggal: string; nilai: number
     skpd_asal: number | null; skpd_tujuan: number | null
     payload: Record<string, unknown> | null; keterangan: string | null
-    jurnal_header: { no_sk: string; tanggal: string; kategori: string } | null
+    jurnal_header: { no_sk: string; tanggal: string; kategori: string; payload: Record<string, unknown> | null } | null
   }[]
 
   // Nama SKPD utk kolom skpd_asal/tujuan di ledger (di luar rantai pemegang).
@@ -173,6 +174,16 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   const koreksiNilai = lastOf(j => j === 'koreksi_nilai')
   const kapitalisasi = lastOf(j => j === 'kapitalisasi')
   const penghapusan = lastOf(j => PENGHAPUSAN.has(j))
+
+  // Pemanfaatan: replay kronologis — baris 'pemanfaatan' terakhir = perjanjian
+  // aktif; 'pemanfaatan_selesai' sesudahnya = sudah diakhiri.
+  let lastPem: (typeof trx)[number] | null = null
+  let pemEnded = false
+  for (const t of trx) {
+    if (t.jenis === 'pemanfaatan') { lastPem = t; pemEnded = false }
+    else if (t.jenis === 'pemanfaatan_selesai' && lastPem) pemEnded = true
+  }
+  const todayISO = new Date().toISOString().slice(0, 10)
 
   const penggunaBarang = skpdChain[0]?.nama || '-'                        // root (level 1)
   const pemegang = skpdChain[skpdChain.length - 1]?.nama || penggunaBarang // daun (unit pemegang)
@@ -326,9 +337,30 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
           ) : <Empty />}
         </Section>
 
-        {/* VII. Pemanfaatan (menu belum dikembangkan) */}
+        {/* VII. Pemanfaatan */}
         <Section num="VII" title="Informasi Pemanfaatan">
-          <Empty />
+          {lastPem ? (() => {
+            const hp = (lastPem.jurnal_header?.payload || {}) as Record<string, unknown>
+            const lp = (lastPem.payload || {}) as { lingkup?: string; bagian?: string | null }
+            const berakhir = typeof hp.berakhir === 'string' ? hp.berakhir : ''
+            const status = pemEnded ? 'Selesai / Diakhiri' : (berakhir && todayISO > berakhir ? 'Berakhir' : 'Aktif')
+            return (
+              <>
+                <Row label="1. Jenis Pemanfaatan" value={JENIS_PEMANFAATAN_LABEL[String(hp.jenis_pemanfaatan || '')] || '-'} />
+                <Row label="2. Mitra Pemanfaatan" value={dash(hp.mitra)} />
+                <Row label="3. Alamat Mitra" value={dash(hp.alamat_mitra)} />
+                <Row label="4. Mulai Pemanfaatan" value={hp.mulai ? fmtTgl(String(hp.mulai)) : '-'} />
+                <Row label="5. Masa Pemanfaatan" value={hp.masa_tahun ? `${hp.masa_tahun} tahun` : '-'} />
+                <Row label="6. Berakhirnya Pemanfaatan" value={berakhir ? fmtTgl(berakhir) : '-'} />
+                <Row label="7. Lingkup" value={lp.lingkup === 'sebagian' ? `Sebagian${lp.bagian ? ` — ${lp.bagian}` : ''}` : 'Seluruhnya'} />
+                <Row label="8. Peruntukan Pemanfaatan" value={dash(hp.peruntukan)} />
+                <Row label="9. Jenis Dokumen" value={dash(hp.jenis_dokumen)} />
+                <Row label="10. Nomor Dokumen" value={dash(lastPem.jurnal_header?.no_sk)} />
+                <Row label="11. Tanggal Dokumen" value={lastPem.jurnal_header?.tanggal ? fmtTgl(lastPem.jurnal_header.tanggal) : '-'} />
+                <Row label="Status" value={status} />
+              </>
+            )
+          })() : <Empty />}
         </Section>
 
         {/* VIII. Reklasifikasi */}
