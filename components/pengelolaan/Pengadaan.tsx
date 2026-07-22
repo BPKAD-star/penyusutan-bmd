@@ -30,6 +30,7 @@ import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd 
 import FormShell from './FormShell'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import RekeningPicker from '@/components/RekeningPicker'
 import { useDateBounds } from '@/components/useTahunBuku'
 
 type SumberPengadaan = 'kwitansi' | 'bukti_pembelian' | 'surat_pesanan' | 'spk'
@@ -917,8 +918,8 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   return (
     <div className="space-y-3">
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-gray-400">(mis. 5.2.01.01.001 — teks bebas)</span></label>
-        <input className="select-filter w-full sm:w-80" value={rekening} onChange={e => setRekening(e.target.value)} placeholder="kode rekening belanja..." />
+        <label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-gray-400">(cari & pilih sampai Sub Rincian Objek)</span></label>
+        <RekeningPicker value={rekening} onChange={setRekening} className="w-full sm:max-w-2xl" />
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <div>

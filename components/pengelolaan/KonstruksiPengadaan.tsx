@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
+import RekeningPicker from '@/components/RekeningPicker'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -665,7 +666,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
                   <select className="select-filter w-full text-sm" value={komponen} onChange={e => setKomponen(e.target.value)}>{KOMPONEN.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}</select></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Nomor BAST</label><input className="select-filter w-full text-sm" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST <span className="text-gray-400">(≥ tgl kontrak {tglKontrak})</span></label><input type="date" min={minTgl} max={bounds.max} className="select-filter w-full text-sm" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Kode Rekening</label><input className="select-filter w-full text-sm" value={rekening} onChange={e => setRekening(e.target.value)} placeholder="free-form" /></div>
+                <div className="col-span-2 sm:col-span-3"><label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-gray-400">(cari & pilih sampai Sub Rincian Objek)</span></label><RekeningPicker value={rekening} onChange={setRekening} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Nominal (Rp)</label><input type="number" className="select-filter w-full text-sm" value={nominal} onChange={e => setNominal(e.target.value)} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full text-sm" value={ket} onChange={e => setKet(e.target.value)} /></div>
               </div>
