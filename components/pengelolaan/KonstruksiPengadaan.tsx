@@ -13,7 +13,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import RekeningPicker from '@/components/RekeningPicker'
 import ProgramPicker from '@/components/ProgramPicker'
-import ComboBox from '@/components/ComboBox'
+import SearchSelect from '@/components/SearchSelect'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -268,7 +268,7 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
           onChange={sel => setF(s => ({ ...s, program: sel.program, kegiatan: sel.kegiatan, subKeg: sel.sub_kegiatan }))} />
       </div>
       <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-        <ComboBox value={ppk} options={pegawai.map(p => p.nama)} placeholder="ketik / pilih pegawai..." onChange={setPpk} /></div>
+        <SearchSelect value={ppk} options={pegawai.map(p => ({ value: p.nama, label: `${p.nama} — ${p.nip}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} /></div>
       {fld('Nama Penyedia', 'penyedia')}
       {fld('Nilai Kontrak Pekerjaan (Rp)', 'nilaiKontrak', 'number')}
       {fld('Keterangan Kontrak', 'keterangan')}
@@ -523,7 +523,7 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
               onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-            <ComboBox value={ppk} options={pegawai.map(pg => pg.nama)} placeholder="ketik / pilih pegawai..." onChange={setPpk} /></div>
+            <SearchSelect value={ppk} options={pegawai.map(pg => ({ value: pg.nama, label: `${pg.nama} — ${pg.nip}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} /></div>
           {fld('Nama Penyedia', penyedia, setPenyedia)}
           {fld('Nilai Kontrak Pekerjaan (Rp)', nilaiKontrak, setNilaiKontrak, 'number')}
           {fld('Keterangan Kontrak', keterangan, setKeterangan)}

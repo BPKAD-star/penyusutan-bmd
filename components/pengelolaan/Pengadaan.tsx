@@ -32,7 +32,7 @@ import EditSpesifikasiModal from './EditSpesifikasiModal'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekeningPicker from '@/components/RekeningPicker'
 import ProgramPicker from '@/components/ProgramPicker'
-import ComboBox from '@/components/ComboBox'
+import SearchSelect from '@/components/SearchSelect'
 import { useDateBounds } from '@/components/useTahunBuku'
 
 type SumberPengadaan = 'kwitansi' | 'bukti_pembelian' | 'surat_pesanan' | 'spk'
@@ -965,7 +965,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Satuan</label>
-              <ComboBox value={satuan} options={satuanList.map(s => s.nama)} placeholder="ketik / pilih satuan..." className="text-sm" onChange={setSatuan} />
+              <SearchSelect value={satuan} options={satuanList.map(s => ({ value: s.nama, label: s.nama }))} placeholder="ketik untuk mencari satuan..." onChange={setSatuan} />
             </div>
             <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Harga / item</label><input className="select-filter w-full text-sm" inputMode="numeric" value={harga} onChange={e => setHarga(e.target.value)} /></div>
@@ -1181,7 +1181,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-            <ComboBox value={ppk} options={pegawaiList.map(p => p.nama)} placeholder="ketik / pilih pegawai..." onChange={setPpk} />
+            <SearchSelect value={ppk} options={pegawaiList.map(p => ({ value: p.nama, label: `${p.nama} — ${p.nip}${p.jabatan ? ` · ${p.jabatan}` : ''}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ketKontrak} onChange={e => setKetKontrak(e.target.value)} /></div>
@@ -1325,7 +1325,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
             <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Nama PPK</label>
-              <ComboBox value={ppk} options={pegawaiList.map(pg => pg.nama)} placeholder="ketik / pilih pegawai..." onChange={setPpk} />
+              <SearchSelect value={ppk} options={pegawaiList.map(pg => ({ value: pg.nama, label: `${pg.nama} — ${pg.nip}${pg.jabatan ? ` · ${pg.jabatan}` : ''}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
             </div>
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>
