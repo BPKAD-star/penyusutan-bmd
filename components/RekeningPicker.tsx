@@ -48,21 +48,22 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
     }
   }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cari (debounce) — hanya saat belum ada pilihan.
+  // Cari (debounce). Saat dropdown terbuka & belum mengetik → tampilkan 20
+  // rekening pertama supaya daftar langsung kelihatan begitu kolom diklik.
   useEffect(() => {
+    if (!open) return
     const term = search.trim().replace(/[,()]/g, '')
-    if (!term) { setResults([]); setLoading(false); return }
     setLoading(true)
     const t = setTimeout(async () => {
       let q = supabase.from('admin_rekening').select(COLS).eq('aktif', true)
       if (kelompok) q = q.eq('kelompok', kelompok)
-      q = q.or(`kode_sub_rincian.ilike.${term}%,uraian_sub_rincian.ilike.%${term}%`)
+      if (term) q = q.or(`kode_sub_rincian.ilike.${term}%,uraian_sub_rincian.ilike.%${term}%`)
       const { data } = await q.order('kode_sub_rincian').limit(20)
       setResults((data || []) as RekeningRow[])
       setLoading(false)
-    }, 250)
+    }, term ? 250 : 0)
     return () => clearTimeout(t)
-  }, [search, kelompok]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, kelompok, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tutup dropdown saat klik di luar.
   useEffect(() => {
@@ -116,7 +117,7 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
         placeholder="ketik untuk mencari kode rekening belanja..."
         autoComplete="off"
       />
-      {open && (search.trim() !== '' || loading) && (
+      {open && (loading || results.length > 0 || search.trim() !== '') && (
         <div className="absolute z-20 mt-1 w-full max-h-72 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg">
           {loading ? (
             <p className="px-3 py-2 text-xs text-gray-400">Mencari…</p>
