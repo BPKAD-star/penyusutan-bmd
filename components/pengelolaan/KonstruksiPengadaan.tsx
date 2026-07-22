@@ -12,6 +12,7 @@ import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import RekeningPicker from '@/components/RekeningPicker'
+import ProgramPicker from '@/components/ProgramPicker'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -260,9 +261,11 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
       {fld('No. Dokumen Kontrak', 'noKontrak')}
       <div><label className="block text-xs text-gray-500 mb-1">Tgl Dokumen Kontrak</label>
         <input type="date" min={bounds.min} max={bounds.max} className="select-filter w-full" value={f.tglKontrak} onChange={e => set('tglKontrak', e.target.value)} /></div>
-      {fld('Program', 'program')}
-      {fld('Kegiatan', 'kegiatan')}
-      {fld('Sub Kegiatan', 'subKeg')}
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Program / Kegiatan / Sub Kegiatan</label>
+        <ProgramPicker program={f.program} kegiatan={f.kegiatan} subKeg={f.subKeg}
+          onChange={sel => setF(s => ({ ...s, program: sel.program, kegiatan: sel.kegiatan, subKeg: sel.sub_kegiatan }))} />
+      </div>
       <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
         <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
           <option value="">— pilih pegawai —</option>
@@ -516,9 +519,11 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
             <input type="date" className="select-filter w-full sm:w-64" max={bounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
             {pindahSemester && <p className="text-xs text-red-600 mt-1">Tanggal ini masuk {periodeDariTanggal(tgl)} — di luar semester kontrak.</p>}
           </div>
-          {fld('Program', program, setProgram)}
-          {fld('Kegiatan', kegiatan, setKegiatan)}
-          {fld('Sub Kegiatan', subKeg, setSubKeg)}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Program / Kegiatan / Sub Kegiatan</label>
+            <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg}
+              onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
+          </div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
             <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
               <option value="">— pilih pegawai —</option>

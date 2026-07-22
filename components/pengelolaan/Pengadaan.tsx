@@ -31,6 +31,7 @@ import FormShell from './FormShell'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekeningPicker from '@/components/RekeningPicker'
+import ProgramPicker from '@/components/ProgramPicker'
 import { useDateBounds } from '@/components/useTahunBuku'
 
 type SumberPengadaan = 'kwitansi' | 'bukti_pembelian' | 'surat_pesanan' | 'spk'
@@ -1175,9 +1176,11 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
               value={tglKontrak} onChange={e => setTglKontrak(e.target.value)} />
             {tglKontrak && <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tglKontrak)}</p>}
           </div>
-          <div><label className="block text-xs text-gray-500 mb-1">Program</label><input className="select-filter w-full" value={program} onChange={e => setProgram(e.target.value)} placeholder="teks bebas (dropdown menyusul)" /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Kegiatan</label><input className="select-filter w-full" value={kegiatan} onChange={e => setKegiatan(e.target.value)} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label><input className="select-filter w-full" value={subKeg} onChange={e => setSubKeg(e.target.value)} /></div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Program / Kegiatan / Sub Kegiatan</label>
+            <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg}
+              onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
+          </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
             <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
@@ -1318,9 +1321,11 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
             <input type="date" className="select-filter w-full sm:w-64" max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
             {pindahSemester && <p className="text-xs text-red-600 mt-1">Tanggal ini masuk {periodeDariTanggal(tgl)} — di luar semester jurnal.</p>}
           </div>
-          <div><label className="block text-xs text-gray-500 mb-1">Program</label><input className="select-filter w-full" value={program} onChange={e => setProgram(e.target.value)} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Kegiatan</label><input className="select-filter w-full" value={kegiatan} onChange={e => setKegiatan(e.target.value)} /></div>
-          <div><label className="block text-xs text-gray-500 mb-1">Sub Kegiatan</label><input className="select-filter w-full" value={subKeg} onChange={e => setSubKeg(e.target.value)} /></div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Program / Kegiatan / Sub Kegiatan</label>
+            <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg}
+              onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
+          </div>
           <div className="space-y-4">
             <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
             <div>
