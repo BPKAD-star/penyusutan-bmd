@@ -57,8 +57,15 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
     const t = setTimeout(async () => {
       let q = supabase.from('admin_rekening').select(COLS).eq('aktif', true)
       if (kelompok) q = q.eq('kelompok', kelompok)
-      if (term) q = q.or(`kode_sub_rincian.ilike.${term}%,uraian_sub_rincian.ilike.%${term}%`)
-      const { data } = await q.order('kode_sub_rincian').limit(20)
+      // Cari luas: kode + nama di semua level (Objek, Rincian Objek, Sub Rincian)
+      // supaya kata seperti "software" tetap ketemu walau ada di level atasnya.
+      if (term) q = q.or([
+        `kode_sub_rincian.ilike.%${term}%`,
+        `uraian_sub_rincian.ilike.%${term}%`,
+        `uraian_rincian_objek.ilike.%${term}%`,
+        `uraian_objek.ilike.%${term}%`,
+      ].join(','))
+      const { data } = await q.order('kode_sub_rincian').limit(50)
       setResults((data || []) as RekeningRow[])
       setLoading(false)
     }, term ? 250 : 0)
