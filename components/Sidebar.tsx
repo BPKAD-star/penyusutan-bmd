@@ -90,6 +90,7 @@ const navTree: NavNode[] = [
         ],
       },
       { type: 'leaf', href: '/dashboard/pelaporan/bmd', label: 'Laporan BMD' },
+      { type: 'leaf', href: '/dashboard/pelaporan/lra', label: 'LRA' },
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi', label: 'Rekonsiliasi BMD' },
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi/rincian', label: 'Rincian Transaksi (Bukti Dukung)' },
       { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
