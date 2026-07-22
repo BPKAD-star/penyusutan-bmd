@@ -13,6 +13,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import RekeningPicker from '@/components/RekeningPicker'
 import ProgramPicker from '@/components/ProgramPicker'
+import ComboBox from '@/components/ComboBox'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -267,10 +268,7 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
           onChange={sel => setF(s => ({ ...s, program: sel.program, kegiatan: sel.kegiatan, subKeg: sel.sub_kegiatan }))} />
       </div>
       <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-        <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
-          <option value="">— pilih pegawai —</option>
-          {pegawai.map((p, i) => <option key={i} value={p.nama}>{p.nama} — {p.nip}</option>)}
-        </select></div>
+        <ComboBox value={ppk} options={pegawai.map(p => p.nama)} placeholder="ketik / pilih pegawai..." onChange={setPpk} /></div>
       {fld('Nama Penyedia', 'penyedia')}
       {fld('Nilai Kontrak Pekerjaan (Rp)', 'nilaiKontrak', 'number')}
       {fld('Keterangan Kontrak', 'keterangan')}
@@ -525,11 +523,7 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
               onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-            <select className="select-filter w-full" value={ppk} onChange={e => setPpk(e.target.value)}>
-              <option value="">— pilih pegawai —</option>
-              {ppk && !pegawai.some(pg => pg.nama === ppk) && <option value={ppk}>{ppk}</option>}
-              {pegawai.map((pg, i) => <option key={i} value={pg.nama}>{pg.nama} — {pg.nip}</option>)}
-            </select></div>
+            <ComboBox value={ppk} options={pegawai.map(pg => pg.nama)} placeholder="ketik / pilih pegawai..." onChange={setPpk} /></div>
           {fld('Nama Penyedia', penyedia, setPenyedia)}
           {fld('Nilai Kontrak Pekerjaan (Rp)', nilaiKontrak, setNilaiKontrak, 'number')}
           {fld('Keterangan Kontrak', keterangan, setKeterangan)}

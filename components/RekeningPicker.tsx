@@ -1,15 +1,12 @@
 'use client'
-// Picker Kode Rekening Belanja — baca master admin_rekening (bagan akun belanja
-// daerah berjenjang). User cari & pilih sampai level DAUN (Sub Rincian Objek);
-// begitu dipilih, hierarki di atasnya (Akun › Kelompok › Jenis › Objek › Rincian
-// Objek) ditampilkan sbg breadcrumb — GRATIS, karena tiap baris admin_rekening
-// sudah bawa semua kode+uraian induknya (denormalisasi 1:1 dgn sumber).
+// Picker Kode Rekening Belanja (master admin_rekening). KETIK BEBAS + saran:
+// input boleh diisi apa saja (nilai = apa yang diketik); sambil mengetik muncul
+// dropdown saran dari admin_rekening yang bisa diklik. Kalau nilai saat ini
+// PERSIS sebuah kode Sub Rincian yang valid, breadcrumb hierarki (Akun ›
+// Kelompok › Jenis › Objek › Rincian Objek) ditampilkan di bawah input.
 //
-// Nilai yang disimpan (onChange) = kode_sub_rincian (kode penuh, mis.
-// 5.2.02.05.001.00005) — cocok dgn payload.kode_rekening di Pengadaan/Konstruksi
-// & kolom kode_rekening di lra_realisasi.
-//
-// Dipakai di: Pengadaan (per barang) & Konstruksi/KDP (per termin).
+// Nilai tersimpan saat memilih saran = kode_sub_rincian (kode penuh). Diketik
+// bebas = apa adanya. Dipakai di Pengadaan (per barang) & Konstruksi (per termin).
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -27,35 +24,36 @@ const COLS =
   'kode_klasifikasi,uraian_klasifikasi,kode_jenis,uraian_jenis,' +
   'kode_objek,uraian_objek,kode_rincian_objek,uraian_rincian_objek'
 
+// Bentuk kode Sub Rincian penuh: 6 kelompok angka (5.1.01.01.001.00001).
+const KODE_PENUH = /^\d+\.\d+\.\d+\.\d+\.\d+\.\d+$/
+
 export default function RekeningPicker({ value, onChange, kelompok, className }: {
   value: string
   onChange: (kode: string) => void
-  /** filter opsional ke satu kelompok (mis. 'modal' = 5.2). Kosong = semua belanja. */
   kelompok?: 'operasi' | 'modal' | 'tak_terduga' | 'transfer'
   className?: string
 }) {
   const supabase = createClient()
-  const [search, setSearch] = useState('')
   const [results, setResults] = useState<RekeningRow[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [picked, setPicked] = useState<RekeningRow | null>(null)
+  const [picked, setPicked] = useState<RekeningRow | null>(null) // baris breadcrumb bila value = kode valid
   const boxRef = useRef<HTMLDivElement>(null)
 
-  // Kalau `value` sudah terisi (mis. draft dibuka lagi) tapi baris belum dimuat,
-  // ambil sekali supaya breadcrumb tetap tampil. Kalau value dikosongkan, reset.
+  // Breadcrumb: ambil baris HANYA kalau value berbentuk kode penuh.
   useEffect(() => {
-    if (value && picked?.kode_sub_rincian !== value) {
-      supabase.from('admin_rekening').select(COLS).eq('kode_sub_rincian', value).maybeSingle()
-        .then(({ data }) => { if (data) setPicked(data as RekeningRow) })
-    } else if (!value && picked) {
-      setPicked(null)
-    }
+    const v = (value || '').trim()
+    if (!KODE_PENUH.test(v)) { setPicked(null); return }
+    if (picked?.kode_sub_rincian === v) return
+    let alive = true
+    supabase.from('admin_rekening').select(COLS).eq('kode_sub_rincian', v).maybeSingle()
+      .then(({ data }) => { if (alive) setPicked(data ? (data as RekeningRow) : null) })
+    return () => { alive = false }
   }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cari (debounce). Pola .or() ilike sama spt pencarian kodefikasi di Pengadaan.
+  // Saran: cari berdasarkan teks yang sedang diketik (debounce).
   useEffect(() => {
-    const term = search.trim().replace(/[,()]/g, '') // buang char yg bisa rusakin .or()
+    const term = (value || '').trim().replace(/[,()]/g, '')
     if (!term) { setResults([]); setLoading(false); return }
     setLoading(true)
     const t = setTimeout(async () => {
@@ -67,7 +65,7 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
       setLoading(false)
     }, 250)
     return () => clearTimeout(t)
-  }, [search, kelompok]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [value, kelompok]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tutup dropdown saat klik di luar.
   useEffect(() => {
@@ -79,53 +77,23 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
   }, [])
 
   function pick(r: RekeningRow) {
-    setPicked(r); onChange(r.kode_sub_rincian)
-    setSearch(''); setResults([]); setOpen(false)
-  }
-  function clear() { setPicked(null); onChange(''); setSearch(''); setResults([]) }
-
-  if (picked) {
-    return (
-      <div className={className}>
-        <div className="rounded-lg border border-teal/40 bg-teal/5 px-3 py-2">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-800 font-mono">{picked.kode_sub_rincian}</p>
-              <p className="text-xs text-gray-600">{picked.uraian_sub_rincian}</p>
-            </div>
-            <button type="button" onClick={clear} className="text-xs text-red-500 hover:text-red-700 flex-shrink-0">Ganti</button>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-gray-400">
-            <Crumb kode={picked.kode_rekening} uraian={picked.uraian_rekening} />
-            <span>›</span>
-            <Crumb kode={picked.kode_klasifikasi} uraian={picked.uraian_klasifikasi} />
-            <span>›</span>
-            <Crumb kode={picked.kode_jenis} uraian={picked.uraian_jenis} />
-            <span>›</span>
-            <Crumb kode={picked.kode_objek} uraian={picked.uraian_objek} />
-            <span>›</span>
-            <Crumb kode={picked.kode_rincian_objek} uraian={picked.uraian_rincian_objek} />
-          </div>
-        </div>
-      </div>
-    )
+    onChange(r.kode_sub_rincian); setPicked(r); setResults([]); setOpen(false)
   }
 
   return (
     <div ref={boxRef} className={`relative ${className || ''}`}>
       <input
         className="select-filter w-full"
-        value={search}
-        onChange={e => { setSearch(e.target.value); setOpen(true) }}
+        value={value}
+        onChange={e => { onChange(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
-        placeholder="cari kode / nama rekening belanja..."
+        placeholder="ketik / cari kode rekening belanja..."
+        autoComplete="off"
       />
-      {open && (search.trim() !== '' || loading) && (
+      {open && (results.length > 0 || loading) && (
         <div className="absolute z-20 mt-1 w-full max-h-72 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg">
           {loading ? (
             <p className="px-3 py-2 text-xs text-gray-400">Mencari…</p>
-          ) : results.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-gray-400">Tidak ada hasil.</p>
           ) : (
             results.map(r => (
               <button
@@ -138,6 +106,22 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
               </button>
             ))
           )}
+        </div>
+      )}
+      {picked && (
+        <div className="mt-1 rounded-lg border border-teal/40 bg-teal/5 px-3 py-2">
+          <p className="text-xs text-gray-700"><span className="font-mono font-semibold">{picked.kode_sub_rincian}</span> — {picked.uraian_sub_rincian}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-gray-400">
+            <Crumb kode={picked.kode_rekening} uraian={picked.uraian_rekening} />
+            <span>›</span>
+            <Crumb kode={picked.kode_klasifikasi} uraian={picked.uraian_klasifikasi} />
+            <span>›</span>
+            <Crumb kode={picked.kode_jenis} uraian={picked.uraian_jenis} />
+            <span>›</span>
+            <Crumb kode={picked.kode_objek} uraian={picked.uraian_objek} />
+            <span>›</span>
+            <Crumb kode={picked.kode_rincian_objek} uraian={picked.uraian_rincian_objek} />
+          </div>
         </div>
       )}
     </div>
