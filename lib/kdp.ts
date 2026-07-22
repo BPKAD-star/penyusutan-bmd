@@ -164,8 +164,20 @@ export async function unapproveKontrakKonstruksi(supabase: SupabaseClient, heade
 
   if (asetIds.length) {
     // Event balik per akumulasi (append-only), satu batch utk semua barang.
-    const { data: trxs } = await supabase.from('transaksi_bmd').select('aset_id,tanggal,nilai').in('aset_id', asetIds).eq('jenis', 'akumulasi_kdp')
-    const balik = ((trxs || []) as { aset_id: string; tanggal: string; nilai: number }[]).map(t => ({
+    const { data: trxs } = await supabase.from('transaksi_bmd').select('id,aset_id,tanggal,nilai').in('aset_id', asetIds).eq('jenis', 'akumulasi_kdp')
+    const akum = (trxs || []) as { id: number; aset_id: string; tanggal: string; nilai: number }[]
+    // Guard rantai: kalau ada barang KDP yg sudah punya transaksi LEBIH BARU
+    // setelah akumulasi terakhirnya (mis. reklas ke aset jadi, koreksi, penghapusan),
+    // buka kunci DIBLOKIR — soft-delete di tengah rantai merusak replay engine.
+    // Batalkan transaksi yg lebih baru itu dulu.
+    const maxAkum = new Map<string, number>()
+    for (const t of akum) maxAkum.set(t.aset_id, Math.max(maxAkum.get(t.aset_id) ?? 0, t.id))
+    for (const [aid, threshold] of maxAkum) {
+      const { count } = await supabase.from('transaksi_bmd')
+        .select('id', { count: 'exact', head: true }).eq('aset_id', aid).gt('id', threshold)
+      if ((count || 0) > 0) return { error: 'Ada barang KDP dengan transaksi LEBIH BARU setelah akumulasi terakhir (mis. reklas/koreksi/penghapusan) — batalkan transaksi itu dulu sebelum buka kunci.' }
+    }
+    const balik = akum.map(t => ({
       aset_id: t.aset_id, jenis: 'batal_akumulasi_kdp', periode: periodeDariTanggal(t.tanggal), tanggal: t.tanggal,
       nilai: -Number(t.nilai || 0), header_id: headerId, payload: {},
     }))

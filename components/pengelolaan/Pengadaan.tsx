@@ -76,6 +76,7 @@ type Header = {
 }
 // Barang yang SUDAH disetujui (dibaca dari aset+ledger, bukan draft).
 type JurnalLine = {
+  trx_id: number
   aset_id: string; nibar: string | null; kode: string; uraian_barang: string | null; nama_barang: string | null
   satuan: string | null; intra_ekstra: string | null; nilai: number; tanggal: string
   rekening: string
@@ -198,7 +199,7 @@ export async function fetchPengadaanJurnals(supabase: ReturnType<typeof createCl
       const fields: Record<string, string> = {}
       for (const k of ASET_FIELD_COLS) { const v = r.aset[k]; if (v != null) fields[k] = String(v) }
       j.lines.push({
-        aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, uraian_barang: r.aset.uraian_barang, nama_barang: r.aset.nama_barang,
+        trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, uraian_barang: r.aset.uraian_barang, nama_barang: r.aset.nama_barang,
         satuan: r.aset.satuan, intra_ekstra: r.aset.intra_ekstra, nilai: r.nilai, tanggal: r.tanggal,
         rekening: r.payload?.kode_rekening || '', foto_paths: r.aset.foto_paths || [], fields,
       })
@@ -587,6 +588,18 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
   async function unapproveHeader() {
     if (!confirm(`Buka kunci kontrak ${j.no_sk}?\n${j.lines.length} barang dikembalikan ke draft & DIHAPUS dari Daftar Barang/Penyusutan sampai disetujui lagi. NIBAR akan digenerate ulang saat approve berikutnya.`)) return
     setBusy(true); onMsg('')
+    // Guard rantai: kalau ada barang yg sudah punya transaksi LEBIH BARU setelah
+    // pengadaan (mis. dialihkan ke SKPD lain, dimanfaatkan, dikapitalisasi, direklas),
+    // buka kunci DIBLOKIR — soft-delete pengadaan di tengah rantai merusak state &
+    // meninggalkan transaksi yatim. Batalkan transaksi yg lebih baru itu dulu.
+    for (const l of j.lines) {
+      const { count } = await supabase.from('transaksi_bmd')
+        .select('id', { count: 'exact', head: true }).eq('aset_id', l.aset_id).gt('id', l.trx_id)
+      if ((count || 0) > 0) {
+        onMsg(`Error: "${l.nama_barang || l.uraian_barang || l.nibar}" punya transaksi LEBIH BARU (mis. pengalihan/pemanfaatan/kapitalisasi) setelah pengadaan ini — batalkan transaksi itu dulu, baru buka kunci.`)
+        setBusy(false); return
+      }
+    }
     for (const l of j.lines) {
       const { error } = await catatTransaksi(supabase, {
         asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal, headerId: j.id,

@@ -32,6 +32,25 @@ apa pun yang menyentuh ledger atau engine.
   dibatalkan lewat `payload.target_trx_id` (pola `kapDibatalkan` di
   lib/engine/penyusutan.ts) — BUKAN hapus baris & BUKAN reklas-balik (reklas-
   balik salah utk lintas-golongan krn fresh-start dobel).
+  **Implementasi guard (client-side, cek `transaksi_bmd` aset_id sama dgn
+  `id > trx_id_dibatalkan` → count>0 = blokir; TAK ADA trigger DB) kini terpasang
+  di SEMUA titik pembatalan yg MENGUBAH state engine:** Reklasifikasi
+  (`batalReklas`), Koreksi Nilai/Spek/Ganda (`batalKoreksi`), Batal Pemecahan
+  (`handleBatalPemecahan` — cek induk + tiap pecahan), Kapitalisasi (`batal` —
+  cek induk; anak terserap sudah tersembunyi jadi tak mungkin dpt trx baru),
+  Penghapusan (`batalBarang`/`hapusBarang` jalur penghapusan), Unapprove Pengadaan
+  (`unapproveHeader` → `batal_pengadaan`, cegah "pengalihan/pemanfaatan di depan
+  pengadaan"), Unapprove Konstruksi/KDP (`unapproveKontrakKonstruksi`, cek per
+  aset vs akumulasi terakhir). Utk sinkron guard butuh `trx_id` (id baris ledger
+  event asli) di tiap line — Pengadaan/Penghapusan/Pemecahan menyimpannya saat
+  load; Kapitalisasi pakai `j.id` (id baris kapitalisasi induk). **PENGECUALIAN
+  sengaja (keputusan user 2026-07-22): Batal Pemanfaatan & Pengamanan TIDAK
+  di-guard di sisi batalnya** — keduanya event NETRAL (engine `default: break`,
+  keanggotaan kartu = replay kronologis baris-terakhir-menang, self-healing), jadi
+  membatalkannya tak bisa merusak state. Tapi keduanya TETAP terhitung sbg
+  "transaksi lebih baru" yg MEMBLOKIR batal event engine di bawahnya (guard pakai
+  `.gt('id')` yg menghitung semua baris). Kalau nambah menu batal engine-affecting
+  baru, WAJIB pasang guard yg sama.
 
 - **Batal Koreksi (migrasi 20260719_04) — 3 jenis, mekanik beda:** Menu Koreksi
   (Nilai/Spesifikasi/Pencatatan Ganda) punya tombol Batal per baris (kartu

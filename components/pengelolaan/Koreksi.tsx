@@ -89,7 +89,7 @@ type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
 // ── Pemecahan Barang (alasan ke-4 di Tambah Jurnal: 1 induk → N pecahan) ────
 type PemecahanHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null }
-type PemecahanRow = { aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; jumlah: number; nilai: number }
+type PemecahanRow = { trx_id: number; aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; jumlah: number; nilai: number }
 type PemecahanJurnal = PemecahanHeader & { induk: PemecahanRow | null; pecahan: PemecahanRow[]; total: number; dibatalkan: boolean }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori'
@@ -215,12 +215,12 @@ function KoreksiTransaksi() {
     const pemIds = pemHeaders.map(h => h.id)
     if (pemIds.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select('header_id,jenis,nilai,aset:aset_id(id,nibar,nama_barang,kode,jumlah)')
+        .select('id,header_id,jenis,nilai,aset:aset_id(id,nibar,nama_barang,kode,jumlah)')
         .in('jenis', ['pemecahan_keluar', 'pemecahan_masuk', 'batal_pemecahan'] as never)
         .in('header_id', pemIds)
         .order('id', { ascending: true })
       const rows = (data || []) as unknown as {
-        header_id: string; jenis: string; nilai: number
+        id: number; header_id: string; jenis: string; nilai: number
         aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; jumlah: number } | null
       }[]
       for (const r of rows) {
@@ -228,7 +228,7 @@ function KoreksiTransaksi() {
         if (!j) continue
         if (r.jenis === 'batal_pemecahan') { j.dibatalkan = true; continue }
         if (!r.aset) continue
-        const row: PemecahanRow = { aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, jumlah: r.aset.jumlah, nilai: r.nilai }
+        const row: PemecahanRow = { trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, jumlah: r.aset.jumlah, nilai: r.nilai }
         if (r.jenis === 'pemecahan_keluar') j.induk = row
         else { j.pecahan.push(row); j.total += r.nilai }
       }
@@ -294,6 +294,17 @@ function KoreksiTransaksi() {
       return
     }
     if (!confirm(`Batalkan pemecahan No. ${j.no_sk}? Induk akan aktif kembali dan ${j.pecahan.length} pecahan dibuang.`)) return
+    // Guard rantai: induk & tiap pecahan tak boleh punya transaksi LEBIH BARU
+    // setelah pemecahan ini (mis. koreksi/reklas di atas pecahan) — batalkan yang
+    // lebih baru dulu, kalau tidak replay engine rusak.
+    for (const r of [...(j.induk ? [j.induk] : []), ...j.pecahan]) {
+      const { count } = await supabase.from('transaksi_bmd')
+        .select('id', { count: 'exact', head: true }).eq('aset_id', r.aset_id).gt('id', r.trx_id)
+      if ((count || 0) > 0) {
+        setMsg(`Error: "${r.nama_barang || r.nibar}" punya transaksi LEBIH BARU setelah pemecahan ini — batalkan yang lebih baru dulu.`)
+        return
+      }
+    }
     setBatalId(j.id)
     setMsg('')
     if (j.induk) {

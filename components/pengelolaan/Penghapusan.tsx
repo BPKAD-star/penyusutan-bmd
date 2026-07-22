@@ -80,6 +80,7 @@ type Header = {
   payload: HeaderPayload | null
 }
 type JurnalLine = {
+  trx_id: number
   aset_id: string
   nibar: string | null
   kode: string
@@ -155,7 +156,7 @@ export default function Penghapusan() {
     for (const j of jmap.values()) {
       if (j.kategori === 'pengalihan_status' && j.approval_status !== 'disetujui') {
         for (const d of j.payload?.draft_items || []) {
-          j.lines.push({ ...d })
+          j.lines.push({ ...d, trx_id: 0 }) // draft pengalihan pending: tak ada ledger; trx_id placeholder (tak dipakai batal_penghapusan)
           j.total += d.nilai
         }
       }
@@ -195,7 +196,7 @@ export default function Penghapusan() {
           if (r.payload?.reversal) continue
         }
         j.lines.push({
-          aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
+          trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
         })
         j.total += r.nilai
@@ -233,6 +234,16 @@ export default function Penghapusan() {
       return
     }
     if (!confirm('Batalkan penghapusan barang ini? Barang akan kembali aktif dan penyusutan dilanjutkan.')) return
+    // Guard rantai: barang tak boleh punya transaksi LEBIH BARU setelah penghapusan
+    // ini — batalkan yang lebih baru dulu, kalau tidak replay engine rusak.
+    {
+      const { count } = await supabase.from('transaksi_bmd')
+        .select('id', { count: 'exact', head: true }).eq('aset_id', l.aset_id).gt('id', l.trx_id)
+      if ((count || 0) > 0) {
+        setMsg(`Error: "${l.nama_barang || l.nibar}" punya transaksi LEBIH BARU setelah penghapusan ini — batalkan yang lebih baru dulu.`)
+        return
+      }
+    }
     // Reversal dicatat di PERIODE penghapusan asli (header.tanggal), bukan hari ini —
     // supaya di view periode itu barang langsung kembali muncul (konsisten Daftar Barang).
     const { error } = await catatTransaksi(supabase, {
