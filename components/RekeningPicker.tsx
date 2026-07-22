@@ -86,20 +86,16 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
         <div className="rounded-lg border border-teal/40 bg-teal/5 px-3 py-2">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-800 font-mono">{picked.kode_sub_rincian}</p>
+              <p className="text-sm font-semibold text-gray-800">{picked.kode_sub_rincian}</p>
               <p className="text-xs text-gray-600">{picked.uraian_sub_rincian}</p>
             </div>
             <button type="button" onClick={ganti} className="text-xs text-red-500 hover:text-red-700 flex-shrink-0">Ganti</button>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-gray-400">
+          <div className="mt-2 space-y-0.5 text-[11px]">
             <Crumb kode={picked.kode_rekening} uraian={picked.uraian_rekening} />
-            <span>›</span>
             <Crumb kode={picked.kode_klasifikasi} uraian={picked.uraian_klasifikasi} />
-            <span>›</span>
             <Crumb kode={picked.kode_jenis} uraian={picked.uraian_jenis} />
-            <span>›</span>
             <Crumb kode={picked.kode_objek} uraian={picked.uraian_objek} />
-            <span>›</span>
             <Crumb kode={picked.kode_rincian_objek} uraian={picked.uraian_rincian_objek} />
           </div>
         </div>
@@ -129,7 +125,7 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
                 type="button" key={r.kode_sub_rincian} onClick={() => pick(r)}
                 className="block w-full text-left px-3 py-2 hover:bg-teal/5 border-b border-gray-50 last:border-0"
               >
-                <span className="text-xs font-medium text-gray-800 font-mono">{r.kode_sub_rincian}</span>
+                <span className="text-xs font-medium text-gray-800">{r.kode_sub_rincian}</span>
                 <span className="block text-[11px] text-gray-600">{r.uraian_sub_rincian}</span>
                 <span className="block text-[10px] text-gray-400 truncate">{r.kode_objek} · {r.uraian_objek}</span>
               </button>
@@ -143,8 +139,6 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
 
 function Crumb({ kode, uraian }: { kode: string; uraian: string }) {
   return (
-    <span className="whitespace-nowrap">
-      <span className="font-mono text-gray-500">{kode}</span> {uraian}
-    </span>
+    <div><span className="font-medium text-gray-600">{kode}</span> <span className="text-gray-500">{uraian}</span></div>
   )
 }

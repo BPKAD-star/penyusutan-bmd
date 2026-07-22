@@ -252,8 +252,8 @@ export default function GisPage() {
             </div>
             <div className="space-y-2 text-xs">
               <div className="flex justify-between gap-3"><span className="text-gray-400">SKPD</span><span className="text-gray-700 text-right">{selected.skpd?.nama || '-'}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400">Kode Barang</span><span className="text-gray-700 font-mono text-right">{selected.kode}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400">NIBAR</span><span className="text-gray-700 font-mono text-right break-all">{selected.nibar || '-'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400">Kode Barang</span><span className="text-gray-700 text-right">{selected.kode}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400">NIBAR</span><span className="text-gray-700 text-right break-all">{selected.nibar || '-'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Uraian Barang</span><span className="text-gray-700 text-right">{selected.uraian_barang || '-'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Spesifikasi Nama Barang</span><span className="text-gray-700 text-right">{selected.spesifikasi_lainnya || '-'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-gray-400">Luas</span><span className="text-gray-700 text-right">{fmtLuas(selected.luas)}</span></div>

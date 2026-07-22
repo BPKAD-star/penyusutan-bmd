@@ -141,7 +141,7 @@ function SKPDCombobox({ skpdList, value, onChange }: {
         autoComplete="off"
       />
       {selected && !open && (
-        <p className="mt-1 text-xs text-slate-500 font-mono">
+        <p className="mt-1 text-xs text-slate-500">
           {selected.kode_lokasi || '-'} · Kelompok {selected.kelompok_fpk ?? '-'} (FPK)
         </p>
       )}
@@ -151,7 +151,7 @@ function SKPDCombobox({ skpdList, value, onChange }: {
             <li key={s.id} onMouseDown={() => { onChange(String(s.id)); setQuery(''); setOpen(false) }}
               className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0">
               <p className="text-sm font-medium text-slate-900">{s.nama}</p>
-              <p className="text-xs text-slate-400 font-mono">{s.kode_lokasi || '-'} · Klpk {s.kelompok_fpk ?? '-'}</p>
+              <p className="text-xs text-slate-400">{s.kode_lokasi || '-'} · Klpk {s.kelompok_fpk ?? '-'}</p>
             </li>
           ))}
         </ul>
@@ -219,7 +219,7 @@ function ParamTL({
         <div>
           <p className="text-sm font-medium text-slate-800">{label}</p>
           <p className="text-xs text-slate-400 mt-0.5">
-            <span className="font-mono">{kode}</span> · bobot {(bobot * 100).toFixed(0)}%
+            <span>{kode}</span> · bobot {(bobot * 100).toFixed(0)}%
             {showFPK && <span className="ml-1">· FPK ×{fpkTemuan.toFixed(1)}</span>}
           </p>
         </div>
@@ -269,7 +269,7 @@ function ParamTanggal({
         <div>
           <p className="text-sm font-medium text-slate-800">{label}</p>
           <p className="text-xs text-slate-400 mt-0.5">
-            <span className="font-mono">{kode}</span> · bobot {(bobot * 100).toFixed(0)}%
+            <span>{kode}</span> · bobot {(bobot * 100).toFixed(0)}%
           </p>
         </div>
         <IndeksBadge indeks={indeks} />
@@ -297,7 +297,7 @@ function ParamBulanan({ jumlah, onChange }: { jumlah: number; onChange: (v: numb
         <div>
           <p className="text-sm font-medium text-slate-800">Laporan Bulanan Penatausahaan BMD</p>
           <p className="text-xs text-slate-400 mt-0.5">
-            <span className="font-mono">SP.2.4.1.1</span> · Berapa bulan tepat waktu (0–12)
+            <span>SP.2.4.1.1</span> · Berapa bulan tepat waktu (0–12)
           </p>
         </div>
         <IndeksBadge indeks={indeks} />
@@ -345,7 +345,7 @@ function ParamRasioRp({
         <div>
           <p className="text-sm font-medium text-slate-800">{label}</p>
           <p className="text-xs text-slate-400 mt-0.5">
-            <span className="font-mono">{kode}</span> · bobot {(bobot * 100).toFixed(0)}%
+            <span>{kode}</span> · bobot {(bobot * 100).toFixed(0)}%
             · FPK ×{fpkLaporan.toFixed(1)}
           </p>
         </div>
@@ -402,7 +402,7 @@ function ParamSertifikasi({
         <div>
           <p className="text-sm text-slate-800">{label}</p>
           <p className="text-xs text-slate-400 mt-0.5">
-            <span className="font-mono">{kode}</span> · bobot {(bobot * 100).toFixed(0)}%
+            <span>{kode}</span> · bobot {(bobot * 100).toFixed(0)}%
           </p>
         </div>
         <div className="flex-shrink-0 flex flex-col items-end gap-1">
@@ -667,7 +667,7 @@ export default function FormPenilaian({
             {lockedSkpdId && selectedSkpd ? (
               <div className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg">
                 <p className="text-sm font-medium text-slate-900">{selectedSkpd.nama}</p>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   {selectedSkpd.kode_lokasi || '-'} · Kelompok {selectedSkpd.kelompok_fpk ?? '-'} (FPK)
                 </p>
               </div>
@@ -733,7 +733,7 @@ export default function FormPenilaian({
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
                       <p className="text-sm font-medium text-slate-800">TL Pemanfaatan / Pemindahtanganan / Penghapusan BMD</p>
-                      <p className="text-xs text-slate-400 mt-0.5"><span className="font-mono">SP.3.7.1.1</span> · bobot 30% dalam NP.3.7.1 · FPK ×{fpkLaporan.toFixed(1)}</p>
+                      <p className="text-xs text-slate-400 mt-0.5"><span>SP.3.7.1.1</span> · bobot 30% dalam NP.3.7.1 · FPK ×{fpkLaporan.toFixed(1)}</p>
                     </div>
                     <IndeksBadge indeks={scores.h3.sp3711.indeks} />
                   </div>

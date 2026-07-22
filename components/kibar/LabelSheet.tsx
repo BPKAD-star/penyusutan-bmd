@@ -65,7 +65,7 @@ export default function LabelSheet({ items, onClose }: { items: LabelItem[]; onC
                 <p className="font-semibold text-gray-800 truncate">{it.skpdNama}</p>
                 <p className="text-gray-700 truncate">{it.namaBarang}</p>
                 {it.merekTipe && <p className="text-gray-500 truncate">{it.merekTipe}</p>}
-                <p className="font-mono text-gray-600 text-[8px] leading-tight">{it.nibar}</p>
+                <p className="text-gray-600 text-[8px] leading-tight">{it.nibar}</p>
                 <p className="text-gray-500">{fmtTgl(it.tglPerolehan)}</p>
               </div>
             </div>

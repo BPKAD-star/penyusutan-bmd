@@ -164,7 +164,7 @@ export default function KibarSearchPage() {
                 {rows.map(r => (
                   <tr key={r.id}>
                     <td className="table-td"><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
-                    <td className="table-td text-xs font-mono">{r.nibar || '-'}</td>
+                    <td className="table-td text-xs">{r.nibar || '-'}</td>
                     <td className="table-td text-xs">{golonganLabels[kodeLevel3(r.kode)] || kodeLevel3(r.kode)}</td>
                     <td className="table-td text-xs">{r.uraian_barang || '-'}</td>
                     <td className="table-td text-xs">{r.nama_barang || '-'}</td>

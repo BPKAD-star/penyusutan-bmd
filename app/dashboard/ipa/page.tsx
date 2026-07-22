@@ -402,7 +402,7 @@ export default function DashboardIPAPage() {
                     <td className="px-4 py-3 text-xs text-slate-400 tabular-nums">{idx + 1}</td>
                     <td className="px-4 py-3 min-w-[180px]">
                       <p className="text-sm font-medium text-slate-900 truncate max-w-xs">{r.skpd?.nama ?? '—'}</p>
-                      <p className="text-xs text-slate-400 font-mono">{r.skpd?.kode_lokasi ?? ''}</p>
+                      <p className="text-xs text-slate-400">{r.skpd?.kode_lokasi ?? ''}</p>
                     </td>
                     <td className="px-4 py-3 text-center">{r.skpd?.kelompok_fpk ? <KelompokBadge k={r.skpd.kelompok_fpk} /> : '—'}</td>
                     <td className="px-4 py-3 text-center">

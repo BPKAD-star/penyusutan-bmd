@@ -101,7 +101,7 @@ function Row({ label, value, sub, mono }: { label: string; value: React.ReactNod
     <div className={`flex text-sm py-1 ${sub ? 'pl-5' : ''}`}>
       <span className="text-gray-500 w-56 flex-shrink-0">{label}</span>
       <span className="text-gray-400 pr-2">:</span>
-      <span className={`text-gray-800 min-w-0 break-words ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
+      <span className={`text-gray-800 min-w-0 break-words ${mono ? 'text-xs' : ''}`}>{value}</span>
     </div>
   )
 }
@@ -118,7 +118,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="card p-8 text-center max-w-md">
           <p className="text-lg font-semibold text-gray-800">Barang tidak ditemukan</p>
-          <p className="text-sm text-gray-500 mt-2">NIBAR <span className="font-mono">{params.nibar}</span> tidak terdaftar di register BMD.</p>
+          <p className="text-sm text-gray-500 mt-2">NIBAR <span>{params.nibar}</span> tidak terdaftar di register BMD.</p>
         </div>
       </div>
     )
@@ -231,7 +231,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
             <h1 className="text-base sm:text-lg font-bold text-gray-900 tracking-wide">KARTU IDENTITAS BARANG (KIBAR)</h1>
             <p className="text-sm font-semibold text-gray-700 mt-0.5">{golonganUraian(aset.kode)}</p>
             <p className="text-sm text-gray-600">PEMERINTAH KABUPATEN KEDIRI</p>
-            <p className="font-mono text-xs text-gray-500 mt-2 break-all">NIBAR: {aset.nibar}</p>
+            <p className="text-xs text-gray-500 mt-2 break-all">NIBAR: {aset.nibar}</p>
           </div>
           <div className="flex flex-col items-center gap-2 flex-shrink-0">
             <div className="w-[140px] h-[140px]" dangerouslySetInnerHTML={{ __html: qrSvg }} />

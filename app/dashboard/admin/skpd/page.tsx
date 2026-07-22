@@ -145,7 +145,7 @@ export default function AdminSkpdPage() {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Kode SKPD</label>
-              <input className="select-filter w-full font-mono" placeholder="mis. 01.02.03.4567.8901" value={form.kode_skpd}
+              <input className="select-filter w-full" placeholder="mis. 01.02.03.4567.8901" value={form.kode_skpd}
                 onChange={e => setForm(f => ({ ...f, kode_skpd: e.target.value }))} />
               <p className="text-xs text-amber-600 mt-1">Hati-hati: dipakai buat generate NIBAR barang baru (Pengadaan/PerolehanManual). Barang lama yang sudah py NIBAR TIDAK ikut berubah kalau kode ini diedit.</p>
             </div>
@@ -184,7 +184,7 @@ export default function AdminSkpdPage() {
               <tr><td colSpan={4} className="table-td text-center py-8 text-gray-400">Belum ada SKPD.</td></tr>
             ) : flatTree.map(s => (
               <tr key={s.id}>
-                <td className="table-td text-xs font-mono text-gray-500">{s.kode_skpd || '-'}</td>
+                <td className="table-td text-xs text-gray-500">{s.kode_skpd || '-'}</td>
                 <td className="table-td text-sm" style={{ paddingLeft: `${1 + s.depth * 1.25}rem` }}>{s.nama}</td>
                 <td className="table-td text-xs text-gray-400">{s.level}</td>
                 <td className="table-td whitespace-nowrap">

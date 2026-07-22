@@ -274,7 +274,7 @@ export default function KendaraanPage() {
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">
                           <div>{r.kode}</div>
                           {r.nibar && (
-                            <div className="text-[10px] text-gray-400 font-mono truncate max-w-[150px]" title={r.nibar}>
+                            <div className="text-[10px] text-gray-400 truncate max-w-[150px]" title={r.nibar}>
                               {r.nibar}
                             </div>
                           )}
@@ -295,8 +295,8 @@ export default function KendaraanPage() {
                         <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.tahun_pengadaan)}</td>
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_bpkb)}</td>
                         <td className="table-td text-xs text-gray-800 font-medium whitespace-nowrap">{teks(r.no_polisi)}</td>
-                        <td className="table-td text-xs text-gray-600 font-mono whitespace-nowrap">{teks(r.no_rangka)}</td>
-                        <td className="table-td text-xs text-gray-600 font-mono whitespace-nowrap">{teks(r.no_mesin)}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_rangka)}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_mesin)}</td>
                         <td className="table-td text-right text-xs whitespace-nowrap tabular-nums">{angka(r.nilai_perolehan)}</td>
                         <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.kondisi_barang)}</td>
                         <td className="table-td text-xs text-gray-600 max-w-[220px]">

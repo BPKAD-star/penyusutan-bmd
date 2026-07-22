@@ -146,7 +146,7 @@ export default function RincianRekonsiliasiPage() {
                     <td className="table-td text-xs text-gray-600 min-w-[140px] max-w-[220px]">{(l.skpd_id != null && skpdMap[l.skpd_id]) || '-'}</td>
                     <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.golongan}</td>
                     <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.kode}</td>
-                    <td className="table-td text-xs text-gray-500 font-mono whitespace-nowrap max-w-[150px] truncate" title={l.nibar || ''}>{l.nibar || '-'}</td>
+                    <td className="table-td text-xs text-gray-500 whitespace-nowrap max-w-[150px] truncate" title={l.nibar || ''}>{l.nibar || '-'}</td>
                     <td className="table-td text-xs text-gray-800 min-w-[160px] max-w-[260px]">{l.nama || '-'}</td>
                     <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap capitalize">{l.komp}</td>
                     <td className="table-td text-right text-xs tabular-nums whitespace-nowrap">{angka(l.nilai)}</td>

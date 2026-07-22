@@ -5,7 +5,7 @@
 // sengaja ngerusak angka yang jadi basis engine penyusutan.
 // Objek/Rincian Objek/Sub Rincian Objek ditampilkan pakai NAMA (nama_objek/
 // nama_rincian/nama_sub_rincian, migrasi 20260710_16), bukan kode mentahnya.
-// Kode ikut font normal (Inter) juga, bukan font-mono lagi.
+// Kode ikut font normal (Inter) juga, bukan lagi.
 //
 // SATU field yang masih boleh diubah: `aktif` (migrasi 20260710_17) — toggle
 // nonaktifkan kode yang membingungkan (mis. "printer" nyasar ke rincian objek
