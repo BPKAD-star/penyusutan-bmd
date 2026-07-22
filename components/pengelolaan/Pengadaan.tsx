@@ -764,6 +764,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                 <tr>
                   <th className="table-th w-8 text-center"><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
                   <th className="table-th w-8 text-center"></th>
+                  <th className="table-th">Kode Rekening</th>
                   <th className="table-th">Uraian Barang</th>
                   <th className="table-th">Spesifikasi Nama Barang</th>
                   <th className="table-th">Merk/Tipe</th>
@@ -837,8 +838,11 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
         <button onClick={onDelete} title="Hapus barang ini" className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
       </td>
       <td className="table-td">
+        <p className="text-xs text-gray-700">{item.rekening || <span className="text-gray-300">-</span>}</p>
+      </td>
+      <td className="table-td">
         <p className="text-xs text-gray-800 font-medium truncate max-w-[220px]">{item.uraianBarang || '-'}</p>
-        <p className="text-[11px] text-gray-400">{item.kode}{item.rekening ? ` · Rek ${item.rekening}` : ''}</p>
+        <p className="text-[11px] text-gray-400">{item.kode}</p>
       </td>
       <td className="table-td">
         <p className="text-xs text-gray-600 truncate max-w-[200px]" title={item.fields?.nama_barang || ''}>
@@ -863,6 +867,20 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
   )
 }
 
+// Peta Jenis BMD (golongan aset) → objek Belanja Modal (5.2.0x) yang lazim.
+// Dipakai HANYA utk WARNING (bukan blokir) saat rekening & jenis aset tak sinkron.
+const REK_MODAL_PER_GOLONGAN: Record<string, string[]> = {
+  '1.3.1': ['5.2.01'],           // Tanah
+  '1.3.2': ['5.2.02'],           // Peralatan dan Mesin
+  '1.3.3': ['5.2.03'],           // Gedung dan Bangunan
+  '1.3.4': ['5.2.04'],           // Jalan, Jaringan dan Irigasi
+  '1.3.5': ['5.2.05'],           // Aset Tetap Lainnya
+  '1.3.6': ['5.2.03', '5.2.04'], // KDP (gedung / JIJ)
+  '1.5.3': ['5.2.06'],           // Aset Tidak Berwujud
+}
+// Objek rekening = 3 segmen pertama, mis. '5.2.02.10.002.00003' → '5.2.02'.
+const objekRekening = (kode: string) => kode.split('.').slice(0, 3).join('.')
+
 // Panel "+ Tambah Barang": pilih Jenis BMD → cari kode → satuan/qty/harga → split langsung.
 function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   golonganLabels: Record<string, string>
@@ -881,6 +899,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   const [qty, setQty] = useState('1')
   const [harga, setHarga] = useState('')
   const [err, setErr] = useState('')
+  const [warnings, setWarnings] = useState<string[] | null>(null)
 
   useEffect(() => {
     supabase.from('admin_satuan_bmd').select('id,nama').order('nama').then(({ data }) => setSatuanList(data || []))
@@ -902,18 +921,44 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     setResults([])
   }
 
+  // Warning (bukan blokir) kalau rekening di luar 5.2 atau tak sinkron dgn jenis aset.
+  function cekWarnings(): string[] {
+    const rek = rekening.trim()
+    if (!rek) return []
+    const w: string[] = []
+    if (!rek.startsWith('5.2.')) {
+      w.push(`Kode rekening ${rek} berada DI LUAR Belanja Modal (5.2). Pengadaan aset tetap normalnya memakai kode 5.2.xx. Yakin memakai kode rekening ini?`)
+    } else {
+      const objek = objekRekening(rek)
+      const expected = REK_MODAL_PER_GOLONGAN[golongan]
+      if (expected && !expected.includes(objek)) {
+        const golNama = golonganLabels[golongan] || golongan
+        w.push(`Jenis aset ${golongan} — ${golNama} biasanya memakai rekening ${expected.map(e => `${e}.xx`).join(' / ')}, tetapi kode rekening yang dipilih ada di objek ${objek}. Jenis aset & kode rekening TIDAK SINKRON. Yakin melanjutkan?`)
+      }
+    }
+    return w
+  }
+
   function simpan() {
     if (!picked) { setErr('Pilih kode barang dulu.'); return }
     const n = toInt(qty)
     if (n < 1) { setErr('Kuantitas minimal 1.'); return }
     if (toNum(harga) <= 0) { setErr('Harga harus > 0.'); return }
+    const w = cekWarnings()
+    if (w.length > 0) { setErr(''); setWarnings(w); return } // tampilkan popup konfirmasi
+    doTambah()
+  }
+
+  function doTambah() {
+    if (!picked) return
     // nama_barang default = uraian baku, diedit belakangan lewat ✎ Edit Spesifikasi.
     const uraian = picked.uraian || ''
-    const items: DraftItem[] = Array.from({ length: n }, () => ({
+    const items: DraftItem[] = Array.from({ length: toInt(qty) }, () => ({
       key: newKey(), golongan, kode: picked.kode, uraianBarang: uraian,
       rekening: rekening.trim(), satuan: satuan.trim(), harga,
       fields: { nama_barang: uraian }, foto: [],
     }))
+    setWarnings(null)
     onTambah(items)
   }
 
@@ -976,6 +1021,24 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
         </div>
       )}
       {!picked && err && <p className="text-xs text-red-600">{err}</p>}
+
+      {warnings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setWarnings(null)}>
+          <div className="card w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="font-semibold text-amber-700">⚠ Konfirmasi Kode Rekening</h3>
+            </div>
+            <div className="p-5 space-y-2">
+              {warnings.map((w, i) => <p key={i} className="text-sm text-gray-700">{w}</p>)}
+              <p className="text-xs text-gray-400">Kalau ini keliru, batalkan lalu perbaiki jenis aset atau kode rekening dulu. Kalau memang disengaja (mis. reklasifikasi/kapitalisasi), silakan lanjutkan.</p>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
+              <button className="btn-secondary text-sm" onClick={() => setWarnings(null)}>Batal, perbaiki dulu</button>
+              <button className="btn-primary text-sm" onClick={doTambah}>Ya, tetap tambahkan</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
