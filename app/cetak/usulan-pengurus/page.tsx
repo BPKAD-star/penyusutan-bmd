@@ -19,11 +19,13 @@ export default function CetakUsulanPage() {
 
   useEffect(() => {
     (async () => {
-      const id = new URLSearchParams(window.location.search).get('skpd')
+      const params = new URLSearchParams(window.location.search)
+      const id = params.get('skpd')
+      const tahun = Number(params.get('tahun')) || new Date().getFullYear()
       if (!id) { setLoading(false); return }
       const [{ data: s }, { data: r }] = await Promise.all([
         supabase.from('admin_skpd').select('nama').eq('id', Number(id)).maybeSingle(),
-        supabase.from('admin_usulan_pengurus').select('*').eq('skpd_id', Number(id))
+        supabase.from('admin_usulan_pengurus').select('*').eq('skpd_id', Number(id)).eq('tahun', tahun)
           .in('status', ['diajukan', 'disetujui']).order('nama'),
       ])
       setSkpd(s as { nama: string } | null)

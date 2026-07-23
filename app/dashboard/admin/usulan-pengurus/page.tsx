@@ -1,8 +1,9 @@
 'use client'
-// Usulan Pengurus Barang (Fase 1). Satu route, dua tampilan by role:
-//   - admin  → tinjau semua usulan per-SKPD → Setujui (RPC materialize ke
-//              admin_pegawai) / Kembalikan (+catatan) → Cetak Lampiran SK.
-//   - SKPD   → isi calon pengurus barang → Ajukan → Cetak Surat Usulan.
+// Usulan Pengurus Barang — MODEL PER-TAHUN. Satu route, dua tampilan by role:
+//   - admin  → tinjau usulan per-SKPD utk tahun terpilih → Setujui / Kembalikan /
+//              Batal Setujui (hanya tahun berjalan) → Cetak Lampiran SK (per tahun).
+//   - SKPD   → isi calon utk tahun terpilih → Ajukan → Cetak Surat Usulan.
+// Tahun lampau = FINAL (read-only, historis). Ada "Salin dari tahun sebelumnya".
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -14,7 +15,8 @@ import {
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 type Skpd = { id: number; nama: string; parent_id: number | null; kode_skpd: string | null }
-const COLS = 'id,skpd_id,nama,nip,pangkat,golongan,jabatan,jenis_kelamin,jenis,role_bmd,status,catatan_admin,no_usulan,tgl_usulan,created_at'
+const COLS = 'id,skpd_id,nama,nip,pangkat,golongan,jabatan,jenis_kelamin,jenis,role_bmd,tahun,status,catatan_admin,no_usulan,tgl_usulan,created_at'
+const CURRENT_YEAR = new Date().getFullYear()
 const byKode = (a: Skpd, b: Skpd) =>
   (a?.kode_skpd || '￿').localeCompare(b?.kode_skpd || '￿') || (a?.nama || '').localeCompare(b?.nama || '')
 
@@ -25,10 +27,16 @@ export default function UsulanPengurusPage() {
   const [skpds, setSkpds] = useState<Skpd[]>([])
   const [rows, setRows] = useState<UsulanRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [tahun, setTahun] = useState(CURRENT_YEAR)
 
   const skpdMap = useMemo(() => {
     const m: Record<number, Skpd> = {}; for (const s of skpds) m[s.id] = s; return m
   }, [skpds])
+  const years = useMemo(() => {
+    const set = new Set<number>(rows.map(r => r.tahun)); set.add(CURRENT_YEAR); set.add(CURRENT_YEAR + 1)
+    return [...set].sort((a, b) => b - a)
+  }, [rows])
+  const isPastYear = tahun < CURRENT_YEAR
 
   async function loadRows() {
     setLoading(true)
@@ -49,10 +57,23 @@ export default function UsulanPengurusPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-800 mb-1">Usulan Pengurus Barang</h1>
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <h1 className="text-2xl font-bold text-gray-800">Usulan Pengurus Barang</h1>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500">Tahun</label>
+          <select className="select-filter" value={tahun} onChange={e => setTahun(Number(e.target.value))}>
+            {years.map(y => <option key={y} value={y}>{y}{y < CURRENT_YEAR ? ' — final' : ''}</option>)}
+          </select>
+        </div>
+      </div>
+      {isPastYear && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+          Tahun {tahun} sudah <b>final</b> (historis) — hanya bisa dilihat & dicetak, tidak bisa diubah.
+        </p>
+      )}
       {scope.isAdmin
-        ? <AdminView rows={rows} skpdMap={skpdMap} loading={loading} reload={loadRows} supabase={supabase} />
-        : <SkpdView rows={rows} scope={scope} skpds={skpds} skpdMap={skpdMap} loading={loading} reload={loadRows} supabase={supabase} />}
+        ? <AdminView rows={rows} skpdMap={skpdMap} tahun={tahun} isPastYear={isPastYear} loading={loading} reload={loadRows} supabase={supabase} />
+        : <SkpdView rows={rows} scope={scope} skpds={skpds} skpdMap={skpdMap} tahun={tahun} isPastYear={isPastYear} loading={loading} reload={loadRows} supabase={supabase} />}
     </div>
   )
 }
@@ -62,9 +83,9 @@ const StatusBadge = ({ s }: { s: UsulanStatus }) => (
 )
 
 // ══════════════════════════════ SISI SKPD ══════════════════════════════════
-function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
+function SkpdView({ rows, scope, skpds, skpdMap, tahun, isPastYear, loading, reload, supabase }: {
   rows: UsulanRow[]; scope: ApprovalScope; skpds: Skpd[]; skpdMap: Record<number, Skpd>
-  loading: boolean; reload: () => Promise<void>; supabase: SupabaseClient
+  tahun: number; isPastYear: boolean; loading: boolean; reload: () => Promise<void>; supabase: SupabaseClient
 }) {
   const allowedIds = useMemo(() => {
     const s = new Set<number>(); if (scope.skpdId != null) s.add(scope.skpdId); scope.bawahan.forEach(id => s.add(id)); return s
@@ -77,7 +98,7 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k: string, v: string) => setF(s => ({ ...s, [k]: v }))
-  const readonly = scope.isViewer
+  const readonly = scope.isViewer || isPastYear
 
   async function simpan() {
     if (!f.skpd_id) { setMsg('Pilih SKPD.'); return }
@@ -93,7 +114,7 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
     }
     const { error } = editId
       ? await supabase.from('admin_usulan_pengurus').update(payload).eq('id', editId)
-      : await supabase.from('admin_usulan_pengurus').insert({ ...payload, jenis: 'pengurus_barang', status: 'draft' })
+      : await supabase.from('admin_usulan_pengurus').insert({ ...payload, jenis: 'pengurus_barang', status: 'draft', tahun })
     setBusy(false)
     if (error) { setMsg(`Gagal: ${error.message}`); return }
     setF({ ...KOSONG, skpd_id: f.skpd_id }); setEditId(null); await reload()
@@ -119,21 +140,42 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
     const { error } = await supabase.from('admin_usulan_pengurus').delete().eq('id', id)
     setBusy(false); if (error) setMsg(`Gagal: ${error.message}`); else reload()
   }
+  // Salin roster tahun lalu (yg disetujui) jadi draft tahun ini.
+  async function salinTahunLalu() {
+    const prev = tahun - 1
+    const src = rows.filter(r => r.tahun === prev && r.status === 'disetujui' && allowedIds.has(r.skpd_id))
+    if (src.length === 0) { setMsg(`Tidak ada usulan disetujui tahun ${prev} untuk disalin.`); return }
+    const existing = new Set(rows.filter(r => r.tahun === tahun).map(r => `${r.skpd_id}|${r.nip}`))
+    const toInsert = src.filter(r => !existing.has(`${r.skpd_id}|${r.nip}`)).map(r => ({
+      skpd_id: r.skpd_id, nama: r.nama, nip: r.nip, pangkat: r.pangkat, golongan: r.golongan,
+      jabatan: r.jabatan, jenis_kelamin: r.jenis_kelamin, role_bmd: r.role_bmd,
+      jenis: 'pengurus_barang', status: 'draft', tahun,
+    }))
+    if (toInsert.length === 0) { setMsg(`Semua roster ${prev} sudah ada di ${tahun}.`); return }
+    setBusy(true); setMsg('')
+    const { error } = await supabase.from('admin_usulan_pengurus').insert(toInsert)
+    setBusy(false)
+    if (error) setMsg(`Gagal salin: ${error.message}`)
+    else { setMsg(`${toInsert.length} usulan disalin dari ${prev} sebagai Draft — periksa & ajukan.`); reload() }
+  }
 
-  // Kelompokkan baris milik user per SKPD.
+  const myRows = useMemo(() => rows.filter(r => r.tahun === tahun), [rows, tahun])
   const perSkpd = useMemo(() => {
     const g = new Map<number, UsulanRow[]>()
-    for (const r of rows) { const a = g.get(r.skpd_id) || []; a.push(r); g.set(r.skpd_id, a) }
+    for (const r of myRows) { const a = g.get(r.skpd_id) || []; a.push(r); g.set(r.skpd_id, a) }
     return [...g.entries()].sort((a, b) => byKode(skpdMap[a[0]] || ({} as Skpd), skpdMap[b[0]] || ({} as Skpd)))
-  }, [rows, skpdMap])
+  }, [myRows, skpdMap])
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-gray-500">Isi calon Pengurus Barang, lalu <b>Ajukan</b>. Setelah diajukan bisa cetak Surat Usulan; admin akan menyetujui atau mengembalikan.</p>
+      <p className="text-sm text-gray-500">Isi calon Pengurus Barang untuk tahun <b>{tahun}</b>, lalu <b>Ajukan</b>. Setelah diajukan bisa cetak Surat Usulan; admin akan menyetujui atau mengembalikan.</p>
 
       {!readonly && (
         <div className="card p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">{editId ? 'Ubah Usulan' : 'Tambah Calon Pengurus Barang'}</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-gray-700">{editId ? 'Ubah Usulan' : `Tambah Calon (Tahun ${tahun})`}</h2>
+            {!editId && <button className="btn-secondary text-xs" disabled={busy} onClick={salinTahunLalu}>⧉ Salin dari tahun {tahun - 1}</button>}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="block text-xs text-gray-500 mb-1">SKPD</label>
               <select className="select-filter w-full" value={f.skpd_id} onChange={e => set('skpd_id', e.target.value)}>
@@ -177,15 +219,16 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
           </div>
         </div>
       )}
+      {readonly && msg && <p className="text-xs text-red-600">{msg}</p>}
 
       {loading ? <p className="text-sm text-gray-400">Memuat…</p>
-        : perSkpd.length === 0 ? <p className="text-sm text-gray-400">Belum ada usulan.</p>
+        : perSkpd.length === 0 ? <p className="text-sm text-gray-400">Belum ada usulan untuk tahun {tahun}.</p>
         : perSkpd.map(([sid, list]) => (
           <div key={sid} className="card overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3 bg-gray-50/50">
               <p className="text-sm font-semibold text-gray-700">{skpdMap[sid]?.kode_skpd ? `${skpdMap[sid]?.kode_skpd} · ` : ''}{skpdMap[sid]?.nama || `SKPD #${sid}`}</p>
               {list.some(r => r.status === 'diajukan' || r.status === 'disetujui') && (
-                <Link href={`/cetak/usulan-pengurus?skpd=${sid}`} target="_blank" className="btn-secondary text-xs">🖨 Cetak Surat Usulan</Link>
+                <Link href={`/cetak/usulan-pengurus?skpd=${sid}&tahun=${tahun}`} target="_blank" className="btn-secondary text-xs">🖨 Cetak Surat Usulan</Link>
               )}
             </div>
             <div className="overflow-x-auto">
@@ -226,9 +269,9 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
 }
 
 // ══════════════════════════════ SISI ADMIN ═════════════════════════════════
-function AdminView({ rows, skpdMap, loading, reload, supabase }: {
+function AdminView({ rows, skpdMap, tahun, isPastYear, loading, reload, supabase }: {
   rows: UsulanRow[]; skpdMap: Record<number, Skpd>
-  loading: boolean; reload: () => Promise<void>; supabase: SupabaseClient
+  tahun: number; isPastYear: boolean; loading: boolean; reload: () => Promise<void>; supabase: SupabaseClient
 }) {
   const [filter, setFilter] = useState<UsulanStatus | 'semua'>('diajukan')
   const [busy, setBusy] = useState(false)
@@ -236,7 +279,9 @@ function AdminView({ rows, skpdMap, loading, reload, supabase }: {
   const [tolakId, setTolakId] = useState<string | null>(null)
   const [catatan, setCatatan] = useState('')
 
-  const shown = useMemo(() => filter === 'semua' ? rows : rows.filter(r => r.status === filter), [rows, filter])
+  const shown = useMemo(() =>
+    rows.filter(r => r.tahun === tahun && (filter === 'semua' || r.status === filter)),
+    [rows, tahun, filter])
   const perSkpd = useMemo(() => {
     const g = new Map<number, UsulanRow[]>()
     for (const r of shown) { const a = g.get(r.skpd_id) || []; a.push(r); g.set(r.skpd_id, a) }
@@ -249,7 +294,7 @@ function AdminView({ rows, skpdMap, loading, reload, supabase }: {
     setBusy(false); if (error) setMsg(`Gagal setujui: ${error.message}`); else reload()
   }
   async function batalSetuju(id: string) {
-    if (!window.confirm('Batalkan persetujuan? Usulan kembali ke status "Diajukan" (bisa disetujui ulang atau dikembalikan ke SKPD). Jika pegawai ini BARU dibuat dari persetujuan ini (dan belum punya akun), datanya di Daftar Pegawai ikut dihapus.')) return
+    if (!window.confirm('Batalkan persetujuan untuk tahun ini? Usulan kembali ke "Diajukan" (bisa disetujui ulang atau dikembalikan ke SKPD). Data pegawai di Daftar Pegawai TIDAK ikut terhapus.')) return
     setBusy(true); setMsg('')
     const { error } = await supabase.rpc('fn_batal_setujui_usulan_pengurus', { p_id: id })
     setBusy(false); if (error) setMsg(`Gagal batal setujui: ${error.message}`); else reload()
@@ -276,12 +321,12 @@ function AdminView({ rows, skpdMap, loading, reload, supabase }: {
             </button>
           ))}
         </div>
-        <Link href="/cetak/lampiran-sk-pengurus" target="_blank" className="btn-primary text-xs">🖨 Cetak Lampiran SK</Link>
+        <Link href={`/cetak/lampiran-sk-pengurus?tahun=${tahun}`} target="_blank" className="btn-primary text-xs">🖨 Cetak Lampiran SK {tahun}</Link>
       </div>
       {msg && <p className="text-xs text-red-600">{msg}</p>}
 
       {loading ? <p className="text-sm text-gray-400">Memuat…</p>
-        : perSkpd.length === 0 ? <p className="text-sm text-gray-400">Tidak ada usulan pada filter ini.</p>
+        : perSkpd.length === 0 ? <p className="text-sm text-gray-400">Tidak ada usulan pada filter ini (tahun {tahun}).</p>
         : perSkpd.map(([sid, list]) => (
           <div key={sid} className="card overflow-hidden">
             <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
@@ -304,13 +349,13 @@ function AdminView({ rows, skpdMap, loading, reload, supabase }: {
                       <td className="table-td text-xs text-gray-600">{jkLabel(r.jenis_kelamin)}</td>
                       <td className="table-td"><StatusBadge s={r.status} /></td>
                       <td className="table-td text-right whitespace-nowrap">
-                        {r.status === 'diajukan' && (
+                        {!isPastYear && r.status === 'diajukan' && (
                           <>
                             <button className="text-xs text-teal hover:underline mr-3" disabled={busy} onClick={() => setuju(r.id)}>✓ Setujui</button>
                             <button className="text-xs text-red-500 hover:underline" disabled={busy} onClick={() => { setTolakId(r.id); setCatatan('') }}>↩ Kembalikan</button>
                           </>
                         )}
-                        {r.status === 'disetujui' && (
+                        {!isPastYear && r.status === 'disetujui' && (
                           <button className="text-xs text-amber-600 hover:underline" disabled={busy} onClick={() => batalSetuju(r.id)}>↶ Batal Setujui</button>
                         )}
                       </td>

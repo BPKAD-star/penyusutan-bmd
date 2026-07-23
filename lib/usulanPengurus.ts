@@ -12,6 +12,7 @@ export type UsulanRow = {
   jenis_kelamin: string | null
   jenis: string
   role_bmd: string
+  tahun: number
   status: UsulanStatus
   catatan_admin: string | null
   no_usulan: string | null

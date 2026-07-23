@@ -14,11 +14,14 @@ export default function CetakLampiranPage() {
   const [rows, setRows] = useState<UsulanRow[]>([])
   const [skpds, setSkpds] = useState<Skpd[]>([])
   const [loading, setLoading] = useState(true)
+  const [tahun, setTahun] = useState<number>(new Date().getFullYear())
 
   useEffect(() => {
     (async () => {
+      const t = Number(new URLSearchParams(window.location.search).get('tahun')) || new Date().getFullYear()
+      setTahun(t)
       const [{ data: r }, { data: s }] = await Promise.all([
-        supabase.from('admin_usulan_pengurus').select('*').eq('status', 'disetujui'),
+        supabase.from('admin_usulan_pengurus').select('*').eq('status', 'disetujui').eq('tahun', t),
         supabase.from('admin_skpd').select('id,nama,kode_skpd').limit(5000),
       ])
       setRows((r || []) as UsulanRow[])
@@ -34,7 +37,7 @@ export default function CetakLampiranPage() {
   }), [rows, skpdMap])
 
   if (loading) return <div className="p-8 text-sm text-gray-400">Memuat…</div>
-  if (rows.length === 0) return <div className="p-8 text-sm text-gray-500">Belum ada usulan yang disetujui untuk dijadikan lampiran.</div>
+  if (rows.length === 0) return <div className="p-8 text-sm text-gray-500">Belum ada usulan yang disetujui untuk tahun {tahun}.</div>
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
@@ -47,10 +50,10 @@ export default function CetakLampiranPage() {
       <div className="max-w-5xl mx-auto bg-white p-10 shadow print:shadow-none text-sm text-gray-900">
         <div className="text-center mb-1">
           <p className="font-semibold">LAMPIRAN KEPUTUSAN BUPATI ....................</p>
-          <p>NOMOR : .................... TAHUN ..........</p>
+          <p>NOMOR : .................... TAHUN {tahun}</p>
           <p>TENTANG PENETAPAN PENGELOLA DAN PENGURUS BARANG MILIK DAERAH</p>
         </div>
-        <p className="text-center font-bold uppercase my-4">Daftar Pengelola dan Pengurus Barang Milik Daerah</p>
+        <p className="text-center font-bold uppercase my-4">Daftar Pengelola dan Pengurus Barang Milik Daerah Tahun {tahun}</p>
 
         <table className="w-full border border-gray-800 border-collapse">
           <thead><tr className="bg-gray-100">
