@@ -109,8 +109,8 @@ const navTree: NavNode[] = [
 const adminGroup: NavNode = {
   type: 'group', label: 'Admin', icon: ICON.user, children: [
     { type: 'leaf', href: '/dashboard/admin/skpd', label: 'SKPD' },
-    { type: 'leaf', href: '/dashboard/admin/pegawai', label: 'Daftar Pegawai' },
     { type: 'leaf', href: '/dashboard/admin/usulan-pengurus', label: 'Usulan Pengurus Barang' },
+    { type: 'leaf', href: '/dashboard/admin/pegawai', label: 'Daftar Pegawai' },
     { type: 'leaf', href: '/dashboard/admin/user', label: 'Daftar User' },
     { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
     { type: 'leaf', href: '/dashboard/admin/kodefikasi', label: 'Kodefikasi BMD' },
