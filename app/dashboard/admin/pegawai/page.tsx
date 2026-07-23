@@ -29,6 +29,7 @@ const ROLE_BMD = [
   { value: 'pembantu_pengurus_barang', label: 'Pembantu Pengurus Barang' },
   { value: 'kuasa_pengguna_barang', label: 'Kuasa Pengguna Barang' },
   { value: 'pengurus_barang_pembantu', label: 'Pengurus Barang Pembantu' },
+  { value: 'penanggung_jawab_ruangan', label: 'Penanggung Jawab Ruangan' },
 ]
 // Posisi tiap role di hierarki (dipakai utk urutan tampil, BUKAN cuma dropdown) —
 // urutan array ini SUDAH persis hierarki organisasi BMD: Pengelola → Pengguna → Sub-unit.
