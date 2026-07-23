@@ -53,3 +53,12 @@ export const pangkatDariGolongan = (g: string) =>
   GOLONGAN_PANGKAT.find(x => x.golongan === g)?.pangkat || ''
 
 export const jkLabel = (jk: string | null) => (jk === 'L' ? 'Laki-laki' : jk === 'P' ? 'Perempuan' : '-')
+
+// NIP = 18 angka: lahir(8)+TMT ASN(6)+kelamin(1)+urut(3). Jenis kelamin ada di
+// digit ke-15 (1=L, 2=P). Return '' kalau NIP belum 18 digit / digit tak dikenal.
+export const jkDariNip = (nip: string) => {
+  const s = (nip || '').replace(/\D/g, '')
+  if (s.length !== 18) return ''
+  return s[14] === '1' ? 'L' : s[14] === '2' ? 'P' : ''
+}
+

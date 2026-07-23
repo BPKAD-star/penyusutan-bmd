@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { jkDariNip } from '@/lib/usulanPengurus'
 
 type Pegawai = {
   id: string
@@ -223,6 +224,7 @@ export default function AdminPegawaiPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!/^\d{18}$/.test(form.nip)) { setMsg('NIP harus tepat 18 angka, tanpa spasi.'); return }
     setSaving(true)
     setMsg('')
 
@@ -442,9 +444,10 @@ export default function AdminPegawaiPage() {
             </div>
             <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 p-6">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">NIP</label>
-                <input required className="select-filter w-full" value={form.nip}
-                  onChange={e => setForm(f => ({ ...f, nip: e.target.value }))} />
+                <label className="block text-xs text-gray-500 mb-1">NIP <span className="text-gray-400">(18 angka, tanpa spasi)</span></label>
+                <input required inputMode="numeric" maxLength={18} className="select-filter w-full" value={form.nip}
+                  onChange={e => setForm(f => ({ ...f, nip: e.target.value.replace(/\D/g, '') }))} placeholder="200110042023021001" />
+                <p className="text-[11px] text-gray-400 mt-1">Format: tgl lahir (8) + TMT ASN (6) + kelamin (1&nbsp;=&nbsp;L, 2&nbsp;=&nbsp;P) + nomor urut (3). 3 digit terakhir = nomor urut dari masing-masing kantor.</p>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Nama Lengkap</label>
@@ -480,6 +483,9 @@ export default function AdminPegawaiPage() {
                   <option value="L">Laki-laki</option>
                   <option value="P">Perempuan</option>
                 </select>
+                {jkDariNip(form.nip) && form.jenis_kelamin && jkDariNip(form.nip) !== form.jenis_kelamin && (
+                  <p className="text-[11px] text-amber-600 mt-1">⚠ Menurut NIP (digit ke-15 = {form.nip[14]}), harusnya <b>{jkDariNip(form.nip) === 'L' ? 'Laki-laki' : 'Perempuan'}</b>.</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Role BMD</label>

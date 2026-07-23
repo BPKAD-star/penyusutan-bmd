@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { fetchApprovalScope, type ApprovalScope, SCOPE_KOSONG } from '@/lib/roles'
 import {
-  GOLONGAN_PANGKAT, pangkatDariGolongan, STATUS_LABEL, STATUS_BADGE, jkLabel,
+  GOLONGAN_PANGKAT, pangkatDariGolongan, STATUS_LABEL, STATUS_BADGE, jkLabel, jkDariNip,
   type UsulanRow, type UsulanStatus,
 } from '@/lib/usulanPengurus'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -82,6 +82,7 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
   async function simpan() {
     if (!f.skpd_id) { setMsg('Pilih SKPD.'); return }
     if (!f.nama.trim() || !f.nip.trim()) { setMsg('Nama & NIP wajib.'); return }
+    if (!/^\d{18}$/.test(f.nip)) { setMsg('NIP harus tepat 18 angka, tanpa spasi.'); return }
     setBusy(true); setMsg('')
     const payload = {
       skpd_id: Number(f.skpd_id), nama: f.nama.trim(), nip: f.nip.trim(),
@@ -138,10 +139,13 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
                 <option value="">— pilih SKPD —</option>
                 {opsiSkpd.map(s => <option key={s.id} value={s.id}>{s.kode_skpd ? `${s.kode_skpd} · ` : ''}{s.nama}</option>)}
               </select></div>
-            <div><label className="block text-xs text-gray-500 mb-1">Nama</label>
-              <input className="select-filter w-full" value={f.nama} onChange={e => set('nama', e.target.value)} /></div>
-            <div><label className="block text-xs text-gray-500 mb-1">NIP</label>
-              <input className="select-filter w-full" value={f.nip} onChange={e => set('nip', e.target.value)} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Nama <span className="text-gray-400">(sertakan gelar sesuai EYD)</span></label>
+              <input className="select-filter w-full" value={f.nama} onChange={e => set('nama', e.target.value)} placeholder="mis. Budi Santoso, S.E., M.M." />
+              <p className="text-[11px] text-gray-400 mt-1">Tulis gelar lengkap & ejaan yang benar, mis. <b>Dr. Siti Aminah, S.H., M.H.</b></p></div>
+            <div><label className="block text-xs text-gray-500 mb-1">NIP <span className="text-gray-400">(18 angka, tanpa spasi)</span></label>
+              <input className="select-filter w-full" inputMode="numeric" maxLength={18} value={f.nip}
+                onChange={e => set('nip', e.target.value.replace(/\D/g, ''))} placeholder="200110042023021001" />
+              <p className="text-[11px] text-gray-400 mt-1">Format: tgl lahir (8) + TMT ASN (6) + kelamin (1&nbsp;=&nbsp;L, 2&nbsp;=&nbsp;P) + nomor urut (3). Contoh <b>2001&nbsp;10&nbsp;04&nbsp;·&nbsp;2023&nbsp;02&nbsp;·&nbsp;1&nbsp;·&nbsp;001</b> = lahir 4&nbsp;Okt&nbsp;2001, ASN Feb&nbsp;2023, laki-laki. PPPK juga 18 angka. <b>3 digit terakhir</b> = nomor urut dari masing-masing kantor.</p></div>
             <div><label className="block text-xs text-gray-500 mb-1">Golongan / Pangkat</label>
               <select className="select-filter w-full" value={f.golongan} onChange={e => set('golongan', e.target.value)}>
                 <option value="">— pilih golongan —</option>
@@ -152,7 +156,10 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
             <div><label className="block text-xs text-gray-500 mb-1">Jenis Kelamin</label>
               <select className="select-filter w-full" value={f.jenis_kelamin} onChange={e => set('jenis_kelamin', e.target.value)}>
                 <option value="">—</option><option value="L">Laki-laki</option><option value="P">Perempuan</option>
-              </select></div>
+              </select>
+              {jkDariNip(f.nip) && f.jenis_kelamin && jkDariNip(f.nip) !== f.jenis_kelamin && (
+                <p className="text-[11px] text-amber-600 mt-1">⚠ Menurut NIP (digit ke-15 = {f.nip[14]}), harusnya <b>{jkDariNip(f.nip) === 'L' ? 'Laki-laki' : 'Perempuan'}</b>. Cek lagi NIP / pilihan kelamin.</p>
+              )}</div>
             <div><label className="block text-xs text-gray-500 mb-1">No. Surat Usulan <span className="text-gray-400">(opsional)</span></label>
               <input className="select-filter w-full" value={f.no_usulan} onChange={e => set('no_usulan', e.target.value)} /></div>
             <div><label className="block text-xs text-gray-500 mb-1">Tgl Usulan <span className="text-gray-400">(opsional)</span></label>
