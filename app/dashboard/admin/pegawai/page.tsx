@@ -252,9 +252,21 @@ export default function AdminPegawaiPage() {
   }
 
   async function handleDelete(id: string, nama: string) {
-    if (!confirm(`Hapus data pegawai ${nama}? Akun login (kalau ada) tidak ikut terhapus.`)) return
+    setMsg('')
+    // Guard: pegawai yg punya AKUN LOGIN tak bisa dihapus (FK admin_profiles).
+    const { count: cAkun } = await supabase.from('admin_profiles')
+      .select('id', { count: 'exact', head: true }).eq('pegawai_id', id)
+    if ((cAkun || 0) > 0) {
+      setMsg('Error: Pegawai ini punya AKUN LOGIN. Hapus dulu akunnya di menu "Daftar User", baru hapus pegawainya.')
+      return
+    }
+    if (!confirm(`Hapus data pegawai ${nama}? (Akun login tidak ada — aman.)`)) return
     const { error } = await supabase.from('admin_pegawai').delete().eq('id', id)
-    if (error) setMsg(`Error: ${error.message}`)
+    if (error) {
+      // Umumnya masih tertaut Usulan yg disetujui (FK admin_usulan_pengurus).
+      setMsg('Error: Gagal hapus — kemungkinan pegawai ini masih terkait Usulan yang DISETUJUI. Buka menu "Usulan Pengurus Barang" → "Batal Setujui" dulu, baru hapus.')
+      return
+    }
     load()
   }
 

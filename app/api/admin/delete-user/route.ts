@@ -15,9 +15,24 @@ export async function POST(req: Request) {
 
   const supabase = createAdminClient()
 
-  await supabase.from('admin_profiles').delete().eq('id', id)
-  const { error } = await supabase.auth.admin.deleteUser(id)
+  // Guard jejak: akun yg pernah membuat transaksi/jurnal TIDAK boleh dihapus —
+  // ledger append-only & FK created_by (NO ACTION) ke auth.users memblok, lagipula
+  // jejak wajib dijaga. Cek dua tabel inti; kalau ada → tolak dgn pesan jelas.
+  const [{ count: cTrx }, { count: cJur }] = await Promise.all([
+    supabase.from('transaksi_bmd').select('id', { count: 'exact', head: true }).eq('created_by', id),
+    supabase.from('jurnal_header').select('id', { count: 'exact', head: true }).eq('created_by', id),
+  ])
+  if ((cTrx || 0) > 0 || (cJur || 0) > 0) {
+    return NextResponse.json({ error: 'User ini pernah membuat transaksi/jurnal, jadi akunnya tidak bisa dihapus demi menjaga jejak ledger. Turunkan aksesnya (mis. jadikan Pengawas) bila memang perlu.' }, { status: 400 })
+  }
 
-  if (error) return NextResponse.json({ error: error.message })
+  // Hapus akun auth DULU. Profil & chat ikut terhapus via ON DELETE CASCADE.
+  // Kalau gagal (mis. FK dari data lain), profil TIDAK disentuh → tak nyangkut setengah.
+  const { error } = await supabase.auth.admin.deleteUser(id)
+  if (error) {
+    return NextResponse.json({ error: `Akun tidak bisa dihapus: ${error.message}. Kemungkinan user ini pernah membuat data lain yang harus dijaga.` }, { status: 400 })
+  }
+  // Bersih-bersih profil bila cascade tak jalan (idempoten, aman).
+  await supabase.from('admin_profiles').delete().eq('id', id)
   return NextResponse.json({ success: true })
 }

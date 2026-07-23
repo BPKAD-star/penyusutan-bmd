@@ -100,12 +100,16 @@ export default function AdminUserPage() {
   }
 
   async function handleDelete(id: string, email: string) {
-    if (!confirm(`Hapus user ${email}?`)) return
-    await fetch('/api/admin/delete-user', {
+    if (!confirm(`Hapus user ${email}? Akun login dihapus permanen. Data pegawai & jejak transaksinya tetap.`)) return
+    setMsg('')
+    const res = await fetch('/api/admin/delete-user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     })
+    const json = await res.json().catch(() => ({}))
+    if (json.error) { setMsg(`Error: ${json.error}`); return }
+    setMsg(`User ${email} berhasil dihapus.`)
     loadProfiles()
   }
 
