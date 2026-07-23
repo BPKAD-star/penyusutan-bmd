@@ -4,7 +4,7 @@
 // Format generik — kop & pejabat penanda tangan tinggal disesuaikan.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { pangkatDariGolongan, type UsulanRow } from '@/lib/usulanPengurus'
+import { pangkatDariGolongan, peranLabel, type UsulanRow } from '@/lib/usulanPengurus'
 
 const tglID = (s: string | null) => {
   const d = s ? new Date(s) : new Date()
@@ -71,13 +71,13 @@ export default function CetakUsulanPage() {
 
         <p className="mb-3 text-justify">
           Dalam rangka tertib administrasi pengelolaan Barang Milik Daerah, bersama ini kami mengusulkan
-          nama-nama pegawai di lingkungan <b>{skpd?.nama || '....................'}</b> untuk ditetapkan sebagai
-          <b> Pengurus Barang</b>, sebagai berikut:
+          nama-nama pegawai di lingkungan <b>{skpd?.nama || '....................'}</b> untuk ditetapkan dalam
+          pengelolaan Barang Milik Daerah dengan peran sebagaimana tercantum berikut:
         </p>
 
         <table className="w-full border border-gray-800 border-collapse mb-4">
           <thead><tr className="bg-gray-100">
-            {['No', 'Nama', 'NIP', 'Gol/Pangkat', 'Jabatan'].map(h => <th key={h} className="border border-gray-800 px-2 py-1 text-left text-xs">{h}</th>)}
+            {['No', 'Nama', 'NIP', 'Gol/Pangkat', 'Jabatan', 'Diusulkan Sebagai'].map(h => <th key={h} className="border border-gray-800 px-2 py-1 text-left text-xs">{h}</th>)}
           </tr></thead>
           <tbody>
             {rows.map((r, i) => (
@@ -87,6 +87,7 @@ export default function CetakUsulanPage() {
                 <td className="border border-gray-800 px-2 py-1">{r.nip}</td>
                 <td className="border border-gray-800 px-2 py-1">{r.golongan || '-'}{(r.pangkat || (r.golongan && pangkatDariGolongan(r.golongan))) ? ` · ${r.pangkat || pangkatDariGolongan(r.golongan || '')}` : ''}</td>
                 <td className="border border-gray-800 px-2 py-1">{r.jabatan || '-'}</td>
+                <td className="border border-gray-800 px-2 py-1">{peranLabel(r.role_bmd)}</td>
               </tr>
             ))}
           </tbody>

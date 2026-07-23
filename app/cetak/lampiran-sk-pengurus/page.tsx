@@ -4,7 +4,7 @@
 // Format generik — nomor SK & pejabat penanda tangan tinggal disesuaikan.
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { pangkatDariGolongan, type UsulanRow } from '@/lib/usulanPengurus'
+import { pangkatDariGolongan, peranLabel, type UsulanRow } from '@/lib/usulanPengurus'
 
 type Skpd = { id: number; nama: string; kode_skpd: string | null }
 const tglID = () => new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -48,9 +48,9 @@ export default function CetakLampiranPage() {
         <div className="text-center mb-1">
           <p className="font-semibold">LAMPIRAN KEPUTUSAN BUPATI ....................</p>
           <p>NOMOR : .................... TAHUN ..........</p>
-          <p>TENTANG PENETAPAN PENGURUS BARANG</p>
+          <p>TENTANG PENETAPAN PENGELOLA DAN PENGURUS BARANG MILIK DAERAH</p>
         </div>
-        <p className="text-center font-bold uppercase my-4">Daftar Pengurus Barang</p>
+        <p className="text-center font-bold uppercase my-4">Daftar Pengelola dan Pengurus Barang Milik Daerah</p>
 
         <table className="w-full border border-gray-800 border-collapse">
           <thead><tr className="bg-gray-100">
@@ -66,7 +66,7 @@ export default function CetakLampiranPage() {
                 <td className="border border-gray-800 px-2 py-1">{r.golongan || '-'}{(r.pangkat || (r.golongan && pangkatDariGolongan(r.golongan))) ? ` · ${r.pangkat || pangkatDariGolongan(r.golongan || '')}` : ''}</td>
                 <td className="border border-gray-800 px-2 py-1">{r.jabatan || '-'}</td>
                 <td className="border border-gray-800 px-2 py-1">{skpdMap[r.skpd_id]?.nama || `SKPD #${r.skpd_id}`}</td>
-                <td className="border border-gray-800 px-2 py-1">Pengurus Barang</td>
+                <td className="border border-gray-800 px-2 py-1">{peranLabel(r.role_bmd)}</td>
               </tr>
             ))}
           </tbody>

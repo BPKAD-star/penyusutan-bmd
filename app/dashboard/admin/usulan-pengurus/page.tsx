@@ -9,12 +9,12 @@ import { createClient } from '@/lib/supabase/client'
 import { fetchApprovalScope, type ApprovalScope, SCOPE_KOSONG } from '@/lib/roles'
 import {
   GOLONGAN_PANGKAT, pangkatDariGolongan, STATUS_LABEL, STATUS_BADGE, jkLabel, jkDariNip,
-  type UsulanRow, type UsulanStatus,
+  PERAN_USULAN, peranLabel, type UsulanRow, type UsulanStatus,
 } from '@/lib/usulanPengurus'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 type Skpd = { id: number; nama: string; parent_id: number | null; kode_skpd: string | null }
-const COLS = 'id,skpd_id,nama,nip,pangkat,golongan,jabatan,jenis_kelamin,jenis,status,catatan_admin,no_usulan,tgl_usulan,created_at'
+const COLS = 'id,skpd_id,nama,nip,pangkat,golongan,jabatan,jenis_kelamin,jenis,role_bmd,status,catatan_admin,no_usulan,tgl_usulan,created_at'
 const byKode = (a: Skpd, b: Skpd) =>
   (a?.kode_skpd || '￿').localeCompare(b?.kode_skpd || '￿') || (a?.nama || '').localeCompare(b?.nama || '')
 
@@ -71,7 +71,7 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
   }, [scope])
   const opsiSkpd = useMemo(() => skpds.filter(s => allowedIds.has(s.id)).sort(byKode), [skpds, allowedIds])
 
-  const KOSONG = { skpd_id: scope.skpdId ? String(scope.skpdId) : '', nama: '', nip: '', golongan: '', jabatan: '', jenis_kelamin: '', no_usulan: '', tgl_usulan: '' }
+  const KOSONG = { skpd_id: scope.skpdId ? String(scope.skpdId) : '', role_bmd: 'pengurus_barang', nama: '', nip: '', golongan: '', jabatan: '', jenis_kelamin: '', no_usulan: '', tgl_usulan: '' }
   const [f, setF] = useState<Record<string, string>>(KOSONG)
   const [editId, setEditId] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
@@ -88,6 +88,7 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
       skpd_id: Number(f.skpd_id), nama: f.nama.trim(), nip: f.nip.trim(),
       golongan: f.golongan || null, pangkat: f.golongan ? pangkatDariGolongan(f.golongan) : null,
       jabatan: f.jabatan.trim() || null, jenis_kelamin: f.jenis_kelamin || null,
+      role_bmd: f.role_bmd || 'pengurus_barang',
       no_usulan: f.no_usulan.trim() || null, tgl_usulan: f.tgl_usulan || null,
     }
     const { error } = editId
@@ -101,7 +102,7 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
   function edit(r: UsulanRow) {
     setEditId(r.id)
     setF({
-      skpd_id: String(r.skpd_id), nama: r.nama, nip: r.nip, golongan: r.golongan || '',
+      skpd_id: String(r.skpd_id), role_bmd: r.role_bmd || 'pengurus_barang', nama: r.nama, nip: r.nip, golongan: r.golongan || '',
       jabatan: r.jabatan || '', jenis_kelamin: r.jenis_kelamin || '',
       no_usulan: r.no_usulan || '', tgl_usulan: r.tgl_usulan || '',
     })
@@ -138,6 +139,10 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
               <select className="select-filter w-full" value={f.skpd_id} onChange={e => set('skpd_id', e.target.value)}>
                 <option value="">— pilih SKPD —</option>
                 {opsiSkpd.map(s => <option key={s.id} value={s.id}>{s.kode_skpd ? `${s.kode_skpd} · ` : ''}{s.nama}</option>)}
+              </select></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Peran yang Diusulkan</label>
+              <select className="select-filter w-full" value={f.role_bmd} onChange={e => set('role_bmd', e.target.value)}>
+                {PERAN_USULAN.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select></div>
             <div><label className="block text-xs text-gray-500 mb-1">Nama <span className="text-gray-400">(sertakan gelar sesuai EYD)</span></label>
               <input className="select-filter w-full" value={f.nama} onChange={e => set('nama', e.target.value)} placeholder="mis. Budi Santoso, S.E., M.M." />
@@ -187,7 +192,7 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100"><tr>
                   <th className="table-th">Nama / NIP</th><th className="table-th">Gol / Pangkat</th>
-                  <th className="table-th">Jabatan</th><th className="table-th">JK</th>
+                  <th className="table-th">Jabatan</th><th className="table-th">Peran</th><th className="table-th">JK</th>
                   <th className="table-th">Status</th><th className="table-th"></th>
                 </tr></thead>
                 <tbody className="divide-y divide-gray-50">
@@ -196,6 +201,7 @@ function SkpdView({ rows, scope, skpds, skpdMap, loading, reload, supabase }: {
                       <td className="table-td"><p className="text-xs font-medium text-gray-800">{r.nama}</p><p className="text-[11px] text-gray-400">{r.nip}</p></td>
                       <td className="table-td text-xs text-gray-600">{r.golongan || '-'}{r.pangkat ? ` · ${r.pangkat}` : ''}</td>
                       <td className="table-td text-xs text-gray-600">{r.jabatan || '-'}</td>
+                      <td className="table-td text-xs text-gray-600">{peranLabel(r.role_bmd)}</td>
                       <td className="table-td text-xs text-gray-600">{r.jenis_kelamin || '-'}</td>
                       <td className="table-td"><StatusBadge s={r.status} />{r.status === 'dikembalikan' && r.catatan_admin && <p className="text-[11px] text-red-500 mt-1 max-w-[220px]">↩ {r.catatan_admin}</p>}</td>
                       <td className="table-td text-right whitespace-nowrap">
@@ -242,6 +248,12 @@ function AdminView({ rows, skpdMap, loading, reload, supabase }: {
     const { error } = await supabase.rpc('fn_setujui_usulan_pengurus', { p_id: id })
     setBusy(false); if (error) setMsg(`Gagal setujui: ${error.message}`); else reload()
   }
+  async function batalSetuju(id: string) {
+    if (!window.confirm('Batalkan persetujuan? Usulan kembali ke status "Diajukan" (bisa disetujui ulang atau dikembalikan ke SKPD). Jika pegawai ini BARU dibuat dari persetujuan ini (dan belum punya akun), datanya di Daftar Pegawai ikut dihapus.')) return
+    setBusy(true); setMsg('')
+    const { error } = await supabase.rpc('fn_batal_setujui_usulan_pengurus', { p_id: id })
+    setBusy(false); if (error) setMsg(`Gagal batal setujui: ${error.message}`); else reload()
+  }
   async function kembalikan() {
     if (!tolakId) return
     setBusy(true); setMsg('')
@@ -279,7 +291,7 @@ function AdminView({ rows, skpdMap, loading, reload, supabase }: {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100"><tr>
                   <th className="table-th">Nama / NIP</th><th className="table-th">Gol / Pangkat</th>
-                  <th className="table-th">Jabatan</th><th className="table-th">JK</th>
+                  <th className="table-th">Jabatan</th><th className="table-th">Peran</th><th className="table-th">JK</th>
                   <th className="table-th">Status</th><th className="table-th"></th>
                 </tr></thead>
                 <tbody className="divide-y divide-gray-50">
@@ -288,6 +300,7 @@ function AdminView({ rows, skpdMap, loading, reload, supabase }: {
                       <td className="table-td"><p className="text-xs font-medium text-gray-800">{r.nama}</p><p className="text-[11px] text-gray-400">{r.nip}</p></td>
                       <td className="table-td text-xs text-gray-600">{r.golongan || '-'}{r.pangkat ? ` · ${r.pangkat}` : ''}</td>
                       <td className="table-td text-xs text-gray-600">{r.jabatan || '-'}</td>
+                      <td className="table-td text-xs text-gray-600">{peranLabel(r.role_bmd)}</td>
                       <td className="table-td text-xs text-gray-600">{jkLabel(r.jenis_kelamin)}</td>
                       <td className="table-td"><StatusBadge s={r.status} /></td>
                       <td className="table-td text-right whitespace-nowrap">
@@ -296,6 +309,9 @@ function AdminView({ rows, skpdMap, loading, reload, supabase }: {
                             <button className="text-xs text-teal hover:underline mr-3" disabled={busy} onClick={() => setuju(r.id)}>✓ Setujui</button>
                             <button className="text-xs text-red-500 hover:underline" disabled={busy} onClick={() => { setTolakId(r.id); setCatatan('') }}>↩ Kembalikan</button>
                           </>
+                        )}
+                        {r.status === 'disetujui' && (
+                          <button className="text-xs text-amber-600 hover:underline" disabled={busy} onClick={() => batalSetuju(r.id)}>↶ Batal Setujui</button>
                         )}
                       </td>
                     </tr>

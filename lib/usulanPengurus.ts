@@ -11,6 +11,7 @@ export type UsulanRow = {
   jabatan: string | null
   jenis_kelamin: string | null
   jenis: string
+  role_bmd: string
   status: UsulanStatus
   catatan_admin: string | null
   no_usulan: string | null
@@ -27,6 +28,17 @@ export const STATUS_BADGE: Record<UsulanStatus, string> = {
   disetujui: 'bg-teal/10 text-teal',
   dikembalikan: 'bg-red-100 text-red-700',
 }
+
+// Peran (role_bmd) yang boleh diusulkan pengurus barang. Nilai = enum role_bmd
+// admin_pegawai (atribut master, TIDAK memengaruhi hak akses/login).
+export const PERAN_USULAN: { value: string; label: string }[] = [
+  { value: 'pengurus_barang', label: 'Pengurus Barang' },
+  { value: 'pengurus_barang_pembantu', label: 'Pengurus Barang Pembantu' },
+  { value: 'pembantu_pengurus_barang', label: 'Pembantu Pengurus Barang' },
+  { value: 'penatausahaan_barang_pengguna', label: 'Pejabat Penatausahaan Barang Pengguna' },
+  { value: 'penanggung_jawab_ruangan', label: 'Penanggung Jawab Ruangan' },
+]
+export const peranLabel = (v: string | null) => PERAN_USULAN.find(p => p.value === v)?.label || v || '-'
 
 // Pangkat mengikuti golongan/ruang PNS (PP 11/2017). PPPK: golongan angka
 // Romawi tanpa pangkat gaya PNS (pangkat dikosongkan).
