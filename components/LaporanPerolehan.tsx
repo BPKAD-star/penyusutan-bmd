@@ -13,6 +13,7 @@ import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import LaporanPengadaanModel3 from '@/components/pelaporan/LaporanPengadaanModel3'
 
 type Trx = {
   id: number
@@ -29,13 +30,15 @@ type Trx = {
   } | null
 }
 
-export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel }: {
+export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel, enableModel3 }: {
   judul: string
   deskripsi: string
   jenis: string
   filePrefix: string
   /** Diisi (mis. "Pihak Pemberi Hibah") utk Hibah/Tukar Menukar → tambah kolom paling kiri. Null utk yang lain. */
   pihakLabel?: string | null
+  /** Aktifkan tab "Model 3" (format Permendagri) — hanya utk menu Pengadaan. */
+  enableModel3?: boolean
 }) {
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
@@ -45,8 +48,9 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const [periodeList, setPeriodeList] = useState<string[]>([])
   const [periode, setPeriode] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
+  const [selSkpdId, setSelSkpdId] = useState<number | null>(null) // SKPD terpilih (utk footer Model 3)
   // Model 2: rekap matriks per SKPD (root) x per golongan — dibangun lazy saat view dipindah.
-  const [view, setView] = useState<'list' | 'matrix'>('list')
+  const [view, setView] = useState<'list' | 'matrix' | 'permendagri'>('list')
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
   const [matrixLoading, setMatrixLoading] = useState(false)
 
@@ -156,10 +160,12 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           <h1 className="text-2xl font-bold text-gray-900">{judul}</h1>
           <p className="text-gray-500 text-sm mt-1">{deskripsi}</p>
         </div>
-        <button onClick={view === 'list' ? handleExport : handleExportMatrix}
-          disabled={view === 'list' ? exporting : matrix.length === 0} className="btn-primary">
-          {view === 'list' ? (exporting ? 'Mengekspor...' : 'Export Excel') : 'Export Excel'}
-        </button>
+        {view !== 'permendagri' && (
+          <button onClick={view === 'list' ? handleExport : handleExportMatrix}
+            disabled={view === 'list' ? exporting : matrix.length === 0} className="btn-primary">
+            {view === 'list' ? (exporting ? 'Mengekspor...' : 'Export Excel') : 'Export Excel'}
+          </button>
+        )}
       </div>
 
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
@@ -171,6 +177,12 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Rekap per SKPD (Model 2)
         </button>
+        {enableModel3 && (
+          <button onClick={() => setView('permendagri')}
+            className={`px-4 py-1.5 rounded-md transition-colors ${view === 'permendagri' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+            Format Permendagri (Model 3)
+          </button>
+        )}
       </div>
 
       <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
@@ -183,12 +195,14 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         </div>
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-          <SkpdCombobox lockToOperator onChangeSelection={sel => setDescIds(sel.descendantIds)} allowClear
+          <SkpdCombobox lockToOperator onChangeSelection={sel => { setDescIds(sel.descendantIds); setSelSkpdId(sel.skpdId) }} allowClear
             placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
         </div>
       </div>
 
-      {view === 'matrix' ? (
+      {view === 'permendagri' ? (
+        <LaporanPengadaanModel3 periode={periode} skpdId={selSkpdId} descIds={descIds} />
+      ) : view === 'matrix' ? (
         <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={matrixLoading} />
       ) : (
         <>

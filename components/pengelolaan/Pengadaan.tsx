@@ -34,15 +34,13 @@ import RekeningPicker from '@/components/RekeningPicker'
 import ProgramPicker from '@/components/ProgramPicker'
 import SearchSelect from '@/components/SearchSelect'
 import { useDateBounds } from '@/components/useTahunBuku'
+import { BENTUK_KONTRAK_OPT, bentukKontrakLabel, type BentukKontrak } from '@/lib/bentukKontrak'
 
-type SumberPengadaan = 'kwitansi' | 'bukti_pembelian' | 'surat_pesanan' | 'spk'
-const SUMBER_OPT: { value: SumberPengadaan; label: string }[] = [
-  { value: 'kwitansi', label: 'Kwitansi' },
-  { value: 'bukti_pembelian', label: 'Bukti Pembelian' },
-  { value: 'surat_pesanan', label: 'Surat Pesanan' },
-  { value: 'spk', label: 'Surat Perintah Kerja (SPK)' },
-]
-const sumberLabel = (v: string) => SUMBER_OPT.find(o => o.value === v)?.label || v
+// Bentuk/Jenis Kontrak kini dari konstanta bersama (lib/bentukKontrak) — 5 opsi
+// termasuk Surat Perjanjian. Alias dipertahankan supaya referensi lama tetap jalan.
+type SumberPengadaan = BentukKontrak
+const SUMBER_OPT = BENTUK_KONTRAK_OPT
+const sumberLabel = bentukKontrakLabel
 
 // Satu DraftItem = satu unit barang (kuantitas dipecah saat ditambahkan, bukan
 // saat approve) — tiap unit bisa beda spesifikasi/no. rangka-mesin/foto.

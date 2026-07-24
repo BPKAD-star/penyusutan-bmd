@@ -25,6 +25,7 @@ import {
   type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
 } from '@/lib/kdp'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
+import { BENTUK_KONTRAK_KONSTRUKSI, bentukKontrakLabel } from '@/lib/bentukKontrak'
 
 export type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload }
 const KOMPONEN = [
@@ -223,6 +224,7 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
   const supabase = createClient()
   const bounds = useDateBounds()
   const [f, setF] = useState({ nama: '', noKontrak: '', tglKontrak: '', program: '', kegiatan: '', subKeg: '', penyedia: '', nilaiKontrak: '', keterangan: '' })
+  const [sumber, setSumber] = useState<string>('spk')
   const [ppk, setPpk] = useState('')
   const [pegawai, setPegawai] = useState<{ nama: string; nip: string }[]>([])
   const [saving, setSaving] = useState(false)
@@ -236,7 +238,7 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
     if (!f.noKontrak.trim() || !f.tglKontrak) { onErr('Error: No & Tgl Kontrak wajib.'); return }
     setSaving(true)
     const payload: KontrakKonstruksiPayload = {
-      nama_pekerjaan: f.nama, sumber: 'spk',
+      nama_pekerjaan: f.nama, sumber,
       program: f.program || null, kegiatan: f.kegiatan || null, sub_kegiatan: f.subKeg || null,
       ppk: ppk || null, penyedia: f.penyedia || null, nilai_kontrak: f.nilaiKontrak ? Number(f.nilaiKontrak) : null,
       keterangan: f.keterangan || null,
@@ -257,8 +259,10 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
   return (
     <form onSubmit={submit} className="card p-5 mb-4 space-y-4 max-w-2xl">
       {fld('Nama Pekerjaan', 'nama')}
-      <div><label className="block text-xs text-gray-500 mb-1">Sumber Pekerjaan (Dokumen Sumber)</label>
-        <input className="select-filter w-full bg-gray-100 text-gray-600" value="Surat Perintah Kerja (SPK)" readOnly /></div>
+      <div><label className="block text-xs text-gray-500 mb-1">Bentuk Kontrak (Dokumen Sumber)</label>
+        <select className="select-filter w-full" value={sumber} onChange={e => setSumber(e.target.value)}>
+          {BENTUK_KONTRAK_KONSTRUKSI.map(v => <option key={v} value={v}>{bentukKontrakLabel(v)}</option>)}
+        </select></div>
       {fld('No. Dokumen Kontrak', 'noKontrak')}
       <div><label className="block text-xs text-gray-500 mb-1">Tgl Dokumen Kontrak</label>
         <input type="date" min={bounds.min} max={bounds.max} className="select-filter w-full" value={f.tglKontrak} onChange={e => set('tglKontrak', e.target.value)} /></div>
@@ -374,7 +378,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-semibold text-gray-800 mb-2">{p.nama_pekerjaan}</h2>
               <div className="space-y-0.5">
-                <Baris label="Jenis Kontrak" value="Surat Perintah Kerja (SPK)" />
+                <Baris label="Bentuk Kontrak" value={bentukKontrakLabel(p.sumber)} />
                 <Baris label="Nomor Kontrak" value={kontrak.no_sk} />
                 <Baris label="Tanggal Kontrak" value={kontrak.tanggal} />
                 <Baris label="Program" value={p.program} />
@@ -463,6 +467,7 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
   const [program, setProgram] = useState(p.program || '')
   const [kegiatan, setKegiatan] = useState(p.kegiatan || '')
   const [subKeg, setSubKeg] = useState(p.sub_kegiatan || '')
+  const [sumber, setSumber] = useState<string>(p.sumber || 'spk')
   const [penyedia, setPenyedia] = useState(p.penyedia || '')
   const [ppk, setPpk] = useState(p.ppk || '')
   const [nilaiKontrak, setNilaiKontrak] = useState(p.nilai_kontrak != null ? String(p.nilai_kontrak) : '')
@@ -485,7 +490,7 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
     if (terminTerawal && tgl > terminTerawal) { setErr(`Tgl kontrak (${tgl}) tidak boleh lebih baru dari termin paling awal (${terminTerawal}) — sesuaikan termin dulu.`); return }
     setErr(''); setSaving(true)
     const payload: KontrakKonstruksiPayload = {
-      ...p, nama_pekerjaan: nama.trim(),
+      ...p, nama_pekerjaan: nama.trim(), sumber,
       program: program.trim() || null, kegiatan: kegiatan.trim() || null, sub_kegiatan: subKeg.trim() || null,
       penyedia: penyedia.trim() || null, ppk: ppk || null,
       nilai_kontrak: nilaiKontrak ? Number(nilaiKontrak) : null, keterangan: keterangan.trim() || null,
@@ -511,7 +516,11 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
         </div>
         <div className="p-5 space-y-4">
           {fld('Nama Pekerjaan', nama, setNama)}
-          {fld('No. Kontrak (SPK)', noKontrak, setNoKontrak)}
+          <div><label className="block text-xs text-gray-500 mb-1">Bentuk Kontrak (Dokumen Sumber)</label>
+            <select className="select-filter w-full" value={sumber} onChange={e => setSumber(e.target.value)}>
+              {BENTUK_KONTRAK_KONSTRUKSI.map(v => <option key={v} value={v}>{bentukKontrakLabel(v)}</option>)}
+            </select></div>
+          {fld('No. Kontrak', noKontrak, setNoKontrak)}
           <div>
             <label className="block text-xs text-gray-500 mb-1">Tgl Kontrak <span className="text-gray-400">(tetap di {periodeAsli})</span></label>
             <input type="date" className="select-filter w-full sm:w-64" max={bounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
