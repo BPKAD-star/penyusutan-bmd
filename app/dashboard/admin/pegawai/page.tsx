@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import PenugasanRangkapModal, { type PegawaiRingkas, type PenugasanRangkap } from '@/components/admin/PenugasanRangkapModal'
 import { jkDariNip } from '@/lib/usulanPengurus'
 
 type Pegawai = {
@@ -159,10 +160,28 @@ export default function AdminPegawaiPage() {
 
   const [skpdOrder, setSkpdOrder] = useState<Map<number, number>>(new Map())
 
+  // Penugasan rangkap (hanya utk Pengguna Barang) — dikelompokkan per pegawai_id.
+  const [rangkapMap, setRangkapMap] = useState<Map<string, PenugasanRangkap[]>>(new Map())
+  const [rangkapPegawai, setRangkapPegawai] = useState<PegawaiRingkas | null>(null)
+
   async function load() {
     const { data } = await supabase.from('admin_pegawai').select('*,skpd:admin_skpd(nama)').order('nama')
     setList((data as never as Pegawai[]) || [])
     setLoading(false)
+  }
+
+  async function loadRangkap() {
+    const rows: PenugasanRangkap[] = []
+    for (let from = 0; ; from += 1000) {
+      const { data } = await supabase.from('admin_pegawai_penugasan')
+        .select('id,pegawai_id,skpd_id,no_sk,tmt,aktif,skpd:admin_skpd(nama)').range(from, from + 999)
+      if (!data || data.length === 0) break
+      rows.push(...(data as never as PenugasanRangkap[]))
+      if (data.length < 1000) break
+    }
+    const m = new Map<string, PenugasanRangkap[]>()
+    for (const r of rows) { const a = m.get(r.pegawai_id) || []; a.push(r); m.set(r.pegawai_id, a) }
+    setRangkapMap(m)
   }
 
   async function loadSkpdOrder() {
@@ -200,7 +219,7 @@ export default function AdminPegawaiPage() {
     })
   }, [list, skpdOrder])
 
-  useEffect(() => { load(); loadSkpdOrder() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); loadSkpdOrder(); loadRangkap() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openCreate() {
     setEditId(null)
@@ -392,7 +411,9 @@ export default function AdminPegawaiPage() {
           <p className="text-xs text-gray-500 mb-4">
             Kolom yang dibaca: <b>NIP</b> (wajib), Nama, Golongan, Jabatan, Jenis Kelamin (L/P),
             Role BMD (slug atau label), SKPD ID (angka — id SKPD, bukan nama). NIP yang sudah ada
-            di database akan <b>diperbarui</b>; NIP baru akan dibuat.
+            di database akan <b>diperbarui</b>; NIP baru akan dibuat. Import hanya mengisi
+            <b> penugasan pokok</b> (1 SKPD per pegawai); penugasan <b>rangkap</b> Pengguna Barang
+            ditambahkan lewat tombol “Rangkap” di daftar, bukan dari file ini.
           </p>
           <input type="file" accept=".xlsx,.xls" className="text-sm mb-4"
             onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f) }} />
@@ -546,7 +567,27 @@ export default function AdminPegawaiPage() {
                 <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">Belum ada pegawai.</td></tr>
               ) : sortedList.map(p => (
                 <tr key={p.id}>
-                  <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.skpd?.nama || '—'}</td>
+                  <td className="table-td text-xs text-gray-500 align-top">
+                    <div className="whitespace-nowrap">{p.skpd?.nama || '—'}</div>
+                    {p.role_bmd === 'pengguna_barang' && (() => {
+                      const rk = rangkapMap.get(p.id) || []
+                      return (
+                        <div className="mt-1 flex items-center gap-2 flex-wrap">
+                          {rk.length > 0 && (
+                            <span className="text-[11px] text-teal">
+                              + Rangkap: {rk.map(r => r.skpd?.nama || `SKPD #${r.skpd_id}`).join(', ')}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => setRangkapPegawai({ id: p.id, nama: p.nama, nip: p.nip, skpd_id: p.skpd_id, skpd_nama: p.skpd?.nama || null })}
+                            className="text-[11px] text-gray-400 hover:text-teal underline"
+                          >
+                            {rk.length > 0 ? 'Kelola rangkap' : '+ Rangkap'}
+                          </button>
+                        </div>
+                      )
+                    })()}
+                  </td>
                   <td className="table-td whitespace-nowrap text-sm font-medium">{p.nama}</td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-400">{p.nip}</td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">
@@ -568,6 +609,14 @@ export default function AdminPegawaiPage() {
           </table>
         </div>
       </div>
+
+      {rangkapPegawai && (
+        <PenugasanRangkapModal
+          pegawai={rangkapPegawai}
+          onClose={() => setRangkapPegawai(null)}
+          onChanged={loadRangkap}
+        />
+      )}
     </FormShell>
   )
 }
