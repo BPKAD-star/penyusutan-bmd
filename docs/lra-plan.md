@@ -189,12 +189,21 @@ Reuse: `PerolehanImport` (baca Excel), `SkpdCombobox lockToOperator`,
 
 ## 7. Fase implementasi
 
-- **Fase A** — tabel `lra_realisasi` + RLS, import 2-langkah (parse→preview→
-  commit, natural key No Bukti), box **LRA** + rekap per jenis/SKPD/bulan +
-  total. (menjawab kebutuhan inti: import, tampil, rekap, anti-dobel)
-- **Fase B** — tanda **Kapitalisasi** (dari 5.1) & **Reklas** (dari 5.2) +
-  **Belanja Modal (app)** + kolom **Check** + badge reconcile.
-- **Fase C** — Export Excel + polish.
+- **Fase A** ✅ **SELESAI** (commit `04f11ec`) — tabel `lra_realisasi` + RLS,
+  import 2-langkah (parse→preview→commit, natural key No Bukti), box **LRA** +
+  rekap per jenis/SKPD/bulan + total.
+- **Fase B** ✅ **SELESAI** — tanda **Kapitalisasi** (dari 5.1, pilih jenis
+  tujuan) & **Reklas** (dari 5.2, jenis otomatis) lewat `LraTagModal`
+  (kandidat / sudah-ditandai + hapus tanda); **Belanja Modal (app)** dari ledger
+  `pengadaan` (`skpd_tujuan`, grup dari `payload.kode_rekening`, fallback
+  golongan lewat `GOLONGAN_KE_GRUP`, aset ber-`batal_pengadaan` dibuang);
+  blok **Check** per jenis + badge reconcile ✓/selisih. Export Excel mencakup
+  kelima blok.
+- **Fase C (opsional)** — validasi `kode_rekening` saat import via tabel
+  referensi **`admin_rekening`** (migrasi `20260722_04`, PK `kode_sub_rincian`)
+  supaya kode ngawur ditolak, bukan cuma cek prefix 5.1/5.2. Catatan:
+  `admin_rekening.kelompok` memakai `'operasi'` untuk 5.1 sedangkan
+  `lra_realisasi.kelompok` memakai `'barjas'` — beda tabel, perhatikan saat join.
 
 ---
 
