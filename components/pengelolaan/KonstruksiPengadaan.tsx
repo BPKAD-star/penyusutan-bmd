@@ -268,7 +268,7 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
           onChange={sel => setF(s => ({ ...s, program: sel.program, kegiatan: sel.kegiatan, subKeg: sel.sub_kegiatan }))} />
       </div>
       <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-        <SearchSelect value={ppk} options={pegawai.map(p => ({ value: p.nama, label: `${p.nama} — ${p.nip}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} /></div>
+        <SearchSelect value={ppk} options={pegawai.map(p => ({ value: p.nama, label: `${p.nama} — ${p.nip || 'Non-ASN'}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} /></div>
       {fld('Nama Penyedia', 'penyedia')}
       {fld('Nilai Kontrak Pekerjaan (Rp)', 'nilaiKontrak', 'number')}
       {fld('Keterangan Kontrak', 'keterangan')}
@@ -523,7 +523,7 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
               onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-            <SearchSelect value={ppk} options={pegawai.map(pg => ({ value: pg.nama, label: `${pg.nama} — ${pg.nip}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} /></div>
+            <SearchSelect value={ppk} options={pegawai.map(pg => ({ value: pg.nama, label: `${pg.nama} — ${pg.nip || 'Non-ASN'}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} /></div>
           {fld('Nama Penyedia', penyedia, setPenyedia)}
           {fld('Nilai Kontrak Pekerjaan (Rp)', nilaiKontrak, setNilaiKontrak, 'number')}
           {fld('Keterangan Kontrak', keterangan, setKeterangan)}

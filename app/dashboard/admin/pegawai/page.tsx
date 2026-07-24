@@ -9,7 +9,7 @@ import { jkDariNip } from '@/lib/usulanPengurus'
 
 type Pegawai = {
   id: string
-  nip: string
+  nip: string | null
   nama: string
   pangkat: string | null
   golongan: string | null
@@ -104,8 +104,11 @@ function normalisasiGolongan(g: string): string {
 
 const FORM_KOSONG = {
   nip: '', nama: '', golongan: '', jabatan: '', jenis_kelamin: '',
-  role_bmd: 'pengurus_barang', skpd_id: '',
+  role_bmd: 'pengurus_barang', skpd_id: '', non_asn: false,
 }
+
+// SKPD RSUD dikenali dari nama (samakan dgn guard fn_pegawai_nip_guard di DB).
+const isNamaRsud = (nama: string | null | undefined) => /^\s*rsud/i.test(nama || '')
 
 // ── Import Excel (upsert by NIP) ────────────────────────────────────────────
 // Master data murni (bukan ledger) — commit LANGSUNG upsert ke admin_pegawai,
@@ -159,6 +162,8 @@ export default function AdminPegawaiPage() {
   const [importMsg, setImportMsg] = useState('')
 
   const [skpdOrder, setSkpdOrder] = useState<Map<number, number>>(new Map())
+  // id SKPD yang tergolong RSUD — hanya di sini Pengguna Barang boleh non-ASN (tanpa NIP).
+  const [rsudIds, setRsudIds] = useState<Set<number>>(new Set())
 
   // Penugasan rangkap (hanya utk Pengguna Barang) — dikelompokkan per pegawai_id.
   const [rangkapMap, setRangkapMap] = useState<Map<string, PenugasanRangkap[]>>(new Map())
@@ -193,6 +198,7 @@ export default function AdminPegawaiPage() {
       if (data.length < 1000) break
     }
     setSkpdOrder(buildSkpdOrder(rows))
+    setRsudIds(new Set(rows.filter(s => isNamaRsud(s.nama)).map(s => s.id)))
   }
 
   // Statistik ringkas pengganti deskripsi statis — 3 role operator lapangan yg
@@ -233,26 +239,34 @@ export default function AdminPegawaiPage() {
     setEditId(p.id)
     const golonganNormal = p.golongan ? normalisasiGolongan(p.golongan) : ''
     setForm({
-      nip: p.nip, nama: p.nama,
+      nip: p.nip || '', nama: p.nama,
       golongan: GOLONGAN_PANGKAT.some(g => g.golongan === golonganNormal) ? golonganNormal
         : isGolonganPppk(p.golongan || '') ? (p.golongan || '').trim() : '',
       jabatan: p.jabatan || '', jenis_kelamin: p.jenis_kelamin || '',
       role_bmd: p.role_bmd, skpd_id: p.skpd_id != null ? String(p.skpd_id) : '',
+      non_asn: !p.nip,  // pegawai tersimpan tanpa NIP = non-ASN
     })
     setShowForm(true)
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!/^\d{18}$/.test(form.nip)) { setMsg('NIP harus tepat 18 angka, tanpa spasi.'); return }
+    // Non-ASN (tanpa NIP) hanya sah utk Pengguna Barang di SKPD RSUD — samakan
+    // dgn guard DB fn_pegawai_nip_guard supaya pesan errornya ramah lebih dulu.
+    const skpdNum = form.skpd_id ? Number(form.skpd_id) : null
+    const eligibleNonAsn = form.role_bmd === 'pengguna_barang' && skpdNum != null && rsudIds.has(skpdNum)
+    const nonAsn = eligibleNonAsn && form.non_asn
+    if (!nonAsn && !/^\d{18}$/.test(form.nip)) {
+      setMsg('NIP harus tepat 18 angka, tanpa spasi.'); return
+    }
     setSaving(true)
     setMsg('')
 
     const payload = {
-      nip: form.nip, nama: form.nama,
+      nip: nonAsn ? null : form.nip, nama: form.nama,
       pangkat: pangkatDariGolongan(form.golongan) || null, golongan: form.golongan || null,
       jabatan: form.jabatan || null, jenis_kelamin: form.jenis_kelamin || null,
-      role_bmd: form.role_bmd, skpd_id: form.skpd_id ? Number(form.skpd_id) : null,
+      role_bmd: form.role_bmd, skpd_id: skpdNum,
     }
 
     const { error } = editId
@@ -388,6 +402,12 @@ export default function AdminPegawaiPage() {
     setCommittingImport(false)
   }
 
+  // Non-ASN (tanpa NIP) hanya utk Pengguna Barang di SKPD RSUD (lihat migrasi
+  // 20260724_03). eligible = boleh dicentang; nonAsn = sedang dicentang & eligible.
+  const skpdIdNum = form.skpd_id ? Number(form.skpd_id) : null
+  const nonAsnEligible = form.role_bmd === 'pengguna_barang' && skpdIdNum != null && rsudIds.has(skpdIdNum)
+  const nonAsn = nonAsnEligible && form.non_asn
+
   return (
     <FormShell judul="Daftar Pegawai" deskripsi={deskripsiStat} msg={msg}>
       <div className="flex justify-end gap-2 mb-4">
@@ -478,10 +498,19 @@ export default function AdminPegawaiPage() {
             </div>
             <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 p-6">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">NIP <span className="text-gray-400">(18 angka, tanpa spasi)</span></label>
-                <input required inputMode="numeric" maxLength={18} className="select-filter w-full" value={form.nip}
-                  onChange={e => setForm(f => ({ ...f, nip: e.target.value.replace(/\D/g, '') }))} placeholder="200110042023021001" />
-                <p className="text-[11px] text-gray-400 mt-1">Format: tgl lahir (8) + TMT ASN (6) + kelamin (1&nbsp;=&nbsp;L, 2&nbsp;=&nbsp;P) + nomor urut (3). 3 digit terakhir = nomor urut dari masing-masing kantor.</p>
+                <label className="block text-xs text-gray-500 mb-1">NIP <span className="text-gray-400">{nonAsn ? '(non-ASN — tanpa NIP)' : '(18 angka, tanpa spasi)'}</span></label>
+                <input required={!nonAsn} disabled={nonAsn} inputMode="numeric" maxLength={18}
+                  className="select-filter w-full disabled:bg-gray-50 disabled:text-gray-400" value={nonAsn ? '' : form.nip}
+                  onChange={e => setForm(f => ({ ...f, nip: e.target.value.replace(/\D/g, '') }))}
+                  placeholder={nonAsn ? '— tanpa NIP —' : '200110042023021001'} />
+                {nonAsnEligible && (
+                  <label className="flex items-center gap-2 mt-1.5 text-[11px] text-gray-600 cursor-pointer">
+                    <input type="checkbox" checked={form.non_asn}
+                      onChange={e => setForm(f => ({ ...f, non_asn: e.target.checked }))} />
+                    Non-ASN (tanpa NIP) — pejabat BLUD/kontrak RSUD
+                  </label>
+                )}
+                {!nonAsn && <p className="text-[11px] text-gray-400 mt-1">Format: tgl lahir (8) + TMT ASN (6) + kelamin (1&nbsp;=&nbsp;L, 2&nbsp;=&nbsp;P) + nomor urut (3). 3 digit terakhir = nomor urut dari masing-masing kantor.</p>}
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Nama Lengkap</label>
@@ -517,7 +546,7 @@ export default function AdminPegawaiPage() {
                   <option value="L">Laki-laki</option>
                   <option value="P">Perempuan</option>
                 </select>
-                {jkDariNip(form.nip) && form.jenis_kelamin && jkDariNip(form.nip) !== form.jenis_kelamin && (
+                {!nonAsn && jkDariNip(form.nip) && form.jenis_kelamin && jkDariNip(form.nip) !== form.jenis_kelamin && (
                   <p className="text-[11px] text-amber-600 mt-1">⚠ Menurut NIP (digit ke-15 = {form.nip[14]}), harusnya <b>{jkDariNip(form.nip) === 'L' ? 'Laki-laki' : 'Perempuan'}</b>.</p>
                 )}
               </div>
@@ -589,7 +618,7 @@ export default function AdminPegawaiPage() {
                     })()}
                   </td>
                   <td className="table-td whitespace-nowrap text-sm font-medium">{p.nama}</td>
-                  <td className="table-td whitespace-nowrap text-xs text-gray-400">{p.nip}</td>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-400">{p.nip || <span className="italic text-gray-300">Non-ASN</span>}</td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">
                     {p.golongan ? (isGolonganPppk(p.golongan) ? `${p.golongan} (PPPK)` : p.golongan) : '—'}
                   </td>

@@ -1244,7 +1244,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-            <SearchSelect value={ppk} options={pegawaiList.map(p => ({ value: p.nama, label: `${p.nama} — ${p.nip}${p.jabatan ? ` · ${p.jabatan}` : ''}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
+            <SearchSelect value={ppk} options={pegawaiList.map(p => ({ value: p.nama, label: `${p.nama} — ${p.nip || 'Non-ASN'}${p.jabatan ? ` · ${p.jabatan}` : ''}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ketKontrak} onChange={e => setKetKontrak(e.target.value)} /></div>
@@ -1388,7 +1388,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
             <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Nama PPK</label>
-              <SearchSelect value={ppk} options={pegawaiList.map(pg => ({ value: pg.nama, label: `${pg.nama} — ${pg.nip}${pg.jabatan ? ` · ${pg.jabatan}` : ''}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
+              <SearchSelect value={ppk} options={pegawaiList.map(pg => ({ value: pg.nama, label: `${pg.nama} — ${pg.nip || 'Non-ASN'}${pg.jabatan ? ` · ${pg.jabatan}` : ''}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
             </div>
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>

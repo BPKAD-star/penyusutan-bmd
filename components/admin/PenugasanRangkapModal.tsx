@@ -11,7 +11,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 export type PegawaiRingkas = {
   id: string
   nama: string
-  nip: string
+  nip: string | null
   skpd_id: number | null
   skpd_nama: string | null
 }
@@ -116,7 +116,7 @@ export default function PenugasanRangkapModal({ pegawai, onClose, onChanged }: {
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
           <div>
             <h2 className="text-base font-semibold text-gray-800">Penugasan Rangkap — Pengguna Barang</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{pegawai.nama} · {pegawai.nip}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{pegawai.nama} · {pegawai.nip || 'Non-ASN'}</p>
           </div>
           <button onClick={close} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
         </div>

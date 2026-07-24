@@ -12,14 +12,14 @@ type Profile = {
   ipa_role: string | null
   created_at: string
   skpd: { nama: string } | null
-  pegawai: { nama: string; nip: string; jabatan: string | null } | null
+  pegawai: { nama: string; nip: string | null; jabatan: string | null } | null
 }
 
 const LABEL_IPA_ROLE: Record<string, string> = {
   pb_admin: 'Pengurus Barang', bkad_verifier: 'Verifikator BKAD', bkad_admin: 'Admin BKAD',
 }
 
-type Pegawai = { id: string; nip: string; nama: string; jabatan: string | null }
+type Pegawai = { id: string; nip: string | null; nama: string; jabatan: string | null }
 
 const FORM_KOSONG = {
   email: '', password: '', role: 'pengurus_pembantu', ipa_role: '', pegawai_id: '',
@@ -185,7 +185,7 @@ export default function AdminUserPage() {
                 onChange={e => setForm(f => ({ ...f, pegawai_id: e.target.value }))}>
                 <option value="">— pilih pegawai —</option>
                 {pegawaiList.map(p => (
-                  <option key={p.id} value={p.id}>{p.nip} — {p.nama}{p.jabatan ? ` — ${p.jabatan}` : ''}</option>
+                  <option key={p.id} value={p.id}>{p.nip || 'Non-ASN'} — {p.nama}{p.jabatan ? ` — ${p.jabatan}` : ''}</option>
                 ))}
               </select>
               <p className="text-xs text-gray-400 mt-1">Belum ada di daftar? Tambahkan dulu di menu Daftar Pegawai.</p>
