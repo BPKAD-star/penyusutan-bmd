@@ -4,6 +4,11 @@
 // dan halaman cetak (app/cetak/laporan-pengadaan). Header bertingkat 2 baris +
 // subtotal per golongan + footer tanda tangan Pengguna Barang (NIP bisa kosong utk
 // non-ASN RSUD). Data & grouping ada di lib/laporanPengadaan (satu sumber).
+//
+// Kolom "Kode Barang" dipecah per level kodefikasi (x|x|x|xx|xx|xx…) seperti format
+// aslinya — jumlah sub-kolom = maksimum segmen `kode` pada data (min 6), supaya
+// grid seragam. Kode lebih pendek dipad sel kosong; lebih panjang → sisa diserap
+// sel terakhir.
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
@@ -11,12 +16,24 @@ import {
   fetchLaporanPengadaan, groupByGolongan, grandTotal, fetchPenggunaBarang, type PengadaanRow,
 } from '@/lib/laporanPengadaan'
 
-const TOTAL_COLS = 20 // total kolom tabel (utk colSpan baris subtotal/kosong)
+// Pecah kode jadi tepat `n` segmen sel; sel terakhir menyerap sisa segmen.
+function kodeSegments(kode: string, n: number): string[] {
+  const seg = (kode || '').split('.')
+  const out: string[] = []
+  for (let i = 0; i < n; i++) {
+    out.push(i < n - 1 ? (seg[i] ?? '') : seg.slice(n - 1).join('.'))
+  }
+  return out
+}
 
-function SubtotalRow({ label, nilai, grand }: { label: string; nilai: number; grand?: boolean }) {
+function SubtotalRow({ label, nilai, kodeCols, grand }: {
+  label: string; nilai: number; kodeCols: number; grand?: boolean
+}) {
+  // Kolom "label" sebelum Total Nilai = kodeCols + (Nama, Spesifikasi, Merek,
+  // Jumlah, Satuan, Harga Satuan) = kodeCols + 6. Tail setelah Nilai Perolehan = 10.
   return (
     <tr className={grand ? 'bg-gray-200 font-bold' : 'bg-gray-100 font-semibold'}>
-      <td className="brd px-2 py-1 text-right" colSpan={7}>{label}</td>
+      <td className="brd px-2 py-1 text-right" colSpan={kodeCols + 6}>{label}</td>
       <td className="brd px-2 py-1 text-right">{formatRupiah(nilai)}</td>
       <td className="brd px-2 py-1 text-right">{formatRupiah(0)}</td>
       <td className="brd px-2 py-1 text-right">{formatRupiah(nilai)}</td>
@@ -25,12 +42,14 @@ function SubtotalRow({ label, nilai, grand }: { label: string; nilai: number; gr
   )
 }
 
-function DataRow({ r }: { r: PengadaanRow }) {
+function DataRow({ r, kodeCols }: { r: PengadaanRow; kodeCols: number }) {
   const c = 'brd px-2 py-1 align-top'
   const num = 'brd px-2 py-1 align-top text-right whitespace-nowrap'
   return (
     <tr>
-      <td className={c + ' whitespace-nowrap'}>{r.kode}</td>
+      {kodeSegments(r.kode, kodeCols).map((s, i) => (
+        <td key={i} className="brd px-1 py-1 align-top text-center whitespace-nowrap">{s || ''}</td>
+      ))}
       <td className={c}>{r.namaBarang || '-'}</td>
       <td className={c}>{r.spesifikasi || '-'}</td>
       <td className={c}>{r.merekTipe || '-'}</td>
@@ -51,6 +70,21 @@ function DataRow({ r }: { r: PengadaanRow }) {
       <td className={c + ' whitespace-nowrap'}>{r.nomor || '-'}</td>
       <td className={c}>{r.keterangan || '-'}</td>
     </tr>
+  )
+}
+
+// Satu blok golongan: baris data + baris subtotal (angka 27..30 di format).
+function FragmentGroup({ kode, uraian, rows, subtotal, kodeCols, totalCols }: {
+  kode: string; uraian: string; rows: PengadaanRow[]; subtotal: number; kodeCols: number; totalCols: number
+}) {
+  return (
+    <>
+      <tr className="bg-teal/5">
+        <td className="brd px-2 py-1 font-semibold" colSpan={totalCols}>{kode} — {uraian}</td>
+      </tr>
+      {rows.map((r, i) => <DataRow key={i} r={r} kodeCols={kodeCols} />)}
+      <SubtotalRow label={`Jumlah ${uraian}`} nilai={subtotal} kodeCols={kodeCols} />
+    </>
   )
 }
 
@@ -87,6 +121,12 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
 
   const groups = useMemo(() => groupByGolongan(rows), [rows])
   const total = useMemo(() => grandTotal(rows), [rows])
+  // Jumlah sub-kolom Kode Barang = maksimum segmen pada data (min 6 utk estetika header).
+  const kodeCols = useMemo(
+    () => Math.max(6, ...rows.map(r => (r.kode || '').split('.').length)),
+    [rows],
+  )
+  const totalCols = kodeCols + 19 // 19 kolom non-kode
   const tglCetak = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 
   const th = 'brd px-2 py-1 text-center font-semibold bg-gray-50'
@@ -116,7 +156,7 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
             <table className="border-collapse w-full">
               <thead>
                 <tr>
-                  <th className={th} colSpan={2}>Penggolongan dan Kodefikasi Barang</th>
+                  <th className={th} colSpan={kodeCols + 1}>Penggolongan dan Kodefikasi Barang</th>
                   <th className={th} rowSpan={2}>Spesifikasi Nama Barang</th>
                   <th className={th} rowSpan={2}>Merek/Tipe</th>
                   <th className={th} rowSpan={2}>Jumlah Barang</th>
@@ -132,7 +172,7 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
                   <th className={th} rowSpan={2}>Keterangan</th>
                 </tr>
                 <tr>
-                  <th className={th}>Kode Barang</th>
+                  <th className={th} colSpan={kodeCols}>Kode Barang</th>
                   <th className={th}>Nama Barang</th>
                   <th className={th}>Kode Sub Kegiatan</th>
                   <th className={th}>Nama Sub Kegiatan</th>
@@ -145,9 +185,10 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
               </thead>
               <tbody>
                 {groups.map(g => (
-                  <FragmentGroup key={g.kode} kode={g.kode} uraian={g.uraian} rows={g.rows} subtotal={g.subtotal} />
+                  <FragmentGroup key={g.kode} kode={g.kode} uraian={g.uraian} rows={g.rows}
+                    subtotal={g.subtotal} kodeCols={kodeCols} totalCols={totalCols} />
                 ))}
-                <SubtotalRow label="TOTAL" nilai={total} grand />
+                <SubtotalRow label="TOTAL" nilai={total} kodeCols={kodeCols} grand />
               </tbody>
             </table>
           </div>
@@ -167,20 +208,5 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
         </>
       )}
     </div>
-  )
-}
-
-// Satu blok golongan: baris data + baris subtotal (angka 27..30 di format).
-function FragmentGroup({ kode, uraian, rows, subtotal }: {
-  kode: string; uraian: string; rows: PengadaanRow[]; subtotal: number
-}) {
-  return (
-    <>
-      <tr className="bg-teal/5">
-        <td className="brd px-2 py-1 font-semibold" colSpan={TOTAL_COLS}>{kode} — {uraian}</td>
-      </tr>
-      {rows.map((r, i) => <DataRow key={i} r={r} />)}
-      <SubtotalRow label={`Jumlah ${uraian}`} nilai={subtotal} />
-    </>
   )
 }
