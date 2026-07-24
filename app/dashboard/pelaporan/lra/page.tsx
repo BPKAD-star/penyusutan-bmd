@@ -9,6 +9,7 @@ import { exportToExcel } from '@/lib/export'
 import SkpdCombobox, { type SkpdSelection } from '@/components/SkpdCombobox'
 import LraImport from '@/components/pelaporan/LraImport'
 import LraTagModal from '@/components/pelaporan/LraTagModal'
+import LraDetailModal from '@/components/pelaporan/LraDetailModal'
 import {
   JENIS_BM, BULAN_SINGKAT,
   rekapModal, rekapKapitalisasi, rekapReklas, rekapApp, selisihMatrix,
@@ -28,6 +29,8 @@ export default function LraPage() {
   const [loading, setLoading] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [tagMode, setTagMode] = useState<'kapitalisasi' | 'reklas_keluar' | null>(null)
+  const [skpdNama, setSkpdNama] = useState<Map<number, string>>(new Map())
+  const [detail, setDetail] = useState<{ judul: string; rows: LraRow[] } | null>(null)
   const [msg, setMsg] = useState('')
 
   const proses = useCallback(async () => {
@@ -60,6 +63,15 @@ export default function LraPage() {
     const appRows: AppRow[] = ((appData || []) as { grup: string | null; bulan: number; nilai: number }[])
       .map(d => ({ grup: d.grup, bulan: Number(d.bulan), nilai: Number(d.nilai || 0) }))
 
+    // 3) Nama SKPD untuk popup rincian (hanya id yang muncul di data).
+    const ids = [...new Set(lra.map(r => r.skpd_id))]
+    const nm = new Map<number, string>()
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await supabase.from('admin_skpd').select('id,nama').in('id', ids.slice(i, i + 200))
+      for (const s of (data || []) as { id: number; nama: string }[]) nm.set(s.id, s.nama)
+    }
+    setSkpdNama(nm)
+
     setRows(lra); setApp(appRows); setLoading(false)
   }, [org, tahun, supabase])
 
@@ -72,6 +84,16 @@ export default function LraPage() {
   const nBarjas = rows ? rows.filter(r => r.kelompok === 'barjas').length : 0
   const nBelumTag = rows ? rows.filter(r => r.kelompok === 'barjas' && r.klasifikasi == null).length : 0
   const nBukti = rows ? new Set(rows.map(r => r.no_bukti)).size : 0
+
+  // Drill-down ala pivot: klik angka → popup baris pembentuknya. Tak perlu query
+  // baru — baris LRA sudah ada di memori. grup/bulan null = "semua" (klik Total).
+  const drill = (blok: string, base: LraRow[], grupOf: (r: LraRow) => string | null) =>
+    (grup: string | null, bulan: number | null) => {
+      const sel = base.filter(r => (grup == null || grupOf(r) === grup) && (bulan == null || r.bulan === bulan))
+      const jl = grup ? `${grup} ${JENIS_BM.find(j => j.grup === grup)?.uraian ?? ''}`.trim() : 'Semua jenis'
+      const bl = bulan ? BULAN_SINGKAT[bulan - 1] : 'Semua bulan'
+      setDetail({ judul: `${blok} · ${jl} · ${bl}`, rows: sel })
+    }
 
   function handleExport() {
     if (!mLra || !mKap || !mRek || !mApp || !check) return
@@ -156,9 +178,12 @@ export default function LraPage() {
             </div>
           </div>
 
-          <MatrixTable judul={`LRA — Belanja Modal (5.2) ${tahun}`} m={mLra!} />
-          <MatrixTable judul="Kapitalisasi (belanja barjas 5.1 → belanja modal)" m={mKap!} kosongNote="Belum ada baris ditandai Kapitalisasi." />
-          <MatrixTable judul="Reklasifikasi (belanja modal dikeluarkan)" m={mRek!} kosongNote="Belum ada baris ditandai Reklasifikasi." />
+          <MatrixTable judul={`LRA — Belanja Modal (5.2) ${tahun}`} m={mLra!}
+            onDrill={drill('LRA', rows.filter(r => r.kelompok === 'modal'), r => r.kode_grup3)} />
+          <MatrixTable judul="Kapitalisasi (belanja barjas 5.1 → belanja modal)" m={mKap!} kosongNote="Belum ada baris ditandai Kapitalisasi."
+            onDrill={drill('Kapitalisasi', rows.filter(r => r.klasifikasi === 'kapitalisasi'), r => r.jenis_tujuan)} />
+          <MatrixTable judul="Reklasifikasi (belanja modal dikeluarkan)" m={mRek!} kosongNote="Belum ada baris ditandai Reklasifikasi."
+            onDrill={drill('Reklasifikasi', rows.filter(r => r.klasifikasi === 'reklas_keluar'), r => r.kode_grup3)} />
           <MatrixTable judul="Belanja Modal — Entryan Aplikasi (dari Pengadaan)" m={mApp!}
             note={mApp!.luarJenis > 0 ? `${angka(mApp!.luarJenis)} dari pengadaan berada di luar objek 5.2.01–05 (mis. 5.2.06 Aset Tidak Berwujud) — tidak masuk tabel ini.` : undefined} />
 
@@ -220,13 +245,29 @@ export default function LraPage() {
           onClose={() => { setTagMode(null); proses() }}
           onDone={m => { setTagMode(null); setMsg(m); proses() }} />
       )}
+      {detail && (
+        <LraDetailModal judul={detail.judul} rows={detail.rows} skpdNama={skpdNama} onClose={() => setDetail(null)} />
+      )}
     </div>
   )
 }
 
-// Tabel matriks jenis × 12 bulan + Total.
-function MatrixTable({ judul, m, note, kosongNote }: { judul: string; m: RekapMatrix; note?: string; kosongNote?: string }) {
+// Tabel matriks jenis × 12 bulan + Total. Kalau `onDrill` diisi, angka non-nol
+// jadi tombol → buka rincian (grup/bulan null = "semua", untuk sel Total).
+function MatrixTable({ judul, m, note, kosongNote, onDrill }: {
+  judul: string; m: RekapMatrix; note?: string; kosongNote?: string
+  onDrill?: (grup: string | null, bulan: number | null) => void
+}) {
   const kosong = m.totalKeseluruhan === 0
+  const Sel = ({ v, grup, bulan, cls }: { v: number; grup: string | null; bulan: number | null; cls?: string }) => (
+    <td className={`table-td text-right tabular-nums ${cls || ''}`}>
+      {v === 0 ? <span className="text-gray-300">–</span>
+        : onDrill
+          ? <button type="button" className="text-teal hover:underline" title="Lihat rincian"
+              onClick={() => onDrill(grup, bulan)}>{angka(v)}</button>
+          : angka(v)}
+    </td>
+  )
   return (
     <div className="card overflow-hidden">
       <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
@@ -248,16 +289,14 @@ function MatrixTable({ judul, m, note, kosongNote }: { judul: string; m: RekapMa
               {JENIS_BM.map(j => (
                 <tr key={j.grup}>
                   <td className="table-td sticky left-0 bg-white whitespace-nowrap"><span className="text-gray-400">{j.grup}</span> {j.uraian}</td>
-                  {m.perJenis[j.grup].map((v, i) => (
-                    <td key={i} className="table-td text-right tabular-nums">{v ? angka(v) : <span className="text-gray-300">–</span>}</td>
-                  ))}
-                  <td className="table-td text-right tabular-nums font-medium border-l border-gray-100">{angka(m.totalJenis[j.grup])}</td>
+                  {m.perJenis[j.grup].map((v, i) => <Sel key={i} v={v} grup={j.grup} bulan={i + 1} />)}
+                  <Sel v={m.totalJenis[j.grup]} grup={j.grup} bulan={null} cls="font-medium border-l border-gray-100" />
                 </tr>
               ))}
               <tr className="bg-gray-50 font-semibold text-gray-900">
                 <td className="table-td sticky left-0 bg-gray-50">TOTAL</td>
-                {m.totalBulan.map((v, i) => <td key={i} className="table-td text-right tabular-nums">{v ? angka(v) : <span className="text-gray-300">–</span>}</td>)}
-                <td className="table-td text-right tabular-nums border-l border-gray-100">{angka(m.totalKeseluruhan)}</td>
+                {m.totalBulan.map((v, i) => <Sel key={i} v={v} grup={null} bulan={i + 1} />)}
+                <Sel v={m.totalKeseluruhan} grup={null} bulan={null} cls="border-l border-gray-100" />
               </tr>
             </tbody>
           </table>
