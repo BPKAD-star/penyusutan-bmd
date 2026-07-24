@@ -158,13 +158,26 @@ export function groupByGolongan(rows: PengadaanRow[]): GolonganGroup[] {
 
 export const grandTotal = (rows: PengadaanRow[]) => rows.reduce((s, r) => s + r.totalNilai, 0)
 
+export type PenggunaBarang = { nama: string; nip: string | null; jabatan: string | null }
+
 // Pengguna Barang penanda tangan laporan (footer) — NIP bisa null (non-ASN RSUD).
-export async function fetchPenggunaBarang(
-  supabase: Supabase, skpdId: number,
-): Promise<{ nama: string; nip: string | null; jabatan: string | null } | null> {
-  const { data } = await supabase.from('admin_pegawai')
-    .select('nama,nip,jabatan').eq('skpd_id', skpdId).eq('role_bmd', 'pengguna_barang')
-    .order('nama').limit(1)
-  const r = (data || [])[0] as { nama: string; nip: string | null; jabatan: string | null } | undefined
-  return r || null
+export async function fetchPenggunaBarang(supabase: Supabase, skpdId: number): Promise<PenggunaBarang | null> {
+  return (await fetchPenggunaBarangMap(supabase, [skpdId])).get(skpdId) || null
+}
+
+// Versi batch (mode se-kabupaten: footer per SKPD). Ambil 1 Pengguna Barang per SKPD.
+export async function fetchPenggunaBarangMap(
+  supabase: Supabase, skpdIds: number[],
+): Promise<Map<number, PenggunaBarang>> {
+  const map = new Map<number, PenggunaBarang>()
+  const uniq = [...new Set(skpdIds)]
+  for (let i = 0; i < uniq.length; i += 200) {
+    const { data } = await supabase.from('admin_pegawai')
+      .select('skpd_id,nama,nip,jabatan').in('skpd_id', uniq.slice(i, i + 200))
+      .eq('role_bmd', 'pengguna_barang').order('nama')
+    for (const r of (data || []) as (PenggunaBarang & { skpd_id: number })[]) {
+      if (!map.has(r.skpd_id)) map.set(r.skpd_id, { nama: r.nama, nip: r.nip, jabatan: r.jabatan })
+    }
+  }
+  return map
 }
