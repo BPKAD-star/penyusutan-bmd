@@ -146,9 +146,15 @@ browser. Pola RLS InitPlan/set-membership (`20260720_01`) dijaga.
    dijumlahkan ke `jenis_tujuan`) dan **Reklas** (`klasifikasi='reklas_keluar'`
    dijumlahkan ke `kode_grup3` sendiri).
 
-2. **`fn_belanja_modal_app(p_tahun, p_skpd_ids)`** → dari `pengadaan`:
-   agregat `nilai` per `(jenis 5.2.0x, bulan)`. (period-aware sederhana:
-   `tanggal` = bulan; golongan → 5.2.0x via mapping #9.)
+2. **`fn_lra_belanja_modal(p_tahun, p_skpd_ids)`** ✅ **SUDAH ADA** (migrasi
+   `20260724_01`) → dari `pengadaan`: agregat `nilai` per `(jenis 5.2.0x, bulan)`,
+   SKPD dari `skpd_tujuan`, grup dari `payload.kode_rekening` (3 segmen) dgn
+   fallback golongan (mapping #9), aset ber-`batal_pengadaan` dibuang.
+   **WAJIB SECURITY DEFINER + scope RLS direplikasi & `fn_is_admin()` sekali**
+   (pola `20260716_07`): versi awal Fase B menarik baris mentah ke browser dan
+   **kena statement timeout 8s** saat SKPD "Semua" (RLS `aset` per-baris ×
+   ~227rb aset). Jangan diulang — agregasi belanja modal HARUS di server.
+   Index pendukung `idx_trx_jenis_tanggal (jenis, tanggal)` ikut dibuat.
 
 **Roll-up SKPD (keputusan D-3):** baris bisa tersimpan di `skpd_id` **sub-unit**,
 tapi rekap yang dilihat di level SKPD **induk** harus menjumlahkan seluruh

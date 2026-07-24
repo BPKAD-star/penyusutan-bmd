@@ -6,12 +6,11 @@
 import { useCallback, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection } from '@/components/SkpdCombobox'
 import LraImport from '@/components/pelaporan/LraImport'
 import LraTagModal from '@/components/pelaporan/LraTagModal'
 import {
-  JENIS_BM, GOLONGAN_KE_GRUP, BULAN_SINGKAT, grup3,
+  JENIS_BM, BULAN_SINGKAT,
   rekapModal, rekapKapitalisasi, rekapReklas, rekapApp, selisihMatrix,
   type LraRow, type AppRow, type RekapMatrix,
 } from '@/lib/lra'
@@ -48,37 +47,18 @@ export default function LraPage() {
       if (batch.length < 1000) break
     }
 
-    // 2) Belanja modal sisi aplikasi = ledger `pengadaan` (skpd_tujuan = SKPD
-    //    pembeli, tanggal = tgl BAST/perolehan). Grup diambil dari
-    //    payload.kode_rekening; kalau kosong (data lama) fallback ke golongan aset.
-    type Trx = { aset_id: string; tanggal: string; nilai: number; payload: { kode_rekening?: string } | null; aset: { kode: string } | null }
-    const trx: Trx[] = []
-    for (let from = 0; ; from += 1000) {
-      let q = supabase.from('transaksi_bmd')
-        .select('aset_id,tanggal,nilai,payload,aset:aset_id(kode)')
-        .eq('jenis', 'pengadaan')
-        .gte('tanggal', `${tahun}-01-01`).lte('tanggal', `${tahun}-12-31`)
-        .order('id').range(from, from + 999)
-      if (desc) q = q.in('skpd_tujuan', desc)
-      const { data, error } = await q
-      if (error) { setMsg(`Error: ${error.message}`); setLoading(false); return }
-      const batch = (data || []) as unknown as Trx[]
-      trx.push(...batch)
-      if (batch.length < 1000) break
-    }
-    // Buang pengadaan yang dibatalkan (batal_pengadaan) — dianggap tak pernah ada.
-    const asetIds = [...new Set(trx.map(t => t.aset_id))]
-    const batal = new Set<string>()
-    for (let i = 0; i < asetIds.length; i += 200) {
-      const { data } = await supabase.from('transaksi_bmd').select('aset_id')
-        .eq('jenis', 'batal_pengadaan').in('aset_id', asetIds.slice(i, i + 200))
-      for (const d of (data || []) as { aset_id: string }[]) batal.add(d.aset_id)
-    }
-    const appRows: AppRow[] = trx.filter(t => !batal.has(t.aset_id)).map(t => {
-      const rek = t.payload?.kode_rekening || ''
-      const grup = rek ? grup3(rek) : (GOLONGAN_KE_GRUP[kodeLevel3(t.aset?.kode || '')] || null)
-      return { grup, bulan: Number(t.tanggal.slice(5, 7)), nilai: Number(t.nilai || 0) }
+    // 2) Belanja modal sisi aplikasi (ledger `pengadaan`) — DIAGREGASI DI SERVER.
+    //    Dulu ditarik mentah ke browser → RLS aset per-baris + ~227rb aset bikin
+    //    statement timeout 8s. Sekarang lewat RPC (SECURITY DEFINER, scope RLS
+    //    direplikasi): balikannya maks 5 jenis × 12 bulan.
+    //    Lihat supabase/migrations/20260724_01_fn_lra_belanja_modal.sql.
+    const { data: appData, error: appErr } = await supabase.rpc('fn_lra_belanja_modal', {
+      p_tahun: Number(tahun),
+      p_skpd_ids: desc,
     })
+    if (appErr) { setMsg(`Error: ${appErr.message}`); setLoading(false); return }
+    const appRows: AppRow[] = ((appData || []) as { grup: string | null; bulan: number; nilai: number }[])
+      .map(d => ({ grup: d.grup, bulan: Number(d.bulan), nilai: Number(d.nilai || 0) }))
 
     setRows(lra); setApp(appRows); setLoading(false)
   }, [org, tahun, supabase])
