@@ -9,6 +9,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { comparePeriode, periodeDariTanggal, kodeLevel3, perlakuanKode } from '@/lib/bmd'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 
 // Event yang menyembunyikan / memunculkan kembali aset — SAMA dgn halaman
 // Penyusutan (jangan pakai varian Daftar Barang yg beda kdp_selesai_keluar).
@@ -152,7 +153,7 @@ export function measuresOf(snap: Snapshot | undefined, golongan: string, komp: K
 // reconcile & memunculkan yg belum terpetakan (mis. reklas_komptabel).
 // Beban/Akumulasi baris mutasi = Fase 3 (belum). Lihat docs/rekonsiliasi-bmd-plan.md.
 export type MutasiKey =
-  | 'pengadaan' | 'hibah' | 'tukar' | 'inventarisasi' | 'lainnya'
+  | 'pengadaan' | 'hibah' | 'tukar' | 'inventarisasi' | 'lainnya' | 'kdp'
   | 'belanja_jasa' | 'penggunaan_masuk' | 'kapitalisasi' | 'koreksi_tambah'
   | 'reklas_fungsi_masuk' | 'reklas_kode_masuk'
   | 'hapus_penjualan' | 'hapus_hibah' | 'hapus_tukar' | 'hapus_penyertaan' | 'hapus_sebab_lain'
@@ -161,8 +162,10 @@ export type MutasiKey =
 export type MutasiCell = Partial<Record<MutasiKey, number>> // perolehan per kategori
 export type Mutasi = Record<string, { intra: MutasiCell; ekstra: MutasiCell }> // key = golongan
 
-const JENIS_CARA = ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya']
-const VOID_JENIS = ['batal_pengadaan', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'koreksi_pencatatan_ganda']
+// 'akumulasi_kdp' = termin kontrak konstruksi → penambahan nilai aset KDP (1.3.6).
+// Sebelumnya tidak dipetakan sama sekali sehingga jatuh ke baris 'residual'
+// (rantai tetap reconcile, tapi tak berlabel). Sekarang punya kategori sendiri.
+const JENIS_CARA = ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya', 'akumulasi_kdp']
 const JENIS_HAPUS = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
 
 type LedRow = {
@@ -187,22 +190,13 @@ async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: 
 }
 
 // Kumpulan aset_id yg PERNAH kena void (semua periode — batal_* retroaktif).
-async function fetchVoided(supabase: SupabaseClient): Promise<Set<string>> {
-  const out = new Set<string>()
-  for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('transaksi_bmd').select('aset_id').in('jenis', VOID_JENIS as never).range(from, from + 999)
-    if (!data || data.length === 0) break
-    for (const r of data as { aset_id: string }[]) out.add(r.aset_id)
-    if (data.length < 1000) break
-  }
-  for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('transaksi_bmd').select('aset_id').eq('jenis', 'batal_koreksi_pencatatan_ganda' as never).range(from, from + 999)
-    if (!data || data.length === 0) break
-    for (const r of data as { aset_id: string }[]) out.delete(r.aset_id)
-    if (data.length < 1000) break
-  }
-  return out
-}
+// Implementasinya dipindah ke lib/voidedAset.ts (dipakai bersama laporan
+// perolehan) — VOID_JENIS-nya identik, dulu diduplikasi di sini & di
+// app/dashboard/pelaporan/bmd/page.tsx. 'batal_akumulasi_kdp' ditambahkan:
+// kontrak konstruksi yang dibuka kunci membalik SEMUA terminnya, jadi aset KDP
+// itu tak boleh dihitung sbg penambahan.
+const fetchVoided = (supabase: SupabaseClient) =>
+  fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'])
 
 // target_trx_id yg dibatalkan utk sekumpulan jenis batal_* (kapitalisasi/koreksi/reklas).
 async function fetchBatalTargets(supabase: SupabaseClient, jenisList: string[]): Promise<Set<number>> {
@@ -253,6 +247,7 @@ const KURANG_KEYS = new Set<MutasiKey>([
 export const KATEGORI_LABEL: Record<MutasiKey, string> = {
   pengadaan: 'Pengadaan', belanja_jasa: 'Perolehan dari rekening Belanja Jasa',
   hibah: 'Hibah', tukar: 'Tukar Menukar', inventarisasi: 'Hasil Inventarisasi', lainnya: 'Perolehan Lainnya',
+  kdp: 'Konstruksi Dalam Pengerjaan (termin)',
   penggunaan_masuk: 'Penggunaan (transfer masuk)', kapitalisasi: 'Kapitalisasi', koreksi_tambah: 'Koreksi Nilai (Tambah)',
   reklas_fungsi_masuk: 'Reklas Perubahan Fungsi (Masuk)', reklas_kode_masuk: 'Reklas Kesalahan Kodefikasi (Masuk)',
   hapus_penjualan: 'Penghapusan Pemindahtanganan — Penjualan', hapus_hibah: 'Penghapusan Pemindahtanganan — Hibah',
@@ -301,6 +296,8 @@ async function computeMutasiLines(
     if (r.jenis === 'pengadaan') {
       const rek = typeof r.payload?.kode_rekening === 'string' ? r.payload.kode_rekening : null
       push(gol, komp, rek?.trim().startsWith('5.1') ? 'belanja_jasa' : 'pengadaan', r.nilai, r)
+    } else if (r.jenis === 'akumulasi_kdp') {
+      push(gol, komp, 'kdp', r.nilai, r)
     } else push(gol, komp, caraKey[r.jenis] || 'lainnya', r.nilai, r)
   }
 

@@ -14,9 +14,9 @@
 //     Menyaring pakai `aset.status='dihapus'` MENCAMPUR keduanya (status terkini
 //     tak bisa bedakan void vs dihapus) → laporan periode lampau berubah tiap
 //     ada penghapusan baru. Pakai fungsi ini, bukan filter status.
-import type { createClient } from '@/lib/supabase/client'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
-type Supabase = ReturnType<typeof createClient>
+type Supabase = SupabaseClient
 
 // Cara perolehan yang dibatalkan (unapprove/koreksi) + gabung pencatatan ganda.
 export const VOID_JENIS = [

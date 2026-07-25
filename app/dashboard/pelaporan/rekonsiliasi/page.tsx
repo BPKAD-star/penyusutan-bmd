@@ -28,7 +28,7 @@ const KOMPS: Komptabel[] = ['intra', 'ekstra']
 type RowKind = 'saldo-awal' | 'saldo-akhir' | 'header' | 'sub' | 'item' | 'jumlah-t' | 'jumlah-k' | 'selisih'
 type RowDef = { kind: RowKind; label: string; key?: MutasiKey; indent?: number }
 
-const TAMBAH_KEYS: MutasiKey[] = ['pengadaan', 'hibah', 'tukar', 'inventarisasi', 'lainnya', 'belanja_jasa', 'penggunaan_masuk', 'kapitalisasi', 'koreksi_tambah', 'reklas_fungsi_masuk', 'reklas_kode_masuk']
+const TAMBAH_KEYS: MutasiKey[] = ['pengadaan', 'hibah', 'tukar', 'inventarisasi', 'lainnya', 'kdp', 'belanja_jasa', 'penggunaan_masuk', 'kapitalisasi', 'koreksi_tambah', 'reklas_fungsi_masuk', 'reklas_kode_masuk']
 const KURANG_KEYS: MutasiKey[] = ['hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain', 'pengalihan_keluar', 'koreksi_kurang', 'reklas_fungsi_keluar', 'reklas_kode_keluar']
 
 const ROWS: RowDef[] = [
@@ -40,6 +40,9 @@ const ROWS: RowDef[] = [
   { kind: 'item', label: 'Tukar Menukar', key: 'tukar', indent: 2 },
   { kind: 'item', label: 'Hasil Inventarisasi', key: 'inventarisasi', indent: 2 },
   { kind: 'item', label: 'Perolehan Lainnya', key: 'lainnya', indent: 2 },
+  // Termin kontrak konstruksi (akumulasi_kdp) → nilai aset KDP 1.3.6 naik.
+  // Sebelumnya tak terpetakan & jatuh ke baris Selisih.
+  { kind: 'item', label: 'Konstruksi Dalam Pengerjaan (termin)', key: 'kdp', indent: 2 },
   { kind: 'item', label: 'Perolehan dari rekening Belanja Jasa', key: 'belanja_jasa', indent: 1 },
   { kind: 'item', label: 'Penggunaan (transfer masuk)', key: 'penggunaan_masuk', indent: 1 },
   { kind: 'item', label: 'Kapitalisasi', key: 'kapitalisasi', indent: 1 },
