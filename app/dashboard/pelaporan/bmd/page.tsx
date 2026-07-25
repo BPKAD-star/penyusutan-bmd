@@ -18,6 +18,7 @@ import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
+import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 
 // ── Model 3: jenis ledger per kategori Penambahan/Pengurangan (nilai
 // perolehan) — diverifikasi ke kode asli tiap alur (Pengadaan/PerolehanManual/
@@ -34,11 +35,17 @@ import { tahunAwal } from '@/lib/tahunKerja'
 // koreksi HARUS ikut disaring juga dari Penambahan (bukan cuma tidak dihitung
 // sbg Pengurangan) — kalau tidak, barang yang sudah "dianggap tidak pernah
 // ada" tetap nongol sbg Penambahan padahal sudah hilang dari Daftar Barang.
-// VOID_JENIS dipakai utk kumpulkan aset_id yang PERNAH kena event ini (across
-// ALL periode — batal_* selalu dicatat mundur ke tgl asli, jadi retroaktif
-// menghapus dari SEMUA periode, bukan cuma periode saat tombol diklik).
-const VOID_JENIS = ['batal_pengadaan', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'koreksi_pencatatan_ganda']
+// Daftar jenis void-nya (dulu konstanta VOID_JENIS lokal di file ini) kini ada
+// di lib/voidedAset.ts — dipakai bersama Rekonsiliasi & Laporan Perolehan supaya
+// tidak drift. Sifatnya sama: kumpulkan aset_id yang PERNAH kena event ini
+// (across ALL periode — batal_* selalu dicatat mundur ke tgl asli, jadi
+// retroaktif menghapus dari SEMUA periode, bukan cuma periode saat diklik).
 const JENIS_CARA_PEROLEHAN = ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya']
+// Termin kontrak konstruksi → menaikkan nilai aset KDP (1.3.6). WAJIB ikut
+// Penambahan: Saldo Awal/Akhir (fn_rekap_bmd) SUDAH mencakup golongan 1.3.6,
+// sedangkan Model 3 tak punya baris penyeimbang — tanpa ini baris KDP tidak
+// foot (Awal + Tambah − Kurang ≠ Akhir) sebesar nilai termin periode itu.
+const JENIS_KDP_M3 = ['akumulasi_kdp']
 const JENIS_PENGHAPUSAN_M3 = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
 
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
@@ -192,30 +199,11 @@ export default function LaporanBmdPage() {
     return out
   }
 
-  // aset_id yang PERNAH kena batal_*/koreksi_pencatatan_ganda (semua periode —
-  // event ini retroaktif, jadi harus disaring dari Penambahan di periode
-  // manapun acquisition aslinya dicatat, bukan cuma periode saat dibatalkan).
-  async function fetchVoidedAsetIds(): Promise<Set<string>> {
-    const out = new Set<string>()
-    for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('transaksi_bmd')
-        .select('aset_id').in('jenis', VOID_JENIS as never).range(from, from + 999)
-      if (!data || data.length === 0) break
-      for (const r of data as { aset_id: string }[]) out.add(r.aset_id)
-      if (data.length < 1000) break
-    }
-    // Un-void: koreksi_pencatatan_ganda yang DIBATALKAN (barang duplikat aktif
-    // lagi) harus muncul kembali sbg Penambahan. Guard batal (tak boleh ada trx
-    // lebih baru) menjamin batal = keadaan TERAKHIR, jadi cukup buang dari set.
-    for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('transaksi_bmd')
-        .select('aset_id').eq('jenis', 'batal_koreksi_pencatatan_ganda' as never).range(from, from + 999)
-      if (!data || data.length === 0) break
-      for (const r of data as { aset_id: string }[]) out.delete(r.aset_id)
-      if (data.length < 1000) break
-    }
-    return out
-  }
+  // (fetchVoidedAsetIds lokal dipindah ke lib/voidedAset.ts — dipakai bersama
+  // Rekonsiliasi & Laporan Perolehan. 'batal_akumulasi_kdp' disertakan saat
+  // dipanggil karena Model 3 kini ikut menghitung termin KDP: kontrak
+  // konstruksi yang dibuka kunci membalik SEMUA terminnya, jadi tak boleh
+  // dihitung sbg Penambahan.)
 
   // trx_id reklas yang DIBATALKAN (batal_reklas.payload.target_trx_id) — supaya
   // reklas_golongan yg sudah dibatalkan TIDAK ikut kehitung sbg mutasi hantu.
@@ -273,7 +261,7 @@ export default function LaporanBmdPage() {
       snapshotPerolehan(periodeSebelumnya),
       snapshotPerolehan(periode),
       fetchSkpdMapM3(),
-      fetchVoidedAsetIds(),
+      fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp']),
       fetchReklasDibatalkan(),
       fetchPenghapusanNetRemoved(),
     ])
@@ -288,11 +276,24 @@ export default function LaporanBmdPage() {
     }
 
     // Cara Perolehan → Penambahan (kecuali yang belakangan di-batal/koreksi —
-    // itu dianggap tidak pernah ada, lihat VOID_JENIS di atas)
+    // itu dianggap tidak pernah ada; daftar jenisnya di lib/voidedAset.ts)
     for (const r of await fetchLedgerM3(JENIS_CARA_PEROLEHAN)) {
       if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       addLine(tambah, 'tambah', kodeLevel3(r.aset.kode), {
         kategori: 'Cara Perolehan', tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
+        namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
+      })
+    }
+
+    // Termin KDP → Penambahan (golongan 1.3.6). Kategori sendiri supaya kebeda
+    // dari Cara Perolehan di rincian; nilai = nominal termin pada periode ini.
+    // Kontrak yang dibuka kunci sudah tersaring lewat `voided`
+    // (batal_akumulasi_kdp) — lihat pemanggilan fetchVoidedAsetIds di atas.
+    for (const r of await fetchLedgerM3(JENIS_KDP_M3)) {
+      if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
+      addLine(tambah, 'tambah', kodeLevel3(r.aset.kode), {
+        kategori: 'Konstruksi Dalam Pengerjaan (termin)', tanggal: r.tanggal,
+        skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
       })
     }
