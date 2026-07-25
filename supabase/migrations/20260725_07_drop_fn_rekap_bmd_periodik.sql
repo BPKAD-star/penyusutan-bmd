@@ -1,0 +1,41 @@
+-- ============================================================================
+-- Batalkan langkah 3 audit Pelaporan: DROP fn_rekap_bmd_periodik + index-nya.
+--
+-- ALASAN: fungsi dari migrasi 20260725_06 TIDAK LAYAK PAKAI — `EXPLAIN ANALYZE
+--   SELECT * FROM fn_rekap_bmd_periodik('2026-S2', NULL, 'intra')` menembus
+--   statement timeout (diuji 2026-07-25). Penyebab desain: demi period-correct,
+--   fungsi itu sengaja MEMBUANG dua filter yang di fn_rekap_bmd memangkas baris
+--   lebih awal (`status='aktif'` dan `skpd_id = ANY(p_skpd_ids)`), lalu
+--   memindahkan filter scope ke query luar lewat `eff_owner`. Akibatnya CTE
+--   `cand` memaparkan SELURUH aset (~227rb) + join penyusutan_semester + replay
+--   ledger sebelum disaring → tak selesai utk scope "Semua".
+--
+-- KEPUTUSAN (user 2026-07-25): jangan lanjut mengoptimasi (siklus tebak-ukur
+--   yang mahal). Manfaat terbesar sudah didapat lewat:
+--     * 20260725_05 — nilai perolehan period-correct (gap yang paling sering
+--       kena: kapitalisasi & koreksi nilai sesudah periode).
+--     * Banner di halaman Laporan BMD — menyatakan terbuka bahwa keanggotaan &
+--       SKPD pemilik mengikuti register TERKINI.
+--     * Rekonsiliasi BMD (lib/rekon.ts) sudah period-aware penuh → itu rujukan
+--       angka periodik resmi.
+--
+-- INDEX IKUT DI-DROP: idx_trx_jenis_aset_periode dibuat khusus utk fungsi ini.
+--   transaksi_bmd adalah jalur TULIS terpanas (ledger append-only); index yang
+--   tak terpakai hanya menambah biaya tiap INSERT.
+--
+-- fn_rekap_bmd (dipakai halaman Laporan BMD) TIDAK disentuh — termasuk
+-- perbaikan perolehan dari 20260725_05 yang TETAP berlaku.
+--
+-- KALAU NANTI period-correct penuh tetap dibutuhkan, jangan ulangi pendekatan
+-- ini (hitung on-the-fly saat request). Arah yang lebih tepat: MATERIALISASI —
+-- simpan hasil rekap per (periode, skpd, golongan) ke tabel, dihitung sekali
+-- saat engine jalan / saat Tutup Tahun. Periode yang sudah TERKUNCI tak pernah
+-- berubah, jadi cukup dihitung sekali dan dibaca lewat index. Pola ini sudah
+-- terpakai di aplikasi ini: `penyusutan_semester` = output engine yang
+-- dimaterialisasi, bukan dihitung ulang tiap buka halaman.
+--
+-- Jalankan di Supabase SQL Editor. Idempoten.
+-- ============================================================================
+
+DROP FUNCTION IF EXISTS fn_rekap_bmd_periodik(text, bigint[], text);
+DROP INDEX IF EXISTS idx_trx_jenis_aset_periode;
