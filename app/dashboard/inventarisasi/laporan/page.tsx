@@ -69,48 +69,38 @@ export default function LaporanInventarisasiPage() {
         </div>
       }
     >
-      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
+      {/* Filter: SKPD satu baris penuh, lalu Tahun / Jenis Aset / Format Laporan.
+          Format Laporan dibuat DROPDOWN (bukan 11 kartu) — daftar sepanjang itu
+          bikin halaman ramai & sulit dibaca; jumlah temuan tetap ditampilkan
+          di tiap opsi supaya operator tahu mana yang berisi. */}
+      <div className="card p-4 mb-4 space-y-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Tahun</label>
-          <select className="select-filter" value={tahun} onChange={e => setTahun(Number(e.target.value))}>
-            {[TAHUN_INI, TAHUN_INI - 1, TAHUN_INI - 2].map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Jenis Aset</label>
-          <select className="select-filter" value={golongan} onChange={e => setGolongan(e.target.value)}>
-            {GOLONGAN_OPSI.map(g => <option key={g.kode} value={g.kode}>{g.label}</option>)}
-          </select>
-        </div>
-        <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD</label>
           <SkpdCombobox lockToOperator allowClear
             onChangeSelection={sel => { setSkpdIds(sel.descendantIds); setSkpdId(sel.skpdId) }}
-            onChange={() => { /* nama diisi lewat header saat 1 SKPD */ }}
             placeholder="Semua SKPD — atau ketik nama SKPD..." />
         </div>
-      </div>
-
-      {/* Pemilih format + jumlah temuan */}
-      <div className="card p-4 mb-4">
-        <p className="text-xs font-semibold text-gray-700 mb-2">Pilih Format Laporan</p>
-        <div className="flex flex-wrap gap-2">
-          {LHI_URUT.map(k => {
-            const n = hitung[k] || 0
-            const aktif = k === kode
-            return (
-              <button key={k} onClick={() => setKode(k)}
-                className={`text-left px-3 py-2 rounded-lg border text-xs transition-colors max-w-[260px] ${
-                  aktif ? 'border-teal bg-teal/5 text-gray-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}>
-                <span className="font-semibold">{k}</span>
-                <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${n > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>
-                  {n}
-                </span>
-                <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">{LHI_LABEL[k]}</p>
-              </button>
-            )
-          })}
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Tahun</label>
+            <select className="select-filter" value={tahun} onChange={e => setTahun(Number(e.target.value))}>
+              {[TAHUN_INI, TAHUN_INI - 1, TAHUN_INI - 2].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Jenis Aset</label>
+            <select className="select-filter" value={golongan} onChange={e => setGolongan(e.target.value)}>
+              {GOLONGAN_OPSI.map(g => <option key={g.kode} value={g.kode}>{g.label}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[320px]">
+            <label className="block text-xs text-gray-500 mb-1">Format Laporan</label>
+            <select className="select-filter w-full" value={kode} onChange={e => setKode(e.target.value as LhiKode)}>
+              {LHI_URUT.map(k => (
+                <option key={k} value={k}>{k} — {LHI_LABEL[k]} ({hitung[k] || 0})</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

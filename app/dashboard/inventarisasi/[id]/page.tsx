@@ -117,6 +117,19 @@ export default function DetailInventarisasiPage() {
     load()
   }
 
+  /** Tarik kembali pengajuan (diajukan → draft). Hanya selama BELUM divalidasi;
+   *  begitu divalidasi, satu-satunya jalan mundur adalah admin "Kembalikan". */
+  async function batalAjukan() {
+    if (!confirm('Tarik kembali pengajuan ini? Lembar kerja kembali ke Draft dan bisa diedit lagi.')) return
+    setBusy(true); setMsg('')
+    const { error } = await supabase.from('inventarisasi')
+      .update({ status: 'draft', diajukan_at: null }).eq('id', id)
+    setBusy(false)
+    if (error) { setMsg(`Error: ${error.message}`); return }
+    setMsg('Pengajuan ditarik kembali — status kembali Draft.')
+    load()
+  }
+
   async function validasi() {
     if (!confirm('Validasi inventarisasi ini? Setelah divalidasi, SKPD tidak bisa mengubahnya lagi.')) return
     setBusy(true); setMsg('')
@@ -170,6 +183,9 @@ export default function DetailInventarisasiPage() {
               <button onClick={ajukan} disabled={busy} className="btn-primary text-sm">
                 {busy ? 'Memproses...' : 'Ajukan ke Pengelola'}
               </button>
+            )}
+            {hdr.status === 'diajukan' && (
+              <button onClick={batalAjukan} disabled={busy} className="btn-secondary text-sm">Batal Ajukan</button>
             )}
             {isAdmin && hdr.status === 'diajukan' && (
               <button onClick={validasi} disabled={busy} className="btn-primary text-sm">✓ Validasi</button>

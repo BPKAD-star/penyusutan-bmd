@@ -41,7 +41,11 @@ export default function InventarisasiPage() {
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState('')
 
+  // Filter daftar (client-side — jumlah inventarisasi kecil: per SKPD × golongan).
   const [filterStatus, setFilterStatus] = useState<'' | InvStatus>('')
+  const [filterTahun, setFilterTahun] = useState<number | ''>('')
+  const [filterGolongan, setFilterGolongan] = useState('')
+  const [filterSkpdIds, setFilterSkpdIds] = useState<number[] | null>(null)
 
   // Form buat
   const [showForm, setShowForm] = useState(false)
@@ -70,10 +74,32 @@ export default function InventarisasiPage() {
   }
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const terlihat = useMemo(
-    () => rows.filter(r => !filterStatus || r.status === filterStatus),
-    [rows, filterStatus],
+  const terlihat = useMemo(() => {
+    const scope = filterSkpdIds && filterSkpdIds.length > 0 ? new Set(filterSkpdIds) : null
+    return rows.filter(r =>
+      (!filterStatus || r.status === filterStatus) &&
+      (!filterTahun || r.tahun === filterTahun) &&
+      (!filterGolongan || r.golongan === filterGolongan) &&
+      (!scope || scope.has(r.skpd_id)))
+  }, [rows, filterStatus, filterTahun, filterGolongan, filterSkpdIds])
+
+  const tahunOpsi = useMemo(
+    () => [...new Set(rows.map(r => r.tahun))].sort((a, b) => b - a),
+    [rows],
   )
+
+  /** Hapus lembar kerja — hanya draft/dikembalikan (ditegakkan juga oleh RLS).
+   *  Barisnya ikut terhapus lewat ON DELETE CASCADE. */
+  async function hapus(h: InvHeader) {
+    if (!confirm(
+      `Hapus inventarisasi ${konfigLki(h.golongan).label} ${h.tahun} — ${h.skpd?.nama || h.skpd_id}?\n` +
+      `Seluruh lembar kerja beserta isiannya ikut terhapus. Tidak bisa dibatalkan.`
+    )) return
+    const { error } = await supabase.from('inventarisasi').delete().eq('id', h.id)
+    if (error) { setMsg(`Error: gagal menghapus — ${error.message}`); return }
+    setMsg('Inventarisasi dihapus.')
+    await load()
+  }
 
   async function buat() {
     if (!skpdId) { setMsg('Error: pilih SKPD dulu.'); return }
@@ -167,19 +193,43 @@ export default function InventarisasiPage() {
         </div>
       )}
 
-      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
+      {/* Filter: SKPD satu baris penuh, lalu Tahun / Jenis Aset / Status. */}
+      <div className="card p-4 mb-4 space-y-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Status</label>
-          <select className="select-filter" value={filterStatus} onChange={e => setFilterStatus(e.target.value as '' | InvStatus)}>
-            <option value="">Semua Status</option>
-            {(['draft', 'diajukan', 'divalidasi', 'dikembalikan'] as InvStatus[]).map(s =>
-              <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-          </select>
+          <label className="block text-xs text-gray-500 mb-1">SKPD</label>
+          <SkpdCombobox lockToOperator allowClear
+            onChangeSelection={sel => setFilterSkpdIds(sel.descendantIds)}
+            placeholder="Semua SKPD — atau ketik nama SKPD..." />
         </div>
-        <Link href="/dashboard/inventarisasi/laporan"
-          className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
-          Laporan Hasil Inventarisasi (LHI)
-        </Link>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Tahun</label>
+            <select className="select-filter" value={filterTahun}
+              onChange={e => setFilterTahun(e.target.value ? Number(e.target.value) : '')}>
+              <option value="">Semua Tahun</option>
+              {tahunOpsi.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Jenis Aset</label>
+            <select className="select-filter" value={filterGolongan} onChange={e => setFilterGolongan(e.target.value)}>
+              <option value="">Semua Jenis Aset</option>
+              {GOLONGAN_OPSI.map(g => <option key={g.kode} value={g.kode}>{g.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Status</label>
+            <select className="select-filter" value={filterStatus} onChange={e => setFilterStatus(e.target.value as '' | InvStatus)}>
+              <option value="">Semua Status</option>
+              {(['draft', 'diajukan', 'divalidasi', 'dikembalikan'] as InvStatus[]).map(s =>
+                <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+            </select>
+          </div>
+          <Link href="/dashboard/inventarisasi/laporan"
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
+            Laporan Hasil (LHI)
+          </Link>
+        </div>
       </div>
 
       <div className="card overflow-hidden">
@@ -217,6 +267,12 @@ export default function InventarisasiPage() {
                     <Link href={`/dashboard/inventarisasi/${h.id}`} className="text-teal hover:underline text-xs font-medium">
                       Buka
                     </Link>
+                    {/* Hapus hanya saat draft/dikembalikan — sesuai policy RLS. */}
+                    {(h.status === 'draft' || h.status === 'dikembalikan') && (
+                      <button onClick={() => hapus(h)} className="ml-3 text-red-500 hover:text-red-700 text-xs font-medium">
+                        Hapus
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
