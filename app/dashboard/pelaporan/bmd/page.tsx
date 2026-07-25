@@ -397,6 +397,21 @@ export default function LaporanBmdPage() {
         <p className="text-gray-500 text-sm mt-1">Rekapitulasi & penyusutan s.d. periode {periode}, per golongan BMD.</p>
       </div>
 
+      {/* Batasan yang DISENGAJA & disampaikan terbuka (audit Pelaporan 2026-07-25):
+          keanggotaan & pemilik dihitung dari register TERKINI (aset.status /
+          aset.skpd_id), bukan replay s.d. periode. Untuk periode berjalan tak ada
+          bedanya; untuk periode LAMPAU angkanya bisa bergeser kalau setelahnya ada
+          penghapusan / pengalihan. Nilai perolehan sendiri SUDAH period-correct
+          sejak migrasi 20260725_05. Rekonsiliasi BMD (lib/rekon.ts) period-aware
+          penuh → itu rujukan angka periodik resmi. */}
+      <div className="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-xs leading-relaxed">
+        <b>Catatan periode lampau.</b> Keanggotaan barang &amp; SKPD pemilik pada laporan ini
+        mengikuti <b>register terkini</b>. Untuk periode berjalan angkanya sama saja, tetapi saat
+        menampilkan <b>periode yang sudah lewat</b>, barang yang setelah itu dihapus atau dialihkan
+        ke SKPD lain dapat menggeser angka. Untuk laporan periodik resmi yang tidak berubah
+        (mis. lampiran BPK/Inspektorat), gunakan <b>Rekonsiliasi BMD</b>.
+      </div>
+
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
