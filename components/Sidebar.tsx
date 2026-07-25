@@ -96,7 +96,14 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
     ],
   },
-  { type: 'leaf', href: '/dashboard/inventarisasi', label: 'Inventarisasi' },
+  {
+    // LHI di sini BEDA dgn "Laporan Hasil Inventarisasi" di grup Pelaporan —
+    // yang itu laporan cara perolehan (ledger `hasil_inventarisasi`).
+    type: 'group', label: 'Inventarisasi', icon: ICON.pembukuan, children: [
+      { type: 'leaf', href: '/dashboard/inventarisasi', label: 'Lembar Kerja (LKI)' },
+      { type: 'leaf', href: '/dashboard/inventarisasi/laporan', label: 'Laporan Hasil (LHI)' },
+    ],
+  },
   { type: 'leaf', href: '/dashboard/wasdal', label: 'WasDal' },
   {
     type: 'group', label: 'IPA', icon: ICON.ipa, children: [
@@ -110,6 +117,7 @@ const adminGroup: NavNode = {
   type: 'group', label: 'Admin', icon: ICON.user, children: [
     { type: 'leaf', href: '/dashboard/admin/skpd', label: 'SKPD' },
     { type: 'leaf', href: '/dashboard/admin/usulan-pengurus', label: 'Usulan Pengurus Barang' },
+    { type: 'leaf', href: '/dashboard/admin/validasi-inventarisasi', label: 'Validasi Inventarisasi' },
     { type: 'leaf', href: '/dashboard/admin/pegawai', label: 'Daftar Pegawai' },
     { type: 'leaf', href: '/dashboard/admin/user', label: 'Daftar User' },
     { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
