@@ -1,16 +1,31 @@
-// Kepemilikan aset PERIOD-AWARE untuk transfer antar SKPD (pengalihan_status).
+// Kepemilikan aset PERIOD-AWARE untuk perpindahan antar unit. Mencakup DUA
+// jenis yang sama-sama meng-UPDATE aset.skpd_id:
+//   * 'pengalihan_status' — transfer antar SKPD (menu Penggunaan/Penghapusan)
+//   * 'mutasi_internal'   — perpindahan antar sub-unit dalam satu OPD induk
+//                           (menu Pengeluaran/Penerimaan Internal)
+// Dulu HANYA pengalihan_status yang diproses, padahal fn_terima_mutasi_internal
+// juga `UPDATE aset SET skpd_id = skpd_tujuan` → barang yang pindah sub-unit di
+// semester DEPAN ikut ter-atribusi ke sub-unit BARU saat melihat semester
+// LAMPAU (riwayat ter-restate). Keduanya berbentuk baris ledger identik
+// (skpd_asal/skpd_tujuan terisi) & pengembaliannya sama-sama baris BARU dgn
+// asal/tujuan bertukar, jadi replay kronologis di bawah menangani dua-duanya
+// tanpa cabang khusus — malah lebih benar untuk aset yang mengalami keduanya.
+//
 // Dipakai Daftar Barang & Penyusutan supaya barang yang pindah di semester DEPAN
-// tetap terhitung di SKPD ASAL saat melihat semester LAMPAU (integritas akuntansi
+// tetap terhitung di unit ASAL saat melihat semester LAMPAU (integritas akuntansi
 // per periode) — dan sebaliknya barang yang MASUK belum muncul sebelum periode
-// transfernya. Penyusutan (angka engine) TIDAK terpengaruh: transfer tanpa efek
-// finansial, hanya atribusi pemilik yang bergeser.
+// transfernya. Penyusutan (angka engine) TIDAK terpengaruh: perpindahan tanpa
+// efek finansial, hanya atribusi pemilik yang bergeser.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { comparePeriode } from '@/lib/bmd'
 
 type Ev = { aset_id: string; id: number; periode: string; skpd_asal: number | null; skpd_tujuan: number | null }
 
+// Jenis ledger yang MEMINDAHKAN aset antar unit (dua-duanya update aset.skpd_id).
+const JENIS_PINDAH = ['pengalihan_status', 'mutasi_internal']
+
 // Map aset_id → SKPD pemilik PADA `periode`, HANYA untuk aset yang pernah
-// dialihkan (punya baris ledger 'pengalihan_status'). Aset lain tidak masuk map
+// berpindah (punya baris ledger JENIS_PINDAH). Aset lain tidak masuk map
 // → pemanggil pakai aset.skpd_id apa adanya.
 //
 // Cara baca: tiap baris memindahkan aset ke skpd_tujuan pada periode-nya (baris
@@ -25,7 +40,7 @@ export async function fetchOwnerOverrides(
   for (let from = 0; ; from += 1000) {
     const { data } = await supabase.from('transaksi_bmd')
       .select('aset_id,id,periode,skpd_asal,skpd_tujuan')
-      .eq('jenis', 'pengalihan_status')
+      .in('jenis', JENIS_PINDAH as never)
       .order('id', { ascending: true })
       .range(from, from + 999)
     if (!data || data.length === 0) break

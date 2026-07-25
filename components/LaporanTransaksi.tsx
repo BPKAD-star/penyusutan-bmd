@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
 import { JENIS_TRANSAKSI_LABEL } from '@/lib/bmd'
+import { fetchBatalTargets } from '@/lib/voidedAset'
 import SkpdCombobox from '@/components/SkpdCombobox'
 
 type Trx = {
@@ -33,7 +34,7 @@ function efektifPerAset(rows: Trx[], statusEfektif: string): Trx[] {
   })
 }
 
-export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePrefix, sembunyikanAsetDihapus, efektifPerAsetStatus }: {
+export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePrefix, sembunyikanAsetDihapus, efektifPerAsetStatus, batalJenis, arah }: {
   judul: string
   deskripsi: string
   jenisList: string[]
@@ -42,6 +43,18 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
   /** Kalau diisi (mis. 'dihapus'): sisakan hanya baris terbaru per aset yang status-nya SEKARANG
    *  masih itu — supaya percobaan yang sudah dibatalkan/ditumpuk tidak dobel-hitung di rekap. */
   efektifPerAsetStatus?: string
+  /** Jenis `batal_*` yang menganulir baris lewat payload.target_trx_id (mis.
+   *  ['batal_kapitalisasi']). Baris yang jadi target DIBUANG dari laporan —
+   *  tanpa ini transaksi yang sudah dibatalkan tetap tampil seolah berlaku,
+   *  dan angkanya beda dgn engine & Rekonsiliasi. Lihat lib/voidedAset.ts. */
+  batalJenis?: readonly string[]
+  /** Arah perpindahan relatif SKPD yang dipilih — untuk jenis transfer yang
+   *  memakai skpd_asal/skpd_tujuan (mis. mutasi_internal). 'masuk' = SKPD
+   *  terpilih sbg TUJUAN (penerimaan), 'keluar' = sbg ASAL (pengeluaran).
+   *  Tanpa ini, Laporan Penerimaan & Pengeluaran Internal menghasilkan baris
+   *  yang PERSIS SAMA (filter default mencocokkan asal ATAU tujuan).
+   *  Hanya berlaku saat SKPD dipilih — se-kabupaten tak punya sudut pandang. */
+  arah?: 'masuk' | 'keluar'
 }) {
   const supabase = createClient()
   const [rows, setRows] = useState<Trx[]>([])
@@ -51,6 +64,13 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
   const [periode, setPeriode] = useState('')
   const [jenis, setJenis] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
+  // null = belum dimuat (atau memang tak perlu difilter → Set kosong).
+  const [batalTargets, setBatalTargets] = useState<Set<number> | null>(null)
+
+  useEffect(() => {
+    if (!batalJenis || batalJenis.length === 0) { setBatalTargets(new Set()); return }
+    fetchBatalTargets(supabase, batalJenis).then(setBatalTargets)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // daftar periode yang ada transaksi (dropdown dinamis)
@@ -66,23 +86,31 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       .order('id', { ascending: false })
     if (periode) q = q.eq('periode', periode)
     if (descIds && descIds.length > 0) {
-      const list = descIds.join(',')
-      q = q.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)
+      // arah 'masuk'/'keluar' → cocokkan SATU sisi saja, supaya Penerimaan &
+      // Pengeluaran Internal tidak menampilkan baris yang sama persis.
+      if (arah === 'masuk') q = q.in('skpd_tujuan', descIds)
+      else if (arah === 'keluar') q = q.in('skpd_asal', descIds)
+      else {
+        const list = descIds.join(',')
+        q = q.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)
+      }
     }
     return q
-  }, [jenis, periode, descIds, jenisList]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [jenis, periode, descIds, jenisList, arah]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    (async () => {
+    if (!batalTargets) return // tunggu set pembatalan termuat
+    ;(async () => {
       setLoading(true)
       const { data } = await buildQuery().limit(500)
       let hasil = (data as never as Trx[]) || []
+      if (batalTargets.size > 0) hasil = hasil.filter(r => !batalTargets.has(r.id))
       if (sembunyikanAsetDihapus) hasil = hasil.filter(r => r.aset?.status !== 'dihapus')
       if (efektifPerAsetStatus) hasil = efektifPerAset(hasil, efektifPerAsetStatus)
       setRows(hasil)
       setLoading(false)
     })()
-  }, [buildQuery, sembunyikanAsetDihapus, efektifPerAsetStatus])
+  }, [buildQuery, sembunyikanAsetDihapus, efektifPerAsetStatus, batalTargets])
 
   // Rekap per jenis
   const rekap = new Map<string, { n: number; nilai: number }>()
@@ -102,7 +130,8 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       all.push(...(data as never as Trx[]))
       if (data.length < 1000) break
     }
-    let hasil = sembunyikanAsetDihapus ? all.filter(r => r.aset?.status !== 'dihapus') : all
+    let hasil = batalTargets && batalTargets.size > 0 ? all.filter(r => !batalTargets.has(r.id)) : all
+    if (sembunyikanAsetDihapus) hasil = hasil.filter(r => r.aset?.status !== 'dihapus')
     if (efektifPerAsetStatus) hasil = efektifPerAset(hasil, efektifPerAsetStatus)
     exportToExcel(hasil.map(r => ({
       'Tanggal': r.tanggal,

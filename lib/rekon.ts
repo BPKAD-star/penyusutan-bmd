@@ -9,7 +9,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { comparePeriode, periodeDariTanggal, kodeLevel3, perlakuanKode } from '@/lib/bmd'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
-import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { fetchVoidedAsetIds, fetchBatalTargets } from '@/lib/voidedAset'
 
 // Event yang menyembunyikan / memunculkan kembali aset — SAMA dgn halaman
 // Penyusutan (jangan pakai varian Daftar Barang yg beda kdp_selesai_keluar).
@@ -198,19 +198,8 @@ async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: 
 const fetchVoided = (supabase: SupabaseClient) =>
   fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'])
 
-// target_trx_id yg dibatalkan utk sekumpulan jenis batal_* (kapitalisasi/koreksi/reklas).
-async function fetchBatalTargets(supabase: SupabaseClient, jenisList: string[]): Promise<Set<number>> {
-  const out = new Set<number>()
-  for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('transaksi_bmd').select('payload').in('jenis', jenisList as never).range(from, from + 999)
-    if (!data || data.length === 0) break
-    for (const r of data as { payload: { target_trx_id?: number } | null }[]) {
-      const t = Number(r.payload?.target_trx_id); if (Number.isFinite(t)) out.add(t)
-    }
-    if (data.length < 1000) break
-  }
-  return out
-}
+// target_trx_id yg dibatalkan (kapitalisasi/koreksi/reklas) — implementasi
+// dipindah ke lib/voidedAset.ts, dipakai bersama Laporan Pengelolaan.
 
 // aset_id yg NET-terhapus (penghapusan_* belum dibatalkan) — replay "event terakhir menang".
 async function fetchNetRemoved(supabase: SupabaseClient): Promise<Set<string>> {

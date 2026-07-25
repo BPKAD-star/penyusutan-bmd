@@ -1,8 +1,12 @@
-// Aset yang dianggap TIDAK PERNAH ADA (void) — dipakai laporan perolehan supaya
-// PERIOD-CORRECT. Logika ini sebelumnya diduplikasi di beberapa tempat
-// (app/dashboard/pelaporan/bmd/page.tsx `fetchVoidedAsetIds`, lib/rekon.ts
-// `fetchVoided`) dengan VOID_JENIS yang identik — dikumpulkan di sini supaya
-// tak drift.
+// Helper PEMBATALAN — dua level, jangan tertukar:
+//   * fetchVoidedAsetIds  → level ASET  : aset yang dianggap tak pernah ada.
+//   * fetchBatalTargets   → level TRANSAKSI: id baris ledger yang dibatalkan
+//     lewat `batal_*.payload.target_trx_id` (kapitalisasi/reklas/koreksi —
+//     asetnya TETAP ada, cuma satu event-nya yang dianulir).
+//
+// Keduanya sebelumnya diduplikasi di beberapa tempat (lib/rekon.ts,
+// app/dashboard/pelaporan/bmd/page.tsx, tiap komponen menu) — dikumpulkan di
+// sini supaya tak drift.
 //
 // ⚠️ BEDAKAN DUA HAL INI (sumber bug period-correctness):
 //   * VOID (di sini) = koreksi input: `batal_*` cara perolehan &
@@ -56,5 +60,38 @@ export async function fetchVoidedAsetIds(
   ])
   const out = new Set(voided)
   for (const id of unvoided) out.delete(id)
+  return out
+}
+
+// ── Level TRANSAKSI ─────────────────────────────────────────────────────────
+// Jenis batal yang menganulir SATU baris ledger lewat payload.target_trx_id
+// (asetnya tetap ada). Dipetakan per menu supaya laporan tinggal pakai.
+export const BATAL_TARGET_JENIS = {
+  kapitalisasi: ['batal_kapitalisasi'],
+  reklasifikasi: ['batal_reklas'],
+  koreksi: ['batal_koreksi_nilai', 'batal_koreksi_spesifikasi', 'batal_koreksi_pencatatan_ganda'],
+} as const
+
+/**
+ * Set id baris ledger yang SUDAH DIBATALKAN (dibaca dari
+ * `batal_*.payload.target_trx_id`). Laporan wajib membuang baris ber-id ini,
+ * kalau tidak transaksi yang sudah dianulir tetap tampil seolah masih berlaku —
+ * dan angkanya beda dgn engine & Rekonsiliasi yang sudah membuangnya.
+ */
+export async function fetchBatalTargets(
+  supabase: Supabase, jenisList: readonly string[],
+): Promise<Set<number>> {
+  const out = new Set<number>()
+  if (jenisList.length === 0) return out
+  for (let from = 0; ; from += 1000) {
+    const { data } = await supabase.from('transaksi_bmd')
+      .select('payload').in('jenis', jenisList as never).range(from, from + 999)
+    if (!data || data.length === 0) break
+    for (const r of data as { payload: { target_trx_id?: number } | null }[]) {
+      const t = Number(r.payload?.target_trx_id)
+      if (Number.isFinite(t)) out.add(t)
+    }
+    if (data.length < 1000) break
+  }
   return out
 }
