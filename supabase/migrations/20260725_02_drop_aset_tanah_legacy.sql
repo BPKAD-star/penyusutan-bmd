@@ -1,0 +1,27 @@
+-- ============================================================================
+-- Drop tabel `aset_tanah` — peninggalan platform GIS-BMD LAMA (eksternal).
+--
+-- Audit 2026-07-25: platform ini TIDAK PERNAH membuat/memakai `aset_tanah`.
+-- Nol referensi di kode & migrasi (hanya disebut di komentar historis
+-- app/dashboard/gis/page.tsx & 20260709_01_aset_bidang_tanah.sql sbg penjelas
+-- sistem lama). Data tanah di platform ini pakai `aset` (gol 1.3.1) + tabel
+-- anak `aset_bidang_tanah`. `aset_tanah` = sisa GIS-BMD lama yang sudah
+-- digantikan.
+--
+-- LOKASI (dikonfirmasi user 2026-07-25 lewat dashboard Supabase): DB BMD utama
+--   platform ini SEBENARNYA adalah DB GIS lama yang di-repurpose — jadi
+--   `aset_tanah` MEMANG ADA di DB utama (bukan project terpisah). Skrip ini
+--   dijalankan di DB BMD utama ini dan BENAR-BENAR menghapus tabelnya (bukan
+--   no-op). IF EXISTS tetap dipasang biar aman kalau sudah pernah didrop.
+--
+-- ⚠️ BACKUP DULU: drop tak bisa di-undo. Kalau ragu ada data bidang tanah yang
+--   BELUM pindah ke `aset_bidang_tanah`, export `aset_tanah` dulu
+--   (pg_dump / Table Editor → Export CSV) sebelum menjalankan ini.
+--
+-- Kalau DROP gagal karena ada objek dependen (view/FK milik sistem lama),
+-- ganti ke: DROP TABLE IF EXISTS aset_tanah CASCADE;
+--
+-- Jalankan di Supabase SQL Editor project BMD utama.
+-- ============================================================================
+
+DROP TABLE IF EXISTS aset_tanah;
