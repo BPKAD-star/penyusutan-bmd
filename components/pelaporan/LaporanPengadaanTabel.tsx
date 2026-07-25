@@ -227,7 +227,11 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
   return (
     <div className="text-[11px] text-gray-900">
       <style>{`.brd{border:1px solid #9ca3af}`}</style>
-      {loading || !loaded ? (
+      {!periode ? (
+        <p className="py-8 text-center text-gray-500">
+          Pilih <b>Periode (semester)</b> dulu — laporan format Permendagri disusun per semester.
+        </p>
+      ) : loading || !loaded ? (
         <p className="py-8 text-center text-gray-400">Memuat data...</p>
       ) : rows.length === 0 ? (
         <p className="py-8 text-center text-gray-400">Tidak ada pengadaan pada periode/SKPD ini.</p>

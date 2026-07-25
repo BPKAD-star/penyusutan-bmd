@@ -49,11 +49,17 @@ export default function LaporanPengadaanModel3({ periode, skpdId, descIds }: {
   return (
     <div>
       <div className="flex items-center justify-end gap-2 mb-3">
-        <a href={cetakUrl} target="_blank" rel="noopener noreferrer"
-          className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
-          🖨 Cetak / PDF
-        </a>
-        <button onClick={handleExport} disabled={exporting} className="btn-primary">
+        {periode ? (
+          <a href={cetakUrl} target="_blank" rel="noopener noreferrer"
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
+            🖨 Cetak / PDF
+          </a>
+        ) : (
+          <span className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-100 text-gray-300 cursor-not-allowed">
+            🖨 Cetak / PDF
+          </span>
+        )}
+        <button onClick={handleExport} disabled={exporting || !periode} className="btn-primary">
           {exporting ? 'Mengekspor...' : 'Export Excel'}
         </button>
       </div>

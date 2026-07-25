@@ -9,6 +9,7 @@
 import type { createClient } from '@/lib/supabase/client'
 import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { bentukKontrakLabel } from '@/lib/bentukKontrak'
+import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 
 type Supabase = ReturnType<typeof createClient>
 
@@ -59,29 +60,38 @@ export async function fetchLaporanPengadaan(
   supabase: Supabase,
   opts: { periode: string; descIds: number[] | null },
 ): Promise<PengadaanRow[]> {
+  // WAJIB pilih periode: tanpa filter periode, query ini menarik SELURUH baris
+  // pengadaan + termin KDP se-pemda ke browser (aturan performa CLAUDE.md —
+  // paginasi/agregasi, jangan tarik semua). UI sudah memaksa pilih semester.
+  if (!opts.periode) return []
+
   const raws: Raw[] = []
   for (let from = 0; ; from += 1000) {
     // Filter periode di server (kolom top-level); filter SKPD di JS via aset.skpd_id
     // — akumulasi_kdp TIDAK mengisi skpd_tujuan, jadi filter lewat aset lebih seragam
     // & andal daripada filter kolom embedded.
-    let q = supabase.from('transaksi_bmd')
+    const { data } = await supabase.from('transaksi_bmd')
       .select('id,periode,tanggal,nilai,keterangan,jenis,payload,aset_id,' +
         'header:header_id(id,no_sk,jenis,payload),' +
         'aset:aset_id(skpd_id,kode,uraian_barang,nama_barang,merek_tipe,satuan,status)')
       .in('jenis', ['pengadaan', 'akumulasi_kdp'])
+      .eq('periode', opts.periode)
       .order('id', { ascending: true })
-    if (opts.periode) q = q.eq('periode', opts.periode)
-    const { data } = await q.range(from, from + 999)
+      .range(from, from + 999)
     if (!data || data.length === 0) break
     raws.push(...(data as never as Raw[]))
     if (data.length < 1000) break
   }
 
-  // Buang aset yang disembunyikan (batal_pengadaan → 'dihapus', unapprove KDP →
-  // 'draft'), lalu batasi ke subtree SKPD (kalau ada) via aset.skpd_id.
+  // PERIOD-CORRECT: buang HANYA aset yang dianggap tak pernah diperoleh (void:
+  // batal_pengadaan / koreksi ganda / unapprove KDP). JANGAN pakai
+  // aset.status='dihapus' — itu juga kena `penghapusan_*` (peristiwa periode
+  // LAIN), yang bikin barang sah hilang dari laporan periode perolehannya.
+  // Lihat lib/voidedAset.ts.
+  const voided = await fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'])
   const descSet = opts.descIds && opts.descIds.length > 0 ? new Set(opts.descIds) : null
   const rows = raws.filter(r =>
-    r.aset && !['dihapus', 'draft'].includes(r.aset.status) &&
+    r.aset && !(r.aset_id && voided.has(r.aset_id)) &&
     (!descSet || descSet.has(r.aset.skpd_id)))
 
   // Uraian rekening: payload.kode_rekening = kode_sub_rincian → lookup admin_rekening.

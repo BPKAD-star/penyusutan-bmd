@@ -14,6 +14,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import LaporanPengadaanModel3 from '@/components/pelaporan/LaporanPengadaanModel3'
+import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 
 type Trx = {
   id: number
@@ -24,6 +25,7 @@ type Trx = {
   payload: { pihak?: string } | null
   header: { no_sk: string } | null
   skpd_tujuan: number | null
+  aset_id: string | null
   aset: {
     kode: string; uraian_barang: string | null; nama_barang: string | null; nibar: string | null
     merek_tipe: string | null; spesifikasi_lainnya: string | null; intra_ekstra: string | null; status: string
@@ -49,6 +51,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const [periode, setPeriode] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [selSkpdId, setSelSkpdId] = useState<number | null>(null) // SKPD terpilih (utk footer Model 3)
+  const [voided, setVoided] = useState<Set<string> | null>(null)  // null = belum dimuat
   // Model 2: rekap matriks per SKPD (root) x per golongan — dibangun lazy saat view dipindah.
   const [view, setView] = useState<'list' | 'matrix' | 'permendagri'>('list')
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
@@ -60,9 +63,18 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       .then(({ data }) => setPeriodeList([...new Set((data || []).map(r => r.periode))]))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Aset yang dianggap TAK PERNAH diperoleh (batal_* cara perolehan / koreksi
+  // ganda). Dipakai menggantikan filter `aset.status='dihapus'` yang TIDAK
+  // period-correct — status terkini juga kena `penghapusan_*` (peristiwa periode
+  // LAIN), jadi barang yang sah diperoleh periode ini ikut hilang begitu kelak
+  // dihapus. Lihat lib/voidedAset.ts.
+  useEffect(() => {
+    fetchVoidedAsetIds(supabase).then(setVoided)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,header:header_id(no_sk),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
+      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
     if (periode) q = q.eq('periode', periode)
@@ -74,20 +86,21 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   }, [periode, descIds, jenis]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    (async () => {
+    if (!voided) return // tunggu set void termuat supaya tak sempat tampil tanpa filter
+    ;(async () => {
       setLoading(true)
       const { data } = await buildQuery().limit(500)
-      const hasil = ((data as never as Trx[]) || []).filter(r => r.aset?.status !== 'dihapus')
+      const hasil = ((data as never as Trx[]) || []).filter(r => !(r.aset_id && voided.has(r.aset_id)))
       setRows(hasil)
       setLoading(false)
     })()
-  }, [buildQuery])
+  }, [buildQuery, voided])
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
   // Model 2: rekap matriks SKPD (root) x golongan — dibangun full (tak dibatasi 500 spt daftar transaksi).
   useEffect(() => {
-    if (view !== 'matrix' || !skpdLoaded) return
+    if (view !== 'matrix' || !skpdLoaded || !voided) return
     ;(async () => {
       setMatrixLoading(true)
       const mtx: Record<number, MatrixRow> = {}
@@ -95,7 +108,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         const { data } = await buildQuery().range(from, from + 999)
         if (!data || data.length === 0) break
         for (const r of (data as never as Trx[])) {
-          if (r.aset?.status === 'dihapus' || !r.skpd_tujuan) continue
+          if ((r.aset_id && voided.has(r.aset_id)) || !r.skpd_tujuan) continue
           const root = rootOf(r.skpd_tujuan)
           const rid = root?.id ?? r.skpd_tujuan
           const rnama = root?.nama ?? `SKPD #${r.skpd_tujuan}`
@@ -109,7 +122,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
       setMatrixLoading(false)
     })()
-  }, [view, buildQuery, skpdLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, buildQuery, skpdLoaded, voided]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleExportMatrix() {
     exportToExcel(matrix.map(r => {
@@ -134,7 +147,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       all.push(...(data as never as Trx[]))
       if (data.length < 1000) break
     }
-    const hasil = all.filter(r => r.aset?.status !== 'dihapus')
+    const hasil = all.filter(r => !(r.aset_id && voided?.has(r.aset_id)))
     exportToExcel(hasil.map(r => ({
       ...(pihakLabel ? { [pihakLabel]: r.payload?.pihak || '' } : {}),
       'Kode Barang': r.aset?.kode || '',
