@@ -25,10 +25,12 @@ export type ApprovalScope = {
   isViewer: boolean
   role: string | null
   skpdId: number | null
+  /** auth.uid() user login — dipakai cek "kartu ini saya sendiri yang buat" (pemisahan tugas). */
+  userId: string | null
   /** id SKPD STRICT di bawah node user (node sendiri TIDAK termasuk) — hanya diisi utk pengurus_barang. */
   bawahan: Set<number>
 }
-export const SCOPE_KOSONG: ApprovalScope = { isAdmin: false, isViewer: false, role: null, skpdId: null, bawahan: new Set() }
+export const SCOPE_KOSONG: ApprovalScope = { isAdmin: false, isViewer: false, role: null, skpdId: null, userId: null, bawahan: new Set() }
 
 /** Ambil role + (utk pengurus_barang) daftar sub-OPD di bawah nodenya — sekali per mount. */
 export async function fetchApprovalScope(supabase: SupabaseClient): Promise<ApprovalScope> {
@@ -36,7 +38,7 @@ export async function fetchApprovalScope(supabase: SupabaseClient): Promise<Appr
   if (!user) return SCOPE_KOSONG
   const { data: p } = await supabase.from('admin_profiles').select('role,skpd_id').eq('id', user.id).single()
   if (!p) return SCOPE_KOSONG
-  const scope: ApprovalScope = { isAdmin: p.role === 'admin', isViewer: p.role === 'pengawas', role: p.role, skpdId: p.skpd_id, bawahan: new Set() }
+  const scope: ApprovalScope = { isAdmin: p.role === 'admin', isViewer: p.role === 'pengawas', role: p.role, skpdId: p.skpd_id, userId: user.id, bawahan: new Set() }
   if (p.role === 'pengurus_barang' && p.skpd_id != null) {
     // Turunan dihitung dari parent_id (BFS) — cukup id+parent_id, ~ratusan baris.
     const { data: rows } = await supabase.from('admin_skpd').select('id,parent_id').limit(5000)
@@ -63,4 +65,22 @@ export function bolehSetujuiSkpd(scope: ApprovalScope, skpdId: number | string |
   if (scope.isAdmin) return true
   if (skpdId == null || skpdId === '') return false
   return scope.bawahan.has(Number(skpdId))
+}
+
+/** Boleh approve KARTU ini? = bolehSetujuiSkpd + pemisahan tugas: bukan pembuatnya
+ *  sendiri. Sejak picker SKPD dibuka ke subtree (2026-07-27) Pengurus Barang bisa
+ *  membuat kartu Cara Perolehan atas nama sub-OPD-nya, jadi tanpa aturan ini dia
+ *  bisa menyetujui kartunya sendiri. Admin dikecualikan (peran super-admin).
+ *  Penegak sesungguhnya = trigger fn_jurnal_header_approval_guard (migrasi
+ *  20260727_01); helper ini cuma supaya tombolnya tidak muncul lalu error. */
+export function bolehSetujuiJurnal(
+  scope: ApprovalScope,
+  skpdId: number | string | null | undefined,
+  createdBy: string | null | undefined,
+): boolean {
+  if (!bolehSetujuiSkpd(scope, skpdId)) return false
+  if (scope.isAdmin) return true
+  // createdBy null (baris warisan / service role) = "bukan saya" — samakan dgn
+  // sikap permisif guard DB (IS DISTINCT FROM), jangan mendadak mengunci data lama.
+  return !(createdBy != null && scope.userId != null && createdBy === scope.userId)
 }

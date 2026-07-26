@@ -496,6 +496,28 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   sengaja read-only). Centang barang **beda golongan** sekaligus → tombol Edit
   Spesifikasi disabled (`allSameGolongan()`, lib/asetFields.ts) — kolomnya beda,
   tak boleh digabung/union.
+- **PEMISAHAN TUGAS: pembuat kartu tak boleh menyetujui kartunya sendiri**
+  (migrasi `20260727_01`, keputusan user 2026-07-27). Latarnya: picker SKPD
+  (`SkpdCombobox` prop `lockToOperator`) dulu TERKUNCI MATI ke node SKPD user;
+  sejak 2026-07-27 dibuka ke **seluruh subtree** — operator boleh mencatat
+  barang atas nama sub-OPD, tidak lagi selalu SKPD induk. Itu membuka celah:
+  `fn_is_pengurus_barang_atas` sengaja strict (`s.id <> my.id`) supaya jurnal
+  node SENDIRI tetap wewenang admin pemda, tapi Pengurus Barang jadi bisa bikin
+  kartu atas nama sub-OPD-nya lalu **menyetujuinya sendiri**. Ditutup di
+  `fn_jurnal_header_approval_guard`: kelonggaran "Pengurus Barang atasan" batal
+  kalau `created_by = auth.uid()`. Admin pemda dikecualikan. Cerminan UI =
+  `bolehSetujuiJurnal()` (lib/roles.ts, pengganti `bolehSetujuiSkpd` di keempat
+  komponen Cara Perolehan) — tombol Setujui/Buka Kunci dihitung **per kartu**,
+  bukan per SKPD lagi, jadi header-nya wajib ikut me-select `created_by`.
+  `created_by IS NULL` (baris warisan) tetap boleh disetujui — sengaja permisif.
+  ⚠️ **Deploy-ordering: migrasi 20260727_01 WAJIB jalan SEBELUM deploy kode** —
+  kebalikan dari alasan biasa (enum). Di sini urutannya soal KONTROL: kalau kode
+  duluan, ada jendela di mana picker sudah terbuka tapi guard belum ada → self-
+  approve Cara Perolehan benar-benar bisa terjadi.
+  ⚠️ Jalur `mutasi_internal`/`pengalihan_status` (disetujui SKPD tujuan) TIDAK
+  ikut diperketat — di situ self-approve memang sudah mungkin sejak dulu (daftar
+  tujuan mutasi internal se-subtree, `PengeluaranInternal.tsx`), pre-existing dan
+  perlu keputusan tersendiri kalau mau ditutup.
 
 ## Spesifikasi barang: wide table + field per golongan (lib/asetFields.ts)
 

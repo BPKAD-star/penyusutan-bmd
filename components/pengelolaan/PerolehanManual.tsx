@@ -15,7 +15,7 @@ import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapit
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
 import { formatRupiah } from '@/lib/export'
-import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
+import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import FormShell from './FormShell'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -47,6 +47,7 @@ type Header = {
   id: string; no_sk: string; tanggal: string; periode: string
   keterangan: string | null; payload: HeaderPayload
   approval_status: ApprovalStatus; approved_at: string | null
+  created_by: string | null   // pemisahan tugas: pembuat tak boleh menyetujui sendiri
 }
 type JurnalLine = {
   aset_id: string; nibar: string | null; kode: string; uraian_barang: string | null; nama_barang: string | null
@@ -70,10 +71,11 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   const [skpdPathMap, setSkpdPathMap] = useState<Record<number, string>>({})
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [skpd, setSkpd] = useState('')
-  // Boleh approve utk SKPD terpilih? admin = semua; pengurus_barang = hanya
-  // sub-OPD strict di bawah nodenya (penegak asli: trigger approval guard di DB).
+  // Boleh approve kartu ini? admin = semua; pengurus_barang = hanya sub-OPD strict
+  // di bawah nodenya DAN bukan kartu buatannya sendiri (pemisahan tugas — sejak
+  // picker SKPD dibuka ke subtree). Penegak asli: trigger approval guard di DB.
   const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
-  const bolehACC = bolehSetujuiSkpd(scope, skpd)
+  const bolehACCKartu = (j: Jurnal) => bolehSetujuiJurnal(scope, skpd, j.created_by)
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
@@ -127,7 +129,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     setLoadingJurnal(true)
 
     const { data: headers } = await supabase.from('jurnal_header')
-      .select('id,no_sk,tanggal,periode,keterangan,payload,approval_status,approved_at')
+      .select('id,no_sk,tanggal,periode,keterangan,payload,approval_status,approved_at,created_by')
       .eq('kategori', kategori).eq('skpd_id', Number(skpdId))
       .order('tanggal', { ascending: false })
     const hs = (headers || []) as Header[]
@@ -383,7 +385,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-amber-700">⏳ Menunggu Persetujuan ({pending.length})</h3>
                   {pending.map(h => (
-                    <PendingCard key={h.id} h={h} isAdmin={bolehACC} busy={busyId === h.id}
+                    <PendingCard key={h.id} h={h} isAdmin={bolehACCKartu(h)} busy={busyId === h.id}
                       golonganLabels={golonganLabels} pihakLabel={pihakLabel}
                       onEditHeader={() => setEditing(h)}
                       onHapusDokumen={() => hapusDokumen(h)}
@@ -399,7 +401,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujui.length})</h3>
                   {disetujui.map(j => (
-                    <ApprovedCard key={j.id} j={j} isAdmin={bolehACC} busy={busyId === j.id} pihakLabel={pihakLabel}
+                    <ApprovedCard key={j.id} j={j} isAdmin={bolehACCKartu(j)} busy={busyId === j.id} pihakLabel={pihakLabel}
                       onUnapprove={() => unapproveHeader(j)}
                     />
                   ))}

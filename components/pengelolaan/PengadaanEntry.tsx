@@ -17,7 +17,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { formatRupiah } from '@/lib/export'
 import Pengadaan, { PengadaanCard, fetchPengadaanJurnals, useGolonganLabels, draftTotal, type Jurnal } from './Pengadaan'
 import KonstruksiPengadaan, { KontrakDetail, fetchKonstruksiKontraks, kontrakTotal, type Kontrak } from './KonstruksiPengadaan'
-import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
+import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 
 type Creating = null | 'nonfisik' | 'konstruksi'
 type MergedItem =
@@ -49,7 +49,10 @@ export default function PengadaanEntry() {
   const [msg, setMsg] = useState('')
   const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
   const golonganLabels = useGolonganLabels()
-  const bolehACC = bolehSetujuiSkpd(scope, skpd)
+  // Per-kartu: selain cakupan SKPD, pembuat kartu tak boleh menyetujui sendiri
+  // (pemisahan tugas — sejak picker SKPD dibuka ke subtree). Penegak asli:
+  // trigger fn_jurnal_header_approval_guard (migrasi 20260727_01).
+  const bolehACCKartu = (createdBy: string | null) => bolehSetujuiJurnal(scope, skpd, createdBy)
   const skpdRef = useRef(skpd); skpdRef.current = skpd
 
   useEffect(() => { (async () => setScope(await fetchApprovalScope(supabase)))() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -132,9 +135,9 @@ export default function PengadaanEntry() {
                   <TypeBadge konstruksi={it.type === 'konstruksi'} />
                   {it.type === 'nonfisik' ? (
                     <PengadaanCard j={it.j} skpdId={Number(skpd)} golonganLabels={golonganLabels}
-                      isAdmin={bolehACC} onChanged={refresh} onMsg={setMsg} />
+                      isAdmin={bolehACCKartu(it.j.created_by)} onChanged={refresh} onMsg={setMsg} />
                   ) : (
-                    <KontrakDetail inline kontrak={it.k} isAdmin={bolehACC}
+                    <KontrakDetail inline kontrak={it.k} isAdmin={bolehACCKartu(it.k.created_by)}
                       onBack={refresh} onChanged={refresh} onMsg={setMsg} />
                   )}
                 </div>

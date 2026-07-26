@@ -18,11 +18,23 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
   placeholder?: string
   allowClear?: boolean
   rootOnly?: boolean // hanya SKPD induk (parent_id null) — dipakai target Pengalihan Status
-  // Kalau true DAN user login non-admin: combobox otomatis terisi & TERKUNCI ke
-  // SKPD yang melekat pada user (tidak bisa pilih SKPD lain). Admin tetap bebas.
-  // RLS tetap penjaga sesungguhnya; ini murni UX supaya operator tidak bingung
-  // melihat pilihan "Semua"/SKPD lain padahal datanya sudah dibatasi. JANGAN
-  // pasang di picker "tujuan" (Pengalihan Status) — operator memang pilih SKPD lain.
+  // Kalau true DAN user login non-admin: combobox dibatasi ke SKPD yang melekat
+  // pada user. Admin tetap bebas. RLS tetap penjaga sesungguhnya; ini murni UX
+  // supaya operator tidak bingung melihat SKPD lain padahal datanya sudah
+  // dibatasi. JANGAN pasang di picker "tujuan" (Pengalihan Status) — operator
+  // memang pilih SKPD lain.
+  //
+  // Opsinya = node user + SELURUH turunannya (default terpilih = node user, jadi
+  // tampilan awal sama spt sebelum fitur ini ada). Berlaku utk dua-duanya:
+  //   - onChangeSelection (filter/laporan) → mempersempit cakupan tampilan.
+  //   - onChange (form entry) → memilih PEMILIK barang; sejak 2026-07-27 operator
+  //     boleh mencatat atas nama sub-OPD, tidak lagi selalu di SKPD induk.
+  //     ⚠️ Ini yang membuat migrasi 20260727_01 perlu: begitu Pengurus Barang
+  //     bisa bikin kartu Cara Perolehan atas nama sub-OPD, tanpa guard dia bisa
+  //     menyetujui kartunya sendiri (fn_is_pengurus_barang_atas hanya menolak
+  //     node SENDIRI). Guard itu menutupnya lewat created_by.
+  // Pengecualian: `rootOnly` tidak pernah masuk mode subtree (memang harus SKPD
+  // induk), dan node tanpa turunan tetap tampil terkunci mati.
   lockToOperator?: boolean
 }) {
   const supabase = createClient()
@@ -95,10 +107,33 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
     return out
   }
 
+  // Filter/laporan vs form entry — dibedakan dari callback yang dipasang, sesuai
+  // kontrak di kepala berkas. Bedanya cuma ARTI memilih node user sendiri:
+  // di filter = "semua unit saya" (agregat), di form = "milik SKPD induk".
+  const modeFilter = onChangeSelection != null
+
+  // MODE SUBTREE (lihat prop lockToOperator): user terkunci → boleh menjelajah ke
+  // bawah node-nya sendiri, tidak pernah keluar dari situ.
+  //   - `!rootOnly`   : picker yang memang wajib SKPD induk (target Pengalihan
+  //                     Status) tidak ikut — menjelajah ke sub-unit tak berlaku.
+  //   - `length > 1`  : node tanpa unit di bawahnya (mis. pengurus pembantu di
+  //                     sub-OPD daun) tak punya yang bisa dipilih → biarkan
+  //                     terkunci mati spt semula, jangan kasih combobox kosong.
+  const lockDescIds = useMemo(
+    () => (lockSkpd == null ? null : descendants(lockSkpd)),
+    [lockSkpd, childrenOf] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const subtreeMode = lockDescIds != null && !rootOnly && lockDescIds.length > 1
+  const subtreeIds = useMemo(() => (subtreeMode ? new Set(lockDescIds!) : null), [subtreeMode, lockDescIds])
+
   const options = useMemo(
-    () => all.filter(s => !rootOnly || s.parent_id == null)
+    // Di mode filter, node user sendiri sengaja TIDAK masuk daftar — sudah
+    // diwakili baris "— Semua unit di X —", supaya tak ada dua entri yang sama
+    // artinya. Di mode form node itu justru pilihan sah (barang milik induk).
+    () => all.filter(s => (!rootOnly || s.parent_id == null)
+      && (!subtreeIds || (subtreeIds.has(s.id) && !(modeFilter && s.id === lockSkpd))))
       .map(s => ({ id: s.id, label: pathOf(s.id) })).sort((a, b) => a.label.localeCompare(b.label)),
-    [all, byId, rootOnly] // eslint-disable-line react-hooks/exhaustive-deps
+    [all, byId, rootOnly, subtreeIds, lockSkpd, modeFilter] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   useEffect(() => {
@@ -123,6 +158,12 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
     setOpen(false); setQuery('')
   }
   function clear() {
+    // Di mode subtree, "kosongkan" = kembali ke node user, BUKAN kosong/null.
+    // Filter: wajib begini — descendantIds null → query kehilangan filter
+    // skpd_id → idx_aset_skpd tak kepakai → itu persis penyebab timeout
+    // GIS/Kendaraan yang dibereskan migrasi 20260720_01 (RLS tetap menutup,
+    // tapi lambatnya balik). Form: pemilik barang tak boleh kosong sama sekali.
+    if (subtreeMode) { pilih(lockSkpd!); return }
     setInternalId('')
     onChange?.('')
     onChangeSelection?.({ skpdId: null, descendantIds: null })
@@ -143,8 +184,9 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
     el?.scrollIntoView({ block: 'nearest' })
   }, [hi, open])
 
-  // Mode terkunci (operator non-admin): tampilkan SKPD-nya, tak bisa diubah.
-  if (lockSkpd != null) {
+  // Mode terkunci MATI (operator non-admin, picker form entry): tampilkan
+  // SKPD-nya, tak bisa diubah. Filter/laporan tidak lewat sini — lihat subtreeMode.
+  if (lockSkpd != null && !subtreeMode) {
     return (
       <div className="relative flex-1">
         <input
@@ -162,21 +204,29 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
       <div className="flex items-center gap-2">
         <input
           className="select-filter w-full"
-          placeholder={placeholder || 'Ketik utk cari SKPD / Sub OPD / Lokasi...'}
+          placeholder={subtreeMode && modeFilter ? 'Ketik utk cari Sub OPD / Sub Sub OPD...' : (placeholder || 'Ketik utk cari SKPD / Sub OPD / Lokasi...')}
           value={open ? query : selectedLabel}
           onFocus={() => { setOpen(true); setQuery(''); setHi(0) }}
           onChange={e => { setQuery(e.target.value); setHi(0); if (!open) setOpen(true) }}
           onKeyDown={onKeyDown}
         />
-        {allowClear && effectiveId && !open && (
-          <button type="button" onClick={clear} title="Kosongkan"
+        {/* Di mode subtree, × = balik ke node user → sembunyikan kalau memang
+            sudah di situ (tidak ada yang bisa dikembalikan). */}
+        {(subtreeMode ? effectiveId !== String(lockSkpd) : (allowClear && effectiveId)) && !open && (
+          <button type="button" onClick={clear}
+            title={!subtreeMode ? 'Kosongkan' : modeFilter ? 'Kembali ke seluruh unit' : 'Kembali ke SKPD induk'}
             className="text-gray-400 hover:text-gray-600 text-lg leading-none flex-shrink-0">×</button>
         )}
       </div>
       {open && (
         <div ref={listRef} className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg divide-y divide-gray-50">
-          {allowClear && (
-            <button type="button" onClick={clear} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-gray-500 italic">— Semua / kosongkan —</button>
+          {/* Baris pintas ini cuma utk mode filter ("semua unit saya"). Di mode
+              form node induk sudah jadi opsi biasa di daftar bawah — tidak perlu,
+              dan kata "semua" justru menyesatkan (pemilik barang harus satu). */}
+          {(allowClear || (subtreeMode && modeFilter)) && (
+            <button type="button" onClick={clear} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-gray-500 italic">
+              {subtreeMode && modeFilter ? `— Semua unit di ${byId.get(lockSkpd!)?.nama || 'SKPD Anda'} —` : '— Semua / kosongkan —'}
+            </button>
           )}
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">Tidak ditemukan.</div>

@@ -26,7 +26,7 @@ import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapit
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
 import { formatRupiah } from '@/lib/export'
-import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
+import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import FormShell from './FormShell'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -74,6 +74,7 @@ type Header = {
   id: string; no_sk: string; tanggal: string; periode: string; jenis: string
   keterangan: string | null; payload: HeaderPayload
   approval_status: ApprovalStatus; approved_at: string | null
+  created_by: string | null   // pemisahan tugas: pembuat tak boleh menyetujui sendiri
 }
 // Barang yang SUDAH disetujui (dibaca dari aset+ledger, bukan draft).
 type JurnalLine = {
@@ -155,7 +156,7 @@ function normalizeDraftItems(raw: unknown): DraftItem[] {
 export async function fetchPengadaanJurnals(supabase: ReturnType<typeof createClient>, skpdId: string | number): Promise<Jurnal[]> {
   if (!skpdId) return []
   const { data: headers } = await supabase.from('jurnal_header')
-    .select('id,no_sk,tanggal,periode,jenis,keterangan,payload,approval_status,approved_at')
+    .select('id,no_sk,tanggal,periode,jenis,keterangan,payload,approval_status,approved_at,created_by')
     .eq('kategori', 'pengadaan').eq('skpd_id', Number(skpdId))
     .order('tanggal', { ascending: false })
   const hs = (headers || []) as Header[]
@@ -271,10 +272,11 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
   // SKPD boleh dikontrol induk (satu tampilan Pengadaan: SKPD dipilih sekali di atas).
   const [skpdInternal, setSkpdInternal] = useState('')
   const skpd = skpdProp !== undefined ? skpdProp : skpdInternal
-  // Boleh approve utk SKPD terpilih? admin = semua; pengurus_barang = hanya
-  // sub-OPD strict di bawah nodenya (penegak asli: trigger approval guard di DB).
+  // Boleh approve kartu ini? admin = semua; pengurus_barang = hanya sub-OPD strict
+  // di bawah nodenya DAN bukan kartu buatannya sendiri (pemisahan tugas — sejak
+  // picker SKPD dibuka ke subtree). Penegak asli: trigger approval guard di DB.
   const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
-  const bolehACC = bolehSetujuiSkpd(scope, skpd)
+  const bolehACCKartu = (j: Jurnal) => bolehSetujuiJurnal(scope, skpd, j.created_by)
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
@@ -359,7 +361,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
           <div className="space-y-6">
             {[...fp, ...fd].map(h => (
               <PengadaanCard key={h.id} j={h} skpdId={Number(skpd)} golonganLabels={golonganLabels}
-                isAdmin={bolehACC} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
+                isAdmin={bolehACCKartu(h)} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
             ))}
           </div>
         )}
@@ -410,7 +412,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
                   <h3 className="text-sm font-semibold text-amber-700">⏳ Menunggu Persetujuan ({pending.length})</h3>
                   {pending.map(h => (
                     <PengadaanCard key={h.id} j={h} skpdId={Number(skpd)} golonganLabels={golonganLabels}
-                      isAdmin={bolehACC} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
+                      isAdmin={bolehACCKartu(h)} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
                   ))}
                 </section>
               )}
@@ -419,7 +421,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
                   <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujui.length})</h3>
                   {disetujui.map(j => (
                     <PengadaanCard key={j.id} j={j} skpdId={Number(skpd)} golonganLabels={golonganLabels}
-                      isAdmin={bolehACC} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
+                      isAdmin={bolehACCKartu(j)} onChanged={() => loadJurnals(skpd)} onMsg={setMsg} />
                   ))}
                 </section>
               )}

@@ -24,10 +24,11 @@ import {
   approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList,
   type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
 } from '@/lib/kdp'
-import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiSkpd } from '@/lib/roles'
+import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import { BENTUK_KONTRAK_KONSTRUKSI, bentukKontrakLabel } from '@/lib/bentukKontrak'
 
-export type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload }
+// created_by: pemisahan tugas — pembuat kartu tak boleh menyetujui sendiri.
+export type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload; created_by: string | null }
 const KOMPONEN = [
   { value: 'perencanaan', label: 'Perencanaan' }, { value: 'fisik', label: 'Fisik' },
   { value: 'biaya_umum', label: 'Biaya Umum' }, { value: 'pengawasan', label: 'Pengawasan' },
@@ -43,7 +44,7 @@ export const kontrakTotal = (p: KontrakKonstruksiPayload) => barangKdpList(p).re
 // (PengadaanEntry). 'ditolak' = kontrak diarsipkan → disembunyikan.
 export async function fetchKonstruksiKontraks(supabase: ReturnType<typeof createClient>, skpdId: string | number): Promise<Kontrak[]> {
   if (!skpdId) return []
-  const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload')
+  const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload,created_by')
     .eq('kategori', 'konstruksi').eq('skpd_id', Number(skpdId)).order('created_at', { ascending: false })
   return ((data || []) as Kontrak[]).filter(k => k.approval_status !== 'ditolak')
 }
@@ -112,12 +113,13 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
   const supabase = createClient()
   const onDataChangeRef = useRef(onDataChange)
   onDataChangeRef.current = onDataChange
-  // Boleh approve utk SKPD terpilih? admin = semua; pengurus_barang = hanya
-  // sub-OPD strict di bawah nodenya (penegak asli: trigger approval guard di DB).
+  // Boleh approve kartu ini? admin = semua; pengurus_barang = hanya sub-OPD strict
+  // di bawah nodenya DAN bukan kartu buatannya sendiri (pemisahan tugas — sejak
+  // picker SKPD dibuka ke subtree). Penegak asli: trigger approval guard di DB.
   const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
   const [skpdInternal, setSkpdInternal] = useState('')
   const skpd = skpdProp !== undefined ? skpdProp : skpdInternal // SKPD boleh dikontrol induk (satu tampilan Pengadaan)
-  const bolehACC = bolehSetujuiSkpd(scope, skpd)
+  const bolehACCKartu = (k: Kontrak) => bolehSetujuiJurnal(scope, skpd, k.created_by)
   const [list, setList] = useState<Kontrak[]>([])
   const [selected, setSelected] = useState<Kontrak | null>(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -152,7 +154,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
           <div className={`p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
         )}
         {selected ? (
-          <KontrakDetail kontrak={selected} isAdmin={bolehACC} onBack={onExit}
+          <KontrakDetail kontrak={selected} isAdmin={bolehACCKartu(selected)} onBack={onExit}
             onMsg={setMsg} onChanged={async () => { await refreshSelected(); load(skpd) }} />
         ) : startCreate ? (
           <>
@@ -199,13 +201,13 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
               {pendingK.length > 0 && (
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-amber-700">⏳ Menunggu Persetujuan ({pendingK.length})</h3>
-                  {pendingK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={bolehACC} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
+                  {pendingK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={bolehACCKartu(k)} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
                 </section>
               )}
               {disetujuiK.length > 0 && (
                 <section className="space-y-3">
                   <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujuiK.length})</h3>
-                  {disetujuiK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={bolehACC} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
+                  {disetujuiK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={bolehACCKartu(k)} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
                 </section>
               )}
             </>
