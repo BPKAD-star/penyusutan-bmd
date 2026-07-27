@@ -102,7 +102,23 @@ const navTree: NavNode[] = [
     // LHI di sini BEDA dgn "Laporan Hasil Inventarisasi" di grup Pelaporan —
     // yang itu laporan cara perolehan (ledger `hasil_inventarisasi`).
     type: 'group', label: 'Inventarisasi', icon: ICON.pembukuan, children: [
-      { type: 'leaf', href: '/dashboard/inventarisasi', label: 'Lembar Kerja (LKI)' },
+      {
+        // Satu menu per jenis aset — tiap jenis punya format LKI sendiri
+        // (III.A.1–III.A.6). Pakai segmen path, bukan ?golongan=, supaya
+        // penanda menu aktif (yang membandingkan pathname) tidak menyala
+        // di kedelapan menu sekaligus.
+        type: 'group', label: 'Lembar Kerja (LKI)', children: [
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.1', label: 'Tanah' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.2', label: 'Peralatan dan Mesin' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.3', label: 'Gedung dan Bangunan' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.4', label: 'Jalan, Jaringan dan Irigasi' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.5', label: 'Aset Tetap Lainnya' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.6', label: 'Konstruksi Dalam Pengerjaan' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.5.3', label: 'Aset Tidak Berwujud' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.5.4', label: 'Aset Lain-Lain' },
+        ],
+      },
+      { type: 'leaf', href: '/dashboard/inventarisasi/validasi', label: 'Validasi' },
       { type: 'leaf', href: '/dashboard/inventarisasi/laporan', label: 'Laporan Hasil (LHI)' },
     ],
   },
@@ -119,7 +135,6 @@ const adminGroup: NavNode = {
   type: 'group', label: 'Admin', icon: ICON.user, children: [
     { type: 'leaf', href: '/dashboard/admin/skpd', label: 'SKPD' },
     { type: 'leaf', href: '/dashboard/admin/usulan-pengurus', label: 'Usulan Pengurus Barang' },
-    { type: 'leaf', href: '/dashboard/admin/validasi-inventarisasi', label: 'Validasi Inventarisasi' },
     { type: 'leaf', href: '/dashboard/admin/pegawai', label: 'Daftar Pegawai' },
     { type: 'leaf', href: '/dashboard/admin/user', label: 'Daftar User' },
     { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
