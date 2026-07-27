@@ -122,7 +122,7 @@ export type InvJawaban = {
     nilai_perolehan?: number; tgl_perolehan?: string
     pemegang?: string          // Pengelola / Pengguna Barang Lainnya / Kuasa PB Lainnya
   }
-  // N — KHUSUS Gedung & Bangunan: berdiri di atas tanah milik siapa
+  // N — Gedung & Bangunan / JIJ: berdiri di atas tanah milik siapa
   tanah_milik?: PihakPengguna
   tanah_milik_nama?: string
   // O–Q
@@ -130,11 +130,18 @@ export type InvJawaban = {
   longitude?: number | null
   lainnya?: string
   keterangan?: string
-  // Khusus Peralatan & Mesin
+  // Merek/Tipe — P&M (III.A.2) dan juga ATL (III.A.5) & ATB (III.A.6),
+  // di dua format terakhir judulnya "Merek/Tipe/spesifikasi lainnya".
   merek_tipe?: SesuaiField
+  // Khusus Peralatan & Mesin (kendaraan dinas)
   no_polisi?: SesuaiField
   no_rangka?: SesuaiField
   no_mesin?: SesuaiField
+  // Khusus Jalan, Jaringan dan Irigasi (Format III.A.4)
+  jenis_perkerasan?: SesuaiField
+  jenis_bahan_jembatan?: SesuaiField
+  no_ruas_jalan?: SesuaiField
+  no_jaringan_irigasi?: SesuaiField
   /** Format III.A.7 — BMD Belum Tercatat (barang belum ada di `aset`, tanpa NIBAR). */
   baru?: {
     kode_barang?: string; nama_barang?: string; spesifikasi?: string
@@ -163,28 +170,44 @@ export type InvBaris = {
 export type LkiConfig = {
   format: string
   label: string
-  /** Bagian Merek/Tipe (Peralatan & Mesin). Tanah & GB tidak punya. */
+  /** Bagian Merek/Tipe. P&M (III.A.2), ATL (III.A.5), ATB (III.A.6). */
   merekTipe: boolean
   /** No. Polisi / Rangka / Mesin (kendaraan dinas — Peralatan & Mesin). */
   nomorKendaraan: boolean
-  /** G pecah jadi Hilang vs Tidak ditemukan (P&M); selain itu digabung. */
+  /** Jenis perkerasan/bahan jembatan + No. ruas jalan & jaringan irigasi (III.A.4). */
+  jijTeknis: boolean
+  /** G pecah jadi Hilang vs Tidak ditemukan (P&M, ATL, ATB); selain itu digabung. */
   hilangVsTidakDitemukan: boolean
   /** Nama pemakai + BAST pemakaian + SIP (rumah negara — Gedung & Bangunan). */
   pemakaiRumahNegara: boolean
-  /** Bagian N "berdiri di atas tanah milik" — HANYA Gedung & Bangunan. */
+  /** Bagian N "berdiri di atas tanah milik" — Gedung & Bangunan dan JIJ. */
   tanahMilik: boolean
+  /** Judul bagian N, beda per format ("Gedung dan Bangunan"/"Jalan" di atas…). */
+  tanahMilikLabel?: string
   /** Titik koordinat (Tanah, GB, JIJ). */
   titikKoordinat: boolean
 }
 
 const DEFAULT_CONFIG: Omit<LkiConfig, 'format' | 'label'> = {
-  merekTipe: false, nomorKendaraan: false, hilangVsTidakDitemukan: false,
-  pemakaiRumahNegara: false, tanahMilik: false, titikKoordinat: true,
+  merekTipe: false, nomorKendaraan: false, jijTeknis: false,
+  hilangVsTidakDitemukan: false, pemakaiRumahNegara: false, tanahMilik: false,
+  titikKoordinat: true,
 }
 
-// ⚠️ Isi persis Format III.A.4–III.A.6 (JIJ / ATL / lainnya) BELUM diverifikasi
-// dari PDF — konfigurasi di bawah memakai default konservatif. Sebelum
-// mengaktifkan golongan tsb, baca dulu halaman 7–12 PDF Lembar Kerja.
+// Konfigurasi di bawah SUDAH diverifikasi baris-per-baris terhadap Lampiran
+// Permendagri 47/2021 (Format III.A.1–III.A.6), termasuk hal. 7–12 (2026-07-28).
+//
+// Catatan penting hasil verifikasi:
+// - III.A.4 (JIJ) punya bagian N "Jalan di atas tanah milik" — sama seperti GB,
+//   cuma beda judul. Ditambah 4 isian teknis khas JIJ (jenis perkerasan jalan,
+//   jenis bahan struktur jembatan, no. ruas jalan, no. jaringan irigasi).
+// - III.A.5 (ATL) & III.A.6 (ATB) BERBENTUK SAMA PERSIS satu sama lain: keduanya
+//   punya "Merek/Tipe/spesifikasi lainnya" dan Keberadaan yang pecah jadi
+//   Hilang vs Tidak ditemukan; keduanya TANPA titik koordinat & tanpa bagian N.
+// - KDP (1.3.6) & Aset Lain-Lain (1.5.4) TIDAK punya format sendiri di
+//   Permendagri. Dipetakan ke bentuk III.A.6 sbg yang paling umum, TAPI titik
+//   koordinat sengaja tetap dinyalakan: KDP itu lokasi pembangunan fisik, dan
+//   1.5.4 kerap menampung eks-tanah/gedung (mis. yang dimanfaatkan pihak lain).
 export const LKI_CONFIG: Record<string, LkiConfig> = {
   '1.3.1': { format: 'III.A.1', label: 'Tanah', ...DEFAULT_CONFIG },
   '1.3.2': {
@@ -194,12 +217,28 @@ export const LKI_CONFIG: Record<string, LkiConfig> = {
   '1.3.3': {
     format: 'III.A.3', label: 'Gedung dan Bangunan', ...DEFAULT_CONFIG,
     pemakaiRumahNegara: true, tanahMilik: true,
+    tanahMilikLabel: 'Gedung dan Bangunan di atas tanah milik',
   },
-  '1.3.4': { format: 'III.A.4', label: 'Jalan, Jaringan dan Irigasi', ...DEFAULT_CONFIG },
-  '1.3.5': { format: 'III.A.5', label: 'Aset Tetap Lainnya', ...DEFAULT_CONFIG, titikKoordinat: false },
-  '1.3.6': { format: 'III.A.6', label: 'Konstruksi Dalam Pengerjaan', ...DEFAULT_CONFIG },
-  '1.5.3': { format: 'III.A.6', label: 'Aset Tidak Berwujud', ...DEFAULT_CONFIG, titikKoordinat: false },
-  '1.5.4': { format: 'III.A.6', label: 'Aset Lain-Lain', ...DEFAULT_CONFIG, titikKoordinat: false },
+  '1.3.4': {
+    format: 'III.A.4', label: 'Jalan, Jaringan dan Irigasi', ...DEFAULT_CONFIG,
+    jijTeknis: true, tanahMilik: true, tanahMilikLabel: 'Jalan di atas tanah milik',
+  },
+  '1.3.5': {
+    format: 'III.A.5', label: 'Aset Tetap Lainnya', ...DEFAULT_CONFIG,
+    merekTipe: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
+  },
+  '1.3.6': {
+    format: 'III.A.6', label: 'Konstruksi Dalam Pengerjaan', ...DEFAULT_CONFIG,
+    merekTipe: true, hilangVsTidakDitemukan: true,
+  },
+  '1.5.3': {
+    format: 'III.A.6', label: 'Aset Tidak Berwujud', ...DEFAULT_CONFIG,
+    merekTipe: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
+  },
+  '1.5.4': {
+    format: 'III.A.6', label: 'Aset Lain-Lain', ...DEFAULT_CONFIG,
+    merekTipe: true, hilangVsTidakDitemukan: true,
+  },
 }
 
 /** Format III.A.7 — BMD Belum Tercatat (berdiri sendiri, tak terikat golongan). */
@@ -288,18 +327,20 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
 
   // B–D / F / J — perubahan data. Format III.B.8 lebih luas dari sekadar
   // spesifikasi: Kode Barang (sekaligus Nama Barang, karena digabung), Satuan,
-  // Alamat, dan atribut kendaraan. Jumlah & nilai perolehan TIDAK bisa diubah
-  // lewat LKI, jadi tak lagi ikut dibandingkan.
+  // Alamat, atribut kendaraan (III.A.2), dan atribut teknis JIJ (III.A.4).
+  // Jumlah & nilai perolehan TIDAK bisa diubah lewat LKI, jadi tak dibandingkan.
   if (
     tidakSesuai(j.kode_barang) || tidakSesuai(j.spesifikasi) || tidakSesuai(j.satuan) ||
     tidakSesuai(j.alamat) || tidakSesuai(j.merek_tipe) ||
-    tidakSesuai(j.no_polisi) || tidakSesuai(j.no_rangka) || tidakSesuai(j.no_mesin)
+    tidakSesuai(j.no_polisi) || tidakSesuai(j.no_rangka) || tidakSesuai(j.no_mesin) ||
+    tidakSesuai(j.jenis_perkerasan) || tidakSesuai(j.jenis_bahan_jembatan) ||
+    tidakSesuai(j.no_ruas_jalan) || tidakSesuai(j.no_jaringan_irigasi)
   ) out.push('III.B.8')
 
   // M — tercatat ganda
   if (j.ganda) out.push('III.B.9')
 
-  // N — berdiri di atas tanah bukan milik Pemda (khusus Gedung & Bangunan)
+  // N — berdiri di atas tanah bukan milik Pemda (Gedung & Bangunan dan JIJ)
   if (j.tanah_milik && j.tanah_milik !== 'pemda') out.push('III.B.10')
 
   return out

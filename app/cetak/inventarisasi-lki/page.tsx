@@ -84,6 +84,15 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
                   : <>☑ Sesuai <span className="text-gray-500">({s.kode || '—'} · {s.uraian_barang || '—'})</span></>}
               </Baris>
               <Baris kode="D" label="Nama Spesifikasi Barang">{jawabSesuai(j.spesifikasi, s.nama_barang)}</Baris>
+              {/* Format III.A.4 menaruh 4 isian teknis JIJ di antara D dan Jumlah. */}
+              {config.jijTeknis && (
+                <>
+                  <Baris kode="E" label="Jenis Perkerasan Jalan">{jawabSesuai(j.jenis_perkerasan, null)}</Baris>
+                  <Baris kode="F" label="Jenis Bahan Struktur Jembatan">{jawabSesuai(j.jenis_bahan_jembatan, null)}</Baris>
+                  <Baris kode="G" label="Nomor Ruas Jalan">{jawabSesuai(j.no_ruas_jalan, null)}</Baris>
+                  <Baris kode="H" label="Nomor Jaringan Irigasi">{jawabSesuai(j.no_jaringan_irigasi, null)}</Baris>
+                </>
+              )}
               <Baris kode="E" label="Jumlah Barang">{s.jumlah ?? '—'}</Baris>
               <Baris kode="F" label="Satuan Barang">{jawabSesuai(j.satuan, s.satuan)}</Baris>
               <Baris kode="G" label="Keberadaan Barang">
@@ -107,7 +116,11 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
               <Baris kode="K" label="Kondisi Barang">
                 {j.kondisi || '—'} <span className="text-gray-500">(sebelum: {normalKondisi(s.kondisi) || '—'})</span>
               </Baris>
-              {config.merekTipe && <Baris kode="L" label="Merek / Tipe">{jawabSesuai(j.merek_tipe, s.merek_tipe)}</Baris>}
+              {config.merekTipe && (
+                <Baris kode="L" label={config.nomorKendaraan ? 'Merek / Tipe' : 'Merek / Tipe / Spesifikasi Lainnya'}>
+                  {jawabSesuai(j.merek_tipe, s.merek_tipe)}
+                </Baris>
+              )}
               {config.nomorKendaraan && (
                 <>
                   <Baris kode="M" label="Nomor Polisi">{jawabSesuai(j.no_polisi, s.no_polisi)}</Baris>
@@ -136,7 +149,7 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
                   : '☑ Tidak'}
               </Baris>
               {config.tanahMilik && (
-                <Baris kode="N" label="Berdiri di atas tanah milik">
+                <Baris kode="N" label={config.tanahMilikLabel || 'Barang berdiri di atas tanah milik'}>
                   {j.tanah_milik
                     ? `${j.tanah_milik === 'pemda' ? 'Pemerintah Daerah' : j.tanah_milik === 'pempus' ? 'Pemerintah Pusat' : j.tanah_milik === 'pemda_lain' ? 'Pemerintah Daerah Lainnya' : 'Pihak Lain'}${j.tanah_milik_nama ? ` — ${j.tanah_milik_nama}` : ''}`
                     : '—'}

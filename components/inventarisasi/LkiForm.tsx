@@ -271,6 +271,37 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
                 </SesuaiRadio>
               </Seksi>
 
+              {/* Format III.A.4 menyisipkan 4 isian teknis di sini, SEBELUM
+                  Jumlah Barang. Di dokumen aslinya huruf E–H terpakai dua kali;
+                  di layar dipendekkan jadi satu blok supaya tak membingungkan.
+                  Keempatnya belum punya kolom di `aset`, jadi "Tercatat" kosong
+                  — petugas mengisi keadaan sebenarnya di lapangan. */}
+              {config.jijTeknis && (
+                <Seksi kode="E–H" judul="Data Teknis Jalan / Jaringan / Irigasi">
+                  <div className="space-y-3">
+                    {([
+                      ['jenis_perkerasan', 'Jenis Perkerasan Jalan'],
+                      ['jenis_bahan_jembatan', 'Jenis Bahan Struktur Jembatan'],
+                      ['no_ruas_jalan', 'Nomor Ruas Jalan'],
+                      ['no_jaringan_irigasi', 'Nomor Jaringan Irigasi'],
+                    ] as const).map(([key, label]) => (
+                      <div key={key}>
+                        <p className="text-[11px] font-medium text-gray-600 mb-1">{label}</p>
+                        <SesuaiRadio
+                          sesuai={j[key]?.sesuai !== false}
+                          disabled={readOnly}
+                          onSesuai={v => set(key, v ? { sesuai: true } : { sesuai: false, seharusnya: j[key]?.seharusnya || '' })}
+                        >
+                          <input className="select-filter w-full" disabled={readOnly} placeholder="sebutkan yang seharusnya..."
+                            value={j[key]?.seharusnya || ''}
+                            onChange={e => set(key, { sesuai: false, seharusnya: e.target.value })} />
+                        </SesuaiRadio>
+                      </div>
+                    ))}
+                  </div>
+                </Seksi>
+              )}
+
               <Seksi kode="E" judul="Jumlah Barang">
                 <Tampilan nilai={s.jumlah ?? '—'} />
               </Seksi>
@@ -403,7 +434,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
               </Seksi>
 
               {config.merekTipe && (
-                <Seksi kode="L" judul="Merek / Tipe">
+                <Seksi kode="L" judul={config.nomorKendaraan ? 'Merek / Tipe' : 'Merek / Tipe / Spesifikasi Lainnya'}>
                   <SesuaiRadio
                     nilaiLama={s.merek_tipe}
                     sesuai={j.merek_tipe?.sesuai !== false}
@@ -543,7 +574,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
               </Seksi>
 
               {config.tanahMilik && (
-                <Seksi kode="N" judul="Gedung dan Bangunan berdiri di atas tanah milik">
+                <Seksi kode="N" judul={config.tanahMilikLabel || 'Barang berdiri di atas tanah milik'}>
                   <div className="space-y-1.5 text-xs">
                     {PIHAK.map(p => (
                       <label key={p.v} className="flex items-center gap-1.5 cursor-pointer">

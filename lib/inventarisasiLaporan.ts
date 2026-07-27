@@ -222,7 +222,26 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
         kondisi_sebelum: normalKondisi(s.kondisi) || '',
         kondisi_setelah: j.kondisi || '',
       }
-    case 'III.B.8':
+    case 'III.B.8': {
+      // Format III.B.8 hanya menyediakan kolom Kode/Nama/Register/Spesifikasi/
+      // Jumlah/Alamat. Atribut lain yang juga bisa dikoreksi lewat LKI —
+      // Merek/Tipe (III.A.2/5/6), nomor kendaraan (III.A.2), data teknis JIJ
+      // (III.A.4) — tak punya kolomnya, jadi dirangkum ke Keterangan supaya
+      // barang yang HANYA berubah di situ tak tampil sebagai baris kosong.
+      const ekstra = ([
+        [j.merek_tipe, 'Merek/Tipe'],
+        [j.no_polisi, 'No. Polisi'],
+        [j.no_rangka, 'No. Rangka'],
+        [j.no_mesin, 'No. Mesin'],
+        [j.jenis_perkerasan, 'Jenis Perkerasan Jalan'],
+        [j.jenis_bahan_jembatan, 'Jenis Bahan Struktur Jembatan'],
+        [j.no_ruas_jalan, 'No. Ruas Jalan'],
+        [j.no_jaringan_irigasi, 'No. Jaringan Irigasi'],
+      ] as const)
+        .filter(([f]) => f?.sesuai === false)
+        .map(([f, label]) => `${label} → ${f?.seharusnya || '(kosong)'}`)
+        .join('; ')
+
       return {
         no, nibar: s.nibar || '',
         sb_kode_barang: s.kode || '', sb_nama_barang: s.uraian_barang || '',
@@ -237,8 +256,9 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
         st_alamat: alamatEfektif,
         satuan: efektif(j.satuan, s.satuan),
         nilai: s.nilai_perolehan ?? '',
-        keterangan: j.keterangan || '',
+        keterangan: [ekstra, j.keterangan].filter(Boolean).join(' — '),
       }
+    }
     case 'III.B.9': {
       const g = j.ganda_data || {}
       return {
