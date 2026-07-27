@@ -368,6 +368,52 @@ per-SKPD + **filter jenis pemanfaatan** (Sewa/Pinjam Pakai/KSP/BGS-BSG/KSPI dari
 `payload.jenis_pemanfaatan`). Keduanya baca `jurnal_header`+ledger, hitung
 keanggotaan per (header, aset) baris-terakhir, export Excel.
 
+## KIR — Kartu Inventaris Ruangan (Format III.K.2, migrasi 20260727_02)
+
+Menu Pembukuan → KIR (`components/kir/Kir.tsx`, `lib/kir.ts`) + Pelaporan → KIR
+(`components/pelaporan/LaporanKir.tsx`) + cetak `app/cetak/kir/page.tsx`.
+Pendataan penempatan FISIK barang di ruangan: pilih SKPD → tambah ruangan (+
+Penanggung Jawab Ruangan) → centang barang → cetak KIR.
+
+- **NON-LEDGER & BUKAN pola jurnal ber-SK** (pola Inventarisasi 20260725_08).
+  Dua tabel biasa: `kir_ruangan` (skpd_id, nama, kode_ruangan, pegawai_id +
+  snapshot `pj_nama/pj_nip/pj_jabatan`, keterangan) & `kir_ruangan_aset`
+  (ruangan_id, aset_id, keterangan). **TIDAK menyentuh `transaksi_bmd` maupun
+  kolom apa pun di `aset`** — penempatan ruangan itu data administratif, bukan
+  peristiwa akuntansi (tak mengubah nilai/penyusutan/kepemilikan SKPD/
+  visibilitas). Karena itu di sini **UPDATE/DELETE biasa** (user minta: edit
+  nama ruangan, hapus barang dari ruangan, hapus ruangan) — aturan append-only
+  `transaksi_bmd` tak berlaku & tak dilanggar. **JANGAN** menambahkan jenis
+  ledger `kir_*` atau kolom cache di `aset` untuk fitur ini.
+- **Beda dgn Pengamanan**: Pengamanan = kustodi HUKUM ke pegawai lewat BAST +
+  Pakta Integritas (ber-dokumen, ber-ledger). KIR = penempatan fisik di ruangan
+  (administratif, sering berubah). Keduanya berdiri sendiri — satu barang boleh
+  punya kustodian Pengamanan sekaligus tercatat di sebuah ruangan.
+- **SATU BARANG = SATU RUANGAN** (keputusan user 2026-07-27): ditegakkan DB lewat
+  `UNIQUE (aset_id)` di `kir_ruangan_aset`, bukan cuma filter picker. Pindah
+  ruangan = keluarkan dulu dari ruangan lama. Picker menyaring aset yang sudah
+  ditempatkan supaya operator tak kena error UNIQUE mentah.
+- **Golongan**: Peralatan & Mesin (1.3.2), Aset Tetap Lainnya (1.3.5), Aset
+  Lain-Lain (1.5.4) — `KIR_ELIGIBLE_GOLONGAN`. Tanah/Gedung/Jalan sengaja TIDAK
+  masuk (KIR mendata ISI ruangan, bukan bangunannya).
+- **Penanggung Jawab Ruangan** dipilih dari `admin_pegawai` se-SKPD (dropdown,
+  yang sudah `role_bmd='penanggung_jawab_ruangan'` ditandai ✓); belum terdaftar
+  → pintasan ke `/dashboard/admin/usulan-pengurus` (peran itu sudah ada di
+  `PERAN_USULAN`). Nama/NIP/jabatan **di-snapshot** ke kolom `pj_*` saat
+  ditetapkan supaya blok tanda tangan KIR yang sudah dicetak tetap sesuai
+  dokumen fisik walau data pegawai berubah. Blok tanda tangan kiri (Pengurus
+  Barang) diambil live dari `admin_pegawai` role `pengurus_barang` SKPD itu.
+- **Cetak** `/cetak/kir?ruangan=<id>` (satu ruangan) atau `?skpd=<id>` (semua
+  ruangan SKPD, page-break per ruangan), A4 landscape. Kolom 5 "Nama Barang" =
+  `aset.uraian_barang` (baku kodefikasi), kolom 6 "Spesifikasi Nama Barang" =
+  `aset.nama_barang` — jangan tertukar. Kolom "Nomor Register" diisi NIBAR:
+  aplikasi ini tak punya nomor register terpisah, kolomnya ada demi kesesuaian
+  format.
+- RLS pola inventarisasi (subtree SKPD; `fn_is_admin()`/`fn_is_viewer()`
+  dibungkus InitPlan). ⚠️ **Deploy-ordering: migrasi 20260727_02 WAJIB jalan
+  SEBELUM deploy kode** — halaman KIR langsung query tabel yang belum ada. Tak
+  ada perubahan enum, jadi menu lain tak terdampak.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang
@@ -559,6 +605,29 @@ BUKAN public URL. Draft (belum py `aset.id`) pakai prefix `draft/<key-client>/..
 
 ## Lingkungan kerja
 
-- Tidak ada node/node_modules lokal (deploy via Vercel). **Tidak bisa jalankan
-  `tsc`/build/test lokal** — verifikasi lewat review manual yang teliti.
+- Deploy via Vercel. `node_modules` lokal ADA tapi **sebagian** — type-check
+  jalan: `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`
+  (diverifikasi 2026-07-27; catatan lama "tidak bisa jalankan tsc" sudah usang).
+  **Ada error PRE-EXISTING yang bukan dari perubahanmu** — dependency opsional
+  belum terpasang (`qrcode`, `leaflet`, `react-leaflet` → app/kibar/[nibar],
+  components/kibar/LabelSheet, components/MapPicker, components/gis/GisMap) plus
+  isu tipe lama di `PerolehanImport`, `RekeningPicker`, `KonstruksiPengadaan`,
+  `Koreksi`. Jadi **jangan baca exit code mentah** — saring outputnya ke berkas
+  yang kamu sentuh saja. `next build` tetap tak bisa (dependency kurang).
 - Migrasi SQL dijalankan user di Supabase SQL Editor sesuai urutan nama file.
+- **SELESAI NGODE = LANGSUNG KASIH COMMAND COMMIT + PUSH** (permintaan user
+  2026-07-27), tanpa diminta lagi. Satu blok `bash` siap-klik, format persis:
+  `git add <berkas satu per satu> && git commit -m "$(cat <<'EOF' … EOF
+  )" && git push origin main`. Aturannya:
+  - **`git add` sebut berkas SATU PER SATU** — jangan `.` / `-A`. Di repo ini
+    selalu ada untracked yang BUKAN bagian kerjaan (file .xlsx besar, migrasi
+    orang lain yang belum di-commit, `docs/`); jangan ikut tersapu.
+  - Pesan commit: judul `tipe(skop): ringkas` lalu bullet WHY/keputusan (lihat
+    `git log` — gaya rinci, bukan satu baris), diakhiri
+    `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
+  - Heredoc `<<'EOF'` (kutip tunggal) supaya `$`/backtick di pesan tak diexpand.
+  - Push ke `main` langsung — repo ini memang tak pakai branch/PR.
+  - Kalau ada migrasi baru: **ingatkan jalankan migrasi dulu** sebelum push,
+    urutan deploy-ordering di CLAUDE.md.
+  - Jalan di terminal user, BUKAN dijalankan Claude — commit/push tetap
+    keputusan user.

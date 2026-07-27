@@ -60,6 +60,7 @@ const navTree: NavNode[] = [
         ],
       },
       { type: 'leaf', href: '/dashboard/pelaporan/lra', label: 'LRA' },
+      { type: 'leaf', href: '/dashboard/pembukuan/kir', label: 'KIR' },
     ],
   },
   { type: 'leaf', href: '/dashboard/daftar-barang', label: 'Daftar Barang' },
@@ -94,6 +95,7 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi', label: 'Rekonsiliasi BMD' },
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi/rincian', label: 'Rincian Transaksi (Bukti Dukung)' },
       { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
+      { type: 'leaf', href: '/dashboard/pelaporan/kir', label: 'KIR' },
     ],
   },
   {
