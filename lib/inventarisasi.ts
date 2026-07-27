@@ -70,28 +70,34 @@ export type PihakPengguna = 'pemda' | 'pempus' | 'pemda_lain' | 'pihak_lain'
 export type KondisiFisik = 'B' | 'RR' | 'RB'
 
 export type InvJawaban = {
-  // A–D
-  kode_register?: SesuaiField
-  kode_barang?: SesuaiField
-  nama_barang?: SesuaiField
+  // A — identitas barang (dulu "Kode Register" yang tak ada di sistem).
+  // NIBAR dipakai apa adanya dari snapshot, jadi tak ada isian di sini.
+
+  // B+C — Kode Barang & Nama Barang DIGABUNG: yang dikoreksi cukup kodenya,
+  // nama/uraian otomatis mengikuti kodefikasi. Pilihan dibatasi kodefikasi
+  // dalam GOLONGAN YANG SAMA (lintas golongan = urusan menu Reklasifikasi).
+  kode_barang?: SesuaiField & { kode_baru?: string; uraian_baru?: string }
+  // D
   spesifikasi?: SesuaiField
-  // E–F
-  jumlah?: number
-  satuan?: string
+  // E — jumlah TIDAK bisa diubah lewat LKI (tampilan saja, dari snapshot).
+  // F — satuan boleh dikoreksi, pilihannya dari master admin_satuan_bmd.
+  satuan?: SesuaiField
   // G — Keberadaan Barang
   keberadaan?: 'ada' | 'hilang' | 'tidak_ditemukan'
   jumlah_tidak_ada?: number
-  // H
-  nilai_perolehan?: number
-  // I — biaya atribusi / menambah kapasitas manfaat (kapitalisasi)
+  // H — nilai perolehan TIDAK bisa diubah lewat LKI (tampilan saja).
+  // I — biaya atribusi / menambah kapasitas manfaat (kapitalisasi).
+  // Induk WAJIB dipilih dari barang milik SKPD lembar ini sendiri.
   atribusi?: 'ya_induk_diketahui' | 'ya_induk_tidak_diketahui' | 'bukan'
   induk?: {
     aset_id?: string | null
     nibar?: string; kode_barang?: string; kode_lokasi?: string
     kode_register?: string; nama_barang?: string; spesifikasi?: string
   }
-  // J–K
-  alamat?: SesuaiField
+  // J — alamat berjenjang (admin_wilayah) + detail jalan, pola sama dgn
+  // spesifikasi barang di menu lain.
+  alamat?: SesuaiField & { wilayah_kode?: string; alamat_detail?: string }
+  // K
   kondisi?: KondisiFisik
   // L — Penggunaan Barang
   penggunaan?: {
@@ -106,9 +112,11 @@ export type InvJawaban = {
     dasar_ada?: boolean        // ada dokumen penguasaan?
     nama_dokumen?: string
   }
-  // M — tercatat ganda
+  // M — tercatat ganda. Barang kembarannya dipilih dari daftar barang SKPD
+  // lembar ini sendiri (sama seperti induk di bagian I), bukan diketik bebas.
   ganda?: boolean
   ganda_data?: {
+    aset_id?: string | null
     nibar?: string; kode_register?: string; kode_barang?: string
     nama_barang?: string; spesifikasi?: string; jumlah?: number; satuan?: string
     nilai_perolehan?: number; tgl_perolehan?: string
@@ -278,14 +286,14 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
   const sebelum = normalKondisi(b.snapshot?.kondisi)
   if (j.kondisi && sebelum && j.kondisi !== sebelum) out.push('III.B.7')
 
-  // A–D / E / J — perubahan data. CATATAN: format III.B.8 lebih luas dari sekadar
-  // spesifikasi — mencakup Kode Barang, Nama Barang, Kode Register, Jumlah, Alamat.
-  const jumlahBerubah = j.jumlah != null && b.snapshot?.jumlah != null && Number(j.jumlah) !== Number(b.snapshot.jumlah)
+  // B–D / F / J — perubahan data. Format III.B.8 lebih luas dari sekadar
+  // spesifikasi: Kode Barang (sekaligus Nama Barang, karena digabung), Satuan,
+  // Alamat, dan atribut kendaraan. Jumlah & nilai perolehan TIDAK bisa diubah
+  // lewat LKI, jadi tak lagi ikut dibandingkan.
   if (
-    tidakSesuai(j.kode_register) || tidakSesuai(j.kode_barang) || tidakSesuai(j.nama_barang) ||
-    tidakSesuai(j.spesifikasi) || tidakSesuai(j.alamat) || tidakSesuai(j.merek_tipe) ||
-    tidakSesuai(j.no_polisi) || tidakSesuai(j.no_rangka) || tidakSesuai(j.no_mesin) ||
-    jumlahBerubah
+    tidakSesuai(j.kode_barang) || tidakSesuai(j.spesifikasi) || tidakSesuai(j.satuan) ||
+    tidakSesuai(j.alamat) || tidakSesuai(j.merek_tipe) ||
+    tidakSesuai(j.no_polisi) || tidakSesuai(j.no_rangka) || tidakSesuai(j.no_mesin)
   ) out.push('III.B.8')
 
   // M — tercatat ganda

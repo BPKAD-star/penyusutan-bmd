@@ -4,18 +4,33 @@
 // isinya ±90% sama; yang berbeda cuma bagian opsional (Merek/Tipe, nomor
 // kendaraan, pemakai rumah negara, "di atas tanah milik", titik koordinat).
 //
+// PRINSIP ISIAN (koreksi user 2026-07-27):
+//   * Yang TIDAK boleh diubah lewat LKI: NIBAR, Jumlah, Nilai Perolehan —
+//     ditampilkan apa adanya. Mengubahnya urusan menu Koreksi, bukan
+//     inventarisasi.
+//   * Yang dikoreksi TIDAK diketik bebas, tapi dipilih dari master:
+//     kode barang → KodefikasiPicker (DIKUNCI ke golongan lembar ini),
+//     satuan → admin_satuan_bmd, alamat → admin_wilayah (berjenjang),
+//     induk & pasangan-ganda → AsetPicker (DIKUNCI ke SKPD lembar ini).
+//   * Kode Barang & Nama Barang digabung: cukup pilih kodenya, uraian ikut.
+//
 // Baris "BMD Belum Tercatat" (Format III.A.7, aset_id NULL) memakai layout
-// BERBEDA: barangnya belum ada di sistem, jadi tak ada pembanding "Sesuai/Tidak
-// Sesuai" — semua data diketik manual di bagian `jawaban.baru`.
-import { useState } from 'react'
+// BERBEDA: barangnya belum ada di sistem, jadi semua data diketik manual.
+import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
+import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
+import WilayahPicker from '@/components/WilayahPicker'
 import { formatRupiah } from '@/lib/export'
 import {
   normalKondisi, klasifikasiLhi, LHI_LABEL,
-  type InvBaris, type InvJawaban, type LkiConfig, type SesuaiField,
+  type InvBaris, type InvJawaban, type LkiConfig,
   type KondisiFisik, type PihakPengguna,
 } from '@/lib/inventarisasi'
+
+// MapPicker butuh `window` (Leaflet) → WAJIB dynamic tanpa SSR (aturan CLAUDE.md).
+const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false })
 
 const KONDISI: { v: KondisiFisik; l: string }[] = [
   { v: 'B', l: 'Baik' }, { v: 'RR', l: 'Rusak Ringan' }, { v: 'RB', l: 'Rusak Berat' },
@@ -38,42 +53,49 @@ function Seksi({ kode, judul, children }: { kode: string; judul: string; childre
   )
 }
 
-/** Bagian A–D & J: radio Sesuai / Tidak Sesuai + isian "yang seharusnya". */
-function SesuaiInput({ nilaiLama, value, onChange, disabled }: {
-  nilaiLama?: string | null
-  value: SesuaiField | undefined
-  onChange: (v: SesuaiField) => void
+/** Baris "tercatat: …" untuk field yang hanya ditampilkan, tak bisa diubah. */
+function Tampilan({ nilai }: { nilai: React.ReactNode }) {
+  return (
+    <p className="text-sm text-gray-800">
+      {nilai}
+      <span className="ml-2 text-[11px] text-gray-400">(tidak diubah lewat inventarisasi)</span>
+    </p>
+  )
+}
+
+/** Radio Sesuai / Tidak Sesuai. Isian koreksinya disuplai lewat `children`. */
+function SesuaiRadio({ sesuai, onSesuai, disabled, nilaiLama, children }: {
+  sesuai: boolean
+  onSesuai: (v: boolean) => void
   disabled?: boolean
+  nilaiLama?: string | null
+  children?: React.ReactNode
 }) {
-  const sesuai = value?.sesuai !== false
   return (
     <div className="space-y-1.5">
       <p className="text-[11px] text-gray-400">Tercatat: <span className="text-gray-600">{nilaiLama || '—'}</span></p>
       <div className="flex flex-wrap items-center gap-4 text-xs">
         <label className="flex items-center gap-1.5 cursor-pointer">
-          <input type="radio" checked={sesuai} disabled={disabled}
-            onChange={() => onChange({ sesuai: true })} />
+          <input type="radio" checked={sesuai} disabled={disabled} onChange={() => onSesuai(true)} />
           Sesuai
         </label>
         <label className="flex items-center gap-1.5 cursor-pointer">
-          <input type="radio" checked={!sesuai} disabled={disabled}
-            onChange={() => onChange({ sesuai: false, seharusnya: value?.seharusnya || '' })} />
+          <input type="radio" checked={!sesuai} disabled={disabled} onChange={() => onSesuai(false)} />
           Tidak Sesuai
         </label>
-        {!sesuai && (
-          <input className="select-filter flex-1 min-w-[200px]" disabled={disabled}
-            placeholder="sebutkan yang seharusnya..."
-            value={value?.seharusnya || ''}
-            onChange={e => onChange({ sesuai: false, seharusnya: e.target.value })} />
-        )}
       </div>
+      {!sesuai && <div className="pt-1">{children}</div>}
     </div>
   )
 }
 
-export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: {
+export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onSimpan, onTutup }: {
   baris: InvBaris
   config: LkiConfig
+  /** Golongan lembar ini — mengunci pilihan kodefikasi & pencarian induk. */
+  golongan: string
+  /** SKPD lembar ini — mengunci pencarian induk & pasangan tercatat-ganda. */
+  skpdId: number
   readOnly?: boolean
   onSimpan: (jawaban: InvJawaban, fotoPaths: string[]) => Promise<void>
   onTutup: () => void
@@ -84,12 +106,21 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
   const [j, setJ] = useState<InvJawaban>(() => ({ ...(baris.jawaban || {}) }))
   const [foto, setFoto] = useState<string[]>(baris.foto_paths || [])
   const [induk, setInduk] = useState<AsetRingkas | null>(null)
+  const [gandaAset, setGandaAset] = useState<AsetRingkas | null>(null)
+  const [kodefikasi, setKodefikasi] = useState<KodefikasiHasil | null>(null)
+  const [satuanOpsi, setSatuanOpsi] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
   const set = <K extends keyof InvJawaban>(k: K, v: InvJawaban[K]) => setJ(p => ({ ...p, [k]: v }))
   const setBaru = (k: string, v: unknown) => setJ(p => ({ ...p, baru: { ...(p.baru || {}), [k]: v } }))
+
+  // Master satuan (menu Admin > Daftar Satuan) — dipakai saat satuan dikoreksi.
+  useEffect(() => {
+    supabase.from('admin_satuan_bmd').select('nama').order('nama')
+      .then(({ data }) => setSatuanOpsi(((data || []) as { nama: string }[]).map(r => r.nama)))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -114,8 +145,8 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
     setSaving(false)
   }
 
-  // Pratinjau LHI: pakai fungsi klasifikasi yang SAMA dengan laporan, jadi
-  // operator langsung tahu lembar ini akan muncul di laporan mana.
+  // Pratinjau LHI: fungsi klasifikasi yang SAMA dgn laporan, jadi isi laporan
+  // tak mungkin berbeda dari yang terlihat di sini.
   const lhi = klasifikasiLhi({ ...baris, jawaban: j })
 
   return (
@@ -193,40 +224,72 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
             </div>
           ) : (
             <>
-              <Seksi kode="A" judul="Kode Register">
-                <SesuaiInput nilaiLama={null} value={j.kode_register} disabled={readOnly}
-                  onChange={v => set('kode_register', v)} />
-                <p className="text-[11px] text-amber-600 mt-1">Kode Register belum tersedia di sistem — isi manual bila perlu.</p>
+              <Seksi kode="A" judul="NIBAR">
+                <Tampilan nilai={<span className="font-medium">{s.nibar || '—'}</span>} />
               </Seksi>
 
-              <Seksi kode="B" judul="Kode Barang">
-                <SesuaiInput nilaiLama={s.kode} value={j.kode_barang} disabled={readOnly}
-                  onChange={v => set('kode_barang', v)} />
-              </Seksi>
-
-              <Seksi kode="C" judul="Nama Barang">
-                <SesuaiInput nilaiLama={s.uraian_barang} value={j.nama_barang} disabled={readOnly}
-                  onChange={v => set('nama_barang', v)} />
+              <Seksi kode="B–C" judul="Kode Barang & Nama Barang">
+                <SesuaiRadio
+                  nilaiLama={`${s.kode || '—'} · ${s.uraian_barang || '—'}`}
+                  sesuai={j.kode_barang?.sesuai !== false}
+                  disabled={readOnly}
+                  onSesuai={v => set('kode_barang', v ? { sesuai: true } : { sesuai: false })}
+                >
+                  <p className="text-[11px] text-gray-500 mb-1.5">
+                    Pilih kode yang benar — <b>Nama Barang otomatis mengikuti</b> uraian kodefikasi.
+                    Pilihan dibatasi golongan <b>{golongan}</b>; pindah golongan lewat menu Reklasifikasi.
+                  </p>
+                  <KodefikasiPicker
+                    picked={kodefikasi}
+                    golonganTetap={golongan}
+                    onPick={r => {
+                      setKodefikasi(r)
+                      set('kode_barang', r
+                        ? { sesuai: false, kode_baru: r.kode, uraian_baru: r.uraian || '', seharusnya: `${r.kode} · ${r.uraian || ''}` }
+                        : { sesuai: false })
+                    }}
+                  />
+                  {j.kode_barang?.kode_baru && (
+                    <p className="text-[11px] text-teal mt-1.5">
+                      Seharusnya: <b>{j.kode_barang.kode_baru}</b> · {j.kode_barang.uraian_baru || '—'}
+                    </p>
+                  )}
+                </SesuaiRadio>
               </Seksi>
 
               <Seksi kode="D" judul="Nama Spesifikasi Barang">
-                <SesuaiInput nilaiLama={s.nama_barang} value={j.spesifikasi} disabled={readOnly}
-                  onChange={v => set('spesifikasi', v)} />
+                <SesuaiRadio
+                  nilaiLama={s.nama_barang}
+                  sesuai={j.spesifikasi?.sesuai !== false}
+                  disabled={readOnly}
+                  onSesuai={v => set('spesifikasi', v ? { sesuai: true } : { sesuai: false, seharusnya: j.spesifikasi?.seharusnya || '' })}
+                >
+                  <input className="select-filter w-full" disabled={readOnly}
+                    placeholder="sebutkan spesifikasi yang seharusnya..."
+                    value={j.spesifikasi?.seharusnya || ''}
+                    onChange={e => set('spesifikasi', { sesuai: false, seharusnya: e.target.value })} />
+                </SesuaiRadio>
               </Seksi>
 
-              <Seksi kode="E–F" judul="Jumlah & Satuan Barang">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-gray-400 mb-1">Jumlah (tercatat: {s.jumlah ?? '—'})</label>
-                    <input type="number" className="select-filter w-full" disabled={readOnly}
-                      value={j.jumlah ?? ''} onChange={e => set('jumlah', Number(e.target.value))} />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-gray-400 mb-1">Satuan (tercatat: {s.satuan || '—'})</label>
-                    <input className="select-filter w-full" disabled={readOnly}
-                      value={j.satuan ?? ''} onChange={e => set('satuan', e.target.value)} />
-                  </div>
-                </div>
+              <Seksi kode="E" judul="Jumlah Barang">
+                <Tampilan nilai={s.jumlah ?? '—'} />
+              </Seksi>
+
+              <Seksi kode="F" judul="Satuan Barang">
+                <SesuaiRadio
+                  nilaiLama={s.satuan}
+                  sesuai={j.satuan?.sesuai !== false}
+                  disabled={readOnly}
+                  onSesuai={v => set('satuan', v ? { sesuai: true } : { sesuai: false, seharusnya: j.satuan?.seharusnya || '' })}
+                >
+                  <select className="select-filter w-full max-w-xs" disabled={readOnly}
+                    value={j.satuan?.seharusnya || ''}
+                    onChange={e => set('satuan', { sesuai: false, seharusnya: e.target.value })}>
+                    <option value="">— pilih satuan —</option>
+                    {satuanOpsi.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-1">Daftar dari menu Admin → Daftar Satuan.</p>
+                </SesuaiRadio>
               </Seksi>
 
               <Seksi kode="G" judul="Keberadaan Barang">
@@ -262,9 +325,7 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
               </Seksi>
 
               <Seksi kode="H" judul="Nilai Perolehan Barang">
-                <p className="text-[11px] text-gray-400 mb-1">Tercatat: {formatRupiah(s.nilai_perolehan || 0)}</p>
-                <input type="number" className="select-filter w-full max-w-xs" disabled={readOnly}
-                  value={j.nilai_perolehan ?? ''} onChange={e => set('nilai_perolehan', Number(e.target.value))} />
+                <Tampilan nilai={formatRupiah(s.nilai_perolehan || 0)} />
               </Seksi>
 
               <Seksi kode="I" judul="Apakah nilai perolehan merupakan biaya atribusi / menambah kapasitas manfaat?">
@@ -275,16 +336,23 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
                     Ya — data awal/induknya <b>diketahui</b>
                   </label>
                   {j.atribusi === 'ya_induk_diketahui' && (
-                    <div className="ml-5 space-y-2">
-                      <AsetPicker selected={induk} kodePrefix={s.kode?.split('.').slice(0, 3).join('.')}
+                    <div className="ml-5 space-y-1.5">
+                      <p className="text-[11px] text-gray-500">
+                        Induk dicari <b>hanya di SKPD lembar ini</b> dan golongan <b>{golongan}</b>.
+                      </p>
+                      <AsetPicker selected={induk} skpdId={skpdId} kodePrefix={golongan}
                         onSelect={a => {
+                          if (a && a.id === baris.aset_id) { setErr('Induk tidak boleh barang ini sendiri.'); return }
+                          setErr('')
                           setInduk(a)
                           set('induk', a ? {
                             aset_id: a.id, nibar: a.nibar || '', kode_barang: a.kode,
                             nama_barang: a.nama_barang || '',
                           } : {})
                         }} />
-                      {j.induk?.nibar && <p className="text-[11px] text-gray-500">Induk: {j.induk.nibar} — {j.induk.nama_barang}</p>}
+                      {j.induk?.nibar && (
+                        <p className="text-[11px] text-teal">Induk: {j.induk.nibar} — {j.induk.nama_barang}</p>
+                      )}
                     </div>
                   )}
                   <label className="flex items-center gap-1.5 cursor-pointer">
@@ -301,8 +369,23 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
               </Seksi>
 
               <Seksi kode="J" judul="Alamat">
-                <SesuaiInput nilaiLama={s.alamat} value={j.alamat} disabled={readOnly}
-                  onChange={v => set('alamat', v)} />
+                <SesuaiRadio
+                  nilaiLama={s.alamat}
+                  sesuai={j.alamat?.sesuai !== false}
+                  disabled={readOnly}
+                  onSesuai={v => set('alamat', v ? { sesuai: true } : { sesuai: false })}
+                >
+                  <div className="space-y-2">
+                    <WilayahPicker
+                      value={j.alamat?.wilayah_kode || ''}
+                      onChange={kode => set('alamat', { ...(j.alamat || { sesuai: false }), sesuai: false, wilayah_kode: kode })}
+                    />
+                    <input className="select-filter w-full" disabled={readOnly}
+                      placeholder="Detail alamat (jalan, nomor, RT/RW)..."
+                      value={j.alamat?.alamat_detail || ''}
+                      onChange={e => set('alamat', { ...(j.alamat || { sesuai: false }), sesuai: false, alamat_detail: e.target.value })} />
+                  </div>
+                </SesuaiRadio>
               </Seksi>
 
               <Seksi kode="K" judul="Kondisi Barang">
@@ -321,17 +404,41 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
 
               {config.merekTipe && (
                 <Seksi kode="L" judul="Merek / Tipe">
-                  <SesuaiInput nilaiLama={s.merek_tipe} value={j.merek_tipe} disabled={readOnly}
-                    onChange={v => set('merek_tipe', v)} />
+                  <SesuaiRadio
+                    nilaiLama={s.merek_tipe}
+                    sesuai={j.merek_tipe?.sesuai !== false}
+                    disabled={readOnly}
+                    onSesuai={v => set('merek_tipe', v ? { sesuai: true } : { sesuai: false, seharusnya: j.merek_tipe?.seharusnya || '' })}
+                  >
+                    <input className="select-filter w-full" disabled={readOnly} placeholder="sebutkan yang seharusnya..."
+                      value={j.merek_tipe?.seharusnya || ''}
+                      onChange={e => set('merek_tipe', { sesuai: false, seharusnya: e.target.value })} />
+                  </SesuaiRadio>
                 </Seksi>
               )}
 
               {config.nomorKendaraan && (
                 <Seksi kode="M–O" judul="Nomor Polisi / Rangka / Mesin (kendaraan dinas)">
                   <div className="space-y-3">
-                    <SesuaiInput nilaiLama={s.no_polisi} value={j.no_polisi} disabled={readOnly} onChange={v => set('no_polisi', v)} />
-                    <SesuaiInput nilaiLama={s.no_rangka} value={j.no_rangka} disabled={readOnly} onChange={v => set('no_rangka', v)} />
-                    <SesuaiInput nilaiLama={s.no_mesin} value={j.no_mesin} disabled={readOnly} onChange={v => set('no_mesin', v)} />
+                    {([
+                      ['no_polisi', 'Nomor Polisi', s.no_polisi],
+                      ['no_rangka', 'Nomor Rangka', s.no_rangka],
+                      ['no_mesin', 'Nomor Mesin', s.no_mesin],
+                    ] as const).map(([key, label, lama]) => (
+                      <div key={key}>
+                        <p className="text-[11px] font-medium text-gray-600 mb-1">{label}</p>
+                        <SesuaiRadio
+                          nilaiLama={lama}
+                          sesuai={j[key]?.sesuai !== false}
+                          disabled={readOnly}
+                          onSesuai={v => set(key, v ? { sesuai: true } : { sesuai: false, seharusnya: j[key]?.seharusnya || '' })}
+                        >
+                          <input className="select-filter w-full" disabled={readOnly} placeholder="sebutkan yang seharusnya..."
+                            value={j[key]?.seharusnya || ''}
+                            onChange={e => set(key, { sesuai: false, seharusnya: e.target.value })} />
+                        </SesuaiRadio>
+                      </div>
+                    ))}
                   </div>
                 </Seksi>
               )}
@@ -355,7 +462,7 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
                             placeholder={p.v === 'pemda' ? 'Nama Kuasa/Pengguna Barang Lainnya' : 'Nama instansi / pihak'}
                             value={j.penggunaan.nama || ''}
                             onChange={e => set('penggunaan', { ...j.penggunaan!, nama: e.target.value })} />
-                          {p.v === 'pemda' && config.pemakaiRumahNegara && (
+                          {p.v === 'pemda' && (
                             <div className="grid grid-cols-2 gap-2">
                               <input className="select-filter" disabled={readOnly} placeholder="Nama Pemakai"
                                 value={j.penggunaan.nama_pemakai || ''}
@@ -363,22 +470,21 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
                               <input className="select-filter" disabled={readOnly} placeholder="Status Pemakai"
                                 value={j.penggunaan.status_pemakai || ''}
                                 onChange={e => set('penggunaan', { ...j.penggunaan!, status_pemakai: e.target.value })} />
-                              <label className="flex items-center gap-1.5 cursor-pointer">
-                                <input type="checkbox" checked={!!j.penggunaan.bast_pemakaian} disabled={readOnly}
-                                  onChange={e => set('penggunaan', { ...j.penggunaan!, bast_pemakaian: e.target.checked })} />
-                                Ada BAST Pemakaian
-                              </label>
-                              <label className="flex items-center gap-1.5 cursor-pointer">
-                                <input type="checkbox" checked={!!j.penggunaan.sip} disabled={readOnly}
-                                  onChange={e => set('penggunaan', { ...j.penggunaan!, sip: e.target.checked })} />
-                                Ada Surat Ijin Penghunian (rumah negara)
-                              </label>
+                              {config.pemakaiRumahNegara && (
+                                <>
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input type="checkbox" checked={!!j.penggunaan.bast_pemakaian} disabled={readOnly}
+                                      onChange={e => set('penggunaan', { ...j.penggunaan!, bast_pemakaian: e.target.checked })} />
+                                    Ada BAST Pemakaian
+                                  </label>
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input type="checkbox" checked={!!j.penggunaan.sip} disabled={readOnly}
+                                      onChange={e => set('penggunaan', { ...j.penggunaan!, sip: e.target.checked })} />
+                                    Ada Surat Ijin Penghunian (rumah negara)
+                                  </label>
+                                </>
+                              )}
                             </div>
-                          )}
-                          {p.v === 'pemda' && !config.pemakaiRumahNegara && (
-                            <input className="select-filter w-full" disabled={readOnly} placeholder="Nama Pemakai"
-                              value={j.penggunaan.nama_pemakai || ''}
-                              onChange={e => set('penggunaan', { ...j.penggunaan!, nama_pemakai: e.target.value })} />
                           )}
                           {p.v !== 'pemda' && (
                             <div className="space-y-1.5">
@@ -408,24 +514,30 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
                   Ya, barang ini tercatat ganda
                 </label>
                 {j.ganda && (
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    {([
-                      ['nibar', 'NIBAR pencatatan ganda'], ['kode_register', 'Kode Register'],
-                      ['kode_barang', 'Kode Barang'], ['nama_barang', 'Nama Barang'],
-                      ['spesifikasi', 'Nama Spesifikasi'], ['satuan', 'Satuan'],
-                      ['tgl_perolehan', 'Tgl/Bln/Th Perolehan'],
-                      ['pemegang', 'Pengelola / Pengguna Barang Lainnya'],
-                    ] as [string, string][]).map(([k, ph]) => (
-                      <input key={k} className="select-filter" disabled={readOnly} placeholder={ph}
-                        value={(j.ganda_data?.[k as keyof typeof j.ganda_data] as string) || ''}
-                        onChange={e => set('ganda_data', { ...(j.ganda_data || {}), [k]: e.target.value })} />
-                    ))}
-                    <input type="number" className="select-filter" disabled={readOnly} placeholder="Jumlah"
-                      value={j.ganda_data?.jumlah ?? ''}
-                      onChange={e => set('ganda_data', { ...(j.ganda_data || {}), jumlah: Number(e.target.value) })} />
-                    <input type="number" className="select-filter" disabled={readOnly} placeholder="Nilai Perolehan (Rp)"
-                      value={j.ganda_data?.nilai_perolehan ?? ''}
-                      onChange={e => set('ganda_data', { ...(j.ganda_data || {}), nilai_perolehan: Number(e.target.value) })} />
+                  <div className="mt-2 space-y-2">
+                    <p className="text-[11px] text-gray-500">
+                      Pilih barang kembarannya — dicari <b>hanya di SKPD lembar ini</b>, golongan <b>{golongan}</b>.
+                    </p>
+                    <AsetPicker selected={gandaAset} skpdId={skpdId} kodePrefix={golongan}
+                      onSelect={a => {
+                        if (a && a.id === baris.aset_id) { setErr('Pasangan ganda tidak boleh barang ini sendiri.'); return }
+                        setErr('')
+                        setGandaAset(a)
+                        set('ganda_data', a ? {
+                          ...(j.ganda_data || {}),
+                          aset_id: a.id, nibar: a.nibar || '', kode_barang: a.kode,
+                          nama_barang: a.nama_barang || '', nilai_perolehan: a.nilai_perolehan,
+                        } : {})
+                      }} />
+                    {j.ganda_data?.nibar && (
+                      <p className="text-[11px] text-teal">
+                        Ganda dengan: {j.ganda_data.nibar} — {j.ganda_data.nama_barang}
+                      </p>
+                    )}
+                    <input className="select-filter w-full" disabled={readOnly}
+                      placeholder="Pengelola / Pengguna Barang Lainnya (bila dipegang unit lain)"
+                      value={j.ganda_data?.pemegang || ''}
+                      onChange={e => set('ganda_data', { ...(j.ganda_data || {}), pemegang: e.target.value })} />
                   </div>
                 )}
               </Seksi>
@@ -450,24 +562,33 @@ export default function LkiForm({ baris, config, readOnly, onSimpan, onTutup }: 
 
               {config.titikKoordinat && (
                 <Seksi kode="O" judul="Titik Koordinat">
-                  <div className="grid grid-cols-2 gap-3">
-                    <input type="number" step="any" className="select-filter" disabled={readOnly} placeholder="Latitude"
-                      value={j.latitude ?? ''} onChange={e => set('latitude', e.target.value === '' ? null : Number(e.target.value))} />
-                    <input type="number" step="any" className="select-filter" disabled={readOnly} placeholder="Longitude"
-                      value={j.longitude ?? ''} onChange={e => set('longitude', e.target.value === '' ? null : Number(e.target.value))} />
+                  <div className="space-y-2">
+                    <MapPicker
+                      latitude={j.latitude != null ? String(j.latitude) : ''}
+                      longitude={j.longitude != null ? String(j.longitude) : ''}
+                      onChange={(lat, lng) => setJ(p => ({
+                        ...p,
+                        latitude: lat === '' ? null : Number(lat),
+                        longitude: lng === '' ? null : Number(lng),
+                      }))}
+                    />
+                    <p className="text-[11px] text-gray-400">
+                      Klik peta untuk menandai titik, atau ketik koordinatnya langsung.
+                    </p>
                   </div>
                 </Seksi>
               )}
             </>
           )}
 
-          <Seksi kode="P–Q" judul="Lainnya & Keterangan">
-            <div className="space-y-2">
-              <input className="select-filter w-full" disabled={readOnly} placeholder="Lainnya"
-                value={j.lainnya || ''} onChange={e => set('lainnya', e.target.value)} />
-              <textarea className="select-filter w-full" rows={2} disabled={readOnly} placeholder="Keterangan"
-                value={j.keterangan || ''} onChange={e => set('keterangan', e.target.value)} />
-            </div>
+          <Seksi kode="P" judul="Lainnya">
+            <input className="select-filter w-full" disabled={readOnly} placeholder="Catatan lain..."
+              value={j.lainnya || ''} onChange={e => set('lainnya', e.target.value)} />
+          </Seksi>
+
+          <Seksi kode="Q" judul="Keterangan">
+            <textarea className="select-filter w-full" rows={2} disabled={readOnly} placeholder="Keterangan..."
+              value={j.keterangan || ''} onChange={e => set('keterangan', e.target.value)} />
           </Seksi>
 
           <Seksi kode="R" judul="Foto / Denah">

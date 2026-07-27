@@ -271,41 +271,48 @@ export default function DetailInventarisasiPage() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                <th className="table-th whitespace-nowrap">NIBAR</th>
-                <th className="table-th">Nama / Spesifikasi</th>
+                <th className="table-th whitespace-nowrap">Kode Barang</th>
+                <th className="table-th">Uraian</th>
+                <th className="table-th">Nama / NIBAR</th>
+                <th className="table-th whitespace-nowrap">Tgl Perolehan</th>
                 <th className="table-th whitespace-nowrap text-right">Nilai Perolehan</th>
                 <th className="table-th whitespace-nowrap">Kondisi Awal</th>
-                <th className="table-th whitespace-nowrap">Status</th>
                 <th className="table-th">Masuk Laporan</th>
+                <th className="table-th whitespace-nowrap">Status</th>
                 <th className="table-th whitespace-nowrap">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {baris.length === 0 ? (
-                <tr><td colSpan={7} className="table-td text-center py-10 text-gray-400">
+                <tr><td colSpan={9} className="table-td text-center py-10 text-gray-400">
                   Tidak ada barang pada golongan ini untuk SKPD tersebut.
                 </td></tr>
               ) : baris.map(b => {
                 const lhi = klasifikasiLhi(b)
                 const isi = sudahDiisi(b)
+                const baru = b.jawaban?.baru
                 return (
                   <tr key={b.id}>
                     <td className="table-td text-xs text-gray-500 whitespace-nowrap">
-                      {b.aset_id ? (b.snapshot?.nibar || '—') : <span className="italic text-amber-600">Belum tercatat</span>}
+                      {b.aset_id ? (b.snapshot?.kode || '—') : (baru?.kode_barang || '—')}
                     </td>
                     <td className="table-td text-xs">
-                      <p className="font-medium">{b.aset_id ? (b.snapshot?.uraian_barang || '-') : (b.jawaban?.baru?.nama_barang || '(belum diisi)')}</p>
-                      <p className="text-gray-400">{b.aset_id ? (b.snapshot?.nama_barang || '') : (b.jawaban?.baru?.spesifikasi || '')}</p>
+                      {b.aset_id ? (b.snapshot?.uraian_barang || '—') : (baru?.nama_barang || '(belum diisi)')}
+                    </td>
+                    {/* Nama & NIBAR bertumpuk, pola sama dgn Daftar Barang. */}
+                    <td className="table-td text-xs">
+                      <p className="font-medium">{b.aset_id ? (b.snapshot?.nama_barang || '—') : (baru?.spesifikasi || '—')}</p>
+                      <p className="text-gray-400">
+                        {b.aset_id ? (b.snapshot?.nibar || '—') : <span className="italic text-amber-600">Belum tercatat</span>}
+                      </p>
+                    </td>
+                    <td className="table-td text-xs text-gray-500 whitespace-nowrap">
+                      {(b.aset_id ? b.snapshot?.tgl_perolehan : baru?.tgl_perolehan) || '—'}
                     </td>
                     <td className="table-td text-xs text-right whitespace-nowrap">
-                      {formatRupiah(b.aset_id ? (b.snapshot?.nilai_perolehan || 0) : (b.jawaban?.baru?.nilai_perolehan || 0))}
+                      {formatRupiah(b.aset_id ? (b.snapshot?.nilai_perolehan || 0) : (baru?.nilai_perolehan || 0))}
                     </td>
                     <td className="table-td text-xs text-gray-500">{normalKondisi(b.snapshot?.kondisi) || '—'}</td>
-                    <td className="table-td whitespace-nowrap">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full ${isi ? 'bg-teal/10 text-teal' : 'bg-gray-100 text-gray-500'}`}>
-                        {isi ? 'Terisi' : 'Belum'}
-                      </span>
-                    </td>
                     <td className="table-td">
                       <div className="flex flex-wrap gap-1">
                         {lhi.length === 0 ? <span className="text-[11px] text-gray-300">—</span>
@@ -313,6 +320,11 @@ export default function DetailInventarisasiPage() {
                             <span key={k} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">{k}</span>
                           ))}
                       </div>
+                    </td>
+                    <td className="table-td whitespace-nowrap">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full ${isi ? 'bg-teal/10 text-teal' : 'bg-gray-100 text-gray-500'}`}>
+                        {isi ? 'Terisi' : 'Belum'}
+                      </span>
                     </td>
                     <td className="table-td whitespace-nowrap">
                       <button onClick={() => setEdit(b)} className="text-teal hover:underline text-xs font-medium">
@@ -334,6 +346,8 @@ export default function DetailInventarisasiPage() {
         <LkiForm
           baris={edit}
           config={config}
+          golongan={hdr.golongan}
+          skpdId={hdr.skpd_id}
           readOnly={readOnly}
           onSimpan={(jawaban, fotoPaths) => simpanLembar(edit, jawaban, fotoPaths)}
           onTutup={() => setEdit(null)}

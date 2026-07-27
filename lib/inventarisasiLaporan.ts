@@ -157,19 +157,32 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
     }
   }
 
+  // Kode Barang & Nama Barang berpasangan: koreksi kodenya sekaligus membawa
+  // uraian barunya. Jumlah & nilai perolehan TIDAK bisa diubah lewat LKI, jadi
+  // selalu dari snapshot. "Kode Register" tak ada di sistem → dikosongkan.
+  const kodeEfektif = j.kode_barang?.sesuai === false
+    ? (j.kode_barang.kode_baru || '(kosong)')
+    : (s.kode || '')
+  const uraianEfektif = j.kode_barang?.sesuai === false
+    ? (j.kode_barang.uraian_baru || '(kosong)')
+    : (s.uraian_barang || '')
+  const alamatEfektif = j.alamat?.sesuai === false
+    ? [j.alamat.alamat_detail, j.alamat.wilayah_kode].filter(Boolean).join(' · ') || '(kosong)'
+    : (s.alamat || '')
+
   const inti = {
     no,
     nibar: s.nibar || '',
-    kode_register: efektif(j.kode_register, ''),
-    kode_barang: efektif(j.kode_barang, s.kode),
-    nama_barang: efektif(j.nama_barang, s.uraian_barang),
+    kode_register: '',
+    kode_barang: kodeEfektif,
+    nama_barang: uraianEfektif,
     spesifikasi: efektif(j.spesifikasi, s.nama_barang),
     merek_tipe: efektif(j.merek_tipe, s.merek_tipe),
-    jumlah: j.jumlah ?? s.jumlah ?? '',
-    satuan: j.satuan || s.satuan || '',
-    nilai: j.nilai_perolehan ?? s.nilai_perolehan ?? '',
+    jumlah: s.jumlah ?? '',
+    satuan: efektif(j.satuan, s.satuan),
+    nilai: s.nilai_perolehan ?? '',
     keterangan: j.keterangan || '',
-    alamat: efektif(j.alamat, s.alamat),
+    alamat: alamatEfektif,
     tgl_perolehan: s.tgl_perolehan || '',
   }
 
@@ -215,14 +228,15 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
         sb_kode_barang: s.kode || '', sb_nama_barang: s.uraian_barang || '',
         sb_kode_register: '', sb_spesifikasi: s.nama_barang || '',
         sb_jumlah: s.jumlah ?? '', sb_alamat: s.alamat || '',
-        st_kode_barang: efektif(j.kode_barang, s.kode),
-        st_nama_barang: efektif(j.nama_barang, s.uraian_barang),
-        st_kode_register: efektif(j.kode_register, ''),
+        st_kode_barang: kodeEfektif,
+        st_nama_barang: uraianEfektif,
+        st_kode_register: '',
         st_spesifikasi: efektif(j.spesifikasi, s.nama_barang),
-        st_jumlah: j.jumlah ?? s.jumlah ?? '',
-        st_alamat: efektif(j.alamat, s.alamat),
-        satuan: j.satuan || s.satuan || '',
-        nilai: j.nilai_perolehan ?? s.nilai_perolehan ?? '',
+        // Jumlah tak bisa diubah lewat LKI → sebelum = sesudah.
+        st_jumlah: s.jumlah ?? '',
+        st_alamat: alamatEfektif,
+        satuan: efektif(j.satuan, s.satuan),
+        nilai: s.nilai_perolehan ?? '',
         keterangan: j.keterangan || '',
       }
     case 'III.B.9': {

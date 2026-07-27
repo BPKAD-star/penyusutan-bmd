@@ -77,12 +77,15 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
             </>
           ) : (
             <>
-              <Baris kode="A" label="Kode Register">{jawabSesuai(j.kode_register, null)}</Baris>
-              <Baris kode="B" label="Kode Barang">{jawabSesuai(j.kode_barang, s.kode)}</Baris>
-              <Baris kode="C" label="Nama Barang">{jawabSesuai(j.nama_barang, s.uraian_barang)}</Baris>
+              <Baris kode="A" label="NIBAR">{s.nibar || '—'}</Baris>
+              <Baris kode="B–C" label="Kode Barang & Nama Barang">
+                {j.kode_barang?.sesuai === false
+                  ? <>☒ Tidak Sesuai — seharusnya: <b>{j.kode_barang.kode_baru || '(kosong)'}</b> · {j.kode_barang.uraian_baru || '—'}</>
+                  : <>☑ Sesuai <span className="text-gray-500">({s.kode || '—'} · {s.uraian_barang || '—'})</span></>}
+              </Baris>
               <Baris kode="D" label="Nama Spesifikasi Barang">{jawabSesuai(j.spesifikasi, s.nama_barang)}</Baris>
-              <Baris kode="E" label="Jumlah Barang">{j.jumlah ?? s.jumlah ?? '—'}</Baris>
-              <Baris kode="F" label="Satuan Barang">{j.satuan || s.satuan || '—'}</Baris>
+              <Baris kode="E" label="Jumlah Barang">{s.jumlah ?? '—'}</Baris>
+              <Baris kode="F" label="Satuan Barang">{jawabSesuai(j.satuan, s.satuan)}</Baris>
               <Baris kode="G" label="Keberadaan Barang">
                 {j.keberadaan === 'ada' ? '☑ Ada'
                   : j.keberadaan === 'hilang' ? '☒ Tidak ada — Hilang (kecurian)'
@@ -90,7 +93,7 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
                   : <span className="text-gray-400">—</span>}
               </Baris>
               <Baris kode="H" label="Nilai Perolehan Barang">
-                {formatRupiah(j.nilai_perolehan ?? s.nilai_perolehan ?? 0)}
+                {formatRupiah(s.nilai_perolehan ?? 0)}
               </Baris>
               <Baris kode="I" label="Biaya atribusi / menambah kapasitas manfaat">
                 {j.atribusi === 'ya_induk_diketahui' ? (
