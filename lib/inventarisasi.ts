@@ -38,7 +38,8 @@ export type InvHeader = {
   diajukan_at: string | null
   divalidasi_at: string | null
   created_at: string
-  skpd?: { nama: string } | null
+  /** kode_skpd dipakai mengurutkan daftar sesuai struktur organisasi (Admin > SKPD). */
+  skpd?: { nama: string; kode_skpd?: string | null } | null
 }
 
 // ── Baris (satu lembar LKI) ─────────────────────────────────────────────────

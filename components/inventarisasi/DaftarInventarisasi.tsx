@@ -55,18 +55,17 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
   // Form buat
   const [showForm, setShowForm] = useState(false)
   const [skpdId, setSkpdId] = useState<number | null>(null)
-  const [golonganPilih, setGolonganPilih] = useState('1.3.3')
   const [saving, setSaving] = useState(false)
 
-  // Golongan yang dipakai form: terkunci dari route, atau pilihan user.
-  const golongan = golonganLock || golonganPilih
+  // Golongan SELALU dari route (menu jenis aset di sidebar) — form buat hanya
+  // tampil di halaman per-jenis, jadi tak ada lagi pemilih golongan di form.
+  const golongan = golonganLock || ''
   const config = konfigLki(golongan)
 
   async function load() {
     setLoading(true)
     let q = supabase.from('inventarisasi')
-      .select(`${HDR_COLS},skpd:admin_skpd(nama)`)
-      .order('created_at', { ascending: false })
+      .select(`${HDR_COLS},skpd:admin_skpd(nama,kode_skpd)`)
     if (golonganLock) q = q.eq('golongan', golonganLock)
     const { data } = await q
     const hs = (data as never as InvHeader[]) || []
@@ -86,11 +85,20 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
 
   const terlihat = useMemo(() => {
     const scope = filterSkpdIds && filterSkpdIds.length > 0 ? new Set(filterSkpdIds) : null
-    return rows.filter(r =>
-      (!filterStatus || r.status === filterStatus) &&
-      (!filterTahun || r.tahun === filterTahun) &&
-      (!filterGolongan || r.golongan === filterGolongan) &&
-      (!scope || scope.has(r.skpd_id)))
+    // Urutan mengikuti KODE SKPD (sama dgn menu Admin > SKPD), bukan waktu
+    // dibuat — supaya induk selalu di atas sub-unitnya dan susunannya cocok
+    // dengan struktur organisasi. Kode kosong ditaruh paling belakang.
+    return rows
+      .filter(r =>
+        (!filterStatus || r.status === filterStatus) &&
+        (!filterTahun || r.tahun === filterTahun) &&
+        (!filterGolongan || r.golongan === filterGolongan) &&
+        (!scope || scope.has(r.skpd_id)))
+      .sort((a, b) =>
+        (a.skpd?.kode_skpd || '￿').localeCompare(b.skpd?.kode_skpd || '￿') ||
+        (a.skpd?.nama || '').localeCompare(b.skpd?.nama || '') ||
+        b.tahun - a.tahun ||
+        a.golongan.localeCompare(b.golongan))
   }, [rows, filterStatus, filterTahun, filterGolongan, filterSkpdIds])
 
   const tahunOpsi = useMemo(
@@ -113,6 +121,9 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
 
   async function buat() {
     if (!skpdId) { setMsg('Error: pilih SKPD dulu.'); return }
+    // Golongan hanya ada di halaman per-jenis; jaga-jaga bila dipanggil dari
+    // route ringkasan (tombolnya memang disembunyikan di sana).
+    if (!golongan) { setMsg('Error: buka menu jenis aset dulu untuk membuat lembar kerja.'); return }
     setSaving(true); setMsg('')
 
     // 1) Header. UNIQUE(skpd_id,tahun,golongan) mencegah duplikat.
@@ -175,41 +186,36 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
       deskripsi={
         golonganLock
           ? `Lembar Kerja Inventarisasi (LKI) ${config.label} — format ${config.format}. Satu lembar kerja per SKPD, per tahun.`
-          : 'Lembar Kerja Inventarisasi (LKI) BMD — Permendagri 47/2021. Satu lembar kerja per SKPD, per tahun, per jenis aset.'
+          : 'Ringkasan seluruh jenis aset. Untuk membuat lembar kerja, pilih jenis asetnya di menu Lembar Kerja (LKI).'
       }
       msg={msg}
       headerRight={
-        <button onClick={() => { setShowForm(v => !v); setMsg('') }} className="btn-primary">
-          {showForm ? 'Batal' : '+ Buat Inventarisasi'}
-        </button>
+        // Tombol Buat HANYA di halaman per-jenis: di sana golongannya sudah
+        // ditentukan menu, jadi tak perlu dipilih ulang. Di route ringkasan
+        // (semua jenis) tombolnya disembunyikan supaya tak ada dua cara memilih
+        // jenis aset — sidebar & dropdown — yang saling menduplikasi.
+        golonganLock ? (
+          <button onClick={() => { setShowForm(v => !v); setMsg('') }} className="btn-primary">
+            {showForm ? 'Batal' : '+ Buat Inventarisasi'}
+          </button>
+        ) : null
       }
     >
-      {showForm && (
+      {showForm && golonganLock && (
         <div className="card p-5 mb-4 space-y-4 max-w-3xl">
           <h2 className="text-base font-semibold text-gray-800">Buat Inventarisasi {TAHUN_INI}</h2>
           <p className="text-xs text-gray-500">
-            Barang diambil otomatis dari Daftar Barang (status aktif) sesuai golongan yang
-            dipilih. Tiap lembar hanya memuat barang yang melekat pada <b>unit itu sendiri</b>.
-            Inventarisasi hanya untuk <b>tahun berjalan</b>.
+            Jenis aset sudah ditentukan oleh menu yang dibuka:{' '}
+            <b>{config.label}</b> <span className="text-gray-400">({golonganLock} · format {config.format})</span>.
+            Barang diambil otomatis dari Daftar Barang (status aktif), dan tiap lembar hanya
+            memuat barang yang melekat pada <b>unit itu sendiri</b>. Inventarisasi hanya untuk{' '}
+            <b>tahun berjalan</b>.
           </p>
           <div>
             <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
             <SkpdCombobox lockToOperator allowClear
               onChangeSelection={sel => setSkpdId(sel.skpdId)}
               placeholder="Ketik nama SKPD / Sub OPD..." />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Jenis Aset (Golongan)</label>
-            {golonganLock ? (
-              // Sudah ditentukan oleh menu yang dibuka — tak perlu dipilih lagi.
-              <p className="text-sm text-gray-800">{config.label} <span className="text-gray-400">({golonganLock})</span></p>
-            ) : (
-              <select className="select-filter w-full max-w-md" value={golonganPilih}
-                onChange={e => setGolonganPilih(e.target.value)}>
-                {GOLONGAN_OPSI.map(g => <option key={g.kode} value={g.kode}>{g.label}</option>)}
-              </select>
-            )}
-            <p className="text-[11px] text-gray-400 mt-1">Format lembar kerja: <b>{config.format}</b></p>
           </div>
           <button onClick={buat} disabled={saving} className="btn-primary">
             {saving ? 'Membuat & mengambil barang...' : 'Buat & Ambil Barang'}
