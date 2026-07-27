@@ -205,9 +205,10 @@ const DEFAULT_CONFIG: Omit<LkiConfig, 'format' | 'label'> = {
 //   punya "Merek/Tipe/spesifikasi lainnya" dan Keberadaan yang pecah jadi
 //   Hilang vs Tidak ditemukan; keduanya TANPA titik koordinat & tanpa bagian N.
 // - KDP (1.3.6) & Aset Lain-Lain (1.5.4) TIDAK punya format sendiri di
-//   Permendagri. Dipetakan ke bentuk III.A.6 sbg yang paling umum, TAPI titik
-//   koordinat sengaja tetap dinyalakan: KDP itu lokasi pembangunan fisik, dan
-//   1.5.4 kerap menampung eks-tanah/gedung (mis. yang dimanfaatkan pihak lain).
+//   Permendagri. Dipetakan ke bentuk III.A.6 PERSIS, termasuk TANPA titik
+//   koordinat (keputusan user 2026-07-28: ikut format apa adanya, jangan
+//   menambah isian yang tak diminta aturan). Kalau nanti lokasi KDP/1.5.4
+//   perlu dipetakan, tempatnya di menu GIS/spesifikasi aset — bukan di LKI.
 export const LKI_CONFIG: Record<string, LkiConfig> = {
   '1.3.1': { format: 'III.A.1', label: 'Tanah', ...DEFAULT_CONFIG },
   '1.3.2': {
@@ -229,7 +230,7 @@ export const LKI_CONFIG: Record<string, LkiConfig> = {
   },
   '1.3.6': {
     format: 'III.A.6', label: 'Konstruksi Dalam Pengerjaan', ...DEFAULT_CONFIG,
-    merekTipe: true, hilangVsTidakDitemukan: true,
+    merekTipe: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
   },
   '1.5.3': {
     format: 'III.A.6', label: 'Aset Tidak Berwujud', ...DEFAULT_CONFIG,
@@ -237,7 +238,7 @@ export const LKI_CONFIG: Record<string, LkiConfig> = {
   },
   '1.5.4': {
     format: 'III.A.6', label: 'Aset Lain-Lain', ...DEFAULT_CONFIG,
-    merekTipe: true, hilangVsTidakDitemukan: true,
+    merekTipe: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
   },
 }
 
