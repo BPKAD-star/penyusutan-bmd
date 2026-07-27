@@ -101,7 +101,16 @@ export default function KendaraanPage() {
     // idx_aset_skpd kepakai; tanpa ini `kode LIKE` tak bisa jadi index-cond di
     // bawah RLS (operator ~~ tak leakproof) → Seq Scan 400rb+ baris → statement
     // timeout (500) buat pengurus_barang. Admin → null → tanpa filter.
-    const { data: scope } = await supabase.rpc('fn_my_skpd_scope')
+    // `error` RPC ini WAJIB dibaca — lihat catatan sama di GIS Tanah: scope null
+    // diam-diam bikin query jalan tanpa filter skpd_id → Seq Scan → timeout,
+    // tanpa jejak penyebabnya.
+    const { data: scope, error: scopeErr } = await supabase.rpc('fn_my_skpd_scope')
+    if (scopeErr) {
+      setError(`Gagal membaca scope SKPD (fn_my_skpd_scope): ${scopeErr.message}`)
+      setLoaded(true)
+      setLoading(false)
+      return
+    }
     const all: Row[] = []
     for (let from = 0; ; from += 1000) {
       // `error` WAJIB dibaca: kalau query gagal (mis. RLS aset yang berat bikin

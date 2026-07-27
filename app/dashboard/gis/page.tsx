@@ -74,7 +74,17 @@ export default function GisPage() {
       // `kode LIKE '1.3.1.%'` tak bisa jadi index-cond di bawah RLS (operator
       // ~~ tak leakproof) → Seq Scan 400rb+ baris → statement timeout (500) buat
       // pengurus_barang. Admin → null → tanpa filter (lihat se-kabupaten).
-      const { data: scope } = await supabase.rpc('fn_my_skpd_scope')
+      // `error` RPC ini WAJIB dibaca: kalau fn_my_skpd_scope gagal (mis. belum
+      // ter-deploy di DB), `scope` cuma null → `.in('skpd_id', ...)` di bawah
+      // TIDAK tersuntik → query jalan TANPA filter → Seq Scan → timeout, dan
+      // penyebab aslinya tak kelihatan sama sekali. Lebih baik berhenti di sini
+      // dengan pesan jelas daripada menembak query yang pasti timeout.
+      const { data: scope, error: scopeErr } = await supabase.rpc('fn_my_skpd_scope')
+      if (scopeErr) {
+        setError(`Gagal membaca scope SKPD (fn_my_skpd_scope): ${scopeErr.message}`)
+        setLoading(false)
+        return
+      }
       const all: AsetRow[] = []
       for (let from = 0; ; from += 1000) {
         // `error` WAJIB dibaca. Sebelumnya tidak: kalau query gagal (mis. RLS

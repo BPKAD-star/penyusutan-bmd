@@ -22,6 +22,28 @@ apa pun yang menyentuh ledger atau engine.
   `fn_rekap_bmd`, `fn_dashboard_rekap`). Kalau perlu tambah policy/fn di path
   panas, bungkus InitPlan.
 
+- **`kode LIKE 'gol.%'` TAK PERNAH bisa jadi index-cond di bawah RLS** — operator
+  `~~` tidak leakproof, jadi Postgres selalu mengevaluasinya SETELAH qual RLS,
+  berapa pun indeks pattern yang ada. Halaman ber-golongan-tunggal (GIS Tanah,
+  Kendaraan) sudah 2x kena timeout karena ini:
+  - **Ronde 1 (20260720_01)**: ditambal dgn menyuntik `.in('skpd_id',
+    fn_my_skpd_scope())` di sisi kode → ada qual leakproof + terindeks
+    (`idx_aset_skpd`). Manjur SELAMA `skpd_id IN (...)` selektif.
+  - **Ronde 2 (20260727_03)**: begitu 20260720_02 mengimpor 149.846 baris ATL di
+    **694 SKPD di bawah Dinas Pendidikan**, `skpd_id IN (694 id)` cocok ~150rb
+    baris → tak selektif lagi → tarik semua baris Diknas, filter LIKE, sort →
+    timeout lagi (cuma di SKPD besar; SKPD kecil & admin normal). Obatnya
+    **PARTIAL INDEX** `idx_aset_tanah_skpd` / `idx_aset_angkutan_skpd`:
+    `ON aset (skpd_id) WHERE kode LIKE '<prefix>' AND status='aktif'` — predikat
+    golongan selesai DI INDEX, sisa `skpd_id = ANY(...)` jadi index-cond.
+  **Pola untuk halaman ber-golongan-tunggal BERIKUTNYA: langsung bikin partial
+  index-nya, jangan cuma andalkan scope SKPD.** ⚠️ Predikat indeks WAJIB sama
+  persis dgn qual di kode (`.like()` + `.eq('status','aktif')`) — beda sedikit,
+  planner tak bisa membuktikan implikasi & indeksnya diabaikan DIAM-DIAM.
+  Pelajaran umum: **import massal bisa membangunkan lagi timeout yang sudah
+  "beres"** — sesudah import besar, uji ulang halaman berat sbg pengurus barang
+  SKPD TERBESAR, bukan cuma sbg admin.
+
 - **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
   setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
   (batal_reklas, batal_penghapusan, batal_kapitalisasi, batal_koreksi_*, dst).
