@@ -35,6 +35,7 @@ export default function DetailInventarisasiPage() {
   const [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState<InvBaris | null>(null)
   const [pilihPegawai, setPilihPegawai] = useState('')
+  const [sayaSkpdInduk, setSayaSkpdInduk] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -62,6 +63,19 @@ export default function DetailInventarisasiPage() {
         .select('id,nama,nip,jabatan').eq('skpd_id', header.skpd_id).order('nama')
       setPegawai((pg as PegawaiRow[]) || [])
     }
+
+    // Wewenang validasi ada di SKPD INDUK (level 1) — jadi perlu tahu apakah
+    // node user sendiri adalah SKPD level 1 (parent_id NULL). Pengurus barang
+    // level 2 (UPTD) TIDAK boleh memvalidasi lembar level 3 di bawahnya.
+    // Cermin dari fn_is_pengurus_barang_skpd_induk (migrasi 20260727_04);
+    // penegak sesungguhnya tetap RPC — ini cuma agar tombolnya tak muncul.
+    if (sc.role === 'pengurus_barang' && sc.skpdId != null) {
+      const { data: my } = await supabase.from('admin_skpd')
+        .select('parent_id').eq('id', sc.skpdId).maybeSingle()
+      setSayaSkpdInduk((my as { parent_id: number | null } | null)?.parent_id == null)
+    } else {
+      setSayaSkpdInduk(false)
+    }
     setLoading(false)
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -69,7 +83,11 @@ export default function DetailInventarisasiPage() {
 
   const config = useMemo(() => konfigLki(hdr?.golongan || ''), [hdr?.golongan])
   const terisi = useMemo(() => baris.filter(sudahDiisi).length, [baris])
-  const isAdmin = scope.isAdmin
+  // Boleh validasi/kembalikan? admin (Pengelola) ATAU Pengurus Barang SKPD
+  // INDUK unit ini. `bawahan` sudah strict (tak memuat node sendiri), jadi
+  // lembar milik SKPD level 1 tetap hanya bisa divalidasi admin.
+  const bolehValidasi = scope.isAdmin ||
+    (sayaSkpdInduk && !!hdr && scope.bawahan.has(hdr.skpd_id))
   // SKPD hanya boleh mengubah selama belum divalidasi (ditegakkan juga oleh RLS).
   const bolehEdit = !!hdr && hdr.status !== 'divalidasi'
   const readOnly = !bolehEdit
@@ -187,10 +205,10 @@ export default function DetailInventarisasiPage() {
             {hdr.status === 'diajukan' && (
               <button onClick={batalAjukan} disabled={busy} className="btn-secondary text-sm">Batal Ajukan</button>
             )}
-            {isAdmin && hdr.status === 'diajukan' && (
+            {bolehValidasi &&hdr.status === 'diajukan' && (
               <button onClick={validasi} disabled={busy} className="btn-primary text-sm">✓ Validasi</button>
             )}
-            {isAdmin && (hdr.status === 'diajukan' || hdr.status === 'divalidasi') && (
+            {bolehValidasi &&(hdr.status === 'diajukan' || hdr.status === 'divalidasi') && (
               <button onClick={kembalikan} disabled={busy}
                 className="px-4 py-2 rounded-lg text-sm font-medium border border-red-200 text-red-600 hover:bg-red-50">
                 Kembalikan

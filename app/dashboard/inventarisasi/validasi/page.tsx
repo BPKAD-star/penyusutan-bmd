@@ -22,6 +22,7 @@ export default function ValidasiInventarisasiPage() {
   const [rows, setRows] = useState<InvHeader[]>([])
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<InvStatus | 'semua'>('diajukan')
+  const [sayaSkpdInduk, setSayaSkpdInduk] = useState(false)
 
   useEffect(() => {
     (async () => {
@@ -33,6 +34,15 @@ export default function ValidasiInventarisasiPage() {
       ])
       setScope(sc)
       setRows((data as never as InvHeader[]) || [])
+
+      // Wewenang validasi = admin ATAU Pengurus Barang SKPD INDUK (level 1).
+      // Perlu tahu apakah node user sendiri SKPD level 1 (parent_id NULL) —
+      // pengurus level 2 (UPTD) tak boleh memvalidasi lembar level 3.
+      if (sc.role === 'pengurus_barang' && sc.skpdId != null) {
+        const { data: my } = await supabase.from('admin_skpd')
+          .select('parent_id').eq('id', sc.skpdId).maybeSingle()
+        setSayaSkpdInduk((my as { parent_id: number | null } | null)?.parent_id == null)
+      }
       setLoading(false)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -43,11 +53,12 @@ export default function ValidasiInventarisasiPage() {
   )
   const jumlahDiajukan = useMemo(() => rows.filter(r => r.status === 'diajukan').length, [rows])
 
-  if (!loading && !scope.isAdmin) {
+  const bolehValidasi = scope.isAdmin || sayaSkpdInduk
+  if (!loading && !bolehValidasi) {
     return (
       <FormShell judul="Validasi Inventarisasi" deskripsi="" msg="">
         <div className="card p-6 text-sm text-gray-500">
-          Halaman ini khusus admin/pengelola barang.
+          Halaman ini untuk admin/Pengelola Barang dan Pengurus Barang SKPD induk.
         </div>
       </FormShell>
     )
