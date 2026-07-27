@@ -55,7 +55,6 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
   // Form buat
   const [showForm, setShowForm] = useState(false)
   const [skpdId, setSkpdId] = useState<number | null>(null)
-  const [descIds, setDescIds] = useState<number[] | null>(null)
   const [golonganPilih, setGolonganPilih] = useState('1.3.3')
   const [saving, setSaving] = useState(false)
 
@@ -109,99 +108,6 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
     const { error } = await supabase.from('inventarisasi').delete().eq('id', h.id)
     if (error) { setMsg(`Error: gagal menghapus — ${error.message}`); return }
     setMsg('Inventarisasi dihapus.')
-    await load()
-  }
-
-  /** Susun baris LKI dari sekumpulan aset (snapshot "SEBELUM" dibekukan di sini). */
-  function barisDari(invId: string, list: AsetRow[]) {
-    return list.map(a => ({
-      inventarisasi_id: invId,
-      aset_id: a.id,
-      snapshot: {
-        nibar: a.nibar, kode: a.kode, uraian_barang: a.uraian_barang,
-        nama_barang: a.nama_barang, spesifikasi_lainnya: a.spesifikasi_lainnya,
-        merek_tipe: a.merek_tipe, jumlah: a.jumlah, satuan: a.satuan,
-        nilai_perolehan: a.nilai_perolehan, alamat: a.alamat_detail,
-        kondisi: a.kondisi_barang, tgl_perolehan: a.tgl_perolehan,
-        no_polisi: a.no_polisi, no_rangka: a.no_rangka, no_mesin: a.no_mesin,
-        skpd_id: a.skpd_id,
-      } as InvSnapshot,
-      jawaban: {},
-    }))
-  }
-
-  /**
-   * Buat lembar untuk SKPD terpilih DAN seluruh turunannya sekaligus.
-   * Tanpa ini, keluarga Dinas Pendidikan saja butuh ±700 lembar dibuat manual
-   * (1 Dinas + 81 UPTD + ±625 SDN).
-   *
-   * Hemat query: aset se-subtree ditarik SEKALI (paged) lalu dikelompokkan per
-   * skpd_id di klien — bukan satu query per unit. Unit TANPA barang dilewati
-   * (biar tak lahir ratusan lembar kosong), begitu pula unit yang lembarnya
-   * sudah ada.
-   */
-  async function buatMassal() {
-    if (!skpdId) { setMsg('Error: pilih SKPD dulu.'); return }
-    const scope = descIds && descIds.length > 0 ? descIds : [skpdId]
-    if (!confirm(
-      `Buat lembar kerja ${config.label} ${TAHUN_INI} untuk SKPD ini beserta ${scope.length - 1} sub-unit di bawahnya?\n` +
-      `Unit yang sudah punya lembar & unit tanpa barang akan dilewati.`
-    )) return
-    setSaving(true); setMsg('')
-
-    // 1) Lembar yang SUDAH ada utk (tahun, golongan) di subtree → dilewati.
-    const sudahAda = new Set<number>()
-    for (let i = 0; i < scope.length; i += 200) {
-      const { data } = await supabase.from('inventarisasi').select('skpd_id')
-        .eq('tahun', TAHUN_INI).eq('golongan', golongan).in('skpd_id', scope.slice(i, i + 200))
-      for (const r of (data || []) as { skpd_id: number }[]) sudahAda.add(r.skpd_id)
-    }
-
-    // 2) Semua aset se-subtree, dikelompokkan per skpd_id.
-    const perSkpd = new Map<number, AsetRow[]>()
-    for (let i = 0; i < scope.length; i += 200) {
-      const bagian = scope.slice(i, i + 200)
-      for (let from = 0; ; from += 1000) {
-        const { data, error } = await supabase.from('aset').select(ASET_COLS)
-          .eq('status', 'aktif').in('skpd_id', bagian)
-          .like('kode', `${golongan}.%`)
-          .range(from, from + 999)
-        if (error) { setMsg(`Error: gagal mengambil barang — ${error.message}`); setSaving(false); return }
-        if (!data || data.length === 0) break
-        for (const a of data as never as AsetRow[]) {
-          if (a.skpd_id == null) continue
-          const arr = perSkpd.get(a.skpd_id) || []; arr.push(a); perSkpd.set(a.skpd_id, arr)
-        }
-        if (data.length < 1000) break
-      }
-    }
-
-    // 3) Unit yang layak dibuatkan lembar.
-    const target = [...perSkpd.keys()].filter(id => !sudahAda.has(id))
-    if (target.length === 0) {
-      setMsg(`Tidak ada lembar baru dibuat — semua unit yang punya barang ${config.label} sudah punya lembar ${TAHUN_INI}.`)
-      setSaving(false); return
-    }
-
-    // 4) Header sekaligus (satu insert), lalu barisnya per potongan.
-    const { data: hdrs, error: hErr } = await supabase.from('inventarisasi')
-      .insert(target.map(id => ({ skpd_id: id, tahun: TAHUN_INI, golongan })))
-      .select('id,skpd_id')
-    if (hErr || !hdrs) { setMsg(`Error: gagal membuat lembar — ${hErr?.message}`); setSaving(false); return }
-
-    const semuaBaris = (hdrs as { id: string; skpd_id: number }[])
-      .flatMap(h => barisDari(h.id, perSkpd.get(h.skpd_id) || []))
-    let gagal = 0
-    for (let i = 0; i < semuaBaris.length; i += 200) {
-      const { error } = await supabase.from('inventarisasi_baris').insert(semuaBaris.slice(i, i + 200))
-      if (error) gagal++
-    }
-
-    setMsg(gagal > 0
-      ? `Error: ${hdrs.length} lembar dibuat, tapi ${gagal} potongan baris gagal — periksa lembar yang jumlah barangnya 0.`
-      : `${hdrs.length} lembar kerja dibuat (${semuaBaris.length.toLocaleString('id-ID')} barang). ` +
-        `${sudahAda.size > 0 ? `${sudahAda.size} unit dilewati karena sudah punya lembar.` : ''}`)
-    setShowForm(false); setSaving(false)
     await load()
   }
 
@@ -282,13 +188,14 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
         <div className="card p-5 mb-4 space-y-4 max-w-3xl">
           <h2 className="text-base font-semibold text-gray-800">Buat Inventarisasi {TAHUN_INI}</h2>
           <p className="text-xs text-gray-500">
-            Barang diambil otomatis dari Daftar Barang: status aktif, SKPD terpilih beserta
-            sub-unitnya, dan golongan yang dipilih. Inventarisasi hanya untuk <b>tahun berjalan</b>.
+            Barang diambil otomatis dari Daftar Barang (status aktif) sesuai golongan yang
+            dipilih. Tiap lembar hanya memuat barang yang melekat pada <b>unit itu sendiri</b>.
+            Inventarisasi hanya untuk <b>tahun berjalan</b>.
           </p>
           <div>
             <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
             <SkpdCombobox lockToOperator allowClear
-              onChangeSelection={sel => { setSkpdId(sel.skpdId); setDescIds(sel.descendantIds) }}
+              onChangeSelection={sel => setSkpdId(sel.skpdId)}
               placeholder="Ketik nama SKPD / Sub OPD..." />
           </div>
           <div>
@@ -304,18 +211,13 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
             )}
             <p className="text-[11px] text-gray-400 mt-1">Format lembar kerja: <b>{config.format}</b></p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button onClick={buat} disabled={saving} className="btn-primary">
-              {saving ? 'Memproses...' : 'Buat untuk SKPD Ini Saja'}
-            </button>
-            <button onClick={buatMassal} disabled={saving} className="btn-secondary">
-              {saving ? 'Memproses...' : 'Buat untuk SKPD Ini + Semua Sub-unit'}
-            </button>
-          </div>
+          <button onClick={buat} disabled={saving} className="btn-primary">
+            {saving ? 'Membuat & mengambil barang...' : 'Buat & Ambil Barang'}
+          </button>
           <p className="text-[11px] text-gray-400">
-            Tiap lembar hanya memuat barang yang melekat pada unit itu sendiri — barang
-            sub-unit TIDAK ikut ke lembar induk, jadi satu barang tak pernah punya dua lembar.
-            Pada pembuatan massal, unit tanpa barang & unit yang sudah punya lembar dilewati.
+            Lembar dibuat untuk <b>satu unit saja</b> — barang sub-unit TIDAK ikut, jadi satu
+            barang tak pernah punya dua lembar. Tiap sub-unit membuat lembarnya sendiri, supaya
+            jelas siapa pemiliknya dan tak ada lembar yang muncul tanpa sepengetahuan unitnya.
           </p>
         </div>
       )}
