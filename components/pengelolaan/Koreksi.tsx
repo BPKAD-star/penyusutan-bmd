@@ -801,7 +801,12 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       const batas = (await fetchBatasKapitalisasi(supabase, [induk.kode])).get(induk.kode)
       const tahun = (induk.tgl_perolehan || h.tanggal).slice(0, 4)
       const nibarItems = alokasiPecah.map((a, i) => ({ key: String(i), kode: induk.kode, intraEkstra: klasifikasiKomptabel(a.np, batas), tahun }))
-      const nibarMap = await generateNibars(supabase, nibarItems, kodeSkpd)
+      let nibarMap: Map<string, string>
+      try {
+        nibarMap = await generateNibars(supabase, nibarItems, kodeSkpd)
+      } catch (e) {
+        setErr((e as Error).message); await delHeader(); setSaving(false); return
+      }
 
       // Aset pecahan — status 'draft' (tersembunyi) sampai commit di akhir.
       const asetRows: Record<string, unknown>[] = alokasiPecah.map((a, i) => {

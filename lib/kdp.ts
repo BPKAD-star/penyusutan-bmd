@@ -107,7 +107,12 @@ export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerI
   // ikut tahun tgl ini juga.
   const tglBarang = (b: BarangKdp) => (b.pembayaran || []).map(x => x.tgl_bast).sort().slice(-1)[0] || h.tanggal
   const nibarInput = barangs.map(b => ({ key: b.key, kode: b.kode, intraEkstra: 'intra' as const, tahun: String(new Date(tglBarang(b)).getFullYear()) }))
-  const nibarMap = await generateNibars(supabase as never, nibarInput, kodeSkpd)
+  let nibarMap: Map<string, string>
+  try {
+    nibarMap = await generateNibars(supabase as never, nibarInput, kodeSkpd)
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
 
   // Pass 1: buat semua aset KDP (belum ada ledger — aman kalau gagal di tengah).
   const createdAsetIds: string[] = []

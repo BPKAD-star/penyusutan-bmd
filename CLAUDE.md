@@ -59,6 +59,21 @@ apa pun yang menyentuh ledger atau engine.
   operator sebagai "0 barang / data memang kosong", dan bug-nya bisa berbulan-
   bulan tak ketahuan. Tampilkan pesannya.
 
+- **`const { data } = await supabase...` (tanpa `error`) di kode yang MENGHITUNG,
+  bukan cuma menampilkan, itu bom waktu.** `generateNibars` (lib/nibar.ts) begitu:
+  query nomor urut terakhir gagal → `data` null → nomor urut diam-diam MENGULANG
+  dari 1. Sebabnya `nibar LIKE '<38 digit>%'` tak terlayani index UNIQUE bawaan
+  (`aset_nibar_key`, opclass DEFAULT tak bisa melayani LIKE prefix di collation
+  non-C) → seq scan 227rb baris + `~~` non-leakproof di bawah RLS → timeout.
+  Diperbaiki migrasi **20260728_04** (`idx_aset_nibar_pattern` text_pattern_ops)
+  + `generateNibars` kini MELEMPAR kalau lookup gagal (keempat pemanggilnya —
+  Pengadaan, PerolehanManual, Koreksi pemecahan, kdp.ts — menangkap & menampilkan).
+  Gejalanya dulu "duplicate key aset_nibar_key" saat approve ulang kontrak yang
+  pernah dibuka kunci; yang menyelamatkan cuma constraint UNIQUE — **kalau kolomnya
+  tak ber-UNIQUE, nomor dobel masuk diam-diam**. Pelajaran: kolom apa pun yang
+  dicari pakai `LIKE 'prefix%'` butuh index `text_pattern_ops` sendiri, UNIQUE saja
+  tidak cukup; dan generator nomor urut harus gagal KERAS, jangan jatuh ke 0.
+
 - **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
   setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
   (batal_reklas, batal_penghapusan, batal_kapitalisasi, batal_koreksi_*, dst).

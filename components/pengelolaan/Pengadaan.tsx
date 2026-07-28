@@ -541,7 +541,12 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     const batasMap = await fetchBatasKapitalisasi(supabase, items.map(it => it.kode))
     const itemsWithKlas = items.map(it => ({ ...it, intraEkstra: klasifikasiKomptabel(toNum(it.harga), batasMap.get(it.kode)) }))
 
-    const nibarMap = await generateNibars(supabase, itemsWithKlas.map(it => ({ ...it, tahun })), skpdRow.kode_skpd)
+    let nibarMap: Map<string, string>
+    try {
+      nibarMap = await generateNibars(supabase, itemsWithKlas.map(it => ({ ...it, tahun })), skpdRow.kode_skpd)
+    } catch (e) {
+      onMsg(`Error: ${(e as Error).message}`); setBusy(false); return
+    }
 
     const asetRows = itemsWithKlas.map(it => {
       const row: Record<string, unknown> = {

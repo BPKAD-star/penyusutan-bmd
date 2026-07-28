@@ -272,7 +272,12 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       tahun: it.tglPerolehan.slice(0, 4),
     }))
 
-    const nibarMap = await generateNibars(supabase, itemsWithKlas, skpdRow.kode_skpd)
+    let nibarMap: Map<string, string>
+    try {
+      nibarMap = await generateNibars(supabase, itemsWithKlas, skpdRow.kode_skpd)
+    } catch (e) {
+      setMsg(`Error: ${(e as Error).message}`); setBusyId(null); return
+    }
 
     const asetRows = itemsWithKlas.map(it => {
       const row: Record<string, unknown> = {

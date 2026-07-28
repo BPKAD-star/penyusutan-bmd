@@ -17,6 +17,7 @@ import type { createClient } from '@/lib/supabase/client'
 const KODE_PROVINSI_KAB = '12'
 const KODE_WILAYAH_KEDIRI = '3506' // Kab. Kediri (Jatim 35, Kediri Kab 06)
 const INTRA_EKSTRA_KODE: Record<string, string> = { intra: '01', ekstra: '02' }
+const PANJANG_SEQ = 7
 
 export function digitsPad(s: string, len: number): string {
   const clean = (s || '').replace(/\D/g, '')
@@ -52,13 +53,38 @@ export async function generateNibars(
     const kodeBarang = digitsPad(group[0].kode, 12)
     const intraKode = INTRA_EKSTRA_KODE[group[0].intraEkstra] || '01'
     const prefix38 = KODE_PROVINSI_KAB + intraKode + KODE_WILAYAH_KEDIRI + kodeLokasi + group[0].tahun + kodeBarang
-    const { data } = await supabase.from('aset').select('nibar')
-      .like('nibar', `${prefix38}%`).order('nibar', { ascending: false }).limit(1)
+    // ⚠️ `error` WAJIB diperiksa, JANGAN ditelan. Dulu cuma `const { data } = ...`:
+    // begitu query ini gagal (statement timeout — `nibar LIKE 'prefix%'` tak
+    // terlayani index UNIQUE bawaan, lihat migrasi 20260728_04), `data` jadi null
+    // dan nomor urut diam-diam MENGULANG dari 1. Untuk barang yang prefiksnya
+    // belum pernah dipakai hasilnya kebetulan benar; begitu ada NIBAR lama yang
+    // harus ditemukan (mis. kontrak yang pernah dibuka kunci), NIBAR terbitan
+    // baru menabrak nomor terpakai. Yang menyelamatkan selama ini cuma constraint
+    // UNIQUE — gagal approve itu gejala, bukan penyakitnya. Kalau constraint itu
+    // tak ada, NIBAR dobel masuk diam-diam & jauh lebih sulit dibereskan.
+    const { data, error } = await supabase.from('aset').select('nibar')
+      .like('nibar', `${prefix38}%`).order('nibar', { ascending: false }).limit(1000)
+    if (error) {
+      throw new Error(
+        `gagal membaca nomor urut NIBAR terakhir untuk kode ${group[0].kode}: ${error.message}. ` +
+        'NIBAR tidak digenerate supaya tidak menimpa nomor yang sudah terpakai — coba lagi, ' +
+        'kalau terus berulang kemungkinan migrasi 20260728_04 (index nibar) belum dijalankan.')
+    }
+    // Ambil nomor TERBESAR secara ANGKA, bukan lewat urutan teks + slice(-7).
+    // `aset` memuat NIBAR warisan e-BMD yang panjangnya beda (43 vs 45 digit);
+    // urutan teks antar-panjang tak menjamin nomor urut tertinggi, dan slice(-7)
+    // pada NIBAR berbentuk lain mengembalikan potongan yang bukan nomor urut.
+    // Yang dihitung hanya NIBAR yang bentuknya persis prefiks + 7 digit.
     let seq = 0
-    if (data && data[0]?.nibar) seq = parseInt(data[0].nibar.slice(-7), 10) || 0
+    for (const r of (data || []) as { nibar: string | null }[]) {
+      const n = r.nibar || ''
+      if (n.length !== prefix38.length + PANJANG_SEQ) continue
+      const v = parseInt(n.slice(prefix38.length), 10)
+      if (Number.isFinite(v) && v > seq) seq = v
+    }
     for (const it of group) {
       seq += 1
-      out.set(it.key, prefix38 + String(seq).padStart(7, '0'))
+      out.set(it.key, prefix38 + String(seq).padStart(PANJANG_SEQ, '0'))
     }
   }
   return out
