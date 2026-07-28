@@ -10,6 +10,9 @@
 // DISUSUTKAN (Tanah 1.3.1, Aset Tetap Lainnya 1.3.5, KDP 1.3.6 — flag
 // `disusutkan` di GOLONGAN_REKAP) TIDAK dapat kolom-kolom itu sama sekali:
 // isinya cuma nol/duplikat nilai perolehan, cuma bikin tabel melar.
+// Satu-satunya kolom yang isinya BEDA dari Daftar Barang: "Lokasi" di sini =
+// `alamat_detail` + rantai wilayah (`wilayah_kode` → Desa, Kec., Kabupaten),
+// sementara Daftar Barang baru menampilkan alamat_detail saja.
 //
 // TAMPILAN mengikuti pola Daftar Barang juga: hasil ≤ SHOW_ALL_MAX baris →
 // tampilkan SEMUA sekaligus (tanpa halaman); lebih dari itu → paginasi SERVER
@@ -52,7 +55,8 @@ type Row = {
   masa_manfaat_smt: number | null; beban_penyusutan_per_smt: number | null
   foto_paths: string[] | null
   // Kolom spesifikasi — dipakai kolom per jenis aset (sama spt Daftar Barang)
-  merek_tipe: string | null; spesifikasi_lainnya: string | null; alamat_detail: string | null
+  merek_tipe: string | null; spesifikasi_lainnya: string | null
+  alamat_detail: string | null; wilayah_kode: string | null
   luas: number | null; jenis_hak: string | null
   asal_usul: string | null; penggunaan_pengamanan: string | null
 }
@@ -62,7 +66,7 @@ const COLS = [
   'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'nilai_perolehan',
   'akumulasi_2025', 'sisa_masa_manfaat_smt', 'nilai_buku_awal', 'masa_manfaat_smt',
   'beban_penyusutan_per_smt', 'foto_paths',
-  'merek_tipe', 'spesifikasi_lainnya', 'alamat_detail', 'luas', 'jenis_hak',
+  'merek_tipe', 'spesifikasi_lainnya', 'alamat_detail', 'wilayah_kode', 'luas', 'jenis_hak',
   'asal_usul', 'penggunaan_pengamanan',
 ].join(',')
 
@@ -155,6 +159,8 @@ export default function Page() {
   const [loadErr, setLoadErr] = useState('')
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
+  // wilayah_kode → "Desa, Kec. X, Kabupaten Y" (rantai induk sudah dirangkai)
+  const [wilayahNama, setWilayahNama] = useState<Record<string, string>>({})
   // ── Koreksi spesifikasi: centang barang (multi) → popup EditSpesifikasiModal ──
   const [sel, setSel] = useState<Record<string, Row>>({}) // key = NIBAR
   const [spekOpen, setSpekOpen] = useState(false)
@@ -179,6 +185,32 @@ export default function Page() {
         if (data.length < 1000) break
       }
       setSkpdNama(map)
+    })()
+    // Wilayah: dataset kecil (Jatim + Kab./Kota Kediri, ~400 baris) → tarik
+    // sekali, rangkai rantai induknya di sini. Provinsi sengaja dibuang (semua
+    // aset di Jatim, cuma bikin panjang); level 3 diberi awalan "Kec." karena
+    // seed-nya nama polos, sedangkan level 2 sudah "Kabupaten/Kota ...".
+    ;(async () => {
+      type W = { kode: string; nama: string; level: number; parent_kode: string | null }
+      const all: W[] = []
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('admin_wilayah').select('kode,nama,level,parent_kode').range(from, from + 999)
+        if (!data || data.length === 0) break
+        all.push(...(data as W[]))
+        if (data.length < 1000) break
+      }
+      const byKode = new Map(all.map(w => [w.kode, w]))
+      const label: Record<string, string> = {}
+      for (const w of all) {
+        const parts: string[] = []
+        let cur: W | undefined = w
+        while (cur) {
+          if (cur.level >= 2) parts.push(cur.level === 3 ? `Kec. ${cur.nama}` : cur.nama)
+          cur = cur.parent_kode ? byKode.get(cur.parent_kode) : undefined
+        }
+        label[w.kode] = parts.join(', ')
+      }
+      setWilayahNama(label)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -402,7 +434,9 @@ export default function Page() {
       case 'nama': return r.nama_barang || ''
       case 'merek': return r.merek_tipe || ''
       case 'spesifikasi': return r.spesifikasi_lainnya || ''
-      case 'lokasi': return r.alamat_detail || ''
+      // Lokasi = alamat jalan + wilayah administratif (dua kolom DB yang beda,
+      // digabung; di layar ditumpuk, di Excel jadi satu sel).
+      case 'lokasi': return [r.alamat_detail, r.wilayah_kode ? wilayahNama[r.wilayah_kode] : ''].filter(Boolean).join(' — ')
       case 'luas': return r.luas ?? ''
       case 'hak': return r.jenis_hak || ''
       case 'komptabel': return r.intra_ekstra || ''
@@ -435,6 +469,16 @@ export default function Page() {
         <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
       </>
     )
+    if (key === 'lokasi') {
+      const wil = r.wilayah_kode ? wilayahNama[r.wilayah_kode] : ''
+      if (!r.alamat_detail && !wil) return <span className="text-gray-300">-</span>
+      return (
+        <>
+          <p className="text-xs text-gray-600">{r.alamat_detail || '-'}</p>
+          {wil && <p className="text-gray-400 text-xs mt-0.5">{wil}</p>}
+        </>
+      )
+    }
     const v = cellValue(key, r)
     if (v === '' || v == null) return <span className="text-gray-300">-</span>
     if (typeof v === 'number' && (TOTAL_KEYS.has(key) || key === 'luas')) return angka(v)

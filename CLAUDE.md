@@ -201,7 +201,10 @@ apa pun yang menyentuh ledger atau engine.
   Nilai Buku Awal · Sisa sesudah. **Jenis aset yang `disusutkan:false` di
   `GOLONGAN_REKAP` (Tanah 1.3.1, ATL 1.3.5, KDP 1.3.6) TIDAK dibuatkan kolom
   penyusutan sama sekali** — isinya cuma nol/duplikat nilai perolehan. Pakai
-  flag itu, jangan hardcode daftar golongannya lagi. Tampilan ikut pola Daftar
+  flag itu, jangan hardcode daftar golongannya lagi. Satu-satunya isi kolom yang
+  BEDA dari Daftar Barang: **Lokasi** di Daftar Barang Awal = `alamat_detail` +
+  rantai `wilayah_kode` (Desa, Kec., Kabupaten — `admin_wilayah` ditarik sekali,
+  provinsi dibuang), sedangkan Daftar Barang masih `alamat_detail` saja. Tampilan ikut pola Daftar
   Barang (≤3.000 baris → tampil semua, lebih → paginasi) TAPI paginasinya
   **di server** (`range` PostgREST): di sini tak ada visibilitas period-aware yg
   harus dihitung di client, jadi tak ada alasan menarik 218rb baris ke browser.
