@@ -1,9 +1,24 @@
 'use client'
 // Saldo Awal → Daftar Barang Awal. Gabungan Daftar Barang + Penyusutan pada posisi
-// saldo awal 2026 (= saldo akhir 2025), sumber saldo_awal_2026 (angka penyusutan
+// saldo awal 2026 (= saldo akhir 2025), sumber aset_awal_2026 (angka penyusutan
 // baseline: masa manfaat, beban/smt, akumulasi 2025, nilai buku awal, sisa).
-// Urutan: SKPD · Kode · Nama(+NIBAR) · Komptabel · Tgl · Masa Manfaat · Nilai ·
-// Beban · Akumulasi · Nilai Buku · Sisa · Keterangan.
+//
+// KOLOM MENGIKUTI DAFTAR BARANG per jenis aset (BASE_COLS = salinan persis COLS
+// di app/dashboard/daftar-barang/page.tsx), lalu DISISIPI kolom penyusutan
+// baseline di sekitar Nilai Perolehan: Masa Manfaat sebelum, Beban/Smt ·
+// Akumulasi 2025 · Nilai Buku Awal · Sisa sesudah. Jenis aset yang MEMANG TIDAK
+// DISUSUTKAN (Tanah 1.3.1, Aset Tetap Lainnya 1.3.5, KDP 1.3.6 — flag
+// `disusutkan` di GOLONGAN_REKAP) TIDAK dapat kolom-kolom itu sama sekali:
+// isinya cuma nol/duplikat nilai perolehan, cuma bikin tabel melar.
+//
+// TAMPILAN mengikuti pola Daftar Barang juga: hasil ≤ SHOW_ALL_MAX baris →
+// tampilkan SEMUA sekaligus (tanpa halaman); lebih dari itu → paginasi SERVER
+// (range PostgREST, 50/hal). Sengaja TIDAK menarik semua baris golongan ke
+// browser seperti Daftar Barang: di sini tak ada visibilitas period-aware yang
+// harus dihitung di client, jadi paginasi server tetap yang benar (CLAUDE.md
+// "PERFORMA Daftar Barang & Penyusutan"). ⚠️ Halaman ini baca TABEL LANGSUNG
+// (bukan RPC spt Rekapitulasi) — RLS-nya WAJIB InitPlan (migrasi 20260728_02),
+// kalau tidak query tanpa filter SKPD tembus statement timeout.
 //
 // Koreksi SPESIFIKASI (bukan angka) bisa dilakukan langsung di sini — centang
 // barang → "Edit Spesifikasi". Angkanya beku & dikunci di DB (migrasi
@@ -28,6 +43,7 @@ import EditSpesifikasiModal from '@/components/pengelolaan/EditSpesifikasiModal'
 import { useIsViewer } from '@/components/useIsViewer'
 
 const PAGE_SIZE = 50
+const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 
 type Row = {
   nibar: string; kode: string; nama_barang: string; skpd_id: number
@@ -35,15 +51,91 @@ type Row = {
   akumulasi_2025: number; nilai_buku_awal: number; sisa_masa_manfaat_smt: number
   masa_manfaat_smt: number | null; beban_penyusutan_per_smt: number | null
   foto_paths: string[] | null
+  // Kolom spesifikasi — dipakai kolom per jenis aset (sama spt Daftar Barang)
+  merek_tipe: string | null; spesifikasi_lainnya: string | null; alamat_detail: string | null
+  luas: number | null; jenis_hak: string | null
+  asal_usul: string | null; penggunaan_pengamanan: string | null
 }
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; search: string }
 
-const COLS = 'nibar,kode,nama_barang,skpd_id,intra_ekstra,tgl_perolehan,nilai_perolehan,akumulasi_2025,sisa_masa_manfaat_smt,nilai_buku_awal,masa_manfaat_smt,beban_penyusutan_per_smt,foto_paths'
+const COLS = [
+  'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'nilai_perolehan',
+  'akumulasi_2025', 'sisa_masa_manfaat_smt', 'nilai_buku_awal', 'masa_manfaat_smt',
+  'beban_penyusutan_per_smt', 'foto_paths',
+  'merek_tipe', 'spesifikasi_lainnya', 'alamat_detail', 'luas', 'jenis_hak',
+  'asal_usul', 'penggunaan_pengamanan',
+].join(',')
 
 const angka = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 const golLabel = (kode: string) => GOLONGAN_REKAP.find(g => g.kode === kodeLevel3(kode))?.uraian || kodeLevel3(kode)
 const newKey = () => Math.random().toString(36).slice(2)
+
+// ── Kolom per jenis aset ────────────────────────────────────────────────────
+const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> = {
+  skpd: { header: 'SKPD' }, kode: { header: 'Kode Barang' }, nama: { header: 'Nama Barang' },
+  merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
+  lokasi: { header: 'Lokasi' }, luas: { header: 'Luas (m²)', align: 'right' }, hak: { header: 'Jenis Hak' },
+  komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
+  mm: { header: 'Masa Manfaat (Smt)', align: 'center' },
+  nilai: { header: 'Nilai Perolehan', align: 'right' },
+  beban: { header: 'Beban / Smt', align: 'right' },
+  akum: { header: 'Akumulasi 2025', align: 'right' },
+  buku: { header: 'Nilai Buku Awal', align: 'right' },
+  sisa: { header: 'Sisa (Smt)', align: 'center' },
+  asal_usul: { header: 'Asal Usul' }, penggunaan: { header: 'Penggunaan' },
+  keterangan: { header: 'Keterangan' },
+}
+
+// SALINAN PERSIS kolom layar Daftar Barang (app/dashboard/daftar-barang/page.tsx
+// → COLS). Kalau di sana berubah, samakan di sini — dua menu ini memang sengaja
+// menampilkan barang yang sama dgn kolom yang sama, bedanya cuma posisi waktu.
+const BASE_COLS: Record<string, string[]> = {
+  '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel
+  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.5.3': ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+}
+const BASE_DEFAULT = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
+
+// Kolom penyusutan baseline — disisipkan mengapit Nilai Perolehan.
+const SUSUT_SEBELUM = ['mm']
+const SUSUT_SESUDAH = ['beban', 'akum', 'buku', 'sisa']
+const SUSUT_KEYS = new Set([...SUSUT_SEBELUM, ...SUSUT_SESUDAH])
+// Jenis aset yang tidak pernah disusutkan → tak usah dibuatkan kolomnya.
+// "Semua Jenis Aset" (golongan kosong) = campuran → kolomnya tetap ditampilkan.
+const disusutkan = (golongan: string) =>
+  golongan === '' || (GOLONGAN_REKAP.find(g => g.kode === golongan)?.disusutkan ?? true)
+
+function colsFor(golongan: string): string[] {
+  const base = BASE_COLS[golongan] || BASE_DEFAULT
+  if (!disusutkan(golongan)) return base
+  const out: string[] = []
+  for (const k of base) {
+    if (k === 'nilai') out.push(...SUSUT_SEBELUM, 'nilai', ...SUSUT_SESUDAH)
+    else out.push(k)
+  }
+  return out
+}
+
+// Kolom yang dijumlahkan di baris TOTAL (rupiah saja — masa manfaat & sisa tidak).
+const TOTAL_KEYS = new Set(['nilai', 'beban', 'akum', 'buku'])
+
+function thClass(key: string) {
+  const a = COL_META[key]?.align
+  return `table-th${a === 'right' ? ' text-right' : a === 'center' ? ' text-center' : ''}`
+}
+function tdClass(key: string) {
+  if (key === 'nama' || key === 'kode') return 'table-td align-top'
+  const a = COL_META[key]?.align
+  if (a === 'right') return 'table-td text-right text-xs'
+  if (a === 'center') return 'table-td text-center text-xs' + (key === 'komptabel' ? ' capitalize' : '')
+  return 'table-td text-xs text-gray-600 align-top'
+}
 
 export default function Page() {
   const supabase = createClient()
@@ -55,9 +147,12 @@ export default function Page() {
   const [applied, setApplied] = useState<Applied | null>(null)
   const [rows, setRows] = useState<Row[]>([])
   const [ketMap, setKetMap] = useState<Record<string, string>>({})
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [total, setTotal] = useState(0)
+  const [showAll, setShowAll] = useState(false) // hasil ≤ SHOW_ALL_MAX → semua baris tampil
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [loadErr, setLoadErr] = useState('')
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
   // ── Koreksi spesifikasi: centang barang (multi) → popup EditSpesifikasiModal ──
@@ -87,35 +182,88 @@ export default function Page() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function buildQuery(f: Applied, withCount: boolean) {
-    let q = supabase.from('aset_awal_2026').select(COLS, withCount ? { count: 'exact' } : undefined)
+  // Tanah semuanya intrakomptabel — filternya disembunyikan (pola Daftar Barang)
+  // DAN nilainya dikosongkan, biar sisa pilihan lama tak diam-diam ikut menyaring.
+  useEffect(() => { if (golongan === '1.3.1' && komptabel) setKomptabel('') }, [golongan]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function buildQuery(f: Applied, opts: { count?: boolean; head?: boolean } = {}) {
+    let q = supabase.from('aset_awal_2026')
+      .select(COLS, opts.count ? { count: 'exact', head: opts.head } : undefined)
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
     if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
     if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
-    return q.order('nilai_perolehan', { ascending: false })
+    // NIBAR sbg pemecah seri: tanpa itu urutan baris bernilai sama tak stabil
+    // antar-request → baris bisa dobel/hilang saat pindah halaman.
+    return q.order('nilai_perolehan', { ascending: false }).order('nibar', { ascending: true })
   }
 
   // Keterangan sengaja diambil dari register `aset` (bukan kolom keterangan di
   // snapshot) — itu versi terkini yang juga dipakai Daftar Barang.
   async function fetchKet(nibars: string[]) {
     const map: Record<string, string> = {}
-    for (let i = 0; i < nibars.length; i += 300) {
-      const { data } = await supabase.from('aset').select('nibar,keterangan').in('nibar', nibars.slice(i, i + 300))
+    for (let i = 0; i < nibars.length; i += 500) {
+      const { data } = await supabase.from('aset').select('nibar,keterangan').in('nibar', nibars.slice(i, i + 500))
       for (const a of (data || []) as { nibar: string | null; keterangan: string | null }[]) if (a.nibar && a.keterangan) map[a.nibar] = a.keterangan
+    }
+    return map
+  }
+
+  // Uraian (nama baku kodefikasi) per kode — ditumpuk di bawah Kode Barang,
+  // sama persis dgn Daftar Barang.
+  async function fetchUraian(kodes: string[]) {
+    const uniq = [...new Set(kodes)]
+    const map: Record<string, string> = {}
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      for (const r of (data || []) as { kode: string; uraian: string | null }[]) if (r.uraian) map[r.kode] = r.uraian
     }
     return map
   }
 
   async function load(f: Applied, pg: number) {
     setLoading(true)
-    const { data, count } = await buildQuery(f, true).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
-    const rs = (data as unknown as Row[]) || []
+    setLoadErr('')
+    // Hitung dulu (head → tanpa bawa baris): dari jumlahnya baru diputuskan
+    // tampil semua atau per halaman.
+    const { count, error: cErr } = await buildQuery(f, { count: true, head: true })
+    if (cErr) { gagalMuat(cErr.message); return }
+    const tot = count || 0
+    const semua = tot > 0 && tot <= SHOW_ALL_MAX
+
+    let rs: Row[] = []
+    if (semua) {
+      for (let from = 0; from < tot; from += 1000) {
+        const { data, error } = await buildQuery(f).range(from, from + 999)
+        if (error) { gagalMuat(error.message); return }
+        if (!data || data.length === 0) break
+        rs.push(...(data as unknown as Row[]))
+        if (data.length < 1000) break
+      }
+    } else {
+      const { data, error } = await buildQuery(f).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
+      if (error) { gagalMuat(error.message); return }
+      rs = (data as unknown as Row[]) || []
+    }
+
     setRows(rs)
-    setTotal(count || 0)
+    setTotal(tot)
+    setShowAll(semua)
     setKetMap(await fetchKet(rs.map(r => r.nibar)))
+    setUraianMap(await fetchUraian(rs.map(r => r.kode)))
     setTerkunci(await fetchTerkunci(rs.map(r => r.nibar)))
     setSel({}) // seleksi lama tak lagi nyambung dgn baris yang tampil
+    setLoading(false)
+  }
+
+  // Kegagalan query TIDAK BOLEH tampil sebagai "0 barang" — dulu `error`
+  // diabaikan, jadi statement timeout (RLS aset_awal_2026 belum InitPlan,
+  // lihat migrasi 20260728_02) terbaca operator sebagai "datanya memang kosong".
+  function gagalMuat(pesan: string) {
+    setRows([]); setTotal(0); setShowAll(false); setKetMap({}); setUraianMap({}); setTerkunci(new Set())
+    setLoadErr(/timeout|57014/i.test(pesan)
+      ? `Database kehabisan waktu memuat data ini (${pesan}). Kalau ini muncul terus, migrasi 20260728_02 kemungkinan belum dijalankan — sementara persempit dulu filternya (pilih SKPD).`
+      : `Gagal memuat data: ${pesan}`)
     setLoading(false)
   }
 
@@ -123,9 +271,12 @@ export default function Page() {
   // lalu kena error. Gagal RPC (mis. migrasi belum dijalankan) → set kosong,
   // tombolnya tetap hidup dan DB yang menolak.
   async function fetchTerkunci(nibars: string[]) {
-    if (nibars.length === 0) return new Set<string>()
-    const { data } = await supabase.rpc('fn_aset_awal_2026_terkunci_batch', { p_nibars: nibars })
-    return new Set(((data || []) as { nibar: string }[]).map(d => d.nibar))
+    const out = new Set<string>()
+    for (let i = 0; i < nibars.length; i += 500) {
+      const { data } = await supabase.rpc('fn_aset_awal_2026_terkunci_batch', { p_nibars: nibars.slice(i, i + 500) })
+      for (const d of (data || []) as { nibar: string }[]) out.add(d.nibar)
+    }
+    return out
   }
 
   function tampilkan() {
@@ -242,29 +393,88 @@ export default function Page() {
     if (applied) load(applied, page)
   }
 
+  // Nilai polos per kolom — dipakai Export (layar pakai cellContent yang boleh JSX).
+  function cellValue(key: string, r: Row): string | number {
+    switch (key) {
+      case 'skpd': return skpdNama[r.skpd_id] || ''
+      case 'kode': return r.kode
+      case 'uraian': return uraianMap[r.kode] || ''
+      case 'nama': return r.nama_barang || ''
+      case 'merek': return r.merek_tipe || ''
+      case 'spesifikasi': return r.spesifikasi_lainnya || ''
+      case 'lokasi': return r.alamat_detail || ''
+      case 'luas': return r.luas ?? ''
+      case 'hak': return r.jenis_hak || ''
+      case 'komptabel': return r.intra_ekstra || ''
+      case 'tgl': return r.tgl_perolehan || ''
+      case 'mm': return r.masa_manfaat_smt ?? ''
+      case 'nilai': return r.nilai_perolehan
+      case 'beban': return r.beban_penyusutan_per_smt ?? ''
+      case 'akum': return r.akumulasi_2025
+      case 'buku': return r.nilai_buku_awal
+      case 'sisa': return r.sisa_masa_manfaat_smt
+      case 'asal_usul': return r.asal_usul || ''
+      case 'penggunaan': return r.penggunaan_pengamanan || ''
+      case 'keterangan': return ketMap[r.nibar] || ''
+      default: return ''
+    }
+  }
+
+  function cellContent(key: string, r: Row): React.ReactNode {
+    // Kode & Nama bertumpuk (uraian baku di bawah kode, NIBAR di bawah nama) —
+    // pola yang sama dgn Daftar Barang.
+    if (key === 'kode') return (
+      <>
+        <p className="font-medium text-gray-700 text-xs">{r.kode}</p>
+        <p className="text-gray-400 text-xs mt-0.5">{uraianMap[r.kode] || '-'}</p>
+      </>
+    )
+    if (key === 'nama') return (
+      <>
+        <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
+        <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
+      </>
+    )
+    const v = cellValue(key, r)
+    if (v === '' || v == null) return <span className="text-gray-300">-</span>
+    if (typeof v === 'number' && (TOTAL_KEYS.has(key) || key === 'luas')) return angka(v)
+    return v
+  }
+
   async function handleExport() {
     if (!applied) return
     setExporting(true)
+    // Layar boleh terpaginasi, ekspornya TIDAK — selalu seluruh hasil filter.
     const all: Row[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await buildQuery(applied, false).range(from, from + 999)
+      const { data, error } = await buildQuery(applied).range(from, from + 999)
+      if (error) { setExporting(false); setLoadErr(`Gagal mengekspor: ${error.message}`); return }
       if (!data || data.length === 0) break
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
     }
     const ket = await fetchKet(all.map(r => r.nibar))
-    exportToExcel(all.map(r => ({
-      'SKPD': skpdNama[r.skpd_id] || '', 'Kode Barang': r.kode, 'Nama Barang': r.nama_barang, 'NIBAR': r.nibar,
-      'Komptabel': r.intra_ekstra || '', 'Tgl Perolehan': r.tgl_perolehan || '',
-      'Masa Manfaat (Smt)': r.masa_manfaat_smt ?? '', 'Nilai Perolehan': r.nilai_perolehan,
-      'Beban / Smt': r.beban_penyusutan_per_smt ?? '', 'Akumulasi 2025': r.akumulasi_2025,
-      'Nilai Buku Awal': r.nilai_buku_awal, 'Sisa (Smt)': r.sisa_masa_manfaat_smt, 'Keterangan': ket[r.nibar] || '',
-    })), 'Daftar_Barang_Awal_2026', 'Daftar Barang Awal')
+    const uraian = await fetchUraian(all.map(r => r.kode))
+    // Ekspor pakai kolom yang sama dgn layar, + Uraian & NIBAR jadi kolom sendiri
+    // (di layar keduanya ditumpuk; di Excel harus rata biar bisa disortir/pivot).
+    const keys = colsFor(applied.golongan).flatMap(k => (k === 'kode' ? ['kode', 'uraian'] : k === 'nama' ? ['nama', 'nibar'] : [k]))
+    exportToExcel(all.map(r => {
+      const obj: Record<string, string | number> = {}
+      for (const k of keys) {
+        if (k === 'nibar') { obj['NIBAR'] = r.nibar; continue }
+        if (k === 'uraian') { obj['Uraian'] = uraian[r.kode] || ''; continue }
+        obj[COL_META[k].header] = k === 'keterangan' ? (ket[r.nibar] || '') : cellValue(k, r)
+      }
+      return obj
+    }), `Daftar_Barang_Awal_2026${applied.golongan ? `_${applied.golongan}` : ''}`, 'Daftar Barang Awal')
     setExporting(false)
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
-  const kolom = isViewer ? 12 : 13
+  const cols = colsFor(applied?.golongan ?? '')
+  const kolom = cols.length + (isViewer ? 0 : 1)
+  const nilaiIdx = cols.indexOf('nilai')
+  const subtotal = (key: string) => rows.reduce((s, r) => s + (Number(cellValue(key, r)) || 0), 0)
 
   return (
     <div className="p-6">
@@ -287,7 +497,8 @@ export default function Page() {
               {GOLONGAN_REKAP.map(g => <option key={g.kode} value={g.kode}>{g.kode} — {g.uraian}</option>)}
             </select>
           </div>
-          <KomptabelRadio value={komptabel} onChange={setKomptabel} />
+          {/* Tanah: semua intrakomptabel — filternya tak relevan (pola Daftar Barang) */}
+          {golongan !== '1.3.1' && <KomptabelRadio value={komptabel} onChange={setKomptabel} />}
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Cari :</label>
             <input className="select-filter flex-1" placeholder="Nama barang / NIBAR / kode..."
@@ -310,6 +521,7 @@ export default function Page() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
               {total.toLocaleString('id-ID')} barang
+              {applied.golongan ? ` · ${applied.golongan} ${GOLONGAN_REKAP.find(g => g.kode === applied.golongan)?.uraian || ''}` : ''}
               {selList.length > 0 && <span className="text-teal font-medium"> · {selList.length} dicentang</span>}
             </span>
             <div className="flex items-center gap-3">
@@ -318,18 +530,19 @@ export default function Page() {
                   {spekSaving ? 'Menyimpan...' : '✎ Edit Spesifikasi...'}
                 </button>
               )}
-              <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>
+              {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>}
               <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs">
                 {exporting ? 'Mengekspor...' : 'Export Excel'}
               </button>
             </div>
           </div>
+          {loadErr && <div className="px-4 py-2 border-b border-gray-100"><p className="text-xs text-red-600">{loadErr}</p></div>}
           {!isViewer && (selList.length > 0 || spekMsg || spekErr || spekSaving || terkunci.size > 0) && (
             <div className="px-4 py-2 border-b border-gray-100 space-y-1">
               {spekSaving && <p className="text-xs text-gray-500">Menyimpan koreksi spesifikasi...</p>}
               {terkunci.size > 0 && (
                 <p className="text-xs text-gray-500">
-                  🔒 {terkunci.size} barang di halaman ini terkunci — sudah punya transaksi yang mengubah spesifikasi,
+                  🔒 {terkunci.size} barang di tampilan ini terkunci — sudah punya transaksi yang mengubah spesifikasi,
                   golongan, atau SKPD-nya. Koreksinya lewat Pembukuan → Koreksi → Spesifikasi Barang, biar ada jejak
                   ledger & bisa dibatalkan.
                 </p>
@@ -352,25 +565,16 @@ export default function Page() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {!isViewer && <th className="table-th w-8" />}
-                  <th className="table-th">SKPD</th>
-                  <th className="table-th">Kode Barang</th>
-                  <th className="table-th">Nama Barang</th>
-                  <th className="table-th text-center">Komptabel</th>
-                  <th className="table-th">Tgl Perolehan</th>
-                  <th className="table-th text-center">Masa Manfaat (Smt)</th>
-                  <th className="table-th text-right">Nilai Perolehan</th>
-                  <th className="table-th text-right">Beban / Smt</th>
-                  <th className="table-th text-right">Akumulasi 2025</th>
-                  <th className="table-th text-right">Nilai Buku Awal</th>
-                  <th className="table-th text-center">Sisa (Smt)</th>
-                  <th className="table-th">Keterangan</th>
+                  {cols.map(k => <th key={k} className={thClass(k)}>{COL_META[k].header}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
                   <tr><td colSpan={kolom} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={kolom} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={kolom} className="table-td text-center py-12 text-gray-400">
+                    {loadErr ? 'Data gagal dimuat — lihat pesan di atas.' : 'Tidak ada data untuk filter ini'}
+                  </td></tr>
                 ) : rows.map((r, i) => (
                   <tr key={r.nibar} className={sel[r.nibar] ? 'bg-teal/5' : i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                     {!isViewer && (
@@ -383,30 +587,32 @@ export default function Page() {
                         )}
                       </td>
                     )}
-                    <td className="table-td text-xs text-gray-600">{skpdNama[r.skpd_id] || '-'}</td>
-                    <td className="table-td text-xs text-gray-600">{r.kode}</td>
-                    <td className="table-td">
-                      <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
-                    </td>
-                    <td className="table-td text-center text-xs capitalize">{r.intra_ekstra || '-'}</td>
-                    <td className="table-td text-xs text-gray-600">{r.tgl_perolehan || '-'}</td>
-                    <td className="table-td text-center text-xs">{r.masa_manfaat_smt ?? <span className="text-gray-300">-</span>}</td>
-                    <td className="table-td text-right text-xs">{angka(r.nilai_perolehan)}</td>
-                    <td className="table-td text-right text-xs">{r.beban_penyusutan_per_smt != null ? angka(r.beban_penyusutan_per_smt) : <span className="text-gray-300">-</span>}</td>
-                    <td className="table-td text-right text-xs">{angka(r.akumulasi_2025)}</td>
-                    <td className="table-td text-right text-xs">{angka(r.nilai_buku_awal)}</td>
-                    <td className="table-td text-center text-xs">{r.sisa_masa_manfaat_smt}</td>
-                    <td className="table-td text-xs text-gray-600">{ketMap[r.nibar] || '-'}</td>
+                    {cols.map(k => <td key={k} className={tdClass(k)}>{cellContent(k, r)}</td>)}
                   </tr>
                 ))}
               </tbody>
+              {!loading && rows.length > 0 && nilaiIdx >= 0 && (
+                <tfoot>
+                  {/* showAll → total seluruh hasil filter; kalau terpaginasi, yang
+                      dijumlahkan cuma baris di layar — labelnya bilang begitu. */}
+                  <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
+                    <td className="table-td text-xs" colSpan={Math.max(1, nilaiIdx + (isViewer ? 0 : 1))}>
+                      {showAll
+                        ? `TOTAL (${total.toLocaleString('id-ID')} barang)`
+                        : `TOTAL halaman ini (${rows.length} dari ${total.toLocaleString('id-ID')} barang)`}
+                    </td>
+                    {cols.slice(nilaiIdx).map(k => (
+                      <td key={k} className={tdClass(k)}>{TOTAL_KEYS.has(k) ? angka(subtotal(k)) : ''}</td>
+                    ))}
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
-          {totalPages > 1 && (
+          {!showAll && totalPages > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-              <button className="btn-secondary" disabled={page === 0} onClick={() => goPage(page - 1)}>← Sebelumnya</button>
-              <button className="btn-secondary" disabled={page >= totalPages - 1} onClick={() => goPage(page + 1)}>Berikutnya →</button>
+              <button className="btn-secondary" disabled={page === 0 || loading} onClick={() => goPage(page - 1)}>← Sebelumnya</button>
+              <button className="btn-secondary" disabled={page >= totalPages - 1 || loading} onClick={() => goPage(page + 1)}>Berikutnya →</button>
             </div>
           )}
         </div>

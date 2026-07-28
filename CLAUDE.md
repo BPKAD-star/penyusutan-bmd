@@ -44,6 +44,21 @@ apa pun yang menyentuh ledger atau engine.
   "beres"** — sesudah import besar, uji ulang halaman berat sbg pengurus barang
   SKPD TERBESAR, bukan cuma sbg admin.
 
+- **Tabel yang selama ini cuma dibaca lewat RPC bisa menyimpan bom waktu RLS.**
+  `aset_awal_2026` KELEWAT dari tiga ronde perbaikan InitPlan (20260716_07,
+  20260717_02, 20260718_05/06) karena satu-satunya pembaca beratnya (Saldo Awal
+  → Rekapitulasi) lewat `fn_rekap_saldo_awal` yang SECURITY DEFINER — policy-nya
+  tak pernah kena beban. Begitu Daftar Barang Awal (2026-07-28) baca TABELNYA
+  LANGSUNG, `sa_select` (`fn_is_admin()` telanjang) + `aset_awal_2026_viewer_
+  select` (`fn_is_viewer()` telanjang) dievaluasi per baris atas 227rb baris →
+  timeout tanpa filter SKPD. Diperbaiki migrasi **20260728_02** (InitPlan + index
+  `skpd_id` kalau belum ada). **Sebelum bikin halaman yang membaca tabel besar
+  LANGSUNG, cek dulu policy-nya sudah InitPlan atau belum** — jangan berasumsi
+  aman cuma karena tabelnya "sudah lama dipakai". Sekalian: **JANGAN telan
+  `error` dari supabase-js diam-diam di halaman daftar** — timeout jadi terbaca
+  operator sebagai "0 barang / data memang kosong", dan bug-nya bisa berbulan-
+  bulan tak ketahuan. Tampilkan pesannya.
+
 - **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
   setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
   (batal_reklas, batal_penghapusan, batal_kapitalisasi, batal_koreksi_*, dst).
@@ -178,7 +193,19 @@ apa pun yang menyentuh ledger atau engine.
   Field set kedua
   pintu itu sekarang SATU sumber: `koreksiFieldKeys` di lib/asetFields.ts
   (dipindah dari Koreksi.tsx) — termasuk pengecualian Tanah 1.3.1 yang dokumen
-  kepemilikan/luas/lokasinya tetap milik menu GIS BMD. ⚠️ **Deploy-ordering:
+  kepemilikan/luas/lokasinya tetap milik menu GIS BMD.
+  **Kolom Daftar Barang Awal = salinan kolom Daftar Barang per jenis aset**
+  (`BASE_COLS` di halaman itu = `COLS` di app/dashboard/daftar-barang/page.tsx —
+  ubah salah satu, samakan yang lain), disisipi kolom penyusutan baseline
+  mengapit Nilai Perolehan: Masa Manfaat sebelum; Beban/Smt · Akumulasi 2025 ·
+  Nilai Buku Awal · Sisa sesudah. **Jenis aset yang `disusutkan:false` di
+  `GOLONGAN_REKAP` (Tanah 1.3.1, ATL 1.3.5, KDP 1.3.6) TIDAK dibuatkan kolom
+  penyusutan sama sekali** — isinya cuma nol/duplikat nilai perolehan. Pakai
+  flag itu, jangan hardcode daftar golongannya lagi. Tampilan ikut pola Daftar
+  Barang (≤3.000 baris → tampil semua, lebih → paginasi) TAPI paginasinya
+  **di server** (`range` PostgREST): di sini tak ada visibilitas period-aware yg
+  harus dihitung di client, jadi tak ada alasan menarik 218rb baris ke browser.
+  ⚠️ **Deploy-ordering:
   migrasi 20260728_01 WAJIB jalan SEBELUM deploy kode** — tanpa policy `sa_update`
   tombol Simpan-nya gagal senyap (RLS menolak, 0 baris ter-update).
 - **Baca dari tabel utama, bukan view.** Semua `v_*` (v_daftar_barang, v_dbar_*,
