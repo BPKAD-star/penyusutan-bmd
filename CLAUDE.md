@@ -209,6 +209,11 @@ apa pun yang menyentuh ledger atau engine.
   Punya bidang → Luas = Σ bidang, Lokasi diringkas dari bidangnya (>2 wilayah
   beda → tunjuk ke GIS, jangan dipaksa muat satu baris). Belum punya bidang →
   jatuh ke kolom tabelnya sendiri (`aset_awal_2026.luas` / `aset.luas`).
+  **Σ hanya sah kalau SEMUA bidang punya `luas`** (`nLuas === n`) — kalau baru
+  sebagian diisi, jumlahnya lebih kecil dari luas sebenarnya & terbaca sebagai
+  penyusutan luas yang tak pernah terjadi; yang belum lengkap jatuh ke kolom
+  tabelnya sendiri + badge "N bidang · luas belum lengkap". Ini bukan kasus
+  langka: per 2026-07-28 dari 529 bidang baru 4 yang berluas & 0 yang ber-wilayah.
   **Σ-nya DIHITUNG SAAT TAMPIL, JANGAN pernah disimpan balik ke kolom** — angka
   tersimpan langsung basi begitu bidang ditambah/diedit/dihapus (tak ada trigger/
   cron yang menjaganya, persis kendala cache `aset.pemanfaatan`), dan snapshot

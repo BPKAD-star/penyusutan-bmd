@@ -155,7 +155,7 @@ export default function DaftarBarangPage() {
   const [data, setData] = useState<Row[]>([])          // baris yang tampil (halaman aktif / semua)
   const [allVisible, setAllVisible] = useState<Row[]>([]) // seluruh baris visible di periode (utk paginasi & export)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
-  const [bidangCount, setBidangCount] = useState<Record<string, { n: number; luas: number | null }>>({}) // aset_id → jumlah bidang & Σ luas (Tanah, dari aset_bidang_tanah)
+  const [bidangCount, setBidangCount] = useState<Record<string, { n: number; nLuas: number; luas: number | null }>>({}) // aset_id → jumlah bidang & Σ luas (Tanah, dari aset_bidang_tanah)
   const [ownerOverride, setOwnerOverride] = useState<Map<string, number | null>>(new Map()) // aset_id → SKPD pemilik period-aware
   const [total, setTotal] = useState(0)
   const [grandTotal, setGrandTotal] = useState(0)
@@ -235,14 +235,17 @@ export default function DaftarBarangPage() {
   // TAMPIL, sengaja tidak disimpan ke `aset.luas` — angka tersimpan bakal basi
   // tiap bidang ditambah/diedit/dihapus (aturan yang sama dipakai Saldo Awal →
   // Daftar Barang Awal, bedanya cadangannya kolom snapshot).
+  // Σ HANYA sah kalau SEMUA bidang punya luas (nLuas === n) — kalau baru
+  // sebagian yang diisi, jumlahnya lebih kecil dari luas sebenarnya. Per
+  // 2026-07-28 itu justru keadaan normal: dari 529 bidang, baru 4 yang berluas.
   const fetchBidangCount = useCallback(async (ids: string[]) => {
-    const cnt: Record<string, { n: number; luas: number | null }> = {}
+    const cnt: Record<string, { n: number; nLuas: number; luas: number | null }> = {}
     for (let i = 0; i < ids.length; i += 200) {
       const { data } = await supabase.from('aset_bidang_tanah').select('aset_id,luas').in('aset_id', ids.slice(i, i + 200))
       for (const b of (data || []) as { aset_id: string; luas: number | null }[]) {
-        const a = cnt[b.aset_id] || (cnt[b.aset_id] = { n: 0, luas: null })
+        const a = cnt[b.aset_id] || (cnt[b.aset_id] = { n: 0, nLuas: 0, luas: null })
         a.n++
-        if (b.luas != null) a.luas = (a.luas ?? 0) + Number(b.luas)
+        if (b.luas != null) { a.nLuas++; a.luas = (a.luas ?? 0) + Number(b.luas) }
       }
     }
     return cnt
@@ -375,7 +378,7 @@ export default function DaftarBarangPage() {
   // otomatis jatuh ke aset.luas, dan memang itu nilai terakhir yang tercatat.)
   function luasOf(r: Row): number | null {
     const b = bidangCount[r.id]
-    return b && b.luas != null ? b.luas : r.luas
+    return b && b.n > 0 && b.nLuas === b.n && b.luas != null ? b.luas : r.luas
   }
 
   async function handleExport() {

@@ -73,7 +73,11 @@ type Row = {
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; search: string }
 // Rekap bidang tanah per aset (dari aset_bidang_tanah, menu GIS Tanah).
 // luas = Σ bidang; wilayah/alamat = daftar UNIK (satu register bisa banyak bidang).
-type BidangAgg = { n: number; luas: number | null; wilayah: string[]; alamat: string[] }
+// nLuas = berapa bidang yang luasnya terisi. Σ HANYA sah kalau nLuas === n —
+// kalau cuma sebagian bidang yang berisi, jumlahnya lebih kecil dari luas
+// sebenarnya & bakal terbaca sebagai penyusutan luas yang tak pernah terjadi.
+// (Per 2026-07-28 ini bukan kasus langka: dari 529 bidang, baru 4 yang berluas.)
+type BidangAgg = { n: number; nLuas: number; luas: number | null; wilayah: string[]; alamat: string[] }
 
 const COLS = [
   'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'nilai_perolehan',
@@ -282,9 +286,9 @@ export default function Page() {
       for (const b of (data || []) as { aset_id: string; luas: number | null; wilayah_kode: string | null; alamat_detail: string | null }[]) {
         const nibar = nibarByAset.get(b.aset_id)
         if (!nibar) continue
-        const a = agg[nibar] || (agg[nibar] = { n: 0, luas: null, wilayah: [], alamat: [] })
+        const a = agg[nibar] || (agg[nibar] = { n: 0, nLuas: 0, luas: null, wilayah: [], alamat: [] })
         a.n++
-        if (b.luas != null) a.luas = (a.luas ?? 0) + Number(b.luas)
+        if (b.luas != null) { a.nLuas++; a.luas = (a.luas ?? 0) + Number(b.luas) }
         if (b.wilayah_kode && !a.wilayah.includes(b.wilayah_kode)) a.wilayah.push(b.wilayah_kode)
         if (b.alamat_detail && !a.alamat.includes(b.alamat_detail)) a.alamat.push(b.alamat_detail)
       }
@@ -491,9 +495,10 @@ export default function Page() {
   // supaya angka di dua menu tak pernah beda tanpa sebab.
   // Parameter `bd` bisa diisi peta bidang lain (dipakai Export, yang cakupan
   // barisnya lebih luas dari layar); default = milik halaman.
+  const luasBidangSah = (b: BidangAgg | undefined) => !!b && b.n > 0 && b.nLuas === b.n && b.luas != null
   const luasOf = (r: Row, bd: Record<string, BidangAgg> = bidang): number | null => {
     const b = bd[r.nibar]
-    return b && b.luas != null ? b.luas : r.luas
+    return luasBidangSah(b) ? b.luas : r.luas
   }
   // Satu register bisa punya banyak bidang di lokasi berbeda — kalau tak bisa
   // diringkas jadi satu baris, jangan dipaksakan: tunjuk saja ke GIS Tanah.
@@ -573,8 +578,10 @@ export default function Page() {
           {b && b.n > 0 && (
             <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar)}`}
               className="text-[11px] text-teal hover:underline"
-              title="Luas ini penjumlahan bidang di GIS Tanah — koreksinya di sana, per bidang">
-              Σ {b.n} bidang
+              title={luasBidangSah(b)
+                ? 'Luas ini penjumlahan seluruh bidang di GIS Tanah — koreksinya di sana, per bidang'
+                : `Ada ${b.n} bidang di GIS Tanah tapi baru ${b.nLuas} yang berisi luas — angka di atas masih dari saldo awal, bukan Σ bidang`}>
+              {luasBidangSah(b) ? `Σ ${b.n} bidang` : `${b.n} bidang · luas belum lengkap`}
             </Link>
           )}
         </>
