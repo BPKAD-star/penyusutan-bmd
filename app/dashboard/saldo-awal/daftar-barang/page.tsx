@@ -10,9 +10,18 @@
 // DISUSUTKAN (Tanah 1.3.1, Aset Tetap Lainnya 1.3.5, KDP 1.3.6 — flag
 // `disusutkan` di GOLONGAN_REKAP) TIDAK dapat kolom-kolom itu sama sekali:
 // isinya cuma nol/duplikat nilai perolehan, cuma bikin tabel melar.
-// Satu-satunya kolom yang isinya BEDA dari Daftar Barang: "Lokasi" di sini =
-// `alamat_detail` + rantai wilayah (`wilayah_kode` → Desa, Kec., Kabupaten),
-// sementara Daftar Barang baru menampilkan alamat_detail saja.
+// "Lokasi" di sini = `alamat_detail` + rantai wilayah (`wilayah_kode` → Desa,
+// Kec., Kabupaten), sementara Daftar Barang baru menampilkan alamat_detail saja.
+//
+// TANAH — luas & lokasi punya DUA kemungkinan sumber, dan bidang yang menang:
+// kalau asetnya punya baris di `aset_bidang_tanah` (menu GIS Tanah), Luas = Σ
+// bidang & Lokasi diringkas dari bidang-bidangnya; kalau belum punya bidang
+// sama sekali, jatuh ke kolom snapshot yang BOLEH diisi manual lewat Edit
+// Spesifikasi (TANAH_TANPA_BIDANG_FIELDS di lib/asetFields.ts). Σ-nya dihitung
+// SAAT TAMPIL, sengaja TIDAK disimpan balik ke kolom mana pun: angka tersimpan
+// bakal basi tiap bidang ditambah/diedit/dihapus (tak ada trigger/cron yang
+// menjaganya), dan snapshot 2025 tak boleh ikut bergerak mengikuti data hidup.
+// Aturan yang sama dipakai Daftar Barang, bedanya cadangannya `aset.luas`.
 //
 // TAMPILAN mengikuti pola Daftar Barang juga: hasil ≤ SHOW_ALL_MAX baris →
 // tampilkan SEMUA sekaligus (tanpa halaman); lebih dari itu → paginasi SERVER
@@ -36,10 +45,11 @@
 // mati — koreksinya wajib lewat menu Koreksi. Penegaknya trigger DB (migrasi
 // 20260728_01 bagian 3); 🔒 di sini cuma biar operator tak klik lalu kena error.
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
-import { koreksiFieldKeys, allSameGolongan, ASET_NUM_COLS } from '@/lib/asetFields'
+import { koreksiFieldKeys, allSameGolongan, ASET_NUM_COLS, type FieldKey } from '@/lib/asetFields'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
 import EditSpesifikasiModal from '@/components/pengelolaan/EditSpesifikasiModal'
@@ -61,6 +71,9 @@ type Row = {
   asal_usul: string | null; penggunaan_pengamanan: string | null
 }
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; search: string }
+// Rekap bidang tanah per aset (dari aset_bidang_tanah, menu GIS Tanah).
+// luas = Σ bidang; wilayah/alamat = daftar UNIK (satu register bisa banyak bidang).
+type BidangAgg = { n: number; luas: number | null; wilayah: string[]; alamat: string[] }
 
 const COLS = [
   'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'nilai_perolehan',
@@ -161,10 +174,15 @@ export default function Page() {
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
   // wilayah_kode → "Desa, Kec. X, Kabupaten Y" (rantai induk sudah dirangkai)
   const [wilayahNama, setWilayahNama] = useState<Record<string, string>>({})
+  // NIBAR → rekap bidang tanah (hanya golongan 1.3.1 yang punya isi)
+  const [bidang, setBidang] = useState<Record<string, BidangAgg>>({})
   // ── Koreksi spesifikasi: centang barang (multi) → popup EditSpesifikasiModal ──
   const [sel, setSel] = useState<Record<string, Row>>({}) // key = NIBAR
   const [spekOpen, setSpekOpen] = useState(false)
   const [spekPrefix, setSpekPrefix] = useState('')
+  // Field yang ditawarkan popup — dihitung saat dibuka (bukan saat render),
+  // karena untuk Tanah isinya bergantung ada/tidaknya bidang.
+  const [spekKeys, setSpekKeys] = useState<FieldKey[]>([])
   const [spekInitFields, setSpekInitFields] = useState<Record<string, string>>({})
   const [spekInitFoto, setSpekInitFoto] = useState<string[]>([])
   const [spekMsg, setSpekMsg] = useState('')
@@ -230,15 +248,48 @@ export default function Page() {
     return q.order('nilai_perolehan', { ascending: false }).order('nibar', { ascending: true })
   }
 
-  // Keterangan sengaja diambil dari register `aset` (bukan kolom keterangan di
-  // snapshot) — itu versi terkini yang juga dipakai Daftar Barang.
-  async function fetchKet(nibars: string[]) {
-    const map: Record<string, string> = {}
+  // Register `aset` per NIBAR: keterangan (sengaja versi TERKINI, bukan kolom
+  // keterangan di snapshot — sama dgn yang tampil di Daftar Barang) + `id`, yang
+  // dibutuhkan untuk menengok bidang tanah (aset_bidang_tanah pakai aset_id,
+  // sementara halaman ini berkunci NIBAR).
+  async function fetchAsetInfo(nibars: string[]) {
+    const map: Record<string, { id: string; keterangan: string | null }> = {}
     for (let i = 0; i < nibars.length; i += 500) {
-      const { data } = await supabase.from('aset').select('nibar,keterangan').in('nibar', nibars.slice(i, i + 500))
-      for (const a of (data || []) as { nibar: string | null; keterangan: string | null }[]) if (a.nibar && a.keterangan) map[a.nibar] = a.keterangan
+      const { data } = await supabase.from('aset').select('id,nibar,keterangan').in('nibar', nibars.slice(i, i + 500))
+      for (const a of (data || []) as { id: string; nibar: string | null; keterangan: string | null }[]) {
+        if (a.nibar) map[a.nibar] = { id: a.id, keterangan: a.keterangan }
+      }
     }
     return map
+  }
+
+  // Bidang tanah per aset (kalau ada) — luas & lokasi Tanah yang sebenarnya
+  // dikelola PER BIDANG di menu GIS Tanah, bukan di kolom `luas`/`alamat_detail`
+  // level register. Yang punya bidang: luas = Σ bidang (dihitung SAAT TAMPIL,
+  // sengaja TIDAK disimpan ke kolom mana pun — angka tersimpan bakal basi tiap
+  // bidang ditambah/diedit/dihapus, dan snapshot 2025 tak boleh ikut bergerak
+  // mengikuti data hidup). Yang belum punya bidang: jatuh ke kolom snapshot,
+  // yang boleh diisi manual lewat Edit Spesifikasi (lihat TANAH_TANPA_BIDANG_FIELDS).
+  async function fetchBidang(info: Record<string, { id: string }>, rs: Row[]) {
+    const tanah = rs.filter(r => kodeLevel3(r.kode) === '1.3.1' && info[r.nibar])
+    if (tanah.length === 0) return {}
+    const nibarByAset = new Map(tanah.map(r => [info[r.nibar].id, r.nibar]))
+    const ids = [...nibarByAset.keys()]
+    const agg: Record<string, BidangAgg> = {}
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data } = await supabase.from('aset_bidang_tanah')
+        .select('aset_id,luas,wilayah_kode,alamat_detail').in('aset_id', ids.slice(i, i + 500))
+      for (const b of (data || []) as { aset_id: string; luas: number | null; wilayah_kode: string | null; alamat_detail: string | null }[]) {
+        const nibar = nibarByAset.get(b.aset_id)
+        if (!nibar) continue
+        const a = agg[nibar] || (agg[nibar] = { n: 0, luas: null, wilayah: [], alamat: [] })
+        a.n++
+        if (b.luas != null) a.luas = (a.luas ?? 0) + Number(b.luas)
+        if (b.wilayah_kode && !a.wilayah.includes(b.wilayah_kode)) a.wilayah.push(b.wilayah_kode)
+        if (b.alamat_detail && !a.alamat.includes(b.alamat_detail)) a.alamat.push(b.alamat_detail)
+      }
+    }
+    return agg
   }
 
   // Uraian (nama baku kodefikasi) per kode — ditumpuk di bawah Kode Barang,
@@ -281,7 +332,11 @@ export default function Page() {
     setRows(rs)
     setTotal(tot)
     setShowAll(semua)
-    setKetMap(await fetchKet(rs.map(r => r.nibar)))
+    const info = await fetchAsetInfo(rs.map(r => r.nibar))
+    const ket: Record<string, string> = {}
+    for (const [nibar, a] of Object.entries(info)) if (a.keterangan) ket[nibar] = a.keterangan
+    setKetMap(ket)
+    setBidang(await fetchBidang(info, rs))
     setUraianMap(await fetchUraian(rs.map(r => r.kode)))
     setTerkunci(await fetchTerkunci(rs.map(r => r.nibar)))
     setSel({}) // seleksi lama tak lagi nyambung dgn baris yang tampil
@@ -331,6 +386,11 @@ export default function Page() {
     setSpekMsg(''); setSpekErr('')
   }
 
+  // Tanah: luas & lokasi cuma boleh dikoreksi dari sini kalau SEMUA yang
+  // dicentang belum punya bidang. Yang sudah punya → GIS Tanah yang berwenang
+  // (kalau tidak, angka manual di sini bakal ketutup Σ bidang & bikin bingung).
+  const spekTanpaBidang = selList.every(r => !(bidang[r.nibar]?.n))
+
   // Buka popup: 1 barang → prefill nilai sekarang (dari snapshot, itu yang
   // ditampilkan halaman ini); banyak barang → kosong (isi = diterapkan ke semua).
   async function openSpek() {
@@ -338,8 +398,9 @@ export default function Page() {
     setSpekMsg(''); setSpekErr('')
     const single = selList.length === 1
     setSpekPrefix(`draft/saldo-awal-spek/${single ? selList[0].nibar : newKey()}`)
+    const keys = koreksiFieldKeys(selList[0].kode, { tanahTanpaBidang: spekTanpaBidang })
+    setSpekKeys(keys)
     if (single) {
-      const keys = koreksiFieldKeys(selList[0].kode)
       const { data } = await supabase.from('aset_awal_2026')
         .select([...keys, 'foto_paths'].join(',')).eq('nibar', selList[0].nibar).single()
       const row = (data || {}) as Record<string, unknown>
@@ -425,8 +486,32 @@ export default function Page() {
     if (applied) load(applied, page)
   }
 
+  // ── Luas & Lokasi: bidang tanah menang, kolom snapshot jadi cadangan ───────
+  // Aturannya sama persis dipakai Daftar Barang (bedanya cadangannya `aset.luas`),
+  // supaya angka di dua menu tak pernah beda tanpa sebab.
+  // Parameter `bd` bisa diisi peta bidang lain (dipakai Export, yang cakupan
+  // barisnya lebih luas dari layar); default = milik halaman.
+  const luasOf = (r: Row, bd: Record<string, BidangAgg> = bidang): number | null => {
+    const b = bd[r.nibar]
+    return b && b.luas != null ? b.luas : r.luas
+  }
+  // Satu register bisa punya banyak bidang di lokasi berbeda — kalau tak bisa
+  // diringkas jadi satu baris, jangan dipaksakan: tunjuk saja ke GIS Tanah.
+  function lokasiOf(r: Row, bd: Record<string, BidangAgg> = bidang): { alamat: string; wilayah: string } {
+    const b = bd[r.nibar]
+    if (b && b.n > 0) {
+      const wil = [...new Set(b.wilayah.map(k => wilayahNama[k]).filter(Boolean))]
+      const wilayah = wil.length === 0 ? '' : wil.length <= 2 ? wil.join(' · ') : `${wil.length} wilayah — lihat GIS Tanah`
+      const alamat = b.alamat.length === 0 ? '' : b.alamat.length === 1 ? b.alamat[0] : `${b.n} bidang`
+      if (wilayah || alamat) return { alamat, wilayah }
+      // Bidangnya ada tapi lokasinya belum diisi → jangan tampilkan kosong,
+      // pakai apa yang ada di snapshot.
+    }
+    return { alamat: r.alamat_detail || '', wilayah: r.wilayah_kode ? (wilayahNama[r.wilayah_kode] || '') : '' }
+  }
+
   // Nilai polos per kolom — dipakai Export (layar pakai cellContent yang boleh JSX).
-  function cellValue(key: string, r: Row): string | number {
+  function cellValue(key: string, r: Row, bd: Record<string, BidangAgg> = bidang): string | number {
     switch (key) {
       case 'skpd': return skpdNama[r.skpd_id] || ''
       case 'kode': return r.kode
@@ -436,8 +521,8 @@ export default function Page() {
       case 'spesifikasi': return r.spesifikasi_lainnya || ''
       // Lokasi = alamat jalan + wilayah administratif (dua kolom DB yang beda,
       // digabung; di layar ditumpuk, di Excel jadi satu sel).
-      case 'lokasi': return [r.alamat_detail, r.wilayah_kode ? wilayahNama[r.wilayah_kode] : ''].filter(Boolean).join(' — ')
-      case 'luas': return r.luas ?? ''
+      case 'lokasi': { const l = lokasiOf(r, bd); return [l.alamat, l.wilayah].filter(Boolean).join(' — ') }
+      case 'luas': return luasOf(r, bd) ?? ''
       case 'hak': return r.jenis_hak || ''
       case 'komptabel': return r.intra_ekstra || ''
       case 'tgl': return r.tgl_perolehan || ''
@@ -470,12 +555,28 @@ export default function Page() {
       </>
     )
     if (key === 'lokasi') {
-      const wil = r.wilayah_kode ? wilayahNama[r.wilayah_kode] : ''
-      if (!r.alamat_detail && !wil) return <span className="text-gray-300">-</span>
+      const { alamat, wilayah } = lokasiOf(r)
+      if (!alamat && !wilayah) return <span className="text-gray-300">-</span>
       return (
         <>
-          <p className="text-xs text-gray-600">{r.alamat_detail || '-'}</p>
-          {wil && <p className="text-gray-400 text-xs mt-0.5">{wil}</p>}
+          <p className="text-xs text-gray-600">{alamat || '-'}</p>
+          {wilayah && <p className="text-gray-400 text-xs mt-0.5">{wilayah}</p>}
+        </>
+      )
+    }
+    if (key === 'luas') {
+      const b = bidang[r.nibar]
+      const v = luasOf(r)
+      return (
+        <>
+          <p className="text-xs text-gray-600">{v != null ? angka(v) : <span className="text-gray-300">-</span>}</p>
+          {b && b.n > 0 && (
+            <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar)}`}
+              className="text-[11px] text-teal hover:underline"
+              title="Luas ini penjumlahan bidang di GIS Tanah — koreksinya di sana, per bidang">
+              Σ {b.n} bidang
+            </Link>
+          )}
         </>
       )
     }
@@ -497,7 +598,13 @@ export default function Page() {
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
     }
-    const ket = await fetchKet(all.map(r => r.nibar))
+    // Ekspor bisa memuat baris di luar halaman yang tampil → keterangan & bidang
+    // tanahnya diambil ulang untuk SELURUH hasil, jangan pakai state halaman
+    // (kalau tidak, kolom Luas/Lokasi di Excel beda dari yang di layar).
+    const info = await fetchAsetInfo(all.map(r => r.nibar))
+    const ket: Record<string, string> = {}
+    for (const [nibar, a] of Object.entries(info)) if (a.keterangan) ket[nibar] = a.keterangan
+    const bd = await fetchBidang(info, all)
     const uraian = await fetchUraian(all.map(r => r.kode))
     // Ekspor pakai kolom yang sama dgn layar, + Uraian & NIBAR jadi kolom sendiri
     // (di layar keduanya ditumpuk; di Excel harus rata biar bisa disortir/pivot).
@@ -507,7 +614,7 @@ export default function Page() {
       for (const k of keys) {
         if (k === 'nibar') { obj['NIBAR'] = r.nibar; continue }
         if (k === 'uraian') { obj['Uraian'] = uraian[r.kode] || ''; continue }
-        obj[COL_META[k].header] = k === 'keterangan' ? (ket[r.nibar] || '') : cellValue(k, r)
+        obj[COL_META[k].header] = k === 'keterangan' ? (ket[r.nibar] || '') : cellValue(k, r, bd)
       }
       return obj
     }), `Daftar_Barang_Awal_2026${applied.golongan ? `_${applied.golongan}` : ''}`, 'Daftar Barang Awal')
@@ -594,6 +701,12 @@ export default function Page() {
               {selList.length > 0 && !selSameGol && (
                 <p className="text-xs text-amber-600">Barang beda jenis aset — pisahkan per jenis, field spesifikasinya beda.</p>
               )}
+              {selList.length > 0 && selSameGol && !spekTanpaBidang && kodeLevel3(selList[0].kode) === '1.3.1' && (
+                <p className="text-xs text-amber-600">
+                  Ada tanah yang sudah punya bidang di GIS Tanah — luas & lokasinya tidak ditawarkan di popup ini.
+                  Yang punya bidang, koreksinya per bidang di menu GIS Tanah (luas di tabel = Σ bidang).
+                </p>
+              )}
               {selList.length > 0 && selSameGol && (
                 <p className="text-xs text-gray-500">
                   Koreksi spesifikasi ditulis ke saldo awal <span className="font-medium">dan</span> register aset (dicocokkan NIBAR).
@@ -667,7 +780,7 @@ export default function Page() {
           title={selList.length === 1
             ? (selList[0].nama_barang || selList[0].nibar)
             : `${selList.length} barang — ${golLabel(selList[0].kode)}`}
-          fieldKeys={koreksiFieldKeys(selList[0].kode)}
+          fieldKeys={spekKeys}
           storagePrefix={spekPrefix}
           initialFields={spekInitFields}
           initialFoto={spekInitFoto}

@@ -201,10 +201,29 @@ apa pun yang menyentuh ledger atau engine.
   Nilai Buku Awal · Sisa sesudah. **Jenis aset yang `disusutkan:false` di
   `GOLONGAN_REKAP` (Tanah 1.3.1, ATL 1.3.5, KDP 1.3.6) TIDAK dibuatkan kolom
   penyusutan sama sekali** — isinya cuma nol/duplikat nilai perolehan. Pakai
-  flag itu, jangan hardcode daftar golongannya lagi. Satu-satunya isi kolom yang
-  BEDA dari Daftar Barang: **Lokasi** di Daftar Barang Awal = `alamat_detail` +
-  rantai `wilayah_kode` (Desa, Kec., Kabupaten — `admin_wilayah` ditarik sekali,
-  provinsi dibuang), sedangkan Daftar Barang masih `alamat_detail` saja. Tampilan ikut pola Daftar
+  flag itu, jangan hardcode daftar golongannya lagi. **Lokasi** di Daftar Barang
+  Awal = `alamat_detail` + rantai `wilayah_kode` (Desa, Kec., Kabupaten —
+  `admin_wilayah` ditarik sekali, provinsi dibuang), sedangkan Daftar Barang
+  masih `alamat_detail` saja.
+  **TANAH: `aset_bidang_tanah` MENANG atas kolom luas/lokasi level register.**
+  Punya bidang → Luas = Σ bidang, Lokasi diringkas dari bidangnya (>2 wilayah
+  beda → tunjuk ke GIS, jangan dipaksa muat satu baris). Belum punya bidang →
+  jatuh ke kolom tabelnya sendiri (`aset_awal_2026.luas` / `aset.luas`).
+  **Σ-nya DIHITUNG SAAT TAMPIL, JANGAN pernah disimpan balik ke kolom** — angka
+  tersimpan langsung basi begitu bidang ditambah/diedit/dihapus (tak ada trigger/
+  cron yang menjaganya, persis kendala cache `aset.pemanfaatan`), dan snapshot
+  2025 tak boleh ikut bergerak mengikuti data hidup. Aturannya kembar di dua
+  halaman; kalau salah satu diubah, samakan yang lain.
+  Konsekuensinya `TANAH_GIS_FIELDS` dilonggarkan (keputusan user 2026-07-28,
+  sore): Tanah yang **belum punya bidang sama sekali** boleh diisi `luas`,
+  `wilayah_kode`, `alamat_detail`-nya dari Edit Spesifikasi
+  (`TANAH_TANPA_BIDANG_FIELDS`) — kalau tidak, tanah warisan baseline e-BMD tak
+  bisa diisi dari mana pun kecuali operator bikin bidang di GIS. Aturan "gak ada
+  2 sumber" tetap utuh karena syaratnya itu: begitu bidang pertama dibuat, GIS
+  yang berwenang & field-nya hilang lagi dari popup. Dokumen kepemilikan, jenis
+  hak & koordinat TETAP milik GIS apa pun keadaannya (melekat per sertifikat).
+  `koreksiFieldKeys(kode, opts)` **fail-closed**: pemanggil yang tak menghitung
+  bidang (menu Koreksi) cukup tak mengisi `opts` → perilaku lama. Tampilan ikut pola Daftar
   Barang (≤3.000 baris → tampil semua, lebih → paginasi) TAPI paginasinya
   **di server** (`range` PostgREST): di sini tak ada visibilitas period-aware yg
   harus dihitung di client, jadi tak ada alasan menarik 218rb baris ke browser.

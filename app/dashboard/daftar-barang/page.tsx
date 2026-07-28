@@ -155,7 +155,7 @@ export default function DaftarBarangPage() {
   const [data, setData] = useState<Row[]>([])          // baris yang tampil (halaman aktif / semua)
   const [allVisible, setAllVisible] = useState<Row[]>([]) // seluruh baris visible di periode (utk paginasi & export)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
-  const [bidangCount, setBidangCount] = useState<Record<string, number>>({}) // aset_id → jumlah bidang (Tanah, dari aset_bidang_tanah)
+  const [bidangCount, setBidangCount] = useState<Record<string, { n: number; luas: number | null }>>({}) // aset_id → jumlah bidang & Σ luas (Tanah, dari aset_bidang_tanah)
   const [ownerOverride, setOwnerOverride] = useState<Map<string, number | null>>(new Map()) // aset_id → SKPD pemilik period-aware
   const [total, setTotal] = useState(0)
   const [grandTotal, setGrandTotal] = useState(0)
@@ -229,13 +229,21 @@ export default function DaftarBarangPage() {
     return out
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Jumlah bidang tanah per aset (aset_bidang_tanah) — utk badge di Daftar
-  // Barang golongan Tanah. Identitas per bidang dikelola di menu GIS BMD.
+  // Bidang tanah per aset (aset_bidang_tanah) — utk badge "N bidang" DAN kolom
+  // Luas. Identitas + luas per bidang dikelola di menu GIS BMD; `aset.luas` cuma
+  // dipakai kalau asetnya belum punya bidang sama sekali. Σ-nya dihitung SAAT
+  // TAMPIL, sengaja tidak disimpan ke `aset.luas` — angka tersimpan bakal basi
+  // tiap bidang ditambah/diedit/dihapus (aturan yang sama dipakai Saldo Awal →
+  // Daftar Barang Awal, bedanya cadangannya kolom snapshot).
   const fetchBidangCount = useCallback(async (ids: string[]) => {
-    const cnt: Record<string, number> = {}
+    const cnt: Record<string, { n: number; luas: number | null }> = {}
     for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await supabase.from('aset_bidang_tanah').select('aset_id').in('aset_id', ids.slice(i, i + 200))
-      for (const b of (data || []) as { aset_id: string }[]) cnt[b.aset_id] = (cnt[b.aset_id] || 0) + 1
+      const { data } = await supabase.from('aset_bidang_tanah').select('aset_id,luas').in('aset_id', ids.slice(i, i + 200))
+      for (const b of (data || []) as { aset_id: string; luas: number | null }[]) {
+        const a = cnt[b.aset_id] || (cnt[b.aset_id] = { n: 0, luas: null })
+        a.n++
+        if (b.luas != null) a.luas = (a.luas ?? 0) + Number(b.luas)
+      }
     }
     return cnt
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -362,6 +370,14 @@ export default function DaftarBarangPage() {
     showPage(allVisible, pg)
   }
 
+  // Luas Tanah: Σ bidang kalau asetnya punya bidang, kalau tidak `aset.luas`.
+  // (Di Export Audit, barang yang sudah dihapus tak ikut di-fetch bidangnya —
+  // otomatis jatuh ke aset.luas, dan memang itu nilai terakhir yang tercatat.)
+  function luasOf(r: Row): number | null {
+    const b = bidangCount[r.id]
+    return b && b.luas != null ? b.luas : r.luas
+  }
+
   async function handleExport() {
     if (!applied) return
     setExporting(true)
@@ -382,7 +398,7 @@ export default function DaftarBarangPage() {
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
           case 'keterangan': return r.keterangan || ''
-          case 'luas': return r.luas ?? ''
+          case 'luas': return luasOf(r) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
           case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
           case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
@@ -420,7 +436,7 @@ export default function DaftarBarangPage() {
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
           case 'keterangan': return r.keterangan || ''
-          case 'luas': return r.luas ?? ''
+          case 'luas': return luasOf(r) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
           case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
           case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
@@ -457,11 +473,11 @@ export default function DaftarBarangPage() {
         <>
           <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
           <p className="text-gray-400 text-xs mt-0.5">{r.nibar || '-'}</p>
-          {(bidangCount[r.id] || 0) > 0 && (
+          {(bidangCount[r.id]?.n || 0) > 0 && (
             <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar || '')}`}
               className="inline-flex items-center gap-1 mt-1 text-[11px] text-teal hover:underline"
               title="Tanah ini terbagi beberapa bidang/sertifikat — kelola & lihat di GIS Tanah">
-              🗺 {bidangCount[r.id]} bidang
+              🗺 {bidangCount[r.id].n} bidang
             </Link>
           )}
         </>
@@ -482,7 +498,7 @@ export default function DaftarBarangPage() {
       case 'asal_usul': return r.asal_usul || '-'
       case 'penggunaan': return r.penggunaan_pengamanan || '-'
       case 'keterangan': return r.keterangan || '-'
-      case 'luas': return r.luas != null ? angka(r.luas) : '-'
+      case 'luas': { const v = luasOf(r); return v != null ? angka(v) : '-' }
       case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || '-'
       case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || '-'
       case 'atas_nama': return r.nama_dokumen_kepemilikan || '-'
