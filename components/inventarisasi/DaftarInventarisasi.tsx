@@ -10,9 +10,10 @@
 // bersamaan.
 //
 // NON-LEDGER: modul ini tak pernah menulis transaksi_bmd / mengubah aset.
-// Saat header dibuat, baris LKI digenerate dari `aset` (status aktif, subtree
-// SKPD, kode LIKE '<golongan>.%') lengkap dgn `snapshot` yang dibekukan sbg
-// nilai "SEBELUM Inventarisasi".
+// Saat header dibuat, baris LKI digenerate dari `aset` (status aktif,
+// skpd_id PERSIS SKPD itu — bukan subtree, lihat catatan exact-scope di
+// `buat()` — dan kode LIKE '<golongan>.%') lengkap dgn `snapshot` yang
+// dibekukan sbg nilai "SEBELUM Inventarisasi".
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'

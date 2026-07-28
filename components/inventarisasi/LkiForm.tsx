@@ -107,7 +107,18 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
   const [foto, setFoto] = useState<string[]>(baris.foto_paths || [])
   const [induk, setInduk] = useState<AsetRingkas | null>(null)
   const [gandaAset, setGandaAset] = useState<AsetRingkas | null>(null)
-  const [kodefikasi, setKodefikasi] = useState<KodefikasiHasil | null>(null)
+  // Seed dari jawaban tersimpan supaya lembar yang dibuka ulang tetap
+  // menampilkan kode yang sudah dipilih, bukan picker kosong.
+  const [kodefikasi, setKodefikasi] = useState<KodefikasiHasil | null>(() => {
+    const jw = baris.jawaban || {}
+    const kode = baris.aset_id ? jw.kode_barang?.kode_baru : jw.baru?.kode_barang
+    const uraian = baris.aset_id ? jw.kode_barang?.uraian_baru : jw.baru?.nama_barang
+    if (!kode) return null
+    return {
+      kode, uraian: uraian || null, nama_objek: null, nama_rincian: null,
+      nama_sub_rincian: null, masa_manfaat_tahun: null, batas_kapitalisasi: null,
+    }
+  })
   const [satuanOpsi, setSatuanOpsi] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -115,6 +126,20 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
 
   const set = <K extends keyof InvJawaban>(k: K, v: InvJawaban[K]) => setJ(p => ({ ...p, [k]: v }))
   const setBaru = (k: string, v: unknown) => setJ(p => ({ ...p, baru: { ...(p.baru || {}), [k]: v } }))
+
+  /** Jumlah & Harga Satuan sekaligus menghitung ulang Nilai Perolehan
+   *  (Format III.A.7 butir 9, 11, 12). Hasilnya tetap boleh ditimpa manual —
+   *  ada barang temuan yang nilainya lump-sum, bukan hasil perkalian. */
+  const setJumlahHarga = (k: 'jumlah' | 'harga_satuan', raw: string) => {
+    const v = raw === '' ? undefined : Number(raw)
+    setJ(p => {
+      const baru = { ...(p.baru || {}), [k]: v }
+      const jml = k === 'jumlah' ? v : baru.jumlah
+      const hrg = k === 'harga_satuan' ? v : baru.harga_satuan
+      if (jml != null && hrg != null) baru.nilai_perolehan = jml * hrg
+      return { ...p, baru }
+    })
+  }
 
   // Master satuan (menu Admin > Daftar Satuan) — dipakai saat satuan dikoreksi.
   useEffect(() => {
@@ -173,15 +198,54 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
           )}
 
           {belumTercatat ? (
-            // ── Format III.A.7 — semua data diketik manual ────────────────────
+            // ── Format III.A.7 — BMD Belum Tercatat ───────────────────────────
+            // 19 isian sesuai lampiran (butir 17–19 Lainnya/Keterangan/Foto
+            // dipakai bersama lembar biasa, ada di bawah). Meski Permendagri
+            // memberi SATU format utk semua golongan, isiannya di sini tetap
+            // memakai master data yang sama dgn lembar biasa — kalau di sini
+            // boleh ketik bebas, barang temuan bakal masuk dgn kode/satuan/
+            // alamat yang tak cocok dgn barang yang sudah tercatat.
             <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Kode Barang &amp; Nama Barang</label>
+                <KodefikasiPicker
+                  picked={kodefikasi}
+                  golonganTetap={golongan}
+                  onPick={r => {
+                    setKodefikasi(r)
+                    setJ(p => ({
+                      ...p,
+                      baru: { ...(p.baru || {}), kode_barang: r?.kode || '', nama_barang: r?.uraian || '' },
+                    }))
+                  }}
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Nama Barang otomatis dari uraian kodefikasi. Pilihan dibatasi golongan <b>{golongan}</b>.
+                </p>
+              </div>
               {([
-                ['kode_barang', 'Kode Barang'], ['nama_barang', 'Nama Barang'],
                 ['spesifikasi', 'Nama Spesifikasi Barang'], ['kode_register', 'Kode Register'],
-                ['merek_tipe', 'Merek/Tipe'], ['no_polisi', 'Nomor Polisi'],
-                ['no_rangka', 'Nomor Rangka'], ['no_mesin', 'Nomor Mesin'],
-                ['satuan', 'Satuan Barang'], ['alamat', 'Alamat'],
-                ['dasar_pencatatan', 'Dasar Pencatatan'],
+              ] as [string, string][]).map(([k, label]) => (
+                <div key={k}>
+                  <label className="block text-xs text-gray-500 mb-1">{label}</label>
+                  <input className="select-filter w-full" disabled={readOnly}
+                    value={(j.baru?.[k as keyof typeof j.baru] as string) || ''}
+                    onChange={e => setBaru(k, e.target.value)} />
+                </div>
+              ))}
+              {config.merekTipe && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    {config.nomorKendaraan ? 'Merek / Tipe' : 'Merek / Tipe / Spesifikasi Lainnya'}
+                  </label>
+                  <input className="select-filter w-full" disabled={readOnly}
+                    value={j.baru?.merek_tipe || ''} onChange={e => setBaru('merek_tipe', e.target.value)} />
+                </div>
+              )}
+              {/* Butir 6–8 bertanda **) di lampiran: "hanya diisi untuk
+                  kendaraan dinas" — jadi ikut config, bukan selalu tampil. */}
+              {config.nomorKendaraan && ([
+                ['no_polisi', 'Nomor Polisi'], ['no_rangka', 'Nomor Rangka'], ['no_mesin', 'Nomor Mesin'],
               ] as [string, string][]).map(([k, label]) => (
                 <div key={k}>
                   <label className="block text-xs text-gray-500 mb-1">{label}</label>
@@ -193,22 +257,52 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Jumlah</label>
                 <input type="number" className="select-filter w-full" disabled={readOnly}
-                  value={j.baru?.jumlah ?? ''} onChange={e => setBaru('jumlah', Number(e.target.value))} />
+                  value={j.baru?.jumlah ?? ''} onChange={e => setJumlahHarga('jumlah', e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Satuan Barang</label>
+                <select className="select-filter w-full" disabled={readOnly}
+                  value={j.baru?.satuan || ''} onChange={e => setBaru('satuan', e.target.value)}>
+                  <option value="">— pilih satuan —</option>
+                  {satuanOpsi.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <p className="text-[11px] text-gray-400 mt-1">Daftar dari menu Admin → Daftar Satuan.</p>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Harga Satuan (Rp)</label>
                 <input type="number" className="select-filter w-full" disabled={readOnly}
-                  value={j.baru?.harga_satuan ?? ''} onChange={e => setBaru('harga_satuan', Number(e.target.value))} />
+                  value={j.baru?.harga_satuan ?? ''} onChange={e => setJumlahHarga('harga_satuan', e.target.value)} />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Nilai Perolehan (Rp)</label>
                 <input type="number" className="select-filter w-full" disabled={readOnly}
                   value={j.baru?.nilai_perolehan ?? ''} onChange={e => setBaru('nilai_perolehan', Number(e.target.value))} />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Terisi otomatis dari Jumlah × Harga Satuan; boleh ditimpa manual.
+                </p>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Tanggal Perolehan</label>
                 <input type="date" className="select-filter w-full" disabled={readOnly}
                   value={j.baru?.tgl_perolehan || ''} onChange={e => setBaru('tgl_perolehan', e.target.value)} />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Alamat</label>
+                <div className="space-y-2">
+                  <WilayahPicker
+                    value={j.baru?.wilayah_kode || ''}
+                    onChange={kode => setBaru('wilayah_kode', kode)}
+                  />
+                  <input className="select-filter w-full" disabled={readOnly}
+                    placeholder="Detail alamat (jalan, nomor, RT/RW)..."
+                    value={j.baru?.alamat_detail || ''}
+                    onChange={e => setBaru('alamat_detail', e.target.value)} />
+                </div>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Dasar Pencatatan</label>
+                <input className="select-filter w-full" disabled={readOnly}
+                  value={j.baru?.dasar_pencatatan || ''} onChange={e => setBaru('dasar_pencatatan', e.target.value)} />
               </div>
               <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Kondisi Barang</label>

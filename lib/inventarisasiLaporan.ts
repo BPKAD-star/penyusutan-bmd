@@ -152,7 +152,10 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
       nilai: baru.nilai_perolehan ?? '', no_polisi: baru.no_polisi || '',
       no_rangka: baru.no_rangka || '', no_mesin: baru.no_mesin || '',
       harga_satuan: baru.harga_satuan ?? '', tgl_perolehan: baru.tgl_perolehan || '',
-      alamat: baru.alamat || '', dasar_pencatatan: baru.dasar_pencatatan || '',
+      // Alamat kini berjenjang (admin_wilayah) + detail; `baru.alamat` teks
+      // lepas dipertahankan sbg cadangan utk baris lama.
+      alamat: [baru.alamat_detail, baru.wilayah_kode].filter(Boolean).join(' · ') || baru.alamat || '',
+      dasar_pencatatan: baru.dasar_pencatatan || '',
       kondisi_setelah: baru.kondisi || '', keterangan: j.keterangan || '',
     }
   }

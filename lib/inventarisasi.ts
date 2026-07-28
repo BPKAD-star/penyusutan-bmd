@@ -142,14 +142,20 @@ export type InvJawaban = {
   jenis_bahan_jembatan?: SesuaiField
   no_ruas_jalan?: SesuaiField
   no_jaringan_irigasi?: SesuaiField
-  /** Format III.A.7 — BMD Belum Tercatat (barang belum ada di `aset`, tanpa NIBAR). */
+  /** Format III.A.7 — BMD Belum Tercatat (barang belum ada di `aset`, tanpa NIBAR).
+   *  Isian mengikuti master data yang sama dgn lembar biasa: kode/nama barang
+   *  dari kodefikasi (dikunci golongan lembar), satuan dari admin_satuan_bmd,
+   *  alamat berjenjang dari admin_wilayah. `alamat` (teks lepas) DIPERTAHANKAN
+   *  utk baris lama yang terlanjur diketik bebas. */
   baru?: {
     kode_barang?: string; nama_barang?: string; spesifikasi?: string
     kode_register?: string; merek_tipe?: string
     no_polisi?: string; no_rangka?: string; no_mesin?: string
     jumlah?: number; satuan?: string
     harga_satuan?: number; nilai_perolehan?: number
-    tgl_perolehan?: string; alamat?: string
+    tgl_perolehan?: string
+    alamat?: string
+    wilayah_kode?: string; alamat_detail?: string
     dasar_pencatatan?: string
     kondisi?: KondisiFisik
   }

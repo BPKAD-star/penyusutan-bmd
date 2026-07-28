@@ -58,22 +58,29 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
         <tbody>
           {belumTercatat ? (
             <>
+              {/* Penomoran 1–16 mengikuti lampiran Format III.A.7 apa adanya.
+                  Butir 6–8 (nomor kendaraan) SELALU dicetak walau kosong —
+                  di formulir kertas barisnya memang ada, cuma diberi catatan
+                  "hanya diisi untuk kendaraan dinas". Butir 17–19 (Lainnya,
+                  Keterangan, Foto) dipakai bersama lembar biasa, di bawah. */}
               <Baris kode="1" label="Kode Barang">{baru.kode_barang || '—'}</Baris>
               <Baris kode="2" label="Nama Barang">{baru.nama_barang || '—'}</Baris>
               <Baris kode="3" label="Nama Spesifikasi Barang">{baru.spesifikasi || '—'}</Baris>
               <Baris kode="4" label="Kode Register">{baru.kode_register || '—'}</Baris>
-              <Baris kode="5" label="Merek/Tipe">{baru.merek_tipe || '—'}</Baris>
-              <Baris kode="6" label="Nomor Polisi / Rangka / Mesin">
-                {[baru.no_polisi, baru.no_rangka, baru.no_mesin].filter(Boolean).join(' / ') || '—'}
+              <Baris kode="5" label="Merek / Tipe">{baru.merek_tipe || '—'}</Baris>
+              <Baris kode="6" label="Nomor Polisi">{baru.no_polisi || '—'}</Baris>
+              <Baris kode="7" label="Nomor Rangka">{baru.no_rangka || '—'}</Baris>
+              <Baris kode="8" label="Nomor Mesin">{baru.no_mesin || '—'}</Baris>
+              <Baris kode="9" label="Jumlah">{baru.jumlah ?? '—'}</Baris>
+              <Baris kode="10" label="Satuan Barang">{baru.satuan || '—'}</Baris>
+              <Baris kode="11" label="Harga Satuan Barang">{formatRupiah(baru.harga_satuan || 0)}</Baris>
+              <Baris kode="12" label="Nilai Perolehan Barang">{formatRupiah(baru.nilai_perolehan || 0)}</Baris>
+              <Baris kode="13" label="Tanggal, Bulan, Tahun Perolehan">{baru.tgl_perolehan || '—'}</Baris>
+              <Baris kode="14" label="Alamat">
+                {[baru.alamat_detail, baru.wilayah_kode].filter(Boolean).join(' · ') || baru.alamat || '—'}
               </Baris>
-              <Baris kode="7" label="Jumlah / Satuan">{`${baru.jumlah ?? '—'} ${baru.satuan || ''}`}</Baris>
-              <Baris kode="8" label="Harga Satuan / Nilai Perolehan">
-                {formatRupiah(baru.harga_satuan || 0)} / {formatRupiah(baru.nilai_perolehan || 0)}
-              </Baris>
-              <Baris kode="9" label="Tanggal, Bulan, Tahun Perolehan">{baru.tgl_perolehan || '—'}</Baris>
-              <Baris kode="10" label="Alamat">{baru.alamat || '—'}</Baris>
-              <Baris kode="11" label="Dasar Pencatatan">{baru.dasar_pencatatan || '—'}</Baris>
-              <Baris kode="12" label="Kondisi Barang">{baru.kondisi || '—'}</Baris>
+              <Baris kode="15" label="Dasar Pencatatan">{baru.dasar_pencatatan || '—'}</Baris>
+              <Baris kode="16" label="Kondisi Barang">{baru.kondisi || '—'}</Baris>
             </>
           ) : (
             <>
