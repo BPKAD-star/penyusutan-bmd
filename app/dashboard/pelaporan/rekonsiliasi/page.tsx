@@ -17,6 +17,10 @@
 // bikin totalnya beda. Kalau nanti nambah baris/kategori, cukup daftarkan di
 // keysOfRow(); baris yang tak punya transaksi pembentuk (saldo, selisih) sengaja
 // dibiarkan tak bisa diklik — lihat komentar di fungsi itu.
+// Popup-nya juga membawa Beban/Akumulasi/Nilai Buku per barang (permintaan
+// akuntansi) — diambil dari penyusutan_semester SAAT DIKLIK. Itu posisi AKHIR
+// PERIODE per ASET, beda jenis dari kolom Nilai yang per TRANSAKSI, jadi
+// totalnya dihitung per aset unik. Lihat fetchPenyusutanAset di lib/rekon.ts.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
@@ -26,8 +30,9 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
-  fetchSnapshot, fetchMutasiLines, aggregateMutasi, measuresOf, mutasiCellOf,
+  fetchSnapshot, fetchMutasiLines, aggregateMutasi, measuresOf, mutasiCellOf, fetchPenyusutanAset,
   type Snapshot, type Mutasi, type MutasiCell, type MutasiKey, type MutasiLine, type Komptabel,
+  type PenyusutanAset,
 } from '@/lib/rekon'
 
 const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
@@ -124,7 +129,8 @@ export default function RekonsiliasiPage() {
   // popup tak mungkin beda dari angka yang diklik.
   const [lines, setLines] = useState<MutasiLine[]>([])
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
-  const [detail, setDetail] = useState<{ judul: string; rows: MutasiLine[] } | null>(null)
+  const [detail, setDetail] = useState<{ judul: string; rows: MutasiLine[]; peny: Map<string, PenyusutanAset> } | null>(null)
+  const [detailBusy, setDetailBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
@@ -166,17 +172,29 @@ export default function RekonsiliasiPage() {
     setLoading(false)
   }
 
-  // Klik angka → kumpulkan baris pembentuk sel (golongan × komptabel × kategori).
-  function bukaDetail(golKode: string, golUraian: string, komp: Komptabel, row: RowDef) {
+  // Klik angka → kumpulkan baris pembentuk sel (golongan × komptabel × kategori),
+  // lalu ambil posisi penyusutan barang-barangnya (akuntansi butuh beban,
+  // akumulasi & nilai buku, bukan cuma nilai transaksi). Diambil SAAT DIKLIK,
+  // bukan diprefetch saat Proses: yang dibutuhkan cuma barang di satu sel, jadi
+  // querynya kecil & halaman utama tak ikut melambat.
+  async function bukaDetail(golKode: string, golUraian: string, komp: Komptabel, row: RowDef) {
     const keys = keysOfRow(row)
     if (!keys) return
     const set = new Set(keys)
     const rows = lines.filter(l => l.golongan === golKode && l.komp === komp && set.has(l.kategori))
     if (rows.length === 0) return
-    setDetail({
-      judul: `${golKode} ${golUraian} · ${komp === 'intra' ? 'Intrakomptabel' : 'Ekstrakomptabel'} · ${row.label}`,
-      rows,
-    })
+    const judul = `${golKode} ${golUraian} · ${komp === 'intra' ? 'Intrakomptabel' : 'Ekstrakomptabel'} · ${row.label}`
+    setDetailBusy(true)
+    try {
+      const peny = await fetchPenyusutanAset(supabase, rows, `${applied!.tahun}-S${applied!.smt}`)
+      setDetail({ judul, rows, peny })
+    } catch (e) {
+      // Gagal ambil penyusutan TIDAK boleh membatalkan drill-down — rincian
+      // transaksinya tetap berguna. Kolom penyusutannya saja yang jadi "—".
+      setDetail({ judul, rows, peny: new Map() })
+      setErr(`Rincian ditampilkan, tapi kolom penyusutannya gagal dimuat: ${(e as Error).message}`)
+    }
+    setDetailBusy(false)
   }
 
   const periodeLabel = applied ? `${applied.tahun}-S${applied.smt}` : ''
@@ -335,8 +353,14 @@ export default function RekonsiliasiPage() {
         </div>
       )}
 
+      {detailBusy && !detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
+          <div className="card px-6 py-4 bg-white text-sm text-gray-600">Memuat rincian...</div>
+        </div>
+      )}
       {detail && (
-        <RekonDetailModal judul={detail.judul} rows={detail.rows} skpdNama={skpdNama} onClose={() => setDetail(null)} />
+        <RekonDetailModal judul={detail.judul} rows={detail.rows} skpdNama={skpdNama}
+          penyusutan={detail.peny} onClose={() => setDetail(null)} />
       )}
     </div>
   )

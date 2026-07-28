@@ -400,3 +400,37 @@ export async function fetchMutasiLines(
 export function mutasiCellOf(mut: Mutasi | undefined, golongan: string, komp: Komptabel): MutasiCell {
   return mut?.[golongan]?.[komp] ?? {}
 }
+
+// ── Posisi penyusutan per aset (utk drill-down Rekonsiliasi) ────────────────
+// Akuntansi butuh beban/akumulasi/nilai buku barang pembentuk sebuah angka
+// mutasi, bukan cuma nilai transaksinya. Aturan perlakuannya SAMA PERSIS dgn
+// fetchSnapshot (golongan tak disusutkan → beban & akumulasi 0, nilai buku =
+// nilai perolehan) supaya angkanya konsisten dgn baris Saldo Awal/Akhir di
+// tabel yang sama.
+//
+// ⚠️ Ini posisi AKHIR PERIODE per ASET, bukan angka per transaksi. Satu aset
+// bisa punya beberapa baris mutasi (reklas keluar+masuk, kapitalisasi berkali-
+// kali) — makanya map-nya berkunci aset_id & pemakainya WAJIB menjumlah per
+// aset UNIK, jangan per baris (nanti dobel). Aset yang belum punya baris
+// penyusutan_semester utk periode itu sengaja TIDAK diisi (bukan nol): biar
+// tampil "—" dan ketahuan engine-nya belum dijalankan, bukan terbaca sbg nol.
+export type PenyusutanAset = { beban: number; akumulasi: number; nilaiBuku: number }
+
+export async function fetchPenyusutanAset(
+  supabase: SupabaseClient, items: { aset_id: string; kode: string }[], periode: string,
+): Promise<Map<string, PenyusutanAset>> {
+  const uniq = [...new Map(items.map(i => [i.aset_id, i])).values()]
+  const pmap = await fetchPeny(supabase, uniq.map(i => i.aset_id), periode)
+  const out = new Map<string, PenyusutanAset>()
+  for (const it of uniq) {
+    const p = pmap.get(it.aset_id)
+    if (!p) continue
+    const susut = perlakuanKode(it.kode) !== 'tidak'
+    out.set(it.aset_id, {
+      beban: susut ? p.beban : 0,
+      akumulasi: susut ? p.akumulasi : 0,
+      nilaiBuku: susut ? p.nilai_buku_akhir : p.nilai_perolehan,
+    })
+  }
+  return out
+}

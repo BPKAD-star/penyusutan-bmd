@@ -6,19 +6,37 @@
 // dengan angka yang diklik — dua-duanya dijumlah dari array yang sama.
 import { useMemo, useState } from 'react'
 import { exportToExcel } from '@/lib/export'
-import { KATEGORI_LABEL, type MutasiLine } from '@/lib/rekon'
+import { KATEGORI_LABEL, type MutasiLine, type PenyusutanAset } from '@/lib/rekon'
 
 // Format polos bergaya id-ID tanpa "Rp" — mengikuti tabel Rekonsiliasi di
 // belakangnya, biar enak dibandingkan angkanya saat tie-out.
 const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
 
-export default function RekonDetailModal({ judul, rows, skpdNama, onClose }: {
+export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, onClose }: {
   judul: string
   rows: MutasiLine[]
   skpdNama: Record<number, string>
+  penyusutan: Map<string, PenyusutanAset>
   onClose: () => void
 }) {
   const [q, setQ] = useState('')
+
+  // Beban/akumulasi/nilai buku itu posisi AKHIR PERIODE per ASET, bukan angka
+  // per transaksi — jadi totalnya dijumlah per aset UNIK. Kalau dijumlah per
+  // baris, aset yang punya dua baris mutasi (reklas keluar+masuk, kapitalisasi
+  // berkali-kali dalam satu semester) bakal terhitung dobel.
+  const totalPenyusutan = (rs: MutasiLine[]) => {
+    const out = { beban: 0, akumulasi: 0, nilaiBuku: 0 }
+    const sudah = new Set<string>()
+    for (const r of rs) {
+      if (sudah.has(r.aset_id)) continue
+      sudah.add(r.aset_id)
+      const p = penyusutan.get(r.aset_id)
+      if (!p) continue
+      out.beban += p.beban; out.akumulasi += p.akumulasi; out.nilaiBuku += p.nilaiBuku
+    }
+    return out
+  }
 
   const term = q.trim().toLowerCase()
   const tampil = useMemo(() => rows.filter(r => !term ||
@@ -49,28 +67,38 @@ export default function RekonDetailModal({ judul, rows, skpdNama, onClose }: {
   const total = tampil.reduce((s, r) => s + r.nilai, 0)
 
   function handleExport() {
-    exportToExcel(tampil.map(r => ({
-      SKPD: (r.skpd_id != null && skpdNama[r.skpd_id]) || '',
-      Tanggal: r.tanggal,
-      Kategori: KATEGORI_LABEL[r.kategori],
-      'Jenis Ledger': r.jenis,
-      'No Dokumen/SK': r.no_dokumen || '',
-      'Kode Barang': r.kode,
-      NIBAR: r.nibar || '',
-      'Nama Barang': r.nama || '',
-      Komptabel: r.komp === 'intra' ? 'Intra' : 'Ekstra',
-      Nilai: r.nilai,
-    })), `Rincian_Rekonsiliasi_${judul.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60)}`, 'Rincian')
+    exportToExcel(tampil.map(r => {
+      const p = penyusutan.get(r.aset_id)
+      return {
+        SKPD: (r.skpd_id != null && skpdNama[r.skpd_id]) || '',
+        Tanggal: r.tanggal,
+        Kategori: KATEGORI_LABEL[r.kategori],
+        'Jenis Ledger': r.jenis,
+        'No Dokumen/SK': r.no_dokumen || '',
+        'Kode Barang': r.kode,
+        NIBAR: r.nibar || '',
+        'Nama Barang': r.nama || '',
+        Komptabel: r.komp === 'intra' ? 'Intra' : 'Ekstra',
+        Nilai: r.nilai,
+        'Beban / Smt': p ? p.beban : '',
+        'Akumulasi': p ? p.akumulasi : '',
+        'Nilai Buku': p ? p.nilaiBuku : '',
+      }
+    }), `Rincian_Rekonsiliasi_${judul.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60)}`, 'Rincian')
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
-      <div className="card w-full max-w-6xl my-8 bg-white">
+      <div className="card w-full max-w-7xl my-8 bg-white">
         <div className="flex items-start justify-between px-5 py-3 border-b border-gray-100 gap-4">
           <div>
             <h2 className="text-base font-semibold text-gray-800">Rincian — {judul}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               {tampil.length} transaksi · {grup.length} SKPD · total <b>{angka(total)}</b>
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Beban, Akumulasi &amp; Nilai Buku = posisi barangnya pada akhir periode (dari hasil engine penyusutan),
+              bukan angka transaksi — totalnya dihitung per barang, bukan per baris.
             </p>
           </div>
           <button className="text-gray-400 hover:text-gray-600 text-xl leading-none flex-shrink-0" onClick={onClose}>×</button>
@@ -82,7 +110,7 @@ export default function RekonDetailModal({ judul, rows, skpdNama, onClose }: {
           <button className="btn-secondary" onClick={handleExport} disabled={tampil.length === 0}>Export Excel</button>
         </div>
 
-        <div className="max-h-[65vh] overflow-y-auto">
+        <div className="max-h-[65vh] overflow-auto">
           {grup.length === 0 ? (
             <div className="p-10 text-center text-gray-400 text-sm">Tidak ada transaksi.</div>
           ) : (
@@ -95,33 +123,56 @@ export default function RekonDetailModal({ judul, rows, skpdNama, onClose }: {
                   <th className="table-th text-left">Kode</th>
                   <th className="table-th text-left">Nama Barang</th>
                   <th className="table-th text-right">Nilai</th>
+                  <th className="table-th text-right border-l border-gray-100">Beban / Smt</th>
+                  <th className="table-th text-right">Akumulasi</th>
+                  <th className="table-th text-right">Nilai Buku</th>
                 </tr>
               </thead>
-              {grup.map(g => (
-                <tbody key={g.id} className="divide-y divide-gray-50">
-                  <tr className="bg-teal/5">
-                    <td className="table-td font-semibold text-gray-800" colSpan={5}>{g.nama}</td>
-                    <td className="table-td text-right font-semibold tabular-nums text-gray-800">{angka(g.total)}</td>
-                  </tr>
-                  {g.rows.map((r, i) => (
-                    <tr key={`${r.aset_id}-${r.jenis}-${r.kategori}-${i}`}>
-                      <td className="table-td whitespace-nowrap">{r.tanggal}</td>
-                      <td className="table-td max-w-[220px] truncate" title={`${KATEGORI_LABEL[r.kategori]} · ${r.jenis}`}>{KATEGORI_LABEL[r.kategori]}</td>
-                      <td className="table-td max-w-[180px] truncate" title={r.no_dokumen || ''}>{r.no_dokumen || '-'}</td>
-                      <td className="table-td whitespace-nowrap">{r.kode}</td>
-                      <td className="table-td max-w-[280px]">
-                        <p className="text-gray-800">{r.nama || '-'}</p>
-                        <p className="text-gray-400 truncate" title={r.nibar || ''}>{r.nibar || '-'}</p>
-                      </td>
-                      <td className="table-td text-right tabular-nums whitespace-nowrap">{angka(r.nilai)}</td>
+              {grup.map(g => {
+                const tp = totalPenyusutan(g.rows)
+                return (
+                  <tbody key={g.id} className="divide-y divide-gray-50">
+                    <tr className="bg-teal/5">
+                      <td className="table-td font-semibold text-gray-800" colSpan={5}>{g.nama}</td>
+                      <td className="table-td text-right font-semibold tabular-nums text-gray-800">{angka(g.total)}</td>
+                      <td className="table-td text-right font-semibold tabular-nums text-gray-800 border-l border-gray-100">{angka(tp.beban)}</td>
+                      <td className="table-td text-right font-semibold tabular-nums text-gray-800">{angka(tp.akumulasi)}</td>
+                      <td className="table-td text-right font-semibold tabular-nums text-gray-800">{angka(tp.nilaiBuku)}</td>
                     </tr>
-                  ))}
-                </tbody>
-              ))}
+                    {g.rows.map((r, i) => {
+                      const p = penyusutan.get(r.aset_id)
+                      // "—" (bukan 0) kalau engine belum punya baris utk aset ini
+                      // di periode tsb — biar ketahuan belum dihitung, bukan nol.
+                      const sel = (v: number | undefined) => v == null
+                        ? <span className="text-gray-300" title="Engine penyusutan belum punya hasil untuk barang ini di periode tersebut">—</span>
+                        : angka(v)
+                      return (
+                        <tr key={`${r.aset_id}-${r.jenis}-${r.kategori}-${i}`}>
+                          <td className="table-td whitespace-nowrap">{r.tanggal}</td>
+                          <td className="table-td max-w-[220px] truncate" title={`${KATEGORI_LABEL[r.kategori]} · ${r.jenis}`}>{KATEGORI_LABEL[r.kategori]}</td>
+                          <td className="table-td max-w-[180px] truncate" title={r.no_dokumen || ''}>{r.no_dokumen || '-'}</td>
+                          <td className="table-td whitespace-nowrap">{r.kode}</td>
+                          <td className="table-td max-w-[280px]">
+                            <p className="text-gray-800">{r.nama || '-'}</p>
+                            <p className="text-gray-400 truncate" title={r.nibar || ''}>{r.nibar || '-'}</p>
+                          </td>
+                          <td className="table-td text-right tabular-nums whitespace-nowrap">{angka(r.nilai)}</td>
+                          <td className="table-td text-right tabular-nums whitespace-nowrap border-l border-gray-100">{sel(p?.beban)}</td>
+                          <td className="table-td text-right tabular-nums whitespace-nowrap">{sel(p?.akumulasi)}</td>
+                          <td className="table-td text-right tabular-nums whitespace-nowrap">{sel(p?.nilaiBuku)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                )
+              })}
               <tfoot className="border-t-2 border-gray-200 bg-gray-50 sticky bottom-0">
                 <tr>
                   <td className="table-td font-semibold text-gray-900" colSpan={5}>TOTAL</td>
                   <td className="table-td text-right font-semibold tabular-nums text-gray-900">{angka(total)}</td>
+                  <td className="table-td text-right font-semibold tabular-nums text-gray-900 border-l border-gray-100">{angka(totalPenyusutan(tampil).beban)}</td>
+                  <td className="table-td text-right font-semibold tabular-nums text-gray-900">{angka(totalPenyusutan(tampil).akumulasi)}</td>
+                  <td className="table-td text-right font-semibold tabular-nums text-gray-900">{angka(totalPenyusutan(tampil).nilaiBuku)}</td>
                 </tr>
               </tfoot>
             </table>
