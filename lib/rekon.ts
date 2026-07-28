@@ -343,16 +343,23 @@ async function computeMutasiLines(
   return lines
 }
 
-export async function fetchMutasi(
-  supabase: SupabaseClient, periode: string, descendantIds: number[] | null
-): Promise<Mutasi> {
-  const lines = await computeMutasiLines(supabase, periode, descendantIds)
+// Agregasi baris rinci → sel (golongan, komptabel, kategori). DIEKSPOR supaya
+// halaman Rekonsiliasi bisa menahan `lines`-nya sendiri untuk drill-down dan
+// menjumlah SENDIRI dari baris yang sama persis — angka di popup dijamin sama
+// dengan angka di tabel karena keduanya dari satu array, bukan dua query.
+export function aggregateMutasi(lines: MutasiLine[]): Mutasi {
   const mut: Mutasi = {}
   for (const l of lines) {
     const cell = (mut[l.golongan] ??= { intra: {}, ekstra: {} })[l.komp]
     cell[l.kategori] = (cell[l.kategori] || 0) + l.nilai
   }
   return mut
+}
+
+export async function fetchMutasi(
+  supabase: SupabaseClient, periode: string, descendantIds: number[] | null
+): Promise<Mutasi> {
+  return aggregateMutasi(await computeMutasiLines(supabase, periode, descendantIds))
 }
 
 // Daftar rinci utk halaman Bukti Dukung — semua transaksi AKTIF yg memengaruhi

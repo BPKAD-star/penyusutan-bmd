@@ -9,16 +9,25 @@
 // "Selisih (belum terpetakan)" penyeimbang (menjamin rantai reconcile & memunculkan
 // yg belum dipetakan, mis. reklas komptabel Intra/Ekstra). Beban & Akumulasi baris
 // mutasi = Fase 3 (kolomnya "—" utk baris mutasi; Saldo Awal/Akhir tetap 4 ukuran).
-import { useState } from 'react'
+//
+// DRILL-DOWN (pola LRA): angka Nilai Perolehan baris mutasi bisa diklik → popup
+// RekonDetailModal berisi transaksi pembentuknya, dikelompokkan per SKPD. Halaman
+// menahan `lines` (fetchMutasiLines) lalu menjumlah SENDIRI lewat aggregateMutasi
+// — jadi tabel & popup makan dari array yang sama, TAK ADA query kedua yang bisa
+// bikin totalnya beda. Kalau nanti nambah baris/kategori, cukup daftarkan di
+// keysOfRow(); baris yang tak punya transaksi pembentuk (saldo, selisih) sengaja
+// dibiarkan tak bisa diklik — lihat komentar di fungsi itu.
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
+import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
-  fetchSnapshot, fetchMutasi, measuresOf, mutasiCellOf,
-  type Snapshot, type Mutasi, type MutasiCell, type MutasiKey, type Komptabel,
+  fetchSnapshot, fetchMutasiLines, aggregateMutasi, measuresOf, mutasiCellOf,
+  type Snapshot, type Mutasi, type MutasiCell, type MutasiKey, type MutasiLine, type Komptabel,
 } from '@/lib/rekon'
 
 const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
@@ -74,6 +83,20 @@ const ROWS: RowDef[] = [
 
 const sumKeys = (cell: MutasiCell, keys: MutasiKey[]) => keys.reduce((s, k) => s + (cell[k] || 0), 0)
 
+// Kategori mutasi pembentuk sebuah baris — dipakai drill-down (klik angka →
+// popup rincian). null = baris yang TIDAK punya transaksi pembentuk:
+//   · saldo awal/akhir → posisi hasil replay engine per aset, bukan transaksi
+//     periode ini (rinciannya ada di menu Penyusutan);
+//   · selisih → penyeimbang, justru bagian yang BELUM terpetakan ke kategori —
+//     kalau bisa dirinci, dia bukan selisih lagi;
+//   · header/sub & baris Reklas Intra/Ekstra (Fase 2b) → memang tanpa angka.
+function keysOfRow(row: RowDef): MutasiKey[] | null {
+  if (row.kind === 'item') return row.key ? [row.key] : null
+  if (row.kind === 'jumlah-t') return TAMBAH_KEYS
+  if (row.kind === 'jumlah-k') return KURANG_KEYS
+  return null
+}
+
 // Nilai Perolehan sebuah baris utk (golongan, komptabel).
 function perolehanRow(row: RowDef, cell: MutasiCell, awalP: number, akhirP: number): number | null {
   switch (row.kind) {
@@ -96,21 +119,55 @@ export default function RekonsiliasiPage() {
   const [snapAwal, setSnapAwal] = useState<Snapshot>({})
   const [snapAkhir, setSnapAkhir] = useState<Snapshot>({})
   const [mutasi, setMutasi] = useState<Mutasi>({})
+  // Baris rinci pembentuk angka mutasi — ditahan di memori untuk drill-down.
+  // Agregatnya dijumlah dari array yang SAMA (aggregateMutasi), jadi total di
+  // popup tak mungkin beda dari angka yang diklik.
+  const [lines, setLines] = useState<MutasiLine[]>([])
+  const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
+  const [detail, setDetail] = useState<{ judul: string; rows: MutasiLine[] } | null>(null)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    (async () => {
+      const map: Record<number, string> = {}
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
+        if (!data || data.length === 0) break
+        for (const s of data as { id: number; nama: string }[]) map[s.id] = s.nama
+        if (data.length < 1000) break
+      }
+      setSkpdNama(map)
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function proses() {
     setLoading(true)
+    setDetail(null)
     const desc = org.descendantIds ?? null
     const periode = `${tahun}-S${smt}`
     const awalPeriode = smt === '1' ? `${Number(tahun) - 1}-S2` : `${tahun}-S1`
-    const [awal, akhir, mut] = await Promise.all([
+    const [awal, akhir, mutLines] = await Promise.all([
       fetchSnapshot(supabase, awalPeriode, desc),
       fetchSnapshot(supabase, periode, desc),
-      fetchMutasi(supabase, periode, desc),
+      fetchMutasiLines(supabase, periode, desc),
     ])
-    setSnapAwal(awal); setSnapAkhir(akhir); setMutasi(mut)
+    setSnapAwal(awal); setSnapAkhir(akhir)
+    setLines(mutLines); setMutasi(aggregateMutasi(mutLines))
     setApplied({ tahun, smt })
     setLoading(false)
+  }
+
+  // Klik angka → kumpulkan baris pembentuk sel (golongan × komptabel × kategori).
+  function bukaDetail(golKode: string, golUraian: string, komp: Komptabel, row: RowDef) {
+    const keys = keysOfRow(row)
+    if (!keys) return
+    const set = new Set(keys)
+    const rows = lines.filter(l => l.golongan === golKode && l.komp === komp && set.has(l.kategori))
+    if (rows.length === 0) return
+    setDetail({
+      judul: `${golKode} ${golUraian} · ${komp === 'intra' ? 'Intrakomptabel' : 'Ekstrakomptabel'} · ${row.label}`,
+      rows,
+    })
   }
 
   const periodeLabel = applied ? `${applied.tahun}-S${applied.smt}` : ''
@@ -190,6 +247,12 @@ export default function RekonsiliasiPage() {
             baris <b>Selisih</b> memuat yang belum terpetakan (a.l. reklas komptabel Intra/Ekstra). Kolom Beban &amp; Akumulasi baris
             mutasi (bertanda &ldquo;—&rdquo;) menyusul Fase 3; Saldo Awal/Akhir sudah lengkap.
           </div>
+          <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-2 text-xs text-gray-600">
+            Angka <b>Nilai Perolehan</b> yang berwarna bisa <b>diklik</b> untuk melihat rincian transaksi pembentuknya
+            (per SKPD, lengkap dengan NIBAR &amp; no. dokumen). Saldo Awal/Akhir tidak — itu posisi hasil replay engine
+            per aset, bukan transaksi periode ini; rinciannya di menu Penyusutan. Baris <b>Selisih</b> juga tidak,
+            karena isinya justru yang belum terpetakan ke kategori mana pun.
+          </div>
           {GOLONGAN_REKAP.map(g => (
             <div key={g.kode} className="card overflow-hidden">
               <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
@@ -227,12 +290,26 @@ export default function RekonsiliasiPage() {
                             const beban = row.kind === 'saldo-awal' ? aw.beban : row.kind === 'saldo-akhir' ? ak.beban : null
                             const akum = row.kind === 'saldo-awal' ? aw.akumulasi : row.kind === 'saldo-akhir' ? ak.akumulasi : null
                             const nb = row.kind === 'saldo-awal' ? aw.nilaiBuku : row.kind === 'saldo-akhir' ? ak.nilaiBuku : null
-                            const td = (id: string, v: number | null, border = false) => (
+                            // Nilai Perolehan baris mutasi bisa diklik → popup rincian
+                            // transaksinya. Kolom lain (Beban/Akumulasi/Nilai Buku) &
+                            // baris saldo/selisih tidak — lihat keysOfRow().
+                            const adaRincian = keysOfRow(row) !== null && p != null && p !== 0
+                            const td = (id: string, v: number | null, border = false, onClick?: () => void) => (
                               <td key={id} className={`table-td text-right text-xs tabular-nums ${border ? 'border-l border-gray-100' : ''}`}>
-                                {v == null ? <span className="text-gray-300">{isHead || row.kind === 'sub' ? '' : '—'}</span> : angka(v)}
+                                {v == null ? <span className="text-gray-300">{isHead || row.kind === 'sub' ? '' : '—'}</span>
+                                  : onClick ? (
+                                    <button type="button" onClick={onClick}
+                                      className="text-teal hover:underline tabular-nums"
+                                      title="Klik untuk melihat rincian transaksi pembentuk angka ini">
+                                      {angka(v)}
+                                    </button>
+                                  ) : angka(v)}
                               </td>
                             )
-                            return [td(`${k}-p`, p, true), td(`${k}-b`, beban), td(`${k}-a`, akum), td(`${k}-n`, nb)]
+                            return [
+                              td(`${k}-p`, p, true, adaRincian ? () => bukaDetail(g.kode, g.uraian, k, row) : undefined),
+                              td(`${k}-b`, beban), td(`${k}-a`, akum), td(`${k}-n`, nb),
+                            ]
                           })}
                         </tr>
                       )
@@ -243,6 +320,10 @@ export default function RekonsiliasiPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {detail && (
+        <RekonDetailModal judul={detail.judul} rows={detail.rows} skpdNama={skpdNama} onClose={() => setDetail(null)} />
       )}
     </div>
   )
