@@ -41,6 +41,7 @@ export default function CetakLhiPage() {
   const [kode, setKode] = useState<LhiKode>('III.B.7')
   const [skpdId, setSkpdId] = useState<number | null>(null)
   const [skpdIds, setSkpdIds] = useState<number[] | null>(null)
+  const [skpdRows, setSkpdRows] = useState<SkpdRow[]>([])
 
   useEffect(() => {
     (async () => {
@@ -59,6 +60,7 @@ export default function CetakLhiPage() {
           all.push(...(data as SkpdRow[]))
           if (data.length < 1000) break
         }
+        setSkpdRows(all)
         setSkpdIds(descendantsOf(all, sk))
       }
       setSiap(true)
@@ -73,6 +75,15 @@ export default function CetakLhiPage() {
   const namaSkpd = skpdId ? headers.find(h => h.skpd_id === skpdId)?.skpd?.nama : undefined
   const petugas = headers[0]?.petugas || []
 
+  // Butir (3)–(5) kop lampiran. SKPD induk = Pengguna Barang, sub-unit =
+  // Kuasa Pengguna Barang. Pengelola Barang (BPKAD) tidak ada di data modul
+  // ini, jadi dibiarkan kosong untuk diisi tangan — bukan ditebak.
+  const identitas = useMemo(() => {
+    if (!skpdId || !namaSkpd) return undefined
+    const punyaInduk = skpdRows.find(r => r.id === skpdId)?.parent_id != null
+    return punyaInduk ? { kuasa: namaSkpd } : { pengguna: namaSkpd }
+  }, [skpdId, namaSkpd, skpdRows])
+
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>
@@ -86,7 +97,7 @@ export default function CetakLhiPage() {
           <p className="py-8 text-center text-gray-400 text-sm">Memuat…</p>
         ) : (
           <>
-            <LhiTabel kode={kode} rows={rows}
+            <LhiTabel kode={kode} rows={rows} identitas={identitas} cetak
               periodeLabel={`${konfigLki(golongan).label} — Tahun ${tahun}`}
               judulSkpd={namaSkpd || (skpdId ? `#${skpdId}` : 'Seluruh Kabupaten')} />
 
