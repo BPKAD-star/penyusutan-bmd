@@ -43,12 +43,24 @@
 -- aset_awal_2026 isinya ~418rb baris. UPDATE besar bikin dead tuple (tabel
 -- membengkak sampai di-VACUUM). JANGAN sekali jalan untuk semua golongan —
 -- BAGIAN 2 dipecah 3 giliran lewat daftar golongan di baris terakhirnya:
---   giliran 1  '1.3.1'                                    2.732 baris
---   giliran 2  '1.3.3','1.3.4','1.3.6','1.5.3','1.5.4'   23.657 baris
---   giliran 3  '1.3.5' saja                             173.262 baris
---   giliran 4  '1.3.2' saja                             218.251 baris
--- Rincian: 1.5.3 ATB 120 · 1.3.6 KDP 233 · 1.3.3 Gedung 6.518 · 1.3.4 Jalan
--- 8.127 · 1.5.4 Lain-Lain 8.659.
+--   giliran 1  '1.3.1'                                    2.732 baris  ✔ SUDAH
+--   giliran 2  '1.3.3','1.3.4','1.3.6','1.5.3','1.5.4'   23.657 baris  ✔ SUDAH
+-- Rincian giliran 2: 1.5.3 ATB 120 · 1.3.6 KDP 233 · 1.3.3 Gedung 6.518 ·
+-- 1.3.4 Jalan 8.127 · 1.5.4 Lain-Lain 8.659.
+--
+-- ❌ 1.3.5 (173.262) & 1.3.2 (218.251) — **TIDAK PERLU DIJALANKAN**, terukur
+-- 2026-07-28. Pratinjau BAGIAN 1 untuk dua golongan ini: cocok_nibar 100%
+-- (218.251 & 173.262, tak ada NIBAR yatim), dilewati_beda_golongan 0, TAPI
+-- akan_isi_merek / penggunaan / spek / keterangan SEMUANYA 0 — register `aset`
+-- sama kosongnya dengan snapshot, jadi tak ada yang bisa disalin. Menjalankannya
+-- = UPDATE 391rb baris untuk nol perubahan, plus dead tuple di project yang
+-- sedang lewat batas free tier. Sebabnya beda asal-usul: Tanah/Gedung diisi
+-- belakangan lewat aplikasi (GIS, Koreksi) sehingga register maju duluan,
+-- sementara P&M & ATL lahir dari impor massal e-BMD (20260716_03, 20260718_02,
+-- 20260719_02) yang file sumbernya memang tak punya kolom Merek/Tipe &
+-- Penggunaan. Mengisinya harus dari sumber LUAR (impor Excel), bukan dari
+-- register. Kalau suatu saat register dua golongan ini terisi, jalankan ulang
+-- pratinjaunya dulu — skrip ini idempotent, aman di-run kapan pun.
 --
 -- ⚠️ JEBAKAN (kena 2026-07-28): prefiks golongan muncul di DUA tempat — di
 -- UPDATE (BAGIAN 2) dan di SELECT verifikasi sesudahnya. Mengganti yang di
