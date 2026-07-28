@@ -36,22 +36,28 @@ type Peny = { nilai_perolehan: number; beban: number; akumulasi: number; nilai_b
 // hindari). Visibilitas period-aware diserahkan ke fetchHiddenIds (pola halaman
 // Penyusutan). Hanya 'draft' (belum resmi, mis. KDP/pemecahan blm disetujui)
 // yang dibuang — tak pernah boleh masuk laporan.
-// ⚠️ Semua kolektor di berkas ini WAJIB: (1) `.order('id')` — paginasi OFFSET
-// tanpa ORDER BY tak dijamin stabil antar-halaman, begitu hasilnya >1.000 baris
-// bisa ada yang terlewat DIAM-DIAM; (2) cek `error` lalu MELEMPAR — laporan yang
-// query-nya gagal harus menolak tampil, bukan menyajikan angka yang kurang
-// sebagian. Ini modul pelaporan: angka salah yang tak bersuara jauh lebih mahal
-// daripada halaman yang error.
+// ⚠️ Semua kolektor di berkas ini WAJIB: (1) urut `id`; (2) paginasi KEYSET
+// (`.gt('id', terakhir)`), BUKAN `.range()`/OFFSET — OFFSET makin dalam makin
+// lambat & satu halaman bisa tembus statement timeout; (3) cek `error` lalu
+// MELEMPAR. Ketiganya sudah pernah menggigit di repo ini (2026-07-28: filter
+// void bocor → Rekonsiliasi kelebihan 6.750.000 tanpa satu pun pesan error).
+// Ini modul pelaporan: angka salah yang tak bersuara jauh lebih mahal daripada
+// halaman yang error. Lihat CLAUDE.md bagian kolektor halaman-demi-halaman.
+const UUID_NOL = '00000000-0000-0000-0000-000000000000'
+
 async function fetchAllBase(supabase: SupabaseClient, descendantIds: number[] | null): Promise<Base[]> {
   const out: Base[] = []
-  for (let from = 0; ; from += 1000) {
+  let terakhir = UUID_NOL
+  for (;;) {
     let q = supabase.from('aset').select(BASE_COLS).neq('status', 'draft')
     if (descendantIds) q = q.in('skpd_id', descendantIds)
-    const { data, error } = await q.order('id', { ascending: true }).range(from, from + 999)
+    const { data, error } = await q.gt('id', terakhir).order('id', { ascending: true }).limit(1000)
     if (error) throw new Error(`gagal membaca daftar aset: ${error.message}`)
     if (!data || data.length === 0) break
-    out.push(...(data as unknown as Base[]))
-    if (data.length < 1000) break
+    const rows = data as unknown as Base[]
+    out.push(...rows)
+    terakhir = rows[rows.length - 1].id
+    if (rows.length < 1000) break
   }
   return out
 }
@@ -188,15 +194,18 @@ type LedRow = {
 
 async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: string): Promise<LedRow[]> {
   const out: LedRow[] = []
-  for (let from = 0; ; from += 1000) {
+  let terakhir = 0
+  for (;;) {
     const { data, error } = await supabase.from('transaksi_bmd')
       .select('id,jenis,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,skpd_id,intra_ekstra,nibar,nama_barang),header:header_id(no_sk)')
       .eq('periode', periode).in('jenis', jenisList as never)
-      .order('id', { ascending: true }).range(from, from + 999)
+      .gt('id', terakhir).order('id', { ascending: true }).limit(1000)
     if (error) throw new Error(`gagal membaca ledger (${jenisList.join(', ')}) periode ${periode}: ${error.message}`)
     if (!data || data.length === 0) break
-    out.push(...(data as unknown as LedRow[]))
-    if (data.length < 1000) break
+    const rows = data as unknown as LedRow[]
+    out.push(...rows)
+    terakhir = rows[rows.length - 1].id
+    if (rows.length < 1000) break
   }
   return out
 }
@@ -216,18 +225,21 @@ const fetchVoided = (supabase: SupabaseClient) =>
 // aset_id yg NET-terhapus (penghapusan_* belum dibatalkan) — replay "event terakhir menang".
 async function fetchNetRemoved(supabase: SupabaseClient): Promise<Set<string>> {
   const latest = new Map<string, { periode: string; id: number; removed: boolean }>()
-  for (let from = 0; ; from += 1000) {
+  let terakhir = 0
+  for (;;) {
     const { data, error } = await supabase.from('transaksi_bmd')
       .select('id,aset_id,periode,jenis').in('jenis', [...JENIS_HAPUS, 'batal_penghapusan'] as never)
-      .order('id', { ascending: true }).range(from, from + 999)
+      .gt('id', terakhir).order('id', { ascending: true }).limit(1000)
     if (error) throw new Error(`gagal membaca riwayat penghapusan: ${error.message}`)
     if (!data || data.length === 0) break
-    for (const r of data as { id: number; aset_id: string; periode: string; jenis: string }[]) {
+    const rows = data as { id: number; aset_id: string; periode: string; jenis: string }[]
+    for (const r of rows) {
       const cur = latest.get(r.aset_id)
       if (!cur || r.periode > cur.periode || (r.periode === cur.periode && r.id > cur.id))
         latest.set(r.aset_id, { periode: r.periode, id: r.id, removed: r.jenis !== 'batal_penghapusan' })
+      terakhir = r.id
     }
-    if (data.length < 1000) break
+    if (rows.length < 1000) break
   }
   const out = new Set<string>()
   for (const [id, s] of latest) if (s.removed) out.add(id)

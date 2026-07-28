@@ -74,11 +74,15 @@ apa pun yang menyentuh ledger atau engine.
   dicari pakai `LIKE 'prefix%'` butuh index `text_pattern_ops` sendiri, UNIQUE saja
   tidak cukup; dan generator nomor urut harus gagal KERAS, jangan jatuh ke 0.
 
-- **Kolektor halaman-demi-halaman WAJIB `.order('id')` + cek `error`.** Dua cacat
-  yang selalu berpasangan di repo ini, dan dua-duanya bikin ANGKA LAPORAN SALAH
-  TANPA SUARA: (1) paginasi `.range()` tanpa `ORDER BY` — Postgres tak menjamin
-  urutan antar-halaman, begitu hasilnya >1.000 baris ada yang terlewat diam-diam;
-  (2) `const { data } = await` — query gagal → `data` null → loop berhenti → fungsi
+- **Kolektor halaman-demi-halaman WAJIB keyset (`.gt('id', terakhir)`) + urut
+  `id` + cek `error`.** Tiga cacat yang selalu berpasangan di repo ini, dan
+  ketiganya bikin ANGKA LAPORAN SALAH TANPA SUARA: (1) paginasi tanpa `ORDER BY` —
+  Postgres tak menjamin urutan antar-halaman, begitu hasilnya >1.000 baris ada
+  yang terlewat diam-diam; (2) **`.range()`/OFFSET** — makin dalam makin lambat
+  (halaman ke-100 menyusuri 99.000 baris cuma untuk dibuang), jadi untuk jenis
+  yang barisnya banyak SATU halaman cepat atau lambat tembus statement timeout;
+  keyset biayanya rata di halaman ke berapa pun; (3) `const { data } = await` —
+  query gagal → `data` null → loop berhenti → fungsi
   mengembalikan set/array KOSONG, yang artinya justru KEBALIKAN dari kenyataan.
   Terparah di `fetchVoidedAsetIds` (lib/voidedAset.ts): set kosong = "tak ada yang
   dibatalkan", jadi barang yang sudah di-`batal_pengadaan` muncul lagi sebagai
