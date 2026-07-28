@@ -74,6 +74,23 @@ apa pun yang menyentuh ledger atau engine.
   dicari pakai `LIKE 'prefix%'` butuh index `text_pattern_ops` sendiri, UNIQUE saja
   tidak cukup; dan generator nomor urut harus gagal KERAS, jangan jatuh ke 0.
 
+- **Kolektor halaman-demi-halaman WAJIB `.order('id')` + cek `error`.** Dua cacat
+  yang selalu berpasangan di repo ini, dan dua-duanya bikin ANGKA LAPORAN SALAH
+  TANPA SUARA: (1) paginasi `.range()` tanpa `ORDER BY` — Postgres tak menjamin
+  urutan antar-halaman, begitu hasilnya >1.000 baris ada yang terlewat diam-diam;
+  (2) `const { data } = await` — query gagal → `data` null → loop berhenti → fungsi
+  mengembalikan set/array KOSONG, yang artinya justru KEBALIKAN dari kenyataan.
+  Terparah di `fetchVoidedAsetIds` (lib/voidedAset.ts): set kosong = "tak ada yang
+  dibatalkan", jadi barang yang sudah di-`batal_pengadaan` muncul lagi sebagai
+  perolehan sah di Rekonsiliasi, Laporan BMD Model 3, & Laporan Pengadaan
+  sekaligus — tanpa satu pun halaman menampilkan error. Diperbaiki 2026-07-28:
+  seluruh kolektor di `lib/voidedAset.ts` & `lib/rekon.ts` kini `.order('id')` +
+  MELEMPAR, dan keempat pemanggilnya (Rekonsiliasi, Laporan BMD, LaporanPerolehan,
+  LaporanPengadaan Model 3/Tabel) menampilkan pesannya lalu MENOLAK menampilkan
+  angka. **Modul pelaporan itu fail-closed**: halaman yang error jauh lebih murah
+  daripada angka kurang-sebagian yang kelihatan sah lalu ikut dilaporkan ke
+  inspektorat/BPK.
+
 - **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
   setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
   (batal_reklas, batal_penghapusan, batal_kapitalisasi, batal_koreksi_*, dst).

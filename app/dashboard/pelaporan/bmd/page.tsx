@@ -64,6 +64,7 @@ export default function LaporanBmdPage() {
   const [rows, setRows] = useState<RekapRow[] | null>(null)
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
   const [mutasiRows, setMutasiRows] = useState<MutasiRow[] | null>(null)
+  const [mutErr, setMutErr] = useState('')
   const [mutasiDetail, setMutasiDetail] = useState<MutasiDetail>({})
   const [loading, setLoading] = useState(false)
   const periode = `${tahun}-S${smt}`
@@ -252,19 +253,24 @@ export default function LaporanBmdPage() {
   }
 
   async function prosesMutasi() {
-    setLoading(true); setMutasiRows(null)
+    setLoading(true); setMutasiRows(null); setMutErr('')
 
     const inScope = (skpdId: number | null) => skpdId != null && (org.descendantIds === null || org.descendantIds.includes(skpdId))
     const lolosKomptabel = (ie: string | null) => !komptabel || ie === komptabel
 
-    const [saldoAwal, saldoAkhir, skpdMap, voided, reklasDibatalkan, penghapusanNetRemoved] = await Promise.all([
+    // fetchVoidedAsetIds MELEMPAR sejak 2026-07-28 (dulu errornya ditelan &
+    // set void jadi kosong → barang yang dianulir ikut terhitung sbg mutasi).
+    // Model 3 lebih baik menolak tampil daripada menyajikan angka yang salah.
+    const hasil = await Promise.all([
       snapshotPerolehan(periodeSebelumnya),
       snapshotPerolehan(periode),
       fetchSkpdMapM3(),
       fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp']),
       fetchReklasDibatalkan(),
       fetchPenghapusanNetRemoved(),
-    ])
+    ]).catch((e: Error) => { setMutErr(`Gagal menyusun mutasi: ${e.message}. Angka tidak ditampilkan supaya tak ada yang terbaca sebagai sah padahal datanya tak lengkap.`); return null })
+    if (!hasil) { setLoading(false); return }
+    const [saldoAwal, saldoAkhir, skpdMap, voided, reklasDibatalkan, penghapusanNetRemoved] = hasil
 
     const tambah: Record<string, number> = {}
     const kurang: Record<string, number> = {}
@@ -396,6 +402,9 @@ export default function LaporanBmdPage() {
         <h1 className="text-2xl font-bold text-gray-900">Laporan BMD</h1>
         <p className="text-gray-500 text-sm mt-1">Rekapitulasi & penyusutan s.d. periode {periode}, per golongan BMD.</p>
       </div>
+      {mutErr && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{mutErr}</div>
+      )}
 
       {/* Batasan yang DISENGAJA & disampaikan terbuka (audit Pelaporan 2026-07-25):
           keanggotaan & pemilik dihitung dari register TERKINI (aset.status /

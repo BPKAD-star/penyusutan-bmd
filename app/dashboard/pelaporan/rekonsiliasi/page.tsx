@@ -126,6 +126,7 @@ export default function RekonsiliasiPage() {
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
   const [detail, setDetail] = useState<{ judul: string; rows: MutasiLine[] } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
 
   useEffect(() => {
     (async () => {
@@ -142,18 +143,26 @@ export default function RekonsiliasiPage() {
 
   async function proses() {
     setLoading(true)
-    setDetail(null)
+    setDetail(null); setErr('')
     const desc = org.descendantIds ?? null
     const periode = `${tahun}-S${smt}`
     const awalPeriode = smt === '1' ? `${Number(tahun) - 1}-S2` : `${tahun}-S1`
-    const [awal, akhir, mutLines] = await Promise.all([
-      fetchSnapshot(supabase, awalPeriode, desc),
-      fetchSnapshot(supabase, periode, desc),
-      fetchMutasiLines(supabase, periode, desc),
-    ])
-    setSnapAwal(awal); setSnapAkhir(akhir)
-    setLines(mutLines); setMutasi(aggregateMutasi(mutLines))
-    setApplied({ tahun, smt })
+    try {
+      const [awal, akhir, mutLines] = await Promise.all([
+        fetchSnapshot(supabase, awalPeriode, desc),
+        fetchSnapshot(supabase, periode, desc),
+        fetchMutasiLines(supabase, periode, desc),
+      ])
+      setSnapAwal(awal); setSnapAkhir(akhir)
+      setLines(mutLines); setMutasi(aggregateMutasi(mutLines))
+      setApplied({ tahun, smt })
+    } catch (e) {
+      // Laporan yang datanya tak lengkap TIDAK BOLEH tampil — angka rekonsiliasi
+      // yang kurang sebagian jauh lebih berbahaya daripada halaman yang kosong,
+      // karena kelihatan sah dan bakal ikut dilaporkan ke inspektorat/BPK.
+      setErr(`${(e as Error).message} — angka tidak ditampilkan supaya tidak ada yang terbaca sebagai sah padahal datanya tak lengkap. Coba Proses lagi; kalau berulang, kabari admin.`)
+      setApplied(null)
+    }
     setLoading(false)
   }
 
@@ -233,6 +242,10 @@ export default function RekonsiliasiPage() {
       </div>
 
       <TahunTerkunciNote tahun={Number(tahun)} />
+
+      {err && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">{err}</div>
+      )}
 
       {applied === null ? (
         <div className="card p-12 text-center text-gray-400 text-sm">

@@ -68,8 +68,15 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // period-correct — status terkini juga kena `penghapusan_*` (peristiwa periode
   // LAIN), jadi barang yang sah diperoleh periode ini ikut hilang begitu kelak
   // dihapus. Lihat lib/voidedAset.ts.
+  // fetchVoidedAsetIds MELEMPAR kalau query-nya gagal (sejak 2026-07-28) — dulu
+  // errornya ditelan & set void jadi kosong, artinya "tak ada yang dibatalkan"
+  // dan barang yang sudah dianulir tetap tampil sebagai perolehan sah. Di sini
+  // kegagalan itu ditandai supaya operator tahu angkanya belum bisa dipercaya.
+  const [voidedErr, setVoidedErr] = useState('')
   useEffect(() => {
-    fetchVoidedAsetIds(supabase).then(setVoided)
+    fetchVoidedAsetIds(supabase)
+      .then(setVoided)
+      .catch((e: Error) => setVoidedErr(`Gagal memuat daftar transaksi yang dibatalkan: ${e.message}. Barang yang sudah dianulir bisa ikut terhitung — muat ulang halaman dulu sebelum memakai angkanya.`))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const buildQuery = useCallback(() => {
@@ -168,6 +175,9 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
   return (
     <div className="p-6">
+      {voidedErr && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{voidedErr}</div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{judul}</h1>

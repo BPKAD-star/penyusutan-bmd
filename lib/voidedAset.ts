@@ -33,11 +33,26 @@ export const VOID_JENIS = [
 // baru) menjamin batal = keadaan TERAKHIR, jadi cukup buang dari set.
 const UNVOID_JENIS = ['batal_koreksi_pencatatan_ganda']
 
+// ⚠️ DUA HAL YANG WAJIB DIPERTAHANKAN DI SETIAP KOLEKTOR HALAMAN-DEMI-HALAMAN
+// DI BERKAS INI (dua-duanya sumber angka salah yang SENYAP):
+//
+// 1. `.order('id')` — paginasi OFFSET tanpa ORDER BY tidak dijamin stabil
+//    antar-halaman oleh Postgres. Begitu baris yang cocok lewat 1.000, halaman
+//    kedua bisa mengulang baris yang sama dan MELEWATKAN yang lain; yang
+//    terlewat = aset void yang lolos ke laporan seolah sah.
+// 2. Cek `error`, jangan `const { data } = await ...`. Kalau query gagal
+//    (timeout, enum tak dikenal, dll) `data` jadi null, loop berhenti, dan
+//    fungsi ini mengembalikan set KOSONG — artinya "tidak ada yang dibatalkan",
+//    kebalikan dari kenyataan. Tak ada satu pun laporan yang error; angkanya
+//    saja yang diam-diam salah di beberapa menu sekaligus. Fail-closed:
+//    lebih baik laporannya menolak tampil daripada menyajikan angka palsu.
 async function collectAsetIds(supabase: Supabase, jenisList: string[]): Promise<string[]> {
   const out: string[] = []
   for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('transaksi_bmd')
-      .select('aset_id').in('jenis', jenisList as never).range(from, from + 999)
+    const { data, error } = await supabase.from('transaksi_bmd')
+      .select('aset_id').in('jenis', jenisList as never)
+      .order('id', { ascending: true }).range(from, from + 999)
+    if (error) throw new Error(`gagal membaca transaksi pembatalan (${jenisList.join(', ')}): ${error.message}`)
     if (!data || data.length === 0) break
     for (const r of data as { aset_id: string | null }[]) if (r.aset_id) out.push(r.aset_id)
     if (data.length < 1000) break
@@ -84,8 +99,10 @@ export async function fetchBatalTargets(
   const out = new Set<number>()
   if (jenisList.length === 0) return out
   for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('transaksi_bmd')
-      .select('payload').in('jenis', jenisList as never).range(from, from + 999)
+    const { data, error } = await supabase.from('transaksi_bmd')
+      .select('payload').in('jenis', jenisList as never)
+      .order('id', { ascending: true }).range(from, from + 999)
+    if (error) throw new Error(`gagal membaca transaksi pembatalan (${jenisList.join(', ')}): ${error.message}`)
     if (!data || data.length === 0) break
     for (const r of data as { payload: { target_trx_id?: number } | null }[]) {
       const t = Number(r.payload?.target_trx_id)

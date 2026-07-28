@@ -17,7 +17,12 @@ export default function LaporanPengadaanModel3({ periode, skpdId, descIds }: {
 
   async function handleExport() {
     setExporting(true)
+    // fetchLaporanPengadaan melempar kalau daftar transaksi yang dibatalkan
+    // gagal dimuat — lebih baik ekspornya batal daripada menghasilkan berkas
+    // yang memuat barang yang sudah dianulir seolah sah.
     const rows = await fetchLaporanPengadaan(supabase, { periode, descIds })
+      .catch((e: Error) => { alert(`Gagal menyusun laporan: ${e.message}`); return null })
+    if (!rows) { setExporting(false); return }
     const groups = groupByGolongan(rows)
     const flat: Record<string, unknown>[] = []
     const cols = (r: (typeof rows)[number]) => ({

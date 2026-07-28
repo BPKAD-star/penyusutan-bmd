@@ -36,12 +36,19 @@ type Peny = { nilai_perolehan: number; beban: number; akumulasi: number; nilai_b
 // hindari). Visibilitas period-aware diserahkan ke fetchHiddenIds (pola halaman
 // Penyusutan). Hanya 'draft' (belum resmi, mis. KDP/pemecahan blm disetujui)
 // yang dibuang — tak pernah boleh masuk laporan.
+// ⚠️ Semua kolektor di berkas ini WAJIB: (1) `.order('id')` — paginasi OFFSET
+// tanpa ORDER BY tak dijamin stabil antar-halaman, begitu hasilnya >1.000 baris
+// bisa ada yang terlewat DIAM-DIAM; (2) cek `error` lalu MELEMPAR — laporan yang
+// query-nya gagal harus menolak tampil, bukan menyajikan angka yang kurang
+// sebagian. Ini modul pelaporan: angka salah yang tak bersuara jauh lebih mahal
+// daripada halaman yang error.
 async function fetchAllBase(supabase: SupabaseClient, descendantIds: number[] | null): Promise<Base[]> {
   const out: Base[] = []
   for (let from = 0; ; from += 1000) {
     let q = supabase.from('aset').select(BASE_COLS).neq('status', 'draft')
     if (descendantIds) q = q.in('skpd_id', descendantIds)
-    const { data } = await q.range(from, from + 999)
+    const { data, error } = await q.order('id', { ascending: true }).range(from, from + 999)
+    if (error) throw new Error(`gagal membaca daftar aset: ${error.message}`)
     if (!data || data.length === 0) break
     out.push(...(data as unknown as Base[]))
     if (data.length < 1000) break
@@ -54,7 +61,8 @@ async function fetchAllBase(supabase: SupabaseClient, descendantIds: number[] | 
 async function fetchBaseByIds(supabase: SupabaseClient, ids: string[]): Promise<Base[]> {
   const out: Base[] = []
   for (let i = 0; i < ids.length; i += 200) {
-    const { data } = await supabase.from('aset').select(BASE_COLS).in('id', ids.slice(i, i + 200))
+    const { data, error } = await supabase.from('aset').select(BASE_COLS).in('id', ids.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca aset lintas-SKPD: ${error.message}`)
     out.push(...((data as unknown as Base[]) || []))
   }
   return out
@@ -64,9 +72,10 @@ async function fetchBaseByIds(supabase: SupabaseClient, ids: string[]): Promise<
 async function fetchPeny(supabase: SupabaseClient, ids: string[], periode: string): Promise<Map<string, Peny>> {
   const map = new Map<string, Peny>()
   for (let i = 0; i < ids.length; i += 200) {
-    const { data } = await supabase.from('penyusutan_semester')
+    const { data, error } = await supabase.from('penyusutan_semester')
       .select('aset_id,nilai_perolehan,beban,akumulasi,nilai_buku_akhir')
       .eq('periode', periode).in('aset_id', ids.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca hasil penyusutan periode ${periode}: ${error.message}`)
     for (const r of (data || []) as (Peny & { aset_id: string })[]) map.set(r.aset_id, r)
   }
   return map
@@ -77,8 +86,9 @@ async function fetchPeny(supabase: SupabaseClient, ids: string[], periode: strin
 async function fetchHiddenIds(supabase: SupabaseClient, ids: string[], periode: string): Promise<Set<string>> {
   const evByAset = new Map<string, { id: number; periode: string; jenis: string }[]>()
   for (let i = 0; i < ids.length; i += 200) {
-    const { data } = await supabase.from('transaksi_bmd')
+    const { data, error } = await supabase.from('transaksi_bmd')
       .select('id,aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca event visibilitas aset: ${error.message}`)
     for (const e of (data || []) as { id: number; aset_id: string; jenis: string; periode: string }[]) {
       const arr = evByAset.get(e.aset_id) || []; arr.push({ id: e.id, periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
     }
@@ -179,9 +189,11 @@ type LedRow = {
 async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: string): Promise<LedRow[]> {
   const out: LedRow[] = []
   for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('transaksi_bmd')
+    const { data, error } = await supabase.from('transaksi_bmd')
       .select('id,jenis,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,skpd_id,intra_ekstra,nibar,nama_barang),header:header_id(no_sk)')
-      .eq('periode', periode).in('jenis', jenisList as never).range(from, from + 999)
+      .eq('periode', periode).in('jenis', jenisList as never)
+      .order('id', { ascending: true }).range(from, from + 999)
+    if (error) throw new Error(`gagal membaca ledger (${jenisList.join(', ')}) periode ${periode}: ${error.message}`)
     if (!data || data.length === 0) break
     out.push(...(data as unknown as LedRow[]))
     if (data.length < 1000) break
@@ -205,8 +217,10 @@ const fetchVoided = (supabase: SupabaseClient) =>
 async function fetchNetRemoved(supabase: SupabaseClient): Promise<Set<string>> {
   const latest = new Map<string, { periode: string; id: number; removed: boolean }>()
   for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('transaksi_bmd')
-      .select('id,aset_id,periode,jenis').in('jenis', [...JENIS_HAPUS, 'batal_penghapusan'] as never).range(from, from + 999)
+    const { data, error } = await supabase.from('transaksi_bmd')
+      .select('id,aset_id,periode,jenis').in('jenis', [...JENIS_HAPUS, 'batal_penghapusan'] as never)
+      .order('id', { ascending: true }).range(from, from + 999)
+    if (error) throw new Error(`gagal membaca riwayat penghapusan: ${error.message}`)
     if (!data || data.length === 0) break
     for (const r of data as { id: number; aset_id: string; periode: string; jenis: string }[]) {
       const cur = latest.get(r.aset_id)

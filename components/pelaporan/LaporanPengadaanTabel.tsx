@@ -176,15 +176,21 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
   const [rows, setRows] = useState<PengadaanRow[]>([])
   const [loading, setLoading] = useState(true)
   const [pgMap, setPgMap] = useState<Map<number, PenggunaBarang>>(new Map())
+  const [err, setErr] = useState('')
   const descKey = (descIds || []).join(',')
 
   useEffect(() => {
     let alive = true
     ;(async () => {
-      setLoading(true)
+      setLoading(true); setErr('')
+      // fetchLaporanPengadaan melempar kalau daftar transaksi yang dibatalkan
+      // gagal dimuat. Tabel dikosongkan & pesannya ditampilkan — laporan yang
+      // memuat barang sudah-dianulir seolah sah jauh lebih berbahaya daripada
+      // tabel kosong yang jelas-jelas bilang ada yang salah.
       const data = await fetchLaporanPengadaan(supabase, { periode, descIds })
+        .catch((e: Error) => { if (alive) setErr(e.message); return null })
       if (!alive) return
-      setRows(data)
+      setRows(data || [])
       setLoading(false)
     })()
     return () => { alive = false }
@@ -227,7 +233,11 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
   return (
     <div className="text-[11px] text-gray-900">
       <style>{`.brd{border:1px solid #9ca3af}`}</style>
-      {!periode ? (
+      {err ? (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          Gagal menyusun laporan: {err}. Angka tidak ditampilkan supaya barang yang sudah dianulir tidak ikut terbaca sebagai sah.
+        </div>
+      ) : !periode ? (
         <p className="py-8 text-center text-gray-500">
           Pilih <b>Periode (semester)</b> dulu — laporan format Permendagri disusun per semester.
         </p>
