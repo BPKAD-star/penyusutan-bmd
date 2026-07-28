@@ -89,7 +89,19 @@ apa pun yang menyentuh ledger atau engine.
   LaporanPengadaan Model 3/Tabel) menampilkan pesannya lalu MENOLAK menampilkan
   angka. **Modul pelaporan itu fail-closed**: halaman yang error jauh lebih murah
   daripada angka kurang-sebagian yang kelihatan sah lalu ikut dilaporkan ke
-  inspektorat/BPK.
+  inspektorat/BPK. Penyebab aslinya ternyata **statement timeout** (pesan yang
+  akhirnya muncul: `gagal membaca transaksi pembatalan (batal_kapitalisasi):
+  canceling statement due to statement timeout`) — ini bukti bahwa filter void
+  memang tak pernah jalan, bukan sekadar teori. **Konsekuensi index dari
+  `.order('id')`:** filter + urutan harus dilayani SATU index. `transaksi_bmd`
+  punya `(jenis)`, `(jenis, aset_id)`, `(jenis, tanggal)` — tak satu pun memuat
+  `id`, jadi `WHERE jenis=... ORDER BY id LIMIT 1000` bikin planner menyusuri
+  PRIMARY KEY urut id sambil menyaring, nyaris seluruh tabel → timeout.
+  Diperbaiki migrasi **20260728_05** (`idx_trx_jenis_id`,
+  `idx_trx_periode_jenis_id`; `idx_trx_jenis` polos di-drop krn redundan).
+  **Nambah `.order()` di kolektor baru → pastikan ada index yang memuat kolom
+  urutnya**; dan JANGAN balas timeout dengan mencabut `ORDER BY`-nya — itu
+  mengembalikan bug paginasi yang senyap.
 
 - **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
   setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
