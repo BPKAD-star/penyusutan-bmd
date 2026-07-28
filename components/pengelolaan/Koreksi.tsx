@@ -12,32 +12,16 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
-import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode, allSameGolongan, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
+import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode, koreksiFieldKeys, allSameGolongan, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds, useTahunBukuMap } from '@/components/useTahunBuku'
 import FormShell from './FormShell'
 
-// ── Field alasan "Spesifikasi Barang" — golongan-aware (popup EditSpesifikasiModal,
-// sama seperti Pengadaan) + atribut lama (satuan/asal usul/tahun/kondisi). Tanah
-// (1.3.1): dokumen kepemilikan, jenis hak, luas & lokasi/koordinat TIDAK diedit
-// di sini — dikelola khusus di menu GIS BMD (aset_bidang_tanah), biar gak ada 2
-// sumber. Golongan lain (termasuk Gedung/Jalan) boleh koreksi dokumen & lokasi.
-const TANAH_GIS_FIELDS: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude']
-const ATRIBUT_KOREKSI: FieldKey[] = ['satuan', 'asal_usul', 'tahun_pengadaan', 'kondisi_barang']
-// Aset Lain-Lain (1.5.4) isinya campuran — ada yg mirip Tanah (butuh dokumen
-// kepemilikan/jenis hak/luas), ada yg mirip kendaraan Peralatan & Mesin (butuh
-// no rangka/mesin/polisi/BPKB). Field templatenya sendiri (TEMPLATE_ASET_LAINNYA
-// di lib/asetFields.ts, dipakai bareng Pengadaan) SENGAJA tetap ringkas — field
-// tambahan ini HANYA muncul di form Koreksi Spesifikasi (pola sama dgn
-// ATRIBUT_KOREKSI di atas), bukan di form input awal Pengadaan.
-const ASET_LAIN_LAIN_EXTRA: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi']
-function koreksiFieldKeys(kode: string): FieldKey[] {
-  let keys = fieldsForKode(kode)
-  if (kodeLevel3(kode) === '1.3.1') keys = keys.filter(k => !TANAH_GIS_FIELDS.includes(k))
-  else if (kodeLevel3(kode) === '1.5.4') keys = [...keys, ...ASET_LAIN_LAIN_EXTRA.filter(k => !keys.includes(k))]
-  return [...keys, ...ATRIBUT_KOREKSI.filter(k => !keys.includes(k))]
-}
+// Field alasan "Spesifikasi Barang" (golongan-aware, + atribut satuan/asal usul/
+// tahun/kondisi) kini tinggal di lib/asetFields.ts sbg `koreksiFieldKeys` —
+// dipakai bareng Saldo Awal → Daftar Barang Awal supaya kedua pintu koreksi
+// spesifikasi menawarkan field yang persis sama.
 
 // ── Koreksi — satu alur ber-SK, 4 alasan ─────────────────────────────────────
 type Alasan = 'nilai_perolehan' | 'pencatatan_ganda' | 'spesifikasi' | 'pemecahan'

@@ -133,7 +133,54 @@ apa pun yang menyentuh ledger atau engine.
   utk periode 2026 supaya baris ekstra terisi.
 - **Baseline beku**: `aset_awal_2026` (di-rename dari `saldo_awal_2026`,
   migrasi `20260710_03`) = foto saldo akhir 2025, display-only, tak pernah
-  disentuh transaksi.
+  disentuh transaksi. **ANGKANYA** yang beku — sejak migrasi `20260728_01`
+  (permintaan user 2026-07-28) kolom **SPESIFIKASI** boleh dikoreksi dari
+  Saldo Awal → Daftar Barang Awal (centang barang → "Edit Spesifikasi", popup
+  `EditSpesifikasiModal` yang sama dgn menu Koreksi). Aman krn tabel ini TIDAK
+  dibaca engine sama sekali (engine replay dari ledger `saldo_awal`/
+  `saldo_awal_checkpoint`) & cuma dipakai 2 halaman menu Saldo Awal. Kolom
+  angka/identitas (`nilai_perolehan`, `akumulasi_2025`, `nilai_buku_awal`,
+  `sisa/masa_manfaat_smt`, `beban_penyusutan_per_smt`, `jumlah`,
+  `harga_satuan`, `kode`, `skpd_id`, `intra_ekstra`, `tgl_perolehan`, `nibar`)
+  dikunci **dua lapis di DB**: GRANT UPDATE per-kolom + trigger
+  `fn_aset_awal_2026_spek_only` (trigger di-skip kalau `current_user <>
+  'authenticated'` — SQL Editor & service-role tetap bebas benerin baseline).
+  **Simpan menulis ke DUA tabel**: snapshot + kolom yang sama di `aset`
+  (dicocokkan NIBAR), keduanya UPDATE biasa **TANPA event ledger** — alasannya
+  sama dgn KIR: spesifikasi = data deskriptif, bukan peristiwa akuntansi.
+  Konsekuensi yang DITERIMA: koreksi lewat pintu ini tak punya jejak ledger &
+  tak bisa di-Batal; yang butuh audit trail tetap lewat Pembukuan → Koreksi →
+  Spesifikasi Barang (`koreksi_spesifikasi` + `payload.prev`).
+  **PINTU INI CUMA UNTUK BARANG YANG BELUM BERGERAK** (keputusan user
+  2026-07-28). Aset yang pernah kena `koreksi_spesifikasi`/
+  `batal_koreksi_spesifikasi`, `reklas_kode`/`reklas_golongan`, atau
+  `pengalihan_status`/`mutasi_internal` **TERKUNCI** — wajib lewat menu Koreksi.
+  Bukan kehati-hatian belaka, ini menutup 2 kerusakan nyata: (a) UPDATE senyap
+  menimpa nilai yang di-set `koreksi_spesifikasi` → tombol Batal-nya nanti
+  me-restore ke `payload.prev` yang tak nyambung kenyataan; (b) sesudah reklas,
+  kode di snapshot (golongan lama) ≠ di register (golongan baru), padahal field
+  template dipilih dari kode SNAPSHOT → bisa nulis kolom golongan yang salah ke
+  `aset`. ⚠️ `saldo_awal`/`saldo_awal_checkpoint` **WAJIB dikecualikan** dari
+  daftar kunci: migrasi 20260702_03 bikin baris `saldo_awal` sintetis di SETIAP
+  aset baseline, jadi kalau ikut dihitung fiturnya mati total di hari pertama.
+  Yang sengaja TIDAK mengunci krn tak menyentuh kolom spesifikasi: pemanfaatan/
+  pengamanan (kustodi), koreksi_nilai/kapitalisasi/akumulasi_kdp (murni angka),
+  reklas_komptabel (keranjang laporan). **Nambah jenis ledger baru yang mengubah
+  kolom spesifikasi, golongan, atau `skpd_id` → WAJIB tambahkan ke daftar kunci**
+  di `fn_aset_awal_2026_terkunci` + `fn_aset_awal_2026_terkunci_batch` (dua-duanya,
+  daftarnya kembar). Penegaknya trigger DB (bukan cuma UI spt guard pembatalan);
+  `fn_aset_awal_2026_terkunci` SECURITY DEFINER karena kalau dievaluasi sbg
+  pemanggil, RLS justru menyembunyikan baris ledger yg jadi alasan penguncian
+  (aset yg sudah pindah SKPD) → guard bocor. Sengaja DIPISAH dari fungsi trigger:
+  di dalam SECURITY DEFINER `current_user` berubah jadi pemilik fungsi, bikin
+  pengecualian `current_user <> 'authenticated'` salah baca. UI memanggil versi
+  `_batch` per halaman (50 baris) buat menampilkan 🔒 & mematikan centang.
+  Field set kedua
+  pintu itu sekarang SATU sumber: `koreksiFieldKeys` di lib/asetFields.ts
+  (dipindah dari Koreksi.tsx) — termasuk pengecualian Tanah 1.3.1 yang dokumen
+  kepemilikan/luas/lokasinya tetap milik menu GIS BMD. ⚠️ **Deploy-ordering:
+  migrasi 20260728_01 WAJIB jalan SEBELUM deploy kode** — tanpa policy `sa_update`
+  tombol Simpan-nya gagal senyap (RLS menolak, 0 baris ter-update).
 - **Baca dari tabel utama, bukan view.** Semua `v_*` (v_daftar_barang, v_dbar_*,
   v_trx_*, v_anomali_saldo_awal, dst.) SUDAH DIHAPUS. Menu register/daftar baca
   `aset` + `transaksi_bmd` (+ `skpd`, `jurnal_header`) langsung. Kunci: `aset.id`

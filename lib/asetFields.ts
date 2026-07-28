@@ -99,6 +99,33 @@ export function fieldsForKode(kode: string): FieldKey[] {
   return GOLONGAN_FIELDS[kodeLevel3(kode)] || DEFAULT_FIELDS
 }
 
+// ── Field set untuk KOREKSI spesifikasi (bukan form input awal) ─────────────
+// Dipakai bareng oleh menu Koreksi → Spesifikasi Barang (register `aset`) dan
+// Saldo Awal → Daftar Barang Awal (snapshot `aset_awal_2026`), supaya kedua
+// pintu koreksi menawarkan field yang PERSIS SAMA — termasuk pengecualian
+// Tanah di bawah. Kalau ditaruh lokal di salah satu komponen, yang satunya
+// bakal pelan-pelan menyimpang.
+//
+// Tanah (1.3.1): dokumen kepemilikan, jenis hak, luas & lokasi/koordinat TIDAK
+// diedit di sini — dikelola khusus di menu GIS BMD (aset_bidang_tanah), biar
+// gak ada 2 sumber. Golongan lain (termasuk Gedung/Jalan) boleh koreksi
+// dokumen & lokasi.
+export const TANAH_GIS_FIELDS: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude']
+export const ATRIBUT_KOREKSI: FieldKey[] = ['satuan', 'asal_usul', 'tahun_pengadaan', 'kondisi_barang']
+// Aset Lain-Lain (1.5.4) isinya campuran — ada yg mirip Tanah (butuh dokumen
+// kepemilikan/jenis hak/luas), ada yg mirip kendaraan Peralatan & Mesin (butuh
+// no rangka/mesin/polisi/BPKB). Field templatenya sendiri (TEMPLATE_ASET_LAINNYA
+// di atas, dipakai bareng Pengadaan) SENGAJA tetap ringkas — field tambahan ini
+// HANYA muncul di form koreksi, bukan di form input awal Pengadaan.
+export const ASET_LAIN_LAIN_EXTRA: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi']
+
+export function koreksiFieldKeys(kode: string): FieldKey[] {
+  let keys = fieldsForKode(kode)
+  if (kodeLevel3(kode) === '1.3.1') keys = keys.filter(k => !TANAH_GIS_FIELDS.includes(k))
+  else if (kodeLevel3(kode) === '1.5.4') keys = [...keys, ...ASET_LAIN_LAIN_EXTRA.filter(k => !keys.includes(k))]
+  return [...keys, ...ATRIBUT_KOREKSI.filter(k => !keys.includes(k))]
+}
+
 // Semua kode golongan sama? Dipakai utk MELARANG edit spesifikasi massal lintas
 // golongan (field-nya beda kolom → tak boleh digabung/union spt sebelumnya).
 export function allSameGolongan(kodes: string[]): boolean {
