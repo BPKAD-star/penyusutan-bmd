@@ -42,12 +42,20 @@
 -- ⚠️ Project ini sedang EXCEEDING USAGE LIMITS di Supabase free tier, dan
 -- aset_awal_2026 isinya ~418rb baris. UPDATE besar bikin dead tuple (tabel
 -- membengkak sampai di-VACUUM). JANGAN sekali jalan untuk semua golongan —
--- jalankan BAGIAN 2 SATU GOLONGAN PER RUN dengan mengganti prefiks di dua
--- tempat (blok --> di bawah), mulai dari yang kecil untuk verifikasi:
---   1.3.1 Tanah        2.732      1.5.3 ATB            120
---   1.3.6 KDP            233      1.3.3 Gedung       6.518
---   1.5.4 Lain-Lain    8.659      1.3.4 Jalan        8.127
---   1.3.5 ATL        173.262      1.3.2 P&M        218.251   ← dua ini terakhir
+-- BAGIAN 2 dipecah 3 giliran lewat daftar golongan di baris terakhirnya:
+--   giliran 1  '1.3.1'                                    2.732 baris
+--   giliran 2  '1.3.3','1.3.4','1.3.6','1.5.3','1.5.4'   23.657 baris
+--   giliran 3  '1.3.5' saja                             173.262 baris
+--   giliran 4  '1.3.2' saja                             218.251 baris
+-- Rincian: 1.5.3 ATB 120 · 1.3.6 KDP 233 · 1.3.3 Gedung 6.518 · 1.3.4 Jalan
+-- 8.127 · 1.5.4 Lain-Lain 8.659.
+--
+-- ⚠️ JEBAKAN (kena 2026-07-28): prefiks golongan muncul di DUA tempat — di
+-- UPDATE (BAGIAN 2) dan di SELECT verifikasi sesudahnya. Mengganti yang di
+-- verifikasi saja bikin hasilnya terlihat "nol semua" padahal UPDATE-nya memang
+-- belum pernah dijalankan untuk golongan itu. Sejak revisi ini keduanya pakai
+-- daftar `IN (...)` yang sama persis supaya sekali ganti langsung kena dua-duanya.
+--
 -- Sesudah semua golongan selesai, jalankan BAGIAN 3 (VACUUM) di tab TERPISAH,
 -- sendirian — VACUUM tidak boleh berada dalam transaction block, sementara SQL
 -- Editor membungkus skrip yang di-Run jadi satu transaksi.
@@ -79,7 +87,7 @@ JOIN aset a ON a.nibar = s.nibar
 GROUP BY 1
 ORDER BY 1;
 
--- ── BAGIAN 2. Backfill — GANTI PREFIKS DI DUA BARIS BERTANDA <<< ────────────
+-- ── BAGIAN 2. Backfill — GANTI DAFTAR GOLONGAN DI BARIS BERTANDA <<< ────────
 UPDATE aset_awal_2026 s
 SET spesifikasi_lainnya         = COALESCE(nullif(btrim(s.spesifikasi_lainnya), ''),       a.spesifikasi_lainnya),
     merek_tipe                  = COALESCE(nullif(btrim(s.merek_tipe), ''),                a.merek_tipe),
@@ -109,15 +117,19 @@ SET spesifikasi_lainnya         = COALESCE(nullif(btrim(s.spesifikasi_lainnya), 
 FROM aset a
 WHERE a.nibar = s.nibar
   AND left(a.kode, 5) = left(s.kode, 5)   -- pengaman 2: jangan salin lintas golongan
-  AND s.kode LIKE '1.3.1.%';              -- <<< GANTI PREFIKS GOLONGAN DI SINI
+  AND left(s.kode, 5) IN ('1.3.1');       -- <<< GANTI DAFTAR GOLONGAN DI SINI
 
--- Verifikasi golongan yang barusan dijalankan (ganti prefiks yang sama):
-SELECT count(*)                                                            AS baris,
-       count(*) FILTER (WHERE luas IS NOT NULL)                            AS ada_luas,
+-- Verifikasi SELURUH golongan sekaligus — sengaja tidak ikut difilter, supaya
+-- ketahuan mana yang sudah dijalankan & mana yang belum (baris yang masih nol
+-- berarti UPDATE di atas belum pernah jalan untuk golongan itu).
+SELECT left(kode, 5) AS gol, count(*) AS baris,
        count(*) FILTER (WHERE nullif(btrim(alamat_detail), '') IS NOT NULL) AS ada_alamat,
-       count(*) FILTER (WHERE nullif(btrim(jenis_hak), '') IS NOT NULL)     AS ada_jenis_hak
+       count(*) FILTER (WHERE luas IS NOT NULL)                             AS ada_luas,
+       count(*) FILTER (WHERE nullif(btrim(asal_usul), '') IS NOT NULL)     AS ada_asal_usul,
+       count(*) FILTER (WHERE nullif(btrim(merek_tipe), '') IS NOT NULL)    AS ada_merek
 FROM aset_awal_2026
-WHERE kode LIKE '1.3.1.%';                -- <<< GANTI PREFIKS GOLONGAN DI SINI
+GROUP BY 1
+ORDER BY 1;
 
 -- ── BAGIAN 3. Sesudah SEMUA golongan selesai — jalankan SENDIRIAN ───────────
 -- (satu tab SQL Editor, cuma baris ini, tanpa perintah lain — VACUUM tidak
