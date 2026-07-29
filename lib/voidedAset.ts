@@ -129,10 +129,30 @@ export const BATAL_TARGET_JENIS = {
  * dan angkanya beda dgn engine & Rekonsiliasi yang sudah membuangnya.
  */
 export async function fetchBatalTargets(
-  supabase: Supabase, jenisList: readonly string[],
+  supabase: Supabase, jenisList: readonly string[], asetIds?: string[],
 ): Promise<Set<number>> {
   const out = new Set<number>()
   if (jenisList.length === 0) return out
+
+  // Jalur TERSCOPE — sama alasannya dgn collectAsetIds. Baris `batal_*` selalu
+  // ber-aset_id sama dgn transaksi yang dibatalkannya, jadi membatasi ke aset
+  // yang ditanya sudah cukup: pemanggil hanya mengecek `has(r.id)` untuk baris
+  // milik aset-aset itu juga.
+  if (asetIds) {
+    if (asetIds.length === 0) return out
+    const uniq = [...new Set(asetIds)]
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data, error } = await supabase.from('transaksi_bmd')
+        .select('payload').in('jenis', jenisList as never).in('aset_id', uniq.slice(i, i + 200))
+      if (error) throw new Error(`gagal membaca transaksi pembatalan (${jenisList.join(', ')}): ${error.message}`)
+      for (const r of (data || []) as { payload: { target_trx_id?: number } | null }[]) {
+        const t = Number(r.payload?.target_trx_id)
+        if (Number.isFinite(t)) out.add(t)
+      }
+    }
+    return out
+  }
+
   let terakhir = 0
   for (;;) {
     const { data, error } = await supabase.from('transaksi_bmd')

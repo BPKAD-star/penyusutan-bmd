@@ -36,19 +36,34 @@ const JENIS_PINDAH = ['pengalihan_status', 'mutasi_internal']
 export async function fetchOwnerOverrides(
   supabase: SupabaseClient, periode: string
 ): Promise<Map<string, number | null>> {
+  // ⚠️ Sengaja TIDAK diberi filter periode/SKPD: pemilik pada periode V hanya
+  // bisa diturunkan dari SELURUH riwayat pindah aset itu (baris sesudah V harus
+  // ikut terbaca supaya barang yang kini sudah keluar scope tetap ketahuan dulu
+  // milik siapa — lihat partitionByPeriodOwner). Aman selama baris pindah masih
+  // sedikit; kalau suatu saat ini yang timeout, pindahkan agregasinya ke RPC
+  // (pola fn_rekap_*), JANGAN dipotong filternya — hasilnya jadi salah diam-diam.
+  //
+  // Keyset (bukan OFFSET) + `error` DIPERIKSA: versi lama menelan errornya, dan
+  // map kosong = "tak ada aset yang pernah pindah" — atribusi SKPD jadi salah
+  // tanpa satu pun pesan. Pelajaran yang sama dgn filter void (CLAUDE.md).
   const evByAset = new Map<string, Ev[]>()
-  for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('transaksi_bmd')
+  let terakhir = 0
+  for (;;) {
+    const { data, error } = await supabase.from('transaksi_bmd')
       .select('aset_id,id,periode,skpd_asal,skpd_tujuan')
       .in('jenis', JENIS_PINDAH as never)
+      .gt('id', terakhir)
       .order('id', { ascending: true })
-      .range(from, from + 999)
+      .limit(1000)
+    if (error) throw new Error(`gagal membaca riwayat pengalihan/mutasi aset: ${error.message}`)
     if (!data || data.length === 0) break
-    for (const e of data as Ev[]) {
+    const rows = data as Ev[]
+    for (const e of rows) {
       const arr = evByAset.get(e.aset_id) || []
       arr.push(e); evByAset.set(e.aset_id, arr)
+      terakhir = e.id
     }
-    if (data.length < 1000) break
+    if (rows.length < 1000) break
   }
   const owner = new Map<string, number | null>()
   for (const [asetId, evs] of evByAset) {

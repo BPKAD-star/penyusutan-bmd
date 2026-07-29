@@ -295,19 +295,21 @@ async function computeMutasiLines(
   // Versi lama menanyakan keduanya atas SELURUH ledger (259rb baris) sekaligus
   // dgn baris periode ini — itu yang tembus statement timeout beruntun
   // 2026-07-28, dan biayanya bakal terus naik seiring ledger tumbuh.
-  const [cara, alih, kap, kapBatal, kor, korBatal, reklasG, reklasK, reklasBatal, hapus] = await Promise.all([
+  const [cara, alih, kap, kor, reklasG, reklasK, hapus] = await Promise.all([
     fetchLed(supabase, JENIS_CARA, periode),
     fetchLed(supabase, ['pengalihan_status'], periode),
     fetchLed(supabase, ['kapitalisasi'], periode),
-    fetchBatalTargets(supabase, ['batal_kapitalisasi']),
     fetchLed(supabase, ['koreksi_nilai'], periode),
-    fetchBatalTargets(supabase, ['batal_koreksi_nilai']),
     fetchLed(supabase, ['reklas_golongan'], periode),
     fetchLed(supabase, ['reklas_kode'], periode),
-    fetchBatalTargets(supabase, ['batal_reklas']),
     fetchLed(supabase, JENIS_HAPUS, periode),
   ])
-  const [voided, netRemoved] = await Promise.all([
+  // Tahap 2 — SEMUA terscope ke aset yang muncul di tahap 1. Tidak ada lagi
+  // satu pun query di fungsi ini yang menyapu seluruh ledger.
+  const [kapBatal, korBatal, reklasBatal, voided, netRemoved] = await Promise.all([
+    fetchBatalTargets(supabase, ['batal_kapitalisasi'], kap.map(r => r.aset_id)),
+    fetchBatalTargets(supabase, ['batal_koreksi_nilai'], kor.map(r => r.aset_id)),
+    fetchBatalTargets(supabase, ['batal_reklas'], [...reklasG, ...reklasK].map(r => r.aset_id)),
     fetchVoided(supabase, cara.map(r => r.aset_id)),
     fetchNetRemoved(supabase, hapus.map(r => r.aset_id)),
   ])
