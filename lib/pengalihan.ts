@@ -19,7 +19,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { comparePeriode } from '@/lib/bmd'
 
-type Ev = { aset_id: string; id: number; periode: string; skpd_asal: number | null; skpd_tujuan: number | null }
+type Ev = {
+  aset_id: string; id: number; periode: string
+  skpd_asal: number | null; skpd_tujuan: number | null
+  jenis: string
+  // Hanya terisi di baris 'batal_pengalihan': daftar id baris pengalihan yang
+  // dibatalkannya (lihat fn_batal_pengalihan_barang, migrasi 20260729_07).
+  payload: { target_trx_ids?: number[] } | null
+}
 
 // Jenis ledger yang MEMINDAHKAN aset antar unit (dua-duanya update aset.skpd_id).
 // ⚠️ KEMBAR dgn predikat partial index `idx_trx_pindah_id` (migrasi 20260729_01).
@@ -27,6 +34,16 @@ type Ev = { aset_id: string; id: number; periode: string; skpd_asal: number | nu
 // planner tak bisa membuktikan implikasinya, indexnya diabaikan DIAM-DIAM, dan
 // query ini balik menyusuri seluruh ledger (418rb baris) demi segelintir baris.
 const JENIS_PINDAH = ['pengalihan_status', 'mutasi_internal']
+// Pembatalan perpindahan (migrasi 20260729_06/07). BEDA dari baris pengembalian
+// ber-`payload.reversal`: pengembalian itu peristiwa NYATA (barang pergi lalu
+// dikembalikan, dua-duanya tetap dibaca), sedangkan pembatalan menyatakan
+// perpindahannya TAK PERNAH TERJADI — barisnya beserta targetnya dibuang total
+// dari perhitungan pemilik.
+const JENIS_BATAL_PINDAH = ['batal_pengalihan']
+// Yang ditarik dari ledger = dua-duanya. ⚠️ KEMBAR dgn predikat partial index
+// `idx_trx_pindah_id` (migrasi 20260729_07) — ubah satu, ubah dua-duanya, atau
+// indexnya diabaikan DIAM-DIAM dan query ini balik menyusuri 418rb baris.
+const JENIS_DITARIK = [...JENIS_PINDAH, ...JENIS_BATAL_PINDAH]
 
 // Riwayat pindah unit MENTAH (semua periode), dikelompokkan per aset.
 // DIPISAH dari fetchOwnerOverrides supaya pemanggil yang butuh BEBERAPA periode
@@ -57,8 +74,8 @@ export async function fetchPindahEvents(supabase: SupabaseClient): Promise<Pinda
   let terakhir = 0
   for (;;) {
     const { data, error } = await supabase.from('transaksi_bmd')
-      .select('aset_id,id,periode,skpd_asal,skpd_tujuan')
-      .in('jenis', JENIS_PINDAH as never)
+      .select('aset_id,id,periode,skpd_asal,skpd_tujuan,jenis,payload')
+      .in('jenis', JENIS_DITARIK as never)
       .gt('id', terakhir)
       .order('id', { ascending: true })
       .limit(1000)
@@ -71,6 +88,42 @@ export async function fetchPindahEvents(supabase: SupabaseClient): Promise<Pinda
       terakhir = e.id
     }
     if (rows.length < 1000) break
+  }
+  return buangYangDibatalkan(evByAset)
+}
+
+// Buang baris pengalihan yang SUDAH DIBATALKAN, berikut baris pembatalnya
+// sendiri. Dilakukan di sini (bukan di tiap pereduksi) supaya SEMUA pemanggil —
+// ownersAt, posisiAt, Rekonsiliasi — otomatis bersih tanpa perlu tahu soal
+// pembatalan sama sekali.
+//
+// Aset yang SELURUH baris pindahnya dibatalkan DIKELUARKAN dari map, bukan
+// disisakan kosong: pemanggil memperlakukan "tidak ada di map" sebagai "tak
+// pernah pindah" dan jatuh ke `aset.skpd_id` — yang memang sudah dikembalikan
+// ke SKPD asal oleh fn_batal_pengalihan_barang. Menyisakan array kosong akan
+// membuat ownersAt membaca `sorted[0]` dari array kosong → undefined.
+function buangYangDibatalkan(evByAset: PindahEvents): PindahEvents {
+  const dibatalkan = new Set<number>()
+  for (const evs of evByAset.values()) {
+    for (const e of evs) {
+      if (!JENIS_BATAL_PINDAH.includes(e.jenis)) continue
+      for (const id of e.payload?.target_trx_ids || []) dibatalkan.add(Number(id))
+    }
+  }
+  if (dibatalkan.size === 0) {
+    // Jalur biasa (tak ada pembatalan sama sekali): tetap perlu membuang baris
+    // batal-nya kalau ada yang payloadnya cacat, tapi umumnya tak ada apa-apa.
+    for (const [asetId, evs] of evByAset) {
+      const bersih = evs.filter(e => !JENIS_BATAL_PINDAH.includes(e.jenis))
+      if (bersih.length === 0) evByAset.delete(asetId)
+      else if (bersih.length !== evs.length) evByAset.set(asetId, bersih)
+    }
+    return evByAset
+  }
+  for (const [asetId, evs] of evByAset) {
+    const bersih = evs.filter(e => !JENIS_BATAL_PINDAH.includes(e.jenis) && !dibatalkan.has(e.id))
+    if (bersih.length === 0) evByAset.delete(asetId)
+    else evByAset.set(asetId, bersih)
   }
   return evByAset
 }

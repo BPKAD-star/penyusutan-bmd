@@ -144,6 +144,29 @@ export default function PenggunaanMasuk() {
     load(skpd)
   }
 
+  // BATAL ≠ KEMBALIKAN — dua-duanya memulangkan barang, tapi artinya beda dan
+  // jejaknya beda. Kembalikan: barang memang sempat dipakai di sini lalu
+  // dipulangkan; dua peristiwa nyata, keduanya tetap terbaca laporan. Batal:
+  // KOREKSI salah pilih barang — pengalihannya dianggap TAK PERNAH TERJADI,
+  // barisnya diabaikan pembaca, dan kode register barang dipulihkan seperti
+  // semula (tanda ⚠ di Daftar Barang ikut padam).
+  // Pembedaan yang sama sudah lama ada di Pemanfaatan (⏹ Akhiri vs 🗑 Batal) &
+  // Pengamanan; Pengalihan yang terakhir menyusul.
+  async function batalPengalihan(j: Jurnal, l: Line) {
+    if (!confirm(
+      `BATALKAN pengalihan "${l.nama_barang || l.nibar || 'barang ini'}"?\n\n` +
+      `Pakai ini kalau SALAH PILIH BARANG — pengalihannya dianggap tidak pernah terjadi ` +
+      `dan barang balik ke ${namaSkpd(j.skpd_id)}.\n\n` +
+      `Kalau barangnya memang sempat dipakai di sini lalu dipulangkan, pakai "Kembalikan", bukan ini.`
+    )) return
+    setBusy(true)
+    const { error } = await supabase.rpc('fn_batal_pengalihan_barang', { p_header_id: j.id, p_aset_id: l.aset_id })
+    setBusy(false)
+    if (error) { setMsg(`Error: ${error.message}`); return }
+    setMsg(`Pengalihan dibatalkan — barang dianggap tidak pernah pindah dari ${namaSkpd(j.skpd_id)}.`)
+    load(skpd)
+  }
+
   async function bukaDokumen(path: string) {
     const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
@@ -261,9 +284,14 @@ export default function PenggunaanMasuk() {
                           {disetujui && (
                             <td className="table-td text-center">
                               <button disabled={busy} onClick={() => kembalikan(j, l)}
-                                title="Kembalikan barang ini ke SKPD asal (dicatat di periode berjalan)"
+                                title="Kembalikan barang ini ke SKPD asal (dicatat di periode berjalan) — barang MEMANG sempat dipakai di sini"
                                 className="px-3 py-1 rounded text-xs bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50">
                                 Kembalikan
+                              </button>
+                              <button disabled={busy} onClick={() => batalPengalihan(j, l)}
+                                title="Batalkan — untuk SALAH CATAT. Pengalihannya dianggap tak pernah terjadi (beda dari Kembalikan)"
+                                className="ml-2 px-3 py-1 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50">
+                                🗑 Batal
                               </button>
                             </td>
                           )}

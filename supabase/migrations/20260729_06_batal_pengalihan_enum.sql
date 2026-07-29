@@ -1,0 +1,24 @@
+-- ============================================================================
+-- BATAL PENGALIHAN — Fase 1: nilai enum saja.
+--
+-- DIPISAH dari migrasi RPC-nya (20260729_07) karena `ALTER TYPE … ADD VALUE`
+-- TIDAK BOLEH berada dalam blok transaksi yang sama dengan pemakaiannya.
+-- Jalankan berkas ini SENDIRIAN, sampai selesai, BARU 20260729_07.
+--
+-- ⚠️ DEPLOY-ORDERING: dua migrasi ini WAJIB jalan SEBELUM deploy kode —
+-- lib/pengalihan.ts sudah akan memfilter `jenis` memakai nilai baru ini; kalau
+-- enumnya belum ada, `.in('jenis', …)` error dan Daftar Barang + Penyusutan +
+-- Rekonsiliasi rusak berjamaah.
+--
+-- KENAPA PERLU, padahal sudah ada "Kembalikan":
+--   Kembalikan = barang memang pergi lalu dikembalikan; dua-duanya peristiwa
+--   nyata dan tetap dibaca. Batal = perpindahannya DIANGGAP TAK PERNAH TERJADI
+--   (salah pilih barang). Pengalihan satu-satunya modul yang belum punya
+--   pembedaan ini — Pemanfaatan & Pengamanan sudah lama punya (⏹ Akhiri vs
+--   🗑 Batal). Akibat nyata 2026-07-29: gedung BKAD punya dua baris
+--   pengalihan_status di TANGGAL YANG SAMA (28→1 lalu 1→28), jelas salah pencet,
+--   tapi terbaca sistem sebagai perpindahan sungguhan sehingga segmen tahun kode
+--   registernya bergeser ke 2026 & barangnya menyala ⚠ selamanya.
+-- ============================================================================
+
+ALTER TYPE jenis_transaksi_bmd ADD VALUE IF NOT EXISTS 'batal_pengalihan';
