@@ -28,6 +28,7 @@ import {
   type InvBaris, type InvJawaban, type LkiConfig,
   type KondisiFisik, type PihakPengguna,
 } from '@/lib/inventarisasi'
+import { backdropClose } from '@/components/backdropClose'
 
 // MapPicker butuh `window` (Leaflet) → WAJIB dynamic tanpa SSR (aturan CLAUDE.md).
 const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false })
@@ -175,7 +176,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
   const lhi = klasifikasiLhi({ ...baris, jawaban: j })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onTutup}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onTutup)}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl flex items-start justify-between gap-4">
           <div>

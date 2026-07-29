@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
+import { backdropClose } from '@/components/backdropClose'
 
 type CaraConfig = { key: string; label: string; jenisTransaksi: string; kategoriJurnal: string | null }
 const CARA_LIST: CaraConfig[] = [
@@ -279,7 +280,7 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
           <h3 className="font-semibold text-gray-800">{title}</h3>

@@ -13,6 +13,7 @@ import {
   PERAN_USULAN, peranLabel, type UsulanRow, type UsulanStatus,
 } from '@/lib/usulanPengurus'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { backdropClose } from '@/components/backdropClose'
 
 type Skpd = { id: number; nama: string; parent_id: number | null; kode_skpd: string | null }
 const COLS = 'id,skpd_id,nama,nip,pangkat,golongan,jabatan,jenis_kelamin,jenis,role_bmd,tahun,status,catatan_admin,no_usulan,tgl_usulan,created_at'
@@ -368,7 +369,7 @@ function AdminView({ rows, skpdMap, tahun, isPastYear, loading, reload, supabase
         ))}
 
       {tolakId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setTolakId(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(() => setTolakId(null))}>
           <div className="card w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-100"><h3 className="font-semibold text-gray-800">Kembalikan Usulan</h3></div>
             <div className="p-5 space-y-2">

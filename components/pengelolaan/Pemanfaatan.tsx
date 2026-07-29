@@ -28,6 +28,7 @@ import {
   JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL, LINGKUP_OPT, type Lingkup,
   PEMANFAATAN_ELIGIBLE_GOLONGAN, isPemanfaatanEligible, hitungBerakhir, pemanfaatanCache,
 } from '@/lib/pemanfaatan'
+import { backdropClose } from '@/components/backdropClose'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
 const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
@@ -368,7 +369,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
           <h3 className="font-semibold text-gray-800">Edit Header Pemanfaatan</h3>

@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/client'
 import { FIELD_LABEL, FIELD_TYPE, FIELD_OPTIONS, type FieldKey } from '@/lib/asetFields'
 import dynamic from 'next/dynamic'
 import WilayahPicker from '@/components/WilayahPicker'
+import { backdropClose } from '@/components/backdropClose'
 const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false, loading: () => <div className="h-[220px] bg-gray-50 rounded-lg animate-pulse" /> })
 
 export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, initialFoto, single, onSave, onClose }: {
@@ -71,7 +72,7 @@ export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
           <h3 className="font-semibold text-gray-800">Edit Spesifikasi — {title}</h3>

@@ -35,6 +35,7 @@ import ProgramPicker from '@/components/ProgramPicker'
 import SearchSelect from '@/components/SearchSelect'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { BENTUK_KONTRAK_OPT, bentukKontrakLabel, type BentukKontrak } from '@/lib/bentukKontrak'
+import { backdropClose } from '@/components/backdropClose'
 
 // Bentuk/Jenis Kontrak kini dari konstanta bersama (lib/bentukKontrak) — 5 opsi
 // termasuk Surat Perjanjian. Alias dipertahankan supaya referensi lama tetap jalan.
@@ -1028,7 +1029,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
       {!picked && err && <p className="text-xs text-red-600">{err}</p>}
 
       {warnings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setWarnings(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(() => setWarnings(null))}>
           <div className="card w-full max-w-md" onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-gray-100">
               <h3 className="font-semibold text-amber-700">⚠ Konfirmasi Kode Rekening</h3>
@@ -1368,7 +1369,7 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
           <h3 className="font-semibold text-gray-800">Edit Kontrak & BAST</h3>

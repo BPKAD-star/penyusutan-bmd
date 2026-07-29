@@ -18,6 +18,7 @@ import { KapitalisasiRincian, KapitalisasiDetailModal, type KapSnapshot, type Ka
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
+import { backdropClose } from '@/components/backdropClose'
 
 type Barang = { id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai_perolehan: number; skpd_id: number | null; tgl_perolehan: string | null }
 type IndukFig = { npLama: number; nbLama: number; akumLama: number; bebanLama: number; sisaLamaSmt: number; masaMaks: number | null }
@@ -426,7 +427,7 @@ function BarangModal({ skpdId, golonganLabels, title, confirmLabel, multi, exclu
   const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-semibold text-gray-800">{title}</h3>

@@ -22,6 +22,7 @@ import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
+import { backdropClose } from '@/components/backdropClose'
 
 type Barang = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null
@@ -350,7 +351,7 @@ function EditHeaderModal({ header, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-lg" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-semibold text-gray-800">Edit Header Jurnal</h3>

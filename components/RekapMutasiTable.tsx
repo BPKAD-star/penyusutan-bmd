@@ -5,6 +5,7 @@
 // dgn drill-down di components/dashboard/MutasiTransferCards.tsx).
 import { useMemo, useState } from 'react'
 import { formatRupiah } from '@/lib/export'
+import { backdropClose } from '@/components/backdropClose'
 
 export type MutasiRow = {
   kode: string
@@ -122,7 +123,7 @@ function DetailModal({ title, lines, onClose }: { title: string; lines: MutasiDe
   }, [lines])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
           <h3 className="font-semibold text-gray-800">{title}</h3>

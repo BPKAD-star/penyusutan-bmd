@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
+import { backdropClose } from '@/components/backdropClose'
 
 export type PenghapusanCount = { n: number; nilai: number }
 export type PenghapusanData = Record<'hibah' | 'jual' | 'tukar' | 'modal' | 'sebabLain', PenghapusanCount>
@@ -89,7 +90,7 @@ function DetailModal({ label, jenis, subJenis, onClose }: { label: string; jenis
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
           <h3 className="font-semibold text-gray-800">{label} — Rincian per SKPD</h3>

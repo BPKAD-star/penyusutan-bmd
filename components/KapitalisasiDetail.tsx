@@ -4,6 +4,7 @@
 // se-eksplisit mungkin agar mudah diperiksa (BPK): semua angka induk sebelum,
 // nilai/persen anak, dan hasil sesudah kapitalisasi.
 import { formatRupiah } from '@/lib/export'
+import { backdropClose } from '@/components/backdropClose'
 
 export type KapSnapshot = {
   np_lama: number; beban_lama: number; akum_lama: number; nb_lama: number
@@ -85,7 +86,7 @@ export function KapitalisasiDetailModal({ title, items, onClose }: {
   title: string; items: KapItem[]; onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
       <div className="card w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-semibold text-gray-800">{title}</h3>
