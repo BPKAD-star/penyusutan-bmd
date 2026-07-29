@@ -44,6 +44,32 @@ apa pun yang menyentuh ledger atau engine.
   "beres"** — sesudah import besar, uji ulang halaman berat sbg pengurus barang
   SKPD TERBESAR, bukan cuma sbg admin.
 
+- **`jenis` (ENUM) juga TAK BISA jadi index-cond di bawah RLS — bukan cuma
+  `LIKE`.** Ronde 3 dari cerita yang sama, kena 2026-07-29 di
+  `fetchOwnerOverrides` (lib/pengalihan.ts) → Rekonsiliasi BMD gagal Proses
+  ("gagal membaca riwayat pengalihan/mutasi aset: statement timeout"). Duduk
+  perkaranya: sesudah import ATL, `transaksi_bmd` = 418.452 baris yang
+  **418.102-nya `saldo_awal`**, sementara baris pindah unit cuma **4**
+  (`pengalihan_status` 4, `mutasi_internal` 0). Qual enum ditinggalkan sbg
+  filter biasa → yang tersisa buat planner cuma `id > N ORDER BY id LIMIT 1000`
+  → menyusuri PRIMARY KEY sambil menyaring, LIMIT tak pernah terpenuhi, seluruh
+  tabel dilewati. **`idx_trx_jenis_id` (20260728_05) TIDAK menolong** untuk
+  kasus ini — index itu mengandalkan `jenis` jadi index-cond, yang justru tak
+  boleh. Obatnya **PARTIAL INDEX** `idx_trx_pindah_id` (migrasi 20260729_01):
+  `ON transaksi_bmd (id) WHERE jenis IN ('pengalihan_status','mutasi_internal')`
+  — jenis selesai di index, sisa `id > N` + `ORDER BY id` dilayani index itu
+  sendiri, dan biayanya ikut jumlah PERPINDAHAN bukan besar ledger.
+  ⚠️ Predikatnya KEMBAR dgn `JENIS_PINDAH` di lib/pengalihan.ts — ubah satu,
+  ubah dua-duanya. Aturan umum: **kolektor yang filternya CUMA `jenis` dan
+  jenisnya jarang, di ledger yang didominasi satu jenis lain, PASTI timeout.**
+  Urutan obat: (1) scope-kan ke `aset_id` kalau pemanggilnya tahu asetnya (pola
+  `fetchVoidedAsetIds`); (2) kalau memang tak bisa discope — cuma
+  `fetchOwnerOverrides`, karena pemilik pada periode V butuh baris SESUDAH V —
+  baru partial index. **Verifikasi WAJIB dgn RLS AKTIF** (`SET LOCAL role
+  authenticated` + `request.jwt.claims`): sbg service_role/superuser query yg
+  rusak ini tetap 0,2 dtk, jadi EXPLAIN tanpa RLS akan bilang "beres" padahal
+  belum — itu yang bikin 20260728_05 lolos verifikasi.
+
 - **Tabel yang selama ini cuma dibaca lewat RPC bisa menyimpan bom waktu RLS.**
   `aset_awal_2026` KELEWAT dari tiga ronde perbaikan InitPlan (20260716_07,
   20260717_02, 20260718_05/06) karena satu-satunya pembaca beratnya (Saldo Awal

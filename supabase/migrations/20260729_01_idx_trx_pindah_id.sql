@@ -1,0 +1,78 @@
+-- ============================================================================
+-- PARTIAL INDEX baris PINDAH UNIT di transaksi_bmd — `fetchOwnerOverrides`
+-- (lib/pengalihan.ts) tembus statement timeout sesudah import ATL Diknas
+-- (2026-07-29).
+--
+-- GEJALA: Rekonsiliasi BMD → Proses → "gagal membaca riwayat pengalihan/mutasi
+-- aset: canceling statement due to statement timeout". Sama akan menimpa Daftar
+-- Barang & Penyusutan (ketiganya memanggil fetchOwnerOverrides).
+--
+-- ANGKA yang menjelaskan semuanya (dihitung 2026-07-29):
+--   transaksi_bmd  = 418.452 baris
+--   jenis='saldo_awal'        = 418.102  ← 99,9% isi ledger (baseline + import)
+--   jenis='pengalihan_status' =       4
+--   jenis='mutasi_internal'   =       0
+-- Query-nya cuma perlu 4 baris, tapi harus menyusuri 418rb untuk menemukannya.
+--
+-- SEBAB — kenapa idx_trx_jenis_id (jenis, id) dari 20260728_05 TIDAK menolong:
+-- `jenis` bertipe ENUM. Di bawah RLS, qual yang tidak leakproof TIDAK BOLEH
+-- turun jadi index-cond (index cond dievaluasi SEBELUM qual sekuriti), jadi
+-- `jenis = ANY (...)` ditinggalkan sebagai filter biasa. Yang tersisa buat
+-- planner cuma `id > N ORDER BY id LIMIT 1000` → menyusuri PRIMARY KEY urut id
+-- sambil menyaring jenis, dan karena yang cocok cuma 4 dari 418rb, LIMIT 1000
+-- TAK PERNAH terpenuhi → seluruh tabel dilewati → timeout. Ini persis pelajaran
+-- `kode LIKE 'gol.%'` di CLAUDE.md, cuma operatornya beda (~~ vs enum =).
+-- Diverifikasi: sebagai service_role (RLS mati) query yang sama 0,24 dtk.
+--
+-- OBAT — PARTIAL INDEX, pola yang sama dgn 20260727_03 (idx_aset_tanah_skpd):
+-- predikat golongan/jenis diselesaikan DI DALAM INDEX, jadi tak ada lagi qual
+-- enum yang perlu jadi index-cond. Sisa qual `id > N` (int4gt, leakproof) jadi
+-- index-cond & `ORDER BY id` dilayani urutan index itu sendiri. Isi indexnya
+-- cuma baris pindah unit (4 hari ini) — biayanya ikut jumlah perpindahan, BUKAN
+-- ikut besar ledger, jadi tak akan bangun lagi berapa pun ledger tumbuh.
+--
+-- KENAPA BUKAN "scope-kan saja" (obat yg dipakai utk kolektor void 2026-07-28):
+-- fetchOwnerOverrides TIDAK BISA discope. Pemilik aset pada periode V hanya bisa
+-- diturunkan dari SELURUH riwayat pindah aset itu — termasuk baris SESUDAH V
+-- (barang yang kini sudah keluar scope tetap harus ketahuan dulu milik siapa,
+-- lihat partitionByPeriodOwner). Memotong filternya = angka salah diam-diam.
+-- Di sini index memang jawaban yang benar, karena himpunannya kecil selamanya.
+--
+-- ⚠️ PREDIKAT INDEX WAJIB SAMA PERSIS dgn qual di kode — `.in('jenis',
+-- JENIS_PINDAH)` di lib/pengalihan.ts dgn urutan & isi yang sama. Beda sedikit,
+-- planner tak bisa membuktikan implikasinya & indexnya diabaikan DIAM-DIAM
+-- (tak ada error, cuma lambat lagi). Nambah jenis ledger pemindah aset baru →
+-- ubah DUA-DUANYA: JENIS_PINDAH di lib/pengalihan.ts DAN predikat di bawah.
+--
+-- PLAIN, bukan CONCURRENTLY (SQL Editor membungkus skrip jadi satu transaksi —
+-- lihat 20260718_06). Indexnya cuma beberapa baris, locknya sekejap.
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_trx_pindah_id
+  ON transaksi_bmd (id)
+  WHERE jenis IN ('pengalihan_status', 'mutasi_internal');
+
+ANALYZE transaksi_bmd;
+
+-- ── VERIFIKASI (jalankan TERPISAH sesudah skrip di atas) ────────────────────
+-- Harus "Index Scan using idx_trx_pindah_id", milidetik. Kalau masih
+-- "Index Scan using transaksi_bmd_pkey" / "Seq Scan", predikatnya TIDAK
+-- terbukti — jangan diamkan, cocokkan lagi dgn JENIS_PINDAH di kode.
+--
+--   EXPLAIN ANALYZE
+--   SELECT aset_id, id, periode, skpd_asal, skpd_tujuan FROM transaksi_bmd
+--   WHERE jenis IN ('pengalihan_status','mutasi_internal') AND id > 0
+--   ORDER BY id LIMIT 1000;
+--
+-- Ulangi dgn RLS AKTIF (ini yang sebenarnya gagal — tanpa RLS selalu kelihatan
+-- bagus, itu sebabnya verifikasi 20260728_05 lolos padahal masalahnya belum
+-- selesai). Ganti <UUID-user> dgn id user admin:
+--
+--   BEGIN;
+--   SET LOCAL role authenticated;
+--   SET LOCAL request.jwt.claims = '{"sub":"<UUID-user>","role":"authenticated"}';
+--   EXPLAIN ANALYZE
+--   SELECT aset_id, id, periode, skpd_asal, skpd_tujuan FROM transaksi_bmd
+--   WHERE jenis IN ('pengalihan_status','mutasi_internal') AND id > 0
+--   ORDER BY id LIMIT 1000;
+--   ROLLBACK;

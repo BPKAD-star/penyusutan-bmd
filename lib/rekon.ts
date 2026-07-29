@@ -8,7 +8,7 @@
 // docs/rekonsiliasi-bmd-plan.md §4.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { comparePeriode, periodeDariTanggal, kodeLevel3, perlakuanKode } from '@/lib/bmd'
-import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+import { fetchPindahEvents, ownersAt, partitionByPeriodOwner, type PindahEvents } from '@/lib/pengalihan'
 import { fetchVoidedAsetIds, fetchBatalTargets } from '@/lib/voidedAset'
 
 // Event yang menyembunyikan / memunculkan kembali aset — SAMA dgn halaman
@@ -111,14 +111,32 @@ async function fetchHiddenIds(supabase: SupabaseClient, ids: string[], periode: 
   return hidden
 }
 
+// Bahan yang SAMA untuk berapa pun periode yang di-snapshot: daftar aset dalam
+// scope + riwayat pindah unit. Rekonsiliasi selalu minta DUA snapshot (saldo
+// awal & saldo akhir) dgn descendantIds yang sama — tanpa konteks bersama ini,
+// kedua panggilan menarik baris yang persis sama dua kali, termasuk sapuan
+// riwayat pindah yang sempat timeout (lihat fetchPindahEvents).
+export type SnapshotCtx = { base: Base[]; pindah: PindahEvents }
+
+export async function prepareSnapshotCtx(
+  supabase: SupabaseClient, descendantIds: number[] | null
+): Promise<SnapshotCtx> {
+  const [base, pindah] = await Promise.all([
+    fetchAllBase(supabase, descendantIds),
+    fetchPindahEvents(supabase),
+  ])
+  return { base, pindah }
+}
+
 // Snapshot period-correct: agregat 4 ukuran per (golongan, komptabel) pada AKHIR
 // `periode`, untuk scope SKPD (descendantIds; null = semua/ admin). Identik dgn
 // assembleRows halaman Penyusutan, tapi dijumlah bukan di-list.
+// `ctx` opsional: isi kalau memanggil >1 periode dgn scope yang sama.
 export async function fetchSnapshot(
-  supabase: SupabaseClient, periode: string, descendantIds: number[] | null
+  supabase: SupabaseClient, periode: string, descendantIds: number[] | null, ctx?: SnapshotCtx
 ): Promise<Snapshot> {
-  const base = await fetchAllBase(supabase, descendantIds)
-  const owners = await fetchOwnerOverrides(supabase, periode)
+  const { base, pindah } = ctx ?? await prepareSnapshotCtx(supabase, descendantIds)
+  const owners = ownersAt(pindah, periode)
 
   let combined = base
   if (descendantIds && descendantIds.length > 0) {

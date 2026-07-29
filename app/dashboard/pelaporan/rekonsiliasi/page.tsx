@@ -30,7 +30,7 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
-  fetchSnapshot, fetchMutasiLines, aggregateMutasi, measuresOf, mutasiCellOf, fetchPenyusutanAset,
+  fetchSnapshot, prepareSnapshotCtx, fetchMutasiLines, aggregateMutasi, measuresOf, mutasiCellOf, fetchPenyusutanAset,
   type Snapshot, type Mutasi, type MutasiCell, type MutasiKey, type MutasiLine, type Komptabel,
   type PenyusutanAset,
 } from '@/lib/rekon'
@@ -154,9 +154,14 @@ export default function RekonsiliasiPage() {
     const periode = `${tahun}-S${smt}`
     const awalPeriode = smt === '1' ? `${Number(tahun) - 1}-S2` : `${tahun}-S1`
     try {
+      // Dua snapshot (saldo awal & saldo akhir) berbagi SATU tarikan daftar aset
+      // + riwayat pindah unit — bahannya memang sama, yang beda cuma titik
+      // potong periodenya (dihitung di memori). Dulu keduanya menarik sendiri²,
+      // jadi setiap kali Proses ledger disapu dua kali percuma.
+      const ctx = await prepareSnapshotCtx(supabase, desc)
       const [awal, akhir, mutLines] = await Promise.all([
-        fetchSnapshot(supabase, awalPeriode, desc),
-        fetchSnapshot(supabase, periode, desc),
+        fetchSnapshot(supabase, awalPeriode, desc, ctx),
+        fetchSnapshot(supabase, periode, desc, ctx),
         fetchMutasiLines(supabase, periode, desc),
       ])
       setSnapAwal(awal); setSnapAkhir(akhir)

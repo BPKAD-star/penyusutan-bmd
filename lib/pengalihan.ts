@@ -22,26 +22,33 @@ import { comparePeriode } from '@/lib/bmd'
 type Ev = { aset_id: string; id: number; periode: string; skpd_asal: number | null; skpd_tujuan: number | null }
 
 // Jenis ledger yang MEMINDAHKAN aset antar unit (dua-duanya update aset.skpd_id).
+// ⚠️ KEMBAR dgn predikat partial index `idx_trx_pindah_id` (migrasi 20260729_01).
+// Nambah/ubah isi daftar ini WAJIB ikut mengubah predikat indexnya — kalau tidak,
+// planner tak bisa membuktikan implikasinya, indexnya diabaikan DIAM-DIAM, dan
+// query ini balik menyusuri seluruh ledger (418rb baris) demi segelintir baris.
 const JENIS_PINDAH = ['pengalihan_status', 'mutasi_internal']
 
-// Map aset_id → SKPD pemilik PADA `periode`, HANYA untuk aset yang pernah
-// berpindah (punya baris ledger JENIS_PINDAH). Aset lain tidak masuk map
-// → pemanggil pakai aset.skpd_id apa adanya.
-//
-// Cara baca: tiap baris memindahkan aset ke skpd_tujuan pada periode-nya (baris
-// reversal/pengembalian = skpd_tujuan berisi SKPD asal). Pemilik pada V =
-// skpd_tujuan baris TERAKHIR (urut periode lalu id ledger) yang periode <= V.
-// Kalau belum ada baris <= V (V sebelum transfer pertama) → skpd_asal baris
-// paling awal (pemilik semula).
-export async function fetchOwnerOverrides(
-  supabase: SupabaseClient, periode: string
-): Promise<Map<string, number | null>> {
+// Riwayat pindah unit MENTAH (semua periode), dikelompokkan per aset.
+// DIPISAH dari fetchOwnerOverrides supaya pemanggil yang butuh BEBERAPA periode
+// sekaligus (Rekonsiliasi: saldo awal + saldo akhir) menariknya SEKALI saja —
+// `periode` cuma dipakai di reduce client-side, jadi dua panggilan lama itu
+// menarik baris yang sama persis dua kali.
+export type PindahEvents = Map<string, Ev[]>
+
+export async function fetchPindahEvents(supabase: SupabaseClient): Promise<PindahEvents> {
   // ⚠️ Sengaja TIDAK diberi filter periode/SKPD: pemilik pada periode V hanya
   // bisa diturunkan dari SELURUH riwayat pindah aset itu (baris sesudah V harus
   // ikut terbaca supaya barang yang kini sudah keluar scope tetap ketahuan dulu
-  // milik siapa — lihat partitionByPeriodOwner). Aman selama baris pindah masih
-  // sedikit; kalau suatu saat ini yang timeout, pindahkan agregasinya ke RPC
-  // (pola fn_rekap_*), JANGAN dipotong filternya — hasilnya jadi salah diam-diam.
+  // milik siapa — lihat partitionByPeriodOwner). JANGAN dipotong filternya —
+  // hasilnya jadi salah diam-diam.
+  //
+  // Ini SATU-SATUNYA kolektor di repo yang memang tak bisa discope ke daftar
+  // aset (obat yang dipakai kolektor void 2026-07-28). Dan memang pernah
+  // timeout: sesudah import ATL Diknas, ledger jadi 418rb baris yang 99,9%-nya
+  // `saldo_awal`, sementara baris pindah cuma 4 — planner menyusuri PK urut id
+  // menyaring 418rb baris karena qual enum `jenis` tak boleh jadi index-cond di
+  // bawah RLS. Obatnya PARTIAL INDEX `idx_trx_pindah_id` (migrasi 20260729_01),
+  // yang biayanya ikut jumlah PERPINDAHAN, bukan besar ledger.
   //
   // Keyset (bukan OFFSET) + `error` DIPERIKSA: versi lama menelan errornya, dan
   // map kosong = "tak ada aset yang pernah pindah" — atribusi SKPD jadi salah
@@ -65,6 +72,20 @@ export async function fetchOwnerOverrides(
     }
     if (rows.length < 1000) break
   }
+  return evByAset
+}
+
+// Reduce MURNI (tanpa I/O): riwayat pindah → map aset_id → SKPD pemilik PADA
+// `periode`, HANYA untuk aset yang pernah berpindah (punya baris ledger
+// JENIS_PINDAH). Aset lain tidak masuk map → pemanggil pakai aset.skpd_id apa
+// adanya.
+//
+// Cara baca: tiap baris memindahkan aset ke skpd_tujuan pada periode-nya (baris
+// reversal/pengembalian = skpd_tujuan berisi SKPD asal). Pemilik pada V =
+// skpd_tujuan baris TERAKHIR (urut periode lalu id ledger) yang periode <= V.
+// Kalau belum ada baris <= V (V sebelum transfer pertama) → skpd_asal baris
+// paling awal (pemilik semula).
+export function ownersAt(evByAset: PindahEvents, periode: string): Map<string, number | null> {
   const owner = new Map<string, number | null>()
   for (const [asetId, evs] of evByAset) {
     const sorted = [...evs].sort((a, b) => comparePeriode(a.periode, b.periode) || a.id - b.id)
@@ -72,6 +93,13 @@ export async function fetchOwnerOverrides(
     owner.set(asetId, upto.length > 0 ? upto[upto.length - 1].skpd_tujuan : sorted[0].skpd_asal)
   }
   return owner
+}
+
+// Jalur SATU PERIODE (Daftar Barang & Penyusutan) — tarik + reduce sekaligus.
+export async function fetchOwnerOverrides(
+  supabase: SupabaseClient, periode: string
+): Promise<Map<string, number | null>> {
+  return ownersAt(await fetchPindahEvents(supabase), periode)
 }
 
 // Terapkan override kepemilikan ke sekumpulan baris yang difilter per-SKPD.
