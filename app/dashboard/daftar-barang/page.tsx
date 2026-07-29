@@ -162,6 +162,11 @@ export default function DaftarBarangPage() {
   const [showAll, setShowAll] = useState(false)
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
+  // Pesan kegagalan query. WAJIB ada di halaman daftar (CLAUDE.md): tanpa ini,
+  // query yang gagal cuma bikin tombol nyangkut "Memuat..." selamanya (kalau
+  // melempar) atau terbaca operator sbg "0 barang / datanya memang kosong"
+  // (kalau errornya ditelan) — dua-duanya bisa berbulan-bulan tak ketahuan.
+  const [err, setErr] = useState('')
   const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
@@ -223,7 +228,8 @@ export default function DaftarBarangPage() {
       if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
       if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
       if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
-      const { data } = await q
+      const { data, error } = await q
+      if (error) throw new Error(`gagal membaca barang yang sudah pindah SKPD: ${error.message}`)
       out.push(...((data as unknown as Row[]) || []))
     }
     return out
@@ -241,7 +247,8 @@ export default function DaftarBarangPage() {
   const fetchBidangCount = useCallback(async (ids: string[]) => {
     const cnt: Record<string, { n: number; nLuas: number; luas: number | null }> = {}
     for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await supabase.from('aset_bidang_tanah').select('aset_id,luas').in('aset_id', ids.slice(i, i + 200))
+      const { data, error } = await supabase.from('aset_bidang_tanah').select('aset_id,luas').in('aset_id', ids.slice(i, i + 200))
+      if (error) throw new Error(`gagal membaca bidang tanah: ${error.message}`)
       for (const b of (data || []) as { aset_id: string; luas: number | null }[]) {
         const a = cnt[b.aset_id] || (cnt[b.aset_id] = { n: 0, nLuas: 0, luas: null })
         a.n++
@@ -256,7 +263,8 @@ export default function DaftarBarangPage() {
     const uniq = [...new Set(kodes)]
     const map: Record<string, string> = {}
     for (let i = 0; i < uniq.length; i += 200) {
-      const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      const { data, error } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      if (error) throw new Error(`gagal membaca uraian kodefikasi: ${error.message}`)
       for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
     }
     return map
@@ -265,7 +273,8 @@ export default function DaftarBarangPage() {
   async function fetchAllRows(f: Applied, includeDeleted = false) {
     const all: Row[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await buildQuery(f, false, includeDeleted).range(from, from + 999)
+      const { data, error } = await buildQuery(f, false, includeDeleted).range(from, from + 999)
+      if (error) throw new Error(`gagal membaca daftar barang: ${error.message}`)
       if (!data || data.length === 0) break
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
@@ -281,8 +290,12 @@ export default function DaftarBarangPage() {
   const fetchHiddenIds = useCallback(async (ids: string[], periode: string) => {
     const evByAset = new Map<string, { id: number; periode: string; jenis: string }[]>()
     for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await supabase.from('transaksi_bmd')
+      const { data, error } = await supabase.from('transaksi_bmd')
         .select('id,aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
+      // Gagal di sini TIDAK BOLEH ditelan: set kosong = "tak ada yang
+      // disembunyikan", jadi barang yang sudah dihapus/diserap muncul lagi
+      // seolah masih ada — persis jebakan filter void (CLAUDE.md).
+      if (error) throw new Error(`gagal membaca event visibilitas barang: ${error.message}`)
       for (const e of (data || []) as { id: number; aset_id: string; jenis: string; periode: string }[]) {
         const arr = evByAset.get(e.aset_id) || []; arr.push({ id: e.id, periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
       }
@@ -308,11 +321,12 @@ export default function DaftarBarangPage() {
   const fetchHapusInfo = useCallback(async (ids: string[]) => {
     const info = new Map<string, HapusInfo>()
     for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await supabase.from('transaksi_bmd')
+      const { data, error } = await supabase.from('transaksi_bmd')
         .select('aset_id,tanggal,jenis,header:header_id(no_sk,keterangan)')
         .in('jenis', ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain'] as never)
         .in('aset_id', ids.slice(i, i + 200))
         .order('id', { ascending: false })
+      if (error) throw new Error(`gagal membaca jejak penghapusan: ${error.message}`)
       for (const r of (data || []) as unknown as { aset_id: string; tanggal: string; jenis: string; header: { no_sk: string | null; keterangan: string | null } | null }[]) {
         if (info.has(r.aset_id)) continue
         info.set(r.aset_id, { tgl: r.tanggal, no_sk: r.header?.no_sk ?? null, jenis: r.jenis, ket: r.header?.keterangan ?? null })
@@ -330,7 +344,17 @@ export default function DaftarBarangPage() {
     if (!fGolongan) return // wajib pilih jenis aset dulu
     const f: Applied = { descIds: fSel.descIds, skpdId: fSel.skpdId, golongan: fGolongan, komptabel: fKomptabel, search: fSearch, periode: `${fTahun}-S${fSmt}` }
     setApplied(f); setPage(0); setGrandTotal(0)
-    setLoading(true)
+    setLoading(true); setErr('')
+
+    // ⚠️ SELURUH isi fungsi ini WAJIB di dalam try/finally. Sebelumnya tidak:
+    // begitu satu query melempar (fetchOwnerOverrides sudah melempar sejak
+    // 2026-07-28), promise-nya ditolak tanpa penangkap, `setLoading(false)` di
+    // baris terakhir TAK PERNAH tercapai → tombol nyangkut "Memuat..." dan
+    // tabel "Memuat data..." SELAMANYA, tanpa sepatah pun keterangan. Itu yang
+    // terlihat operator sbg "Daftar Barang ndak muncul-muncul" padahal
+    // penyebabnya statement timeout yang sama dgn Rekonsiliasi — bedanya
+    // Rekonsiliasi punya try/catch jadi pesannya kelihatan, halaman ini tidak.
+    try {
 
     // Ambil SEMUA baris (aktif + dihapus) yg kini di scope SKPD, lalu:
     //   (0) sesuaikan kepemilikan PERIOD-AWARE (transfer antar SKPD): buang yg
@@ -365,7 +389,18 @@ export default function DaftarBarangPage() {
     showPage(visible, 0)
     setUraianMap(await fetchUraian(visible.map(r => r.kode)))
     setBidangCount(f.golongan === '1.3.1' ? await fetchBidangCount(visible.map(r => r.id)) : {})
-    setLoading(false)
+
+    } catch (e) {
+      // Fail-closed spt modul pelaporan: daftar yang kurang sebagian JAUH lebih
+      // berbahaya daripada daftar yang menolak tampil — operator tak punya cara
+      // tahu barangnya kurang, dan angkanya ikut diekspor ke Excel.
+      setErr(`${(e as Error).message} — daftar tidak ditampilkan supaya tidak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat. Coba klik Tampilkan lagi; kalau berulang, kabari admin.`)
+      setAllVisible([]); setData([]); setTotal(0); setGrandTotal(0)
+    } finally {
+      // Di `finally`, BUKAN di akhir jalur sukses — kalau tidak, satu query
+      // gagal bikin tombolnya nyangkut "Memuat..." selamanya.
+      setLoading(false)
+    }
   }
 
   function goPage(pg: number) {
@@ -383,7 +418,8 @@ export default function DaftarBarangPage() {
 
   async function handleExport() {
     if (!applied) return
-    setExporting(true)
+    setExporting(true); setErr('')
+    try {
     const all = allVisible // posisi sesuai periode terpilih (period-aware)
     const uraian = await fetchUraian(all.map(r => r.kode))
     const keys = exportColsFor(applied.golongan)
@@ -413,14 +449,21 @@ export default function DaftarBarangPage() {
       for (const k of keys) obj[COL_META[k].header] = cell(k)
       return obj
     }), `Daftar_Barang_${applied.golongan}`, 'Daftar Barang')
-    setExporting(false)
+    } catch (e) {
+      // Berkas Excel yang isinya kurang sebagian TIDAK BOLEH terlanjur terunduh —
+      // sekali tersimpan, tak ada lagi tanda bahwa datanya tak lengkap.
+      setErr(`gagal menyiapkan export: ${(e as Error).message} — berkas tidak dibuat supaya tidak ada Excel setengah jadi yang beredar.`)
+    } finally {
+      setExporting(false)
+    }
   }
 
   // Export Audit/Mutasi (BPK): SEMUA barang termasuk yang dihapus, + kolom jejak
   // penghapusan (status, no. SK, tanggal, alasan). Barang aktif → kolom hapus kosong.
   async function handleExportAudit() {
     if (!applied) return
-    setExporting(true)
+    setExporting(true); setErr('')
+    try {
     const all = await fetchAllRows(applied, true)
     const uraian = await fetchUraian(all.map(r => r.kode))
     const hapus = await fetchHapusInfo(all.filter(r => r.status !== 'aktif').map(r => r.id))
@@ -457,7 +500,13 @@ export default function DaftarBarangPage() {
       obj['Alasan Penghapusan'] = hi?.ket || ''
       return obj
     }), `Daftar_Barang_${applied.golongan}_AUDIT`, 'Daftar Barang (Audit)')
-    setExporting(false)
+    } catch (e) {
+      // Ini berkas untuk BPK/inspektorat — justru yang PALING tak boleh
+      // terunduh dalam keadaan kurang sebagian.
+      setErr(`gagal menyiapkan Export Audit: ${(e as Error).message} — berkas tidak dibuat supaya tidak ada Excel setengah jadi yang beredar.`)
+    } finally {
+      setExporting(false)
+    }
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -573,6 +622,10 @@ export default function DaftarBarangPage() {
           </div>
         </div>
       </div>
+
+      {err && (
+        <div className="card border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
+      )}
 
       {/* Hasil */}
       {applied === null ? (

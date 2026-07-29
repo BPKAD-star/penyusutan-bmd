@@ -71,6 +71,8 @@ export default function PenyusutanPage() {
   const [detail, setDetail] = useState<{ nama: string; items: KapItem[] } | null>(null)
   const [engineRunning, setEngineRunning] = useState(false)
   const [engineMsg, setEngineMsg] = useState('')
+  // Pesan kegagalan query (bukan pesan engine) — lihat catatan di `load`.
+  const [err, setErr] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
 
   // "Jalankan Engine" khusus admin pemda (Pengelola Barang) — server (/api/engine/run)
@@ -220,11 +222,23 @@ export default function PenyusutanPage() {
       .map(b => ({ ...b, p: pmap.get(b.id), ownerSkpd: owners.get(b.id) ?? b.skpd_id }))
   }
 
+  // ⚠️ try/finally WAJIB — assembleRows memanggil kolektor fail-closed
+  // (fetchOwnerOverrides MELEMPAR sejak 2026-07-28). Tanpa penangkap, satu
+  // query gagal bikin `setLoading(false)` tak pernah tercapai → halaman beku
+  // di "Memuat..." tanpa keterangan apa pun. Lihat CLAUDE.md.
   async function load(f: Applied) {
-    setLoading(true)
-    setRows(await assembleRows(f))
-    setKapMap(await fetchKap(f))
-    setLoading(false)
+    setLoading(true); setErr('')
+    try {
+      setRows(await assembleRows(f))
+      setKapMap(await fetchKap(f))
+    } catch (e) {
+      // Fail-closed: daftar penyusutan yang kurang sebagian lebih berbahaya
+      // daripada halaman yang menolak tampil.
+      setErr(`${(e as Error).message} — daftar tidak ditampilkan supaya tidak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat. Coba Tampilkan lagi; kalau berulang, kabari admin.`)
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   function tampilkan() {
@@ -388,6 +402,10 @@ export default function PenyusutanPage() {
           )}
         </div>
       </div>
+
+      {err && (
+        <div className="card border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
+      )}
 
       {applied === null ? (
         <div className="card p-12 text-center text-gray-400 text-sm">

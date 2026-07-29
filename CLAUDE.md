@@ -85,6 +85,23 @@ apa pun yang menyentuh ledger atau engine.
   operator sebagai "0 barang / data memang kosong", dan bug-nya bisa berbulan-
   bulan tak ketahuan. Tampilkan pesannya.
 
+- **Kolektor yang MELEMPAR tanpa `try/catch` di pemanggilnya = halaman NYANGKUT
+  selamanya.** Pasangan wajib dari aturan di atas, dan sempat kelewat: sesudah
+  kolektor-kolektor diubah jadi fail-closed (2026-07-28), **Daftar Barang**
+  (2026-07-29) `await fetchOwnerOverrides(...)` tanpa penangkap sama sekali —
+  begitu query itu timeout, promise-nya ditolak, `setLoading(false)` di baris
+  terakhir TAK PERNAH tercapai → tombol "Memuat..." & tabel "Memuat data..."
+  membeku SELAMANYA tanpa sepatah pun keterangan. Akar masalahnya sama persis
+  dgn Rekonsiliasi (statement timeout), tapi Rekonsiliasi punya try/catch jadi
+  pesannya kelihatan dan langsung ketahuan; Daftar Barang cuma terlihat "ndak
+  muncul-muncul". **Setiap halaman yang memanggil kolektor fail-closed WAJIB:**
+  (1) seluruh badan fungsi loader di dalam `try`; (2) `setLoading(false)` di
+  `finally`, BUKAN di akhir jalur sukses; (3) state error yang DITAMPILKAN;
+  (4) tombol Export ikut dibungkus — Excel setengah jadi yang terlanjur terunduh
+  tak punya tanda apa pun bahwa isinya kurang. Sudah dipasang di Daftar Barang;
+  **cek halaman lain yang memanggil `fetchOwnerOverrides`/`fetchVoidedAsetIds`/
+  `fetchBatalTargets` sebelum menambah kolektor melempar yang baru.**
+
 - **`const { data } = await supabase...` (tanpa `error`) di kode yang MENGHITUNG,
   bukan cuma menampilkan, itu bom waktu.** `generateNibars` (lib/nibar.ts) begitu:
   query nomor urut terakhir gagal → `data` null → nomor urut diam-diam MENGULANG
