@@ -180,6 +180,18 @@ export default function Penghapusan() {
       // Penghapusan: dedup global by aset (barang cuma bisa 'dihapus' di satu
       // jurnal). Pengalihan: dedup per header+aset (barang sah pindah berkali-
       // kali lewat jurnal berbeda); baris terbaru reversal = keluar dari kartu.
+      // Pengalihan yang DIBATALKAN (migrasi 20260729_06/07) — dianggap tak
+      // pernah terjadi, jadi barangnya keluar dari kartu di SISI PENGIRIM juga,
+      // bukan cuma di Penggunaan Masuk. Kalau semua barangnya dibatalkan,
+      // kartunya ikut hilang lewat filter `lines.length > 0` di bawah.
+      const { data: batalRows } = await supabase.from('transaksi_bmd')
+        .select('header_id,aset_id')
+        .eq('jenis', 'batal_pengalihan')
+        .in('header_id', ledgerIds)
+      const dibatalkan = new Set(
+        ((batalRows || []) as { header_id: string; aset_id: string }[])
+          .map(r => `${r.header_id}|${r.aset_id}`))
+
       const seenHapus = new Set<string>()
       const seenAlih = new Set<string>()
       for (const r of rows) {
@@ -194,6 +206,7 @@ export default function Penghapusan() {
           const key = `${r.header_id}|${r.aset.id}`
           if (seenAlih.has(key)) continue
           seenAlih.add(key)
+          if (dibatalkan.has(key)) continue
           if (r.payload?.reversal) continue
         }
         j.lines.push({

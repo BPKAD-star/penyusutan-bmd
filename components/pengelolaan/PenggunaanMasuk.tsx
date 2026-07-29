@@ -95,12 +95,27 @@ export default function PenggunaanMasuk() {
         id: number; header_id: string; nilai: number; payload: { reversal?: boolean } | null
         aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; merek_tipe: string | null; jumlah: number; satuan: string | null } | null
       }[]
+      // Pasangan (kartu, barang) yang pengalihannya DIBATALKAN. Beda perlakuan
+      // dari "Dikembalikan": dikembalikan = peristiwa nyata, tetap tampil
+      // sebagai riwayat; DIBATALKAN = dianggap tak pernah terjadi, jadi
+      // barangnya keluar TOTAL dari kartu. Kartu yang lalu jadi kosong ikut
+      // hilang lewat filter `lines.length > 0` di bawah — pola "auto-ilang"
+      // yang sama dengan sisi pengirim di Penghapusan.tsx.
+      const { data: batalRows } = await supabase.from('transaksi_bmd')
+        .select('header_id,aset_id')
+        .eq('jenis', 'batal_pengalihan')
+        .in('header_id', approvedIds)
+      const dibatalkan = new Set(
+        ((batalRows || []) as { header_id: string; aset_id: string }[])
+          .map(r => `${r.header_id}|${r.aset_id}`))
+
       const seen = new Set<string>()
       for (const r of rows) {
         if (!r.aset) continue
         const key = `${r.header_id}|${r.aset.id}`
         if (seen.has(key)) continue
         seen.add(key)
+        if (dibatalkan.has(key)) continue
         // Baris terbaru ber-reversal = sudah dipulangkan. DITAMPILKAN sebagai
         // riwayat, bukan dibuang — lihat catatan di type Line.
         const dikembalikan = !!r.payload?.reversal
