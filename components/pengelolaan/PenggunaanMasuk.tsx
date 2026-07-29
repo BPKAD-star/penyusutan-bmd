@@ -30,7 +30,14 @@ type Header = {
   rejected_reason: string | null
   payload: { dokumen_paths?: string[]; draft_items?: DraftItem[] } | null
 }
-type Line = DraftItem
+// `dikembalikan` = baris ledger TERBARU aset ini di kartu tsb ber-`reversal`,
+// artinya barangnya sudah dipulangkan ke SKPD asal. Barisnya TETAP ditampilkan
+// sebagai riwayat (pola yang sama dgn Pemanfaatan "Selesai" & Pengamanan
+// "Dikembalikan") — sebelumnya dibuang total dari daftar, akibatnya tombol
+// Batal tak pernah bisa dijangkau untuk barang yang terlanjur dikembalikan,
+// padahal justru itu kasus yang paling butuh dibatalkan (salah pencet lalu
+// buru-buru dipulangkan di hari yang sama).
+type Line = DraftItem & { dikembalikan?: boolean }
 type Jurnal = Header & { lines: Line[]; total: number }
 
 const namaFile = (path: string) => path.split('/').pop() || path
@@ -94,14 +101,19 @@ export default function PenggunaanMasuk() {
         const key = `${r.header_id}|${r.aset.id}`
         if (seen.has(key)) continue
         seen.add(key)
-        if (r.payload?.reversal) continue // baris terbaru = pembatalan → bukan anggota lagi
+        // Baris terbaru ber-reversal = sudah dipulangkan. DITAMPILKAN sebagai
+        // riwayat, bukan dibuang — lihat catatan di type Line.
+        const dikembalikan = !!r.payload?.reversal
         const j = jmap.get(r.header_id)
         if (!j) continue
         j.lines.push({
           aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
+          dikembalikan,
         })
-        j.total += r.nilai
+        // Barang yang sudah pulang TIDAK ikut total kartu — totalnya menyatakan
+        // nilai yang saat ini dikuasai SKPD penerima.
+        if (!dikembalikan) j.total += r.nilai
       }
     }
     setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
@@ -277,20 +289,30 @@ export default function PenggunaanMasuk() {
                           <td className="table-td">
                             <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
                             <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
+                            {l.dikembalikan && (
+                              <span className="inline-block mt-1 px-2 py-0.5 rounded text-[11px] bg-gray-100 text-gray-500">
+                                Dikembalikan
+                              </span>
+                            )}
                           </td>
                           <td className="table-td text-xs text-gray-600">{l.merek_tipe || '-'}</td>
                           <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
                           <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
                           {disetujui && (
                             <td className="table-td text-center">
-                              <button disabled={busy} onClick={() => kembalikan(j, l)}
-                                title="Kembalikan barang ini ke SKPD asal (dicatat di periode berjalan) — barang MEMANG sempat dipakai di sini"
-                                className="px-3 py-1 rounded text-xs bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50">
-                                Kembalikan
-                              </button>
+                              {/* Sudah dipulangkan → tak ada yang bisa dikembalikan lagi,
+                                  tapi pembatalan TETAP boleh: justru barang yang buru-buru
+                                  dipulangkan itu yang biasanya salah pencet. */}
+                              {!l.dikembalikan && (
+                                <button disabled={busy} onClick={() => kembalikan(j, l)}
+                                  title="Kembalikan barang ini ke SKPD asal (dicatat di periode berjalan) — barang MEMANG sempat dipakai di sini"
+                                  className="px-3 py-1 rounded text-xs bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50">
+                                  Kembalikan
+                                </button>
+                              )}
                               <button disabled={busy} onClick={() => batalPengalihan(j, l)}
                                 title="Batalkan — untuk SALAH CATAT. Pengalihannya dianggap tak pernah terjadi (beda dari Kembalikan)"
-                                className="ml-2 px-3 py-1 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50">
+                                className={`${l.dikembalikan ? '' : 'ml-2 '}px-3 py-1 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50`}>
                                 🗑 Batal
                               </button>
                             </td>
