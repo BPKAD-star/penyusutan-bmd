@@ -216,30 +216,32 @@ async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: 
 // app/dashboard/pelaporan/bmd/page.tsx. 'batal_akumulasi_kdp' ditambahkan:
 // kontrak konstruksi yang dibuka kunci membalik SEMUA terminnya, jadi aset KDP
 // itu tak boleh dihitung sbg penambahan.
-const fetchVoided = (supabase: SupabaseClient) =>
-  fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'])
+const fetchVoided = (supabase: SupabaseClient, asetIds: string[]) =>
+  fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'], asetIds)
 
 // target_trx_id yg dibatalkan (kapitalisasi/koreksi/reklas) — implementasi
 // dipindah ke lib/voidedAset.ts, dipakai bersama Laporan Pengelolaan.
 
-// aset_id yg NET-terhapus (penghapusan_* belum dibatalkan) — replay "event terakhir menang".
-async function fetchNetRemoved(supabase: SupabaseClient): Promise<Set<string>> {
+// aset_id yg NET-terhapus (penghapusan_* belum dibatalkan) — replay "event
+// terakhir menang". DIBATASI ke aset yang memang ditanyakan: fungsi ini cuma
+// dipakai untuk menilai baris `hapus` di periode ini, jadi tak ada gunanya
+// menyapu seluruh riwayat penghapusan sepanjang masa. Versi lama melakukan itu
+// dan tembus statement timeout (2026-07-28) — biayanya tumbuh terus mengikuti
+// ledger, jadi index pun tak akan menyelamatkan selamanya.
+async function fetchNetRemoved(supabase: SupabaseClient, asetIds: string[]): Promise<Set<string>> {
   const latest = new Map<string, { periode: string; id: number; removed: boolean }>()
-  let terakhir = 0
-  for (;;) {
+  const uniq = [...new Set(asetIds)]
+  for (let i = 0; i < uniq.length; i += 200) {
     const { data, error } = await supabase.from('transaksi_bmd')
-      .select('id,aset_id,periode,jenis').in('jenis', [...JENIS_HAPUS, 'batal_penghapusan'] as never)
-      .gt('id', terakhir).order('id', { ascending: true }).limit(1000)
+      .select('id,aset_id,periode,jenis')
+      .in('jenis', [...JENIS_HAPUS, 'batal_penghapusan'] as never)
+      .in('aset_id', uniq.slice(i, i + 200))
     if (error) throw new Error(`gagal membaca riwayat penghapusan: ${error.message}`)
-    if (!data || data.length === 0) break
-    const rows = data as { id: number; aset_id: string; periode: string; jenis: string }[]
-    for (const r of rows) {
+    for (const r of (data || []) as { id: number; aset_id: string; periode: string; jenis: string }[]) {
       const cur = latest.get(r.aset_id)
       if (!cur || r.periode > cur.periode || (r.periode === cur.periode && r.id > cur.id))
         latest.set(r.aset_id, { periode: r.periode, id: r.id, removed: r.jenis !== 'batal_penghapusan' })
-      terakhir = r.id
     }
-    if (rows.length < 1000) break
   }
   const out = new Set<string>()
   for (const [id, s] of latest) if (s.removed) out.add(id)
@@ -288,7 +290,12 @@ async function computeMutasiLines(
     })
   }
 
-  const [cara, alih, kap, kapBatal, kor, korBatal, reklasG, reklasK, reklasBatal, voided, netRemoved, hapus] = await Promise.all([
+  // DUA TAHAP, sengaja. Tahap 1 menarik baris ledger periode ini; tahap 2
+  // menanyakan status void/net-removed HANYA untuk aset yang muncul di tahap 1.
+  // Versi lama menanyakan keduanya atas SELURUH ledger (259rb baris) sekaligus
+  // dgn baris periode ini — itu yang tembus statement timeout beruntun
+  // 2026-07-28, dan biayanya bakal terus naik seiring ledger tumbuh.
+  const [cara, alih, kap, kapBatal, kor, korBatal, reklasG, reklasK, reklasBatal, hapus] = await Promise.all([
     fetchLed(supabase, JENIS_CARA, periode),
     fetchLed(supabase, ['pengalihan_status'], periode),
     fetchLed(supabase, ['kapitalisasi'], periode),
@@ -298,9 +305,11 @@ async function computeMutasiLines(
     fetchLed(supabase, ['reklas_golongan'], periode),
     fetchLed(supabase, ['reklas_kode'], periode),
     fetchBatalTargets(supabase, ['batal_reklas']),
-    fetchVoided(supabase),
-    fetchNetRemoved(supabase),
     fetchLed(supabase, JENIS_HAPUS, periode),
+  ])
+  const [voided, netRemoved] = await Promise.all([
+    fetchVoided(supabase, cara.map(r => r.aset_id)),
+    fetchNetRemoved(supabase, hapus.map(r => r.aset_id)),
   ])
 
   // Cara Perolehan (+ split Belanja Jasa 5.1). jenis dari ledger.

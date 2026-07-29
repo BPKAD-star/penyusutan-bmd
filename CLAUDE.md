@@ -74,6 +74,20 @@ apa pun yang menyentuh ledger atau engine.
   dicari pakai `LIKE 'prefix%'` butuh index `text_pattern_ops` sendiri, UNIQUE saja
   tidak cukup; dan generator nomor urut harus gagal KERAS, jangan jatuh ke 0.
 
+- **JANGAN sapu seluruh ledger untuk menanyakan status segelintir aset.**
+  `fetchVoidedAsetIds` & `fetchNetRemoved` dulu menarik SEMUA baris `batal_*`/
+  `penghapusan_*` sepanjang masa (259rb baris) padahal yang ditanya cuma status
+  belasan aset di satu periode. Hasilnya timeout beruntun 2026-07-28 yang
+  "pindah-pindah" tiap ditambal (batal_kapitalisasi → batal_koreksi_nilai →
+  riwayat penghapusan) — index & keyset cuma menggeser ambangnya, biayanya tetap
+  tumbuh mengikuti ledger. Obatnya: **kirim daftar aset yang ditanya**
+  (`fetchVoidedAsetIds(..., asetIds)`, `fetchNetRemoved(supabase, asetIds)`) →
+  `jenis IN (...) AND aset_id IN (...)` dilayani `idx_trx_jenis_aset`, biaya
+  tetap kecil selamanya. Di `computeMutasiLines` ini bikin alurnya DUA TAHAP:
+  tarik baris periode dulu, baru tanya status aset-aset itu. Pemanggil yang
+  belum terscope (LaporanPerolehan, Laporan BMD Model 3) masih pakai jalur lama
+  — kalau nanti timeout, scope-kan, jangan tambah index lagi.
+
 - **Kolektor halaman-demi-halaman WAJIB keyset (`.gt('id', terakhir)`) + urut
   `id` + cek `error`.** Tiga cacat yang selalu berpasangan di repo ini, dan
   ketiganya bikin ANGKA LAPORAN SALAH TANPA SUARA: (1) paginasi tanpa `ORDER BY` —

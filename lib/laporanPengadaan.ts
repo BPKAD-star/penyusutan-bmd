@@ -88,7 +88,11 @@ export async function fetchLaporanPengadaan(
   // aset.status='dihapus' — itu juga kena `penghapusan_*` (peristiwa periode
   // LAIN), yang bikin barang sah hilang dari laporan periode perolehannya.
   // Lihat lib/voidedAset.ts.
-  const voided = await fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'])
+  // Dibatasi ke aset yang memang ada di `raws` — menyapu seluruh ledger cuma
+  // untuk menanyakan status segelintir aset itu yang bikin timeout beruntun
+  // (2026-07-28). Lihat catatan param `asetIds` di lib/voidedAset.ts.
+  const voided = await fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'],
+    raws.map(r => r.aset_id).filter((id): id is string => !!id))
   const descSet = opts.descIds && opts.descIds.length > 0 ? new Set(opts.descIds) : null
   const rows = raws.filter(r =>
     r.aset && !(r.aset_id && voided.has(r.aset_id)) &&

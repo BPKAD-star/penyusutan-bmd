@@ -50,8 +50,30 @@ const UNVOID_JENIS = ['batal_koreksi_pencatatan_ganda']
 //    `data` jadi null, loop berhenti, dan fungsi ini mengembalikan set KOSONG —
 //    artinya "tidak ada yang dibatalkan", kebalikan dari kenyataan. Fail-closed:
 //    lebih baik laporannya menolak tampil daripada menyajikan angka palsu.
-async function collectAsetIds(supabase: Supabase, jenisList: string[]): Promise<string[]> {
+async function collectAsetIds(supabase: Supabase, jenisList: string[], asetIds?: string[]): Promise<string[]> {
   const out: string[] = []
+
+  // ── Jalur TERSCOPE (dipakai kalau pemanggil sudah tahu aset mana yang ditanya) ──
+  // Jauh lebih murah & TIDAK tumbuh seiring ledger: `jenis IN (...) AND aset_id
+  // IN (...)` dilayani idx_trx_jenis_aset, hasilnya paling banyak beberapa baris
+  // per aset. Ini yang benar — menyapu seluruh ledger cuma untuk menanyakan
+  // status belasan aset itu yang bikin timeout beruntun 2026-07-28.
+  if (asetIds) {
+    if (asetIds.length === 0) return out
+    const uniq = [...new Set(asetIds)]
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data, error } = await supabase.from('transaksi_bmd')
+        .select('aset_id').in('jenis', jenisList as never).in('aset_id', uniq.slice(i, i + 200))
+      if (error) throw new Error(`gagal membaca transaksi pembatalan (${jenisList.join(', ')}): ${error.message}`)
+      for (const r of (data || []) as { aset_id: string | null }[]) if (r.aset_id) out.push(r.aset_id)
+    }
+    return out
+  }
+
+  // ── Jalur SELURUH LEDGER (pemanggil yang belum bisa menyebut asetnya) ──
+  // Keyset, bukan OFFSET. Tetap berisiko berat di ledger besar — kalau suatu
+  // saat timeout lagi, jangan tambal indexnya: pindahkan pemanggilnya ke jalur
+  // terscope di atas, atau agregasikan di server lewat RPC (pola fn_rekap_*).
   let terakhir = 0
   for (;;) {
     const { data, error } = await supabase.from('transaksi_bmd')
@@ -73,13 +95,18 @@ async function collectAsetIds(supabase: Supabase, jenisList: string[]): Promise<
  * @param extraVoidJenis jenis void tambahan, mis. ['batal_akumulasi_kdp'] utk
  *   laporan yang ikut menarik KDP (unapprove kontrak konstruksi membalik semua
  *   termin & menyembunyikan asetnya).
+ * @param asetIds BATASI ke aset ini saja — ISI KALAU BISA. Pemanggil laporan
+ *   umumnya sudah punya daftar asetnya, dan menanyakan status void hanya untuk
+ *   mereka jauh lebih murah daripada menyapu seluruh ledger (yang biayanya
+ *   tumbuh terus & sudah bikin timeout beruntun 2026-07-28). Dikosongkan =
+ *   perilaku lama (seluruh ledger).
  */
 export async function fetchVoidedAsetIds(
-  supabase: Supabase, extraVoidJenis: string[] = [],
+  supabase: Supabase, extraVoidJenis: string[] = [], asetIds?: string[],
 ): Promise<Set<string>> {
   const [voided, unvoided] = await Promise.all([
-    collectAsetIds(supabase, [...VOID_JENIS, ...extraVoidJenis]),
-    collectAsetIds(supabase, UNVOID_JENIS),
+    collectAsetIds(supabase, [...VOID_JENIS, ...extraVoidJenis], asetIds),
+    collectAsetIds(supabase, UNVOID_JENIS, asetIds),
   ])
   const out = new Set(voided)
   for (const id of unvoided) out.delete(id)
