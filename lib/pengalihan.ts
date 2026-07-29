@@ -85,13 +85,33 @@ export async function fetchPindahEvents(supabase: SupabaseClient): Promise<Pinda
 // skpd_tujuan baris TERAKHIR (urut periode lalu id ledger) yang periode <= V.
 // Kalau belum ada baris <= V (V sebelum transfer pertama) → skpd_asal baris
 // paling awal (pemilik semula).
-export function ownersAt(evByAset: PindahEvents, periode: string): Map<string, number | null> {
-  const owner = new Map<string, number | null>()
+// Versi LENGKAP: selain SKPD pemilik, sekalian TAHUN barang itu masuk ke SKPD
+// tersebut — dibutuhkan kode register, yang segmen tahunnya bukan tahun
+// perolehan melainkan "tahun berada di SKPD ini" (lihat lib/kodeRegister.ts).
+// `tahunMasuk` null = pada periode itu barangnya belum pernah pindah sama
+// sekali, jadi pemanggil jatuh ke tahun perolehannya.
+export type PosisiPeriode = { skpd: number | null; tahunMasuk: string | null }
+
+export function posisiAt(evByAset: PindahEvents, periode: string): Map<string, PosisiPeriode> {
+  const out = new Map<string, PosisiPeriode>()
   for (const [asetId, evs] of evByAset) {
     const sorted = [...evs].sort((a, b) => comparePeriode(a.periode, b.periode) || a.id - b.id)
     const upto = sorted.filter(e => comparePeriode(e.periode, periode) <= 0)
-    owner.set(asetId, upto.length > 0 ? upto[upto.length - 1].skpd_tujuan : sorted[0].skpd_asal)
+    const terakhir = upto.length > 0 ? upto[upto.length - 1] : null
+    out.set(asetId, terakhir
+      // periode berbentuk 'YYYY-S1'/'YYYY-S2' → 4 digit pertama = tahunnya.
+      ? { skpd: terakhir.skpd_tujuan, tahunMasuk: terakhir.periode.slice(0, 4) }
+      : { skpd: sorted[0].skpd_asal, tahunMasuk: null })
   }
+  return out
+}
+
+// Diturunkan dari posisiAt supaya aturan "pemilik pada periode V" cuma ditulis
+// SEKALI. Perilakunya identik dengan versi sebelumnya — pemanggil lama
+// (Daftar Barang, Penyusutan, Rekonsiliasi) tidak perlu berubah.
+export function ownersAt(evByAset: PindahEvents, periode: string): Map<string, number | null> {
+  const owner = new Map<string, number | null>()
+  for (const [asetId, p] of posisiAt(evByAset, periode)) owner.set(asetId, p.skpd)
   return owner
 }
 
@@ -100,6 +120,18 @@ export async function fetchOwnerOverrides(
   supabase: SupabaseClient, periode: string
 ): Promise<Map<string, number | null>> {
   return ownersAt(await fetchPindahEvents(supabase), periode)
+}
+
+// Sama seperti fetchOwnerOverrides tapi membawa tahun masuk juga — QUERY-nya
+// PERSIS SAMA (satu panggilan fetchPindahEvents), jadi halaman yang butuh
+// dua-duanya cukup memakai ini SAJA, jangan panggil berdua-duaan.
+// MELEMPAR kalau query gagal (lihat fetchPindahEvents) — pemanggil WAJIB punya
+// try/catch + setLoading(false) di finally, lihat aturan kolektor fail-closed
+// di CLAUDE.md.
+export async function fetchPosisiOverrides(
+  supabase: SupabaseClient, periode: string
+): Promise<Map<string, PosisiPeriode>> {
+  return posisiAt(await fetchPindahEvents(supabase), periode)
 }
 
 // Terapkan override kepemilikan ke sekumpulan baris yang difilter per-SKPD.

@@ -21,7 +21,8 @@ import { createClient } from '@/lib/supabase/client'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
-import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
+import { prefixKodeRegister, bergeserDariNibar, tahunPosisi } from '@/lib/kodeRegister'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 
@@ -156,7 +157,8 @@ export default function DaftarBarangPage() {
   const [allVisible, setAllVisible] = useState<Row[]>([]) // seluruh baris visible di periode (utk paginasi & export)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [bidangCount, setBidangCount] = useState<Record<string, { n: number; nLuas: number; luas: number | null }>>({}) // aset_id → jumlah bidang & Σ luas (Tanah, dari aset_bidang_tanah)
-  const [ownerOverride, setOwnerOverride] = useState<Map<string, number | null>>(new Map()) // aset_id → SKPD pemilik period-aware
+  const [posisiOverride, setPosisiOverride] = useState<Map<string, PosisiPeriode>>(new Map()) // aset_id → SKPD pemilik + tahun masuk, period-aware
+  const [skpdKode, setSkpdKode] = useState<Record<number, string>>({}) // skpd_id → kode_skpd (segmen lokasi kode register)
   const [total, setTotal] = useState(0)
   const [grandTotal, setGrandTotal] = useState(0)
   const [showAll, setShowAll] = useState(false)
@@ -172,13 +174,18 @@ export default function DaftarBarangPage() {
   useEffect(() => {
     ;(async () => {
       const map: Record<number, string> = {}
+      // `kode_skpd` ikut ditarik di query yang SAMA (bukan query kedua) — dipakai
+      // sbg segmen lokasi 14 digit kode register. Per audit 2026-07-29 ke-816
+      // SKPD sudah terisi & panjangnya benar semua.
+      const kode: Record<number, string> = {}
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama,kode_skpd').range(from, from + 999)
         if (!data || data.length === 0) break
-        for (const s of data) map[s.id] = s.nama
+        for (const s of data) { map[s.id] = s.nama; if (s.kode_skpd) kode[s.id] = s.kode_skpd }
         if (data.length < 1000) break
       }
       setSkpdMap(map)
+      setSkpdKode(kode)
     })()
     ;(async () => {
       const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
@@ -364,8 +371,12 @@ export default function DaftarBarangPage() {
     //   (b) buang yang BELUM diperoleh pada periode ini (tgl perolehan > periode) —
     //       supaya barang yang dibeli di semester DEPAN tak muncul di posisi lampau.
     const base = await fetchAllRows(f, true)
-    const owners = await fetchOwnerOverrides(supabase, f.periode)
-    setOwnerOverride(owners)
+    // SATU query untuk dua kebutuhan: atribusi SKPD period-aware (lama) + tahun
+    // masuk SKPD (segmen tahun kode register). Jangan panggil fetchOwnerOverrides
+    // lagi di sini — querynya persis sama, cuma nambah beban.
+    const posisi = await fetchPosisiOverrides(supabase, f.periode)
+    setPosisiOverride(posisi)
+    const owners = new Map<string, number | null>([...posisi].map(([id, p]) => [id, p.skpd]))
 
     let combined = base
     if (f.descIds && f.descIds.length > 0) {
@@ -516,15 +527,39 @@ export default function DaftarBarangPage() {
 
   // SKPD pemilik pada periode terpilih (period-aware): override kalau barang
   // pernah dialihkan; kalau tidak, pakai skpd_id terkini.
-  const ownerSkpd = (r: Row): number | null => ownerOverride.get(r.id) ?? r.skpd_id
+  const ownerSkpd = (r: Row): number | null => posisiOverride.get(r.id)?.skpd ?? r.skpd_id
+
+  // Kode register — FASE 0: 38 digit prefiks SAJA, tanpa nomor urut & belum
+  // disimpan di mana pun (lihat lib/kodeRegister.ts kenapa nomor urutnya harus
+  // diterbitkan, bukan dihitung). Diturunkan dari posisi PADA PERIODE yang
+  // sedang dilihat — jadi ia bergeser barengan kolom SKPD di baris yang sama,
+  // bukan menunjukkan keadaan hari ini di baris periode lampau.
+  const registerPrefix = (r: Row): string | null => prefixKodeRegister({
+    intraEkstra: r.intra_ekstra,
+    kodeSkpd: skpdKode[ownerSkpd(r) ?? -1] || null,
+    tahun: tahunPosisi(posisiOverride.get(r.id)?.tahunMasuk ?? null, r.tgl_perolehan),
+    kode: r.kode,
+  })
 
   function cellContent(key: string, r: Row): React.ReactNode {
     switch (key) {
       case 'skpd': return skpdMap[ownerSkpd(r) ?? -1] || '-'
-      case 'nama': return (
+      case 'nama': {
+        const reg = registerPrefix(r)
+        const bergeser = bergeserDariNibar(r.nibar, reg)
+        return (
         <>
           <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
           <p className="text-gray-400 text-xs mt-0.5">{r.nibar || '-'}</p>
+          {/* Baris ketiga = kode register. Ditandai hanya kalau BERGESER dari
+              NIBAR (pernah pindah/reklas) — kalau sama persis, tak ada gunanya
+              menarik perhatian operator ke dua deret digit yang kembar. */}
+          <p className={`text-[11px] mt-0.5 ${bergeser ? 'text-amber-600 font-medium' : 'text-gray-300'}`}
+            title={bergeser
+              ? 'Kode register: posisi barang ini sudah bergeser dari NIBAR-nya (pernah pindah unit / reklas). 38 digit — nomor urut belum diterbitkan.'
+              : 'Kode register (38 digit, nomor urut belum diterbitkan)'}>
+            {reg ? `REG ${reg}${bergeser ? ' ⚠' : ''}` : 'REG —'}
+          </p>
           {(bidangCount[r.id]?.n || 0) > 0 && (
             <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar || '')}`}
               className="inline-flex items-center gap-1 mt-1 text-[11px] text-teal hover:underline"
@@ -533,7 +568,8 @@ export default function DaftarBarangPage() {
             </Link>
           )}
         </>
-      )
+        )
+      }
       case 'kode': return (
         <>
           <p className="font-medium text-gray-700 text-xs">{r.kode}</p>

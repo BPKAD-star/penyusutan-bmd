@@ -14,9 +14,13 @@
 // ============================================================================
 import type { createClient } from '@/lib/supabase/client'
 
-const KODE_PROVINSI_KAB = '12'
-const KODE_WILAYAH_KEDIRI = '3506' // Kab. Kediri (Jatim 35, Kediri Kab 06)
-const INTRA_EKSTRA_KODE: Record<string, string> = { intra: '01', ekstra: '02' }
+// Di-EXPORT karena lib/kodeRegister.ts menyusun deretan digit yang sama persis
+// (kode register = NIBAR yang mengikuti posisi terakhir barang). Sengaja SATU
+// sumber, bukan disalin: repo ini sudah pernah kena konstanta kembar yang geser
+// diam-diam (JENIS_PINDAH vs predikat partial index-nya).
+export const KODE_PROVINSI_KAB = '12'
+export const KODE_WILAYAH_KEDIRI = '3506' // Kab. Kediri (Jatim 35, Kediri Kab 06)
+export const INTRA_EKSTRA_KODE: Record<string, string> = { intra: '01', ekstra: '02' }
 const PANJANG_SEQ = 7
 
 export function digitsPad(s: string, len: number): string {
