@@ -45,6 +45,14 @@ export type PosisiBarang = {
   kode: string | null
 }
 
+// ⚠️ SEJAK FASE 1 FUNGSI INI TIDAK LAGI DIPAKAI DI JALUR TAMPILAN — kode
+// register dibaca apa adanya dari kolom `aset.kode_register`, yang diisi trigger
+// DB. Yang OTORITATIF sekarang `fn_prefix_kode_register` (migrasi 20260729_03);
+// yang di bawah ini rujukan yang bisa dibaca manusia & alat uji.
+// Konsekuensinya: kalau salah satu diubah dan yang lain tidak, TIDAK ADA yang
+// gagal — tak ada pemanggil yang meledak. Jadi kalau menyentuh salah satunya,
+// sandingkan langsung dengan yang satunya, jangan andalkan tes atau tipe.
+//
 // FAIL-CLOSED: kembalikan null kalau ada segmen yang datanya memang TIDAK ADA.
 // Sengaja tidak meniru `digitsPad` yang mengisi '0' diam-diam — untuk NIBAR itu
 // sudah terlanjur jadi perilaku bawaan, tapi kode register ini DITAMPILKAN ke
@@ -66,20 +74,51 @@ export function prefixKodeRegister(p: PosisiBarang): string | null {
   )
 }
 
+// Kepala NIBAR yang MEMANG memakai skema aplikasi ini: [12][01|02][3506].
+const KEPALA_SKEMA_KITA = new Set([
+  KODE_PROVINSI_KAB + INTRA_EKSTRA_KODE.intra + KODE_WILAYAH_KEDIRI,  // 12013506
+  KODE_PROVINSI_KAB + INTRA_EKSTRA_KODE.ekstra + KODE_WILAYAH_KEDIRI, // 12023506
+])
+
 // 38 digit pertama NIBAR, untuk dibandingkan dengan prefixKodeRegister().
-// HANYA sahih untuk NIBAR 45 digit: NIBAR warisan e-BMD yang 43 digit posisi
-// segmennya bergeser, jadi memotongnya 38 digit menghasilkan perbandingan yang
-// SELALU "beda" padahal barangnya tidak ke mana-mana.
+//
+// PANJANG 45 SAJA TIDAK CUKUP. Cek 2026-07-29 atas data live: 150.101 aset
+// (praktis seluruh batch impor ATL Diknas) punya NIBAR 45 digit tapi SUSUNAN
+// SEGMENNYA BEDA — warisan e-BMD:
+//     [8 dgt urut internal][kode barang 12][kode SKPD 14][tahun 4][urut 7]
+// versus skema kita:
+//     [12][01|02][3506][kode SKPD 14][tahun 4][kode barang 12][urut 7]
+// Kode barang & SKPD-nya TERTUKAR posisi, tahunnya di belakang, dan 8 digit
+// depannya angka yang naik per baris — bukan [12][01|02][3506].
+//
+// Tanpa penyaring ini, memotongnya 38 digit membandingkan potongan yang isinya
+// bukan segmen yang dimaksud → SELALU "beda", dan 150rb barang tampil bertanda
+// "pernah bergeser" padahal tak ke mana-mana. Yang benar-benar pindah (4 baris
+// di ledger) malah tenggelam di antaranya — penandanya jadi tak ada gunanya.
+//
+// null = "tak bisa dinilai", BUKAN "berbeda". Pembeda itu penting: yang tak
+// bisa dinilai tidak boleh ditandai apa-apa di layar.
 export function prefixNibar(nibar: string | null): string | null {
   const n = (nibar || '').trim()
-  return n.length === PANJANG_NIBAR_PENUH ? n.slice(0, PANJANG_PREFIX_REGISTER) : null
+  if (n.length !== PANJANG_NIBAR_PENUH) return null
+  if (!KEPALA_SKEMA_KITA.has(n.slice(0, 8))) return null
+  return n.slice(0, PANJANG_PREFIX_REGISTER)
 }
 
-/** Sudah bergeser dari akta lahirnya? null = tak bisa dinilai (NIBAR kosong/warisan). */
-export function bergeserDariNibar(nibar: string | null, prefixRegister: string | null): boolean | null {
+// Sudah bergeser dari akta lahirnya? Menerima kode register UTUH (45 digit,
+// apa adanya dari kolom `aset.kode_register`) — pemotongan 38 digitnya di sini
+// saja, supaya tak ada pemanggil yang lupa memotong lalu diam-diam
+// membandingkan 45 lawan 38 dan selalu dapat "berbeda".
+//
+// null = TAK BISA DINILAI (NIBAR kosong, atau warisan e-BMD yang layoutnya beda)
+// — sengaja dibedakan dari `false`: yang tak bisa dinilai jangan ditandai apa pun
+// di layar. Per data live 2026-07-29, penyaring ini menurunkan jumlah yang
+// ditandai dari 150.108 (praktis semua barang, tak berguna) jadi 148.
+export function bergeserDariNibar(nibar: string | null, kodeRegister: string | null): boolean | null {
   const pn = prefixNibar(nibar)
-  if (!pn || !prefixRegister) return null
-  return pn !== prefixRegister
+  const pr = (kodeRegister || '').trim().slice(0, PANJANG_PREFIX_REGISTER)
+  if (!pn || pr.length !== PANJANG_PREFIX_REGISTER) return null
+  return pn !== pr
 }
 
 // Tahun untuk segmen ke-5. `tahunMasuk` datang dari posisiAt() (lib/pengalihan.ts)
