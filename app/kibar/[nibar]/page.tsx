@@ -168,7 +168,21 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   }
   const asal = firstOf(j => PEROLEHAN.has(j))
   const trxTerakhir = trx.length ? trx[trx.length - 1] : null
-  const penggunaan = lastOf(j => j === 'pengalihan_status')
+  // Pengalihan yang DIBATALKAN (`batal_pengalihan` menganulir lewat
+  // `payload.target_trx_ids`, bisa beberapa baris sekaligus) tak boleh mengisi
+  // bagian Penggunaan — ini kartu barang yang DICETAK, jadi jangan sampai
+  // memuat perpindahan yang dianggap tak pernah terjadi. Diturunkan dari `trx`
+  // yang memang sudah memuat seluruh baris ledger aset ini, tanpa query baru.
+  const pengalihanDibatalkan = new Set<number>()
+  for (const t of trx) {
+    if (t.jenis !== 'batal_pengalihan') continue
+    for (const v of (t.payload?.target_trx_ids as unknown[] | undefined) || []) {
+      const n = Number(v)
+      if (Number.isFinite(n)) pengalihanDibatalkan.add(n)
+    }
+  }
+  const pengalihanSah = trx.filter(t => t.jenis === 'pengalihan_status' && !pengalihanDibatalkan.has(t.id))
+  const penggunaan = pengalihanSah.length ? pengalihanSah[pengalihanSah.length - 1] : null
   const mutasi = lastOf(j => j === 'mutasi_internal')
   const reklas = firstOf(j => REKLAS.has(j))
   const koreksiNilai = lastOf(j => j === 'koreksi_nilai')

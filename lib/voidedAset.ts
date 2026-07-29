@@ -120,7 +120,27 @@ export const BATAL_TARGET_JENIS = {
   kapitalisasi: ['batal_kapitalisasi'],
   reklasifikasi: ['batal_reklas'],
   koreksi: ['batal_koreksi_nilai', 'batal_koreksi_spesifikasi', 'batal_koreksi_pencatatan_ganda'],
+  pengalihan: ['batal_pengalihan'],
 } as const
+
+// Satu baris `batal_*` bisa menganulir SATU baris (`payload.target_trx_id`) atau
+// BEBERAPA sekaligus (`payload.target_trx_ids`). Yang jamak dipakai
+// `batal_pengalihan` (migrasi 20260729_07): sekali batal menganulir baris
+// perginya DAN baris pulangnya, karena membatalkan separuh menyisakan rantai
+// yang tak nyambung. Dua-duanya dibaca supaya laporan tak perlu tahu bentuk
+// payload per jenis.
+type BatalPayload = { target_trx_id?: number; target_trx_ids?: unknown[] } | null
+
+function idTarget(payload: BatalPayload): number[] {
+  const out: number[] = []
+  const satu = Number(payload?.target_trx_id)
+  if (Number.isFinite(satu)) out.push(satu)
+  for (const v of payload?.target_trx_ids || []) {
+    const n = Number(v)
+    if (Number.isFinite(n)) out.push(n)
+  }
+  return out
+}
 
 /**
  * Set id baris ledger yang SUDAH DIBATALKAN (dibaca dari
@@ -145,9 +165,8 @@ export async function fetchBatalTargets(
       const { data, error } = await supabase.from('transaksi_bmd')
         .select('payload').in('jenis', jenisList as never).in('aset_id', uniq.slice(i, i + 200))
       if (error) throw new Error(`gagal membaca transaksi pembatalan (${jenisList.join(', ')}): ${error.message}`)
-      for (const r of (data || []) as { payload: { target_trx_id?: number } | null }[]) {
-        const t = Number(r.payload?.target_trx_id)
-        if (Number.isFinite(t)) out.add(t)
+      for (const r of (data || []) as { payload: BatalPayload }[]) {
+        for (const t of idTarget(r.payload)) out.add(t)
       }
     }
     return out
@@ -160,9 +179,8 @@ export async function fetchBatalTargets(
       .gt('id', terakhir).order('id', { ascending: true }).limit(1000)
     if (error) throw new Error(`gagal membaca transaksi pembatalan (${jenisList.join(', ')}): ${error.message}`)
     if (!data || data.length === 0) break
-    for (const r of data as { id: number; payload: { target_trx_id?: number } | null }[]) {
-      const t = Number(r.payload?.target_trx_id)
-      if (Number.isFinite(t)) out.add(t)
+    for (const r of data as { id: number; payload: BatalPayload }[]) {
+      for (const t of idTarget(r.payload)) out.add(t)
       terakhir = r.id
     }
     if (data.length < 1000) break

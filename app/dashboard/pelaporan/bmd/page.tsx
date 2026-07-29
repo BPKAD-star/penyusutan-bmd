@@ -18,7 +18,7 @@ import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
-import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 
 // ── Model 3: jenis ledger per kategori Penambahan/Pengurangan (nilai
 // perolehan) — diverifikasi ke kode asli tiap alur (Pengadaan/PerolehanManual/
@@ -268,9 +268,14 @@ export default function LaporanBmdPage() {
       fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp']),
       fetchReklasDibatalkan(),
       fetchPenghapusanNetRemoved(),
+      // Pengalihan yang DIBATALKAN — ikut jalur fail-closed yang sama: kalau
+      // querynya gagal, Model 3 menolak tampil daripada mencatat perpindahan
+      // yang sudah dianulir sebagai mutasi masuk/keluar.
+      fetchBatalTargets(supabase, BATAL_TARGET_JENIS.pengalihan),
     ]).catch((e: Error) => { setMutErr(`Gagal menyusun mutasi: ${e.message}. Angka tidak ditampilkan supaya tak ada yang terbaca sebagai sah padahal datanya tak lengkap.`); return null })
     if (!hasil) { setLoading(false); return }
-    const [saldoAwal, saldoAkhir, skpdMap, voided, reklasDibatalkan, penghapusanNetRemoved] = hasil
+    const [saldoAwal, saldoAkhir, skpdMap, voided, reklasDibatalkan, penghapusanNetRemoved,
+           pengalihanDibatalkan] = hasil
 
     const tambah: Record<string, number> = {}
     const kurang: Record<string, number> = {}
@@ -322,6 +327,10 @@ export default function LaporanBmdPage() {
     // Pengurangan (asal in-scope, tujuan tidak) — netral kalau scope "Semua".
     for (const r of await fetchLedgerM3(['pengalihan_status'])) {
       if (!r.aset || !lolosKomptabel(r.aset.intra_ekstra)) continue
+      // Sudah dibatalkan → perpindahannya dianggap tak pernah terjadi, jadi
+      // tak boleh muncul sbg Pengalihan Masuk/Keluar. Tanpa baris ini angka
+      // Model 3 beda dgn Daftar Barang & Rekonsiliasi yang sudah membuangnya.
+      if (pengalihanDibatalkan.has(r.id)) continue
       const asalIn = inScope(r.skpd_asal)
       const tujuanIn = inScope(r.skpd_tujuan)
       const g = kodeLevel3(r.aset.kode)
