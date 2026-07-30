@@ -591,8 +591,15 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
   ⚠️ Ikut menanggung keterbatasan yang sama dgn layar: **kode TERKINI, belum
   period-aware**. Begitu tampilan dibuat period-aware lewat `aset_kode_register`,
   export WAJIB diubah bareng — kalau tidak, berkas periode lampau untuk BPK
-  menyebut kode yang saat itu belum terbit. Menu export LAIN (Daftar Barang Awal,
-  Penyusutan, Kendaraan, GIS, modul Pelaporan) belum membawa kolom ini.
+  menyebut kode yang saat itu belum terbit. **Export Penyusutan ikut** (kolom
+  sama, tepat setelah NIBAR; `kode_register` ditambahkan ke `BASE_COLS`) —
+  sekaligus `handleExport`-nya dibungkus try/catch/finally yang tadinya TIDAK
+  ada padahal `assembleRows` memanggil `fetchOwnerOverrides` yang fail-closed
+  (persis cacat yang sudah didokumentasikan utk Daftar Barang: tanpa penangkap,
+  tombolnya nyangkut "Mengekspor..." selamanya & tanpa keterangan). Menu export
+  LAIN (Daftar Barang Awal, Kendaraan, GIS, modul Pelaporan) belum membawa kolom
+  ini. Di Penyusutan kode register **cuma di Export, tidak di layar** — layarnya
+  masih menampilkan NIBAR di bawah nama barang.
 
 ## Pemanfaatan BMD (sewa/pinjam pakai/KSP/BGS-BSG/KSPI, migrasi 20260721_01+02)
 

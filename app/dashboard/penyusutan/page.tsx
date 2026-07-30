@@ -22,10 +22,14 @@ import { useTahunBukuMap } from '@/components/useTahunBuku'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 
-const BASE_COLS = 'id,nibar,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,merek_tipe,alamat_detail'
+const BASE_COLS = 'id,nibar,kode_register,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,merek_tipe,alamat_detail'
 
 type Base = {
-  id: string; nibar: string; kode_barang: string; nama_barang: string; skpd_id: number
+  id: string; nibar: string
+  // Kode register 45 digit — DIBACA dari kolom (diterbitkan & dibekukan trigger
+  // trg_aset_kode_register), cuma dipakai di Export. Lihat handleExport.
+  kode_register: string | null
+  kode_barang: string; nama_barang: string; skpd_id: number
   nilai_perolehan: number; intra_ekstra: string | null
   tgl_perolehan: string | null
   merek_tipe: string | null; alamat_detail: string | null
@@ -284,15 +288,23 @@ export default function PenyusutanPage() {
     setEngineRunning(false)
   }
 
+  // ⚠️ try/catch/finally WAJIB, alasan sama dgn `load`: assembleRows memanggil
+  // kolektor fail-closed (fetchOwnerOverrides MELEMPAR). Tanpa penangkap,
+  // sekali query itu gagal tombolnya nyangkut "Mengekspor..." selamanya tanpa
+  // sepatah pun keterangan. Dan berkas Excel yang isinya kurang sebagian TIDAK
+  // BOLEH terlanjur terunduh — sekali tersimpan tak ada lagi tanda bahwa
+  // datanya tak lengkap, padahal angkanya ikut dilaporkan.
   async function handleExport() {
     if (!applied) return
-    setExporting(true)
+    setExporting(true); setErr('')
+    try {
     const data = await assembleRows(applied)
     exportToExcel(data.map(b => {
       const p = b.p
       const susut = perlakuanKode(b.kode_barang) !== 'tidak'
       return {
-        'NIBAR': b.nibar, 'Nama Barang': b.nama_barang, 'Kode Barang': b.kode_barang,
+        'NIBAR': b.nibar, 'Kode Register': b.kode_register || '',
+        'Nama Barang': b.nama_barang, 'Kode Barang': b.kode_barang,
         'SKPD': skpdNama[b.ownerSkpd ?? b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
         'Tgl Perolehan': b.tgl_perolehan || '',
         'Nilai Perolehan': p ? p.nilai_perolehan : b.nilai_perolehan,
@@ -304,7 +316,11 @@ export default function PenyusutanPage() {
         'Periode': applied.periode,
       }
     }), `Penyusutan_${applied.periode}`, 'Penyusutan')
-    setExporting(false)
+    } catch (e) {
+      setErr(`gagal menyiapkan export: ${(e as Error).message} — berkas tidak dibuat supaya tidak ada Excel setengah jadi yang beredar.`)
+    } finally {
+      setExporting(false)
+    }
   }
 
   const dash = (v: React.ReactNode, ok: boolean) => (ok ? v : <span className="text-gray-300">-</span>)
