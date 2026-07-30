@@ -46,6 +46,7 @@ type Row = {
   tgl_perolehan: string | null
   nilai_perolehan: number
   kondisi_barang: string | null
+  penggunaan_pengamanan: string | null   // kolom berlabel "Penggunaan" (lihat lib/asetFields.ts)
   keterangan: string | null
   skpd_id: number | null
 }
@@ -56,7 +57,7 @@ type Row = {
 // diresolve dari map id→nama yang di-fetch sekali dari admin_skpd (ratusan
 // baris, murah) — pola yang sama dengan Daftar Barang.
 const SELECT_COLS =
-  'id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,keterangan,skpd_id'
+  'id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,penggunaan_pengamanan,keterangan,skpd_id'
 
 // Angka polos bergaya id-ID tanpa "Rp" — sama dengan Daftar Barang (enak di-copas ke Excel).
 const angka = (v: number | null | undefined) =>
@@ -122,8 +123,14 @@ export default function KendaraanPage() {
         .like('kode', `${PREFIX_ALAT_ANGKUTAN}%`)
         .eq('status', 'aktif')
       if (Array.isArray(scope) && scope.length) q = q.in('skpd_id', scope)
+      // ⚠️ `.order('id')` itu PEMECAH SERI, jangan dicopot: barisnya ditarik
+      // halaman-demi-halaman pakai `.range()` dan `nilai_perolehan` banyak
+      // kembarnya, jadi dgn urutan yang tak total baris kembar tak dijamin
+      // jatuh di halaman yang sama tiap query → ada yang terlewat & ada yang
+      // dobel TANPA SUARA. Sama dgn yang dipasang di Daftar Barang & Penyusutan.
       const { data, error } = await q
         .order('nilai_perolehan', { ascending: false })
+        .order('id')
         .range(from, from + 999)
       if (error) { setError(error.message); break }
       if (!data || data.length === 0) break
@@ -166,14 +173,19 @@ export default function KendaraanPage() {
 
   function handleExport() {
     exportToExcel(
+      // Urutan kolom mengikuti layar (2026-07-30). Yang di layar ditumpuk
+      // (kode+uraian, NIBAR+nama) di sini jadi kolom sendiri-sendiri — Excel tak
+      // punya "baris kedua" dalam satu sel, dan dipisah justru bisa disaring.
+      // Spesifikasi Lainnya SENGAJA tetap ikut walau sudah tak di layar: pola
+      // lama repo ini, berkas export memang lebih lengkap dari tampilan.
       filtered.map(r => ({
-        'Lokasi / SKPD': teks(namaSkpd(r)),
+        'SKPD': teks(namaSkpd(r)),
         'Kode Barang': r.kode,
+        'Uraian Barang': teks(r.uraian_barang),
         'NIBAR': teks(r.nibar),
-        'Uraian': teks(r.uraian_barang),
         'Nama Barang': teks(r.nama_barang),
         'Merek / Tipe': teks(r.merek_tipe),
-        'Spesifikasi': teks(r.spesifikasi_lainnya),
+        'Spesifikasi Lainnya': teks(r.spesifikasi_lainnya),
         'Tahun Pengadaan': teks(r.tahun_pengadaan),
         'No. BPKB': teks(r.no_bpkb),
         'No. Polisi': teks(r.no_polisi),
@@ -181,6 +193,7 @@ export default function KendaraanPage() {
         'No. Mesin': teks(r.no_mesin),
         'Nilai Perolehan': r.nilai_perolehan ?? 0,
         'Kondisi': teks(r.kondisi_barang),
+        'Penggunaan': teks(r.penggunaan_pengamanan),
         'Keterangan': teks(r.keterangan),
       })),
       'kendaraan-dinas',
@@ -252,16 +265,23 @@ export default function KendaraanPage() {
               {rows.length === 0 ? 'Belum ada data kendaraan.' : 'Tidak ada kendaraan yang cocok dengan pencarian.'}
             </div>
           ) : (
-            // Kolom identitas (kode, nopol, rangka, mesin, nilai) di-nowrap supaya
-            // tidak terpotong jadi 2 baris; tabel dibiarkan melebar dan digeser
-            // lewat scroll horizontal — lebih terbaca daripada dipaksa muat.
+            // Kolom identitas (kode, NIBAR, nopol, rangka, mesin, nilai) di-nowrap
+            // supaya tidak terpotong jadi 2 baris; tabel dibiarkan melebar dan
+            // digeser lewat scroll horizontal — lebih terbaca daripada dipaksa muat.
+            // ⚠️ TIDAK ADA `truncate` di tabel ini (permintaan user 2026-07-30:
+            // "jangan kepotong informasinya"). Dulu NIBAR, spesifikasi, &
+            // keterangan dipotong elipsis dgn `max-w` — isinya cuma bisa dilihat
+            // lewat tooltip, yang tak kebaca kalau lagi ditelusuri cepat & hilang
+            // sama sekali kalau halaman ini dicetak. Teks panjang MEMBUNGKUS
+            // (wrap), tak pernah dipangkas. Kalau nanti tergoda memasang
+            // `truncate` lagi biar rapi, jangan.
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="table-th whitespace-nowrap">Lokasi / SKPD</th>
-                    <th className="table-th whitespace-nowrap">Kode Register</th>
-                    <th className="table-th whitespace-nowrap">Nama Barang</th>
+                    <th className="table-th whitespace-nowrap">SKPD</th>
+                    <th className="table-th whitespace-nowrap">Kode Barang</th>
+                    <th className="table-th whitespace-nowrap">NIBAR</th>
                     <th className="table-th whitespace-nowrap">Merek / Tipe</th>
                     <th className="table-th whitespace-nowrap text-center">Tahun</th>
                     <th className="table-th whitespace-nowrap">No. BPKB</th>
@@ -270,29 +290,30 @@ export default function KendaraanPage() {
                     <th className="table-th whitespace-nowrap">No. Mesin</th>
                     <th className="table-th whitespace-nowrap text-right">Nilai Perolehan</th>
                     <th className="table-th whitespace-nowrap text-center">Kondisi</th>
+                    <th className="table-th whitespace-nowrap">Penggunaan</th>
                     <th className="table-th whitespace-nowrap">Keterangan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {filtered.map(r => {
                     const belumLengkap = isiKosong(r.no_polisi) && isiKosong(r.no_rangka) && isiKosong(r.no_mesin)
-                    const spek = r.spesifikasi_lainnya
                     return (
                       <tr key={r.id} className="hover:bg-gray-50/60 align-top">
-                        <td className="table-td text-xs text-gray-600 min-w-[150px] max-w-[220px]">{teks(namaSkpd(r))}</td>
-                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">
-                          <div>{r.kode}</div>
-                          {r.nibar && (
-                            <div className="text-[10px] text-gray-400 truncate max-w-[150px]" title={r.nibar}>
-                              {r.nibar}
-                            </div>
-                          )}
+                        <td className="table-td text-xs text-gray-600 min-w-[150px]">{teks(namaSkpd(r))}</td>
+                        {/* Kode barang + uraian baku kodefikasi ditumpuk (pola
+                            Daftar Barang). Uraian dari `aset.uraian_barang` —
+                            di halaman ini memang salinan yang tersimpan, bukan
+                            lookup ke admin_kodefikasi_bmd spt Daftar Barang,
+                            karena menu ini murni baca & tak boleh nambah query. */}
+                        <td className="table-td text-xs text-gray-600 min-w-[150px]">
+                          <div className="whitespace-nowrap">{r.kode}</div>
+                          <div className="text-[11px] text-gray-400 mt-0.5">{teks(r.uraian_barang)}</div>
                         </td>
-                        <td className="table-td min-w-[180px] max-w-[260px]">
-                          <div>{teks(r.nama_barang || r.uraian_barang)}</div>
-                          {spek && !isiKosong(spek) && (
-                            <div className="text-[11px] text-gray-500 mt-0.5 truncate" title={spek}>{spek}</div>
-                          )}
+                        {/* NIBAR + nama barang. NIBAR di-nowrap: 45 digit yang
+                            membungkus di tengah malah tak terbaca sbg satu nomor. */}
+                        <td className="table-td text-xs min-w-[200px]">
+                          <div className="text-gray-500 whitespace-nowrap">{teks(r.nibar)}</div>
+                          <div className="text-gray-800 mt-0.5">{teks(r.nama_barang)}</div>
                           {belumLengkap && (
                             <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700 whitespace-nowrap"
                               title="No. Polisi, No. Rangka, dan No. Mesin semuanya kosong — lengkapi lewat Koreksi → Spesifikasi">
@@ -300,7 +321,7 @@ export default function KendaraanPage() {
                             </span>
                           )}
                         </td>
-                        <td className="table-td text-xs text-gray-600 min-w-[120px] max-w-[180px]">{teks(r.merek_tipe)}</td>
+                        <td className="table-td text-xs text-gray-600 min-w-[120px]">{teks(r.merek_tipe)}</td>
                         <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.tahun_pengadaan)}</td>
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_bpkb)}</td>
                         <td className="table-td text-xs text-gray-800 font-medium whitespace-nowrap">{teks(r.no_polisi)}</td>
@@ -308,9 +329,8 @@ export default function KendaraanPage() {
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_mesin)}</td>
                         <td className="table-td text-right text-xs whitespace-nowrap tabular-nums">{angka(r.nilai_perolehan)}</td>
                         <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.kondisi_barang)}</td>
-                        <td className="table-td text-xs text-gray-600 max-w-[220px]">
-                          <div className="truncate" title={r.keterangan || undefined}>{teks(r.keterangan)}</div>
-                        </td>
+                        <td className="table-td text-xs text-gray-600 min-w-[120px]">{teks(r.penggunaan_pengamanan)}</td>
+                        <td className="table-td text-xs text-gray-600 min-w-[160px]">{teks(r.keterangan)}</td>
                       </tr>
                     )
                   })}

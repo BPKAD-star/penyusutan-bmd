@@ -967,6 +967,23 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   awal. Tak butuh index baru di ketiganya: sort node-nya memang sudah ada (tak
   ada index yang melayani `nilai_perolehan`), jadi nambah kunci di sort yang
   sama ~gratis.
+- **Menu Kendaraan: kolomnya ditata ulang & TIDAK BOLEH ada `truncate`**
+  (permintaan user 2026-07-30). Susunannya: SKPD · Kode Barang + Uraian Barang
+  (ditumpuk) · NIBAR + Nama Barang (ditumpuk) · Merek/Tipe · Tahun · No. BPKB ·
+  No. Polisi · No. Rangka · No. Mesin · Nilai Perolehan · Kondisi · Penggunaan ·
+  Keterangan. Dulu NIBAR, Spesifikasi, & Keterangan dipangkas elipsis pakai
+  `max-w`+`truncate` — isinya cuma muncul di tooltip, yang tak terbaca saat
+  ditelusuri cepat & hilang total kalau halaman dicetak. **Teks panjang
+  MEMBUNGKUS, tak pernah dipangkas**; tabelnya dibiarkan melebar & digeser
+  horizontal (pola yang memang sudah dianut halaman ini). Jangan pasang
+  `truncate` lagi demi kerapian.
+  ⚠️ Header lamanya **salah label**: kolom berjudul "Kode Register" itu isinya
+  NIBAR (halaman ini tak pernah membaca `aset.kode_register`) — sekarang jadi
+  kolom "NIBAR" yang jujur. Kalau nanti kode register mau ditampilkan di sini,
+  itu kolom/baris BARU, bukan mengganti NIBAR.
+  Uraian diambil dari `aset.uraian_barang` (salinan tersimpan), BUKAN lookup ke
+  `admin_kodefikasi_bmd` spt Daftar Barang — menu ini murni baca & sengaja tak
+  menambah query. Spesifikasi Lainnya hilang dari layar tapi TETAP di Export.
 - **`cara_perolehan` vs `asal_usul` — DUA KOLOM, SENGAJA TIDAK DISINKRONKAN**
   (keputusan user 2026-07-30). `aset.cara_perolehan` (text + CHECK:
   `saldo_awal`/`pengadaan`/`hibah_masuk`/`tukar_menukar`/`hasil_inventarisasi`/
