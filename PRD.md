@@ -66,6 +66,12 @@ UI hanya cerminan (menyembunyikan tombol).
   semester depan tetap tampil saat melihat semester lalu; kepemilikan SKPD
   mengikuti periode), export Excel + export Audit (termasuk barang terhapus,
   untuk BPK).
+- **Kode Register** — identitas 45 digit yang mengikuti **posisi terakhir**
+  barang (SKPD, tahun masuk SKPD, kode barang, intra/ekstra), berdampingan
+  dengan **NIBAR** yang beku sejak barang masuk. Analoginya: NIBAR akta lahir,
+  kode register KTP. Diterbitkan & dibekukan otomatis oleh DB — barang yang
+  posisinya bergeser dari akta lahirnya ditandai di Daftar Barang, supaya
+  pengurus barang bisa menelusuri riwayat pindah/reklas.
 - **Penyusutan**: hasil engine per aset per semester; tombol "Jalankan Engine"
   (admin). Ekstrakomptabel **ikut disusutkan**; pemisahan intra/ekstra hanya
   di lapisan laporan.

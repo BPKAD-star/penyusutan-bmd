@@ -44,6 +44,9 @@ npm run dev
   kapitalisasi (band overhaul + cap masa manfaat), penghapusan (pemindahtanganan, pengalihan
   status, sebab lain — soft-delete, data tetap di DB).
 - **Daftar Barang**: register semua golongan BMD (label golongan dari data, bukan hardcode).
+  Menampilkan **NIBAR** (akta lahir, beku) + **Kode Register** (KTP — mengikuti posisi
+  terakhir barang: SKPD, tahun masuk SKPD, kode barang, intra/ekstra), dengan penanda
+  untuk barang yang posisinya sudah bergeser dari akta lahirnya.
 - **Penyusutan**: hasil engine ledger (`penyusutan_semester`) + data lama G&B
   (`penyusutan_periode`, dipertahankan). Admin bisa jalankan engine dari UI.
 - **Pelaporan**: rekap perolehan & pengelolaan per jenis/periode/SKPD, export Excel.

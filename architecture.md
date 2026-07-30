@@ -114,6 +114,39 @@ dibaca trigger. Tutup Tahun = checkpoint massal `saldo_awal_checkpoint` (salin
 hasil engine S2) + kunci tahun + buka tahun berikutnya — engine tahun
 berikutnya replay dari checkpoint, bukan dari 2025 lagi.
 
+### 4.7 Identitas yang DITERBITKAN, bukan dihitung (kode register)
+
+Sebagian besar turunan di aplikasi ini dihitung ulang saat dibaca (penyusutan,
+visibilitas, kepemilikan per periode). **Kode register justru sebaliknya**, dan
+pengecualian ini disengaja.
+
+Kode register mengikuti posisi terakhir barang, jadi ia *berubah*. Tapi nomor
+urut 7 digit di ekornya **tidak boleh** diturunkan dari urutan baris: begitu satu
+barang hilang dari tengah, nomor semua barang di bawahnya bergeser — padahal
+nomor itu tercetak di label barang, KIR, dan BAST. Kertas dan layar jadi tak
+cocok, tanpa ada yang sadar.
+
+Karena itu mekanismenya:
+
+| Lapisan | Peran |
+|---|---|
+| `kode_register_seq` | Alokator `UPDATE … RETURNING` per prefiks — O(1), aman balapan, monoton |
+| Trigger `fn_aset_kode_register_sync` di `aset` | **Satu-satunya** penerbit. Di DB, bukan di kode |
+| `aset.kode_register` | Nilai yang berlaku sekarang (cache) |
+| `aset_kode_register` | Riwayat append-only, satu baris per perpindahan |
+
+**Kenapa trigger, bukan dipanggil dari kode:** ada 6+ pintu yang menggeser posisi
+barang (`fn_terima_pengalihan`, `fn_kembalikan_pengalihan_barang`,
+`fn_terima_mutasi_internal` + pengembaliannya, `patchAsetDari` untuk reklas,
+`batal_reklas`, approve Cara Perolehan). Kalau penegakannya di sisi klien, satu
+pintu kelupaan = kode basi **diam-diam** — persis nasib cache `aset.pemanfaatan`
+yang sampai sekarang tak pernah auto-null saat masa berakhir lewat.
+
+Bandingkan dengan aturan sebaliknya di §4.1: Σ luas bidang tanah **tak boleh**
+disimpan balik ke kolom, karena ia wajib ikut data hidup. Kode register wajib
+**berhenti** ikut. Membedakan dua kasus ini adalah pertanyaan pertama sebelum
+memutuskan simpan-atau-hitung.
+
 ## 5. Penyimpanan Berkas
 
 Supabase Storage, semua bucket **privat**, tampil via signed URL (~1 jam):

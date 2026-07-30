@@ -36,6 +36,51 @@ kehati-hatian teoretis.
 5. **Baseline `aset_awal_2026` beku.** Angkanya tidak pernah berubah; hanya
    kolom spesifikasi yang boleh dikoreksi, itu pun hanya untuk barang yang
    belum pernah bergerak (dikunci trigger DB dua lapis, bukan cuma UI).
+6. **"Berakhir" ≠ "Tidak pernah terjadi".** Setiap modul yang bisa dihentikan
+   wajib membedakan dua aksi, dan **jangan pakai yang satu untuk maksud yang
+   lain**:
+   - **Selesai / Akhiri / Kembalikan** — peristiwanya SAH lalu berakhir.
+     Barisnya tetap dibaca laporan, barangnya tetap tampil sebagai riwayat
+     (badge "Selesai" / "Dikembalikan").
+   - **Batal (`batal_*`)** — KOREKSI salah catat. Peristiwanya dianggap **tak
+     pernah terjadi**: barisnya diabaikan seluruh pembaca dan barangnya keluar
+     total dari kartu; kartu yang jadi kosong ikut hilang.
+
+   Terpasang di Pemanfaatan (⏹ Akhiri vs 🗑 Batal), Pengamanan (⤺ Kembalikan
+   vs 🗑 Batal), dan Pengalihan (Kembalikan vs 🗑 Batal). Tanpa pembedaan ini,
+   salah pencet meninggalkan jejak permanen seolah barangnya benar-benar pernah
+   pindah/dimanfaatkan — dan itu ikut menggeser turunan lain (mis. segmen tahun
+   kode register).
+7. **DAFTAR PERIKSA menambah jenis `batal_*` baru.** Menambah nilai enum + RPC
+   itu bagian yang mudah; yang berkali-kali kelewat adalah PEMBACA-nya.
+   `batal_pengalihan` (2026-07-29) kelewat **tiga ronde**, semuanya baru ketemu
+   setelah dianggap selesai. Sisir tujuh tempat ini:
+   1. **Engine** (`lib/engine/penyusutan.ts`) — kalau jenisnya memengaruhi nilai.
+   2. **Kolektor period-aware** (`lib/pengalihan.ts`, `lib/rekon.ts`) — buang
+      baris yang dianulir DI KOLEKTOR, supaya semua pemanggil bersih otomatis.
+   3. **Keanggotaan kartu** di komponen pengelolaan — **kedua sisi** (pengirim
+      dan penerima). Ini yang paling sering lolos: ledger sudah benar tapi
+      barangnya masih nongol di kartu.
+   4. **Modul pelaporan** — daftarkan di `BATAL_TARGET_JENIS` (lib/voidedAset.ts)
+      lalu teruskan sebagai prop `batalJenis`/filter. Laporan yang tak menyaring
+      menampilkan angka yang **beda** dengan Daftar Barang & Rekonsiliasi.
+   5. **KIBAR** — kartu yang DICETAK; jangan memuat peristiwa yang dianulir.
+   6. **Partial index** yang predikatnya kembar dengan daftar jenis di kode
+      (mis. `idx_trx_pindah_id` vs `JENIS_DITARIK`) — ubah dua-duanya sekaligus.
+   7. **`fn_aset_awal_2026_terkunci` + `_batch`** kalau jenisnya menyentuh
+      `skpd_id`, kolom spesifikasi, atau golongan.
+
+   ⚠️ Perhatikan juga **bentuk payload**: `fetchBatalTargets` membaca
+   `payload.target_trx_id` (tunggal) DAN `target_trx_ids` (jamak). Kalau jenis
+   baru memakai bentuk lain, filternya **tidak menyaring apa pun tanpa satu pun
+   error** — kegagalan senyap yang paling mahal di repo ini.
+8. **Nomor yang DITERBITKAN jangan pernah dihitung ulang saat tampil.** NIBAR &
+   kode register dialokasikan sekali lalu dibekukan. Menghitungnya dari urutan
+   baris membuat satu barang hilang menggeser nomor semua barang di bawahnya —
+   padahal nomor itu tercetak di label barang, KIR, dan BAST, jadi kertas dan
+   layar jadi tak cocok tanpa ada yang sadar. Alokasi lewat **tabel counter**
+   (`kode_register_seq`, `UPDATE … RETURNING`), bukan `LIKE 'prefix%'` yang
+   pernah membuat generator NIBAR timeout lalu mengulang nomor dari 1.
 
 ## 2. Fail-Closed (angka salah > halaman error)
 

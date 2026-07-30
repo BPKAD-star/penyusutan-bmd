@@ -500,6 +500,90 @@ disentuh sampai SKPD tujuan menerima). Poin penting:
   image+pdf — beda dari `aset-foto` yg image-only), path di
   `payload.dokumen_paths`, tampilkan via signed URL.
 
+- **BATAL PENGALIHAN** (migrasi 20260729_06 enum + 20260729_07 RPC/index/trigger).
+  BEDA dari Kembalikan, dan jangan ditukar: **Kembalikan** = barang memang sempat
+  dipakai di penerima lalu dipulangkan (dua peristiwa NYATA, keduanya tetap
+  dibaca laporan, barang tetap tampil ber-badge "Dikembalikan"). **Batal** =
+  KOREKSI salah pilih barang — perpindahannya dianggap TAK PERNAH TERJADI.
+  `fn_batal_pengalihan_barang(header_id, aset_id)`: wewenang **admin + SKPD
+  PENERIMA** (satu pintu migrasi 22 tetap utuh — SKPD asal tak berwenang), tanpa
+  batas waktu, tapi tunduk guard baku "tak boleh dibatalkan kalau aset punya
+  transaksi lebih baru". Membatalkan **SEMUA** baris pengalihan aset itu di kartu
+  tsb sekaligus (kasus khas punya 2 baris: pergi + pulang) — membatalkan separuh
+  menyisakan rantai yang tak nyambung. Payloadnya **`target_trx_ids` (JAMAK)`**,
+  beda dari `batal_*` lain yang tunggal; `fetchBatalTargets` sudah membaca
+  dua-duanya. Trigger kode register punya cabang khusus (dipicu GUC
+  `app.batal_pengalihan`) yang memulihkan kode lama — tanpa itu batal justru
+  MENERBITKAN nomor baru karena `skpd_id` berubah.
+  ⚠️ Fitur ini kelewat **tiga ronde** sebelum benar-benar sampai ke sasaran:
+  keanggotaan kartu (dua sisi) dan modul pelaporan sama-sama terlupakan padahal
+  ledgernya sudah benar. **Sebelum menambah `batal_*` baru, ikuti daftar periksa
+  tujuh titik di [rules.md](rules.md) §1.7.**
+
+## Kode Register (identitas ikut posisi terakhir, migrasi 20260729_03..07)
+
+**NIBAR = akta lahir, kode register = KTP.** Dua-duanya 45 digit dengan susunan
+sama: `[12][01|02][3506][kode SKPD 14][tahun 4][kode barang 12][urut 7]`. NIBAR
+terbit sekali saat barang masuk dan **tak pernah berubah** (direklas pun tidak
+digenerate ulang). Kode register mengikuti **posisi terakhir**: empat segmen
+tengahnya bergerak — intra/ekstra (`reklas_komptabel`), kode lokasi
+(`pengalihan_status`/`mutasi_internal`), **tahun = tahun MASUK SKPD** (BUKAN
+tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
+
+- **NOMOR URUT DITERBITKAN, BUKAN DIHITUNG SAAT TAMPIL.** Ini pengecualian
+  sengaja dari kebiasaan repo ini yang serba-turunan. Kalau dihitung dari urutan
+  baris, satu barang hilang di tengah menggeser nomor semua barang di bawahnya —
+  padahal kode ini tercetak di label barang, KIR, dan BAST, jadi kertas & layar
+  tak cocok tanpa ada yang sadar. Bandingkan dgn aturan SEBALIKNYA untuk Σ luas
+  bidang tanah ("JANGAN disimpan balik ke kolom") — di situ nilainya wajib ikut
+  data hidup, di sini wajib BERHENTI ikut.
+- **Alokasi lewat tabel counter** `kode_register_seq` (`INSERT … ON CONFLICT DO
+  UPDATE … RETURNING`, fungsi `fn_alokasi_nomor_register` SECURITY DEFINER) —
+  O(1) & aman balapan. **JANGAN** pakai pola `LIKE 'prefix%'` seperti
+  `generateNibars`: itu sudah pernah timeout & diam-diam mengulang nomor dari 1.
+  Counternya MONOTON → nomor urut per SKPD boleh berlubang, itu harga kode stabil.
+- **Penegakan di TRIGGER DB** (`trg_aset_kode_register`), bukan dipanggil dari
+  kode: ada 6+ pintu yang menggeser posisi barang, satu kelupaan = kode basi
+  diam-diam (nasib cache `aset.pemanfaatan`). Klausa `UPDATE OF` sengaja TIDAK
+  memuat `kode_register` supaya backfill massal tak membangunkannya. Kode yang
+  dikirim client selalu diabaikan — nomor wajib lewat counter.
+- **Riwayat `aset_kode_register` = SATU BARIS PER PERPINDAHAN**, memuat
+  `kode_lama` + kode baru sekaligus. Itu yang bikin 418rb barang yang tak pernah
+  pindah tak menitipkan satu baris pun TAPI riwayatnya tetap bisa direkonstruksi.
+  Cara bacanya **kembar** dgn `ownersAt()`: kode pada periode V = baris terakhir
+  ber-periode ≤ V; kalau belum ada, jatuh ke `kode_lama` baris paling awal.
+- ⚠️ **`fn_prefix_kode_register` (SQL) adalah yang OTORITATIF**;
+  `prefixKodeRegister` di lib/kodeRegister.ts kini rujukan saja, **tak dipanggil
+  jalur tampilan**. Kalau keduanya beda, TAK ADA yang gagal — jadi kalau
+  menyentuh salah satu, sandingkan langsung dengan yang lain.
+- ⚠️ **Panjang 45 digit TIDAK cukup untuk menilai kesamaan dgn NIBAR.** 150.101
+  aset (impor ATL Diknas) punya NIBAR 45 digit dgn **susunan BEDA**:
+  `[8 dgt urut internal][kode barang 12][kode SKPD 14][tahun 4][urut 7]` — kode
+  barang & SKPD tertukar posisi, tahun di belakang. `prefixNibar` menyaring lewat
+  kepala `12013506`/`12023506`. Tanpa penyaring itu 150.108 barang tampil
+  "bergeser" dan 148 yang benar-benar bergeser tenggelam. `null` = **tak bisa
+  dinilai**, sengaja dibedakan dari `false`; yang tak bisa dinilai jangan
+  ditandai apa pun.
+- Barang `draft` belum berkode (nomor tak dibakar untuk yang mungkin tak jadi);
+  barang `dihapus` **membekukan** kode terakhirnya (dokumen penghapusannya masih
+  menyebut kode itu).
+- **Backfill (20260729_04) wajib lewat `psql`, bukan SQL Editor.** Dua alasan:
+  (1) UPDATE 418rb baris melampaui batas waktu gateway API → `Failed to fetch`;
+  (2) SQL Editor menentukan mode baca/tulis dari **kata pertama skrip**, jadi
+  skrip berawalan `WITH` dibuka READ-ONLY dan semua tulis di dalamnya ditolak
+  (`25006`). Pass 1 mewarisi NIBAR apa adanya untuk barang yang belum bergerak
+  (tak ada nomor terbuang + counter ter-seed benar); Pass 2 menerbitkan nomor
+  baru. Hasil: 418.032 berkode, 0 dobel, 86.188 prefiks.
+  ⚠️ **Backfill sebesar ini membengkakkan WAL ±700 MB** dan pernah mendorong disk
+  Supabase 54% → 96% → project READ-ONLY → seluruh app mati (504 di middleware,
+  karena refresh sesi auth itu operasi tulis). **Cek sisa disk SEBELUM menjalankan
+  migrasi massal**, bukan sesudah.
+- **BELUM SELESAI:** tampilan belum period-aware (Daftar Barang menampilkan kode
+  TERKINI walau membuka periode lampau — belum terasa karena tabel riwayat masih
+  nyaris kosong, tapi salah begitu ada perpindahan yang tak dibatalkan); KIBAR
+  masih mengisi kolom "Nomor Register" dengan NIBAR; Export Excel belum membawa
+  kode register (menunggu keputusan user — berkas itu untuk BPK).
+
 ## Pemanfaatan BMD (sewa/pinjam pakai/KSP/BGS-BSG/KSPI, migrasi 20260721_01+02)
 
 Menu Pembukuan → Pengelolaan → Pemanfaatan (`components/pengelolaan/Pemanfaatan.tsx`,

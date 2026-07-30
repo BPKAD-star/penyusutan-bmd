@@ -35,11 +35,26 @@
 ## 1. Tabel Jantung
 
 ### `aset` — register (keadaan terkini)
-PK `id uuid`. Kolom kunci: `nibar` (UNIQUE), `kode` (→ `admin_kodefikasi_bmd`),
-`nama_barang`, `uraian_barang`, `jumlah`, `nilai_perolehan` (basis susut; naik
-saat kapitalisasi), `tgl_perolehan`, `skpd_id`, `intra_ekstra`
-(`intra`|`ekstra`), `cara_perolehan`, `status` (`aktif`|`dihapus`|`draft`),
-`foto_paths text[]`, cache `pemanfaatan` & `pengamanan`.
+PK `id uuid`. Kolom kunci: `nibar` (UNIQUE), `kode_register` (UNIQUE),
+`kode` (→ `admin_kodefikasi_bmd`), `nama_barang`, `uraian_barang`, `jumlah`,
+`nilai_perolehan` (basis susut; naik saat kapitalisasi), `tgl_perolehan`,
+`skpd_id`, `intra_ekstra` (`intra`|`ekstra`), `cara_perolehan`,
+`status` (`aktif`|`dihapus`|`draft`), `foto_paths text[]`,
+cache `pemanfaatan` & `pengamanan`.
+
+**NIBAR vs KODE REGISTER** — dua-duanya 45 digit dengan susunan yang sama
+(`[12][01|02][3506][kode SKPD 14][tahun 4][kode barang 12][urut 7]`), tapi
+maknanya beda:
+- **`nibar` = akta lahir.** Terbit sekali saat barang masuk, **tidak pernah
+  berubah** (direklas pun tidak digenerate ulang). Ini kunci relasi di DB —
+  dipakai mencocokkan `aset_awal_2026` dan jadi alamat halaman KIBAR.
+- **`kode_register` = KTP.** Mengikuti **posisi terakhir** barang; terbit ulang
+  saat pindah unit (`pengalihan_status`/`mutasi_internal`), reklas kode/golongan,
+  atau reklas komptabel. Segmen tahunnya = **tahun masuk SKPD**, bukan tahun
+  perolehan. **JANGAN dipakai sebagai kunci join** — nilainya berubah.
+
+Barang berstatus `draft` belum punya `kode_register` (nomor urut tak dibakar
+untuk barang yang mungkin tak jadi); barang `dihapus` memegang kode terakhirnya.
 
 **Wide table**: kolom spesifikasi nullable untuk semua golongan dalam satu
 tabel (bukan tabel per jenis aset). Template per golongan didefinisikan di
@@ -67,6 +82,28 @@ bawahnya tetap beku.
 Snapshot saldo akhir 2025, dicocokkan ke `aset` lewat NIBAR. Display-only,
 **tidak pernah dibaca engine** (engine replay dari ledger `saldo_awal`).
 
+### `kode_register_seq` — alokator nomor urut
+`prefix38` (PK) → `nomor_terakhir`. Satu baris per (SKPD + tahun + kode barang +
+intra/ekstra). Alokasi lewat `INSERT … ON CONFLICT DO UPDATE … RETURNING`
+(`fn_alokasi_nomor_register`, SECURITY DEFINER) — **O(1) & aman dari balapan**,
+bukan `LIKE 'prefix%'` yang pernah membuat generator NIBAR timeout lalu diam-diam
+mengulang nomor dari 1. **MONOTON**: nomor yang ditinggalkan barang yang pindah
+keluar tidak pernah diterbitkan ulang, jadi nomor urut per SKPD boleh berlubang
+(…122, …124) — itu harga dari kode yang stabil.
+
+### `aset_kode_register` — riwayat kode register, append-only
+`aset_id`, **`kode_lama`**, `kode_register`, `periode`, `tanggal`, `trx_id`,
+`alasan`. **Satu baris = satu perpindahan**, memuat kode lama DAN kode baru
+sekaligus. Karena itu 418rb barang yang tak pernah pindah tidak menitipkan satu
+baris pun, tapi riwayatnya tetap bisa direkonstruksi: kode pada periode V =
+`kode_register` baris terakhir dengan periode ≤ V; kalau belum ada, jatuh ke
+`kode_lama` baris paling awal. Bentuk & cara bacanya **sengaja kembar** dengan
+`ownersAt()` di `lib/pengalihan.ts`.
+
+Arah penunjuknya **riwayat → ledger** (`trx_id`), bukan sebaliknya: menyalin
+kode ke `transaksi_bmd` hanya menduplikasi data yang sudah bisa diturunkan.
+Ditulis hanya oleh trigger SECURITY DEFINER; `authenticated` cuma punya SELECT.
+
 ## 2. Enum `jenis_transaksi_bmd`
 
 Satu enum untuk seluruh peristiwa. Dikelompokkan menurut perlakuannya:
@@ -75,7 +112,7 @@ Satu enum untuk seluruh peristiwa. Dikelompokkan menurut perlakuannya:
 |---|---|
 | Baseline | `saldo_awal`, `saldo_awal_checkpoint` |
 | Cara perolehan | `pengadaan`, `hibah_masuk`, `tukar_menukar`, `hasil_inventarisasi`, `perolehan_lainnya`, `akumulasi_kdp` |
-| Perpindahan unit | `pengalihan_status`, `mutasi_internal` |
+| Perpindahan unit | `pengalihan_status`, `mutasi_internal` (pembatalannya: `batal_pengalihan`) |
 | Reklasifikasi | `reklas_kode`, `reklas_golongan`, `reklas_komptabel` |
 | Koreksi | `koreksi_nilai`, `koreksi_spesifikasi`, `koreksi_kuantitas`, `koreksi_pencatatan_ganda` |
 | Kapitalisasi | `kapitalisasi`, `kapitalisasi_serap` |
@@ -96,13 +133,22 @@ dijalankan **sebelum** deploy kode yang memfilter nilai baru itu.
 - **MUNCUL**: `batal_kapitalisasi`, `batal_penghapusan`, `batal_pemecahan`,
   `batal_koreksi_pencatatan_ganda`.
 - **NETRAL** (engine `default: break`): `pengalihan_status`,
-  `mutasi_internal`, `pemanfaatan*`, `pengamanan*`.
+  `mutasi_internal`, `batal_pengalihan`, `pemanfaatan*`, `pengamanan*`.
+
+⚠️ `batal_pengalihan` menganulir lewat **`payload.target_trx_ids` (JAMAK)** —
+sekali batal membatalkan baris perginya DAN baris pulangnya, sebab membatalkan
+separuh menyisakan rantai yang tak nyambung. `batal_*` lain memakai
+`target_trx_id` (tunggal); `fetchBatalTargets` membaca dua-duanya. Beda dari
+baris pengembalian ber-`payload.reversal`, yang justru peristiwa NYATA dan tetap
+dibaca laporan — lihat [rules.md](rules.md) §1.6.
 
 ## 3. Mekanisme Integritas (trigger & guard)
 
 | Fungsi | Menjaga |
 |---|---|
 | `fn_transaksi_bmd_immutable` | Ledger append-only — tolak UPDATE/DELETE, termasuk service_role |
+| `fn_aset_kode_register_immutable` | Riwayat kode register append-only |
+| `fn_aset_kode_register_sync` | Menerbitkan/membekukan `aset.kode_register`. Trigger `BEFORE INSERT OR UPDATE OF skpd_id, kode, intra_ekstra, status, tgl_perolehan` — **`kode_register` sengaja di luar daftar itu** supaya backfill massal tak membangunkannya. Kode dari client selalu diabaikan (nomor wajib lewat counter). Cabang **pembatalan** dipicu GUC `app.batal_pengalihan` (di-set `fn_batal_pengalihan_barang`): menghitung ulang seolah tak pernah pindah & memulihkan `kode_register = nibar` bila cocok |
 | `fn_cek_tahun_buku` | Tolak tanggal masa depan (tanpa kecuali) & tanggal di tahun terkunci (kecuali whitelist retroaktif). Tahun tak terdaftar = terkunci |
 | `fn_jurnal_header_guard` | Edit header tidak boleh pindah semester; `skpd_id`/`kategori` tidak boleh berubah |
 | `fn_jurnal_header_approval_guard` | Hanya admin / Pengurus Barang atasan yang boleh approve; **pembuat ≠ penyetuju** |
@@ -162,8 +208,10 @@ di antaranya `saldo_awal` hasil import baseline + ATL).
 | `idx_trx_jenis_aset (jenis, aset_id)` | Status void/batal per aset |
 | `idx_trx_jenis_tanggal (jenis, tanggal)` | LRA belanja modal |
 | `idx_trx_jenis_id (jenis, id)`, `idx_trx_periode_jenis_id (periode, jenis, id)` | Kolektor laporan ber-`ORDER BY id` |
-| `idx_trx_pindah_id` | **Partial** `(id) WHERE jenis IN ('pengalihan_status','mutasi_internal')` — riwayat pindah unit (4 baris dari 418rb) |
+| `idx_trx_pindah_id` | **Partial** `(id) WHERE jenis IN ('pengalihan_status','mutasi_internal','batal_pengalihan')` — riwayat pindah unit (segelintir baris dari 418rb). ⚠️ Predikatnya **kembar** dengan `JENIS_DITARIK` di `lib/pengalihan.ts` — ubah satu, ubah dua-duanya, atau index diabaikan **diam-diam** |
 | `idx_trx_header (header_id)` | Grouping kartu jurnal |
+| `aset_kode_register_key (kode_register)` | UNIQUE — jaring pengaman terakhir kalau alokator nomor bocor. Waktu generator NIBAR diam-diam mengulang dari 1, cuma constraint UNIQUE yang menyelamatkan |
+| `idx_akr_aset_id (aset_id, id)`, `idx_akr_kode (kode_register)` | Riwayat kode register per aset & penelusuran balik dari dokumen fisik |
 
 ⚠️ **Aturan index di repo ini** (rincian: [rules.md](rules.md) §4):
 `LIKE` dan `=` pada kolom **enum** tidak pernah bisa jadi index-cond di bawah

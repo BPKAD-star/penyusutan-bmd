@@ -65,8 +65,25 @@ pernah beku di "Memuat...". (Latar insiden: [rules.md](rules.md) §Fail-closed.)
 - Badge "Tahun Kerja YYYY" di top bar; banner info `TahunTerkunciNote` di
   halaman ber-pemilih tahun ketika tahun terpilih terkunci (informatif, bukan
   larangan).
-- Status per baris: "Selesai" (pemanfaatan), "Dikembalikan" (pengamanan),
-  🔒 (baseline terkunci), "N bidang · luas belum lengkap" (tanah).
+- Status per baris: "Selesai" (pemanfaatan), "Dikembalikan" (pengamanan &
+  pengalihan), 🔒 (baseline terkunci), "N bidang · luas belum lengkap" (tanah).
+- **Penanda ⚠ kode register** (Daftar Barang, baris `REG` di bawah NIBAR):
+  nyala kuning hanya kalau posisi barang **bergeser** dari NIBAR-nya. Tiga
+  keadaan, dan yang ketiga sering dilupakan:
+  | Keadaan | Tampilan |
+  |---|---|
+  | Sama dengan NIBAR | abu-abu pucat, tanpa tanda |
+  | Bergeser (pernah pindah/reklas) | kuning + ⚠ |
+  | **Tak bisa dinilai** (NIBAR kosong / warisan e-BMD yang susunannya beda) | abu-abu, **tanpa tanda** |
+
+  "Tak bisa dinilai" **bukan** "sama" — tapi juga tak boleh ditandai. Menandai
+  149.960 barang warisan membuat 148 yang benar-benar bergeser tenggelam, dan
+  penandanya jadi tak ada gunanya.
+- **Tombol penghentian selalu SEPASANG** dengan warna & maksud yang beda:
+  Akhiri/Kembalikan (kuning — peristiwa sah yang berakhir) vs 🗑 Batal (merah —
+  salah catat, dianggap tak pernah terjadi). Konfirmasinya wajib menjelaskan
+  bedanya, bukan cuma "Yakin?" — operator yang salah pilih meninggalkan jejak
+  permanen. Lihat [rules.md](rules.md) §1.6.
 
 ## 4. Tabel & Data Besar
 
