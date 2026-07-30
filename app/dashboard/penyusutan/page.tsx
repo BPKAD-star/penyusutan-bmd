@@ -41,6 +41,19 @@ type Base = {
 //   - Merek (merek_tipe): Peralatan & Mesin, Aset Tidak Berwujud, Aset Lain-Lain.
 //   - Lokasi (alamat_detail): Tanah, Gedung&Bangunan, Jalan/Jaringan/Irigasi, KDP, Aset Lain-Lain.
 // "Semua Jenis" (golongan kosong) → tidak ada kolom tambahan (data akan campur golongan).
+// Urutan tampil & export: KODE BARANG A→Z (permintaan user 2026-07-30; dulu
+// nilai perolehan terbesar dulu). KEMBAR dgn `bandingKode` di Daftar Barang —
+// ubah satu, samakan yang lain; bedanya cuma nama kolomnya di sini di-alias
+// `kode_barang`. Perbandingan string polos (segmen kode e-BMD sudah zero-padded
+// → leksikografis = urutan nomor, & murah utk ratusan ribu baris); nilai turun
+// + `id` sbg pemecah seri karena satu kode dipakai ribuan barang dan tanpa
+// kunci UNIK urutannya bisa beda tiap render.
+function bandingKode(a: Base, b: Base): number {
+  if (a.kode_barang !== b.kode_barang) return a.kode_barang < b.kode_barang ? -1 : 1
+  const d = (b.nilai_perolehan || 0) - (a.nilai_perolehan || 0)
+  return d !== 0 ? d : (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
 const GOL_MEREK = ['1.3.2', '1.5.3', '1.5.4']
 const GOL_LOKASI = ['1.3.1', '1.3.3', '1.3.4', '1.3.6', '1.5.4']
 // Hasil engine (penyusutan_semester) — angka period-aware.
@@ -117,7 +130,13 @@ export default function PenyusutanPage() {
     if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
     if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
-    return q.order('nilai_perolehan', { ascending: false })
+    // ⚠️ `.order('id')` itu PEMECAH SERI, jangan dicopot. Baris ditarik
+    // halaman-demi-halaman pakai `.range()` dan `nilai_perolehan` banyak
+    // kembarnya — dgn urutan yang tak total, baris kembar tak dijamin jatuh di
+    // halaman yang sama tiap query, jadi ada yang terlewat & ada yang dobel
+    // TANPA SUARA. Urutan TAMPIL ditentukan `bandingKode` di assembleRows;
+    // yang di sini murni supaya pengambilannya utuh.
+    return q.order('nilai_perolehan', { ascending: false }).order('id')
   }
 
   async function fetchAllBase(f: Applied) {
@@ -240,8 +259,12 @@ export default function PenyusutanPage() {
     const ids = combined.map(b => b.id)
     const [pmap, hidden] = await Promise.all([fetchPeny(ids, f.periode), fetchHiddenIds(ids, f.periode)])
     const belumAda = (b: Base) => !!b.tgl_perolehan && comparePeriode(periodeDariTanggal(b.tgl_perolehan), f.periode) > 0
+    // Sortir di SINI, bukan andalkan urutan dari DB: `combined` gabungan dua
+    // fetch (`kept` + `added` period-aware) yang ditempel di belakang, jadi
+    // urutan aslinya sudah pasti patah.
     return combined
       .filter(b => !hidden.has(b.id) && !belumAda(b))
+      .sort(bandingKode)
       .map(b => ({ ...b, p: pmap.get(b.id), ownerSkpd: owners.get(b.id) ?? b.skpd_id }))
   }
 

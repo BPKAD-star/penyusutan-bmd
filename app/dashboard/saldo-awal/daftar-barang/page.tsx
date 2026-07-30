@@ -247,9 +247,18 @@ export default function Page() {
     if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
     if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
-    // NIBAR sbg pemecah seri: tanpa itu urutan baris bernilai sama tak stabil
+    // Urutan: KODE BARANG A→Z (permintaan user 2026-07-30; dulu nilai perolehan
+    // terbesar dulu), samakan dgn Daftar Barang & Penyusutan — nilai turun jadi
+    // kunci kedua supaya di dalam satu kode barang mahal tetap di atas.
+    // Di sini urutannya WAJIB di query, bukan di client spt dua halaman itu:
+    // paginasinya di SERVER (`.range()` per halaman, tak pernah menarik semua
+    // baris ke browser), jadi mengurutkan array yang tampil cuma akan
+    // mengurutkan 50 baris halaman itu sendiri.
+    // NIBAR sbg pemecah seri: tanpa itu urutan baris berkunci sama tak stabil
     // antar-request → baris bisa dobel/hilang saat pindah halaman.
-    return q.order('nilai_perolehan', { ascending: false }).order('nibar', { ascending: true })
+    return q.order('kode', { ascending: true })
+      .order('nilai_perolehan', { ascending: false })
+      .order('nibar', { ascending: true })
   }
 
   // Register `aset` per NIBAR: keterangan (sengaja versi TERKINI, bukan kolom

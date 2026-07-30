@@ -937,22 +937,36 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   ikut diperketat — di situ self-approve memang sudah mungkin sejak dulu (daftar
   tujuan mutasi internal se-subtree, `PengeluaranInternal.tsx`), pre-existing dan
   perlu keputusan tersendiri kalau mau ditutup.
-- **Urutan Daftar Barang = KODE BARANG A→Z** (keputusan user 2026-07-30; dulu
-  nilai perolehan terbesar dulu). Comparator `bandingKode` di halaman itu, satu
-  sumber utk layar + Export Excel + Export Audit. Kuncinya **tiga**: kode →
-  nilai perolehan turun → `id`. Dua kunci terakhir bukan hiasan — satu kode
-  dipakai ribuan barang, dan tanpa pemecah seri UNIK urutannya bisa beda tiap
-  render (`Array.sort()` tak dijamin stabil), jadi isi halaman 3 berpindah-pindah
-  tiap kali dibuka. Pakai perbandingan string POLOS, bukan `localeCompare`:
-  segmen kode e-BMD sudah zero-padded jadi leksikografis = urutan nomor, dan
-  jauh lebih murah utk 200rb baris.
-  ⚠️ Terpisah dari itu, `buildQuery` kini `.order('nilai_perolehan')` **+
-  `.order('id')`** — pemecah seri utk PENGAMBILAN, jangan dicopot. Barisnya
-  ditarik `.range()` per 1.000 dan `nilai_perolehan` banyak kembarnya; dgn
-  urutan tak total, baris kembar tak dijamin jatuh di halaman yang sama tiap
-  query → ada yang terlewat & ada yang dobel TANPA SUARA (varian dari cacat
-  paginasi yang sudah didokumentasikan utk kolektor ledger). Tak butuh index
-  baru: sort node-nya memang sudah ada.
+- **Urutan baris = KODE BARANG A→Z di TIGA halaman register** (keputusan user
+  2026-07-30; dulu nilai perolehan terbesar dulu): Daftar Barang, Penyusutan,
+  Daftar Barang Awal. Kuncinya **tiga**: kode → nilai perolehan turun → kunci
+  UNIK. Dua kunci terakhir bukan hiasan — satu kode dipakai ribuan barang, dan
+  tanpa pemecah seri unik urutannya bisa beda tiap render/request, jadi isi
+  halaman 3 berpindah-pindah tiap kali dibuka. Nilai-turun dipertahankan supaya
+  kebiasaan lama (barang mahal di atas) masih terasa di dalam satu kode.
+  **Tapi TEMPAT mengurutkannya beda, dan itu bukan selera:**
+  - Daftar Barang & Penyusutan → **di client** (`bandingKode`, kembar di dua
+    berkas — ubah satu, samakan yang lain; di Penyusutan kolomnya di-alias
+    `kode_barang`). WAJIB di client karena barisnya gabungan dua fetch: hasil
+    query utama + barang period-aware yang ditempel di belakang
+    (`partitionByPeriodOwner`) — urutan dari DB sudah pasti patah di situ.
+    Aman krn kedua halaman memang menarik SEMUA baris visible ke memori.
+    Perbandingan string POLOS, bukan `localeCompare`: segmen kode e-BMD sudah
+    zero-padded jadi leksikografis = urutan nomor, dan jauh lebih murah utk
+    200rb baris.
+  - Daftar Barang Awal → **di query** (`.order('kode')…`). Paginasinya di
+    SERVER (`.range()` per halaman, tak pernah menarik semua baris), jadi
+    menyortir array yang tampil cuma akan mengurutkan 50 baris halaman itu.
+  ⚠️ Terpisah dari urutan tampil: query pengambilan di Daftar Barang &
+  Penyusutan kini `.order('nilai_perolehan')` **+ `.order('id')`** — pemecah
+  seri, jangan dicopot. Barisnya ditarik `.range()` per 1.000 dan
+  `nilai_perolehan` banyak kembarnya; dgn urutan tak total, baris kembar tak
+  dijamin jatuh di halaman yang sama tiap query → ada yang terlewat & ada yang
+  dobel TANPA SUARA (varian cacat paginasi yang sudah didokumentasikan utk
+  kolektor ledger). Daftar Barang Awal sudah punya pemecah seri (`nibar`) sejak
+  awal. Tak butuh index baru di ketiganya: sort node-nya memang sudah ada (tak
+  ada index yang melayani `nilai_perolehan`), jadi nambah kunci di sort yang
+  sama ~gratis.
 - **`cara_perolehan` vs `asal_usul` — DUA KOLOM, SENGAJA TIDAK DISINKRONKAN**
   (keputusan user 2026-07-30). `aset.cara_perolehan` (text + CHECK:
   `saldo_awal`/`pengadaan`/`hibah_masuk`/`tukar_menukar`/`hasil_inventarisasi`/
