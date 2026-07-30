@@ -20,7 +20,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
+import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal, asalUsulTampil } from '@/lib/bmd'
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
@@ -34,7 +34,7 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan', 'koreksi_pencatatan_ganda', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'kdp_selesai_keluar', 'pemecahan_keluar', 'batal_pemecahan_masuk']
 const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan', 'batal_koreksi_pencatatan_ganda']
 
-const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
+const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -52,6 +52,9 @@ type Row = {
   tgl_perolehan: string | null
   intra_ekstra: string | null
   asal_usul: string | null
+  // Diisi menu Cara Perolehan saat approve — dipakai HANYA sbg cadangan
+  // tampilan kalau `asal_usul` kosong. Lihat `asalUsulTampil` di lib/bmd.ts.
+  cara_perolehan: string | null
   penggunaan_pengamanan: string | null   // kolom label "Penggunaan" (lihat lib/asetFields.ts)
   keterangan: string | null
   status: string
@@ -74,13 +77,17 @@ const angka = (v: number | null | undefined) =>
 // ── Kolom per jenis aset (pakai field yang tersedia) ────────────────────────
 const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> = {
   skpd: { header: 'SKPD' }, nama: { header: 'Nama Barang' }, kode: { header: 'Kode Barang' },
-  uraian: { header: 'Uraian' }, merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
+  uraian: { header: 'Uraian Barang' }, merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
   lokasi: { header: 'Lokasi' }, komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
   nilai: { header: 'Nilai Perolehan', align: 'right' }, keterangan: { header: 'Keterangan' },
   asal_usul: { header: 'Asal Usul' }, penggunaan: { header: 'Penggunaan' },
   luas: { header: 'Luas (m²)', align: 'right' }, no_sertifikat: { header: 'Nomor Dokumen Kepemilikan' },
   tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' }, atas_nama: { header: 'Nama Dokumen Kepemilikan' },
   hak: { header: 'Jenis Hak' },
+  // Dua kolom identitas — EXPORT-ONLY (tak pernah masuk COLS layar; di layar
+  // NIBAR & kode register ditumpuk di sel Nama Barang). Ada di COL_META supaya
+  // ikut satu sistem urutan yang sama dgn kolom lain (EXPORT_ORDER).
+  nibar: { header: 'NIBAR' }, kode_register: { header: 'Kode Register' },
 }
 // ── Kolom TAMPILAN LAYAR (diringkas 2026-07-19) ─────────────────────────────
 // - `uraian` TIDAK jadi kolom sendiri lagi → ditumpuk di bawah `kode` (spt nibar
@@ -110,24 +117,46 @@ const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
 // ── Kolom EKSPOR (Excel/BPK) — TETAP flat & lengkap: `uraian` jadi kolom
 // sendiri, dan Tanah tetap membawa Dokumen Kepemilikan (no/tgl/atas nama).
 // Sengaja beda dari tampilan layar yang diringkas.
-// Dua kolom identitas (NIBAR & Kode Register) TIDAK ada di daftar ini — keduanya
-// selalu ikut, dipasang di depan sebelum keys ini (lihat handleExport).
 // ⚠️ Kode Register yang diekspor = kode TERKINI (kolom `aset.kode_register`),
 // BELUM period-aware — sama seperti tampilan layar. Kalau nanti tampilan dibuat
 // period-aware lewat `aset_kode_register`, export WAJIB ikut, kalau tidak berkas
 // periode lampau menyebut kode yang saat itu belum terbit.
+//
+// URUTAN kolom kiri→kanan DITENTUKAN USER (2026-07-30) & dipegang SATU tempat:
+// EXPORT_ORDER di bawah. `EXPORT_COLS` cuma menentukan kolom mana yang IKUT per
+// golongan (himpunan, bukan urutan) — urutannya selalu dari EXPORT_ORDER. Ini
+// disengaja: dulu urutannya tersebar di 9 daftar, jadi nambah satu kolom berarti
+// menyisipkannya di 9 tempat dengan benar & satu kelupaan bikin berkas golongan
+// itu beda susunan tanpa ada yang sadar.
+// Susunannya: identitas (SKPD → kode & uraian → NIBAR → kode register → nama) →
+// deskriptif per golongan (merek, spesifikasi, lokasi, luas, hak, dokumen
+// kepemilikan) → atribut (tgl, komptabel) → angka → asal usul/penggunaan/ket.
+// Blok deskriptif itu yang bikin tiap golongan beda panjang, sesuai kolom yang
+// memang ditampilkan Daftar Barang untuk jenis aset itu.
+const EXPORT_ORDER = [
+  'skpd', 'kode', 'uraian', 'nibar', 'kode_register', 'nama',
+  'merek', 'spesifikasi', 'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
+  'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan',
+]
+// Dua kolom identitas ini SELALU ikut, apa pun golongannya — sengaja di luar
+// daftar per-golongan supaya tak bisa kelupaan di salah satu entri.
+const EXPORT_ALWAYS = ['nibar', 'kode_register']
 const EXPORT_COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'nilai', 'keterangan'],
-  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
-  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
-  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
-  '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'keterangan'],
-  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
-  '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
-  '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
+  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'tgl', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel (spt layar)
+  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
 }
-const EXPORT_DEFAULT = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'keterangan']
-const exportColsFor = (golongan: string) => EXPORT_COLS[golongan] || EXPORT_DEFAULT
+const EXPORT_DEFAULT = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
+// Himpunan kolom golongan + yang selalu ikut, DIURUTKAN oleh EXPORT_ORDER.
+const exportColsFor = (golongan: string) => {
+  const pilih = new Set([...(EXPORT_COLS[golongan] || EXPORT_DEFAULT), ...EXPORT_ALWAYS])
+  return EXPORT_ORDER.filter(k => pilih.has(k))
+}
 
 // Label jenis penghapusan untuk export Audit.
 const HAPUS_LABEL: Record<string, string> = {
@@ -445,12 +474,21 @@ export default function DaftarBarangPage() {
           case 'nama': return r.nama_barang || ''
           case 'kode': return r.kode
           case 'uraian': return uraian[r.kode] || ''
+          case 'nibar': return r.nibar || ''
+          // String, BUKAN angka — 45 digit sbg numerik jadi notasi ilmiah di
+          // Excel & digit belakangnya hilang tanpa suara.
+          case 'kode_register': return r.kode_register || ''
           case 'merek': return r.merek_tipe || ''
           case 'spesifikasi': return r.spesifikasi_lainnya || ''
           case 'lokasi': return r.alamat_detail || ''
           case 'komptabel': return r.intra_ekstra || ''
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
+          // Kosong → jatuh ke label cara perolehan (menu yang mencatat barang
+          // ini). Di Excel tak ditandai apa-apa: bagi pembaca berkas keduanya
+          // sama-sama "asal usul barang", dan penandaan cuma bikin bingung.
+          case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
+          case 'penggunaan': return r.penggunaan_pengamanan || ''
           case 'keterangan': return r.keterangan || ''
           case 'luas': return luasOf(r) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
@@ -460,7 +498,7 @@ export default function DaftarBarangPage() {
           default: return ''
         }
       }
-      const obj: Record<string, string | number> = { NIBAR: r.nibar || '', 'Kode Register': r.kode_register || '' }
+      const obj: Record<string, string | number> = {}
       for (const k of keys) obj[COL_META[k].header] = cell(k)
       return obj
     }), `Daftar_Barang_${applied.golongan}`, 'Daftar Barang')
@@ -490,12 +528,21 @@ export default function DaftarBarangPage() {
           case 'nama': return r.nama_barang || ''
           case 'kode': return r.kode
           case 'uraian': return uraian[r.kode] || ''
+          case 'nibar': return r.nibar || ''
+          // String, BUKAN angka — 45 digit sbg numerik jadi notasi ilmiah di
+          // Excel & digit belakangnya hilang tanpa suara.
+          case 'kode_register': return r.kode_register || ''
           case 'merek': return r.merek_tipe || ''
           case 'spesifikasi': return r.spesifikasi_lainnya || ''
           case 'lokasi': return r.alamat_detail || ''
           case 'komptabel': return r.intra_ekstra || ''
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
+          // Kosong → jatuh ke label cara perolehan (menu yang mencatat barang
+          // ini). Di Excel tak ditandai apa-apa: bagi pembaca berkas keduanya
+          // sama-sama "asal usul barang", dan penandaan cuma bikin bingung.
+          case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
+          case 'penggunaan': return r.penggunaan_pengamanan || ''
           case 'keterangan': return r.keterangan || ''
           case 'luas': return luasOf(r) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
@@ -505,7 +552,7 @@ export default function DaftarBarangPage() {
           default: return ''
         }
       }
-      const obj: Record<string, string | number> = { NIBAR: r.nibar || '', 'Kode Register': r.kode_register || '' }
+      const obj: Record<string, string | number> = {}
       for (const k of keys) obj[COL_META[k].header] = cell(k)
       const hi = hapus.get(r.id)
       obj['Status'] = r.status === 'aktif' ? 'Aktif' : 'Dihapus'
@@ -579,7 +626,20 @@ export default function DaftarBarangPage() {
       case 'komptabel': return r.intra_ekstra || '-'
       case 'tgl': return r.tgl_perolehan || '-'
       case 'nilai': return angka(r.nilai_perolehan)
-      case 'asal_usul': return r.asal_usul || '-'
+      case 'asal_usul': {
+        // Isian operator menang; kalau kosong pakai label cara perolehan.
+        // Yang turunan dibuat lebih redup + ber-tooltip supaya operator tahu
+        // itu bukan hasil ketikan siapa pun & masih bisa diperinci lewat
+        // Koreksi → Spesifikasi (mis. jadi "Pengadaan APBD").
+        const { teks, turunan } = asalUsulTampil(r.asal_usul, r.cara_perolehan)
+        if (!teks) return '-'
+        if (!turunan) return teks
+        return (
+          <span className="text-gray-400 italic" title="Belum diisi — ditampilkan dari cara perolehan barang ini. Isi lebih rinci lewat Pembukuan → Koreksi → Spesifikasi Barang.">
+            {teks}
+          </span>
+        )
+      }
       case 'penggunaan': return r.penggunaan_pengamanan || '-'
       case 'keterangan': return r.keterangan || '-'
       case 'luas': { const v = luasOf(r); return v != null ? angka(v) : '-' }

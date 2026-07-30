@@ -583,11 +583,12 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
   nyaris kosong, tapi salah begitu ada perpindahan yang tak dibatalkan); KIBAR
   masih mengisi kolom "Nomor Register" dengan NIBAR.
 - **Export Daftar Barang SUDAH membawa kode register** (2026-07-30, keputusan
-  user): kolom **"Kode Register"** ikut di Export Excel & Export Audit, dipasang
-  tepat setelah NIBAR & SEBELUM `EXPORT_COLS` — dua kolom identitas itu sengaja
-  di luar daftar per-golongan supaya selalu ikut apa pun jenis asetnya. Diisi
-  langsung dari kolom `aset.kode_register` (sudah ada di `SELECT_COLS`), string
-  → sel Excel bertipe teks, jadi 45 digitnya tak dibulatkan jadi notasi ilmiah.
+  user): kolom **"Kode Register"** ikut di Export Excel & Export Audit. Bersama
+  NIBAR ia masuk `EXPORT_ALWAYS` — dua kolom identitas itu sengaja di luar
+  daftar per-golongan supaya selalu ikut apa pun jenis asetnya & tak bisa
+  kelupaan di salah satu entri. Diisi langsung dari kolom `aset.kode_register`
+  (sudah ada di `SELECT_COLS`), string → sel Excel bertipe teks, jadi 45 digitnya
+  tak dibulatkan jadi notasi ilmiah.
   ⚠️ Ikut menanggung keterbatasan yang sama dgn layar: **kode TERKINI, belum
   period-aware**. Begitu tampilan dibuat period-aware lewat `aset_kode_register`,
   export WAJIB diubah bareng — kalau tidak, berkas periode lampau untuk BPK
@@ -610,14 +611,39 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
   fail-closed — kolom uraian kosong di berkas BPK tak boleh diam-diam berarti
   "query gagal".
 - **Urutan kolom Export Penyusutan DITENTUKAN USER** (2026-07-30): SKPD · Kode
-  Barang · Uraian Barang · NIBAR · Kode Register · Nama Barang · Komptabel ·
-  Tgl Perolehan · Masa Manfaat (Smt) · Nilai Perolehan · Beban · Akumulasi ·
-  Nilai Buku Akhir · Sisa (Smt) · Periode. Urutan properti objek di
+  Barang · Uraian Barang · NIBAR · Kode Register · Nama Barang · Lokasi ·
+  Tgl Perolehan · Komptabel · Masa Manfaat (Smt) · Nilai Perolehan · Beban ·
+  Akumulasi · Nilai Buku Akhir · Sisa (Smt) · Periode. **Lokasi selalu ikut**
+  walau di layar cuma tampil utk `GOL_LOKASI` — set kolom berkas export tak
+  boleh berubah-ubah tiap ganti filter jenis aset; golongan tanpa lokasi cukup
+  kosong. (Kolom **Merek** yang juga kondisional di layar SENGAJA belum masuk
+  export — belum diminta.) Urutan properti objek di
   `handleExport` = urutan kolom Excel (`json_to_sheet` ikut key objek pertama) —
+  DI PENYUSUTAN urutan itu ditulis langsung di objeknya (satu set kolom, tak
+  per-golongan) —
   jangan diacak saat menambah kolom baru. Suffix **"(Smt)"** di Masa Manfaat &
   Sisa WAJIB dipertahankan: angkanya semester (`masa_manfaat_tahun × 2`), tanpa
-  label itu "100" terbaca 100 tahun. Export Daftar Barang urutannya BEDA (lewat
-  `EXPORT_COLS` per golongan) — memang sengaja, dua berkas beda peruntukan.
+  label itu "100" terbaca 100 tahun.
+- **Urutan Export Daftar Barang DISAMAKAN dgn Penyusutan** (2026-07-30,
+  permintaan user): SKPD · Kode Barang · Uraian Barang · NIBAR · Kode Register ·
+  Nama Barang · *(merek · spesifikasi · lokasi · luas · jenis hak · dokumen
+  kepemilikan — sesuai kolom yang memang ditampilkan Daftar Barang utk golongan
+  itu)* · Tgl Perolehan · Komptabel · Nilai Perolehan · Asal Usul · Penggunaan ·
+  Keterangan. Yang berubah dari sebelumnya: Tgl Perolehan kini SEBELUM Komptabel,
+  dan **Asal Usul + Penggunaan akhirnya ikut** (dulu ada di layar tapi tak pernah
+  masuk Excel; `cell()` juga belum punya case-nya, jadi menambah kolomnya saja
+  akan menghasilkan kolom kosong senyap lewat `default: return ''`).
+  ⚠️ **Urutan dipegang SATU tempat: `EXPORT_ORDER`.** `EXPORT_COLS` kini cuma
+  HIMPUNAN kolom per golongan (urutannya diabaikan) & `exportColsFor` menyaring
+  `EXPORT_ORDER` dengan himpunan itu + `EXPORT_ALWAYS`. Sebelumnya urutan
+  tersebar di 9 daftar, jadi menambah satu kolom berarti menyisipkannya dgn
+  benar di 9 tempat — satu kelupaan bikin berkas golongan itu beda susunan tanpa
+  ada yang sadar. **Nambah kolom export baru = tambahkan ke `EXPORT_ORDER`
+  (posisi) + `EXPORT_COLS` golongan yang relevan (keanggotaan) + `cell()`
+  (isi).** Ketiganya, kalau tidak kolomnya hilang / salah tempat / kosong senyap.
+  Header `uraian` ikut jadi **"Uraian Barang"** biar kembar dgn Penyusutan.
+  Dua berkas ini tetap TIDAK identik — Daftar Barang tak punya kolom angka
+  penyusutan & punya blok deskriptif per golongan; yang disamakan susunannya.
 
 ## Pemanfaatan BMD (sewa/pinjam pakai/KSP/BGS-BSG/KSPI, migrasi 20260721_01+02)
 
@@ -911,6 +937,28 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   ikut diperketat — di situ self-approve memang sudah mungkin sejak dulu (daftar
   tujuan mutasi internal se-subtree, `PengeluaranInternal.tsx`), pre-existing dan
   perlu keputusan tersendiri kalau mau ditutup.
+- **`cara_perolehan` vs `asal_usul` — DUA KOLOM, SENGAJA TIDAK DISINKRONKAN**
+  (keputusan user 2026-07-30). `aset.cara_perolehan` (text + CHECK:
+  `saldo_awal`/`pengadaan`/`hibah_masuk`/`tukar_menukar`/`hasil_inventarisasi`/
+  `perolehan_lainnya`) SUDAH diisi otomatis oleh kelima menu Cara Perolehan saat
+  approve (`Pengadaan.tsx` hardcode `'pengadaan'`, `PerolehanManual.tsx` pakai
+  `kategori`) — fakta dari menu, tak pernah diketik tangan. `aset.asal_usul` =
+  teks BEBAS (tanpa CHECK) warisan impor e-BMD yang lebih rinci ("Pengadaan
+  APBD" — menyebut sumber dana), boleh dikoreksi operator lewat Koreksi →
+  Spesifikasi (`ATRIBUT_KOREKSI`) & Saldo Awal → Edit Spesifikasi.
+  **Menu Cara Perolehan JANGAN dibuat ikut menulis `asal_usul`**: dua penulis
+  untuk satu kolom = dua sumber kebenaran yang bisa bertentangan tanpa aturan
+  siapa menang (cacat yang sudah terbukti merepotkan di cache
+  `aset.pemanfaatan`), dan menulis "Pengadaan" saja justru MENURUNKAN mutu
+  dibanding gaya e-BMD yang menyebut sumber dana.
+  Yang dipakai: **turunan tampilan** `asalUsulTampil(asal_usul, cara_perolehan)`
+  (lib/bmd.ts) — isian operator menang, kalau kosong jatuh ke
+  `CARA_PEROLEHAN_LABEL`. Nol tulis ke DB, **berlaku surut** ke barang yang
+  terlanjur di-approve (tak perlu backfill), dan begitu operator mengisi
+  `asal_usul` punya dia yang menang. Terpasang di Daftar Barang: layar (yang
+  turunan dibuat redup+italic+tooltip supaya kelihatan bukan ketikan orang) &
+  Export (teks polos, tanpa penanda). **Nambah cara perolehan baru = CHECK +
+  `CARA_PEROLEHAN_LABEL` + menunya, ketiganya.**
 
 ## Spesifikasi barang: wide table + field per golongan (lib/asetFields.ts)
 

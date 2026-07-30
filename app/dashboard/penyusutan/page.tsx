@@ -337,8 +337,14 @@ export default function PenyusutanPage() {
         'NIBAR': b.nibar,
         'Kode Register': b.kode_register || '',
         'Nama Barang': b.nama_barang,
-        'Komptabel': b.intra_ekstra || '',
+        // Lokasi SELALU ikut di Excel walau di layar cuma tampil utk golongan
+        // ber-lokasi (GOL_LOKASI) — berkas export memang sengaja flat & tetap
+        // kolomnya, biar tak berubah-ubah set kolom tiap ganti filter jenis
+        // aset. Golongan tanpa lokasi cukup kosong. (Pola sama: EXPORT_COLS di
+        // Daftar Barang juga lebih lengkap dari tampilan layarnya.)
+        'Lokasi': b.alamat_detail || '',
         'Tgl Perolehan': b.tgl_perolehan || '',
+        'Komptabel': b.intra_ekstra || '',
         'Masa Manfaat (Smt)': susut && p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : '',
         'Nilai Perolehan': p ? p.nilai_perolehan : b.nilai_perolehan,
         'Beban': susut && p ? p.beban : '',

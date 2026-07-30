@@ -150,6 +150,46 @@ export const JENIS_TRANSAKSI_LABEL: Record<string, string> = {
   batal_pengamanan: 'Pembatalan Pengamanan',
 }
 
+/**
+ * Label `aset.cara_perolehan` (kolom text + CHECK, diisi menu Cara Perolehan
+ * saat approve — lihat Pengadaan.tsx & PerolehanManual.tsx). Kuncinya PERSIS
+ * nilai CHECK-nya; nambah cara perolehan baru = tambah di CHECK, di sini, dan
+ * di menunya.
+ *
+ * ⚠️ Ini BUKAN pengganti `aset.asal_usul`. Dua kolom beda maksud dan sengaja
+ * TIDAK disinkronkan: `cara_perolehan` = fakta dari menu (dijamin benar, tak
+ * pernah diedit tangan), `asal_usul` = teks bebas warisan e-BMD yang lebih
+ * rinci ("Pengadaan APBD" — menyebut sumber dana) & boleh dikoreksi operator
+ * lewat Koreksi → Spesifikasi. Menu Cara Perolehan **tidak menulis
+ * `asal_usul`** (keputusan user 2026-07-30): dua penulis untuk satu kolom =
+ * dua sumber kebenaran yang bisa saling bertentangan tanpa aturan siapa
+ * menang — cacat yang sudah terbukti bikin repot di cache `aset.pemanfaatan`.
+ * Yang dilakukan cuma MENAMPILKAN label ini sbg cadangan kalau `asal_usul`
+ * kosong (lihat `asalUsulTampil`), jadi nol tulis & berlaku surut.
+ */
+export const CARA_PEROLEHAN_LABEL: Record<string, string> = {
+  saldo_awal: 'Saldo Awal',
+  pengadaan: 'Pengadaan',
+  hibah_masuk: 'Hibah',
+  tukar_menukar: 'Tukar Menukar',
+  hasil_inventarisasi: 'Hasil Inventarisasi',
+  perolehan_lainnya: 'Perolehan Lainnya',
+}
+
+/**
+ * Asal Usul yang DITAMPILKAN: isian operator kalau ada, kalau kosong jatuh ke
+ * label cara perolehan. `turunan` menandai hasilnya cadangan (dipakai layar
+ * buat merendahkan warnanya — di Excel tak ada bedanya, cuma teks).
+ */
+export function asalUsulTampil(
+  asalUsul: string | null | undefined,
+  caraPerolehan: string | null | undefined,
+): { teks: string; turunan: boolean } {
+  const isi = (asalUsul || '').trim()
+  if (isi) return { teks: isi, turunan: false }
+  return { teks: CARA_PEROLEHAN_LABEL[caraPerolehan || ''] || '', turunan: true }
+}
+
 export const JENIS_PEROLEHAN = ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya'] as const
 export const JENIS_PENGHAPUSAN = ['penghapusan_pemindahtanganan', 'pengalihan_status', 'penghapusan_sebab_lain'] as const
 
