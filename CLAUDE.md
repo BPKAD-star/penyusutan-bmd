@@ -307,7 +307,17 @@ apa pun yang menyentuh ledger atau engine.
   Spesifikasi Lainnya, sementara Daftar Barang belum. Kolomnya sudah lama ada di
   `aset_awal_2026` (migrasi 20260704_20) tapi tak pernah ditampilkan. Kalau nanti
   Daftar Barang mau ikut, salin empat kunci itu ke `COLS` + `cellContent`-nya.
-  Disisipi kolom penyusutan baseline
+  **Kotak Cari-nya juga sudah lebih luas** (2026-07-30): nama barang, NIBAR,
+  kode (prefix), merek/tipe, no. polisi/rangka/mesin, + **nilai perolehan**
+  (`orCari`). Dua jebakan yang ditutup di situ & jangan dibuka lagi: (1) nilai
+  dikutip ganda — satu koma yang diketik operator memecah sintaks `or=` di
+  tengah jalan → PostgREST menolak "failed to parse logic tree" & halaman gagal
+  muat, padahal nama barang e-BMD banyak yang berkoma; (2) klausa
+  `nilai_perolehan.eq` cuma ikut kalau sisa ketikan (setelah titik/koma/spasi
+  dibuang, jadi "686.700.000" hasil salin dari layar tetap ketemu) BENAR-BENAR
+  angka — kalau teks biasa ikut dikirim ke kolom numeric, PostgREST menolak
+  SELURUH filter, jadi pencarian teks pun ikut mati. Daftar Barang **belum**
+  ikut diperluas (belum diminta). Disisipi kolom penyusutan baseline
   mengapit Nilai Perolehan: Masa Manfaat sebelum; Beban/Smt · Akumulasi 2025 ·
   Nilai Buku Awal · Sisa sesudah. **Jenis aset yang `disusutkan:false` di
   `GOLONGAN_REKAP` (Tanah 1.3.1, ATL 1.3.5, KDP 1.3.6) TIDAK dibuatkan kolom

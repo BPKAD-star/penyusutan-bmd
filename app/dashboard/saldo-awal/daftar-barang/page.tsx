@@ -92,6 +92,42 @@ const COLS = [
 
 const angka = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
+
+// ── Kotak "Cari" (server-side, PostgREST `or=`) ─────────────────────────────
+// Bidang yang dicocokkan: nama barang, NIBAR, kode (prefix), merek/tipe, dan
+// nomor identitas kendaraan (polisi/rangka/mesin) + nilai perolehan
+// (permintaan user 2026-07-30).
+//
+// Nilai WAJIB dikutip ganda. Tanpa itu satu koma / tanda kurung yang diketik
+// operator memecah sintaks `or=` di tengah jalan → PostgREST menolak dgn
+// "failed to parse logic tree" dan halaman gagal muat, padahal yang salah cuma
+// tanda baca di kotak pencarian. Nama barang e-BMD banyak yang berkoma
+// ("Meja, Kursi Rapat"), jadi ini bukan kasus langka.
+const kutip = (s: string) => `"${s.replace(/["\\]/g, m => `\\${m}`)}"`
+
+// Nilai perolehan: dicocokkan PERSIS (`eq`), bukan mengandung — kolomnya numeric
+// & yang dicari operator selalu satu angka utuh dari kolom Nilai Perolehan.
+// Titik/koma/spasi pemisah ribuan dibuang dulu supaya "686.700.000" hasil salin
+// dari layar tetap ketemu. Klausa ini cuma ikut kalau sisanya BENAR-BENAR angka;
+// kalau tidak, PostgREST menolak seluruh filter (numeric vs teks), yang artinya
+// pencarian teks biasa pun ikut mati.
+function orCari(cari: string): string {
+  const q = cari.trim()
+  const suka = kutip(`%${q}%`)
+  const klausa = [
+    `nama_barang.ilike.${suka}`,
+    `nibar.ilike.${suka}`,
+    `kode.ilike.${kutip(`${q}%`)}`,
+    `merek_tipe.ilike.${suka}`,
+    `no_polisi.ilike.${suka}`,
+    `no_rangka.ilike.${suka}`,
+    `no_mesin.ilike.${suka}`,
+  ]
+  const bersih = q.replace(/[.,\s]/g, '')
+  if (bersih && /^\d+$/.test(bersih)) klausa.push(`nilai_perolehan.eq.${bersih}`)
+  return klausa.join(',')
+}
+
 const golLabel = (kode: string) => GOLONGAN_REKAP.find(g => g.kode === kodeLevel3(kode))?.uraian || kodeLevel3(kode)
 const newKey = () => Math.random().toString(36).slice(2)
 
@@ -256,7 +292,7 @@ export default function Page() {
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
     if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
-    if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
+    if (f.search) q = q.or(orCari(f.search))
     // Urutan: KODE BARANG A→Z (permintaan user 2026-07-30; dulu nilai perolehan
     // terbesar dulu), samakan dgn Daftar Barang & Penyusutan — nilai turun jadi
     // kunci kedua supaya di dalam satu kode barang mahal tetap di atas.
@@ -684,7 +720,8 @@ export default function Page() {
           {golongan !== '1.3.1' && <KomptabelRadio value={komptabel} onChange={setKomptabel} />}
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Cari :</label>
-            <input className="select-filter flex-1" placeholder="Nama barang / NIBAR / kode..."
+            <input className="select-filter flex-1"
+              placeholder="Nama barang / NIBAR / kode / merek / no. polisi / rangka / mesin / nilai perolehan..."
               value={search} onChange={e => setSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
           </div>
