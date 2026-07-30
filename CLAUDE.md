@@ -581,8 +581,18 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
 - **BELUM SELESAI:** tampilan belum period-aware (Daftar Barang menampilkan kode
   TERKINI walau membuka periode lampau — belum terasa karena tabel riwayat masih
   nyaris kosong, tapi salah begitu ada perpindahan yang tak dibatalkan); KIBAR
-  masih mengisi kolom "Nomor Register" dengan NIBAR; Export Excel belum membawa
-  kode register (menunggu keputusan user — berkas itu untuk BPK).
+  masih mengisi kolom "Nomor Register" dengan NIBAR.
+- **Export Daftar Barang SUDAH membawa kode register** (2026-07-30, keputusan
+  user): kolom **"Kode Register"** ikut di Export Excel & Export Audit, dipasang
+  tepat setelah NIBAR & SEBELUM `EXPORT_COLS` — dua kolom identitas itu sengaja
+  di luar daftar per-golongan supaya selalu ikut apa pun jenis asetnya. Diisi
+  langsung dari kolom `aset.kode_register` (sudah ada di `SELECT_COLS`), string
+  → sel Excel bertipe teks, jadi 45 digitnya tak dibulatkan jadi notasi ilmiah.
+  ⚠️ Ikut menanggung keterbatasan yang sama dgn layar: **kode TERKINI, belum
+  period-aware**. Begitu tampilan dibuat period-aware lewat `aset_kode_register`,
+  export WAJIB diubah bareng — kalau tidak, berkas periode lampau untuk BPK
+  menyebut kode yang saat itu belum terbit. Menu export LAIN (Daftar Barang Awal,
+  Penyusutan, Kendaraan, GIS, modul Pelaporan) belum membawa kolom ini.
 
 ## Pemanfaatan BMD (sewa/pinjam pakai/KSP/BGS-BSG/KSPI, migrasi 20260721_01+02)
 

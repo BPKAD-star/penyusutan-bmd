@@ -110,6 +110,12 @@ const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
 // ── Kolom EKSPOR (Excel/BPK) — TETAP flat & lengkap: `uraian` jadi kolom
 // sendiri, dan Tanah tetap membawa Dokumen Kepemilikan (no/tgl/atas nama).
 // Sengaja beda dari tampilan layar yang diringkas.
+// Dua kolom identitas (NIBAR & Kode Register) TIDAK ada di daftar ini — keduanya
+// selalu ikut, dipasang di depan sebelum keys ini (lihat handleExport).
+// ⚠️ Kode Register yang diekspor = kode TERKINI (kolom `aset.kode_register`),
+// BELUM period-aware — sama seperti tampilan layar. Kalau nanti tampilan dibuat
+// period-aware lewat `aset_kode_register`, export WAJIB ikut, kalau tidak berkas
+// periode lampau menyebut kode yang saat itu belum terbit.
 const EXPORT_COLS: Record<string, string[]> = {
   '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'nilai', 'keterangan'],
   '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'keterangan'],
@@ -454,7 +460,7 @@ export default function DaftarBarangPage() {
           default: return ''
         }
       }
-      const obj: Record<string, string | number> = { NIBAR: r.nibar || '' }
+      const obj: Record<string, string | number> = { NIBAR: r.nibar || '', 'Kode Register': r.kode_register || '' }
       for (const k of keys) obj[COL_META[k].header] = cell(k)
       return obj
     }), `Daftar_Barang_${applied.golongan}`, 'Daftar Barang')
@@ -499,7 +505,7 @@ export default function DaftarBarangPage() {
           default: return ''
         }
       }
-      const obj: Record<string, string | number> = { NIBAR: r.nibar || '' }
+      const obj: Record<string, string | number> = { NIBAR: r.nibar || '', 'Kode Register': r.kode_register || '' }
       for (const k of keys) obj[COL_META[k].header] = cell(k)
       const hi = hapus.get(r.id)
       obj['Status'] = r.status === 'aktif' ? 'Aktif' : 'Dihapus'
