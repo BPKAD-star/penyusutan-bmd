@@ -598,8 +598,26 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
   (persis cacat yang sudah didokumentasikan utk Daftar Barang: tanpa penangkap,
   tombolnya nyangkut "Mengekspor..." selamanya & tanpa keterangan). Menu export
   LAIN (Daftar Barang Awal, Kendaraan, GIS, modul Pelaporan) belum membawa kolom
-  ini. Di Penyusutan kode register **cuma di Export, tidak di layar** — layarnya
-  masih menampilkan NIBAR di bawah nama barang.
+  ini.
+- **Layar Penyusutan menampilkan kode register & uraian barang** (2026-07-30):
+  sel Nama Barang jadi tiga baris (nama · NIBAR · `REG …`) dan sel Kode Barang
+  dua baris (kode · uraian) — **pola & kelas CSS-nya kembar dgn Daftar Barang,
+  termasuk penanda ⚠ `bergeserDariNibar` yang sengaja TIDAK menandai apa pun
+  kalau hasilnya `null`**. Ubah salah satu halaman → samakan yang lain.
+  Uraian diambil dari `admin_kodefikasi_bmd` (`fetchUraian`, di-dedup per kode),
+  **BUKAN** dari `aset.uraian_barang`, supaya selalu ikut kodefikasi terkini;
+  fungsinya MELEMPAR & dipanggil di dalam `try` milik `load`, jadi ikut
+  fail-closed — kolom uraian kosong di berkas BPK tak boleh diam-diam berarti
+  "query gagal".
+- **Urutan kolom Export Penyusutan DITENTUKAN USER** (2026-07-30): SKPD · Kode
+  Barang · Uraian Barang · NIBAR · Kode Register · Nama Barang · Komptabel ·
+  Tgl Perolehan · Masa Manfaat (Smt) · Nilai Perolehan · Beban · Akumulasi ·
+  Nilai Buku Akhir · Sisa (Smt) · Periode. Urutan properti objek di
+  `handleExport` = urutan kolom Excel (`json_to_sheet` ikut key objek pertama) —
+  jangan diacak saat menambah kolom baru. Suffix **"(Smt)"** di Masa Manfaat &
+  Sisa WAJIB dipertahankan: angkanya semester (`masa_manfaat_tahun × 2`), tanpa
+  label itu "100" terbaca 100 tahun. Export Daftar Barang urutannya BEDA (lewat
+  `EXPORT_COLS` per golongan) — memang sengaja, dua berkas beda peruntukan.
 
 ## Pemanfaatan BMD (sewa/pinjam pakai/KSP/BGS-BSG/KSPI, migrasi 20260721_01+02)
 

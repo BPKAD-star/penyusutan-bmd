@@ -18,6 +18,7 @@ import { GOLONGAN_REKAP, perlakuanKode, comparePeriode, periodeDariTanggal } fro
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+import { bergeserDariNibar } from '@/lib/kodeRegister'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
@@ -27,7 +28,7 @@ const BASE_COLS = 'id,nibar,kode_register,kode_barang:kode,nama_barang,skpd_id,n
 type Base = {
   id: string; nibar: string
   // Kode register 45 digit — DIBACA dari kolom (diterbitkan & dibekukan trigger
-  // trg_aset_kode_register), cuma dipakai di Export. Lihat handleExport.
+  // trg_aset_kode_register), tampil di layar (baris ke-3 sel Nama Barang) & Export.
   kode_register: string | null
   kode_barang: string; nama_barang: string; skpd_id: number
   nilai_perolehan: number; intra_ekstra: string | null
@@ -72,6 +73,10 @@ export default function PenyusutanPage() {
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
   const [kapMap, setKapMap] = useState<Record<string, KapItem[]>>({})
+  // kode barang → uraian baku kodefikasi (ditumpuk di bawah Kode Barang, pola
+  // Daftar Barang). `aset.uraian_barang` TIDAK dipakai supaya uraiannya selalu
+  // ikut kodefikasi terkini, sama seperti halaman itu.
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [detail, setDetail] = useState<{ nama: string; items: KapItem[] } | null>(null)
   const [engineRunning, setEngineRunning] = useState(false)
   const [engineMsg, setEngineMsg] = useState('')
@@ -199,6 +204,20 @@ export default function PenyusutanPage() {
     return map
   }
 
+  // Uraian baku per kode barang (dibagi rata: satu kode dipakai banyak aset,
+  // jadi di-dedup dulu). MELEMPAR kalau gagal — uraian ikut ke Excel, dan kolom
+  // kosong di berkas untuk BPK tak punya tanda bahwa penyebabnya query gagal.
+  async function fetchUraian(kodes: string[]) {
+    const uniq = [...new Set(kodes)]
+    const map: Record<string, string> = {}
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data, error } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      if (error) throw new Error(`gagal membaca uraian kodefikasi: ${error.message}`)
+      for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
+    }
+    return map
+  }
+
   // Susun baris tampil: register − yang tersembunyi − yang belum diperoleh di
   // periode ini (tgl perolehan > periode), disesuaikan kepemilikan PERIOD-AWARE
   // (transfer antar SKPD: barang yg pindah di semester depan tetap di SKPD asal
@@ -233,8 +252,10 @@ export default function PenyusutanPage() {
   async function load(f: Applied) {
     setLoading(true); setErr('')
     try {
-      setRows(await assembleRows(f))
+      const r = await assembleRows(f)
+      setRows(r)
       setKapMap(await fetchKap(f))
+      setUraianMap(await fetchUraian(r.map(b => b.kode_barang)))
     } catch (e) {
       // Fail-closed: daftar penyusutan yang kurang sebagian lebih berbahaya
       // daripada halaman yang menolak tampil.
@@ -299,19 +320,30 @@ export default function PenyusutanPage() {
     setExporting(true); setErr('')
     try {
     const data = await assembleRows(applied)
+    const uraian = await fetchUraian(data.map(b => b.kode_barang))
+    // Urutan kolom kiri→kanan DITENTUKAN USER (2026-07-30): identitas dulu
+    // (SKPD → kode & uraian → NIBAR → kode register → nama), lalu atribut,
+    // baru angka penyusutan. Urutan properti objek di sini = urutan kolom di
+    // Excel (json_to_sheet ikut key pertama), jadi jangan diacak-acak.
+    // Satuan "(Smt)" DIPERTAHANKAN di judul Masa Manfaat & Sisa: angkanya
+    // semester (masa_manfaat_tahun × 2), tanpa label itu "100" terbaca 100 tahun.
     exportToExcel(data.map(b => {
       const p = b.p
       const susut = perlakuanKode(b.kode_barang) !== 'tidak'
       return {
-        'NIBAR': b.nibar, 'Kode Register': b.kode_register || '',
-        'Nama Barang': b.nama_barang, 'Kode Barang': b.kode_barang,
-        'SKPD': skpdNama[b.ownerSkpd ?? b.skpd_id] || '', 'Komptabel': b.intra_ekstra || '',
+        'SKPD': skpdNama[b.ownerSkpd ?? b.skpd_id] || '',
+        'Kode Barang': b.kode_barang,
+        'Uraian Barang': uraian[b.kode_barang] || '',
+        'NIBAR': b.nibar,
+        'Kode Register': b.kode_register || '',
+        'Nama Barang': b.nama_barang,
+        'Komptabel': b.intra_ekstra || '',
         'Tgl Perolehan': b.tgl_perolehan || '',
+        'Masa Manfaat (Smt)': susut && p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : '',
         'Nilai Perolehan': p ? p.nilai_perolehan : b.nilai_perolehan,
         'Beban': susut && p ? p.beban : '',
         'Akumulasi': susut && p ? p.akumulasi : '',
         'Nilai Buku Akhir': susut && p ? p.nilai_buku_akhir : b.nilai_perolehan,
-        'Masa Manfaat (Smt)': susut && p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : '',
         'Sisa (Smt)': susut && p ? p.sisa_semester : '',
         'Periode': applied.periode,
       }
@@ -472,14 +504,29 @@ export default function PenyusutanPage() {
                   const susut = perlakuanKode(r.kode_barang) !== 'tidak'
                   const p = r.p
                   const kap = kapMap[r.nibar]
+                  const bergeser = bergeserDariNibar(r.nibar, r.kode_register)
                   const masaSmt = p?.masa_manfaat_tahun != null ? Math.round(p.masa_manfaat_tahun * 2) : null
                   return (
                     <tr key={r.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                       <td className="table-td text-xs text-gray-600">{skpdNama[r.ownerSkpd ?? r.skpd_id] || '-'}</td>
-                      <td className="table-td text-xs text-gray-600">{r.kode_barang}</td>
-                      <td className="table-td">
+                      <td className="table-td text-xs text-gray-600 align-top">
+                        <p className="font-medium text-gray-700">{r.kode_barang}</p>
+                        <p className="text-gray-400 mt-0.5">{uraianMap[r.kode_barang] || '-'}</p>
+                      </td>
+                      <td className="table-td align-top">
                         <p className={`text-xs ${kap ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>{r.nama_barang || '-'}</p>
                         <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
+                        {/* Kode register DIBACA dari kolom (diterbitkan & dibekukan
+                            trigger di DB), tidak dihitung di layar. Ditandai HANYA
+                            kalau bergeser dari NIBAR; `bergeser === null` (NIBAR
+                            warisan e-BMD yang susunannya beda) sengaja tak ditandai
+                            apa-apa — pola & alasan sama dgn Daftar Barang. */}
+                        <p className={`text-[11px] mt-0.5 ${bergeser ? 'text-amber-600 font-medium' : 'text-gray-300'}`}
+                          title={bergeser
+                            ? 'Kode register: posisi barang ini sudah bergeser dari NIBAR-nya (pernah pindah unit / reklas)'
+                            : 'Kode register (posisi terakhir barang)'}>
+                          {r.kode_register ? `REG ${r.kode_register}${bergeser ? ' ⚠' : ''}` : 'REG —'}
+                        </p>
                       </td>
                       {showMerek && <td className="table-td text-xs text-gray-600">{r.merek_tipe || '-'}</td>}
                       {showLokasi && <td className="table-td text-xs text-gray-600">{r.alamat_detail || '-'}</td>}
