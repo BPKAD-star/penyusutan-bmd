@@ -158,6 +158,22 @@ const exportColsFor = (golongan: string) => {
   return EXPORT_ORDER.filter(k => pilih.has(k))
 }
 
+// Urutan tampil & export: KODE BARANG A→Z (permintaan user 2026-07-30; dulu
+// nilai perolehan terbesar dulu). Perbandingan string POLOS, bukan
+// `localeCompare`: kode e-BMD itu angka ber-titik yang tiap segmennya sudah
+// zero-padded ('1.3.2.02.01.02.003'), jadi urutan leksikografis = urutan
+// nomornya, dan sorting 200rb baris jadi jauh lebih murah.
+// Dua kunci sesudahnya WAJIB ada, bukan hiasan: satu kode dipakai ribuan barang,
+// dan tanpa pemecah seri yang UNIK urutannya bisa berbeda tiap render (Array
+// .sort() tak stabil utk semua mesin) — nomor halaman jadi berpindah-pindah
+// isinya. Nilai perolehan turun dipertahankan sbg kunci kedua supaya kebiasaan
+// lama (barang mahal di atas) masih terasa di dalam satu kode.
+function bandingKode(a: Row, b: Row): number {
+  if (a.kode !== b.kode) return a.kode < b.kode ? -1 : 1
+  const d = (b.nilai_perolehan || 0) - (a.nilai_perolehan || 0)
+  return d !== 0 ? d : (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
 // Label jenis penghapusan untuk export Audit.
 const HAPUS_LABEL: Record<string, string> = {
   penghapusan_pemindahtanganan: 'Pemindahtanganan',
@@ -254,7 +270,18 @@ export default function DaftarBarangPage() {
   const buildQuery = useCallback((f: Applied, withCount: boolean, includeDeleted = false) => {
     const q = supabase.from('aset')
       .select(SELECT_COLS, withCount ? { count: 'exact' } : undefined)
-    return applyFilters(q, f, includeDeleted).order('nilai_perolehan', { ascending: false })
+    // ⚠️ `.order('id')` itu PEMECAH SERI, jangan dicopot. Baris ditarik
+    // halaman-demi-halaman pakai `.range()`, dan `nilai_perolehan` punya
+    // BANYAK kembar (ribuan barang senilai sama) — dgn urutan yang tak total,
+    // Postgres tak menjamin baris kembar jatuh di halaman yang sama tiap query,
+    // jadi ada baris yang bisa terlewat & baris lain dobel TANPA SUARA. Urutan
+    // tampilnya sendiri ditentukan `bandingKode` di client; ini murni supaya
+    // pengambilannya utuh. Tak butuh index baru: sort node-nya toh sudah ada
+    // utk `nilai_perolehan` (tak ada index yang melayaninya), jadi nambah kunci
+    // kedua di sort yang sama ~gratis.
+    return applyFilters(q, f, includeDeleted)
+      .order('nilai_perolehan', { ascending: false })
+      .order('id')
   }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ambil baris aset berdasar daftar id (utk barang yang PADA periode terpilih
@@ -423,8 +450,7 @@ export default function DaftarBarangPage() {
 
     const hidden = await fetchHiddenIds(combined.map(r => r.id), f.periode)
     const belumAda = (r: Row) => !!r.tgl_perolehan && comparePeriode(periodeDariTanggal(r.tgl_perolehan), f.periode) > 0
-    const visible = combined.filter(r => !hidden.has(r.id) && !belumAda(r))
-      .sort((a, b) => (b.nilai_perolehan || 0) - (a.nilai_perolehan || 0))
+    const visible = combined.filter(r => !hidden.has(r.id) && !belumAda(r)).sort(bandingKode)
 
     setAllVisible(visible)
     setTotal(visible.length)
@@ -517,7 +543,10 @@ export default function DaftarBarangPage() {
     if (!applied) return
     setExporting(true); setErr('')
     try {
-    const all = await fetchAllRows(applied, true)
+    // Diurutkan sendiri: berkas ini TIDAK lewat `allVisible` (dia menarik ulang
+    // termasuk barang yang sudah dihapus), jadi tanpa baris ini susunannya ikut
+    // urutan ambil dari DB dan beda sendiri dari Export Excel & layar.
+    const all = (await fetchAllRows(applied, true)).sort(bandingKode)
     const uraian = await fetchUraian(all.map(r => r.kode))
     const hapus = await fetchHapusInfo(all.filter(r => r.status !== 'aktif').map(r => r.id))
     const keys = exportColsFor(applied.golongan)

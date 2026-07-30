@@ -937,6 +937,22 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   ikut diperketat — di situ self-approve memang sudah mungkin sejak dulu (daftar
   tujuan mutasi internal se-subtree, `PengeluaranInternal.tsx`), pre-existing dan
   perlu keputusan tersendiri kalau mau ditutup.
+- **Urutan Daftar Barang = KODE BARANG A→Z** (keputusan user 2026-07-30; dulu
+  nilai perolehan terbesar dulu). Comparator `bandingKode` di halaman itu, satu
+  sumber utk layar + Export Excel + Export Audit. Kuncinya **tiga**: kode →
+  nilai perolehan turun → `id`. Dua kunci terakhir bukan hiasan — satu kode
+  dipakai ribuan barang, dan tanpa pemecah seri UNIK urutannya bisa beda tiap
+  render (`Array.sort()` tak dijamin stabil), jadi isi halaman 3 berpindah-pindah
+  tiap kali dibuka. Pakai perbandingan string POLOS, bukan `localeCompare`:
+  segmen kode e-BMD sudah zero-padded jadi leksikografis = urutan nomor, dan
+  jauh lebih murah utk 200rb baris.
+  ⚠️ Terpisah dari itu, `buildQuery` kini `.order('nilai_perolehan')` **+
+  `.order('id')`** — pemecah seri utk PENGAMBILAN, jangan dicopot. Barisnya
+  ditarik `.range()` per 1.000 dan `nilai_perolehan` banyak kembarnya; dgn
+  urutan tak total, baris kembar tak dijamin jatuh di halaman yang sama tiap
+  query → ada yang terlewat & ada yang dobel TANPA SUARA (varian dari cacat
+  paginasi yang sudah didokumentasikan utk kolektor ledger). Tak butuh index
+  baru: sort node-nya memang sudah ada.
 - **`cara_perolehan` vs `asal_usul` — DUA KOLOM, SENGAJA TIDAK DISINKRONKAN**
   (keputusan user 2026-07-30). `aset.cara_perolehan` (text + CHECK:
   `saldo_awal`/`pengadaan`/`hibah_masuk`/`tukar_menukar`/`hasil_inventarisasi`/
