@@ -66,6 +66,8 @@ type Row = {
   foto_paths: string[] | null
   // Kolom spesifikasi — dipakai kolom per jenis aset (sama spt Daftar Barang)
   merek_tipe: string | null; spesifikasi_lainnya: string | null
+  // Identitas kendaraan — cuma dipakai kolom Peralatan & Mesin (1.3.2).
+  no_polisi: string | null; no_rangka: string | null; no_mesin: string | null; no_bpkb: string | null
   alamat_detail: string | null; wilayah_kode: string | null
   luas: number | null; jenis_hak: string | null
   asal_usul: string | null; penggunaan_pengamanan: string | null
@@ -83,7 +85,8 @@ const COLS = [
   'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'nilai_perolehan',
   'akumulasi_2025', 'sisa_masa_manfaat_smt', 'nilai_buku_awal', 'masa_manfaat_smt',
   'beban_penyusutan_per_smt', 'foto_paths',
-  'merek_tipe', 'spesifikasi_lainnya', 'alamat_detail', 'wilayah_kode', 'luas', 'jenis_hak',
+  'merek_tipe', 'spesifikasi_lainnya', 'no_polisi', 'no_rangka', 'no_mesin', 'no_bpkb',
+  'alamat_detail', 'wilayah_kode', 'luas', 'jenis_hak',
   'asal_usul', 'penggunaan_pengamanan',
 ].join(',')
 
@@ -96,6 +99,8 @@ const newKey = () => Math.random().toString(36).slice(2)
 const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> = {
   skpd: { header: 'SKPD' }, kode: { header: 'Kode Barang' }, nama: { header: 'Nama Barang' },
   merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
+  nopol: { header: 'No. Polisi' }, rangka: { header: 'No. Rangka' },
+  mesin: { header: 'No. Mesin' }, bpkb: { header: 'No. BPKB' },
   lokasi: { header: 'Lokasi' }, luas: { header: 'Luas (m²)', align: 'right' }, hak: { header: 'Jenis Hak' },
   komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
   mm: { header: 'Masa Manfaat (Smt)', align: 'center' },
@@ -108,12 +113,17 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   keterangan: { header: 'Keterangan' },
 }
 
-// SALINAN PERSIS kolom layar Daftar Barang (app/dashboard/daftar-barang/page.tsx
-// → COLS). Kalau di sana berubah, samakan di sini — dua menu ini memang sengaja
+// SALINAN kolom layar Daftar Barang (app/dashboard/daftar-barang/page.tsx →
+// COLS). Kalau di sana berubah, samakan di sini — dua menu ini memang sengaja
 // menampilkan barang yang sama dgn kolom yang sama, bedanya cuma posisi waktu.
+// ⚠️ SATU penyimpangan yang DISENGAJA (permintaan user 2026-07-30): Peralatan &
+// Mesin di sini membawa No. Polisi/Rangka/Mesin/BPKB sesudah Spesifikasi
+// Lainnya, sementara Daftar Barang belum. Identitas kendaraan itu yang paling
+// sering dicocokkan saat menelusuri baseline 2025; kalau nanti Daftar Barang
+// mau ikut, tinggal salin empat kunci ini ke sana.
 const BASE_COLS: Record<string, string[]> = {
   '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel
-  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
@@ -533,6 +543,10 @@ export default function Page() {
       case 'nama': return r.nama_barang || ''
       case 'merek': return r.merek_tipe || ''
       case 'spesifikasi': return r.spesifikasi_lainnya || ''
+      case 'nopol': return r.no_polisi || ''
+      case 'rangka': return r.no_rangka || ''
+      case 'mesin': return r.no_mesin || ''
+      case 'bpkb': return r.no_bpkb || ''
       // Lokasi = alamat jalan + wilayah administratif (dua kolom DB yang beda,
       // digabung; di layar ditumpuk, di Excel jadi satu sel).
       case 'lokasi': { const l = lokasiOf(r, bd); return [l.alamat, l.wilayah].filter(Boolean).join(' — ') }
@@ -629,7 +643,9 @@ export default function Page() {
       const obj: Record<string, string | number> = {}
       for (const k of keys) {
         if (k === 'nibar') { obj['NIBAR'] = r.nibar; continue }
-        if (k === 'uraian') { obj['Uraian'] = uraian[r.kode] || ''; continue }
+        // "Uraian Barang", bukan "Uraian" — samakan dgn Export Daftar Barang,
+        // Penyusutan, & Kendaraan (2026-07-30).
+        if (k === 'uraian') { obj['Uraian Barang'] = uraian[r.kode] || ''; continue }
         obj[COL_META[k].header] = k === 'keterangan' ? (ket[r.nibar] || '') : cellValue(k, r, bd)
       }
       return obj

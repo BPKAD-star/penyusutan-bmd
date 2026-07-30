@@ -301,7 +301,13 @@ apa pun yang menyentuh ledger atau engine.
   kepemilikan/luas/lokasinya tetap milik menu GIS BMD.
   **Kolom Daftar Barang Awal = salinan kolom Daftar Barang per jenis aset**
   (`BASE_COLS` di halaman itu = `COLS` di app/dashboard/daftar-barang/page.tsx —
-  ubah salah satu, samakan yang lain), disisipi kolom penyusutan baseline
+  ubah salah satu, samakan yang lain) — **kecuali SATU penyimpangan yang
+  disengaja** (permintaan user 2026-07-30): Peralatan & Mesin (1.3.2) di Daftar
+  Barang Awal membawa **No. Polisi · No. Rangka · No. Mesin · No. BPKB** sesudah
+  Spesifikasi Lainnya, sementara Daftar Barang belum. Kolomnya sudah lama ada di
+  `aset_awal_2026` (migrasi 20260704_20) tapi tak pernah ditampilkan. Kalau nanti
+  Daftar Barang mau ikut, salin empat kunci itu ke `COLS` + `cellContent`-nya.
+  Disisipi kolom penyusutan baseline
   mengapit Nilai Perolehan: Masa Manfaat sebelum; Beban/Smt · Akumulasi 2025 ·
   Nilai Buku Awal · Sisa sesudah. **Jenis aset yang `disusutkan:false` di
   `GOLONGAN_REKAP` (Tanah 1.3.1, ATL 1.3.5, KDP 1.3.6) TIDAK dibuatkan kolom
@@ -969,18 +975,20 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   sama ~gratis.
 - **Menu Kendaraan: kolomnya ditata ulang & TIDAK BOLEH ada `truncate`**
   (permintaan user 2026-07-30). Susunannya: SKPD · Kode Barang + Uraian Barang
-  (ditumpuk) · NIBAR + Nama Barang (ditumpuk) · Merek/Tipe · Tahun · No. BPKB ·
-  No. Polisi · No. Rangka · No. Mesin · Nilai Perolehan · Kondisi · Penggunaan ·
-  Keterangan. Dulu NIBAR, Spesifikasi, & Keterangan dipangkas elipsis pakai
+  (ditumpuk) · Nama Barang + NIBAR + Kode Register (ditumpuk tiga) · Merek/Tipe ·
+  Tahun · No. Polisi · No. Rangka · No. Mesin · No. BPKB · Nilai Perolehan ·
+  Kondisi · Penggunaan · Keterangan. Sel tiga baris itu **kembar** dgn Daftar
+  Barang & Penyusutan — termasuk penanda ⚠ `bergeserDariNibar` yang sengaja tak
+  menandai apa pun kalau hasilnya `null`. Ini halaman KETIGA yang ikut pola itu:
+  ubah satu, samakan semua. Dulu NIBAR, Spesifikasi, & Keterangan dipangkas elipsis pakai
   `max-w`+`truncate` — isinya cuma muncul di tooltip, yang tak terbaca saat
   ditelusuri cepat & hilang total kalau halaman dicetak. **Teks panjang
   MEMBUNGKUS, tak pernah dipangkas**; tabelnya dibiarkan melebar & digeser
   horizontal (pola yang memang sudah dianut halaman ini). Jangan pasang
   `truncate` lagi demi kerapian.
   ⚠️ Header lamanya **salah label**: kolom berjudul "Kode Register" itu isinya
-  NIBAR (halaman ini tak pernah membaca `aset.kode_register`) — sekarang jadi
-  kolom "NIBAR" yang jujur. Kalau nanti kode register mau ditampilkan di sini,
-  itu kolom/baris BARU, bukan mengganti NIBAR.
+  NIBAR — halaman ini tak pernah membaca `aset.kode_register` sama sekali.
+  Sekarang `kode_register` benar-benar di-select & jadi baris ketiganya sendiri.
   Uraian diambil dari `aset.uraian_barang` (salinan tersimpan), BUKAN lookup ke
   `admin_kodefikasi_bmd` spt Daftar Barang — menu ini murni baca & sengaja tak
   menambah query. Spesifikasi Lainnya hilang dari layar tapi TETAP di Export.

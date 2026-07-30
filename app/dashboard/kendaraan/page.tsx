@@ -27,12 +27,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
+import { bergeserDariNibar } from '@/lib/kodeRegister'
 
 const PREFIX_ALAT_ANGKUTAN = '1.3.2.02.'
 
 type Row = {
   id: string
   nibar: string | null
+  // Kode register 45 digit — DIBACA dari kolom (diterbitkan & dibekukan trigger
+  // trg_aset_kode_register), tak pernah dihitung di layar.
+  kode_register: string | null
   kode: string
   nama_barang: string | null
   uraian_barang: string | null
@@ -57,7 +61,7 @@ type Row = {
 // diresolve dari map id→nama yang di-fetch sekali dari admin_skpd (ratusan
 // baris, murah) — pola yang sama dengan Daftar Barang.
 const SELECT_COLS =
-  'id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,penggunaan_pengamanan,keterangan,skpd_id'
+  'id,nibar,kode_register,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,penggunaan_pengamanan,keterangan,skpd_id'
 
 // Angka polos bergaya id-ID tanpa "Rp" — sama dengan Daftar Barang (enak di-copas ke Excel).
 const angka = (v: number | null | undefined) =>
@@ -157,7 +161,7 @@ export default function KendaraanPage() {
     const q = search.trim().toLowerCase()
     if (!q) return rows
     return rows.filter(r => [
-      namaSkpd(r), r.nama_barang, r.uraian_barang, r.nibar, r.kode, r.merek_tipe,
+      namaSkpd(r), r.nama_barang, r.uraian_barang, r.nibar, r.kode_register, r.kode, r.merek_tipe,
       r.spesifikasi_lainnya, r.no_polisi, r.no_rangka, r.no_mesin, r.no_bpkb, r.keterangan,
     ].some(v => v != null && String(v).toLowerCase().includes(q)))
   }, [rows, search, skpdMap]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -182,15 +186,17 @@ export default function KendaraanPage() {
         'SKPD': teks(namaSkpd(r)),
         'Kode Barang': r.kode,
         'Uraian Barang': teks(r.uraian_barang),
-        'NIBAR': teks(r.nibar),
         'Nama Barang': teks(r.nama_barang),
+        'NIBAR': teks(r.nibar),
+        // String, bukan angka: 45 digit sbg numerik jadi notasi ilmiah di Excel.
+        'Kode Register': teks(r.kode_register),
         'Merek / Tipe': teks(r.merek_tipe),
         'Spesifikasi Lainnya': teks(r.spesifikasi_lainnya),
         'Tahun Pengadaan': teks(r.tahun_pengadaan),
-        'No. BPKB': teks(r.no_bpkb),
         'No. Polisi': teks(r.no_polisi),
         'No. Rangka': teks(r.no_rangka),
         'No. Mesin': teks(r.no_mesin),
+        'No. BPKB': teks(r.no_bpkb),
         'Nilai Perolehan': r.nilai_perolehan ?? 0,
         'Kondisi': teks(r.kondisi_barang),
         'Penggunaan': teks(r.penggunaan_pengamanan),
@@ -281,13 +287,13 @@ export default function KendaraanPage() {
                   <tr>
                     <th className="table-th whitespace-nowrap">SKPD</th>
                     <th className="table-th whitespace-nowrap">Kode Barang</th>
-                    <th className="table-th whitespace-nowrap">NIBAR</th>
+                    <th className="table-th whitespace-nowrap">Nama Barang</th>
                     <th className="table-th whitespace-nowrap">Merek / Tipe</th>
                     <th className="table-th whitespace-nowrap text-center">Tahun</th>
-                    <th className="table-th whitespace-nowrap">No. BPKB</th>
                     <th className="table-th whitespace-nowrap">No. Polisi</th>
                     <th className="table-th whitespace-nowrap">No. Rangka</th>
                     <th className="table-th whitespace-nowrap">No. Mesin</th>
+                    <th className="table-th whitespace-nowrap">No. BPKB</th>
                     <th className="table-th whitespace-nowrap text-right">Nilai Perolehan</th>
                     <th className="table-th whitespace-nowrap text-center">Kondisi</th>
                     <th className="table-th whitespace-nowrap">Penggunaan</th>
@@ -297,6 +303,7 @@ export default function KendaraanPage() {
                 <tbody className="divide-y divide-gray-50">
                   {filtered.map(r => {
                     const belumLengkap = isiKosong(r.no_polisi) && isiKosong(r.no_rangka) && isiKosong(r.no_mesin)
+                    const bergeser = bergeserDariNibar(r.nibar, r.kode_register)
                     return (
                       <tr key={r.id} className="hover:bg-gray-50/60 align-top">
                         <td className="table-td text-xs text-gray-600 min-w-[150px]">{teks(namaSkpd(r))}</td>
@@ -309,11 +316,20 @@ export default function KendaraanPage() {
                           <div className="whitespace-nowrap">{r.kode}</div>
                           <div className="text-[11px] text-gray-400 mt-0.5">{teks(r.uraian_barang)}</div>
                         </td>
-                        {/* NIBAR + nama barang. NIBAR di-nowrap: 45 digit yang
-                            membungkus di tengah malah tak terbaca sbg satu nomor. */}
+                        {/* Nama barang · NIBAR · kode register — susunan & penanda
+                            ⚠ kembar dgn Daftar Barang & Penyusutan (`bergeser === null`
+                            = NIBAR warisan e-BMD yang susunannya beda, sengaja TIDAK
+                            ditandai apa pun). Dua nomornya di-nowrap: 45 digit yang
+                            membungkus di tengah tak terbaca sbg satu nomor. */}
                         <td className="table-td text-xs min-w-[200px]">
-                          <div className="text-gray-500 whitespace-nowrap">{teks(r.nibar)}</div>
-                          <div className="text-gray-800 mt-0.5">{teks(r.nama_barang)}</div>
+                          <div className="text-gray-800 font-medium">{teks(r.nama_barang)}</div>
+                          <div className="text-gray-400 mt-0.5 whitespace-nowrap">{teks(r.nibar)}</div>
+                          <div className={`text-[11px] mt-0.5 whitespace-nowrap ${bergeser ? 'text-amber-600 font-medium' : 'text-gray-300'}`}
+                            title={bergeser
+                              ? 'Kode register: posisi barang ini sudah bergeser dari NIBAR-nya (pernah pindah unit / reklas)'
+                              : 'Kode register (posisi terakhir barang)'}>
+                            {r.kode_register ? `REG ${r.kode_register}${bergeser ? ' ⚠' : ''}` : 'REG —'}
+                          </div>
                           {belumLengkap && (
                             <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700 whitespace-nowrap"
                               title="No. Polisi, No. Rangka, dan No. Mesin semuanya kosong — lengkapi lewat Koreksi → Spesifikasi">
@@ -323,10 +339,10 @@ export default function KendaraanPage() {
                         </td>
                         <td className="table-td text-xs text-gray-600 min-w-[120px]">{teks(r.merek_tipe)}</td>
                         <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.tahun_pengadaan)}</td>
-                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_bpkb)}</td>
                         <td className="table-td text-xs text-gray-800 font-medium whitespace-nowrap">{teks(r.no_polisi)}</td>
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_rangka)}</td>
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_mesin)}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_bpkb)}</td>
                         <td className="table-td text-right text-xs whitespace-nowrap tabular-nums">{angka(r.nilai_perolehan)}</td>
                         <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.kondisi_barang)}</td>
                         <td className="table-td text-xs text-gray-600 min-w-[120px]">{teks(r.penggunaan_pengamanan)}</td>
