@@ -192,16 +192,22 @@ function colsFor(golongan: string): string[] {
 // Kolom yang dijumlahkan di baris TOTAL (rupiah saja — masa manfaat & sisa tidak).
 const TOTAL_KEYS = new Set(['nilai', 'beban', 'akum', 'buku'])
 
+// Kolom yang isinya SATU nomor utuh — dipaksa satu baris. Tanpa ini "AG 1021 EP"
+// pecah jadi tiga baris di kolom sempit & tak lagi terbaca sebagai satu nomor
+// polisi (permintaan user 2026-07-30). Tabelnya memang sudah bisa digeser
+// horizontal, jadi melebar sedikit lebih baik daripada nomor yang terbelah.
+const NOWRAP_KEYS = new Set(['nopol', 'rangka', 'mesin', 'bpkb', 'tgl'])
 function thClass(key: string) {
   const a = COL_META[key]?.align
   return `table-th${a === 'right' ? ' text-right' : a === 'center' ? ' text-center' : ''}`
+    + (NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : '')
 }
 function tdClass(key: string) {
   if (key === 'nama' || key === 'kode') return 'table-td align-top'
   const a = COL_META[key]?.align
   if (a === 'right') return 'table-td text-right text-xs'
   if (a === 'center') return 'table-td text-center text-xs' + (key === 'komptabel' ? ' capitalize' : '')
-  return 'table-td text-xs text-gray-600 align-top'
+  return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
 }
 
 export default function Page() {
