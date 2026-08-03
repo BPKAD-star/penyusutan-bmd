@@ -5,6 +5,24 @@ React 18 + TypeScript + Tailwind + Supabase. Scope: LIVE data pemerintah daerah,
 jadi **integritas data di atas segalanya** — hati-hati dengan perubahan skema &
 apa pun yang menyentuh ledger atau engine.
 
+## Dokumen yang WAJIB diacu sebelum menulis kode
+
+| Dokumen | Menjawab | Kapan dibaca |
+|---|---|---|
+| **[rules.md](rules.md)** | apa yang **tidak boleh rusak** | selalu, lebih dulu |
+| **[CODING-STANDARD.md](CODING-STANDARD.md)** | **bagaimana cara menulisnya** — lapisan, struktur folder, primitif wajib (`paginate`/`assertOk`/`useAsyncData`), penamaan, checklist commit | setiap kali menulis/mengubah kode |
+| **[TESTING.md](TESTING.md)** | apa yang diuji & di lapisan mana | setiap perubahan yang menyentuh angka |
+| **[REFACTOR-PLAN.md](REFACTOR-PLAN.md)** | ke mana arah kode ini bergerak | saat memilih cara mengerjakan fitur |
+
+Berkas ini (CLAUDE.md) memuat **sejarah & rincian per fitur** — kenapa sesuatu
+dibuat begitu, insiden apa yang melatarinya. Ia bukan panduan gaya menulis kode;
+untuk itu pakai CODING-STANDARD.md.
+
+⚠️ Kalau kamu menulis komentar berbunyi *"ubah satu, samakan yang lain"* atau
+*"jangan lupa juga ubah X"*, itu **utang desain**, bukan solusi. Catat di
+REFACTOR-PLAN.md §5 — aturan yang cuma ditulis di komentar sudah berkali-kali
+terbukti dilanggar di repo ini.
+
 ## Aturan lintas-fitur (2026-07-19, JANGAN dilanggar)
 
 - **PERFORMA Daftar Barang & Penyusutan — JANGAN diturunkan.** Setelah import

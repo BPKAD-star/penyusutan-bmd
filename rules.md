@@ -3,8 +3,11 @@
 > Aturan operasional untuk siapa pun (manusia maupun agent AI) yang menyentuh
 > repo ini. Rinciannya per fitur ada di **CLAUDE.md**; berkas ini adalah
 > ringkasan yang wajib dibaca lebih dulu.
-> Pendamping: [PRD.md](PRD.md) · [architecture.md](architecture.md) ·
-> [design.md](design.md) · [schema.md](schema.md).
+> Pendamping: [CODING-STANDARD.md](CODING-STANDARD.md) (cara menulis kode) ·
+> [TESTING.md](TESTING.md) (cara membuktikannya benar) ·
+> [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (arah) · [PRD.md](PRD.md) ·
+> [architecture.md](architecture.md) · [design.md](design.md) ·
+> [schema.md](schema.md).
 
 **Konteks:** ini data **LIVE pemerintah daerah** yang dilaporkan ke
 inspektorat/BPK. Setiap aturan di bawah lahir dari kerusakan nyata, bukan

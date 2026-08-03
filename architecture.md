@@ -1,7 +1,13 @@
 # Arsitektur — Penyusutan BMD
 
 > Dokumen pendamping: [PRD.md](PRD.md) · [design.md](design.md) ·
-> [rules.md](rules.md) · [schema.md](schema.md).
+> [rules.md](rules.md) · [schema.md](schema.md) ·
+> [CODING-STANDARD.md](CODING-STANDARD.md) · [TESTING.md](TESTING.md) ·
+> [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
+>
+> Berkas ini menggambarkan arsitektur **sekarang**. Arah perubahannya —
+> pemisahan lapisan `domain`/`data`/`ui`, pemindahan pembacaan berat ke server —
+> ada di [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
 
 ## 1. Tumpukan Teknologi
 
