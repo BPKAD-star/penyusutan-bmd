@@ -1,8 +1,8 @@
 # Rencana Refactoring Bertahap — Penyusutan BMD
 
-> Dokumen hidup. Pendamping: [CODING-STANDARD.md](CODING-STANDARD.md) (target
-> gaya) · [TESTING.md](TESTING.md) (jaring pengaman) · [rules.md](rules.md)
-> (yang tak boleh rusak).
+> Dokumen hidup — arah pergerakan kode ini.
+>
+> **Peta seluruh dokumen: [README.md](README.md).**
 >
 > **Aturan induk: tidak ada fase yang menghentikan pengembangan fitur.**
 > Setiap fase dirancang agar bisa dikerjakan menyelip di antara pekerjaan
