@@ -1061,6 +1061,20 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   (aman dari `trg_aset_kode_register`, `uraian_barang` di luar `UPDATE OF`-nya).
   **Bikin pintu pembuat aset baru → isi `uraian_barang`.**
 
+- **`admin_skpd.kode_lokasi` KOSONG di SELURUH 816 baris** (dicek 2026-08-03) —
+  yang terisi & jadi identitas resmi SKPD adalah **`kode_skpd`** (mis.
+  `18.00.00.0000.0000`; 14 digitnya tanpa titik = segmen SKPD di NIBAR & kode
+  register) plus `kode_raw` (`18.00.00`). KIBAR dulu mengisi "2. Kode Lokasi"
+  dari `kode_lokasi` saja → selalu "-"; sekarang `kode_lokasi || kode_skpd`
+  (kolom bernama-tepat tetap didahulukan kalau suatu saat diisi). **Halaman IPA
+  (`app/dashboard/ipa/*`, `components/ipa/FormPenilaian.tsx`) masih menampilkan
+  & MENGURUTKAN pakai `kode_lokasi` telanjang** — artinya label "-" & urutan
+  yang sebenarnya tak mengurutkan apa-apa; belum diminta diperbaiki.
+  Terkait: **Unit Pemakai di KIBAR bukan kolom `aset`** — dirangkai dari
+  `admin_skpd` dgn menaiki `parent_id` dari `aset.skpd_id` (`resolveSkpdChain`).
+  Pohonnya rapi per level: level 1 = `pengguna barang` (60), level 2 = `kuasa
+  penguna barang` (131), level 3 = `sub kuasa penguna barang` (625).
+
 ## Spesifikasi barang: wide table + field per golongan (lib/asetFields.ts)
 
 Field spesifikasi (mis. no. rangka/mesin utk Peralatan&Mesin, dokumen

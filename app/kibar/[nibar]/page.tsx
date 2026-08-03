@@ -60,7 +60,7 @@ async function resolveWilayah(admin: Admin, kode: string): Promise<string[]> {
   return parts
 }
 
-type SkpdNode = { id: number; nama: string; level: number; parent_id: number | null; kode_lokasi: string | null }
+type SkpdNode = { id: number; nama: string; level: number; parent_id: number | null; kode_lokasi: string | null; kode_skpd: string | null }
 // Rantai SKPD dari akar (level 1, Pengguna Barang) → daun (unit pemegang / Kuasa
 // Pengguna Barang). Iteratif naik lewat parent_id — pohon SKPD cuma ~4 level.
 async function resolveSkpdChain(admin: Admin, skpdId: number): Promise<SkpdNode[]> {
@@ -68,7 +68,7 @@ async function resolveSkpdChain(admin: Admin, skpdId: number): Promise<SkpdNode[
   let cur: number | null = skpdId
   for (let i = 0; i < 6 && cur; i++) {
     const { data } = await admin.from('admin_skpd')
-      .select('id,nama,level,parent_id,kode_lokasi').eq('id', cur).maybeSingle()
+      .select('id,nama,level,parent_id,kode_lokasi,kode_skpd').eq('id', cur).maybeSingle()
     if (!data) break
     chain.unshift(data as SkpdNode)
     cur = (data as SkpdNode).parent_id
@@ -216,9 +216,22 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   const todayISO = new Date().toISOString().slice(0, 10)
 
   const penggunaBarang = skpdChain[0]?.nama || '-'                        // root (level 1)
-  const pemegang = skpdChain[skpdChain.length - 1]?.nama || penggunaBarang // daun (unit pemegang)
-  const kuasaPengguna = skpdChain.length > 1 ? pemegang : '-'
-  const kodeLokasi = skpdChain[skpdChain.length - 1]?.kode_lokasi || null
+  const daun = skpdChain[skpdChain.length - 1] || null                    // unit pemegang
+  const pemegang = daun?.nama || penggunaBarang
+  // Kuasa Pengguna Barang = unit pemegang TERDALAM. Kalau rantai SKPD berhenti
+  // di level 1 (barang dipegang SKPD induk sendiri, tak ada sub-unit), diisi
+  // nama SKPD itu sendiri — keputusan user 2026-08-03. Dulu dikosongkan "-",
+  // yang terbaca di kartu cetak seolah datanya belum diisi padahal memang
+  // tak ada sub-unit. (Catatan: `admin_skpd.jabatan` menamai level 2 "kuasa
+  // pengguna barang" & level 3 "sub kuasa pengguna barang"; kartu ini sengaja
+  // menyebut yang TERDALAM supaya menunjuk pemegang fisik barang.)
+  const kuasaPengguna = pemegang
+  // Kode Lokasi: `admin_skpd.kode_lokasi` KOSONG di seluruh 816 baris (dicek
+  // 2026-08-03) — itu sebabnya kartu selalu "-". Yang terisi & jadi identitas
+  // resmi SKPD adalah `kode_skpd` (mis. "18.00.00.0000.0000"; 14 digitnya tanpa
+  // titik = segmen SKPD di NIBAR/kode register). `kode_lokasi` tetap didahulukan
+  // kalau suatu saat diisi, supaya kolom bernama-tepat itu yang menang.
+  const kodeLokasi = daun?.kode_lokasi || daun?.kode_skpd || null
 
   // Spesifikasi lainnya = field golongan yang belum tampil di row eksplisit II.
   const shownFields = new Set<FieldKey>(['nama_barang', 'keterangan', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude',
