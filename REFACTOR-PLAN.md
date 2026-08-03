@@ -80,7 +80,7 @@ konflik dengan pekerjaan fitur yang sedang berjalan.
 |---|---|---|---|
 | 0.1 | Vitest + `vitest.config.ts` + script npm | `npm test` jalan | ✅ 2026-08-03 |
 | 0.2 | Test untuk `lib/engine/penyusutan.ts` | jantung angka neraca terkunci — **fungsinya sudah murni, nol refactor** | ✅ 2026-08-03 — 71 test, 99% stmt / 82% branch |
-| 0.3 | Test untuk helper murni di `lib/bmd.ts` | `periodeDariTanggal`, `comparePeriode`, `klasifikasiKomptabel` | ⬜ |
+| 0.3 | Test untuk helper murni di `lib/bmd.ts` | `periodeDariTanggal`, `comparePeriode`, `klasifikasiKomptabel` | ✅ 2026-08-03 — 73 test, 93% stmt / 100% branch |
 | 0.4 | Property test invarian engine (`fast-check`) | nilai buku ≥ 0, Σ beban = akumulasi | ✅ 2026-08-03 — 6 invarian × 300 run |
 | 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis | ⬜ |
 | 0.6 | Baseline typecheck | error **baru** memerahkan CI; yang lama tak memblokir | ⬜ |
@@ -96,6 +96,36 @@ konflik dengan pekerjaan fitur yang sedang berjalan.
 > kode saat baseline alih-alih kode terkini → 2 test; (5) checkpoint mengambil
 > baris pertama alih-alih terbaru → 1 test. **Ulangi cara ini untuk tiap suite
 > baru** — ia yang membedakan jaring pengaman dari dekorasi.
+>
+> ⚠️ **Mutasi yang "selamat" belum tentu berarti ada lubang di test — periksa
+> dulu mutasinya benar-benar mendarat.** Di Fase 0.3 satu mutasi lolos, dan
+> ternyata `perl` yang tak jadi mengubah apa-apa; begitu disuntikkan dengan
+> benar, dua test langsung merah. Tanpa memeriksa, waktu habis memburu lubang
+> yang tak ada. Selalu `grep` berkasnya sesudah menyuntik.
+
+### Temuan Fase 0.3
+
+Menguji `lib/bmd.ts` memunculkan **tiga gap yang sebelumnya tak terlihat**,
+semuanya dari pola yang sama: konstanta kembar yang cuma dijaga ingatan
+(rules.md §25). Ketiganya dipin sebagai test bertanda `DUGAAN BUG` — dikunci
+apa adanya, bukan disebut benar, supaya keputusannya disengaja:
+
+1. **`tukar_menukar` tak dikenali engine sebagai baseline perolehan** → barang
+   hasil tukar menukar **tidak pernah disusutkan**. Jenisnya sah (enum migrasi
+   20260707_02) dan benar-benar ditulis saat approve. Yang membuktikan ini
+   kelalaian, bukan kesengajaan: engine justru menangani `batal_tukar_menukar`
+   sebagai event penghenti — hanya masuk akal kalau barangnya memang mestinya
+   disusutkan. **Prioritas tertinggi** (mode kegagalan #1: angka salah,
+   senyap).
+2. **`GOLONGAN_REKAP['1.5.4'].disusutkan = true`** padahal engine tak pernah
+   mengakrualkannya (guard `perlakuan !== 'lain_lain'`, keputusan user
+   2026-07-13). Konstantanya mencerminkan aturan sebelum keputusan itu.
+3. **15 jenis ledger tanpa label tampilan** di `JENIS_TRANSAKSI_LABEL` — cacat
+   tampilan (peringkat 5), bukan angka.
+
+Tiga-tiganya **tidak diperbaiki di sini**: perbaikan nomor 1 mengubah angka
+laporan surut ke belakang dan menuntut engine dijalankan ulang. Itu PR
+tersendiri dengan keputusan user.
 
 ### ESLint: sedikit tapi menggigit
 

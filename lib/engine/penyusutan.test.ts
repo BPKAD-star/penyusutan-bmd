@@ -153,6 +153,43 @@ describe('hitungJadwalAset — baseline & bail-out', () => {
     expect(hasil).toEqual([])
   })
 
+  it.each([
+    ['pengadaan'],
+    ['hibah_masuk'],
+    ['hasil_inventarisasi'],
+    ['perolehan_lainnya'],
+    ['kdp_selesai_masuk'],
+  ])('mengenali %s sebagai baseline perolehan', (jenis) => {
+    const hasil = jalankan(aset(), [trx({ jenis, periode: '2026-S1', nilai: 10_000_000 })], masa(KODE_PM, 5), '2027-S2')
+
+    expect(hasil.length).toBeGreaterThan(0)
+    expect(hasil[0].beban).toBeGreaterThan(0)
+  })
+
+  it('DUGAAN BUG: tukar_menukar TIDAK dikenali sebagai baseline → barang tak pernah disusutkan', () => {
+    // `tukar_menukar` jenis ledger yang SAH (enum, migrasi 20260707_02) dan
+    // benar-benar ditulis saat approve menu Tukar Menukar (PerolehanManual.tsx
+    // :301 `jenis: kategori`). Tapi ia absen dari daftar baseline perolehan di
+    // engine, jadi `hitungJadwalAset` tak menemukan titik mulai dan berhenti
+    // di `return []` — barangnya TIDAK MUNCUL SAMA SEKALI di penyusutan.
+    //
+    // Bahwa ini kelalaian, bukan kesengajaan, terlihat dari engine yang JUSTRU
+    // menangani `batal_tukar_menukar` sbg event penghenti — event itu cuma
+    // masuk akal kalau barangnya memang seharusnya disusutkan lebih dulu.
+    // Kembar dengan gap di `JENIS_PEROLEHAN` (lihat lib/bmd.test.ts).
+    //
+    // Perbaikannya satu kata di daftar jenis perolehan, TAPI ia mengubah angka
+    // laporan surut ke belakang, jadi wajib PR tersendiri + jalankan ulang
+    // engine. Sampai itu diputuskan, perilakunya dipin di sini.
+    const hasil = jalankan(
+      aset(),
+      [trx({ jenis: 'tukar_menukar', periode: '2026-S1', nilai: 10_000_000 })],
+      masa(KODE_PM, 5), '2030-S2',
+    )
+
+    expect(hasil).toEqual([])
+  })
+
   it('memakai kode TERKINI aset untuk bail-out, bukan kode saat baseline', () => {
     // Aset yang sekarang Gedung tapi dulu KDP tidak boleh ikut bail-out —
     // periode sebelum reklas memang tak berakrual, tapi sesudahnya harus jalan.
