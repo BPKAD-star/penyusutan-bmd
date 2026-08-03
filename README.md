@@ -1,79 +1,191 @@
 # BMD Kabupaten Kediri
 
-Sistem pengelolaan Barang Milik Daerah berbasis Next.js + Supabase.
-Shadow-ledger + layer transparansi — **bukan pengganti e-bmd** (e-bmd tetap sistem legal/resmi).
+Sistem pengelolaan Barang Milik Daerah berbasis Next.js 14 + Supabase.
+Shadow-ledger + layer transparansi — **bukan pengganti e-BMD** (e-BMD tetap
+sistem legal/resmi).
 
-Prinsip inti:
-- **Ledger append-only**: setiap pengelolaan = 1 transaksi immutable di `transaksi_bmd`
-  (UPDATE/DELETE diblokir trigger). Koreksi = transaksi baru.
-- **Engine penyusutan event-driven**: dihitung ulang dari histori transaksi per aset per
-  semester, bukan batch. Masa manfaat di DB dalam TAHUN; ×2 semester hanya di engine.
-- **Data flow satu arah**: e-bmd → app (sekali, baseline `saldo_awal_2026`). Tidak sync balik.
+⚠️ **Ini data LIVE pemerintah daerah yang dilaporkan ke inspektorat/BPK.**
+Integritas data di atas segalanya. Sebelum menyentuh kode, baca
+[rules.md](rules.md) — setiap aturan di sana lahir dari kerusakan nyata.
+
+---
+
+## Peta dokumen
+
+Berkas ini adalah **satu-satunya tempat yang mendaftar seluruh dokumen**.
+Kalau menambah dokumen baru, daftarkan di sini saja — jangan menyalin daftarnya
+ke header berkas lain (itu mengulang persis pola "konstanta kembar" yang
+dilarang [rules.md](rules.md) §25).
+
+**Urutan baca untuk orang/agent baru:** README → rules → CODING-STANDARD →
+sisanya sesuai kebutuhan.
+
+### Dokumen yang selalu berlaku (root)
+
+| Dokumen | Menjawab | Dibaca kapan |
+|---|---|---|
+| [rules.md](rules.md) | apa yang **tidak boleh rusak** | selalu, paling dulu |
+| [CODING-STANDARD.md](CODING-STANDARD.md) | **bagaimana** menulisnya — lapisan, folder, primitif wajib (`paginate`/`assertOk`/`useAsyncData`), checklist commit | tiap kali menulis kode |
+| [TESTING.md](TESTING.md) | apa yang diuji & di lapisan mana | tiap perubahan yang menyentuh angka |
+| [REFACTOR-PLAN.md](REFACTOR-PLAN.md) | ke mana arah kode ini bergerak | saat memilih cara mengerjakan fitur |
+| [CLAUDE.md](CLAUDE.md) | **sejarah & rincian per fitur** — kenapa sesuatu dibuat begitu, insiden apa yang melatarinya | saat bertanya "kenapa begini?" |
+| [architecture.md](architecture.md) | bentuk sistem **sekarang** (lapisan, pola, RLS) | saat orientasi |
+| [schema.md](schema.md) | peta tabel + mekanisme integritas | sebelum menyentuh DB |
+| [design.md](design.md) | konvensi UI/UX & pola interaksi baku | saat menggarap tampilan |
+| [PRD.md](PRD.md) | ruang lingkup produk & kebutuhan | saat menimbang fitur baru |
+
+### Dokumen kerja & rujukan dalam ([docs/](docs/))
+
+| Dokumen | Isi |
+|---|---|
+| [docs/skema-database.md](docs/skema-database.md) | diagram ER (Mermaid) **per modul** — versi dalam dari `schema.md` |
+| [docs/lra-plan.md](docs/lra-plan.md) | rencana modul LRA |
+| [docs/rekonsiliasi-bmd-plan.md](docs/rekonsiliasi-bmd-plan.md) | rencana modul Rekonsiliasi |
+| [docs/PLAN-period-lock.md](docs/PLAN-period-lock.md) | rencana kunci periode |
+
+**Sumbu pemisahnya:** root = dokumen yang selalu berlaku dan dibaca berulang;
+`docs/` = dokumen kerja/rujukan dalam yang dibaca sekali atau sesekali.
+`CLAUDE.md` dan `README.md` **wajib tetap di root** (masing-masing dimuat
+otomatis oleh Claude Code dan dirender GitHub).
+
+---
+
+## Prinsip inti
+
+Ringkas saja di sini — rinciannya beserta sejarah insidennya di
+[rules.md](rules.md) dan [CLAUDE.md](CLAUDE.md).
+
+- **Ledger append-only mutlak.** Setiap pengelolaan = 1 baris immutable di
+  `transaksi_bmd` (UPDATE/DELETE ditolak trigger, termasuk untuk `service_role`).
+  Koreksi = **transaksi baru yang membalik** (`batal_*`), tidak pernah hapus
+  baris lama.
+- **Soft-delete.** Penghapusan barang = `aset.status='dihapus'` + transaksi.
+- **Engine penyusutan event-driven.** Dihitung ulang dengan **mereplay ledger
+  per aset** dari baseline sampai periode target — bukan batch, dan re-run
+  selalu aman. `penyusutan_semester` = turunan, bukan sumber kebenaran.
+- **Masa manfaat disimpan dalam TAHUN** di DB; konversi ×2 (ke semester) hanya
+  di dalam engine.
+- **Periode semesteran**: `YYYY-S1` (Jan–Jun) / `YYYY-S2` (Jul–Des).
+- **Penegakan aturan di DB, bukan di UI.** RLS per-SKPD (ltree) + trigger +
+  RPC `SECURITY DEFINER`. UI memvalidasi hanya demi pesan yang ramah.
+- **Fail-closed.** Kolektor data wajib cek `error` lalu melempar; halaman
+  laporan menolak menampilkan angka saat ada kegagalan. Halaman error jauh
+  lebih murah daripada angka kurang-sebagian yang terlihat sah lalu ikut
+  dilaporkan ke BPK.
+- **Aliran data satu arah**: e-BMD → app (sekali, sebagai baseline). Tidak ada
+  sinkronisasi balik.
+
+---
 
 ## Setup
 
-### 1. Supabase — jalankan migrasi berurutan di SQL Editor
-```
-supabase/migrations/profiles.sql                        (existing, kalau belum)
-supabase/migrations/20260702_01_bmd_core.sql            (aset, ledger, penyusutan_semester, RLS)
-supabase/migrations/20260702_02_overhaul_band_seed.sql  (band overhaul 242 baris)
-supabase/migrations/20260702_03_saldo_awal_ke_ledger.sql (migrasi 6.518 aset existing → ledger)
-```
+### 1. Supabase — jalankan migrasi di SQL Editor
+
+Migrasi ada di [`supabase/migrations/`](supabase/migrations/) (**143 berkas**),
+dijalankan **manual dan berurutan sesuai nama berkas**. `profiles.sql`
+dijalankan lebih dulu bila belum ada.
+
+⚠️ Dua hal yang wajib diingat:
+
+- **Migrasi selalu PLAIN, bukan `CONCURRENTLY`** — SQL Editor membungkus skrip
+  jadi satu transaksi, sehingga `CREATE INDEX CONCURRENTLY` **gagal senyap**.
+- **Deploy-ordering**: migrasi (enum `ADD VALUE`, policy, guard, tabel baru)
+  dijalankan **SEBELUM** deploy kode. Urutan per fitur ada di
+  [CLAUDE.md](CLAUDE.md).
 
 ### 2. Environment variables (`.env.local` / Vercel)
+
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://gvwparkboopglytnjbad.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 OPENROUTER_API_KEY=your-openrouter-api-key
 ```
-`OPENROUTER_API_KEY` dipakai server-side saja (`app/api/ai-chat/route.ts`) untuk opsi "Asisten AI" di ChatWidget — jangan diberi prefix `NEXT_PUBLIC_`.
+
+`OPENROUTER_API_KEY` dipakai **server-side saja**
+(`app/api/ai-chat/route.ts`, opsi "Asisten AI" di ChatWidget) — jangan diberi
+prefix `NEXT_PUBLIC_`.
 
 ### 3. Install & jalankan
+
 ```bash
 npm install
 npm run dev
+npm test        # unit test (Vitest)
 ```
+
+Type-check: `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` —
+**saring ke berkas yang disentuh**, ada error pre-existing dari dependency
+opsional yang belum terpasang. Jangan baca exit code mentah. `next build`
+lokal belum bisa jalan.
+
+---
 
 ## Fitur
 
-- **Pembukuan → Cara Perolehan**: import Excel template export e-bmd (pengadaan, hibah masuk,
-  hasil inventarisasi, perolehan lainnya). Kode 7 segmen digabung & divalidasi ke `kodefikasi_bmd`.
-- **Pembukuan → Pengelolaan**: penggunaan & penerimaan internal (display-only), pengeluaran
-  internal (mutasi antar sub-SKPD satu induk), reklasifikasi kode, koreksi nilai/spesifikasi,
-  kapitalisasi (band overhaul + cap masa manfaat), penghapusan (pemindahtanganan, pengalihan
-  status, sebab lain — soft-delete, data tetap di DB).
-- **Daftar Barang**: register semua golongan BMD (label golongan dari data, bukan hardcode).
-  Menampilkan **NIBAR** (akta lahir, beku) + **Kode Register** (KTP — mengikuti posisi
-  terakhir barang: SKPD, tahun masuk SKPD, kode barang, intra/ekstra), dengan penanda
+Ruang lingkup lengkap di [PRD.md](PRD.md); rincian & alasan desain per fitur di
+[CLAUDE.md](CLAUDE.md).
+
+- **Pembukuan → Cara Perolehan** — pengadaan, hibah masuk, tukar menukar, hasil
+  inventarisasi, perolehan lainnya. Pola **draft → approve**: barang ditampung
+  sebagai `draft_items` di `jurnal_header`, baru masuk ledger saat disetujui.
+  Termasuk import Excel template e-BMD dan pengadaan konstruksi (multi-KDP).
+- **Pembukuan → Pengelolaan** — penggunaan & penerimaan internal, mutasi antar
+  sub-SKPD, pengalihan status antar-SKPD, reklasifikasi, koreksi
+  (nilai/spesifikasi/pencatatan ganda/pemecahan), kapitalisasi, penghapusan,
+  pemanfaatan, pengamanan.
+- **KIR** — Kartu Inventaris Ruangan (penempatan fisik barang per ruangan).
+- **Daftar Barang** — register semua golongan. Menampilkan **NIBAR** (akta
+  lahir, beku selamanya) + **Kode Register** (KTP — mengikuti posisi terakhir
+  barang: SKPD, tahun masuk SKPD, kode barang, intra/ekstra), dengan penanda ⚠
   untuk barang yang posisinya sudah bergeser dari akta lahirnya.
-- **Penyusutan**: hasil engine ledger (`penyusutan_semester`) + data lama G&B
-  (`penyusutan_periode`, dipertahankan). Admin bisa jalankan engine dari UI.
-- **Pelaporan**: rekap perolehan & pengelolaan per jenis/periode/SKPD, export Excel.
-  Barang dihapus tidak muncul di laporan (tetap queryable di DB).
-- **Admin**: manajemen user (nama, NIP, pangkat/golongan, username, SKPD, role).
-  Operator SKPD hanya melihat aset subtree SKPD-nya (RLS berbasis ltree path).
-- **IPA & GIS BMD**: link eksternal di sidebar.
+- **Penyusutan** — hasil engine (`penyusutan_semester`). Admin bisa menjalankan
+  engine dari UI.
+- **Pelaporan** — rekonsiliasi, laporan BMD, rekap perolehan & pengelolaan per
+  jenis/periode/SKPD, KIBAR, export Excel + export audit (BPK).
+- **Saldo Awal** — snapshot baseline `aset_awal_2026` (foto saldo akhir 2025),
+  display-only dan **tidak pernah dibaca engine**; hanya kolom spesifikasi yang
+  boleh dikoreksi, itu pun terbatas pada barang yang belum pernah bergerak.
+- **Admin** — manajemen user & pegawai, tutup tahun buku. Operator SKPD hanya
+  melihat aset subtree SKPD-nya (RLS berbasis ltree path).
+
+---
 
 ## Engine penyusutan
 
-Jalankan dari UI (menu Penyusutan → Jalankan Engine, admin only) atau:
+Jalankan dari UI (Penyusutan → **Jalankan Engine**, admin only) atau:
+
 ```
 POST /api/engine/run  { "periode": "2026-S1" }
 ```
-Engine me-replay ledger tiap aset dari saldo awal, menerapkan kapitalisasi/koreksi/reklas/
-penghapusan, lalu upsert ke `penyusutan_semester` (re-run aman).
 
-Aturan kapitalisasi (Perbup 30/2024, band di `overhaul_band`):
+Engine mereplay ledger tiap aset dari checkpoint terbaru
+(`saldo_awal` / `saldo_awal_checkpoint`), menerapkan
+kapitalisasi/koreksi/reklas/penghapusan berikut pembatalannya, lalu upsert ke
+`penyusutan_semester`. **Re-run aman.**
+
+Baris hasil untuk periode di **tahun terkunci** difilter sebelum upsert — engine
+tetap menghitungnya di memori tapi tidak pernah menimpa angka tahun yang sudah
+final.
+
+Aturan kapitalisasi (Perbup 30/2024, band di `admin_overhaul_band`):
+
 ```
 persen  = nilai_rehab / nilai_perolehan        (bukan nilai buku)
 masa'   = min(sisa_tahun + tambahan_band, masa_max_tahun)
 beban   = (nilai_buku + rehab) / (masa' × 2)   (rupiah penuh)
-sisa_semester = counter integer −1 per periode; pembulatan diserap semester terakhir (NB = 0 persis)
+sisa_semester = counter integer −1 per periode
+                pembulatan diserap semester terakhir (nilai buku = 0 persis)
 ```
 
-**Ditunda (jangan dibangun sebelum ada rules)**: reklas komptabel; alokasi akumulasi
-penyusutan saat koreksi kuantitas (split/merge). Struktur DB sudah siap, logika dikosongkan.
+**Ekstrakomptabel ikut disusutkan** dengan aturan yang sama persis seperti
+intrakomptabel; pemisahan "neraca hanya intra" terjadi di **laporan**, bukan di
+engine. Golongan 1.5.4 (Aset Lain-Lain) beku — tidak pernah diakrualkan.
+
+---
 
 ## Deploy
-Vercel — `penyusutan-bmd.vercel.app`. Set env vars yang sama di dashboard Vercel.
+
+Vercel — `penyusutan-bmd.vercel.app`. Set env vars yang sama di dashboard
+Vercel. Ingat **deploy-ordering**: jalankan migrasi di Supabase **sebelum**
+men-deploy kode yang bergantung padanya.

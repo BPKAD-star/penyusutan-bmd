@@ -1,8 +1,8 @@
 # PRD — Aplikasi Penyusutan BMD Kabupaten Kediri
 
 > Dokumen kebutuhan produk (Product Requirements Document).
-> Dokumen pendamping: [architecture.md](architecture.md) · [design.md](design.md) ·
-> [rules.md](rules.md) · [schema.md](schema.md) · CLAUDE.md (panduan agent/AI).
+>
+> **Peta seluruh dokumen: [README.md](README.md).**
 
 ## 1. Latar Belakang & Tujuan
 

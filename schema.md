@@ -4,8 +4,8 @@
 > **Diagram ER lengkap per modul** ada di
 > [docs/skema-database.md](docs/skema-database.md) — berkas ini adalah peta
 > tingkat atas + aturan integritas yang wajib diketahui sebelum menyentuh DB.
-> Pendamping: [PRD.md](PRD.md) · [architecture.md](architecture.md) ·
-> [design.md](design.md) · [rules.md](rules.md).
+>
+> **Peta seluruh dokumen: [README.md](README.md).**
 
 ## Konvensi Penamaan
 

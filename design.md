@@ -1,7 +1,8 @@
 # Design — Konvensi UI/UX Penyusutan BMD
 
-> Dokumen pendamping: [PRD.md](PRD.md) · [architecture.md](architecture.md) ·
-> [rules.md](rules.md) · [schema.md](schema.md).
+> Konvensi tampilan & interaksi yang berlaku di seluruh halaman.
+>
+> **Peta seluruh dokumen: [README.md](README.md).**
 
 ## 1. Kerangka Halaman
 

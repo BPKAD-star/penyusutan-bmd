@@ -18,6 +18,16 @@ Berkas ini (CLAUDE.md) memuat **sejarah & rincian per fitur** — kenapa sesuatu
 dibuat begitu, insiden apa yang melatarinya. Ia bukan panduan gaya menulis kode;
 untuk itu pakai CODING-STANDARD.md.
 
+**Peta LENGKAP seluruh dokumen (termasuk `docs/`) ada di
+[README.md](README.md)** — di sanalah satu-satunya daftar yang perlu disunting
+kalau ada dokumen baru. Tabel di atas sengaja **tetap dibiarkan menduplikasi
+sebagian isinya**, dan itu bukan kelalaian: CLAUDE.md satu-satunya berkas yang
+dimuat OTOMATIS ke konteks agent, sedangkan README tidak. Tanpa tabel ini,
+agent yang mulai dingin tidak akan pernah tahu rules.md ada. Cakupannya sengaja
+dibatasi pada empat dokumen yang wajib dibaca **sebelum menulis kode** — kalau
+menambah dokumen baru yang tidak masuk kategori itu, cukup daftarkan di README
+saja, jangan di sini.
+
 ⚠️ Kalau kamu menulis komentar berbunyi *"ubah satu, samakan yang lain"* atau
 *"jangan lupa juga ubah X"*, itu **utang desain**, bukan solusi. Catat di
 REFACTOR-PLAN.md §5 — aturan yang cuma ditulis di komentar sudah berkali-kali

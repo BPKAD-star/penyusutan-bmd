@@ -1,7 +1,8 @@
 # Strategi & Desain Pengujian — Penyusutan BMD
 
-> Pendamping [CODING-STANDARD.md](CODING-STANDARD.md) · [rules.md](rules.md).
 > Dokumen ini menjawab: **apa yang diuji, di lapisan mana, dan kenapa.**
+>
+> **Peta seluruh dokumen: [README.md](README.md).**
 
 **Kondisi awal (2026-08-03): nol test, nol lint, nol CI.** 36.000 baris kode
 yang mengelola data aset milik pemerintah daerah, dilaporkan ke inspektorat

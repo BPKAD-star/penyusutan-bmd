@@ -3,11 +3,7 @@
 > **Dokumen ini wajib diacu setiap kali menulis kode di repo ini** (manusia
 > maupun agent AI). Ia menjawab *"bagaimana cara menulisnya"*.
 >
-> Pendamping: [rules.md](rules.md) (*apa yang tidak boleh rusak*) ·
-> [architecture.md](architecture.md) (*bagaimana sistem ini tersusun*) ·
-> [TESTING.md](TESTING.md) (*bagaimana membuktikannya benar*) ·
-> [REFACTOR-PLAN.md](REFACTOR-PLAN.md) (*ke mana arahnya*) ·
-> [CLAUDE.md](CLAUDE.md) (*sejarah & rincian per fitur*).
+> **Peta seluruh dokumen: [README.md](README.md).**
 >
 > Kalau standar ini bertabrakan dengan [rules.md](rules.md), **rules.md
 > menang** — itu aturan integritas data, ini aturan kerapian.
