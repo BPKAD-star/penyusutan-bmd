@@ -76,16 +76,26 @@ diekstrak ke tempat baru; yang tersisa tinggal sedikit.
 **Tidak menyentuh satu baris pun kode produk.** Hanya berkas baru → nol
 konflik dengan pekerjaan fitur yang sedang berjalan.
 
-| # | Pekerjaan | Hasil |
-|---|---|---|
-| 0.1 | Vitest + `vitest.config.ts` + script npm | `npm test` jalan |
-| 0.2 | Test untuk `lib/engine/penyusutan.ts` | jantung angka neraca terkunci — **fungsinya sudah murni, nol refactor** |
-| 0.3 | Test untuk helper murni di `lib/bmd.ts` | `periodeDariTanggal`, `comparePeriode`, `klasifikasiKomptabel` |
-| 0.4 | Property test invarian engine (`fast-check`) | nilai buku ≥ 0, Σ beban = akumulasi |
-| 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis |
-| 0.6 | Baseline typecheck | error **baru** memerahkan CI; yang lama tak memblokir |
-| 0.7 | GitHub Actions | lint + typecheck + unit tiap push |
-| 0.8 | `supabase gen types` → `shared/types/database.types.ts` | sumber tipe tunggal |
+| # | Pekerjaan | Hasil | Status |
+|---|---|---|---|
+| 0.1 | Vitest + `vitest.config.ts` + script npm | `npm test` jalan | ✅ 2026-08-03 |
+| 0.2 | Test untuk `lib/engine/penyusutan.ts` | jantung angka neraca terkunci — **fungsinya sudah murni, nol refactor** | ✅ 2026-08-03 — 71 test, 99% stmt / 82% branch |
+| 0.3 | Test untuk helper murni di `lib/bmd.ts` | `periodeDariTanggal`, `comparePeriode`, `klasifikasiKomptabel` | ⬜ |
+| 0.4 | Property test invarian engine (`fast-check`) | nilai buku ≥ 0, Σ beban = akumulasi | ✅ 2026-08-03 — 6 invarian × 300 run |
+| 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis | ⬜ |
+| 0.6 | Baseline typecheck | error **baru** memerahkan CI; yang lama tak memblokir | ⬜ |
+| 0.7 | GitHub Actions | lint + typecheck + unit tiap push | ⬜ |
+| 0.8 | `supabase gen types` → `shared/types/database.types.ts` | sumber tipe tunggal | ⬜ |
+
+> **Catatan 0.2 — suite ini diverifikasi dengan uji mutasi, bukan cuma
+> "hijau".** Test yang lulus di percobaan pertama belum tentu menguji apa pun.
+> Lima cacat sengaja disuntikkan ke engine dan tiap kali **hanya** test yang
+> memang mengaku menutupinya yang merah: (1) selisih pembulatan tidak diserap
+> di semester terakhir → 4 test; (2) `batal_*` tak lagi menganulir event
+> target → 3 test; (3) guard beku 1.5.4 dicabut → 1 test; (4) bail-out memakai
+> kode saat baseline alih-alih kode terkini → 2 test; (5) checkpoint mengambil
+> baris pertama alih-alih terbaru → 1 test. **Ulangi cara ini untuk tiap suite
+> baru** — ia yang membedakan jaring pengaman dari dekorasi.
 
 ### ESLint: sedikit tapi menggigit
 

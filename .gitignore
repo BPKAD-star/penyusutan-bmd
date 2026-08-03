@@ -5,6 +5,7 @@ out/
 .env
 *.tsbuildinfo
 .DS_Store
+coverage/
 # Arsip file sumber import (xlsx/csv berisi data aset live pemda — jangan di-commit)
 arsip-import/
 # Setelan lokal Claude Code: per-mesin, dan allowlist-nya bisa memuat
