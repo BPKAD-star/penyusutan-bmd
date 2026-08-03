@@ -82,6 +82,7 @@ konflik dengan pekerjaan fitur yang sedang berjalan.
 | 0.2 | Test untuk `lib/engine/penyusutan.ts` | jantung angka neraca terkunci — **fungsinya sudah murni, nol refactor** | ✅ 2026-08-03 — 71 test, 99% stmt / 82% branch |
 | 0.3 | Test untuk helper murni di `lib/bmd.ts` | `periodeDariTanggal`, `comparePeriode`, `klasifikasiKomptabel` | ✅ 2026-08-03 — 73 test, 93% stmt / 100% branch |
 | 0.4 | Property test invarian engine (`fast-check`) | nilai buku ≥ 0, Σ beban = akumulasi | ✅ 2026-08-03 — 6 invarian × 300 run |
+| 0.4b | Test sinkronisasi daftar `batal_*` (rules.md §1.7) | jenis `batal_*` baru yang lupa satu titik gagal di CI, bukan ketahuan tiga ronde kemudian | ⬜ |
 | 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis | ⬜ |
 | 0.6 | Baseline typecheck | error **baru** memerahkan CI; yang lama tak memblokir | ⬜ |
 | 0.7 | GitHub Actions | lint + typecheck + unit tiap push | ⬜ |
@@ -102,6 +103,31 @@ konflik dengan pekerjaan fitur yang sedang berjalan.
 > ternyata `perl` yang tak jadi mengubah apa-apa; begitu disuntikkan dengan
 > benar, dua test langsung merah. Tanpa memeriksa, waktu habis memburu lubang
 > yang tak ada. Selalu `grep` berkasnya sesudah menyuntik.
+
+### Catatan 0.4b — checklist §1.7 diubah jadi test, bukan prosa
+
+Daftar periksa tujuh titik untuk menambah jenis `batal_*` (rules.md §1.7) hari
+ini hidup **sepenuhnya sebagai prosa**. Itu persis kelas aturan yang tema
+rencana ini janji pindahkan ke kode: `batal_pengalihan` (2026-07-29) kelewat
+**tiga ronde** justru karena tak ada satu pun mekanisme yang gagal ketika satu
+titik terlewat — ledgernya benar, jadi semuanya terlihat beres.
+
+Yang bisa diuji tanpa DB (murni perbandingan daftar), dan karena itu masuk
+Fase 0 bukan Fase 2:
+
+- setiap nilai enum berawalan `batal_` terdaftar di `BATAL_TARGET_JENIS`
+  (lib/voidedAset.ts) — kecuali yang di-*allowlist* eksplisit berikut alasannya;
+- `JENIS_PINDAH` (lib/pengalihan.ts) tetap kembar dengan predikat
+  `idx_trx_pindah_id` (rules.md §25) — bandingkan konstanta TS dengan predikat
+  yang dibaca dari berkas migrasinya, supaya perbedaannya jadi test merah, bukan
+  timeout di produksi;
+- setiap jenis di `BATAL_TARGET_JENIS` punya label di `JENIS_TRANSAKSI_LABEL`
+  (menutup temuan #3 Fase 0.3 sekaligus mencegahnya terulang).
+
+Tiga titik sisanya (keanggotaan kartu **dua sisi**, KIBAR, dan
+`fn_aset_awal_2026_terkunci` ↔ `_batch`) butuh integrasi DB — jadwalkan sebagai
+test integrasi `authenticated` di baris metrik yang sudah ada, jangan dipaksakan
+jadi unit test yang cuma pura-pura menutupinya.
 
 ### Temuan Fase 0.3
 
@@ -200,11 +226,20 @@ komponen 1.400 baris ke fungsi murni **berikut test-nya**.
 | # | Ekstrak | Dari | Kenapa duluan |
 |---|---|---|---|
 | 2.1 | `aset/domain/visibilitas.ts` — `SEMBUNYI`/`MUNCUL` + replay | 6 berkas | duplikasi terbanyak; urutan kronologisnya halus (aksi terakhir menang, bukan "batal selalu menang") |
+| 2.1b | `aset/domain/guardPembatalan.ts` — cek "transaksi lebih baru" (rules.md §1.3) | `Koreksi.tsx`, `Penghapusan.tsx`, `Pengadaan.tsx`, `Kapitalisasi.tsx`, `Reklasifikasi.tsx` (dikonfirmasi grep, 5 berkas) | guard integritas ledger terduplikasi lima kali; kelupaan di menu batal baru = rantai replay engine RUSAK, bukan cuma laporan salah — satu tingkat di atas visibilitas |
 | 2.2 | `pengalihan/domain/kepemilikan.ts` — `ownersAt` | `lib/pengalihan.ts` + 2 halaman | atribusi SKPD period-aware, sudah pernah salah |
 | 2.3 | `aset/domain/kolom.ts` — `COLS`/`EXPORT_ORDER`/`EXPORT_COLS` | Daftar Barang ↔ Daftar Barang Awal | pasangan kembar yang dijaga komentar; sekali ekstrak, "kelupaan" jadi mustahil |
-| 2.4 | `kode-register/domain/` — `prefixKodeRegister`, `bergeserDariNibar` | `lib/kodeRegister.ts` | pembedaan `null` vs `false` mudah rusak; kembar dengan `fn_prefix_kode_register` di SQL |
+| 2.4 | `kode-register/domain/` — `prefixKodeRegister`, `bergeserDariNibar` | `lib/kodeRegister.ts` | pembedaan `null` vs `false` mudah rusak; kembar dengan `fn_prefix_kode_register` di SQL — ekstraksi WAJIB disertai test yang membandingkan output TS vs `fn_prefix_kode_register` lewat query nyata, bukan cuma memindahkan fungsinya |
 | 2.5 | `pelaporan/domain/` — agregasi rekonsiliasi | `lib/rekon.ts` (25 KB) | berkas terbesar di `lib/`, murni-nya bisa dipisah dari I/O-nya |
 | 2.6 | `perolehan/domain/draft.ts` — validasi & materialisasi draft | `Pengadaan.tsx` + `PerolehanManual.tsx` | aturan approval terjepit di dalam JSX |
+
+**Kandidat lain yang dipantau tapi belum masuk giliran** (audit 2026-08-03): guard
+`bolehSetujuiJurnal()` (self-approval, migrasi 20260727_01) tercermin di 4
+komponen Cara Perolehan; konstanta `*_ELIGIBLE_GOLONGAN` (Pemanfaatan,
+Pengamanan, KIR — 3 berkas terpisah) mengulang pola "golongan mana yang boleh"
+tanpa satu sumber. Keduanya kelas risiko sama dengan 2.1–2.6 (aturan bisnis
+duplikat di komponen), naikkan ke tabel begitu ada fitur yang mendarat di
+salah satu berkasnya.
 
 ### Resep satu ekstraksi (satu PR, ±2–4 jam)
 
@@ -291,6 +326,20 @@ Per halaman, urutan kerjanya:
   sesudah.
 - Pindahkan agregasi/paginasi/penyaringan ke RPC `SECURITY INVOKER` (biarkan
   RLS tetap berlaku) atau ke Route Handler bila butuh komposisi lintas tabel.
+- **Checklist RLS wajib untuk tiap RPC/policy/index baru di fase ini**
+  (rules.md §14–20 — ditulis eksplisit di sini karena fase ini fokusnya di sisi
+  TS dan bagian SQL-nya paling mudah kelupaan):
+  - fungsi apa pun di policy dibungkus InitPlan — `(SELECT fn_…())`, jangan
+    pernah telanjang (§14);
+  - predikat golongan/`jenis` diselesaikan lewat **partial index yang
+    predikatnya sama persis** dengan qual di kode — `LIKE` dan `=` pada ENUM
+    tak pernah bisa jadi index-cond di bawah RLS, dan beda sedikit membuat
+    index diabaikan **diam-diam** (§15, §25);
+  - `.order()` baru → pastikan ada index yang memuat kolom urutnya (§12);
+  - tabel besar yang selama ini hanya dibaca lewat RPC `SECURITY DEFINER`:
+    cek policy-nya sudah InitPlan **sebelum** halaman membacanya langsung (§20);
+  - migrasi PLAIN, bukan `CONCURRENTLY` (§23); import/backfill diakhiri
+    `ANALYZE` (§17).
 - `EXPLAIN` **dengan RLS aktif** (rules.md §16) — tanpa itu verifikasinya
   tidak membuktikan apa pun.
 - Halamannya jadi Server Component; sisakan `'use client'` hanya untuk
