@@ -124,13 +124,20 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
     )
   }
 
-  const [{ data: trxRaw }, wilayahParts, skpdChain] = await Promise.all([
+  const [{ data: trxRaw }, wilayahParts, skpdChain, { data: kodefikasi }] = await Promise.all([
     admin.from('transaksi_bmd')
       .select('id,jenis,periode,tanggal,nilai,skpd_asal,skpd_tujuan,payload,keterangan,header_id,jurnal_header(no_sk,tanggal,kategori,payload)')
       .eq('aset_id', aset.id).order('id', { ascending: true }),
     aset.wilayah_kode ? resolveWilayah(admin, aset.wilayah_kode) : Promise.resolve([] as string[]),
     aset.skpd_id ? resolveSkpdChain(admin, aset.skpd_id) : Promise.resolve([] as SkpdNode[]),
+    admin.from('admin_kodefikasi_bmd').select('uraian').eq('kode', aset.kode).maybeSingle(),
   ])
+  // Uraian Barang (II.4) diambil dari kodefikasi — pola sama Daftar Barang &
+  // Penyusutan, supaya selalu ikut kodefikasi terkini. Kolom tersimpan
+  // `aset.uraian_barang` jadi CADANGAN saja (kode tak terdaftar / query gagal):
+  // barang hasil PEMECAHAN yg dibuat sebelum perbaikan ini kolomnya null, jadi
+  // kartu yang dicetak keluar "-" padahal kodenya jelas punya uraian.
+  const uraianBarang = (kodefikasi as { uraian: string | null } | null)?.uraian || aset.uraian_barang
   const trx = (trxRaw || []) as unknown as {
     id: number; jenis: string; periode: string; tanggal: string; nilai: number
     skpd_asal: number | null; skpd_tujuan: number | null
@@ -252,7 +259,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
             <div className="kibar-no-print">
               <PrintLabelButton item={{
                 nibar: aset.nibar || '-',
-                namaBarang: aset.nama_barang || aset.uraian_barang || '-',
+                namaBarang: aset.nama_barang || uraianBarang || '-',
                 merekTipe: aset.merek_tipe,
                 skpdNama: pemegang,
                 tglPerolehan: aset.tgl_perolehan,
@@ -274,7 +281,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
           <Row label="1. Kode Barang" value={dash(aset.kode)} mono />
           <Row label="2. Kode Lokasi" value={dash(kodeLokasi)} mono />
           <Row label="3. Kode Register Barang" value={dash(aset.nibar)} mono />
-          <Row label="4. Uraian Barang" value={dash(aset.uraian_barang)} />
+          <Row label="4. Uraian Barang" value={dash(uraianBarang)} />
           <Row label="5. Nama Barang" value={dash(aset.nama_barang)} />
           <Row label="6. Luas" value={aset.luas != null ? String(aset.luas) : '-'} />
           <Row label="7. Satuan Barang" value={dash(aset.satuan)} />

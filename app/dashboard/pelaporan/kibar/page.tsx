@@ -37,6 +37,7 @@ export default function KibarSearchPage() {
   const [search, setSearch] = useState('')
   const [skpdMap, setSkpdMap] = useState<Record<number, string>>({})
   const [rows, setRows] = useState<Row[] | null>(null)
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [printOpen, setPrintOpen] = useState(false)
@@ -78,8 +79,25 @@ export default function KibarSearchPage() {
     if (golongan) q = q.like('kode', `${golongan}.%`)
     if (search.trim()) q = q.or(`nama_barang.ilike.%${search}%,nibar.ilike.%${search}%,kode.ilike.${search}%`)
     const { data } = await q
-    setRows((data as Row[]) || [])
+    const list = (data as Row[]) || []
+    setRows(list)
+    setUraianMap(await fetchUraian(list.map(r => r.kode)))
     setLoading(false)
+  }
+
+  // Uraian baku per kode dari admin_kodefikasi_bmd — pola sama Daftar Barang &
+  // Penyusutan (selalu ikut kodefikasi terkini). Kolom tersimpan
+  // `aset.uraian_barang` cuma dipakai sbg cadangan: barang hasil PEMECAHAN yg
+  // dibuat sebelum perbaikan ini kolomnya null, jadi kalau cuma baca kolom,
+  // uraiannya tampil "-" padahal kodenya jelas punya uraian.
+  async function fetchUraian(kodes: string[]) {
+    const uniq = [...new Set(kodes)]
+    const map: Record<string, string> = {}
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
+    }
+    return map
   }
 
   function toggle(id: string) {
@@ -97,7 +115,7 @@ export default function KibarSearchPage() {
     .filter(r => selected.has(r.id))
     .map(r => ({
       nibar: r.nibar || '-',
-      namaBarang: r.nama_barang || r.uraian_barang || '-',
+      namaBarang: r.nama_barang || uraianMap[r.kode] || r.uraian_barang || '-',
       merekTipe: r.merek_tipe,
       skpdNama: skpdMap[r.skpd_id ?? -1] || '-',
       tglPerolehan: r.tgl_perolehan,
@@ -166,7 +184,7 @@ export default function KibarSearchPage() {
                     <td className="table-td"><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
                     <td className="table-td text-xs">{r.nibar || '-'}</td>
                     <td className="table-td text-xs">{golonganLabels[kodeLevel3(r.kode)] || kodeLevel3(r.kode)}</td>
-                    <td className="table-td text-xs">{r.uraian_barang || '-'}</td>
+                    <td className="table-td text-xs">{uraianMap[r.kode] || r.uraian_barang || '-'}</td>
                     <td className="table-td text-xs">{r.nama_barang || '-'}</td>
                     <td className="table-td text-xs">{r.merek_tipe || '-'}</td>
                     <td className="table-td text-xs">{fmtTgl(r.tgl_perolehan)}</td>

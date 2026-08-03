@@ -800,6 +800,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       const kodeSkpd = (skpdRow as { kode_skpd: string }).kode_skpd
 
       const batas = (await fetchBatasKapitalisasi(supabase, [induk.kode])).get(induk.kode)
+      // Uraian baku ikut kode induk (pecahan kodenya sama persis). WAJIB diisi:
+      // KIBAR & KIR membaca kolom TERSIMPAN `aset.uraian_barang`, bukan lookup
+      // kodefikasi spt Daftar Barang/Penyusutan — kalau dibiarkan null, kartu
+      // yang dicetak keluar "-" padahal kodenya jelas punya uraian.
+      const uraianInduk = (await fetchUraian([induk.kode]))[induk.kode] || null
       const tahun = (induk.tgl_perolehan || h.tanggal).slice(0, 4)
       const nibarItems = alokasiPecah.map((a, i) => ({ key: String(i), kode: induk.kode, intraEkstra: klasifikasiKomptabel(a.np, batas), tahun }))
       let nibarMap: Map<string, string>
@@ -813,7 +818,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       const asetRows: Record<string, unknown>[] = alokasiPecah.map((a, i) => {
         const jumlah = parseInt(pecahan[i].jumlah, 10)
         const row: Record<string, unknown> = {
-          nibar: nibarMap.get(String(i)) || null, kode: induk.kode, jumlah,
+          nibar: nibarMap.get(String(i)) || null, kode: induk.kode, uraian_barang: uraianInduk, jumlah,
           harga_satuan: a.np / Math.max(1, jumlah), nilai_perolehan: a.np,
           tgl_perolehan: induk.tgl_perolehan, skpd_id: skpdId,
           intra_ekstra: klasifikasiKomptabel(a.np, batas),

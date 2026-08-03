@@ -1043,6 +1043,24 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   Export (teks polos, tanpa penanda). **Nambah cara perolehan baru = CHECK +
   `CARA_PEROLEHAN_LABEL` + menunya, ketiganya.**
 
+- **`uraian_barang` punya DUA sumber, dan halaman-halaman membacanya beda —
+  setiap pintu yang MEMBUAT aset wajib mengisi kolomnya.** Sumber baku ada di
+  `admin_kodefikasi_bmd.uraian`; `aset.uraian_barang` cuma SALINAN yang ditulis
+  saat barang dibuat. Daftar Barang & Penyusutan sengaja lookup ke kodefikasi
+  (selalu ikut kodefikasi terkini), tapi **KIBAR, KIR, Kendaraan, kartu
+  Pengadaan/Perolehan Manual, Reklasifikasi, & Inventarisasi membaca kolom
+  tersimpan** — jadi pintu pembuat aset yang lupa mengisinya bikin kartu CETAK
+  keluar "-" sementara layar register kelihatan baik-baik saja, dan tak ada
+  yang error. Persis itu yang terjadi 2026-08-03: **Koreksi → Pemecahan Barang**
+  tak pernah mengisi `uraian_barang` (Pengadaan & Perolehan Manual mengisi),
+  jadi 7 pecahan Lapak UMKM tampil normal di Daftar Barang tapi kosong di
+  KIBAR. Diperbaiki dua lapis: pemecahan kini mengisi kolomnya dari kodefikasi
+  (kode pecahan = kode induk), DAN KIBAR (daftar + kartu) kini lookup kodefikasi
+  dulu dgn kolom tersimpan sbg cadangan — supaya baris yang terlanjur dibuat
+  ikut benar tanpa nunggu backfill. Backfill 11 baris: migrasi 20260803_01
+  (aman dari `trg_aset_kode_register`, `uraian_barang` di luar `UPDATE OF`-nya).
+  **Bikin pintu pembuat aset baru → isi `uraian_barang`.**
+
 ## Spesifikasi barang: wide table + field per golongan (lib/asetFields.ts)
 
 Field spesifikasi (mis. no. rangka/mesin utk Peralatan&Mesin, dokumen
