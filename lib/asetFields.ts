@@ -32,8 +32,9 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   longitude: 'Longitude',
   penggunaan_pengamanan: 'Penggunaan',
   keterangan: 'Keterangan',
-  // Atribut tambahan — TIDAK masuk template golongan (form Pengadaan tak berubah);
-  // dipakai HANYA oleh menu Koreksi Spesifikasi yang menambahkannya secara eksplisit.
+  // Atribut tambahan — dipakai menu Koreksi Spesifikasi (ATRIBUT_KOREKSI).
+  // KECUALI `kondisi_barang`, yang sejak 2026-08-04 juga masuk ketiga template
+  // golongan → ikut muncul di form input awal (Pengadaan/Hibah dst).
   satuan: 'Satuan',
   asal_usul: 'Asal Usul',
   tahun_pengadaan: 'Tahun Pengadaan',
@@ -66,20 +67,24 @@ export const FIELD_OPTIONS: Partial<Record<FieldKey, string[]>> = {
 // ── 3 template field, dipetakan ke 8 golongan (lib/bmd GOLONGAN_REKAP) ──────
 // TANAH-like: Tanah, Gedung&Bangunan, Jalan/Jaringan/Irigasi (semua bisa py
 // dokumen kepemilikan lahan + titik lokasi).
+// ⚠️ `kondisi_barang` ada di KETIGA template, tepat sebelum Penggunaan &
+// Keterangan (permintaan user 2026-08-04) — kondisi fisik itu atribut universal,
+// bukan milik satu golongan. Ia juga masih terdaftar di ATRIBUT_KOREKSI; tak
+// dobel karena koreksiFieldKeys() menyaring yang sudah ada.
 const TEMPLATE_TANAH: FieldKey[] = [
   'nama_barang', 'spesifikasi_lainnya', 'jenis_hak', 'luas',
   'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
-  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan_pengamanan', 'keterangan',
+  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan',
 ]
 // PERALATAN & MESIN: kendaraan dkk (nomor rangka/mesin/polisi/BPKB) + lokasi.
 const TEMPLATE_PERALATAN_MESIN: FieldKey[] = [
   'nama_barang', 'merek_tipe', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi', 'spesifikasi_lainnya',
-  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan_pengamanan', 'keterangan',
+  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan',
 ]
 // ASET LAINNYA-like: Aset Tetap Lainnya, KDP, ATB, Aset Lain-Lain — sama seperti
 // Peralatan&Mesin tanpa nomor kendaraan.
 const TEMPLATE_ASET_LAINNYA: FieldKey[] = [
-  'nama_barang', 'merek_tipe', 'spesifikasi_lainnya', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan_pengamanan', 'keterangan',
+  'nama_barang', 'merek_tipe', 'spesifikasi_lainnya', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan',
 ]
 
 // Golongan level-3 (dari kodeLevel3) → field yang relevan, urut tampil.
@@ -156,8 +161,14 @@ export function allSameGolongan(kodes: string[]): boolean {
 
 // Kolom `aset` yang diisi lewat popup Edit Spesifikasi (union semua template) —
 // dipakai saat materialize draft → aset (Pengadaan & PerolehanManual).
+// ⚠️ WAJIB memuat SEMUA key yang ada di template golongan — kolom yang lupa
+// didaftarkan di sini akan tetap muncul di popup & tersimpan di draft, tapi
+// DIAM-DIAM hilang saat draft di-materialize ke `aset` (approve). Itu yang
+// membuat `kondisi_barang` ikut ditambahkan bersamaan dgn masuknya ia ke ketiga
+// template. Nilainya tunduk CHECK `aset_kondisi_barang_check` (5 opsi, migrasi
+// 20260709_04) — sama persis dgn FIELD_OPTIONS.kondisi_barang di atas.
 export const ASET_FIELD_COLS = ['nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
   'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak',
-  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'penggunaan_pengamanan', 'keterangan'] as const
+  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan'] as const
 // Kolom spesifikasi yang bertipe numeric di DB → di-cast toNum saat materialize.
 export const ASET_NUM_COLS = new Set(['luas', 'latitude', 'longitude'])

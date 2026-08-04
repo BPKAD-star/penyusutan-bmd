@@ -36,6 +36,7 @@ import SearchSelect from '@/components/SearchSelect'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { BENTUK_KONTRAK_OPT, bentukKontrakLabel, type BentukKontrak } from '@/lib/bentukKontrak'
 import { backdropClose } from '@/components/backdropClose'
+import { useDraftSeleksi, DraftSearchBar, DraftBulkBar } from './draftSeleksi'
 
 // Bentuk/Jenis Kontrak kini dari konstanta bersama (lib/bentukKontrak) — 5 opsi
 // termasuk Surat Perjanjian. Alias dipertahankan supaya referensi lama tetap jalan.
@@ -476,6 +477,16 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     const items = (j.payload.draft_items || []).filter(i => i.key !== key)
     if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
   }
+  // Hapus massal (barang yang dicentang). Draft belum menyentuh ledger sama
+  // sekali — ini cuma UPDATE payload jurnal_header, jadi tak melanggar
+  // append-only. Aset yang SUDAH disetujui tak lewat sini (kartunya read-only).
+  async function hapusDraftItems(keys: string[]) {
+    if (keys.length === 0) return
+    if (!confirm(`Hapus ${keys.length} barang yang dicentang dari draft? Tidak bisa dibatalkan.`)) return
+    const buang = new Set(keys)
+    const items = (j.payload.draft_items || []).filter(i => !buang.has(i.key))
+    if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
+  }
   // Edit spesifikasi draft. foto.replace (mode 1 barang) = ganti penuh set foto.
   // foto.append (mode banyak barang) = TAMBAH foto baru ke tiap barang yg dicentang
   // (di-"split" ke semua yg dipilih, tanpa menghapus foto lama masing-masing).
@@ -640,6 +651,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
           onHapusKontrak={hapusKontrak}
           onTambah={tambahDraftItems}
           onHapusItem={hapusDraftItem}
+          onHapusItems={hapusDraftItems}
           onEditSpes={keys => setSpecKeys(keys)}
           onApprove={approveHeader}
         />
@@ -704,24 +716,20 @@ function useFirstFotoUrls(paths: string[]) {
 }
 
 // ── Kartu "Menunggu Persetujuan" ─────────────────────────────────────────────
-function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKontrak, onTambah, onHapusItem, onEditSpes, onApprove }: {
+function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKontrak, onTambah, onHapusItem, onHapusItems, onEditSpes, onApprove }: {
   h: Jurnal; isAdmin: boolean; busy: boolean; golonganLabels: Record<string, string>
   onEditHeader: () => void; onHapusKontrak: () => void
   onTambah: (items: DraftItem[]) => void
   onHapusItem: (key: string) => void
+  onHapusItems: (keys: string[]) => void
   onEditSpes: (keys: string[]) => void
   onApprove: () => void
 }) {
   const items = h.payload.draft_items || []
   const [showTambah, setShowTambah] = useState(items.length === 0)
-  const [checked, setChecked] = useState<Set<string>>(new Set())
   const fotoUrls = useFirstFotoUrls(items.map(i => i.foto[0]).filter(Boolean))
-
-  const allChecked = items.length > 0 && items.every(i => checked.has(i.key))
-  function toggleAll() { setChecked(allChecked ? new Set() : new Set(items.map(i => i.key))) }
-  function toggleOne(key: string) {
-    setChecked(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next })
-  }
+  // Pencarian + seleksi + aksi massal: modul bersama dgn PerolehanManual.
+  const sel = useDraftSeleksi(items)
 
   return (
     <div className="card overflow-hidden border-amber-200">
@@ -764,11 +772,15 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
 
       {items.length > 0 && (
         <>
+          <DraftSearchBar q={sel.q} setQ={sel.setQ} jml={sel.terlihat.length} total={items.length} />
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="table-th w-8 text-center"><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
+                  <th className="table-th w-8 text-center">
+                    <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll}
+                      title={sel.q ? 'Centang semua barang pada hasil pencarian' : 'Centang semua barang'} />
+                  </th>
                   <th className="table-th w-8 text-center"></th>
                   <th className="table-th">Kode Rekening</th>
                   <th className="table-th">Uraian Barang</th>
@@ -781,28 +793,24 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {items.map(it => (
-                  <DraftRow key={it.key} item={it} checked={checked.has(it.key)}
-                    onToggle={() => toggleOne(it.key)}
+                {sel.terlihat.map(it => (
+                  <DraftRow key={it.key} item={it} checked={sel.checked.has(it.key)}
+                    onToggle={() => sel.toggleOne(it.key)}
                     onDelete={() => onHapusItem(it.key)}
                     fotoUrl={it.foto[0] ? fotoUrls[it.foto[0]] : undefined} />
                 ))}
+                {sel.terlihat.length === 0 && (
+                  <tr><td colSpan={10} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
-          {checked.size > 0 && (() => {
-            const checkedKodes = items.filter(i => checked.has(i.key)).map(i => i.kode)
-            const sameGol = allSameGolongan(checkedKodes)
-            return (
-              <div className="px-5 py-3 border-t border-gray-100 bg-teal/5 flex items-center justify-between">
-                <span className="text-xs text-gray-600">
-                  {checked.size} barang dicentang
-                  {!sameGol && <span className="text-amber-600"> — beda jenis BMD, tak bisa edit bersamaan (kolomnya beda)</span>}
-                </span>
-                <button className="btn-primary text-xs" disabled={!sameGol} onClick={() => onEditSpes([...checked])}>✎ Edit Spesifikasi ({checked.size})</button>
-              </div>
-            )
-          })()}
+          {sel.dipilih.length > 0 && (
+            <DraftBulkBar jml={sel.dipilih.length} tersembunyi={sel.tersembunyi}
+              sameGol={allSameGolongan(sel.dipilih.map(i => i.kode))}
+              onEdit={() => onEditSpes(sel.dipilih.map(i => i.key))}
+              onHapus={() => onHapusItems(sel.dipilih.map(i => i.key))} />
+          )}
         </>
       )}
 

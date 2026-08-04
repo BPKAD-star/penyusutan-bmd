@@ -959,6 +959,42 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   sengaja read-only). Centang barang **beda golongan** sekaligus → tombol Edit
   Spesifikasi disabled (`allSameGolongan()`, lib/asetFields.ts) — kolomnya beda,
   tak boleh digabung/union.
+- **Pencarian + seleksi + aksi massal tabel draft = SATU modul bersama**
+  `components/pengelolaan/draftSeleksi.tsx` (`useDraftSeleksi` · `DraftSearchBar`
+  · `DraftBulkBar`), dipakai Pengadaan **dan** PerolehanManual (2026-08-04).
+  Dua kartu "Menunggu Persetujuan" itu memang kembar sejak awal (checklist →
+  Edit Spesifikasi massal); begitu ditambah pencarian & Hapus massal, menyalin
+  logikanya berarti utang "ubah satu, samakan yang lain" yang di repo ini sudah
+  berkali-kali dilanggar. KonstruksiPengadaan **tidak** ikut — barang KDP-nya
+  hidup di `payload.barang[]`, bukan `draft_items`.
+  - **Centang-semua = semua yang LOLOS pencarian saat itu**, bukan seluruh isi
+    kontrak (permintaan user: satu kontrak bisa berisi beberapa jenis aset dgn
+    puluhan barang, mencentang satu-satu tak masuk akal). Tanpa kata kunci ya
+    seluruhnya, seperti dulu.
+  - **Centang TETAP tersimpan waktu kata kuncinya diganti** — supaya barang bisa
+    dikumpulkan dari beberapa pencarian. Konsekuensinya bisa ada barang
+    tercentang di LUAR hasil pencarian, dan itu WAJIB tertulis di bilah aksi
+    ("N di luar hasil pencarian"): tanpa itu tombol Hapus membuang barang yang
+    tak kelihatan di layar. Jangan hapus keterangan itu demi kerapian.
+  - Aksi massal jalan di atas `sel.dipilih` (diturunkan dari `items`), **bukan**
+    isi `checked` mentah — key barang yang sudah dihapus bisa tertinggal di set.
+  - **Hapus massal cuma ada di kartu DRAFT.** Isinya `UPDATE
+    jurnal_header.payload`, belum menyentuh ledger sama sekali → append-only tak
+    dilanggar. Kartu yang sudah disetujui tetap read-only; membuang barangnya
+    tetap lewat Buka Kunci → edit → setujui ulang, atau `batal_pengadaan`.
+- **`kondisi_barang` ikut di form input awal, bukan cuma menu Koreksi**
+  (permintaan user 2026-08-04): ditaruh di KETIGA template `GOLONGAN_FIELDS`
+  tepat sebelum Penggunaan & Keterangan — kondisi fisik itu atribut universal.
+  Ia masih terdaftar di `ATRIBUT_KOREKSI` juga & tak dobel karena
+  `koreksiFieldKeys()` menyaring yang sudah ada. **Tak ada migrasi**: kolom
+  `aset.kondisi_barang` + CHECK 5 opsi sudah ada sejak 20260707_04 & 20260709_04,
+  dan `FIELD_OPTIONS.kondisi_barang` sudah kembar dgn CHECK itu.
+  ⚠️ Bareng itu ia ditambahkan ke **`ASET_FIELD_COLS`** — daftar itu yang
+  menentukan field mana yang benar-benar ditulis ke `aset` saat draft
+  di-materialize. **Menambah key ke template golongan TANPA menambahkannya ke
+  `ASET_FIELD_COLS` = field muncul di popup, tersimpan di draft, lalu HILANG
+  DIAM-DIAM saat approve** — tak ada yang error, operator baru sadar berbulan
+  kemudian. Tambahkan ke dua-duanya.
 - **PEMISAHAN TUGAS: pembuat kartu tak boleh menyetujui kartunya sendiri**
   (migrasi `20260727_01`, keputusan user 2026-07-27). Latarnya: picker SKPD
   (`SkpdCombobox` prop `lockToOperator`) dulu TERKUNCI MATI ke node SKPD user;
