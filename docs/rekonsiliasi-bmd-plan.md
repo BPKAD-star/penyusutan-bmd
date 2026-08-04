@@ -1,7 +1,13 @@
 # Rencana Implementasi — Berita Acara Rekonsiliasi BMD
 
-Status: **DRAFT untuk review** (belum ada kode fitur). Disepakati dari sesi
-diskusi 2026-07-20.
+Status: **Fase 1–3 SUDAH JALAN** (per 2026-08-04). Disepakati dari sesi diskusi
+2026-07-20; DECISION-1 dijawab user 2026-08-04 (**Opsi A**, lihat §5.4).
+Rincian status per fase & sisa pekerjaannya ada di §10.
+
+Kodenya: `lib/rekon.ts` (snapshot period-correct, dekomposisi mutasi, atribusi
+beban/akumulasi) + `app/dashboard/pelaporan/rekonsiliasi/page.tsx` (tabel) +
+`components/pelaporan/RekonDetailModal.tsx` (drill-down) + `lib/rekon.test.ts`
+(uji atribusi, memakai contoh angka §6 sebagai patokan).
 
 Menu baru: **Pelaporan → Laporan BMD → Rekonsiliasi BMD** (halaman terpisah,
 sibling di bawah Laporan BMD). Read-only, tanpa perubahan skema/ledger. Export
@@ -220,9 +226,18 @@ reconcile):
   Awal). Efek kapitalisasi terhadap masa manfaat sudah otomatis tercermin di
   `beban_P` hasil engine → tak perlu koreksi manual.
 
-> **DECISION-1 (perlu konfirmasi di review):** apakah beban aset yang
-> di-kapitalisasi tetap penuh di Saldo Awal (usulan di atas), atau sebagian
-> dipindah ke baris Kapitalisasi? Usulan di atas paling sederhana & pasti tie-out.
+> **DECISION-1 — DIJAWAB (user, 2026-08-04): OPSI A**, yakni usulan di atas —
+> beban aset yang di-kapitalisasi/dikoreksi tetap PENUH di baris Saldo Awal;
+> baris Kapitalisasi/Koreksi cuma membawa Δ perolehan, bebannya nol.
+> Alasan yang dipakai: (1) tiap aset menyumbang persis sekali ke tiap ukuran →
+> rantainya pasti tie-out tanpa selisih pembulatan; (2) engine cuma menghasilkan
+> SATU angka beban per aset per periode — efek kapitalisasi terhadap masa manfaat
+> sudah melebur di dalamnya, jadi angka split-nya bukan dibaca melainkan dikarang.
+> Konsekuensi yang diterima: baris Kapitalisasi tak menceritakan "rehab ini
+> menambah beban sekian"; dampaknya baru terbaca lewat naiknya beban di baris
+> Saldo Awal periode berikutnya.
+> Ditegakkan di `attribusiPenyusutan` (lib/rekon.ts) & dikunci test
+> `lib/rekon.test.ts` ("OPSI A — baris Kapitalisasi cuma membawa Δ perolehan").
 
 ---
 
@@ -329,30 +344,54 @@ justru output yang dicari (keputusan #1).
 
 ## 10. Fase implementasi
 
-- **Fase 0** — review dokumen ini; tuntaskan DECISION-1 & DECISION-2 (§5.4, §7, §11).
-- **Fase 1** — snapshot period-correct (RPC/mesin) + halaman kerangka + tabel
-  Saldo Awal/Akhir 4 ukuran × intra/ekstra × 8 golongan × 2 semester. Lolos
-  self-check #2, #3, #4.
-- **Fase 2** — dekomposisi mutasi (Penambahan/Pengurangan) untuk **Nilai
-  Perolehan** (perluasan Model 3). Lolos self-check #1 utk perolehan.
-- **Fase 3** — atribusi **Beban & Akumulasi** penuh (§5.3–5.4). Lolos self-check
-  #1 utk akumulasi.
-- **Fase 4** — Export Excel + badge reconcile + polish.
+- ~~**Fase 0**~~ **SELESAI** — DECISION-1 dijawab (Opsi A, §5.4); DECISION-2
+  diambil jalur "reuse mesin client" (§7 alternatif berisiko-rendah).
+- ~~**Fase 1**~~ **SELESAI** — snapshot period-correct + halaman + tabel Saldo
+  Awal/Akhir 4 ukuran × intra/ekstra × 8 golongan.
+- ~~**Fase 2**~~ **SELESAI** — dekomposisi mutasi utk **Nilai Perolehan** +
+  baris "Selisih (belum terpetakan)" sbg penyeimbang.
+- ~~**Fase 3**~~ **SELESAI (2026-08-04)** — atribusi **Beban & Akumulasi**
+  (`attribusiPenyusutan`, lib/rekon.ts). Aturannya per SEL (golongan ×
+  komptabel), bukan per aset global — itu yang bikin reklasifikasi antar
+  golongan tetap tie-out di kedua selnya. Yang menegakkan kebenaran adalah uji
+  keanggotaan sel (aset ada di P−1 / di P), BUKAN daftar kategori; daftar
+  `MASUK_KEYS`/`KELUAR_KEYS` cuma menentukan baris mana yang kebagian label
+  ketika satu aset punya beberapa baris di sel yang sama.
+
+  **Sisa yang belum, dan sengaja:**
+  - **Fase 2b** — `reklas_komptabel` (baris Reklasifikasi → Intra/Ekstra) masih
+    belum punya `MutasiKey`; angkanya jatuh ke baris **Selisih**. Rantainya tetap
+    reconcile, cuma tak berlabel.
+  - **Badge reconcile** (§9) belum ada; untuk sekarang baris Selisih yang jadi
+    penunjuknya — nol artinya cocok sempurna.
+- **Fase 4** — badge reconcile + polish. (Export Excel **sudah** ada dan kini
+  membawa keempat ukuran untuk semua baris.)
 - **Fase 5 (opsional/terpisah)** — naikkan `fn_rekap_bmd` (Laporan BMD) ke
   standar period-correct supaya dua laporan konsisten (§4.3).
 
+> ⚠️ **Catatan cara baca kolom Akumulasi** (konsekuensi §5.3 yang gampang
+> disalahpahami saat tie-out): kolom Akumulasi **tidak** menjumlah vertikal
+> seperti Nilai Perolehan. Akumulasi bertambah karena **beban**, dan beban ada di
+> kolomnya sendiri — bukan baris Penambahan. Rantainya: `Saldo Awal + Beban
+> periode + akumulasi bawaan barang masuk − akumulasi barang keluar = Saldo
+> Akhir`. Ini juga sebabnya self-check §9 #1 untuk Akumulasi harus dibaca sebagai
+> rantai berikut suku ΣBeban, bukan `Σ Penambahan − Σ Pengurangan` polos —
+> contoh angka §6 memang begitu (190 + 60 + 0 − 30 = 220).
+
 ---
 
-## 11. Item yang MASIH perlu keputusan (sebelum Fase 1)
+## 11. Item yang MASIH perlu keputusan
 
-- **DECISION-1** (§5.4): penempatan beban aset yang di-kapitalisasi/koreksi —
-  usulan: tetap penuh di Saldo Awal. Konfirmasi?
-- **DECISION-2** (§7): RPC replay period-aware di SQL (lebih cepat, lebih banyak
-  kerja) **vs** reuse mesin client dari halaman Penyusutan (lebih cepat jadi,
-  performa se-kabupaten perlu diuji). Rekomendasi: mulai reuse mesin client utk
-  kebenaran dulu, optimalkan ke RPC kalau lambat.
+- ~~**DECISION-1**~~ (§5.4) **DIJAWAB 2026-08-04: Opsi A** — beban aset yang
+  dikapitalisasi/dikoreksi tetap penuh di baris Saldo Awal.
+- ~~**DECISION-2**~~ (§7) **DIAMBIL: reuse mesin client** (`fetchHiddenIds`,
+  `fetchOwnerOverrides`, `penyusutan_semester`) — kebenaran dulu. Konsekuensinya
+  beratnya ikut jumlah aset dalam scope: se-pemda ≈ 227rb posisi aset ditahan di
+  browser untuk DUA periode. Pemindahan agregasi ke RPC sudah terdaftar di
+  REFACTOR-PLAN §"Rekonsiliasi & Laporan BMD"; **ukur dulu sebagai pengurus SKPD
+  TERBESAR sebelum menyimpulkan** (rules.md §18).
 - **DECISION-3** (§4.3, Fase 5): apakah `fn_rekap_bmd`/Laporan BMD ikut
-  dinaikkan ke period-correct sekarang atau nanti.
+  dinaikkan ke period-correct sekarang atau nanti. **Belum diputuskan.**
 - **Data quality**: `kode_rekening` teks bebas & hanya di Pengadaan → baris
   "Belanja Jasa" hanya menangkap pengadaan ber-5.1 yang benar terisi. Perlu
   disepakati bahwa yang kosong = Cara Perolehan biasa (sudah, Opsi B).

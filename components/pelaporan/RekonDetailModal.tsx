@@ -21,10 +21,21 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
 }) {
   const [q, setQ] = useState('')
 
-  // Beban/akumulasi/nilai buku itu posisi AKHIR PERIODE per ASET, bukan angka
-  // per transaksi — jadi totalnya dijumlah per aset UNIK. Kalau dijumlah per
-  // baris, aset yang punya dua baris mutasi (reklas keluar+masuk, kapitalisasi
-  // berkali-kali dalam satu semester) bakal terhitung dobel.
+  // DUA hal berbeda yang gampang tertukar, makanya dipisah tegas:
+  //
+  // (1) KONTRIBUSI (r.beban / r.akumulasi) — bagian baris ini terhadap angka di
+  //     tabel Rekonsiliasi. Dijumlah PER BARIS, dan totalnya WAJIB sama persis
+  //     dgn sel yang diklik. Banyak yang nol: beban/akumulasi cuma menempel di
+  //     baris yang menceritakan barang MASUK/KELUAR sel — barang yang cuma
+  //     berubah nilai (kapitalisasi, koreksi, termin KDP kedua dst) bebannya ada
+  //     di baris Saldo Awal, bukan di sini (lihat attribusiPenyusutan).
+  // (2) POSISI akhir periode per ASET (dari hasil engine) — konteks tambahan,
+  //     dijumlah per aset UNIK. Kalau ikut dijumlah per baris, aset yang punya
+  //     dua baris mutasi (reklas keluar+masuk, kapitalisasi berkali-kali dalam
+  //     satu semester) terhitung dobel.
+  const totalKontribusi = (rs: MutasiLine[]) =>
+    rs.reduce((s, r) => ({ beban: s.beban + r.beban, akumulasi: s.akumulasi + r.akumulasi }), { beban: 0, akumulasi: 0 })
+
   const totalPenyusutan = (rs: MutasiLine[]) => {
     const out = { beban: 0, akumulasi: 0, nilaiBuku: 0 }
     const sudah = new Set<string>()
@@ -80,6 +91,8 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
         'Nama Barang': r.nama || '',
         Komptabel: r.komp === 'intra' ? 'Intra' : 'Ekstra',
         Nilai: r.nilai,
+        'Beban (kontribusi)': r.beban,
+        'Akumulasi (kontribusi)': r.akumulasi,
         'Beban / Smt': p ? p.beban : '',
         'Akumulasi': p ? p.akumulasi : '',
         'Nilai Buku': p ? p.nilaiBuku : '',
@@ -97,8 +110,11 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
               {tampil.length} transaksi · {grup.length} SKPD · total <b>{angka(total)}</b>
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
-              Beban, Akumulasi &amp; Nilai Buku = posisi barangnya pada akhir periode (dari hasil engine penyusutan),
-              bukan angka transaksi — totalnya dihitung per barang, bukan per baris.
+              Kolom <b>(kontribusi)</b> = bagian baris ini terhadap angka di tabel Rekonsiliasi; totalnya sama persis dengan
+              sel yang diklik. Banyak yang nol — beban &amp; akumulasi cuma menempel di baris yang menceritakan barang
+              masuk/keluar; barang yang hanya berubah nilai bebannya ada di baris Saldo Awal.
+              Kolom <b>Beban / Smt</b>, <b>Akumulasi</b> &amp; <b>Nilai Buku</b> = posisi barangnya pada akhir periode (hasil
+              engine penyusutan), bukan angka transaksi — totalnya dihitung per barang, bukan per baris.
             </p>
           </div>
           <button className="text-gray-400 hover:text-gray-600 text-xl leading-none flex-shrink-0" onClick={onClose}>×</button>
@@ -123,18 +139,22 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
                   <th className="table-th text-left">Kode</th>
                   <th className="table-th text-left">Nama Barang</th>
                   <th className="table-th text-right">Nilai</th>
+                  <th className="table-th text-right border-l border-gray-100" title="Kontribusi baris ini ke kolom Beban di tabel Rekonsiliasi">Beban (kontribusi)</th>
+                  <th className="table-th text-right" title="Kontribusi baris ini ke kolom Akumulasi di tabel Rekonsiliasi">Akum. (kontribusi)</th>
                   <th className="table-th text-right border-l border-gray-100">Beban / Smt</th>
                   <th className="table-th text-right">Akumulasi</th>
                   <th className="table-th text-right">Nilai Buku</th>
                 </tr>
               </thead>
               {grup.map(g => {
-                const tp = totalPenyusutan(g.rows)
+                const tp = totalPenyusutan(g.rows), tk = totalKontribusi(g.rows)
                 return (
                   <tbody key={g.id} className="divide-y divide-gray-50">
                     <tr className="bg-teal/5">
                       <td className="table-td font-semibold text-gray-800" colSpan={5}>{g.nama}</td>
                       <td className="table-td text-right font-semibold tabular-nums text-gray-800">{angka(g.total)}</td>
+                      <td className="table-td text-right font-semibold tabular-nums text-gray-800 border-l border-gray-100">{angka(tk.beban)}</td>
+                      <td className="table-td text-right font-semibold tabular-nums text-gray-800">{angka(tk.akumulasi)}</td>
                       <td className="table-td text-right font-semibold tabular-nums text-gray-800 border-l border-gray-100">{angka(tp.beban)}</td>
                       <td className="table-td text-right font-semibold tabular-nums text-gray-800">{angka(tp.akumulasi)}</td>
                       <td className="table-td text-right font-semibold tabular-nums text-gray-800">{angka(tp.nilaiBuku)}</td>
@@ -157,6 +177,8 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
                             <p className="text-gray-400 truncate" title={r.nibar || ''}>{r.nibar || '-'}</p>
                           </td>
                           <td className="table-td text-right tabular-nums whitespace-nowrap">{angka(r.nilai)}</td>
+                          <td className="table-td text-right tabular-nums whitespace-nowrap border-l border-gray-100 text-gray-600">{angka(r.beban)}</td>
+                          <td className="table-td text-right tabular-nums whitespace-nowrap text-gray-600">{angka(r.akumulasi)}</td>
                           <td className="table-td text-right tabular-nums whitespace-nowrap border-l border-gray-100">{sel(p?.beban)}</td>
                           <td className="table-td text-right tabular-nums whitespace-nowrap">{sel(p?.akumulasi)}</td>
                           <td className="table-td text-right tabular-nums whitespace-nowrap">{sel(p?.nilaiBuku)}</td>
@@ -170,6 +192,8 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
                 <tr>
                   <td className="table-td font-semibold text-gray-900" colSpan={5}>TOTAL</td>
                   <td className="table-td text-right font-semibold tabular-nums text-gray-900">{angka(total)}</td>
+                  <td className="table-td text-right font-semibold tabular-nums text-gray-900 border-l border-gray-100">{angka(totalKontribusi(tampil).beban)}</td>
+                  <td className="table-td text-right font-semibold tabular-nums text-gray-900">{angka(totalKontribusi(tampil).akumulasi)}</td>
                   <td className="table-td text-right font-semibold tabular-nums text-gray-900 border-l border-gray-100">{angka(totalPenyusutan(tampil).beban)}</td>
                   <td className="table-td text-right font-semibold tabular-nums text-gray-900">{angka(totalPenyusutan(tampil).akumulasi)}</td>
                   <td className="table-td text-right font-semibold tabular-nums text-gray-900">{angka(totalPenyusutan(tampil).nilaiBuku)}</td>

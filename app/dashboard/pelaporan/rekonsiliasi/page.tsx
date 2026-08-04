@@ -5,10 +5,13 @@
 // Angka PERIOD-CORRECT (lib/rekon.ts) — identik halaman Penyusutan → bisa tie-out.
 // Lihat docs/rekonsiliasi-bmd-plan.md.
 //
-// FASE 2 (ini): baris Penambahan/Pengurangan terisi utk NILAI PEROLEHAN + baris
+// FASE 2: baris Penambahan/Pengurangan terisi utk NILAI PEROLEHAN + baris
 // "Selisih (belum terpetakan)" penyeimbang (menjamin rantai reconcile & memunculkan
-// yg belum dipetakan, mis. reklas komptabel Intra/Ekstra). Beban & Akumulasi baris
-// mutasi = Fase 3 (kolomnya "—" utk baris mutasi; Saldo Awal/Akhir tetap 4 ukuran).
+// yg belum dipetakan, mis. reklas komptabel Intra/Ekstra).
+// FASE 3 (ini): Beban & Akumulasi ikut diatribusikan ke baris mutasi lewat
+// attribusiPenyusutan() (lib/rekon.ts) — DECISION-1 = Opsi A, beban aset yang
+// dikapitalisasi tetap penuh di baris Saldo Awal. Nilai Buku SELALU diturunkan
+// `perolehan − akumulasi`, tak pernah dijumlah vertikal (rencana §6).
 //
 // DRILL-DOWN (pola LRA): angka Nilai Perolehan baris mutasi bisa diklik → popup
 // RekonDetailModal berisi transaksi pembentuknya, dikelompokkan per SKPD. Halaman
@@ -30,9 +33,10 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
-  fetchSnapshot, prepareSnapshotCtx, fetchMutasiLines, aggregateMutasi, measuresOf, mutasiCellOf, fetchPenyusutanAset,
+  fetchSnapshotPositions, aggregatePositions, prepareSnapshotCtx, fetchMutasiLines, attribusiPenyusutan,
+  aggregateMutasi, measuresOf, mutasiCellOf, fetchPenyusutanAset, zeroUkuran,
   type Snapshot, type Mutasi, type MutasiCell, type MutasiKey, type MutasiLine, type Komptabel,
-  type PenyusutanAset,
+  type PenyusutanAset, type UkuranMutasi, type Measures,
 } from '@/lib/rekon'
 
 const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
@@ -86,7 +90,14 @@ const ROWS: RowDef[] = [
   { kind: 'saldo-akhir', label: 'SALDO AKHIR' },
 ]
 
-const sumKeys = (cell: MutasiCell, keys: MutasiKey[]) => keys.reduce((s, k) => s + (cell[k] || 0), 0)
+function sumKeys(cell: MutasiCell, keys: MutasiKey[]): UkuranMutasi {
+  const t = zeroUkuran()
+  for (const k of keys) {
+    const u = cell[k]; if (!u) continue
+    t.perolehan += u.perolehan; t.beban += u.beban; t.akumulasi += u.akumulasi
+  }
+  return t
+}
 
 // Kategori mutasi pembentuk sebuah baris — dipakai drill-down (klik angka →
 // popup rincian). null = baris yang TIDAK punya transaksi pembentuk:
@@ -102,15 +113,47 @@ function keysOfRow(row: RowDef): MutasiKey[] | null {
   return null
 }
 
-// Nilai Perolehan sebuah baris utk (golongan, komptabel).
-function perolehanRow(row: RowDef, cell: MutasiCell, awalP: number, akhirP: number): number | null {
+// Keempat ukuran sebuah baris utk (golongan, komptabel). null = sel kosong
+// (baris header/sub) — dibedakan dari 0 supaya yang tak punya angka tak terbaca
+// sebagai nol.
+type Nilai4 = { perolehan: number; beban: number; akumulasi: number; nilaiBuku: number } | null
+
+// Nilai Buku SELALU diturunkan `perolehan − akumulasi`, TAK PERNAH dijumlah
+// vertikal antar baris — beban menurunkan NB tapi bukan baris Penambahan/
+// Pengurangan, jadi penjumlahan vertikalnya meleset (contoh angka & buktinya di
+// docs/rekonsiliasi-bmd-plan.md §6: 470 vs 430).
+const nb4 = (perolehan: number, beban: number, akumulasi: number): Nilai4 =>
+  ({ perolehan, beban, akumulasi, nilaiBuku: perolehan - akumulasi })
+
+// bebanAwal = Beban baris SALDO AWAL (populasi lanjut) — hasil Fase 3, BUKAN
+// `aw.beban`. `aw.beban` itu beban periode P−1 (flow periode lalu); yang
+// dibutuhkan di sini beban periode BERJALAN atas populasi awal, supaya kolom
+// Beban menjumlah tepat ke beban penyusutan periode ini.
+function nilaiBaris(row: RowDef, cell: MutasiCell, aw: Measures, ak: Measures, bebanAwal: number): Nilai4 {
+  const t = sumKeys(cell, TAMBAH_KEYS), k = sumKeys(cell, KURANG_KEYS)
   switch (row.kind) {
-    case 'saldo-awal': return awalP
-    case 'saldo-akhir': return akhirP
-    case 'jumlah-t': return sumKeys(cell, TAMBAH_KEYS)
-    case 'jumlah-k': return sumKeys(cell, KURANG_KEYS)
-    case 'selisih': return (akhirP - awalP) - (sumKeys(cell, TAMBAH_KEYS) - sumKeys(cell, KURANG_KEYS))
-    case 'item': return row.key ? (cell[row.key] || 0) : 0
+    case 'saldo-awal': return nb4(aw.perolehan, bebanAwal, aw.akumulasi)
+    // Beban di baris ini MEMO: total beban periode berjalan atas populasi akhir.
+    // Ia bukan hasil roll-forward — beban itu flow, tak punya "saldo".
+    case 'saldo-akhir': return nb4(ak.perolehan, ak.beban, ak.akumulasi)
+    case 'jumlah-t': return nb4(t.perolehan, t.beban, t.akumulasi)
+    case 'jumlah-k': return nb4(k.perolehan, k.beban, k.akumulasi)
+    case 'item': {
+      const u = (row.key && cell[row.key]) || zeroUkuran()
+      return nb4(u.perolehan, u.beban, u.akumulasi)
+    }
+    case 'selisih': return nb4(
+      (ak.perolehan - aw.perolehan) - (t.perolehan - k.perolehan),
+      // Kolom Beban HARUS berjumlah persis ke beban periode berjalan (ak.beban).
+      // Sisanya = beban aset yang masuk sel ini tanpa baris mutasi yang
+      // memetakannya (mis. reklas komptabel Intra↔Ekstra, Fase 2b).
+      ak.beban - (bebanAwal + t.beban + k.beban),
+      // Rantai akumulasi (rencana §5.3) memuat ΣBeban periode berjalan sbg suku
+      // TERSENDIRI — akumulasi memang bertambah karena beban, dan beban itu ada
+      // di kolom sebelahnya, bukan di baris Penambahan. Jadi kolom Akumulasi
+      // sengaja TIDAK menjumlah vertikal seperti kolom Perolehan.
+      (ak.akumulasi - aw.akumulasi) - (ak.beban + t.akumulasi - k.akumulasi),
+    )
     default: return null // header/sub → tanpa angka
   }
 }
@@ -124,6 +167,8 @@ export default function RekonsiliasiPage() {
   const [snapAwal, setSnapAwal] = useState<Snapshot>({})
   const [snapAkhir, setSnapAkhir] = useState<Snapshot>({})
   const [mutasi, setMutasi] = useState<Mutasi>({})
+  // Fase 3 — Beban baris SALDO AWAL per golongan × komptabel (populasi lanjut).
+  const [bebanAwal, setBebanAwal] = useState<Record<string, { intra: number; ekstra: number }>>({})
   // Baris rinci pembentuk angka mutasi — ditahan di memori untuk drill-down.
   // Agregatnya dijumlah dari array yang SAMA (aggregateMutasi), jadi total di
   // popup tak mungkin beda dari angka yang diklik.
@@ -159,13 +204,18 @@ export default function RekonsiliasiPage() {
       // potong periodenya (dihitung di memori). Dulu keduanya menarik sendiri²,
       // jadi setiap kali Proses ledger disapu dua kali percuma.
       const ctx = await prepareSnapshotCtx(supabase, desc)
-      const [awal, akhir, mutLines] = await Promise.all([
-        fetchSnapshot(supabase, awalPeriode, desc, ctx),
-        fetchSnapshot(supabase, periode, desc, ctx),
+      // Snapshot ditahan dalam bentuk POSISI PER-ASET, bukan langsung agregat:
+      // atribusi Fase 3 harus tahu apakah SATU aset masuk/keluar/tetap di selnya
+      // antara P−1 dan P, dan itu hilang begitu angkanya dijumlah.
+      const [posAwal, posAkhir, mutLines] = await Promise.all([
+        fetchSnapshotPositions(supabase, awalPeriode, desc, ctx),
+        fetchSnapshotPositions(supabase, periode, desc, ctx),
         fetchMutasiLines(supabase, periode, desc),
       ])
-      setSnapAwal(awal); setSnapAkhir(akhir)
-      setLines(mutLines); setMutasi(aggregateMutasi(mutLines))
+      const atr = attribusiPenyusutan(mutLines, posAwal, posAkhir)
+      setSnapAwal(aggregatePositions(posAwal)); setSnapAkhir(aggregatePositions(posAkhir))
+      setBebanAwal(atr.bebanSaldoAwal)
+      setLines(atr.lines); setMutasi(aggregateMutasi(atr.lines))
       setApplied({ tahun, smt })
     } catch (e) {
       // Laporan yang datanya tak lengkap TIDAK BOLEH tampil — angka rekonsiliasi
@@ -203,6 +253,7 @@ export default function RekonsiliasiPage() {
   }
 
   const periodeLabel = applied ? `${applied.tahun}-S${applied.smt}` : ''
+  const bebanAwalOf = (gol: string, k: Komptabel) => bebanAwal[gol]?.[k] ?? 0
 
   function handleExport() {
     if (!applied) return
@@ -212,14 +263,13 @@ export default function RekonsiliasiPage() {
         if (row.kind === 'header' || row.kind === 'sub') continue
         const rec: Record<string, string | number> = { 'Jenis Aset': `${g.kode} — ${g.uraian}`, 'Baris': row.label }
         for (const k of KOMPS) {
-          const cell = mutasiCellOf(mutasi, g.kode, k)
-          const aw = measuresOf(snapAwal, g.kode, k), ak = measuresOf(snapAkhir, g.kode, k)
-          const p = perolehanRow(row, cell, aw.perolehan, ak.perolehan)
+          const v = nilaiBaris(row, mutasiCellOf(mutasi, g.kode, k),
+            measuresOf(snapAwal, g.kode, k), measuresOf(snapAkhir, g.kode, k), bebanAwalOf(g.kode, k))
           const pref = k === 'intra' ? 'Intra' : 'Ekstra'
-          rec[`${pref} — Nilai Perolehan`] = p ?? ''
-          rec[`${pref} — Beban`] = row.kind === 'saldo-awal' ? aw.beban : row.kind === 'saldo-akhir' ? ak.beban : ''
-          rec[`${pref} — Akumulasi`] = row.kind === 'saldo-awal' ? aw.akumulasi : row.kind === 'saldo-akhir' ? ak.akumulasi : ''
-          rec[`${pref} — Nilai Buku`] = row.kind === 'saldo-awal' ? aw.nilaiBuku : row.kind === 'saldo-akhir' ? ak.nilaiBuku : ''
+          rec[`${pref} — Nilai Perolehan`] = v?.perolehan ?? ''
+          rec[`${pref} — Beban`] = v?.beban ?? ''
+          rec[`${pref} — Akumulasi`] = v?.akumulasi ?? ''
+          rec[`${pref} — Nilai Buku`] = v?.nilaiBuku ?? ''
         }
         rows.push(rec)
       }
@@ -279,15 +329,29 @@ export default function RekonsiliasiPage() {
       ) : (
         <div className="space-y-3">
           <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">
-            <span className="font-medium">Fase 2</span> — periode <b>{periodeLabel}</b>. Nilai Perolehan baris mutasi sudah terisi;
-            baris <b>Selisih</b> memuat yang belum terpetakan (a.l. reklas komptabel Intra/Ekstra). Kolom Beban &amp; Akumulasi baris
-            mutasi (bertanda &ldquo;—&rdquo;) menyusul Fase 3; Saldo Awal/Akhir sudah lengkap.
+            <span className="font-medium">Periode {periodeLabel}</span> — keempat ukuran sudah terisi. Baris <b>Selisih</b> memuat
+            yang belum terpetakan ke kategori mana pun (a.l. reklas komptabel Intra↔Ekstra): kalau isinya nol, rantai
+            Saldo Awal + Penambahan − Pengurangan = Saldo Akhir cocok sempurna untuk sel itu.
           </div>
-          <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-2 text-xs text-gray-600">
-            Angka <b>Nilai Perolehan</b> yang berwarna bisa <b>diklik</b> untuk melihat rincian transaksi pembentuknya
-            (per SKPD, lengkap dengan NIBAR &amp; no. dokumen). Saldo Awal/Akhir tidak — itu posisi hasil replay engine
-            per aset, bukan transaksi periode ini; rinciannya di menu Penyusutan. Baris <b>Selisih</b> juga tidak,
-            karena isinya justru yang belum terpetakan ke kategori mana pun.
+          <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-2 text-xs text-gray-600 space-y-1">
+            <p>
+              Angka <b>Nilai Perolehan</b> yang berwarna bisa <b>diklik</b> untuk melihat rincian transaksi pembentuknya
+              (per SKPD, lengkap dengan NIBAR &amp; no. dokumen). Saldo Awal/Akhir tidak — itu posisi hasil replay engine
+              per aset, bukan transaksi periode ini; rinciannya di menu Penyusutan. Baris <b>Selisih</b> juga tidak,
+              karena isinya justru yang belum terpetakan ke kategori mana pun.
+            </p>
+            <p>
+              <b>Beban</b> itu arus periode berjalan, bukan saldo: kolomnya menjumlah tepat ke beban penyusutan periode ini
+              (baris Saldo Akhir = memo totalnya). Beban barang yang sudah ada sejak awal semester — termasuk yang
+              dikapitalisasi atau dikoreksi di semester ini — seluruhnya di baris <b>Saldo Awal</b>; baris Kapitalisasi &amp;
+              Koreksi hanya membawa perubahan nilai perolehannya.
+            </p>
+            <p>
+              <b>Akumulasi</b> bertambah karena beban, dan beban ada di kolom sebelahnya — jadi kolom ini sengaja tidak
+              menjumlah vertikal seperti Nilai Perolehan. Rantainya: Saldo Awal + <b>Beban periode</b> + akumulasi bawaan
+              barang masuk − akumulasi barang keluar = Saldo Akhir. <b>Nilai Buku</b> selalu diturunkan
+              (Nilai Perolehan − Akumulasi), tak pernah dijumlah antar baris.
+            </p>
           </div>
           {GOLONGAN_REKAP.map(g => (
             <div key={g.kode} className="card overflow-hidden">
@@ -320,12 +384,12 @@ export default function RekonsiliasiPage() {
                         <tr key={ri} className={cls}>
                           <td className="table-td text-xs" style={{ paddingLeft: `${0.75 + (row.indent || 0) * 1}rem` }}>{row.label}</td>
                           {KOMPS.map(k => {
-                            const cell = mutasiCellOf(mutasi, g.kode, k)
-                            const aw = measuresOf(snapAwal, g.kode, k), ak = measuresOf(snapAkhir, g.kode, k)
-                            const p = perolehanRow(row, cell, aw.perolehan, ak.perolehan)
-                            const beban = row.kind === 'saldo-awal' ? aw.beban : row.kind === 'saldo-akhir' ? ak.beban : null
-                            const akum = row.kind === 'saldo-awal' ? aw.akumulasi : row.kind === 'saldo-akhir' ? ak.akumulasi : null
-                            const nb = row.kind === 'saldo-awal' ? aw.nilaiBuku : row.kind === 'saldo-akhir' ? ak.nilaiBuku : null
+                            const v = nilaiBaris(row, mutasiCellOf(mutasi, g.kode, k),
+                              measuresOf(snapAwal, g.kode, k), measuresOf(snapAkhir, g.kode, k), bebanAwalOf(g.kode, k))
+                            const p = v?.perolehan ?? null
+                            const beban = v?.beban ?? null
+                            const akum = v?.akumulasi ?? null
+                            const nb = v?.nilaiBuku ?? null
                             // Nilai Perolehan baris mutasi bisa diklik → popup rincian
                             // transaksinya. Kolom lain (Beban/Akumulasi/Nilai Buku) &
                             // baris saldo/selisih tidak — lihat keysOfRow().

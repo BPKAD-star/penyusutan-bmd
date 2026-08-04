@@ -128,13 +128,25 @@ export async function prepareSnapshotCtx(
   return { base, pindah }
 }
 
-// Snapshot period-correct: agregat 4 ukuran per (golongan, komptabel) pada AKHIR
-// `periode`, untuk scope SKPD (descendantIds; null = semua/ admin). Identik dgn
-// assembleRows halaman Penyusutan, tapi dijumlah bukan di-list.
+// Posisi SATU aset pada akhir sebuah periode + sel (golongan × komptabel) tempat
+// ia berada saat itu. Ini bentuk ANTARA dari snapshot: agregat tinggal dijumlah
+// darinya (aggregatePositions), sementara Fase 3 butuh yang per-aset — atribusi
+// beban/akumulasi bergantung pada apakah SATU aset pindah/masuk/keluar sel
+// antara periode P−1 dan P, dan itu tak bisa dijawab dari angka yang sudah
+// terlanjur dijumlah.
+export type PosAset = { gol: string; komp: Komptabel; perolehan: number; beban: number; akumulasi: number; nilaiBuku: number }
+
+// Snapshot period-correct dalam bentuk per-aset: posisi tiap aset yang TERLIHAT
+// pada akhir `periode`, untuk scope SKPD (descendantIds; null = semua/admin).
+// Identik dgn assembleRows halaman Penyusutan.
 // `ctx` opsional: isi kalau memanggil >1 periode dgn scope yang sama.
-export async function fetchSnapshot(
+//
+// ⚠️ Beratnya ikut jumlah aset dalam scope (se-pemda ≈ 227rb entri). Itu memang
+// sudah jadi sifat halaman ini sejak Fase 1 (`combined` & `pmap` sama besarnya);
+// pemindahan agregasi ke RPC ada di REFACTOR-PLAN §"Rekonsiliasi & Laporan BMD".
+export async function fetchSnapshotPositions(
   supabase: SupabaseClient, periode: string, descendantIds: number[] | null, ctx?: SnapshotCtx
-): Promise<Snapshot> {
+): Promise<Map<string, PosAset>> {
   const { base, pindah } = ctx ?? await prepareSnapshotCtx(supabase, descendantIds)
   const owners = ownersAt(pindah, periode)
 
@@ -152,7 +164,7 @@ export async function fetchSnapshot(
   const [pmap, hidden] = await Promise.all([fetchPeny(supabase, ids, periode), fetchHiddenIds(supabase, ids, periode)])
   const belumAda = (b: Base) => !!b.tgl_perolehan && comparePeriode(periodeDariTanggal(b.tgl_perolehan), periode) > 0
 
-  const snap: Snapshot = {}
+  const pos = new Map<string, PosAset>()
   for (const b of combined) {
     if (hidden.has(b.id) || belumAda(b)) continue
     const p = pmap.get(b.id)
@@ -160,16 +172,35 @@ export async function fetchSnapshot(
     const perolehan = p ? p.nilai_perolehan : (b.nilai_perolehan || 0)
     const beban = susut && p ? p.beban : 0
     const akumulasi = susut && p ? p.akumulasi : 0
-    const nilaiBuku = susut && p ? p.nilai_buku_akhir : perolehan
-    const gol = kodeLevel3(b.kode)
-    const cell = (snap[gol] ??= zeroGol())[kompOf(b.intra_ekstra)]
-    cell.perolehan += perolehan
-    cell.beban += beban
-    cell.akumulasi += akumulasi
-    cell.nilaiBuku += nilaiBuku
+    pos.set(b.id, {
+      gol: kodeLevel3(b.kode), komp: kompOf(b.intra_ekstra),
+      perolehan, beban, akumulasi,
+      nilaiBuku: susut && p ? p.nilai_buku_akhir : perolehan,
+    })
+  }
+  return pos
+}
+
+export function aggregatePositions(pos: Map<string, PosAset>): Snapshot {
+  const snap: Snapshot = {}
+  for (const p of pos.values()) {
+    const cell = (snap[p.gol] ??= zeroGol())[p.komp]
+    cell.perolehan += p.perolehan
+    cell.beban += p.beban
+    cell.akumulasi += p.akumulasi
+    cell.nilaiBuku += p.nilaiBuku
     cell.count += 1
   }
   return snap
+}
+
+// Agregat 4 ukuran per (golongan, komptabel). Pemakai yang butuh atribusi Fase 3
+// harus lewat fetchSnapshotPositions + aggregatePositions supaya posisi
+// per-asetnya tidak dihitung dua kali.
+export async function fetchSnapshot(
+  supabase: SupabaseClient, periode: string, descendantIds: number[] | null, ctx?: SnapshotCtx
+): Promise<Snapshot> {
+  return aggregatePositions(await fetchSnapshotPositions(supabase, periode, descendantIds, ctx))
 }
 
 // Ambil sel (golongan, komptabel) dari snapshot dgn fallback nol.
@@ -185,7 +216,8 @@ export function measuresOf(snap: Snapshot | undefined, golongan: string, komp: K
 // reklas golongan/kode), per golongan × komptabel. Baris 'residual' =
 // penyeimbang: (SaldoAkhir − SaldoAwal) − Σ terpetakan → menjamin rantai
 // reconcile & memunculkan yg belum terpetakan (mis. reklas_komptabel).
-// Beban/Akumulasi baris mutasi = Fase 3 (belum). Lihat docs/rekonsiliasi-bmd-plan.md.
+// FASE 3 (attribusiPenyusutan, di bawah) mengisi Beban & Akumulasi baris mutasi.
+// Lihat docs/rekonsiliasi-bmd-plan.md §5.3–5.4.
 export type MutasiKey =
   | 'pengadaan' | 'hibah' | 'tukar' | 'inventarisasi' | 'lainnya' | 'kdp'
   | 'belanja_jasa' | 'penggunaan_masuk' | 'kapitalisasi' | 'koreksi_tambah'
@@ -193,7 +225,13 @@ export type MutasiKey =
   | 'hapus_penjualan' | 'hapus_hibah' | 'hapus_tukar' | 'hapus_penyertaan' | 'hapus_sebab_lain'
   | 'pengalihan_keluar' | 'koreksi_kurang'
   | 'reklas_fungsi_keluar' | 'reklas_kode_keluar'
-export type MutasiCell = Partial<Record<MutasiKey, number>> // perolehan per kategori
+// Tiga ukuran per kategori. Nilai Buku SENGAJA tidak ikut: ia SELALU diturunkan
+// (`perolehan − akumulasi`) dan tak pernah dijumlah vertikal — kalau disimpan
+// sbg angka sendiri, cepat atau lambat ada yang menjumlahkannya antar baris dan
+// hasilnya salah (docs/rekonsiliasi-bmd-plan.md §6).
+export type UkuranMutasi = { perolehan: number; beban: number; akumulasi: number }
+export const zeroUkuran = (): UkuranMutasi => ({ perolehan: 0, beban: 0, akumulasi: 0 })
+export type MutasiCell = Partial<Record<MutasiKey, UkuranMutasi>>
 export type Mutasi = Record<string, { intra: MutasiCell; ekstra: MutasiCell }> // key = golongan
 
 // 'akumulasi_kdp' = termin kontrak konstruksi → penambahan nilai aset KDP (1.3.6).
@@ -272,6 +310,12 @@ export type MutasiLine = {
   golongan: string; komp: Komptabel; kategori: MutasiKey; arah: MutasiArah
   aset_id: string; nibar: string | null; kode: string; nama: string | null
   skpd_id: number | null; tanggal: string; nilai: number; jenis: string; no_dokumen: string | null
+  // FASE 3 — kontribusi baris ini ke kolom Beban & Akumulasi. Diisi BELAKANGAN
+  // oleh attribusiPenyusutan(); computeMutasiLines sengaja meninggalkannya 0
+  // karena atribusi butuh posisi aset di DUA periode, bukan cuma ledger periode
+  // ini. Besarannya MAGNITUDO (baris pengurangan tetap positif, sama spt
+  // `nilai`) — tanda ditentukan oleh `arah`.
+  beban: number; akumulasi: number
 }
 
 const KURANG_KEYS = new Set<MutasiKey>([
@@ -291,8 +335,9 @@ export const KATEGORI_LABEL: Record<MutasiKey, string> = {
   koreksi_kurang: 'Koreksi Kurang', reklas_fungsi_keluar: 'Reklas Perubahan Fungsi (Keluar)', reklas_kode_keluar: 'Reklas Kesalahan Kodefikasi (Keluar)',
 }
 
-// Inti: hitung SEMUA baris mutasi (rinci). fetchMutasi (agregat) & halaman rincian
-// berbagi fungsi ini — satu sumber kebenaran, angka pasti konsisten.
+// Inti: hitung SEMUA baris mutasi (rinci). Tabel Rekonsiliasi (lewat
+// attribusiPenyusutan + aggregateMutasi) & halaman rincian berbagi fungsi ini —
+// satu sumber kebenaran, angka pasti konsisten.
 async function computeMutasiLines(
   supabase: SupabaseClient, periode: string, descendantIds: number[] | null
 ): Promise<MutasiLine[]> {
@@ -305,6 +350,7 @@ async function computeMutasiLines(
       golongan: gol, komp, kategori, arah: KURANG_KEYS.has(kategori) ? 'kurang' : 'tambah',
       aset_id: r.aset_id, nibar: r.aset?.nibar ?? null, kode: r.aset?.kode ?? '', nama: r.aset?.nama_barang ?? null,
       skpd_id: skpd ?? r.aset?.skpd_id ?? null, tanggal: r.tanggal, nilai, jenis: r.jenis, no_dokumen: r.header?.no_sk ?? null,
+      beban: 0, akumulasi: 0,
     })
   }
 
@@ -398,6 +444,94 @@ async function computeMutasiLines(
   return lines
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// FASE 3 — atribusi Beban & Akumulasi ke baris mutasi (rencana §5.3–5.4).
+//
+// Keputusan yang dipakai (DECISION-1, dijawab user 2026-08-04: **OPSI A**):
+// beban aset yang dikapitalisasi/dikoreksi di periode yang sama tetap PENUH di
+// baris SALDO AWAL — dia penghuni populasi awal. Baris Kapitalisasi/Koreksi cuma
+// membawa Δ perolehan, bebannya nol. Alasannya: (1) tiap aset menyumbang persis
+// SEKALI ke tiap ukuran, jadi rantainya pasti tie-out; (2) engine cuma
+// menghasilkan SATU angka beban per aset per periode — efek kapitalisasi
+// terhadap masa manfaat sudah melebur di dalamnya, jadi angka split-nya bukan
+// dibaca melainkan dikarang.
+//
+// Aturannya per SEL (golongan × komptabel), bukan per aset global — itu penting
+// untuk reklasifikasi, yang memindahkan satu aset dari satu sel ke sel lain:
+//   · aset yang MASUK sel (ada di P, tidak di P−1) → baris masuknya dapat
+//     beban_P dan akumulasi (`akum_P − beban_P`, yakni akumulasi BAWAAN saja;
+//     bagian beban-nya sudah dihitung di kolom Beban → jangan dobel);
+//   · aset yang KELUAR sel (ada di P−1, tidak di P) → baris keluarnya dapat
+//     `−akum_{P−1}`, bebannya NOL (beban periode ini melekat di sel tujuannya,
+//     kalau ada — kalau ikut dihitung di sel asal, rantai akumulasi sel itu
+//     kelebihan sebesar beban tsb);
+//   · aset yang TETAP di sel → semua ada di baris SALDO AWAL (`bebanSaldoAwal`),
+//     baris mutasinya (kapitalisasi/koreksi) nol.
+//
+// ⚠️ Yang menegakkan kebenaran adalah UJI KEANGGOTAAN SEL di atas, bukan daftar
+// kategori. MASUK_KEYS/KELUAR_KEYS cuma menentukan baris MANA yang kebagian
+// label saat satu aset punya beberapa baris di sel yang sama (mis. reklas masuk
+// + kapitalisasi) — tanpa itu urutan baris yang menentukan, dan itu kebetulan.
+// Konsekuensinya kategori BARU yang ditambahkan nanti otomatis berperilaku benar
+// walau lupa didaftarkan di sini; ia cuma kalah rebutan label.
+const MASUK_KEYS = new Set<MutasiKey>([
+  'pengadaan', 'belanja_jasa', 'hibah', 'tukar', 'inventarisasi', 'lainnya', 'kdp',
+  'penggunaan_masuk', 'reklas_fungsi_masuk', 'reklas_kode_masuk',
+])
+const KELUAR_KEYS = new Set<MutasiKey>([
+  'hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
+  'pengalihan_keluar', 'reklas_fungsi_keluar', 'reklas_kode_keluar',
+])
+
+export type AtribusiPenyusutan = {
+  lines: MutasiLine[]  // salinan baru; `lines` masukan tidak diubah
+  // Beban baris SALDO AWAL per golongan × komptabel = Σ beban periode P atas
+  // aset yang ada di sel yang SAMA pada P−1 dan P (populasi lanjut).
+  bebanSaldoAwal: Record<string, { intra: number; ekstra: number }>
+}
+
+export function attribusiPenyusutan(
+  lines: MutasiLine[], posAwal: Map<string, PosAset>, posAkhir: Map<string, PosAset>,
+): AtribusiPenyusutan {
+  const out = lines.map(l => ({ ...l, beban: 0, akumulasi: 0 }))
+  const diSel = (p: PosAset | undefined, l: MutasiLine) => !!p && p.gol === l.golongan && p.komp === l.komp
+  // Satu aset boleh punya beberapa baris di satu sel (termin KDP berkali-kali,
+  // reklas masuk + kapitalisasi). Beban/akumulasi cuma boleh menempel SEKALI —
+  // kalau tidak, satu barang terhitung dua kali dan rantainya patah.
+  const sudah = new Set<string>()
+  const kunci = (l: MutasiLine) => `${l.golongan}|${l.komp}|${l.arah}|${l.aset_id}`
+
+  const attr = (l: MutasiLine) => {
+    const k = kunci(l)
+    if (sudah.has(k)) return
+    const pw = posAwal.get(l.aset_id), pa = posAkhir.get(l.aset_id)
+    const awal = diSel(pw, l), akhir = diSel(pa, l)
+    if (l.arah === 'tambah') {
+      if (!akhir || awal) return              // bukan aset yang BARU masuk sel ini
+      sudah.add(k)
+      l.beban = pa!.beban
+      l.akumulasi = pa!.akumulasi - pa!.beban // akumulasi BAWAAN saja
+    } else {
+      if (!awal || akhir) return              // bukan aset yang KELUAR dari sel ini
+      sudah.add(k)
+      l.akumulasi = pw!.akumulasi             // beban tetap 0 — lihat catatan di atas
+    }
+  }
+  // Dua lintasan: baris berkategori masuk/keluar duluan supaya angkanya mendarat
+  // di baris yang memang menceritakan perpindahannya.
+  for (const l of out) if (MASUK_KEYS.has(l.kategori) || KELUAR_KEYS.has(l.kategori)) attr(l)
+  for (const l of out) if (!MASUK_KEYS.has(l.kategori) && !KELUAR_KEYS.has(l.kategori)) attr(l)
+
+  const bebanSaldoAwal: Record<string, { intra: number; ekstra: number }> = {}
+  for (const [id, pa] of posAkhir) {
+    const pw = posAwal.get(id)
+    if (!pw || pw.gol !== pa.gol || pw.komp !== pa.komp) continue
+    const c = (bebanSaldoAwal[pa.gol] ??= { intra: 0, ekstra: 0 })
+    c[pa.komp] += pa.beban
+  }
+  return { lines: out, bebanSaldoAwal }
+}
+
 // Agregasi baris rinci → sel (golongan, komptabel, kategori). DIEKSPOR supaya
 // halaman Rekonsiliasi bisa menahan `lines`-nya sendiri untuk drill-down dan
 // menjumlah SENDIRI dari baris yang sama persis — angka di popup dijamin sama
@@ -406,20 +540,20 @@ export function aggregateMutasi(lines: MutasiLine[]): Mutasi {
   const mut: Mutasi = {}
   for (const l of lines) {
     const cell = (mut[l.golongan] ??= { intra: {}, ekstra: {} })[l.komp]
-    cell[l.kategori] = (cell[l.kategori] || 0) + l.nilai
+    const u = (cell[l.kategori] ??= zeroUkuran())
+    u.perolehan += l.nilai
+    u.beban += l.beban
+    u.akumulasi += l.akumulasi
   }
   return mut
 }
 
-export async function fetchMutasi(
-  supabase: SupabaseClient, periode: string, descendantIds: number[] | null
-): Promise<Mutasi> {
-  return aggregateMutasi(await computeMutasiLines(supabase, periode, descendantIds))
-}
-
 // Daftar rinci utk halaman Bukti Dukung — semua transaksi AKTIF yg memengaruhi
-// Rekonsiliasi pada periode. Se-pemda (desc=null) atau per SKPD. Sumber sama
-// dgn fetchMutasi → angka rincian pasti menjumlah ke agregat Rekonsiliasi.
+// Rekonsiliasi pada periode. Se-pemda (desc=null) atau per SKPD. Sumbernya sama
+// dgn tabel Rekonsiliasi → angka rincian pasti menjumlah ke agregatnya.
+// ⚠️ `beban`/`akumulasi` baris hasilnya masih NOL — jalankan attribusiPenyusutan
+// dulu kalau butuh kontribusi Fase 3-nya (halaman Bukti Dukung sengaja tidak:
+// ia mendaftar transaksi, bukan merekonsiliasi saldo).
 export async function fetchMutasiLines(
   supabase: SupabaseClient, periode: string, descendantIds: number[] | null
 ): Promise<MutasiLine[]> {
