@@ -120,6 +120,7 @@ export const JENIS_TRANSAKSI_LABEL: Record<string, string> = {
   saldo_awal: 'Saldo Awal',
   pengadaan: 'Pengadaan',
   hibah_masuk: 'Hibah Masuk',
+  tukar_menukar: 'Tukar Menukar',
   hasil_inventarisasi: 'Hasil Inventarisasi',
   perolehan_lainnya: 'Perolehan Lainnya',
   mutasi_internal: 'Pengeluaran/Penerimaan Internal',
@@ -190,7 +191,35 @@ export function asalUsulTampil(
   return { teks: CARA_PEROLEHAN_LABEL[caraPerolehan || ''] || '', turunan: true }
 }
 
-export const JENIS_PEROLEHAN = ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya'] as const
+/**
+ * Kelima jenis ledger Cara Perolehan. `tukar_menukar` sempat KELEWAT (ditambal
+ * 2026-08-05 bersama daftar baseline di `lib/engine/penyusutan.ts`).
+ *
+ * ⚠️ Daftar "cara perolehan" hidup di **lima tempat** dan semuanya harus
+ * memuat jenis yang sama — tak ada satu pun yang error kalau salah satu
+ * ketinggalan, yang muncul cuma angka yang beda antar laporan
+ * (rules.md §5.5):
+ *
+ *   1. daftar baseline `perolehan` di `lib/engine/penyusutan.ts` → menentukan
+ *      barangnya DISUSUTKAN atau tidak
+ *   2. `JENIS_CARA` di `lib/rekon.ts`                → Rekonsiliasi BMD
+ *   3. `JENIS_CARA_PEROLEHAN` di `app/dashboard/pelaporan/bmd/page.tsx` → Model 3
+ *   4. `CARA_LIST` di `components/dashboard/CaraPerolehanCards.tsx` → Dashboard
+ *   5. konstanta ini
+ *
+ * Plus dua turunan yang ikut: `CARA_PEROLEHAN_LABEL` (kembar dengan CHECK
+ * `aset.cara_perolehan`) dan `JENIS_TRANSAKSI_LABEL`. Pasangan 1↔5 dikunci
+ * `penyusutan.test.ts`; 5↔`CARA_PEROLEHAN_LABEL` dikunci `bmd.test.ts`.
+ * Nomor 2–4 belum ada yang menjaga — itu utang yang masih terbuka.
+ *
+ * ℹ️ Konstanta INI sendiri ternyata **tidak dipakai runtime** (diverifikasi
+ * grep 2026-08-05: satu-satunya pembacanya `bmd.test.ts`). Itu justru
+ * menjelaskan kenapa `tukar_menukar` bisa hilang dari sini tanpa ketahuan —
+ * tak ada yang memanggil, jadi tak ada yang rusak. Sengaja **tidak dihapus**:
+ * ia dipakai test sebagai pasangan pembanding `CARA_PEROLEHAN_LABEL`, dan itu
+ * peran yang sah. Kalau suatu saat ada yang memakainya, ia sudah benar.
+ */
+export const JENIS_PEROLEHAN = ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya'] as const
 export const JENIS_PENGHAPUSAN = ['penghapusan_pemindahtanganan', 'pengalihan_status', 'penghapusan_sebab_lain'] as const
 
 /** Gabung 7 segmen kode template e-bmd → '1.3.2.05.01.05.068' (PLAN §5A). */

@@ -171,11 +171,26 @@ export function hitungJadwalAset(
   const saldoAwal = saldoAwalKandidat.length > 0
     ? saldoAwalKandidat.reduce((terbaru, t) => (comparePeriode(t.periode, terbaru.periode) > 0 ? t : terbaru))
     : undefined
+  // ⚠️ SATU-SATUNYA daftar jenis yang bisa jadi TITIK MULAI penyusutan. Jenis
+  // perolehan yang tidak terdaftar di sini → `hitungJadwalAset` tak menemukan
+  // baseline → `return []` → barangnya TIDAK PERNAH DISUSUTKAN, tanpa satu pun
+  // error. Menambah cara perolehan baru = tambahkan di sini JUGA, bukan cuma di
+  // enum + menunya. Dikunci `penyusutan.test.ts` (`it.each` daftar perolehan).
+  //
+  // 'tukar_menukar' sempat KELEWAT (ditemukan Fase 0.3, ditambal 2026-08-05):
+  // jenisnya sah sejak migrasi 20260707_02 & benar-benar ditulis saat approve,
+  // tapi absen di sini. Yang membuktikan itu kelalaian bukan kesengajaan: engine
+  // justru menangani 'batal_tukar_menukar' sbg event penghenti (lihat case di
+  // bawah) — event itu cuma masuk akal kalau barangnya memang mestinya
+  // disusutkan lebih dulu. Ditambal saat produksi masih 0 baris tukar menukar,
+  // jadi nol angka yang sudah dilaporkan berubah.
+  //
+  // 'kdp_selesai_masuk' = aset tetap hasil carve-out KDP saat BAPP → jadi baseline
+  // perolehan aset BARU ini, penyusutan mulai dari periode BAPP (fresh, seperti
+  // perolehan biasa). KDP-nya sendiri (1.3.6) tetap perlakuan 'tidak' → bail-out.
   const perolehan = ledger.find(t =>
-    // 'kdp_selesai_masuk' = aset tetap hasil carve-out KDP saat BAPP → jadi baseline
-    // perolehan aset BARU ini, penyusutan mulai dari periode BAPP (fresh, seperti
-    // perolehan biasa). KDP-nya sendiri (1.3.6) tetap perlakuan 'tidak' → bail-out.
-    ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya', 'kdp_selesai_masuk'].includes(t.jenis))
+    ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi',
+     'perolehan_lainnya', 'kdp_selesai_masuk'].includes(t.jenis))
 
   // Pecahan hasil Pemecahan Barang: baseline MID-LIFE. Payload bentuk checkpoint
   // (nilai buku/akumulasi/sisa masa manfaat/beban) hasil alokasi proporsional dari

@@ -126,14 +126,26 @@ Satu enum untuk seluruh peristiwa. Dikelompokkan menurut perlakuannya:
 dijalankan **sebelum** deploy kode yang memfilter nilai baru itu.
 
 ### Klasifikasi perilaku (dipakai halaman pembaca)
-- **SEMBUNYI**: `kapitalisasi_serap`, `penghapusan_*`, `batal_pengadaan`,
-  `koreksi_pencatatan_ganda`, `batal_hibah_masuk`, `batal_tukar_menukar`,
-  `batal_hasil_inventarisasi`, `batal_perolehan_lainnya`, `pemecahan_keluar`,
-  `batal_pemecahan_masuk` (+ `kdp_selesai_keluar` di Daftar Barang).
-- **MUNCUL**: `batal_kapitalisasi`, `batal_penghapusan`, `batal_pemecahan`,
-  `batal_koreksi_pencatatan_ganda`.
-- **NETRAL** (engine `default: break`): `pengalihan_status`,
-  `mutasi_internal`, `batal_pengalihan`, `pemanfaatan*`, `pengamanan*`.
+
+> ⚠️ **Daftar isinya TIDAK ditulis ulang di sini.** Sumber tunggalnya
+> **`lib/visibilitas.ts`**, dikunci `lib/visibilitas.test.ts`. Sebelumnya
+> daftar yang sama disalin ke Daftar Barang, Penyusutan, `lib/rekon.ts`, dan
+> ke dokumen ini — dan salinannya **sudah pernah menyimpang** (rules.md §5.5).
+> Yang ada di bawah cuma penjelasan *maksud* tiap kelompok; kalau butuh
+> anggotanya, buka berkasnya.
+
+Sebuah barang tampil di periode V kalau lolos **tiga** pertanyaan, bukan satu:
+
+| Kelompok | Konstanta | Maksudnya |
+|---|---|---|
+| **LAHIR** | `LAHIR` | Barang yang lahir dari sebuah PERISTIWA (pemecahan, carve-out KDP) dan **mewarisi `tgl_perolehan` induknya**, jadi tanggalnya berbohong soal kapan ia ada. Tak boleh tampil sebelum periode peristiwanya |
+| **SEMBUNYI** | `SEMBUNYI_PENYUSUTAN` / `SEMBUNYI_DAFTAR_BARANG` | Barang disembunyikan sejak periode event-nya (serap, penghapusan, pembatalan perolehan, induk yang sudah dipecah). Dua varian — Daftar Barang **plus** `kdp_selesai_keluar`; perbedaannya **sengaja** |
+| **MUNCUL** | `MUNCUL` | Membatalkan penyembunyian. Replay **kronologis** (periode → id ledger), bukan "batal selalu menang" — siklus hapus→batal→hapus di periode yang sama harus ikut aksi TERAKHIR |
+| **NETRAL** | — (engine `default: break`) | `pengalihan_status`, `mutasi_internal`, `batal_pengalihan`, `pemanfaatan*`, `pengamanan*`. Barang tetap tampil & tetap disusutkan |
+
+⚠️ Salinan lintas-bahasa yang **belum** bisa disatukan: `fn_rekap_bmd` &
+`fn_rekap_bmd_periodik` (SQL) mengulang daftar yang sama di Postgres. Belum ada
+yang menjaganya sinkron — lihat [REFACTOR-PLAN.md](REFACTOR-PLAN.md) 2.1.
 
 ⚠️ `batal_pengalihan` menganulir lewat **`payload.target_trx_ids` (JAMAK)** —
 sekali batal membatalkan baris perginya DAN baris pulangnya, sebab membatalkan

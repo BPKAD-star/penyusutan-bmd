@@ -153,9 +153,16 @@ describe('hitungJadwalAset — baseline & bail-out', () => {
     expect(hasil).toEqual([])
   })
 
+  // ⚠️ Daftar ini KEMBAR dengan daftar jenis di `hitungJadwalAset` (konstanta
+  // `perolehan`). Ia sengaja ditulis ulang di sini, BUKAN diimpor: kalau
+  // di-impor, jenis yang lupa didaftarkan di engine juga otomatis hilang dari
+  // test dan gap-nya lolos tanpa suara — persis yang terjadi pada
+  // `tukar_menukar`. Menambah cara perolehan baru = tambah di DUA tempat, dan
+  // test inilah yang memaksanya.
   it.each([
     ['pengadaan'],
     ['hibah_masuk'],
+    ['tukar_menukar'],
     ['hasil_inventarisasi'],
     ['perolehan_lainnya'],
     ['kdp_selesai_masuk'],
@@ -166,28 +173,50 @@ describe('hitungJadwalAset — baseline & bail-out', () => {
     expect(hasil[0].beban).toBeGreaterThan(0)
   })
 
-  it('DUGAAN BUG: tukar_menukar TIDAK dikenali sebagai baseline → barang tak pernah disusutkan', () => {
-    // `tukar_menukar` jenis ledger yang SAH (enum, migrasi 20260707_02) dan
-    // benar-benar ditulis saat approve menu Tukar Menukar (PerolehanManual.tsx
-    // :301 `jenis: kategori`). Tapi ia absen dari daftar baseline perolehan di
-    // engine, jadi `hitungJadwalAset` tak menemukan titik mulai dan berhenti
-    // di `return []` — barangnya TIDAK MUNCUL SAMA SEKALI di penyusutan.
+  it('regresi 2026-08-05: tukar_menukar disusutkan PERSIS SAMA dengan pengadaan', () => {
+    // `tukar_menukar` jenis ledger yang SAH (enum migrasi 20260707_02) dan
+    // benar-benar ditulis saat approve menu Tukar Menukar, tapi sempat ABSEN
+    // dari daftar baseline perolehan di engine. Akibatnya `hitungJadwalAset`
+    // tak menemukan titik mulai → `return []` → barangnya TIDAK MUNCUL SAMA
+    // SEKALI di penyusutan, tanpa satu pun pesan error. Ditemukan Fase 0.3,
+    // ditambal 2026-08-05 saat produksi masih 0 baris tukar menukar (nol angka
+    // yang sudah dilaporkan berubah).
     //
-    // Bahwa ini kelalaian, bukan kesengajaan, terlihat dari engine yang JUSTRU
-    // menangani `batal_tukar_menukar` sbg event penghenti — event itu cuma
-    // masuk akal kalau barangnya memang seharusnya disusutkan lebih dulu.
-    // Kembar dengan gap di `JENIS_PEROLEHAN` (lihat lib/bmd.test.ts).
-    //
-    // Perbaikannya satu kata di daftar jenis perolehan, TAPI ia mengubah angka
-    // laporan surut ke belakang, jadi wajib PR tersendiri + jalankan ulang
-    // engine. Sampai itu diputuskan, perilakunya dipin di sini.
-    const hasil = jalankan(
-      aset(),
-      [trx({ jenis: 'tukar_menukar', periode: '2026-S1', nilai: 10_000_000 })],
+    // Assert-nya sengaja BUKAN "length > 0" (itu sudah ditutup it.each di atas)
+    // melainkan kesamaan penuh dengan `pengadaan`: cara perolehan tidak boleh
+    // memengaruhi ANGKA sedikit pun — ia cuma menentukan dari mana barangnya
+    // datang. Kalau suatu saat ada yang memberi tukar menukar perlakuan
+    // penyusutan sendiri, test ini yang menangkapnya.
+    const tukar = jalankan(
+      aset(), [trx({ jenis: 'tukar_menukar', periode: '2026-S1', nilai: 10_000_000 })],
+      masa(KODE_PM, 5), '2030-S2',
+    )
+    const beli = jalankan(
+      aset(), [trx({ jenis: 'pengadaan', periode: '2026-S1', nilai: 10_000_000 })],
       masa(KODE_PM, 5), '2030-S2',
     )
 
-    expect(hasil).toEqual([])
+    expect(tukar).toEqual(beli)
+    expect(tukar.at(-1)!.nilai_buku_akhir).toBe(0)
+  })
+
+  it('regresi 2026-08-05: batal_tukar_menukar menghentikan barang yang sudah disusutkan', () => {
+    // Pasangan dari test di atas, dan alasan kenapa gap-nya jelas kelalaian:
+    // engine SUDAH lama menangani `batal_tukar_menukar` sebagai event penghenti
+    // (`berhenti = true`) — event yang cuma masuk akal kalau barangnya memang
+    // seharusnya disusutkan lebih dulu. Sebelum tambalan, cabang ini tak pernah
+    // bisa tercapai sama sekali karena replay-nya berhenti di `return []`.
+    const hasil = jalankan(
+      aset(),
+      [
+        trx({ jenis: 'tukar_menukar', periode: '2026-S1', nilai: 10_000_000 }),
+        trx({ jenis: 'batal_tukar_menukar', periode: '2026-S2' }),
+      ],
+      masa(KODE_PM, 5), '2027-S2',
+    )
+
+    expect(hasil[0].beban).toBeGreaterThan(0)                    // S1 sempat berjalan
+    expect(hasil.slice(1).every(r => r.beban === 0)).toBe(true)  // sejak S2 berhenti
   })
 
   it('memakai kode TERKINI aset untuk bail-out, bukan kode saat baseline', () => {

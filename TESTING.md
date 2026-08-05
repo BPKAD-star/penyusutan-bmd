@@ -8,6 +8,21 @@
 yang mengelola data aset milik pemerintah daerah, dilaporkan ke inspektorat
 dan BPK, diverifikasi sepenuhnya secara manual.
 
+**Kondisi sekarang (2026-08-05)** — perbarui tanggalnya tiap kali berubah,
+supaya paragraf di atas tidak terbaca sebagai keadaan hari ini:
+
+| | Status |
+|---|---|
+| Unit domain | ✅ **150 test** — `lib/engine/penyusutan` (71, 99% stmt), `lib/bmd` (73, 93% stmt), 6 invarian property-based, + `lib/visibilitas.test.ts` |
+| Integrasi DB (`authenticated`) | ⬜ belum ada — **ini lubang terbesar**, lihat §5 |
+| Golden test laporan | ⬜ belum ada |
+| Lint | ⬜ belum ada (REFACTOR-PLAN Fase 0.5) |
+| CI | ⬜ belum ada (Fase 0.7) |
+
+Artinya jantung angkanya (engine) sudah terkunci, tapi **separuh invarian sistem
+ini yang hidup di dalam database masih nol pengawasan** — dan itu justru lapisan
+yang paling tidak bisa diuji dari TypeScript.
+
 ---
 
 ## 1. Model risiko — apa yang sebenarnya kita takuti
@@ -378,7 +393,7 @@ it('daftar barang golongan tunggal memakai partial index, bukan seq scan', async
 ```
 
 Dijalankan sebagai **pengurus barang SKPD TERBESAR**, bukan admin —
-rules.md §18.
+rules.md §4.5.
 
 ---
 
@@ -438,7 +453,7 @@ it('menampilkan pesan error dan MENOLAK menampilkan angka saat kolektor gagal', 
 ```
 
 Perilaku *fail-closed* itu sendiri layak diuji — ia aturan bisnis
-([rules.md](rules.md) §2.9), bukan sekadar penanganan error.
+([rules.md](rules.md) §2.4), bukan sekadar penanganan error.
 
 ### 7.2 E2E (Playwright) — sedikit saja
 Mahal dan rapuh. Batasi pada alur yang kalau rusak menghentikan pekerjaan

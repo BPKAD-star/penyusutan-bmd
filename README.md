@@ -48,6 +48,47 @@ sisanya sesuai kebutuhan.
 `CLAUDE.md` dan `README.md` **wajib tetap di root** (masing-masing dimuat
 otomatis oleh Claude Code dan dirender GitHub).
 
+### Hierarki: siapa menang kalau dua dokumen bertabrakan
+
+Dokumen di repo ini ada **tiga jenis**, dan membedakannya penting — pernah ada
+kasus [design.md](design.md) melestarikan pola yang justru dilarang
+[CODING-STANDARD.md](CODING-STANDARD.md), dan tidak ada mekanisme apa pun yang
+menyadarinya.
+
+```
+TINGKAT 0 ─ Keputusan user (bertanggal, dicatat di CLAUDE.md)  ← menang atas SEMUANYA
+              │
+TINGKAT 1 ─ rules.md                    ← integritas data. BLOCKING.
+              │
+TINGKAT 2 ─ PRD.md                      ← ruang lingkup produk
+              │
+TINGKAT 3 ─ CODING-STANDARD.md          ← cara menulis     (paling tinggi di tingkat ini)
+            TESTING.md                  ← cara membuktikan
+            design.md                   ← cara menampilkan
+              │
+TINGKAT 4 ─ REFACTOR-PLAN.md            ← arah. Boleh ditunda, tak pernah membatalkan fitur.
+
+── DESKRIPTIF (menggambarkan keadaan, TIDAK memerintah) ──
+   architecture.md · schema.md          ← "bentuknya sekarang"
+   CLAUDE.md · docs/                    ← "kenapa jadi begini"
+```
+
+| Yang bertabrakan | Siapa menang |
+|---|---|
+| Normatif vs normatif | Yang **tingkatnya lebih atas** |
+| Dokumen **normatif** vs kode | **Kodenya salah** → perbaiki kode |
+| Dokumen **deskriptif** vs kode | **Dokumennya basi** → perbaiki dokumen |
+| Rencana (REFACTOR-PLAN) vs fitur mendesak | **Fitur menang**; refactornya menumpang |
+
+**Satu fakta, satu rumah.** Jangan menyalin isi antar-dokumen — cukup tautkan:
+
+| Fakta | Rumahnya |
+|---|---|
+| Daftar jenis ledger & perilakunya (`LAHIR`/`SEMBUNYI`/`MUNCUL`) | **kode**: `lib/visibilitas.ts` |
+| Aturan integritas yang tidak boleh dilanggar | `rules.md` |
+| Sejarah, insiden, & keputusan per fitur | `CLAUDE.md` |
+| Cara menulis kode | `CODING-STANDARD.md` |
+
 ---
 
 ## Prinsip inti

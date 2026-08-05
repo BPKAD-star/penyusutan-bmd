@@ -53,7 +53,7 @@ bg-red-50 …`) di atas area hasil, berisi pesan asli + kalimat penjelas +
 instruksi ("Coba Proses lagi; kalau berulang, kabari admin"). Halaman
 laporan/daftar bersifat **fail-closed**: saat error, data dikosongkan — tidak
 pernah menampilkan hasil separuh. Loading pakai `finally`, jadi tombol tidak
-pernah beku di "Memuat...". (Latar insiden: [rules.md](rules.md) §Fail-closed.)
+pernah beku di "Memuat...". (Latar insiden: [rules.md](rules.md) §2.)
 
 ### 3.2 Loading & kosong
 - Tombol proses berubah label ("Memuat...") + `disabled`.
@@ -88,9 +88,14 @@ pernah beku di "Memuat...". (Latar insiden: [rules.md](rules.md) §Fail-closed.)
 
 ## 4. Tabel & Data Besar
 
-- Kolom per golongan didefinisikan sekali (mis. `COLS` di Daftar Barang) dan
-  **disalin sadar** ke halaman kembarnya (Daftar Barang Awal) — ubah satu,
-  samakan yang lain.
+- Kolom per golongan didefinisikan sekali (mis. `COLS` di Daftar Barang).
+  ⚠️ Saat ini daftarnya **masih disalin** ke halaman kembarnya (`BASE_COLS` di
+  Daftar Barang Awal) dan cuma dijaga komentar "ubah satu, samakan yang lain".
+  **Itu utang desain, bukan konvensi yang boleh ditiru** — [CODING-STANDARD.md](CODING-STANDARD.md)
+  §1.2 mewajibkan aturan integritas diekstrak sejak kemunculan **kedua**, dan
+  penyatuannya sudah dijadwalkan di [REFACTOR-PLAN.md](REFACTOR-PLAN.md) 2.3.
+  Selama belum disatukan: ubah satu, samakan yang lain. Kalau kamu menambah
+  pasangan kembar **baru**, ekstrak — jangan menyalin lagi.
 - Golongan tak-disusutkan tidak diberi kolom penyusutan sama sekali (pakai
   flag `disusutkan` di `GOLONGAN_REKAP`, jangan hardcode daftar golongan).
 - Paginasi tampilan: ≤ 3.000 baris tampil semua, lebih → per halaman.

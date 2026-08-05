@@ -401,7 +401,7 @@ klasifikasi ini:
 
 Kategori terakhir itu yang jadi target refactor. Saat ini ada setidaknya
 enam pasang konstanta kembar yang dijaga hanya oleh peringatan tertulis
-(daftar lengkapnya di [rules.md](rules.md) §25).
+(daftar lengkapnya di [rules.md](rules.md) §5.5).
 
 ---
 

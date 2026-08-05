@@ -6,7 +6,7 @@
 // menyebar diam-diam ke seluruh laporan.
 //
 // Selain fungsinya, berkas ini menguji **konsistensi antar konstanta kembar**.
-// rules.md §25 mewajibkan pasangan konstanta diubah berpasangan, tapi selama
+// rules.md §5.5 mewajibkan pasangan konstanta diubah berpasangan, tapi selama
 // aturan itu cuma tertulis di komentar, tak ada yang menegakkannya. Test di
 // bawah menegakkannya.
 //
@@ -321,7 +321,7 @@ describe('gabungKode', () => {
 })
 
 // ════════════════════════════════════════════════════════════════════════════
-// Konsistensi antar konstanta kembar (rules.md §25).
+// Konsistensi antar konstanta kembar (rules.md §5.5).
 // ════════════════════════════════════════════════════════════════════════════
 describe('konsistensi konstanta', () => {
   it('GOLONGAN_REKAP memuat golongan yang sama persis dengan GOLONGAN_DAFTAR_BARANG', () => {
@@ -363,28 +363,42 @@ describe('konsistensi konstanta', () => {
     expect(Object.values(CARA_PEROLEHAN_LABEL).every(v => v.trim().length > 0)).toBe(true)
   })
 
-  it('DUGAAN BUG: JENIS_PEROLEHAN tidak memuat tukar_menukar', () => {
-    // `tukar_menukar` adalah jenis ledger yang SAH (enum ditambahkan migrasi
-    // 20260707_02) dan benar-benar ditulis PerolehanManual saat approve
-    // (`jenis: kategori`, PerolehanManual.tsx:301). Tapi ia absen dari daftar
-    // ini DAN dari daftar baseline perolehan di engine — lihat test
-    // "tukar_menukar TIDAK dikenali sbg baseline" di penyusutan.test.ts, yang
-    // menunjukkan akibatnya: barang hasil tukar menukar tak pernah disusutkan.
-    expect(JENIS_PEROLEHAN).not.toContain('tukar_menukar')
-
-    // Pembanding: keempat saudaranya ada di dua-duanya.
-    for (const j of ['pengadaan', 'hibah_masuk', 'hasil_inventarisasi', 'perolehan_lainnya'])
-      expect(CARA_PEROLEHAN_LABEL).toHaveProperty(j)
+  it('regresi 2026-08-05: JENIS_PEROLEHAN memuat KELIMA cara perolehan, termasuk tukar_menukar', () => {
+    // `tukar_menukar` jenis ledger yang SAH (enum migrasi 20260707_02), punya
+    // menu input & menu laporannya sendiri, tapi sempat absen dari daftar ini
+    // DAN dari daftar baseline perolehan di engine — akibatnya barang hasil
+    // tukar menukar tak pernah disusutkan. Ditambal 2026-08-05 saat produksi
+    // masih 0 baris, jadi nol angka yang sudah dilaporkan berubah.
+    expect([...JENIS_PEROLEHAN].sort()).toEqual([
+      'hasil_inventarisasi', 'hibah_masuk', 'pengadaan',
+      'perolehan_lainnya', 'tukar_menukar',
+    ])
   })
 
-  it('DUGAAN BUG: 15 jenis ledger tidak punya label tampilan', () => {
+  it('JENIS_PEROLEHAN sepasang dengan CARA_PEROLEHAN_LABEL (selisihnya cuma saldo_awal)', () => {
+    // Pengunci yang sesungguhnya, bukan cuma daftar yang dieja ulang: begitu
+    // ada cara perolehan KEENAM ditambahkan ke salah satu sisi dan lupa di
+    // sisi lain, test ini merah. `saldo_awal` sengaja hanya ada di LABEL —
+    // ia asal-usul baseline e-BMD, bukan jenis ledger perolehan.
+    //
+    // ⚠️ Yang MASIH belum terjaga siapa pun: `JENIS_CARA` (lib/rekon.ts),
+    // `JENIS_CARA_PEROLEHAN` (pelaporan/bmd/page.tsx), dan `CARA_LIST`
+    // (dashboard/CaraPerolehanCards.tsx) mengulang daftar yang sama. Per
+    // 2026-08-05 ketiganya SUDAH benar (diverifikasi manual), tapi tak ada
+    // mekanisme yang menahannya kalau nanti bergeser — lihat REFACTOR-PLAN 0.4b.
+    const dariLabel = Object.keys(CARA_PEROLEHAN_LABEL).filter(k => k !== 'saldo_awal')
+
+    expect(dariLabel.sort()).toEqual([...JENIS_PEROLEHAN].sort())
+  })
+
+  it('DUGAAN BUG: 14 jenis ledger tidak punya label tampilan', () => {
     // JENIS_TRANSAKSI_LABEL ketinggalan dari enum: tiap `ALTER TYPE … ADD
     // VALUE` sejak migrasi 20260707_02 menambah jenis baru tanpa menambah
     // labelnya. Akibatnya baris ledger itu tampil tanpa nama di KIBAR & layar
     // riwayat transaksi.
     //
     // Ini cacat TAMPILAN, bukan angka — jauh lebih ringan dari dua DUGAAN BUG
-    // di atas. Tapi ia contoh persis pola yang diperingatkan rules.md §25:
+    // di atas. Tapi ia contoh persis pola yang diperingatkan rules.md §5.5:
     // konstanta kembar (enum DB ↔ peta label) yang cuma dijaga ingatan.
     //
     // Daftar ini SENGAJA dieja satu per satu, bukan dihitung otomatis: begitu
@@ -395,7 +409,7 @@ describe('konsistensi konstanta', () => {
       'batal_hasil_inventarisasi', 'batal_hibah_masuk', 'batal_perolehan_lainnya',
       'batal_koreksi_nilai', 'batal_koreksi_pencatatan_ganda', 'batal_koreksi_spesifikasi',
       'batal_pengalihan', 'batal_reklas',
-      'batal_tukar_menukar', 'tukar_menukar',
+      'batal_tukar_menukar',
       'kdp_selesai_keluar', 'kdp_selesai_masuk',
       'saldo_awal_checkpoint',
     ]

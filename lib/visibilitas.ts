@@ -3,7 +3,7 @@
 // Dipakai bersama Daftar Barang, Penyusutan, & Rekonsiliasi BMD. Sebelumnya
 // logika ini disalin di ketiga tempat itu dan SUDAH menyimpang (varian daftar
 // SEMBUNYI beda `kdp_selesai_keluar`) — persis pola yang diperingatkan
-// rules.md §25. Perbaikan "pecahan tampil sebelum dipecah" (2026-08-05) harus
+// rules.md §5.5. Perbaikan "pecahan tampil sebelum dipecah" (2026-08-05) harus
 // mendarat di ketiganya sekaligus, jadi daftarnya dikumpulkan di sini.
 //
 // ── TIGA pertanyaan yang menentukan sebuah barang tampil di periode V ───────

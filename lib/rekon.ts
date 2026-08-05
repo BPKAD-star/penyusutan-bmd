@@ -305,7 +305,7 @@ export type MutasiLine = {
 // Kategori yang MENGURANGI. Diekspor & dipakai halaman Rekonsiliasi juga —
 // dulu daftar ini ditulis ulang di sana, jadi menambah satu kategori berarti
 // mengubah dua tempat dan yang kelupaan tak menghasilkan error apa pun, cuma
-// angka yang tak ikut dijumlah (rules.md §25).
+// angka yang tak ikut dijumlah (rules.md §5.5).
 export const KURANG_KEYS: MutasiKey[] = [
   'hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
   'pengalihan_keluar', 'koreksi_kurang', 'pemecahan_keluar', 'reklas_fungsi_keluar', 'reklas_kode_keluar',

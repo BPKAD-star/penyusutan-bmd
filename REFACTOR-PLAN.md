@@ -118,11 +118,18 @@ Fase 0 bukan Fase 2:
 - setiap nilai enum berawalan `batal_` terdaftar di `BATAL_TARGET_JENIS`
   (lib/voidedAset.ts) — kecuali yang di-*allowlist* eksplisit berikut alasannya;
 - `JENIS_PINDAH` (lib/pengalihan.ts) tetap kembar dengan predikat
-  `idx_trx_pindah_id` (rules.md §25) — bandingkan konstanta TS dengan predikat
+  `idx_trx_pindah_id` (rules.md §5.5) — bandingkan konstanta TS dengan predikat
   yang dibaca dari berkas migrasinya, supaya perbedaannya jadi test merah, bukan
   timeout di produksi;
 - setiap jenis di `BATAL_TARGET_JENIS` punya label di `JENIS_TRANSAKSI_LABEL`
-  (menutup temuan #3 Fase 0.3 sekaligus mencegahnya terulang).
+  (menutup temuan #3 Fase 0.3 sekaligus mencegahnya terulang);
+- **daftar CARA PEROLEHAN tetap sama di lima tempat** (ditemukan 2026-08-05,
+  lihat §5 Temuan 0.3 #1). Dua pasangannya sudah terkunci test; sisanya —
+  `JENIS_CARA` (lib/rekon.ts), `JENIS_CARA_PEROLEHAN`
+  (app/dashboard/pelaporan/bmd/page.tsx), `CARA_LIST`
+  (components/dashboard/CaraPerolehanCards.tsx) — belum. Ketiganya konstanta
+  literal di berkas berbeda, jadi bisa dibandingkan tanpa DB: impor,
+  urutkan, samakan.
 
 Tiga titik sisanya (keanggotaan kartu **dua sisi**, KIBAR, dan
 `fn_aset_awal_2026_terkunci` ↔ `_batch`) butuh integrasi DB — jadwalkan sebagai
@@ -133,16 +140,71 @@ jadi unit test yang cuma pura-pura menutupinya.
 
 Menguji `lib/bmd.ts` memunculkan **tiga gap yang sebelumnya tak terlihat**,
 semuanya dari pola yang sama: konstanta kembar yang cuma dijaga ingatan
-(rules.md §25). Ketiganya dipin sebagai test bertanda `DUGAAN BUG` — dikunci
+(rules.md §5.5). Ketiganya dipin sebagai test bertanda `DUGAAN BUG` — dikunci
 apa adanya, bukan disebut benar, supaya keputusannya disengaja:
 
 1. **`tukar_menukar` tak dikenali engine sebagai baseline perolehan** → barang
    hasil tukar menukar **tidak pernah disusutkan**. Jenisnya sah (enum migrasi
    20260707_02) dan benar-benar ditulis saat approve. Yang membuktikan ini
    kelalaian, bukan kesengajaan: engine justru menangani `batal_tukar_menukar`
-   sebagai event penghenti — hanya masuk akal kalau barangnya memang mestinya
-   disusutkan. **Prioritas tertinggi** (mode kegagalan #1: angka salah,
-   senyap).
+   sebagai event penghenti (`lib/engine/penyusutan.ts`, `case`
+   `'batal_tukar_menukar'`) — hanya masuk akal kalau barangnya memang mestinya
+   disusutkan. Daftar baseline-nya sendiri:
+   `['pengadaan','hibah_masuk','hasil_inventarisasi','perolehan_lainnya','kdp_selesai_masuk']`
+   — `tukar_menukar` memang tak ada.
+
+   ✅ **DIVERIFIKASI KE DB PRODUKSI 2026-08-05 — dampak hari ini NOL:**
+   `aset.cara_perolehan='tukar_menukar'` **0 baris**, ledger `tukar_menukar`
+   **0 baris**, `batal_tukar_menukar` **0 baris**. Jadi ini **bom waktu yang
+   belum meledak**, bukan angka salah yang sedang beredar — tidak ada satu pun
+   laporan yang terdampak dan tidak ada yang perlu ditarik kembali.
+
+   ✅ **ENGINE SUDAH DITAMBAL 2026-08-05.** `'tukar_menukar'` masuk daftar
+   baseline `hitungJadwalAset`; nol angka yang sudah dilaporkan berubah (0
+   baris di produksi) sehingga tak perlu run engine ulang maupun keputusan
+   user soal angka surut. Dikunci **dua test regresi**: (a) tukar menukar
+   menghasilkan jadwal **identik** dengan pengadaan — cara perolehan tak boleh
+   memengaruhi angka sedikit pun; (b) `batal_tukar_menukar` menghentikannya,
+   cabang yang sebelumnya **tak pernah bisa tercapai**. Daftar `it.each` jenis
+   perolehan sengaja **ditulis ulang di test, bukan diimpor dari engine** —
+   kalau diimpor, jenis yang lupa didaftarkan juga hilang dari test dan gapnya
+   lolos lagi tanpa suara.
+
+   ✅ **`JENIS_PEROLEHAN` (lib/bmd.ts) IKUT DITAMBAL** sesudah pembacanya
+   disisir manual satu per satu (rules.md §1.7). Bersamanya:
+   `JENIS_TRANSAKSI_LABEL` dapat entri `tukar_menukar` — wajib, karena test
+   "semua jenis di JENIS_PEROLEHAN punya label" akan merah tanpa itu, dan
+   `tukar_menukar` dicoret dari daftar "jenis tanpa label" (15 → 14).
+   Dikunci test baru **`JENIS_PEROLEHAN` sepasang dengan
+   `CARA_PEROLEHAN_LABEL`** — cara perolehan keenam yang cuma didaftarkan di
+   satu sisi langsung merah.
+
+   ### Hasil sisir: daftar "cara perolehan" ternyata hidup di LIMA tempat
+
+   Temuan yang lebih besar dari bug aslinya. Diverifikasi manual 2026-08-05:
+
+   | # | Tempat | Isi `tukar_menukar`? |
+   |---|---|---|
+   | 1 | daftar baseline `perolehan`, `lib/engine/penyusutan.ts` | ❌ → ✅ ditambal |
+   | 2 | `JENIS_CARA`, `lib/rekon.ts` (Rekonsiliasi BMD) | ✅ sudah benar |
+   | 3 | `JENIS_CARA_PEROLEHAN`, `app/dashboard/pelaporan/bmd/page.tsx` (Model 3) | ✅ sudah benar |
+   | 4 | `CARA_LIST`, `components/dashboard/CaraPerolehanCards.tsx` | ✅ sudah benar |
+   | 5 | `JENIS_PEROLEHAN`, `lib/bmd.ts` | ❌ → ✅ ditambal (⚠️ ternyata **tak dipakai runtime**) |
+
+   Ditambah dua turunan yang juga harus ikut: `CARA_PEROLEHAN_LABEL` (✅, kembar
+   dengan CHECK `aset.cara_perolehan`) dan `JENIS_TRANSAKSI_LABEL` (❌ → ✅).
+   `VOID_JENIS` (lib/voidedAset.ts) sudah memuat `batal_tukar_menukar` ✅.
+   `LaporanPerolehan`/`LaporanTransaksi` aman — keduanya menerima jenis sebagai
+   **prop**, dan menu Laporan Tukar Menukar memang sudah ada.
+
+   **Pelajarannya bukan "ada satu yang lupa", tapi "ada LIMA salinan".** Yang
+   bolong justru yang paling mahal (engine → barang tak pernah disusutkan);
+   empat lainnya kebetulan benar, dan tak satu pun mekanisme yang menjamin
+   mereka tetap benar. Pasangan 1↔5 dan 5↔`CARA_PEROLEHAN_LABEL` kini terkunci
+   test; **nomor 2, 3, 4 masih tanpa penjaga** — jadikan bagian Fase 0.4b, satu
+   keluarga dengan test sinkronisasi `batal_*`. Kandidat ekstraksi jangka
+   panjang: satu `perolehan/domain/jenis.ts` yang jadi sumber tunggal
+   (Fase 2, kelas risiko sama dengan 2.1–2.6).
 2. **`GOLONGAN_REKAP['1.5.4'].disusutkan = true`** padahal engine tak pernah
    mengakrualkannya (guard `perlakuan !== 'lain_lain'`, keputusan user
    2026-07-13). Konstantanya mencerminkan aturan sebelum keputusan itu.
@@ -166,7 +228,7 @@ rules: {
   '@typescript-eslint/await-thenable':       'error',
   'no-restricted-syntax': ['warn',
     { selector: "VariableDeclarator[id.type='ObjectPattern']:not(:has(Property[key.name='error'])) > AwaitExpression",
-      message: 'Query Supabase wajib memeriksa `error` — pakai assertOk() (rules.md §2.6).' },
+      message: 'Query Supabase wajib memeriksa `error` — pakai assertOk() (rules.md §2.1).' },
   ],
   'no-restricted-imports': ['error', { patterns: [
     { group: ['**/modules/*/data/*', '**/modules/*/ui/*'],
@@ -194,8 +256,8 @@ Bangun tiga helper di `shared/db/` dan `shared/ui/` (kode lengkapnya di
 | Primitif | Menggantikan | Aturan yang jadi tak-bisa-dilanggar |
 |---|---|---|
 | `paginate()` | 126 loop tulis-tangan | keyset + `ORDER BY` + cek error (rules.md §3) |
-| `assertOk()` | 166 `const { data } =` | fail-closed (rules.md §2.6) |
-| `useAsyncData()` | `try/catch/finally` tulis-tangan | loader tak bisa nyangkut (rules.md §2.7) |
+| `assertOk()` | 166 `const { data } =` | fail-closed (rules.md §2.1) |
+| `useAsyncData()` | `try/catch/finally` tulis-tangan | loader tak bisa nyangkut (rules.md §2.2) |
 
 **Adopsi TIDAK dilakukan dengan penggantian massal.** Satu PR yang menyentuh
 47 berkas mustahil di-review, dan di aplikasi yang dilaporkan ke BPK review
@@ -355,7 +417,7 @@ browser**.
 
 ### Pendekatan — per halaman, terukur, satu per satu
 
-Repo ini **sudah punya polanya** dan sudah merestuinya di rules.md §19:
+Repo ini **sudah punya polanya** dan sudah merestuinya di rules.md §4.6:
 `fn_daftar_barang`, `fn_rekap_bmd`, `fn_rekap_saldo_awal`,
 `fn_dashboard_rekap`. Fase ini memperluasnya, bukan mengarang pendekatan baru.
 
@@ -372,25 +434,25 @@ Urutan berdasarkan (berat × frekuensi pakai):
 Per halaman, urutan kerjanya:
 
 - **Ukur dulu**: catat jumlah query & waktu muat sebagai pengurus SKPD
-  TERBESAR (bukan admin — rules.md §18). Tanpa angka sebelum, tak ada bukti
+  TERBESAR (bukan admin — rules.md §4.5). Tanpa angka sebelum, tak ada bukti
   sesudah.
 - Pindahkan agregasi/paginasi/penyaringan ke RPC `SECURITY INVOKER` (biarkan
   RLS tetap berlaku) atau ke Route Handler bila butuh komposisi lintas tabel.
 - **Checklist RLS wajib untuk tiap RPC/policy/index baru di fase ini**
-  (rules.md §14–20 — ditulis eksplisit di sini karena fase ini fokusnya di sisi
+  (rules.md §4 — ditulis eksplisit di sini karena fase ini fokusnya di sisi
   TS dan bagian SQL-nya paling mudah kelupaan):
   - fungsi apa pun di policy dibungkus InitPlan — `(SELECT fn_…())`, jangan
-    pernah telanjang (§14);
+    pernah telanjang (§4.1);
   - predikat golongan/`jenis` diselesaikan lewat **partial index yang
     predikatnya sama persis** dengan qual di kode — `LIKE` dan `=` pada ENUM
     tak pernah bisa jadi index-cond di bawah RLS, dan beda sedikit membuat
-    index diabaikan **diam-diam** (§15, §25);
-  - `.order()` baru → pastikan ada index yang memuat kolom urutnya (§12);
+    index diabaikan **diam-diam** (§4.2, §5.5);
+  - `.order()` baru → pastikan ada index yang memuat kolom urutnya (§3.3);
   - tabel besar yang selama ini hanya dibaca lewat RPC `SECURITY DEFINER`:
-    cek policy-nya sudah InitPlan **sebelum** halaman membacanya langsung (§20);
-  - migrasi PLAIN, bukan `CONCURRENTLY` (§23); import/backfill diakhiri
-    `ANALYZE` (§17).
-- `EXPLAIN` **dengan RLS aktif** (rules.md §16) — tanpa itu verifikasinya
+    cek policy-nya sudah InitPlan **sebelum** halaman membacanya langsung (§4.7);
+  - migrasi PLAIN, bukan `CONCURRENTLY` (§5.3); import/backfill diakhiri
+    `ANALYZE` (§4.4).
+- `EXPLAIN` **dengan RLS aktif** (rules.md §4.3) — tanpa itu verifikasinya
   tidak membuktikan apa pun.
 - Halamannya jadi Server Component; sisakan `'use client'` hanya untuk
   filter dan tabel interaktifnya.
@@ -409,7 +471,7 @@ Per halaman, urutan kerjanya:
   pernah auto-null. Selesaikan jumlah query dulu — kemungkinan besar sudah
   cukup.
 - **Pisah `aset`/`transaksi_bmd` per tahun atau per jenis.** Dilarang
-  rules.md §22. Kalau skala benar-benar jadi masalah: **partisi by
+  rules.md §5.2. Kalau skala benar-benar jadi masalah: **partisi by
   `periode`**.
 
 ---
@@ -476,17 +538,33 @@ tanpa test itu biaya berbunga.
 Tinjau sebulan sekali. Semuanya bisa dihitung satu perintah — sengaja,
 supaya tak ada alasan tidak mengukurnya.
 
-| Metrik | Awal | 3 bln | 6 bln | 12 bln |
-|---|---|---|---|---|
-| Test unit domain | 0 | 60 | 150 | 300 |
-| Test integrasi DB (`authenticated`) | 0 | 10 | 40 | 60 |
-| Golden test laporan | 0 | 5 | 15 | 20 |
-| Loop paginasi tulis-tangan | 126 | 90 | 40 | < 10 |
-| `const { data } = await` | 166 | 110 | 50 | < 10 |
-| Berkas > 500 baris | 19 | 15 | 8 | ≤ 3 |
-| Komentar "ubah satu, samakan yang lain" | ~6 pasang | 4 | 2 | 0 |
-| Query per pemuatan Daftar Barang | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
-| Coverage `domain/` + `shared/` | — | 60% | 80% | 85% |
+**Kolom `Sekarang` WAJIB diisi ulang tiap tinjauan** (tulis tanggalnya). Tanpa
+kolom itu tabel ini cuma daftar cita-cita — tidak ada tempat mencatat posisi
+hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
+
+| Metrik | Awal | **Sekarang** | 3 bln | 6 bln | 12 bln |
+|---|---|---|---|---|---|
+| Test unit domain | 0 | **150** + `visibilitas.test.ts` ⟨2026-08-05⟩ | 60 | 150 | 300 |
+| Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
+| Golden test laporan | 0 | **0** | 5 | 15 | 20 |
+| Loop paginasi tulis-tangan | 126 | ⬜ belum diukur ulang | 90 | 40 | < 10 |
+| `const { data } = await` | 166 | ⬜ belum diukur ulang | 110 | 50 | < 10 |
+| Berkas > 500 baris | 19 | ⬜ belum diukur ulang | 15 | 8 | ≤ 3 |
+| Komentar "ubah satu, samakan yang lain" | ~6 pasang | **5 + 1 keluarga baru** ⟨lihat catatan⟩ | 4 | 2 | 0 |
+| Query per pemuatan Daftar Barang | 8–15 | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
+| Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
+
+Angka test berasal dari Fase 0.2 (71) + 0.3 (73) + 0.4 (6 invarian). Baris
+ber-⬜ butuh perintah metrik di §4 dijalankan ulang — jangan diisi kira-kira,
+lebih baik kosong daripada angka karangan.
+
+⚠️ Baris konstanta kembar **naik, bukan turun**: `visibilitas` berhasil
+disatukan (−1), tapi sisir `tukar_menukar` 2026-08-05 menemukan keluarga yang
+sebelumnya tak terhitung — daftar "cara perolehan" ada di **lima** tempat
+(§5 Temuan 0.3 #1). Angka awal "~6 pasang" ternyata terlalu optimis karena
+dihitung dari komentar yang ADA; duplikat yang tak berkomentar tak masuk
+hitungan sama sekali. **Perhitungan berbasis komentar itu batas bawah, bukan
+jumlah sebenarnya** — perlakukan begitu saat meninjau.
 
 Kolom terakhir yang paling penting: **nol pasang konstanta kembar** berarti
 setiap aturan yang hari ini dijaga oleh peringatan tertulis sudah berubah
