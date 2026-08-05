@@ -34,7 +34,7 @@ import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
   fetchSnapshotPositions, aggregatePositions, prepareSnapshotCtx, fetchMutasiLines, attribusiPenyusutan,
-  aggregateMutasi, measuresOf, mutasiCellOf, fetchPenyusutanAset, zeroUkuran,
+  aggregateMutasi, measuresOf, mutasiCellOf, fetchPenyusutanAset, zeroUkuran, TAMBAH_KEYS, KURANG_KEYS,
   type Snapshot, type Mutasi, type MutasiCell, type MutasiKey, type MutasiLine, type Komptabel,
   type PenyusutanAset, type UkuranMutasi, type Measures,
 } from '@/lib/rekon'
@@ -45,9 +45,6 @@ const KOMPS: Komptabel[] = ['intra', 'ekstra']
 // ── Struktur baris laporan (image BA rekonsiliasi) ──────────────────────────
 type RowKind = 'saldo-awal' | 'saldo-akhir' | 'header' | 'sub' | 'item' | 'jumlah-t' | 'jumlah-k' | 'selisih'
 type RowDef = { kind: RowKind; label: string; key?: MutasiKey; indent?: number }
-
-const TAMBAH_KEYS: MutasiKey[] = ['pengadaan', 'hibah', 'tukar', 'inventarisasi', 'lainnya', 'kdp', 'belanja_jasa', 'penggunaan_masuk', 'kapitalisasi', 'koreksi_tambah', 'reklas_fungsi_masuk', 'reklas_kode_masuk']
-const KURANG_KEYS: MutasiKey[] = ['hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain', 'pengalihan_keluar', 'koreksi_kurang', 'reklas_fungsi_keluar', 'reklas_kode_keluar']
 
 const ROWS: RowDef[] = [
   { kind: 'saldo-awal', label: 'SALDO AWAL' },
@@ -65,6 +62,10 @@ const ROWS: RowDef[] = [
   { kind: 'item', label: 'Penggunaan (transfer masuk)', key: 'penggunaan_masuk', indent: 1 },
   { kind: 'item', label: 'Kapitalisasi', key: 'kapitalisasi', indent: 1 },
   { kind: 'item', label: 'Koreksi Nilai', key: 'koreksi_tambah', indent: 1 },
+  // Pemecahan Barang: pecahan MASUK ke sel ini. Bukan net-nol terhadap baris
+  // induk di bawah — keduanya sering beda kolom komptabel (induk intra →
+  // pecahan ekstra), jadi tiap sel melihatnya sebagai mutasi sungguhan.
+  { kind: 'item', label: 'Pemecahan Barang (pecahan baru)', key: 'pemecahan_masuk', indent: 1 },
   { kind: 'sub', label: 'Reklasifikasi', indent: 1 },
   { kind: 'item', label: 'Intra', indent: 2 },        // reklas_komptabel → Selisih (Fase 2b)
   { kind: 'item', label: 'Ekstra', indent: 2 },       // reklas_komptabel → Selisih (Fase 2b)
@@ -80,6 +81,7 @@ const ROWS: RowDef[] = [
   { kind: 'item', label: 'Penghapusan Sebab Lain', key: 'hapus_sebab_lain', indent: 1 },
   { kind: 'item', label: 'Penghapusan Pengalihan (transfer keluar)', key: 'pengalihan_keluar', indent: 1 },
   { kind: 'item', label: 'Koreksi Kurang', key: 'koreksi_kurang', indent: 1 },
+  { kind: 'item', label: 'Pemecahan Barang (induk dipecah)', key: 'pemecahan_keluar', indent: 1 },
   { kind: 'sub', label: 'Reklasifikasi', indent: 1 },
   { kind: 'item', label: 'Intra', indent: 2 },
   { kind: 'item', label: 'Ekstra', indent: 2 },

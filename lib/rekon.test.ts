@@ -10,7 +10,7 @@
 // laporan yang sudah terlanjur dikirim.
 import { describe, it, expect } from 'vitest'
 import {
-  attribusiPenyusutan, aggregateMutasi, aggregatePositions,
+  attribusiPenyusutan, aggregateMutasi, aggregatePositions, KURANG_KEYS,
   type MutasiLine, type MutasiKey, type PosAset, type Komptabel,
 } from '@/lib/rekon'
 
@@ -21,12 +21,12 @@ const pos = (gol: string, perolehan: number, beban: number, akumulasi: number, k
   ({ gol, komp, perolehan, beban, akumulasi, nilaiBuku: perolehan - akumulasi })
 
 let seq = 0
+// `arah` diturunkan dari KURANG_KEYS milik lib — jangan diketik ulang di sini,
+// nanti test-nya "lulus" atas dunia yang tak sama dengan kenyataan produksi.
 function line(kategori: MutasiKey, aset_id: string, nilai: number, opts: { gol?: string; komp?: Komptabel; arah?: 'tambah' | 'kurang' } = {}): MutasiLine {
-  const KURANG = ['hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
-    'pengalihan_keluar', 'koreksi_kurang', 'reklas_fungsi_keluar', 'reklas_kode_keluar']
   return {
     golongan: opts.gol ?? GOL, komp: opts.komp ?? KOMP, kategori,
-    arah: opts.arah ?? (KURANG.includes(kategori) ? 'kurang' : 'tambah'),
+    arah: opts.arah ?? (KURANG_KEYS.includes(kategori) ? 'kurang' : 'tambah'),
     aset_id, nibar: null, kode: `${GOL}.01.01.001`, nama: aset_id,
     skpd_id: 1, tanggal: '2026-08-01', nilai, jenis: kategori, no_dokumen: `DOK-${++seq}`,
     beban: 0, akumulasi: 0,
@@ -152,6 +152,54 @@ describe('attribusiPenyusutan — reklasifikasi memindahkan aset antar sel', () 
     expect(awL.akumulasi + 0 + 0 - 50).toBe(0)
     // Sel tujuan: 0 + beban 10 + bawaan 50 − 0 = 60.
     expect(0 + akB.beban + 50 - 0).toBe(akB.akumulasi)
+  })
+})
+
+describe('pemecahan barang — induk intra → pecahan ekstra (kasus nyata 2026-08-05)', () => {
+  // Rehab Garasi Grogol 167.324.933 INTRA dipecah jadi 7 lapak EKSTRA di
+  // 2026-S2. Rencana §1 keputusan #4 dulu bilang pemecahan "net-nol jadi
+  // diabaikan" — keliru: net-nol cuma kalau dijumlah LINTAS sel. Per sel, intra
+  // berkurang penuh & ekstra bertambah penuh. Tanpa kategori sendiri keduanya
+  // nyangkut di baris Selisih tanpa penjelasan; itu yang dilaporkan user.
+  const GOL = '1.3.3'
+  const posAwal = new Map<string, PosAset>([['INDUK', pos(GOL, 167_324_933, 1_673_249, 11_712_745, 'intra')]])
+  const posAkhir = new Map<string, PosAset>(
+    ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'].map(k => [k, pos(GOL, 23_903_561, 239_035, 1_673_249, 'ekstra')]),
+  )
+  const lines = [
+    line('pemecahan_keluar', 'INDUK', 167_324_933, { gol: GOL, komp: 'intra' }),
+    ...['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'].map(k => line('pemecahan_masuk', k, 23_903_561, { gol: GOL, komp: 'ekstra' })),
+  ]
+  const atr = attribusiPenyusutan(lines, posAwal, posAkhir)
+  const mut = aggregateMutasi(atr.lines)
+
+  it('kolom INTRA: induk keluar penuh, bawa akumulasi lamanya', () => {
+    expect(sel(mut, 'pemecahan_keluar', GOL, 'intra'))
+      .toEqual({ perolehan: 167_324_933, beban: 0, akumulasi: 11_712_745 })
+  })
+
+  it('kolom EKSTRA: ketujuh pecahan masuk, bawa beban + akumulasi warisan induk', () => {
+    const u = sel(mut, 'pemecahan_masuk', GOL, 'ekstra')
+    expect(u.perolehan).toBe(167_324_927)          // 7 × 23.903.561
+    expect(u.beban).toBe(7 * 239_035)
+    expect(u.akumulasi).toBe(7 * (1_673_249 - 239_035)) // bawaan saja, beban tak dobel
+  })
+
+  it('BUKAN net-nol per sel — itu sebabnya butuh kategori sendiri', () => {
+    // Kalau "diabaikan" seperti rencana awal, kolom intra kelebihan 167 juta dan
+    // kolom ekstra kekurangan 167 juta, dua-duanya jatuh ke baris Selisih.
+    expect(sel(mut, 'pemecahan_keluar', GOL, 'ekstra').perolehan).toBe(0)
+    expect(sel(mut, 'pemecahan_masuk', GOL, 'intra').perolehan).toBe(0)
+  })
+
+  it('rantai kedua sel tie-out', () => {
+    const awI = aggregatePositions(posAwal)[GOL].intra
+    const akE = aggregatePositions(posAkhir)[GOL].ekstra
+    // Intra: 167.324.933 − 167.324.933 = 0
+    expect(awI.perolehan - 167_324_933).toBe(0)
+    expect(awI.akumulasi - 11_712_745).toBe(0)
+    // Ekstra: 0 + beban + akumulasi bawaan = akumulasi akhir
+    expect(0 + akE.beban + 7 * (1_673_249 - 239_035)).toBe(akE.akumulasi)
   })
 })
 

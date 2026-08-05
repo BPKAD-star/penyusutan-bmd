@@ -30,7 +30,7 @@ Keputusan yang sudah dikunci:
 | 1 | Period-correctness | **Fork A** — period-correct betulan (S1 beku walau S2 bergerak). Jadi alat pembanding untuk menemukan yang missed di Laporan BMD. |
 | 2 | Kolom Beban & Akumulasi | **Atribusi penuh** per kategori (selama sel itu ada transaksi). |
 | 3 | Kapitalisasi | **Baris sendiri** di Penambahan. |
-| 4 | Pemecahan | **Diabaikan** (net-nol). |
+| 4 | Pemecahan | ~~Diabaikan (net-nol)~~ → **DIRALAT 2026-08-05: punya baris sendiri** di Penambahan (`pemecahan_masuk`) & Pengurangan (`pemecahan_keluar`). "Net-nol" cuma benar kalau dijumlah LINTAS sel; induk & pecahan sering beda kolom komptabel (kasus nyata: induk 167.324.933 **intra** → 7 lapak **ekstra**), jadi tiap sel melihatnya sebagai mutasi penuh. Tanpa kategori sendiri, dua-duanya nyangkut di baris Selisih tanpa penjelasan. |
 | 5 | "Perolehan dari rekening Belanja Jasa" | `pengadaan` dengan `payload.kode_rekening` diawali **`5.1`**. Tanpa rekening / bukan pengadaan → Cara Perolehan biasa (Opsi B). |
 | 6 | Urutan jenis aset | Tanah → Peralatan & Mesin → Gedung & Bangunan → Jalan/Jaringan/Irigasi → Aset Tetap Lainnya → KDP → Aset Tidak Berwujud → Aset Lain-Lain (`GOLONGAN_REKAP`, sudah urut ini). |
 
@@ -361,7 +361,15 @@ justru output yang dicari (keputusan #1).
   **Sisa yang belum, dan sengaja:**
   - **Fase 2b** — `reklas_komptabel` (baris Reklasifikasi → Intra/Ekstra) masih
     belum punya `MutasiKey`; angkanya jatuh ke baris **Selisih**. Rantainya tetap
-    reconcile, cuma tak berlabel.
+    reconcile, cuma tak berlabel. (`pemecahan_masuk`/`pemecahan_keluar` DULU juga
+    begitu — sudah dipetakan 2026-08-05, lihat keputusan #4 §1.)
+
+  ⚠️ **Angka baris mutasi ikut apa adanya hasil engine.** Barang yang belum
+  punya baris `penyusutan_semester` untuk periode itu masuk dengan beban &
+  akumulasi **nol**, dan nilai perolehannya jatuh ke `aset.nilai_perolehan`.
+  Jadi sesudah pemecahan/kapitalisasi/koreksi, **jalankan engine untuk periode
+  itu** sebelum angkanya dipakai — kalau tidak, pecahan tampil seolah akumulasi
+  penyusutannya nol padahal ia mewarisi akumulasi induknya.
   - **Badge reconcile** (§9) belum ada; untuk sekarang baris Selisih yang jadi
     penunjuknya — nol artinya cocok sempurna.
 - **Fase 4** — badge reconcile + polish. (Export Excel **sudah** ada dan kini
