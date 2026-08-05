@@ -18,7 +18,7 @@ import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
-import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
+import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
 
 // ── Model 3: jenis ledger per kategori Penambahan/Pengurangan (nilai
 // perolehan) — diverifikasi ke kode asli tiap alur (Pengadaan/PerolehanManual/
@@ -47,6 +47,14 @@ const JENIS_CARA_PEROLEHAN = ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasi
 // foot (Awal + Tambah − Kurang ≠ Akhir) sebesar nilai termin periode itu.
 const JENIS_KDP_M3 = ['akumulasi_kdp']
 const JENIS_PENGHAPUSAN_M3 = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
+// Pemecahan Barang — WAJIB ikut sejak fn_rekap_bmd jadi period-correct
+// (20260805_02). Sebelumnya induk yang sudah dipecah berstatus 'dihapus' dan
+// karenanya hilang dari Saldo Awal MAUPUN Saldo Akhir, jadi pemecahan tak
+// kelihatan sama sekali dan Model 3 "foot" secara kebetulan. Sekarang Saldo
+// Awal memuatnya kembali (benar), jadi tanpa baris ini rekonsiliasinya meleset
+// tepat sebesar nilai induk yang pecahannya pindah kolom komptabel — kasus
+// nyata: Rehab Garasi Grogol Rp167.324.933, induk intra → 7 pecahan ekstra.
+const JENIS_PECAH_M3 = ['pemecahan_keluar', 'pemecahan_masuk']
 
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
 
@@ -184,13 +192,14 @@ export default function LaporanBmdPage() {
   async function fetchLedgerM3(jenisList: string[]) {
     type Row = {
       id: number; aset_id: string; nilai: number; tanggal: string; skpd_asal: number | null; skpd_tujuan: number | null
+      jenis: string; header_id: string | null
       payload: Record<string, unknown> | null
       aset: { kode: string; nama_barang: string | null; nibar: string | null; skpd_id: number; intra_ekstra: string | null } | null
     }
     const out: Row[] = []
     for (let from = 0; ; from += 1000) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select('id,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
+        .select('id,jenis,header_id,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
         .eq('periode', periode).in('jenis', jenisList as never)
         .range(from, from + 999)
       if (!data || data.length === 0) break
@@ -319,6 +328,24 @@ export default function LaporanBmdPage() {
       hapusSeen.add(r.aset_id)
       addLine(kurang, 'kurang', kodeLevel3(r.aset.kode), {
         kategori: 'Penghapusan', tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
+        namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
+      })
+    }
+
+    // Pemecahan Barang: induk KELUAR dari selnya, tiap pecahan MASUK ke selnya.
+    // Sering beda kolom komptabel (induk intra → pecahan ekstra), jadi per
+    // golongan × komptabel ini mutasi sungguhan, bukan net-nol yang bisa
+    // diabaikan. Pembatalan disaring per (kartu, aset) — satu induk boleh
+    // dipecah, dibatalkan, lalu dipecah lagi.
+    const pecahRows = await fetchLedgerM3(JENIS_PECAH_M3)
+    const pecahBatal = await fetchPemecahanBatal(supabase, pecahRows.map(r => r.aset_id))
+    for (const r of pecahRows) {
+      if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
+      if (pecahBatal.has(kunciPemecahan(r.header_id, r.aset_id))) continue
+      const keluar = r.jenis === 'pemecahan_keluar'
+      addLine(keluar ? kurang : tambah, keluar ? 'kurang' : 'tambah', kodeLevel3(r.aset.kode), {
+        kategori: keluar ? 'Pemecahan Barang (induk dipecah)' : 'Pemecahan Barang (pecahan baru)',
+        tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
       })
     }

@@ -116,7 +116,8 @@ di baris terkait. Lihat `VOID_JENIS`, `fetchVoidedAsetIds`,
 `fetchPenghapusanNetRemoved`, `fetchReklasDibatalkan` di
 `app/dashboard/pelaporan/bmd/page.tsx`.
 
-**Diabaikan**: `pemecahan_keluar`/`pemecahan_masuk` (net-nol, keputusan #4),
+**Diabaikan**: ~~`pemecahan_keluar`/`pemecahan_masuk`~~ — **tidak lagi sejak
+2026-08-05**, keduanya punya baris sendiri (lihat ralat keputusan #4 di §1);
 `mutasi_internal` (dalam satu SKPD induk — netral untuk rekap per SKPD induk),
 `koreksi_spesifikasi`/`reklas_komptabel` yang nol-efek nilai perolehan tetap
 dicatat di kolom komptabel (pindah keranjang).
@@ -374,8 +375,13 @@ justru output yang dicari (keputusan #1).
     penunjuknya — nol artinya cocok sempurna.
 - **Fase 4** — badge reconcile + polish. (Export Excel **sudah** ada dan kini
   membawa keempat ukuran untuk semua baris.)
-- **Fase 5 (opsional/terpisah)** — naikkan `fn_rekap_bmd` (Laporan BMD) ke
-  standar period-correct supaya dua laporan konsisten (§4.3).
+- ~~**Fase 5**~~ **SELESAI (2026-08-05, migrasi 20260805_02)** — `fn_rekap_bmd`
+  (Laporan BMD) dinaikkan ke period-correct: visibilitas replay SEMBUNYI/MUNCUL
+  + `LAHIR`, dan kepemilikan pemilik-pada-periode (cermin SQL dari `ownersAt`,
+  termasuk `mutasi_internal` & pembuangan `batal_pengalihan`). Kedua laporan
+  kini **sedefinisi** → Saldo Akhir Laporan BMD harus SAMA PERSIS dengan Saldo
+  Akhir Rekonsiliasi pada periode & scope yang sama. Model 3 ikut dapat baris
+  Pemecahan Barang supaya tetap foot. DECISION-3 dengan sendirinya terjawab.
 
 > ⚠️ **Catatan cara baca kolom Akumulasi** (konsekuensi §5.3 yang gampang
 > disalahpahami saat tie-out): kolom Akumulasi **tidak** menjumlah vertikal
@@ -398,8 +404,9 @@ justru output yang dicari (keputusan #1).
   browser untuk DUA periode. Pemindahan agregasi ke RPC sudah terdaftar di
   REFACTOR-PLAN §"Rekonsiliasi & Laporan BMD"; **ukur dulu sebagai pengurus SKPD
   TERBESAR sebelum menyimpulkan** (rules.md §18).
-- **DECISION-3** (§4.3, Fase 5): apakah `fn_rekap_bmd`/Laporan BMD ikut
-  dinaikkan ke period-correct sekarang atau nanti. **Belum diputuskan.**
+- ~~**DECISION-3**~~ (§4.3, Fase 5) **DIJAWAB 2026-08-05: SEKARANG.**
+  `fn_rekap_bmd`/Laporan BMD dinaikkan ke period-correct lewat migrasi
+  20260805_02 (permintaan user). Kedua laporan kini sedefinisi.
 - **Data quality**: `kode_rekening` teks bebas & hanya di Pengadaan → baris
   "Belanja Jasa" hanya menangkap pengadaan ber-5.1 yang benar terisi. Perlu
   disepakati bahwa yang kosong = Cara Perolehan biasa (sudah, Opsi B).

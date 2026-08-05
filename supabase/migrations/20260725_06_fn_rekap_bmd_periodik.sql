@@ -1,4 +1,18 @@
 -- ============================================================================
+-- ⛔ JANGAN DIJALANKAN — TIDAK PERNAH DIPAKAI, DIGANTIKAN 20260805_02.
+--
+-- Diperiksa 2026-08-05: fungsi ini tidak ada di database (migrasinya memang tak
+-- pernah dijalankan) dan tak pernah dipanggil satu baris kode pun — halaman
+-- Laporan BMD selalu memakai `fn_rekap_bmd`. Menyimpan dua fungsi rekap yang
+-- nyaris kembar cuma mengundang drift, jadi perbaikan period-correct-nya
+-- dipasang di `fn_rekap_bmd` ITU SENDIRI lewat
+-- `20260805_02_fn_rekap_bmd_period_correct.sql` — yang sekaligus menambal dua
+-- hal yang belum ada di berkas ini: pemeriksaan barang BELUM LAHIR (pecahan
+-- Pemecahan Barang mewarisi `tgl_perolehan` induk) dan pembuangan pengalihan
+-- yang dianulir `batal_pengalihan`. Berkas ini disimpan sebagai jejak sejarah.
+--
+-- Isi asli di bawah.
+-- ----------------------------------------------------------------------------
 -- fn_rekap_bmd_periodik — rekap BMD PERIOD-CORRECT PENUH (langkah 3 temuan
 -- audit Pelaporan 2026-07-25).
 --

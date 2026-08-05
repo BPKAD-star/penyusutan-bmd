@@ -187,3 +187,29 @@ export async function fetchBatalTargets(
   }
   return out
 }
+
+// ── Pembatalan PEMECAHAN BARANG ─────────────────────────────────────────────
+// Beda bentuk dari dua helper di atas: `batal_pemecahan` (induk) &
+// `batal_pemecahan_masuk` (tiap pecahan) TIDAK memakai `payload.target_trx_id`
+// — keduanya baris per-ASET yang menempel di kartu jurnal yang sama. Jadi
+// kuncinya `(header_id, aset_id)`, BUKAN aset saja: satu induk boleh dipecah,
+// dibatalkan, lalu dipecah lagi — kalau dicek per aset, pembatalan yang lama
+// ikut menghapus pemecahan yang baru.
+//
+// Dipakai bersama Rekonsiliasi BMD & Laporan BMD Model 3.
+export async function fetchPemecahanBatal(supabase: SupabaseClient, asetIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>()
+  const uniq = [...new Set(asetIds)]
+  for (let i = 0; i < uniq.length; i += 200) {
+    const { data, error } = await supabase.from('transaksi_bmd')
+      .select('aset_id,header_id')
+      .in('jenis', ['batal_pemecahan', 'batal_pemecahan_masuk'] as never)
+      .in('aset_id', uniq.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca pembatalan pemecahan: ${error.message}`)
+    for (const r of (data || []) as { aset_id: string; header_id: string | null }[])
+      out.add(kunciPemecahan(r.header_id, r.aset_id))
+  }
+  return out
+}
+
+export const kunciPemecahan = (headerId: string | null, asetId: string) => `${headerId ?? ''}|${asetId}`

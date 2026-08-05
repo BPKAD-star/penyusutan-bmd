@@ -9,7 +9,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { kodeLevel3, perlakuanKode } from '@/lib/bmd'
 import { fetchPindahEvents, ownersAt, partitionByPeriodOwner, type PindahEvents } from '@/lib/pengalihan'
-import { fetchVoidedAsetIds, fetchBatalTargets } from '@/lib/voidedAset'
+import { fetchVoidedAsetIds, fetchBatalTargets, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
 
 export type Komptabel = 'intra' | 'ekstra'
@@ -312,23 +312,6 @@ export const KURANG_KEYS: MutasiKey[] = [
 ]
 const KURANG_SET = new Set<MutasiKey>(KURANG_KEYS)
 
-// Pembatalan pemecahan, dikunci per (header, aset). SENGAJA bukan per aset saja:
-// satu induk boleh dipecah, dibatalkan, lalu dipecah lagi — kalau dicek per aset,
-// pembatalan yang lama ikut menghapus pemecahan yang baru.
-async function fetchPemecahanBatal(supabase: SupabaseClient, asetIds: string[]): Promise<Set<string>> {
-  const out = new Set<string>()
-  const uniq = [...new Set(asetIds)]
-  for (let i = 0; i < uniq.length; i += 200) {
-    const { data, error } = await supabase.from('transaksi_bmd')
-      .select('aset_id,header_id')
-      .in('jenis', ['batal_pemecahan', 'batal_pemecahan_masuk'] as never)
-      .in('aset_id', uniq.slice(i, i + 200))
-    if (error) throw new Error(`gagal membaca pembatalan pemecahan: ${error.message}`)
-    for (const r of (data || []) as { aset_id: string; header_id: string | null }[])
-      out.add(`${r.header_id ?? ''}|${r.aset_id}`)
-  }
-  return out
-}
 
 export const KATEGORI_LABEL: Record<MutasiKey, string> = {
   pengadaan: 'Pengadaan', belanja_jasa: 'Perolehan dari rekening Belanja Jasa',
@@ -449,7 +432,7 @@ async function computeMutasiLines(
   // di tabel yang benar.
   for (const r of pecah) {
     if (!r.aset || !inScope(r.aset.skpd_id)) continue
-    if (pecahBatal.has(`${r.header_id ?? ''}|${r.aset_id}`)) continue
+    if (pecahBatal.has(kunciPemecahan(r.header_id, r.aset_id))) continue
     push(kodeLevel3(r.aset.kode), kompOf(r.aset.intra_ekstra),
       r.jenis === 'pemecahan_keluar' ? 'pemecahan_keluar' : 'pemecahan_masuk', r.nilai, r)
   }

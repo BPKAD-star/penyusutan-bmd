@@ -556,7 +556,25 @@ disentuh sampai SKPD tujuan menerima). Poin penting:
   scope tapi kini sudah pindah keluar (di-fetch by id, RLS `aset_select` diperluas
   migrasi 22 via `fn_aset_pernah_dikelola` supaya pengirim tetap bisa baca aset yg
   sudah pindah). Angka penyusutan engine tak berubah — hanya kolom/atribusi SKPD.
-  ⚠️ Rekapitulasi Saldo Akhir (per SKPD) BELUM period-aware utk pengalihan.
+  ✅ **Laporan BMD ikut period-aware sejak migrasi 20260805_02** (permintaan
+  user 2026-08-05): `fn_rekap_bmd` tak lagi memakai `status`/`skpd_id` TERKINI.
+  Kini replay SEMBUNYI/MUNCUL + `LAHIR` + pemilik-pada-periode (`ownersAt` versi
+  SQL, termasuk `mutasi_internal` & pembuangan `batal_pengalihan`), jadi
+  sedefinisi dgn Rekonsiliasi — Saldo Akhir keduanya harus SAMA PERSIS pada
+  periode & scope yang sama; selisih yang tersisa = bug, bukan beda definisi.
+  Bareng itu Model 3 dapat baris **Pemecahan Barang** (masuk/keluar): dulu induk
+  yang sudah dipecah hilang dari Saldo Awal MAUPUN Akhir sehingga Model 3 foot
+  secara kebetulan; begitu Saldo Awal memuatnya kembali, tanpa baris itu
+  rekonsiliasinya meleset sebesar induk yang pecahannya pindah kolom komptabel.
+  ⚠️ Daftar jenis di `fn_rekap_bmd` KEMBAR dgn lib/visibilitas.ts &
+  lib/pengalihan.ts — ubah satu, ubah semua. Dan perbandingannya WAJIB memakai
+  array bertipe enum (`jenis_transaksi_bmd[]`), jangan `jenis::text = ANY(...)`:
+  cast ke text mematikan `idx_trx_jenis_id` → seq scan 418rb baris tiap panggil.
+  ⚠️ **Saldo Awal → Rekapitulasi SENGAJA TIDAK ikut**: ia membaca
+  `aset_awal_2026`, foto BEKU posisi akhir 2025 yang tak pernah disentuh
+  transaksi (`skpd_id`-nya termasuk kolom terkunci). Pengalihan yang terjadi di
+  2026 memang TIDAK boleh menggesernya — membuatnya "period-aware" justru
+  merusak baseline.
 - Selama pending: draft bebas diedit, jurnal boleh DELETE utuh (belum ada
   ledger). Pindah semester = hapus & entry ulang (guard semester sama spt
   ber-SK lain). `skpd_tujuan` terkunci begitu status bukan pending.
