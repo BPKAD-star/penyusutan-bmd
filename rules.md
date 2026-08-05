@@ -81,6 +81,37 @@ kehati-hatian teoretis.
    layar jadi tak cocok tanpa ada yang sadar. Alokasi lewat **tabel counter**
    (`kode_register_seq`, `UPDATE … RETURNING`), bukan `LIKE 'prefix%'` yang
    pernah membuat generator NIBAR timeout lalu mengulang nomor dari 1.
+9. **PERISTIWA BERLAKU SEJAK PERIODENYA, TIDAK SURUT** (keputusan user
+   2026-08-05). Koreksi apa pun — pemecahan, reklasifikasi, kapitalisasi,
+   penghapusan, pengalihan — mengubah keadaan barang **mulai periode
+   peristiwanya**, bukan sejak awal waktu. Barang yang dipecah di 2026-S2 wajib
+   masih **utuh** kalau laporan 2026-S1 dibuka: induknya ada, pecahannya belum.
+   Berlaku di semua halaman period-aware (Daftar Barang, Penyusutan,
+   Rekonsiliasi BMD).
+
+   **Jangan menilai "sudah ada atau belum" dari `tgl_perolehan` saja.** Pecahan
+   hasil Pemecahan Barang sengaja MEWARISI `tgl_perolehan` induknya — itu benar
+   untuk penyusutan (pecahan meneruskan sisa umur induk, bukan memulai umur
+   baru), tapi membuat tanggalnya berbohong soal kapan barang itu ada. Yang
+   otoritatif adalah **periode event kelahirannya** (daftar `LAHIR` di
+   `lib/visibilitas.ts`). Insiden 2026-08-05: pemecahan 27 Juli 2026 → saat
+   2026-S1 dibuka, induk yang masih utuh DAN ketujuh pecahannya tampil
+   bersamaan, jadi nilainya kehitung **dobel** di Daftar Barang maupun
+   Rekonsiliasi BMD — tanpa satu pun pesan error.
+
+   **Bikin pintu baru yang MEMBUAT aset dengan `tgl_perolehan` warisan/mundur
+   (bukan tanggal peristiwanya) → WAJIB daftarkan jenis ledgernya di `LAHIR`.**
+   Logikanya SATU tempat (`lib/visibilitas.ts`, dipakai bertiga) & dikunci
+   `lib/visibilitas.test.ts` — jangan disalin lagi ke halaman.
+
+   ⚠️ **Yang sengaja TIDAK ikut aturan ini**, jangan "dirapikan" tanpa
+   keputusan: `batal_pengadaan`, `batal_hibah_masuk` dkk, dan
+   `koreksi_pencatatan_ganda` memang dicatat MUNDUR ke tanggal aslinya supaya
+   barangnya hilang dari SEMUA periode — di situ maksudnya "tak pernah ada",
+   bukan "berhenti sejak sekarang". Terpisah dari itu, kolom Nilai Perolehan di
+   **Daftar Barang** membaca `aset.nilai_perolehan` TERKINI, jadi kapitalisasi/
+   koreksi nilai di S2 ikut terlihat saat membuka S1 (Penyusutan & Rekonsiliasi
+   tidak — keduanya memakai angka engine per periode). Belum diputuskan.
 
 ## 2. Fail-Closed (angka salah > halaman error)
 

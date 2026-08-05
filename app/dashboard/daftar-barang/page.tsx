@@ -20,7 +20,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_DAFTAR_BARANG, comparePeriode, periodeDariTanggal, asalUsulTampil } from '@/lib/bmd'
+import { GOLONGAN_DAFTAR_BARANG, periodeDariTanggal, asalUsulTampil } from '@/lib/bmd'
+import { fetchHiddenIds, belumAdaPada, SEMBUNYI_DAFTAR_BARANG } from '@/lib/visibilitas'
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
@@ -29,10 +30,9 @@ import { tahunAwal } from '@/lib/tahunKerja'
 const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 
-// Event yang menyembunyikan / memunculkan kembali aset (serap/hapus vs batal) —
-// sama dgn menu Penyusutan. Dipakai untuk visibilitas period-aware.
-const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan', 'koreksi_pencatatan_ganda', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'kdp_selesai_keluar', 'pemecahan_keluar', 'batal_pemecahan_masuk']
-const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan', 'batal_koreksi_pencatatan_ganda']
+// Visibilitas period-aware (event sembunyi/muncul/lahir) dari lib/visibilitas.ts
+// — dipakai bersama Penyusutan & Rekonsiliasi. Varian daftar SEMBUNYI di sini
+// beda sendiri (plus `kdp_selesai_keluar`); itu disengaja, lihat modulnya.
 
 const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
 
@@ -349,39 +349,6 @@ export default function DaftarBarangPage() {
     return all
   }
 
-  // aset_id yang tersembunyi PADA periode terpilih (serap/hapus dgn periode <=
-  // periode, dikurangi batal). Sama persis dgn logika menu Penyusutan, supaya
-  // Daftar Barang menampilkan posisi barang sesuai semester yang dipilih:
-  //   - barang yang dihapus di semester DEPAN tetap muncul saat lihat semester lalu;
-  //   - barang anak yang diserap kapitalisasi disembunyikan sejak periode serap.
-  const fetchHiddenIds = useCallback(async (ids: string[], periode: string) => {
-    const evByAset = new Map<string, { id: number; periode: string; jenis: string }[]>()
-    for (let i = 0; i < ids.length; i += 200) {
-      const { data, error } = await supabase.from('transaksi_bmd')
-        .select('id,aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
-      // Gagal di sini TIDAK BOLEH ditelan: set kosong = "tak ada yang
-      // disembunyikan", jadi barang yang sudah dihapus/diserap muncul lagi
-      // seolah masih ada — persis jebakan filter void (CLAUDE.md).
-      if (error) throw new Error(`gagal membaca event visibilitas barang: ${error.message}`)
-      for (const e of (data || []) as { id: number; aset_id: string; jenis: string; periode: string }[]) {
-        const arr = evByAset.get(e.aset_id) || []; arr.push({ id: e.id, periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
-      }
-    }
-    const hidden = new Set<string>()
-    for (const [id, evs] of evByAset) {
-      let h = false
-      // Urut kronologis SUNGGUHAN (periode lalu id ledger — append-only jadi id = urutan
-      // insert asli), BUKAN dikelompokkan SEMBUNYI-dulu-baru-MUNCUL. Pengelompokan lama
-      // salah kalau dalam satu periode ada siklus hapus→batal→hapus lagi (mis. dari testing
-      // di hari yang sama): hasil akhir harus ikut aksi TERAKHIR, bukan selalu "batal menang".
-      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || a.id - b.id)) {
-        if (SEMBUNYI.includes(e.jenis)) h = true
-        else if (MUNCUL.includes(e.jenis)) h = false
-      }
-      if (h) hidden.add(id)
-    }
-    return hidden
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Jejak penghapusan per aset (untuk export Audit): No SK, tanggal, jenis, alasan —
   // dari ledger + jurnal_header. Penghapusan TERBARU per aset (id desc) yang menang.
@@ -448,9 +415,11 @@ export default function DaftarBarangPage() {
       combined = [...kept, ...added]
     }
 
-    const hidden = await fetchHiddenIds(combined.map(r => r.id), f.periode)
-    const belumAda = (r: Row) => !!r.tgl_perolehan && comparePeriode(periodeDariTanggal(r.tgl_perolehan), f.periode) > 0
-    const visible = combined.filter(r => !hidden.has(r.id) && !belumAda(r)).sort(bandingKode)
+    // `hidden` sudah mencakup barang yang BELUM LAHIR pada periode ini (pecahan
+    // hasil Pemecahan Barang mewarisi tgl perolehan induknya, jadi tak bisa
+    // dinilai dari tanggal); belumAdaPada menangani perolehan biasa.
+    const hidden = await fetchHiddenIds(supabase, combined.map(r => r.id), f.periode, SEMBUNYI_DAFTAR_BARANG)
+    const visible = combined.filter(r => !hidden.has(r.id) && !belumAdaPada(r.tgl_perolehan, f.periode)).sort(bandingKode)
 
     setAllVisible(visible)
     setTotal(visible.length)

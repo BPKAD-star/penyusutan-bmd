@@ -14,7 +14,8 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_REKAP, perlakuanKode, comparePeriode, periodeDariTanggal } from '@/lib/bmd'
+import { GOLONGAN_REKAP, perlakuanKode } from '@/lib/bmd'
+import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
@@ -63,9 +64,8 @@ type Applied = { org: OrgSelection; golongan: string; komptabel: string; periode
 const angka = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
-// Event yang menyembunyikan / memunculkan kembali aset (serap/hapus vs batal).
-const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan', 'koreksi_pencatatan_ganda', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'pemecahan_keluar', 'batal_pemecahan_masuk']
-const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan', 'batal_koreksi_pencatatan_ganda']
+// Visibilitas period-aware (event sembunyi/muncul/lahir) dari lib/visibilitas.ts
+// — dipakai bersama Daftar Barang & Rekonsiliasi supaya tak menyimpang lagi.
 
 export default function PenyusutanPage() {
   const supabase = createClient()
@@ -178,32 +178,6 @@ export default function PenyusutanPage() {
     return map
   }
 
-  // aset_id yang tersembunyi PER periode (serap/hapus dgn periode <= viewed, dikurangi batal).
-  async function fetchHiddenIds(ids: string[], periode: string) {
-    const evByAset = new Map<string, { id: number; periode: string; jenis: string }[]>()
-    for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await supabase.from('transaksi_bmd')
-        .select('id,aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
-      for (const e of (data || []) as { id: number; aset_id: string; jenis: string; periode: string }[]) {
-        const arr = evByAset.get(e.aset_id) || []; arr.push({ id: e.id, periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
-      }
-    }
-    const hidden = new Set<string>()
-    for (const [id, evs] of evByAset) {
-      let h = false
-      // Urut kronologis SUNGGUHAN (periode lalu id ledger — append-only jadi id = urutan
-      // insert asli), BUKAN dikelompokkan SEMBUNYI-dulu-baru-MUNCUL. Pengelompokan lama
-      // salah kalau dalam satu periode ada siklus hapus→batal→hapus lagi (mis. dari testing
-      // di hari yang sama): hasil akhir harus ikut aksi TERAKHIR, bukan selalu "batal menang".
-      for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || a.id - b.id)) {
-        if (SEMBUNYI.includes(e.jenis)) h = true
-        else if (MUNCUL.includes(e.jenis)) h = false
-      }
-      if (h) hidden.add(id)
-    }
-    return hidden
-  }
-
   // Kapitalisasi per NIBAR induk (buang yang dibatalkan), urut tertua→termuda.
   async function fetchKap(f: Applied) {
     let kq = supabase.from('transaksi_bmd').select('id,tanggal,keterangan,payload,aset:aset_id(nibar)').eq('jenis', 'kapitalisasi')
@@ -257,13 +231,15 @@ export default function PenyusutanPage() {
     }
 
     const ids = combined.map(b => b.id)
-    const [pmap, hidden] = await Promise.all([fetchPeny(ids, f.periode), fetchHiddenIds(ids, f.periode)])
-    const belumAda = (b: Base) => !!b.tgl_perolehan && comparePeriode(periodeDariTanggal(b.tgl_perolehan), f.periode) > 0
+    const [pmap, hidden] = await Promise.all([
+      fetchPeny(ids, f.periode),
+      fetchHiddenIds(supabase, ids, f.periode, SEMBUNYI_PENYUSUTAN),
+    ])
     // Sortir di SINI, bukan andalkan urutan dari DB: `combined` gabungan dua
     // fetch (`kept` + `added` period-aware) yang ditempel di belakang, jadi
     // urutan aslinya sudah pasti patah.
     return combined
-      .filter(b => !hidden.has(b.id) && !belumAda(b))
+      .filter(b => !hidden.has(b.id) && !belumAdaPada(b.tgl_perolehan, f.periode))
       .sort(bandingKode)
       .map(b => ({ ...b, p: pmap.get(b.id), ownerSkpd: owners.get(b.id) ?? b.skpd_id }))
   }

@@ -35,6 +35,26 @@ terbukti dilanggar di repo ini.
 
 ## Aturan lintas-fitur (2026-07-19, JANGAN dilanggar)
 
+- **PERISTIWA BERLAKU SEJAK PERIODENYA, TIDAK SURUT** (keputusan user
+  2026-08-05, berlaku untuk SEMUA bentuk koreksi). Barang yang dipecah di
+  2026-S2 wajib masih UTUH kalau 2026-S1 dibuka — induknya ada, pecahannya
+  belum. **Jangan menilai "sudah ada atau belum" dari `tgl_perolehan` saja:**
+  pecahan hasil Pemecahan Barang sengaja MEWARISI `tgl_perolehan` induk
+  (Koreksi.tsx) supaya penyusutannya meneruskan sisa umur induk, jadi
+  tanggalnya berbohong soal kapan barang itu ada. Yang otoritatif = periode
+  event kelahirannya (`LAHIR` di lib/visibilitas.ts, kini memuat
+  `pemecahan_masuk` & `kdp_selesai_masuk`). Insiden: pemecahan 27 Juli 2026 di
+  Dinas Koperasi → di 2026-S1 induk (167.324.933) DAN 7 pecahannya tampil
+  bersamaan → nilai **dobel** di Daftar Barang & Rekonsiliasi BMD tanpa satu pun
+  pesan error. **Pintu baru yang MEMBUAT aset dengan `tgl_perolehan` warisan/
+  mundur → WAJIB daftarkan jenis ledgernya di `LAHIR`.**
+  Bareng perbaikan ini, replay visibilitas (`SEMBUNYI`/`MUNCUL`/`LAHIR` +
+  `fetchHiddenIds` + `belumAdaPada`) dipindah ke **lib/visibilitas.ts** —
+  sebelumnya disalin di Daftar Barang, Penyusutan, & lib/rekon.ts dan sudah
+  menyimpang (varian Daftar Barang beda `kdp_selesai_keluar`; versi Penyusutan
+  malah menelan error query). Jangan disalin lagi ke halaman; dikunci
+  lib/visibilitas.test.ts. Rincian & pengecualian yang disengaja: rules.md §1.9.
+
 - **PERFORMA Daftar Barang & Penyusutan — JANGAN diturunkan.** Setelah import
   massal (Peralatan & Mesin 218rb, dst → total aset ~227rb), dua halaman ini
   sempat 504/timeout/freeze. Yang MENYELAMATKAN & bikin stabil (bukan sekadar

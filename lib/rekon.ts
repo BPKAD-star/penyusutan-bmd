@@ -7,14 +7,10 @@
 // nilai_perolehan terkini (fn_rekap_bmd TIDAK period-correct). Lihat
 // docs/rekonsiliasi-bmd-plan.md §4.
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { comparePeriode, periodeDariTanggal, kodeLevel3, perlakuanKode } from '@/lib/bmd'
+import { kodeLevel3, perlakuanKode } from '@/lib/bmd'
 import { fetchPindahEvents, ownersAt, partitionByPeriodOwner, type PindahEvents } from '@/lib/pengalihan'
 import { fetchVoidedAsetIds, fetchBatalTargets } from '@/lib/voidedAset'
-
-// Event yang menyembunyikan / memunculkan kembali aset — SAMA dgn halaman
-// Penyusutan (jangan pakai varian Daftar Barang yg beda kdp_selesai_keluar).
-const SEMBUNYI = ['kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain', 'batal_pengadaan', 'koreksi_pencatatan_ganda', 'batal_hibah_masuk', 'batal_tukar_menukar', 'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'pemecahan_keluar', 'batal_pemecahan_masuk']
-const MUNCUL = ['batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan', 'batal_koreksi_pencatatan_ganda']
+import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
 
 export type Komptabel = 'intra' | 'ekstra'
 export type Measures = { perolehan: number; beban: number; akumulasi: number; nilaiBuku: number; count: number }
@@ -87,30 +83,6 @@ async function fetchPeny(supabase: SupabaseClient, ids: string[], periode: strin
   return map
 }
 
-// aset_id yang tersembunyi PADA periode (serap/hapus dgn periode <= viewed,
-// dikurangi batal) — replay kronologis SUNGGUHAN (periode lalu id ledger).
-async function fetchHiddenIds(supabase: SupabaseClient, ids: string[], periode: string): Promise<Set<string>> {
-  const evByAset = new Map<string, { id: number; periode: string; jenis: string }[]>()
-  for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await supabase.from('transaksi_bmd')
-      .select('id,aset_id,jenis,periode').in('jenis', [...SEMBUNYI, ...MUNCUL] as never).in('aset_id', ids.slice(i, i + 200))
-    if (error) throw new Error(`gagal membaca event visibilitas aset: ${error.message}`)
-    for (const e of (data || []) as { id: number; aset_id: string; jenis: string; periode: string }[]) {
-      const arr = evByAset.get(e.aset_id) || []; arr.push({ id: e.id, periode: e.periode, jenis: e.jenis }); evByAset.set(e.aset_id, arr)
-    }
-  }
-  const hidden = new Set<string>()
-  for (const [id, evs] of evByAset) {
-    let h = false
-    for (const e of evs.filter(e => comparePeriode(e.periode, periode) <= 0).sort((a, b) => comparePeriode(a.periode, b.periode) || a.id - b.id)) {
-      if (SEMBUNYI.includes(e.jenis)) h = true
-      else if (MUNCUL.includes(e.jenis)) h = false
-    }
-    if (h) hidden.add(id)
-  }
-  return hidden
-}
-
 // Bahan yang SAMA untuk berapa pun periode yang di-snapshot: daftar aset dalam
 // scope + riwayat pindah unit. Rekonsiliasi selalu minta DUA snapshot (saldo
 // awal & saldo akhir) dgn descendantIds yang sama — tanpa konteks bersama ini,
@@ -161,12 +133,16 @@ export async function fetchSnapshotPositions(
   }
 
   const ids = combined.map(b => b.id)
-  const [pmap, hidden] = await Promise.all([fetchPeny(supabase, ids, periode), fetchHiddenIds(supabase, ids, periode)])
-  const belumAda = (b: Base) => !!b.tgl_perolehan && comparePeriode(periodeDariTanggal(b.tgl_perolehan), periode) > 0
+  const [pmap, hidden] = await Promise.all([
+    fetchPeny(supabase, ids, periode),
+    fetchHiddenIds(supabase, ids, periode, SEMBUNYI_PENYUSUTAN),
+  ])
 
   const pos = new Map<string, PosAset>()
   for (const b of combined) {
-    if (hidden.has(b.id) || belumAda(b)) continue
+    // `hidden` sudah mencakup "belum lahir" (pecahan pemecahan, carve-out KDP);
+    // belumAdaPada menangani barang biasa yang tanggal perolehannya di depan.
+    if (hidden.has(b.id) || belumAdaPada(b.tgl_perolehan, periode)) continue
     const p = pmap.get(b.id)
     const susut = perlakuanKode(b.kode) !== 'tidak'
     const perolehan = p ? p.nilai_perolehan : (b.nilai_perolehan || 0)
