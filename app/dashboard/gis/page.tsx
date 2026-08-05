@@ -38,11 +38,17 @@ type AsetRow = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null; uraian_barang: string | null
   spesifikasi_lainnya: string | null; jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null
   nama_dokumen_kepemilikan: string | null; tanggal_dokumen_kepemilikan: string | null
-  tgl_perolehan: string | null; nilai_perolehan: number; luas: number | null
+  tgl_perolehan: string | null; nilai_perolehan: number
+  // Masih ikut di-select tapi SENGAJA tak ditampilkan di halaman ini sejak
+  // 2026-08-05 — luas di GIS bersumber dari bidang. Jangan dihapus dari
+  // SELECT_COLS: kalau nanti `aset.luas` yang diputuskan otoritatif
+  // (REFACTOR-PLAN §5), ia tinggal dipasang lagi.
+  luas: number | null
   latitude: number | null; longitude: number | null
   skpd_id: number | null; skpd: { nama: string } | null
 }
-type BidangRingkas = { aset_id: string; jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null; latitude: number | null; longitude: number | null }
+type BidangRingkas = { aset_id: string; jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null; luas: number | null; latitude: number | null; longitude: number | null }
+const BIDANG_COLS = 'aset_id,jenis_hak,nomor_dokumen_kepemilikan,luas,latitude,longitude'
 type Status = 'sengketa' | 'proses' | 'bersertifikat'
 
 const SELECT_COLS = 'id,nibar,kode,nama_barang,uraian_barang,spesifikasi_lainnya,jenis_hak,nomor_dokumen_kepemilikan,nama_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,tgl_perolehan,nilai_perolehan,luas,latitude,longitude,skpd_id,skpd:skpd_id(nama)'
@@ -108,7 +114,7 @@ export default function GisPage() {
       const bidangMap: Record<string, BidangRingkas[]> = {}
       for (let i = 0; i < ids.length; i += 200) {
         const { data: bidang } = await supabase.from('aset_bidang_tanah')
-          .select('aset_id,jenis_hak,nomor_dokumen_kepemilikan,latitude,longitude').in('aset_id', ids.slice(i, i + 200))
+          .select(BIDANG_COLS).in('aset_id', ids.slice(i, i + 200))
         for (const b of (bidang as BidangRingkas[]) || []) (bidangMap[b.aset_id] ||= []).push(b)
       }
       setBidangByAset(bidangMap)
@@ -171,11 +177,32 @@ export default function GisPage() {
   }, [filtered, bidangByAset, selectedId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Statistik ikut set yang lagi difilter — kartu keterangan pojok kiri bawah.
+  //
+  // ⚠️ `luas` DIJUMLAH DARI BIDANG (aset_bidang_tanah), bukan dari `aset.luas`
+  // (keputusan user 2026-08-05). Konsekuensinya angkanya JAUH lebih kecil selama
+  // pendataan bidang belum tuntas — per 2026-08-05: Σ bidang 360.166 m² vs
+  // Σ register 14.679.786 m², karena baru 186 dari 2.733 register yang punya
+  // bidang dan baru 106 dari 632 bidang yang diisi luasnya.
+  //
+  // Karena itu labelnya "Luas terpetakan", BUKAN "Luas total", dan cakupannya
+  // ikut ditampilkan. Ini bukan basa-basi: angka tanpa konteks itu terbaca
+  // sebagai "tanah pemda tinggal 360 ribu m²" — salah baca yang mahal. Dengan
+  // label & cakupannya, angka yang sama justru jadi indikator progres pendataan
+  // GIS, yang memang itu gunanya di halaman peta.
+  // Duduk perkara dua sumber luas & tiga arah penyelesaiannya: REFACTOR-PLAN §5.
   const stats = useMemo(() => {
-    let luas = 0, nilai = 0, bersertifikat = 0, proses = 0, sengketa = 0
+    let luasBidang = 0, nilai = 0, bersertifikat = 0, proses = 0, sengketa = 0
+    let bidang = 0, bidangBerluas = 0, registerBerbidang = 0
     for (const r of filtered) {
-      luas += r.luas || 0
       nilai += r.nilai_perolehan || 0
+      const list = bidangByAset[r.id] || []
+      if (list.length > 0) registerBerbidang++
+      bidang += list.length
+      for (const b of list) {
+        if (b.luas == null) continue
+        bidangBerluas++
+        luasBidang += b.luas
+      }
       const st = statusOf(r)
       if (st === 'bersertifikat') bersertifikat++
       else if (st === 'sengketa') sengketa++
@@ -183,7 +210,7 @@ export default function GisPage() {
     }
     const total = filtered.length
     const persen = total > 0 ? Math.round((bersertifikat / total) * 100) : 0
-    return { total, luas, nilai, bersertifikat, proses, sengketa, persen }
+    return { total, bidang, bidangBerluas, registerBerbidang, luasBidang, nilai, bersertifikat, proses, sengketa, persen }
   }, [filtered, bidangByAset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -240,11 +267,24 @@ export default function GisPage() {
 
         <div className="card p-3 shadow-lg pointer-events-auto text-xs space-y-1">
           <div className="flex justify-between"><span className="text-gray-400">Total register</span><span className="font-semibold text-gray-800">{stats.total.toLocaleString('id-ID')}</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Luas total</span><span className="font-semibold text-gray-800">{fmtLuas(stats.luas)}</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Nilai total</span><span className="font-semibold text-gray-800">{formatRupiah(stats.nilai)}</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Bersertifikat</span><span className="font-semibold text-teal">{stats.bersertifikat.toLocaleString('id-ID')} ({stats.persen}%)</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Proses</span><span className="font-semibold text-amber-600">{stats.proses.toLocaleString('id-ID')}</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Sengketa</span><span className="font-semibold text-rose-600">{stats.sengketa.toLocaleString('id-ID')}</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Total bidang</span><span className="font-semibold text-gray-800">{stats.bidang.toLocaleString('id-ID')}</span></div>
+          <div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Luas terpetakan</span>
+              <span className="font-semibold text-gray-800">{fmtLuas(stats.luasBidang)}</span>
+            </div>
+            {/* Cakupan WAJIB ikut: tanpa ini angka di atas terbaca sebagai total
+                luas tanah pemda, padahal ia baru sebagian kecil yang bidangnya
+                sudah didata. Lihat catatan di `stats`. */}
+            <p className="text-[10px] text-gray-400 leading-tight mt-0.5">
+              dari {stats.bidangBerluas.toLocaleString('id-ID')} bidang berluas ·
+              {' '}{stats.registerBerbidang.toLocaleString('id-ID')} dari {stats.total.toLocaleString('id-ID')} register sudah berbidang
+            </p>
+          </div>
+          <div className="flex justify-between"><span className="text-gray-400">Nilai perolehan</span><span className="font-semibold text-gray-800">{formatRupiah(stats.nilai)}</span></div>
+          <div className="flex justify-between pt-1 border-t border-gray-100"><span className="text-gray-400">Bersertifikat</span><span className="font-semibold text-teal">{stats.bersertifikat.toLocaleString('id-ID')} ({stats.persen}%)</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Proses sertifikat</span><span className="font-semibold text-amber-600">{stats.proses.toLocaleString('id-ID')}</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Dalam sengketa</span><span className="font-semibold text-rose-600">{stats.sengketa.toLocaleString('id-ID')}</span></div>
         </div>
       </div>
 
@@ -280,7 +320,7 @@ export default function GisPage() {
           <KelolaBidangPanel asetId={selected.id}
             asetDokumen={{ jenis_hak: selected.jenis_hak, nomor_dokumen_kepemilikan: selected.nomor_dokumen_kepemilikan, nama_dokumen_kepemilikan: selected.nama_dokumen_kepemilikan, tanggal_dokumen_kepemilikan: selected.tanggal_dokumen_kepemilikan }}
             onChanged={() => {
-              supabase.from('aset_bidang_tanah').select('aset_id,jenis_hak,nomor_dokumen_kepemilikan,latitude,longitude').eq('aset_id', selected.id)
+              supabase.from('aset_bidang_tanah').select(BIDANG_COLS).eq('aset_id', selected.id)
                 .then(({ data }) => setBidangByAset(prev => ({ ...prev, [selected.id]: (data as BidangRingkas[]) || [] })))
               // Kelola Bidang ikut sinkron sebagian kolom aset (identitas dokumen +
               // NULL-kan titik aset kalau bidang py titik sendiri) — refresh baris

@@ -253,8 +253,16 @@ Keadaannya sekarang:
 
 | Sumber | Diisi dari | Dibaca |
 |---|---|---|
-| `aset.luas` (level register) | impor e-BMD, Koreksi Spesifikasi, Edit Spesifikasi Saldo Awal | GIS (kartu & statistik "Luas total"), Daftar Barang, Export |
-| `aset_bidang_tanah.luas` (per bidang) | menu GIS → Kelola Bidang | GIS panel Dokumen Kepemilikan; Daftar Barang & Daftar Barang Awal sudah memakai Σ bidang **kalau bidangnya lengkap** |
+| `aset.luas` (level register) | impor e-BMD, Koreksi Spesifikasi, Edit Spesifikasi Saldo Awal | Daftar Barang, Export. **Tidak lagi di GIS** sejak 2026-08-05 |
+| `aset_bidang_tanah.luas` (per bidang) | menu GIS → Kelola Bidang | **seluruh tampilan luas di GIS** (kolom per bidang, total per register, statistik "Luas terpetakan"); Daftar Barang & Daftar Barang Awal sudah memakai Σ bidang **kalau bidangnya lengkap** |
+
+Angka kelengkapannya (2026-08-05): `aset.luas` terisi di **2.733/2.733** register
+= 14.679.786 m²; Σ bidang baru **360.166 m²** dari **106/632** bidang berluas,
+dan cuma **186/2.733** register yang punya bidang sama sekali. Itu sebabnya
+statistik GIS memakai label **"Luas terpetakan"** + cakupannya, bukan "Luas
+total" — angka Σ bidang tanpa konteks terbaca sebagai "tanah pemda tinggal 360
+ribu m²". Begitu pendataan bidang tuntas, angka itu naik sendiri sampai bertemu
+angka register; di titik itu keputusan di bawah jadi mudah diambil.
 
 Keduanya **tidak pernah disinkronkan** dan tak ada aturan siapa menang di level
 register. Ini keluarga masalah yang sama dengan cache `aset.pemanfaatan` —
