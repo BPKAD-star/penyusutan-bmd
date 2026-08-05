@@ -34,6 +34,7 @@ const FORM_KOSONG = {
 
 const namaFile = (path: string) => path.split('/').pop() || path
 const fmtTgl = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
+const fmtLuas = (v: number | null) => v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 
 export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   asetId: string; asetDokumen?: AsetDokumen | null; onChanged?: () => void
@@ -175,6 +176,15 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   const adaDataLama = !!(asetDokumen?.jenis_hak || asetDokumen?.nomor_dokumen_kepemilikan || asetDokumen?.nama_dokumen_kepemilikan)
   const tampilkanVirtual = !loading && rows.length === 0 && adaDataLama
 
+  // Ringkasan bidang. Σ luas HANYA sah kalau SEMUA bidang punya luas — kalau
+  // baru sebagian diisi, jumlahnya lebih kecil dari luas sebenarnya dan terbaca
+  // sebagai penyusutan luas yang tak pernah terjadi. Aturan yang SAMA dengan
+  // Daftar Barang & Daftar Barang Awal (lihat CLAUDE.md): yang belum lengkap
+  // ditandai, bukan diam-diam dijumlah.
+  const nLuas = rows.filter(b => b.luas != null).length
+  const luasTotal = rows.reduce((s, b) => s + (b.luas || 0), 0)
+  const luasLengkap = rows.length > 0 && nLuas === rows.length
+
   return (
     <div className="card p-4">
       <p className="text-sm font-semibold text-gray-800 mb-3">Dokumen Kepemilikan</p>
@@ -186,54 +196,82 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
       {loading ? (
         <p className="text-xs text-gray-400 text-center py-4">Memuat...</p>
       ) : (
-        <div className="overflow-x-auto -mx-1">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-gray-400 border-b border-gray-100">
-                <th className="font-medium py-1.5 px-1">Jenis Hak</th>
-                <th className="font-medium py-1.5 px-1">Nama</th>
-                <th className="font-medium py-1.5 px-1">Nomor</th>
-                <th className="font-medium py-1.5 px-1">Tanggal</th>
-                <th className="font-medium py-1.5 px-1">PDF</th>
-                <th className="font-medium py-1.5 px-1 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {rows.length === 0 && !tampilkanVirtual && (
-                <tr><td colSpan={6} className="text-center text-gray-400 py-4">Belum ada data kepemilikan.</td></tr>
-              )}
-              {tampilkanVirtual && (
-                <tr className="text-gray-500 italic">
-                  <td className="py-1.5 px-1">{asetDokumen?.jenis_hak || '-'}</td>
-                  <td className="py-1.5 px-1">{asetDokumen?.nama_dokumen_kepemilikan || '-'}</td>
-                  <td className="py-1.5 px-1">{asetDokumen?.nomor_dokumen_kepemilikan || '-'}</td>
-                  <td className="py-1.5 px-1">{fmtTgl(asetDokumen?.tanggal_dokumen_kepemilikan || null)}</td>
-                  <td className="py-1.5 px-1">-</td>
-                  <td className="py-1.5 px-1 text-right">
-                    <button onClick={openLengkapi} className="text-teal hover:underline not-italic">Lengkapi</button>
-                  </td>
+        <>
+          {rows.length > 0 && (
+            <div className="flex items-center justify-between gap-3 mb-2 px-1 pb-2 border-b border-gray-100 text-xs">
+              <span className="text-gray-500">
+                <span className="font-semibold text-gray-800">{rows.length}</span> bidang
+              </span>
+              <span className="text-gray-500">
+                Luas total{' '}
+                <span className={`font-semibold ${luasLengkap ? 'text-gray-800' : 'text-amber-600'}`}>
+                  {fmtLuas(luasTotal)} m²
+                </span>
+                {!luasLengkap && (
+                  <span className="text-amber-600" title={`${rows.length - nLuas} bidang belum diisi luasnya — jumlah ini masih kurang dari luas sebenarnya`}>
+                    {' '}· {rows.length - nLuas} belum berluas
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
+          {/* Tinggi dibatasi + scroll sendiri: satu register bisa punya puluhan
+              sertifikat (kasus GOR), dan tanpa batas ini ringkasan di atas ikut
+              terdorong hilang dari layar saat digulir. */}
+          <div className="overflow-auto scrollbar-thin -mx-1 max-h-[16rem]">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white">
+                <tr className="text-left text-gray-400 border-b border-gray-100">
+                  <th className="font-medium py-1.5 px-1">Jenis Hak</th>
+                  <th className="font-medium py-1.5 px-1">Nama</th>
+                  <th className="font-medium py-1.5 px-1">Nomor</th>
+                  <th className="font-medium py-1.5 px-1">Tanggal</th>
+                  <th className="font-medium py-1.5 px-1 text-right whitespace-nowrap">Luas (m²)</th>
+                  <th className="font-medium py-1.5 px-1">PDF</th>
+                  <th className="font-medium py-1.5 px-1 text-right">Aksi</th>
                 </tr>
-              )}
-              {rows.map(b => (
-                <tr key={b.id} className="text-gray-700">
-                  <td className="py-1.5 px-1">{b.jenis_hak || '-'}</td>
-                  <td className="py-1.5 px-1">{b.nama_dokumen_kepemilikan || '-'}</td>
-                  <td className="py-1.5 px-1">{b.nomor_dokumen_kepemilikan || '-'}</td>
-                  <td className="py-1.5 px-1">{fmtTgl(b.tanggal_dokumen_kepemilikan)}</td>
-                  <td className="py-1.5 px-1">
-                    {b.sertifikat_path ? (
-                      <button onClick={() => lihatSertifikat(b.sertifikat_path!)} className="text-teal hover:underline">Lihat</button>
-                    ) : '-'}
-                  </td>
-                  <td className="py-1.5 px-1 text-right whitespace-nowrap">
-                    <button onClick={() => openEdit(b)} className="text-teal hover:underline mr-2">Edit</button>
-                    <button onClick={() => handleDelete(b)} className="text-red-500 hover:underline">Hapus</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {rows.length === 0 && !tampilkanVirtual && (
+                  <tr><td colSpan={7} className="text-center text-gray-400 py-4">Belum ada data kepemilikan.</td></tr>
+                )}
+                {tampilkanVirtual && (
+                  <tr className="text-gray-500 italic">
+                    <td className="py-1.5 px-1">{asetDokumen?.jenis_hak || '-'}</td>
+                    <td className="py-1.5 px-1">{asetDokumen?.nama_dokumen_kepemilikan || '-'}</td>
+                    <td className="py-1.5 px-1">{asetDokumen?.nomor_dokumen_kepemilikan || '-'}</td>
+                    <td className="py-1.5 px-1">{fmtTgl(asetDokumen?.tanggal_dokumen_kepemilikan || null)}</td>
+                    <td className="py-1.5 px-1 text-right">-</td>
+                    <td className="py-1.5 px-1">-</td>
+                    <td className="py-1.5 px-1 text-right">
+                      <button onClick={openLengkapi} className="text-teal hover:underline not-italic">Lengkapi</button>
+                    </td>
+                  </tr>
+                )}
+                {rows.map(b => (
+                  <tr key={b.id} className="text-gray-700">
+                    <td className="py-1.5 px-1">{b.jenis_hak || '-'}</td>
+                    <td className="py-1.5 px-1">{b.nama_dokumen_kepemilikan || '-'}</td>
+                    <td className="py-1.5 px-1">{b.nomor_dokumen_kepemilikan || '-'}</td>
+                    <td className="py-1.5 px-1">{fmtTgl(b.tanggal_dokumen_kepemilikan)}</td>
+                    <td className={`py-1.5 px-1 text-right tabular-nums whitespace-nowrap ${b.luas == null ? 'text-gray-300' : ''}`}>
+                      {fmtLuas(b.luas)}
+                    </td>
+                    <td className="py-1.5 px-1">
+                      {b.sertifikat_path ? (
+                        <button onClick={() => lihatSertifikat(b.sertifikat_path!)} className="text-teal hover:underline">Lihat</button>
+                      ) : '-'}
+                    </td>
+                    <td className="py-1.5 px-1 text-right whitespace-nowrap">
+                      <button onClick={() => openEdit(b)} className="text-teal hover:underline mr-2">Edit</button>
+                      <button onClick={() => handleDelete(b)} className="text-red-500 hover:underline">Hapus</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       <div className="mt-3 flex justify-center">

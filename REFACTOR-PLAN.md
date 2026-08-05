@@ -225,7 +225,7 @@ komponen 1.400 baris ke fungsi murni **berikut test-nya**.
 
 | # | Ekstrak | Dari | Kenapa duluan |
 |---|---|---|---|
-| 2.1 | `aset/domain/visibilitas.ts` — `SEMBUNYI`/`MUNCUL` + replay | 6 berkas | duplikasi terbanyak; urutan kronologisnya halus (aksi terakhir menang, bukan "batal selalu menang") |
+| 2.1 | ~~`aset/domain/visibilitas.ts`~~ — **SUDAH, sebagian (2026-08-05)**: `lib/visibilitas.ts` + `lib/visibilitas.test.ts`, menyatukan Daftar Barang, Penyusutan, & `lib/rekon.ts` (3 dari 6 berkas, plus daftar baru `LAHIR`). **Sisa**: `fn_rekap_bmd` (SQL, migrasi 20260805_02) & `fn_rekap_bmd_periodik` mengulang daftar yang sama di Postgres — kembar lintas-bahasa yang tak bisa diimpor, jadi perlu test yang membandingkan output TS vs SQL lewat query nyata (pola sama dgn 2.4). | duplikasi terbanyak; urutan kronologisnya halus (aksi terakhir menang, bukan "batal selalu menang") |
 | 2.1b | `aset/domain/guardPembatalan.ts` — cek "transaksi lebih baru" (rules.md §1.3) | `Koreksi.tsx`, `Penghapusan.tsx`, `Pengadaan.tsx`, `Kapitalisasi.tsx`, `Reklasifikasi.tsx` (dikonfirmasi grep, 5 berkas) | guard integritas ledger terduplikasi lima kali; kelupaan di menu batal baru = rantai replay engine RUSAK, bukan cuma laporan salah — satu tingkat di atas visibilitas |
 | 2.2 | `pengalihan/domain/kepemilikan.ts` — `ownersAt` | `lib/pengalihan.ts` + 2 halaman | atribusi SKPD period-aware, sudah pernah salah |
 | 2.3 | `aset/domain/kolom.ts` — `COLS`/`EXPORT_ORDER`/`EXPORT_COLS` | Daftar Barang ↔ Daftar Barang Awal | pasangan kembar yang dijaga komentar; sekali ekstrak, "kelupaan" jadi mustahil |
@@ -240,6 +240,48 @@ Pengamanan, KIR — 3 berkas terpisah) mengulang pola "golongan mana yang boleh"
 tanpa satu sumber. Keduanya kelas risiko sama dengan 2.1–2.6 (aturan bisnis
 duplikat di komponen), naikkan ke tabel begitu ada fitur yang mendarat di
 salah satu berkasnya.
+
+### Utang data: DUA SUMBER untuk satu besaran — `luas` tanah
+
+Dicatat 2026-08-05 atas permintaan user; **butuh keputusan user dulu, bukan
+refactor**. Sambil menunggu, luas sengaja disembunyikan dari layar GIS (kartu
+daftar & kotak detail kanan) supaya tak ada yang mengambil angka dari sumber
+yang belum disepakati; yang ditampilkan hanya luas per bidang + totalnya di
+panel Dokumen Kepemilikan, yang sumbernya tunggal.
+
+Keadaannya sekarang:
+
+| Sumber | Diisi dari | Dibaca |
+|---|---|---|
+| `aset.luas` (level register) | impor e-BMD, Koreksi Spesifikasi, Edit Spesifikasi Saldo Awal | GIS (kartu & statistik "Luas total"), Daftar Barang, Export |
+| `aset_bidang_tanah.luas` (per bidang) | menu GIS → Kelola Bidang | GIS panel Dokumen Kepemilikan; Daftar Barang & Daftar Barang Awal sudah memakai Σ bidang **kalau bidangnya lengkap** |
+
+Keduanya **tidak pernah disinkronkan** dan tak ada aturan siapa menang di level
+register. Ini keluarga masalah yang sama dengan cache `aset.pemanfaatan` —
+dua penulis, satu besaran, tanpa arbiter — dan sudah terbukti merepotkan.
+Bukti skalanya: per 2026-07-28 dari 529 bidang baru 4 yang berluas, jadi Σ
+bidang untuk hampir semua register masih 0 sementara `aset.luas` terisi.
+
+Tiga arah yang mungkin, tinggal dipilih:
+
+1. **Bidang jadi otoritatif, `aset.luas` jadi turunan tampilan.** Paling bersih
+   & sejalan dengan aturan yang sudah dipakai Daftar Barang (Σ bidang menang,
+   jatuh ke kolom register kalau bidang belum lengkap). Syaratnya pendataan
+   bidang harus dituntaskan dulu — kalau tidak, luas seluruh kabupaten anjlok
+   ke nyaris nol dalam semalam. ⚠️ Σ-nya **dihitung saat tampil, jangan pernah
+   disimpan balik ke kolom** — angka tersimpan langsung basi begitu bidang
+   ditambah/diedit/dihapus, dan tak ada trigger/cron yang menjaganya.
+2. **`aset.luas` tetap otoritatif**, bidang hanya rincian informatif. Paling
+   tidak mengganggu, tapi utangnya tetap ada — dua angka yang bisa
+   bertentangan di layar yang sama.
+3. **Bidang wajib, kolom register di-drop.** Paling benar secara model, paling
+   mahal: butuh backfill 529+ bidang dan menyentuh Daftar Barang, Export, KIBAR,
+   Saldo Awal.
+
+Yang **tidak boleh** dilakukan tanpa keputusan di atas: menambah penulis ketiga
+ke `aset.luas`, atau menjumlah Σ bidang yang belum lengkap seolah itu luas
+sebenarnya (jumlahnya lebih kecil dari kenyataan dan terbaca sebagai penyusutan
+luas yang tak pernah terjadi).
 
 ### Resep satu ekstraksi (satu PR, ±2–4 jam)
 

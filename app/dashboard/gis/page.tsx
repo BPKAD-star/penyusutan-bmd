@@ -227,8 +227,9 @@ export default function GisPage() {
                   <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${badge.cls}`}>{badge.label}</span>
                 </div>
                 <p className="text-gray-400 mt-0.5 truncate">{r.skpd?.nama || '-'}</p>
+                {/* Luas dihilangkan dari kartu (keputusan user 2026-08-05) —
+                    lihat catatan di panel kanan. */}
                 <div className="flex items-center gap-3 mt-1 text-gray-500">
-                  <span>{fmtLuas(r.luas)}</span>
                   <span>{formatRupiah(r.nilai_perolehan)}</span>
                   {r.latitude == null && <span className="text-gray-300">Blm titik</span>}
                 </div>
@@ -249,7 +250,7 @@ export default function GisPage() {
 
       {/* Panel kanan: identitas + kelola bidang register terpilih — mengambang di atas peta */}
       {selected && (
-        <div className="absolute top-4 right-4 bottom-4 w-[380px] z-[1000] overflow-y-auto space-y-3">
+        <div className="absolute top-4 right-4 bottom-4 w-[380px] z-[1000] overflow-y-auto scrollbar-thin space-y-3">
           <div className="card p-4 shadow-lg">
             <div className="flex items-start justify-between mb-3">
               <div>
@@ -266,7 +267,12 @@ export default function GisPage() {
               <div className="flex justify-between gap-3"><span className="text-gray-400">NIBAR</span><span className="text-gray-700 text-right break-all">{selected.nibar || '-'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Uraian Barang</span><span className="text-gray-700 text-right">{selected.uraian_barang || '-'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Spesifikasi Nama Barang</span><span className="text-gray-700 text-right">{selected.spesifikasi_lainnya || '-'}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400">Luas</span><span className="text-gray-700 text-right">{fmtLuas(selected.luas)}</span></div>
+              {/* Luas SENGAJA tidak ditampilkan di sini (keputusan user 2026-08-05).
+                  `aset.luas` level register belum jelas hubungannya dengan Σ luas
+                  bidang di aset_bidang_tanah — dua sumber untuk satu besaran, dan
+                  yang otoritatif belum diputuskan. Luas per bidang + totalnya ada
+                  di panel Dokumen Kepemilikan di bawah, yang sumbernya tunggal.
+                  Rencana penyatuannya: REFACTOR-PLAN.md §5. */}
               <div className="flex justify-between gap-3"><span className="text-gray-400">Tanggal Perolehan</span><span className="text-gray-700 text-right">{fmtTgl(selected.tgl_perolehan)}</span></div>
               <div className="flex justify-between gap-3"><span className="text-gray-400">Nilai Perolehan</span><span className="text-gray-700 text-right">{formatRupiah(selected.nilai_perolehan)}</span></div>
             </div>
