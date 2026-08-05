@@ -82,10 +82,10 @@ konflik dengan pekerjaan fitur yang sedang berjalan.
 | 0.2 | Test untuk `lib/engine/penyusutan.ts` | jantung angka neraca terkunci — **fungsinya sudah murni, nol refactor** | ✅ 2026-08-03 — 71 test, 99% stmt / 82% branch |
 | 0.3 | Test untuk helper murni di `lib/bmd.ts` | `periodeDariTanggal`, `comparePeriode`, `klasifikasiKomptabel` | ✅ 2026-08-03 — 73 test, 93% stmt / 100% branch |
 | 0.4 | Property test invarian engine (`fast-check`) | nilai buku ≥ 0, Σ beban = akumulasi | ✅ 2026-08-03 — 6 invarian × 300 run |
-| 0.4b | Test sinkronisasi daftar `batal_*` (rules.md §1.7) | jenis `batal_*` baru yang lupa satu titik gagal di CI, bukan ketahuan tiga ronde kemudian | ⬜ |
+| 0.4b | Test sinkronisasi daftar `batal_*` (rules.md §1.7) | jenis `batal_*` baru yang lupa satu titik gagal di CI, bukan ketahuan tiga ronde kemudian | ✅ 2026-08-05 — `lib/sinkronisasi.test.ts` |
 | 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis | ⬜ |
-| 0.6 | Baseline typecheck | error **baru** memerahkan CI; yang lama tak memblokir | ⬜ |
-| 0.7 | GitHub Actions | lint + typecheck + unit tiap push | ⬜ |
+| 0.6 | Baseline typecheck | error **baru** memerahkan CI; yang lama tak memblokir | ⬜ — **cek ulang dulu**: `npm install` 2026-08-05 memasang `qrcode`/`leaflet`/`react-leaflet` yang selama ini absen, jadi sebagian besar "error pre-existing" mungkin sudah hilang & baseline-nya tak perlu ada |
+| 0.7 | GitHub Actions | lint + typecheck + unit tiap push | 🟡 sebagian — `.github/workflows/ci.yml` menjalankan `npm ci && npm test`. Lint & typecheck menyusul setelah 0.5/0.6 |
 | 0.8 | `supabase gen types` → `shared/types/database.types.ts` | sumber tipe tunggal | ⬜ |
 
 > **Catatan 0.2 — suite ini diverifikasi dengan uji mutasi, bukan cuma
@@ -135,6 +135,31 @@ Tiga titik sisanya (keanggotaan kartu **dua sisi**, KIBAR, dan
 `fn_aset_awal_2026_terkunci` ↔ `_batch`) butuh integrasi DB — jadwalkan sebagai
 test integrasi `authenticated` di baris metrik yang sudah ada, jangan dipaksakan
 jadi unit test yang cuma pura-pura menutupinya.
+
+**✅ Terpasang 2026-08-05 — `lib/sinkronisasi.test.ts`.** Yang akhirnya
+dijaga mesin:
+
+1. **Setiap `batal_*` di enum punya rumah yang disengaja.** Nilai enum dibaca
+   LANGSUNG dari `supabase/migrations/*.sql` (`ADD VALUE` + `CREATE TYPE …
+   AS ENUM`), bukan disalin ke TS — jadi menambah jenis di migrasi tanpa
+   mendaftarkannya di `VOID_JENIS`/`BATAL_TARGET_JENIS`/pengecualian langsung
+   merah. Pengecualiannya wajib bertuliskan **alasan**, dan ada test arah
+   sebaliknya yang membuang pengecualian basi.
+2. **`JENIS_DITARIK` (lib/pengalihan.ts) ↔ predikat `idx_trx_pindah_id`**,
+   dibaca dari berkas migrasinya. Ini kegagalan paling senyap di repo ini:
+   beda sedikit → index diabaikan diam-diam → timeout.
+3. **`BATAL_TARGET_JENIS` semuanya punya label** (menutup temuan #3 Fase 0.3;
+   lima label ditambahkan bersamaan, daftar "jenis tanpa label" 14 → 9).
+4. **Daftar cara perolehan sama di empat tempat yang bisa dijangkau** — dua
+   lewat impor, dua lewat pembacaan berkas karena berkasnya komponen
+   `'use client'` yang menyeret React kalau di-import.
+
+> **Anti-hampa itu bagian dari desainnya.** Test yang memindai berkas bisa
+> "lulus" hanya karena pemindaiannya tak menemukan apa pun — lebih berbahaya
+> daripada tak punya test, karena memberi rasa aman palsu. Karena itu tiap
+> pemindai punya ambang minimum (≥50 migrasi, ≥30 nilai enum, ≥15 `batal_*`)
+> dan **melempar** kalau polanya tak ketemu, bukan diam-diam mengembalikan
+> daftar kosong. Pertahankan pola ini di test pemindai berikutnya.
 
 ### Temuan Fase 0.3
 

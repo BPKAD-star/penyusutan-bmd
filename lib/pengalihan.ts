@@ -33,17 +33,20 @@ type Ev = {
 // Nambah/ubah isi daftar ini WAJIB ikut mengubah predikat indexnya — kalau tidak,
 // planner tak bisa membuktikan implikasinya, indexnya diabaikan DIAM-DIAM, dan
 // query ini balik menyusuri seluruh ledger (418rb baris) demi segelintir baris.
-const JENIS_PINDAH = ['pengalihan_status', 'mutasi_internal']
+export const JENIS_PINDAH = ['pengalihan_status', 'mutasi_internal']
 // Pembatalan perpindahan (migrasi 20260729_06/07). BEDA dari baris pengembalian
 // ber-`payload.reversal`: pengembalian itu peristiwa NYATA (barang pergi lalu
 // dikembalikan, dua-duanya tetap dibaca), sedangkan pembatalan menyatakan
 // perpindahannya TAK PERNAH TERJADI — barisnya beserta targetnya dibuang total
 // dari perhitungan pemilik.
-const JENIS_BATAL_PINDAH = ['batal_pengalihan']
+export const JENIS_BATAL_PINDAH = ['batal_pengalihan']
 // Yang ditarik dari ledger = dua-duanya. ⚠️ KEMBAR dgn predikat partial index
 // `idx_trx_pindah_id` (migrasi 20260729_07) — ubah satu, ubah dua-duanya, atau
 // indexnya diabaikan DIAM-DIAM dan query ini balik menyusuri 418rb baris.
-const JENIS_DITARIK = [...JENIS_PINDAH, ...JENIS_BATAL_PINDAH]
+// Diekspor supaya `lib/sinkronisasi.test.ts` bisa membandingkannya langsung
+// dengan predikat `idx_trx_pindah_id` yang dibaca dari berkas migrasinya —
+// peringatan "ubah satu, ubah dua-duanya" di atas jadi punya penegak.
+export const JENIS_DITARIK = [...JENIS_PINDAH, ...JENIS_BATAL_PINDAH]
 
 // Riwayat pindah unit MENTAH (semua periode), dikelompokkan per aset.
 // DIPISAH dari fetchOwnerOverrides supaya pemanggil yang butuh BEBERAPA periode

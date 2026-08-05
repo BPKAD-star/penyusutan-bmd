@@ -213,7 +213,10 @@ export type Mutasi = Record<string, { intra: MutasiCell; ekstra: MutasiCell }> /
 // 'akumulasi_kdp' = termin kontrak konstruksi → penambahan nilai aset KDP (1.3.6).
 // Sebelumnya tidak dipetakan sama sekali sehingga jatuh ke baris 'residual'
 // (rantai tetap reconcile, tapi tak berlabel). Sekarang punya kategori sendiri.
-const JENIS_CARA = ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya', 'akumulasi_kdp']
+// Diekspor untuk `lib/sinkronisasi.test.ts` — daftar cara perolehan hidup di
+// lima tempat (lihat JENIS_PEROLEHAN di lib/bmd.ts) dan `tukar_menukar` sempat
+// hilang dari salah satunya selama berbulan-bulan tanpa satu pun error.
+export const JENIS_CARA = ['pengadaan', 'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya', 'akumulasi_kdp']
 const JENIS_HAPUS = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
 // Pemecahan Barang. Rencana §1 keputusan #4 dulu menyebutnya "diabaikan
 // (net-nol)" — itu KELIRU dan sudah terbukti 2026-08-05: induk & pecahan bisa

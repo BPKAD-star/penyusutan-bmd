@@ -391,7 +391,7 @@ describe('konsistensi konstanta', () => {
     expect(dariLabel.sort()).toEqual([...JENIS_PEROLEHAN].sort())
   })
 
-  it('DUGAAN BUG: 14 jenis ledger tidak punya label tampilan', () => {
+  it('DUGAAN BUG: 9 jenis ledger tidak punya label tampilan', () => {
     // JENIS_TRANSAKSI_LABEL ketinggalan dari enum: tiap `ALTER TYPE … ADD
     // VALUE` sejak migrasi 20260707_02 menambah jenis baru tanpa menambah
     // labelnya. Akibatnya baris ledger itu tampil tanpa nama di KIBAR & layar
@@ -407,8 +407,6 @@ describe('konsistensi konstanta', () => {
     const tanpaLabel = [
       'akumulasi_kdp', 'batal_akumulasi_kdp',
       'batal_hasil_inventarisasi', 'batal_hibah_masuk', 'batal_perolehan_lainnya',
-      'batal_koreksi_nilai', 'batal_koreksi_pencatatan_ganda', 'batal_koreksi_spesifikasi',
-      'batal_pengalihan', 'batal_reklas',
       'batal_tukar_menukar',
       'kdp_selesai_keluar', 'kdp_selesai_masuk',
       'saldo_awal_checkpoint',

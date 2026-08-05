@@ -139,6 +139,14 @@ export const JENIS_TRANSAKSI_LABEL: Record<string, string> = {
   kapitalisasi_serap: 'Kapitalisasi — Barang Anak Terserap',
   batal_kapitalisasi: 'Pembatalan Kapitalisasi',
   batal_pengadaan: 'Pembatalan Pengadaan (Koreksi Input)',
+  // Kelima ini WAJIB berlabel: semuanya terdaftar di `BATAL_TARGET_JENIS`
+  // (lib/voidedAset.ts) alias dibaca modul pelaporan, jadi barisnya benar-benar
+  // sampai ke layar riwayat & KIBAR. Dikunci lib/sinkronisasi.test.ts.
+  batal_reklas: 'Pembatalan Reklasifikasi',
+  batal_koreksi_nilai: 'Pembatalan Koreksi Nilai',
+  batal_koreksi_spesifikasi: 'Pembatalan Koreksi Spesifikasi',
+  batal_koreksi_pencatatan_ganda: 'Pembatalan Koreksi Pencatatan Ganda',
+  batal_pengalihan: 'Pembatalan Pengalihan Status',
   pemecahan_keluar: 'Pemecahan Barang — Induk Dipecah',
   pemecahan_masuk: 'Pemecahan Barang — Pecahan Baru',
   batal_pemecahan: 'Pembatalan Pemecahan — Induk Kembali',
