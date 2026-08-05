@@ -254,7 +254,16 @@ export default function PerolehanImport({ jenis, label, kontrakRelevan }: {
       // Pengadaan: approve pakai tgl BAST (header) utk SEMUA barang → tanggal
       // header = tgl BAST. Hibah dsb: tgl perolehan per item (bisa backdate),
       // header cukup tanggal hari ini (di tahun terbuka, hindari guard kunci).
-      const header = isPengadaan ? {
+      // Anotasi tipe eksplisit, JANGAN dibiarkan terinfer. Kedua cabang
+      // menghasilkan bentuk `payload` yang berbeda, jadi tanpa anotasi TS
+      // membuat UNION dan `.insert()` menolaknya (TS2345). Menyatukannya di
+      // satu tipe lebih jujur daripada `as never` — kolom headernya tetap
+      // dicek, yang dilonggarkan hanya isi payload yang memang beda per menu.
+      const header: {
+        skpd_id: number; kategori: string; jenis: string | null; sub_jenis: null
+        no_sk: string; tanggal: string; keterangan: null
+        payload: Record<string, unknown>; approval_status: string
+      } = isPengadaan ? {
         skpd_id: Number(targetSkpd), kategori: 'pengadaan', jenis: mapSumber(grp[0].bentuk_kontrak), sub_jenis: null,
         no_sk: noSk, tanggal: tglBast, keterangan: null,
         payload: { nama_penyedia: penyedia, no_bast: noSk, tgl_bast: tglBast, dokumen_paths: [], draft_items: draftItems, sumber_import: fileName },

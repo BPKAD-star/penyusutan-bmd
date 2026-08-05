@@ -42,7 +42,11 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
   useEffect(() => {
     if (value && picked?.kode_sub_rincian !== value) {
       supabase.from('admin_rekening').select(COLS).eq('kode_sub_rincian', value).maybeSingle()
-        .then(({ data }) => { if (data) setPicked(data as RekeningRow) })
+        // `as unknown as` (bukan `as` langsung): `.select(COLS)` diberi string
+        // yang dirakit runtime, jadi supabase-js tak bisa menurunkan bentuk
+        // barisnya & tipenya jatuh ke `GenericStringError`. Pola yang sama
+        // sudah dipakai kolektor di lib/ (mis. `as unknown as LedRow[]`).
+        .then(({ data }) => { if (data) setPicked(data as unknown as RekeningRow) })
     } else if (!value && picked) {
       setPicked(null)
     }
@@ -66,7 +70,7 @@ export default function RekeningPicker({ value, onChange, kelompok, className }:
         `uraian_objek.ilike.%${term}%`,
       ].join(','))
       const { data } = await q.order('kode_sub_rincian').limit(50)
-      setResults((data || []) as RekeningRow[])
+      setResults((data || []) as unknown as RekeningRow[])
       setLoading(false)
     }, term ? 250 : 0)
     return () => clearTimeout(t)

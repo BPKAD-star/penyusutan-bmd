@@ -474,7 +474,14 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
   const [penyedia, setPenyedia] = useState(p.penyedia || '')
   const [ppk, setPpk] = useState(p.ppk || '')
   const [nilaiKontrak, setNilaiKontrak] = useState(p.nilai_kontrak != null ? String(p.nilai_kontrak) : '')
-  const [keterangan, setKeterangan] = useState(p.keterangan || kontrak.keterangan || '')
+  // Dulu di sini ada cadangan `|| kontrak.keterangan`, TAPI ia tak pernah
+  // berfungsi: `Kontrak` tidak punya kolom itu dan `fetchKonstruksiKontraks`
+  // tidak men-select-nya, jadi nilainya SELALU undefined. Dibuang 2026-08-05 —
+  // perilakunya tidak berubah sedikit pun, yang hilang cuma ilusi punya
+  // cadangan. Kalau cadangan ke `jurnal_header.keterangan` memang diinginkan
+  // (kolomnya ada di DB), tambahkan di TYPE `Kontrak` **dan** di `.select()` —
+  // dua-duanya, kalau tidak ia balik jadi undefined tanpa suara.
+  const [keterangan, setKeterangan] = useState(p.keterangan || '')
   const [pegawai, setPegawai] = useState<{ nama: string; nip: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')

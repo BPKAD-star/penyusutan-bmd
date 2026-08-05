@@ -16,8 +16,9 @@ supaya paragraf di atas tidak terbaca sebagai keadaan hari ini:
 | Unit domain | ✅ **192 test, semua hijau** (`npm test`, 506 ms) — `engine/penyusutan` 79 · `bmd` 74 · `rekon` 21 · `visibilitas` 18. Termasuk 6 invarian property-based (`fast-check`) |
 | Integrasi DB (`authenticated`) | ⬜ belum ada — **ini lubang terbesar**, lihat §5 |
 | Golden test laporan | ⬜ belum ada |
+| Typecheck | ✅ **0 error** (`npx tsc --noEmit -p tsconfig.json`) — tanpa baseline |
 | Lint | ⬜ belum ada (REFACTOR-PLAN Fase 0.5) |
-| CI | ⬜ belum ada (Fase 0.7) |
+| CI | 🟡 `.github/workflows/ci.yml` — typecheck + unit test; lint menyusul |
 
 Artinya jantung angkanya (engine) sudah terkunci, tapi **separuh invarian sistem
 ini yang hidup di dalam database masih nol pengawasan** — dan itu justru lapisan
@@ -509,9 +510,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
       - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck   # dibandingkan dgn baseline error pre-existing
-      - run: npm run test        # unit domain saja
+      - run: npm run typecheck   # apa adanya — repo ini 0 error, tanpa baseline
+      - run: npm test            # unit domain saja
+      # `npm run lint` menyusul setelah Fase 0.5 (eslint) terpasang. Jangan
+      # ditaruh sebelum ada — CI merah permanen = CI yang diabaikan semua orang.
 
   database:                    # butuh Postgres, tiap PR
     runs-on: ubuntu-latest
@@ -528,16 +530,22 @@ jobs:
       - run: npm run test:db
 ```
 
-**Baseline typecheck.** Ada error pre-existing dari dependency opsional yang
-belum terpasang (`qrcode`, `leaflet`, `react-leaflet`) plus isu tipe lama.
-Bekukan daftarnya sekali, lalu CI gagal hanya kalau ada error **baru**:
+**Baseline typecheck — TIDAK JADI DIBUAT, dan itu hasil yang lebih baik.**
+Rencana awal: bekukan daftar error pre-existing ke `.typecheck-baseline.txt`
+supaya CI hanya merah untuk error **baru**, dengan alasan "menunggu sampai nol
+error berarti CI tak akan pernah aktif".
 
-```bash
-npm run typecheck 2>&1 | sort > .typecheck-baseline.txt   # sekali, saat setup
-```
+Ternyata nol errornya bisa dicapai langsung (2026-08-05). Dua sebab yang
+disangka permanen ternyata dangkal: `qrcode`/`leaflet`/`react-leaflet` cuma
+belum ter-`npm install`, dan enam isu tipe sisanya lima di antaranya sekadar
+`as` → `as unknown as`. Jadi CI menjalankan `npm run typecheck` **apa adanya**,
+tanpa berkas baseline, tanpa perbandingan, tanpa mekanisme yang harus dirawat.
 
-Ini penting: menunggu sampai nol error sebelum mengaktifkan CI berarti CI
-tidak akan pernah aktif.
+> **Pelajarannya layak diingat untuk keputusan sejenis:** sebelum membangun
+> mekanisme untuk *hidup berdampingan* dengan utang, ukur dulu utangnya. Yang
+> tampak seperti "36.000 baris penuh error lawas" ternyata enam error di empat
+> berkas. Baseline yang terlanjur dibuat akan jadi berkas yang harus dijaga
+> selamanya — dan tempat sempurna untuk menyembunyikan error baru.
 
 ---
 

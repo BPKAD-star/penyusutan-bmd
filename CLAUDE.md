@@ -1200,15 +1200,20 @@ BUKAN public URL. Draft (belum py `aset.id`) pakai prefix `draft/<key-client>/..
 
 ## Lingkungan kerja
 
-- Deploy via Vercel. `node_modules` lokal ADA tapi **sebagian** — type-check
-  jalan: `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`
-  (diverifikasi 2026-07-27; catatan lama "tidak bisa jalankan tsc" sudah usang).
-  **Ada error PRE-EXISTING yang bukan dari perubahanmu** — dependency opsional
-  belum terpasang (`qrcode`, `leaflet`, `react-leaflet` → app/kibar/[nibar],
-  components/kibar/LabelSheet, components/MapPicker, components/gis/GisMap) plus
-  isu tipe lama di `PerolehanImport`, `RekeningPicker`, `KonstruksiPengadaan`,
-  `Koreksi`. Jadi **jangan baca exit code mentah** — saring outputnya ke berkas
-  yang kamu sentuh saja. `next build` tetap tak bisa (dependency kurang).
+- Deploy via Vercel. **Type-check BERSIH — 0 error** (diverifikasi 2026-08-05):
+  `npx tsc --noEmit -p tsconfig.json`. **Exit code-nya sekarang bisa dipercaya
+  apa adanya** — jangan disaring lagi, error apa pun yang muncul berarti dari
+  perubahanmu sendiri.
+  Catatan lama "ada error PRE-EXISTING, saring ke berkas yang kamu sentuh" sudah
+  **USANG dan dicabut**. Dua sebabnya sudah hilang: (1) `qrcode`/`leaflet`/
+  `react-leaflet` ternyata cuma belum ter-`npm install`, bukan cacat kode;
+  (2) enam isu tipe lama di `PerolehanImport`/`RekeningPicker`/
+  `KonstruksiPengadaan`/`Koreksi` sudah ditambal — lima di antaranya murni tipe
+  (`as` → `as unknown as`, keterbatasan inferensi supabase-js saat `.select()`
+  diberi string rakitan runtime), satu kode mati.
+  ⚠️ Kalau `npm test`/`tsc` bilang perintahnya tak ditemukan, jalankan
+  `npm install` dulu — **worktree tidak berbagi `node_modules` dengan repo
+  utama**. `npm run build` belum pernah diuji di sini.
 - Migrasi SQL dijalankan user di Supabase SQL Editor sesuai urutan nama file.
 - **SELESAI NGODE = LANGSUNG KASIH COMMAND COMMIT + PUSH** (permintaan user
   2026-07-27), tanpa diminta lagi. Satu blok `bash` siap-klik, format persis:

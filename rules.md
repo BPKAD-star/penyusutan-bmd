@@ -221,10 +221,12 @@ kode, jadi ia harus stabil:
 
 ## 7. Alur Kerja Pengembangan
 
-1. **Type-check**: `node node_modules/typescript/bin/tsc --noEmit -p
-    tsconfig.json`, lalu **saring ke berkas yang disentuh** — ada error
-    pre-existing dari dependency opsional yang belum terpasang. Jangan baca
-    exit code mentah.
+1. **Type-check WAJIB bersih**: `npx tsc --noEmit -p tsconfig.json` → **0
+    error** (sejak 2026-08-05, dijaga CI). Exit code-nya boleh dibaca apa
+    adanya; aturan lama "saring ke berkas yang disentuh" sudah **dicabut**.
+    Error apa pun yang muncul berarti dari perubahanmu — jangan dibiarkan
+    menumpuk lagi. Sekali satu lolos, penyaringan manual itu kembali, dan
+    bersamanya kembali pula kebiasaan mengabaikan output.
 2. **`git add` sebut berkas satu per satu**, jangan `.` atau `-A` — repo ini
     selalu punya untracked yang bukan bagian pekerjaan (file `.xlsx` besar,
     migrasi orang lain, `docs/`).

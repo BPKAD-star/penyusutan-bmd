@@ -570,7 +570,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
     setIndukPecah(b)
     const { data } = await supabase.from('aset').select(ASET_FIELD_COLS.join(',')).eq('id', b.id).single()
     const f: Record<string, string> = {}
-    if (data) for (const k of ASET_FIELD_COLS) { const v = (data as Record<string, unknown>)[k]; if (v != null) f[k] = String(v) }
+    // `as unknown as`: `.select()` diberi string rakitan runtime → supabase-js
+    // tak bisa menurunkan bentuk barisnya (tipenya jadi `GenericStringError`).
+    if (data) for (const k of ASET_FIELD_COLS) { const v = (data as unknown as Record<string, unknown>)[k]; if (v != null) f[k] = String(v) }
     // Tanah: sertifikat/jenis hak TIDAK diwarisi — tiap pecahan sertifikatnya sendiri, diisi di GIS.
     if (kodeLevel3(b.kode) === '1.3.1') for (const k of TANAH_DOK_FIELDS) delete f[k]
     setIndukFields(f)
@@ -768,7 +770,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       const prevByAset = new Map<string, Record<string, unknown>>()
       if (prevCols.length > 0) {
         const { data: prevRows } = await supabase.from('aset').select(['id', ...prevCols].join(',')).in('id', list.map(b => b.id))
-        for (const r of (prevRows || []) as Record<string, unknown>[]) prevByAset.set(String(r.id), r)
+        for (const r of (prevRows || []) as unknown as Record<string, unknown>[]) prevByAset.set(String(r.id), r)
       }
       for (const b of list) {
         const prevRow = prevByAset.get(b.id) || {}

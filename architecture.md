@@ -162,9 +162,10 @@ Supabase Storage, semua bucket **privat**, tampil via signed URL (~1 jam):
 ## 6. Lingkungan Pengembangan
 
 - Kode di WSL Ubuntu (`~/penyusutan-bmd`), diakses dari Windows.
-- Type-check: `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`
-  (ada error pre-existing dari dependency opsional yang belum terpasang —
-  saring ke berkas yang disentuh). `next build` lokal tidak jalan.
+- Type-check: `npx tsc --noEmit -p tsconfig.json` — **bersih, 0 error**
+  (2026-08-05); exit code-nya bisa dibaca apa adanya. `npm run build` belum
+  diuji. ⚠️ Worktree tidak berbagi `node_modules` dengan repo utama — jalankan
+  `npm install` di dalamnya kalau `tsc`/`vitest` tak ditemukan.
 - Migrasi SQL: file di `supabase/migrations/`, dijalankan user secara manual di
   Supabase SQL Editor **berurutan sesuai nama file**. SQL Editor membungkus
   skrip dalam satu transaksi → `CREATE INDEX CONCURRENTLY` gagal senyap,

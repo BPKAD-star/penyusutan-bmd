@@ -38,6 +38,7 @@ sisanya sesuai kebutuhan.
 
 | Dokumen | Isi |
 |---|---|
+| [docs/lanjutan-sesi.md](docs/lanjutan-sesi.md) | ⏳ **SEMENTARA** — antrean tugas yang sudah disepakati + status Fase 0. Hapus begitu antreannya habis |
 | [docs/skema-database.md](docs/skema-database.md) | diagram ER (Mermaid) **per modul** — versi dalam dari `schema.md` |
 | [docs/lra-plan.md](docs/lra-plan.md) | rencana modul LRA |
 | [docs/rekonsiliasi-bmd-plan.md](docs/rekonsiliasi-bmd-plan.md) | rencana modul Rekonsiliasi |
@@ -155,10 +156,9 @@ npm run dev
 npm test        # unit test (Vitest)
 ```
 
-Type-check: `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` —
-**saring ke berkas yang disentuh**, ada error pre-existing dari dependency
-opsional yang belum terpasang. Jangan baca exit code mentah. `next build`
-lokal belum bisa jalan.
+Type-check: `npx tsc --noEmit -p tsconfig.json` — **bersih, 0 error**
+(2026-08-05). Exit code-nya bisa dibaca apa adanya; tidak perlu disaring lagi.
+`npm run build` belum diuji.
 
 ---
 

@@ -84,8 +84,8 @@ konflik dengan pekerjaan fitur yang sedang berjalan.
 | 0.4 | Property test invarian engine (`fast-check`) | nilai buku ≥ 0, Σ beban = akumulasi | ✅ 2026-08-03 — 6 invarian × 300 run |
 | 0.4b | Test sinkronisasi daftar `batal_*` (rules.md §1.7) | jenis `batal_*` baru yang lupa satu titik gagal di CI, bukan ketahuan tiga ronde kemudian | ✅ 2026-08-05 — `lib/sinkronisasi.test.ts` |
 | 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis | ⬜ |
-| 0.6 | Baseline typecheck | error **baru** memerahkan CI; yang lama tak memblokir | ⬜ — **cek ulang dulu**: `npm install` 2026-08-05 memasang `qrcode`/`leaflet`/`react-leaflet` yang selama ini absen, jadi sebagian besar "error pre-existing" mungkin sudah hilang & baseline-nya tak perlu ada |
-| 0.7 | GitHub Actions | lint + typecheck + unit tiap push | 🟡 sebagian — `.github/workflows/ci.yml` menjalankan `npm ci && npm test`. Lint & typecheck menyusul setelah 0.5/0.6 |
+| 0.6 | ~~Baseline typecheck~~ → **typecheck bersih** | **0 error**, jadi baseline-nya TIDAK JADI DIBUAT — CI menjalankan `npm run typecheck` apa adanya | ✅ 2026-08-05 |
+| 0.7 | GitHub Actions | typecheck + unit tiap push | 🟡 sebagian — `.github/workflows/ci.yml`: `npm ci` → `typecheck` → `test`. Lint menyusul setelah 0.5 |
 | 0.8 | `supabase gen types` → `shared/types/database.types.ts` | sumber tipe tunggal | ⬜ |
 
 > **Catatan 0.2 — suite ini diverifikasi dengan uji mutasi, bukan cuma
@@ -239,6 +239,28 @@ apa adanya, bukan disebut benar, supaya keputusannya disengaja:
 Tiga-tiganya **tidak diperbaiki di sini**: perbaikan nomor 1 mengubah angka
 laporan surut ke belakang dan menuntut engine dijalankan ulang. Itu PR
 tersendiri dengan keputusan user.
+
+### Catatan 0.6 — baseline yang tidak jadi dibuat
+
+Rencananya membekukan error typecheck lama ke `.typecheck-baseline.txt` supaya
+CI hanya merah untuk error **baru**, dengan alasan "menunggu sampai nol error
+berarti CI tak akan pernah aktif". Alasan itu ternyata salah di repo ini.
+
+Sesudah `npm install` (2026-08-05) errornya tinggal **6 di 4 berkas** —
+`qrcode`/`leaflet`/`react-leaflet` rupanya cuma belum terpasang, bukan cacat
+kode. Dari enam sisanya: **lima murni tipe** (`as` → `as unknown as`;
+supabase-js tak bisa menurunkan bentuk baris kalau `.select()` diberi string
+yang dirakit runtime — pola yang sudah dipakai kolektor di `lib/`, cuma
+komponennya yang belum), **satu kode mati** (`kontrak.keterangan` di
+KonstruksiPengadaan: `Kontrak` tak punya kolom itu & query-nya tak
+men-select-nya, jadi cadangan yang selalu `undefined` — kode yang mengira
+punya jaring pengaman padahal tidak). Nol perubahan logika bisnis.
+
+> **Sebelum membangun mekanisme untuk hidup berdampingan dengan utang, ukur
+> dulu utangnya.** Yang tampak seperti "36.000 baris penuh error lawas"
+> ternyata enam error di empat berkas, selesai dalam satu duduk. Baseline yang
+> terlanjur dibuat akan jadi berkas yang harus dirawat selamanya — dan tempat
+> sempurna untuk menyembunyikan error baru.
 
 ### ESLint: sedikit tapi menggigit
 
