@@ -544,7 +544,7 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 
 | Metrik | Awal | **Sekarang** | 3 bln | 6 bln | 12 bln |
 |---|---|---|---|---|---|
-| Test unit domain | 0 | **150** + `visibilitas.test.ts` ⟨2026-08-05⟩ | 60 | 150 | 300 |
+| Test unit domain | 0 | **192** ⟨`vitest run`, 2026-08-05⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
 | Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **0** | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 | ⬜ belum diukur ulang | 90 | 40 | < 10 |
@@ -554,9 +554,10 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Query per pemuatan Daftar Barang | 8–15 | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
 | Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
 
-Angka test berasal dari Fase 0.2 (71) + 0.3 (73) + 0.4 (6 invarian). Baris
-ber-⬜ butuh perintah metrik di §4 dijalankan ulang — jangan diisi kira-kira,
-lebih baik kosong daripada angka karangan.
+Rincian 192 test (`npm test`, 506 ms): `lib/engine/penyusutan.test.ts` 79 ·
+`lib/bmd.test.ts` 74 · `lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18.
+Baris ber-⬜ butuh perintah metrik di §4 dijalankan ulang — jangan diisi
+kira-kira, lebih baik kosong daripada angka karangan.
 
 ⚠️ Baris konstanta kembar **naik, bukan turun**: `visibilitas` berhasil
 disatukan (−1), tapi sisir `tukar_menukar` 2026-08-05 menemukan keluarga yang

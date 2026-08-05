@@ -13,7 +13,7 @@ supaya paragraf di atas tidak terbaca sebagai keadaan hari ini:
 
 | | Status |
 |---|---|
-| Unit domain | ✅ **150 test** — `lib/engine/penyusutan` (71, 99% stmt), `lib/bmd` (73, 93% stmt), 6 invarian property-based, + `lib/visibilitas.test.ts` |
+| Unit domain | ✅ **192 test, semua hijau** (`npm test`, 506 ms) — `engine/penyusutan` 79 · `bmd` 74 · `rekon` 21 · `visibilitas` 18. Termasuk 6 invarian property-based (`fast-check`) |
 | Integrasi DB (`authenticated`) | ⬜ belum ada — **ini lubang terbesar**, lihat §5 |
 | Golden test laporan | ⬜ belum ada |
 | Lint | ⬜ belum ada (REFACTOR-PLAN Fase 0.5) |
