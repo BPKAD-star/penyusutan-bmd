@@ -1,0 +1,48 @@
+# CI — REFACTOR-PLAN.md Fase 0.7.
+#
+# Sengaja MINIMAL: hanya yang sudah terbukti hijau di lokal. Menaruh langkah
+# yang belum bisa jalan cuma menghasilkan CI merah permanen — efeknya sama
+# dengan tidak punya CI, karena semua orang belajar mengabaikannya.
+#
+#   1. npm run typecheck  ← Fase 0.6, APA ADANYA (repo ini 0 error)
+#   2. npm test           ← Fase 0.2–0.4b, 201 test
+#   3. npm run lint       ← Fase 0.5, menyusul setelah eslint terpasang
+#
+# ⚠️ `typecheck` sengaja TANPA berkas baseline. Rencana awal membekukan error
+# lama ke `.typecheck-baseline.txt`, tapi ternyata nol error bisa dicapai
+# langsung — dan berkas baseline adalah tempat sempurna untuk menyembunyikan
+# error baru. Kalau suatu saat ada yang menambahkannya, itu langkah MUNDUR:
+# perbaiki errornya, jangan bekukan.
+#
+# Yang dijaga CI ini hari ini: 192 test domain, termasuk lib/sinkronisasi.test.ts
+# yang menegakkan rules.md §1.7 & §5.5 — daftar konstanta kembar yang selama ini
+# hanya dijaga ingatan dan sudah berkali-kali bocor.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Typecheck + unit test domain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # `npm ci` (bukan `npm install`) — dipasang persis dari package-lock.json,
+      # jadi CI tak bisa diam-diam memakai versi paket yang berbeda dari lokal.
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # lib/sinkronisasi.test.ts membaca supabase/migrations/*.sql lewat fs,
+      # jadi checkout WAJIB memuat berkas migrasinya (default actions/checkout
+      # sudah begitu — jangan pakai sparse-checkout di sini).
+      - run: npm test
