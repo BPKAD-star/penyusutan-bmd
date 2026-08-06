@@ -639,7 +639,7 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 
 | Metrik | Awal | **Sekarang** | 3 bln | 6 bln | 12 bln |
 |---|---|---|---|---|---|
-| Test unit domain | 0 | **203** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
+| Test unit domain | 0 | **204** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
 | Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **0** | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 | ⬜ belum diukur ulang | 90 | 40 | < 10 |
@@ -649,9 +649,9 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Query per pemuatan Daftar Barang | 8–15 | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
 | Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
 
-Rincian 203 test (`npm test`, ±800 ms): `lib/engine/penyusutan.test.ts` 79 ·
+Rincian 204 test (`npm test`, ±1 dtk): `lib/engine/penyusutan.test.ts` 79 ·
 `lib/bmd.test.ts` 74 · `lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18 ·
-`lib/sinkronisasi.test.ts` 11.
+`lib/sinkronisasi.test.ts` 12.
 Baris ber-⬜ butuh perintah metrik di §4 dijalankan ulang — jangan diisi
 kira-kira, lebih baik kosong daripada angka karangan.
 

@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { tahunAwal } from '@/lib/tahunKerja'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { fetchApprovalScope } from '@/lib/roles'
 import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen } from '@/lib/dokumenSiklus'
 import { uploadDokumenSiklus, hapusFileDokumen, bukaDokumenSumber, namaFileDariPath } from '@/lib/dokumenStorage'
 
@@ -46,18 +47,21 @@ export default function DokumenSumber() {
 
   useEffect(() => {
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: profile } = await supabase.from('profiles').select('role,skpd_id').eq('id', user.id).single()
-      setIsAdmin(profile?.role === 'admin')
-      setMySkpdId(profile?.skpd_id ?? null)
+      // ⚠️ Dulu berkas ini query `profiles` & `skpd` — dua tabel yang TIDAK ADA
+      // (namanya `admin_profiles` & `admin_skpd`; lihat docs/insiden.md INS-19).
+      // Karena `error`-nya ditelan, gagalnya senyap: isAdmin selalu false &
+      // nama SKPD selalu jatuh ke "SKPD #12". Peran dibaca lewat helper bersama
+      // supaya definisi "admin" tak lagi punya salinan kedua di sini.
+      const scope = await fetchApprovalScope(supabase)
+      setIsAdmin(scope.isAdmin)
+      setMySkpdId(scope.skpdId)
       const { data: induk } = await supabase.rpc('fn_skpd_admin_induk')
       setAdminInduk(!!induk)
     })()
     ;(async () => {
       const map = new Map<number, string>()
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('skpd').select('id,nama').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
         if (!data || data.length === 0) break
         for (const s of data as { id: number; nama: string }[]) map.set(s.id, s.nama)
         if (data.length < 1000) break

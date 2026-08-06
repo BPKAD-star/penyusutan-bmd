@@ -43,6 +43,21 @@ function bacaBerkas(rel: string): string {
   return fs.readFileSync(p, 'utf8')
 }
 
+/** Semua berkas TS/TSX di lapisan aplikasi (app/, components/, lib/). */
+function berkasSumber(): { nama: string; isi: string }[] {
+  const out: { nama: string; isi: string }[] = []
+  const jelajah = (dir: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) jelajah(p)
+      else if (/\.tsx?$/.test(e.name)) out.push({ nama: path.relative(AKAR, p), isi: fs.readFileSync(p, 'utf8') })
+    }
+  }
+  for (const d of ['app', 'components', 'lib']) jelajah(path.join(AKAR, d))
+  if (out.length < 100) throw new Error(`hanya ${out.length} berkas sumber terbaca — penjelajahnya rusak`)
+  return out
+}
+
 function bacaMigrasi(): { nama: string; isi: string }[] {
   const dir = path.join(AKAR, 'supabase', 'migrations')
   const berkas = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort()
@@ -238,6 +253,37 @@ describe('database.types.ts tidak ketinggalan dari migrasi (Fase 0.8)', () => {
     }
 
     expect(dariTipe).toEqual([...nilaiEnumDariMigrasi()].sort())
+  })
+
+  it('setiap .from(\'…\') menunjuk tabel yang BENAR-BENAR ADA (regresi INS-19)', () => {
+    // 2026-07-08 commit "rename tabel referensi ke prefix admin_" mengganti
+    // `dokumen_siklus` → `admin_dokumen` di DokumenSumber.tsx (tiga kali) tapi
+    // MELEWATKAN `profiles` & `skpd` di berkas yang sama. Query ke tabel yang
+    // tak ada gagal saat runtime, dan karena `error`-nya ditelan hasilnya
+    // senyap: isAdmin selalu false, nama SKPD selalu "SKPD #12". Bertahan 29
+    // hari. Ini pengecek yang seharusnya ada sejak berkas tipe di-commit.
+    const tipe = bacaBerkas('shared/types/database.types.ts')
+    const adaDiSkema = new Set(
+      [...tipe.slice(tipe.indexOf('  public: {')).matchAll(/\n {6}([a-z_][a-z0-9_]*): \{\n {8}Row: \{/g)].map(m => m[1]),
+    )
+    if (adaDiSkema.size < 20) {
+      throw new Error(`hanya ${adaDiSkema.size} tabel terbaca dari database.types.ts — pemindainya rusak, PERBAIKI`)
+    }
+
+    const asing: string[] = []
+    let total = 0
+    for (const f of berkasSumber()) {
+      f.isi.split('\n').forEach((baris, i) => {
+        for (const [, t] of baris.matchAll(/\.from\('([a-z_][a-z0-9_]*)'\)/g)) {
+          total++
+          if (!adaDiSkema.has(t)) asing.push(`${f.nama}:${i + 1} → .from('${t}')`)
+        }
+      })
+    }
+    // Anti-hampa: kalau penjelajah berkasnya rusak, jangan diam-diam lulus.
+    if (total < 200) throw new Error(`hanya ${total} pemanggilan .from() terbaca — penjelajah berkasnya rusak`)
+
+    expect(asing).toEqual([])
   })
 
   it('tabel jantung ada di tipe generated (bukan berkas kosong/terpotong)', () => {

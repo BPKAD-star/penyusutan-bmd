@@ -5,7 +5,7 @@
 # dengan tidak punya CI, karena semua orang belajar mengabaikannya.
 #
 #   1. npm run typecheck  ← Fase 0.6, APA ADANYA (repo ini 0 error)
-#   2. npm test           ← Fase 0.2–0.4b & 0.8, 203 test
+#   2. npm test           ← Fase 0.2–0.4b & 0.8, 204 test
 #   3. npm run lint       ← Fase 0.5, terpasang 2026-08-06 (0 error, 569 warning)
 #
 # ⚠️ `typecheck` sengaja TANPA berkas baseline. Rencana awal membekukan error
@@ -14,7 +14,7 @@
 # error baru. Kalau suatu saat ada yang menambahkannya, itu langkah MUNDUR:
 # perbaiki errornya, jangan bekukan.
 #
-# Yang dijaga CI ini hari ini: 203 test domain, termasuk lib/sinkronisasi.test.ts
+# Yang dijaga CI ini hari ini: 204 test domain, termasuk lib/sinkronisasi.test.ts
 # yang menegakkan rules.md §1.7 & §5.5 — daftar konstanta kembar yang selama ini
 # hanya dijaga ingatan dan sudah berkali-kali bocor. Sejak Fase 0.8 ia juga
 # membandingkan shared/types/database.types.ts dengan migrasi, jadi menambah

@@ -13,7 +13,7 @@ supaya paragraf di atas tidak terbaca sebagai keadaan hari ini:
 
 | | Status |
 |---|---|
-| Unit domain | ✅ **203 test, semua hijau** (`npm test`, ±800 ms) — `engine/penyusutan` 79 · `bmd` 74 · `rekon` 21 · `visibilitas` 18 · `sinkronisasi` 11. Termasuk 6 invarian property-based (`fast-check`) |
+| Unit domain | ✅ **204 test, semua hijau** (`npm test`, ±1 dtk) — `engine/penyusutan` 79 · `bmd` 74 · `rekon` 21 · `visibilitas` 18 · `sinkronisasi` 12. Termasuk 6 invarian property-based (`fast-check`) |
 | Integrasi DB (`authenticated`) | ⬜ belum ada — **ini lubang terbesar**, lihat §5 |
 | Golden test laporan | ⬜ belum ada |
 | Typecheck | ✅ **0 error** (`npx tsc --noEmit -p tsconfig.json`) — tanpa baseline |

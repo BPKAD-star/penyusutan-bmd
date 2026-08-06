@@ -49,8 +49,9 @@
 | [INS-16](#ins-16) | 2026-08-03 | Kolom **Nama Barang kosong ("-") di KIBAR**, padahal di layar terisi | ⬜ |
 | [INS-17](#ins-17) | 2026-08-03 → 2026-08-05 | **Tidak ada** — bom waktu yang belum meledak (0 baris di produksi) | ✅ [`penyusutan.test.ts`](../lib/engine/penyusutan.test.ts) · [`bmd.test.ts`](../lib/bmd.test.ts) |
 | [INS-18](#ins-18) | 2026-08-05 | Nilai barang **dobel** saat membuka periode lampau | ✅ [`visibilitas.test.ts`](../lib/visibilitas.test.ts) · [`rekon.test.ts`](../lib/rekon.test.ts) |
+| [INS-19](#ins-19) | 2026-07-08 → 2026-08-06 | Nama SKPD tampil **"SKPD #12"**, dan admin pemda **kehilangan tombol Unggah** di Dokumen Sumber | ✅ [`sinkronisasi.test.ts`](../lib/sinkronisasi.test.ts) |
 
-**Skornya hari ini: 3 dari 18 punya penjaga otomatis, dua di antaranya
+**Skornya hari ini: 5 dari 19 punya penjaga otomatis, dua di antaranya
 sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
 
 ---
@@ -406,27 +407,62 @@ sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
   perolehan saja tidak cukup, dan `LAHIR`/`SEMBUNYI`/`MUNCUL` tidak beririsan)
   + `lib/rekon.test.ts`.
 
+### INS-19
+**Nama SKPD tampil "SKPD #12", dan admin pemda kehilangan tombol Unggah**
+
+- **Tanggal** — disisipkan **2026-07-08** (commit `f255217`), ditemukan &
+  diperbaiki **2026-08-06**. Hidup **29 hari**.
+- **Gejala** — di menu **Dokumen Sumber**: nama SKPD tidak pernah muncul, yang
+  tampil `SKPD #12`; dan admin pemda tidak melihat tombol Unggah pada siklus
+  yang cakupannya bukan per-SKPD. Tidak ada pesan error di mana pun.
+- **Akar** — `components/dashboard/DokumenSumber.tsx` menanyai dua tabel yang
+  **tidak ada**: `profiles` dan `skpd` (nama sebenarnya `admin_profiles` dan
+  `admin_skpd`). Commit `f255217` *"rename tabel referensi ke prefix admin_"*
+  mengganti `dokumen_siklus` → `admin_dokumen` **tiga kali di berkas yang sama**
+  tapi melewatkan dua ini — penyapuan rename yang tidak tuntas. Karena keduanya
+  memakai `const { data } = await` tanpa memeriksa `error`, kegagalannya
+  **senyap**: `isAdmin` selalu `false`, `mySkpdId` selalu `null`, `skpdMap`
+  selalu kosong. Pola yang sama persis dengan [INS-06](#ins-06).
+- **Ditemukan bagaimana** — bukan oleh laporan operator, melainkan sebagai efek
+  samping pengukuran Fase 0.8: begitu client Supabase diberi tipe `Database`,
+  TypeScript menolak kedua nama tabel itu. Dikonfirmasi langsung ke database
+  (`information_schema.tables`) sebelum diperbaiki.
+- **Perbaikan** — peran dibaca lewat helper bersama `fetchApprovalScope()`
+  (lib/roles.ts) alih-alih query sendiri, sehingga definisi "admin" tidak lagi
+  punya salinan kedua; `from('skpd')` → `from('admin_skpd')`. Disisir juga
+  seluruh repo: dari **505** pemanggilan `.from()`, berkas ini satu-satunya yang
+  salah.
+- **Test** — ✅ `lib/sinkronisasi.test.ts`: setiap `.from('…')` di `app/`,
+  `components/`, `lib/` wajib menunjuk tabel yang ada di
+  `shared/types/database.types.ts`. Diverifikasi dengan **uji mutasi** —
+  mengembalikan `admin_skpd` jadi `skpd` memerahkan tepat satu test.
+
 ---
 
 ## Pola yang berulang
 
-Delapan belas entri di atas bukan delapan belas masalah berbeda. Kalau
+Sembilan belas entri di atas bukan sembilan belas masalah berbeda. Kalau
 diurutkan menurut **akar**-nya, sebagian besar jatuh ke empat keluarga — dan
 keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 
 | Pola | Entri | Sudah dijinakkan? |
 |---|---|---|
-| **Kegagalan senyap** — `error` ditelan, hasilnya terbaca sebagai kebalikan kenyataan | INS-06 · INS-08 · INS-09 | sebagian: aturannya ada ([../rules.md](../rules.md) §2), tapi masih **166** pelanggaran tercatat. ESLint Fase 0.5 |
+| **Kegagalan senyap** — `error` ditelan, hasilnya terbaca sebagai kebalikan kenyataan | INS-06 · INS-08 · INS-09 · INS-19 | sebagian: aturannya ada ([../rules.md](../rules.md) §2), tapi masih **166** pelanggaran tercatat. ESLint Fase 0.5 |
 | **Operator non-*leakproof* di bawah RLS** (`LIKE`, lalu ENUM) | INS-02 · INS-03 · INS-05 · INS-11 · INS-12 | sebagian: partial index + `ANALYZE` jadi kebiasaan; verifikasinya belum jadi test |
 | **Konstanta kembar dijaga ingatan** | INS-15 · INS-17 · INS-18 | sebagian: `lib/sinkronisasi.test.ts` |
+| **Penyapuan rename yang tidak tuntas** | INS-19 | ✅ `lib/sinkronisasi.test.ts` — nama tabel dicocokkan ke tipe generated |
 | **Prosedur migrasi** | INS-13 · INS-14 | [runbook-migrasi.md](runbook-migrasi.md) |
 
 Dua pengamatan yang berlaku untuk hampir semuanya:
 
 - **Yang mahal bukan angka salah — yang mahal angka salah yang kelihatan
   benar.** Sebagian besar entri di atas tidak menampilkan satu pun error saat
-  sedang terjadi (INS-01, INS-06, INS-08, INS-16, INS-17, INS-18). Yang cepat
-  ketahuan justru yang **berisik** (INS-10, INS-13).
+  sedang terjadi (INS-01, INS-06, INS-08, INS-16, INS-17, INS-18, INS-19). Yang
+  cepat ketahuan justru yang **berisik** (INS-10, INS-13).
+- **Beberapa insiden ditemukan oleh pekerjaan yang tujuannya lain.** INS-17
+  muncul saat menulis test `lib/bmd.ts`, INS-19 saat mengukur Fase 0.8. Itu
+  argumen paling konkret untuk jaring pengaman: nilainya bukan cuma mencegah
+  regresi baru, tapi menyingkap yang sudah lama diam.
 - **Perbaikan yang meleset selalu punya bentuk yang sama:** menambal gejalanya
   (index baru, keyset baru) sementara biayanya tetap tumbuh mengikuti besar
   ledger — INS-07 dan INS-11 keduanya begitu, dan keduanya baru selesai setelah
