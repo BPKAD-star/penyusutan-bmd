@@ -490,8 +490,10 @@ it('regresi 2026-07-28: fetchVoidedAsetIds MELEMPAR saat query gagal, tidak meng
 })
 ```
 
-CLAUDE.md sudah memuat daftar insiden yang siap dipanen jadi test —
-kerjakan bertahap, dahulukan yang menyentuh angka laporan.
+Daftar insiden yang siap dipanen jadi test ada di
+**[docs/insiden.md](docs/insiden.md)**, lengkap dengan kolom "test penjaga" —
+di situlah janji di atas bisa **dicek**, bukan cuma dijanjikan. Kerjakan
+bertahap, dahulukan yang menyentuh angka laporan.
 
 ---
 
