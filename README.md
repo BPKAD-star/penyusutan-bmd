@@ -38,7 +38,6 @@ sisanya sesuai kebutuhan.
 
 | Dokumen | Isi |
 |---|---|
-| [docs/lanjutan-sesi.md](docs/lanjutan-sesi.md) | ⏳ **SEMENTARA** — antrean tugas yang sudah disepakati + status Fase 0. Hapus begitu antreannya habis |
 | [docs/runbook-migrasi.md](docs/runbook-migrasi.md) | **daftar centang pra-terbang** menjalankan migrasi SQL — dibaca sambil mengerjakan, urut |
 | [docs/panduan-operator.md](docs/panduan-operator.md) | 👤 **satu-satunya dokumen untuk pengurus barang**, bukan untuk yang menulis kode — siap dicetak |
 | [docs/insiden.md](docs/insiden.md) | **register insiden** — gejala · akar · perbaikan · test yang menjaganya. Alat cek janji TESTING.md §8 |
