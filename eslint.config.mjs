@@ -36,7 +36,14 @@ const akar = path.dirname(fileURLToPath(import.meta.url))
 
 export default tseslint.config(
   {
-    ignores: ['.next/**', 'out/**', 'coverage/**', 'node_modules/**'],
+    ignores: [
+      '.next/**', 'out/**', 'coverage/**', 'node_modules/**',
+      // DIGENERATE (`npm run gen:types`), bukan ditulis tangan. Melintnya cuma
+      // menghasilkan peringatan yang tak boleh ditindaklanjuti — memperbaikinya
+      // di berkas ini akan tersapu regenerasi berikutnya. `shared/` yang lain
+      // TETAP dilint (di sana nanti primitif Fase 1 tinggal).
+      'shared/types/database.types.ts',
+    ],
   },
 
   {

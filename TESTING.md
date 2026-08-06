@@ -13,10 +13,11 @@ supaya paragraf di atas tidak terbaca sebagai keadaan hari ini:
 
 | | Status |
 |---|---|
-| Unit domain | ✅ **192 test, semua hijau** (`npm test`, 506 ms) — `engine/penyusutan` 79 · `bmd` 74 · `rekon` 21 · `visibilitas` 18. Termasuk 6 invarian property-based (`fast-check`) |
+| Unit domain | ✅ **203 test, semua hijau** (`npm test`, ±800 ms) — `engine/penyusutan` 79 · `bmd` 74 · `rekon` 21 · `visibilitas` 18 · `sinkronisasi` 11. Termasuk 6 invarian property-based (`fast-check`) |
 | Integrasi DB (`authenticated`) | ⬜ belum ada — **ini lubang terbesar**, lihat §5 |
 | Golden test laporan | ⬜ belum ada |
 | Typecheck | ✅ **0 error** (`npx tsc --noEmit -p tsconfig.json`) — tanpa baseline |
+| Tipe DB generated | ✅ `shared/types/database.types.ts` (`npm run gen:types`). Dijaga tidak ketinggalan dari migrasi oleh `lib/sinkronisasi.test.ts` §4 |
 | Lint | ✅ `eslint.config.mjs` — 6 aturan, **0 error / 569 warning** (2026-08-06). Warning = utang terukur, sengaja tidak memerahkan CI |
 | CI | ✅ `.github/workflows/ci.yml` — typecheck + unit test + lint tiap push |
 

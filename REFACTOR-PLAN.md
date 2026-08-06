@@ -86,7 +86,7 @@ konflik dengan pekerjaan fitur yang sedang berjalan.
 | 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis | ✅ 2026-08-06 — `eslint.config.mjs`, **0 error / 569 warning** |
 | 0.6 | ~~Baseline typecheck~~ → **typecheck bersih** | **0 error**, jadi baseline-nya TIDAK JADI DIBUAT — CI menjalankan `npm run typecheck` apa adanya | ✅ 2026-08-05 |
 | 0.7 | GitHub Actions | typecheck + unit tiap push | ✅ 2026-08-06 — `.github/workflows/ci.yml`: `npm ci` → `typecheck` → `test` → `lint` |
-| 0.8 | `supabase gen types` → `shared/types/database.types.ts` | sumber tipe tunggal | ⬜ |
+| 0.8 | `supabase gen types` → `shared/types/database.types.ts` | sumber tipe tunggal | ✅ 2026-08-06 — 2.930 baris, 46 tabel. Adopsi lewat `Tables<>`/`Enums<>`; **client belum bertipe**, lihat di bawah |
 
 > **Catatan 0.2 — suite ini diverifikasi dengan uji mutasi, bukan cuma
 > "hijau".** Test yang lulus di percobaan pertama belum tentu menguji apa pun.
@@ -295,6 +295,51 @@ berarti menyentuh 80 berkas produk tanpa alasan.
 
 **Kriteria selesai:** ✅ CI hijau di `main` (0 error / 569 warning); ✅ menambah
 `const { data } = await` baru memunculkan peringatan; ✅ engine punya 79 test.
+
+### Catatan 0.8 — tipe generated ada, client-nya belum bisa diberi tipe
+
+[`shared/types/database.types.ts`](shared/types/database.types.ts) sudah
+di-commit (2.930 baris, 46 tabel) dan diregenerasi lewat `npm run gen:types`.
+Cara memakainya di kode ada di [CODING-STANDARD.md](CODING-STANDARD.md) §4.4.
+
+**Yang tidak jadi dikerjakan, berikut angkanya.** Rencana wajarnya adalah
+menyematkan `createBrowserClient<Database>` di `lib/supabase/client.ts` supaya
+seluruh `.from()` bertipe. Diukur 2026-08-06: itu menghasilkan **239 error
+typecheck**, nyaris semuanya `Argument … is not assignable to parameter of type
+'never'` pada `.insert()`/`.update()`.
+
+Dua hipotesis pertama **salah**, dan itu layak dicatat supaya tak diulang:
+versi `supabase-js` sudah baru (2.108.2, bukan yang lama), dan menyalakan
+`--strictNullChecks` justru menaikkan error jadi **297**. Penyebab sebenarnya
+diisolasi dengan membandingkan dua jalur pembuatan client dalam satu berkas:
+
+| Jalur | `.from('aset').update(...)` | tabel ngawur ditolak? |
+|---|---|---|
+| `createClient` dari **`@supabase/supabase-js`** | ✅ bertipe benar | ✅ ya |
+| `createBrowserClient` dari **`@supabase/ssr` 0.5.2** | ❌ `never` | ❌ tidak |
+
+Pesan errornya menunjukkan skew generic yang persis: ssr menghasilkan
+`SupabaseClient<Database, "public", Schema>` (3 parameter) sementara supabase-js
+2.108.2 menuntut **4**. Jadi ini **soal versi `@supabase/ssr`, bukan soal
+tipenya**.
+
+Menaikkan `@supabase/ssr` bukan keputusan yang boleh menumpang di Fase 0: paket
+itu memegang refresh sesi auth di `middleware.ts` — lapisan yang, waktu database
+masuk mode read-only, membuat **seluruh aplikasi tak bisa diakses**
+([docs/insiden.md](docs/insiden.md) INS-13). Itu butuh keputusan tersendiri
+berikut ujinya. Sampai saat itu, `Tables<>`/`TablesInsert<>`/`Enums<>` sudah
+memberi sebagian besar manfaat tanpa menyentuh client sama sekali.
+
+**Temuan sampingan — pemindai enum yang bocor separuh.** Membandingkan berkas
+generated dengan `supabase/migrations/*.sql` langsung memerahkan test, dan
+sebabnya bukan di berkas generated: `nilaiEnumDariMigrasi()` di
+`lib/sinkronisasi.test.ts` cuma menangkap **31 dari 46** nilai enum. Badan
+`CREATE TYPE … AS ENUM ( … )` memuat komentar `-- … (pengguna barang)`, dan
+kurung tutup di dalam komentar itu mengakhiri tangkapan lebih awal. Ambang
+anti-hampanya `< 30`, jadi 31 tetap lolos — **ambang yang jauh di bawah
+kenyataan bukan pengaman, ia tempat pemindai rusak-sebagian bersembunyi.**
+Diperbaiki (komentar dibuang dulu, ambang dinaikkan ke 40); test §1–§3 yang
+sudah ada ikut jadi lebih kuat.
 
 ---
 
@@ -594,7 +639,7 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 
 | Metrik | Awal | **Sekarang** | 3 bln | 6 bln | 12 bln |
 |---|---|---|---|---|---|
-| Test unit domain | 0 | **192** ⟨`vitest run`, 2026-08-05⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
+| Test unit domain | 0 | **203** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
 | Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **0** | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 | ⬜ belum diukur ulang | 90 | 40 | < 10 |
@@ -604,8 +649,9 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Query per pemuatan Daftar Barang | 8–15 | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
 | Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
 
-Rincian 192 test (`npm test`, 506 ms): `lib/engine/penyusutan.test.ts` 79 ·
-`lib/bmd.test.ts` 74 · `lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18.
+Rincian 203 test (`npm test`, ±800 ms): `lib/engine/penyusutan.test.ts` 79 ·
+`lib/bmd.test.ts` 74 · `lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18 ·
+`lib/sinkronisasi.test.ts` 11.
 Baris ber-⬜ butuh perintah metrik di §4 dijalankan ulang — jangan diisi
 kira-kira, lebih baik kosong daripada angka karangan.
 

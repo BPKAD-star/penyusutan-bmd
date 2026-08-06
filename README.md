@@ -156,9 +156,21 @@ prefix `NEXT_PUBLIC_`.
 ```bash
 npm install
 npm run dev
-npm test        # unit test (Vitest) — 201 hijau
+npm test        # unit test (Vitest) — 203 hijau
 npm run lint    # ESLint, 6 aturan (eslint.config.mjs)
 ```
+
+Tipe database digenerate ke
+[`shared/types/database.types.ts`](shared/types/database.types.ts) —
+**jangan disunting tangan**, regenerasi dengan:
+
+```bash
+SUPABASE_ACCESS_TOKEN=<token> npm run gen:types
+```
+
+Cara memakainya (`Tables<'aset'>`, `Enums<'jenis_transaksi_bmd'>`, dan kenapa
+client-nya sendiri belum bertipe) ada di
+[CODING-STANDARD.md](CODING-STANDARD.md) §4.4.
 
 Type-check: `npx tsc --noEmit -p tsconfig.json` — **bersih, 0 error**
 (2026-08-05). Exit code-nya bisa dibaca apa adanya; tidak perlu disaring lagi.

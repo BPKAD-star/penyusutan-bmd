@@ -304,18 +304,39 @@ terunduh tidak punya tanda apa pun bahwa isinya kurang.
 
 ### 4.4 Tipe database digenerate, bukan diketik
 
-Sekarang tiap halaman mendeklarasikan `type Row = { … }` sendiri. Kalau kolom
-di DB berubah tipe atau nullability, TypeScript **tidak tahu apa-apa**.
+Berkasnya **sudah ada**: [`shared/types/database.types.ts`](shared/types/database.types.ts)
+(Fase 0.8, 2026-08-06). Regenerasi:
 
 ```bash
-npx supabase gen types typescript --project-id <id> > shared/types/database.types.ts
+SUPABASE_ACCESS_TOKEN=<token> npm run gen:types
 ```
 
-Lalu turunkan tipe baris dari sana, jangan tulis ulang:
+Banyak halaman masih mendeklarasikan `type Row = { … }` sendiri — kalau kolom di
+DB berubah tipe atau nullability, TypeScript **tidak tahu apa-apa**. Untuk kode
+baru, turunkan dari berkas generated itu, jangan tulis ulang:
 
 ```ts
-type AsetRow = Pick<Tables<'aset'>, 'id' | 'nibar' | 'kode' | 'nilai_perolehan'>
+import type { Tables, TablesInsert, Enums } from '@/shared/types/database.types'
+
+type AsetRow  = Pick<Tables<'aset'>, 'id' | 'nibar' | 'kode' | 'nilai_perolehan'>
+type AsetBaru = TablesInsert<'aset'>
+type Jenis    = Enums<'jenis_transaksi_bmd'>
 ```
+
+⚠️ **Yang BELUM bisa: memberi tipe pada client-nya** (`createClient()` di
+`lib/supabase/client.ts`), jadi `.from('aset').select()` masih mengembalikan
+baris ber-tipe longgar. Bukan kelalaian — `createBrowserClient<Database>` dari
+`@supabase/ssr` 0.5.2 tidak meneruskan generic-nya ke `supabase-js` 2.108.2
+(ssr menghasilkan `SupabaseClient<Database, "public", Schema>`, supabase-js kini
+menuntut 4 parameter), sehingga seluruh `.insert()`/`.update()` jatuh ke `never`
+— **239 error typecheck, terukur 2026-08-06**. Lewat `createClient` dari
+supabase-js langsung tipenya bekerja normal, jadi yang perlu diselesaikan versi
+`@supabase/ssr`-nya. Sampai itu diputuskan, tiga alias di atas sudah memberi
+sebagian besar manfaatnya tanpa menyentuh client.
+
+Berkas itu **digenerate — jangan disunting tangan**; suntingan apa pun tersapu
+regenerasi berikutnya (karena itu ia dikecualikan dari ESLint). Yang menjaganya
+tidak diam-diam ketinggalan dari migrasi: `lib/sinkronisasi.test.ts` §4.
 
 ---
 

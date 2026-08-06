@@ -28,6 +28,7 @@ import { JENIS_PEROLEHAN, JENIS_TRANSAKSI_LABEL } from './bmd'
 import { BATAL_TARGET_JENIS, VOID_JENIS } from './voidedAset'
 import { JENIS_DITARIK } from './pengalihan'
 import { JENIS_CARA } from './rekon'
+import { Constants } from '@/shared/types/database.types'
 
 const AKAR = process.cwd()
 
@@ -56,13 +57,24 @@ function bacaMigrasi(): { nama: string; isi: string }[] {
 function nilaiEnumDariMigrasi(): Set<string> {
   const out = new Set<string>()
   for (const m of bacaMigrasi()) {
+    // Komentar SQL DIBUANG DULU. Tanpa ini, deklarasi awal enum tidak pernah
+    // terbaca utuh: badan `CREATE TYPE … AS ENUM ( … )` di 20260702_01 memuat
+    // komentar `-- no.11b\5: transfer antar SKPD (pengguna barang)`, dan
+    // kurung tutup di dalam komentar itu MENGAKHIRI tangkapan lebih awal.
+    // Akibatnya (ketahuan 2026-08-06 lewat pembanding database.types.ts) cuma
+    // 31 dari 46 nilai yang terdeteksi — dan ambang anti-hampa yang dulu `<30`
+    // tetap lolos, jadi tak ada yang sadar selama itu.
+    const isi = m.isi.replace(/--[^\n]*/g, '')
     // (a) `ALTER TYPE … ADD VALUE 'x'` — cara enum bertambah sesudah awal.
-    for (const [, v] of m.isi.matchAll(/ADD\s+VALUE\s+(?:IF\s+NOT\s+EXISTS\s+)?'([a-z0-9_]+)'/gi)) out.add(v)
+    for (const [, v] of isi.matchAll(/ADD\s+VALUE\s+(?:IF\s+NOT\s+EXISTS\s+)?'([a-z0-9_]+)'/gi)) out.add(v)
     // (b) `CREATE TYPE … jenis_transaksi_bmd … AS ENUM ( … )` — deklarasi awal.
-    for (const blok of m.isi.matchAll(/CREATE\s+TYPE\s+[^;]*?jenis_transaksi_bmd[\s\S]*?AS\s+ENUM\s*\(([\s\S]*?)\)/gi))
+    for (const blok of isi.matchAll(/CREATE\s+TYPE\s+[^;()]*?jenis_transaksi_bmd[^;()]*?AS\s+ENUM\s*\(([^)]*)\)/gi))
       for (const [, v] of blok[1].matchAll(/'([a-z0-9_]+)'/g)) out.add(v)
   }
-  if (out.size < 30) throw new Error(`hanya ${out.size} nilai enum terdeteksi — regex pemindainya usang, PERBAIKI`)
+  // Ambangnya sengaja dinaikkan mendekati jumlah sebenarnya (46 per 2026-08-06).
+  // Ambang yang jauh di bawah kenyataan bukan pengaman — ia justru tempat
+  // pemindai yang rusak sebagian bersembunyi.
+  if (out.size < 40) throw new Error(`hanya ${out.size} nilai enum terdeteksi — regex pemindainya usang, PERBAIKI`)
   return out
 }
 
@@ -197,5 +209,45 @@ describe('daftar cara perolehan konsisten lintas modul', () => {
     const jenis = [...blok[1].matchAll(/jenisTransaksi:\s*'([a-z0-9_]+)'/g)].map(x => x[1]).sort()
 
     expect(jenis).toEqual(HARAPAN)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// 4. shared/types/database.types.ts ↔ migrasi (REFACTOR-PLAN Fase 0.8).
+//
+// Berkas tipe itu DIGENERATE dari database, bukan ditulis tangan — jadi ia
+// salinan, dan salinan di repo ini punya riwayat panjang menyimpang diam-diam.
+// Bedanya dengan salinan lain: yang ini tak bisa dibandingkan ke DB dari CI
+// (butuh kredensial). Yang BISA dibandingkan tanpa kredensial: nilai enum,
+// karena sumbernya sama-sama ada di `supabase/migrations/*.sql`.
+//
+// Itu justru drift yang paling mahal. Menambah nilai enum lewat migrasi lalu
+// lupa `npm run gen:types` membuat berkas tipe diam-diam KETINGGALAN, dan kode
+// baru yang memakai `Enums<'jenis_transaksi_bmd'>` akan menolak nilai yang
+// sebenarnya sah — atau lebih buruk, dianggap sah padahal belum ada.
+// ════════════════════════════════════════════════════════════════════════════
+describe('database.types.ts tidak ketinggalan dari migrasi (Fase 0.8)', () => {
+  it('enum jenis_transaksi_bmd sama persis dengan yang ada di migrasi', () => {
+    const dariTipe = [...Constants.public.Enums.jenis_transaksi_bmd].sort()
+    // Anti-hampa: kalau generatornya berubah bentuk, jangan diam-diam lulus.
+    if (dariTipe.length < 30) {
+      throw new Error(
+        `hanya ${dariTipe.length} nilai enum di database.types.ts — bentuk keluaran ` +
+        `generatornya berubah. PERBAIKI pengeceknya, jangan hapus.`,
+      )
+    }
+
+    expect(dariTipe).toEqual([...nilaiEnumDariMigrasi()].sort())
+  })
+
+  it('tabel jantung ada di tipe generated (bukan berkas kosong/terpotong)', () => {
+    // Murah, tapi menutup kegagalan paling memalukan: `npm run gen:types` yang
+    // putus separuh jalan lalu menimpa berkasnya dengan keluaran tak lengkap.
+    // Dibaca sebagai TEKS — `Constants` yang diekspor generator hanya memuat
+    // Enums, tidak ada daftar tabel yang bisa diperiksa saat runtime.
+    const isi = bacaBerkas('shared/types/database.types.ts')
+    for (const wajib of ['aset', 'transaksi_bmd', 'jurnal_header', 'aset_awal_2026']) {
+      expect(isi).toMatch(new RegExp(`\\n\\s+${wajib}:\\s*\\{`))
+    }
   })
 })
