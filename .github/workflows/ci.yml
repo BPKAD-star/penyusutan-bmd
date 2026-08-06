@@ -6,7 +6,7 @@
 #
 #   1. npm run typecheck  ← Fase 0.6, APA ADANYA (repo ini 0 error)
 #   2. npm test           ← Fase 0.2–0.4b, 201 test
-#   3. npm run lint       ← Fase 0.5, menyusul setelah eslint terpasang
+#   3. npm run lint       ← Fase 0.5, terpasang 2026-08-06 (0 error, 569 warning)
 #
 # ⚠️ `typecheck` sengaja TANPA berkas baseline. Rencana awal membekukan error
 # lama ke `.typecheck-baseline.txt`, tapi ternyata nol error bisa dicapai
@@ -26,7 +26,7 @@ on:
 
 jobs:
   test:
-    name: Typecheck + unit test domain
+    name: Typecheck + unit test domain + lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,3 +46,11 @@ jobs:
       # jadi checkout WAJIB memuat berkas migrasinya (default actions/checkout
       # sudah begitu — jangan pakai sparse-checkout di sini).
       - run: npm test
+
+      # SENGAJA TANPA `--max-warnings`. Warning di sini = utang lama yang sudah
+      # terukur & sengaja dibiarkan (569: 294 `const { data } = await`, 260
+      # floating promise di app/components, 15 berkas > 500 baris) — memerahkan
+      # CI karenanya sama saja dengan tidak punya CI. Yang memerahkan CI cuma
+      # yang berstatus `error`, dan itu semua dipilih dari kelompok yang HARI
+      # INI nol pelanggaran. Rinciannya di eslint.config.mjs.
+      - run: npm run lint

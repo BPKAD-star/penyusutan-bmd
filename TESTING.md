@@ -17,8 +17,8 @@ supaya paragraf di atas tidak terbaca sebagai keadaan hari ini:
 | Integrasi DB (`authenticated`) | ⬜ belum ada — **ini lubang terbesar**, lihat §5 |
 | Golden test laporan | ⬜ belum ada |
 | Typecheck | ✅ **0 error** (`npx tsc --noEmit -p tsconfig.json`) — tanpa baseline |
-| Lint | ⬜ belum ada (REFACTOR-PLAN Fase 0.5) |
-| CI | 🟡 `.github/workflows/ci.yml` — typecheck + unit test; lint menyusul |
+| Lint | ✅ `eslint.config.mjs` — 6 aturan, **0 error / 569 warning** (2026-08-06). Warning = utang terukur, sengaja tidak memerahkan CI |
+| CI | ✅ `.github/workflows/ci.yml` — typecheck + unit test + lint tiap push |
 
 Artinya jantung angkanya (engine) sudah terkunci, tapi **separuh invarian sistem
 ini yang hidup di dalam database masih nol pengawasan** — dan itu justru lapisan
@@ -514,8 +514,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck   # apa adanya — repo ini 0 error, tanpa baseline
       - run: npm test            # unit domain saja
-      # `npm run lint` menyusul setelah Fase 0.5 (eslint) terpasang. Jangan
-      # ditaruh sebelum ada — CI merah permanen = CI yang diabaikan semua orang.
+      - run: npm run lint        # Fase 0.5 — tanpa `--max-warnings`, lihat
+                                 # eslint.config.mjs soal error vs warn
 
   database:                    # butuh Postgres, tiap PR
     runs-on: ubuntu-latest

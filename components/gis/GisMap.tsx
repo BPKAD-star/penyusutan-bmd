@@ -64,7 +64,7 @@ export default function GisMap({ markers, onSelect }: { markers: GisMarker[]; on
     if (active) return [active.lat, active.lng]
     if (markers.length > 0) return [markers[0].lat, markers[0].lng]
     return DEFAULT_CENTER
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps — cuma posisi AWAL; re-center berikutnya via FocusActive
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- cuma posisi AWAL; re-center berikutnya via FocusActive
 
   return (
     <MapContainer center={initialCenter} zoom={markers.length > 0 ? 13 : 11} zoomControl={false} style={{ height: '100%', width: '100%' }}>

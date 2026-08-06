@@ -157,12 +157,18 @@ prefix `NEXT_PUBLIC_`.
 ```bash
 npm install
 npm run dev
-npm test        # unit test (Vitest)
+npm test        # unit test (Vitest) — 201 hijau
+npm run lint    # ESLint, 6 aturan (eslint.config.mjs)
 ```
 
 Type-check: `npx tsc --noEmit -p tsconfig.json` — **bersih, 0 error**
 (2026-08-05). Exit code-nya bisa dibaca apa adanya; tidak perlu disaring lagi.
 `npm run build` belum diuji.
+
+Lint **0 error / 569 warning** (2026-08-06). Warning-nya utang lama yang sudah
+terukur dan sengaja tidak memerahkan CI — alasan per aturan ada di
+[`eslint.config.mjs`](eslint.config.mjs); adopsinya lewat *boy-scout rule*
+([CODING-STANDARD.md](CODING-STANDARD.md) §10).
 
 ---
 

@@ -83,9 +83,9 @@ konflik dengan pekerjaan fitur yang sedang berjalan.
 | 0.3 | Test untuk helper murni di `lib/bmd.ts` | `periodeDariTanggal`, `comparePeriode`, `klasifikasiKomptabel` | ✅ 2026-08-03 — 73 test, 93% stmt / 100% branch |
 | 0.4 | Property test invarian engine (`fast-check`) | nilai buku ≥ 0, Σ beban = akumulasi | ✅ 2026-08-03 — 6 invarian × 300 run |
 | 0.4b | Test sinkronisasi daftar `batal_*` (rules.md §1.7) | jenis `batal_*` baru yang lupa satu titik gagal di CI, bukan ketahuan tiga ronde kemudian | ✅ 2026-08-05 — `lib/sinkronisasi.test.ts` |
-| 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis | ⬜ |
+| 0.5 | ESLint — **hanya 6 aturan** (lihat di bawah) | pelanggaran baru tertangkap otomatis | ✅ 2026-08-06 — `eslint.config.mjs`, **0 error / 569 warning** |
 | 0.6 | ~~Baseline typecheck~~ → **typecheck bersih** | **0 error**, jadi baseline-nya TIDAK JADI DIBUAT — CI menjalankan `npm run typecheck` apa adanya | ✅ 2026-08-05 |
-| 0.7 | GitHub Actions | typecheck + unit tiap push | 🟡 sebagian — `.github/workflows/ci.yml`: `npm ci` → `typecheck` → `test`. Lint menyusul setelah 0.5 |
+| 0.7 | GitHub Actions | typecheck + unit tiap push | ✅ 2026-08-06 — `.github/workflows/ci.yml`: `npm ci` → `typecheck` → `test` → `lint` |
 | 0.8 | `supabase gen types` → `shared/types/database.types.ts` | sumber tipe tunggal | ⬜ |
 
 > **Catatan 0.2 — suite ini diverifikasi dengan uji mutasi, bukan cuma
@@ -262,36 +262,39 @@ punya jaring pengaman padahal tidak). Nol perubahan logika bisnis.
 > terlanjur dibuat akan jadi berkas yang harus dirawat selamanya — dan tempat
 > sempurna untuk menyembunyikan error baru.
 
-### ESLint: sedikit tapi menggigit
+### ESLint: sedikit tapi menggigit — ✅ terpasang 2026-08-06
 
 Menyalakan `eslint-config-next` penuh di 36.000 baris tanpa lint akan
-menghasilkan ribuan peringatan yang langsung diabaikan semua orang. Mulai
-dengan enam aturan yang memetakan langsung ke insiden nyata:
-
-```js
-// eslint.config.js — sengaja minimalis
-rules: {
-  '@typescript-eslint/no-floating-promises': 'error',   // loader tanpa penangkap → halaman beku
-  '@typescript-eslint/await-thenable':       'error',
-  'no-restricted-syntax': ['warn',
-    { selector: "VariableDeclarator[id.type='ObjectPattern']:not(:has(Property[key.name='error'])) > AwaitExpression",
-      message: 'Query Supabase wajib memeriksa `error` — pakai assertOk() (rules.md §2.1).' },
-  ],
-  'no-restricted-imports': ['error', { patterns: [
-    { group: ['**/modules/*/data/*', '**/modules/*/ui/*'],
-      message: 'Impor antar-modul hanya lewat index.ts (CODING-STANDARD §2).' },
-    { group: ['@supabase/*'],
-      message: 'domain/ tidak boleh menyentuh I/O.' },   // di-override per-folder untuk data/
-  ]}],
-  'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
-}
-```
+menghasilkan ribuan peringatan yang langsung diabaikan semua orang. Karena itu
+hanya enam aturan yang dinyalakan, semuanya memetakan langsung ke insiden
+nyata. **Konfigurasinya sendiri ada di
+[`eslint.config.mjs`](eslint.config.mjs)** berikut alasan per aturan — jangan
+disalin ke sini, cukup dibaca di sana.
 
 Aturan `no-restricted-imports` itulah yang **menegakkan arah dependensi**
-dari CODING-STANDARD §2 — tanpa ia, pemisahan lapisan cuma niat baik.
+dari CODING-STANDARD §2 — tanpa ia, pemisahan lapisan cuma niat baik. Ia
+sengaja dipasang **sebelum** folder `modules/` pertamanya dibuat (Fase 5), jadi
+hari ini nol efek.
 
-**Kriteria selesai:** CI hijau di `main`; menambah `const { data } = await`
-baru memunculkan peringatan; engine punya ≥ 25 test.
+**Yang meleset dari rencana, dan angkanya:** rencana menaruh
+`no-floating-promises` & `await-thenable` di `'error'` global. Pengukuran
+pertama (2026-08-06) menemukan **260 pelanggaran** — 178 di `components/`, 82
+di `app/`, dan **0 di `lib/`**, hampir semuanya berbentuk
+`useEffect(() => { load() }, [])`. Jadi keduanya `'error'` **di `lib/` +
+`middleware.ts` saja** dan `'warn'` di lapisan UI. Alasannya sama persis dengan
+alasan `const { data } = await` di-set `'warn'`: `error` di atas utang yang
+sudah terlanjur besar = **CI merah permanen**, yang efeknya identik dengan
+tidak punya CI. Naikkan blok UI-nya jadi `error` begitu angkanya nol.
+
+Temuan sampingan yang tak terduga: 144 komentar `eslint-disable` lama di 80
+berkas menyebut aturan `eslint-config-next` yang **tidak dipasang**, dan ESLint
+melaporkan itu sebagai **error** ("Definition for rule was not found") — CI
+merah karena komentar, bukan karena kode. Ditutup dengan mendaftarkan kedua
+plugin-nya **tanpa menyalakan satu pun aturannya**; membuang 144 komentar itu
+berarti menyentuh 80 berkas produk tanpa alasan.
+
+**Kriteria selesai:** ✅ CI hijau di `main` (0 error / 569 warning); ✅ menambah
+`const { data } = await` baru memunculkan peringatan; ✅ engine punya 79 test.
 
 ---
 
