@@ -39,6 +39,7 @@ sisanya sesuai kebutuhan.
 | Dokumen | Isi |
 |---|---|
 | [docs/lanjutan-sesi.md](docs/lanjutan-sesi.md) | ⏳ **SEMENTARA** — antrean tugas yang sudah disepakati + status Fase 0. Hapus begitu antreannya habis |
+| [docs/runbook-migrasi.md](docs/runbook-migrasi.md) | **daftar centang pra-terbang** menjalankan migrasi SQL — dibaca sambil mengerjakan, urut |
 | [docs/skema-database.md](docs/skema-database.md) | diagram ER (Mermaid) **per modul** — versi dalam dari `schema.md` |
 | [docs/lra-plan.md](docs/lra-plan.md) | rencana modul LRA |
 | [docs/rekonsiliasi-bmd-plan.md](docs/rekonsiliasi-bmd-plan.md) | rencana modul Rekonsiliasi |
