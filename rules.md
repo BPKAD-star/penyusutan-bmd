@@ -187,6 +187,38 @@ kode, jadi ia harus stabil:
 7. **Sebelum membuat halaman yang membaca tabel besar LANGSUNG, cek policy-nya
     sudah InitPlan atau belum** — tabel yang selama ini hanya dibaca lewat RPC
     SECURITY DEFINER bisa menyimpan bom waktu RLS.
+8. **Di dalam RPC agregasi, JANGAN panggil `fn_skpd_visible(x)` atau
+    `fn_aset_pernah_dikelola(x)` sebagai qual.** Keduanya berargumen per-baris,
+    jadi TIDAK BISA diangkat jadi InitPlan (§4.1) — di tabel 418rb baris
+    biayanya bukan "lebih lambat", melainkan **tidak selesai**. Hitung scope
+    **sekali** jadi array lalu bandingkan dengan `= ANY(...)`:
+
+    ```sql
+    v_scope bigint[] := CASE WHEN fn_is_viewer() THEN ARRAY[]::bigint[]
+                             ELSE COALESCE(fn_my_skpd_scope(), ARRAY[]::bigint[]) END;
+    -- ... WHERE (v_is_admin OR a.skpd_id = ANY(v_scope) OR a.id = ANY(v_pernah))
+    ```
+
+    ⚠️ **Dua jebakan, dua-duanya soal KEAMANAN, bukan kecepatan:**
+    - **Viewer (`pengawas`)**: `fn_skpd_visible` SELALU false untuk viewer, tapi
+      `fn_my_skpd_scope()` **tidak memeriksanya**. Dipakai mentah → viewer
+      mendadak melihat seluruh subtree-nya. Scope viewer WAJIB array kosong.
+    - `x = ANY(NULL::bigint[])` menghasilkan **NULL, bukan false** — dan admin
+      memang menerima NULL dari `fn_my_skpd_scope()`. WAJIB `COALESCE`.
+
+    ⚠️ **Verifikasi kesetaraannya SEBELUM mengubah**, jangan sesudah: bandingkan
+    `fn_skpd_visible(s.id)` vs `s.id = ANY(fn_my_skpd_scope())` atas seluruh
+    `admin_skpd` sebagai pengguna uji. Harus 0 beda.
+    (Kejadian 2026-08-10: Dashboard **tidak selesai sama sekali** untuk pengurus
+    barang Dinas Pendidikan — 294.967 aset — padahal 173 ms untuk admin, karena
+    `v_is_admin` memutus di depan dan masalahnya tak pernah terlihat.)
+9. **Predikat yang membungkus kolom dalam pemanggilan fungsi tidak bisa
+    ditaksir planner.** Ia memakai tebakan baku 33%; kalau kenyataannya jauh
+    berbeda, hash join dialokasikan salah ukuran lalu **tumpah ke disk**.
+    Tulis ulang jadi perbandingan kolom polos kalau bisa —
+    `fn_periode_dari_tanggal(tgl) <= '2026-S2'` setara dengan
+    `tgl <= '2026-12-31'`, dan yang kedua punya statistik.
+    (2026-08-10: estimasi 139.827 vs nyata 418.143 → 16 batch, 6.272 blok temp.)
 
 ## 5. Skema & Migrasi
 

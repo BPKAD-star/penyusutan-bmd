@@ -51,8 +51,9 @@
 | [INS-18](#ins-18) | 2026-08-05 | Nilai barang **dobel** saat membuka periode lampau | ✅ [`visibilitas.test.ts`](../lib/visibilitas.test.ts) · [`rekon.test.ts`](../lib/rekon.test.ts) |
 | [INS-19](#ins-19) | 2026-07-08 → 2026-08-06 | Nama SKPD tampil **"SKPD #12"**, dan admin pemda **kehilangan tombol Unggah** di Dokumen Sumber | ✅ [`sinkronisasi.test.ts`](../lib/sinkronisasi.test.ts) |
 | [INS-20](#ins-20) | 2024 → ditemukan 2026-08-06 | **±200 barang dobel** masih tampil di Daftar Barang Awal, dan **Edit Spesifikasi tidak tersambung** untuk ±300 barang | ⬜ butuh integrasi DB |
+| [INS-21](#ins-21) | 2026-08-10 | Dashboard, Saldo Awal, & Laporan BMD menampilkan **semua angka NOL** — dan untuk pengurus barang, Dashboard **tidak pernah selesai** | ⬜ butuh integrasi DB |
 
-**Skornya hari ini: 5 dari 20 punya penjaga otomatis, dua di antaranya
+**Skornya hari ini: 5 dari 21 punya penjaga otomatis, dua di antaranya
 sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
 
 ---
@@ -491,18 +492,80 @@ sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
   bergantung NIBAR tunggal.
 - **Test** — ⬜ butuh integrasi DB (perbandingan dua tabel besar).
 
+### INS-21
+**Halaman rekap menampilkan semua angka NOL; untuk pengurus barang tak pernah selesai**
+
+- **Tanggal** — dilaporkan & diperbaiki **2026-08-10**. Sebabnya sudah ada sejak
+  ledger membesar (import ATL 2026-07); yang baru cuma laporannya.
+- **Gejala** — tiga lapis, dan lapis pertama yang paling berbahaya:
+  1. **Dashboard, Saldo Awal → Rekapitulasi, dan Laporan BMD menampilkan 0 di
+     SEMUA baris**, termasuk "Total Nilai BMD 0". Tanpa pesan apa pun. Operator
+     membacanya sebagai "asetnya belum diinput".
+  2. Kadang muncul kadang tidak — tergantung apakah query kebetulan selesai di
+     bawah batas 8 detik.
+  3. Untuk **pengurus barang**, Dashboard **tidak pernah selesai sama sekali**
+     (diuji: >60 detik) — padahal untuk admin 173 ms.
+- **Akar** — tiga sebab terpisah yang kebetulan menumpuk:
+  1. **Kegagalan ditelan.** Ketiga halaman memakai `const { data } = await
+     supabase.rpc(...)` lalu `(data || [])`: query gagal → `data` null → loop
+     nol kali → tabel terisi 0. Dashboard bahkan `if (!error && data)` + `catch
+     {}` kosong. Keluarga INS-06/INS-08.
+  2. **Agregat menyapu seluruh tabel.** Tak ada index penutup, jadi tiap klik
+     membaca ~275 MB heap hanya untuk menjumlah tiga kolom.
+  3. **Qual RLS per baris.** `fn_skpd_visible(skpd_id)` dan
+     `fn_aset_pernah_dikelola(id)` berargumen per-baris → tak bisa diangkat
+     jadi InitPlan → dievaluasi 418rb kali, dan yang kedua melakukan subquery ke
+     `transaksi_bmd` sambil memanggil `fn_skpd_visible` dua kali lagi di
+     dalamnya. **Untuk admin `v_is_admin` memutus di depan — itulah kenapa
+     masalahnya tak pernah terlihat oleh yang menguji.**
+
+  Ditambah satu penyebab kecil yang mahal: predikat
+  `fn_periode_dari_tanggal(tgl) <= periode` tak bisa ditaksir planner → estimasi
+  139.827 vs nyata 418.143 → hash kekecilan → tumpah ke disk.
+- **Perbaikan** — tiga lapis, berurutan, masing-masing diukur:
+  1. **Fail-closed** di ketiga halaman: banner merah, tabel menolak tampil,
+     Export dimatikan. Adopsi nyata pertama `assertOk()` dari Fase 1.
+  2. **Index penutup** (`idx_aset_rekap_golongan`, `idx_sa2026_rekap`,
+     `idx_ps_periode_rekap`, `idx_aset_rekap_bmd`, `idx_aset_skpd_rekap`) →
+     index-only scan; blok dibaca `aset` 33.665 → 2.465,
+     `aset_awal_2026` 91.251 → 4.295.
+  3. **Scope RLS dihitung sekali** (rules.md §4.8) + predikat tanggal estimable
+     (§4.9), di `fn_dashboard_rekap`, `fn_rekap_bmd`, `fn_rekap_saldo_awal`.
+
+  | Query | Sebelum | Sesudah |
+  |---|---:|---:|
+  | Dashboard, admin | 1.441 ms | 173 ms |
+  | Dashboard, pengurus Diknas | **>60.000 ms** | 442 ms |
+  | Saldo Awal per SKPD | 14.431 ms | 1.025 ms |
+  | Laporan BMD, admin | timeout | 2.194 ms |
+  | Laporan BMD, pengurus Diknas | timeout | 2.042 ms |
+
+  **Angkanya tidak bergeser sedikit pun** — diverifikasi terhadap tangkapan
+  layar sebelum perubahan (417.900 · Rp8.933.160.505.974,6) dan terhadap
+  hitungan subtree Diknas yang diambil terpisah (294.967).
+- **⚠️ BELUM SELESAI** — **Laporan BMD Model 3 (mutasi) masih timeout**:
+  *"gagal membaca transaksi pembatalan (batal_koreksi_pencatatan_ganda)"*.
+  Itu bukan RPC melainkan kolektor sisi aplikasi (`fetchBatalTargets`,
+  lib/voidedAset.ts) yang menyapu SELURUH ledger tanpa discope ke `aset_id` —
+  keluarga [INS-07](#ins-07) yang obatnya sudah diketahui (rules.md §3.4:
+  scope-kan ke aset yang ditanya), tapi pemanggil Model 3 belum ikut discope.
+- **Test** — ⬜ butuh integrasi DB. Pengecek yang paling berguna sudah ditulis
+  polanya di [../TESTING.md](../TESTING.md) §5.3: `EXPLAIN` **sebagai pengurus
+  barang SKPD TERBESAR**, pastikan index-nya terpakai & tak ada `Seq Scan`.
+
 ---
 
 ## Pola yang berulang
 
-Dua puluh entri di atas bukan dua puluh masalah berbeda. Kalau
+Dua puluh satu entri di atas bukan dua puluh satu masalah berbeda. Kalau
 diurutkan menurut **akar**-nya, sebagian besar jatuh ke empat keluarga — dan
 keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 
 | Pola | Entri | Sudah dijinakkan? |
 |---|---|---|
-| **Kegagalan senyap** — `error` ditelan, hasilnya terbaca sebagai kebalikan kenyataan | INS-06 · INS-08 · INS-09 · INS-19 | sebagian: aturannya ada ([../rules.md](../rules.md) §2), tapi masih **166** pelanggaran tercatat. ESLint Fase 0.5 |
+| **Kegagalan senyap** — `error` ditelan, hasilnya terbaca sebagai kebalikan kenyataan | INS-06 · INS-08 · INS-09 · INS-19 · INS-21 | sebagian: aturannya ada ([../rules.md](../rules.md) §2), tapi masih ~160 pelanggaran tercatat. ESLint Fase 0.5 |
 | **Operator non-*leakproof* di bawah RLS** (`LIKE`, lalu ENUM) | INS-02 · INS-03 · INS-05 · INS-11 · INS-12 | sebagian: partial index + `ANALYZE` jadi kebiasaan; verifikasinya belum jadi test |
+| **Diuji sebagai ADMIN saja** — jalur cepat admin menyembunyikan biaya yang ditanggung semua orang lain | INS-21 | rules.md §4.5 & §4.8 sudah menuliskannya; penegaknya masih prosedur |
 | **Konstanta kembar dijaga ingatan** | INS-15 · INS-17 · INS-18 | sebagian: `lib/sinkronisasi.test.ts` |
 | **Penyapuan rename yang tidak tuntas** | INS-19 | ✅ `lib/sinkronisasi.test.ts` — nama tabel dicocokkan ke tipe generated |
 | **Foto beku vs data hidup** — snapshot yang benar hari lahirnya lalu ditinggal kenyataan | INS-20 | ⬜ belum; butuh keputusan apakah baseline boleh diperbaiki |
