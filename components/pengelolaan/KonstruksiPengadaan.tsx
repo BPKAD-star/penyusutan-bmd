@@ -14,6 +14,7 @@ import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiP
 import RekeningPicker from '@/components/RekeningPicker'
 import ProgramPicker from '@/components/ProgramPicker'
 import SearchSelect from '@/components/SearchSelect'
+import { usePegawaiSkpd, pegawaiOptions } from '@/components/usePegawaiSkpd'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -229,11 +230,10 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
   const [f, setF] = useState({ nama: '', noKontrak: '', tglKontrak: '', program: '', kegiatan: '', subKeg: '', penyedia: '', nilaiKontrak: '', keterangan: '' })
   const [sumber, setSumber] = useState<string>('spk')
   const [ppk, setPpk] = useState('')
-  const [pegawai, setPegawai] = useState<{ nama: string; nip: string }[]>([])
+  // PPK dibatasi ke pegawai SKPD kontrak ini (+ SKPD induk) — lihat usePegawaiSkpd.
+  const pegawai = usePegawaiSkpd(skpdId)
   const [saving, setSaving] = useState(false)
   const set = (k: keyof typeof f, v: string) => setF(s => ({ ...s, [k]: v }))
-
-  useEffect(() => { supabase.from('admin_pegawai').select('nama,nip').order('nama').then(({ data }) => setPegawai((data || []) as { nama: string; nip: string }[])) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -275,7 +275,8 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
           onChange={sel => setF(s => ({ ...s, program: sel.program, kegiatan: sel.kegiatan, subKeg: sel.sub_kegiatan }))} />
       </div>
       <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-        <SearchSelect value={ppk} options={pegawai.map(p => ({ value: p.nama, label: `${p.nama} — ${p.nip || 'Non-ASN'}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} /></div>
+        <SearchSelect value={ppk} options={pegawaiOptions(pegawai)} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
+        {pegawai.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada pegawai terdaftar di SKPD ini — daftarkan dulu di Daftar Pegawai (menu Admin).</p>}</div>
       {fld('Nama Penyedia', 'penyedia')}
       {fld('Nilai Kontrak Pekerjaan (Rp)', 'nilaiKontrak', 'number')}
       {fld('Keterangan Kontrak', 'keterangan')}
@@ -482,11 +483,10 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
   // (kolomnya ada di DB), tambahkan di TYPE `Kontrak` **dan** di `.select()` —
   // dua-duanya, kalau tidak ia balik jadi undefined tanpa suara.
   const [keterangan, setKeterangan] = useState(p.keterangan || '')
-  const [pegawai, setPegawai] = useState<{ nama: string; nip: string }[]>([])
+  // PPK dibatasi ke pegawai SKPD kontrak ini (+ SKPD induk) — lihat usePegawaiSkpd.
+  const pegawai = usePegawaiSkpd(kontrak.skpd_id)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
-
-  useEffect(() => { supabase.from('admin_pegawai').select('nama,nip').order('nama').then(({ data }) => setPegawai((data || []) as { nama: string; nip: string }[])) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const periodeAsli = periodeDariTanggal(kontrak.tanggal)
   const pindahSemester = periodeDariTanggal(tgl) !== periodeAsli
@@ -542,7 +542,8 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
               onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-            <SearchSelect value={ppk} options={pegawai.map(pg => ({ value: pg.nama, label: `${pg.nama} — ${pg.nip || 'Non-ASN'}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} /></div>
+            <SearchSelect value={ppk} options={pegawaiOptions(pegawai)} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
+            {pegawai.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada pegawai terdaftar di SKPD ini — daftarkan dulu di Daftar Pegawai (menu Admin).</p>}</div>
           {fld('Nama Penyedia', penyedia, setPenyedia)}
           {fld('Nilai Kontrak Pekerjaan (Rp)', nilaiKontrak, setNilaiKontrak, 'number')}
           {fld('Keterangan Kontrak', keterangan, setKeterangan)}

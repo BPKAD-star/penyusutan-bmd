@@ -33,6 +33,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import RekeningPicker from '@/components/RekeningPicker'
 import ProgramPicker from '@/components/ProgramPicker'
 import SearchSelect from '@/components/SearchSelect'
+import { usePegawaiSkpd, pegawaiOptions } from '@/components/usePegawaiSkpd'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { BENTUK_KONTRAK_OPT, bentukKontrakLabel, type BentukKontrak } from '@/lib/bentukKontrak'
 import { backdropClose } from '@/components/backdropClose'
@@ -659,7 +660,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
         <ApprovedCard j={j} isAdmin={isAdmin} busy={busy} onUnapprove={unapproveHeader} />
       )}
       {editing && (
-        <EditHeaderModal header={j} cekNomorDipakai={cekNomorDipakai}
+        <EditHeaderModal header={j} skpdId={skpdId} cekNomorDipakai={cekNomorDipakai}
           onClose={() => setEditing(false)}
           onSaved={() => { setEditing(false); onMsg('Header kontrak diperbarui.'); onChanged() }}
         />
@@ -1179,14 +1180,10 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
   const [ketBast, setKetBast] = useState('')
   const [dokPaths, setDokPaths] = useState<string[]>([])
   const [dokUploading, setDokUploading] = useState(false)
-  const [pegawaiList, setPegawaiList] = useState<{ id: string; nama: string; nip: string; jabatan: string | null }[]>([])
+  // PPK dibatasi ke pegawai SKPD kartu ini (+ SKPD induk) — lihat usePegawaiSkpd.
+  const pegawaiList = usePegawaiSkpd(skpdId)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
-
-  useEffect(() => {
-    supabase.from('admin_pegawai').select('id,nama,nip,jabatan').order('nama')
-      .then(({ data }) => setPegawaiList(data || []))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function uploadDokumen(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -1258,7 +1255,8 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-            <SearchSelect value={ppk} options={pegawaiList.map(p => ({ value: p.nama, label: `${p.nama} — ${p.nip || 'Non-ASN'}${p.jabatan ? ` · ${p.jabatan}` : ''}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
+            <SearchSelect value={ppk} options={pegawaiOptions(pegawaiList)} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
+            {pegawaiList.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada pegawai terdaftar di SKPD ini — daftarkan dulu di Daftar Pegawai (menu Admin).</p>}
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ketKontrak} onChange={e => setKetKontrak(e.target.value)} /></div>
@@ -1304,8 +1302,11 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
 }
 
 // ── Modal edit header: kontrak (no/tgl, kunci semester) + BAST + penyedia/PPK ─
-function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
+function EditHeaderModal({ header, skpdId, cekNomorDipakai, onClose, onSaved }: {
   header: Header
+  // `Header` tidak memuat skpd_id (tak ikut di-select) — jadi SKPD kartu ini
+  // dioper dari PengadaanCard, dipakai membatasi daftar PPK.
+  skpdId: number
   cekNomorDipakai: (noSk: string, noBast: string | undefined, excludeId?: string) => Promise<string | null>
   onClose: () => void; onSaved: () => void
 }) {
@@ -1325,14 +1326,10 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
   const [ketBast, setKetBast] = useState(p.ket_bast || '')
   const [dokPaths, setDokPaths] = useState<string[]>(p.dokumen_paths || [])
   const [dokUploading, setDokUploading] = useState(false)
-  const [pegawaiList, setPegawaiList] = useState<{ id: string; nama: string; nip: string; jabatan: string | null }[]>([])
+  // PPK dibatasi ke pegawai SKPD kartu ini (+ SKPD induk) — lihat usePegawaiSkpd.
+  const pegawaiList = usePegawaiSkpd(skpdId)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
-
-  useEffect(() => {
-    supabase.from('admin_pegawai').select('id,nama,nip,jabatan').order('nama')
-      .then(({ data }) => setPegawaiList(data || []))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pindahSemester = periodeDariTanggal(tgl) !== header.periode
 
@@ -1402,7 +1399,8 @@ function EditHeaderModal({ header, cekNomorDipakai, onClose, onSaved }: {
             <div><label className="block text-xs text-gray-500 mb-1">Nama Penyedia</label><input className="select-filter w-full" value={penyedia} onChange={e => setPenyedia(e.target.value)} /></div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Nama PPK</label>
-              <SearchSelect value={ppk} options={pegawaiList.map(pg => ({ value: pg.nama, label: `${pg.nama} — ${pg.nip || 'Non-ASN'}${pg.jabatan ? ` · ${pg.jabatan}` : ''}` }))} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
+              <SearchSelect value={ppk} options={pegawaiOptions(pegawaiList)} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
+              {pegawaiList.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada pegawai terdaftar di SKPD ini — daftarkan dulu di Daftar Pegawai (menu Admin).</p>}
             </div>
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan Kontrak</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>
