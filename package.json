@@ -10,7 +10,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint --no-error-on-unmatched-pattern app components lib shared middleware.ts",
+    "lint": "eslint --no-error-on-unmatched-pattern app components lib shared tests middleware.ts",
     "gen:types": "supabase gen types typescript --project-id gvwparkboopglytnjbad > shared/types/database.types.ts"
   },
   "dependencies": {

@@ -23,6 +23,7 @@ export default defineConfig({
       'lib/**/*.test.ts', 'lib/**/*.test.tsx',
       'modules/**/*.test.ts', 'modules/**/*.test.tsx',
       'shared/**/*.test.ts', 'shared/**/*.test.tsx',
+      'tests/**/*.test.ts', 'tests/**/*.test.tsx',
     ],
     exclude: ['node_modules', '.next'],
     // `periodeDariTanggal` membaca tanggal dengan getter LOKAL padahal

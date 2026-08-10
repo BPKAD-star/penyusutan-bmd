@@ -1,0 +1,254 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden — snapshot agregat > posisi Saldo Awal & Saldo Akhir per golongan 1`] = `
+{
+  "akhir": {
+    "1.3.1": {
+      "ekstra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 0,
+        "nilaiBuku": 0,
+        "perolehan": 0,
+      },
+      "intra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 1,
+        "nilaiBuku": 500000000,
+        "perolehan": 500000000,
+      },
+    },
+    "1.3.2": {
+      "ekstra": {
+        "akumulasi": 6100000,
+        "beban": 2200000,
+        "count": 3,
+        "nilaiBuku": 15900000,
+        "perolehan": 22000000,
+      },
+      "intra": {
+        "akumulasi": 118500000,
+        "beban": 47500000,
+        "count": 8,
+        "nilaiBuku": 357000000,
+        "perolehan": 475500000,
+      },
+    },
+    "1.3.5": {
+      "ekstra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 0,
+        "nilaiBuku": 0,
+        "perolehan": 0,
+      },
+      "intra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 1,
+        "nilaiBuku": 15000000,
+        "perolehan": 15000000,
+      },
+    },
+    "1.5.4": {
+      "ekstra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 0,
+        "nilaiBuku": 0,
+        "perolehan": 0,
+      },
+      "intra": {
+        "akumulasi": 5000000,
+        "beban": 0,
+        "count": 1,
+        "nilaiBuku": 20000000,
+        "perolehan": 25000000,
+      },
+    },
+  },
+  "awal": {
+    "1.3.1": {
+      "ekstra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 0,
+        "nilaiBuku": 0,
+        "perolehan": 0,
+      },
+      "intra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 1,
+        "nilaiBuku": 500000000,
+        "perolehan": 500000000,
+      },
+    },
+    "1.3.2": {
+      "ekstra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 0,
+        "nilaiBuku": 0,
+        "perolehan": 0,
+      },
+      "intra": {
+        "akumulasi": 81000000,
+        "beban": 40500000,
+        "count": 9,
+        "nilaiBuku": 325000000,
+        "perolehan": 406000000,
+      },
+    },
+    "1.3.5": {
+      "ekstra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 0,
+        "nilaiBuku": 0,
+        "perolehan": 0,
+      },
+      "intra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 1,
+        "nilaiBuku": 15000000,
+        "perolehan": 15000000,
+      },
+    },
+    "1.5.4": {
+      "ekstra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 0,
+        "nilaiBuku": 0,
+        "perolehan": 0,
+      },
+      "intra": {
+        "akumulasi": 5000000,
+        "beban": 0,
+        "count": 1,
+        "nilaiBuku": 20000000,
+        "perolehan": 25000000,
+      },
+    },
+  },
+}
+`;
+
+exports[`golden — snapshot agregat > sel 1.3.2 intra — dirinci supaya perubahan angkanya terbaca di diff 1`] = `
+{
+  "hapus_sebab_lain": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 30000000,
+  },
+  "kapitalisasi": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 20000000,
+  },
+  "koreksi_kurang": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 1500000,
+  },
+  "koreksi_tambah": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 2000000,
+  },
+  "pemecahan_keluar": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 21000000,
+  },
+  "pengadaan": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 100000000,
+  },
+  "pengalihan_keluar": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 70000000,
+  },
+  "reklas_kode_keluar": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 15000000,
+  },
+}
+`;
+
+exports[`golden — snapshot agregat > tabel mutasi Rekonsiliasi 2026-S1 (scope Dinas A+B) 1`] = `
+{
+  "1.3.2": {
+    "ekstra": {
+      "pemecahan_masuk": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 21000000,
+      },
+      "pengadaan": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 1000000,
+      },
+    },
+    "intra": {
+      "hapus_sebab_lain": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 30000000,
+      },
+      "kapitalisasi": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 20000000,
+      },
+      "koreksi_kurang": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 1500000,
+      },
+      "koreksi_tambah": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 2000000,
+      },
+      "pemecahan_keluar": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 21000000,
+      },
+      "pengadaan": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 100000000,
+      },
+      "pengalihan_keluar": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 70000000,
+      },
+      "reklas_kode_keluar": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 15000000,
+      },
+    },
+  },
+  "1.3.5": {
+    "ekstra": {},
+    "intra": {
+      "reklas_kode_masuk": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 15000000,
+      },
+    },
+  },
+}
+`;

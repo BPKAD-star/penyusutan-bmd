@@ -13,10 +13,10 @@ supaya paragraf di atas tidak terbaca sebagai keadaan hari ini:
 
 | | Status |
 |---|---|
-| Unit domain | ✅ **238 test, semua hijau** (`npm test`, ±1,8 dtk) — `engine/penyusutan` 79 · `bmd` 74 · `rekon` 21 · `visibilitas` 18 · `shared/db/paginate` 15 · `sinkronisasi` 12 · `shared/ui/useAsyncData` 10 · `shared/db/query` 9. Termasuk 6 invarian property-based (`fast-check`) |
+| Unit domain | ✅ **264 test, semua hijau** (`npm test`, ±1,5 dtk) — `engine/penyusutan` 79 · `bmd` 74 · `golden/rekonsiliasi` 26 · `rekon` 21 · `visibilitas` 18 · `shared/db/paginate` 15 · `sinkronisasi` 12 · `shared/ui/useAsyncData` 10 · `shared/db/query` 9. Termasuk 6 invarian property-based (`fast-check`) |
 | Komponen / hook (jsdom) | 🟡 baru primitif `shared/ui/` — `@testing-library/react` + `jsdom` sudah terpasang, jadi test presenter berikutnya tinggal ditulis (§7.1) |
 | Integrasi DB (`authenticated`) | ⬜ belum ada — **ini lubang terbesar**, lihat §5 |
-| Golden test laporan | ⬜ belum ada |
+| Golden test laporan | ✅ **Rekonsiliasi BMD** — `tests/golden/`, 26 test + 3 snapshot, dataset tetap 18 aset. Menemukan **2 dugaan bug** saat dipasang (lihat REFACTOR-PLAN §4) |
 | Typecheck | ✅ **0 error** (`npx tsc --noEmit -p tsconfig.json`) — tanpa baseline |
 | Tipe DB generated | ✅ `shared/types/database.types.ts` (`npm run gen:types`). Dijaga tidak ketinggalan dari migrasi oleh `lib/sinkronisasi.test.ts` §4 |
 | Lint | ✅ `eslint.config.mjs` — 6 aturan, **0 error / 569 warning** (2026-08-06). Warning = utang terukur, sengaja tidak memerahkan CI |

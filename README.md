@@ -156,7 +156,7 @@ prefix `NEXT_PUBLIC_`.
 ```bash
 npm install
 npm run dev
-npm test        # unit test (Vitest) — 238 hijau
+npm test        # unit test (Vitest) — 264 hijau, termasuk golden test laporan
 npm run lint    # ESLint, 6 aturan (eslint.config.mjs)
 ```
 

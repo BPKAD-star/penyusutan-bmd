@@ -5,7 +5,7 @@
 # dengan tidak punya CI, karena semua orang belajar mengabaikannya.
 #
 #   1. npm run typecheck  ← Fase 0.6, APA ADANYA (repo ini 0 error)
-#   2. npm test           ← Fase 0.2–0.8 & Fase 1, 238 test
+#   2. npm test           ← Fase 0.2–0.8, Fase 1, golden test — 264 test
 #   3. npm run lint       ← Fase 0.5, terpasang 2026-08-06 (0 error, 569 warning)
 #
 # ⚠️ `typecheck` sengaja TANPA berkas baseline. Rencana awal membekukan error

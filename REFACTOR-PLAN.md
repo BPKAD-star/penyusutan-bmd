@@ -372,6 +372,57 @@ dokumen mana pun.
 adalah pertahanan terakhir. Adopsi lewat *boy-scout rule*
 (CODING-STANDARD §10).
 
+### Temuan golden test Rekonsiliasi (2026-08-06)
+
+Golden test pertama (`tests/golden/`, TESTING.md §6) dipasang dengan dataset
+tetap 18 aset yang tiap barisnya mewakili satu kasus yang pernah menggigit.
+Angka snapshot-nya **diverifikasi tangan**, bukan sekadar direkam: Saldo Awal
+1.3.2 intra = 406.000.000 dari 9 aset, Saldo Akhir = 475.000.000 dari 8 aset.
+
+Yang paling berguna justru **invarian tie-out** (Saldo Awal + penambahan −
+pengurangan = Saldo Akhir per sel). Ia langsung merah, dan sesudah kesalahan
+fixture sendiri dibereskan menyisakan selisih yang bisa didekomposisi bersih:
+**−85.000.000** di `1.3.2|intra` dan **+15.000.000** di `1.3.5|intra`. Dua sebab
+terpisah, dua-duanya di kode produk:
+
+1. **`batal_pengalihan` tidak disaring di `lib/rekon.ts`** (−70.000.000).
+   `computeMutasiLines` menyaring pembatalan untuk kapitalisasi, koreksi nilai,
+   dan reklas — **tidak untuk `pengalihan_status`**. Padahal rules.md §1.7
+   titik 2 mewajibkannya, dan konstantanya sudah ada
+   (`BATAL_TARGET_JENIS.pengalihan`); yang belum cuma pemakaiannya. Akibatnya
+   barang yang pengalihannya dibatalkan tetap tampil sebagai pengurangan —
+   persis mode kegagalan INS-15, tanpa satu pun pesan error.
+2. **Golongan pada snapshot tidak period-aware** (−15.000.000 / +15.000.000).
+   `fetchSnapshotPositions` memakai `aset.kode` TERKINI, sementara baris mutasi
+   membukukan keluar-dari-kode-lama + masuk-ke-kode-baru. Untuk aset yang
+   direklas di periode berjalan, Saldo Awal sudah duduk di golongan BARU lalu
+   ditambah lagi oleh baris "reklas masuk". Beda dengan `kode_register` yang
+   riwayatnya memang disimpan (`aset_kode_register`), golongan tak punya
+   padanannya — jadi ini butuh keputusan desain, bukan sekadar panggilan yang
+   lupa.
+
+**Keduanya DIPIN apa adanya sebagai test bertanda `DUGAAN BUG`**, mengikuti
+cara yang sama dengan Temuan Fase 0.3: dikunci, bukan disebut benar. Alasannya
+sama pula — memperbaikinya **mengubah angka yang sudah dilaporkan**, jadi itu
+commit tersendiri dengan keputusan user. Begitu diperbaiki, test-nya akan gagal;
+itu memang sinyalnya, bukan gangguan.
+
+> **DIVERIFIKASI KE DB PRODUKSI 2026-08-06 — dan ini BUKAN bom waktu yang
+> belum meledak.** Berbeda dari `tukar_menukar` (0 baris), datanya ada:
+> `pengalihan_status` **4 baris**, `batal_pengalihan` **2 baris** yang
+> menganulir **keempat**-empatnya (target `[9657,9658]` dan `[9659,9679]`),
+> semuanya periode **2026-S2**, bernilai **Rp215.155.360** dan
+> **Rp3.794.734.725**. Jadi setiap pengalihan yang pernah tercatat di sistem
+> ini sudah dibatalkan, dan tak satu pun disaring oleh Rekonsiliasi.
+>
+> Yang meredam dampaknya: baris hanya terbit kalau **tepat satu sisi** ada di
+> scope. Untuk tampilan **se-kabupaten** (scope kosong) asal & tujuan sama-sama
+> dianggap in-scope, jadi tak ada baris — angka kabupaten AMAN. Yang salah
+> adalah tampilan **per-SKPD** pada 2026-S2: di sana muncul pengurangan
+> "Penghapusan Pengalihan (transfer keluar)" untuk perpindahan yang sudah
+> dianulir. **Periksa apakah laporan 2026-S2 per-SKPD sudah terlanjur
+> dipakai/dikirim sebelum memutuskan perbaikannya.**
+
 > ⚠️ **Rencana awal punya pengecualian yang premisnya TIDAK BENAR** — dicoret
 > 2026-08-06. Bunyinya: kolektor jalur pelaporan (`lib/rekon.ts`,
 > `lib/voidedAset.ts`, `lib/pengalihan.ts`) dimigrasikan lebih dulu "karena
@@ -663,9 +714,9 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 
 | Metrik | Awal | **Sekarang** | 3 bln | 6 bln | 12 bln |
 |---|---|---|---|---|---|
-| Test unit domain | 0 | **238** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
+| Test unit domain | 0 | **264** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
 | Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
-| Golden test laporan | 0 | **0** | 5 | 15 | 20 |
+| Golden test laporan | 0 | **26 test + 3 snapshot** ⟨Rekonsiliasi BMD, 2026-08-06⟩ | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 ⚠️ | **63** kemunculan di **47** berkas ⟨2026-08-06⟩ — lihat catatan | 90 | 40 | < 10 |
 | `const { data } = await` | 166 | **166** ⟨2026-08-06⟩ — **tidak bergerak**, memang belum ada adopsi `assertOk()` | 110 | 50 | < 10 |
 | Berkas > 500 baris | 19 | **20** ⟨2026-08-06⟩ — **naik 1** | 15 | 8 | ≤ 3 |
@@ -673,8 +724,9 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Query per pemuatan Daftar Barang | 8–15 | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
 | Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
 
-Rincian 238 test (`npm test`, ±1,8 dtk): `lib/engine/penyusutan.test.ts` 79 ·
-`lib/bmd.test.ts` 74 · `lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18 ·
+Rincian 264 test (`npm test`, ±1,5 dtk): `lib/engine/penyusutan.test.ts` 79 ·
+`lib/bmd.test.ts` 74 · `tests/golden/rekonsiliasi.test.ts` 26 ·
+`lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18 ·
 `shared/db/paginate.test.ts` 15 · `lib/sinkronisasi.test.ts` 12 ·
 `shared/ui/useAsyncData.test.tsx` 10 · `shared/db/query.test.ts` 9.
 **Tinjauan 2026-08-06 — cara mengukurnya, supaya bisa diulang persis:**
