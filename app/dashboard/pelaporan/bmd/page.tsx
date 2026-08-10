@@ -299,9 +299,22 @@ export default function LaporanBmdPage() {
     // fetchVoidedAsetIds & fetchBatalTargets MELEMPAR sejak 2026-07-28 (dulu
     // errornya ditelan & set void jadi kosong → barang yang dianulir ikut
     // terhitung). Model 3 lebih baik menolak tampil daripada salah angka.
+    // ⚠️ DUA SNAPSHOT DIJALANKAN BERURUTAN, BUKAN PARALEL — dan itu justru
+    // membuatnya LEBIH CEPAT SELESAI. `fn_rekap_bmd` sendirian ±2–5 dtk;
+    // menembakkan dua sekaligus bersama enam tarikan ledger membuat semuanya
+    // berebut CPU, dan `statement_timeout` (8 dtk) berlaku PER STATEMENT —
+    // jadi yang tadinya 2 dtk bisa jadi 9 dtk lalu dibatalkan, padahal total
+    // kerjanya sama saja. Diukur 2026-08-10: S1 5,1 dtk & S2 2,2 dtk sendiri-
+    // sendiri; bersamaan → keduanya timeout. Kalau nanti tergoda menjadikannya
+    // Promise.all lagi demi "lebih cepat", ukur dulu — ini kasus di mana
+    // paralel justru kalah.
+    const saldoAwal = await snapshotPerolehan(periodeSebelumnya).catch(gagal)
+    if (!saldoAwal) { setLoading(false); return }
+    const saldoAkhir = await snapshotPerolehan(periode).catch(gagal)
+    if (!saldoAkhir) { setLoading(false); return }
+
+    // Yang ringan boleh paralel: semuanya sudah tersaring `periode` di SQL.
     const tahap1 = await Promise.all([
-      snapshotPerolehan(periodeSebelumnya),
-      snapshotPerolehan(periode),
       fetchSkpdMapM3(),
       fetchLedgerM3(JENIS_CARA_PEROLEHAN),
       fetchLedgerM3(JENIS_KDP_M3),
@@ -311,8 +324,7 @@ export default function LaporanBmdPage() {
       fetchLedgerM3(['reklas_golongan']),
     ]).catch(gagal)
     if (!tahap1) { setLoading(false); return }
-    const [saldoAwal, saldoAkhir, skpdMap,
-           rowsCara, rowsKdp, rowsHapus, pecahRows, rowsAlih, rowsReklas] = tahap1
+    const [skpdMap, rowsCara, rowsKdp, rowsHapus, pecahRows, rowsAlih, rowsReklas] = tahap1
 
     const tahap2 = await Promise.all([
       // KDP: kontrak yang dibuka kunci membalik SEMUA terminnya, jadi asetnya
