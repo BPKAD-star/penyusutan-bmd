@@ -12,6 +12,7 @@ import RekapTable, { type RekapRow } from '@/components/RekapTable'
 import RekapMatrixTable, { METRIC_LABEL, type MatrixRow, type MetricOrAll, type Metric } from '@/components/RekapMatrixTable'
 import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import { assertOk } from '@/shared/db/query'
 
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
 
@@ -25,9 +26,17 @@ export default function Page() {
   const [rows, setRows] = useState<RekapRow[] | null>(null)
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
   const [loading, setLoading] = useState(false)
+  // ⚠️ WAJIB ADA & WAJIB DITAMPILKAN (rules.md §2.4). Sebelum 2026-08-10 halaman
+  // ini memakai `const { data } = await supabase.rpc(...)` lalu `(data || [])`:
+  // query gagal → data null → loop nol kali → SELURUH tabel terisi 0 tanpa satu
+  // pun pesan. Nol yang terlihat sah itu lebih berbahaya daripada halaman error
+  // — operator menyimpulkan "asetnya belum diinput", padahal query-nya yang
+  // tembus statement timeout 8 dtk. Keluarga INS-06/INS-08.
+  const [err, setErr] = useState('')
 
   async function proses() {
     setLoading(true)
+    setErr('')
     setRows([])
     const agg: Record<string, { kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilaiBuku: number }> = {}
     const mtx: Record<number, MatrixRow> = {}
@@ -36,10 +45,11 @@ export default function Page() {
     // jumlah di JS (ratusan request se-kabupaten sejak import 218rb baris P&M).
     // nilai_buku sudah = COALESCE(nilai_buku_awal, nilai_perolehan) di SQL.
     // Rollup ke SKPD induk (rootOf) & mapping GOLONGAN_REKAP tetap di client.
-    const { data } = await supabase.rpc('fn_rekap_saldo_awal', {
+    try {
+    const data = assertOk(await supabase.rpc('fn_rekap_saldo_awal', {
       p_skpd_ids: org.descendantIds ?? null,
       p_komptabel: komptabel || null,
-    })
+    }), 'rekap saldo awal')
     for (const r of (data || []) as { skpd_id: number; golongan: string; kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilai_buku: number }[]) {
       const g = r.golongan
       const kuantitas = Number(r.kuantitas); const perolehan = Number(r.perolehan)
@@ -66,10 +76,21 @@ export default function Page() {
       nilaiBuku: agg[g.kode]?.nilaiBuku ?? 0,
     })))
     setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
-    setLoading(false)
+    } catch (e) {
+      // MENOLAK menampilkan angka, bukan menampilkan nol.
+      setErr(`${(e as Error).message} — angka TIDAK ditampilkan supaya tidak ada nol yang terbaca sebagai "belum ada data". Coba Proses lagi; kalau berulang, kabari admin.`)
+      setRows(null)
+      setMatrix([])
+    } finally {
+      // Di `finally`, bukan di akhir jalur sukses (rules.md §2.2, INS-10).
+      setLoading(false)
+    }
   }
 
   function handleExport() {
+    // Export ikut fail-closed (rules.md §2.3): Excel setengah jadi yang
+    // terlanjur terunduh tidak punya tanda apa pun bahwa isinya kurang.
+    if (err) return
     if (model === 1) {
       if (!rows) return
       exportToExcel(rows.map(r => ({
@@ -124,7 +145,9 @@ export default function Page() {
         </div>
       </div>
 
-      {rows === null ? (
+      {err ? (
+        <div role="alert" className="card border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
+      ) : rows === null ? (
         <div className="card p-12 text-center text-gray-400 text-sm">
           Atur filter lalu klik <span className="font-medium text-gray-600">Proses</span>.
         </div>

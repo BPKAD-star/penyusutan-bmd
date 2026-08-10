@@ -99,29 +99,40 @@ async function countPenghapusan(sb: SB): Promise<PenghapusanData> {
 // batal_pengadaan/unapprove kemudian, krn itu cuma nambah baris baru, bukan hapus
 // baris lama). Register aset (status='aktif') adalah satu-satunya sumber yg
 // mencerminkan kondisi TERKINI (sudah dikurangi soft-delete).
+// ⚠️ MENGEMBALIKAN `err`, BUKAN DIAM (rules.md §2.4). Sampai 2026-08-10 fungsi
+// ini menelan kegagalan (`if (!error && data)` + `catch {}` kosong) lalu
+// mengembalikan objek kosong — semua kartu tampil **0 unit · 0** dan "Total
+// Nilai BMD 0". Nol itu terbaca operator sebagai "asetnya belum diinput",
+// padahal yang terjadi query-nya tembus statement timeout 8 dtk (agregat ini
+// menyapu 418rb baris; terukur 1,4 dtk dalam kondisi TERBAIK, jadi memang
+// dekat ambang). Keluarga INS-06/INS-08 — nol yang terlihat sah jauh lebih
+// mahal daripada pesan error.
 async function scanAset(sb: SB): Promise<{
   gol: Record<string, { count: number; nilai: number }>
   caraNilai: Record<string, number>
   caraCount: Record<string, number>
+  err: string
 }> {
   const gol: Record<string, { count: number; nilai: number }> = {}
   const caraNilai: Record<string, number> = {}
   const caraCount: Record<string, number> = {}
   try {
     const { data, error } = await sb.rpc('fn_dashboard_rekap')
-    if (!error && data) {
-      const d = data as {
-        gol: { golongan: string; count: number; nilai: number }[]
-        cara: { cara_perolehan: string; count: number; nilai: number }[]
-      }
-      for (const r of d.gol || []) gol[r.golongan] = { count: Number(r.count), nilai: Number(r.nilai) }
-      for (const r of d.cara || []) {
-        caraCount[r.cara_perolehan] = Number(r.count)
-        caraNilai[r.cara_perolehan] = Number(r.nilai)
-      }
+    if (error) return { gol, caraNilai, caraCount, err: error.message }
+    if (!data) return { gol, caraNilai, caraCount, err: 'data kosong' }
+    const d = data as {
+      gol: { golongan: string; count: number; nilai: number }[]
+      cara: { cara_perolehan: string; count: number; nilai: number }[]
     }
-  } catch { /* tabel aset / fungsi belum ada → kosong */ }
-  return { gol, caraNilai, caraCount }
+    for (const r of d.gol || []) gol[r.golongan] = { count: Number(r.count), nilai: Number(r.nilai) }
+    for (const r of d.cara || []) {
+      caraCount[r.cara_perolehan] = Number(r.count)
+      caraNilai[r.cara_perolehan] = Number(r.nilai)
+    }
+  } catch (e) {
+    return { gol, caraNilai, caraCount, err: e instanceof Error ? e.message : String(e) }
+  }
+  return { gol, caraNilai, caraCount, err: '' }
 }
 
 export default async function DashboardHome() {
@@ -152,9 +163,18 @@ export default async function DashboardHome() {
         </div>
         <div className="text-right">
           <p className="text-xs text-gray-400">Total Nilai BMD</p>
-          <p className="text-2xl font-bold text-teal">{formatRp(totalNilai)}</p>
+          {/* Saat gagal: JANGAN tampilkan Rp0 — itu angka yang terlihat sah. */}
+          <p className="text-2xl font-bold text-teal">{scan.err ? '—' : formatRp(totalNilai)}</p>
         </div>
       </div>
+
+      {scan.err && (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+          <span className="font-semibold">Rekap aset gagal dimuat</span> — {scan.err}.
+          Angka di kartu di bawah <span className="font-semibold">bukan nol yang sebenarnya</span>, melainkan
+          data yang tidak berhasil diambil. Muat ulang halaman; kalau berulang, kabari admin.
+        </div>
+      )}
 
       {/* Total aset per jenis: jumlah unit + nilai rekapitulasi (harga perolehan) */}
       <Section title="Total Aset per Jenis"

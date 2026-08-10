@@ -19,6 +19,7 @@ import { useSkpdTree } from '@/components/useSkpdTree'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
+import { assertOk } from '@/shared/db/query'
 
 // ── Model 3: jenis ledger per kategori Penambahan/Pengurangan (nilai
 // perolehan) — diverifikasi ke kode asli tiap alur (Pengadaan/PerolehanManual/
@@ -73,6 +74,9 @@ export default function LaporanBmdPage() {
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
   const [mutasiRows, setMutasiRows] = useState<MutasiRow[] | null>(null)
   const [mutErr, setMutErr] = useState('')
+  // Error Model 1 & 2 (Model 3 sudah punya `mutErr` sejak awal). WAJIB
+  // ditampilkan — lihat komentar di blok catch `proses()`.
+  const [err, setErr] = useState('')
   const [mutasiDetail, setMutasiDetail] = useState<MutasiDetail>({})
   const [loading, setLoading] = useState(false)
   const periode = `${tahun}-S${smt}`
@@ -91,7 +95,8 @@ export default function LaporanBmdPage() {
   }
 
   async function proses() {
-    setLoading(true); setRows([])
+    setLoading(true); setRows([]); setErr('')
+    try {
     const mtx: Record<number, MatrixRow> = {}
     const disusutkanKode = new Set(GOLONGAN_REKAP.filter(g => g.disusutkan).map(g => g.kode))
     const hasPeny = new Set<string>() // `${rid}|${golongan}` yg punya hasil engine
@@ -105,11 +110,11 @@ export default function LaporanBmdPage() {
     // penyusutan_semester ke browser (ratusan request se-kabupaten sejak import
     // 218rb baris P&M). count_peny > 0 = sel punya hasil engine (hasPeny). Semua
     // rollup SKPD induk + rekonsiliasi nilai buku di bawah TETAP di client.
-    const { data } = await supabase.rpc('fn_rekap_bmd', {
+    const data = assertOk(await supabase.rpc('fn_rekap_bmd', {
       p_periode: periode,
       p_skpd_ids: org.descendantIds ?? null,
       p_komptabel: komptabel || null,
-    })
+    }), `rekap BMD periode ${periode}`)
     for (const r of (data || []) as { skpd_id: number; golongan: string; kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilai_buku_akhir: number; count_peny: number }[]) {
       const g = r.golongan
       const v = Number(r.perolehan)
@@ -153,7 +158,16 @@ export default function LaporanBmdPage() {
       return { kode: g.kode, uraian: g.uraian, disusutkan: g.disusutkan, kuantitas: kt, perolehan: hp, akumulasi: 0, beban: 0, nilaiBuku: hp }
     }))
     setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
-    setLoading(false)
+    } catch (e) {
+      // MENOLAK menampilkan angka. Sebelum 2026-08-10 blok ini tidak ada:
+      // `const { data } =` menelan error, `(data || [])` bikin loop nol kali,
+      // dan SELURUH tabel terisi 0 tanpa satu pun pesan — nol yang terbaca
+      // operator sebagai "belum ada aset". Keluarga INS-06/INS-08.
+      setErr(`${(e as Error).message} — angka TIDAK ditampilkan supaya tidak ada nol yang terbaca sebagai "belum ada data". Coba Proses lagi; kalau berulang, kabari admin.`)
+      setRows(null); setMatrix([])
+    } finally {
+      setLoading(false)   // di `finally`, bukan akhir jalur sukses (rules.md §2.2)
+    }
   }
 
   // ── Model 3: mutasi (Saldo Awal + Penambahan − Pengurangan = Saldo Akhir) ──
@@ -165,11 +179,14 @@ export default function LaporanBmdPage() {
     const out: Record<string, number> = {}
     // Reuse fn_rekap_bmd (period-aware perolehan per golongan sudah dihitung di
     // SQL); Model 3 cuma butuh kolom perolehan-nya, penyusutan diabaikan.
-    const { data } = await supabase.rpc('fn_rekap_bmd', {
+    // MELEMPAR kalau gagal — ditangkap `.catch` di prosesMutasi(). Tanpa ini,
+    // snapshot yang gagal jadi `{}` dan Model 3 menampilkan Saldo Awal NOL,
+    // yang lalu "menjelaskan" seluruh saldo akhir sebagai penambahan.
+    const data = assertOk(await supabase.rpc('fn_rekap_bmd', {
       p_periode: pPeriode,
       p_skpd_ids: org.descendantIds ?? null,
       p_komptabel: komptabel || null,
-    })
+    }), `snapshot perolehan periode ${pPeriode}`)
     for (const r of (data || []) as { golongan: string; perolehan: number }[]) {
       out[r.golongan] = (out[r.golongan] || 0) + Number(r.perolehan)
     }
@@ -179,7 +196,7 @@ export default function LaporanBmdPage() {
   async function fetchSkpdMapM3(): Promise<Record<number, string>> {
     const map: Record<number, string> = {}
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
+      const data = assertOk(await supabase.from('admin_skpd').select('id,nama').range(from, from + 999), 'daftar SKPD')
       if (!data || data.length === 0) break
       for (const s of data as { id: number; nama: string }[]) map[s.id] = s.nama
       if (data.length < 1000) break
@@ -198,10 +215,11 @@ export default function LaporanBmdPage() {
     }
     const out: Row[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('transaksi_bmd')
+      const data = assertOk(await supabase.from('transaksi_bmd')
         .select('id,jenis,header_id,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
         .eq('periode', periode).in('jenis', jenisList as never)
-        .range(from, from + 999)
+        .range(from, from + 999),
+        `ledger periode ${periode} (${jenisList.join(', ')})`)
       if (!data || data.length === 0) break
       out.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
@@ -220,8 +238,9 @@ export default function LaporanBmdPage() {
   async function fetchReklasDibatalkan(): Promise<Set<number>> {
     const out = new Set<number>()
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('transaksi_bmd')
-        .select('payload').eq('jenis', 'batal_reklas' as never).range(from, from + 999)
+      const data = assertOk(await supabase.from('transaksi_bmd')
+        .select('payload').eq('jenis', 'batal_reklas' as never).range(from, from + 999),
+        'transaksi batal_reklas')
       if (!data || data.length === 0) break
       for (const r of data as { payload: { target_trx_id?: number } | null }[]) {
         const t = Number(r.payload?.target_trx_id); if (Number.isFinite(t)) out.add(t)
@@ -243,10 +262,11 @@ export default function LaporanBmdPage() {
   async function fetchPenghapusanNetRemoved(): Promise<Set<string>> {
     const latest = new Map<string, { periode: string; id: number; removed: boolean }>()
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('transaksi_bmd')
+      const data = assertOk(await supabase.from('transaksi_bmd')
         .select('id,aset_id,periode,jenis')
         .in('jenis', [...JENIS_PENGHAPUSAN_M3, 'batal_penghapusan'] as never)
-        .range(from, from + 999)
+        .range(from, from + 999),
+        'riwayat penghapusan')
       if (!data || data.length === 0) break
       for (const r of data as { id: number; aset_id: string; periode: string; jenis: string }[]) {
         // periode 'YYYY-SN' urut secara leksikal (S1<S2, 2026<2027).
@@ -430,7 +450,11 @@ export default function LaporanBmdPage() {
     }), `Laporan_BMD_${periode}_per_SKPD`, 'Laporan BMD per SKPD')
   }
 
-  const hasData = model === 1 ? (rows && rows.length > 0) : model === 3 ? (mutasiRows && mutasiRows.length > 0) : matrix.length > 0
+  // Export ikut fail-closed (rules.md §2.3): kalau ada kegagalan, tombolnya
+  // tidak muncul sama sekali — Excel setengah jadi yang terlanjur terunduh tak
+  // punya tanda apa pun bahwa isinya kurang.
+  const hasData = !err && !mutErr && (
+    model === 1 ? (rows && rows.length > 0) : model === 3 ? (mutasiRows && mutasiRows.length > 0) : matrix.length > 0)
 
   return (
     <div className="p-6">
@@ -439,7 +463,10 @@ export default function LaporanBmdPage() {
         <p className="text-gray-500 text-sm mt-1">Rekapitulasi & penyusutan s.d. periode {periode}, per golongan BMD.</p>
       </div>
       {mutErr && (
-        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{mutErr}</div>
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{mutErr}</div>
+      )}
+      {err && (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{err}</div>
       )}
 
       {/* Batasan yang DISENGAJA & disampaikan terbuka (audit Pelaporan 2026-07-25):
