@@ -348,19 +348,43 @@ sudah ada ikut jadi lebih kuat.
 Bangun tiga helper di `shared/db/` dan `shared/ui/` (kode lengkapnya di
 [CODING-STANDARD.md](CODING-STANDARD.md) §4), lengkap dengan test-nya:
 
-| Primitif | Menggantikan | Aturan yang jadi tak-bisa-dilanggar |
-|---|---|---|
-| `paginate()` | 126 loop tulis-tangan | keyset + `ORDER BY` + cek error (rules.md §3) |
-| `assertOk()` | 166 `const { data } =` | fail-closed (rules.md §2.1) |
-| `useAsyncData()` | `try/catch/finally` tulis-tangan | loader tak bisa nyangkut (rules.md §2.2) |
+| Primitif | Menggantikan | Aturan yang jadi tak-bisa-dilanggar | Status |
+|---|---|---|---|
+| `paginate()` + `perPotongan()` | 63 loop tulis-tangan di 47 berkas | keyset + `ORDER BY` + cek error (rules.md §3) | ✅ 2026-08-06 — `shared/db/paginate.ts`, 15 test |
+| `assertOk()` + 2 varian | 166 `const { data } =` | fail-closed (rules.md §2.1) | ✅ 2026-08-06 — `shared/db/query.ts`, 9 test |
+| `useAsyncData()` | `try/catch/finally` tulis-tangan | loader tak bisa nyangkut (rules.md §2.2) | ✅ 2026-08-06 — `shared/ui/useAsyncData.ts`, 10 test |
+
+Ketiganya diverifikasi dengan **uji mutasi**, bukan cuma "hijau": mencabut
+`finally` dari `useAsyncData` memerahkan tepat 2 test bertanda INS-10;
+menelan `error` di `paginate` memerahkan tepat 1. Cara pakainya di
+[CODING-STANDARD.md](CODING-STANDARD.md) §4 — kodenya **tidak** disalin ke
+dokumen mana pun.
+
+> ⚠️ **Temuan sampingan yang layak diingat:** berkas test pertama ber-ekstensi
+> `.tsx` (hook) semula **tidak dijalankan sama sekali** — pola `include` di
+> `vitest.config.ts` cuma memuat `*.test.ts`. Vitest melaporkan semuanya hijau
+> tanpa pernah memungutnya. Test yang tak terpungut lebih berbahaya daripada
+> tak punya test. Sudah diperbaiki; kalau menambah lokasi test baru, **pastikan
+> jumlah berkasnya benar-benar bertambah di keluaran**.
 
 **Adopsi TIDAK dilakukan dengan penggantian massal.** Satu PR yang menyentuh
 47 berkas mustahil di-review, dan di aplikasi yang dilaporkan ke BPK review
 adalah pertahanan terakhir. Adopsi lewat *boy-scout rule*
-(CODING-STANDARD §10), dengan **satu pengecualian**: kolektor di jalur
-pelaporan (`lib/rekon.ts`, `lib/voidedAset.ts`, `lib/pengalihan.ts`)
-dimigrasikan lebih dulu secara sengaja — di sanalah kegagalan senyap paling
-mahal, dan ketiganya sudah punya golden test dari Fase 0.
+(CODING-STANDARD §10).
+
+> ⚠️ **Rencana awal punya pengecualian yang premisnya TIDAK BENAR** — dicoret
+> 2026-08-06. Bunyinya: kolektor jalur pelaporan (`lib/rekon.ts`,
+> `lib/voidedAset.ts`, `lib/pengalihan.ts`) dimigrasikan lebih dulu "karena
+> ketiganya sudah punya golden test dari Fase 0". Diperiksa: **golden test
+> belum ada sama sekali** (TESTING.md §6 masih ⬜), `lib/rekon.test.ts` menguji
+> `attribusiPenyusutan` yang MURNI — bukan kolektornya, dan `lib/voidedAset.ts`
+> serta `lib/pengalihan.ts` **tidak punya test satu pun**.
+>
+> Jadi justru ketiga berkas itu yang paling **tidak** boleh dimigrasikan
+> duluan: mereka menghitung angka yang dilaporkan ke inspektorat/BPK, dan tak
+> ada apa pun yang akan memberi tahu kalau migrasinya mengubah hasil.
+> **Prasyaratnya golden test dulu** (Fase 0 baris "Golden test laporan", masih
+> 0) — baru migrasi. Sampai itu ada, ketiganya ikut boy-scout seperti yang lain.
 
 **Metrik yang dipantau tiap bulan** (satu perintah, taruh di README):
 
@@ -639,7 +663,7 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 
 | Metrik | Awal | **Sekarang** | 3 bln | 6 bln | 12 bln |
 |---|---|---|---|---|---|
-| Test unit domain | 0 | **204** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
+| Test unit domain | 0 | **238** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
 | Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **0** | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 ⚠️ | **63** kemunculan di **47** berkas ⟨2026-08-06⟩ — lihat catatan | 90 | 40 | < 10 |
@@ -649,9 +673,10 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Query per pemuatan Daftar Barang | 8–15 | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
 | Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
 
-Rincian 204 test (`npm test`, ±1 dtk): `lib/engine/penyusutan.test.ts` 79 ·
+Rincian 238 test (`npm test`, ±1,8 dtk): `lib/engine/penyusutan.test.ts` 79 ·
 `lib/bmd.test.ts` 74 · `lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18 ·
-`lib/sinkronisasi.test.ts` 12.
+`shared/db/paginate.test.ts` 15 · `lib/sinkronisasi.test.ts` 12 ·
+`shared/ui/useAsyncData.test.tsx` 10 · `shared/db/query.test.ts` 9.
 **Tinjauan 2026-08-06 — cara mengukurnya, supaya bisa diulang persis:**
 
 ```bash

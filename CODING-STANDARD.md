@@ -195,35 +195,16 @@ didokumentasikan: tanpa `ORDER BY` (baris hilang senyap), pakai `.range()`
 alih-alih keyset (timeout di halaman dalam), dan tanpa cek `error` (hasil
 kosong dibaca sebagai "memang tidak ada").
 
-```ts
-// shared/db/paginate.ts
-/**
- * Ambil SELURUH baris lewat paginasi keyset. Satu-satunya cara yang sah untuk
- * menarik >1.000 baris (rules.md §3).
- *
- * Keyset, bukan .range(): biaya OFFSET tumbuh mengikuti kedalaman halaman dan
- * cepat atau lambat satu halaman menembus statement timeout.
- * MELEMPAR saat error: array kosong tidak boleh bisa berarti "query gagal".
- */
-export async function paginate<T extends { id: K }, K extends string | number>(
-  label: string,                              // muncul di pesan error, mis. 'daftar barang'
-  build: (kursor: K | null) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-  opts: { size?: number } = {},
-): Promise<T[]> {
-  const size = opts.size ?? 1000
-  const out: T[] = []
-  let kursor: K | null = null
-  for (;;) {
-    const { data, error } = await build(kursor)
-    if (error) throw new Error(`gagal membaca ${label}: ${error.message}`)
-    if (!data?.length) break
-    out.push(...data)
-    if (data.length < size) break
-    kursor = data[data.length - 1].id
-  }
-  return out
-}
-```
+**Sudah ada: [`shared/db/paginate.ts`](shared/db/paginate.ts)** (Fase 1,
+2026-08-06), dikunci [`paginate.test.ts`](shared/db/paginate.test.ts).
+Implementasinya **tidak disalin ke sini** — baca berkasnya; yang di dokumen ini
+cuma cara memakainya.
+
+Selain melempar saat `error`, ia juga **menolak hasil yang buktinya salah**:
+satu halaman yang tidak urut naik menurut `id` (tanda `.order('id')` hilang),
+halaman yang melebihi `size` (tanda `.limit()` tidak sesuai), dan kursor yang
+tidak maju (tanda `.gt('id', kursor)` lupa). Ketiganya dulu bergejala sebagai
+baris hilang senyap atau loop tak berujung — sekarang jadi pesan error.
 
 Pemakaian:
 
@@ -239,22 +220,28 @@ const rows = await paginate<AsetRow, string>('daftar barang', (kursor) => {
 > per halaman (mis. Daftar Barang Awal, halaman 50 baris). Yang dilarang
 > adalah `.range()` untuk **menyapu seluruh hasil**.
 
+Pasangannya **`perPotongan()`** (berkas yang sama): untuk pertanyaan yang sudah
+tahu daftar id-nya, dipecah per 200. Ini yang benar ketika pemanggil sudah
+punya asetnya — menyapu seluruh ledger cuma untuk menanyakan status belasan
+aset itu yang bikin timeout beruntun (rules.md §3.4, docs/insiden.md INS-07).
+
 ### 4.2 `assertOk()` — error tidak bisa ditelan
 
 **Masalah terukur:** **166 pemakaian `const { data } = await supabase…`**
 tanpa menyentuh `error` sama sekali.
 
-```ts
-// shared/db/query.ts
-export function assertOk<T>(
-  res: { data: T | null; error: { message: string } | null },
-  label: string,
-): T {
-  if (res.error) throw new Error(`gagal membaca ${label}: ${res.error.message}`)
-  if (res.data == null) throw new Error(`gagal membaca ${label}: data kosong`)
-  return res.data
-}
-```
+**Sudah ada: [`shared/db/query.ts`](shared/db/query.ts)** (Fase 1, 2026-08-06),
+dikunci [`query.test.ts`](shared/db/query.test.ts). Tiga varian, pilih yang
+sesuai maksudnya:
+
+| Fungsi | Untuk | "Tidak ada data" |
+|---|---|---|
+| `assertOk` | pembacaan yang hasilnya **dihitung/difilter** | **MELEMPAR** |
+| `assertOkOpsional` | pencarian opsional (`.maybeSingle()`) | `null` — sah |
+| `assertTulisOk` | insert/update/delete tanpa `.select()` | — |
+
+Ketiganya tetap melempar kalau query-nya **gagal**; yang membedakan cuma
+sikapnya terhadap "sukses tapi nol baris".
 
 ```ts
 // ❌ tidak boleh lagi — gagal senyap
@@ -276,28 +263,26 @@ CLAUDE.md: lookup gagal → nomor urut diam-diam mengulang dari 1.
 tidak selalu punya `try/catch`. Daftar Barang pernah membeku di "Memuat…"
 **selamanya** tanpa satu pun keterangan (CLAUDE.md, 2026-07-29).
 
+**Sudah ada: [`shared/ui/useAsyncData.ts`](shared/ui/useAsyncData.ts)**
+(Fase 1, 2026-08-06), dikunci
+[`useAsyncData.test.tsx`](shared/ui/useAsyncData.test.tsx).
+
 ```ts
-// shared/ui/useAsyncData.ts
-/**
- * Bungkus loader yang MELEMPAR. `setLoading(false)` dijamin lewat finally, dan
- * pesan errornya wajib ditampilkan pemanggil — dua hal yang berkali-kali lupa
- * ditulis tangan (rules.md §2).
- */
-export function useAsyncData<T>() {
-  const [data, setData] = useState<T | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+const { data, loading, error, run } = useAsyncData<Baris[]>()
 
-  const run = useCallback(async (fn: () => Promise<T>) => {
-    setLoading(true); setError('')
-    try { setData(await fn()) }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); setData(null) }
-    finally { setLoading(false) }
-  }, [])
+useEffect(() => { void run(() => muatBaris(periode)) }, [periode, run])
 
-  return { data, loading, error, run }
-}
+if (error) return <p role="alert" className="text-red-700">{error}</p>
 ```
+
+Tiga jaminannya, dan ketiganya sudah pernah dilanggar saat ditulis tangan:
+
+1. **`setLoading(false)` lewat `finally`** — bukan di akhir jalur sukses.
+2. **Data lama DIBUANG saat gagal.** Angka setengah-lama yang terlihat sah itu
+   mode kegagalan nomor satu (TESTING.md §1), lebih mahal daripada layar kosong.
+3. **Hasil yang kedaluwarsa diabaikan.** Kalau pengguna mengganti periode
+   sebelum muatan pertama selesai, jawaban lama tidak menimpa yang baru — layar
+   tak pernah menampilkan angka periode yang bukan sedang dipilih.
 
 Berlaku sama untuk **tombol Export** — Excel setengah jadi yang terlanjur
 terunduh tidak punya tanda apa pun bahwa isinya kurang.

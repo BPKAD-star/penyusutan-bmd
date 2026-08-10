@@ -13,7 +13,17 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['lib/**/*.test.ts', 'modules/**/*.test.ts', 'shared/**/*.test.ts'],
+    // ⚠️ `.test.tsx` WAJIB ikut. Sebelum Fase 1 pola-nya cuma `*.test.ts`, jadi
+    // berkas test hook pertama (shared/ui/useAsyncData.test.tsx) DILEWATI
+    // diam-diam: vitest melaporkan semuanya hijau tanpa pernah menjalankannya.
+    // Test yang tak terpungut lebih berbahaya daripada tak punya test — ia
+    // memberi rasa aman palsu. Kalau menambah lokasi test baru, tambahkan
+    // polanya di sini DAN pastikan jumlah berkasnya bertambah di keluaran.
+    include: [
+      'lib/**/*.test.ts', 'lib/**/*.test.tsx',
+      'modules/**/*.test.ts', 'modules/**/*.test.tsx',
+      'shared/**/*.test.ts', 'shared/**/*.test.tsx',
+    ],
     exclude: ['node_modules', '.next'],
     // `periodeDariTanggal` membaca tanggal dengan getter LOKAL padahal
     // `new Date('YYYY-MM-DD')` di-parse sebagai UTC — hasilnya ikut zona waktu
@@ -27,7 +37,7 @@ export default defineConfig({
       include: ['lib/engine/**', 'lib/bmd.ts', 'modules/**/domain/**', 'shared/**'],
       // Berkas test tidak ikut dihitung sbg kode yang diukur — kalau ikut,
       // angkanya naik palsu karena test selalu 100% menjalankan dirinya sendiri.
-      exclude: ['**/*.test.ts'],
+      exclude: ['**/*.test.ts', '**/*.test.tsx'],
       // Catatan: `fetchBatasKapitalisasi` (lib/bmd.ts) sengaja tak diuji —
       // satu-satunya fungsi ber-I/O di sana, milik lapisan data bukan domain
       // (CODING-STANDARD §2), dan akan pindah ke `data/` di Fase 2. Ia yang
