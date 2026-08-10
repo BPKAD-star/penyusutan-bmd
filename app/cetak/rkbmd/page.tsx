@@ -1,41 +1,99 @@
 'use client'
-// Cetak "Usulan Rencana Kebutuhan Pengadaan Barang Milik Daerah".
-// Standalone, A4 landscape. Query: ?id=<uuid rkbmd>
+// Cetak "Usulan Rencana Kebutuhan Barang Milik Daerah" — kelima jenis.
+// Standalone, A4 landscape. Dua mode:
+//   ?id=<uuid rkbmd>                        → satu dokumen
+//   ?tahun=2027&jenis=pengadaan[&versi=..]  → SE-KABUPATEN, satu lembar per
+//                                             SKPD (page-break antar SKPD)
 //
-// Bentuk lembarnya mengikuti format resmi: kolom 2 memuat hierarki
-// Program → Kegiatan → Sub Kegiatan sebagai baris-baris judul yang MENJOROK,
-// dan barisan barang muncul di bawah sub kegiatannya masing-masing. Karena itu
-// kolom 2 di baris barang sengaja DIKOSONGKAN — bukan kelupaan: judulnya sudah
-// dicetak sekali di baris judur di atasnya, mengulangnya per baris justru
-// membuat lembar tak terbaca.
+// PENGADAAN punya bentuk sendiri: kolom 2 memuat hierarki Program → Kegiatan →
+// Sub Kegiatan sebagai baris judul menjorok, barang menyusul di bawahnya.
+// EMPAT JENIS LAIN datar (tak berkartu) dan kolomnya menyesuaikan kebutuhan
+// masing-masing, tapi keempatnya WAJIB memuat empat hal yang sama (keputusan
+// user 2026-08-10): Kode Barang/Uraian Barang · Spesifikasi Nama Barang/NIBAR ·
+// Tanggal Perolehan · Nilai Perolehan.
 //
-// Penomoran: kolom "No." memakai huruf/angka bertingkat (1. → 1. Kegiatan →
-// a. sub kegiatan) persis seperti contoh formatnya, sedangkan barangnya
-// bernomor urut sendiri di dalam tiap sub kegiatan.
+// Tanggal & nilai perolehan dibaca dari SNAPSHOT di `rkbmd_item`, bukan di-join
+// dari `aset` — lembar yang dicetak ulang harus sama dengan yang dulu
+// ditandatangani. Uraian Barang justru sebaliknya: di-lookup dari kodefikasi
+// supaya ikut nomenklatur terkini (pola Daftar Barang & Penyusutan).
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
-import type { RkbmdPaket } from '@/lib/rkbmd'
+import { RKBMD_JENIS, type RkbmdPaket } from '@/lib/rkbmd'
+
+const KABUPATEN = 'Kediri'
+const JENIS_LABEL: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j => [j.key, j.label]))
 
 type SkpdRow = { id: number; nama: string; parent_id: number | null; kode_skpd: string | null }
 
 type Item = {
-  id: string; paket_id: string | null; no_urut: number | null
-  kode: string | null; nama_barang: string | null; satuan: string | null
+  id: string; rkbmd_id: string; paket_id: string | null; no_urut: number | null
+  kode: string | null; nibar: string | null; nama_barang: string | null; satuan: string | null
   kode_rekening: string | null
   jumlah_kebutuhan: number | null; jumlah_eksisting: number | null
   harga_satuan: number | null; total_anggaran: number | null
+  tgl_perolehan: string | null; nilai_perolehan: number | null
+  kondisi: string | null; peruntukan: string | null; bentuk: string | null
+  jangka_waktu: string | null; estimasi_hasil: number | null; alasan: string | null
   keterangan: string | null
 }
 
-type Dok = {
-  id: string; skpd_id: number; tahun_anggaran: number; jenis: string; versi: string; status: string
+type Dok = { id: string; skpd_id: number; tahun_anggaran: number; jenis: string; versi: string; status: string }
+
+type Lembar = {
+  dok: Dok
+  skpd: SkpdRow | null
+  penanda: { nama: string; jabatan: string | null } | null
+  pakets: RkbmdPaket[]
+  items: Item[]
 }
 
 const tglID = () => new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 const HURUF = 'abcdefghijklmnopqrstuvwxyz'
 
-/** SKPD induk paling atas — yang menandatangani sebagai Pengguna Barang. */
+// ── Kolom tambahan per jenis (di luar 4 kolom identitas barang yang wajib) ──
+// `jumlahkan` menandai kolom mana yang dijumlahkan di baris JUMLAH. Tanpa
+// penanda ini angka totalnya gampang jatuh di kolom yang salah (mis. di bawah
+// Keterangan) — kekeliruan yang tak terlihat sampai lembarnya sudah dicetak.
+type KolomEkstra = { judul: string; align?: 'right'; jumlahkan?: true; isi: (r: Item) => string }
+const EKSTRA: Record<string, KolomEkstra[]> = {
+  pemeliharaan: [
+    { judul: 'Kondisi', isi: r => r.kondisi || '-' },
+    { judul: 'Estimasi Biaya Pemeliharaan', align: 'right', jumlahkan: true, isi: r => formatRupiah(r.total_anggaran) },
+  ],
+  pemanfaatan: [
+    { judul: 'Bentuk Pemanfaatan', isi: r => r.bentuk || '-' },
+    { judul: 'Peruntukan', isi: r => r.peruntukan || '-' },
+    { judul: 'Estimasi Hasil', align: 'right', jumlahkan: true, isi: r => formatRupiah(r.estimasi_hasil) },
+    { judul: 'Jangka Waktu', isi: r => r.jangka_waktu || '-' },
+  ],
+  pemindahtanganan: [
+    { judul: 'Bentuk Pemindahtanganan', isi: r => r.bentuk || '-' },
+  ],
+  penghapusan: [
+    { judul: 'Sebab Penghapusan', isi: r => r.alasan || '-' },
+  ],
+}
+
+/** Lima kolom identitas selalu di depan: No · Kode/Uraian · Spesifikasi/NIBAR ·
+ *  Tgl Perolehan · Nilai Perolehan. */
+const KOLOM_IDENTITAS = 5
+
+/** Posisi (1-based) kolom yang memuat angka JUMLAH. Kalau tak ada kolom ekstra
+ *  yang ditandai `jumlahkan`, yang dijumlahkan Nilai Perolehan (kolom ke-5). */
+function posisiJumlah(ekstra: KolomEkstra[]): number {
+  const i = ekstra.findIndex(k => k.jumlahkan)
+  return i === -1 ? KOLOM_IDENTITAS : KOLOM_IDENTITAS + i + 1
+}
+
+/** Kolom mana yang dijumlahkan di baris JUMLAH (per jenis). */
+function nilaiTotal(jenis: string, r: Item): number {
+  if (jenis === 'pengadaan') return r.total_anggaran || 0
+  if (jenis === 'pemeliharaan') return r.total_anggaran || 0
+  if (jenis === 'pemanfaatan') return r.estimasi_hasil || 0
+  return r.nilai_perolehan || 0
+}
+
 function akarSkpd(id: number, byId: Map<number, SkpdRow>): SkpdRow | undefined {
   let cur = byId.get(id)
   const seen = new Set<number>()
@@ -48,8 +106,6 @@ function akarSkpd(id: number, byId: Map<number, SkpdRow>): SkpdRow | undefined {
   return cur
 }
 
-/** Kartu-kartu disusun jadi pohon Program → Kegiatan → Sub Kegiatan supaya
- *  judul program & kegiatan dicetak SEKALI walau dipakai beberapa sub kegiatan. */
 type Sub = { paket: RkbmdPaket; isi: Item[] }
 type Keg = { nama: string; subs: Sub[] }
 type Prog = { nama: string; kegs: Keg[] }
@@ -68,62 +124,66 @@ function susunPohon(pakets: RkbmdPaket[], items: Item[]): Prog[] {
   return out
 }
 
-function Th({ children, rowSpan, colSpan, className = '' }: {
-  children?: React.ReactNode; rowSpan?: number; colSpan?: number; className?: string
-}) {
-  return <th rowSpan={rowSpan} colSpan={colSpan} className={`brd px-1 py-1 font-semibold ${className}`}>{children}</th>
-}
-
 export default function CetakRkbmdPage() {
   const supabase = createClient()
-  const [dok, setDok] = useState<Dok | null>(null)
-  const [pohon, setPohon] = useState<Prog[]>([])
-  const [total, setTotal] = useState(0)
-  const [skpd, setSkpd] = useState<SkpdRow | null>(null)
-  const [induk, setInduk] = useState<SkpdRow | null>(null)
-  const [pengguna, setPengguna] = useState<{ nama: string; nip: string | null } | null>(null)
+  const [lembar, setLembar] = useState<Lembar[]>([])
   const [uraianByKode, setUraianByKode] = useState<Map<string, string>>(new Map())
+  const [judulLingkup, setJudulLingkup] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
 
   useEffect(() => {
     (async () => {
-      const id = new URLSearchParams(window.location.search).get('id')
-      if (!id) { setErr('Parameter ?id= (dokumen RKBMD) belum diisi.'); setLoading(false); return }
+      const p = new URLSearchParams(window.location.search)
+      const id = p.get('id')
+      const tahun = p.get('tahun')
+      const jenisQ = p.get('jenis')
+      const versiQ = p.get('versi')
+      if (!id && !(tahun && jenisQ)) {
+        setErr('Alamat cetak belum lengkap. Pakai ?id=<dokumen> atau ?tahun=<TA>&jenis=<jenis>.')
+        setLoading(false); return
+      }
 
-      const { data: h, error: eh } = await supabase.from('rkbmd')
-        .select('id,skpd_id,tahun_anggaran,jenis,versi,status').eq('id', id).maybeSingle()
+      let q = supabase.from('rkbmd').select('id,skpd_id,tahun_anggaran,jenis,versi,status')
+      if (id) q = q.eq('id', id)
+      else {
+        q = q.eq('tahun_anggaran', Number(tahun)).eq('jenis', jenisQ!)
+        if (versiQ) q = q.eq('versi', versiQ)
+      }
+      const { data: hs, error: eh } = await q
       if (eh) { setErr(`gagal membaca dokumen: ${eh.message}`); setLoading(false); return }
-      if (!h) { setErr('Dokumen RKBMD tidak ditemukan (mungkin sudah dihapus).'); setLoading(false); return }
-      const dokumen = h as Dok
-      setDok(dokumen)
+      const doks = (hs || []) as Dok[]
+      if (doks.length === 0) {
+        setErr(id ? 'Dokumen RKBMD tidak ditemukan (mungkin sudah dihapus).'
+                  : `Tidak ada dokumen RKBMD ${JENIS_LABEL[jenisQ!] || jenisQ} TA ${tahun}.`)
+        setLoading(false); return
+      }
 
+      const ids = doks.map(d => d.id)
       const [pk, it] = await Promise.all([
         supabase.from('rkbmd_paket').select('id,rkbmd_id,no_urut,program,kegiatan,sub_kegiatan,keterangan')
-          .eq('rkbmd_id', id).order('no_urut'),
-        supabase.from('rkbmd_item')
-          .select('id,paket_id,no_urut,kode,nama_barang,satuan,kode_rekening,jumlah_kebutuhan,jumlah_eksisting,harga_satuan,total_anggaran,keterangan')
-          .eq('rkbmd_id', id).order('no_urut'),
+          .in('rkbmd_id', ids).order('no_urut'),
+        supabase.from('rkbmd_item').select('*').in('rkbmd_id', ids).order('no_urut'),
       ])
       if (pk.error || it.error) {
         setErr(`gagal membaca isi dokumen: ${(pk.error || it.error)!.message}`); setLoading(false); return
       }
       const pakets = (pk.data || []) as RkbmdPaket[]
       const items = (it.data || []) as Item[]
-      setPohon(susunPohon(pakets, items))
-      setTotal(items.reduce((s, r) => s + (r.total_anggaran || 0), 0))
 
-      // Kolom 5 "Uraian Barang" = nama BAKU dari kodefikasi (bukan salinan di
-      // item) supaya lembar cetak selalu ikut kodefikasi terkini — pola yang
-      // sama dipakai Daftar Barang & Penyusutan.
+      // Uraian baku dari kodefikasi.
       const kodes = [...new Set(items.map(r => r.kode).filter((k): k is string => !!k))]
       if (kodes.length > 0) {
-        const { data: kd } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', kodes)
-        setUraianByKode(new Map(((kd || []) as { kode: string; uraian: string | null }[])
-          .map(k => [k.kode, k.uraian || ''])))
+        const peta = new Map<string, string>()
+        for (let i = 0; i < kodes.length; i += 500) {
+          const { data: kd } = await supabase.from('admin_kodefikasi_bmd')
+            .select('kode,uraian').in('kode', kodes.slice(i, i + 500))
+          for (const k of (kd || []) as { kode: string; uraian: string | null }[]) peta.set(k.kode, k.uraian || '')
+        }
+        setUraianByKode(peta)
       }
 
-      // SKPD + rantai induknya untuk kepala & blok tanda tangan.
+      // Seluruh SKPD (untuk nama, kode, & rantai induk).
       const rows: SkpdRow[] = []
       for (let from = 0; ; from += 1000) {
         const { data } = await supabase.from('admin_skpd').select('id,nama,parent_id,kode_skpd').range(from, from + 999)
@@ -131,18 +191,37 @@ export default function CetakRkbmdPage() {
         rows.push(...(data as SkpdRow[]))
         if (data.length < 1000) break
       }
-      const byId = new Map(rows.map(s => [s.id, s]))
-      setSkpd(byId.get(dokumen.skpd_id) || null)
-      setInduk(akarSkpd(dokumen.skpd_id, byId) || null)
+      const skpdById = new Map(rows.map(s => [s.id, s]))
 
-      // Penanda tangan: Pengguna Barang SKPD itu. Kalau perannya belum
-      // didaftarkan, blok tanda tangannya dibiarkan bertitik-titik supaya bisa
-      // ditulis tangan — jangan diisi nama lain.
-      const { data: pgw } = await supabase.from('admin_pegawai')
-        .select('nama,nip').eq('skpd_id', dokumen.skpd_id).eq('role_bmd', 'pengguna_barang').limit(1)
-      const g = ((pgw || []) as { nama: string; nip: string | null }[])[0]
-      setPengguna(g || null)
+      // Penanda tangan = KEPALA kantor SKPD masing-masing (permintaan user
+      // 2026-08-10). Dipilih dari `admin_pegawai` SKPD itu yang jabatannya
+      // memuat kata "Kepala" — sengaja lewat `jabatan`, bukan menebak nilai
+      // `role_bmd`. Kalau tak ketemu, blok tanda tangannya dibiarkan
+      // bertitik-titik supaya ditulis tangan; JANGAN diisi nama lain.
+      const skpdIds = [...new Set(doks.map(d => d.skpd_id))]
+      const penandaBySkpd = new Map<number, { nama: string; jabatan: string | null }>()
+      for (let i = 0; i < skpdIds.length; i += 200) {
+        const { data: pgw } = await supabase.from('admin_pegawai')
+          .select('nama,jabatan,skpd_id').in('skpd_id', skpdIds.slice(i, i + 200))
+        for (const g of (pgw || []) as { nama: string; jabatan: string | null; skpd_id: number }[]) {
+          if (penandaBySkpd.has(g.skpd_id)) continue
+          if ((g.jabatan || '').toLowerCase().includes('kepala')) {
+            penandaBySkpd.set(g.skpd_id, { nama: g.nama, jabatan: g.jabatan })
+          }
+        }
+      }
 
+      const out: Lembar[] = doks.map(d => ({
+        dok: d,
+        skpd: skpdById.get(d.skpd_id) || null,
+        penanda: penandaBySkpd.get(d.skpd_id) || null,
+        pakets: pakets.filter(x => x.rkbmd_id === d.id),
+        items: items.filter(x => x.rkbmd_id === d.id),
+      }))
+      out.sort((a, b) => (a.skpd?.nama || '').localeCompare(b.skpd?.nama || ''))
+
+      setJudulLingkup(id ? '' : `Se-Kabupaten ${KABUPATEN} — ${out.length} SKPD`)
+      setLembar(out)
       setLoading(false)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -151,7 +230,8 @@ export default function CetakRkbmdPage() {
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>
 
-      <div className="max-w-6xl mx-auto mb-3 flex justify-end no-print px-4">
+      <div className="max-w-6xl mx-auto mb-3 flex items-center justify-between no-print px-4">
+        <span className="text-sm text-gray-500">{judulLingkup}</span>
         <button onClick={() => window.print()} className="btn-primary text-sm">🖨 Cetak / Simpan PDF</button>
       </div>
 
@@ -161,92 +241,113 @@ export default function CetakRkbmdPage() {
         ) : err ? (
           <div className="bg-white p-8 text-sm text-red-600">{err}</div>
         ) : (
-          <div className="bg-white p-8 shadow print:shadow-none print:p-0 text-[10px] text-gray-900">
-            <style>{`.brd{border:1px solid #6b7280}`}</style>
-
-            <div className="text-center mb-3">
-              <p className="font-bold uppercase text-[12px]">
-                Usulan Rencana Kebutuhan {dok?.versi === 'perubahan' ? 'Perubahan ' : ''}Pengadaan Barang Milik Daerah
-              </p>
-              <p className="font-bold uppercase text-[11px]">(Rencana Pengadaan)</p>
-              <p className="font-bold uppercase text-[11px]">{skpd?.nama || `SKPD #${dok?.skpd_id}`}</p>
-              <p className="font-bold uppercase text-[11px]">Tahun {dok?.tahun_anggaran}</p>
-            </div>
-
-            <table className="mb-2">
-              <tbody>
-                <tr>
-                  <td className="pr-2 align-top">Kode SKPD</td><td className="pr-2 align-top">:</td>
-                  <td className="align-top">{skpd?.kode_skpd || '-'}</td>
-                </tr>
-                <tr>
-                  <td className="pr-2 align-top">Nama SKPD</td><td className="pr-2 align-top">:</td>
-                  <td className="align-top">{skpd?.nama || '-'}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <table className="border-collapse w-full">
-              <thead>
-                <tr className="text-center">
-                  <Th rowSpan={2}>No.</Th>
-                  <Th rowSpan={2}>Program / Kegiatan / Sub Kegiatan</Th>
-                  <Th colSpan={8}>Usulan BMD</Th>
-                  <Th rowSpan={2}>Jumlah barang<br />pada neraca</Th>
-                  <Th rowSpan={2}>Keterangan</Th>
-                </tr>
-                <tr className="text-center">
-                  <Th>Kode rekening</Th>
-                  <Th>Kode barang</Th>
-                  <Th>Uraian Barang</Th>
-                  <Th>Spesifikasi Nama Barang</Th>
-                  <Th>Jumlah</Th>
-                  <Th>Satuan</Th>
-                  <Th>Harga Satuan</Th>
-                  <Th>Nilai total</Th>
-                </tr>
-                <tr className="text-center text-[9px]">
-                  {Array.from({ length: 12 }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
-                </tr>
-              </thead>
-              <tbody>
-                {pohon.length === 0 ? (
-                  <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={12}>
-                    Dokumen ini belum berisi kartu program/kegiatan.
-                  </td></tr>
-                ) : pohon.map((prog, pi) => (
-                  <PohonProgram key={prog.nama} prog={prog} pi={pi} uraianByKode={uraianByKode} />
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="font-semibold">
-                  <td className="brd px-1 py-1 text-center" colSpan={9}>JUMLAH</td>
-                  <td className="brd px-1 py-1 text-right">{formatRupiah(total)}</td>
-                  <td className="brd px-1 py-1" colSpan={2} />
-                </tr>
-              </tfoot>
-            </table>
-
-            <div className="mt-8 flex justify-end pr-16">
-              <div className="text-center">
-                <p>…………, {tglID()}</p>
-                <p>Pengguna Barang</p>
-                <div className="h-16" />
-                <p className="font-semibold underline">{pengguna?.nama || '(………………………………)'}</p>
-                <p>NIP. {pengguna?.nip || '………………………'}</p>
-              </div>
-            </div>
-          </div>
+          lembar.map(l => <LembarUsulan key={l.dok.id} l={l} uraianByKode={uraianByKode} />)
         )}
       </div>
     </div>
   )
 }
 
-// ── Satu blok Program (beserta kegiatan & sub kegiatannya) ──────────────────
-function PohonProgram({ prog, pi, uraianByKode }: {
-  prog: Prog; pi: number; uraianByKode: Map<string, string>
+// ── Satu lembar = satu dokumen RKBMD satu SKPD ──────────────────────────────
+function LembarUsulan({ l, uraianByKode }: { l: Lembar; uraianByKode: Map<string, string> }) {
+  const { dok, skpd, penanda, pakets, items } = l
+  const pengadaan = dok.jenis === 'pengadaan'
+  const ekstra = EKSTRA[dok.jenis] || []
+  const total = items.reduce((s, r) => s + nilaiTotal(dok.jenis, r), 0)
+  const pohon = pengadaan ? susunPohon(pakets, items) : []
+
+  // Lebar tabel: 5 kolom identitas + kolom per jenis + Keterangan.
+  const nKolom = pengadaan ? 12 : KOLOM_IDENTITAS + ekstra.length + 1
+
+  return (
+    <div className="bg-white p-8 shadow print:shadow-none print:p-0 mb-6 print:mb-0 print:break-after-page text-[10px] text-gray-900">
+      <style>{`.brd{border:1px solid #6b7280}`}</style>
+
+      <div className="text-center mb-3">
+        <p className="font-bold uppercase text-[12px]">Pemerintah Kabupaten {KABUPATEN}</p>
+        <p className="font-bold uppercase text-[12px]">
+          Usulan Rencana Kebutuhan {dok.versi === 'perubahan' ? 'Perubahan ' : ''}
+          {JENIS_LABEL[dok.jenis] || dok.jenis} Barang Milik Daerah
+        </p>
+        <p className="font-bold uppercase text-[11px]">{skpd?.nama || `SKPD #${dok.skpd_id}`}</p>
+        <p className="font-bold uppercase text-[11px]">Tahun {dok.tahun_anggaran}</p>
+      </div>
+
+      <table className="mb-2">
+        <tbody>
+          <tr>
+            <td className="pr-2 align-top">Kode SKPD</td><td className="pr-2 align-top">:</td>
+            <td className="align-top">{skpd?.kode_skpd || '-'}</td>
+          </tr>
+          <tr>
+            <td className="pr-2 align-top">Nama SKPD</td><td className="pr-2 align-top">:</td>
+            <td className="align-top">{skpd?.nama || '-'}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {pengadaan ? (
+        <TabelPengadaan pohon={pohon} total={total} uraianByKode={uraianByKode} />
+      ) : (
+        <TabelAset items={items} ekstra={ekstra} total={total} uraianByKode={uraianByKode} nKolom={nKolom} />
+      )}
+
+      <div className="mt-8 flex justify-end pr-16">
+        <div className="text-center">
+          <p>{KABUPATEN}, {tglID()}</p>
+          <p>Kepala {skpd?.nama || '…………………………'}</p>
+          <div className="h-16" />
+          <p className="font-semibold underline">{penanda?.nama || '(………………………………)'}</p>
+          <p>{penanda?.jabatan || 'NIP. ………………………'}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Tabel Pengadaan (berkartu, 12 kolom) ────────────────────────────────────
+function TabelPengadaan({ pohon, total, uraianByKode }: {
+  pohon: Prog[]; total: number; uraianByKode: Map<string, string>
 }) {
+  return (
+    <table className="border-collapse w-full">
+      <thead>
+        <tr className="text-center">
+          <th className="brd px-1 py-1 font-semibold" rowSpan={2}>No.</th>
+          <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Program / Kegiatan / Sub Kegiatan</th>
+          <th className="brd px-1 py-1 font-semibold" colSpan={8}>Usulan BMD</th>
+          <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Jumlah barang<br />pada neraca</th>
+          <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Keterangan</th>
+        </tr>
+        <tr className="text-center">
+          {['Kode rekening', 'Kode barang', 'Uraian Barang', 'Spesifikasi Nama Barang', 'Jumlah', 'Satuan', 'Harga Satuan', 'Nilai total']
+            .map(h => <th key={h} className="brd px-1 py-1 font-semibold">{h}</th>)}
+        </tr>
+        <tr className="text-center text-[9px]">
+          {Array.from({ length: 12 }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
+        </tr>
+      </thead>
+      <tbody>
+        {pohon.length === 0 ? (
+          <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={12}>
+            Dokumen ini belum berisi kartu program/kegiatan.
+          </td></tr>
+        ) : pohon.map((prog, pi) => (
+          <BlokProgram key={prog.nama} prog={prog} pi={pi} uraianByKode={uraianByKode} />
+        ))}
+      </tbody>
+      <tfoot>
+        <tr className="font-semibold">
+          <td className="brd px-1 py-1 text-center" colSpan={9}>JUMLAH</td>
+          <td className="brd px-1 py-1 text-right">{formatRupiah(total)}</td>
+          <td className="brd px-1 py-1" colSpan={2} />
+        </tr>
+      </tfoot>
+    </table>
+  )
+}
+
+function BlokProgram({ prog, pi, uraianByKode }: { prog: Prog; pi: number; uraianByKode: Map<string, string> }) {
   return (
     <>
       <tr>
@@ -255,15 +356,13 @@ function PohonProgram({ prog, pi, uraianByKode }: {
         {Array.from({ length: 10 }, (_, i) => <td key={i} className="brd px-1 py-0.5" />)}
       </tr>
       {prog.kegs.map((keg, ki) => (
-        <PohonKegiatan key={keg.nama} keg={keg} ki={ki} uraianByKode={uraianByKode} />
+        <BlokKegiatan key={keg.nama} keg={keg} ki={ki} uraianByKode={uraianByKode} />
       ))}
     </>
   )
 }
 
-function PohonKegiatan({ keg, ki, uraianByKode }: {
-  keg: Keg; ki: number; uraianByKode: Map<string, string>
-}) {
+function BlokKegiatan({ keg, ki, uraianByKode }: { keg: Keg; ki: number; uraianByKode: Map<string, string> }) {
   return (
     <>
       <tr>
@@ -271,16 +370,12 @@ function PohonKegiatan({ keg, ki, uraianByKode }: {
         <td className="brd px-1 py-0.5 align-top pl-4">{ki + 1}. {keg.nama}</td>
         {Array.from({ length: 10 }, (_, i) => <td key={i} className="brd px-1 py-0.5" />)}
       </tr>
-      {keg.subs.map((sub, si) => (
-        <PohonSub key={sub.paket.id} sub={sub} si={si} uraianByKode={uraianByKode} />
-      ))}
+      {keg.subs.map((sub, si) => <BlokSub key={sub.paket.id} sub={sub} si={si} uraianByKode={uraianByKode} />)}
     </>
   )
 }
 
-function PohonSub({ sub, si, uraianByKode }: {
-  sub: Sub; si: number; uraianByKode: Map<string, string>
-}) {
+function BlokSub({ sub, si, uraianByKode }: { sub: Sub; si: number; uraianByKode: Map<string, string> }) {
   const subtotal = sub.isi.reduce((s, r) => s + (r.total_anggaran || 0), 0)
   return (
     <>
@@ -294,8 +389,7 @@ function PohonSub({ sub, si, uraianByKode }: {
 
       {sub.isi.length === 0 ? (
         <tr>
-          <td className="brd px-1 py-0.5" />
-          <td className="brd px-1 py-0.5" />
+          <td className="brd px-1 py-0.5" /><td className="brd px-1 py-0.5" />
           <td className="brd px-1 py-2 text-center text-gray-400" colSpan={10}>Belum ada usulan barang.</td>
         </tr>
       ) : sub.isi.map((r, i) => (
@@ -325,5 +419,67 @@ function PohonSub({ sub, si, uraianByKode }: {
         </tr>
       )}
     </>
+  )
+}
+
+// ── Tabel empat jenis berbasis aset (datar) ─────────────────────────────────
+// Kolom identitas barang WAJIB & seragam: Kode Barang/Uraian · Spesifikasi Nama
+// Barang/NIBAR · Tgl Perolehan · Nilai Perolehan. Sisanya per jenis (EKSTRA).
+function TabelAset({ items, ekstra, total, uraianByKode, nKolom }: {
+  items: Item[]; ekstra: KolomEkstra[]; total: number
+  uraianByKode: Map<string, string>; nKolom: number
+}) {
+  const idxJumlah = posisiJumlah(ekstra)
+  return (
+    <table className="border-collapse w-full">
+      <thead>
+        <tr className="text-center">
+          <th className="brd px-1 py-1 font-semibold">No.</th>
+          <th className="brd px-1 py-1 font-semibold">Kode Barang /<br />Uraian Barang</th>
+          <th className="brd px-1 py-1 font-semibold">Spesifikasi Nama Barang /<br />NIBAR</th>
+          <th className="brd px-1 py-1 font-semibold">Tanggal<br />Perolehan</th>
+          <th className="brd px-1 py-1 font-semibold">Nilai Perolehan</th>
+          {ekstra.map(k => <th key={k.judul} className="brd px-1 py-1 font-semibold">{k.judul}</th>)}
+          <th className="brd px-1 py-1 font-semibold">Keterangan</th>
+        </tr>
+        <tr className="text-center text-[9px]">
+          {Array.from({ length: nKolom }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
+        </tr>
+      </thead>
+      <tbody>
+        {items.length === 0 ? (
+          <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={nKolom}>
+            Dokumen ini belum berisi usulan barang.
+          </td></tr>
+        ) : items.map((r, i) => (
+          <tr key={r.id}>
+            <td className="brd px-1 py-0.5 text-center align-top">{r.no_urut ?? i + 1}</td>
+            <td className="brd px-1 py-0.5 align-top">
+              <div>{r.kode || '-'}</div>
+              <div className="text-gray-600">{(r.kode && uraianByKode.get(r.kode)) || '-'}</div>
+            </td>
+            <td className="brd px-1 py-0.5 align-top">
+              <div>{r.nama_barang || '-'}</div>
+              <div className="text-gray-600 break-all">{r.nibar || '-'}</div>
+            </td>
+            <td className="brd px-1 py-0.5 align-top text-center whitespace-nowrap">{r.tgl_perolehan || '-'}</td>
+            <td className="brd px-1 py-0.5 align-top text-right">{formatRupiah(r.nilai_perolehan)}</td>
+            {ekstra.map(k => (
+              <td key={k.judul} className={`brd px-1 py-0.5 align-top ${k.align === 'right' ? 'text-right' : ''}`}>
+                {k.isi(r)}
+              </td>
+            ))}
+            <td className="brd px-1 py-0.5 align-top">{r.keterangan || ''}</td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot>
+        <tr className="font-semibold">
+          <td className="brd px-1 py-1 text-center" colSpan={idxJumlah - 1}>JUMLAH</td>
+          <td className="brd px-1 py-1 text-right">{formatRupiah(total)}</td>
+          {nKolom > idxJumlah && <td className="brd px-1 py-1" colSpan={nKolom - idxJumlah} />}
+        </tr>
+      </tfoot>
+    </table>
   )
 }

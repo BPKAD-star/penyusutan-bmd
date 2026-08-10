@@ -248,11 +248,10 @@ function DokumenPanel({
             {berkartu && `${pakets.length} kartu · `}{items.length} item · Total {formatRupiah(total)}
           </span>
         </div>
+        {/* Tombol Cetak SENGAJA TIDAK di sini (keputusan user 2026-08-10) —
+            tempatnya di menu Pelaporan. Menu Usulan itu layar penyusunan; yang
+            dicetak & ditandatangani sebaiknya diambil dari satu pintu. */}
         <div className="flex flex-wrap items-center gap-2">
-          <a href={`/cetak/rkbmd?id=${header.id}`} target="_blank" rel="noopener noreferrer"
-            className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200">
-            🖨 Cetak
-          </a>
           {header.status === 'draft' && (
             <>
               <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}
@@ -560,9 +559,10 @@ function ringkasItem(jenis: RkbmdJenis, it: RkbmdItem): string {
     case 'pengadaan':
       return `${it.jumlah_kebutuhan ?? 0} ${it.satuan || ''} · ${formatRupiah(it.total_anggaran)}`
     case 'pemeliharaan':
-      return formatRupiah(it.total_anggaran)
+      return [it.kondisi, formatRupiah(it.total_anggaran)].filter(Boolean).join(' · ')
     case 'pemanfaatan':
-      return [it.bentuk, it.jangka_waktu].filter(Boolean).join(' · ') || '—'
+      return [it.bentuk, it.jangka_waktu, it.estimasi_hasil != null ? formatRupiah(it.estimasi_hasil) : null]
+        .filter(Boolean).join(' · ') || '—'
     case 'pemindahtanganan':
       return [it.bentuk, formatRupiah(it.nilai_perolehan)].filter(Boolean).join(' · ')
     case 'penghapusan':

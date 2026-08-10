@@ -26,6 +26,12 @@ export const STATUS_META: Record<RkbmdStatus, { label: string; cls: string }> = 
 export const BENTUK_PEMANFAATAN = ['Sewa', 'Pinjam Pakai', 'BGS', 'BSG', 'KSP', 'KSPI']
 export const BENTUK_PEMINDAHTANGANAN = ['Penjualan', 'Tukar Menukar', 'Hibah', 'Penyertaan Modal']
 
+/** Kondisi barang yang diusulkan di RKBMD Pemeliharaan (keputusan user
+ *  2026-08-10). ⚠️ KEMBAR dengan CHECK `rkbmd_item_kondisi_check` (migrasi
+ *  20260810_03) — ubah satu, ubah dua-duanya. Sengaja BEDA dari 5 opsi
+ *  `aset.kondisi_barang`: yang ini kondisi yang DIUSULKAN, bukan yang tercatat. */
+export const KONDISI_RKBMD = ['Baik', 'Rusak Ringan', 'Rusak Berat']
+
 export type RkbmdHeader = {
   id: string
   skpd_id: number
@@ -81,6 +87,13 @@ export type RkbmdItem = {
   harga_satuan: number | null
   total_anggaran: number | null
   nilai_perolehan: number | null
+  /** Di-snapshot dari `aset` saat item disusun (migrasi 20260810_03) — jangan
+   *  di-join ulang saat cetak, dokumen yang sudah ditandatangani tak boleh
+   *  angkanya bergerak mengikuti data hidup. */
+  tgl_perolehan: string | null
+  /** Rencana PENERIMAAN pemanfaatan (sewa/KSP) — kolom sendiri, sengaja bukan
+   *  menumpang `total_anggaran` yang dijumlahkan sbg kebutuhan dana. */
+  estimasi_hasil: number | null
   jumlah: number | null
   lokasi: string | null
   kondisi: string | null

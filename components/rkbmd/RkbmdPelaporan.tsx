@@ -159,6 +159,27 @@ export default function RkbmdPelaporan() {
           <button className="btn-primary" onClick={handleExport} disabled={loading || !!err || rows.length === 0}>
             Export Excel
           </button>
+          {/* Cetak SE-KABUPATEN: satu lembar per SKPD, page-break antar SKPD.
+              Hanya masuk akal kalau jenisnya tunggal — lembar Pengadaan &
+              Penghapusan punya susunan kolom yang berbeda, jadi mencampurnya
+              dalam satu berkas justru menyulitkan pembacanya. */}
+          {jenis === 'semua' ? (
+            <span className="text-xs text-gray-400 pb-2 max-w-[16rem]">
+              Pilih satu jenis untuk mengaktifkan cetak se-kabupaten (kolom tiap jenis berbeda).
+            </span>
+          ) : (
+            <a
+              href={`/cetak/rkbmd?tahun=${tahun}&jenis=${jenis}`}
+              target="_blank" rel="noopener noreferrer"
+              className={`text-sm px-3 py-2 rounded-lg border ${
+                loading || err || rows.length === 0
+                  ? 'pointer-events-none opacity-40 border-gray-200 text-gray-400'
+                  : 'border-gray-200 text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              🖨 Cetak se-Kabupaten
+            </a>
+          )}
         </div>
       </div>
 
@@ -186,15 +207,16 @@ export default function RkbmdPelaporan() {
               <th className="table-th">Sub Kegiatan</th>
               <th className="table-th text-right">Item</th>
               <th className="table-th text-right">Total Anggaran</th>
+              <th className="table-th w-20">Cetak</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={8} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+              <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
             ) : err ? (
-              <tr><td colSpan={8} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
+              <tr><td colSpan={9} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="table-td text-center py-8 text-gray-400">Tidak ada dokumen RKBMD yang cocok dengan filter.</td></tr>
+              <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Tidak ada dokumen RKBMD yang cocok dengan filter.</td></tr>
             ) : rows.map(r => (
               <tr key={r.id}>
                 <td className="table-td text-xs text-gray-800">{r.skpd}</td>
@@ -209,6 +231,12 @@ export default function RkbmdPelaporan() {
                 <td className="table-td text-xs text-gray-500">{r.sub_kegiatan || '—'}</td>
                 <td className="table-td text-xs text-right">{r.jumlah_item}</td>
                 <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(r.total)}</td>
+                <td className="table-td whitespace-nowrap">
+                  <a href={`/cetak/rkbmd?id=${r.id}`} target="_blank" rel="noopener noreferrer"
+                    className="text-teal hover:underline text-xs font-medium" title="Cetak lembar usulan SKPD ini">
+                    🖨 Cetak
+                  </a>
+                </td>
               </tr>
             ))}
           </tbody>

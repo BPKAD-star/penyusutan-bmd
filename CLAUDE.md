@@ -942,7 +942,38 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   `(rkbmd_id, sub_kegiatan)` mencegah dua kartu untuk sub kegiatan yang sama
   (kartu baru ber-NULL sengaja tak kena, supaya bisa dibuat lalu diisi).
   Biayanya kecil: satu baris per sub kegiatan per SKPD per tahun.
-- **Cetak `/cetak/rkbmd?id=<uuid>`** — format "Usulan Rencana Kebutuhan
+- **Empat jenis non-pengadaan (migrasi 20260810_03).** Urutan isian ditentukan
+  user & sengaja beda per jenis: di **Pemanfaatan & Pemindahtanganan BENTUK
+  dipilih PALING DULU** (sebelum barang), karena bentuknya yang menentukan
+  barang macam apa yang layak diusulkan. Semuanya: pilih jenis aset → pilih
+  barang (dicari lewat NIBAR / uraian barang / nama barang / merek) → field
+  khusus → keterangan. `kondisi` kini **tiga pilihan baku** (Baik / Rusak Ringan
+  / Rusak Berat) ber-CHECK di DB — ⚠️ KEMBAR dgn `KONDISI_RKBMD` di lib/rkbmd.ts,
+  dan **sengaja BEDA dari 5 opsi `aset.kondisi_barang`** (yang ini kondisi
+  DIUSULKAN, bukan yang tercatat di register).
+  Dua kolom baru: **`tgl_perolehan`** (di-SNAPSHOT dari `aset` saat item
+  disusun, jangan di-join saat cetak — lembar yang dicetak ulang harus sama
+  dgn yang dulu ditandatangani) & **`estimasi_hasil`** untuk Pemanfaatan.
+  ⚠️ `estimasi_hasil` sengaja **kolom sendiri, bukan menumpang
+  `total_anggaran`**: pemanfaatan itu rencana PENERIMAAN, dan menumpangkannya
+  membuat Pelaporan menjumlahkan pemasukan ke dalam "Total Rencana Anggaran".
+- **Cetak `/cetak/rkbmd`** — dua mode: `?id=<uuid>` (satu dokumen) dan
+  `?tahun=&jenis=[&versi=]` (**se-Kabupaten**, satu lembar per SKPD dgn
+  page-break). Cetak se-kabupaten hanya aktif kalau jenisnya tunggal — susunan
+  kolom tiap jenis berbeda, mencampurnya menyulitkan pembaca. Kepala lembar
+  memuat "Pemerintah Kabupaten Kediri"; penanda tangan = **Kepala kantor SKPD
+  masing-masing**, dipilih dari `admin_pegawai` yang `jabatan`-nya memuat kata
+  "Kepala" — sengaja lewat `jabatan`, BUKAN menebak nilai `role_bmd`. Tak
+  ketemu → blok tanda tangan dibiarkan bertitik-titik, jangan diisi nama lain.
+  **Tombolnya ada di menu Pelaporan** (per baris + se-kabupaten), sengaja
+  DICABUT dari menu Usulan (keputusan user 2026-08-10): Usulan itu layar
+  penyusunan, yang ditandatangani sebaiknya keluar dari satu pintu.
+  Empat jenis non-pengadaan memakai tabel datar 5 kolom identitas (No ·
+  Kode/Uraian Barang · Spesifikasi Nama Barang/NIBAR · Tgl Perolehan · Nilai
+  Perolehan) + kolom khas jenisnya + Keterangan. ⚠️ Kolom yang dijumlahkan di
+  baris JUMLAH ditandai `jumlahkan` di `EKSTRA` — tanpa penanda itu angka total
+  gampang jatuh di kolom yang salah dan baru ketahuan setelah dicetak.
+- **Cetak Pengadaan `?id=<uuid>`** — format "Usulan Rencana Kebutuhan
   Pengadaan BMD", A4 landscape, 12 kolom. Kolom 2 memuat hierarki Program →
   Kegiatan → Sub Kegiatan sbg baris judul menjorok; di baris barang kolom itu
   **sengaja kosong** (judulnya sudah dicetak sekali di atas). Kolom 5 "Uraian
