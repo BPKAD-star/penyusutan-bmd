@@ -371,10 +371,16 @@ async function computeMutasiLines(
   ])
   // Tahap 2 — SEMUA terscope ke aset yang muncul di tahap 1. Tidak ada lagi
   // satu pun query di fungsi ini yang menyapu seluruh ledger.
-  const [kapBatal, korBatal, reklasBatal, voided, netRemoved, pecahBatal] = await Promise.all([
+  const [kapBatal, korBatal, reklasBatal, alihBatal, voided, netRemoved, pecahBatal] = await Promise.all([
     fetchBatalTargets(supabase, ['batal_kapitalisasi'], kap.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_koreksi_nilai'], kor.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_reklas'], [...reklasG, ...reklasK].map(r => r.aset_id)),
+    // Pengalihan yang DIANULIR. Sempat kelewat (rules.md §1.7 titik 2 sudah
+    // mewajibkannya & BATAL_TARGET_JENIS.pengalihan sudah ada — yang belum cuma
+    // pemakaiannya di sini), ketahuan lewat invarian tie-out golden test
+    // 2026-08-06. Payloadnya `target_trx_ids` JAMAK: sekali batal menganulir
+    // baris perginya DAN baris pulangnya; fetchBatalTargets membaca dua bentuk.
+    fetchBatalTargets(supabase, ['batal_pengalihan'], alih.map(r => r.aset_id)),
     fetchVoided(supabase, cara.map(r => r.aset_id)),
     fetchNetRemoved(supabase, hapus.map(r => r.aset_id)),
     fetchPemecahanBatal(supabase, pecah.map(r => r.aset_id)),
@@ -409,7 +415,7 @@ async function computeMutasiLines(
 
   // Pengalihan Status — masuk (Penggunaan) / keluar. skpd_id = sisi in-scope.
   for (const r of alih) {
-    if (!r.aset) continue
+    if (!r.aset || alihBatal.has(r.id)) continue
     const asalIn = inScope(r.skpd_asal), tujuanIn = inScope(r.skpd_tujuan)
     const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
     if (tujuanIn && !asalIn) push(gol, komp, 'penggunaan_masuk', r.nilai, r, r.skpd_tujuan)

@@ -169,11 +169,6 @@ exports[`golden — snapshot agregat > sel 1.3.2 intra — dirinci supaya peruba
     "beban": 0,
     "perolehan": 100000000,
   },
-  "pengalihan_keluar": {
-    "akumulasi": 0,
-    "beban": 0,
-    "perolehan": 70000000,
-  },
   "reklas_kode_keluar": {
     "akumulasi": 0,
     "beban": 0,
@@ -227,11 +222,6 @@ exports[`golden — snapshot agregat > tabel mutasi Rekonsiliasi 2026-S1 (scope 
         "akumulasi": 0,
         "beban": 0,
         "perolehan": 100000000,
-      },
-      "pengalihan_keluar": {
-        "akumulasi": 0,
-        "beban": 0,
-        "perolehan": 70000000,
       },
       "reklas_kode_keluar": {
         "akumulasi": 0,

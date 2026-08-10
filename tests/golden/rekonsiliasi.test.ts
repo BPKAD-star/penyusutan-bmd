@@ -252,39 +252,35 @@ async function selisihTieOut(): Promise<Record<string, number>> {
 }
 
 describe('golden — tie-out perolehan per sel', () => {
-  it('sel yang TIDAK kena dua gap di bawah tie-out sempurna', async () => {
+  it('hanya sel yang kena gap reklas yang belum tie-out', async () => {
     const selisih = await selisihTieOut()
 
     // Semua sel lain WAJIB nol. Ini yang membuktikan pipeline-nya benar untuk
-    // pengadaan, kapitalisasi, penghapusan, pemecahan, koreksi, ekstrakomptabel,
-    // golongan beku, dan golongan tak disusutkan sekaligus.
+    // pengadaan, kapitalisasi, penghapusan, pemecahan, koreksi, pengalihan
+    // (termasuk pembatalannya), ekstrakomptabel, golongan beku, dan golongan
+    // tak disusutkan sekaligus.
     expect(Object.keys(selisih).sort()).toEqual(['1.3.2|intra', '1.3.5|intra'])
   })
 
-  // ── DUGAAN BUG 1 ────────────────────────────────────────────────────────
-  it('DUGAAN BUG: pengalihan yang DIBATALKAN tetap dihitung sebagai pengurangan', async () => {
-    // rules.md §1.7 titik 2 mewajibkan kolektor period-aware (lib/rekon.ts)
-    // MEMBUANG baris yang dianulir. `computeMutasiLines` menyaring batal untuk
-    // kapitalisasi, koreksi_nilai, dan reklas — TAPI TIDAK untuk
-    // `pengalihan_status`. Konstantanya sudah ada (BATAL_TARGET_JENIS.pengalihan
-    // di lib/voidedAset.ts); yang belum, pemakaiannya di sini.
+  it('regresi 2026-08-06: pengalihan yang DIBATALKAN tidak lagi dihitung sebagai pengurangan', async () => {
+    // Ditemukan invarian tie-out golden test. `computeMutasiLines` dulu
+    // menyaring pembatalan untuk kapitalisasi, koreksi_nilai, dan reklas —
+    // TAPI TIDAK untuk `pengalihan_status`, padahal rules.md §1.7 titik 2
+    // mewajibkannya dan BATAL_TARGET_JENIS.pengalihan sudah lama ada.
     //
-    // Akibatnya: barang yang pengalihannya dibatalkan tetap tampil sebagai
-    // "Penghapusan Pengalihan (transfer keluar)" — persis mode kegagalan
-    // INS-15, dan tanpa satu pun pesan error.
-    //
-    // DIKUNCI APA ADANYA, bukan disebut benar. Memperbaikinya MENGUBAH ANGKA
-    // laporan, jadi butuh keputusan user + commit tersendiri.
+    // Di produksi: KEEMPAT baris pengalihan_status sudah dianulir 2 baris
+    // batal_pengalihan (Rp215.155.360 & Rp3.794.734.725, 2026-S2), dan
+    // semuanya tetap tampil sebagai pengurangan di tampilan per-SKPD.
     const lines = await muatLines()
 
-    const a06 = lines.filter(l => l.aset_id === 'A06')
-    expect(a06).toHaveLength(1)
-    expect(a06[0].kategori).toBe('pengalihan_keluar')
-    expect(a06[0].nilai).toBe(70_000_000)
-    // Kalau nanti diperbaiki, dua assertion di atas gagal — itu memang sinyalnya.
+    expect(lines.some(l => l.aset_id === 'A06')).toBe(false)
+    // A05 (pengalihan SAH) harus TETAP ada — kalau filternya kebablasan
+    // membuang yang sah juga, ini yang menangkap.
+    const a05 = await fetchMutasiLines(db(), PERIODE, [SKPD_A])
+    expect(a05.filter(l => l.aset_id === 'A05')).toHaveLength(1)
   })
 
-  // ── DUGAAN BUG 2 ────────────────────────────────────────────────────────
+  // ── DUGAAN BUG (masih terbuka) ──────────────────────────────────────────
   it('DUGAAN BUG: golongan pada snapshot TIDAK period-aware, jadi reklas merusak tie-out', async () => {
     // `fetchSnapshotPositions` memakai `aset.kode` TERKINI, sementara baris
     // mutasi membukukan keluar-dari-kode-lama + masuk-ke-kode-baru. Jadi untuk
@@ -297,7 +293,9 @@ describe('golden — tie-out perolehan per sel', () => {
     const selisih = await selisihTieOut()
 
     expect(selisih['1.3.5|intra']).toBe(15_000_000)   // kelebihan di golongan TUJUAN
-    expect(selisih['1.3.2|intra']).toBe(-85_000_000)  // −15jt reklas, −70jt DUGAAN BUG 1
+    expect(selisih['1.3.2|intra']).toBe(-15_000_000)  // kekurangan di golongan ASAL
+    // Selisihnya kini SIMETRIS (+15jt / −15jt) — bukti sisa gap ini murni soal
+    // reklas, bukan lagi bercampur pengalihan yang dibatalkan.
   })
 })
 
