@@ -47,6 +47,26 @@ ada.
 - [ ] **`ALTER TYPE … ADD VALUE` harus statement lepas**, tidak boleh berada di
       dalam blok transaksi — dan tidak boleh digabung dengan DDL lain di berkas
       yang sama kalau berkas itu akan dijalankan sekali tekan.
+- [ ] **`VACUUM` TIDAK BOLEH ada di berkas migrasi.** Sama sebabnya
+      (SQL Editor = satu transaksi), tapi akibatnya berbeda dari
+      `CONCURRENTLY`: `VACUUM` gagal **KERAS** dengan
+      `ERROR 25001: VACUUM cannot run inside a transaction block`, dan karena
+      satu transaksi, **seluruh migrasi ikut ter-rollback** — termasuk DDL yang
+      sudah benar di atasnya. Kejadian 2026-08-10 di
+      `20260810_01_idx_aset_rekap_covering.sql`.
+
+      Yang sering dikira sama padahal beda:
+
+      | Perintah | Di dalam transaksi? | Boleh di berkas migrasi? |
+      |---|---|---|
+      | `ANALYZE` | ✅ boleh | ✅ ya |
+      | `VACUUM` / `VACUUM ANALYZE` | ❌ tidak | ❌ **tidak** — jalankan lepas |
+      | `CREATE INDEX CONCURRENTLY` | ❌ tidak | ❌ tidak (gagal **senyap**) |
+      | `ALTER TYPE … ADD VALUE` | ❌ tidak | ❌ tidak |
+
+      Kalau butuh `VACUUM` (mis. supaya index-only scan benar-benar terpakai),
+      tulis sebagai **langkah terpisah** di komentar berkasnya, jangan sebagai
+      statement.
 - [ ] **Predikat partial index disalin PERSIS dari qual di kode.** Beda sedikit
       → planner tak bisa membuktikan implikasinya dan indexnya **diabaikan
       diam-diam**: tak ada error, cuma lambat lagi ([../rules.md](../rules.md)

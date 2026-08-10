@@ -33,10 +33,20 @@
 -- `enum_eq` dan `~~` yang tidak. Jadi filter komptabel TIDAK terkena larangan
 -- "tak pernah bisa jadi index-cond di bawah RLS" (rules.md §4.2).
 --
--- ⚠️ Index-only scan baru benar-benar terjadi kalau visibility map-nya segar.
--- Sesudah import massal WAJIB `VACUUM ANALYZE aset` — tanpa itu Postgres tetap
--- mengintip heap dan perbaikannya tidak terasa.
+-- ⚠️ Index-only scan baru benar-benar terjadi kalau visibility map-nya segar,
+-- dan itu butuh `VACUUM`. TAPI **`VACUUM` TIDAK BOLEH ADA DI BERKAS INI** —
+-- lihat langkah 2 di bawah. Percobaan pertama (2026-08-10) menaruhnya di sini
+-- dan SELURUH migrasi gagal: `ERROR 25001: VACUUM cannot run inside a
+-- transaction block`. Karena SQL Editor membungkus skrip jadi satu transaksi,
+-- `CREATE INDEX` di atasnya ikut ter-rollback — tidak ada yang setengah jadi,
+-- tapi juga tidak ada yang jadi.
+--
+-- Bedakan baik-baik, keduanya sering dikira sama:
+--   * `ANALYZE`  → BOLEH di dalam transaksi → aman di berkas migrasi.
+--   * `VACUUM`   → TIDAK BOLEH → wajib dijalankan sebagai perintah lepas.
 -- ============================================================================
+
+-- ── LANGKAH 1 (berkas ini) ──────────────────────────────────────────────────
 
 -- PLAIN, bukan CONCURRENTLY: Supabase SQL Editor membungkus skrip jadi satu
 -- transaksi, dan CONCURRENTLY di dalam transaksi GAGAL SENYAP (rules.md §5.3).
@@ -46,9 +56,21 @@ CREATE INDEX IF NOT EXISTS idx_aset_rekap_golongan
   ON aset (status, golongan)
   INCLUDE (nilai_perolehan, intra_ekstra);
 
--- Statistik & visibility map. ANALYZE wajib (rules.md §4.4); VACUUM di sini
--- yang membuat index-only scan benar-benar bisa dipakai.
-VACUUM ANALYZE aset;
+-- Statistik planner. ANALYZE boleh di dalam transaksi, jadi aman di sini
+-- (rules.md §4.4 — tiap perubahan besar ditutup ANALYZE).
+ANALYZE aset;
+
+-- ── LANGKAH 2 (JALANKAN TERPISAH, satu perintah sendiri) ────────────────────
+-- WAJIB, dan TIDAK BOLEH digabung ke berkas di atas:
+--
+--   VACUUM (ANALYZE) aset;
+--
+-- Ini yang menyegarkan visibility map. Tanpanya index di atas memang terbentuk,
+-- tapi Postgres tetap mengintip heap tiap baris dan perbaikannya nyaris tak
+-- terasa ("Heap Fetches" besar di EXPLAIN).
+--
+-- Di Supabase SQL Editor: buka tab BARU, isi HANYA baris VACUUM itu, Run.
+-- Kalau tetap kena `25001`, jalankan lewat psql.
 
 -- ── VERIFIKASI ──────────────────────────────────────────────────────────────
 -- Jalankan terpisah. Yang dicari: "Index Only Scan using idx_aset_rekap_golongan"
