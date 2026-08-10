@@ -56,14 +56,31 @@ CREATE INDEX IF NOT EXISTS idx_aset_rekap_golongan
   ON aset (status, golongan)
   INCLUDE (nilai_perolehan, intra_ekstra);
 
+-- ── Saldo Awal: tabel LAIN, masalah yang SAMA, dan lebih parah ─────────────
+-- `fn_rekap_saldo_awal` membaca `aset_awal_2026`, bukan `aset`, jadi index di
+-- atas tidak menolongnya sama sekali. Terukur 2026-08-10 SEBELUM perbaikan:
+-- **14.431 ms** — jauh di atas statement_timeout 8 dtk role `authenticated`,
+-- artinya Rekapitulasi Saldo Awal se-kabupaten memang PASTI gagal (dan
+-- gagalnya diam-diam tampil sebagai nol; lihat perbaikan fail-closed
+-- 2026-08-10). Planner memilih `idx_saldo_skpd` demi urutan presorted, lalu
+-- membayar 91.251 akses buffer ACAK ke heap — lebih mahal daripada seq scan.
+--
+-- Kolom kunci `(skpd_id, kode)`: skpd_id memberi urutan presorted yang memang
+-- dipakai GROUP BY, kode dipakai menurunkan golongan. Sisanya INCLUDE.
+CREATE INDEX IF NOT EXISTS idx_sa2026_rekap
+  ON aset_awal_2026 (skpd_id, kode)
+  INCLUDE (nilai_perolehan, akumulasi_2025, beban_penyusutan_per_smt, nilai_buku_awal, intra_ekstra);
+
 -- Statistik planner. ANALYZE boleh di dalam transaksi, jadi aman di sini
 -- (rules.md §4.4 — tiap perubahan besar ditutup ANALYZE).
 ANALYZE aset;
+ANALYZE aset_awal_2026;
 
 -- ── LANGKAH 2 (JALANKAN TERPISAH, satu perintah sendiri) ────────────────────
 -- WAJIB, dan TIDAK BOLEH digabung ke berkas di atas:
 --
 --   VACUUM (ANALYZE) aset;
+--   VACUUM (ANALYZE) aset_awal_2026;
 --
 -- Ini yang menyegarkan visibility map. Tanpanya index di atas memang terbentuk,
 -- tapi Postgres tetap mengintip heap tiap baris dan perbaikannya nyaris tak
@@ -90,3 +107,22 @@ ANALYZE aset;
 --   SET LOCAL request.jwt.claims = '{"sub":"<UUID-user>","role":"authenticated"}';
 --   EXPLAIN ANALYZE <query di atas>;
 --   ROLLBACK;
+--
+-- ── HASIL SESUDAH DIJALANKAN (2026-08-10, service_role, cache hangat) ───────
+--
+--   agregat `aset`, tanpa filter komptabel   1.441 ms →   173 ms   (8×)
+--   agregat `aset`, filter 'ekstra'          1.819 ms →    42 ms  (43×)
+--   agregat `aset_awal_2026` per SKPD       14.431 ms → 1.025 ms  (14×)
+--
+--   blok dibaca `aset`            : 33.665 → 2.465   · Heap Fetches 1.077
+--   blok dibaca `aset_awal_2026`  : 91.251 → 4.295   · Heap Fetches 0
+--   ukuran index                  : 19 MB + 33 MB
+--
+-- ⚠️ Angka di atas TANPA beban RLS. Untuk non-admin, `fn_skpd_visible`
+-- dievaluasi PER BARIS dan itu biaya terpisah yang TIDAK disentuh index ini —
+-- lihat rules.md §4.1 (InitPlan). Uji ulang sebagai pengurus barang SKPD
+-- TERBESAR sebelum menyatakan selesai (rules.md §4.5).
+--
+-- ⚠️ Run PERTAMA sesudah index dibuat justru terlihat LEBIH LAMBAT (1.989 ms)
+-- karena indexnya masih dingin & cache baru di-VACUUM. Jangan menilai dari satu
+-- pengukuran — ulangi sampai `Buffers` menunjukkan `hit` tanpa `read`.
