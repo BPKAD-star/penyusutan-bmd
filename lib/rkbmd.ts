@@ -32,6 +32,46 @@ export const BENTUK_PEMINDAHTANGANAN = ['Penjualan', 'Tukar Menukar', 'Hibah', '
  *  `aset.kondisi_barang`: yang ini kondisi yang DIUSULKAN, bukan yang tercatat. */
 export const KONDISI_RKBMD = ['Baik', 'Rusak Ringan', 'Rusak Berat']
 
+// ── "Total Nilai" per jenis ────────────────────────────────────────────────
+// Kelima jenis RKBMD menjumlahkan hal yang BERBEDA, dan itu bukan sekadar soal
+// label: pengadaan & pemeliharaan menjumlahkan RENCANA BELANJA, pemanfaatan
+// menjumlahkan RENCANA PENERIMAAN, sedangkan pemindahtanganan & penghapusan
+// menjumlahkan NILAI PEROLEHAN barang yang dilepas. Sebelum ini semuanya
+// dibaca dari `total_anggaran` saja, sehingga tiga jenis terakhir selalu
+// tampil 0 di menu Pelaporan.
+//
+// ⚠️ SATU SUMBER: dipakai menu Pelaporan DAN halaman cetak. Jangan disalin.
+export const LABEL_NILAI: Record<RkbmdJenis, string> = {
+  pengadaan: 'Estimasi Total Penganggaran Pengadaan',
+  pemeliharaan: 'Estimasi Total Biaya Pemeliharaan',
+  pemanfaatan: 'Total Estimasi Pendapatan Pemanfaatan',
+  pemindahtanganan: 'Total Nilai Perolehan Barang yang Dipindahtangankan',
+  penghapusan: 'Total Nilai Perolehan Barang yang Dihapus',
+}
+
+/** Bentuk minimal yang dibutuhkan — bukan `RkbmdItem` utuh, supaya pemanggil
+ *  boleh mengambil hanya tiga kolom ini dari DB. */
+export type NilaiItem = {
+  total_anggaran?: number | null
+  estimasi_hasil?: number | null
+  nilai_perolehan?: number | null
+}
+
+export function nilaiItemRkbmd(jenis: RkbmdJenis | string, it: NilaiItem): number {
+  switch (jenis) {
+    case 'pengadaan':
+    case 'pemeliharaan':
+      return it.total_anggaran || 0
+    case 'pemanfaatan':
+      return it.estimasi_hasil || 0
+    case 'pemindahtanganan':
+    case 'penghapusan':
+      return it.nilai_perolehan || 0
+    default:
+      return 0
+  }
+}
+
 export type RkbmdHeader = {
   id: string
   skpd_id: number

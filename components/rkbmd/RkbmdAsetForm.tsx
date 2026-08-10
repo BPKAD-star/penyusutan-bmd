@@ -18,6 +18,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
+import AsetMultiPicker from '@/components/rkbmd/AsetMultiPicker'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import {
@@ -44,6 +45,13 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
   const editing = !!editItem
   const pakaiBentuk = jenis === 'pemanfaatan' || jenis === 'pemindahtanganan'
   const opsiBentuk = jenis === 'pemanfaatan' ? BENTUK_PEMANFAATAN : BENTUK_PEMINDAHTANGANAN
+  // Pemindahtanganan & Penghapusan boleh memilih BANYAK barang sekaligus
+  // (permintaan user 2026-08-10) — di dua jenis itu satu SKPD biasanya
+  // mengusulkan puluhan barang setahun. Field lain (bentuk/sebab/keterangan)
+  // berlaku sama untuk semua barang yang dicentang, jadi aman disatukan.
+  // ⚠️ Hanya saat MENAMBAH: mengedit tetap satu baris, kalau tidak "simpan"
+  // jadi ambigu (mengganti barangnya? menambah barang ke baris yang sama?).
+  const bolehBanyak = (jenis === 'pemindahtanganan' || jenis === 'penghapusan') && !editing
 
   const [bentuk, setBentuk] = useState(editItem?.bentuk || '')
   const [golongan, setGolongan] = useState(editItem?.kode ? kodeLevel3(editItem.kode) : '')
@@ -56,6 +64,7 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
         }
       : null,
   )
+  const [banyak, setBanyak] = useState<AsetRingkas[]>([])
   const [kondisi, setKondisi] = useState(editItem?.kondisi || '')
   const [biaya, setBiaya] = useState(editItem?.total_anggaran != null ? String(editItem.total_anggaran) : '')
   const [peruntukan, setPeruntukan] = useState(editItem?.peruntukan || '')
@@ -71,6 +80,7 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
   // golongan baru — operator tak punya petunjuk apa pun bahwa itu tak cocok.
   useEffect(() => {
     if (aset && golongan && kodeLevel3(aset.kode) !== golongan) setAset(null)
+    if (golongan) setBanyak(prev => prev.filter(a => kodeLevel3(a.kode) === golongan))
   }, [golongan]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(e: React.FormEvent) {
@@ -78,20 +88,14 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
     if (pakaiBentuk && !bentuk) {
       setErr(`Pilih bentuk ${jenis === 'pemanfaatan' ? 'pemanfaatan' : 'pemindahtanganan'} dulu.`); return
     }
-    if (!aset) { setErr('Pilih barangnya dulu.'); return }
+    const daftar = bolehBanyak ? banyak : (aset ? [aset] : [])
+    if (daftar.length === 0) { setErr(bolehBanyak ? 'Centang minimal satu barang.' : 'Pilih barangnya dulu.'); return }
     if (jenis === 'pemeliharaan' && !kondisi) { setErr('Pilih kondisi barang.'); return }
     setSaving(true); setErr('')
 
-    const base = {
-      rkbmd_id: rkbmdId,
-      aset_id: aset.id,
-      kode: aset.kode || null,
-      nibar: aset.nibar,
-      nama_barang: aset.nama_barang,
-      tgl_perolehan: aset.tgl_perolehan ?? null,
-      nilai_perolehan: aset.nilai_perolehan ?? null,
-      keterangan: keterangan.trim() || null,
-    }
+    // Field selain identitas barang berlaku SAMA untuk semua barang yang
+    // dicentang — itu sebabnya multi-pilih hanya dibuka untuk dua jenis yang
+    // memang tak punya field per-barang.
     const perJenis: Record<string, unknown> =
       jenis === 'pemeliharaan'
         ? { kondisi, total_anggaran: biaya === '' ? null : Number(biaya) }
@@ -105,15 +109,29 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
         ? { bentuk }
         : { alasan: sebab.trim() || null }
 
-    const payload = { ...base, ...perJenis }
+    const barisDari = (a: AsetRingkas) => ({
+      rkbmd_id: rkbmdId,
+      aset_id: a.id,
+      kode: a.kode || null,
+      nibar: a.nibar,
+      nama_barang: a.nama_barang,
+      tgl_perolehan: a.tgl_perolehan ?? null,
+      nilai_perolehan: a.nilai_perolehan ?? null,
+      keterangan: keterangan.trim() || null,
+      ...perJenis,
+    })
+
     let error
     if (editing) {
-      ({ error } = await supabase.from('rkbmd_item').update(payload).eq('id', editItem!.id))
+      ({ error } = await supabase.from('rkbmd_item').update(barisDari(daftar[0])).eq('id', editItem!.id))
     } else {
       const { data: last } = await supabase.from('rkbmd_item').select('no_urut')
         .eq('rkbmd_id', rkbmdId).order('no_urut', { ascending: false }).limit(1).maybeSingle()
-      const next = ((last as { no_urut: number | null } | null)?.no_urut || 0) + 1;
-      ({ error } = await supabase.from('rkbmd_item').insert({ ...payload, no_urut: next }))
+      const mulai = ((last as { no_urut: number | null } | null)?.no_urut || 0);
+      // Satu INSERT untuk semua barang — kalau ada yang gagal, tak ada yang
+      // masuk separuh (operator tak perlu menebak mana yang sudah tercatat).
+      ({ error } = await supabase.from('rkbmd_item')
+        .insert(daftar.map((a, i) => ({ ...barisDari(a), no_urut: mulai + i + 1 }))))
     }
     if (error) { setErr(`Error: ${error.message}`); setSaving(false); return }
     setSaving(false)
@@ -155,12 +173,20 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
       </div>
 
       <div>
-        <label className="block text-xs text-gray-500 mb-1">{langkah()}. Data Barang</label>
-        <AsetPicker selected={aset} onSelect={setAset} skpdId={skpdId} kodePrefix={golongan || undefined} />
-        <p className="text-[11px] text-gray-400 mt-1">
-          Bisa dicari lewat NIBAR, uraian barang, nama barang, atau merek. Kosongkan kotak cari lalu tekan
-          &ldquo;Cari&rdquo; untuk melihat seluruh barang{golongan ? ' jenis ini' : ''} di SKPD.
-        </p>
+        <label className="block text-xs text-gray-500 mb-1">
+          {langkah()}. Data Barang{bolehBanyak ? ' (boleh beberapa sekaligus)' : ''}
+        </label>
+        {bolehBanyak ? (
+          <AsetMultiPicker terpilih={banyak} onChange={setBanyak} skpdId={skpdId} kodePrefix={golongan || undefined} />
+        ) : (
+          <>
+            <AsetPicker selected={aset} onSelect={setAset} skpdId={skpdId} kodePrefix={golongan || undefined} />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Bisa dicari lewat NIBAR, uraian barang, nama barang, atau merek. Kosongkan kotak cari lalu tekan
+              &ldquo;Cari&rdquo; untuk melihat seluruh barang{golongan ? ' jenis ini' : ''} di SKPD.
+            </p>
+          </>
+        )}
       </div>
 
       {jenis === 'pemeliharaan' && (
@@ -222,17 +248,26 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
         <input className="select-filter w-full" value={keterangan} onChange={e => setKeterangan(e.target.value)} />
       </div>
 
-      {aset && (
+      {!bolehBanyak && aset && (
         <div className="rounded-lg bg-gray-50 px-4 py-2 text-[11px] text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
           <span>Dibekukan ke dokumen —</span>
           <span>Tgl perolehan: <span className="font-medium text-gray-700">{aset.tgl_perolehan || '—'}</span></span>
           <span>Nilai perolehan: <span className="font-medium text-gray-700">{formatRupiah(aset.nilai_perolehan)}</span></span>
         </div>
       )}
+      {bolehBanyak && banyak.length > 0 && (
+        <div className="rounded-lg bg-gray-50 px-4 py-2 text-[11px] text-gray-500">
+          {banyak.length} barang akan ditambahkan sebagai {banyak.length} baris — tanggal & nilai perolehan
+          masing-masing ikut dibekukan ke dokumen.
+        </div>
+      )}
 
       <div className="flex gap-2">
         <button type="submit" disabled={saving} className="btn-primary">
-          {saving ? 'Menyimpan...' : editing ? 'Simpan Perubahan' : 'Tambah Item'}
+          {saving ? 'Menyimpan...'
+            : editing ? 'Simpan Perubahan'
+            : bolehBanyak ? `Tambahkan ${banyak.length || ''} Item`.replace('  ', ' ')
+            : 'Tambah Item'}
         </button>
         <button type="button" onClick={onCancel} className="text-sm text-gray-500 hover:text-gray-700">Batal</button>
       </div>

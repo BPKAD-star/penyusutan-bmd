@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { exportToExcel, formatRupiah } from '@/lib/export'
-import { RKBMD_JENIS, STATUS_META, type RkbmdStatus } from '@/lib/rkbmd'
+import { RKBMD_JENIS, STATUS_META, LABEL_NILAI, nilaiItemRkbmd, type RkbmdStatus, type RkbmdJenis } from '@/lib/rkbmd'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
 const JENIS_LABEL: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j => [j.key, j.label]))
@@ -21,11 +21,12 @@ type Baris = {
   jenis: string
   versi: string
   status: RkbmdStatus
-  /** Jumlah kartu Program/Kegiatan/Sub Kegiatan (jenis pengadaan; 0 utk jenis lain). */
-  kartu: number
-  /** Daftar sub kegiatan kartu-kartunya, dirangkai jadi satu sel. */
+  /** Daftar sub kegiatan kartu-kartunya. Sudah TIDAK ditampilkan di tabel
+   *  (permintaan user 2026-08-10) tapi tetap ikut ke Excel — di berkas kerja
+   *  informasi itu masih berguna, sedangkan di layar ia bikin baris melebar. */
   sub_kegiatan: string
   jumlah_item: number
+  /** "Total Nilai" — artinya BEDA per jenis, lihat nilaiItemRkbmd/LABEL_NILAI. */
   total: number
 }
 
@@ -53,7 +54,7 @@ export default function RkbmdPelaporan() {
       admin_skpd: { nama: string } | null
     }[]).map(h => ({
       id: h.id, skpd: h.admin_skpd?.nama || `SKPD #${h.skpd_id}`, jenis: h.jenis, versi: h.versi,
-      status: h.status, kartu: 0, sub_kegiatan: '', jumlah_item: 0, total: 0,
+      status: h.status, sub_kegiatan: '', jumlah_item: 0, total: 0,
     }))
 
     if (base.length > 0) {
@@ -62,7 +63,11 @@ export default function RkbmdPelaporan() {
       const subs = new Map<string, string[]>()
       const [pk, it] = await Promise.all([
         supabase.from('rkbmd_paket').select('rkbmd_id,sub_kegiatan').in('rkbmd_id', ids).order('no_urut'),
-        supabase.from('rkbmd_item').select('rkbmd_id,total_anggaran').in('rkbmd_id', ids),
+        // Ketiga kolom nilai ditarik sekaligus: mana yang dipakai ditentukan
+        // `nilaiItemRkbmd` sesuai jenis dokumennya. Sebelum ini cuma
+        // `total_anggaran` yang dibaca, jadi Pemanfaatan/Pemindahtanganan/
+        // Penghapusan SELALU tampil 0.
+        supabase.from('rkbmd_item').select('rkbmd_id,total_anggaran,estimasi_hasil,nilai_perolehan').in('rkbmd_id', ids),
       ])
       if (pk.error || it.error) {
         setErr(`gagal membaca isi RKBMD: ${(pk.error || it.error)!.message}`)
@@ -71,15 +76,16 @@ export default function RkbmdPelaporan() {
       for (const p of (pk.data || []) as { rkbmd_id: string; sub_kegiatan: string | null }[]) {
         const h = byId.get(p.rkbmd_id)
         if (!h) continue
-        h.kartu += 1
         const arr = subs.get(p.rkbmd_id) || []
         arr.push(p.sub_kegiatan || '(belum dipilih)')
         subs.set(p.rkbmd_id, arr)
       }
       for (const [id, arr] of subs) { const h = byId.get(id); if (h) h.sub_kegiatan = arr.join('; ') }
-      for (const r of (it.data || []) as { rkbmd_id: string; total_anggaran: number | null }[]) {
+      for (const r of (it.data || []) as {
+        rkbmd_id: string; total_anggaran: number | null; estimasi_hasil: number | null; nilai_perolehan: number | null
+      }[]) {
         const h = byId.get(r.rkbmd_id)
-        if (h) { h.jumlah_item += 1; h.total += r.total_anggaran || 0 }
+        if (h) { h.jumlah_item += 1; h.total += nilaiItemRkbmd(h.jenis, r) }
       }
     }
 
@@ -107,10 +113,10 @@ export default function RkbmdPelaporan() {
       'Jenis RKBMD': JENIS_LABEL[r.jenis] || r.jenis,
       'Versi': r.versi === 'perubahan' ? 'Perubahan' : 'Murni',
       'Status': STATUS_META[r.status].label,
-      'Jumlah Kartu': r.kartu,
       'Sub Kegiatan': r.sub_kegiatan,
       'Jumlah Item': r.jumlah_item,
-      'Total Anggaran': r.total,
+      'Total Nilai': r.total,
+      'Arti Total Nilai': LABEL_NILAI[r.jenis as RkbmdJenis] || '',
     })), `RKBMD-${tahun}`, `RKBMD ${tahun}`)
   }
 
@@ -125,7 +131,9 @@ export default function RkbmdPelaporan() {
       msg=""
       headerRight={
         <div className="text-right">
-          <p className="text-xs text-gray-400">Total Rencana Anggaran</p>
+          <p className="text-xs text-gray-400">
+            {jenis === 'semua' ? 'Total Nilai (gabungan semua jenis)' : LABEL_NILAI[jenis as RkbmdJenis] || 'Total Nilai'}
+          </p>
           <p className="text-lg font-bold text-gray-900">{err ? '—' : formatRupiah(total)}</p>
         </div>
       }
@@ -184,15 +192,26 @@ export default function RkbmdPelaporan() {
       </div>
 
       {!err && perJenis.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-          {perJenis.map(([k, v]) => (
-            <div key={k} className="card p-3">
-              <p className="text-[11px] text-gray-400">{JENIS_LABEL[k] || k}</p>
-              <p className="text-sm font-semibold text-gray-900">{formatRupiah(v.total)}</p>
-              <p className="text-[11px] text-gray-400">{v.n} dokumen</p>
-            </div>
-          ))}
-        </div>
+        <>
+          {jenis === 'semua' && (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-3">
+              &ldquo;Total Nilai&rdquo; berbeda artinya per jenis — Pengadaan &amp; Pemeliharaan itu rencana
+              <em> belanja</em>, Pemanfaatan rencana <em>pendapatan</em>, sedangkan Pemindahtanganan &amp;
+              Penghapusan adalah <em>nilai perolehan</em> barang yang dilepas. Angka gabungan di kanan atas
+              karena itu bukan jumlah yang bisa dibaca sebagai satu makna; pakai rincian per jenis di bawah.
+            </p>
+          )}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            {perJenis.map(([k, v]) => (
+              <div key={k} className="card p-3">
+                <p className="text-[11px] text-gray-400">{JENIS_LABEL[k] || k}</p>
+                <p className="text-sm font-semibold text-gray-900">{formatRupiah(v.total)}</p>
+                <p className="text-[11px] text-gray-400">{v.n} dokumen</p>
+                <p className="text-[10px] text-gray-400 mt-1 leading-tight">{LABEL_NILAI[k as RkbmdJenis] || ''}</p>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="card overflow-x-auto">
@@ -203,20 +222,18 @@ export default function RkbmdPelaporan() {
               <th className="table-th">Jenis</th>
               <th className="table-th">Versi</th>
               <th className="table-th">Status</th>
-              <th className="table-th text-right">Kartu</th>
-              <th className="table-th">Sub Kegiatan</th>
               <th className="table-th text-right">Item</th>
-              <th className="table-th text-right">Total Anggaran</th>
+              <th className="table-th text-right">Total Nilai</th>
               <th className="table-th w-20">Cetak</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+              <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
             ) : err ? (
-              <tr><td colSpan={9} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
+              <tr><td colSpan={7} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={9} className="table-td text-center py-8 text-gray-400">Tidak ada dokumen RKBMD yang cocok dengan filter.</td></tr>
+              <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Tidak ada dokumen RKBMD yang cocok dengan filter.</td></tr>
             ) : rows.map(r => (
               <tr key={r.id}>
                 <td className="table-td text-xs text-gray-800">{r.skpd}</td>
@@ -227,10 +244,9 @@ export default function RkbmdPelaporan() {
                     {STATUS_META[r.status].label}
                   </span>
                 </td>
-                <td className="table-td text-xs text-right">{r.kartu || '—'}</td>
-                <td className="table-td text-xs text-gray-500">{r.sub_kegiatan || '—'}</td>
                 <td className="table-td text-xs text-right">{r.jumlah_item}</td>
-                <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(r.total)}</td>
+                <td className="table-td text-xs text-right whitespace-nowrap"
+                  title={LABEL_NILAI[r.jenis as RkbmdJenis]}>{formatRupiah(r.total)}</td>
                 <td className="table-td whitespace-nowrap">
                   <a href={`/cetak/rkbmd?id=${r.id}`} target="_blank" rel="noopener noreferrer"
                     className="text-teal hover:underline text-xs font-medium" title="Cetak lembar usulan SKPD ini">

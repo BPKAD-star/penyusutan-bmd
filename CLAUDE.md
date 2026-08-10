@@ -957,6 +957,28 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   ⚠️ `estimasi_hasil` sengaja **kolom sendiri, bukan menumpang
   `total_anggaran`**: pemanfaatan itu rencana PENERIMAAN, dan menumpangkannya
   membuat Pelaporan menjumlahkan pemasukan ke dalam "Total Rencana Anggaran".
+- **Pemindahtanganan & Penghapusan boleh memilih BANYAK barang sekaligus**
+  (`AsetMultiPicker`, permintaan user 2026-08-10) — di dua jenis itu satu SKPD
+  biasanya mengusulkan puluhan barang setahun. Aman disatukan karena field
+  selain identitas barang (bentuk / sebab / keterangan) berlaku SAMA untuk semua
+  yang dicentang; Pemeliharaan & Pemanfaatan **tidak** ikut, keduanya punya
+  angka per-barang (biaya, estimasi hasil). Multi-pilih hanya saat MENAMBAH —
+  mengedit tetap satu baris, kalau tidak arti "simpan" jadi ambigu. Semua baris
+  masuk lewat SATU insert supaya tak ada yang tercatat separuh. Centang tetap
+  tersimpan saat kata kunci diganti (pola `draftSeleksi`), dan seluruh pilihan
+  ditampilkan utuh di daftar bawah supaya tak ada yang tersembunyi.
+- **"Total Nilai" artinya BEDA per jenis** — `nilaiItemRkbmd()` + `LABEL_NILAI`
+  di lib/rkbmd.ts, **satu sumber** dipakai menu Pelaporan DAN halaman cetak.
+  Pengadaan & Pemeliharaan = `total_anggaran` (rencana belanja); Pemanfaatan =
+  `estimasi_hasil` (rencana pendapatan); Pemindahtanganan & Penghapusan =
+  `nilai_perolehan` barang yang dilepas. Sebelumnya semuanya dibaca dari
+  `total_anggaran` saja sehingga tiga jenis terakhir **selalu tampil 0**.
+  ⚠️ Angka gabungan saat filter Jenis = "semua" mencampur belanja, pendapatan,
+  dan nilai perolehan — itu **bukan** jumlah yang bisa dibaca sebagai satu
+  makna, dan halamannya wajib mengatakan begitu. Jangan hilangkan peringatannya.
+  Kolom **Kartu & Sub Kegiatan dibuang dari tabel Pelaporan** (permintaan user);
+  Sub Kegiatan tetap ikut ke Excel — di berkas kerja masih berguna, di layar ia
+  cuma melebarkan baris.
 - **Cetak `/cetak/rkbmd`** — dua mode: `?id=<uuid>` (satu dokumen) dan
   `?tahun=&jenis=[&versi=]` (**se-Kabupaten**, satu lembar per SKPD dgn
   page-break). Cetak se-kabupaten hanya aktif kalau jenisnya tunggal — susunan

@@ -19,7 +19,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
-import { RKBMD_JENIS, type RkbmdPaket } from '@/lib/rkbmd'
+import { RKBMD_JENIS, nilaiItemRkbmd, type RkbmdPaket } from '@/lib/rkbmd'
 
 const KABUPATEN = 'Kediri'
 const JENIS_LABEL: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j => [j.key, j.label]))
@@ -84,14 +84,6 @@ const KOLOM_IDENTITAS = 5
 function posisiJumlah(ekstra: KolomEkstra[]): number {
   const i = ekstra.findIndex(k => k.jumlahkan)
   return i === -1 ? KOLOM_IDENTITAS : KOLOM_IDENTITAS + i + 1
-}
-
-/** Kolom mana yang dijumlahkan di baris JUMLAH (per jenis). */
-function nilaiTotal(jenis: string, r: Item): number {
-  if (jenis === 'pengadaan') return r.total_anggaran || 0
-  if (jenis === 'pemeliharaan') return r.total_anggaran || 0
-  if (jenis === 'pemanfaatan') return r.estimasi_hasil || 0
-  return r.nilai_perolehan || 0
 }
 
 function akarSkpd(id: number, byId: Map<number, SkpdRow>): SkpdRow | undefined {
@@ -253,7 +245,9 @@ function LembarUsulan({ l, uraianByKode }: { l: Lembar; uraianByKode: Map<string
   const { dok, skpd, penanda, pakets, items } = l
   const pengadaan = dok.jenis === 'pengadaan'
   const ekstra = EKSTRA[dok.jenis] || []
-  const total = items.reduce((s, r) => s + nilaiTotal(dok.jenis, r), 0)
+  // Rumus "total nilai" per jenis dipakai bersama menu Pelaporan — satu sumber
+  // di lib/rkbmd.ts, jangan disalin ke sini.
+  const total = items.reduce((s, r) => s + nilaiItemRkbmd(dok.jenis, r), 0)
   const pohon = pengadaan ? susunPohon(pakets, items) : []
 
   // Lebar tabel: 5 kolom identitas + kolom per jenis + Keterangan.
