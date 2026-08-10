@@ -233,22 +233,11 @@ export default function LaporanBmdPage() {
   // konstruksi yang dibuka kunci membalik SEMUA terminnya, jadi tak boleh
   // dihitung sbg Penambahan.)
 
-  // trx_id reklas yang DIBATALKAN (batal_reklas.payload.target_trx_id) — supaya
-  // reklas_golongan yg sudah dibatalkan TIDAK ikut kehitung sbg mutasi hantu.
-  async function fetchReklasDibatalkan(): Promise<Set<number>> {
-    const out = new Set<number>()
-    for (let from = 0; ; from += 1000) {
-      const data = assertOk(await supabase.from('transaksi_bmd')
-        .select('payload').eq('jenis', 'batal_reklas' as never).range(from, from + 999),
-        'transaksi batal_reklas')
-      if (!data || data.length === 0) break
-      for (const r of data as { payload: { target_trx_id?: number } | null }[]) {
-        const t = Number(r.payload?.target_trx_id); if (Number.isFinite(t)) out.add(t)
-      }
-      if (data.length < 1000) break
-    }
-    return out
-  }
+  // (`fetchReklasDibatalkan` lokal DIHAPUS 2026-08-10 — ia menyapu SELURUH
+  // ledger `batal_reklas` sepanjang masa padahal yang ditanya cuma segelintir
+  // aset di satu periode. Diganti `fetchBatalTargets(supabase, ['batal_reklas'],
+  // asetIds)` dari lib/voidedAset.ts: fungsinya identik, tapi TERSCOPE dan
+  // sekaligus menghapus salinan implementasi kedua.)
 
   // aset_id yang NET-terhapus (penghapusan_* belum dibatalkan). batal_penghapusan
   // dicatat per-aset (bukan target_trx_id) & di-backdate ke periode penghapusan
@@ -259,22 +248,26 @@ export default function LaporanBmdPage() {
   // supaya hapus→batal netto nol & Model 3 rekonsiliasi). Tanpa ini, penghapusan
   // yg sudah dibatalkan tetap nyantol sbg Pengurangan hantu (SaldoAwal=SaldoAkhir
   // tapi Pengurangan≠0).
-  async function fetchPenghapusanNetRemoved(): Promise<Set<string>> {
+  // ⚠️ TERSCOPE ke `asetIds` (rules.md §3.4). Versi lama menyapu SELURUH
+  // riwayat penghapusan sepanjang masa lalu dipaginasi dengan `.range()` —
+  // padahal yang ditanya cuma status belasan aset di SATU periode. Itu yang
+  // bikin Model 3 timeout (INS-21); biayanya tumbuh mengikuti ledger, jadi
+  // index pun cuma menggeser ambangnya.
+  async function fetchPenghapusanNetRemoved(asetIds: string[]): Promise<Set<string>> {
     const latest = new Map<string, { periode: string; id: number; removed: boolean }>()
-    for (let from = 0; ; from += 1000) {
+    const uniq = [...new Set(asetIds)]
+    for (let i = 0; i < uniq.length; i += 200) {
       const data = assertOk(await supabase.from('transaksi_bmd')
         .select('id,aset_id,periode,jenis')
         .in('jenis', [...JENIS_PENGHAPUSAN_M3, 'batal_penghapusan'] as never)
-        .range(from, from + 999),
+        .in('aset_id', uniq.slice(i, i + 200)),
         'riwayat penghapusan')
-      if (!data || data.length === 0) break
-      for (const r of data as { id: number; aset_id: string; periode: string; jenis: string }[]) {
+      for (const r of (data || []) as { id: number; aset_id: string; periode: string; jenis: string }[]) {
         // periode 'YYYY-SN' urut secara leksikal (S1<S2, 2026<2027).
         const cur = latest.get(r.aset_id)
         const menang = !cur || r.periode > cur.periode || (r.periode === cur.periode && r.id > cur.id)
         if (menang) latest.set(r.aset_id, { periode: r.periode, id: r.id, removed: r.jenis !== 'batal_penghapusan' })
       }
-      if (data.length < 1000) break
     }
     const out = new Set<string>()
     for (const [asetId, s] of latest) if (s.removed) out.add(asetId)
@@ -287,24 +280,56 @@ export default function LaporanBmdPage() {
     const inScope = (skpdId: number | null) => skpdId != null && (org.descendantIds === null || org.descendantIds.includes(skpdId))
     const lolosKomptabel = (ie: string | null) => !komptabel || ie === komptabel
 
-    // fetchVoidedAsetIds MELEMPAR sejak 2026-07-28 (dulu errornya ditelan &
-    // set void jadi kosong → barang yang dianulir ikut terhitung sbg mutasi).
-    // Model 3 lebih baik menolak tampil daripada menyajikan angka yang salah.
-    const hasil = await Promise.all([
+    const gagal = (e: Error) => {
+      setMutErr(`Gagal menyusun mutasi: ${e.message}. Angka tidak ditampilkan supaya tak ada yang terbaca sebagai sah padahal datanya tak lengkap.`)
+      return null
+    }
+
+    // ── DUA TAHAP, sengaja (rules.md §3.4; pola yang sama dgn computeMutasiLines
+    // di lib/rekon.ts). TAHAP 1 menarik baris ledger PERIODE INI; TAHAP 2 baru
+    // menanyakan status void/batal/net-hapus — dan HANYA untuk aset yang muncul
+    // di tahap 1.
+    //
+    // Versi lama menanyakan keduanya sekaligus, dengan kolektor tahap 2 yang
+    // menyapu SELURUH ledger tanpa scope. Itu yang bikin Model 3 timeout
+    // (INS-21: "gagal membaca transaksi pembatalan
+    // (batal_koreksi_pencatatan_ganda)"), dan biayanya tumbuh terus mengikuti
+    // ledger — bukan mengikuti banyaknya mutasi yang sedang dilaporkan.
+    //
+    // fetchVoidedAsetIds & fetchBatalTargets MELEMPAR sejak 2026-07-28 (dulu
+    // errornya ditelan & set void jadi kosong → barang yang dianulir ikut
+    // terhitung). Model 3 lebih baik menolak tampil daripada salah angka.
+    const tahap1 = await Promise.all([
       snapshotPerolehan(periodeSebelumnya),
       snapshotPerolehan(periode),
       fetchSkpdMapM3(),
-      fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp']),
-      fetchReklasDibatalkan(),
-      fetchPenghapusanNetRemoved(),
-      // Pengalihan yang DIBATALKAN — ikut jalur fail-closed yang sama: kalau
-      // querynya gagal, Model 3 menolak tampil daripada mencatat perpindahan
-      // yang sudah dianulir sebagai mutasi masuk/keluar.
-      fetchBatalTargets(supabase, BATAL_TARGET_JENIS.pengalihan),
-    ]).catch((e: Error) => { setMutErr(`Gagal menyusun mutasi: ${e.message}. Angka tidak ditampilkan supaya tak ada yang terbaca sebagai sah padahal datanya tak lengkap.`); return null })
-    if (!hasil) { setLoading(false); return }
-    const [saldoAwal, saldoAkhir, skpdMap, voided, reklasDibatalkan, penghapusanNetRemoved,
-           pengalihanDibatalkan] = hasil
+      fetchLedgerM3(JENIS_CARA_PEROLEHAN),
+      fetchLedgerM3(JENIS_KDP_M3),
+      fetchLedgerM3(JENIS_PENGHAPUSAN_M3),
+      fetchLedgerM3(JENIS_PECAH_M3),
+      fetchLedgerM3(['pengalihan_status']),
+      fetchLedgerM3(['reklas_golongan']),
+    ]).catch(gagal)
+    if (!tahap1) { setLoading(false); return }
+    const [saldoAwal, saldoAkhir, skpdMap,
+           rowsCara, rowsKdp, rowsHapus, pecahRows, rowsAlih, rowsReklas] = tahap1
+
+    const tahap2 = await Promise.all([
+      // KDP: kontrak yang dibuka kunci membalik SEMUA terminnya, jadi asetnya
+      // tak boleh dihitung sbg Penambahan.
+      fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'],
+        [...rowsCara, ...rowsKdp].map(r => r.aset_id)),
+      // Pengalihan yang DIBATALKAN — kalau tidak disaring, perpindahan yang
+      // sudah dianulir tetap muncul sbg mutasi masuk/keluar dan angkanya beda
+      // dgn Daftar Barang & Rekonsiliasi.
+      fetchBatalTargets(supabase, BATAL_TARGET_JENIS.pengalihan, rowsAlih.map(r => r.aset_id)),
+      // Menggantikan fetchReklasDibatalkan lokal yang sudah dihapus.
+      fetchBatalTargets(supabase, BATAL_TARGET_JENIS.reklasifikasi, rowsReklas.map(r => r.aset_id)),
+      fetchPenghapusanNetRemoved(rowsHapus.map(r => r.aset_id)),
+      fetchPemecahanBatal(supabase, pecahRows.map(r => r.aset_id)),
+    ]).catch(gagal)
+    if (!tahap2) { setLoading(false); return }
+    const [voided, pengalihanDibatalkan, reklasDibatalkan, penghapusanNetRemoved, pecahBatal] = tahap2
 
     const tambah: Record<string, number> = {}
     const kurang: Record<string, number> = {}
@@ -317,7 +342,7 @@ export default function LaporanBmdPage() {
 
     // Cara Perolehan → Penambahan (kecuali yang belakangan di-batal/koreksi —
     // itu dianggap tidak pernah ada; daftar jenisnya di lib/voidedAset.ts)
-    for (const r of await fetchLedgerM3(JENIS_CARA_PEROLEHAN)) {
+    for (const r of rowsCara) {
       if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       addLine(tambah, 'tambah', kodeLevel3(r.aset.kode), {
         kategori: 'Cara Perolehan', tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
@@ -329,7 +354,7 @@ export default function LaporanBmdPage() {
     // dari Cara Perolehan di rincian; nilai = nominal termin pada periode ini.
     // Kontrak yang dibuka kunci sudah tersaring lewat `voided`
     // (batal_akumulasi_kdp) — lihat pemanggilan fetchVoidedAsetIds di atas.
-    for (const r of await fetchLedgerM3(JENIS_KDP_M3)) {
+    for (const r of rowsKdp) {
       if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       addLine(tambah, 'tambah', kodeLevel3(r.aset.kode), {
         kategori: 'Konstruksi Dalam Pengerjaan (termin)', tanggal: r.tanggal,
@@ -342,7 +367,7 @@ export default function LaporanBmdPage() {
     // dihitung; dedup per aset supaya siklus hapus→batal→hapus (>1 event
     // penghapusan seperiode) tak dobel-hitung nilainya.
     const hapusSeen = new Set<string>()
-    for (const r of await fetchLedgerM3(JENIS_PENGHAPUSAN_M3)) {
+    for (const r of rowsHapus) {
       if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       if (!penghapusanNetRemoved.has(r.aset_id) || hapusSeen.has(r.aset_id)) continue
       hapusSeen.add(r.aset_id)
@@ -357,8 +382,6 @@ export default function LaporanBmdPage() {
     // golongan × komptabel ini mutasi sungguhan, bukan net-nol yang bisa
     // diabaikan. Pembatalan disaring per (kartu, aset) — satu induk boleh
     // dipecah, dibatalkan, lalu dipecah lagi.
-    const pecahRows = await fetchLedgerM3(JENIS_PECAH_M3)
-    const pecahBatal = await fetchPemecahanBatal(supabase, pecahRows.map(r => r.aset_id))
     for (const r of pecahRows) {
       if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       if (pecahBatal.has(kunciPemecahan(r.header_id, r.aset_id))) continue
@@ -372,7 +395,7 @@ export default function LaporanBmdPage() {
 
     // Pengalihan Status: masuk ke Penambahan (tujuan in-scope, asal tidak) /
     // Pengurangan (asal in-scope, tujuan tidak) — netral kalau scope "Semua".
-    for (const r of await fetchLedgerM3(['pengalihan_status'])) {
+    for (const r of rowsAlih) {
       if (!r.aset || !lolosKomptabel(r.aset.intra_ekstra)) continue
       // Sudah dibatalkan → perpindahannya dianggap tak pernah terjadi, jadi
       // tak boleh muncul sbg Pengalihan Masuk/Keluar. Tanpa baris ini angka
@@ -391,7 +414,7 @@ export default function LaporanBmdPage() {
 
     // Reklasifikasi Perubahan Fungsi BMD: golongan ASAL (payload.kode_lama)
     // → Pengurangan, golongan TUJUAN (payload.kode_baru) → Penambahan.
-    for (const r of await fetchLedgerM3(['reklas_golongan'])) {
+    for (const r of rowsReklas) {
       if (!r.aset || reklasDibatalkan.has(r.id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       const kodeLama = typeof r.payload?.kode_lama === 'string' ? r.payload.kode_lama : null
       const kodeBaru = typeof r.payload?.kode_baru === 'string' ? r.payload.kode_baru : null
