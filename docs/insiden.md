@@ -50,8 +50,9 @@
 | [INS-17](#ins-17) | 2026-08-03 → 2026-08-05 | **Tidak ada** — bom waktu yang belum meledak (0 baris di produksi) | ✅ [`penyusutan.test.ts`](../lib/engine/penyusutan.test.ts) · [`bmd.test.ts`](../lib/bmd.test.ts) |
 | [INS-18](#ins-18) | 2026-08-05 | Nilai barang **dobel** saat membuka periode lampau | ✅ [`visibilitas.test.ts`](../lib/visibilitas.test.ts) · [`rekon.test.ts`](../lib/rekon.test.ts) |
 | [INS-19](#ins-19) | 2026-07-08 → 2026-08-06 | Nama SKPD tampil **"SKPD #12"**, dan admin pemda **kehilangan tombol Unggah** di Dokumen Sumber | ✅ [`sinkronisasi.test.ts`](../lib/sinkronisasi.test.ts) |
+| [INS-20](#ins-20) | 2024 → ditemukan 2026-08-06 | **±200 barang dobel** masih tampil di Daftar Barang Awal, dan **Edit Spesifikasi tidak tersambung** untuk ±300 barang | ⬜ butuh integrasi DB |
 
-**Skornya hari ini: 5 dari 19 punya penjaga otomatis, dua di antaranya
+**Skornya hari ini: 5 dari 20 punya penjaga otomatis, dua di antaranya
 sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
 
 ---
@@ -437,11 +438,64 @@ sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
   `shared/types/database.types.ts`. Diverifikasi dengan **uji mutasi** —
   mengembalikan `admin_skpd` jadi `skpd` memerahkan tepat satu test.
 
+### INS-20
+**±200 barang dobel masih tampil di Daftar Barang Awal, dan Edit Spesifikasi tidak tersambung**
+
+- **Tanggal** — sebab-sebabnya berlangsung sejak **2024** (koreksi pencatatan
+  ganda paling awal 23 April 2024); **ditemukan 2026-08-06** saat mencocokkan
+  total antar-laporan sesudah tiga pemecahan. Belum diperbaiki.
+- **Gejala** — dua-duanya senyap, tak ada pesan error:
+  1. **Daftar Barang Awal** menampilkan ±200 barang yang di register sudah
+     dikoreksi sebagai **pencatatan ganda** — jadi terlihat dobel.
+  2. **Edit Spesifikasi** di halaman itu menulis ke snapshot **dan** ke
+     register, dicocokkan lewat **NIBAR**. Untuk ±300 barang yang NIBAR-nya tak
+     berpasangan, hanya **salah satu tabel** yang ter-update; perubahannya tidak
+     sampai ke register, dan operator tidak diberi tahu apa pun.
+- **Akar** — `aset_awal_2026` adalah **foto beku** yang memang tidak pernah
+  disentuh transaksi (rules.md §1.5). Register sesudah itu dibersihkan:
+  **200 aset** dihapus lewat `koreksi_pencatatan_ganda` (bertanggal mundur
+  1928–2025, memang begitu desainnya supaya barangnya hilang dari SEMUA
+  periode). Snapshot tak bisa dan tak boleh ikut berubah — jadi ia tetap
+  memegang barisnya. **Ini konsekuensi definisi, bukan kode yang rusak.**
+
+  Terpisah dari itu, **NIBAR kedua tabel berbeda untuk ratusan barang yang
+  sama**. Diverifikasi dengan mencocokkan SKPD + kode barang + nilai perolehan +
+  nama barang (`tgl_perolehan` sama persis di semuanya):
+
+  | | Jumlah |
+  |---|---:|
+  | Hanya nomor **urut** berbeda — prefiks 38 digit identik | 33 |
+  | Segmen **kode barang / SKPD / tahun** yang berbeda | 73 |
+  | Benar-benar tanpa padanan apa pun | **1** |
+
+  Yang 33: barang dientri **dua kali**, nomor urut bergeser (sampel 40 prefiks —
+  **37 punya lebih banyak baris di register**, nol sebaliknya). Yang 73: kedua
+  tabel membeku pada nilai atribut yang **berbeda**, jadi NIBAR-nya lahir dari
+  masukan yang tidak sama.
+- **Skala** — dari **309** NIBAR snapshot yang tak berpasangan: 200 terhapus
+  via koreksi pencatatan ganda, 2 induk pemecahan 2026, **106 barang sama
+  ber-NIBAR beda**, dan **1** benar-benar yatim (BANGUNAN GEDUNG KANTOR
+  PERMANEN, UPTD Pusat Pelatihan SDM dan Kesehatan, **Rp68.220.000**, NIBAR-nya
+  bahkan menyebut `02`/ekstra padahal kolomnya `intra`).
+
+  ⚠️ **Rp157,1 miliar yang tak berpasangan itu BUKAN uang hilang** — barangnya
+  ada dan ikut terhitung di register; yang tidak ada cuma tautan NIBAR-nya.
+  Yang benar-benar tak tertelusuri hanya **Rp68.220.000**.
+- **Yang TIDAK terdampak** — angka penyusutan, sama sekali. Engine tak pernah
+  membaca `aset_awal_2026` (ia replay dari ledger). Total nilai kedua sisi juga
+  cocok sampai sen: **Rp8.933.341.830.907,60**.
+- **Perbaikan** — ⬜ **belum**, dan sengaja: membetulkan snapshot berarti
+  menyentuh baseline beku, yang butuh keputusan user lebih dulu. Dua arah yang
+  mungkin: (a) susun peta NIBAR lama↔baru lalu perbaiki `aset_awal_2026` lewat
+  migrasi; (b) biarkan snapshot apa adanya tapi buat pencocokannya tidak lagi
+  bergantung NIBAR tunggal.
+- **Test** — ⬜ butuh integrasi DB (perbandingan dua tabel besar).
+
 ---
 
 ## Pola yang berulang
 
-Sembilan belas entri di atas bukan sembilan belas masalah berbeda. Kalau
+Dua puluh entri di atas bukan dua puluh masalah berbeda. Kalau
 diurutkan menurut **akar**-nya, sebagian besar jatuh ke empat keluarga — dan
 keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 
@@ -451,6 +505,7 @@ keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 | **Operator non-*leakproof* di bawah RLS** (`LIKE`, lalu ENUM) | INS-02 · INS-03 · INS-05 · INS-11 · INS-12 | sebagian: partial index + `ANALYZE` jadi kebiasaan; verifikasinya belum jadi test |
 | **Konstanta kembar dijaga ingatan** | INS-15 · INS-17 · INS-18 | sebagian: `lib/sinkronisasi.test.ts` |
 | **Penyapuan rename yang tidak tuntas** | INS-19 | ✅ `lib/sinkronisasi.test.ts` — nama tabel dicocokkan ke tipe generated |
+| **Foto beku vs data hidup** — snapshot yang benar hari lahirnya lalu ditinggal kenyataan | INS-20 | ⬜ belum; butuh keputusan apakah baseline boleh diperbaiki |
 | **Prosedur migrasi** | INS-13 · INS-14 | [runbook-migrasi.md](runbook-migrasi.md) |
 
 Dua pengamatan yang berlaku untuk hampir semuanya:
