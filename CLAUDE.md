@@ -870,6 +870,72 @@ Penanggung Jawab Ruangan) → centang barang → cetak KIR.
   SEBELUM deploy kode** — halaman KIR langsung query tabel yang belum ada. Tak
   ada perubahan enum, jadi menu lain tak terdampak.
 
+## RKBMD — sub-menu + Standar Harga sbg BAK BERSAMA (migrasi 20260810_01)
+
+Menu RKBMD dipecah jadi empat (keputusan user 2026-08-10): **Standar Harga**
+(SSH · SBSK · ASB · SBU · HSPK) · **Usulan RKBMD** · **Validasi** · **Pelaporan**.
+SSH & SBSK **PINDAH dari menu Admin** ke RKBMD → Standar Harga; rute lamanya
+(`/dashboard/admin/rkbmd-ssh`, `-sbsk`) dibiarkan hidup sebagai `redirect()`,
+bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
+
+- **SATU tabel `rkbmd_standar` untuk EMPAT standar** (discriminator `jenis` ∈
+  ssh/hspk/asb/sbu), bukan empat tabel kembar — keempatnya berbentuk sama
+  (tahun · nama · satuan · harga · rekening · keterangan) dan aturan dedupnya
+  sama. Bedanya cuma dua, ditegakkan CHECK: `ssh`/`hspk` WAJIB ber-`kode`
+  (kode barang BMD) & boleh ber-TKDN; `asb`/`sbu` **HARUS `kode` NULL** — ASB
+  (belanja kegiatan) & SBU (honorarium, perjalanan dinas) bukan barang.
+  Halamannya juga satu komponen (`StandarHargaWorkspace`) + config
+  `STANDAR_CONFIG` di lib/rkbmdStandar.ts. **SBSK sengaja TIDAK ikut**: bentuknya
+  beda sendiri (`kuantitas_standar` + `satuan_pengukur`, bukan harga), tabel
+  `rkbmd_sbsk` tetap terpisah & tetap admin-only. Yang pindah cuma menunya.
+- **BAK BERSAMA lintas SKPD.** Satu barang cukup diinput SEKALI se-kabupaten.
+  Identitas dedup = `jenis|tahun|kode|nama|satuan|harga`, disimpan sbg
+  **generated column `identitas`** + UNIQUE index — penegaknya DB, bukan
+  kesopanan pemanggil, jadi dua operator yang menyimpan bersamaan tetap tak bisa
+  melahirkan baris kembar. `lower(btrim(...))` supaya beda spasi/huruf besar
+  bukan barang berbeda; `round(harga,2)::text` supaya numeric `1000` dan
+  `1000.00` tidak jadi dua baris.
+- **Kode rekening = tabel anak `rkbmd_standar_rekening`, boleh banyak.** Inilah
+  yang membuat "SKPD B pakai rekening lain" tidak melahirkan barang kedua:
+  rekeningnya menempel di anak, barangnya tetap satu. ⚠️ **SENGAJA TANPA BATAS
+  5** — form menyediakan 5 slot (permintaan user), tapi tabelnya tidak dibatasi;
+  batas keras akan mematahkan janji penggabungan begitu SKPD ke-6 datang. Modal
+  edit menampilkan `max(5, jumlah rekening yang ada)` slot supaya menyimpan tak
+  diam-diam MEMBUANG rekening SKPD lain.
+- **RPC `fn_rkbmd_standar_simpan` (SECURITY DEFINER)** yang melakukan dedup +
+  penggabungan; DEFINER karena harus menambah rekening ke baris milik SKPD lain
+  & membaca nama SKPD pemilik untuk pesan. Mengembalikan jsonb
+  `{status:'baru'|'sudah_ada', rekening_baru, pemilik_skpd}` supaya UI bisa
+  berkata jujur: "sudah ada (diinput Dinas X) — 1 kode rekening Anda
+  digabungkan". ⚠️ Rumus identitas di dalam RPC **KEMBAR** dengan generated
+  column-nya; kalau salah satu diubah, ubah dua-duanya — kalau tidak, RPC
+  mengira barangnya baru lalu ditolak UNIQUE dengan pesan mentah.
+- **Hak akses (keputusan user 2026-08-10):** semua SKPD boleh MENAMBAH;
+  ubah/hapus hanya SKPD pembuat + admin (`fn_skpd_visible(skpd_id)`). Mencabut
+  kode rekening: penyumbangnya, pemilik barangnya, atau admin — tanpa syarat itu
+  satu SKPD bisa mencabut rekening yang sedang dipakai SKPD lain di RKBMD-nya.
+  Semua fn di policy dibungkus InitPlan `(SELECT fn_...())`.
+- **RKBMD Pengadaan kini BERSANDAR KE SSH.** Barang dipilih dari SSH TA itu —
+  di luar SSH tidak bisa. **Harga tidak bisa diketik di form item** (dulu bisa
+  di-override diam-diam per dokumen): kalau harganya keliru, yang diperbaiki
+  SSH-nya supaya seluruh SKPD ikut terkoreksi. Kalau barangnya punya beberapa
+  rekening, operator memilih SATU (`rkbmd_item.kode_rekening`) supaya anggaran
+  bisa dijumlahkan per kode rekening; satu rekening → terisi otomatis.
+  `jumlah_standar` (SBSK) & `jumlah_eksisting` tetap disimpan sbg angka rujukan
+  read-only — sudah dipakai kolom laporan & dibekukan supaya angka telaah tak
+  bergerak saat aset berpindah.
+- **`admin_program` TIDAK diubah** — ia sudah lama memuat `kode_sub_kegiatan`/
+  `uraian_sub_kegiatan` (1.527 baris terisi penuh) dan `ProgramPicker` sudah
+  men-cascade Program → Kegiatan → Sub Kegiatan. Yang hilang cuma tempat
+  menyimpannya di dokumen: `rkbmd.sub_kegiatan` (kolom baru). Itu sebabnya form
+  lama memakai input teks bebas dan sub kegiatan tak pernah muncul. Sekarang
+  ketiganya DIPILIH dari master, tersusun ke bawah (uraiannya panjang).
+- ⚠️ **Deploy-ordering: migrasi 20260810_01 WAJIB jalan SEBELUM deploy kode** —
+  halaman baru langsung query `rkbmd_standar` & RPC yang belum ada. Sebaliknya
+  `DROP TABLE rkbmd_ssh` di akhir migrasi membuat halaman Admin → SSH versi LAMA
+  error selama jendela antara migrasi & deploy; itu diterima karena tabelnya
+  terbukti KOSONG (0 baris, dicek 2026-08-10) dan halamannya memang diganti.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang

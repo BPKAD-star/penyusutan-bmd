@@ -126,7 +126,7 @@ Ringkas saja di sini — rinciannya beserta sejarah insidennya di
 
 ### 1. Supabase — jalankan migrasi di SQL Editor
 
-Migrasi ada di [`supabase/migrations/`](supabase/migrations/) (**143 berkas**),
+Migrasi ada di [`supabase/migrations/`](supabase/migrations/) (**144 berkas**),
 dijalankan **manual dan berurutan sesuai nama berkas**. `profiles.sql`
 dijalankan lebih dulu bila belum ada.
 
@@ -188,6 +188,12 @@ terukur dan sengaja tidak memerahkan CI — alasan per aturan ada di
 Ruang lingkup lengkap di [PRD.md](PRD.md); rincian & alasan desain per fitur di
 [CLAUDE.md](CLAUDE.md).
 
+- **RKBMD** — perencanaan kebutuhan T+1: **Standar Harga** (SSH · SBSK · ASB ·
+  SBU · HSPK), **Usulan** per SKPD, **Validasi** (antrean telaah admin), dan
+  **Pelaporan**. SSH/HSPK/ASB/SBU adalah **bak bersama lintas SKPD** — satu
+  barang cukup diinput sekali se-kabupaten; bila SKPD lain memakai kode rekening
+  berbeda, rekeningnya digabung ke barang yang sama, bukan jadi baris baru.
+  RKBMD Pengadaan hanya boleh memakai barang yang sudah ada di SSH.
 - **Pembukuan → Cara Perolehan** — pengadaan, hibah masuk, tukar menukar, hasil
   inventarisasi, perolehan lainnya. Pola **draft → approve**: barang ditampung
   sebagai `draft_items` di `jurnal_header`, baru masuk ledger saat disetujui.

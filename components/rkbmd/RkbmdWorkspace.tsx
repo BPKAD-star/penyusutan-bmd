@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import ProgramPicker from '@/components/ProgramPicker'
 import RkbmdPengadaanForm from '@/components/rkbmd/RkbmdPengadaanForm'
 import RkbmdAsetForm from '@/components/rkbmd/RkbmdAsetForm'
 import { formatRupiah } from '@/lib/export'
@@ -17,7 +18,7 @@ import {
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
 const HEADER_COLS =
-  'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,program,kegiatan,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at'
+  'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,program,kegiatan,sub_kegiatan,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at'
 
 export default function RkbmdWorkspace() {
   const supabase = createClient()
@@ -207,9 +208,12 @@ function DokumenPanel({
   const supabase = createClient()
   const [program, setProgram] = useState(header.program || '')
   const [kegiatan, setKegiatan] = useState(header.kegiatan || '')
+  const [subKeg, setSubKeg] = useState(header.sub_kegiatan || '')
   const [showForm, setShowForm] = useState(false)
   const [editItem, setEditItem] = useState<RkbmdItem | null>(null)
-  useEffect(() => { setProgram(header.program || ''); setKegiatan(header.kegiatan || '') }, [header.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setProgram(header.program || ''); setKegiatan(header.kegiatan || ''); setSubKeg(header.sub_kegiatan || '')
+  }, [header.id]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setShowForm(false); setEditItem(null) }, [header.id])
 
   const canAddItem = canEditContent // semua jenis sudah didukung
@@ -265,27 +269,39 @@ function DokumenPanel({
         </div>
       )}
 
-      {/* Program/kegiatan — khusus Pengadaan (Pasal 28 ayat 4) */}
+      {/* Program / Kegiatan / Sub Kegiatan — khusus Pengadaan (Pasal 28 ayat 4).
+          Sejak 2026-08-10 DIPILIH dari master `admin_program` lewat ProgramPicker,
+          bukan diketik bebas: nomenklatur Kepmendagri 050 harus persis supaya
+          RKBMD bisa disandingkan dengan dokumen anggaran. Sub kegiatan ikut —
+          kolomnya baru ada di `rkbmd` sejak migrasi 20260810_01. Tersusun ke
+          BAWAH (bukan dua kolom) karena uraiannya panjang-panjang. */}
       {header.jenis === 'pengadaan' && (
-        <div className="card p-4 grid grid-cols-2 gap-3 max-w-2xl">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Program</label>
-            <input className="select-filter w-full" value={program} disabled={!canEditContent}
-              onChange={e => setProgram(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Kegiatan</label>
-            <input className="select-filter w-full" value={kegiatan} disabled={!canEditContent}
-              onChange={e => setKegiatan(e.target.value)} />
-          </div>
-          {canEditContent && (
-            <div className="col-span-2">
+        <div className="card p-4 max-w-3xl space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Program / Kegiatan / Sub Kegiatan</h3>
+          {canEditContent ? (
+            <>
+              <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg}
+                onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
               <button className="text-sm text-teal hover:underline" disabled={busy}
-                onClick={() => onSaveHeader({ program: program || null, kegiatan: kegiatan || null }, 'Program/kegiatan disimpan.')}>
+                onClick={() => onSaveHeader(
+                  { program: program || null, kegiatan: kegiatan || null, sub_kegiatan: subKeg || null },
+                  'Program / kegiatan / sub kegiatan disimpan.')}>
                 Simpan program/kegiatan
               </button>
+            </>
+          ) : (
+            <div className="space-y-1 text-xs">
+              <p><span className="text-gray-400">Program</span> : <span className="text-gray-700">{header.program || '—'}</span></p>
+              <p><span className="text-gray-400">Kegiatan</span> : <span className="text-gray-700">{header.kegiatan || '—'}</span></p>
+              <p><span className="text-gray-400">Sub Kegiatan</span> : <span className="text-gray-700">{header.sub_kegiatan || '—'}</span></p>
             </div>
           )}
+          {/* Total anggaran seluruh item dokumen ini = total untuk satu sub
+              kegiatan, karena 1 dokumen RKBMD = 1 sub kegiatan. */}
+          <div className="rounded-lg bg-teal/5 border border-teal/20 px-4 py-2.5 flex items-center justify-between">
+            <span className="text-xs text-gray-600">Total anggaran program ini ({items.length} item)</span>
+            <span className="text-base font-semibold text-gray-900">{formatRupiah(total)}</span>
+          </div>
         </div>
       )}
 

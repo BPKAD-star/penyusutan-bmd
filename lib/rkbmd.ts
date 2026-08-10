@@ -35,6 +35,10 @@ export type RkbmdHeader = {
   parent_id: string | null
   program: string | null
   kegiatan: string | null
+  // Ditambah migrasi 20260810_01. `admin_program` sudah lama memuat sub
+  // kegiatan & ProgramPicker sudah men-cascade-nya — yang belum ada cuma
+  // tempat menyimpannya di dokumen RKBMD, jadi form lama memakai teks bebas.
+  sub_kegiatan: string | null
   keterangan: string | null
   status: RkbmdStatus
   catatan_telaah: string | null
@@ -47,6 +51,12 @@ export type RkbmdItem = {
   id: string
   rkbmd_id: string
   no_urut: number | null
+  // Barang SSH yang jadi dasar item ini (migrasi 20260810_01). RKBMD Pengadaan
+  // hanya boleh memakai barang yang terdaftar di SSH; ON DELETE SET NULL supaya
+  // baris SSH boleh dihapus tanpa merusak dokumen yang sudah disusun.
+  standar_id: number | null
+  /** SATU kode rekening yang dipilih dari daftar rekening barang SSH itu. */
+  kode_rekening: string | null
   kode: string | null
   nama_barang: string | null
   spesifikasi: string | null

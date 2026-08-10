@@ -28,7 +28,25 @@ const ICON = {
 
 const navTree: NavNode[] = [
   { type: 'leaf', href: '/dashboard', label: 'Dashboard' },
-  { type: 'leaf', href: '/dashboard/rkbmd', label: 'RKBMD' },
+  {
+    // RKBMD jadi grup 2026-08-10. Standar Harga PINDAH ke sini dari menu Admin
+    // (SSH & SBSK) — bukan lagi urusan admin saja, karena SSH kini bak bersama
+    // yang diisi seluruh SKPD. Rute lamanya tetap hidup sebagai pengalih.
+    type: 'group', label: 'RKBMD', icon: ICON.pelaporan, children: [
+      {
+        type: 'group', label: 'Standar Harga', children: [
+          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/ssh', label: 'SSH' },
+          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/sbsk', label: 'Standar Kebutuhan (SBSK)' },
+          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/asb', label: 'ASB' },
+          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/sbu', label: 'SBU' },
+          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/hspk', label: 'HSPK' },
+        ],
+      },
+      { type: 'leaf', href: '/dashboard/rkbmd/usulan', label: 'Usulan RKBMD' },
+      { type: 'leaf', href: '/dashboard/rkbmd/validasi', label: 'Validasi' },
+      { type: 'leaf', href: '/dashboard/rkbmd/pelaporan', label: 'Pelaporan' },
+    ],
+  },
   {
     type: 'group', label: 'Saldo Awal', icon: ICON.saldo, children: [
       { type: 'leaf', href: '/dashboard/saldo-awal/rekapitulasi', label: 'Rekapitulasi' },
@@ -140,8 +158,7 @@ const adminGroup: NavNode = {
     { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
     { type: 'leaf', href: '/dashboard/admin/kodefikasi', label: 'Kodefikasi BMD' },
     { type: 'leaf', href: '/dashboard/admin/overhaul', label: 'Overhaul Band' },
-    { type: 'leaf', href: '/dashboard/admin/rkbmd-ssh', label: 'Standar Harga (SSH)' },
-    { type: 'leaf', href: '/dashboard/admin/rkbmd-sbsk', label: 'Standar Kebutuhan (SBSK)' },
+    // SSH & SBSK pindah ke RKBMD > Standar Harga (2026-08-10).
     { type: 'leaf', href: '/dashboard/dokumen-sumber', label: 'Dokumen Sumber' },
     { type: 'leaf', href: '/dashboard/admin/tutup-tahun', label: 'Tutup Tahun' },
     { type: 'leaf', href: '/dashboard/admin/broadcast', label: 'Broadcast' },
