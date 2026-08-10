@@ -930,6 +930,26 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   menyimpannya di dokumen: `rkbmd.sub_kegiatan` (kolom baru). Itu sebabnya form
   lama memakai input teks bebas dan sub kegiatan tak pernah muncul. Sekarang
   ketiganya DIPILIH dari master, tersusun ke bawah (uraiannya panjang).
+- **Program/Kegiatan/Sub Kegiatan TERSIMPAN OTOMATIS tiap dipilih.** Tautan
+  terpisah "Simpan program/kegiatan" sudah DIBUANG — ia jebakan yang langsung
+  memakan korban di hari pertama: picker sudah terlihat terisi, operator klik
+  "Ajukan ulang", dan pilihannya tak pernah sampai ke DB. Dokumen TA 2027
+  pertama terkirim dengan `program='Tes'`, `kegiatan='Tes'`, `sub_kegiatan=NULL`
+  padahal layarnya menampilkan nomenklatur yang benar. **Jangan kembalikan pola
+  "isi di picker, simpan di tombol lain" untuk field header mana pun.**
+- **Dokumen berstatus `ditolak` boleh DIHAPUS** oleh SKPD penyusun (keputusan
+  user 2026-08-10) supaya bisa disusun ulang dari nol. Sebelumnya tombol Hapus
+  cuma ada di status `draft`, jadi dokumen yang dikembalikan penelaah nyangkut
+  selamanya. Yang `disetujui` tetap tak bisa dihapus — bukanya lewat Buka Kunci.
+- **Angka "Eksisting" bisa diklik** → pop-up daftar barangnya (NIBAR, kode
+  register, merek, tgl perolehan, nilai, kondisi). Satu query terindeks
+  (`skpd_id` + `kode` + `status`), jumlah barang satu kode di satu SKPD selalu
+  kecil — tak perlu paginasi.
+- **Tombol "Lihat" di Validasi = pop-up rincian**, bukan tautan ke menu Usulan
+  (yang memaksa penelaah keluar dari antrean lalu memilih SKPD lagi dari awal).
+  ⚠️ **TKDN tidak ada di `rkbmd_item`** — ia atribut barang di SSH, ditarik lewat
+  `standar_id`. Sengaja: menyalinnya ke tiap item = dua sumber kebenaran yang
+  bisa berbeda.
 - ⚠️ **Deploy-ordering: migrasi 20260810_01 WAJIB jalan SEBELUM deploy kode** —
   halaman baru langsung query `rkbmd_standar` & RPC yang belum ada. Sebaliknya
   `DROP TABLE rkbmd_ssh` di akhir migrasi membuat halaman Admin → SSH versi LAMA

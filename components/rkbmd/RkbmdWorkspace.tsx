@@ -258,7 +258,17 @@ function DokumenPanel({
             <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200" onClick={onBukaKunci} disabled={busy}>Buka Kunci</button>
           )}
           {header.status === 'ditolak' && (
-            <button className="btn-primary" onClick={onAjukan} disabled={busy || items.length === 0}>Ajukan ulang</button>
+            <>
+              <button className="btn-primary" onClick={onAjukan} disabled={busy || items.length === 0}>Ajukan ulang</button>
+              {/* Dokumen yang DITOLAK boleh dibuang & disusun ulang dari nol
+                  (keputusan user 2026-08-10) — sebelumnya tombol ini cuma ada di
+                  status draft, jadi dokumen yang dikembalikan penelaah nyangkut
+                  selamanya. Yang DISETUJUI tetap tak bisa dihapus: itu dokumen
+                  perencanaan yang sudah ditetapkan, bukanya lewat "Buka Kunci". */}
+              <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={onHapus} disabled={busy}>
+                Hapus dokumen
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -280,14 +290,20 @@ function DokumenPanel({
           <h3 className="text-sm font-semibold text-gray-700">Program / Kegiatan / Sub Kegiatan</h3>
           {canEditContent ? (
             <>
+              {/* TERSIMPAN OTOMATIS tiap kali dipilih — tautan "Simpan program/
+                  kegiatan" yang terpisah sudah DIBUANG (2026-08-10). Ia jebakan:
+                  picker sudah terlihat terisi, operator langsung klik "Ajukan",
+                  dan pilihannya tak pernah sampai ke DB. Terbukti kejadian —
+                  dokumen TA 2027 pertama terkirim dengan program/kegiatan masih
+                  "Tes" dan sub kegiatan kosong padahal layarnya sudah benar. */}
               <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg}
-                onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
-              <button className="text-sm text-teal hover:underline" disabled={busy}
-                onClick={() => onSaveHeader(
-                  { program: program || null, kegiatan: kegiatan || null, sub_kegiatan: subKeg || null },
-                  'Program / kegiatan / sub kegiatan disimpan.')}>
-                Simpan program/kegiatan
-              </button>
+                onChange={sel => {
+                  setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan)
+                  onSaveHeader(
+                    { program: sel.program || null, kegiatan: sel.kegiatan || null, sub_kegiatan: sel.sub_kegiatan || null },
+                    'Program / kegiatan / sub kegiatan disimpan.')
+                }} />
+              <p className="text-[11px] text-gray-400">Tersimpan otomatis setiap kali dipilih.</p>
             </>
           ) : (
             <div className="space-y-1 text-xs">

@@ -20,6 +20,7 @@
 // berpindah. Bukan isian, jadi tidak menambah langkah bagi operator.
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { backdropClose } from '@/components/backdropClose'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import { fetchStandar, type StandarRow } from '@/lib/rkbmdStandar'
@@ -45,6 +46,7 @@ export default function RkbmdPengadaanForm({ rkbmdId, skpdId, tahun, editItem, o
   const [keterangan, setKeterangan] = useState(editItem?.keterangan || '')
   const [eksisting, setEksisting] = useState<number>(editItem?.jumlah_eksisting ?? 0)
   const [standarSbsk, setStandarSbsk] = useState<number | null>(editItem?.jumlah_standar ?? null)
+  const [lihatEksisting, setLihatEksisting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
@@ -216,14 +218,30 @@ export default function RkbmdPengadaanForm({ rkbmdId, skpdId, tahun, editItem, o
                 </div>
               </div>
 
-              <div className="rounded-lg bg-gray-50 px-4 py-2 text-[11px] text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
+              <div className="rounded-lg bg-gray-50 px-4 py-2 text-[11px] text-gray-500 flex flex-wrap items-center gap-x-6 gap-y-1">
                 <span>Angka rujukan (bukan isian) —</span>
-                <span>Eksisting di SKPD ini: <span className="font-medium text-gray-700">{eksisting}</span></span>
+                <span>
+                  Eksisting di SKPD ini:{' '}
+                  {eksisting > 0 ? (
+                    <button type="button" onClick={() => setLihatEksisting(true)}
+                      className="font-medium text-teal hover:underline"
+                      title="Lihat barangnya di Daftar Barang">
+                      {eksisting} ↗
+                    </button>
+                  ) : (
+                    <span className="font-medium text-gray-700">0</span>
+                  )}
+                </span>
                 <span>Standar SBSK: <span className="font-medium text-gray-700">{standarSbsk ?? '—'}</span></span>
                 {standarSbsk != null && (
                   <span>Selisih: <span className="font-medium text-gray-700">{Math.max(standarSbsk - eksisting, 0)}</span></span>
                 )}
               </div>
+
+              {lihatEksisting && (
+                <EksistingModal skpdId={skpdId} kode={dipilih.kode!} nama={dipilih.nama}
+                  onClose={() => setLihatEksisting(false)} />
+              )}
 
               <div>
                 <label className="block text-xs text-gray-500 mb-1">4. Keterangan</label>
@@ -241,5 +259,104 @@ export default function RkbmdPengadaanForm({ rkbmdId, skpdId, tahun, editItem, o
         </>
       )}
     </form>
+  )
+}
+
+// ── Pop-up "barang eksisting" ───────────────────────────────────────────────
+// Angka Eksisting selama ini cuma total tanpa cara memeriksanya — operator harus
+// pindah ke Daftar Barang, menyaring SKPD & kode, lalu kembali. Di sini
+// barangnya ditampilkan langsung. Ringan: satu query terindeks (skpd_id + kode +
+// status), dan jumlah barang satu kode di satu SKPD selalu kecil.
+function EksistingModal({ skpdId, kode, nama, onClose }: {
+  skpdId: number; kode: string; nama: string; onClose: () => void
+}) {
+  const supabase = createClient()
+  type Baris = {
+    id: string; nibar: string | null; kode_register: string | null
+    nama_barang: string | null; merek_tipe: string | null; tgl_perolehan: string | null
+    jumlah: number | null; satuan: string | null; nilai_perolehan: number | null
+    kondisi_barang: string | null
+  }
+  const [rows, setRows] = useState<Baris[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const { data, error } = await supabase.from('aset')
+        .select('id,nibar,kode_register,nama_barang,merek_tipe,tgl_perolehan,jumlah,satuan,nilai_perolehan,kondisi_barang')
+        .eq('status', 'aktif').eq('skpd_id', skpdId).eq('kode', kode)
+        .order('tgl_perolehan', { ascending: false }).order('id')
+        .limit(1000)
+      if (!alive) return
+      if (error) { setErr(`gagal membaca daftar barang: ${error.message}`); setRows([]) }
+      else setRows((data || []) as Baris[])
+      setLoading(false)
+    })()
+    return () => { alive = false }
+  }, [skpdId, kode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalUnit = rows.reduce((s, r) => s + (r.jumlah || 0), 0)
+  const totalNilai = rows.reduce((s, r) => s + (r.nilai_perolehan || 0), 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
+      <div className="card w-full max-w-5xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between sticky top-0 bg-white z-10">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-gray-800">Barang eksisting di SKPD ini</h3>
+            <p className="text-xs text-gray-500">{kode} — {nama}</p>
+          </div>
+          <button className="text-gray-400 hover:text-gray-700 text-xl leading-none flex-shrink-0" onClick={onClose}>×</button>
+        </div>
+
+        <div className="p-5">
+          {err && <div className="mb-3 p-3 rounded-lg bg-red-50 text-red-700 text-sm">{err}</div>}
+          {loading ? (
+            <p className="text-sm text-gray-400 py-6 text-center">Memuat...</p>
+          ) : err ? null : rows.length === 0 ? (
+            <p className="text-sm text-gray-400 py-6 text-center">Tidak ada barang aktif dengan kode ini di SKPD ini.</p>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500 mb-3">
+                {rows.length} baris · {totalUnit} unit · nilai perolehan {formatRupiah(totalNilai)}
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="table-th">NIBAR / Kode Register</th>
+                      <th className="table-th">Nama Barang</th>
+                      <th className="table-th">Merek / Tipe</th>
+                      <th className="table-th">Tgl Perolehan</th>
+                      <th className="table-th text-right">Jumlah</th>
+                      <th className="table-th text-right">Nilai Perolehan</th>
+                      <th className="table-th">Kondisi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {rows.map(r => (
+                      <tr key={r.id}>
+                        <td className="table-td text-xs">
+                          <div>{r.nibar || '—'}</div>
+                          {r.kode_register && <div className="text-[11px] text-gray-400">REG {r.kode_register}</div>}
+                        </td>
+                        <td className="table-td text-xs text-gray-700">{r.nama_barang || '—'}</td>
+                        <td className="table-td text-xs text-gray-500">{r.merek_tipe || '—'}</td>
+                        <td className="table-td text-xs text-gray-500 whitespace-nowrap">{r.tgl_perolehan || '—'}</td>
+                        <td className="table-td text-xs text-right">{r.jumlah ?? '—'} {r.satuan || ''}</td>
+                        <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(r.nilai_perolehan)}</td>
+                        <td className="table-td text-xs text-gray-500">{r.kondisi_barang || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
