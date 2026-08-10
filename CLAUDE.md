@@ -930,6 +930,26 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   menyimpannya di dokumen: `rkbmd.sub_kegiatan` (kolom baru). Itu sebabnya form
   lama memakai input teks bebas dan sub kegiatan tak pernah muncul. Sekarang
   ketiganya DIPILIH dari master, tersusun ke bawah (uraiannya panjang).
+- **RKBMD Pengadaan BERKARTU (migrasi 20260810_02).** Satu dokumen berisi
+  BEBERAPA kartu; satu kartu (`rkbmd_paket`) = satu Program/Kegiatan/Sub
+  Kegiatan dengan beberapa item di dalamnya — polanya mengikuti entry Pengadaan.
+  Semua kartu diisi dulu, baru SATU KALI diajukan; penolakan berlaku untuk
+  SELURUH dokumen (semua kartu ikut kembali bisa disunting), lalu diajukan
+  ulang. **Tidak ada setuju-sebagian.** Empat jenis RKBMD lain tetap datar
+  (`rkbmd_item.paket_id` NULL). ⚠️ `program`/`kegiatan`/`sub_kegiatan`
+  **DI-DROP dari `rkbmd`** — sekarang rumahnya cuma `rkbmd_paket`; jangan
+  dikembalikan ke header, itu dua rumah untuk satu fakta. UNIQUE
+  `(rkbmd_id, sub_kegiatan)` mencegah dua kartu untuk sub kegiatan yang sama
+  (kartu baru ber-NULL sengaja tak kena, supaya bisa dibuat lalu diisi).
+  Biayanya kecil: satu baris per sub kegiatan per SKPD per tahun.
+- **Cetak `/cetak/rkbmd?id=<uuid>`** — format "Usulan Rencana Kebutuhan
+  Pengadaan BMD", A4 landscape, 12 kolom. Kolom 2 memuat hierarki Program →
+  Kegiatan → Sub Kegiatan sbg baris judul menjorok; di baris barang kolom itu
+  **sengaja kosong** (judulnya sudah dicetak sekali di atas). Kolom 5 "Uraian
+  Barang" di-lookup dari `admin_kodefikasi_bmd`, BUKAN dari `rkbmd_item` —
+  supaya ikut kodefikasi terkini, pola yang sama dgn Daftar Barang & Penyusutan.
+  Kolom 11 "Jumlah barang pada neraca" = `jumlah_eksisting` yang dibekukan saat
+  dokumen disusun.
 - **Program/Kegiatan/Sub Kegiatan TERSIMPAN OTOMATIS tiap dipilih.** Tautan
   terpisah "Simpan program/kegiatan" sudah DIBUANG — ia jebakan yang langsung
   memakan korban di hari pertama: picker sudah terlihat terisi, operator klik

@@ -26,8 +26,10 @@ import { formatRupiah } from '@/lib/export'
 import { fetchStandar, type StandarRow } from '@/lib/rkbmdStandar'
 import type { RkbmdItem } from '@/lib/rkbmd'
 
-export default function RkbmdPengadaanForm({ rkbmdId, skpdId, tahun, editItem, onSaved, onCancel }: {
+export default function RkbmdPengadaanForm({ rkbmdId, paketId, skpdId, tahun, editItem, onSaved, onCancel }: {
   rkbmdId: string
+  /** Kartu Program/Kegiatan/Sub Kegiatan tempat item ini bernaung (migrasi 20260810_02). */
+  paketId: string
   skpdId: number
   tahun: number
   editItem: RkbmdItem | null
@@ -107,6 +109,7 @@ export default function RkbmdPengadaanForm({ rkbmdId, skpdId, tahun, editItem, o
     setSaving(true); setErr('')
     const payload = {
       rkbmd_id: rkbmdId,
+      paket_id: paketId,
       standar_id: dipilih.id,
       kode: dipilih.kode,
       nama_barang: dipilih.nama,
@@ -123,8 +126,10 @@ export default function RkbmdPengadaanForm({ rkbmdId, skpdId, tahun, editItem, o
     if (editing) {
       ({ error } = await supabase.from('rkbmd_item').update(payload).eq('id', editItem!.id))
     } else {
+      // Nomor urut dihitung PER KARTU, bukan per dokumen — di lembar cetak tiap
+      // sub kegiatan bernomor sendiri mulai dari 1.
       const { data: last } = await supabase.from('rkbmd_item').select('no_urut')
-        .eq('rkbmd_id', rkbmdId).order('no_urut', { ascending: false }).limit(1).maybeSingle()
+        .eq('paket_id', paketId).order('no_urut', { ascending: false }).limit(1).maybeSingle()
       const next = ((last as { no_urut: number | null } | null)?.no_urut || 0) + 1;
       ({ error } = await supabase.from('rkbmd_item').insert({ ...payload, no_urut: next }))
     }

@@ -33,12 +33,9 @@ export type RkbmdHeader = {
   jenis: RkbmdJenis
   versi: RkbmdVersi
   parent_id: string | null
-  program: string | null
-  kegiatan: string | null
-  // Ditambah migrasi 20260810_01. `admin_program` sudah lama memuat sub
-  // kegiatan & ProgramPicker sudah men-cascade-nya — yang belum ada cuma
-  // tempat menyimpannya di dokumen RKBMD, jadi form lama memakai teks bebas.
-  sub_kegiatan: string | null
+  // ⚠️ program/kegiatan/sub_kegiatan SUDAH TIDAK DI SINI (migrasi 20260810_02).
+  // Satu SKPD punya BEBERAPA kartu, satu kartu = satu Sub Kegiatan → tempatnya
+  // di `rkbmd_paket`. Jangan dikembalikan ke header: dua rumah untuk satu fakta.
   keterangan: string | null
   status: RkbmdStatus
   catatan_telaah: string | null
@@ -47,9 +44,24 @@ export type RkbmdHeader = {
   created_at: string
 }
 
+/** Satu kartu = satu Program/Kegiatan/Sub Kegiatan berisi beberapa item barang
+ *  (migrasi 20260810_02). Hanya dipakai jenis 'pengadaan'; empat jenis lain
+ *  itemnya menempel langsung ke dokumen (`paket_id` NULL). */
+export type RkbmdPaket = {
+  id: string
+  rkbmd_id: string
+  no_urut: number | null
+  program: string | null
+  kegiatan: string | null
+  sub_kegiatan: string | null
+  keterangan: string | null
+}
+
 export type RkbmdItem = {
   id: string
   rkbmd_id: string
+  /** Kartu induk. NULL untuk empat jenis RKBMD non-pengadaan. */
+  paket_id: string | null
   no_urut: number | null
   // Barang SSH yang jadi dasar item ini (migrasi 20260810_01). RKBMD Pengadaan
   // hanya boleh memakai barang yang terdaftar di SSH; ON DELETE SET NULL supaya

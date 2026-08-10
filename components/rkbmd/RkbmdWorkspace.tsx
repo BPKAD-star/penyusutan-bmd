@@ -1,8 +1,15 @@
 'use client'
 // Shell modul RKBMD: pemilih Tahun Anggaran + SKPD + versi (murni/perubahan),
 // tab per 5 jenis, siklus dokumen (buat draft → ajukan → telaah setuju/tolak →
-// buka kunci). Form input item per jenis menyusul (Stage 4/5) — di sini item
-// ditampilkan read-only. Non-ledger: approve hanya membekukan status.
+// buka kunci). Non-ledger: approve hanya membekukan status.
+//
+// BENTUK BERKARTU (migrasi 20260810_02, keputusan user 2026-08-10): RKBMD
+// Pengadaan berisi BEBERAPA kartu, satu kartu = satu Program/Kegiatan/Sub
+// Kegiatan dengan beberapa item barang di dalamnya — polanya mengikuti entry
+// Pengadaan. Semua kartu diisi dulu, baru SATU KALI diajukan. Penolakan berlaku
+// untuk SELURUH dokumen (semua kartu ikut kembali ke SKPD), lalu diajukan ulang.
+// Empat jenis lain (pemeliharaan/pemanfaatan/pemindahtanganan/penghapusan)
+// tetap datar: itemnya menempel langsung ke dokumen, `paket_id` NULL.
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
@@ -13,12 +20,13 @@ import RkbmdAsetForm from '@/components/rkbmd/RkbmdAsetForm'
 import { formatRupiah } from '@/lib/export'
 import {
   RKBMD_JENIS, STATUS_META, type RkbmdJenis, type RkbmdVersi,
-  type RkbmdHeader, type RkbmdItem,
+  type RkbmdHeader, type RkbmdItem, type RkbmdPaket,
 } from '@/lib/rkbmd'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
 const HEADER_COLS =
-  'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,program,kegiatan,sub_kegiatan,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at'
+  'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at'
+const PAKET_COLS = 'id,rkbmd_id,no_urut,program,kegiatan,sub_kegiatan,keterangan'
 
 export default function RkbmdWorkspace() {
   const supabase = createClient()
@@ -30,6 +38,7 @@ export default function RkbmdWorkspace() {
 
   const [headers, setHeaders] = useState<Record<string, RkbmdHeader>>({}) // key = jenis
   const [items, setItems] = useState<RkbmdItem[]>([])
+  const [pakets, setPakets] = useState<RkbmdPaket[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -47,7 +56,7 @@ export default function RkbmdWorkspace() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadHeaders = useCallback(async () => {
-    if (!skpd) { setHeaders({}); setItems([]); return }
+    if (!skpd) { setHeaders({}); setItems([]); setPakets([]); return }
     setLoading(true); setMsg('')
     const { data, error } = await supabase.from('rkbmd').select(HEADER_COLS)
       .eq('skpd_id', Number(skpd)).eq('tahun_anggaran', tahun).eq('versi', versi)
@@ -60,13 +69,20 @@ export default function RkbmdWorkspace() {
 
   useEffect(() => { loadHeaders() }, [loadHeaders])
 
-  const loadItems = useCallback(async (rkbmdId: string | undefined) => {
-    if (!rkbmdId) { setItems([]); return }
-    const { data } = await supabase.from('rkbmd_item').select('*').eq('rkbmd_id', rkbmdId).order('no_urut')
-    setItems((data || []) as RkbmdItem[])
+  // Kartu + item dimuat bersama: keduanya berubah bareng tiap kali dokumen
+  // diganti atau isinya disunting, dan tampilan kartu butuh dua-duanya.
+  const loadIsi = useCallback(async (rkbmdId: string | undefined) => {
+    if (!rkbmdId) { setItems([]); setPakets([]); return }
+    const [pk, it] = await Promise.all([
+      supabase.from('rkbmd_paket').select(PAKET_COLS).eq('rkbmd_id', rkbmdId).order('no_urut'),
+      supabase.from('rkbmd_item').select('*').eq('rkbmd_id', rkbmdId).order('no_urut'),
+    ])
+    if (pk.error || it.error) { setMsg(`Error: ${(pk.error || it.error)!.message}`); return }
+    setPakets((pk.data || []) as RkbmdPaket[])
+    setItems((it.data || []) as RkbmdItem[])
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadItems(header?.id) }, [header?.id, loadItems])
+  useEffect(() => { loadIsi(header?.id) }, [header?.id, loadIsi])
 
   async function buatDokumen() {
     if (!skpd) { setMsg('Error: pilih SKPD dulu.'); return }
@@ -100,7 +116,7 @@ export default function RkbmdWorkspace() {
 
   async function hapusDokumen() {
     if (!header) return
-    if (!confirm('Hapus dokumen RKBMD ini beserta seluruh itemnya? (hanya untuk draft)')) return
+    if (!confirm('Hapus dokumen RKBMD ini beserta SELURUH kartu & itemnya? Tidak bisa dibatalkan.')) return
     setBusy(true); setMsg('')
     const { error } = await supabase.from('rkbmd').delete().eq('id', header.id)
     if (error) setMsg(`Error: ${error.message}`)
@@ -111,7 +127,8 @@ export default function RkbmdWorkspace() {
   function tolak() {
     const alasan = prompt('Catatan penolakan / telaah (akan dikirim ke SKPD):')
     if (alasan === null) return
-    patchHeader({ status: 'ditolak', catatan_telaah: alasan || null }, 'RKBMD ditolak & dikembalikan.')
+    patchHeader({ status: 'ditolak', catatan_telaah: alasan || null },
+      'RKBMD ditolak & dikembalikan — seluruh kartu kembali bisa disunting SKPD.')
   }
 
   return (
@@ -179,9 +196,9 @@ export default function RkbmdWorkspace() {
             </div>
           ) : (
             <DokumenPanel
-              header={header} items={items} isAdmin={isAdmin} busy={busy} canEditContent={canEditContent}
-              reloadItems={() => loadItems(header.id)}
-              onSaveHeader={patchHeader} onAjukan={() => patchHeader({ status: 'diajukan' }, 'RKBMD diajukan untuk ditelaah.')}
+              header={header} items={items} pakets={pakets} isAdmin={isAdmin} busy={busy} canEditContent={canEditContent}
+              reloadIsi={() => loadIsi(header.id)} onMsg={setMsg}
+              onAjukan={() => patchHeader({ status: 'diajukan' }, 'RKBMD diajukan untuk ditelaah.')}
               onTarik={() => patchHeader({ status: 'draft' }, 'Pengajuan ditarik kembali ke draft.')}
               onSetujui={() => patchHeader({ status: 'disetujui' }, 'RKBMD disetujui & ditetapkan.')}
               onTolak={tolak} onBukaKunci={() => patchHeader({ status: 'draft' }, 'Kunci dibuka — dokumen kembali ke draft.')}
@@ -196,36 +213,28 @@ export default function RkbmdWorkspace() {
 
 // ── Panel satu dokumen RKBMD ──────────────────────────────────────────────
 function DokumenPanel({
-  header, items, isAdmin, busy, canEditContent, reloadItems,
-  onSaveHeader, onAjukan, onTarik, onSetujui, onTolak, onBukaKunci, onHapus,
+  header, items, pakets, isAdmin, busy, canEditContent, reloadIsi, onMsg,
+  onAjukan, onTarik, onSetujui, onTolak, onBukaKunci, onHapus,
 }: {
-  header: RkbmdHeader; items: RkbmdItem[]; isAdmin: boolean; busy: boolean; canEditContent: boolean
-  reloadItems: () => void
-  onSaveHeader: (patch: Partial<RkbmdHeader>, okMsg: string) => void
+  header: RkbmdHeader; items: RkbmdItem[]; pakets: RkbmdPaket[]
+  isAdmin: boolean; busy: boolean; canEditContent: boolean
+  reloadIsi: () => void; onMsg: (m: string) => void
   onAjukan: () => void; onTarik: () => void; onSetujui: () => void
   onTolak: () => void; onBukaKunci: () => void; onHapus: () => void
 }) {
   const supabase = createClient()
-  const [program, setProgram] = useState(header.program || '')
-  const [kegiatan, setKegiatan] = useState(header.kegiatan || '')
-  const [subKeg, setSubKeg] = useState(header.sub_kegiatan || '')
-  const [showForm, setShowForm] = useState(false)
-  const [editItem, setEditItem] = useState<RkbmdItem | null>(null)
-  useEffect(() => {
-    setProgram(header.program || ''); setKegiatan(header.kegiatan || ''); setSubKeg(header.sub_kegiatan || '')
-  }, [header.id]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setShowForm(false); setEditItem(null) }, [header.id])
-
-  const canAddItem = canEditContent // semua jenis sudah didukung
-  const formOpen = showForm || !!editItem
-
-  async function hapusItem(it: RkbmdItem) {
-    if (!confirm(`Hapus item ${it.kode || it.nama_barang || ''}?`)) return
-    await supabase.from('rkbmd_item').delete().eq('id', it.id)
-    reloadItems()
-  }
-
+  const berkartu = header.jenis === 'pengadaan'
   const total = items.reduce((s, it) => s + (it.total_anggaran || 0), 0)
+  // Diajukan hanya kalau benar-benar ada isinya — dokumen kosong yang masuk
+  // antrean telaah cuma membuang waktu penelaah.
+  const bolehAjukan = items.length > 0
+
+  async function tambahKartu() {
+    const next = Math.max(0, ...pakets.map(p => p.no_urut || 0)) + 1
+    const { error } = await supabase.from('rkbmd_paket').insert({ rkbmd_id: header.id, no_urut: next })
+    if (error) onMsg(`Error: gagal menambah kartu: ${error.message}`)
+    else reloadIsi()
+  }
 
   return (
     <div className="space-y-4">
@@ -235,13 +244,19 @@ function DokumenPanel({
           <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_META[header.status].cls}`}>
             {STATUS_META[header.status].label}
           </span>
-          <span className="text-xs text-gray-400">{items.length} item · Total {formatRupiah(total)}</span>
+          <span className="text-xs text-gray-400">
+            {berkartu && `${pakets.length} kartu · `}{items.length} item · Total {formatRupiah(total)}
+          </span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <a href={`/cetak/rkbmd?id=${header.id}`} target="_blank" rel="noopener noreferrer"
+            className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200">
+            🖨 Cetak
+          </a>
           {header.status === 'draft' && (
             <>
-              <button className="btn-primary" onClick={onAjukan} disabled={busy || items.length === 0}
-                title={items.length === 0 ? 'Tambah item dulu sebelum diajukan' : undefined}>Ajukan</button>
+              <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}
+                title={!bolehAjukan ? 'Tambah item dulu sebelum diajukan' : undefined}>Ajukan</button>
               <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={onHapus} disabled={busy}>Hapus dokumen</button>
             </>
           )}
@@ -259,15 +274,11 @@ function DokumenPanel({
           )}
           {header.status === 'ditolak' && (
             <>
-              <button className="btn-primary" onClick={onAjukan} disabled={busy || items.length === 0}>Ajukan ulang</button>
-              {/* Dokumen yang DITOLAK boleh dibuang & disusun ulang dari nol
-                  (keputusan user 2026-08-10) — sebelumnya tombol ini cuma ada di
-                  status draft, jadi dokumen yang dikembalikan penelaah nyangkut
-                  selamanya. Yang DISETUJUI tetap tak bisa dihapus: itu dokumen
-                  perencanaan yang sudah ditetapkan, bukanya lewat "Buka Kunci". */}
-              <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={onHapus} disabled={busy}>
-                Hapus dokumen
-              </button>
+              <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}>Ajukan ulang</button>
+              {/* Dokumen DITOLAK boleh dibuang & disusun ulang dari nol
+                  (keputusan user 2026-08-10). Yang DISETUJUI tetap tidak —
+                  bukanya lewat "Buka Kunci". */}
+              <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={onHapus} disabled={busy}>Hapus dokumen</button>
             </>
           )}
         </div>
@@ -276,73 +287,231 @@ function DokumenPanel({
       {header.status === 'ditolak' && header.catatan_telaah && (
         <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">
           <span className="font-medium">Catatan telaah:</span> {header.catatan_telaah}
+          <span className="block text-xs mt-1 text-red-600/80">
+            Seluruh kartu di dokumen ini kembali bisa disunting. Perbaiki lalu ajukan ulang.
+          </span>
         </div>
       )}
 
-      {/* Program / Kegiatan / Sub Kegiatan — khusus Pengadaan (Pasal 28 ayat 4).
-          Sejak 2026-08-10 DIPILIH dari master `admin_program` lewat ProgramPicker,
-          bukan diketik bebas: nomenklatur Kepmendagri 050 harus persis supaya
-          RKBMD bisa disandingkan dengan dokumen anggaran. Sub kegiatan ikut —
-          kolomnya baru ada di `rkbmd` sejak migrasi 20260810_01. Tersusun ke
-          BAWAH (bukan dua kolom) karena uraiannya panjang-panjang. */}
-      {header.jenis === 'pengadaan' && (
-        <div className="card p-4 max-w-3xl space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700">Program / Kegiatan / Sub Kegiatan</h3>
-          {canEditContent ? (
-            <>
-              {/* TERSIMPAN OTOMATIS tiap kali dipilih — tautan "Simpan program/
-                  kegiatan" yang terpisah sudah DIBUANG (2026-08-10). Ia jebakan:
-                  picker sudah terlihat terisi, operator langsung klik "Ajukan",
-                  dan pilihannya tak pernah sampai ke DB. Terbukti kejadian —
-                  dokumen TA 2027 pertama terkirim dengan program/kegiatan masih
-                  "Tes" dan sub kegiatan kosong padahal layarnya sudah benar. */}
-              <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg}
-                onChange={sel => {
-                  setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan)
-                  onSaveHeader(
-                    { program: sel.program || null, kegiatan: sel.kegiatan || null, sub_kegiatan: sel.sub_kegiatan || null },
-                    'Program / kegiatan / sub kegiatan disimpan.')
-                }} />
-              <p className="text-[11px] text-gray-400">Tersimpan otomatis setiap kali dipilih.</p>
-            </>
-          ) : (
-            <div className="space-y-1 text-xs">
-              <p><span className="text-gray-400">Program</span> : <span className="text-gray-700">{header.program || '—'}</span></p>
-              <p><span className="text-gray-400">Kegiatan</span> : <span className="text-gray-700">{header.kegiatan || '—'}</span></p>
-              <p><span className="text-gray-400">Sub Kegiatan</span> : <span className="text-gray-700">{header.sub_kegiatan || '—'}</span></p>
+      {berkartu ? (
+        <>
+          {pakets.length === 0 ? (
+            <div className="card p-8 text-center">
+              <p className="text-sm text-gray-500 mb-1">Belum ada kartu program/kegiatan.</p>
+              <p className="text-xs text-gray-400 mb-4">
+                Satu kartu = satu Sub Kegiatan, berisi beberapa item barang. Buat sebanyak yang dibutuhkan,
+                baru ajukan sekali ke Pengelola Barang.
+              </p>
+              {canEditContent && <button className="btn-primary" onClick={tambahKartu} disabled={busy}>+ Tambah Kartu</button>}
             </div>
+          ) : (
+            pakets.map(p => (
+              <KartuPaket key={p.id} paket={p} header={header}
+                items={items.filter(i => i.paket_id === p.id)}
+                canEdit={canEditContent} onMsg={onMsg} reloadIsi={reloadIsi} />
+            ))
           )}
-          {/* Total anggaran seluruh item dokumen ini = total untuk satu sub
-              kegiatan, karena 1 dokumen RKBMD = 1 sub kegiatan. */}
-          <div className="rounded-lg bg-teal/5 border border-teal/20 px-4 py-2.5 flex items-center justify-between">
-            <span className="text-xs text-gray-600">Total anggaran program ini ({items.length} item)</span>
-            <span className="text-base font-semibold text-gray-900">{formatRupiah(total)}</span>
+          {canEditContent && pakets.length > 0 && (
+            <button className="btn-secondary text-sm" onClick={tambahKartu} disabled={busy}>
+              + Tambah Kartu Program/Kegiatan
+            </button>
+          )}
+          <div className="card p-4 flex items-center justify-between">
+            <span className="text-sm text-gray-600">Total seluruh kartu ({items.length} item)</span>
+            <span className="text-lg font-bold text-gray-900">{formatRupiah(total)}</span>
           </div>
+        </>
+      ) : (
+        <DaftarItemDatar header={header} items={items} canEdit={canEditContent}
+          reloadIsi={reloadIsi} onMsg={onMsg} />
+      )}
+    </div>
+  )
+}
+
+// ── Satu kartu = satu Program/Kegiatan/Sub Kegiatan + itemnya ───────────────
+function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi }: {
+  paket: RkbmdPaket; header: RkbmdHeader; items: RkbmdItem[]
+  canEdit: boolean; onMsg: (m: string) => void; reloadIsi: () => void
+}) {
+  const supabase = createClient()
+  const [program, setProgram] = useState(paket.program || '')
+  const [kegiatan, setKegiatan] = useState(paket.kegiatan || '')
+  const [subKeg, setSubKeg] = useState(paket.sub_kegiatan || '')
+  const [showForm, setShowForm] = useState(false)
+  const [editItem, setEditItem] = useState<RkbmdItem | null>(null)
+
+  useEffect(() => {
+    setProgram(paket.program || ''); setKegiatan(paket.kegiatan || ''); setSubKeg(paket.sub_kegiatan || '')
+  }, [paket.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const total = items.reduce((s, it) => s + (it.total_anggaran || 0), 0)
+  const formOpen = showForm || !!editItem
+
+  // TERSIMPAN OTOMATIS tiap dipilih — tautan "Simpan" terpisah sudah terbukti
+  // jadi jebakan (pilihan terlihat jadi tapi tak pernah sampai ke DB).
+  async function simpanProgram(sel: { program: string; kegiatan: string; sub_kegiatan: string }) {
+    setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan)
+    const { error } = await supabase.from('rkbmd_paket').update({
+      program: sel.program || null, kegiatan: sel.kegiatan || null, sub_kegiatan: sel.sub_kegiatan || null,
+    }).eq('id', paket.id)
+    if (error) {
+      // UNIQUE (rkbmd_id, sub_kegiatan): sub kegiatan yang sama sudah punya kartu.
+      onMsg(error.code === '23505'
+        ? `Error: Sub Kegiatan itu sudah punya kartu sendiri di dokumen ini — tambahkan barangnya ke kartu tersebut.`
+        : `Error: ${error.message}`)
+      reloadIsi()
+    } else {
+      reloadIsi()
+    }
+  }
+
+  async function hapusKartu() {
+    if (!confirm(items.length > 0
+      ? `Hapus kartu ini beserta ${items.length} item barangnya?`
+      : 'Hapus kartu ini?')) return
+    const { error } = await supabase.from('rkbmd_paket').delete().eq('id', paket.id)
+    if (error) onMsg(`Error: ${error.message}`); else reloadIsi()
+  }
+
+  async function hapusItem(it: RkbmdItem) {
+    if (!confirm(`Hapus item ${it.kode || it.nama_barang || ''}?`)) return
+    const { error } = await supabase.from('rkbmd_item').delete().eq('id', it.id)
+    if (error) onMsg(`Error: ${error.message}`); else reloadIsi()
+  }
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="p-4 border-b border-gray-100 bg-gray-50/60">
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-[11px] font-semibold text-gray-500">
+            KARTU {paket.no_urut ?? ''} — PROGRAM / KEGIATAN / SUB KEGIATAN
+          </p>
+          {canEdit && (
+            <button onClick={hapusKartu} title="Hapus kartu ini"
+              className="text-red-500 hover:text-red-700 text-xs font-medium flex-shrink-0">🗑 Hapus kartu</button>
+          )}
+        </div>
+
+        {canEdit ? (
+          <div className="mt-2 max-w-3xl">
+            <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg} onChange={simpanProgram} />
+            <p className="text-[11px] text-gray-400 mt-1">Tersimpan otomatis setiap kali dipilih.</p>
+          </div>
+        ) : (
+          <div className="mt-2 space-y-1 text-xs">
+            <p><span className="text-gray-400 inline-block w-24">Program</span>: <span className="text-gray-700">{paket.program || '—'}</span></p>
+            <p><span className="text-gray-400 inline-block w-24">Kegiatan</span>: <span className="text-gray-700">{paket.kegiatan || '—'}</span></p>
+            <p><span className="text-gray-400 inline-block w-24">Sub Kegiatan</span>: <span className="text-gray-700">{paket.sub_kegiatan || '—'}</span></p>
+          </div>
+        )}
+      </div>
+
+      {canEdit && formOpen && (
+        <div className="p-4 border-b border-gray-100">
+          <RkbmdPengadaanForm
+            rkbmdId={header.id} paketId={paket.id} skpdId={header.skpd_id} tahun={header.tahun_anggaran}
+            editItem={editItem}
+            onSaved={() => { setShowForm(false); setEditItem(null); reloadIsi() }}
+            onCancel={() => { setShowForm(false); setEditItem(null) }}
+          />
         </div>
       )}
 
-      {/* Form tambah/edit item per jenis */}
-      {canAddItem && formOpen && (
-        header.jenis === 'pengadaan' ? (
-          <RkbmdPengadaanForm
-            rkbmdId={header.id} skpdId={header.skpd_id} tahun={header.tahun_anggaran} editItem={editItem}
-            onSaved={() => { setShowForm(false); setEditItem(null); reloadItems() }}
-            onCancel={() => { setShowForm(false); setEditItem(null) }}
-          />
-        ) : (
-          <RkbmdAsetForm
-            jenis={header.jenis} rkbmdId={header.id} skpdId={header.skpd_id} editItem={editItem}
-            onSaved={() => { setShowForm(false); setEditItem(null); reloadItems() }}
-            onCancel={() => { setShowForm(false); setEditItem(null) }}
-          />
-        )
+      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-700">Item Barang ({items.length})</h3>
+        {canEdit && !formOpen && (
+          <button className="btn-primary text-xs py-1.5" onClick={() => { setEditItem(null); setShowForm(true) }}>
+            + Tambah Item
+          </button>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <div className="p-6 text-center text-gray-400 text-sm">Belum ada item di kartu ini.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-100">
+              <tr>
+                <th className="table-th w-10">No</th>
+                <th className="table-th">Kode Barang</th>
+                <th className="table-th">Spesifikasi Nama Barang</th>
+                <th className="table-th">Kode Rekening</th>
+                <th className="table-th text-right">Jumlah</th>
+                <th className="table-th text-right">Harga Satuan</th>
+                <th className="table-th text-right">Nilai Total</th>
+                <th className="table-th">Keterangan</th>
+                {canEdit && <th className="table-th w-28">Aksi</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {items.map((it, i) => (
+                <tr key={it.id}>
+                  <td className="table-td text-xs">{it.no_urut ?? i + 1}</td>
+                  <td className="table-td text-xs whitespace-nowrap">{it.kode || '—'}</td>
+                  <td className="table-td text-xs text-gray-700">{it.nama_barang || '—'}</td>
+                  <td className="table-td text-xs text-gray-500 whitespace-nowrap">{it.kode_rekening || '—'}</td>
+                  <td className="table-td text-xs text-right whitespace-nowrap">{it.jumlah_kebutuhan ?? 0} {it.satuan || ''}</td>
+                  <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(it.harga_satuan)}</td>
+                  <td className="table-td text-xs text-right whitespace-nowrap font-medium">{formatRupiah(it.total_anggaran)}</td>
+                  <td className="table-td text-xs text-gray-500">{it.keterangan || '—'}</td>
+                  {canEdit && (
+                    <td className="table-td whitespace-nowrap">
+                      <button onClick={() => { setEditItem(it); setShowForm(false) }} className="text-teal hover:underline text-xs font-medium mr-3">Edit</button>
+                      <button onClick={() => hapusItem(it)} className="text-red-500 hover:text-red-700 text-xs font-medium">Hapus</button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-100">
+              <tr>
+                <td className="table-td text-xs font-semibold" colSpan={6}>Subtotal kartu ini</td>
+                <td className="table-td text-xs text-right font-bold whitespace-nowrap">{formatRupiah(total)}</td>
+                <td className="table-td" colSpan={canEdit ? 2 : 1} />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Daftar item datar (4 jenis RKBMD non-pengadaan) ─────────────────────────
+function DaftarItemDatar({ header, items, canEdit, reloadIsi, onMsg }: {
+  header: RkbmdHeader; items: RkbmdItem[]; canEdit: boolean
+  reloadIsi: () => void; onMsg: (m: string) => void
+}) {
+  const supabase = createClient()
+  const [showForm, setShowForm] = useState(false)
+  const [editItem, setEditItem] = useState<RkbmdItem | null>(null)
+  useEffect(() => { setShowForm(false); setEditItem(null) }, [header.id])
+
+  const formOpen = showForm || !!editItem
+
+  async function hapusItem(it: RkbmdItem) {
+    if (!confirm(`Hapus item ${it.kode || it.nama_barang || ''}?`)) return
+    const { error } = await supabase.from('rkbmd_item').delete().eq('id', it.id)
+    if (error) onMsg(`Error: ${error.message}`); else reloadIsi()
+  }
+
+  return (
+    <>
+      {canEdit && formOpen && (
+        <RkbmdAsetForm
+          jenis={header.jenis as Exclude<RkbmdJenis, 'pengadaan'>}
+          rkbmdId={header.id} skpdId={header.skpd_id} editItem={editItem}
+          onSaved={() => { setShowForm(false); setEditItem(null); reloadIsi() }}
+          onCancel={() => { setShowForm(false); setEditItem(null) }}
+        />
       )}
 
-      {/* Daftar item */}
       <div className="card overflow-hidden">
         <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-700">Daftar Item</h3>
-          {canAddItem
+          {canEdit
             ? (!formOpen && <button className="btn-primary text-xs py-1.5" onClick={() => { setEditItem(null); setShowForm(true) }}>+ Tambah Item</button>)
             : (header.status === 'disetujui' && <span className="text-xs text-gray-400">Terkunci — sudah disetujui</span>)}
         </div>
@@ -358,7 +527,7 @@ function DokumenPanel({
                   <th className="table-th">Nama Barang</th>
                   <th className="table-th text-right">Ringkasan</th>
                   <th className="table-th">Keterangan</th>
-                  {canAddItem && <th className="table-th">Aksi</th>}
+                  {canEdit && <th className="table-th">Aksi</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -369,7 +538,7 @@ function DokumenPanel({
                     <td className="table-td text-xs text-gray-700">{it.nama_barang || '—'}</td>
                     <td className="table-td text-xs text-right">{ringkasItem(header.jenis, it)}</td>
                     <td className="table-td text-xs text-gray-500">{it.keterangan || '—'}</td>
-                    {canAddItem && (
+                    {canEdit && (
                       <td className="table-td whitespace-nowrap">
                         <button onClick={() => { setEditItem(it); setShowForm(false) }} className="text-teal hover:underline text-xs font-medium mr-3">Edit</button>
                         <button onClick={() => hapusItem(it)} className="text-red-500 hover:text-red-700 text-xs font-medium">Hapus</button>
@@ -382,7 +551,7 @@ function DokumenPanel({
           </div>
         )}
       </div>
-    </div>
+    </>
   )
 }
 

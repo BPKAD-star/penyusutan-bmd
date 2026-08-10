@@ -21,9 +21,10 @@ type Baris = {
   jenis: string
   versi: string
   status: RkbmdStatus
-  program: string | null
-  kegiatan: string | null
-  sub_kegiatan: string | null
+  /** Jumlah kartu Program/Kegiatan/Sub Kegiatan (jenis pengadaan; 0 utk jenis lain). */
+  kartu: number
+  /** Daftar sub kegiatan kartu-kartunya, dirangkai jadi satu sel. */
+  sub_kegiatan: string
   jumlah_item: number
   total: number
 }
@@ -40,31 +41,45 @@ export default function RkbmdPelaporan() {
   const load = useCallback(async () => {
     setLoading(true); setErr('')
     let q = supabase.from('rkbmd')
-      .select('id,skpd_id,jenis,versi,status,program,kegiatan,sub_kegiatan,admin_skpd(nama)')
+      .select('id,skpd_id,jenis,versi,status,admin_skpd(nama)')
       .eq('tahun_anggaran', tahun)
     if (status !== 'semua') q = q.eq('status', status)
     if (jenis !== 'semua') q = q.eq('jenis', jenis)
     const { data, error } = await q
     if (error) { setErr(`gagal membaca dokumen RKBMD: ${error.message}`); setRows([]); setLoading(false); return }
 
-    const base = ((data || []) as unknown as {
+    const base: Baris[] = ((data || []) as unknown as {
       id: string; skpd_id: number; jenis: string; versi: string; status: RkbmdStatus
-      program: string | null; kegiatan: string | null; sub_kegiatan: string | null
       admin_skpd: { nama: string } | null
     }[]).map(h => ({
       id: h.id, skpd: h.admin_skpd?.nama || `SKPD #${h.skpd_id}`, jenis: h.jenis, versi: h.versi,
-      status: h.status, program: h.program, kegiatan: h.kegiatan, sub_kegiatan: h.sub_kegiatan,
-      jumlah_item: 0, total: 0,
+      status: h.status, kartu: 0, sub_kegiatan: '', jumlah_item: 0, total: 0,
     }))
 
     if (base.length > 0) {
       const byId = new Map(base.map(h => [h.id, h]))
-      const { data: its, error: e2 } = await supabase.from('rkbmd_item')
-        .select('rkbmd_id,total_anggaran').in('rkbmd_id', base.map(h => h.id))
-      if (e2) { setErr(`gagal membaca item RKBMD: ${e2.message}`); setRows([]); setLoading(false); return }
-      for (const it of (its || []) as { rkbmd_id: string; total_anggaran: number | null }[]) {
-        const h = byId.get(it.rkbmd_id)
-        if (h) { h.jumlah_item += 1; h.total += it.total_anggaran || 0 }
+      const ids = base.map(h => h.id)
+      const subs = new Map<string, string[]>()
+      const [pk, it] = await Promise.all([
+        supabase.from('rkbmd_paket').select('rkbmd_id,sub_kegiatan').in('rkbmd_id', ids).order('no_urut'),
+        supabase.from('rkbmd_item').select('rkbmd_id,total_anggaran').in('rkbmd_id', ids),
+      ])
+      if (pk.error || it.error) {
+        setErr(`gagal membaca isi RKBMD: ${(pk.error || it.error)!.message}`)
+        setRows([]); setLoading(false); return
+      }
+      for (const p of (pk.data || []) as { rkbmd_id: string; sub_kegiatan: string | null }[]) {
+        const h = byId.get(p.rkbmd_id)
+        if (!h) continue
+        h.kartu += 1
+        const arr = subs.get(p.rkbmd_id) || []
+        arr.push(p.sub_kegiatan || '(belum dipilih)')
+        subs.set(p.rkbmd_id, arr)
+      }
+      for (const [id, arr] of subs) { const h = byId.get(id); if (h) h.sub_kegiatan = arr.join('; ') }
+      for (const r of (it.data || []) as { rkbmd_id: string; total_anggaran: number | null }[]) {
+        const h = byId.get(r.rkbmd_id)
+        if (h) { h.jumlah_item += 1; h.total += r.total_anggaran || 0 }
       }
     }
 
@@ -92,9 +107,8 @@ export default function RkbmdPelaporan() {
       'Jenis RKBMD': JENIS_LABEL[r.jenis] || r.jenis,
       'Versi': r.versi === 'perubahan' ? 'Perubahan' : 'Murni',
       'Status': STATUS_META[r.status].label,
-      'Program': r.program || '',
-      'Kegiatan': r.kegiatan || '',
-      'Sub Kegiatan': r.sub_kegiatan || '',
+      'Jumlah Kartu': r.kartu,
+      'Sub Kegiatan': r.sub_kegiatan,
       'Jumlah Item': r.jumlah_item,
       'Total Anggaran': r.total,
     })), `RKBMD-${tahun}`, `RKBMD ${tahun}`)
@@ -168,18 +182,19 @@ export default function RkbmdPelaporan() {
               <th className="table-th">Jenis</th>
               <th className="table-th">Versi</th>
               <th className="table-th">Status</th>
-              <th className="table-th">Program / Sub Kegiatan</th>
+              <th className="table-th text-right">Kartu</th>
+              <th className="table-th">Sub Kegiatan</th>
               <th className="table-th text-right">Item</th>
               <th className="table-th text-right">Total Anggaran</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+              <tr><td colSpan={8} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
             ) : err ? (
-              <tr><td colSpan={7} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
+              <tr><td colSpan={8} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Tidak ada dokumen RKBMD yang cocok dengan filter.</td></tr>
+              <tr><td colSpan={8} className="table-td text-center py-8 text-gray-400">Tidak ada dokumen RKBMD yang cocok dengan filter.</td></tr>
             ) : rows.map(r => (
               <tr key={r.id}>
                 <td className="table-td text-xs text-gray-800">{r.skpd}</td>
@@ -190,10 +205,8 @@ export default function RkbmdPelaporan() {
                     {STATUS_META[r.status].label}
                   </span>
                 </td>
-                <td className="table-td text-xs text-gray-500">
-                  <div>{r.program || '—'}</div>
-                  {r.sub_kegiatan && <div className="text-[11px] text-gray-400">{r.sub_kegiatan}</div>}
-                </td>
+                <td className="table-td text-xs text-right">{r.kartu || '—'}</td>
+                <td className="table-td text-xs text-gray-500">{r.sub_kegiatan || '—'}</td>
                 <td className="table-td text-xs text-right">{r.jumlah_item}</td>
                 <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(r.total)}</td>
               </tr>
