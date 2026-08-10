@@ -382,7 +382,7 @@ komponen 1.400 baris ke fungsi murni **berikut test-nya**.
 
 | # | Ekstrak | Dari | Kenapa duluan |
 |---|---|---|---|
-| 2.1 | ~~`aset/domain/visibilitas.ts`~~ — **SUDAH, sebagian (2026-08-05)**: `lib/visibilitas.ts` + `lib/visibilitas.test.ts`, menyatukan Daftar Barang, Penyusutan, & `lib/rekon.ts` (3 dari 6 berkas, plus daftar baru `LAHIR`). **Sisa**: `fn_rekap_bmd` (SQL, migrasi 20260805_02) & `fn_rekap_bmd_periodik` mengulang daftar yang sama di Postgres — kembar lintas-bahasa yang tak bisa diimpor, jadi perlu test yang membandingkan output TS vs SQL lewat query nyata (pola sama dgn 2.4). | duplikasi terbanyak; urutan kronologisnya halus (aksi terakhir menang, bukan "batal selalu menang") |
+| 2.1 | ~~`aset/domain/visibilitas.ts`~~ — **SUDAH, sebagian (2026-08-05)**: `lib/visibilitas.ts` + `lib/visibilitas.test.ts`, menyatukan Daftar Barang, Penyusutan, & `lib/rekon.ts` (3 dari 6 berkas, plus daftar baru `LAHIR`). **Sisa**: `fn_rekap_bmd` (SQL, migrasi 20260805_02) mengulang daftar yang sama di Postgres — kembar lintas-bahasa yang tak bisa diimpor, jadi perlu test yang membandingkan output TS vs SQL lewat query nyata (pola sama dgn 2.4). ⟨`fn_rekap_bmd_periodik` **tak lagi disebut di sini**: sudah di-DROP migrasi 20260725_07, diverifikasi ke DB 2026-08-06 — tinggal SATU kembaran SQL, bukan dua⟩ | duplikasi terbanyak; urutan kronologisnya halus (aksi terakhir menang, bukan "batal selalu menang") |
 | 2.1b | `aset/domain/guardPembatalan.ts` — cek "transaksi lebih baru" (rules.md §1.3) | `Koreksi.tsx`, `Penghapusan.tsx`, `Pengadaan.tsx`, `Kapitalisasi.tsx`, `Reklasifikasi.tsx` (dikonfirmasi grep, 5 berkas) | guard integritas ledger terduplikasi lima kali; kelupaan di menu batal baru = rantai replay engine RUSAK, bukan cuma laporan salah — satu tingkat di atas visibilitas |
 | 2.2 | `pengalihan/domain/kepemilikan.ts` — `ownersAt` | `lib/pengalihan.ts` + 2 halaman | atribusi SKPD period-aware, sudah pernah salah |
 | 2.3 | `aset/domain/kolom.ts` — `COLS`/`EXPORT_ORDER`/`EXPORT_COLS` | Daftar Barang ↔ Daftar Barang Awal | pasangan kembar yang dijaga komentar; sekali ekstrak, "kelupaan" jadi mustahil |
@@ -642,9 +642,9 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Test unit domain | 0 | **204** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
 | Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **0** | 5 | 15 | 20 |
-| Loop paginasi tulis-tangan | 126 | ⬜ belum diukur ulang | 90 | 40 | < 10 |
-| `const { data } = await` | 166 | ⬜ belum diukur ulang | 110 | 50 | < 10 |
-| Berkas > 500 baris | 19 | ⬜ belum diukur ulang | 15 | 8 | ≤ 3 |
+| Loop paginasi tulis-tangan | 126 ⚠️ | **63** kemunculan di **47** berkas ⟨2026-08-06⟩ — lihat catatan | 90 | 40 | < 10 |
+| `const { data } = await` | 166 | **166** ⟨2026-08-06⟩ — **tidak bergerak**, memang belum ada adopsi `assertOk()` | 110 | 50 | < 10 |
+| Berkas > 500 baris | 19 | **20** ⟨2026-08-06⟩ — **naik 1** | 15 | 8 | ≤ 3 |
 | Komentar "ubah satu, samakan yang lain" | ~6 pasang | **5 + 1 keluarga baru** ⟨lihat catatan⟩ | 4 | 2 | 0 |
 | Query per pemuatan Daftar Barang | 8–15 | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
 | Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
@@ -652,8 +652,33 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 Rincian 204 test (`npm test`, ±1 dtk): `lib/engine/penyusutan.test.ts` 79 ·
 `lib/bmd.test.ts` 74 · `lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18 ·
 `lib/sinkronisasi.test.ts` 12.
-Baris ber-⬜ butuh perintah metrik di §4 dijalankan ulang — jangan diisi
-kira-kira, lebih baik kosong daripada angka karangan.
+**Tinjauan 2026-08-06 — cara mengukurnya, supaya bisa diulang persis:**
+
+```bash
+grep -rn 'from + 999'            --include='*.ts*' app components lib | wc -l   # 63  kemunculan
+grep -rc 'from + 999'            --include='*.ts*' app components lib | grep -v ':0' | wc -l   # 47 berkas
+grep -rn 'const { data } = await' --include='*.ts*' app components lib | wc -l  # 166
+find app components lib -name '*.ts' -o -name '*.tsx' | xargs wc -l \
+  | awk '$2 != "total" && $1 > 500' | wc -l                                     # 20
+```
+
+⚠️ **Angka awal "126" TIDAK bisa direproduksi** dengan perintah mana pun di
+atas — yang mendekati cuma `.range(` (74 kemunculan / 50 berkas) dan
+`from, from +` (66). Metodenya tak pernah dicatat, jadi **jangan membaca
+"126 → 63" sebagai penurunan separuh**: tak ada satu pun loop paginasi yang
+diperbaiki dalam pekerjaan Fase 0. Yang benar: **angka 2026-08-06 di atas
+adalah baseline baru yang reproducible**, dan "126" dipensiunkan. Ini persis
+alasan kolom `Sekarang` wajib menyebutkan perintahnya, bukan cuma angkanya.
+
+Dua baris yang **memburuk**, dan itu memang harus terbaca begitu: berkas > 500
+baris 19 → **20** (`Pengadaan.tsx` 1.437 → 1.445, `Koreksi.tsx` 1.422 → 1.429 —
+berkas besar terus tumbuh selama belum ada fitur yang memicu Fase 3), dan
+`const { data } = await` **tidak bergerak sama sekali** dari 166. Fase 0 memang
+tidak menyentuh keduanya: ia memasang alat ukurnya (ESLint kini memperingatkan
+tiap pelanggaran baru), bukan melunasi utangnya.
+
+Jangan diisi kira-kira — lebih baik kosong daripada angka karangan, dan lebih
+baik lagi angka yang disertai perintahnya.
 
 ⚠️ Baris konstanta kembar **naik, bukan turun**: `visibilitas` berhasil
 disatukan (−1), tapi sisir `tukar_menukar` 2026-08-05 menemukan keluarga yang

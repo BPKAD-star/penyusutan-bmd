@@ -143,9 +143,11 @@ Sebuah barang tampil di periode V kalau lolos **tiga** pertanyaan, bukan satu:
 | **MUNCUL** | `MUNCUL` | Membatalkan penyembunyian. Replay **kronologis** (periode → id ledger), bukan "batal selalu menang" — siklus hapus→batal→hapus di periode yang sama harus ikut aksi TERAKHIR |
 | **NETRAL** | — (engine `default: break`) | `pengalihan_status`, `mutasi_internal`, `batal_pengalihan`, `pemanfaatan*`, `pengamanan*`. Barang tetap tampil & tetap disusutkan |
 
-⚠️ Salinan lintas-bahasa yang **belum** bisa disatukan: `fn_rekap_bmd` &
-`fn_rekap_bmd_periodik` (SQL) mengulang daftar yang sama di Postgres. Belum ada
-yang menjaganya sinkron — lihat [REFACTOR-PLAN.md](REFACTOR-PLAN.md) 2.1.
+⚠️ Salinan lintas-bahasa yang **belum** bisa disatukan: **`fn_rekap_bmd`** (SQL)
+mengulang daftar yang sama di Postgres. Belum ada yang menjaganya sinkron —
+lihat [REFACTOR-PLAN.md](REFACTOR-PLAN.md) 2.1. (`fn_rekap_bmd_periodik` dulu
+ikut disebut di sini; ia sudah di-DROP migrasi `20260725_07` — diverifikasi ke
+DB 2026-08-06, jadi kembaran SQL-nya tinggal satu.)
 
 ⚠️ `batal_pengalihan` menganulir lewat **`payload.target_trx_ids` (JAMAK)** —
 sekali batal membatalkan baris perginya DAN baris pulangnya, sebab membatalkan
