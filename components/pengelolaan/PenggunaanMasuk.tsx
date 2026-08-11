@@ -12,6 +12,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
+import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import SkpdCombobox from '@/components/SkpdCombobox'
 
 type DraftItem = {
@@ -50,6 +51,7 @@ export default function PenggunaanMasuk() {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [errLoad, setErrLoad] = useState('')
 
   useEffect(() => {
     (async () => {
@@ -64,10 +66,13 @@ export default function PenggunaanMasuk() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ⚠️ Badan fungsi di dalam try, `setLoading(false)` di FINALLY —
+  // `fetchBatalTargets` MELEMPAR (fail-closed). Tanpa ini halaman membeku di
+  // "Memuat..." tanpa keterangan; lihat aturan kolektor fail-closed di CLAUDE.md.
   const load = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setJurnals([]); return }
-    setLoading(true)
-
+    if (!skpdId) { setJurnals([]); setErrLoad(''); return }
+    setLoading(true); setErrLoad('')
+    try {
     const { data: headers } = await supabase.from('jurnal_header')
       .select('id,no_sk,tanggal,periode,keterangan,skpd_id,skpd_tujuan,approval_status,rejected_reason,payload')
       .eq('kategori', 'pengalihan_status')
@@ -95,19 +100,22 @@ export default function PenggunaanMasuk() {
         id: number; header_id: string; nilai: number; payload: { reversal?: boolean } | null
         aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; merek_tipe: string | null; jumlah: number; satuan: string | null } | null
       }[]
-      // Pasangan (kartu, barang) yang pengalihannya DIBATALKAN. Beda perlakuan
-      // dari "Dikembalikan": dikembalikan = peristiwa nyata, tetap tampil
-      // sebagai riwayat; DIBATALKAN = dianggap tak pernah terjadi, jadi
-      // barangnya keluar TOTAL dari kartu. Kartu yang lalu jadi kosong ikut
-      // hilang lewat filter `lines.length > 0` di bawah — pola "auto-ilang"
-      // yang sama dengan sisi pengirim di Penghapusan.tsx.
-      const { data: batalRows } = await supabase.from('transaksi_bmd')
-        .select('header_id,aset_id')
-        .eq('jenis', 'batal_pengalihan')
-        .in('header_id', approvedIds)
-      const dibatalkan = new Set(
-        ((batalRows || []) as { header_id: string; aset_id: string }[])
-          .map(r => `${r.header_id}|${r.aset_id}`))
+      // Baris ledger yang DIBATALKAN — per ID BARIS, bukan per (kartu, barang).
+      // Beda perlakuan dari "Dikembalikan": dikembalikan = peristiwa nyata,
+      // tetap tampil sebagai riwayat; DIBATALKAN = dianggap tak pernah terjadi,
+      // jadi barisnya keluar TOTAL dari kartu.
+      //
+      // ⚠️ DULU di-kunci `header|aset` dan itu SALAH sejak kartu bisa diterima
+      // ULANG (migrasi 20260811_02): satu `batal_pengalihan` lama membuat
+      // SELURUH baris barang itu di kartu tsb ikut tersapu — termasuk
+      // penerimaan BARU yang sah. Akibatnya barang benar-benar pindah tapi
+      // kartunya lenyap dari kedua sisi, pengirim maupun penerima. Yang
+      // otoritatif adalah `payload.target_trx_ids`, dan itu yang dibaca
+      // fetchBatalTargets — sumber yang sama dipakai Rekonsiliasi & Laporan BMD.
+      const dibatalkan = await fetchBatalTargets(
+        supabase, BATAL_TARGET_JENIS.pengalihan,
+        rows.map(r => r.aset?.id).filter((x): x is string => !!x),
+      )
 
       const seen = new Set<string>()
       for (const r of rows) {
@@ -115,7 +123,7 @@ export default function PenggunaanMasuk() {
         const key = `${r.header_id}|${r.aset.id}`
         if (seen.has(key)) continue
         seen.add(key)
-        if (dibatalkan.has(key)) continue
+        if (dibatalkan.has(r.id)) continue
         // Baris terbaru ber-reversal = sudah dipulangkan. DITAMPILKAN sebagai
         // riwayat, bukan dibuang — lihat catatan di type Line.
         const dikembalikan = !!r.payload?.reversal
@@ -132,7 +140,12 @@ export default function PenggunaanMasuk() {
       }
     }
     setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
-    setLoading(false)
+    } catch (e) {
+      setJurnals([])
+      setErrLoad(`Gagal memuat pengalihan masuk: ${e instanceof Error ? e.message : String(e)}. Daftar tidak ditampilkan supaya tak terbaca sebagai "belum ada pengalihan masuk".`)
+    } finally {
+      setLoading(false)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(skpd) }, [skpd, load])
@@ -255,6 +268,8 @@ export default function PenggunaanMasuk() {
 
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Pilih SKPD untuk melihat pengalihan masuk.</div>
+      ) : errLoad ? (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{errLoad}</div>
       ) : loading ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Memuat...</div>
       ) : jurnals.length === 0 ? (

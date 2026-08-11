@@ -23,6 +23,7 @@ import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
+import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -129,6 +130,7 @@ export default function Penghapusan() {
   // lagi berarti "belum ada ledger" — pembatalan mengembalikan kartu ke pending
   // padahal jejaknya sudah ada. Ini yang membedakan hapus vs arsipkan.
   const [jurnalBerledger, setJurnalBerledger] = useState<Record<string, number>>({})
+  const [errLoad, setErrLoad] = useState('')
 
   // ── Referensi awal ──
   useEffect(() => {
@@ -157,10 +159,16 @@ export default function Penghapusan() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Muat jurnal penghapusan + pengalihan milik SKPD terpilih ──
+  // ⚠️ Seluruh badan fungsi di dalam try, `setLoadingJurnal(false)` di FINALLY.
+  // `fetchBatalTargets` MELEMPAR kalau querynya gagal (fail-closed, lib/
+  // voidedAset.ts). Tanpa penangkap, promise-nya ditolak, loading tak pernah
+  // dimatikan, dan halaman membeku di "Memuat jurnal..." tanpa sepatah pun
+  // keterangan — cacat yang sudah pernah memakan Daftar Barang & sudah
+  // tertulis di CLAUDE.md, jangan diulang di sini.
   const loadJurnals = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setJurnals([]); return }
-    setLoadingJurnal(true)
-
+    if (!skpdId) { setJurnals([]); setErrLoad(''); return }
+    setLoadingJurnal(true); setErrLoad('')
+    try {
     const { data: headers } = await supabase.from('jurnal_header')
       .select(HEADER_COLS)
       .in('kategori', ['penghapusan', 'pengalihan_status'])
@@ -202,13 +210,17 @@ export default function Penghapusan() {
       // pernah terjadi, jadi barangnya keluar dari kartu di SISI PENGIRIM juga,
       // bukan cuma di Penggunaan Masuk. Kalau semua barangnya dibatalkan,
       // kartunya ikut hilang lewat filter `lines.length > 0` di bawah.
-      const { data: batalRows } = await supabase.from('transaksi_bmd')
-        .select('header_id,aset_id')
-        .eq('jenis', 'batal_pengalihan')
-        .in('header_id', ledgerIds)
-      const dibatalkan = new Set(
-        ((batalRows || []) as { header_id: string; aset_id: string }[])
-          .map(r => `${r.header_id}|${r.aset_id}`))
+      //
+      // ⚠️ Per ID BARIS (`payload.target_trx_ids`), BUKAN per (kartu, barang).
+      // Kunci lama `header|aset` menyapu SELURUH baris barang itu di kartu tsb,
+      // termasuk penerimaan BARU yang sah sesudah pembatalan — cacat yang baru
+      // muncul sejak kartu bisa diterima ulang (migrasi 20260811_02), dan
+      // akibatnya barang pindah tapi kartunya lenyap dari kedua sisi.
+      // Kembar dengan PenggunaanMasuk.tsx; ubah satu, samakan yang lain.
+      const dibatalkan = await fetchBatalTargets(
+        supabase, BATAL_TARGET_JENIS.pengalihan,
+        rows.map(r => r.aset?.id).filter((x): x is string => !!x),
+      )
 
       const seenHapus = new Set<string>()
       const seenAlih = new Set<string>()
@@ -224,7 +236,7 @@ export default function Penghapusan() {
           const key = `${r.header_id}|${r.aset.id}`
           if (seenAlih.has(key)) continue
           seenAlih.add(key)
-          if (dibatalkan.has(key)) continue
+          if (dibatalkan.has(r.id)) continue
           if (r.payload?.reversal) continue
         }
         j.lines.push({
@@ -253,7 +265,12 @@ export default function Penghapusan() {
     // sudah dibatalkan, atau header orphan sisa entry yang gagal. Header tetap di
     // DB (baris ledger yg pernah ada memblok DELETE via FK), cukup tak ditampilkan.
     setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
-    setLoadingJurnal(false)
+    } catch (e) {
+      setJurnals([])
+      setErrLoad(`Gagal memuat jurnal: ${e instanceof Error ? e.message : String(e)}. Daftar tidak ditampilkan supaya tak terbaca sebagai "belum ada jurnal".`)
+    } finally {
+      setLoadingJurnal(false)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null) }, [skpd, loadJurnals])
@@ -443,7 +460,9 @@ export default function Penghapusan() {
             )}
           </div>
 
-          {loadingJurnal ? (
+          {errLoad ? (
+            <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{errLoad}</div>
+          ) : loadingJurnal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
           ) : jurnals.length === 0 ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Belum ada penghapusan / pengalihan untuk SKPD ini.</div>
