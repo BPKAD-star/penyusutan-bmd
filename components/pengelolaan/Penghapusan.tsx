@@ -374,13 +374,28 @@ export default function Penghapusan() {
   // disimpan terpisah dari daftarnya cepat atau lambat berselisih dengannya
   // (pola yang sudah menggigit di cache `aset.pemanfaatan`).
   const jurnalTampil = filterJenis === 'semua' ? jurnals : jurnals.filter(j => j.jenis === filterJenis)
-  const totalTampil = jurnalTampil.reduce((s, j) => s + j.total, 0)
-  const jumlahBarangTampil = jurnalTampil.reduce((s, j) => s + j.lines.length, 0)
+
+  // ⚠️ Kartu `ditolak` TIDAK ikut total maupun cacahan. Ia perpindahan yang tak
+  // pernah jadi — entah ditolak SKPD tujuan, entah ditarik kembali pengirim
+  // sesudah dibatalkan. Barangnya sudah pulang ke SKPD asal, jadi menghitungnya
+  // berarti mengklaim perpindahan yang tak ada.
+  //
+  // Perlu ditulis eksplisit karena barisnya datang dari `payload.draft_items`,
+  // dan draft itu TIDAK pernah dikosongkan saat kartu diarsipkan — jadi kartu
+  // mati tetap membawa isinya. Terukur 2026-08-11: total Pengalihan Status
+  // tampil 9.573.169.260,03 padahal yang sah 9.210.214.924,03; selisih
+  // 362.954.336 itu satu kartu ke Kecamatan Plemahan yang sudah dibatalkan.
+  const arsip = (j: Jurnal) => j.approval_status === 'ditolak'
+  const jurnalAktif = jurnalTampil.filter(j => !arsip(j))
+  const jurnalArsip = jurnalTampil.filter(arsip)
+  const totalTampil = jurnalAktif.reduce((s, j) => s + j.total, 0)
+  const jumlahBarangTampil = jurnalAktif.reduce((s, j) => s + j.lines.length, 0)
+  const cacah = (f: (j: Jurnal) => boolean) => jurnals.filter(j => !arsip(j) && f(j)).length
   const hitungJenis: Record<'semua' | JenisHapus, number> = {
-    semua: jurnals.length,
-    penghapusan_pemindahtanganan: jurnals.filter(j => j.jenis === 'penghapusan_pemindahtanganan').length,
-    penghapusan_sebab_lain: jurnals.filter(j => j.jenis === 'penghapusan_sebab_lain').length,
-    pengalihan_status: jurnals.filter(j => j.jenis === 'pengalihan_status').length,
+    semua: cacah(() => true),
+    penghapusan_pemindahtanganan: cacah(j => j.jenis === 'penghapusan_pemindahtanganan'),
+    penghapusan_sebab_lain: cacah(j => j.jenis === 'penghapusan_sebab_lain'),
+    pengalihan_status: cacah(j => j.jenis === 'pengalihan_status'),
   }
 
   return (
@@ -448,7 +463,12 @@ export default function Penghapusan() {
                   Total Nilai{filterJenis !== 'semua' ? ` — ${FILTER_LABEL[filterJenis]}` : ''}
                 </p>
                 <p className="text-xl font-bold text-gray-800">{formatRupiah(totalTampil)}</p>
-                <p className="text-xs text-gray-400">{jurnalTampil.length} jurnal · {jumlahBarangTampil} barang</p>
+                <p className="text-xs text-gray-400">{jurnalAktif.length} jurnal · {jumlahBarangTampil} barang</p>
+                {jurnalArsip.length > 0 && (
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    + {jurnalArsip.length} kartu diarsipkan/ditolak, <span className="font-medium">tidak dihitung</span>
+                  </p>
+                )}
               </div>
             </div>
             {filterJenis === 'semua' && (
@@ -470,7 +490,10 @@ export default function Penghapusan() {
             <div className="card p-12 text-center text-gray-400 text-sm">
               Tak ada jurnal berjenis &quot;{FILTER_LABEL[filterJenis as JenisHapus]}&quot; untuk SKPD ini.
             </div>
-          ) : jurnalTampil.map(j => {
+          ) : [...jurnalAktif, ...jurnalArsip].map((j, idx) => {
+            // Kartu arsip dikumpulkan di BAWAH, di belakang pemisah — supaya
+            // tak tercampur dengan yang sah & jelas kenapa ia tak ikut total.
+            const mulaiArsip = jurnalArsip.length > 0 && idx === jurnalAktif.length
             const isAlih = j.kategori === 'pengalihan_status'
             const pending = isAlih && j.approval_status === 'pending'
             const ditolak = isAlih && j.approval_status === 'ditolak'
@@ -479,7 +502,17 @@ export default function Penghapusan() {
             // Disetujui → read-only di sisi pengirim (pengembalian ada di penerima).
             const bolehHapusLine = !isAlih || pending
             return (
-            <div key={j.id} className="card overflow-hidden">
+            <div key={j.id} className={mulaiArsip ? 'space-y-4 pt-2' : ''}>
+            {mulaiArsip && (
+              <div className="flex items-center gap-3 pt-2">
+                <div className="h-px flex-1 bg-gray-200" />
+                <span className="text-xs text-gray-400 font-medium">
+                  Diarsipkan / ditolak — barang sudah kembali ke SKPD ini, tidak dihitung dalam total
+                </span>
+                <div className="h-px flex-1 bg-gray-200" />
+              </div>
+            )}
+            <div className={`card overflow-hidden ${arsip(j) ? 'opacity-60' : ''}`}>
               <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
                 <div className="flex items-start justify-between gap-4">
                   <div className="text-sm space-y-0.5">
@@ -587,6 +620,7 @@ export default function Penghapusan() {
                   </tbody>
                 </table>
               </div>
+            </div>
             </div>
           )})}
         </div>
