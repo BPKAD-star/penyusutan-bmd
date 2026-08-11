@@ -1029,6 +1029,38 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   error selama jendela antara migrasi & deploy; itu diterima karena tabelnya
   terbukti KOSONG (0 baris, dicek 2026-08-10) dan halamannya memang diganti.
 
+## Rekonsiliasi BMD — Saldo Awal Semester I sempat berakumulasi NOL
+
+Insiden 2026-08-11. Rekonsiliasi Semester I menampilkan baris **SALDO AWAL**
+dengan Akumulasi kosong dan Nilai Buku = Nilai Perolehan (mustahil untuk barang
+yang sudah tersusut), lalu seluruh akumulasi awal muncul di baris **Selisih**.
+
+- **Sebabnya:** `penyusutan_semester` **tidak pernah berisi 2025-S2** — posisi
+  akhir 2025 itu data impor e-BMD, bukan hasil engine, dan tersimpan di payload
+  ledger `saldo_awal` (`akumulasi_2025`, `nilai_buku_awal`). Sementara itu
+  `fetchSnapshotPositions` cuma memberi cadangan untuk `perolehan`
+  (`p ? p.nilai_perolehan : aset.nilai_perolehan`); `akumulasi`/`nilai_buku`
+  langsung 0 kalau baris engine tak ada. Saldo Awal S1 = snapshot 2025-S2 →
+  semua asetnya tanpa baris engine → akumulasi nol seluruhnya.
+- **Buktinya** (BKAD 1.3.2 intra): Selisih akumulasi 926.099.171 = persis
+  akumulasi akhir 965.096.688 − beban periode 38.997.517. Dicek se-pemda:
+  Σ`akumulasi_2025` 4.032.584.622.838,89 + Σbeban 2026-S1 145.668.260.154,04 =
+  Σakumulasi 2026-S1 4.178.252.882.992,93 (selisih 2e-6, pembulatan).
+- **Perbaikannya:** `fetchBaselinePos()` — aset yang terlihat tapi tak punya
+  baris engine posisinya dibaca dari `saldo_awal`/`saldo_awal_checkpoint`
+  (checkpoint TERBARU ber-periode ≤ periode diminta, pola `hitungJadwalAset`).
+  Hanya untuk yang missing, jadi di 2026-S1/S2 praktis tak berbiaya.
+- Efeknya berantai & ketiganya perbaikan: (1) Saldo Awal S1 benar; (2) baris
+  PENGURANGAN ikut membawa akumulasi bawaan — `attribusiPenyusutan` mengambil
+  `pw.akumulasi` yang dulu nol, jadi barang keluar seolah tak pernah tersusut;
+  (3) Selisih runtuh ke ~0. **Semester II tak berubah** (saldo awalnya 2026-S1
+  yang memang punya baris engine).
+- ⚠️ **`perolehan` Saldo Awal sengaja TETAP dari register**, bukan nilai beku
+  akhir 2025 — untuk barang yang dikapitalisasi/dikoreksi di 2026 angkanya
+  sedikit lebih besar. Tidak diubah bersamaan karena rantai kolom perolehan
+  sudah tie-out; kalau mau dirapikan, sumbernya `aset_awal_2026.nilai_perolehan`
+  dicocokkan lewat NIBAR.
+
 ## Rekonsiliasi BMD — tampilan & cetak (2026-08-11)
 
 - **Nol ditampilkan `–`, bukan `0`** (permintaan user): di lembar seluas ini
