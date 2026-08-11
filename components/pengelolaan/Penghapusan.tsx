@@ -44,6 +44,15 @@ const SUBJENIS_OPT = [
 
 const PENGHAPUSAN_JENIS = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
 
+// Label pendek khusus bilah filter — `JENIS_OPT.label` dipakai di formulir dan
+// terlalu panjang untuk dijejer sebagai tombol.
+const FILTER_LABEL: Record<'semua' | JenisHapus, string> = {
+  semua: 'Semua',
+  penghapusan_pemindahtanganan: 'Pemindahtanganan',
+  penghapusan_sebab_lain: 'Sebab Lain',
+  pengalihan_status: 'Pengalihan Status',
+}
+
 type Barang = {
   id: string
   nibar: string | null
@@ -111,6 +120,15 @@ export default function Penghapusan() {
   const [addTo, setAddTo] = useState<Header | null>(null)   // "+" tambah barang ke jurnal ini
   const [editing, setEditing] = useState<Header | null>(null) // edit header
   const [msg, setMsg] = useState('')
+  // Filter jenis kartu — 'semua' | JenisHapus. Menu ini menampung tiga alur
+  // yang berbeda sifatnya (dua penghapusan + satu transfer), dan sesudah satu
+  // SK memecah diri jadi 16 kartu tujuan, daftarnya jadi tak bisa ditelusuri
+  // tanpa penyaring.
+  const [filterJenis, setFilterJenis] = useState<'semua' | JenisHapus>('semua')
+  // header_id → jumlah baris ledger. Sejak migrasi 20260811_02, `pending` TIDAK
+  // lagi berarti "belum ada ledger" — pembatalan mengembalikan kartu ke pending
+  // padahal jejaknya sudah ada. Ini yang membedakan hapus vs arsipkan.
+  const [jurnalBerledger, setJurnalBerledger] = useState<Record<string, number>>({})
 
   // ── Referensi awal ──
   useEffect(() => {
@@ -216,6 +234,21 @@ export default function Penghapusan() {
         j.total += r.nilai
       }
     }
+    // Kartu mana yang PUNYA jejak ledger — menentukan apakah 🗑 menghapus
+    // beneran atau mengarsipkan. Dihitung dari header_id apa adanya, TERMASUK
+    // kartu yang kini 'pending' lagi karena pembatalan (migrasi 20260811_02):
+    // di situlah persoalannya, sebab status 'pending' saja tak lagi berarti
+    // "belum ada ledger" sejak migrasi itu.
+    const berledger: Record<string, number> = {}
+    if (hs.length > 0) {
+      const { data: ledgerCount } = await supabase.from('transaksi_bmd')
+        .select('header_id').in('header_id', hs.map(h => h.id))
+      for (const r of (ledgerCount || []) as { header_id: string }[]) {
+        berledger[r.header_id] = (berledger[r.header_id] || 0) + 1
+      }
+    }
+    setJurnalBerledger(berledger)
+
     // Sembunyikan jurnal tanpa barang (auto-ilang): entah karena semua barang
     // sudah dibatalkan, atau header orphan sisa entry yang gagal. Header tetap di
     // DB (baris ledger yg pernah ada memblok DELETE via FK), cukup tak ditampilkan.
@@ -233,10 +266,12 @@ export default function Penghapusan() {
       if (j.approval_status !== 'pending') return
       const sisa = (j.payload?.draft_items || []).filter(d => d.aset_id !== l.aset_id)
       if (sisa.length === 0) {
-        if (!confirm('Ini barang terakhir di jurnal — jurnal pengalihan akan dihapus seluruhnya. Lanjutkan?')) return
-        const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
-        if (error) { setMsg(`Error: ${error.message}`); return }
-        setMsg('Jurnal pengalihan dihapus.')
+        // Barang terakhir → kartunya ikut hilang. Lewat hapusJurnal supaya
+        // aturan hapus-vs-arsipkan cuma hidup di SATU tempat; salinan kedua di
+        // sini persis yang membuat jalur ini luput saat 20260811_02 mengubah
+        // arti status 'pending'.
+        await hapusJurnal(j)
+        return
       } else {
         if (!confirm('Keluarkan barang ini dari draft pengalihan?')) return
         const { error } = await supabase.from('jurnal_header')
@@ -269,13 +304,43 @@ export default function Penghapusan() {
     loadJurnals(skpd)
   }
 
-  // Hapus jurnal pengalihan utuh — hanya selama belum disetujui (belum ada
-  // jejak ledger). Jalan keluar utk salah semester: hapus, entry ulang.
+  // Hapus jurnal pengalihan utuh.
+  //
+  // DUA PERILAKU, persis pola `hapusKontrak` di Pengadaan — dan ini bukan
+  // kehati-hatian belaka, ini menutup regresi 2026-08-11:
+  //   * Draft murni (belum pernah diterima, TAK ADA baris ledger) → DELETE
+  //     beneran. Aman: tak ada yang menggantung.
+  //   * Kartu yang PERNAH diterima lalu dibatalkan (`punyaLedger`) → DIARSIPKAN
+  //     (`approval_status='ditolak'`), bukan dihapus. Ledgernya wajib tetap
+  //     utuh (append-only), dan FK `transaksi_bmd.header_id` + trigger
+  //     `trg_jurnal_header_hapus_guard` memang menolak DELETE-nya.
+  //
+  // Kenapa perlu: sejak migrasi 20260811_02 pembatalan mengembalikan kartu ke
+  // 'pending', jadi tombol 🗑 muncul lagi untuk kartu yang justru TAK MUNGKIN
+  // dihapus. Membiarkannya begitu berarti memasang tombol yang selalu gagal.
+  // Dan membiarkan kartunya tetap 'pending' juga tak aman: ia nangkring di
+  // antrean "Menunggu Persetujuan" SKPD tujuan, yang bisa saja mengklik Terima
+  // dan memindahkan barang yang salah untuk kedua kalinya.
   async function hapusJurnal(j: Jurnal) {
-    if (!confirm(`Hapus jurnal pengalihan "${j.no_sk}" seluruhnya (${j.lines.length} barang)? Barang tetap utuh di SKPD ini.`)) return
-    const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg('Jurnal pengalihan dihapus.')
+    const punyaLedger = (jurnalBerledger[j.id] || 0) > 0
+    const pesan = punyaLedger
+      ? `Kartu pengalihan "${j.no_sk}" sudah pernah diterima lalu dibatalkan, jadi jejak ledgernya WAJIB disimpan dan kartunya tidak bisa dihapus.\n\n` +
+        `Kartu ini akan DIARSIPKAN: hilang dari daftar Anda dan dari antrean persetujuan ${namaSkpdById(j.skpd_tujuan)}, ` +
+        `sehingga tak bisa lagi diterima tanpa sengaja. Barang tetap utuh di SKPD ini.\n\nLanjutkan?`
+      : `Hapus jurnal pengalihan "${j.no_sk}" seluruhnya (${j.lines.length} barang)? Barang tetap utuh di SKPD ini.`
+    if (!confirm(pesan)) return
+
+    if (punyaLedger) {
+      const { error } = await supabase.from('jurnal_header')
+        .update({ approval_status: 'ditolak', rejected_reason: 'Ditarik kembali oleh SKPD asal (kartu sudah pernah diterima lalu dibatalkan).' })
+        .eq('id', j.id)
+      if (error) { setMsg(`Error: ${error.message}`); return }
+      setMsg(`Kartu ${j.no_sk} diarsipkan — tak lagi muncul di antrean persetujuan SKPD tujuan.`)
+    } else {
+      const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
+      if (error) { setMsg(`Error: ${error.message}`); return }
+      setMsg('Jurnal pengalihan dihapus.')
+    }
     loadJurnals(skpd)
   }
 
@@ -286,6 +351,20 @@ export default function Penghapusan() {
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
   const namaSkpdById = (id: number | null) => skpdList.find(s => s.id === id)?.nama || '-'
+
+  // ── Filter + total ────────────────────────────────────────────────────────
+  // Diturunkan dari `jurnals` saat render, TIDAK disimpan di state: angka yang
+  // disimpan terpisah dari daftarnya cepat atau lambat berselisih dengannya
+  // (pola yang sudah menggigit di cache `aset.pemanfaatan`).
+  const jurnalTampil = filterJenis === 'semua' ? jurnals : jurnals.filter(j => j.jenis === filterJenis)
+  const totalTampil = jurnalTampil.reduce((s, j) => s + j.total, 0)
+  const jumlahBarangTampil = jurnalTampil.reduce((s, j) => s + j.lines.length, 0)
+  const hitungJenis: Record<'semua' | JenisHapus, number> = {
+    semua: jurnals.length,
+    penghapusan_pemindahtanganan: jurnals.filter(j => j.jenis === 'penghapusan_pemindahtanganan').length,
+    penghapusan_sebab_lain: jurnals.filter(j => j.jenis === 'penghapusan_sebab_lain').length,
+    pengalihan_status: jurnals.filter(j => j.jenis === 'pengalihan_status').length,
+  }
 
   return (
     <FormShell judul="Penghapusan" msg={msg}
@@ -328,11 +407,51 @@ export default function Penghapusan() {
             <button className="btn-primary" onClick={() => { setMsg(''); setMode('tambah') }}>+ Tambah Jurnal</button>
           </div>
 
+          {/* Filter jenis + total. Totalnya SELALU mengikuti filter yang sedang
+              aktif — angka ringkas yang tak sepakat dengan daftar di bawahnya
+              lebih berbahaya daripada tidak ada angka sama sekali. */}
+          <div className="card px-5 py-4">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-gray-600 mr-1">Jenis :</span>
+                {([['semua', 'Semua'], ...JENIS_OPT.map(o => [o.value, FILTER_LABEL[o.value]] as const)] as const).map(([v, l]) => {
+                  const aktif = filterJenis === v
+                  return (
+                    <button key={v} onClick={() => setFilterJenis(v as 'semua' | JenisHapus)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        aktif ? 'bg-teal text-white border-teal' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                      }`}>
+                      {l} <span className={aktif ? 'opacity-80' : 'text-gray-400'}>({hitungJenis[v as 'semua' | JenisHapus]})</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="text-xs text-gray-400">
+                  Total Nilai{filterJenis !== 'semua' ? ` — ${FILTER_LABEL[filterJenis]}` : ''}
+                </p>
+                <p className="text-xl font-bold text-gray-800">{formatRupiah(totalTampil)}</p>
+                <p className="text-xs text-gray-400">{jurnalTampil.length} jurnal · {jumlahBarangTampil} barang</p>
+              </div>
+            </div>
+            {filterJenis === 'semua' && (
+              <p className="text-xs text-gray-500 mt-3">
+                ⚠️ Total &quot;Semua&quot; mencampur <span className="font-medium">penghapusan</span> (barang keluar dari
+                register) dengan <span className="font-medium">pengalihan</span> (barang pindah SKPD, tetap milik pemda) —
+                jadi angkanya bukan satu makna. Pilih jenisnya untuk angka yang bisa dibaca.
+              </p>
+            )}
+          </div>
+
           {loadingJurnal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
           ) : jurnals.length === 0 ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Belum ada penghapusan / pengalihan untuk SKPD ini.</div>
-          ) : jurnals.map(j => {
+          ) : jurnalTampil.length === 0 ? (
+            <div className="card p-12 text-center text-gray-400 text-sm">
+              Tak ada jurnal berjenis &quot;{FILTER_LABEL[filterJenis as JenisHapus]}&quot; untuk SKPD ini.
+            </div>
+          ) : jurnalTampil.map(j => {
             const isAlih = j.kategori === 'pengalihan_status'
             const pending = isAlih && j.approval_status === 'pending'
             const ditolak = isAlih && j.approval_status === 'ditolak'
@@ -395,10 +514,19 @@ export default function Penghapusan() {
                         onClick={() => { setMsg(''); setAddTo(j) }}
                         className="inline-flex items-center justify-center w-8 h-8 rounded bg-teal hover:opacity-90 text-white">+</button>
                     )}
-                    {(pending || ditolak) && (
-                      <button title="Hapus jurnal pengalihan ini seluruhnya (belum ada jejak ledger)"
+                    {/* `ditolak` TANPA ledger masih boleh dihapus (pengirim
+                        membereskan kartu yang ditolak penerima). `ditolak`
+                        DENGAN ledger sudah keluar dari antrean & tak bisa
+                        dihapus — tombolnya cuma akan jadi jalan buntu. */}
+                    {(pending || (ditolak && (jurnalBerledger[j.id] || 0) === 0)) && (
+                      <button
+                        title={(jurnalBerledger[j.id] || 0) > 0
+                          ? 'Arsipkan kartu ini — sudah pernah diterima lalu dibatalkan, jadi jejak ledgernya wajib disimpan & kartunya tak bisa dihapus'
+                          : 'Hapus jurnal pengalihan ini seluruhnya (belum ada jejak ledger)'}
                         onClick={() => hapusJurnal(j)}
-                        className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+                        className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">
+                        {(jurnalBerledger[j.id] || 0) > 0 ? '📥' : '🗑'}
+                      </button>
                     )}
                   </div>
                 </div>
