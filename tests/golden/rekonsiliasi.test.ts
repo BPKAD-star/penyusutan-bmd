@@ -252,14 +252,21 @@ async function selisihTieOut(): Promise<Record<string, number>> {
 }
 
 describe('golden — tie-out perolehan per sel', () => {
-  it('hanya sel yang kena gap reklas yang belum tie-out', async () => {
+  it('SETIAP sel tie-out — tak ada satu pun yang tersisa', async () => {
     const selisih = await selisihTieOut()
 
-    // Semua sel lain WAJIB nol. Ini yang membuktikan pipeline-nya benar untuk
-    // pengadaan, kapitalisasi, penghapusan, pemecahan, koreksi, pengalihan
-    // (termasuk pembatalannya), ekstrakomptabel, golongan beku, dan golongan
-    // tak disusutkan sekaligus.
-    expect(Object.keys(selisih).sort()).toEqual(['1.3.2|intra', '1.3.5|intra'])
+    // Ini invarian yang jadi seluruh alasan laporan ini ada, dan sejak
+    // 2026-08-11 ia berlaku TANPA PENGECUALIAN — membuktikan pipeline-nya benar
+    // untuk pengadaan, kapitalisasi, penghapusan, pemecahan, koreksi,
+    // pengalihan (termasuk pembatalannya), reklasifikasi, ekstrakomptabel,
+    // golongan beku, dan golongan tak disusutkan sekaligus.
+    //
+    // ⚠️ JANGAN pernah melonggarkan tes ini jadi "kecuali sel X" lagi. Daftar
+    // pengecualian itu dulu berisi dua sel reklas selama berbulan-bulan, dan
+    // selama ia ada, tak ada yang bisa membedakan gap yang sudah diketahui dari
+    // gap BARU yang menyelinap masuk. Kalau ada sel yang tak tie-out, itu bug —
+    // perbaiki sebabnya, bukan tesnya.
+    expect(selisih).toEqual({})
   })
 
   it('regresi 2026-08-06: pengalihan yang DIBATALKAN tidak lagi dihitung sebagai pengurangan', async () => {
@@ -280,22 +287,32 @@ describe('golden — tie-out perolehan per sel', () => {
     expect(a05.filter(l => l.aset_id === 'A05')).toHaveLength(1)
   })
 
-  // ── DUGAAN BUG (masih terbuka) ──────────────────────────────────────────
-  it('DUGAAN BUG: golongan pada snapshot TIDAK period-aware, jadi reklas merusak tie-out', async () => {
-    // `fetchSnapshotPositions` memakai `aset.kode` TERKINI, sementara baris
-    // mutasi membukukan keluar-dari-kode-lama + masuk-ke-kode-baru. Jadi untuk
-    // aset yang direklas di periode ini, Saldo AWAL sudah duduk di golongan
-    // BARU — lalu masih ditambah lagi oleh baris "reklas masuk".
+  // ── Dulu "DUGAAN BUG", DITUTUP 2026-08-11 ────────────────────────────────
+  it('regresi: golongan pada snapshot PERIOD-AWARE — aset yang direklas tetap di golongan lamanya', async () => {
+    // Dulu `fetchSnapshotPositions` memakai `aset.kode` TERKINI, sementara
+    // baris mutasi membukukan keluar-dari-kode-lama + masuk-ke-kode-baru. Jadi
+    // untuk aset yang direklas di periode ini, Saldo AWAL sudah duduk di
+    // golongan BARU — lalu masih ditambah lagi oleh baris "reklas masuk":
+    // dobel di golongan tujuan (+15jt), kurang di golongan asal (−15jt).
     //
-    // Bandingkan dengan `kode_register` yang riwayatnya memang disimpan
-    // (aset_kode_register): golongan tidak punya padanannya, jadi ini bukan
-    // sekadar lupa memanggil — perlu keputusan desain.
-    const selisih = await selisihTieOut()
+    // Yang membuatnya terasa "perlu keputusan desain" adalah anggapan bahwa
+    // golongan tak punya riwayat seperti `aset_kode_register`. Itu keliru:
+    // riwayatnya memang ada, tersimpan sebagai `payload.kode_lama`/`kode_baru`
+    // di ledger reklas — tinggal direplay, persis cara `ownersAt` membaca
+    // riwayat pindah unit. Sumbernya sekarang lib/reklasKode.ts.
+    //
+    // Di produksi ini menutup selisih Rp5.846.579.000 di Laporan BMD Model 3
+    // (SIRKUIT DRAG RACE DI KAWASAN G. KELUD, 1.3.3 → 1.3.4 pada 2026-S2).
+    const ctx = await prepareSnapshotCtx(db(), SCOPE)
+    const awal = await fetchSnapshotPositions(db(), PERIODE_LALU, SCOPE, ctx)
+    const akhir = await fetchSnapshotPositions(db(), PERIODE, SCOPE, ctx)
 
-    expect(selisih['1.3.5|intra']).toBe(15_000_000)   // kelebihan di golongan TUJUAN
-    expect(selisih['1.3.2|intra']).toBe(-15_000_000)  // kekurangan di golongan ASAL
-    // Selisihnya kini SIMETRIS (+15jt / −15jt) — bukti sisa gap ini murni soal
-    // reklas, bukan lagi bercampur pengalihan yang dibatalkan.
+    // A15 direklas 1.3.2 (Peralatan & Mesin) → 1.3.5 (ATL) DI PERIODE INI.
+    // Diperiksa per-aset, bukan lewat agregat golongan: 1.3.2 juga kena
+    // pengadaan/kapitalisasi/pemecahan di periode yang sama, jadi selisih
+    // agregatnya tak membuktikan apa pun tentang A15.
+    expect(awal.get('A15')?.gol).toBe('1.3.2')   // golongan SAAT ITU
+    expect(akhir.get('A15')?.gol).toBe('1.3.5')  // sesudah reklas
   })
 })
 

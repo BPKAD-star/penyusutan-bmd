@@ -11,6 +11,7 @@ import { kodeLevel3, perlakuanKode } from '@/lib/bmd'
 import { fetchPindahEvents, ownersAt, partitionByPeriodOwner, type PindahEvents } from '@/lib/pengalihan'
 import { fetchVoidedAsetIds, fetchBatalTargets, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
+import { fetchReklasEvents, kodeAt, type ReklasEvents } from '@/lib/reklasKode'
 
 export type Komptabel = 'intra' | 'ekstra'
 export type Measures = { perolehan: number; beban: number; akumulasi: number; nilaiBuku: number; count: number }
@@ -88,16 +89,20 @@ async function fetchPeny(supabase: SupabaseClient, ids: string[], periode: strin
 // awal & saldo akhir) dgn descendantIds yang sama — tanpa konteks bersama ini,
 // kedua panggilan menarik baris yang persis sama dua kali, termasuk sapuan
 // riwayat pindah yang sempat timeout (lihat fetchPindahEvents).
-export type SnapshotCtx = { base: Base[]; pindah: PindahEvents }
+export type SnapshotCtx = { base: Base[]; pindah: PindahEvents; reklas: ReklasEvents }
 
 export async function prepareSnapshotCtx(
   supabase: SupabaseClient, descendantIds: number[] | null
 ): Promise<SnapshotCtx> {
-  const [base, pindah] = await Promise.all([
+  const [base, pindah, reklas] = await Promise.all([
     fetchAllBase(supabase, descendantIds),
     fetchPindahEvents(supabase),
+    // Riwayat reklas ikut ke ctx dgn alasan yang sama dgn `pindah`: kedua
+    // snapshot (saldo awal & akhir) membutuhkannya, dan tanpa konteks bersama
+    // baris yang persis sama ditarik dua kali.
+    fetchReklasEvents(supabase),
   ])
-  return { base, pindah }
+  return { base, pindah, reklas }
 }
 
 // Posisi SATU aset pada akhir sebuah periode + sel (golongan × komptabel) tempat
@@ -119,8 +124,14 @@ export type PosAset = { gol: string; komp: Komptabel; perolehan: number; beban: 
 export async function fetchSnapshotPositions(
   supabase: SupabaseClient, periode: string, descendantIds: number[] | null, ctx?: SnapshotCtx
 ): Promise<Map<string, PosAset>> {
-  const { base, pindah } = ctx ?? await prepareSnapshotCtx(supabase, descendantIds)
+  const { base, pindah, reklas } = ctx ?? await prepareSnapshotCtx(supabase, descendantIds)
   const owners = ownersAt(pindah, periode)
+  // Golongan PADA PERIODE INI, bukan `aset.kode` terkini. Tanpa ini, aset yang
+  // direklas sudah duduk di golongan BARU di saldo awal MAUPUN akhir, lalu
+  // masih ditambah lagi oleh baris mutasi "reklas masuk" — dobel di golongan
+  // tujuan, kurang di golongan asal. Dulu terpin sbg DUGAAN BUG di
+  // tests/golden/rekonsiliasi.test.ts.
+  const kodeSaatItu = kodeAt(reklas, periode)
 
   let combined = base
   if (descendantIds && descendantIds.length > 0) {
@@ -144,12 +155,16 @@ export async function fetchSnapshotPositions(
     // belumAdaPada menangani barang biasa yang tanggal perolehannya di depan.
     if (hidden.has(b.id) || belumAdaPada(b.tgl_perolehan, periode)) continue
     const p = pmap.get(b.id)
-    const susut = perlakuanKode(b.kode) !== 'tidak'
+    const kode = kodeSaatItu.get(b.id) ?? b.kode
+    // `perlakuanKode` ikut kode SAAT ITU juga: barang yang direklas MASUK ke
+    // 1.5.4 Aset Lain-Lain berhenti disusutkan sejak reklasnya, bukan surut ke
+    // periode sebelum reklas.
+    const susut = perlakuanKode(kode) !== 'tidak'
     const perolehan = p ? p.nilai_perolehan : (b.nilai_perolehan || 0)
     const beban = susut && p ? p.beban : 0
     const akumulasi = susut && p ? p.akumulasi : 0
     pos.set(b.id, {
-      gol: kodeLevel3(b.kode), komp: kompOf(b.intra_ekstra),
+      gol: kodeLevel3(kode), komp: kompOf(b.intra_ekstra),
       perolehan, beban, akumulasi,
       nilaiBuku: susut && p ? p.nilai_buku_akhir : perolehan,
     })

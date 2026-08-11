@@ -19,6 +19,7 @@ import { useSkpdTree } from '@/components/useSkpdTree'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
+import { fetchReklasEvents, kodePada, JENIS_REKLAS_KODE } from '@/lib/reklasKode'
 import { assertOk } from '@/shared/db/query'
 
 // ── Model 3: jenis ledger per kategori Penambahan/Pengurangan (nilai
@@ -56,6 +57,24 @@ const JENIS_PENGHAPUSAN_M3 = ['penghapusan_pemindahtanganan', 'penghapusan_sebab
 // tepat sebesar nilai induk yang pecahannya pindah kolom komptabel — kasus
 // nyata: Rehab Garasi Grogol Rp167.324.933, induk intra → 7 pecahan ekstra.
 const JENIS_PECAH_M3 = ['pemecahan_keluar', 'pemecahan_masuk']
+// Reklasifikasi — KEDUA jenis (lib/reklasKode.ts), bukan cuma
+// `reklas_golongan`. Yang menentukan baris mutasi bukan NAMA jenisnya melainkan
+// apakah golongan level-3 berubah; tak ada penjaga di DB yang memaksa
+// `reklas_kode` tinggal di golongan yang sama. Versi lama diam-diam tak
+// membuatkan baris mutasinya kalau ia melintas, sementara snapshot-nya sudah
+// pindah golongan → tidak foot, tanpa pesan apa pun.
+const JENIS_REKLAS_M3 = [...JENIS_REKLAS_KODE]
+// Koreksi Nilai → mutasi. Ia MENGUBAH nilai perolehan barang yang sudah ada,
+// jadi bukan barang masuk/keluar — tapi Saldo Awal & Saldo Akhir sama-sama
+// memakai `penyusutan_semester.nilai_perolehan` yang SUDAH memuat koreksi itu,
+// jadi tanpa baris mutasinya laporan tak mungkin foot. Presedennya persis
+// `akumulasi_kdp` di atas: kenaikan nilai atas aset yang sudah ada, dihitung
+// sebagai Penambahan. `nilai` = DELTA ± (lib/transaksi.ts), dan delta itu
+// teleskopik — jumlah seluruh delta dalam periode = perubahan bersihnya, jadi
+// koreksi berulang atas barang yang sama tak perlu perlakuan "yang terakhir
+// menang". Terukur 2026-08-11: 6 baris di 1.3.3 intra, netto Rp665.788.761 —
+// tepat sebesar sisa selisih Model 3 yang selama ini tak terjelaskan.
+const JENIS_KOREKSI_NILAI_M3 = ['koreksi_nilai']
 
 const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
 
@@ -78,6 +97,8 @@ export default function LaporanBmdPage() {
   // ditampilkan — lihat komentar di blok catch `proses()`.
   const [err, setErr] = useState('')
   const [mutasiDetail, setMutasiDetail] = useState<MutasiDetail>({})
+  // Periode saldo awal yang belum pernah dihitung engine (kosong = aman).
+  const [awalTakTerhitung, setAwalTakTerhitung] = useState('')
   const [loading, setLoading] = useState(false)
   // `smt` = '1' | '2' | 'TH'. 'TH' (Akhir Tahun) HANYA untuk Model 3 — Model 1
   // & 2 memang laporan posisi "s.d. periode", jadi akhir tahun = sama dengan
@@ -195,7 +216,9 @@ export default function LaporanBmdPage() {
   // Snapshot nilai perolehan per golongan pada suatu periode (barang aktif,
   // sudah diperoleh s.d. periode itu) — versi ringkas dari step 1 `proses()`
   // di atas, tanpa join penyusutan (Model 3 cuma butuh nilai perolehan).
-  async function snapshotPerolehan(pPeriode: string): Promise<Record<string, number>> {
+  //
+  // ⚠️ Mengembalikan `adaHasilEngine` juga — lihat `bannerAwalTakTerhitung`.
+  async function snapshotPerolehan(pPeriode: string): Promise<{ perGol: Record<string, number>; adaHasilEngine: boolean }> {
     const out: Record<string, number> = {}
     // Reuse fn_rekap_bmd (period-aware perolehan per golongan sudah dihitung di
     // SQL); Model 3 cuma butuh kolom perolehan-nya, penyusutan diabaikan.
@@ -207,10 +230,12 @@ export default function LaporanBmdPage() {
       p_skpd_ids: org.descendantIds ?? null,
       p_komptabel: komptabel || null,
     }), `snapshot perolehan periode ${pPeriode}`)
-    for (const r of (data || []) as { golongan: string; perolehan: number }[]) {
+    let countPeny = 0
+    for (const r of (data || []) as { golongan: string; perolehan: number; count_peny: number }[]) {
       out[r.golongan] = (out[r.golongan] || 0) + Number(r.perolehan)
+      countPeny += Number(r.count_peny) || 0
     }
-    return out
+    return { perGol: out, adaHasilEngine: countPeny > 0 }
   }
 
   async function fetchSkpdMapM3(): Promise<Record<number, string>> {
@@ -229,7 +254,7 @@ export default function LaporanBmdPage() {
   async function fetchLedgerM3(jenisList: string[]) {
     type Row = {
       id: number; aset_id: string; nilai: number; tanggal: string; skpd_asal: number | null; skpd_tujuan: number | null
-      jenis: string; header_id: string | null
+      jenis: string; header_id: string | null; periode: string
       payload: Record<string, unknown> | null
       aset: { kode: string; nama_barang: string | null; nibar: string | null; skpd_id: number; intra_ekstra: string | null } | null
     }
@@ -237,7 +262,7 @@ export default function LaporanBmdPage() {
     for (let from = 0; ; from += 1000) {
       // `.in('periode', ...)` — Akhir Tahun menarik S1 DAN S2 sekaligus.
       const data = assertOk(await supabase.from('transaksi_bmd')
-        .select('id,jenis,header_id,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
+        .select('id,jenis,header_id,aset_id,nilai,tanggal,periode,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
         .in('periode', periodeMutasi).in('jenis', jenisList as never)
         .range(from, from + 999),
         `ledger periode ${labelPeriode} (${jenisList.join(', ')})`)
@@ -274,6 +299,25 @@ export default function LaporanBmdPage() {
   // padahal yang ditanya cuma status belasan aset di SATU periode. Itu yang
   // bikin Model 3 timeout (INS-21); biayanya tumbuh mengikuti ledger, jadi
   // index pun cuma menggeser ambangnya.
+  // ── Kode barang PADA SAAT sebuah transaksi terjadi ─────────────────────────
+  // CERMIN KLIEN dari CTE `kode_at` di `fn_rekap_bmd` (migrasi 20260811_01) —
+  // ubah satu, samakan yang lain. Bedanya cuma titik acuannya: snapshot bertanya
+  // "kode di AKHIR periode P", baris mutasi bertanya "kode saat transaksi ini".
+  //
+  // Kenapa harus setepat itu: barang yang DIPEROLEH lalu DIREKLAS dalam periode
+  // yang sama. Saldo Awal 0, Saldo Akhir di golongan TUJUAN. Kalau baris
+  // perolehannya dicatat di golongan tujuan (kode terkini), golongan itu dapat
+  // +X dari perolehan DAN +X lagi dari "Reklasifikasi Masuk" — dobel, sementara
+  // golongan asal tinggal −X yang tak pernah ada isinya. Dicatat di golongan
+  // ASAL, keduanya saling meniadakan dan laporannya foot.
+  //
+  // Per 2026-08-11 tak ada satu pun aset yang punya reklas DAN mutasi lain di
+  // periode yang sama, jadi ini TIDAK menggeser angka mana pun hari ini. Ia
+  // dipasang supaya kasus itu tak menghidupkan lagi selisih yang baru saja
+  // ditutup — persis pola yang sudah dua kali terjadi di modul ini.
+  // Aturannya sendiri hidup di lib/reklasKode.ts — dipakai bersama Rekonsiliasi
+  // BMD, yang wajib menghasilkan Saldo Akhir SAMA PERSIS dgn halaman ini.
+
   async function fetchPenghapusanNetRemoved(asetIds: string[]): Promise<Set<string>> {
     const latest = new Map<string, { periode: string; id: number; removed: boolean }>()
     const uniq = [...new Set(asetIds)]
@@ -296,7 +340,7 @@ export default function LaporanBmdPage() {
   }
 
   async function prosesMutasi() {
-    setLoading(true); setMutasiRows(null); setMutErr('')
+    setLoading(true); setMutasiRows(null); setMutErr(''); setAwalTakTerhitung('')
 
     const inScope = (skpdId: number | null) => skpdId != null && (org.descendantIds === null || org.descendantIds.includes(skpdId))
     const lolosKomptabel = (ie: string | null) => !komptabel || ie === komptabel
@@ -329,10 +373,30 @@ export default function LaporanBmdPage() {
     // sendiri; bersamaan → keduanya timeout. Kalau nanti tergoda menjadikannya
     // Promise.all lagi demi "lebih cepat", ukur dulu — ini kasus di mana
     // paralel justru kalah.
-    const saldoAwal = await snapshotPerolehan(periodeAwal).catch(gagal)
-    if (!saldoAwal) { setLoading(false); return }
-    const saldoAkhir = await snapshotPerolehan(periode).catch(gagal)
-    if (!saldoAkhir) { setLoading(false); return }
+    const snapAwal = await snapshotPerolehan(periodeAwal).catch(gagal)
+    if (!snapAwal) { setLoading(false); return }
+    const snapAkhir = await snapshotPerolehan(periode).catch(gagal)
+    if (!snapAkhir) { setLoading(false); return }
+    const saldoAwal = snapAwal.perGol
+    const saldoAkhir = snapAkhir.perGol
+    // ── Peringatan: posisi AWAL diambil dari periode yang ENGINE-nya kosong ───
+    // `fn_rekap_bmd` memakai `COALESCE(penyusutan_semester.nilai_perolehan,
+    // aset.nilai_perolehan)`. Untuk periode yang tak pernah dihitung engine,
+    // ruas pertama selalu NULL — jadi seluruh kolom Saldo Awal diam-diam
+    // memakai nilai perolehan HARI INI, termasuk koreksi nilai & kapitalisasi
+    // yang baru terjadi SESUDAH periode itu. Laporannya lalu tak mungkin foot,
+    // dan tak ada satu pun pesan yang memberi tahu kenapa.
+    //
+    // Nyata per 2026-08-11: engine cuma punya 2026-S1 & 2026-S2, jadi mode
+    // Semester I dan Akhir Tahun 2026 (yang saldo awalnya di 2025-S2) meleset
+    // Rp665.788.761 — persis koreksi nilai dua gedung yang dicatat di 2026-S2:
+    //   Perbaikan Perkerasan Halaman Rumah Dinas Bupati  213.847.888 → 1.828.592.000
+    //   PEMBANGUNAN TAMAN KEPALA KERETA API DI SLG     1.118.060.700 →   169.105.349
+    //
+    // Dideteksi lewat `count_peny` yang MEMANG SUDAH dikembalikan RPC-nya —
+    // bukan daftar tahun yang di-hardcode, supaya ia ikut benar sendiri begitu
+    // tahun ditutup (`fn_tutup_tahun` mengisi checkpoint & engine punya baris).
+    setAwalTakTerhitung(!snapAwal.adaHasilEngine ? periodeAwal : '')
 
     // Yang ringan boleh paralel: semuanya sudah tersaring `periode` di SQL.
     const tahap1 = await Promise.all([
@@ -342,10 +406,18 @@ export default function LaporanBmdPage() {
       fetchLedgerM3(JENIS_PENGHAPUSAN_M3),
       fetchLedgerM3(JENIS_PECAH_M3),
       fetchLedgerM3(['pengalihan_status']),
-      fetchLedgerM3(['reklas_golongan']),
+      fetchLedgerM3(JENIS_REKLAS_M3),
+      fetchLedgerM3(JENIS_KOREKSI_NILAI_M3),
     ]).catch(gagal)
     if (!tahap1) { setLoading(false); return }
-    const [skpdMap, rowsCara, rowsKdp, rowsHapus, pecahRows, rowsAlih, rowsReklas] = tahap1
+    const [skpdMap, rowsCara, rowsKdp, rowsHapus, pecahRows, rowsAlih, rowsReklas, rowsKoreksi] = tahap1
+
+    // Aset yang tersentuh mutasi periode ini — dipakai untuk MENSCOPE kolektor
+    // tahap 2 (rules.md §3.4). `rowsReklas` ikut supaya set "reklas dibatalkan"
+    // mencakup pembatalan atas reklas DI LUAR periode laporan juga: `kodePada`
+    // membaca riwayat sepanjang masa, jadi penyaringnya harus seluas itu pula.
+    const asetTerlibat = [...rowsCara, ...rowsKdp, ...rowsHapus, ...pecahRows,
+                          ...rowsAlih, ...rowsReklas, ...rowsKoreksi].map(r => r.aset_id)
 
     const tahap2 = await Promise.all([
       // KDP: kontrak yang dibuka kunci membalik SEMUA terminnya, jadi asetnya
@@ -357,12 +429,19 @@ export default function LaporanBmdPage() {
       // dgn Daftar Barang & Rekonsiliasi.
       fetchBatalTargets(supabase, BATAL_TARGET_JENIS.pengalihan, rowsAlih.map(r => r.aset_id)),
       // Menggantikan fetchReklasDibatalkan lokal yang sudah dihapus.
-      fetchBatalTargets(supabase, BATAL_TARGET_JENIS.reklasifikasi, rowsReklas.map(r => r.aset_id)),
+      fetchBatalTargets(supabase, BATAL_TARGET_JENIS.reklasifikasi, asetTerlibat),
       fetchPenghapusanNetRemoved(rowsHapus.map(r => r.aset_id)),
       fetchPemecahanBatal(supabase, pecahRows.map(r => r.aset_id)),
+      // Koreksi Nilai yang sudah dibatalkan — deltanya dianggap tak pernah ada,
+      // persis perlakuan reklas & pengalihan yang dianulir.
+      fetchBatalTargets(supabase, ['batal_koreksi_nilai'], rowsKoreksi.map(r => r.aset_id)),
+      // Riwayat reklas — dipakai `kodePada` untuk menaruh tiap baris mutasi di
+      // golongannya SAAT ITU. Sengaja tak discope ke aset (lihat lib-nya).
+      fetchReklasEvents(supabase),
     ]).catch(gagal)
     if (!tahap2) { setLoading(false); return }
-    const [voided, pengalihanDibatalkan, reklasDibatalkan, penghapusanNetRemoved, pecahBatal] = tahap2
+    const [voided, pengalihanDibatalkan, reklasDibatalkan, penghapusanNetRemoved, pecahBatal,
+           koreksiDibatalkan, reklasEvents] = tahap2
 
     const tambah: Record<string, number> = {}
     const kurang: Record<string, number> = {}
@@ -375,9 +454,14 @@ export default function LaporanBmdPage() {
 
     // Cara Perolehan → Penambahan (kecuali yang belakangan di-batal/koreksi —
     // itu dianggap tidak pernah ada; daftar jenisnya di lib/voidedAset.ts)
+    // Golongan sebuah baris mutasi = golongan barang SAAT transaksi itu terjadi,
+    // bukan golongannya sekarang. Lihat `buatKodePada` di atas untuk alasannya.
+    const golPada = (r: { aset_id: string; id: number; periode: string; aset: { kode: string } | null }) =>
+      kodeLevel3(kodePada(reklasEvents, r.aset_id, r.periode, r.id, r.aset!.kode))
+
     for (const r of rowsCara) {
       if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
-      addLine(tambah, 'tambah', kodeLevel3(r.aset.kode), {
+      addLine(tambah, 'tambah', golPada(r), {
         kategori: 'Cara Perolehan', tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
       })
@@ -389,7 +473,7 @@ export default function LaporanBmdPage() {
     // (batal_akumulasi_kdp) — lihat pemanggilan fetchVoidedAsetIds di atas.
     for (const r of rowsKdp) {
       if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
-      addLine(tambah, 'tambah', kodeLevel3(r.aset.kode), {
+      addLine(tambah, 'tambah', golPada(r), {
         kategori: 'Konstruksi Dalam Pengerjaan (termin)', tanggal: r.tanggal,
         skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
@@ -404,7 +488,7 @@ export default function LaporanBmdPage() {
       if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       if (!penghapusanNetRemoved.has(r.aset_id) || hapusSeen.has(r.aset_id)) continue
       hapusSeen.add(r.aset_id)
-      addLine(kurang, 'kurang', kodeLevel3(r.aset.kode), {
+      addLine(kurang, 'kurang', golPada(r), {
         kategori: 'Penghapusan', tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
       })
@@ -419,7 +503,7 @@ export default function LaporanBmdPage() {
       if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       if (pecahBatal.has(kunciPemecahan(r.header_id, r.aset_id))) continue
       const keluar = r.jenis === 'pemecahan_keluar'
-      addLine(keluar ? kurang : tambah, keluar ? 'kurang' : 'tambah', kodeLevel3(r.aset.kode), {
+      addLine(keluar ? kurang : tambah, keluar ? 'kurang' : 'tambah', golPada(r), {
         kategori: keluar ? 'Pemecahan Barang (induk dipecah)' : 'Pemecahan Barang (pecahan baru)',
         tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
@@ -436,7 +520,7 @@ export default function LaporanBmdPage() {
       if (pengalihanDibatalkan.has(r.id)) continue
       const asalIn = inScope(r.skpd_asal)
       const tujuanIn = inScope(r.skpd_tujuan)
-      const g = kodeLevel3(r.aset.kode)
+      const g = golPada(r)
       const line = (skpdId: number | null): MutasiDetailLine => ({
         kategori: tujuanIn && !asalIn ? 'Pengalihan Masuk' : 'Pengalihan Keluar', tanggal: r.tanggal,
         skpdNama: skpdMap[skpdId || 0] || '-', namaBarang: r.aset!.nama_barang, nibar: r.aset!.nibar, nilai: r.nilai,
@@ -445,19 +529,46 @@ export default function LaporanBmdPage() {
       else if (asalIn && !tujuanIn) addLine(kurang, 'kurang', g, line(r.skpd_tujuan))
     }
 
-    // Reklasifikasi Perubahan Fungsi BMD: golongan ASAL (payload.kode_lama)
-    // → Pengurangan, golongan TUJUAN (payload.kode_baru) → Penambahan.
+    // Reklasifikasi: golongan ASAL (payload.kode_lama) → Pengurangan, golongan
+    // TUJUAN (payload.kode_baru) → Penambahan. Di sini `kodePada` TIDAK dipakai
+    // — barisnya sendiri yang menyatakan kode sebelum & sesudah.
+    //
+    // ⚠️ Hanya kalau golongan level-3-nya BENAR-BENAR berubah. Reklas di dalam
+    // golongan yang sama (30 dari 31 baris per 2026-08-11 — semuanya di 1.5.4)
+    // akan menghasilkan +X dan −X di SEL YANG SAMA: totalnya memang nol, tapi
+    // kolom Penambahan & Pengurangan menggelembung oleh mutasi yang tak pernah
+    // menyeberang ke mana pun, dan pembacanya mengira ada barang berpindah.
     for (const r of rowsReklas) {
       if (!r.aset || reklasDibatalkan.has(r.id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       const kodeLama = typeof r.payload?.kode_lama === 'string' ? r.payload.kode_lama : null
       const kodeBaru = typeof r.payload?.kode_baru === 'string' ? r.payload.kode_baru : null
       if (!kodeLama || !kodeBaru) continue
+      const golLama = kodeLevel3(kodeLama)
+      const golBaru = kodeLevel3(kodeBaru)
+      if (golLama === golBaru) continue
       const skpdNama = skpdMap[r.aset.skpd_id] || '-'
-      addLine(kurang, 'kurang', kodeLevel3(kodeLama), {
+      addLine(kurang, 'kurang', golLama, {
         kategori: 'Reklasifikasi Keluar', tanggal: r.tanggal, skpdNama, namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
       })
-      addLine(tambah, 'tambah', kodeLevel3(kodeBaru), {
+      addLine(tambah, 'tambah', golBaru, {
         kategori: 'Reklasifikasi Masuk', tanggal: r.tanggal, skpdNama, namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
+      })
+    }
+
+    // Koreksi Nilai → Penambahan (delta +) / Pengurangan (delta −).
+    // `nilai` sudah berupa selisih bertanda, jadi yang dilaporkan cuma
+    // perubahannya — BUKAN nilai perolehan barangnya, yang memang sudah duduk
+    // di Saldo Awal. Barang yang sama dikoreksi beberapa kali muncul beberapa
+    // baris; itu disengaja, karena itulah isi ledgernya, dan jumlah bertandanya
+    // tetap sama dengan perubahan bersih.
+    for (const r of rowsKoreksi) {
+      if (!r.aset || koreksiDibatalkan.has(r.id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
+      if (!r.nilai) continue
+      const naik = r.nilai > 0
+      addLine(naik ? tambah : kurang, naik ? 'tambah' : 'kurang', golPada(r), {
+        kategori: naik ? 'Koreksi Nilai (bertambah)' : 'Koreksi Nilai (berkurang)', tanggal: r.tanggal,
+        skpdNama: skpdMap[r.aset.skpd_id] || '-',
+        namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: Math.abs(r.nilai),
       })
     }
 
@@ -524,6 +635,22 @@ export default function LaporanBmdPage() {
       )}
       {err && (
         <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">{err}</div>
+      )}
+      {awalTakTerhitung && (
+        <div role="alert" className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 mb-4">
+          <p className="font-semibold">Saldo Awal ({awalTakTerhitung}) belum pernah dihitung engine.</p>
+          <p className="mt-1">
+            Untuk periode itu tak ada hasil penyusutan tersimpan, jadi kolom Saldo Awal
+            memakai <span className="font-medium">nilai perolehan yang berlaku hari ini</span> — sudah termasuk
+            koreksi nilai &amp; kapitalisasi yang baru dicatat SESUDAH periode tersebut.
+            Akibatnya <span className="font-medium">Saldo Awal + Penambahan − Pengurangan bisa tidak sama dengan
+            Saldo Akhir</span>, dan selisihnya bukan kesalahan penjumlahan.
+          </p>
+          <p className="mt-1">
+            Untuk angka yang bisa direkonsiliasi, pakai periode yang kedua ujungnya sudah dihitung engine
+            (mis. Semester II), atau bandingkan dengan menu Saldo Awal.
+          </p>
+        </div>
       )}
 
       {/* Batasan yang DISENGAJA & disampaikan terbuka (audit Pelaporan 2026-07-25):

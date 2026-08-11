@@ -28,6 +28,7 @@ import { JENIS_PEROLEHAN, JENIS_TRANSAKSI_LABEL } from './bmd'
 import { BATAL_TARGET_JENIS, VOID_JENIS } from './voidedAset'
 import { JENIS_DITARIK } from './pengalihan'
 import { JENIS_CARA } from './rekon'
+import { JENIS_REKLAS_KODE } from './reklasKode'
 import { Constants } from '@/shared/types/database.types'
 
 const AKAR = process.cwd()
@@ -295,5 +296,50 @@ describe('database.types.ts tidak ketinggalan dari migrasi (Fase 0.8)', () => {
     for (const wajib of ['aset', 'transaksi_bmd', 'jurnal_header', 'aset_awal_2026']) {
       expect(isi).toMatch(new RegExp(`\\n\\s+${wajib}:\\s*\\{`))
     }
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// 5. Reklasifikasi kode — KEMBAR TIGA (lib/reklasKode.ts).
+//
+// Aturan "kode pada periode" hidup di tiga tempat sekaligus, dan dua di
+// antaranya tak bisa diuji dengan menjalankan kode:
+//   1. `JENIS_REKLAS_KODE` (TypeScript)      — Laporan BMD & Rekonsiliasi
+//   2. `v_reklas` di `fn_rekap_bmd`  (SQL)   — Saldo Awal/Akhir Laporan BMD
+//   3. predikat index parsial `idx_trx_reklas_id`
+//
+// Kalau (1) dan (2) berbeda, TIDAK ADA yang gagal — Saldo Awal dan baris
+// mutasinya cuma berhenti sepakat, dan laporannya tak foot tanpa penjelasan.
+// Kalau (3) berbeda dari (1), juga tak ada yang gagal: planner diam-diam
+// mengabaikan indeksnya dan kolektornya pelan lalu timeout.
+// ════════════════════════════════════════════════════════════════════════════
+describe('reklas kode: daftar jenis di TS, SQL, & index parsial sama persis', () => {
+  const MIGRASI = 'supabase/migrations/20260811_01_fn_rekap_bmd_golongan_period_aware.sql'
+
+  // Jenis di dalam sebuah literal array SQL, mis. ARRAY['a','b']::jenis_...[]
+  function jenisDalam(sql: string, penanda: RegExp): string[] {
+    const m = sql.match(penanda)
+    if (!m) throw new Error(`pola ${penanda} tak ditemukan di ${MIGRASI} — PERBAIKI pengeceknya, jangan hapus`)
+    return [...m[1].matchAll(/'([a-z_]+)'/g)].map(x => x[1]).sort()
+  }
+
+  it('CTE v_reklas di fn_rekap_bmd = JENIS_REKLAS_KODE', () => {
+    const sql = bacaBerkas(MIGRASI)
+    expect(jenisDalam(sql, /v_reklas\s+jenis_transaksi_bmd\[\]\s*:=\s*ARRAY\[([^\]]+)\]/))
+      .toEqual([...JENIS_REKLAS_KODE].sort())
+  })
+
+  it('predikat idx_trx_reklas_id = JENIS_REKLAS_KODE + batal_reklas', () => {
+    // `batal_reklas` ikut di index karena kolektornya menarik baris pembatalan
+    // dalam SAPUAN YANG SAMA — kalau ia tak masuk predikat, separuh query itu
+    // kembali menyusuri seluruh ledger dan indexnya tak menolong apa-apa.
+    const sql = bacaBerkas(MIGRASI)
+    expect(jenisDalam(sql, /idx_trx_reklas_id[\s\S]*?WHERE jenis IN \(([^)]+)\)/))
+      .toEqual([...JENIS_REKLAS_KODE, 'batal_reklas'].sort())
+  })
+
+  it('semua jenisnya memang ada di enum database.types.ts', () => {
+    const enumJenis = new Set<string>(Constants.public.Enums.jenis_transaksi_bmd)
+    for (const j of [...JENIS_REKLAS_KODE, 'batal_reklas']) expect(enumJenis).toContain(j)
   })
 })
