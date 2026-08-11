@@ -581,6 +581,29 @@ export default function LaporanBmdPage() {
     setLoading(false)
   }
 
+  // Baris keterangan di ATAS tabel Model 3. Selalu memuat identitas laporannya
+  // (periode & lingkupnya) supaya berkas yang beredar bisa berdiri sendiri —
+  // nama file gampang diganti orang, isi sheet tidak.
+  function catatanMutasi(): string[] {
+    const out = [
+      `Laporan BMD — Mutasi (Model 3). Saldo Awal = posisi ${periodeAwal}; ` +
+      `mutasi ${smt === 'TH' ? `sepanjang tahun ${tahun}` : `periode ${periode}`}; ` +
+      `Saldo Akhir = posisi ${periode}. Komptabel: ${komptabel || 'semua'}.`,
+    ]
+    if (awalTakTerhitung) {
+      out.push(
+        `PERHATIAN — Saldo Awal (${awalTakTerhitung}) belum pernah dihitung engine penyusutan. ` +
+        `Untuk periode itu tidak ada hasil penyusutan tersimpan, sehingga kolom Saldo Awal memakai ` +
+        `nilai perolehan yang berlaku pada saat berkas ini dibuat — sudah termasuk koreksi nilai & ` +
+        `kapitalisasi yang dicatat SESUDAH periode tersebut.`,
+        `Akibatnya Saldo Awal + Penambahan - Pengurangan BISA TIDAK SAMA dengan Saldo Akhir. ` +
+        `Selisih itu bukan kesalahan penjumlahan. Untuk angka yang bisa direkonsiliasi, pakai ` +
+        `periode yang kedua ujungnya sudah dihitung engine (mis. Semester II).`,
+      )
+    }
+    return out
+  }
+
   function handleExport() {
     if (model === 1) {
       if (!rows) return
@@ -594,13 +617,17 @@ export default function LaporanBmdPage() {
     }
     if (model === 3) {
       if (!mutasiRows) return
+      // Peringatan yang sama dgn banner di layar WAJIB ikut ke berkasnya.
+      // Berkas inilah yang dikirim ke inspektorat/BPK; bannernya tidak ikut,
+      // dan pembacanya tak punya cara lain untuk tahu.
       exportToExcel(mutasiRows.map(r => ({
         'Kode Jenis': r.kode, 'Uraian': r.uraian,
         [`Saldo Awal (posisi ${periodeAwal})`]: r.saldoAwal,
         [`Penambahan ${labelPeriode}`]: r.penambahan,
         [`Pengurangan ${labelPeriode}`]: r.pengurangan,
         [`Saldo Akhir (posisi ${periode})`]: r.saldoAkhir,
-      })), `Laporan_BMD_Mutasi_${smt === 'TH' ? tahun : periode}`, 'Laporan BMD Mutasi')
+      })), `Laporan_BMD_Mutasi_${smt === 'TH' ? tahun : periode}`, 'Laporan BMD Mutasi',
+        catatanMutasi())
       return
     }
     const metrics: Metric[] = metric === 'semua' ? SUB_METRICS : [metric]
