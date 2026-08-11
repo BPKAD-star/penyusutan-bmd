@@ -373,8 +373,6 @@ export default function Penghapusan() {
   // Diturunkan dari `jurnals` saat render, TIDAK disimpan di state: angka yang
   // disimpan terpisah dari daftarnya cepat atau lambat berselisih dengannya
   // (pola yang sudah menggigit di cache `aset.pemanfaatan`).
-  const jurnalTampil = filterJenis === 'semua' ? jurnals : jurnals.filter(j => j.jenis === filterJenis)
-
   // ⚠️ Kartu `ditolak` TIDAK ikut total maupun cacahan. Ia perpindahan yang tak
   // pernah jadi — entah ditolak SKPD tujuan, entah ditarik kembali pengirim
   // sesudah dibatalkan. Barangnya sudah pulang ke SKPD asal, jadi menghitungnya
@@ -386,11 +384,28 @@ export default function Penghapusan() {
   // tampil 9.573.169.260,03 padahal yang sah 9.210.214.924,03; selisih
   // 362.954.336 itu satu kartu ke Kecamatan Plemahan yang sudah dibatalkan.
   const arsip = (j: Jurnal) => j.approval_status === 'ditolak'
+
+  // DUA MACAM `ditolak`, dan cuma satu yang boleh disembunyikan (permintaan
+  // user 2026-08-11 "bikin ilang aja kartu arsipnya"):
+  //   * DIARSIPKAN pengirim = sudah pernah diterima lalu dibatalkan → PUNYA
+  //     jejak ledger. Urusannya selesai, tak ada yang perlu ditindaklanjuti →
+  //     disembunyikan.
+  //   * DITOLAK SKPD tujuan = belum pernah diterima → TANPA ledger. Ini status
+  //     AKTIF di kategori pengalihan (CLAUDE.md) dan pengirim WAJIB melihatnya
+  //     berikut alasan penolakannya — kalau ikut disembunyikan, penolakan jadi
+  //     tak pernah sampai ke pengirim dan barangnya menggantung tanpa kabar.
+  // Pembedanya keadaan nyata (ada/tidaknya ledger), bukan menebak dari teks
+  // alasan — teks bisa ditulis siapa saja, jejak ledger tidak.
+  const disembunyikan = (j: Jurnal) => arsip(j) && (jurnalBerledger[j.id] || 0) > 0
+  const jumlahDisembunyikan = jurnals.filter(disembunyikan).length
+
+  const jurnalTampil = (filterJenis === 'semua' ? jurnals : jurnals.filter(j => j.jenis === filterJenis))
+    .filter(j => !disembunyikan(j))
   const jurnalAktif = jurnalTampil.filter(j => !arsip(j))
   const jurnalArsip = jurnalTampil.filter(arsip)
   const totalTampil = jurnalAktif.reduce((s, j) => s + j.total, 0)
   const jumlahBarangTampil = jurnalAktif.reduce((s, j) => s + j.lines.length, 0)
-  const cacah = (f: (j: Jurnal) => boolean) => jurnals.filter(j => !arsip(j) && f(j)).length
+  const cacah = (f: (j: Jurnal) => boolean) => jurnals.filter(j => !arsip(j) && !disembunyikan(j) && f(j)).length
   const hitungJenis: Record<'semua' | JenisHapus, number> = {
     semua: cacah(() => true),
     penghapusan_pemindahtanganan: cacah(j => j.jenis === 'penghapusan_pemindahtanganan'),
@@ -464,9 +479,15 @@ export default function Penghapusan() {
                 </p>
                 <p className="text-xl font-bold text-gray-800">{formatRupiah(totalTampil)}</p>
                 <p className="text-xs text-gray-400">{jurnalAktif.length} jurnal · {jumlahBarangTampil} barang</p>
+                {/* Kartu yang disembunyikan tetap DISEBUT jumlahnya. Daftar yang
+                    diam-diam membuang baris adalah cara paling halus membuat
+                    orang salah hitung — di repo ini sudah beberapa kali begitu. */}
+                {jumlahDisembunyikan > 0 && (
+                  <p className="text-xs text-gray-400 mt-0.5">{jumlahDisembunyikan} kartu diarsipkan, disembunyikan</p>
+                )}
                 {jurnalArsip.length > 0 && (
                   <p className="text-xs text-gray-400 mt-0.5">
-                    + {jurnalArsip.length} kartu diarsipkan/ditolak, <span className="font-medium">tidak dihitung</span>
+                    + {jurnalArsip.length} kartu ditolak SKPD tujuan, <span className="font-medium">tidak dihitung</span>
                   </p>
                 )}
               </div>
@@ -507,7 +528,7 @@ export default function Penghapusan() {
               <div className="flex items-center gap-3 pt-2">
                 <div className="h-px flex-1 bg-gray-200" />
                 <span className="text-xs text-gray-400 font-medium">
-                  Diarsipkan / ditolak — barang sudah kembali ke SKPD ini, tidak dihitung dalam total
+                  Ditolak SKPD tujuan — barang tetap di SKPD ini, tidak dihitung dalam total
                 </span>
                 <div className="h-px flex-1 bg-gray-200" />
               </div>
