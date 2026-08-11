@@ -176,10 +176,7 @@ export default function RekonsiliasiPage() {
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [tahun, setTahun] = useState(() => tahunAwal('2026'))
   const [smt, setSmt] = useState('1')
-  // `skpdId` ikut dibekukan saat Proses supaya kop Berita Acara yang dicetak
-  // menyebut SKPD yang angkanya benar-benar sedang ditampilkan — bukan pilihan
-  // terbaru di kotak filter yang mungkin sudah diganti tanpa menekan Proses.
-  const [applied, setApplied] = useState<{ tahun: string; smt: string; skpdId: number | null } | null>(null)
+  const [applied, setApplied] = useState<{ tahun: string; smt: string } | null>(null)
   const [snapAwal, setSnapAwal] = useState<Snapshot>({})
   const [snapAkhir, setSnapAkhir] = useState<Snapshot>({})
   const [mutasi, setMutasi] = useState<Mutasi>({})
@@ -232,7 +229,7 @@ export default function RekonsiliasiPage() {
       setSnapAwal(aggregatePositions(posAwal)); setSnapAkhir(aggregatePositions(posAkhir))
       setBebanAwal(atr.bebanSaldoAwal)
       setLines(atr.lines); setMutasi(aggregateMutasi(atr.lines))
-      setApplied({ tahun, smt, skpdId: org.skpdId })
+      setApplied({ tahun, smt })
     } catch (e) {
       // Laporan yang datanya tak lengkap TIDAK BOLEH tampil — angka rekonsiliasi
       // yang kurang sebagian jauh lebih berbahaya daripada halaman yang kosong,
@@ -293,10 +290,6 @@ export default function RekonsiliasiPage() {
     exportToExcel(rows, `Rekonsiliasi_BMD_${periodeLabel}`, 'Rekonsiliasi BMD')
   }
 
-  const namaSkpdCetak = applied?.skpdId != null
-    ? (skpdNama[applied.skpdId] || `SKPD #${applied.skpdId}`)
-    : 'Seluruh SKPD — Pemerintah Kabupaten Kediri'
-
   // Export PDF = CETAK HALAMAN INI apa adanya (permintaan user: "sebagaimana
   // formatnya yang ada di page itu"), bukan halaman /cetak terpisah yang
   // menghitung ulang. Alasannya bukan kemalasan: seluruh angka di sini lahir
@@ -315,18 +308,35 @@ export default function RekonsiliasiPage() {
           #cetak-rekon. Teknik visibility ini sengaja dipilih supaya tidak perlu
           tahu susunan layout dashboard (sidebar, top bar) — kalau layoutnya
           berubah, cetakannya tetap bersih. `print-color-adjust` menjaga warna
-          hijau/merah tetap tercetak; tanpa itu banyak browser membuangnya. */}
+          hijau/merah tetap tercetak; tanpa itu banyak browser membuangnya.
+          SATU JENIS ASET = SATU LEMBAR (`break-after: page` per kartu; kartu
+          terakhir dikecualikan supaya tak menyisakan halaman kosong).
+          Tabelnya dipadatkan habis-habisan — 9 kolom × ~45 baris memang cuma
+          muat kalau font & padding ditekan. `table-layout: fixed` + lebar kolom
+          pertama 20% mencegah kolom label melar dan mendorong angka keluar
+          halaman; label panjang dibiarkan MEMBUNGKUS, angka tidak. */}
       <style>{`
         @media print {
-          @page { size: A4 landscape; margin: 1cm; }
+          @page { size: A4 landscape; margin: 0.7cm; }
           body { background: #fff; }
           body * { visibility: hidden; }
           #cetak-rekon, #cetak-rekon * { visibility: visible; }
           #cetak-rekon { position: absolute; left: 0; top: 0; width: 100%; }
           #cetak-rekon .no-print { display: none !important; }
-          #cetak-rekon .kop-cetak { display: block !important; }
-          #cetak-rekon table { font-size: 8px; }
-          #cetak-rekon .card { break-inside: avoid; box-shadow: none; border: 0; }
+          #cetak-rekon .space-y-3 > * { margin-top: 0 !important; }
+          #cetak-rekon .card {
+            break-inside: avoid; break-after: page;
+            box-shadow: none; border: 0; border-radius: 0; margin: 0;
+          }
+          #cetak-rekon .card:last-child { break-after: auto; }
+          #cetak-rekon .judul-gol { padding: 0 0 2px 0 !important; background: none !important; border: 0 !important; }
+          #cetak-rekon .judul-gol p { font-size: 10px !important; }
+          #cetak-rekon table { font-size: 6.5px; table-layout: fixed; width: 100%; border-collapse: collapse; }
+          #cetak-rekon th, #cetak-rekon td { padding: 0.5px 2px !important; line-height: 1.2; }
+          #cetak-rekon th:first-child, #cetak-rekon td:first-child {
+            width: 20%; overflow-wrap: anywhere;
+          }
+          #cetak-rekon td:not(:first-child), #cetak-rekon th:not(:first-child) { white-space: nowrap; }
           #cetak-rekon .overflow-x-auto { overflow: visible !important; }
           * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
@@ -382,16 +392,11 @@ export default function RekonsiliasiPage() {
         <div className="card p-12 text-center text-gray-400 text-sm">Memproses...</div>
       ) : (
         <div id="cetak-rekon" className="space-y-3">
-          {/* Kop hanya muncul di kertas — di layar filternya sudah menerangkan
-              periode & SKPD, jadi mengulangnya cuma menghabiskan ruang. */}
-          <div className="kop-cetak hidden text-center mb-4">
-            <p className="font-bold uppercase text-[13px]">Berita Acara Rekonsiliasi BMD</p>
-            <p className="font-bold uppercase text-[12px]">
-              Semester {applied.smt === '1' ? '1' : '2'} Tahun {applied.tahun}
-            </p>
-            <p className="font-bold uppercase text-[12px]">{namaSkpdCetak}</p>
-          </div>
-
+          {/* Kop "Berita Acara" DIBUANG atas permintaan user 2026-08-11 — sejak
+              tiap jenis aset dicetak di lembarnya sendiri, kop tiga baris itu
+              terulang di setiap halaman dan memakan ruang yang justru dibutuhkan
+              tabelnya. Konsekuensi yang DITERIMA: berkas cetak tidak lagi
+              menyebut SKPD & periode; identitas lembar cuma judul jenis aset. */}
           <div className="no-print rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">
             <span className="font-medium">Periode {periodeLabel}</span> — keempat ukuran sudah terisi. Baris <b>Selisih</b> memuat
             yang belum terpetakan ke kategori mana pun (a.l. reklas komptabel Intra↔Ekstra): kalau isinya nol, rantai
@@ -419,7 +424,7 @@ export default function RekonsiliasiPage() {
           </div>
           {GOLONGAN_REKAP.map(g => (
             <div key={g.kode} className="card overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
+              <div className="judul-gol px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
                 <p className="text-sm font-semibold text-gray-800">{g.kode} — {g.uraian}</p>
               </div>
               <div className="overflow-x-auto">
