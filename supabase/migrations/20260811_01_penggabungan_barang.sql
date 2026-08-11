@@ -1,0 +1,63 @@
+-- ============================================================================
+-- Koreksi → PENGGABUNGAN BARANG: N baris register digabung jadi SATU.
+--
+-- Latar (keputusan user 2026-08-11): impor e-BMD memecah satu barang menjadi
+-- banyak baris ketika satuannya bukan "unit" — pagar 125 meter jadi 125 baris.
+-- Contoh nyata di produksi: "Pagar Besi" UPTD SMPN 2 Mojo, 35 baris ×
+-- Rp721.500 (tgl 2025-02-05), total Rp25.252.500 — satu pagar, bukan 35 pagar.
+--
+-- ⚠️ INI BUKAN "Pencatatan Ganda". Bedanya menentukan benar/salahnya neraca:
+--   · Pencatatan Ganda = barang yang KECATAT DUA KALI. Duplikatnya dibuang,
+--     total nilai perolehan SEHARUSNYA TURUN. (menu lama, tidak diubah)
+--   · Penggabungan     = satu barang yang TERPECAH jadi banyak baris. Nilainya
+--     DIJUMLAHKAN, total nilai perolehan HARUS TETAP.
+-- Memakai mekanik Pencatatan Ganda untuk kasus pagar akan menghapus
+-- Rp24.531.000 dari neraca SKPD itu tanpa satu pun pesan error.
+--
+-- Bentuknya CERMIN dari Pemecahan Barang, dengan satu perbedaan penting:
+-- barang hasil gabungan ADALAH induknya sendiri (aset & NIBAR yang sudah ada),
+-- bukan aset baru. Karena itu ia TIDAK perlu didaftarkan di `LAHIR`
+-- (lib/visibilitas.ts) — induk memang sudah ada sejak tanggal perolehannya, dan
+-- justru pendaftaran keliru di situ yang dulu bikin pecahan Pemecahan tampil
+-- dobel di periode lampau (insiden 2026-08-05).
+--
+-- ⚠️ DEPLOY-ORDERING: migrasi ini WAJIB jalan SEBELUM deploy kode — halaman
+-- Daftar Barang, Penyusutan, & Rekonsiliasi sudah akan memfilter `jenis` dengan
+-- nilai enum baru; kalau enumnya belum ada, filter `.in('jenis', ...)` error dan
+-- ketiga halaman itu rusak (pola yang sama dgn migrasi 20260719_04).
+-- ============================================================================
+
+-- ── Empat jenis ledger baru ─────────────────────────────────────────────────
+-- Dipisah dari `pemecahan_*` supaya Rekonsiliasi & Laporan BMD bisa menamainya
+-- sendiri: di lembar mutasi, "digabung" dan "dipecah" adalah dua cerita berbeda
+-- meski dua-duanya bergerak antar-baris.
+alter type jenis_transaksi_bmd add value if not exists 'penggabungan_keluar';
+alter type jenis_transaksi_bmd add value if not exists 'penggabungan_masuk';
+alter type jenis_transaksi_bmd add value if not exists 'batal_penggabungan';
+alter type jenis_transaksi_bmd add value if not exists 'batal_penggabungan_masuk';
+
+-- Catatan pemakaian (tak ada DDL lain yang perlu — payload disimpan di kolom
+-- `payload` jsonb yang sudah ada):
+--
+--   penggabungan_keluar   → pada tiap barang SUMBER (yang dilebur).
+--     nilai   = nilai_perolehan barang itu (agar Rekonsiliasi bisa menjumlah)
+--     payload = { induk_aset_id, induk_nibar }
+--     Efek    : SEMBUNYI + berhenti disusutkan (sama spt pemecahan_keluar).
+--
+--   penggabungan_masuk    → pada barang INDUK (yang dipertahankan).
+--     nilai   = TOTAL nilai perolehan seluruh barang yang digabung
+--     payload = {
+--       nilai_lama, akumulasi_lama,            -- untuk pembatalan
+--       nilai_perolehan_baru, akumulasi_baru,  -- basis baru = Σ seluruh sumber
+--       sumber_ids[], sumber_nibars[], jumlah_sumber
+--     }
+--     Efek    : engine me-rebasis induk — nilai & AKUMULASI jadi jumlah seluruh
+--               anggota, sisa masa manfaat & tanggal perolehan tetap milik induk
+--               (keputusan user: "ikut barang yang dipilih sebagai induk").
+--     ⚠️ akumulasi_baru WAJIB ikut. Tanpa itu akumulasi 34 baris pagar lenyap,
+--        nilai buku melonjak, dan Laporan BMD ikut salah.
+--
+--   batal_penggabungan       → pada barang sumber; MUNCUL kembali.
+--   batal_penggabungan_masuk → pada induk; basis kembali ke nilai_lama/akumulasi_lama.
+--     Keduanya memakai payload.target_trx_id (pola `batal_*` baku) dan tunduk
+--     guard "tak boleh dibatalkan kalau aset punya transaksi lebih baru".
