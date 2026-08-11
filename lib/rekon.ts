@@ -70,6 +70,50 @@ async function fetchBaseByIds(supabase: SupabaseClient, ids: string[]): Promise<
   return out
 }
 
+// ── Posisi BASELINE dari ledger (saldo_awal / saldo_awal_checkpoint) ────────
+// Engine SENGAJA tidak menghasilkan baris `penyusutan_semester` untuk periode
+// baseline (2025-S2): posisi akhir 2025 itu data impor e-BMD, bukan hasil
+// hitung. Ia tersimpan di payload ledger `saldo_awal` (418.102 baris) —
+// `akumulasi_2025` & `nilai_buku_awal`.
+//
+// ⚠️ Tanpa ini, snapshot 2025-S2 mengembalikan akumulasi 0 untuk SEMUA aset,
+// sehingga baris SALDO AWAL Rekonsiliasi Semester I tampil berakumulasi nol dan
+// seluruh akumulasi awal terlempar ke baris "Selisih (belum terpetakan)".
+// Terbukti di produksi 2026-08-11: BKAD 1.3.2 intra, Selisih akumulasi
+// 926.099.171 = persis (akumulasi akhir 965.096.688 − beban periode 38.997.517).
+//
+// `saldo_awal_checkpoint` (hasil fn_tutup_tahun) ikut dibaca dgn bentuk payload
+// yang sama; yang dipakai adalah checkpoint TERBARU yang periodenya <= periode
+// yang diminta — pola yang sama dgn hitungJadwalAset di engine.
+type Baseline = { akumulasi: number; nilaiBuku: number }
+
+async function fetchBaselinePos(
+  supabase: SupabaseClient, ids: string[], periode: string,
+): Promise<Map<string, Baseline>> {
+  const pilih = new Map<string, { periode: string; b: Baseline }>()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase.from('transaksi_bmd')
+      .select('aset_id,periode,payload')
+      .in('jenis', ['saldo_awal', 'saldo_awal_checkpoint'])
+      .in('aset_id', ids.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca saldo awal baseline: ${error.message}`)
+    for (const r of (data || []) as { aset_id: string; periode: string; payload: Record<string, unknown> | null }[]) {
+      // Checkpoint yang lahir SESUDAH periode ini belum berlaku untuknya.
+      // Perbandingan string aman: format periode selalu `YYYY-Sn`.
+      if (r.periode > periode) continue
+      const cur = pilih.get(r.aset_id)
+      if (cur && cur.periode >= r.periode) continue
+      const p = r.payload || {}
+      const akumulasi = Number(p.akumulasi_2025 ?? 0) || 0
+      const nb = Number(p.nilai_buku_awal ?? 0) || 0
+      pilih.set(r.aset_id, { periode: r.periode, b: { akumulasi, nilaiBuku: nb } })
+    }
+  }
+  const out = new Map<string, Baseline>()
+  for (const [id, v] of pilih) out.set(id, v.b)
+  return out
+}
+
 // Hasil engine per aset_id untuk periode terpilih.
 async function fetchPeny(supabase: SupabaseClient, ids: string[], periode: string): Promise<Map<string, Peny>> {
   const map = new Map<string, Peny>()
@@ -138,20 +182,47 @@ export async function fetchSnapshotPositions(
     fetchHiddenIds(supabase, ids, periode, SEMBUNYI_PENYUSUTAN),
   ])
 
+  // Aset yang TERLIHAT pada periode ini tapi tak punya baris engine — untuk
+  // periode baseline (2025-S2) itu SEMUA aset, karena engine memang tak pernah
+  // menghitung 2025. Posisinya diambil dari ledger saldo awal. Sengaja hanya
+  // untuk yang missing: pada 2026-S1/S2 hampir semua aset punya baris engine,
+  // jadi query tambahan ini praktis tak berbiaya di sana.
+  const terlihat = combined.filter(b => !hidden.has(b.id) && !belumAdaPada(b.tgl_perolehan, periode))
+  const tanpaEngine = terlihat.filter(b => !pmap.get(b.id)).map(b => b.id)
+  const bmap = tanpaEngine.length > 0
+    ? await fetchBaselinePos(supabase, tanpaEngine, periode)
+    : new Map<string, Baseline>()
+
   const pos = new Map<string, PosAset>()
-  for (const b of combined) {
-    // `hidden` sudah mencakup "belum lahir" (pecahan pemecahan, carve-out KDP);
-    // belumAdaPada menangani barang biasa yang tanggal perolehannya di depan.
-    if (hidden.has(b.id) || belumAdaPada(b.tgl_perolehan, periode)) continue
+  for (const b of terlihat) {
     const p = pmap.get(b.id)
     const susut = perlakuanKode(b.kode) !== 'tidak'
-    const perolehan = p ? p.nilai_perolehan : (b.nilai_perolehan || 0)
-    const beban = susut && p ? p.beban : 0
-    const akumulasi = susut && p ? p.akumulasi : 0
+    if (p) {
+      const perolehan = p.nilai_perolehan
+      pos.set(b.id, {
+        gol: kodeLevel3(b.kode), komp: kompOf(b.intra_ekstra),
+        perolehan,
+        beban: susut ? p.beban : 0,
+        akumulasi: susut ? p.akumulasi : 0,
+        nilaiBuku: susut ? p.nilai_buku_akhir : perolehan,
+      })
+      continue
+    }
+    // Tanpa baris engine → pakai baseline ledger. `beban` tetap 0: beban itu
+    // ARUS sebuah periode, dan periode baseline bukan periode yang dilaporkan
+    // di sini (kolom Beban baris SALDO AWAL diisi `bebanSaldoAwal`, yakni beban
+    // periode BERJALAN atas populasi awal — lihat attribusiPenyusutan).
+    // ⚠️ `perolehan` tetap dari register (`aset.nilai_perolehan`), BUKAN nilai
+    // beku akhir 2025. Untuk barang yang dikapitalisasi/dikoreksi di 2026 itu
+    // sedikit terlalu besar; rantai perolehan selama ini sudah tie-out dengan
+    // cara ini, jadi tidak diubah bersamaan dengan perbaikan akumulasi.
+    const bl = susut ? bmap.get(b.id) : undefined
+    const perolehan = b.nilai_perolehan || 0
+    const akumulasi = bl?.akumulasi ?? 0
     pos.set(b.id, {
       gol: kodeLevel3(b.kode), komp: kompOf(b.intra_ekstra),
-      perolehan, beban, akumulasi,
-      nilaiBuku: susut && p ? p.nilai_buku_akhir : perolehan,
+      perolehan, beban: 0, akumulasi,
+      nilaiBuku: bl ? (bl.nilaiBuku || perolehan - akumulasi) : perolehan,
     })
   }
   return pos
