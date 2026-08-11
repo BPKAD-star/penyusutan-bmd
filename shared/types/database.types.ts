@@ -2126,10 +2126,8 @@ export type Database = {
           diajukan_at: string | null
           id: string
           jenis: string
-          kegiatan: string | null
           keterangan: string | null
           parent_id: string | null
-          program: string | null
           skpd_id: number
           status: string
           tahun_anggaran: number
@@ -2145,10 +2143,8 @@ export type Database = {
           diajukan_at?: string | null
           id?: string
           jenis: string
-          kegiatan?: string | null
           keterangan?: string | null
           parent_id?: string | null
-          program?: string | null
           skpd_id: number
           status?: string
           tahun_anggaran: number
@@ -2164,10 +2160,8 @@ export type Database = {
           diajukan_at?: string | null
           id?: string
           jenis?: string
-          kegiatan?: string | null
           keterangan?: string | null
           parent_id?: string | null
-          program?: string | null
           skpd_id?: number
           status?: string
           tahun_anggaran?: number
@@ -2197,6 +2191,7 @@ export type Database = {
           aset_id: string | null
           bentuk: string | null
           created_at: string
+          estimasi_hasil: number | null
           harga_satuan: number | null
           id: string
           jangka_waktu: string | null
@@ -2206,16 +2201,20 @@ export type Database = {
           jumlah_standar: number | null
           keterangan: string | null
           kode: string | null
+          kode_rekening: string | null
           kondisi: string | null
           lokasi: string | null
           nama_barang: string | null
           nibar: string | null
           nilai_perolehan: number | null
           no_urut: number | null
+          paket_id: string | null
           peruntukan: string | null
           rkbmd_id: string
           satuan: string | null
           spesifikasi: string | null
+          standar_id: number | null
+          tgl_perolehan: string | null
           total_anggaran: number | null
           updated_at: string
           uraian_pemeliharaan: string | null
@@ -2225,6 +2224,7 @@ export type Database = {
           aset_id?: string | null
           bentuk?: string | null
           created_at?: string
+          estimasi_hasil?: number | null
           harga_satuan?: number | null
           id?: string
           jangka_waktu?: string | null
@@ -2234,16 +2234,20 @@ export type Database = {
           jumlah_standar?: number | null
           keterangan?: string | null
           kode?: string | null
+          kode_rekening?: string | null
           kondisi?: string | null
           lokasi?: string | null
           nama_barang?: string | null
           nibar?: string | null
           nilai_perolehan?: number | null
           no_urut?: number | null
+          paket_id?: string | null
           peruntukan?: string | null
           rkbmd_id: string
           satuan?: string | null
           spesifikasi?: string | null
+          standar_id?: number | null
+          tgl_perolehan?: string | null
           total_anggaran?: number | null
           updated_at?: string
           uraian_pemeliharaan?: string | null
@@ -2253,6 +2257,7 @@ export type Database = {
           aset_id?: string | null
           bentuk?: string | null
           created_at?: string
+          estimasi_hasil?: number | null
           harga_satuan?: number | null
           id?: string
           jangka_waktu?: string | null
@@ -2262,16 +2267,20 @@ export type Database = {
           jumlah_standar?: number | null
           keterangan?: string | null
           kode?: string | null
+          kode_rekening?: string | null
           kondisi?: string | null
           lokasi?: string | null
           nama_barang?: string | null
           nibar?: string | null
           nilai_perolehan?: number | null
           no_urut?: number | null
+          paket_id?: string | null
           peruntukan?: string | null
           rkbmd_id?: string
           satuan?: string | null
           spesifikasi?: string | null
+          standar_id?: number | null
+          tgl_perolehan?: string | null
           total_anggaran?: number | null
           updated_at?: string
           uraian_pemeliharaan?: string | null
@@ -2292,7 +2301,72 @@ export type Database = {
             referencedColumns: ["kode"]
           },
           {
+            foreignKeyName: "rkbmd_item_kode_rekening_fkey"
+            columns: ["kode_rekening"]
+            isOneToOne: false
+            referencedRelation: "admin_rekening"
+            referencedColumns: ["kode_sub_rincian"]
+          },
+          {
+            foreignKeyName: "rkbmd_item_paket_id_fkey"
+            columns: ["paket_id"]
+            isOneToOne: false
+            referencedRelation: "rkbmd_paket"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "rkbmd_item_rkbmd_id_fkey"
+            columns: ["rkbmd_id"]
+            isOneToOne: false
+            referencedRelation: "rkbmd"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rkbmd_item_standar_id_fkey"
+            columns: ["standar_id"]
+            isOneToOne: false
+            referencedRelation: "rkbmd_standar"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rkbmd_paket: {
+        Row: {
+          created_at: string
+          id: string
+          kegiatan: string | null
+          keterangan: string | null
+          no_urut: number | null
+          program: string | null
+          rkbmd_id: string
+          sub_kegiatan: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kegiatan?: string | null
+          keterangan?: string | null
+          no_urut?: number | null
+          program?: string | null
+          rkbmd_id: string
+          sub_kegiatan?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kegiatan?: string | null
+          keterangan?: string | null
+          no_urut?: number | null
+          program?: string | null
+          rkbmd_id?: string
+          sub_kegiatan?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rkbmd_paket_rkbmd_id_fkey"
             columns: ["rkbmd_id"]
             isOneToOne: false
             referencedRelation: "rkbmd"
@@ -2347,47 +2421,118 @@ export type Database = {
           },
         ]
       }
-      rkbmd_ssh: {
+      rkbmd_standar: {
         Row: {
           created_at: string
+          created_by: string | null
           harga: number
           id: number
+          identitas: string | null
+          jenis: string
           keterangan: string | null
-          kode: string
+          kode: string | null
+          nama: string
           satuan: string | null
-          spesifikasi: string | null
+          skpd_id: number | null
           tahun: number
+          tkdn: number | null
           updated_at: string
         }
         Insert: {
           created_at?: string
-          harga: number
-          id?: never
+          created_by?: string | null
+          harga?: number
+          id?: number
+          identitas?: string | null
+          jenis: string
           keterangan?: string | null
-          kode: string
+          kode?: string | null
+          nama: string
           satuan?: string | null
-          spesifikasi?: string | null
+          skpd_id?: number | null
           tahun: number
+          tkdn?: number | null
           updated_at?: string
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           harga?: number
-          id?: never
+          id?: number
+          identitas?: string | null
+          jenis?: string
           keterangan?: string | null
-          kode?: string
+          kode?: string | null
+          nama?: string
           satuan?: string | null
-          spesifikasi?: string | null
+          skpd_id?: number | null
           tahun?: number
+          tkdn?: number | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "rkbmd_ssh_kode_fkey"
+            foreignKeyName: "rkbmd_standar_kode_fkey"
             columns: ["kode"]
             isOneToOne: false
             referencedRelation: "admin_kodefikasi_bmd"
             referencedColumns: ["kode"]
+          },
+          {
+            foreignKeyName: "rkbmd_standar_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: false
+            referencedRelation: "admin_skpd"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rkbmd_standar_rekening: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: number
+          kode_rekening: string
+          skpd_id: number | null
+          standar_id: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: number
+          kode_rekening: string
+          skpd_id?: number | null
+          standar_id: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: number
+          kode_rekening?: string
+          skpd_id?: number | null
+          standar_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rkbmd_standar_rekening_kode_rekening_fkey"
+            columns: ["kode_rekening"]
+            isOneToOne: false
+            referencedRelation: "admin_rekening"
+            referencedColumns: ["kode_sub_rincian"]
+          },
+          {
+            foreignKeyName: "rkbmd_standar_rekening_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: false
+            referencedRelation: "admin_skpd"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rkbmd_standar_rekening_standar_id_fkey"
+            columns: ["standar_id"]
+            isOneToOne: false
+            referencedRelation: "rkbmd_standar"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2659,6 +2804,20 @@ export type Database = {
           perolehan: number
           skpd_id: number
         }[]
+      }
+      fn_rkbmd_standar_simpan: {
+        Args: {
+          p_harga: number
+          p_jenis: string
+          p_keterangan: string
+          p_kode: string
+          p_nama: string
+          p_rekening: string[]
+          p_satuan: string
+          p_tahun: number
+          p_tkdn: number
+        }
+        Returns: Json
       }
       fn_setujui_usulan_pengurus: { Args: { p_id: string }; Returns: string }
       fn_skpd_admin_induk: { Args: never; Returns: boolean }
