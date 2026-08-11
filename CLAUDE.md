@@ -33,6 +33,33 @@ saja, jangan di sini.
 REFACTOR-PLAN.md §5 — aturan yang cuma ditulis di komentar sudah berkali-kali
 terbukti dilanggar di repo ini.
 
+## PERINGKAT KERUSAKAN — apa yang paling mahal kalau rusak
+
+Ditetapkan user 2026-08-11. Dipakai untuk memutuskan **seberapa hati-hati** suatu
+perubahan digarap, apa yang wajib diuji ulang sebelum push, dan apa yang boleh
+diterima sebagai risiko. Kalau sebuah perubahan menyentuh lapis 1, perlakukan
+seperti menyentuh ledger: verifikasi angkanya, jangan cuma andalkan tsc hijau.
+
+**Lapis 1 — TIDAK BOLEH RUSAK.** Ini alasan aplikasi ini ada:
+
+1. **Laporan BMD** — semester 1, semester 2, akhir tahun, di SEMUA model.
+   Nilai perolehan, beban penyusutan, akumulasi penyusutan, & nilai buku wajib
+   utuh. Ini yang dilaporkan ke inspektorat/BPK.
+2. **Rekonsiliasi BMD** — menjelaskan kronologi perjalanan aset. ⚠️ Cakupan yang
+   diminta user cukup **level SKPD**; se-kabupaten bukan kebutuhan, jadi jangan
+   mengorbankan kebenaran/keterbacaan level SKPD demi angka gabungan.
+3. **Daftar Barang** — tidak boleh keliru & tidak boleh nge-bug.
+4. **Penyusutan + engine-nya** — fitur utama aplikasi; engine wajib stabil &
+   re-run selalu aman.
+5. **KIBAR** — penelusuran segala hal yang terjadi pada satu aset.
+
+**Lapis 2 — penting, tapi kerusakannya tidak membatalkan laporan resmi:**
+RKBMD, GIS Tanah, Kendaraan, IPA, Inventarisasi, WasDal, KIR, dan menu admin.
+
+⚠️ Konsekuensi praktis: perubahan **lintas-halaman** (tema/warna global, refactor
+komponen bersama, util angka/format) berbahaya justru karena tak terlihat
+menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
+
 ## Aturan lintas-fitur (JANGAN dilanggar — terakhir ditambah 2026-08-05)
 
 - **PERISTIWA BERLAKU SEJAK PERIODENYA, TIDAK SURUT** (keputusan user

@@ -11,6 +11,31 @@ function formatRp(val: number) {
 }
 const nf = (n: number) => n.toLocaleString('id-ID')
 
+// ── Ikon per golongan (kartu "Total Aset per Jenis") ────────────────────────
+// Outline 24×24 stroke-currentColor, satu gaya dgn ikon sidebar. Ukurannya
+// sengaja dipatok: badge 36px (w-9) berisi ikon 20px (w-5) — ikon mengisi ~55%
+// kotaknya, jadi tidak tenggelam maupun sesak. Kalau menambah golongan baru,
+// tambahkan ikonnya di sini; yang tak terdaftar jatuh ke ikon kotak arsip.
+const IKON_GOLONGAN: Record<string, React.ReactNode> = {
+  // Tanah — pin peta
+  '1.3.1': <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></>,
+  // Peralatan & Mesin — perangkat/komputer
+  '1.3.2': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25A2.25 2.25 0 015.25 3h13.5A2.25 2.25 0 0121 5.25z" />,
+  // Gedung & Bangunan — gedung kantor
+  '1.3.3': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />,
+  // Jalan, Jaringan & Irigasi — badan jalan bermarka
+  '1.3.4': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M4.5 21L8.25 3M19.5 21L15.75 3M12 4.5v3m0 3.75v3m0 3.75v3" />,
+  // Aset Tetap Lainnya — buku (koleksi perpustakaan, tanaman, hewan)
+  '1.3.5': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />,
+  // Konstruksi Dalam Pengerjaan — crane menara
+  '1.3.6': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M4.5 21h6M7.5 21V4.5m-4 2.25h16.5M7.5 10.5l3.75-3.75M15.75 6.75v4.5m-1.875 0h3.75" />,
+  // Aset Tidak Berwujud — kurung kode (perangkat lunak, lisensi)
+  '1.5.3': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M17.25 6.75L22.5 12l-5.25 5.25M6.75 17.25L1.5 12l5.25-5.25M14.25 3.75l-4.5 16.5" />,
+  // Aset Lain-Lain — kotak arsip barang rusak/tak terpakai
+  '1.5.4': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M9.75 11.25l4.5 4.5m0-4.5l-4.5 4.5M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />,
+}
+const IKON_LAIN = IKON_GOLONGAN['1.5.4']
+
 type SB = ReturnType<typeof createClient>
 
 // transaksi_bmd bersifat append-only: batal (pengalihan/penghapusan) DICATAT
@@ -155,7 +180,10 @@ export default async function DashboardHome() {
   const totalNilai = Object.values(gol).reduce((s, v) => s + v.nilai, 0)
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    // `p-6` polos, TANPA `max-w-6xl mx-auto`: semua halaman lain di dashboard
+    // memakai lebar penuh, jadi yang lama membuat Dashboard menjorok masuk ~250px
+    // di kiri & kanan dan terasa tak sejajar dengan menu di sebelahnya.
+    <div className="p-6">
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
@@ -184,8 +212,15 @@ export default async function DashboardHome() {
             const d = gol[g.kode] || { count: 0, nilai: 0 }
             return (
               <div key={g.kode} className="card p-4">
-                <p className="text-[11px] text-gray-400">{g.kode}</p>
-                <p className="text-xs text-gray-600 leading-tight mt-0.5 h-8">{g.uraian}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-teal/10 text-teal flex-shrink-0">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                      {IKON_GOLONGAN[g.kode] ?? IKON_LAIN}
+                    </svg>
+                  </span>
+                  <p className="text-[11px] text-gray-400">{g.kode}</p>
+                </div>
+                <p className="text-xs text-gray-600 leading-tight mt-2 h-8">{g.uraian}</p>
                 <p className="text-xl font-bold text-gray-900 mt-1">{nf(d.count)} <span className="text-xs font-normal text-gray-400">unit</span></p>
                 <p className="text-xs font-medium text-teal mt-1">{formatRp(d.nilai)}</p>
               </div>

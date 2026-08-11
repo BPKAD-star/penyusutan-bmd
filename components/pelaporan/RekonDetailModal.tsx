@@ -91,10 +91,10 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
         'Nama Barang': r.nama || '',
         Komptabel: r.komp === 'intra' ? 'Intra' : 'Ekstra',
         Nilai: r.nilai,
-        'Beban (kontribusi)': r.beban,
-        'Akumulasi (kontribusi)': r.akumulasi,
+        'Beban di baris ini': r.beban,
+        'Akum. dibawa masuk/keluar': r.akumulasi,
         'Beban / Smt': p ? p.beban : '',
-        'Akumulasi': p ? p.akumulasi : '',
+        'Akumulasi barang': p ? p.akumulasi : '',
         'Nilai Buku': p ? p.nilaiBuku : '',
       }
     }), `Rincian_Rekonsiliasi_${judul.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60)}`, 'Rincian')
@@ -110,11 +110,15 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
               {tampil.length} transaksi · {grup.length} SKPD · total <b>{angka(total)}</b>
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
-              Kolom <b>(kontribusi)</b> = bagian baris ini terhadap angka di tabel Rekonsiliasi; totalnya sama persis dengan
-              sel yang diklik. Banyak yang nol — beban &amp; akumulasi cuma menempel di baris yang menceritakan barang
-              masuk/keluar; barang yang hanya berubah nilai bebannya ada di baris Saldo Awal.
-              Kolom <b>Beban / Smt</b>, <b>Akumulasi</b> &amp; <b>Nilai Buku</b> = posisi barangnya pada akhir periode (hasil
-              engine penyusutan), bukan angka transaksi — totalnya dihitung per barang, bukan per baris.
+              <b>Beban di baris ini</b> &amp; <b>Akum. dibawa masuk/keluar</b> = yang BERPINDAH karena baris ini;
+              totalnya sama persis dengan sel yang diklik. Banyak yang nol — keduanya cuma menempel di baris yang
+              menceritakan barang masuk/keluar sel; barang yang hanya berubah nilai bebannya ada di baris Saldo Awal.
+              Untuk barang masuk, akumulasinya sengaja hanya yang BAWAAN (tanpa beban periode ini) supaya tidak
+              terhitung dua kali dengan kolom Beban.
+              <br />
+              <b>Beban / Smt</b>, <b>Akumulasi barang</b> &amp; <b>Nilai Buku</b> = posisi barangnya pada akhir periode
+              (hasil engine penyusutan, sama dengan menu Penyusutan) — bukan angka transaksi, dan totalnya dihitung
+              per barang unik, bukan per baris.
             </p>
           </div>
           <button className="text-gray-400 hover:text-gray-600 text-xl leading-none flex-shrink-0" onClick={onClose}>×</button>
@@ -139,11 +143,15 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
                   <th className="table-th text-left">Kode</th>
                   <th className="table-th text-left">Nama Barang</th>
                   <th className="table-th text-right">Nilai</th>
-                  <th className="table-th text-right border-l border-gray-100" title="Kontribusi baris ini ke kolom Beban di tabel Rekonsiliasi">Beban (kontribusi)</th>
-                  <th className="table-th text-right" title="Kontribusi baris ini ke kolom Akumulasi di tabel Rekonsiliasi">Akum. (kontribusi)</th>
-                  <th className="table-th text-right border-l border-gray-100">Beban / Smt</th>
-                  <th className="table-th text-right">Akumulasi</th>
-                  <th className="table-th text-right">Nilai Buku</th>
+                  {/* Label diperjelas 2026-08-11: "(kontribusi)" ternyata terbaca
+                      sebagai versi lain dari akumulasi barangnya, padahal ia
+                      menjawab pertanyaan yang berbeda — berapa yang BERPINDAH
+                      masuk/keluar sel ini. Angkanya tidak diubah sedikit pun. */}
+                  <th className="table-th text-right border-l border-gray-100" title="Beban periode ini yang dibawa baris ini ke sel Rekonsiliasi. Nol untuk barang yang hanya berubah nilai — bebannya ada di baris Saldo Awal.">Beban di baris ini</th>
+                  <th className="table-th text-right" title="Akumulasi yang berpindah masuk/keluar sel ini karena baris ini. Untuk barang masuk = akumulasi BAWAAN saja (tanpa beban periode ini, supaya tidak dihitung dua kali).">Akum. dibawa masuk/keluar</th>
+                  <th className="table-th text-right border-l border-gray-100" title="Posisi barang pada akhir periode (hasil engine penyusutan)">Beban / Smt</th>
+                  <th className="table-th text-right" title="Akumulasi penyusutan barang ini pada akhir periode — bukan angka transaksi">Akumulasi barang</th>
+                  <th className="table-th text-right" title="Posisi barang pada akhir periode (hasil engine penyusutan)">Nilai Buku</th>
                 </tr>
               </thead>
               {grup.map(g => {
