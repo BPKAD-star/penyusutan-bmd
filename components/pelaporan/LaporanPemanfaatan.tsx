@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { GayaCetakLaporan, KopCetak, TombolCetak, konfirmasiCetakBanyak } from '@/components/pelaporan/CetakLaporan'
 import { JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
 
 type HeaderPayload = {
@@ -28,6 +29,7 @@ export default function LaporanPemanfaatan() {
   const [exporting, setExporting] = useState(false)
   const [jenis, setJenis] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
+  const [skpdNama, setSkpdNama] = useState('')
 
   const build = useCallback(async (): Promise<Row[]> => {
     let hq = supabase.from('jurnal_header')
@@ -97,17 +99,35 @@ export default function LaporanPemanfaatan() {
     setExporting(false)
   }
 
+  // Tabel di sini sudah memuat SELURUH baris (bukan dibatasi seperti
+  // LaporanTransaksi), jadi cetak = langsung print, tanpa tarikan ulang.
+  function handleCetak() {
+    if (rows.length === 0) return
+    if (!konfirmasiCetakBanyak(rows.length)) return
+    window.print()
+  }
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6" id="cetak-laporan">
+      <GayaCetakLaporan />
+      <KopCetak judul="Laporan Pemanfaatan BMD" baris={[
+        `SKPD: ${skpdNama || 'Seluruh SKPD'}`,
+        `Jenis Pemanfaatan: ${jenis ? (JENIS_PEMANFAATAN_LABEL[jenis] || jenis) : 'Semua Jenis'}`,
+        `${rows.length.toLocaleString('id-ID')} barang`,
+      ]} />
+
+      <div className="flex items-center justify-between mb-6 no-print">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Laporan Pemanfaatan</h1>
           <p className="text-gray-500 text-sm mt-1">Rekap barang yang dimanfaatkan (sewa/pinjam pakai/KSP/BGS-BSG/KSPI). Kosongkan SKPD untuk se-kabupaten.</p>
         </div>
-        <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-primary">{exporting ? 'Mengekspor...' : 'Export Excel'}</button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-primary">{exporting ? 'Mengekspor...' : 'Export Excel'}</button>
+          <TombolCetak onClick={handleCetak} disabled={loading || rows.length === 0} />
+        </div>
       </div>
 
-      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
+      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end no-print">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Jenis Pemanfaatan</label>
           <select className="select-filter" value={jenis} onChange={e => setJenis(e.target.value)}>
@@ -117,12 +137,18 @@ export default function LaporanPemanfaatan() {
         </div>
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-          <SkpdCombobox lockToOperator onChangeSelection={sel => setDescIds(sel.descendantIds)} allowClear
-            placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
+          <SkpdCombobox lockToOperator allowClear
+            placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..."
+            onChangeSelection={async sel => {
+              setDescIds(sel.descendantIds)
+              if (sel.skpdId == null) { setSkpdNama(''); return }
+              const { data } = await supabase.from('admin_skpd').select('nama').eq('id', sel.skpdId).maybeSingle()
+              setSkpdNama((data as { nama: string } | null)?.nama || '')
+            }} />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 no-print">
         <div className="card p-4">
           <p className="text-xs text-gray-500">Total Barang</p>
           <p className="text-lg font-bold text-gray-900 mt-1">{rows.length.toLocaleString('id-ID')}</p>
@@ -136,7 +162,7 @@ export default function LaporanPemanfaatan() {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm text-gray-500">{rows.length} barang</span></div>
+        <div className="px-4 py-3 border-b border-gray-100 no-print"><span className="text-sm text-gray-500">{rows.length} barang</span></div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">

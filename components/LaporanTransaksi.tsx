@@ -6,6 +6,7 @@ import { exportToExcel, formatRupiah } from '@/lib/export'
 import { JENIS_TRANSAKSI_LABEL } from '@/lib/bmd'
 import { fetchBatalTargets } from '@/lib/voidedAset'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { GayaCetakLaporan, KopCetak, TombolCetak, konfirmasiCetakBanyak } from '@/components/pelaporan/CetakLaporan'
 
 type Trx = {
   id: number
@@ -64,6 +65,13 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
   const [periode, setPeriode] = useState('')
   const [jenis, setJenis] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
+  const [skpdNama, setSkpdNama] = useState('')
+  // Baris LENGKAP khusus untuk cetak. Tabel di layar sengaja dibatasi 500 baris,
+  // tapi PDF yang cuma memuat 500 dari (misalnya) 4.000 transaksi adalah dokumen
+  // yang MENYESATKAN — ia tidak terlihat terpotong. Jadi saat mencetak, seluruh
+  // baris ditarik dulu (sama persis dengan Export Excel), dirender, baru dicetak.
+  const [barisCetak, setBarisCetak] = useState<Trx[] | null>(null)
+  const [menyiapkan, setMenyiapkan] = useState(false)
   // null = belum dimuat (atau memang tak perlu difilter → Set kosong).
   const [batalTargets, setBatalTargets] = useState<Set<number> | null>(null)
 
@@ -121,8 +129,10 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
     rekap.set(r.jenis, cur)
   }
 
-  async function handleExport() {
-    setExporting(true)
+  // Tarikan LENGKAP (tanpa batas 500 seperti tabel layar) + penyaringan yang
+  // sama persis. Dipakai bersama Export Excel & Export PDF supaya kedua berkas
+  // tak mungkin berisi baris yang berbeda.
+  async function ambilSemua(): Promise<Trx[]> {
     const all: Trx[] = []
     for (let from = 0; ; from += 1000) {
       const { data } = await buildQuery().range(from, from + 999)
@@ -133,6 +143,29 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
     let hasil = batalTargets && batalTargets.size > 0 ? all.filter(r => !batalTargets.has(r.id)) : all
     if (sembunyikanAsetDihapus) hasil = hasil.filter(r => r.aset?.status !== 'dihapus')
     if (efektifPerAsetStatus) hasil = efektifPerAset(hasil, efektifPerAsetStatus)
+    return hasil
+  }
+
+  async function handleCetak() {
+    setMenyiapkan(true)
+    const hasil = await ambilSemua()
+    setMenyiapkan(false)
+    if (hasil.length === 0) { alert('Tidak ada transaksi untuk dicetak dengan filter ini.'); return }
+    if (!konfirmasiCetakBanyak(hasil.length)) return
+    setBarisCetak(hasil)
+  }
+
+  // Cetak SESUDAH baris lengkapnya benar-benar ter-render — kalau window.print()
+  // dipanggil di handler yang sama, yang tercetak masih tabel 500 baris.
+  useEffect(() => {
+    if (!barisCetak) return
+    const t = setTimeout(() => { window.print(); setBarisCetak(null) }, 100)
+    return () => clearTimeout(t)
+  }, [barisCetak])
+
+  async function handleExport() {
+    setExporting(true)
+    const hasil = await ambilSemua()
     exportToExcel(hasil.map(r => ({
       'Tanggal': r.tanggal,
       'Periode': r.periode,
@@ -148,20 +181,36 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
     setExporting(false)
   }
 
+  // Yang dicetak = barisCetak (lengkap) kalau sedang menyiapkan PDF; selain itu
+  // tabel layar apa adanya.
+  const barisTampil = barisCetak ?? rows
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6" id="cetak-laporan">
+      <GayaCetakLaporan />
+      <KopCetak judul={judul} baris={[
+        `Periode: ${periode || 'Semua Periode'}`,
+        `SKPD: ${skpdNama || 'Seluruh SKPD'}`,
+        jenis ? `Jenis: ${JENIS_TRANSAKSI_LABEL[jenis] || jenis}` : null,
+        `${barisTampil.length.toLocaleString('id-ID')} transaksi`,
+      ]} />
+
+      <div className="flex items-center justify-between mb-6 no-print">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{judul}</h1>
           <p className="text-gray-500 text-sm mt-1">{deskripsi}</p>
         </div>
-        <button onClick={handleExport} disabled={exporting} className="btn-primary">
-          {exporting ? 'Mengekspor...' : 'Export Excel'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExport} disabled={exporting} className="btn-primary">
+            {exporting ? 'Mengekspor...' : 'Export Excel'}
+          </button>
+          <TombolCetak onClick={handleCetak} disabled={menyiapkan || exporting}
+            label={menyiapkan ? 'Menyiapkan...' : 'Export PDF'} />
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
+      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end no-print">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Periode</label>
           <select className="select-filter" value={periode} onChange={e => setPeriode(e.target.value)}>
@@ -180,13 +229,21 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
         )}
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-          <SkpdCombobox lockToOperator onChangeSelection={sel => setDescIds(sel.descendantIds)} allowClear
-            placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
+          <SkpdCombobox lockToOperator allowClear
+            placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..."
+            onChangeSelection={async sel => {
+              setDescIds(sel.descendantIds)
+              // Namanya cuma dibutuhkan kop PDF; satu baris, jadi diambil saat
+              // dipilih ketimbang menarik seluruh daftar SKPD ke halaman ini.
+              if (sel.skpdId == null) { setSkpdNama(''); return }
+              const { data } = await supabase.from('admin_skpd').select('nama').eq('id', sel.skpdId).maybeSingle()
+              setSkpdNama((data as { nama: string } | null)?.nama || '')
+            }} />
         </div>
       </div>
 
       {/* Rekap */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 no-print">
         {[...rekap.entries()].map(([j, v]) => (
           <div key={j} className="card p-4">
             <p className="text-xs text-gray-500">{JENIS_TRANSAKSI_LABEL[j] || j}</p>
@@ -198,7 +255,7 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100">
+        <div className="px-4 py-3 border-b border-gray-100 no-print">
           <span className="text-sm text-gray-500">{rows.length} transaksi (maks. 500 ditampilkan — export untuk semua)</span>
         </div>
         <div className="overflow-x-auto">
@@ -216,9 +273,9 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
-              ) : rows.length === 0 ? (
+              ) : barisTampil.length === 0 ? (
                 <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-              ) : rows.map(r => (
+              ) : barisTampil.map(r => (
                 <tr key={r.id}>
                   <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
                   <td className="table-td text-xs">{JENIS_TRANSAKSI_LABEL[r.jenis] || r.jenis}</td>

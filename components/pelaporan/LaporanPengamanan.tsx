@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { GayaCetakLaporan, KopCetak, TombolCetak, konfirmasiCetakBanyak } from '@/components/pelaporan/CetakLaporan'
 
 type HeaderPayload = {
   nama_pegawai?: string; nip?: string; pangkat_golongan?: string; jabatan?: string
@@ -26,6 +27,7 @@ export default function LaporanPengamanan() {
   const [exporting, setExporting] = useState(false)
   const [status, setStatus] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
+  const [skpdNama, setSkpdNama] = useState('')
 
   const build = useCallback(async (): Promise<Row[]> => {
     let hq = supabase.from('jurnal_header')
@@ -88,17 +90,34 @@ export default function LaporanPengamanan() {
     setExporting(false)
   }
 
+  // Tabel di sini sudah memuat SELURUH baris, jadi cetak = langsung print.
+  function handleCetak() {
+    if (rows.length === 0) return
+    if (!konfirmasiCetakBanyak(rows.length)) return
+    window.print()
+  }
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6" id="cetak-laporan">
+      <GayaCetakLaporan />
+      <KopCetak judul="Laporan Pengamanan BMD" baris={[
+        `SKPD: ${skpdNama || 'Seluruh SKPD'}`,
+        `Status: ${status || 'Semua'}`,
+        `${rows.length.toLocaleString('id-ID')} barang`,
+      ]} />
+
+      <div className="flex items-center justify-between mb-6 no-print">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Laporan Pengamanan</h1>
           <p className="text-gray-500 text-sm mt-1">Rekap barang dalam kustodi pegawai penanggung jawab. Kosongkan SKPD untuk se-kabupaten.</p>
         </div>
-        <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-primary">{exporting ? 'Mengekspor...' : 'Export Excel'}</button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-primary">{exporting ? 'Mengekspor...' : 'Export Excel'}</button>
+          <TombolCetak onClick={handleCetak} disabled={loading || rows.length === 0} />
+        </div>
       </div>
 
-      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
+      <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end no-print">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Status</label>
           <select className="select-filter" value={status} onChange={e => setStatus(e.target.value)}>
@@ -109,19 +128,25 @@ export default function LaporanPengamanan() {
         </div>
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-          <SkpdCombobox lockToOperator onChangeSelection={sel => setDescIds(sel.descendantIds)} allowClear
-            placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
+          <SkpdCombobox lockToOperator allowClear
+            placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..."
+            onChangeSelection={async sel => {
+              setDescIds(sel.descendantIds)
+              if (sel.skpdId == null) { setSkpdNama(''); return }
+              const { data } = await supabase.from('admin_skpd').select('nama').eq('id', sel.skpdId).maybeSingle()
+              setSkpdNama((data as { nama: string } | null)?.nama || '')
+            }} />
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-3 gap-3 mb-4 no-print">
         <div className="card p-4"><p className="text-xs text-gray-500">Total Barang</p><p className="text-lg font-bold text-gray-900 mt-1">{rows.length.toLocaleString('id-ID')}</p></div>
         <div className="card p-4"><p className="text-xs text-gray-500">Diamankan</p><p className="text-lg font-bold text-green-700 mt-1">{nDiamankan.toLocaleString('id-ID')}</p></div>
         <div className="card p-4"><p className="text-xs text-gray-500">Dikembalikan</p><p className="text-lg font-bold text-gray-500 mt-1">{nKembali.toLocaleString('id-ID')}</p></div>
       </div>
 
       <div className="card overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100"><span className="text-sm text-gray-500">{rows.length} barang</span></div>
+        <div className="px-4 py-3 border-b border-gray-100 no-print"><span className="text-sm text-gray-500">{rows.length} barang</span></div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">
