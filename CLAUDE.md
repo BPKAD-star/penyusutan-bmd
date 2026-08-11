@@ -1047,11 +1047,21 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   `prepareSnapshotCtx` → `fetchSnapshotPositions` → `attribusiPenyusutan` yang
   mahal dan bergantung `descendantIds` hasil `SkpdCombobox` — subtree Dinas
   Pendidikan saja 694 id, tak mungkin dititipkan lewat URL, dan menghitung ulang
-  membuka celah PDF berbeda dari layar. Kop Berita Acara (`.kop-cetak`) hanya
-  muncul di kertas; `#cetak-rekon` diisolasi dgn pola `visibility:hidden` atas
-  `body *` supaya cetakan tetap bersih tanpa perlu tahu susunan layout
-  dashboard. `applied` ikut membekukan `skpdId` supaya kop menyebut SKPD yang
-  angkanya sedang ditampilkan, bukan pilihan terbaru di kotak filter.
+  membuka celah PDF berbeda dari layar. `#cetak-rekon` diisolasi dgn pola
+  `visibility:hidden` atas `body *` supaya cetakan tetap bersih tanpa perlu tahu
+  susunan layout dashboard.
+- **A4 landscape, SATU JENIS ASET = SATU LEMBAR** (`break-after: page` per
+  kartu; kartu terakhir dikecualikan supaya tak menyisakan halaman kosong).
+  Supaya 9 kolom × ~45 baris muat kanan-kiri DAN atas-bawah, font ditekan ke
+  6,5px + padding 0,5px dan `table-layout: fixed` dgn kolom label 20% — tanpa
+  fixed, kolom label melar mengikuti teks terpanjang lalu mendorong angka keluar
+  halaman. Label MEMBUNGKUS (`overflow-wrap: anywhere`), angka tidak (`nowrap`).
+- ⚠️ **Kop "Berita Acara" sengaja DIBUANG** (user 2026-08-11, membatalkan
+  permintaan sehari sebelumnya): sejak tiap jenis aset punya lembar sendiri, kop
+  tiga baris itu terulang di setiap halaman. **Konsekuensi yang diterima: berkas
+  cetak tidak menyebut SKPD & periode sama sekali** — identitas lembar cuma
+  judul jenis aset. Kalau nanti diminta kembali, `applied` perlu ikut membekukan
+  `skpdId` lagi (dulu ada, dibuang bersama kopnya supaya tak jadi kode mati).
 
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
