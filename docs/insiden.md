@@ -52,9 +52,15 @@
 | [INS-19](#ins-19) | 2026-07-08 → 2026-08-06 | Nama SKPD tampil **"SKPD #12"**, dan admin pemda **kehilangan tombol Unggah** di Dokumen Sumber | ✅ [`sinkronisasi.test.ts`](../lib/sinkronisasi.test.ts) |
 | [INS-20](#ins-20) | 2024 → ditemukan 2026-08-06 | **±200 barang dobel** masih tampil di Daftar Barang Awal, dan **Edit Spesifikasi tidak tersambung** untuk ±300 barang | ⬜ butuh integrasi DB |
 | [INS-21](#ins-21) | 2026-08-10 | Dashboard, Saldo Awal, & Laporan BMD menampilkan **semua angka NOL** — dan untuk pengurus barang, Dashboard **tidak pernah selesai** | ⬜ butuh integrasi DB |
+| [INS-22](#ins-22) | ditemukan 2026-08-11, **belum sempat salah** | Satu pemanggil `catatTransaksi` tak mengisi `tanggal` → ledger diam-diam bertanggal **hari ini**, bukan tanggal dokumen | ✅ [`sinkronisasi.test.ts`](../lib/sinkronisasi.test.ts) §6 |
+| [INS-23](#ins-23) | ditemukan 2026-08-11 | Enam baris `koreksi_nilai` disisipkan lewat **SQL langsung**, dibalik dengan koreksi berlawanan tanda alih-alih `batal_koreksi_nilai` | ⬜ soal disiplin operasi |
 
-**Skornya hari ini: 5 dari 21 punya penjaga otomatis, dua di antaranya
+**Skornya hari ini: 6 dari 23 punya penjaga otomatis, dua di antaranya
 sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
+
+INS-22 satu-satunya yang masuk daftar ini **sebelum** memakan korban. Ia layak
+dicatat justru karena itu: yang menemukannya bukan laporan yang salah,
+melainkan membaca ulang pemanggil satu per satu **sesudah** data bilang aman.
 
 ---
 
@@ -555,9 +561,75 @@ sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
 
 ---
 
+### INS-22
+**Tanggal ledger diam-diam jadi "hari ini" karena satu pemanggil lupa mengisinya**
+
+- **Tanggal** — ditemukan **2026-08-11** saat mengaudit permintaan user agar
+  semua menu memakai tanggal dokumen sumber. **Belum pernah salah di data
+  hidup** — dan itu justru inti ceritanya.
+- **Gejala** — tidak ada. Keempat baris `koreksi_spesifikasi` yang ada cocok
+  dengan tanggal kartunya (2026-07-20), jadi audit sepintas menyatakannya
+  benar. Cocoknya kebetulan: dokumen itu diinput di hari yang sama dengan
+  tanggal dokumennya sendiri.
+- **Akar** — `catatTransaksi` (lib/transaksi.ts) men-default `tanggal` ke
+  `new Date()` kalau argumennya tak diisi. Di Koreksi.tsx, `koreksi_nilai`,
+  `pemecahan_masuk`, `pemecahan_keluar`, dan `koreksi_pencatatan_ganda`
+  semuanya mengirim tanggal kartu — **`koreksi_spesifikasi` tidak**, sendirian,
+  di berkas yang sama. Tanggal ledger menentukan periode, dan periode
+  menentukan di semester mana angkanya dilaporkan; begitu ada operator yang
+  mengetik dokumen bertanggal mundur, barisnya mendarat di semester berjalan
+  tanpa satu pun pesan.
+- **Kenapa layak dicatat walau belum memakan korban** — ia menunjukkan bahwa
+  **memeriksa data saja tidak cukup**. Query pembanding "tanggal ledger vs
+  tanggal kartu" menyatakan `koreksi_spesifikasi` 4/4 cocok, dan kalau audit
+  berhenti di situ cacatnya lolos. Yang menemukannya adalah membaca pemanggil
+  satu per satu sesudah datanya bilang aman.
+- **Perbaikan** — `tanggal: h.tanggal` ditambahkan, dan aturannya dinaikkan
+  jadi: **`tanggal` WAJIB disebut, apa pun nilainya.** Yang memang mau hari ini
+  pun menuliskannya (`tanggal: today`) supaya terbaca sebagai keputusan, bukan
+  kelalaian.
+- **Test** — ✅ `lib/sinkronisasi.test.ts` §6: setiap `catatTransaksi(supabase,
+  { … })` di `app/`, `components/`, `lib/` wajib memuat kunci `tanggal:`.
+  Argumennya diambil dengan **menghitung kurung kurawal**, bukan regex —
+  `payload` di dalamnya punya kurawal sendiri. Diverifikasi dengan
+  mengembalikan cacatnya: tesnya merah & menyebut
+  `components/pengelolaan/Koreksi.tsx → jenis: 'koreksi_spesifikasi'`.
+
+---
+
+### INS-23
+**Enam baris `koreksi_nilai` yang tak pernah lewat menu**
+
+- **Tanggal** — ditemukan **2026-08-11** saat menelusuri kenapa Laporan BMD
+  Model 3 tak *foot*.
+- **Temuan** — enam baris `koreksi_nilai` di golongan 1.3.3 intra
+  (netto **Rp665.788.761**) **tidak dibuat oleh menu Koreksi**: `header_id`
+  NULL, dan payload-nya `{"sumber": "Sinkron nilai perolehan ke Import Gedung
+  Lengkap"}` — bukan bentuk yang ditulis Koreksi.tsx
+  (`nilai_lama`/`nilai_perolehan_baru`/`delta`). Disisipkan lewat SQL langsung.
+- **Yang lebih penting dari itu** — dua di antaranya berketerangan *"Batalkan
+  koreksi_nilai — mekanisme salah"* dan membalik dengan `koreksi_nilai`
+  **berlawanan tanda**, bukan dengan `batal_koreksi_nilai`. Urutannya jadi
+  sinkron → dibalik → sinkron lagi. Hasil akhirnya BENAR (sinkronisasi
+  diterapkan sekali), tapi jejaknya berbeda: `batal_koreksi_nilai` menandai
+  baris targetnya lewat `target_trx_id` sehingga pembaca laporan MEMBUANGNYA;
+  koreksi berlawanan tanda tetap terbaca sebagai dua mutasi nyata.
+- **Akibat yang diterima** — di Laporan BMD Model 3 barang itu muncul **enam
+  baris**: tiga di Penambahan, tiga di Pengurangan, saling meniadakan.
+  Jumlahnya benar, tampilannya ramai. **Sengaja tidak dirapikan** (keputusan
+  user 2026-08-11): ledger append-only, jadi "merapikan" berarti menambah baris
+  lagi — bukan mengurangi keramaian.
+- **Pelajaran** — perbaikan data lewat SQL langsung melewati SEMUA yang dijaga
+  menu: bentuk payload, `header_id`, dan pilihan jenis pembatalan yang benar.
+  Kalau memang harus lewat SQL, tirulah payload yang ditulis menunya, dan pakai
+  `batal_*` yang sesuai — jangan membalik dengan baris berlawanan tanda.
+- **Test** — ⬜ tak ada; ini soal disiplin operasi, bukan kode.
+
+---
+
 ## Pola yang berulang
 
-Dua puluh satu entri di atas bukan dua puluh satu masalah berbeda. Kalau
+Dua puluh tiga entri di atas bukan dua puluh tiga masalah berbeda. Kalau
 diurutkan menurut **akar**-nya, sebagian besar jatuh ke empat keluarga — dan
 keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 
@@ -567,6 +639,8 @@ keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 | **Operator non-*leakproof* di bawah RLS** (`LIKE`, lalu ENUM) | INS-02 · INS-03 · INS-05 · INS-11 · INS-12 | sebagian: partial index + `ANALYZE` jadi kebiasaan; verifikasinya belum jadi test |
 | **Diuji sebagai ADMIN saja** — jalur cepat admin menyembunyikan biaya yang ditanggung semua orang lain | INS-21 | rules.md §4.5 & §4.8 sudah menuliskannya; penegaknya masih prosedur |
 | **Konstanta kembar dijaga ingatan** | INS-15 · INS-17 · INS-18 | sebagian: `lib/sinkronisasi.test.ts` |
+| **Default diam-diam** — argumen yang boleh kosong lalu diisi sendiri oleh helper, padahal isinya menentukan periode laporan | INS-22 | ✅ `lib/sinkronisasi.test.ts` §6 — `tanggal` wajib disebut eksplisit |
+| **Perbaikan data lewat SQL langsung** — melewati bentuk payload, `header_id`, & pilihan jenis pembatalan yang dijaga menu | INS-23 | ⬜ soal disiplin operasi, bukan kode |
 | **Penyapuan rename yang tidak tuntas** | INS-19 | ✅ `lib/sinkronisasi.test.ts` — nama tabel dicocokkan ke tipe generated |
 | **Foto beku vs data hidup** — snapshot yang benar hari lahirnya lalu ditinggal kenyataan | INS-20 | ⬜ belum; butuh keputusan apakah baseline boleh diperbaiki |
 | **Prosedur migrasi** | INS-13 · INS-14 | [runbook-migrasi.md](runbook-migrasi.md) |

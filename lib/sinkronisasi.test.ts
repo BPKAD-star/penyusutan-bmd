@@ -343,3 +343,67 @@ describe('reklas kode: daftar jenis di TS, SQL, & index parsial sama persis', ()
     for (const j of [...JENIS_REKLAS_KODE, 'batal_reklas']) expect(enumJenis).toContain(j)
   })
 })
+
+// ════════════════════════════════════════════════════════════════════════════
+// 6. Setiap penulisan ledger menyebut `tanggal` SECARA EKSPLISIT.
+//
+// `catatTransaksi` men-default `tanggal` ke HARI INI kalau tak diisi. Itu
+// default yang berbahaya: tanggal ledger menentukan PERIODE, dan periode
+// menentukan di semester mana angkanya dilaporkan. Satu pemanggil yang lupa
+// mengisinya akan mencatat dokumen bertanggal mundur di semester berjalan —
+// tanpa error, tanpa peringatan, dan cuma ketahuan kalau ada yang kebetulan
+// membandingkan kartu dengan ledgernya.
+//
+// Ditemukan 2026-08-11 di `koreksi_spesifikasi` (Koreksi.tsx): satu-satunya
+// pemanggil yang tak menyebut `tanggal`, sementara `koreksi_nilai` &
+// `pemecahan_*` di BERKAS YANG SAMA menyebutnya. Belum sempat salah karena
+// keempat barisnya kebetulan diinput di hari yang sama dgn tanggal dokumennya.
+//
+// Aturannya: SEBUT `tanggal`, apa pun nilainya. Yang memang mau hari ini pun
+// wajib menuliskannya (mis. `tanggal: today`) — supaya pilihan itu terbaca
+// sebagai keputusan, bukan sebagai kelalaian.
+// ════════════════════════════════════════════════════════════════════════════
+describe('catatTransaksi: `tanggal` selalu disebut eksplisit', () => {
+  // Ambil isi objek argumen kedua `catatTransaksi(supabase, { ... })` dengan
+  // menghitung kurung kurawal — regex saja tak bisa menangani objek bersarang
+  // (payload di dalamnya punya kurawal sendiri).
+  function panggilanCatatTransaksi(isi: string): string[] {
+    const out: string[] = []
+    const penanda = /catatTransaksi\(\s*supabase\s*,\s*\{/g
+    let m: RegExpExecArray | null
+    while ((m = penanda.exec(isi)) !== null) {
+      let dalam = 1
+      let i = m.index + m[0].length
+      for (; i < isi.length && dalam > 0; i++) {
+        if (isi[i] === '{') dalam++
+        else if (isi[i] === '}') dalam--
+      }
+      out.push(isi.slice(m.index + m[0].length, i - 1))
+    }
+    return out
+  }
+
+  it('tak ada pemanggil yang membiarkan tanggalnya jatuh ke default hari ini', () => {
+    const lalai: string[] = []
+    let total = 0
+    for (const f of berkasSumber()) {
+      // Berkas test dilewati — termasuk BERKAS INI, yang memuat pola
+      // `catatTransaksi(supabase, {` di dalam regex pemindainya sendiri dan
+      // karenanya menuduh dirinya lalai.
+      if (/\.test\.tsx?$/.test(f.nama)) continue
+      if (!f.isi.includes('catatTransaksi(')) continue
+      for (const arg of panggilanCatatTransaksi(f.isi)) {
+        total++
+        // Kedalaman objeknya sudah dijaga penghitung kurawal; cukup pastikan
+        // ada kunci `tanggal:` di level mana pun argumen itu.
+        if (!/\btanggal\s*:/.test(arg)) {
+          lalai.push(`${f.nama} → ${(arg.match(/jenis\s*:\s*[^,\n]+/) || ['(jenis tak terbaca)'])[0].trim()}`)
+        }
+      }
+    }
+    // Anti-hampa: kalau pemindainya rusak, jangan diam-diam lulus.
+    if (total < 8) throw new Error(`hanya ${total} panggilan catatTransaksi terbaca — pemindainya rusak, PERBAIKI`)
+
+    expect(lalai).toEqual([])
+  })
+})

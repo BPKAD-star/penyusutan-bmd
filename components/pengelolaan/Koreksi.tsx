@@ -779,8 +779,16 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
         const payload: Record<string, unknown> = { ...base, prev }
         if (single && fotoBerubah) payload.foto_paths = fotoReplace
         else if (!single && fotoAppend && fotoAppend.length) payload.foto_paths = [...(b.foto_paths || []), ...fotoAppend]
+        // `tanggal` WAJIB disebut. Tanpa itu `catatTransaksi` men-default ke
+        // HARI INI, sementara koreksi_nilai & pemecahan di berkas yang sama
+        // memakai tanggal kartu — jadi satu jurnal bisa melahirkan baris ledger
+        // bertanggal berbeda-beda. Selama ini tak ketahuan karena keempat baris
+        // yang ada kebetulan diinput di hari yang sama dgn tanggal dokumennya;
+        // begitu ada dokumen bertanggal mundur, ledgernya melenceng diam-diam.
+        // Dikunci lib/sinkronisasi.test.ts (§6).
         const { error } = await catatTransaksi(supabase, {
-          asetId: b.id, jenis: 'koreksi_spesifikasi', headerId: h.id, payload, keterangan: h.keterangan || undefined,
+          asetId: b.id, jenis: 'koreksi_spesifikasi', tanggal: h.tanggal, headerId: h.id,
+          payload, keterangan: h.keterangan || undefined,
         })
         if (error) { setErr(error); setSaving(false); return }
       }
