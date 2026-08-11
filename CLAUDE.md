@@ -1029,6 +1029,30 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   error selama jendela antara migrasi & deploy; itu diterima karena tabelnya
   terbukti KOSONG (0 baris, dicek 2026-08-10) dan halamannya memang diganti.
 
+## Rekonsiliasi BMD — tampilan & cetak (2026-08-11)
+
+- **Nol ditampilkan `–`, bukan `0`** (permintaan user): di lembar seluas ini
+  deretan nol menenggelamkan sel yang benar-benar berisi. Tetap abu-abu & tak
+  diwarnai — nol bukan mutasi.
+- **Blok Penambahan hijau, Pengurangan merah.** `grup` di `RowDef` diisi
+  OTOMATIS lewat `ROWS_TAMBAH`/`ROWS_KURANG` yang di-spread ke `ROWS`, supaya
+  baris baru tak bisa kelupaan diwarnai. `grup` **tidak dipakai perhitungan apa
+  pun** — murni warna.
+- ⚠️ Warna itu **mencabut penanda lama "angka teal = bisa diklik"**; penanda
+  drill-down dipindah ke **garis bawah putus-putus**, dan kalimat bantuannya
+  ikut diubah. Kalau warnanya diutak-atik lagi, jaga tetap ada penanda
+  klik yang bukan warna.
+- **Export PDF = `window.print()` atas halaman itu sendiri**, BUKAN rute
+  `/cetak/...` terpisah. Sengaja: seluruh angkanya lahir dari
+  `prepareSnapshotCtx` → `fetchSnapshotPositions` → `attribusiPenyusutan` yang
+  mahal dan bergantung `descendantIds` hasil `SkpdCombobox` — subtree Dinas
+  Pendidikan saja 694 id, tak mungkin dititipkan lewat URL, dan menghitung ulang
+  membuka celah PDF berbeda dari layar. Kop Berita Acara (`.kop-cetak`) hanya
+  muncul di kertas; `#cetak-rekon` diisolasi dgn pola `visibility:hidden` atas
+  `body *` supaya cetakan tetap bersih tanpa perlu tahu susunan layout
+  dashboard. `applied` ikut membekukan `skpdId` supaya kop menyebut SKPD yang
+  angkanya sedang ditampilkan, bukan pilihan terbaru di kotak filter.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang

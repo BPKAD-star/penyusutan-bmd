@@ -44,10 +44,12 @@ const KOMPS: Komptabel[] = ['intra', 'ekstra']
 
 // ── Struktur baris laporan (image BA rekonsiliasi) ──────────────────────────
 type RowKind = 'saldo-awal' | 'saldo-akhir' | 'header' | 'sub' | 'item' | 'jumlah-t' | 'jumlah-k' | 'selisih'
-type RowDef = { kind: RowKind; label: string; key?: MutasiKey; indent?: number }
+/** `grup` cuma menentukan WARNA angka (hijau untuk penambahan, merah untuk
+ *  pengurangan) — tidak dipakai perhitungan apa pun. Diisi otomatis di bawah
+ *  supaya tak ada baris yang kelupaan diwarnai saat daftar ini ditambah. */
+type RowDef = { kind: RowKind; label: string; key?: MutasiKey; indent?: number; grup?: 'tambah' | 'kurang' }
 
-const ROWS: RowDef[] = [
-  { kind: 'saldo-awal', label: 'SALDO AWAL' },
+const ROWS_TAMBAH: RowDef[] = [
   { kind: 'header', label: 'Penambahan' },
   { kind: 'sub', label: 'Cara Perolehan', indent: 1 },
   { kind: 'item', label: 'Pengadaan', key: 'pengadaan', indent: 2 },
@@ -72,6 +74,9 @@ const ROWS: RowDef[] = [
   { kind: 'item', label: 'Perubahan Fungsi', key: 'reklas_fungsi_masuk', indent: 2 },
   { kind: 'item', label: 'Kesalahan Kodefikasi', key: 'reklas_kode_masuk', indent: 2 },
   { kind: 'jumlah-t', label: 'JUMLAH PENAMBAHAN' },
+]
+
+const ROWS_KURANG: RowDef[] = [
   { kind: 'header', label: 'Pengurangan' },
   { kind: 'sub', label: 'Penghapusan Pemindahtanganan', indent: 1 },
   { kind: 'item', label: 'Penjualan', key: 'hapus_penjualan', indent: 2 },
@@ -88,6 +93,12 @@ const ROWS: RowDef[] = [
   { kind: 'item', label: 'Perubahan Fungsi', key: 'reklas_fungsi_keluar', indent: 2 },
   { kind: 'item', label: 'Kesalahan Kodefikasi', key: 'reklas_kode_keluar', indent: 2 },
   { kind: 'jumlah-k', label: 'JUMLAH PENGURANGAN' },
+]
+
+const ROWS: RowDef[] = [
+  { kind: 'saldo-awal', label: 'SALDO AWAL' },
+  ...ROWS_TAMBAH.map(r => ({ ...r, grup: 'tambah' as const })),
+  ...ROWS_KURANG.map(r => ({ ...r, grup: 'kurang' as const })),
   { kind: 'selisih', label: 'Selisih (belum terpetakan)' },
   { kind: 'saldo-akhir', label: 'SALDO AKHIR' },
 ]
@@ -165,7 +176,10 @@ export default function RekonsiliasiPage() {
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [tahun, setTahun] = useState(() => tahunAwal('2026'))
   const [smt, setSmt] = useState('1')
-  const [applied, setApplied] = useState<{ tahun: string; smt: string } | null>(null)
+  // `skpdId` ikut dibekukan saat Proses supaya kop Berita Acara yang dicetak
+  // menyebut SKPD yang angkanya benar-benar sedang ditampilkan — bukan pilihan
+  // terbaru di kotak filter yang mungkin sudah diganti tanpa menekan Proses.
+  const [applied, setApplied] = useState<{ tahun: string; smt: string; skpdId: number | null } | null>(null)
   const [snapAwal, setSnapAwal] = useState<Snapshot>({})
   const [snapAkhir, setSnapAkhir] = useState<Snapshot>({})
   const [mutasi, setMutasi] = useState<Mutasi>({})
@@ -218,7 +232,7 @@ export default function RekonsiliasiPage() {
       setSnapAwal(aggregatePositions(posAwal)); setSnapAkhir(aggregatePositions(posAkhir))
       setBebanAwal(atr.bebanSaldoAwal)
       setLines(atr.lines); setMutasi(aggregateMutasi(atr.lines))
-      setApplied({ tahun, smt })
+      setApplied({ tahun, smt, skpdId: org.skpdId })
     } catch (e) {
       // Laporan yang datanya tak lengkap TIDAK BOLEH tampil — angka rekonsiliasi
       // yang kurang sebagian jauh lebih berbahaya daripada halaman yang kosong,
@@ -279,8 +293,45 @@ export default function RekonsiliasiPage() {
     exportToExcel(rows, `Rekonsiliasi_BMD_${periodeLabel}`, 'Rekonsiliasi BMD')
   }
 
+  const namaSkpdCetak = applied?.skpdId != null
+    ? (skpdNama[applied.skpdId] || `SKPD #${applied.skpdId}`)
+    : 'Seluruh SKPD — Pemerintah Kabupaten Kediri'
+
+  // Export PDF = CETAK HALAMAN INI apa adanya (permintaan user: "sebagaimana
+  // formatnya yang ada di page itu"), bukan halaman /cetak terpisah yang
+  // menghitung ulang. Alasannya bukan kemalasan: seluruh angka di sini lahir
+  // dari prepareSnapshotCtx → fetchSnapshotPositions → attribusiPenyusutan yang
+  // mahal dan bergantung pada `descendantIds` hasil pilihan SkpdCombobox —
+  // subtree Dinas Pendidikan saja 694 id, tak mungkin dititipkan lewat URL.
+  // Menghitungnya dua kali juga membuka celah berkas PDF berbeda dari layar.
+  function handlePrint() {
+    if (!applied) return
+    window.print()
+  }
+
   return (
     <div className="p-6">
+      {/* Saat mencetak: sembunyikan SELURUH halaman lalu tampilkan hanya
+          #cetak-rekon. Teknik visibility ini sengaja dipilih supaya tidak perlu
+          tahu susunan layout dashboard (sidebar, top bar) — kalau layoutnya
+          berubah, cetakannya tetap bersih. `print-color-adjust` menjaga warna
+          hijau/merah tetap tercetak; tanpa itu banyak browser membuangnya. */}
+      <style>{`
+        @media print {
+          @page { size: A4 landscape; margin: 1cm; }
+          body { background: #fff; }
+          body * { visibility: hidden; }
+          #cetak-rekon, #cetak-rekon * { visibility: visible; }
+          #cetak-rekon { position: absolute; left: 0; top: 0; width: 100%; }
+          #cetak-rekon .no-print { display: none !important; }
+          #cetak-rekon .kop-cetak { display: block !important; }
+          #cetak-rekon table { font-size: 8px; }
+          #cetak-rekon .card { break-inside: avoid; box-shadow: none; border: 0; }
+          #cetak-rekon .overflow-x-auto { overflow: visible !important; }
+          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+      `}</style>
+
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Rekonsiliasi BMD</h1>
         <p className="text-gray-500 text-sm mt-1">
@@ -312,6 +363,7 @@ export default function RekonsiliasiPage() {
             <span className="w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={proses} disabled={loading}>{loading ? 'Memproses...' : 'Proses'}</button>
             {applied && <button className="btn-secondary" onClick={handleExport}>Export Excel</button>}
+            {applied && <button className="btn-secondary" onClick={handlePrint}>Export PDF / Cetak</button>}
           </div>
         </div>
       </div>
@@ -329,15 +381,25 @@ export default function RekonsiliasiPage() {
       ) : loading ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Memproses...</div>
       ) : (
-        <div className="space-y-3">
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">
+        <div id="cetak-rekon" className="space-y-3">
+          {/* Kop hanya muncul di kertas — di layar filternya sudah menerangkan
+              periode & SKPD, jadi mengulangnya cuma menghabiskan ruang. */}
+          <div className="kop-cetak hidden text-center mb-4">
+            <p className="font-bold uppercase text-[13px]">Berita Acara Rekonsiliasi BMD</p>
+            <p className="font-bold uppercase text-[12px]">
+              Semester {applied.smt === '1' ? '1' : '2'} Tahun {applied.tahun}
+            </p>
+            <p className="font-bold uppercase text-[12px]">{namaSkpdCetak}</p>
+          </div>
+
+          <div className="no-print rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-800">
             <span className="font-medium">Periode {periodeLabel}</span> — keempat ukuran sudah terisi. Baris <b>Selisih</b> memuat
             yang belum terpetakan ke kategori mana pun (a.l. reklas komptabel Intra↔Ekstra): kalau isinya nol, rantai
             Saldo Awal + Penambahan − Pengurangan = Saldo Akhir cocok sempurna untuk sel itu.
           </div>
-          <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-2 text-xs text-gray-600 space-y-1">
+          <div className="no-print rounded-lg bg-gray-50 border border-gray-200 px-4 py-2 text-xs text-gray-600 space-y-1">
             <p>
-              Angka <b>Nilai Perolehan</b> yang berwarna bisa <b>diklik</b> untuk melihat rincian transaksi pembentuknya
+              Angka <b>Nilai Perolehan</b> yang bergaris putus-putus bisa <b>diklik</b> untuk melihat rincian transaksi pembentuknya
               (per SKPD, lengkap dengan NIBAR &amp; no. dokumen). Saldo Awal/Akhir tidak — itu posisi hasil replay engine
               per aset, bukan transaksi periode ini; rinciannya di menu Penyusutan. Baris <b>Selisih</b> juga tidak,
               karena isinya justru yang belum terpetakan ke kategori mana pun.
@@ -378,9 +440,16 @@ export default function RekonsiliasiPage() {
                       const isSaldo = row.kind === 'saldo-awal' || row.kind === 'saldo-akhir'
                       const isJumlah = row.kind === 'jumlah-t' || row.kind === 'jumlah-k'
                       const isHead = row.kind === 'header'
+                      // Blok Penambahan/Pengurangan ikut diberi latar & warna
+                      // judul supaya dua blok itu terbaca sekali lihat — di
+                      // lembar sepanjang ini keduanya mudah tertukar.
                       const cls = isSaldo ? 'bg-teal/5 font-semibold text-gray-900'
-                        : isJumlah ? 'bg-gray-50 font-medium text-gray-800'
-                        : isHead ? 'bg-gray-50/40 font-medium text-gray-700'
+                        : isJumlah ? (row.grup === 'tambah'
+                            ? 'bg-emerald-50 font-semibold text-emerald-800'
+                            : 'bg-red-50 font-semibold text-red-800')
+                        : isHead ? (row.grup === 'tambah'
+                            ? 'bg-emerald-50/60 font-medium text-emerald-800'
+                            : 'bg-red-50/60 font-medium text-red-800')
                         : row.kind === 'selisih' ? 'text-gray-500 italic' : ''
                       return (
                         <tr key={ri} className={cls}>
@@ -396,16 +465,30 @@ export default function RekonsiliasiPage() {
                             // transaksinya. Kolom lain (Beban/Akumulasi/Nilai Buku) &
                             // baris saldo/selisih tidak — lihat keysOfRow().
                             const adaRincian = keysOfRow(row) !== null && p != null && p !== 0
+                            // Nol ditampilkan sebagai "–" (permintaan user
+                            // 2026-08-11): di lembar seluas ini deretan angka 0
+                            // justru menenggelamkan sel yang benar-benar berisi.
+                            // Tetap ABU-ABU & tak berwarna — mewarnai tanda pisah
+                            // cuma menambah bising, dan nol bukan mutasi.
+                            const warna = row.grup === 'tambah' ? 'text-emerald-700'
+                              : row.grup === 'kurang' ? 'text-red-600' : ''
                             const td = (id: string, v: number | null, border = false, onClick?: () => void) => (
                               <td key={id} className={`table-td text-right text-xs tabular-nums ${border ? 'border-l border-gray-100' : ''}`}>
-                                {v == null ? <span className="text-gray-300">{isHead || row.kind === 'sub' ? '' : '—'}</span>
+                                {v == null ? <span className="text-gray-300">{isHead || row.kind === 'sub' ? '' : '–'}</span>
+                                  : v === 0 ? <span className="text-gray-300">–</span>
                                   : onClick ? (
+                                    // Setelah angka diwarnai per grup, warna tak
+                                    // lagi bisa jadi penanda "bisa diklik" —
+                                    // dipindah ke garis putus-putus. Di kertas
+                                    // garis ini ikut hilang (.no-print tak
+                                    // berlaku di sini, tapi tooltip & klik memang
+                                    // tak berarti apa-apa di PDF).
                                     <button type="button" onClick={onClick}
-                                      className="text-teal hover:underline tabular-nums"
+                                      className={`tabular-nums underline decoration-dotted decoration-gray-400 underline-offset-4 hover:decoration-solid ${warna || 'text-teal'}`}
                                       title="Klik untuk melihat rincian transaksi pembentuk angka ini">
                                       {angka(v)}
                                     </button>
-                                  ) : angka(v)}
+                                  ) : <span className={warna}>{angka(v)}</span>}
                               </td>
                             )
                             return [
