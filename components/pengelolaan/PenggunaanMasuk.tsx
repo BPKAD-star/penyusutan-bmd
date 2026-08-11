@@ -137,8 +137,16 @@ export default function PenggunaanMasuk() {
 
   useEffect(() => { load(skpd) }, [skpd, load])
 
+  // Tanggal perpindahan = TANGGAL DOKUMEN (j.tanggal), bukan hari ini —
+  // migrasi 20260811_02. Disebut eksplisit di konfirmasi karena itulah yang
+  // menentukan periode laporannya, dan dulu bedanya baru ketahuan setelah
+  // angkanya muncul di semester yang salah.
   async function terima(j: Jurnal) {
-    if (!confirm(`Terima ${j.lines.length} barang dari ${namaSkpd(j.skpd_id)}? Barang akan resmi berpindah ke SKPD ini.`)) return
+    if (!confirm(
+      `Terima ${j.lines.length} barang dari ${namaSkpd(j.skpd_id)}?\n\n` +
+      `Perpindahan dicatat pada TANGGAL DOKUMEN ${j.tanggal} (${j.periode}), bukan tanggal hari ini. ` +
+      `Kalau tanggal itu keliru, minta SKPD asal membetulkannya dulu.`
+    )) return
     setBusy(true)
     const { data, error } = await supabase.rpc('fn_terima_pengalihan', { p_header_id: j.id })
     setBusy(false)
@@ -191,6 +199,28 @@ export default function PenggunaanMasuk() {
     setBusy(false)
     if (error) { setMsg(`Error: ${error.message}`); return }
     setMsg(`Pengalihan dibatalkan — barang dianggap tidak pernah pindah dari ${namaSkpd(j.skpd_id)}.`)
+    load(skpd)
+  }
+
+  // Batal SELURUH kartu. Bukan sekadar pintasan dari mengklik Batal satu per
+  // satu: kartu yang seluruh barangnya dibatalkan KEMBALI ke "Menunggu
+  // Persetujuan" (migrasi 20260811_02), jadi bisa diterima ulang tanpa SKPD
+  // pengirim membuat kartu baru. Itu jalan resmi untuk membetulkan penerimaan
+  // yang tanggalnya keliru. Kalau berhenti di tengah, seluruhnya batal — satu
+  // transaksi di server.
+  async function batalSeluruh(j: Jurnal) {
+    if (!confirm(
+      `BATALKAN SELURUH pengalihan "${j.no_sk}" (${j.lines.length} barang)?\n\n` +
+      `Semua barang dianggap tidak pernah pindah dan kembali ke ${namaSkpd(j.skpd_id)}. ` +
+      `Kartunya balik ke "Menunggu Persetujuan" sehingga bisa Anda terima ULANG — ` +
+      `SKPD pengirim tidak perlu entry ulang.\n\n` +
+      `Kalau barangnya memang sempat dipakai di sini lalu dipulangkan, pakai "Kembalikan" per barang, bukan ini.`
+    )) return
+    setBusy(true)
+    const { data, error } = await supabase.rpc('fn_batal_seluruh_pengalihan', { p_header_id: j.id })
+    setBusy(false)
+    if (error) { setMsg(`Error: ${error.message}`); return }
+    setMsg(`${data} barang dibatalkan — kartu ${j.no_sk} kembali menunggu persetujuan & siap diterima ulang.`)
     load(skpd)
   }
 
@@ -283,6 +313,13 @@ export default function PenggunaanMasuk() {
                             Tolak
                           </button>
                         </>
+                      )}
+                      {disetujui && (
+                        <button disabled={busy} onClick={() => batalSeluruh(j)}
+                          title="Batalkan SEMUA barang di kartu ini sekaligus, lalu kartunya bisa diterima ulang"
+                          className="px-3 py-2 rounded-lg text-xs font-medium text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-40">
+                          {busy ? '...' : 'Batal Seluruh Pengalihan'}
+                        </button>
                       )}
                     </div>
                   </div>
