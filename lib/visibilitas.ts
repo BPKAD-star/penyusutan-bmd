@@ -22,6 +22,11 @@ export const SEMBUNYI_PENYUSUTAN = [
   'kapitalisasi_serap', 'penghapusan_pemindahtanganan', 'penghapusan_sebab_lain',
   'batal_pengadaan', 'koreksi_pencatatan_ganda', 'batal_hibah_masuk', 'batal_tukar_menukar',
   'batal_hasil_inventarisasi', 'batal_perolehan_lainnya', 'pemecahan_keluar', 'batal_pemecahan_masuk',
+  // Penggabungan Barang (migrasi 20260811_01): barang SUMBER dilebur ke induk →
+  // hilang dari daftar sejak periode penggabungan. `penggabungan_masuk` TIDAK
+  // ada di sini maupun di LAHIR — induknya barang lama yang tetap tampil, cuma
+  // basisnya yang di-rebasis.
+  'penggabungan_keluar',
 ] as const
 // Varian Daftar Barang — PLUS `kdp_selesai_keluar` (aset KDP 1.3.6 yang sudah
 // di-carve-out jadi aset tetap tak lagi didaftar). Perbedaan ini SENGAJA, sudah
@@ -30,6 +35,10 @@ export const SEMBUNYI_DAFTAR_BARANG = [...SEMBUNYI_PENYUSUTAN, 'kdp_selesai_kelu
 // Event yang MEMUNCULKAN kembali barang yang tadinya disembunyikan.
 export const MUNCUL = [
   'batal_kapitalisasi', 'batal_penghapusan', 'batal_pemecahan', 'batal_koreksi_pencatatan_ganda',
+  // Batal Penggabungan: barang sumber yang sudah dilebur muncul kembali utuh.
+  // Pasangannya `batal_penggabungan_masuk` (pada induk) BUKAN event visibilitas —
+  // induk tak pernah disembunyikan; yang dibatalkan cuma re-basis nilainya.
+  'batal_penggabungan',
 ] as const
 
 // Event KELAHIRAN — barang yang lahir dari sebuah PERISTIWA, bukan dari
@@ -45,6 +54,14 @@ export const MUNCUL = [
 //
 // ⚠️ Bikin pintu baru yang MEMBUAT aset dengan `tgl_perolehan` warisan/mundur
 // (bukan tanggal peristiwanya) → WAJIB daftarkan jenis ledgernya di sini.
+//
+// ⚠️ `penggabungan_masuk` SENGAJA TIDAK di sini, dan itu bukan kelalaian:
+// Penggabungan Barang tidak MEMBUAT aset baru — hasil gabungannya ADALAH
+// induknya sendiri (aset & NIBAR yang sudah ada, keputusan user 2026-08-11).
+// Induk memang sudah ada sejak tanggal perolehannya, jadi mendaftarkannya di
+// sini justru akan MENGHILANGKAN barang yang sah dari periode sebelum
+// penggabungan — kebalikan persis dari insiden 2026-08-05 yang melahirkan
+// daftar ini.
 export const LAHIR = ['pemecahan_masuk', 'kdp_selesai_masuk'] as const
 
 export type EventVisibilitas = { id: number; periode: string; jenis: string }

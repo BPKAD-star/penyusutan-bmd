@@ -2908,6 +2908,10 @@ export type Database = {
         | "pengembalian_pengamanan"
         | "batal_pengamanan"
         | "batal_pengalihan"
+        | "penggabungan_keluar"
+        | "penggabungan_masuk"
+        | "batal_penggabungan"
+        | "batal_penggabungan_masuk"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3082,6 +3086,10 @@ export const Constants = {
         "pengembalian_pengamanan",
         "batal_pengamanan",
         "batal_pengalihan",
+        "penggabungan_keluar",
+        "penggabungan_masuk",
+        "batal_penggabungan",
+        "batal_penggabungan_masuk",
       ],
     },
   },

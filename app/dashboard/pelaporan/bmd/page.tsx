@@ -57,6 +57,15 @@ const JENIS_PENGHAPUSAN_M3 = ['penghapusan_pemindahtanganan', 'penghapusan_sebab
 // tepat sebesar nilai induk yang pecahannya pindah kolom komptabel — kasus
 // nyata: Rehab Garasi Grogol Rp167.324.933, induk intra → 7 pecahan ekstra.
 const JENIS_PECAH_M3 = ['pemecahan_keluar', 'pemecahan_masuk']
+// Penggabungan Barang (migrasi 20260811_01) — alasannya PERSIS sama dgn
+// Pemecahan di atas: Saldo Awal memuat seluruh baris yang nanti dilebur, Saldo
+// Akhir cuma memuat induknya (dengan nilai gabungan), jadi tanpa dua baris
+// mutasi ini Model 3 tidak foot.
+// ⚠️ `penggabungan_masuk.nilai` = DELTA (Σ barang sumber), bukan nilai penuh
+// hasil gabungan — induknya sendiri sudah ada di Saldo Awal. Lihat JENIS_GABUNG
+// di lib/rekon.ts; kedua modul WAJIB membacanya dengan cara yang sama, kalau
+// tidak Rekonsiliasi & Laporan BMD berbeda angka.
+const JENIS_GABUNG_M3 = ['penggabungan_keluar', 'penggabungan_masuk']
 // Reklasifikasi — KEDUA jenis (lib/reklasKode.ts), bukan cuma
 // `reklas_golongan`. Yang menentukan baris mutasi bukan NAMA jenisnya melainkan
 // apakah golongan level-3 berubah; tak ada penjaga di DB yang memaksa
@@ -405,18 +414,19 @@ export default function LaporanBmdPage() {
       fetchLedgerM3(JENIS_KDP_M3),
       fetchLedgerM3(JENIS_PENGHAPUSAN_M3),
       fetchLedgerM3(JENIS_PECAH_M3),
+      fetchLedgerM3(JENIS_GABUNG_M3),
       fetchLedgerM3(['pengalihan_status']),
       fetchLedgerM3(JENIS_REKLAS_M3),
       fetchLedgerM3(JENIS_KOREKSI_NILAI_M3),
     ]).catch(gagal)
     if (!tahap1) { setLoading(false); return }
-    const [skpdMap, rowsCara, rowsKdp, rowsHapus, pecahRows, rowsAlih, rowsReklas, rowsKoreksi] = tahap1
+    const [skpdMap, rowsCara, rowsKdp, rowsHapus, pecahRows, gabungRows, rowsAlih, rowsReklas, rowsKoreksi] = tahap1
 
     // Aset yang tersentuh mutasi periode ini — dipakai untuk MENSCOPE kolektor
     // tahap 2 (rules.md §3.4). `rowsReklas` ikut supaya set "reklas dibatalkan"
     // mencakup pembatalan atas reklas DI LUAR periode laporan juga: `kodePada`
     // membaca riwayat sepanjang masa, jadi penyaringnya harus seluas itu pula.
-    const asetTerlibat = [...rowsCara, ...rowsKdp, ...rowsHapus, ...pecahRows,
+    const asetTerlibat = [...rowsCara, ...rowsKdp, ...rowsHapus, ...pecahRows, ...gabungRows,
                           ...rowsAlih, ...rowsReklas, ...rowsKoreksi].map(r => r.aset_id)
 
     const tahap2 = await Promise.all([
@@ -432,6 +442,9 @@ export default function LaporanBmdPage() {
       fetchBatalTargets(supabase, BATAL_TARGET_JENIS.reklasifikasi, asetTerlibat),
       fetchPenghapusanNetRemoved(rowsHapus.map(r => r.aset_id)),
       fetchPemecahanBatal(supabase, pecahRows.map(r => r.aset_id)),
+      // Penggabungan yang dibatalkan — per baris ledger (payload.target_trx_id),
+      // bukan per (kartu, aset) spt pemecahan.
+      fetchBatalTargets(supabase, BATAL_TARGET_JENIS.penggabungan, gabungRows.map(r => r.aset_id)),
       // Koreksi Nilai yang sudah dibatalkan — deltanya dianggap tak pernah ada,
       // persis perlakuan reklas & pengalihan yang dianulir.
       fetchBatalTargets(supabase, ['batal_koreksi_nilai'], rowsKoreksi.map(r => r.aset_id)),
@@ -441,7 +454,7 @@ export default function LaporanBmdPage() {
     ]).catch(gagal)
     if (!tahap2) { setLoading(false); return }
     const [voided, pengalihanDibatalkan, reklasDibatalkan, penghapusanNetRemoved, pecahBatal,
-           koreksiDibatalkan, reklasEvents] = tahap2
+           gabungBatal, koreksiDibatalkan, reklasEvents] = tahap2
 
     const tambah: Record<string, number> = {}
     const kurang: Record<string, number> = {}
@@ -505,6 +518,23 @@ export default function LaporanBmdPage() {
       const keluar = r.jenis === 'pemecahan_keluar'
       addLine(keluar ? kurang : tambah, keluar ? 'kurang' : 'tambah', golPada(r), {
         kategori: keluar ? 'Pemecahan Barang (induk dipecah)' : 'Pemecahan Barang (pecahan baru)',
+        tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
+        namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
+      })
+    }
+
+    // Penggabungan Barang: tiap barang SUMBER keluar sebesar nilai
+    // perolehannya, INDUK menerima delta-nya (Σ sumber). Kalau semuanya sekolom
+    // komptabel, Penambahan & Pengurangan sama besar dan Saldo Akhir tak
+    // bergeser — memang begitu maksudnya: yang dirapikan pencatatannya, bukan
+    // kekayaannya. Yang dijaga baris ini justru kasus sebaliknya, saat induk &
+    // sumber beda kolom/golongan.
+    for (const r of gabungRows) {
+      if (!r.aset || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
+      if (gabungBatal.has(r.id)) continue
+      const keluar = r.jenis === 'penggabungan_keluar'
+      addLine(keluar ? kurang : tambah, keluar ? 'kurang' : 'tambah', golPada(r), {
+        kategori: keluar ? 'Penggabungan Barang (barang dilebur)' : 'Penggabungan Barang (nilai masuk ke induk)',
         tanggal: r.tanggal, skpdNama: skpdMap[r.aset.skpd_id] || '-',
         namaBarang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai,
       })

@@ -121,10 +121,17 @@ kode, jadi ia harus stabil:
    `lib/visibilitas.test.ts` — jangan disalin lagi ke halaman.
 
    ⚠️ **Yang sengaja TIDAK ikut aturan ini**, jangan "dirapikan" tanpa
-   keputusan: `batal_pengadaan`, `batal_hibah_masuk` dkk, dan
-   `koreksi_pencatatan_ganda` memang dicatat MUNDUR ke tanggal aslinya supaya
-   barangnya hilang dari SEMUA periode — di situ maksudnya "tak pernah ada",
-   bukan "berhenti sejak sekarang". Terpisah dari itu, kolom Nilai Perolehan di
+   keputusan: `batal_pengadaan`, `batal_hibah_masuk` dkk memang dicatat MUNDUR
+   ke tanggal aslinya supaya barangnya hilang dari SEMUA periode — di situ
+   maksudnya "tak pernah ada", bukan "berhenti sejak sekarang".
+   `koreksi_pencatatan_ganda` **dulu ikut kelompok itu, sejak 2026-08-11 TIDAK
+   lagi** (keputusan user): ia kini memakai tanggal DOKUMEN koreksi. Dua
+   sebabnya: barisnya jatuh di periode perolehan sehingga Laporan &
+   Rekonsiliasi menaruhnya di periode yang salah, dan jenis itu tak ada di
+   whitelist retroaktif `fn_cek_tahun_buku` sehingga duplikat yang diperoleh di
+   tahun terkunci DITOLAK trigger — tak bisa digabung sama sekali. Penyaringan
+   "tak pernah ada" untuk modul pelaporan tetap jalan lewat `fetchVoidedAsetIds`
+   yang memang period-agnostic. Terpisah dari itu, kolom Nilai Perolehan di
    **Daftar Barang** membaca `aset.nilai_perolehan` TERKINI, jadi kapitalisasi/
    koreksi nilai di S2 ikut terlihat saat membuka S1 (Penyusutan & Rekonsiliasi
    tidak — keduanya memakai angka engine per periode). Belum diputuskan.

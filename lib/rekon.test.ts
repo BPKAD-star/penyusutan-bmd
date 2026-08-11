@@ -203,6 +203,84 @@ describe('pemecahan barang — induk intra → pecahan ekstra (kasus nyata 2026-
   })
 })
 
+describe('penggabungan barang — 35 baris pagar jadi satu (kasus nyata 2026-08-11)', () => {
+  // "Pagar Besi" UPTD SMPN 2 Mojo: 35 baris @ Rp721.500 karena satuannya bukan
+  // "unit". SATU pagar, bukan 35. Yang dijaga di sini persis janji fiturnya:
+  // total perolehan & total akumulasi TIDAK berubah, dan baris Selisih NOL.
+  //
+  // Bentuk angkanya beda dari Pemecahan dan itu yang gampang salah: induk BUKAN
+  // barang baru di sel ini, ia sudah ada di Saldo Awal. Jadi baris masuknya
+  // membawa DELTA (Σ 34 sumber), bukan Rp25.252.500 — kalau nilai penuh yang
+  // dipakai, kolom Penambahan kelebihan Rp721.500 dan Selisih tak pernah nol.
+  const GOL = '1.3.2'
+  const NP = 721_500, BEBAN = 36_075, AKUM_S1 = 180_375
+  const SUMBER = Array.from({ length: 34 }, (_, i) => `S${i + 1}`)
+
+  const posAwal = new Map<string, PosAset>(
+    ['INDUK', ...SUMBER].map(k => [k, pos(GOL, NP, BEBAN, AKUM_S1, 'intra')]),
+  )
+  // Sesudah digabung engine me-rebasis induk: nilai & akumulasi jadi jumlah
+  // seluruh anggota, sisa umurnya tetap milik induk (35 × angka satu baris).
+  const posAkhir = new Map<string, PosAset>([
+    ['INDUK', pos(GOL, 35 * NP, 35 * BEBAN, 35 * (AKUM_S1 + BEBAN), 'intra')],
+  ])
+  const lines = [
+    ...SUMBER.map(k => line('penggabungan_keluar', k, NP, { gol: GOL, komp: 'intra' })),
+    line('penggabungan_masuk', 'INDUK', 34 * NP, { gol: GOL, komp: 'intra' }),
+  ]
+  const atr = attribusiPenyusutan(lines, posAwal, posAkhir)
+  const mut = aggregateMutasi(atr.lines)
+  const aw = aggregatePositions(posAwal)[GOL].intra
+  const ak = aggregatePositions(posAkhir)[GOL].intra
+
+  it('KEKEKALAN: total perolehan & akumulasi sel tidak berubah sepeser pun', () => {
+    expect(ak.perolehan).toBe(aw.perolehan)
+    // Akumulasi akhir = akumulasi awal + beban periode berjalan; yang penting,
+    // tak ada satu rupiah pun yang HILANG bersama 34 baris yang dilebur.
+    expect(ak.akumulasi).toBe(aw.akumulasi + ak.beban)
+  })
+
+  it('barang yang dilebur membawa keluar akumulasinya, bebannya nol', () => {
+    expect(sel(mut, 'penggabungan_keluar', GOL, 'intra'))
+      .toEqual({ perolehan: 34 * NP, beban: 0, akumulasi: 34 * AKUM_S1 })
+  })
+
+  it('baris INDUK membawa akumulasi yang DISERAP — bukan nol seperti kapitalisasi', () => {
+    // Ini satu-satunya baris "tambah" di modul ini yang menempel pada aset yang
+    // sudah ada di sel. Kalau ia diperlakukan seperti kapitalisasi (akumulasi
+    // nol), akumulasi 34 baris yang keluar tak punya penyeimbang dan seluruhnya
+    // jatuh ke baris Selisih.
+    expect(sel(mut, 'penggabungan_masuk', GOL, 'intra'))
+      .toEqual({ perolehan: 34 * NP, beban: 0, akumulasi: 34 * AKUM_S1 })
+  })
+
+  it('beban periode tetap milik baris SALDO AWAL (induk penghuni populasi awal)', () => {
+    expect(atr.bebanSaldoAwal[GOL].intra).toBe(35 * BEBAN)
+    expect(atr.bebanSaldoAwal[GOL].intra + atr.lines.reduce((s, l) => s + l.beban, 0)).toBe(ak.beban)
+  })
+
+  it('SELISIH NOL — rantai perolehan & akumulasi dua-duanya tie-out', () => {
+    const t = atr.lines.filter(l => l.arah === 'tambah')
+    const k = atr.lines.filter(l => l.arah === 'kurang')
+    const sum = (rs: MutasiLine[], f: (l: MutasiLine) => number) => rs.reduce((s, l) => s + f(l), 0)
+
+    // Persis rumus baris 'selisih' di app/dashboard/pelaporan/rekonsiliasi/page.tsx.
+    expect((ak.perolehan - aw.perolehan) - (sum(t, l => l.nilai) - sum(k, l => l.nilai))).toBe(0)
+    expect((ak.akumulasi - aw.akumulasi) - (ak.beban + sum(t, l => l.akumulasi) - sum(k, l => l.akumulasi))).toBe(0)
+  })
+
+  it('induk yang BARU masuk sel di periode yang sama tetap pakai aturan umum', () => {
+    // Kalau induknya sendiri baru diperoleh/direklas masuk pada periode ini, ia
+    // BUKAN penghuni populasi awal — atribusinya harus jatuh ke jalur "baru
+    // masuk sel" (bawa beban penuh), bukan ke cabang penyerapan di atas.
+    const awal = new Map<string, PosAset>()
+    const akhir = new Map<string, PosAset>([['I', pos(GOL, 1_443_000, 72_150, 72_150, 'intra')]])
+    const a = attribusiPenyusutan([line('penggabungan_masuk', 'I', 721_500, { gol: GOL, komp: 'intra' })], awal, akhir)
+
+    expect(a.lines[0]).toMatchObject({ beban: 72_150, akumulasi: 0 })
+  })
+})
+
 describe('attribusiPenyusutan — anti-dobel', () => {
   it('satu aset dgn BEBERAPA baris di sel yang sama cuma diatribusi sekali', () => {
     // Kontrak konstruksi 3 termin di periode yang sama → 3 baris 'kdp' utk satu

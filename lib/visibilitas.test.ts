@@ -67,6 +67,50 @@ describe('pemecahan barang — insiden 2026-08-05', () => {
   })
 })
 
+describe('penggabungan barang — kebalikan pemecahan (2026-08-11)', () => {
+  // Kejadian nyata: "Pagar Besi" UPTD SMPN 2 Mojo terpecah jadi 35 baris
+  // @ Rp721.500 (tgl_perolehan 2025-02-05) gara-gara satuannya bukan "unit".
+  // Digabung pada dokumen bertanggal 2026-S2: 34 sumber dilebur, 1 induk
+  // dipertahankan dengan basis = jumlah seluruhnya.
+  const TGL = '2025-02-05'
+  const sumber = [ev('penggabungan_keluar', '2026-S2')]
+  const induk = [ev('penggabungan_masuk', '2026-S2')]
+
+  it('2026-S1: SEMUA baris masih ada — penggabungan tidak surut', () => {
+    expect(tampil(sumber, '2026-S1', TGL)).toBe(true)
+    expect(tampil(induk, '2026-S1', TGL)).toBe(true)
+  })
+
+  it('2026-S2: sumber hilang, induk TETAP tampil', () => {
+    expect(tampil(sumber, '2026-S2', TGL)).toBe(false)
+    expect(tampil(induk, '2026-S2', TGL)).toBe(true)
+  })
+
+  it('induk tak pernah tersembunyi di periode mana pun', () => {
+    // Inilah bedanya dgn Pemecahan: di sana induk RETIRE, di sini induk hidup
+    // terus. Kalau `penggabungan_masuk` sampai masuk LAHIR/SEMBUNYI, barang
+    // yang sah hilang dari laporan periode lampau.
+    for (const p of ['2025-S2', '2026-S1', '2026-S2', '2027-S1'])
+      expect(tampil(induk, p, TGL), `induk hilang di ${p}`).toBe(true)
+  })
+
+  it('setelah Batal Penggabungan: sumber muncul lagi', () => {
+    const sumberBatal = [...sumber, ev('batal_penggabungan', '2026-S2')]
+    expect(tampil(sumberBatal, '2026-S2', TGL)).toBe(true)
+    expect(tampil(sumberBatal, '2027-S1', TGL)).toBe(true)
+  })
+
+  it('batal_penggabungan_masuk BUKAN event visibilitas — induk tetap tampil', () => {
+    const indukBatal = [...induk, ev('batal_penggabungan_masuk', '2026-S2')]
+    expect(tampil(indukBatal, '2026-S2', TGL)).toBe(true)
+  })
+
+  it('penggabungan_masuk TIDAK terdaftar sbg kelahiran', () => {
+    expect((LAHIR as readonly string[]).includes('penggabungan_masuk')).toBe(false)
+    expect(lahirSetelah(induk, '2025-S2')).toBe(false)
+  })
+})
+
 describe('carve-out KDP (kdp_selesai_masuk) ikut aturan yang sama', () => {
   it('aset tetap hasil carve-out belum ada sebelum BAPP', () => {
     const asetTetap = [ev('kdp_selesai_masuk', '2026-S2')]

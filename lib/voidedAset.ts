@@ -121,6 +121,13 @@ export const BATAL_TARGET_JENIS = {
   reklasifikasi: ['batal_reklas'],
   koreksi: ['batal_koreksi_nilai', 'batal_koreksi_spesifikasi', 'batal_koreksi_pencatatan_ganda'],
   pengalihan: ['batal_pengalihan'],
+  // Penggabungan Barang (migrasi 20260811_01). Dua jenis SEKALIGUS & memang
+  // harus begitu: satu pembatalan menganulir baris `penggabungan_keluar` tiap
+  // sumber DAN baris `penggabungan_masuk` induknya. Beda dari
+  // `batal_pemecahan*` yang tak ber-target_trx_id (lihat fetchPemecahanBatal di
+  // bawah) — di sini keduanya memakai payload.target_trx_id, jadi laporan cukup
+  // menyaring per baris ledger.
+  penggabungan: ['batal_penggabungan', 'batal_penggabungan_masuk'],
 } as const
 
 // Satu baris `batal_*` bisa menganulir SATU baris (`payload.target_trx_id`) atau

@@ -54,6 +54,24 @@ const KOREKSI_SPEK_COLS = new Set([
   'luas', 'tahun_pengadaan', 'latitude', 'longitude', 'foto_paths',
 ])
 
+// Ambil field spesifikasi dari sub-payload (`spek` / `spek_prev`) dgn whitelist
+// yang sama seperti koreksi spesifikasi. `izinkanKosong` = arah PEMULIHAN
+// (batal): null & string kosong ikut ditulis, supaya field yang dulu memang
+// kosong benar-benar kembali kosong — sama persis alasannya dgn
+// `batal_koreksi_spesifikasi`.
+function patchSpek(spek: unknown, izinkanKosong: boolean): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (!spek || typeof spek !== 'object' || Array.isArray(spek)) return patch
+  for (const [k, v] of Object.entries(spek as Record<string, unknown>)) {
+    if (!KOREKSI_SPEK_COLS.has(k)) continue
+    if (izinkanKosong) { patch[k] = v; continue }
+    if (typeof v === 'string' && v.trim() !== '') patch[k] = v
+    else if (typeof v === 'number' && Number.isFinite(v)) patch[k] = v
+    else if (Array.isArray(v)) patch[k] = v
+  }
+  return patch
+}
+
 function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
   const p = t.payload ?? {}
   switch (t.jenis) {
@@ -140,6 +158,39 @@ function patchAsetDari(t: TransaksiInput): Record<string, unknown> | null {
       // Batal pemecahan: PECAHAN dibuang (soft-delete). Ledger pemecahan_masuk-nya
       // tetap tersimpan utk audit (append-only).
       return { status: 'dihapus' }
+    case 'penggabungan_keluar':
+      // Penggabungan Barang: barang SUMBER dilebur ke induk (soft-delete).
+      // Nilainya tidak hilang — ia pindah ke induk lewat penggabungan_masuk.
+      return { status: 'dihapus' }
+    case 'penggabungan_masuk': {
+      // INDUK: nilai perolehan di register jadi jumlah seluruh anggota. WAJIB
+      // ada — Daftar Barang membaca `aset.nilai_perolehan` TERKINI, jadi tanpa
+      // patch ini 35 baris pagar (Rp25.252.500) menyusut jadi satu baris
+      // Rp721.500 dan Rp24,5 juta lenyap dari register tanpa pesan apa pun.
+      const patch: Record<string, unknown> = {}
+      if (typeof p.nilai_perolehan_baru === 'number') patch.nilai_perolehan = p.nilai_perolehan_baru
+      // `payload.spek` = spesifikasi HASIL gabungan (nama & satuan barunya —
+      // "Pagar Besi 125 m", satuan "Unit" menggantikan "Meter Persegi").
+      // Dititipkan di event ini, bukan baris koreksi_spesifikasi tersendiri,
+      // supaya satu peristiwa tetap satu baris ledger per aset: baris kedua
+      // akan jadi "transaksi lebih baru" yang memblokir pembatalannya sendiri.
+      Object.assign(patch, patchSpek(p.spek, false))
+      return Object.keys(patch).length ? patch : null
+    }
+    case 'batal_penggabungan':
+      // Batal penggabungan: barang sumber aktif & tampil lagi (pola batal_pemecahan).
+      return { status: 'aktif' }
+    case 'batal_penggabungan_masuk': {
+      // INDUK kembali ke nilai perolehan sebelum digabung (dikirim caller sbg
+      // nilai_perolehan_baru = payload.nilai_lama, pola batal_koreksi_nilai) DAN
+      // ke spesifikasi sebelum digabung (`spek_prev`, null diizinkan — pola
+      // batal_koreksi_spesifikasi). Statusnya tak disentuh: induk tak pernah
+      // dihapus, jadi tak ada yang perlu dihidupkan lagi.
+      const patch: Record<string, unknown> = {}
+      if (typeof p.nilai_perolehan_baru === 'number') patch.nilai_perolehan = p.nilai_perolehan_baru
+      Object.assign(patch, patchSpek(p.spek_prev, true))
+      return Object.keys(patch).length ? patch : null
+    }
     case 'batal_penghapusan':
       // Kebalikan penghapusan: barang kembali aktif, penyusutan lanjut lagi.
       return { status: 'aktif' }

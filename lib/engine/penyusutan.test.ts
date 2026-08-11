@@ -467,6 +467,7 @@ describe('hitungJadwalAset — event yang MENGHENTIKAN & yang MELANJUTKAN', () =
     ['kapitalisasi_serap'],
     ['pemecahan_keluar'],
     ['batal_pemecahan_masuk'],
+    ['penggabungan_keluar'],
   ])('%s menghentikan akrual sejak periode kejadiannya', (jenis) => {
     const hasil = jalankanDengan(trx({ jenis, periode: '2026-S2', id: 50 }))
 
@@ -479,6 +480,7 @@ describe('hitungJadwalAset — event yang MENGHENTIKAN & yang MELANJUTKAN', () =
     ['batal_kapitalisasi',               'kapitalisasi_serap'],
     ['batal_koreksi_pencatatan_ganda',   'koreksi_pencatatan_ganda'],
     ['batal_pemecahan',                  'pemecahan_keluar'],
+    ['batal_penggabungan',               'penggabungan_keluar'],
   ])('%s melanjutkan akrual lagi setelah %s', (batal, henti) => {
     const hasil = jalankanDengan(
       trx({ jenis: henti, periode: '2026-S1', id: 50 }),
@@ -563,6 +565,128 @@ describe('hitungJadwalAset — reklasifikasi', () => {
     expect(hasil[1].masa_manfaat_tahun).toBe(20)
     expect(hasil[1].beban).toBe(Math.round(500_000_000 / 40))
     expect(hasil[1].sisa_semester).toBe(39)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// Penggabungan Barang — kebalikan pemecahan (keputusan user 2026-08-11).
+//
+// Kasus nyatanya: "Pagar Besi" UPTD SMPN 2 Mojo tercatat 35 baris @ Rp721.500
+// karena satuannya bukan "unit". Yang WAJIB dijaga di sini adalah dua kekekalan
+// yang tak akan bersuara kalau jebol: total NILAI PEROLEHAN dan total AKUMULASI
+// tidak boleh berubah sepeser pun. Kalau akumulasinya yang hilang, nilai buku
+// melonjak dan neraca ikut naik tanpa satu pun pesan error.
+describe('hitungJadwalAset — penggabungan barang', () => {
+  // Satu baris pagar: perolehan 721.500, sudah tersusut 4 dari 20 semester.
+  const satuPagar = () => baseline({
+    nilaiPerolehan: 721_500, nilaiBuku: 577_200, akumulasi: 144_300,
+    sisaSmt: 16, masaSmt: 20, bebanSmt: 36_075,
+  })
+  // ⚠️ `akumulasi_baru` diambil dari posisi semester SEBELUM cutover — untuk
+  // dokumen bertanggal 2026-S2 itu berarti akhir 2026-S1, bukan angka baseline
+  // 2025-S2. Persis itu yang dibaca UI (penyusutan_semester periode sebelumnya).
+  // Salah periode di sini tak akan bikin apa pun gagal; ia cuma menggeser
+  // akumulasinya sebesar satu semester beban × jumlah barang.
+  const AKUM_S1 = 144_300 + 36_075   // 180.375 — akumulasi tiap baris akhir 2026-S1
+  const gabung35 = (periode = '2026-S2', id = 70) => trx({
+    jenis: 'penggabungan_masuk', periode, id,
+    nilai: 34 * 721_500, // DELTA (Σ sumber) — bentuk yang dibaca Rekonsiliasi
+    payload: {
+      nilai_lama: 721_500, akumulasi_lama: AKUM_S1,
+      nilai_perolehan_baru: 35 * 721_500, akumulasi_baru: 35 * AKUM_S1,
+    },
+  })
+
+  it('me-rebasis induk: nilai & akumulasi jadi jumlah SELURUH anggota', () => {
+    const hasil = jalankan(
+      aset({ nilai_perolehan: 721_500 }),
+      [satuPagar(), gabung35()],
+      masa(KODE_PM, 10),
+      '2026-S2',
+    )
+
+    const smt2 = hasil[hasil.length - 1]
+    expect(smt2.periode).toBe('2026-S2')
+    expect(smt2.nilai_perolehan).toBe(35 * 721_500)          // 25.252.500
+    // Akumulasi = basis gabungan + beban semester ini.
+    expect(smt2.akumulasi).toBe(35 * AKUM_S1 + smt2.beban)
+    expect(smt2.nilai_buku_akhir).toBe(35 * 721_500 - smt2.akumulasi)
+  })
+
+  it('KEKEKALAN: induk gabungan = 35 baris terpisah, sampai rupiah terakhir', () => {
+    // Inti fitur ini. Dijalankan sebagai perbandingan, bukan angka hafalan:
+    // yang harus dijaga adalah kesamaannya, bukan nilai tertentu.
+    const sendiri = jalankan(aset({ nilai_perolehan: 721_500 }), [satuPagar()], masa(KODE_PM, 10), '2026-S2')
+    const akhirSendiri = sendiri[sendiri.length - 1]
+
+    const gabung = jalankan(
+      aset({ nilai_perolehan: 721_500 }),
+      [satuPagar(), gabung35()],
+      masa(KODE_PM, 10),
+      '2026-S2',
+    )
+    const akhirGabung = gabung[gabung.length - 1]
+
+    expect(akhirGabung.nilai_perolehan).toBe(35 * akhirSendiri.nilai_perolehan)
+    expect(akhirGabung.akumulasi).toBe(35 * akhirSendiri.akumulasi)
+    expect(akhirGabung.beban).toBe(35 * akhirSendiri.beban)
+    expect(akhirGabung.nilai_buku_akhir).toBe(35 * akhirSendiri.nilai_buku_akhir)
+    // Sisa masa manfaat IKUT INDUK — tidak ikut membesar karena digabung.
+    expect(akhirGabung.sisa_semester).toBe(akhirSendiri.sisa_semester)
+  })
+
+  it('sisa umur induk TIDAK berubah — beban disebar ke sisa umur itu', () => {
+    const hasil = jalankan(
+      aset({ nilai_perolehan: 721_500 }),
+      [satuPagar(), gabung35()],
+      masa(KODE_PM, 10),
+      '2026-S2',
+    )
+
+    // Sesudah 2026-S1 sisa 15 smt; event terjadi di 2026-S2 dgn sisa 15 → beban
+    // = nilai buku gabungan ÷ 15, lalu satu semester dipakai (sisa 14).
+    const smt2 = hasil[hasil.length - 1]
+    expect(smt2.sisa_semester).toBe(14)
+    expect(smt2.beban).toBe(Math.round((35 * 721_500 - 35 * AKUM_S1) / 15))
+  })
+
+  it('mengabaikan re-basis yang dianulir lewat batal_penggabungan_masuk', () => {
+    const dianulir = jalankan(
+      aset({ nilai_perolehan: 721_500 }),
+      [
+        satuPagar(),
+        gabung35(),
+        trx({ jenis: 'batal_penggabungan_masuk', periode: '2026-S2', id: 71, tanggal: '2026-09-05',
+              payload: { target_trx_id: 70, nilai_perolehan_baru: 721_500 } }),
+      ],
+      masa(KODE_PM, 10),
+      '2027-S2',
+    )
+    const polos = jalankan(aset({ nilai_perolehan: 721_500 }), [satuPagar()], masa(KODE_PM, 10), '2027-S2')
+
+    // Induk harus kembali PERSIS seperti tak pernah digabung — termasuk
+    // bebannya, bukan cuma nilai perolehannya.
+    expect(dianulir).toEqual(polos)
+  })
+
+  it('batal_penggabungan_masuk TIDAK menghentikan induk (beda dari batal_pemecahan_masuk)', () => {
+    // Kalau ia ikut jadi event penghenti, induk yang batal gabung malah lenyap
+    // dari laporan — barang yang tak pernah salah apa-apa.
+    const hasil = jalankan(
+      aset({ nilai_perolehan: 721_500 }),
+      [
+        satuPagar(),
+        trx({ jenis: 'penggabungan_masuk', periode: '2026-S1', id: 70, nilai: 721_500,
+              payload: { nilai_lama: 721_500, akumulasi_lama: 144_300,
+                         nilai_perolehan_baru: 1_443_000, akumulasi_baru: 288_600 } }),
+        trx({ jenis: 'batal_penggabungan_masuk', periode: '2026-S2', id: 71,
+              payload: { target_trx_id: 70, nilai_perolehan_baru: 721_500 } }),
+      ],
+      masa(KODE_PM, 10),
+      '2026-S2',
+    )
+
+    expect(hasil[hasil.length - 1].beban).toBeGreaterThan(0)
   })
 })
 

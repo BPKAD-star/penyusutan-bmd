@@ -9,7 +9,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { kodeLevel3, perlakuanKode } from '@/lib/bmd'
 import { fetchPindahEvents, ownersAt, partitionByPeriodOwner, type PindahEvents } from '@/lib/pengalihan'
-import { fetchVoidedAsetIds, fetchBatalTargets, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
+import { fetchVoidedAsetIds, fetchBatalTargets, fetchPemecahanBatal, kunciPemecahan, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
 import { fetchReklasEvents, kodeAt, type ReklasEvents } from '@/lib/reklasKode'
 
@@ -288,9 +288,9 @@ export function measuresOf(snap: Snapshot | undefined, golongan: string, komp: K
 export type MutasiKey =
   | 'pengadaan' | 'hibah' | 'tukar' | 'inventarisasi' | 'lainnya' | 'kdp'
   | 'belanja_jasa' | 'penggunaan_masuk' | 'kapitalisasi' | 'koreksi_tambah'
-  | 'pemecahan_masuk' | 'reklas_fungsi_masuk' | 'reklas_kode_masuk'
+  | 'pemecahan_masuk' | 'penggabungan_masuk' | 'reklas_fungsi_masuk' | 'reklas_kode_masuk'
   | 'hapus_penjualan' | 'hapus_hibah' | 'hapus_tukar' | 'hapus_penyertaan' | 'hapus_sebab_lain'
-  | 'pengalihan_keluar' | 'koreksi_kurang' | 'pemecahan_keluar'
+  | 'pengalihan_keluar' | 'koreksi_kurang' | 'pemecahan_keluar' | 'penggabungan_keluar'
   | 'reklas_fungsi_keluar' | 'reklas_kode_keluar'
 // Tiga ukuran per kategori. Nilai Buku SENGAJA tidak ikut: ia SELALU diturunkan
 // (`perolehan − akumulasi`) dan tak pernah dijumlah vertikal — kalau disimpan
@@ -316,6 +316,18 @@ const JENIS_HAPUS = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
 // dijumlah lintas-sel; per sel ia penambahan/pengurangan sungguhan, dan tanpa
 // kategori sendiri angkanya nyangkut di baris Selisih tanpa penjelasan.
 const JENIS_PECAH = ['pemecahan_keluar', 'pemecahan_masuk']
+// Penggabungan Barang — kebalikan Pemecahan (migrasi 20260811_01). N baris
+// register yang sebetulnya SATU barang dilebur ke salah satunya.
+//
+// ⚠️ BENTUK ANGKANYA BEDA dari Pemecahan, dan ini yang menentukan Selisih nol
+// atau tidak: induk BUKAN barang baru, ia sudah duduk di Saldo Awal sel ini.
+// Jadi `penggabungan_masuk.nilai` = **DELTA** (Σ nilai perolehan SUMBER saja,
+// tanpa nilai induk sendiri) — persis pola `kapitalisasi`/`koreksi_nilai` yang
+// juga menaikkan nilai aset yang sudah ada. Kalau ia diisi Σ SELURUH anggota
+// (termasuk induk), kolom Penambahan kelebihan tepat sebesar nilai induk dan
+// Selisih tak akan pernah nol. Nilai penuh hasil gabungan tetap terekam di
+// `payload.nilai_perolehan_baru` (yang dipakai engine & register).
+const JENIS_GABUNG = ['penggabungan_keluar', 'penggabungan_masuk']
 
 type LedRow = {
   id: number; jenis: string; aset_id: string; nilai: number; tanggal: string
@@ -402,7 +414,8 @@ export type MutasiLine = {
 // angka yang tak ikut dijumlah (rules.md §5.5).
 export const KURANG_KEYS: MutasiKey[] = [
   'hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
-  'pengalihan_keluar', 'koreksi_kurang', 'pemecahan_keluar', 'reklas_fungsi_keluar', 'reklas_kode_keluar',
+  'pengalihan_keluar', 'koreksi_kurang', 'pemecahan_keluar', 'penggabungan_keluar',
+  'reklas_fungsi_keluar', 'reklas_kode_keluar',
 ]
 const KURANG_SET = new Set<MutasiKey>(KURANG_KEYS)
 
@@ -413,6 +426,7 @@ export const KATEGORI_LABEL: Record<MutasiKey, string> = {
   kdp: 'Konstruksi Dalam Pengerjaan (termin)',
   penggunaan_masuk: 'Penggunaan (transfer masuk)', kapitalisasi: 'Kapitalisasi', koreksi_tambah: 'Koreksi Nilai (Tambah)',
   pemecahan_masuk: 'Pemecahan Barang (pecahan baru)', pemecahan_keluar: 'Pemecahan Barang (induk dipecah)',
+  penggabungan_masuk: 'Penggabungan Barang (nilai masuk ke induk)', penggabungan_keluar: 'Penggabungan Barang (barang dilebur)',
   reklas_fungsi_masuk: 'Reklas Perubahan Fungsi (Masuk)', reklas_kode_masuk: 'Reklas Kesalahan Kodefikasi (Masuk)',
   hapus_penjualan: 'Penghapusan Pemindahtanganan — Penjualan', hapus_hibah: 'Penghapusan Pemindahtanganan — Hibah',
   hapus_tukar: 'Penghapusan Pemindahtanganan — Tukar Menukar', hapus_penyertaan: 'Penghapusan Pemindahtanganan — Penyertaan Modal',
@@ -450,7 +464,7 @@ async function computeMutasiLines(
   // Versi lama menanyakan keduanya atas SELURUH ledger (259rb baris) sekaligus
   // dgn baris periode ini — itu yang tembus statement timeout beruntun
   // 2026-07-28, dan biayanya bakal terus naik seiring ledger tumbuh.
-  const [cara, alih, kap, kor, reklasG, reklasK, hapus, pecah] = await Promise.all([
+  const [cara, alih, kap, kor, reklasG, reklasK, hapus, pecah, gabung] = await Promise.all([
     fetchLed(supabase, JENIS_CARA, periode),
     fetchLed(supabase, ['pengalihan_status'], periode),
     fetchLed(supabase, ['kapitalisasi'], periode),
@@ -459,10 +473,11 @@ async function computeMutasiLines(
     fetchLed(supabase, ['reklas_kode'], periode),
     fetchLed(supabase, JENIS_HAPUS, periode),
     fetchLed(supabase, JENIS_PECAH, periode),
+    fetchLed(supabase, JENIS_GABUNG, periode),
   ])
   // Tahap 2 — SEMUA terscope ke aset yang muncul di tahap 1. Tidak ada lagi
   // satu pun query di fungsi ini yang menyapu seluruh ledger.
-  const [kapBatal, korBatal, reklasBatal, alihBatal, voided, netRemoved, pecahBatal] = await Promise.all([
+  const [kapBatal, korBatal, reklasBatal, alihBatal, voided, netRemoved, pecahBatal, gabungBatal] = await Promise.all([
     fetchBatalTargets(supabase, ['batal_kapitalisasi'], kap.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_koreksi_nilai'], kor.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_reklas'], [...reklasG, ...reklasK].map(r => r.aset_id)),
@@ -475,6 +490,10 @@ async function computeMutasiLines(
     fetchVoided(supabase, cara.map(r => r.aset_id)),
     fetchNetRemoved(supabase, hapus.map(r => r.aset_id)),
     fetchPemecahanBatal(supabase, pecah.map(r => r.aset_id)),
+    // Penggabungan yang DIBATALKAN. Di sini per-TRANSAKSI (payload
+    // target_trx_id), bukan per (kartu, aset) spt pemecahan — jenis batalnya
+    // memang membawa target_trx_id, jadi cukup fetchBatalTargets.
+    fetchBatalTargets(supabase, BATAL_TARGET_JENIS.penggabungan, gabung.map(r => r.aset_id)),
   ])
 
   // Cara Perolehan (+ split Belanja Jasa 5.1). jenis dari ledger.
@@ -537,6 +556,18 @@ async function computeMutasiLines(
       r.jenis === 'pemecahan_keluar' ? 'pemecahan_keluar' : 'pemecahan_masuk', r.nilai, r)
   }
 
+  // Penggabungan Barang: tiap SUMBER keluar dari selnya sebesar nilai
+  // perolehannya; INDUK menerima delta-nya (Σ sumber) di selnya sendiri. Kalau
+  // keduanya di sel yang sama, +Σ dan −Σ saling meniadakan — itu memang benar,
+  // penggabungan tidak menambah/mengurangi kekayaan. Keduanya tetap dicatat
+  // supaya lembar mutasinya BERCERITA, dan supaya sel yang beda (induk intra,
+  // sumber ekstra) tetap foot masing-masing.
+  for (const r of gabung) {
+    if (!r.aset || gabungBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
+    push(kodeLevel3(r.aset.kode), kompOf(r.aset.intra_ekstra),
+      r.jenis === 'penggabungan_keluar' ? 'penggabungan_keluar' : 'penggabungan_masuk', r.nilai, r)
+  }
+
   // Reklas Perubahan Fungsi (golongan) & Kesalahan Kodefikasi (kode).
   const doReklas = (rows: LedRow[], masuk: MutasiKey, keluar: MutasiKey) => {
     for (const r of rows) {
@@ -587,11 +618,11 @@ async function computeMutasiLines(
 // walau lupa didaftarkan di sini; ia cuma kalah rebutan label.
 const MASUK_KEYS = new Set<MutasiKey>([
   'pengadaan', 'belanja_jasa', 'hibah', 'tukar', 'inventarisasi', 'lainnya', 'kdp',
-  'penggunaan_masuk', 'pemecahan_masuk', 'reklas_fungsi_masuk', 'reklas_kode_masuk',
+  'penggunaan_masuk', 'pemecahan_masuk', 'penggabungan_masuk', 'reklas_fungsi_masuk', 'reklas_kode_masuk',
 ])
 const KELUAR_KEYS = new Set<MutasiKey>([
   'hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
-  'pengalihan_keluar', 'pemecahan_keluar', 'reklas_fungsi_keluar', 'reklas_kode_keluar',
+  'pengalihan_keluar', 'pemecahan_keluar', 'penggabungan_keluar', 'reklas_fungsi_keluar', 'reklas_kode_keluar',
 ])
 
 export type AtribusiPenyusutan = {
@@ -618,6 +649,22 @@ export function attribusiPenyusutan(
     const pw = posAwal.get(l.aset_id), pa = posAkhir.get(l.aset_id)
     const awal = diSel(pw, l), akhir = diSel(pa, l)
     if (l.arah === 'tambah') {
+      // ── PENGGABUNGAN: satu-satunya baris yang membawa akumulasi ke aset yang
+      // SUDAH ada di sel ini. Uji keanggotaan di bawah sengaja melewatkan aset
+      // semacam itu (kapitalisasi & koreksi nilai memang cuma menambah harga
+      // perolehan, akumulasinya nol) — tapi penggabungan MEMINDAHKAN akumulasi
+      // 34 baris sumber ke induk. Tanpa suku ini, akumulasi yang keluar lewat
+      // baris `penggabungan_keluar` tak punya penyeimbang dan seluruhnya jatuh
+      // ke baris "Selisih (belum terpetakan)".
+      //   akumulasi bawaan induk pada P (`akum_P − beban_P`) − akumulasinya
+      //   pada P−1 = persis Σ akumulasi barang yang dilebur.
+      // Beban tetap 0 (DECISION-1 Opsi A): induk penghuni populasi awal, jadi
+      // beban periode ini sudah dihitung di baris SALDO AWAL.
+      if (l.kategori === 'penggabungan_masuk' && awal && akhir) {
+        sudah.add(k)
+        l.akumulasi = (pa!.akumulasi - pa!.beban) - pw!.akumulasi
+        return
+      }
       if (!akhir || awal) return              // bukan aset yang BARU masuk sel ini
       sudah.add(k)
       l.beban = pa!.beban

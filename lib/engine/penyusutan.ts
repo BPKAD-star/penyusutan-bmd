@@ -128,6 +128,19 @@ export function hitungJadwalAset(
     if (Number.isFinite(tid)) koreksiNilaiDibatalkan.add(tid)
   }
 
+  // Penggabungan yang dibatalkan (batal_penggabungan_masuk.payload.target_trx_id).
+  // Pola SAMA dgn kapDibatalkan: baris `penggabungan_masuk` yang id-nya di sini
+  // DIABAIKAN saat replay → basis induk kembali ke sebelum penggabungan (nilai
+  // & akumulasi lamanya). Ini yang bikin batal benar SECARA RETROAKTIF tanpa
+  // menyentuh baris lama: `aset.nilai_perolehan` dipulihkan lewat payload
+  // (lib/transaksi.ts), jadwalnya lewat skip ini.
+  const penggabunganDibatalkan = new Set<number>()
+  for (const t of ledger) {
+    if (t.jenis !== 'batal_penggabungan_masuk') continue
+    const tid = Number((t.payload as Record<string, unknown>)?.target_trx_id)
+    if (Number.isFinite(tid)) penggabunganDibatalkan.add(tid)
+  }
+
   // CATATAN (2026-07-13): dulu ada bail-out `if (ekstra) return []` di sini —
   // DIHAPUS. Ekstrakomptabel ikut disusutkan dgn aturan sama; neraca disaring
   // intra di laporan. Konsekuensi: reklas_komptabel (flip intra↔ekstra) kini
@@ -343,6 +356,40 @@ export function hitungJadwalAset(
           berhenti = false // batal pemecahan: induk aktif lagi, penyusutan lanjut sejak periode ini
           break
         // pemecahan_masuk: BUKAN event di sini — dibaca sbg seed baseline di atas.
+        case 'penggabungan_masuk': {
+          // Penggabungan Barang (kebalikan pemecahan): N baris register yang
+          // sebetulnya SATU barang dilebur ke salah satunya. Yang dipertahankan
+          // (induk) BUKAN aset baru — makanya ini event RE-BASIS, bukan seed
+          // baseline seperti `pemecahan_masuk` di atas.
+          //
+          // Yang berubah cuma nilai perolehan & akumulasi; **sisa masa manfaat
+          // dan tanggal perolehan tetap milik induk** (keputusan user
+          // 2026-08-11: "ikut barang yang dipilih sebagai induk"). Beban
+          // disebar ulang ke sisa umur itu — persis pola `koreksi_nilai`.
+          //
+          // ⚠️ `akumulasi_baru` WAJIB dipakai. Kalau cuma nilai perolehannya
+          // yang naik, akumulasi 34 baris pagar lenyap dan nilai bukunya
+          // melonjak Rp24,5 juta tanpa satu pun pesan error.
+          if (ev.id != null && penggabunganDibatalkan.has(ev.id)) break // dibatalkan → abaikan
+          const p = ev.payload as Record<string, unknown>
+          const npBaru = Number(p.nilai_perolehan_baru)
+          if (!Number.isFinite(npBaru) || npBaru <= 0) break
+          const akBaru = Number(p.akumulasi_baru)
+          nilaiPerolehan = npBaru
+          if (Number.isFinite(akBaru)) akumulasi = Math.max(0, akBaru)
+          nilaiBuku = Math.max(0, npBaru - akumulasi)
+          if (sisaSmt > 0) beban = Math.round(nilaiBuku / sisaSmt)
+          break
+        }
+        case 'penggabungan_keluar':
+          berhenti = true // barang sumber dilebur ke induk: penyusutannya berhenti & hilang dari laporan
+          break
+        case 'batal_penggabungan':
+          berhenti = false // batal penggabungan: barang sumber aktif & disusutkan lagi
+          break
+        // batal_penggabungan_masuk: TANPA case — sengaja. Ia tidak menghentikan
+        // apa pun (induk harus tetap hidup); efeknya cuma membuat re-basis di
+        // atas diabaikan, lewat `penggabunganDibatalkan`.
         case 'batal_penghapusan':
           berhenti = false // kebalikan penghapusan: penyusutan lanjut sejak periode ini
           break

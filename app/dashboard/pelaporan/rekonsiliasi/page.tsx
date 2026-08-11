@@ -68,6 +68,11 @@ const ROWS_TAMBAH: RowDef[] = [
   // induk di bawah — keduanya sering beda kolom komptabel (induk intra →
   // pecahan ekstra), jadi tiap sel melihatnya sebagai mutasi sungguhan.
   { kind: 'item', label: 'Pemecahan Barang (pecahan baru)', key: 'pemecahan_masuk', indent: 1 },
+  // Penggabungan Barang: nilai (dan akumulasi) barang yang dilebur MASUK ke
+  // induknya. Angkanya = Σ barang sumber saja — induk sendiri sudah duduk di
+  // Saldo Awal, jadi kalau nilai penuh hasil gabungan yang dipakai, baris ini
+  // kelebihan tepat sebesar nilai induk. Lihat JENIS_GABUNG di lib/rekon.ts.
+  { kind: 'item', label: 'Penggabungan Barang (nilai masuk ke induk)', key: 'penggabungan_masuk', indent: 1 },
   { kind: 'sub', label: 'Reklasifikasi', indent: 1 },
   { kind: 'item', label: 'Intra', indent: 2 },        // reklas_komptabel → Selisih (Fase 2b)
   { kind: 'item', label: 'Ekstra', indent: 2 },       // reklas_komptabel → Selisih (Fase 2b)
@@ -87,6 +92,11 @@ const ROWS_KURANG: RowDef[] = [
   { kind: 'item', label: 'Penghapusan Pengalihan (transfer keluar)', key: 'pengalihan_keluar', indent: 1 },
   { kind: 'item', label: 'Koreksi Kurang', key: 'koreksi_kurang', indent: 1 },
   { kind: 'item', label: 'Pemecahan Barang (induk dipecah)', key: 'pemecahan_keluar', indent: 1 },
+  // Barang sumber yang dilebur ke induk. Total nilainya SAMA dengan baris
+  // Penggabungan di blok Penambahan kalau induk & sumber sekolom komptabel —
+  // memang saling meniadakan; penggabungan tidak menambah/mengurangi kekayaan,
+  // ia cuma merapikan pencatatan yang terlanjur terpecah.
+  { kind: 'item', label: 'Penggabungan Barang (barang dilebur)', key: 'penggabungan_keluar', indent: 1 },
   { kind: 'sub', label: 'Reklasifikasi', indent: 1 },
   { kind: 'item', label: 'Intra', indent: 2 },
   { kind: 'item', label: 'Ekstra', indent: 2 },

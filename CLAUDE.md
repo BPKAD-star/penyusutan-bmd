@@ -1122,6 +1122,82 @@ yang sudah tersusut), lalu seluruh akumulasi awal muncul di baris **Selisih**.
   judul jenis aset. Kalau nanti diminta kembali, `applied` perlu ikut membekukan
   `skpdId` lagi (dulu ada, dibuang bersama kopnya supaya tak jadi kode mati).
 
+## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
+
+Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user
+2026-08-11). Impor e-BMD memecah satu barang jadi banyak baris kalau satuannya
+bukan "unit": **"Pagar Besi" UPTD SMPN 2 Mojo (skpd_id 108), kode
+1.3.2.05.02.06.121, tgl 2025-02-05 → 35 baris × Rp721.500 = Rp25.252.500**,
+tiap baris `jumlah=1`. Itu SATU pagar.
+
+- ⚠️ **BUKAN "Pencatatan Ganda", dan menukarnya merusak neraca diam-diam.**
+  Pencatatan Ganda = barang kecatat DUA KALI → duplikat dibuang, total nilai
+  **TURUN**. Penggabungan = satu barang TERPECAH → nilai **DIJUMLAHKAN**, total
+  **TETAP**. Memakai menu lama untuk kasus pagar menghapus Rp24.531.000 dari
+  neraca tanpa satu pun pesan error. Deskripsi kedua alasan di `ALASAN_OPT`
+  sengaja saling menunjuk — jangan diringkas.
+- **Syarat gabung: kode barang + nilai perolehan + tanggal perolehan SAMA
+  PERSIS** (`kunciGabung`, satu string biar tak ada tempat yang membandingkan
+  dua dari tiga). Nama, merek, **satuan**, & spesifikasi BOLEH beda — justru itu
+  yang selama ini menghalangi kasus pagar (satu barang tersebar di satuan "Meter
+  Persegi"/"unit"/"Buah"/"Set"). Kode tetap wajib: 49.156 kelompok se-pemda
+  punya nilai+tanggal sama, terbesar 5.481 baris — tanpa kode, salah centang
+  bisa melebur ribuan barang tak sejenis.
+- **Hasil gabungan ADALAH induknya sendiri** (aset & NIBAR yang sudah ada),
+  bukan aset baru. Sisa masa manfaat & tanggal perolehan ikut induk. Karena itu
+  **`penggabungan_masuk` TIDAK didaftarkan di `LAHIR`** (lib/visibilitas.ts):
+  induk memang sudah ada sejak tanggal perolehannya, dan pendaftaran keliru di
+  situ justru akan MENGHILANGKAN barang sah dari periode sebelum penggabungan —
+  kebalikan persis dari insiden 2026-08-05 yang melahirkan daftar itu.
+- **Tanggal SEMUA baris ledger = tanggal DOKUMEN kartu** (`h.tanggal`), bukan
+  tanggal perolehan barang.
+- **`penggabungan_masuk.nilai` = DELTA (Σ barang SUMBER saja), bukan nilai penuh
+  hasil gabungan.** Ini yang menentukan Selisih Rekonsiliasi nol atau tidak:
+  induk sudah duduk di Saldo Awal, jadi nilai penuh membuat kolom Penambahan
+  kelebihan tepat sebesar nilai induk sendiri. Nilai penuhnya tetap terekam di
+  `payload.nilai_perolehan_baru` (dipakai engine & register). Polanya sama
+  dengan `kapitalisasi`/`koreksi_nilai` — sama-sama menaikkan nilai aset yang
+  sudah ada.
+- **`akumulasi_baru` WAJIB ikut & dibaca dari `penyusutan_semester` periode
+  SEBELUM tanggal dokumen** (pola basis Pemecahan). UI **MENOLAK menyimpan**
+  kalau ada satu saja anggota yang belum punya baris engine di periode itu —
+  jatuh ke 0 diam-diam akan menghapus akumulasi barang tsb dari neraca.
+- **Atribusi Rekonsiliasi punya cabang khusus** (`attribusiPenyusutan`,
+  lib/rekon.ts): `penggabungan_masuk` satu-satunya baris "tambah" yang menempel
+  pada aset yang SUDAH ada di sel, jadi akumulasinya = `(akum_P − beban_P) −
+  akum_{P−1}` = akumulasi yang DISERAP dari barang sumber. Diperlakukan seperti
+  kapitalisasi (akumulasi nol) → akumulasi 34 baris yang keluar tak punya
+  penyeimbang & seluruhnya jatuh ke baris Selisih. Dikunci lib/rekon.test.ts.
+- **Spesifikasi hasil gabungan** (nama/satuan baru) dititipkan di
+  `payload.spek` + `spek_prev` event yang sama, BUKAN baris `koreksi_spesifikasi`
+  tersendiri: satu peristiwa = satu baris ledger per aset, kalau tidak baris
+  kedua jadi "transaksi lebih baru" yang memblokir pembatalannya sendiri.
+  Batal otomatis memulihkannya (whitelist `KOREKSI_SPEK_COLS`, lib/transaksi.ts).
+- **Batal**: `batal_penggabungan` tiap sumber + `batal_penggabungan_masuk` pada
+  induk, keduanya ber-`payload.target_trx_id`, dicatat mundur ke tanggal dokumen
+  (jadi tahunnya wajib masih terbuka) & tunduk guard baku "tak boleh ada
+  transaksi lebih baru". `batal_penggabungan_masuk` **tidak menghentikan** induk
+  (beda dari `batal_pemecahan_masuk`) — ia cuma membatalkan re-basisnya.
+  **URUTAN TULIS DISENGAJA, dua-duanya memilih kurang-catat daripada dobel:**
+  simpan = sumber dulu lalu induk; batal = induk dulu lalu sumber.
+- ⚠️ **Migrasi 20260811_02 (`fn_rekap_bmd`) WAJIB dijalankan** — tanpa itu
+  Laporan BMD tetap menghitung barang sumbernya (kasus pagar: Rp49.783.500,
+  hampir dua kali lipat) sementara Rekonsiliasi sudah benar, jadi dua laporan
+  Lapis 1 berhenti sepakat. Daftar jenisnya KEMBAR TIGA: SQL ↔
+  lib/visibilitas.ts ↔ varian Daftar Barang.
+- **Engine WAJIB di-run ulang** untuk periode penggabungan sesudah menyimpan.
+
+**Cacat lama yang ikut diperbaiki (2026-08-11):** `koreksi_pencatatan_ganda`
+dulu dicatat `tanggal: k.tgl_perolehan || h.tanggal` → barisnya jatuh di periode
+PEROLEHAN, bukan periode dokumen koreksi, DAN ditolak trigger tahun buku kalau
+barangnya diperoleh di tahun terkunci (jenis itu tak ada di whitelist
+`fn_cek_tahun_buku`) — jadi duplikat warisan e-BMD 2025 tak bisa digabung sama
+sekali. Kini `h.tanggal`. Konsekuensi yang diterima: duplikatnya hilang sejak
+periode koreksi, bukan surut ke semua periode; modul pelaporan yang memakai
+`fetchVoidedAsetIds` tetap membuangnya dari periode mana pun (daftar itu
+period-agnostic). Ini **melonggarkan** pengecualian yang tertulis di rules.md
+§1.9 untuk jenis tsb.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang

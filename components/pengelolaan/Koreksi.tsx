@@ -25,12 +25,17 @@ import { backdropClose } from '@/components/backdropClose'
 // spesifikasi menawarkan field yang persis sama.
 
 // ── Koreksi — satu alur ber-SK, 4 alasan ─────────────────────────────────────
-type Alasan = 'nilai_perolehan' | 'pencatatan_ganda' | 'spesifikasi' | 'pemecahan'
+type Alasan = 'nilai_perolehan' | 'pencatatan_ganda' | 'spesifikasi' | 'pemecahan' | 'penggabungan'
 const ALASAN_OPT: { value: Alasan; label: string; deskripsi: string; disabled?: boolean }[] = [
   { value: 'nilai_perolehan', label: 'Nilai Perolehan', deskripsi: 'Koreksi nilai perolehan barang — beban penyusutan disebar ulang ke sisa umur oleh engine.' },
-  { value: 'pencatatan_ganda', label: 'Pencatatan Ganda (Gabung Duplikat)', deskripsi: 'Gabungkan barang yang kecatat dua kali jadi satu register — kode barang harus identik.' },
+  // ⚠️ Kalimat pembeda di dua deskripsi ini BUKAN hiasan. Memakai Pencatatan
+  // Ganda untuk barang yang TERPECAH (mis. pagar 35 baris) akan MENGHAPUS
+  // Rp24,5 juta dari neraca tanpa satu pun pesan error — duplikat dibuang,
+  // sedangkan barang terpecah nilainya harus DIJUMLAHKAN.
+  { value: 'pencatatan_ganda', label: 'Pencatatan Ganda (Gabung Duplikat)', deskripsi: 'Barang yang KECATAT DUA KALI — duplikatnya dibuang, total nilai TURUN. Kode barang harus identik. Untuk satu barang yang terlanjur tercatat jadi banyak baris, pakai Penggabungan Barang.' },
   { value: 'spesifikasi', label: 'Spesifikasi Barang', deskripsi: 'Koreksi field spesifikasi (nama, dokumen, kondisi, dll) satu barang — tanpa efek nilai/penyusutan.' },
   { value: 'pemecahan', label: 'Pemecahan Barang', deskripsi: '1 barang induk dipecah jadi beberapa barang baru — nilai perolehan & penyusutan dialokasi proporsional (total pecahan = nilai induk).' },
+  { value: 'penggabungan', label: 'Penggabungan Barang', deskripsi: 'SATU barang yang terlanjur tercatat jadi beberapa baris (mis. pagar 125 m jadi 125 baris karena satuannya bukan "unit") dilebur jadi satu — nilai & akumulasi DIJUMLAHKAN ke barang induk, total nilai TIDAK berubah.' },
 ]
 const ALASAN_LABEL = Object.fromEntries(ALASAN_OPT.map(a => [a.value, a.label])) as Record<Alasan, string>
 const tahunDari = (tgl: string | null) => tgl ? tgl.slice(0, 4) : '-'
@@ -59,6 +64,16 @@ type Kandidat = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null
   spesifikasi_lainnya: string | null; nilai_perolehan: number; tgl_perolehan: string | null
 }
+// ── Penggabungan: kandidat + basis akumulasi per barang ─────────────────────
+// `satuan` ikut karena justru DI SITU jejak masalahnya kelihatan (satu pagar
+// tersebar di satuan "Meter Persegi"/"Buah"/"Set"); operator perlu melihatnya
+// waktu memilih. Ia TIDAK ikut jadi syarat gabung — keputusan user 2026-08-11:
+// syaratnya cuma nilai perolehan + tanggal perolehan + KODE BARANG.
+type KandidatGabung = Kandidat & { satuan: string | null; merek_tipe: string | null }
+// Kunci kelayakan gabung. Dipakai sebagai perbandingan string tunggal supaya
+// tak ada satu pun tempat yang membandingkan dua dari tiga syaratnya saja.
+const kunciGabung = (k: { kode: string; nilai_perolehan: number; tgl_perolehan: string | null }) =>
+  `${k.kode}|${Math.round(k.nilai_perolehan)}|${k.tgl_perolehan || '-'}`
 // prev = nilai field SEBELUM koreksi_spesifikasi (utk restore saat batal).
 type LinePayload = { nilai_lama?: number; nilai_perolehan_baru?: number; survivor_nibar?: string; prev?: Record<string, unknown> } & Record<string, unknown>
 type Header = {
@@ -76,6 +91,17 @@ type Jurnal = Header & { lines: JurnalLine[]; total: number }
 type PemecahanHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null }
 type PemecahanRow = { trx_id: number; aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; jumlah: number; nilai: number }
 type PemecahanJurnal = PemecahanHeader & { induk: PemecahanRow | null; pecahan: PemecahanRow[]; total: number; dibatalkan: boolean }
+
+// ── Penggabungan Barang (alasan ke-5: N baris → 1 induk) ────────────────────
+// Cermin dari Pemecahan, dengan satu beda mendasar: hasil gabungan ADALAH
+// induknya sendiri (aset & NIBAR yang sudah ada), jadi tak ada aset baru dan
+// `penggabungan_masuk` TIDAK didaftarkan di `LAHIR` (lib/visibilitas.ts).
+type PenggabunganHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null }
+type PenggabunganRow = { trx_id: number; aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai: number }
+type PenggabunganJurnal = PenggabunganHeader & {
+  induk: (PenggabunganRow & { nilaiLama: number; nilaiBaru: number }) | null
+  sumber: PenggabunganRow[]; dibatalkan: boolean
+}
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori'
 
@@ -112,6 +138,7 @@ function KoreksiTransaksi() {
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [pemecahanJurnals, setPemecahanJurnals] = useState<PemecahanJurnal[]>([])
+  const [penggabunganJurnals, setPenggabunganJurnals] = useState<PenggabunganJurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
@@ -149,14 +176,15 @@ function KoreksiTransaksi() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadJurnals = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setJurnals([]); setPemecahanJurnals([]); return }
+    if (!skpdId) { setJurnals([]); setPemecahanJurnals([]); setPenggabunganJurnals([]); return }
     setLoadingJurnal(true)
     const { data: headers } = await supabase.from('jurnal_header')
       .select(HEADER_COLS).eq('kategori', 'koreksi').eq('skpd_id', Number(skpdId))
       .order('tanggal', { ascending: false })
     const allHeaders = (headers || []) as unknown as (Header & { jenis: string })[]
-    const hs = allHeaders.filter(h => h.jenis !== 'pemecahan') as unknown as Header[]
+    const hs = allHeaders.filter(h => h.jenis !== 'pemecahan' && h.jenis !== 'penggabungan') as unknown as Header[]
     const pemHeaders = allHeaders.filter(h => h.jenis === 'pemecahan') as unknown as PemecahanHeader[]
+    const gabHeaders = allHeaders.filter(h => h.jenis === 'penggabungan') as unknown as PenggabunganHeader[]
 
     const jmap = new Map<string, Jurnal>()
     for (const h of hs) jmap.set(h.id, { ...h, lines: [], total: 0 })
@@ -219,6 +247,37 @@ function KoreksiTransaksi() {
       }
     }
     setPemecahanJurnals([...pmap.values()].filter(j => j.induk || j.pecahan.length > 0))
+
+    // ── Jurnal Penggabungan: induk (penggabungan_masuk) + sumber (penggabungan_keluar) ──
+    // Baris batal ikut ditarik supaya kartu yang sudah dibatalkan tampil
+    // ber-badge, BUKAN hilang — sama pola dgn kartu Pemecahan. Peristiwanya
+    // memang pernah terjadi; yang berubah cuma akibatnya.
+    const gmap = new Map<string, PenggabunganJurnal>()
+    for (const h of gabHeaders) gmap.set(h.id, { ...h, induk: null, sumber: [], dibatalkan: false })
+    const gabIds = gabHeaders.map(h => h.id)
+    if (gabIds.length > 0) {
+      const { data } = await supabase.from('transaksi_bmd')
+        .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode)')
+        .in('jenis', ['penggabungan_keluar', 'penggabungan_masuk', 'batal_penggabungan', 'batal_penggabungan_masuk'] as never)
+        .in('header_id', gabIds)
+        .order('id', { ascending: true })
+      const rows = (data || []) as unknown as {
+        id: number; header_id: string; jenis: string; nilai: number
+        payload: { nilai_lama?: number; nilai_perolehan_baru?: number } | null
+        aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string } | null
+      }[]
+      for (const r of rows) {
+        const j = gmap.get(r.header_id)
+        if (!j) continue
+        if (r.jenis === 'batal_penggabungan' || r.jenis === 'batal_penggabungan_masuk') { j.dibatalkan = true; continue }
+        if (!r.aset) continue
+        const row: PenggabunganRow = { trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, nilai: r.nilai }
+        if (r.jenis === 'penggabungan_masuk') {
+          j.induk = { ...row, nilaiLama: Number(r.payload?.nilai_lama ?? 0), nilaiBaru: Number(r.payload?.nilai_perolehan_baru ?? 0) }
+        } else j.sumber.push(row)
+      }
+    }
+    setPenggabunganJurnals([...gmap.values()].filter(j => j.induk || j.sumber.length > 0))
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -311,6 +370,60 @@ function KoreksiTransaksi() {
     loadJurnals(skpd)
   }
 
+  // Batal Penggabungan: induk kembali ke nilai & akumulasi sebelum digabung
+  // (batal_penggabungan_masuk, membawa target_trx_id supaya engine mengabaikan
+  // re-basisnya) + tiap barang sumber muncul & disusutkan lagi
+  // (batal_penggabungan). Dicatat MUNDUR ke tanggal dokumen aslinya supaya
+  // period-correct — karena itu tahunnya wajib masih terbuka.
+  //
+  // ⚠️ URUTAN TULISNYA DISENGAJA: induk DULU, sumber belakangan. Kalau prosesnya
+  // putus di tengah, yang tersisa adalah keadaan KURANG-catat (induk sudah
+  // mengecil, sebagian sumber belum kembali) — bukan DOBEL-catat (sumber sudah
+  // kembali sementara induk masih memegang nilai gabungan). Mengulangi tombol
+  // yang sama menuntaskan sisanya.
+  async function handleBatalPenggabungan(j: PenggabunganJurnal) {
+    const tahun = parsePeriode(j.periode).tahun
+    if (tahunMap[tahun] !== 'terbuka') {
+      setMsg(`Error: Tahun ${tahun} sudah terkunci — penggabungan tidak bisa dibatalkan. Koreksi lewat jurnal baru di periode berjalan.`)
+      return
+    }
+    if (!confirm(`Batalkan penggabungan No. ${j.no_sk}? ${j.sumber.length} barang akan muncul kembali dan induk balik ke nilai semula.`)) return
+    // Guard rantai baku (rules.md §1.3): induk & tiap sumber tak boleh punya
+    // transaksi LEBIH BARU setelah penggabungan ini.
+    for (const r of [...(j.induk ? [j.induk] : []), ...j.sumber]) {
+      const { count } = await supabase.from('transaksi_bmd')
+        .select('id', { count: 'exact', head: true }).eq('aset_id', r.aset_id).gt('id', r.trx_id)
+      if ((count || 0) > 0) {
+        setMsg(`Error: "${r.nama_barang || r.nibar}" punya transaksi LEBIH BARU setelah penggabungan ini — batalkan yang lebih baru dulu.`)
+        return
+      }
+    }
+    setBatalId(j.id)
+    setMsg('')
+    if (j.induk) {
+      const { error } = await catatTransaksi(supabase, {
+        asetId: j.induk.aset_id, jenis: 'batal_penggabungan_masuk', tanggal: j.tanggal,
+        nilai: j.induk.nilai, headerId: j.id,
+        // `nilai_perolehan_baru` = nilai LAMA induk: itu yang dipulihkan ke
+        // register (lib/transaksi.ts), pola batal_koreksi_nilai.
+        payload: { target_trx_id: j.induk.trx_id, nilai_perolehan_baru: j.induk.nilaiLama },
+        keterangan: `Pembatalan penggabungan ${j.no_sk}`,
+      })
+      if (error) { setMsg(`Error: ${error}`); setBatalId(null); return }
+    }
+    for (const s of j.sumber) {
+      const { error } = await catatTransaksi(supabase, {
+        asetId: s.aset_id, jenis: 'batal_penggabungan', tanggal: j.tanggal, nilai: s.nilai, headerId: j.id,
+        payload: { target_trx_id: s.trx_id, induk_nibar: j.induk?.nibar || null },
+        keterangan: `Pembatalan penggabungan ${j.no_sk}`,
+      })
+      if (error) { setMsg(`Sebagian batal gagal: ${error} — ulangi untuk menuntaskan.`); setBatalId(null); loadJurnals(skpd); return }
+    }
+    setBatalId(null)
+    setMsg(`Penggabungan ${j.no_sk} dibatalkan — ${j.sumber.length} barang kembali. Jalankan engine untuk memperbarui penyusutan.`)
+    loadJurnals(skpd)
+  }
+
   return (
     <>
       <div className="card p-5 mb-4">
@@ -338,18 +451,23 @@ function KoreksiTransaksi() {
       ) : (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} koreksi · {pemecahanJurnals.length} pemecahan</span>
+            <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} koreksi · {pemecahanJurnals.length} pemecahan · {penggabunganJurnals.length} penggabungan</span>
             <button className="btn-primary" onClick={() => { setMsg(''); setMode('tambah') }}>+ Tambah Jurnal</button>
           </div>
           {loadingJurnal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
-          ) : (jurnals.length === 0 && pemecahanJurnals.length === 0) ? (
+          ) : (jurnals.length === 0 && pemecahanJurnals.length === 0 && penggabunganJurnals.length === 0) ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Belum ada koreksi transaksi untuk SKPD ini.</div>
           ) : (<>
             {pemecahanJurnals.map(j => (
               <PemecahanCard key={j.id} j={j} busy={batalId === j.id}
                 bisaBatal={tahunMap[parsePeriode(j.periode).tahun] === 'terbuka'}
                 onBatal={() => handleBatalPemecahan(j)} />
+            ))}
+            {penggabunganJurnals.map(j => (
+              <PenggabunganCard key={j.id} j={j} busy={batalId === j.id}
+                bisaBatal={tahunMap[parsePeriode(j.periode).tahun] === 'terbuka'}
+                onBatal={() => handleBatalPenggabungan(j)} />
             ))}
             {jurnals.map(j => {
             const selLines = j.lines.filter(l => selBatal[l.trx_id])
@@ -535,6 +653,29 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   const [spekPrefix, setSpekPrefix] = useState('')
   const [spekEdit, setSpekEdit] = useState<SpekEdit | null>(null)
 
+  // ── Penggabungan: N barang → 1 induk (kebalikan pemecahan) ──
+  const [qGabung, setQGabung] = useState('')
+  const [hasilGabung, setHasilGabung] = useState<KandidatGabung[]>([])
+  const [gabungList, setGabungList] = useState<KandidatGabung[]>([])
+  const [indukGabungId, setIndukGabungId] = useState<string | null>(null)
+  // Daftar barang SEJENIS (kode + nilai + tgl perolehan sama persis) — dimuat
+  // sekali begitu barang pertama dipilih. Tanpa ini fitur ini tak terpakai:
+  // kasus yang melahirkannya punya 35 baris, dan mencarinya satu per satu lewat
+  // kotak cari bukan pekerjaan yang masuk akal.
+  const [sejenis, setSejenis] = useState<KandidatGabung[]>([])
+  const [selSejenis, setSelSejenis] = useState<Record<string, boolean>>({})
+  const [sejenisLoading, setSejenisLoading] = useState(false)
+  // aset_id → akumulasi penyusutan pada semester SEBELUM cutover. Basis ini yang
+  // dijumlah jadi `akumulasi_baru`; tanpanya akumulasi barang yang dilebur
+  // lenyap & nilai bukunya melonjak.
+  const [basisGabung, setBasisGabung] = useState<Record<string, number> | null>(null)
+  const [basisGabungErr, setBasisGabungErr] = useState('')
+  const [basisGabungLoading, setBasisGabungLoading] = useState(false)
+  const [gabungSpek, setGabungSpek] = useState<SpekEdit | null>(null)
+  const [gabungSpekInit, setGabungSpekInit] = useState<Record<string, string>>({})
+  const [gabungSpekFoto, setGabungSpekFoto] = useState<string[]>([])
+  const [gabungSpekOpen, setGabungSpekOpen] = useState(false)
+
   // ── Pemecahan: 1 induk → N pecahan (jumlah + nilai + spesifikasi per barang) ──
   const [indukPecah, setIndukPecah] = useState<Barang | null>(null)
   const [basisPecah, setBasisPecah] = useState<BasisPecah | null>(null)
@@ -564,6 +705,135 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       setBasisPecahLoading(false)
     })()
   }, [indukPecah, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Penggabungan: basis akumulasi seluruh anggota pada semester SEBELUM cutover ──
+  // Sengaja MENOLAK kalau ada satu saja anggota yang belum punya baris engine di
+  // periode itu. Jatuh ke 0 diam-diam akan menghapus akumulasi barang tsb dari
+  // neraca — persis kerusakan yang fitur ini justru harus menghindari, dan tak
+  // akan ada satu pun pesan yang memberi tahu.
+  useEffect(() => {
+    if (gabungList.length === 0) { setBasisGabung(null); setBasisGabungErr(''); return }
+    ;(async () => {
+      setBasisGabungLoading(true); setBasisGabungErr(''); setBasisGabung(null)
+      const basisPeriode = formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))
+      const ids = gabungList.map(k => k.id)
+      // Golongan yang memang tak disusutkan (Tanah/ATL/KDP) tak punya baris
+      // engine sama sekali — akumulasinya nol, bukan "belum dihitung".
+      if (perlakuanKode(gabungList[0].kode) === 'tidak') {
+        setBasisGabung(Object.fromEntries(ids.map(id => [id, 0] as const)))
+        setBasisGabungLoading(false); return
+      }
+      const map: Record<string, number> = {}
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data, error } = await supabase.from('penyusutan_semester')
+          .select('aset_id,akumulasi').eq('periode', basisPeriode).in('aset_id', ids.slice(i, i + 200))
+        if (error) {
+          setBasisGabungErr(`Gagal membaca akumulasi penyusutan ${basisPeriode}: ${error.message}`)
+          setBasisGabungLoading(false); return
+        }
+        for (const r of (data || []) as { aset_id: string; akumulasi: number }[]) map[r.aset_id] = Number(r.akumulasi) || 0
+      }
+      const belum = ids.filter(id => map[id] === undefined)
+      if (belum.length > 0) {
+        setBasisGabungErr(`${belum.length} dari ${ids.length} barang belum punya hasil penyusutan periode ${basisPeriode}. Jalankan Engine untuk periode itu dulu, atau pilih tanggal dokumen di semester berikutnya — kalau diteruskan, akumulasi barang itu hilang dari neraca.`)
+        setBasisGabungLoading(false); return
+      }
+      setBasisGabung(map)
+      setBasisGabungLoading(false)
+    })()
+  }, [gabungList, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const indukGabung = gabungList.find(k => k.id === indukGabungId) || null
+  const totalNPGabung = gabungList.reduce((s, k) => s + Math.round(k.nilai_perolehan), 0)
+  const totalAkumGabung = basisGabung ? gabungList.reduce((s, k) => s + (basisGabung[k.id] || 0), 0) : 0
+  // Ketiga syarat sekaligus (keputusan user 2026-08-11). Nama, merek, satuan, &
+  // spesifikasi BOLEH beda — justru itu yang selama ini menghalangi kasus pagar.
+  const gabungSyaratOk = gabungList.length >= 2 && gabungList.every(k => kunciGabung(k) === kunciGabung(gabungList[0]))
+  const sejenisTersisa = sejenis.filter(k => !gabungList.some(x => x.id === k.id))
+
+  // Semua barang aktif se-SKPD yang kode + nilai + tanggal perolehannya SAMA
+  // PERSIS dgn barang pertama. `.eq` bertumpuk, bukan pencarian teks: syarat
+  // gabung itu kesamaan angka, dan mencocokkannya lewat nama justru yang bikin
+  // kasus pagar (nama & satuannya berbeda-beda) tak pernah ketemu.
+  async function muatSejenis(k0: KandidatGabung) {
+    setSejenisLoading(true)
+    let q = supabase.from('aset')
+      .select('id,nibar,kode,nama_barang,spesifikasi_lainnya,nilai_perolehan,tgl_perolehan,satuan,merek_tipe')
+      .eq('status', 'aktif').eq('skpd_id', skpdId)
+      .eq('kode', k0.kode).eq('nilai_perolehan', k0.nilai_perolehan)
+    q = k0.tgl_perolehan ? q.eq('tgl_perolehan', k0.tgl_perolehan) : q.is('tgl_perolehan', null)
+    const { data, error } = await q.order('nibar', { ascending: true }).limit(500)
+    if (error) { setErr(`Gagal memuat barang sejenis: ${error.message}`); setSejenisLoading(false); return }
+    setSejenis((data as unknown as KandidatGabung[]) || [])
+    setSelSejenis({})
+    setSejenisLoading(false)
+  }
+
+  async function cariGabung() {
+    if (!qGabung.trim()) return
+    let q = supabase.from('aset')
+      .select('id,nibar,kode,nama_barang,spesifikasi_lainnya,nilai_perolehan,tgl_perolehan,satuan,merek_tipe')
+      .eq('status', 'aktif').eq('skpd_id', skpdId)
+      .or(`nibar.ilike.%${qGabung}%,nama_barang.ilike.%${qGabung}%,kode.ilike.%${qGabung}%`)
+    // Begitu anggota pertama ada, hasil carinya ikut disaring ke yang LAYAK
+    // gabung — supaya operator tak menemukan barang yang lalu ditolak.
+    const k0 = gabungList[0]
+    if (k0) {
+      q = q.eq('kode', k0.kode).eq('nilai_perolehan', k0.nilai_perolehan)
+      q = k0.tgl_perolehan ? q.eq('tgl_perolehan', k0.tgl_perolehan) : q.is('tgl_perolehan', null)
+    }
+    const { data, error } = await q.limit(20)
+    if (error) { setErr(`Gagal mencari barang: ${error.message}`); return }
+    setHasilGabung((data as unknown as KandidatGabung[]) || [])
+  }
+
+  function tambahGabung(k: KandidatGabung) {
+    if (gabungList.some(x => x.id === k.id)) return
+    const k0 = gabungList[0]
+    // Penjaga lapis kedua: query di atas sudah menyaring, tapi syarat ini yang
+    // menentukan benar/salahnya neraca — jangan andalkan filter tampilan saja.
+    if (k0 && kunciGabung(k) !== kunciGabung(k0)) {
+      setErr('Barang itu beda kode / nilai perolehan / tanggal perolehan — tidak bisa digabung dengan yang sudah dipilih.')
+      return
+    }
+    setErr('')
+    setGabungList(prev => [...prev, k])
+    setIndukGabungId(prev => prev ?? k.id)
+    setHasilGabung([]); setQGabung('')
+    if (!k0) muatSejenis(k)
+  }
+
+  function tambahSejenisTerpilih() {
+    const pilih = sejenisTersisa.filter(k => selSejenis[k.id])
+    if (pilih.length === 0) return
+    setGabungList(prev => [...prev, ...pilih.filter(k => !prev.some(x => x.id === k.id))])
+    setSelSejenis({})
+  }
+
+  function hapusGabung(id: string) {
+    setGabungList(prev => {
+      const next = prev.filter(k => k.id !== id)
+      if (next.length === 0) { setSejenis([]); setSelSejenis({}) }
+      return next
+    })
+    setIndukGabungId(prev => prev === id ? null : prev)
+    setGabungSpek(null) // induk/anggota berubah → edit tersusun tak lagi tentu valid
+  }
+
+  // Spesifikasi HASIL gabungan = spesifikasi induk yang boleh dikoreksi
+  // (mis. satuan "Meter Persegi" → "Unit", nama jadi "Pagar Besi 125 m").
+  async function openGabungSpek() {
+    const b = indukGabung
+    if (!b) return
+    const keys = koreksiFieldKeys(b.kode)
+    const { data } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
+    const row = (data || {}) as Record<string, unknown>
+    const f: Record<string, string> = {}
+    for (const k of keys) { const v = row[k]; if (v != null) f[k] = String(v) }
+    setGabungSpekInit(f)
+    setGabungSpekFoto(Array.isArray(row.foto_paths) ? (row.foto_paths as string[]) : [])
+    setGabungSpekOpen(true)
+  }
 
   // Pilih induk → warisi field spesifikasi induk sbg titik awal tiap pecahan.
   async function pilihInduk(b: Barang) {
@@ -711,6 +981,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
     if (!h) {
       if (!noSk.trim()) { setErr('No. dokumen koreksi wajib diisi.'); return }
       if (alasan === 'pencatatan_ganda' && !ket.trim()) { setErr('Keterangan/justifikasi wajib diisi utk Pencatatan Ganda.'); return }
+      if (alasan === 'penggabungan' && !ket.trim()) { setErr('Keterangan/justifikasi wajib diisi utk Penggabungan Barang.'); return }
     }
 
     setSaving(true)
@@ -793,6 +1064,77 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
         if (error) { setErr(error); setSaving(false); return }
       }
       setSaving(false); onSaved(list.length); return
+    }
+
+    if (alasan === 'penggabungan') {
+      const delHeader = async () => { if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h!.id) }
+      const induk = indukGabung, basis = basisGabung
+      if (gabungList.length < 2) { setErr('Pilih minimal 2 barang untuk digabung.'); await delHeader(); setSaving(false); return }
+      if (!induk) { setErr('Tunjuk salah satu barang sebagai INDUK (barang yang dipertahankan).'); await delHeader(); setSaving(false); return }
+      if (!gabungSyaratOk) { setErr('Semua barang wajib sama KODE BARANG, NILAI PEROLEHAN, dan TANGGAL PEROLEHAN.'); await delHeader(); setSaving(false); return }
+      if (basisGabungErr) { setErr(basisGabungErr); await delHeader(); setSaving(false); return }
+      if (!basis) { setErr('Basis akumulasi belum termuat.'); await delHeader(); setSaving(false); return }
+
+      const sumber = gabungList.filter(k => k.id !== induk.id)
+      const nilaiLama = Math.round(induk.nilai_perolehan)
+      const npBaru = totalNPGabung
+      const akumLama = basis[induk.id] || 0
+      const akBaru = totalAkumGabung
+
+      // Spesifikasi hasil gabungan → dititipkan di payload event ini (bukan
+      // baris `koreksi_spesifikasi` tersendiri). Dua alasannya: (1) satu
+      // peristiwa = satu baris ledger per aset, jadi guard "tak boleh ada
+      // transaksi lebih baru" tak memblokir pembatalannya sendiri; (2) batal
+      // penggabungan otomatis mengembalikan namanya juga, lewat `spek_prev`.
+      const spekBaru: Record<string, unknown> = {}
+      if (gabungSpek) {
+        for (const [k, v] of Object.entries(gabungSpek.fields)) {
+          const val = (v ?? '').toString().trim()
+          if (val === '' || val === (gabungSpekInit[k] ?? '').toString().trim()) continue
+          if (ASET_NUM_COLS.has(k) || k === 'tahun_pengadaan') { const n = Number(val); if (Number.isFinite(n)) spekBaru[k] = n }
+          else spekBaru[k] = val
+        }
+        const fotoBaru = gabungSpek.foto.replace
+        if (fotoBaru && JSON.stringify(fotoBaru) !== JSON.stringify(gabungSpekFoto)) spekBaru.foto_paths = fotoBaru
+      }
+      const spekPrev: Record<string, unknown> = {}
+      if (Object.keys(spekBaru).length > 0) {
+        const { data: prevRow } = await supabase.from('aset').select(Object.keys(spekBaru).join(',')).eq('id', induk.id).single()
+        const row = (prevRow || {}) as Record<string, unknown>
+        for (const k of Object.keys(spekBaru)) spekPrev[k] = row[k] ?? null
+      }
+
+      // ⚠️ URUTAN: SUMBER dulu, INDUK belakangan. Kalau prosesnya putus di
+      // tengah, sisanya adalah keadaan KURANG-catat (sebagian sumber sudah
+      // hilang, induk belum membesar) — bukan DOBEL-catat, yang justru terjadi
+      // kalau induk di-rebasis lebih dulu lalu penulisan sumber gagal.
+      for (const s of sumber) {
+        const { error } = await catatTransaksi(supabase, {
+          asetId: s.id, jenis: 'penggabungan_keluar', tanggal: h.tanggal, nilai: Math.round(s.nilai_perolehan), headerId: h.id,
+          payload: { induk_aset_id: induk.id, induk_nibar: induk.nibar, akumulasi_diserap: basis[s.id] || 0 },
+          keterangan: `Digabung ke ${induk.nibar || induk.nama_barang || 'induk'} (${h.no_sk})`,
+        })
+        if (error) { setErr(`Gagal melebur "${s.nama_barang || s.nibar}": ${error}. Batalkan lewat kartu jurnal penggabungan lalu ulangi.`); setSaving(false); return }
+      }
+
+      const { error: masukErr } = await catatTransaksi(supabase, {
+        asetId: induk.id, jenis: 'penggabungan_masuk', tanggal: h.tanggal,
+        // `nilai` = DELTA (Σ barang sumber), BUKAN nilai penuh hasil gabungan —
+        // induk sudah duduk di Saldo Awal, jadi nilai penuh akan menggelembungkan
+        // baris Penambahan Rekonsiliasi tepat sebesar nilai induk sendiri.
+        // Nilai penuhnya tetap terekam di payload (dipakai engine & register).
+        nilai: npBaru - nilaiLama, headerId: h.id,
+        payload: {
+          nilai_lama: nilaiLama, akumulasi_lama: akumLama,
+          nilai_perolehan_baru: npBaru, akumulasi_baru: akBaru,
+          sumber_ids: sumber.map(s => s.id), sumber_nibars: sumber.map(s => s.nibar), jumlah_sumber: sumber.length,
+          ...(Object.keys(spekBaru).length > 0 ? { spek: spekBaru, spek_prev: spekPrev } : {}),
+        },
+        keterangan: `Gabungan ${gabungList.length} barang (${h.no_sk})`,
+      })
+      if (masukErr) { setErr(`Gagal me-rebasis induk: ${masukErr}. Batalkan lewat kartu jurnal penggabungan lalu ulangi.`); setSaving(false); return }
+
+      setSaving(false); onSaved(gabungList.length); return
     }
 
     if (alasan === 'pemecahan') {
@@ -879,8 +1221,23 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
     const survivor = kandidat.find(k => k.id === survivorId)!
     const lainnya = kandidat.filter(k => k.id !== survivorId)
     for (const k of lainnya) {
+      // `tanggal` = tanggal DOKUMEN koreksi (h.tanggal), bukan tanggal
+      // perolehan barangnya (keputusan user 2026-08-11). Dulu `k.tgl_perolehan
+      // || h.tanggal`, dan itu keliru dua kali:
+      //   (1) baris ledgernya jatuh di periode PEROLEHAN, jadi Laporan &
+      //       Rekonsiliasi menaruh koreksi ini di periode yang salah — persis
+      //       jebakan yang sudah dijelaskan panjang lebar di cabang
+      //       `koreksi_spesifikasi` di atas (dikunci lib/sinkronisasi.test.ts §6);
+      //   (2) `koreksi_pencatatan_ganda` TIDAK ada di whitelist retroaktif
+      //       `fn_cek_tahun_buku`, jadi begitu barangnya diperoleh di tahun yang
+      //       sudah dikunci, penyimpanannya DITOLAK trigger — duplikat warisan
+      //       e-BMD 2025 tak bisa digabung sama sekali.
+      // Konsekuensi yang diterima: duplikatnya kini hilang sejak periode
+      // koreksi, bukan surut ke semua periode. Modul pelaporan yang memakai
+      // `fetchVoidedAsetIds` tetap membuangnya dari periode mana pun — daftar
+      // itu memang period-agnostic (lib/voidedAset.ts).
       const { error } = await catatTransaksi(supabase, {
-        asetId: k.id, jenis: 'koreksi_pencatatan_ganda', tanggal: k.tgl_perolehan || h.tanggal, headerId: h.id,
+        asetId: k.id, jenis: 'koreksi_pencatatan_ganda', tanggal: h.tanggal, headerId: h.id,
         payload: { survivor_aset_id: survivor.id, survivor_nibar: survivor.nibar },
         keterangan: h.keterangan || undefined,
       })
@@ -913,6 +1270,8 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                         setAlasan(o.value); setSelNilai({}); setKandidat([]); setSurvivorId(null); setRows([]); setLoaded(false)
                         setSelSpek({}); setSpekEdit(null); setSpekModalOpen(false)
                         setIndukPecah(null); setBasisPecah(null); setBasisPecahErr(''); setPecahan([]); setIndukFields({}); setEditPecahIdx(null)
+                        setGabungList([]); setIndukGabungId(null); setHasilGabung([]); setQGabung('')
+                        setSejenis([]); setSelSejenis({}); setGabungSpek(null); setGabungSpekOpen(false)
                       }} />
                     <span>
                       <span className="font-medium text-gray-800">{o.label}</span>
@@ -935,6 +1294,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
               <div className="sm:col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">
                   Keterangan {alasan === 'pencatatan_ganda' && <span className="text-red-500">*wajib (justifikasi duplikat)</span>}
+                  {alasan === 'penggabungan' && <span className="text-red-500">*wajib (alasan barang tercatat terpecah)</span>}
                 </label>
                 <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
               </div>
@@ -1327,6 +1687,179 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
         </div>
       )}
 
+      {alasanAktif === 'penggabungan' && (
+        <div className="card p-5">
+          <h2 className="text-base font-semibold text-gray-800 mb-1">Barang yang Digabung</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Syaratnya <span className="font-medium">kode barang, nilai perolehan, &amp; tanggal perolehan SAMA PERSIS</span>.
+            Nama, merek, satuan, dan spesifikasi boleh beda — memang itu yang biasanya berantakan.
+            Sisa masa manfaat &amp; tanggal perolehan hasil gabungan mengikuti barang yang ditunjuk sebagai <span className="font-medium">Induk</span>.
+          </p>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              {gabungList.length === 0 ? 'Cari barang pertama (NIBAR / nama / kode)' : 'Cari barang lain yang layak digabung'}
+            </label>
+            <div className="flex gap-2">
+              <input className="select-filter flex-1" value={qGabung} onChange={e => setQGabung(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); cariGabung() } }} />
+              <button type="button" className="btn-secondary" onClick={cariGabung}>Cari</button>
+            </div>
+            {hasilGabung.length > 0 && (
+              <div className="mt-2 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                {hasilGabung.map(k => (
+                  <button key={k.id} type="button" onClick={() => tambahGabung(k)}
+                    disabled={gabungList.some(x => x.id === k.id)}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs disabled:opacity-40">
+                    <span className="font-medium text-gray-800">{k.nama_barang || '-'}</span>
+                    <span className="text-gray-400"> — {k.nibar || '-'} · {k.kode} · {formatRupiah(k.nilai_perolehan)} · {tahunDari(k.tgl_perolehan)}{k.satuan ? ` · ${k.satuan}` : ''}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Barang sejenis: inti kegunaan fitur ini. Kasus yang melahirkannya
+              punya 35 baris — mencentangnya di sini, bukan mencarinya satu-satu. */}
+          {gabungList.length > 0 && (
+            <div className="mt-4">
+              {sejenisLoading ? (
+                <p className="text-xs text-gray-400">Mencari barang sejenis…</p>
+              ) : sejenisTersisa.length > 0 ? (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-amber-50/60 border-b border-gray-100 flex items-center justify-between gap-3">
+                    <p className="text-xs text-amber-800">
+                      Ada <span className="font-semibold">{sejenisTersisa.length}</span> barang lain di SKPD ini dengan kode, nilai, &amp; tanggal perolehan yang sama persis.
+                    </p>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button type="button" className="text-xs text-teal hover:underline"
+                        onClick={() => setSelSejenis(Object.fromEntries(sejenisTersisa.map(k => [k.id, true] as const)))}>Centang semua</button>
+                      <button type="button" className="btn-primary text-xs px-3 py-1"
+                        disabled={sejenisTersisa.every(k => !selSejenis[k.id])} onClick={tambahSejenisTerpilih}>
+                        Tambahkan {sejenisTersisa.filter(k => selSejenis[k.id]).length || ''}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="max-h-56 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <tbody className="divide-y divide-gray-50">
+                        {sejenisTersisa.map(k => (
+                          <tr key={k.id} className={selSejenis[k.id] ? 'bg-teal/5' : ''}>
+                            <td className="table-td w-10 text-center">
+                              <input type="checkbox" checked={!!selSejenis[k.id]}
+                                onChange={() => setSelSejenis(prev => { const n = { ...prev }; if (n[k.id]) delete n[k.id]; else n[k.id] = true; return n })} />
+                            </td>
+                            <td className="table-td">
+                              <p className="font-medium text-gray-800">{k.nama_barang || '-'}</p>
+                              <p className="text-gray-400 mt-0.5">{k.nibar || '-'}{k.satuan ? ` · ${k.satuan}` : ''}{k.merek_tipe ? ` · ${k.merek_tipe}` : ''}</p>
+                            </td>
+                            <td className="table-td text-right">{formatRupiah(k.nilai_perolehan)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">Tidak ada barang sejenis lain yang belum dipilih.</p>
+              )}
+            </div>
+          )}
+
+          {gabungList.length > 0 && (
+            <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="table-th w-16 text-center">Induk</th>
+                    <th className="table-th">Barang</th>
+                    <th className="table-th">Satuan</th>
+                    <th className="table-th text-right">Nilai Perolehan</th>
+                    <th className="table-th text-right">Akumulasi</th>
+                    <th className="table-th w-10 text-center">Hapus</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {gabungList.map(k => (
+                    <tr key={k.id} className={indukGabungId === k.id ? 'bg-teal/5' : ''}>
+                      <td className="table-td text-center">
+                        <input type="radio" name="induk-gabung" checked={indukGabungId === k.id}
+                          onChange={() => { setIndukGabungId(k.id); setGabungSpek(null) }} />
+                      </td>
+                      <td className="table-td text-xs">
+                        <p className="font-medium text-gray-800">{k.nama_barang || '-'}</p>
+                        <p className="text-gray-400 mt-0.5">{k.nibar || '-'} · {k.kode} · {tahunDari(k.tgl_perolehan)}</p>
+                      </td>
+                      <td className="table-td text-xs text-gray-600">{k.satuan || '-'}</td>
+                      <td className="table-td text-right text-xs">{formatRupiah(k.nilai_perolehan)}</td>
+                      <td className="table-td text-right text-xs text-gray-600">
+                        {basisGabung ? formatRupiah(basisGabung[k.id] || 0) : '—'}
+                      </td>
+                      <td className="table-td text-center">
+                        <button type="button" onClick={() => hapusGabung(k.id)} className="text-red-500 hover:text-red-700">×</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-gray-200 bg-gray-50/60">
+                    <td className="table-td text-xs font-medium text-center" colSpan={3}>Hasil gabungan ({gabungList.length} barang)</td>
+                    <td className="table-td text-right text-xs font-semibold text-gray-800">{formatRupiah(totalNPGabung)}</td>
+                    <td className="table-td text-right text-xs font-semibold text-gray-800">{basisGabung ? formatRupiah(totalAkumGabung) : '—'}</td>
+                    <td className="table-td"></td>
+                  </tr>
+                </tfoot>
+              </table>
+              {!gabungSyaratOk && gabungList.length > 1 && (
+                <p className="text-xs text-red-600 px-3 py-2 bg-red-50">
+                  Ada barang yang beda kode / nilai perolehan / tanggal perolehan — keluarkan dulu, kalau tidak angkanya tak bisa dipertanggungjawabkan.
+                </p>
+              )}
+              <p className="text-xs text-gray-500 px-3 py-2 bg-gray-50/60 border-t border-gray-100">
+                Total nilai perolehan &amp; akumulasi TIDAK berubah — keduanya cuma pindah ke induk.
+                Nilai buku hasil gabungan: <span className="font-medium">{basisGabung ? formatRupiah(totalNPGabung - totalAkumGabung) : '—'}</span>.
+              </p>
+            </div>
+          )}
+
+          {basisGabungLoading && <p className="mt-3 text-xs text-gray-400">Memuat akumulasi penyusutan…</p>}
+          {basisGabungErr && <p className="mt-3 text-sm text-red-600">{basisGabungErr}</p>}
+          {gabungSpek && indukGabung && (
+            <p className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+              Spesifikasi hasil gabungan tersusun — akan diterapkan ke induk saat Simpan.
+            </p>
+          )}
+          {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+            <span className="text-sm text-gray-600">
+              {gabungList.length} barang dipilih{indukGabung ? ` · induk: ${indukGabung.nibar || indukGabung.nama_barang || '-'}` : ' · induk belum ditunjuk'}
+            </span>
+            <div className="flex items-center gap-2">
+              <button className="btn-secondary" onClick={openGabungSpek} disabled={!indukGabung}>
+                {gabungSpek ? '✎ Ubah Spesifikasi Hasil...' : '✎ Spesifikasi Hasil Gabungan...'}
+              </button>
+              <button className="btn-primary" onClick={simpan}
+                disabled={saving || gabungList.length < 2 || !indukGabungId || !gabungSyaratOk || !basisGabung || !!basisGabungErr}>
+                {saving ? 'Menyimpan...' : `Gabung ${gabungList.length} Barang`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {gabungSpekOpen && indukGabung && (
+        <EditSpesifikasiModal
+          title={`Spesifikasi Hasil Gabungan — ${indukGabung.nama_barang || indukGabung.nibar || 'induk'}`}
+          fieldKeys={koreksiFieldKeys(indukGabung.kode)}
+          storagePrefix={`draft/koreksi-gabung/${indukGabung.id}`}
+          initialFields={gabungSpekInit}
+          initialFoto={gabungSpekFoto}
+          single
+          onSave={(fields, foto) => { setGabungSpek({ fields, foto }); setGabungSpekOpen(false) }}
+          onClose={() => setGabungSpekOpen(false)}
+        />
+      )}
+
       {editPecahIdx != null && indukPecah && pecahan[editPecahIdx] && (
         <EditSpesifikasiModal
           title={`Spesifikasi Pecahan #${editPecahIdx + 1}`}
@@ -1427,6 +1960,82 @@ function PemecahanCard({ j, busy, bisaBatal, onBatal }: {
                 </td>
                 <td className="table-td text-center text-xs">{p.jumlah}</td>
                 <td className="table-td text-right text-xs">{formatRupiah(p.nilai)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Penggabungan Barang — kartu tampil (induk + N sumber yang dilebur) + Batal
+// ════════════════════════════════════════════════════════════════════════
+function PenggabunganCard({ j, busy, bisaBatal, onBatal }: {
+  j: PenggabunganJurnal; busy: boolean; bisaBatal: boolean; onBatal: () => void
+}) {
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
+        <div className="flex items-start justify-between gap-4">
+          <div className="text-sm space-y-0.5">
+            <p className="font-semibold text-gray-800">
+              Penggabungan Barang · No. {j.no_sk}
+              {j.dibatalkan && <span className="ml-2 text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded">Dibatalkan</span>}
+            </p>
+            <p className="text-xs text-gray-500">Tgl. {j.tanggal} · {j.periode} · {j.sumber.length} barang dilebur</p>
+            {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
+          </div>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Nilai Hasil Gabungan</p>
+              <p className="font-semibold text-gray-800">{formatRupiah(j.induk?.nilaiBaru || 0)}</p>
+            </div>
+            {!j.dibatalkan && (
+              <button disabled={busy || !bisaBatal} onClick={onBatal}
+                title={bisaBatal ? 'Batalkan penggabungan — barang yang dilebur kembali & induk balik ke nilai semula' : 'Tahun sudah terkunci — tidak bisa dibatalkan'}
+                className="text-xs font-medium text-red-600 hover:text-red-700 border border-red-200 rounded px-2.5 py-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+                {busy ? 'Membatalkan...' : 'Batal Penggabungan'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              <th className="table-th w-24">Peran</th>
+              <th className="table-th">NIBAR / Nama Barang</th>
+              <th className="table-th text-right">Nilai Perolehan</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {j.induk && (
+              <tr className="bg-teal/5">
+                <td className="table-td text-xs font-medium text-teal">Induk</td>
+                <td className="table-td">
+                  <p className="font-medium text-gray-800 text-xs">{j.induk.nama_barang || '-'}</p>
+                  <p className="text-gray-400 text-xs mt-0.5">{j.induk.nibar || '-'} · {j.induk.kode}</p>
+                </td>
+                {/* Dua angka sekaligus: yang dibaca akuntansi adalah nilai
+                    BARU, tapi tanpa nilai lamanya kartu ini tak menjelaskan
+                    apa-apa waktu dibaca ulang setahun kemudian. */}
+                <td className="table-td text-right text-xs">
+                  <p className="font-medium text-gray-800">{formatRupiah(j.induk.nilaiBaru)}</p>
+                  <p className="text-gray-400 mt-0.5">semula {formatRupiah(j.induk.nilaiLama)}</p>
+                </td>
+              </tr>
+            )}
+            {j.sumber.map(s => (
+              <tr key={s.aset_id}>
+                <td className="table-td text-xs text-gray-500">Dilebur</td>
+                <td className="table-td">
+                  <p className="font-medium text-gray-800 text-xs">{s.nama_barang || '-'}</p>
+                  <p className="text-gray-400 text-xs mt-0.5">{s.nibar || '-'} · {s.kode}</p>
+                </td>
+                <td className="table-td text-right text-xs">{formatRupiah(s.nilai)}</td>
               </tr>
             ))}
           </tbody>

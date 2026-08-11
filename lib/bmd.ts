@@ -151,6 +151,12 @@ export const JENIS_TRANSAKSI_LABEL: Record<string, string> = {
   pemecahan_masuk: 'Pemecahan Barang — Pecahan Baru',
   batal_pemecahan: 'Pembatalan Pemecahan — Induk Kembali',
   batal_pemecahan_masuk: 'Pembatalan Pemecahan — Pecahan Dibuang',
+  penggabungan_keluar: 'Penggabungan Barang — Dilebur ke Induk',
+  penggabungan_masuk: 'Penggabungan Barang — Induk Menerima',
+  // Dua ini terdaftar di `BATAL_TARGET_JENIS.penggabungan` (lib/voidedAset.ts),
+  // jadi labelnya WAJIB ada — dikunci lib/sinkronisasi.test.ts §1.
+  batal_penggabungan: 'Pembatalan Penggabungan — Barang Kembali',
+  batal_penggabungan_masuk: 'Pembatalan Penggabungan — Induk Kembali ke Nilai Semula',
   pemanfaatan: 'Pemanfaatan',
   pemanfaatan_selesai: 'Pemanfaatan Selesai / Diakhiri',
   batal_pemanfaatan: 'Pembatalan Pemanfaatan',
