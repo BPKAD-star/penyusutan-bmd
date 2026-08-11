@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
-import { GOLONGAN_REKAP, kodeLevel3, parsePeriode, formatPeriode, previousPeriode } from '@/lib/bmd'
+import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
 import RekapTable, { type RekapRow } from '@/components/RekapTable'
@@ -79,8 +79,28 @@ export default function LaporanBmdPage() {
   const [err, setErr] = useState('')
   const [mutasiDetail, setMutasiDetail] = useState<MutasiDetail>({})
   const [loading, setLoading] = useState(false)
-  const periode = `${tahun}-S${smt}`
-  const periodeSebelumnya = formatPeriode(previousPeriode(parsePeriode(periode)))
+  // `smt` = '1' | '2' | 'TH'. 'TH' (Akhir Tahun) HANYA untuk Model 3 — Model 1
+  // & 2 memang laporan posisi "s.d. periode", jadi akhir tahun = sama dengan
+  // Semester II dan pilihannya tak berarti apa-apa di sana.
+  const smtEfektif = smt === 'TH' ? '2' : smt
+  const periode = `${tahun}-S${smtEfektif}`
+
+  // ── Periode pembanding Model 3 (keputusan user 2026-08-10) ────────────────
+  // Saldo Awal mengikuti JENIS laporannya, bukan selalu semester sebelumnya:
+  //   Semester I   → saldo awal TAHUN  ({tahun-1}-S2), mutasi = S1
+  //   Semester II  → saldo akhir S1    ({tahun}-S1),   mutasi = S2
+  //   Akhir Tahun  → saldo awal TAHUN  ({tahun-1}-S2), mutasi = S1 + S2
+  //
+  // ⚠️ Saldo awal tahun sengaja diambil lewat `fn_rekap_bmd({tahun-1}-S2)`,
+  // BUKAN dari tabel `aset_awal_2026`. Alasannya: dua ujung laporan harus
+  // dilihat dengan LENSA YANG SAMA, kalau tidak selisihnya tak akan pernah
+  // bisa direkonsiliasi. Diverifikasi 2026-08-10 — keduanya cuma beda
+  // 14.000.000 / 3 barang, dan ketiganya sudah teridentifikasi (kamar mandi
+  // SDN yang `ekstra` di register tapi `intra` di snapshot; INS-20).
+  const periodeAwal = smt === '2' ? `${tahun}-S1` : `${Number(tahun) - 1}-S2`
+  // Periode ledger yang ditarik sebagai mutasi.
+  const periodeMutasi = smt === 'TH' ? [`${tahun}-S1`, `${tahun}-S2`] : [periode]
+  const labelPeriode = smt === 'TH' ? `${tahun} (setahun)` : periode
 
   const rootId = (skpdId: number) => rootOf(skpdId)?.id ?? skpdId
   const mtxKey = (skpdId: number, g: string) => `${rootId(skpdId)}|${g}`
@@ -215,11 +235,12 @@ export default function LaporanBmdPage() {
     }
     const out: Row[] = []
     for (let from = 0; ; from += 1000) {
+      // `.in('periode', ...)` — Akhir Tahun menarik S1 DAN S2 sekaligus.
       const data = assertOk(await supabase.from('transaksi_bmd')
         .select('id,jenis,header_id,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
-        .eq('periode', periode).in('jenis', jenisList as never)
+        .in('periode', periodeMutasi).in('jenis', jenisList as never)
         .range(from, from + 999),
-        `ledger periode ${periode} (${jenisList.join(', ')})`)
+        `ledger periode ${labelPeriode} (${jenisList.join(', ')})`)
       if (!data || data.length === 0) break
       out.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
@@ -308,7 +329,7 @@ export default function LaporanBmdPage() {
     // sendiri; bersamaan → keduanya timeout. Kalau nanti tergoda menjadikannya
     // Promise.all lagi demi "lebih cepat", ukur dulu — ini kasus di mana
     // paralel justru kalah.
-    const saldoAwal = await snapshotPerolehan(periodeSebelumnya).catch(gagal)
+    const saldoAwal = await snapshotPerolehan(periodeAwal).catch(gagal)
     if (!saldoAwal) { setLoading(false); return }
     const saldoAkhir = await snapshotPerolehan(periode).catch(gagal)
     if (!saldoAkhir) { setLoading(false); return }
@@ -464,10 +485,11 @@ export default function LaporanBmdPage() {
       if (!mutasiRows) return
       exportToExcel(mutasiRows.map(r => ({
         'Kode Jenis': r.kode, 'Uraian': r.uraian,
-        [`Saldo Awal (${periodeSebelumnya})`]: r.saldoAwal,
-        'Penambahan': r.penambahan, 'Pengurangan': r.pengurangan,
-        [`Saldo Akhir (${periode})`]: r.saldoAkhir,
-      })), `Laporan_BMD_Mutasi_${periode}`, 'Laporan BMD Mutasi')
+        [`Saldo Awal (posisi ${periodeAwal})`]: r.saldoAwal,
+        [`Penambahan ${labelPeriode}`]: r.penambahan,
+        [`Pengurangan ${labelPeriode}`]: r.pengurangan,
+        [`Saldo Akhir (posisi ${periode})`]: r.saldoAkhir,
+      })), `Laporan_BMD_Mutasi_${smt === 'TH' ? tahun : periode}`, 'Laporan BMD Mutasi')
       return
     }
     const metrics: Metric[] = metric === 'semua' ? SUB_METRICS : [metric]
@@ -522,25 +544,48 @@ export default function LaporanBmdPage() {
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
-          <RekapModelControls model={model} onModel={setModel} metric={metric} onMetric={setMetric} models={[1, 2, 3]} />
+          {/* Pindah ke Model 1/2 sambil membawa 'TH' bikin TAK ADA radio yang
+              tercentang (pilihannya cuma ada di Model 3) padahal datanya jalan
+              — jatuh ke S2. Turunkan ke '2' supaya layar & angka sepakat. */}
+          <RekapModelControls
+            model={model}
+            onModel={m => { setModel(m); if (m !== 3 && smt === 'TH') setSmt('2') }}
+            metric={metric} onMetric={setMetric} models={[1, 2, 3]}
+          />
           <div className="flex items-center gap-3">
             <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
             <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
           <KomptabelRadio value={komptabel} onChange={setKomptabel} />
           <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Sampai Semester :</label>
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">
+              {model === 3 ? 'Periode laporan :' : 'Sampai Semester :'}
+            </label>
             <select className="select-filter w-28" value={tahun} onChange={e => setTahun(e.target.value)}>
               {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
             <div className="flex gap-4">
-              {[['1', 'Semester I'], ['2', 'Semester II']].map(([v, l]) => (
+              {/* "Akhir Tahun" HANYA untuk Model 3 — Model 1 & 2 laporan posisi
+                  "s.d. periode", jadi di sana akhir tahun = Semester II. */}
+              {(model === 3
+                ? [['1', 'Semester I'], ['2', 'Semester II'], ['TH', 'Akhir Tahun']]
+                : [['1', 'Semester I'], ['2', 'Semester II']]).map(([v, l]) => (
                 <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
                   <input type="radio" name="smt" checked={smt === v} onChange={() => setSmt(v)} />{l}
                 </label>
               ))}
             </div>
           </div>
+          {model === 3 && (
+            <div className="flex items-start gap-3">
+              <span className="w-40 flex-shrink-0" />
+              <p className="text-xs text-gray-500">
+                Saldo Awal = posisi <span className="font-medium">{periodeAwal}</span> ·
+                mutasi {smt === 'TH' ? 'sepanjang tahun' : `periode ${periode}`} ·
+                Saldo Akhir = posisi <span className="font-medium">{periode}</span>.
+              </p>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <span className="w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={model === 3 ? prosesMutasi : proses} disabled={loading}>{loading ? 'Memproses...' : 'Proses'}</button>
