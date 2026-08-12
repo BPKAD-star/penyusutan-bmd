@@ -1,0 +1,54 @@
+-- ============================================================================
+-- Buang 107 baris YATIM di `aset_awal_2026` — baris snapshot yang NIBAR-nya
+-- tak punya pasangan sama sekali di register `aset`.
+--
+-- 107 baris, Rp157.108.121.777,83, tersebar di 21 SKPD.
+--
+-- ── Kenapa baru ketahuan sekarang ──────────────────────────────────────────
+-- Baris-baris ini SUDAH ADA jauh sebelum migrasi 20260812_03: 95 dibuat
+-- 2026-06-18 dan 12 dibuat 2026-07-02 — sisa impor e-BMD awal, yang barangnya
+-- kemudian diimpor ULANG dengan NIBAR baru (Import Tanah / Import Gedung
+-- 2026-07-10) sementara baris snapshot lamanya tidak ikut dibereskan.
+--
+-- Diperiksa: dari 307 baris yang ditambahkan 20260812_03, **NOL** yang yatim.
+-- Jadi migrasi itu tidak menciptakan masalah ini — ia MEMBONGKARNYA. Sebelumnya
+-- Saldo Awal hanya memuat versi yatimnya (pasangan hidupnya memang belum ada di
+-- snapshot), sehingga jumlah barangnya kebetulan terlihat benar padahal
+-- barisnya yang salah. Contoh BKAD Tanah:
+--   sebelum : 7 baris = 4 yatim + 3 hidup   → jumlah benar, isinya separuh salah
+--   sesudah : 11 baris = 4 yatim + 7 hidup  → dobel, dan barulah kelihatan
+--   migrasi ini: 7 baris = 7 hidup          → benar isi & jumlahnya
+--
+-- ── Kenapa aman dihapus ────────────────────────────────────────────────────
+-- 106 dari 107 punya "kembaran hidup" di snapshot yang sama SKPD + kode +
+-- nilai perolehannya, jadi nilai 2025-nya tetap terwakili. Yang ke-107 (UPTD
+-- Pusat Pelatihan SDM dan Kesehatan, BANGUNAN GEDUNG KANTOR PERMANEN
+-- Rp68.220.000) kembarannya ada di SKPD LAIN — asetnya pindah ke Dinas
+-- Kesehatan dan sudah masuk snapshot lewat 20260812_03 dengan NIBAR baru.
+--
+-- Baris yatim juga tak bisa dijangkau fitur apa pun yang bertumpu pada
+-- register: Edit Spesifikasi, penguncian `fn_aset_awal_2026_terkunci`, sampai
+-- pencocokan NIBAR di Rekonsiliasi semuanya butuh baris `aset`. Satu-satunya
+-- efeknya selama ini: menggelembungkan jumlah barang & nilai di menu Saldo Awal.
+--
+-- ⚠️ DELETE di sini SAH dan tidak melanggar apa pun. `aset_awal_2026` BUKAN
+-- ledger append-only — ia tabel snapshot display-only yang tak pernah dibaca
+-- engine. Yang dikunci migrasi 20260728_01 adalah KOLOM ANGKA-nya terhadap
+-- peran `authenticated`; migrasi berjalan sebagai pemilik, dan yang dibuang di
+-- sini bukan angka sebuah barang melainkan baris hantu yang tak mewakili barang
+-- mana pun. Aturan append-only `transaksi_bmd` tidak tersentuh sama sekali.
+--
+-- Idempoten: syaratnya keadaan ("tak punya pasangan"), bukan daftar id.
+-- ============================================================================
+
+DELETE FROM aset_awal_2026 w
+WHERE NOT EXISTS (SELECT 1 FROM aset a WHERE a.nibar = w.nibar);
+
+-- ── Pemeriksaan sesudah dijalankan ─────────────────────────────────────────
+-- 1. Tak ada lagi yang yatim (harus 0):
+--      SELECT count(*) FROM aset_awal_2026 w
+--      WHERE NOT EXISTS (SELECT 1 FROM aset a WHERE a.nibar = w.nibar);
+-- 2. BKAD Tanah harus 7, sama dengan Daftar Barang:
+--      SELECT count(*) FROM aset_awal_2026 w JOIN admin_skpd s ON s.id=w.skpd_id
+--      WHERE s.nama='Badan Keuangan dan Aset Daerah' AND w.kode LIKE '1.3.1.%';
+-- 3. Bagian Umum 1.3.3 harus TETAP 95 (tak ada yatim di sana).
