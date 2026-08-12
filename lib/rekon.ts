@@ -480,7 +480,7 @@ async function computeMutasiLines(
   ])
   // Tahap 2 — SEMUA terscope ke aset yang muncul di tahap 1. Tidak ada lagi
   // satu pun query di fungsi ini yang menyapu seluruh ledger.
-  const [kapBatal, korBatal, reklasBatal, alihBatal, voided, netRemoved, pecahBatal, gabungBatal] = await Promise.all([
+  const [kapBatal, korBatal, reklasBatal, alihBatal, internalBatal, voided, netRemoved, pecahBatal, gabungBatal] = await Promise.all([
     fetchBatalTargets(supabase, ['batal_kapitalisasi'], kap.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_koreksi_nilai'], kor.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_reklas'], [...reklasG, ...reklasK].map(r => r.aset_id)),
@@ -490,6 +490,10 @@ async function computeMutasiLines(
     // 2026-08-06. Payloadnya `target_trx_ids` JAMAK: sekali batal menganulir
     // baris perginya DAN baris pulangnya; fetchBatalTargets membaca dua bentuk.
     fetchBatalTargets(supabase, ['batal_pengalihan'], alih.map(r => r.aset_id)),
+    // Mutasi internal memakai jenis batal yang SAMA (migrasi 20260812_04) —
+    // lihat alasan pemakaian-ulang enum di sana. Terscope ke aset mutasi
+    // internal periode ini, jadi biayanya tetap kecil.
+    fetchBatalTargets(supabase, ['batal_pengalihan'], internal.map(r => r.aset_id)),
     fetchVoided(supabase, cara.map(r => r.aset_id)),
     fetchNetRemoved(supabase, hapus.map(r => r.aset_id)),
     fetchPemecahanBatal(supabase, pecah.map(r => r.aset_id)),
@@ -542,16 +546,11 @@ async function computeMutasiLines(
   // seharusnya begitu (barang tak keluar-masuk kekayaan SKPD itu). Barisnya
   // baru muncul saat laporan diambil pada level sub-unit yang bersangkutan.
   //
-  // Baris pengembalian (`payload.reversal`) tak perlu diperlakukan khusus:
-  // fn_kembalikan_mutasi_internal menukar skpd_asal/skpd_tujuan, jadi arah
-  // masuk/keluarnya sudah benar dgn sendirinya.
-  //
-  // ⚠️ Belum ada jenis `batal_mutasi_internal`, jadi TIDAK ada penyaring batal
-  // di sini — beda dari `alihBatal` di atas. Begitu jalur batalnya dibangun,
-  // penyaringnya WAJIB ditambahkan (rules.md §1.7 titik 2: modul pelaporan
-  // adalah titik yang paling sering kelupaan).
+  // Pembatalan memakai jenis `batal_pengalihan` yang SAMA dgn pengalihan
+  // (migrasi 20260812_04) — penyaringnya lewat `target_trx_ids`, jadi id baris
+  // mutasi internal yang dibatalkan ikut terbuang tanpa perlu jenis tersendiri.
   for (const r of internal) {
-    if (!r.aset) continue
+    if (!r.aset || internalBatal.has(r.id)) continue
     const asalIn = inScope(r.skpd_asal), tujuanIn = inScope(r.skpd_tujuan)
     const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
     if (tujuanIn && !asalIn) push(gol, komp, 'internal_masuk', r.nilai, r, r.skpd_tujuan)

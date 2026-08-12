@@ -67,6 +67,22 @@ kode, jadi ia harus stabil:
    salah pencet meninggalkan jejak permanen seolah barangnya benar-benar pernah
    pindah/dimanfaatkan — dan itu ikut menggeser turunan lain (mis. segmen tahun
    kode register).
+
+   **PENGECUALIAN: Mutasi Internal hanya punya Batal** (keputusan user
+   2026-08-12, migrasi 20260812_04). Aturan di atas mengandaikan "berakhir" itu
+   perubahan keadaan pada peristiwa YANG SAMA sehingga tak punya dokumen sendiri
+   — benar untuk Pemanfaatan (sewa berakhir) & Pengamanan (kustodi BAST itu
+   berakhir). Untuk PERPINDAHAN barang tidak begitu: pengembalian yang sungguhan
+   selalu punya dokumennya sendiri, jadi bentuk yang benar adalah kartu
+   Pengeluaran Internal BARU ke arah sebaliknya — bukan baris reversal yang
+   digantungkan pada kartu lama, yang justru menempelkan peristiwa periode
+   BERJALAN pada dokumen bertanggal periode lampau. Di sini pembedaan itu
+   mubazir, bukan dilanggar. Aman dicabut karena `mutasi_internal` tak punya
+   satu pun baris `payload.reversal` saat itu (0 dari 6).
+   ⚠️ `pengalihan_status` **tetap punya dua-duanya** — di sana ada 2 baris
+   reversal hidup, jadi pembacanya wajib bertahan apa pun keputusan soal
+   tombolnya. Kalau nanti ikut dicabut, cabut TOMBOLNYA saja, jangan
+   pembacanya.
 7. **DAFTAR PERIKSA menambah jenis `batal_*` baru.** Menambah nilai enum + RPC
    itu bagian yang mudah; yang berkali-kali kelewat adalah PEMBACA-nya.
    `batal_pengalihan` (2026-07-29) kelewat **tiga ronde**, semuanya baru ketemu

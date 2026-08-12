@@ -7,11 +7,15 @@
 //     sumber, lalu TERIMA (RPC fn_terima_mutasi_internal: insert ledger
 //     'mutasi_internal' + pindahkan aset.skpd_id, atomik) atau TOLAK
 //     (fn_tolak_mutasi_internal: status 'ditolak' + alasan; draft utuh di SKPD asal).
-//   - Riwayat disetujui ditampilkan dari ledger (baris reversal = barang yang
-//     mutasinya sudah dikembalikan, tidak ditampilkan sbg anggota).
+//   - Riwayat disetujui ditampilkan dari ledger; barang yang mutasinya
+//     DIBATALKAN dibuang dari kartu (perpindahannya dianggap tak pernah ada).
+//   - TIDAK ada aksi "Kembalikan" di sini — hanya Batal (migrasi 20260812_04).
+//     Pengembalian yang sungguhan punya dokumen sendiri, jadi bentuknya kartu
+//     Pengeluaran Internal BARU ke arah sebaliknya.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
+import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import SkpdCombobox from '@/components/SkpdCombobox'
 
 type DraftItem = {
@@ -30,15 +34,7 @@ type Header = {
   rejected_reason: string | null
   payload: { dokumen_paths?: string[]; draft_items?: DraftItem[] } | null
 }
-// `dikembalikan` = baris ledger TERBARU aset ini di kartu tsb ber-`reversal`,
-// artinya barangnya sudah dipulangkan ke SKPD asal. Barisnya TETAP ditampilkan
-// sebagai riwayat — pola yang sama dgn Penggunaan (Pengalihan), Pemanfaatan
-// "Selesai", & Pengamanan "Dikembalikan". Sebelumnya dibuang total, akibatnya
-// kartu yang seluruh barangnya sudah pulang LENYAP dari daftar (lihat filter
-// `lines.length > 0` di akhir load) — riwayatnya hilang tanpa jejak di layar,
-// dan itu terasa makin tajam sejak ada "Kembalikan Semua": satu klik, kartunya
-// menguap.
-type Line = DraftItem & { dikembalikan?: boolean }
+type Line = DraftItem
 type Jurnal = Header & { lines: Line[]; total: number }
 
 const namaFile = (path: string) => path.split('/').pop() || path
@@ -100,28 +96,32 @@ export default function PenerimaanInternal() {
         .order('id', { ascending: false })
       if (errT) throw new Error(errT.message)
       const rows = (data || []) as unknown as {
-        id: number; header_id: string; nilai: number; payload: { reversal?: boolean } | null
+        id: number; header_id: string; nilai: number
         aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; merek_tipe: string | null; jumlah: number; satuan: string | null } | null
       }[]
+      // Barang yang mutasinya dibatalkan keluar TOTAL dari kartu — pembatalan
+      // menyatakan perpindahannya tak pernah terjadi. Dikunci per ID BARIS
+      // (`target_trx_ids`), bukan per (kartu, aset): kartu yang dibatalkan
+      // balik ke 'pending' dan bisa diterima ULANG, jadi kunci per-aset akan
+      // ikut menyapu penerimaan BARU yang sah.
+      const dibatalkan = await fetchBatalTargets(
+        supabase, BATAL_TARGET_JENIS.pengalihan,
+        rows.map(r => r.aset?.id).filter((x): x is string => !!x),
+      )
       const seen = new Set<string>()
       for (const r of rows) {
         if (!r.aset) continue
         const key = `${r.header_id}|${r.aset.id}`
         if (seen.has(key)) continue
         seen.add(key)
-        // Baris terbaru ber-reversal = sudah dipulangkan. DITAMPILKAN sebagai
-        // riwayat, bukan dibuang — lihat catatan di type Line.
-        const dikembalikan = !!r.payload?.reversal
+        if (dibatalkan.has(r.id)) continue
         const j = jmap.get(r.header_id)
         if (!j) continue
         j.lines.push({
           aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
-          dikembalikan,
         })
-        // Barang yang sudah pulang TIDAK ikut total kartu — totalnya menyatakan
-        // nilai yang saat ini dikuasai SKPD penerima.
-        if (!dikembalikan) j.total += r.nilai
+        j.total += r.nilai
       }
     }
     setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
@@ -156,44 +156,47 @@ export default function PenerimaanInternal() {
     load(skpd)
   }
 
-  async function kembalikan(j: Jurnal, l: Line) {
-    if (!confirm(`Kembalikan "${l.nama_barang || l.nibar || 'barang ini'}" ke ${namaSkpd(j.skpd_id)}? Barang dicatat balik ke SKPD asal pada periode berjalan.`)) return
+  // SATU-SATUNYA cara memulangkan barang dari kartu ini (keputusan user
+  // 2026-08-12, migrasi 20260812_04). "Kembalikan" dicabut: pengembalian yang
+  // SUNGGUHAN punya dokumennya sendiri, jadi bentuk yang benar adalah kartu
+  // Pengeluaran Internal BARU ke arah sebaliknya — bukan baris reversal yang
+  // digantungkan pada kartu lama. Dua tombol yang sama-sama memulangkan barang
+  // tapi berlawanan arti terbukti mengundang salah pencet.
+  async function batal(j: Jurnal, l: Line) {
+    if (!confirm(
+      `BATALKAN mutasi "${l.nama_barang || l.nibar || 'barang ini'}"?\n\n` +
+      `Mutasinya dianggap TIDAK PERNAH TERJADI dan barang balik ke ${namaSkpd(j.skpd_id)}.\n\n` +
+      `Kalau barangnya memang sempat dipakai di sini lalu dipulangkan, jangan pakai ini — ` +
+      `buat kartu Pengeluaran Internal baru ke arah sebaliknya.`
+    )) return
     setBusy(true)
-    const { error } = await supabase.rpc('fn_kembalikan_mutasi_internal', { p_header_id: j.id, p_aset_id: l.aset_id })
+    const { error } = await supabase.rpc('fn_batal_pengalihan_barang', { p_header_id: j.id, p_aset_id: l.aset_id })
     setBusy(false)
     if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg(`Barang dikembalikan ke ${namaSkpd(j.skpd_id)}.`)
+    setMsg(`Mutasi dibatalkan — barang kembali ke ${namaSkpd(j.skpd_id)}.`)
+    load(skpd)
+  }
+
+  async function batalSeluruh(j: Jurnal) {
+    if (!confirm(
+      `BATALKAN SELURUH mutasi "${j.no_sk}" (${j.lines.length} barang)?\n\n` +
+      `Semua barang dianggap tidak pernah pindah dan kembali ke ${namaSkpd(j.skpd_id)}. ` +
+      `Kartunya balik ke "Menunggu Persetujuan" sehingga bisa Anda terima ULANG — ` +
+      `SKPD pengirim tidak perlu entry ulang.`
+    )) return
+    setBusy(true)
+    const { data, error } = await supabase.rpc('fn_batal_seluruh_pengalihan', { p_header_id: j.id })
+    setBusy(false)
+    if (error) { setMsg(`Error: ${error.message}`); return }
+    setMsg(`${data} barang dibatalkan — kartu bisa diterima ulang.`)
     load(skpd)
   }
 
   // Pengembalian setingkat KARTU. Bukan sekadar penghemat klik: memulangkan
   // barang satu per satu bisa berhenti di tengah dan meninggalkan kartu
   // separuh — separuh di sub-unit ini, separuh sudah pulang — padahal
-  // dokumennya satu. RPC-nya memutar `fn_kembalikan_mutasi_internal` di dalam
-  // SATU transaksi, jadi kartunya selesai utuh atau tidak berubah sama sekali.
-  //
-  // ⚠️ Ini KEMBALIKAN, bukan BATAL (yang di Penggunaan ada sebagai "Batal
-  // Seluruh Pengalihan"). Kembalikan = barang memang sempat dipakai di sini
-  // lalu dipulangkan; dua peristiwa nyata, dua-duanya tetap terbaca laporan &
-  // kartunya tetap "Diterima". Padanan Batal untuk mutasi internal memang belum
-  // ada — jangan pakai tombol ini untuk membetulkan salah catat.
-  async function kembalikanSemua(j: Jurnal) {
-    const sisa = j.lines.filter(l => !l.dikembalikan)
-    if (!confirm(
-      `Kembalikan SEMUA ${sisa.length} barang di "${j.no_sk}" ke ${namaSkpd(j.skpd_id)}?\n\n` +
-      `Semua dicatat balik ke SKPD asal pada periode berjalan, dan kartunya tetap ` +
-      `tersimpan sebagai riwayat.\n\n` +
-      `Pakai ini kalau barangnya MEMANG sempat dipakai di sini lalu dipulangkan — ` +
-      `bukan untuk membetulkan salah catat.`
-    )) return
-    setBusy(true)
-    const { data, error } = await supabase.rpc('fn_kembalikan_seluruh_mutasi_internal', { p_header_id: j.id })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg(`${data} barang dikembalikan ke ${namaSkpd(j.skpd_id)}.`)
-    load(skpd)
-  }
-
+  // dokumennya satu. RPC-nya memutar pembatalan per barang di dalam SATU
+  // transaksi, jadi kartunya selesai utuh atau tidak berubah sama sekali.
   async function bukaDokumen(path: string) {
     const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
     if (data?.signedUrl) window.open(data.signedUrl, '_blank')
@@ -209,7 +212,7 @@ export default function PenerimaanInternal() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Penerimaan Internal</h1>
         <p className="text-gray-500 text-sm mt-1">
-          BMD masuk dari sub-unit lain dalam SKPD induk yang sama (Pengeluaran Internal). Jurnal pending menunggu persetujuan SKPD ini — periksa barang & dokumen sumber, lalu Terima atau Tolak. Barang yang sudah diterima bisa dikembalikan ke SKPD asal kapan pun lewat tombol Kembalikan.
+          BMD masuk dari sub-unit lain dalam SKPD induk yang sama (Pengeluaran Internal). Jurnal pending menunggu persetujuan SKPD ini — periksa barang & dokumen sumber, lalu Terima atau Tolak. Kalau ada barang yang salah masuk, pakai Batal — mutasinya dianggap tak pernah terjadi dan barang balik ke SKPD asal. Untuk memulangkan barang yang memang sempat dipakai di sini, buat kartu Pengeluaran Internal baru ke arah sebaliknya.
         </p>
       </div>
 
@@ -286,13 +289,11 @@ export default function PenerimaanInternal() {
                           </button>
                         </>
                       )}
-                      {/* Muncul hanya kalau MASIH ada yang bisa dipulangkan —
-                          kartu yang seluruh barangnya sudah pulang cuma riwayat. */}
-                      {disetujui && j.lines.some(l => !l.dikembalikan) && (
-                        <button disabled={busy} onClick={() => kembalikanSemua(j)}
-                          title="Kembalikan SEMUA barang di kartu ini ke SKPD asal sekaligus (dicatat di periode berjalan)"
-                          className="px-3 py-2 rounded-lg text-xs font-medium text-amber-700 border border-amber-300 hover:bg-amber-50 disabled:opacity-40">
-                          {busy ? '...' : 'Kembalikan Semua'}
+                      {disetujui && (
+                        <button disabled={busy} onClick={() => batalSeluruh(j)}
+                          title="Batalkan SEMUA barang di kartu ini sekaligus, lalu kartunya bisa diterima ulang"
+                          className="px-3 py-2 rounded-lg text-xs font-medium text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-40">
+                          {busy ? '...' : 'Batal Seluruh Mutasi'}
                         </button>
                       )}
                     </div>
@@ -315,26 +316,17 @@ export default function PenerimaanInternal() {
                           <td className="table-td">
                             <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
                             <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
-                            {l.dikembalikan && (
-                              <span className="inline-block mt-1 px-2 py-0.5 rounded text-[11px] bg-gray-100 text-gray-500">
-                                Dikembalikan
-                              </span>
-                            )}
                           </td>
                           <td className="table-td text-xs text-gray-600">{l.merek_tipe || '-'}</td>
                           <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
                           <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
                           {disetujui && (
                             <td className="table-td text-center">
-                              {l.dikembalikan ? (
-                                <span className="text-xs text-gray-400">—</span>
-                              ) : (
-                                <button disabled={busy} onClick={() => kembalikan(j, l)}
-                                  title="Kembalikan barang ini ke SKPD asal (dicatat di periode berjalan)"
-                                  className="px-3 py-1 rounded text-xs bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50">
-                                  Kembalikan
-                                </button>
-                              )}
+                              <button disabled={busy} onClick={() => batal(j, l)}
+                                title="Batalkan — mutasinya dianggap tak pernah terjadi & barang balik ke SKPD asal"
+                                className="px-3 py-1 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50">
+                                🗑 Batal
+                              </button>
                             </td>
                           )}
                         </tr>

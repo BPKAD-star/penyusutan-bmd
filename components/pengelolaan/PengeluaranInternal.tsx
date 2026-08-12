@@ -19,6 +19,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
+import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -53,6 +54,7 @@ export default function PengeluaranInternal() {
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
+  const [errLoad, setErrLoad] = useState('')
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [addTo, setAddTo] = useState<Header | null>(null)
@@ -84,14 +86,19 @@ export default function PengeluaranInternal() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ⚠️ Badan fungsi di dalam try, `setLoadingJurnal(false)` di FINALLY:
+  // `fetchBatalTargets` MELEMPAR (fail-closed). Tanpa ini halaman membeku di
+  // "Memuat..." tanpa keterangan — cacat yang sudah didokumentasikan di
+  // CLAUDE.md untuk Daftar Barang.
   const loadJurnals = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setJurnals([]); return }
-    setLoadingJurnal(true)
-
-    const { data: headers } = await supabase.from('jurnal_header')
+    if (!skpdId) { setJurnals([]); setErrLoad(''); return }
+    setLoadingJurnal(true); setErrLoad('')
+    try {
+    const { data: headers, error: errH } = await supabase.from('jurnal_header')
       .select(HEADER_COLS)
       .eq('kategori', 'mutasi_internal').eq('skpd_id', Number(skpdId))
       .order('tanggal', { ascending: false })
+    if (errH) throw new Error(errH.message)
     const hs = (headers || []) as unknown as Header[]
 
     const jmap = new Map<string, Jurnal>()
@@ -105,22 +112,30 @@ export default function PengeluaranInternal() {
 
     const approvedIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
     if (approvedIds.length > 0) {
-      const { data } = await supabase.from('transaksi_bmd')
+      const { data, error: errT } = await supabase.from('transaksi_bmd')
         .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
         .eq('jenis', 'mutasi_internal')
         .in('header_id', approvedIds)
         .order('id', { ascending: false })
+      if (errT) throw new Error(errT.message)
       const rows = (data || []) as unknown as {
-        id: number; header_id: string; nilai: number; payload: { reversal?: boolean } | null
+        id: number; header_id: string; nilai: number
         aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; merek_tipe: string | null; jumlah: number; satuan: string | null } | null
       }[]
+      // Barang yang mutasinya DIBATALKAN keluar dari kartu — juga di sisi
+      // PENGIRIM. rules.md §1.7 titik 3 menyebut sisi ini yang paling sering
+      // lolos: ledgernya sudah benar tapi barangnya masih nongol di kartu.
+      const dibatalkan = await fetchBatalTargets(
+        supabase, BATAL_TARGET_JENIS.pengalihan,
+        rows.map(r => r.aset?.id).filter((x): x is string => !!x),
+      )
       const seen = new Set<string>()
       for (const r of rows) {
         if (!r.aset) continue
         const key = `${r.header_id}|${r.aset.id}`
         if (seen.has(key)) continue
         seen.add(key)
-        if (r.payload?.reversal) continue // baris terbaru = pengembalian → bukan anggota lagi
+        if (dibatalkan.has(r.id)) continue
         const j = jmap.get(r.header_id)
         if (!j) continue
         j.lines.push({
@@ -131,7 +146,12 @@ export default function PengeluaranInternal() {
       }
     }
     setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
-    setLoadingJurnal(false)
+    } catch (e) {
+      setJurnals([])
+      setErrLoad(`Gagal memuat jurnal mutasi internal: ${e instanceof Error ? e.message : String(e)}. Daftar tidak ditampilkan supaya tak terbaca sebagai "belum ada jurnal".`)
+    } finally {
+      setLoadingJurnal(false)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null) }, [skpd, loadJurnals])
