@@ -86,7 +86,9 @@ async function fetchBaseByIds(supabase: SupabaseClient, ids: string[]): Promise<
 // `saldo_awal_checkpoint` (hasil fn_tutup_tahun) ikut dibaca dgn bentuk payload
 // yang sama; yang dipakai adalah checkpoint TERBARU yang periodenya <= periode
 // yang diminta — pola yang sama dgn hitungJadwalAset di engine.
-type Baseline = { akumulasi: number; nilaiBuku: number }
+// `perolehan` ikut dibaca dari baris ledger yang SAMA (kolom `nilai`), bukan
+// dari register — lihat alasannya di pemakainya di bawah.
+type Baseline = { perolehan: number; akumulasi: number; nilaiBuku: number }
 
 async function fetchBaselinePos(
   supabase: SupabaseClient, ids: string[], periode: string,
@@ -94,11 +96,11 @@ async function fetchBaselinePos(
   const pilih = new Map<string, { periode: string; b: Baseline }>()
   for (let i = 0; i < ids.length; i += 200) {
     const { data, error } = await supabase.from('transaksi_bmd')
-      .select('aset_id,periode,payload')
+      .select('aset_id,periode,nilai,payload')
       .in('jenis', ['saldo_awal', 'saldo_awal_checkpoint'])
       .in('aset_id', ids.slice(i, i + 200))
     if (error) throw new Error(`gagal membaca saldo awal baseline: ${error.message}`)
-    for (const r of (data || []) as { aset_id: string; periode: string; payload: Record<string, unknown> | null }[]) {
+    for (const r of (data || []) as { aset_id: string; periode: string; nilai: number; payload: Record<string, unknown> | null }[]) {
       // Checkpoint yang lahir SESUDAH periode ini belum berlaku untuknya.
       // Perbandingan string aman: format periode selalu `YYYY-Sn`.
       if (r.periode > periode) continue
@@ -107,7 +109,8 @@ async function fetchBaselinePos(
       const p = r.payload || {}
       const akumulasi = Number(p.akumulasi_2025 ?? 0) || 0
       const nb = Number(p.nilai_buku_awal ?? 0) || 0
-      pilih.set(r.aset_id, { periode: r.periode, b: { akumulasi, nilaiBuku: nb } })
+      const perolehan = Number(r.nilai ?? 0) || 0
+      pilih.set(r.aset_id, { periode: r.periode, b: { perolehan, akumulasi, nilaiBuku: nb } })
     }
   }
   const out = new Map<string, Baseline>()
@@ -232,12 +235,25 @@ export async function fetchSnapshotPositions(
     // ARUS sebuah periode, dan periode baseline bukan periode yang dilaporkan
     // di sini (kolom Beban baris SALDO AWAL diisi `bebanSaldoAwal`, yakni beban
     // periode BERJALAN atas populasi awal — lihat attribusiPenyusutan).
-    // ⚠️ `perolehan` tetap dari register (`aset.nilai_perolehan`), BUKAN nilai
-    // beku akhir 2025. Untuk barang yang dikapitalisasi/dikoreksi di 2026 itu
-    // sedikit terlalu besar; rantai perolehan selama ini sudah tie-out dengan
-    // cara ini, jadi tidak diubah bersamaan dengan perbaikan akumulasi.
-    const bl = susut ? bmap.get(b.id) : undefined
-    const perolehan = b.nilai_perolehan || 0
+    // `perolehan` diambil dari BARIS LEDGER baseline (kolom `nilai`), bukan dari
+    // register. Register memuat nilai HARI INI; kalau barangnya dikoreksi atau
+    // dikapitalisasi di 2026, Saldo Awal Semester I jadi memuat nilai yang belum
+    // pernah berlaku pada akhir 2025, sementara Saldo Akhir-nya (dari engine)
+    // memakai nilai yang benar. Bedanya lalu jatuh ke baris "Selisih (belum
+    // terpetakan)" — dan tidak akan pernah bisa terpetakan, karena baris
+    // koreksinya memang ada di periode LAIN.
+    // Insiden 2026-08-12: Setda −1.614.744.112 & Dinas LH +948.955.351 di
+    // 2026-S1, dari dua aset yang dikoreksi Juli 2026 (2026-S2).
+    // ⚠️ Sumbernya sengaja baris ledger yang SAMA dengan akumulasi/nilai buku di
+    // atas, bukan `aset_awal_2026` yang dicocokkan lewat NIBAR: satu baris = satu
+    // periode, jadi ketiga angkanya dijamin berasal dari checkpoint yang sama.
+    // Itu juga membuatnya ikut benar untuk `saldo_awal_checkpoint` tahun-tahun
+    // berikutnya, yang tak punya padanan di tabel snapshot 2026.
+    const blRaw = bmap.get(b.id)
+    // Akumulasi & nilai buku tetap hanya untuk yang disusutkan; `perolehan`
+    // TIDAK — Tanah/ATL/KDP pun nilainya harus nilai beku akhir 2025.
+    const bl = susut ? blRaw : undefined
+    const perolehan = blRaw?.perolehan ?? (b.nilai_perolehan || 0)
     const akumulasi = bl?.akumulasi ?? 0
     pos.set(b.id, {
       gol, komp,

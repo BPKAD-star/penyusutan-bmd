@@ -1104,11 +1104,23 @@ yang sudah tersusut), lalu seluruh akumulasi awal muncul di baris **Selisih**.
   `pw.akumulasi` yang dulu nol, jadi barang keluar seolah tak pernah tersusut;
   (3) Selisih runtuh ke ~0. **Semester II tak berubah** (saldo awalnya 2026-S1
   yang memang punya baris engine).
-- ⚠️ **`perolehan` Saldo Awal sengaja TETAP dari register**, bukan nilai beku
-  akhir 2025 — untuk barang yang dikapitalisasi/dikoreksi di 2026 angkanya
-  sedikit lebih besar. Tidak diubah bersamaan karena rantai kolom perolehan
-  sudah tie-out; kalau mau dirapikan, sumbernya `aset_awal_2026.nilai_perolehan`
-  dicocokkan lewat NIBAR.
+- ✅ **`perolehan` Saldo Awal kini dari BARIS LEDGER baseline** (kolom `nilai`
+  baris `saldo_awal`/`saldo_awal_checkpoint`), bukan lagi dari register
+  (2026-08-12; sebelumnya sengaja dibiarkan & tercatat di sini sbg keterbatasan).
+  Register memuat nilai HARI INI, jadi barang yang dikoreksi/dikapitalisasi di
+  2026 membuat Saldo Awal **Semester I** memuat nilai yang belum pernah berlaku
+  pada akhir 2025, sementara Saldo Akhir-nya (dari engine) sudah benar —
+  selisihnya jatuh ke baris "Selisih (belum terpetakan)" dan TAK PERNAH bisa
+  terpetakan, karena baris koreksinya ada di periode LAIN. Terbukti di data
+  hidup: Setda −1.614.744.112 & Dinas LH +948.955.351 di 2026-S1, dari dua aset
+  yang dikoreksi Juli 2026. Sesudah diperbaiki: `nilai` baris baseline = nilai
+  perolehan engine 2026-S1 untuk **SEMUA** aset (0 yang beda).
+  ⚠️ Sumbernya baris ledger yang SAMA dgn akumulasi & nilai buku — sengaja BUKAN
+  `aset_awal_2026` lewat NIBAR (rencana lama): satu baris = satu periode, jadi
+  ketiganya dijamin dari checkpoint yang sama, dan ikut benar untuk
+  `saldo_awal_checkpoint` tahun berikutnya yang tak punya padanan di tabel
+  snapshot 2026. Hanya **Semester I** yang terdampak — Saldo Awal Semester II
+  membaca baris engine S1 yang memang ada, jadi tak pernah jatuh ke cadangan.
 
 ## Rekonsiliasi BMD — tampilan & cetak (2026-08-11)
 
