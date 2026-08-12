@@ -287,10 +287,10 @@ export function measuresOf(snap: Snapshot | undefined, golongan: string, komp: K
 // Lihat docs/rekonsiliasi-bmd-plan.md §5.3–5.4.
 export type MutasiKey =
   | 'pengadaan' | 'hibah' | 'tukar' | 'inventarisasi' | 'lainnya' | 'kdp'
-  | 'belanja_jasa' | 'penggunaan_masuk' | 'kapitalisasi' | 'koreksi_tambah'
+  | 'belanja_jasa' | 'penggunaan_masuk' | 'internal_masuk' | 'kapitalisasi' | 'koreksi_tambah'
   | 'pemecahan_masuk' | 'penggabungan_masuk' | 'reklas_fungsi_masuk' | 'reklas_kode_masuk'
   | 'hapus_penjualan' | 'hapus_hibah' | 'hapus_tukar' | 'hapus_penyertaan' | 'hapus_sebab_lain'
-  | 'pengalihan_keluar' | 'koreksi_kurang' | 'pemecahan_keluar' | 'penggabungan_keluar'
+  | 'pengalihan_keluar' | 'internal_keluar' | 'koreksi_kurang' | 'pemecahan_keluar' | 'penggabungan_keluar'
   | 'reklas_fungsi_keluar' | 'reklas_kode_keluar'
 // Tiga ukuran per kategori. Nilai Buku SENGAJA tidak ikut: ia SELALU diturunkan
 // (`perolehan − akumulasi`) dan tak pernah dijumlah vertikal — kalau disimpan
@@ -414,7 +414,7 @@ export type MutasiLine = {
 // angka yang tak ikut dijumlah (rules.md §5.5).
 export const KURANG_KEYS: MutasiKey[] = [
   'hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
-  'pengalihan_keluar', 'koreksi_kurang', 'pemecahan_keluar', 'penggabungan_keluar',
+  'pengalihan_keluar', 'internal_keluar', 'koreksi_kurang', 'pemecahan_keluar', 'penggabungan_keluar',
   'reklas_fungsi_keluar', 'reklas_kode_keluar',
 ]
 const KURANG_SET = new Set<MutasiKey>(KURANG_KEYS)
@@ -424,13 +424,15 @@ export const KATEGORI_LABEL: Record<MutasiKey, string> = {
   pengadaan: 'Pengadaan', belanja_jasa: 'Perolehan dari rekening Belanja Jasa',
   hibah: 'Hibah', tukar: 'Tukar Menukar', inventarisasi: 'Hasil Inventarisasi', lainnya: 'Perolehan Lainnya',
   kdp: 'Konstruksi Dalam Pengerjaan (termin)',
-  penggunaan_masuk: 'Penggunaan (transfer masuk)', kapitalisasi: 'Kapitalisasi', koreksi_tambah: 'Koreksi Nilai (Tambah)',
+  penggunaan_masuk: 'Penggunaan (transfer masuk)', internal_masuk: 'Penerimaan Internal (transfer masuk)',
+  kapitalisasi: 'Kapitalisasi', koreksi_tambah: 'Koreksi Nilai (Tambah)',
   pemecahan_masuk: 'Pemecahan Barang (pecahan baru)', pemecahan_keluar: 'Pemecahan Barang (induk dipecah)',
   penggabungan_masuk: 'Penggabungan Barang (nilai masuk ke induk)', penggabungan_keluar: 'Penggabungan Barang (barang dilebur)',
   reklas_fungsi_masuk: 'Reklas Perubahan Fungsi (Masuk)', reklas_kode_masuk: 'Reklas Kesalahan Kodefikasi (Masuk)',
   hapus_penjualan: 'Penghapusan Pemindahtanganan — Penjualan', hapus_hibah: 'Penghapusan Pemindahtanganan — Hibah',
   hapus_tukar: 'Penghapusan Pemindahtanganan — Tukar Menukar', hapus_penyertaan: 'Penghapusan Pemindahtanganan — Penyertaan Modal',
   hapus_sebab_lain: 'Penghapusan Sebab Lain', pengalihan_keluar: 'Penghapusan Pengalihan (transfer keluar)',
+  internal_keluar: 'Pengeluaran Internal (transfer keluar)',
   koreksi_kurang: 'Koreksi Kurang', reklas_fungsi_keluar: 'Reklas Perubahan Fungsi (Keluar)', reklas_kode_keluar: 'Reklas Kesalahan Kodefikasi (Keluar)',
 }
 
@@ -464,9 +466,10 @@ async function computeMutasiLines(
   // Versi lama menanyakan keduanya atas SELURUH ledger (259rb baris) sekaligus
   // dgn baris periode ini — itu yang tembus statement timeout beruntun
   // 2026-07-28, dan biayanya bakal terus naik seiring ledger tumbuh.
-  const [cara, alih, kap, kor, reklasG, reklasK, hapus, pecah, gabung] = await Promise.all([
+  const [cara, alih, internal, kap, kor, reklasG, reklasK, hapus, pecah, gabung] = await Promise.all([
     fetchLed(supabase, JENIS_CARA, periode),
     fetchLed(supabase, ['pengalihan_status'], periode),
+    fetchLed(supabase, ['mutasi_internal'], periode),
     fetchLed(supabase, ['kapitalisasi'], periode),
     fetchLed(supabase, ['koreksi_nilai'], periode),
     fetchLed(supabase, ['reklas_golongan'], periode),
@@ -530,6 +533,29 @@ async function computeMutasiLines(
     const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
     if (tujuanIn && !asalIn) push(gol, komp, 'penggunaan_masuk', r.nilai, r, r.skpd_tujuan)
     else if (asalIn && !tujuanIn) push(gol, komp, 'pengalihan_keluar', r.nilai, r, r.skpd_asal)
+  }
+
+  // Mutasi Internal — perpindahan antar sub-unit DALAM satu SKPD induk.
+  // Logikanya kembar dgn pengalihan di atas, dan justru uji keanggotaan scope
+  // itu yang membuatnya benar: kalau laporan diambil pada level SKPD INDUK,
+  // asal & tujuan sama-sama in-scope → tak ada baris sama sekali, memang
+  // seharusnya begitu (barang tak keluar-masuk kekayaan SKPD itu). Barisnya
+  // baru muncul saat laporan diambil pada level sub-unit yang bersangkutan.
+  //
+  // Baris pengembalian (`payload.reversal`) tak perlu diperlakukan khusus:
+  // fn_kembalikan_mutasi_internal menukar skpd_asal/skpd_tujuan, jadi arah
+  // masuk/keluarnya sudah benar dgn sendirinya.
+  //
+  // ⚠️ Belum ada jenis `batal_mutasi_internal`, jadi TIDAK ada penyaring batal
+  // di sini — beda dari `alihBatal` di atas. Begitu jalur batalnya dibangun,
+  // penyaringnya WAJIB ditambahkan (rules.md §1.7 titik 2: modul pelaporan
+  // adalah titik yang paling sering kelupaan).
+  for (const r of internal) {
+    if (!r.aset) continue
+    const asalIn = inScope(r.skpd_asal), tujuanIn = inScope(r.skpd_tujuan)
+    const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
+    if (tujuanIn && !asalIn) push(gol, komp, 'internal_masuk', r.nilai, r, r.skpd_tujuan)
+    else if (asalIn && !tujuanIn) push(gol, komp, 'internal_keluar', r.nilai, r, r.skpd_asal)
   }
 
   // Penghapusan — hanya net-removed; dedup per aset.
@@ -618,11 +644,13 @@ async function computeMutasiLines(
 // walau lupa didaftarkan di sini; ia cuma kalah rebutan label.
 const MASUK_KEYS = new Set<MutasiKey>([
   'pengadaan', 'belanja_jasa', 'hibah', 'tukar', 'inventarisasi', 'lainnya', 'kdp',
-  'penggunaan_masuk', 'pemecahan_masuk', 'penggabungan_masuk', 'reklas_fungsi_masuk', 'reklas_kode_masuk',
+  'penggunaan_masuk', 'internal_masuk', 'pemecahan_masuk', 'penggabungan_masuk',
+  'reklas_fungsi_masuk', 'reklas_kode_masuk',
 ])
 const KELUAR_KEYS = new Set<MutasiKey>([
   'hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
-  'pengalihan_keluar', 'pemecahan_keluar', 'penggabungan_keluar', 'reklas_fungsi_keluar', 'reklas_kode_keluar',
+  'pengalihan_keluar', 'internal_keluar', 'pemecahan_keluar', 'penggabungan_keluar',
+  'reklas_fungsi_keluar', 'reklas_kode_keluar',
 ])
 
 export type AtribusiPenyusutan = {

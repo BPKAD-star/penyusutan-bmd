@@ -62,6 +62,10 @@ const ROWS_TAMBAH: RowDef[] = [
   { kind: 'item', label: 'Konstruksi Dalam Pengerjaan (termin)', key: 'kdp', indent: 2 },
   { kind: 'item', label: 'Perolehan dari rekening Belanja Jasa', key: 'belanja_jasa', indent: 1 },
   { kind: 'item', label: 'Penggunaan (transfer masuk)', key: 'penggunaan_masuk', indent: 1 },
+  // Mutasi antar sub-unit dalam satu SKPD induk. SENGAJA kosong kalau laporan
+  // diambil di level SKPD induk — di situ barangnya tak keluar-masuk ke mana
+  // pun; barisnya hanya berisi saat filternya sub-unit (lihat lib/rekon.ts).
+  { kind: 'item', label: 'Penerimaan Internal (transfer masuk)', key: 'internal_masuk', indent: 1 },
   { kind: 'item', label: 'Kapitalisasi', key: 'kapitalisasi', indent: 1 },
   { kind: 'item', label: 'Koreksi Nilai', key: 'koreksi_tambah', indent: 1 },
   // Pemecahan Barang: pecahan MASUK ke sel ini. Bukan net-nol terhadap baris
@@ -90,6 +94,7 @@ const ROWS_KURANG: RowDef[] = [
   { kind: 'item', label: 'Penyertaan Modal', key: 'hapus_penyertaan', indent: 2 },
   { kind: 'item', label: 'Penghapusan Sebab Lain', key: 'hapus_sebab_lain', indent: 1 },
   { kind: 'item', label: 'Penghapusan Pengalihan (transfer keluar)', key: 'pengalihan_keluar', indent: 1 },
+  { kind: 'item', label: 'Pengeluaran Internal (transfer keluar)', key: 'internal_keluar', indent: 1 },
   { kind: 'item', label: 'Koreksi Kurang', key: 'koreksi_kurang', indent: 1 },
   { kind: 'item', label: 'Pemecahan Barang (induk dipecah)', key: 'pemecahan_keluar', indent: 1 },
   // Barang sumber yang dilebur ke induk. Total nilainya SAMA dengan baris
