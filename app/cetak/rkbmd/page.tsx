@@ -120,6 +120,10 @@ export default function CetakRkbmdPage() {
   const supabase = createClient()
   const [lembar, setLembar] = useState<Lembar[]>([])
   const [uraianByKode, setUraianByKode] = useState<Map<string, string>>(new Map())
+  // Terisi HANYA di mode se-kabupaten (`?tahun=&jenis=`). Kop lembar itu satu
+  // untuk seluruh dokumen, jadi tahun/jenis/versinya diambil dari FILTER, bukan
+  // dari dokumen pertama yang kebetulan lolos.
+  const [sekab, setSekab] = useState<{ tahun: number; jenis: string; versi: string | null } | null>(null)
   const [judulLingkup, setJudulLingkup] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
@@ -212,7 +216,13 @@ export default function CetakRkbmdPage() {
       }))
       out.sort((a, b) => (a.skpd?.nama || '').localeCompare(b.skpd?.nama || ''))
 
-      setJudulLingkup(id ? '' : `Se-Kabupaten ${KABUPATEN} — ${out.length} SKPD`)
+      // Keterangan layar (tak ikut tercetak). Kalau `versi` tak disebut di URL,
+      // dokumen Murni & Perubahan ikut TERGABUNG — menu Pelaporan sudah
+      // mewajibkan versi tunggal, tapi URL yang diketik tangan bisa melewatinya,
+      // dan kopnya sendiri tak punya cara memberi tahu.
+      setJudulLingkup(id ? '' : `Se-Kabupaten ${KABUPATEN} — ${out.length} SKPD`
+        + (versiQ ? ` · versi ${versiQ}` : ' · ⚠ Murni + Perubahan tergabung (versi tak disaring)'))
+      if (!id) setSekab({ tahun: Number(tahun), jenis: jenisQ!, versi: versiQ })
       setLembar(out)
       setLoading(false)
     })()
@@ -232,7 +242,13 @@ export default function CetakRkbmdPage() {
           <div className="bg-white p-8 text-sm text-gray-400">Memuat…</div>
         ) : err ? (
           <div className="bg-white p-8 text-sm text-red-600">{err}</div>
+        ) : sekab ? (
+          // Se-kabupaten: SATU dokumen menerus, kop sekali di atas.
+          <LembarSeKabupaten sekab={sekab} lembar={lembar} uraianByKode={uraianByKode} />
         ) : (
+          // Per-SKPD (`?id=`): lembar lengkap ber-kop & ber-tanda tangan.
+          // Sudah benar menurut user (2026-08-13) — JANGAN diubah ikut-ikutan
+          // waktu menyetel lembar se-kabupaten.
           lembar.map(l => <LembarUsulan key={l.dok.id} l={l} uraianByKode={uraianByKode} />)
         )}
       </div>
@@ -299,28 +315,58 @@ function LembarUsulan({ l, uraianByKode }: { l: Lembar; uraianByKode: Map<string
   )
 }
 
+// ── Kepala tabel & baris JUMLAH — dipakai BERSAMA oleh lembar per-SKPD dan
+// lembar se-Kabupaten. Sengaja dipisah dari tabelnya: dua mode itu harus punya
+// susunan kolom yang SAMA PERSIS, dan menyalinnya akan jadi utang "ubah satu,
+// samakan yang lain" yang di repo ini sudah berkali-kali dilanggar.
+const JUDUL_PENGADAAN = ['Kode rekening', 'Kode barang', 'Uraian Barang', 'Spesifikasi Nama Barang',
+  'Jumlah', 'Satuan', 'Harga Satuan', 'Nilai total']
+
+/** Kolom (1-based) tempat angka JUMLAH jatuh di lembar Pengadaan = "Nilai total". */
+const KOLOM_JUMLAH_PENGADAAN = 10
+
+function TheadPengadaan() {
+  return (
+    <thead>
+      <tr className="text-center">
+        <th className="brd px-1 py-1 font-semibold" rowSpan={2}>No.</th>
+        <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Program / Kegiatan / Sub Kegiatan</th>
+        <th className="brd px-1 py-1 font-semibold" colSpan={8}>Usulan BMD</th>
+        <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Jumlah barang<br />pada neraca</th>
+        <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Keterangan</th>
+      </tr>
+      <tr className="text-center">
+        {JUDUL_PENGADAAN.map(h => <th key={h} className="brd px-1 py-1 font-semibold">{h}</th>)}
+      </tr>
+      <tr className="text-center text-[9px]">
+        {Array.from({ length: 12 }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
+      </tr>
+    </thead>
+  )
+}
+
+/** Satu baris JUMLAH yang angkanya jatuh di kolom `kolomJumlah`. Posisinya
+ *  dihitung, tidak ditulis tangan — angka total yang meleset satu kolom baru
+ *  ketahuan setelah lembarnya dicetak & ditandatangani. */
+function BarisJumlah({ label, total, nKolom, kolomJumlah }: {
+  label: string; total: number; nKolom: number; kolomJumlah: number
+}) {
+  return (
+    <tr className="font-semibold">
+      <td className="brd px-1 py-1 text-right" colSpan={kolomJumlah - 1}>{label}</td>
+      <td className="brd px-1 py-1 text-right">{formatRupiah(total)}</td>
+      {nKolom > kolomJumlah && <td className="brd px-1 py-1" colSpan={nKolom - kolomJumlah} />}
+    </tr>
+  )
+}
+
 // ── Tabel Pengadaan (berkartu, 12 kolom) ────────────────────────────────────
 function TabelPengadaan({ pohon, total, uraianByKode }: {
   pohon: Prog[]; total: number; uraianByKode: Map<string, string>
 }) {
   return (
     <table className="border-collapse w-full">
-      <thead>
-        <tr className="text-center">
-          <th className="brd px-1 py-1 font-semibold" rowSpan={2}>No.</th>
-          <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Program / Kegiatan / Sub Kegiatan</th>
-          <th className="brd px-1 py-1 font-semibold" colSpan={8}>Usulan BMD</th>
-          <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Jumlah barang<br />pada neraca</th>
-          <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Keterangan</th>
-        </tr>
-        <tr className="text-center">
-          {['Kode rekening', 'Kode barang', 'Uraian Barang', 'Spesifikasi Nama Barang', 'Jumlah', 'Satuan', 'Harga Satuan', 'Nilai total']
-            .map(h => <th key={h} className="brd px-1 py-1 font-semibold">{h}</th>)}
-        </tr>
-        <tr className="text-center text-[9px]">
-          {Array.from({ length: 12 }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
-        </tr>
-      </thead>
+      <TheadPengadaan />
       <tbody>
         {pohon.length === 0 ? (
           <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={12}>
@@ -331,11 +377,7 @@ function TabelPengadaan({ pohon, total, uraianByKode }: {
         ))}
       </tbody>
       <tfoot>
-        <tr className="font-semibold">
-          <td className="brd px-1 py-1 text-center" colSpan={9}>JUMLAH</td>
-          <td className="brd px-1 py-1 text-right">{formatRupiah(total)}</td>
-          <td className="brd px-1 py-1" colSpan={2} />
-        </tr>
+        <BarisJumlah label="JUMLAH" total={total} nKolom={12} kolomJumlah={KOLOM_JUMLAH_PENGADAAN} />
       </tfoot>
     </table>
   )
@@ -386,9 +428,13 @@ function BlokSub({ sub, si, uraianByKode }: { sub: Sub; si: number; uraianByKode
           <td className="brd px-1 py-0.5" /><td className="brd px-1 py-0.5" />
           <td className="brd px-1 py-2 text-center text-gray-400" colSpan={10}>Belum ada usulan barang.</td>
         </tr>
-      ) : sub.isi.map((r, i) => (
+      ) : sub.isi.map(r => (
         <tr key={r.id}>
-          <td className="brd px-1 py-0.5 text-center align-top">{r.no_urut ?? i + 1}</td>
+          {/* Kolom "No." SENGAJA kosong di baris barang (permintaan user
+              2026-08-13): yang dinomori cukup PROGRAM-nya. Nomor per barang
+              menumpuk dua sistem penomoran di satu kolom yang sama ("1."
+              program vs "1" barang), dan lembar ini ditelusuri per program. */}
+          <td className="brd px-1 py-0.5" />
           {/* Kolom 2 sengaja kosong — hierarkinya sudah dicetak di baris judul. */}
           <td className="brd px-1 py-0.5" />
           <td className="brd px-1 py-0.5 align-top">{r.kode_rekening || '-'}</td>
@@ -419,61 +465,178 @@ function BlokSub({ sub, si, uraianByKode }: { sub: Sub; si: number; uraianByKode
 // ── Tabel empat jenis berbasis aset (datar) ─────────────────────────────────
 // Kolom identitas barang WAJIB & seragam: Kode Barang/Uraian · Spesifikasi Nama
 // Barang/NIBAR · Tgl Perolehan · Nilai Perolehan. Sisanya per jenis (EKSTRA).
+function TheadAset({ ekstra, nKolom }: { ekstra: KolomEkstra[]; nKolom: number }) {
+  return (
+    <thead>
+      <tr className="text-center">
+        <th className="brd px-1 py-1 font-semibold">No.</th>
+        <th className="brd px-1 py-1 font-semibold">Kode Barang /<br />Uraian Barang</th>
+        <th className="brd px-1 py-1 font-semibold">Spesifikasi Nama Barang /<br />NIBAR</th>
+        <th className="brd px-1 py-1 font-semibold">Tanggal<br />Perolehan</th>
+        <th className="brd px-1 py-1 font-semibold">Nilai Perolehan</th>
+        {ekstra.map(k => <th key={k.judul} className="brd px-1 py-1 font-semibold">{k.judul}</th>)}
+        <th className="brd px-1 py-1 font-semibold">Keterangan</th>
+      </tr>
+      <tr className="text-center text-[9px]">
+        {Array.from({ length: nKolom }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
+      </tr>
+    </thead>
+  )
+}
+
+// Empat jenis non-pengadaan TIDAK ikut pencabutan nomor (permintaan user
+// 2026-08-13 menyebut "per barangnya" pada lembar Pengadaan, yang di sana
+// nomornya bertumpuk dengan nomor program). Di sini tak ada program sama
+// sekali, jadi mencabutnya cuma menyisakan kolom "No." yang kosong melompong.
+function BarisAset({ r, no, ekstra, uraianByKode }: {
+  r: Item; no: number; ekstra: KolomEkstra[]; uraianByKode: Map<string, string>
+}) {
+  return (
+    <tr>
+      <td className="brd px-1 py-0.5 text-center align-top">{no}</td>
+      <td className="brd px-1 py-0.5 align-top">
+        <div>{r.kode || '-'}</div>
+        <div className="text-gray-600">{(r.kode && uraianByKode.get(r.kode)) || '-'}</div>
+      </td>
+      <td className="brd px-1 py-0.5 align-top">
+        <div>{r.nama_barang || '-'}</div>
+        <div className="text-gray-600 break-all">{r.nibar || '-'}</div>
+      </td>
+      <td className="brd px-1 py-0.5 align-top text-center whitespace-nowrap">{r.tgl_perolehan || '-'}</td>
+      <td className="brd px-1 py-0.5 align-top text-right">{formatRupiah(r.nilai_perolehan)}</td>
+      {ekstra.map(k => (
+        <td key={k.judul} className={`brd px-1 py-0.5 align-top ${k.align === 'right' ? 'text-right' : ''}`}>
+          {k.isi(r)}
+        </td>
+      ))}
+      <td className="brd px-1 py-0.5 align-top">{r.keterangan || ''}</td>
+    </tr>
+  )
+}
+
 function TabelAset({ items, ekstra, total, uraianByKode, nKolom }: {
   items: Item[]; ekstra: KolomEkstra[]; total: number
   uraianByKode: Map<string, string>; nKolom: number
 }) {
-  const idxJumlah = posisiJumlah(ekstra)
   return (
     <table className="border-collapse w-full">
-      <thead>
-        <tr className="text-center">
-          <th className="brd px-1 py-1 font-semibold">No.</th>
-          <th className="brd px-1 py-1 font-semibold">Kode Barang /<br />Uraian Barang</th>
-          <th className="brd px-1 py-1 font-semibold">Spesifikasi Nama Barang /<br />NIBAR</th>
-          <th className="brd px-1 py-1 font-semibold">Tanggal<br />Perolehan</th>
-          <th className="brd px-1 py-1 font-semibold">Nilai Perolehan</th>
-          {ekstra.map(k => <th key={k.judul} className="brd px-1 py-1 font-semibold">{k.judul}</th>)}
-          <th className="brd px-1 py-1 font-semibold">Keterangan</th>
-        </tr>
-        <tr className="text-center text-[9px]">
-          {Array.from({ length: nKolom }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
-        </tr>
-      </thead>
+      <TheadAset ekstra={ekstra} nKolom={nKolom} />
       <tbody>
         {items.length === 0 ? (
           <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={nKolom}>
             Dokumen ini belum berisi usulan barang.
           </td></tr>
         ) : items.map((r, i) => (
-          <tr key={r.id}>
-            <td className="brd px-1 py-0.5 text-center align-top">{r.no_urut ?? i + 1}</td>
-            <td className="brd px-1 py-0.5 align-top">
-              <div>{r.kode || '-'}</div>
-              <div className="text-gray-600">{(r.kode && uraianByKode.get(r.kode)) || '-'}</div>
-            </td>
-            <td className="brd px-1 py-0.5 align-top">
-              <div>{r.nama_barang || '-'}</div>
-              <div className="text-gray-600 break-all">{r.nibar || '-'}</div>
-            </td>
-            <td className="brd px-1 py-0.5 align-top text-center whitespace-nowrap">{r.tgl_perolehan || '-'}</td>
-            <td className="brd px-1 py-0.5 align-top text-right">{formatRupiah(r.nilai_perolehan)}</td>
-            {ekstra.map(k => (
-              <td key={k.judul} className={`brd px-1 py-0.5 align-top ${k.align === 'right' ? 'text-right' : ''}`}>
-                {k.isi(r)}
-              </td>
-            ))}
-            <td className="brd px-1 py-0.5 align-top">{r.keterangan || ''}</td>
-          </tr>
+          <BarisAset key={r.id} r={r} no={r.no_urut ?? i + 1} ekstra={ekstra} uraianByKode={uraianByKode} />
         ))}
       </tbody>
       <tfoot>
-        <tr className="font-semibold">
-          <td className="brd px-1 py-1 text-center" colSpan={idxJumlah - 1}>JUMLAH</td>
-          <td className="brd px-1 py-1 text-right">{formatRupiah(total)}</td>
-          {nKolom > idxJumlah && <td className="brd px-1 py-1" colSpan={nKolom - idxJumlah} />}
-        </tr>
+        <BarisJumlah label="JUMLAH" total={total} nKolom={nKolom} kolomJumlah={posisiJumlah(ekstra)} />
       </tfoot>
     </table>
+  )
+}
+
+// ── Lembar SE-KABUPATEN ─────────────────────────────────────────────────────
+// Bentuknya DIUBAH 2026-08-13 (permintaan user): dulu satu lembar utuh per SKPD
+// — kop tiga baris, blok Kode/Nama SKPD, tabel, blok tanda tangan — lalu
+// page-break, berulang 60+ kali. Sekarang SATU dokumen menerus: kop sekali di
+// atas, lalu satu tabel panjang yang tiap SKPD-nya dibuka baris judul selebar
+// tabel dan ditutup baris subtotalnya sendiri.
+//
+// ⚠️ KONSEKUENSI YANG DISENGAJA: lembar se-kabupaten TIDAK memuat blok tanda
+// tangan per SKPD. Dokumen yang ditandatangani kepala SKPD adalah lembar
+// PER-SKPD (`?id=<uuid>`, dicetak dari kolom Cetak di menu Pelaporan) — itu
+// yang sudah benar & sengaja dipertahankan apa adanya. Yang ini rekap
+// se-kabupaten untuk pengelola barang, bukan lembar tanda tangan; menyelipkan
+// blok tanda tangan di tengah tabel menerus justru membuatnya tampak seperti
+// dokumen yang sudah disahkan padahal bukan.
+function LembarSeKabupaten({ sekab, lembar, uraianByKode }: {
+  sekab: { tahun: number; jenis: string; versi: string | null }
+  lembar: Lembar[]
+  uraianByKode: Map<string, string>
+}) {
+  const pengadaan = sekab.jenis === 'pengadaan'
+  const ekstra = EKSTRA[sekab.jenis] || []
+  const nKolom = pengadaan ? 12 : KOLOM_IDENTITAS + ekstra.length + 1
+  const kolomJumlah = pengadaan ? KOLOM_JUMLAH_PENGADAAN : posisiJumlah(ekstra)
+  const total = lembar.reduce(
+    (s, l) => s + l.items.reduce((a, r) => a + nilaiItemRkbmd(sekab.jenis, r), 0), 0)
+
+  return (
+    <div className="bg-white p-8 shadow print:shadow-none print:p-0 text-[10px] text-gray-900">
+      <style>{`.brd{border:1px solid #6b7280}`}</style>
+
+      <div className="text-center mb-3">
+        <p className="font-bold uppercase text-[12px]">Pemerintah Kabupaten {KABUPATEN}</p>
+        <p className="font-bold uppercase text-[12px]">
+          Usulan Rencana Kebutuhan {sekab.versi === 'perubahan' ? 'Perubahan ' : ''}
+          {JENIS_LABEL[sekab.jenis] || sekab.jenis} Barang Milik Daerah
+        </p>
+        <p className="font-bold uppercase text-[12px]">Tahun {sekab.tahun}</p>
+      </div>
+
+      <table className="border-collapse w-full">
+        {pengadaan ? <TheadPengadaan /> : <TheadAset ekstra={ekstra} nKolom={nKolom} />}
+        <tbody>
+          {lembar.length === 0 ? (
+            <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={nKolom}>
+              Belum ada dokumen RKBMD yang cocok.
+            </td></tr>
+          ) : lembar.map(l => (
+            <BlokSkpd key={l.dok.id} l={l} jenis={sekab.jenis} pengadaan={pengadaan}
+              ekstra={ekstra} nKolom={nKolom} kolomJumlah={kolomJumlah} uraianByKode={uraianByKode} />
+          ))}
+        </tbody>
+        <tfoot>
+          <BarisJumlah label={`JUMLAH SE-KABUPATEN ${KABUPATEN.toUpperCase()}`}
+            total={total} nKolom={nKolom} kolomJumlah={kolomJumlah} />
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+/** Satu SKPD di dalam lembar se-kabupaten: baris judul selebar tabel, isinya,
+ *  lalu subtotal SKPD itu. Penomoran program dimulai lagi dari 1 di tiap SKPD —
+ *  memang begitu bacanya, tiap SKPD menyusun programnya sendiri. */
+function BlokSkpd({ l, jenis, pengadaan, ekstra, nKolom, kolomJumlah, uraianByKode }: {
+  l: Lembar; jenis: string; pengadaan: boolean; ekstra: KolomEkstra[]
+  nKolom: number; kolomJumlah: number; uraianByKode: Map<string, string>
+}) {
+  const subtotal = l.items.reduce((s, r) => s + nilaiItemRkbmd(jenis, r), 0)
+  const pohon = pengadaan ? susunPohon(l.pakets, l.items) : []
+  const nama = l.skpd?.nama || `SKPD #${l.dok.skpd_id}`
+  return (
+    <>
+      {/* Tanpa warna latar: `bg-*` gampang tak ikut tercetak (browser membuang
+          latar belakang kecuali "background graphics" dinyalakan), jadi
+          pembedanya huruf tebal + kapital yang pasti terbawa ke kertas. */}
+      <tr>
+        <td className="brd px-1 py-1 font-bold uppercase" colSpan={nKolom}>
+          {l.skpd?.kode_skpd ? `${l.skpd.kode_skpd} — ` : ''}{nama}
+        </td>
+      </tr>
+
+      {pengadaan ? (
+        pohon.length === 0 ? (
+          <tr><td className="brd px-1 py-2 text-center text-gray-400" colSpan={nKolom}>
+            Belum berisi kartu program/kegiatan.
+          </td></tr>
+        ) : pohon.map((prog, pi) => (
+          <BlokProgram key={prog.nama} prog={prog} pi={pi} uraianByKode={uraianByKode} />
+        ))
+      ) : (
+        l.items.length === 0 ? (
+          <tr><td className="brd px-1 py-2 text-center text-gray-400" colSpan={nKolom}>
+            Belum berisi usulan barang.
+          </td></tr>
+        ) : l.items.map((r, i) => (
+          <BarisAset key={r.id} r={r} no={r.no_urut ?? i + 1} ekstra={ekstra} uraianByKode={uraianByKode} />
+        ))
+      )}
+
+      <BarisJumlah label={`Jumlah ${nama}`} total={subtotal} nKolom={nKolom} kolomJumlah={kolomJumlah} />
+    </>
   )
 }

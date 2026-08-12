@@ -10,9 +10,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { exportToExcel, formatRupiah } from '@/lib/export'
-import { RKBMD_JENIS, STATUS_META, LABEL_NILAI, nilaiItemRkbmd, type RkbmdStatus, type RkbmdJenis } from '@/lib/rkbmd'
+import { RKBMD_JENIS, STATUS_META, LABEL_NILAI, nilaiItemRkbmd, type RkbmdStatus, type RkbmdJenis, type RkbmdVersi } from '@/lib/rkbmd'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
+const VERSI_LABEL: Record<RkbmdVersi, string> = { murni: 'Murni', perubahan: 'Perubahan' }
 const JENIS_LABEL: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j => [j.key, j.label]))
 
 type Baris = {
@@ -35,6 +36,11 @@ export default function RkbmdPelaporan() {
   const [tahun, setTahun] = useState(TAHUN_DEFAULT)
   const [status, setStatus] = useState<'semua' | RkbmdStatus>('disetujui')
   const [jenis, setJenis] = useState<'semua' | string>('semua')
+  // RKBMD Perubahan sudah lama bisa DISUSUN (pemilih versi di menu Usulan,
+  // `rkbmd.versi` + `parent_id`) tapi tak pernah bisa DILAPORKAN terpisah:
+  // halaman ini menampilkan kolom Versi namun mencampur keduanya. Default
+  // 'semua' = perilaku lama, jadi tak ada laporan yang mendadak berubah isi.
+  const [versi, setVersi] = useState<'semua' | RkbmdVersi>('semua')
   const [rows, setRows] = useState<Baris[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
@@ -46,6 +52,7 @@ export default function RkbmdPelaporan() {
       .eq('tahun_anggaran', tahun)
     if (status !== 'semua') q = q.eq('status', status)
     if (jenis !== 'semua') q = q.eq('jenis', jenis)
+    if (versi !== 'semua') q = q.eq('versi', versi)
     const { data, error } = await q
     if (error) { setErr(`gagal membaca dokumen RKBMD: ${error.message}`); setRows([]); setLoading(false); return }
 
@@ -92,7 +99,7 @@ export default function RkbmdPelaporan() {
     base.sort((a, b) => a.skpd.localeCompare(b.skpd) || a.jenis.localeCompare(b.jenis))
     setRows(base)
     setLoading(false)
-  }, [tahun, status, jenis]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tahun, status, jenis, versi]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
 
@@ -111,7 +118,7 @@ export default function RkbmdPelaporan() {
     exportToExcel(rows.map(r => ({
       'SKPD': r.skpd,
       'Jenis RKBMD': JENIS_LABEL[r.jenis] || r.jenis,
-      'Versi': r.versi === 'perubahan' ? 'Perubahan' : 'Murni',
+      'Versi': VERSI_LABEL[r.versi as RkbmdVersi] || r.versi,
       'Status': STATUS_META[r.status].label,
       'Sub Kegiatan': r.sub_kegiatan,
       'Jumlah Item': r.jumlah_item,
@@ -164,20 +171,34 @@ export default function RkbmdPelaporan() {
               {RKBMD_JENIS.map(j => <option key={j.key} value={j.key}>{j.label}</option>)}
             </select>
           </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Versi</label>
+            <select className="select-filter" value={versi} onChange={e => setVersi(e.target.value as typeof versi)}>
+              <option value="semua">Murni + Perubahan</option>
+              <option value="murni">Murni</option>
+              <option value="perubahan">Perubahan</option>
+            </select>
+          </div>
           <button className="btn-primary" onClick={handleExport} disabled={loading || !!err || rows.length === 0}>
             Export Excel
           </button>
-          {/* Cetak SE-KABUPATEN: satu lembar per SKPD, page-break antar SKPD.
-              Hanya masuk akal kalau jenisnya tunggal — lembar Pengadaan &
-              Penghapusan punya susunan kolom yang berbeda, jadi mencampurnya
-              dalam satu berkas justru menyulitkan pembacanya. */}
-          {jenis === 'semua' ? (
+          {/* Cetak SE-KABUPATEN: SATU dokumen menerus — kop sekali di atas, lalu
+              tiap SKPD jadi blok di dalam tabel yang sama (bentuknya diubah
+              2026-08-13 atas permintaan user; dulu satu lembar penuh per SKPD).
+              Hanya masuk akal kalau jenisnya TUNGGAL — lembar Pengadaan &
+              Penghapusan punya susunan kolom yang berbeda.
+              ⚠️ VERSI juga wajib tunggal. Sebelum ini `versi` tak pernah ikut di
+              URL, jadi berkasnya diam-diam menggabung RKBMD Murni DAN
+              Perubahan untuk SKPD yang sama — dua dokumen berbeda yang totalnya
+              lalu dijumlahkan jadi satu angka yang tak berarti apa-apa. */}
+          {jenis === 'semua' || versi === 'semua' ? (
             <span className="text-xs text-gray-400 pb-2 max-w-[16rem]">
-              Pilih satu jenis untuk mengaktifkan cetak se-kabupaten (kolom tiap jenis berbeda).
+              Pilih satu <span className="font-medium">jenis</span> dan satu <span className="font-medium">versi</span> untuk
+              mengaktifkan cetak se-kabupaten — kolom tiap jenis berbeda, dan Murni/Perubahan itu dua dokumen terpisah.
             </span>
           ) : (
             <a
-              href={`/cetak/rkbmd?tahun=${tahun}&jenis=${jenis}`}
+              href={`/cetak/rkbmd?tahun=${tahun}&jenis=${jenis}&versi=${versi}`}
               target="_blank" rel="noopener noreferrer"
               className={`text-sm px-3 py-2 rounded-lg border ${
                 loading || err || rows.length === 0
@@ -185,7 +206,7 @@ export default function RkbmdPelaporan() {
                   : 'border-gray-200 text-gray-600 hover:text-gray-800'
               }`}
             >
-              🖨 Cetak se-Kabupaten
+              🖨 Cetak se-Kabupaten{versi === 'perubahan' ? ' (Perubahan)' : ''}
             </a>
           )}
         </div>
@@ -238,7 +259,7 @@ export default function RkbmdPelaporan() {
               <tr key={r.id}>
                 <td className="table-td text-xs text-gray-800">{r.skpd}</td>
                 <td className="table-td text-xs">{JENIS_LABEL[r.jenis] || r.jenis}</td>
-                <td className="table-td text-xs text-gray-500">{r.versi === 'perubahan' ? 'Perubahan' : 'Murni'}</td>
+                <td className="table-td text-xs text-gray-500">{VERSI_LABEL[r.versi as RkbmdVersi] || r.versi}</td>
                 <td className="table-td text-xs">
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${STATUS_META[r.status].cls}`}>
                     {STATUS_META[r.status].label}

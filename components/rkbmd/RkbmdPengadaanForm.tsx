@@ -23,7 +23,7 @@ import { createClient } from '@/lib/supabase/client'
 import { backdropClose } from '@/components/backdropClose'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
-import { fetchStandar, type StandarRow } from '@/lib/rkbmdStandar'
+import { fetchStandar, fetchUraianRekening, labelRekening, type StandarRow } from '@/lib/rkbmdStandar'
 import type { RkbmdItem } from '@/lib/rkbmd'
 
 export default function RkbmdPengadaanForm({ rkbmdId, paketId, skpdId, tahun, editItem, onSaved, onCancel }: {
@@ -40,6 +40,11 @@ export default function RkbmdPengadaanForm({ rkbmdId, paketId, skpdId, tahun, ed
   const editing = !!editItem
 
   const [sshRows, setSshRows] = useState<StandarRow[]>([])
+  // kode rekening → nama belanja ("Belanja Modal Kendaraan Bermotor Beroda Dua").
+  // Ditarik SEKALI untuk seluruh rekening di SSH TA ini, bukan per barang yang
+  // dipilih: daftarnya pendek (4 kode se-kabupaten per 2026-08-13) dan operator
+  // gonta-ganti barang berkali-kali dalam satu sesi pengisian.
+  const [uraianRek, setUraianRek] = useState<Map<string, string>>(new Map())
   const [loadingSsh, setLoadingSsh] = useState(true)
   const [golongan, setGolongan] = useState(editItem?.kode ? kodeLevel3(editItem.kode) : '')
   const [standarId, setStandarId] = useState<string>(editItem?.standar_id != null ? String(editItem.standar_id) : '')
@@ -59,7 +64,14 @@ export default function RkbmdPengadaanForm({ rkbmdId, paketId, skpdId, tahun, ed
     let alive = true
     setLoadingSsh(true)
     fetchStandar(supabase, 'ssh', tahun)
-      .then(rows => { if (alive) { setSshRows(rows); setErr('') } })
+      .then(async rows => {
+        if (!alive) return
+        setSshRows(rows); setErr('')
+        // Nama belanjanya menyusul & tak ikut menahan form: kalau gagal, yang
+        // tampil kodenya saja — sama seperti sebelum ini.
+        const peta = await fetchUraianRekening(supabase, rows.flatMap(r => r.rekening))
+        if (alive) setUraianRek(peta)
+      })
       .catch(e => { if (alive) { setSshRows([]); setErr((e as Error).message) } })
       .finally(() => { if (alive) setLoadingSsh(false) })
     return () => { alive = false }
@@ -188,12 +200,18 @@ export default function RkbmdPengadaanForm({ rkbmdId, paketId, skpdId, tahun, ed
               {dipilih.rekening.length > 0 && (
                 <div className="max-w-lg">
                   <label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja</label>
+                  {/* Kode + NAMA belanjanya (permintaan user 2026-08-13) — kode
+                      6 segmen sendirian tak memberi tahu apa pun tanpa dihafal. */}
                   {dipilih.rekening.length === 1 ? (
-                    <div className="select-filter w-full bg-gray-100 text-gray-700">{dipilih.rekening[0]}</div>
+                    <div className="select-filter w-full bg-gray-100 text-gray-700">
+                      {labelRekening(dipilih.rekening[0], uraianRek)}
+                    </div>
                   ) : (
                     <select className="select-filter w-full" value={rekening} onChange={e => setRekening(e.target.value)}>
                       <option value="">— pilih salah satu —</option>
-                      {dipilih.rekening.map(k => <option key={k} value={k}>{k}</option>)}
+                      {dipilih.rekening.map(k => (
+                        <option key={k} value={k}>{labelRekening(k, uraianRek)}</option>
+                      ))}
                     </select>
                   )}
                   <p className="text-[11px] text-gray-400 mt-1">

@@ -1072,6 +1072,45 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   ⚠️ **TKDN tidak ada di `rkbmd_item`** — ia atribut barang di SSH, ditarik lewat
   `standar_id`. Sengaja: menyalinnya ke tiap item = dua sumber kebenaran yang
   bisa berbeda.
+- **Kode rekening ditampilkan BERSAMA NAMA BELANJANYA** (permintaan user
+  2026-08-13): "5.2.02.02.001.00004 — Belanja Modal Kendaraan Bermotor Beroda
+  Dua". ⚠️ Kunci join-nya **`admin_rekening.kode_sub_rincian`**, BUKAN
+  `admin_rekening.kode_rekening` — kolom yang namanya paling menggoda itu isinya
+  cuma level teratas, harfiah `'5'` (Belanja) di SELURUH 406 barisnya
+  (diverifikasi ke DB 2026-08-13). Menjoin ke situ mengembalikan 0 baris TANPA
+  error & uraiannya tinggal kosong. Helper `fetchUraianRekening` +
+  `labelRekening` di lib/rkbmdStandar.ts; sengaja **tidak melempar** karena
+  uraian itu hiasan di atas kode yang sudah benar dan cadangannya (kode saja)
+  persis tampilan sebelumnya. Terpasang di form item RKBMD Pengadaan; **halaman
+  cetak sengaja belum ikut** — kolom 3 di lembar 12-kolom itu sudah sempit.
+- **Cetak se-Kabupaten = SATU dokumen menerus** (permintaan user 2026-08-13,
+  mengubah bentuk 2026-08-10): kop **sekali** di atas (Pemerintah Kabupaten
+  Kediri · Usulan Rencana Kebutuhan [Perubahan] <Jenis> BMD · Tahun), lalu satu
+  tabel panjang — tiap SKPD dibuka baris judul selebar tabel & ditutup baris
+  subtotalnya, berulang sampai SKPD terakhir, ditutup JUMLAH SE-KABUPATEN.
+  Dulu tiap SKPD satu lembar penuh ber-kop + page-break, jadi kop tiga baris itu
+  terulang 60+ kali. **Konsekuensi yang DISENGAJA: lembar se-kabupaten tak punya
+  blok tanda tangan.** Yang ditandatangani kepala SKPD adalah lembar PER-SKPD
+  (`?id=<uuid>`, tombol Cetak per baris di menu Pelaporan) — bentuk itu sudah
+  benar menurut user & **jangan diubah** ikut-ikutan saat menyetel yang se-kab.
+  Kepala tabel & baris JUMLAH dipakai bersama dua mode (`TheadPengadaan`,
+  `TheadAset`, `BarisAset`, `BarisJumlah`) supaya susunan kolomnya tak bisa
+  menyimpang diam-diam.
+- **Nomor cuma di PROGRAM, tidak per barang** (permintaan user 2026-08-13) di
+  lembar Pengadaan: kolom "No." di baris barang dikosongkan. Dulu satu kolom
+  memuat dua sistem penomoran bertumpuk ("1." program vs "1" barang). Empat
+  jenis non-pengadaan **tetap bernomor** — di sana tak ada program sama sekali,
+  jadi mencabutnya cuma menyisakan kolom kosong.
+- **Pelaporan punya filter Versi (Murni / Perubahan / gabungan).** RKBMD
+  Perubahan sudah lama bisa DISUSUN (`rkbmd.versi` + `parent_id`, pemilih versi
+  di menu Usulan, syarat: murni jenis itu sudah `disetujui`) tapi tak pernah
+  bisa DILAPORKAN terpisah. Default `semua` = perilaku lama.
+  ⚠️ Bareng itu ditutup celah nyata: tautan cetak se-kabupaten **tak pernah
+  mengirim `versi`** padahal halaman cetak sudah menerimanya, jadi berkasnya
+  diam-diam menggabung dokumen Murni DAN Perubahan SKPD yang sama lalu
+  menjumlahkan keduanya jadi satu angka yang tak berarti. Sekarang cetak se-kab
+  mensyaratkan jenis **dan** versi tunggal. Per 2026-08-13 belum ada satu pun
+  dokumen `versi='perubahan'` di DB — laporannya kosong sampai SKPD menyusunnya.
 - ⚠️ **Deploy-ordering: migrasi 20260810_01 WAJIB jalan SEBELUM deploy kode** —
   halaman baru langsung query `rkbmd_standar` & RPC yang belum ada. Sebaliknya
   `DROP TABLE rkbmd_ssh` di akhir migrasi membuat halaman Admin → SSH versi LAMA

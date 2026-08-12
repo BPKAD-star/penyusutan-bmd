@@ -206,3 +206,43 @@ export async function hapusStandar(supabase: SupabaseClient, id: number): Promis
   const { error } = await supabase.from('rkbmd_standar').delete().eq('id', id)
   if (error) throw new Error(error.message)
 }
+
+// ── Nama belanja di balik kode rekening ─────────────────────────────────────
+// "5.2.02.02.001.00004" sendirian tak memberi tahu apa pun; operator harus hafal
+// atau menebak. Yang dibutuhkan: "…00004 — Belanja Modal Kendaraan Bermotor
+// Beroda Dua" (permintaan user 2026-08-13).
+//
+// ⚠️ KUNCI JOIN-nya `admin_rekening.kode_sub_rincian`, **BUKAN** `kode_rekening`.
+// Kolom yang bernama `kode_rekening` di tabel itu isinya cuma level TERATAS —
+// harfiah `'5'` (Belanja) di SELURUH 406 barisnya (diverifikasi ke DB
+// 2026-08-13). Menjoin ke kolom yang namanya paling cocok itu mengembalikan 0
+// baris TANPA satu pun error, dan uraiannya tinggal kosong — persis bentuk
+// kegagalan senyap yang di repo ini sudah berkali-kali makan korban. Kode
+// lengkap 6 segmen ada di `kode_sub_rincian`, namanya di `uraian_sub_rincian`.
+//
+// SENGAJA tidak melempar: uraian itu HIASAN di atas kode yang sudah benar, dan
+// cadangannya (menampilkan kodenya saja) persis sama dengan tampilan hari ini.
+// Menjatuhkan form penyusunan anggaran gara-gara label gagal dibaca jelas lebih
+// merugikan daripada label yang absen.
+export async function fetchUraianRekening(
+  supabase: SupabaseClient,
+  kodes: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const uniq = [...new Set(kodes.filter(Boolean))]
+  for (let i = 0; i < uniq.length; i += 200) {
+    const { data } = await supabase.from('admin_rekening')
+      .select('kode_sub_rincian,uraian_sub_rincian')
+      .in('kode_sub_rincian', uniq.slice(i, i + 200))
+    for (const r of (data || []) as { kode_sub_rincian: string | null; uraian_sub_rincian: string | null }[]) {
+      if (r.kode_sub_rincian && r.uraian_sub_rincian) out.set(r.kode_sub_rincian, r.uraian_sub_rincian)
+    }
+  }
+  return out
+}
+
+/** "<kode> — <nama belanja>", atau kodenya saja kalau namanya tak ketemu. */
+export function labelRekening(kode: string, uraian: Map<string, string>): string {
+  const u = uraian.get(kode)
+  return u ? `${kode} — ${u}` : kode
+}
