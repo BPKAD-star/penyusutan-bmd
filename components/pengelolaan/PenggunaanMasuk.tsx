@@ -179,19 +179,18 @@ export default function PenggunaanMasuk() {
     load(skpd)
   }
 
-  // Kembalikan barang ke SKPD asal — hak SKPD penerima (satu pintu). Dicatat
-  // sebagai peristiwa baru di periode BERJALAN (bukan periode jurnal asli),
-  // jadi laporan periode antara terima & kembali tetap menunjukkan barang di sini.
-  async function kembalikan(j: Jurnal, l: Line) {
-    if (!confirm(`Kembalikan "${l.nama_barang || l.nibar || 'barang ini'}" ke ${namaSkpd(j.skpd_id)}? Barang dicatat balik ke SKPD asal pada periode berjalan.`)) return
-    setBusy(true)
-    const { error } = await supabase.rpc('fn_kembalikan_pengalihan_barang', { p_header_id: j.id, p_aset_id: l.aset_id })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg(`Barang dikembalikan ke ${namaSkpd(j.skpd_id)}.`)
-    load(skpd)
-  }
-
+  // ⚠️ AKSI "Kembalikan" SUDAH DICABUT (keputusan user 2026-08-12, migrasi
+  // 20260812_05) — menyusul mutasi internal. Pengembalian yang SUNGGUHAN punya
+  // dokumennya sendiri, jadi bentuk yang benar adalah kartu Pengalihan Status
+  // BARU ke arah sebaliknya; baris reversal yang digantungkan pada kartu lama
+  // justru menempelkan peristiwa periode BERJALAN pada dokumen bertanggal
+  // periode lampau.
+  //
+  // Yang MEMBACA `payload.reversal` di bawah SENGAJA DIPERTAHANKAN dan tidak
+  // boleh dicabut: 2 baris reversal sudah terlanjur ada di ledger (Juli 2026),
+  // dan ledger itu append-only — riwayatnya wajib tetap terbaca benar
+  // selamanya. Yang dicabut cuma pembuatnya.
+  //
   // BATAL ≠ KEMBALIKAN — dua-duanya memulangkan barang, tapi artinya beda dan
   // jejaknya beda. Kembalikan: barang memang sempat dipakai di sini lalu
   // dipulangkan; dua peristiwa nyata, keduanya tetap terbaca laporan. Batal:
@@ -252,7 +251,7 @@ export default function PenggunaanMasuk() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Penggunaan</h1>
         <p className="text-gray-500 text-sm mt-1">
-          BMD masuk dari SKPD lain (Pengalihan Status Penggunaan). Jurnal pending menunggu persetujuan SKPD ini — periksa barang & dokumen sumber, lalu Terima atau Tolak. Barang yang sudah diterima bisa dikembalikan ke SKPD asal kapan pun lewat tombol Kembalikan.
+          BMD masuk dari SKPD lain (Pengalihan Status Penggunaan). Jurnal pending menunggu persetujuan SKPD ini — periksa barang & dokumen sumber, lalu Terima atau Tolak. Kalau ada barang yang salah masuk, pakai Batal — pengalihannya dianggap tak pernah terjadi dan barang balik ke SKPD asal. Untuk memulangkan barang yang memang sempat dipakai di sini, buat kartu Pengalihan Status baru ke arah sebaliknya.
         </p>
       </div>
 
@@ -367,19 +366,11 @@ export default function PenggunaanMasuk() {
                           <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
                           {disetujui && (
                             <td className="table-td text-center">
-                              {/* Sudah dipulangkan → tak ada yang bisa dikembalikan lagi,
-                                  tapi pembatalan TETAP boleh: justru barang yang buru-buru
-                                  dipulangkan itu yang biasanya salah pencet. */}
-                              {!l.dikembalikan && (
-                                <button disabled={busy} onClick={() => kembalikan(j, l)}
-                                  title="Kembalikan barang ini ke SKPD asal (dicatat di periode berjalan) — barang MEMANG sempat dipakai di sini"
-                                  className="px-3 py-1 rounded text-xs bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50">
-                                  Kembalikan
-                                </button>
-                              )}
+                              {/* Barang yang terlanjur dipulangkan lewat aksi lama tetap
+                                  boleh DIBATALKAN — justru itu yang biasanya salah pencet. */}
                               <button disabled={busy} onClick={() => batalPengalihan(j, l)}
-                                title="Batalkan — untuk SALAH CATAT. Pengalihannya dianggap tak pernah terjadi (beda dari Kembalikan)"
-                                className={`${l.dikembalikan ? '' : 'ml-2 '}px-3 py-1 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50`}>
+                                title="Batalkan — pengalihannya dianggap tak pernah terjadi & barang balik ke SKPD asal"
+                                className="px-3 py-1 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50">
                                 🗑 Batal
                               </button>
                             </td>

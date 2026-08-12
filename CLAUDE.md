@@ -557,21 +557,34 @@ level SKPD induk — combobox `rootOnly`) + draft-approve (barang di
 disentuh sampai SKPD tujuan menerima). Poin penting:
 
 - **SATU PINTU (migrasi 22).** Begitu SKPD tujuan MENERIMA, SKPD asal (pengirim)
-  TIDAK bisa apa-apa lagi — kartunya read-only. Pengembalian barang HANYA lewat
-  SKPD PENERIMA (tombol "Kembalikan" per barang di `PenggunaanMasuk.tsx`).
+  TIDAK bisa apa-apa lagi — kartunya read-only. Yang berwenang memulangkan
+  barang HANYA SKPD PENERIMA (+ admin).
+- **AKSI "KEMBALIKAN" SUDAH DICABUT** (keputusan user 2026-08-12, migrasi
+  20260812_04 utk mutasi internal & 20260812_05 utk pengalihan). Seluruh modul
+  PERPINDAHAN barang kini punya satu aksi saja: **Batal**. Alasannya:
+  pengembalian yang SUNGGUHAN selalu punya dokumennya sendiri, jadi bentuk yang
+  benar adalah kartu BARU ke arah sebaliknya — baris reversal yang digantungkan
+  pada kartu lama menempelkan peristiwa periode BERJALAN pada dokumen bertanggal
+  periode lampau, ketidakcocokan yang sama yang diperbaiki 20260811_02. Dua
+  tombol yang sama-sama memulangkan barang tapi berlawanan arti juga terbukti
+  mengundang salah pencet. Rinciannya di rules.md §1.6.
+  ⚠️ **Yang dicabut PEMBUATNYA, bukan PEMBACANYA.** 2 baris `payload.reversal`
+  terlanjur ada di ledger pengalihan (id 9658 & 9679, Juli 2026) dan ledger itu
+  append-only, jadi `payload.reversal` WAJIB tetap dibaca `lib/pengalihan.ts`
+  (`ownersAt` — reversal menukar asal/tujuan), `fn_rekap_bmd`, lib/rekon.ts, &
+  badge "Dikembalikan" di `PenggunaanMasuk.tsx`. Mencabut pembacanya membuat
+  atribusi SKPD dua aset itu salah sejak 2026-S2 tanpa satu pun error.
+  Mutasi internal tak punya baris reversal sama sekali (0 dari 6), jadi di sana
+  pencabutannya bersih.
 - **Mutasi lintas-SKPD lewat RPC SECURITY DEFINER**, bukan insert/update client:
   `fn_terima_pengalihan` (materialize: ledger `pengalihan_status` + pindah
-  `aset.skpd_id`, atomik), `fn_tolak_pengalihan` (status `ditolak`+alasan, ini
-  status AKTIF di kategori ini — beda dgn Pengadaan yg legacy), dan
-  `fn_kembalikan_pengalihan_barang` (penerima/admin ONLY: transaksi balik
-  ber-payload `{reversal:true}` + aset kembali ke asal). Alasannya: RLS
+  `aset.skpd_id`, atomik) & `fn_tolak_pengalihan` (status `ditolak`+alasan, ini
+  status AKTIF di kategori ini — beda dgn Pengadaan yg legacy). Alasannya: RLS
   `aset`/`transaksi_bmd` menolak operator menulis di luar subtree SKPD-nya —
-  jangan coba bypass dgn policy longgar. (`fn_batal_pengalihan_barang` LAMA
-  di-DROP migrasi 22 — jangan dipakai lagi.)
-- **Pengembalian = peristiwa BARU di periode BERJALAN** (`current_date`), BUKAN
-  dibekukan ke periode jurnal asli. Supaya laporan periode ANTARA terima &
-  kembali tetap menunjukkan barang di SKPD penerima; sejak periode kembali,
-  balik ke SKPD asal.
+  jangan coba bypass dgn policy longgar. (`fn_kembalikan_pengalihan_barang`
+  di-DROP migrasi 20260812_05; `fn_batal_pengalihan_barang` LAMA di-DROP migrasi
+  22 lalu dibangun ulang 20260729_07 — yang berlaku versi baru, kini melayani
+  pengalihan DAN mutasi internal.)
 - `pengalihan_status` TANPA efek finansial di engine (penyusutan jalan terus)
   dan BUKAN event SEMBUNYI — barang cuma pindah pemegang. Keanggotaan kartu:
   baris ledger TERBARU per (header, aset); `payload.reversal` = keluar.
@@ -610,12 +623,21 @@ disentuh sampai SKPD tujuan menerima). Poin penting:
   image+pdf — beda dari `aset-foto` yg image-only), path di
   `payload.dokumen_paths`, tampilkan via signed URL.
 
-- **BATAL PENGALIHAN** (migrasi 20260729_06 enum + 20260729_07 RPC/index/trigger).
-  BEDA dari Kembalikan, dan jangan ditukar: **Kembalikan** = barang memang sempat
-  dipakai di penerima lalu dipulangkan (dua peristiwa NYATA, keduanya tetap
-  dibaca laporan, barang tetap tampil ber-badge "Dikembalikan"). **Batal** =
-  KOREKSI salah pilih barang — perpindahannya dianggap TAK PERNAH TERJADI.
-  `fn_batal_pengalihan_barang(header_id, aset_id)`: wewenang **admin + SKPD
+- **BATAL PERPINDAHAN** (migrasi 20260729_06 enum + 20260729_07 RPC/index/trigger;
+  digeneralkan ke mutasi internal oleh 20260812_04). Sejak "Kembalikan" dicabut,
+  ini **satu-satunya** cara memulangkan barang dari kartu perpindahan: **Batal** =
+  perpindahannya dianggap TAK PERNAH TERJADI. Pengembalian yang sungguhan =
+  kartu BARU ke arah sebaliknya, bukan aksi di kartu ini.
+  ⚠️ **Enum `batal_pengalihan` DIPAKAI BERSAMA** oleh `pengalihan_status` DAN
+  `mutasi_internal` — sengaja, bukan kelalaian penamaan. Semua pembacanya
+  menyaring lewat `payload.target_trx_ids` (id baris), bukan lewat jenis baris
+  yang dibatalkan, jadi memakai ulang enum membuat `buangYangDibatalkan`,
+  `idx_trx_pindah_id`, `fn_rekap_bmd`, cabang GUC kode register, & KIBAR benar
+  TANPA disentuh. Enum kembar akan memaksa menyisir ulang enam pembaca
+  (rules.md §1.7) — dan `batal_pengalihan` sendiri sudah kelewat tiga ronde.
+  **Jangan pecah jadi `batal_mutasi_internal`.**
+  `fn_batal_pengalihan_barang(header_id, aset_id)` melayani kedua kategori
+  (jenis baris diturunkan dari `jurnal_header.kategori`): wewenang **admin + SKPD
   PENERIMA** (satu pintu migrasi 22 tetap utuh — SKPD asal tak berwenang), tanpa
   batas waktu, tapi tunduk guard baku "tak boleh dibatalkan kalau aset punya
   transaksi lebih baru". Membatalkan **SEMUA** baris pengalihan aset itu di kartu

@@ -62,27 +62,30 @@ kode, jadi ia harus stabil:
      pernah terjadi**: barisnya diabaikan seluruh pembaca dan barangnya keluar
      total dari kartu; kartu yang jadi kosong ikut hilang.
 
-   Terpasang di Pemanfaatan (⏹ Akhiri vs 🗑 Batal), Pengamanan (⤺ Kembalikan
-   vs 🗑 Batal), dan Pengalihan (Kembalikan vs 🗑 Batal). Tanpa pembedaan ini,
-   salah pencet meninggalkan jejak permanen seolah barangnya benar-benar pernah
-   pindah/dimanfaatkan — dan itu ikut menggeser turunan lain (mis. segmen tahun
-   kode register).
+   Terpasang di Pemanfaatan (⏹ Akhiri vs 🗑 Batal) & Pengamanan (⤺ Kembalikan
+   vs 🗑 Batal). Tanpa pembedaan ini, salah pencet meninggalkan jejak permanen
+   seolah barangnya benar-benar pernah dimanfaatkan — dan itu ikut menggeser
+   turunan lain (mis. segmen tahun kode register).
 
-   **PENGECUALIAN: Mutasi Internal hanya punya Batal** (keputusan user
-   2026-08-12, migrasi 20260812_04). Aturan di atas mengandaikan "berakhir" itu
-   perubahan keadaan pada peristiwa YANG SAMA sehingga tak punya dokumen sendiri
-   — benar untuk Pemanfaatan (sewa berakhir) & Pengamanan (kustodi BAST itu
-   berakhir). Untuk PERPINDAHAN barang tidak begitu: pengembalian yang sungguhan
-   selalu punya dokumennya sendiri, jadi bentuk yang benar adalah kartu
-   Pengeluaran Internal BARU ke arah sebaliknya — bukan baris reversal yang
-   digantungkan pada kartu lama, yang justru menempelkan peristiwa periode
-   BERJALAN pada dokumen bertanggal periode lampau. Di sini pembedaan itu
-   mubazir, bukan dilanggar. Aman dicabut karena `mutasi_internal` tak punya
-   satu pun baris `payload.reversal` saat itu (0 dari 6).
-   ⚠️ `pengalihan_status` **tetap punya dua-duanya** — di sana ada 2 baris
-   reversal hidup, jadi pembacanya wajib bertahan apa pun keputusan soal
-   tombolnya. Kalau nanti ikut dicabut, cabut TOMBOLNYA saja, jangan
-   pembacanya.
+   **PENGECUALIAN: modul PERPINDAHAN barang hanya punya Batal** — Pengalihan
+   Status & Mutasi Internal (keputusan user 2026-08-12, migrasi 20260812_04
+   & _05). Aturan di atas mengandaikan "berakhir" itu perubahan keadaan pada
+   peristiwa YANG SAMA sehingga tak punya dokumen sendiri — benar untuk
+   Pemanfaatan (sewa berakhir) & Pengamanan (kustodi BAST itu berakhir). Untuk
+   perpindahan barang tidak begitu: pengembalian yang sungguhan SELALU punya
+   dokumennya sendiri, jadi bentuk yang benar adalah **kartu perpindahan BARU ke
+   arah sebaliknya** — bukan baris reversal yang digantungkan pada kartu lama,
+   yang justru menempelkan peristiwa periode BERJALAN pada dokumen bertanggal
+   periode lampau (ketidakcocokan yang sama yang diperbaiki 20260811_02). Di
+   sini pembedaan itu mubazir, bukan dilanggar.
+
+   ⚠️ **Yang dicabut PEMBUATNYA, bukan PEMBACANYA.** Mutasi internal bersih
+   (0 dari 6 baris ber-`payload.reversal`), tapi pengalihan punya **2 baris
+   reversal hidup** (id 9658 & 9679) dan ledger append-only — jadi
+   `payload.reversal` WAJIB tetap dibaca `lib/pengalihan.ts` (`ownersAt`),
+   `fn_rekap_bmd`, lib/rekon.ts, & badge "Dikembalikan" di PenggunaanMasuk.
+   Mencabut pembacanya membuat atribusi SKPD dua aset itu salah sejak 2026-S2
+   tanpa satu pun error. Jumlahnya kini beku di 2 selamanya.
 7. **DAFTAR PERIKSA menambah jenis `batal_*` baru.** Menambah nilai enum + RPC
    itu bagian yang mudah; yang berkali-kali kelewat adalah PEMBACA-nya.
    `batal_pengalihan` (2026-07-29) kelewat **tiga ronde**, semuanya baru ketemu

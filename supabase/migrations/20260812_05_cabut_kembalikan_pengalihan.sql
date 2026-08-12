@@ -1,0 +1,44 @@
+-- ============================================================================
+-- Cabut "Kembalikan" dari Pengalihan Status — menyusul mutasi internal.
+--
+-- Keputusan user 2026-08-12, lanjutan dari 20260812_04. Alasannya sama persis:
+-- pengembalian yang SUNGGUHAN punya dokumennya sendiri, jadi bentuk yang benar
+-- adalah kartu Pengalihan Status BARU ke arah sebaliknya. Baris reversal yang
+-- digantungkan pada kartu lama justru menempelkan peristiwa periode BERJALAN
+-- pada dokumen bertanggal periode lampau — ketidakcocokan yang sama yang sudah
+-- diperbaiki 20260811_02 (tanggal ledger = tanggal dokumen).
+--
+-- Dengan ini seluruh modul PERPINDAHAN barang punya satu aksi saja: Batal.
+--
+-- ── ⚠️ BEDANYA DARI 20260812_04: DI SINI ADA RIWAYAT ───────────────────────
+-- `mutasi_internal` bisa dicabut bersih karena 0 dari 6 barisnya ber-reversal.
+-- `pengalihan_status` TIDAK: ada **2 baris `payload.reversal` hidup** (id 9658
+-- & 9679, Juli 2026, BKAD ↔ Pengelola Barang). Ledger append-only, jadi dua
+-- baris itu tinggal selamanya.
+--
+-- Konsekuensinya tegas, dan JANGAN dilanggar oleh siapa pun yang merapikan ini
+-- nanti: **yang dicabut hanya PEMBUATNYA, bukan PEMBACANYA.**
+--   TETAP HIDUP (wajib):
+--     * `payload.reversal` di lib/pengalihan.ts — baris reversal menukar
+--       skpd_asal/skpd_tujuan, jadi `ownersAt` membacanya sebagai perpindahan
+--       balik. Mencabutnya membuat atribusi SKPD dua aset itu SALAH sejak
+--       2026-S2, tanpa satu pun error.
+--     * badge "Dikembalikan" + pengecualian dari total di PenggunaanMasuk.tsx.
+--     * penanganan reversal di `fn_rekap_bmd` & lib/rekon.ts.
+--   DICABUT:
+--     * `fn_kembalikan_pengalihan_barang` (satu-satunya penulis baris reversal
+--       pengalihan) + tombolnya di UI.
+--
+-- Sesudah ini tak ada baris `pengalihan_status` ber-reversal baru yang bisa
+-- lahir, jadi jumlahnya beku di 2 selamanya.
+--
+-- Tak ada perubahan enum/skema → urutan deploy bebas. Tapi jalankan SEBELUM
+-- deploy kode kalau tak mau ada jendela di mana tombolnya sudah hilang tapi
+-- fungsinya masih bisa dipanggil langsung.
+-- ============================================================================
+
+DROP FUNCTION IF EXISTS public.fn_kembalikan_pengalihan_barang(uuid, uuid);
+
+-- Pemeriksaan: harus tetap 2, dan tak pernah bertambah lagi.
+--   SELECT count(*) FROM transaksi_bmd
+--   WHERE jenis = 'pengalihan_status' AND payload->>'reversal' = 'true';
