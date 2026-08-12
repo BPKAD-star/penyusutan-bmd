@@ -221,11 +221,20 @@ export default function Page() {
   const [rows, setRows] = useState<Row[]>([])
   const [ketMap, setKetMap] = useState<Record<string, string>>({})
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
-  const [total, setTotal] = useState(0)
+  // null = jumlahnya TAK DIKETAHUI (query hitung gagal, barisnya tetap tampil).
+  // Sengaja dibedakan dari 0 — "0 barang" itu pernyataan tentang data, "tak bisa
+  // dihitung" itu pernyataan tentang query; menyamakannya persis kesalahan yang
+  // dulu bikin timeout terbaca operator sebagai "datanya memang kosong".
+  const [total, setTotal] = useState<number | null>(0)
   const [showAll, setShowAll] = useState(false) // hasil ≤ SHOW_ALL_MAX → semua baris tampil
+  const [adaLagi, setAdaLagi] = useState(false)  // dipakai saat total tak diketahui: halaman ini penuh → mungkin masih ada
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
   const [loadErr, setLoadErr] = useState('')
+  // Kegagalan yang TIDAK membatalkan tabel (kolom pelengkap: keterangan, uraian,
+  // bidang tanah, tanda 🔒). Barangnya sudah benar, cuma hiasannya kurang —
+  // tapi tetap harus kelihatan, jangan ditelan.
+  const [warn, setWarn] = useState<string[]>([])
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
   // wilayah_kode → "Desa, Kec. X, Kabupaten Y" (rantai induk sudah dirangkai)
@@ -292,11 +301,28 @@ export default function Page() {
   // DAN nilainya dikosongkan, biar sisa pilihan lama tak diam-diam ikut menyaring.
   useEffect(() => { if (golongan === '1.3.1' && komptabel) setKomptabel('') }, [golongan]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function buildQuery(f: Applied, opts: { count?: boolean; head?: boolean } = {}) {
+  // ⚠️ `head: true` SENGAJA TIDAK DIPAKAI LAGI (2026-08-12). Respons HEAD tidak
+  // berbadan, jadi supabase-js tak punya apa pun untuk di-parse dan mengembalikan
+  // `error.message` KOSONG — persis yang bikin halaman ini cuma menulis "Gagal
+  // memuat data:" tanpa sebab, dan bikin cabang khusus timeout di `gagalMuat`
+  // tak pernah bisa menyala (regex-nya diuji atas string kosong). Menghitung
+  // sambil membawa barisnya sekaligus jauh lebih murah daripada kehilangan
+  // keterangan errornya: satu perjalanan, badan respons utuh.
+  function buildQuery(f: Applied, opts: { count?: boolean } = {}) {
     let q = supabase.from('aset_awal_2026')
-      .select(COLS, opts.count ? { count: 'exact', head: opts.head } : undefined)
+      .select(COLS, opts.count ? { count: 'exact' } : undefined)
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
-    if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
+    // ⚠️ `.eq('golongan', ...)` — JANGAN dikembalikan jadi `.like('kode', 'gol.%')`.
+    // `~~` (LIKE) tidak leakproof, jadi Postgres selalu mengevaluasinya SESUDAH
+    // qual RLS & ia tak pernah bisa jadi index-cond; karena ORDER BY diawali
+    // `kode`, planner lalu menyusuri idx_saldo_kode DARI KODE PALING AWAL sambil
+    // membuang 235.828 baris satu per satu → 9,5 dtk, lewat statement_timeout
+    // 8 dtk, HALAMAN PERTAMA pun gagal (diukur 2026-08-12). `=` pada text itu
+    // leakproof → boleh turun jadi index-cond. Kolom `golongan` terisi penuh &
+    // dijamin cocok dgn `kode` oleh CHECK aset_awal_2026_golongan_cocok_kode
+    // (migrasi 20260812_08). Predikat ini KEMBAR dgn index idx_sa2026_gol_urut —
+    // ubah satu, ubah dua-duanya, atau indexnya diabaikan DIAM-DIAM.
+    if (f.golongan) q = q.eq('golongan', f.golongan)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
     if (f.search) q = q.or(orCari(f.search))
     // Urutan: KODE BARANG A→Z (permintaan user 2026-07-30; dulu nilai perolehan
@@ -317,10 +343,17 @@ export default function Page() {
   // keterangan di snapshot — sama dgn yang tampil di Daftar Barang) + `id`, yang
   // dibutuhkan untuk menengok bidang tanah (aset_bidang_tanah pakai aset_id,
   // sementara halaman ini berkunci NIBAR).
-  async function fetchAsetInfo(nibars: string[]) {
+  // ⚠️ `pesan` = penampung keluhan. Keempat pelengkap di bawah ini dulu memakai
+  // `const { data } = await ...` telanjang: query gagal → `data` null → kolomnya
+  // diam-diam kosong dan terbaca operator sebagai "barang ini memang tak punya
+  // keterangan/uraian/bidang". Sekarang kegagalannya DILAPORKAN (strip kuning di
+  // atas tabel) tapi TIDAK membatalkan tabel — barisnya sendiri sudah benar,
+  // dan mengosongkan halaman gara-gara kolom hiasan justru merugikan.
+  async function fetchAsetInfo(nibars: string[], pesan: string[]) {
     const map: Record<string, { id: string; keterangan: string | null }> = {}
     for (let i = 0; i < nibars.length; i += 500) {
-      const { data } = await supabase.from('aset').select('id,nibar,keterangan').in('nibar', nibars.slice(i, i + 500))
+      const { data, error } = await supabase.from('aset').select('id,nibar,keterangan').in('nibar', nibars.slice(i, i + 500))
+      if (error) { pesan.push(`Kolom Keterangan (dan Luas/Lokasi tanah) tidak lengkap — gagal membaca register aset: ${error.message}`); break }
       for (const a of (data || []) as { id: string; nibar: string | null; keterangan: string | null }[]) {
         if (a.nibar) map[a.nibar] = { id: a.id, keterangan: a.keterangan }
       }
@@ -335,15 +368,16 @@ export default function Page() {
   // bidang ditambah/diedit/dihapus, dan snapshot 2025 tak boleh ikut bergerak
   // mengikuti data hidup). Yang belum punya bidang: jatuh ke kolom snapshot,
   // yang boleh diisi manual lewat Edit Spesifikasi (lihat TANAH_TANPA_BIDANG_FIELDS).
-  async function fetchBidang(info: Record<string, { id: string }>, rs: Row[]) {
+  async function fetchBidang(info: Record<string, { id: string }>, rs: Row[], pesan: string[]) {
     const tanah = rs.filter(r => kodeLevel3(r.kode) === '1.3.1' && info[r.nibar])
     if (tanah.length === 0) return {}
     const nibarByAset = new Map(tanah.map(r => [info[r.nibar].id, r.nibar]))
     const ids = [...nibarByAset.keys()]
     const agg: Record<string, BidangAgg> = {}
     for (let i = 0; i < ids.length; i += 500) {
-      const { data } = await supabase.from('aset_bidang_tanah')
+      const { data, error } = await supabase.from('aset_bidang_tanah')
         .select('aset_id,luas,wilayah_kode,alamat_detail').in('aset_id', ids.slice(i, i + 500))
+      if (error) { pesan.push(`Luas & Lokasi tanah masih dari kolom saldo awal, bukan Σ bidang — gagal membaca bidang tanah: ${error.message}`); break }
       for (const b of (data || []) as { aset_id: string; luas: number | null; wilayah_kode: string | null; alamat_detail: string | null }[]) {
         const nibar = nibarByAset.get(b.aset_id)
         if (!nibar) continue
@@ -359,73 +393,126 @@ export default function Page() {
 
   // Uraian (nama baku kodefikasi) per kode — ditumpuk di bawah Kode Barang,
   // sama persis dgn Daftar Barang.
-  async function fetchUraian(kodes: string[]) {
+  async function fetchUraian(kodes: string[], pesan: string[]) {
     const uniq = [...new Set(kodes)]
     const map: Record<string, string> = {}
     for (let i = 0; i < uniq.length; i += 200) {
-      const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      const { data, error } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      if (error) { pesan.push(`Kolom Uraian Barang kosong — gagal membaca kodefikasi: ${error.message}`); break }
       for (const r of (data || []) as { kode: string; uraian: string | null }[]) if (r.uraian) map[r.kode] = r.uraian
     }
     return map
   }
 
+  // MENGHITUNG dan MENAMPILKAN dipisah tegas, dan itu inti kekuatan halaman ini.
+  // `count: 'exact'` menyapu SELURUH baris golongan itu (1.3.5 = 173.262 dari
+  // 418.102 baris) — sesudah migrasi 20260812_08 jadi 2,8 dtk, sedangkan
+  // mengambil 50 baris halamannya cuma 18 ms. Ongkosnya beda dua orde, jadi
+  // nasibnya tak boleh disatukan: hitungan itu yang paling dulu tumbang kalau
+  // tabel tumbuh lagi. Dulu kegagalannya `return` → tabel kosong TOTAL, padahal
+  // barisnya sendiri bisa diambil. Kini diturunkan jadi peringatan & daftarnya
+  // tetap tampil.
   async function load(f: Applied, pg: number) {
     setLoading(true)
     setLoadErr('')
-    // Hitung dulu (head → tanpa bawa baris): dari jumlahnya baru diputuskan
-    // tampil semua atau per halaman.
-    const { count, error: cErr } = await buildQuery(f, { count: true, head: true })
-    if (cErr) { gagalMuat(cErr.message); return }
-    const tot = count || 0
-    const semua = tot > 0 && tot <= SHOW_ALL_MAX
+    setWarn([])
+    const pesan: string[] = []
+    // ⚠️ SELURUH badan fungsi ini WAJIB di dalam try/finally, `setLoading(false)`
+    // di `finally` — BUKAN di akhir jalur sukses (CLAUDE.md, insiden Daftar
+    // Barang 2026-07-29: satu promise ditolak → tombol nyangkut "Memuat..."
+    // selamanya tanpa sepatah pun keterangan).
+    try {
+      const dari = pg * PAGE_SIZE
 
-    let rs: Row[] = []
-    if (semua) {
-      for (let from = 0; from < tot; from += 1000) {
-        const { data, error } = await buildQuery(f).range(from, from + 999)
-        if (error) { gagalMuat(error.message); return }
-        if (!data || data.length === 0) break
-        rs.push(...(data as unknown as Row[]))
-        if (data.length < 1000) break
+      // Satu perjalanan: baris halaman ini + jumlah total sekaligus.
+      const a = await buildQuery(f, { count: true }).range(dari, dari + PAGE_SIZE - 1)
+      let rs: Row[]
+      let tot: number | null
+      if (a.error) {
+        // Coba lagi TANPA count. Kalau yang ini pun gagal, memang barisnya yang
+        // tak terbaca → baru halaman dikosongkan.
+        const b = await buildQuery(f).range(dari, dari + PAGE_SIZE - 1)
+        if (b.error) { gagalMuat(b.error.message || a.error.message); return }
+        rs = (b.data as unknown as Row[]) || []
+        tot = null
+        pesan.push(pesanHitungGagal(a.error.message))
+      } else {
+        rs = (a.data as unknown as Row[]) || []
+        tot = a.count ?? 0
       }
-    } else {
-      const { data, error } = await buildQuery(f).range(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE - 1)
-      if (error) { gagalMuat(error.message); return }
-      rs = (data as unknown as Row[]) || []
-    }
 
-    setRows(rs)
-    setTotal(tot)
-    setShowAll(semua)
-    const info = await fetchAsetInfo(rs.map(r => r.nibar))
-    const ket: Record<string, string> = {}
-    for (const [nibar, a] of Object.entries(info)) if (a.keterangan) ket[nibar] = a.keterangan
-    setKetMap(ket)
-    setBidang(await fetchBidang(info, rs))
-    setUraianMap(await fetchUraian(rs.map(r => r.kode)))
-    setTerkunci(await fetchTerkunci(rs.map(r => r.nibar)))
-    setSel({}) // seleksi lama tak lagi nyambung dgn baris yang tampil
-    setLoading(false)
+      // Hasil kecil → tampilkan semua sekaligus (tanpa halaman), pola Daftar Barang.
+      const semua = tot != null && tot > 0 && tot <= SHOW_ALL_MAX
+      if (semua) {
+        const all: Row[] = []
+        for (let from = 0; from < (tot as number); from += 1000) {
+          const { data, error } = await buildQuery(f).range(from, from + 999)
+          if (error) { gagalMuat(error.message); return }
+          if (!data || data.length === 0) break
+          all.push(...(data as unknown as Row[]))
+          if (data.length < 1000) break
+        }
+        rs = all
+      }
+
+      setRows(rs)
+      setTotal(tot)
+      setShowAll(semua)
+      // Tanpa jumlah total, satu-satunya petunjuk "masih ada lagi" adalah halaman
+      // ini penuh. Konsekuensi yang diterima: kalau sisanya pas kelipatan 50,
+      // tombol Berikutnya sekali membuka halaman kosong — jauh lebih murah
+      // daripada mengunci operator di halaman 1.
+      setAdaLagi(tot == null && rs.length === PAGE_SIZE)
+      setSel({}) // seleksi lama tak lagi nyambung dgn baris yang tampil
+
+      const info = await fetchAsetInfo(rs.map(r => r.nibar), pesan)
+      const ket: Record<string, string> = {}
+      for (const [nibar, x] of Object.entries(info)) if (x.keterangan) ket[nibar] = x.keterangan
+      setKetMap(ket)
+      setBidang(await fetchBidang(info, rs, pesan))
+      setUraianMap(await fetchUraian(rs.map(r => r.kode), pesan))
+      setTerkunci(await fetchTerkunci(rs.map(r => r.nibar), pesan))
+      setWarn(pesan)
+    } catch (e) {
+      gagalMuat(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
   }
+
+  // Gagal MENGHITUNG saja — barangnya tetap tampil, jadi ini peringatan, bukan
+  // kegagalan. Pesan aslinya ikut dibawa: sejak `head: true` dicabut, PostgREST
+  // benar-benar mengirim sebabnya (mis. "canceling statement due to statement
+  // timeout", kode 57014).
+  const pesanHitungGagal = (pesan: string) =>
+    `Jumlah total barang tidak bisa dihitung${pesan ? ` (${pesan})` : ''} — daftarnya tetap ditampilkan per halaman. `
+    + 'Kalau ini muncul terus tanpa filter SKPD, cek index idx_sa2026_gol_urut (migrasi 20260812_08) masih ada '
+    + 'atau tidak — sementara itu pilih SKPD dulu supaya cakupannya sempit.'
 
   // Kegagalan query TIDAK BOLEH tampil sebagai "0 barang" — dulu `error`
   // diabaikan, jadi statement timeout (RLS aset_awal_2026 belum InitPlan,
   // lihat migrasi 20260728_02) terbaca operator sebagai "datanya memang kosong".
+  // ⚠️ `setLoading(false)` sengaja TIDAK di sini — itu urusan `finally` di
+  // `load`, supaya tak ada jalur keluar yang bisa melewatkannya.
   function gagalMuat(pesan: string) {
-    setRows([]); setTotal(0); setShowAll(false); setKetMap({}); setUraianMap({}); setTerkunci(new Set())
-    setLoadErr(/timeout|57014/i.test(pesan)
-      ? `Database kehabisan waktu memuat data ini (${pesan}). Kalau ini muncul terus, migrasi 20260728_02 kemungkinan belum dijalankan — sementara persempit dulu filternya (pilih SKPD).`
-      : `Gagal memuat data: ${pesan}`)
-    setLoading(false)
+    setRows([]); setTotal(0); setShowAll(false); setAdaLagi(false)
+    setKetMap({}); setUraianMap({}); setBidang({}); setTerkunci(new Set())
+    // Respons tanpa keterangan apa pun sudah pernah terjadi & bikin operator
+    // buntu ("Gagal memuat data:" lalu kosong). Kalau terulang, katakan begitu.
+    const p = pesan || 'database tidak mengirim keterangan apa pun'
+    setLoadErr(/timeout|57014/i.test(p)
+      ? `Database kehabisan waktu memuat data ini (${p}). Kalau ini muncul terus, migrasi 20260812_08 kemungkinan belum dijalankan (index idx_sa2026_gol_urut) — sementara persempit dulu filternya (pilih SKPD).`
+      : `Gagal memuat data: ${p}`)
   }
 
   // Penegak sesungguhnya tetap trigger DB — ini cuma supaya operator tak klik
   // lalu kena error. Gagal RPC (mis. migrasi belum dijalankan) → set kosong,
   // tombolnya tetap hidup dan DB yang menolak.
-  async function fetchTerkunci(nibars: string[]) {
+  async function fetchTerkunci(nibars: string[], pesan: string[]) {
     const out = new Set<string>()
     for (let i = 0; i < nibars.length; i += 500) {
-      const { data } = await supabase.rpc('fn_aset_awal_2026_terkunci_batch', { p_nibars: nibars.slice(i, i + 500) })
+      const { data, error } = await supabase.rpc('fn_aset_awal_2026_terkunci_batch', { p_nibars: nibars.slice(i, i + 500) })
+      if (error) { pesan.push(`Tanda 🔒 tidak ditampilkan — gagal memeriksa barang yang terkunci: ${error.message}. Centang tetap bisa diklik; kalau barangnya memang terkunci, database yang menolak saat Simpan.`); break }
       for (const d of (data || []) as { nibar: string }[]) out.add(d.nibar)
     }
     return out
@@ -658,14 +745,20 @@ export default function Page() {
     return v
   }
 
+  // ⚠️ Dibungkus try/catch/finally seperti loader: tanpa itu satu query yang
+  // melempar meninggalkan tombol "Mengekspor..." nyangkut selamanya, DAN berkas
+  // Excel setengah jadi yang terlanjur terunduh tak punya tanda apa pun bahwa
+  // isinya kurang (CLAUDE.md — aturan kolektor fail-closed).
   async function handleExport() {
     if (!applied) return
     setExporting(true)
+    const pesan: string[] = []
+    try {
     // Layar boleh terpaginasi, ekspornya TIDAK — selalu seluruh hasil filter.
     const all: Row[] = []
     for (let from = 0; ; from += 1000) {
       const { data, error } = await buildQuery(applied).range(from, from + 999)
-      if (error) { setExporting(false); setLoadErr(`Gagal mengekspor: ${error.message}`); return }
+      if (error) { setLoadErr(`Gagal mengekspor: ${error.message}`); return }
       if (!data || data.length === 0) break
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
@@ -673,11 +766,11 @@ export default function Page() {
     // Ekspor bisa memuat baris di luar halaman yang tampil → keterangan & bidang
     // tanahnya diambil ulang untuk SELURUH hasil, jangan pakai state halaman
     // (kalau tidak, kolom Luas/Lokasi di Excel beda dari yang di layar).
-    const info = await fetchAsetInfo(all.map(r => r.nibar))
+    const info = await fetchAsetInfo(all.map(r => r.nibar), pesan)
     const ket: Record<string, string> = {}
     for (const [nibar, a] of Object.entries(info)) if (a.keterangan) ket[nibar] = a.keterangan
-    const bd = await fetchBidang(info, all)
-    const uraian = await fetchUraian(all.map(r => r.kode))
+    const bd = await fetchBidang(info, all, pesan)
+    const uraian = await fetchUraian(all.map(r => r.kode), pesan)
     // Ekspor pakai kolom yang sama dgn layar, + Uraian & NIBAR jadi kolom sendiri
     // (di layar keduanya ditumpuk; di Excel harus rata biar bisa disortir/pivot).
     const keys = colsFor(applied.golongan).flatMap(k => (k === 'kode' ? ['kode', 'uraian'] : k === 'nama' ? ['nama', 'nibar'] : [k]))
@@ -692,10 +785,17 @@ export default function Page() {
       }
       return obj
     }), `Daftar_Barang_Awal_2026${applied.golongan ? `_${applied.golongan}` : ''}`, 'Daftar Barang Awal')
-    setExporting(false)
+    // Kolom pelengkap yang gagal dibaca WAJIB diberitahukan — berkas untuk BPK
+    // tak boleh diam-diam berisi kolom kosong yang terbaca sbg "memang tak ada".
+    if (pesan.length > 0) setWarn(p => [...p, ...pesan.map(m => `Berkas Excel: ${m}`)])
+    } catch (e) {
+      setLoadErr(`Gagal mengekspor: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setExporting(false)
+    }
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
+  const totalPages = total == null ? 0 : Math.ceil(total / PAGE_SIZE)
   const cols = colsFor(applied?.golongan ?? '')
   const kolom = cols.length + (isViewer ? 0 : 1)
   const nilaiIdx = cols.indexOf('nilai')
@@ -746,7 +846,7 @@ export default function Page() {
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
-              {total.toLocaleString('id-ID')} barang
+              {total == null ? `${rows.length} barang di halaman ini (total tak terhitung)` : `${total.toLocaleString('id-ID')} barang`}
               {applied.golongan ? ` · ${applied.golongan} ${GOLONGAN_REKAP.find(g => g.kode === applied.golongan)?.uraian || ''}` : ''}
               {selList.length > 0 && <span className="text-teal font-medium"> · {selList.length} dicentang</span>}
             </span>
@@ -756,13 +856,20 @@ export default function Page() {
                   {spekSaving ? 'Menyimpan...' : '✎ Edit Spesifikasi...'}
                 </button>
               )}
-              {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>}
-              <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs">
+              {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1}{total == null ? '' : ` / ${totalPages || 1}`}</span>}
+              <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-secondary text-xs">
                 {exporting ? 'Mengekspor...' : 'Export Excel'}
               </button>
             </div>
           </div>
           {loadErr && <div className="px-4 py-2 border-b border-gray-100"><p className="text-xs text-red-600">{loadErr}</p></div>}
+          {/* Kegagalan yang TIDAK membatalkan daftar (jumlah total, kolom
+              pelengkap). Amber, bukan merah — barangnya di bawah tetap sah. */}
+          {warn.length > 0 && (
+            <div className="px-4 py-2 border-b border-gray-100 space-y-1">
+              {warn.map((w, i) => <p key={i} className="text-xs text-amber-600">{w}</p>)}
+            </div>
+          )}
           {!isViewer && (selList.length > 0 || spekMsg || spekErr || spekSaving || terkunci.size > 0) && (
             <div className="px-4 py-2 border-b border-gray-100 space-y-1">
               {spekSaving && <p className="text-xs text-gray-500">Menyimpan koreksi spesifikasi...</p>}
@@ -829,9 +936,9 @@ export default function Page() {
                       dijumlahkan cuma baris di layar — labelnya bilang begitu. */}
                   <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
                     <td className="table-td text-xs" colSpan={Math.max(1, nilaiIdx + (isViewer ? 0 : 1))}>
-                      {showAll
+                      {showAll && total != null
                         ? `TOTAL (${total.toLocaleString('id-ID')} barang)`
-                        : `TOTAL halaman ini (${rows.length} dari ${total.toLocaleString('id-ID')} barang)`}
+                        : `TOTAL halaman ini (${rows.length}${total == null ? '' : ` dari ${total.toLocaleString('id-ID')}`} barang)`}
                     </td>
                     {cols.slice(nilaiIdx).map(k => (
                       <td key={k} className={tdClass(k)}>{TOTAL_KEYS.has(k) ? angka(subtotal(k)) : ''}</td>
@@ -841,10 +948,12 @@ export default function Page() {
               )}
             </table>
           </div>
-          {!showAll && totalPages > 1 && (
+          {/* Tanpa jumlah total tak ada `totalPages`, tapi maju-mundur tetap
+              harus bisa — kalau tidak, gagal menghitung = terkurung di halaman 1. */}
+          {!showAll && (total == null ? (page > 0 || adaLagi) : totalPages > 1) && (
             <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
               <button className="btn-secondary" disabled={page === 0 || loading} onClick={() => goPage(page - 1)}>← Sebelumnya</button>
-              <button className="btn-secondary" disabled={page >= totalPages - 1 || loading} onClick={() => goPage(page + 1)}>Berikutnya →</button>
+              <button className="btn-secondary" disabled={loading || (total == null ? !adaLagi : page >= totalPages - 1)} onClick={() => goPage(page + 1)}>Berikutnya →</button>
             </div>
           )}
         </div>

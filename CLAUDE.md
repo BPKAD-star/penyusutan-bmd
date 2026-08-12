@@ -1232,6 +1232,84 @@ periode koreksi, bukan surut ke semua periode; modul pelaporan yang memakai
 period-agnostic). Ini **melonggarkan** pengecualian yang tertulis di rules.md
 §1.9 untuk jenis tsb.
 
+## Daftar Barang Awal — `head:true` menelan sebab kegagalan (2026-08-12)
+
+Gejala: Saldo Awal → Daftar Barang Awal, Jenis Aset 1.3.5 tanpa filter SKPD →
+**"Gagal memuat data:" lalu KOSONG**, "0 barang", tabel hampa. Di saat yang sama
+Daftar Barang biasa sanggup menampilkan 173.262 baris golongan yang sama. User
+menegaskan (2026-08-12) halaman ini harus **sekuat Daftar Barang**, dan Daftar
+Barang sendiri tak boleh ikut rusak.
+
+- **Sebabnya bukan datanya, tapi CARA BERTANYANYA.** Query hitung memakai
+  `.select(COLS, { count: 'exact', head: true })`. Respons **HEAD tidak
+  berbadan**, jadi supabase-js tak punya apa pun untuk di-parse dan
+  mengembalikan `error.message` **KOSONG**. Akibatnya cabang khusus timeout di
+  `gagalMuat` (`/timeout|57014/`) diuji atas string kosong → tak pernah menyala,
+  dan operator dapat kalimat menggantung tanpa satu pun petunjuk. Pesan yang
+  paling dibutuhkan justru yang paling rajin dibuang.
+  **JANGAN pakai `head: true` untuk query yang errornya perlu dibaca manusia.**
+- **AKAR SEBENARNYA: ronde ke-4 dari `LIKE` yang tak bisa jadi index-cond.**
+  Diukur langsung ke DB dgn RLS aktif (2026-08-12), `statement_timeout` =
+  **8 dtk**: query halaman PERTAMA (`LIMIT 50 OFFSET 0`) makan **9.518 ms**.
+  Plan-nya `Index Scan using idx_saldo_kode` dgn **`Rows Removed by Filter:
+  235.828`** — karena `~~` tidak leakproof, `kode LIKE '1.3.5.%'` ditinggal
+  sbg filter biasa, dan `ORDER BY kode ...` membuat planner menyusuri index
+  kode DARI PALING AWAL sambil membuang seperempat juta baris satu per satu.
+  Jadi bukan cuma hitungannya yang tumbang — **halaman pertamanya pun tak
+  pernah sanggup**. Ini cerita yang sama dgn GIS Tanah, Kendaraan, &
+  `fetchOwnerOverrides`.
+  ⚠️ Dugaan awal "migrasi 20260728_02 belum jalan" **SALAH** — policy-nya sudah
+  InitPlan (`(SELECT fn_is_admin()) OR fn_skpd_visible(skpd_id)`), diverifikasi
+  ke `pg_policies`. Dan angka "227rb baris" yang tertulis di bagian Baseline
+  juga **basi**: `aset_awal_2026` kini **418.102** baris (1.3.2 = 218.251,
+  1.3.5 = 173.262) — sama besar dgn register.
+- **Obatnya BUKAN partial index per golongan, tapi kolom `golongan`.** Tabel ini
+  sudah lama punya kolom `golongan`, terisi penuh (0 NULL) & **100% cocok** dgn
+  `substring(kode from '^\d+\.\d+\.\d+')` di seluruh 418.102 baris. `=` pada
+  text itu **leakproof** → boleh turun jadi index-cond di bawah RLS. Jadi cukup
+  SATU index biasa untuk kedelapan golongan, bukan 8 partial index:
+  `idx_sa2026_gol_urut (golongan, kode, nilai_perolehan DESC, nibar) INCLUDE
+  (skpd_id)` (migrasi **20260812_08**). Kunci urutnya sengaja SAMA PERSIS dgn
+  `ORDER BY` halaman → LIMIT 50 dilayani **tanpa node Sort**. `INCLUDE
+  (skpd_id)` bukan hiasan: `skpd_id` dipakai qual RLS, tanpanya `count(*)`
+  terpaksa Index Scan + 173rb kunjungan heap. Hasil: halaman 1 **9.518 → 18 ms**,
+  halaman terdalam (OFFSET 173.200) **819 ms**, count **8.916 → 2.755 ms**.
+  ⚠️ Predikat `.eq('golongan', gol)` di kode **KEMBAR** dgn index ini — kalau
+  ada yang mengembalikannya jadi `.like('kode', ...)`, indexnya diabaikan
+  DIAM-DIAM & halamannya timeout lagi. Invarian `golongan` ↔ `kode` dikunci
+  CHECK `aset_awal_2026_golongan_cocok_kode`: tampilan kini bersandar pada
+  `golongan`, jadi kalau keduanya menyimpang barang tampil di jenis aset yang
+  SALAH tanpa satu pun error.
+- **`count: 'exact'` dan pengambilan baris punya biaya yang JAUH berbeda
+  (2,8 dtk vs 18 ms), jadi tak boleh satu nasib.** Yang tumbang duluan selalu
+  hitungannya. Dulu kegagalannya `return` → tabel kosong TOTAL, padahal barisnya
+  bisa diambil. Sekarang: minta count **bareng** baris dalam satu permintaan;
+  kalau gagal, **ulangi tanpa count** dan turunkan jadi peringatan (strip amber)
+  — daftarnya tetap tampil. `total: number | null`, `null` = "tak terhitung",
+  sengaja DIBEDAKAN dari 0. Tanpa total, tombol Berikutnya dipandu "halaman ini
+  penuh" (`adaLagi`), bukan `totalPages` — kalau tidak, gagal menghitung berarti
+  operator terkurung di halaman 1.
+- **Loader kini try/catch/finally penuh** (`setLoading(false)` di `finally`,
+  bukan di akhir jalur sukses) — aturan yang sudah lama tertulis untuk Daftar
+  Barang tapi belum terpasang di sini. `handleExport` ikut dibungkus; sebelumnya
+  satu query yang melempar meninggalkan tombol "Mengekspor..." nyangkut selamanya.
+- **Empat kolektor pelengkap berhenti menelan `error`** (`fetchAsetInfo`,
+  `fetchBidang`, `fetchUraian`, `fetchTerkunci` — semuanya `const { data } =
+  await` telanjang): kegagalannya bikin kolom Keterangan/Uraian/Luas/🔒 diam-diam
+  kosong dan terbaca operator sbg "barangnya memang tak punya". Sekarang
+  dilaporkan lewat strip peringatan **tanpa membatalkan tabel** — barisnya sudah
+  benar, dan mengosongkan halaman gara-gara kolom hiasan justru merugikan. Beda
+  perlakuan dari modul Pelaporan (yang fail-closed) itu disengaja: ini halaman
+  register, bukan angka yang dilaporkan ke BPK.
+- ⚠️ **Deploy-ordering: migrasi 20260812_08 WAJIB jalan SEBELUM deploy kode** —
+  kode sudah menyaring `.eq('golongan', ...)`; tanpa indexnya filter itu jatuh
+  ke seq scan 418rb baris + sort 173rb baris, jadi halamannya tetap timeout
+  (beda sebab, gejala sama).
+- **Pelajaran yang berlaku umum:** `count: 'exact'` di halaman daftar itu
+  **pertanyaan termahal yang paling tidak penting**. Sebelum menambahkannya di
+  halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
+  dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang
