@@ -209,13 +209,23 @@ export default function CetakRkbmdPage() {
       else {
         q = q.eq('tahun_anggaran', Number(tahun)).eq('jenis', jenisQ!)
         if (versiQ) q = q.eq('versi', versiQ)
+        // ⚠️ SE-KABUPATEN HANYA yang sudah DITETAPKAN (keputusan user
+        // 2026-08-13). Sebelum ini seluruh dokumen ikut apa pun statusnya, jadi
+        // draft yang belum selesai & usulan yang masih menunggu telaah ikut
+        // terjumlah — lembar yang tercetak terbaca sebagai ketetapan
+        // se-kabupaten padahal separuhnya belum diputuskan siapa pun.
+        // Lembar per-SKPD (`?id=`) SENGAJA tidak difilter: justru draft yang
+        // perlu dicetak untuk ditandatangani sebelum diajukan.
+        q = q.eq('status', 'disetujui')
       }
       const { data: hs, error: eh } = await q
       if (eh) { setErr(`gagal membaca dokumen: ${eh.message}`); setLoading(false); return }
       const doks = (hs || []) as Dok[]
       if (doks.length === 0) {
         setErr(id ? 'Dokumen RKBMD tidak ditemukan (mungkin sudah dihapus).'
-                  : `Tidak ada dokumen RKBMD ${JENIS_LABEL[jenisQ!] || jenisQ} TA ${tahun}.`)
+                  : `Belum ada RKBMD ${JENIS_LABEL[jenisQ!] || jenisQ} TA ${tahun} yang DITETAPKAN. `
+                    + 'Lembar se-Kabupaten hanya memuat dokumen berstatus Disetujui — yang masih draft '
+                    + 'atau menunggu telaah sengaja tidak ikut.')
         setLoading(false); return
       }
 
@@ -336,9 +346,33 @@ export default function CetakRkbmdPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Nama berkas unduhan (permintaan user 2026-08-13). Chrome & Edge memakai
+  // `document.title` sebagai nama bawaan saat "Save as PDF" — tak ada cara lain
+  // menyetelnya dari halaman. Karakter yang dilarang di nama berkas Windows
+  // (\ / : * ? " < > |) dibuang: nama SKPD boleh memuat garis miring, dan kalau
+  // ikut terbawa dialog simpannya menolak atau memotong namanya diam-diam.
+  useEffect(() => {
+    if (loading || err) return
+    const bersih = (s: string) => s.replace(/[\\/:*?"<>|]/g, '-').trim()
+    if (sekab) {
+      document.title = `RKBMD_Kab ${KABUPATEN}_${sekab.tahun}`
+    } else if (lembar[0]) {
+      const l = lembar[0]
+      document.title = `Usulan RKBMD_${bersih(l.skpd?.nama || `SKPD ${l.dok.skpd_id}`)}_${l.dok.tahun_anggaran}`
+    }
+  }, [loading, err, sekab, lembar])
+
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
-      <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>
+      {/* F4 (215×330 mm) HANYA untuk lembar se-Kabupaten (keputusan user
+          2026-08-13); lembar per-SKPD tetap A4. Dua-duanya LANDSCAPE — tabel
+          Pengadaan 13 kolom mustahil muat di lebar 215 mm.
+          ⚠️ Tanggal, judul, & URL yang muncul di tepi hasil cetak itu header &
+          footer BAWAAN BROWSER — halaman web tak bisa memindah atau
+          menghapusnya lewat CSS. Matikan dengan menghilangkan centang
+          "Headers and footers" di dialog Print. Identitas kita sendiri dicetak
+          di kanan atas lembar (lihat KopKanan). */}
+      <style>{`@media print { .no-print { display: none !important; } @page { size: ${sekab ? '330mm 215mm' : 'A4 landscape'}; margin: 1cm; } body { background: white; } }`}</style>
 
       <div className="max-w-6xl mx-auto mb-3 flex flex-wrap items-center justify-between gap-3 no-print px-4">
         <span className="text-sm text-gray-500">{judulLingkup}</span>
@@ -522,6 +556,7 @@ function LembarUsulan({ l, uraianByKode, ttd, plt }: {
   return (
     <div className="bg-white p-8 shadow print:shadow-none print:p-0 mb-6 print:mb-0 print:break-after-page text-[10px] text-gray-900">
       <style>{`.brd{border:1px solid #6b7280}`}</style>
+      <KopKanan />
 
       <div className="text-center mb-3">
         <p className="font-bold uppercase text-[12px]">Pemerintah Kabupaten {KABUPATEN}</p>
@@ -609,6 +644,15 @@ function TheadPengadaan() {
       </tr>
     </thead>
   )
+}
+
+/** Identitas aplikasi, rata KANAN ATAS lembar (permintaan user 2026-08-13).
+ *  Ini PENGGANTI header bawaan browser yang selama ini mencetak judul tab di
+ *  tengah atas — header itu milik browser & tak bisa disentuh CSS, jadi
+ *  satu-satunya jalan adalah mematikannya di dialog Print ("Headers and
+ *  footers") lalu mencetak identitas kita sendiri di dalam halaman. */
+function KopKanan() {
+  return <p className="text-right text-[9px] text-gray-500 mb-1">BMD | Kabupaten {KABUPATEN}</p>
 }
 
 /** Satu baris "NIHIL" selebar tabel. Dipakai lembar per-SKPD & se-Kabupaten,
@@ -857,6 +901,7 @@ function LembarSeKabupaten({ sekab, lembar, uraianByKode, ttd }: {
   return (
     <div className="bg-white p-8 shadow print:shadow-none print:p-0 text-[10px] text-gray-900">
       <style>{`.brd{border:1px solid #6b7280}`}</style>
+      <KopKanan />
 
       <div className="text-center mb-3">
         <p className="font-bold uppercase text-[12px]">Pemerintah Kabupaten {KABUPATEN}</p>
@@ -885,10 +930,18 @@ function LembarSeKabupaten({ sekab, lembar, uraianByKode, ttd }: {
         </tfoot>
       </table>
 
+      {/* Blok tanda tangan se-Kabupaten (bentuk ditentukan user 2026-08-13):
+          tanggal DIKOSONGKAN untuk ditulis tangan — rekap ini ditandatangani
+          entah kapan setelah dicetak, jadi mencetak tanggal hari ini justru
+          memaksa penanda tangan mencoret. Jabatannya DIPAKU "Sekretaris
+          Daerah" (Pengelola Barang menurut Permendagri 19/2016), sengaja BUKAN
+          `ttd.jabatan`: kolom itu memuat jabatan struktural pegawainya, dan
+          sempat mencetak "Kepala Sekretariat Daerah" — bukan Sekda. Yang ikut
+          pilihan operator hanya NAMA & NIP. */}
       <div className="mt-8 flex justify-end pr-16">
         <div className="text-center">
-          <p>{KABUPATEN}, {tglID()}</p>
-          <p>{ttd?.jabatan || '…………………………'}</p>
+          <p>{KABUPATEN}, ……… - ……… - {sekab.tahun - 1}</p>
+          <p>Sekretaris Daerah</p>
           <div className="h-16" />
           <p className="font-semibold underline">{ttd?.nama || '(………………………………)'}</p>
           <p>NIP. {ttd?.nip || '………………………'}</p>

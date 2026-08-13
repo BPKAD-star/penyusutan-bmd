@@ -1248,6 +1248,68 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   menu Usulan, Validasi, Pelaporan, & halaman cetak sudah men-`select` kolom
   `nihil`; tanpa kolomnya keempatnya mati total. Pola yang sama dgn 20260813_01.
 
+### Pembagian menu RKBMD (keputusan user 2026-08-13, sore)
+
+Tiga menu, tiga peran, dan pembagiannya **bukan selera tata letak** — ia
+mengikuti siapa pemilik keputusannya:
+
+| Menu | Milik siapa | Isinya |
+|---|---|---|
+| **Usulan** | operator SKPD | menyusun · Nyatakan NIHIL · **Cetak lembar usulan** · Ajukan (lewat pop-up) · Hapus |
+| **Validasi** | Pengelola Barang | 2 tab: **Usulan** (draft+diajukan+ditolak, pantau siapa belum menyusun) & **Tervalidasi** (disetujui). **Setujui · Tolak · Buka Kunci** semuanya di sini |
+| **Pelaporan** | Pengelola Barang | MURNI KELUARAN: Export Excel + **Cetak se-Kabupaten**, keduanya HANYA dokumen `disetujui` |
+
+- **Buka Kunci PINDAH dari Usulan ke Validasi.** Menyetujui, menolak, dan
+  membatalkan penetapan adalah tiga sisi dari satu wewenang; tersebar di dua
+  menu berarti operator SKPD melihat tombol yang bukan haknya. `onBukaKunci`
+  sudah dicabut dari `DokumenPanel` — jangan dikembalikan.
+- **Dua laporan (Usulan & Setelah Validasi) PINDAH dari Pelaporan ke Validasi**
+  sebagai dua tab. Yang memantau dan yang memutuskan orang yang sama, jadi tak
+  perlu pindah menu di tengah pekerjaan.
+- ⚠️ **Pelaporan tak boleh lagi memuat dokumen yang belum ditetapkan** — tak ada
+  filter status sama sekali di situ. Apa pun yang keluar dari menu Pelaporan
+  terbaca sebagai ketetapan, dan angka yang masih bisa berubah tak boleh ikut
+  tercetak. `versi` juga wajib tunggal (tak ada pilihan "semua").
+- **Tata letak tombol di menu Usulan** (permintaan user): di ATAS hanya aksi
+  MENYUSUN — Tambah Kartu (hijau) & Nyatakan NIHIL (**kuning**, karena ia
+  PERNYATAAN, bukan aksi rutin). Yang MENGAKHIRI dokumen turun ke bilah penutup
+  di ujung halaman: Cetak lembar usulan (putih) · Ajukan (hijau) · Hapus
+  dokumen (merah). Dulu semuanya bertumpuk satu baris, jadi "Ajukan" duduk
+  bersebelahan dengan "Tambah Kartu" padahal keduanya berlawanan arah.
+- **Unggah lampiran PINDAH ke pop-up "Ajukan"** (`AjukanModal`), tak lagi jadi
+  kartu permanen di halaman. Kartu yang selalu terpampang membuat operator
+  mengunggah lebih dulu lalu lupa menekan Ajukan; pop-up muncul tepat saat ia
+  sudah berniat mengirim, dan kalau lampirannya belum ada di situlah tempat
+  paling tepat menjelaskan urutannya (cetak → ttd → pindai → unggah). Kartu
+  lampiran masih ditampilkan **read-only** saat dokumen sudah tak bisa
+  disunting, sebagai bukti apa yang terlanjur dikirim.
+- **Tombol Cetak dicabut dari menu Validasi** (termasuk pop-up rincian): yang
+  ditelaah di situ adalah LAMPIRAN bertanda tangan (📄 Dokumen), sedangkan
+  mencetak ulang dari sana justru menghasilkan lembar TANPA tanda tangan yang
+  mudah tertukar dengan berkas sah.
+
+### Ukuran kertas & nama berkas cetak (user 2026-08-13)
+
+- **Lembar se-Kabupaten = F4 landscape** (`330mm 215mm`); **lembar per-SKPD
+  tetap A4 landscape**. Dua-duanya landscape — tabel Pengadaan 13 kolom
+  mustahil muat di lebar 215 mm.
+- **Nama berkas unduhan lewat `document.title`** (satu-satunya cara menyetel
+  nama bawaan "Save as PDF" dari halaman): `Usulan RKBMD_<SKPD>_<tahun>` dan
+  `RKBMD_Kab Kediri_<tahun>`. Karakter terlarang Windows (`\ / : * ? " < > |`)
+  dibuang — nama SKPD boleh memuat garis miring & dialog simpan akan menolaknya.
+- ⚠️ **Tanggal, judul, & URL di tepi hasil cetak itu header/footer BAWAAN
+  BROWSER** — halaman web TIDAK BISA memindah atau menghapusnya lewat CSS.
+  Satu-satunya cara: hilangkan centang **"Headers and footers"** di dialog
+  Print. Identitas kita sendiri dicetak di kanan atas lembar (`KopKanan`).
+  Jangan menghabiskan waktu mencari trik CSS untuk ini; tidak ada.
+- **Blok tanda tangan se-Kabupaten**: tanggal DIKOSONGKAN (`Kediri, … - … -
+  <tahun−1>`) untuk ditulis tangan — rekap ini diteken entah kapan setelah
+  dicetak, jadi mencetak tanggal hari ini justru memaksa penanda tangan
+  mencoret. Jabatannya **dipaku "Sekretaris Daerah"**, sengaja BUKAN
+  `ttd.jabatan`: kolom itu memuat jabatan struktural pegawainya dan sempat
+  mencetak "Kepala Sekretariat Daerah" — bukan Sekda. Yang ikut pilihan
+  operator hanya NAMA & NIP.
+
 ### Alur RKBMD yang disepakati (user 2026-08-13) — BARU SEBAGIAN DIBANGUN
 
 1. SKPD menyusun RKBMD → **cetak lembar usulan** (✅ ada, di menu Usulan) →

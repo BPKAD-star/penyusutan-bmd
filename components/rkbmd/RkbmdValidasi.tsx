@@ -44,9 +44,21 @@ type Antrean = {
   total: number
 }
 
+/** Dokumen yang BELUM ditetapkan. Daftar eksplisit, bukan "semua kecuali
+ *  disetujui": status baru harus dipikirkan masuk tab mana, bukan diam-diam
+ *  ikut ke sini. Kembar dengan `STATUS_BELUM` di RkbmdPelaporan. */
+const STATUS_BELUM: RkbmdStatus[] = ['draft', 'diajukan', 'ditolak']
+
+type Tab = 'usulan' | 'tervalidasi'
+
 export default function RkbmdValidasi() {
   const supabase = createClient()
   const [tahun, setTahun] = useState(TAHUN_DEFAULT)
+  // SATU PINTU untuk seluruh keputusan telaah (keputusan user 2026-08-13):
+  // Setujui, Tolak, DAN Buka Kunci ada di layar ini. Buka Kunci sebelumnya di
+  // menu Usulan — tempat SKPD menyusun — sehingga wewenang Pengelola tercecer
+  // di dua menu dan operator SKPD melihat tombol yang bukan haknya.
+  const [tab, setTab] = useState<Tab>('usulan')
   const [isAdmin, setIsAdmin] = useState(false)
   const [rows, setRows] = useState<Antrean[]>([])
   const [loading, setLoading] = useState(true)
@@ -66,10 +78,13 @@ export default function RkbmdValidasi() {
 
   const load = useCallback(async () => {
     setLoading(true); setErr('')
-    const { data, error } = await supabase.from('rkbmd')
+    let q = supabase.from('rkbmd')
       .select('id,skpd_id,tahun_anggaran,jenis,versi,status,diajukan_at,dokumen_paths,nihil,admin_skpd(nama)')
-      .eq('tahun_anggaran', tahun).eq('status', 'diajukan')
-      .order('diajukan_at', { ascending: true })
+      .eq('tahun_anggaran', tahun)
+    // Tab menentukan lingkupnya, dan lingkup itu MUTLAK: tab "Tervalidasi" tak
+    // boleh bisa memuat dokumen yang belum ditetapkan, sebaliknya juga.
+    q = tab === 'tervalidasi' ? q.eq('status', 'disetujui') : q.in('status', STATUS_BELUM)
+    const { data, error } = await q.order('diajukan_at', { ascending: true })
     if (error) { setErr(`gagal membaca antrean telaah: ${error.message}`); setRows([]); setLoading(false); return }
 
     const base = ((data || []) as unknown as Omit<Antrean, 'pakets' | 'jumlah_item' | 'total' | 'dokumen_url'>[])
@@ -104,9 +119,14 @@ export default function RkbmdValidasi() {
         if (h) { h.jumlah_item += 1; h.total += r.total_anggaran || 0 }
       }
     }
+    // Antrean telaah urut waktu pengajuan; daftar yang sudah ditetapkan tak
+    // punya urutan alami itu (banyak yang `diajukan_at` sama) → urut SKPD.
+    if (tab === 'tervalidasi') {
+      base.sort((a, b) => (a.admin_skpd?.nama || '').localeCompare(b.admin_skpd?.nama || ''))
+    }
     setRows(base)
     setLoading(false)
-  }, [tahun]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tahun, tab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
 
@@ -136,10 +156,27 @@ export default function RkbmdValidasi() {
     setBusy(null)
   }
 
+  // Buka Kunci: dokumen yang sudah ditetapkan dikembalikan ke draft supaya SKPD
+  // bisa memperbaikinya. Pindah ke sini dari menu Usulan (keputusan user
+  // 2026-08-13) — menyetujui, menolak, dan membatalkan penetapan adalah tiga
+  // sisi dari satu wewenang yang sama, jadi tempatnya satu layar.
+  async function bukaKunci(h: Antrean) {
+    if (!confirm(
+      `Buka kunci RKBMD ${JENIS_LABEL[h.jenis] || h.jenis} ${h.admin_skpd?.nama || ''} TA ${h.tahun_anggaran}?\n\n`
+      + 'Dokumen kembali ke DRAFT dan bisa disunting SKPD. Penetapannya dibatalkan, '
+      + 'dan untuk diajukan lagi lembarnya harus dicetak & ditandatangani ulang.',
+    )) return
+    setBusy(h.id); setErr(''); setMsg('')
+    const { error } = await supabase.from('rkbmd').update({ status: 'draft' }).eq('id', h.id)
+    if (error) setErr(error.message)
+    else { setMsg('Kunci dibuka — dokumen kembali ke draft di menu Usulan SKPD.'); load() }
+    setBusy(null)
+  }
+
   return (
     <FormShell
       judul="Validasi RKBMD"
-      deskripsi="Antrean telaah Pengelola Barang: seluruh dokumen RKBMD yang sudah diajukan SKPD, dari semua SKPD sekaligus. Persetujuan & penolakan berlaku untuk satu dokumen utuh beserta semua kartunya."
+      deskripsi="Satu pintu keputusan Pengelola Barang atas RKBMD seluruh SKPD: menelaah usulan yang masuk (setujui/tolak) dan membuka kunci dokumen yang sudah ditetapkan. Keputusan berlaku untuk satu dokumen utuh beserta semua kartunya."
       msg={msg}
       headerRight={
         <div>
@@ -154,9 +191,23 @@ export default function RkbmdValidasi() {
       {!isAdmin && (
         <div className="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm">
           Menelaah RKBMD adalah wewenang Pengelola Barang (admin pemda). Anda tetap bisa melihat antreannya,
-          tapi tombol Setujui/Tolak tidak tersedia.
+          tapi tombol Setujui/Tolak/Buka Kunci tidak tersedia.
         </div>
       )}
+
+      <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-100">
+        {([
+          ['usulan', 'Usulan', 'Draft, diajukan, & yang dikembalikan — pantau siapa yang belum menyusun'],
+          ['tervalidasi', 'Tervalidasi', 'Sudah ditetapkan. Di sinilah Buka Kunci kalau perlu diperbaiki'],
+        ] as [Tab, string, string][]).map(([k, label, ket]) => (
+          <button key={k} onClick={() => setTab(k)} title={ket}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === k ? 'border-teal text-teal' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}>
+            {label}
+          </button>
+        ))}
+      </div>
 
       <div className="card overflow-x-auto">
         <table className="w-full">
@@ -179,7 +230,9 @@ export default function RkbmdValidasi() {
               <tr><td colSpan={8} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={8} className="table-td text-center py-8 text-gray-400">
-                Tidak ada RKBMD yang menunggu telaah untuk TA {tahun}.
+                {tab === 'tervalidasi'
+                  ? `Belum ada RKBMD TA ${tahun} yang ditetapkan.`
+                  : `Tidak ada usulan RKBMD TA ${tahun} yang sedang disusun atau menunggu telaah.`}
               </td></tr>
             ) : rows.map(h => (
               <tr key={h.id}>
@@ -229,13 +282,21 @@ export default function RkbmdValidasi() {
                     <span className="text-amber-600 text-xs mr-3"
                       title="Dokumen ini tidak punya lampiran bertanda tangan">⚠ Tanpa lampiran</span>
                   )}
-                  {isAdmin && (
+                  {/* Setujui/Tolak hanya untuk yang BENAR-BENAR menunggu
+                      keputusan. Tab "Usulan" juga memuat draft & yang sudah
+                      dikembalikan — dokumen itu ada di tangan SKPD, bukan di
+                      tangan penelaah, jadi tombolnya tak boleh muncul. */}
+                  {isAdmin && h.status === 'diajukan' && (
                     <>
                       <button onClick={() => setujui(h)} disabled={busy === h.id}
                         className="text-teal hover:underline text-xs font-medium mr-3">Setujui</button>
                       <button onClick={() => tolak(h)} disabled={busy === h.id}
                         className="text-red-500 hover:text-red-700 text-xs font-medium">Tolak</button>
                     </>
+                  )}
+                  {isAdmin && h.status === 'disetujui' && (
+                    <button onClick={() => bukaKunci(h)} disabled={busy === h.id}
+                      className="text-gray-600 hover:text-gray-800 text-xs font-medium">Buka Kunci</button>
                   )}
                 </td>
               </tr>
@@ -309,11 +370,14 @@ function DetailModal({ h, onClose }: { h: Antrean; onClose: () => void }) {
               {' '}{h.pakets.length} kartu · diajukan {h.diajukan_at?.slice(0, 10) || '—'}
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <a href={`/cetak/rkbmd?id=${h.id}`} target="_blank" rel="noopener noreferrer"
-              className="text-xs text-gray-600 hover:text-gray-800 px-2.5 py-1.5 rounded-lg border border-gray-200">🖨 Cetak</a>
-            <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>
-          </div>
+          {/* Tombol Cetak SENGAJA TIDAK di sini (keputusan user 2026-08-13):
+              lembar per-SKPD dicetak di menu Usulan (tempatnya disusun &
+              ditandatangani), lembar se-Kabupaten di menu Pelaporan. Yang
+              ditelaah di layar ini adalah LAMPIRAN bertanda tangan lewat
+              tombol 📄 Dokumen di antrean — mencetak ulang dari sini justru
+              menghasilkan lembar TANPA tanda tangan yang mudah tertukar
+              dengan berkas yang sah. */}
+          <button className="text-gray-400 hover:text-gray-700 text-xl leading-none flex-shrink-0" onClick={onClose}>×</button>
         </div>
 
         <div className="p-5 space-y-5">

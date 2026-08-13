@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
+import { backdropClose } from '@/components/backdropClose'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import ProgramPicker from '@/components/ProgramPicker'
 import RkbmdPengadaanForm from '@/components/rkbmd/RkbmdPengadaanForm'
@@ -200,7 +201,6 @@ export default function RkbmdWorkspace() {
               reloadHeader={loadHeaders} onMsg={setMsg}
               onAjukan={() => patchHeader({ status: 'diajukan' }, 'RKBMD diajukan untuk ditelaah.')}
               onTarik={() => patchHeader({ status: 'draft' }, 'Pengajuan ditarik kembali ke draft.')}
-              onBukaKunci={() => patchHeader({ status: 'draft' }, 'Kunci dibuka — dokumen kembali ke draft.')}
               onHapus={hapusDokumen}
               onNihil={(v) => patchHeader({ nihil: v }, v
                 ? 'Dokumen dinyatakan NIHIL — lampirkan pernyataan bertanda tangan, lalu ajukan.'
@@ -214,34 +214,28 @@ export default function RkbmdWorkspace() {
 }
 
 // ── Panel satu dokumen RKBMD ──────────────────────────────────────────────
+// ⚠️ `onBukaKunci` SUDAH TIDAK ADA (keputusan user 2026-08-13): membuka kunci
+// dokumen yang sudah ditetapkan adalah wewenang Pengelola Barang, dan kini
+// berkumpul satu pintu bersama Setujui & Tolak di menu RKBMD → Validasi.
+// Jangan dikembalikan ke sini — layar ini milik SKPD penyusun.
 function DokumenPanel({
   header, items, pakets, isAdmin, busy, canEditContent, reloadIsi, reloadHeader, onMsg,
-  onAjukan, onTarik, onBukaKunci, onHapus, onNihil,
+  onAjukan, onTarik, onHapus, onNihil,
 }: {
   header: RkbmdHeader; items: RkbmdItem[]; pakets: RkbmdPaket[]
   isAdmin: boolean; busy: boolean; canEditContent: boolean
   reloadIsi: () => void; reloadHeader: () => void; onMsg: (m: string) => void
   onAjukan: () => void; onTarik: () => void
-  onBukaKunci: () => void; onHapus: () => void; onNihil: (v: boolean) => void
+  onHapus: () => void; onNihil: (v: boolean) => void
 }) {
   const supabase = createClient()
   const berkartu = header.jenis === 'pengadaan'
   const total = items.reduce((s, it) => s + (it.total_anggaran || 0), 0)
-  // Dua syarat mengajukan, dan keduanya juga ditegakkan DB — yang di sini cuma
-  // supaya operator tak menekan tombol lalu kena pesan mentah dari Postgres:
-  //   (1) ada isinya, ATAU dokumen dinyatakan NIHIL (migrasi 20260813_02) —
-  //       dokumen yang cuma kosong di antrean telaah membuang waktu penelaah,
-  //       tapi pernyataan nihil itu keputusan yang memang perlu ditelaah;
-  //   (2) lampiran bertanda tangan sudah diunggah (migrasi 20260813_01) —
-  //       BERLAKU JUGA untuk nihil: pernyataannya pun diteken kepala kantor.
-  const adaLampiran = (header.dokumen_paths?.length ?? 0) > 0
-  const adaIsi = items.length > 0 || header.nihil
-  const bolehAjukan = adaIsi && adaLampiran
-  const alasanTakBolehAjukan = !adaIsi
-    ? 'Tambah item dulu, atau nyatakan dokumen ini NIHIL'
-    : !adaLampiran
-      ? 'Unggah dulu lembar usulan bertanda tangan (PDF) di kotak Dokumen usulan'
-      : undefined
+  // Syarat mengajukan sekarang diperiksa DI DALAM pop-up Ajukan (AjukanModal),
+  // bukan dengan mematikan tombolnya di sini: tombol mati tanpa keterangan
+  // membuat operator menebak apa yang kurang. Penegak sesungguhnya tetap
+  // trigger DB — `fn_rkbmd_status_guard` (lampiran) + `fn_rkbmd_nihil_guard`.
+  const [ajukanOpen, setAjukanOpen] = useState(false)
   // Menyatakan nihil hanya masuk akal saat dokumennya memang masih kosong; DB
   // menolak kalau tidak, tapi tombol yang pasti gagal lebih baik tak ada.
   const bolehNihil = canEditContent && (header.nihil || (items.length === 0 && pakets.length === 0))
@@ -280,11 +274,6 @@ function DokumenPanel({
               TETAP di Pelaporan.
               Sengaja tak dibatasi status: draft pun boleh dicetak — justru itu
               gunanya, tanda tangan dibutuhkan SEBELUM diajukan. */}
-          <a href={`/cetak/rkbmd?id=${header.id}`} target="_blank" rel="noopener noreferrer"
-            className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
-            title="Cetak lembar usulan SKPD ini untuk ditandatangani kepala kantor">
-            🖨 Cetak lembar usulan
-          </a>
           {/* "Tambah Kartu" naik ke baris aksi, SEJAJAR dengan Ajukan
               (permintaan user 2026-08-13). Dulu ia menempel di bawah kartu
               terakhir, jadi di dokumen yang sudah berisi beberapa kartu
@@ -308,7 +297,10 @@ function DokumenPanel({
                 Batalkan NIHIL
               </button>
             ) : (
-              <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
+              // Kuning (permintaan user 2026-08-13): NIHIL itu PERNYATAAN, bukan
+              // aksi rutin — warnanya sengaja beda dari tombol biasa supaya tak
+              // terpencet sebagai "lanjut".
+              <button className="text-sm text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-lg"
                 onClick={() => { if (confirm('Nyatakan dokumen RKBMD ini NIHIL — tidak ada usulan untuk jenis & tahun ini?')) onNihil(true) }}
                 disabled={busy}
                 title="Untuk SKPD yang memang tidak punya usulan pada jenis & tahun ini">
@@ -316,58 +308,24 @@ function DokumenPanel({
               </button>
             )
           )}
-          {header.status === 'draft' && (
-            <>
-              <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}
-                title={alasanTakBolehAjukan}>Ajukan</button>
-              <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={onHapus} disabled={busy}>Hapus dokumen</button>
-            </>
-          )}
-          {header.status === 'diajukan' && (
-            <>
-              {!isAdmin && <button className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200" onClick={onTarik} disabled={busy}>Tarik kembali</button>}
-              {/* Setujui/Tolak SENGAJA TIDAK ADA DI SINI (keputusan user
-                  2026-08-13) — telaah dikerjakan di RKBMD → Validasi, tempat
-                  seluruh SKPD terkumpul dalam satu antrean berikut lampiran
-                  bertanda tangannya. Dua pintu untuk satu keputusan berarti
-                  satu di antaranya pasti menyetujui tanpa membuka lampiran,
-                  dan yang di sini justru pintu yang tak punya lampirannya. */}
-              {isAdmin && (
-                <a href="/dashboard/rkbmd/validasi"
-                  className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
-                  title="Persetujuan & penolakan dikerjakan di antrean telaah">
-                  Telaah di menu Validasi →
-                </a>
-              )}
-            </>
-          )}
-          {header.status === 'disetujui' && isAdmin && (
-            <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200" onClick={onBukaKunci} disabled={busy}>Buka Kunci</button>
-          )}
-          {header.status === 'ditolak' && (
-            <>
-              <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}
-                title={alasanTakBolehAjukan}>Ajukan ulang</button>
-              {/* Dokumen DITOLAK boleh dibuang & disusun ulang dari nol
-                  (keputusan user 2026-08-10). Yang DISETUJUI tetap tidak —
-                  bukanya lewat "Buka Kunci". */}
-              <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={onHapus} disabled={busy}>Hapus dokumen</button>
-            </>
-          )}
         </div>
       </div>
 
-      {/* Lampiran ditaruh SEBELUM isi dokumen: urutan di layar mengikuti urutan
-          kerjanya — cetak (tombol di kartu status di atas) → tanda tangan →
-          unggah → baru Ajukan. Tetap ditampilkan saat status 'diajukan'/
-          'disetujui' (read-only) supaya penelaah bisa membuka berkasnya. */}
-      <RkbmdLampiran
-        rkbmdId={header.id}
-        paths={header.dokumen_paths || []}
-        diunggahAt={header.dokumen_diunggah_at}
-        canEdit={canEditContent}
-        onChanged={reloadHeader}
-      />
+      {/* Lampiran hanya ditampilkan saat dokumen SUDAH TAK BISA DISUNTING —
+          sebagai bukti apa yang terlanjur dikirim, supaya operator bisa
+          memeriksanya tanpa membuka menu Validasi. Selama masih draft/ditolak,
+          unggahnya pindah ke pop-up Ajukan (keputusan user 2026-08-13): di
+          sanalah ia benar-benar dibutuhkan, dan menaruhnya di sini membuat
+          operator mengunggah lebih dulu lalu lupa menekan Ajukan. */}
+      {!canEditContent && (header.dokumen_paths?.length ?? 0) > 0 && (
+        <RkbmdLampiran
+          rkbmdId={header.id}
+          paths={header.dokumen_paths || []}
+          diunggahAt={header.dokumen_diunggah_at}
+          canEdit={false}
+          onChanged={reloadHeader}
+        />
+      )}
 
       {header.status === 'ditolak' && header.catatan_telaah && (
         <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">
@@ -422,6 +380,141 @@ function DokumenPanel({
         <DaftarItemDatar header={header} items={items} canEdit={canEditContent}
           reloadIsi={reloadIsi} onMsg={onMsg} />
       )}
+
+      {/* ── Bilah aksi PENUTUP (tata letak ditentukan user 2026-08-13) ───────
+          Di ATAS cuma aksi MENYUSUN (Tambah Kartu, Nyatakan NIHIL); yang
+          MENGAKHIRI dokumen ada di sini, di ujung halaman — urutannya sama
+          dengan urutan kerjanya: cetak → tanda tangan → ajukan. Sebelumnya
+          semuanya bertumpuk di satu baris atas, sehingga "Ajukan" duduk
+          bersebelahan dengan "Tambah Kartu" padahal keduanya berlawanan arah. */}
+      <div className="card p-4 flex flex-wrap items-center justify-end gap-2">
+        <a href={`/cetak/rkbmd?id=${header.id}`} target="_blank" rel="noopener noreferrer"
+          className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
+          title="Cetak lembar usulan untuk ditandatangani kepala kantor">
+          🖨 Cetak lembar usulan
+        </a>
+
+        {(header.status === 'draft' || header.status === 'ditolak') && (
+          <>
+            {/* Tombol ini TIDAK lagi langsung mengirim. Ia membuka pop-up yang
+                menagih lampiran bertanda tangan — gerbang yang sama tetap
+                ditegakkan trigger DB, ini cuma membuat syaratnya terlihat pada
+                saat operator benar-benar berniat mengirim. */}
+            <button className="btn-primary" onClick={() => setAjukanOpen(true)} disabled={busy}>
+              {header.status === 'ditolak' ? 'Ajukan ulang' : 'Ajukan'}
+            </button>
+            <button
+              className="text-sm text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200"
+              onClick={onHapus} disabled={busy}>
+              Hapus dokumen
+            </button>
+          </>
+        )}
+
+        {header.status === 'diajukan' && !isAdmin && (
+          <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
+            onClick={onTarik} disabled={busy}>Tarik kembali</button>
+        )}
+        {/* Setujui/Tolak/Buka Kunci SENGAJA TIDAK ADA DI LAYAR INI (keputusan
+            user 2026-08-13): ketiganya wewenang Pengelola Barang dan berkumpul
+            di RKBMD → Validasi. Dua pintu untuk satu keputusan berarti salah
+            satunya pasti dipakai tanpa membuka lampiran. */}
+        {(header.status === 'diajukan' || header.status === 'disetujui') && isAdmin && (
+          <a href="/dashboard/rkbmd/validasi"
+            className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
+            title="Setujui, tolak, & buka kunci dikerjakan di antrean telaah">
+            Telaah di menu Validasi →
+          </a>
+        )}
+      </div>
+
+      {ajukanOpen && (
+        <AjukanModal
+          header={header}
+          adaIsi={items.length > 0 || header.nihil}
+          busy={busy}
+          onChanged={reloadHeader}
+          onAjukan={() => { setAjukanOpen(false); onAjukan() }}
+          onClose={() => setAjukanOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Pop-up "Ajukan" ─────────────────────────────────────────────────────────
+// Lampiran bertanda tangan ditagih DI SINI, bukan sebagai kartu permanen di
+// halaman (keputusan user 2026-08-13). Alasannya soal urutan kerja: kartu yang
+// selalu terpampang membuat operator mengunggah lebih dulu lalu lupa menekan
+// Ajukan, sementara pop-up ini muncul tepat ketika ia sudah berniat mengirim —
+// dan kalau lampirannya belum ada, di situlah tempat paling tepat menjelaskan
+// caranya. Penegak sesungguhnya tetap trigger `fn_rkbmd_status_guard`.
+function AjukanModal({ header, adaIsi, busy, onChanged, onAjukan, onClose }: {
+  header: RkbmdHeader
+  /** Ada item, atau dokumen sudah dinyatakan NIHIL. */
+  adaIsi: boolean
+  busy: boolean
+  onChanged: () => void
+  onAjukan: () => void
+  onClose: () => void
+}) {
+  const adaLampiran = (header.dokumen_paths?.length ?? 0) > 0
+  const alasan = !adaIsi
+    ? 'Dokumen masih kosong — tambahkan item, atau nyatakan NIHIL.'
+    : !adaLampiran ? 'Unggah dulu lembar usulan bertanda tangan (PDF).' : undefined
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
+      <div className="card w-full max-w-2xl max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between sticky top-0 bg-white z-10">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-gray-800">Ajukan RKBMD ke Pengelola Barang</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Pengajuan wajib disertai lembar usulan yang sudah ditandatangani kepala kantor.
+            </p>
+          </div>
+          <button className="text-gray-400 hover:text-gray-700 text-xl leading-none flex-shrink-0" onClick={onClose}>×</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {!adaIsi && (
+            <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-sm">
+              Dokumen ini belum berisi apa pun. Tambahkan item dulu — atau kalau SKPD Anda memang tidak
+              punya usulan untuk jenis &amp; tahun ini, tekan <span className="font-medium">Nyatakan NIHIL</span>.
+            </div>
+          )}
+
+          {!adaLampiran && (
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Belum ada lampiran — begini urutannya:</p>
+              <ol className="text-sm text-gray-600 space-y-1 list-decimal pl-5">
+                <li>Tekan <span className="font-medium">🖨 Cetak lembar usulan</span> di bawah, lalu cetak lembarnya.</li>
+                <li>Mintakan tanda tangan <span className="font-medium">kepala kantor</span>.</li>
+                <li>Pindai, gabungkan dengan surat pengantar jadi <span className="font-medium">satu berkas PDF</span>.</li>
+                <li>Unggah di bawah ini, lalu tekan Ajukan.</li>
+              </ol>
+            </div>
+          )}
+
+          <RkbmdLampiran
+            rkbmdId={header.id}
+            paths={header.dokumen_paths || []}
+            diunggahAt={header.dokumen_diunggah_at}
+            canEdit
+            onChanged={onChanged}
+          />
+        </div>
+
+        <div className="px-5 py-4 border-t border-gray-100 flex flex-wrap items-center justify-end gap-2 sticky bottom-0 bg-white">
+          <a href={`/cetak/rkbmd?id=${header.id}`} target="_blank" rel="noopener noreferrer"
+            className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200">
+            🖨 Cetak lembar usulan
+          </a>
+          <button className="btn-primary" onClick={onAjukan} disabled={busy || !!alasan} title={alasan}>
+            Ajukan sekarang
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
