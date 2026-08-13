@@ -218,6 +218,14 @@ SET statement_timeout = 0;   -- batas waktu bawaan role Supabase akan memotong
         wewenangnya sudah longgar tapi penjaganya belum terpasang
         (preseden `20260727_01`: picker SKPD dibuka sebelum guard self-approve
         ada → menyetujui kartu sendiri benar-benar mungkin).
+      - **Kolom baru yang ikut di daftar `.select()`**: PostgREST menolak
+        **SELURUH query**, bukan cuma kolom yang hilang — jadi satu kolom yang
+        belum ada di query paling hulu mematikan seluruh modul, bukan cuma
+        fiturnya (preseden `20260813_02`/INS-25: `nihil` ikut di query header
+        RKBMD → Usulan, Validasi, Pelaporan, & cetak mati serentak dengan
+        `column rkbmd.nihil does not exist`). **Ini kelas yang paling gampang
+        diremehkan**, karena "cuma nambah kolom" terdengar seperti perubahan
+        yang tak bisa merusak apa-apa.
 - [ ] **Migrasi yang menambah policy `UPDATE`/`INSERT` juga masuk kategori
       ini** — tanpa policy-nya, tombol Simpan gagal **senyap** (RLS menolak, 0
       baris ter-update, tak ada pesan).

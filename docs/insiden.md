@@ -55,8 +55,9 @@
 | [INS-22](#ins-22) | ditemukan 2026-08-11, **belum sempat salah** | Satu pemanggil `catatTransaksi` tak mengisi `tanggal` → ledger diam-diam bertanggal **hari ini**, bukan tanggal dokumen | ✅ [`sinkronisasi.test.ts`](../lib/sinkronisasi.test.ts) §6 |
 | [INS-23](#ins-23) | ditemukan 2026-08-11 | Enam baris `koreksi_nilai` disisipkan lewat **SQL langsung**, dibalik dengan koreksi berlawanan tanda alih-alih `batal_koreksi_nilai` | ⬜ soal disiplin operasi |
 | [INS-24](#ins-24) | 2026-08-13 | Dashboard menghitung **51** barang dipindah antar SKPD, padahal **57** | ✅ [`pengalihan.test.ts`](../lib/pengalihan.test.ts) |
+| [INS-25](#ins-25) | 2026-08-13 | **Seluruh menu RKBMD mati** — `column rkbmd.nihil does not exist` | ⬜ soal urutan deploy |
 
-**Skornya hari ini: 7 dari 24 punya penjaga otomatis, dua di antaranya
+**Skornya hari ini: 7 dari 25 punya penjaga otomatis, dua di antaranya
 sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
 
 INS-22 satu-satunya yang masuk daftar ini **sebelum** memakan korban. Ia layak
@@ -665,9 +666,40 @@ melainkan membaca ulang pemanggil satu per satu **sesudah** data bilang aman.
 
 ---
 
+### INS-25
+**Empat halaman RKBMD mati bersamaan: `column rkbmd.nihil does not exist`**
+
+- **Tanggal** — **2026-08-13**, beberapa jam sesudah deploy fitur usulan NIHIL.
+- **Gejala** — Usulan, Validasi, & Pelaporan RKBMD serentak menampilkan pita
+  merah `column rkbmd.nihil does not exist` lalu tabelnya kosong; halaman cetak
+  ikut mati. Bukan sebagian — **seluruh menu RKBMD tak bisa dipakai**.
+- **Akar masalah** — bukan cacat kode. **Kodenya di-push & ter-deploy, tapi
+  migrasi `20260813_02` belum dijalankan di SQL Editor.** Keempat halaman itu
+  sudah men-`select` kolom `nihil`; tanpa kolomnya PostgREST menolak SELURUH
+  query, bukan cuma kolom itu.
+- **Yang bikin gejalanya seluas itu** — `nihil` ikut di daftar kolom query
+  HEADER, yang dibaca setiap halaman RKBMD sebelum apa pun bisa ditampilkan.
+  Satu kolom hilang di query paling hulu = seluruh modul berhenti.
+- **Perbaikan** — migrasinya dijalankan (kolom + dua fungsi trigger ditulis
+  ulang). Sesudah itu diverifikasi ke DB: kolom ada, kedua fungsi memuat blok
+  NIHIL, query header jalan, dan guard-nya diuji benar-benar menolak pernyataan
+  NIHIL pada dokumen yang masih berisi 1 item (uji dibatalkan sendiri, data
+  tidak berubah).
+- **Pelajaran** — deploy-ordering-nya SUDAH tertulis di CLAUDE.md, di kepala
+  berkas migrasinya, DAN di pesan commit-nya; tetap terlewat. Peringatan yang
+  cuma tertulis tak menahan apa pun — yang menahan cuma urutan kerja: **jalankan
+  migrasi dulu, baru `git push`.** Selama jendela di antaranya, aplikasi memang
+  rusak, dan panjang jendela itu ditentukan oleh urutan tekan tombol.
+  Lihat [runbook-migrasi.md](runbook-migrasi.md).
+- **Test** — ⬜ tak bisa diuji dari TS; ini soal urutan operasi. Yang bisa
+  membantu kelak: pemeriksaan pra-deploy yang membandingkan kolom yang
+  di-`select` kode dengan skema yang sedang hidup.
+
+---
+
 ## Pola yang berulang
 
-Dua puluh empat entri di atas bukan dua puluh empat masalah berbeda. Kalau
+Dua puluh lima entri di atas bukan dua puluh lima masalah berbeda. Kalau
 diurutkan menurut **akar**-nya, sebagian besar jatuh ke empat keluarga — dan
 keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 
@@ -682,7 +714,7 @@ keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 | **Perbaikan data lewat SQL langsung** — melewati bentuk payload, `header_id`, & pilihan jenis pembatalan yang dijaga menu | INS-23 | ⬜ soal disiplin operasi, bukan kode |
 | **Penyapuan rename yang tidak tuntas** | INS-19 | ✅ `lib/sinkronisasi.test.ts` — nama tabel dicocokkan ke tipe generated |
 | **Foto beku vs data hidup** — snapshot yang benar hari lahirnya lalu ditinggal kenyataan | INS-20 | ⬜ belum; butuh keputusan apakah baseline boleh diperbaiki |
-| **Prosedur migrasi** | INS-13 · INS-14 | [runbook-migrasi.md](runbook-migrasi.md) |
+| **Prosedur migrasi** | INS-13 · INS-14 · INS-25 | [runbook-migrasi.md](runbook-migrasi.md) — INS-25 menambah satu aturan: **migrasi dijalankan SEBELUM push**, bukan sesudah |
 
 Dua pengamatan yang berlaku untuk hampir semuanya:
 
