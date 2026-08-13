@@ -87,7 +87,14 @@ function CaraCard({ cara, disetujui, belum, nilai, onClickApproved, onClickPendi
     <div className="card p-4">
       <p className="text-xs text-gray-600 leading-tight">{cara.label}</p>
       <p className="text-sm font-bold text-teal mb-1 truncate" title={formatRp(nilai)}>{formatRp(nilai)}</p>
-      <div className="flex items-center gap-3 mt-1">
+      {/* ⚠️ `min-w-0` di baris ini & di kolom keterangan BUKAN hiasan: tanpa itu
+          min-width flex item = min-content, jadi kolom keterangan menolak
+          menyempit dan teksnya MELUBER keluar kartu — di layar sempit (mis.
+          DevTools terbuka) tulisannya menimpa kartu sebelahnya. Dengan min-w-0
+          ia membungkus ke bawah, tetap di dalam kartunya.
+          KEMBAR dengan DonutCard di MutasiTransferCards.tsx — ubah satu,
+          samakan yang lain. */}
+      <div className="flex items-center gap-3 mt-1 min-w-0">
         <div
           className="relative flex-shrink-0"
           style={{ width: 56, height: 56, borderRadius: '50%', background: `conic-gradient(#0d9488 ${pct}%, #fbbf24 ${pct}% 100%)` }}
@@ -97,13 +104,13 @@ function CaraCard({ cara, disetujui, belum, nilai, onClickApproved, onClickPendi
             <span className="text-[10px] font-semibold text-gray-700">{pct}%</span>
           </div>
         </div>
-        <div className="text-xs space-y-1">
-          <button onClick={onClickApproved} className="flex items-center gap-1.5 hover:underline" disabled={disetujui === 0}>
-            <span className="w-2 h-2 rounded-full bg-teal inline-block" />
+        <div className="text-xs space-y-1 min-w-0">
+          <button onClick={onClickApproved} className="flex items-start gap-1.5 hover:underline text-left min-w-0" disabled={disetujui === 0}>
+            <span className="w-2 h-2 rounded-full bg-teal inline-block flex-shrink-0 mt-1" />
             <span className="text-gray-700">{nf(disetujui)} disetujui</span>
           </button>
-          <button onClick={onClickPending} className="flex items-center gap-1.5 hover:underline" disabled={belum === 0}>
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+          <button onClick={onClickPending} className="flex items-start gap-1.5 hover:underline text-left min-w-0" disabled={belum === 0}>
+            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block flex-shrink-0 mt-1" />
             <span className="text-gray-700">{nf(belum)} menunggu</span>
           </button>
         </div>

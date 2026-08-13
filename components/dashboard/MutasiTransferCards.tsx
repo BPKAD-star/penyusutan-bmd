@@ -81,7 +81,10 @@ function DonutCard({ label, note, disetujui, belum, onClickDisetujui, onClickMen
   return (
     <div className="card p-4">
       <p className="text-xs text-gray-600 leading-tight h-8">{label}</p>
-      <div className="flex items-center gap-3 mt-1">
+      {/* ⚠️ `min-w-0` — lihat penjelasannya di CaraPerolehanCards.tsx (kartu ini
+          KEMBAR dengannya). Tanpa itu keterangannya meluber keluar kartu di
+          layar sempit. Ubah satu, samakan yang lain. */}
+      <div className="flex items-center gap-3 mt-1 min-w-0">
         <div
           className="relative flex-shrink-0"
           style={{ width: 56, height: 56, borderRadius: '50%', background: `conic-gradient(#0d9488 ${pct}%, #fbbf24 ${pct}% 100%)` }}
@@ -91,13 +94,13 @@ function DonutCard({ label, note, disetujui, belum, onClickDisetujui, onClickMen
             <span className="text-[10px] font-semibold text-gray-700">{pct}%</span>
           </div>
         </div>
-        <div className="text-xs space-y-1">
-          <button onClick={onClickDisetujui} className="flex items-center gap-1.5 hover:underline" disabled={disetujui === 0}>
-            <span className="w-2 h-2 rounded-full bg-teal inline-block" />
+        <div className="text-xs space-y-1 min-w-0">
+          <button onClick={onClickDisetujui} className="flex items-start gap-1.5 hover:underline text-left min-w-0" disabled={disetujui === 0}>
+            <span className="w-2 h-2 rounded-full bg-teal inline-block flex-shrink-0 mt-1" />
             <span className="text-gray-700">{nf(disetujui)} disetujui</span>
           </button>
-          <button onClick={onClickMenunggu} className="flex items-center gap-1.5 hover:underline" disabled={belum === 0}>
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+          <button onClick={onClickMenunggu} className="flex items-start gap-1.5 hover:underline text-left min-w-0" disabled={belum === 0}>
+            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block flex-shrink-0 mt-1" />
             <span className="text-gray-700">{nf(belum)} menunggu</span>
           </button>
         </div>

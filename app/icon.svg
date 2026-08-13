@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Ikon tab peramban. Lambang & warnanya SENGAJA sama dengan logo di TopBar
+       (components/TopBar.tsx): gedung kantor putih di atas kotak membulat teal
+       #0d9488 (tailwind.config.ts). Kalau logonya diganti, ganti juga di sini —
+       ikon tab yang berbeda dari logo di layar membuat aplikasi terasa seperti
+       dua situs berbeda saat banyak tab terbuka sekaligus. -->
+  <rect width="32" height="32" rx="7" fill="#0d9488"/>
+  <g fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 24V10a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v14"/>
+    <path d="M7 24h18"/>
+    <path d="M13 12h.01M13 16h.01M19 12h.01M19 16h.01"/>
+    <path d="M13.5 24v-3.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V24"/>
+  </g>
+</svg>
