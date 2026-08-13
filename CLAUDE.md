@@ -1315,7 +1315,44 @@ kuantitas + angka eksisting. Jangan menyalin alurnya ke pop-up.
   diterjemahkan jadi kalimat yang menyuruh menambahkan barang ke kartu yang
   sudah ada.
 
-### Standar Harga: alur usulan→validasi (disepakati user 2026-08-13) — BELUM DIBANGUN
+### Standar Harga: alur usulan→validasi (user 2026-08-13) — DB SELESAI, LAYAR BELUM
+
+**Sudah dibangun (migrasi 20260813_03 + `lib/rkbmdStandarUsulan.ts`):**
+- Tabel `rkbmd_standar_usulan` → `_item` → `_rekening`. Nama sengaja tetap
+  keluarga `rkbmd_standar_*` supaya hubungannya terbaca dari namanya saja;
+  BUKAN prefix baru (`sh_*`) yang memecah satu keluarga jadi dua tempat.
+- Partial unique `uq_standar_usulan_berjalan` — paling banyak SATU usulan
+  berjalan per SKPD/tahun/jenis, tapi riwayat yang sudah selesai bebas berapa
+  pun (SKPD tetap boleh mengusulkan tambahan sesudah usulan pertama ditetapkan).
+- `fn_standar_usulan_status_guard` (admin-only utk setuju/tolak; menolak
+  pengajuan usulan KOSONG) & `fn_standar_usulan_item_guard` (baris terkunci
+  sesudah diajukan + **bentuk sah per jenis**: ssh/hspk wajib kode+harga,
+  asb/sbu wajib harga & kode HARUS kosong, sbsk wajib kode+kuantitas+satuan
+  pengukur). Bentuk divalidasi di DB, bukan cuma UI — baris yang salah bentuk
+  kalau lolos baru meledak saat DISETUJUI, di tangan penelaah.
+- `fn_standar_usulan_setujui(p_id)` — seluruh baris masuk bak bersama, atomik.
+- ⚠️ `fn_rkbmd_standar_simpan` dapat parameter ke-10 **`p_skpd_id`**. Versi lama
+  selalu mengambil SKPD dari `auth.uid()`, jadi kalau dipakai saat ADMIN
+  menyetujui, baris bak bersama akan dikreditkan ke SKPD admin — bukan ke
+  pengusulnya. Fungsinya **di-DROP dulu lalu dibuat ulang**: menambah parameter
+  ber-DEFAULT tanpa membuang versi 9-argumen membuat panggilan lama ambigu
+  ("function is not unique"). Sudah diuji ke DB: panggilan 9-argumen dari form
+  SSH tetap jalan, dan kredit jatuh ke SKPD pengusul.
+- Lampiran bertanda tangan: kolomnya SUDAH ADA (`dokumen_paths`,
+  `dokumen_diunggah_at`) tapi gerbangnya **sengaja belum dinyalakan** — user
+  belum memintanya untuk standar harga. Tiga baris di
+  `fn_standar_usulan_status_guard` tinggal dibuka kalau nanti perlu.
+
+**Belum dibangun:** tiga layar (Usulan · Validasi · Pelaporan Standar Harga),
+rutenya, dan pemecahan sidebar jadi dua kelompok bertingkat.
+
+⚠️ **Deploy-ordering: migrasi 20260813_03 WAJIB jalan SEBELUM deploy kode** —
+ia mem-`DROP` lalu membuat ulang `fn_rkbmd_standar_simpan`. Selama jendela
+antara migrasi & deploy tak ada yang rusak (tanda tangan 9-argumen tetap
+dilayani), tapi kode yang menyentuh tabel usulan akan gagal kalau tabelnya
+belum ada.
+
+Rancangan asli & alasannya:
 
 Menu RKBMD dipecah jadi dua kelompok, masing-masing **Usulan · Validasi ·
 Pelaporan**: satu untuk **Standar Harga**, satu untuk **RKBMD**. Di Usulan
