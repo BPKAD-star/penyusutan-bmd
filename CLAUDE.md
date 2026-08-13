@@ -1288,6 +1288,55 @@ mengikuti siapa pemilik keputusannya:
   mencetak ulang dari sana justru menghasilkan lembar TANPA tanda tangan yang
   mudah tertukar dengan berkas sah.
 
+### Kartu RKBMD Pengadaan diisi lewat POP-UP (user 2026-08-13)
+
+"Tambah Kartu" tak lagi melahirkan kartu KOSONG di halaman lalu diisi di tempat;
+ia membuka pop-up dua langkah: **Program/Kegiatan/Sub Kegiatan → barang
+pertama** (`KartuModal`). Langkah 2 memakai ulang `RkbmdPengadaanForm` apa
+adanya — form itu sudah menuntun jenis aset → kode barang SSH → kode rekening →
+kuantitas + angka eksisting. Jangan menyalin alurnya ke pop-up.
+
+- ⚠️ Ini **melonggarkan** catatan 2026-08-10 *"jangan kembalikan pola 'isi di
+  picker, simpan di tombol lain'"*. Yang dilarang waktu itu tautan simpan
+  TERPISAH di halaman yang sama: picker terlihat terisi → operator mengira
+  tersimpan → menekan Ajukan → pilihannya tak pernah sampai ke DB. Di pop-up
+  bentuk risikonya beda: selama belum disimpan **kartunya belum ada sama sekali**
+  di halaman, jadi tak ada yang bisa terbaca sebagai "sudah tersimpan". Menutup
+  pop-up = tak terjadi apa-apa — lebih aman daripada kartu kosong yang terlanjur
+  lahir dari satu klik nyasar.
+- **Header kartu BOLEH DIUBAH** (bukan "salah berarti hapus"), lewat pop-up yang
+  sama via tombol ✎ Ubah. Aman karena item menempel lewat `paket_id`, bukan
+  lewat teks sub kegiatannya — tak ada angka yang ikut bergeser; dan kalau
+  lembarnya sudah diteken, `trg_rkbmd_paket_lampiran` mencabut lampirannya
+  otomatis. Menghapus kartu tetap ada, tapi ia MEMBAWA SERTA itemnya, jadi
+  memaksa hapus-dan-ulang berarti menghanguskan puluhan barang hanya karena satu
+  dropdown keliru.
+- UNIQUE `(rkbmd_id, sub_kegiatan)` tetap penjaganya; pesan `23505`
+  diterjemahkan jadi kalimat yang menyuruh menambahkan barang ke kartu yang
+  sudah ada.
+
+### Standar Harga: alur usulan→validasi (disepakati user 2026-08-13) — BELUM DIBANGUN
+
+Menu RKBMD dipecah jadi dua kelompok, masing-masing **Usulan · Validasi ·
+Pelaporan**: satu untuk **Standar Harga**, satu untuk **RKBMD**. Di Usulan
+Standar Harga, hal pertama yang dipilih operator adalah JENIS usulannya — SSH ·
+ASB · SBU · HSPK · **Standar Kebutuhan (SBSK)** — selebihnya alurnya sama.
+
+⚠️ **Keputusan model data yang WAJIB dipatuhi: usulan ditampung di TABEL
+STAGING sendiri, bukan kolom `status` di `rkbmd_standar`.** Sebabnya bak
+bersama: `uq_rkbmd_standar_identitas` membuat usulan SKPD yang masih *pending*
+MEMBLOKIR SKPD lain mengusulkan barang yang sama — terblokir oleh baris yang tak
+bisa mereka lihat, dan tetap terblokir walau usulan itu akhirnya ditolak.
+Dengan staging: tiap SKPD bebas mengusulkan, dedup & gabung rekening baru jalan
+**saat approve** memakai RPC `fn_rkbmd_standar_simpan` yang sudah ada.
+Untung besarnya: **picker RKBMD tak perlu diubah sama sekali** — isi
+`rkbmd_standar` dengan sendirinya berarti "sudah tervalidasi".
+
+SBSK ikut satu pintu walau bentuknya beda (kuantitas standar per satuan
+pengukur, bukan harga) → staging-nya butuh kolom harga & kuantitas yang saling
+nullable, dengan CHECK per jenis seperti pola `rkbmd_standar` sekarang
+(ssh/hspk wajib `kode`; asb/sbu `kode` NULL).
+
 ### Ukuran kertas & nama berkas cetak (user 2026-08-13)
 
 - **Lembar se-Kabupaten = F4 landscape** (`330mm 215mm`); **lembar per-SKPD

@@ -240,12 +240,11 @@ function DokumenPanel({
   // menolak kalau tidak, tapi tombol yang pasti gagal lebih baik tak ada.
   const bolehNihil = canEditContent && (header.nihil || (items.length === 0 && pakets.length === 0))
 
-  async function tambahKartu() {
-    const next = Math.max(0, ...pakets.map(p => p.no_urut || 0)) + 1
-    const { error } = await supabase.from('rkbmd_paket').insert({ rkbmd_id: header.id, no_urut: next })
-    if (error) onMsg(`Error: gagal menambah kartu: ${error.message}`)
-    else reloadIsi()
-  }
+  // Kartu tak lagi dibuat kosong lalu diisi di tempat — pengisiannya lewat
+  // pop-up (keputusan user 2026-08-13). `null` = tertutup; `{paket:null}` =
+  // membuat baru; `{paket}` = mengubah header kartu yang sudah ada.
+  const [kartuModal, setKartuModal] = useState<{ paket: RkbmdPaket | null } | null>(null)
+  const nomorKartuBerikut = Math.max(0, ...pakets.map(p => p.no_urut || 0)) + 1
 
   return (
     <div className="space-y-4">
@@ -282,7 +281,7 @@ function DokumenPanel({
               awal — di sana ia bagian dari penjelasan "satu kartu = satu sub
               kegiatan", bukan sekadar tombol. */}
           {berkartu && canEditContent && !header.nihil && (
-            <button className="btn-primary text-sm" onClick={tambahKartu} disabled={busy}>
+            <button className="btn-primary text-sm" onClick={() => setKartuModal({ paket: null })} disabled={busy}>
               + Tambah Kartu Program/Kegiatan
             </button>
           )}
@@ -362,13 +361,18 @@ function DokumenPanel({
                 Satu kartu = satu Sub Kegiatan, berisi beberapa item barang. Buat sebanyak yang dibutuhkan,
                 baru ajukan sekali ke Pengelola Barang.
               </p>
-              {canEditContent && <button className="btn-primary" onClick={tambahKartu} disabled={busy}>+ Tambah Kartu</button>}
+              {canEditContent && (
+                <button className="btn-primary" onClick={() => setKartuModal({ paket: null })} disabled={busy}>
+                  + Tambah Kartu
+                </button>
+              )}
             </div>
           ) : (
             pakets.map(p => (
               <KartuPaket key={p.id} paket={p} header={header}
                 items={items.filter(i => i.paket_id === p.id)}
-                canEdit={canEditContent} onMsg={onMsg} reloadIsi={reloadIsi} />
+                canEdit={canEditContent} onMsg={onMsg} reloadIsi={reloadIsi}
+                onUbah={() => setKartuModal({ paket: p })} />
             ))
           )}
           <div className="card p-4 flex items-center justify-between">
@@ -427,6 +431,17 @@ function DokumenPanel({
           </a>
         )}
       </div>
+
+      {kartuModal && (
+        <KartuModal
+          header={header}
+          paket={kartuModal.paket}
+          nomorBerikut={nomorKartuBerikut}
+          onMsg={onMsg}
+          onTersimpan={reloadIsi}
+          onTutup={() => setKartuModal(null)}
+        />
+      )}
 
       {ajukanOpen && (
         <AjukanModal
@@ -519,42 +534,156 @@ function AjukanModal({ header, adaIsi, busy, onChanged, onAjukan, onClose }: {
   )
 }
 
-// ── Satu kartu = satu Program/Kegiatan/Sub Kegiatan + itemnya ───────────────
-function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi }: {
-  paket: RkbmdPaket; header: RkbmdHeader; items: RkbmdItem[]
-  canEdit: boolean; onMsg: (m: string) => void; reloadIsi: () => void
+// ── Pop-up kartu: Program/Kegiatan/Sub Kegiatan → barang pertama ────────────
+// Dua langkah dalam SATU pop-up (keputusan user 2026-08-13). Dulu "Tambah
+// Kartu" langsung membuat kartu KOSONG di halaman lalu diisi di tempat, jadi
+// satu klik nyasar meninggalkan kartu hampa yang harus dihapus manual, dan
+// urutan pengisiannya tak terbaca dari layar.
+//
+// ⚠️ Ini MELONGGARKAN catatan 2026-08-10 "jangan kembalikan pola 'isi di
+// picker, simpan di tombol lain'". Yang dilarang waktu itu adalah tautan simpan
+// TERPISAH di halaman yang sama: picker-nya sudah terlihat terisi, operator
+// mengira tersimpan, lalu menekan Ajukan — dan pilihannya tak pernah sampai ke
+// DB. Bentuk risikonya BERBEDA di sini: selama pop-up belum disimpan, kartunya
+// belum ada sama sekali di halaman, jadi tak ada apa pun yang bisa terbaca
+// sebagai "sudah tersimpan". Menutup pop-up = tak terjadi apa-apa, dan itu
+// justru lebih aman daripada kartu kosong yang terlanjur lahir.
+//
+// Langkah 2 memakai ulang `RkbmdPengadaanForm` apa adanya — form itu sudah
+// menuntun jenis aset → kode barang (SSH) → kode rekening → kuantitas berikut
+// angka eksisting. Menyalin alurnya ke sini berarti dua tempat yang harus
+// diubah bersamaan setiap kali aturan SSH bergeser.
+function KartuModal({ header, paket, nomorBerikut, onMsg, onTersimpan, onTutup }: {
+  header: RkbmdHeader
+  /** null = kartu baru; terisi = mengubah header kartu yang sudah ada. */
+  paket: RkbmdPaket | null
+  nomorBerikut: number
+  onMsg: (m: string) => void
+  onTersimpan: () => void
+  onTutup: () => void
 }) {
   const supabase = createClient()
-  const [program, setProgram] = useState(paket.program || '')
-  const [kegiatan, setKegiatan] = useState(paket.kegiatan || '')
-  const [subKeg, setSubKeg] = useState(paket.sub_kegiatan || '')
+  const [program, setProgram] = useState(paket?.program || '')
+  const [kegiatan, setKegiatan] = useState(paket?.kegiatan || '')
+  const [subKeg, setSubKeg] = useState(paket?.sub_kegiatan || '')
+  // Terisi sesudah kartu baru benar-benar tersimpan → pop-up lanjut ke langkah 2.
+  const [paketBaruId, setPaketBaruId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const mengubah = !!paket
+
+  async function simpanHeader() {
+    if (!subKeg) { setErr('Pilih Sub Kegiatan dulu — satu kartu = satu Sub Kegiatan.'); return }
+    setSaving(true); setErr('')
+    const isi = {
+      program: program || null, kegiatan: kegiatan || null, sub_kegiatan: subKeg || null,
+    }
+    try {
+      if (mengubah) {
+        const { error } = await supabase.from('rkbmd_paket').update(isi).eq('id', paket!.id)
+        if (error) { setErr(pesanKartu(error)); return }
+        onTersimpan(); onTutup()
+        return
+      }
+      // `.select('id')` WAJIB: id kartu baru dibutuhkan langkah 2, DAN insert
+      // yang ditolak RLS tak melempar error — cuma mengembalikan 0 baris.
+      const { data, error } = await supabase.from('rkbmd_paket')
+        .insert({ rkbmd_id: header.id, no_urut: nomorBerikut, ...isi })
+        .select('id')
+      if (error) { setErr(pesanKartu(error)); return }
+      if (!data || data.length === 0) { setErr('Kartu ditolak database — dokumen ini di luar wewenang SKPD-mu.'); return }
+      setPaketBaruId((data[0] as { id: string }).id)
+      onTersimpan() // kartunya sudah nyata di belakang pop-up
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /** UNIQUE (rkbmd_id, sub_kegiatan) — dua kartu untuk sub kegiatan yang sama. */
+  const pesanKartu = (e: { code?: string; message: string }) =>
+    e.code === '23505'
+      ? 'Sub Kegiatan itu sudah punya kartu sendiri di dokumen ini — tambahkan barangnya ke kartu tersebut.'
+      : e.message
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onTutup)}>
+      <div className="card w-full max-w-3xl max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between sticky top-0 bg-white z-10">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-gray-800">
+              {mengubah ? `Ubah Kartu ${paket!.no_urut ?? ''}` : `Kartu Baru ${nomorBerikut}`}
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {paketBaruId
+                ? 'Kartu tersimpan. Sekarang isi barang pertamanya — barang lain bisa ditambah lagi nanti dari kartunya.'
+                : 'Satu kartu = satu Sub Kegiatan, berisi beberapa item barang.'}
+            </p>
+          </div>
+          <button className="text-gray-400 hover:text-gray-700 text-xl leading-none flex-shrink-0" onClick={onTutup}>×</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {err && <p className="text-xs text-red-600">{err}</p>}
+
+          {paketBaruId ? (
+            // Langkah 2 — barang pertama. Header kartunya ditampilkan ringkas
+            // sebagai penegasan konteks; mengubahnya lagi lewat tombol "Ubah"
+            // di kartunya, bukan di sini (satu pop-up satu maksud).
+            <>
+              <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-xs space-y-1">
+                <p><span className="text-gray-400 inline-block w-24">Program</span>: <span className="text-gray-700">{program || '—'}</span></p>
+                <p><span className="text-gray-400 inline-block w-24">Kegiatan</span>: <span className="text-gray-700">{kegiatan || '—'}</span></p>
+                <p><span className="text-gray-400 inline-block w-24">Sub Kegiatan</span>: <span className="text-gray-700">{subKeg || '—'}</span></p>
+              </div>
+              <RkbmdPengadaanForm
+                rkbmdId={header.id} paketId={paketBaruId}
+                skpdId={header.skpd_id} tahun={header.tahun_anggaran}
+                editItem={null}
+                onSaved={() => { onTersimpan(); onTutup() }}
+                onCancel={onTutup}
+              />
+              <p className="text-[11px] text-gray-400">
+                Tutup tanpa mengisi barang pun tak apa — kartunya sudah tersimpan dan bisa diisi dari halaman.
+              </p>
+            </>
+          ) : (
+            <>
+              <ProgramPicker
+                program={program} kegiatan={kegiatan} subKeg={subKeg}
+                onChange={sel => {
+                  setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan)
+                  setErr('')
+                }}
+              />
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button className="text-sm text-gray-500 hover:text-gray-700 px-2" onClick={onTutup}>Batal</button>
+                <button className="btn-primary" onClick={simpanHeader} disabled={saving || !subKeg}
+                  title={!subKeg ? 'Pilih Sub Kegiatan dulu' : undefined}>
+                  {saving ? 'Menyimpan…' : mengubah ? 'Simpan Perubahan' : 'Simpan & Lanjut Isi Barang'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Satu kartu = satu Program/Kegiatan/Sub Kegiatan + itemnya ───────────────
+function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi, onUbah }: {
+  paket: RkbmdPaket; header: RkbmdHeader; items: RkbmdItem[]
+  canEdit: boolean; onMsg: (m: string) => void; reloadIsi: () => void
+  /** Buka pop-up kartu dalam mode ubah — header kartu tak lagi disunting di tempat. */
+  onUbah: () => void
+}) {
+  const supabase = createClient()
   const [showForm, setShowForm] = useState(false)
   const [editItem, setEditItem] = useState<RkbmdItem | null>(null)
 
-  useEffect(() => {
-    setProgram(paket.program || ''); setKegiatan(paket.kegiatan || ''); setSubKeg(paket.sub_kegiatan || '')
-  }, [paket.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
   const total = items.reduce((s, it) => s + (it.total_anggaran || 0), 0)
   const formOpen = showForm || !!editItem
-
-  // TERSIMPAN OTOMATIS tiap dipilih — tautan "Simpan" terpisah sudah terbukti
-  // jadi jebakan (pilihan terlihat jadi tapi tak pernah sampai ke DB).
-  async function simpanProgram(sel: { program: string; kegiatan: string; sub_kegiatan: string }) {
-    setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan)
-    const { error } = await supabase.from('rkbmd_paket').update({
-      program: sel.program || null, kegiatan: sel.kegiatan || null, sub_kegiatan: sel.sub_kegiatan || null,
-    }).eq('id', paket.id)
-    if (error) {
-      // UNIQUE (rkbmd_id, sub_kegiatan): sub kegiatan yang sama sudah punya kartu.
-      onMsg(error.code === '23505'
-        ? `Error: Sub Kegiatan itu sudah punya kartu sendiri di dokumen ini — tambahkan barangnya ke kartu tersebut.`
-        : `Error: ${error.message}`)
-      reloadIsi()
-    } else {
-      reloadIsi()
-    }
-  }
 
   async function hapusKartu() {
     if (!confirm(items.length > 0
@@ -578,23 +707,28 @@ function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi }: {
             KARTU {paket.no_urut ?? ''} — PROGRAM / KEGIATAN / SUB KEGIATAN
           </p>
           {canEdit && (
-            <button onClick={hapusKartu} title="Hapus kartu ini"
-              className="text-red-500 hover:text-red-700 text-xs font-medium flex-shrink-0">🗑 Hapus kartu</button>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {/* Header kartu BOLEH diubah (keputusan user 2026-08-13) — lewat
+                  pop-up yang sama dengan pembuatannya. Mengubahnya aman: item
+                  menempel ke kartu lewat `paket_id`, bukan lewat teks sub
+                  kegiatannya, jadi tak ada angka yang ikut bergeser. Dan kalau
+                  lembarnya sudah ditandatangani, `trg_rkbmd_paket_lampiran`
+                  otomatis mencabut lampirannya. Pilihan "salah program berarti
+                  hapus kartu" sengaja TIDAK diambil: itu menghanguskan seluruh
+                  item yang sudah diketik hanya karena satu dropdown keliru. */}
+              <button onClick={onUbah} title="Ubah program/kegiatan/sub kegiatan kartu ini"
+                className="text-gray-500 hover:text-gray-700 text-xs font-medium">✎ Ubah</button>
+              <button onClick={hapusKartu} title="Hapus kartu ini"
+                className="text-red-500 hover:text-red-700 text-xs font-medium">🗑 Hapus kartu</button>
+            </div>
           )}
         </div>
 
-        {canEdit ? (
-          <div className="mt-2 max-w-3xl">
-            <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg} onChange={simpanProgram} />
-            <p className="text-[11px] text-gray-400 mt-1">Tersimpan otomatis setiap kali dipilih.</p>
-          </div>
-        ) : (
-          <div className="mt-2 space-y-1 text-xs">
-            <p><span className="text-gray-400 inline-block w-24">Program</span>: <span className="text-gray-700">{paket.program || '—'}</span></p>
-            <p><span className="text-gray-400 inline-block w-24">Kegiatan</span>: <span className="text-gray-700">{paket.kegiatan || '—'}</span></p>
-            <p><span className="text-gray-400 inline-block w-24">Sub Kegiatan</span>: <span className="text-gray-700">{paket.sub_kegiatan || '—'}</span></p>
-          </div>
-        )}
+        <div className="mt-2 space-y-1 text-xs">
+          <p><span className="text-gray-400 inline-block w-24">Program</span>: <span className="text-gray-700">{paket.program || '—'}</span></p>
+          <p><span className="text-gray-400 inline-block w-24">Kegiatan</span>: <span className="text-gray-700">{paket.kegiatan || '—'}</span></p>
+          <p><span className="text-gray-400 inline-block w-24">Sub Kegiatan</span>: <span className="text-gray-700">{paket.sub_kegiatan || '—'}</span></p>
+        </div>
       </div>
 
       {canEdit && formOpen && (
