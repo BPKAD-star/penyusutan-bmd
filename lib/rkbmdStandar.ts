@@ -86,6 +86,12 @@ export type StandarRow = {
   satuan: string | null
   harga: number
   tkdn: number | null
+  /** Merk/Tipe (migrasi 20260813_04). SENGAJA di luar `identitas`: rumus dedup
+   *  itu kembar di tiga tempat, dan menambah ruas di sana harus persis sama di
+   *  ketiganya. Konsekuensinya barang identik ber-merk beda tetap satu baris —
+   *  merk pengusul pertama yang tercatat, usulan berikutnya hanya mengisi bila
+   *  masih kosong. */
+  merk_tipe: string | null
   keterangan: string | null
   skpd_id: number | null
   /** Dirakit dari `rkbmd_standar_rekening` — bisa lebih dari satu (hasil gabungan antar-SKPD). */
@@ -94,7 +100,7 @@ export type StandarRow = {
   skpd_nama: string | null
 }
 
-const COLS = 'id,jenis,tahun,kode,nama,satuan,harga,tkdn,keterangan,skpd_id,admin_skpd(nama)'
+const COLS = 'id,jenis,tahun,kode,nama,satuan,harga,tkdn,merk_tipe,keterangan,skpd_id,admin_skpd(nama)'
 
 /** Jumlah slot rekening di FORM (permintaan user). Tabelnya sendiri tak dibatasi
  *  — batas keras akan mematahkan penggabungan begitu SKPD ke-6 datang. */

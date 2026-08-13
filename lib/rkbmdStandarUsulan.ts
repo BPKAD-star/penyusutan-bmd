@@ -63,6 +63,9 @@ export type UsulanItem = {
   no_urut: number | null
   kode: string | null
   nama: string
+  /** Merk/Tipe (permintaan user 2026-08-13) — tepat di bawah Spesifikasi Nama
+   *  Barang, karena itulah urutan orang membacanya: barang apa, lalu merk apa. */
+  merk_tipe: string | null
   satuan: string | null
   harga: number | null
   tkdn: number | null
@@ -76,7 +79,7 @@ export type UsulanItem = {
 const HEADER_COLS =
   'id,skpd_id,tahun,jenis,status,keterangan,catatan_telaah,diajukan_at,approved_at,created_at'
 const ITEM_COLS =
-  'id,usulan_id,no_urut,kode,nama,satuan,harga,tkdn,kuantitas_standar,satuan_pengukur,keterangan'
+  'id,usulan_id,no_urut,kode,nama,merk_tipe,satuan,harga,tkdn,kuantitas_standar,satuan_pengukur,keterangan'
 
 /** Semua kolektor di berkas ini MELEMPAR saat query gagal (rules.md fail-closed):
  *  daftar kosong yang sebenarnya "query error" akan terbaca operator sebagai
@@ -171,6 +174,7 @@ export async function simpanItem(
   const isi = {
     usulan_id: usulanId,
     no_urut: v.no_urut, kode: v.kode || null, nama: v.nama.trim(),
+    merk_tipe: v.merk_tipe || null,
     satuan: v.satuan || null, harga: v.harga, tkdn: v.tkdn,
     kuantitas_standar: v.kuantitas_standar, satuan_pengukur: v.satuan_pengukur || null,
     keterangan: v.keterangan || null,
@@ -255,6 +259,43 @@ export async function setujuiUsulan(
   const { data, error } = await supabase.rpc('fn_standar_usulan_setujui', { p_id: usulanId })
   if (error) lempar('gagal menetapkan usulan', error)
   return data as HasilSetujui
+}
+
+export type HasilBukaKunci = {
+  jenis: UsulanJenis
+  /** Baris yang benar-benar dicabut dari acuan bersama (belum dipakai siapa pun). */
+  ditarik: number
+  /** Dibiarkan karena sudah dipakai RKBMD atau juga lahir dari usulan SKPD lain. */
+  tetap: number
+  sbsk: number
+}
+
+/** Buka kunci: usulan kembali ke draft, DAN barisnya ditarik dari acuan bersama
+ *  — tapi hanya yang belum dipakai siapa pun. Lewat RPC karena penarikannya
+ *  menyentuh baris milik SKPD pengusul, di luar wewenang admin lewat jalur RLS
+ *  biasa, dan karena keputusannya butuh memeriksa `rkbmd_item` + usulan lain. */
+export async function bukaKunciUsulan(
+  supabase: SupabaseClient, usulanId: string,
+): Promise<HasilBukaKunci> {
+  const { data, error } = await supabase.rpc('fn_standar_usulan_buka_kunci', { p_id: usulanId })
+  if (error) lempar('gagal membuka kunci usulan', error)
+  return data as HasilBukaKunci
+}
+
+/** Apa yang SEBENARNYA terjadi saat buka kunci — angka "tetap" itu yang paling
+ *  perlu dibaca penelaah: itulah baris yang sengaja tidak dicabut karena sudah
+ *  dipakai orang lain, dan ia takkan hilang hanya karena usulannya dibuka. */
+export function ringkasBukaKunci(h: HasilBukaKunci): string {
+  if (h.jenis === 'sbsk') {
+    return `Usulan kembali ke draft. ${h.sbsk} baris Standar Kebutuhan TIDAK ditarik — `
+      + 'persetujuan menimpa angka standar yang mungkin sudah ada sebelumnya, dan nilai lamanya '
+      + 'tidak tersimpan di mana pun. Periksa & betulkan sendiri bila perlu.'
+  }
+  const bagian = [`Usulan kembali ke draft. ${h.ditarik} baris ditarik dari acuan bersama`]
+  if (h.tetap > 0) {
+    bagian.push(`${h.tetap} dibiarkan karena sudah dipakai RKBMD atau juga diusulkan SKPD lain`)
+  }
+  return `${bagian.join(' · ')}.`
 }
 
 /** Kalimat hasil persetujuan yang jujur — "3 baru, 2 sudah ada (1 rekening

@@ -304,7 +304,10 @@ function TabelItem({ jenis, items, bisaSunting, busy, onEdit, onHapus }: {
             <tr key={it.id}>
               <td className="table-td text-xs text-gray-400">{it.no_urut ?? i + 1}</td>
               {adaKode && <td className="table-td text-xs whitespace-nowrap">{it.kode || '—'}</td>}
-              <td className="table-td text-xs text-gray-800">{it.nama}</td>
+              <td className="table-td text-xs text-gray-800">
+                {it.nama}
+                {it.merk_tipe && <span className="block text-[11px] text-gray-400">{it.merk_tipe}</span>}
+              </td>
               <td className="table-td text-xs text-gray-500">{it.satuan || '—'}</td>
               {sbsk && <td className="table-td text-xs text-gray-500">{it.satuan_pengukur || '—'}</td>}
               <td className="table-td text-xs text-right whitespace-nowrap">
@@ -355,6 +358,7 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
   const [picked, setPicked] = useState<KodefikasiHasil | null>(
     item?.kode ? ({ kode: item.kode, uraian: item.nama } as KodefikasiHasil) : null)
   const [nama, setNama] = useState(item?.nama || '')
+  const [merk, setMerk] = useState(item?.merk_tipe || '')
   const [satuan, setSatuan] = useState(item?.satuan || '')
   const [harga, setHarga] = useState(item?.harga != null ? String(item.harga) : '')
   const [tkdn, setTkdn] = useState(item?.tkdn != null ? String(item.tkdn) : '')
@@ -399,6 +403,7 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
         no_urut: item?.no_urut ?? nomorBerikut,
         kode: adaKode ? (picked?.kode ?? null) : null,
         nama: nama.trim(),
+        merk_tipe: merk.trim() || null,
         satuan: satuan || null,
         harga: nHarga,
         tkdn: nTkdn,
@@ -440,6 +445,17 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
           <div>
             <label className="block text-xs text-gray-500 mb-1">{LABEL_NAMA[jenis]}</label>
             <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} />
+          </div>
+
+          {/* Merk/Tipe tepat DI BAWAH Spesifikasi Nama Barang (permintaan user
+              2026-08-13) — itu urutan orang membacanya: barang apa, lalu merk apa.
+              ⚠️ Merk TIDAK ikut menentukan identitas dedup: dua SKPD yang
+              mengusulkan barang identik dengan merk berbeda tetap jadi SATU baris
+              di acuan bersama, dan merk pengusul pertama yang tercatat. */}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Merk / Tipe</label>
+            <input className="select-filter w-full" value={merk} onChange={e => setMerk(e.target.value)}
+              placeholder="mis. Asus ExpertBook B1, Honda Vario 160" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

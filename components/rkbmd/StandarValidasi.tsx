@@ -23,6 +23,7 @@ import { formatRupiah } from '@/lib/export'
 import {
   USULAN_JENIS, USULAN_STATUS_META, pakaiKodeBarang, pakaiRekening,
   fetchUsulanAntrean, fetchUsulanItems, setStatusUsulan, setujuiUsulan, ringkasHasil,
+  bukaKunciUsulan, ringkasBukaKunci,
   type UsulanJenis, type UsulanHeader, type UsulanItem, type UsulanStatus,
 } from '@/lib/rkbmdStandarUsulan'
 
@@ -109,15 +110,12 @@ export default function StandarValidasi() {
   function bukaKunci(h: Baris) {
     if (!confirm(
       `Buka kunci usulan ${JENIS_LABEL[h.jenis]} ${h.skpd_nama || ''} TA ${h.tahun}?\n\n`
-      + 'Usulannya kembali ke draft dan bisa disunting SKPD.\n\n'
-      + '⚠️ Baris yang sudah terlanjur masuk acuan bersama TIDAK ikut ditarik — '
-      + 'SKPD lain mungkin sudah memakainya. Kalau ada yang keliru di sana, '
-      + 'perbaiki lewat menu Pelaporan Standar Harga.',
+      + 'Usulannya kembali ke draft, DAN barisnya ditarik dari acuan bersama.\n\n'
+      + '⚠️ Yang sudah dipakai SKPD lain menyusun RKBMD — atau yang juga diusulkan '
+      + 'SKPD lain — sengaja TIDAK ditarik; menghapusnya akan membuat dokumen mereka '
+      + 'menunjuk barang yang lenyap. Jumlahnya akan diberitahukan setelah ini.',
     )) return
-    jalankan(h.id, async () => {
-      await setStatusUsulan(supabase, h.id, 'draft')
-      return 'Kunci dibuka — usulan kembali ke draft di SKPD.'
-    })
+    jalankan(h.id, async () => ringkasBukaKunci(await bukaKunciUsulan(supabase, h.id)))
   }
 
   return (
@@ -289,7 +287,10 @@ function DetailModal({ h, onClose }: { h: Baris; onClose: () => void }) {
                     <tr key={it.id}>
                       <td className="table-td text-xs text-gray-400">{it.no_urut ?? i + 1}</td>
                       {adaKode && <td className="table-td text-xs whitespace-nowrap">{it.kode || '—'}</td>}
-                      <td className="table-td text-xs text-gray-800">{it.nama}</td>
+                      <td className="table-td text-xs text-gray-800">
+                        {it.nama}
+                        {it.merk_tipe && <span className="block text-[11px] text-gray-400">{it.merk_tipe}</span>}
+                      </td>
                       <td className="table-td text-xs text-gray-500">{it.satuan || '—'}</td>
                       {sbsk && <td className="table-td text-xs text-gray-500">{it.satuan_pengukur || '—'}</td>}
                       <td className="table-td text-xs text-right whitespace-nowrap">

@@ -33,6 +33,11 @@ export default function StandarPelaporan() {
   const [jenis, setJenis] = useState<UsulanJenis>('ssh')
   const [rows, setRows] = useState<StandarRow[]>([])
   const [sbsk, setSbsk] = useState<SbskRow[]>([])
+  // kode barang → uraian BAKU dari kodefikasi. Sengaja di-lookup, BUKAN memakai
+  // `nama` yang tersimpan: `nama` itu spesifikasi yang diketik pengusul,
+  // sedangkan "Uraian Barang" harus ikut nomenklatur terkini — pola yang sama
+  // dengan Daftar Barang, Penyusutan, & lembar cetak RKBMD.
+  const [uraian, setUraian] = useState<Map<string, string>>(new Map())
   const [cari, setCari] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
@@ -48,9 +53,23 @@ export default function StandarPelaporan() {
           .select('id,tahun,kode,spesifikasi,satuan_pengukur,kuantitas_standar,satuan,keterangan')
           .eq('tahun', tahun).order('kode')
         if (error) throw new Error(`gagal membaca standar kebutuhan: ${error.message}`)
-        setSbsk((data || []) as SbskRow[]); setRows([])
+        setSbsk((data || []) as SbskRow[]); setRows([]); setUraian(new Map())
       } else {
-        setRows(await fetchStandar(supabase, jenis as StandarJenis, tahun)); setSbsk([])
+        const data = await fetchStandar(supabase, jenis as StandarJenis, tahun)
+        setRows(data); setSbsk([])
+
+        // Uraian baku per kode. ASB/SBU tak berkode barang → tak ada yang dicari.
+        const kodes = [...new Set(data.map(r => r.kode).filter((k): k is string => !!k))]
+        const peta = new Map<string, string>()
+        for (let i = 0; i < kodes.length; i += 500) {
+          const { data: kd, error: e2 } = await supabase.from('admin_kodefikasi_bmd')
+            .select('kode,uraian').in('kode', kodes.slice(i, i + 500))
+          if (e2) throw new Error(`gagal membaca uraian kodefikasi: ${e2.message}`)
+          for (const k of (kd || []) as { kode: string; uraian: string | null }[]) {
+            peta.set(k.kode, k.uraian || '')
+          }
+        }
+        setUraian(peta)
       }
     } catch (e) {
       setRows([]); setSbsk([]); setErr((e as Error).message)
@@ -88,16 +107,21 @@ export default function StandarPelaporan() {
       })), `Standar-Kebutuhan-${tahun}`, `SBSK ${tahun}`)
       return
     }
+    // Urutan kolom DITENTUKAN USER (2026-08-13) & sama persis dengan layar —
+    // urutan properti objek pertama = urutan kolom Excel (`json_to_sheet` ikut
+    // key objeknya), jadi jangan diacak saat menambah kolom baru.
     exportToExcel(tampilStandar.map(r => ({
+      'Diinput oleh': r.skpd_nama || '',
       'Kode Barang': r.kode || '',
-      'Nama / Uraian': r.nama,
+      'Uraian Barang': (r.kode && uraian.get(r.kode)) || '',
+      'Spesifikasi Nama Barang': r.nama,
+      'Merk / Tipe': r.merk_tipe || '',
       'Satuan': r.satuan || '',
-      'Harga / Besaran': r.harga,
+      'Harga Satuan': r.harga,
       'TKDN (%)': r.tkdn ?? '',
       // Rekening bisa lebih dari satu (hasil penggabungan antar-SKPD) — di satu
       // sel dipisah "; " supaya tetap terbaca sebagai daftar, bukan hilang.
       'Kode Rekening': r.rekening.join('; '),
-      'Diinput oleh': r.skpd_nama || '',
       'Keterangan': r.keterangan || '',
     })), `${label}-${tahun}`, `${label} ${tahun}`)
   }
@@ -177,18 +201,25 @@ export default function StandarPelaporan() {
         ) : (
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">
+              {/* Urutan kolom ditentukan user 2026-08-13. "Uraian Barang" =
+                  nomenklatur baku dari kodefikasi; "Spesifikasi Nama Barang" =
+                  yang diketik pengusul. Dua hal berbeda, jangan digabung. */}
               <tr>
-                <th className="table-th">Kode Barang</th>
-                <th className="table-th">Nama / Uraian</th>
-                <th className="table-th">Satuan</th>
-                <th className="table-th text-right">Harga / Besaran</th>
-                <th className="table-th">Kode Rekening</th>
                 <th className="table-th">Diinput oleh</th>
+                <th className="table-th">Kode Barang</th>
+                <th className="table-th">Uraian Barang</th>
+                <th className="table-th">Spesifikasi Nama Barang</th>
+                <th className="table-th">Merk / Tipe</th>
+                <th className="table-th">Satuan</th>
+                <th className="table-th text-right">Harga Satuan</th>
+                <th className="table-th text-center">TKDN</th>
+                <th className="table-th">Kode Rekening</th>
+                <th className="table-th">Keterangan</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {tampilStandar.length === 0 ? (
-                <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">
+                <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">
                   Belum ada {label} yang ditetapkan untuk TA {tahun}.
                   <span className="block text-[11px] mt-1">
                     Isinya datang dari usulan SKPD yang sudah disetujui di menu Validasi.
@@ -196,17 +227,20 @@ export default function StandarPelaporan() {
                 </td></tr>
               ) : tampilStandar.map(r => (
                 <tr key={r.id}>
+                  <td className="table-td text-xs text-gray-500">{r.skpd_nama || '—'}</td>
                   <td className="table-td text-xs whitespace-nowrap">{r.kode || '—'}</td>
+                  <td className="table-td text-xs text-gray-500">{(r.kode && uraian.get(r.kode)) || '—'}</td>
                   <td className="table-td text-xs text-gray-800">{r.nama}</td>
+                  <td className="table-td text-xs text-gray-600">{r.merk_tipe || '—'}</td>
                   <td className="table-td text-xs text-gray-500">{r.satuan || '—'}</td>
-                  <td className="table-td text-xs text-right whitespace-nowrap">
-                    {formatRupiah(r.harga)}
-                    {r.tkdn != null && <span className="block text-[10px] text-gray-400">TKDN {r.tkdn}%</span>}
+                  <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(r.harga)}</td>
+                  <td className="table-td text-xs text-center whitespace-nowrap">
+                    {r.tkdn != null ? `${r.tkdn}%` : '—'}
                   </td>
                   <td className="table-td text-[11px] text-gray-500">
                     {r.rekening.length === 0 ? '—' : r.rekening.map(k => <div key={k}>{k}</div>)}
                   </td>
-                  <td className="table-td text-xs text-gray-400">{r.skpd_nama || '—'}</td>
+                  <td className="table-td text-xs text-gray-500">{r.keterangan || ''}</td>
                 </tr>
               ))}
             </tbody>

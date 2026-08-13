@@ -1358,12 +1358,40 @@ Usulan · Validasi · Pelaporan.
   bersama akan memintas seluruh alur usulan→validasi. Ia juga tak perlu filter
   status — sejak 20260813_03 satu-satunya jalan masuk ke `rkbmd_standar` adalah
   `fn_standar_usulan_setujui`, jadi isinya **dengan sendirinya** tervalidasi.
-- ⚠️ **"Buka Kunci" di Validasi Standar Harga TIDAK menarik kembali baris yang
-  sudah masuk bak bersama** — ia cuma mengembalikan status usulannya ke draft.
-  Disengaja & dikatakan terus terang di konfirmasinya: begitu jadi acuan
-  bersama, SKPD lain mungkin sudah memakainya menyusun RKBMD, dan menariknya
-  diam-diam membuat dokumen mereka menunjuk barang yang mendadak lenyap.
-  Ini BEDA dari Buka Kunci RKBMD, yang memang tak meninggalkan jejak ke mana-mana.
+- ⚠️ **"Buka Kunci" MENARIK KEMBALI barisnya — tapi SELEKTIF** (migrasi
+  20260813_04, sesudah user menguji alurnya dari nol). Semula ia cuma
+  mengembalikan status ke draft dan meninggalkan barisnya di bak bersama; untuk
+  barang yang belum dipakai siapa pun itu salah — penelaah bermaksud
+  membatalkan penetapannya, dan yang tertinggal jadi acuan hantu yang tak
+  seorang pun merasa menaruhnya. Tapi menarik SEMUANYA juga salah. Dua saringan
+  di `fn_standar_usulan_buka_kunci`, keduanya wajib:
+  (a) baris yang sudah dirujuk `rkbmd_item.standar_id` — ada SKPD yang memakainya
+  menyusun RKBMD; FK-nya `ON DELETE SET NULL`, jadi menghapusnya **tidak error**
+  dan justru itu bahayanya: rusaknya senyap;
+  (b) baris yang juga lahir dari usulan LAIN yang sudah disetujui — bak bersama
+  memang menyatukan usulan beberapa SKPD ke satu baris.
+  Yang tertinggal DILAPORKAN lewat `ringkasBukaKunci()`, tidak dibiarkan senyap.
+  **SBSK sengaja tak ditarik sama sekali**: persetujuannya meng-upsert baris
+  `(tahun, kode)` yang mungkin sudah bernilai sebelumnya, dan nilai lamanya tak
+  disimpan di mana pun — menariknya berarti MENGHAPUS, bukan memulihkan.
+  ⚠️ Semua ini bergantung pada kolom jejak **`rkbmd_standar_usulan_item.standar_id`**
+  yang diisi saat persetujuan. Tanpa jejak itu penarikan selektif mustahil —
+  jangan dicabut.
+- **`merk_tipe`** ada di staging & bak bersama (migrasi 20260813_04), tepat di
+  bawah Spesifikasi Nama Barang. ⚠️ **SENGAJA di luar `identitas`**: rumus dedup
+  itu kembar di tiga tempat, dan menambah ruas berarti tiga suntingan yang harus
+  persis sama — yang meleset bikin RPC mengira barangnya baru lalu ditolak
+  UNIQUE dengan pesan mentah. Konsekuensi yang DITERIMA: barang identik ber-merk
+  beda tetap SATU baris; merk pengusul pertama yang tercatat, usulan berikutnya
+  hanya MENGISI bila masih kosong dan tak pernah menimpa.
+- **Kolom Pelaporan Standar Harga (urutan ditentukan user 2026-08-13):**
+  Diinput oleh · Kode Barang · **Uraian Barang** · **Spesifikasi Nama Barang** ·
+  Merk/Tipe · Satuan · Harga Satuan · TKDN · Kode Rekening · Keterangan.
+  ⚠️ Dua kolom di tengah itu BEDA & jangan digabung: *Uraian Barang* =
+  nomenklatur baku hasil lookup `admin_kodefikasi_bmd` (ikut kodefikasi
+  terkini), *Spesifikasi Nama Barang* = yang diketik pengusul. Pola yang sama
+  dipakai Daftar Barang, Penyusutan, & lembar cetak RKBMD. Urutan di Excel
+  mengikuti urutan properti objek — jangan diacak saat menambah kolom.
 - Pesan hasil persetujuan memakai `ringkasHasil()` — "3 barang baru · 2 sudah
   ada (tidak diduplikasi) · 1 kode rekening digabungkan". Penggabungan itu
   justru inti bak bersama; "berhasil" saja menyembunyikan yang paling perlu
