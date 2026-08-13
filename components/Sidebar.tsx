@@ -50,7 +50,13 @@ const navTree: NavNode[] = [
         ],
       },
       {
-        type: 'group', label: 'RKBMD', children: [
+        // "Perencanaan", bukan "RKBMD" lagi (permintaan user 2026-08-13):
+        // "RKBMD > RKBMD" membingungkan dibaca, dan label kembar itu juga yang
+        // dulu membuat saklar buka-tutupnya bertabrakan (lihat `jalur` di
+        // renderNode). Penyebabnya sudah diperbaiki, tapi namanya tetap diganti
+        // karena memang lebih jelas: Standar Harga = acuan, Perencanaan =
+        // dokumen RKBMD-nya sendiri.
+        type: 'group', label: 'Perencanaan', children: [
           { type: 'leaf', href: '/dashboard/rkbmd/usulan', label: 'Usulan RKBMD' },
           { type: 'leaf', href: '/dashboard/rkbmd/validasi', label: 'Validasi' },
           { type: 'leaf', href: '/dashboard/rkbmd/pelaporan', label: 'Pelaporan' },
@@ -227,8 +233,15 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
   const groupActive = (node: NavNode) => leafHrefs(node).some(h => !h.startsWith('http') && isActive(h))
   const menuTree = userRole === 'admin' ? [...navTree, adminGroup] : [...navTree, adminGroupOperator]
 
-  function renderNode(node: NavNode, depth: number): React.ReactNode {
+  // ⚠️ `jalur` = kunci buka-tutup, dirakit dari SELURUH jalur label — bukan
+  // labelnya saja. Dulu `open[node.label]`, dan itu membuat dua grup bernama
+  // sama BERBAGI SATU SAKLAR: menekan grup "RKBMD" di dalam grup "RKBMD" ikut
+  // membalik yang luar, sehingga seluruh menu menutup sendiri. Bug-nya tak
+  // kelihatan sampai ada label kembar, jadi jangan dikembalikan ke label saja
+  // hanya karena "sekarang toh tak ada yang kembar".
+  function renderNode(node: NavNode, depth: number, indukJalur = ''): React.ReactNode {
     const pad = { paddingLeft: `${0.75 + depth * 0.85}rem` }
+    const jalur = `${indukJalur}/${node.label}`
 
     if (node.type === 'leaf') {
       const active = !node.external && isActive(node.href)
@@ -256,11 +269,11 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
 
     // group
     const active = groupActive(node)
-    const isOpen = open[node.label] ?? active
+    const isOpen = open[jalur] ?? active
     return (
-      <div key={node.label}>
+      <div key={jalur}>
         <button
-          onClick={() => setOpen(o => ({ ...o, [node.label]: !(o[node.label] ?? active) }))}
+          onClick={() => setOpen(o => ({ ...o, [jalur]: !(o[jalur] ?? active) }))}
           className={`w-full flex items-center gap-3 pr-3 py-2 rounded-lg text-sm transition-colors ${
             active ? 'bg-white/10 text-white font-medium' : 'text-white/60 hover:text-white hover:bg-white/10'
           }`}
@@ -277,7 +290,7 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
         </button>
         {isOpen && (
           <div className="mt-0.5 space-y-0.5">
-            {node.children.map(c => renderNode(c, depth + 1))}
+            {node.children.map(c => renderNode(c, depth + 1, jalur))}
           </div>
         )}
       </div>
