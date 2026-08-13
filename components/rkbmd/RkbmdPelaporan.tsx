@@ -245,16 +245,22 @@ export default function RkbmdPelaporan() {
               <th className="table-th">Status</th>
               <th className="table-th text-right">Item</th>
               <th className="table-th text-right">Total Nilai</th>
-              <th className="table-th w-20">Cetak</th>
+              {/* Kolom "Cetak" per baris DIPINDAH ke menu Usulan (keputusan user
+                  2026-08-13, membalik keputusan 2026-08-10). Alasannya berubah:
+                  lembar per-SKPD kini dicetak SEBELUM diajukan untuk
+                  ditandatangani kepala kantor — ia jadi SYARAT pengajuan, bukan
+                  keluaran. Tempatnya di layar tempat operator SKPD bekerja.
+                  Yang tinggal di sini cuma cetak se-Kabupaten: keluaran hilir
+                  untuk Pengelola Barang. */}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+              <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
             ) : err ? (
-              <tr><td colSpan={7} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
+              <tr><td colSpan={6} className="table-td text-center py-8 text-red-500">Data tidak ditampilkan karena terjadi kesalahan di atas.</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Tidak ada dokumen RKBMD yang cocok dengan filter.</td></tr>
+              <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">Tidak ada dokumen RKBMD yang cocok dengan filter.</td></tr>
             ) : rows.map(r => (
               <tr key={r.id}>
                 <td className="table-td text-xs text-gray-800">{r.skpd}</td>
@@ -268,12 +274,6 @@ export default function RkbmdPelaporan() {
                 <td className="table-td text-xs text-right">{r.jumlah_item}</td>
                 <td className="table-td text-xs text-right whitespace-nowrap"
                   title={LABEL_NILAI[r.jenis as RkbmdJenis]}>{formatRupiah(r.total)}</td>
-                <td className="table-td whitespace-nowrap">
-                  <a href={`/cetak/rkbmd?id=${r.id}`} target="_blank" rel="noopener noreferrer"
-                    className="text-teal hover:underline text-xs font-medium" title="Cetak lembar usulan SKPD ini">
-                    🖨 Cetak
-                  </a>
-                </td>
               </tr>
             ))}
           </tbody>

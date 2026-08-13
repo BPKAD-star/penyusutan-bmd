@@ -1111,6 +1111,51 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   menjumlahkan keduanya jadi satu angka yang tak berarti. Sekarang cetak se-kab
   mensyaratkan jenis **dan** versi tunggal. Per 2026-08-13 belum ada satu pun
   dokumen `versi='perubahan'` di DB — laporannya kosong sampai SKPD menyusunnya.
+- **Lembar se-Kabupaten BERTANDA TANGAN, satu blok di AKHIR dokumen**
+  (keputusan user 2026-08-13, mengoreksi bentuk yang sempat tanpa tanda tangan).
+  Yang meneken rekap se-kabupaten itu Pengelola Barang, bukan 60+ kepala SKPD.
+  Penanda tangannya **DIPILIH BEBAS dari daftar `admin_pegawai`** lewat dropdown
+  di halaman cetak (tak ikut tercetak) — sengaja BUKAN tebakan dari kolom
+  `jabatan` seperti lembar per-SKPD, karena per 2026-08-13 **tak satu pun** dari
+  136 baris `admin_pegawai` berjabatan "Sekretaris Daerah", jadi tebakan
+  otomatis apa pun pasti meleset. Pilihannya disimpan di `localStorage`
+  (`bmd_rkbmd_ttd_sekab`, pola `bmd_tahun_kerja_pilihan`) supaya cetak ulang
+  menghasilkan lembar yang SAMA; bisa juga dipaksa lewat `?ttd=<id pegawai>`.
+  Belum dipilih → blok tanda tangan dibiarkan bertitik-titik. **JANGAN diisi
+  nama lain** — aturan yang sama dgn lembar per-SKPD.
+- **Tombol Cetak lembar per-SKPD KEMBALI ke menu Usulan** (keputusan user
+  2026-08-13). Ini **membalik keputusan 2026-08-10** yang sengaja mencabutnya
+  dari Usulan ("layar penyusunan, yang ditandatangani keluar dari satu pintu"),
+  dan pembalikannya disengaja karena **peran lembarnya berubah**: dalam alur
+  baru ia dicetak → ditandatangani kepala kantor → pindaiannya jadi SYARAT
+  menekan Ajukan. Ia bukan lagi keluaran, tapi MASUKAN proses — jadi tempatnya
+  di layar tempat operator SKPD bekerja. Sengaja **tak dibatasi status** (draft
+  pun boleh dicetak; justru itu gunanya). Cetak **se-Kabupaten tetap di
+  Pelaporan** — itu keluaran hilir untuk Pengelola Barang.
+
+### Alur RKBMD yang disepakati (user 2026-08-13) — BARU SEBAGIAN DIBANGUN
+
+1. SKPD menyusun RKBMD → **cetak lembar usulan** (✅ ada, di menu Usulan) →
+   ditandatangani kepala kantor.
+2. **Ajukan WAJIB melampirkan** PDF bertanda tangan + surat pengantar (satu
+   berkas). Belum melampirkan → tombol Ajukan mati. ⛔ **BELUM DIBANGUN.**
+3. Validasi oleh Pengelola → **cetak se-Kabupaten** (✅ ada) → keluarannya
+   **SK RKBMD TA 20xx**. ⛔ Format SK-nya **BELUM DIBANGUN**.
+
+Rancangan langkah 2 yang sudah disepakati, supaya penerusnya tak memutuskan ulang:
+- `rkbmd` **belum punya kolom dokumen apa pun** (dicek 2026-08-13) → butuh
+  migrasi: kolom path berkas + berkasnya ke bucket **`dokumen-sumber`** (privat,
+  10MB, image+pdf — bucket yang sama dipakai Pengalihan & Pengamanan), tampilkan
+  lewat signed URL.
+- Penegaknya **`fn_rkbmd_status_guard`** yang SUDAH ADA — ia memang sudah
+  menjaga transisi status; tinggal ditambah "tolak `draft`→`diajukan` kalau
+  lampiran kosong". Jangan cukup mematikan tombol di UI.
+- ⚠️ **Isi berubah sesudah PDF diunggah → lampirannya DICABUT OTOMATIS**, tombol
+  Ajukan mati lagi, wajib cetak & tanda tangan ulang (keputusan user
+  2026-08-13). Tanpa aturan ini operator bisa menandatangani lembar, lalu
+  menyunting item, lalu melampirkan PDF lama — **kertas & catatan berbeda tanpa
+  satu pun pesan error**, persis kelas kegagalan senyap yang berulang di repo
+  ini. Ongkos yang diterima: satu koreksi kecil = tanda tangan ulang.
 - ⚠️ **Deploy-ordering: migrasi 20260810_01 WAJIB jalan SEBELUM deploy kode** —
   halaman baru langsung query `rkbmd_standar` & RPC yang belum ada. Sebaliknya
   `DROP TABLE rkbmd_ssh` di akhir migrasi membuat halaman Admin → SSH versi LAMA

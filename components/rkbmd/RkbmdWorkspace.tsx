@@ -248,10 +248,22 @@ function DokumenPanel({
             {berkartu && `${pakets.length} kartu · `}{items.length} item · Total {formatRupiah(total)}
           </span>
         </div>
-        {/* Tombol Cetak SENGAJA TIDAK di sini (keputusan user 2026-08-10) —
-            tempatnya di menu Pelaporan. Menu Usulan itu layar penyusunan; yang
-            dicetak & ditandatangani sebaiknya diambil dari satu pintu. */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Tombol Cetak KEMBALI ke sini (keputusan user 2026-08-13, membalik
+              keputusan 2026-08-10 yang memindahkannya ke menu Pelaporan).
+              Yang berubah bukan seleranya, tapi PERAN lembarnya: dalam alur
+              baru, lembar per-SKPD dicetak dulu, ditandatangani kepala kantor,
+              lalu hasil pindaiannya jadi SYARAT menekan Ajukan. Ia berubah dari
+              KELUARAN jadi MASUKAN — tempatnya di layar tempat operator SKPD
+              bekerja, bukan di menu hilir milik Pengelola. Cetak se-Kabupaten
+              TETAP di Pelaporan.
+              Sengaja tak dibatasi status: draft pun boleh dicetak — justru itu
+              gunanya, tanda tangan dibutuhkan SEBELUM diajukan. */}
+          <a href={`/cetak/rkbmd?id=${header.id}`} target="_blank" rel="noopener noreferrer"
+            className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
+            title="Cetak lembar usulan SKPD ini untuk ditandatangani kepala kantor">
+            🖨 Cetak lembar usulan
+          </a>
           {header.status === 'draft' && (
             <>
               <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}

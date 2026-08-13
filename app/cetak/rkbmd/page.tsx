@@ -26,6 +26,19 @@ const JENIS_LABEL: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j
 
 type SkpdRow = { id: number; nama: string; parent_id: number | null; kode_skpd: string | null }
 
+/** Calon penanda tangan lembar se-Kabupaten. Dipilih BEBAS dari daftar pegawai
+ *  (keputusan user 2026-08-13), bukan ditebak dari kolom `jabatan` seperti
+ *  lembar per-SKPD — di se-kabupaten yang menandatangani itu Pengelola Barang,
+ *  dan per 2026-08-13 tak satu pun dari 136 baris `admin_pegawai` berjabatan
+ *  "Sekretaris Daerah", jadi tebakan otomatis apa pun pasti meleset. */
+type Pegawai = { id: string | number; nama: string; nip: string | null; jabatan: string | null; skpd_id: number | null }
+
+/** Pilihan penanda tangan disimpan supaya cetak ulang menghasilkan lembar yang
+ *  SAMA — kalau tidak, dokumen yang sudah diedarkan bisa dicetak ulang dengan
+ *  nama lain tanpa ada yang sadar. Pola & alasannya sama dgn `bmd_tahun_kerja_
+ *  pilihan` (lib/tahunKerja.ts): preferensi tampilan, bukan gerbang wewenang. */
+const KEY_TTD = 'bmd_rkbmd_ttd_sekab'
+
 type Item = {
   id: string; rkbmd_id: string; paket_id: string | null; no_urut: number | null
   kode: string | null; nibar: string | null; nama_barang: string | null; satuan: string | null
@@ -125,6 +138,10 @@ export default function CetakRkbmdPage() {
   // dari dokumen pertama yang kebetulan lolos.
   const [sekab, setSekab] = useState<{ tahun: number; jenis: string; versi: string | null } | null>(null)
   const [judulLingkup, setJudulLingkup] = useState('')
+  // Daftar pegawai + pilihan penanda tangan (mode se-kabupaten saja).
+  const [pegawai, setPegawai] = useState<Pegawai[]>([])
+  const [skpdNama, setSkpdNama] = useState<Map<number, string>>(new Map())
+  const [ttdId, setTtdId] = useState('')
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
 
@@ -222,7 +239,21 @@ export default function CetakRkbmdPage() {
       // dan kopnya sendiri tak punya cara memberi tahu.
       setJudulLingkup(id ? '' : `Se-Kabupaten ${KABUPATEN} — ${out.length} SKPD`
         + (versiQ ? ` · versi ${versiQ}` : ' · ⚠ Murni + Perubahan tergabung (versi tak disaring)'))
-      if (!id) setSekab({ tahun: Number(tahun), jenis: jenisQ!, versi: versiQ })
+
+      // Daftar penanda tangan — hanya mode se-kabupaten yang memerlukannya
+      // (lembar per-SKPD memakai kepala kantornya masing-masing). 136 baris
+      // se-kabupaten per 2026-08-13, jadi cukup ditarik sekali tanpa paginasi.
+      if (!id) {
+        setSekab({ tahun: Number(tahun), jenis: jenisQ!, versi: versiQ })
+        // Tuple ditulis eksplisit: tanpa itu `.map()` menyimpulkan
+        // `(string | number)[][]`, yang tak bisa dipakai membangun Map.
+        setSkpdNama(new Map(rows.map(s => [s.id, s.nama] as [number, string])))
+        const { data: pg } = await supabase.from('admin_pegawai')
+          .select('id,nama,nip,jabatan,skpd_id').order('nama')
+        setPegawai((pg || []) as Pegawai[])
+        const tersimpan = p.get('ttd') || localStorage.getItem(KEY_TTD) || ''
+        if (tersimpan) setTtdId(tersimpan)
+      }
       setLembar(out)
       setLoading(false)
     })()
@@ -232,9 +263,36 @@ export default function CetakRkbmdPage() {
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>
 
-      <div className="max-w-6xl mx-auto mb-3 flex items-center justify-between no-print px-4">
+      <div className="max-w-6xl mx-auto mb-3 flex flex-wrap items-center justify-between gap-3 no-print px-4">
         <span className="text-sm text-gray-500">{judulLingkup}</span>
-        <button onClick={() => window.print()} className="btn-primary text-sm">🖨 Cetak / Simpan PDF</button>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Pemilih penanda tangan — TIDAK ikut tercetak. Muncul hanya di mode
+              se-kabupaten; lembar per-SKPD sudah punya kepala kantornya sendiri. */}
+          {sekab && (
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Penanda tangan:
+              <select
+                className="select-filter text-sm max-w-xs"
+                value={ttdId}
+                onChange={e => {
+                  setTtdId(e.target.value)
+                  // Disimpan supaya cetak ulang menghasilkan lembar yang sama.
+                  if (e.target.value) localStorage.setItem(KEY_TTD, e.target.value)
+                  else localStorage.removeItem(KEY_TTD)
+                }}
+              >
+                <option value="">— belum dipilih (dibiarkan bertitik-titik) —</option>
+                {pegawai.map(g => (
+                  <option key={String(g.id)} value={String(g.id)}>
+                    {g.nama}{g.jabatan ? ` — ${g.jabatan}` : ''}
+                    {g.skpd_id != null && skpdNama.get(g.skpd_id) ? ` (${skpdNama.get(g.skpd_id)})` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button onClick={() => window.print()} className="btn-primary text-sm">🖨 Cetak / Simpan PDF</button>
+        </div>
       </div>
 
       <div className="max-w-6xl mx-auto">
@@ -244,7 +302,8 @@ export default function CetakRkbmdPage() {
           <div className="bg-white p-8 text-sm text-red-600">{err}</div>
         ) : sekab ? (
           // Se-kabupaten: SATU dokumen menerus, kop sekali di atas.
-          <LembarSeKabupaten sekab={sekab} lembar={lembar} uraianByKode={uraianByKode} />
+          <LembarSeKabupaten sekab={sekab} lembar={lembar} uraianByKode={uraianByKode}
+            ttd={pegawai.find(g => String(g.id) === ttdId) || null} />
         ) : (
           // Per-SKPD (`?id=`): lembar lengkap ber-kop & ber-tanda tangan.
           // Sudah benar menurut user (2026-08-13) — JANGAN diubah ikut-ikutan
@@ -544,17 +603,19 @@ function TabelAset({ items, ekstra, total, uraianByKode, nKolom }: {
 // atas, lalu satu tabel panjang yang tiap SKPD-nya dibuka baris judul selebar
 // tabel dan ditutup baris subtotalnya sendiri.
 //
-// ⚠️ KONSEKUENSI YANG DISENGAJA: lembar se-kabupaten TIDAK memuat blok tanda
-// tangan per SKPD. Dokumen yang ditandatangani kepala SKPD adalah lembar
-// PER-SKPD (`?id=<uuid>`, dicetak dari kolom Cetak di menu Pelaporan) — itu
-// yang sudah benar & sengaja dipertahankan apa adanya. Yang ini rekap
-// se-kabupaten untuk pengelola barang, bukan lembar tanda tangan; menyelipkan
-// blok tanda tangan di tengah tabel menerus justru membuatnya tampak seperti
-// dokumen yang sudah disahkan padahal bukan.
-function LembarSeKabupaten({ sekab, lembar, uraianByKode }: {
+// TANDA TANGAN: SATU blok di AKHIR dokumen, bukan per SKPD (keputusan user
+// 2026-08-13). Yang menandatangani rekap se-kabupaten itu Pengelola Barang,
+// bukan 60+ kepala SKPD — dan lembar per-SKPD yang mereka tandatangani sudah
+// ada sendiri (`?id=<uuid>`). Penanda tangannya DIPILIH dari daftar pegawai,
+// tidak ditebak dari kolom `jabatan` seperti lembar per-SKPD: per 2026-08-13
+// tak satu pun dari 136 baris `admin_pegawai` berjabatan "Sekretaris Daerah",
+// jadi tebakan otomatis apa pun pasti meleset. Belum dipilih → dibiarkan
+// bertitik-titik untuk ditulis tangan; JANGAN diisi nama lain.
+function LembarSeKabupaten({ sekab, lembar, uraianByKode, ttd }: {
   sekab: { tahun: number; jenis: string; versi: string | null }
   lembar: Lembar[]
   uraianByKode: Map<string, string>
+  ttd: Pegawai | null
 }) {
   const pengadaan = sekab.jenis === 'pengadaan'
   const ekstra = EKSTRA[sekab.jenis] || []
@@ -593,6 +654,16 @@ function LembarSeKabupaten({ sekab, lembar, uraianByKode }: {
             total={total} nKolom={nKolom} kolomJumlah={kolomJumlah} />
         </tfoot>
       </table>
+
+      <div className="mt-8 flex justify-end pr-16">
+        <div className="text-center">
+          <p>{KABUPATEN}, {tglID()}</p>
+          <p>{ttd?.jabatan || '…………………………'}</p>
+          <div className="h-16" />
+          <p className="font-semibold underline">{ttd?.nama || '(………………………………)'}</p>
+          <p>NIP. {ttd?.nip || '………………………'}</p>
+        </div>
+      </div>
     </div>
   )
 }
