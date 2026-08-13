@@ -17,6 +17,7 @@ import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import RekeningPicker from '@/components/RekeningPicker'
+import StandarImport from '@/components/rkbmd/StandarImport'
 import { backdropClose } from '@/components/backdropClose'
 import { formatRupiah } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope } from '@/lib/roles'
@@ -47,6 +48,7 @@ export default function StandarHargaWorkspace({ jenis }: { jenis: StandarJenis }
   const [err, setErr] = useState('')
   const [msg, setMsg] = useState('')
   const [modal, setModal] = useState<{ mode: 'baru' } | { mode: 'edit'; row: StandarRow } | null>(null)
+  const [impor, setImpor] = useState(false)
 
   useEffect(() => { (async () => setScope(await fetchApprovalScope(supabase)))() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -94,6 +96,17 @@ export default function StandarHargaWorkspace({ jenis }: { jenis: StandarJenis }
             <input type="number" className="select-filter w-28" value={tahun}
               onChange={e => setTahun(Number(e.target.value) || TAHUN_DEFAULT)} />
           </div>
+          {/* Import massal ADMIN SAJA (keputusan user 2026-08-13). Gerbangnya
+              di TAMPILAN, bukan di DB — `fn_rkbmd_standar_simpan` memang boleh
+              dipanggil semua SKPD, jadi ini bukan kemampuan baru, cuma jalan
+              cepat menuju hal yang satu-per-satu sudah boleh. Rinciannya di
+              kepala StandarImport.tsx. */}
+          {scope.isAdmin && (
+            <button className="btn-secondary whitespace-nowrap" onClick={() => { setErr(''); setImpor(true) }}
+              title="Unduh format Excel, isi, lalu unggah — untuk memasukkan banyak baris sekaligus">
+              ⬆ Import Excel
+            </button>
+          )}
           <button className="btn-primary whitespace-nowrap" onClick={() => { setErr(''); setModal({ mode: 'baru' }) }}>
             ＋ Tambah
           </button>
@@ -173,6 +186,17 @@ export default function StandarHargaWorkspace({ jenis }: { jenis: StandarJenis }
           </tbody>
         </table>
       </div>
+
+      {impor && (
+        <StandarImport
+          jenis={jenis} tahun={tahun}
+          onClose={() => setImpor(false)}
+          // Tetap terbuka sesudah impor: ringkasannya (berapa baru, berapa
+          // sudah ada, berapa gagal) ada di pesan itu, dan menutup pop-up
+          // sendiri akan membuangnya sebelum sempat dibaca.
+          onSelesai={(m) => { setMsg(m); load() }}
+        />
+      )}
 
       {modal && (
         <StandarModal

@@ -38,6 +38,32 @@ type Pegawai = { id: string | number; nama: string; nip: string | null; jabatan:
  *  nama lain tanpa ada yang sadar. Pola & alasannya sama dgn `bmd_tahun_kerja_
  *  pilihan` (lib/tahunKerja.ts): preferensi tampilan, bukan gerbang wewenang. */
 const KEY_TTD = 'bmd_rkbmd_ttd_sekab'
+/** Idem untuk lembar per-SKPD, tapi DIPISAH PER SKPD: satu operator bisa
+ *  mencetak lembar beberapa sub-OPD, dan satu kunci bersama akan membuat
+ *  pilihan SKPD terakhir bocor ke lembar SKPD berikutnya. */
+const keyTtdSkpd = (skpdId: number) => `bmd_rkbmd_ttd_skpd_${skpdId}`
+
+/** Definitif → "Kepala <SKPD>"; Plt → "Plt. Kepala <SKPD>" (keputusan user
+ *  2026-08-13). Ditulis SEKALI di sini karena dipakai blok tanda tangan
+ *  sekaligus pratinjau di pop-up — dua tempat yang wajib berbunyi sama persis,
+ *  kalau tidak operator menyetujui satu kalimat lalu yang tercetak kalimat lain. */
+function sebutanKepala(plt: boolean, namaSkpd: string): string {
+  return `${plt ? 'Plt. ' : ''}Kepala ${namaSkpd}`
+}
+
+type TtdTersimpan = { id?: string; plt?: boolean }
+
+/** Isi localStorage itu data dari luar program: bisa cacat karena versi lama,
+ *  suntingan manual, atau berbagi kunci dgn tab lain. Gagal mengurainya cukup
+ *  berarti "belum pernah memilih" — jangan sampai menjatuhkan halaman cetak. */
+function bacaTtdTersimpan(skpdId: number): TtdTersimpan | null {
+  try {
+    const s = localStorage.getItem(keyTtdSkpd(skpdId))
+    return s ? (JSON.parse(s) as TtdTersimpan) : null
+  } catch {
+    return null
+  }
+}
 
 type Item = {
   id: string; rkbmd_id: string; paket_id: string | null; no_urut: number | null
@@ -56,7 +82,9 @@ type Dok = { id: string; skpd_id: number; tahun_anggaran: number; jenis: string;
 type Lembar = {
   dok: Dok
   skpd: SkpdRow | null
-  penanda: { nama: string; jabatan: string | null } | null
+  /** Tebakan awal penanda tangan (pegawai SKPD itu yang jabatannya memuat
+   *  "Kepala") — kini cuma PILIHAN AWAL di pop-up, bukan lagi keputusan akhir. */
+  penanda: Pegawai | null
   pakets: RkbmdPaket[]
   items: Item[]
 }
@@ -142,6 +170,14 @@ export default function CetakRkbmdPage() {
   const [pegawai, setPegawai] = useState<Pegawai[]>([])
   const [skpdNama, setSkpdNama] = useState<Map<number, string>>(new Map())
   const [ttdId, setTtdId] = useState('')
+  // ── Mode per-SKPD: penanda tangan DITANYAKAN, tidak lagi ditebak diam-diam.
+  // `plt` menentukan sebutannya: "Kepala X" vs "Plt. Kepala X" (permintaan user
+  // 2026-08-13). Pilihannya wajib dibuat SEBELUM lembarnya dicetak, jadi
+  // pop-upnya terbuka sendiri begitu halaman selesai memuat.
+  const [pegawaiSkpd, setPegawaiSkpd] = useState<Pegawai[]>([])
+  const [ttdSkpdId, setTtdSkpdId] = useState('')
+  const [plt, setPlt] = useState(false)
+  const [tanyaTtd, setTanyaTtd] = useState(false)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
 
@@ -206,20 +242,23 @@ export default function CetakRkbmdPage() {
       }
       const skpdById = new Map(rows.map(s => [s.id, s]))
 
-      // Penanda tangan = KEPALA kantor SKPD masing-masing (permintaan user
-      // 2026-08-10). Dipilih dari `admin_pegawai` SKPD itu yang jabatannya
-      // memuat kata "Kepala" — sengaja lewat `jabatan`, bukan menebak nilai
-      // `role_bmd`. Kalau tak ketemu, blok tanda tangannya dibiarkan
-      // bertitik-titik supaya ditulis tangan; JANGAN diisi nama lain.
+      // Pegawai SKPD dokumen — dipakai dua-duanya: menebak KEPALA kantor sbg
+      // pilihan awal, DAN mengisi daftar pilihan di pop-up penanda tangan.
+      // Tebakannya lewat `jabatan` yang memuat kata "Kepala", sengaja bukan
+      // menebak nilai `role_bmd`. Tebakan yang meleset kini tidak lagi berakhir
+      // di blok titik-titik: operator tinggal memilih sendiri di pop-up.
       const skpdIds = [...new Set(doks.map(d => d.skpd_id))]
-      const penandaBySkpd = new Map<number, { nama: string; jabatan: string | null }>()
+      const pegawaiBySkpd = new Map<number, Pegawai[]>()
+      const penandaBySkpd = new Map<number, Pegawai>()
       for (let i = 0; i < skpdIds.length; i += 200) {
         const { data: pgw } = await supabase.from('admin_pegawai')
-          .select('nama,jabatan,skpd_id').in('skpd_id', skpdIds.slice(i, i + 200))
-        for (const g of (pgw || []) as { nama: string; jabatan: string | null; skpd_id: number }[]) {
-          if (penandaBySkpd.has(g.skpd_id)) continue
-          if ((g.jabatan || '').toLowerCase().includes('kepala')) {
-            penandaBySkpd.set(g.skpd_id, { nama: g.nama, jabatan: g.jabatan })
+          .select('id,nama,nip,jabatan,skpd_id').in('skpd_id', skpdIds.slice(i, i + 200)).order('nama')
+        for (const g of (pgw || []) as Pegawai[]) {
+          if (g.skpd_id == null) continue
+          const arr = pegawaiBySkpd.get(g.skpd_id) || []
+          arr.push(g); pegawaiBySkpd.set(g.skpd_id, arr)
+          if (!penandaBySkpd.has(g.skpd_id) && (g.jabatan || '').toLowerCase().includes('kepala')) {
+            penandaBySkpd.set(g.skpd_id, g)
           }
         }
       }
@@ -240,9 +279,10 @@ export default function CetakRkbmdPage() {
       setJudulLingkup(id ? '' : `Se-Kabupaten ${KABUPATEN} — ${out.length} SKPD`
         + (versiQ ? ` · versi ${versiQ}` : ' · ⚠ Murni + Perubahan tergabung (versi tak disaring)'))
 
-      // Daftar penanda tangan — hanya mode se-kabupaten yang memerlukannya
-      // (lembar per-SKPD memakai kepala kantornya masing-masing). 136 baris
-      // se-kabupaten per 2026-08-13, jadi cukup ditarik sekali tanpa paginasi.
+      // Daftar penanda tangan. Se-kabupaten menariknya SE-PEMDA (yang meneken
+      // rekap itu Pengelola Barang, bisa dari SKPD mana pun) — 136 baris per
+      // 2026-08-13, cukup sekali tarik tanpa paginasi. Per-SKPD cukup pegawai
+      // SKPD dokumen itu, yang sudah ditarik di atas.
       if (!id) {
         setSekab({ tahun: Number(tahun), jenis: jenisQ!, versi: versiQ })
         // Tuple ditulis eksplisit: tanpa itu `.map()` menyimpulkan
@@ -253,6 +293,18 @@ export default function CetakRkbmdPage() {
         setPegawai((pg || []) as Pegawai[])
         const tersimpan = p.get('ttd') || localStorage.getItem(KEY_TTD) || ''
         if (tersimpan) setTtdId(tersimpan)
+      } else {
+        // Per-SKPD: `?id=` selalu satu dokumen, jadi satu SKPD & satu pilihan.
+        const l = out[0]
+        const sid = l.dok.skpd_id
+        setPegawaiSkpd(pegawaiBySkpd.get(sid) || [])
+        // Urutan sumber pilihan awal: URL (dipaksa pemanggil) → pilihan yang
+        // tersimpan untuk SKPD ini → tebakan "Kepala". Pop-upnya tetap terbuka
+        // supaya operator melihat & mengiyakan apa yang akan tercetak.
+        const tsimpan = bacaTtdTersimpan(sid)
+        setTtdSkpdId(p.get('ttd') || tsimpan?.id || (l.penanda ? String(l.penanda.id) : ''))
+        setPlt(p.get('plt') === '1' || p.get('plt') === 'true' || !!tsimpan?.plt)
+        setTanyaTtd(true)
       }
       setLembar(out)
       setLoading(false)
@@ -266,8 +318,12 @@ export default function CetakRkbmdPage() {
       <div className="max-w-6xl mx-auto mb-3 flex flex-wrap items-center justify-between gap-3 no-print px-4">
         <span className="text-sm text-gray-500">{judulLingkup}</span>
         <div className="flex flex-wrap items-center gap-3">
-          {/* Pemilih penanda tangan — TIDAK ikut tercetak. Muncul hanya di mode
-              se-kabupaten; lembar per-SKPD sudah punya kepala kantornya sendiri. */}
+          {/* Pemilih penanda tangan se-Kabupaten — TIDAK ikut tercetak. Di sini
+              dropdown polos, bukan pop-up seperti lembar per-SKPD: rekap
+              se-kabupaten dicetak Pengelola Barang yang penanda tangannya
+              nyaris selalu orang yang sama, jadi menanyakannya tiap kali cuma
+              menghalangi. Yang per-SKPD ditanya karena berpindah-pindah SKPD
+              dan punya pilihan Definitif/Plt. */}
           {sekab && (
             <label className="flex items-center gap-2 text-sm text-gray-600">
               Penanda tangan:
@@ -291,9 +347,37 @@ export default function CetakRkbmdPage() {
               </select>
             </label>
           )}
+          {/* Mode per-SKPD: ringkasan pilihan + jalan masuk membuka pop-upnya
+              lagi. Tanpa ini, satu-satunya cara mengubah penanda tangan adalah
+              memuat ulang halaman. */}
+          {!sekab && !loading && !err && (
+            <button onClick={() => setTanyaTtd(true)}
+              className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200">
+              ✍ Penanda tangan: {pegawaiSkpd.find(g => String(g.id) === ttdSkpdId)?.nama || 'belum dipilih'}
+              {plt ? ' (Plt.)' : ''}
+            </button>
+          )}
           <button onClick={() => window.print()} className="btn-primary text-sm">🖨 Cetak / Simpan PDF</button>
         </div>
       </div>
+
+      {tanyaTtd && lembar[0] && (
+        <TtdModal
+          namaSkpd={lembar[0].skpd?.nama || `SKPD #${lembar[0].dok.skpd_id}`}
+          pegawai={pegawaiSkpd}
+          nilai={{ id: ttdSkpdId, plt }}
+          onBatal={() => setTanyaTtd(false)}
+          onPilih={(v) => {
+            setTtdSkpdId(v.id); setPlt(v.plt); setTanyaTtd(false)
+            // Disimpan supaya cetak ulang menghasilkan lembar yang SAMA —
+            // lembar ini ditandatangani lalu dipindai jadi lampiran pengajuan,
+            // jadi cetakan kedua yang berbeda nama akan menyulitkan penelaah.
+            const sid = lembar[0].dok.skpd_id
+            if (v.id) localStorage.setItem(keyTtdSkpd(sid), JSON.stringify(v))
+            else localStorage.removeItem(keyTtdSkpd(sid))
+          }}
+        />
+      )}
 
       <div className="max-w-6xl mx-auto">
         {loading ? (
@@ -308,16 +392,98 @@ export default function CetakRkbmdPage() {
           // Per-SKPD (`?id=`): lembar lengkap ber-kop & ber-tanda tangan.
           // Sudah benar menurut user (2026-08-13) — JANGAN diubah ikut-ikutan
           // waktu menyetel lembar se-kabupaten.
-          lembar.map(l => <LembarUsulan key={l.dok.id} l={l} uraianByKode={uraianByKode} />)
+          lembar.map(l => (
+            <LembarUsulan key={l.dok.id} l={l} uraianByKode={uraianByKode}
+              ttd={pegawaiSkpd.find(g => String(g.id) === ttdSkpdId) || null} plt={plt} />
+          ))
         )}
       </div>
     </div>
   )
 }
 
+// ── Pop-up penanda tangan lembar per-SKPD ───────────────────────────────────
+// Muncul sendiri saat halaman cetak dibuka (permintaan user 2026-08-13). Dua
+// hal yang ditanyakan, dan keduanya tak bisa disimpulkan sistem sendiri:
+//   (1) SIAPA yang meneken — tebakan lewat kata "Kepala" di kolom `jabatan`
+//       sering meleset, dan yang meleset dulu berakhir sbg blok titik-titik;
+//   (2) DEFINITIF atau Plt. — status ini tidak ada di `admin_pegawai` sama
+//       sekali, jadi tak ada sumber data mana pun yang bisa menjawabnya.
+// Pratinjau sebutannya ditampilkan apa adanya supaya yang disetujui di layar
+// persis yang tercetak di kertas.
+function TtdModal({ namaSkpd, pegawai, nilai, onPilih, onBatal }: {
+  namaSkpd: string
+  pegawai: Pegawai[]
+  nilai: { id: string; plt: boolean }
+  onPilih: (v: { id: string; plt: boolean }) => void
+  onBatal: () => void
+}) {
+  const [id, setId] = useState(nilai.id)
+  const [plt, setPlt] = useState(nilai.plt)
+  const dipilih = pegawai.find(g => String(g.id) === id) || null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 no-print">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-800">Penanda tangan lembar usulan</h3>
+          <p className="text-xs text-gray-500 mt-0.5">{namaSkpd}</p>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Nama penanda tangan</label>
+            <select className="select-filter w-full" value={id} onChange={e => setId(e.target.value)}>
+              <option value="">— belum dipilih (dibiarkan bertitik-titik) —</option>
+              {pegawai.map(g => (
+                <option key={String(g.id)} value={String(g.id)}>
+                  {g.nama}{g.jabatan ? ` — ${g.jabatan}` : ''}
+                </option>
+              ))}
+            </select>
+            {pegawai.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">
+                Belum ada pegawai terdaftar di SKPD ini. Lembarnya tetap bisa dicetak — blok tanda
+                tangan dibiarkan bertitik-titik untuk ditulis tangan.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Status jabatan</label>
+            <div className="flex gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input type="radio" checked={!plt} onChange={() => setPlt(false)} /> Definitif
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" checked={plt} onChange={() => setPlt(true)} /> Plt.
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-center text-xs">
+            <p className="text-gray-400 mb-1">Yang akan tercetak:</p>
+            <p className="text-gray-700">{sebutanKepala(plt, namaSkpd)}</p>
+            <div className="h-6" />
+            <p className="font-semibold underline text-gray-800">{dipilih?.nama || '(………………………………)'}</p>
+            <p className="text-gray-700">NIP. {dipilih?.nip || '………………………'}</p>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
+          <button className="btn-secondary text-sm" onClick={onBatal}>Batal</button>
+          <button className="btn-primary text-sm" onClick={() => onPilih({ id, plt })}>Terapkan</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Satu lembar = satu dokumen RKBMD satu SKPD ──────────────────────────────
-function LembarUsulan({ l, uraianByKode }: { l: Lembar; uraianByKode: Map<string, string> }) {
-  const { dok, skpd, penanda, pakets, items } = l
+function LembarUsulan({ l, uraianByKode, ttd, plt }: {
+  l: Lembar; uraianByKode: Map<string, string>; ttd: Pegawai | null; plt: boolean
+}) {
+  const { dok, skpd, pakets, items } = l
   const pengadaan = dok.jenis === 'pengadaan'
   const ekstra = EKSTRA[dok.jenis] || []
   // Rumus "total nilai" per jenis dipakai bersama menu Pelaporan — satu sumber
@@ -364,10 +530,14 @@ function LembarUsulan({ l, uraianByKode }: { l: Lembar; uraianByKode: Map<string
       <div className="mt-8 flex justify-end pr-16">
         <div className="text-center">
           <p>{KABUPATEN}, {tglID()}</p>
-          <p>Kepala {skpd?.nama || '…………………………'}</p>
+          <p>{sebutanKepala(plt, skpd?.nama || '…………………………')}</p>
           <div className="h-16" />
-          <p className="font-semibold underline">{penanda?.nama || '(………………………………)'}</p>
-          <p>{penanda?.jabatan || 'NIP. ………………………'}</p>
+          <p className="font-semibold underline">{ttd?.nama || '(………………………………)'}</p>
+          {/* Dulu baris ini mencetak `jabatan` pegawainya — yang berarti
+              "Kepala <SKPD>" tercetak DUA KALI beruntun, dan begitu Plt.
+              dipilih kedua baris itu justru saling bertentangan. Diganti NIP,
+              sama dengan blok tanda tangan lembar se-Kabupaten. */}
+          <p>NIP. {ttd?.nip || '………………………'}</p>
         </div>
       </div>
     </div>

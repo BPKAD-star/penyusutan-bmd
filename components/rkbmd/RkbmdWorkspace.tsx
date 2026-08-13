@@ -125,13 +125,6 @@ export default function RkbmdWorkspace() {
     setBusy(false)
   }
 
-  function tolak() {
-    const alasan = prompt('Catatan penolakan / telaah (akan dikirim ke SKPD):')
-    if (alasan === null) return
-    patchHeader({ status: 'ditolak', catatan_telaah: alasan || null },
-      'RKBMD ditolak & dikembalikan — seluruh kartu kembali bisa disunting SKPD.')
-  }
-
   return (
     <FormShell
       judul="RKBMD"
@@ -207,8 +200,7 @@ export default function RkbmdWorkspace() {
               reloadHeader={loadHeaders} onMsg={setMsg}
               onAjukan={() => patchHeader({ status: 'diajukan' }, 'RKBMD diajukan untuk ditelaah.')}
               onTarik={() => patchHeader({ status: 'draft' }, 'Pengajuan ditarik kembali ke draft.')}
-              onSetujui={() => patchHeader({ status: 'disetujui' }, 'RKBMD disetujui & ditetapkan.')}
-              onTolak={tolak} onBukaKunci={() => patchHeader({ status: 'draft' }, 'Kunci dibuka — dokumen kembali ke draft.')}
+              onBukaKunci={() => patchHeader({ status: 'draft' }, 'Kunci dibuka — dokumen kembali ke draft.')}
               onHapus={hapusDokumen}
             />
           )}
@@ -221,13 +213,13 @@ export default function RkbmdWorkspace() {
 // ── Panel satu dokumen RKBMD ──────────────────────────────────────────────
 function DokumenPanel({
   header, items, pakets, isAdmin, busy, canEditContent, reloadIsi, reloadHeader, onMsg,
-  onAjukan, onTarik, onSetujui, onTolak, onBukaKunci, onHapus,
+  onAjukan, onTarik, onBukaKunci, onHapus,
 }: {
   header: RkbmdHeader; items: RkbmdItem[]; pakets: RkbmdPaket[]
   isAdmin: boolean; busy: boolean; canEditContent: boolean
   reloadIsi: () => void; reloadHeader: () => void; onMsg: (m: string) => void
-  onAjukan: () => void; onTarik: () => void; onSetujui: () => void
-  onTolak: () => void; onBukaKunci: () => void; onHapus: () => void
+  onAjukan: () => void; onTarik: () => void
+  onBukaKunci: () => void; onHapus: () => void
 }) {
   const supabase = createClient()
   const berkartu = header.jenis === 'pengadaan'
@@ -279,6 +271,18 @@ function DokumenPanel({
             title="Cetak lembar usulan SKPD ini untuk ditandatangani kepala kantor">
             🖨 Cetak lembar usulan
           </a>
+          {/* "Tambah Kartu" naik ke baris aksi, SEJAJAR dengan Ajukan
+              (permintaan user 2026-08-13). Dulu ia menempel di bawah kartu
+              terakhir, jadi di dokumen yang sudah berisi beberapa kartu
+              operator harus menggulir ke dasar halaman tiap kali mau menambah
+              satu lagi. Tombol yang sama tetap ada di kartu kosong sbg ajakan
+              awal — di sana ia bagian dari penjelasan "satu kartu = satu sub
+              kegiatan", bukan sekadar tombol. */}
+          {berkartu && canEditContent && (
+            <button className="btn-secondary text-sm" onClick={tambahKartu} disabled={busy}>
+              + Tambah Kartu Program/Kegiatan
+            </button>
+          )}
           {header.status === 'draft' && (
             <>
               <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}
@@ -289,10 +293,19 @@ function DokumenPanel({
           {header.status === 'diajukan' && (
             <>
               {!isAdmin && <button className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200" onClick={onTarik} disabled={busy}>Tarik kembali</button>}
-              {isAdmin && <>
-                <button className="btn-primary" onClick={onSetujui} disabled={busy}>Setujui</button>
-                <button className="text-sm text-red-600 hover:text-red-700 px-3 py-1.5 rounded-lg border border-red-200" onClick={onTolak} disabled={busy}>Tolak</button>
-              </>}
+              {/* Setujui/Tolak SENGAJA TIDAK ADA DI SINI (keputusan user
+                  2026-08-13) — telaah dikerjakan di RKBMD → Validasi, tempat
+                  seluruh SKPD terkumpul dalam satu antrean berikut lampiran
+                  bertanda tangannya. Dua pintu untuk satu keputusan berarti
+                  satu di antaranya pasti menyetujui tanpa membuka lampiran,
+                  dan yang di sini justru pintu yang tak punya lampirannya. */}
+              {isAdmin && (
+                <a href="/dashboard/rkbmd/validasi"
+                  className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
+                  title="Persetujuan & penolakan dikerjakan di antrean telaah">
+                  Telaah di menu Validasi →
+                </a>
+              )}
             </>
           )}
           {header.status === 'disetujui' && isAdmin && (
@@ -349,11 +362,6 @@ function DokumenPanel({
                 items={items.filter(i => i.paket_id === p.id)}
                 canEdit={canEditContent} onMsg={onMsg} reloadIsi={reloadIsi} />
             ))
-          )}
-          {canEditContent && pakets.length > 0 && (
-            <button className="btn-secondary text-sm" onClick={tambahKartu} disabled={busy}>
-              + Tambah Kartu Program/Kegiatan
-            </button>
           )}
           <div className="card p-4 flex items-center justify-between">
             <span className="text-sm text-gray-600">Total seluruh kartu ({items.length} item)</span>

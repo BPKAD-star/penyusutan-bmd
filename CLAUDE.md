@@ -1145,6 +1145,63 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   pun boleh dicetak; justru itu gunanya). Cetak **se-Kabupaten tetap di
   Pelaporan** — itu keluaran hilir untuk Pengelola Barang.
 
+- **Import Excel Standar Harga — ADMIN SAJA** (permintaan user 2026-08-13).
+  Tombol "⬆ Import Excel" di halaman Standar Harga (`StandarImport.tsx`):
+  unduh format → isi → unggah → **periksa di layar** → simpan. Tiap baris tetap
+  lewat **RPC yang sama** dgn form manual (`fn_rkbmd_standar_simpan`), jadi
+  dedup & penggabungan kode rekening lintas SKPD berlaku persis sama — jangan
+  diganti INSERT langsung demi kecepatan, itu mematahkan janji bak bersamanya.
+  ⚠️ Gerbang "admin saja" itu **TAMPILAN, bukan keamanan**, dan itu disengaja:
+  RPC-nya memang boleh dipanggil semua SKPD, jadi import massal bukan kemampuan
+  BARU — cuma jalan cepat menuju hal yang satu-per-satu sudah boleh. Kalau kelak
+  perlu ditegakkan sungguhan, tempatnya di RPC.
+  Judul kolom format & pembacanya **satu sumber**: `kolomTemplate()` di
+  lib/rkbmdStandar.ts, diturunkan dari `STANDAR_CONFIG` — label tiap jenis
+  memang beda ("Harga Satuan" vs "Besaran / Pagu Satuan"), jadi menulis
+  daftarnya dua kali membuat berkas yang diunduh perlahan menyimpang dari yang
+  bisa dibaca. Pencocokan kolom **dua tahap** (persis dulu, baru longgar):
+  dengan `includes` saja, alias "satuan" mencaplok kolom "Besaran / Pagu Satuan"
+  milik ASB lalu kolom harganya kosong DIAM-DIAM.
+  ⚠️ Lembar isian **tanpa baris contoh** — contoh yang duduk di lembar data ikut
+  terbaca sbg barang sungguhan kalau tak dihapus, dan di bak bersama lintas SKPD
+  barang karangan yang terlanjur masuk akan dipakai SKPD lain menyusun anggaran.
+  Contohnya di lembar **Petunjuk**, tempat ia tak bisa terimpor.
+  Kode barang & kode rekening diperiksa ke masternya SEBELUM baris pertama
+  disimpan (dua-duanya ber-FK) — kalau tidak, satu salah ketik memunculkan pesan
+  Postgres mentah sesudah sebagian baris terlanjur masuk. Baris kembar di dalam
+  satu berkas dibuang & dilaporkan. Ringkasan hasil ditampilkan **di dalam
+  pop-up**, bukan cuma dikirim ke pesan induk yang tercetak di belakang lapisan
+  gelap modal. Berlaku untuk keempat jenis (SSH/HSPK/ASB/SBU) — bentuknya sama,
+  dan mengkhususkan SSH cuma menyisakan cabang `if` di berkas yang justru
+  dirancang config-driven.
+- **Setujui/Tolak DICABUT dari menu Usulan** (keputusan user 2026-08-13) —
+  telaah hanya di **RKBMD → Validasi**, tempat seluruh SKPD terkumpul dalam satu
+  antrean berikut lampiran bertanda tangannya. Dua pintu untuk satu keputusan
+  berarti satu di antaranya pasti menyetujui tanpa membuka lampiran, dan yang di
+  Usulan justru pintu yang tak menampilkannya. Yang di Usulan tinggal tautan
+  "Telaah di menu Validasi →". **"Buka Kunci" TETAP di Usulan** — antrean
+  Validasi hanya memuat status `diajukan`, jadi dokumen `disetujui` tak punya
+  pintu lain untuk dibuka.
+- **"+ Tambah Kartu Program/Kegiatan" naik ke baris aksi**, sejajar Ajukan
+  (permintaan user 2026-08-13). Dulu menempel di bawah kartu terakhir → di
+  dokumen berisi beberapa kartu, operator harus menggulir ke dasar halaman tiap
+  kali menambah satu. Tombol yang sama tetap ada di kartu kosong sbg ajakan awal.
+- **Penanda tangan lembar per-SKPD DITANYAKAN lewat pop-up** (permintaan user
+  2026-08-13), tak lagi ditebak diam-diam. Dua hal yang ditanyakan & keduanya
+  tak bisa disimpulkan sistem: (1) SIAPA — tebakan lewat kata "Kepala" di kolom
+  `jabatan` sering meleset, dan yang meleset dulu berakhir jadi blok titik-titik;
+  (2) **Definitif atau Plt.** — status ini **tidak ada di `admin_pegawai` sama
+  sekali**, jadi tak ada sumber data mana pun yang bisa menjawabnya. Sebutannya
+  `sebutanKepala()`: Definitif → "Kepala <SKPD>", Plt → "Plt. Kepala <SKPD>",
+  satu fungsi dipakai blok tanda tangan DAN pratinjau di pop-up supaya yang
+  disetujui di layar persis yang tercetak. Pilihan disimpan **per SKPD**
+  (`bmd_rkbmd_ttd_skpd_<id>`, pola `bmd_rkbmd_ttd_sekab`) supaya cetak ulang
+  menghasilkan lembar yang SAMA — lembar ini ditandatangani lalu dipindai jadi
+  lampiran pengajuan. Bisa dipaksa lewat `?ttd=<id pegawai>&plt=1`.
+  ⚠️ Baris di bawah nama kini **NIP**, bukan `jabatan`: dulu "Kepala <SKPD>"
+  tercetak dua kali beruntun, dan begitu Plt. dipilih kedua baris itu justru
+  saling bertentangan. Sama dgn blok tanda tangan lembar se-Kabupaten.
+
 ### Alur RKBMD yang disepakati (user 2026-08-13) — BARU SEBAGIAN DIBANGUN
 
 1. SKPD menyusun RKBMD → **cetak lembar usulan** (✅ ada, di menu Usulan) →

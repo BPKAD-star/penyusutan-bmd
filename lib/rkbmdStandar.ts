@@ -11,6 +11,7 @@
 //
 // SBSK TIDAK di sini: bentuknya beda (kuantitas standar per satuan pengukur,
 // bukan harga) dan tabelnya sendiri (`rkbmd_sbsk`). Yang disatukan cuma menunya.
+import * as XLSX from 'xlsx'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type StandarJenis = 'ssh' | 'hspk' | 'asb' | 'sbu'
@@ -205,6 +206,96 @@ export async function ubahStandar(
 export async function hapusStandar(supabase: SupabaseClient, id: number): Promise<void> {
   const { error } = await supabase.from('rkbmd_standar').delete().eq('id', id)
   if (error) throw new Error(error.message)
+}
+
+// ── Format import Excel ─────────────────────────────────────────────────────
+// Judul kolom berkas import DITURUNKAN dari `STANDAR_CONFIG`, bukan ditulis
+// tangan: berkas yang diunduh operator dan pembacanya (StandarImport) wajib
+// menyebut kolom yang sama persis, dan label per jenis memang berbeda
+// ("Harga Satuan" vs "Besaran / Pagu Satuan"). Menulis daftarnya dua kali akan
+// membuat format yang diunduh perlahan menyimpang dari yang bisa dibaca.
+
+/** Judul kolom lembar isian, urut kiri ke kanan. */
+export function kolomTemplate(jenis: StandarJenis): string[] {
+  const cfg = STANDAR_CONFIG[jenis]
+  return [
+    ...(cfg.pakaiKodeBarang ? ['Kode Barang'] : []),
+    cfg.labelNama,
+    'Satuan',
+    cfg.labelHarga,
+    ...(cfg.pakaiTkdn ? ['TKDN (%)'] : []),
+    ...Array.from({ length: SLOT_REKENING }, (_, i) => `Kode Rekening ${i + 1}`),
+    'Keterangan',
+  ]
+}
+
+/** Unduh berkas format: satu lembar isian (judul kolom saja) + satu lembar
+ *  Petunjuk.
+ *
+ *  ⚠️ Lembar isian sengaja TANPA baris contoh. Contoh yang duduk di lembar data
+ *  akan ikut terbaca sebagai barang sungguhan begitu berkasnya diunggah tanpa
+ *  dihapus — dan di bak bersama lintas SKPD, barang karangan yang terlanjur
+ *  masuk akan dipakai SKPD lain menyusun anggaran. Contohnya ditaruh di lembar
+ *  Petunjuk, tempat ia tak bisa ikut terimpor. */
+export function unduhTemplateStandar(jenis: StandarJenis, tahun: number): void {
+  const cfg = STANDAR_CONFIG[jenis]
+  const kolom = kolomTemplate(jenis)
+
+  const wb = XLSX.utils.book_new()
+
+  const wsIsi = XLSX.utils.aoa_to_sheet([kolom])
+  wsIsi['!cols'] = kolom.map(k => ({ wch: Math.max(k.length + 2, 14) }))
+  XLSX.utils.book_append_sheet(wb, wsIsi, 'Isian')
+
+  const petunjuk: string[][] = [
+    [`Format import ${cfg.judul} — Tahun Anggaran ${tahun}`],
+    [''],
+    ['Cara pakai:'],
+    ['1. Isi lembar "Isian". Satu baris = satu barang/komponen. Jangan mengubah judul kolomnya.'],
+    ['2. Baris kosong diabaikan. Simpan sebagai .xlsx.'],
+    ['3. Unggah lewat RKBMD → Standar Harga → ' + cfg.jenis.toUpperCase() + ' → Import.'],
+    ['4. Sebelum tersimpan, semua baris diperiksa dulu & ditampilkan di layar.'],
+    [''],
+    ['Keterangan kolom:'],
+    ...(cfg.pakaiKodeBarang
+      ? [['Kode Barang', 'WAJIB. Kode kodefikasi BMD, mis. 1.3.2.10.01.02.001. Harus sudah terdaftar di master kodefikasi.']]
+      : []),
+    [cfg.labelNama, 'WAJIB. Nama/uraian sedetail mungkin — inilah yang membedakan satu barang dari barang lain di bak bersama.'],
+    ['Satuan', 'Opsional, mis. Unit / Buah / Set. Sebaiknya diisi: satuan ikut menentukan barang ini dianggap sama atau beda.'],
+    [cfg.labelHarga, 'WAJIB. Angka, tanpa "Rp". Titik ribuan boleh (1.500.000), koma untuk desimal.'],
+    ...(cfg.pakaiTkdn ? [['TKDN (%)', 'Opsional. Angka 0–100. Kosongkan bila tidak diketahui.']] : []),
+    [`Kode Rekening 1–${SLOT_REKENING}`, 'Opsional, boleh lebih dari satu. Kode rekening belanja 6 segmen, mis. 5.2.02.10.001.00002. Harus terdaftar di master rekening.'],
+    ['Keterangan', 'Opsional.'],
+    [''],
+    ['Contoh pengisian (JANGAN disalin apa adanya — ini cuma gambaran):'],
+    kolom,
+    contohBaris(jenis),
+    [''],
+    ['Catatan penting:'],
+    ['· Ini BAK BERSAMA seluruh SKPD. Barang yang identitasnya sama (kode + nama + satuan + harga)'],
+    ['  tidak akan diduplikasi — kode rekening pada baris Anda digabungkan ke barang yang sudah ada.'],
+    ['· Karena itu, beda harga = barang yang BERBEDA. Untuk memperbaiki harga, ubah barisnya lewat'],
+    ['  tombol Edit di halaman, jangan diimpor ulang dengan harga baru.'],
+  ]
+  const wsPetunjuk = XLSX.utils.aoa_to_sheet(petunjuk)
+  wsPetunjuk['!cols'] = [{ wch: 34 }, { wch: 110 }]
+  XLSX.utils.book_append_sheet(wb, wsPetunjuk, 'Petunjuk')
+
+  XLSX.writeFile(wb, `Format-Import-${cfg.jenis.toUpperCase()}-TA${tahun}.xlsx`)
+}
+
+function contohBaris(jenis: StandarJenis): string[] {
+  const cfg = STANDAR_CONFIG[jenis]
+  return [
+    ...(cfg.pakaiKodeBarang ? ['1.3.2.10.01.02.001'] : []),
+    cfg.pakaiKodeBarang ? 'P.C Unit — Core i5, RAM 16GB, SSD 512GB' : 'Honorarium Narasumber Eselon II (per jam)',
+    cfg.pakaiKodeBarang ? 'Unit' : 'OJ',
+    '17500000',
+    ...(cfg.pakaiTkdn ? ['40'] : []),
+    '5.2.02.10.001.00002',
+    ...Array.from({ length: SLOT_REKENING - 1 }, () => ''),
+    '',
+  ]
 }
 
 // ── Nama belanja di balik kode rekening ─────────────────────────────────────
