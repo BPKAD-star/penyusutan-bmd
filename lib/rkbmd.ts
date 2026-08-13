@@ -88,6 +88,17 @@ export type RkbmdHeader = {
   diajukan_at: string | null
   approved_at: string | null
   created_at: string
+  /** Lembar usulan bertanda tangan + surat pengantar (satu PDF) di bucket
+   *  `dokumen-sumber`. WAJIB terisi sebelum status jadi `diajukan` — penegaknya
+   *  trigger `fn_rkbmd_status_guard` (migrasi 20260813_01), bukan UI.
+   *  ⚠️ DICABUT OTOMATIS begitu item/kartu dokumen ini berubah (trigger
+   *  `fn_rkbmd_lampiran_batal`): berkas bertanda tangan harus selalu cocok
+   *  dengan isinya. Kalau saat itu statusnya `diajukan`, ia ikut ditarik
+   *  kembali ke `draft`. */
+  dokumen_paths: string[]
+  /** Diisi/dikosongkan OTOMATIS oleh trigger mengikuti `dokumen_paths` —
+   *  jangan diset dari kode. */
+  dokumen_diunggah_at: string | null
 }
 
 /** Satu kartu = satu Program/Kegiatan/Sub Kegiatan berisi beberapa item barang

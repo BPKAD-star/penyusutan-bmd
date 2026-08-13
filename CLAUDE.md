@@ -1138,24 +1138,51 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
 1. SKPD menyusun RKBMD → **cetak lembar usulan** (✅ ada, di menu Usulan) →
    ditandatangani kepala kantor.
 2. **Ajukan WAJIB melampirkan** PDF bertanda tangan + surat pengantar (satu
-   berkas). Belum melampirkan → tombol Ajukan mati. ⛔ **BELUM DIBANGUN.**
+   berkas). ✅ **SUDAH DIBANGUN** (migrasi 20260813_01) — rincian di bawah.
 3. Validasi oleh Pengelola → **cetak se-Kabupaten** (✅ ada) → keluarannya
    **SK RKBMD TA 20xx**. ⛔ Format SK-nya **BELUM DIBANGUN**.
 
-Rancangan langkah 2 yang sudah disepakati, supaya penerusnya tak memutuskan ulang:
-- `rkbmd` **belum punya kolom dokumen apa pun** (dicek 2026-08-13) → butuh
-  migrasi: kolom path berkas + berkasnya ke bucket **`dokumen-sumber`** (privat,
-  10MB, image+pdf — bucket yang sama dipakai Pengalihan & Pengamanan), tampilkan
-  lewat signed URL.
-- Penegaknya **`fn_rkbmd_status_guard`** yang SUDAH ADA — ia memang sudah
-  menjaga transisi status; tinggal ditambah "tolak `draft`→`diajukan` kalau
-  lampiran kosong". Jangan cukup mematikan tombol di UI.
-- ⚠️ **Isi berubah sesudah PDF diunggah → lampirannya DICABUT OTOMATIS**, tombol
-  Ajukan mati lagi, wajib cetak & tanda tangan ulang (keputusan user
-  2026-08-13). Tanpa aturan ini operator bisa menandatangani lembar, lalu
-  menyunting item, lalu melampirkan PDF lama — **kertas & catatan berbeda tanpa
-  satu pun pesan error**, persis kelas kegagalan senyap yang berulang di repo
-  ini. Ongkos yang diterima: satu koreksi kecil = tanda tangan ulang.
+**Lampiran wajib (migrasi 20260813_01).** Kolom `rkbmd.dokumen_paths text[]` +
+`dokumen_diunggah_at`; berkasnya ke bucket **`dokumen-sumber`** (privat, 10MB,
+image+pdf — sama dgn Pengalihan & Pengamanan), prefix `rkbmd-usulan/`, dibuka
+lewat signed URL. **Tak perlu migrasi storage**: policy `dokumen_sumber_*`
+bersifat se-bucket, bukan per-prefix (diverifikasi 2026-08-13).
+
+- **SATU berkas, bukan daftar** (permintaan user: "pdf satu file") — lembar
+  bertanda tangan & surat pengantar digabung sendiri oleh operator. Kolomnya
+  tetap `text[]` supaya kalau nanti perlu lebih dari satu tak usah migrasi lagi;
+  yang membatasi jadi satu adalah layarnya. Mengunggah = MENGGANTI.
+- **Penegaknya trigger, bukan tombol.** `fn_rkbmd_status_guard` menolak transisi
+  ke `diajukan` kalau `cardinality(dokumen_paths)=0`. `dokumen_diunggah_at`
+  diisi/dikosongkan OTOMATIS oleh trigger yang sama mengikuti `dokumen_paths` —
+  **jangan diset dari kode**, biar tak bisa berbohong.
+- ⚠️ **Isi berubah → lampiran DICABUT OTOMATIS** (`fn_rkbmd_lampiran_batal`,
+  trigger di `rkbmd_item` DAN `rkbmd_paket`). Tanpa ini operator bisa: cetak →
+  tanda tangan → lampirkan → SUNTING itemnya → ajukan; kertas & catatan berbeda
+  **tanpa satu pun pesan error**. Ongkos yang diterima: satu koreksi kecil =
+  tanda tangan ulang.
+- ⚠️ **Status `diajukan` IKUT ditarik kembali ke `draft`** saat isinya berubah.
+  Sebabnya `fn_rkbmd_item_lock` cuma mengunci item saat `disetujui`, jadi
+  dokumen yang SUDAH diajukan itemnya masih bisa disunting — tanpa aturan ini
+  penelaah bisa menyetujui dokumen yang isinya sudah berbeda dari PDF yang
+  diteken. Mencabut lampirannya saja akan menyisakan keadaan mustahil:
+  berstatus "diajukan" tapi tanpa lampiran, padahal lampiran itu syarat masuk.
+  Status `disetujui` **sengaja dilewati** — itu catatan final & lampirannya
+  bukti; membuangnya justru menghapus jejak.
+- **UI wajib memuat ulang HEADER tiap isi berubah**, bukan cuma item/kartunya
+  (`reloadIsi` di RkbmdWorkspace memanggil `loadHeaders` juga). Kalau tidak,
+  layar masih memamerkan "✓ Terlampir" & tombol Ajukan hidup padahal DB sudah
+  mencabutnya — kesenjangan UI-vs-DB yang justru paling membingungkan.
+- Menu **Validasi** menampilkan tautan 📄 Dokumen per baris (signed URL dirakit
+  **di muka** saat memuat antrean — `window.open` sesudah `await` diblokir
+  peramban sbg pop-up). Dokumen tanpa lampiran ditandai ⚠ — normalnya tak ada,
+  kecuali diajukan sebelum aturan ini berlaku.
+- **Kompatibilitas:** 6 dokumen yang ada per 2026-08-13 semuanya `disetujui`
+  tanpa lampiran & tak terganggu — guard hanya menyala pada TRANSISI menuju
+  `diajukan`. Baru terasa kalau salah satunya di-"Buka Kunci" lalu diajukan lagi.
+- ⚠️ **Deploy-ordering: migrasi 20260813_01 WAJIB jalan SEBELUM deploy kode** —
+  kode sudah men-`select` `dokumen_paths`/`dokumen_diunggah_at`; tanpa kolomnya
+  query header gagal & menu Usulan + Validasi mati total.
 - ⚠️ **Deploy-ordering: migrasi 20260810_01 WAJIB jalan SEBELUM deploy kode** —
   halaman baru langsung query `rkbmd_standar` & RPC yang belum ada. Sebaliknya
   `DROP TABLE rkbmd_ssh` di akhir migrasi membuat halaman Admin → SSH versi LAMA

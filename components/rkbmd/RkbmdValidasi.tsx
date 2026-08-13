@@ -29,6 +29,12 @@ type Antrean = {
   status: RkbmdStatus
   diajukan_at: string | null
   admin_skpd: { nama: string } | null
+  dokumen_paths: string[]
+  /** Signed URL lampiran, dirakit saat memuat antrean. Sengaja DIMUAT DI MUKA,
+   *  bukan saat tombolnya diklik: membuat signed URL itu asinkron, dan
+   *  `window.open` sesudah `await` akan diblokir peramban sbg pop-up. Antrean
+   *  telaah selalu pendek, jadi biayanya kecil. */
+  dokumen_url: string
   pakets: RkbmdPaket[]
   jumlah_item: number
   total: number
@@ -57,13 +63,22 @@ export default function RkbmdValidasi() {
   const load = useCallback(async () => {
     setLoading(true); setErr('')
     const { data, error } = await supabase.from('rkbmd')
-      .select('id,skpd_id,tahun_anggaran,jenis,versi,status,diajukan_at,admin_skpd(nama)')
+      .select('id,skpd_id,tahun_anggaran,jenis,versi,status,diajukan_at,dokumen_paths,admin_skpd(nama)')
       .eq('tahun_anggaran', tahun).eq('status', 'diajukan')
       .order('diajukan_at', { ascending: true })
     if (error) { setErr(`gagal membaca antrean telaah: ${error.message}`); setRows([]); setLoading(false); return }
 
-    const base = ((data || []) as unknown as Omit<Antrean, 'pakets' | 'jumlah_item' | 'total'>[])
-      .map(h => ({ ...h, pakets: [] as RkbmdPaket[], jumlah_item: 0, total: 0 }))
+    const base = ((data || []) as unknown as Omit<Antrean, 'pakets' | 'jumlah_item' | 'total' | 'dokumen_url'>[])
+      .map(h => ({ ...h, dokumen_url: '', pakets: [] as RkbmdPaket[], jumlah_item: 0, total: 0 }))
+
+    // Tautan lampiran bertanda tangan — inilah yang ditelaah bersama angkanya.
+    // Bucket privat → wajib signed URL (~1 jam), bukan public URL.
+    await Promise.all(base.map(async h => {
+      const p = h.dokumen_paths?.[0]
+      if (!p) return
+      const { data: sig } = await supabase.storage.from('dokumen-sumber').createSignedUrl(p, 3600)
+      h.dokumen_url = sig?.signedUrl || ''
+    }))
 
     // Kartu + rekap item untuk semua dokumen di antrean sekaligus — bukan N
     // query, dan tetap kecil karena yang berstatus 'diajukan' selalu sedikit.
@@ -192,6 +207,19 @@ export default function RkbmdValidasi() {
                       memaksa penelaah keluar dari antrean lalu memilih SKPD lagi. */}
                   <button onClick={() => setDetail(h)}
                     className="text-gray-500 hover:text-gray-700 text-xs mr-3">Lihat</button>
+                  {/* Lampiran bertanda tangan — yang ditelaah bukan cuma
+                      angkanya, tapi juga kecocokannya dengan berkas yang
+                      diteken kepala kantor. Sejak migrasi 20260813_01 lampiran
+                      ini SYARAT pengajuan, jadi normalnya selalu ada; kalau
+                      kosong, dokumennya diajukan sebelum aturan itu berlaku. */}
+                  {h.dokumen_url ? (
+                    <a href={h.dokumen_url} target="_blank" rel="noopener noreferrer"
+                      className="text-gray-500 hover:text-gray-700 text-xs mr-3"
+                      title="Buka lembar usulan bertanda tangan + surat pengantar">📄 Dokumen</a>
+                  ) : (
+                    <span className="text-amber-600 text-xs mr-3"
+                      title="Dokumen ini tidak punya lampiran bertanda tangan">⚠ Tanpa lampiran</span>
+                  )}
                   {isAdmin && (
                     <>
                       <button onClick={() => setujui(h)} disabled={busy === h.id}

@@ -17,6 +17,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import ProgramPicker from '@/components/ProgramPicker'
 import RkbmdPengadaanForm from '@/components/rkbmd/RkbmdPengadaanForm'
 import RkbmdAsetForm from '@/components/rkbmd/RkbmdAsetForm'
+import RkbmdLampiran from '@/components/rkbmd/RkbmdLampiran'
 import { formatRupiah } from '@/lib/export'
 import {
   RKBMD_JENIS, STATUS_META, type RkbmdJenis, type RkbmdVersi,
@@ -25,7 +26,7 @@ import {
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
 const HEADER_COLS =
-  'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at'
+  'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at,dokumen_paths,dokumen_diunggah_at'
 const PAKET_COLS = 'id,rkbmd_id,no_urut,program,kegiatan,sub_kegiatan,keterangan'
 
 export default function RkbmdWorkspace() {
@@ -197,7 +198,13 @@ export default function RkbmdWorkspace() {
           ) : (
             <DokumenPanel
               header={header} items={items} pakets={pakets} isAdmin={isAdmin} busy={busy} canEditContent={canEditContent}
-              reloadIsi={() => loadIsi(header.id)} onMsg={setMsg}
+              // ⚠️ Header IKUT dimuat ulang tiap isi berubah, bukan cuma item/kartunya.
+              // Sejak migrasi 20260813_01, menyunting isi membuat DB MENCABUT
+              // lampiran (dan menarik status 'diajukan' kembali ke 'draft') lewat
+              // trigger — tanpa memuat ulang header, layar masih memamerkan
+              // "✓ Terlampir" & tombol Ajukan hidup padahal DB sudah menolaknya.
+              reloadIsi={async () => { await loadIsi(header.id); await loadHeaders() }}
+              reloadHeader={loadHeaders} onMsg={setMsg}
               onAjukan={() => patchHeader({ status: 'diajukan' }, 'RKBMD diajukan untuk ditelaah.')}
               onTarik={() => patchHeader({ status: 'draft' }, 'Pengajuan ditarik kembali ke draft.')}
               onSetujui={() => patchHeader({ status: 'disetujui' }, 'RKBMD disetujui & ditetapkan.')}
@@ -213,21 +220,29 @@ export default function RkbmdWorkspace() {
 
 // ── Panel satu dokumen RKBMD ──────────────────────────────────────────────
 function DokumenPanel({
-  header, items, pakets, isAdmin, busy, canEditContent, reloadIsi, onMsg,
+  header, items, pakets, isAdmin, busy, canEditContent, reloadIsi, reloadHeader, onMsg,
   onAjukan, onTarik, onSetujui, onTolak, onBukaKunci, onHapus,
 }: {
   header: RkbmdHeader; items: RkbmdItem[]; pakets: RkbmdPaket[]
   isAdmin: boolean; busy: boolean; canEditContent: boolean
-  reloadIsi: () => void; onMsg: (m: string) => void
+  reloadIsi: () => void; reloadHeader: () => void; onMsg: (m: string) => void
   onAjukan: () => void; onTarik: () => void; onSetujui: () => void
   onTolak: () => void; onBukaKunci: () => void; onHapus: () => void
 }) {
   const supabase = createClient()
   const berkartu = header.jenis === 'pengadaan'
   const total = items.reduce((s, it) => s + (it.total_anggaran || 0), 0)
-  // Diajukan hanya kalau benar-benar ada isinya — dokumen kosong yang masuk
-  // antrean telaah cuma membuang waktu penelaah.
-  const bolehAjukan = items.length > 0
+  // Dua syarat mengajukan, dan keduanya juga ditegakkan DB — yang di sini cuma
+  // supaya operator tak menekan tombol lalu kena pesan mentah dari Postgres:
+  //   (1) ada isinya — dokumen kosong di antrean telaah cuma membuang waktu;
+  //   (2) lampiran bertanda tangan sudah diunggah (migrasi 20260813_01).
+  const adaLampiran = (header.dokumen_paths?.length ?? 0) > 0
+  const bolehAjukan = items.length > 0 && adaLampiran
+  const alasanTakBolehAjukan = items.length === 0
+    ? 'Tambah item dulu sebelum diajukan'
+    : !adaLampiran
+      ? 'Unggah dulu lembar usulan bertanda tangan (PDF) di kotak Dokumen usulan'
+      : undefined
 
   async function tambahKartu() {
     const next = Math.max(0, ...pakets.map(p => p.no_urut || 0)) + 1
@@ -267,7 +282,7 @@ function DokumenPanel({
           {header.status === 'draft' && (
             <>
               <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}
-                title={!bolehAjukan ? 'Tambah item dulu sebelum diajukan' : undefined}>Ajukan</button>
+                title={alasanTakBolehAjukan}>Ajukan</button>
               <button className="text-sm text-red-500 hover:text-red-700 px-2" onClick={onHapus} disabled={busy}>Hapus dokumen</button>
             </>
           )}
@@ -285,7 +300,8 @@ function DokumenPanel({
           )}
           {header.status === 'ditolak' && (
             <>
-              <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}>Ajukan ulang</button>
+              <button className="btn-primary" onClick={onAjukan} disabled={busy || !bolehAjukan}
+                title={alasanTakBolehAjukan}>Ajukan ulang</button>
               {/* Dokumen DITOLAK boleh dibuang & disusun ulang dari nol
                   (keputusan user 2026-08-10). Yang DISETUJUI tetap tidak —
                   bukanya lewat "Buka Kunci". */}
@@ -294,6 +310,18 @@ function DokumenPanel({
           )}
         </div>
       </div>
+
+      {/* Lampiran ditaruh SEBELUM isi dokumen: urutan di layar mengikuti urutan
+          kerjanya — cetak (tombol di kartu status di atas) → tanda tangan →
+          unggah → baru Ajukan. Tetap ditampilkan saat status 'diajukan'/
+          'disetujui' (read-only) supaya penelaah bisa membuka berkasnya. */}
+      <RkbmdLampiran
+        rkbmdId={header.id}
+        paths={header.dokumen_paths || []}
+        diunggahAt={header.dokumen_diunggah_at}
+        canEdit={canEditContent}
+        onChanged={reloadHeader}
+      />
 
       {header.status === 'ditolak' && header.catatan_telaah && (
         <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">
