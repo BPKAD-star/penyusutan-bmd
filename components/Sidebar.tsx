@@ -33,18 +33,29 @@ const navTree: NavNode[] = [
     // (SSH & SBSK) — bukan lagi urusan admin saja, karena SSH kini bak bersama
     // yang diisi seluruh SKPD. Rute lamanya tetap hidup sebagai pengalih.
     type: 'group', label: 'RKBMD', icon: ICON.pelaporan, children: [
+      // DUA KELOMPOK BER-ALUR KEMBAR (keputusan user 2026-08-13): Standar Harga
+      // dan RKBMD, masing-masing Usulan · Validasi · Pelaporan. Lima menu
+      // per-jenis yang lama (SSH/SBSK/ASB/SBU/HSPK) DILEBUR jadi satu "Usulan
+      // Standar Harga" — jenisnya dipilih di dalam layarnya, karena sekarang
+      // yang membedakan alur bukan jenisnya melainkan tahap dokumennya.
+      // ⚠️ Rute lamanya SENGAJA DIBIARKAN HIDUP (tidak dihapus, cuma tak lagi
+      // di sidebar): halaman itu satu-satunya jalan admin menyunting/menghapus
+      // baris yang terlanjur salah di bak bersama — alur usulan hanya bisa
+      // MENAMBAH. Jangan dibuang sebelum ada penggantinya.
       {
         type: 'group', label: 'Standar Harga', children: [
-          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/ssh', label: 'SSH' },
-          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/sbsk', label: 'Standar Kebutuhan (SBSK)' },
-          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/asb', label: 'ASB' },
-          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/sbu', label: 'SBU' },
-          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/hspk', label: 'HSPK' },
+          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/usulan', label: 'Usulan Standar Harga' },
+          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/validasi', label: 'Validasi' },
+          { type: 'leaf', href: '/dashboard/rkbmd/standar-harga/pelaporan', label: 'Pelaporan' },
         ],
       },
-      { type: 'leaf', href: '/dashboard/rkbmd/usulan', label: 'Usulan RKBMD' },
-      { type: 'leaf', href: '/dashboard/rkbmd/validasi', label: 'Validasi' },
-      { type: 'leaf', href: '/dashboard/rkbmd/pelaporan', label: 'Pelaporan' },
+      {
+        type: 'group', label: 'RKBMD', children: [
+          { type: 'leaf', href: '/dashboard/rkbmd/usulan', label: 'Usulan RKBMD' },
+          { type: 'leaf', href: '/dashboard/rkbmd/validasi', label: 'Validasi' },
+          { type: 'leaf', href: '/dashboard/rkbmd/pelaporan', label: 'Pelaporan' },
+        ],
+      },
     ],
   },
   {

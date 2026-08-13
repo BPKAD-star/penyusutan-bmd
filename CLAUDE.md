@@ -1343,8 +1343,31 @@ kuantitas + angka eksisting. Jangan menyalin alurnya ke pop-up.
   belum memintanya untuk standar harga. Tiga baris di
   `fn_standar_usulan_status_guard` tinggal dibuka kalau nanti perlu.
 
-**Belum dibangun:** tiga layar (Usulan · Validasi · Pelaporan Standar Harga),
-rutenya, dan pemecahan sidebar jadi dua kelompok bertingkat.
+**Layar (SELESAI):** `StandarUsulan` · `StandarValidasi` · `StandarPelaporan`
+di `/dashboard/rkbmd/standar-harga/{usulan,validasi,pelaporan}`. Sidebar dipecah
+jadi dua kelompok ber-alur kembar — **Standar Harga** & **RKBMD**, masing-masing
+Usulan · Validasi · Pelaporan.
+
+- **Lima menu per-jenis lama (SSH/SBSK/ASB/SBU/HSPK) dilebur** jadi satu Usulan
+  Standar Harga; jenisnya dipilih di dalam layarnya. ⚠️ **Rutenya sengaja
+  DIBIARKAN HIDUP** (cuma hilang dari sidebar): `StandarHargaWorkspace` adalah
+  satu-satunya jalan admin **menyunting/menghapus** baris yang terlanjur salah
+  di bak bersama — alur usulan hanya bisa MENAMBAH. Jangan dibuang sebelum ada
+  penggantinya.
+- **Pelaporan Standar Harga tak punya tombol Tambah**: menambah langsung ke bak
+  bersama akan memintas seluruh alur usulan→validasi. Ia juga tak perlu filter
+  status — sejak 20260813_03 satu-satunya jalan masuk ke `rkbmd_standar` adalah
+  `fn_standar_usulan_setujui`, jadi isinya **dengan sendirinya** tervalidasi.
+- ⚠️ **"Buka Kunci" di Validasi Standar Harga TIDAK menarik kembali baris yang
+  sudah masuk bak bersama** — ia cuma mengembalikan status usulannya ke draft.
+  Disengaja & dikatakan terus terang di konfirmasinya: begitu jadi acuan
+  bersama, SKPD lain mungkin sudah memakainya menyusun RKBMD, dan menariknya
+  diam-diam membuat dokumen mereka menunjuk barang yang mendadak lenyap.
+  Ini BEDA dari Buka Kunci RKBMD, yang memang tak meninggalkan jejak ke mana-mana.
+- Pesan hasil persetujuan memakai `ringkasHasil()` — "3 barang baru · 2 sudah
+  ada (tidak diduplikasi) · 1 kode rekening digabungkan". Penggabungan itu
+  justru inti bak bersama; "berhasil" saja menyembunyikan yang paling perlu
+  diketahui penelaah.
 
 ⚠️ **Deploy-ordering: migrasi 20260813_03 WAJIB jalan SEBELUM deploy kode** —
 ia mem-`DROP` lalu membuat ulang `fn_rkbmd_standar_simpan`. Selama jendela
