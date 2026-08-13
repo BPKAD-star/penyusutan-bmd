@@ -161,10 +161,14 @@ export default function RkbmdPelaporan() {
 
   const total = useMemo(() => rows.reduce((s, r) => s + r.total, 0), [rows])
   const perJenis = useMemo(() => {
-    const m = new Map<string, { n: number; total: number }>()
+    // `nihil` dihitung terpisah supaya kartu ringkasan bisa berkata "5 dokumen ·
+    // 2 nihil". Tanpa itu dokumen NIHIL tenggelam: ia ikut terhitung sbg dokumen
+    // tapi menyumbang Rp0, jadi dari ringkasan saja tak bisa dibedakan dari
+    // dokumen yang ditetapkan tapi kebetulan kosong.
+    const m = new Map<string, { n: number; nihil: number; total: number }>()
     for (const r of rows) {
-      const cur = m.get(r.jenis) || { n: 0, total: 0 }
-      m.set(r.jenis, { n: cur.n + 1, total: cur.total + r.total })
+      const cur = m.get(r.jenis) || { n: 0, nihil: 0, total: 0 }
+      m.set(r.jenis, { n: cur.n + 1, nihil: cur.nihil + (r.nihil ? 1 : 0), total: cur.total + r.total })
     }
     return [...m.entries()]
   }, [rows])
@@ -311,7 +315,10 @@ export default function RkbmdPelaporan() {
               <div key={k} className="card p-3">
                 <p className="text-[11px] text-gray-400">{JENIS_LABEL[k] || k}</p>
                 <p className="text-sm font-semibold text-gray-900">{formatRupiah(v.total)}</p>
-                <p className="text-[11px] text-gray-400">{v.n} dokumen</p>
+                <p className="text-[11px] text-gray-400">
+                  {v.n} dokumen
+                  {v.nihil > 0 && <span className="text-slate-500"> · {v.nihil} nihil</span>}
+                </p>
                 <p className="text-[10px] text-gray-400 mt-1 leading-tight">{LABEL_NILAI[k as RkbmdJenis] || ''}</p>
               </div>
             ))}
