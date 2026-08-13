@@ -616,6 +616,18 @@ disentuh sampai SKPD tujuan menerima). Poin penting:
   transaksi (`skpd_id`-nya termasuk kolom terkunci). Pengalihan yang terjadi di
   2026 memang TIDAK boleh menggesernya — membuatnya "period-aware" justru
   merusak baseline.
+- ⚠️ **"Barang ini masih berpindah?" JANGAN dijawab dari `aset.skpd_id` hari
+  ini.** Posisi terkini itu hasil akhir dari BANYAK jenis peristiwa, jadi ia tak
+  bisa menjawab pertanyaan tentang SATU jenis. Kartu Mutasi & Transfer di
+  Dashboard dulu membandingkan `aset.skpd_id` dgn `skpd_tujuan` baris
+  pengalihannya → 6 barang yang sesudah pindah ke Setda dimutasi-internal lagi
+  ke Bagian Umum hilang dari hitungan (**57 tampil 51**, INS-24, 2026-08-13).
+  Sumber kebenarannya LEDGER: pakai **`pindahAktif`** (lib/pengalihan.ts) —
+  baris terakhir per aset untuk jenis itu, minus pengembalian
+  (`payload.reversal`); yang dibatalkan sudah dibuang `fetchPindahEvents`.
+  Angka kartu (server) & isi popupnya (client) memakainya bersama — dulu
+  logikanya disalin di dua tempat sehingga keduanya salah dengan cara yang sama
+  dan mencocokkan keduanya tak menemukan apa pun. Dikunci lib/pengalihan.test.ts.
 - Selama pending: draft bebas diedit, jurnal boleh DELETE utuh (belum ada
   ledger). Pindah semester = hapus & entry ulang (guard semester sama spt
   ber-SK lain). `skpd_tujuan` terkunci begitu status bukan pending.

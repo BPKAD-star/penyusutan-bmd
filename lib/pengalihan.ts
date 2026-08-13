@@ -19,13 +19,20 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { comparePeriode } from '@/lib/bmd'
 
-type Ev = {
+export type Ev = {
   aset_id: string; id: number; periode: string
   skpd_asal: number | null; skpd_tujuan: number | null
   jenis: string
-  // Hanya terisi di baris 'batal_pengalihan': daftar id baris pengalihan yang
-  // dibatalkannya (lihat fn_batal_pengalihan_barang, migrasi 20260729_07).
-  payload: { target_trx_ids?: number[] } | null
+  // Nilai perolehan yang dibawa baris perpindahan itu. Tidak dipakai penentuan
+  // pemilik sama sekali — ikut ditarik supaya pemanggil yang menampilkan rincian
+  // perpindahan (kartu Mutasi & Transfer di Dashboard) tak perlu query kedua ke
+  // ledger yang sama dgn aturan penyaringan yang bisa menyimpang.
+  nilai: number | null
+  // `target_trx_ids` hanya terisi di baris 'batal_pengalihan': daftar id baris
+  // pengalihan yang dibatalkannya (fn_batal_pengalihan_barang, migrasi
+  // 20260729_07). `reversal` hanya di baris pengembalian warisan (2 baris, id
+  // 9658 & 9679) — pembuatnya sudah dicabut, pembacanya WAJIB tetap ada.
+  payload: { target_trx_ids?: number[]; reversal?: boolean } | null
 }
 
 // Jenis ledger yang MEMINDAHKAN aset antar unit (dua-duanya update aset.skpd_id).
@@ -77,7 +84,7 @@ export async function fetchPindahEvents(supabase: SupabaseClient): Promise<Pinda
   let terakhir = 0
   for (;;) {
     const { data, error } = await supabase.from('transaksi_bmd')
-      .select('aset_id,id,periode,skpd_asal,skpd_tujuan,jenis,payload')
+      .select('aset_id,id,periode,skpd_asal,skpd_tujuan,jenis,nilai,payload')
       .in('jenis', JENIS_DITARIK as never)
       .gt('id', terakhir)
       .order('id', { ascending: true })
@@ -169,6 +176,35 @@ export function ownersAt(evByAset: PindahEvents, periode: string): Map<string, n
   const owner = new Map<string, number | null>()
   for (const [asetId, p] of posisiAt(evByAset, periode)) owner.set(asetId, p.skpd)
   return owner
+}
+
+// Reduce MURNI: aset yang SAAT INI sedang berpindah karena `jenis` tertentu →
+// baris perpindahan yang masih berlaku untuk aset itu. Dipakai kartu "Mutasi &
+// Transfer" di Dashboard (angka kartu DAN isi popupnya, supaya keduanya tak
+// bisa menyimpang).
+//
+// ⚠️ Aturannya BUKAN "aset.skpd_id sekarang == skpd_tujuan baris ini" — itu
+// yang dipakai versi lama dan hasilnya kurang hitung DIAM-DIAM: barang yang
+// sudah pindah SKPD lalu dimutasi-internal lagi ke sub-unit di bawah SKPD
+// tujuan membuat `aset.skpd_id` tak lagi sama dgn `skpd_tujuan` baris
+// pengalihannya, padahal pengalihannya jelas masih berlaku. Terbukti di data
+// hidup 2026-08-13: 6 barang Dinas Perumahan → Sekretariat Daerah yang lalu
+// dimutasi ke Bagian Umum hilang dari hitungan (57 barang tampil 51).
+// Sumber kebenarannya LEDGER: `fetchPindahEvents` sudah membuang baris yang
+// dibatalkan (`batal_pengalihan`), jadi di sini tinggal ambil baris TERAKHIR
+// per aset untuk jenis itu & buang yang berupa pengembalian (`payload.reversal`
+// — barangnya sudah pulang ke asal).
+export function pindahAktif(evByAset: PindahEvents, jenis: string): Map<string, Ev> {
+  const out = new Map<string, Ev>()
+  for (const [asetId, evs] of evByAset) {
+    const sejenis = evs.filter(e => e.jenis === jenis)
+    if (sejenis.length === 0) continue
+    const terakhir = sejenis.reduce((a, b) =>
+      (comparePeriode(a.periode, b.periode) || a.id - b.id) >= 0 ? a : b)
+    if (terakhir.payload?.reversal === true) continue
+    out.set(asetId, terakhir)
+  }
+  return out
 }
 
 // Jalur SATU PERIODE (Daftar Barang & Penyusutan) — tarik + reduce sekaligus.

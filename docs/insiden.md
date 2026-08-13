@@ -54,8 +54,9 @@
 | [INS-21](#ins-21) | 2026-08-10 | Dashboard, Saldo Awal, & Laporan BMD menampilkan **semua angka NOL** — dan untuk pengurus barang, Dashboard **tidak pernah selesai** | ⬜ butuh integrasi DB |
 | [INS-22](#ins-22) | ditemukan 2026-08-11, **belum sempat salah** | Satu pemanggil `catatTransaksi` tak mengisi `tanggal` → ledger diam-diam bertanggal **hari ini**, bukan tanggal dokumen | ✅ [`sinkronisasi.test.ts`](../lib/sinkronisasi.test.ts) §6 |
 | [INS-23](#ins-23) | ditemukan 2026-08-11 | Enam baris `koreksi_nilai` disisipkan lewat **SQL langsung**, dibalik dengan koreksi berlawanan tanda alih-alih `batal_koreksi_nilai` | ⬜ soal disiplin operasi |
+| [INS-24](#ins-24) | 2026-08-13 | Dashboard menghitung **51** barang dipindah antar SKPD, padahal **57** | ✅ [`pengalihan.test.ts`](../lib/pengalihan.test.ts) |
 
-**Skornya hari ini: 6 dari 23 punya penjaga otomatis, dua di antaranya
+**Skornya hari ini: 7 dari 24 punya penjaga otomatis, dua di antaranya
 sebagian.** Itu angka yang jujur, dan memang itu gunanya kolom ini ada.
 
 INS-22 satu-satunya yang masuk daftar ini **sebelum** memakan korban. Ia layak
@@ -627,18 +628,56 @@ melainkan membaca ulang pemanggil satu per satu **sesudah** data bilang aman.
 
 ---
 
+### INS-24
+**Dashboard menghitung 51 barang dipindah, padahal 57**
+
+- **Tanggal** — dilaporkan user **2026-08-13**: *"udah mindah sekitar 57 barang,
+  tapi cuman muncul 51"* di kartu Transfer Keluar / Masuk SKPD.
+- **Gejala** — kartu "Mutasi & Transfer" menampilkan **51 disetujui** (dan
+  popup rinciannya ikut cuma memuat 51 baris, jadi mencocokkannya manual pun
+  tetap sepakat salah). Tak ada error apa pun.
+- **Akar masalah** — `countTransferAktif` (app/dashboard/page.tsx) menilai
+  sebuah pengalihan "masih berlaku" dengan membandingkan **`aset.skpd_id` hari
+  ini** dengan `skpd_tujuan` baris pengalihannya. Itu benar selama barangnya
+  berhenti di situ. Enam barang Dinas Perumahan → **Sekretariat Daerah (26)**
+  kemudian **dimutasi-internal ke Bagian Umum (187)**, sub-unit di bawah Setda:
+  `aset.skpd_id` jadi 187 ≠ 26 → keenamnya dianggap "sudah tidak berpindah",
+  padahal pengalihan lintas SKPD-nya jelas masih berlaku. Angka mutasi
+  internalnya sendiri (6) benar — jadi tak ada yang mencurigakan di layar.
+- **Yang membuatnya diam** — posisi barang hari ini itu **hasil akhir dari
+  banyak jenis peristiwa**, jadi ia tak bisa menjawab pertanyaan tentang SATU
+  jenis peristiwa. Sumber kebenarannya ledger, dan ledger sudah punya penanda
+  pembatalan sendiri (`batal_pengalihan` → `payload.target_trx_ids`).
+- **Perbaikan** — reduce murni **`pindahAktif`** di [`lib/pengalihan.ts`](../lib/pengalihan.ts):
+  baris TERAKHIR per aset untuk jenis itu, dibuang kalau berupa pengembalian
+  (`payload.reversal`); baris yang dibatalkan sudah dibuang lebih dulu oleh
+  `fetchPindahEvents` → `buangYangDibatalkan`. Dipakai **bersama** oleh angka
+  kartunya (server) dan isi popupnya (client) — sebelumnya logika itu disalin
+  di dua tempat, jadi keduanya salah dengan cara yang sama. Sekalian:
+  `countPindahAktif` mengembalikan `err` (dulu `catch {}` kosong → query gagal =
+  kartu "0 disetujui", keluarga INS-06/INS-08), dan popupnya `try/finally` +
+  menampilkan pesan.
+- **Verifikasi ke data hidup** — 59 aset pernah kena `pengalihan_status`;
+  2 di antaranya seluruh baris pindahnya dibatalkan → **57 aktif**, persis angka
+  yang disebut user. `mutasi_internal` tetap 6.
+- **Test** — ✅ [`lib/pengalihan.test.ts`](../lib/pengalihan.test.ts), memakai
+  rantai 7 → 26 → 187 yang nyata itu sebagai kasusnya.
+
+---
+
 ## Pola yang berulang
 
-Dua puluh tiga entri di atas bukan dua puluh tiga masalah berbeda. Kalau
+Dua puluh empat entri di atas bukan dua puluh empat masalah berbeda. Kalau
 diurutkan menurut **akar**-nya, sebagian besar jatuh ke empat keluarga — dan
 keluarga itu yang layak dijaga, bukan kasus per kasusnya.
 
 | Pola | Entri | Sudah dijinakkan? |
 |---|---|---|
-| **Kegagalan senyap** — `error` ditelan, hasilnya terbaca sebagai kebalikan kenyataan | INS-06 · INS-08 · INS-09 · INS-19 · INS-21 | sebagian: aturannya ada ([../rules.md](../rules.md) §2), tapi masih ~160 pelanggaran tercatat. ESLint Fase 0.5 |
+| **Kegagalan senyap** — `error` ditelan, hasilnya terbaca sebagai kebalikan kenyataan | INS-06 · INS-08 · INS-09 · INS-19 · INS-21 · INS-24 | sebagian: aturannya ada ([../rules.md](../rules.md) §2), tapi masih ~160 pelanggaran tercatat. ESLint Fase 0.5 |
 | **Operator non-*leakproof* di bawah RLS** (`LIKE`, lalu ENUM) | INS-02 · INS-03 · INS-05 · INS-11 · INS-12 | sebagian: partial index + `ANALYZE` jadi kebiasaan; verifikasinya belum jadi test |
 | **Diuji sebagai ADMIN saja** — jalur cepat admin menyembunyikan biaya yang ditanggung semua orang lain | INS-21 | rules.md §4.5 & §4.8 sudah menuliskannya; penegaknya masih prosedur |
 | **Konstanta kembar dijaga ingatan** | INS-15 · INS-17 · INS-18 | sebagian: `lib/sinkronisasi.test.ts` |
+| **Aturan yang sama disalin ke dua tempat** — angka & rinciannya lalu salah bersama-sama, jadi mencocokkan keduanya tak menemukan apa pun | INS-24 | ✅ satu sumber `pindahAktif`, dikunci `lib/pengalihan.test.ts` |
 | **Default diam-diam** — argumen yang boleh kosong lalu diisi sendiri oleh helper, padahal isinya menentukan periode laporan | INS-22 | ✅ `lib/sinkronisasi.test.ts` §6 — `tanggal` wajib disebut eksplisit |
 | **Perbaikan data lewat SQL langsung** — melewati bentuk payload, `header_id`, & pilihan jenis pembatalan yang dijaga menu | INS-23 | ⬜ soal disiplin operasi, bukan kode |
 | **Penyapuan rename yang tidak tuntas** | INS-19 | ✅ `lib/sinkronisasi.test.ts` — nama tabel dicocokkan ke tipe generated |

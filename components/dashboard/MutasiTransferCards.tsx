@@ -8,6 +8,7 @@
 // menunggu), sama pola dgn popup di CaraPerolehanCards.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { fetchPindahEvents, pindahAktif } from '@/lib/pengalihan'
 import { formatRupiah } from '@/lib/export'
 import { backdropClose } from '@/components/backdropClose'
 
@@ -118,54 +119,59 @@ async function fetchSkpdMap(supabase: ReturnType<typeof createClient>): Promise<
 }
 
 // ── Popup "Disetujui": kelompok per SKPD (asal utk arah keluar, tujuan utk
-// arah masuk) — hanya aset yang event TERAKHIR-nya masih transfer maju yg berlaku
-// (bukan pembalik, & aset kini di skpd_tujuan). Sama persis logika count di server,
-// lihat app/dashboard/page.tsx countTransferAktif.
+// arah masuk) — isinya HARUS persis sepanjang angka di kartunya, jadi aturan
+// "perpindahan mana yang masih berlaku" dipakai bersama dari satu tempat:
+// `pindahAktif` (lib/pengalihan.ts). Jangan tulis ulang di sini — versi lama
+// menyalinnya lalu ikut menanggung cacat yang sama (membandingkan aset.skpd_id
+// dgn skpd_tujuan → barang yang sesudah pindah SKPD dimutasi-internal lagi ke
+// sub-unitnya hilang dari hitungan).
 function DisetujuiModal({ kategori, arah, label, onClose }: { kategori: Kategori; arah: Arah; label: string; onClose: () => void }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
   const [groups, setGroups] = useState<{ skpdNama: string; total: number; lines: { lawanNama: string; nama_barang: string | null; nibar: string | null; nilai: number }[] }[]>([])
 
   useEffect(() => {
     (async () => {
-      const skpdMap = await fetchSkpdMap(supabase)
-      const rows: { id: number; skpd_asal: number; skpd_tujuan: number; nilai: number; payload: { reversal?: boolean } | null; aset: { id: string; nibar: string | null; nama_barang: string | null; skpd_id: number } | null }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('transaksi_bmd')
-          .select('id,skpd_asal,skpd_tujuan,nilai,payload,aset:aset_id(id,nibar,nama_barang,skpd_id)')
-          .eq('jenis', kategori).range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...(data as unknown as typeof rows))
-        if (data.length < 1000) break
+      try {
+        const skpdMap = await fetchSkpdMap(supabase)
+        const aktif = pindahAktif(await fetchPindahEvents(supabase), kategori)
+        // Identitas barang ditarik terpisah (ledger tak menyimpan nibar/nama).
+        const asetMap = new Map<string, { nibar: string | null; nama_barang: string | null }>()
+        const ids = [...aktif.keys()]
+        for (let i = 0; i < ids.length; i += 200) {
+          const { data, error } = await supabase.from('aset')
+            .select('id,nibar,nama_barang').in('id', ids.slice(i, i + 200))
+          if (error) throw new Error(`gagal membaca data barang: ${error.message}`)
+          for (const a of (data || []) as { id: string; nibar: string | null; nama_barang: string | null }[]) {
+            asetMap.set(a.id, { nibar: a.nibar, nama_barang: a.nama_barang })
+          }
+        }
+        const groupMap = new Map<number, { total: number; lines: { lawan: number; nama_barang: string | null; nibar: string | null; nilai: number }[] }>()
+        for (const [asetId, r] of aktif) {
+          if (r.skpd_asal == null || r.skpd_tujuan == null) continue
+          const ownerId = arah === 'keluar' ? r.skpd_asal : r.skpd_tujuan
+          const lawanId = arah === 'keluar' ? r.skpd_tujuan : r.skpd_asal
+          const info = asetMap.get(asetId)
+          const g = groupMap.get(ownerId) || { total: 0, lines: [] }
+          g.total += r.nilai || 0
+          g.lines.push({ lawan: lawanId, nama_barang: info?.nama_barang ?? null, nibar: info?.nibar ?? null, nilai: r.nilai || 0 })
+          groupMap.set(ownerId, g)
+        }
+        setGroups([...groupMap.entries()]
+          .map(([id, g]) => ({
+            skpdNama: skpdMap[id] || `SKPD #${id}`,
+            total: g.total,
+            lines: g.lines.map(l => ({ lawanNama: skpdMap[l.lawan] || `SKPD #${l.lawan}`, nama_barang: l.nama_barang, nibar: l.nibar, nilai: l.nilai })),
+          }))
+          .sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
+      } catch (e) {
+        // Fail-closed: JANGAN tampilkan daftar setengah jadi tanpa keterangan —
+        // popup ini yang dipakai operator utk mencocokkan jumlah barang.
+        setErr(e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoading(false)
       }
-      // Ambil event TERAKHIR per aset (id terbesar) — sama logika dgn countTransferAktif
-      // di app/dashboard/page.tsx: baris pembalik (payload.reversal) & aset yg sudah
-      // balik ke asal TIDAK ditampilkan sbg transfer aktif.
-      const latest = new Map<string, typeof rows[number]>()
-      for (const r of rows) {
-        if (!r.aset) continue
-        const prev = latest.get(r.aset.id)
-        if (!prev || r.id > prev.id) latest.set(r.aset.id, r)
-      }
-      const groupMap = new Map<number, { total: number; lines: { lawan: number; nama_barang: string | null; nibar: string | null; nilai: number }[] }>()
-      for (const r of latest.values()) {
-        if (r.payload?.reversal === true || !r.aset || r.aset.skpd_id !== r.skpd_tujuan) continue
-        const ownerId = arah === 'keluar' ? r.skpd_asal : r.skpd_tujuan
-        const lawanId = arah === 'keluar' ? r.skpd_tujuan : r.skpd_asal
-        const g = groupMap.get(ownerId) || { total: 0, lines: [] }
-        g.total += r.nilai || 0
-        g.lines.push({ lawan: lawanId, nama_barang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai })
-        groupMap.set(ownerId, g)
-      }
-      const out = [...groupMap.entries()]
-        .map(([id, g]) => ({
-          skpdNama: skpdMap[id] || `SKPD #${id}`,
-          total: g.total,
-          lines: g.lines.map(l => ({ lawanNama: skpdMap[l.lawan] || `SKPD #${l.lawan}`, nama_barang: l.nama_barang, nibar: l.nibar, nilai: l.nilai })),
-        }))
-        .sort((a, b) => a.skpdNama.localeCompare(b.skpdNama))
-      setGroups(out)
-      setLoading(false)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -173,6 +179,10 @@ function DisetujuiModal({ kategori, arah, label, onClose }: { kategori: Kategori
     <Modal title={`${label} — Sudah Disetujui`} onClose={onClose}>
       {loading ? (
         <p className="text-sm text-gray-400 text-center py-8">Memuat...</p>
+      ) : err ? (
+        <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          Gagal memuat rincian — {err}.
+        </p>
       ) : groups.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">Belum ada data.</p>
       ) : (

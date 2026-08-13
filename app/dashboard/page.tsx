@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
+import { fetchPindahEvents, pindahAktif } from '@/lib/pengalihan'
 import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
 import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/PenghapusanCards'
@@ -40,43 +41,34 @@ type SB = ReturnType<typeof createClient>
 
 // transaksi_bmd bersifat append-only: batal (pengalihan/penghapusan) DICATAT
 // sebagai baris baru, bukan menghapus baris lama — jadi hitung baris mentah
-// bisa kebesaran (baris yang sudah "dibatalkan" tetap ikut terhitung). Untuk
-// dapat angka yang mencerminkan kondisi TERKINI, cek balik ke status/skpd_id
-// aset saat ini (satu-satunya sumber yang sudah dikurangi efek pembatalan).
-
-// Transfer masih "berlaku" kalau skpd_id aset SEKARANG sama dengan skpd_tujuan
-// baris transaksi itu (kalau sudah dibatalkan/dikembalikan, aset.skpd_id sudah
-// kembali ke skpd_asal — baris lama otomatis tak terhitung). Dipakai utk kedua
-// jenis transfer: 'pengalihan_status' (lintas SKPD induk) & 'mutasi_internal'
-// (dalam satu SKPD induk).
-async function countTransferAktif(sb: SB, jenis: string): Promise<number> {
-  // Hitung aset yang SEDANG berpindah akibat transfer. Kunci: baca event TERAKHIR
-  // per aset (id ledger terbesar — append-only jadi id = urutan kejadian). Aset
-  // dihitung hanya kalau event terakhirnya BUKAN pembalik (payload.reversal, dipakai
-  // baik pengalihan_status maupun mutasi_internal) DAN aset kini benar-benar di
-  // skpd_tujuan event itu. Tanpa cek ini, baris pengembalian (skpd_tujuan = SKPD
-  // asal, tempat barang balik) ikut kehitung karena aset.skpd_id kebetulan sama dgn
-  // skpd_tujuan-nya — bikin transfer yg SUDAH dikembalikan tetap tampil "aktif".
-  const latest = new Map<string, { id: number; tujuan: number; reversal: boolean; cur: number | null }>()
+// bisa kebesaran (baris yang sudah "dibatalkan" tetap ikut terhitung).
+//
+// Untuk PERPINDAHAN, yang menentukan berlaku/tidaknya adalah LEDGER-nya sendiri
+// (`fetchPindahEvents` sudah membuang baris yang kena `batal_pengalihan`),
+// BUKAN posisi `aset.skpd_id` hari ini — lihat alasan panjangnya di
+// `pindahAktif` (lib/pengalihan.ts). Versi lama membandingkan `aset.skpd_id`
+// dgn `skpd_tujuan` dan kurang hitung diam-diam untuk barang yang sesudah
+// pindah SKPD dimutasi-internal lagi ke sub-unit di bawahnya.
+//
+// Dua jenisnya dihitung dari SATU tarikan ledger: `fetchPindahEvents` memang
+// menarik keduanya sekaligus (partial index `idx_trx_pindah_id`), jadi
+// memanggilnya dua kali cuma menarik baris yang sama persis dua kali.
+//
+// ⚠️ MENGEMBALIKAN `err`, BUKAN DIAM. Versi lama membungkusnya `try/catch {}`
+// kosong → query gagal berarti kartu tampil "0 disetujui", dan nol itu terbaca
+// operator sebagai "memang belum ada barang yang dipindah". Sama alasannya dgn
+// scanAset di bawah (keluarga INS-06/INS-08).
+async function countPindahAktif(sb: SB): Promise<{ transfer: number; mutasiInternal: number; err: string }> {
   try {
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await sb.from('transaksi_bmd')
-        .select('id, aset_id, skpd_tujuan, payload, aset(skpd_id)')
-        .eq('jenis', jenis)
-        .range(from, from + 999)
-      if (error || !data || data.length === 0) break
-      for (const r of data as unknown as { id: number; aset_id: string; skpd_tujuan: number; payload: { reversal?: boolean } | null; aset: { skpd_id: number } | null }[]) {
-        const prev = latest.get(r.aset_id)
-        if (!prev || r.id > prev.id) {
-          latest.set(r.aset_id, { id: r.id, tujuan: r.skpd_tujuan, reversal: r.payload?.reversal === true, cur: r.aset?.skpd_id ?? null })
-        }
-      }
-      if (data.length < 1000) break
+    const ev = await fetchPindahEvents(sb)
+    return {
+      transfer: pindahAktif(ev, 'pengalihan_status').size,
+      mutasiInternal: pindahAktif(ev, 'mutasi_internal').size,
+      err: '',
     }
-  } catch { /* transaksi_bmd/aset belum ada → 0 */ }
-  let n = 0
-  for (const v of latest.values()) if (!v.reversal && v.cur === v.tujuan) n++
-  return n
+  } catch (e) {
+    return { transfer: 0, mutasiInternal: 0, err: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 // Penghapusan: hanya hitung baris yang aset-nya MASIH status 'dihapus' saat
@@ -165,14 +157,14 @@ export default async function DashboardHome() {
 
   const [
     scan,
-    transfer, mutasiInternal,
+    pindah,
     hapus,
   ] = await Promise.all([
     scanAset(supabase),
-    countTransferAktif(supabase, 'pengalihan_status'),
-    countTransferAktif(supabase, 'mutasi_internal'),
+    countPindahAktif(supabase),
     countPenghapusan(supabase),
   ])
+  const { transfer, mutasiInternal } = pindah
   const gol = scan.gol
   const cn = scan.caraNilai
   const cc = scan.caraCount
@@ -238,6 +230,14 @@ export default async function DashboardHome() {
 
       {/* Mutasi & transfer */}
       <Section title="Mutasi & Transfer" sub="Perpindahan barang antar / dalam SKPD — proporsi sudah di-acc vs masih menunggu persetujuan">
+        {/* Sama alasannya dgn banner scanAset: angka 0 yang lahir dari query
+            gagal terbaca sebagai "belum ada perpindahan" — katakan apa adanya. */}
+        {pindah.err && (
+          <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">
+            <span className="font-semibold">Riwayat perpindahan gagal dimuat</span> — {pindah.err}.
+            Angka &ldquo;disetujui&rdquo; di bawah <span className="font-semibold">bukan nol yang sebenarnya</span>.
+          </div>
+        )}
         <MutasiTransferCards approved={{ transfer, mutasiInternal }} />
       </Section>
 
