@@ -1202,6 +1202,52 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   tercetak dua kali beruntun, dan begitu Plt. dipilih kedua baris itu justru
   saling bertentangan. Sama dgn blok tanda tangan lembar se-Kabupaten.
 
+- **Usulan NIHIL (migrasi 20260813_02).** SKPD menyatakan tak ada usulan untuk
+  suatu jenis & tahun. **Kolom `rkbmd.nihil`, bukan sekadar "dokumen tanpa
+  item"** — dua keadaan itu terlihat sama persis tapi artinya berlawanan:
+  kosong = BELUM disusun, NIHIL = SUDAH disusun & hasilnya memang tidak ada.
+  Tanpa pembeda, Pengelola tak bisa memisahkan SKPD yang sudah menyatakan sikap
+  dari yang belum mengerjakan, dan lembar cetaknya cuma tabel kosong.
+  Dijaga **dari DUA arah** oleh trigger: menyatakan nihil saat masih berisi
+  ditolak (`fn_rkbmd_status_guard`), dan menambah item/kartu ke dokumen nihil
+  ditolak (`fn_rkbmd_lampiran_batal`, menumpang trigger yang sudah ada di
+  `rkbmd_item`/`rkbmd_paket` — fungsi itu sudah membaca baris induknya).
+  Menjaga satu arah saja meninggalkan dokumen "NIHIL berisi 12 barang" yang
+  tercetak sbg lembar NIHIL sementara Pelaporan menjumlahkan isinya. DELETE
+  sengaja dikecualikan — mengosongkan isi dokumen nihil harus selalu boleh.
+  **Lampiran bertanda tangan TETAP wajib**: pernyataan nihil pun diteken kepala
+  kantor, justru di situ nilainya. Mengubah `nihil` pada dokumen `disetujui`
+  ditolak (buka kunci dulu). Lembar cetak menampilkan satu baris **N I H I L**
+  selebar tabel (`BarisNihil`, dipakai lembar per-SKPD & se-Kabupaten, kelima
+  jenis). Di Pelaporan kolom Item menampilkan badge NIHIL, bukan `0` — angka nol
+  menghapus satu-satunya pembeda; kolom "Nihil" ikut ke Excel.
+- **Pelaporan DIPISAH jadi dua laporan** (keputusan user 2026-08-13), bukan satu
+  tabel ber-filter status: **Laporan Usulan RKBMD** (draft/diajukan/ditolak —
+  "sudah sampai mana penyusunannya") dan **Laporan Setelah Validasi** (hanya
+  `disetujui` — "apa yang ditetapkan"). Lingkup status ditentukan MODE lebih
+  dulu, filter di layar cuma menyaring di dalamnya — laporan setelah validasi
+  tak boleh bisa memuat dokumen yang belum ditetapkan seketat apa pun filternya
+  disetel. **Cetak se-Kabupaten HANYA di laporan setelah validasi**, disediakan
+  **langsung per jenis** (5 tautan) supaya Pengelola tak perlu menyetel filter
+  dulu; versi diambil dari filter & di mode ini pilihan "Murni + Perubahan"
+  dicabut (ia cuma mematikan tombolnya). Di laporan usulan cetak se-kab sengaja
+  TIDAK ADA: angkanya belum final, dan yang tercetak akan terbaca sbg ketetapan.
+  Default mode `ditetapkan` = perilaku lama halaman ini.
+- **TKDN ikut di lembar cetak Pengadaan**, tepat setelah Spesifikasi Nama Barang
+  (permintaan user 2026-08-13) → 13 kolom. Nilainya di-lookup dari
+  `rkbmd_standar` lewat `standar_id`, **bukan** disalin ke `rkbmd_item` (dua
+  sumber kebenaran yang bisa berbeda — alasan yang sama dgn pop-up Validasi);
+  ditempelkan ke itemnya sesudah ditarik supaya tak perlu dialirkan sbg prop
+  lewat enam komponen. `-` berarti tak ber-TKDN / tak bersandar SSH, sengaja
+  bukan `0%`. ⚠️ Lebar tabel & posisi baris JUMLAH kini **DIHITUNG** dari
+  `JUDUL_PENGADAAN` (`KOLOM_PENGADAAN`, `ISI_KOSONG_PENGADAAN`,
+  `KOLOM_JUMLAH_PENGADAAN`) — dulu angka 12/10/8 ditulis tangan di sembilan
+  tempat, jadi menyisipkan satu kolom berarti menyunting sembilannya & yang
+  terlewat baru ketahuan sesudah lembarnya dicetak.
+- ⚠️ **Deploy-ordering: migrasi 20260813_02 WAJIB jalan SEBELUM deploy kode** —
+  menu Usulan, Validasi, Pelaporan, & halaman cetak sudah men-`select` kolom
+  `nihil`; tanpa kolomnya keempatnya mati total. Pola yang sama dgn 20260813_01.
+
 ### Alur RKBMD yang disepakati (user 2026-08-13) — BARU SEBAGIAN DIBANGUN
 
 1. SKPD menyusun RKBMD → **cetak lembar usulan** (✅ ada, di menu Usulan) →

@@ -2,6 +2,18 @@
 // RKBMD > Pelaporan — rekap dokumen RKBMD satu tahun anggaran + export Excel.
 // Baca-saja; tidak ada tombol yang mengubah status (itu di menu Validasi).
 //
+// DUA LAPORAN, DIPISAH (keputusan user 2026-08-13) — bukan satu tabel dengan
+// filter status, karena keduanya menjawab pertanyaan yang berbeda dan dibaca
+// orang pada saat yang berbeda:
+//   • Usulan RKBMD    — "sudah sampai mana penyusunannya?" Isinya dokumen yang
+//                       BELUM ditetapkan (draft/diajukan/ditolak). Angkanya
+//                       masih bisa berubah, jadi TIDAK boleh dicetak sebagai
+//                       lembar se-kabupaten: yang tercetak akan terbaca sbg
+//                       ketetapan padahal belum.
+//   • Setelah Validasi — "apa yang DITETAPKAN?" Hanya `disetujui`, dan di sinilah
+//                       cetak se-Kabupaten berada, langsung per jenis tanpa
+//                       harus menyetel filter lebih dulu.
+//
 // Fail-closed (rules.md): kalau salah satu query gagal, tabel DIKOSONGKAN dan
 // pesannya ditampilkan — angka setengah jadi yang terlihat sah lalu ikut
 // dilaporkan jauh lebih mahal daripada halaman yang error. Tombol Export ikut
@@ -13,8 +25,33 @@ import { exportToExcel, formatRupiah } from '@/lib/export'
 import { RKBMD_JENIS, STATUS_META, LABEL_NILAI, nilaiItemRkbmd, type RkbmdStatus, type RkbmdJenis, type RkbmdVersi } from '@/lib/rkbmd'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
+const KABUPATEN = 'Kediri'
 const VERSI_LABEL: Record<RkbmdVersi, string> = { murni: 'Murni', perubahan: 'Perubahan' }
 const JENIS_LABEL: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j => [j.key, j.label]))
+
+/** Dokumen yang belum ditetapkan. Sengaja daftar eksplisit, bukan "semua kecuali
+ *  disetujui": kalau kelak ada status baru, ia harus dipikirkan masuk laporan
+ *  yang mana — bukan diam-diam ikut ke sini. */
+const STATUS_BELUM: RkbmdStatus[] = ['draft', 'diajukan', 'ditolak']
+
+type Mode = 'usulan' | 'ditetapkan'
+
+const JUDUL_MODE: Record<Mode, { tab: string; judul: string; deskripsi: string; berkas: string }> = {
+  usulan: {
+    tab: 'Laporan Usulan RKBMD',
+    judul: 'Laporan Usulan RKBMD',
+    deskripsi: 'Pemantauan penyusunan: dokumen yang masih draft, sudah diajukan, atau dikembalikan penelaah. '
+      + 'Angkanya BELUM final — belum ada yang ditetapkan, jadi lembar se-Kabupaten sengaja tidak tersedia di sini.',
+    berkas: 'Usulan',
+  },
+  ditetapkan: {
+    tab: 'Laporan Setelah Validasi',
+    judul: 'Laporan RKBMD Setelah Validasi',
+    deskripsi: 'Hanya dokumen yang sudah DISETUJUI & ditetapkan Pengelola Barang. Inilah yang dicetak '
+      + 'se-Kabupaten Kediri sebagai dasar SK RKBMD.',
+    berkas: 'Ditetapkan',
+  },
+}
 
 type Baris = {
   id: string
@@ -22,6 +59,9 @@ type Baris = {
   jenis: string
   versi: string
   status: RkbmdStatus
+  /** SKPD menyatakan tidak ada usulan (migrasi 20260813_02). Dibedakan dari
+   *  "0 item" — yang satu keputusan, yang lain pekerjaan yang belum selesai. */
+  nihil: boolean
   /** Daftar sub kegiatan kartu-kartunya. Sudah TIDAK ditampilkan di tabel
    *  (permintaan user 2026-08-10) tapi tetap ikut ke Excel — di berkas kerja
    *  informasi itu masih berguna, sedangkan di layar ia bikin baris melebar. */
@@ -34,7 +74,10 @@ type Baris = {
 export default function RkbmdPelaporan() {
   const supabase = createClient()
   const [tahun, setTahun] = useState(TAHUN_DEFAULT)
-  const [status, setStatus] = useState<'semua' | RkbmdStatus>('disetujui')
+  // Default 'ditetapkan' = perilaku lama halaman ini (status difilter
+  // 'disetujui'), supaya laporan yang biasa dibuka tidak mendadak berubah isi.
+  const [mode, setMode] = useState<Mode>('ditetapkan')
+  const [status, setStatus] = useState<'semua' | RkbmdStatus>('semua')
   const [jenis, setJenis] = useState<'semua' | string>('semua')
   // RKBMD Perubahan sudah lama bisa DISUSUN (pemilih versi di menu Usulan,
   // `rkbmd.versi` + `parent_id`) tapi tak pernah bisa DILAPORKAN terpisah:
@@ -48,20 +91,25 @@ export default function RkbmdPelaporan() {
   const load = useCallback(async () => {
     setLoading(true); setErr('')
     let q = supabase.from('rkbmd')
-      .select('id,skpd_id,jenis,versi,status,admin_skpd(nama)')
+      .select('id,skpd_id,jenis,versi,status,nihil,admin_skpd(nama)')
       .eq('tahun_anggaran', tahun)
-    if (status !== 'semua') q = q.eq('status', status)
+    // Status dibatasi MODE lebih dulu; filter status di layar cuma menyaring di
+    // dalam lingkup itu. Laporan "setelah validasi" tak boleh bisa memuat
+    // dokumen yang belum ditetapkan, seketat apa pun filternya disetel.
+    if (mode === 'ditetapkan') q = q.eq('status', 'disetujui')
+    else if (status !== 'semua') q = q.eq('status', status)
+    else q = q.in('status', STATUS_BELUM)
     if (jenis !== 'semua') q = q.eq('jenis', jenis)
     if (versi !== 'semua') q = q.eq('versi', versi)
     const { data, error } = await q
     if (error) { setErr(`gagal membaca dokumen RKBMD: ${error.message}`); setRows([]); setLoading(false); return }
 
     const base: Baris[] = ((data || []) as unknown as {
-      id: string; skpd_id: number; jenis: string; versi: string; status: RkbmdStatus
+      id: string; skpd_id: number; jenis: string; versi: string; status: RkbmdStatus; nihil: boolean
       admin_skpd: { nama: string } | null
     }[]).map(h => ({
       id: h.id, skpd: h.admin_skpd?.nama || `SKPD #${h.skpd_id}`, jenis: h.jenis, versi: h.versi,
-      status: h.status, sub_kegiatan: '', jumlah_item: 0, total: 0,
+      status: h.status, nihil: !!h.nihil, sub_kegiatan: '', jumlah_item: 0, total: 0,
     }))
 
     if (base.length > 0) {
@@ -99,9 +147,17 @@ export default function RkbmdPelaporan() {
     base.sort((a, b) => a.skpd.localeCompare(b.skpd) || a.jenis.localeCompare(b.jenis))
     setRows(base)
     setLoading(false)
-  }, [tahun, status, jenis, versi]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tahun, mode, status, jenis, versi]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
+
+  // Cetak se-Kabupaten mensyaratkan versi TUNGGAL (Murni & Perubahan itu dua
+  // dokumen terpisah; menggabungkannya menjumlahkan angka yang tak berarti).
+  // Di laporan setelah validasi tombol itu jalan utamanya, jadi 'semua' di situ
+  // hanya akan mematikan tombolnya tanpa alasan yang jelas bagi operator.
+  useEffect(() => {
+    if (mode === 'ditetapkan' && versi === 'semua') setVersi('murni')
+  }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const total = useMemo(() => rows.reduce((s, r) => s + r.total, 0), [rows])
   const perJenis = useMemo(() => {
@@ -120,11 +176,14 @@ export default function RkbmdPelaporan() {
       'Jenis RKBMD': JENIS_LABEL[r.jenis] || r.jenis,
       'Versi': VERSI_LABEL[r.versi as RkbmdVersi] || r.versi,
       'Status': STATUS_META[r.status].label,
+      // Ikut ke Excel: di berkas kerja, "0 item" dan "NIHIL" harus tetap bisa
+      // dibedakan — yang satu belum dikerjakan, yang lain sudah diputuskan.
+      'Nihil': r.nihil ? 'NIHIL' : '',
       'Sub Kegiatan': r.sub_kegiatan,
       'Jumlah Item': r.jumlah_item,
       'Total Nilai': r.total,
       'Arti Total Nilai': LABEL_NILAI[r.jenis as RkbmdJenis] || '',
-    })), `RKBMD-${tahun}`, `RKBMD ${tahun}`)
+    })), `RKBMD-${JUDUL_MODE[mode].berkas}-${tahun}`, `RKBMD ${tahun}`)
   }
 
   // `msg=""` disengaja: halaman ini baca-saja, tak ada aksi yang menghasilkan
@@ -133,8 +192,8 @@ export default function RkbmdPelaporan() {
   // tetap mewajibkan prop `msg`.
   return (
     <FormShell
-      judul="Pelaporan RKBMD"
-      deskripsi="Rekap dokumen RKBMD seluruh SKPD per tahun anggaran, beserta total rencana anggarannya."
+      judul={JUDUL_MODE[mode].judul}
+      deskripsi={JUDUL_MODE[mode].deskripsi}
       msg=""
       headerRight={
         <div className="text-right">
@@ -147,6 +206,19 @@ export default function RkbmdPelaporan() {
     >
       {err && <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">{err}</div>}
 
+      {/* Dua laporan yang berbeda, bukan satu tabel ber-filter — alasannya di
+          kepala berkas ini. */}
+      <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-100">
+        {(['usulan', 'ditetapkan'] as Mode[]).map(m => (
+          <button key={m} onClick={() => setMode(m)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              mode === m ? 'border-teal text-teal' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}>
+            {JUDUL_MODE[m].tab}
+          </button>
+        ))}
+      </div>
+
       <div className="card p-5 mb-4">
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -154,16 +226,20 @@ export default function RkbmdPelaporan() {
             <input type="number" className="select-filter w-28" value={tahun}
               onChange={e => setTahun(Number(e.target.value) || TAHUN_DEFAULT)} />
           </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Status</label>
-            <select className="select-filter" value={status} onChange={e => setStatus(e.target.value as typeof status)}>
-              <option value="disetujui">Disetujui (ditetapkan)</option>
-              <option value="diajukan">Diajukan</option>
-              <option value="draft">Draft</option>
-              <option value="ditolak">Ditolak</option>
-              <option value="semua">Semua status</option>
-            </select>
-          </div>
+          {/* Filter status hanya di laporan usulan. Di laporan setelah validasi
+              statusnya memang cuma satu — menampilkan pemilih yang isinya satu
+              pilihan hanya mengundang pertanyaan. */}
+          {mode === 'usulan' && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Status</label>
+              <select className="select-filter" value={status} onChange={e => setStatus(e.target.value as typeof status)}>
+                <option value="semua">Semua yang belum ditetapkan</option>
+                <option value="draft">Draft</option>
+                <option value="diajukan">Diajukan</option>
+                <option value="ditolak">Ditolak</option>
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-xs text-gray-500 mb-1">Jenis</label>
             <select className="select-filter" value={jenis} onChange={e => setJenis(e.target.value)}>
@@ -174,7 +250,10 @@ export default function RkbmdPelaporan() {
           <div>
             <label className="block text-xs text-gray-500 mb-1">Versi</label>
             <select className="select-filter" value={versi} onChange={e => setVersi(e.target.value as typeof versi)}>
-              <option value="semua">Murni + Perubahan</option>
+              {/* 'semua' hanya di laporan usulan: di sana ia sekadar filter
+                  tampilan, sedangkan di laporan setelah validasi ia mematikan
+                  cetak se-kabupaten yang justru jadi jalan utamanya. */}
+              {mode === 'usulan' && <option value="semua">Murni + Perubahan</option>}
               <option value="murni">Murni</option>
               <option value="perubahan">Perubahan</option>
             </select>
@@ -182,34 +261,39 @@ export default function RkbmdPelaporan() {
           <button className="btn-primary" onClick={handleExport} disabled={loading || !!err || rows.length === 0}>
             Export Excel
           </button>
-          {/* Cetak SE-KABUPATEN: SATU dokumen menerus — kop sekali di atas, lalu
-              tiap SKPD jadi blok di dalam tabel yang sama (bentuknya diubah
-              2026-08-13 atas permintaan user; dulu satu lembar penuh per SKPD).
-              Hanya masuk akal kalau jenisnya TUNGGAL — lembar Pengadaan &
-              Penghapusan punya susunan kolom yang berbeda.
-              ⚠️ VERSI juga wajib tunggal. Sebelum ini `versi` tak pernah ikut di
-              URL, jadi berkasnya diam-diam menggabung RKBMD Murni DAN
-              Perubahan untuk SKPD yang sama — dua dokumen berbeda yang totalnya
-              lalu dijumlahkan jadi satu angka yang tak berarti apa-apa. */}
-          {jenis === 'semua' || versi === 'semua' ? (
-            <span className="text-xs text-gray-400 pb-2 max-w-[16rem]">
-              Pilih satu <span className="font-medium">jenis</span> dan satu <span className="font-medium">versi</span> untuk
-              mengaktifkan cetak se-kabupaten — kolom tiap jenis berbeda, dan Murni/Perubahan itu dua dokumen terpisah.
-            </span>
-          ) : (
-            <a
-              href={`/cetak/rkbmd?tahun=${tahun}&jenis=${jenis}&versi=${versi}`}
-              target="_blank" rel="noopener noreferrer"
-              className={`text-sm px-3 py-2 rounded-lg border ${
-                loading || err || rows.length === 0
-                  ? 'pointer-events-none opacity-40 border-gray-200 text-gray-400'
-                  : 'border-gray-200 text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              🖨 Cetak se-Kabupaten{versi === 'perubahan' ? ' (Perubahan)' : ''}
-            </a>
-          )}
         </div>
+
+        {/* ── Cetak SE-KABUPATEN — HANYA di laporan setelah validasi ──────────
+            Satu dokumen menerus: kop sekali di atas, lalu tiap SKPD jadi blok
+            di dalam tabel yang sama. Disediakan LANGSUNG per jenis (permintaan
+            user 2026-08-13) supaya Pengelola tak perlu menyetel filter dulu —
+            lembar tiap jenis punya susunan kolom sendiri, jadi memang harus
+            satu jenis per berkas.
+            ⚠️ VERSI wajib tunggal & diambil dari filter di atas. Sebelum
+            2026-08-13 `versi` tak pernah ikut di URL, jadi berkasnya diam-diam
+            menggabung RKBMD Murni DAN Perubahan untuk SKPD yang sama — dua
+            dokumen berbeda yang totalnya lalu dijumlahkan jadi satu angka yang
+            tak berarti apa-apa. */}
+        {mode === 'ditetapkan' && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="text-xs text-gray-500 mb-2">
+              Cetak se-Kabupaten {KABUPATEN} — TA {tahun}, versi{' '}
+              <span className="font-medium">{VERSI_LABEL[versi as RkbmdVersi] || versi}</span>.
+              Satu berkas per jenis (susunan kolomnya berbeda-beda).
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {RKBMD_JENIS.map(j => (
+                <a key={j.key}
+                  href={`/cetak/rkbmd?tahun=${tahun}&jenis=${j.key}&versi=${versi}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:text-gray-800 hover:border-gray-300"
+                >
+                  🖨 {j.label}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {!err && perJenis.length > 0 && (
@@ -271,9 +355,16 @@ export default function RkbmdPelaporan() {
                     {STATUS_META[r.status].label}
                   </span>
                 </td>
-                <td className="table-td text-xs text-right">{r.jumlah_item}</td>
+                {/* NIHIL, bukan "0". Dokumen yang menyatakan tak ada usulan dan
+                    dokumen yang belum diisi sama-sama berjumlah nol item —
+                    membiarkannya tampil "0" menghapus satu-satunya pembeda. */}
+                <td className="table-td text-xs text-right">
+                  {r.nihil
+                    ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">NIHIL</span>
+                    : r.jumlah_item}
+                </td>
                 <td className="table-td text-xs text-right whitespace-nowrap"
-                  title={LABEL_NILAI[r.jenis as RkbmdJenis]}>{formatRupiah(r.total)}</td>
+                  title={LABEL_NILAI[r.jenis as RkbmdJenis]}>{r.nihil ? '–' : formatRupiah(r.total)}</td>
               </tr>
             ))}
           </tbody>

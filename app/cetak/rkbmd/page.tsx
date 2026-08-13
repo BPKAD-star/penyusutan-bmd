@@ -75,9 +75,20 @@ type Item = {
   kondisi: string | null; peruntukan: string | null; bentuk: string | null
   jangka_waktu: string | null; estimasi_hasil: number | null; alasan: string | null
   keterangan: string | null
+  /** Barang SSH yang mendasari item ini. TKDN TIDAK disimpan di `rkbmd_item` —
+   *  ia atribut barang di SSH, dan menyalinnya ke tiap item berarti dua sumber
+   *  kebenaran yang bisa berbeda (alasan yang sama dgn pop-up Validasi). */
+  standar_id: number | null
+  /** Ditempelkan sesudah item ditarik, dari `rkbmd_standar`. Bukan kolom DB. */
+  tkdn?: number | null
 }
 
-type Dok = { id: string; skpd_id: number; tahun_anggaran: number; jenis: string; versi: string; status: string }
+type Dok = {
+  id: string; skpd_id: number; tahun_anggaran: number; jenis: string; versi: string; status: string
+  /** SKPD menyatakan tak ada usulan (migrasi 20260813_02) — lembarnya tercetak
+   *  dengan satu baris NIHIL, bukan tabel kosong yang tak berkata apa-apa. */
+  nihil: boolean
+}
 
 type Lembar = {
   dok: Dok
@@ -193,7 +204,7 @@ export default function CetakRkbmdPage() {
         setLoading(false); return
       }
 
-      let q = supabase.from('rkbmd').select('id,skpd_id,tahun_anggaran,jenis,versi,status')
+      let q = supabase.from('rkbmd').select('id,skpd_id,tahun_anggaran,jenis,versi,status,nihil')
       if (id) q = q.eq('id', id)
       else {
         q = q.eq('tahun_anggaran', Number(tahun)).eq('jenis', jenisQ!)
@@ -219,6 +230,20 @@ export default function CetakRkbmdPage() {
       }
       const pakets = (pk.data || []) as RkbmdPaket[]
       const items = (it.data || []) as Item[]
+
+      // TKDN ditarik dari SSH lewat `standar_id` (permintaan user 2026-08-13:
+      // tampilkan TKDN di lembar, setelah Spesifikasi Nama Barang). Ditempelkan
+      // ke itemnya supaya tak perlu dialirkan sbg prop lewat enam komponen.
+      const stdIds = [...new Set(items.map(r => r.standar_id).filter((x): x is number => x != null))]
+      if (stdIds.length > 0) {
+        const peta = new Map<number, number | null>()
+        for (let i = 0; i < stdIds.length; i += 300) {
+          const { data: std } = await supabase.from('rkbmd_standar')
+            .select('id,tkdn').in('id', stdIds.slice(i, i + 300))
+          for (const s of (std || []) as { id: number; tkdn: number | null }[]) peta.set(s.id, s.tkdn)
+        }
+        for (const r of items) if (r.standar_id != null) r.tkdn = peta.get(r.standar_id) ?? null
+      }
 
       // Uraian baku dari kodefikasi.
       const kodes = [...new Set(items.map(r => r.kode).filter((k): k is string => !!k))]
@@ -492,7 +517,7 @@ function LembarUsulan({ l, uraianByKode, ttd, plt }: {
   const pohon = pengadaan ? susunPohon(pakets, items) : []
 
   // Lebar tabel: 5 kolom identitas + kolom per jenis + Keterangan.
-  const nKolom = pengadaan ? 12 : KOLOM_IDENTITAS + ekstra.length + 1
+  const nKolom = pengadaan ? KOLOM_PENGADAAN : KOLOM_IDENTITAS + ekstra.length + 1
 
   return (
     <div className="bg-white p-8 shadow print:shadow-none print:p-0 mb-6 print:mb-0 print:break-after-page text-[10px] text-gray-900">
@@ -522,9 +547,10 @@ function LembarUsulan({ l, uraianByKode, ttd, plt }: {
       </table>
 
       {pengadaan ? (
-        <TabelPengadaan pohon={pohon} total={total} uraianByKode={uraianByKode} />
+        <TabelPengadaan pohon={pohon} total={total} uraianByKode={uraianByKode} nihil={dok.nihil} />
       ) : (
-        <TabelAset items={items} ekstra={ekstra} total={total} uraianByKode={uraianByKode} nKolom={nKolom} />
+        <TabelAset items={items} ekstra={ekstra} total={total} uraianByKode={uraianByKode}
+          nKolom={nKolom} nihil={dok.nihil} />
       )}
 
       <div className="mt-8 flex justify-end pr-16">
@@ -548,11 +574,22 @@ function LembarUsulan({ l, uraianByKode, ttd, plt }: {
 // lembar se-Kabupaten. Sengaja dipisah dari tabelnya: dua mode itu harus punya
 // susunan kolom yang SAMA PERSIS, dan menyalinnya akan jadi utang "ubah satu,
 // samakan yang lain" yang di repo ini sudah berkali-kali dilanggar.
+// TKDN disisipkan tepat setelah "Spesifikasi Nama Barang" (permintaan user
+// 2026-08-13). Nilainya dari SSH lewat `standar_id`, bukan kolom `rkbmd_item`.
 const JUDUL_PENGADAAN = ['Kode rekening', 'Kode barang', 'Uraian Barang', 'Spesifikasi Nama Barang',
-  'Jumlah', 'Satuan', 'Harga Satuan', 'Nilai total']
+  'TKDN (%)', 'Jumlah', 'Satuan', 'Harga Satuan', 'Nilai total']
 
+/** Dua kolom sebelum blok "Usulan BMD" (No. + Program/Kegiatan/Sub Kegiatan). */
+const KOLOM_AWAL_PENGADAAN = 2
+/** Total kolom lembar Pengadaan = 2 awal + blok Usulan BMD + 2 penutup
+ *  (Jumlah barang pada neraca + Keterangan). DIHITUNG, tidak ditulis tangan:
+ *  satu kolom baru dulu berarti menyunting sembilan `colSpan`/pengisi yang
+ *  tersebar, dan yang terlewat baru ketahuan sesudah lembarnya dicetak. */
+const KOLOM_PENGADAAN = KOLOM_AWAL_PENGADAAN + JUDUL_PENGADAAN.length + 2
+/** Sel kosong yang perlu diisi di baris judul program/kegiatan/sub kegiatan. */
+const ISI_KOSONG_PENGADAAN = KOLOM_PENGADAAN - KOLOM_AWAL_PENGADAAN
 /** Kolom (1-based) tempat angka JUMLAH jatuh di lembar Pengadaan = "Nilai total". */
-const KOLOM_JUMLAH_PENGADAAN = 10
+const KOLOM_JUMLAH_PENGADAAN = KOLOM_AWAL_PENGADAAN + JUDUL_PENGADAAN.indexOf('Nilai total') + 1
 
 function TheadPengadaan() {
   return (
@@ -560,7 +597,7 @@ function TheadPengadaan() {
       <tr className="text-center">
         <th className="brd px-1 py-1 font-semibold" rowSpan={2}>No.</th>
         <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Program / Kegiatan / Sub Kegiatan</th>
-        <th className="brd px-1 py-1 font-semibold" colSpan={8}>Usulan BMD</th>
+        <th className="brd px-1 py-1 font-semibold" colSpan={JUDUL_PENGADAAN.length}>Usulan BMD</th>
         <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Jumlah barang<br />pada neraca</th>
         <th className="brd px-1 py-1 font-semibold" rowSpan={2}>Keterangan</th>
       </tr>
@@ -568,9 +605,20 @@ function TheadPengadaan() {
         {JUDUL_PENGADAAN.map(h => <th key={h} className="brd px-1 py-1 font-semibold">{h}</th>)}
       </tr>
       <tr className="text-center text-[9px]">
-        {Array.from({ length: 12 }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
+        {Array.from({ length: KOLOM_PENGADAAN }, (_, i) => <td key={i} className="brd px-1">{i + 1}</td>)}
       </tr>
     </thead>
+  )
+}
+
+/** Satu baris "NIHIL" selebar tabel. Dipakai lembar per-SKPD & se-Kabupaten,
+ *  kelima jenis — dokumen yang dinyatakan nihil harus BERKATA nihil, bukan
+ *  tampil sbg tabel kosong yang tak bisa dibedakan dari "belum disusun". */
+function BarisNihil({ nKolom }: { nKolom: number }) {
+  return (
+    <tr>
+      <td className="brd px-1 py-3 text-center font-semibold tracking-wide" colSpan={nKolom}>N I H I L</td>
+    </tr>
   )
 }
 
@@ -589,16 +637,18 @@ function BarisJumlah({ label, total, nKolom, kolomJumlah }: {
   )
 }
 
-// ── Tabel Pengadaan (berkartu, 12 kolom) ────────────────────────────────────
-function TabelPengadaan({ pohon, total, uraianByKode }: {
-  pohon: Prog[]; total: number; uraianByKode: Map<string, string>
+// ── Tabel Pengadaan (berkartu) ──────────────────────────────────────────────
+function TabelPengadaan({ pohon, total, uraianByKode, nihil }: {
+  pohon: Prog[]; total: number; uraianByKode: Map<string, string>; nihil: boolean
 }) {
   return (
     <table className="border-collapse w-full">
       <TheadPengadaan />
       <tbody>
-        {pohon.length === 0 ? (
-          <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={12}>
+        {nihil ? (
+          <BarisNihil nKolom={KOLOM_PENGADAAN} />
+        ) : pohon.length === 0 ? (
+          <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={KOLOM_PENGADAAN}>
             Dokumen ini belum berisi kartu program/kegiatan.
           </td></tr>
         ) : pohon.map((prog, pi) => (
@@ -606,7 +656,7 @@ function TabelPengadaan({ pohon, total, uraianByKode }: {
         ))}
       </tbody>
       <tfoot>
-        <BarisJumlah label="JUMLAH" total={total} nKolom={12} kolomJumlah={KOLOM_JUMLAH_PENGADAAN} />
+        <BarisJumlah label="JUMLAH" total={total} nKolom={KOLOM_PENGADAAN} kolomJumlah={KOLOM_JUMLAH_PENGADAAN} />
       </tfoot>
     </table>
   )
@@ -618,7 +668,7 @@ function BlokProgram({ prog, pi, uraianByKode }: { prog: Prog; pi: number; uraia
       <tr>
         <td className="brd px-1 py-0.5 align-top text-center">{pi + 1}.</td>
         <td className="brd px-1 py-0.5 align-top font-medium">{prog.nama}</td>
-        {Array.from({ length: 10 }, (_, i) => <td key={i} className="brd px-1 py-0.5" />)}
+        {Array.from({ length: ISI_KOSONG_PENGADAAN }, (_, i) => <td key={i} className="brd px-1 py-0.5" />)}
       </tr>
       {prog.kegs.map((keg, ki) => (
         <BlokKegiatan key={keg.nama} keg={keg} ki={ki} uraianByKode={uraianByKode} />
@@ -633,7 +683,7 @@ function BlokKegiatan({ keg, ki, uraianByKode }: { keg: Keg; ki: number; uraianB
       <tr>
         <td className="brd px-1 py-0.5" />
         <td className="brd px-1 py-0.5 align-top pl-4">{ki + 1}. {keg.nama}</td>
-        {Array.from({ length: 10 }, (_, i) => <td key={i} className="brd px-1 py-0.5" />)}
+        {Array.from({ length: ISI_KOSONG_PENGADAAN }, (_, i) => <td key={i} className="brd px-1 py-0.5" />)}
       </tr>
       {keg.subs.map((sub, si) => <BlokSub key={sub.paket.id} sub={sub} si={si} uraianByKode={uraianByKode} />)}
     </>
@@ -649,13 +699,13 @@ function BlokSub({ sub, si, uraianByKode }: { sub: Sub; si: number; uraianByKode
         <td className="brd px-1 py-0.5 align-top pl-8">
           {HURUF[si] || si + 1}. {sub.paket.sub_kegiatan || '(sub kegiatan belum dipilih)'}
         </td>
-        {Array.from({ length: 10 }, (_, i) => <td key={i} className="brd px-1 py-0.5" />)}
+        {Array.from({ length: ISI_KOSONG_PENGADAAN }, (_, i) => <td key={i} className="brd px-1 py-0.5" />)}
       </tr>
 
       {sub.isi.length === 0 ? (
         <tr>
           <td className="brd px-1 py-0.5" /><td className="brd px-1 py-0.5" />
-          <td className="brd px-1 py-2 text-center text-gray-400" colSpan={10}>Belum ada usulan barang.</td>
+          <td className="brd px-1 py-2 text-center text-gray-400" colSpan={ISI_KOSONG_PENGADAAN}>Belum ada usulan barang.</td>
         </tr>
       ) : sub.isi.map(r => (
         <tr key={r.id}>
@@ -670,6 +720,10 @@ function BlokSub({ sub, si, uraianByKode }: { sub: Sub; si: number; uraianByKode
           <td className="brd px-1 py-0.5 align-top">{r.kode || '-'}</td>
           <td className="brd px-1 py-0.5 align-top">{(r.kode && uraianByKode.get(r.kode)) || '-'}</td>
           <td className="brd px-1 py-0.5 align-top">{r.nama_barang || '-'}</td>
+          {/* TKDN dari SSH. "-" berarti barangnya memang tak berTKDN atau tak
+              bersandar ke baris SSH — sengaja tidak ditulis 0%, itu angka yang
+              berbeda artinya. */}
+          <td className="brd px-1 py-0.5 align-top text-right">{r.tkdn != null ? `${r.tkdn}` : '-'}</td>
           <td className="brd px-1 py-0.5 align-top text-right">{r.jumlah_kebutuhan ?? 0}</td>
           <td className="brd px-1 py-0.5 align-top">{r.satuan || '-'}</td>
           <td className="brd px-1 py-0.5 align-top text-right">{formatRupiah(r.harga_satuan)}</td>
@@ -682,9 +736,13 @@ function BlokSub({ sub, si, uraianByKode }: { sub: Sub; si: number; uraianByKode
       {sub.isi.length > 0 && (
         <tr>
           <td className="brd px-1 py-0.5" />
-          <td className="brd px-1 py-0.5 text-right italic" colSpan={8}>Subtotal sub kegiatan</td>
+          {/* Label mengisi semua kolom sampai TEPAT sebelum "Nilai total",
+              angkanya di kolom itu, sisanya penutup. Dihitung dari
+              KOLOM_JUMLAH_PENGADAAN supaya ikut bergeser sendiri kalau ada
+              kolom baru disisipkan. */}
+          <td className="brd px-1 py-0.5 text-right italic" colSpan={KOLOM_JUMLAH_PENGADAAN - 2}>Subtotal sub kegiatan</td>
           <td className="brd px-1 py-0.5 text-right font-semibold">{formatRupiah(subtotal)}</td>
-          <td className="brd px-1 py-0.5" colSpan={2} />
+          <td className="brd px-1 py-0.5" colSpan={KOLOM_PENGADAAN - KOLOM_JUMLAH_PENGADAAN} />
         </tr>
       )}
     </>
@@ -743,15 +801,17 @@ function BarisAset({ r, no, ekstra, uraianByKode }: {
   )
 }
 
-function TabelAset({ items, ekstra, total, uraianByKode, nKolom }: {
+function TabelAset({ items, ekstra, total, uraianByKode, nKolom, nihil }: {
   items: Item[]; ekstra: KolomEkstra[]; total: number
-  uraianByKode: Map<string, string>; nKolom: number
+  uraianByKode: Map<string, string>; nKolom: number; nihil: boolean
 }) {
   return (
     <table className="border-collapse w-full">
       <TheadAset ekstra={ekstra} nKolom={nKolom} />
       <tbody>
-        {items.length === 0 ? (
+        {nihil ? (
+          <BarisNihil nKolom={nKolom} />
+        ) : items.length === 0 ? (
           <tr><td className="brd px-1 py-4 text-center text-gray-400" colSpan={nKolom}>
             Dokumen ini belum berisi usulan barang.
           </td></tr>
@@ -789,7 +849,7 @@ function LembarSeKabupaten({ sekab, lembar, uraianByKode, ttd }: {
 }) {
   const pengadaan = sekab.jenis === 'pengadaan'
   const ekstra = EKSTRA[sekab.jenis] || []
-  const nKolom = pengadaan ? 12 : KOLOM_IDENTITAS + ekstra.length + 1
+  const nKolom = pengadaan ? KOLOM_PENGADAAN : KOLOM_IDENTITAS + ekstra.length + 1
   const kolomJumlah = pengadaan ? KOLOM_JUMLAH_PENGADAAN : posisiJumlah(ekstra)
   const total = lembar.reduce(
     (s, l) => s + l.items.reduce((a, r) => a + nilaiItemRkbmd(sekab.jenis, r), 0), 0)
@@ -859,7 +919,9 @@ function BlokSkpd({ l, jenis, pengadaan, ekstra, nKolom, kolomJumlah, uraianByKo
         </td>
       </tr>
 
-      {pengadaan ? (
+      {l.dok.nihil ? (
+        <BarisNihil nKolom={nKolom} />
+      ) : pengadaan ? (
         pohon.length === 0 ? (
           <tr><td className="brd px-1 py-2 text-center text-gray-400" colSpan={nKolom}>
             Belum berisi kartu program/kegiatan.

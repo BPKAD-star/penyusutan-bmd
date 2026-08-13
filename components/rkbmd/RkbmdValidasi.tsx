@@ -29,6 +29,10 @@ type Antrean = {
   status: RkbmdStatus
   diajukan_at: string | null
   admin_skpd: { nama: string } | null
+  /** SKPD menyatakan tidak ada usulan (migrasi 20260813_02). WAJIB ditampilkan:
+   *  tanpa penanda, dokumen nihil terlihat persis seperti dokumen yang lupa
+   *  diisi, dan penelaah bisa menolaknya karena mengira SKPD-nya belum bekerja. */
+  nihil: boolean
   dokumen_paths: string[]
   /** Signed URL lampiran, dirakit saat memuat antrean. Sengaja DIMUAT DI MUKA,
    *  bukan saat tombolnya diklik: membuat signed URL itu asinkron, dan
@@ -63,7 +67,7 @@ export default function RkbmdValidasi() {
   const load = useCallback(async () => {
     setLoading(true); setErr('')
     const { data, error } = await supabase.from('rkbmd')
-      .select('id,skpd_id,tahun_anggaran,jenis,versi,status,diajukan_at,dokumen_paths,admin_skpd(nama)')
+      .select('id,skpd_id,tahun_anggaran,jenis,versi,status,diajukan_at,dokumen_paths,nihil,admin_skpd(nama)')
       .eq('tahun_anggaran', tahun).eq('status', 'diajukan')
       .order('diajukan_at', { ascending: true })
     if (error) { setErr(`gagal membaca antrean telaah: ${error.message}`); setRows([]); setLoading(false); return }
@@ -107,7 +111,10 @@ export default function RkbmdValidasi() {
   useEffect(() => { load() }, [load])
 
   async function setujui(h: Antrean) {
-    if (!confirm(`Setujui RKBMD ${JENIS_LABEL[h.jenis] || h.jenis} ${h.admin_skpd?.nama || ''} TA ${h.tahun_anggaran}?\n${h.pakets.length} kartu · ${h.jumlah_item} item · ${formatRupiah(h.total)}`)) return
+    const isi = h.nihil
+      ? 'Dokumen ini dinyatakan NIHIL (tidak ada usulan).'
+      : `${h.pakets.length} kartu · ${h.jumlah_item} item · ${formatRupiah(h.total)}`
+    if (!confirm(`Setujui RKBMD ${JENIS_LABEL[h.jenis] || h.jenis} ${h.admin_skpd?.nama || ''} TA ${h.tahun_anggaran}?\n${isi}`)) return
     setBusy(h.id); setErr(''); setMsg('')
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('rkbmd').update({
@@ -185,7 +192,9 @@ export default function RkbmdValidasi() {
                 </td>
                 <td className="table-td text-xs text-gray-500">{h.versi === 'perubahan' ? 'Perubahan' : 'Murni'}</td>
                 <td className="table-td text-xs text-gray-500">
-                  {h.pakets.length === 0 ? '—' : (
+                  {h.nihil ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">NIHIL</span>
+                  ) : h.pakets.length === 0 ? '—' : (
                     <>
                       <div className="text-gray-700">{h.pakets.length} kartu</div>
                       {h.pakets.slice(0, 2).map(p => (
@@ -312,7 +321,15 @@ function DetailModal({ h, onClose }: { h: Antrean; onClose: () => void }) {
 
           {loading ? (
             <p className="text-sm text-gray-400 py-6 text-center">Memuat rincian...</p>
-          ) : err ? null : kelompok.length === 0 ? (
+          ) : err ? null : h.nihil ? (
+            <div className="py-8 text-center">
+              <p className="text-sm font-semibold text-gray-700">Usulan NIHIL</p>
+              <p className="text-xs text-gray-500 mt-1">
+                SKPD ini menyatakan tidak ada usulan untuk jenis &amp; tahun anggaran tersebut.
+                Periksa lampiran pernyataan bertanda tangannya sebelum menyetujui.
+              </p>
+            </div>
+          ) : kelompok.length === 0 ? (
             <p className="text-sm text-gray-400 py-6 text-center">Dokumen ini belum berisi apa pun.</p>
           ) : (
             <>

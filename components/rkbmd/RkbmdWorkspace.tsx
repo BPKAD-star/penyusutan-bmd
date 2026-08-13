@@ -26,7 +26,7 @@ import {
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
 const HEADER_COLS =
-  'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at,dokumen_paths,dokumen_diunggah_at'
+  'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at,dokumen_paths,dokumen_diunggah_at,nihil'
 const PAKET_COLS = 'id,rkbmd_id,no_urut,program,kegiatan,sub_kegiatan,keterangan'
 
 export default function RkbmdWorkspace() {
@@ -202,6 +202,9 @@ export default function RkbmdWorkspace() {
               onTarik={() => patchHeader({ status: 'draft' }, 'Pengajuan ditarik kembali ke draft.')}
               onBukaKunci={() => patchHeader({ status: 'draft' }, 'Kunci dibuka — dokumen kembali ke draft.')}
               onHapus={hapusDokumen}
+              onNihil={(v) => patchHeader({ nihil: v }, v
+                ? 'Dokumen dinyatakan NIHIL — lampirkan pernyataan bertanda tangan, lalu ajukan.'
+                : 'Pernyataan nihil dibatalkan — dokumen kembali bisa diisi.')}
             />
           )}
         </>
@@ -213,28 +216,35 @@ export default function RkbmdWorkspace() {
 // ── Panel satu dokumen RKBMD ──────────────────────────────────────────────
 function DokumenPanel({
   header, items, pakets, isAdmin, busy, canEditContent, reloadIsi, reloadHeader, onMsg,
-  onAjukan, onTarik, onBukaKunci, onHapus,
+  onAjukan, onTarik, onBukaKunci, onHapus, onNihil,
 }: {
   header: RkbmdHeader; items: RkbmdItem[]; pakets: RkbmdPaket[]
   isAdmin: boolean; busy: boolean; canEditContent: boolean
   reloadIsi: () => void; reloadHeader: () => void; onMsg: (m: string) => void
   onAjukan: () => void; onTarik: () => void
-  onBukaKunci: () => void; onHapus: () => void
+  onBukaKunci: () => void; onHapus: () => void; onNihil: (v: boolean) => void
 }) {
   const supabase = createClient()
   const berkartu = header.jenis === 'pengadaan'
   const total = items.reduce((s, it) => s + (it.total_anggaran || 0), 0)
   // Dua syarat mengajukan, dan keduanya juga ditegakkan DB — yang di sini cuma
   // supaya operator tak menekan tombol lalu kena pesan mentah dari Postgres:
-  //   (1) ada isinya — dokumen kosong di antrean telaah cuma membuang waktu;
-  //   (2) lampiran bertanda tangan sudah diunggah (migrasi 20260813_01).
+  //   (1) ada isinya, ATAU dokumen dinyatakan NIHIL (migrasi 20260813_02) —
+  //       dokumen yang cuma kosong di antrean telaah membuang waktu penelaah,
+  //       tapi pernyataan nihil itu keputusan yang memang perlu ditelaah;
+  //   (2) lampiran bertanda tangan sudah diunggah (migrasi 20260813_01) —
+  //       BERLAKU JUGA untuk nihil: pernyataannya pun diteken kepala kantor.
   const adaLampiran = (header.dokumen_paths?.length ?? 0) > 0
-  const bolehAjukan = items.length > 0 && adaLampiran
-  const alasanTakBolehAjukan = items.length === 0
-    ? 'Tambah item dulu sebelum diajukan'
+  const adaIsi = items.length > 0 || header.nihil
+  const bolehAjukan = adaIsi && adaLampiran
+  const alasanTakBolehAjukan = !adaIsi
+    ? 'Tambah item dulu, atau nyatakan dokumen ini NIHIL'
     : !adaLampiran
       ? 'Unggah dulu lembar usulan bertanda tangan (PDF) di kotak Dokumen usulan'
       : undefined
+  // Menyatakan nihil hanya masuk akal saat dokumennya memang masih kosong; DB
+  // menolak kalau tidak, tapi tombol yang pasti gagal lebih baik tak ada.
+  const bolehNihil = canEditContent && (header.nihil || (items.length === 0 && pakets.length === 0))
 
   async function tambahKartu() {
     const next = Math.max(0, ...pakets.map(p => p.no_urut || 0)) + 1
@@ -251,9 +261,13 @@ function DokumenPanel({
           <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${STATUS_META[header.status].cls}`}>
             {STATUS_META[header.status].label}
           </span>
-          <span className="text-xs text-gray-400">
-            {berkartu && `${pakets.length} kartu · `}{items.length} item · Total {formatRupiah(total)}
-          </span>
+          {header.nihil ? (
+            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">NIHIL</span>
+          ) : (
+            <span className="text-xs text-gray-400">
+              {berkartu && `${pakets.length} kartu · `}{items.length} item · Total {formatRupiah(total)}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* Tombol Cetak KEMBALI ke sini (keputusan user 2026-08-13, membalik
@@ -278,10 +292,29 @@ function DokumenPanel({
               satu lagi. Tombol yang sama tetap ada di kartu kosong sbg ajakan
               awal — di sana ia bagian dari penjelasan "satu kartu = satu sub
               kegiatan", bukan sekadar tombol. */}
-          {berkartu && canEditContent && (
-            <button className="btn-secondary text-sm" onClick={tambahKartu} disabled={busy}>
+          {berkartu && canEditContent && !header.nihil && (
+            <button className="btn-primary text-sm" onClick={tambahKartu} disabled={busy}>
               + Tambah Kartu Program/Kegiatan
             </button>
+          )}
+          {/* Pernyataan NIHIL — hanya saat dokumennya masih bisa disunting &
+              memang kosong. Ditaruh sebelum Ajukan karena urutan kerjanya
+              begitu: nyatakan nihil → cetak → tanda tangan → unggah → ajukan. */}
+          {bolehNihil && (
+            header.nihil ? (
+              <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
+                onClick={() => onNihil(false)} disabled={busy}
+                title="Batalkan pernyataan nihil supaya dokumen ini bisa diisi lagi">
+                Batalkan NIHIL
+              </button>
+            ) : (
+              <button className="text-sm text-gray-600 hover:text-gray-800 px-3 py-1.5 rounded-lg border border-gray-200"
+                onClick={() => { if (confirm('Nyatakan dokumen RKBMD ini NIHIL — tidak ada usulan untuk jenis & tahun ini?')) onNihil(true) }}
+                disabled={busy}
+                title="Untuk SKPD yang memang tidak punya usulan pada jenis & tahun ini">
+                Nyatakan NIHIL
+              </button>
+            )
           )}
           {header.status === 'draft' && (
             <>
@@ -345,7 +378,24 @@ function DokumenPanel({
         </div>
       )}
 
-      {berkartu ? (
+      {/* NIHIL menggantikan SELURUH badan dokumen. Menyisakan tabel kosong di
+          bawahnya cuma mengaburkan yang baru saja dinyatakan — dan tombol
+          "Tambah" yang tetap terlihat akan gagal di trigger DB. */}
+      {header.nihil ? (
+        <div className="card p-8 text-center">
+          <p className="text-sm font-semibold text-gray-700">Usulan NIHIL</p>
+          <p className="text-xs text-gray-500 mt-1 max-w-xl mx-auto">
+            SKPD ini menyatakan tidak ada usulan RKBMD {RKBMD_JENIS.find(j => j.key === header.jenis)?.label} untuk
+            TA {header.tahun_anggaran}. Cetak lembar usulan di atas, mintakan tanda tangan kepala kantor,
+            unggah pindaiannya, lalu ajukan seperti dokumen biasa.
+          </p>
+          {canEditContent && (
+            <p className="text-xs text-gray-400 mt-3">
+              Berubah pikiran? Tekan <span className="font-medium">Batalkan NIHIL</span> di atas.
+            </p>
+          )}
+        </div>
+      ) : berkartu ? (
         <>
           {pakets.length === 0 ? (
             <div className="card p-8 text-center">

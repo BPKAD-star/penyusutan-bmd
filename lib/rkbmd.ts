@@ -99,6 +99,13 @@ export type RkbmdHeader = {
   /** Diisi/dikosongkan OTOMATIS oleh trigger mengikuti `dokumen_paths` —
    *  jangan diset dari kode. */
   dokumen_diunggah_at: string | null
+  /** SKPD menyatakan tidak ada usulan untuk jenis & tahun ini (migrasi
+   *  20260813_02). ⚠️ BUKAN sinonim "dokumen kosong": kosong = belum disusun,
+   *  NIHIL = sudah disusun & hasilnya memang tidak ada. Tanpa pembeda ini,
+   *  Pengelola tak bisa memisahkan SKPD yang sudah menyatakan sikap dari yang
+   *  belum mengerjakan. Wajib tanpa item/kartu — ditegakkan trigger, dari dua
+   *  arah sekaligus. */
+  nihil: boolean
 }
 
 /** Satu kartu = satu Program/Kegiatan/Sub Kegiatan berisi beberapa item barang
