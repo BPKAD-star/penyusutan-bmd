@@ -1415,6 +1415,25 @@ mempertanggungjawabkannya**. Perbaikannya menetapkan satu invarian:
   sudah disetujui. Itu bukan pemakaian di RKBMD melainkan bak bersama yang
   menyatukan dua pengusul; klaim usulan ini dicabut, barisnya tetap berdiri atas
   nama SKPD itu, dan dilaporkan sbg "tetap" oleh `ringkasBukaKunci()`.
+- ⚠️ **Buka Kunci MENGGABUNG, bukan menabrak `uq_standar_usulan_berjalan`**
+  (migrasi 20260814_02, insiden 2026-08-14). Partial unique itu menjaga SATU
+  usulan berjalan per (SKPD, tahun, jenis) — perlu, karena layar Usulan memilih
+  satu untuk disunting (`headers.find`) sehingga daftar kedua tak kelihatan sama
+  sekali. Tapi Buka Kunci mengembalikan usulan ke `draft`, dan SKPD yang sudah
+  menyusun usulan TAMBAHAN membuat jalan mundur itu ditolak
+  (`duplicate key ... uq_standar_usulan_berjalan`). Lebih buruk: SKPD dengan DUA
+  penetapan cuma bisa membuka satu; yang kedua terkunci sampai draft hasil
+  pembukaan pertama dihabiskan. **Jalan mundur yang bisa buntu bukan jalan
+  mundur.** Sekarang barisnya DIPINDAHKAN ke usulan yang sedang disusun
+  (`no_urut` dilanjutkan dari nomor terakhir), header lamanya yang sudah kosong
+  dibuang, dan hasilnya dilaporkan lewat `digabung` di `ringkasBukaKunci()`.
+  **Pengecualian: usulan lain yang berstatus `diajukan`** → ditolak dgn pesan,
+  karena menyuntikkan baris ke daftar yang sedang dibaca penelaah membuat ia
+  menyetujui sesuatu yang berbeda dari yang dilihatnya.
+  Bareng itu partial unique diperluas memuat **`ditolak`**: dulu status itu di
+  luar index, jadi SKPD yang usulannya dikembalikan bisa membuat draft baru &
+  salah satunya lenyap dari layar berikut isinya — padahal yang dikembalikan
+  itulah yang mestinya diperbaiki.
 - **Baris usulan yang sudah `disetujui` BEKU untuk semua**, termasuk admin
   (`fn_standar_usulan_item_guard`) — menyuntingnya memutus kesamaan antara yang
   tercatat di usulan & yang berdiri di acuan bersama, dan menghapusnya membuang
@@ -1567,8 +1586,21 @@ bersifat se-bucket, bukan per-prefix (diverifikasi 2026-08-13).
   & panelnya wajib tetap berdiri; begitu SKPD/tahun/versi berganti, "Memuat..."
   justru yang benar karena data lama memang milik filter lain.
   **Berlaku umum: jangan pasang gerbang `loading ? <Memuat/> : <Panel/>` di ATAS
-  panel yang memuat pop-up** — pakai penanda muat-awal, atau angkat state
-  pop-upnya ke induk.
+  komponen ANAK yang menyimpan state** — pakai penanda muat-awal, atau angkat
+  state-nya ke induk. Kalau gerbangnya cuma menukar JSX inline (baris tabel,
+  daftar kartu tanpa komponen anak), ia aman; yang berbahaya khusus saat
+  cabang-salahnya berisi `<KomponenAnak/>` ber-`useState`.
+  **Hasil penyisiran seluruh layar (2026-08-14):** satu lagi kena — **Pengadaan
+  Entry** (`PengadaanEntry.tsx`), yang gerbangnya menukar seluruh daftar
+  `<PengadaanCard/>`/`<KontrakDetail inline/>`. Di situ yang hilang tiap
+  `onChanged` (menambah/menghapus/menyunting SATU barang draft) bukan cuma
+  pop-up Edit Spesifikasi yang sedang terbuka, tapi juga kotak Cari & **centang
+  barang yang justru sengaja dirancang bertahan lintas pencarian**
+  (`draftSeleksi`) — jadi mengumpulkan barang dari beberapa kata kunci mustahil.
+  Sudah diperbaiki dgn pola yang sama (`skpdTampil`). Yang DIPERIKSA dan
+  ternyata aman: Usulan Standar Harga, Validasi RKBMD/Standar Harga, KIR,
+  Penggunaan/Penerimaan Masuk, GIS KelolaBidangPanel, kartu Dashboard — semua
+  pop-upnya dirender DI LUAR gerbang & state-nya di komponen yang sama.
 - Menu **Validasi** menampilkan tautan 📄 Dokumen per baris (signed URL dirakit
   **di muka** saat memuat antrean — `window.open` sesudah `await` diblokir
   peramban sbg pop-up). Dokumen tanpa lampiran ditandai ⚠ — normalnya tak ada,

@@ -45,8 +45,20 @@ export default function PengadaanEntry() {
   const [pickOpen, setPickOpen] = useState(false)
   const [nfJurnals, setNfJurnals] = useState<Jurnal[]>([])
   const [kKontraks, setKKontraks] = useState<Kontrak[]>([])
-  const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState('')
+
+  // ⚠️ "Memuat pengadaan..." HANYA untuk SKPD yang datanya belum tampil, BUKAN
+  // tiap `refresh`. Layar itu menggantikan seluruh daftar kartu, jadi
+  // <PengadaanCard/> & <KontrakDetail/> ikut TERBONGKAR berikut state di
+  // dalamnya: pop-up Edit Spesifikasi yang sedang terbuka, kotak Cari draft,
+  // dan CENTANG barang yang sengaja dirancang bertahan lintas pencarian
+  // (draftSeleksi). Padahal `onChanged` dipanggil setiap kali satu barang
+  // ditambah/dihapus/disunting — jadi tiap satu perubahan kecil membuang
+  // seluruh pilihan operator. Sama sebabnya dgn pop-up Ajukan RKBMD yang
+  // menghilang sendiri (2026-08-14): gerbang `loading` dipasang DI ATAS
+  // komponen yang menyimpan state.
+  const [skpdTampil, setSkpdTampil] = useState('')
+  const memuatAwal = skpdTampil !== skpd
   const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
   const golonganLabels = useGolonganLabels()
   // Per-kartu: selain cakupan SKPD, pembuat kartu tak boleh menyetujui sendiri
@@ -58,13 +70,12 @@ export default function PengadaanEntry() {
   useEffect(() => { (async () => setScope(await fetchApprovalScope(supabase)))() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const reload = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setNfJurnals([]); setKKontraks([]); return }
-    setLoading(true)
+    if (!skpdId) { setNfJurnals([]); setKKontraks([]); setSkpdTampil(''); return }
     const [nf, k] = await Promise.all([
       fetchPengadaanJurnals(supabase, skpdId),
       fetchKonstruksiKontraks(supabase, skpdId),
     ])
-    setNfJurnals(nf); setKKontraks(k); setLoading(false)
+    setNfJurnals(nf); setKKontraks(k); setSkpdTampil(skpdId)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { reload(skpd); setCreating(null); setPickOpen(false); setMsg('') }, [skpd, reload])
@@ -124,7 +135,7 @@ export default function PengadaanEntry() {
             </div>
           </div>
 
-          {loading ? (
+          {memuatAwal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat pengadaan...</div>
           ) : merged.length === 0 ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Belum ada pengadaan untuk SKPD ini.</div>

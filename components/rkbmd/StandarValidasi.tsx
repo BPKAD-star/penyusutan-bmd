@@ -111,8 +111,9 @@ export default function StandarValidasi() {
   function bukaKunci(h: Baris) {
     if (!confirm(
       `Buka kunci usulan ${JENIS_LABEL[h.jenis]} ${h.skpd_nama || ''} TA ${h.tahun}?\n\n`
-      + 'Usulannya kembali ke draft, DAN barisnya ditarik dari acuan bersama — '
-      + 'seluruh SKPD tidak bisa lagi memakainya menyusun RKBMD.\n\n'
+      + 'Barisnya ditarik dari acuan bersama — seluruh SKPD tidak bisa lagi '
+      + 'memakainya menyusun RKBMD — lalu dikembalikan ke meja SKPD: jadi draft '
+      + 'lagi, atau digabung ke usulan yang sedang mereka susun kalau sudah ada.\n\n'
       + '⚠️ Kalau ada barangnya yang SUDAH dipakai di dokumen RKBMD, permintaan ini '
       + 'akan DITOLAK seluruhnya: lepaskan dulu barangnya dari RKBMD, baru usulan ini '
       + 'bisa dibuka.',

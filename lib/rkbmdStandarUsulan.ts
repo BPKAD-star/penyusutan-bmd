@@ -270,6 +270,11 @@ export type HasilBukaKunci = {
    *  nama SKPD itu. Bukan "barang nyantol": pemiliknya jelas. */
   tetap: number
   sbsk: number
+  /** Baris yang DIPINDAHKAN ke usulan yang sedang disusun SKPD, karena mereka
+   *  sudah punya satu (migrasi 20260814_02). Kalau ini > 0, dokumen usulan yang
+   *  dibuka TIDAK kembali jadi draft — ia sudah kosong & dibuang; isinya kini
+   *  ada di daftar yang sedang mereka kerjakan. */
+  digabung: number
 }
 
 /** Buka kunci: usulan kembali ke draft, DAN barisnya ditarik dari acuan bersama.
@@ -297,12 +302,17 @@ export async function bukaKunciUsulan(
  *  supaya penelaah tak mengira penarikannya gagal: baris itu memang masih
  *  berdiri, tapi atas nama SKPD lain yang juga mengusulkannya. */
 export function ringkasBukaKunci(h: HasilBukaKunci): string {
+  // Ke mana barisnya pulang — SKPD perlu tahu di daftar mana mencarinya.
+  const pulang = h.digabung > 0
+    ? `${h.digabung} baris dikembalikan ke usulan yang sedang disusun SKPD (digabung jadi satu daftar)`
+    : 'Usulan kembali ke draft'
+
   if (h.jenis === 'sbsk') {
-    return `Usulan kembali ke draft. ${h.sbsk} baris Standar Kebutuhan TIDAK ditarik — `
+    return `${pulang}. ${h.sbsk} baris Standar Kebutuhan TIDAK ditarik — `
       + 'persetujuan menimpa angka standar yang mungkin sudah ada sebelumnya, dan nilai lamanya '
       + 'tidak tersimpan di mana pun. Periksa & betulkan sendiri bila perlu.'
   }
-  const bagian = [`Usulan kembali ke draft. ${h.ditarik} baris ditarik dari acuan bersama`]
+  const bagian = [`${pulang}. ${h.ditarik} baris ditarik dari acuan bersama`]
   if (h.tetap > 0) {
     bagian.push(`${h.tetap} tetap berdiri karena juga diusulkan SKPD lain yang sudah ditetapkan`)
   }
