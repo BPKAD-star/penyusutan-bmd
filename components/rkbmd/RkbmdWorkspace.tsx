@@ -41,9 +41,24 @@ export default function RkbmdWorkspace() {
   const [headers, setHeaders] = useState<Record<string, RkbmdHeader>>({}) // key = jenis
   const [items, setItems] = useState<RkbmdItem[]>([])
   const [pakets, setPakets] = useState<RkbmdPaket[]>([])
-  const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+
+  // ⚠️ "Memuat..." HANYA untuk muat AWAL, bukan tiap penyegaran — dan itu bukan
+  // soal kenyamanan. Layar "Memuat..." menggantikan <DokumenPanel/> di pohon
+  // React, jadi panelnya IKUT TERBONGKAR berikut seluruh state di dalamnya:
+  // pop-up Ajukan, pop-up Kartu, form item. Gejalanya persis yang dilaporkan
+  // user 2026-08-14: sesudah melampirkan PDF, `onChanged` memuat ulang header →
+  // panel dibongkar-pasang → pop-up Ajukan menghilang sendiri tepat sebelum
+  // tombol "Ajukan sekarang" sempat ditekan.
+  //
+  // Pembedanya KUNCI FILTER, bukan bendera `loading` yang harus diingat tiap
+  // pemanggil: selama filternya sama, yang di layar masih benar & panelnya wajib
+  // tetap berdiri. Begitu SKPD/tahun/versi berganti, data lama memang milik
+  // filter lain dan "Memuat..." justru yang benar.
+  const kunciFilter = `${skpd}|${tahun}|${versi}`
+  const [kunciTampil, setKunciTampil] = useState('')
+  const memuatAwal = kunciTampil !== kunciFilter
 
   const header = headers[jenis] as RkbmdHeader | undefined
   const canEditContent = !!header && (header.status === 'draft' || header.status === 'ditolak')
@@ -58,15 +73,15 @@ export default function RkbmdWorkspace() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadHeaders = useCallback(async () => {
-    if (!skpd) { setHeaders({}); setItems([]); setPakets([]); return }
-    setLoading(true); setMsg('')
+    if (!skpd) { setHeaders({}); setItems([]); setPakets([]); setKunciTampil(''); return }
+    setMsg('')
     const { data, error } = await supabase.from('rkbmd').select(HEADER_COLS)
       .eq('skpd_id', Number(skpd)).eq('tahun_anggaran', tahun).eq('versi', versi)
     if (error) setMsg(`Error: ${error.message}`)
     const map: Record<string, RkbmdHeader> = {}
     for (const h of (data || []) as RkbmdHeader[]) map[h.jenis] = h
     setHeaders(map)
-    setLoading(false)
+    setKunciTampil(`${skpd}|${tahun}|${versi}`)
   }, [skpd, tahun, versi]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadHeaders() }, [loadHeaders])
@@ -177,7 +192,7 @@ export default function RkbmdWorkspace() {
             })}
           </div>
 
-          {loading ? (
+          {memuatAwal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat...</div>
           ) : !header ? (
             <div className="card p-8 text-center">

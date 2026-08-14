@@ -1555,6 +1555,20 @@ bersifat se-bucket, bukan per-prefix (diverifikasi 2026-08-13).
   (`reloadIsi` di RkbmdWorkspace memanggil `loadHeaders` juga). Kalau tidak,
   layar masih memamerkan "✓ Terlampir" & tombol Ajukan hidup padahal DB sudah
   mencabutnya — kesenjangan UI-vs-DB yang justru paling membingungkan.
+- ⚠️ **Pasangan wajib dari aturan di atas: layar "Memuat..." TIDAK BOLEH muncul
+  saat menyegarkan** (diperbaiki 2026-08-14). Ia menggantikan `<DokumenPanel/>`
+  di pohon React, jadi panelnya ikut DIBONGKAR berikut seluruh state di
+  dalamnya — pop-up Ajukan, pop-up Kartu, form item. Gejalanya: sesudah
+  melampirkan PDF, `onChanged` → `loadHeaders` → `setLoading(true)` → **pop-up
+  Ajukan menghilang sendiri** tepat sebelum tombol "Ajukan sekarang" sempat
+  ditekan, dan operator harus membukanya lagi tanpa tahu kenapa. Pembedanya
+  sekarang **kunci filter** (`skpd|tahun|versi`), bukan bendera `loading` yang
+  harus diingat tiap pemanggil: selama filternya sama, yang di layar masih benar
+  & panelnya wajib tetap berdiri; begitu SKPD/tahun/versi berganti, "Memuat..."
+  justru yang benar karena data lama memang milik filter lain.
+  **Berlaku umum: jangan pasang gerbang `loading ? <Memuat/> : <Panel/>` di ATAS
+  panel yang memuat pop-up** — pakai penanda muat-awal, atau angkat state
+  pop-upnya ke induk.
 - Menu **Validasi** menampilkan tautan 📄 Dokumen per baris (signed URL dirakit
   **di muka** saat memuat antrean — `window.open` sesudah `await` diblokir
   peramban sbg pop-up). Dokumen tanpa lampiran ditandai ⚠ — normalnya tak ada,
