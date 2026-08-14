@@ -102,7 +102,20 @@ export default function GisPage() {
           .like('kode', '1.3.1.%')
           .eq('status', 'aktif')
         if (Array.isArray(scope) && scope.length) q = q.in('skpd_id', scope)
-        const { data, error } = await q.order('nama_barang', { ascending: true }).range(from, from + 999)
+        // ⚠️ `.order('id')` itu PEMECAH SERI, jangan dicopot. Dari 2.733 tanah
+        // aktif cuma 2.326 nama yang unik (diverifikasi ke DB 2026-08-14), jadi
+        // ratusan baris bernama kembar. Baris ditarik `.range()` per 1.000, dan
+        // dengan urutan yang TIDAK TOTAL Postgres tak menjamin baris kembar
+        // jatuh di halaman yang sama tiap query → ada yang TERLEWAT & ada yang
+        // DOBEL tanpa satu pun pesan. Di peta itu terlihat sbg bidang yang
+        // "kadang ada kadang hilang" saat halaman dimuat ulang.
+        // Urutan dua kunci ini KEMBAR dgn `idx_aset_tanah_nama` (migrasi
+        // 20260814_04) yang melayaninya tanpa node Sort — ubah salah satu,
+        // ubah dua-duanya.
+        const { data, error } = await q
+          .order('nama_barang', { ascending: true })
+          .order('id')
+          .range(from, from + 999)
         if (error) { setError(error.message); break }
         if (!data || data.length === 0) break
         all.push(...(data as unknown as AsetRow[]))
@@ -110,12 +123,43 @@ export default function GisPage() {
       }
       setRows(all)
 
-      const ids = all.map(r => r.id)
+      // Bidang ditarik SEKALI untuk semua register, bukan 200 id per permintaan.
+      // Dulu: 2.733 id dibagi 200 = 14 permintaan BERURUTAN demi 665 baris —
+      // biayanya hampir seluruhnya bolak-balik jaringan, bukan kerja database.
+      // Policy `abt_select` sudah membatasi lewat SKPD induk asetnya (EXISTS ke
+      // `aset` + fn_skpd_visible), jadi menarik seluruhnya mengembalikan PERSIS
+      // bidang yang boleh dilihat user ini — hasilnya sama dgn penyaringan
+      // per-id, cuma tanpa 13 perjalanan tambahan.
+      //
+      // Kunci `bidangMap` hanya dibaca lewat `bidangByAset[r.id]` untuk baris
+      // yang tampil, jadi entri milik aset di luar daftar (mis. tanah berstatus
+      // 'dihapus') tidak berpengaruh apa-apa — ia inert, tak pernah terbaca.
+      //
+      // Keyset (`.gt('id', terakhir)` + `.order('id')`), bukan `.range()`:
+      // pagination tanpa urutan bikin baris terlewat/dobel diam-diam, dan di
+      // sini akibatnya titik hilang dari peta. `id` bertipe uuid & punya urutan
+      // total di Postgres, jadi uuid nol dipakai sbg batas bawah; kunci urutnya
+      // dilayani `aset_bidang_tanah_pkey`.
+      //
+      // ⚠️ `error` DIPERIKSA. Versi lama `const { data: bidang }` telanjang:
+      // query gagal → tak ada bidang sama sekali → peta kehilangan titiknya dan
+      // statistik "Luas terpetakan" jatuh ke 0, yang terbaca operator sebagai
+      // "bidangnya memang belum didata". Keluarga yang sama dgn kolektor lain
+      // di repo ini.
       const bidangMap: Record<string, BidangRingkas[]> = {}
-      for (let i = 0; i < ids.length; i += 200) {
-        const { data: bidang } = await supabase.from('aset_bidang_tanah')
-          .select(BIDANG_COLS).in('aset_id', ids.slice(i, i + 200))
-        for (const b of (bidang as BidangRingkas[]) || []) (bidangMap[b.aset_id] ||= []).push(b)
+      let bidangTerakhir = '00000000-0000-0000-0000-000000000000'
+      for (;;) {
+        const { data: bidang, error: bidangErr } = await supabase.from('aset_bidang_tanah')
+          .select(`id,${BIDANG_COLS}`)
+          .gt('id', bidangTerakhir)
+          .order('id', { ascending: true })
+          .limit(1000)
+        if (bidangErr) { setError(`Gagal membaca bidang tanah: ${bidangErr.message}`); break }
+        if (!bidang || bidang.length === 0) break
+        const batch = bidang as unknown as (BidangRingkas & { id: string })[]
+        for (const b of batch) (bidangMap[b.aset_id] ||= []).push(b)
+        bidangTerakhir = batch[batch.length - 1].id
+        if (batch.length < 1000) break
       }
       setBidangByAset(bidangMap)
 
