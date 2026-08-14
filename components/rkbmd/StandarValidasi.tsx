@@ -10,11 +10,12 @@
 // apa adanya lewat `ringkasHasil` — berapa yang benar-benar baru, berapa yang
 // ternyata sudah ada (rekeningnya digabung, barangnya TIDAK diduplikasi).
 //
-// "Buka Kunci" di sini mengembalikan status usulannya ke draft — ia TIDAK
-// menarik kembali baris yang sudah terlanjur masuk bak bersama. Itu disengaja
-// & dikatakan terus terang di konfirmasinya: begitu jadi acuan bersama, SKPD
-// lain mungkin sudah memakainya, dan menariknya diam-diam akan membuat RKBMD
-// mereka menunjuk barang yang mendadak lenyap.
+// "Buka Kunci" mengembalikan usulannya ke draft SEKALIGUS menarik barisnya dari
+// bak bersama — dua hal itu satu paket, dan tak bisa dipisah (migrasi
+// 20260814_01). Kalau salah satu barangnya sudah dipakai di dokumen RKBMD, DB
+// MENOLAK seluruh operasinya: barangnya harus dilepas dulu dari RKBMD. Alurnya
+// maju (usulan → ditetapkan → dipakai) dan mundur (dilepas → dibuka), tanpa
+// potong kompas di tengah.
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
@@ -110,10 +111,11 @@ export default function StandarValidasi() {
   function bukaKunci(h: Baris) {
     if (!confirm(
       `Buka kunci usulan ${JENIS_LABEL[h.jenis]} ${h.skpd_nama || ''} TA ${h.tahun}?\n\n`
-      + 'Usulannya kembali ke draft, DAN barisnya ditarik dari acuan bersama.\n\n'
-      + '⚠️ Yang sudah dipakai SKPD lain menyusun RKBMD — atau yang juga diusulkan '
-      + 'SKPD lain — sengaja TIDAK ditarik; menghapusnya akan membuat dokumen mereka '
-      + 'menunjuk barang yang lenyap. Jumlahnya akan diberitahukan setelah ini.',
+      + 'Usulannya kembali ke draft, DAN barisnya ditarik dari acuan bersama — '
+      + 'seluruh SKPD tidak bisa lagi memakainya menyusun RKBMD.\n\n'
+      + '⚠️ Kalau ada barangnya yang SUDAH dipakai di dokumen RKBMD, permintaan ini '
+      + 'akan DITOLAK seluruhnya: lepaskan dulu barangnya dari RKBMD, baru usulan ini '
+      + 'bisa dibuka.',
     )) return
     jalankan(h.id, async () => ringkasBukaKunci(await bukaKunciUsulan(supabase, h.id)))
   }

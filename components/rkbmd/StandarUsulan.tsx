@@ -17,9 +17,10 @@ import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import RekeningPicker from '@/components/RekeningPicker'
+import StandarImport from '@/components/rkbmd/StandarImport'
 import { backdropClose } from '@/components/backdropClose'
 import { formatRupiah } from '@/lib/export'
-import { SLOT_REKENING } from '@/lib/rkbmdStandar'
+import { SLOT_REKENING, type StandarJenis } from '@/lib/rkbmdStandar'
 import {
   USULAN_JENIS, USULAN_STATUS_META, pakaiKodeBarang, pakaiHarga, pakaiTkdn, pakaiRekening,
   fetchUsulanSkpd, fetchUsulanItems, buatUsulan, simpanItem, hapusItem, hapusUsulan,
@@ -54,6 +55,7 @@ export default function StandarUsulan() {
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
   const [modal, setModal] = useState<{ item: UsulanItem | null } | null>(null)
+  const [impor, setImpor] = useState(false)
 
   // Usulan yang masih BERJALAN untuk jenis ini — itulah yang disunting.
   // Riwayat yang sudah selesai ditampilkan terpisah supaya operator bisa
@@ -168,6 +170,16 @@ export default function StandarUsulan() {
                   <span className="text-xs text-gray-400">{items.length} baris diusulkan</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {/* Import Excel = jalan CEPAT mengisi usulan ini, bukan jalan
+                      pintas ke acuan bersama (migrasi 20260814_01). SBSK belum
+                      punya format importnya — bentuknya beda sendiri. */}
+                  {bisaSunting && jenis !== 'sbsk' && (
+                    <button className="btn-secondary text-sm" onClick={() => { setErr(''); setImpor(true) }}
+                      disabled={busy}
+                      title="Unduh format Excel, isi, lalu unggah — untuk memasukkan banyak baris sekaligus">
+                      ⬆ Import Excel
+                    </button>
+                  )}
                   {bisaSunting && (
                     <button className="btn-primary text-sm" onClick={() => setModal({ item: null })} disabled={busy}>
                       + Tambah Baris
@@ -253,6 +265,18 @@ export default function StandarUsulan() {
             </div>
           )}
         </>
+      )}
+
+      {impor && berjalan && jenis !== 'sbsk' && (
+        <StandarImport
+          jenis={jenis as StandarJenis} tahun={tahun} usulanId={berjalan.id}
+          nomorBerikut={Math.max(0, ...items.map(i => i.no_urut || 0)) + 1}
+          onClose={() => setImpor(false)}
+          // Tetap terbuka sesudah impor: ringkasannya (berapa masuk, berapa
+          // dilewati) ada di pesan itu, dan menutup pop-up sendiri akan
+          // membuangnya sebelum sempat dibaca.
+          onSelesai={async (m) => { setMsg(m); await loadItems(berjalan.id) }}
+        />
       )}
 
       {modal && berjalan && (

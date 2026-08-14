@@ -2124,9 +2124,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           diajukan_at: string | null
+          dokumen_diunggah_at: string | null
+          dokumen_paths: string[]
           id: string
           jenis: string
           keterangan: string | null
+          nihil: boolean
           parent_id: string | null
           skpd_id: number
           status: string
@@ -2141,9 +2144,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           diajukan_at?: string | null
+          dokumen_diunggah_at?: string | null
+          dokumen_paths?: string[]
           id?: string
           jenis: string
           keterangan?: string | null
+          nihil?: boolean
           parent_id?: string | null
           skpd_id: number
           status?: string
@@ -2158,9 +2164,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           diajukan_at?: string | null
+          dokumen_diunggah_at?: string | null
+          dokumen_paths?: string[]
           id?: string
           jenis?: string
           keterangan?: string | null
+          nihil?: boolean
           parent_id?: string | null
           skpd_id?: number
           status?: string
@@ -2431,6 +2440,7 @@ export type Database = {
           jenis: string
           keterangan: string | null
           kode: string | null
+          merk_tipe: string | null
           nama: string
           satuan: string | null
           skpd_id: number | null
@@ -2447,6 +2457,7 @@ export type Database = {
           jenis: string
           keterangan?: string | null
           kode?: string | null
+          merk_tipe?: string | null
           nama: string
           satuan?: string | null
           skpd_id?: number | null
@@ -2463,6 +2474,7 @@ export type Database = {
           jenis?: string
           keterangan?: string | null
           kode?: string | null
+          merk_tipe?: string | null
           nama?: string
           satuan?: string | null
           skpd_id?: number | null
@@ -2532,6 +2544,163 @@ export type Database = {
             columns: ["standar_id"]
             isOneToOne: false
             referencedRelation: "rkbmd_standar"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rkbmd_standar_usulan: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          catatan_telaah: string | null
+          created_at: string
+          created_by: string | null
+          diajukan_at: string | null
+          dokumen_diunggah_at: string | null
+          dokumen_paths: string[]
+          id: string
+          jenis: string
+          keterangan: string | null
+          skpd_id: number
+          status: string
+          tahun: number
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          catatan_telaah?: string | null
+          created_at?: string
+          created_by?: string | null
+          diajukan_at?: string | null
+          dokumen_diunggah_at?: string | null
+          dokumen_paths?: string[]
+          id?: string
+          jenis: string
+          keterangan?: string | null
+          skpd_id: number
+          status?: string
+          tahun: number
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          catatan_telaah?: string | null
+          created_at?: string
+          created_by?: string | null
+          diajukan_at?: string | null
+          dokumen_diunggah_at?: string | null
+          dokumen_paths?: string[]
+          id?: string
+          jenis?: string
+          keterangan?: string | null
+          skpd_id?: number
+          status?: string
+          tahun?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rkbmd_standar_usulan_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: false
+            referencedRelation: "admin_skpd"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rkbmd_standar_usulan_item: {
+        Row: {
+          created_at: string
+          harga: number | null
+          id: number
+          keterangan: string | null
+          kode: string | null
+          kuantitas_standar: number | null
+          merk_tipe: string | null
+          nama: string
+          no_urut: number | null
+          satuan: string | null
+          satuan_pengukur: string | null
+          standar_id: number | null
+          tkdn: number | null
+          updated_at: string
+          usulan_id: string
+        }
+        Insert: {
+          created_at?: string
+          harga?: number | null
+          id?: never
+          keterangan?: string | null
+          kode?: string | null
+          kuantitas_standar?: number | null
+          merk_tipe?: string | null
+          nama: string
+          no_urut?: number | null
+          satuan?: string | null
+          satuan_pengukur?: string | null
+          standar_id?: number | null
+          tkdn?: number | null
+          updated_at?: string
+          usulan_id: string
+        }
+        Update: {
+          created_at?: string
+          harga?: number | null
+          id?: never
+          keterangan?: string | null
+          kode?: string | null
+          kuantitas_standar?: number | null
+          merk_tipe?: string | null
+          nama?: string
+          no_urut?: number | null
+          satuan?: string | null
+          satuan_pengukur?: string | null
+          standar_id?: number | null
+          tkdn?: number | null
+          updated_at?: string
+          usulan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rkbmd_standar_usulan_item_standar_id_fkey"
+            columns: ["standar_id"]
+            isOneToOne: false
+            referencedRelation: "rkbmd_standar"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rkbmd_standar_usulan_item_usulan_id_fkey"
+            columns: ["usulan_id"]
+            isOneToOne: false
+            referencedRelation: "rkbmd_standar_usulan"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rkbmd_standar_usulan_rekening: {
+        Row: {
+          id: number
+          item_id: number
+          kode_rekening: string
+        }
+        Insert: {
+          id?: never
+          item_id: number
+          kode_rekening: string
+        }
+        Update: {
+          id?: never
+          item_id?: number
+          kode_rekening?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rkbmd_standar_usulan_rekening_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "rkbmd_standar_usulan_item"
             referencedColumns: ["id"]
           },
         ]
@@ -2688,6 +2857,10 @@ export type Database = {
         Args: { p_aset_id: string; p_header_id: string }
         Returns: undefined
       }
+      fn_batal_seluruh_pengalihan: {
+        Args: { p_header_id: string }
+        Returns: number
+      }
       fn_batal_setujui_usulan_pengurus: {
         Args: { p_id: string }
         Returns: undefined
@@ -2739,14 +2912,6 @@ export type Database = {
       fn_is_viewer: { Args: never; Returns: boolean }
       fn_kembalikan_inventarisasi: {
         Args: { p_catatan: string; p_id: string }
-        Returns: undefined
-      }
-      fn_kembalikan_mutasi_internal: {
-        Args: { p_aset_id: string; p_header_id: string }
-        Returns: undefined
-      }
-      fn_kembalikan_pengalihan_barang: {
-        Args: { p_aset_id: string; p_header_id: string }
         Returns: undefined
       }
       fn_lra_belanja_modal: {
@@ -2811,9 +2976,11 @@ export type Database = {
           p_jenis: string
           p_keterangan: string
           p_kode: string
+          p_merk_tipe?: string
           p_nama: string
           p_rekening: string[]
           p_satuan: string
+          p_skpd_id?: number
           p_tahun: number
           p_tkdn: number
         }
@@ -2823,6 +2990,8 @@ export type Database = {
       fn_skpd_admin_induk: { Args: never; Returns: boolean }
       fn_skpd_root: { Args: { p_skpd_id: number }; Returns: number }
       fn_skpd_visible: { Args: { p_skpd_id: number }; Returns: boolean }
+      fn_standar_usulan_buka_kunci: { Args: { p_id: string }; Returns: Json }
+      fn_standar_usulan_setujui: { Args: { p_id: string }; Returns: Json }
       fn_terima_mutasi_internal: {
         Args: { p_header_id: string }
         Returns: number

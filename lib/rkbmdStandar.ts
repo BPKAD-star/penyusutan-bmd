@@ -9,6 +9,10 @@
 // `fn_rkbmd_standar_simpan` — bukan pengecekan di UI, supaya dua operator yang
 // menyimpan bersamaan tetap tak bisa melahirkan baris kembar.
 //
+// ⚠️ Berkas ini HANYA MEMBACA (migrasi 20260814_01). Bak bersamanya diisi
+// semata-mata lewat persetujuan usulan; lihat catatan di bawah blok fetchStandar
+// dan lib/rkbmdStandarUsulan.ts.
+//
 // SBSK TIDAK di sini: bentuknya beda (kuantitas standar per satuan pengukur,
 // bukan harga) dan tabelnya sendiri (`rkbmd_sbsk`). Yang disatukan cuma menunya.
 import * as XLSX from 'xlsx'
@@ -106,15 +110,6 @@ const COLS = 'id,jenis,tahun,kode,nama,satuan,harga,tkdn,merk_tipe,keterangan,sk
  *  — batas keras akan mematahkan penggabungan begitu SKPD ke-6 datang. */
 export const SLOT_REKENING = 5
 
-/** Hasil RPC simpan — dipakai UI untuk berkata jujur apa yang sebenarnya terjadi. */
-export type HasilSimpan = {
-  id: number
-  status: 'baru' | 'sudah_ada'
-  rekening_baru: number
-  pemilik_skpd_id: number | null
-  pemilik_skpd: string
-}
-
 /** Baris standar + rekeningnya untuk satu jenis & tahun.
  *  MELEMPAR kalau query gagal — halaman ini jadi dasar angka anggaran, jadi
  *  "kosong" tak boleh diam-diam berarti "query error" (rules.md fail-closed). */
@@ -150,69 +145,17 @@ export async function fetchStandar(
   return rows
 }
 
-/** Simpan baris BARU lewat RPC (dedup + gabung rekening dikerjakan di DB). */
-export async function simpanStandar(
-  supabase: SupabaseClient,
-  v: {
-    jenis: StandarJenis; tahun: number; kode: string | null; nama: string
-    satuan: string | null; harga: number; tkdn: number | null; keterangan: string | null
-    rekening: string[]
-  },
-): Promise<HasilSimpan> {
-  const { data, error } = await supabase.rpc('fn_rkbmd_standar_simpan', {
-    p_jenis: v.jenis, p_tahun: v.tahun, p_kode: v.kode, p_nama: v.nama,
-    p_satuan: v.satuan, p_harga: v.harga, p_tkdn: v.tkdn, p_keterangan: v.keterangan,
-    p_rekening: v.rekening,
-  })
-  if (error) throw new Error(error.message)
-  return data as HasilSimpan
-}
-
-/** Ubah baris yang sudah ada + samakan daftar rekeningnya.
- *  Bukan lewat RPC: RPC itu untuk MENAMBAH (dedup), sedangkan di sini barisnya
- *  sudah pasti mana. Tabrakan identitas (mis. harga diubah jadi sama persis
- *  dengan baris lain) ditangkap UNIQUE index & diterjemahkan jadi pesan ramah. */
-export async function ubahStandar(
-  supabase: SupabaseClient,
-  id: number,
-  v: {
-    nama: string; satuan: string | null; harga: number; tkdn: number | null
-    keterangan: string | null; kode: string | null; rekening: string[]
-  },
-  rekeningLama: string[],
-): Promise<void> {
-  const { error } = await supabase.from('rkbmd_standar').update({
-    kode: v.kode, nama: v.nama.trim(), satuan: v.satuan, harga: v.harga,
-    tkdn: v.tkdn, keterangan: v.keterangan,
-  }).eq('id', id)
-  if (error) {
-    if (error.code === '23505') {
-      throw new Error('Sudah ada baris lain dengan kode, nama, satuan, dan harga yang sama persis di tahun ini.')
-    }
-    throw new Error(error.message)
-  }
-
-  const baru = new Set(v.rekening.filter(Boolean))
-  const lama = new Set(rekeningLama)
-  const tambah = [...baru].filter(k => !lama.has(k))
-  const buang = [...lama].filter(k => !baru.has(k))
-
-  if (tambah.length > 0) {
-    const { error: e } = await supabase.from('rkbmd_standar_rekening')
-      .insert(tambah.map(k => ({ standar_id: id, kode_rekening: k })))
-    if (e) throw new Error(`gagal menambah kode rekening: ${e.message}`)
-  }
-  if (buang.length > 0) {
-    const { error: e } = await supabase.from('rkbmd_standar_rekening')
-      .delete().eq('standar_id', id).in('kode_rekening', buang)
-    if (e) throw new Error(`gagal mencabut kode rekening: ${e.message}`)
-  }
-}
-
-export async function hapusStandar(supabase: SupabaseClient, id: number): Promise<void> {
-  const { error } = await supabase.from('rkbmd_standar').delete().eq('id', id)
-  if (error) throw new Error(error.message)
-}
+// ⚠️ TIDAK ADA fungsi tulis di berkas ini, dan itu disengaja (migrasi
+// 20260814_01, keputusan user 2026-08-14). `simpanStandar`/`ubahStandar`/
+// `hapusStandar` sudah DICABUT: GRANT tulis ke `rkbmd_standar` &
+// `rkbmd_standar_rekening` dicabut dari `authenticated`, jadi satu-satunya
+// penulisnya kini `fn_standar_usulan_setujui` (masuk) & `fn_standar_usulan_
+// buka_kunci` (keluar). Membetulkan baris yang salah = Buka Kunci → SKPD
+// perbaiki di usulannya → ajukan → setujui lagi.
+//
+// Kalau suatu saat terasa perlu menambahkan fungsi tulis di sini lagi, berarti
+// ada yang hendak memintas Usulan → Validasi — dan itu justru lubang yang
+// migrasi 20260814_01 tutup. Pintu masuknya lewat lib/rkbmdStandarUsulan.ts.
 
 // ── Format import Excel ─────────────────────────────────────────────────────
 // Judul kolom berkas import DITURUNKAN dari `STANDAR_CONFIG`, bukan ditulis
@@ -221,12 +164,16 @@ export async function hapusStandar(supabase: SupabaseClient, id: number): Promis
 // ("Harga Satuan" vs "Besaran / Pagu Satuan"). Menulis daftarnya dua kali akan
 // membuat format yang diunduh perlahan menyimpang dari yang bisa dibaca.
 
-/** Judul kolom lembar isian, urut kiri ke kanan. */
+/** Judul kolom lembar isian, urut kiri ke kanan.
+ *  Merk/Tipe ikut untuk jenis yang berbasis barang — kolomnya sudah ada di form
+ *  usulan sejak 20260813_04, dan berkas import yang tak memuatnya akan
+ *  memaksa operator mengetik ulang merk satu per satu sesudah mengimpor. */
 export function kolomTemplate(jenis: StandarJenis): string[] {
   const cfg = STANDAR_CONFIG[jenis]
   return [
     ...(cfg.pakaiKodeBarang ? ['Kode Barang'] : []),
     cfg.labelNama,
+    ...(cfg.pakaiKodeBarang ? ['Merk / Tipe'] : []),
     'Satuan',
     cfg.labelHarga,
     ...(cfg.pakaiTkdn ? ['TKDN (%)'] : []),
@@ -259,14 +206,18 @@ export function unduhTemplateStandar(jenis: StandarJenis, tahun: number): void {
     ['Cara pakai:'],
     ['1. Isi lembar "Isian". Satu baris = satu barang/komponen. Jangan mengubah judul kolomnya.'],
     ['2. Baris kosong diabaikan. Simpan sebagai .xlsx.'],
-    ['3. Unggah lewat RKBMD → Standar Harga → ' + cfg.jenis.toUpperCase() + ' → Import.'],
+    ['3. Unggah lewat RKBMD → Standar Harga → Usulan → pilih jenis ' + cfg.jenis.toUpperCase() + ' → Import Excel.'],
     ['4. Sebelum tersimpan, semua baris diperiksa dulu & ditampilkan di layar.'],
+    ['5. Isinya masuk ke USULAN, belum jadi acuan bersama. Ajukan dulu, lalu ditetapkan Pengelola di menu Validasi.'],
     [''],
     ['Keterangan kolom:'],
     ...(cfg.pakaiKodeBarang
       ? [['Kode Barang', 'WAJIB. Kode kodefikasi BMD, mis. 1.3.2.10.01.02.001. Harus sudah terdaftar di master kodefikasi.']]
       : []),
     [cfg.labelNama, 'WAJIB. Nama/uraian sedetail mungkin — inilah yang membedakan satu barang dari barang lain di bak bersama.'],
+    ...(cfg.pakaiKodeBarang
+      ? [['Merk / Tipe', 'Opsional, mis. Asus ExpertBook B1. Tidak ikut menentukan barang ini sama atau beda dengan usulan SKPD lain.']]
+      : []),
     ['Satuan', 'Opsional, mis. Unit / Buah / Set. Sebaiknya diisi: satuan ikut menentukan barang ini dianggap sama atau beda.'],
     [cfg.labelHarga, 'WAJIB. Angka, tanpa "Rp". Titik ribuan boleh (1.500.000), koma untuk desimal.'],
     ...(cfg.pakaiTkdn ? [['TKDN (%)', 'Opsional. Angka 0–100. Kosongkan bila tidak diketahui.']] : []),
@@ -278,10 +229,10 @@ export function unduhTemplateStandar(jenis: StandarJenis, tahun: number): void {
     contohBaris(jenis),
     [''],
     ['Catatan penting:'],
-    ['· Ini BAK BERSAMA seluruh SKPD. Barang yang identitasnya sama (kode + nama + satuan + harga)'],
-    ['  tidak akan diduplikasi — kode rekening pada baris Anda digabungkan ke barang yang sudah ada.'],
-    ['· Karena itu, beda harga = barang yang BERBEDA. Untuk memperbaiki harga, ubah barisnya lewat'],
-    ['  tombol Edit di halaman, jangan diimpor ulang dengan harga baru.'],
+    ['· Acuan bersamanya milik seluruh SKPD. Saat usulan ini DISETUJUI, barang yang identitasnya sama'],
+    ['  (kode + nama + satuan + harga) tidak akan diduplikasi — kode rekening Anda digabungkan ke barang yang sudah ada.'],
+    ['· Karena itu, beda harga = barang yang BERBEDA. Untuk memperbaiki harga, ubah barisnya di usulan'],
+    ['  ini selagi masih draft — jangan diimpor ulang dengan harga baru.'],
   ]
   const wsPetunjuk = XLSX.utils.aoa_to_sheet(petunjuk)
   wsPetunjuk['!cols'] = [{ wch: 34 }, { wch: 110 }]
@@ -295,6 +246,7 @@ function contohBaris(jenis: StandarJenis): string[] {
   return [
     ...(cfg.pakaiKodeBarang ? ['1.3.2.10.01.02.001'] : []),
     cfg.pakaiKodeBarang ? 'P.C Unit — Core i5, RAM 16GB, SSD 512GB' : 'Honorarium Narasumber Eselon II (per jam)',
+    ...(cfg.pakaiKodeBarang ? ['Lenovo ThinkCentre M70q'] : []),
     cfg.pakaiKodeBarang ? 'Unit' : 'OJ',
     '17500000',
     ...(cfg.pakaiTkdn ? ['40'] : []),

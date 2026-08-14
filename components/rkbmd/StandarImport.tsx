@@ -1,33 +1,30 @@
 'use client'
-// Import massal Standar Harga (SSH · HSPK · ASB · SBU) dari Excel — ADMIN SAJA
-// (permintaan user 2026-08-13). Alurnya: unduh format → isi di Excel → unggah →
-// PERIKSA di layar → baru disimpan.
+// Import massal Standar Harga (SSH · HSPK · ASB · SBU) dari Excel. Alurnya:
+// unduh format → isi di Excel → unggah → PERIKSA di layar → baru disimpan.
 //
-// ⚠️ Pembatasan "admin saja" ini gerbang TAMPILAN, bukan gerbang keamanan, dan
-// itu disengaja: `fn_rkbmd_standar_simpan` memang boleh dipanggil semua SKPD
-// (bak bersama), jadi import massal bukan kemampuan BARU — ia cuma jalan cepat
-// menuju hal yang satu-per-satu sudah boleh. Yang dijaga di sini kerapian bak
-// bersamanya: ratusan baris sekaligus dari satu SKPD lebih baik lewat satu
-// pintu yang sadar. Kalau kelak perlu ditegakkan sungguhan, tempatnya di RPC.
+// ⚠️ MASUKNYA KE USULAN, BUKAN KE ACUAN BERSAMA (perubahan 2026-08-14, migrasi
+// 20260814_01). Versi sebelumnya memanggil `fn_rkbmd_standar_simpan` langsung
+// sehingga ratusan baris bisa mendarat di bak bersama tanpa pernah ditelaah
+// siapa pun — persis "shortcut di tengah alur" yang ditutup migrasi itu.
+// Sekarang ia cuma cara CEPAT mengisi usulan yang sedang disusun: tetap harus
+// diajukan, tetap harus ditetapkan Pengelola di menu Validasi.
 //
-// TIDAK menulis langsung ke tabel: tiap baris tetap lewat RPC yang sama dengan
-// form manual, jadi dedup & penggabungan kode rekening lintas SKPD berlaku
-// persis sama. Baris yang barangnya sudah ada TIDAK melahirkan baris kedua —
-// rekening barunya digabungkan, dan itu dilaporkan apa adanya di ringkasan.
+// Karena isinya belum jadi acuan, tak ada lagi laporan "berapa yang sudah ada /
+// berapa rekening digabungkan" — dedup memang baru dikerjakan saat DISETUJUI,
+// dan mengarang angkanya di sini akan menyesatkan.
 import { useState } from 'react'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import { backdropClose } from '@/components/backdropClose'
-import {
-  STANDAR_CONFIG, SLOT_REKENING, simpanStandar, unduhTemplateStandar,
-  type StandarJenis,
-} from '@/lib/rkbmdStandar'
+import { STANDAR_CONFIG, SLOT_REKENING, unduhTemplateStandar, type StandarJenis } from '@/lib/rkbmdStandar'
+import { simpanItem } from '@/lib/rkbmdStandarUsulan'
 
 /** Satu baris hasil baca berkas + hasil pemeriksaannya. */
 type Baris = {
   no: number
   kode: string
   nama: string
+  merk: string
   satuan: string
   harga: number
   tkdn: number | null
@@ -72,9 +69,13 @@ function petakanKolom(header: string[], alias: Record<string, string[]>): Record
   return out
 }
 
-export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
+export default function StandarImport({ jenis, tahun, usulanId, nomorBerikut, onClose, onSelesai }: {
   jenis: StandarJenis
   tahun: number
+  /** Usulan yang sedang disusun — barisnya ditambahkan ke sini. */
+  usulanId: string
+  /** No urut pertama yang dipakai; baris berikutnya menyusul berurutan. */
+  nomorBerikut: number
   onClose: () => void
   onSelesai: (msg: string) => void
 }) {
@@ -104,6 +105,7 @@ export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
       const alias: Record<string, string[]> = {
         ...(cfg.pakaiKodeBarang ? { kode: ['kodebarang', 'kode'] } : {}),
         nama: [norm(cfg.labelNama), 'namabarang', 'uraian', 'nama'],
+        ...(cfg.pakaiKodeBarang ? { merk: ['merktipe', 'merk', 'merek'] } : {}),
         satuan: ['satuan'],
         harga: [norm(cfg.labelHarga), 'hargasatuan', 'harga', 'besaran'],
         ...(cfg.pakaiTkdn ? { tkdn: ['tkdn'] } : {}),
@@ -149,7 +151,7 @@ export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
         )]
 
         hasil.push({
-          no: i + 1, kode, nama, satuan: sel(r, 'satuan'), harga: nHarga ?? 0,
+          no: i + 1, kode, nama, merk: sel(r, 'merk'), satuan: sel(r, 'satuan'), harga: nHarga ?? 0,
           tkdn: nTkdn, rekening, keterangan: sel(r, 'keterangan'), masalah,
         })
       }
@@ -198,12 +200,10 @@ export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
     }
   }
 
-  /** Dua baris beridentitas sama di SATU berkas. Dibiarkan lewat, keduanya akan
-   *  jatuh ke barang yang sama (RPC-nya dedup) — jadi bukan kesalahan, tapi
-   *  operator perlu tahu bahwa jumlah baris yang masuk lebih sedikit dari
-   *  jumlah baris di berkasnya, supaya tak dikira ada yang gagal diam-diam.
-   *  Yang kembar dibuang dari daftar impor supaya dua panggilan RPC serentak
-   *  untuk identitas yang sama tak bertabrakan di UNIQUE index. */
+  /** Dua baris beridentitas sama di SATU berkas. Di usulan, keduanya BOLEH
+   *  tersimpan (tak ada UNIQUE di staging) — tapi saat disetujui keduanya jatuh
+   *  ke barang yang sama, jadi memasukkan dua-duanya cuma membuat penelaah
+   *  membaca daftar yang lebih panjang dari kenyataannya. Dibuang & dilaporkan. */
   function tandaiKembar(hasil: Baris[]) {
     const lihat = new Set<string>()
     for (const r of hasil) {
@@ -217,21 +217,25 @@ export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
   async function impor() {
     if (sah.length === 0) return
     setSibuk(true); setErr(''); setMaju(0); setRingkasan('')
-    let baru = 0, sudahAda = 0, rekGabung = 0
+    let masuk = 0
     const gagal: string[] = []
     try {
-      for (const r of sah) {
+      for (const [i, r] of sah.entries()) {
         try {
-          const h = await simpanStandar(supabase, {
-            jenis, tahun,
+          await simpanItem(supabase, usulanId, {
+            no_urut: nomorBerikut + i,
             kode: cfg.pakaiKodeBarang ? r.kode : null,
-            nama: r.nama, satuan: r.satuan || null, harga: r.harga,
+            nama: r.nama,
+            merk_tipe: cfg.pakaiKodeBarang ? (r.merk || null) : null,
+            satuan: r.satuan || null,
+            harga: r.harga,
             tkdn: cfg.pakaiTkdn ? r.tkdn : null,
+            kuantitas_standar: null,
+            satuan_pengukur: null,
             keterangan: r.keterangan || null,
             rekening: r.rekening,
           })
-          if (h.status === 'baru') baru++; else sudahAda++
-          rekGabung += h.rekening_baru
+          masuk++
         } catch (e) {
           gagal.push(`baris ${r.no}: ${(e as Error).message}`)
         }
@@ -240,12 +244,10 @@ export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
       // Laporan JUJUR: sebutkan yang gagal, jangan cuma yang berhasil. Import
       // yang "selesai" padahal separuhnya tak masuk adalah bentuk kegagalan
       // senyap yang paling mahal di modul ini.
-      const bagian = [`${baru} barang baru`]
-      if (sudahAda > 0) bagian.push(`${sudahAda} sudah ada (tidak diduplikasi)`)
-      if (rekGabung > 0) bagian.push(`${rekGabung} kode rekening digabungkan`)
-      if (cacat.length > 0) bagian.push(`${cacat.length} baris dilewati karena bermasalah`)
-      if (gagal.length > 0) bagian.push(`${gagal.length} baris GAGAL disimpan`)
-      const pesan = `Import ${cfg.judul} TA ${tahun}: ${bagian.join(' · ')}.`
+      const bagian = [`${masuk} baris masuk ke usulan`]
+      if (cacat.length > 0) bagian.push(`${cacat.length} dilewati karena bermasalah`)
+      if (gagal.length > 0) bagian.push(`${gagal.length} GAGAL disimpan`)
+      const pesan = `Import ${cfg.judul} TA ${tahun}: ${bagian.join(' · ')}. Belum jadi acuan bersama — ajukan dulu ke Pengelola.`
       setRingkasan(pesan)
       onSelesai(pesan)
       if (gagal.length > 0) setErr(`Gagal disimpan:\n${gagal.slice(0, 20).join('\n')}${gagal.length > 20 ? `\n…dan ${gagal.length - 20} lainnya` : ''}`)
@@ -261,8 +263,8 @@ export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
           <div>
             <h3 className="font-semibold text-gray-800">Import {cfg.judul} — TA {tahun}</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Seluruh baris akan masuk ke tahun anggaran <span className="font-medium">{tahun}</span> —
-              ganti dulu Tahun Anggaran di halaman ini kalau bukan itu yang dimaksud.
+              Barisnya masuk ke <span className="font-medium">usulan yang sedang disusun</span>, belum menjadi
+              acuan bersama — tetap harus diajukan &amp; ditetapkan Pengelola Barang.
             </p>
           </div>
           <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>
@@ -304,6 +306,7 @@ export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
                       <th className="table-th w-12">Baris</th>
                       {cfg.pakaiKodeBarang && <th className="table-th">Kode Barang</th>}
                       <th className="table-th">{cfg.labelNama}</th>
+                      {cfg.pakaiKodeBarang && <th className="table-th">Merk / Tipe</th>}
                       <th className="table-th">Satuan</th>
                       <th className="table-th text-right">{cfg.labelHarga}</th>
                       <th className="table-th">Kode Rekening</th>
@@ -317,6 +320,7 @@ export default function StandarImport({ jenis, tahun, onClose, onSelesai }: {
                         <td className="table-td text-xs text-gray-400">{r.no}</td>
                         {cfg.pakaiKodeBarang && <td className="table-td text-xs whitespace-nowrap">{r.kode || '—'}</td>}
                         <td className="table-td text-xs text-gray-800">{r.nama || '—'}</td>
+                        {cfg.pakaiKodeBarang && <td className="table-td text-xs text-gray-500">{r.merk || '—'}</td>}
                         <td className="table-td text-xs text-gray-500">{r.satuan || '—'}</td>
                         <td className="table-td text-xs text-right whitespace-nowrap">{r.harga.toLocaleString('id-ID')}</td>
                         <td className="table-td text-xs text-gray-500">{r.rekening.join(', ') || '—'}</td>

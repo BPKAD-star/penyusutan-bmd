@@ -971,15 +971,18 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   digabungkan". ⚠️ Rumus identitas di dalam RPC **KEMBAR** dengan generated
   column-nya; kalau salah satu diubah, ubah dua-duanya — kalau tidak, RPC
   mengira barangnya baru lalu ditolak UNIQUE dengan pesan mentah.
-- **Hak akses (keputusan user 2026-08-10):** semua SKPD boleh MENAMBAH;
-  ubah/hapus hanya SKPD pembuat + admin (`fn_skpd_visible(skpd_id)`). Mencabut
-  kode rekening: penyumbangnya, pemilik barangnya, atau admin — tanpa syarat itu
-  satu SKPD bisa mencabut rekening yang sedang dipakai SKPD lain di RKBMD-nya.
-  Semua fn di policy dibungkus InitPlan `(SELECT fn_...())`.
+- ⚠️ **Hak akses tulis SUDAH TIDAK BERLAKU** (aturan 2026-08-10 "semua SKPD
+  boleh MENAMBAH; ubah/hapus SKPD pembuat + admin" dicabut migrasi
+  20260814_01). GRANT tulis ke `authenticated` dicabut & policy tulisnya
+  di-DROP: **tak seorang pun menulis ke `rkbmd_standar` lewat aplikasi**, semua
+  lewat Usulan → Validasi. Rinciannya di §"SATU PINTU MASUK, SATU PINTU KELUAR".
+  Yang tersisa policy SELECT (terbuka untuk semua — memang bak bersama).
 - **RKBMD Pengadaan kini BERSANDAR KE SSH.** Barang dipilih dari SSH TA itu —
   di luar SSH tidak bisa. **Harga tidak bisa diketik di form item** (dulu bisa
   di-override diam-diam per dokumen): kalau harganya keliru, yang diperbaiki
-  SSH-nya supaya seluruh SKPD ikut terkoreksi. Kalau barangnya punya beberapa
+  SSH-nya supaya seluruh SKPD ikut terkoreksi — sejak 20260814_01 caranya Buka
+  Kunci usulannya, perbaiki, ajukan & tetapkan lagi (barangnya wajib dilepas
+  dulu dari dokumen RKBMD mana pun). Kalau barangnya punya beberapa
   rekening, operator memilih SATU (`rkbmd_item.kode_rekening`) supaya anggaran
   bisa dijumlahkan per kode rekening; satu rekening → terisi otomatis.
   `jumlah_standar` (SBSK) & `jumlah_eksisting` tetap disimpan sbg angka rujukan
@@ -1145,16 +1148,24 @@ bukan dihapus, supaya pranala yang terlanjur tersebar tidak mati.
   pun boleh dicetak; justru itu gunanya). Cetak **se-Kabupaten tetap di
   Pelaporan** — itu keluaran hilir untuk Pengelola Barang.
 
-- **Import Excel Standar Harga — ADMIN SAJA** (permintaan user 2026-08-13).
-  Tombol "⬆ Import Excel" di halaman Standar Harga (`StandarImport.tsx`):
-  unduh format → isi → unggah → **periksa di layar** → simpan. Tiap baris tetap
-  lewat **RPC yang sama** dgn form manual (`fn_rkbmd_standar_simpan`), jadi
-  dedup & penggabungan kode rekening lintas SKPD berlaku persis sama — jangan
-  diganti INSERT langsung demi kecepatan, itu mematahkan janji bak bersamanya.
-  ⚠️ Gerbang "admin saja" itu **TAMPILAN, bukan keamanan**, dan itu disengaja:
-  RPC-nya memang boleh dipanggil semua SKPD, jadi import massal bukan kemampuan
-  BARU — cuma jalan cepat menuju hal yang satu-per-satu sudah boleh. Kalau kelak
-  perlu ditegakkan sungguhan, tempatnya di RPC.
+- **Import Excel Standar Harga — MASUK KE USULAN, bukan ke acuan bersama**
+  (2026-08-13, dialihkan 2026-08-14). Tombol "⬆ Import Excel" kini di layar
+  **Usulan** Standar Harga (`StandarImport.tsx`), muncul selama usulannya masih
+  bisa disunting: unduh format → isi → unggah → **periksa di layar** → baris
+  masuk ke usulan itu lewat `simpanItem`. Tetap harus diajukan & ditetapkan.
+  ⚠️ Versi lamanya memanggil `fn_rkbmd_standar_simpan` LANGSUNG dari menu
+  SSH/HSPK/ASB/SBU, jadi ratusan baris bisa mendarat di bak bersama tanpa
+  ditelaah siapa pun — lubang yang ditutup migrasi 20260814_01. Gerbang "admin
+  saja" ikut dicabut: yang menentukan sekarang wewenang atas USULAN-nya (RLS
+  `rkbmd_standar_usulan`), bukan peran pemanggil. **Jangan kembalikan import
+  yang menulis ke `rkbmd_standar`** — RPC-nya sekarang memang menolak.
+  Karena isinya belum jadi acuan, ringkasannya **tak lagi menyebut** "berapa
+  sudah ada / berapa rekening digabung": dedup baru dikerjakan saat DISETUJUI,
+  dan mengarang angkanya di layar import akan menyesatkan.
+  **Merk/Tipe ikut di format** (kolom setelah Spesifikasi Nama Barang, hanya
+  untuk jenis ber-kode barang) — form usulan sudah punya kolom itu sejak
+  20260813_04, dan berkas yang tak memuatnya memaksa operator mengetik ulang
+  merk satu per satu sesudah mengimpor.
   Judul kolom format & pembacanya **satu sumber**: `kolomTemplate()` di
   lib/rkbmdStandar.ts, diturunkan dari `STANDAR_CONFIG` — label tiap jenis
   memang beda ("Harga Satuan" vs "Besaran / Pagu Satuan"), jadi menulis
@@ -1349,34 +1360,91 @@ jadi dua kelompok ber-alur kembar — **Standar Harga** & **RKBMD**, masing-masi
 Usulan · Validasi · Pelaporan.
 
 - **Lima menu per-jenis lama (SSH/SBSK/ASB/SBU/HSPK) dilebur** jadi satu Usulan
-  Standar Harga; jenisnya dipilih di dalam layarnya. ⚠️ **Rutenya sengaja
-  DIBIARKAN HIDUP** (cuma hilang dari sidebar): `StandarHargaWorkspace` adalah
-  satu-satunya jalan admin **menyunting/menghapus** baris yang terlanjur salah
-  di bak bersama — alur usulan hanya bisa MENAMBAH. Jangan dibuang sebelum ada
-  penggantinya.
+  Standar Harga; jenisnya dipilih di dalam layarnya. **Rute SSH/HSPK/ASB/SBU
+  kini `redirect()` ke Pelaporan** & `StandarHargaWorkspace` DIHAPUS
+  (2026-08-14) — satu-satunya alasan ia dipertahankan dulu adalah "jalan admin
+  menyunting/menghapus baris bak bersama", dan justru itulah shortcut yang
+  ditutup migrasi 20260814_01. Membetulkan baris yang salah sekarang: **Buka
+  Kunci → SKPD perbaiki di usulannya → ajukan → setujui lagi.** Rute SBSK tetap
+  hidup (`SbskWorkspace`, tabel `rkbmd_sbsk`, master admin — bukan bak bersama).
 - **Pelaporan Standar Harga tak punya tombol Tambah**: menambah langsung ke bak
   bersama akan memintas seluruh alur usulan→validasi. Ia juga tak perlu filter
-  status — sejak 20260813_03 satu-satunya jalan masuk ke `rkbmd_standar` adalah
+  status — satu-satunya jalan masuk ke `rkbmd_standar` adalah
   `fn_standar_usulan_setujui`, jadi isinya **dengan sendirinya** tervalidasi.
-- ⚠️ **"Buka Kunci" MENARIK KEMBALI barisnya — tapi SELEKTIF** (migrasi
-  20260813_04, sesudah user menguji alurnya dari nol). Semula ia cuma
-  mengembalikan status ke draft dan meninggalkan barisnya di bak bersama; untuk
-  barang yang belum dipakai siapa pun itu salah — penelaah bermaksud
-  membatalkan penetapannya, dan yang tertinggal jadi acuan hantu yang tak
-  seorang pun merasa menaruhnya. Tapi menarik SEMUANYA juga salah. Dua saringan
-  di `fn_standar_usulan_buka_kunci`, keduanya wajib:
-  (a) baris yang sudah dirujuk `rkbmd_item.standar_id` — ada SKPD yang memakainya
-  menyusun RKBMD; FK-nya `ON DELETE SET NULL`, jadi menghapusnya **tidak error**
-  dan justru itu bahayanya: rusaknya senyap;
-  (b) baris yang juga lahir dari usulan LAIN yang sudah disetujui — bak bersama
-  memang menyatukan usulan beberapa SKPD ke satu baris.
-  Yang tertinggal DILAPORKAN lewat `ringkasBukaKunci()`, tidak dibiarkan senyap.
-  **SBSK sengaja tak ditarik sama sekali**: persetujuannya meng-upsert baris
-  `(tahun, kode)` yang mungkin sudah bernilai sebelumnya, dan nilai lamanya tak
-  disimpan di mana pun — menariknya berarti MENGHAPUS, bukan memulihkan.
-  ⚠️ Semua ini bergantung pada kolom jejak **`rkbmd_standar_usulan_item.standar_id`**
-  yang diisi saat persetujuan. Tanpa jejak itu penarikan selektif mustahil —
-  jangan dicabut.
+
+### SATU PINTU MASUK, SATU PINTU KELUAR (migrasi 20260814_01)
+
+User menguji alurnya dari nol, membuka kunci usulan SSH yang sudah ditetapkan —
+dan barangnya **tetap mentereng di Pelaporan**. Ada TIGA lubang, bentuknya sama
+semua: baris bisa masuk atau bertahan di bak bersama **tanpa usulan hidup yang
+mempertanggungjawabkannya**. Perbaikannya menetapkan satu invarian:
+
+> **Isi `rkbmd_standar` = TEPAT sebanyak yang diklaim usulan berstatus
+> `disetujui`.** Alurnya maju (Usulan → Validasi → acuan → dipakai RKBMD) dan
+> mundur (lepas dari RKBMD → Buka Kunci → draft), tanpa potong kompas.
+
+- **(1) Masuk lewat samping — DITUTUP DENGAN GRANT.** `StandarHargaWorkspace` &
+  Import Excel memanggil `fn_rkbmd_standar_simpan` langsung; 3 dari 4 baris yang
+  ada per 2026-08-14 lahir begitu (`skpd_id` NULL, tampil "Diinput oleh —").
+  Sekarang **GRANT INSERT/UPDATE/DELETE ke `authenticated`+`anon` DICABUT** dari
+  `rkbmd_standar` & `rkbmd_standar_rekening` (policy tulisnya ikut di-DROP
+  supaya tak ada aturan yang berbohong), dan RPC-nya sendiri **menolak** kecuali
+  dipanggil dari jalur persetujuan. Penegaknya GRANT, bukan tombol yang
+  dihilangkan dari layar: kode klien mana pun — termasuk yang belum ditulis —
+  kini mustahil menulis ke sini. ⚠️ Konsekuensinya **lib/rkbmdStandar.ts tak
+  punya fungsi tulis sama sekali**; kalau terasa perlu menambahkannya lagi,
+  berarti ada yang hendak memintas Usulan → Validasi.
+- **(2) Jejaknya bisa dihapus — DITUTUP TRIGGER.** `rkbmd_standar_usulan` dulu
+  boleh di-DELETE dalam status apa pun; menghapus usulan yang sudah DISETUJUI
+  membuang item-itemnya (CASCADE) berikut kolom jejak `standar_id`, dan barisnya
+  tertinggal **selamanya tanpa satu pun cara menariknya**. Persis itu yang
+  terjadi pada baris ke-4 (Laptop Asus, BKAD): tabel usulan kosong, barisnya
+  tetap ada. Kini `fn_standar_usulan_hapus_guard` menolaknya — buka kunci dulu.
+- **(3) Mundur tanpa menarik — DITUTUP DI STATUS GUARD.** Admin dulu bisa
+  meng-UPDATE `disetujui` → `draft` lewat jalur biasa, dan UPDATE itu tak
+  menyentuh acuan bersama. Sekarang transisi keluar dari `disetujui` hanya sah
+  bila datang dari `fn_standar_usulan_buka_kunci`.
+- ⚠️ **"Buka Kunci" kini MENOLAK TOTAL kalau barangnya dipakai RKBMD**
+  (keputusan user 2026-08-14, mengubah perilaku selektif 20260813_04). Dulu yang
+  dipakai dilewati & sisanya ditarik — tapi yang terlewat itu tertinggal di
+  acuan bersama sementara usulannya sudah kembali draft, yaitu keadaan "barang
+  nyantol tanpa pemilik" yang sama, cuma lahir dari pintu lain. Sekarang: pesan
+  menyebut berapa barang & dokumen SKPD mana yang memakainya, **tak ada yang
+  ditarik sebagian**, dan urutannya dipaksa — lepas dari RKBMD dulu.
+  Yang TIDAK memblokir: baris yang juga lahir dari usulan **SKPD lain** yang
+  sudah disetujui. Itu bukan pemakaian di RKBMD melainkan bak bersama yang
+  menyatukan dua pengusul; klaim usulan ini dicabut, barisnya tetap berdiri atas
+  nama SKPD itu, dan dilaporkan sbg "tetap" oleh `ringkasBukaKunci()`.
+- **Baris usulan yang sudah `disetujui` BEKU untuk semua**, termasuk admin
+  (`fn_standar_usulan_item_guard`) — menyuntingnya memutus kesamaan antara yang
+  tercatat di usulan & yang berdiri di acuan bersama, dan menghapusnya membuang
+  jejak `standar_id`-nya.
+- **Pengecualian ketiga guard di atas satu-satunya: penanda transaksi
+  `app.standar_via_usulan`**, disetel `set_config(..., true)` di dalam
+  `fn_standar_usulan_setujui` & `fn_standar_usulan_buka_kunci`. Hidup hanya
+  selama transaksi pemanggilnya & tiap permintaan PostgREST adalah satu
+  transaksi tersendiri, jadi klien tak punya cara menyalakannya. **Kalau nanti
+  ada RPC baru yang sah menulis ke bak bersama, ia WAJIB menyalakan penanda ini
+  — dan itu berarti berpikir dua kali dulu apakah ia memang boleh.**
+- **FK `rkbmd_item.standar_id` → ON DELETE RESTRICT** (dulu SET NULL). SET NULL
+  adalah kerusakan SENYAP: baris acuan hilang, dokumen RKBMD-nya tetap ada tapi
+  kehilangan sandaran harganya tanpa satu pun error.
+- **SBSK sengaja tak ditarik sama sekali** saat buka kunci: persetujuannya
+  meng-upsert baris `(tahun, kode)` yang mungkin sudah bernilai sebelumnya, dan
+  nilai lamanya tak disimpan di mana pun — menariknya berarti MENGHAPUS, bukan
+  memulihkan. Dilaporkan supaya penelaah membetulkannya sendiri.
+- ⚠️ Semua ini bergantung pada kolom jejak
+  **`rkbmd_standar_usulan_item.standar_id`** yang diisi saat persetujuan. Tanpa
+  jejak itu penarikan mustahil — jangan dicabut.
+- **Escape hatch yang tersisa: SQL Editor / service_role.** Pemilik tabel
+  melampaui GRANT, jadi admin DB tetap bisa membenahi baris yang terlanjur
+  kacau — sama polanya dgn pengecualian `current_user <> 'authenticated'` di
+  `aset_awal_2026`. Yang ditutup jalur APLIKASI, bukan jalur perbaikan darurat.
+- ⚠️ **Deploy-ordering: migrasi 20260814_01 WAJIB jalan SEBELUM deploy kode** —
+  begitu ia jalan, menu SSH/HSPK/ASB/SBU versi LAMA (tombol Tambah/Edit/Hapus &
+  Import) gagal; itu diterima karena halamannya memang diganti pengalih. Kalau
+  urutannya dibalik, yang terjadi lebih buruk: import versi baru menulis ke
+  tabel usulan sementara pintu lamanya masih menganga.
 - **`merk_tipe`** ada di staging & bak bersama (migrasi 20260813_04), tepat di
   bawah Spesifikasi Nama Barang. ⚠️ **SENGAJA di luar `identitas`**: rumus dedup
   itu kembar di tiga tempat, dan menambah ruas berarti tiga suntingan yang harus

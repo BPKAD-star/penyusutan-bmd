@@ -263,17 +263,28 @@ export async function setujuiUsulan(
 
 export type HasilBukaKunci = {
   jenis: UsulanJenis
-  /** Baris yang benar-benar dicabut dari acuan bersama (belum dipakai siapa pun). */
+  /** Baris yang dicabut dari acuan bersama. */
   ditarik: number
-  /** Dibiarkan karena sudah dipakai RKBMD atau juga lahir dari usulan SKPD lain. */
+  /** Dibiarkan karena baris yang sama juga lahir dari usulan SKPD lain yang
+   *  sudah disetujui — klaim usulan INI dicabut, barisnya tetap berdiri atas
+   *  nama SKPD itu. Bukan "barang nyantol": pemiliknya jelas. */
   tetap: number
   sbsk: number
 }
 
-/** Buka kunci: usulan kembali ke draft, DAN barisnya ditarik dari acuan bersama
- *  — tapi hanya yang belum dipakai siapa pun. Lewat RPC karena penarikannya
- *  menyentuh baris milik SKPD pengusul, di luar wewenang admin lewat jalur RLS
- *  biasa, dan karena keputusannya butuh memeriksa `rkbmd_item` + usulan lain. */
+/** Buka kunci: usulan kembali ke draft, DAN barisnya ditarik dari acuan bersama.
+ *
+ *  ⚠️ MENOLAK TOTAL kalau ada satu saja barangnya yang sudah dipakai di dokumen
+ *  RKBMD (migrasi 20260814_01, keputusan user 2026-08-14) — tak ada yang
+ *  ditarik sebagian. Urutannya dipaksa maju-mundur: lepas dulu barangnya dari
+ *  RKBMD, baru usulannya bisa dibuka. Versi sebelumnya melewati yang dipakai
+ *  lalu menarik sisanya, dan yang terlewat itu tertinggal di acuan bersama
+ *  sementara usulannya sudah kembali ke draft — persis keadaan "barang nyantol
+ *  tanpa pemilik" yang mau diberantas.
+ *
+ *  Lewat RPC karena penarikannya menyentuh baris milik SKPD pengusul, di luar
+ *  wewenang admin lewat jalur RLS biasa (bahkan GRANT tulisnya sudah dicabut),
+ *  dan karena keputusannya butuh memeriksa `rkbmd_item` + usulan lain. */
 export async function bukaKunciUsulan(
   supabase: SupabaseClient, usulanId: string,
 ): Promise<HasilBukaKunci> {
@@ -282,9 +293,9 @@ export async function bukaKunciUsulan(
   return data as HasilBukaKunci
 }
 
-/** Apa yang SEBENARNYA terjadi saat buka kunci — angka "tetap" itu yang paling
- *  perlu dibaca penelaah: itulah baris yang sengaja tidak dicabut karena sudah
- *  dipakai orang lain, dan ia takkan hilang hanya karena usulannya dibuka. */
+/** Apa yang SEBENARNYA terjadi saat buka kunci. Angka "tetap" perlu disebut
+ *  supaya penelaah tak mengira penarikannya gagal: baris itu memang masih
+ *  berdiri, tapi atas nama SKPD lain yang juga mengusulkannya. */
 export function ringkasBukaKunci(h: HasilBukaKunci): string {
   if (h.jenis === 'sbsk') {
     return `Usulan kembali ke draft. ${h.sbsk} baris Standar Kebutuhan TIDAK ditarik — `
@@ -293,7 +304,7 @@ export function ringkasBukaKunci(h: HasilBukaKunci): string {
   }
   const bagian = [`Usulan kembali ke draft. ${h.ditarik} baris ditarik dari acuan bersama`]
   if (h.tetap > 0) {
-    bagian.push(`${h.tetap} dibiarkan karena sudah dipakai RKBMD atau juga diusulkan SKPD lain`)
+    bagian.push(`${h.tetap} tetap berdiri karena juga diusulkan SKPD lain yang sudah ditetapkan`)
   }
   return `${bagian.join(' · ')}.`
 }
