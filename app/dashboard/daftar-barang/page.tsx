@@ -337,11 +337,76 @@ export default function DaftarBarangPage() {
     return map
   }
 
-  async function fetchAllRows(f: Applied, includeDeleted = false) {
+  // ── Jalur baru: paginasi & visibilitas dikerjakan DI SERVER ────────────────
+  // `fn_daftar_barang` (migrasi 20260814_05..07) sudah melakukan SEMUA yang
+  // dulu dirangkai di sini: visibilitas period-aware (SEMBUNYI/MUNCUL/LAHIR),
+  // kepemilikan pada periode (pengalihan + mutasi internal, minus yang
+  // dibatalkan), filter golongan/komptabel/cari, DAN urutannya — kembar dgn
+  // `bandingKode`. Jadi halaman ini tak perlu lagi menarik seluruh baris.
+  //
+  // Ukurannya (RLS aktif, 1.3.2 se-kabupaten = 218.251 baris):
+  //   dulu : 219 permintaan x ~2,3 dtk, seluruh baris masuk memori browser
+  //   kini : 1 permintaan, 126 ms untuk 50 baris
+  //
+  // ⚠️ Aturan dua mode (user 2026-08-14) ditegakkan DI DB lewat `fn_dbar_guard`:
+  // tak boleh semua jenis aset x semua SKPD sekaligus. Sah cuma (A) satu SKPD →
+  // semua jenis, atau (B) se-kabupaten → wajib satu jenis. Pesan ramahnya juga
+  // ditampilkan di layar sebelum tombol ditekan, tapi penegaknya tetap DB.
+  const rpcArgs = useCallback((f: Applied) => ({
+    p_periode: f.periode,
+    p_skpd_ids: f.descIds && f.descIds.length > 0 ? f.descIds : null,
+    p_golongan: f.golongan || null,
+    p_komptabel: f.komptabel || null,
+    p_search: f.search || null,
+  }), [])
+
+  // MELEMPAR kalau gagal — pemanggilnya (handleTampilkan/goPage/export) semuanya
+  // punya try/catch + pesan yang DITAMPILKAN. Daftar yang kurang sebagian jauh
+  // lebih berbahaya daripada daftar yang menolak tampil.
+  const fetchPage = useCallback(async (f: Applied, limit: number, offset: number): Promise<Row[]> => {
+    const { data, error } = await supabase.rpc('fn_daftar_barang', { ...rpcArgs(f), p_limit: limit, p_offset: offset })
+    if (error) throw new Error(`gagal membaca daftar barang: ${error.message}`)
+    return (data || []) as unknown as Row[]
+  }, [rpcArgs]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Total & jumlah nilai SELURUH hasil filter (bukan cuma halaman ini).
+  // Sengaja fungsi TERPISAH & dipanggil SEKALI per perubahan filter: menghitung
+  // 218rb baris itu 1.229 ms, sedangkan mengambil 50 baris cuma 126 ms — kalau
+  // digabung jadi satu query (window function), LIMIT tak bisa berhenti lebih
+  // awal & halamannya balik jadi 9,8 dtk. Lihat migrasi 20260814_06.
+  const fetchRekap = useCallback(async (f: Applied): Promise<{ total: number; grand: number }> => {
+    const { data, error } = await supabase.rpc('fn_daftar_barang_rekap', rpcArgs(f))
+    if (error) throw new Error(`gagal menghitung total daftar barang: ${error.message}`)
+    const r = ((data || []) as unknown as { total_count: number; grand_total: number }[])[0]
+    return { total: Number(r?.total_count ?? 0), grand: Number(r?.grand_total ?? 0) }
+  }, [rpcArgs]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Seluruh baris visible — HANYA untuk Export. Layar tidak pernah memakainya
+  // lagi. Untuk 1.3.2 se-kabupaten ini tetap 219 permintaan, tapi kini cuma
+  // terjadi kalau operator SENGAJA menekan Export, bukan tiap membuka halaman.
+  async function fetchAllRows(f: Applied) {
+    const all: Row[] = []
+    for (let off = 0; ; off += 1000) {
+      const batch = await fetchPage(f, 1000, off)
+      all.push(...batch)
+      if (batch.length < 1000) break
+    }
+    return all
+  }
+
+  // Jalur MENTAH — tanpa penyaringan visibilitas period-aware. HANYA untuk
+  // Export Audit/Mutasi (BPK), yang memang harus memuat barang yang di layar
+  // sudah tersembunyi (dihapus/diserap/dibatalkan) BERIKUT jejak penghapusannya.
+  //
+  // ⚠️ JANGAN ganti dengan `fetchAllRows` di atas. RPC menyaring yang tersembunyi
+  // — itu benar untuk layar & Export biasa, tapi untuk berkas audit justru
+  // MENGHILANGKAN baris yang jadi alasan berkas itu dibuat, tanpa satu pun
+  // pesan. Ini satu-satunya pemakai `buildQuery` yang tersisa.
+  async function fetchAllRowsRaw(f: Applied) {
     const all: Row[] = []
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await buildQuery(f, false, includeDeleted).range(from, from + 999)
-      if (error) throw new Error(`gagal membaca daftar barang: ${error.message}`)
+      const { data, error } = await buildQuery(f, false, true).range(from, from + 999)
+      if (error) throw new Error(`gagal membaca daftar barang (audit): ${error.message}`)
       if (!data || data.length === 0) break
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
@@ -369,13 +434,21 @@ export default function DaftarBarangPage() {
     return info
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Render halaman (client-side) dari kumpulan baris visible.
-  function showPage(all: Row[], pg: number) {
-    setData(all.length <= SHOW_ALL_MAX ? all : all.slice(pg * PAGE_SIZE, (pg + 1) * PAGE_SIZE))
-  }
+  // Lengkapi tampilan untuk SATU halaman: uraian kodefikasi & jumlah bidang
+  // tanah. Dulu dijalankan atas SELURUH baris visible (218rb); kini cuma atas
+  // 50 baris yang benar-benar tampil, jadi praktis gratis.
+  const lengkapiHalaman = useCallback(async (rows: Row[], golongan: string) => {
+    setUraianMap(await fetchUraian(rows.map(r => r.kode)))
+    setBidangCount(golongan === '1.3.1' ? await fetchBidangCount(rows.map(r => r.id)) : {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleTampilkan() {
-    if (!fGolongan) return // wajib pilih jenis aset dulu
+    // Aturan dua mode (user 2026-08-14). Penegak sesungguhnya `fn_dbar_guard`
+    // di DB; ini cuma supaya pesannya ramah & muncul sebelum query ditembak.
+    if (!fGolongan && !(fSel.descIds && fSel.descIds.length > 0)) {
+      setErr('Pilih SKPD dulu, atau pilih jenis aset kalau ingin melihat se-kabupaten. Menampilkan semua jenis aset untuk semua SKPD sekaligus tidak didukung.')
+      return
+    }
     const f: Applied = { descIds: fSel.descIds, skpdId: fSel.skpdId, golongan: fGolongan, komptabel: fKomptabel, search: fSearch, periode: `${fTahun}-S${fSmt}` }
     setApplied(f); setPage(0); setGrandTotal(0)
     setLoading(true); setErr('')
@@ -390,44 +463,33 @@ export default function DaftarBarangPage() {
     // Rekonsiliasi punya try/catch jadi pesannya kelihatan, halaman ini tidak.
     try {
 
-    // Ambil SEMUA baris (aktif + dihapus) yg kini di scope SKPD, lalu:
-    //   (0) sesuaikan kepemilikan PERIOD-AWARE (transfer antar SKPD): buang yg
-    //       pada periode ini milik SKPD lain, tambah yg pada periode ini milik
-    //       scope tapi kini sudah pindah keluar. Lihat lib/pengalihan.ts.
-    //   (a) buang yang tersembunyi krn dihapus/diserap di periode, DAN
-    //   (b) buang yang BELUM diperoleh pada periode ini (tgl perolehan > periode) —
-    //       supaya barang yang dibeli di semester DEPAN tak muncul di posisi lampau.
-    const base = await fetchAllRows(f, true)
-    // SATU query untuk dua kebutuhan: atribusi SKPD period-aware (lama) + tahun
-    // masuk SKPD (segmen tahun kode register). Jangan panggil fetchOwnerOverrides
-    // lagi di sini — querynya persis sama, cuma nambah beban.
+    // Visibilitas period-aware, kepemilikan pada periode, filter, & urutan —
+    // SEMUANYA sudah dikerjakan `fn_daftar_barang` di server. Yang dulu di sini
+    // (fetchAllRows 219 permintaan → partitionByPeriodOwner → fetchHiddenIds →
+    // belumAdaPada → sort) kini tinggal dua panggilan.
+    //
+    // `fetchPosisiOverrides` TETAP dipanggil, dan itu disengaja: RPC memang
+    // mengembalikan `owner_skpd`, tapi tampilan juga butuh `tahunMasuk` (segmen
+    // tahun kode register) yang tak ada di sana. Query-nya dilayani partial
+    // index `idx_trx_pindah_id` & cuma 183 baris, jadi ongkosnya ~10 ms.
     const posisi = await fetchPosisiOverrides(supabase, f.periode)
     setPosisiOverride(posisi)
-    const owners = new Map<string, number | null>([...posisi].map(([id, p]) => [id, p.skpd]))
 
-    let combined = base
-    if (f.descIds && f.descIds.length > 0) {
-      const scope = new Set(f.descIds)
-      const curSkpd = new Map<string, number | null>(base.map(r => [r.id, r.skpd_id]))
-      const { keepIds, addIds } = partitionByPeriodOwner(base.map(r => r.id), owners, curSkpd, scope)
-      const kept = base.filter(r => keepIds.has(r.id))
-      const added = addIds.length > 0 ? await fetchRowsByIds(addIds, f) : []
-      combined = [...kept, ...added]
-    }
+    // Rekap DULU, baru halamannya: jumlahnya yang menentukan berapa baris
+    // diminta. Kalau hasilnya kecil (<= SHOW_ALL_MAX) halaman ini tetap
+    // menampilkan semuanya sekaligus seperti dulu — perilaku itu dipertahankan,
+    // cuma pemotongannya kini di server.
+    const rekap = await fetchRekap(f)
+    setTotal(rekap.total)
+    setGrandTotal(rekap.grand)
+    const semua = rekap.total <= SHOW_ALL_MAX
+    setShowAll(semua)
 
-    // `hidden` sudah mencakup barang yang BELUM LAHIR pada periode ini (pecahan
-    // hasil Pemecahan Barang mewarisi tgl perolehan induknya, jadi tak bisa
-    // dinilai dari tanggal); belumAdaPada menangani perolehan biasa.
-    const hidden = await fetchHiddenIds(supabase, combined.map(r => r.id), f.periode, SEMBUNYI_DAFTAR_BARANG)
-    const visible = combined.filter(r => !hidden.has(r.id) && !belumAdaPada(r.tgl_perolehan, f.periode)).sort(bandingKode)
-
-    setAllVisible(visible)
-    setTotal(visible.length)
-    setGrandTotal(visible.reduce((s, r) => s + (r.nilai_perolehan || 0), 0))
-    setShowAll(visible.length <= SHOW_ALL_MAX)
-    showPage(visible, 0)
-    setUraianMap(await fetchUraian(visible.map(r => r.kode)))
-    setBidangCount(f.golongan === '1.3.1' ? await fetchBidangCount(visible.map(r => r.id)) : {})
+    const rows = await fetchPage(f, semua ? Math.max(rekap.total, 1) : PAGE_SIZE, 0)
+    setData(rows)
+    // Tak ada lagi "seluruh baris" di memori — Export menariknya sendiri.
+    setAllVisible([])
+    await lengkapiHalaman(rows, f.golongan)
 
     } catch (e) {
       // Fail-closed spt modul pelaporan: daftar yang kurang sebagian JAUH lebih
@@ -442,16 +504,41 @@ export default function DaftarBarangPage() {
     }
   }
 
-  function goPage(pg: number) {
+  // Pindah halaman = SATU permintaan 50 baris (~126 ms), bukan memotong array
+  // 218rb baris di memori. `applied` (bukan nilai filter yang sedang diketik)
+  // yang dipakai — supaya mengganti filter tanpa menekan Tampilkan tak
+  // diam-diam menggeser isi halaman.
+  //
+  // ⚠️ Seluruh badan fungsi di dalam try/finally, `setLoading(false)` di
+  // `finally`, dan errornya DITAMPILKAN — aturan yang sama dgn handleTampilkan.
+  // Tanpa itu satu query gagal bikin tombol halaman nyangkut "Memuat..."
+  // selamanya tanpa sepatah pun keterangan.
+  async function goPage(pg: number) {
+    if (!applied) return
     setPage(pg)
-    showPage(allVisible, pg)
+    setLoading(true); setErr('')
+    try {
+      const rows = await fetchPage(applied, PAGE_SIZE, pg * PAGE_SIZE)
+      setData(rows)
+      await lengkapiHalaman(rows, applied.golongan)
+    } catch (e) {
+      setErr(`${(e as Error).message} — halaman ini tidak ditampilkan supaya tidak ada yang terbaca sebagai lengkap padahal gagal dimuat.`)
+      setData([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   // Luas Tanah: Σ bidang kalau asetnya punya bidang, kalau tidak `aset.luas`.
   // (Di Export Audit, barang yang sudah dihapus tak ikut di-fetch bidangnya —
   // otomatis jatuh ke aset.luas, dan memang itu nilai terakhir yang tercatat.)
-  function luasOf(r: Row): number | null {
-    const b = bidangCount[r.id]
+  // ⚠️ `bc` WAJIB dilewatkan oleh Export. Sejak paginasi pindah ke server,
+  // state `bidangCount` cuma memuat baris HALAMAN YANG SEDANG TAMPIL (50), jadi
+  // memakainya untuk seluruh isi Export akan diam-diam menjatuhkan hampir semua
+  // baris ke `aset.luas` — padahal Σ bidang yang otoritatif. Export menghitung
+  // petanya sendiri atas baris yang benar-benar diekspor.
+  function luasOf(r: Row, bc: Record<string, { n: number; nLuas: number; luas: number | null }> = bidangCount): number | null {
+    const b = bc[r.id]
     return b && b.n > 0 && b.nLuas === b.n && b.luas != null ? b.luas : r.luas
   }
 
@@ -459,8 +546,17 @@ export default function DaftarBarangPage() {
     if (!applied) return
     setExporting(true); setErr('')
     try {
-    const all = allVisible // posisi sesuai periode terpilih (period-aware)
+    // Sejak paginasi pindah ke server, seluruh baris TIDAK lagi ada di memori —
+    // Export menariknya sendiri lewat RPC yang sama (halaman demi halaman, tetap
+    // period-aware). Untuk 1.3.2 se-kabupaten ini 219 permintaan & memang lama,
+    // tapi kini cuma terjadi kalau operator SENGAJA menekan Export.
+    // ⚠️ JANGAN kembalikan ke `allVisible`: state itu sekarang selalu kosong,
+    // dan berkas Excel kosong yang terunduh tanpa pesan apa pun adalah persis
+    // jenis kegagalan senyap yang paling mahal di modul ini.
+    const all = await fetchAllRows(applied)
     const uraian = await fetchUraian(all.map(r => r.kode))
+    // Peta bidang khusus baris yang diekspor — lihat catatan di `luasOf`.
+    const bidangEx = applied.golongan === '1.3.1' ? await fetchBidangCount(all.map(r => r.id)) : {}
     const keys = exportColsFor(applied.golongan)
     exportToExcel(all.map(r => {
       const cell = (key: string): string | number => {
@@ -485,7 +581,7 @@ export default function DaftarBarangPage() {
           case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
           case 'penggunaan': return r.penggunaan_pengamanan || ''
           case 'keterangan': return r.keterangan || ''
-          case 'luas': return luasOf(r) ?? ''
+          case 'luas': return luasOf(r, bidangEx) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
           case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
           case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
@@ -515,8 +611,11 @@ export default function DaftarBarangPage() {
     // Diurutkan sendiri: berkas ini TIDAK lewat `allVisible` (dia menarik ulang
     // termasuk barang yang sudah dihapus), jadi tanpa baris ini susunannya ikut
     // urutan ambil dari DB dan beda sendiri dari Export Excel & layar.
-    const all = (await fetchAllRows(applied, true)).sort(bandingKode)
+    const all = (await fetchAllRowsRaw(applied)).sort(bandingKode)
     const uraian = await fetchUraian(all.map(r => r.kode))
+    // Peta bidang khusus baris yang diekspor — `bidangCount` di state cuma
+    // memuat halaman yang sedang tampil sejak paginasi pindah ke server.
+    const bidangEx = applied.golongan === '1.3.1' ? await fetchBidangCount(all.map(r => r.id)) : {}
     const hapus = await fetchHapusInfo(all.filter(r => r.status !== 'aktif').map(r => r.id))
     const keys = exportColsFor(applied.golongan)
     exportToExcel(all.map(r => {
@@ -542,7 +641,7 @@ export default function DaftarBarangPage() {
           case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
           case 'penggunaan': return r.penggunaan_pengamanan || ''
           case 'keterangan': return r.keterangan || ''
-          case 'luas': return luasOf(r) ?? ''
+          case 'luas': return luasOf(r, bidangEx) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
           case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
           case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
