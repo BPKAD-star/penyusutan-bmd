@@ -48,44 +48,74 @@ export default function PenghapusanCards({ data }: { data: PenghapusanData }) {
 function DetailModal({ label, jenis, subJenis, onClose }: { label: string; jenis: string; subJenis: string | null; onClose: () => void }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
   const [groups, setGroups] = useState<{ skpdNama: string; n: number; total: number; items: { nama_barang: string | null; nibar: string | null; nilai: number }[] }[]>([])
 
+  // ⚠️ KEYSET (`.gt('id', terakhir)` + `.order('id')`), BUKAN `.range()`. Versi
+  // lama memakai OFFSET TANPA `ORDER BY` sama sekali — Postgres tak menjamin
+  // urutan antar-halaman, jadi begitu hasilnya >1.000 baris ada yang TERLEWAT
+  // dan ada yang DOBEL diam-diam. Di popup ini akibatnya barang hilang dari
+  // rincian per-SKPD atau tercatat dua kali, dan totalnya jadi tak cocok dgn
+  // angka di kartunya — tanpa satu pun pesan error. Cacat kembar dgn
+  // `countPenghapusan` (app/dashboard/page.tsx), diperbaiki bareng.
+  //
+  // Filternya cuma `jenis`, yang di bawah RLS tak bisa jadi index-cond — kedua
+  // nilainya tercakup partial index `idx_trx_penghapusan_id` (migrasi
+  // 20260814_03), dan `ORDER BY id` + `id > N` dilayani index yang sama.
+  //
+  // ⚠️ `error` DIPERIKSA & DITAMPILKAN, bukan `const { data }` telanjang.
+  // Daftar kosong yang lahir dari query gagal terbaca operator sbg "memang tak
+  // ada barang yang dihapus" — popup inilah yang dipakai mencocokkan jumlah
+  // barang, jadi ia fail-closed spt DisetujuiModal di MutasiTransferCards.
   useEffect(() => {
     (async () => {
-      const skpdMap: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data as { id: number; nama: string }[]) skpdMap[s.id] = s.nama
-        if (data.length < 1000) break
+      try {
+        const skpdMap: Record<number, string> = {}
+        let skpdTerakhir = 0
+        for (;;) {
+          const { data, error } = await supabase.from('admin_skpd').select('id,nama')
+            .gt('id', skpdTerakhir).order('id', { ascending: true }).limit(1000)
+          if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
+          if (!data || data.length === 0) break
+          const batch = data as { id: number; nama: string }[]
+          for (const s of batch) { skpdMap[s.id] = s.nama; skpdTerakhir = s.id }
+          if (batch.length < 1000) break
+        }
+        const rows: {
+          id: number; skpd_asal: number; nilai: number; payload: { sub_jenis?: string } | null
+          aset: { nama_barang: string | null; nibar: string | null; status: string } | null
+        }[] = []
+        let terakhir = 0
+        for (;;) {
+          const { data, error } = await supabase.from('transaksi_bmd')
+            .select('id,skpd_asal,nilai,payload,aset:aset_id(nama_barang,nibar,status)')
+            .eq('jenis', jenis).gt('id', terakhir).order('id', { ascending: true }).limit(1000)
+          if (error) throw new Error(`gagal membaca riwayat penghapusan: ${error.message}`)
+          if (!data || data.length === 0) break
+          const batch = data as unknown as typeof rows
+          rows.push(...batch)
+          terakhir = batch[batch.length - 1].id
+          if (batch.length < 1000) break
+        }
+        const groupMap = new Map<number, { n: number; total: number; items: { nama_barang: string | null; nibar: string | null; nilai: number }[] }>()
+        for (const r of rows) {
+          if (!r.aset || r.aset.status !== 'dihapus') continue
+          if (subJenis && r.payload?.sub_jenis !== subJenis) continue
+          const g = groupMap.get(r.skpd_asal) || { n: 0, total: 0, items: [] }
+          g.n += 1
+          g.total += r.nilai || 0
+          g.items.push({ nama_barang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai })
+          groupMap.set(r.skpd_asal, g)
+        }
+        const out = [...groupMap.entries()]
+          .map(([id, g]) => ({ skpdNama: skpdMap[id] || `SKPD #${id}`, ...g }))
+          .sort((a, b) => a.skpdNama.localeCompare(b.skpdNama))
+        setGroups(out)
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoading(false)
       }
-      const rows: {
-        skpd_asal: number; nilai: number; payload: { sub_jenis?: string } | null
-        aset: { nama_barang: string | null; nibar: string | null; status: string } | null
-      }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('transaksi_bmd')
-          .select('skpd_asal,nilai,payload,aset:aset_id(nama_barang,nibar,status)')
-          .eq('jenis', jenis).range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...(data as unknown as typeof rows))
-        if (data.length < 1000) break
-      }
-      const groupMap = new Map<number, { n: number; total: number; items: { nama_barang: string | null; nibar: string | null; nilai: number }[] }>()
-      for (const r of rows) {
-        if (!r.aset || r.aset.status !== 'dihapus') continue
-        if (subJenis && r.payload?.sub_jenis !== subJenis) continue
-        const g = groupMap.get(r.skpd_asal) || { n: 0, total: 0, items: [] }
-        g.n += 1
-        g.total += r.nilai || 0
-        g.items.push({ nama_barang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai })
-        groupMap.set(r.skpd_asal, g)
-      }
-      const out = [...groupMap.entries()]
-        .map(([id, g]) => ({ skpdNama: skpdMap[id] || `SKPD #${id}`, ...g }))
-        .sort((a, b) => a.skpdNama.localeCompare(b.skpdNama))
-      setGroups(out)
-      setLoading(false)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -99,6 +129,10 @@ function DetailModal({ label, jenis, subJenis, onClose }: { label: string; jenis
         <div className="p-5">
           {loading ? (
             <p className="text-sm text-gray-400 text-center py-8">Memuat...</p>
+          ) : err ? (
+            <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              Gagal memuat rincian — {err}. Daftar di bawah sengaja tidak ditampilkan sebagian.
+            </p>
           ) : groups.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-8">Belum ada data.</p>
           ) : (

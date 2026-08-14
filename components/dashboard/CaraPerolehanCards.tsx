@@ -35,11 +35,18 @@ export default function CaraPerolehanCards({ approved, approvedNilai }: {
   const [pending, setPending] = useState<Record<string, number>>({})
   const [detail, setDetail] = useState<{ mode: 'approved' | 'pending'; cara: CaraConfig } | null>(null)
 
+  // ⚠️ Kelima kategori ditarik BERBARENGAN, bukan satu per satu. Versi lama
+  // memakai `for...of` dengan `await` di dalamnya, jadi kelimanya ANTRE:
+  // waktunya menjumlah (di Network tab terlihat sbg lima permintaan
+  // `jurnal_header?...` berderet ~200 ms masing-masing, total ~1 dtk sesudah
+  // halaman ter-hydrate). Kelimanya saling bebas — tak ada satu pun yang
+  // memakai hasil yang lain — jadi tak ada alasan diantrekan.
+  // Paginasi DI DALAM satu kategori tetap berurutan: halaman berikutnya memang
+  // baru bisa diminta setelah yang sekarang tiba.
   useEffect(() => {
     (async () => {
-      const result: Record<string, number> = {}
-      for (const c of CARA_LIST) {
-        if (!c.kategoriJurnal) { result[c.key] = 0; continue }
+      const pasangan = await Promise.all(CARA_LIST.map(async c => {
+        if (!c.kategoriJurnal) return [c.key, 0] as const
         let total = 0
         for (let from = 0; ; from += 500) {
           const { data } = await supabase.from('jurnal_header').select('payload')
@@ -48,9 +55,9 @@ export default function CaraPerolehanCards({ approved, approvedNilai }: {
           for (const r of data as { payload: { draft_items?: unknown[] } }[]) total += r.payload?.draft_items?.length || 0
           if (data.length < 500) break
         }
-        result[c.key] = total
-      }
-      setPending(result)
+        return [c.key, total] as const
+      }))
+      setPending(Object.fromEntries(pasangan))
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

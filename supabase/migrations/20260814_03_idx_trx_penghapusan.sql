@@ -1,0 +1,71 @@
+-- 20260814_03_idx_trx_penghapusan.sql
+-- PARTIAL INDEX utk kolektor Penghapusan di Dashboard (app/dashboard/page.tsx
+-- `countPenghapusan`, dan popup rincian di components/dashboard/PenghapusanCards.tsx).
+--
+-- Ronde ke-4 dari cerita yang sama dengan `idx_trx_pindah_id` (20260729_01) dan
+-- `idx_trx_penghapusan`-nya sendiri belum pernah ada: kolektor yang filternya
+-- CUMA `jenis`, jenisnya JARANG, di ledger yang didominasi satu jenis lain.
+--
+-- Duduk perkaranya persis seperti yang sudah tertulis di CLAUDE.md:
+--   * `transaksi_bmd` ±418rb baris, 418.102-nya `saldo_awal`.
+--   * Qual `jenis` (ENUM) TIDAK BISA jadi index-cond di bawah RLS — sama seperti
+--     `LIKE`, ia ditinggalkan sbg filter biasa dan dievaluasi SESUDAH qual RLS.
+--   * Karena itu `idx_trx_jenis_id` (20260728_05) TIDAK menolong di sini: index
+--     itu justru mengandalkan `jenis` jadi index-cond.
+--   * Yang tersisa buat planner tinggal menyusuri PRIMARY KEY sambil menyaring
+--     seluruh tabel demi beberapa ratus baris penghapusan.
+--
+-- Obatnya sama dengan yang sudah terbukti utk perpindahan: predikat golongan
+-- jenisnya diselesaikan DI INDEX, sisanya (`id > N` + `ORDER BY id`) dilayani
+-- index itu sendiri — jadi biayanya ikut jumlah PENGHAPUSAN, bukan besar ledger.
+--
+-- ⚠️ Predikat di bawah KEMBAR dengan qual di kode:
+--     app/dashboard/page.tsx      → .in('jenis', ['penghapusan_pemindahtanganan','penghapusan_sebab_lain'])
+--     PenghapusanCards.tsx        → .eq('jenis', <salah satu dari dua di atas>)
+--   Beda sedikit saja, planner tak bisa membuktikan implikasinya dan indeksnya
+--   diabaikan DIAM-DIAM (halaman balik lambat tanpa satu pun pesan error).
+--   Ubah salah satu → ubah dua-duanya.
+--
+-- ⚠️ PLAIN, bukan CONCURRENTLY — Supabase SQL Editor membungkus skrip dalam satu
+--   transaksi, dan CONCURRENTLY di dalam transaksi GAGAL SENYAP (pelajaran dari
+--   migrasi 20260718_06).
+
+CREATE INDEX IF NOT EXISTS idx_trx_penghapusan_id
+  ON transaksi_bmd (id)
+  WHERE jenis IN ('penghapusan_pemindahtanganan', 'penghapusan_sebab_lain');
+
+-- Verifikasi WAJIB dengan RLS AKTIF, bukan sebagai service_role/superuser.
+-- Sebagai superuser query yang rusak pun tetap ~0,2 dtk, jadi EXPLAIN tanpa RLS
+-- akan bilang "beres" padahal belum — itu yang bikin 20260728_05 lolos
+-- verifikasi. Contoh cara mengukurnya (ganti <uid> dengan user sungguhan):
+--
+--   BEGIN;
+--     SET LOCAL role authenticated;
+--     SET LOCAL request.jwt.claims TO '{"sub":"<uid>","role":"authenticated"}';
+--     EXPLAIN (ANALYZE, BUFFERS)
+--       SELECT id, jenis, nilai, payload FROM transaksi_bmd
+--       WHERE jenis IN ('penghapusan_pemindahtanganan','penghapusan_sebab_lain')
+--         AND id > 0
+--       ORDER BY id LIMIT 1000;
+--   ROLLBACK;
+--
+-- Yang dicari di plan-nya: `Index Scan using idx_trx_penghapusan_id`, TANPA node
+-- Sort, dan `Rows Removed by Filter` yang kecil (bukan ratusan ribu).
+--
+-- HASIL TERUKUR di produksi (2026-08-14, RLS aktif, user admin BKAD):
+--                          SEBELUM                    SESUDAH
+--   index dipakai          transaksi_bmd_pkey         idx_trx_penghapusan_id
+--   Rows Removed by Filter 418.655                    0
+--   Buffers                shared hit=3406 read=18801 shared hit=144 read=1
+--   Execution Time         15.999 ms                  24,8 ms
+--   ukuran index           —                          16 kB
+--
+-- ⚠️ Angka 15.999 ms itu MELAMPAUI `statement_timeout` role `authenticated`
+-- (8 dtk), jadi sebelum migrasi ini query-nya TIDAK PERNAH berhasil di
+-- produksi — bukan sekadar lambat. Kode lama membungkusnya `catch {}` kosong,
+-- jadi kartu Penghapusan jatuh ke nol tanpa satu pun pesan. Nolnya kebetulan
+-- benar saat itu (ke-14 baris penghapusan sudah di-batal_penghapusan sehingga
+-- asetnya `aktif` lagi), jadi cacatnya tertutupi kebetulan — begitu ada
+-- penghapusan yang TIDAK dibatalkan, kartunya akan tetap nol & tak seorang pun
+-- tahu. Itu sebabnya kolektornya sekarang fail-closed (menampilkan pesan),
+-- bukan menelan error.
