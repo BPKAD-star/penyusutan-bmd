@@ -1,3 +1,4 @@
+import { Suspense, cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import { fetchPindahEvents, pindahAktif } from '@/lib/pengalihan'
@@ -71,23 +72,57 @@ async function countPindahAktif(sb: SB): Promise<{ transfer: number; mutasiInter
   }
 }
 
+const nolPenghapusan = (): PenghapusanData => ({
+  hibah: { n: 0, nilai: 0 }, jual: { n: 0, nilai: 0 }, tukar: { n: 0, nilai: 0 },
+  modal: { n: 0, nilai: 0 }, sebabLain: { n: 0, nilai: 0 },
+})
+
 // Penghapusan: hanya hitung baris yang aset-nya MASIH status 'dihapus' saat
 // ini (kalau sudah di-batal_penghapusan, aset kembali 'aktif' — tak terhitung).
 // 5 kategori: 4 mekanisme pemindahtanganan (sub_jenis) + 1 sebab lainnya (jenis
 // sendiri, force majeure dkk) — masing-masing dgn jumlah barang & total nilai.
-async function countPenghapusan(sb: SB): Promise<PenghapusanData> {
-  const out: PenghapusanData = {
-    hibah: { n: 0, nilai: 0 }, jual: { n: 0, nilai: 0 }, tukar: { n: 0, nilai: 0 },
-    modal: { n: 0, nilai: 0 }, sebabLain: { n: 0, nilai: 0 },
-  }
+//
+// ⚠️ KEYSET (`.gt('id', terakhir)` + `.order('id')`), BUKAN `.range()`. Versi
+// lama memakai OFFSET TANPA `ORDER BY` sama sekali, dan itu menabrak tiga
+// aturan repo ini sekaligus (CLAUDE.md, "kolektor halaman-demi-halaman"):
+//   (1) paginasi tanpa urutan — Postgres tak menjamin urutan antar-halaman,
+//       jadi begitu hasilnya >1.000 baris ada yang TERLEWAT & ada yang DOBEL
+//       diam-diam; angka kartu Penghapusan salah tanpa satu pun pesan;
+//   (2) OFFSET makin dalam makin lambat — halaman ke-N menyusuri lalu membuang
+//       (N-1)×1.000 baris hanya untuk sampai ke barisnya;
+//   (3) filternya CUMA `jenis`, dan `jenis` (ENUM) tak bisa jadi index-cond di
+//       bawah RLS → tiap halaman menyapu ulang ledger 418rb baris demi beberapa
+//       ratus baris penghapusan. Inilah penyumbang terbesar 7,9 dtk render
+//       Dashboard. Diperbaiki migrasi 20260814_03 (`idx_trx_penghapusan_id`);
+//       keyset di bawah yang membuat index itu benar-benar terpakai — ORDER BY
+//       id + id > N dilayani index yang sama, tanpa node Sort.
+//
+// ⚠️ MENGEMBALIKAN `err`, BUKAN `catch {}` kosong seperti versi lama. Kartu
+// Penghapusan yang tampil "0 barang · Rp0" karena query-nya timeout terbaca
+// operator sebagai "memang belum ada barang yang dihapus" — keluarga
+// INS-06/INS-08, sama alasannya dgn scanAset & countPindahAktif.
+async function countPenghapusan(sb: SB): Promise<{ data: PenghapusanData; err: string }> {
+  const out = nolPenghapusan()
   try {
-    for (let from = 0; ; from += 1000) {
+    let terakhir = 0
+    for (;;) {
       const { data, error } = await sb.from('transaksi_bmd')
-        .select('jenis, nilai, payload, aset(status)')
+        .select('id,jenis,nilai,payload,aset(status)')
         .in('jenis', ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain'])
-        .range(from, from + 999)
-      if (error || !data || data.length === 0) break
-      for (const r of data as unknown as { jenis: string; nilai: number; payload: { sub_jenis?: string }; aset: { status: string } | null }[]) {
+        .gt('id', terakhir)
+        .order('id', { ascending: true })
+        .limit(1000)
+      // Gagal di tengah = angka SEBAGIAN. Kembalikan nol + pesan, jangan
+      // hitungan separuh yang terlihat sah.
+      if (error) return { data: nolPenghapusan(), err: error.message }
+      if (!data || data.length === 0) break
+      const rows = data as unknown as {
+        id: number; jenis: string; nilai: number
+        payload: { sub_jenis?: string } | null
+        aset: { status: string } | null
+      }[]
+      for (const r of rows) {
+        terakhir = r.id
         if (r.aset?.status !== 'dihapus') continue
         const nilai = r.nilai || 0
         if (r.jenis === 'penghapusan_sebab_lain') { out.sebabLain.n++; out.sebabLain.nilai += nilai; continue }
@@ -98,10 +133,12 @@ async function countPenghapusan(sb: SB): Promise<PenghapusanData> {
         else if (sub === 'penyertaan_modal') { out.modal.n++; out.modal.nilai += nilai }
         else { out.sebabLain.n++; out.sebabLain.nilai += nilai } // fallback data lama tanpa sub_jenis dikenal
       }
-      if (data.length < 1000) break
+      if (rows.length < 1000) break
     }
-  } catch { /* transaksi_bmd/aset belum ada → 0 */ }
-  return out
+  } catch (e) {
+    return { data: nolPenghapusan(), err: e instanceof Error ? e.message : String(e) }
+  }
+  return { data: out, err: '' }
 }
 
 // Rekap register aset (aktif): count+nilai per golongan DAN per cara_perolehan
@@ -109,8 +146,12 @@ async function countPenghapusan(sb: SB): Promise<PenghapusanData> {
 // fn_dashboard_rekap() (satu query GROUP BY) — BUKAN lagi paging seluruh tabel
 // aset ke serverless lalu jumlah di JS. Perubahan 2026-07-16: setelah import
 // Peralatan & Mesin (218rb baris) scan lama butuh ~230 request berurutan dalam
-// satu invocation → 504 FUNCTION_INVOCATION_TIMEOUT. RPC SECURITY INVOKER, jadi
-// tetap tunduk RLS pemanggil (hasil sama persis dgn scan lama).
+// satu invocation → 504 FUNCTION_INVOCATION_TIMEOUT. RPC-nya SECURITY DEFINER
+// (bukan INVOKER spt yang sempat tertulis di sini — diperiksa ke DB 2026-08-14):
+// ia menghitung cakupan SKPD-nya sendiri di dalam fungsi lewat `fn_is_admin()` /
+// `fn_is_viewer()` / `fn_my_skpd_scope()`, jadi hasilnya tetap per-user persis
+// spt scan lama — TAPI penegaknya isi fungsi itu, bukan RLS. Kalau menyuntingnya,
+// cakupan itu WAJIB ikut disunting; RLS tak akan menolong sebagai jaring pengaman.
 // PENTING: "disetujui" count HARUS dari aset aktif, BUKAN dari jumlah baris ledger
 // jenis='pengadaan' (append-only, permanen — tak berkurang walau barangnya di-
 // batal_pengadaan/unapprove kemudian, krn itu cuma nambah baris baru, bukan hapus
@@ -152,25 +193,31 @@ async function scanAset(sb: SB): Promise<{
   return { gol, caraNilai, caraCount, err: '' }
 }
 
-export default async function DashboardHome() {
-  const supabase = createClient()
+// ── Pengambil data ber-`cache()` ────────────────────────────────────────────
+// `cache()` React men-dedup per PERMINTAAN: `getScan()` dipanggil dua komponen
+// (angka "Total Nilai BMD" di kepala halaman & kartu per jenis) tapi RPC-nya
+// tetap jalan SEKALI. Tanpa ini, memecah halaman jadi beberapa slot streaming
+// justru MELIPATGANDAKAN query-nya.
+//
+// ⚠️ Ini dedup sebatas satu render, BUKAN cache lintas-permintaan. Sengaja:
+// `fn_dashboard_rekap` memang SECURITY DEFINER, tapi ia menghitung cakupannya
+// SENDIRI dari pemanggil (`fn_is_admin()` / `fn_is_viewer()` /
+// `fn_my_skpd_scope()`, diverifikasi ke DB 2026-08-14), dan `fetchPindahEvents`
+// dibaca langsung di bawah RLS — jadi hasil keduanya BEDA per user sesuai
+// cakupan SKPD-nya. Menyimpannya di `unstable_cache`/cache global tanpa kunci
+// identitas user = operator SKPD A melihat angka se-kabupaten milik user lain.
+// JANGAN dijadikan cache lintas-permintaan tanpa memasukkan identitas user ke
+// kuncinya.
+const getScan = cache(() => scanAset(createClient()))
+const getPindah = cache(() => countPindahAktif(createClient()))
+const getHapus = cache(() => countPenghapusan(createClient()))
 
-  const [
-    scan,
-    pindah,
-    hapus,
-  ] = await Promise.all([
-    scanAset(supabase),
-    countPindahAktif(supabase),
-    countPenghapusan(supabase),
-  ])
-  const { transfer, mutasiInternal } = pindah
-  const gol = scan.gol
-  const cn = scan.caraNilai
-  const cc = scan.caraCount
-  const totalRegister = Object.values(gol).reduce((s, v) => s + v.count, 0)
-  const totalNilai = Object.values(gol).reduce((s, v) => s + v.nilai, 0)
-
+// Halaman ini SENGAJA tidak `async` lagi. Versi lama menunggu KETIGA query
+// (`Promise.all`) sebelum mengirim satu byte pun HTML, jadi waktu tampilnya =
+// query paling lambat — 7,9 dtk layar kosong. Sekarang kerangka halaman
+// (judul, tajuk tiap seksi) terkirim SEKETIKA dan tiap seksi menyusul lewat
+// <Suspense> begitu datanya siap, masing-masing tanpa menunggu yang lain.
+export default function DashboardHome() {
   return (
     // `p-6` polos, TANPA `max-w-6xl mx-auto`: semua halaman lain di dashboard
     // memakai lebar penuh, jadi yang lama membuat Dashboard menjorok masuk ~250px
@@ -183,11 +230,52 @@ export default async function DashboardHome() {
         </div>
         <div className="text-right">
           <p className="text-xs text-gray-400">Total Nilai BMD</p>
-          {/* Saat gagal: JANGAN tampilkan Rp0 — itu angka yang terlihat sah. */}
-          <p className="text-2xl font-bold text-teal">{scan.err ? '—' : formatRp(totalNilai)}</p>
+          <Suspense fallback={<p className="text-2xl font-bold text-gray-200 animate-pulse">••••</p>}>
+            <TotalNilai />
+          </Suspense>
         </div>
       </div>
 
+      {/* Total aset per jenis: jumlah unit + nilai rekapitulasi (harga perolehan) */}
+      <Suspense fallback={<SectionSkeleton title="Total Aset per Jenis" sub="Memuat rekap register…" n={8} kolom={4} />}>
+        <SectionJenis />
+      </Suspense>
+
+      {/* Perolehan */}
+      <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan — klik utk rincian disetujui/menunggu">
+        <Suspense fallback={<CardsSkeleton n={5} kolom={5} />}>
+          <SeksiCaraPerolehan />
+        </Suspense>
+      </Section>
+
+      {/* Mutasi & transfer */}
+      <Suspense fallback={<SectionSkeleton title="Mutasi & Transfer" sub="Memuat riwayat perpindahan…" n={4} kolom={4} />}>
+        <SectionMutasi />
+      </Suspense>
+
+      {/* Penghapusan */}
+      <Suspense fallback={<SectionSkeleton title="Penghapusan Barang" sub="Memuat riwayat penghapusan…" n={5} kolom={5} />}>
+        <SectionPenghapusan />
+      </Suspense>
+    </div>
+  )
+}
+
+async function TotalNilai() {
+  const scan = await getScan()
+  const totalNilai = Object.values(scan.gol).reduce((s, v) => s + v.nilai, 0)
+  // Saat gagal: JANGAN tampilkan Rp0 — itu angka yang terlihat sah.
+  return <p className="text-2xl font-bold text-teal">{scan.err ? '—' : formatRp(totalNilai)}</p>
+}
+
+async function SectionJenis() {
+  const scan = await getScan()
+  const gol = scan.gol
+  const totalRegister = Object.values(gol).reduce((s, v) => s + v.count, 0)
+  const totalNilai = Object.values(gol).reduce((s, v) => s + v.nilai, 0)
+
+  return (
+    <>
       {scan.err && (
         <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
           <span className="font-semibold">Rekap aset gagal dimuat</span> — {scan.err}.
@@ -195,8 +283,6 @@ export default async function DashboardHome() {
           data yang tidak berhasil diambil. Muat ulang halaman; kalau berulang, kabari admin.
         </div>
       )}
-
-      {/* Total aset per jenis: jumlah unit + nilai rekapitulasi (harga perolehan) */}
       <Section title="Total Aset per Jenis"
         sub={`Register BMD — ${nf(totalRegister)} aset · ${formatRp(totalNilai)}`}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -220,32 +306,50 @@ export default async function DashboardHome() {
           })}
         </div>
       </Section>
+    </>
+  )
+}
 
-      {/* Perolehan */}
-      <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan — klik utk rincian disetujui/menunggu">
-        <CaraPerolehanCards
-          approved={{ pengadaan: cc['pengadaan'] || 0, hibah: cc['hibah_masuk'] || 0, tukarMenukar: cc['tukar_menukar'] || 0, inventarisasi: cc['hasil_inventarisasi'] || 0, lainnya: cc['perolehan_lainnya'] || 0 }}
-          approvedNilai={{ pengadaan: cn['pengadaan'] || 0, hibah: cn['hibah_masuk'] || 0, tukarMenukar: cn['tukar_menukar'] || 0, inventarisasi: cn['hasil_inventarisasi'] || 0, lainnya: cn['perolehan_lainnya'] || 0 }} />
-      </Section>
+async function SeksiCaraPerolehan() {
+  const scan = await getScan()
+  const cn = scan.caraNilai
+  const cc = scan.caraCount
+  return (
+    <CaraPerolehanCards
+      approved={{ pengadaan: cc['pengadaan'] || 0, hibah: cc['hibah_masuk'] || 0, tukarMenukar: cc['tukar_menukar'] || 0, inventarisasi: cc['hasil_inventarisasi'] || 0, lainnya: cc['perolehan_lainnya'] || 0 }}
+      approvedNilai={{ pengadaan: cn['pengadaan'] || 0, hibah: cn['hibah_masuk'] || 0, tukarMenukar: cn['tukar_menukar'] || 0, inventarisasi: cn['hasil_inventarisasi'] || 0, lainnya: cn['perolehan_lainnya'] || 0 }} />
+  )
+}
 
-      {/* Mutasi & transfer */}
-      <Section title="Mutasi & Transfer" sub="Perpindahan barang antar / dalam SKPD — proporsi sudah di-acc vs masih menunggu persetujuan">
-        {/* Sama alasannya dgn banner scanAset: angka 0 yang lahir dari query
-            gagal terbaca sebagai "belum ada perpindahan" — katakan apa adanya. */}
-        {pindah.err && (
-          <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">
-            <span className="font-semibold">Riwayat perpindahan gagal dimuat</span> — {pindah.err}.
-            Angka &ldquo;disetujui&rdquo; di bawah <span className="font-semibold">bukan nol yang sebenarnya</span>.
-          </div>
-        )}
-        <MutasiTransferCards approved={{ transfer, mutasiInternal }} />
-      </Section>
+async function SectionMutasi() {
+  const pindah = await getPindah()
+  return (
+    <Section title="Mutasi & Transfer" sub="Perpindahan barang antar / dalam SKPD — proporsi sudah di-acc vs masih menunggu persetujuan">
+      {/* Sama alasannya dgn banner scanAset: angka 0 yang lahir dari query
+          gagal terbaca sebagai "belum ada perpindahan" — katakan apa adanya. */}
+      {pindah.err && (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">
+          <span className="font-semibold">Riwayat perpindahan gagal dimuat</span> — {pindah.err}.
+          Angka &ldquo;disetujui&rdquo; di bawah <span className="font-semibold">bukan nol yang sebenarnya</span>.
+        </div>
+      )}
+      <MutasiTransferCards approved={{ transfer: pindah.transfer, mutasiInternal: pindah.mutasiInternal }} />
+    </Section>
+  )
+}
 
-      {/* Penghapusan */}
-      <Section title="Penghapusan Barang" sub="Barang yang dihapus dari laporan (data tetap tersimpan) — klik utk rincian per SKPD">
-        <PenghapusanCards data={hapus} />
-      </Section>
-    </div>
+async function SectionPenghapusan() {
+  const hapus = await getHapus()
+  return (
+    <Section title="Penghapusan Barang" sub="Barang yang dihapus dari laporan (data tetap tersimpan) — klik utk rincian per SKPD">
+      {hapus.err && (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">
+          <span className="font-semibold">Riwayat penghapusan gagal dimuat</span> — {hapus.err}.
+          Angka di kartu di bawah <span className="font-semibold">bukan nol yang sebenarnya</span>.
+        </div>
+      )}
+      <PenghapusanCards data={hapus.data} />
+    </Section>
   )
 }
 
@@ -258,5 +362,36 @@ function Section({ title, sub, children }: { title: string; sub: string; childre
       </div>
       {children}
     </div>
+  )
+}
+
+// Kerangka kartu selagi datanya menyusul. Tingginya sengaja dibuat mendekati
+// kartu sungguhan supaya isinya tidak "meloncat" saat data tiba.
+function CardsSkeleton({ n, kolom }: { n: number; kolom: 4 | 5 }) {
+  // Kelas grid ditulis UTUH, bukan dirakit lewat template string — Tailwind
+  // memindai kode sumber secara literal, jadi `lg:grid-cols-${kolom}` tak akan
+  // pernah ikut ter-generate ke CSS-nya.
+  const grid = kolom === 5
+    ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3'
+    : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3'
+  return (
+    <div className={grid} aria-hidden="true">
+      {Array.from({ length: n }, (_, i) => (
+        <div key={i} className="card p-4 animate-pulse">
+          <div className="h-9 w-9 rounded-lg bg-gray-100" />
+          <div className="h-3 w-3/4 rounded bg-gray-100 mt-3" />
+          <div className="h-5 w-1/2 rounded bg-gray-100 mt-2" />
+          <div className="h-3 w-2/3 rounded bg-gray-100 mt-2" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SectionSkeleton({ title, sub, n, kolom }: { title: string; sub: string; n: number; kolom: 4 | 5 }) {
+  return (
+    <Section title={title} sub={sub}>
+      <CardsSkeleton n={n} kolom={kolom} />
+    </Section>
   )
 }
