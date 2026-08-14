@@ -27,7 +27,13 @@ import { bergeserDariNibar } from '@/lib/kodeRegister'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 
-const PAGE_SIZE = 50
+// Baris per halaman. Sejak paginasi pindah ke server (migrasi 20260814_05..08)
+// angka ini menentukan `p_limit` RPC, bukan besar potongan array di memori —
+// jadi menaikkannya menambah kerja DB kira-kira LINEAR: index berhenti setelah
+// N baris ketemu, bukan menyapu lebih banyak. 50 -> 100 ~ 126 ms -> ~200 ms.
+// Naikkan lagi kalau perlu; yang TIDAK boleh dinaikkan sembarangan adalah
+// SHOW_ALL_MAX di bawah, karena itu jumlah baris yang benar-benar dirender DOM.
+const PAGE_SIZE = 100
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 
 // Visibilitas period-aware (event sembunyi/muncul/lahir) dari lib/visibilitas.ts
