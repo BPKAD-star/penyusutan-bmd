@@ -22,25 +22,13 @@ import { backdropClose } from '@/components/backdropClose'
 import { formatRupiah } from '@/lib/export'
 import { SLOT_REKENING, type StandarJenis } from '@/lib/rkbmdStandar'
 import {
-  USULAN_JENIS, USULAN_STATUS_META, pakaiKodeBarang, pakaiHarga, pakaiTkdn, pakaiRekening,
+  USULAN_JENIS, USULAN_STATUS_META, LABEL_NAMA, LABEL_NILAI,
+  pakaiKodeBarang, pakaiHarga, pakaiTkdn, pakaiRekening, pakaiMerk, validasiItemUsulan,
   fetchUsulanSkpd, fetchUsulanItems, buatUsulan, simpanItem, hapusItem, hapusUsulan,
   setStatusUsulan, type UsulanJenis, type UsulanHeader, type UsulanItem,
 } from '@/lib/rkbmdStandarUsulan'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
-
-/** Label kolom nilai per jenis — SBSK bukan uang, jadi menyebutnya "harga"
- *  akan menyesatkan operator yang mengisinya. */
-const LABEL_NILAI: Record<UsulanJenis, string> = {
-  ssh: 'Harga Satuan', hspk: 'Harga Satuan',
-  asb: 'Besaran / Pagu Satuan', sbu: 'Besaran Tertinggi',
-  sbsk: 'Kuantitas Standar',
-}
-const LABEL_NAMA: Record<UsulanJenis, string> = {
-  ssh: 'Spesifikasi Nama Barang', hspk: 'Spesifikasi Nama Barang / Pekerjaan',
-  asb: 'Uraian Komponen Belanja', sbu: 'Uraian Komponen Biaya',
-  sbsk: 'Spesifikasi Barang',
-}
 
 export default function StandarUsulan() {
   const supabase = createClient()
@@ -103,6 +91,13 @@ export default function StandarUsulan() {
   }
 
   const cfgJenis = USULAN_JENIS.find(j => j.key === jenis)!
+
+  // Baris yang belum lengkap. Diperiksa di layar DAFTAR, bukan cuma di pop-up:
+  // baris bisa masuk lewat Import Excel, dan baris lama bisa saja tersimpan
+  // sebelum aturan ini berlaku — dua-duanya tak pernah melewati pop-up.
+  const barisCacat = items
+    .map(it => ({ it, masalah: validasiItemUsulan(jenis, it) }))
+    .filter(x => x.masalah.length > 0)
 
   return (
     <FormShell
@@ -201,6 +196,13 @@ export default function StandarUsulan() {
                 </div>
               )}
 
+              {barisCacat.length > 0 && bisaSunting && (
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                  <span className="font-medium">{barisCacat.length} baris belum lengkap</span> — ditandai ⚠ di
+                  tabel. Semua kolom wajib diisi (kode rekening cukup yang paling atas) sebelum usulan bisa diajukan.
+                </div>
+              )}
+
               <TabelItem jenis={jenis} items={items} bisaSunting={bisaSunting} busy={busy}
                 onEdit={it => setModal({ item: it })}
                 onHapus={it => {
@@ -219,11 +221,25 @@ export default function StandarUsulan() {
               <div className="card p-4 flex flex-wrap items-center justify-end gap-2">
                 {bisaSunting && (
                   <>
+                    {/* Tombolnya TIDAK dimatikan saat ada baris cacat — yang
+                        dimatikan cuma kasus "belum ada baris sama sekali", di
+                        mana keadaannya sudah jelas dari layar. Untuk baris yang
+                        belum lengkap, penolakan berikut ALASANNYA jauh lebih
+                        berguna daripada tombol mati yang tak berkata apa-apa. */}
                     <button className="btn-primary" disabled={busy || items.length === 0}
                       title={items.length === 0 ? 'Tambahkan minimal satu baris dulu' : undefined}
-                      onClick={() => jalankan(async () => {
-                        await setStatusUsulan(supabase, berjalan.id, 'diajukan')
-                      }, 'Usulan diajukan ke Pengelola Barang.')}>
+                      onClick={() => {
+                        if (barisCacat.length > 0) {
+                          setMsg('')
+                          setErr(`Belum bisa diajukan — ${barisCacat.length} baris masih kurang lengkap: `
+                            + barisCacat.slice(0, 3).map(x => `"${x.it.nama}" (${x.masalah.join(', ')})`).join('; ')
+                            + (barisCacat.length > 3 ? `; dan ${barisCacat.length - 3} baris lainnya.` : '.'))
+                          return
+                        }
+                        jalankan(async () => {
+                          await setStatusUsulan(supabase, berjalan.id, 'diajukan')
+                        }, 'Usulan diajukan ke Pengelola Barang.')
+                      }}>
                       {berjalan.status === 'ditolak' ? 'Ajukan ulang' : 'Ajukan'}
                     </button>
                     <button className="text-sm text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200"
@@ -324,13 +340,21 @@ function TabelItem({ jenis, items, bisaSunting, busy, onEdit, onHapus }: {
             <tr><td colSpan={kolom + 1} className="table-td text-center py-8 text-gray-400">
               Belum ada baris. Tekan <span className="font-medium">+ Tambah Baris</span> untuk mengisi.
             </td></tr>
-          ) : items.map((it, i) => (
-            <tr key={it.id}>
+          ) : items.map((it, i) => {
+            const masalah = validasiItemUsulan(jenis, it)
+            return (
+            <tr key={it.id} className={masalah.length > 0 ? 'bg-amber-50/60' : ''}>
               <td className="table-td text-xs text-gray-400">{it.no_urut ?? i + 1}</td>
               {adaKode && <td className="table-td text-xs whitespace-nowrap">{it.kode || '—'}</td>}
               <td className="table-td text-xs text-gray-800">
+                {masalah.length > 0 && (
+                  <span className="text-amber-600 mr-1" title={masalah.join(' · ')}>⚠</span>
+                )}
                 {it.nama}
                 {it.merk_tipe && <span className="block text-[11px] text-gray-400">{it.merk_tipe}</span>}
+                {masalah.length > 0 && (
+                  <span className="block text-[11px] text-amber-600">{masalah.join(' · ')}</span>
+                )}
               </td>
               <td className="table-td text-xs text-gray-500">{it.satuan || '—'}</td>
               {sbsk && <td className="table-td text-xs text-gray-500">{it.satuan_pengukur || '—'}</td>}
@@ -354,12 +378,18 @@ function TabelItem({ jenis, items, bisaSunting, busy, onEdit, onHapus }: {
                 </td>
               )}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>
   )
 }
+
+/** Penanda kolom wajib. Semua kolom yang TAMPIL memang wajib (keputusan user
+ *  2026-08-16), tapi tetap ditandai satu per satu — kalimat pengantar di atas
+ *  form gampang terlewat, tanda di sebelah labelnya tidak. */
+const Wajib = () => <span className="text-red-500" title="wajib diisi">*</span>
 
 // ── Pop-up satu baris usulan ────────────────────────────────────────────────
 // Bentuk isian menyesuaikan jenis. Aturannya KEMBAR dengan
@@ -377,6 +407,7 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
   const adaHarga = pakaiHarga(jenis)
   const adaTkdn = pakaiTkdn(jenis)
   const adaRek = pakaiRekening(jenis)
+  const adaMerk = pakaiMerk(jenis)
   const sbsk = jenis === 'sbsk'
 
   const [picked, setPicked] = useState<KodefikasiHasil | null>(
@@ -402,41 +433,35 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
       .then(({ data }) => setSatuanList(((data || []) as { nama: string }[]).map(s => s.nama)))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function simpan() {
-    if (adaKode && !picked) { setErr('Pilih jenis aset & kode barang dulu.'); return }
-    if (!nama.trim()) { setErr(`${LABEL_NAMA[jenis]} wajib diisi.`); return }
+  // Nilai yang akan disimpan — dirakit sekali & dipakai bersama oleh pemeriksa
+  // dan penyimpan, supaya yang divalidasi PERSIS yang masuk DB.
+  const isian = {
+    kode: adaKode ? (picked?.kode ?? null) : null,
+    nama: nama.trim(),
+    merk_tipe: adaMerk ? (merk.trim() || null) : null,
+    satuan: satuan || null,
+    harga: adaHarga && harga.trim() !== '' ? Number(harga) : null,
+    tkdn: adaTkdn && tkdn.trim() !== '' ? Number(tkdn) : null,
+    kuantitas_standar: sbsk && kuantitas.trim() !== '' ? Number(kuantitas) : null,
+    satuan_pengukur: sbsk ? (satuanPengukur.trim() || null) : null,
+    keterangan: keterangan.trim() || null,
+    // Dedup di dalam form: dua slot berisi rekening yang sama akan ditolak
+    // UNIQUE (item_id, kode_rekening) dengan pesan mentah.
+    rekening: adaRek ? [...new Set(rekening.map(r => r.trim()).filter(Boolean))] : [],
+  }
+  // Ditampilkan HIDUP di bawah tombol, bukan cuma saat Simpan ditekan: operator
+  // melihat apa yang masih kurang sambil mengisi, bukan sesudah mengira selesai.
+  const masalah = validasiItemUsulan(jenis, isian)
 
-    let nHarga: number | null = null
-    if (adaHarga) {
-      nHarga = Number(harga)
-      if (!harga || isNaN(nHarga) || nHarga < 0) { setErr(`${LABEL_NILAI[jenis]} wajib diisi dengan angka ≥ 0.`); return }
-    }
-    let nKuantitas: number | null = null
-    if (sbsk) {
-      nKuantitas = Number(kuantitas)
-      if (!kuantitas || isNaN(nKuantitas) || nKuantitas < 0) { setErr('Kuantitas standar wajib diisi dengan angka ≥ 0.'); return }
-      if (!satuanPengukur.trim()) { setErr('Satuan pengukur wajib diisi (mis. per pegawai, per ruang).'); return }
-    }
-    const nTkdn = !adaTkdn || tkdn.trim() === '' ? null : Number(tkdn)
-    if (nTkdn != null && (isNaN(nTkdn) || nTkdn < 0 || nTkdn > 100)) { setErr('TKDN harus antara 0 sampai 100.'); return }
+  async function simpan() {
+    if (masalah.length > 0) { setErr(masalah.join(' · ') + '.'); return }
 
     setSaving(true); setErr('')
     try {
       await simpanItem(supabase, usulanId, {
         id: item?.id,
         no_urut: item?.no_urut ?? nomorBerikut,
-        kode: adaKode ? (picked?.kode ?? null) : null,
-        nama: nama.trim(),
-        merk_tipe: merk.trim() || null,
-        satuan: satuan || null,
-        harga: nHarga,
-        tkdn: nTkdn,
-        kuantitas_standar: nKuantitas,
-        satuan_pengukur: sbsk ? satuanPengukur.trim() : null,
-        keterangan: keterangan.trim() || null,
-        // Dedup di dalam form: dua slot berisi rekening yang sama akan ditolak
-        // UNIQUE (item_id, kode_rekening) dengan pesan mentah.
-        rekening: adaRek ? [...new Set(rekening.map(r => r.trim()).filter(Boolean))] : [],
+        ...isian,
       })
       onTersimpan(editing ? 'Baris diperbarui.' : 'Baris ditambahkan ke usulan.')
     } catch (e) {
@@ -456,9 +481,14 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
         </div>
 
         <div className="p-5 space-y-4">
+          <p className="text-xs text-gray-400">
+            Semua kolom wajib diisi. Kode Rekening Belanja cukup <span className="font-medium">kolom
+            paling atas</span> — slot berikutnya hanya bila barangnya dibebankan ke lebih dari satu rekening.
+          </p>
+
           {adaKode && (
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Jenis Aset &amp; Kode Barang</label>
+              <label className="block text-xs text-gray-500 mb-1">Jenis Aset &amp; Kode Barang <Wajib /></label>
               <KodefikasiPicker picked={picked} onPick={r => {
                 setPicked(r)
                 if (r) setNama(prev => prev || r.uraian || '')
@@ -467,24 +497,30 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
           )}
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">{LABEL_NAMA[jenis]}</label>
+            <label className="block text-xs text-gray-500 mb-1">{LABEL_NAMA[jenis]} <Wajib /></label>
             <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} />
           </div>
 
           {/* Merk/Tipe tepat DI BAWAH Spesifikasi Nama Barang (permintaan user
               2026-08-13) — itu urutan orang membacanya: barang apa, lalu merk apa.
+              ⚠️ Hanya untuk jenis ber-BARANG NYATA (`pakaiMerk`): ASB itu
+              komponen belanja kegiatan & SBU honorarium/perjalanan dinas, yang
+              tak punya merk sama sekali — mewajibkannya di sana cuma memaksa
+              operator mengarang isian. Sama dgn kolom format import.
               ⚠️ Merk TIDAK ikut menentukan identitas dedup: dua SKPD yang
               mengusulkan barang identik dengan merk berbeda tetap jadi SATU baris
               di acuan bersama, dan merk pengusul pertama yang tercatat. */}
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Merk / Tipe</label>
-            <input className="select-filter w-full" value={merk} onChange={e => setMerk(e.target.value)}
-              placeholder="mis. Asus ExpertBook B1, Honda Vario 160" />
-          </div>
+          {adaMerk && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Merk / Tipe <Wajib /></label>
+              <input className="select-filter w-full" value={merk} onChange={e => setMerk(e.target.value)}
+                placeholder="mis. Asus ExpertBook B1, Honda Vario 160" />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Satuan</label>
+              <label className="block text-xs text-gray-500 mb-1">Satuan <Wajib /></label>
               <select className="select-filter w-full" value={satuan} onChange={e => setSatuan(e.target.value)}>
                 <option value="">— pilih satuan —</option>
                 {satuanList.map(s => <option key={s} value={s}>{s}</option>)}
@@ -492,13 +528,13 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
             </div>
             {adaHarga ? (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">{LABEL_NILAI[jenis]} (Rp)</label>
+                <label className="block text-xs text-gray-500 mb-1">{LABEL_NILAI[jenis]} (Rp) <Wajib /></label>
                 <input type="number" min={0} step="any" className="select-filter w-full"
                   value={harga} onChange={e => setHarga(e.target.value)} />
               </div>
             ) : (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Kuantitas Standar</label>
+                <label className="block text-xs text-gray-500 mb-1">Kuantitas Standar <Wajib /></label>
                 <input type="number" min={0} step="any" className="select-filter w-full"
                   value={kuantitas} onChange={e => setKuantitas(e.target.value)} />
               </div>
@@ -507,7 +543,7 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
 
           {sbsk && (
             <div className="max-w-sm">
-              <label className="block text-xs text-gray-500 mb-1">Satuan Pengukur</label>
+              <label className="block text-xs text-gray-500 mb-1">Satuan Pengukur <Wajib /></label>
               <input className="select-filter w-full" value={satuanPengukur}
                 onChange={e => setSatuanPengukur(e.target.value)}
                 placeholder="mis. per pegawai, per ruang kerja, per unit kendaraan" />
@@ -520,7 +556,8 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
           {adaRek && (
             <div>
               <label className="block text-xs text-gray-500 mb-1">
-                Kode Rekening Belanja <span className="text-gray-400">(boleh lebih dari satu)</span>
+                Kode Rekening Belanja <Wajib />
+                <span className="text-gray-400"> — minimal yang paling atas, boleh lebih dari satu</span>
               </label>
               <div className="space-y-2">
                 {rekening.map((k, i) => (
@@ -533,26 +570,37 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
 
           {adaTkdn && (
             <div className="max-w-xs">
-              <label className="block text-xs text-gray-500 mb-1">TKDN (%)</label>
+              <label className="block text-xs text-gray-500 mb-1">TKDN (%) <Wajib /></label>
               <input type="number" min={0} max={100} step="any" className="select-filter w-full"
                 value={tkdn} onChange={e => setTkdn(e.target.value)}
-                placeholder="0 – 100, kosongkan bila tak diketahui" />
+                placeholder="0 – 100" />
             </div>
           )}
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
+            <label className="block text-xs text-gray-500 mb-1">Keterangan <Wajib /></label>
             <input className="select-filter w-full" value={keterangan} onChange={e => setKeterangan(e.target.value)} />
           </div>
 
           {err && <p className="text-sm text-red-600">{err}</p>}
         </div>
 
-        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white">
-          <button className="btn-secondary" onClick={onTutup} disabled={saving}>Batal</button>
-          <button className="btn-primary" onClick={simpan} disabled={saving}>
-            {saving ? 'Menyimpan...' : editing ? 'Simpan Perubahan' : 'Tambah'}
-          </button>
+        <div className="px-5 py-4 border-t border-gray-100 sticky bottom-0 bg-white">
+          {/* Daftar kekurangan ditampilkan SEBELUM tombol ditekan. Tombolnya
+              sendiri sengaja TIDAK dimatikan: tombol mati tanpa keterangan
+              adalah bentuk kegagalan senyap — operator menekan, tak terjadi
+              apa-apa, dan ia tak punya cara tahu kenapa. */}
+          {masalah.length > 0 && (
+            <ul className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-0.5">
+              {masalah.map(t => <li key={t}>• {t}</li>)}
+            </ul>
+          )}
+          <div className="flex justify-end gap-2">
+            <button className="btn-secondary" onClick={onTutup} disabled={saving}>Batal</button>
+            <button className="btn-primary" onClick={simpan} disabled={saving}>
+              {saving ? 'Menyimpan...' : editing ? 'Simpan Perubahan' : 'Tambah'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

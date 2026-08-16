@@ -1372,6 +1372,46 @@ Usulan · Validasi · Pelaporan.
   status — satu-satunya jalan masuk ke `rkbmd_standar` adalah
   `fn_standar_usulan_setujui`, jadi isinya **dengan sendirinya** tervalidasi.
 
+### Usulan Standar Harga: SEMUA kolom wajib (user 2026-08-16)
+
+Baris usulan wajib lengkap — **satu-satunya kelonggaran: kode rekening cukup
+slot PALING ATAS**, sisanya memang untuk barang yang dibebankan ke lebih dari
+satu rekening. Alasannya isi `rkbmd_standar` jadi **acuan bersama se-kabupaten**
+yang dipakai SKPD lain menyusun anggaran; baris setengah isi di situ merugikan
+orang yang tak pernah mengetiknya.
+
+- Aturannya SATU tempat: `validasiItemUsulan()` di **lib/rkbmdStandarUsulan.ts**,
+  dikunci lib/rkbmdStandarUsulan.test.ts. Dipakai **tiga** titik: pop-up
+  Tambah/Ubah baris, **Import Excel**, dan penjaga tombol **Ajukan**.
+  ⚠️ Memasangnya cuma di pop-up percuma — satu berkas impor bisa menyelundupkan
+  ratusan baris setengah isi ke usulan yang sama. Aturan yang bisa dipintas
+  lewat pintu sebelah bukan aturan.
+- ⚠️ **BUKAN penegak terakhir & sengaja lebih ketat dari DB.**
+  `fn_standar_usulan_item_guard` (migrasi 20260813_03) menjaga *bentuk yang sah*
+  per jenis (mis. asb/sbu WAJIB berkode kosong); yang di sini *kelengkapan
+  isian*. Melonggarkan yang di sini aman; melanggar yang di DB tetap ditolak.
+  Tak ada migrasi untuk perubahan ini.
+- **`pakaiMerk` = ssh & hspk saja** (predikat baru, sebaris dengan
+  `pakaiKodeBarang`/`pakaiHarga`/`pakaiTkdn`/`pakaiRekening`). ASB itu komponen
+  belanja kegiatan & SBU honorarium/perjalanan dinas — keduanya bukan barang,
+  jadi kolom Merk/Tipe **dihilangkan** di sana alih-alih diwajibkan; SBSK
+  menyatakan BERAPA BANYAK, bukan barang merk apa. Sama persis dengan kolom yang
+  memang sudah ikut di format import. Akibatnya aturannya bisa dibaca sederhana:
+  **setiap kolom yang TAMPIL itu wajib.**
+- **TKDN kini wajib** (dulu "kosongkan bila tak diketahui") dan **harga harus
+  > 0** (dulu ≥ 0) — standar harga bernilai nol sama saja belum diisi.
+- `LABEL_NAMA`/`LABEL_NILAI` **pindah** dari StandarUsulan.tsx ke lib supaya
+  pesan validasinya menyebut nama kolom yang sama dengan yang di layar.
+- **Tombol Ajukan sengaja TIDAK dimatikan** saat ada baris cacat: ia menolak
+  berikut ALASAN & menyebut baris mana. Tombol mati tanpa keterangan adalah
+  kegagalan senyap — operator menekan, tak terjadi apa-apa, dan tak punya cara
+  tahu kenapa. Yang tetap dimatikan cuma "belum ada baris sama sekali", yang
+  sudah jelas dari layar.
+- Baris belum lengkap ditandai **⚠ + latar amber di tabel** berikut daftar
+  kekurangannya, karena baris bisa masuk lewat Import (tak pernah melewati
+  pop-up) — dan pop-up sendiri menampilkan kekurangannya **hidup sambil
+  diketik**, bukan baru saat Simpan ditekan.
+
 ### SATU PINTU MASUK, SATU PINTU KELUAR (migrasi 20260814_01)
 
 User menguji alurnya dari nol, membuka kunci usulan SSH yang sudah ditetapkan —

@@ -43,6 +43,99 @@ export const pakaiKodeBarang = (j: UsulanJenis) => j === 'ssh' || j === 'hspk' |
 export const pakaiHarga      = (j: UsulanJenis) => j !== 'sbsk'
 export const pakaiTkdn       = (j: UsulanJenis) => j === 'ssh' || j === 'hspk'
 export const pakaiRekening   = (j: UsulanJenis) => j !== 'sbsk'
+/** Merk/Tipe hanya untuk jenis yang isinya BARANG NYATA. ASB (komponen belanja
+ *  kegiatan) & SBU (honorarium, perjalanan dinas) tak punya merk, dan SBSK
+ *  menyatakan BERAPA BANYAK per satuan pengukur — bukan barang merk apa.
+ *  Sama persis dengan kolom yang ikut di format import (`cfg.pakaiKodeBarang`
+ *  di STANDAR_CONFIG, yang di sana memang cuma ssh & hspk). */
+export const pakaiMerk       = (j: UsulanJenis) => j === 'ssh' || j === 'hspk'
+
+/** Label kolom nilai per jenis — SBSK bukan uang, jadi menyebutnya "harga"
+ *  akan menyesatkan operator yang mengisinya. */
+export const LABEL_NILAI: Record<UsulanJenis, string> = {
+  ssh: 'Harga Satuan', hspk: 'Harga Satuan',
+  asb: 'Besaran / Pagu Satuan', sbu: 'Besaran Tertinggi',
+  sbsk: 'Kuantitas Standar',
+}
+export const LABEL_NAMA: Record<UsulanJenis, string> = {
+  ssh: 'Spesifikasi Nama Barang', hspk: 'Spesifikasi Nama Barang / Pekerjaan',
+  asb: 'Uraian Komponen Belanja', sbu: 'Uraian Komponen Biaya',
+  sbsk: 'Spesifikasi Barang',
+}
+
+/** Isian satu baris yang hendak diperiksa. Sengaja bentuk polos (bukan
+ *  `UsulanItem`) supaya layar Import — yang barisnya lahir dari sel Excel, bukan
+ *  dari DB — bisa memakai pemeriksa yang SAMA PERSIS. */
+export type IsianItemUsulan = {
+  kode: string | null
+  nama: string
+  merk_tipe: string | null
+  satuan: string | null
+  harga: number | null
+  tkdn: number | null
+  kuantitas_standar: number | null
+  satuan_pengukur: string | null
+  keterangan: string | null
+  rekening: string[]
+}
+
+const kosong = (s: string | null | undefined) => !s || s.trim() === ''
+
+/**
+ * SELURUH kolom yang tampil untuk jenis itu WAJIB diisi (keputusan user
+ * 2026-08-16) — satu-satunya kelonggaran: **kode rekening cukup slot teratas**,
+ * sisanya tetap boleh kosong (form menyediakan 5 slot karena satu barang bisa
+ * dibebankan ke beberapa rekening, bukan karena kelimanya harus terpakai).
+ *
+ * ⚠️ Hidup DI SINI SAJA & dipakai dua pintu masuk: pop-up "Tambah/Ubah baris"
+ * DAN Import Excel. Kalau cuma dipasang di pop-up, satu berkas impor bisa
+ * menyelundupkan ratusan baris setengah isi ke usulan yang sama — aturan yang
+ * bisa dipintas lewat pintu sebelah bukan aturan.
+ *
+ * ⚠️ INI BUKAN penegak terakhir. Bentuk minimum per jenis ditegakkan trigger
+ * `fn_standar_usulan_item_guard` (migrasi 20260813_03) yang sengaja LEBIH
+ * LONGGAR — ia menjaga *bentuk yang sah* (mis. asb/sbu WAJIB berkode kosong),
+ * sedangkan yang di sini *kelengkapan isian*. Melonggarkan yang di sini aman;
+ * melanggar yang di DB tetap ditolak.
+ *
+ * Mengembalikan DAFTAR masalah, bukan satu pesan: layar Import menampilkan
+ * semuanya sekaligus per baris, dan operator yang harus mengunggah ulang lima
+ * kali karena diberi tahu satu-satu akan menyerah di kali ketiga.
+ */
+export function validasiItemUsulan(jenis: UsulanJenis, v: IsianItemUsulan): string[] {
+  const m: string[] = []
+
+  if (pakaiKodeBarang(jenis) && kosong(v.kode)) m.push('Jenis Aset & Kode Barang wajib dipilih')
+  if (kosong(v.nama)) m.push(`${LABEL_NAMA[jenis]} wajib diisi`)
+  if (pakaiMerk(jenis) && kosong(v.merk_tipe)) m.push('Merk / Tipe wajib diisi')
+  if (kosong(v.satuan)) m.push('Satuan wajib dipilih')
+
+  if (pakaiHarga(jenis)) {
+    if (v.harga == null || isNaN(v.harga)) m.push(`${LABEL_NILAI[jenis]} wajib diisi`)
+    else if (v.harga <= 0) m.push(`${LABEL_NILAI[jenis]} harus lebih besar dari 0`)
+  }
+
+  if (jenis === 'sbsk') {
+    if (v.kuantitas_standar == null || isNaN(v.kuantitas_standar)) m.push('Kuantitas Standar wajib diisi')
+    else if (v.kuantitas_standar <= 0) m.push('Kuantitas Standar harus lebih besar dari 0')
+    if (kosong(v.satuan_pengukur)) m.push('Satuan Pengukur wajib diisi (mis. per pegawai, per ruang)')
+  }
+
+  // Kelonggaran yang diminta user: cukup yang PALING ATAS. Slot berikutnya
+  // memang untuk barang yang dibebankan ke lebih dari satu rekening.
+  if (pakaiRekening(jenis) && v.rekening.filter(k => !kosong(k)).length === 0) {
+    m.push('Kode Rekening Belanja wajib diisi minimal satu (kolom paling atas)')
+  }
+
+  if (pakaiTkdn(jenis)) {
+    if (v.tkdn == null || isNaN(v.tkdn)) m.push('TKDN (%) wajib diisi')
+    else if (v.tkdn < 0 || v.tkdn > 100) m.push('TKDN harus antara 0 sampai 100')
+  }
+
+  if (kosong(v.keterangan)) m.push('Keterangan wajib diisi')
+
+  return m
+}
 
 export type UsulanHeader = {
   id: string

@@ -17,7 +17,7 @@ import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import { backdropClose } from '@/components/backdropClose'
 import { STANDAR_CONFIG, SLOT_REKENING, unduhTemplateStandar, type StandarJenis } from '@/lib/rkbmdStandar'
-import { simpanItem } from '@/lib/rkbmdStandarUsulan'
+import { simpanItem, validasiItemUsulan, pakaiMerk } from '@/lib/rkbmdStandarUsulan'
 
 /** Satu baris hasil baca berkas + hasil pemeriksaannya. */
 type Baris = {
@@ -105,7 +105,7 @@ export default function StandarImport({ jenis, tahun, usulanId, nomorBerikut, on
       const alias: Record<string, string[]> = {
         ...(cfg.pakaiKodeBarang ? { kode: ['kodebarang', 'kode'] } : {}),
         nama: [norm(cfg.labelNama), 'namabarang', 'uraian', 'nama'],
-        ...(cfg.pakaiKodeBarang ? { merk: ['merktipe', 'merk', 'merek'] } : {}),
+        ...(pakaiMerk(jenis) ? { merk: ['merktipe', 'merk', 'merek'] } : {}),
         satuan: ['satuan'],
         harga: [norm(cfg.labelHarga), 'hargasatuan', 'harga', 'besaran'],
         ...(cfg.pakaiTkdn ? { tkdn: ['tkdn'] } : {}),
@@ -133,26 +133,38 @@ export default function StandarImport({ jenis, tahun, usulanId, nomorBerikut, on
         const r = grid[i]
         if (!r || r.every(c => String(c ?? '').trim() === '')) continue
 
-        const masalah: string[] = []
         const kode = cfg.pakaiKodeBarang ? sel(r, 'kode') : ''
         const nama = sel(r, 'nama')
+        const tHarga = kol.harga == null ? '' : String(r[kol.harga] ?? '').trim()
         const nHarga = angka(kol.harga == null ? null : r[kol.harga])
         const tTkdn = cfg.pakaiTkdn ? sel(r, 'tkdn') : ''
         const nTkdn = tTkdn === '' ? null : angka(tTkdn)
-
-        if (cfg.pakaiKodeBarang && !kode) masalah.push('Kode Barang kosong')
-        if (!nama) masalah.push(`${cfg.labelNama} kosong`)
-        if (nHarga == null) masalah.push(`${cfg.labelHarga} bukan angka`)
-        else if (nHarga < 0) masalah.push(`${cfg.labelHarga} negatif`)
-        if (tTkdn !== '' && (nTkdn == null || nTkdn < 0 || nTkdn > 100)) masalah.push('TKDN harus 0–100')
-
+        const merk = sel(r, 'merk')
+        const satuan = sel(r, 'satuan')
+        const keterangan = sel(r, 'keterangan')
         const rekening = [...new Set(
           Array.from({ length: SLOT_REKENING }, (_, k) => sel(r, `rek${k}`)).filter(Boolean),
         )]
 
+        // Sel yang BERISI tapi tak terbaca sbg angka dapat pesannya sendiri —
+        // "wajib diisi" akan membingungkan operator yang jelas-jelas mengisinya.
+        const masalah: string[] = []
+        if (tHarga !== '' && nHarga == null) masalah.push(`${cfg.labelHarga} bukan angka`)
+        if (tTkdn !== '' && nTkdn == null) masalah.push('TKDN bukan angka')
+
+        // Kelengkapan isian dipakaikan pemeriksa yang SAMA dengan pop-up
+        // "Tambah baris" (lib/rkbmdStandarUsulan.ts). Kalau aturannya cuma
+        // dipasang di pop-up, satu berkas impor bisa menyelundupkan ratusan
+        // baris setengah isi ke usulan yang sama.
+        masalah.push(...validasiItemUsulan(jenis, {
+          kode: kode || null, nama, merk_tipe: merk || null, satuan: satuan || null,
+          harga: nHarga, tkdn: nTkdn, kuantitas_standar: null, satuan_pengukur: null,
+          keterangan: keterangan || null, rekening,
+        }))
+
         hasil.push({
-          no: i + 1, kode, nama, merk: sel(r, 'merk'), satuan: sel(r, 'satuan'), harga: nHarga ?? 0,
-          tkdn: nTkdn, rekening, keterangan: sel(r, 'keterangan'), masalah,
+          no: i + 1, kode, nama, merk, satuan, harga: nHarga ?? 0,
+          tkdn: nTkdn, rekening, keterangan, masalah: [...new Set(masalah)],
         })
       }
       if (hasil.length === 0) throw new Error('Tidak ada baris isi di bawah judul kolom.')
@@ -226,7 +238,7 @@ export default function StandarImport({ jenis, tahun, usulanId, nomorBerikut, on
             no_urut: nomorBerikut + i,
             kode: cfg.pakaiKodeBarang ? r.kode : null,
             nama: r.nama,
-            merk_tipe: cfg.pakaiKodeBarang ? (r.merk || null) : null,
+            merk_tipe: pakaiMerk(jenis) ? (r.merk || null) : null,
             satuan: r.satuan || null,
             harga: r.harga,
             tkdn: cfg.pakaiTkdn ? r.tkdn : null,
@@ -306,7 +318,7 @@ export default function StandarImport({ jenis, tahun, usulanId, nomorBerikut, on
                       <th className="table-th w-12">Baris</th>
                       {cfg.pakaiKodeBarang && <th className="table-th">Kode Barang</th>}
                       <th className="table-th">{cfg.labelNama}</th>
-                      {cfg.pakaiKodeBarang && <th className="table-th">Merk / Tipe</th>}
+                      {pakaiMerk(jenis) && <th className="table-th">Merk / Tipe</th>}
                       <th className="table-th">Satuan</th>
                       <th className="table-th text-right">{cfg.labelHarga}</th>
                       <th className="table-th">Kode Rekening</th>
@@ -320,7 +332,7 @@ export default function StandarImport({ jenis, tahun, usulanId, nomorBerikut, on
                         <td className="table-td text-xs text-gray-400">{r.no}</td>
                         {cfg.pakaiKodeBarang && <td className="table-td text-xs whitespace-nowrap">{r.kode || '—'}</td>}
                         <td className="table-td text-xs text-gray-800">{r.nama || '—'}</td>
-                        {cfg.pakaiKodeBarang && <td className="table-td text-xs text-gray-500">{r.merk || '—'}</td>}
+                        {pakaiMerk(jenis) && <td className="table-td text-xs text-gray-500">{r.merk || '—'}</td>}
                         <td className="table-td text-xs text-gray-500">{r.satuan || '—'}</td>
                         <td className="table-td text-xs text-right whitespace-nowrap">{r.harga.toLocaleString('id-ID')}</td>
                         <td className="table-td text-xs text-gray-500">{r.rekening.join(', ') || '—'}</td>
