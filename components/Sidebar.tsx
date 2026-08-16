@@ -184,6 +184,11 @@ const adminGroup: NavNode = {
     { type: 'leaf', href: '/dashboard/dokumen-sumber', label: 'Dokumen Sumber' },
     { type: 'leaf', href: '/dashboard/admin/tutup-tahun', label: 'Tutup Tahun' },
     { type: 'leaf', href: '/dashboard/admin/broadcast', label: 'Broadcast' },
+    // Paling bawah, sengaja (permintaan user 2026-08-16): Notes bukan menu
+    // kerja harian. Ia ada di KEDUA grup Admin — siapa pun boleh menulis
+    // masukan; yang membedakan cuma isinya (admin melihat semua SKPD, yang
+    // lain catatannya sendiri), dan itu ditegakkan RLS, bukan oleh menu ini.
+    { type: 'leaf', href: '/dashboard/admin/notes', label: 'Notes' },
   ],
 }
 
@@ -195,6 +200,9 @@ const adminGroupOperator: NavNode = {
     { type: 'leaf', href: '/dashboard/admin/usulan-pengurus', label: 'Usulan Pengurus Barang' },
     { type: 'leaf', href: '/dashboard/admin/kodefikasi', label: 'Kodefikasi BMD' },
     { type: 'leaf', href: '/dashboard/dokumen-sumber', label: 'Dokumen Sumber' },
+    // Sengaja IKUT di sini — inti fiturnya justru operator SKPD yang menulis.
+    // Kalau cuma di grup admin, yang punya masukan tak punya tempat menaruhnya.
+    { type: 'leaf', href: '/dashboard/admin/notes', label: 'Notes' },
   ],
 }
 

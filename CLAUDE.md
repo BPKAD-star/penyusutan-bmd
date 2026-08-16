@@ -1701,6 +1701,42 @@ yang sudah tersusut), lalu seluruh akumulasi awal muncul di baris **Selisih**.
   snapshot 2026. Hanya **Semester I** yang terdampak — Saldo Awal Semester II
   membaca baris engine S1 yang memang ada, jadi tak pernah jatuh ke cadangan.
 
+## Notes — saran & masukan pengguna (migrasi 20260816_01)
+
+Menu Admin → **Notes**, paling bawah (permintaan user 2026-08-16). Tiap user
+menulis saran/masukan tentang aplikasi; admin melihat semuanya jadi satu.
+
+- **TANPA alur ajukan/telaah/setujui** — keputusan user, dan itu bukan
+  penyederhanaan malas: begitu masukan harus "diajukan", orang berhenti
+  mengirimkannya, dan yang paling berguna justru keluhan kecil yang tak akan
+  pernah ditulis kalau harus lewat prosedur.
+- **NON-LEDGER**, pola yang sama dengan KIR (20260727_02): data administratif,
+  bukan peristiwa akuntansi. Karena itu UPDATE/DELETE biasa di sini SAH &
+  aturan append-only `transaksi_bmd` tak dilanggar. **JANGAN** menambahkan jenis
+  ledger `note_*` atau kolom cache di `aset` untuk fitur ini.
+- **Siapa melihat apa (RLS, bukan layar):** admin → seluruh catatan; lainnya →
+  catatannya sendiri. ⚠️ Catatan seorang operator **tidak** terlihat rekan
+  se-SKPD-nya — disengaja, karena masukan sering menyinggung cara kerja unitnya
+  sendiri dan yang bisa dibaca sebelah meja akan ditulis setengah hati. Kalau
+  nanti diminta se-SKPD, yang diubah policy `notes_select`, bukan halamannya.
+- **Menyunting hanya milik sendiri — admin sekalipun tidak.** Catatan orang lain
+  yang bisa diubah admin berhenti jadi masukan yang bisa dipercaya. Admin boleh
+  MENGHAPUS (membersihkan yang sudah ditindaklanjuti), itu beda perkara.
+- **Identitas penulis diisi TRIGGER, bukan diterima dari klien**
+  (`fn_admin_notes_isi` → `auth.uid()`): kalau `author_id`/`skpd_id` boleh
+  dikirim klien, satu orang bisa menulis atas nama SKPD lain dan di layar admin
+  itu tak akan tampak janggal sama sekali.
+- **`penulis` & `skpd_nama` di-SNAPSHOT, bukan di-join saat tampil.** Catatan
+  "dari Kecamatan Kras" harus tetap terbaca begitu walau penulisnya kemudian
+  pindah SKPD — konteks keluhannya melekat pada saat ia menulis. FK-nya
+  `ON DELETE SET NULL` (bukan CASCADE): masukan tetap berguna sesudah akun
+  penulisnya dihapus.
+- Menunya ada di **KEDUA** grup Admin di Sidebar (`adminGroup` &
+  `adminGroupOperator`) — inti fiturnya justru operator SKPD yang menulis; kalau
+  cuma di grup admin, yang punya masukan tak punya tempat menaruhnya.
+- ⚠️ **Deploy-ordering: migrasi 20260816_01 WAJIB jalan SEBELUM deploy kode** —
+  halamannya langsung men-`select` tabel `admin_notes` yang belum ada.
+
 ## Penanda tangan lembar per-SKPD: rangkap & sub-unit (2026-08-16)
 
 Pemilih penanda tangan lembar RKBMD per-SKPD dulu cuma menarik pegawai yang
