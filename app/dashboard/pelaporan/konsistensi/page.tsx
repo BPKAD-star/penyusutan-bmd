@@ -28,6 +28,7 @@ import { assertOk } from '@/shared/db/query'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import { formatRupiah, exportToExcel } from '@/lib/export'
 import { fetchSnapshot, measuresOf, type Snapshot, type Komptabel } from '@/lib/rekon'
+import { rekapPerGolongan, zeroRekap, type RekapRpcRow, type RekapUkuran } from '@/lib/rekapBmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
@@ -53,7 +54,12 @@ type Baris = {
 
 // Agregat fn_rekap_bmd per golongan untuk SATU komptabel. Dipanggil dua kali
 // (intra & ekstra) karena RPC-nya menyaring komptabel, bukan memecahnya.
-type RekapRaw = { golongan: string; perolehan: number; akumulasi: number; nilai_buku_akhir: number }
+//
+// ⚠️ Turunannya WAJIB lewat `rekapPerGolongan` (lib/rekapBmd.ts), bukan dibaca
+// mentah dari RPC. Halaman ini pernah membaca `nilai_buku_akhir` apa adanya —
+// nol untuk golongan yang tak disusutkan — lalu menuduh Tanah & Aset Tetap
+// Lainnya "TIDAK COCOK" sebesar seluruh nilai perolehannya, padahal Laporan BMD
+// yang dibandingkannya menampilkan angka yang benar. Lihat lib/rekapBmd.ts.
 
 export default function UjiKonsistensiPage() {
   const supabase = createClient()
@@ -95,15 +101,7 @@ export default function UjiKonsistensiPage() {
     const data = assertOk(await supabase.rpc('fn_rekap_bmd', {
       p_periode: periode, p_skpd_ids: skpdIds, p_komptabel: komp,
     }), `rekap BMD ${komp} periode ${periode}`)
-    const out = new Map<string, { perolehan: number; akumulasi: number; nilaiBuku: number }>()
-    for (const r of (data || []) as RekapRaw[]) {
-      const c = out.get(r.golongan) ?? { perolehan: 0, akumulasi: 0, nilaiBuku: 0 }
-      c.perolehan += Number(r.perolehan)
-      c.akumulasi += Number(r.akumulasi)
-      c.nilaiBuku += Number(r.nilai_buku_akhir)
-      out.set(r.golongan, c)
-    }
-    return out
+    return rekapPerGolongan((data || []) as RekapRpcRow[])
   }
 
   const jumlahBeda = rows?.filter(r => !r.cocok).length ?? 0
@@ -245,15 +243,14 @@ const tampil = (n: number) => (Math.abs(n) < 0.005 ? '–' : formatRupiah(n))
 // kegagalan yang paling perlu terlihat.
 function susun(
   snap: Snapshot,
-  bmdIntra: Map<string, { perolehan: number; akumulasi: number; nilaiBuku: number }>,
-  bmdEkstra: Map<string, { perolehan: number; akumulasi: number; nilaiBuku: number }>,
+  bmdIntra: Map<string, RekapUkuran>,
+  bmdEkstra: Map<string, RekapUkuran>,
 ): Baris[] {
   const out: Baris[] = []
   for (const g of GOLONGAN_REKAP) {
     for (const komp of ['intra', 'ekstra'] as Komptabel[]) {
       const r = measuresOf(snap, g.kode, komp)
-      const b = (komp === 'intra' ? bmdIntra : bmdEkstra).get(g.kode)
-        ?? { perolehan: 0, akumulasi: 0, nilaiBuku: 0 }
+      const b = (komp === 'intra' ? bmdIntra : bmdEkstra).get(g.kode) ?? zeroRekap()
       const nilai: Record<Ukuran, Sel> = {
         perolehan: { rekon: r.perolehan, bmd: b.perolehan },
         akumulasi: { rekon: r.akumulasi, bmd: b.akumulasi },

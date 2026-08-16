@@ -1661,6 +1661,44 @@ yang sudah tersusut), lalu seluruh akumulasi awal muncul di baris **Selisih**.
   snapshot 2026. Hanya **Semester I** yang terdampak — Saldo Awal Semester II
   membaca baris engine S1 yang memang ada, jadi tak pernah jatuh ke cadangan.
 
+## Uji Konsistensi menuduh Tanah & ATL "TIDAK COCOK" (2026-08-16)
+
+Gejala: Laporan BMD (Model 1, BKAD 2026-S1) menampilkan Nilai Buku Tanah
+Rp49.448.614.813 & Aset Tetap Lainnya Rp13.339.400 — benar. Uji Konsistensi
+periode & SKPD yang sama menampilkan sisi "Laporan BMD"-nya **NOL** untuk kedua
+golongan itu, lalu melaporkan 2 sel ❌ berikut anjuran menahan pengiriman
+laporan. Yang salah justru pengujinya.
+
+- **Sebabnya turunan yang tak dibagi.** `fn_rekap_bmd` mengembalikan
+  `akumulasi`/`beban`/`nilai_buku_akhir` apa adanya dari LEFT JOIN ke
+  `penyusutan_semester` — nol untuk sel tanpa baris engine, dan golongan yang
+  memang **tak pernah disusutkan** (Tanah 1.3.1, ATL 1.3.5, KDP 1.3.6) tak
+  pernah punya baris engine sama sekali. Aturan "tak disusutkan → nilai buku =
+  nilai perolehan" hidup di SISI KLIEN, dan sampai 2026-08-16 ia ditulis ulang
+  di tiap pemakainya: Laporan BMD Model 1 punya versinya, Model 2 punya versi
+  lain (per sel, lewat `hasPeny`), Rekonsiliasi punya versinya sendiri per aset
+  (`nilaiBuku: susut ? p.nilai_buku_akhir : nilai`, lib/rekon.ts) — dan Uji
+  Konsistensi **tak punya sama sekali**. Tak ada satu pun yang error; yang
+  muncul cuma angka yang berbeda.
+- **Obatnya `lib/rekapBmd.ts`** (`pakaiHasilEngine` · `nilaiBukuSel` ·
+  `rekapPerGolongan`), dipakai Laporan BMD Model 1 & 2 DAN Uji Konsistensi.
+  Daftar golongan disusutkan diturunkan dari `GOLONGAN_REKAP`, bukan diketik
+  ulang. Dikunci lib/rekapBmd.test.ts. **Jangan baca `nilai_buku_akhir` mentah
+  dari RPC di pemakai baru.**
+- **Cadangannya kini PER BARIS RPC (per skpd × golongan), bukan sesudah dijumlah
+  per golongan** — ini ikut memperbaiki cacat kedua yang belum pernah kelihatan:
+  Model 1 lama menjumlah nilai buku HANYA dari baris ber-`count_peny>0`, jadi
+  kalau dalam satu golongan ada SKPD yang belum dihitung engine, nilai
+  perolehan SKPD itu hilang total dari kolom Nilai Buku & identitas
+  `perolehan − akumulasi = nilai buku` patah tanpa satu pun pesan. Model 2 sudah
+  per sel, jadi dua model di halaman yang sama diam-diam bisa beda angka.
+- ⚠️ Aturan kembar di `fetchSnapshotPositions` & `fetchPenyusutanAset`
+  (lib/rekon.ts) **tak bisa** ikut disatukan — keduanya bekerja per ASET dari
+  `penyusutan_semester`, bukan per sel hasil agregasi SQL. Yang menjaga keduanya
+  tetap sepakat justru halaman Uji Konsistensi itu sendiri; itu sebabnya
+  halaman itu tak boleh punya turunan sendiri.
+- **Tak ada migrasi.** Murni turunan di klien; `fn_rekap_bmd` tidak disentuh.
+
 ## Rekonsiliasi BMD — tampilan & cetak (2026-08-11)
 
 - **Nol ditampilkan `–`, bukan `0`** (permintaan user): di lembar seluas ini

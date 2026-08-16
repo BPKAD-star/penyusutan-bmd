@@ -20,6 +20,7 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
 import { fetchReklasEvents, kodePada, JENIS_REKLAS_KODE } from '@/lib/reklasKode'
+import { rekapPerGolongan, nilaiBukuSel, zeroRekap, type RekapRpcRow } from '@/lib/rekapBmd'
 import { assertOk } from '@/shared/db/query'
 
 // ── Model 3: jenis ledger per kategori Penambahan/Pengurangan (nilai
@@ -132,8 +133,9 @@ export default function LaporanBmdPage() {
   const periodeMutasi = smt === 'TH' ? [`${tahun}-S1`, `${tahun}-S2`] : [periode]
   const labelPeriode = smt === 'TH' ? `${tahun} (setahun)` : periode
 
-  const rootId = (skpdId: number) => rootOf(skpdId)?.id ?? skpdId
-  const mtxKey = (skpdId: number, g: string) => `${rootId(skpdId)}|${g}`
+  // (`rootId`/`mtxKey` DIHAPUS bersama blok rekonsiliasi nilai buku per sel —
+  // aturannya kini per BARIS RPC lewat `nilaiBukuSel`, jadi tak ada lagi yang
+  // perlu bertanya "sel root ini punya hasil engine atau tidak" belakangan.)
 
   // Ambil/siapkan sel matriks (skpd root × golongan) sekali.
   function ensureCell(mtx: Record<number, MatrixRow>, skpdId: number, g: string): MatrixCell {
@@ -148,64 +150,43 @@ export default function LaporanBmdPage() {
     setLoading(true); setRows([]); setErr('')
     try {
     const mtx: Record<number, MatrixRow> = {}
-    const disusutkanKode = new Set(GOLONGAN_REKAP.filter(g => g.disusutkan).map(g => g.kode))
-    const hasPeny = new Set<string>() // `${rid}|${golongan}` yg punya hasil engine
-    const perolehan: Record<string, number> = {}
-    const kuantitas: Record<string, number> = {}
-    const peny: Record<string, { akumulasi: number; beban: number; nilaiBuku: number }> = {}
 
     // Agregasi (perolehan + penyusutan engine) per (skpd_id, golongan) dilakukan
     // di DB via RPC fn_rekap_bmd (satu query: aset LIVE ⋈ penyusutan_semester,
     // period-aware & komptabel di SQL) — BUKAN lagi paging seluruh aset +
     // penyusutan_semester ke browser (ratusan request se-kabupaten sejak import
-    // 218rb baris P&M). count_peny > 0 = sel punya hasil engine (hasPeny). Semua
-    // rollup SKPD induk + rekonsiliasi nilai buku di bawah TETAP di client.
+    // 218rb baris P&M). Rollup SKPD induk TETAP di client.
+    //
+    // ⚠️ Aturan nilai buku (golongan tak disusutkan / sel tanpa hasil engine →
+    // nilai buku = nilai perolehan) hidup di `lib/rekapBmd.ts`, SATU tempat.
+    // Dulu ia ditulis ulang di sini untuk Model 1 & Model 2 dengan cara yang
+    // sedikit berbeda, dan halaman Uji Konsistensi tak menulisnya sama sekali —
+    // yang bikin Tanah & ATL dilaporkan "TIDAK COCOK" sebesar seluruh nilai
+    // perolehannya (2026-08-16). Jangan disalin balik ke sini.
     const data = assertOk(await supabase.rpc('fn_rekap_bmd', {
       p_periode: periode,
       p_skpd_ids: org.descendantIds ?? null,
       p_komptabel: komptabel || null,
     }), `rekap BMD periode ${periode}`)
-    for (const r of (data || []) as { skpd_id: number; golongan: string; kuantitas: number; perolehan: number; akumulasi: number; beban: number; nilai_buku_akhir: number; count_peny: number }[]) {
-      const g = r.golongan
-      const v = Number(r.perolehan)
-      perolehan[g] = (perolehan[g] || 0) + v
-      kuantitas[g] = (kuantitas[g] || 0) + Number(r.kuantitas)
-      const c = ensureCell(mtx, r.skpd_id, g)
-      c.perolehan += v
-      // akumulasi/beban/nilai_buku_akhir sudah 0 utk sel tanpa hasil engine
-      // (LEFT JOIN) — akumulasi tanpa syarat aman. hasPeny dari count_peny.
+    const raw = (data || []) as RekapRpcRow[]
+    for (const r of raw) {
+      const c = ensureCell(mtx, r.skpd_id, r.golongan)
+      c.perolehan += Number(r.perolehan)
+      // akumulasi/beban sudah 0 utk sel tanpa hasil engine (LEFT JOIN) — aman
+      // dijumlah tanpa syarat. Yang butuh cadangan cuma nilai buku.
       c.akumulasi += Number(r.akumulasi)
       c.beban += Number(r.beban)
-      c.nilaiBuku += Number(r.nilai_buku_akhir)
-      if (Number(r.count_peny) > 0) {
-        peny[g] ??= { akumulasi: 0, beban: 0, nilaiBuku: 0 }
-        peny[g].akumulasi += Number(r.akumulasi)
-        peny[g].beban += Number(r.beban)
-        peny[g].nilaiBuku += Number(r.nilai_buku_akhir)
-        hasPeny.add(mtxKey(r.skpd_id, g))
-      }
+      c.nilaiBuku += nilaiBukuSel(r)
     }
 
-    // Rekonsiliasi nilai buku sel: golongan disusutkan dgn hasil engine → pakai
-    // akumulasi engine; selain itu (non-disusutkan / belum ada engine) → = perolehan.
-    for (const row of Object.values(mtx)) {
-      for (const g of GOLONGAN_REKAP) {
-        const c = row.cells[g.kode]
-        if (!c) continue
-        if (!(disusutkanKode.has(g.kode) && hasPeny.has(mtxKey(row.skpdId, g.kode)))) {
-          c.nilaiBuku = c.perolehan
-        }
-      }
-    }
-
+    const perGol = rekapPerGolongan(raw)
     setRows(GOLONGAN_REKAP.map(g => {
-      const hp = perolehan[g.kode] || 0
-      const kt = kuantitas[g.kode] || 0
-      const p = peny[g.kode]
-      if (g.disusutkan && p) {
-        return { kode: g.kode, uraian: g.uraian, disusutkan: true, kuantitas: kt, perolehan: hp, akumulasi: p.akumulasi, beban: p.beban, nilaiBuku: p.nilaiBuku }
+      const u = perGol.get(g.kode) ?? zeroRekap()
+      return {
+        kode: g.kode, uraian: g.uraian, disusutkan: g.disusutkan,
+        kuantitas: u.kuantitas, perolehan: u.perolehan,
+        akumulasi: u.akumulasi, beban: u.beban, nilaiBuku: u.nilaiBuku,
       }
-      return { kode: g.kode, uraian: g.uraian, disusutkan: g.disusutkan, kuantitas: kt, perolehan: hp, akumulasi: 0, beban: 0, nilaiBuku: hp }
     }))
     setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
     } catch (e) {
