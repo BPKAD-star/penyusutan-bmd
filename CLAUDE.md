@@ -1661,6 +1661,69 @@ yang sudah tersusut), lalu seluruh akumulasi awal muncul di baris **Selisih**.
   snapshot 2026. Hanya **Semester I** yang terdampak — Saldo Awal Semester II
   membaca baris engine S1 yang memang ada, jadi tak pernah jatuh ke cadangan.
 
+## Penanda tangan lembar per-SKPD: rangkap & sub-unit (2026-08-16)
+
+Pemilih penanda tangan lembar RKBMD per-SKPD dulu cuma menarik pegawai yang
+**SKPD pokoknya PERSIS** SKPD dokumen (`.in('skpd_id', [sid])`). Dua akibatnya,
+dua-duanya berakhir di blok tanda tangan bertitik-titik:
+
+- **Sub-unit tak punya Kepala sendiri.** Dari **816 SKPD hanya 57** yang punya
+  pegawai berjabatan "Kepala", sementara **756 di antaranya sub-SKPD** (diukur
+  2026-08-16). Jadi lembar UPTD/Bidang/Sub-OPD nyaris selalu tak menemukan
+  siapa pun.
+- **Kepala rangkap tak terbaca sama sekali.** `admin_pegawai_penugasan` sudah
+  lama merekam kepala yang mengampu SKPD kedua (10 baris aktif), tapi
+  SATU-SATUNYA pembacanya tampilan Daftar Pegawai — tak ada satu pun lembar
+  cetak yang melihatnya. Contoh nyata: Dinas Perumahan & Kawasan Permukiman
+  cuma menawarkan dua staf, dan tebakan "Kepala" tak menemukan apa-apa,
+  padahal kepalanya Kadis PU yang merangkap di situ.
+
+**Aturannya (keputusan user 2026-08-16): definitif di SKPD pokok, Plt. di SKPD
+rangkap, berlaku turun sampai sub-unit yang dia ampu di kedua-duanya.**
+
+- Disusun `fetchCalonTtd` (**lib/penandaTangan.ts**), tiga jalur yang sengaja
+  TIDAK sama luasnya: `sendiri` = SELURUH pegawai SKPD itu (perilaku lama —
+  operator kadang menunjuk pejabat yang jabatannya tak memuat kata "Kepala");
+  `rangkap` = pemegang penugasan AKTIF di SKPD itu atau induknya, disarankan
+  **Plt.**; `induk` = pegawai SKPD induk yang berjabatan "Kepala", definitif.
+- ⚠️ Jalur `induk` **WAJIB tetap disaring ke yang berjabatan "Kepala"**. Tanpa
+  saringan itu, lembar satu UPTD menawarkan seluruh pegawai Dinas Pendidikan
+  berikut 694 unit di bawahnya. Terukur sesudah perbaikan: kandidat terbanyak
+  **6 nama**, rata-rata 1,11, dan **0 dari 816 SKPD yang kehabisan kandidat**.
+- **`pltDisarankan` itu SARAN, bukan keputusan.** Status Definitif/Plt tidak ada
+  di `admin_pegawai` maupun di mana pun, jadi yang menentukan tetap operator
+  lewat radio di pop-up; mengganti orang di dropdown ikut memindahkan centangnya
+  (kalau tidak, "Plt." menempel ke kepala definitif hanya karena pilihan
+  sebelumnya orang yang merangkap).
+- **Tak ada migrasi**: `pegawai_select` & `pegawai_penugasan_select` dua-duanya
+  ber-`qual = true` (diverifikasi ke `pg_policies` 2026-08-16), jadi halaman
+  cetak boleh membacanya apa adanya.
+- Lembar **se-Kabupaten tidak ikut** — penanda tangannya Pengelola Barang yang
+  memang dipilih bebas dari seluruh `admin_pegawai` (keputusan 2026-08-13).
+- Dikunci lib/penandaTangan.test.ts. ⚠️ Kalau nanti ada lembar cetak per-SKPD
+  BARU yang butuh kepala kantor, pakai `fetchCalonTtd` — jangan query
+  `admin_pegawai` ber-`.eq('skpd_id')` lagi, itu persis cacat yang ditutup di
+  sini.
+
+## Kotak Cari di Daftar Pegawai & Daftar User (2026-08-16)
+
+Kata kuncinya **nama · NIP · SKPD** (permintaan user), pencocoknya satu tempat:
+`cocokCari` di **lib/cari.ts**, dikunci lib/cari.test.ts. Tiga hal yang
+disengaja & jangan dibalik:
+
+- **AND antar kata, bukan OR** — mengetik lebih spesifik harus MEMPERSEMPIT.
+- **Cadangan NIP berambang 4 angka**: operator menyalin NIP berikut pemisah
+  ("19730502 200312 1 006"), sementara di DB ia 18 angka rapat. Ambangnya
+  mencegah ketikan angka pendek mencocoki hampir semua baris.
+- **Selalu tampilkan "N dari M"** saat menyaring (`CariBox`) & bedakan pesan
+  "belum ada" dari "tak ada yang cocok" — daftar tersaring yang tak berketerangan
+  terbaca sebagai "pegawainya belum terdaftar", lalu ditambahkan lagi.
+
+Di Daftar Pegawai, kata kunci SKPD **termasuk SKPD rangkap**: mencari "Dinas
+Perumahan" harus menemukan kepala dinas yang merangkap di situ. Menyaring di
+memori sah di sini (ratusan baris, sudah ditarik semua); **jangan tiru polanya
+untuk daftar beraset** — di sana paginasi wajib di server.
+
 ## Uji Konsistensi menuduh Tanah & ATL "TIDAK COCOK" (2026-08-16)
 
 Gejala: Laporan BMD (Model 1, BKAD 2026-S1) menampilkan Nilai Buku Tanah

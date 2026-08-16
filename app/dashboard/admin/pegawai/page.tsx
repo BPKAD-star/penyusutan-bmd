@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import PenugasanRangkapModal, { type PegawaiRingkas, type PenugasanRangkap } from '@/components/admin/PenugasanRangkapModal'
+import CariBox from '@/components/admin/CariBox'
+import { cocokCari } from '@/lib/cari'
 import { jkDariNip } from '@/lib/usulanPengurus'
 
 type Pegawai = {
@@ -169,6 +171,8 @@ export default function AdminPegawaiPage() {
   const [rangkapMap, setRangkapMap] = useState<Map<string, PenugasanRangkap[]>>(new Map())
   const [rangkapPegawai, setRangkapPegawai] = useState<PegawaiRingkas | null>(null)
 
+  const [cari, setCari] = useState('')
+
   async function load() {
     const { data } = await supabase.from('admin_pegawai').select('*,skpd:admin_skpd(nama)').order('nama')
     setList((data as never as Pegawai[]) || [])
@@ -224,6 +228,18 @@ export default function AdminPegawaiPage() {
       return a.nama.localeCompare(b.nama)
     })
   }, [list, skpdOrder])
+
+  // Hasil saring kotak Cari. Kata kuncinya nama · NIP · SKPD — dan SKPD di sini
+  // termasuk **SKPD rangkap**, bukan cuma penugasan pokoknya: mencari "Dinas
+  // Perumahan" harus menemukan kepala dinas yang merangkap di situ, kalau tidak
+  // operator menyimpulkan SKPD itu tak punya Pengguna Barang.
+  const tampilList = useMemo(
+    () => sortedList.filter(p => cocokCari(cari, [
+      p.nama, p.nip, p.skpd?.nama,
+      ...(rangkapMap.get(p.id) || []).map(r => r.skpd?.nama),
+    ])),
+    [sortedList, cari, rangkapMap]
+  )
 
   useEffect(() => { load(); loadSkpdOrder(); loadRangkap() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -410,7 +426,9 @@ export default function AdminPegawaiPage() {
 
   return (
     <FormShell judul="Daftar Pegawai" deskripsi={deskripsiStat} msg={msg}>
-      <div className="flex justify-end gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4">
+        <CariBox nilai={cari} onChange={setCari} jumlah={tampilList.length} total={sortedList.length}
+          satuan="pegawai" placeholder="Cari nama, NIP, atau SKPD..." />
         <button
           onClick={() => { setShowImport(v => !v); if (showForm) closeForm() }}
           className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50"
@@ -592,9 +610,13 @@ export default function AdminPegawaiPage() {
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
-              ) : sortedList.length === 0 ? (
-                <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">Belum ada pegawai.</td></tr>
-              ) : sortedList.map(p => (
+              ) : tampilList.length === 0 ? (
+                <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">
+                  {/* Dibedakan: "belum ada" vs "tak ada yang cocok" — kalau
+                      disamakan, operator mengira datanya hilang. */}
+                  {sortedList.length === 0 ? 'Belum ada pegawai.' : `Tidak ada pegawai yang cocok dengan "${cari}".`}
+                </td></tr>
+              ) : tampilList.map(p => (
                 <tr key={p.id}>
                   <td className="table-td text-xs text-gray-500 align-top">
                     <div className="whitespace-nowrap">{p.skpd?.nama || '—'}</div>

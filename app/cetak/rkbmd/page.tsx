@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
 import { RKBMD_JENIS, nilaiItemRkbmd, type RkbmdPaket } from '@/lib/rkbmd'
+import { fetchCalonTtd, calonTtdAwal, labelAsalTtd, type CalonTtd } from '@/lib/penandaTangan'
 
 const KABUPATEN = 'Kediri'
 const JENIS_LABEL: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j => [j.key, j.label]))
@@ -93,9 +94,6 @@ type Dok = {
 type Lembar = {
   dok: Dok
   skpd: SkpdRow | null
-  /** Tebakan awal penanda tangan (pegawai SKPD itu yang jabatannya memuat
-   *  "Kepala") — kini cuma PILIHAN AWAL di pop-up, bukan lagi keputusan akhir. */
-  penanda: Pegawai | null
   pakets: RkbmdPaket[]
   items: Item[]
 }
@@ -185,7 +183,11 @@ export default function CetakRkbmdPage() {
   // `plt` menentukan sebutannya: "Kepala X" vs "Plt. Kepala X" (permintaan user
   // 2026-08-13). Pilihannya wajib dibuat SEBELUM lembarnya dicetak, jadi
   // pop-upnya terbuka sendiri begitu halaman selesai memuat.
-  const [pegawaiSkpd, setPegawaiSkpd] = useState<Pegawai[]>([])
+  // ⚠️ Sejak 2026-08-16 isinya BUKAN lagi "pegawai SKPD ini" saja, melainkan
+  // calon penanda tangan yang SAH untuk lembar ini: pegawai SKPD itu sendiri +
+  // pemegang penugasan RANGKAP (→ Plt.) + Kepala SKPD INDUK-nya. Aturannya di
+  // lib/penandaTangan.ts — jangan dikembalikan jadi satu query `.eq('skpd_id')`.
+  const [pegawaiSkpd, setPegawaiSkpd] = useState<CalonTtd[]>([])
   const [ttdSkpdId, setTtdSkpdId] = useState('')
   const [plt, setPlt] = useState(false)
   const [tanyaTtd, setTanyaTtd] = useState(false)
@@ -277,31 +279,13 @@ export default function CetakRkbmdPage() {
       }
       const skpdById = new Map(rows.map(s => [s.id, s]))
 
-      // Pegawai SKPD dokumen — dipakai dua-duanya: menebak KEPALA kantor sbg
-      // pilihan awal, DAN mengisi daftar pilihan di pop-up penanda tangan.
-      // Tebakannya lewat `jabatan` yang memuat kata "Kepala", sengaja bukan
-      // menebak nilai `role_bmd`. Tebakan yang meleset kini tidak lagi berakhir
-      // di blok titik-titik: operator tinggal memilih sendiri di pop-up.
-      const skpdIds = [...new Set(doks.map(d => d.skpd_id))]
-      const pegawaiBySkpd = new Map<number, Pegawai[]>()
-      const penandaBySkpd = new Map<number, Pegawai>()
-      for (let i = 0; i < skpdIds.length; i += 200) {
-        const { data: pgw } = await supabase.from('admin_pegawai')
-          .select('id,nama,nip,jabatan,skpd_id').in('skpd_id', skpdIds.slice(i, i + 200)).order('nama')
-        for (const g of (pgw || []) as Pegawai[]) {
-          if (g.skpd_id == null) continue
-          const arr = pegawaiBySkpd.get(g.skpd_id) || []
-          arr.push(g); pegawaiBySkpd.set(g.skpd_id, arr)
-          if (!penandaBySkpd.has(g.skpd_id) && (g.jabatan || '').toLowerCase().includes('kepala')) {
-            penandaBySkpd.set(g.skpd_id, g)
-          }
-        }
-      }
+      // (Daftar calon penanda tangan per-SKPD dipindah ke cabang `else` di
+      // bawah — ia butuh rantai induk & penugasan rangkap, dan mode
+      // se-kabupaten tak memakainya sama sekali.)
 
       const out: Lembar[] = doks.map(d => ({
         dok: d,
         skpd: skpdById.get(d.skpd_id) || null,
-        penanda: penandaBySkpd.get(d.skpd_id) || null,
         pakets: pakets.filter(x => x.rkbmd_id === d.id),
         items: items.filter(x => x.rkbmd_id === d.id),
       }))
@@ -316,8 +300,8 @@ export default function CetakRkbmdPage() {
 
       // Daftar penanda tangan. Se-kabupaten menariknya SE-PEMDA (yang meneken
       // rekap itu Pengelola Barang, bisa dari SKPD mana pun) — 136 baris per
-      // 2026-08-13, cukup sekali tarik tanpa paginasi. Per-SKPD cukup pegawai
-      // SKPD dokumen itu, yang sudah ditarik di atas.
+      // 2026-08-13, cukup sekali tarik tanpa paginasi. Per-SKPD disusun
+      // `fetchCalonTtd` (SKPD itu + rangkap + induk) — lihat cabang `else`.
       if (!id) {
         setSekab({ tahun: Number(tahun), jenis: jenisQ!, versi: versiQ })
         // Tuple ditulis eksplisit: tanpa itu `.map()` menyimpulkan
@@ -332,13 +316,29 @@ export default function CetakRkbmdPage() {
         // Per-SKPD: `?id=` selalu satu dokumen, jadi satu SKPD & satu pilihan.
         const l = out[0]
         const sid = l.dok.skpd_id
-        setPegawaiSkpd(pegawaiBySkpd.get(sid) || [])
+        // Calon penanda tangan = pegawai SKPD ini + pemegang RANGKAP (Plt.) +
+        // Kepala SKPD INDUK. Melempar kalau gagal — daftar yang diam-diam kosong
+        // terbaca sebagai "SKPD ini tak punya pejabat" (lihat lib/penandaTangan.ts).
+        let calon: CalonTtd[] = []
+        try {
+          calon = await fetchCalonTtd(supabase, sid,
+            new Map(rows.map(s => [s.id, { id: s.id, nama: s.nama, parent_id: s.parent_id }])))
+        } catch (e) {
+          setErr(`gagal menyusun daftar penanda tangan: ${e instanceof Error ? e.message : String(e)}`)
+          setLoading(false); return
+        }
+        setPegawaiSkpd(calon)
         // Urutan sumber pilihan awal: URL (dipaksa pemanggil) → pilihan yang
-        // tersimpan untuk SKPD ini → tebakan "Kepala". Pop-upnya tetap terbuka
-        // supaya operator melihat & mengiyakan apa yang akan tercetak.
+        // tersimpan untuk SKPD ini → saran `calonTtdAwal`. Pop-upnya tetap
+        // terbuka supaya operator melihat & mengiyakan apa yang akan tercetak.
         const tsimpan = bacaTtdTersimpan(sid)
-        setTtdSkpdId(p.get('ttd') || tsimpan?.id || (l.penanda ? String(l.penanda.id) : ''))
-        setPlt(p.get('plt') === '1' || p.get('plt') === 'true' || !!tsimpan?.plt)
+        const saran = calonTtdAwal(calon)
+        const idAwal = p.get('ttd') || tsimpan?.id || (saran ? String(saran.id) : '')
+        setTtdSkpdId(idAwal)
+        // Plt. dari URL/simpanan kalau ada; kalau jatuh ke saran, ikut saran
+        // pemegang rangkap. Radio-nya tetap bisa diubah operator.
+        const pltTersimpan = p.get('plt') === '1' || p.get('plt') === 'true' || !!tsimpan?.plt
+        setPlt(pltTersimpan || (!p.get('ttd') && !tsimpan?.id && !!saran?.pltDisarankan))
         setTanyaTtd(true)
       }
       setLembar(out)
@@ -472,7 +472,7 @@ export default function CetakRkbmdPage() {
 // persis yang tercetak di kertas.
 function TtdModal({ namaSkpd, pegawai, nilai, onPilih, onBatal }: {
   namaSkpd: string
-  pegawai: Pegawai[]
+  pegawai: CalonTtd[]
   nilai: { id: string; plt: boolean }
   onPilih: (v: { id: string; plt: boolean }) => void
   onBatal: () => void
@@ -480,6 +480,17 @@ function TtdModal({ namaSkpd, pegawai, nilai, onPilih, onBatal }: {
   const [id, setId] = useState(nilai.id)
   const [plt, setPlt] = useState(nilai.plt)
   const dipilih = pegawai.find(g => String(g.id) === id) || null
+
+  // Ganti orang → centang Definitif/Plt IKUT saran calon itu. Pemegang rangkap
+  // hampir selalu Plt. dan pejabat sendiri/induk hampir selalu definitif, jadi
+  // membiarkan centang lama menempel bikin lembarnya tercetak "Plt." untuk
+  // kepala definitif hanya karena sebelumnya sempat memilih yang merangkap.
+  // Tetap bisa dikoreksi sesudahnya — radionya tidak dikunci.
+  function pilihOrang(v: string) {
+    setId(v)
+    const c = pegawai.find(g => String(g.id) === v)
+    if (c) setPlt(c.pltDisarankan)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 no-print">
@@ -492,18 +503,25 @@ function TtdModal({ namaSkpd, pegawai, nilai, onPilih, onBatal }: {
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Nama penanda tangan</label>
-            <select className="select-filter w-full" value={id} onChange={e => setId(e.target.value)}>
+            <select className="select-filter w-full" value={id} onChange={e => pilihOrang(e.target.value)}>
               <option value="">— belum dipilih (dibiarkan bertitik-titik) —</option>
               {pegawai.map(g => (
                 <option key={String(g.id)} value={String(g.id)}>
-                  {g.nama}{g.jabatan ? ` — ${g.jabatan}` : ''}
+                  {g.nama}{g.jabatan ? ` — ${g.jabatan}` : ''}{labelAsalTtd(g)}
                 </option>
               ))}
             </select>
+            {dipilih && dipilih.sumber !== 'sendiri' && (
+              <p className="text-xs text-gray-500 mt-1">
+                {dipilih.sumber === 'rangkap'
+                  ? <>Pejabat ini <b>merangkap</b> di sini; jabatan definitifnya di {dipilih.asal || 'SKPD lain'} — karena itu status di bawah disarankan <b>Plt.</b></>
+                  : <>Pejabat <b>SKPD induk</b> ({dipilih.asal || '—'}); unit ini tidak punya Kepala sendiri.</>}
+              </p>
+            )}
             {pegawai.length === 0 && (
               <p className="text-xs text-amber-600 mt-1">
-                Belum ada pegawai terdaftar di SKPD ini. Lembarnya tetap bisa dicetak — blok tanda
-                tangan dibiarkan bertitik-titik untuk ditulis tangan.
+                Belum ada pegawai terdaftar di SKPD ini maupun di SKPD induknya. Lembarnya tetap bisa
+                dicetak — blok tanda tangan dibiarkan bertitik-titik untuk ditulis tangan.
               </p>
             )}
           </div>

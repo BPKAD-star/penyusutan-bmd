@@ -1,7 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ROLE_LABEL, ROLE_VALUES } from '@/lib/roles'
+import CariBox from '@/components/admin/CariBox'
+import { cocokCari } from '@/lib/cari'
 
 type Profile = {
   id: string
@@ -61,6 +63,16 @@ export default function AdminUserPage() {
   const [showResetPassword, setShowResetPassword] = useState(false)
   const [resetSaving, setResetSaving] = useState(false)
   const [resetMsg, setResetMsg] = useState('')
+  const [cari, setCari] = useState('')
+
+  // Kata kunci: nama · NIP · SKPD. Email sengaja TIDAK ikut — di sini email
+  // pengguna memang dirakit dari NIP ("2001…@pengguna.bmd.internal"), jadi
+  // menambahkannya tak menemukan apa pun yang baru, cuma memperbesar peluang
+  // satu ketikan angka mencocoki baris yang tak dimaksud.
+  const tampilProfiles = useMemo(
+    () => profiles.filter(p => cocokCari(cari, [p.pegawai?.nama, p.pegawai?.nip, p.skpd?.nama])),
+    [profiles, cari]
+  )
 
   async function loadProfiles() {
     const { data } = await supabase.from('admin_profiles').select('*,skpd:admin_skpd(nama),pegawai:admin_pegawai(nama,nip,jabatan)').order('created_at')
@@ -169,6 +181,11 @@ export default function AdminUserPage() {
         </button>
       </div>
 
+      <div className="mb-4">
+        <CariBox nilai={cari} onChange={setCari} jumlah={tampilProfiles.length} total={profiles.length}
+          satuan="user" placeholder="Cari nama, NIP, atau SKPD..." />
+      </div>
+
       {msg && (
         <div className={`mb-4 p-3 rounded-lg text-sm ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
           {msg}
@@ -246,7 +263,11 @@ export default function AdminUserPage() {
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
-              ) : profiles.map(p => (
+              ) : tampilProfiles.length === 0 ? (
+                <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">
+                  {profiles.length === 0 ? 'Belum ada user.' : `Tidak ada user yang cocok dengan "${cari}".`}
+                </td></tr>
+              ) : tampilProfiles.map(p => (
                 <tr key={p.id}>
                   <td className="table-td">
                     <p className="font-medium text-sm">{p.pegawai?.nama || '—'}</p>
