@@ -248,17 +248,35 @@ export default function LaporanBmdPage() {
       payload: Record<string, unknown> | null
       aset: { kode: string; nama_barang: string | null; nibar: string | null; skpd_id: number; intra_ekstra: string | null } | null
     }
+    // ⚠️ KEYSET (`.gt('id', …)` + `.order('id')`), BUKAN `.range()`/OFFSET.
+    // Versi lama memakai `.range()` TANPA `.order()` sama sekali — dua cacat
+    // yang di repo ini selalu berpasangan & keduanya bikin ANGKA LAPORAN SALAH
+    // TANPA SUARA (rules.md §3, CLAUDE.md "kolektor halaman-demi-halaman"):
+    // Postgres tak menjamin urutan antar-halaman, jadi begitu satu grup jenis
+    // melewati 1.000 baris ada yang terlewat DAN ada yang dobel; dan OFFSET
+    // makin dalam makin lambat sampai tembus statement timeout.
+    //
+    // Hari ini masih laten — mutasi se-kabupaten 2026-S1 = 83 baris, 2026-S2 =
+    // 147 (terukur 2026-08-18), jauh di bawah 1.000. Diperbaiki SEBELUM
+    // meledak, bukan sesudah: kalau ia meledak, gejalanya cuma angka Model 3
+    // yang tak foot, tanpa satu pun pesan error.
+    //
+    // Urutan + filternya dilayani `idx_trx_periode_jenis_id` (periode, jenis,
+    // id) — index yang lahir dari insiden yang sama (migrasi 20260728_05).
     const out: Row[] = []
-    for (let from = 0; ; from += 1000) {
+    let terakhir = 0
+    for (;;) {
       // `.in('periode', ...)` — Akhir Tahun menarik S1 DAN S2 sekaligus.
       const data = assertOk(await supabase.from('transaksi_bmd')
         .select('id,jenis,header_id,aset_id,nilai,tanggal,periode,skpd_asal,skpd_tujuan,payload,aset:aset_id(kode,nama_barang,nibar,skpd_id,intra_ekstra)')
         .in('periode', periodeMutasi).in('jenis', jenisList as never)
-        .range(from, from + 999),
+        .gt('id', terakhir).order('id', { ascending: true }).limit(1000),
         `ledger periode ${labelPeriode} (${jenisList.join(', ')})`)
       if (!data || data.length === 0) break
-      out.push(...(data as unknown as Row[]))
-      if (data.length < 1000) break
+      const rows = data as unknown as Row[]
+      out.push(...rows)
+      terakhir = rows[rows.length - 1].id
+      if (rows.length < 1000) break
     }
     return out
   }
