@@ -33,7 +33,7 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
-  fetchSnapshotPositions, aggregatePositions, prepareSnapshotCtx, fetchMutasiLines, attribusiPenyusutan,
+  fetchRekonRekap, fetchPosAset, fetchMutasiLines, attribusiLines,
   aggregateMutasi, measuresOf, mutasiCellOf, fetchPenyusutanAset, zeroUkuran, TAMBAH_KEYS, KURANG_KEYS,
   type Snapshot, type Mutasi, type MutasiCell, type MutasiKey, type MutasiLine, type Komptabel,
   type PenyusutanAset, type UkuranMutasi, type Measures,
@@ -227,23 +227,35 @@ export default function RekonsiliasiPage() {
     const periode = `${tahun}-S${smt}`
     const awalPeriode = smt === '1' ? `${Number(tahun) - 1}-S2` : `${tahun}-S1`
     try {
-      // Dua snapshot (saldo awal & saldo akhir) berbagi SATU tarikan daftar aset
-      // + riwayat pindah unit — bahannya memang sama, yang beda cuma titik
-      // potong periodenya (dihitung di memori). Dulu keduanya menarik sendiri²,
-      // jadi setiap kali Proses ledger disapu dua kali percuma.
-      const ctx = await prepareSnapshotCtx(supabase, desc)
-      // Snapshot ditahan dalam bentuk POSISI PER-ASET, bukan langsung agregat:
-      // atribusi Fase 3 harus tahu apakah SATU aset masuk/keluar/tetap di selnya
-      // antara P−1 dan P, dan itu hilang begitu angkanya dijumlah.
-      const [posAwal, posAkhir, mutLines] = await Promise.all([
-        fetchSnapshotPositions(supabase, awalPeriode, desc, ctx),
-        fetchSnapshotPositions(supabase, periode, desc, ctx),
+      // ── FASE 4 (migrasi 20260818_03/04) ───────────────────────────────────
+      // Agregat kedua snapshot + beban populasi lanjut datang dari SATU RPC.
+      // Dulu halaman ini menarik posisi 295.141 aset DUA KALI ke browser lewat
+      // ±8.400 permintaan lalu menjumlahnya di sini; sekarang yang menyeberang
+      // cuma 9 baris sel. Terukur sbg pengurus Dinas Pendidikan: 30,4 dtk,
+      // turun dari belasan menit.
+      const [rekap, mutLines] = await Promise.all([
+        fetchRekonRekap(supabase, awalPeriode, periode, desc),
         fetchMutasiLines(supabase, periode, desc),
       ])
-      const atr = attribusiPenyusutan(mutLines, posAwal, posAkhir)
-      setSnapAwal(aggregatePositions(posAwal)); setSnapAkhir(aggregatePositions(posAkhir))
-      setBebanAwal(atr.bebanSaldoAwal)
-      setLines(atr.lines); setMutasi(aggregateMutasi(atr.lines))
+      // Atribusi Fase 3 harus tahu apakah SATU aset masuk/keluar/tetap di selnya
+      // antara P−1 dan P — itu tetap butuh posisi per-aset, tapi HANYA untuk aset
+      // yang punya baris mutasi (≤132 se-kabupaten per periode; terukur 2026-S1
+      // = 75 aset, 2026-S2 = 132). Menarik seluruh populasi demi itu adalah
+      // 99,96% pekerjaan sia-sia.
+      const asetMutasi = mutLines.map(l => l.aset_id)
+      const [posAwal, posAkhir] = await Promise.all([
+        fetchPosAset(supabase, awalPeriode, desc, asetMutasi),
+        fetchPosAset(supabase, periode, desc, asetMutasi),
+      ])
+      // ⚠️ `attribusiLines`, BUKAN `attribusiPenyusutan`. Yang terakhir juga
+      // menghitung `bebanSaldoAwal` dari peta yang diberikan — dan peta di sini
+      // sengaja cuma berisi aset bermutasi, jadi hasilnya akan nyaris nol TANPA
+      // satu pun error. `bebanSaldoAwal` yang benar datang dari RPC di atas,
+      // dihitung di server atas seluruh populasi.
+      const atrLines = attribusiLines(mutLines, posAwal, posAkhir)
+      setSnapAwal(rekap.awal); setSnapAkhir(rekap.akhir)
+      setBebanAwal(rekap.bebanSaldoAwal)
+      setLines(atrLines); setMutasi(aggregateMutasi(atrLines))
       setApplied({ tahun, smt })
     } catch (e) {
       // Laporan yang datanya tak lengkap TIDAK BOLEH tampil — angka rekonsiliasi

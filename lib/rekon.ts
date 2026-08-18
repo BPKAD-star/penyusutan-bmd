@@ -675,9 +675,17 @@ export type AtribusiPenyusutan = {
   bebanSaldoAwal: Record<string, { intra: number; ekstra: number }>
 }
 
-export function attribusiPenyusutan(
+// ⚠️ DIPECAH DUA (Fase 4, 2026-08-18) — `attribusiPenyusutan` di bawah tetap
+// ada dengan bentuk & perilaku yang PERSIS SAMA, jadi test yang sudah ada tak
+// tersentuh. Alasan pemecahannya: sejak agregat pindah ke `fn_rekon_rekap`,
+// halaman Rekonsiliasi cuma memberi posisi untuk aset yang BERMUTASI (≤132
+// se-kabupaten) — cukup untuk atribusi per-baris, tapi `bebanSaldoAwal` butuh
+// SELURUH populasi dan kalau dihitung dari peta kecil itu hasilnya diam-diam
+// nyaris nol. Memisahkannya membuat kekeliruan itu mustahil ditulis: yang
+// menerima peta kecil memang tak mengembalikan `bebanSaldoAwal` sama sekali.
+export function attribusiLines(
   lines: MutasiLine[], posAwal: Map<string, PosAset>, posAkhir: Map<string, PosAset>,
-): AtribusiPenyusutan {
+): MutasiLine[] {
   const out = lines.map(l => ({ ...l, beban: 0, akumulasi: 0 }))
   const diSel = (p: PosAset | undefined, l: MutasiLine) => !!p && p.gol === l.golongan && p.komp === l.komp
   // Satu aset boleh punya beberapa baris di satu sel (termin KDP berkali-kali,
@@ -723,6 +731,21 @@ export function attribusiPenyusutan(
   for (const l of out) if (MASUK_KEYS.has(l.kategori) || KELUAR_KEYS.has(l.kategori)) attr(l)
   for (const l of out) if (!MASUK_KEYS.has(l.kategori) && !KELUAR_KEYS.has(l.kategori)) attr(l)
 
+  return out
+}
+
+/**
+ * Beban baris SALDO AWAL per golongan × komptabel = Σ beban periode P atas aset
+ * yang ada di sel yang SAMA pada P−1 dan P (populasi lanjut).
+ *
+ * ⚠️ WAJIB diberi posisi SELURUH populasi, bukan cuma aset bermutasi. Sejak
+ * Fase 4 halaman Rekonsiliasi mengambil angka ini dari `fn_rekon_rekap`
+ * (kolom `beban_saldo_awal`, dihitung di server atas seluruh scope); fungsi ini
+ * tinggal dipakai `attribusiPenyusutan` & test.
+ */
+export function hitungBebanSaldoAwal(
+  posAwal: Map<string, PosAset>, posAkhir: Map<string, PosAset>,
+): Record<string, { intra: number; ekstra: number }> {
   const bebanSaldoAwal: Record<string, { intra: number; ekstra: number }> = {}
   for (const [id, pa] of posAkhir) {
     const pw = posAwal.get(id)
@@ -730,7 +753,116 @@ export function attribusiPenyusutan(
     const c = (bebanSaldoAwal[pa.gol] ??= { intra: 0, ekstra: 0 })
     c[pa.komp] += pa.beban
   }
-  return { lines: out, bebanSaldoAwal }
+  return bebanSaldoAwal
+}
+
+/** Bentuk lama — dipertahankan apa adanya supaya test & pemanggil lain utuh. */
+export function attribusiPenyusutan(
+  lines: MutasiLine[], posAwal: Map<string, PosAset>, posAkhir: Map<string, PosAset>,
+): AtribusiPenyusutan {
+  return {
+    lines: attribusiLines(lines, posAwal, posAkhir),
+    bebanSaldoAwal: hitungBebanSaldoAwal(posAwal, posAkhir),
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// FASE 4 — agregat & posisi dari SERVER (migrasi 20260818_03/04).
+//
+// Menggantikan `prepareSnapshotCtx` + `fetchSnapshotPositions` ×2. Terukur
+// 2026-08-18 sbg pengurus Dinas Pendidikan (707 unit, 295.141 aset), RLS aktif:
+//
+//   | | Sebelum | Sesudah |
+//   |---|---|---|
+//   | Permintaan per "Proses" | ≈8.455 | 3 |
+//   | Baris menyeberang ke browser | 590.282 | ~150 |
+//   | Waktu | belasan menit | 30,4 dtk |
+//
+// ⚠️ Kolektor LAMA (`prepareSnapshotCtx`, `fetchSnapshotPositions`,
+// `fetchAllBase`, `fetchBaselinePos`) SENGAJA DIPERTAHANKAN — dipakai
+// `tests/golden/rekonsiliasi.test.ts` sbg pembanding, dan justru itu yang
+// menjaga jalur SQL & jalur TS tetap sepakat.
+type RekapRow = {
+  golongan: string; komptabel: string
+  awal_jumlah: number; awal_perolehan: number; awal_akumulasi: number; awal_nilai_buku: number
+  akhir_jumlah: number; akhir_perolehan: number; akhir_beban: number
+  akhir_akumulasi: number; akhir_nilai_buku: number
+  beban_saldo_awal: number
+}
+type PosRow = {
+  aset_id: string; golongan: string; komptabel: string
+  perolehan: number; beban: number; akumulasi: number; nilai_buku: number
+}
+
+export type RekonRekap = {
+  awal: Snapshot; akhir: Snapshot
+  bebanSaldoAwal: Record<string, { intra: number; ekstra: number }>
+}
+
+/**
+ * Saldo Awal + Saldo Akhir + beban populasi lanjut — SATU panggilan.
+ *
+ * ⚠️ MELEMPAR kalau gagal. Modul pelaporan fail-closed: halaman yang error jauh
+ * lebih murah daripada angka kurang-sebagian yang kelihatan sah lalu ikut
+ * dilaporkan ke inspektorat/BPK.
+ */
+export async function fetchRekonRekap(
+  supabase: SupabaseClient, periodeAwal: string, periode: string, descendantIds: number[] | null,
+): Promise<RekonRekap> {
+  const { data, error } = await supabase.rpc('fn_rekon_rekap', {
+    p_periode_awal: periodeAwal, p_periode: periode, p_skpd_ids: descendantIds ?? null,
+  })
+  if (error) throw new Error(`gagal menghitung rekap rekonsiliasi: ${error.message}`)
+  const awal: Snapshot = {}, akhir: Snapshot = {}
+  const bebanSaldoAwal: Record<string, { intra: number; ekstra: number }> = {}
+  for (const r of (data || []) as RekapRow[]) {
+    const komp = kompOf(r.komptabel)
+    // `beban` sisi AWAL sengaja 0: beban itu ARUS sebuah periode, dan yang
+    // dipakai baris SALDO AWAL adalah beban periode BERJALAN atas populasi awal
+    // (`bebanSaldoAwal`), bukan beban periode lalu. Lihat `nilaiBaris` di
+    // halaman Rekonsiliasi — `aw.beban` memang tak pernah dibaca.
+    ;(awal[r.golongan] ??= zeroGol())[komp] = {
+      perolehan: Number(r.awal_perolehan), beban: 0,
+      akumulasi: Number(r.awal_akumulasi), nilaiBuku: Number(r.awal_nilai_buku),
+      count: Number(r.awal_jumlah),
+    }
+    ;(akhir[r.golongan] ??= zeroGol())[komp] = {
+      perolehan: Number(r.akhir_perolehan), beban: Number(r.akhir_beban),
+      akumulasi: Number(r.akhir_akumulasi), nilaiBuku: Number(r.akhir_nilai_buku),
+      count: Number(r.akhir_jumlah),
+    }
+    ;(bebanSaldoAwal[r.golongan] ??= { intra: 0, ekstra: 0 })[komp] = Number(r.beban_saldo_awal)
+  }
+  return { awal, akhir, bebanSaldoAwal }
+}
+
+/**
+ * Posisi per aset untuk DAFTAR ASET TERTENTU — dipakai `attribusiLines`, yang
+ * hanya butuh aset bermutasi (≤132 se-kabupaten per periode).
+ *
+ * ⚠️ Hasilnya JANGAN dipakai `hitungBebanSaldoAwal` — petanya sengaja tak
+ * lengkap. Itulah alasan kedua fungsi itu dipisah.
+ */
+export async function fetchPosAset(
+  supabase: SupabaseClient, periode: string, descendantIds: number[] | null, asetIds: string[],
+): Promise<Map<string, PosAset>> {
+  const out = new Map<string, PosAset>()
+  const uniq = [...new Set(asetIds)]
+  if (uniq.length === 0) return out
+  for (let i = 0; i < uniq.length; i += 500) {
+    const { data, error } = await supabase.rpc('fn_rekon_pos', {
+      p_periode: periode, p_skpd_ids: descendantIds ?? null, p_aset_ids: uniq.slice(i, i + 500),
+    })
+    if (error) throw new Error(`gagal membaca posisi aset periode ${periode}: ${error.message}`)
+    for (const r of (data || []) as PosRow[]) {
+      out.set(r.aset_id, {
+        gol: r.golongan, komp: kompOf(r.komptabel),
+        perolehan: Number(r.perolehan), beban: Number(r.beban),
+        akumulasi: Number(r.akumulasi), nilaiBuku: Number(r.nilai_buku),
+      })
+    }
+  }
+  return out
 }
 
 // Agregasi baris rinci → sel (golongan, komptabel, kategori). DIEKSPOR supaya

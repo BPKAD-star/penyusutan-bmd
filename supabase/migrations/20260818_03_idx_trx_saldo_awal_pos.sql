@@ -1,0 +1,79 @@
+-- Fase 4 — prasyarat Rekonsiliasi BMD: posisi BASELINE harus bisa dibaca massal.
+--
+-- ── KENAPA ADA MIGRASI INI ──────────────────────────────────────────────────
+-- `fetchBaselinePos` (lib/rekon.ts) menjawab "berapa perolehan/akumulasi/nilai
+-- buku aset ini pada checkpoint terakhir yang berlaku". Ia jalur CADANGAN di
+-- kertas, tapi di Semester I ia jalur UTAMA: engine SENGAJA tak pernah
+-- menghasilkan baris `penyusutan_semester` untuk 2025-S2 (posisi akhir 2025 itu
+-- data impor e-BMD, bukan hasil hitung). Diverifikasi ke DB 2026-08-18:
+--   penyusutan_semester periode '2025-S2' ....................... 0 baris
+-- Jadi SELURUH baris SALDO AWAL Rekonsiliasi Semester I lahir dari sini.
+--
+-- Bentuk pertanyaannya "baris terakhir per aset" (DISTINCT ON), dan tanpa index
+-- yang melayaninya Postgres menempuh `idx_trx_aset` lalu MENGUNJUNGI HEAP untuk
+-- setiap baris. Terukur 2026-08-18, `saldo_awal` + `saldo_awal_checkpoint` =
+-- 418.105 baris, TANPA payload sama sekali (cuma `aset_id` + `nilai`):
+--
+--   cache dingin ....... 41.602 ms   (shared hit 400.594 · read 20.231)
+--   cache penuh ........ 19.100 ms   (shared hit 420.567 · read 258)
+--
+-- 19 dtk itu biaya CPU sejati, bukan I/O — **2,4× di atas statement timeout 8
+-- dtk**, jadi jalur ini tak pernah bisa dipakai massal sebelum indexnya ada.
+-- Di bawah RLS sebagai pengurus SKPD ia bahkan tak selesai dalam 120 dtk.
+--
+-- ⚠️ Angka di atas diukur dengan `EXPLAIN (ANALYZE, BUFFERS)`. Ukur ULANG
+-- sesudah migrasi ini dijalankan — kalau `Index Only Scan` tidak muncul di
+-- plan-nya, indexnya DIABAIKAN DIAM-DIAM dan seluruh alasan migrasi ini gugur
+-- tanpa satu pun error (pola kegagalan yang sudah berkali-kali terjadi di repo
+-- ini: `LIKE` & qual ENUM yang tak pernah bisa jadi index-cond di bawah RLS).
+--
+-- ── KENAPA BENTUKNYA BEGINI ─────────────────────────────────────────────────
+-- (1) PARSIAL. `jenis` bertipe ENUM dan qual ENUM TAK PERNAH bisa jadi
+--     index-cond di bawah RLS (CLAUDE.md, insiden `fetchOwnerOverrides`
+--     2026-07-29). Menaruhnya di PREDIKAT menyelesaikannya di index, jadi yang
+--     tersisa buat planner tinggal `aset_id` — dan biayanya ikut jumlah baris
+--     baseline, bukan besar ledger (418.452 baris & terus tumbuh).
+--     ⚠️ Predikat ini KEMBAR dengan qual di `fetchBaselinePos` (lib/rekon.ts)
+--     dan dengan CTE baseline di RPC Rekonsiliasi yang menyusul. Beda sedikit →
+--     index diabaikan diam-diam. Ubah satu, ubah semuanya.
+--
+-- (2) URUTAN KUNCI `(aset_id, periode DESC, id DESC)` SAMA PERSIS dengan
+--     `ORDER BY` milik DISTINCT ON-nya. Itu yang membuang node Sort — bukan
+--     sekadar mempercepat, tapi menghapus langkah yang biayanya tumbuh
+--     n log n. `periode DESC` wajib eksplisit: arah campuran tak bisa dilayani
+--     dengan memindai index terbalik.
+--
+-- (3) `INCLUDE (nilai)` BUKAN hiasan — itu yang membuatnya **Index Only Scan**.
+--     `nilai` adalah perolehan baseline (kolom biasa, bukan payload), dan
+--     tanpa ia ikut, 418 ribu kunjungan heap acak itu kembali lagi persis
+--     seperti pengukuran di atas.
+--
+-- ⚠️ `payload` SENGAJA TIDAK di-INCLUDE. Ia jsonb & ter-TOAST; menyertakannya
+-- membengkakkan index dari puluhan MB jadi ratusan MB demi kolom yang hanya
+-- dibutuhkan untuk **golongan yang disusutkan DAN belum punya baris engine** —
+-- himpunan yang untuk 2026-S1 berisi NOL aset (144.456 aset disusutkan,
+-- 144.456 punya baris engine). Akumulasi & nilai buku baseline diambil lewat
+-- pencarian per-aset yang terscope, memakai index yang sama; heap-nya hanya
+-- disentuh untuk aset yang benar-benar membutuhkannya.
+--
+-- ── CATATAN SKALA ───────────────────────────────────────────────────────────
+-- Per 2026-08-18: `saldo_awal` 418.102 baris, `saldo_awal_checkpoint` 3 baris,
+-- 418.102 aset unik — jadi hari ini praktis SATU baris per aset dan DISTINCT ON
+-- nyaris tak melipat apa pun. Ia tetap ditulis sbg DISTINCT ON, bukan join
+-- kesetaraan: `fn_tutup_tahun` menambah satu checkpoint per aset TIAP tahun
+-- ditutup, dan kode yang cuma benar selama checkpoint-nya nol akan salah diam-
+-- diam pada penutupan tahun berikutnya.
+--
+-- ⚠️ PLAIN, bukan CONCURRENTLY (rules.md §5.3) — Supabase SQL Editor membungkus
+-- skrip dalam transaksi, dan CONCURRENTLY di dalam transaksi GAGAL SENYAP.
+-- Perkiraan ukuran ±25–30 MB, jadi WAL-nya jauh di bawah insiden backfill 700 MB
+-- yang pernah mendorong disk 54% → 96% (INS-13). Tetap **periksa sisa disk
+-- SEBELUM menjalankan**, bukan sesudah.
+CREATE INDEX IF NOT EXISTS idx_trx_saldo_awal_pos
+  ON transaksi_bmd (aset_id, periode DESC, id DESC)
+  INCLUDE (nilai)
+  WHERE jenis IN ('saldo_awal', 'saldo_awal_checkpoint');
+
+-- Tanpa ANALYZE, planner memakai statistik lama & bisa mengabaikan index yang
+-- baru lahir (rules.md §4.4).
+ANALYZE transaksi_bmd;
