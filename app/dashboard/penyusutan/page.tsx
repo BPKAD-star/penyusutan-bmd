@@ -61,6 +61,34 @@ const GOL_LOKASI = ['1.3.1', '1.3.3', '1.3.4', '1.3.6', '1.5.4']
 type Peny = { nilai_perolehan: number; beban: number; akumulasi: number; nilai_buku_akhir: number; sisa_semester: number; masa_manfaat_tahun: number | null }
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; periode: string; search: string }
 
+// ── Paginasi DI SERVER (Fase 4, migrasi 20260818_01) ───────────────────────
+// Layar tak lagi menarik seluruh baris ke browser. Terukur 2026-08-18 (Dinas
+// Pendidikan, 1.3.2, intra, 2026-S1 = 132.694 aset): dari ±1.466 permintaan
+// PostgREST + 132.694 baris menyeberang → **1 permintaan + 100 baris, 986 ms**;
+// kaki tabelnya lewat `fn_penyusutan_rekap`, 561 ms.
+//
+// ⚠️ `assembleRows` & kolektor di bawahnya (fetchAllBase/fetchPeny/
+// fetchHiddenIds/fetchOwnerOverrides) SENGAJA DIPERTAHANKAN — kini khusus
+// EXPORT (keputusan user 2026-08-18: export tetap lewat jalur mentah, pola yang
+// sama dgn Export Audit di Daftar Barang). Berkas Excel harus memuat SELURUH
+// hasil filter, bukan cuma halaman yang kebetulan terbuka.
+const PAGE_SIZE = 100
+
+// Satu baris hasil `fn_penyusutan`. Kolom engine di-prefix `p_` di SQL supaya
+// tak bentrok dgn kolom register yang bernama sama (nilai_perolehan).
+type RpcRow = {
+  id: string; nibar: string; kode_register: string | null; kode_barang: string
+  nama_barang: string; skpd_id: number; owner_skpd: number | null
+  nilai_perolehan: number; intra_ekstra: string | null; tgl_perolehan: string | null
+  merek_tipe: string | null; alamat_detail: string | null
+  p_nilai_perolehan: number | null; p_beban: number | null; p_akumulasi: number | null
+  p_nilai_buku_akhir: number | null; p_sisa_semester: number | null; p_masa_manfaat_tahun: number | null
+}
+type Rekap = {
+  jumlah_baris: number; total_perolehan: number; total_beban: number
+  total_akumulasi: number; total_nilai_buku: number; tanpa_hasil_engine: number
+}
+
 const angka = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
@@ -82,6 +110,11 @@ export default function PenyusutanPage() {
 
   const [applied, setApplied] = useState<Applied | null>(null)
   const [rows, setRows] = useState<(Base & { p?: Peny; ownerSkpd?: number | null })[]>([])
+  // Halaman aktif (0-based) & rekap seluruh hasil filter. `rekap` null =
+  // hitungannya gagal/belum ada — DIBEDAKAN dari 0, supaya "0 aset" tak pernah
+  // dipakai untuk sesuatu yang sebenarnya tak terhitung.
+  const [hal, setHal] = useState(0)
+  const [rekap, setRekap] = useState<Rekap | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
@@ -211,6 +244,45 @@ export default function PenyusutanPage() {
     return map
   }
 
+  // ── Jalur TAMPIL: satu panggilan RPC per halaman ──────────────────────────
+  // Seluruh penyaringan (visibilitas period-aware, pemilik-pada-periode, scope
+  // SKPD, golongan/komptabel/cari) + pengurutan + paginasi terjadi DI SERVER.
+  // Bentuk barisnya sengaja dipetakan kembali ke `Base & { p?: Peny }` yang
+  // sudah dipakai tabel — supaya JSX-nya tak perlu disentuh sama sekali, dan
+  // `handleExport` (jalur mentah) tetap menghasilkan bentuk yang identik.
+  async function fetchHalaman(f: Applied, halaman: number) {
+    const arg = {
+      p_periode: f.periode,
+      p_skpd_ids: f.org.descendantIds ?? null,
+      p_golongan: f.golongan || null,
+      p_komptabel: f.komptabel || null,
+      p_search: f.search || null,
+    }
+    const { data, error } = await supabase.rpc('fn_penyusutan', {
+      ...arg, p_limit: PAGE_SIZE, p_offset: halaman * PAGE_SIZE,
+    })
+    if (error) throw new Error(`gagal membaca daftar penyusutan: ${error.message}`)
+
+    const baris = ((data || []) as RpcRow[]).map(r => ({
+      id: r.id, nibar: r.nibar, kode_register: r.kode_register,
+      kode_barang: r.kode_barang, nama_barang: r.nama_barang, skpd_id: r.skpd_id,
+      nilai_perolehan: Number(r.nilai_perolehan), intra_ekstra: r.intra_ekstra,
+      tgl_perolehan: r.tgl_perolehan, merek_tipe: r.merek_tipe, alamat_detail: r.alamat_detail,
+      ownerSkpd: r.owner_skpd ?? r.skpd_id,
+      // NULL di kolom engine = aset belum dihitung engine periode ini. Sengaja
+      // jadi `undefined`, BUKAN objek berisi nol: tabel & export membedakan
+      // "belum dihitung" (tampil "-") dari "sudah habis disusutkan" (0).
+      p: r.p_nilai_perolehan == null ? undefined : {
+        nilai_perolehan: Number(r.p_nilai_perolehan),
+        beban: Number(r.p_beban), akumulasi: Number(r.p_akumulasi),
+        nilai_buku_akhir: Number(r.p_nilai_buku_akhir),
+        sisa_semester: Number(r.p_sisa_semester),
+        masa_manfaat_tahun: r.p_masa_manfaat_tahun == null ? null : Number(r.p_masa_manfaat_tahun),
+      },
+    }))
+    return { baris, arg }
+  }
+
   // Susun baris tampil: register − yang tersembunyi − yang belum diperoleh di
   // periode ini (tgl perolehan > periode), disesuaikan kepemilikan PERIOD-AWARE
   // (transfer antar SKPD: barang yg pindah di semester depan tetap di SKPD asal
@@ -244,22 +316,40 @@ export default function PenyusutanPage() {
       .map(b => ({ ...b, p: pmap.get(b.id), ownerSkpd: owners.get(b.id) ?? b.skpd_id }))
   }
 
-  // ⚠️ try/finally WAJIB — assembleRows memanggil kolektor fail-closed
-  // (fetchOwnerOverrides MELEMPAR sejak 2026-07-28). Tanpa penangkap, satu
-  // query gagal bikin `setLoading(false)` tak pernah tercapai → halaman beku
-  // di "Memuat..." tanpa keterangan apa pun. Lihat CLAUDE.md.
-  async function load(f: Applied) {
+  // ⚠️ try/catch/finally WAJIB & `setLoading(false)` di FINALLY — bukan di akhir
+  // jalur sukses. Sejak paginasi pindah ke server yang melempar bukan lagi
+  // kolektor klien melainkan RPC-nya sendiri (`fn_penyusutan` bisa gagal karena
+  // timeout / guard), tapi akibatnya sama persis: tanpa penangkap, halaman beku
+  // di "Memuat..." selamanya tanpa sepatah pun keterangan. Lihat CLAUDE.md.
+  async function load(f: Applied, halaman = 0) {
     setLoading(true); setErr('')
     try {
-      const r = await assembleRows(f)
-      setRows(r)
+      const { baris, arg } = await fetchHalaman(f, halaman)
+      setRows(baris)
+      setHal(halaman)
+
+      // Rekap ditarik SEKALI per perubahan filter, bukan tiap ganti halaman —
+      // ia menghitung seluruh hasil filter (561 ms utk 132rb baris) dan tak
+      // berubah saat berpindah halaman.
+      if (halaman === 0) {
+        const { data: rk, error: eRk } = await supabase.rpc('fn_penyusutan_rekap', arg)
+        if (eRk) throw new Error(`gagal menghitung rekap penyusutan: ${eRk.message}`)
+        const row = ((rk || []) as Rekap[])[0]
+        setRekap(row ? {
+          jumlah_baris: Number(row.jumlah_baris),
+          total_perolehan: Number(row.total_perolehan), total_beban: Number(row.total_beban),
+          total_akumulasi: Number(row.total_akumulasi), total_nilai_buku: Number(row.total_nilai_buku),
+          tanpa_hasil_engine: Number(row.tanpa_hasil_engine),
+        } : null)
+      }
+
       setKapMap(await fetchKap(f))
-      setUraianMap(await fetchUraian(r.map(b => b.kode_barang)))
+      setUraianMap(await fetchUraian(baris.map(b => b.kode_barang)))
     } catch (e) {
       // Fail-closed: daftar penyusutan yang kurang sebagian lebih berbahaya
       // daripada halaman yang menolak tampil.
       setErr(`${(e as Error).message} — daftar tidak ditampilkan supaya tidak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat. Coba Tampilkan lagi; kalau berulang, kabari admin.`)
-      setRows([])
+      setRows([]); setRekap(null)
     } finally {
       setLoading(false)
     }
@@ -267,7 +357,10 @@ export default function PenyusutanPage() {
 
   function tampilkan() {
     const f: Applied = { org, golongan, komptabel, periode: `${tahun}-S${smt}`, search }
-    setApplied(f); load(f)
+    // Ganti filter → WAJIB balik ke halaman 1. Tanpa ini operator yang sedang di
+    // halaman 40 lalu mempersempit filternya mendarat di halaman kosong dan
+    // membacanya sebagai "tidak ada data".
+    setApplied(f); setRekap(null); load(f, 0)
   }
 
   async function runEngine() {
@@ -366,15 +459,21 @@ export default function PenyusutanPage() {
   const showLokasi = !!applied && GOL_LOKASI.includes(applied.golongan)
   const colCount = 12 + (showMerek ? 1 : 0) + (showLokasi ? 1 : 0)
 
-  // Total kolom (pakai angka engine).
-  const tot = rows.reduce((a, r) => {
-    const susut = perlakuanKode(r.kode_barang) !== 'tidak'
-    const p = r.p
-    a.perolehan += p ? p.nilai_perolehan : (r.nilai_perolehan || 0)
-    if (susut && p) { a.beban += p.beban; a.akum += p.akumulasi }
-    a.nba += (susut && p) ? p.nilai_buku_akhir : (r.nilai_perolehan || 0)
-    return a
-  }, { perolehan: 0, beban: 0, akum: 0, nba: 0 })
+  // Total kolom — dari REKAP SERVER (seluruh hasil filter), bukan dari `rows`.
+  // ⚠️ Sejak paginasi pindah ke server, `rows` cuma 100 baris halaman berjalan;
+  // menjumlahkannya akan menghasilkan kaki tabel yang berubah-ubah tiap ganti
+  // halaman dan terbaca sebagai total seluruh SKPD. Aturan per-golongannya
+  // (tak disusutkan → nilai buku = nilai perolehan) hidup di
+  // `fn_penyusutan_rekap`, kembar dengan `perlakuanKode()`.
+  const tot = {
+    perolehan: rekap?.total_perolehan ?? 0,
+    beban: rekap?.total_beban ?? 0,
+    akum: rekap?.total_akumulasi ?? 0,
+    nba: rekap?.total_nilai_buku ?? 0,
+  }
+
+  const totalBaris = rekap?.jumlah_baris ?? null
+  const halTerakhir = totalBaris == null ? hal : Math.max(0, Math.ceil(totalBaris / PAGE_SIZE) - 1)
 
   return (
     <div className="p-6">
@@ -473,9 +572,21 @@ export default function PenyusutanPage() {
           )}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
-              {rows.length.toLocaleString('id-ID')} aset · periode {applied.periode}
+              {/* Jumlah SELURUH hasil filter (dari rekap server), bukan jumlah
+                  baris di halaman ini. `null` = rekapnya gagal dihitung —
+                  dikatakan apa adanya, jangan diganti angka 0. */}
+              {totalBaris == null ? 'jumlah tak terhitung' : `${totalBaris.toLocaleString('id-ID')} aset`}
+              {' · '}periode {applied.periode}
               {applied.org.skpdId && skpdNama[applied.org.skpdId] ? ` · ${skpdNama[applied.org.skpdId]}` : ''}
+              {rekap && rekap.tanpa_hasil_engine > 0 && (
+                <span className="text-amber-600">
+                  {' · '}{rekap.tanpa_hasil_engine.toLocaleString('id-ID')} belum dihitung engine
+                </span>
+              )}
             </span>
+            {/* Export tetap lewat JALUR MENTAH (assembleRows) — keputusan user
+                2026-08-18. Berkasnya wajib memuat SELURUH hasil filter, bukan
+                cuma halaman yang kebetulan terbuka. */}
             <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-secondary text-xs">
               {exporting ? 'Mengekspor...' : 'Export Excel'}
             </button>
@@ -556,7 +667,12 @@ export default function PenyusutanPage() {
               {!loading && rows.length > 0 && (
                 <tfoot>
                   <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
-                    <td className="table-td text-xs" colSpan={6 + (showMerek ? 1 : 0) + (showLokasi ? 1 : 0)}>TOTAL ({rows.length.toLocaleString('id-ID')} aset)</td>
+                    {/* TOTAL = seluruh hasil filter, bukan halaman ini. Jumlah
+                        asetnya ikut dari rekap supaya angka & label tak pernah
+                        bercerita beda. */}
+                    <td className="table-td text-xs" colSpan={6 + (showMerek ? 1 : 0) + (showLokasi ? 1 : 0)}>
+                      TOTAL ({totalBaris == null ? '—' : totalBaris.toLocaleString('id-ID')} aset, seluruh hasil filter)
+                    </td>
                     <td className="table-td text-right text-xs">{angka(tot.perolehan)}</td>
                     <td className="table-td text-right text-xs text-teal">{angka(tot.beban)}</td>
                     <td className="table-td text-right text-xs">{angka(tot.akum)}</td>
@@ -568,6 +684,27 @@ export default function PenyusutanPage() {
               )}
             </table>
           </div>
+
+          {/* Kendali halaman. Tombol Berikutnya dipandu `halTerakhir` kalau
+              rekapnya ada; kalau rekapnya gagal dihitung, ia dipandu "halaman
+              ini penuh" — kalau tidak, sekali gagal menghitung operator
+              terkurung di halaman 1. Pola & alasan sama dgn Daftar Barang Awal. */}
+          {!loading && rows.length > 0 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-xs text-gray-500">
+              <span>
+                Halaman {hal + 1}
+                {totalBaris != null && ` dari ${(halTerakhir + 1).toLocaleString('id-ID')}`}
+                {' · '}menampilkan {rows.length.toLocaleString('id-ID')} baris
+              </span>
+              <div className="flex gap-2">
+                <button className="btn-secondary text-xs" disabled={hal === 0 || loading}
+                  onClick={() => applied && load(applied, hal - 1)}>← Sebelumnya</button>
+                <button className="btn-secondary text-xs"
+                  disabled={loading || (totalBaris != null ? hal >= halTerakhir : rows.length < PAGE_SIZE)}
+                  onClick={() => applied && load(applied, hal + 1)}>Berikutnya →</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -14,6 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      // ⚠️ DITAMBAHKAN TANGAN 2026-08-18, bukan hasil `gen:types`. Migrasi
+      // 20260816_01 sudah membuat tabel ini di DB, tapi CLI Supabase belum
+      // terpasang di mesin ini (butuh SUPABASE_ACCESS_TOKEN), sementara
+      // `lib/sinkronisasi.test.ts` — benar — menolak `.from('admin_notes')`
+      // yang tak ada di berkas ini. Blok ini akan TERTIMPA sendiri begitu
+      // `npm run gen:types` sungguhan dijalankan; itu memang yang diharapkan.
+      admin_notes: {
+        Row: {
+          author_id: string | null
+          created_at: string
+          id: string
+          isi: string
+          penulis: string | null
+          skpd_id: number | null
+          skpd_nama: string | null
+          updated_at: string
+        }
+        Insert: {
+          author_id?: string | null
+          created_at?: string
+          id?: string
+          isi: string
+          penulis?: string | null
+          skpd_id?: number | null
+          skpd_nama?: string | null
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string | null
+          created_at?: string
+          id?: string
+          isi?: string
+          penulis?: string | null
+          skpd_id?: number | null
+          skpd_nama?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       admin_broadcast: {
         Row: {
           aktif: boolean

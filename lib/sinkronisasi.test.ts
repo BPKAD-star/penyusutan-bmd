@@ -163,8 +163,20 @@ describe('JENIS_DITARIK kembar dengan predikat idx_trx_pindah_id (rules.md §4.2
     // membuktikan implikasinya dan indexnya DIABAIKAN diam-diam — tak ada
     // error, query cuma balik menyusuri 418rb baris sampai statement timeout.
     // Persis yang bikin Rekonsiliasi BMD gagal Proses 2026-07-29.
+    // ⚠️ `[^;]` — BUKAN `[\s\S]`. Dengan `[\s\S]*?` polanya bisa melompati
+    // batas pernyataan: ia mulai dari satu `CREATE INDEX`, meloncat ke
+    // penyebutan `idx_trx_pindah_id` di KOMENTAR berkas yang sama, lalu menelan
+    // badan fungsi di bawahnya sampai `;` berikutnya. Hasilnya daftar palsu
+    // berisi `SET search_path TO 'public'` dan seluruh enum SEMBUNYI —
+    // test merah tanpa ada yang salah di kode.
+    //
+    // Terjadi sejak migrasi 20260814_05/06 (paginasi server Daftar Barang), yang
+    // memang menyebut `idx_trx_pindah_id` di komentar SEKALIGUS membuat index &
+    // fungsi dalam satu berkas. Sembilan berkas menyebut nama index itu; hanya
+    // SATU yang benar-benar membuatnya, dan `[^;]` yang memastikan cuma
+    // pernyataan `CREATE INDEX` sungguhan yang tertangkap.
     const pernyataan = bacaMigrasi()
-      .flatMap(m => [...m.isi.matchAll(/CREATE\s+INDEX[\s\S]*?idx_trx_pindah_id[\s\S]*?;/gi)].map(x => x[0]))
+      .flatMap(m => [...m.isi.matchAll(/CREATE\s+INDEX[^;]*?idx_trx_pindah_id[^;]*?;/gi)].map(x => x[0]))
       .filter(s => /\bjenis\b/i.test(s))
     const terakhir = pernyataan.at(-1) // migrasi terbaru yang menang
     if (!terakhir) throw new Error('tidak menemukan CREATE INDEX idx_trx_pindah_id ber-predikat jenis di migrasi mana pun')

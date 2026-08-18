@@ -619,11 +619,46 @@ Repo ini **sudah punya polanya** dan sudah merestuinya di rules.md §4.6:
 
 Urutan berdasarkan (berat × frekuensi pakai):
 
-1. **Daftar Barang** — paling sering dibuka, paling berat. Visibilitas
-   period-aware dipindah ke RPC agar penyaringan terjadi **sebelum** baris
-   menyeberang ke browser.
-2. **Penyusutan** — pola identik; dua halaman ini berbagi logika, jadi RPC-nya
-   bisa berbagi juga.
+1. ~~**Daftar Barang**~~ — ✅ **SELESAI 2026-08-14** (migrasi 20260814_05..08):
+   `fn_daftar_barang` / `fn_daftar_barang_rekap` + `fn_dbar_hidden`/`_owner`/
+   `_scope`/`_guard`. Se-kab 1.3.2 **9.821 → 126 ms**; satu SKPD **timeout →
+   23,7 ms**; rekap 3.335 → 1.229 ms.
+2. ~~**Penyusutan**~~ — ✅ **SELESAI 2026-08-18** (migrasi 20260818_01/02).
+   Diukur sbg pengurus Dinas Pendidikan (707 unit), 1.3.2 intra 2026-S1 =
+   132.694 aset, RLS aktif:
+
+   | | Sebelum | Sesudah |
+   |---|---|---|
+   | Permintaan per "Tampilkan" | **≈1.466** | **2** |
+   | Baris menyeberang ke browser | **132.694** | **100** |
+   | Halaman baris | — | 986 ms |
+   | Rekap / kaki tabel | — | 561 ms |
+
+   Tiga pelajaran yang layak dibawa ke halaman berikutnya:
+   - **`fn_dbar_hidden` kini BER-VARIAN** (`daftar_barang` / `penyusutan`).
+     Penyusutan sengaja tanpa `kdp_selesai_keluar`; menyambungkannya ke varian
+     Daftar Barang apa adanya akan menyembunyikan aset KDP yang seharusnya
+     tampil, TANPA satu pun error. Hari ini bedanya laten (0 baris) — justru
+     itu alasan parameternya dipasang sebelum carve-out KDP dipakai.
+   - **Rekap butuh `MATERIALIZED` + `SET work_mem` BERSAMAAN.** Sendiri-sendiri
+     salah satunya justru lebih lambat: nested loop 5.237 ms · MATERIALIZED
+     dgn work_mem bawaan 6.112 ms (hash tumpah, Batches 4) · keduanya 561 ms.
+   - **Kaki tabel WAJIB ikut aturan per-baris** (tak disusutkan → nilai buku =
+     nilai perolehan). Versi pertama menjumlah `nilai_buku_akhir` mentah dan
+     melaporkan Tanah/ATL **nol** — persis cacat Uji Konsistensi 2026-08-16.
+
+   ⚠️ Temuan sampingan yang belum tuntas: RLS `penyusutan_semester` memanggil
+   `fn_is_admin()`/`fn_is_viewer()` telanjang + `fn_skpd_visible()` PER BARIS.
+   Ditambal migrasi 20260818_02 (**114.941 → 30.704 ms**), tapi sisa 30 dtk itu
+   bawaan policy yang harus menengok `aset` per baris. Tak dikejar lebih jauh
+   KARENA sesudah halaman disambungkan tak ada lagi yang membaca tabel itu
+   massal sebagai `authenticated`; menekannya lagi butuh mendenormalisasi
+   `skpd_id` ke sana — turunan baru yang bisa basi, kelas masalah yang sama
+   dengan cache `aset.pemanfaatan`.
+
+   Export SENGAJA tetap lewat jalur mentah `assembleRows` (keputusan user
+   2026-08-18, pola Export Audit Daftar Barang): berkas Excel wajib memuat
+   SELURUH hasil filter, bukan halaman yang kebetulan terbuka.
 3. **Rekonsiliasi & Laporan BMD** — agregasi murni, kandidat paling wajar.
 4. **Dashboard** — sudah sebagian lewat RPC, tuntaskan.
 
@@ -747,7 +782,8 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | `const { data } = await` | 166 | **166** ⟨2026-08-06⟩ — **tidak bergerak**, memang belum ada adopsi `assertOk()` | 110 | 50 | < 10 |
 | Berkas > 500 baris | 19 | **20** ⟨2026-08-06⟩ — **naik 1** | 15 | 8 | ≤ 3 |
 | Komentar "ubah satu, samakan yang lain" | ~6 pasang | **5 + 1 keluarga baru** ⟨lihat catatan⟩ | 4 | 2 | 0 |
-| Query per pemuatan Daftar Barang | 8–15 | 8–15 | 8–15 | ≤ 5 | ≤ 5 |
+| Query per pemuatan Daftar Barang | 8–15 | **2** ⟨2026-08-14, RPC⟩ | 8–15 | ≤ 5 | ≤ 5 |
+| Query per pemuatan Penyusutan | ≈1.466 ⟨SKPD terbesar⟩ | **2** ⟨2026-08-18, RPC⟩ | — | ≤ 5 | ≤ 5 |
 | Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
 
 Rincian 264 test (`npm test`, ±1,5 dtk): `lib/engine/penyusutan.test.ts` 79 ·
