@@ -659,8 +659,97 @@ Urutan berdasarkan (berat × frekuensi pakai):
    Export SENGAJA tetap lewat jalur mentah `assembleRows` (keputusan user
    2026-08-18, pola Export Audit Daftar Barang): berkas Excel wajib memuat
    SELURUH hasil filter, bukan halaman yang kebetulan terbuka.
-3. **Rekonsiliasi & Laporan BMD** — agregasi murni, kandidat paling wajar.
-4. **Dashboard** — sudah sebagian lewat RPC, tuntaskan.
+3. ~~**Rekonsiliasi BMD**~~ — ✅ **SELESAI 2026-08-18** (migrasi 20260818_03/04).
+   Diukur sbg pengurus Dinas Pendidikan (707 unit, 295.141 aset), RLS aktif:
+
+   | | Sebelum | Sesudah |
+   |---|---|---|
+   | Permintaan — jalur snapshot | **≈8.430** | **3** |
+   | Permintaan — halaman utuh | ≈8.455 | **52** ⟨diamati di panel Network⟩ |
+   | Baris menyeberang ke browser | 590.282 ⟨295.141 × 2⟩ | ~150 |
+   | Waktu | belasan menit | 30,4 dtk |
+
+   ⚠️ **Angka "3" itu jalur SNAPSHOT saja, bukan halaman.** Pesan commit
+   `f582306` menyebut "8.455 permintaan jadi 3" dan itu terlalu bagus: sisanya
+   `computeMutasiLines` (19 kolektor, sengaja tetap di klien — sudah terscope &
+   memuat aturan void/net-removed yang mahal dipindah) plus preflight CORS.
+   Penurunannya tetap ~160×. Dicatat di sini karena kesalahan semacam ini persis
+   yang membuat metrik jadi tak bisa dipercaya.
+
+   Empat pelajaran:
+   - **Penghalangnya bukan agregasi, tapi posisi BASELINE.** Engine sengaja tak
+     pernah menghasilkan baris `penyusutan_semester` untuk 2025-S2 (0 baris),
+     jadi SELURUH baris SALDO AWAL Semester I lahir dari ledger `saldo_awal` —
+     jalur "cadangan" itu justru jalur utamanya. Sebagai `DISTINCT ON` tanpa
+     index yang melayaninya: **19.100 ms dengan cache penuh**, 2,4× di atas
+     statement timeout. Ditutup `idx_trx_saldo_awal_pos` → Index Only Scan
+     2.622 ms.
+   - **Prototipe yang bentuknya beda dari fungsinya BUKAN pengukuran fungsinya.**
+     Versi standalone-nya 87 dtk karena dua hal yang lenyap begitu ditulis
+     sebagai plpgsql: periode yang datang dari CTE membuat planner meninggalkan
+     index parsial, dan `EXISTS` berkorelasi atas override pemilik dieksekusi
+     122.972 kali. Keduanya sudah dibayar di `fn_penyusutan`; pola arraynya
+     tinggal disalin dari sana.
+   - **`attribusiPenyusutan` dipecah** jadi `attribusiLines` +
+     `hitungBebanSaldoAwal`. Halaman kini hanya punya posisi aset bermutasi
+     (≤132 se-kabupaten), dan versi lamanya akan menghitung `bebanSaldoAwal`
+     dari peta kecil itu → nyaris nol TANPA satu pun error. Bentuk lamanya
+     dipertahankan identik, jadi 26 golden test tak tersentuh.
+   - **`statement_timeout` dinaikkan DI DALAM fungsi**, bukan dipaksa masuk
+     8 dtk — yang dibandingkan bukan "30 dtk vs 8 dtk" melainkan "30 dtk vs
+     8.455 permintaan".
+4. ~~**Laporan BMD**~~ — ✅ **SELESAI 2026-08-18** (migrasi 20260818_05), tapi
+   temuannya bukan yang diperkirakan: Model 1 & 2 **sudah** satu RPC sejak lama.
+   Yang ditemukan justru **`fn_rekap_bmd` TIMEOUT untuk SKPD terbesar** —
+   9.144 ms dengan `work_mem` bawaan, di atas pagu 8 dtk, ditolak `57014`.
+   Artinya Laporan BMD **tidak bisa dibuka sama sekali** oleh pengurus Dinas
+   Pendidikan, entah sejak kapan, dan Model 3 lebih parah karena memanggil
+   fungsi yang sama dua kali. **9.144 → 2.119 ms.**
+
+   Bareng itu kembar tiga visibilitas jadi dua (`fn_dbar_hidden`/`fn_dbar_owner`
+   menggantikan CTE inline) dan `kode_at` — yang baru saja diduplikasi oleh
+   20260818_04 — diekstrak jadi `fn_dbar_kode_at`. Penggantian dilakukan
+   **sesudah dibuktikan setara**, bukan atas dasar pembacaan kode: hidden
+   227=227, owner 57=57, selisih 0 di kedua arah; sesudahnya Laporan BMD vs
+   Rekonsiliasi selisih **0,00 di 8 golongan × 4 ukuran**.
+
+   Cacat lama yang ikut diperbaiki: `fetchLedgerM3` memakai `.range()` **tanpa
+   `.order()`** — dua cacat paginasi senyap sekaligus (rules.md §3). Masih laten
+   (mutasi se-kab 83 baris di 2026-S1, 147 di 2026-S2), diperbaiki jadi keyset
+   sebelum meledak.
+5. ~~**Dashboard**~~ — ✅ **SELESAI 2026-08-18** (migrasi 20260818_06). Halaman
+   paling matang dari kelimanya: sudah Server Component, satu RPC, `cache()`
+   dedup, `<Suspense>` streaming, keyset, error ditampilkan. **Tak ada yang
+   perlu dipindahkan ke server.**
+
+   Yang ditemukan pengukuran justru pola lintas-halaman: **`work_mem` selama ini
+   dipasang AD-HOC**, hanya saat sebuah halaman kebetulan bermasalah. Audit
+   `pg_proc.proconfig` menemukan dua RPC agregat belum kebagian:
+
+   | | Sebelum | Sesudah |
+   |---|---|---|
+   | `fn_dashboard_rekap()` | 5.741 ms | **450 ms** hangat / 2.880 ms dingin |
+   | `fn_rekap_saldo_awal()` | 3.462 ms | **466 ms** |
+
+   Keduanya masih lolos pagu 8 dtk, jadi ini bukan halaman rusak — tapi
+   marginnya tipis & terus menyusut (komentar di `app/dashboard/page.tsx`
+   mencatat 1,4 dtk "kondisi terbaik"; hari ini sudah 4× lipat).
+   `statement_timeout` SENGAJA tidak dinaikkan di sini: keduanya selesai di
+   bawah 500 ms, dan pagu 8 dtk adalah satu-satunya alarm yang akan berteriak
+   kalau kelak ada regresi 20×. `fn_daftar_barang_rekap` sengaja dibiarkan —
+   350 ms tanpa `work_mem`, sehat.
+
+   Aturan itu kini dijaga mesin: `lib/sinkronisasiRpc.test.ts` §5 memerahkan RPC
+   agregat baru yang lupa menyetel `work_mem`.
+
+> **Pelajaran lintas-halaman Fase 4, dan ini yang paling mahal:** tiga dari lima
+> halaman ternyata **sudah** memakai RPC, dan masalahnya bukan "belum dipindah
+> ke server" melainkan **setelan eksekusi yang tak pernah diaudit**. Satu di
+> antaranya (`fn_rekap_bmd`) sudah gagal total di produksi tanpa ada yang tahu,
+> karena gejalanya cuma halaman yang tak mau tampil untuk SATU SKPD. **Ukur
+> dengan RLS aktif sebagai pengurus SKPD TERBESAR sebelum menyimpulkan sebuah
+> halaman sudah beres** — sebagai admin/service_role, query yang rusak pun tetap
+> cepat.
 
 Per halaman, urutan kerjanya:
 
@@ -775,7 +864,7 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 
 | Metrik | Awal | **Sekarang** | 3 bln | 6 bln | 12 bln |
 |---|---|---|---|---|---|
-| Test unit domain | 0 | **264** ⟨`vitest run`, 2026-08-06⟩ — target 6 bln sudah terlampaui | 60 | 150 | 300 |
+| Test unit domain | 0 | **380** ⟨`npm test`, 2026-08-18 — 17 berkas⟩ — target 12 bln sudah terlampaui | 60 | 150 | 300 |
 | Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **26 test + 3 snapshot** ⟨Rekonsiliasi BMD, 2026-08-06⟩ | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 ⚠️ | **63** kemunculan di **47** berkas ⟨2026-08-06⟩ — lihat catatan | 90 | 40 | < 10 |
@@ -784,6 +873,8 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Komentar "ubah satu, samakan yang lain" | ~6 pasang | **5 + 1 keluarga baru** ⟨lihat catatan⟩ | 4 | 2 | 0 |
 | Query per pemuatan Daftar Barang | 8–15 | **2** ⟨2026-08-14, RPC⟩ | 8–15 | ≤ 5 | ≤ 5 |
 | Query per pemuatan Penyusutan | ≈1.466 ⟨SKPD terbesar⟩ | **2** ⟨2026-08-18, RPC⟩ | — | ≤ 5 | ≤ 5 |
+| Query per "Proses" Rekonsiliasi | ≈8.455 ⟨SKPD terbesar⟩ | **52** halaman utuh · **3** jalur snapshot ⟨2026-08-18⟩ | — | ≤ 5 | ≤ 5 |
+| RPC agregat berat tanpa `work_mem` | — | **0** ⟨audit `pg_proc.proconfig`, 2026-08-18; sebelumnya 3 dari 6⟩ | — | 0 | 0 |
 | Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
 
 Rincian 264 test (`npm test`, ±1,5 dtk): `lib/engine/penyusutan.test.ts` 79 ·

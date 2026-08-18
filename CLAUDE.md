@@ -97,6 +97,35 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   `fn_rekap_bmd`, `fn_dashboard_rekap`). Kalau perlu tambah policy/fn di path
   panas, bungkus InitPlan.
 
+- **RPC AGREGAT BERAT WAJIB `SET work_mem TO '64MB'` di definisi fungsinya.**
+  Sampai 2026-08-18 setelan ini dipasang AD-HOC — hanya saat sebuah halaman
+  kebetulan bermasalah — dan akibat terburuknya sudah terjadi tanpa ada yang
+  tahu: **`fn_rekap_bmd` TIMEOUT untuk SKPD terbesar** (Dinas Pendidikan, 707
+  unit, 295.141 aset) — 9.144 ms dengan `work_mem` bawaan vs pagu 8 dtk,
+  ditolak `57014`. Artinya **Laporan BMD tak bisa dibuka sama sekali** oleh
+  pengurus SKPD itu, dan Model 3 lebih parah karena memanggil fungsi yang sama
+  dua kali. Gejalanya cuma "halaman tak mau tampil untuk satu SKPD", jadi tak
+  pernah terbaca sebagai bug. Diperbaiki migrasi 20260818_05/06 (`fn_rekap_bmd`
+  9.144→2.119 ms, `fn_dashboard_rekap` 5.741→450 ms, `fn_rekap_saldo_awal`
+  3.462→466 ms). Dikunci `lib/sinkronisasiRpc.test.ts` §5.
+  ⚠️ **64MB, jangan lebih** — `work_mem` berlaku PER NODE PER KONEKSI; dengan
+  target 100–150 pengguna serentak, angka besar jadi masalah memori server.
+  ⚠️ **`statement_timeout` JANGAN ikut dinaikkan kalau fungsinya tak benar-benar
+  butuh.** Pagu 8 dtk itu satu-satunya alarm yang akan berteriak kalau kelak ada
+  regresi 20×; menaikkannya "biar aman" membungkam alarm. Yang dinaikkan hanya
+  `fn_rekon_pos`/`fn_rekon_rekap`/`fn_rekap_bmd`, yang memang butuh puluhan detik.
+
+- **UKUR SEBAGAI PENGURUS SKPD TERBESAR, JANGAN sebagai admin/service_role.**
+  Ini bukan saran kehati-hatian, ini syarat: sebagai service_role query yang
+  RUSAK pun tetap cepat. uid Dinas Pendidikan yang dipakai mengukur seluruh
+  Fase 4: `306a752a-34e5-4c18-8d26-66237325d002` (707 unit, 295.141 aset).
+  Caranya `SET LOCAL role authenticated` + `SET LOCAL request.jwt.claims`.
+  ⚠️ **Prototipe yang bentuknya beda dari fungsinya BUKAN pengukuran fungsinya.**
+  Prototipe standalone `fn_rekon_pos` sempat 87 dtk gara-gara dua hal yang
+  lenyap begitu ditulis sbg plpgsql: periode yang datang dari CTE membuat
+  planner meninggalkan index parsial, & `EXISTS` berkorelasi dieksekusi 122.972
+  kali. Tulis prototipe dengan parameter SKALAR dan array yang dihitung sekali.
+
 - **`kode LIKE 'gol.%'` TAK PERNAH bisa jadi index-cond di bawah RLS** — operator
   `~~` tidak leakproof, jadi Postgres selalu mengevaluasinya SETELAH qual RLS,
   berapa pun indeks pattern yang ada. Halaman ber-golongan-tunggal (GIS Tanah,
@@ -1706,6 +1735,47 @@ yang sudah tersusut), lalu seluruh akumulasi awal muncul di baris **Selisih**.
   `saldo_awal_checkpoint` tahun berikutnya yang tak punya padanan di tabel
   snapshot 2026. Hanya **Semester I** yang terdampak — Saldo Awal Semester II
   membaca baris engine S1 yang memang ada, jadi tak pernah jatuh ke cadangan.
+
+## Rekonsiliasi & Laporan BMD dibaca dari SERVER (Fase 4, migrasi 20260818_03..06)
+
+Halaman Rekonsiliasi tak lagi menarik posisi 295.141 aset DUA KALI ke browser.
+Diukur sbg pengurus Dinas Pendidikan, RLS aktif: **≈8.455 permintaan → 52**
+(jalur snapshot-nya sendiri 3), 590.282 baris → ~150, belasan menit → 30,4 dtk.
+
+- **`fn_rekon_pos(periode, skpd_ids, aset_ids)`** — posisi per aset (golongan,
+  komptabel, perolehan, beban, akumulasi, nilai buku) pada akhir periode.
+  KEMBAR dgn `fetchSnapshotPositions` (lib/rekon.ts). `aset_ids` NULL = seluruh
+  scope; berisi = hanya aset itu.
+- **`fn_rekon_rekap(periode_awal, periode, skpd_ids)`** — agregat DUA periode +
+  `beban_saldo_awal` (Σ beban populasi lanjut), sekali panggil.
+- **`fn_dbar_kode_at(periode)`** — kode barang efektif pada periode; dipakai
+  BERSAMA `fn_rekap_bmd` & `fn_rekon_pos`. ⚠️ Masih kembar dgn `kodePada()` di
+  lib/reklasKode.ts — daftar jenisnya dikunci `lib/sinkronisasiRpc.test.ts` §3.
+- **`idx_trx_saldo_awal_pos`** — partial index `(aset_id, periode DESC, id DESC)
+  INCLUDE (nilai) WHERE jenis IN ('saldo_awal','saldo_awal_checkpoint')`.
+  ⚠️ **Predikatnya KEMBAR** dgn qual di `fn_rekon_pos` & `fetchBaselinePos`;
+  beda sedikit → index diabaikan DIAM-DIAM dan pembacaan baseline balik ke
+  19.100 ms (2,4× di atas statement timeout). Dikunci test §4.
+
+⚠️ **`attribusiPenyusutan` DIPECAH** jadi `attribusiLines` +
+`hitungBebanSaldoAwal`. Halaman hanya punya posisi aset BERMUTASI (≤132
+se-kabupaten), dan `attribusiPenyusutan` versi lama akan menghitung
+`bebanSaldoAwal` dari peta kecil itu → **nyaris nol tanpa satu pun error**.
+Yang benar datang dari `fn_rekon_rekap`. Bentuk lamanya dipertahankan identik
+supaya golden test tak tersentuh — **jangan dipakai di halaman.**
+
+⚠️ **Kolektor lama (`prepareSnapshotCtx`, `fetchSnapshotPositions`,
+`fetchAllBase`, `fetchBaselinePos`) SENGAJA dipertahankan** — dipakai
+`tests/golden/rekonsiliasi.test.ts` sbg pembanding, dan justru itu yang menjaga
+jalur SQL & TS tetap sepakat. Jangan dihapus karena "sudah tak dipakai halaman".
+
+**Laporan BMD**: Model 1 & 2 memang sudah satu RPC sejak lama; yang diperbaiki
+2026-08-18 adalah `fn_rekap_bmd` yang **timeout untuk SKPD terbesar** (lihat
+aturan `work_mem` di atas) + CTE visibilitas/pemilik/kode-nya diganti
+`fn_dbar_hidden`/`fn_dbar_owner`/`fn_dbar_kode_at` sesudah **dibuktikan setara**
+(hidden 227=227, owner 57=57, selisih 0 dua arah). Sesudahnya **Laporan BMD vs
+Rekonsiliasi selisih 0,00 di 8 golongan × 4 ukuran** — itu patokan yang harus
+tetap berlaku; selisih yang muncul kemudian = bug, bukan beda definisi.
 
 ## Notes — saran & masukan pengguna (migrasi 20260816_01)
 
