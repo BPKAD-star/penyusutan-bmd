@@ -19,6 +19,7 @@ import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
+import { cekBolehBatal } from '@/lib/guardPembatalan'
 
 type Barang = { id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai_perolehan: number; skpd_id: number | null; tgl_perolehan: string | null }
 type IndukFig = { npLama: number; nbLama: number; akumLama: number; bebanLama: number; sisaLamaSmt: number; masaMaks: number | null }
@@ -117,12 +118,12 @@ export default function Kapitalisasi() {
     // ini (mis. reklas/kapitalisasi lagi di atasnya) — batalkan yang lebih baru dulu,
     // kalau tidak replay engine rusak. (Anak yg terserap sudah tersembunyi dari semua
     // menu sehingga tak mungkin menerima transaksi baru → cukup jaga induk.)
-    const { count } = await supabase.from('transaksi_bmd')
-      .select('id', { count: 'exact', head: true }).eq('aset_id', j.aset_id).gt('id', j.id)
-    if ((count || 0) > 0) {
-      setMsg('Error: barang induk punya transaksi LEBIH BARU setelah kapitalisasi ini — batalkan yang lebih baru dulu.')
-      return
-    }
+    const guard = await cekBolehBatal(
+      supabase,
+      [{ aset_id: j.aset_id, trx_id: j.id, label: j.induk?.nama_barang || j.induk?.nibar }],
+      'kapitalisasi ini',
+    )
+    if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); return }
     // Nilai perolehan induk dikembalikan: nilai sekarang − rehab transaksi ini.
     const { data: a } = await supabase.from('aset').select('nilai_perolehan,skpd_id').eq('id', j.aset_id).single()
     const npRestore = (a?.nilai_perolehan ?? 0) - j.nilai

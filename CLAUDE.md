@@ -249,9 +249,15 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   dibatalkan lewat `payload.target_trx_id` (pola `kapDibatalkan` di
   lib/engine/penyusutan.ts) — BUKAN hapus baris & BUKAN reklas-balik (reklas-
   balik salah utk lintas-golongan krn fresh-start dobel).
-  **Implementasi guard (client-side, cek `transaksi_bmd` aset_id sama dgn
-  `id > trx_id_dibatalkan` → count>0 = blokir; TAK ADA trigger DB) kini terpasang
-  di SEMUA titik pembatalan yg MENGUBAH state engine:** Reklasifikasi
+  **Implementasi guard = `cekBolehBatal()` di `lib/guardPembatalan.ts`** (satu
+  sumber sejak 2026-08-18; dulu disalin di 8 titik / 6 berkas). Client-side, cek
+  `transaksi_bmd` aset_id sama dgn `id > trx_id_dibatalkan`; **TAK ADA trigger
+  DB**, jadi fungsi itulah satu-satunya penjaga. Ia mengembalikan HANYA dua
+  keadaan (boleh / tidak boleh + alasan) dan **kegagalan query jatuh ke "tidak
+  boleh"** — kedelapan salinan lamanya `fail-open` (`const { count } = await …`
+  lalu `(count || 0) > 0`: query gagal → `count` undefined → guard lolos senyap).
+  **Menu batal baru WAJIB memanggilnya, jangan menulis ulang querynya.**
+  Terpasang di SEMUA titik pembatalan yg MENGUBAH state engine: Reklasifikasi
   (`batalReklas`), Koreksi Nilai/Spek/Ganda (`batalKoreksi`), Batal Pemecahan
   (`handleBatalPemecahan` — cek induk + tiap pecahan), Kapitalisasi (`batal` —
   cek induk; anak terserap sudah tersembunyi jadi tak mungkin dpt trx baru),

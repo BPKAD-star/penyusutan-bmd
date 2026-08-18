@@ -35,8 +35,15 @@ export type ItemBatal = {
  * tidak-boleh; kalau tidak, gangguan jaringan sesaat cukup untuk merusak rantai
  * replay engine tanpa satu pun pesan.
  */
+// ⚠️ `pesan?: undefined` di cabang sukses BUKAN hiasan — jangan dibuang.
+// tsconfig repo ini `"strict": false`, jadi `strictNullChecks` mati, dan dalam
+// mode itu TypeScript TIDAK menyempitkan discriminated union lewat boolean
+// literal: `if (!guard.boleh) guard.pesan` gagal kompilasi dengan "Property
+// 'pesan' does not exist on type '{ boleh: true }'". Dengan properti opsional
+// ini, `pesan` bisa dibaca dari union-nya (bertipe `string | undefined`) tanpa
+// bergantung pada penyempitan. Tetap benar kalau suatu saat `strict` dinyalakan.
 export type HasilGuard =
-  | { boleh: true }
+  | { boleh: true; pesan?: undefined }
   | { boleh: false; pesan: string }
 
 const sebut = (it: ItemBatal) => it.label?.trim() || it.aset_id

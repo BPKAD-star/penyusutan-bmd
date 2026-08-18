@@ -458,12 +458,38 @@ komponen 1.400 baris ke fungsi murni **berikut test-nya**.
 | # | Ekstrak | Dari | Kenapa duluan |
 |---|---|---|---|
 | 2.1 | ~~`aset/domain/visibilitas.ts`~~ — **SUDAH, sebagian (2026-08-05)**: `lib/visibilitas.ts` + `lib/visibilitas.test.ts`, menyatukan Daftar Barang, Penyusutan, & `lib/rekon.ts` (3 dari 6 berkas, plus daftar baru `LAHIR`). **Sisa**: `fn_rekap_bmd` (SQL, migrasi 20260805_02) mengulang daftar yang sama di Postgres — kembar lintas-bahasa yang tak bisa diimpor, jadi perlu test yang membandingkan output TS vs SQL lewat query nyata (pola sama dgn 2.4). ⟨`fn_rekap_bmd_periodik` **tak lagi disebut di sini**: sudah di-DROP migrasi 20260725_07, diverifikasi ke DB 2026-08-06 — tinggal SATU kembaran SQL, bukan dua⟩ | duplikasi terbanyak; urutan kronologisnya halus (aksi terakhir menang, bukan "batal selalu menang") |
-| 2.1b | `aset/domain/guardPembatalan.ts` — cek "transaksi lebih baru" (rules.md §1.3) | `Koreksi.tsx`, `Penghapusan.tsx`, `Pengadaan.tsx`, `Kapitalisasi.tsx`, `Reklasifikasi.tsx` (dikonfirmasi grep, 5 berkas) | guard integritas ledger terduplikasi lima kali; kelupaan di menu batal baru = rantai replay engine RUSAK, bukan cuma laporan salah — satu tingkat di atas visibilitas |
+| 2.1b | ~~`aset/domain/guardPembatalan.ts`~~ — **SELESAI 2026-08-18**: `lib/guardPembatalan.ts` + `lib/guardPembatalan.test.ts`, **8 titik panggil di 6 berkas** tersatukan (lihat catatan di bawah) | `Koreksi.tsx` ×3, `Penghapusan.tsx`, `Pengadaan.tsx`, `Kapitalisasi.tsx`, `Reklasifikasi.tsx`, **`lib/kdp.ts`** | guard integritas ledger terduplikasi; kelupaan di menu batal baru = rantai replay engine RUSAK, bukan cuma laporan salah — satu tingkat di atas visibilitas |
 | 2.2 | `pengalihan/domain/kepemilikan.ts` — `ownersAt` | `lib/pengalihan.ts` + 2 halaman | atribusi SKPD period-aware, sudah pernah salah |
 | 2.3 | `aset/domain/kolom.ts` — `COLS`/`EXPORT_ORDER`/`EXPORT_COLS` | Daftar Barang ↔ Daftar Barang Awal | pasangan kembar yang dijaga komentar; sekali ekstrak, "kelupaan" jadi mustahil |
 | 2.4 | `kode-register/domain/` — `prefixKodeRegister`, `bergeserDariNibar` | `lib/kodeRegister.ts` | pembedaan `null` vs `false` mudah rusak; kembar dengan `fn_prefix_kode_register` di SQL — ekstraksi WAJIB disertai test yang membandingkan output TS vs `fn_prefix_kode_register` lewat query nyata, bukan cuma memindahkan fungsinya |
 | 2.5 | `pelaporan/domain/` — agregasi rekonsiliasi | `lib/rekon.ts` (25 KB) | berkas terbesar di `lib/`, murni-nya bisa dipisah dari I/O-nya |
 | 2.6 | `perolehan/domain/draft.ts` — validasi & materialisasi draft | `Pengadaan.tsx` + `PerolehanManual.tsx` | aturan approval terjepit di dalam JSX |
+
+### Catatan 2.1b — "dikonfirmasi grep, 5 berkas" ternyata KURANG SATU
+
+Ekstraksi 2026-08-18 menemukan **6 berkas / 8 titik panggil**, bukan 5:
+`Koreksi.tsx` punya **tiga** (batal koreksi, batal pemecahan, batal
+penggabungan), dan **`lib/kdp.ts`** (`unapproveKontrakKonstruksi`) sama sekali
+tak terhitung karena ia bukan komponen — pencariannya waktu itu terbatas ke
+`components/`. Ini contoh persis kenapa angka duplikat di §10 disebut **batas
+bawah, bukan jumlah sebenarnya**.
+
+**Satu cacat ditemukan saat karakterisasi, dan ia ada di KEDELAPAN salinan:**
+semuanya menulis `const { count } = await …` lalu `(count || 0) > 0`. Query yang
+gagal membuat `count` `undefined`, sehingga guard **lolos diam-diam** — *fail-open*
+pada satu-satunya penjaga rantai replay engine (tak ada trigger DB yang
+menegakkannya). Diperparah `{ head: true }`, yang membuat `error.message` KOSONG
+sehingga sebabnya pun tak terbaca.
+
+`cekBolehBatal()` menutupnya lewat BENTUK, bukan lewat kedisiplinan pemanggil:
+ia mengembalikan **hanya dua keadaan** (`boleh` / `tidak boleh + alasan`), dan
+kegagalan query jatuh ke "tidak boleh". Tak ada keadaan ketiga yang bisa
+diabaikan. Ini perubahan perilaku yang DISENGAJA & tak bisa menggeser satu pun
+angka laporan — ia hanya mengubah bypass senyap jadi penolakan yang terlihat.
+
+Komentar peringatan yang bisa dihapus (kriteria selesai Fase 2): delapan blok
+komentar "Guard rantai: …" yang mengulang aturan yang sama di enam berkas kini
+tinggal satu rujukan per titik.
 
 **Kandidat lain yang dipantau tapi belum masuk giliran** (audit 2026-08-03): guard
 `bolehSetujuiJurnal()` (self-approval, migrasi 20260727_01) tercermin di 4

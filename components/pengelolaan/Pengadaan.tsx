@@ -25,6 +25,7 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
+import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { formatRupiah } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import FormShell from './FormShell'
@@ -609,18 +610,15 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
   async function unapproveHeader() {
     if (!confirm(`Buka kunci kontrak ${j.no_sk}?\n${j.lines.length} barang dikembalikan ke draft & DIHAPUS dari Daftar Barang/Penyusutan sampai disetujui lagi. NIBAR akan digenerate ulang saat approve berikutnya.`)) return
     setBusy(true); onMsg('')
-    // Guard rantai: kalau ada barang yg sudah punya transaksi LEBIH BARU setelah
-    // pengadaan (mis. dialihkan ke SKPD lain, dimanfaatkan, dikapitalisasi, direklas),
-    // buka kunci DIBLOKIR — soft-delete pengadaan di tengah rantai merusak state &
-    // meninggalkan transaksi yatim. Batalkan transaksi yg lebih baru itu dulu.
-    for (const l of j.lines) {
-      const { count } = await supabase.from('transaksi_bmd')
-        .select('id', { count: 'exact', head: true }).eq('aset_id', l.aset_id).gt('id', l.trx_id)
-      if ((count || 0) > 0) {
-        onMsg(`Error: "${l.nama_barang || l.uraian_barang || l.nibar}" punya transaksi LEBIH BARU (mis. pengalihan/pemanfaatan/kapitalisasi) setelah pengadaan ini — batalkan transaksi itu dulu, baru buka kunci.`)
-        setBusy(false); return
-      }
-    }
+    // Guard rantai (rules.md §1.3) — satu sumber di lib/guardPembatalan.ts.
+    // Soft-delete pengadaan di tengah rantai merusak state & meninggalkan
+    // transaksi yatim, jadi buka kunci DIBLOKIR selama masih ada yang lebih baru.
+    const guard = await cekBolehBatal(
+      supabase,
+      j.lines.map(l => ({ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.uraian_barang || l.nibar })),
+      'pengadaan ini (mis. pengalihan/pemanfaatan/kapitalisasi)',
+    )
+    if (!guard.boleh) { onMsg(`Error: ${guard.pesan}`); setBusy(false); return }
     for (const l of j.lines) {
       const { error } = await catatTransaksi(supabase, {
         asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal, headerId: j.id,

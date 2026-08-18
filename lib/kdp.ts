@@ -15,6 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { periodeDariTanggal, klasifikasiKomptabel, fetchBatasKapitalisasi } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
+import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 
 // ── MODEL MERGE-KE-PENGADAAN: 1 kontrak konstruksi = 1 kartu jurnal_header ──
@@ -177,11 +178,13 @@ export async function unapproveKontrakKonstruksi(supabase: SupabaseClient, heade
     // Batalkan transaksi yg lebih baru itu dulu.
     const maxAkum = new Map<string, number>()
     for (const t of akum) maxAkum.set(t.aset_id, Math.max(maxAkum.get(t.aset_id) ?? 0, t.id))
-    for (const [aid, threshold] of maxAkum) {
-      const { count } = await supabase.from('transaksi_bmd')
-        .select('id', { count: 'exact', head: true }).eq('aset_id', aid).gt('id', threshold)
-      if ((count || 0) > 0) return { error: 'Ada barang KDP dengan transaksi LEBIH BARU setelah akumulasi terakhir (mis. reklas/koreksi/penghapusan) — batalkan transaksi itu dulu sebelum buka kunci.' }
-    }
+    const namaByAset = new Map(barangs.filter(b => b.aset_id).map(b => [b.aset_id as string, b.nama]))
+    const guard = await cekBolehBatal(
+      supabase,
+      [...maxAkum].map(([aid, threshold]) => ({ aset_id: aid, trx_id: threshold, label: namaByAset.get(aid) })),
+      'akumulasi terakhirnya (mis. reklas/koreksi/penghapusan)',
+    )
+    if (!guard.boleh) return { error: guard.pesan }
     const balik = akum.map(t => ({
       aset_id: t.aset_id, jenis: 'batal_akumulasi_kdp', periode: periodeDariTanggal(t.tanggal), tanggal: t.tanggal,
       nilai: -Number(t.nilai || 0), header_id: headerId, payload: {},

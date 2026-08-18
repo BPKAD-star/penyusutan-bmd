@@ -12,6 +12,7 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
+import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode, koreksiFieldKeys, allSameGolongan, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
@@ -294,15 +295,13 @@ function KoreksiTransaksi() {
     const label = ALASAN_LABEL[j.jenis]
     if (!confirm(`Batalkan koreksi (${label}) ${lines.length} barang? Barang kembali ke keadaan sebelum koreksi. Jalankan Engine lagi setelah ini.`)) return
     setBatalling(true); setMsg('')
-    // Guard rantai: tolak kalau ada transaksi lebih baru pada aset itu.
-    for (const l of lines) {
-      const { count } = await supabase.from('transaksi_bmd')
-        .select('id', { count: 'exact', head: true }).eq('aset_id', l.aset_id).gt('id', l.trx_id)
-      if ((count || 0) > 0) {
-        setMsg(`Batal diblokir: "${l.nama_barang || l.nibar}" punya transaksi LEBIH BARU setelah koreksi ini — batalkan yang lebih baru dulu.`)
-        setBatalling(false); return
-      }
-    }
+    // Guard rantai (rules.md §1.3) — satu sumber di lib/guardPembatalan.ts.
+    const guard = await cekBolehBatal(
+      supabase,
+      lines.map(l => ({ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.nibar })),
+      'koreksi ini',
+    )
+    if (!guard.boleh) { setMsg(guard.pesan); setBatalling(false); return }
     const today = new Date().toISOString().slice(0, 10)
     for (const l of lines) {
       let jenis: string
@@ -338,16 +337,16 @@ function KoreksiTransaksi() {
       return
     }
     if (!confirm(`Batalkan pemecahan No. ${j.no_sk}? Induk akan aktif kembali dan ${j.pecahan.length} pecahan dibuang.`)) return
-    // Guard rantai: induk & tiap pecahan tak boleh punya transaksi LEBIH BARU
-    // setelah pemecahan ini (mis. koreksi/reklas di atas pecahan) — batalkan yang
-    // lebih baru dulu, kalau tidak replay engine rusak.
-    for (const r of [...(j.induk ? [j.induk] : []), ...j.pecahan]) {
-      const { count } = await supabase.from('transaksi_bmd')
-        .select('id', { count: 'exact', head: true }).eq('aset_id', r.aset_id).gt('id', r.trx_id)
-      if ((count || 0) > 0) {
-        setMsg(`Error: "${r.nama_barang || r.nibar}" punya transaksi LEBIH BARU setelah pemecahan ini — batalkan yang lebih baru dulu.`)
-        return
-      }
+    // Guard rantai (rules.md §1.3): induk & TIAP pecahan diperiksa — koreksi/
+    // reklas yang mendarat di salah satu pecahan pun sudah cukup memblokir.
+    {
+      const guard = await cekBolehBatal(
+        supabase,
+        [...(j.induk ? [j.induk] : []), ...j.pecahan]
+          .map(r => ({ aset_id: r.aset_id, trx_id: r.trx_id, label: r.nama_barang || r.nibar })),
+        'pemecahan ini',
+      )
+      if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); return }
     }
     setBatalId(j.id)
     setMsg('')
@@ -388,15 +387,15 @@ function KoreksiTransaksi() {
       return
     }
     if (!confirm(`Batalkan penggabungan No. ${j.no_sk}? ${j.sumber.length} barang akan muncul kembali dan induk balik ke nilai semula.`)) return
-    // Guard rantai baku (rules.md §1.3): induk & tiap sumber tak boleh punya
-    // transaksi LEBIH BARU setelah penggabungan ini.
-    for (const r of [...(j.induk ? [j.induk] : []), ...j.sumber]) {
-      const { count } = await supabase.from('transaksi_bmd')
-        .select('id', { count: 'exact', head: true }).eq('aset_id', r.aset_id).gt('id', r.trx_id)
-      if ((count || 0) > 0) {
-        setMsg(`Error: "${r.nama_barang || r.nibar}" punya transaksi LEBIH BARU setelah penggabungan ini — batalkan yang lebih baru dulu.`)
-        return
-      }
+    // Guard rantai baku (rules.md §1.3): induk & tiap sumber diperiksa.
+    {
+      const guard = await cekBolehBatal(
+        supabase,
+        [...(j.induk ? [j.induk] : []), ...j.sumber]
+          .map(r => ({ aset_id: r.aset_id, trx_id: r.trx_id, label: r.nama_barang || r.nibar })),
+        'penggabungan ini',
+      )
+      if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); return }
     }
     setBatalId(j.id)
     setMsg('')

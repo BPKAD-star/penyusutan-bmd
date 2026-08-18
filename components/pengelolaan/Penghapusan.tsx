@@ -24,6 +24,7 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
+import { cekBolehBatal } from '@/lib/guardPembatalan'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -300,16 +301,13 @@ export default function Penghapusan() {
       return
     }
     if (!confirm('Batalkan penghapusan barang ini? Barang akan kembali aktif dan penyusutan dilanjutkan.')) return
-    // Guard rantai: barang tak boleh punya transaksi LEBIH BARU setelah penghapusan
-    // ini — batalkan yang lebih baru dulu, kalau tidak replay engine rusak.
-    {
-      const { count } = await supabase.from('transaksi_bmd')
-        .select('id', { count: 'exact', head: true }).eq('aset_id', l.aset_id).gt('id', l.trx_id)
-      if ((count || 0) > 0) {
-        setMsg(`Error: "${l.nama_barang || l.nibar}" punya transaksi LEBIH BARU setelah penghapusan ini — batalkan yang lebih baru dulu.`)
-        return
-      }
-    }
+    // Guard rantai (rules.md §1.3) — satu sumber di lib/guardPembatalan.ts.
+    const guard = await cekBolehBatal(
+      supabase,
+      [{ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.nibar }],
+      'penghapusan ini',
+    )
+    if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); return }
     // Reversal dicatat di PERIODE penghapusan asli (header.tanggal), bukan hari ini —
     // supaya di view periode itu barang langsung kembali muncul (konsisten Daftar Barang).
     const { error } = await catatTransaksi(supabase, {
