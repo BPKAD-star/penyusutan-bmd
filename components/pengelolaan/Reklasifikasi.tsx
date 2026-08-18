@@ -29,6 +29,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
+import { cekBolehBatal } from '@/lib/guardPembatalan'
 
 type Alasan = 'komptabel_ke_ekstra' | 'komptabel_ke_intra' | 'golongan' | 'kode'
 
@@ -131,15 +132,17 @@ export default function Reklasifikasi() {
     if (lines.length === 0) { setMsg('Centang minimal satu baris untuk dibatalkan.'); return }
     if (!confirm(`Batalkan reklasifikasi ${lines.length} barang? Barang kembali ke kode/posisi semula. Jalankan Engine lagi setelah ini.`)) return
     setBatalling(true); setMsg('')
-    // Guard rantai: tolak kalau ada transaksi lebih baru dari baris reklas ini.
-    for (const l of lines) {
-      const { count } = await supabase.from('transaksi_bmd')
-        .select('id', { count: 'exact', head: true }).eq('aset_id', l.aset_id).gt('id', l.trx_id)
-      if ((count || 0) > 0) {
-        setMsg(`Batal diblokir: "${l.nama_barang || l.nibar}" punya transaksi LEBIH BARU setelah reklas ini — batalkan yang lebih baru dulu.`)
-        setBatalling(false); return
-      }
-    }
+    // Guard rantai (rules.md §1.3) — SATU sumber di lib/guardPembatalan.ts,
+    // dipakai bersama seluruh menu batal. Versi lama di sini menulis
+    // `const { count } = await …` lalu `(count || 0) > 0`: query yang gagal
+    // membuat `count` undefined sehingga guard-nya LOLOS diam-diam. Sekarang
+    // gagal-memeriksa berarti tidak-boleh.
+    const guard = await cekBolehBatal(
+      supabase,
+      lines.map(l => ({ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.nibar })),
+      'reklas ini',
+    )
+    if (!guard.boleh) { setMsg(guard.pesan); setBatalling(false); return }
     const today = new Date().toISOString().slice(0, 10)
     const periode = periodeDariTanggal(today)
     const trxRows = lines.map(l => ({
