@@ -1,0 +1,49 @@
+-- Fase 4 — Dashboard & Saldo Awal: `work_mem` untuk dua RPC agregat terakhir
+-- yang belum kebagian.
+--
+-- ── TEMUAN: `work_mem` selama ini dipasang AD-HOC ───────────────────────────
+-- Audit `pg_proc.proconfig` seluruh RPC berat (2026-08-18) menunjukkan tak ada
+-- aturan yang menentukan siapa dapat `work_mem` — ia ditambahkan hanya saat
+-- sebuah halaman kebetulan bermasalah:
+--
+--   fn_penyusutan_rekap ........ work_mem 64MB
+--   fn_rekap_bmd ............... work_mem 64MB + statement_timeout  (20260818_05)
+--   fn_rekon_pos ............... work_mem 64MB + statement_timeout  (20260818_04)
+--   fn_dashboard_rekap ......... (tak ada)   ← diperbaiki di sini
+--   fn_rekap_saldo_awal ........ (tak ada)   ← diperbaiki di sini
+--   fn_daftar_barang(_rekap) ... (tak ada)   ← SENGAJA dibiarkan, lihat bawah
+--
+-- Terukur sbg pengurus Dinas Pendidikan (707 unit, 295.141 aset), RLS aktif:
+--
+--   fn_dashboard_rekap() ................ 5.741 ms → 434 ms   (13,2x)
+--   fn_rekap_saldo_awal(scope,'intra') .. 3.462 ms → 466 ms   ( 7,4x)
+--
+-- Keduanya SEBELUMNYA masih lolos pagu 8 dtk, jadi ini bukan perbaikan halaman
+-- rusak seperti 20260818_05 — tapi marginnya tipis (2,3 dtk & 4,5 dtk) dan
+-- keduanya tumbuh mengikuti jumlah aset. Komentar di app/dashboard/page.tsx
+-- bahkan sudah mencatat `fn_dashboard_rekap` "terukur 1,4 dtk dalam kondisi
+-- TERBAIK, jadi memang dekat ambang" — pengukuran hari ini menemukannya sudah
+-- 4x lipat dari itu.
+--
+-- ── YANG SENGAJA TIDAK DIUBAH ──────────────────────────────────────────────
+-- (1) `fn_daftar_barang_rekap` diukur **350 ms tanpa work_mem** — sehat, tak
+--     ada yang perlu diperbaiki. Menambahkan setelan ke fungsi yang tak
+--     membutuhkannya cuma menambah hal yang harus dirawat.
+-- (2) **`statement_timeout` TIDAK dinaikkan di sini**, berbeda dari
+--     20260818_04/05. Di sana pagu 8 dtk memang tak cukup (fn_rekon_pos butuh
+--     ~14 dtk); di sini keduanya selesai di bawah 500 ms, dan menaikkan pagunya
+--     justru MERUGIKAN: pagu 8 dtk adalah satu-satunya alat yang akan berteriak
+--     kalau suatu saat fungsi ini mengalami regresi 20x. Menaikkannya berarti
+--     membungkam alarm demi kelonggaran yang tak dibutuhkan.
+--
+-- ── KENAPA `ALTER FUNCTION`, BUKAN `CREATE OR REPLACE` ──────────────────────
+-- Badan kedua fungsi ini tidak berubah sama sekali. Menyalin ulang badannya ke
+-- migrasi hanya untuk menambah satu baris SET membuka peluang salah transkripsi
+-- pada fungsi yang menghitung angka Lapis 1 — risiko yang tak dibayar apa pun.
+-- `ALTER FUNCTION … SET` mengubah persis satu hal dan tak menyentuh sisanya.
+--
+-- ⚠️ 64MB, jangan lebih. `work_mem` berlaku PER NODE PER KONEKSI; dengan target
+-- 100–150 pengguna serentak, angka besar di sini berubah jadi masalah memori
+-- server. Pemakaian nyata yang pernah diukur (fn_penyusutan_rekap): 8,3 MB.
+ALTER FUNCTION fn_dashboard_rekap()                  SET work_mem TO '64MB';
+ALTER FUNCTION fn_rekap_saldo_awal(bigint[], text)   SET work_mem TO '64MB';
