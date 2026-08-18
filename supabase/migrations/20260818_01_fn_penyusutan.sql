@@ -285,7 +285,14 @@ BEGIN
     COALESCE(sum(ps.akumulasi) FILTER (WHERE a.golongan IN ('1.3.2','1.3.3','1.3.4','1.5.3','1.5.4')), 0),
     COALESCE(sum(CASE WHEN a.golongan IN ('1.3.2','1.3.3','1.3.4','1.5.3','1.5.4') AND ps.aset_id IS NOT NULL
                       THEN ps.nilai_buku_akhir ELSE a.nilai_perolehan END), 0),
-    count(*) FILTER (WHERE ps.aset_id IS NULL)::bigint
+    -- ⚠️ HANYA golongan yang MEMANG disusutkan. Tanah/ATL/KDP tak pernah punya
+    -- baris engine sama sekali, jadi menghitungnya di sini membuat layar
+    -- selalu berkata "834 belum dihitung engine" untuk keadaan yang justru
+    -- normal & permanen — dan itu memancing operator menjalankan engine
+    -- se-kabupaten tanpa guna. Angka ini harus berarti "SEHARUSNYA punya hasil
+    -- engine tapi belum", bukan sekadar "tak punya baris".
+    count(*) FILTER (WHERE ps.aset_id IS NULL
+                       AND a.golongan IN ('1.3.2','1.3.3','1.3.4','1.5.3','1.5.4'))::bigint
   FROM aset a
   LEFT JOIN ps ON ps.aset_id = a.id
   WHERE a.status <> 'draft'
