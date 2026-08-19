@@ -4,6 +4,15 @@ const config: Config = {
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
+    // ⚠️ WAJIB. Kelas Tailwind yang HANYA dipakai di berkas luar daftar ini
+    // tidak pernah ikut ter-generate ke CSS — komponennya tetap dirender, cuma
+    // tampil telanjang, TANPA satu pun error di konsol maupun saat build.
+    // Terjadi 2026-08-19: KonfirmasiModal pindah ke shared/ui/ dan pop-upnya
+    // muncul tanpa latar gelap sama sekali, menumpuk di atas isi halaman.
+    // Sebelum itu shared/ isinya cuma logika (paginate/assertOk/useAsyncData)
+    // tanpa JSX ber-kelas, jadi lubangnya tak pernah kelihatan.
+    // Menambah folder ber-JSX baru → daftarkan di sini juga.
+    './shared/**/*.{ts,tsx}',
   ],
   theme: {
     extend: {

@@ -175,6 +175,13 @@ kapitalisasi, koreksi, reklasifikasi), `pengalihan`, `pemanfaatan`,
 - **Satu commit = pindah berkas saja, tanpa perubahan isi.** Kalau ada
   perbaikan yang ingin dibawa, taruh di commit berikutnya. Diff "pindah +
   ubah" mustahil di-review.
+- **Folder BARU yang berisi JSX → daftarkan di `content` Tailwind.** Kelas yang
+  hanya dipakai di berkas luar daftar itu tidak pernah ter-generate ke CSS:
+  komponennya tetap dirender, cuma **tampil telanjang, tanpa satu pun error**
+  saat build maupun di konsol. Kejadian 2026-08-19 — `KonfirmasiModal` pindah ke
+  `shared/ui/` dan pop-upnya muncul tanpa latar gelap, menumpuk di atas isi
+  halaman. `shared/` sebelumnya cuma berisi logika, jadi lubangnya tak pernah
+  kelihatan.
 - **Tetap di root, jangan ke `src/`.** Tidak ada manfaat teknisnya dan
   memindahkan semua path sekaligus itu mesin konflik merge.
 - `components/` dan `lib/` yang lama **dibiarkan hidup** selama transisi.
