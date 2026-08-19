@@ -2124,11 +2124,19 @@ barang**, yang dipakai puluhan barang. Akibatnya tiap aset kena DUA kali:
   satunya bernama "Desa Tugurejo Kecamatan Ngasem", jelas kolom LOKASI yang
   salah petak.
 
-Lebih catat 1.3.3 **Rp1.997.697.349** selama 5 minggu, di Laporan BMD, Saldo
-Awal (snapshot ikut kena backfill 20260812_03), maupun beban penyusutan. Satu
-aset bahkan berakumulasi **melebihi** nilai perolehannya (257.153.961 vs
-169.105.349) sehingga engine memaksa nilai buku ke 0 — satu-satunya baris
-semacam itu di seluruh basis data, dan tak ada satu pun pesan error.
+⚠️ **Dan kesalahan ketiga, yang baru ketahuan sehari kemudian:** karena mengira
+kedua baris file itu sudah terpakai, batch yang sama **menonaktifkan barang
+aslinya** (`koreksi_pencatatan_ganda` "di luar Import Lengkap") — *Rehab DLH
+(pos jaga & Gudang TPA Sekoto)* Rp169.105.349 & *Pembangunan Gedung Serbaguna
+Kab. Kediri* Rp1.828.592.000. Padahal keduanya ADA di daftar. Jadi
+**TOTAL-nya tak pernah kelebihan — yang salah sebarannya**: nilai menempel di
+barang yang keliru, dua barang hilang, dua duplikat mengisi tempatnya, dan
+jumlahnya kebetulan pas. 20260819_01 membetulkan sebarannya tapi meninggalkan
+kekurangan Rp1.997.697.349; ditutup migrasi **20260819_03**.
+**Pelajarannya: jangan berhenti di barang yang nilainya salah — periksa juga
+barang PEMILIK nilai itu.** Satu aset bahkan berakumulasi **melebihi** nilai
+perolehannya (257.153.961 vs 169.105.349) sehingga engine memaksa nilai buku ke
+0 — satu-satunya baris semacam itu di seluruh basis data, tanpa satu pun error.
 
 - **Aturannya: kunci pencocokan import massal WAJIB identitas barang (NIBAR),
   bukan kode barang** — dan kalau NIBAR tak tersedia, minimal
@@ -2174,6 +2182,16 @@ semacam itu di seluruh basis data, dan tak ada satu pun pesan error.
   beda pembulatan float 1e-7 di satu baris Jalan). Laporan BMD & Rekonsiliasi
   TIDAK ikut salah — keduanya membaca ledger, dan ledgernya benar sejak awal;
   yang salah cuma tabel snapshot. Karena itu engine tak perlu di-run ulang.
+
+- **`batal_koreksi_pencatatan_ganda` masuk whitelist `fn_cek_tahun_buku`**
+  (migrasi 20260819_03). `koreksi_pencatatan_ganda` sudah di-whitelist sejak
+  migrasi 23 supaya bisa dibackdate ke tahun terkunci; pembatalannya tidak —
+  padahal ia WAJIB bisa dicatat pada tanggal yang sama, kalau tidak barangnya
+  hidup lagi hanya sejak periode berjalan sementara periode-periode sebelumnya
+  tetap kehilangan dia (`fn_rekap_bmd` period-aware). **Aturan umum: setiap
+  jenis di whitelist itu pasangan `batal_*`-nya ikut di-whitelist** — tiga yang
+  lain (`batal_pengadaan`/`batal_penghapusan`/`batal_kapitalisasi`) memang sudah
+  begitu sejak awal; yang ini kelewat.
 
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
