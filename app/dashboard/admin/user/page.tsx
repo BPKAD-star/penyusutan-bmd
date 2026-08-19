@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ROLE_LABEL, ROLE_VALUES } from '@/lib/roles'
 import CariBox from '@/components/admin/CariBox'
+import SearchSelect from '@/components/SearchSelect'
 import { cocokCari } from '@/lib/cari'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
@@ -92,6 +93,12 @@ export default function AdminUserPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    // Pegawai diperiksa DI SINI, bukan lewat `required` di elemennya: kolomnya
+    // sekarang SearchSelect (input teks + daftar), dan `required` di input itu
+    // cuma memaksa kotaknya terisi teks — bukan memastikan ada pegawai yang
+    // benar-benar TERPILIH. Kotak berisi ketikan yang tak cocok dengan siapa pun
+    // akan lolos, lalu gagal di API dengan pesan mentah.
+    if (!form.pegawai_id) { setMsg('Error: pilih pegawai dulu dari daftar.'); return }
     setSaving(true)
     setMsg('')
 
@@ -206,15 +213,29 @@ export default function AdminUserPage() {
           <h2 className="text-base font-semibold text-gray-800 mb-4">Tambah User Baru</h2>
           <form onSubmit={handleCreate} className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="block text-xs text-gray-500 mb-1">Pegawai (NIP — Nama — Jabatan)</label>
-              <select required className="select-filter w-full" value={form.pegawai_id}
-                onChange={e => setForm(f => ({ ...f, pegawai_id: e.target.value }))}>
-                <option value="">— pilih pegawai —</option>
-                {pegawaiList.map(p => (
-                  <option key={p.id} value={p.id}>{p.nip || 'Non-ASN'} — {p.nama}{p.jabatan ? ` — ${p.jabatan}` : ''}</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-400 mt-1">Belum ada di daftar? Tambahkan dulu di menu Daftar Pegawai.</p>
+              <label className="block text-xs text-gray-500 mb-1">Pegawai</label>
+              {/* Bisa DIKETIK untuk menyaring (permintaan user 2026-08-19).
+                  Sebelumnya <select> biasa berisi ratusan pegawai — satu-satunya
+                  cara memilih adalah menggulir daftar panjang berhuruf kecil.
+                  Memakai SearchSelect yang sudah ada (dipakai Pengadaan &
+                  Konstruksi), bukan bikin komponen baru.
+                  NAMA ditaruh di baris utama & NIP/jabatan di baris kecil —
+                  kebalikan dari susunan lama "NIP — Nama — Jabatan". Orang
+                  mencari pegawai dengan mengingat namanya, bukan NIP-nya;
+                  NIP tetap ikut tercari karena SearchSelect juga menyaring `sub`. */}
+              <SearchSelect
+                value={form.pegawai_id}
+                onChange={v => setForm(f => ({ ...f, pegawai_id: v }))}
+                options={pegawaiList.map(p => ({
+                  value: p.id,
+                  label: p.nama,
+                  sub: [p.nip || 'Non-ASN', p.jabatan].filter(Boolean).join(' · '),
+                }))}
+                placeholder="Ketik nama, NIP, atau jabatan…"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Ketik untuk mencari. Belum ada di daftar? Tambahkan dulu di menu Daftar Pegawai.
+              </p>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Username / Email (untuk login)</label>
