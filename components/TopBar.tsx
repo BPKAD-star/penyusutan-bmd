@@ -4,9 +4,11 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import TahunKerjaBadge from './TahunKerjaBadge'
 import { useIsViewer } from './useIsViewer'
+import AvatarPegawai, { type JenisKelamin } from './AvatarPegawai'
 
-export default function TopBar({ userName, onToggleSidebar }: {
+export default function TopBar({ userName, userJk, onToggleSidebar }: {
   userName: string
+  userJk: JenisKelamin
   onToggleSidebar: () => void
 }) {
   const router = useRouter()
@@ -53,9 +55,7 @@ export default function TopBar({ userName, onToggleSidebar }: {
         <div className="relative">
           <button onClick={() => setMenuOpen(v => !v)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-            <span className="w-7 h-7 rounded-full bg-navy text-white text-xs font-bold flex items-center justify-center">
-              {userName.charAt(0).toUpperCase()}
-            </span>
+            <AvatarPegawai jk={userJk} nama={userName} />
             <span className="text-sm text-gray-700">Welcome, <span className="font-medium">{userName}</span></span>
             <svg className={`w-4 h-4 text-gray-400 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor">

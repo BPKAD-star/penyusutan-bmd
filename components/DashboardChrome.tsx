@@ -5,10 +5,13 @@ import TopBar from './TopBar'
 import ChatWidget from './ChatWidget'
 import BroadcastPopup from './BroadcastPopup'
 import { KonfirmasiProvider } from '@/shared/ui/konfirmasi'
+import type { JenisKelamin } from './AvatarPegawai'
 
-export default function DashboardChrome({ userName, userRole, children }: {
+export default function DashboardChrome({ userName, userRole, userJk, children }: {
   userName: string
   userRole: string
+  /** 'L' | 'P' | '' — kosong berarti tak diketahui, avatar jatuh ke huruf awal. */
+  userJk: JenisKelamin
   children: React.ReactNode
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -20,7 +23,7 @@ export default function DashboardChrome({ userName, userRole, children }: {
   return (
     <KonfirmasiProvider>
       <div className="flex flex-col h-screen overflow-hidden">
-        <TopBar userName={userName} onToggleSidebar={() => setSidebarOpen(o => !o)} />
+        <TopBar userName={userName} userJk={userJk} onToggleSidebar={() => setSidebarOpen(o => !o)} />
         <div className="flex flex-1 overflow-hidden">
           {sidebarOpen && <Sidebar userName={userName} userRole={userRole} />}
           <main className="flex-1 overflow-auto bg-gray-50 min-w-0">{children}</main>
