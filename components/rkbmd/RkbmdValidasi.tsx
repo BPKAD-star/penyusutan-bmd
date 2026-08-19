@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { backdropClose } from '@/components/backdropClose'
+import KonfirmasiModal from '@/components/KonfirmasiModal'
 import { formatRupiah } from '@/lib/export'
 import { RKBMD_JENIS, STATUS_META, type RkbmdStatus, type RkbmdPaket } from '@/lib/rkbmd'
 
@@ -51,6 +52,11 @@ const STATUS_BELUM: RkbmdStatus[] = ['draft', 'diajukan', 'ditolak']
 
 type Tab = 'usulan' | 'tervalidasi'
 
+/** Keputusan yang sedang ditanyakan lewat pop-up. Satu state untuk ketiganya —
+ *  ketiganya saling meniadakan, dan tiga bendera terpisah cepat atau lambat
+ *  menyala dua-duanya. Kembar dengan `Konfirmasi` di StandarValidasi. */
+type Konfirmasi = { aksi: 'setujui' | 'tolak' | 'buka'; h: Antrean }
+
 export default function RkbmdValidasi() {
   const supabase = createClient()
   const [tahun, setTahun] = useState(TAHUN_DEFAULT)
@@ -64,6 +70,7 @@ export default function RkbmdValidasi() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [detail, setDetail] = useState<Antrean | null>(null)
+  const [konfirm, setKonfirm] = useState<Konfirmasi | null>(null)
   const [err, setErr] = useState('')
   const [msg, setMsg] = useState('')
 
@@ -130,47 +137,39 @@ export default function RkbmdValidasi() {
 
   useEffect(() => { load() }, [load])
 
-  async function setujui(h: Antrean) {
-    const isi = h.nihil
-      ? 'Dokumen ini dinyatakan NIHIL (tidak ada usulan).'
-      : `${h.pakets.length} kartu · ${h.jumlah_item} item · ${formatRupiah(h.total)}`
-    if (!confirm(`Setujui RKBMD ${JENIS_LABEL[h.jenis] || h.jenis} ${h.admin_skpd?.nama || ''} TA ${h.tahun_anggaran}?\n${isi}`)) return
+  // Ketiga keputusan lewat satu jalur — pop-up sengaja DIBIARKAN TERBUKA selama
+  // pekerjaannya berjalan (ditutup di `finally`, bukan saat tombolnya ditekan),
+  // supaya ada keadaan "sedang diproses" yang dulu mustahil ditampilkan karena
+  // `confirm()` membekukan seluruh tab. Lihat components/KonfirmasiModal.tsx.
+  //
+  // Buka Kunci ada di layar ini sejak 2026-08-13 (pindah dari menu Usulan):
+  // menyetujui, menolak, dan membatalkan penetapan adalah tiga sisi dari satu
+  // wewenang yang sama, jadi tempatnya satu layar.
+  async function putuskan(k: Konfirmasi, catatan: string) {
+    const { aksi, h } = k
     setBusy(h.id); setErr(''); setMsg('')
-    const { data: { user } } = await supabase.auth.getUser()
-    const { error } = await supabase.from('rkbmd').update({
-      status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString(),
-    }).eq('id', h.id)
-    if (error) setErr(error.message)
-    else { setMsg('RKBMD disetujui & ditetapkan.'); load() }
-    setBusy(null)
-  }
-
-  async function tolak(h: Antrean) {
-    const alasan = prompt('Catatan telaah (akan dikirim ke SKPD). Seluruh kartu di dokumen ini kembali bisa disunting:')
-    if (alasan === null) return
-    setBusy(h.id); setErr(''); setMsg('')
-    const { error } = await supabase.from('rkbmd')
-      .update({ status: 'ditolak', catatan_telaah: alasan || null }).eq('id', h.id)
-    if (error) setErr(error.message)
-    else { setMsg('RKBMD dikembalikan ke SKPD — seluruh kartunya ikut dibuka untuk direview.'); load() }
-    setBusy(null)
-  }
-
-  // Buka Kunci: dokumen yang sudah ditetapkan dikembalikan ke draft supaya SKPD
-  // bisa memperbaikinya. Pindah ke sini dari menu Usulan (keputusan user
-  // 2026-08-13) — menyetujui, menolak, dan membatalkan penetapan adalah tiga
-  // sisi dari satu wewenang yang sama, jadi tempatnya satu layar.
-  async function bukaKunci(h: Antrean) {
-    if (!confirm(
-      `Buka kunci RKBMD ${JENIS_LABEL[h.jenis] || h.jenis} ${h.admin_skpd?.nama || ''} TA ${h.tahun_anggaran}?\n\n`
-      + 'Dokumen kembali ke DRAFT dan bisa disunting SKPD. Penetapannya dibatalkan, '
-      + 'dan untuk diajukan lagi lembarnya harus dicetak & ditandatangani ulang.',
-    )) return
-    setBusy(h.id); setErr(''); setMsg('')
-    const { error } = await supabase.from('rkbmd').update({ status: 'draft' }).eq('id', h.id)
-    if (error) setErr(error.message)
-    else { setMsg('Kunci dibuka — dokumen kembali ke draft di menu Usulan SKPD.'); load() }
-    setBusy(null)
+    try {
+      if (aksi === 'setujui') {
+        const { data: { user } } = await supabase.auth.getUser()
+        const { error } = await supabase.from('rkbmd').update({
+          status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString(),
+        }).eq('id', h.id)
+        if (error) { setErr(error.message); return }
+        setMsg('RKBMD disetujui & ditetapkan.')
+      } else if (aksi === 'tolak') {
+        const { error } = await supabase.from('rkbmd')
+          .update({ status: 'ditolak', catatan_telaah: catatan || null }).eq('id', h.id)
+        if (error) { setErr(error.message); return }
+        setMsg('RKBMD dikembalikan ke SKPD — seluruh kartunya ikut dibuka untuk direview.')
+      } else {
+        const { error } = await supabase.from('rkbmd').update({ status: 'draft' }).eq('id', h.id)
+        if (error) { setErr(error.message); return }
+        setMsg('Kunci dibuka — dokumen kembali ke draft di menu Usulan SKPD.')
+      }
+      await load()
+    } finally {
+      setBusy(null); setKonfirm(null)
+    }
   }
 
   return (
@@ -288,14 +287,14 @@ export default function RkbmdValidasi() {
                       tangan penelaah, jadi tombolnya tak boleh muncul. */}
                   {isAdmin && h.status === 'diajukan' && (
                     <>
-                      <button onClick={() => setujui(h)} disabled={busy === h.id}
+                      <button onClick={() => setKonfirm({ aksi: 'setujui', h })} disabled={busy === h.id}
                         className="text-teal hover:underline text-xs font-medium mr-3">Setujui</button>
-                      <button onClick={() => tolak(h)} disabled={busy === h.id}
+                      <button onClick={() => setKonfirm({ aksi: 'tolak', h })} disabled={busy === h.id}
                         className="text-red-500 hover:text-red-700 text-xs font-medium">Tolak</button>
                     </>
                   )}
                   {isAdmin && h.status === 'disetujui' && (
-                    <button onClick={() => bukaKunci(h)} disabled={busy === h.id}
+                    <button onClick={() => setKonfirm({ aksi: 'buka', h })} disabled={busy === h.id}
                       className="text-gray-600 hover:text-gray-800 text-xs font-medium">Buka Kunci</button>
                   )}
                 </td>
@@ -306,7 +305,81 @@ export default function RkbmdValidasi() {
       </div>
 
       {detail && <DetailModal h={detail} onClose={() => setDetail(null)} />}
+      {konfirm && (
+        <KonfirmasiRkbmd
+          k={konfirm}
+          busy={busy === konfirm.h.id}
+          onBatal={() => setKonfirm(null)}
+          onYa={(catatan) => putuskan(konfirm, catatan)}
+        />
+      )}
     </FormShell>
+  )
+}
+
+// ── Isi pop-up untuk ketiga keputusan ───────────────────────────────────────
+// Dokumen NIHIL sengaja diberi baris rincian sendiri: ia dan dokumen yang lupa
+// diisi sama-sama berjumlah 0 item, dan penelaah yang tak melihat pembedanya
+// bisa menolak SKPD yang justru sudah menyatakan sikapnya.
+function KonfirmasiRkbmd({ k, busy, onYa, onBatal }: {
+  k: Konfirmasi; busy: boolean; onYa: (catatan: string) => void; onBatal: () => void
+}) {
+  const { aksi, h } = k
+  const subjudul = `${h.admin_skpd?.nama || `SKPD #${h.skpd_id}`} · ${JENIS_LABEL[h.jenis] || h.jenis}`
+    + ` ${h.versi === 'perubahan' ? 'Perubahan' : 'Murni'} · TA ${h.tahun_anggaran}`
+  const rincian = h.nihil
+    ? [{ label: 'Isi dokumen', nilai: 'NIHIL (dinyatakan tidak ada usulan)' }]
+    : [
+        { label: 'Kartu', nilai: `${h.pakets.length} kartu` },
+        { label: 'Item', nilai: `${h.jumlah_item} item` },
+        { label: 'Total anggaran', nilai: formatRupiah(h.total) },
+      ]
+
+  if (aksi === 'setujui') {
+    return (
+      <KonfirmasiModal
+        nada="teal" ikon="✓" judul="Tetapkan dokumen RKBMD ini?" subjudul={subjudul}
+        rincian={rincian} labelYa="Ya, setujui" busy={busy} onYa={onYa} onBatal={onBatal}
+        peringatan={h.dokumen_url ? undefined : <>
+          Dokumen ini <b>tanpa lampiran bertanda tangan</b>. Normalnya lampiran itu syarat pengajuan
+          (berlaku sejak migrasi 20260813_01) — periksa dulu sebelum menetapkannya.
+        </>}
+      >
+        Dokumen dibekukan beserta <b>seluruh kartunya</b> dan masuk ke Pelaporan sebagai
+        ketetapan. Untuk mengubahnya lagi harus lewat <b>Buka Kunci</b> di tab Tervalidasi.
+      </KonfirmasiModal>
+    )
+  }
+
+  if (aksi === 'tolak') {
+    return (
+      <KonfirmasiModal
+        nada="merah" ikon="↩" judul="Kembalikan dokumen ke SKPD?" subjudul={subjudul}
+        rincian={rincian} labelYa="Ya, kembalikan" busy={busy} onYa={onYa} onBatal={onBatal}
+        catatan={{
+          label: 'Catatan telaah',
+          placeholder: 'Mis. sub kegiatan pada kartu 2 tidak sesuai nomenklatur; jumlah eksisting perlu dicek ulang.',
+          petunjuk: <>Boleh dikosongkan, tapi SKPD tak akan tahu apa yang harus diperbaiki.</>,
+        }}
+      >
+        Penolakan berlaku untuk <b>satu dokumen utuh</b> — seluruh kartunya kembali bisa disunting.
+        Tidak ada setuju-sebagian.
+      </KonfirmasiModal>
+    )
+  }
+
+  return (
+    <KonfirmasiModal
+      nada="amber" ikon="🔓" judul="Batalkan penetapan dokumen ini?" subjudul={subjudul}
+      rincian={rincian} labelYa="Ya, buka kunci" busy={busy} onYa={onYa} onBatal={onBatal}
+      peringatan={<>
+        Lampirannya ikut tercabut begitu isinya disunting, jadi untuk diajukan lagi lembarnya
+        harus <b>dicetak &amp; ditandatangani ulang</b> kepala kantor.
+      </>}
+    >
+      Dokumen kembali ke <b>draft</b> dan bisa disunting SKPD. Ia hilang dari menu Pelaporan
+      sampai ditetapkan lagi.
+    </KonfirmasiModal>
   )
 }
 

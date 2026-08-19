@@ -1609,6 +1609,93 @@ nullable, dengan CHECK per jenis seperti pola `rkbmd_standar` sekarang
   mencetak "Kepala Sekretariat Daerah" — bukan Sekda. Yang ikut pilihan
   operator hanya NAMA & NIP.
 
+### Pop-up keputusan bertema — `confirm()`/`prompt()` DICABUT (user 2026-08-19)
+
+Setujui · Tolak · Buka Kunci di **RKBMD → Validasi** dan **Standar Harga →
+Validasi** tak lagi memakai dialog bawaan peramban. Penggantinya
+**`components/KonfirmasiModal.tsx`**, satu komponen dipakai enam titik keputusan.
+Keluhan awalnya soal tampilan ("item putih biasa"), tapi yang dibetulkan lebih
+dari itu — dialog bawaan punya tiga cacat yang tak bisa ditambal:
+
+- **Hitam-putih milik peramban, tak bisa disentuh CSS.** Di layar yang
+  seluruhnya navy/teal ia terbaca sebagai peringatan sistem, bukan bagian
+  aplikasi.
+- **`confirm()` MEMBEKUKAN seluruh tab**, jadi mustahil menampilkan keadaan
+  "sedang diproses". Menyetujui usulan standar harga memanggil
+  `fn_standar_usulan_setujui` yang bisa memasukkan ratusan baris ke bak bersama;
+  dengan dialog bawaan layar cuma diam lalu tiba-tiba berubah. Karena itu
+  pop-upnya **sengaja tetap terbuka selama pekerjaannya berjalan** — ditutup di
+  `finally`, BUKAN saat tombolnya ditekan. Kalau nanti ada yang "merapikan"
+  dengan menutup lebih awal, keadaan itu hilang lagi.
+- **`prompt()` cuma satu baris.** Catatan telaah yang dibaca SKPD perlu
+  menjelaskan apa yang harus diperbaiki, dan itu jarang muat sebaris. Kotaknya
+  tetap **boleh dikosongkan** (perilaku lama dipertahankan), tapi petunjuknya
+  menyebut akibatnya.
+
+⚠️ **Nada warna lewat `Record<Nada, string>` berisi kelas UTUH, jangan dirakit
+runtime.** `bg-${x}-600` tidak pernah ikut terpindai saat build → tombolnya
+tampil TANPA warna sama sekali, tanpa satu pun error. Tiga nada: `teal`
+(setujui) · `merah` (tolak/kembalikan) · `amber` (buka kunci).
+Isi kalimatnya sengaja dipisah per layar (`KonfirmasiStandar`,
+`KonfirmasiRkbmd`) supaya ketiganya bisa dibaca berdampingan — yang paling
+gampang keliru di layar itu bukan tombolnya, melainkan mengira "Tolak" dan
+"Buka Kunci" sama-sama sekadar mengembalikan dokumen. Padahal Buka Kunci
+standar harga **MENARIK barisnya dari acuan bersama** yang mungkin sudah dipakai
+SKPD lain menyusun anggaran.
+
+**Tak ada migrasi** — murni tampilan; RPC & guard DB tidak disentuh.
+
+### Cetak Standar Harga = lampiran draft SK (user 2026-08-19)
+
+`app/cetak/standar-harga/page.tsx`, `?tahun=<TA>&jenis=ssh|hspk|asb|sbu|sbsk`
+(+ opsional `&ttd=<id pegawai>&jabatan=bupati|sekda`). Tombolnya lima, satu per
+jenis, di **Standar Harga → Pelaporan** — pola & alasan yang sama dgn cetak
+se-Kabupaten RKBMD: susunan kolom tiap jenis berbeda, jadi memang satu berkas
+per jenis. F4 landscape.
+
+- **SE-KABUPATEN, TANPA mode per-SKPD** — dan itu bukan kelalaian.
+  `rkbmd_standar` bak bersama: satu barang cukup diusulkan sekali se-kabupaten
+  dan yang ditetapkan justru daftar gabungannya. Memecahnya per SKPD mencetak
+  beberapa lembar yang saling memuat barang yang sama, dan pembacanya tak punya
+  cara tahu mana yang berlaku. Konsekuensinya kolom **"Diinput oleh" sengaja
+  TIDAK ikut tercetak**: siapa yang pertama mengusulkan itu jejak proses, bukan
+  isi ketetapan.
+- **TANDA TANGAN CUMA DI SINI** (permintaan user: "bukan ketika setiap
+  pengusulan kudu ada TTD, cukup di pelaporan akhir aja"). Beda dari RKBMD, yang
+  lembar per-SKPD-nya justru diteken kepala kantor sbg SYARAT pengajuan —
+  **jangan disamakan**, itu dua alur yang berbeda maksudnya.
+- ⚠️ **TIDAK ADA baris JUMLAH rupiah, sengaja.** Yang berjajar di kolom nilai
+  itu HARGA SATUAN barang-barang yang berbeda; menjumlahkannya menghasilkan
+  angka yang tak berarti apa pun, dan begitu tercetak di lampiran SK ia akan
+  dikutip orang sebagai "nilai standar harga". Yang dicetak cuma banyaknya
+  baris. (Bandingkan lembar RKBMD, yang memang menjumlahkan rencana anggaran.)
+- **Susunan kolom DITURUNKAN dari predikat bentuk** di lib/rkbmdStandarUsulan
+  (`pakaiKodeBarang`/`pakaiMerk`/`pakaiTkdn`/`pakaiRekening` + `LABEL_NAMA`/
+  `LABEL_NILAI`) — bukan lima daftar yang ditulis tangan. Predikat itu juga yang
+  menentukan kolom mana yang tampil & wajib diisi di form usulan, jadi lembarnya
+  mustahil memuat kolom yang tak pernah ada isiannya. Nambah jenis/kolom → ubah
+  predikatnya, jangan tambah cabang di halaman cetak.
+- **Nomor & tanggal SK dibiarkan titik-titik**: aplikasi ini tak menyimpan nomor
+  SK di mana pun, dan mengarang nomor di lembar yang akan diteken jauh lebih
+  berbahaya daripada titik-titik yang jelas belum diisi. Sama untuk nama
+  penanda tangan yang belum dipilih — **JANGAN diisi nama lain**.
+- Jabatan penanda tangan **dipaku dua pilihan** (`Bupati Kediri` /
+  `Sekretaris Daerah Kabupaten Kediri`), sengaja BUKAN `pegawai.jabatan`: kolom
+  itu memuat jabatan struktural & pernah mencetak "Kepala Sekretariat Daerah" —
+  bukan Sekda. Baris **NIP tidak dicetak untuk Bupati** (jabatan politis, tak
+  ber-NIP), bukan karena datanya kosong. Pilihannya disimpan di `localStorage`
+  (`bmd_standar_ttd_sekab`, pola `bmd_rkbmd_ttd_sekab`) supaya cetak ulang
+  menghasilkan lembar yang SAMA.
+- Uraian Barang di-lookup dari `admin_kodefikasi_bmd` (ikut nomenklatur
+  terkini), sedangkan `nama` = spesifikasi yang diketik pengusul — dua hal
+  berbeda, jangan digabung. Fail-closed: query gagal → lembarnya tak dirakit
+  sama sekali.
+
+**Tak ada migrasi**; halaman ini murni membaca `rkbmd_standar` /
+`rkbmd_standar_rekening` / `rkbmd_sbsk` yang sudah ada.
+⛔ Format **SK RKBMD** (bukan standar harga) masih BELUM dibangun — lihat
+bagian di bawah.
+
 ### Alur RKBMD yang disepakati (user 2026-08-13) — BARU SEBAGIAN DIBANGUN
 
 1. SKPD menyusun RKBMD → **cetak lembar usulan** (✅ ada, di menu Usulan) →

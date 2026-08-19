@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { backdropClose } from '@/components/backdropClose'
+import KonfirmasiModal from '@/components/KonfirmasiModal'
 import { formatRupiah } from '@/lib/export'
 import {
   USULAN_JENIS, USULAN_STATUS_META, pakaiKodeBarang, pakaiRekening,
@@ -38,6 +39,11 @@ const STATUS_BELUM: UsulanStatus[] = ['draft', 'diajukan', 'ditolak']
 type Tab = 'usulan' | 'tervalidasi'
 type Baris = UsulanHeader & { skpd_nama: string | null; jumlah_item: number }
 
+/** Keputusan yang sedang ditanyakan lewat pop-up. Satu state untuk ketiganya —
+ *  ketiganya saling meniadakan (tak mungkin menyetujui & menolak sekaligus),
+ *  dan tiga bendera terpisah cepat atau lambat menyala dua-duanya. */
+type Konfirmasi = { aksi: 'setujui' | 'tolak' | 'buka'; h: Baris }
+
 export default function StandarValidasi() {
   const supabase = createClient()
   const [tahun, setTahun] = useState(TAHUN_DEFAULT)
@@ -47,6 +53,7 @@ export default function StandarValidasi() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [detail, setDetail] = useState<Baris | null>(null)
+  const [konfirm, setKonfirm] = useState<Konfirmasi | null>(null)
   const [err, setErr] = useState('')
   const [msg, setMsg] = useState('')
 
@@ -77,6 +84,11 @@ export default function StandarValidasi() {
 
   useEffect(() => { load() }, [load])
 
+  // Pop-up sengaja DIBIARKAN TERBUKA selama pekerjaannya berjalan (ditutup di
+  // `finally`, bukan saat tombolnya ditekan): menyetujui usulan standar harga
+  // memanggil RPC yang bisa memasukkan ratusan baris ke bak bersama, dan tanpa
+  // keadaan "sedang diproses" layar cuma diam — persis keterbatasan `confirm()`
+  // yang membuat pop-up ini dibangun.
   async function jalankan(id: string, fn: () => Promise<string>) {
     setBusy(id); setErr(''); setMsg('')
     try {
@@ -85,40 +97,22 @@ export default function StandarValidasi() {
     } catch (e) {
       setErr((e as Error).message)
     } finally {
-      setBusy(null)
+      setBusy(null); setKonfirm(null)
     }
   }
 
-  function setujui(h: Baris) {
-    if (!confirm(
-      `Setujui usulan ${JENIS_LABEL[h.jenis]} ${h.skpd_nama || ''} TA ${h.tahun}?\n\n`
-      + `${h.jumlah_item} baris akan MASUK ke acuan bersama dan langsung bisa dipakai `
-      + 'seluruh SKPD menyusun RKBMD. Barang yang sudah ada tidak diduplikasi — '
-      + 'kode rekeningnya digabung ke barang yang sama.',
-    )) return
-    jalankan(h.id, async () => ringkasHasil(await setujuiUsulan(supabase, h.id)))
-  }
-
-  function tolak(h: Baris) {
-    const alasan = prompt('Catatan telaah (akan dikirim ke SKPD):')
-    if (alasan === null) return
-    jalankan(h.id, async () => {
-      await setStatusUsulan(supabase, h.id, 'ditolak', alasan || null)
-      return 'Usulan dikembalikan ke SKPD.'
-    })
-  }
-
-  function bukaKunci(h: Baris) {
-    if (!confirm(
-      `Buka kunci usulan ${JENIS_LABEL[h.jenis]} ${h.skpd_nama || ''} TA ${h.tahun}?\n\n`
-      + 'Barisnya ditarik dari acuan bersama — seluruh SKPD tidak bisa lagi '
-      + 'memakainya menyusun RKBMD — lalu dikembalikan ke meja SKPD: jadi draft '
-      + 'lagi, atau digabung ke usulan yang sedang mereka susun kalau sudah ada.\n\n'
-      + '⚠️ Kalau ada barangnya yang SUDAH dipakai di dokumen RKBMD, permintaan ini '
-      + 'akan DITOLAK seluruhnya: lepaskan dulu barangnya dari RKBMD, baru usulan ini '
-      + 'bisa dibuka.',
-    )) return
-    jalankan(h.id, async () => ringkasBukaKunci(await bukaKunciUsulan(supabase, h.id)))
+  function putuskan(k: Konfirmasi, catatan: string) {
+    const { aksi, h } = k
+    if (aksi === 'setujui') {
+      jalankan(h.id, async () => ringkasHasil(await setujuiUsulan(supabase, h.id)))
+    } else if (aksi === 'tolak') {
+      jalankan(h.id, async () => {
+        await setStatusUsulan(supabase, h.id, 'ditolak', catatan || null)
+        return 'Usulan dikembalikan ke SKPD.'
+      })
+    } else {
+      jalankan(h.id, async () => ringkasBukaKunci(await bukaKunciUsulan(supabase, h.id)))
+    }
   }
 
   return (
@@ -200,14 +194,14 @@ export default function StandarValidasi() {
                       draft & yang sudah dikembalikan ada di tangan SKPD. */}
                   {isAdmin && h.status === 'diajukan' && (
                     <>
-                      <button onClick={() => setujui(h)} disabled={busy === h.id}
+                      <button onClick={() => setKonfirm({ aksi: 'setujui', h })} disabled={busy === h.id}
                         className="text-teal hover:underline text-xs font-medium mr-3">Setujui</button>
-                      <button onClick={() => tolak(h)} disabled={busy === h.id}
+                      <button onClick={() => setKonfirm({ aksi: 'tolak', h })} disabled={busy === h.id}
                         className="text-red-500 hover:text-red-700 text-xs font-medium">Tolak</button>
                     </>
                   )}
                   {isAdmin && h.status === 'disetujui' && (
-                    <button onClick={() => bukaKunci(h)} disabled={busy === h.id}
+                    <button onClick={() => setKonfirm({ aksi: 'buka', h })} disabled={busy === h.id}
                       className="text-gray-600 hover:text-gray-800 text-xs font-medium">Buka Kunci</button>
                   )}
                 </td>
@@ -218,7 +212,77 @@ export default function StandarValidasi() {
       </div>
 
       {detail && <DetailModal h={detail} onClose={() => setDetail(null)} />}
+      {konfirm && (
+        <KonfirmasiStandar
+          k={konfirm}
+          busy={busy === konfirm.h.id}
+          onBatal={() => setKonfirm(null)}
+          onYa={(catatan) => putuskan(konfirm, catatan)}
+        />
+      )}
     </FormShell>
+  )
+}
+
+// ── Isi pop-up untuk ketiga keputusan ───────────────────────────────────────
+// Dipisah dari badan halaman supaya kalimatnya bisa dibaca berdampingan: yang
+// paling gampang keliru di layar ini bukan tombolnya, melainkan mengira "Tolak"
+// dan "Buka Kunci" sama-sama sekadar mengembalikan dokumen ke SKPD. Padahal
+// yang satu belum pernah jadi acuan, yang lain MENARIK barisnya dari acuan
+// bersama yang mungkin sudah dipakai SKPD lain menyusun anggaran.
+function KonfirmasiStandar({ k, busy, onYa, onBatal }: {
+  k: Konfirmasi; busy: boolean; onYa: (catatan: string) => void; onBatal: () => void
+}) {
+  const { aksi, h } = k
+  const subjudul = `${h.skpd_nama || `SKPD #${h.skpd_id}`} · ${JENIS_LABEL[h.jenis] || h.jenis} · TA ${h.tahun}`
+  const rincian = [
+    { label: 'Jumlah baris', nilai: `${h.jumlah_item} baris` },
+    { label: 'Diajukan', nilai: h.diajukan_at?.slice(0, 10) || '—' },
+  ]
+
+  if (aksi === 'setujui') {
+    return (
+      <KonfirmasiModal
+        nada="teal" ikon="✓" judul="Tetapkan sebagai acuan bersama?" subjudul={subjudul}
+        rincian={rincian} labelYa="Ya, setujui" busy={busy} onYa={onYa} onBatal={onBatal}
+      >
+        Seluruh barisnya <b>masuk ke acuan bersama</b> dan langsung bisa dipakai semua SKPD
+        menyusun RKBMD Pengadaan. Barang yang sudah ada tidak diduplikasi — kode rekeningnya
+        digabungkan ke barang yang sama.
+      </KonfirmasiModal>
+    )
+  }
+
+  if (aksi === 'tolak') {
+    return (
+      <KonfirmasiModal
+        nada="merah" ikon="↩" judul="Kembalikan usulan ke SKPD?" subjudul={subjudul}
+        rincian={rincian} labelYa="Ya, kembalikan" busy={busy} onYa={onYa} onBatal={onBatal}
+        catatan={{
+          label: 'Catatan telaah',
+          placeholder: 'Mis. harga laptop di baris 3–7 melebihi pagu; lampirkan pembanding e-katalog.',
+          petunjuk: <>Boleh dikosongkan, tapi SKPD tak akan tahu apa yang harus diperbaiki.</>,
+        }}
+      >
+        Usulan kembali bisa disunting SKPD. Tidak ada baris yang masuk acuan bersama.
+      </KonfirmasiModal>
+    )
+  }
+
+  return (
+    <KonfirmasiModal
+      nada="amber" ikon="🔓" judul="Buka kunci usulan yang sudah ditetapkan?" subjudul={subjudul}
+      rincian={rincian} labelYa="Ya, buka kunci" busy={busy} onYa={onYa} onBatal={onBatal}
+      peringatan={<>
+        Kalau ada barangnya yang <b>sudah dipakai di dokumen RKBMD</b>, permintaan ini
+        ditolak <b>seluruhnya</b> — tidak ada yang ditarik sebagian. Lepaskan dulu barangnya
+        dari RKBMD, baru usulan ini bisa dibuka.
+      </>}
+    >
+      Barisnya <b>ditarik dari acuan bersama</b> sehingga tak bisa lagi dipakai SKPD mana pun,
+      lalu dikembalikan ke meja SKPD: jadi draft lagi, atau digabung ke usulan yang sedang
+      mereka susun kalau sudah ada.
+    </KonfirmasiModal>
   )
 }
 

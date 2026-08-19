@@ -19,6 +19,7 @@ import { fetchStandar, type StandarJenis, type StandarRow } from '@/lib/rkbmdSta
 import { USULAN_JENIS, type UsulanJenis } from '@/lib/rkbmdStandarUsulan'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
+const KABUPATEN = 'Kediri'
 
 /** Baris SBSK — bentuknya beda (kuantitas standar, bukan harga) & tabelnya
  *  sendiri, jadi dirakit terpisah lalu ditampilkan di tabelnya sendiri. */
@@ -129,7 +130,7 @@ export default function StandarPelaporan() {
   return (
     <FormShell
       judul="Pelaporan Standar Harga"
-      deskripsi="Acuan bersama yang sudah ditetapkan Pengelola Barang — inilah yang dipakai seluruh SKPD menyusun RKBMD Pengadaan. Penambahan hanya lewat menu Usulan Standar Harga."
+      deskripsi="Acuan bersama yang sudah ditetapkan Pengelola Barang — inilah yang dipakai seluruh SKPD menyusun RKBMD Pengadaan. Penambahan hanya lewat menu Usulan Standar Harga. Di sini pula lembar penetapannya dicetak sebagai lampiran draft SK."
       msg=""
       headerRight={
         <div className="text-right">
@@ -161,6 +162,34 @@ export default function StandarPelaporan() {
           <button className="btn-primary" onClick={handleExport} disabled={loading || !!err || jumlah === 0}>
             Export Excel
           </button>
+        </div>
+
+        {/* ── Cetak lembar penetapan (bakal jadi lampiran SK) ─────────────────
+            Disediakan LANGSUNG per jenis (pola menu Pelaporan RKBMD) supaya
+            Pengelola tak perlu menyetel filter dulu — susunan kolom tiap jenis
+            berbeda, jadi memang satu berkas per jenis.
+            ⚠️ SE-KABUPATEN, tak ada mode per SKPD: `rkbmd_standar` itu bak
+            bersama, dan yang ditetapkan justru daftar gabungannya. Tanda tangan
+            hanya di lembar ini — usulan per SKPD tidak perlu lembar bertanda
+            tangan sendiri seperti RKBMD (keputusan user 2026-08-19). */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-2">
+            Cetak lembar penetapan se-Kabupaten {KABUPATEN} — TA {tahun}, untuk dijadikan
+            <span className="font-medium"> lampiran draft SK</span>. Hanya memuat yang sudah
+            ditetapkan di menu Validasi; nomor &amp; tanggal SK dibiarkan kosong untuk diisi saat SK disusun.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {USULAN_JENIS.map(j => (
+              <a key={j.key}
+                href={`/cetak/standar-harga?tahun=${tahun}&jenis=${j.key}`}
+                target="_blank" rel="noopener noreferrer"
+                title={j.deskripsi}
+                className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:text-gray-800 hover:border-gray-300"
+              >
+                🖨 {j.label}
+              </a>
+            ))}
+          </div>
         </div>
       </div>
 
