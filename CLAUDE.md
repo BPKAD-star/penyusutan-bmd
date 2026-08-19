@@ -2151,6 +2151,30 @@ semacam itu di seluruh basis data, dan tak ada satu pun pesan error.
   & riwayat penyusutan) — kebalikan dari naluri "yang terakhir paling benar".
   ⚠️ **Engine WAJIB di-run ulang** 2026-S1 & 2026-S2 sesudahnya.
 
+- **Ekor ketiga: NIBAR DIPAKAI ULANG, dan `NOT EXISTS per NIBAR` menelannya
+  DIAM-DIAM** (migrasi 20260819_02). Sesudah 20260819_01 jalan, user mengadu
+  Daftar Barang Awal 1.3.3 dgn berkas Excel-nya: masih sisa **Rp976.713.700**.
+  Sebabnya lain: NIBAR `…22…20211330401040010000001` dipegang **dua barang
+  berbeda** — di `aset_awal_2026` ia "PAGAR PENUTUP PINTU MASUK LOKET LAMA"
+  (Rp198.500.000, baris impor baseline 18 Juni), di `aset` ia "Pagar Keliling
+  Kawasan Sri Aji Joyoboyo." (Rp1.175.213.700, lahir 10 Juli). Nomor PAGAR
+  PENUTUP bergeser ke `…0009` di pemuatan register 2 Juli, lalu nomor yang
+  ditinggalkannya dipakai ulang.
+  **`nibar` itu PRIMARY KEY `aset_awal_2026`**, dan 20260812_03 memakai
+  `NOT EXISTS per NIBAR` sbg penjaga idempotensi — jadi untuk Joyoboyo (yang
+  punya baris ledger `saldo_awal` #9873 & seharusnya ikut) uji itu menjawab
+  "sudah ada", padahal yang ada barang LAIN. Ia dilewati tanpa suara, sementara
+  PAGAR PENUTUP malah dapat baris kedua. Saldo Awal 1.3.3 kurang catat bersih
+  976.713.700 selama sebulan. **Kunci idempotensi WAJIB identitas BARIS yang
+  sedang disalin (`aset.id`), bukan nomor yang bisa berpindah pemilik.**
+  ⚠️ 20260812_07 tak menangkapnya: uji "snapshot yatim" mencari NIBAR yang tak
+  punya pasangan di register — yang ini punya, cuma pasangan yang salah barang.
+  **Uji yang benar:** `JOIN aset ON nibar` lalu bandingkan `tgl_perolehan`/
+  `nilai_perolehan`. Disapu se-basis data: hanya 1 kasus nyata (yang kedua cuma
+  beda pembulatan float 1e-7 di satu baris Jalan). Laporan BMD & Rekonsiliasi
+  TIDAK ikut salah — keduanya membaca ledger, dan ledgernya benar sejak awal;
+  yang salah cuma tabel snapshot. Karena itu engine tak perlu di-run ulang.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang
