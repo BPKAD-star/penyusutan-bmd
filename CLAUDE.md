@@ -2102,6 +2102,55 @@ Barang sendiri tak boleh ikut rusak.
   halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
   dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
 
+## Import massal JANGAN mencocokkan barang lewat KODE BARANG (migrasi 20260819_01)
+
+Insiden 2026-08-19. User membuka Laporan BMD Model 3 (1.3.3, 2026-S2) dan
+menemukan "Koreksi Nilai (berkurang) 948.955.351" atas *PEMBANGUNAN TAMAN
+KEPALA KERETA API DI SLG* yang tak pernah ia catat — dan memang bukan dia:
+`created_by` NULL, `header_id` NULL, tak ada kartu di menu Koreksi.
+
+Asalnya batch SQL "Import Gedung Bangunan Lengkap.xlsx" 2026-07-10 (196 aset
+baru dari file + 195 aset di luar file dinonaktifkan). Untuk **2 aset** batch
+itu melakukan hal ketiga — "sinkron nilai" — dan **mencocokkannya lewat kode
+barang**, yang dipakai puluhan barang. Akibatnya tiap aset kena DUA kali:
+
+- Nilainya ditimpa nilai **barang lain berkode sama**. Taman Kepala Kereta Api
+  (1.3.3.01.01.37.001) diberi 169.105.349 milik *Rehab DLH (pos jaga & Gudang
+  TPA Sekoto)*; Perbaikan Perkerasan Halaman R. Dinas Bupati
+  (1.3.3.01.01.01.001) diberi 1.828.592.000 milik *Pembangunan Gedung Serbaguna
+  Kab. Kediri*. Dua "donor" itu justru dinonaktifkan hari itu juga.
+- Baris file yang BENAR-BENAR miliknya masuk lagi sebagai **aset baru** —
+  payload baseline-nya sama persis sampai ke akumulasi & sisa umur. Salah
+  satunya bernama "Desa Tugurejo Kecamatan Ngasem", jelas kolom LOKASI yang
+  salah petak.
+
+Lebih catat 1.3.3 **Rp1.997.697.349** selama 5 minggu, di Laporan BMD, Saldo
+Awal (snapshot ikut kena backfill 20260812_03), maupun beban penyusutan. Satu
+aset bahkan berakumulasi **melebihi** nilai perolehannya (257.153.961 vs
+169.105.349) sehingga engine memaksa nilai buku ke 0 — satu-satunya baris
+semacam itu di seluruh basis data, dan tak ada satu pun pesan error.
+
+- **Aturannya: kunci pencocokan import massal WAJIB identitas barang (NIBAR),
+  bukan kode barang** — dan kalau NIBAR tak tersedia, minimal
+  `kode + tgl_perolehan + nilai`, dengan pencocokan ambigu (>1 kandidat)
+  **DITOLAK, bukan diambil yang pertama**.
+- **Satu batch jangan punya dua mekanisme untuk maksud yang sama.** 195 aset
+  direstatement lewat `koreksi_pencatatan_ganda` (period-agnostic, nol jejak di
+  mutasi); 2 aset lewat `koreksi_nilai` (muncul sebagai mutasi 2026-S2). Yang 2
+  itulah yang salah, dan justru karena beda mekanisme ia terlihat.
+- **Alarm yang seharusnya ada:** `akumulasi > nilai_perolehan` tak pernah
+  diperiksa di mana pun. Kalau nanti bikin pemeriksaan kesehatan data, mulai
+  dari situ — `SELECT count(*) FROM penyusutan_semester WHERE akumulasi >
+  nilai_perolehan + 0.5` harus selalu 0.
+- Perbaikannya migrasi **20260819_01**: anulir kedua `koreksi_nilai`
+  (`batal_koreksi_nilai` + pulihkan `aset.nilai_perolehan`), nonaktifkan kedua
+  duplikat dgn `koreksi_pencatatan_ganda` **dibackdate ke `tgl_perolehan`**
+  (jenis itu di-whitelist `fn_cek_tahun_buku`, jadi lenyap dari SEMUA periode
+  termasuk 2026-S1 di `fn_rekap_bmd` yang period-aware), buang 2 baris snapshot
+  duplikatnya. Yang DIPERTAHANKAN aset LAMA (bernama benar, punya kode register
+  & riwayat penyusutan) — kebalikan dari naluri "yang terakhir paling benar".
+  ⚠️ **Engine WAJIB di-run ulang** 2026-S1 & 2026-S2 sesudahnya.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang
