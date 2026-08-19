@@ -19,6 +19,37 @@ const ICON_AI = 'M13 10V3L4 14h7v7l9-11h-7z'
 const fmtJam = (s: string) => new Date(s).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
 const fmtTgl = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 
+// ── Ukuran kotak chat, bisa diatur pengguna ─────────────────────────────────
+// Balasan Asisten AI sering panjang (langkah bernomor + daftar), dan di kotak
+// 360×520 tetap ia jadi terowongan sempit yang harus digulir terus.
+//
+// Diseret dari pojok KIRI-ATAS, bukan kanan-bawah: panelnya menempel di
+// kanan-bawah layar, jadi menyeret ke kiri/atas = membesar. Grip di kanan-bawah
+// justru akan menumbuhkan panel KELUAR layar.
+const KEY_UKURAN = 'bmd_chat_ukuran'
+const UKURAN_BAWAAN = { w: 360, h: 520 }
+const MIN_W = 300
+const MIN_H = 320
+/** Jarak aman dari tepi layar (bottom-6/right-6 = 24px, disisakan dua kali). */
+const SISA_TEPI = 48
+
+type Ukuran = { w: number; h: number }
+
+/** Isi localStorage itu data dari luar program — cacat karena versi lama atau
+ *  suntingan manual cukup berarti "pakai ukuran bawaan", jangan sampai
+ *  menjatuhkan widget-nya. */
+function bacaUkuran(): Ukuran {
+  try {
+    const s = localStorage.getItem(KEY_UKURAN)
+    if (!s) return UKURAN_BAWAAN
+    const v = JSON.parse(s) as Partial<Ukuran>
+    if (typeof v?.w !== 'number' || typeof v?.h !== 'number') return UKURAN_BAWAAN
+    return { w: Math.max(MIN_W, v.w), h: Math.max(MIN_H, v.h) }
+  } catch {
+    return UKURAN_BAWAAN
+  }
+}
+
 // ── Balasan AI: tebalkan `**teks**` ─────────────────────────────────────────
 // Model membalas dengan Markdown (kebiasaan yang sangat kuat), dan sebelum ini
 // balasannya dirender sebagai teks polos sehingga bintang-bintangnya tampil
@@ -66,6 +97,12 @@ export default function ChatWidget() {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // Dimulai dari ukuran bawaan lalu ditimpa di useEffect — BUKAN dibaca
+  // langsung di useState. Komponen ini ikut dirender di server, dan menyentuh
+  // localStorage di sana melempar; membacanya belakangan juga menghindari
+  // ketidakcocokan hidrasi.
+  const [ukuran, setUkuran] = useState<Ukuran>(UKURAN_BAWAAN)
+  useEffect(() => { setUkuran(bacaUkuran()) }, [])
 
   useEffect(() => {
     ;(async () => {
@@ -259,6 +296,51 @@ export default function ChatWidget() {
     setAiMsgs(prev => prev.filter(m => m.id !== id))
   }
 
+  /**
+   * Seret pojok kiri-atas untuk mengubah ukuran.
+   *
+   * Pendengarnya dipasang di `window`, bukan di grip-nya: kalau kursor bergerak
+   * lebih cepat daripada render, ia keluar dari grip yang cuma 24px dan seretnya
+   * putus di tengah jalan. Pointer Events dipakai supaya mouse & sentuh dilayani
+   * satu jalur yang sama.
+   *
+   * Ukuran terakhir disimpan di variabel closure lalu ditulis SEKALI saat
+   * seretan selesai — bukan tiap gerakan. Menulis localStorage puluhan kali per
+   * detik itu pemborosan yang terasa di perangkat lemah.
+   */
+  function mulaiResize(e: React.PointerEvent) {
+    e.preventDefault()
+    const x0 = e.clientX
+    const y0 = e.clientY
+    const w0 = ukuran.w
+    const h0 = ukuran.h
+    const maksW = window.innerWidth - SISA_TEPI
+    const maksH = window.innerHeight - SISA_TEPI
+    let terakhir: Ukuran = { w: w0, h: h0 }
+
+    const bergerak = (ev: PointerEvent) => {
+      terakhir = {
+        w: Math.min(maksW, Math.max(MIN_W, w0 - (ev.clientX - x0))),
+        h: Math.min(maksH, Math.max(MIN_H, h0 - (ev.clientY - y0))),
+      }
+      setUkuran(terakhir)
+    }
+    const selesai = () => {
+      window.removeEventListener('pointermove', bergerak)
+      window.removeEventListener('pointerup', selesai)
+      window.removeEventListener('pointercancel', selesai)
+      try { localStorage.setItem(KEY_UKURAN, JSON.stringify(terakhir)) } catch {}
+    }
+    window.addEventListener('pointermove', bergerak)
+    window.addEventListener('pointerup', selesai)
+    window.addEventListener('pointercancel', selesai)
+  }
+
+  function resetUkuran() {
+    setUkuran(UKURAN_BAWAAN)
+    try { localStorage.removeItem(KEY_UKURAN) } catch {}
+  }
+
   if (!myId) return null
 
   return (
@@ -278,7 +360,38 @@ export default function ChatWidget() {
       )}
 
       {open && (
-        <div className="fixed bottom-6 right-6 z-50 w-[360px] h-[520px] max-h-[70vh] bg-white rounded-xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
+        // Pembungkus luar memegang UKURAN & posisi; kartu di dalamnya yang
+        // memegang tampilan + `overflow-hidden`. Dipisah supaya grip bisa
+        // duduk sedikit di LUAR sudut kartu tanpa ikut terpotong.
+        // maxWidth/maxHeight dalam CSS (bukan hasil hitungan JS) sengaja: kalau
+        // jendela peramban diperkecil setelah panelnya dibesarkan, panel ikut
+        // menyusut sendiri tanpa perlu pendengar resize.
+        <div
+          className="fixed bottom-6 right-6 z-50"
+          style={{
+            width: ukuran.w,
+            height: ukuran.h,
+            maxWidth: `calc(100vw - ${SISA_TEPI}px)`,
+            maxHeight: `calc(100vh - ${SISA_TEPI}px)`,
+          }}
+        >
+          <button
+            onPointerDown={mulaiResize}
+            onDoubleClick={resetUkuran}
+            title="Seret untuk mengubah ukuran · klik ganda untuk kembali ke ukuran semula"
+            aria-label="Ubah ukuran kotak chat"
+            // `touch-none` (touch-action: none) WAJIB — tanpa itu, di layar
+            // sentuh gerakan jari ditafsirkan sebagai menggulir halaman dan
+            // seretannya tak pernah sampai ke pointermove.
+            className="absolute -top-2 -left-2 z-10 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:text-teal hover:border-teal/40 cursor-nwse-resize touch-none"
+          >
+            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
+              <path d="M10.5 1.5 1.5 10.5" />
+              <path d="M6.5 1.5 1.5 6.5" />
+            </svg>
+          </button>
+
+          <div className="w-full h-full bg-white rounded-xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0 bg-navy text-white">
             {activeRoom !== null && (
               <button onClick={() => setActiveRoom(null)} className="text-white/70 hover:text-white">
@@ -433,6 +546,7 @@ export default function ChatWidget() {
               </form>
             </>
           )}
+          </div>
         </div>
       )}
     </>
