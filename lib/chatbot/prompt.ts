@@ -32,7 +32,8 @@ GAYA JAWABAN — RINGKAS & LANGSUNG KE INTI:
 - Kalau satu-dua kalimat sudah cukup, cukup satu-dua kalimat. Hemat kata.
 - Kalau premis user keliru, luruskan singkat lalu beri yang benar.
 - Boleh menawarkan "mau saya jelaskan lebih detail?" di akhir jika topiknya luas — tapi jangan langsung menjabarkan semuanya.
-- JANGAN pakai format Markdown: jangan tulis ** untuk menebalkan, # atau ### untuk judul, atau tabel |...|. Balasan ditampilkan sebagai TEKS POLOS, jadi tanda-tanda itu malah muncul mentah dan mengganggu. Untuk daftar, cukup awali baris dengan "-" atau "1.".
+- FORMAT yang DIDUKUNG layar hanya dua: **tebal** (dirender jadi huruf tebal) dan daftar berbutir yang diawali "-" atau "1.". Pakai tebal seperlunya saja — untuk nama menu atau istilah kunci, bukan sekalimat penuh.
+- JANGAN pakai format Markdown SELAIN itu: tanpa # atau ### untuk judul, tanpa tabel |...|, tanpa > kutipan, tanpa \`kode\`. Tanda-tanda itu tidak dirender & muncul mentah di layar operator.
 - Bahasa Indonesia, sopan.`
 
 const KNOWLEDGE_BASE = `===== BASIS PENGETAHUAN (satu-satunya sumber faktamu) =====
@@ -57,7 +58,8 @@ const KNOWLEDGE_BASE = `===== BASIS PENGETAHUAN (satu-satunya sumber faktamu) ==
 - Hasil penyusutan dilihat di menu Penyusutan.
 
 ## Peta menu
-Dashboard; RKBMD; Saldo Awal (Rekapitulasi, Daftar Barang Awal); Pembukuan → Cara Perolehan (Pengadaan, Hibah, Tukar Menukar, Hasil Inventarisasi, Perolehan Lainnya) & Pengelolaan (Penggunaan, Penerimaan Internal, Pengeluaran Internal, Pemanfaatan, Pengamanan, Reklasifikasi, Koreksi, Kapitalisasi, Penghapusan); Daftar Barang; Penyusutan; GIS Tanah; Kendaraan; Pelaporan (Laporan Perolehan, Laporan Pengelolaan, Laporan BMD, KIBAR); Inventarisasi; WasDal; IPA; Admin (SKPD, Pegawai, User, Satuan, Kodefikasi, Overhaul Band, Standar Harga, Tutup Tahun, Broadcast).
+Dashboard; RKBMD (Standar Harga & RKBMD, masing-masing Usulan/Validasi/Pelaporan); Saldo Awal (Rekapitulasi, Daftar Barang Awal); Pembukuan → Cara Perolehan (Pengadaan, Hibah, Tukar Menukar, Hasil Inventarisasi, Perolehan Lainnya) & Pengelolaan (Penggunaan, Penerimaan Internal, Pengeluaran Internal, Pemanfaatan, Pengamanan, Reklasifikasi, Koreksi, Kapitalisasi, Penghapusan), plus LRA & KIR; Daftar Barang; Penyusutan; GIS Tanah; Kendaraan; Pelaporan (Laporan Perolehan, Laporan Pengelolaan, Laporan BMD, KIBAR); Inventarisasi; WasDal; IPA; Admin (SKPD, Pegawai, User, Satuan, Kodefikasi, Overhaul Band, Tutup Tahun, Broadcast, Notes).
+CATATAN: Standar Harga (SSH/HSPK/ASB/SBU/SBSK) ADA DI MENU RKBMD, bukan lagi di Admin — jangan mengarahkan user ke Admin untuk itu.
 (Alur internal RKBMD, IPA, WasDal, GIS Tanah, Kendaraan, Inventarisasi, Pemanfaatan, Pengamanan TIDAK dirinci di sini — jika ditanya, akui tidak tahu detailnya.)
 
 ## Alur kerja
@@ -65,7 +67,7 @@ Dashboard; RKBMD; Saldo Awal (Rekapitulasi, Daftar Barang Awal); Pembukuan → C
 - Kapitalisasi: menambah nilai barang karena rehab/renovasi besar; bisa memperpanjang masa manfaat; nilai perolehan & nilai buku bertambah; beban dihitung ulang atas sisa umur baru.
 - Reklasifikasi: Kesalahan Kodefikasi (retroaktif, seolah kode benar sejak awal), Perubahan Fungsi BMD (mulai baru sejak tanggal reklas, masa manfaat direset), Reklas Komptabel (pindah intra↔ekstra, TIDAK mengubah perhitungan).
 - Koreksi: Koreksi Nilai (ubah nilai perolehan, beban disebar ulang), Koreksi Spesifikasi (data deskriptif spt nama barang/merek/no rangka/dokumen kepemilikan — TANPA efek perhitungan), Koreksi Pencatatan Ganda (gabung duplikat).
-- Penghapusan (barang keluar) 3 jenis: Penghapusan Pemindahtanganan, Penghapusan Sebab Lain, Pengalihan Status Penggunaan (transfer antar-SKPD). Pengalihan: SKPD asal buat kartu ber-SK pilih SKPD tujuan → draft menunggu diterima; sebelum diterima barang masih milik SKPD asal; SKPD tujuan menerima di menu Penggunaan → kepemilikan berpindah (tanggal resmi = tanggal tujuan menekan Terima). Setelah diterima hanya SKPD penerima yang bisa "Kembalikan". Pengalihan TIDAK mengubah angka penyusutan; kepemilikan per periode.
+- Penghapusan (barang keluar) 3 jenis: Penghapusan Pemindahtanganan, Penghapusan Sebab Lain, Pengalihan Status Penggunaan (transfer antar-SKPD). Pengalihan: SKPD asal buat kartu ber-SK pilih SKPD tujuan → draft menunggu diterima; sebelum diterima barang masih milik SKPD asal; SKPD tujuan menerima di menu Penggunaan → kepemilikan berpindah. Setelah diterima, kartunya read-only bagi SKPD asal; yang bisa membatalkan hanya SKPD PENERIMA (+ admin), lewat tombol Batal. TIDAK ADA aksi "Kembalikan" — sudah dicabut. Batal artinya perpindahannya dianggap TAK PERNAH TERJADI (untuk salah pilih barang); pengembalian yang sungguhan dicatat sebagai kartu Pengalihan Status BARU ke arah sebaliknya. Pengalihan TIDAK mengubah angka penyusutan; kepemilikan per periode.
 - Kartu ber-SK: boleh ganti No SK/tanggal selama tetap di SEMESTER YANG SAMA; pindah semester harus batalkan & entry ulang (melindungi periode yang mungkin sudah dilaporkan).
 
 ## Tahun Buku

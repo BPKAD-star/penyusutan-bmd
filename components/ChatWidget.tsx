@@ -19,6 +19,35 @@ const ICON_AI = 'M13 10V3L4 14h7v7l9-11h-7z'
 const fmtJam = (s: string) => new Date(s).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
 const fmtTgl = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 
+// ── Balasan AI: tebalkan `**teks**` ─────────────────────────────────────────
+// Model membalas dengan Markdown (kebiasaan yang sangat kuat), dan sebelum ini
+// balasannya dirender sebagai teks polos sehingga bintang-bintangnya tampil
+// mentah di layar operator (dilaporkan user 2026-08-19).
+//
+// Prompt-nya SUDAH melarang Markdown & tetap dilanggar — melarang lewat kalimat
+// itu taruhan yang kalah terus. Jadi yang menyesuaikan renderer-nya; prompt
+// diubah jadi MENGIZINKAN tebal & daftar "-" saja (lib/chatbot/prompt.ts),
+// supaya yang diminta ke model persis yang bisa ditampilkan layar.
+//
+// ⚠️ SENGAJA subset paling kecil — tebal saja, TANPA `dangerouslySetInnerHTML`.
+// Balasan model itu teks dari luar; menyuntikkannya sebagai HTML membuka XSS,
+// dan tak ada yang cukup berharga di heading/tabel untuk menanggung risiko itu.
+// Daftar berbutir tetap terbaca apa adanya karena bubble-nya `whitespace-pre-wrap`.
+// `**` yang tak berpasangan dibiarkan apa adanya, bukan dibuang.
+function tebalkan(teks: string): ReactNode[] {
+  const out: ReactNode[] = []
+  const pola = /\*\*([^*]+)\*\*/g
+  let akhir = 0
+  let m: RegExpExecArray | null
+  while ((m = pola.exec(teks)) !== null) {
+    if (m.index > akhir) out.push(teks.slice(akhir, m.index))
+    out.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>)
+    akhir = m.index + m[0].length
+  }
+  if (akhir < teks.length) out.push(teks.slice(akhir))
+  return out
+}
+
 export default function ChatWidget() {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
@@ -333,7 +362,11 @@ export default function ChatWidget() {
                       <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                         <div className={`group max-w-[75%] rounded-lg px-3 py-2 text-sm relative ${mine ? 'bg-teal text-white' : 'bg-indigo-50 text-gray-800'}`}>
                           {!mine && <p className="text-[11px] font-medium text-indigo-600 mb-0.5">Asisten AI</p>}
-                          <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                          {/* Hanya balasan AI yang dirender ber-tebal. Pesan yang
+                              DIKETIK MANUSIA (chat publik & DM) tetap teks polos —
+                              di sana `**` yang diketik orang memang bermaksud
+                              bintang, bukan penanda format. */}
+                          <p className="whitespace-pre-wrap break-words">{mine ? m.content : tebalkan(m.content)}</p>
                           <div className="flex items-center gap-2 mt-1">
                             <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>{fmtJam(m.created_at)}</p>
                             <button onClick={() => hapusAi(m.id)}
