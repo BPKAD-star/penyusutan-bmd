@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 export type PegawaiRingkas = {
   id: string
@@ -32,6 +33,7 @@ export default function PenugasanRangkapModal({ pegawai, onClose, onChanged }: {
   onChanged: () => void // dipanggil setelah ada perubahan, supaya list induk reload
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [rows, setRows] = useState<PenugasanRangkap[]>([])
   const [loading, setLoading] = useState(true)
   const [closing, setClosing] = useState(false)
@@ -97,7 +99,16 @@ export default function PenugasanRangkapModal({ pegawai, onClose, onChanged }: {
   }
 
   async function hapus(r: PenugasanRangkap) {
-    if (!confirm(`Hapus penugasan rangkap di ${r.skpd?.nama || `SKPD #${r.skpd_id}`}?`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus penugasan rangkap ini?',
+      subjudul: r.skpd?.nama || `SKPD #${r.skpd_id}`,
+      // Penugasan rangkap dibaca `fetchCalonTtd` (lib/penandaTangan.ts) untuk
+      // menyusun calon penanda tangan lembar per-SKPD — akibat yang tak terlihat
+      // dari layar ini.
+      isi: <>Pejabat ini tak lagi muncul sebagai calon <b>penanda tangan Plt.</b> untuk SKPD tersebut
+        maupun unit-unit di bawahnya.</>,
+      labelYa: 'Hapus penugasan',
+    })).ya) return
     setMsg('')
     const { error } = await supabase.from('admin_pegawai_penugasan').delete().eq('id', r.id)
     if (error) { setMsg(`Error: ${error.message}`); return }

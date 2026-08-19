@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { FIELD_OPTIONS } from '@/lib/asetFields'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false, loading: () => <div className="h-[180px] bg-gray-50 rounded-lg animate-pulse" /> })
 
@@ -40,6 +41,7 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   asetId: string; asetDokumen?: AsetDokumen | null; onChanged?: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [rows, setRows] = useState<Bidang[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -109,7 +111,12 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   }
   async function hapusSertifikat() {
     if (!sertifikatPath) return
-    if (!confirm('Hapus file sertifikat ini?')) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus berkas sertifikat ini?',
+      isi: <>Berkasnya <b>dibuang dari penyimpanan</b> dan tak bisa dikembalikan. Data bidangnya
+        sendiri tetap ada — yang hilang cuma pindaian dokumennya.</>,
+      labelYa: 'Hapus berkas',
+    })).ya) return
     await supabase.storage.from('dokumen-sumber').remove([sertifikatPath])
     setSertifikatPath(null)
   }
@@ -166,7 +173,19 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   }
 
   async function handleDelete(b: Bidang) {
-    if (!confirm(`Hapus bidang "${b.nama_bidang || b.id}"?`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus bidang tanah ini?',
+      subjudul: b.nama_bidang || String(b.id),
+      rincian: b.luas != null ? [{ label: 'Luas', nilai: `${b.luas} m²` }] : undefined,
+      // Luas & lokasi Tanah dihitung dari bidang-bidangnya (CLAUDE.md), jadi
+      // menghapus satu bidang menggeser angka yang tampil di Daftar Barang.
+      isi: <>Luas &amp; lokasi tanah ini <b>dijumlahkan dari bidang-bidangnya</b>, jadi angkanya di
+        Daftar Barang ikut berubah begitu bidang ini hilang.</>,
+      peringatan: b.sertifikat_path
+        ? <>Berkas sertifikat yang menempel di bidang ini <b>ikut dibuang</b> dari penyimpanan.</>
+        : undefined,
+      labelYa: 'Hapus bidang',
+    })).ya) return
     if (b.sertifikat_path) await supabase.storage.from('dokumen-sumber').remove([b.sertifikat_path])
     const { error } = await supabase.from('aset_bidang_tanah').delete().eq('id', b.id)
     if (error) setMsg(`Error: ${error.message}`)

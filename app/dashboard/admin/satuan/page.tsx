@@ -2,11 +2,13 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Satuan = { id: number; nama: string; keterangan: string | null }
 
 export default function AdminSatuanPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [list, setList] = useState<Satuan[]>([])
   const [loading, setLoading] = useState(true)
   const [nama, setNama] = useState('')
@@ -56,7 +58,13 @@ export default function AdminSatuanPage() {
   }
 
   async function handleDelete(id: number, nm: string) {
-    if (!confirm(`Hapus satuan "${nm}"?`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus satuan ini?',
+      subjudul: nm,
+      isi: <>Satuan ini hilang dari pilihan di seluruh form entry barang. Barang yang terlanjur
+        memakainya <b>tidak berubah</b> — satuannya tersimpan sebagai teks di barang itu.</>,
+      labelYa: 'Hapus satuan',
+    })).ya) return
     const { error } = await supabase.from('admin_satuan_bmd').delete().eq('id', id)
     if (error) setMsg(`Error: ${error.message}`)
     load()

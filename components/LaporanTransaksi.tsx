@@ -6,7 +6,8 @@ import { exportToExcel, formatRupiah } from '@/lib/export'
 import { JENIS_TRANSAKSI_LABEL } from '@/lib/bmd'
 import { fetchBatalTargets } from '@/lib/voidedAset'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { GayaCetakLaporan, KopCetak, TombolCetak, konfirmasiCetakBanyak } from '@/components/pelaporan/CetakLaporan'
+import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Trx = {
   id: number
@@ -58,6 +59,8 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
   arah?: 'masuk' | 'keluar'
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
+  const konfirmasiCetak = useKonfirmasiCetak()
   const [rows, setRows] = useState<Trx[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -150,8 +153,16 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
     setMenyiapkan(true)
     const hasil = await ambilSemua()
     setMenyiapkan(false)
-    if (hasil.length === 0) { alert('Tidak ada transaksi untuk dicetak dengan filter ini.'); return }
-    if (!konfirmasiCetakBanyak(hasil.length)) return
+    if (hasil.length === 0) {
+      await konfirmasi({
+        nada: 'amber', ikon: '⚠', judul: 'Tidak ada transaksi untuk dicetak',
+        isi: <>Filter yang sedang aktif tidak menghasilkan satu baris pun. Longgarkan periode, SKPD,
+          atau jenis transaksinya lalu coba lagi.</>,
+        labelYa: 'Mengerti', tanpaBatal: true,
+      })
+      return
+    }
+    if (!(await konfirmasiCetak(hasil.length))) return
     setBarisCetak(hasil)
   }
 

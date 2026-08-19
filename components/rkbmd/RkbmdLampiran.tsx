@@ -16,6 +16,7 @@
 // sedangkan baris DB yang menunjuk berkas terhapus itu lampiran yang hilang.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const BUCKET = 'dokumen-sumber'
 const PREFIX = 'rkbmd-usulan'
@@ -32,6 +33,7 @@ export default function RkbmdLampiran({ rkbmdId, paths, diunggahAt, canEdit, onC
   onChanged: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const path = paths[0] || ''
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
@@ -87,7 +89,12 @@ export default function RkbmdLampiran({ rkbmdId, paths, diunggahAt, canEdit, onC
   }
 
   async function hapus() {
-    if (!confirm('Hapus lampiran? Tombol Ajukan akan mati sampai lampiran baru diunggah.')) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus lampiran bertanda tangan?',
+      isi: <>Lampiran ini <b>syarat pengajuan</b> — tanpanya dokumen tak bisa diajukan sampai
+        berkas baru diunggah.</>,
+      labelYa: 'Hapus lampiran',
+    })).ya) return
     setBusy(true); setErr('')
     try {
       const { data, error } = await supabase.from('rkbmd')

@@ -1,53 +1,72 @@
 'use client'
-// Pop-up konfirmasi bertema — PENGGANTI `confirm()` & `prompt()` bawaan browser.
+// ============================================================================
+// KonfirmasiModal — tampilan pop-up konfirmasi bertema.
 //
-// Kenapa dibuatkan komponen sendiri, bukan sekadar dirapikan di tiap layar:
-//   (1) Dialog bawaan itu HITAM-PUTIH milik peramban, tak bisa disentuh CSS sama
-//       sekali — di layar yang seluruhnya bertema navy/teal ia terbaca seperti
-//       peringatan sistem, bukan bagian aplikasi (keluhan user 2026-08-19).
-//   (2) `confirm()` MEMBEKUKAN seluruh tab selama terbuka, jadi mustahil
-//       menampilkan keadaan "sedang diproses". Menyetujui usulan standar harga
-//       bisa memakan beberapa detik (RPC memasukkan ratusan baris ke bak
-//       bersama); dengan dialog bawaan, layar hanya diam lalu tiba-tiba berubah.
-//   (3) `prompt()` cuma menyediakan SATU BARIS teks. Catatan telaah yang
-//       dikirim ke SKPD justru perlu beberapa kalimat.
+// PENGGANTI `confirm()` / `prompt()` / `alert()` bawaan peramban, yang di repo
+// ini DILARANG dipakai lagi (CODING-STANDARD.md §4.5). Tiga alasannya, dan
+// tak satu pun bisa ditambal tanpa mengganti dialognya:
 //
-// Sengaja BUKAN "sistem toast/dialog" umum: yang dibutuhkan cuma satu bentuk —
-// pertanyaan ya/tidak yang mempertaruhkan sesuatu, dengan rincian yang ditelaah
-// dan (opsional) catatan. Menambah bentuk lain di sini berarti komponennya mulai
-// jadi kerangka kerja, dan yang begitu selalu berakhir dengan cabang `if` yang
-// tak seorang pun berani cabut.
+//   (1) TAMPILAN — dialog bawaan itu hitam-putih milik peramban dan tak bisa
+//       disentuh CSS sama sekali. Di aplikasi yang seluruhnya navy/teal ia
+//       terbaca sebagai peringatan sistem, bukan bagian aplikasi; kalimatnya
+//       pun tampil sebagai teks polos tanpa penekanan, padahal yang perlu
+//       menonjol justru akibat yang tak bisa dibatalkan (keluhan user
+//       2026-08-19).
+//   (2) `confirm()` MEMBEKUKAN SELURUH TAB selama terbuka, jadi mustahil
+//       menampilkan keadaan "sedang diproses". Banyak keputusan di aplikasi
+//       ini memanggil RPC yang butuh beberapa detik (mis.
+//       `fn_standar_usulan_setujui` memasukkan ratusan baris ke bak bersama);
+//       dengan dialog bawaan, layar cuma diam lalu tiba-tiba berubah.
+//   (3) `prompt()` cuma menyediakan SATU BARIS teks — sementara catatan telaah
+//       yang dikirim ke SKPD justru perlu menjelaskan apa yang harus
+//       diperbaiki.
+//
+// ⚠️ Ini komponen TAMPILAN saja (terkendali penuh oleh pemanggil). Untuk
+// pemakaian sehari-hari pakai `useKonfirmasi()` di shared/ui/konfirmasi.tsx —
+// ia yang mengubah `if (!confirm(...)) return` jadi satu baris `await`.
+// Komponen ini dipakai langsung hanya kalau pop-upnya perlu dikendalikan
+// sendiri (mis. isinya bergantung state lain di halaman itu).
+//
+// SENGAJA BUKAN "sistem dialog" umum: yang dibutuhkan repo ini cuma satu
+// bentuk — pertanyaan ya/tidak yang mempertaruhkan sesuatu, dengan rincian
+// yang ditelaah dan (opsional) catatan. Menambah bentuk lain di sini akan
+// membuatnya jadi kerangka kerja ber-prop boolean, yang justru dilarang
+// CODING-STANDARD §1.5.
+// ============================================================================
 import { useEffect, useState, type ReactNode } from 'react'
 import { backdropClose } from '@/components/backdropClose'
 
-/** Warna nada keputusan. Sengaja bukan `warna: string` bebas: kelas Tailwind
- *  HARUS berupa string utuh di berkas sumber supaya ikut terpindai saat build —
- *  kelas yang dirakit runtime (`bg-${x}-600`) tidak pernah ikut ke CSS dan
- *  tombolnya akan tampil TANPA warna sama sekali, tanpa satu pun error. */
+/**
+ * Warna nada keputusan.
+ *
+ * ⚠️ Kelas Tailwind WAJIB berupa string utuh di berkas sumber supaya ikut
+ * terpindai saat build. Kelas yang dirakit runtime (`bg-${x}-600`) TIDAK
+ * PERNAH ikut ke CSS, dan tombolnya tampil tanpa warna sama sekali — tanpa
+ * satu pun error. Itu sebabnya nada dibatasi tiga nilai, bukan `warna: string`.
+ */
 export type NadaKonfirmasi = 'teal' | 'merah' | 'amber'
 
 const NADA: Record<NadaKonfirmasi, {
-  /** Lingkaran ikon di kepala pop-up. */
   lencana: string
-  /** Gradasi tipis di kepala — penanda nada yang tetap terbaca walau ikonnya kecil. */
   kepala: string
-  /** Tombol keputusan. */
   tombol: string
-  /** Kotak peringatan di badan. */
   peringatan: string
 }> = {
+  // Teal = tindakan yang MENETAPKAN sesuatu (setujui, tetapkan, kirim).
   teal: {
     lencana: 'bg-teal/10 text-teal ring-1 ring-teal/20',
     kepala: 'bg-gradient-to-br from-teal/5 via-white to-white',
     tombol: 'bg-teal hover:bg-teal-light focus:ring-teal/40',
     peringatan: 'bg-teal/5 border-teal/20 text-teal',
   },
+  // Merah = MEMBUANG / mengembalikan / menolak.
   merah: {
     lencana: 'bg-red-50 text-red-600 ring-1 ring-red-100',
     kepala: 'bg-gradient-to-br from-red-50 via-white to-white',
     tombol: 'bg-red-600 hover:bg-red-500 focus:ring-red-300',
     peringatan: 'bg-red-50 border-red-100 text-red-700',
   },
+  // Amber = MEMBATALKAN keadaan yang sudah berlaku (buka kunci, unapprove).
   amber: {
     lencana: 'bg-amber-50 text-amber-600 ring-1 ring-amber-100',
     kepala: 'bg-gradient-to-br from-amber-50 via-white to-white',
@@ -61,29 +80,32 @@ export type IsianCatatan = {
   placeholder?: string
   /** Keterangan kecil di bawah kotak — tempat menjelaskan akibat mengosongkannya. */
   petunjuk?: ReactNode
-  /** Nilai awal (mis. catatan telaah sebelumnya). */
   awal?: string
 }
 
-type Props = {
+export type PropsKonfirmasiModal = {
   nada?: NadaKonfirmasi
-  /** Emoji/karakter di lencana kepala. Satu karakter, bukan gambar. */
+  /** Emoji/karakter di lencana kepala. */
   ikon?: string
   judul: string
-  /** Baris kecil di bawah judul — biasanya SKPD · jenis · tahun anggaran. */
+  /** Baris kecil di bawah judul — biasanya SKPD · jenis · periode. */
   subjudul?: ReactNode
-  /** Ringkasan yang ditelaah sebelum memutuskan: label di kiri, angka di kanan. */
+  /** Ringkasan yang ditelaah sebelum memutuskan: label kiri, angka kanan. */
   rincian?: { label: string; nilai: ReactNode }[]
   /** Penjelasan akibat keputusannya. */
   children?: ReactNode
-  /** Kotak bernada — untuk akibat yang tak bisa dibatalkan / syarat yang bisa menggagalkan. */
+  /** Kotak bernada — untuk akibat tak terbalikkan / syarat yang bisa menggagalkan. */
   peringatan?: ReactNode
   /** Kalau diisi, pop-up menampilkan kotak catatan & mengirim isinya ke `onYa`. */
   catatan?: IsianCatatan
   labelYa: string
   labelBatal?: string
-  /** Selama true: tombol terkunci & pop-up TETAP TERBUKA — inilah yang tak bisa
-   *  dilakukan `confirm()`. Penutupnya pemanggil, sesudah pekerjaannya selesai. */
+  /** Pemberitahuan satu tombol — pengganti `alert()`. Tombol Batal disembunyikan. */
+  tanpaBatal?: boolean
+  /**
+   * Selama true: tombol terkunci & pop-up TETAP TERBUKA — inilah yang tak bisa
+   * dilakukan `confirm()`. Penutupnya pemanggil, sesudah pekerjaannya selesai.
+   */
   busy?: boolean
   onYa: (catatan: string) => void
   onBatal: () => void
@@ -91,13 +113,14 @@ type Props = {
 
 export default function KonfirmasiModal({
   nada = 'teal', ikon, judul, subjudul, rincian, children, peringatan,
-  catatan, labelYa, labelBatal = 'Batal', busy = false, onYa, onBatal,
-}: Props) {
+  catatan, labelYa, labelBatal = 'Batal', tanpaBatal = false, busy = false,
+  onYa, onBatal,
+}: PropsKonfirmasiModal) {
   const [isi, setIsi] = useState(catatan?.awal || '')
   const n = NADA[nada]
 
   // Esc menutup — kebiasaan yang dibawa dari dialog bawaan; mencabutnya membuat
-  // pop-up ini terasa lebih "menjebak" daripada yang digantikannya. Diabaikan
+  // pop-up ini terasa lebih menjebak daripada yang digantikannya. Diabaikan
   // selama busy: menutup layar di tengah operasi cuma menyembunyikan hasilnya,
   // pekerjaannya sendiri tetap jalan di server.
   useEffect(() => {
@@ -108,6 +131,9 @@ export default function KonfirmasiModal({
 
   return (
     <div
+      // z-[60]: di atas modal biasa (z-50) — konfirmasi sering dipicu DARI
+      // dalam sebuah modal (mis. "Hapus" di pop-up rincian), dan yang tampil
+      // di bawahnya akan terlihat seperti tombolnya tidak berfungsi.
       className="fixed inset-0 z-[60] flex items-center justify-center bg-navy-dark/40 backdrop-blur-[2px] p-4 animate-fade-in"
       {...backdropClose(() => { if (!busy) onBatal() })}
       role="dialog"
@@ -166,13 +192,11 @@ export default function KonfirmasiModal({
         </div>
 
         <div className="px-5 py-3.5 bg-gray-50/70 border-t border-gray-100 flex justify-end gap-2">
-          <button
-            className="btn-secondary text-sm disabled:opacity-50"
-            onClick={onBatal}
-            disabled={busy}
-          >
-            {labelBatal}
-          </button>
+          {!tanpaBatal && (
+            <button className="btn-secondary text-sm disabled:opacity-50" onClick={onBatal} disabled={busy}>
+              {labelBatal}
+            </button>
+          )}
           <button
             className={`text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 disabled:opacity-60 disabled:cursor-not-allowed ${n.tombol}`}
             onClick={() => onYa(isi.trim())}

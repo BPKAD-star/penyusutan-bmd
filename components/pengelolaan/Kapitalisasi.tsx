@@ -19,6 +19,7 @@ import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 
 type Barang = { id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai_perolehan: number; skpd_id: number | null; tgl_perolehan: string | null }
@@ -51,6 +52,7 @@ function computeSnapshot(fig: IndukFig, kode: string, rehab: number, bands: Band
 
 export default function Kapitalisasi() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [bands, setBands] = useState<BandOverhaul[]>([])
@@ -113,7 +115,20 @@ export default function Kapitalisasi() {
   useEffect(() => { loadList(skpd); setMode('list') }, [skpd, loadList])
 
   async function batal(j: Jurnal) {
-    if (!confirm(`Batalkan kapitalisasi No. Dok ${j.no_dokumen}? Nilai induk & masa manfaat kembali seperti semula, dan ${j.anak.length} barang anak aktif lagi.`)) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Batalkan kapitalisasi ini?',
+      subjudul: `No. Dok ${j.no_dokumen}`,
+      rincian: [
+        { label: 'Barang induk', nilai: j.induk?.nama_barang || j.induk?.nibar || '—' },
+        { label: 'Nilai rehab dibalik', nilai: formatRupiah(j.nilai) },
+        { label: 'Barang anak aktif lagi', nilai: `${j.anak.length} barang` },
+      ],
+      isi: <>Nilai perolehan induk &amp; masa manfaatnya <b>kembali seperti semula</b>, dan barang anak
+        yang tadinya terserap muncul lagi sebagai barang tersendiri.</>,
+      peringatan: <>Ditolak kalau induknya sudah punya transaksi lebih baru — batalkan yang lebih
+        baru dulu. Jalankan <b>Engine</b> lagi setelah ini supaya angka penyusutannya ikut berubah.</>,
+      labelYa: 'Ya, batalkan',
+    })).ya) return
     // Guard rantai: induk tak boleh punya transaksi LEBIH BARU setelah kapitalisasi
     // ini (mis. reklas/kapitalisasi lagi di atasnya) — batalkan yang lebih baru dulu,
     // kalau tidak replay engine rusak. (Anak yg terserap sudah tersembunyi dari semua

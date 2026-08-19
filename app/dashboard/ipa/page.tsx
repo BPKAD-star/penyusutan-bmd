@@ -12,6 +12,7 @@ import {
   indeksTertimbangKeKategori, ipaKeDisplay, stKeDisplay, ST_MAX,
 } from '@/lib/ipaEngine'
 import type { KategoriIPA, StatusRecord } from '@/lib/ipaTypes'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type TahunRow = { id: string; tahun: number; batas_submit_pb: string | null; batas_submit_bkad: string | null; is_active: boolean }
 
@@ -90,6 +91,7 @@ function KelompokBadge({ k }: { k: number }) {
 
 export default function DashboardIPAPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [loading, setLoading] = useState(true)
   const [isAdminUmum, setIsAdminUmum] = useState(false)
   const [ipaRole, setIpaRole] = useState<string | null>(null)
@@ -180,8 +182,30 @@ export default function DashboardIPAPage() {
 
   async function handleTolak(recordId: string) {
     if (!userId) return
-    const catatan = prompt('Alasan penolakan (wajib diisi):')
-    if (!catatan || !catatan.trim()) return
+    const { ya, catatan } = await konfirmasi({
+      nada: 'merah', ikon: '↩', judul: 'Tolak penilaian IPA ini?',
+      isi: <>Penilaiannya dikembalikan ke pengurus barang untuk diperbaiki.</>,
+      catatan: {
+        label: 'Alasan penolakan',
+        placeholder: 'Mis. bukti dukung sub-tema 2 belum diunggah; nilai ST3 tak sesuai dokumen.',
+        petunjuk: <><b>Wajib diisi</b> — ini satu-satunya keterangan yang sampai ke pengurus barang.</>,
+      },
+      labelYa: 'Ya, tolak',
+    })
+    if (!ya) return
+    // Halaman ini tak punya kotak pesan sendiri, jadi penolakan tanpa alasan
+    // dijawab dengan pemberitahuan satu tombol (pengganti `alert()`). Perilaku
+    // LAMA-nya: `prompt` yang dikosongkan membatalkan aksinya DIAM-DIAM —
+    // operator menekan OK, tak terjadi apa-apa, tanpa satu pun keterangan.
+    if (!catatan.trim()) {
+      await konfirmasi({
+        nada: 'amber', ikon: '⚠', judul: 'Alasan penolakan wajib diisi',
+        isi: <>Tanpa alasan, pengurus barang tak punya cara tahu apa yang harus diperbaiki.
+          Penolakan dibatalkan — silakan ulangi.</>,
+        labelYa: 'Mengerti', tanpaBatal: true,
+      })
+      return
+    }
     setBusyId(recordId)
     await supabase.from('ipa_record').update({
       status: 'ditolak', verified_at: new Date().toISOString(), verified_by: userId, catatan_verifikasi: catatan.trim(),

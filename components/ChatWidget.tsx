@@ -4,8 +4,9 @@
 // lihat migrasi 20260710_14), plus DM 1-on-1 ke user lain (migrasi
 // 20260710_15_chat_dm.sql). Realtime via Postgres Changes, satu channel utk
 // semua room — RLS chat_select yang menyaring mana row yang boleh saya lihat.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Msg = { id: number; sender_id: string; recipient_id: string | null; content: string; created_at: string }
 type AiMsg = { id: number; role: 'user' | 'assistant'; content: string; created_at: string }
@@ -20,6 +21,7 @@ const fmtTgl = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-
 
 export default function ChatWidget() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [open, setOpen] = useState(false)
   const [myId, setMyId] = useState<string | null>(null)
   const [profiles, setProfiles] = useState<Record<string, Profile>>({})
@@ -159,6 +161,16 @@ export default function ChatWidget() {
   const threadMsgs = activeRoom === null || activeRoom === 'ai' ? [] : activeRoom === 'public' ? publicMsgs : (dmByPeer[activeRoom] || [])
   const threadTitle = activeRoom === null ? '' : activeRoom === 'ai' ? 'Asisten AI' : activeRoom === 'public' ? 'Publik / Chat Grup' : (profiles[activeRoom]?.nama || 'User')
 
+  /** Pemberitahuan satu tombol — pengganti `alert()`. Widget ini mengambang di
+   *  atas halaman lain & tak punya kotak pesan sendiri, jadi kegagalan memang
+   *  harus muncul sebagai pop-up; yang diganti cuma dialog bawaan perambannya. */
+  async function beritahuGagal(judul: string, pesan: string, tambahan?: ReactNode) {
+    await konfirmasi({
+      nada: 'merah', ikon: '⚠', judul, subjudul: pesan,
+      isi: tambahan, labelYa: 'Mengerti', tanpaBatal: true,
+    })
+  }
+
   async function kirim() {
     const content = text.trim()
     if (!content || !myId || sending || activeRoom === null || activeRoom === 'ai') return
@@ -166,14 +178,24 @@ export default function ChatWidget() {
     setText('')
     const recipient_id = activeRoom === 'public' ? null : activeRoom
     const { error } = await supabase.from('chat_messages').insert({ sender_id: myId, recipient_id, content })
-    if (error) { alert(`Gagal kirim pesan: ${error.message}`); setText(content) }
+    // Teks yang gagal terkirim DIKEMBALIKAN ke kotak ketik — itu yang paling
+    // menolong, jadi pemberitahuannya cukup menjelaskan kenapa & bahwa
+    // ketikannya masih ada.
+    if (error) {
+      setText(content)
+      await beritahuGagal('Pesan gagal terkirim', error.message, <>Ketikan Anda dikembalikan ke kotak pesan — coba kirim lagi.</>)
+    }
     setSending(false)
   }
 
   async function hapus(id: number) {
-    if (!confirm('Hapus pesan ini?')) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus pesan ini?',
+      isi: <>Pesan hilang untuk <b>semua orang</b> di percakapan ini, bukan cuma dari layar Anda.</>,
+      labelYa: 'Hapus pesan',
+    })).ya) return
     const { error } = await supabase.from('chat_messages').delete().eq('id', id)
-    if (error) alert(`Gagal hapus: ${error.message}`)
+    if (error) await beritahuGagal('Pesan gagal dihapus', error.message)
   }
 
   // ── Chat AI: kirim ke /api/ai-chat (server, simpan API key aman) lalu tampilkan balasan ──
@@ -198,9 +220,13 @@ export default function ChatWidget() {
 
   async function hapusAi(id: number) {
     if (id < 0) { setAiMsgs(prev => prev.filter(m => m.id !== id)); return } // pesan lokal (gagal simpan), belum ada di DB
-    if (!confirm('Hapus pesan ini?')) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus pesan ini?',
+      isi: <>Percakapan dengan asisten AI ini milik Anda sendiri — yang lain tak pernah melihatnya.</>,
+      labelYa: 'Hapus pesan',
+    })).ya) return
     const { error } = await supabase.from('chat_messages_ai').delete().eq('id', id)
-    if (error) { alert(`Gagal hapus: ${error.message}`); return }
+    if (error) { await beritahuGagal('Pesan gagal dihapus', error.message); return }
     setAiMsgs(prev => prev.filter(m => m.id !== id))
   }
 

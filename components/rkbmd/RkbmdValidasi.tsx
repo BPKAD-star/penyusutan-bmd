@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { backdropClose } from '@/components/backdropClose'
-import KonfirmasiModal from '@/components/KonfirmasiModal'
+import KonfirmasiModal from '@/shared/ui/KonfirmasiModal'
 import { formatRupiah } from '@/lib/export'
 import { RKBMD_JENIS, STATUS_META, type RkbmdStatus, type RkbmdPaket } from '@/lib/rkbmd'
 
@@ -140,7 +140,7 @@ export default function RkbmdValidasi() {
   // Ketiga keputusan lewat satu jalur — pop-up sengaja DIBIARKAN TERBUKA selama
   // pekerjaannya berjalan (ditutup di `finally`, bukan saat tombolnya ditekan),
   // supaya ada keadaan "sedang diproses" yang dulu mustahil ditampilkan karena
-  // `confirm()` membekukan seluruh tab. Lihat components/KonfirmasiModal.tsx.
+  // `confirm()` membekukan seluruh tab. Lihat shared/ui/KonfirmasiModal.tsx.
   //
   // Buka Kunci ada di layar ini sejak 2026-08-13 (pindah dari menu Usulan):
   // menyetujui, menolak, dan membatalkan penetapan adalah tiga sisi dari satu

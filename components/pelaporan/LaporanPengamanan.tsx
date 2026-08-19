@@ -8,7 +8,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { GayaCetakLaporan, KopCetak, TombolCetak, konfirmasiCetakBanyak } from '@/components/pelaporan/CetakLaporan'
+import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
 
 type HeaderPayload = {
   nama_pegawai?: string; nip?: string; pangkat_golongan?: string; jabatan?: string
@@ -22,6 +22,7 @@ type Row = {
 
 export default function LaporanPengamanan() {
   const supabase = createClient()
+  const konfirmasiCetak = useKonfirmasiCetak()
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -91,9 +92,9 @@ export default function LaporanPengamanan() {
   }
 
   // Tabel di sini sudah memuat SELURUH baris, jadi cetak = langsung print.
-  function handleCetak() {
+  async function handleCetak() {
     if (rows.length === 0) return
-    if (!konfirmasiCetakBanyak(rows.length)) return
+    if (!(await konfirmasiCetak(rows.length))) return
     window.print()
   }
 

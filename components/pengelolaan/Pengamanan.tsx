@@ -23,6 +23,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { PANGKAT_GOLONGAN, PENGAMANAN_ELIGIBLE_GOLONGAN, isPengamananEligible, pengamananCache } from '@/lib/pengamanan'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
 const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
@@ -53,6 +54,7 @@ const HEADER_COLS = 'id,no_sk,tanggal,periode,keterangan,payload'
 export default function Pengamanan() {
   const supabase = createClient()
 
+  const konfirmasi = useKonfirmasi()
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [skpd, setSkpd] = useState('')
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
@@ -135,19 +137,50 @@ export default function Pengamanan() {
     return true
   }
 
+  // ⤺ Kembalikan vs 🗑 Batal: pasangan yang sama gampang tertukarnya dengan
+  // Akhiri/Batal di Pemanfaatan, jadi nadanya dibedakan dengan aturan yang sama
+  // — teal untuk peristiwa yang SAH, merah untuk koreksi salah catat.
   async function kembalikanBarang(l: Line, j: Jurnal) {
     if (l.dikembalikan) return
-    if (!confirm(`Kembalikan barang "${l.nama_barang || l.nibar}" dari ${j.payload?.nama_pegawai || 'pegawai'}? Barang lepas dari kustodi & bebas diserahkan ke pegawai lain.`)) return
+    if (!(await konfirmasi({
+      nada: 'teal', ikon: '⤺', judul: 'Kembalikan barang dari kustodi?',
+      subjudul: l.nama_barang || l.nibar,
+      rincian: [{ label: 'Kustodian saat ini', nilai: j.payload?.nama_pegawai || 'pegawai' }],
+      isi: <>Barang <b>lepas dari kustodi</b> dan bebas diserahkan ke pegawai lain lewat BAST baru.
+        Riwayatnya tetap tampil di kartu ini dengan status &ldquo;Dikembalikan&rdquo;.</>,
+      peringatan: <>Kalau sebenarnya <b>salah catat</b> (barangnya tak pernah diserahkan), pakai
+        🗑 Batal supaya tak tertinggal riwayat penyerahan yang tak pernah terjadi.</>,
+      labelYa: 'Ya, kembalikan',
+    })).ya) return
     if (await tulisEvent(l, j, 'pengembalian_pengamanan')) { setMsg('Barang dikembalikan dari pengamanan.'); loadJurnals(skpd) }
   }
 
   async function batalBarang(l: Line, j: Jurnal) {
-    if (!confirm(`Batalkan (salah catat) pengamanan "${l.nama_barang || l.nibar}"? Barang hilang dari kartu ini (dianggap tak pernah diserahkan). Untuk pengembalian normal pakai ⤺ Kembalikan.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Batalkan pengamanan ini — salah catat?',
+      subjudul: l.nama_barang || l.nibar,
+      isi: <>Barang dianggap <b>TAK PERNAH diserahkan</b>: hilang dari kartu ini tanpa meninggalkan
+        riwayat.</>,
+      peringatan: <>Ini <b>koreksi salah catat</b>, bukan pengembalian. Kalau barangnya memang pernah
+        dipegang lalu dikembalikan, pakai ⤺ Kembalikan.</>,
+      labelYa: 'Ya, batalkan',
+    })).ya) return
     if (await tulisEvent(l, j, 'batal_pengamanan')) { setMsg('Pengamanan barang dibatalkan (salah catat).'); loadJurnals(skpd) }
   }
 
   async function batalSeluruh(j: Jurnal) {
-    if (!confirm(`Batalkan SELURUH BAST pengamanan "${j.no_sk}" (${j.lines.length} barang)? Semua barang dianggap tak pernah diserahkan — kartu hilang. HANYA untuk salah catat, BUKAN pengembalian normal (pakai ⤺ Kembalikan per barang).`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Batalkan SELURUH BAST pengamanan ini?',
+      subjudul: `No. BAST ${j.no_sk}`,
+      rincian: [
+        { label: 'Barang terdampak', nilai: `${j.lines.length} barang` },
+        { label: 'Pegawai penanggung jawab', nilai: j.payload?.nama_pegawai || '—' },
+      ],
+      isi: <>Semua barangnya dianggap <b>tak pernah diserahkan</b> dan kartunya hilang dari daftar.</>,
+      peringatan: <><b>HANYA untuk salah catat.</b> Penyerahan yang memang terjadi lalu selesai
+        dikembalikan per barang lewat ⤺ Kembalikan, bukan dibatalkan dari sini.</>,
+      labelYa: 'Ya, batalkan seluruhnya',
+    })).ya) return
     const tgl = todayStr()
     const rows = j.lines.map(l => ({
       aset_id: l.aset_id, jenis: 'batal_pengamanan', periode: periodeDariTanggal(tgl), tanggal: tgl, nilai: 0, header_id: j.id, payload: {},

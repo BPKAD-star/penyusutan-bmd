@@ -22,6 +22,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useDraftSeleksi, DraftSearchBar, DraftBulkBar } from './draftSeleksi'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 export type KategoriPerolehan = 'hibah_masuk' | 'tukar_menukar' | 'hasil_inventarisasi' | 'perolehan_lainnya'
 
@@ -69,6 +70,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   kategori: KategoriPerolehan; judul: string; pihakLabel: string | null
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
 
   const [skpdPathMap, setSkpdPathMap] = useState<Record<number, string>>({})
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
@@ -216,7 +218,13 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     if (ok) loadJurnals(skpd)
   }
   async function hapusDraftItem(h: Jurnal, key: string) {
-    if (!confirm('Hapus barang ini dari draft?')) return
+    const it = (h.payload.draft_items || []).find(i => i.key === key)
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus barang ini dari draft?',
+      subjudul: it?.fields?.nama_barang || it?.kode || undefined,
+      isi: <>Barangnya belum pernah tercatat di Daftar Barang, jadi tak ada jejak yang ikut terhapus.</>,
+      labelYa: 'Hapus',
+    })).ya) return
     const items = (h.payload.draft_items || []).filter(i => i.key !== key)
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
@@ -225,7 +233,15 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   // UPDATE payload jurnal_header, jadi tak melanggar append-only.
   async function hapusDraftItems(h: Jurnal, keys: string[]) {
     if (keys.length === 0) return
-    if (!confirm(`Hapus ${keys.length} barang yang dicentang dari draft? Tidak bisa dibatalkan.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus barang yang dicentang?',
+      subjudul: `Dokumen ${h.no_sk}`,
+      rincian: [{ label: 'Barang dicentang', nilai: `${keys.length} barang` }],
+      isi: <>Centangnya bertahan lintas pencarian, jadi bisa ada barang terpilih yang sedang tidak
+        kelihatan di layar. Angka di atas itu yang akan dibuang.</>,
+      peringatan: <>Tidak bisa dibatalkan.</>,
+      labelYa: `Hapus ${keys.length} barang`,
+    })).ya) return
     const buang = new Set(keys)
     const items = (h.payload.draft_items || []).filter(i => !buang.has(i.key))
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
@@ -245,14 +261,30 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   }
   async function hapusDokumen(h: Jurnal) {
     if (h.hasLedger) {
-      if (!confirm(`Arsipkan dokumen ${h.no_sk}? Dokumen ini pernah disetujui — riwayat ledgernya tetap tersimpan (append-only). Dokumen akan hilang dari daftar & No. Dokumen bisa dipakai lagi. Tidak bisa dibatalkan.`)) return
+      if (!(await konfirmasi({
+        nada: 'merah', ikon: '📦', judul: 'Arsipkan dokumen ini?',
+        subjudul: `Dokumen ${h.no_sk}`,
+        isi: <>Dokumen ini <b>pernah disetujui</b>, jadi tidak bisa dihapus betulan. Ia diarsipkan:
+          hilang dari daftar, dan No. Dokumen-nya bebas dipakai lagi.</>,
+        peringatan: <>Riwayat ledgernya <b>tetap tersimpan</b> (append-only, tak bisa dihapus).
+          Tidak bisa dibatalkan.</>,
+        labelYa: 'Arsipkan',
+      })).ya) return
       const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', h.id)
       if (error) { setMsg(`Error: gagal mengarsipkan dokumen: ${error.message}`); return }
       setMsg(`Dokumen ${h.no_sk} diarsipkan.`)
       loadJurnals(skpd)
       return
     }
-    if (!confirm(`Hapus dokumen ${h.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus dokumen ini?',
+      subjudul: `Dokumen ${h.no_sk}`,
+      rincian: [{ label: 'Draft barang', nilai: `${(h.payload.draft_items || []).length} barang` }],
+      isi: <>Dokumen ini belum pernah disetujui, jadi belum menyentuh ledger — dokumen &amp; seluruh
+        draft barangnya dihapus betulan.</>,
+      peringatan: <>Tidak bisa dibatalkan.</>,
+      labelYa: 'Hapus dokumen',
+    })).ya) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', h.id)
     if (error) { setMsg(`Error: gagal menghapus dokumen: ${error.message}`); return }
     setMsg(`Dokumen ${h.no_sk} dihapus.`)
@@ -268,7 +300,25 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       if (!it.tglPerolehan) { setMsg(`Error: barang "${it.fields.nama_barang || it.kode}" belum ada tanggal perolehan.`); return }
       if (toNum(it.harga) <= 0) { setMsg(`Error: nilai "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
     }
-    if (!confirm(`Setujui dokumen ${h.no_sk}?\n${items.length} barang akan dicatat resmi sesuai tanggal perolehan masing-masing.`)) return
+    // Beda dari Pengadaan: di sini TIAP BARANG punya tanggal perolehannya
+    // sendiri (boleh backdate), jadi rentangnya yang ditampilkan — bukan satu
+    // tanggal BAST. Kalau semuanya setanggal, rentangnya jadi satu tanggal.
+    const tgls = items.map(i => i.tglPerolehan).filter(Boolean).sort()
+    const rentang = tgls.length === 0 ? '—'
+      : tgls[0] === tgls[tgls.length - 1] ? tgls[0]
+      : `${tgls[0]} s.d. ${tgls[tgls.length - 1]}`
+    if (!(await konfirmasi({
+      nada: 'teal', ikon: '✓', judul: 'Setujui dokumen ini?',
+      subjudul: `Dokumen ${h.no_sk}`,
+      rincian: [
+        { label: 'Barang dicatat', nilai: `${items.length} barang` },
+        { label: 'Tgl perolehan', nilai: rentang },
+      ],
+      isi: <>Barangnya <b>resmi tercatat</b> di Daftar Barang, Penyusutan, &amp; laporan BMD dengan
+        tanggal perolehan masing-masing, dan NIBAR-nya diterbitkan. Sesudah ini kartunya terkunci —
+        mengubahnya harus lewat Buka Kunci.</>,
+      labelYa: 'Ya, setujui',
+    })).ya) return
 
     setBusyId(h.id); setMsg('')
 
@@ -332,7 +382,16 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   }
 
   async function unapproveHeader(j: Jurnal) {
-    if (!confirm(`Buka kunci dokumen ${j.no_sk}?\n${j.lines.length} barang dikembalikan ke draft & DIHAPUS dari Daftar Barang/Penyusutan sampai disetujui lagi.`)) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '🔓', judul: 'Buka kunci dokumen ini?',
+      subjudul: `Dokumen ${j.no_sk}`,
+      rincian: [{ label: 'Barang terdampak', nilai: `${j.lines.length} barang` }],
+      isi: <>Barangnya kembali jadi draft dan <b>hilang dari Daftar Barang &amp; Penyusutan</b> sampai
+        disetujui lagi.</>,
+      peringatan: <><b>NIBAR digenerate ulang</b> saat disetujui berikutnya. Kalau ada barangnya yang
+        sudah punya transaksi lebih baru, permintaan ini akan ditolak.</>,
+      labelYa: 'Ya, buka kunci',
+    })).ya) return
     setBusyId(j.id); setMsg('')
     for (const l of j.lines) {
       const { error } = await catatTransaksi(supabase, {

@@ -23,6 +23,7 @@ import { bergeserDariNibar } from '@/lib/kodeRegister'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const BASE_COLS = 'id,nibar,kode_register,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,merek_tipe,alamat_detail'
 
@@ -97,6 +98,7 @@ const angka = (v: number | null | undefined) =>
 
 export default function PenyusutanPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const tahunBukuMap = useTahunBukuMap()
 
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
@@ -365,7 +367,18 @@ export default function PenyusutanPage() {
 
   async function runEngine() {
     const periode = `${tahun}-S${smt}`
-    if (!confirm(`Jalankan engine penyusutan untuk periode ${periode}?\nMenghitung ulang SEMUA aset (bisa beberapa menit). Aman diulang.`)) return
+    // TIDAK memakai `kerjakan`: engine dijalankan bertahap (batch per-aset) dan
+    // kemajuannya sudah dilaporkan sendiri lewat `engineMsg` — "Memproses… N
+    // aset". Menahan pop-up di depan layar justru menutupi angka itu.
+    if (!(await konfirmasi({
+      nada: 'teal', ikon: '⚙', judul: 'Jalankan engine penyusutan?',
+      subjudul: `Periode ${periode}`,
+      isi: <>Seluruh aset dihitung <b>ulang dari awal</b> untuk periode ini. Bisa memakan beberapa
+        menit, dan <b>aman diulang</b> — hasilnya sama berapa kali pun dijalankan.</>,
+      peringatan: <>Periode di tahun yang sudah <b>terkunci</b> ditolak, dan baris tahun terkunci
+        yang terlewati saat replay tidak ditimpa.</>,
+      labelYa: 'Ya, jalankan',
+    })).ya) return
     setEngineRunning(true); setEngineMsg('Memproses… 0 aset')
     // Engine di-BATCH per-aset di server (keyset by id). Client loop tiap batch
     // sampai `done`, akumulasi statistik + tampilkan progress. Mencegah timeout

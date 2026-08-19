@@ -29,6 +29,7 @@ import {
   PEMANFAATAN_ELIGIBLE_GOLONGAN, isPemanfaatanEligible, hitungBerakhir, pemanfaatanCache,
 } from '@/lib/pemanfaatan'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
 const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
@@ -65,6 +66,7 @@ function statusBadge(h: Header): { txt: string; cls: string } {
 
 export default function Pemanfaatan() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
 
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [skpd, setSkpd] = useState('')
@@ -150,7 +152,19 @@ export default function Pemanfaatan() {
   // Akhiri pemanfaatan satu barang: baris pemanfaatan_selesai (hari ini) + null cache.
   async function akhiriBarang(l: Line, j: Jurnal) {
     if (l.selesai) return
-    if (!confirm(`Akhiri pemanfaatan barang "${l.nama_barang || l.nibar}"? Barang tetap di SKPD & tetap disusutkan — hanya status pemanfaatannya yang ditutup.`)) return
+    // ⏹ Akhiri vs 🗑 Batal itu dua hal yang BERBEDA ARTINYA & paling gampang
+    // tertukar (CLAUDE.md, keputusan user 2026-07-21). Karena itu nadanya
+    // dibedakan — Akhiri teal (peristiwa yang sah), Batal merah (koreksi salah
+    // catat) — dan tiap pop-up menyebut lawannya secara eksplisit.
+    if (!(await konfirmasi({
+      nada: 'teal', ikon: '⏹', judul: 'Akhiri pemanfaatan barang ini?',
+      subjudul: l.nama_barang || l.nibar,
+      isi: <>Pemanfaatannya <b>sah lalu berakhir</b>. Barang tetap di SKPD ini &amp; tetap disusutkan —
+        yang ditutup cuma status pemanfaatannya, dan riwayatnya tetap tampil di KIBAR.</>,
+      peringatan: <>Kalau sebenarnya <b>salah catat</b> (pemanfaatannya tak pernah terjadi), pakai
+        🗑 Batal — kalau tidak, akan ada pemanfaatan hantu berstatus &ldquo;Selesai&rdquo; di KIBAR.</>,
+      labelYa: 'Ya, akhiri',
+    })).ya) return
     const tgl = todayStr()
     const { error } = await supabase.from('transaksi_bmd').insert({
       aset_id: l.aset_id, jenis: 'pemanfaatan_selesai', periode: periodeDariTanggal(tgl), tanggal: tgl,
@@ -165,7 +179,15 @@ export default function Pemanfaatan() {
   // Batal (koreksi salah catat): baris batal_pemanfaatan → barang hilang total
   // dari kartu & KIBAR (dianggap tak pernah dimanfaatkan). Beda dari Akhiri.
   async function batalBarang(l: Line, j: Jurnal) {
-    if (!confirm(`Batalkan (salah catat) pemanfaatan "${l.nama_barang || l.nibar}"? Barang dianggap TAK PERNAH dimanfaatkan — hilang dari kartu ini & KIBAR. Untuk pengakhiran normal pakai ⏹ Akhiri.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Batalkan pemanfaatan ini — salah catat?',
+      subjudul: l.nama_barang || l.nibar,
+      isi: <>Barang dianggap <b>TAK PERNAH dimanfaatkan</b>: hilang total dari kartu ini dan dari
+        KIBAR, tanpa meninggalkan riwayat.</>,
+      peringatan: <>Ini <b>koreksi salah catat</b>, bukan pengakhiran. Kalau pemanfaatannya memang
+        pernah berjalan lalu selesai, pakai ⏹ Akhiri supaya riwayatnya tetap ada.</>,
+      labelYa: 'Ya, batalkan',
+    })).ya) return
     const tgl = todayStr()
     const { error } = await supabase.from('transaksi_bmd').insert({
       aset_id: l.aset_id, jenis: 'batal_pemanfaatan', periode: periodeDariTanggal(tgl), tanggal: tgl,
@@ -180,7 +202,15 @@ export default function Pemanfaatan() {
   // Batal seluruh perjanjian salah catat: batal_pemanfaatan utk SEMUA barang di
   // kartu → kartu hilang (auto-filter lines.length===0). Bukan pengakhiran normal.
   async function batalSeluruh(j: Jurnal) {
-    if (!confirm(`Batalkan SELURUH perjanjian "${j.no_sk}" (${j.lines.length} barang)? Semua barang dianggap tak pernah dimanfaatkan — kartu hilang. HANYA untuk koreksi salah catat, BUKAN pengakhiran normal (pakai ⏹ Akhiri per barang).`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Batalkan SELURUH perjanjian ini?',
+      subjudul: `No. ${j.no_sk}`,
+      rincian: [{ label: 'Barang terdampak', nilai: `${j.lines.length} barang` }],
+      isi: <>Semua barangnya dianggap <b>tak pernah dimanfaatkan</b> dan kartunya hilang dari daftar.</>,
+      peringatan: <><b>HANYA untuk koreksi salah catat.</b> Perjanjian yang memang berjalan lalu
+        berakhir diakhiri per barang lewat ⏹ Akhiri, bukan dibatalkan dari sini.</>,
+      labelYa: 'Ya, batalkan seluruhnya',
+    })).ya) return
     const tgl = todayStr()
     const rows = j.lines.map(l => ({
       aset_id: l.aset_id, jenis: 'batal_pemanfaatan', periode: periodeDariTanggal(tgl), tanggal: tgl,

@@ -8,6 +8,7 @@ import PenugasanRangkapModal, { type PegawaiRingkas, type PenugasanRangkap } fro
 import CariBox from '@/components/admin/CariBox'
 import { cocokCari } from '@/lib/cari'
 import { jkDariNip } from '@/lib/usulanPengurus'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Pegawai = {
   id: string
@@ -140,6 +141,7 @@ function mapRoleBmd(raw: string): string | null {
 
 export default function AdminPegawaiPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [list, setList] = useState<Pegawai[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -310,7 +312,15 @@ export default function AdminPegawaiPage() {
       setMsg('Error: Pegawai ini punya AKUN LOGIN. Hapus dulu akunnya di menu "Daftar User", baru hapus pegawainya.')
       return
     }
-    if (!confirm(`Hapus data pegawai ${nama}? (Akun login tidak ada — aman.)`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus data pegawai ini?',
+      subjudul: nama,
+      isi: <>Sudah diperiksa: pegawai ini <b>tidak punya akun login</b>, jadi tak ada yang kehilangan
+        akses.</>,
+      peringatan: <>Kalau ia masih tertaut <b>Usulan Pengurus Barang yang sudah disetujui</b>,
+        database akan menolak — batalkan persetujuannya dulu di menu itu.</>,
+      labelYa: 'Hapus pegawai',
+    })).ya) return
     const { error } = await supabase.from('admin_pegawai').delete().eq('id', id)
     if (error) {
       // Umumnya masih tertaut Usulan yg disetujui (FK admin_usulan_pengurus).

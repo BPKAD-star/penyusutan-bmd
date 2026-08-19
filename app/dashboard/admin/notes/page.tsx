@@ -19,6 +19,7 @@ import FormShell from '@/components/pengelolaan/FormShell'
 import CariBox from '@/components/admin/CariBox'
 import { cocokCari } from '@/lib/cari'
 import { fetchApprovalScope, SCOPE_KOSONG, type ApprovalScope } from '@/lib/roles'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Note = {
   id: string
@@ -43,6 +44,7 @@ function waktu(iso: string): string {
 
 export default function NotesPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
@@ -121,7 +123,12 @@ export default function NotesPage() {
   }
 
   async function hapus(n: Note) {
-    if (!confirm('Hapus catatan ini?')) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus catatan ini?',
+      subjudul: [n.penulis, n.skpd_nama].filter(Boolean).join(' · ') || undefined,
+      isi: <>Masukan yang sudah dihapus tak bisa dipulihkan.</>,
+      labelYa: 'Hapus catatan',
+    })).ya) return
     await jalankan(async () => {
       const { data, error } = await supabase.from('admin_notes').delete().eq('id', n.id).select('id')
       if (error) throw new Error(`gagal menghapus catatan: ${error.message}`)

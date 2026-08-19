@@ -1613,9 +1613,13 @@ nullable, dengan CHECK per jenis seperti pola `rkbmd_standar` sekarang
 
 Setujui · Tolak · Buka Kunci di **RKBMD → Validasi** dan **Standar Harga →
 Validasi** tak lagi memakai dialog bawaan peramban. Penggantinya
-**`components/KonfirmasiModal.tsx`**, satu komponen dipakai enam titik keputusan.
-Keluhan awalnya soal tampilan ("item putih biasa"), tapi yang dibetulkan lebih
-dari itu — dialog bawaan punya tiga cacat yang tak bisa ditambal:
+**`shared/ui/KonfirmasiModal.tsx`** + **`shared/ui/konfirmasi.tsx`**
+(`useKonfirmasi()`), dipasang sekali di `DashboardChrome`. **Aturannya, berikut
+cara memakainya, ada di [CODING-STANDARD.md](CODING-STANDARD.md) §4.5 —
+`confirm()`/`prompt()`/`alert()` sekarang DILARANG di seluruh repo**, bukan cuma
+di menu RKBMD. Keluhan awalnya soal tampilan ("item putih biasa"), tapi yang
+dibetulkan lebih dari itu — dialog bawaan punya tiga cacat yang tak bisa
+ditambal:
 
 - **Hitam-putih milik peramban, tak bisa disentuh CSS.** Di layar yang
   seluruhnya navy/teal ia terbaca sebagai peringatan sistem, bukan bagian

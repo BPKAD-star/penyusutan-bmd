@@ -19,6 +19,7 @@ import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds, useTahunBukuMap } from '@/components/useTahunBuku'
 import FormShell from './FormShell'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 // Field alasan "Spesifikasi Barang" (golongan-aware, + atribut satuan/asal usul/
 // tahun/kondisi) kini tinggal di lib/asetFields.ts sbg `koreksiFieldKeys` —
@@ -132,6 +133,7 @@ export default function Koreksi() {
 // ════════════════════════════════════════════════════════════════════════
 function KoreksiTransaksi() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const tahunMap = useTahunBukuMap()
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
@@ -293,7 +295,16 @@ function KoreksiTransaksi() {
   async function batalKoreksi(j: Jurnal, lines: JurnalLine[]) {
     if (lines.length === 0) { setMsg('Centang minimal satu baris untuk dibatalkan.'); return }
     const label = ALASAN_LABEL[j.jenis]
-    if (!confirm(`Batalkan koreksi (${label}) ${lines.length} barang? Barang kembali ke keadaan sebelum koreksi. Jalankan Engine lagi setelah ini.`)) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Batalkan koreksi barang terpilih?',
+      subjudul: `${label} · No. ${j.no_sk}`,
+      rincian: [{ label: 'Baris dicentang', nilai: `${lines.length} barang` }],
+      isi: <>Barang kembali ke <b>keadaan sebelum koreksi</b>. Koreksinya tidak dihapus dari ledger —
+        pembatalannya dicatat sebagai peristiwa baru, dan engine yang mengabaikan yang dibatalkan.</>,
+      peringatan: <>Angka penyusutan belum ikut berubah sampai <b>Engine dijalankan lagi</b>. Ditolak
+        kalau ada barang yang sudah punya transaksi lebih baru.</>,
+      labelYa: `Ya, batalkan ${lines.length} barang`,
+    })).ya) return
     setBatalling(true); setMsg('')
     // Guard rantai (rules.md §1.3) — satu sumber di lib/guardPembatalan.ts.
     const guard = await cekBolehBatal(
@@ -336,7 +347,19 @@ function KoreksiTransaksi() {
       setMsg(`Error: Tahun ${tahun} sudah terkunci — pemecahan tidak bisa dibatalkan. Koreksi lewat pemecahan/gabung baru di periode berjalan.`)
       return
     }
-    if (!confirm(`Batalkan pemecahan No. ${j.no_sk}? Induk akan aktif kembali dan ${j.pecahan.length} pecahan dibuang.`)) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Batalkan pemecahan barang ini?',
+      subjudul: `No. ${j.no_sk}`,
+      rincian: [
+        { label: 'Induk', nilai: j.induk?.nama_barang || j.induk?.nibar || '—' },
+        { label: 'Pecahan dibuang', nilai: `${j.pecahan.length} barang` },
+      ],
+      isi: <>Barang induk <b>aktif kembali</b> dengan nilai utuhnya, dan seluruh pecahannya dibuang.</>,
+      peringatan: <>Diperiksa untuk induk <b>dan tiap pecahan</b> — satu koreksi atau reklas yang
+        terlanjur mendarat di salah satu pecahan sudah cukup memblokir. Jalankan <b>Engine</b> lagi
+        setelah ini.</>,
+      labelYa: 'Ya, batalkan pemecahan',
+    })).ya) return
     // Guard rantai (rules.md §1.3): induk & TIAP pecahan diperiksa — koreksi/
     // reklas yang mendarat di salah satu pecahan pun sudah cukup memblokir.
     {
@@ -386,7 +409,20 @@ function KoreksiTransaksi() {
       setMsg(`Error: Tahun ${tahun} sudah terkunci — penggabungan tidak bisa dibatalkan. Koreksi lewat jurnal baru di periode berjalan.`)
       return
     }
-    if (!confirm(`Batalkan penggabungan No. ${j.no_sk}? ${j.sumber.length} barang akan muncul kembali dan induk balik ke nilai semula.`)) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Batalkan penggabungan barang ini?',
+      subjudul: `No. ${j.no_sk}`,
+      rincian: [
+        { label: 'Induk', nilai: j.induk?.nama_barang || j.induk?.nibar || '—' },
+        { label: 'Barang sumber kembali', nilai: `${j.sumber.length} barang` },
+      ],
+      isi: <>Induk balik ke <b>nilai &amp; akumulasi sebelum digabung</b>, dan tiap barang sumber muncul
+        serta disusutkan lagi seperti semula.</>,
+      peringatan: <>Kalau prosesnya putus di tengah, yang tersisa keadaan <b>kurang-catat</b>, bukan
+        dobel — tekan tombol yang sama lagi untuk menuntaskan sisanya. Jalankan <b>Engine</b> lagi
+        setelah ini.</>,
+      labelYa: 'Ya, batalkan penggabungan',
+    })).ya) return
     // Guard rantai baku (rules.md §1.3): induk & tiap sumber diperiksa.
     {
       const guard = await cekBolehBatal(

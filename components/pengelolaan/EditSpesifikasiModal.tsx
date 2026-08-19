@@ -14,6 +14,7 @@ import { FIELD_LABEL, FIELD_TYPE, FIELD_OPTIONS, type FieldKey } from '@/lib/ase
 import dynamic from 'next/dynamic'
 import WilayahPicker from '@/components/WilayahPicker'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false, loading: () => <div className="h-[220px] bg-gray-50 rounded-lg animate-pulse" /> })
 
 export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, initialFoto, single, onSave, onClose }: {
@@ -23,6 +24,7 @@ export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, 
   onClose: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const keys = fieldKeys
   const [values, setValues] = useState<Record<string, string>>(initialFields)
   // single: fotoPaths = daftar penuh (di-replace). bulk: fotoPaths = foto BARU
@@ -60,7 +62,17 @@ export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, 
   }
 
   async function hapusFoto(path: string) {
-    if (!confirm('Hapus foto ini?')) return
+    // Bedanya nyata & perlu dikatakan: di mode satu barang berkasnya benar-benar
+    // dibuang dari storage; di mode massal foto itu dipakai bersama beberapa
+    // barang, jadi yang dilepas cuma kaitannya.
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus foto ini?',
+      isi: single
+        ? <>Berkas fotonya <b>dibuang dari penyimpanan</b> dan tak bisa dikembalikan.</>
+        : <>Foto ini dipakai bersama beberapa barang, jadi yang dilepas cuma kaitannya di sini —
+            berkasnya tetap ada.</>,
+      labelYa: 'Hapus foto',
+    })).ya) return
     if (single) await supabase.storage.from('aset-foto').remove([path]) // bulk: file dipakai bersama, jangan hapus fisiknya
     setFotoPaths(prev => prev.filter(p => p !== path))
   }

@@ -27,11 +27,13 @@ import {
   fetchUsulanSkpd, fetchUsulanItems, buatUsulan, simpanItem, hapusItem, hapusUsulan,
   setStatusUsulan, type UsulanJenis, type UsulanHeader, type UsulanItem,
 } from '@/lib/rkbmdStandarUsulan'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
 
 export default function StandarUsulan() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [tahun, setTahun] = useState(TAHUN_DEFAULT)
   const [skpd, setSkpd] = useState('')
   const [jenis, setJenis] = useState<UsulanJenis>('ssh')
@@ -205,12 +207,16 @@ export default function StandarUsulan() {
 
               <TabelItem jenis={jenis} items={items} bisaSunting={bisaSunting} busy={busy}
                 onEdit={it => setModal({ item: it })}
-                onHapus={it => {
-                  // `confirm` diperiksa DI LUAR `jalankan`: kalau dibatalkan dari
-                  // dalam, satu-satunya cara keluar adalah melempar — dan
+                onHapus={async it => {
+                  // Konfirmasinya diperiksa DI LUAR `jalankan`: kalau dibatalkan
+                  // dari dalam, satu-satunya cara keluar adalah melempar — dan
                   // lemparannya bakal tampil sebagai pesan error, padahal
                   // operator cuma menekan Batal.
-                  if (!confirm(`Hapus baris "${it.nama}"?`)) return
+                  if (!(await konfirmasi({
+                    nada: 'merah', ikon: '🗑', judul: 'Hapus baris usulan ini?',
+                    subjudul: it.nama,
+                    labelYa: 'Hapus baris',
+                  })).ya) return
                   jalankan(async () => {
                     await hapusItem(supabase, it.id)
                     await loadItems(berjalan.id)
@@ -244,8 +250,17 @@ export default function StandarUsulan() {
                     </button>
                     <button className="text-sm text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200"
                       disabled={busy}
-                      onClick={() => {
-                        if (!confirm(`Hapus usulan ${cfgJenis.label} ini beserta ${items.length} barisnya?`)) return
+                      onClick={async () => {
+                        if (!(await konfirmasi({
+                          nada: 'merah', ikon: '🗑', judul: 'Hapus usulan ini?',
+                          subjudul: `${cfgJenis.label} · TA ${berjalan.tahun}`,
+                          rincian: [{ label: 'Baris ikut terhapus', nilai: `${items.length} baris` }],
+                          isi: <>Belum ada yang masuk acuan bersama, jadi tak ada barang yang ditarik
+                            dari SKPD lain — yang dibuang cuma daftar yang sedang Anda susun.</>,
+                          peringatan: <>Tidak bisa dibatalkan. Kalau cuma perlu memperbaiki beberapa
+                            baris, sunting barisnya saja.</>,
+                          labelYa: 'Hapus usulan',
+                        })).ya) return
                         jalankan(async () => { await hapusUsulan(supabase, berjalan.id) }, 'Usulan dihapus.')
                       }}>
                       Hapus usulan

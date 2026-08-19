@@ -23,6 +23,7 @@ import {
   GOLONGAN_OPSI, STATUS_LABEL, STATUS_BADGE, konfigLki,
   type InvHeader, type InvStatus, type InvSnapshot,
 } from '@/lib/inventarisasi'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const TAHUN_INI = new Date().getFullYear()
 const HDR_COLS = 'id,skpd_id,tahun,golongan,status,catatan_validator,petugas,keterangan,diajukan_at,divalidasi_at,created_at'
@@ -42,6 +43,7 @@ type AsetRow = {
 
 export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: string }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [rows, setRows] = useState<InvHeader[]>([])
   const [jumlahBaris, setJumlahBaris] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
@@ -110,10 +112,15 @@ export default function DaftarInventarisasi({ golonganLock }: { golonganLock?: s
   /** Hapus lembar kerja — hanya draft/dikembalikan (ditegakkan juga oleh RLS).
    *  Barisnya ikut terhapus lewat ON DELETE CASCADE. */
   async function hapus(h: InvHeader) {
-    if (!confirm(
-      `Hapus inventarisasi ${konfigLki(h.golongan).label} ${h.tahun} — ${h.skpd?.nama || h.skpd_id}?\n` +
-      `Seluruh lembar kerja beserta isiannya ikut terhapus. Tidak bisa dibatalkan.`
-    )) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus inventarisasi ini?',
+      subjudul: `${konfigLki(h.golongan).label} ${h.tahun} · ${h.skpd?.nama || h.skpd_id}`,
+      isi: <>Seluruh <b>lembar kerja beserta isiannya</b> ikut terhapus — temuan yang sudah diketik
+        petugas tidak bisa dipulihkan.</>,
+      peringatan: <>Tidak bisa dibatalkan. Register barangnya sendiri tidak tersentuh —
+        inventarisasi memang tidak pernah mengubah data aset.</>,
+      labelYa: 'Hapus inventarisasi',
+    })).ya) return
     const { error } = await supabase.from('inventarisasi').delete().eq('id', h.id)
     if (error) { setMsg(`Error: gagal menghapus — ${error.message}`); return }
     setMsg('Inventarisasi dihapus.')

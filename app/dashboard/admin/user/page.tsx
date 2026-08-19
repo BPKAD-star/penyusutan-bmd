@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ROLE_LABEL, ROLE_VALUES } from '@/lib/roles'
 import CariBox from '@/components/admin/CariBox'
 import { cocokCari } from '@/lib/cari'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Profile = {
   id: string
@@ -49,6 +50,7 @@ function EyeToggleButton({ shown, onClick }: { shown: boolean; onClick: () => vo
 
 export default function AdminUserPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string; level: number }[]>([])
   const [pegawaiList, setPegawaiList] = useState<Pegawai[]>([])
@@ -112,7 +114,14 @@ export default function AdminUserPage() {
   }
 
   async function handleDelete(id: string, email: string) {
-    if (!confirm(`Hapus user ${email}? Akun login dihapus permanen. Data pegawai & jejak transaksinya tetap.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus akun login ini?',
+      subjudul: email,
+      isi: <>Akun loginnya <b>dihapus permanen</b> — orang ini tak bisa masuk lagi.</>,
+      peringatan: <>Data pegawainya di Daftar Pegawai &amp; <b>jejak transaksi yang pernah ia catat
+        tetap utuh</b>. Yang dicabut cuma aksesnya.</>,
+      labelYa: 'Hapus akun',
+    })).ya) return
     setMsg('')
     const res = await fetch('/api/admin/delete-user', {
       method: 'POST',

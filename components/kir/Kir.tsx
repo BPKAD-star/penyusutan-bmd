@@ -28,6 +28,7 @@ import {
   type AsetKir, type IsiRuangan, type PegawaiRuangan, type Ruangan,
 } from '@/lib/kir'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
 const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
@@ -36,6 +37,7 @@ type RuanganLengkap = Ruangan & { isi: IsiRuangan[] }
 
 export default function Kir() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
 
   const [skpd, setSkpd] = useState('')
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
@@ -101,10 +103,16 @@ export default function Kir() {
   }, [skpd, loadRuangan, loadPegawai])
 
   async function hapusRuangan(r: RuanganLengkap) {
-    if (!confirm(
-      `Hapus ruangan "${r.nama}"?${r.isi.length > 0 ? ` ${r.isi.length} barang di dalamnya akan dilepas dari ruangan ini.` : ''}\n\n` +
-      'Barangnya sendiri TIDAK dihapus — tetap ada di Daftar Barang, hanya kehilangan penempatan ruangan.'
-    )) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus ruangan ini?',
+      subjudul: r.nama,
+      rincian: r.isi.length > 0
+        ? [{ label: 'Barang dilepas dari ruangan', nilai: `${r.isi.length} barang` }]
+        : undefined,
+      isi: <>Barangnya sendiri <b>TIDAK dihapus</b> — tetap ada di Daftar Barang, cuma kehilangan
+        penempatan ruangannya dan bebas ditempatkan di ruangan lain.</>,
+      labelYa: 'Hapus ruangan',
+    })).ya) return
     const { error } = await supabase.from('kir_ruangan').delete().eq('id', r.id)
     if (error) { setMsg(`Error: ${error.message}`); return }
     setMsg(`Ruangan "${r.nama}" dihapus.`)
@@ -112,7 +120,15 @@ export default function Kir() {
   }
 
   async function keluarkanBarang(r: RuanganLengkap, b: IsiRuangan) {
-    if (!confirm(`Keluarkan "${b.nama_barang || b.uraian_barang || b.nibar}" dari ruangan "${r.nama}"? Barang jadi bebas ditempatkan di ruangan lain.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '↩', judul: 'Keluarkan barang dari ruangan ini?',
+      subjudul: `${b.nama_barang || b.uraian_barang || b.nibar} · ${r.nama}`,
+      // Satu barang = satu ruangan (UNIQUE di DB), jadi mengeluarkannya dari
+      // sini memang syarat memindahkannya — itu yang perlu dikatakan.
+      isi: <>Barang jadi <b>bebas ditempatkan di ruangan lain</b>. Memang begini cara memindahkannya:
+        satu barang hanya boleh berada di satu ruangan.</>,
+      labelYa: 'Keluarkan',
+    })).ya) return
     const { error } = await supabase.from('kir_ruangan_aset').delete().eq('id', b.id)
     if (error) { setMsg(`Error: ${error.message}`); return }
     setMsg('Barang dikeluarkan dari ruangan.')

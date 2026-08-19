@@ -28,6 +28,7 @@ import {
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import { BENTUK_KONTRAK_KONSTRUKSI, bentukKontrakLabel } from '@/lib/bentukKontrak'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 // created_by: pemisahan tugas — pembuat kartu tak boleh menyetujui sendiri.
 export type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload; created_by: string | null }
@@ -292,6 +293,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
   inline?: boolean // dipakai di halaman gabungan (banyak kartu sekaligus) — sembunyikan tombol "Kembali"
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [busy, setBusy] = useState(false)
   const [showAddBarang, setShowAddBarang] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -314,7 +316,19 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
     setShowAddBarang(false)
   }
   async function hapusBarang(key: string) {
-    if (!confirm('Hapus barang KDP ini beserta semua terminnya dari draft?')) return
+    const b = barangs.find(x => x.key === key)
+    const nTermin = (b?.pembayaran || []).length
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus barang KDP ini dari draft?',
+      subjudul: b?.nama || b?.kode || undefined,
+      rincian: [
+        { label: 'Termin ikut terhapus', nilai: `${nTermin} termin` },
+        { label: 'Nilai barang', nilai: formatRupiah(b ? barangTotal(b) : 0) },
+      ],
+      isi: <>Kontraknya masih draft, jadi belum ada aset KDP yang tercatat — yang dibuang cuma
+        rancangannya.</>,
+      labelYa: 'Hapus barang',
+    })).ya) return
     await saveBarang(barangs.filter(b => b.key !== key))
   }
   async function ubahKapInfo(key: string, kapInfo: KapInfo | null) {
@@ -333,19 +347,48 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
     setSpecBarang(null); onMsg('Spesifikasi disimpan.')
   }
 
+  // Approve & unapprove KDP itu ATOMIK PER KONTRAK dan bisa menyentuh puluhan
+  // aset + seluruh terminnya sekaligus — jadi keduanya dijalankan lewat
+  // `kerjakan`, supaya pop-upnya tetap terbuka menampilkan "Memproses…".
+  // Dengan `confirm()` lama, layar cuma diam beberapa detik tanpa keterangan.
   async function approve() {
-    if (!confirm(`Setujui kontrak ${kontrak.no_sk}? ${barangs.length} barang KDP (total ${formatRupiah(total)}) resmi tercatat di Daftar Barang.`)) return
-    setBusy(true); onMsg('')
-    const { error } = await approveKontrakKonstruksi(supabase, kontrak.id)
-    setBusy(false)
-    if (error) onMsg(`Error: ${error}`); else { onMsg('Kontrak disetujui — semua barang KDP resmi tercatat.'); onChanged() }
+    await konfirmasi({
+      nada: 'teal', ikon: '✓', judul: 'Setujui kontrak konstruksi ini?',
+      subjudul: `Kontrak ${kontrak.no_sk}`,
+      rincian: [
+        { label: 'Barang KDP', nilai: `${barangs.length} barang` },
+        { label: 'Total nilai', nilai: formatRupiah(total) },
+      ],
+      isi: <>Seluruh barang KDP <b>resmi tercatat</b> di Daftar Barang berikut akumulasi terminnya —
+        satu paket, tak ada yang bisa disetujui separuh.</>,
+      labelYa: 'Ya, setujui',
+      kerjakan: async () => {
+        setBusy(true); onMsg('')
+        const { error } = await approveKontrakKonstruksi(supabase, kontrak.id)
+        setBusy(false)
+        if (error) { onMsg(`Error: ${error}`); return }
+        onMsg('Kontrak disetujui — semua barang KDP resmi tercatat.'); onChanged()
+      },
+    })
   }
   async function unapprove() {
-    if (!confirm(`Buka kunci kontrak ${kontrak.no_sk}? SEMUA (${barangs.length}) barang KDP disembunyikan dari Daftar Barang & kontrak kembali draft sampai disetujui ulang.`)) return
-    setBusy(true); onMsg('')
-    const { error } = await unapproveKontrakKonstruksi(supabase, kontrak.id)
-    setBusy(false)
-    if (error) onMsg(`Error: ${error}`); else { onMsg('Kontrak dibuka kunci — semua barang KDP kembali draft.'); onChanged() }
+    await konfirmasi({
+      nada: 'amber', ikon: '🔓', judul: 'Buka kunci kontrak konstruksi ini?',
+      subjudul: `Kontrak ${kontrak.no_sk}`,
+      rincian: [{ label: 'Barang KDP terdampak', nilai: `${barangs.length} barang` }],
+      isi: <><b>SEMUA</b> barang KDP-nya disembunyikan dari Daftar Barang &amp; seluruh terminnya
+        dibalik, lalu kontrak kembali draft sampai disetujui ulang.</>,
+      peringatan: <>Berlaku satu paket — kalau 10 barang, kesepuluhnya ikut hilang, bukan yang
+        dipilih saja.</>,
+      labelYa: 'Ya, buka kunci',
+      kerjakan: async () => {
+        setBusy(true); onMsg('')
+        const { error } = await unapproveKontrakKonstruksi(supabase, kontrak.id)
+        setBusy(false)
+        if (error) { onMsg(`Error: ${error}`); return }
+        onMsg('Kontrak dibuka kunci — semua barang KDP kembali draft.'); onChanged()
+      },
+    })
   }
   async function hapus() {
     // Kontrak yg PERNAH disetujui punya jejak ledger (akumulasi_kdp/batal_ yg
@@ -356,14 +399,30 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
     const { data: led } = await supabase.from('transaksi_bmd').select('id').eq('header_id', kontrak.id).limit(1)
     const hasLedger = !!(led && led.length > 0)
     if (hasLedger) {
-      if (!confirm(`Arsipkan kontrak ${kontrak.no_sk}? Kontrak ini pernah disetujui — riwayat ledgernya TETAP tersimpan (append-only, tak bisa dihapus). Kontrak hilang dari daftar & No. SPK bisa dipakai lagi. Tidak bisa dibatalkan.`)) return
+      if (!(await konfirmasi({
+        nada: 'merah', ikon: '📦', judul: 'Arsipkan kontrak ini?',
+        subjudul: `Kontrak ${kontrak.no_sk}`,
+        isi: <>Kontrak ini <b>pernah disetujui</b>, jadi tidak bisa dihapus betulan. Ia diarsipkan:
+          hilang dari daftar, dan No. SPK-nya bebas dipakai lagi.</>,
+        peringatan: <>Riwayat ledgernya <b>tetap tersimpan</b> (append-only, tak bisa dihapus).
+          Tidak bisa dibatalkan.</>,
+        labelYa: 'Arsipkan',
+      })).ya) return
       const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', kontrak.id)
       if (error) { onMsg(`Error: gagal mengarsipkan kontrak: ${error.message}`); return }
       onMsg(`Kontrak ${kontrak.no_sk} diarsipkan — No. SPK bisa dipakai lagi.`)
       onBack()
       return
     }
-    if (!confirm('Hapus kontrak draft ini?')) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus kontrak draft ini?',
+      subjudul: `Kontrak ${kontrak.no_sk}`,
+      rincian: [{ label: 'Barang KDP', nilai: `${barangs.length} barang` }],
+      isi: <>Kontrak ini belum pernah disetujui, jadi belum menyentuh ledger — kontrak beserta
+        seluruh barang &amp; terminnya dihapus betulan.</>,
+      peringatan: <>Tidak bisa dibatalkan.</>,
+      labelYa: 'Hapus kontrak',
+    })).ya) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', kontrak.id)
     if (error) onMsg(`Error: ${error.message}`); else onBack()
   }

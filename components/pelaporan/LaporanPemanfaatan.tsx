@@ -8,7 +8,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { GayaCetakLaporan, KopCetak, TombolCetak, konfirmasiCetakBanyak } from '@/components/pelaporan/CetakLaporan'
+import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
 import { JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
 
 type HeaderPayload = {
@@ -24,6 +24,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 
 export default function LaporanPemanfaatan() {
   const supabase = createClient()
+  const konfirmasiCetak = useKonfirmasiCetak()
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -101,9 +102,9 @@ export default function LaporanPemanfaatan() {
 
   // Tabel di sini sudah memuat SELURUH baris (bukan dibatasi seperti
   // LaporanTransaksi), jadi cetak = langsung print, tanpa tarikan ulang.
-  function handleCetak() {
+  async function handleCetak() {
     if (rows.length === 0) return
-    if (!konfirmasiCetakBanyak(rows.length)) return
+    if (!(await konfirmasiCetak(rows.length))) return
     window.print()
   }
 

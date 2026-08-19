@@ -8,21 +8,33 @@ import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { fetchLaporanPengadaan, groupByGolongan, grandTotal } from '@/lib/laporanPengadaan'
 import LaporanPengadaanTabel from './LaporanPengadaanTabel'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 export default function LaporanPengadaanModel3({ periode, skpdId, descIds }: {
   periode: string; skpdId: number | null; descIds: number[] | null
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [exporting, setExporting] = useState(false)
 
   async function handleExport() {
     setExporting(true)
     // fetchLaporanPengadaan melempar kalau daftar transaksi yang dibatalkan
     // gagal dimuat — lebih baik ekspornya batal daripada menghasilkan berkas
-    // yang memuat barang yang sudah dianulir seolah sah.
+    // yang memuat barang yang sudah dianulir seolah sah (fail-closed).
+    let pesanGagal = ''
     const rows = await fetchLaporanPengadaan(supabase, { periode, descIds })
-      .catch((e: Error) => { alert(`Gagal menyusun laporan: ${e.message}`); return null })
-    if (!rows) { setExporting(false); return }
+      .catch((e: Error) => { pesanGagal = e.message; return null })
+    if (!rows) {
+      setExporting(false)
+      await konfirmasi({
+        nada: 'merah', ikon: '⚠', judul: 'Laporan gagal disusun', subjudul: pesanGagal,
+        isi: <>Berkasnya <b>sengaja tidak dibuat</b>: sebagian transaksi tak bisa dibaca, dan berkas
+          setengah isi yang terlihat sah jauh lebih berbahaya daripada tidak ada berkas sama sekali.</>,
+        labelYa: 'Mengerti', tanpaBatal: true,
+      })
+      return
+    }
     const groups = groupByGolongan(rows)
     const flat: Record<string, unknown>[] = []
     const cols = (r: (typeof rows)[number]) => ({

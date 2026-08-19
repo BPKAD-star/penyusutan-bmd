@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Broadcast = {
   id: string
@@ -22,6 +23,7 @@ const fmtTgl = (s: string) =>
 
 export default function AdminBroadcastPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [list, setList] = useState<Broadcast[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -88,7 +90,14 @@ export default function AdminBroadcastPage() {
   }
 
   async function handleDelete(id: string, judul: string) {
-    if (!confirm(`Hapus pengumuman "${judul}"? Tidak bisa dikembalikan.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus pengumuman ini?',
+      subjudul: judul,
+      isi: <>Kalau cuma ingin menghentikan tampilnya, <b>matikan</b> saja — pengumumannya tetap
+        tersimpan &amp; bisa dinyalakan lagi kapan pun.</>,
+      peringatan: <>Tidak bisa dikembalikan.</>,
+      labelYa: 'Hapus pengumuman',
+    })).ya) return
     const { error } = await supabase.from('admin_broadcast').delete().eq('id', id)
     if (error) setMsg(`Error: ${error.message}`)
     load()

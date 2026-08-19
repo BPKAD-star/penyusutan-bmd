@@ -38,6 +38,7 @@ import { usePegawaiSkpd, pegawaiOptions } from '@/components/usePegawaiSkpd'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { BENTUK_KONTRAK_OPT, bentukKontrakLabel, type BentukKontrak } from '@/lib/bentukKontrak'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { useDraftSeleksi, DraftSearchBar, DraftBulkBar } from './draftSeleksi'
 
 // Bentuk/Jenis Kontrak kini dari konstanta bersama (lib/bentukKontrak) — 5 opsi
@@ -457,6 +458,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
   isAdmin: boolean; onChanged: () => void; onMsg: (m: string) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [specKeys, setSpecKeys] = useState<string[] | null>(null)
@@ -475,7 +477,15 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
   }
   async function hapusDraftItem(key: string) {
-    if (!confirm('Hapus barang ini dari draft?')) return
+    const it = (j.payload.draft_items || []).find(i => i.key === key)
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus barang ini dari draft?',
+      subjudul: it?.fields?.nama_barang || it?.kode || undefined,
+      // Draft belum menyentuh ledger sama sekali, jadi ini benar-benar cuma
+      // membuang baris dari payload — itu yang perlu ditenangkan ke operator.
+      isi: <>Barangnya belum pernah tercatat di Daftar Barang, jadi tak ada jejak yang ikut terhapus.</>,
+      labelYa: 'Hapus',
+    })).ya) return
     const items = (j.payload.draft_items || []).filter(i => i.key !== key)
     if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
   }
@@ -484,7 +494,15 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
   // append-only. Aset yang SUDAH disetujui tak lewat sini (kartunya read-only).
   async function hapusDraftItems(keys: string[]) {
     if (keys.length === 0) return
-    if (!confirm(`Hapus ${keys.length} barang yang dicentang dari draft? Tidak bisa dibatalkan.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus barang yang dicentang?',
+      subjudul: `Kontrak ${j.no_sk}`,
+      rincian: [{ label: 'Barang dicentang', nilai: `${keys.length} barang` }],
+      isi: <>Centangnya bertahan lintas pencarian, jadi bisa ada barang terpilih yang sedang tidak
+        kelihatan di layar. Angka di atas itu yang akan dibuang.</>,
+      peringatan: <>Tidak bisa dibatalkan.</>,
+      labelYa: `Hapus ${keys.length} barang`,
+    })).ya) return
     const buang = new Set(keys)
     const items = (j.payload.draft_items || []).filter(i => !buang.has(i.key))
     if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
@@ -514,14 +532,30 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     // dipakai ulang (uniqueness check sudah mengecualikan 'ditolak'), TANPA
     // menyentuh ledger sama sekali.
     if (j.hasLedger) {
-      if (!confirm(`Arsipkan kontrak ${j.no_sk}? Kontrak ini pernah disetujui — riwayat ledgernya (barang yg sudah dibatalkan) TETAP tersimpan (append-only, tak bisa dihapus). Kontrak akan hilang dari daftar & No. Kontrak/BAST bisa dipakai lagi. Tidak bisa dibatalkan.`)) return
+      if (!(await konfirmasi({
+        nada: 'merah', ikon: '📦', judul: 'Arsipkan kontrak ini?',
+        subjudul: `Kontrak ${j.no_sk}`,
+        isi: <>Kontrak ini <b>pernah disetujui</b>, jadi tidak bisa dihapus betulan. Ia diarsipkan:
+          hilang dari daftar, dan No. Kontrak/BAST-nya bebas dipakai lagi.</>,
+        peringatan: <>Riwayat ledgernya <b>tetap tersimpan</b> (append-only, tak bisa dihapus).
+          Tidak bisa dibatalkan.</>,
+        labelYa: 'Arsipkan',
+      })).ya) return
       const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', j.id)
       if (error) { onMsg(`Error: gagal mengarsipkan kontrak: ${error.message}`); return }
       onMsg(`Kontrak ${j.no_sk} diarsipkan — No. Kontrak/BAST bisa dipakai lagi.`)
       onChanged()
       return
     }
-    if (!confirm(`Hapus kontrak ${j.no_sk} beserta semua draft barangnya? Tidak bisa dibatalkan.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus kontrak ini?',
+      subjudul: `Kontrak ${j.no_sk}`,
+      rincian: [{ label: 'Draft barang', nilai: `${(j.payload.draft_items || []).length} barang` }],
+      isi: <>Kontrak ini belum pernah disetujui, jadi belum menyentuh ledger — kontrak &amp; seluruh
+        draft barangnya dihapus betulan.</>,
+      peringatan: <>Tidak bisa dibatalkan.</>,
+      labelYa: 'Hapus kontrak',
+    })).ya) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
     if (error) { onMsg(`Error: gagal menghapus kontrak: ${error.message}`); return }
     onMsg(`Kontrak ${j.no_sk} dihapus.`)
@@ -537,7 +571,20 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       if (toNum(it.harga) <= 0) { onMsg(`Error: harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
     }
     const perolehanDate = j.payload.tgl_bast || j.tanggal
-    if (!confirm(`Setujui kontrak ${j.no_sk}?\n${items.length} barang akan dicatat resmi dgn tgl perolehan ${perolehanDate}.`)) return
+    // Tanggal perolehan efektif = tanggal BAST, BUKAN tanggal approve — dan itu
+    // ditaruh sebagai baris rincian tersendiri, bukan diselipkan di kalimat:
+    // inilah satu-satunya angka di layar ini yang salahnya ikut ke laporan.
+    if (!(await konfirmasi({
+      nada: 'teal', ikon: '✓', judul: 'Setujui kontrak ini?',
+      subjudul: `Kontrak ${j.no_sk}`,
+      rincian: [
+        { label: 'Barang dicatat', nilai: `${items.length} barang` },
+        { label: 'Tgl perolehan efektif', nilai: perolehanDate },
+      ],
+      isi: <>Barangnya <b>resmi tercatat</b> di Daftar Barang, Penyusutan, &amp; laporan BMD, dan
+        NIBAR-nya diterbitkan. Sesudah ini kartunya terkunci — mengubahnya harus lewat Buka Kunci.</>,
+      labelYa: 'Ya, setujui',
+    })).ya) return
 
     setBusy(true); onMsg('')
     const periode = periodeDariTanggal(perolehanDate)
@@ -608,7 +655,17 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
   // supaya bisa diedit. NIBAR digenerate ULANG saat disetujui lagi (yang lama tetap
   // tersimpan sbg 'dihapus' untuk audit). Admin only.
   async function unapproveHeader() {
-    if (!confirm(`Buka kunci kontrak ${j.no_sk}?\n${j.lines.length} barang dikembalikan ke draft & DIHAPUS dari Daftar Barang/Penyusutan sampai disetujui lagi. NIBAR akan digenerate ulang saat approve berikutnya.`)) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '🔓', judul: 'Buka kunci kontrak ini?',
+      subjudul: `Kontrak ${j.no_sk}`,
+      rincian: [{ label: 'Barang terdampak', nilai: `${j.lines.length} barang` }],
+      isi: <>Barangnya kembali jadi draft dan <b>hilang dari Daftar Barang &amp; Penyusutan</b> sampai
+        disetujui lagi.</>,
+      peringatan: <><b>NIBAR digenerate ulang</b> saat disetujui berikutnya — nomor yang lama tetap
+        tersimpan pada barang yang dihapus, untuk audit. Kalau ada barangnya yang sudah punya
+        transaksi lebih baru, permintaan ini akan ditolak.</>,
+      labelYa: 'Ya, buka kunci',
+    })).ya) return
     setBusy(true); onMsg('')
     // Guard rantai (rules.md §1.3) — satu sumber di lib/guardPembatalan.ts.
     // Soft-delete pengadaan di tengah rantai merusak state & meninggalkan

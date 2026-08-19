@@ -21,17 +21,23 @@ import RkbmdAsetForm from '@/components/rkbmd/RkbmdAsetForm'
 import RkbmdLampiran from '@/components/rkbmd/RkbmdLampiran'
 import { formatRupiah } from '@/lib/export'
 import {
-  RKBMD_JENIS, STATUS_META, type RkbmdJenis, type RkbmdVersi,
+  RKBMD_JENIS, STATUS_META, LABEL_NILAI, nilaiItemRkbmd,
+  type RkbmdJenis, type RkbmdVersi,
   type RkbmdHeader, type RkbmdItem, type RkbmdPaket,
 } from '@/lib/rkbmd'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
+/** Label jenis untuk kalimat pop-up. Diturunkan dari RKBMD_JENIS, bukan diketik
+ *  ulang — daftar jenisnya satu sumber di lib/rkbmd.ts. */
+const LABEL_JENIS: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j => [j.key, j.label]))
 const HEADER_COLS =
   'id,skpd_id,tahun_anggaran,jenis,versi,parent_id,keterangan,status,catatan_telaah,diajukan_at,approved_at,created_at,dokumen_paths,dokumen_diunggah_at,nihil'
 const PAKET_COLS = 'id,rkbmd_id,no_urut,program,kegiatan,sub_kegiatan,keterangan'
 
 export default function RkbmdWorkspace() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [isAdmin, setIsAdmin] = useState(false)
   const [tahun, setTahun] = useState(TAHUN_DEFAULT)
   const [skpd, setSkpd] = useState('')
@@ -133,7 +139,15 @@ export default function RkbmdWorkspace() {
 
   async function hapusDokumen() {
     if (!header) return
-    if (!confirm('Hapus dokumen RKBMD ini beserta SELURUH kartu & itemnya? Tidak bisa dibatalkan.')) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus dokumen RKBMD ini?',
+      subjudul: `${LABEL_JENIS[header.jenis] || header.jenis} · TA ${header.tahun_anggaran}`,
+      isi: <>Seluruh <b>kartu program/kegiatan beserta itemnya</b> ikut terhapus — bukan cuma
+        header dokumennya.</>,
+      peringatan: <>Tidak bisa dibatalkan. Kalau cuma perlu menyusun ulang isinya, hapus itemnya
+        saja &amp; biarkan dokumennya berdiri.</>,
+      labelYa: 'Hapus dokumen',
+    })).ya) return
     setBusy(true); setMsg('')
     const { error } = await supabase.from('rkbmd').delete().eq('id', header.id)
     if (error) setMsg(`Error: ${error.message}`)
@@ -244,6 +258,7 @@ function DokumenPanel({
   onHapus: () => void; onNihil: (v: boolean) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const berkartu = header.jenis === 'pengadaan'
   const total = items.reduce((s, it) => s + (it.total_anggaran || 0), 0)
   // Syarat mengajukan sekarang diperiksa DI DALAM pop-up Ajukan (AjukanModal),
@@ -315,7 +330,23 @@ function DokumenPanel({
               // aksi rutin — warnanya sengaja beda dari tombol biasa supaya tak
               // terpencet sebagai "lanjut".
               <button className="text-sm text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-lg"
-                onClick={() => { if (confirm('Nyatakan dokumen RKBMD ini NIHIL — tidak ada usulan untuk jenis & tahun ini?')) onNihil(true) }}
+                onClick={async () => {
+                  // NIHIL itu PERNYATAAN, bukan "kosong". Pembedanya itulah yang
+                  // perlu ditegaskan di sini: Pengelola memakainya untuk memisah
+                  // SKPD yang sudah bersikap dari yang belum mengerjakan
+                  // (migrasi 20260813_02).
+                  if (!(await konfirmasi({
+                    nada: 'amber', ikon: '📄', judul: 'Nyatakan dokumen ini NIHIL?',
+                    subjudul: `${LABEL_JENIS[header.jenis] || header.jenis} · TA ${header.tahun_anggaran}`,
+                    isi: <>Anda menyatakan SKPD ini <b>memang tidak punya usulan</b> untuk jenis &amp;
+                      tahun tersebut — beda dari dokumen yang belum sempat diisi.</>,
+                    peringatan: <>Pernyataan nihil <b>tetap harus dicetak &amp; ditandatangani</b> kepala
+                      kantor, lalu dilampirkan saat Ajukan. Selama berstatus nihil, dokumen ini tak
+                      bisa diisi barang.</>,
+                    labelYa: 'Ya, nyatakan NIHIL',
+                  })).ya) return
+                  onNihil(true)
+                }}
                 disabled={busy}
                 title="Untuk SKPD yang memang tidak punya usulan pada jenis & tahun ini">
                 Nyatakan NIHIL
@@ -694,6 +725,7 @@ function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi, onUbah }:
   onUbah: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [showForm, setShowForm] = useState(false)
   const [editItem, setEditItem] = useState<RkbmdItem | null>(null)
 
@@ -701,15 +733,37 @@ function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi, onUbah }:
   const formOpen = showForm || !!editItem
 
   async function hapusKartu() {
-    if (!confirm(items.length > 0
-      ? `Hapus kartu ini beserta ${items.length} item barangnya?`
-      : 'Hapus kartu ini?')) return
+    // Menghapus kartu MEMBAWA SERTA itemnya — itulah alasan tombol ✎ Ubah ada
+    // (keputusan user 2026-08-13): satu dropdown yang keliru tak boleh berarti
+    // menghanguskan puluhan barang. Jadi pop-upnya menyebut angkanya, dan
+    // menawarkan jalan yang benar.
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus kartu ini?',
+      subjudul: paket.sub_kegiatan || '(sub kegiatan belum dipilih)',
+      rincian: items.length > 0 ? [
+        { label: 'Item ikut terhapus', nilai: `${items.length} barang` },
+        { label: 'Nilai', nilai: formatRupiah(total) },
+      ] : undefined,
+      isi: items.length > 0
+        ? <>Seluruh item barang di kartu ini <b>ikut terhapus</b>.</>
+        : <>Kartu ini belum berisi item.</>,
+      peringatan: items.length > 0
+        ? <>Kalau yang keliru cuma Program/Kegiatan/Sub Kegiatan-nya, pakai <b>✎ Ubah</b> — itemnya
+            menempel lewat kartu, bukan lewat teksnya, jadi tak ada angka yang bergeser.</>
+        : undefined,
+      labelYa: 'Hapus kartu',
+    })).ya) return
     const { error } = await supabase.from('rkbmd_paket').delete().eq('id', paket.id)
     if (error) onMsg(`Error: ${error.message}`); else reloadIsi()
   }
 
   async function hapusItem(it: RkbmdItem) {
-    if (!confirm(`Hapus item ${it.kode || it.nama_barang || ''}?`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus item ini dari kartu?',
+      subjudul: it.nama_barang || it.kode || undefined,
+      rincian: [{ label: 'Nilai', nilai: formatRupiah(it.total_anggaran) }],
+      labelYa: 'Hapus item',
+    })).ya) return
     const { error } = await supabase.from('rkbmd_item').delete().eq('id', it.id)
     if (error) onMsg(`Error: ${error.message}`); else reloadIsi()
   }
@@ -824,6 +878,7 @@ function DaftarItemDatar({ header, items, canEdit, reloadIsi, onMsg }: {
   reloadIsi: () => void; onMsg: (m: string) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [showForm, setShowForm] = useState(false)
   const [editItem, setEditItem] = useState<RkbmdItem | null>(null)
   useEffect(() => { setShowForm(false); setEditItem(null) }, [header.id])
@@ -831,7 +886,14 @@ function DaftarItemDatar({ header, items, canEdit, reloadIsi, onMsg }: {
   const formOpen = showForm || !!editItem
 
   async function hapusItem(it: RkbmdItem) {
-    if (!confirm(`Hapus item ${it.kode || it.nama_barang || ''}?`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus barang ini dari usulan?',
+      subjudul: it.nama_barang || it.kode || undefined,
+      // "Nilai" artinya beda per jenis RKBMD (belanja / pendapatan / nilai
+      // perolehan) — satu sumber di lib/rkbmd.ts, jangan dihitung ulang di sini.
+      rincian: [{ label: LABEL_NILAI[header.jenis as RkbmdJenis] || 'Nilai', nilai: formatRupiah(nilaiItemRkbmd(header.jenis, it)) }],
+      labelYa: 'Hapus barang',
+    })).ya) return
     const { error } = await supabase.from('rkbmd_item').delete().eq('id', it.id)
     if (error) onMsg(`Error: ${error.message}`); else reloadIsi()
   }

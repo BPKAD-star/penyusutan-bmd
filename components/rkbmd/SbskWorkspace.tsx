@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type SBSK = {
   id: number; tahun: number; kode: string; spesifikasi: string | null
@@ -28,6 +29,7 @@ const SATUAN_PENGUKUR = ['per_skpd', 'per_pegawai', 'per_ruangan', 'per_unit_ker
 
 export default function SbskWorkspace() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [tahun, setTahun] = useState(TAHUN_DEFAULT)
   const [list, setList] = useState<SBSK[]>([])
   const [satuanList, setSatuanList] = useState<string[]>([])
@@ -91,7 +93,13 @@ export default function SbskWorkspace() {
   }
 
   async function handleDelete(s: SBSK) {
-    if (!confirm(`Hapus SBSK ${s.kode} (${tahun})?`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus baris Standar Kebutuhan ini?',
+      subjudul: `${s.kode} · TA ${tahun}`,
+      isi: <>Standar kebutuhan ini dipakai seluruh SKPD sebagai pembanding jumlah barang di RKBMD —
+        menghapusnya membuat kolom pembandingnya kosong bagi semua.</>,
+      labelYa: 'Hapus',
+    })).ya) return
     const { error } = await supabase.from('rkbmd_sbsk').delete().eq('id', s.id)
     if (error) setMsg(`Error: ${error.message}`)
     load()

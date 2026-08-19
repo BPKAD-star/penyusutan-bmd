@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Skpd = { id: number; nama: string; level: number; parent_id: number | null; kode_skpd: string | null }
 
@@ -19,6 +20,7 @@ function compareSkpd(a: Skpd, b: Skpd): number {
 
 export default function AdminSkpdPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [all, setAll] = useState<Skpd[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -120,7 +122,14 @@ export default function AdminSkpdPage() {
       setMsg(`Error: ${s.nama} masih punya sub-unit, pindahkan/hapus dulu sub-unitnya.`)
       return
     }
-    if (!confirm(`Hapus SKPD "${s.nama}"? Aset/pegawai/user yang masih terkait akan menolak penghapusan ini.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus SKPD ini?',
+      subjudul: s.nama,
+      isi: <>Unit ini hilang dari seluruh pemilih SKPD di aplikasi.</>,
+      peringatan: <>Kalau masih ada <b>aset, pegawai, atau user</b> yang terkait, database akan
+        MENOLAK penghapusan ini — pindahkan dulu semuanya.</>,
+      labelYa: 'Hapus SKPD',
+    })).ya) return
     const { error } = await supabase.from('admin_skpd').delete().eq('id', s.id)
     if (error) setMsg(`Error: ${error.message}`)
     else load()

@@ -8,6 +8,7 @@
 //      (checkpoint massal + kunci tahun ini + buka tahun berikutnya, atomik).
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type TahunRow = { tahun: number; status: 'terbuka' | 'terkunci'; ditutup_pada: string | null; catatan: string | null }
 type Blocker = { kategori: string; no_sk: string; tanggal: string; skpd_nama: string }
@@ -19,6 +20,7 @@ const KATEGORI_LABEL: Record<string, string> = {
 
 export default function TutupTahunPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [rows, setRows] = useState<TahunRow[]>([])
   const [blockers, setBlockers] = useState<Blocker[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,18 +51,35 @@ export default function TutupTahunPage() {
   const akhirTahun = target != null ? `${target}-12-31` : null
   const belumBerakhir = akhirTahun != null && akhirTahun > new Date().toISOString().slice(0, 10)
 
+  // Aksi paling tak terbalikkan di seluruh aplikasi — dan satu-satunya yang
+  // membekukan angka yang dilaporkan ke inspektorat/BPK. Karena itu ia
+  // dijalankan lewat `kerjakan` (checkpoint massal seluruh aset aktif bisa
+  // makan waktu) DAN akibatnya dipecah jadi baris rincian, bukan paragraf.
   async function tutup() {
     if (target == null) return
-    if (!confirm(
-      `Tutup tahun ${target}?\n\nSetelah ini:\n- Angka penyusutan ${target} beku permanen (checkpoint).\n- Tahun ${target + 1} otomatis terbuka.\n- Tidak bisa dibatalkan lewat aplikasi.\n\nLanjutkan?`
-    )) return
-    setBusy(true); setMsg('')
-    const { data, error } = await supabase.rpc('fn_tutup_tahun', { p_tahun: target, p_catatan: catatan.trim() || null })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg(`✓ Tahun ${target} ditutup — ${data} aset di-checkpoint. Tahun ${target + 1} sekarang terbuka.`)
-    setCatatan('')
-    load()
+    await konfirmasi({
+      nada: 'amber', ikon: '🔒', judul: `Tutup tahun buku ${target}?`,
+      rincian: [
+        { label: 'Dibekukan', nilai: `Posisi akhir ${target}` },
+        { label: 'Otomatis terbuka', nilai: `Tahun ${target + 1}` },
+        { label: 'Jurnal menggantung', nilai: blockers.length === 0 ? 'tidak ada' : `${blockers.length} — akan ditolak` },
+      ],
+      isi: <>Angka penyusutan {target} disalin jadi <b>checkpoint permanen</b>, dan tahun itu tak
+        bisa menerima transaksi baru lagi. Laporannya tetap bisa dibuka — yang dikunci
+        pencatatannya, bukan pembacaannya.</>,
+      peringatan: <><b>Tidak bisa dibatalkan lewat aplikasi.</b> Pastikan seluruh transaksi {target} sudah
+        masuk dan Engine sudah dijalankan untuk semester terakhirnya.</>,
+      labelYa: `Ya, tutup tahun ${target}`,
+      kerjakan: async () => {
+        setBusy(true); setMsg('')
+        const { data, error } = await supabase.rpc('fn_tutup_tahun', { p_tahun: target, p_catatan: catatan.trim() || null })
+        setBusy(false)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg(`✓ Tahun ${target} ditutup — ${data} aset di-checkpoint. Tahun ${target + 1} sekarang terbuka.`)
+        setCatatan('')
+        load()
+      },
+    })
   }
 
   return (

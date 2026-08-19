@@ -17,12 +17,14 @@ import {
   STATUS_LABEL, STATUS_BADGE, konfigLki, klasifikasiLhi, sudahDiisi, normalKondisi,
   type InvHeader, type InvBaris, type InvJawaban, type Petugas,
 } from '@/lib/inventarisasi'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const HDR_COLS = 'id,skpd_id,tahun,golongan,status,catatan_validator,petugas,keterangan,diajukan_at,divalidasi_at,created_at'
 type PegawaiRow = { id: string; nama: string; nip: string | null; jabatan: string | null }
 
 export default function DetailInventarisasiPage() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const params = useParams<{ id: string }>()
   const id = params?.id as string
 
@@ -117,7 +119,12 @@ export default function DetailInventarisasiPage() {
   }
 
   async function hapusBaris(b: InvBaris) {
-    if (!confirm('Hapus lembar "BMD Belum Tercatat" ini?')) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus lembar "BMD Belum Tercatat" ini?',
+      isi: <>Baris temuan ini dibuang dari lembar kerja inventarisasi. Barang di register tidak
+        tersentuh — temuan ini memang belum pernah tercatat di sana.</>,
+      labelYa: 'Hapus lembar',
+    })).ya) return
     const { error } = await supabase.from('inventarisasi_baris').delete().eq('id', b.id)
     if (error) { setMsg(`Error: ${error.message}`); return }
     setBaris(prev => prev.filter(x => x.id !== b.id))
@@ -125,7 +132,18 @@ export default function DetailInventarisasiPage() {
 
   async function ajukan() {
     const belum = baris.length - terisi
-    if (belum > 0 && !confirm(`Masih ada ${belum} barang yang belum diisi. Tetap ajukan?`)) return
+    // Hanya bertanya kalau memang ada yang belum diisi — mengajukan lembar yang
+    // sudah lengkap tak perlu dihalangi pop-up.
+    if (belum > 0 && !(await konfirmasi({
+      nada: 'amber', ikon: '⚠', judul: 'Masih ada barang yang belum diisi — tetap ajukan?',
+      rincian: [
+        { label: 'Sudah diisi', nilai: `${terisi} dari ${baris.length} barang` },
+        { label: 'Belum diisi', nilai: `${belum} barang` },
+      ],
+      isi: <>Yang belum diisi ikut terkirim <b>apa adanya</b> ke pengelola untuk divalidasi.</>,
+      labelYa: 'Tetap ajukan',
+      labelBatal: 'Lengkapi dulu',
+    })).ya) return
     setBusy(true); setMsg('')
     const { error } = await supabase.from('inventarisasi')
       .update({ status: 'diajukan', diajukan_at: new Date().toISOString() }).eq('id', id)
@@ -138,7 +156,13 @@ export default function DetailInventarisasiPage() {
   /** Tarik kembali pengajuan (diajukan → draft). Hanya selama BELUM divalidasi;
    *  begitu divalidasi, satu-satunya jalan mundur adalah admin "Kembalikan". */
   async function batalAjukan() {
-    if (!confirm('Tarik kembali pengajuan ini? Lembar kerja kembali ke Draft dan bisa diedit lagi.')) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Tarik kembali pengajuan ini?',
+      isi: <>Lembar kerja kembali ke <b>Draft</b> dan bisa disunting lagi.</>,
+      peringatan: <>Hanya bisa selama <b>belum divalidasi</b> pengelola. Setelah divalidasi, jalan
+        mundurnya cuma lewat &ldquo;Kembalikan&rdquo; oleh pengelola.</>,
+      labelYa: 'Ya, tarik kembali',
+    })).ya) return
     setBusy(true); setMsg('')
     const { error } = await supabase.from('inventarisasi')
       .update({ status: 'draft', diajukan_at: null }).eq('id', id)
@@ -149,24 +173,46 @@ export default function DetailInventarisasiPage() {
   }
 
   async function validasi() {
-    if (!confirm('Validasi inventarisasi ini? Setelah divalidasi, SKPD tidak bisa mengubahnya lagi.')) return
-    setBusy(true); setMsg('')
-    const { error } = await supabase.rpc('fn_validasi_inventarisasi', { p_id: id, p_catatan: null })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg('Inventarisasi divalidasi.')
-    load()
+    await konfirmasi({
+      nada: 'teal', ikon: '✓', judul: 'Validasi inventarisasi ini?',
+      rincian: [{ label: 'Barang diperiksa', nilai: `${terisi} dari ${baris.length} barang terisi` }],
+      isi: <>Hasilnya dibekukan — setelah divalidasi <b>SKPD tidak bisa mengubahnya lagi</b>.</>,
+      labelYa: 'Ya, validasi',
+      kerjakan: async () => {
+        setBusy(true); setMsg('')
+        const { error } = await supabase.rpc('fn_validasi_inventarisasi', { p_id: id, p_catatan: null })
+        setBusy(false)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg('Inventarisasi divalidasi.')
+        load()
+      },
+    })
   }
 
   async function kembalikan() {
-    const alasan = prompt('Alasan dikembalikan ke pengurus barang:')
-    if (!alasan || !alasan.trim()) return
-    setBusy(true); setMsg('')
-    const { error } = await supabase.rpc('fn_kembalikan_inventarisasi', { p_id: id, p_catatan: alasan.trim() })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg('Inventarisasi dikembalikan untuk dibenahi.')
-    load()
+    // Alasannya WAJIB di sini (beda dari penolakan lain yang boleh kosong) —
+    // perilaku lama: `prompt` yang dikosongkan langsung membatalkan aksinya.
+    // Karena tombol Ya tak bisa dimatikan tanpa keterangan, yang kosong ditolak
+    // berikut alasannya.
+    await konfirmasi({
+      nada: 'merah', ikon: '↩', judul: 'Kembalikan ke pengurus barang?',
+      isi: <>Lembar kerjanya dibuka lagi supaya SKPD bisa membenahi isian yang keliru.</>,
+      catatan: {
+        label: 'Alasan dikembalikan',
+        placeholder: 'Mis. 12 barang berkondisi "Baik" padahal fotonya menunjukkan rusak berat.',
+        petunjuk: <><b>Wajib diisi</b> — ini satu-satunya keterangan yang sampai ke pengurus barang.</>,
+      },
+      labelYa: 'Ya, kembalikan',
+      kerjakan: async (alasan) => {
+        if (!alasan.trim()) { setMsg('Error: alasan wajib diisi supaya pengurus barang tahu apa yang harus dibenahi.'); return }
+        setBusy(true); setMsg('')
+        const { error } = await supabase.rpc('fn_kembalikan_inventarisasi', { p_id: id, p_catatan: alasan.trim() })
+        setBusy(false)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg('Inventarisasi dikembalikan untuk dibenahi.')
+        load()
+      },
+    })
   }
 
   if (loading) return <div className="p-6 text-sm text-gray-400">Memuat...</div>

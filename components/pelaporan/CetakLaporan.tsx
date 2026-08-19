@@ -16,6 +16,7 @@
 //   <GayaCetakLaporan />
 //   <div id="cetak-laporan"> … <KopCetak … /> …tabel… </div>
 //   — beri kelas `no-print` pada filter, tombol, dan catatan layar.
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const KABUPATEN = 'Kediri'
 
@@ -77,11 +78,30 @@ export function TombolCetak({ onClick, disabled, label = 'Export PDF' }: {
  *  Bukan batas keras — sekadar mencegah browser membeku tanpa peringatan. */
 export const AMBANG_CETAK = 3000
 
-export function konfirmasiCetakBanyak(n: number): boolean {
-  if (n <= AMBANG_CETAK) return true
-  return confirm(
-    `Laporan ini berisi ${n.toLocaleString('id-ID')} baris. Menyiapkan PDF sebanyak itu bisa membuat ` +
-    `peramban lambat atau berhenti merespons beberapa saat, dan hasilnya puluhan halaman.\n\n` +
-    `Untuk arsip, Export Excel jauh lebih ringan. Tetap lanjutkan mencetak?`,
-  )
+/**
+ * Konfirmasi "laporannya besar, yakin dicetak?" — mengembalikan `true` kalau
+ * boleh lanjut. Di bawah ambang, ia langsung `true` tanpa bertanya apa pun.
+ *
+ * ⚠️ HOOK, bukan fungsi biasa, dan itu memaksa pemakaian yang benar. Versi
+ * lamanya `konfirmasiCetakBanyak(n): boolean` yang memanggil `confirm()`
+ * bawaan; mengubahnya jadi async DENGAN NAMA YANG SAMA akan lolos typecheck di
+ * pemanggil lama (`if (!promise)` selalu false) dan diam-diam mencetak tanpa
+ * pernah bertanya. Nama baru membuat pemanggil yang belum disesuaikan GAGAL
+ * dikompilasi — satu-satunya cara memastikan tak ada yang terlewat.
+ */
+export function useKonfirmasiCetak(): (n: number) => Promise<boolean> {
+  const konfirmasi = useKonfirmasi()
+  return async (n: number) => {
+    if (n <= AMBANG_CETAK) return true
+    return (await konfirmasi({
+      nada: 'amber', ikon: '🖨', judul: 'Laporan ini besar — tetap cetak?',
+      rincian: [{ label: 'Jumlah baris', nilai: `${n.toLocaleString('id-ID')} baris` }],
+      isi: <>Menyiapkan PDF sebanyak itu bisa membuat peramban <b>lambat atau berhenti merespons</b> beberapa
+        saat, dan hasilnya puluhan halaman.</>,
+      peringatan: <>Untuk keperluan arsip, <b>Export Excel</b> jauh lebih ringan &amp; lebih mudah
+        ditelusuri.</>,
+      labelYa: 'Tetap cetak',
+      labelBatal: 'Batal',
+    })).ya
+  }
 }

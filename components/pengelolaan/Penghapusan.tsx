@@ -29,6 +29,7 @@ import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type JenisHapus = 'penghapusan_pemindahtanganan' | 'penghapusan_sebab_lain' | 'pengalihan_status'
 
@@ -110,6 +111,7 @@ const namaFile = (path: string) => path.split('/').pop() || path
 
 export default function Penghapusan() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
 
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
@@ -291,7 +293,13 @@ export default function Penghapusan() {
         await hapusJurnal(j)
         return
       } else {
-        if (!confirm('Keluarkan barang ini dari draft pengalihan?')) return
+        if (!(await konfirmasi({
+          nada: 'merah', ikon: '↩', judul: 'Keluarkan barang ini dari draft pengalihan?',
+          subjudul: l.nama_barang || l.nibar,
+          isi: <>Kartunya masih draft &amp; belum diterima SKPD tujuan, jadi barangnya cuma dicoret dari
+            daftar — tetap utuh di SKPD ini.</>,
+          labelYa: 'Keluarkan',
+        })).ya) return
         const { error } = await supabase.from('jurnal_header')
           .update({ payload: { ...(j.payload || {}), draft_items: sisa } }).eq('id', j.id)
         if (error) { setMsg(`Error: ${error.message}`); return }
@@ -300,7 +308,16 @@ export default function Penghapusan() {
       loadJurnals(skpd)
       return
     }
-    if (!confirm('Batalkan penghapusan barang ini? Barang akan kembali aktif dan penyusutan dilanjutkan.')) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Batalkan penghapusan barang ini?',
+      subjudul: l.nama_barang || l.nibar,
+      isi: <>Barang <b>kembali aktif</b> dan penyusutannya dilanjutkan. Pembatalannya dicatat pada
+        periode penghapusan aslinya, jadi barang muncul lagi sejak periode itu — bukan cuma dari
+        sekarang.</>,
+      peringatan: <>Ditolak kalau barang ini sudah punya transaksi yang lebih baru — membatalkan
+        peristiwa di tengah rantai merusak hasil penyusutannya.</>,
+      labelYa: 'Ya, batalkan',
+    })).ya) return
     // Guard rantai (rules.md §1.3) — satu sumber di lib/guardPembatalan.ts.
     const guard = await cekBolehBatal(
       supabase,
@@ -338,12 +355,22 @@ export default function Penghapusan() {
   // dan memindahkan barang yang salah untuk kedua kalinya.
   async function hapusJurnal(j: Jurnal) {
     const punyaLedger = (jurnalBerledger[j.id] || 0) > 0
-    const pesan = punyaLedger
-      ? `Kartu pengalihan "${j.no_sk}" sudah pernah diterima lalu dibatalkan, jadi jejak ledgernya WAJIB disimpan dan kartunya tidak bisa dihapus.\n\n` +
-        `Kartu ini akan DIARSIPKAN: hilang dari daftar Anda dan dari antrean persetujuan ${namaSkpdById(j.skpd_tujuan)}, ` +
-        `sehingga tak bisa lagi diterima tanpa sengaja. Barang tetap utuh di SKPD ini.\n\nLanjutkan?`
-      : `Hapus jurnal pengalihan "${j.no_sk}" seluruhnya (${j.lines.length} barang)? Barang tetap utuh di SKPD ini.`
-    if (!confirm(pesan)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: punyaLedger ? '📦' : '🗑',
+      judul: punyaLedger ? 'Arsipkan kartu pengalihan ini?' : 'Hapus kartu pengalihan ini?',
+      subjudul: `No. ${j.no_sk}`,
+      rincian: [
+        { label: 'Barang di kartu', nilai: `${j.lines.length} barang` },
+        { label: 'SKPD tujuan', nilai: namaSkpdById(j.skpd_tujuan) },
+      ],
+      isi: punyaLedger
+        ? <>Kartu ini <b>sudah pernah diterima lalu dibatalkan</b>, jadi jejak ledgernya wajib
+            disimpan dan kartunya tak bisa dihapus. Ia diarsipkan: hilang dari daftar Anda <b>dan</b> dari
+            antrean persetujuan SKPD tujuan, sehingga tak bisa lagi diterima tanpa sengaja.</>
+        : <>Kartunya belum pernah menyentuh ledger, jadi dihapus betulan.</>,
+      peringatan: <>Barangnya <b>tetap utuh</b> di SKPD ini — yang dibuang kartunya, bukan asetnya.</>,
+      labelYa: punyaLedger ? 'Arsipkan kartu' : 'Hapus kartu',
+    })).ya) return
 
     if (punyaLedger) {
       const { error } = await supabase.from('jurnal_header')

@@ -24,6 +24,7 @@ import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Barang = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null
@@ -47,6 +48,7 @@ const namaFile = (path: string) => path.split('/').pop() || path
 
 export default function PengeluaranInternal() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
 
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
@@ -160,12 +162,27 @@ export default function PengeluaranInternal() {
     if (j.approval_status !== 'pending') return // SATU PINTU: disetujui = read-only di sisi pengirim
     const sisa = (j.payload?.draft_items || []).filter(d => d.aset_id !== l.aset_id)
     if (sisa.length === 0) {
-      if (!confirm('Ini barang terakhir di jurnal — jurnal akan dihapus seluruhnya. Lanjutkan?')) return
+      // Akibatnya melampaui barangnya sendiri — kartunya ikut hilang. Itu harus
+      // jadi judulnya, bukan catatan kecil di ujung kalimat.
+      if (!(await konfirmasi({
+        nada: 'merah', ikon: '🗑', judul: 'Barang terakhir — kartunya ikut terhapus?',
+        subjudul: `No. ${j.no_sk} · ${l.nama_barang || l.nibar || 'barang ini'}`,
+        isi: <>Mengeluarkan barang terakhir berarti kartu mutasi ini <b>dihapus seluruhnya</b>.
+          Barangnya sendiri tetap utuh di SKPD ini — yang dibuang kartunya.</>,
+        labelYa: 'Ya, hapus kartunya',
+      })).ya) return
       const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
       if (error) { setMsg(`Error: ${error.message}`); return }
       setMsg('Jurnal mutasi internal dihapus.')
     } else {
-      if (!confirm('Keluarkan barang ini dari draft?')) return
+      if (!(await konfirmasi({
+        nada: 'merah', ikon: '↩', judul: 'Keluarkan barang ini dari draft?',
+        subjudul: l.nama_barang || l.nibar || 'barang ini',
+        rincian: [{ label: 'Sisa di kartu', nilai: `${sisa.length} barang` }],
+        isi: <>Kartunya belum diterima sub-unit tujuan, jadi barangnya cuma dicoret dari daftar —
+          tetap utuh di SKPD ini.</>,
+        labelYa: 'Keluarkan',
+      })).ya) return
       const { error } = await supabase.from('jurnal_header')
         .update({ payload: { ...(j.payload || {}), draft_items: sisa } }).eq('id', j.id)
       if (error) { setMsg(`Error: ${error.message}`); return }
@@ -175,7 +192,15 @@ export default function PengeluaranInternal() {
   }
 
   async function hapusJurnal(j: Jurnal) {
-    if (!confirm(`Hapus jurnal "${j.no_sk}" seluruhnya (${j.lines.length} barang)? Barang tetap utuh di SKPD ini.`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus kartu mutasi ini?',
+      subjudul: `No. ${j.no_sk}`,
+      rincian: [{ label: 'Barang di kartu', nilai: `${j.lines.length} barang` }],
+      isi: <>Kartunya belum diterima sub-unit tujuan &amp; belum menyentuh ledger, jadi dihapus
+        betulan.</>,
+      peringatan: <>Barangnya <b>tetap utuh</b> di SKPD ini — yang dibuang kartunya, bukan asetnya.</>,
+      labelYa: 'Hapus kartu',
+    })).ya) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
     if (error) { setMsg(`Error: ${error.message}`); return }
     setMsg('Jurnal mutasi internal dihapus.')

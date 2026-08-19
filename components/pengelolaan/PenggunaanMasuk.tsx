@@ -14,6 +14,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type DraftItem = {
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
@@ -45,6 +46,7 @@ const namaFile = (path: string) => path.split('/').pop() || path
 
 export default function PenggunaanMasuk() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [skpd, setSkpd] = useState('')
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
@@ -155,28 +157,55 @@ export default function PenggunaanMasuk() {
   // menentukan periode laporannya, dan dulu bedanya baru ketahuan setelah
   // angkanya muncul di semester yang salah.
   async function terima(j: Jurnal) {
-    if (!confirm(
-      `Terima ${j.lines.length} barang dari ${namaSkpd(j.skpd_id)}?\n\n` +
-      `Perpindahan dicatat pada TANGGAL DOKUMEN ${j.tanggal} (${j.periode}), bukan tanggal hari ini. ` +
-      `Kalau tanggal itu keliru, minta SKPD asal membetulkannya dulu.`
-    )) return
-    setBusy(true)
-    const { data, error } = await supabase.rpc('fn_terima_pengalihan', { p_header_id: j.id })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg(`${data} barang diterima — resmi tercatat di SKPD ini.`)
-    load(skpd)
+    await konfirmasi({
+      nada: 'teal', ikon: '📥', judul: 'Terima barang pengalihan ini?',
+      subjudul: `No. ${j.no_sk} · dari ${namaSkpd(j.skpd_id)}`,
+      rincian: [
+        { label: 'Barang diterima', nilai: `${j.lines.length} barang` },
+        // Inilah satu-satunya angka di layar ini yang salahnya langsung
+        // mendarat di semester laporan yang keliru — jadi ia baris tersendiri,
+        // bukan diselipkan di kalimat (migrasi 20260811_02).
+        { label: 'Dicatat pada tanggal', nilai: `${j.tanggal} (${j.periode})` },
+      ],
+      isi: <>Barangnya <b>resmi berpindah</b> ke SKPD ini dan mulai tampil di Daftar Barang,
+        Penyusutan, &amp; laporan BMD sejak periode itu.</>,
+      peringatan: <>Tanggalnya <b>tanggal dokumen, bukan hari ini</b>. Kalau keliru, minta SKPD asal
+        membetulkannya dulu — jangan diterima sekarang.</>,
+      labelYa: 'Ya, terima',
+      kerjakan: async () => {
+        setBusy(true)
+        const { data, error } = await supabase.rpc('fn_terima_pengalihan', { p_header_id: j.id })
+        setBusy(false)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg(`${data} barang diterima — resmi tercatat di SKPD ini.`)
+        load(skpd)
+      },
+    })
   }
 
   async function tolak(j: Jurnal) {
-    const alasan = prompt(`Tolak pengalihan "${j.no_sk}" dari ${namaSkpd(j.skpd_id)}? Tulis alasan penolakan (dikirim balik ke SKPD asal):`)
-    if (alasan === null) return
-    setBusy(true)
-    const { error } = await supabase.rpc('fn_tolak_pengalihan', { p_header_id: j.id, p_alasan: alasan })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg('Pengalihan ditolak — SKPD asal bisa merevisi atau menghapus jurnalnya.')
-    load(skpd)
+    await konfirmasi({
+      nada: 'merah', ikon: '↩', judul: 'Tolak pengalihan ini?',
+      subjudul: `No. ${j.no_sk} · dari ${namaSkpd(j.skpd_id)}`,
+      rincian: [{ label: 'Barang di kartu', nilai: `${j.lines.length} barang` }],
+      isi: <>Tak ada barang yang berpindah. SKPD asal bisa merevisi kartunya lalu mengajukan lagi,
+        atau menghapusnya.</>,
+      catatan: {
+        label: 'Alasan penolakan',
+        placeholder: 'Mis. barangnya tidak sesuai BAST; tanggal dokumen keliru (tertulis 2026-03-31, seharusnya 2026-04-02).',
+        petunjuk: <>Dikirim balik ke SKPD asal. Boleh dikosongkan, tapi mereka tak akan tahu apa yang
+          harus diperbaiki.</>,
+      },
+      labelYa: 'Ya, tolak',
+      kerjakan: async (alasan) => {
+        setBusy(true)
+        const { error } = await supabase.rpc('fn_tolak_pengalihan', { p_header_id: j.id, p_alasan: alasan })
+        setBusy(false)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg('Pengalihan ditolak — SKPD asal bisa merevisi atau menghapus jurnalnya.')
+        load(skpd)
+      },
+    })
   }
 
   // ⚠️ AKSI "Kembalikan" SUDAH DICABUT (keputusan user 2026-08-12, migrasi
@@ -200,18 +229,29 @@ export default function PenggunaanMasuk() {
   // Pembedaan yang sama sudah lama ada di Pemanfaatan (⏹ Akhiri vs 🗑 Batal) &
   // Pengamanan; Pengalihan yang terakhir menyusul.
   async function batalPengalihan(j: Jurnal, l: Line) {
-    if (!confirm(
-      `BATALKAN pengalihan "${l.nama_barang || l.nibar || 'barang ini'}"?\n\n` +
-      `Pakai ini kalau SALAH PILIH BARANG — pengalihannya dianggap tidak pernah terjadi ` +
-      `dan barang balik ke ${namaSkpd(j.skpd_id)}.\n\n` +
-      `Kalau barangnya memang sempat dipakai di sini lalu dipulangkan, pakai "Kembalikan", bukan ini.`
-    )) return
-    setBusy(true)
-    const { error } = await supabase.rpc('fn_batal_pengalihan_barang', { p_header_id: j.id, p_aset_id: l.aset_id })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg(`Pengalihan dibatalkan — barang dianggap tidak pernah pindah dari ${namaSkpd(j.skpd_id)}.`)
-    load(skpd)
+    await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Batalkan pengalihan barang ini?',
+      subjudul: l.nama_barang || l.nibar || 'barang ini',
+      rincian: [{ label: 'Barang kembali ke', nilai: namaSkpd(j.skpd_id) }],
+      isi: <>Pengalihannya dianggap <b>tidak pernah terjadi</b>: barang balik ke SKPD asal, barisnya
+        diabaikan seluruh laporan, dan kode registernya dipulihkan seperti semula.</>,
+      // ⚠️ Teks lama di sini masih menyuruh memakai "Kembalikan" — tombol yang
+      // DICABUT 2026-08-12 (migrasi 20260812_05). Petunjuk ke tombol yang sudah
+      // tidak ada bukan cuma tak menolong; ia membuat operator mencari-cari lalu
+      // menekan Batal juga, tapi dengan mengira artinya sama.
+      peringatan: <>Ini untuk <b>salah pilih barang</b>. Pengembalian yang sungguhan — barang memang
+        sempat dipakai di sini lalu dipulangkan — dicatat sebagai <b>kartu Pengalihan Status baru ke
+        arah sebaliknya</b>, bukan dari sini.</>,
+      labelYa: 'Ya, batalkan',
+      kerjakan: async () => {
+        setBusy(true)
+        const { error } = await supabase.rpc('fn_batal_pengalihan_barang', { p_header_id: j.id, p_aset_id: l.aset_id })
+        setBusy(false)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg(`Pengalihan dibatalkan — barang dianggap tidak pernah pindah dari ${namaSkpd(j.skpd_id)}.`)
+        load(skpd)
+      },
+    })
   }
 
   // Batal SELURUH kartu. Bukan sekadar pintasan dari mengklik Batal satu per
@@ -221,19 +261,28 @@ export default function PenggunaanMasuk() {
   // yang tanggalnya keliru. Kalau berhenti di tengah, seluruhnya batal — satu
   // transaksi di server.
   async function batalSeluruh(j: Jurnal) {
-    if (!confirm(
-      `BATALKAN SELURUH pengalihan "${j.no_sk}" (${j.lines.length} barang)?\n\n` +
-      `Semua barang dianggap tidak pernah pindah dan kembali ke ${namaSkpd(j.skpd_id)}. ` +
-      `Kartunya balik ke "Menunggu Persetujuan" sehingga bisa Anda terima ULANG — ` +
-      `SKPD pengirim tidak perlu entry ulang.\n\n` +
-      `Kalau barangnya memang sempat dipakai di sini lalu dipulangkan, pakai "Kembalikan" per barang, bukan ini.`
-    )) return
-    setBusy(true)
-    const { data, error } = await supabase.rpc('fn_batal_seluruh_pengalihan', { p_header_id: j.id })
-    setBusy(false)
-    if (error) { setMsg(`Error: ${error.message}`); return }
-    setMsg(`${data} barang dibatalkan — kartu ${j.no_sk} kembali menunggu persetujuan & siap diterima ulang.`)
-    load(skpd)
+    await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Batalkan SELURUH pengalihan ini?',
+      subjudul: `No. ${j.no_sk} · dari ${namaSkpd(j.skpd_id)}`,
+      rincian: [
+        { label: 'Barang dibatalkan', nilai: `${j.lines.length} barang` },
+        { label: 'Kembali ke', nilai: namaSkpd(j.skpd_id) },
+      ],
+      isi: <>Kartunya balik ke <b>&ldquo;Menunggu Persetujuan&rdquo;</b> sehingga bisa Anda terima
+        ULANG — SKPD pengirim tak perlu entry ulang. Inilah jalan resmi membetulkan penerimaan yang
+        tanggalnya keliru.</>,
+      peringatan: <>Berlaku satu paket: kalau berhenti di tengah, seluruhnya batal. Pengembalian yang
+        sungguhan dicatat sebagai <b>kartu baru ke arah sebaliknya</b>, bukan dari sini.</>,
+      labelYa: 'Ya, batalkan seluruhnya',
+      kerjakan: async () => {
+        setBusy(true)
+        const { data, error } = await supabase.rpc('fn_batal_seluruh_pengalihan', { p_header_id: j.id })
+        setBusy(false)
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg(`${data} barang dibatalkan — kartu ${j.no_sk} kembali menunggu persetujuan & siap diterima ulang.`)
+        load(skpd)
+      },
+    })
   }
 
   async function bukaDokumen(path: string) {

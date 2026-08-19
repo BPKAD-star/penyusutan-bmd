@@ -323,6 +323,90 @@ Berkas itu **digenerate — jangan disunting tangan**; suntingan apa pun tersapu
 regenerasi berikutnya (karena itu ia dikecualikan dari ESLint). Yang menjaganya
 tidak diam-diam ketinggalan dari migrasi: `lib/sinkronisasi.test.ts` §4.
 
+### 4.5 `useKonfirmasi()` — dialog bawaan peramban dilarang
+
+> **`confirm()`, `prompt()`, dan `alert()` tidak boleh dipakai lagi di repo
+> ini.** Semua konfirmasi lewat
+> [`shared/ui/konfirmasi.tsx`](shared/ui/konfirmasi.tsx).
+
+**Masalahnya bukan cuma tampilan.** Betul bahwa kotak hitam-putih milik
+peramban itu terlihat asing di aplikasi yang seluruhnya navy/teal — itu
+keluhan yang memicu penggantian ini (user 2026-08-19). Tapi dua cacat lainnya
+lebih mahal:
+
+1. **`confirm()` membekukan seluruh tab**, jadi mustahil menampilkan keadaan
+   *sedang diproses*. Banyak keputusan di aplikasi ini memanggil RPC yang butuh
+   beberapa detik (`fn_standar_usulan_setujui` memasukkan ratusan baris ke bak
+   bersama; approve kontrak konstruksi memateri­alisasi seluruh barangnya).
+   Dengan dialog bawaan, layar diam lalu tiba-tiba berubah — dan operator yang
+   mengira tombolnya tak berfungsi akan menekannya lagi.
+2. **`prompt()` cuma satu baris.** Catatan telaah yang dikirim ke SKPD justru
+   perlu menjelaskan apa yang harus diperbaiki.
+3. Ketiganya juga **tidak bisa menonjolkan apa pun** — akibat yang tak bisa
+   dibatalkan tampil dengan bobot yang sama seperti basa-basi di kalimat
+   pertama.
+
+Bentuk pemakaiannya sengaja dijaga tetap **satu baris**, supaya menggantinya di
+puluhan berkas benar-benar bisa selesai:
+
+```ts
+const konfirmasi = useKonfirmasi()
+
+// ❌ tidak boleh lagi
+if (!confirm('Hapus barang ini?')) return
+
+// ✅ pengganti langsung
+if (!(await konfirmasi({ judul: 'Hapus barang ini?', nada: 'merah', labelYa: 'Hapus' })).ya) return
+
+// ✅ pengganti prompt()
+const { ya, catatan } = await konfirmasi({ …, catatan: { label: 'Catatan telaah' } })
+
+// ✅ pengganti alert()
+await konfirmasi({ judul: 'Kontrak sudah disetujui', labelYa: 'Mengerti', tanpaBatal: true })
+```
+
+**Untuk apa pun yang menyentuh jaringan, pakai `kerjakan`** — pop-up tetap
+terbuka & menampilkan "Memproses…" sampai selesai, dan kalau `kerjakan`
+melempar maka `konfirmasi()` ikut melempar sehingga `try/catch` yang sudah ada
+di pemanggil tetap bekerja:
+
+```ts
+await konfirmasi({
+  judul: 'Setujui kontrak ini?', labelYa: 'Ya, setujui',
+  rincian: [{ label: 'Barang', nilai: `${n} unit` }, { label: 'Nilai', nilai: formatRupiah(total) }],
+  kerjakan: async () => { await approve() },
+})
+```
+
+Tiga nada, dan pemilihannya bukan selera — ia yang membedakan aksi yang mudah
+tertukar:
+
+| Nada | Untuk | Contoh |
+|---|---|---|
+| `teal` | MENETAPKAN sesuatu | Setujui · Tetapkan · Ajukan |
+| `merah` | MEMBUANG / menolak | Hapus · Tolak · Kembalikan |
+| `amber` | MEMBATALKAN keadaan yang sudah berlaku | Buka Kunci · Unapprove · Batal transaksi |
+
+⚠️ **Kelas warnanya wajib string utuh** di `Record<Nada, …>`. Kelas yang
+dirakit runtime (`bg-${x}-600`) tidak pernah ikut terpindai saat build →
+tombolnya tampil **tanpa warna sama sekali**, tanpa satu pun error.
+
+⚠️ **`rincian` bukan hiasan.** Angka yang dipertaruhkan (berapa barang, berapa
+rupiah, tanggal perolehan efektif) harus muncul sebagai baris tersendiri, bukan
+diselipkan di tengah kalimat. Yang paling sering salah pencet di aplikasi ini
+bukan tombolnya, melainkan menyetujui kartu yang keliru.
+
+Hostnya (`<KonfirmasiProvider>`) dipasang **sekali** di `DashboardChrome` —
+jangan menambahkan host kedua per halaman: konfirmasi sering dipicu dari dalam
+modal lain, dan host yang ikut dibongkar bersama pemanggilnya akan menutup
+pop-upnya sendiri di tengah jalan. `useKonfirmasi()` **melempar** kalau dipakai
+di luar host, sengaja: diam-diam mengembalikan `false` membuat tombol terlihat
+rusak, dan `true` menjalankan aksi tanpa pernah bertanya.
+
+Kalau pop-upnya perlu dikendalikan sendiri (isinya bergantung state lain di
+halaman itu), pakai komponennya langsung:
+[`shared/ui/KonfirmasiModal.tsx`](shared/ui/KonfirmasiModal.tsx).
+
 ---
 
 ## 5. Aturan Komponen React
@@ -444,6 +528,8 @@ Kerapian (dari dokumen ini — *dianjurkan, tidak memblokir*):
 - [ ] Aturan bisnis baru diletakkan di `domain/` dan **punya unit test**.
 - [ ] Tidak ada `.from('…')` baru di dalam komponen.
 - [ ] Tidak ada loop paginasi baru yang ditulis tangan — pakai `paginate()`.
+- [ ] Tidak ada `confirm()` / `prompt()` / `alert()` baru — pakai
+      `useKonfirmasi()` (§4.5), berikut nada & `rincian`-nya.
 - [ ] Berkas yang disentuh tidak jadi lebih panjang dari sebelumnya
       (*boy-scout rule*).
 - [ ] `node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json`,

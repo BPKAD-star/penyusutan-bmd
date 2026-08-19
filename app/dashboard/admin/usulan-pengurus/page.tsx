@@ -14,6 +14,7 @@ import {
 } from '@/lib/usulanPengurus'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Skpd = { id: number; nama: string; parent_id: number | null; kode_skpd: string | null }
 const COLS = 'id,skpd_id,nama,nip,pangkat,golongan,jabatan,jenis_kelamin,jenis,role_bmd,tahun,status,catatan_admin,no_usulan,tgl_usulan,created_at'
@@ -274,6 +275,7 @@ function AdminView({ rows, skpdMap, tahun, isPastYear, loading, reload, supabase
   rows: UsulanRow[]; skpdMap: Record<number, Skpd>
   tahun: number; isPastYear: boolean; loading: boolean; reload: () => Promise<void>; supabase: SupabaseClient
 }) {
+  const konfirmasi = useKonfirmasi()
   const [filter, setFilter] = useState<UsulanStatus | 'semua'>('diajukan')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -295,7 +297,14 @@ function AdminView({ rows, skpdMap, tahun, isPastYear, loading, reload, supabase
     setBusy(false); if (error) setMsg(`Gagal setujui: ${error.message}`); else reload()
   }
   async function batalSetuju(id: string) {
-    if (!window.confirm('Batalkan persetujuan untuk tahun ini? Usulan kembali ke "Diajukan" (bisa disetujui ulang atau dikembalikan ke SKPD). Data pegawai di Daftar Pegawai TIDAK ikut terhapus.')) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '🔓', judul: 'Batalkan persetujuan usulan ini?',
+      isi: <>Usulan kembali ke <b>&ldquo;Diajukan&rdquo;</b> — bisa disetujui ulang, atau dikembalikan
+        ke SKPD untuk diperbaiki.</>,
+      peringatan: <>Data pegawai di Daftar Pegawai <b>TIDAK ikut terhapus</b>. Yang dicabut cuma
+        penetapannya untuk tahun ini.</>,
+      labelYa: 'Ya, batalkan persetujuan',
+    })).ya) return
     setBusy(true); setMsg('')
     const { error } = await supabase.rpc('fn_batal_setujui_usulan_pengurus', { p_id: id })
     setBusy(false); if (error) setMsg(`Gagal batal setujui: ${error.message}`); else reload()

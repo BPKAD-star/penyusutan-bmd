@@ -16,6 +16,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { fetchApprovalScope } from '@/lib/roles'
 import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen } from '@/lib/dokumenSiklus'
 import { uploadDokumenSiklus, hapusFileDokumen, bukaDokumenSumber, namaFileDariPath } from '@/lib/dokumenStorage'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type GenericDoc = {
   id: string; sub_jenis: string | null; skpd_id: number | null
@@ -216,6 +217,7 @@ function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap 
   isAdmin: boolean; adminInduk: boolean; mySkpdId: number | null; skpdMap: Map<number, string>
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [docs, setDocs] = useState<GenericDoc[]>([])
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
@@ -263,7 +265,12 @@ function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap 
   }
 
   async function hapus(d: GenericDoc) {
-    if (!confirm(`Hapus dokumen "${d.judul}"?`)) return
+    if (!(await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus dokumen ini?',
+      subjudul: d.judul,
+      isi: <>Berkasnya ikut <b>dibuang dari penyimpanan</b> dan tak bisa dikembalikan.</>,
+      labelYa: 'Hapus dokumen',
+    })).ya) return
     await hapusFileDokumen(d.file_path)
     const { error } = await supabase.from('admin_dokumen').delete().eq('id', d.id)
     if (error) { setErr(error.message); return }

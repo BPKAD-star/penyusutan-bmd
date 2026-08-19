@@ -20,7 +20,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { backdropClose } from '@/components/backdropClose'
-import KonfirmasiModal from '@/components/KonfirmasiModal'
+import KonfirmasiModal from '@/shared/ui/KonfirmasiModal'
 import { formatRupiah } from '@/lib/export'
 import {
   USULAN_JENIS, USULAN_STATUS_META, pakaiKodeBarang, pakaiRekening,

@@ -29,6 +29,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 
 type Alasan = 'komptabel_ke_ekstra' | 'komptabel_ke_intra' | 'golongan' | 'kode'
@@ -108,6 +109,7 @@ function ringkasanBaris(l: JurnalLine): string {
 
 export default function Reklasifikasi() {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
 
   const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
@@ -130,7 +132,16 @@ export default function Reklasifikasi() {
   // aset ke nilai lama. Engine mengabaikan reklas via target_trx_id saat replay.
   async function batalReklas(j: Jurnal, lines: JurnalLine[]) {
     if (lines.length === 0) { setMsg('Centang minimal satu baris untuk dibatalkan.'); return }
-    if (!confirm(`Batalkan reklasifikasi ${lines.length} barang? Barang kembali ke kode/posisi semula. Jalankan Engine lagi setelah ini.`)) return
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '↩', judul: 'Batalkan reklasifikasi barang terpilih?',
+      subjudul: `No. ${j.no_sk}`,
+      rincian: [{ label: 'Baris dicentang', nilai: `${lines.length} barang` }],
+      isi: <>Barang kembali ke <b>kode &amp; posisi semula</b>. Reklasnya tidak dihapus dari ledger —
+        engine yang mengabaikannya saat menghitung ulang.</>,
+      peringatan: <>Angka penyusutan belum ikut berubah sampai <b>Engine dijalankan lagi</b> untuk
+        periode itu. Ditolak kalau ada barang yang sudah punya transaksi lebih baru.</>,
+      labelYa: `Ya, batalkan ${lines.length} barang`,
+    })).ya) return
     setBatalling(true); setMsg('')
     // Guard rantai (rules.md §1.3) — SATU sumber di lib/guardPembatalan.ts,
     // dipakai bersama seluruh menu batal. Versi lama di sini menulis
