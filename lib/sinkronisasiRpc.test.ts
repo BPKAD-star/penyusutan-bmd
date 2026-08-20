@@ -237,3 +237,78 @@ describe('§5 RPC agregat berat wajib punya work_mem', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+describe('§6 Laporan Perolehan — predikat idx_trx_perolehan_id ↔ prop `jenis` halamannya', () => {
+  // Insiden 2026-08-20: kelima menu Laporan Perolehan timeout begitu dibuka &
+  // baru muncul setelah SKPD dipilih. `jenis` (ENUM) tak bisa jadi index-cond
+  // di bawah RLS, jadi yang tersisa buat planner cuma `ORDER BY id DESC LIMIT
+  // 500` → menyusuri PRIMARY KEY MUNDUR. Karena baris perolehan jauh lebih
+  // sedikit dari LIMIT-nya (hibah_masuk 45 dari 420rb), LIMIT tak pernah
+  // terpenuhi & seluruh tabel dilewati: 15.386 ms vs pagu 8 dtk.
+  //
+  // Ditambal partial index `(id) WHERE jenis IN (…)` (20260820_03) → 21,5 ms.
+  // BAHAYANYA: predikat itu KEMBAR dengan prop `jenis` di kelima halaman. Menu
+  // Cara Perolehan BARU yang lupa didaftarkan di predikat index akan timeout
+  // dengan gejala yang sama persis, dan TAK ADA APA PUN yang gagal — itulah
+  // yang dijaga test ini.
+  const DIR_HAL = path.join(AKAR, 'app', 'dashboard', 'pelaporan', 'perolehan')
+
+  /** Prop `jenis="…"` dari tiap halaman yang memakai components/LaporanPerolehan. */
+  function jenisHalaman(): string[] {
+    const out: string[] = []
+    for (const d of fs.readdirSync(DIR_HAL, { withFileTypes: true })) {
+      if (!d.isDirectory()) continue
+      const f = path.join(DIR_HAL, d.name, 'page.tsx')
+      if (!fs.existsSync(f)) continue
+      const isi = fs.readFileSync(f, 'utf8')
+      if (!isi.includes('LaporanPerolehan')) continue
+      const m = isi.match(/jenis="([a-z_]+)"/)
+      expect(m, `halaman ${d.name} memakai LaporanPerolehan tapi prop jenis tak terbaca`).toBeTruthy()
+      out.push(m![1])
+    }
+    // Pengaman anti-hampa: pemindai yang tak menemukan apa-apa akan "lulus".
+    expect(out.length, `hanya ${out.length} halaman Laporan Perolehan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(5)
+    return out
+  }
+
+  /**
+   * Badan pernyataan `CREATE INDEX … ;` saja.
+   *
+   * ⚠️ Sengaja TIDAK memakai `jenisIn()` atas seluruh berkas seperti §4:
+   * migrasi ini menjelaskan predikatnya panjang lebar di komentar, dan kalimat
+   * seperti "predikat `jenis IN (…)`" ikut tertangkap regex lalu menghasilkan
+   * daftar KOSONG yang membuat assertion di bawah gagal (atau, kalau
+   * assertion-nya dilonggarkan, LULUS TANPA MEMERIKSA APA PUN). Menyempitkan
+   * ke pernyataannya lebih benar daripada mengarang komentar yang menghindari
+   * pola regex.
+   */
+  function pernyataanIndex(isi: string): string {
+    const mulai = isi.search(/CREATE\s+INDEX[^;]*idx_trx_perolehan_id/i)
+    expect(mulai, 'pernyataan CREATE INDEX idx_trx_perolehan_id tak ditemukan').toBeGreaterThanOrEqual(0)
+    const sisa = isi.slice(mulai)
+    return sisa.slice(0, sisa.indexOf(';') + 1)
+  }
+
+  it('predikat index memuat SEMUA jenis yang dipakai halaman Laporan Perolehan', () => {
+    const mig = bacaMigrasi().filter(m => m.isi.includes('idx_trx_perolehan_id'))
+    expect(mig.length, 'migrasi idx_trx_perolehan_id tak ditemukan').toBeGreaterThan(0)
+    const daftar = jenisIn(pernyataanIndex(mig[mig.length - 1].isi))
+    expect(daftar.length, 'predikat `jenis IN (…)` tak ditemukan di CREATE INDEX-nya').toBe(1)
+    expect(daftar[0].length, 'predikat index terbaca kosong — regexnya rusak').toBeGreaterThan(0)
+
+    // Predikat WAJIB superset: `jenis = 'x'` cuma bisa dibuktikan menyiratkan
+    // `jenis IN (…)` kalau x memang ada di dalamnya. Yang kurang = index
+    // diabaikan diam-diam untuk menu itu.
+    for (const j of jenisHalaman()) {
+      expect(daftar[0], `jenis '${j}' dipakai halaman Laporan Perolehan tapi TIDAK ada di predikat idx_trx_perolehan_id`).toContain(j)
+    }
+  })
+
+  it('index dibuat PLAIN, bukan CONCURRENTLY', () => {
+    // Supabase SQL Editor membungkus skrip dalam transaksi, dan CONCURRENTLY di
+    // dalam transaksi GAGAL SENYAP (pelajaran migrasi 20260718_06).
+    const mig = bacaMigrasi().filter(m => m.isi.includes('idx_trx_perolehan_id'))
+    expect(mig[mig.length - 1].isi).not.toMatch(/CREATE\s+INDEX\s+CONCURRENTLY/i)
+  })
+})

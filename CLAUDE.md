@@ -204,6 +204,45 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   DITOLAK. **Satu komponen ini dipakai kelima menu Laporan Perolehan**, jadi
   perbaikannya berlaku serentak.
 
+- **TIMEOUT KEDUA di Laporan Perolehan, yang selama ini tertutup yang pertama**
+  (migrasi 20260820_03). Sesudah `fetchVoidedAsetIds` di-scope, kelima menu itu
+  MASIH gagal — tapi hanya **sebelum SKPD dipilih**; begitu SKPD dipilih
+  angkanya muncul. Justru urutan itu yang menunjukkan sebabnya: yang tumbang
+  RENCANA QUERY-nya, bukan datanya.
+  ⚠️ **Bedakan dari yang pertama lewat PESANNYA**: yang void berbunyi "gagal
+  membaca transaksi pembatalan (…)", yang ini tidak — ini query UTAMA daftar
+  transaksinya.
+  Diukur ke DB dgn RLS aktif: `Index Scan Backward using transaksi_bmd_pkey`,
+  `Rows Removed by Filter: 420537`, **15.386 ms** (pagu 8 dtk). `jenis` (ENUM)
+  tak bisa jadi index-cond di bawah RLS, jadi ia jatuh jadi filter biasa dan
+  yang tersisa buat planner cuma `ORDER BY id DESC LIMIT 500` → menyusuri
+  PRIMARY KEY MUNDUR. Karena `hibah_masuk` cuma **45 baris dari 420rb**,
+  LIMIT-nya TAK PERNAH terpenuhi & seluruh tabel dilewati; perkiraan planner
+  pun meleset jauh (rows=33101 vs actual 45). Begitu SKPD dipilih,
+  `skpd_asal/skpd_tujuan IN (…)` jadi qual selektif & terindeks → planner
+  pindah jalur → halamannya jalan.
+  ⚠️ **`idx_trx_jenis_id` (jenis, id) TIDAK menolong** — persis seperti pada
+  `fetchOwnerOverrides` (20260728_05 → 20260729_01): ia mengandalkan `jenis`
+  jadi index-cond, yang justru tak boleh. Obatnya **PARTIAL INDEX**
+  `idx_trx_perolehan_id` `ON transaksi_bmd (id) WHERE jenis IN (5 jenis Cara
+  Perolehan)`. Terukur: `hibah_masuk` **15.386 → 21,5 ms** (Rows Removed
+  420537 → 36); `tukar_menukar` (**0 baris**, kasus TERBURUK krn LIMIT tak
+  pernah terpenuhi sama sekali) **19,2 ms**, Rows Removed 81 — seluruh index
+  cuma 81 entri, jadi biayanya ikut jumlah baris perolehan, bukan besar ledger.
+  ⚠️ Predikatnya **KEMBAR dgn prop `jenis` di kelima halaman**
+  `app/dashboard/pelaporan/perolehan/*/page.tsx`. Menu Cara Perolehan BARU yang
+  lupa didaftarkan di predikat index akan timeout dgn gejala yang sama persis &
+  TANPA satu pun error di kode — **dikunci lib/sinkronisasiRpc.test.ts §6**
+  (diuji merah dulu dgn sengaja mencabut satu jenis, bukan cuma diasumsikan
+  menangkap).
+  **Pola umum yang layak diingat: `ORDER BY <pk> LIMIT n` di atas filter yang
+  tak bisa jadi index-cond, pada jenis yang barisnya JAUH LEBIH SEDIKIT dari
+  `n`, PASTI menyusuri seluruh tabel** — dan makin sedikit barisnya makin
+  parah, kebalikan dari dugaan orang.
+  ⚠️ **Deploy-ordering: migrasi 20260820_03 boleh jalan kapan saja** (tak ada
+  perubahan kode yang menyertainya), tapi selama belum jalan kelima menu itu
+  tetap gagal saat dibuka tanpa filter SKPD.
+
 - **PERFORMA Daftar Barang & Penyusutan — JANGAN diturunkan.** Setelah import
   massal (Peralatan & Mesin 218rb, dst → total aset ~227rb), dua halaman ini
   sempat 504/timeout/freeze. Yang MENYELAMATKAN & bikin stabil (bukan sekadar

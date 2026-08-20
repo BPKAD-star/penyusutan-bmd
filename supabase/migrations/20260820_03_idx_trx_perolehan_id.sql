@@ -1,0 +1,82 @@
+-- ============================================================================
+-- 2026-08-20 — Laporan Perolehan gagal muat SEBELUM SKPD dipilih
+--
+-- GEJALA: kelima menu Laporan Perolehan menampilkan "canceling statement due
+-- to statement timeout" begitu dibuka, lalu angkanya MUNCUL BEGITU SKPD DIPILIH.
+-- Justru urutan itu yang menunjukkan sebabnya: yang tumbang bukan datanya,
+-- melainkan RENCANA QUERY-nya waktu tak ada filter selektif sama sekali.
+--
+-- ⚠️ BEDA DARI TIMEOUT SEBELUMNYA (yang diperbaiki dgn men-scope
+-- `fetchVoidedAsetIds`). Pesannya bisa dibedakan: yang itu berbunyi "gagal
+-- membaca transaksi pembatalan (…)", yang ini tidak — ini query UTAMA daftar
+-- transaksinya. Perbaikan kemarin tetap benar & tetap diperlukan; ia cuma
+-- menyingkap timeout kedua yang selama ini tertutup olehnya.
+--
+-- SEBABNYA (diukur ke DB, RLS AKTIF, sbg admin):
+--     Index Scan Backward using transaksi_bmd_pkey
+--       Filter: (RLS… AND jenis = 'hibah_masuk')
+--       Rows Removed by Filter: 420537
+--     Execution Time: 15386 ms          -- pagu 8 dtk
+-- `jenis` bertipe ENUM tak pernah bisa jadi index-cond di bawah RLS (CLAUDE.md
+-- "ronde 3"), jadi ia ditinggalkan sebagai filter biasa. Yang tersisa buat
+-- planner cuma `ORDER BY id DESC LIMIT 500` → ia menyusuri PRIMARY KEY MUNDUR
+-- berharap terkumpul 500 baris. Padahal `hibah_masuk` cuma 45 baris se-basis
+-- data, jadi LIMIT-nya TAK PERNAH terpenuhi dan seluruh 420rb baris dilewati.
+-- Perkiraan planner pun meleset jauh (rows=33101 vs actual 45), itu yang
+-- membuatnya yakin LIMIT 500 bakal cepat terpenuhi.
+--
+-- Begitu SKPD dipilih, `skpd_asal/skpd_tujuan IN (…)` jadi qual selektif &
+-- terindeks → planner pindah jalur → halamannya jalan. Itu sebabnya bug ini
+-- terlihat seperti "cuma error di awal".
+--
+-- ⚠️ `idx_trx_jenis_id` (jenis, id) yang sudah ada TIDAK menolong, persis
+-- seperti pada insiden `fetchOwnerOverrides` (20260728_05 → 20260729_01):
+-- index itu mengandalkan `jenis` jadi index-cond, yang justru tak boleh.
+--
+-- OBATNYA PARTIAL INDEX — pola yang sama dgn `idx_trx_pindah_id`
+-- (20260729_01): predikat golongan selesai DI INDEX, sisa `ORDER BY id`
+-- dilayani index itu sendiri, dan biayanya ikut JUMLAH BARIS PEROLEHAN
+-- (81 se-basis data) bukan besar ledger (420rb).
+--
+-- Terukur dgn index ini (RLS aktif, uji dlm transaksi lalu ROLLBACK):
+--   * `hibah_masuk`   (45 baris): 15.386 ms → 21,5 ms; Rows Removed 420537 → 36
+--   * `tukar_menukar` ( 0 baris): 19,2 ms; Rows Removed 81
+-- Yang nol baris itu kasus TERBURUK — LIMIT tak pernah terpenuhi sama sekali —
+-- dan tetap murah karena seluruh index cuma 81 entri.
+--
+-- ⚠️ DAFTAR JENIS KEMBAR dgn prop `jenis` di kelima halaman
+-- app/dashboard/pelaporan/perolehan/*/page.tsx (yang memakai
+-- components/LaporanPerolehan.tsx). Nambah menu Cara Perolehan baru → tambahkan
+-- jenisnya di sini juga; kalau tidak, menu itu timeout dgn gejala yang sama
+-- persis dan TANPA satu pun error di sisi kode.
+--
+-- ⚠️ Predikat index HARUS memuat jenis yang di-query. Postgres membuktikan
+-- implikasi `jenis = 'hibah_masuk'` ⇒ `jenis IN (…)` — SUDAH DIVERIFIKASI di
+-- EXPLAIN di atas, bukan diasumsikan. Kalau suatu saat kodenya berubah jadi
+-- menanyakan jenis DI LUAR daftar ini, indexnya diabaikan DIAM-DIAM.
+--
+-- ⚠️ PLAIN, bukan CONCURRENTLY: Supabase SQL Editor membungkus skrip dalam
+-- transaksi, dan CONCURRENTLY di dalam transaksi GAGAL SENYAP (pelajaran
+-- migrasi 20260718_06). Indexnya cuma 81 entri, jadi kuncinya sekejap.
+--
+-- Tak ada perubahan kode yang menyertainya — murni rencana query.
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_trx_perolehan_id
+  ON transaksi_bmd (id)
+  WHERE jenis IN ('pengadaan', 'hibah_masuk', 'tukar_menukar',
+                  'hasil_inventarisasi', 'perolehan_lainnya');
+
+ANALYZE transaksi_bmd;
+
+-- ── Verifikasi: harus menyebut idx_trx_perolehan_id, BUKAN transaksi_bmd_pkey ─
+-- Jalankan sebagai pengurus barang, bukan service_role: tanpa RLS query yang
+-- rusak pun tetap cepat, jadi EXPLAIN tanpa RLS akan bilang "beres" padahal
+-- belum (pelajaran migrasi 20260728_05).
+--
+--   BEGIN;
+--   SET LOCAL role authenticated;
+--   SET LOCAL request.jwt.claims TO '{"sub":"<uid pengurus>","role":"authenticated"}';
+--   EXPLAIN ANALYZE
+--   SELECT id FROM transaksi_bmd WHERE jenis = 'hibah_masuk' ORDER BY id DESC LIMIT 500;
+--   ROLLBACK;
