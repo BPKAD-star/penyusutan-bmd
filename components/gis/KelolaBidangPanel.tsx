@@ -148,26 +148,35 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
       setSaving(false)
       return
     }
-    // Ikutkan sinkron ke aset: identitas dokumen (nama/nomor/tanggal/jenis hak)
-    // supaya halaman lain yang baca langsung dari `aset` (Daftar Barang, Koreksi
-    // Spesifikasi, dll.) nggak ketinggalan info terbaru. Titik koordinat aset
-    // di-NULL-kan begitu bidang ini py titik sendiri — bidang jadi satu-satunya
-    // sumber lokasi, aset.latitude/longitude nggak lagi dipakai/aktif utk aset
-    // ini (keputusan user 2026-07-10).
-    const asetPatch: Record<string, unknown> = {
-      jenis_hak: payload.jenis_hak,
-      nomor_dokumen_kepemilikan: payload.nomor_dokumen_kepemilikan,
-      nama_dokumen_kepemilikan: payload.nama_dokumen_kepemilikan,
-      tanggal_dokumen_kepemilikan: payload.tanggal_dokumen_kepemilikan,
-    }
-    if (latitude != null && longitude != null) { asetPatch.latitude = null; asetPatch.longitude = null }
-    const { error: asetErr } = await supabase.from('aset').update(asetPatch).eq('id', asetId)
-    if (asetErr) {
-      setMsg(`Bidang tersimpan, tapi gagal sinkron ke data aset: ${asetErr.message}`)
-    } else {
-      setMsg(editId ? 'Bidang diperbarui.' : 'Bidang ditambahkan.')
-      setShowForm(false); setEditId(null); setForm(FORM_KOSONG); setSertifikatPath(null)
-    }
+    // ⚠️ MENYIMPAN BIDANG TIDAK LAGI MENYENTUH `aset` SAMA SEKALI
+    // (keputusan user 2026-08-20, mencabut perilaku 2026-07-10). Dulu blok ini
+    // melakukan dua hal, dan DUA-DUANYA merusak:
+    //
+    //   (1) Menyalin jenis hak + nomor/nama/tanggal dokumen ke kolom `aset`.
+    //       Kolom register cuma muat SATU nilai, sementara satu tanah bisa
+    //       punya banyak sertifikat — di data hidup 159 dari 195 tanah
+    //       berbidang punya nomor sertifikat yang berbeda-beda, dan yang
+    //       tercatat di register selalu "bidang yang terakhir disimpan".
+    //       Jadi Daftar Barang/KIBAR menampilkan satu sertifikat seolah itu
+    //       satu-satunya. Berkas kerja Bidang Aset malah menggabung SEMUA
+    //       nomornya dengan koma — itu bentuk yang benar, dan tak mungkin
+    //       ditampung satu kolom.
+    //
+    //   (2) Meng-NULL-kan `aset.latitude/longitude` begitu bidang ini punya
+    //       titik. Ini yang paling berbahaya: 2.230 dari 2.739 tanah aktif
+    //       titiknya HANYA ada di register (diukur 2026-08-20). Untuk tanah
+    //       ber-54 bidang, memberi titik pada SATU bidang memusnahkan titik
+    //       register — 53 bidang sisanya tak bertitik, jadi di peta tanah itu
+    //       tinggal diwakili satu titik. Kalau bidang itu kemudian dihapus,
+    //       tanahnya kehilangan titik SAMA SEKALI, tanpa jalan pulang.
+    //
+    // Aturan barunya satu kalimat: **bidang MENANG saat tampil, register
+    // BERTAHAN sebagai cadangan.** Penyaringnya sudah benar di GIS
+    // (`bidangBerkoordinat.length > 0 ? titik bidang : titik register`), jadi
+    // yang perlu dicabut memang cuma penulisan balik ini — bukan logika
+    // tampilannya.
+    setMsg(editId ? 'Bidang diperbarui.' : 'Bidang ditambahkan.')
+    setShowForm(false); setEditId(null); setForm(FORM_KOSONG); setSertifikatPath(null)
     load(); onChanged?.()
     setSaving(false)
   }

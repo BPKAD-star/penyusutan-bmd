@@ -2937,6 +2937,76 @@ pin-nya muncul jauh di **LAUT dekat Filipina**.
   titiknya pemisah desimal. Satu fungsi tak bisa melayani keduanya, dan yang
   kalah selalu yang lebih jarang dilihat orang.
 
+## TANAH: bidang MENANG saat tampil, register BERTAHAN sebagai cadangan
+
+Keputusan user 2026-08-20, sesudah menelaah berkas kerja Bidang Aset
+("register vs bidang tanah update.xlsx", 2.732 register / 4.410 bidang).
+Menetapkan sekali untuk semua atribut fisik tanah — **luas, koordinat, dan
+dokumen kepemilikan** — yang selama ini punya DUA rumah dan saling menimpa.
+
+**Pembagiannya:**
+
+    aset (register)     → NIBAR, kode, nama, NILAI, SKPD, status, penyusutan
+                          ← dipegang ledger & laporan keuangan
+    aset_bidang_tanah   → luas, koordinat, nomor/tanggal/jenis hak, sertifikat
+                          ← dipegang GIS. SATU BARIS = SATU SERTIFIKAT
+                            (kalau belum bersertifikat: satu hamparan utuh)
+
+**Semua turunan DIHITUNG SAAT TAMPIL, tak pernah disimpan balik:** luas =
+Σ bidang bila semua bidang berluas (kalau tidak → `aset.luas` + badge);
+dokumen = DAFTAR sertifikat; koordinat = titik semua bidang, jatuh ke titik
+register kalau tak ada bidang berkoordinat.
+
+⚠️ **`KelolaBidangPanel` TIDAK BOLEH LAGI MENULIS KE `aset`.** Sampai
+2026-08-20 menyimpan bidang melakukan dua hal, dua-duanya merusak:
+
+- **Menyalin dokumen & jenis hak ke kolom register.** Kolom itu muat SATU
+  nilai, sementara satu tanah bisa punya banyak sertifikat — **159 dari 195**
+  tanah berbidang punya nomor sertifikat yang berbeda-beda, dan yang tercatat
+  selalu "bidang yang TERAKHIR disimpan". Cache-nya selalu cocok dgn salah satu
+  bidang (0 yang nyasar), dan justru itu yang menipu: kelihatan sah. Berkas
+  kerja Bidang Aset malah menggabung SEMUA nomor dengan koma — bentuk yang
+  benar, dan mustahil ditampung satu kolom. Keluarga masalah yang sama dgn
+  cache `aset.pemanfaatan`.
+- **Meng-NULL-kan `aset.latitude/longitude`** begitu satu bidang punya titik.
+  Ini yang paling berbahaya: **2.230 dari 2.739** tanah aktif titiknya HANYA
+  ada di register. Untuk tanah ber-**54** bidang, memberi titik pada SATU
+  bidang memusnahkan titik register — 53 sisanya tak bertitik. Kalau bidang itu
+  lalu dihapus, tanahnya kehilangan titik SAMA SEKALI, tanpa jalan pulang.
+
+Penyaring tampilan di GIS (`bidangBerkoordinat.length > 0 ? titik bidang :
+titik register`) **sudah benar sejak awal** — yang dicabut cuma penulisan
+baliknya. Kolom register **tetap dipertahankan selamanya**: ia cadangan sah
+untuk tanah yang belum dipetakan (2.544 dari 2.739 belum punya bidang).
+
+⚠️ **VISIBILITAS BIDANG SELALU IKUT ASETNYA — bidang tak punya status sendiri,
+dan JANGAN dibuatkan.** Itu yang membuat dua kasus di bawah beres tanpa
+mekanisme baru (diverifikasi ke kode 2026-08-20):
+
+- **Pemecahan Barang**: induk → `status='dihapus'` → bidangnya jadi INERT (GIS
+  cuma menarik aset `status='aktif'`; entri milik aset di luar daftar tak
+  pernah terbaca). Pecahan lahir tanpa bidang → operator isi baru. **Batal
+  pemecahan** → induk `aktif` lagi → bidang lamanya MUNCUL UTUH.
+- **Reklas keluar 1.3.1**: `aset.kode` berubah → bidang inert karena GIS
+  menyaring `kode LIKE '1.3.1.%'`. `batalReklas` memulihkan `kode` dari
+  `payload.kode_lama`, jadi bidangnya hidup lagi sendiri.
+  ⚠️ Karena itu bidang **JANGAN benar-benar di-DELETE saat reklas** — hasilnya
+  di layar sama (hilang dari GIS) tapi datanya utuh & batal reklas bisa
+  memulihkannya. Yang layak ditambah cuma PERINGATAN saat mereklas tanah yang
+  punya bidang bersertifikat.
+
+**Bentuk data berkas kerja (rujukan untuk impor):** 🟢 Bersertipikat 1.574
+register / 3.249 bidang (rata² 2,06, maks 54, semua bernomor) · 🟠 Belum
+bersertipikat 1.158 register / 1.161 bidang (rata² 1,00, 1.160 tanpa nomor).
+Warna baris KEMBAR 1:1 dgn kolom "Status Sertipikat (Register)" — **baca
+kolomnya, jangan warnanya**; warna gampang berubah kalau berkasnya disunting.
+Sheet Rekap menegaskan invariannya: Σ luas & Σ nilai register = bidang
+(15.361.089,69 m² / Rp1.156.309.715.727,16), dengan **95 register** yang masih
+selisih (−98.471 … +45.515 m²) terdaftar di sheet "Cek Selisih".
+⚠️ Berkas itu **tidak membawa koordinat sama sekali**, jadi impor tak akan
+menggeser satu titik pun — tapi justru karena sesudahnya JAUH lebih banyak
+tanah punya bidang, pencabutan NULL di atas wajib lebih dulu.
+
 ## Foto barang (Supabase Storage)
 
 Bucket `aset-foto` (privat, limit 10MB, hanya image/jpeg|png|webp — lihat migrasi
