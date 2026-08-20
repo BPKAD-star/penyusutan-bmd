@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
 import { RKBMD_JENIS, nilaiItemRkbmd, type RkbmdPaket } from '@/lib/rkbmd'
-import { fetchCalonTtd, calonTtdAwal, labelAsalTtd, type CalonTtd } from '@/lib/penandaTangan'
+import { fetchCalonTtd, calonTtdAwal, labelAsalTtd, type CalonTtd, sebutanKepala } from '@/lib/penandaTangan'
 
 const KABUPATEN = 'Kediri'
 const JENIS_LABEL: Record<string, string> = Object.fromEntries(RKBMD_JENIS.map(j => [j.key, j.label]))
@@ -43,14 +43,6 @@ const KEY_TTD = 'bmd_rkbmd_ttd_sekab'
  *  mencetak lembar beberapa sub-OPD, dan satu kunci bersama akan membuat
  *  pilihan SKPD terakhir bocor ke lembar SKPD berikutnya. */
 const keyTtdSkpd = (skpdId: number) => `bmd_rkbmd_ttd_skpd_${skpdId}`
-
-/** Definitif → "Kepala <SKPD>"; Plt → "Plt. Kepala <SKPD>" (keputusan user
- *  2026-08-13). Ditulis SEKALI di sini karena dipakai blok tanda tangan
- *  sekaligus pratinjau di pop-up — dua tempat yang wajib berbunyi sama persis,
- *  kalau tidak operator menyetujui satu kalimat lalu yang tercetak kalimat lain. */
-function sebutanKepala(plt: boolean, namaSkpd: string): string {
-  return `${plt ? 'Plt. ' : ''}Kepala ${namaSkpd}`
-}
 
 type TtdTersimpan = { id?: string; plt?: boolean }
 

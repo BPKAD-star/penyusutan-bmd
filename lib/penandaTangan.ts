@@ -123,6 +123,22 @@ export async function fetchCalonTtd(
 }
 
 /** Keterangan asal wewenang, untuk label dropdown. Kosong utk pegawai sendiri. */
+/**
+ * Definitif → "Kepala <SKPD>"; Plt → "Plt. Kepala <SKPD>" (keputusan user
+ * 2026-08-13).
+ *
+ * Ditulis SEKALI di sini karena dipakai blok tanda tangan SEKALIGUS pratinjau
+ * di pop-up pemilihnya — dua tempat yang wajib berbunyi sama persis, kalau
+ * tidak operator menyetujui satu kalimat lalu yang tercetak kalimat lain.
+ * Sejak 2026-08-20 dipakai DUA lembar cetak (RKBMD per-SKPD & Laporan
+ * Penerimaan BMD), jadi ia naik dari berkas halaman ke modul ini — salinan
+ * kedua yang menyimpang akan membuat dua lembar resmi menyebut jabatan yang
+ * berbeda untuk orang yang sama.
+ */
+export function sebutanKepala(plt: boolean, namaSkpd: string): string {
+  return `${plt ? 'Plt. ' : ''}Kepala ${namaSkpd}`
+}
+
 export function labelAsalTtd(c: CalonTtd): string {
   if (c.sumber === 'sendiri') return ''
   if (c.sumber === 'rangkap') return ` · merangkap dari ${c.asal || 'SKPD lain'} (Plt.)`

@@ -4,7 +4,7 @@
 // yang berbunyi "Kepala X" untuk pejabat yang sebenarnya cuma Plt. adalah cacat
 // dokumen resmi, dan tak ada satu pun proses di aplikasi yang akan menangkapnya.
 import { describe, it, expect } from 'vitest'
-import { rantaiKeAtas, calonTtdAwal, labelAsalTtd, type CalonTtd, type SkpdNode } from '@/lib/penandaTangan'
+import { rantaiKeAtas, calonTtdAwal, labelAsalTtd, sebutanKepala, type CalonTtd, type SkpdNode } from '@/lib/penandaTangan'
 
 const POHON = new Map<number, SkpdNode>([
   [1, { id: 1, nama: 'Dinas Pendidikan', parent_id: null }],
@@ -90,5 +90,21 @@ describe('labelAsalTtd', () => {
   it('induk menyebut SKPD induknya', () => {
     expect(labelAsalTtd(calon({ id: 'a', sumber: 'induk', asal: 'Dinas Pendidikan' })))
       .toContain('Dinas Pendidikan')
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe('sebutanKepala — dipakai DUA lembar cetak resmi', () => {
+  // Naik dari app/cetak/rkbmd ke modul ini 2026-08-20 karena lembar Laporan
+  // Penerimaan BMD ikut memakainya. Salinan kedua yang menyimpang akan membuat
+  // dua dokumen resmi menyebut jabatan BERBEDA untuk orang yang sama.
+  it('definitif vs Plt.', () => {
+    expect(sebutanKepala(false, 'Dinas Pekerjaan Umum')).toBe('Kepala Dinas Pekerjaan Umum')
+    expect(sebutanKepala(true, 'Dinas Pekerjaan Umum')).toBe('Plt. Kepala Dinas Pekerjaan Umum')
+  })
+
+  it('Plt. hanya menambah awalan — sisanya identik', () => {
+    const nama = 'UPTD Puskesmas Kras'
+    expect(sebutanKepala(true, nama)).toBe(`Plt. ${sebutanKepala(false, nama)}`)
   })
 })

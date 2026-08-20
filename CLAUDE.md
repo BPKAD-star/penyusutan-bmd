@@ -2658,6 +2658,11 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   (Jumlah/Satuan, Kondisi, Tahun Perolehan, Tanggal BAST); kelegaannya
   dialihkan ke kolom ber-isi panjang (uraian, spesifikasi, pihak, no. BAST,
   keterangan).
+  ⚠️ **Kolom NIBAR 11,5% + font 6,5px — jangan dipersempit.** Potongan PERTAMA
+  (26 digit) wajib muat SEBARIS; versi 9%/7,5px membuatnya membungkus sendiri
+  lebih dulu sehingga `<br/>` di batas segmen menghasilkan **TIGA** baris,
+  persis yang hendak dihindari. Hitungannya: lebar cetak A4 landscape ±1047 px,
+  11,5% ≈ 120 px, dikurangi padding ±8 px; 26 digit @6,5px ≈ 94 px.
   **NIBAR dipenggal 2 baris di BATAS SEGMEN** lewat `pecahNibar()`
   (lib/kodeRegister.ts): 26 digit pertama `[12][01|02][3506][SKPD 14][tahun 4]`,
   sisanya `[kode barang 12][urut 7]` — jadi baris kedua selalu mulai dari kode
@@ -2688,10 +2693,35 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   **Dua tanggal di lembar ini BEDA & jangan disamakan**: "Tahun Perolehan" =
   `aset.tgl_perolehan` (kapan barang DIBUAT — bisa jauh sebelum BAST untuk
   barang bekas), "Tanggal BAST" = tanggal baris ledgernya.
-  Blok tanda tangan **dibiarkan bertitik-titik** — aplikasi ini tak menyimpan
-  siapa yang meneken lembar ini, dan mengarang nama di dokumen yang akan
-  ditandatangani lebih berbahaya daripada titik-titik yang jelas belum diisi
-  (aturan yang sama dgn lembar RKBMD & Standar Harga).
+  **Penanda tangan DIPILIH operator + tanggal bisa disetel** (permintaan user
+  2026-08-20), pola yang sama dgn lembar RKBMD per-SKPD & Standar Harga:
+  dropdown nama + Definitif/Plt + `<input type="date">`, disimpan di
+  `localStorage` **per SKPD** (`bmd_perolehan_ttd_skpd_<id>`) supaya cetak ulang
+  menghasilkan lembar yang SAMA — lembar ini diteken lalu dipindai, jadi versi
+  kedua yang berbeda bikin kacau. Bisa dipaksa lewat `?ttd=<id>&plt=1&tgl=`.
+  ⚠️ Calonnya dari **`fetchCalonTtd`**, BUKAN `admin_pegawai` ber-`.eq('skpd_id')`
+  — aturan yang sudah tertulis untuk lembar per-SKPD baru: dari 816 SKPD hanya
+  57 yang punya pegawai berjabatan "Kepala" & 756 di antaranya sub-SKPD, jadi
+  query polos membuat lembar UPTD/Bidang nyaris selalu kosong dan kepala yang
+  MERANGKAP tak terbaca sama sekali. Gagal memuatnya tak menjatuhkan lembar —
+  blok tanda tangan tinggal bertitik-titik, keadaan yang memang sah di sini.
+  **Definitif/Plt DITANYAKAN, tak ditebak**: statusnya tidak ada di
+  `admin_pegawai` maupun di mana pun; `pltDisarankan` cuma menaruh centang awal.
+  Mengganti orang ikut memindahkan centangnya — kalau tidak, "Plt." menempel ke
+  kepala definitif hanya karena pilihan sebelumnya orang yang merangkap.
+  Yang **belum dipilih tetap bertitik-titik** — mengarang nama di dokumen yang
+  akan ditandatangani lebih berbahaya daripada titik-titik yang jelas belum
+  diisi. Baris di bawah nama = **NIP, bukan `jabatan` pegawainya**: kalau
+  jabatan, "Kepala <SKPD>" tercetak dua kali beruntun & begitu Plt. dipilih
+  keduanya saling bertentangan (pelajaran lembar RKBMD).
+  ⚠️ `sebutanKepala()` **pindah ke lib/penandaTangan.ts** (2026-08-20) karena
+  kini dipakai DUA lembar cetak; salinan kedua yang menyimpang akan membuat dua
+  dokumen resmi menyebut jabatan berbeda untuk orang yang sama. Dikunci
+  lib/penandaTangan.test.ts.
+  Tanggal diurai manual (`tglPanjang`), SENGAJA bukan
+  `new Date(s).toLocaleDateString`: `new Date('YYYY-MM-DD')` dibaca sbg tengah
+  malam UTC, jadi di zona negatif tanggalnya mundur sehari — lembar bertanda
+  tangan tak boleh bergeser tanggalnya karena zona waktu peramban.
 
 - **`kondisi_barang` ikut di form input awal, bukan cuma menu Koreksi**
   (permintaan user 2026-08-04): ditaruh di KETIGA template `GOLONGAN_FIELDS`

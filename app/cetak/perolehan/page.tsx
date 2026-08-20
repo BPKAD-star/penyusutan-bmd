@@ -35,6 +35,10 @@ import { createClient } from '@/lib/supabase/client'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import { formatRupiah } from '@/lib/export'
 import { pecahNibar } from '@/lib/kodeRegister'
+import {
+  fetchCalonTtd, calonTtdAwal, labelAsalTtd, sebutanKepala,
+  type CalonTtd, type SkpdNode,
+} from '@/lib/penandaTangan'
 
 const KABUPATEN = 'Kediri'
 const PROVINSI = 'Jawa Timur'
@@ -95,6 +99,47 @@ const tglID = (s: string | null | undefined) => {
   return y && m && d ? `${d}/${m}/${y}` : s
 }
 
+const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+
+/**
+ * '2026-08-20' → '20 Agustus 2026'.
+ *
+ * Diurai manual, SENGAJA bukan `new Date(s).toLocaleDateString`: `new Date`
+ * membaca 'YYYY-MM-DD' sebagai tengah malam UTC, jadi di zona negatif
+ * tanggalnya mundur sehari — lembar bertanda tangan tak boleh bergeser
+ * tanggalnya hanya karena zona waktu peramban.
+ */
+function tglPanjang(s: string): string {
+  const [y, m, d] = (s || '').slice(0, 10).split('-')
+  const bln = BULAN[Number(m) - 1]
+  return y && bln && d ? `${Number(d)} ${bln} ${y}` : ''
+}
+
+const todayStr = () => {
+  const t = new Date()
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+}
+
+/** Pilihan penanda tangan DIPISAH PER SKPD — satu operator bisa mencetak lembar
+ *  beberapa sub-OPD, dan satu kunci bersama akan membuat pilihan SKPD terakhir
+ *  bocor ke lembar SKPD berikutnya (pola `bmd_rkbmd_ttd_skpd_<id>`).
+ *  Preferensi tampilan, BUKAN gerbang wewenang. */
+const keyTtd = (skpdId: number) => `bmd_perolehan_ttd_skpd_${skpdId}`
+type TtdTersimpan = { id?: string; plt?: boolean; tgl?: string }
+
+/** Isi localStorage itu data dari luar program (versi lama, suntingan manual,
+ *  tab lain). Gagal mengurainya cukup berarti "belum pernah memilih" — jangan
+ *  sampai menjatuhkan halaman cetak. */
+function bacaTtd(skpdId: number): TtdTersimpan | null {
+  try {
+    const v = localStorage.getItem(keyTtd(skpdId))
+    return v ? (JSON.parse(v) as TtdTersimpan) : null
+  } catch {
+    return null
+  }
+}
+
 /** '2026-S1' → 'SEMESTER I'; kosong → 'AKHIR TAHUN' (seluruh periode). */
 function labelPeriode(periode: string): { judul: string; tahun: string } {
   if (!periode) return { judul: 'AKHIR TAHUN', tahun: String(new Date().getFullYear()) }
@@ -110,6 +155,11 @@ export default function CetakPerolehanPage() {
   const [skpd, setSkpd] = useState<{ kode: string; nama: string } | null>(null)
   const [jenis, setJenis] = useState('hibah_masuk')
   const [periode, setPeriode] = useState('')
+  const [skpdId, setSkpdId] = useState<number | null>(null)
+  const [calon, setCalon] = useState<CalonTtd[]>([])
+  const [ttdId, setTtdId] = useState('')
+  const [plt, setPlt] = useState(false)
+  const [tglTtd, setTglTtd] = useState(todayStr())
 
   useEffect(() => {
     void (async () => {
@@ -134,7 +184,33 @@ export default function CetakPerolehanPage() {
         const ini = semua.find(x => x.id === sk)
         if (!ini) throw new Error(`SKPD #${sk} tidak ditemukan.`)
         setSkpd({ kode: ini.kode_skpd || '', nama: ini.nama })
+        setSkpdId(sk)
         const desc = descendantsOf(semua, sk)
+
+        // ── Calon penanda tangan ────────────────────────────────────────────
+        // ⚠️ WAJIB `fetchCalonTtd`, bukan `admin_pegawai` ber-`.eq('skpd_id')`
+        // (CLAUDE.md): dari 816 SKPD hanya 57 yang punya pegawai berjabatan
+        // "Kepala", sementara 756 di antaranya sub-SKPD — query polos membuat
+        // lembar UPTD/Bidang nyaris selalu tak menemukan siapa pun, dan kepala
+        // yang MERANGKAP tak terbaca sama sekali.
+        // Gagal memuatnya TIDAK menjatuhkan lembar: blok tanda tangan tinggal
+        // bertitik-titik, dan itu memang keadaan sah di sini.
+        const byId = new Map<number, SkpdNode>(
+          semua.map(x => [x.id, { id: x.id, nama: x.nama, parent_id: x.parent_id }]))
+        let daftar: CalonTtd[] = []
+        try { daftar = await fetchCalonTtd(supabase, sk, byId) } catch { daftar = [] }
+        setCalon(daftar)
+
+        // URL menang atas simpanan; simpanan menang atas tebakan. Tebakannya
+        // sendiri cuma SARAN — status Definitif/Plt tak ada di data mana pun.
+        const simpan = bacaTtd(sk)
+        const awal = calonTtdAwal(daftar)
+        const dariUrl = q.get('ttd')
+        const idTerpilih = dariUrl || simpan?.id || awal?.id || ''
+        setTtdId(idTerpilih)
+        setPlt(q.get('plt') === '1' ? true
+          : simpan?.plt ?? (daftar.find(c => c.id === idTerpilih)?.pltDisarankan ?? false))
+        setTglTtd(q.get('tgl') || simpan?.tgl || todayStr())
 
         // ── Baris transaksi ────────────────────────────────────────────────
         // Bentuk query-nya SAMA dgn components/LaporanPerolehan.tsx, jadi ia
@@ -175,6 +251,16 @@ export default function CetakPerolehanPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const ttd = calon.find(c => c.id === ttdId) || null
+
+  /** Simpan supaya cetak ulang menghasilkan lembar yang SAMA — lembar ini
+   *  ditandatangani lalu dipindai, jadi versi kedua yang berbeda bikin kacau. */
+  function simpanTtd(next: Partial<TtdTersimpan>) {
+    if (skpdId == null) return
+    const v: TtdTersimpan = { id: ttdId, plt, tgl: tglTtd, ...next }
+    try { localStorage.setItem(keyTtd(skpdId), JSON.stringify(v)) } catch { /* kuota penuh / mode privat — abaikan */ }
+  }
+
   const info = JENIS_INFO[jenis] || JENIS_INFO.hibah_masuk
   const { judul: judulPeriode, tahun } = labelPeriode(periode)
   const total = rows.reduce((s, r) => s + (r.nilai || 0), 0)
@@ -191,7 +277,47 @@ export default function CetakPerolehanPage() {
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>
 
-      <div className="max-w-[1400px] mx-auto mb-3 flex justify-end no-print px-4">
+      <div className="max-w-[1400px] mx-auto mb-3 flex flex-wrap items-center justify-end gap-3 no-print px-4">
+        {siap && !gagal && (
+          <>
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Tanggal:
+              <input type="date" className="select-filter text-sm" value={tglTtd}
+                onChange={e => { setTglTtd(e.target.value); simpanTtd({ tgl: e.target.value }) }} />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Penanda tangan:
+              <select className="select-filter text-sm max-w-sm" value={ttdId}
+                onChange={e => {
+                  const v = e.target.value
+                  // Ganti orang → centang Plt ikut pindah. Kalau tidak, "Plt."
+                  // menempel ke kepala definitif hanya karena pilihan
+                  // sebelumnya orang yang merangkap.
+                  const p = calon.find(c => c.id === v)?.pltDisarankan ?? false
+                  setTtdId(v); setPlt(p); simpanTtd({ id: v, plt: p })
+                }}>
+                <option value="">— belum dipilih (dibiarkan bertitik-titik) —</option>
+                {calon.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.nama}{c.jabatan ? ` — ${c.jabatan}` : ''}{labelAsalTtd(c)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {/* Definitif/Plt DITANYAKAN, tak ditebak diam-diam: statusnya tidak
+                ada di `admin_pegawai` maupun di mana pun, jadi tak ada sumber
+                data yang bisa menjawabnya. `pltDisarankan` cuma menaruh centang
+                awal di tempat yang paling sering benar. */}
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Status:
+              <select className="select-filter text-sm" value={plt ? 'plt' : 'definitif'}
+                onChange={e => { const v = e.target.value === 'plt'; setPlt(v); simpanTtd({ plt: v }) }}>
+                <option value="definitif">Definitif</option>
+                <option value="plt">Plt.</option>
+              </select>
+            </label>
+          </>
+        )}
         <button onClick={() => window.print()} disabled={!siap || !!gagal} className="btn-primary text-sm">
           🖨 Cetak / Simpan PDF
         </button>
@@ -235,20 +361,26 @@ export default function CetakPerolehanPage() {
                   dialihkan ke kolom yang isinya panjang: uraian, spesifikasi,
                   pihak, no. BAST, & keterangan. */}
               <colgroup>
-                <col className="w-[9%]" />{/* Kode Barang / Uraian */}
-                <col className="w-[9%]" />{/* Spesifikasi Nama Barang */}
-                <col className="w-[9%]" />{/* NIBAR — 2 baris, 26+19 digit */}
-                <col className="w-[9%]" />{/* Spesifikasi Lainnya */}
+                <col className="w-[10%]" />{/* Kode Barang / Uraian */}
+                <col className="w-[10%]" />{/* Spesifikasi Nama Barang */}
+                {/* ⚠️ 11,5% + font 6,5px: potongan pertama NIBAR 26 DIGIT wajib
+                    muat SEBARIS. Versi 9%/7,5px membuatnya membungkus sendiri
+                    lebih dulu, jadi `<br/>` di batas segmen menghasilkan TIGA
+                    baris — persis yang hendak dihindari. Hitungannya: lebar
+                    cetak A4 landscape ±1047px, 11,5% ≈ 120px, dikurangi padding
+                    ±8px; 26 digit @6,5px ≈ 94px, sisa ±18px. */}
+                <col className="w-[11.5%]" />{/* NIBAR — 26+19 digit, 2 baris */}
+                <col className="w-[6%]" />{/* Spesifikasi Lainnya */}
                 <col className="w-[3.5%]" />{/* Jumlah + Satuan, ditumpuk */}
-                <col className="w-[7.5%]" />{/* Nilai Satuan */}
-                <col className="w-[7.5%]" />{/* Total Nilai */}
-                <col className="w-[4%]" />{/* Kondisi */}
-                <col className="w-[8%]" />{/* Sumber Dana */}
-                <col className="w-[10%]" />{/* Pihak */}
+                <col className="w-[7%]" />{/* Nilai Satuan */}
+                <col className="w-[7%]" />{/* Total Nilai */}
+                <col className="w-[3.5%]" />{/* Kondisi */}
+                <col className="w-[7%]" />{/* Sumber Dana */}
+                <col className="w-[9%]" />{/* Pihak */}
                 <col className="w-[4.5%]" />{/* Tahun Perolehan */}
                 <col className="w-[4.5%]" />{/* Tanggal BAST */}
-                <col className="w-[7%]" />{/* Nomor BAST */}
-                <col className="w-[7.5%]" />{/* Keterangan */}
+                <col className="w-[8.5%]" />{/* Nomor BAST */}
+                <col className="w-[8%]" />{/* Keterangan */}
               </colgroup>
               <thead>
                 <tr className="text-center font-semibold">
@@ -272,7 +404,7 @@ export default function CetakPerolehanPage() {
                         selalu mulai dari kode barangnya — lihat `pecahNibar`.
                         NIBAR warisan e-BMD yang susunannya beda tak bisa dinilai
                         → ditampilkan utuh dgn `break-all`, bukan ditebak. */}
-                    <td className="border border-black px-1 py-0.5 break-all">
+                    <td className="border border-black px-1 py-0.5 break-all text-[6.5px] tracking-tight">
                       {(() => {
                         const pecah = pecahNibar(r.aset!.nibar)
                         return pecah
@@ -322,17 +454,20 @@ export default function CetakPerolehanPage() {
               </tbody>
             </table>
 
-            {/* Blok tanda tangan SENGAJA bertitik-titik. Aplikasi ini tak
-                menyimpan siapa yang menandatangani lembar ini, dan mengarang
-                nama di dokumen yang akan diteken jauh lebih berbahaya daripada
+            {/* Penanda tangan DIPILIH operator, bukan ditebak diam-diam — dan
+                yang belum dipilih DIBIARKAN bertitik-titik. Mengarang nama di
+                dokumen yang akan ditandatangani jauh lebih berbahaya daripada
                 titik-titik yang jelas belum diisi (aturan yang sama dgn lembar
-                RKBMD & Standar Harga). */}
+                RKBMD & Standar Harga). Baris di bawah nama = NIP, BUKAN
+                `jabatan` pegawainya: kalau jabatan, "Kepala <SKPD>" tercetak
+                dua kali beruntun & begitu Plt. dipilih keduanya bertentangan. */}
             <div className="flex justify-end mt-10 text-[11px]">
-              <div className="text-center w-64">
-                <p>Kabupaten {KABUPATEN}</p>
+              <div className="text-center w-72">
+                <p>Kabupaten {KABUPATEN}, {tglPanjang(tglTtd)}</p>
+                <p>{sebutanKepala(plt, skpd?.nama || '…………………………')}</p>
                 <div className="h-16" />
-                <p>(...................................)</p>
-                <p>NIP. ...........................</p>
+                <p className="font-semibold underline">{ttd?.nama || '(...................................)'}</p>
+                <p>NIP. {ttd?.nip || '...........................'}</p>
               </div>
             </div>
           </>
