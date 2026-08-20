@@ -2940,7 +2940,7 @@ pin-nya muncul jauh di **LAUT dekat Filipina**.
 ## TANAH: bidang MENANG saat tampil, register BERTAHAN sebagai cadangan
 
 Keputusan user 2026-08-20, sesudah menelaah berkas kerja Bidang Aset
-("register vs bidang tanah update.xlsx", 2.732 register / 4.410 bidang).
+("register vs bidang tanah update.xlsx", 2.732 register / 4.407 bidang).
 Menetapkan sekali untuk semua atribut fisik tanah — **luas, koordinat, dan
 dokumen kepemilikan** — yang selama ini punya DUA rumah dan saling menimpa.
 
@@ -2995,14 +2995,20 @@ mekanisme baru (diverifikasi ke kode 2026-08-20):
   memulihkannya. Yang layak ditambah cuma PERINGATAN saat mereklas tanah yang
   punya bidang bersertifikat.
 
-**Bentuk data berkas kerja (rujukan untuk impor):** 🟢 Bersertipikat 1.574
-register / 3.249 bidang (rata² 2,06, maks 54, semua bernomor) · 🟠 Belum
-bersertipikat 1.158 register / 1.161 bidang (rata² 1,00, 1.160 tanpa nomor).
+**Bentuk data berkas kerja (rujukan untuk impor):** baris **2..4408** =
+**4.407 bidang** / 2.732 register. 🟢 Bersertipikat 1.574 register / **3.249**
+bidang (rata² 2,06, maks **54**, SEMUA bernomor) · 🟠 Belum bersertipikat
+1.158 register / **1.158** bidang — tepat SATU bidang per register, semuanya
+tanpa nomor (bidang = satu hamparan utuh selama belum ada sertifikatnya).
+Σ luas bidang = 15.361.089,69 m², sama persis dgn register; **95 register**
+masih selisih (−98.471 … +45.515 m²), terdaftar di sheet "Cek Selisih".
+⚠️ **Baris 4409–4413 BUKAN data — itu baris TOTAL di bawah tabel** (4410 =
+subtotal bersertipikat, 4411 = grand total, 4413 = angka kerja). Pemindai yang
+membaca sampai `ws.max_row` akan menghitungnya sebagai bidang & menghasilkan
+4.410/3.250/1.160 — salah, dan bedanya kecil sehingga gampang lolos. Rentang
+`M2:M4408` di sheet Rekap justru yang BENAR; berhenti di 4408.
 Warna baris KEMBAR 1:1 dgn kolom "Status Sertipikat (Register)" — **baca
 kolomnya, jangan warnanya**; warna gampang berubah kalau berkasnya disunting.
-Sheet Rekap menegaskan invariannya: Σ luas & Σ nilai register = bidang
-(15.361.089,69 m² / Rp1.156.309.715.727,16), dengan **95 register** yang masih
-selisih (−98.471 … +45.515 m²) terdaftar di sheet "Cek Selisih".
 ⚠️ Berkas itu **tidak membawa koordinat sama sekali**, jadi impor tak akan
 menggeser satu titik pun — tapi justru karena sesudahnya JAUH lebih banyak
 tanah punya bidang, pencabutan NULL di atas wajib lebih dulu.
