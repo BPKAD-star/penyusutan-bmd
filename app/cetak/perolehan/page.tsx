@@ -1,0 +1,296 @@
+'use client'
+// ============================================================================
+// Cetak "Laporan Penerimaan BMD Berupa Aset Tetap Dengan Cara Perolehan Dari …"
+// Standalone (tanpa sidebar), A4 landscape.
+//   ?jenis=hibah_masuk|tukar_menukar|hasil_inventarisasi|perolehan_lainnya|pengadaan
+//   &skpd=<id>                (WAJIB — lihat di bawah)
+//   &periode=YYYY-Sx          (kosong = semua periode)
+//
+// ⚠️ SUSUNAN KOLOM BERTUMPUK, BUKAN DATAR (keputusan user 2026-08-20). Format
+// bakunya 16 kolom datar; di sini "Kode Barang + Uraian Barang" ditumpuk dalam
+// satu sel dan "Jumlah + Satuan" digabung ("1 Unit") → 14 kolom. Bukan selera
+// tata letak: NIBAR panjangnya 45 DIGIT, dan pada A4 landscape (lebar cetak
+// ~277 mm) 16 kolom menyisakan ~17 mm per kolom — NIBAR-nya pasti terpotong
+// atau memaksa font di bawah batas terbaca. Repo ini sudah pernah kena:
+// lembar RKBMD 13 kolom terbukti mustahil muat di lebar 215 mm, makanya
+// dipindah ke F4. Di sini kertasnya dipertahankan A4 (permintaan user), jadi
+// yang dikompromikan jumlah kolomnya.
+//
+// ⚠️ WAJIB PER-SKPD. Kepala lembar memuat "<kode> - <nama SKPD>", jadi satu
+// berkas hanya sah untuk satu SKPD. Tombol di menu Pelaporan dimatikan selama
+// SKPD belum dipilih — bukan dibiarkan menghasilkan lembar tanpa identitas.
+//
+// ⚠️ FAIL-CLOSED. Baris yang dibatalkan (`batal_*` cara perolehan /
+// `koreksi_pencatatan_ganda`) WAJIB dibuang lewat `fetchVoidedAsetIds`; kalau
+// pemeriksaannya gagal, lembarnya TIDAK dirakit sama sekali. Lembar yang
+// ditandatangani dan dikirim ke inspektorat/BPK jauh lebih mahal daripada
+// halaman yang menolak tampil (CLAUDE.md, modul pelaporan).
+// ============================================================================
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { formatRupiah } from '@/lib/export'
+
+const KABUPATEN = 'Kediri'
+const PROVINSI = 'Jawa Timur'
+
+/** Judul & label kolom pihak, per cara perolehan. */
+const JENIS_INFO: Record<string, { judul: string; pihak: string }> = {
+  hibah_masuk: { judul: 'HIBAH', pihak: 'Pihak Pemberi Hibah' },
+  tukar_menukar: { judul: 'TUKAR MENUKAR', pihak: 'Pihak Tukar Menukar' },
+  hasil_inventarisasi: { judul: 'HASIL INVENTARISASI', pihak: 'Pihak Terkait' },
+  perolehan_lainnya: { judul: 'PEROLEHAN LAINNYA', pihak: 'Pihak Terkait' },
+  pengadaan: { judul: 'PENGADAAN', pihak: 'Penyedia' },
+}
+
+type SkpdRow = { id: number; parent_id: number | null }
+
+// Node + SEMUA turunannya — samakan dgn SkpdCombobox.descendants & halaman
+// cetak Laporan Pengadaan (URL cuma membawa satu id, bukan daftar).
+function descendantsOf(all: SkpdRow[], root: number): number[] {
+  const childrenOf = new Map<number, number[]>()
+  for (const s of all) {
+    if (s.parent_id == null) continue
+    const a = childrenOf.get(s.parent_id) || []; a.push(s.id); childrenOf.set(s.parent_id, a)
+  }
+  const out: number[] = []
+  const stack = [root]
+  const seen = new Set<number>()
+  while (stack.length) {
+    const id = stack.pop()!
+    if (seen.has(id)) continue
+    seen.add(id); out.push(id)
+    for (const c of childrenOf.get(id) || []) stack.push(c)
+  }
+  return out
+}
+
+type Baris = {
+  id: number
+  tanggal: string
+  nilai: number
+  keterangan: string | null
+  aset_id: string | null
+  header: { no_sk: string; payload: { pihak?: string; sumber_dana?: string } | null } | null
+  aset: {
+    kode: string; uraian_barang: string | null; nama_barang: string | null; nibar: string | null
+    spesifikasi_lainnya: string | null; satuan: string | null; jumlah: number | null
+    harga_satuan: number | null; kondisi_barang: string | null; tgl_perolehan: string | null
+  } | null
+}
+
+const SEL = 'id,tanggal,nilai,keterangan,aset_id,header:header_id(no_sk,payload),' +
+  'aset:aset_id(kode,uraian_barang,nama_barang,nibar,spesifikasi_lainnya,satuan,jumlah,harga_satuan,kondisi_barang,tgl_perolehan)'
+
+/** '2026-02-24' → '24/02/2026'. Kosong → '' (bukan 'Invalid Date'). */
+const tglID = (s: string | null | undefined) => {
+  if (!s) return ''
+  const [y, m, d] = s.slice(0, 10).split('-')
+  return y && m && d ? `${d}/${m}/${y}` : s
+}
+
+/** '2026-S1' → 'SEMESTER I'; kosong → 'AKHIR TAHUN' (seluruh periode). */
+function labelPeriode(periode: string): { judul: string; tahun: string } {
+  if (!periode) return { judul: 'AKHIR TAHUN', tahun: String(new Date().getFullYear()) }
+  const [th, smt] = periode.split('-')
+  return { judul: smt === 'S1' ? 'SEMESTER I' : smt === 'S2' ? 'SEMESTER II' : 'AKHIR TAHUN', tahun: th }
+}
+
+export default function CetakPerolehanPage() {
+  const supabase = createClient()
+  const [siap, setSiap] = useState(false)
+  const [gagal, setGagal] = useState('')
+  const [rows, setRows] = useState<Baris[]>([])
+  const [skpd, setSkpd] = useState<{ kode: string; nama: string } | null>(null)
+  const [jenis, setJenis] = useState('hibah_masuk')
+  const [periode, setPeriode] = useState('')
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const q = new URLSearchParams(window.location.search)
+        const jns = q.get('jenis') || 'hibah_masuk'
+        const per = q.get('periode') || ''
+        const sk = q.get('skpd') ? Number(q.get('skpd')) : null
+        setJenis(jns); setPeriode(per)
+        if (!sk) throw new Error('SKPD belum dipilih. Lembar ini memuat identitas SKPD di kepalanya, jadi wajib per-SKPD.')
+
+        // ── SKPD: identitas kepala lembar + subtree utk penyaringan ──────────
+        const semua: (SkpdRow & { nama: string; kode_skpd: string | null })[] = []
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await supabase.from('admin_skpd')
+            .select('id,parent_id,nama,kode_skpd').range(from, from + 999)
+          if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
+          if (!data || data.length === 0) break
+          semua.push(...(data as typeof semua))
+          if (data.length < 1000) break
+        }
+        const ini = semua.find(x => x.id === sk)
+        if (!ini) throw new Error(`SKPD #${sk} tidak ditemukan.`)
+        setSkpd({ kode: ini.kode_skpd || '', nama: ini.nama })
+        const desc = descendantsOf(semua, sk)
+
+        // ── Baris transaksi ────────────────────────────────────────────────
+        // Bentuk query-nya SAMA dgn components/LaporanPerolehan.tsx, jadi ia
+        // ikut dilayani partial index `idx_trx_perolehan_id` (20260820_03).
+        // Tanpa index itu, `ORDER BY id DESC LIMIT n` di atas filter `jenis`
+        // yang tak bisa jadi index-cond akan menyusuri seluruh ledger.
+        let qq = supabase.from('transaksi_bmd').select(SEL)
+          .eq('jenis', jns).order('id', { ascending: false })
+        if (per) qq = qq.eq('periode', per)
+        if (desc.length > 0) {
+          const list = desc.join(',')
+          qq = qq.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)
+        }
+        const { data: trx, error: trxErr } = await qq.limit(2000)
+        if (trxErr) throw new Error(trxErr.message)
+        const semuaBaris = ((trx as never as Baris[]) || []).filter(r => r.aset)
+
+        // ── Buang yang dianulir — TERSCOPE ke aset yang benar-benar ditanya ──
+        const voided = await fetchVoidedAsetIds(
+          supabase, [], semuaBaris.map(r => r.aset_id).filter((x): x is string => !!x))
+        setRows(semuaBaris.filter(r => !(r.aset_id && voided.has(r.aset_id))))
+      } catch (e) {
+        setGagal((e as Error).message)
+      } finally {
+        setSiap(true)
+      }
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const info = JENIS_INFO[jenis] || JENIS_INFO.hibah_masuk
+  const { judul: judulPeriode, tahun } = labelPeriode(periode)
+  const total = rows.reduce((s, r) => s + (r.nilai || 0), 0)
+
+  // Nama bawaan saat "Save as PDF" — satu-satunya cara menyetelnya dari halaman.
+  // Karakter terlarang Windows dibuang: nama SKPD boleh memuat garis miring.
+  useEffect(() => {
+    if (!skpd) return
+    const bersih = (t: string) => t.replace(/[\\/:*?"<>|]/g, '-').trim()
+    document.title = `Laporan Penerimaan ${info.judul}_${bersih(skpd.nama)}_${tahun}`
+  }, [skpd, info.judul, tahun])
+
+  return (
+    <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
+      <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>
+
+      <div className="max-w-[1400px] mx-auto mb-3 flex justify-end no-print px-4">
+        <button onClick={() => window.print()} disabled={!siap || !!gagal} className="btn-primary text-sm">
+          🖨 Cetak / Simpan PDF
+        </button>
+      </div>
+
+      <div className="max-w-[1400px] mx-auto bg-white p-6 shadow print:shadow-none print:p-0">
+        {!siap ? (
+          <p className="py-8 text-center text-gray-400 text-sm">Memuat…</p>
+        ) : gagal ? (
+          <p className="py-8 text-center text-red-600 text-sm">Gagal menyiapkan lembar: {gagal}</p>
+        ) : (
+          <>
+            <div className="text-center leading-tight mb-3">
+              <p className="font-bold text-[13px]">
+                LAPORAN PENERIMAAN BMD BERUPA ASET TETAP DENGAN CARA PEROLEHAN DARI {info.judul}
+              </p>
+              <p className="font-bold text-[13px]">INTRAKOMPTABEL DAN EKSTRAKOMPTABEL</p>
+              <p className="font-bold text-[13px]">{skpd?.kode ? `${skpd.kode} - ` : ''}{skpd?.nama}</p>
+              <p className="text-[13px]">{judulPeriode}</p>
+              <p className="text-[13px]">TAHUN {tahun}</p>
+            </div>
+
+            <table className="text-[11px] mb-2">
+              <tbody>
+                <tr><td className="pr-6">Provinsi</td><td>: Provinsi {PROVINSI}</td></tr>
+                <tr><td className="pr-6">Kabupaten / Kota</td><td>: Kabupaten {KABUPATEN}</td></tr>
+              </tbody>
+            </table>
+
+            {/* `table-fixed` + lebar per kolom: tanpa itu kolom NIBAR (45 digit)
+                melar mengikuti isinya lalu mendorong kolom lain keluar halaman —
+                pelajaran yang sama dgn lembar cetak Rekonsiliasi. */}
+            <table className="w-full table-fixed border-collapse text-[7.5px] leading-tight">
+              <colgroup>
+                <col className="w-[8%]" />{/* Kode Barang / Uraian */}
+                <col className="w-[8%]" />{/* Spesifikasi Nama Barang */}
+                <col className="w-[11%]" />{/* NIBAR — 45 digit, membungkus */}
+                <col className="w-[8%]" />{/* Spesifikasi Lainnya */}
+                <col className="w-[5%]" />{/* Jumlah Satuan */}
+                <col className="w-[8%]" />{/* Nilai Satuan */}
+                <col className="w-[8%]" />{/* Total Nilai */}
+                <col className="w-[5%]" />{/* Kondisi */}
+                <col className="w-[7%]" />{/* Sumber Dana */}
+                <col className="w-[9%]" />{/* Pihak */}
+                <col className="w-[6%]" />{/* Tahun Perolehan */}
+                <col className="w-[6%]" />{/* Tanggal BAST */}
+                <col className="w-[6%]" />{/* Nomor BAST */}
+                <col className="w-[5%]" />{/* Keterangan */}
+              </colgroup>
+              <thead>
+                <tr className="text-center font-semibold">
+                  {['Kode Barang / Uraian', 'Spesifikasi Nama Barang', 'NIBAR', 'Spesifikasi Lainnya',
+                    'Jumlah Satuan', 'Nilai Satuan', 'Total Nilai', 'Kondisi', 'Sumber Dana', info.pihak,
+                    'Tahun Perolehan', 'Tanggal BAST', 'Nomor BAST', 'Keterangan'].map(h => (
+                    <th key={h} className="border border-black px-1 py-1 align-middle">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} className="align-top">
+                    {/* Kode & Uraian DITUMPUK — inilah yang menghemat satu kolom. */}
+                    <td className="border border-black px-1 py-0.5 break-words">
+                      <div>{r.aset!.kode}</div>
+                      <div>{r.aset!.uraian_barang || ''}</div>
+                    </td>
+                    <td className="border border-black px-1 py-0.5 break-words">{r.aset!.nama_barang || ''}</td>
+                    {/* `break-all`: NIBAR itu satu untai 45 digit tanpa spasi —
+                        `break-words` saja tak akan memotongnya. */}
+                    <td className="border border-black px-1 py-0.5 break-all">{r.aset!.nibar || ''}</td>
+                    <td className="border border-black px-1 py-0.5 break-words">{r.aset!.spesifikasi_lainnya || ''}</td>
+                    <td className="border border-black px-1 py-0.5 text-center">
+                      {r.aset!.jumlah ?? 1} {r.aset!.satuan || ''}
+                    </td>
+                    <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(r.aset!.harga_satuan ?? r.nilai)}</td>
+                    <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(r.nilai)}</td>
+                    <td className="border border-black px-1 py-0.5 text-center break-words">{r.aset!.kondisi_barang || ''}</td>
+                    <td className="border border-black px-1 py-0.5 break-words">{r.header?.payload?.sumber_dana || ''}</td>
+                    <td className="border border-black px-1 py-0.5 break-words">{r.header?.payload?.pihak || ''}</td>
+                    {/* Tahun Perolehan = tanggal barang DIBUAT (bisa jauh sebelum
+                        BAST untuk barang bekas); Tanggal BAST = tanggal ia jadi
+                        milik pemkab. Dua tanggal berbeda — jangan disamakan. */}
+                    <td className="border border-black px-1 py-0.5 text-center">{tglID(r.aset!.tgl_perolehan)}</td>
+                    <td className="border border-black px-1 py-0.5 text-center">{tglID(r.tanggal)}</td>
+                    <td className="border border-black px-1 py-0.5 break-words">{r.header?.no_sk || ''}</td>
+                    <td className="border border-black px-1 py-0.5 break-words">{r.keterangan || ''}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr><td colSpan={14} className="border border-black px-1 py-3 text-center">Tidak ada penerimaan pada periode ini.</td></tr>
+                )}
+                <tr className="font-semibold">
+                  <td className="border border-black px-1 py-0.5">TOTAL</td>
+                  <td className="border border-black px-1 py-0.5" colSpan={5} />
+                  <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(total)}</td>
+                  <td className="border border-black px-1 py-0.5" colSpan={7} />
+                </tr>
+              </tbody>
+            </table>
+
+            {/* Blok tanda tangan SENGAJA bertitik-titik. Aplikasi ini tak
+                menyimpan siapa yang menandatangani lembar ini, dan mengarang
+                nama di dokumen yang akan diteken jauh lebih berbahaya daripada
+                titik-titik yang jelas belum diisi (aturan yang sama dgn lembar
+                RKBMD & Standar Harga). */}
+            <div className="flex justify-end mt-10 text-[11px]">
+              <div className="text-center w-64">
+                <p>Kabupaten {KABUPATEN}</p>
+                <div className="h-16" />
+                <p>(...................................)</p>
+                <p>NIP. ...........................</p>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -227,12 +227,33 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           <h1 className="text-2xl font-bold text-gray-900">{judul}</h1>
           <p className="text-gray-500 text-sm mt-1">{deskripsi}</p>
         </div>
-        {view !== 'permendagri' && (
-          <button onClick={view === 'list' ? handleExport : handleExportMatrix}
-            disabled={view === 'list' ? exporting : matrix.length === 0} className="btn-primary">
-            {view === 'list' ? (exporting ? 'Mengekspor...' : 'Export Excel') : 'Export Excel'}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Cetak lembar "Laporan Penerimaan BMD" (format Permendagri).
+              ⚠️ WAJIB per-SKPD: kepala lembarnya memuat "<kode> - <nama SKPD>",
+              jadi tanpa SKPD terpilih ia akan menghasilkan lembar tanpa
+              identitas. Dimatikan berikut ALASANNYA — tombol mati tanpa
+              keterangan itu kegagalan senyap: operator menekan, tak terjadi
+              apa-apa, dan tak punya cara tahu kenapa. */}
+          {view === 'list' && (
+            selSkpdId ? (
+              <a href={`/cetak/perolehan?jenis=${jenis}&skpd=${selSkpdId}${periode ? `&periode=${periode}` : ''}`}
+                target="_blank" rel="noreferrer" className="btn-secondary whitespace-nowrap">
+                🖨 Cetak PDF
+              </a>
+            ) : (
+              <span className="btn-secondary opacity-50 cursor-not-allowed whitespace-nowrap"
+                title="Pilih SKPD dulu — lembar ini memuat identitas SKPD di kepalanya, jadi hanya sah per-SKPD.">
+                🖨 Cetak PDF
+              </span>
+            )
+          )}
+          {view !== 'permendagri' && (
+            <button onClick={view === 'list' ? handleExport : handleExportMatrix}
+              disabled={view === 'list' ? exporting : matrix.length === 0} className="btn-primary">
+              {view === 'list' ? (exporting ? 'Mengekspor...' : 'Export Excel') : 'Export Excel'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">

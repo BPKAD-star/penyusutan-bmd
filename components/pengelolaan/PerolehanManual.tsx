@@ -104,7 +104,13 @@ type KodefikasiHasil = {
   nama_objek: string | null; nama_rincian: string | null; nama_sub_rincian: string | null
   masa_manfaat_tahun: number | null; batas_kapitalisasi: number | null
 }
-type HeaderPayload = { pihak?: string; dokumen_paths?: string[]; draft_items?: DraftItem[] }
+// ⚠️ `sumber_dana` DI HEADER, bukan kolom di `aset` (keputusan user
+// 2026-08-20). Ia berdampingan dgn "Pihak Pemberi Hibah" di lembar Laporan
+// Penerimaan BMD, dan keduanya memang atribut DOKUMEN: satu BAST = satu pemberi
+// = satu sumber dana. Karena `payload` bertipe jsonb, menambah kunci ini TIDAK
+// butuh migrasi sama sekali — dan kartu yang sudah terlanjur dibuat cukup
+// disunting lewat "Edit", tanpa entry ulang barangnya.
+type HeaderPayload = { pihak?: string; sumber_dana?: string; dokumen_paths?: string[]; draft_items?: DraftItem[] }
 type ApprovalStatus = 'pending' | 'disetujui' | 'ditolak'
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string
@@ -712,6 +718,9 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
             {pihakLabel && h.payload?.pihak && (
               <p className="text-xs text-gray-500 mt-1">{pihakLabel}: {h.payload.pihak}</p>
             )}
+            {h.payload?.sumber_dana && (
+              <p className="text-xs text-gray-500">Sumber Dana: {h.payload.sumber_dana}</p>
+            )}
             {h.keterangan && <p className="text-xs text-gray-400 mt-1">{h.keterangan}</p>}
             <DokumenLinks paths={h.payload?.dokumen_paths || []} />
           </div>
@@ -992,6 +1001,7 @@ function ApprovedCard({ j, isAdmin, busy, pihakLabel, onUnapprove }: {
             <p className="text-sm font-semibold text-gray-800">{j.no_sk}</p>
             <p className="text-xs text-gray-500">Tgl {j.tanggal} · {j.periode}</p>
             {pihakLabel && j.payload?.pihak && <p className="text-xs text-gray-500 mt-1">{pihakLabel}: {j.payload.pihak}</p>}
+            {j.payload?.sumber_dana && <p className="text-xs text-gray-500">Sumber Dana: {j.payload.sumber_dana}</p>}
             <DokumenLinks paths={j.payload?.dokumen_paths || []} />
             {j.approved_at && <p className="text-xs text-teal mt-1">Disetujui {j.approved_at.slice(0, 10)}</p>}
           </div>
@@ -1064,6 +1074,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
   const [noDok, setNoDok] = useState('')
   const [tglDok, setTglDok] = useState(todayStr())
   const [pihak, setPihak] = useState('')
+  const [sumberDana, setSumberDana] = useState('')
   const [ket, setKet] = useState('')
   const [dokPaths, setDokPaths] = useState<string[]>([])
   const [dokUploading, setDokUploading] = useState(false)
@@ -1092,7 +1103,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
     setErr(''); setSaving(true)
     const dup = await cekNomorDipakai(noDok.trim())
     if (dup) { setErr(dup); setSaving(false); return }
-    const payload: HeaderPayload = { pihak: pihak.trim() || undefined, dokumen_paths: dokPaths, draft_items: [] }
+    const payload: HeaderPayload = { pihak: pihak.trim() || undefined, sumber_dana: sumberDana.trim() || undefined, dokumen_paths: dokPaths, draft_items: [] }
     const { error } = await supabase.from('jurnal_header').insert({
       skpd_id: skpdId, kategori, jenis: null, sub_jenis: null,
       no_sk: noDok.trim(), tanggal: tglDok, keterangan: ket.trim() || null,
@@ -1125,6 +1136,12 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
             <input className="select-filter w-full" value={pihak} onChange={e => setPihak(e.target.value)} />
           </div>
         )}
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-gray-500 mb-1">Sumber Dana</label>
+          <input className="select-filter w-full" value={sumberDana} onChange={e => setSumberDana(e.target.value)}
+            placeholder="mis. APBD Kab. Kediri / APBN / Dana Perusahaan" />
+          <p className="text-xs text-gray-400 mt-1">Muncul sebagai kolom Sumber Dana di Laporan Penerimaan BMD.</p>
+        </div>
         <div className="sm:col-span-2">
           <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
           <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
@@ -1167,6 +1184,7 @@ function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai,
   const [tgl, setTgl] = useState(header.tanggal)
   const [ket, setKet] = useState(header.keterangan || '')
   const [pihak, setPihak] = useState(p.pihak || '')
+  const [sumberDana, setSumberDana] = useState(p.sumber_dana || '')
   const [dokPaths, setDokPaths] = useState<string[]>(p.dokumen_paths || [])
   const [dokUploading, setDokUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1200,7 +1218,7 @@ function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai,
     setErr(''); setSaving(true)
     const dup = await cekNomorDipakai(noDok.trim(), header.id)
     if (dup) { setErr(dup); setSaving(false); return }
-    const payload: HeaderPayload = { ...header.payload, pihak: pihak.trim() || undefined, dokumen_paths: dokPaths }
+    const payload: HeaderPayload = { ...header.payload, pihak: pihak.trim() || undefined, sumber_dana: sumberDana.trim() || undefined, dokumen_paths: dokPaths }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noDok.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload })
       .eq('id', header.id)
@@ -1228,6 +1246,11 @@ function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai,
           {pihakLabel && (
             <div><label className="block text-xs text-gray-500 mb-1">{pihakLabel}</label><input className="select-filter w-full" value={pihak} onChange={e => setPihak(e.target.value)} /></div>
           )}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Sumber Dana</label>
+            <input className="select-filter w-full" value={sumberDana} onChange={e => setSumberDana(e.target.value)}
+              placeholder="mis. APBD Kab. Kediri / APBN / Dana Perusahaan" />
+          </div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>

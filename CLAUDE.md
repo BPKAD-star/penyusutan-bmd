@@ -2625,6 +2625,52 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   saat approve — pratinjau yang menampilkan angka berbeda dari yang akan
   tersimpan justru kebalikan dari gunanya.
 
+- **SUMBER DANA = atribut DOKUMEN, disimpan di `jurnal_header.payload`**
+  (keputusan user 2026-08-20). Ia berdampingan dgn "Pihak Pemberi Hibah" di
+  lembar Laporan Penerimaan BMD, dan keduanya memang milik dokumen: satu BAST =
+  satu pemberi = satu sumber dana. **TIDAK ADA MIGRASI** — `payload` bertipe
+  `jsonb`, jadi menambah kunci tak butuh DDL, dan kartu yang terlanjur dibuat
+  cukup disunting lewat "Edit" tanpa entry ulang barangnya.
+  ⚠️ Sengaja BUKAN kolom `aset.sumber_dana`: kalau per-barang, satu fakta punya
+  dua tempat tinggal begitu header-nya juga menyimpannya — pola dua-sumber yang
+  di repo ini sudah berkali-kali bermasalah (cache `aset.pemanfaatan`).
+  Konsekuensi yang DITERIMA: satu dokumen tak bisa memuat dua sumber dana; kalau
+  suatu saat perlu, pecah dokumennya — jangan tambahkan kolom keduanya.
+  ⚠️ **Pengadaan sengaja TIDAK ikut**: di sana sumber dananya sudah terwakili
+  `rkbmd_item.kode_rekening`/`draft_items[].rekening` yang per-barang. Menambah
+  kotak "Sumber Dana" di situ = dua sumber untuk satu fakta.
+
+- **Cetak "Laporan Penerimaan BMD" — `app/cetak/perolehan/page.tsx`**
+  (permintaan user 2026-08-20). `?jenis=<cara perolehan>&skpd=<id>[&periode=]`,
+  tombol 🖨 Cetak PDF di menu Pelaporan → Laporan Perolehan (kelima menu, satu
+  komponen). A4 landscape.
+  ⚠️ **SUSUNAN BERTUMPUK (14 kolom), BUKAN datar (16)** — keputusan user, dan
+  bukan selera tata letak: "Kode Barang + Uraian" ditumpuk dalam satu sel &
+  "Jumlah + Satuan" digabung ("1 Unit"). Sebabnya **NIBAR 45 DIGIT**; pada A4
+  landscape (lebar cetak ±277 mm) 16 kolom menyisakan ±17 mm per kolom, jadi
+  NIBAR pasti terpotong atau memaksa font di bawah batas terbaca. Repo ini sudah
+  pernah kena persis di sini: lembar RKBMD 13 kolom terbukti mustahil muat di
+  lebar 215 mm & akhirnya dipindah ke F4. Di sini kertasnya yang dipertahankan
+  A4, jadi yang dikompromikan jumlah kolomnya. `table-fixed` + `<colgroup>`
+  wajib — tanpa itu kolom NIBAR melar mengikuti isinya lalu mendorong kolom lain
+  keluar halaman; NIBAR juga butuh `break-all`, bukan `break-words`, karena ia
+  satu untai tanpa spasi.
+  ⚠️ **WAJIB per-SKPD** — kepala lembar memuat "<kode> - <nama SKPD>", jadi satu
+  berkas hanya sah untuk satu SKPD. Tombolnya dimatikan selama SKPD belum
+  dipilih, **berikut alasannya di `title`**: tombol mati tanpa keterangan itu
+  kegagalan senyap.
+  ⚠️ **Fail-closed**: baris yang dianulir dibuang lewat `fetchVoidedAsetIds`
+  (terscope ke aset yang ditarik), dan kalau pemeriksaannya gagal lembarnya
+  TIDAK dirakit sama sekali. Query utamanya sengaja berbentuk SAMA dgn
+  `LaporanPerolehan` supaya ikut dilayani `idx_trx_perolehan_id` (20260820_03).
+  **Dua tanggal di lembar ini BEDA & jangan disamakan**: "Tahun Perolehan" =
+  `aset.tgl_perolehan` (kapan barang DIBUAT — bisa jauh sebelum BAST untuk
+  barang bekas), "Tanggal BAST" = tanggal baris ledgernya.
+  Blok tanda tangan **dibiarkan bertitik-titik** — aplikasi ini tak menyimpan
+  siapa yang meneken lembar ini, dan mengarang nama di dokumen yang akan
+  ditandatangani lebih berbahaya daripada titik-titik yang jelas belum diisi
+  (aturan yang sama dgn lembar RKBMD & Standar Harga).
+
 - **`kondisi_barang` ikut di form input awal, bukan cuma menu Koreksi**
   (permintaan user 2026-08-04): ditaruh di KETIGA template `GOLONGAN_FIELDS`
   tepat sebelum Penggunaan & Keterangan — kondisi fisik itu atribut universal.
