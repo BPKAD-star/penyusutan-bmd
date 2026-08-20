@@ -44,6 +44,7 @@ type AsetRow = {
   // SELECT_COLS: kalau nanti `aset.luas` yang diputuskan otoritatif
   // (REFACTOR-PLAN §5), ia tinggal dipasang lagi.
   luas: number | null
+  alamat_detail: string | null
   latitude: number | null; longitude: number | null
   skpd_id: number | null; skpd: { nama: string } | null
 }
@@ -51,7 +52,7 @@ type BidangRingkas = { aset_id: string; jenis_hak: string | null; nomor_dokumen_
 const BIDANG_COLS = 'aset_id,jenis_hak,nomor_dokumen_kepemilikan,luas,latitude,longitude'
 type Status = 'sengketa' | 'proses' | 'bersertifikat'
 
-const SELECT_COLS = 'id,nibar,kode,nama_barang,uraian_barang,spesifikasi_lainnya,jenis_hak,nomor_dokumen_kepemilikan,nama_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,tgl_perolehan,nilai_perolehan,luas,latitude,longitude,skpd_id,skpd:skpd_id(nama)'
+const SELECT_COLS = 'id,nibar,kode,nama_barang,uraian_barang,spesifikasi_lainnya,alamat_detail,jenis_hak,nomor_dokumen_kepemilikan,nama_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,tgl_perolehan,nilai_perolehan,luas,latitude,longitude,skpd_id,skpd:skpd_id(nama)'
 const fmtTgl = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
 const fmtLuas = (v: number | null) => v == null ? '-' : `${new Intl.NumberFormat('id-ID').format(v)} m²`
 
@@ -334,7 +335,7 @@ export default function GisPage() {
 
       {/* Panel kanan: identitas + kelola bidang register terpilih — mengambang di atas peta */}
       {selected && (
-        <div className="absolute top-4 right-4 bottom-4 w-[380px] z-[1000] overflow-y-auto scrollbar-thin space-y-3">
+        <div className="absolute top-4 right-4 bottom-4 w-[480px] z-[1000] overflow-y-auto scrollbar-thin space-y-3">
           <div className="card p-4 shadow-lg">
             <div className="flex items-start justify-between mb-3">
               <div>
@@ -346,11 +347,14 @@ export default function GisPage() {
               <button onClick={() => setSelectedId(null)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
             </div>
             <div className="space-y-2 text-xs">
-              <div className="flex justify-between gap-3"><span className="text-gray-400">SKPD</span><span className="text-gray-700 text-right">{selected.skpd?.nama || '-'}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400">Kode Barang</span><span className="text-gray-700 text-right">{selected.kode}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400">NIBAR</span><span className="text-gray-700 text-right break-all">{selected.nibar || '-'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">SKPD</span><span className="text-gray-700 text-right">{selected.skpd?.nama || '-'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Kode Barang</span><span className="text-gray-700 text-right">{selected.kode}</span></div>
               <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Uraian Barang</span><span className="text-gray-700 text-right">{selected.uraian_barang || '-'}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Spesifikasi Nama Barang</span><span className="text-gray-700 text-right">{selected.spesifikasi_lainnya || '-'}</span></div>
+              {/* `whitespace-nowrap`: NIBAR 45 digit sengaja TIDAK dibiarkan
+                  membungkus (permintaan user 2026-08-21) — panel sudah
+                  dilebarkan ke 480px supaya muat sebaris. */}
+              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">NIBAR</span><span className="text-gray-700 text-right whitespace-nowrap">{selected.nibar || '-'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Alamat Detail</span><span className="text-gray-700 text-right">{selected.alamat_detail || '-'}</span></div>
               {/* Luas SENGAJA tidak ditampilkan di sini (keputusan user 2026-08-05).
                   `aset.luas` level register belum jelas hubungannya dengan Σ luas
                   bidang di aset_bidang_tanah — dua sumber untuk satu besaran, dan

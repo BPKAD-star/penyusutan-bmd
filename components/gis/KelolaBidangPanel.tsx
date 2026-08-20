@@ -246,12 +246,11 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
           {/* Tinggi dibatasi + scroll sendiri: satu register bisa punya puluhan
               sertifikat (kasus GOR), dan tanpa batas ini ringkasan di atas ikut
               terdorong hilang dari layar saat digulir. */}
-          <div className="overflow-auto scrollbar-thin -mx-1 max-h-[16rem]">
+          <div className="overflow-y-auto overflow-x-hidden scrollbar-thin -mx-1 max-h-[16rem]">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-white">
                 <tr className="text-left text-gray-400 border-b border-gray-100">
                   <th className="font-medium py-1.5 px-1">Jenis Hak</th>
-                  <th className="font-medium py-1.5 px-1">Nama</th>
                   <th className="font-medium py-1.5 px-1">Nomor</th>
                   <th className="font-medium py-1.5 px-1">Tanggal</th>
                   <th className="font-medium py-1.5 px-1 text-right whitespace-nowrap">Luas (m²)</th>
@@ -261,12 +260,11 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {rows.length === 0 && !tampilkanVirtual && (
-                  <tr><td colSpan={7} className="text-center text-gray-400 py-4">Belum ada data kepemilikan.</td></tr>
+                  <tr><td colSpan={6} className="text-center text-gray-400 py-4">Belum ada data kepemilikan.</td></tr>
                 )}
                 {tampilkanVirtual && (
                   <tr className="text-gray-500 italic">
                     <td className="py-1.5 px-1">{asetDokumen?.jenis_hak || '-'}</td>
-                    <td className="py-1.5 px-1">{asetDokumen?.nama_dokumen_kepemilikan || '-'}</td>
                     <td className="py-1.5 px-1">{asetDokumen?.nomor_dokumen_kepemilikan || '-'}</td>
                     <td className="py-1.5 px-1">{fmtTgl(asetDokumen?.tanggal_dokumen_kepemilikan || null)}</td>
                     <td className="py-1.5 px-1 text-right">-</td>
@@ -279,7 +277,6 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
                 {rows.map(b => (
                   <tr key={b.id} className="text-gray-700">
                     <td className="py-1.5 px-1">{b.jenis_hak || '-'}</td>
-                    <td className="py-1.5 px-1">{b.nama_dokumen_kepemilikan || '-'}</td>
                     <td className="py-1.5 px-1">{b.nomor_dokumen_kepemilikan || '-'}</td>
                     <td className="py-1.5 px-1">{fmtTgl(b.tanggal_dokumen_kepemilikan)}</td>
                     <td className={`py-1.5 px-1 text-right tabular-nums whitespace-nowrap ${b.luas == null ? 'text-gray-300' : ''}`}>
@@ -290,9 +287,16 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
                         <button onClick={() => lihatSertifikat(b.sertifikat_path!)} className="text-teal hover:underline">Lihat</button>
                       ) : '-'}
                     </td>
+                    {/* Ikon, bukan teks "Edit"/"Hapus" (permintaan user
+                        2026-08-21): dua kata itu memakan lebar yang membuat
+                        tabel butuh geser kiri-kanan. `title` dipertahankan
+                        supaya maksudnya tetap terbaca saat disinggahi kursor —
+                        ikon tanpa keterangan itu tebak-tebakan. */}
                     <td className="py-1.5 px-1 text-right whitespace-nowrap">
-                      <button onClick={() => openEdit(b)} className="text-teal hover:underline mr-2">Edit</button>
-                      <button onClick={() => handleDelete(b)} className="text-red-500 hover:underline">Hapus</button>
+                      <button onClick={() => openEdit(b)} title="Ubah bidang" aria-label="Ubah bidang"
+                        className="text-teal hover:opacity-70 mr-1.5">✎</button>
+                      <button onClick={() => handleDelete(b)} title="Hapus bidang" aria-label="Hapus bidang"
+                        className="text-red-500 hover:opacity-70">🗑</button>
                     </td>
                   </tr>
                 ))}
