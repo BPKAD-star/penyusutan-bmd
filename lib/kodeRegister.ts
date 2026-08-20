@@ -33,6 +33,9 @@ import {
 export const PANJANG_PREFIX_REGISTER = 38
 /** NIBAR utuh skema baru. Warisan e-BMD ada yang 43 digit — segmennya TIDAK sejajar. */
 export const PANJANG_NIBAR_PENUH = 45
+// Batas [12][01|02][3506] + [kode SKPD 14] + [tahun 4] = 8+14+4. Dipakai
+// `pecahNibar` untuk memenggal di batas segmen, bukan di tengah angka.
+export const POTONG_NIBAR_CETAK = 26
 
 export type PosisiBarang = {
   /** `aset.intra_ekstra` — 'intra' | 'ekstra'. */
@@ -103,6 +106,27 @@ export function prefixNibar(nibar: string | null): string | null {
   if (n.length !== PANJANG_NIBAR_PENUH) return null
   if (!KEPALA_SKEMA_KITA.has(n.slice(0, 8))) return null
   return n.slice(0, PANJANG_PREFIX_REGISTER)
+}
+
+// Pecah NIBAR jadi DUA baris di batas segmen yang berarti, untuk lembar cetak
+// yang kolomnya sempit (permintaan user 2026-08-20).
+//
+// Titik potongnya SESUDAH tahun, tepat sebelum KODE BARANG:
+//     [12][01|02][3506] [kode SKPD 14] [tahun 4] | [kode barang 12] [urut 7]
+//      \________________ 26 digit ______________/  \____ 19 digit ________/
+// jadi baris kedua selalu dimulai kode barangnya ('131010307003…' untuk Tanah).
+// Itu jauh lebih terbaca daripada `break-all`, yang memotong di mana pun baris
+// kebetulan habis sehingga potongannya tak berarti apa-apa.
+//
+// ⚠️ Memakai penjaga yang SAMA dgn `prefixNibar`: 150.101 NIBAR warisan impor
+// ATL Diknas juga 45 digit tapi susunannya BEDA (kode barang & SKPD tertukar,
+// tahun di belakang). Memotongnya di 26 akan memenggal di tengah segmen yang
+// bukan itu. `null` = tak bisa dipecah dgn yakin → pemanggil menampilkannya
+// utuh apa adanya, jangan menebak.
+export function pecahNibar(nibar: string | null): [string, string] | null {
+  const n = (nibar || '').trim()
+  if (!prefixNibar(n)) return null
+  return [n.slice(0, POTONG_NIBAR_CETAK), n.slice(POTONG_NIBAR_CETAK)]
 }
 
 // Sudah bergeser dari akta lahirnya? Menerima kode register UTUH (45 digit,

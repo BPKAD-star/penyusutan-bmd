@@ -2646,15 +2646,37 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   komponen). A4 landscape.
   ⚠️ **SUSUNAN BERTUMPUK (14 kolom), BUKAN datar (16)** — keputusan user, dan
   bukan selera tata letak: "Kode Barang + Uraian" ditumpuk dalam satu sel &
-  "Jumlah + Satuan" digabung ("1 Unit"). Sebabnya **NIBAR 45 DIGIT**; pada A4
-  landscape (lebar cetak ±277 mm) 16 kolom menyisakan ±17 mm per kolom, jadi
+  "Jumlah + Satuan" jadi satu kolom dua baris. Sebabnya **NIBAR 45 DIGIT**; pada
+  A4 landscape (lebar cetak ±277 mm) 16 kolom menyisakan ±17 mm per kolom, jadi
   NIBAR pasti terpotong atau memaksa font di bawah batas terbaca. Repo ini sudah
   pernah kena persis di sini: lembar RKBMD 13 kolom terbukti mustahil muat di
   lebar 215 mm & akhirnya dipindah ke F4. Di sini kertasnya yang dipertahankan
-  A4, jadi yang dikompromikan jumlah kolomnya. `table-fixed` + `<colgroup>`
-  wajib — tanpa itu kolom NIBAR melar mengikuti isinya lalu mendorong kolom lain
-  keluar halaman; NIBAR juga butuh `break-all`, bukan `break-words`, karena ia
-  satu untai tanpa spasi.
+  A4, jadi yang dikompromikan jumlah kolomnya.
+  **"Fit to window" itu `table-fixed` + `<colgroup>` yang totalnya PERSIS 100%**
+  — dgn begitu tak ada kolom yang bisa melar mengikuti isinya lalu mendorong
+  yang lain keluar halaman. Yang dipangkas kolom ber-isi pendek & seragam
+  (Jumlah/Satuan, Kondisi, Tahun Perolehan, Tanggal BAST); kelegaannya
+  dialihkan ke kolom ber-isi panjang (uraian, spesifikasi, pihak, no. BAST,
+  keterangan).
+  **NIBAR dipenggal 2 baris di BATAS SEGMEN** lewat `pecahNibar()`
+  (lib/kodeRegister.ts): 26 digit pertama `[12][01|02][3506][SKPD 14][tahun 4]`,
+  sisanya `[kode barang 12][urut 7]` — jadi baris kedua selalu mulai dari kode
+  barangnya (`131010307003…`), jauh lebih terbaca daripada `break-all` yang
+  memotong di mana pun baris kebetulan habis. ⚠️ Penjaganya SAMA dgn
+  `prefixNibar`: 150.101 NIBAR warisan impor ATL Diknas juga 45 digit tapi
+  susunannya BEDA, jadi memenggalnya di 26 akan jatuh di tengah segmen yang
+  bukan itu. `null` = tampilkan utuh, JANGAN menebak. Dikunci
+  lib/kodeRegister.test.ts (termasuk uji bahwa kedua penjaga tak menyimpang).
+  **Urutan baris = jenis aset** (kode → nama_barang natural → nibar sbg pemecah
+  seri); tanpa pemecah seri, barang bernama kembar bertukar tempat tiap cetak
+  ulang.
+  ⚠️ **Kolom Keterangan dibaca dari `aset.keterangan`, BUKAN
+  `transaksi_bmd.keterangan`** — versi pertama lembar ini salah kolom, jadi
+  kolomnya HAMPA padahal operator sudah mengisinya per barang lewat field
+  spesifikasi. Keterangan baris ledger untuk perolehan memang selalu kosong;
+  ia cuma dipakai sbg cadangan. Pola yang sama berlaku untuk kolom lain yang
+  "ada isinya di layar tapi kosong di cetakan": periksa dulu ia milik `aset`
+  atau milik baris ledger.
   ⚠️ **WAJIB per-SKPD** — kepala lembar memuat "<kode> - <nama SKPD>", jadi satu
   berkas hanya sah untuk satu SKPD. Tombolnya dimatikan selama SKPD belum
   dipilih, **berikut alasannya di `title`**: tombol mati tanpa keterangan itu

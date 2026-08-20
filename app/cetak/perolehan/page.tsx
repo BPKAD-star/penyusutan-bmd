@@ -8,13 +8,17 @@
 //
 // ⚠️ SUSUNAN KOLOM BERTUMPUK, BUKAN DATAR (keputusan user 2026-08-20). Format
 // bakunya 16 kolom datar; di sini "Kode Barang + Uraian Barang" ditumpuk dalam
-// satu sel dan "Jumlah + Satuan" digabung ("1 Unit") → 14 kolom. Bukan selera
-// tata letak: NIBAR panjangnya 45 DIGIT, dan pada A4 landscape (lebar cetak
-// ~277 mm) 16 kolom menyisakan ~17 mm per kolom — NIBAR-nya pasti terpotong
-// atau memaksa font di bawah batas terbaca. Repo ini sudah pernah kena:
-// lembar RKBMD 13 kolom terbukti mustahil muat di lebar 215 mm, makanya
+// satu sel dan "Jumlah + Satuan" jadi satu kolom dua baris → 14 kolom. Bukan
+// selera tata letak: NIBAR panjangnya 45 DIGIT, dan pada A4 landscape (lebar
+// cetak ~277 mm) 16 kolom menyisakan ~17 mm per kolom — NIBAR-nya pasti
+// terpotong atau memaksa font di bawah batas terbaca. Repo ini sudah pernah
+// kena: lembar RKBMD 13 kolom terbukti mustahil muat di lebar 215 mm, makanya
 // dipindah ke F4. Di sini kertasnya dipertahankan A4 (permintaan user), jadi
 // yang dikompromikan jumlah kolomnya.
+//
+// LEBARNYA DISETEL MANUAL & TOTALNYA PERSIS 100% (lihat <colgroup>) — itulah
+// yang membuat lembarnya "fit to window": dgn `table-fixed`, tak ada kolom yang
+// bisa melar mengikuti isinya lalu mendorong yang lain keluar halaman.
 //
 // ⚠️ WAJIB PER-SKPD. Kepala lembar memuat "<kode> - <nama SKPD>", jadi satu
 // berkas hanya sah untuk satu SKPD. Tombol di menu Pelaporan dimatikan selama
@@ -30,6 +34,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import { formatRupiah } from '@/lib/export'
+import { pecahNibar } from '@/lib/kodeRegister'
 
 const KABUPATEN = 'Kediri'
 const PROVINSI = 'Jawa Timur'
@@ -76,11 +81,12 @@ type Baris = {
     kode: string; uraian_barang: string | null; nama_barang: string | null; nibar: string | null
     spesifikasi_lainnya: string | null; satuan: string | null; jumlah: number | null
     harga_satuan: number | null; kondisi_barang: string | null; tgl_perolehan: string | null
+    keterangan: string | null
   } | null
 }
 
 const SEL = 'id,tanggal,nilai,keterangan,aset_id,header:header_id(no_sk,payload),' +
-  'aset:aset_id(kode,uraian_barang,nama_barang,nibar,spesifikasi_lainnya,satuan,jumlah,harga_satuan,kondisi_barang,tgl_perolehan)'
+  'aset:aset_id(kode,uraian_barang,nama_barang,nibar,spesifikasi_lainnya,satuan,jumlah,harga_satuan,kondisi_barang,tgl_perolehan,keterangan)'
 
 /** '2026-02-24' → '24/02/2026'. Kosong → '' (bukan 'Invalid Date'). */
 const tglID = (s: string | null | undefined) => {
@@ -149,7 +155,18 @@ export default function CetakPerolehanPage() {
         // ── Buang yang dianulir — TERSCOPE ke aset yang benar-benar ditanya ──
         const voided = await fetchVoidedAsetIds(
           supabase, [], semuaBaris.map(r => r.aset_id).filter((x): x is string => !!x))
-        setRows(semuaBaris.filter(r => !(r.aset_id && voided.has(r.aset_id))))
+        // Urut per JENIS ASET (permintaan user 2026-08-20) — lembar ini dibaca
+        // per golongan, jadi urutan id ledger (kebetulan urut entry) menyulitkan
+        // penelaah. Kunci kedua `nama_barang` supaya "…RD 1..6" berderet, dan
+        // ketiga `nibar` sbg PEMECAH SERI: tanpa urutan total, barang bernama
+        // kembar bisa bertukar tempat tiap kali lembarnya dicetak ulang.
+        const urut = semuaBaris
+          .filter(r => !(r.aset_id && voided.has(r.aset_id)))
+          .sort((a, b) =>
+            (a.aset!.kode || '').localeCompare(b.aset!.kode || '')
+            || (a.aset!.nama_barang || '').localeCompare(b.aset!.nama_barang || '', 'id', { numeric: true })
+            || (a.aset!.nibar || '').localeCompare(b.aset!.nibar || ''))
+        setRows(urut)
       } catch (e) {
         setGagal((e as Error).message)
       } finally {
@@ -208,21 +225,30 @@ export default function CetakPerolehanPage() {
                 melar mengikuti isinya lalu mendorong kolom lain keluar halaman —
                 pelajaran yang sama dgn lembar cetak Rekonsiliasi. */}
             <table className="w-full table-fixed border-collapse text-[7.5px] leading-tight">
+              {/* Lebar disetel manual & totalnya 100% — inilah yang bikin lembar
+                  "fit to window": `table-fixed` membagi lebar menurut colgroup,
+                  jadi tak ada kolom yang bisa melar mengikuti isinya lalu
+                  mendorong yang lain keluar halaman. Yang DIPANGKAS (permintaan
+                  user 2026-08-20) kolom ber-isi pendek & seragam — Jumlah/Satuan
+                  (ditumpuk), Kondisi, Tahun Perolehan, Tanggal BAST — dan NIBAR
+                  yang kini dipenggal 2 baris di batas segmen. Kelegaan hasilnya
+                  dialihkan ke kolom yang isinya panjang: uraian, spesifikasi,
+                  pihak, no. BAST, & keterangan. */}
               <colgroup>
-                <col className="w-[8%]" />{/* Kode Barang / Uraian */}
-                <col className="w-[8%]" />{/* Spesifikasi Nama Barang */}
-                <col className="w-[11%]" />{/* NIBAR — 45 digit, membungkus */}
-                <col className="w-[8%]" />{/* Spesifikasi Lainnya */}
-                <col className="w-[5%]" />{/* Jumlah Satuan */}
-                <col className="w-[8%]" />{/* Nilai Satuan */}
-                <col className="w-[8%]" />{/* Total Nilai */}
-                <col className="w-[5%]" />{/* Kondisi */}
-                <col className="w-[7%]" />{/* Sumber Dana */}
-                <col className="w-[9%]" />{/* Pihak */}
-                <col className="w-[6%]" />{/* Tahun Perolehan */}
-                <col className="w-[6%]" />{/* Tanggal BAST */}
-                <col className="w-[6%]" />{/* Nomor BAST */}
-                <col className="w-[5%]" />{/* Keterangan */}
+                <col className="w-[9%]" />{/* Kode Barang / Uraian */}
+                <col className="w-[9%]" />{/* Spesifikasi Nama Barang */}
+                <col className="w-[9%]" />{/* NIBAR — 2 baris, 26+19 digit */}
+                <col className="w-[9%]" />{/* Spesifikasi Lainnya */}
+                <col className="w-[3.5%]" />{/* Jumlah + Satuan, ditumpuk */}
+                <col className="w-[7.5%]" />{/* Nilai Satuan */}
+                <col className="w-[7.5%]" />{/* Total Nilai */}
+                <col className="w-[4%]" />{/* Kondisi */}
+                <col className="w-[8%]" />{/* Sumber Dana */}
+                <col className="w-[10%]" />{/* Pihak */}
+                <col className="w-[4.5%]" />{/* Tahun Perolehan */}
+                <col className="w-[4.5%]" />{/* Tanggal BAST */}
+                <col className="w-[7%]" />{/* Nomor BAST */}
+                <col className="w-[7.5%]" />{/* Keterangan */}
               </colgroup>
               <thead>
                 <tr className="text-center font-semibold">
@@ -242,12 +268,25 @@ export default function CetakPerolehanPage() {
                       <div>{r.aset!.uraian_barang || ''}</div>
                     </td>
                     <td className="border border-black px-1 py-0.5 break-words">{r.aset!.nama_barang || ''}</td>
-                    {/* `break-all`: NIBAR itu satu untai 45 digit tanpa spasi —
-                        `break-words` saja tak akan memotongnya. */}
-                    <td className="border border-black px-1 py-0.5 break-all">{r.aset!.nibar || ''}</td>
+                    {/* Dipenggal di BATAS SEGMEN (26+19) supaya baris kedua
+                        selalu mulai dari kode barangnya — lihat `pecahNibar`.
+                        NIBAR warisan e-BMD yang susunannya beda tak bisa dinilai
+                        → ditampilkan utuh dgn `break-all`, bukan ditebak. */}
+                    <td className="border border-black px-1 py-0.5 break-all">
+                      {(() => {
+                        const pecah = pecahNibar(r.aset!.nibar)
+                        return pecah
+                          ? <>{pecah[0]}<br />{pecah[1]}</>
+                          : (r.aset!.nibar || '')
+                      })()}
+                    </td>
                     <td className="border border-black px-1 py-0.5 break-words">{r.aset!.spesifikasi_lainnya || ''}</td>
+                    {/* Ditumpuk, bukan "1 Unit" sebaris — satuan seperti
+                        "Meter Persegi" memaksa kolomnya selebar teks terpanjang
+                        padahal angkanya cuma 1 digit. */}
                     <td className="border border-black px-1 py-0.5 text-center">
-                      {r.aset!.jumlah ?? 1} {r.aset!.satuan || ''}
+                      <div>{r.aset!.jumlah ?? 1}</div>
+                      <div>{r.aset!.satuan || ''}</div>
                     </td>
                     <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(r.aset!.harga_satuan ?? r.nilai)}</td>
                     <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(r.nilai)}</td>
@@ -260,7 +299,15 @@ export default function CetakPerolehanPage() {
                     <td className="border border-black px-1 py-0.5 text-center">{tglID(r.aset!.tgl_perolehan)}</td>
                     <td className="border border-black px-1 py-0.5 text-center">{tglID(r.tanggal)}</td>
                     <td className="border border-black px-1 py-0.5 break-words">{r.header?.no_sk || ''}</td>
-                    <td className="border border-black px-1 py-0.5 break-words">{r.keterangan || ''}</td>
+                    {/* ⚠️ `aset.keterangan` — keterangan yang DIISI OPERATOR per
+                        barang (field spesifikasi). `transaksi_bmd.keterangan`
+                        milik baris ledgernya & untuk perolehan memang selalu
+                        kosong, jadi versi awal lembar ini menampilkan kolom
+                        Keterangan HAMPA padahal datanya ada. Ledger dipakai
+                        sebagai cadangan saja. */}
+                    <td className="border border-black px-1 py-0.5 break-words">
+                      {r.aset!.keterangan || r.keterangan || ''}
+                    </td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
