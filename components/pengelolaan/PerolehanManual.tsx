@@ -28,6 +28,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useDraftSeleksi, DraftSearchBar, DraftBulkBar } from './draftSeleksi'
+import PreviewDraftModal from './PreviewDraftModal'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 export type KategoriPerolehan = 'hibah_masuk' | 'tukar_menukar' | 'hasil_inventarisasi' | 'perolehan_lainnya'
@@ -695,6 +696,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
 }) {
   const items = h.payload.draft_items || []
   const [showTambah, setShowTambah] = useState(items.length === 0)
+  const [showPreview, setShowPreview] = useState(false)
   const fotoUrls = useFotoThumbs(items.map(i => i.foto[0]).filter(Boolean))
   // Pencarian + seleksi + aksi massal: modul bersama dgn Pengadaan.
   const sel = useDraftSeleksi(items)
@@ -781,16 +783,44 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
         )}
       </div>
 
-      <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+      <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-3">
         <span className="text-xs text-gray-500">{items.length} barang</span>
-        {isAdmin ? (
-          <button className="btn-primary text-xs" disabled={busy || items.length === 0} onClick={onApprove}>
-            {busy ? 'Memproses...' : '✓ Setujui'}
+        <div className="flex items-center gap-2">
+          {/* Pratinjau SENGAJA di luar cabang `isAdmin`. Yang paling butuh
+              memeriksa kelengkapan justru operator SKPD yang mengisinya —
+              dan dialah satu-satunya yang tak punya tombol apa pun di baris
+              ini ("Menunggu tinjauan admin."). Ia cuma membaca draft yang
+              sudah ada di layar, jadi tak ada wewenang yang dilonggarkan. */}
+          <button className="btn-secondary text-xs" disabled={items.length === 0}
+            onClick={() => setShowPreview(true)}
+            title="Lihat rincian & kelengkapan seluruh barang di kartu ini">
+            🔍 Pratinjau
           </button>
-        ) : (
-          <span className="text-xs text-gray-400">Menunggu tinjauan admin.</span>
-        )}
+          {isAdmin ? (
+            <button className="btn-primary text-xs" disabled={busy || items.length === 0} onClick={onApprove}>
+              {busy ? 'Memproses...' : '✓ Setujui'}
+            </button>
+          ) : (
+            <span className="text-xs text-gray-400">Menunggu tinjauan admin.</span>
+          )}
+        </div>
       </div>
+      {showPreview && (
+        <PreviewDraftModal
+          judul={h.no_sk}
+          subjudul={`Tgl ${h.tanggal} · ${h.periode}`}
+          golonganLabels={golonganLabels}
+          kolomEkstra={[{ key: 'tglPerolehan', label: 'Tgl Perolehan' }]}
+          items={items.map(i => ({
+            key: i.key, kode: i.kode, uraianBarang: i.uraianBarang, satuan: i.satuan,
+            // `toNum` — pembaca harga yang SAMA dgn yang dipakai saat approve.
+            // Pratinjau yang menampilkan angka berbeda dari yang akan tersimpan
+            // justru kebalikan dari gunanya.
+            harga: toNum(i.harga), fields: i.fields, foto: i.foto,
+            ekstra: { tglPerolehan: i.tglPerolehan },
+          }))}
+          onClose={() => setShowPreview(false)} />
+      )}
     </div>
   )
 }

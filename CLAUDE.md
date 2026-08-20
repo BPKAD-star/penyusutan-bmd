@@ -2596,6 +2596,35 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
     jurnal_header.payload`, belum menyentuh ledger sama sekali → append-only tak
     dilanggar. Kartu yang sudah disetujui tetap read-only; membuang barangnya
     tetap lewat Buka Kunci → edit → setujui ulang, atau `batal_pengadaan`.
+- **Pratinjau kelengkapan kartu draft** (`PreviewDraftModal`, permintaan user
+  2026-08-20). Tombol 🔍 Pratinjau di sebelah Setujui → pop-up berisi SELURUH
+  barang kartu itu dengan kolom mengikuti jenis asetnya. Alasannya: tabel di
+  kartu cuma memuat 6–7 kolom ringkas, sementara satu barang Tanah punya 14
+  field spesifikasi — sisanya hanya kelihatan kalau pop-up Edit Spesifikasi
+  dibuka SATU PER SATU, yang untuk kontrak berisi puluhan barang praktis
+  mustahil. Akibatnya barang bernomor rangka kosong bisa lolos ke register
+  tanpa ada yang sadar; karena itu yang KOSONG justru ditandai paling menonjol
+  (latar amber + "N kosong" + ringkasan di kepala pop-up).
+  ⚠️ **Kolomnya DITURUNKAN dari `fieldsForKode()`, jangan diketik ulang per
+  jenis aset** — fungsi yang SAMA dipakai `EditSpesifikasiModal` untuk memutuskan
+  field mana yang ditawarkan. Menyalin daftarnya akan melahirkan penyimpangan
+  yang paling berbahaya untuk fitur ini: pratinjau yang bilang "lengkap" karena
+  kolom yang belum terisi kebetulan tak ikut ditampilkan.
+  Satu kartu boleh berisi beberapa golongan, jadi barang DIKELOMPOKKAN per
+  golongan & tiap kelompok punya susunan kolomnya sendiri — disatukan jadi satu
+  tabel, kolom milik golongan lain tampil kosong dan terbaca sbg "belum diisi".
+  **Tombolnya SENGAJA di luar cabang `isAdmin`**: yang paling butuh memeriksa
+  kelengkapan justru operator SKPD yang mengisinya, dan dialah satu-satunya
+  yang tak punya tombol apa pun di baris itu. Ia cuma membaca draft yang sudah
+  ada di layar — tak ada wewenang yang dilonggarkan.
+  Kekosongan = PERINGATAN, bukan larangan: sebagian field memang tak berlaku
+  untuk barang tertentu (nomor polisi pada alat berat), jadi Setujui tidak
+  diblokir. `wilayah_kode` diterjemahkan jadi rantai nama wilayah (kode mentah
+  tak bisa diperiksa manusia) & kegagalannya cuma menurunkan tampilan ke kode
+  apa adanya, tak menjatuhkan pop-up. Harga dibaca dgn `toNum` yang SAMA dgn
+  saat approve — pratinjau yang menampilkan angka berbeda dari yang akan
+  tersimpan justru kebalikan dari gunanya.
+
 - **`kondisi_barang` ikut di form input awal, bukan cuma menu Koreksi**
   (permintaan user 2026-08-04): ditaruh di KETIGA template `GOLONGAN_FIELDS`
   tepat sebelum Penggunaan & Keterangan — kondisi fisik itu atribut universal.
