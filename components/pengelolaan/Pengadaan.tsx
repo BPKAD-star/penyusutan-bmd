@@ -23,7 +23,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
-import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
+import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
@@ -620,7 +620,14 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       for (const k of ASET_FIELD_COLS) {
         const v = it.fields[k]
         if (!v) continue
-        row[k] = ASET_NUM_COLS.has(k) ? toNum(v) : v
+        // ⚠️ `angkaKolomAset`, BUKAN `toNum` (insiden 2026-08-20). `toNum` itu
+        // pembaca RUPIAH — regexnya membuang tanda minus, jadi latitude Kediri
+        // (−7,8; belahan SELATAN) tersimpan +7,8 dan titiknya melompat ke laut
+        // dekat Filipina, tanpa satu pun error. Lihat lib/asetFields.ts.
+        // `null` = tak terbaca sebagai angka → kolomnya JANGAN ditulis, supaya
+        // isian keliru tak mendarat jadi 0 (latitude 0 = Teluk Guinea).
+        if (ASET_NUM_COLS.has(k)) { const n = angkaKolomAset(v); if (n !== null) row[k] = n }
+        else row[k] = v
       }
       return row
     })

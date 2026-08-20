@@ -18,7 +18,7 @@ import {
   klasifikasiKomptabel, fetchMasaManfaat, comparePeriode, periodeRange,
   previousPeriode, parsePeriode, formatPeriode,
 } from '@/lib/bmd'
-import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
+import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
 import { formatRupiah } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
@@ -433,7 +433,14 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       for (const k of ASET_FIELD_COLS) {
         const v = it.fields[k]
         if (!v) continue
-        row[k] = ASET_NUM_COLS.has(k) ? toNum(v) : v
+        // ⚠️ `angkaKolomAset`, BUKAN `toNum` (insiden 2026-08-20). `toNum` itu
+        // pembaca RUPIAH — regexnya membuang tanda minus, jadi latitude Kediri
+        // (−7,8; belahan SELATAN) tersimpan +7,8 dan titiknya melompat ke laut
+        // dekat Filipina, tanpa satu pun error. Lihat lib/asetFields.ts.
+        // `null` = tak terbaca sebagai angka → kolomnya JANGAN ditulis, supaya
+        // isian keliru tak mendarat jadi 0 (latitude 0 = Teluk Guinea).
+        if (ASET_NUM_COLS.has(k)) { const n = angkaKolomAset(v); if (n !== null) row[k] = n }
+        else row[k] = v
       }
       return row
     })

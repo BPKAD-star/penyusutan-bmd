@@ -2760,6 +2760,56 @@ spesifikasi selalu lewat **popup**
 taruh inline di baris tabel (bikin panjang/scroll). Baris tabel cukup
 ringkasan satu baris + tombol buka popup.
 
+### Koordinat: `toNum` MEMBUANG tanda minus (insiden 2026-08-20)
+
+Operator menitik lokasi tanah hibah di Kediri lewat MapPicker, tapi di GIS Tanah
+pin-nya muncul jauh di **LAUT dekat Filipina**.
+
+- **Sebabnya pembaca angka yang salah dipakai.** Ketiga menu Cara Perolehan
+  meng-cast kolom `ASET_NUM_COLS` (`luas`, `latitude`, `longitude`) memakai
+  `toNum` milik berkasnya sendiri —
+  `parseFloat(String(s).replace(/[^0-9.]/g, ''))` — yang dirancang untuk
+  RUPIAH. Regex itu membuang semua karakter selain angka & titik, **termasuk
+  tanda minus**. Kab. Kediri ada di belahan **SELATAN**, jadi latitude-nya
+  wajib negatif: `'-7.774007'` → `7.774007`, dan titiknya melompat ke seberang
+  khatulistiwa. Besarannya tetap "masuk akal" & rentangnya sah, jadi **tak satu
+  pun validasi berteriak** — yang berubah cuma belahan buminya.
+- **Cacat KEDUA di fungsi yang sama:** titik dianggap pemisah ribuan lalu
+  ditelan `parseFloat` — `'686.700.000'` → **`686.7`**, meleset sejuta kali.
+  Kolom harga di Pengadaan/Perolehan Manual itu `<input>` biasa ber-
+  `inputMode="numeric"` (petunjuk keyboard ponsel, **bukan validasi**), jadi
+  operator bisa menempel angka berpemisah titik. Disapu ke DB: **nol korban**
+  di kolom angka menu itu (19.447 nilai kecil berdesimal semuanya `saldo_awal`,
+  yang tak lewat `toNum`) — tapi ranjaunya nyata.
+- **Obatnya `angkaKolomAset()` di lib/asetFields.ts**, dipakai ketiga menu
+  (`PerolehanManual`, `Pengadaan`, `KonstruksiPengadaan`). `Number()` +
+  `Number.isFinite`, sengaja BUKAN `parseFloat`: `parseFloat` membaca `'12abc'`
+  jadi `12` & `'686.700.000'` jadi `686.7` — ia berhenti di karakter tak
+  dikenal alih-alih mengaku gagal. `null` = tak terbaca → **kolomnya tak
+  ditulis sama sekali**, bukan jatuh ke `0`; ini penting karena `0` itu
+  koordinat yang SAH (Teluk Guinea) dan lolos semua validasi rentang.
+  Dikunci **lib/asetFields.test.ts**, yang menyandingkan langsung dgn `toNum`
+  lama supaya bedanya terbaca hitam-putih.
+- ⚠️ **Jalur lain TIDAK kena & itu diverifikasi ke DB, bukan diasumsikan:**
+  GIS → Kelola Bidang (`parseFloat`), Inventarisasi/LKI (`Number`), Koreksi →
+  Spesifikasi & Saldo Awal → Daftar Barang Awal (`Number` + isFinite) benar
+  sejak awal. Buktinya `aset_bidang_tanah` punya **0** baris berlatitude
+  positif sementara `aset` punya 107.
+- Data diperbaiki migrasi **20260820_04** (balik tanda, bukan dikosongkan —
+  besarannya sudah benar & itu titik yang sungguh dipilih operator). 107 baris:
+  hibah 70 · pengadaan 36 · hasil inventarisasi 1; aktif 14 · dihapus 77 ·
+  draft 16. **Non-ledger** (koordinat itu data deskriptif), jadi UPDATE biasa —
+  pola yang sama dgn KIR.
+- ⚠️ **TEMUAN TERPISAH yang BELUM ditangani:** 184 aset punya longitude di luar
+  111..113 (rentang 5,88 … 110,04), **semuanya `saldo_awal`** — warisan impor
+  baseline e-BMD, bukan korban `toNum`, dan tak satu pun berlatitude positif.
+  Koordinat benarnya tak diketahui aplikasi ini; menebaknya lebih berbahaya
+  daripada membiarkannya. Perlu telaah tersendiri.
+- **Pelajaran umum: pembaca angka RUPIAH tak boleh dipakai untuk besaran lain.**
+  Uang tak pernah negatif & titiknya pemisah ribuan; koordinat bisa negatif &
+  titiknya pemisah desimal. Satu fungsi tak bisa melayani keduanya, dan yang
+  kalah selalu yang lebih jarang dilihat orang.
+
 ## Foto barang (Supabase Storage)
 
 Bucket `aset-foto` (privat, limit 10MB, hanya image/jpeg|png|webp — lihat migrasi

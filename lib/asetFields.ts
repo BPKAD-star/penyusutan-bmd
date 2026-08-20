@@ -170,5 +170,44 @@ export function allSameGolongan(kodes: string[]): boolean {
 export const ASET_FIELD_COLS = ['nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
   'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak',
   'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan'] as const
-// Kolom spesifikasi yang bertipe numeric di DB → di-cast toNum saat materialize.
+// Kolom spesifikasi yang bertipe numeric di DB → di-cast saat materialize.
 export const ASET_NUM_COLS = new Set(['luas', 'latitude', 'longitude'])
+
+/**
+ * Angka untuk kolom di `ASET_NUM_COLS`, dibaca dari isian form (selalu string).
+ * `null` = TIDAK BISA dibaca sebagai angka → kolomnya JANGAN ditulis sama sekali.
+ *
+ * ⚠️ ADA KARENA INSIDEN 2026-08-20 — jangan diganti `toNum()`. Ketiga menu Cara
+ * Perolehan dulu memakai `toNum` milik masing-masing berkas:
+ *
+ *     const toNum = (s) => parseFloat(String(s).replace(/[^0-9.]/g, ''))
+ *
+ * Regex itu dirancang untuk RUPIAH, dan pada koordinat ia salah dua kali:
+ *
+ *   (1) **TANDA MINUS IKUT DIBUANG.** Kabupaten Kediri ada di belahan SELATAN,
+ *       jadi latitude-nya wajib negatif (≈ −7,8). `'-7.774007'` → `7.774007`,
+ *       dan titiknya melompat ke seberang khatulistiwa — muncul di LAUT dekat
+ *       Filipina. Tanpa satu pun error; operator cuma melihat pin di tempat
+ *       yang salah. 91 aset terlanjur kena (hibah 56, pengadaan 34, hasil
+ *       inventarisasi 1), diperbaiki migrasi 20260820_04.
+ *   (2) **Titik dianggap pemisah ribuan lalu ditelan `parseFloat`.**
+ *       `'686.700.000'` → `686.7`. Belum ada korbannya di kolom ini, tapi
+ *       `Number()` mengembalikan NaN untuk bentuk itu — dan NaN yang DITOLAK
+ *       jauh lebih baik daripada angka yang diam-diam meleset sejuta kali.
+ *
+ * Sengaja `Number()` + `Number.isFinite`, bukan `parseFloat`: `parseFloat`
+ * membaca `'12abc'` jadi `12` dan `'686.700.000'` jadi `686.7` — ia berhenti di
+ * karakter pertama yang tak dikenal alih-alih mengaku gagal. Untuk kolom yang
+ * masuk ke register BMD, gagal-yang-kelihatan lebih murah daripada angka yang
+ * salah diam-diam.
+ *
+ * Pola ini KEMBAR dengan Koreksi.tsx & Saldo Awal → Daftar Barang Awal, yang
+ * memang sudah benar sejak awal; fungsi ini yang menyatukannya supaya pintu
+ * BARU tak bisa lagi memilih varian yang salah. Dikunci lib/asetFields.test.ts.
+ */
+export function angkaKolomAset(v: unknown): number | null {
+  const s = String(v ?? '').trim()
+  if (s === '') return null
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}

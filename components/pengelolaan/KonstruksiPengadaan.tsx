@@ -20,7 +20,7 @@ import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { periodeDariTanggal } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
-import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
+import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import {
   approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList,
   type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
@@ -342,7 +342,16 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
   }
   async function saveSpec(key: string, fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
     const spec: Record<string, string> = {}
-    for (const k of ASET_FIELD_COLS) { const v = fields[k]; if (v) spec[k] = ASET_NUM_COLS.has(k) ? String(toNum(v)) : v }
+    // ⚠️ `angkaKolomAset`, BUKAN `toNum` — alasan sama dgn Pengadaan &
+    // PerolehanManual (insiden 2026-08-20): `toNum` membuang tanda minus, jadi
+    // latitude belahan selatan tersimpan positif. Yang tak terbaca sbg angka
+    // DILEWATI, bukan dijadikan 0. Lihat lib/asetFields.ts.
+    for (const k of ASET_FIELD_COLS) {
+      const v = fields[k]
+      if (!v) continue
+      if (ASET_NUM_COLS.has(k)) { const n = angkaKolomAset(v); if (n !== null) spec[k] = String(n) }
+      else spec[k] = v
+    }
     await saveBarang(barangs.map(b => b.key === key ? { ...b, spec, foto: foto.replace ?? b.foto ?? [] } : b))
     setSpecBarang(null); onMsg('Spesifikasi disimpan.')
   }
