@@ -634,7 +634,17 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     }))
     const { error: trxErr } = await supabase.from('transaksi_bmd').insert(trxRows)
     if (trxErr) {
-      await supabase.from('aset').update({ status: 'dihapus' }).in('id', (inserted as { id: string }[]).map(a => a.id))
+      // ⚠️ ROLLBACK WAJIB 'draft', BUKAN 'dihapus' (insiden 2026-08-20).
+      // Visibilitas di repo ini diputuskan lewat REPLAY EVENT LEDGER
+      // (`fn_dbar_hidden`), bukan dari `aset.status`; saringan status di sana
+      // cuma `status <> 'draft'`. Aset yang terlanjur dibuat di sini BELUM
+      // punya satu pun baris ledger — justru itu yang barusan gagal — jadi
+      // 'dihapus' tak punya `SEMBUNYI` apa pun untuk direplay dan barangnya
+      // TETAP TAMPIL di Daftar Barang, Penyusutan, & Laporan BMD. Waktu approve
+      // diulang, barang yang sama masuk lagi → nilainya DOBEL, tanpa satu pun
+      // error. 'draft' disaring SEMUA pembaca Lapis 1 tanpa perlu ledger, dan
+      // rollback approve Konstruksi/KDP (lib/kdp.ts) memang sudah begitu.
+      await supabase.from('aset').update({ status: 'draft' }).in('id', (inserted as { id: string }[]).map(a => a.id))
       onMsg(`Error: gagal mencatat transaksi: ${trxErr.message}`); setBusy(false); return
     }
 

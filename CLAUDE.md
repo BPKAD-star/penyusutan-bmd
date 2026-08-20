@@ -114,6 +114,34 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   buat ulang.
   ⚠️ **Deploy-ordering: migrasi 20260820_01 WAJIB jalan SEBELUM deploy kode.**
 
+- **ROLLBACK APPROVE YANG GAGAL WAJIB `status='draft'`, BUKAN `'dihapus'`**
+  (insiden 2026-08-20, migrasi 20260820_02). Approve Cara Perolehan menulis
+  `aset` DULU baru `transaksi_bmd`; kalau langkah kedua gagal, rollback-nya
+  menyetel status aset yang terlanjur dibuat. Sampai hari ini ia menyetel
+  `'dihapus'` — dan itu **tidak menyembunyikan apa pun**: visibilitas di repo
+  ini diputuskan lewat REPLAY EVENT LEDGER (`fn_dbar_hidden`), sedangkan
+  saringan status di situ cuma `status <> 'draft'`. Aset korban rollback belum
+  punya SATU PUN baris ledger — justru itu yang barusan gagal — jadi tak ada
+  `SEMBUNYI` yang bisa direplay dan barangnya TETAP TAMPIL. Begitu approve
+  diulang, barang yang sama masuk lagi → **nilainya DOBEL tanpa satu pun
+  error**. Kejadian nyata: hibah SDHI ke Dinas PU (15 barang,
+  Rp275.415.118.752) gagal approve 2026-08-19 (guard tahun buku menolak baris
+  bertanggal 2024, sebab yang diperbaiki 20260820_01), lalu berhasil
+  2026-08-20 → Daftar Barang menampilkan tiap barang dua kali, dan **Laporan
+  BMD Model 3 Saldo Awal lebih besar dari Saldo Awal → Rekapitulasi tepat
+  sebesar itu** (1.3.1 +161.863.667.617, 1.3.4 +113.551.451.135) — kembarannya
+  duduk di Saldo Awal, yang sah di Penambahan.
+  `lib/kdp.ts` sudah benar sejak awal; yang salah `PerolehanManual.tsx` &
+  `Pengadaan.tsx`, kini disamakan. **`'dihapus'` hanya sah kalau dibarengi
+  baris ledger penghapusan/pembatalan** — kalau tak ada ledgernya, satu-satunya
+  keadaan yang benar-benar menyembunyikan adalah `'draft'`.
+  ⚠️ Perbaikan datanya SENGAJA **tidak** memakai `koreksi_pencatatan_ganda`
+  seperti 20260819_01: duplikat di sana PUNYA baris ledger & riwayat sungguhan,
+  yang ini NOL — menuliskan baris koreksi berarti mengarang peristiwa akuntansi
+  yang tak pernah terjadi lalu menaruhnya permanen di ledger append-only.
+  **Alarm yang layak dibuat**: `aset` ber-`status <> 'draft'` yang tak punya
+  satu pun baris `transaksi_bmd` harus selalu 0.
+
 - **PERFORMA Daftar Barang & Penyusutan — JANGAN diturunkan.** Setelah import
   massal (Peralatan & Mesin 218rb, dst → total aset ~227rb), dua halaman ini
   sempat 504/timeout/freeze. Yang MENYELAMATKAN & bikin stabil (bukan sekadar
