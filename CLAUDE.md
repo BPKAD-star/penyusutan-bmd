@@ -3009,6 +3009,34 @@ membaca sampai `ws.max_row` akan menghitungnya sebagai bidang & menghasilkan
 `M2:M4408` di sheet Rekap justru yang BENAR; berhenti di 4408.
 Warna baris KEMBAR 1:1 dgn kolom "Status Sertipikat (Register)" — **baca
 kolomnya, jangan warnanya**; warna gampang berubah kalau berkasnya disunting.
+
+**HASIL IMPOR (migrasi 20260821_01..05, dijalankan 2026-08-21).** Bidang
+**676 → 3.704**; tanah berbidang **195 → 2.722** dari 2.739. `aset` TIDAK
+tersentuh sama sekali — tanah aktif tetap 2.739, nol `UPDATE`, nol baris
+ledger, jadi Laporan BMD/Rekonsiliasi/Penyusutan/Daftar Barang tak bergeser
+seangka pun. Dari 4.407 baris berkas: **3.028 diimpor** (2.527 register),
+1.362 dilewati karena asetnya sudah punya bidang hasil kerja manual (188
+register — TIDAK ditimpa), 5 dilewati karena asetnya tidak aktif, 12 dilewati
+karena NIBAR-nya tak ketemu.
+⚠️ **12 register ber-NIBAR USANG belum masuk.** Barangnya ADA & aktif di DB,
+tapi NIBAR di berkas sudah bergeser sejak Import Tanah Juli — sebagian di
+segmen urut, sebagian di segmen SKPD (mis. Tanah Kantor Infokom A `…0617…` di
+berkas vs `…0622…` di DB). Dicocokkan lewat nama+nilai+luas hasilnya 12/12
+tunggal & luas cocok semua (a.l. Tanah SMAN 2 Pare Rp13,7 M / 27.886 m²,
+Tanah Gedung Kantor BPKAD Rp10,65 M / 9.618 m²), tapi SENGAJA TIDAK ikut
+diimpor: itu kelas pencocokan yang berbeda dari NIBAR, dan pelajaran insiden
+Import Gedung (20260819_01) tegas — kunci pencocokan impor massal wajib
+identitas barang. Rencananya migrasi TERPISAH berisi 12 pasangan EKSPLISIT
+yang bisa dibaca & disetujui satu per satu.
+⚠️ Satu tanggal sertipikat di berkas tersimpan sebagai TEKS & cacat
+(`30/1/0203`, tahun 0203) → INSERT ditolak Postgres (`22008`) dan SELURUH
+bagian ke-4 batal (satu pernyataan = satu transaksi). Dijadikan NULL, sengaja
+tak ditebak jadi 2003/1903. Ternyata registernya (Tanah Jalan Branggahan –
+Cendono) sudah punya 5 bidang manual, jadi barisnya tak jadi diimpor sama
+sekali; se-tabel, bidang bersertipikat tanpa tanggal = 0.
+Sesudah impor: **84 register** Σ bidangnya beda dari `aset.luas` (67 dari
+hasil impor + 17 yang sudah selisih sejak sebelumnya). SENGAJA dibiarkan —
+yang benar diputuskan manusia lewat menu GIS, bukan ditimpa migrasi.
 ⚠️ Berkas itu **tidak membawa koordinat sama sekali**, jadi impor tak akan
 menggeser satu titik pun — tapi justru karena sesudahnya JAUH lebih banyak
 tanah punya bidang, pencabutan NULL di atas wajib lebih dulu.
