@@ -142,6 +142,37 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   **Alarm yang layak dibuat**: `aset` ber-`status <> 'draft'` yang tak punya
   satu pun baris `transaksi_bmd` harus selalu 0.
 
+- **BUKA KUNCI Cara Perolehan manual WAJIB memulihkan TANGGAL PEROLEHAN, bukan
+  tanggal ledger** (regresi 2026-08-20, ketahuan sebelum sempat memakan korban).
+  Begitu baris ledger pindah ke tanggal BAST, `unapproveHeader`
+  (PerolehanManual.tsx) masih membangun ulang `draft_items` dengan
+  `tglPerolehan: l.tanggal` — yang kini tanggal BAST, bukan tanggal barang itu
+  dibuat. Akibatnya Buka Kunci → Setujui ulang **menulis ulang tanggal
+  perolehan** dan merusak dua hal sekaligus, dua-duanya senyap: (1) segmen tahun
+  NIBAR (2024→2026, jadi NIBAR baru di prefiks lain); (2) `checkpointBekas`
+  langsung `return {}` begitu periode perolehan = periode BAST, jadi **akumulasi
+  penyusutan bawaan HILANG** dan barang bekas masuk lagi seolah baru — persis
+  membatalkan fitur yang baru saja dibangun. Kini `JurnalLine` membawa
+  `tgl_perolehan` sendiri, dibaca berurut: kolom `aset` (nilai HIDUP, sejalan
+  dgn `fields` yang juga dari aset) → `payload.tgl_perolehan_asli` (beku di
+  ledger) → `l.tanggal` (cuma buat baris sebelum 2026-08-20, waktu itu keduanya
+  memang sama). **Pengadaan TIDAK kena** — di sana `tgl_perolehan` & tanggal
+  ledger sama-sama tanggal BAST, jadi `l.tanggal` memang benar.
+  ⚠️ Pelajaran umum: begitu satu tanggal DIPECAH jadi dua, sisir SEMUA pembaca
+  tanggal lama — yang paling gampang kelewat justru jalur BALIK (unapprove/
+  batal/rekonstruksi draft), karena ia jarang dijalankan dan tak pernah error.
+
+- **`cekBolehBatal` KELEWAT di PerolehanManual** (dipasang 2026-08-20). Keempat
+  menu Cara Perolehan manual (Hibah, Tukar Menukar, Hasil Inventarisasi,
+  Perolehan Lainnya) punya Buka Kunci yang menulis `batal_*` — dan `batal_*` di
+  situ **soft-delete asetnya** (`patchAsetDari`, lib/transaksi.ts), jadi ia
+  event yang MENGUBAH state engine dan tunduk aturan "tak boleh dibatalkan
+  kalau aset punya transaksi lebih baru". Pengadaan sudah memasangnya sejak
+  lama; menu ini tidak, jadi barang yang sudah dikapitalisasi/dialihkan/
+  dimanfaatkan bisa ditarik dari tengah rantai tanpa satu pun penolakan.
+  Butuh `trx_id` (id baris ledger perolehannya) di tiap line — ikut ditambahkan
+  ke `JurnalLine`.
+
 - **PERFORMA Daftar Barang & Penyusutan — JANGAN diturunkan.** Setelah import
   massal (Peralatan & Mesin 218rb, dst → total aset ~227rb), dua halaman ini
   sempat 504/timeout/freeze. Yang MENYELAMATKAN & bikin stabil (bukan sekadar

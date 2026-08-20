@@ -10,6 +10,7 @@
 //     20260707_02 yg membuka whitelist tahun_buku utk jenis-jenis ini).
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { catatTransaksi } from '@/lib/transaksi'
 import {
   periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi,
@@ -110,8 +111,16 @@ type Header = {
   created_by: string | null   // pemisahan tugas: pembuat tak boleh menyetujui sendiri
 }
 type JurnalLine = {
+  /** id baris ledger event perolehannya — dipakai guard pembatalan. */
+  trx_id: number
   aset_id: string; nibar: string | null; kode: string; uraian_barang: string | null; nama_barang: string | null
-  satuan: string | null; intra_ekstra: string | null; nilai: number; tanggal: string
+  satuan: string | null; intra_ekstra: string | null; nilai: number
+  // ⚠️ DUA tanggal, dan sejak 2026-08-20 keduanya BEDA — jangan tertukar.
+  // `tanggal`       = tanggal PERISTIWA (BAST), tanggal baris ledgernya.
+  // `tgl_perolehan` = tanggal barang itu DIBUAT, yang menentukan NIBAR &
+  //                   akumulasi bawaan. Inilah yang dipakai membangun ulang
+  //                   draft saat Buka Kunci.
+  tanggal: string; tgl_perolehan: string
   foto_paths: string[]
   fields: Record<string, string>
 }
@@ -212,16 +221,18 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     const disetujuiIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
     if (disetujuiIds.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select(`id,header_id,nilai,tanggal,aset:aset_id(id,nibar,uraian_barang,kode,satuan,intra_ekstra,status,foto_paths,${ASET_FIELD_COLS.join(',')})`)
+        .select(`id,header_id,nilai,tanggal,payload,aset:aset_id(id,nibar,uraian_barang,kode,satuan,intra_ekstra,status,tgl_perolehan,foto_paths,${ASET_FIELD_COLS.join(',')})`)
         .eq('jenis', kategori)
         .in('header_id', disetujuiIds)
         .order('id', { ascending: false })
 
       const rows = (data || []) as unknown as {
         id: number; header_id: string; nilai: number; tanggal: string
+        payload: { tgl_perolehan_asli?: string | null } | null
         aset: ({
           id: string; nibar: string | null; nama_barang: string | null; uraian_barang: string | null; kode: string
-          satuan: string | null; intra_ekstra: string | null; status: string; foto_paths: string[]
+          satuan: string | null; intra_ekstra: string | null; status: string; tgl_perolehan: string | null
+          foto_paths: string[]
         } & Record<string, string | number | null>) | null
       }[]
       const seen = new Set<string>()
@@ -234,8 +245,16 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
         const fields: Record<string, string> = {}
         for (const k of ASET_FIELD_COLS) { const v = r.aset[k]; if (v != null) fields[k] = String(v) }
         j.lines.push({
-          aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, uraian_barang: r.aset.uraian_barang, nama_barang: r.aset.nama_barang,
+          trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, uraian_barang: r.aset.uraian_barang, nama_barang: r.aset.nama_barang,
           satuan: r.aset.satuan, intra_ekstra: r.aset.intra_ekstra, nilai: r.nilai, tanggal: r.tanggal,
+          // Urutan cadangan SENGAJA begini: kolom `aset` dulu (nilai HIDUP —
+          // ikut koreksi lewat menu Koreksi, sejalan dengan `fields` di bawah
+          // yang juga dibaca dari aset), lalu `payload.tgl_perolehan_asli`
+          // (beku di ledger saat approve), baru `r.tanggal`. Yang terakhir
+          // cuma buat baris LAMA (sebelum 2026-08-20) — waktu itu tanggal
+          // ledger memang SAMA dengan tanggal perolehan.
+          tgl_perolehan: (r.aset.tgl_perolehan as string | null)
+            || r.payload?.tgl_perolehan_asli || r.tanggal,
           foto_paths: r.aset.foto_paths || [], fields,
         })
         j.total += r.nilai
@@ -492,6 +511,18 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       labelYa: 'Ya, buka kunci',
     })).ya) return
     setBusyId(j.id); setMsg('')
+    // Guard rantai (rules.md §1.3) — satu sumber di lib/guardPembatalan.ts.
+    // Pengadaan sudah memasangnya sejak lama; menu ini KELEWAT. `batal_*` di
+    // sini soft-delete asetnya (lihat patchAsetDari di lib/transaksi.ts), jadi
+    // membatalkannya di TENGAH rantai — barang yang sudah dikapitalisasi,
+    // dialihkan, atau dimanfaatkan — merusak replay engine tanpa satu pun
+    // pesan. Guard-nya fail-closed: query gagal = tidak boleh.
+    const guard = await cekBolehBatal(
+      supabase,
+      j.lines.map(l => ({ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.uraian_barang || l.nibar })),
+      `${judul.toLowerCase()} ini (mis. pengalihan/pemanfaatan/kapitalisasi)`,
+    )
+    if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); setBusyId(null); return }
     for (const l of j.lines) {
       const { error } = await catatTransaksi(supabase, {
         asetId: l.aset_id, jenis: `batal_${kategori}`, tanggal: l.tanggal, headerId: j.id,
@@ -501,7 +532,16 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     }
     const draftItems: DraftItem[] = j.lines.map(l => ({
       key: newKey(), golongan: kodeLevel3(l.kode), kode: l.kode, uraianBarang: l.uraian_barang || '',
-      tglPerolehan: l.tanggal, satuan: l.satuan || '', harga: String(l.nilai), fields: l.fields || {}, foto: l.foto_paths || [],
+      // ⚠️ WAJIB `l.tgl_perolehan`, BUKAN `l.tanggal` (regresi 2026-08-20).
+      // Sejak baris ledger dicatat pada tanggal BAST, `l.tanggal` = 2026-02-24
+      // sementara barangnya dibangun 2024. Memakai `l.tanggal` di sini bikin
+      // Buka Kunci → Setujui ulang DIAM-DIAM menulis ulang tgl perolehan jadi
+      // tanggal BAST, dan itu merusak dua hal sekaligus: segmen tahun NIBAR
+      // (2024→2026, jadi NIBAR baru di prefiks lain), dan `checkpointBekas`
+      // yang langsung `return {}` begitu periode perolehan = periode BAST —
+      // artinya AKUMULASI PENYUSUTAN BAWAAN 2024–2025 HILANG dan barangnya
+      // masuk lagi seolah baru. Tanpa satu pun error.
+      tglPerolehan: l.tgl_perolehan, satuan: l.satuan || '', harga: String(l.nilai), fields: l.fields || {}, foto: l.foto_paths || [],
     }))
     const { error } = await supabase.from('jurnal_header')
       .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...j.payload, draft_items: draftItems } })
