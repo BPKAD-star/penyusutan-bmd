@@ -51,7 +51,6 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const [periode, setPeriode] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [selSkpdId, setSelSkpdId] = useState<number | null>(null) // SKPD terpilih (utk footer Model 3)
-  const [voided, setVoided] = useState<Set<string> | null>(null)  // null = belum dimuat
   // Model 2: rekap matriks per SKPD (root) x per golongan — dibangun lazy saat view dipindah.
   const [view, setView] = useState<'list' | 'matrix' | 'permendagri'>('list')
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
@@ -73,11 +72,31 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // dan barang yang sudah dianulir tetap tampil sebagai perolehan sah. Di sini
   // kegagalan itu ditandai supaya operator tahu angkanya belum bisa dipercaya.
   const [voidedErr, setVoidedErr] = useState('')
-  useEffect(() => {
-    fetchVoidedAsetIds(supabase)
-      .then(setVoided)
-      .catch((e: Error) => setVoidedErr(`Gagal memuat daftar transaksi yang dibatalkan: ${e.message}. Barang yang sudah dianulir bisa ikut terhitung — muat ulang halaman dulu sebelum memakai angkanya.`))
+
+  // ⚠️ DITANYAKAN PER BARIS YANG SUDAH DITARIK, bukan disapu di muka
+  // (2026-08-20). Versi lama memanggil `fetchVoidedAsetIds(supabase)` TANPA
+  // daftar aset, di sebuah useEffect ber-deps `[]` — jadi ia menyisir SELURUH
+  // `transaksi_bmd` (418rb baris) cuma untuk menanyakan status paling banyak
+  // 500 baris laporan. Itu TIMEOUT, dan TIDAK bisa ditambal index: `jenis`
+  // bertipe ENUM tak pernah bisa jadi index-cond di bawah RLS (CLAUDE.md
+  // "ronde 3"). Obatnya memang sudah tertulis di sana — scope-kan, jangan
+  // tambah index. Ini pemanggil tak-terscope yang TERAKHIR.
+  //
+  // Urutannya jadi terbalik, dan itu memang syaratnya: tarik barisnya DULU,
+  // baru tanya status void aset-aset itu — `jenis IN (...) AND aset_id IN
+  // (...)` dilayani idx_trx_jenis_aset, biayanya tetap kecil selamanya.
+  //
+  // Berlaku ke KELIMA menu Laporan Perolehan sekaligus (Pengadaan, Hibah,
+  // Tukar Menukar, Hasil Inventarisasi, Perolehan Lainnya) — komponen ini
+  // dipakai bersama.
+  const saringVoid = useCallback(async <T extends { aset_id: string | null }>(baris: T[]): Promise<T[]> => {
+    const voided = await fetchVoidedAsetIds(
+      supabase, [], baris.map(r => r.aset_id).filter((id): id is string => !!id))
+    return baris.filter(r => !(r.aset_id && voided.has(r.aset_id)))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pesanVoidGagal = (e: Error) =>
+    `Gagal memuat daftar transaksi yang dibatalkan: ${e.message}. Angka di halaman ini TIDAK ditampilkan — muat ulang halaman dulu.`
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
@@ -93,29 +112,44 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   }, [periode, descIds, jenis]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!voided) return // tunggu set void termuat supaya tak sempat tampil tanpa filter
     ;(async () => {
-      setLoading(true)
-      const { data } = await buildQuery().limit(500)
-      const hasil = ((data as never as Trx[]) || []).filter(r => !(r.aset_id && voided.has(r.aset_id)))
-      setRows(hasil)
-      setLoading(false)
+      setLoading(true); setVoidedErr('')
+      try {
+        // `error` WAJIB dibaca: `const { data } = await` bikin query yang gagal
+        // terbaca sebagai "datanya memang kosong" — 0 transaksi yang kelihatan
+        // sah padahal query-nya tumbang.
+        const { data, error } = await buildQuery().limit(500)
+        if (error) throw new Error(error.message)
+        setRows(await saringVoid((data as never as Trx[]) || []))
+      } catch (e) {
+        // Fail-closed (CLAUDE.md): modul pelaporan lebih baik menolak tampil
+        // daripada menyajikan angka kurang-sebagian yang kelihatan sah.
+        setVoidedErr(pesanVoidGagal(e as Error)); setRows([])
+      } finally {
+        // Di `finally`, BUKAN di akhir jalur sukses — kalau tidak, satu query
+        // yang melempar meninggalkan tabel "Memuat data..." SELAMANYA.
+        setLoading(false)
+      }
     })()
-  }, [buildQuery, voided])
+  }, [buildQuery, saringVoid])
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
   // Model 2: rekap matriks SKPD (root) x golongan — dibangun full (tak dibatasi 500 spt daftar transaksi).
   useEffect(() => {
-    if (view !== 'matrix' || !skpdLoaded || !voided) return
+    if (view !== 'matrix' || !skpdLoaded) return
     ;(async () => {
-      setMatrixLoading(true)
+      setMatrixLoading(true); setVoidedErr('')
+      try {
       const mtx: Record<number, MatrixRow> = {}
       for (let from = 0; ; from += 1000) {
-        const { data } = await buildQuery().range(from, from + 999)
+        const { data, error } = await buildQuery().range(from, from + 999)
+        if (error) throw new Error(error.message)
         if (!data || data.length === 0) break
-        for (const r of (data as never as Trx[])) {
-          if ((r.aset_id && voided.has(r.aset_id)) || !r.skpd_tujuan) continue
+        // Disaring PER HALAMAN — daftar aset yang ditanya ikut kecil, jadi
+        // biayanya datar berapa pun besar ledgernya.
+        for (const r of await saringVoid((data as never as Trx[]))) {
+          if (!r.skpd_tujuan) continue
           const root = rootOf(r.skpd_tujuan)
           const rid = root?.id ?? r.skpd_tujuan
           const rnama = root?.nama ?? `SKPD #${r.skpd_tujuan}`
@@ -127,9 +161,11 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         if (data.length < 1000) break
       }
       setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
-      setMatrixLoading(false)
+      } catch (e) {
+        setVoidedErr(pesanVoidGagal(e as Error)); setMatrix([])
+      } finally { setMatrixLoading(false) }
     })()
-  }, [view, buildQuery, skpdLoaded, voided]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, buildQuery, skpdLoaded, saringVoid]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleExportMatrix() {
     exportToExcel(matrix.map(r => {
@@ -146,15 +182,23 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   }
 
   async function handleExport() {
-    setExporting(true)
-    const all: Trx[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data } = await buildQuery().range(from, from + 999)
-      if (!data || data.length === 0) break
-      all.push(...(data as never as Trx[]))
-      if (data.length < 1000) break
+    setExporting(true); setVoidedErr('')
+    // ⚠️ Dulu barisnya disaring dgn `voided?.has(...)`. Optional chaining itu
+    // berarti set yang GAGAL dimuat (null) menghasilkan berkas Excel TANPA
+    // saringan sama sekali — dan berkas yang sudah terunduh tak punya satu pun
+    // tanda bahwa isinya salah. Sekarang kegagalan MEMBATALKAN exportnya.
+    const hasil: Trx[] = []
+    try {
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await buildQuery().range(from, from + 999)
+        if (error) throw new Error(error.message)
+        if (!data || data.length === 0) break
+        hasil.push(...await saringVoid((data as never as Trx[])))
+        if (data.length < 1000) break
+      }
+    } catch (e) {
+      setVoidedErr(pesanVoidGagal(e as Error)); setExporting(false); return
     }
-    const hasil = all.filter(r => !(r.aset_id && voided?.has(r.aset_id)))
     exportToExcel(hasil.map(r => ({
       ...(pihakLabel ? { [pihakLabel]: r.payload?.pihak || '' } : {}),
       'Kode Barang': r.aset?.kode || '',

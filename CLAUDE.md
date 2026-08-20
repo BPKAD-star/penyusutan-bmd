@@ -173,6 +173,37 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   Butuh `trx_id` (id baris ledger perolehannya) di tiap line — ikut ditambahkan
   ke `JurnalLine`.
 
+- **LAPORAN PEROLEHAN (kelima menu) timeout — pemanggil `fetchVoidedAsetIds`
+  TAK TERSCOPE yang terakhir** (2026-08-20). Gejalanya strip merah "gagal
+  membaca transaksi pembatalan (…): canceling statement due to statement
+  timeout" di Laporan Hibah/Tukar Menukar/dst, lalu tabelnya nyangkut di
+  "Memuat data..." selamanya. Ini **persis kejadian yang sudah diramalkan**
+  catatan 2026-07-28 di atas ("Pemanggil yang belum terscope … kalau nanti
+  timeout, scope-kan, jangan tambah index lagi") — Laporan BMD Model 3 &
+  Laporan Pengadaan sudah dipindah ke jalur terscope, `components/
+  LaporanPerolehan.tsx` kelewat.
+  Sebabnya ia memanggil `fetchVoidedAsetIds(supabase)` **tanpa daftar aset** di
+  `useEffect` ber-deps `[]` — menyisir SELURUH `transaksi_bmd` (418rb baris)
+  cuma untuk menanyakan status paling banyak 500 baris laporan. Tak bisa
+  ditambal index: `jenis` bertipe ENUM tak pernah bisa jadi index-cond di bawah
+  RLS. **Diukur dgn RLS aktif** (`SET LOCAL role authenticated` + uid pengurus
+  SKPD): jalur lama **57014 timeout**, jalur terscope **229 ms** dgn
+  `Index Cond: (aset_id = ANY (…))` — biayanya ikut jumlah aset yang ditanya,
+  bukan besar ledger. Sebagai service_role query yang rusak itu tetap 61 ms,
+  jadi EXPLAIN tanpa RLS akan bilang "beres" padahal belum.
+  **Urutannya jadi terbalik & itu memang syaratnya**: tarik baris laporan DULU,
+  baru tanya status void aset-aset itu (`saringVoid`). Dipakai di tiga tempat —
+  daftar transaksi, Model 2 (per halaman), & Export.
+  ⚠️ Bareng itu dua kebocoran senyap ikut ditutup di berkas yang sama:
+  (1) `const { data } = await buildQuery()` **tanpa `error`** di ketiga tempat —
+  query gagal terbaca sbg "0 transaksi" yang kelihatan sah; (2) Export menyaring
+  dgn **`voided?.has(...)`**, jadi set yang gagal dimuat (`null`) menghasilkan
+  berkas Excel **TANPA saringan sama sekali**, tanpa satu pun tanda di berkas
+  yang sudah terunduh. Sekarang ketiganya fail-closed: `setLoading(false)` di
+  `finally` (bukan akhir jalur sukses), pesan error ditampilkan, angka & export
+  DITOLAK. **Satu komponen ini dipakai kelima menu Laporan Perolehan**, jadi
+  perbaikannya berlaku serentak.
+
 - **PERFORMA Daftar Barang & Penyusutan — JANGAN diturunkan.** Setelah import
   massal (Peralatan & Mesin 218rb, dst → total aset ~227rb), dua halaman ini
   sempat 504/timeout/freeze. Yang MENYELAMATKAN & bikin stabil (bukan sekadar
