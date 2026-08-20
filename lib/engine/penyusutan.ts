@@ -233,15 +233,47 @@ export function hitungJadwalAset(
     // Akrual mulai TEPAT di periode pemecahan → baseline = periode sebelumnya.
     mulaiSetelah = prevPeriodeOf(pemecahanMasuk.periode)
   } else if (perolehan) {
+    // ── Barang BEKAS yang diterima pertengahan umur (2026-08-20) ────────────
+    // Hibah/Tukar Menukar/Hasil Inventarisasi/Perolehan Lainnya bisa berupa
+    // barang yang DIBANGUN pihak pemberi jauh sebelum BAST-nya. Keputusan user
+    // 2026-08-20: pemkab mengakui tahun pembuatannya, jadi barang itu masuk
+    // SUDAH membawa akumulasi penyusutan — bukan mulai umur baru dari BAST.
+    //
+    // Posisi umurnya dihitung SAAT APPROVE lalu dititipkan di payload baris
+    // ledger, bentuknya sama persis dgn `pemecahan_masuk` — bukan diturunkan
+    // di sini dari `aset.tgl_perolehan`. Alasannya sama dgn kenapa checkpoint
+    // Tutup Tahun disimpan, bukan dihitung ulang: `tgl_perolehan` & masa manfaat
+    // kodefikasi bisa berubah kemudian (koreksi spesifikasi, kodefikasi
+    // diperbarui), dan angka yang sudah masuk neraca tak boleh ikut bergerak.
+    //
+    // Tanpa payload ini → perilaku LAMA persis, jadi seluruh baris perolehan
+    // yang sudah ada tak tersentuh.
+    const cp = (perolehan.payload || {}) as Record<string, unknown>
+    const bekas = cp.sisa_masa_manfaat_smt != null && cp.akumulasi != null
+
     nilaiPerolehan = Number(perolehan.nilai || 0)
-    nilaiBuku = nilaiPerolehan
-    akumulasi = 0
-    masaTahun = masaManfaatKode.get(kode) ?? 0
-    sisaSmt = Math.max(0, Math.round((masaTahun || 0) * 2)) // ×2 hanya di engine (§6 step 3)
-    beban = sisaSmt > 0 ? Math.round(nilaiPerolehan / sisaSmt) : 0
-    // Penyusutan mulai semester perolehan itu sendiri → baseline = periode sebelumnya
-    const prev = comparePeriode(perolehan.periode, '2026-S1') <= 0 ? PERIODE_BASELINE : null
-    mulaiSetelah = prev ?? prevPeriodeOf(perolehan.periode)
+    if (bekas) {
+      nilaiBuku = Number(cp.nilai_buku_awal ?? nilaiPerolehan)
+      akumulasi = Number(cp.akumulasi ?? 0)
+      sisaSmt = Math.max(0, Math.trunc(Number(cp.sisa_masa_manfaat_smt ?? 0)))
+      beban = Math.round(Number(cp.beban_per_smt ?? 0))
+      masaTahun = cp.masa_manfaat_smt ? Number(cp.masa_manfaat_smt) / 2 : (masaManfaatKode.get(kode) ?? null)
+      // Akrual mulai TEPAT di periode BAST → baseline = periode sebelumnya.
+      // ⚠️ SENGAJA tanpa pintasan PERIODE_BASELINE di bawah: checkpoint-nya
+      // sudah memuat seluruh riwayat sampai semester sebelum BAST, jadi
+      // memundurkan titik mulainya justru akan menghitung ulang periode yang
+      // sudah terwakili di dalamnya.
+      mulaiSetelah = prevPeriodeOf(perolehan.periode)
+    } else {
+      nilaiBuku = nilaiPerolehan
+      akumulasi = 0
+      masaTahun = masaManfaatKode.get(kode) ?? 0
+      sisaSmt = Math.max(0, Math.round((masaTahun || 0) * 2)) // ×2 hanya di engine (§6 step 3)
+      beban = sisaSmt > 0 ? Math.round(nilaiPerolehan / sisaSmt) : 0
+      // Penyusutan mulai semester perolehan itu sendiri → baseline = periode sebelumnya
+      const prev = comparePeriode(perolehan.periode, '2026-S1') <= 0 ? PERIODE_BASELINE : null
+      mulaiSetelah = prev ?? prevPeriodeOf(perolehan.periode)
+    }
   } else {
     return [] // tidak ada baseline — belum masuk ledger
   }

@@ -11,7 +11,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
-import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
+import {
+  periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi,
+  klasifikasiKomptabel, fetchMasaManfaat, comparePeriode, periodeRange,
+  previousPeriode, parsePeriode, formatPeriode,
+} from '@/lib/bmd'
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
 import { formatRupiah } from '@/lib/export'
@@ -27,6 +31,59 @@ import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 export type KategoriPerolehan = 'hibah_masuk' | 'tukar_menukar' | 'hasil_inventarisasi' | 'perolehan_lainnya'
 
 const todayStr = () => new Date().toISOString().slice(0, 10)
+
+/**
+ * Posisi umur barang BEKAS yang diterima pertengahan umur — dititipkan di
+ * payload baris ledger, bentuknya sama persis dengan `pemecahan_masuk` supaya
+ * engine bisa memakainya lewat satu cabang yang sama.
+ *
+ * Keputusan user 2026-08-20: pemkab mengakui tahun PEMBUATAN barang, jadi
+ * barang hibah/tukar menukar/dsb yang dibangun 2024 lalu diserahkan Februari
+ * 2026 masuk dengan akumulasi penyusutan 2024–2025 sudah menempel — bukan
+ * mulai umur baru sejak BAST.
+ *
+ * DIHITUNG SEKALI DI SINI, lalu dibekukan. Sengaja bukan diturunkan engine dari
+ * `aset.tgl_perolehan`: kolom itu masih bisa dikoreksi belakangan lewat menu
+ * Koreksi, dan masa manfaat di kodefikasi bisa diperbarui — sementara angka yang
+ * sudah masuk neraca tak boleh ikut bergerak. Pola & alasan yang sama dengan
+ * checkpoint Tutup Tahun.
+ *
+ * Mengembalikan objek KOSONG (bukan nol-nol) kalau tak ada yang perlu dibawa —
+ * barang yang perolehannya di periode BAST itu sendiri, atau golongan tanpa masa
+ * manfaat (Tanah, ATL, KDP). Payload tanpa kunci checkpoint = engine memakai
+ * jalur lama persis, jadi entry normal sama sekali tak berubah perilakunya.
+ */
+function checkpointBekas(
+  nilai: number, tglPerolehan: string, periodeBast: string, masaTahun: number | undefined,
+): Record<string, number> {
+  if (!masaTahun || masaTahun <= 0 || !tglPerolehan) return {}
+  const periodeAsal = periodeDariTanggal(tglPerolehan)
+  if (comparePeriode(periodeAsal, periodeBast) >= 0) return {}
+
+  // Semester yang SUDAH terpakai = sejak semester perolehan s.d. semester
+  // SEBELUM BAST. Penyusutan di aplikasi ini mulai pada semester perolehan itu
+  // sendiri, karena itu batas bawahnya periode sebelum `periodeAsal`.
+  // `previousPeriode` bekerja pada objek Periode, `periodeRange` pada string —
+  // jadi keduanya disambung lewat parse/format, bukan dipanggil berantai.
+  const smtSebelum = (p: string) => formatPeriode(previousPeriode(parsePeriode(p)))
+  const totalSmt = Math.max(1, Math.round(masaTahun * 2))
+  const terpakai = Math.min(
+    totalSmt,
+    periodeRange(smtSebelum(periodeAsal), smtSebelum(periodeBast)).length,
+  )
+  const bebanPerSmt = Math.round(nilai / totalSmt)
+  // Umur HABIS sebelum diserahkan → nilai buku 0, bukan sisa pembulatan.
+  // Aturannya sama dengan engine: selisih pembulatan diserap di semester akhir.
+  const habis = terpakai >= totalSmt
+  const akumulasi = habis ? nilai : bebanPerSmt * terpakai
+  return {
+    nilai_buku_awal: nilai - akumulasi,
+    akumulasi,
+    sisa_masa_manfaat_smt: totalSmt - terpakai,
+    masa_manfaat_smt: totalSmt,
+    beban_per_smt: bebanPerSmt,
+  }
+}
 
 // Satu DraftItem = satu unit barang (kuantitas dipecah saat ditambahkan, sama
 // spt Pengadaan). tglPerolehan ikut per-unit (beda dari Pengadaan yg 1 tanggal
@@ -312,11 +369,16 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       subjudul: `Dokumen ${h.no_sk}`,
       rincian: [
         { label: 'Barang dicatat', nilai: `${items.length} barang` },
-        { label: 'Tgl perolehan', nilai: rentang },
+        // DUA tanggal, dan bedanya menentukan angka: yang satu menentukan barang
+        // muncul di periode laporan mana, yang satu menentukan sudah berapa lama
+        // ia disusutkan. Sebelum 2026-08-20 keduanya dianggap satu.
+        { label: 'Masuk pada', nilai: `${h.tanggal} (${periodeDariTanggal(h.tanggal)})` },
+        { label: 'Tgl perolehan barang', nilai: rentang },
       ],
-      isi: <>Barangnya <b>resmi tercatat</b> di Daftar Barang, Penyusutan, &amp; laporan BMD dengan
-        tanggal perolehan masing-masing, dan NIBAR-nya diterbitkan. Sesudah ini kartunya terkunci —
-        mengubahnya harus lewat Buka Kunci.</>,
+      isi: <>Barangnya <b>resmi tercatat</b> sejak periode BAST di atas, dan NIBAR-nya diterbitkan.
+        Barang yang tanggal perolehannya <b>lebih tua</b> dari periode itu masuk dengan
+        <b> akumulasi penyusutan yang sudah berjalan</b>, bukan umur baru. Sesudah ini kartunya
+        terkunci — mengubahnya harus lewat Buka Kunci.</>,
       labelYa: 'Ya, setujui',
     })).ya) return
 
@@ -358,12 +420,39 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     const { data: inserted, error: asetErr } = await supabase.from('aset').insert(asetRows).select('id,nilai_perolehan')
     if (asetErr || !inserted) { setMsg(`Error: gagal membuat barang: ${asetErr?.message}`); setBusyId(null); return }
 
-    const trxRows = (inserted as { id: string; nilai_perolehan: number }[]).map((a, i) => ({
-      aset_id: a.id, jenis: kategori, periode: periodeDariTanggal(itemsWithKlas[i].tglPerolehan),
-      tanggal: itemsWithKlas[i].tglPerolehan, nilai: a.nilai_perolehan,
-      skpd_tujuan: Number(skpd), header_id: h.id,
-      payload: { pihak: h.payload.pihak || null },
-    }))
+    // ── Tanggal PERISTIWA vs tanggal PEROLEHAN (keputusan user 2026-08-20) ───
+    // Baris ledger dicatat pada TANGGAL BAST/dokumen, bukan tanggal perolehan
+    // barang. Dua sebab, dua-duanya nyata:
+    //   (1) Barang yang diterima bisa DIBANGUN pihak pemberi bertahun-tahun
+    //       sebelumnya. Mencatat barisnya di tahun itu ditolak guard tahun buku
+    //       ("Tahun 2024 sudah tutup buku") — sampai 2026-08-20 itu membuat
+    //       barang bekas MUSTAHIL dicatat sama sekali.
+    //   (2) Barang itu baru jadi milik pemkab saat BAST. Kalau barisnya
+    //       bertanggal 2024, ia akan muncul di Daftar Barang, Laporan BMD, &
+    //       Rekonsiliasi SEJAK 2024 — mengubah angka tahun yang sudah dikunci
+    //       dan sudah dilaporkan.
+    // `aset.tgl_perolehan` TETAP tanggal aslinya (dipakai kolom Tahun Perolehan,
+    // NIBAR, & dasar hitung umur di bawah). Yang memisahkan keduanya di sisi
+    // tampilan: keempat jenis ini terdaftar di `LAHIR` (lib/visibilitas.ts).
+    const periodeBast = periodeDariTanggal(h.tanggal)
+    const masaMap = await fetchMasaManfaat(supabase, itemsWithKlas.map(it => it.kode))
+
+    const trxRows = (inserted as { id: string; nilai_perolehan: number }[]).map((a, i) => {
+      const it = itemsWithKlas[i]
+      return {
+        aset_id: a.id, jenis: kategori, periode: periodeBast,
+        tanggal: h.tanggal, nilai: a.nilai_perolehan,
+        skpd_tujuan: Number(skpd), header_id: h.id,
+        payload: {
+          pihak: h.payload.pihak || null,
+          // Tanggal perolehan asli ikut direkam di ledger, bukan cuma di `aset`:
+          // kolom `aset` bisa dikoreksi belakangan, sedangkan yang menjelaskan
+          // angka di neraca harus ikut beku bersama barisnya (append-only).
+          tgl_perolehan_asli: it.tglPerolehan,
+          ...checkpointBekas(toNum(it.harga), it.tglPerolehan, periodeBast, masaMap.get(it.kode)),
+        },
+      }
+    })
     const { error: trxErr } = await supabase.from('transaksi_bmd').insert(trxRows)
     if (trxErr) {
       await supabase.from('aset').update({ status: 'dihapus' }).in('id', (inserted as { id: string }[]).map(a => a.id))

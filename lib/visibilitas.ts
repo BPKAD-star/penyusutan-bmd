@@ -62,7 +62,22 @@ export const MUNCUL = [
 // sini justru akan MENGHILANGKAN barang yang sah dari periode sebelum
 // penggabungan — kebalikan persis dari insiden 2026-08-05 yang melahirkan
 // daftar ini.
-export const LAHIR = ['pemecahan_masuk', 'kdp_selesai_masuk'] as const
+// ⚠️ Keempat jenis Cara Perolehan manual (Hibah, Tukar Menukar, Hasil
+// Inventarisasi, Perolehan Lainnya) IKUT di sini sejak 2026-08-20. Sebelumnya
+// baris ledgernya dicatat pada TANGGAL PEROLEHAN barang, jadi periode ledger =
+// periode `tgl_perolehan` dan `belumAdaPada` sudah cukup. Sekarang barisnya
+// dicatat pada TANGGAL BAST — barang bekas yang dibangun 2024 lalu dihibahkan
+// Februari 2026 punya `tgl_perolehan` 2024 tapi baru jadi milik pemkab di
+// 2026-S1. Tanpa daftar ini, ia akan tampil di Daftar Barang, Laporan BMD, &
+// Rekonsiliasi SEJAK 2024 — mengubah angka tahun yang sudah dikunci & dilaporkan.
+//
+// Barisan lama tidak terpengaruh: untuk baris yang dicatat sebelum perubahan
+// ini, periode ledger memang SAMA dengan periode `tgl_perolehan`, jadi
+// `lahirSetelah` menjawab persis seperti `belumAdaPada`.
+export const LAHIR = [
+  'pemecahan_masuk', 'kdp_selesai_masuk',
+  'hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya',
+] as const
 
 export type EventVisibilitas = { id: number; periode: string; jenis: string }
 

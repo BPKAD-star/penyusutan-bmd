@@ -16,6 +16,23 @@ export async function fetchBatasKapitalisasi(supabase: SupabaseClient, kodes: st
   return map
 }
 
+/** Ambil masa_manfaat_tahun (kodefikasi_bmd) utk sekumpulan kode sekaligus.
+ *  Kembar bentuknya dgn `fetchBatasKapitalisasi` di atas — dipakai saat sebuah
+ *  pintu perolehan perlu menghitung posisi umur barang SEBELUM engine jalan
+ *  (barang bekas yang diterima pertengahan umur, lihat PerolehanManual).
+ *  Kode tanpa masa manfaat (mis. Tanah) tidak masuk peta. */
+export async function fetchMasaManfaat(supabase: SupabaseClient, kodes: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>()
+  const distinct = [...new Set(kodes)]
+  for (let i = 0; i < distinct.length; i += 300) {
+    const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,masa_manfaat_tahun').in('kode', distinct.slice(i, i + 300))
+    for (const r of (data || []) as { kode: string; masa_manfaat_tahun: number | null }[]) {
+      if (r.masa_manfaat_tahun) map.set(r.kode, Number(r.masa_manfaat_tahun))
+    }
+  }
+  return map
+}
+
 /**
  * Klasifikasi intra/ekstrakomptabel: nilai per item vs batas_kapitalisasi
  * (kodefikasi_bmd, Permendagri 108). nilai >= batas → intra; nilai < batas →

@@ -82,6 +82,38 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   malah menelan error query). Jangan disalin lagi ke halaman; dikunci
   lib/visibilitas.test.ts. Rincian & pengecualian yang disengaja: rules.md §1.9.
 
+- **BARANG BEKAS YANG DITERIMA: tanggal BAST ≠ tanggal perolehan** (keputusan
+  user 2026-08-20, migrasi 20260820_01). Hibah/Tukar Menukar/Hasil
+  Inventarisasi/Perolehan Lainnya bisa berupa barang yang DIBANGUN pihak
+  pemberi bertahun-tahun sebelumnya. Sampai 2026-08-20 baris ledgernya dicatat
+  pada tanggal perolehan barang, dan itu **memblokir total**: guard tahun buku
+  menolaknya ("Tahun 2024 sudah tutup buku"), jadi barang bekas MUSTAHIL
+  dicatat sama sekali. Sekarang **baris ledger bertanggal BAST**, sedangkan
+  `aset.tgl_perolehan` tetap tanggal pembuatan aslinya.
+  Konsekuensinya keempat jenis itu WAJIB masuk `LAHIR` (lib/visibilitas.ts +
+  `v_lahir` di `fn_dbar_hidden`) — tanpa itu barang bertanggal 2024 muncul di
+  Laporan BMD 2024 & 2025, tahun yang sudah dikunci & dilaporkan.
+  **Pemkab mengakui tahun pembuatannya**, jadi barang masuk SUDAH membawa
+  akumulasi penyusutan: posisi umurnya dihitung saat approve
+  (`checkpointBekas` di PerolehanManual) lalu DIBEKUKAN di payload baris
+  ledger, bentuknya sama persis dgn `pemecahan_masuk` sehingga engine
+  memakainya lewat satu cabang yang sama. ⚠️ Sengaja dibekukan, bukan
+  diturunkan engine dari `tgl_perolehan`: kolom itu masih bisa dikoreksi lewat
+  menu Koreksi & masa manfaat kodefikasi bisa diperbarui, sementara angka yang
+  sudah masuk neraca tak boleh ikut bergerak (alasan yang sama dgn checkpoint
+  Tutup Tahun). Baris TANPA checkpoint → perilaku LAMA persis, jadi seluruh
+  data lama tak bergeser. Rekonsiliasi **tidak perlu disentuh**:
+  `attribusiLines` sudah mengatribusi `akumulasi = akum_P − beban_P`
+  ("akumulasi BAWAAN saja") untuk barang yang baru masuk sel. `pengadaan`
+  TIDAK ikut — di sana tanggal perolehan efektif memang tanggal BAST-nya
+  sendiri. Dikunci lib/engine/perolehanBekas.test.ts.
+  ⚠️ **Predikat `idx_trx_visibilitas` KEMBAR dgn `ev` di `fn_dbar_hidden`** —
+  menambah jenis di `v_lahir` tanpa memperlebar indexnya membuat planner
+  mengabaikan index itu DIAM-DIAM (Daftar Barang & Penyusutan lambat lalu
+  timeout, tanpa satu pun error). Predikat index tak bisa di-ALTER → drop &
+  buat ulang.
+  ⚠️ **Deploy-ordering: migrasi 20260820_01 WAJIB jalan SEBELUM deploy kode.**
+
 - **PERFORMA Daftar Barang & Penyusutan — JANGAN diturunkan.** Setelah import
   massal (Peralatan & Mesin 218rb, dst → total aset ~227rb), dua halaman ini
   sempat 504/timeout/freeze. Yang MENYELAMATKAN & bikin stabil (bukan sekadar
