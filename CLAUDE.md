@@ -2733,6 +2733,27 @@ BUKAN public URL. Draft (belum py `aset.id`) pakai prefix `draft/<key-client>/..
 
 - Kotak pemilih "Lokasi / SKPD" di menu pengelolaan pakai card full-width
   (tanpa `max-w-3xl`).
+- **Kolom FOTO di tabel barang = `FotoSel` + `useFotoThumbs`
+  (shared/ui/FotoBarang.tsx), JANGAN ditulis ulang per menu.** Gambar mini
+  32 px-nya bisa diklik → pop-up ukuran penuh (permintaan user 2026-08-20:
+  pada ukuran itu nomor rangka/merek di badan barang mustahil dibaca, jadi ia
+  praktis cuma penanda "ada fotonya"). Sebelumnya hook `useFirstFotoUrls` &
+  markup selnya disalin di EMPAT tempat — kartu draft & kartu disetujui,
+  masing-masing di Pengadaan.tsx dan PerolehanManual.tsx (yang sendirinya
+  melayani Hibah, Tukar Menukar, Hasil Inventarisasi, & Perolehan Lainnya) —
+  identik sampai ke kelas Tailwind-nya.
+  **Pembagian tugas tanda tangannya disengaja**: tabel menandatangani foto
+  PERTAMA tiap baris dalam SATU permintaan (`useFotoThumbs`), pop-up
+  menandatangani SELURUH foto barang itu saat dibuka. Kalau semuanya
+  ditandatangani di muka, kartu berisi ratusan barang membayar tanda tangan
+  untuk foto yang tak pernah dilihat. Bucket `aset-foto` privat → SELALU signed
+  URL, jangan public URL.
+  ⚠️ `useFotoThumbs` **sengaja tidak melempar** saat tanda tangan gagal — satu-
+  satunya pengecualian fail-closed di modul ini, karena gambar mini itu hiasan
+  dan menjatuhkan seluruh tabel kartu gara-gara foto justru merugikan.
+  Kegagalannya tak disembunyikan, cuma diturunkan derajatnya: sel jatuh ke
+  penanda `{n}📷` yang TETAP BISA DIKLIK, dan pop-up (yang punya jalur tanda
+  tangannya sendiri, ber-`error`) menampilkan pesan aslinya.
 
 ## Lingkungan kerja
 

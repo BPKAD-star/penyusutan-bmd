@@ -25,6 +25,7 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
+import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { formatRupiah } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
@@ -765,22 +766,6 @@ function DokumenLinks({ paths }: { paths: string[] }) {
 }
 
 // Ambil signed URL foto pertama tiap path (bucket privat) — dipakai preview kecil di baris.
-function useFirstFotoUrls(paths: string[]) {
-  const supabase = createClient()
-  const [urls, setUrls] = useState<Record<string, string>>({})
-  const key = paths.join('|')
-  useEffect(() => {
-    if (paths.length === 0) { setUrls({}); return }
-    (async () => {
-      const { data } = await supabase.storage.from('aset-foto').createSignedUrls(paths, 3600)
-      const map: Record<string, string> = {}
-      for (const d of data || []) if (d.signedUrl && d.path) map[d.path] = d.signedUrl
-      setUrls(map)
-    })()
-  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
-  return urls
-}
-
 // ── Kartu "Menunggu Persetujuan" ─────────────────────────────────────────────
 function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKontrak, onTambah, onHapusItem, onHapusItems, onEditSpes, onApprove }: {
   h: Jurnal; isAdmin: boolean; busy: boolean; golonganLabels: Record<string, string>
@@ -793,7 +778,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
 }) {
   const items = h.payload.draft_items || []
   const [showTambah, setShowTambah] = useState(items.length === 0)
-  const fotoUrls = useFirstFotoUrls(items.map(i => i.foto[0]).filter(Boolean))
+  const fotoUrls = useFotoThumbs(items.map(i => i.foto[0]).filter(Boolean))
   // Pencarian + seleksi + aksi massal: modul bersama dgn PerolehanManual.
   const sel = useDraftSeleksi(items)
 
@@ -931,14 +916,7 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
       </td>
       <td className="table-td text-xs text-gray-600 truncate max-w-[120px]">{item.fields?.merek_tipe || '-'}</td>
       <td className="table-td text-center">
-        {fotoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={fotoUrl} alt="" className="w-8 h-8 object-cover rounded border border-gray-200 mx-auto" />
-        ) : item.foto.length > 0 ? (
-          <span className="text-[10px] text-gray-400">{item.foto.length}📷</span>
-        ) : (
-          <span className="text-[10px] text-gray-300">-</span>
-        )}
+        <FotoSel paths={item.foto} thumbUrl={fotoUrl} judul={item.fields?.nama_barang || item.uraianBarang} />
       </td>
       <td className="table-td text-center text-xs text-gray-600">{item.satuan || '-'}</td>
       <td className="table-td text-right text-xs text-gray-600">{formatRupiah(toNum(item.harga))}</td>
@@ -1129,7 +1107,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
   j: Jurnal; isAdmin: boolean; busy: boolean
   onUnapprove: () => void
 }) {
-  const fotoUrls = useFirstFotoUrls(j.lines.map(l => l.foto_paths[0]).filter(Boolean))
+  const fotoUrls = useFotoThumbs(j.lines.map(l => l.foto_paths[0]).filter(Boolean))
 
   return (
     <div className="card overflow-hidden">
@@ -1200,14 +1178,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
                   </td>
                   <td className="table-td text-xs text-gray-600 truncate max-w-[120px]">{f.merek_tipe || '-'}</td>
                   <td className="table-td text-center">
-                    {fotoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={fotoUrl} alt="" className="w-8 h-8 object-cover rounded border border-gray-200 mx-auto" />
-                    ) : l.foto_paths.length > 0 ? (
-                      <span className="text-[10px] text-gray-400">{l.foto_paths.length}📷</span>
-                    ) : (
-                      <span className="text-[10px] text-gray-300">-</span>
-                    )}
+                    <FotoSel paths={l.foto_paths} thumbUrl={fotoUrl} judul={l.nama_barang || l.uraian_barang} />
                   </td>
                   <td className="table-td text-center text-xs">{l.satuan || '-'}</td>
                   <td className="table-td text-center text-xs capitalize">{l.intra_ekstra || '-'}</td>
