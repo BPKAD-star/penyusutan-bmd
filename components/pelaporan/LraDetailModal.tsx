@@ -71,43 +71,43 @@ export default function LraDetailModal({ judul, rows, skpdNama, onClose }: {
           <button className="btn-secondary" onClick={handleExport} disabled={tampil.length === 0}>Export Excel</button>
         </div>
 
-        <div className="max-h-[65vh] overflow-y-auto">
+        <div className="max-h-[65vh] overflow-auto">
           {grup.length === 0 ? (
             <div className="p-10 text-center text-gray-400 text-sm">Tidak ada baris.</div>
           ) : (
-            <table className="w-full text-xs">
-              <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
+            <table className="text-xs" style={{ minWidth: '1400px', width: '100%' }}>
+              <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                 <tr>
-                  <th className="table-th text-left">Tanggal</th>
-                  <th className="table-th text-left">Kode Rekening</th>
-                  <th className="table-th text-left">Uraian</th>
-                  <th className="table-th text-left">No. Bukti</th>
-                  <th className="table-th text-left">Keterangan</th>
-                  <th className="table-th text-right">Debit</th>
+                  <th className="table-th text-left whitespace-nowrap">Tanggal</th>
+                  <th className="table-th text-left whitespace-nowrap">Kode Rekening</th>
+                  <th className="table-th text-left" style={{ minWidth: '260px' }}>Uraian</th>
+                  <th className="table-th text-left" style={{ minWidth: '200px' }}>No. Bukti</th>
+                  <th className="table-th text-left" style={{ minWidth: '280px' }}>Keterangan</th>
+                  <th className="table-th text-right whitespace-nowrap">Debit</th>
                 </tr>
               </thead>
               {grup.map(g => (
                   <tbody key={g.id} className="divide-y divide-gray-50">
                     <tr className="bg-teal/5">
-                      <td className="table-td font-semibold text-gray-800" colSpan={5}>{g.nama}</td>
-                      <td className="table-td text-right font-semibold tabular-nums text-gray-800">{formatRupiah(g.total)}</td>
+                      <td className="table-td font-semibold text-gray-800 whitespace-nowrap" colSpan={5}>{g.nama}</td>
+                      <td className="table-td text-right font-semibold tabular-nums text-gray-800 whitespace-nowrap">{formatRupiah(g.total)}</td>
                     </tr>
                     {g.rows.map(r => (
                       <tr key={r.id}>
                         <td className="table-td whitespace-nowrap">{r.tanggal}</td>
                         <td className="table-td whitespace-nowrap">{r.kode_rekening}</td>
-                        <td className="table-td max-w-[260px] truncate" title={r.uraian || ''}>{r.uraian || '-'}</td>
-                        <td className="table-td max-w-[200px] truncate" title={r.no_bukti}>{r.no_bukti}</td>
-                        <td className="table-td max-w-[280px] truncate" title={r.keterangan || ''}>{r.keterangan || '-'}</td>
-                        <td className="table-td text-right tabular-nums">{formatRupiah(r.debit)}</td>
+                        <td className="table-td whitespace-nowrap">{r.uraian || '-'}</td>
+                        <td className="table-td whitespace-nowrap">{r.no_bukti}</td>
+                        <td className="table-td whitespace-nowrap">{r.keterangan || '-'}</td>
+                        <td className="table-td text-right tabular-nums whitespace-nowrap">{formatRupiah(r.debit)}</td>
                       </tr>
                     ))}
                   </tbody>
               ))}
               <tfoot className="border-t-2 border-gray-200 bg-gray-50 sticky bottom-0">
                 <tr>
-                  <td className="table-td font-semibold text-gray-900" colSpan={5}>TOTAL</td>
-                  <td className="table-td text-right font-semibold tabular-nums text-gray-900">{formatRupiah(total)}</td>
+                  <td className="table-td font-semibold text-gray-900 whitespace-nowrap" colSpan={5}>TOTAL</td>
+                  <td className="table-td text-right font-semibold tabular-nums text-gray-900 whitespace-nowrap">{formatRupiah(total)}</td>
                 </tr>
               </tfoot>
             </table>
