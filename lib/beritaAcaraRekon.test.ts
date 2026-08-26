@@ -77,12 +77,26 @@ describe('barisTrxBA', () => {
     expect(koreksi.kurang).toBe(200)
   })
 
-  it('pos Permendagri tanpa padanan di aplikasi dibiarkan KOSONG, bukan nol', () => {
-    // Nol menyatakan "tidak ada divestasi tahun ini"; kosong menyatakan
-    // "aplikasi ini tak mencatatnya". Dua pernyataan yang berbeda.
+  it('pos Permendagri yang belum ada menunya tampil 0, BUKAN kosong', () => {
+    // Beda dari Persediaan/Kemitraan di lampiran Saldo (barisSaldoBA) — baris
+    // ini bukan pos yang mustahil dicatat aplikasi, cuma belum ada menunya di
+    // Pembukuan. Kosong di sini akan terbaca sbg "di luar aplikasi", padahal
+    // suatu saat bisa dibangun; 0 lebih jujur & sejajar dgn baris tak bermutasi.
     const divestasi = barisTrxBA({}).find(b => b.uraian === 'divestasi')!
-    expect(divestasi.tambah).toBeNull()
-    expect(divestasi.kurang).toBeNull()
+    expect(divestasi.tambah).toBe(0)
+    expect(divestasi.kurang).toBe(0)
+    const putusan = barisTrxBA({}).find(b => b.uraian === 'Putusan Pengadilan berkekuatan hukum tetap')!
+    expect(putusan.tambah).toBe(0)
+    expect(putusan.kurang).toBe(0)
+  })
+
+  it('baris JUDUL (header seksi) tetap kosong — ia tak pernah punya angka', () => {
+    const judul = barisTrxBA({}).filter(b => b.judul)
+    expect(judul.length).toBeGreaterThan(0)
+    for (const b of judul) {
+      expect(b.tambah).toBeNull()
+      expect(b.kurang).toBeNull()
+    }
   })
 
   it('jumlah seluruh baris = jumlah seluruh kategori (tak ada yang bocor)', () => {

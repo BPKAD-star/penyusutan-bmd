@@ -146,11 +146,6 @@ export type KonfigBA = {
   catatanAwal: string
   catatanAkhir: string
   catatanTrx: string
-  /** (16)(24) baris "LRA ……… Rp ………" di bawah Pengadaan dari APBD. Aplikasi ini
-   *  tidak menghubungkan lembar ini ke menu LRA — angkanya diketik operator,
-   *  supaya tak ada angka karangan di dokumen yang diteken. */
-  lraKode: string
-  lraNilai: string
 }
 
 // ── Tanggal & terbilang ─────────────────────────────────────────────────────
@@ -325,13 +320,16 @@ export type BarisTrx = {
   no: string
   huruf: string
   uraian: string
-  /** Kategori pembentuk. Kosong = pos Permendagri yang aplikasi ini belum punya
-   *  padanannya (mis. divestasi, putusan pengadilan) → sel nilainya dibiarkan
-   *  kosong, bukan diisi nol. */
+  /** Kategori pembentuk. Kosong (di baris BUKAN judul) = pos Permendagri yang
+   *  aplikasi ini belum punya MENUnya (mis. divestasi, putusan pengadilan) —
+   *  sel nilainya diisi 0, BUKAN dikosongkan. Beda dari "Persediaan"/"Kemitraan
+   *  dengan Pihak Ketiga" di lampiran Saldo Awal/Akhir: pos itu di luar cakupan
+   *  aplikasi BMD SELAMANYA (ranah SIPD/keuangan), sedangkan baris di sini
+   *  cuma menunggu menunya dibangun — 0 lebih jujur karena sejajar dengan
+   *  baris lain yang memang tak bermutasi periode ini (keputusan user
+   *  2026-08-26, membatalkan sikap "dikosongkan" sebelumnya). */
   keys: MutasiKey[]
   judul: boolean
-  /** Baris "Pengadaan dari APBD" membawa sub-baris LRA di bawahnya. */
-  lra?: boolean
 }
 
 /**
@@ -346,7 +344,13 @@ export const BARIS_TRX: BarisTrx[] = [
   { no: '1', huruf: '', uraian: 'Cara Perolehan', keys: [], judul: true },
   // Termin kontrak konstruksi (KDP) & pengadaan lewat rekening Belanja Jasa
   // dua-duanya belanja APBD — beda rekening, bukan beda cara perolehan.
-  { no: '', huruf: 'a.', uraian: 'Pengadaan dari APBD', keys: ['pengadaan', 'belanja_jasa', 'kdp'], judul: false, lra: true },
+  // ⚠️ Format V.2 (17)(24) menyediakan sub-baris "LRA … Rp …" di bawah baris
+  // ini — SENGAJA DIHILANGKAN (keputusan user 2026-08-26): aplikasi ini tak
+  // menautkan lembar ini ke menu LRA, dan sub-baris kosong yang cuma diketik
+  // manual dinilai lebih mengganggu daripada berguna. Beda dari "kosong ≠ nol"
+  // yang berlaku di tempat lain — di sini elemen formatnya memang dibuang,
+  // bukan dikosongkan.
+  { no: '', huruf: 'a.', uraian: 'Pengadaan dari APBD', keys: ['pengadaan', 'belanja_jasa', 'kdp'], judul: false },
   { no: '', huruf: 'b.', uraian: 'Hibah', keys: ['hibah'], judul: false },
   { no: '', huruf: 'c.', uraian: 'pelaksanaan dari perjanjian/kontrak', keys: [], judul: false },
   { no: '', huruf: 'd.', uraian: 'ketentuan peraturan perundang-undangan', keys: [], judul: false },
@@ -378,22 +382,28 @@ export const BARIS_TRX: BarisTrx[] = [
     no: '', huruf: 'a.', uraian: 'Pemindahtanganan BMD', judul: false,
     keys: ['hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan'],
   },
-  { no: '', huruf: 'b.', uraian: 'Penyerahan atau Pengalihan Status Penggunaan BMD', keys: ['pengalihan_keluar'], judul: false },
-  { no: '', huruf: 'c.', uraian: 'Putusan Pengadilan yang telah berkekuatan hukum tetap', keys: [], judul: false },
+  { no: '', huruf: 'b.', uraian: 'Penyerahan atau Pengalihan Status Penggunaan', keys: ['pengalihan_keluar'], judul: false },
+  { no: '', huruf: 'c.', uraian: 'Putusan Pengadilan berkekuatan hukum tetap', keys: [], judul: false },
   { no: '', huruf: 'd.', uraian: 'ketentuan peraturan perundang-undangan', keys: [], judul: false },
   { no: '', huruf: 'e.', uraian: 'Pemusnahan', keys: [], judul: false },
   { no: '', huruf: 'f.', uraian: 'Sebab lain', keys: ['hapus_sebab_lain'], judul: false },
 ]
 
 export type BarisTrxNilai = BarisTrx & {
-  /** null = baris tanpa kategori pembentuk → sel dibiarkan KOSONG, bukan 0. */
+  /** null HANYA untuk baris judul (header seksi, tak pernah punya angka) atau
+   *  kolom yang secara struktural tak berlaku untuk baris itu (mis. kolom
+   *  Kurang di baris Cara Perolehan — kategori itu memang selalu penambahan).
+   *  Baris DATA tanpa kategori pembentuk (belum ada menunya) tampil 0, bukan
+   *  null — lihat komentar `BarisTrx.keys`. */
   tambah: number | null
   kurang: number | null
 }
 
 export function barisTrxBA(sel: SelBA): BarisTrxNilai[] {
   return BARIS_TRX.map(b => {
-    if (b.keys.length === 0) return { ...b, tambah: null, kurang: null }
+    if (b.keys.length === 0) {
+      return b.judul ? { ...b, tambah: null, kurang: null } : { ...b, tambah: 0, kurang: 0 }
+    }
     let tambah = 0, kurang = 0
     for (const k of b.keys) {
       const v = sel[k] ?? 0

@@ -2244,19 +2244,38 @@ migrasi** — murni menyusun ulang angka yang sudah ada di layar.
   perolehan); Kapitalisasi, Pemecahan & Penggabungan masuk **6 Koreksi** — semua
   pembetulan pencatatan atas barang yang SUDAH ada, menaruhnya di Cara Perolehan
   berarti menyatakan pemda menerima barang yang cuma dipecah nomor registernya.
-- **Pos Permendagri tanpa padanan di aplikasi (divestasi, putusan pengadilan,
-  Persediaan, Kemitraan Pihak Ketiga) dibiarkan KOSONG, bukan diisi 0.** Nol
-  menyatakan "tidak ada tahun ini"; kosong menyatakan "tak ditatausahakan di
-  sini". Dua pernyataan berbeda, dan yang satu tak berhak dibuat aplikasi ini.
-  ⚠️ Kalimat penjelasnya di kaki lembar Saldo Awal **DIBUANG** atas permintaan
-  user 2026-08-26 — keputusan sadar, bukan kelalaian: dokumen yang diteken tak
-  memuat keterangan itu lagi. Aturan "kosong ≠ nol" tetap berlaku di kodenya.
+- **Baris DATA tanpa MENU (divestasi, putusan pengadilan, dst.) tampil 0, BUKAN
+  dikosongkan** (keputusan user 2026-08-26, MEMBATALKAN sikap "dikosongkan"
+  sebelumnya). `c. pelaksanaan dari perjanjian/kontrak`, `d.` s.d. `f.` di Cara
+  Perolehan, `i. pembatalan Penghapusan`, `c.` s.d. `e.` di Penghapusan — semua
+  itu bukan pos yang MUSTAHIL dicatat aplikasi ini, cuma BELUM ADA menunya di
+  Pembukuan. Nol lebih jujur di sini: ia sejajar dengan baris lain yang memang
+  tak bermutasi periode ini, sementara kosong terbaca "di luar cakupan
+  aplikasi" — pesan yang salah untuk sesuatu yang bisa dibangun kelak.
+  ⚠️ **Baris JUDUL (header seksi — "1 Cara Perolehan", "2 Penggunaan",
+  "7 Penghapusan") TETAP kosong**, bukan nol — itu bukan baris data sama
+  sekali. Bedanya di `barisTrxBA`: `keys.length===0` → nol kalau `!judul`, null
+  kalau `judul`. Ini SATU-SATUNYA tempat kosong≠nol berubah jadi nol=belum-ada-
+  menu; sel angka lain di aplikasi ini (mis. Persediaan/Kemitraan di lampiran
+  Saldo — lihat `barisSaldoBA`) TETAP kosong karena pos itu di luar cakupan
+  aplikasi BMD SELAMANYA (ranah SIPD/keuangan), bukan sekadar belum dibangun.
+  **Jangan disamakan** kalau nanti menambah baris baru — tanyakan dulu:
+  "mustahil dicatat aplikasi ini" (kosong) atau "belum ada menunya" (nol)?
+- **Baris LRA (17)(24) DIHAPUS**, bukan dibiarkan kosong (keputusan user
+  2026-08-26, membatalkan keputusan sebelumnya yang menyediakan input manual).
+  Aplikasi ini tak menautkan lembar ini ke menu LRA, dan sub-baris kosong yang
+  cuma diketik manual dinilai lebih mengganggu daripada berguna. `KonfigBA`
+  tak lagi punya `lraKode`/`lraNilai`.
 - **KOP SURAT OPSIONAL & BAWAANNYA MATI** (user 2026-08-26): lembar ini umumnya
   dicetak di atas kertas yang SUDAH berkop, jadi kop yang ikut tercetak menabrak
   kop aslinya. Tanpa kop, lembar depan langsung mulai dari judul.
-- **Header lampiran Saldo Awal = EMPAT BARIS terpisah** (user 2026-08-26):
-  judul (bold) → nama SKPD → periode → komptabel. Dulu tiga terakhir didempetkan
-  satu baris dengan pemisah titik-tengah.
+- **Header 4 baris (judul → SKPD → periode → komptabel) di SEMUA TIGA jenis
+  lampiran** (user 2026-08-26, "biar berimbang"): Saldo Awal, Saldo Akhir, DAN
+  tiap lembar transaksi per jenis aset — sebelumnya cuma Saldo Awal.
+  `headerLampiran` satu variabel dipakai ketiganya. ⚠️ Blok kanan-atas
+  "Lampiran / Nomor / Tanggal" (`kepalaLampiran`) TETAP cuma di Saldo Awal —
+  itu memang begitu di Format V.2 aslinya (halaman 3 & 4 tak memuatnya), jangan
+  ikut disamakan ke tiga lampiran.
 - **Tabel lampiran dipadatkan lewat kelas `.tabel-ba`** (8,5px, padding 1px),
   BUKAN lewat selektor `#cetak-ba table` — blok isian Nama/NIP/Pangkat/Jabatan
   di lembar depan juga `<table>` dan tak boleh ikut mengecil. Tanpa pemadatan
@@ -2284,10 +2303,6 @@ migrasi** — murni menyusun ulang angka yang sudah ada di layar.
   untuk dicentang tangan. Aplikasi ini cuma memegang data SATU pihak (kolomnya
   memang berjudul "Laporan BMD Pengguna Barang"); mencentangnya sendiri berarti
   menyatakan pihak seberang setuju padahal datanya tak pernah dilihat.
-- **Baris "LRA ……… Rp ………" diketik operator**, tidak ditarik dari menu LRA.
-  Mengarang angka realisasi di dokumen yang akan diteken jauh lebih berbahaya
-  daripada titik-titik yang jelas belum diisi — aturan yang sama dgn nama
-  penanda tangan di lembar RKBMD & Standar Harga.
 - **Identitas kedua pihak: dipilih dari `admin_pegawai` lalu BOLEH disunting.**
   Saran awalnya lewat `role_bmd` (`pengurus_barang_pembantu` / `pengurus_barang`
   / `pengurus_barang_pengelola`); **Pelaksana Fungsi Akuntansi tidak ada di

@@ -69,8 +69,6 @@ function konfigAwal(varian: VarianBA, namaSkpd: string): KonfigBA {
     catatanAwal: '',
     catatanAkhir: '',
     catatanTrx: '',
-    lraKode: '',
-    lraNilai: '',
   }
 }
 
@@ -320,7 +318,7 @@ export default function BeritaAcaraRekonModal({
 
           <details className="rounded-lg border border-gray-200 px-3 py-2">
             <summary className="text-sm font-medium text-gray-700 cursor-pointer">
-              Catatan Hasil Rekonsiliasi &amp; baris LRA (opsional)
+              Catatan Hasil Rekonsiliasi (opsional)
             </summary>
             <p className="text-[11px] text-gray-400 mt-2">
               Satu butir per baris. Dibiarkan kosong → lembarnya mencetak baris titik-titik untuk diisi tangan.
@@ -342,18 +340,6 @@ export default function BeritaAcaraRekonModal({
                 <Label>Catatan — Lampiran transaksi</Label>
                 <textarea className="select-filter w-full h-16" value={konfig.catatanTrx}
                   onChange={e => set({ catatanTrx: e.target.value })} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <div>
-                <Label>Baris LRA — kode/uraian</Label>
-                <input className="select-filter w-full" value={konfig.lraKode}
-                  onChange={e => set({ lraKode: e.target.value })} />
-              </div>
-              <div>
-                <Label>Baris LRA — nilai (Rp)</Label>
-                <input className="select-filter w-full" value={konfig.lraNilai}
-                  onChange={e => set({ lraNilai: e.target.value })} />
               </div>
             </div>
           </details>

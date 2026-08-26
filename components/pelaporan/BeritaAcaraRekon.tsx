@@ -24,7 +24,7 @@
 // Barang"); mencentangnya sendiri berarti menyatakan pihak seberang setuju
 // padahal datanya tak pernah dilihat.
 // ============================================================================
-import { Fragment, type TdHTMLAttributes, type ThHTMLAttributes } from 'react'
+import type { TdHTMLAttributes, ThHTMLAttributes } from 'react'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import type { Mutasi, Snapshot } from '@/lib/rekon'
 import {
@@ -157,6 +157,18 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
     </div>
   )
 
+  // Header 4 baris (judul → SKPD → periode → komptabel), dipakai berimbang di
+  // KETIGA jenis lampiran — Saldo Awal, Saldo Akhir, dan tiap lembar transaksi
+  // per jenis aset (keputusan user 2026-08-26; sebelumnya cuma di Saldo Awal).
+  const headerLampiran = (
+    <div className="text-center mb-4 leading-snug">
+      <p className="font-bold">BERITA ACARA REKONSILIASI</p>
+      <p>{namaSkpd || 'Pemerintah Kabupaten Kediri'}</p>
+      <p>{labelSemester(periode)}</p>
+      <p>{LABEL_CAKUPAN[konfig.cakupan]}</p>
+    </div>
+  )
+
   /** Tabel Saldo Awal / Saldo Akhir (Format V.2 kolom (9)–(14)). */
   const tabelSaldo = (snap: Snapshot) => (
     // `tabel-ba` = penanda untuk print CSS yang memadatkan font & padding
@@ -242,15 +254,7 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
       {/* ── Lampiran 1 — Saldo Awal ──────────────────────────────────────── */}
       <section className="lembar">
         {kepalaLampiran}
-        {/* Urutan header ditentukan user 2026-08-26: judul → SKPD → periode →
-            komptabel, masing-masing di barisnya sendiri (dulu tiga terakhir
-            didempetkan dengan pemisah titik-tengah). */}
-        <div className="text-center mb-4 leading-snug">
-          <p className="font-bold">BERITA ACARA REKONSILIASI</p>
-          <p>{namaSkpd || 'Pemerintah Kabupaten Kediri'}</p>
-          <p>{labelSemester(periode)}</p>
-          <p>{LABEL_CAKUPAN[konfig.cakupan]}</p>
-        </div>
+        {headerLampiran}
         <p className="font-semibold mb-2">1. Saldo Awal</p>
         {tabelSaldo(snapAwal)}
         <Catatan butir={butirCatatan(konfig.catatanAwal)} />
@@ -258,6 +262,7 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
 
       {/* ── Lampiran 2 — Saldo Akhir ─────────────────────────────────────── */}
       <section className="lembar">
+        {headerLampiran}
         <p className="font-semibold mb-2">2. Saldo Akhir</p>
         {tabelSaldo(snapAkhir)}
         <Catatan butir={[...butirCatatan(konfig.catatanAkhir), ...catatanSelisih]} />
@@ -276,6 +281,7 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
         const total = totalTrxBA(sel)
         return (
           <section key={g.kode} className="lembar">
+            {headerLampiran}
             <p className="font-semibold mb-2">{idx + 3}. {g.kode} — {g.uraian}</p>
             <table className="tabel-ba w-full table-fixed border-collapse">
               <colgroup>
@@ -298,28 +304,13 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
               </thead>
               <tbody>
                 {barisTrxBA(sel).map((b, i) => (
-                  <Fragment key={i}>
-                    <tr className={b.judul ? 'font-semibold' : ''}>
-                      <TD className="text-center">{b.no}</TD>
-                      <TD className={b.huruf ? 'pl-5' : ''}>{b.huruf ? `${b.huruf} ` : ''}{b.uraian}</TD>
-                      <TD className="text-right"><Rp v={b.tambah} /></TD>
-                      <TD className="text-right"><Rp v={b.kurang} /></TD>
-                      <TD /><TD /><TD />
-                    </tr>
-                    {/* (16)(24) — angka LRA DIKETIK operator; aplikasi ini tak
-                        menautkan lembar ini ke menu LRA, dan mengarang angka
-                        realisasi di dokumen yang akan diteken jauh lebih
-                        berbahaya daripada titik-titik yang jelas belum diisi. */}
-                    {b.lra && (
-                      <tr>
-                        <TD />
-                        <TD className="pl-10 italic">
-                          LRA {konfig.lraKode || '……………………'} &nbsp;&nbsp; Rp. {konfig.lraNilai || '……………………'}
-                        </TD>
-                        <TD /><TD /><TD /><TD /><TD />
-                      </tr>
-                    )}
-                  </Fragment>
+                  <tr key={i} className={b.judul ? 'font-semibold' : ''}>
+                    <TD className="text-center">{b.no}</TD>
+                    <TD className={b.huruf ? 'pl-5' : ''}>{b.huruf ? `${b.huruf} ` : ''}{b.uraian}</TD>
+                    <TD className="text-right"><Rp v={b.tambah} /></TD>
+                    <TD className="text-right"><Rp v={b.kurang} /></TD>
+                    <TD /><TD /><TD />
+                  </tr>
                 ))}
                 <tr className="font-semibold">
                   <TD />
