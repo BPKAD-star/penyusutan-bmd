@@ -1145,6 +1145,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
   onUnapprove: () => void
 }) {
   const fotoUrls = useFotoThumbs(j.lines.map(l => l.foto_paths[0]).filter(Boolean))
+  const [showSurat, setShowSurat] = useState(false)
 
   return (
     <div className="card overflow-hidden">
@@ -1175,6 +1176,12 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
               <p className="text-xs text-gray-400">Total Pengadaan</p>
               <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
             </div>
+            {/* Sengaja di luar cabang isAdmin — mencetak surat itu aksi baca,
+                bukan mengubah data, jadi tak ada wewenang yang dilonggarkan
+                (pola sama dgn tombol 🔍 Pratinjau di kartu draft). */}
+            <button title="Cetak Surat Pernyataan pencatatan BMD hasil pengadaan ini"
+              onClick={() => setShowSurat(true)}
+              className="btn-secondary text-xs mt-2">📜 Surat Pernyataan</button>
             {isAdmin ? (
               <button title="Buka kunci (unapprove) — kembalikan ke draft utk diedit" onClick={onUnapprove} disabled={busy}
                 className="btn-secondary text-xs mt-2">{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>
@@ -1184,6 +1191,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
           </div>
         </div>
       </div>
+      {showSurat && <SuratPernyataanModal header={j} onClose={() => setShowSurat(false)} />}
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100">
@@ -1226,6 +1234,50 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
             })}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Pop-up "Surat Pernyataan" — SATU-SATUNYA isian manual Nomor Surat.
+// Tanggal & seluruh data lain (pengurus barang, PPK, sub kegiatan, rekening,
+// nilai, dst.) diambil otomatis oleh halaman cetak dari `jurnal_header` +
+// tabel referensi — lihat app/cetak/surat-pernyataan-pengadaan/page.tsx. ────
+function SuratPernyataanModal({ header, onClose }: { header: Jurnal; onClose: () => void }) {
+  const [nomor, setNomor] = useState('')
+  const [err, setErr] = useState('')
+
+  function cetak() {
+    if (!nomor.trim()) { setErr('Nomor surat wajib diisi.'); return }
+    window.open(`/cetak/surat-pernyataan-pengadaan?id=${header.id}&nomor=${encodeURIComponent(nomor.trim())}`, '_blank')
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
+      <div className="card w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-semibold text-gray-800">Cetak Surat Pernyataan</h3>
+          <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>
+        </div>
+        <div className="p-5 space-y-3">
+          <p className="text-xs text-gray-500">
+            Kontrak {header.no_sk} — data pengurus barang, PPK, sub kegiatan, rekening & nilai diisi otomatis
+            dari kontrak ini. Cukup isi nomor surat.
+          </p>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Nomor Surat</label>
+            <input className="select-filter w-full" autoFocus value={nomor}
+              onChange={e => { setNomor(e.target.value); setErr('') }}
+              onKeyDown={e => { if (e.key === 'Enter') cetak() }}
+              placeholder="mis. 027/123/BKAD/2026" />
+          </div>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+        </div>
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
+          <button className="btn-secondary text-sm" onClick={onClose}>Batal</button>
+          <button className="btn-primary text-sm" onClick={cetak}>🖨 Cetak</button>
+        </div>
       </div>
     </div>
   )
