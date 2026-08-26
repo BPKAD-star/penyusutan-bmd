@@ -3,7 +3,7 @@
 //   LRA (5.2) + Kapitalisasi (5.1 ditandai) − Reklasifikasi (5.2 ditandai)
 //   =? Belanja Modal (Entryan Aplikasi, dari ledger `pengadaan`)
 // Lihat docs/lra-plan.md.
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import SkpdCombobox, { type SkpdSelection } from '@/components/SkpdCombobox'
@@ -16,6 +16,7 @@ import {
   type LraRow, type AppRow, type RekapMatrix,
 } from '@/lib/lra'
 import { tahunAwal } from '@/lib/tahunKerja'
+import { fetchApprovalScope } from '@/lib/roles'
 
 const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
 const LRA_COLS = 'id,skpd_id,tanggal,bulan,no_bukti,kode_rekening,kode_grup3,kelompok,uraian,keterangan,debit,klasifikasi,jenis_tujuan'
@@ -32,6 +33,12 @@ export default function LraPage() {
   const [skpdNama, setSkpdNama] = useState<Map<number, string>>(new Map())
   const [detail, setDetail] = useState<{ judul: string; rows: LraRow[] } | null>(null)
   const [msg, setMsg] = useState('')
+  // Import Excel LRA = admin-only (permintaan user 2026-08-26) — Pengurus
+  // Barang/Pembantu/Pengawas tak perlu. Penegak sesungguhnya trigger DB
+  // fn_lra_realisasi_guard (migrasi 20260826_02); ini cuma menyembunyikan
+  // tombolnya supaya non-admin tak mengklik lalu kena pesan error.
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => { fetchApprovalScope(supabase).then(s => setIsAdmin(s.isAdmin)) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const proses = useCallback(async () => {
     setLoading(true); setMsg('')
@@ -137,7 +144,7 @@ export default function LraPage() {
       <div className="card p-5 mb-4">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-800">Filter data</h2>
-          <button className="btn-primary" onClick={() => setShowImport(true)}>+ Import Excel LRA</button>
+          {isAdmin && <button className="btn-primary" onClick={() => setShowImport(true)}>+ Import Excel LRA</button>}
         </div>
         <div className="space-y-3 max-w-3xl">
           <div className="flex items-center gap-3">
@@ -160,12 +167,17 @@ export default function LraPage() {
 
       {rows === null ? (
         <div className="card p-12 text-center text-gray-400 text-sm">
-          Atur filter lalu klik <span className="font-medium text-gray-600">Proses</span>. Belum ada data? Klik <span className="font-medium text-gray-600">Import Excel LRA</span> dulu.
+          Atur filter lalu klik <span className="font-medium text-gray-600">Proses</span>.
+          {isAdmin
+            ? <> Belum ada data? Klik <span className="font-medium text-gray-600">Import Excel LRA</span> dulu.</>
+            : <> Belum ada data? Hubungi admin untuk mengimpor data LRA.</>}
         </div>
       ) : loading ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Memproses...</div>
       ) : rows.length === 0 ? (
-        <div className="card p-12 text-center text-gray-400 text-sm">Belum ada data LRA untuk tahun {tahun} pada lingkup ini. Import dulu.</div>
+        <div className="card p-12 text-center text-gray-400 text-sm">
+          Belum ada data LRA untuk tahun {tahun} pada lingkup ini.{isAdmin ? ' Import dulu.' : ' Hubungi admin untuk mengimpor data LRA.'}
+        </div>
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">

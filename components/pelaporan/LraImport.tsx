@@ -3,6 +3,14 @@
 // preview → commit. Anti-dobel via natural key (skpd_id, no_bukti, kode_rekening)
 // dengan UPSERT (tanda Kapitalisasi/Reklas Fase B tetap, tak ikut ditimpa).
 // Lihat docs/lra-plan.md §4.
+//
+// ADMIN-ONLY sejak 2026-08-26 (permintaan user) — pemanggilnya (app/dashboard/
+// pelaporan/lra/page.tsx) hanya menampilkan tombol yang membuka modal ini kalau
+// isAdmin, dan trigger DB `fn_lra_realisasi_guard` (migrasi 20260826_02) menolak
+// INSERT/DELETE/UPDATE-kolom-impor dari non-admin apa pun caranya. Karena itu
+// modul ini TAK LAGI membatasi SKPD per-role — dulu non-admin cuma boleh
+// mengimpor subtree SKPD-nya sendiri (allowedIds/mySkpdId), sekarang kode itu
+// dihapus krn tak pernah tereksekusi lagi (satu-satunya pemanggil sudah admin).
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
@@ -31,10 +39,7 @@ const keyOf = (r: { skpd_id: number | null; no_bukti: string; kode: string }) =>
 
 export default function LraImport({ onClose, onDone }: { onClose: () => void; onDone: (msg: string) => void }) {
   const supabase = createClient()
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [mySkpdId, setMySkpdId] = useState<number | null>(null)
   const [skpdNama, setSkpdNama] = useState<Map<number, string>>(new Map())
-  const [allowedIds, setAllowedIds] = useState<Set<number> | null>(null) // null = admin (semua)
   const [ready, setReady] = useState(false)
 
   const [fileName, setFileName] = useState('')
@@ -46,29 +51,15 @@ export default function LraImport({ onClose, onDone }: { onClose: () => void; on
 
   useEffect(() => {
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setReady(true); return }
-      const { data: profile } = await supabase.from('admin_profiles').select('role,skpd_id').eq('id', user.id).single()
-      const admin = profile?.role === 'admin'
-      setIsAdmin(admin)
-      setMySkpdId(profile?.skpd_id ?? null)
-      // Master SKPD (id→nama, id→path) untuk validasi + hitung subtree operator.
-      const all: { id: number; nama: string; path: string }[] = []
+      // Master SKPD (id→nama) — cuma utk validasi id_skpd & label preview.
+      const all: { id: number; nama: string }[] = []
       for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama,path').range(from, from + 999)
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
         if (!data || data.length === 0) break
-        all.push(...(data as { id: number; nama: string; path: string }[]))
+        all.push(...(data as { id: number; nama: string }[]))
         if (data.length < 1000) break
       }
       setSkpdNama(new Map(all.map(s => [s.id, s.nama])))
-      if (admin) {
-        setAllowedIds(null)
-      } else {
-        const myPath = all.find(s => s.id === profile?.skpd_id)?.path || ''
-        const allow = new Set<number>()
-        for (const s of all) if (myPath && (s.path === myPath || s.path.startsWith(myPath + '.'))) allow.add(s.id)
-        setAllowedIds(allow)
-      }
       setReady(true)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -119,7 +110,6 @@ export default function LraImport({ onClose, onDone }: { onClose: () => void; on
         if (!buktiCell) masalah.push('No. Bukti kosong')
         if (skpd_id == null) masalah.push('id_skpd bukan angka')
         else if (!skpdNama.has(skpd_id)) masalah.push(`id_skpd ${skpd_id} tak ada`)
-        else if (allowedIds && !allowedIds.has(skpd_id)) masalah.push(`id_skpd ${skpd_id} di luar SKPD Anda`)
         if (debit <= 0) masalah.push('debit ≤ 0')
         if (kelompok === 'lain') masalah.push('bukan 5.1/5.2 (dilewati)')
 
@@ -235,7 +225,6 @@ export default function LraImport({ onClose, onDone }: { onClose: () => void; on
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
             {!ready && <span className="text-sm text-gray-400">Memuat data SKPD…</span>}
             {parsing && <span className="text-sm text-gray-400">Membaca {fileName}…</span>}
-            {!isAdmin && ready && <span className="text-xs text-gray-400">Hanya SKPD Anda ({skpdNama.get(mySkpdId ?? -1) || '—'}) & sub-unitnya yang diterima.</span>}
           </div>
 
           {rows.length > 0 && (
