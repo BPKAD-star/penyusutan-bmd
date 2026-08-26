@@ -107,7 +107,11 @@ function Baris({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="flex text-xs leading-relaxed">
       <span className="text-gray-400 w-24 flex-shrink-0">{label}</span>
-      <span className="text-gray-700">: {value || '-'}</span>
+      {/* `min-w-0` WAJIB — tanpa itu flex item tak mau menyusut & `truncate`
+          tak berefek. Teks panjang (mis. Keterangan BAST) dulu membungkus &
+          menambah tinggi baris, mendorong sisa kartu (termasuk tombol di kolom
+          kanan) turun & bikin kartu-kartu berikutnya tak sejajar tingginya. */}
+      <span className="text-gray-700 min-w-0 truncate" title={value || undefined}>: {value || '-'}</span>
     </div>
   )
 }
@@ -1171,23 +1175,33 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
             <DokumenLinks paths={j.payload?.dokumen_paths || []} />
             {j.approved_at && <p className="text-xs text-teal mt-1">Disetujui {j.approved_at.slice(0, 10)}</p>}
           </div>
-          <div className="flex flex-col items-end justify-between">
+          <div className="flex flex-col items-end justify-between gap-3">
             <div className="text-right">
               <p className="text-xs text-gray-400">Total Pengadaan</p>
               <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
             </div>
-            {/* Sengaja di luar cabang isAdmin — mencetak surat itu aksi baca,
-                bukan mengubah data, jadi tak ada wewenang yang dilonggarkan
-                (pola sama dgn tombol 🔍 Pratinjau di kartu draft). */}
-            <button title="Cetak Surat Pernyataan pencatatan BMD hasil pengadaan ini"
-              onClick={() => setShowSurat(true)}
-              className="btn-secondary text-xs mt-2">📜 Surat Pernyataan</button>
-            {isAdmin ? (
-              <button title="Buka kunci (unapprove) — kembalikan ke draft utk diedit" onClick={onUnapprove} disabled={busy}
-                className="btn-secondary text-xs mt-2">{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>
-            ) : (
-              <span className="text-[11px] text-gray-400 mt-2">🔒 Terkunci</span>
-            )}
+            {/* Dua tombol dijejer SAMA LEBAR (w-40) & sejajar — bukan cuma
+                ditumpuk btn-secondary spt sebelumnya. Warna beda peran: teal =
+                tema aplikasi (aksi baca/cetak), amber = "buka kunci" (pola
+                nada yang sama dgn KonfirmasiModal: amber = buka kunci). */}
+            <div className="flex flex-col gap-2 w-40">
+              {/* Sengaja di luar cabang isAdmin — mencetak surat itu aksi baca,
+                  bukan mengubah data, jadi tak ada wewenang yang dilonggarkan
+                  (pola sama dgn tombol 🔍 Pratinjau di kartu draft). */}
+              <button title="Cetak Surat Pernyataan pencatatan BMD hasil pengadaan ini"
+                onClick={() => setShowSurat(true)}
+                className="w-full inline-flex items-center justify-center gap-1.5 bg-teal hover:bg-teal-light text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                📜 Surat Pernyataan
+              </button>
+              {isAdmin ? (
+                <button title="Buka kunci (unapprove) — kembalikan ke draft utk diedit" onClick={onUnapprove} disabled={busy}
+                  className="w-full inline-flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                  {busy ? 'Memproses...' : '🔓 Buka Kunci'}
+                </button>
+              ) : (
+                <span className="text-[11px] text-gray-400 text-center">🔒 Terkunci</span>
+              )}
+            </div>
           </div>
         </div>
       </div>
