@@ -773,6 +773,28 @@ export default function LaporanBmdPage() {
             <span className="w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={model === 3 ? prosesMutasi : proses} disabled={loading}>{loading ? 'Memproses...' : 'Proses'}</button>
             {hasData && <button className="btn-secondary" onClick={handleExport}>Export Excel</button>}
+            {/* Lembar resmi Permendagri 47/2021 Format IV.L.4.2 — HANYA di
+                Model 1 (laporan posisi per golongan); Model 2 matriks per SKPD
+                & Model 3 mutasi punya format lampirannya sendiri (IV.L.4.1)
+                yang belum dibangun, jadi tombolnya sengaja tak muncul di sana
+                supaya tak ada yang mengira lembar ini mewakili angka Model 3.
+                ⚠️ WAJIB per-SKPD: kepala lembar memuat identitas SKPD, jadi
+                tanpa SKPD terpilih ia menghasilkan lembar tanpa identitas.
+                Dimatikan berikut ALASANNYA — tombol mati tanpa keterangan itu
+                kegagalan senyap. */}
+            {hasData && model === 1 && (
+              org.skpdId ? (
+                <a href={`/cetak/laporan-bmd?periode=${periode}&skpd=${org.skpdId}&komptabel=${komptabel}`}
+                  target="_blank" rel="noreferrer" className="btn-secondary whitespace-nowrap">
+                  🖨 Cetak Format IV.L.4.2
+                </a>
+              ) : (
+                <span className="btn-secondary opacity-50 cursor-not-allowed whitespace-nowrap"
+                  title="Pilih SKPD dulu — lembar Format IV.L.4.2 memuat identitas SKPD di kepalanya, jadi hanya sah per-SKPD.">
+                  🖨 Cetak Format IV.L.4.2
+                </span>
+              )
+            )}
           </div>
         </div>
       </div>
