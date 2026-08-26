@@ -10,7 +10,7 @@ import {
   BARIS_TRX, VARIAN_BA, barisSaldoBA, barisTrxBA, totalTrxBA, selBA, selisihBA,
   adaTransaksiBA, catatanSelisihBA, terbilang, hariDari, tglPanjang, tanggalCutoff,
   kalimatTanggal, pangkatGol, saranPihak, butirCatatan, KOMPS_DARI, varianInfo,
-  type PegawaiBA, type SelBA,
+  namaBerkasBA, type PegawaiBA, type SelBA,
 } from '@/lib/beritaAcaraRekon'
 
 const SEMUA_KEY = Object.keys(KATEGORI_LABEL) as MutasiKey[]
@@ -230,6 +230,13 @@ describe('tanggal & terbilang', () => {
   it('tanggalCutoff = akhir periode, bukan tanggal BA', () => {
     expect(tanggalCutoff('2026-S1')).toBe('30 Juni 2026')
     expect(tanggalCutoff('2026-S2')).toBe('31 Desember 2026')
+  })
+
+  it('namaBerkasBA membuang karakter yang ditolak dialog simpan Windows', () => {
+    // Nama SKPD boleh memuat garis miring; kalau ikut, dialog "Save as PDF"
+    // menolak nama berkasnya tanpa menjelaskan kenapa.
+    expect(namaBerkasBA('Dinas A/B', '2026-S1')).toBe('Berita Acara Rekonsiliasi_Dinas A-B_2026-S1')
+    expect(namaBerkasBA('', '2026-S2')).toBe('Berita Acara Rekonsiliasi_Kab Kediri_2026-S2')
   })
 })
 

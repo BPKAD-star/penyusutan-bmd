@@ -33,7 +33,7 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import BeritaAcaraRekon from '@/components/pelaporan/BeritaAcaraRekon'
 import BeritaAcaraRekonModal from '@/components/pelaporan/BeritaAcaraRekonModal'
-import type { KonfigBA } from '@/lib/beritaAcaraRekon'
+import { namaBerkasBA, type KonfigBA } from '@/lib/beritaAcaraRekon'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
   fetchRekonRekap, fetchPosAset, fetchMutasiLines, attribusiLines,
@@ -233,9 +233,25 @@ export default function RekonsiliasiPage() {
 
   useEffect(() => {
     if (pemicuCetak === 0) return
+    // `document.title` = nama bawaan berkas saat "Save as PDF" — satu-satunya
+    // cara menyetelnya dari halaman. Dipulihkan sesudah cetak supaya judul tab
+    // dashboard tidak ikut berubah permanen.
+    const judulAsli = document.title
+    if (modeCetak === 'ba' && applied) {
+      document.title = namaBerkasBA(
+        applied.skpdId != null ? (skpdNama[applied.skpdId] || '') : '',
+        `${applied.tahun}-S${applied.smt}`,
+      )
+    }
+    const pulih = () => { document.title = judulAsli }
+    window.addEventListener('afterprint', pulih)
     const t = window.setTimeout(() => window.print(), 80)
-    return () => window.clearTimeout(t)
-  }, [pemicuCetak])
+    return () => {
+      window.clearTimeout(t)
+      window.removeEventListener('afterprint', pulih)
+      pulih()
+    }
+  }, [pemicuCetak]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     (async () => {
@@ -407,6 +423,15 @@ export default function RekonsiliasiPage() {
             #cetak-ba .lembar:last-child { break-after: auto; }
             #cetak-ba tr { break-inside: avoid; }
             #cetak-ba thead { display: table-header-group; }
+            /* ⚠️ Padatkan HANYA tabel lampiran (.tabel-ba), bukan semua <table>:
+               blok isian Nama/NIP/Pangkat/Jabatan di lembar depan juga <table>
+               dan tak boleh ikut mengecil. Tanpa pemadatan ini lembar transaksi
+               (25 baris + JUMLAH + catatan) mendorong blok tanda tangan ke
+               halaman berikutnya sendirian — user 2026-08-26. */
+            #cetak-ba .tabel-ba { font-size: 8.5px; }
+            #cetak-ba .tabel-ba th, #cetak-ba .tabel-ba td {
+              padding: 1px 3px !important; line-height: 1.15;
+            }
             * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           }
         `}</style>

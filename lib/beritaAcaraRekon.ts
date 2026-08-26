@@ -127,7 +127,11 @@ export const LABEL_CAKUPAN: Record<CakupanKomptabel, string> = {
 export type KonfigBA = {
   varian: VarianBA
   cakupan: CakupanKomptabel
-  /** (1) Kop surat — satu baris per elemen. Dibiarkan bebas: tiap SKPD punya
+  /** (1) Kop surat ikut dicetak? BAWAANNYA MATI (keputusan user 2026-08-26):
+   *  lembar ini umumnya dicetak di atas kertas yang SUDAH berkop, jadi kop yang
+   *  ikut tercetak justru tumpang tindih dengan kop aslinya. */
+  pakaiKop: boolean
+  /** (1) Baris kop — satu baris per elemen. Dibiarkan bebas: tiap SKPD punya
    *  susunan kop & alamatnya sendiri, dan menebaknya salah lebih buruk. */
   kop: string[]
   /** (2) Nomor Berita Acara. Kosong → dicetak titik-titik. */
@@ -220,6 +224,17 @@ export function tanggalCutoff(periode: string): string {
 
 export const labelSemester = (periode: string) =>
   periode.endsWith('S1') ? 'Semester I' : periode.endsWith('S2') ? 'Semester II' : periode
+
+/**
+ * Nama bawaan berkas saat "Save as PDF" — satu-satunya cara menyetelnya dari
+ * halaman adalah lewat `document.title` (pola app/cetak/perolehan/page.tsx).
+ * Karakter terlarang Windows dibuang: nama SKPD boleh memuat garis miring &
+ * dialog simpan akan menolaknya.
+ */
+export function namaBerkasBA(namaSkpd: string, periode: string): string {
+  const bersih = (namaSkpd || '').replace(/[\\/:*?"<>|]/g, '-').trim()
+  return `Berita Acara Rekonsiliasi_${bersih || 'Kab Kediri'}_${periode}`
+}
 
 // ── Lampiran 1 & 2: Saldo Awal / Saldo Akhir ────────────────────────────────
 /**

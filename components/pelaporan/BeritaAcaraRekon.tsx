@@ -78,15 +78,19 @@ function BlokPihak({ romawi, pihak }: { romawi: 'I' | 'II'; pihak: PihakBA }) {
 
 /** Blok tanda tangan — PIHAK KEDUA di KIRI, PIHAK PERTAMA di KANAN (Format V.2). */
 function BlokTtd({ pertama, kedua }: { pertama: PihakBA; kedua: PihakBA }) {
+  // Ruang tanda tangan sengaja dipadatkan (user 2026-08-26): di lembar
+  // transaksi yang tabelnya panjang, blok ini yang mendorong tanda tangan
+  // tumpah ke halaman sendirian — `break-inside-avoid` memindahkannya utuh,
+  // bukan memotongnya.
   const kolom = (judul: string, p: PihakBA) => (
     <div className="text-center w-64">
-      <p className="mb-16">{judul}</p>
+      <p className="mb-12">{judul}</p>
       <p className="font-semibold underline">{p.nama || '(…………………………………)'}</p>
       <p>NIP. {p.nip || '…………………………'}</p>
     </div>
   )
   return (
-    <div className="flex justify-around mt-8 break-inside-avoid">
+    <div className="flex justify-around mt-6 break-inside-avoid">
       {kolom('PIHAK KEDUA', kedua)}
       {kolom('PIHAK PERTAMA', pertama)}
     </div>
@@ -155,7 +159,10 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
 
   /** Tabel Saldo Awal / Saldo Akhir (Format V.2 kolom (9)–(14)). */
   const tabelSaldo = (snap: Snapshot) => (
-    <table className="w-full table-fixed border-collapse">
+    // `tabel-ba` = penanda untuk print CSS yang memadatkan font & padding
+    // (lihat halaman Rekonsiliasi). Sengaja BUKAN diketik di sini: tabel isian
+    // di lembar depan pakai <table> juga dan tak boleh ikut dipadatkan.
+    <table className="tabel-ba w-full table-fixed border-collapse">
       <colgroup>
         <col className="w-[7%]" /><col className="w-[41%]" /><col className="w-[18%]" />
         <col className="w-[8%]" /><col className="w-[10%]" /><col className="w-[16%]" />
@@ -190,14 +197,19 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
 
       {/* ── Lembar depan ─────────────────────────────────────────────────── */}
       <section className="lembar">
-        <div className="text-center border-b-2 border-black pb-2 mb-6">
-          {/* `|| []` bukan basa-basi: konfigurasi ini bisa datang dari
-              localStorage yang ditulis versi kode lain, dan kop yang hilang
-              tak boleh menjatuhkan seluruh lembarnya. */}
-          {(konfig.kop || []).filter(Boolean).map((baris, i) => (
-            <p key={i} className={`font-bold uppercase ${i === 0 ? 'text-[13px]' : 'text-[12px]'}`}>{baris}</p>
-          ))}
-        </div>
+        {/* Kop surat OPSIONAL & bawaannya MATI (keputusan user 2026-08-26):
+            lembar ini umumnya dicetak di atas kertas yang SUDAH berkop, jadi kop
+            yang ikut tercetak justru menabrak kop aslinya.
+            `|| []` bukan basa-basi: konfigurasi ini bisa datang dari
+            localStorage yang ditulis versi kode lain, dan kop yang hilang tak
+            boleh menjatuhkan seluruh lembarnya. */}
+        {konfig.pakaiKop && (konfig.kop || []).filter(Boolean).length > 0 && (
+          <div className="text-center border-b-2 border-black pb-2 mb-6">
+            {(konfig.kop || []).filter(Boolean).map((baris, i) => (
+              <p key={i} className={`font-bold uppercase ${i === 0 ? 'text-[13px]' : 'text-[12px]'}`}>{baris}</p>
+            ))}
+          </div>
+        )}
 
         <div className="text-center mb-6">
           <p className="font-bold text-[13px] tracking-wide">BERITA ACARA REKONSILIASI</p>
@@ -230,17 +242,18 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
       {/* ── Lampiran 1 — Saldo Awal ──────────────────────────────────────── */}
       <section className="lembar">
         {kepalaLampiran}
-        <p className="text-center font-bold mb-1">BERITA ACARA REKONSILIASI</p>
-        <p className="text-center mb-4">
-          {namaSkpd || 'Pemerintah Kabupaten Kediri'} · {labelSemester(periode)} · {LABEL_CAKUPAN[konfig.cakupan]}
-        </p>
+        {/* Urutan header ditentukan user 2026-08-26: judul → SKPD → periode →
+            komptabel, masing-masing di barisnya sendiri (dulu tiga terakhir
+            didempetkan dengan pemisah titik-tengah). */}
+        <div className="text-center mb-4 leading-snug">
+          <p className="font-bold">BERITA ACARA REKONSILIASI</p>
+          <p>{namaSkpd || 'Pemerintah Kabupaten Kediri'}</p>
+          <p>{labelSemester(periode)}</p>
+          <p>{LABEL_CAKUPAN[konfig.cakupan]}</p>
+        </div>
         <p className="font-semibold mb-2">1. Saldo Awal</p>
         {tabelSaldo(snapAwal)}
         <Catatan butir={butirCatatan(konfig.catatanAwal)} />
-        <p className="mt-3 text-[9px] italic text-gray-700">
-          Sel nilai yang dibiarkan kosong (Persediaan, Kemitraan dengan Pihak Ketiga) adalah pos yang tidak
-          ditatausahakan pada aplikasi BMD ini — bukan bersaldo nol.
-        </p>
       </section>
 
       {/* ── Lampiran 2 — Saldo Akhir ─────────────────────────────────────── */}
@@ -264,7 +277,7 @@ export default function BeritaAcaraRekon({ konfig, periode, namaSkpd, snapAwal, 
         return (
           <section key={g.kode} className="lembar">
             <p className="font-semibold mb-2">{idx + 3}. {g.kode} — {g.uraian}</p>
-            <table className="w-full table-fixed border-collapse">
+            <table className="tabel-ba w-full table-fixed border-collapse">
               <colgroup>
                 <col className="w-[5%]" /><col className="w-[34%]" />
                 <col className="w-[14%]" /><col className="w-[14%]" />

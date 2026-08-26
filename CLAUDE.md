@@ -2248,7 +2248,28 @@ migrasi** — murni menyusun ulang angka yang sudah ada di layar.
   Persediaan, Kemitraan Pihak Ketiga) dibiarkan KOSONG, bukan diisi 0.** Nol
   menyatakan "tidak ada tahun ini"; kosong menyatakan "tak ditatausahakan di
   sini". Dua pernyataan berbeda, dan yang satu tak berhak dibuat aplikasi ini.
-  Lembar Saldo Awal memuat satu kalimat yang mengatakannya.
+  ⚠️ Kalimat penjelasnya di kaki lembar Saldo Awal **DIBUANG** atas permintaan
+  user 2026-08-26 — keputusan sadar, bukan kelalaian: dokumen yang diteken tak
+  memuat keterangan itu lagi. Aturan "kosong ≠ nol" tetap berlaku di kodenya.
+- **KOP SURAT OPSIONAL & BAWAANNYA MATI** (user 2026-08-26): lembar ini umumnya
+  dicetak di atas kertas yang SUDAH berkop, jadi kop yang ikut tercetak menabrak
+  kop aslinya. Tanpa kop, lembar depan langsung mulai dari judul.
+- **Header lampiran Saldo Awal = EMPAT BARIS terpisah** (user 2026-08-26):
+  judul (bold) → nama SKPD → periode → komptabel. Dulu tiga terakhir didempetkan
+  satu baris dengan pemisah titik-tengah.
+- **Tabel lampiran dipadatkan lewat kelas `.tabel-ba`** (8,5px, padding 1px),
+  BUKAN lewat selektor `#cetak-ba table` — blok isian Nama/NIP/Pangkat/Jabatan
+  di lembar depan juga `<table>` dan tak boleh ikut mengecil. Tanpa pemadatan
+  ini lembar transaksi (25 baris + JUMLAH + catatan) mendorong blok tanda tangan
+  ke halaman berikutnya sendirian.
+- ⚠️ **Tanggal, jam, judul tab, & URL di tepi hasil cetak itu header/footer
+  BAWAAN PERAMBAN** — sama persis dengan yang sudah tercatat untuk cetak RKBMD:
+  halaman web TIDAK BISA menghapusnya lewat CSS, satu-satunya cara adalah
+  mematikan **"Headers and footers"** di dialog Print. Karena itu petunjuknya
+  ditaruh di pop-up, tepat di sebelah tombol Cetak. **Jangan menghabiskan waktu
+  mencari trik CSS untuk ini; tidak ada.** Yang BISA disetel cuma nama berkas
+  bawaan "Save as PDF", lewat `document.title` (`namaBerkasBA`) — dipulihkan
+  sesudah cetak supaya judul tab dashboard tak berubah permanen.
 - ⚠️ **Format V.2 tak punya baris "Selisih", jadi selisih dititipkan ke
   "Catatan Hasil Rekonsiliasi (15)"** — bagian yang memang disediakan formatnya,
   jadi fidelitasnya utuh. Rumus `selisihBA` KEMBAR dgn baris Selisih di tabel
