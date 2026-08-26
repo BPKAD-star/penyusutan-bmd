@@ -312,3 +312,77 @@ describe('§6 Laporan Perolehan — predikat idx_trx_perolehan_id ↔ prop `jeni
     expect(mig[mig.length - 1].isi).not.toMatch(/CREATE\s+INDEX\s+CONCURRENTLY/i)
   })
 })
+
+// ---------------------------------------------------------------------------
+describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index (id) parsial', () => {
+  // Insiden 2026-08-26: dropdown "Periode" di Laporan Pengadaan kosong (pola
+  // §6). Menyisir components/LaporanTransaksi.tsx (dipakai Reklasifikasi/
+  // Koreksi/Kapitalisasi/Penghapusan/Pengalihan/Mutasi Internal) menemukan
+  // dua korban LAIN yang lebih parah, keduanya TIMEOUT SEJAK MENUNYA ADA
+  // (bukan cuma dropdown-nya): idx_trx_reklas_id ketinggalan 'reklas_komptabel'
+  // (dibuat 20260811_01 untuk fn_dbar_kode_at, bukan untuk laporan ini), dan
+  // 'kapitalisasi' tak pernah punya index parsial sama sekali. Diukur ke DB
+  // RLS aktif: reklasifikasi 9.708 ms, kapitalisasi 13.950 ms — dua-duanya di
+  // atas statement_timeout 8 dtk.
+  //
+  // Bedanya dari §6: di sana SATU index melayani lima halaman (jenis tunggal
+  // per halaman, index-nya union kelimanya). Di sini SATU index bisa melayani
+  // SATU KELOMPOK menu (jenisList jamak per halaman) — jadi yang diperiksa
+  // bukan "satu index tunggal berisi semua", tapi "tiap jenisList tercakup
+  // OLEH SALAH SATU index (id) WHERE jenis IN (…) yang ada".
+  const DIR_HAL = path.join(AKAR, 'app', 'dashboard', 'pelaporan', 'pengelolaan')
+
+  /** Prop `jenisList={[...]}` dari tiap halaman yang memakai components/LaporanTransaksi. */
+  function jenisListHalaman(): { halaman: string; jenis: string[] }[] {
+    const out: { halaman: string; jenis: string[] }[] = []
+    for (const d of fs.readdirSync(DIR_HAL, { withFileTypes: true })) {
+      if (!d.isDirectory()) continue
+      const f = path.join(DIR_HAL, d.name, 'page.tsx')
+      if (!fs.existsSync(f)) continue
+      const isi = fs.readFileSync(f, 'utf8')
+      if (!isi.includes('LaporanTransaksi')) continue
+      const m = isi.match(/jenisList=\{\[([^\]]*)\]\}/)
+      expect(m, `halaman ${d.name} memakai LaporanTransaksi tapi prop jenisList tak terbaca`).toBeTruthy()
+      out.push({ halaman: d.name, jenis: kutipan(m![1]) })
+    }
+    // Pengaman anti-hampa: pemindai yang tak menemukan apa-apa akan "lulus".
+    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(5)
+    return out
+  }
+
+  /**
+   * Predikat TERAKHIR tiap index `(id) WHERE jenis IN (…)` atas transaksi_bmd,
+   * disisir dari SELURUH migrasi berurutan nama file — index yang di-DROP lalu
+   * dibuat ulang dgn predikat lebih lebar (pola idx_trx_reklas_id di sini,
+   * idx_trx_pindah_id di 20260729_07) otomatis kepakai definisi terakhirnya,
+   * karena Map di-overwrite tiap CREATE ditemukan lagi.
+   */
+  function predikatIndexId(): Map<string, string[]> {
+    const peta = new Map<string, string[]>()
+    const re = /CREATE\s+INDEX(?:\s+IF\s+NOT\s+EXISTS)?\s+(\w+)\s+ON\s+transaksi_bmd\s*\(id\)\s*WHERE\s+jenis\s+IN\s*\(([^)]*)\)/gi
+    for (const { isi } of bacaMigrasi()) {
+      for (const m of isi.matchAll(re)) peta.set(m[1], kutipan(m[2]))
+    }
+    return peta
+  }
+
+  it('setiap jenisList tercakup SEKURANG-KURANGNYA satu index (id) WHERE jenis IN (…)', () => {
+    const peta = predikatIndexId()
+    expect(peta.size, 'tak ada satu pun index (id) WHERE jenis IN (…) terbaca dari migrasi — parser rusak').toBeGreaterThan(0)
+    for (const { halaman, jenis } of jenisListHalaman()) {
+      const cocok = [...peta.entries()].filter(([, predikat]) => jenis.every(j => predikat.includes(j)))
+      expect(cocok.length,
+        `halaman '${halaman}' (jenisList: ${jenis.join(', ')}) tak tercakup index manapun — ` +
+        `akan timeout begitu dibuka tanpa filter SKPD/periode (pola persis §6, kembar dgn insiden 2026-08-26)`,
+      ).toBeGreaterThan(0)
+    }
+  })
+
+  it('idx_trx_kapitalisasi_id & idx_trx_koreksi_id dibuat PLAIN, bukan CONCURRENTLY', () => {
+    for (const nama of ['idx_trx_kapitalisasi_id', 'idx_trx_koreksi_id']) {
+      const mig = bacaMigrasi().filter(m => m.isi.includes(nama))
+      expect(mig.length, `migrasi ${nama} tak ditemukan`).toBeGreaterThan(0)
+      expect(mig[mig.length - 1].isi).not.toMatch(/CREATE\s+INDEX\s+CONCURRENTLY/i)
+    }
+  })
+})

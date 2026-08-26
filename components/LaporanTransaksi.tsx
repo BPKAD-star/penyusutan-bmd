@@ -85,9 +85,16 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
 
   useEffect(() => {
     // daftar periode yang ada transaksi (dropdown dinamis)
+    // ⚠️ `order('id')`, BUKAN `order('periode')` — sama bug & obat dgn
+    // LaporanPerolehan.tsx: `jenis` (ENUM) tak bisa jadi index-cond di bawah
+    // RLS, jadi order('periode') menyusuri index periode MUNDUR sambil
+    // membuang ratusan ribu baris jenis lain → TIMEOUT (diukur nyata 14 dtk
+    // utk kasus serupa). order('id') cocok dgn index parsial per-jenis yang
+    // sudah dipakai buildQuery di bawah (idx_trx_reklas_id/_penghapusan_id/
+    // _pindah_id/dst) → jauh lebih murah.
     supabase.from('transaksi_bmd').select('periode').in('jenis', jenisList as never)
-      .order('periode', { ascending: false }).limit(1000)
-      .then(({ data }) => setPeriodeList([...new Set((data || []).map(r => r.periode))]))
+      .order('id', { ascending: false }).limit(1000)
+      .then(({ data }) => setPeriodeList([...new Set((data || []).map(r => r.periode))].sort().reverse()))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const buildQuery = useCallback(() => {

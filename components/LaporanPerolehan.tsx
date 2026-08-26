@@ -57,9 +57,16 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const [matrixLoading, setMatrixLoading] = useState(false)
 
   useEffect(() => {
+    // ⚠️ `order('id')`, BUKAN `order('periode')` — `jenis` (ENUM) tak bisa jadi
+    // index-cond di bawah RLS (CLAUDE.md "ronde 3"), jadi urutan yang dipakai
+    // menentukan index mana yang sanggup melayani. Diukur ke DB dgn RLS aktif:
+    // order('periode') menyusuri idx_trx_periode MUNDUR sambil membuang
+    // ~421rb baris jenis lain → 14.408 ms (di atas statement_timeout 8 dtk,
+    // TIMEOUT nyata, bukan teori). order('id') dilayani `idx_trx_perolehan_id`
+    // (partial index yg SAMA dipakai buildQuery di bawah) → 19,8 ms.
     supabase.from('transaksi_bmd').select('periode').eq('jenis', jenis)
-      .order('periode', { ascending: false }).limit(1000)
-      .then(({ data }) => setPeriodeList([...new Set((data || []).map(r => r.periode))]))
+      .order('id', { ascending: false }).limit(1000)
+      .then(({ data }) => setPeriodeList([...new Set((data || []).map(r => r.periode))].sort().reverse()))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Aset yang dianggap TAK PERNAH diperoleh (batal_* cara perolehan / koreksi
