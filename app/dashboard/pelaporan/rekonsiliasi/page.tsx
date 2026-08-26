@@ -31,6 +31,9 @@ import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
+import BeritaAcaraRekon from '@/components/pelaporan/BeritaAcaraRekon'
+import BeritaAcaraRekonModal from '@/components/pelaporan/BeritaAcaraRekonModal'
+import type { KonfigBA } from '@/lib/beritaAcaraRekon'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
   fetchRekonRekap, fetchPosAset, fetchMutasiLines, attribusiLines,
@@ -191,7 +194,17 @@ export default function RekonsiliasiPage() {
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [tahun, setTahun] = useState(() => tahunAwal('2026'))
   const [smt, setSmt] = useState('1')
-  const [applied, setApplied] = useState<{ tahun: string; smt: string } | null>(null)
+  // ⚠️ `skpdId`/`descendantIds` ikut DIBEKUKAN di sini (2026-08-26). Sempat
+  // dicabut bersama kop "Berita Acara" 2026-08-11 dan CLAUDE.md sudah mencatat
+  // "kalau nanti diminta kembali, `applied` perlu ikut membekukan `skpdId`
+  // lagi" — inilah saatnya: lembar BA Rekon memuat nama SKPD di kop suratnya,
+  // dan itu WAJIB SKPD yang angkanya sedang tampil. Kalau dibaca dari `org`
+  // (nilai HIDUP), operator yang mengganti pilihan SKPD tanpa menekan Proses
+  // akan mencetak angka SKPD lama di bawah kop SKPD baru — tanpa satu pun
+  // tanda, dan lembar itu ditandatangani.
+  const [applied, setApplied] = useState<
+    { tahun: string; smt: string; skpdId: number | null; descendantIds: number[] | null } | null
+  >(null)
   const [snapAwal, setSnapAwal] = useState<Snapshot>({})
   const [snapAkhir, setSnapAkhir] = useState<Snapshot>({})
   const [mutasi, setMutasi] = useState<Mutasi>({})
@@ -206,6 +219,23 @@ export default function RekonsiliasiPage() {
   const [detailBusy, setDetailBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  // ── Berita Acara Rekonsiliasi (Format V.2 Permendagri 47/2021) ────────────
+  // `ba` = konfigurasi lembar yang sudah disusun operator; dibiarkan MENETAP
+  // sesudah dicetak supaya cetak ulang tak perlu mengisi ulang pop-upnya.
+  const [ba, setBa] = useState<KonfigBA | null>(null)
+  const [modalBA, setModalBA] = useState(false)
+  const [modeCetak, setModeCetak] = useState<'tabel' | 'ba'>('tabel')
+  // Pemicu cetak sengaja COUNTER, bukan boolean yang di-reset: `window.print()`
+  // harus dijalankan SESUDAH React sempat merender blok yang mau dicetak, dan
+  // boolean yang di-reset sendiri gampang jadi "klik kedua tak melakukan apa-apa"
+  // kalau `afterprint` tak pernah menyala (beda-beda antar peramban).
+  const [pemicuCetak, setPemicuCetak] = useState(0)
+
+  useEffect(() => {
+    if (pemicuCetak === 0) return
+    const t = window.setTimeout(() => window.print(), 80)
+    return () => window.clearTimeout(t)
+  }, [pemicuCetak])
 
   useEffect(() => {
     (async () => {
@@ -256,7 +286,7 @@ export default function RekonsiliasiPage() {
       setSnapAwal(rekap.awal); setSnapAkhir(rekap.akhir)
       setBebanAwal(rekap.bebanSaldoAwal)
       setLines(atrLines); setMutasi(aggregateMutasi(atrLines))
-      setApplied({ tahun, smt })
+      setApplied({ tahun, smt, skpdId: org.skpdId, descendantIds: desc })
     } catch (e) {
       // Laporan yang datanya tak lengkap TIDAK BOLEH tampil — angka rekonsiliasi
       // yang kurang sebagian jauh lebih berbahaya daripada halaman yang kosong,
@@ -326,8 +356,21 @@ export default function RekonsiliasiPage() {
   // Menghitungnya dua kali juga membuka celah berkas PDF berbeda dari layar.
   function handlePrint() {
     if (!applied) return
-    window.print()
+    setModeCetak('tabel')
+    setPemicuCetak(n => n + 1)
   }
+
+  // Lembar Berita Acara memakai angka yang SAMA (state halaman ini), cuma
+  // disusun ulang ke bentuk Format V.2 — lihat components/pelaporan/
+  // BeritaAcaraRekon.tsx untuk alasan ia tidak jadi rute /cetak terpisah.
+  function handleCetakBA(konfig: KonfigBA) {
+    setBa(konfig)
+    setModalBA(false)
+    setModeCetak('ba')
+    setPemicuCetak(n => n + 1)
+  }
+
+  const namaSkpdApplied = applied?.skpdId != null ? (skpdNama[applied.skpdId] || '') : ''
 
   return (
     <div className="p-6">
@@ -342,11 +385,38 @@ export default function RekonsiliasiPage() {
           muat kalau font & padding ditekan. `table-layout: fixed` + lebar kolom
           pertama 20% mencegah kolom label melar dan mendorong angka keluar
           halaman; label panjang dibiarkan MEMBUNGKUS, angka tidak. */}
+      {/* ⚠️ DUA lembar cetak berbeda hidup di halaman yang sama — tabel
+          Rekonsiliasi (A4 landscape) dan Berita Acara Format V.2 (A4 potret).
+          Aturannya SATU: hanya `modeCetak` yang menentukan mana yang tampil,
+          dan yang tidak tampil di-`display:none` — BUKAN cuma `visibility`.
+          Trik visibility saja tak cukup di sini: elemen yang tak terlihat tetap
+          MENGISI tata letak, jadi #cetak-rekon yang tingginya ~8 halaman akan
+          menghasilkan berkas BA berisi 8 lembar kosong di belakangnya. */}
+      {modeCetak === 'ba' ? (
+        <style>{`
+          @media print {
+            @page { size: A4 portrait; margin: 1.4cm 1.5cm; }
+            body { background: #fff; }
+            body * { visibility: hidden; }
+            #cetak-rekon { display: none !important; }
+            #cetak-ba { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
+            #cetak-ba, #cetak-ba * { visibility: visible; }
+            /* Satu lembar = satu halaman; lembar terakhir tak menyisakan
+               halaman kosong (pola yang sama dgn kartu tabel di bawah). */
+            #cetak-ba .lembar { break-after: page; break-inside: auto; }
+            #cetak-ba .lembar:last-child { break-after: auto; }
+            #cetak-ba tr { break-inside: avoid; }
+            #cetak-ba thead { display: table-header-group; }
+            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          }
+        `}</style>
+      ) : (
       <style>{`
         @media print {
           @page { size: A4 landscape; margin: 0.7cm; }
           body { background: #fff; }
           body * { visibility: hidden; }
+          #cetak-ba { display: none !important; }
           #cetak-rekon, #cetak-rekon * { visibility: visible; }
           #cetak-rekon { position: absolute; left: 0; top: 0; width: 100%; }
           #cetak-rekon .no-print { display: none !important; }
@@ -368,6 +438,7 @@ export default function RekonsiliasiPage() {
           * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
+      )}
 
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Rekonsiliasi BMD</h1>
@@ -401,6 +472,11 @@ export default function RekonsiliasiPage() {
             <button className="btn-primary" onClick={proses} disabled={loading}>{loading ? 'Memproses...' : 'Proses'}</button>
             {applied && <button className="btn-secondary" onClick={handleExport}>Export Excel</button>}
             {applied && <button className="btn-secondary" onClick={handlePrint}>Export PDF / Cetak</button>}
+            {applied && (
+              <button className="btn-primary" onClick={() => setModalBA(true)}>
+                Cetak BA Rekon (Permendagri 47)
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -537,6 +613,33 @@ export default function RekonsiliasiPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Lembar Berita Acara — TERSEMBUNYI di layar (`hidden`), disalakan hanya
+          oleh print CSS di atas. Ia memakai state yang SAMA dgn tabel di layar,
+          jadi berkas yang ditandatangani mustahil berbeda dari yang barusan
+          diproses. Dibiarkan menetap sesudah dicetak supaya cetak ulang tak
+          perlu mengisi pop-upnya lagi. */}
+      {applied && ba && (
+        <BeritaAcaraRekon
+          konfig={ba}
+          periode={periodeLabel}
+          namaSkpd={namaSkpdApplied}
+          snapAwal={snapAwal}
+          snapAkhir={snapAkhir}
+          mutasi={mutasi}
+        />
+      )}
+
+      {modalBA && applied && (
+        <BeritaAcaraRekonModal
+          skpdId={applied.skpdId}
+          namaSkpd={namaSkpdApplied}
+          descendantIds={applied.descendantIds}
+          periode={periodeLabel}
+          onClose={() => setModalBA(false)}
+          onCetak={handleCetakBA}
+        />
       )}
 
       {detailBusy && !detail && (

@@ -2199,6 +2199,81 @@ laporan. Yang salah justru pengujinya.
   cetak tidak menyebut SKPD & periode sama sekali** — identitas lembar cuma
   judul jenis aset. Kalau nanti diminta kembali, `applied` perlu ikut membekukan
   `skpdId` lagi (dulu ada, dibuang bersama kopnya supaya tak jadi kode mati).
+  ✅ **Itu terjadi 2026-08-26** — lihat bagian BA Rekon di bawah; `applied` kini
+  membekukan `skpdId` DAN `descendantIds`.
+
+## Berita Acara Rekonsiliasi Format V.2 (Permendagri 47/2021, 2026-08-26)
+
+Tombol **"Cetak BA Rekon (Permendagri 47)"** di menu Pelaporan → Rekonsiliasi
+BMD. Berkasnya: lembar depan (kop · nomor · hari/tanggal terbilang · identitas
+kedua pihak · tanda tangan) → Lampiran 1 Saldo Awal → Lampiran 2 Saldo Akhir →
+**satu lembar per JENIS ASET yang punya transaksi**. A4 potret.
+Berkasnya: `lib/beritaAcaraRekon.ts` (+ test), `components/pelaporan/
+BeritaAcaraRekon.tsx` (lembar) & `BeritaAcaraRekonModal.tsx` (pop-up). **Tak ada
+migrasi** — murni menyusun ulang angka yang sudah ada di layar.
+
+- **EMPAT VARIAN, ANGKA YANG SAMA** (permintaan user): Pembantu↔Pengguna ·
+  Pengguna↔Pengelola · Pengguna↔Akuntansi SKPD · Pengelola↔Akuntansi Pemda.
+  Yang berbeda cuma siapa PIHAK PERTAMA/KEDUA & judul kolom nilainya, jadi
+  keempatnya jadi **data** (`VARIAN_BA`), bukan empat halaman cetak yang saling
+  menyalin. Hanya varian keempat yang se-kabupaten; tiga lainnya WAJIB SKPD
+  terpilih — kop suratnya menyebut satu SKPD, dan lembar tanpa identitas itu
+  bukan dokumen.
+- ⚠️ **BUKAN rute `/cetak/...` terpisah**, alasannya sama persis dgn "Export PDF
+  / Cetak" tabel Rekonsiliasi: angkanya lahir dari `fetchRekonRekap` +
+  `fetchMutasiLines` + `attribusiLines` yang mahal (30 dtk untuk Diknas) dan
+  bergantung `descendantIds` — 694 id tak muat di URL, dan menghitung ulang
+  membuka celah lembar bertanda tangan yang berbeda dari layar. Lembarnya
+  dirender di halaman yang sama, `hidden` di layar, dinyalakan print CSS.
+- ⚠️ **DUA lembar cetak di satu halaman → yang tidak dipakai wajib
+  `display:none`, bukan cuma `visibility:hidden`.** Elemen tak-terlihat tetap
+  MENGISI tata letak, jadi tanpa itu berkas BA membawa ~8 halaman kosong
+  (setinggi tabel Rekonsiliasi) di belakangnya. `modeCetak` yang memilih.
+- ⚠️ **`applied` kini membekukan `skpdId` & `descendantIds`.** Kalau nama SKPD
+  dibaca dari `org` (nilai HIDUP), operator yang mengganti SKPD tanpa menekan
+  Proses akan mencetak angka SKPD lama di bawah kop SKPD baru — tanpa satu pun
+  tanda, dan lembar itu ditandatangani.
+- ⚠️ **PEMETAAN 27 `MutasiKey` → BARIS FORMAT ADALAH ATURAN INTEGRITAS.**
+  Format V.2 punya daftar baris TETAP (Cara Perolehan a–j, Penggunaan, internal,
+  reklasifikasi, Koreksi, Penghapusan a–f) sementara aplikasi ini punya 27
+  kategori. Kategori yang lupa dipetakan **tidak menghasilkan satu pun error** —
+  ia cuma hilang dari lembar & jumlahnya diam-diam kurang. Karena itu
+  `BARIS_TRX` dikunci test: tiap kategori dipakai **TEPAT SEKALI** (bukan cuma
+  "ada" — salah tempel bikin dobel). Keputusan yang perlu diingat: KDP &
+  Belanja Jasa masuk **1.a Pengadaan dari APBD** (beda rekening, bukan beda cara
+  perolehan); Kapitalisasi, Pemecahan & Penggabungan masuk **6 Koreksi** — semua
+  pembetulan pencatatan atas barang yang SUDAH ada, menaruhnya di Cara Perolehan
+  berarti menyatakan pemda menerima barang yang cuma dipecah nomor registernya.
+- **Pos Permendagri tanpa padanan di aplikasi (divestasi, putusan pengadilan,
+  Persediaan, Kemitraan Pihak Ketiga) dibiarkan KOSONG, bukan diisi 0.** Nol
+  menyatakan "tidak ada tahun ini"; kosong menyatakan "tak ditatausahakan di
+  sini". Dua pernyataan berbeda, dan yang satu tak berhak dibuat aplikasi ini.
+  Lembar Saldo Awal memuat satu kalimat yang mengatakannya.
+- ⚠️ **Format V.2 tak punya baris "Selisih", jadi selisih dititipkan ke
+  "Catatan Hasil Rekonsiliasi (15)"** — bagian yang memang disediakan formatnya,
+  jadi fidelitasnya utuh. Rumus `selisihBA` KEMBAR dgn baris Selisih di tabel
+  Rekonsiliasi (`nilaiBaris` kasus `'selisih'`). Daftar LENGKAPnya ditaruh di
+  lampiran **Saldo Akhir**, bukan cuma di lembar per jenis aset: golongan yang
+  selisihnya lahir dari reklas komptabel Intra↔Ekstra sering tak punya SATU PUN
+  baris mutasi → tak kebagian lembar sendiri → catatannya hilang tanpa jejak.
+- **Cakupan angka bisa dipilih: Intrakomptabel (bawaan) atau Intra+Ekstra.**
+  Neraca hanya memuat intra — itu yang direkonsiliasi dengan akuntansi; antar
+  pengurus barang sering dipakai keduanya.
+- **Kolom "Sesuai / Tidak Sesuai" & "Disetujui / Perbaikan" DIBIARKAN KOSONG**
+  untuk dicentang tangan. Aplikasi ini cuma memegang data SATU pihak (kolomnya
+  memang berjudul "Laporan BMD Pengguna Barang"); mencentangnya sendiri berarti
+  menyatakan pihak seberang setuju padahal datanya tak pernah dilihat.
+- **Baris "LRA ……… Rp ………" diketik operator**, tidak ditarik dari menu LRA.
+  Mengarang angka realisasi di dokumen yang akan diteken jauh lebih berbahaya
+  daripada titik-titik yang jelas belum diisi — aturan yang sama dgn nama
+  penanda tangan di lembar RKBMD & Standar Harga.
+- **Identitas kedua pihak: dipilih dari `admin_pegawai` lalu BOLEH disunting.**
+  Saran awalnya lewat `role_bmd` (`pengurus_barang_pembantu` / `pengurus_barang`
+  / `pengurus_barang_pengelola`); **Pelaksana Fungsi Akuntansi tidak ada di
+  master pegawai sama sekali**, jadi untuk varian 3 & 4 pihak keduanya sengaja
+  TAK PERNAH ditebak. Pilihan disimpan di `localStorage` per (SKPD × varian)
+  supaya cetak ulang menghasilkan lembar yang SAMA — berkas ini diteken lalu
+  dipindai (pola `bmd_rkbmd_ttd_skpd_<id>`).
 
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
