@@ -60,9 +60,11 @@ const ROWS_TAMBAH: RowDef[] = [
   { kind: 'item', label: 'Tukar Menukar', key: 'tukar', indent: 2 },
   { kind: 'item', label: 'Hasil Inventarisasi', key: 'inventarisasi', indent: 2 },
   { kind: 'item', label: 'Perolehan Lainnya', key: 'lainnya', indent: 2 },
-  // Termin kontrak konstruksi (akumulasi_kdp) → nilai aset KDP 1.3.6 naik.
-  // Sebelumnya tak terpetakan & jatuh ke baris Selisih.
-  { kind: 'item', label: 'Konstruksi Dalam Pengerjaan (termin)', key: 'kdp', indent: 2 },
+  // ⚠️ Baris "Konstruksi Dalam Pengerjaan (termin)" DICABUT 2026-08-27
+  // (keputusan user). Termin kontrak konstruksi (`akumulasi_kdp`) kini mendarat
+  // di baris **Pengadaan** di atas — lihat `computeMutasiLines` (lib/rekon.ts).
+  // Ia memang belanja modal APBD, cuma atas barang yang masih dikerjakan; baris
+  // tersendiri membuat pembacanya mengira ada cara perolehan kelima.
   { kind: 'item', label: 'Perolehan dari rekening Belanja Jasa', key: 'belanja_jasa', indent: 1 },
   { kind: 'item', label: 'Penggunaan (transfer masuk)', key: 'penggunaan_masuk', indent: 1 },
   // Mutasi antar sub-unit dalam satu SKPD induk. SENGAJA kosong kalau laporan

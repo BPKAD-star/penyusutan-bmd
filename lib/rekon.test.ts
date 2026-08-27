@@ -283,17 +283,20 @@ describe('penggabungan barang — 35 baris pagar jadi satu (kasus nyata 2026-08-
 
 describe('attribusiPenyusutan — anti-dobel', () => {
   it('satu aset dgn BEBERAPA baris di sel yang sama cuma diatribusi sekali', () => {
-    // Kontrak konstruksi 3 termin di periode yang sama → 3 baris 'kdp' utk satu
-    // aset KDP. Kalau tiap baris kebagian beban/akumulasi, angkanya 3x lipat.
+    // Kontrak konstruksi 3 termin di periode yang sama → 3 baris untuk SATU aset
+    // KDP. Kalau tiap baris kebagian beban/akumulasi, angkanya 3x lipat.
+    // ⚠️ Kategorinya `pengadaan` sejak 2026-08-27 — `akumulasi_kdp` tak lagi
+    // punya kategori `kdp` sendiri (lihat computeMutasiLines). Yang diuji di
+    // sini justru tetap berlaku: banyak termin, satu aset, satu atribusi.
     const posAwal = new Map<string, PosAset>()
     const posAkhir = new Map<string, PosAset>([['K', pos('1.3.6', 300, 0, 0)]])
     const atr = attribusiPenyusutan([
-      line('kdp', 'K', 100, { gol: '1.3.6' }),
-      line('kdp', 'K', 100, { gol: '1.3.6' }),
-      line('kdp', 'K', 100, { gol: '1.3.6' }),
+      line('pengadaan', 'K', 100, { gol: '1.3.6' }),
+      line('pengadaan', 'K', 100, { gol: '1.3.6' }),
+      line('pengadaan', 'K', 100, { gol: '1.3.6' }),
     ], posAwal, posAkhir)
     const m = aggregateMutasi(atr.lines)
-    expect(sel(m, 'kdp', '1.3.6')).toEqual({ perolehan: 300, beban: 0, akumulasi: 0 })
+    expect(sel(m, 'pengadaan', '1.3.6')).toEqual({ perolehan: 300, beban: 0, akumulasi: 0 })
     expect(atr.lines.filter(l => l.akumulasi !== 0 || l.beban !== 0).length).toBeLessThanOrEqual(1)
   })
 

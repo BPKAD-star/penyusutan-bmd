@@ -301,8 +301,14 @@ export function measuresOf(snap: Snapshot | undefined, golongan: string, komp: K
 // reconcile & memunculkan yg belum terpetakan (mis. reklas_komptabel).
 // FASE 3 (attribusiPenyusutan, di bawah) mengisi Beban & Akumulasi baris mutasi.
 // Lihat docs/rekonsiliasi-bmd-plan.md §5.3–5.4.
+// ⚠️ Kategori `kdp` DIHAPUS 2026-08-27 (keputusan user). Termin kontrak
+// konstruksi (`akumulasi_kdp`) sekarang diperlakukan PERSIS seperti `pengadaan`
+// — termasuk pemisahan Belanja Jasa 5.1 — karena memang itulah wujudnya:
+// belanja modal APBD atas barang KDP. Baris "Konstruksi Dalam Pengerjaan
+// (termin)" ikut dicabut dari tabel Rekonsiliasi; angkanya kini muncul di baris
+// Pengadaan pada tabel golongan 1.3.6.
 export type MutasiKey =
-  | 'pengadaan' | 'hibah' | 'tukar' | 'inventarisasi' | 'lainnya' | 'kdp'
+  | 'pengadaan' | 'hibah' | 'tukar' | 'inventarisasi' | 'lainnya'
   | 'belanja_jasa' | 'penggunaan_masuk' | 'internal_masuk' | 'kapitalisasi' | 'koreksi_tambah'
   | 'pemecahan_masuk' | 'penggabungan_masuk' | 'reklas_fungsi_masuk' | 'reklas_kode_masuk'
   | 'hapus_penjualan' | 'hapus_hibah' | 'hapus_tukar' | 'hapus_penyertaan' | 'hapus_sebab_lain'
@@ -439,7 +445,6 @@ const KURANG_SET = new Set<MutasiKey>(KURANG_KEYS)
 export const KATEGORI_LABEL: Record<MutasiKey, string> = {
   pengadaan: 'Pengadaan', belanja_jasa: 'Perolehan dari rekening Belanja Jasa',
   hibah: 'Hibah', tukar: 'Tukar Menukar', inventarisasi: 'Hasil Inventarisasi', lainnya: 'Perolehan Lainnya',
-  kdp: 'Konstruksi Dalam Pengerjaan (termin)',
   penggunaan_masuk: 'Penggunaan (transfer masuk)', internal_masuk: 'Penerimaan Internal (transfer masuk)',
   kapitalisasi: 'Kapitalisasi', koreksi_tambah: 'Koreksi Nilai (Tambah)',
   pemecahan_masuk: 'Pemecahan Barang (pecahan baru)', pemecahan_keluar: 'Pemecahan Barang (induk dipecah)',
@@ -524,11 +529,17 @@ async function computeMutasiLines(
   for (const r of cara) {
     if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id)) continue
     const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
-    if (r.jenis === 'pengadaan') {
+    // ⚠️ `akumulasi_kdp` (termin kontrak konstruksi) diperlakukan PERSIS seperti
+    // `pengadaan` sejak 2026-08-27 — dulu ia punya kategori `kdp` sendiri.
+    // Alasannya: termin KDP memang belanja modal APBD, cuma atas barang yang
+    // masih dikerjakan; memberinya baris sendiri di lembar rekonsiliasi membuat
+    // pembacanya mengira ada cara perolehan kelima. Pemisahan Belanja Jasa 5.1
+    // ikut berlaku, sebab payload `akumulasi_kdp` juga membawa `kode_rekening`
+    // (lib/kdp.ts) — kalau tidak, termin ber-rekening 5.1 akan mendarat di baris
+    // yang berbeda dari pengadaan non-fisik ber-rekening sama.
+    if (r.jenis === 'pengadaan' || r.jenis === 'akumulasi_kdp') {
       const rek = typeof r.payload?.kode_rekening === 'string' ? r.payload.kode_rekening : null
       push(gol, komp, rek?.trim().startsWith('5.1') ? 'belanja_jasa' : 'pengadaan', r.nilai, r)
-    } else if (r.jenis === 'akumulasi_kdp') {
-      push(gol, komp, 'kdp', r.nilai, r)
     } else push(gol, komp, caraKey[r.jenis] || 'lainnya', r.nilai, r)
   }
 
@@ -658,7 +669,7 @@ async function computeMutasiLines(
 // Konsekuensinya kategori BARU yang ditambahkan nanti otomatis berperilaku benar
 // walau lupa didaftarkan di sini; ia cuma kalah rebutan label.
 const MASUK_KEYS = new Set<MutasiKey>([
-  'pengadaan', 'belanja_jasa', 'hibah', 'tukar', 'inventarisasi', 'lainnya', 'kdp',
+  'pengadaan', 'belanja_jasa', 'hibah', 'tukar', 'inventarisasi', 'lainnya',
   'penggunaan_masuk', 'internal_masuk', 'pemecahan_masuk', 'penggabungan_masuk',
   'reklas_fungsi_masuk', 'reklas_kode_masuk',
 ])

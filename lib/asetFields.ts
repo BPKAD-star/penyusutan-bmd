@@ -104,6 +104,26 @@ export function fieldsForKode(kode: string): FieldKey[] {
   return GOLONGAN_FIELDS[kodeLevel3(kode)] || DEFAULT_FIELDS
 }
 
+// ── Barang KDP di menu Pengadaan → Pekerjaan Konstruksi ─────────────────────
+// Dokumen kepemilikan & jenis hak SENGAJA tidak ditawarkan (keputusan user
+// 2026-08-27): barang KDP itu bangunan/jalan yang MASIH DIKERJAKAN — sertifikat,
+// IMB, dan jenis haknya baru terbit setelah pekerjaan selesai lalu direklas ke
+// aset tetap. Menawarkannya sekarang cuma mengundang isian karangan di kolom
+// yang toh diisi ulang nanti.
+//
+// ⚠️ Luas & lokasi TETAP ada — itu justru yang dibutuhkan saat pekerjaan
+// berjalan, dan kartu kontrak menampilkan `alamat_detail` sbg "Lokasi".
+//
+// Sengaja BUKAN `GOLONGAN_FIELDS['1.3.6']`: golongan 1.3.6 di menu lain
+// (Koreksi, Daftar Barang Awal) memakai template ASET_LAINNYA yang membawa
+// Merek/Tipe & tanpa luas. Pintu ini punya kebutuhan sendiri; menyamakannya
+// akan menyeret dua menu lain ikut berubah.
+const KDP_TANPA_DOKUMEN: FieldKey[] = [
+  'jenis_hak', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
+]
+export const KDP_KONSTRUKSI_FIELDS: FieldKey[] =
+  TEMPLATE_TANAH.filter(k => !KDP_TANPA_DOKUMEN.includes(k))
+
 // ── Field set untuk KOREKSI spesifikasi (bukan form input awal) ─────────────
 // Dipakai bareng oleh menu Koreksi → Spesifikasi Barang (register `aset`) dan
 // Saldo Awal → Daftar Barang Awal (snapshot `aset_awal_2026`), supaya kedua

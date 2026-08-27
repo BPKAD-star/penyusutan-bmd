@@ -16,7 +16,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { periodeDariTanggal, klasifikasiKomptabel, fetchBatasKapitalisasi } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
-import { ASET_FIELD_COLS, ASET_NUM_COLS } from '@/lib/asetFields'
+import { ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 
 // ── MODEL MERGE-KE-PENGADAAN: 1 kontrak konstruksi = 1 kartu jurnal_header ──
 // (kategori 'konstruksi'). Semua data di payload; aset KDP dibuat SAAT approve.
@@ -77,7 +77,14 @@ function stripLegacy(p: KontrakKonstruksiPayload): KontrakKonstruksiPayload {
   return rest
 }
 
-const toNumStr = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
+// ⚠️ Pembaca angka kolom spesifikasi SENGAJA `angkaKolomAset`, bukan varian
+// `parseFloat(replace(/[^0-9.]/g,''))` yang dipakai di sini sampai 2026-08-27.
+// Regex itu dirancang untuk RUPIAH dan MEMBUANG TANDA MINUS: latitude Kabupaten
+// Kediri (≈ −7,8) tersimpan POSITIF, jadi titiknya melompat ke seberang
+// khatulistiwa — persis insiden 20260820_04, yang waktu itu diperbaiki di
+// Pengadaan/PerolehanManual tapi jalur KDP ini KELEWAT. `saveSpec` di
+// KonstruksiPengadaan sudah menyimpan "-7.774007" dengan benar; yang mencabut
+// minusnya justru materialisasi di bawah. Lihat lib/asetFields.ts.
 
 /**
  * Approve 1 kontrak konstruksi → materialize SEMUA barang KDP sekaligus (atomik):
@@ -126,7 +133,14 @@ export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerI
       jumlah: 1, nilai_perolehan: total, tgl_perolehan: tglBarang(b), skpd_id: h.skpd_id,
       intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: b.foto || [],
     }
-    for (const k of ASET_FIELD_COLS) { const v = b.spec?.[k]; if (v) asetRow[k] = ASET_NUM_COLS.has(k) ? toNumStr(v) : v }
+    for (const k of ASET_FIELD_COLS) {
+      const v = b.spec?.[k]
+      if (!v) continue
+      // Yang tak terbaca sebagai angka DILEWATI, bukan dijadikan 0 — `0` itu
+      // koordinat yang SAH (Teluk Guinea) dan lolos semua validasi rentang.
+      if (ASET_NUM_COLS.has(k)) { const n = angkaKolomAset(v); if (n !== null) asetRow[k] = n }
+      else asetRow[k] = v
+    }
     const { data: aset, error: aErr } = await supabase.from('aset').insert(asetRow).select('id').single()
     if (aErr || !aset) {
       if (createdAsetIds.length) await supabase.from('aset').update({ status: 'draft' }).in('id', createdAsetIds)
