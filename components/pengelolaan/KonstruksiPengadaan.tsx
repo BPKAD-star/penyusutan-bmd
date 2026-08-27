@@ -17,6 +17,7 @@ import SearchSelect from '@/components/SearchSelect'
 import { usePegawaiSkpd, pegawaiOptions } from '@/components/usePegawaiSkpd'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
+import PreviewKonstruksiModal from './PreviewKonstruksiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { periodeDariTanggal } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
@@ -53,11 +54,16 @@ export async function fetchKonstruksiKontraks(supabase: ReturnType<typeof create
 }
 
 // Baris label:value ringkas utk header kartu kontrak.
-function Baris({ label, value }: { label: string; value?: string | null }) {
+// `lebar` = lebar kolom label. Bawaannya cukup untuk kartu kontrak ("Tanggal
+// Kontrak" dsb); kartu barang KDP mengoper yang lebih lebar karena
+// "Spesifikasi Nama Barang" tak muat di w-28 lalu MEMBUNGKUS jadi dua baris —
+// labelnya turun & barisnya jadi tak sejajar dgn baris lain (user 2026-08-27).
+// `whitespace-nowrap` menjaga label tetap sebaris berapa pun lebarnya.
+function Baris({ label, value, lebar = 'w-28' }: { label: string; value?: string | null; lebar?: string }) {
   return (
     <div className="flex text-xs leading-relaxed">
-      <span className="text-gray-400 w-28 flex-shrink-0">{label}</span>
-      <span className="text-gray-700">: {value || '-'}</span>
+      <span className={`text-gray-400 flex-shrink-0 whitespace-nowrap ${lebar}`}>{label}</span>
+      <span className="text-gray-700 min-w-0">: {value || '-'}</span>
     </div>
   )
 }
@@ -297,6 +303,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
   const [busy, setBusy] = useState(false)
   const [showAddBarang, setShowAddBarang] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const [specBarang, setSpecBarang] = useState<BarangKdp | null>(null)
   const p = kontrak.payload || ({} as KontrakKonstruksiPayload)
   const barangs = barangKdpList(p)
@@ -500,6 +507,18 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
         )}
 
         <div className="p-4 border-t border-gray-100 flex justify-end items-center gap-3">
+          {/* Pratinjau SENGAJA di luar cabang `isAdmin` & hanya saat masih
+              pending — yang paling butuh memeriksa belanjanya justru operator
+              SKPD yang mengisinya, dan dialah satu-satunya yang tak punya
+              tombol apa pun di baris ini ("Menunggu tinjauan admin."). Ia cuma
+              membaca payload yang sudah di layar, jadi tak ada wewenang yang
+              dilonggarkan. Pola sama dgn 🔍 Pratinjau di kartu Pengadaan. */}
+          {pending && barangs.length > 0 && (
+            <button className="btn-secondary text-sm" onClick={() => setShowPreview(true)}
+              title="Lihat rincian & kelengkapan seluruh belanja (termin) di kontrak ini">
+              🔍 Pratinjau
+            </button>
+          )}
           {pending && isAdmin && barangs.length > 0 && <button className="btn-primary" onClick={approve} disabled={busy}>{busy ? 'Memproses...' : '✓ Setujui Kontrak'}</button>}
           {pending && isAdmin && barangs.length === 0 && <span className="text-xs text-gray-400">Tambah minimal 1 barang KDP untuk bisa disetujui.</span>}
           {pending && !isAdmin && <span className="text-xs text-gray-400">Menunggu tinjauan admin.</span>}
@@ -518,6 +537,17 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
           onClose={() => setShowEdit(false)}
           onSaved={() => { setShowEdit(false); onMsg('Header kontrak diperbarui.'); onChanged() }}
           onErr={onMsg} />
+      )}
+      {showPreview && (
+        <PreviewKonstruksiModal judul={kontrak.no_sk}
+          subjudul={`${p.nama_pekerjaan || 'Pekerjaan konstruksi'} · tgl ${kontrak.tanggal}`}
+          barangs={barangs}
+          // `FIELDS_KDP` — daftar yang SAMA yang dioper ke EditSpesifikasiModal
+          // di bawah. Wajib satu sumber: KDP berkode 1.3.6 tapi formnya sengaja
+          // memakai template Tanah, jadi pratinjau yang menurunkan sendiri dari
+          // kodenya akan memeriksa daftar yang berbeda.
+          fieldKeys={FIELDS_KDP}
+          onClose={() => setShowPreview(false)} />
       )}
     </div>
   )
@@ -692,10 +722,10 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-800">{barang.nama} <span className="text-[11px] text-gray-400 font-normal">· {barang.kode}</span></p>
           <div className="mt-1 space-y-0.5">
-            <Baris label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
-            <Baris label="Lokasi" value={barang.spec?.alamat_detail} />
-            <Baris label="Keterangan" value={barang.spec?.keterangan} />
-            {barang.kap_info?.menambah && <Baris label="Menambah Manfaat" value={barang.kap_info.target_nama || '(aset dipilih)'} />}
+            <Baris lebar="w-44" label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
+            <Baris lebar="w-44" label="Lokasi" value={barang.spec?.alamat_detail} />
+            <Baris lebar="w-44" label="Keterangan" value={barang.spec?.keterangan} />
+            {barang.kap_info?.menambah && <Baris lebar="w-44" label="Menambah Manfaat" value={barang.kap_info.target_nama || '(aset dipilih)'} />}
           </div>
         </div>
         <div className="flex items-start gap-3 flex-shrink-0">
@@ -703,10 +733,27 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
             <p className="text-[11px] text-gray-400">Nilai (Σ termin)</p>
             <p className="font-semibold text-gray-800">{formatRupiah(total)}</p>
           </div>
-          <div className="flex flex-col gap-1 items-end">
-            <button className="text-xs text-teal hover:underline" onClick={onEditSpec}>Edit Spesifikasi</button>
-            {pending && <button className="text-xs text-teal hover:underline" onClick={() => { setDraftKapInfo(barang.kap_info ?? null); setShowKapInfo(v => !v) }}>Ubah Induk Aset</button>}
-            {pending && <button className="text-xs text-red-500 hover:text-red-700" onClick={onHapusBarang}>Hapus Barang</button>}
+          {/* Tombol berkotak & SAMA LEBAR (w-36) — dulu tiga tautan bergaris
+              bawah dgn panjang berbeda-beda sehingga tepinya tak rata. Warna
+              mengikuti peran: hijau = menyunting isi, amber = mengubah
+              keterkaitan induk (pola nada KonfirmasiModal), merah = membuang. */}
+          <div className="flex flex-col gap-1.5 items-end w-36">
+            <button onClick={onEditSpec}
+              className="w-full inline-flex items-center justify-center bg-teal hover:bg-teal-light text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+              Edit Spesifikasi
+            </button>
+            {pending && (
+              <button onClick={() => { setDraftKapInfo(barang.kap_info ?? null); setShowKapInfo(v => !v) }}
+                className="w-full inline-flex items-center justify-center bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                Ubah Induk Aset
+              </button>
+            )}
+            {pending && (
+              <button onClick={onHapusBarang}
+                className="w-full inline-flex items-center justify-center bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                Hapus Barang
+              </button>
+            )}
           </div>
         </div>
       </div>
