@@ -88,11 +88,15 @@ export default function LembarMutasiBmd({ periode, komptabel, sumber, konfig }: 
         </table>
       )}
 
-      <table className="tabel-mutasi w-full table-fixed border-collapse text-[9px]">
+      {/* A4 POTRET (permintaan user 2026-08-27) — kolom angka dibuat lebih
+          lega & font 8px supaya nilai terpanjang (17 digit, mis.
+          4.976.717.582.306) muat SEBARIS. Lebar cetak potret ±703px pada
+          margin 1,2cm; 17% ≈ 119px, sedangkan 17 digit @8px ≈ 75px. */}
+      <table className="tabel-mutasi w-full table-fixed border-collapse text-[8px]">
         <colgroup>
-          <col className="w-[3.5%]" /><col className="w-[3.5%]" /><col className="w-[3.5%]" />
-          <col className="w-[25.5%]" />
-          <col className="w-[16%]" /><col className="w-[16%]" /><col className="w-[16%]" /><col className="w-[16%]" />
+          <col className="w-[3%]" /><col className="w-[3%]" /><col className="w-[3%]" />
+          <col className="w-[23%]" />
+          <col className="w-[17%]" /><col className="w-[17%]" /><col className="w-[17%]" /><col className="w-[17%]" />
         </colgroup>
         <thead>
           <tr className="text-center font-semibold">

@@ -947,7 +947,11 @@ export default function LaporanBmdPage() {
         <>
           <style>{`
             @media print {
-              @page { size: A4 landscape; margin: 1.2cm; }
+              /* POTRET (permintaan user 2026-08-27) — sama dgn lembar posisi
+                 4.2/4.4, jadi keempat lampiran Laporan BMD seragam. Muat
+                 karena kolom angkanya cuma empat & fontnya 8px: 17 digit
+                 (~75px) di kolom selebar 17% dari ±703px = 119px. */
+              @page { size: A4 portrait; margin: 1.2cm; }
               body { background: #fff; }
               body * { visibility: hidden; }
               #cetak-mutasi-bmd { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
