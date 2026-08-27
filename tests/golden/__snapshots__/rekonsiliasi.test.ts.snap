@@ -35,6 +35,22 @@ exports[`golden — snapshot agregat > posisi Saldo Awal & Saldo Akhir per golon
         "perolehan": 475500000,
       },
     },
+    "1.3.3": {
+      "ekstra": {
+        "akumulasi": 0,
+        "beban": 0,
+        "count": 0,
+        "nilaiBuku": 0,
+        "perolehan": 0,
+      },
+      "intra": {
+        "akumulasi": 1000000,
+        "beban": 1000000,
+        "count": 1,
+        "nilaiBuku": 29000000,
+        "perolehan": 30000000,
+      },
+    },
     "1.3.5": {
       "ekstra": {
         "akumulasi": 0,
@@ -214,6 +230,16 @@ exports[`golden — snapshot agregat > tabel mutasi Rekonsiliasi 2026-S1 (scope 
       },
     },
   },
+  "1.3.3": {
+    "ekstra": {},
+    "intra": {
+      "reklas_fungsi_masuk": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 30000000,
+      },
+    },
+  },
   "1.3.5": {
     "ekstra": {},
     "intra": {
@@ -221,6 +247,21 @@ exports[`golden — snapshot agregat > tabel mutasi Rekonsiliasi 2026-S1 (scope 
         "akumulasi": 0,
         "beban": 0,
         "perolehan": 15000000,
+      },
+    },
+  },
+  "1.3.6": {
+    "ekstra": {},
+    "intra": {
+      "pengadaan": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 30000000,
+      },
+      "reklas_fungsi_keluar": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 30000000,
       },
     },
   },

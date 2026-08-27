@@ -2332,10 +2332,42 @@ Bangunan lalu digabung ke induk. **Tak ada migrasi** — seluruhnya perilaku kod
   `JENIS_CARA` di lib/rekon.ts **tetap memuat `akumulasi_kdp`** (itu jenis
   ledger, bukan kategori) — `lib/sinkronisasi.test.ts` §3 sudah mengecualikannya
   dari perbandingan cara perolehan.
-- **Reklas KDP → Gedung/JIJ sudah benar sejak awal** dan tak disentuh: ia
-  menghasilkan `reklas_golongan` → `reklas_fungsi_keluar` di 1.3.6 +
-  `reklas_fungsi_masuk` di golongan tujuan. Diverifikasi ke ledger produksi
-  (aset `b87ebdff…`, 335.000.000, 2026-S2).
+- **Reklas KDP → Gedung/JIJ menghasilkan `reklas_golongan`** →
+  `reklas_fungsi_keluar` di 1.3.6 + `reklas_fungsi_masuk` di golongan tujuan.
+  Baris reklasnya sendiri memang sudah benar sejak awal (dibaca dari
+  `payload.kode_lama`/`kode_baru`); yang salah baris mutasi LAINNYA — lihat
+  butir berikut.
+- ⚠️ **GOLONGAN BARIS MUTASI TAK PERNAH PERIOD-AWARE** (bug ditemukan
+  2026-08-27, ada sejak fitur reklas dibuat). `computeMutasiLines` memakai
+  `kodeLevel3(r.aset.kode)` — posisi TERAKHIR barang — untuk SEMUA kategori
+  kecuali reklas. Snapshot Saldo Awal/Akhir sudah period-aware sejak 2026-08-11
+  (`kodeAt`), jadi yang patah cuma sisi mutasinya, dan patahnya **tak
+  bersuara**.
+  Terlihat di produksi (BKAD, aset `b87ebdff…`): satu kontrak konstruksi dengan
+  5 termin `akumulasi_kdp` lalu direklas KDP → Gedung. Karena `aset.kode` kini
+  1.3.3, KELIMA termin — termasuk yang dibayar di **2026-S1**, dua bulan sebelum
+  reklasnya — dibukukan di tabel **1.3.3**. Jadi Gedung & Bangunan seolah
+  menerima pengadaan yang tak pernah ada, dan KDP tak pernah kelihatan bertambah
+  sama sekali.
+  **Obatnya `kodePada()` (lib/reklasKode.ts)** — fungsi itu SUDAH ADA lengkap
+  dengan parameter `trxId` dan dokumennya berbunyi *"berisi = tepat saat
+  transaksi itu, supaya baris mutasi jatuh di golongan yang benar"*; yang tak
+  pernah dipasang cuma wiring-nya.
+  ⚠️ **`r.id` dioper, BUKAN `null`.** Reklas bisa terjadi di periode yang SAMA
+  dengan transaksinya (termin 8 Agustus, reklas 19 Agustus, dua-duanya 2026-S2).
+  Dengan "kode pada AKHIR periode" termin itu ikut pindah ke golongan tujuan,
+  lalu 1.3.6 menerima pengurangan reklas tanpa pernah menerima penambahannya —
+  rantainya tak akan pernah tie-out. Yang menentukan urutan kejadian di ledger.
+  ⚠️ **`doReklas` TIDAK ikut** — baris reklas dibaca dari `payload.kode_lama`/
+  `kode_baru`, dan itu memang sudah benar.
+  **Kenapa golden test tak menangkapnya selama ini:** A15 memang direklas, tapi
+  ia tak punya baris mutasi lain, jadi tak ada satu pun aset yang menguji
+  "transaksi biasa + reklas pada aset yang sama". Ditutup fixture **A19**
+  (termin KDP → reklas ke Gedung, seperiode) + assertion eksplisit di
+  `tests/golden/rekonsiliasi.test.ts`.
+  ℹ️ `fn_rekap_bmd` (Laporan BMD) memakai `fn_dbar_kode_at` = kode pada AKHIR
+  periode, jadi untuk kasus reklas-seperiode Laporan BMD & Rekonsiliasi bisa
+  berbeda pada golongan asal. Belum disentuh — perlu telaah tersendiri.
   ⛔ **Kapitalisasi/penggabungan ke induk BELUM ditangani** — `kapitalisasi_serap`
   tidak dipetakan ke satu pun `MutasiKey`, jadi barang yang terserap hilang dari
   Saldo Akhir tanpa baris mutasi & jatuh ke baris Selisih. Sengaja ditunda

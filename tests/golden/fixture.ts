@@ -18,6 +18,14 @@
 //   ✔ pemecahan induk → 2 pecahan beda kolom → A12/A13/A14
 //   ✔ reklas kode (keluar+masuk)             → A15
 //   ✔ koreksi nilai tambah & kurang          → A16 / A17
+//   ✔ termin KDP lalu reklas ke Gedung, SEPERIODE → A19
+//
+// ⚠️ A19 ditambahkan 2026-08-27 sesudah bug lolos dari dataset ini. A15 memang
+// direklas, tapi ia TIDAK punya baris mutasi lain — jadi tak ada satu pun aset
+// yang menguji "transaksi biasa + reklas pada aset yang sama". Selama itu,
+// `computeMutasiLines` boleh saja memakai `aset.kode` TERKINI dan tie-out tetap
+// hijau. Di produksi akibatnya: kelima termin kontrak konstruksi BKAD dibukukan
+// di 1.3.3 Gedung — termasuk yang dibayar semester SEBELUM reklasnya.
 //
 // TIDAK tercakup di sini, dan itu disengaja: "barang melewati checkpoint tutup
 // tahun" (TESTING.md §6) menyentuh ENGINE, bukan Rekonsiliasi — Rekonsiliasi
@@ -37,6 +45,8 @@ const PM = '1.3.2.02.01.02.003'   // Peralatan & Mesin — disusutkan
 const TANAH = '1.3.1.11.01.01.001' // Tanah — TIDAK disusutkan
 const ATL = '1.3.5.01.01.01.001'   // Aset Tetap Lainnya
 const LAIN = '1.5.4.01.01.01.001'  // Aset Lain-Lain — BEKU
+const KDP = '1.3.6.01.01.01.003'   // Konstruksi Dalam Pengerjaan
+const GB = '1.3.3.01.01.01.001'    // Gedung dan Bangunan
 
 type AsetRow = {
   id: string; kode: string; skpd_id: number; nilai_perolehan: number
@@ -70,6 +80,10 @@ export const ASET: AsetRow[] = [
   aset('A16', PM, SKPD_A, 8_000_000),                             // koreksi nilai TAMBAH
   aset('A17', PM, SKPD_A, 7_000_000),                             // koreksi nilai KURANG
   aset('A18', PM, SKPD_LUAR, 999_000_000),                        // DI LUAR scope — tak boleh ikut
+  // A19 — barang KDP yang menerima termin lalu direklas ke Gedung DI PERIODE
+  // YANG SAMA. `kode` di sini sengaja sudah GB: itulah posisi TERAKHIRnya, dan
+  // justru kolom itu yang dulu keliru dipakai untuk membukukan terminnya.
+  aset('A19', GB, SKPD_A, 30_000_000, 'intra', '2026-03-01'),
 ]
 
 export const JURNAL: { id: string; no_sk: string }[] = [
@@ -139,6 +153,15 @@ export const TRANSAKSI: Trx[] = [
 
   // A18 — di LUAR scope: pengadaan besar yang tak boleh ikut terhitung.
   t(190, 'pengadaan', 'A18', 999_000_000, { payload: { kode_rekening: '5.2.02.01' } }),
+
+  // A19 — termin kontrak konstruksi lalu reklas KDP → Gedung, SEPERIODE.
+  // ⚠️ Urutan id-nya yang jadi pokok perkara: termin (200) terjadi SEBELUM
+  // reklas (201), jadi ia wajib dibukukan di 1.3.6 — bukan di 1.3.3, golongan
+  // barang itu SEKARANG. Kalau memakai "kode pada AKHIR periode" pun masih
+  // salah: terminnya ikut pindah ke golongan tujuan, lalu 1.3.6 menerima
+  // pengurangan reklas tanpa pernah menerima penambahannya & tak akan tie-out.
+  t(200, 'akumulasi_kdp', 'A19', 30_000_000, { payload: { kode_rekening: '5.2.03.01' } }),
+  t(201, 'reklas_golongan', 'A19', 30_000_000, { payload: { kode_lama: KDP, kode_baru: GB } }),
 ]
 
 // Hasil engine. Disederhanakan tapi KONSISTEN: nilai_buku = perolehan −
@@ -192,6 +215,12 @@ export const PENYUSUTAN: Peny[] = [
   peny('A17', PERIODE_LALU, 7_000_000, 700_000, 1_400_000),
   peny('A17', PERIODE, 5_500_000, 700_000, 2_100_000),    // −1.500.000
   ...susutBiasa('A18', 999_000_000, 100_000_000, 50_000_000),
+  // A19 lahir & direklas di periode ini → cuma punya baris periode INI, dan
+  // snapshot menempatkannya di golongan TUJUAN (kode pada AKHIR periode).
+  // `akumulasi` sengaja = `beban`: seluruh akumulasinya memang dari beban
+  // periode ini, jadi "akumulasi bawaan" (akum − beban) = 0 dan invarian
+  // "atribusi tak pernah negatif" benar-benar diuji di batasnya.
+  peny('A19', PERIODE, 30_000_000, 1_000_000, 1_000_000),
 ]
 
 export const EMBED: Embed = {
