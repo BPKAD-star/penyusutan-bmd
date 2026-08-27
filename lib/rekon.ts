@@ -11,7 +11,7 @@ import { kodeLevel3, perlakuanKode } from '@/lib/bmd'
 import { fetchPindahEvents, ownersAt, partitionByPeriodOwner, type PindahEvents } from '@/lib/pengalihan'
 import { fetchVoidedAsetIds, fetchBatalTargets, fetchPemecahanBatal, kunciPemecahan, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
-import { fetchReklasEvents, kodeAt, type ReklasEvents } from '@/lib/reklasKode'
+import { fetchReklasEvents, kodeAt, kodePada, type ReklasEvents } from '@/lib/reklasKode'
 
 export type Komptabel = 'intra' | 'ekstra'
 export type Measures = { perolehan: number; beban: number; akumulasi: number; nilaiBuku: number; count: number }
@@ -499,6 +499,32 @@ async function computeMutasiLines(
     fetchLed(supabase, JENIS_PECAH, periode),
     fetchLed(supabase, JENIS_GABUNG, periode),
   ])
+  // ⚠️ GOLONGAN BARIS MUTASI WAJIB PERIOD-AWARE (perbaikan 2026-08-27).
+  //
+  // `r.aset.kode` itu posisi TERAKHIR barang, bukan posisi saat transaksinya
+  // terjadi. Snapshot Saldo Awal/Akhir sudah period-aware sejak 2026-08-11
+  // (`kodeAt` di fetchSnapshotPositions), tapi baris mutasi di sini KELEWAT —
+  // padahal `kodePada()` sudah dibuat lengkap dengan parameter `trxId` justru
+  // "supaya baris mutasi jatuh di golongan yang benar" (lib/reklasKode.ts).
+  // Wiring-nya yang tak pernah dipasang.
+  //
+  // Akibatnya nyata & terlihat di produksi (BKAD, aset b87ebdff): satu kontrak
+  // konstruksi dengan 5 termin `akumulasi_kdp` lalu direklas KDP → Gedung.
+  // Karena `aset.kode` kini 1.3.3, KELIMA termin itu — termasuk yang dibayar di
+  // 2026-S1, jauh sebelum reklasnya — dibukukan di tabel **1.3.3**, bukan 1.3.6.
+  // Jadi Gedung & Bangunan seolah menerima pengadaan yang tak pernah ada, dan
+  // KDP tak pernah kelihatan bertambah sama sekali.
+  //
+  // ⚠️ `r.id` (bukan `null`) sengaja dioper: reklas bisa terjadi di periode yang
+  // SAMA dengan transaksinya. Termin BAST 8 Agustus lalu reklas 19 Agustus
+  // dua-duanya 2026-S2 — kalau dipakai "kode pada AKHIR periode", termin itu
+  // ikut pindah ke golongan tujuan dan rantai 1.3.6 tak akan pernah tie-out
+  // (Saldo Awal 15jt + 0 − 335jt ≠ 0). Dengan `r.id`, yang menentukan urutan
+  // kejadiannya di ledger.
+  const reklasEv = await fetchReklasEvents(supabase)
+  const golPada = (r: LedRow) =>
+    kodeLevel3(kodePada(reklasEv, r.aset_id, periode, r.id, r.aset?.kode ?? ''))
+
   // Tahap 2 — SEMUA terscope ke aset yang muncul di tahap 1. Tidak ada lagi
   // satu pun query di fungsi ini yang menyapu seluruh ledger.
   const [kapBatal, korBatal, reklasBatal, alihBatal, internalBatal, voided, netRemoved, pecahBatal, gabungBatal] = await Promise.all([
@@ -528,7 +554,7 @@ async function computeMutasiLines(
   const caraKey: Record<string, MutasiKey> = { hibah_masuk: 'hibah', tukar_menukar: 'tukar', hasil_inventarisasi: 'inventarisasi', perolehan_lainnya: 'lainnya' }
   for (const r of cara) {
     if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id)) continue
-    const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
+    const gol = golPada(r), komp = kompOf(r.aset.intra_ekstra)
     // ⚠️ `akumulasi_kdp` (termin kontrak konstruksi) diperlakukan PERSIS seperti
     // `pengadaan` sejak 2026-08-27 — dulu ia punya kategori `kdp` sendiri.
     // Alasannya: termin KDP memang belanja modal APBD, cuma atas barang yang
@@ -546,13 +572,13 @@ async function computeMutasiLines(
   // Kapitalisasi (nilai = rehab), buang yg dibatalkan.
   for (const r of kap) {
     if (!r.aset || kapBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
-    push(kodeLevel3(r.aset.kode), kompOf(r.aset.intra_ekstra), 'kapitalisasi', r.nilai, r)
+    push(golPada(r), kompOf(r.aset.intra_ekstra), 'kapitalisasi', r.nilai, r)
   }
 
   // Koreksi Nilai (delta ±) — tambah (>0) / kurang (<0), buang yg dibatalkan.
   for (const r of kor) {
     if (!r.aset || korBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
-    const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
+    const gol = golPada(r), komp = kompOf(r.aset.intra_ekstra)
     if (r.nilai >= 0) push(gol, komp, 'koreksi_tambah', r.nilai, r)
     else push(gol, komp, 'koreksi_kurang', -r.nilai, r)
   }
@@ -561,7 +587,7 @@ async function computeMutasiLines(
   for (const r of alih) {
     if (!r.aset || alihBatal.has(r.id)) continue
     const asalIn = inScope(r.skpd_asal), tujuanIn = inScope(r.skpd_tujuan)
-    const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
+    const gol = golPada(r), komp = kompOf(r.aset.intra_ekstra)
     if (tujuanIn && !asalIn) push(gol, komp, 'penggunaan_masuk', r.nilai, r, r.skpd_tujuan)
     else if (asalIn && !tujuanIn) push(gol, komp, 'pengalihan_keluar', r.nilai, r, r.skpd_asal)
   }
@@ -579,7 +605,7 @@ async function computeMutasiLines(
   for (const r of internal) {
     if (!r.aset || internalBatal.has(r.id)) continue
     const asalIn = inScope(r.skpd_asal), tujuanIn = inScope(r.skpd_tujuan)
-    const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
+    const gol = golPada(r), komp = kompOf(r.aset.intra_ekstra)
     if (tujuanIn && !asalIn) push(gol, komp, 'internal_masuk', r.nilai, r, r.skpd_tujuan)
     else if (asalIn && !tujuanIn) push(gol, komp, 'internal_keluar', r.nilai, r, r.skpd_asal)
   }
@@ -589,7 +615,7 @@ async function computeMutasiLines(
   for (const r of hapus) {
     if (!r.aset || !inScope(r.aset.skpd_id) || !netRemoved.has(r.aset_id) || seen.has(r.aset_id)) continue
     seen.add(r.aset_id)
-    const gol = kodeLevel3(r.aset.kode), komp = kompOf(r.aset.intra_ekstra)
+    const gol = golPada(r), komp = kompOf(r.aset.intra_ekstra)
     const sub = typeof r.payload?.sub_jenis === 'string' ? r.payload.sub_jenis : null
     const key: MutasiKey = sub === 'penjualan' ? 'hapus_penjualan' : sub === 'hibah' ? 'hapus_hibah'
       : sub === 'tukar_menukar' ? 'hapus_tukar' : sub === 'penyertaan_modal' ? 'hapus_penyertaan' : 'hapus_sebab_lain'
@@ -604,7 +630,7 @@ async function computeMutasiLines(
   for (const r of pecah) {
     if (!r.aset || !inScope(r.aset.skpd_id)) continue
     if (pecahBatal.has(kunciPemecahan(r.header_id, r.aset_id))) continue
-    push(kodeLevel3(r.aset.kode), kompOf(r.aset.intra_ekstra),
+    push(golPada(r), kompOf(r.aset.intra_ekstra),
       r.jenis === 'pemecahan_keluar' ? 'pemecahan_keluar' : 'pemecahan_masuk', r.nilai, r)
   }
 
@@ -616,7 +642,7 @@ async function computeMutasiLines(
   // sumber ekstra) tetap foot masing-masing.
   for (const r of gabung) {
     if (!r.aset || gabungBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
-    push(kodeLevel3(r.aset.kode), kompOf(r.aset.intra_ekstra),
+    push(golPada(r), kompOf(r.aset.intra_ekstra),
       r.jenis === 'penggabungan_keluar' ? 'penggabungan_keluar' : 'penggabungan_masuk', r.nilai, r)
   }
 

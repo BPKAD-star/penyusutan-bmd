@@ -18,8 +18,12 @@
 //     jenis lama yang sudah ada: 'reklas_kode' (reuse apa adanya).
 //
 // Header (No dokumen/tanggal) boleh diedit selama semester sama; ledger tetap
-// beku. Belum ada mekanisme batal/reversal utk reklasifikasi (out of scope —
-// lihat CLAUDE.md/plan).
+// beku. Batal reklas SUDAH ADA (`batalReklas` di bawah: centang baris →
+// `batal_reklas` append-only + kode/intra/nama dikembalikan), tunduk guard baku
+// "tak boleh ada transaksi lebih baru" lewat `cekBolehBatal`. Komentar lama di
+// sini masih berbunyi "belum ada mekanisme batal/reversal" sampai 2026-08-27 —
+// basi, dan komentar yang bertentangan dgn kodenya lebih berbahaya daripada tak
+// ada komentar sama sekali.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'

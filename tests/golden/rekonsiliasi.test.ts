@@ -135,6 +135,26 @@ describe('golden — kasus yang pernah menggigit', () => {
 
     expect(lines.some(l => l.aset_id === 'A18')).toBe(false)
   })
+
+  it('golongan baris mutasi PERIOD-AWARE: termin KDP yang direklas SEPERIODE tetap di 1.3.6 (2026-08-27)', async () => {
+    // A19: termin kontrak konstruksi (trx 200) lalu reklas KDP → Gedung (201),
+    // dua-duanya di periode ini. `aset.kode` sudah 1.3.3.
+    //
+    // Sampai 2026-08-27 `computeMutasiLines` memakai `kodeLevel3(r.aset.kode)` —
+    // kode TERKINI — untuk SEMUA kategori kecuali reklas. Akibatnya terminnya
+    // dibukukan di 1.3.3, golongan yang barangnya baru sampai di sana SESUDAH
+    // termin itu dibayar. Snapshot-nya sendiri sudah period-aware sejak
+    // 2026-08-11, jadi yang patah cuma sisi mutasinya — dan patahnya tak
+    // bersuara: Gedung seolah menerima pengadaan yang tak pernah ada, dan KDP
+    // tak pernah kelihatan bertambah sama sekali.
+    const lines = await muatLines()
+
+    expect(nilai(lines, '1.3.6', 'intra', 'pengadaan')).toBe(30_000_000)
+    expect(nilai(lines, '1.3.3', 'intra', 'pengadaan')).toBe(0)
+    // Reklasnya sendiri tetap dibaca dari payload (kode_lama → kode_baru).
+    expect(nilai(lines, '1.3.6', 'intra', 'reklas_fungsi_keluar')).toBe(30_000_000)
+    expect(nilai(lines, '1.3.3', 'intra', 'reklas_fungsi_masuk')).toBe(30_000_000)
+  })
 })
 
 // ════════════════════════════════════════════════════════════════════════════
