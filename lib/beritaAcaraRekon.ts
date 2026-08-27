@@ -342,15 +342,17 @@ export type BarisTrx = {
  */
 export const BARIS_TRX: BarisTrx[] = [
   { no: '1', huruf: '', uraian: 'Cara Perolehan', keys: [], judul: true },
-  // Termin kontrak konstruksi (KDP) & pengadaan lewat rekening Belanja Jasa
-  // dua-duanya belanja APBD — beda rekening, bukan beda cara perolehan.
+  // Pengadaan lewat rekening Belanja Jasa (5.1) sama-sama belanja APBD — beda
+  // rekening, bukan beda cara perolehan. Termin kontrak konstruksi juga masuk
+  // sini, tapi sejak 2026-08-27 ia sudah dipetakan ke `pengadaan`/`belanja_jasa`
+  // di hulu (lib/rekon.ts), jadi tak lagi butuh kategori sendiri.
   // ⚠️ Format V.2 (17)(24) menyediakan sub-baris "LRA … Rp …" di bawah baris
   // ini — SENGAJA DIHILANGKAN (keputusan user 2026-08-26): aplikasi ini tak
   // menautkan lembar ini ke menu LRA, dan sub-baris kosong yang cuma diketik
   // manual dinilai lebih mengganggu daripada berguna. Beda dari "kosong ≠ nol"
   // yang berlaku di tempat lain — di sini elemen formatnya memang dibuang,
   // bukan dikosongkan.
-  { no: '', huruf: 'a.', uraian: 'Pengadaan dari APBD', keys: ['pengadaan', 'belanja_jasa', 'kdp'], judul: false },
+  { no: '', huruf: 'a.', uraian: 'Pengadaan dari APBD', keys: ['pengadaan', 'belanja_jasa'], judul: false },
   { no: '', huruf: 'b.', uraian: 'Hibah', keys: ['hibah'], judul: false },
   { no: '', huruf: 'c.', uraian: 'pelaksanaan dari perjanjian/kontrak', keys: [], judul: false },
   { no: '', huruf: 'd.', uraian: 'ketentuan peraturan perundang-undangan', keys: [], judul: false },

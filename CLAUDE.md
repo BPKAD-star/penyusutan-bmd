@@ -2311,6 +2311,74 @@ migrasi** — murni menyusun ulang angka yang sudah ada di layar.
   supaya cetak ulang menghasilkan lembar yang SAMA — berkas ini diteken lalu
   dipindai (pola `bmd_rkbmd_ttd_skpd_<id>`).
 
+## Pekerjaan Konstruksi (KDP) — perbaikan alur entry (2026-08-27)
+
+Hasil user menguji satu kontrak konstruksi dari nol sampai reklas ke Gedung &
+Bangunan lalu digabung ke induk. **Tak ada migrasi** — seluruhnya perilaku kode.
+
+- **Termin KDP masuk baris PENGADAAN, kategori `kdp` DIHAPUS.** `akumulasi_kdp`
+  kini diperlakukan PERSIS seperti `pengadaan` di `computeMutasiLines`,
+  **termasuk pemisahan Belanja Jasa 5.1** — payload `akumulasi_kdp` memang
+  membawa `kode_rekening` (lib/kdp.ts), jadi tanpa pemisahan itu termin
+  ber-rekening 5.1 mendarat di baris berbeda dari pengadaan non-fisik
+  ber-rekening sama. Alasannya (keputusan user): termin KDP itu belanja modal
+  APBD atas barang yang masih dikerjakan — baris tersendiri membuat pembaca
+  lembar rekonsiliasi mengira ada cara perolehan kelima.
+  ⚠️ Konsekuensinya `MutasiKey` **berkurang satu**: `KATEGORI_LABEL`,
+  `MASUK_KEYS`, baris di halaman Rekonsiliasi, dan `BARIS_TRX` (BA Rekon)
+  semuanya ikut dicabut. Yang menjaga tak ada pembaca tertinggal adalah
+  **typecheck** — menghapus anggota union bikin setiap sisa referensi jadi error
+  yang berisik, kebalikan dari kelupaan yang biasanya senyap di repo ini.
+  `JENIS_CARA` di lib/rekon.ts **tetap memuat `akumulasi_kdp`** (itu jenis
+  ledger, bukan kategori) — `lib/sinkronisasi.test.ts` §3 sudah mengecualikannya
+  dari perbandingan cara perolehan.
+- **Reklas KDP → Gedung/JIJ sudah benar sejak awal** dan tak disentuh: ia
+  menghasilkan `reklas_golongan` → `reklas_fungsi_keluar` di 1.3.6 +
+  `reklas_fungsi_masuk` di golongan tujuan. Diverifikasi ke ledger produksi
+  (aset `b87ebdff…`, 335.000.000, 2026-S2).
+  ⛔ **Kapitalisasi/penggabungan ke induk BELUM ditangani** — `kapitalisasi_serap`
+  tidak dipetakan ke satu pun `MutasiKey`, jadi barang yang terserap hilang dari
+  Saldo Akhir tanpa baris mutasi & jatuh ke baris Selisih. Sengaja ditunda
+  (user: "kapitalisasi nanti kita bahas lagi").
+- **Spesifikasi barang KDP tak lagi menawarkan dokumen kepemilikan & jenis hak**
+  (`KDP_KONSTRUKSI_FIELDS` di lib/asetFields.ts). Dulu ia `GOLONGAN_FIELDS['1.3.1']`
+  apa adanya — template Tanah lengkap. Sertifikat/IMB baru terbit SESUDAH
+  pekerjaan selesai & direklas; menawarkannya saat masih dikerjakan cuma
+  mengundang isian karangan. Luas & lokasi TETAP ada (kartu kontrak menampilkan
+  `alamat_detail` sbg "Lokasi"). ⚠️ Sengaja BUKAN `GOLONGAN_FIELDS['1.3.6']` —
+  golongan itu dipakai menu lain (Koreksi, Daftar Barang Awal) dengan template
+  ASET_LAINNYA; menyamakannya akan menyeret dua menu itu ikut berubah.
+- **"Edit Spesifikasi" DIKUNCI sesudah kontrak disetujui.** Bukan sekadar soal
+  konsistensi kunci: `saveSpec` menulis ke `jurnal_header.payload`, sedangkan
+  spesifikasi baru mendarat di kolom `aset` **saat approve**. Jadi menyuntingnya
+  pasca-approve adalah **no-op SENYAP** — kartu berubah (kartu membaca payload)
+  sementara register tak bergerak sedikit pun. **Tak perlu migrasi**: payload &
+  `aset` diperiksa ke produksi 2026-08-27 dan cocok, dan seandainya menyimpang
+  pun yang salah cuma tampilan kartu, bukan ledger. Perbaikan spesifikasi barang
+  yang sudah tercatat: menu Koreksi → Spesifikasi (ada jejak ledger), atau Buka
+  Kunci → perbaiki → setujui ulang.
+- **Peringatan kode rekening kini juga di termin konstruksi.** Aturannya dipindah
+  ke **lib/rekeningBelanja.ts** (`REK_MODAL_PER_GOLONGAN` · `objekRekening` ·
+  `cekWarningRekening`), dipakai Pengadaan non-fisik DAN termin konstruksi.
+  Ini kemunculan KEDUA sebuah aturan, bukan JSX yang kebetulan mirip — dua
+  salinan yang menyimpang akan membuat dua pintu memperingatkan hal berbeda
+  untuk rekening yang sama. Dikunci lib/rekeningBelanja.test.ts. Tetap
+  PERINGATAN, bukan blokir: komponen biaya umum/pengawasan kadang memang
+  dibebankan ke rekening lain.
+- **Form termin mengosongkan `kode_rekening` & tanggal BAST sesudah disimpan.**
+  Dulu keduanya tertinggal dari termin sebelumnya, jadi termin berikutnya terisi
+  rekening lama diam-diam — operator yang tak menyadarinya membukukan BAST ke
+  rekening yang salah tanpa satu pun tanda. Salah-karena-lupa jauh lebih murah
+  daripada salah-karena-terisi-sendiri.
+- ⚠️ **Bug laten yang ikut ditambal: `lib/kdp.ts` masih memakai pembaca angka
+  gaya RUPIAH saat materialisasi.** `toNumStr` (`parseFloat` + `replace(/[^0-9.]/g,'')`)
+  MEMBUANG TANDA MINUS, jadi latitude Kabupaten Kediri (≈ −7,8) tersimpan
+  POSITIF — persis insiden 20260820_04, yang waktu itu diperbaiki di
+  Pengadaan/PerolehanManual tapi **jalur KDP kelewat**. `saveSpec` sudah
+  menyimpan "-7.774007" dengan benar; yang mencabut minusnya materialisasi di
+  `approveKontrakKonstruksi`. Kini `angkaKolomAset`, dan yang tak terbaca sebagai
+  angka DILEWATI (bukan jadi 0 — `0` itu koordinat yang sah).
+
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
 Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user

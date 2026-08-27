@@ -24,6 +24,7 @@ import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
+import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import { generateNibars } from '@/lib/nibar'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
@@ -966,20 +967,6 @@ function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
   )
 }
 
-// Peta Jenis BMD (golongan aset) → objek Belanja Modal (5.2.0x) yang lazim.
-// Dipakai HANYA utk WARNING (bukan blokir) saat rekening & jenis aset tak sinkron.
-const REK_MODAL_PER_GOLONGAN: Record<string, string[]> = {
-  '1.3.1': ['5.2.01'],           // Tanah
-  '1.3.2': ['5.2.02'],           // Peralatan dan Mesin
-  '1.3.3': ['5.2.03'],           // Gedung dan Bangunan
-  '1.3.4': ['5.2.04'],           // Jalan, Jaringan dan Irigasi
-  '1.3.5': ['5.2.05'],           // Aset Tetap Lainnya
-  '1.3.6': ['5.2.03', '5.2.04'], // KDP (gedung / JIJ)
-  '1.5.3': ['5.2.06'],           // Aset Tidak Berwujud
-}
-// Objek rekening = 3 segmen pertama, mis. '5.2.02.10.002.00003' → '5.2.02'.
-const objekRekening = (kode: string) => kode.split('.').slice(0, 3).join('.')
-
 // Panel "+ Tambah Barang": pilih Jenis BMD → cari kode → satuan/qty/harga → split langsung.
 function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   golonganLabels: Record<string, string>
@@ -1020,30 +1007,14 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     setResults([])
   }
 
-  // Warning (bukan blokir) kalau rekening di luar 5.2 atau tak sinkron dgn jenis aset.
-  function cekWarnings(): string[] {
-    const rek = rekening.trim()
-    if (!rek) return []
-    const w: string[] = []
-    if (!rek.startsWith('5.2.')) {
-      w.push(`Kode rekening ${rek} berada DI LUAR Belanja Modal (5.2). Pengadaan aset tetap normalnya memakai kode 5.2.xx. Yakin memakai kode rekening ini?`)
-    } else {
-      const objek = objekRekening(rek)
-      const expected = REK_MODAL_PER_GOLONGAN[golongan]
-      if (expected && !expected.includes(objek)) {
-        const golNama = golonganLabels[golongan] || golongan
-        w.push(`Jenis aset ${golongan} — ${golNama} biasanya memakai rekening ${expected.map(e => `${e}.xx`).join(' / ')}, tetapi kode rekening yang dipilih ada di objek ${objek}. Jenis aset & kode rekening TIDAK SINKRON. Yakin melanjutkan?`)
-      }
-    }
-    return w
-  }
-
   function simpan() {
     if (!picked) { setErr('Pilih kode barang dulu.'); return }
     const n = toInt(qty)
     if (n < 1) { setErr('Kuantitas minimal 1.'); return }
     if (toNum(harga) <= 0) { setErr('Harga harus > 0.'); return }
-    const w = cekWarnings()
+    // Aturannya di lib/rekeningBelanja.ts — dipakai bersama termin Pekerjaan
+    // Konstruksi sejak 2026-08-27, jangan disalin balik ke sini.
+    const w = cekWarningRekening(rekening, golongan, golonganLabels[golongan])
     if (w.length > 0) { setErr(''); setWarnings(w); return } // tampilkan popup konfirmasi
     doTambah()
   }

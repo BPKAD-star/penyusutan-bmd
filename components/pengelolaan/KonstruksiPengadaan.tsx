@@ -21,7 +21,8 @@ import PreviewKonstruksiModal from './PreviewKonstruksiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { periodeDariTanggal } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
-import { GOLONGAN_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
+import { KDP_KONSTRUKSI_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
+import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import {
   approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList,
   type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
@@ -40,7 +41,13 @@ const KOMPONEN = [
 const komponenLabel = (v: string) => KOMPONEN.find(k => k.value === v)?.label || v
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
-const FIELDS_KDP = GOLONGAN_FIELDS['1.3.1']
+// ⚠️ Sampai 2026-08-27 ini `GOLONGAN_FIELDS['1.3.1']` (template Tanah), jadi
+// popup spesifikasi KDP menawarkan Jenis Hak & tiga kolom dokumen kepemilikan —
+// padahal sertifikat/IMB baru terbit SESUDAH pekerjaan selesai & direklas ke
+// aset tetap. Alasan lengkapnya di lib/asetFields.ts.
+const FIELDS_KDP = KDP_KONSTRUKSI_FIELDS
+// Barang KDP selalu golongan 1.3.6 (dipaksa `golonganTetap` di TambahBarangPanel).
+const GOL_KDP = '1.3.6'
 const barangTotal = (b: BarangKdp) => (b.pembayaran || []).reduce((s, x) => s + Number(x.nominal || 0), 0)
 export const kontrakTotal = (p: KontrakKonstruksiPayload) => barangKdpList(p).reduce((s, b) => s + barangTotal(b), 0)
 
@@ -543,8 +550,8 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
           subjudul={`${p.nama_pekerjaan || 'Pekerjaan konstruksi'} · tgl ${kontrak.tanggal}`}
           barangs={barangs}
           // `FIELDS_KDP` — daftar yang SAMA yang dioper ke EditSpesifikasiModal
-          // di bawah. Wajib satu sumber: KDP berkode 1.3.6 tapi formnya sengaja
-          // memakai template Tanah, jadi pratinjau yang menurunkan sendiri dari
+          // di bawah. Wajib satu sumber: KDP berkode 1.3.6 tapi formnya memakai
+          // `KDP_KONSTRUKSI_FIELDS`, jadi pratinjau yang menurunkan sendiri dari
           // kodenya akan memeriksa daftar yang berbeda.
           fieldKeys={FIELDS_KDP}
           onClose={() => setShowPreview(false)} />
@@ -701,6 +708,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
   const [nominal, setNominal] = useState('')
   const [ket, setKet] = useState('')
   const [err, setErr] = useState('')
+  const [warnings, setWarnings] = useState<string[] | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [showKapInfo, setShowKapInfo] = useState(false)
   const [draftKapInfo, setDraftKapInfo] = useState<KapInfo | null>(barang.kap_info ?? null)
@@ -712,8 +720,25 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
     if (!tgl || !nominal) { setErr('Tgl BAST & nominal wajib diisi.'); return }
     if (tglKontrak && tgl < tglKontrak) { setErr(`Tgl BAST (${tgl}) tidak boleh lebih tua dari tgl kontrak (${tglKontrak}).`); return }
     setErr('')
+    // Peringatan kode rekening — pola & teks SAMA dgn Pengadaan non-fisik
+    // (permintaan user 2026-08-27). Bukan blokir: termin biaya umum/pengawasan
+    // kadang memang dibebankan ke rekening lain, jadi operator yang memutuskan.
+    const w = cekWarningRekening(rekening, GOL_KDP, 'Konstruksi Dalam Pengerjaan')
+    if (w.length > 0) { setWarnings(w); return }
+    doTambahTermin()
+  }
+
+  function doTambahTermin() {
+    setWarnings(null)
     onTambahTermin({ komponen: komponen as PembayaranKdp['komponen'], no_bast: noBast || null, tgl_bast: tgl, kode_rekening: rekening || null, nominal: Number(nominal), keterangan: ket || null })
-    setNoBast(''); setNominal(''); setKet(''); setShowForm(false)
+    // ⚠️ `rekening` & `tgl` IKUT DIKOSONGKAN (permintaan user 2026-08-27).
+    // Sebelumnya keduanya tertinggal dari termin sebelumnya, jadi termin
+    // berikutnya terisi rekening lama secara diam-diam — operator yang tak
+    // menyadarinya membukukan BAST ke kode rekening yang salah tanpa satu pun
+    // tanda. Biarkan diisi ulang; salah-karena-lupa lebih murah daripada
+    // salah-karena-terisi-sendiri.
+    setNoBast(''); setNominal(''); setKet(''); setRekening(''); setTgl('')
+    setShowForm(false)
   }
 
   return (
@@ -736,12 +761,29 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
           {/* Tombol berkotak & SAMA LEBAR (w-36) — dulu tiga tautan bergaris
               bawah dgn panjang berbeda-beda sehingga tepinya tak rata. Warna
               mengikuti peran: hijau = menyunting isi, amber = mengubah
-              keterkaitan induk (pola nada KonfirmasiModal), merah = membuang. */}
+              keterkaitan induk (pola nada KonfirmasiModal), merah = membuang.
+
+              ⚠️ "Edit Spesifikasi" HANYA saat draft (keputusan user 2026-08-27).
+              Bukan sekadar soal konsistensi kunci: `saveSpec` menulis ke
+              `jurnal_header.payload`, sedangkan spesifikasi baru mendarat di
+              kolom `aset` SAAT APPROVE (lib/kdp.ts). Jadi menyuntingnya sesudah
+              kontrak disetujui adalah NO-OP SENYAP — kartu berubah (kartu memang
+              membaca payload) sementara register tak bergerak sedikit pun, tanpa
+              satu pun pesan. Perbaikan spesifikasi barang yang SUDAH tercatat:
+              Pembukuan → Koreksi → Spesifikasi Barang (ada jejak ledgernya),
+              atau Buka Kunci → perbaiki → setujui ulang. */}
           <div className="flex flex-col gap-1.5 items-end w-36">
-            <button onClick={onEditSpec}
-              className="w-full inline-flex items-center justify-center bg-teal hover:bg-teal-light text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-              Edit Spesifikasi
-            </button>
+            {pending ? (
+              <button onClick={onEditSpec}
+                className="w-full inline-flex items-center justify-center bg-teal hover:bg-teal-light text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                Edit Spesifikasi
+              </button>
+            ) : (
+              <span title="Kontrak sudah disetujui — perbaikan spesifikasi lewat menu Koreksi, atau Buka Kunci dulu."
+                className="w-full inline-flex items-center justify-center bg-gray-100 text-gray-500 text-xs font-medium px-3 py-1.5 rounded-lg">
+                🔒 Terkunci
+              </span>
+            )}
             {pending && (
               <button onClick={() => { setDraftKapInfo(barang.kap_info ?? null); setShowKapInfo(v => !v) }}
                 className="w-full inline-flex items-center justify-center bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
@@ -813,6 +855,26 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
           ) : (
             <button className="btn-secondary text-xs" onClick={() => setShowForm(true)}>+ Tambah Rincian / Pembayaran</button>
           )}
+        </div>
+      )}
+
+      {/* Konfirmasi kode rekening — bentuknya sengaja KEMBAR dgn Pengadaan
+          non-fisik supaya operator mengenali maksudnya seketika. */}
+      {warnings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(() => setWarnings(null))}>
+          <div className="card w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="font-semibold text-amber-700">⚠ Konfirmasi Kode Rekening</h3>
+            </div>
+            <div className="p-5 space-y-2">
+              {warnings.map((w, i) => <p key={i} className="text-sm text-gray-700">{w}</p>)}
+              <p className="text-xs text-gray-400">Kalau ini keliru, batalkan lalu perbaiki kode rekeningnya dulu. Kalau memang disengaja (mis. komponen biaya umum dibebankan ke rekening lain), silakan lanjutkan.</p>
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
+              <button className="btn-secondary text-sm" onClick={() => setWarnings(null)}>Batal, perbaiki dulu</button>
+              <button className="btn-primary text-sm" onClick={doTambahTermin}>Ya, tetap tambahkan</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

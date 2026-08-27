@@ -30,12 +30,12 @@
 // diturunkan sendiri dari `fieldsForKode(barang.kode)`. Kalau diturunkan
 // sendiri, pratinjau ini akan memeriksa daftar yang BERBEDA dari yang
 // ditawarkan formnya: KDP berkode golongan 1.3.6 (→ template Aset Lainnya),
-// tetapi form Edit Spesifikasi-nya sengaja memakai `GOLONGAN_FIELDS['1.3.1']`
-// (template Tanah) karena KDP konstruksi butuh lokasi & dokumen. Akibatnya
-// pratinjaunya akan menuduh "belum diisi" untuk field yang tak pernah bisa
-// diisi dari mana pun — persis kegagalan senyap yang fitur ini justru dibuat
-// untuk mencegah. Pemanggil yang memegang kebenarannya, jadi pemanggil yang
-// mengoper.
+// sementara form Edit Spesifikasi-nya memakai `KDP_KONSTRUKSI_FIELDS` — template
+// Tanah tanpa dokumen kepemilikan & jenis hak (lib/asetFields.ts; sertifikat/IMB
+// baru terbit sesudah pekerjaan direklas ke aset tetap). Akibatnya pratinjaunya
+// akan menuduh "belum diisi" untuk field yang tak pernah bisa diisi dari mana
+// pun — persis kegagalan senyap yang fitur ini justru dibuat untuk mencegah.
+// Pemanggil yang memegang kebenarannya, jadi pemanggil yang mengoper.
 // ============================================================================
 import { useMemo } from 'react'
 import { backdropClose } from '@/components/backdropClose'
