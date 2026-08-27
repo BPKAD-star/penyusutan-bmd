@@ -5,7 +5,7 @@
 // perolehan baru, period-aware) + akumulasi/beban/nilai buku dari hasil engine
 // (penyusutan_semester) pada periode terpilih. Model 1: per golongan. Model 2:
 // matriks per SKPD × per jenis. Model 3: mutasi saldo awal/akhir.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
@@ -14,6 +14,9 @@ import KomptabelRadio from '@/components/KomptabelRadio'
 import RekapTable, { type RekapRow } from '@/components/RekapTable'
 import RekapMatrixTable, { METRIC_LABEL, type MatrixRow, type MatrixCell, type MetricOrAll, type Metric } from '@/components/RekapMatrixTable'
 import RekapMutasiTable, { type MutasiRow, type MutasiDetail, type MutasiDetailLine } from '@/components/RekapMutasiTable'
+import LembarMutasiBmd, { type KonfigMutasi } from '@/components/pelaporan/LembarMutasiBmd'
+import CetakMutasiBmdModal from '@/components/pelaporan/CetakMutasiBmdModal'
+import type { SumberMutasi } from '@/lib/laporanBmdFormat'
 import RekapModelControls from '@/components/RekapModelControls'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
@@ -102,6 +105,24 @@ export default function LaporanBmdPage() {
   const [rows, setRows] = useState<RekapRow[] | null>(null)
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
   const [mutasiRows, setMutasiRows] = useState<MutasiRow[] | null>(null)
+  // ── Lembar resmi IV.L.4.1/4.3 (Rekapitulasi Mutasi) ───────────────────────
+  // Dirender DI HALAMAN INI, bukan rute /cetak — angka mutasinya lahir dari
+  // prosesMutasi() yang mahal & panjang, jadi menghitungnya ulang di halaman
+  // kedua membuka celah lembar bertanda tangan yang beda dari layar (pola yang
+  // sama dgn Berita Acara Rekonsiliasi).
+  const [akumMutasi, setAkumMutasi] = useState<{
+    awal: Map<string, number>; akhir: Map<string, number>; beban: Map<string, number>
+  } | null>(null)
+  // Identitas SKPD terpilih untuk kop lembar (SkpdSelection cuma membawa id).
+  // `level` menentukan sebutan penanda tangan: 1 = Pengguna Barang, di
+  // bawahnya = Kuasa Pengguna Barang.
+  const [skpdInfo, setSkpdInfo] = useState<{ nama: string; kodeLokasi: string; level: number } | null>(null)
+  const [modalMutasi, setModalMutasi] = useState(false)
+  const [konfigMutasi, setKonfigMutasi] = useState<KonfigMutasi | null>(null)
+  // Pemicu COUNTER, bukan boolean yang di-reset: `window.print()` harus jalan
+  // SESUDAH React merender lembarnya, dan boolean gampang jadi "klik kedua tak
+  // melakukan apa-apa" kalau `afterprint` tak menyala (beda antar peramban).
+  const [pemicuCetak, setPemicuCetak] = useState(0)
   const [mutErr, setMutErr] = useState('')
   // Error Model 1 & 2 (Model 3 sudah punya `mutErr` sejak awal). WAJIB
   // ditampilkan — lihat komentar di blok catch `proses()`.
@@ -208,8 +229,22 @@ export default function LaporanBmdPage() {
   // di atas, tanpa join penyusutan (Model 3 cuma butuh nilai perolehan).
   //
   // ⚠️ Mengembalikan `adaHasilEngine` juga — lihat `bannerAwalTakTerhitung`.
-  async function snapshotPerolehan(pPeriode: string): Promise<{ perGol: Record<string, number>; adaHasilEngine: boolean }> {
+  //
+  // ⚠️ Ikut mengembalikan `akumGol` & `bebanGol` (2026-08-26) — dipakai lembar
+  // resmi Format IV.L.4.1/4.3 untuk mengisi baris Akumulasi Penyusutan di
+  // keempat kolomnya. Diambil dari panggilan RPC yang SAMA, jadi tak ada query
+  // tambahan & tak mungkin beda periode/lingkup dari angka perolehan di
+  // sebelahnya. Model 3 di layar tak menyentuh dua kolom itu — perilakunya
+  // persis seperti sebelumnya.
+  async function snapshotPerolehan(pPeriode: string): Promise<{
+    perGol: Record<string, number>
+    akumGol: Record<string, number>
+    bebanGol: Record<string, number>
+    adaHasilEngine: boolean
+  }> {
     const out: Record<string, number> = {}
+    const akum: Record<string, number> = {}
+    const beban: Record<string, number> = {}
     // Reuse fn_rekap_bmd (period-aware perolehan per golongan sudah dihitung di
     // SQL); Model 3 cuma butuh kolom perolehan-nya, penyusutan diabaikan.
     // MELEMPAR kalau gagal — ditangkap `.catch` di prosesMutasi(). Tanpa ini,
@@ -221,11 +256,15 @@ export default function LaporanBmdPage() {
       p_komptabel: komptabel || null,
     }), `snapshot perolehan periode ${pPeriode}`)
     let countPeny = 0
-    for (const r of (data || []) as { golongan: string; perolehan: number; count_peny: number }[]) {
+    for (const r of (data || []) as {
+      golongan: string; perolehan: number; count_peny: number; akumulasi: number; beban: number
+    }[]) {
       out[r.golongan] = (out[r.golongan] || 0) + Number(r.perolehan)
+      akum[r.golongan] = (akum[r.golongan] || 0) + (Number(r.akumulasi) || 0)
+      beban[r.golongan] = (beban[r.golongan] || 0) + (Number(r.beban) || 0)
       countPeny += Number(r.count_peny) || 0
     }
-    return { perGol: out, adaHasilEngine: countPeny > 0 }
+    return { perGol: out, akumGol: akum, bebanGol: beban, adaHasilEngine: countPeny > 0 }
   }
 
   async function fetchSkpdMapM3(): Promise<Record<number, string>> {
@@ -387,6 +426,13 @@ export default function LaporanBmdPage() {
     if (!snapAkhir) { setLoading(false); return }
     const saldoAwal = snapAwal.perGol
     const saldoAkhir = snapAkhir.perGol
+    // Akumulasi & beban — dipakai HANYA oleh lembar resmi IV.L.4.1/4.3 (baris
+    // Akumulasi Penyusutan). Tabel Model 3 di layar tak menyentuhnya.
+    setAkumMutasi({
+      awal: new Map(Object.entries(snapAwal.akumGol)),
+      akhir: new Map(Object.entries(snapAkhir.akumGol)),
+      beban: new Map(Object.entries(snapAkhir.bebanGol)),
+    })
     // ── Peringatan: posisi AWAL diambil dari periode yang ENGINE-nya kosong ───
     // `fn_rekap_bmd` memakai `COALESCE(penyusutan_semester.nilai_perolehan,
     // aset.nilai_perolehan)`. Untuk periode yang tak pernah dihitung engine,
@@ -674,6 +720,56 @@ export default function LaporanBmdPage() {
     }), `Laporan_BMD_${periode}_per_SKPD`, 'Laporan BMD per SKPD')
   }
 
+  useEffect(() => {
+    if (org.skpdId == null) { setSkpdInfo(null); return }
+    let batal = false
+    void (async () => {
+      // Gagal memuatnya tak menjatuhkan apa pun — kop lembar tinggal memakai
+      // cadangan ("SKPD #id") & kode lokasinya bertitik-titik.
+      const { data } = await supabase.from('admin_skpd')
+        .select('nama,level,kode_skpd,kode_lokasi').eq('id', org.skpdId).maybeSingle()
+      if (batal) return
+      const r = data as { nama: string; level: number; kode_skpd: string | null; kode_lokasi: string | null } | null
+      setSkpdInfo(r ? {
+        nama: r.nama,
+        // `kode_lokasi` KOSONG di seluruh 816 baris (CLAUDE.md) — yang terisi
+        // & jadi identitas resmi SKPD adalah `kode_skpd`. Kolom bernama-tepat
+        // tetap didahulukan kalau suatu saat diisi (pola KIBAR).
+        kodeLokasi: r.kode_lokasi || r.kode_skpd || '',
+        level: r.level ?? 1,
+      } : null)
+    })()
+    return () => { batal = true }
+  }, [org.skpdId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cetak lembar mutasi: `document.title` = nama bawaan berkas saat "Save as
+  // PDF" (satu-satunya cara menyetelnya dari halaman), dipulihkan sesudahnya
+  // supaya judul tab dashboard tak berubah permanen.
+  useEffect(() => {
+    if (pemicuCetak === 0) return
+    const judulAsli = document.title
+    const nama = org.skpdId ? (skpdInfo?.nama || 'SKPD') : 'Kab Kediri'
+    document.title = `Rekapitulasi Mutasi BMD_${nama.replace(/[\\/:*?"<>|]/g, '-')}_${periode}`
+    const pulih = () => { document.title = judulAsli }
+    window.addEventListener('afterprint', pulih)
+    const t = window.setTimeout(() => window.print(), 80)
+    return () => {
+      window.clearTimeout(t)
+      window.removeEventListener('afterprint', pulih)
+      pulih()
+    }
+  }, [pemicuCetak]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Sumber angka lembar IV.L.4.1/4.3 — dirakit dari data Model 3 yang SUDAH
+   *  di layar, jadi tak ada jalur hitung kedua. */
+  const sumberMutasi: SumberMutasi | null = mutasiRows && akumMutasi ? {
+    mutasi: new Map(mutasiRows.map(r => [r.kode, {
+      saldoAwal: r.saldoAwal, penambahan: r.penambahan,
+      pengurangan: r.pengurangan, saldoAkhir: r.saldoAkhir,
+    }])),
+    akumAwal: akumMutasi.awal, akumAkhir: akumMutasi.akhir, beban: akumMutasi.beban,
+  } : null
+
   // Export ikut fail-closed (rules.md §2.3): kalau ada kegagalan, tombolnya
   // tidak muncul sama sekali — Excel setengah jadi yang terlanjur terunduh tak
   // punya tanda apa pun bahwa isinya kurang.
@@ -773,27 +869,35 @@ export default function LaporanBmdPage() {
             <span className="w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={model === 3 ? prosesMutasi : proses} disabled={loading}>{loading ? 'Memproses...' : 'Proses'}</button>
             {hasData && <button className="btn-secondary" onClick={handleExport}>Export Excel</button>}
-            {/* Lembar resmi Permendagri 47/2021 Format IV.L.4.2 — HANYA di
-                Model 1 (laporan posisi per golongan); Model 2 matriks per SKPD
-                & Model 3 mutasi punya format lampirannya sendiri (IV.L.4.1)
-                yang belum dibangun, jadi tombolnya sengaja tak muncul di sana
-                supaya tak ada yang mengira lembar ini mewakili angka Model 3.
-                ⚠️ WAJIB per-SKPD: kepala lembar memuat identitas SKPD, jadi
-                tanpa SKPD terpilih ia menghasilkan lembar tanpa identitas.
-                Dimatikan berikut ALASANNYA — tombol mati tanpa keterangan itu
-                kegagalan senyap. */}
+            {/* Lembar resmi Permendagri 47/2021 — HANYA di Model 1 (laporan
+                posisi per golongan). Model 2 (matriks per SKPD) tak punya
+                padanan lampiran; Model 3 (mutasi) padanannya IV.L.4.1/4.3 yang
+                dicetak lewat tombolnya sendiri di bawah — dipisah supaya tak
+                ada yang mengira lembar posisi mewakili angka mutasi.
+                LINGKUPNYA mengikuti filter SKPD: dipilih → 4.2 (per SKPD,
+                kop memuat nama SKPD); dikosongkan → 4.4 (se-pemda, kop memuat
+                provinsi/kabupaten & dua tanda tangan). */}
             {hasData && model === 1 && (
-              org.skpdId ? (
-                <a href={`/cetak/laporan-bmd?periode=${periode}&skpd=${org.skpdId}&komptabel=${komptabel}`}
-                  target="_blank" rel="noreferrer" className="btn-secondary whitespace-nowrap">
-                  🖨 Cetak Format IV.L.4.2
-                </a>
-              ) : (
-                <span className="btn-secondary opacity-50 cursor-not-allowed whitespace-nowrap"
-                  title="Pilih SKPD dulu — lembar Format IV.L.4.2 memuat identitas SKPD di kepalanya, jadi hanya sah per-SKPD.">
-                  🖨 Cetak Format IV.L.4.2
-                </span>
-              )
+              <a href={org.skpdId
+                  ? `/cetak/laporan-bmd?periode=${periode}&skpd=${org.skpdId}&komptabel=${komptabel}`
+                  : `/cetak/laporan-bmd-pemda?periode=${periode}&komptabel=${komptabel}`}
+                target="_blank" rel="noreferrer" className="btn-secondary whitespace-nowrap"
+                title={org.skpdId
+                  ? 'Lembar per SKPD (Format IV.L.4.2)'
+                  : 'Tak ada SKPD terpilih → lembar se-Kabupaten (Format IV.L.4.4)'}>
+                🖨 Cetak Format {org.skpdId ? 'IV.L.4.2' : 'IV.L.4.4'}
+              </a>
+            )}
+            {/* Lembar mutasi dicetak DARI HALAMAN INI (bukan rute /cetak) —
+                lihat catatan di LembarMutasiBmd. `sumberMutasi` null berarti
+                Proses belum dijalankan / snapshot akumulasi belum ada. */}
+            {hasData && model === 3 && sumberMutasi && (
+              <button className="btn-secondary whitespace-nowrap" onClick={() => setModalMutasi(true)}
+                title={org.skpdId
+                  ? 'Lembar per SKPD (Format IV.L.4.1)'
+                  : 'Tak ada SKPD terpilih → lembar se-Kabupaten (Format IV.L.4.3)'}>
+                🖨 Cetak Format {org.skpdId ? 'IV.L.4.1' : 'IV.L.4.3'}
+              </button>
             )}
           </div>
         </div>
@@ -812,6 +916,50 @@ export default function LaporanBmdPage() {
         <RekapMutasiTable rows={mutasiRows!} detail={mutasiDetail} loading={loading} />
       ) : (
         <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric={metric} loading={loading} />
+      )}
+
+      {modalMutasi && (
+        <CetakMutasiBmdModal skpdId={org.skpdId}
+          onClose={() => setModalMutasi(false)}
+          onCetak={v => {
+            setKonfigMutasi({
+              lingkup: org.skpdId ? 'skpd' : 'pemda',
+              namaSkpd: skpdInfo?.nama || (org.skpdId ? `SKPD #${org.skpdId}` : ''),
+              kodeLokasi: skpdInfo?.kodeLokasi || '',
+              // Sebutan ikut level: 1 = Pengguna Barang, di bawahnya Kuasa
+              // Pengguna Barang (lampiran menyebut ketiganya karena satu
+              // format melayani semua tingkatan).
+              sebutan: (skpdInfo?.level ?? 1) <= 1 ? 'Pengguna Barang' : 'Kuasa Pengguna Barang',
+              tanggal: v.tanggal, ttd: v.ttd, ttdKiri: v.ttdKiri,
+            })
+            setModalMutasi(false)
+            setPemicuCetak(n => n + 1)
+          }} />
+      )}
+
+      {/* Lembar resmi IV.L.4.1/4.3 — `hidden` di layar, disalakan print CSS.
+          ⚠️ Isolasi cetak memakai `visibility:hidden` atas `body *` lalu hanya
+          lembar ini yang ditampilkan — sengaja tak perlu tahu susunan layout
+          dashboard, jadi cetakannya tetap bersih kalau layoutnya berubah.
+          `#cetak-mutasi-bmd` di-`display:block` (bukan cuma visibility) karena
+          elemen tak-terlihat tetap MENGISI tata letak. */}
+      {sumberMutasi && konfigMutasi && (
+        <>
+          <style>{`
+            @media print {
+              @page { size: A4 landscape; margin: 1.2cm; }
+              body { background: #fff; }
+              body * { visibility: hidden; }
+              #cetak-mutasi-bmd { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
+              #cetak-mutasi-bmd, #cetak-mutasi-bmd * { visibility: visible; }
+              #cetak-mutasi-bmd tr { break-inside: avoid; }
+              #cetak-mutasi-bmd thead { display: table-header-group; }
+              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+          `}</style>
+          <LembarMutasiBmd periode={periode} komptabel={komptabel}
+            sumber={sumberMutasi} konfig={konfigMutasi} />
+        </>
       )}
     </div>
   )

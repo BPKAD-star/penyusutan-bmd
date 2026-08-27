@@ -27,9 +27,9 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { assertOk } from '@/shared/db/query'
 import type { RekapRpcRow } from '@/lib/rekapBmd'
+import TabelLaporanBmd from '@/components/pelaporan/TabelLaporanBmd'
 import {
-  BARIS_LAPORAN_BMD, ukuranPerGolongan, nilaiBaris, pecahPeriode, labelKomptabel,
-  type UkuranGolongan,
+  ukuranPerGolongan, pecahPeriode, labelKomptabel, type UkuranGolongan,
 } from '@/lib/laporanBmdFormat'
 import {
   fetchCalonTtd, calonTtdAwal, labelAsalTtd,
@@ -58,10 +58,6 @@ function descendantsOf(all: { id: number; parent_id: number | null }[], root: nu
   }
   return out
 }
-
-const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
-/** Akun lawan dicetak dalam kurung — konvensi neraca untuk nilai pengurang. */
-const kurung = (v: number) => `(${angka(v)})`
 
 const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
@@ -217,9 +213,11 @@ export default function CetakLaporanBmdPage() {
             <div className="text-center leading-tight mb-4">
               <p className="font-bold text-[13px]">LAPORAN BMD</p>
               <p className="font-bold text-[12px]">{labelKomptabel(komptabel)}</p>
-              <p className="font-bold text-[12px] uppercase">
-                {sebutanPengguna(skpd?.level ?? 1)} {skpd?.nama}
-              </p>
+              {/* Nama instansi SAJA — sebutan "Pengguna Barang" dicabut dari
+                  kop (keputusan user 2026-08-26); ia sudah muncul di blok tanda
+                  tangan, dan di kop justru membuat baris identitasnya panjang
+                  tanpa menambah keterangan apa pun. */}
+              <p className="font-bold text-[12px] uppercase">{skpd?.nama}</p>
               <p className="font-bold text-[12px]">SEMESTER {semester || '……'}</p>
               <p className="font-bold text-[12px]">TAHUN {tahun || '……'}</p>
             </div>
@@ -232,51 +230,7 @@ export default function CetakLaporanBmdPage() {
               </tbody>
             </table>
 
-            <table className="w-full table-fixed border-collapse text-[10px]">
-              <colgroup>
-                <col className="w-[4%]" /><col className="w-[4%]" /><col className="w-[4%]" />
-                <col className="w-[40%]" />
-                <col className="w-[20%]" />
-                <col className="w-[28%]" />
-              </colgroup>
-              <thead>
-                <tr className="text-center font-semibold">
-                  <th className="border border-black px-1 py-1" colSpan={4}>Penggolongan dan Kodefikasi Barang</th>
-                  <th className="border border-black px-1 py-1" rowSpan={2}>Jumlah BMD</th>
-                  <th className="border border-black px-1 py-1" rowSpan={2}>Saldo akhir (Rp)</th>
-                </tr>
-                <tr className="text-center font-semibold">
-                  <th className="border border-black px-1 py-1" colSpan={3}>Kode Barang</th>
-                  <th className="border border-black px-1 py-1">Nama Barang</th>
-                </tr>
-              </thead>
-              <tbody>
-                {BARIS_LAPORAN_BMD.map(b => {
-                  const n = nilaiBaris(b, peta)
-                  const tebal = b.jenis === 'kelompok'
-                  const akum = b.jenis === 'akumulasi'
-                  return (
-                    <tr key={b.kode.join('.') + b.nama} className={tebal ? 'font-bold' : ''}>
-                      {b.kode.map((k, i) => (
-                        <td key={i} className="border border-black px-1 py-0.5 text-center">{k}</td>
-                      ))}
-                      <td className="border border-black px-1 py-0.5">
-                        {b.nama}{b.bintang ? '*)' : ''}
-                      </td>
-                      {/* Baris akun lawan: "Jumlah BMD" sengaja "–" (tak punya
-                          jumlah unit) — persis seperti di lampiran aslinya. */}
-                      <td className="border border-black px-1 py-0.5 text-right">
-                        {n.jumlahBmd == null ? '–' : angka(n.jumlahBmd)}
-                      </td>
-                      <td className="border border-black px-1 py-0.5 text-right">
-                        {n.saldoAkhir == null ? '–' : akum ? kurung(n.saldoAkhir) : angka(n.saldoAkhir)}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            <p className="text-[9px] mt-1">*) tidak berlaku Intrakomptabel/ekstrakomtable</p>
+            <TabelLaporanBmd peta={peta} />
 
             {/* Penanda tangan DIPILIH operator; yang belum dipilih DIBIARKAN
                 bertitik-titik — mengarang nama di dokumen yang akan diteken jauh

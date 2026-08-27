@@ -9,7 +9,8 @@
 //   3. golongan yang tak punya data tercetak "–", bukan 0.
 import { describe, it, expect } from 'vitest'
 import {
-  BARIS_LAPORAN_BMD, ukuranPerGolongan, nilaiBaris, pecahPeriode, labelKomptabel,
+  BARIS_LAPORAN_BMD, ukuranPerGolongan, nilaiBaris, nilaiBarisMutasi,
+  pecahPeriode, labelKomptabel,
 } from './laporanBmdFormat'
 import type { RekapRpcRow } from './rekapBmd'
 
@@ -36,12 +37,11 @@ describe('§1 susunan baris — persis lampiran', () => {
     ])
   })
 
-  it('Persediaan & Tanah bertanda *), sisanya tidak', () => {
-    // Catatan kaki "*) tidak berlaku Intrakomptabel/ekstrakomtable" hanya
-    // menempel di dua baris itu — kalau bertambah/berkurang diam-diam, lembar
-    // resmi jadi menjanjikan sesuatu yang tak sesuai lampiran.
-    expect(BARIS_LAPORAN_BMD.filter(b => b.bintang).map(b => b.nama))
-      .toEqual(['Persediaan', 'Tanah'])
+  it('nama baris bersih — tanpa tanda *) yang sudah dicabut', () => {
+    // Tanda *) & catatan kakinya dicabut 2026-08-26 (Tanah tetap diisi penuh,
+    // jadi tandanya tak menerangkan apa pun). Kalau ada yang menempelkannya
+    // lagi ke `nama`, lembar resmi memuat catatan kaki yang tak ada penjelasnya.
+    expect(BARIS_LAPORAN_BMD.filter(b => b.nama.includes('*'))).toEqual([])
   })
 
   it('tepat dua baris kelompok (subtotal tebal) & tiga baris akumulasi', () => {
@@ -146,7 +146,72 @@ describe('§4 golongan tanpa data → "–", bukan 0', () => {
   })
 })
 
-describe('§5 kop lembar', () => {
+describe('§5 mutasi (IV.L.4.1/4.3) — baris akumulasi & subtotal wajib FOOT', () => {
+  const mut = (saldoAwal: number, penambahan: number, pengurangan: number) =>
+    ({ saldoAwal, penambahan, pengurangan, saldoAkhir: saldoAwal + penambahan - pengurangan })
+
+  const sumber = {
+    mutasi: new Map([
+      ['1.3.1', mut(40_000, 10_000, 0)],
+      ['1.3.2', mut(8_000, 2_000, 1_000)],
+      ['1.3.3', mut(200, 0, 0)],
+      ['1.5.3', mut(500, 0, 0)],
+      ['1.5.4', mut(3_000, 100, 50)],
+    ]),
+    akumAwal: new Map([['1.3.2', 5_000], ['1.3.3', 100], ['1.5.3', 400], ['1.5.4', 2_000]]),
+    akumAkhir: new Map([['1.3.2', 5_600], ['1.3.3', 120], ['1.5.3', 450], ['1.5.4', 2_300]]),
+    beban: new Map([['1.3.2', 900], ['1.3.3', 20], ['1.5.3', 50], ['1.5.4', 300]]),
+  }
+
+  it('baris aset memakai mutasi bruto apa adanya', () => {
+    expect(nilaiBarisMutasi(baris('Peralatan dan Mesin'), sumber))
+      .toEqual({ saldoAwal: 8_000, penambahan: 2_000, pengurangan: 1_000, saldoAkhir: 9_000 })
+  })
+
+  it('baris akumulasi: Bertambah = beban, Berkurang diturunkan agar FOOT', () => {
+    // awal 5.100 + beban 920 − akhir 5.720 = 300 lepas krn pelepasan.
+    expect(nilaiBarisMutasi(baris('Akumulasi Penyusutan'), sumber))
+      .toEqual({ saldoAwal: 5_100, penambahan: 920, pengurangan: 300, saldoAkhir: 5_720 })
+  })
+
+  it('IDENTITAS: tiap baris akumulasi selalu foot (awal + tambah − kurang = akhir)', () => {
+    // Ini yang membuat lembar resminya mustahil menampilkan penjumlahan yang
+    // tak nyambung — dijaga untuk KETIGA baris akumulasi sekaligus.
+    for (const b of BARIS_LAPORAN_BMD.filter(x => x.jenis === 'akumulasi')) {
+      const n = nilaiBarisMutasi(b, sumber)
+      expect(n.saldoAwal! + n.penambahan! - n.pengurangan!, `baris ${b.nama} tak foot`)
+        .toBe(n.saldoAkhir!)
+    }
+  })
+
+  it('IDENTITAS: baris kelompok juga foot', () => {
+    for (const b of BARIS_LAPORAN_BMD.filter(x => x.jenis === 'kelompok')) {
+      const n = nilaiBarisMutasi(b, sumber)
+      expect(n.saldoAwal! + n.penambahan! - n.pengurangan!, `subtotal ${b.nama} tak foot`)
+        .toBe(n.saldoAkhir!)
+    }
+  })
+
+  it('Saldo akhir subtotal SAMA dgn lembar posisi (IV.L.4.2/4.4)', () => {
+    // Dua lembar resmi untuk periode & lingkup yang sama tak boleh menyebut
+    // angka berbeda — itu pertanyaan pertama yang akan diajukan penelaah.
+    const petaPosisi = ukuranPerGolongan([
+      rpc('1.3.1', 0, 50_000), rpc('1.3.2', 0, 9_000, 5_600), rpc('1.3.3', 0, 200, 120),
+      rpc('1.5.3', 0, 500, 450), rpc('1.5.4', 0, 3_050, 2_300),
+    ])
+    expect(nilaiBarisMutasi(baris('Aset Tetap'), sumber).saldoAkhir)
+      .toBe(nilaiBaris(baris('Aset Tetap'), petaPosisi).saldoAkhir)
+    expect(nilaiBarisMutasi(baris('Aset Lainnya'), sumber).saldoAkhir)
+      .toBe(nilaiBaris(baris('Aset Lainnya'), petaPosisi).saldoAkhir)
+  })
+
+  it('golongan tanpa data tetap "–" di keempat kolom', () => {
+    expect(nilaiBarisMutasi(baris('Persediaan'), sumber))
+      .toEqual({ saldoAwal: null, penambahan: null, pengurangan: null, saldoAkhir: null })
+  })
+})
+
+describe('§6 kop lembar', () => {
   it('pecahPeriode', () => {
     expect(pecahPeriode('2026-S1')).toEqual({ semester: 'I', tahun: '2026' })
     expect(pecahPeriode('2026-S2')).toEqual({ semester: 'II', tahun: '2026' })
