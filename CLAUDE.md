@@ -2456,6 +2456,49 @@ Keputusan user, sesudah menanyakan kasus "Gedung 2015 (induk) digabung Gedung
   + akumulasi per anak ditampilkan di pratinjau, supaya operator bisa
   membedakan "memang nol" dari "engine belum dijalankan".
 - **Engine WAJIB di-run ulang** untuk periode kapitalisasi sesudah menyimpan.
+  ℹ️ Cukup periode TERAKHIR yang terdampak: `hitungJadwalAset` selalu replay
+  dari checkpoint sampai periode target lalu menulis SELURUH periode di rentang
+  itu, jadi menjalankan 2026-S2 otomatis menulis ulang 2026-S1 juga.
+
+### Tombol ✎ Ubah = BATAL DULU, lalu form terisi ulang (2026-08-27)
+
+Permintaan user sesudah kasus "salah pilih induk". **Bukan** ikon (+) yang
+menambah anak ke kartu yang sudah ada — itu ditolak, dan alasannya bukan selera:
+
+- `transaksi_bmd` **append-only**, baris `kapitalisasi` tak bisa di-UPDATE. Jadi
+  "+" mau tak mau jadi kapitalisasi KEDUA, dan band overhaul-nya dihitung dari
+  `r2 ÷ nilai perolehan yang SUDAH naik`, bukan `(r1+r2) ÷ nilai awal`.
+  Untuk SATU dokumen rehab yang barangnya kurang tercentang, hasilnya **salah**,
+  bukan sekadar beda. (Catatan "tambah anak BUKAN append murni — perlu keputusan
+  desain terpisah" sudah lama ada di bagian pola jurnal ber-SK di atas; inilah
+  keputusannya.)
+- Kasus yang SAH untuk dua baris — dua kontrak rehab berbeda di semester yang
+  sama — sudah tertangani "+ Tambah Transaksi" biasa. Menyediakan (+) hanya
+  membuat dua kasus yang berlawanan maksud terlihat sama di layar, pola yang
+  sudah memakan korban di modul Pengalihan (dua tombol beda arti → salah pencet
+  → aksinya dicabut).
+- ⚠️ **Batal dijalankan SAAT ✎ ditekan, bukan nanti saat Simpan.** Alasannya
+  kebenaran angka: sesudah batal, `aset.nilai_perolehan` induk sudah pulih &
+  barang anak kembali `aktif`, jadi form membaca dunia yang BERSIH — persis
+  seperti membuat transaksi baru, nol jalur perhitungan baru. Kalau ditunda,
+  form menghitung di atas nilai perolehan yang masih menggelembung DAN picker
+  anak tak bisa menampilkan barang yang masih berstatus terserap.
+  Konsekuensi yang DITERIMA & dikatakan terus terang di pop-up + banner: menutup
+  form tanpa menyimpan meninggalkan kapitalisasinya batal.
+- ⚠️ **`fig` induk diambil dari `snapshot.*_lama` transaksi lama** kalau
+  induknya tidak diganti — BUKAN dari `penyusutan_semester`. Sesudah batal,
+  engine belum dijalankan ulang, jadi baris engine masih memuat jadwal hasil
+  kapitalisasi yang baru saja dibatalkan (masa manfaat sudah diperpanjang,
+  akumulasi & nilai buku ikutannya). Tanpa cabang ini, pratinjau & snapshot yang
+  dibekukan ke ledger memakai angka "sesudah" sebagai "sebelum". Induk yang
+  DIGANTI ke barang lain tak kena — aset itu tak pernah tersentuh.
+- `nilai_perolehan_lama/_baru` di payload memakai **`fig.npLama`**, bukan
+  `induk.nilai_perolehan`, supaya angkanya tak bergantung pada urutan
+  pembacaan aset vs pemulihan. Untuk transaksi baru keduanya identik.
+- Pembatalannya SATU sumber: **`batalkanKapitalisasi()`** (guard rantai →
+  pulihkan nilai induk → hidupkan tiap anak), dipakai 🗑 Batal DAN ✎ Ubah.
+  ⚠️ TIDAK transaksional — gagal di tengah dilaporkan apa adanya & pemanggil
+  wajib memuat ulang daftar.
 
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
