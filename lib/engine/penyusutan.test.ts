@@ -122,6 +122,76 @@ describe('cariBand', () => {
 })
 
 // ════════════════════════════════════════════════════════════════════════════
+// Kapitalisasi — akumulasi anak IKUT PINDAH ke induk (keputusan user
+// 2026-08-27). Sebelumnya `rehab` (Σ nilai perolehan BRUTO anak) ditambahkan ke
+// nilai perolehan DAN nilai buku induk sementara akumulasinya tak disentuh,
+// lalu anak dihentikan `kapitalisasi_serap` — akumulasi anak lenyap & nilai
+// buku kelompok melonjak persis sebesar itu.
+//
+// Kesalahan itu SENYAP dua kali: `NP − akum = NB` tetap konsisten, dan
+// Rekonsiliasi pun tetap tie-out (baris "Kapitalisasi (barang diserap induk)"
+// membawa keluar akumulasi anak, jadi rantainya menutup ke angka yang salah).
+// Tak ada satu pun proses lain yang akan menangkapnya — makanya dikunci di sini.
+describe('kapitalisasi — akumulasi anak ikut pindah ke induk', () => {
+  const KODE = KODE_GEDUNG
+  // Induk: NP 1.000jt, sudah tersusut → akum 220jt, NB 780jt, sisa 78 smt.
+  const indukAwal = () => baseline({
+    nilaiPerolehan: 1_000_000_000, nilaiBuku: 780_000_000, akumulasi: 220_000_000,
+    sisaSmt: 78, masaSmt: 100, bebanSmt: 10_000_000,
+  })
+  // tambahan_tahun 0 → sisa masa manfaat tak berubah, jadi yang diuji murni
+  // perlakuan akumulasinya, bukan efek band.
+  const bands: BandOverhaul[] = [
+    { kode_prefix: '1.3.3', band_no: 1, pct_min: 0, pct_max: null, tambahan_tahun: 0 },
+  ]
+  // Anak: NP 400jt (masuk sbg `nilai`), akumulasinya lewat payload.
+  const hasil = (payload: Record<string, unknown>) =>
+    jalankan(
+      aset({ kode: KODE, nilai_perolehan: 1_000_000_000 }),
+      [indukAwal(), trx({ id: 900, jenis: 'kapitalisasi', periode: '2026-S1', nilai: 400_000_000, payload })],
+      masa(KODE, 50), '2026-S1', bands,
+    )[0]
+
+  it('akumulasi induk BERTAMBAH sebesar akumulasi anak', () => {
+    const r = hasil({ akumulasi_diserap: 28_000_000 })
+    expect(r.nilai_perolehan).toBe(1_400_000_000)
+    // `akumulasi` baris hasil sudah termasuk beban periode ini; yang diserap
+    // adalah posisi PEMBUKA-nya — 220jt (induk) + 28jt (anak).
+    expect(r.akumulasi - r.beban).toBe(248_000_000)
+  })
+
+  it('KEKEKALAN: tak ada akumulasi yang menguap saat anak dilebur', () => {
+    const r = hasil({ akumulasi_diserap: 28_000_000 })
+    expect(r.nilai_perolehan - r.akumulasi).toBe(r.nilai_buku_akhir)
+    // Sebelum digabung kelompok punya 220jt + 28jt. Anak berhenti disusutkan,
+    // jadi seluruh 248jt itu WAJIB ada di induk — bukan hilang.
+    expect(r.akumulasi).toBeGreaterThanOrEqual(248_000_000)
+  })
+
+  it('anak yang belum pernah disusutkan (KDP) tak mengubah apa pun', () => {
+    // Kasus nyata 2026-08-27: KDP direklas ke Gedung lalu diserap. Akumulasinya
+    // memang 0, jadi hasilnya wajib IDENTIK dgn baris tanpa kunci sama sekali.
+    expect(hasil({ akumulasi_diserap: 0 })).toEqual(hasil({}))
+  })
+
+  it('baris kapitalisasi LAMA (tanpa kunci) berperilaku persis seperti sebelumnya', () => {
+    // Kompatibilitas mundur — seluruh kapitalisasi yang sudah tercatat tak
+    // boleh bergeser sepeser pun saat engine di-run ulang.
+    const lama = hasil({})
+    expect(lama.nilai_perolehan).toBe(1_400_000_000)
+    expect(lama.akumulasi - lama.beban).toBe(220_000_000) // akumulasi induk saja
+    expect(lama.nilai_perolehan - lama.akumulasi).toBe(lama.nilai_buku_akhir)
+  })
+
+  it('payload yang tak masuk akal DIABAIKAN, bukan bikin akumulasi melenceng', () => {
+    const acuan = hasil({}).akumulasi
+    for (const p of [{ akumulasi_diserap: -5 }, { akumulasi_diserap: 'x' }, { akumulasi_diserap: null }]) {
+      expect(hasil(p).akumulasi).toBe(acuan)
+    }
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
 describe('kodeDisusutkan', () => {
   it('menandai golongan yang disusutkan / diamortisasi', () => {
     expect(kodeDisusutkan(KODE_PM)).toBe(true)

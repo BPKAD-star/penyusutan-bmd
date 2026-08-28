@@ -313,6 +313,36 @@ export function hitungJadwalAset(
           // Step 4-6
           nilaiPerolehan += rehab
           nilaiBuku += rehab
+          // ⚠️ AKUMULASI ANAK IKUT PINDAH KE INDUK (keputusan user 2026-08-27).
+          //
+          // `rehab` = Σ nilai perolehan BRUTO anak, dan sampai hari ini akumulasi
+          // induk tak disentuh sama sekali. Untuk anak yang belum pernah
+          // disusutkan (KDP hasil reklas — akumulasinya memang 0) itu benar. Tapi
+          // begitu anaknya aset yang SUDAH berdiri sendiri & sudah tersusut (mis.
+          // Gedung 2023 digabung ke Gedung 2015), akumulasi anak LENYAP bersama
+          // dia lewat `kapitalisasi_serap` di bawah — akumulasi kelompok turun &
+          // nilai buku melonjak persis sebesar akumulasi anak.
+          //
+          // Kesalahan itu SENYAP: `NP − akum = NB` tetap konsisten secara
+          // aritmetika, dan Rekonsiliasi pun tetap tie-out (baris "Kapitalisasi
+          // (barang diserap induk)" membawa keluar akumulasi anak, jadi rantainya
+          // menutup ke angka yang sudah salah). Yang keliru neracanya, bukan
+          // rekonsiliasinya. Pola & peringatan yang sama sudah lama tertulis di
+          // `penggabungan_masuk` di bawah.
+          //
+          // ⚠️ Sengaja DELTA (`akumulasi_diserap`), bukan absolut `akumulasi_baru`
+          // seperti penggabungan. Alasannya `rehab` juga delta, dan snapshot di
+          // payload dihitung UI pada posisi AKHIR periode sementara engine berada
+          // di posisi AWAL periode saat event ini diproses — angka absolut dari
+          // payload akan bertabrakan dengan state replay. Delta selalu benar.
+          //
+          // Baris LAMA tanpa kunci ini → perilaku persis seperti sebelumnya, jadi
+          // seluruh kapitalisasi yang sudah tercatat tidak bergeser sepeser pun.
+          const akumSerap = Number((ev.payload as Record<string, unknown>)?.akumulasi_diserap)
+          if (Number.isFinite(akumSerap) && akumSerap > 0) {
+            akumulasi += akumSerap
+            nilaiBuku = Math.max(0, nilaiBuku - akumSerap)
+          }
           beban = Math.round(nilaiBuku / sisaSmt)
           masaTahun = maxTahun
           break

@@ -12,7 +12,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah } from '@/lib/export'
-import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
+import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, parsePeriode, previousPeriode, formatPeriode } from '@/lib/bmd'
 import { cariBand, type BandOverhaul } from '@/lib/engine/penyusutan'
 import { KapitalisasiRincian, KapitalisasiDetailModal, type KapSnapshot, type KapAnak, type KapItem } from '@/components/KapitalisasiDetail'
 import FormShell from './FormShell'
@@ -32,7 +32,21 @@ type Jurnal = {
 
 const today = () => new Date().toISOString().slice(0, 10)
 
-function computeSnapshot(fig: IndukFig, kode: string, rehab: number, bands: BandOverhaul[]): KapSnapshot {
+/**
+ * Pratinjau angka induk sesudah kapitalisasi.
+ *
+ * ⚠️ `akumSerap` = Σ akumulasi penyusutan barang ANAK (keputusan user
+ * 2026-08-27). Anak yang sudah berdiri sendiri & sudah tersusut membawa serta
+ * akumulasinya ke induk — kalau tidak, akumulasi itu lenyap bersama anaknya
+ * lewat `kapitalisasi_serap` dan nilai buku kelompok melonjak persis sebesar
+ * itu, tanpa satu pun pesan error. Untuk anak yang belum pernah disusutkan
+ * (KDP hasil reklas) nilainya 0 → hasilnya identik dengan perilaku lama.
+ *
+ * `nb_baru` sengaja tetap diturunkan dari `nbLama + rehab − akumSerap` (bukan
+ * `npBaru − akumBaru`) supaya rumusnya persis sama seperti sebelumnya saat
+ * `akumSerap` nol — pratinjau lama tak bergeser sedikit pun.
+ */
+function computeSnapshot(fig: IndukFig, kode: string, rehab: number, bands: BandOverhaul[], akumSerap = 0): KapSnapshot {
   const persen = fig.npLama > 0 ? (rehab / fig.npLama) * 100 : 0
   const band = rehab > 0 ? cariBand(bands, kode, persen) : null
   const tambahan = band?.tambahan_tahun ?? 0
@@ -40,13 +54,14 @@ function computeSnapshot(fig: IndukFig, kode: string, rehab: number, bands: Band
   const masaBaruTahun = fig.masaMaks != null ? Math.min(sisaTahunLama + tambahan, fig.masaMaks) : sisaTahunLama + tambahan
   const sisaBaruSmt = Math.max(1, Math.round(masaBaruTahun * 2))
   const npBaru = fig.npLama + rehab
-  const nbBaru = fig.nbLama + rehab
+  const nbBaru = Math.max(0, fig.nbLama + rehab - akumSerap)
   const bebanBaru = sisaBaruSmt > 0 ? Math.round(nbBaru / sisaBaruSmt) : 0
   return {
     np_lama: fig.npLama, beban_lama: fig.bebanLama, akum_lama: fig.akumLama, nb_lama: fig.nbLama,
     sisa_lama_smt: fig.sisaLamaSmt, masa_maks_tahun: fig.masaMaks,
     rehab, persen, tambahan_tahun: tambahan, masa_baru_tahun: masaBaruTahun, sisa_baru_smt: sisaBaruSmt,
-    np_baru: npBaru, nb_baru: nbBaru, beban_baru: bebanBaru, akum_baru: fig.akumLama,
+    np_baru: npBaru, nb_baru: nbBaru, beban_baru: bebanBaru,
+    akum_diserap: akumSerap, akum_baru: fig.akumLama + akumSerap,
   }
 }
 
@@ -277,9 +292,40 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
     })()
   }, [induk]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Akumulasi penyusutan tiap ANAK, dibaca pada periode SEBELUM tanggal
+  // dokumen (pola sama dgn Penggabungan Barang). WAJIB dibekukan ke payload:
+  // engine mereplay SATU aset per panggilan, jadi saat memproses induk ia tak
+  // punya akses ke jadwal anaknya — angka ini tak bisa diturunkan belakangan.
+  //
+  // ⚠️ Anak TANPA baris engine di periode itu dihitung 0, dan itu memang BENAR,
+  // bukan kelonggaran: kalau `penyusutan_semester` tak punya barisnya, aset itu
+  // tak menyumbang akumulasi apa pun ke laporan mana pun — menyerap 0 justru
+  // yang menjaga totalnya kekal. Kasus nyatanya KDP hasil reklas (golongan
+  // 1.3.6 tak pernah disusutkan). Karena itu di sini TIDAK diblokir seperti
+  // Penggabungan Barang; yang dilakukan menampilkannya supaya operator sadar.
+  const [akumAnak, setAkumAnak] = useState<Record<string, number>>({})
+  const [anakTanpaBaris, setAnakTanpaBaris] = useState<string[]>([])
+
+  useEffect(() => {
+    if (anak.length === 0) { setAkumAnak({}); setAnakTanpaBaris([]); return }
+    const periodeSebelum = formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))
+    ;(async () => {
+      const { data } = await supabase.from('penyusutan_semester')
+        .select('aset_id,akumulasi').eq('periode', periodeSebelum).in('aset_id', anak.map(a => a.id))
+      const map: Record<string, number> = {}
+      for (const r of (data || []) as { aset_id: string; akumulasi: number }[]) map[r.aset_id] = Number(r.akumulasi) || 0
+      setAkumAnak(map)
+      setAnakTanpaBaris(anak.filter(a => map[a.id] == null).map(a => a.nama_barang || a.nibar || a.id))
+    })()
+  }, [anak, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const rehab = anak.reduce((s, a) => s + (a.nilai_perolehan || 0), 0)
-  const snap = induk && fig && rehab > 0 ? computeSnapshot(fig, induk.kode, rehab, bands) : null
-  const anakInfo = (): KapAnak[] => anak.map(a => ({ id: a.id, nibar: a.nibar, nama: a.nama_barang, nilai: a.nilai_perolehan, tgl: a.tgl_perolehan }))
+  const akumSerap = anak.reduce((s, a) => s + (akumAnak[a.id] || 0), 0)
+  const snap = induk && fig && rehab > 0 ? computeSnapshot(fig, induk.kode, rehab, bands, akumSerap) : null
+  const anakInfo = (): KapAnak[] => anak.map(a => ({
+    id: a.id, nibar: a.nibar, nama: a.nama_barang, nilai: a.nilai_perolehan, tgl: a.tgl_perolehan,
+    akum: akumAnak[a.id] || 0,
+  }))
 
   const indukLevel3 = induk ? kodeLevel3(induk.kode) : ''
   const anakInvalid = (b: Barang): string | null => {
@@ -296,13 +342,19 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
     if (bad) { setErr(`Barang anak "${bad.nama_barang}" ${anakInvalid(bad)} — tidak boleh.`); return }
     if (!fig) { setErr('Data induk belum siap, coba sebentar lagi.'); return }
     setErr(''); setSaving(true)
-    const snapshot = computeSnapshot(fig, induk.kode, rehab, bands)
+    const snapshot = computeSnapshot(fig, induk.kode, rehab, bands, akumSerap)
     const { error } = await catatTransaksi(supabase, {
       asetId: induk.id, jenis: 'kapitalisasi', tanggal: tgl, nilai: rehab, skpdAsal: induk.skpd_id,
       payload: {
         no_dokumen: noDok.trim(), nilai_rehab: rehab, persen_rehab: Math.round(snapshot.persen * 100) / 100,
         tambahan_tahun: snapshot.tambahan_tahun, nilai_perolehan_lama: induk.nilai_perolehan,
-        nilai_perolehan_baru: induk.nilai_perolehan + rehab, anak: anakInfo(), snapshot,
+        nilai_perolehan_baru: induk.nilai_perolehan + rehab,
+        // ⚠️ DELTA yang dibaca engine (lib/engine/penyusutan.ts case
+        // 'kapitalisasi'). Dibekukan di sini karena engine mereplay satu aset
+        // per panggilan & tak bisa melihat jadwal anaknya. Baris kapitalisasi
+        // LAMA tak punya kunci ini → engine berperilaku persis seperti dulu.
+        akumulasi_diserap: akumSerap,
+        anak: anakInfo(), snapshot,
       },
       keterangan: ket.trim() || undefined,
     })
@@ -372,6 +424,22 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
             </ul>
           )}
       </div>
+
+      {/* Anak tanpa baris engine = akumulasi 0 yang DIBEKUKAN ke ledger. Untuk
+          KDP hasil reklas itu memang benar (golongan 1.3.6 tak pernah
+          disusutkan), tapi kalau sebabnya cuma "engine belum dijalankan untuk
+          periode itu", angka 0 tadi ikut permanen. Karena itu diberitahukan —
+          bukan diblokir: memblokir akan mematikan alur KDP yang sah. */}
+      {anakTanpaBaris.length > 0 && (
+        <div className="max-w-3xl rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+          <b>{anakTanpaBaris.length} barang anak belum punya hasil penyusutan</b> pada periode{' '}
+          {formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))} — akumulasi yang ikut pindah ke
+          induk dihitung <b>nol</b> untuk barang itu: {anakTanpaBaris.join(', ')}.
+          <br />
+          Itu <b>benar</b> kalau barangnya memang belum pernah disusutkan (mis. KDP yang baru direklas). Kalau
+          bukan, jalankan <b>Engine</b> untuk periode itu dulu — angka nol ini ikut tersimpan permanen di ledger.
+        </div>
+      )}
 
       {snap && (
         <div className="card p-5 max-w-4xl">
