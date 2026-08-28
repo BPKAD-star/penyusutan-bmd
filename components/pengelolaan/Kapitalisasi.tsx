@@ -33,6 +33,58 @@ type Jurnal = {
 const today = () => new Date().toISOString().slice(0, 10)
 
 /**
+ * Pembatalan satu transaksi kapitalisasi — SATU sumber, dipakai tombol
+ * 🗑 Batal DAN ✎ Ubah.
+ *
+ * ⚠️ Diekstrak saat Ubah dibuat (2026-08-27). Ini aturan integritas (guard
+ * rantai + pemulihan nilai perolehan + menghidupkan tiap anak), jadi dua
+ * salinannya akan menyimpang cepat atau lambat — CODING-STANDARD §1.2
+ * mewajibkan ekstraksi sejak kemunculan KEDUA untuk yang seperti ini.
+ *
+ * Reversal DICATAT DI TANGGAL TRANSAKSI ASLI, bukan hari ini: kalau pakai hari
+ * ini, batalnya bisa jatuh di semester berbeda dari kapitalisasinya sehingga di
+ * periode asli barang anak tetap terlihat "terserap".
+ *
+ * ⚠️ TIDAK transaksional — `catatTransaksi` menulis satu baris per panggilan.
+ * Urutannya sengaja: guard → induk → tiap anak. Gagal di tengah dilaporkan apa
+ * adanya; pemanggil WAJIB memuat ulang daftar supaya layar tak memamerkan
+ * keadaan yang sudah tidak benar.
+ */
+async function batalkanKapitalisasi(
+  supabase: ReturnType<typeof createClient>, j: Jurnal, skpdFallback: number,
+): Promise<{ error?: string }> {
+  // Guard rantai: induk tak boleh punya transaksi LEBIH BARU setelah kapitalisasi
+  // ini (mis. reklas/kapitalisasi lagi di atasnya) — batalkan yang lebih baru
+  // dulu, kalau tidak replay engine rusak. (Anak yg terserap sudah tersembunyi
+  // dari semua menu sehingga tak mungkin menerima transaksi baru → cukup jaga
+  // induk.)
+  const guard = await cekBolehBatal(
+    supabase,
+    [{ aset_id: j.aset_id, trx_id: j.id, label: j.induk?.nama_barang || j.induk?.nibar }],
+    'kapitalisasi ini',
+  )
+  if (!guard.boleh) return { error: guard.pesan }
+  // Nilai perolehan induk dikembalikan: nilai SEKARANG − rehab transaksi ini.
+  const { data: a } = await supabase.from('aset').select('nilai_perolehan,skpd_id').eq('id', j.aset_id).single()
+  const npRestore = (a?.nilai_perolehan ?? 0) - j.nilai
+  const { error } = await catatTransaksi(supabase, {
+    asetId: j.aset_id, jenis: 'batal_kapitalisasi', tanggal: j.tanggal, nilai: j.nilai,
+    skpdAsal: a?.skpd_id ?? skpdFallback,
+    payload: { target_trx_id: j.id, nilai_perolehan_baru: npRestore, no_dokumen: j.no_dokumen },
+    keterangan: `Pembatalan kapitalisasi ${j.no_dokumen}`,
+  })
+  if (error) return { error }
+  for (const a2 of j.anak) {
+    const { error: e2 } = await catatTransaksi(supabase, {
+      asetId: a2.id, jenis: 'batal_kapitalisasi', tanggal: j.tanggal, nilai: a2.nilai, skpdAsal: skpdFallback,
+      payload: { induk_id: j.aset_id, no_dokumen: j.no_dokumen }, keterangan: `Batal serap dari ${j.no_dokumen}`,
+    })
+    if (e2) return { error: `Sebagian batal gagal: ${e2}` }
+  }
+  return {}
+}
+
+/**
  * Pratinjau angka induk sesudah kapitalisasi.
  *
  * ⚠️ `akumSerap` = Σ akumulasi penyusutan barang ANAK (keputusan user
@@ -76,6 +128,10 @@ export default function Kapitalisasi() {
   const [loadingList, setLoadingList] = useState(false)
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [detail, setDetail] = useState<KapItem[] | null>(null)
+  // Transaksi yang sedang diubah — sudah DIBATALKAN saat ✎ ditekan; nilainya
+  // cuma dipakai mengisi ulang form (termasuk `snapshot` lamanya sbg posisi
+  // induk SEBELUM kapitalisasi). null = membuat transaksi baru.
+  const [ubah, setUbah] = useState<Jurnal | null>(null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -144,37 +200,55 @@ export default function Kapitalisasi() {
         baru dulu. Jalankan <b>Engine</b> lagi setelah ini supaya angka penyusutannya ikut berubah.</>,
       labelYa: 'Ya, batalkan',
     })).ya) return
-    // Guard rantai: induk tak boleh punya transaksi LEBIH BARU setelah kapitalisasi
-    // ini (mis. reklas/kapitalisasi lagi di atasnya) — batalkan yang lebih baru dulu,
-    // kalau tidak replay engine rusak. (Anak yg terserap sudah tersembunyi dari semua
-    // menu sehingga tak mungkin menerima transaksi baru → cukup jaga induk.)
-    const guard = await cekBolehBatal(
-      supabase,
-      [{ aset_id: j.aset_id, trx_id: j.id, label: j.induk?.nama_barang || j.induk?.nibar }],
-      'kapitalisasi ini',
-    )
-    if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); return }
-    // Nilai perolehan induk dikembalikan: nilai sekarang − rehab transaksi ini.
-    const { data: a } = await supabase.from('aset').select('nilai_perolehan,skpd_id').eq('id', j.aset_id).single()
-    const npRestore = (a?.nilai_perolehan ?? 0) - j.nilai
-    // Batal = koreksi kesalahan → reversal DICATAT DI PERIODE TRANSAKSI ASLI (j.tanggal),
-    // bukan hari ini. Kalau pakai hari ini, batal jatuh di semester berbeda dari kapitalisasi
-    // sehingga di view periode asli aset tetap "terserap" (beda dgn Daftar Barang yg langsung).
-    const { error } = await catatTransaksi(supabase, {
-      asetId: j.aset_id, jenis: 'batal_kapitalisasi', tanggal: j.tanggal, nilai: j.nilai, skpdAsal: a?.skpd_id ?? Number(skpd),
-      payload: { target_trx_id: j.id, nilai_perolehan_baru: npRestore, no_dokumen: j.no_dokumen },
-      keterangan: `Pembatalan kapitalisasi ${j.no_dokumen}`,
-    })
-    if (error) { setMsg(`Error: ${error}`); return }
-    for (const a2 of j.anak) {
-      const { error: e2 } = await catatTransaksi(supabase, {
-        asetId: a2.id, jenis: 'batal_kapitalisasi', tanggal: j.tanggal, nilai: a2.nilai, skpdAsal: Number(skpd),
-        payload: { induk_id: j.aset_id, no_dokumen: j.no_dokumen }, keterangan: `Batal serap dari ${j.no_dokumen}`,
-      })
-      if (e2) { setMsg(`Sebagian batal gagal: ${e2}`); loadList(skpd); return }
-    }
+    const { error } = await batalkanKapitalisasi(supabase, j, Number(skpd))
+    if (error) { setMsg(`Error: ${error}`); loadList(skpd); return }
     setMsg('Kapitalisasi dibatalkan — kembali seperti semula. Jalankan engine untuk memperbarui penyusutan.')
     loadList(skpd)
+  }
+
+  // ── ✎ Ubah = BATAL DULU, lalu form terisi ulang ────────────────────────────
+  //
+  // ⚠️ Bentuk ini SENGAJA, dan bukan "tambah anak lewat (+)". `transaksi_bmd`
+  // append-only: baris kapitalisasi yang sudah ada tak bisa di-UPDATE, jadi
+  // menambah anak belakangan mau tak mau jadi kapitalisasi KEDUA — dan band
+  // overhaul-nya lalu dihitung dari persentase yang berbeda (r2 ÷ nilai
+  // perolehan yang SUDAH naik), bukan dari (r1+r2) ÷ nilai awal. Untuk satu
+  // dokumen rehab yang barangnya kurang tercentang, hasilnya SALAH, bukan
+  // sekadar beda. Catatan ini sudah lama ada di CLAUDE.md ("tambah anak BUKAN
+  // append murni — perlu keputusan desain terpisah").
+  //
+  // ⚠️ Batal dijalankan SEKARANG, bukan nanti saat Simpan. Alasannya
+  // kebenaran angka, bukan kenyamanan: sesudah batal, `aset.nilai_perolehan`
+  // induk sudah pulih & barang anak kembali `aktif`, jadi form di belakang ini
+  // membaca dunia yang BERSIH — persis seperti membuat transaksi baru. Kalau
+  // batal ditunda sampai Simpan, form akan menghitung di atas nilai perolehan
+  // yang masih menggelembung oleh kapitalisasi lama, dan picker anak pun tak
+  // bisa menampilkan barang yang masih berstatus terserap.
+  //
+  // Konsekuensi yang DITERIMA: kalau operator menutup form tanpa menyimpan,
+  // kapitalisasinya memang sudah batal. Itu dikatakan terus terang di pop-up —
+  // dan hasilnya sama saja dengan menekan 🗑 lalu "+ Tambah Transaksi", yang
+  // memang alur manualnya selama ini.
+  async function mulaiUbah(j: Jurnal) {
+    if (!(await konfirmasi({
+      nada: 'amber', ikon: '✎', judul: 'Ubah kapitalisasi ini?',
+      subjudul: `No. Dok ${j.no_dokumen}`,
+      rincian: [
+        { label: 'Barang induk', nilai: j.induk?.nama_barang || j.induk?.nibar || '—' },
+        { label: 'Barang anak', nilai: `${j.anak.length} barang` },
+        { label: 'Nilai kapitalisasi', nilai: formatRupiah(j.nilai) },
+      ],
+      isi: <>Kapitalisasi ini <b>dibatalkan lebih dulu</b>, lalu formnya dibuka kembali sudah terisi —
+        induk &amp; barang anaknya bebas diganti, termasuk menukar mana yang jadi induk.</>,
+      peringatan: <>Kalau form ditutup tanpa disimpan, kapitalisasinya <b>tetap batal</b> dan harus
+        disusun ulang. Jalankan <b>Engine</b> lagi setelah selesai.</>,
+      labelYa: 'Ya, ubah',
+    })).ya) return
+    const { error } = await batalkanKapitalisasi(supabase, j, Number(skpd))
+    if (error) { setMsg(`Error: ${error}`); loadList(skpd); return }
+    setUbah(j)
+    setMsg('')
+    setMode('tambah')
   }
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
@@ -195,14 +269,27 @@ export default function Kapitalisasi() {
       ) : mode === 'tambah' ? (
         <TambahKapitalisasi
           skpdId={Number(skpd)} skpdNama={skpdNama || ''} bands={bands} golonganLabels={golonganLabels}
-          onCancel={() => setMode('list')}
-          onSaved={(n) => { setMode('list'); setMsg(`Kapitalisasi tersimpan — ${n} barang anak diserap ke induk. Jalankan engine untuk memperbarui penyusutan.`); loadList(skpd) }}
+          ubah={ubah}
+          onCancel={() => {
+            // Saat mengubah, kapitalisasi lamanya SUDAH batal (lihat mulaiUbah).
+            // Katakan apa adanya — kalau tidak, operator mengira "Kembali" =
+            // membatalkan penyuntingan, padahal datanya memang sudah terbalik.
+            setMsg(ubah
+              ? `Kapitalisasi ${ubah.no_dokumen} sudah dibatalkan dan TIDAK disusun ulang. Buat transaksi baru kalau memang masih diperlukan, lalu jalankan engine.`
+              : '')
+            setUbah(null); setMode('list'); loadList(skpd)
+          }}
+          onSaved={(n) => {
+            setMode('list')
+            setMsg(`${ubah ? 'Kapitalisasi diperbarui' : 'Kapitalisasi tersimpan'} — ${n} barang anak diserap ke induk. Jalankan engine untuk memperbarui penyusutan.`)
+            setUbah(null); loadList(skpd)
+          }}
         />
       ) : (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} transaksi kapitalisasi</span>
-            <button className="btn-primary" onClick={() => { setMsg(''); setMode('tambah') }}>+ Tambah Transaksi</button>
+            <button className="btn-primary" onClick={() => { setMsg(''); setUbah(null); setMode('tambah') }}>+ Tambah Transaksi</button>
           </div>
 
           {loadingList ? (
@@ -224,6 +311,11 @@ export default function Kapitalisasi() {
                   <button title="Lihat rincian penambahan masa manfaat"
                     onClick={() => setDetail([{ no_dokumen: j.no_dokumen, tanggal: j.tanggal, keterangan: j.keterangan, snapshot: j.snapshot, anak: j.anak }])}
                     className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">👁</button>
+                  {/* Amber = membatalkan keadaan yang sudah berlaku (nada yang
+                      sama dgn Buka Kunci di KonfirmasiModal) — Ubah memang
+                      membatalkan dulu, bukan menyunting di tempat. */}
+                  <button title="Ubah kapitalisasi (dibatalkan lalu disusun ulang)" onClick={() => mulaiUbah(j)}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded bg-amber-500 hover:bg-amber-600 text-white">✎</button>
                   <button title="Batalkan kapitalisasi" onClick={() => batal(j)}
                     className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
                 </div>
@@ -255,8 +347,11 @@ export default function Kapitalisasi() {
 }
 
 // ── Form tambah ─────────────────────────────────────────────────────────────
-function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel, onSaved }: {
+function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onCancel, onSaved }: {
   skpdId: number; skpdNama: string; bands: BandOverhaul[]; golonganLabels: Record<string, string>
+  /** Transaksi yang sedang diubah — SUDAH dibatalkan sebelum form ini dibuka.
+   *  null = membuat transaksi baru. */
+  ubah?: Jurnal | null
   onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
@@ -271,10 +366,48 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
+  // Isi ulang dari transaksi yang sedang diubah. Baris `aset` DIBACA ULANG dari
+  // DB, tidak diambil dari kartu: pembatalan barusan sudah memulihkan
+  // `nilai_perolehan` induk & menghidupkan lagi barang anak, dan nilai di kartu
+  // itu foto SEBELUM pemulihan.
+  useEffect(() => {
+    if (!ubah) return
+    ;(async () => {
+      setNoDok(ubah.no_dokumen === '(tanpa no. dok)' ? '' : ubah.no_dokumen)
+      setTgl(ubah.tanggal)
+      setKet(ubah.keterangan || '')
+      const ids = [ubah.aset_id, ...ubah.anak.map(a => a.id)]
+      const { data } = await supabase.from('aset')
+        .select('id,nibar,kode,nama_barang,nilai_perolehan,skpd_id,tgl_perolehan').in('id', ids)
+      const rows = (data || []) as Barang[]
+      setInduk(rows.find(r => r.id === ubah.aset_id) ?? null)
+      setAnak(ubah.anak.map(a => rows.find(r => r.id === a.id)).filter((b): b is Barang => !!b))
+    })()
+  }, [ubah]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     setFig(null)
     if (!induk) return
     (async () => {
+      // ⚠️ Saat MENGUBAH dgn induk yang SAMA, posisi induk diambil dari
+      // `snapshot.*_lama` transaksi lama — itu persis "induk sebelum
+      // kapitalisasi ini", dan guard rantai menjamin tak ada peristiwa lain di
+      // antaranya. `penyusutan_semester` TIDAK dipakai di sini karena engine
+      // belum dijalankan ulang sesudah pembatalan barusan, jadi barisnya masih
+      // memuat jadwal hasil kapitalisasi yang baru saja dibatalkan (masa
+      // manfaat yang sudah diperpanjang, akumulasi & nilai buku ikutannya).
+      // Tanpa cabang ini, pratinjau & snapshot yang dibekukan ke ledger akan
+      // memuat angka "sesudah" yang dipakai sebagai "sebelum".
+      // Induk yang DIGANTI ke barang lain tak kena: aset itu tak pernah
+      // tersentuh kapitalisasi ini, jadi pembacaan biasa di bawah sudah benar.
+      if (ubah && induk.id === ubah.aset_id && ubah.snapshot) {
+        const s = ubah.snapshot
+        setFig({
+          npLama: s.np_lama, nbLama: s.nb_lama, akumLama: s.akum_lama,
+          bebanLama: s.beban_lama, sisaLamaSmt: s.sisa_lama_smt, masaMaks: s.masa_maks_tahun,
+        })
+        return
+      }
       const { data: k } = await supabase.from('admin_kodefikasi_bmd').select('masa_manfaat_tahun').eq('kode', induk.kode).single()
       const masaMaks = k?.masa_manfaat_tahun ?? null
       const { data: ps } = await supabase.from('penyusutan_semester')
@@ -343,12 +476,20 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
     if (!fig) { setErr('Data induk belum siap, coba sebentar lagi.'); return }
     setErr(''); setSaving(true)
     const snapshot = computeSnapshot(fig, induk.kode, rehab, bands, akumSerap)
+    // ⚠️ `fig.npLama`, BUKAN `induk.nilai_perolehan`. Untuk transaksi baru
+    // keduanya sama persis (fig diisi dari kolom itu). Bedanya cuma muncul saat
+    // MENGUBAH dgn induk yang sama: di situ `fig.npLama` datang dari snapshot
+    // lama — nilai perolehan induk SEBELUM kapitalisasi yang barusan
+    // dibatalkan — sedangkan `induk.nilai_perolehan` bergantung pada apakah
+    // pembacaan aset terjadi sebelum atau sesudah pemulihan. Memakai `fig`
+    // membuat angkanya tak bergantung pada urutan itu.
+    const npLama = fig.npLama
     const { error } = await catatTransaksi(supabase, {
       asetId: induk.id, jenis: 'kapitalisasi', tanggal: tgl, nilai: rehab, skpdAsal: induk.skpd_id,
       payload: {
         no_dokumen: noDok.trim(), nilai_rehab: rehab, persen_rehab: Math.round(snapshot.persen * 100) / 100,
-        tambahan_tahun: snapshot.tambahan_tahun, nilai_perolehan_lama: induk.nilai_perolehan,
-        nilai_perolehan_baru: induk.nilai_perolehan + rehab,
+        tambahan_tahun: snapshot.tambahan_tahun, nilai_perolehan_lama: npLama,
+        nilai_perolehan_baru: npLama + rehab,
         // ⚠️ DELTA yang dibaca engine (lib/engine/penyusutan.ts case
         // 'kapitalisasi'). Dibekukan di sini karena engine mereplay satu aset
         // per panggilan & tak bisa melihat jadwal anaknya. Baris kapitalisasi
@@ -372,9 +513,20 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
 
   return (
     <div className="space-y-4">
+      {ubah && (
+        <div className="max-w-3xl rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
+          Kapitalisasi <b>No. Dok {ubah.no_dokumen}</b> sudah <b>dibatalkan</b> — induk kembali ke nilai semula
+          dan {ubah.anak.length} barang anaknya aktif lagi. Susun ulang di bawah lalu <b>Simpan</b>.
+          <br />
+          Kalau lu tekan <b>← Kembali</b> tanpa menyimpan, kapitalisasinya tetap batal dan harus dibuat dari awal.
+        </div>
+      )}
+
       <div className="card p-5 max-w-3xl">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-800">Kapitalisasi Baru — {skpdNama}</h2>
+          <h2 className="text-base font-semibold text-gray-800">
+            {ubah ? 'Susun Ulang Kapitalisasi' : 'Kapitalisasi Baru'} — {skpdNama}
+          </h2>
           <button className="btn-secondary text-xs" onClick={onCancel}>← Kembali</button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -402,7 +554,9 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, onCancel,
         {induk ? (
           <div className="p-3 bg-teal/5 border border-teal/30 rounded-lg text-sm">
             <p className="font-medium text-gray-800">{induk.nama_barang || '-'}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{induk.nibar || '-'} · {induk.kode} · Tgl {induk.tgl_perolehan || '-'} · Nilai {formatRupiah(induk.nilai_perolehan)}</p>
+            {/* Nilai dari `fig` — lihat alasannya di `simpan()`. Sebelum fig
+                termuat, kolom register dipakai sbg tampilan sementara. */}
+            <p className="text-xs text-gray-500 mt-0.5">{induk.nibar || '-'} · {induk.kode} · Tgl {induk.tgl_perolehan || '-'} · Nilai {formatRupiah(fig ? fig.npLama : induk.nilai_perolehan)}</p>
           </div>
         ) : <p className="text-xs text-gray-400">Belum dipilih.</p>}
       </div>
