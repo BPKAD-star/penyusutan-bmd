@@ -10,15 +10,24 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
+import { barangKdpList, type KontrakKonstruksiPayload } from '@/lib/kdp'
 import { backdropClose } from '@/components/backdropClose'
 
-type CaraConfig = { key: string; label: string; jenisTransaksi: string; kategoriJurnal: string | null }
+// ⚠️ `kategoriJurnal` JAMAK — Pengadaan punya DUA pintu masuk yang memakai
+// kategori `jurnal_header` berbeda: entry non-fisik (`pengadaan`) dan Pekerjaan
+// Fisik/Konstruksi (`konstruksi`). Sampai 2026-08-27 kartu ini cuma menyapu
+// yang pertama, jadi kontrak konstruksi yang masih menunggu persetujuan TIDAK
+// pernah terhitung di angka "menunggu" & tak muncul di popup-nya — hilang
+// diam-diam, tanpa satu pun error. (Sisi "disetujui" tak kena: asetnya dibuat
+// dgn `cara_perolehan='pengadaan'` sama spt non-fisik, jadi `fn_dashboard_rekap`
+// sudah menghitungnya sejak awal.)
+type CaraConfig = { key: string; label: string; jenisTransaksi: string; kategoriJurnal: string[] }
 const CARA_LIST: CaraConfig[] = [
-  { key: 'pengadaan', label: 'Pengadaan', jenisTransaksi: 'pengadaan', kategoriJurnal: 'pengadaan' },
-  { key: 'hibah', label: 'Hibah', jenisTransaksi: 'hibah_masuk', kategoriJurnal: 'hibah_masuk' },
-  { key: 'tukarMenukar', label: 'Tukar Menukar', jenisTransaksi: 'tukar_menukar', kategoriJurnal: 'tukar_menukar' },
-  { key: 'inventarisasi', label: 'Hasil Inventarisasi', jenisTransaksi: 'hasil_inventarisasi', kategoriJurnal: 'hasil_inventarisasi' },
-  { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: 'perolehan_lainnya' },
+  { key: 'pengadaan', label: 'Pengadaan', jenisTransaksi: 'pengadaan', kategoriJurnal: ['pengadaan', 'konstruksi'] },
+  { key: 'hibah', label: 'Hibah', jenisTransaksi: 'hibah_masuk', kategoriJurnal: ['hibah_masuk'] },
+  { key: 'tukarMenukar', label: 'Tukar Menukar', jenisTransaksi: 'tukar_menukar', kategoriJurnal: ['tukar_menukar'] },
+  { key: 'inventarisasi', label: 'Hasil Inventarisasi', jenisTransaksi: 'hasil_inventarisasi', kategoriJurnal: ['hasil_inventarisasi'] },
+  { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: ['perolehan_lainnya'] },
 ]
 
 const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
@@ -27,7 +36,44 @@ const nf = (n: number) => n.toLocaleString('id-ID')
 const KODE_GOL = new Set(GOLONGAN_REKAP.map(g => g.kode))
 
 type DraftItemLite = { kode?: string; nama?: string; harga?: string }
-type PendingHeaderLite = { id: string; no_sk: string; tanggal: string; skpd_id: number; payload: { draft_items?: DraftItemLite[] } }
+type PayloadLite = { draft_items?: DraftItemLite[] } & Record<string, unknown>
+type PendingHeaderLite = { id: string; no_sk: string; tanggal: string; skpd_id: number; kategori: string; payload: PayloadLite }
+
+/** Satu barang yang menunggu persetujuan, sudah dinormalkan lintas kategori. */
+type ItemPending = { nama: string; kode: string; nilai: number }
+
+/**
+ * Barang menunggu persetujuan di SATU kartu — bentuk payloadnya BEDA antar
+ * kategori dan itu bukan kelalaian penamaan:
+ *   · Cara Perolehan biasa → `payload.draft_items[]`, tiap item punya `harga`;
+ *   · Konstruksi/KDP       → `payload.barang[]`, tiap barang dibayar BERTERMIN
+ *     sehingga nilainya = Σ `pembayaran[].nominal` (lihat lib/kdp.ts).
+ *
+ * Dinormalkan di satu tempat supaya ANGKA KARTU & ISI POPUP mustahil berbeda —
+ * dua penghitung terpisah untuk satu fakta adalah pola yang di repo ini sudah
+ * beberapa kali melahirkan "57 tampil 51" (lihat catatan `pindahAktif`).
+ *
+ * ⚠️ `barangKdpList` (bukan `payload.barang` telanjang) karena kontrak
+ * konstruksi versi lama menyimpan SATU KDP secara datar (`kode_kdp` +
+ * `pembayaran`) tanpa array `barang` — membacanya langsung akan melewatkan
+ * kontrak lama tanpa satu pun tanda.
+ */
+function itemsPending(kategori: string, payload: PayloadLite): ItemPending[] {
+  if (kategori === 'konstruksi') {
+    return barangKdpList(payload as KontrakKonstruksiPayload).map(b => ({
+      nama: b.nama || b.kode,
+      kode: b.kode,
+      nilai: (b.pembayaran || []).reduce((s, p) => s + Number(p.nominal || 0), 0),
+    }))
+  }
+  return (payload.draft_items || []).map(d => ({
+    nama: d.nama || d.kode || '',
+    kode: d.kode || '',
+    // Pembaca yang SAMA dgn versi sebelumnya — angka kartu tak boleh bergeser
+    // gara-gara perubahan yang niatnya cuma menyambungkan konstruksi.
+    nilai: parseFloat(d.harga || '0') || 0,
+  }))
+}
 
 export default function CaraPerolehanCards({ approved, approvedNilai }: {
   approved: Record<string, number>
@@ -48,13 +94,17 @@ export default function CaraPerolehanCards({ approved, approvedNilai }: {
   useEffect(() => {
     (async () => {
       const pasangan = await Promise.all(CARA_LIST.map(async c => {
-        if (!c.kategoriJurnal) return [c.key, 0] as const
+        if (c.kategoriJurnal.length === 0) return [c.key, 0] as const
         let total = 0
+        // `.in(...)` — satu cara perolehan bisa punya beberapa kategori kartu
+        // (Pengadaan = non-fisik + konstruksi), lihat catatan di CARA_LIST.
         for (let from = 0; ; from += 500) {
-          const { data } = await supabase.from('jurnal_header').select('payload')
-            .eq('kategori', c.kategoriJurnal).eq('approval_status', 'pending').range(from, from + 499)
+          const { data } = await supabase.from('jurnal_header').select('kategori,payload')
+            .in('kategori', c.kategoriJurnal).eq('approval_status', 'pending').range(from, from + 499)
           if (!data || data.length === 0) break
-          for (const r of data as { payload: { draft_items?: unknown[] } }[]) total += r.payload?.draft_items?.length || 0
+          for (const r of data as { kategori: string; payload: PayloadLite }[]) {
+            total += itemsPending(r.kategori, r.payload || {}).length
+          }
           if (data.length < 500) break
         }
         return [c.key, total] as const
@@ -287,7 +337,7 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
   const [bySkpd, setBySkpd] = useState<Record<string, PendingHeaderLite[]>>({})
 
   useEffect(() => {
-    if (!cara.kategoriJurnal) { setLoading(false); return }
+    if (cara.kategoriJurnal.length === 0) { setLoading(false); return }
     (async () => {
       const skpdMap: Record<number, string> = {}
       for (let from = 0; ; from += 1000) {
@@ -297,13 +347,13 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
         if (data.length < 1000) break
       }
       const { data: headers } = await supabase.from('jurnal_header')
-        .select('id,no_sk,tanggal,skpd_id,payload')
-        .eq('kategori', cara.kategoriJurnal).eq('approval_status', 'pending')
+        .select('id,no_sk,tanggal,skpd_id,kategori,payload')
+        .in('kategori', cara.kategoriJurnal).eq('approval_status', 'pending')
         .order('tanggal', { ascending: false })
       const grouped: Record<string, PendingHeaderLite[]> = {}
-      for (const h of (headers || []) as { id: string; no_sk: string; tanggal: string; skpd_id: number; payload: { draft_items?: DraftItemLite[] } }[]) {
+      for (const h of (headers || []) as PendingHeaderLite[]) {
         const nama = skpdMap[h.skpd_id] || `SKPD #${h.skpd_id}`
-        ;(grouped[nama] ||= []).push({ id: h.id, no_sk: h.no_sk, tanggal: h.tanggal, skpd_id: h.skpd_id, payload: h.payload || {} })
+        ;(grouped[nama] ||= []).push({ ...h, payload: h.payload || {} })
       }
       setBySkpd(grouped)
       setLoading(false)
@@ -314,7 +364,7 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
 
   return (
     <Modal title={`${cara.label} — Menunggu Persetujuan`} onClose={onClose}>
-      {!cara.kategoriJurnal ? (
+      {cara.kategoriJurnal.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">Cara perolehan ini belum pakai alur draft/approval — data langsung masuk saat diinput.</p>
       ) : loading ? (
         <p className="text-sm text-gray-400 text-center py-8">Memuat...</p>
@@ -327,13 +377,23 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
               <p className="text-sm font-semibold text-gray-800 mb-2">{nama}</p>
               <div className="space-y-2">
                 {bySkpd[nama].map(h => {
-                  const items = h.payload.draft_items || []
-                  const total = items.reduce((s, i) => s + (parseFloat(i.harga || '0') || 0), 0)
+                  const items = itemsPending(h.kategori, h.payload)
+                  const total = items.reduce((s, i) => s + i.nilai, 0)
                   return (
                     <div key={h.id} className="border border-gray-100 rounded-lg p-3">
-                      <p className="text-xs font-medium text-gray-700">Kontrak: {h.no_sk} · {h.tanggal} · {items.length} barang · {formatRp(total)}</p>
+                      <p className="text-xs font-medium text-gray-700">
+                        Kontrak: {h.no_sk} · {h.tanggal} · {items.length} barang · {formatRp(total)}
+                        {/* Penanda kontrak konstruksi — bentuk & alur entry-nya
+                            beda (bertermin), jadi operator perlu tahu kartu ini
+                            dibuka di menu Pekerjaan Fisik, bukan Entry Manual. */}
+                        {h.kategori === 'konstruksi' && (
+                          <span className="ml-1.5 text-[10px] font-normal text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">
+                            Konstruksi
+                          </span>
+                        )}
+                      </p>
                       <ul className="text-xs text-gray-500 mt-1 list-disc list-inside">
-                        {items.slice(0, 8).map((it, i) => <li key={i}>{it.nama || it.kode} <span className="text-gray-400">({it.kode})</span></li>)}
+                        {items.slice(0, 8).map((it, i) => <li key={i}>{it.nama} <span className="text-gray-400">({it.kode})</span></li>)}
                         {items.length > 8 && <li className="text-gray-400">...dan {items.length - 8} lainnya</li>}
                       </ul>
                     </div>
