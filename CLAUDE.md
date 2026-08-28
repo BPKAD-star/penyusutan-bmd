@@ -2411,6 +2411,52 @@ Bangunan lalu digabung ke induk. **Tak ada migrasi** — seluruhnya perilaku kod
   `approveKontrakKonstruksi`. Kini `angkaKolomAset`, dan yang tak terbaca sebagai
   angka DILEWATI (bukan jadi 0 — `0` itu koordinat yang sah).
 
+## Kapitalisasi: akumulasi anak IKUT PINDAH ke induk (2026-08-27)
+
+Keputusan user, sesudah menanyakan kasus "Gedung 2015 (induk) digabung Gedung
+2023 (anak) — akumulasi anaknya diapakan?". **Tak ada migrasi** — murni payload
+`jsonb` + satu cabang di engine.
+
+- **Sebabnya cacat nyata.** `case 'kapitalisasi'` di lib/engine/penyusutan.ts
+  dulu: `nilaiPerolehan += rehab; nilaiBuku += rehab`, akumulasi **tak disentuh**.
+  `rehab` = Σ nilai perolehan **BRUTO** anak. Untuk anak yang belum pernah
+  disusutkan (KDP hasil reklas) itu benar. Begitu anaknya aset yang sudah
+  berdiri sendiri & sudah tersusut, akumulasinya LENYAP bersama dia lewat
+  `kapitalisasi_serap` (`berhenti = true`) — akumulasi kelompok turun & nilai
+  buku melonjak persis sebesar akumulasi anak.
+  Contoh: induk NP 1.000jt/akum 220jt + anak NP 400jt/akum 28jt → sesudah
+  gabung NP 1.400jt ✓ tapi akum **220jt** (harusnya 248jt) & NB **1.180jt**
+  (harusnya 1.152jt).
+- ⚠️ **Kesalahannya SENYAP DUA KALI**, dan itu yang bikin ia bertahan lama:
+  (1) `NP − akum = NB` tetap konsisten secara aritmetika; (2) **Rekonsiliasi
+  tetap tie-out** — baris "Kapitalisasi (barang diserap induk)" membawa KELUAR
+  akumulasi anak, jadi rantainya menutup rapi ke angka yang sudah salah. Yang
+  keliru neracanya, bukan rekonsiliasinya. Jangan pernah menyimpulkan "Selisih
+  nol berarti benar" untuk kelas kesalahan ini.
+- **Obatnya `payload.akumulasi_diserap`** (Σ akumulasi anak) → engine
+  `akumulasi += akumSerap; nilaiBuku −= akumSerap`.
+  ⚠️ Sengaja **DELTA**, bukan absolut `akumulasi_baru` seperti
+  `penggabungan_masuk`: `rehab` juga delta, dan snapshot di payload dihitung UI
+  pada posisi AKHIR periode sementara engine berada di posisi AWAL periode saat
+  memproses event itu — angka absolut dari payload akan bertabrakan dgn state
+  replay. (Terbukti di data hidup: payload `nb_lama` 185.033.608,8 vs state
+  engine 187.185.162,8 untuk kapitalisasi yang sama.)
+- **Kompatibel mundur penuh:** baris kapitalisasi LAMA tak punya kunci itu →
+  cabangnya dilewati → perilaku persis seperti dulu. Anak ber-akumulasi 0 (KDP)
+  → hasil identik. Dikunci lib/engine/penyusutan.test.ts.
+- **Akumulasi anak dibaca pada periode SEBELUM tanggal dokumen** (pola
+  Penggabungan Barang) lalu DIBEKUKAN ke payload — engine mereplay SATU aset per
+  panggilan, jadi saat memproses induk ia tak punya akses ke jadwal anaknya.
+- ⚠️ Anak **tanpa** baris `penyusutan_semester` dihitung 0 dan **TIDAK
+  diblokir** — sengaja beda dari Penggabungan Barang yang menolak menyimpan.
+  Alasannya: kalau barisnya tak ada, aset itu memang tak menyumbang akumulasi ke
+  laporan mana pun, jadi menyerap 0 justru yang menjaga totalnya kekal — dan
+  kasus nyatanya KDP hasil reklas (golongan 1.3.6 tak pernah disusutkan), yang
+  akan mati total kalau diblokir. Yang dilakukan: strip amber menyebut barangnya
+  + akumulasi per anak ditampilkan di pratinjau, supaya operator bisa
+  membedakan "memang nol" dari "engine belum dijalankan".
+- **Engine WAJIB di-run ulang** untuk periode kapitalisasi sesudah menyimpan.
+
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
 Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user

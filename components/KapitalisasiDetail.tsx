@@ -12,8 +12,17 @@ export type KapSnapshot = {
   rehab: number; persen: number; tambahan_tahun: number
   masa_baru_tahun: number; sisa_baru_smt: number
   np_baru: number; nb_baru: number; beban_baru: number; akum_baru: number
+  /** Σ akumulasi penyusutan anak yang IKUT PINDAH ke induk (2026-08-27).
+   *  Opsional: baris kapitalisasi lama tak punya kunci ini — di sana
+   *  `akum_baru` memang sama dengan `akum_lama`. */
+  akum_diserap?: number
 }
-export type KapAnak = { id: string; nibar: string | null; nama: string | null; nilai: number; tgl?: string | null }
+export type KapAnak = {
+  id: string; nibar: string | null; nama: string | null; nilai: number; tgl?: string | null
+  /** Akumulasi penyusutan anak pada periode sebelum dokumen — ikut pindah ke
+   *  induk. Opsional: baris lama tak menyimpannya. */
+  akum?: number
+}
 export type KapItem = { no_dokumen: string; tanggal: string; keterangan?: string | null; snapshot: KapSnapshot | null; anak: KapAnak[] }
 
 function Row({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
@@ -54,13 +63,27 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Penambahan (Anak)</p>
             <ul className="mb-2 space-y-1">
               {item.anak.map(a => (
-                <li key={a.id} className="text-xs text-gray-700 flex justify-between gap-3 min-w-0">
-                  <span className="min-w-0 break-words">{a.nama || '-'}{a.tgl ? <span className="text-gray-400"> · {a.tgl}</span> : null}</span>
-                  <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah(a.nilai)}</span>
+                <li key={a.id} className="text-xs text-gray-700 min-w-0">
+                  <div className="flex justify-between gap-3 min-w-0">
+                    <span className="min-w-0 break-words">{a.nama || '-'}{a.tgl ? <span className="text-gray-400"> · {a.tgl}</span> : null}</span>
+                    <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah(a.nilai)}</span>
+                  </div>
+                  {/* Akumulasi anak ditampilkan PER BARANG, bukan cuma totalnya:
+                      inilah angka yang berpindah ke induk, dan operator perlu
+                      bisa mencocokkannya satu per satu sebelum menyimpan. */}
+                  {a.akum != null && (
+                    <div className="flex justify-between gap-3 min-w-0 text-gray-400">
+                      <span>akumulasi ikut pindah</span>
+                      <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah(a.akum)}</span>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
             <Row label="Total nilai anak (rehab)" value={formatRupiah(s.rehab)} strong />
+            {s.akum_diserap != null && (
+              <Row label="Akumulasi anak yang diserap" value={formatRupiah(s.akum_diserap)} strong />
+            )}
             <Row label="Persentase thd nilai induk" value={`${s.persen.toFixed(2)}%`} />
             <Row label="Tambahan masa manfaat" value={`+${s.tambahan_tahun} th`} />
           </div>
