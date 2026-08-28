@@ -96,8 +96,24 @@ describe('golden — kasus yang pernah menggigit', () => {
   it('kapitalisasi yang DIBATALKAN tidak ikut, yang sah tetap ikut', async () => {
     const lines = await muatLines()
 
-    expect(nilai(lines, '1.3.2', 'intra', 'kapitalisasi')).toBe(20_000_000) // A07 saja
+    // A07 (20jt) + A20 (18jt). A08 dianulir → tak boleh ikut sama sekali.
+    expect(nilai(lines, '1.3.2', 'intra', 'kapitalisasi')).toBe(38_000_000)
     expect(lines.some(l => l.aset_id === 'A08')).toBe(false)
+  })
+
+  it('kapitalisasi SEIMBANG: yang diserap muncul sbg Pengurangan sebesar yang masuk ke induk', async () => {
+    // ⚠️ INVARIAN, bukan sekadar angka. Kapitalisasi itu peristiwa DIAM secara
+    // nilai total — nilainya berpindah dari anak ke induk, kekayaan pemda tak
+    // bertambah. Sampai 2026-08-27 `kapitalisasi_serap` tak dipetakan sama
+    // sekali: induk naik tanpa ada yang turun, dan selisihnya jatuh ke baris
+    // "Selisih (belum terpetakan)" sebesar DUA KALI nilai rehab.
+    const lines = await muatLines()
+
+    expect(nilai(lines, '1.3.2', 'intra', 'kapitalisasi_keluar')).toBe(18_000_000)
+    // Barisnya menempel pada ANAK (A21) & berarah KURANG.
+    const serap = lines.filter(l => l.kategori === 'kapitalisasi_keluar')
+    expect(serap.map(l => l.aset_id)).toEqual(['A21'])
+    expect(serap[0].arah).toBe('kurang')
   })
 
   it('ekstrakomptabel mendarat di kolom EKSTRA, bukan intra', async () => {

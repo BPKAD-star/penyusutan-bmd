@@ -84,6 +84,16 @@ export const ASET: AsetRow[] = [
   // YANG SAMA. `kode` di sini sengaja sudah GB: itulah posisi TERAKHIRnya, dan
   // justru kolom itu yang dulu keliru dipakai untuk membukukan terminnya.
   aset('A19', GB, SKPD_A, 30_000_000, 'intra', '2026-03-01'),
+  // A20 / A21 — kapitalisasi DUA SISI: induk menyerap nilai anak.
+  // ⚠️ Ditambahkan 2026-08-27 sesudah bug lolos dari dataset ini. A07 sudah
+  // menguji sisi INDUK (baris `kapitalisasi`), tapi tak ada satu pun aset yang
+  // BENAR-BENAR DISERAP — jadi `kapitalisasi_serap` tak pernah muncul di
+  // fixture & tie-out tetap hijau walau kategorinya tak dipetakan sama sekali.
+  // Di produksi akibatnya: nilai rehab tercatat sbg Penambahan pada induk,
+  // barang yang diserap lenyap dari Saldo Akhir tanpa baris Pengurangan, dan
+  // selisihnya jatuh ke "Selisih (belum terpetakan)" sebesar DUA KALI rehab.
+  aset('A20', PM, SKPD_A, 68_000_000),                            // induk sesudah menyerap (50jt + 18jt)
+  aset('A21', PM, SKPD_A, 18_000_000, 'intra', '2024-01-01', 'dihapus'), // anak yang DISERAP
 ]
 
 export const JURNAL: { id: string; no_sk: string }[] = [
@@ -162,6 +172,17 @@ export const TRANSAKSI: Trx[] = [
   // pengurangan reklas tanpa pernah menerima penambahannya & tak akan tie-out.
   t(200, 'akumulasi_kdp', 'A19', 30_000_000, { payload: { kode_rekening: '5.2.03.01' } }),
   t(201, 'reklas_golongan', 'A19', 30_000_000, { payload: { kode_lama: KDP, kode_baru: GB } }),
+
+  // A20 ← A21 — kapitalisasi dua sisi. Nilai yang SAMA muncul dua kali &
+  // saling meniadakan: induk naik 18jt (Penambahan), anak lenyap 18jt
+  // (Pengurangan). Kekayaan pemda tak bergerak — memang begitu wujudnya.
+  // ⚠️ Baris ANAK sengaja TANPA `target_trx_id`: begitulah bentuk aslinya di
+  // produksi (Kapitalisasi.tsx cuma menulis {induk_id, no_dokumen} di sisi
+  // anak), dan justru itu sebabnya pembatalannya tak bisa dinilai lewat
+  // `fetchBatalTargets` melainkan lewat replay "baris terakhir menang"
+  // (`fetchNetSerap`).
+  t(210, 'kapitalisasi', 'A20', 18_000_000, { header_id: 'H2' }),
+  t(211, 'kapitalisasi_serap', 'A21', 18_000_000, { header_id: 'H2', payload: { induk_id: 'A20' } }),
 ]
 
 // Hasil engine. Disederhanakan tapi KONSISTEN: nilai_buku = perolehan −
@@ -221,6 +242,16 @@ export const PENYUSUTAN: Peny[] = [
   // periode ini, jadi "akumulasi bawaan" (akum − beban) = 0 dan invarian
   // "atribusi tak pernah negatif" benar-benar diuji di batasnya.
   peny('A19', PERIODE, 30_000_000, 1_000_000, 1_000_000),
+  // A20 induk kapitalisasi: perolehan periode ini naik 18jt (50jt → 68jt),
+  // pola yang sama dgn A07 & dgn koreksi nilai di atas — hasil engine WAJIB
+  // ikut berubah, kalau tidak tie-out meleset karena fixture-nya sendiri yang
+  // tak konsisten.
+  peny('A20', PERIODE_LALU, 50_000_000, 5_000_000, 10_000_000),
+  peny('A20', PERIODE, 68_000_000, 6_800_000, 16_800_000),
+  // A21 anak yang DISERAP: utuh di periode LALU (jadi ia ada di Saldo Awal),
+  // TAK punya baris periode ini — `kapitalisasi_serap` event SEMBUNYI, jadi ia
+  // memang lenyap dari Saldo Akhir. Persis pola A12 (induk pemecahan).
+  peny('A21', PERIODE_LALU, 18_000_000, 1_800_000, 3_600_000),
 ]
 
 export const EMBED: Embed = {

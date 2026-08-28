@@ -377,7 +377,7 @@ export const BARIS_TRX: BarisTrx[] = [
     // barang yang sebenarnya cuma dipecah/digabung nomor registernya.
     no: '6', huruf: '', uraian: 'Koreksi', judul: false,
     keys: ['kapitalisasi', 'koreksi_tambah', 'pemecahan_masuk', 'penggabungan_masuk',
-      'koreksi_kurang', 'pemecahan_keluar', 'penggabungan_keluar'],
+      'koreksi_kurang', 'pemecahan_keluar', 'penggabungan_keluar', 'kapitalisasi_keluar'],
   },
   { no: '7', huruf: '', uraian: 'Penghapusan', keys: [], judul: true },
   {

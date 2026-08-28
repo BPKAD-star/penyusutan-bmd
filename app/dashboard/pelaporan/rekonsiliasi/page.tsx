@@ -101,6 +101,13 @@ const ROWS_KURANG: RowDef[] = [
   { kind: 'item', label: 'Penghapusan Pengalihan (transfer keluar)', key: 'pengalihan_keluar', indent: 1 },
   { kind: 'item', label: 'Pengeluaran Internal (transfer keluar)', key: 'internal_keluar', indent: 1 },
   { kind: 'item', label: 'Koreksi Kurang', key: 'koreksi_kurang', indent: 1 },
+  // Barang yang DISERAP induk saat kapitalisasi. Total nilainya SAMA dengan
+  // baris Kapitalisasi di blok Penambahan kalau induk & anak sekolom
+  // komptabel — memang saling meniadakan: nilai berpindah dari anak ke induk,
+  // kekayaan pemda tak bertambah. Sebelum 2026-08-27 baris ini tak ada sama
+  // sekali, jadi selisihnya jatuh ke "Selisih (belum terpetakan)" sebesar DUA
+  // KALI nilai rehab (induk naik + anak hilang).
+  { kind: 'item', label: 'Kapitalisasi (barang diserap induk)', key: 'kapitalisasi_keluar', indent: 1 },
   { kind: 'item', label: 'Pemecahan Barang (induk dipecah)', key: 'pemecahan_keluar', indent: 1 },
   // Barang sumber yang dilebur ke induk. Total nilainya SAMA dengan baris
   // Penggabungan di blok Penambahan kalau induk & sumber sekolom komptabel —
@@ -554,11 +561,20 @@ export default function RekonsiliasiPage() {
           </div>
           {GOLONGAN_REKAP.map(g => (
             <div key={g.kode} className="card overflow-hidden">
-              <div className="judul-gol px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
+              <div className="judul-gol px-4 py-1.5 border-b border-gray-100 bg-gray-50/60">
                 <p className="text-sm font-semibold text-gray-800">{g.kode} — {g.uraian}</p>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                {/* ⚠️ Dipadatkan lewat varian ber-SCOPE (`[&_.table-td]:…`),
+                    sengaja BUKAN dgn mengubah `.table-td`/`.table-th` di
+                    globals.css — dua kelas itu dipakai hampir seluruh tabel
+                    aplikasi, jadi menyunting yang di sana akan mengecilkan
+                    Daftar Barang, Penyusutan, & belasan menu lain sekaligus.
+                    Bawaan `py-3` (12px) × ~46 baris membuat satu jenis aset
+                    mustahil muat sepandangan; `py-0.5` memangkasnya ±500px
+                    sehingga blok Penambahan & Pengurangan terlihat bersamaan
+                    (permintaan user 2026-08-27). */}
+                <table className="w-full text-[11px] [&_.table-td]:px-2 [&_.table-td]:py-0.5 [&_.table-th]:px-2 [&_.table-th]:py-1 [&_.table-th]:normal-case [&_.table-th]:tracking-normal">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="table-th text-left" rowSpan={2}>Uraian</th>
@@ -588,7 +604,13 @@ export default function RekonsiliasiPage() {
                         : row.kind === 'selisih' ? 'text-gray-500 italic' : ''
                       return (
                         <tr key={ri} className={cls}>
-                          <td className="table-td text-xs" style={{ paddingLeft: `${0.75 + (row.indent || 0) * 1}rem` }}>{row.label}</td>
+                          {/* `text-xs` DICABUT dari sel — ia menimpa ukuran
+                              tabel (`text-[11px]`) & membuat pemadatannya
+                              tak berefek. Indentasi ikut dirapatkan (1rem →
+                              0.65rem per tingkat): hierarki tetap terbaca,
+                              tapi kolom Uraian tak lagi memakan lebar yang
+                              dibutuhkan delapan kolom angka. */}
+                          <td className="table-td whitespace-nowrap" style={{ paddingLeft: `${0.5 + (row.indent || 0) * 0.65}rem` }}>{row.label}</td>
                           {KOMPS.map(k => {
                             const v = nilaiBaris(row, mutasiCellOf(mutasi, g.kode, k),
                               measuresOf(snapAwal, g.kode, k), measuresOf(snapAkhir, g.kode, k), bebanAwalOf(g.kode, k))
@@ -608,7 +630,7 @@ export default function RekonsiliasiPage() {
                             const warna = row.grup === 'tambah' ? 'text-emerald-700'
                               : row.grup === 'kurang' ? 'text-red-600' : ''
                             const td = (id: string, v: number | null, border = false, onClick?: () => void) => (
-                              <td key={id} className={`table-td text-right text-xs tabular-nums ${border ? 'border-l border-gray-100' : ''}`}>
+                              <td key={id} className={`table-td text-right tabular-nums whitespace-nowrap ${border ? 'border-l border-gray-100' : ''}`}>
                                 {v == null ? <span className="text-gray-300">{isHead || row.kind === 'sub' ? '' : '–'}</span>
                                   : v === 0 ? <span className="text-gray-300">–</span>
                                   : onClick ? (
