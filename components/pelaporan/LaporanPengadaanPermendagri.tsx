@@ -1,5 +1,5 @@
 'use client'
-// Tab "Model 3" di Laporan Pengadaan — format Permendagri 47/2021 (Format IV.A).
+// Tab "Format Permendagri" di Laporan Pengadaan — Permendagri 47/2021 Format IV.A.
 // Toolbar (Export Excel flat + Cetak/PDF ke halaman cetak khusus) + tabel plek-
 // ketiplek (LaporanPengadaanTabel). Filter periode & SKPD diteruskan dari
 // LaporanPerolehan (komponen induk).
@@ -10,7 +10,7 @@ import { fetchLaporanPengadaan, groupByGolongan, grandTotal } from '@/lib/lapora
 import LaporanPengadaanTabel from './LaporanPengadaanTabel'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
-export default function LaporanPengadaanModel3({ periode, skpdId, descIds }: {
+export default function LaporanPengadaanPermendagri({ periode, skpdId, descIds }: {
   periode: string; skpdId: number | null; descIds: number[] | null
 }) {
   const supabase = createClient()

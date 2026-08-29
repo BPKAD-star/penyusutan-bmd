@@ -1,4 +1,5 @@
 'use client'
+import { namaBerkasCetak } from '@/lib/cetakLembar'
 // ============================================================================
 // Cetak "Surat Pernyataan" — pengakuan pencatatan BMD hasil Pengadaan APBD.
 // Standalone (tanpa sidebar, TANPA kop surat — permintaan user 2026-08-26).
@@ -180,7 +181,7 @@ export default function CetakSuratPernyataanPengadaanPage() {
 
   useEffect(() => {
     if (!header) return
-    document.title = `Surat Pernyataan Pengadaan_${header.no_sk.replace(/[\\/:*?"<>|]/g, '-')}`
+    document.title = namaBerkasCetak('Surat Pernyataan Pengadaan', header.no_sk)
   }, [header])
 
   const tgl = header ? pecahTanggal(tanggalJakarta(header.created_at)) : null

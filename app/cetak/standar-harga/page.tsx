@@ -1,4 +1,6 @@
 'use client'
+import { ingatanCetak, KUNCI_TTD_STANDAR_SEKAB } from '@/lib/ingatanCetak'
+import { namaBerkasCetak } from '@/lib/cetakLembar'
 // Cetak Standar Harga — LAMPIRAN draft SK penetapan, satu berkas per jenis.
 // Standalone, F4 landscape (sama dgn lembar RKBMD se-Kabupaten).
 //
@@ -33,7 +35,6 @@ const KABUPATEN = 'Kediri'
 /** Pilihan penanda tangan disimpan supaya cetak ulang menghasilkan lembar yang
  *  SAMA — pola & alasannya sama dgn `bmd_rkbmd_ttd_sekab` (app/cetak/rkbmd).
  *  Preferensi tampilan, bukan gerbang wewenang. */
-const KEY_TTD = 'bmd_standar_ttd_sekab'
 
 /** Yang meneken SK standar harga. Dua pilihan saja & sengaja DIPAKU teksnya,
  *  bukan diambil dari kolom `jabatan` pegawainya: kolom itu memuat jabatan
@@ -51,14 +52,8 @@ type TtdTersimpan = { id?: string; jabatan?: JabatanTtd }
 /** Isi localStorage itu data dari luar program (versi lama, suntingan manual,
  *  tab lain). Gagal mengurainya cukup berarti "belum pernah memilih" — jangan
  *  sampai menjatuhkan halaman cetak. */
-function bacaTtdTersimpan(): TtdTersimpan | null {
-  try {
-    const s = localStorage.getItem(KEY_TTD)
-    return s ? (JSON.parse(s) as TtdTersimpan) : null
-  } catch {
-    return null
-  }
-}
+const ingatan = ingatanCetak<TtdTersimpan>(KUNCI_TTD_STANDAR_SEKAB)
+const bacaTtdTersimpan = (): TtdTersimpan | null => ingatan.baca()
 
 /** Satu bentuk baris untuk kelima jenis. `rkbmd_standar` & `rkbmd_sbsk` dua
  *  tabel berbeda (yang satu berharga, yang lain berkuantitas), tapi lembarnya
@@ -244,7 +239,7 @@ export default function CetakStandarHargaPage() {
   useEffect(() => {
     if (loading || err || !jenis) return
     const label = USULAN_JENIS.find(j => j.key === jenis)?.label || jenis
-    document.title = `Standar Harga_${label}_Kab ${KABUPATEN}_${tahun}`
+    document.title = namaBerkasCetak('Standar Harga', label, `Kab ${KABUPATEN}`, tahun)
   }, [loading, err, jenis, tahun])
 
   const kolom = useMemo(() => jenis ? kolomUntuk(jenis, uraian) : [], [jenis, uraian])
@@ -256,7 +251,10 @@ export default function CetakStandarHargaPage() {
   // pilihan itu hilang tiap kali halaman dibuka lagi.
   function simpanTtd(next: { id?: string; jabatan?: JabatanTtd }) {
     const v: TtdTersimpan = { id: next.id ?? ttdId, jabatan: next.jabatan ?? jabatan }
-    localStorage.setItem(KEY_TTD, JSON.stringify(v))
+    // ⚠️ Dulu `localStorage.setItem` telanjang — melempar di mode privat &
+    // saat kuota penuh, dari dalam handler pemilih, jadi memilih penanda
+    // tangan bisa menjatuhkan halaman cetaknya.
+    ingatan.simpan(v)
   }
 
   return (

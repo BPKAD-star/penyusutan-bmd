@@ -1,4 +1,5 @@
 'use client'
+import { ingatanCetak } from '@/lib/ingatanCetak'
 // ============================================================================
 // Pop-up penyusun "Berita Acara Rekonsiliasi" (Format V.2 Permendagri 47/2021).
 //
@@ -39,14 +40,11 @@ const kunciSimpanan = (skpdId: number | null, varian: VarianBA) =>
 /** Isi localStorage itu data dari luar program (versi lama, suntingan manual,
  *  tab lain). Gagal mengurainya cukup berarti "belum pernah diisi" — jangan
  *  sampai menjatuhkan pop-upnya. */
-function bacaSimpanan(skpdId: number | null, varian: VarianBA): Partial<KonfigBA> | null {
-  try {
-    const v = localStorage.getItem(kunciSimpanan(skpdId, varian))
-    return v ? (JSON.parse(v) as Partial<KonfigBA>) : null
-  } catch {
-    return null
-  }
-}
+const ingatanBA = (skpdId: number | null, varian: VarianBA) =>
+  ingatanCetak<Partial<KonfigBA>>(kunciSimpanan(skpdId, varian))
+
+const bacaSimpanan = (skpdId: number | null, varian: VarianBA): Partial<KonfigBA> | null =>
+  ingatanBA(skpdId, varian).baca()
 
 function konfigAwal(varian: VarianBA, namaSkpd: string): KonfigBA {
   const v = varianInfo(varian)
@@ -166,9 +164,9 @@ export default function BeritaAcaraRekonModal({
 
   function cetak() {
     if (!bolehCetak) return
-    try {
-      localStorage.setItem(kunciSimpanan(skpdId, konfig.varian), JSON.stringify(konfig))
-    } catch { /* kuota penuh / mode privat — lembarnya tetap boleh dicetak */ }
+    // `simpan` sendiri sudah fail-safe (lib/ingatanCetak.ts) — try/catch di
+    // sini jadi mubazir & menyesatkan, seolah masih ada yang bisa melempar.
+    ingatanBA(skpdId, konfig.varian).simpan(konfig)
     onCetak(konfig)
   }
 

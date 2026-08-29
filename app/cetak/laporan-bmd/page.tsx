@@ -1,4 +1,6 @@
 'use client'
+import { ingatanCetak, kunciTtdLaporanBmd } from '@/lib/ingatanCetak'
+import { namaBerkasCetak } from '@/lib/cetakLembar'
 // ============================================================================
 // Cetak LAPORAN BMD — Permendagri 47/2021 Format IV.L.4.2 (per SKPD).
 // Standalone (tanpa sidebar), A4 PORTRAIT — lembarnya cuma 4 kolom, jadi tak
@@ -80,14 +82,8 @@ const todayStr = () => {
  *  lampiran melayani semua tingkatan; yang dicetak harus yang berlaku saja. */
 const sebutanPengguna = (level: number) => (level <= 1 ? 'Pengguna Barang' : 'Kuasa Pengguna Barang')
 
-const keyTtd = (skpdId: number) => `bmd_laporanbmd_ttd_skpd_${skpdId}`
 type TtdTersimpan = { id?: string; tgl?: string }
-function bacaTtd(skpdId: number): TtdTersimpan | null {
-  try {
-    const v = localStorage.getItem(keyTtd(skpdId))
-    return v ? (JSON.parse(v) as TtdTersimpan) : null
-  } catch { return null }
-}
+const ingatan = (skpdId: number) => ingatanCetak<TtdTersimpan>(kunciTtdLaporanBmd(skpdId))
 
 export default function CetakLaporanBmdPage() {
   const supabase = createClient()
@@ -138,7 +134,7 @@ export default function CetakLaporanBmdPage() {
         let daftar: CalonTtd[] = []
         try { daftar = await fetchCalonTtd(supabase, sk, byId) } catch { daftar = [] }
         setCalon(daftar)
-        const simpan = bacaTtd(sk)
+        const simpan = ingatan(sk).baca()
         setTtdId(q.get('ttd') || simpan?.id || calonTtdAwal(daftar)?.id || '')
         setTglTtd(q.get('tgl') || simpan?.tgl || todayStr())
 
@@ -163,13 +159,12 @@ export default function CetakLaporanBmdPage() {
   function simpanTtd(next: Partial<TtdTersimpan>) {
     if (!skpd) return
     const v: TtdTersimpan = { id: ttdId, tgl: tglTtd, ...next }
-    try { localStorage.setItem(keyTtd(skpd.id), JSON.stringify(v)) } catch { /* mode privat — abaikan */ }
+    ingatan(skpd.id).simpan(v)
   }
 
   useEffect(() => {
     if (!skpd) return
-    const bersih = (t: string) => t.replace(/[\\/:*?"<>|]/g, '-').trim()
-    document.title = `Laporan BMD_${bersih(skpd.nama)}_${periode}`
+    document.title = namaBerkasCetak('Laporan BMD', skpd.nama, periode)
   }, [skpd, periode])
 
   return (

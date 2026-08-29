@@ -227,11 +227,12 @@ export const labelSemester = (periode: string) =>
  * dialog simpan akan menolaknya.
  */
 export function namaBerkasBA(namaSkpd: string, periode: string): string {
-  const bersih = (namaSkpd || '').replace(/[\\/:*?"<>|]/g, '-').trim()
-  return `Berita Acara Rekonsiliasi_${bersih || 'Kab Kediri'}_${periode}`
+  return namaBerkasCetak(
+    'Berita Acara Rekonsiliasi', namaBerkasCetak(namaSkpd) || 'Kab Kediri', periode)
 }
 
 // ── Lampiran 1 & 2: Saldo Awal / Saldo Akhir ────────────────────────────────
+import { namaBerkasCetak } from './cetakLembar'
 /**
  * Satu baris tabel saldo.
  *

@@ -34,6 +34,7 @@ import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import BeritaAcaraRekon from '@/components/pelaporan/BeritaAcaraRekon'
 import BeritaAcaraRekonModal from '@/components/pelaporan/BeritaAcaraRekonModal'
 import { namaBerkasBA, type KonfigBA } from '@/lib/beritaAcaraRekon'
+import { cssCetakLembar } from '@/lib/cetakLembar'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
   fetchRekonRekap, fetchPosAset, fetchMutasiLines, attribusiLines,
@@ -417,21 +418,21 @@ export default function RekonsiliasiPage() {
           Trik visibility saja tak cukup di sini: elemen yang tak terlihat tetap
           MENGISI tata letak, jadi #cetak-rekon yang tingginya ~8 halaman akan
           menghasilkan berkas BA berisi 8 lembar kosong di belakangnya. */}
+      {/* Mekanik isolasinya dipegang `cssCetakLembar` (satu sumber sejak
+          2026-08-29) — termasuk `sembunyikan`, yang menegakkan aturan
+          "saudaranya WAJIB display:none" di atas. Kalau salah satu lembar lupa
+          menyembunyikan yang lain, `cssCetakLembar` tak bisa menolongnya —
+          tapi kalau ia keliru menyembunyikan DIRINYA SENDIRI, fungsinya
+          melempar (dikunci lib/cetakLembar.test.ts). */}
       {modeCetak === 'ba' ? (
-        <style>{`
-          @media print {
-            @page { size: A4 portrait; margin: 1.4cm 1.5cm; }
-            body { background: #fff; }
-            body * { visibility: hidden; }
-            #cetak-rekon { display: none !important; }
-            #cetak-ba { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
-            #cetak-ba, #cetak-ba * { visibility: visible; }
+        <style>{cssCetakLembar({
+          id: 'cetak-ba', kertas: 'A4 potret', margin: '1.4cm 1.5cm',
+          sembunyikan: ['cetak-rekon'],
+          tambahan: `
             /* Satu lembar = satu halaman; lembar terakhir tak menyisakan
                halaman kosong (pola yang sama dgn kartu tabel di bawah). */
             #cetak-ba .lembar { break-after: page; break-inside: auto; }
             #cetak-ba .lembar:last-child { break-after: auto; }
-            #cetak-ba tr { break-inside: avoid; }
-            #cetak-ba thead { display: table-header-group; }
             /* ⚠️ Padatkan HANYA tabel lampiran (.tabel-ba), bukan semua <table>:
                blok isian Nama/NIP/Pangkat/Jabatan di lembar depan juga <table>
                dan tak boleh ikut mengecil. Tanpa pemadatan ini lembar transaksi
@@ -440,38 +441,29 @@ export default function RekonsiliasiPage() {
             #cetak-ba .tabel-ba { font-size: 8.5px; }
             #cetak-ba .tabel-ba th, #cetak-ba .tabel-ba td {
               padding: 1px 3px !important; line-height: 1.15;
-            }
-            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-        `}</style>
+            }`,
+        })}</style>
       ) : (
-      <style>{`
-        @media print {
-          @page { size: A4 landscape; margin: 0.7cm; }
-          body { background: #fff; }
-          body * { visibility: hidden; }
-          #cetak-ba { display: none !important; }
-          #cetak-rekon, #cetak-rekon * { visibility: visible; }
-          #cetak-rekon { position: absolute; left: 0; top: 0; width: 100%; }
-          #cetak-rekon .no-print { display: none !important; }
-          #cetak-rekon .space-y-3 > * { margin-top: 0 !important; }
-          #cetak-rekon .card {
-            break-inside: avoid; break-after: page;
-            box-shadow: none; border: 0; border-radius: 0; margin: 0;
-          }
-          #cetak-rekon .card:last-child { break-after: auto; }
-          #cetak-rekon .judul-gol { padding: 0 0 2px 0 !important; background: none !important; border: 0 !important; }
-          #cetak-rekon .judul-gol p { font-size: 10px !important; }
-          #cetak-rekon table { font-size: 6.5px; table-layout: fixed; width: 100%; border-collapse: collapse; }
-          #cetak-rekon th, #cetak-rekon td { padding: 0.5px 2px !important; line-height: 1.2; }
-          #cetak-rekon th:first-child, #cetak-rekon td:first-child {
-            width: 20%; overflow-wrap: anywhere;
-          }
-          #cetak-rekon td:not(:first-child), #cetak-rekon th:not(:first-child) { white-space: nowrap; }
-          #cetak-rekon .overflow-x-auto { overflow: visible !important; }
-          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-      `}</style>
+        <style>{cssCetakLembar({
+          id: 'cetak-rekon', kertas: 'A4 lanskap', margin: '0.7cm',
+          sembunyikan: ['cetak-ba'],
+          tambahan: `
+            #cetak-rekon .space-y-3 > * { margin-top: 0 !important; }
+            #cetak-rekon .card {
+              break-inside: avoid; break-after: page;
+              box-shadow: none; border: 0; border-radius: 0; margin: 0;
+            }
+            #cetak-rekon .card:last-child { break-after: auto; }
+            #cetak-rekon .judul-gol { padding: 0 0 2px 0 !important; background: none !important; border: 0 !important; }
+            #cetak-rekon .judul-gol p { font-size: 10px !important; }
+            #cetak-rekon table { font-size: 6.5px; table-layout: fixed; width: 100%; border-collapse: collapse; }
+            #cetak-rekon th, #cetak-rekon td { padding: 0.5px 2px !important; line-height: 1.2; }
+            #cetak-rekon th:first-child, #cetak-rekon td:first-child {
+              width: 20%; overflow-wrap: anywhere;
+            }
+            #cetak-rekon td:not(:first-child), #cetak-rekon th:not(:first-child) { white-space: nowrap; }
+            #cetak-rekon .overflow-x-auto { overflow: visible !important; }`,
+        })}</style>
       )}
 
       <div className="mb-6">
