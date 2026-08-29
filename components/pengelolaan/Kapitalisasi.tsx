@@ -20,9 +20,13 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
-import { cekBolehBatal } from '@/lib/guardPembatalan'
+import { cekBolehBatal, cekBolehSisip } from '@/lib/guardPembatalan'
 
-type Barang = { id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai_perolehan: number; skpd_id: number | null; tgl_perolehan: string | null }
+// `intra_ekstra` IKUT dibaca (2026-08-27) — dipakai `anakInvalid` menegakkan
+// syarat "anak & induk harus sekomptabel"; lihat alasannya di sana.
+type Barang = { id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai_perolehan: number; skpd_id: number | null; tgl_perolehan: string | null; intra_ekstra: string | null }
+const BARANG_COLS = 'id,nibar,kode,nama_barang,nilai_perolehan,skpd_id,tgl_perolehan,intra_ekstra'
+const kompLabel = (v: string | null) => (v === 'ekstra' ? 'Ekstrakomptabel' : 'Intrakomptabel')
 type IndukFig = { npLama: number; nbLama: number; akumLama: number; bebanLama: number; sisaLamaSmt: number; masaMaks: number | null }
 type Jurnal = {
   id: number; aset_id: string; no_dokumen: string; tanggal: string; keterangan: string | null; nilai: number
@@ -382,7 +386,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
       setKet(ubah.keterangan || '')
       const ids = [ubah.aset_id, ...ubah.anak.map(a => a.id)]
       const { data } = await supabase.from('aset')
-        .select('id,nibar,kode,nama_barang,nilai_perolehan,skpd_id,tgl_perolehan').in('id', ids)
+        .select(BARANG_COLS).in('id', ids)
       const rows = (data || []) as Barang[]
       setInduk(rows.find(r => r.id === ubah.aset_id) ?? null)
       setAnak(ubah.anak.map(a => rows.find(r => r.id === a.id)).filter((b): b is Barang => !!b))
@@ -477,6 +481,23 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
   const anakInvalid = (b: Barang): string | null => {
     if (induk && kodeLevel3(b.kode) !== indukLevel3) return 'beda jenis aset'
     if (induk?.tgl_perolehan && b.tgl_perolehan && b.tgl_perolehan < induk.tgl_perolehan) return 'lebih tua dari induk'
+    // ⚠️ KOMPTABEL WAJIB SAMA (dipasang 2026-08-27). Aturannya sudah lama
+    // dinyatakan aplikasi ini sendiri — teks di menu Reklasifikasi berbunyi
+    // "Ekstra → Intra Komptabel … dibutuhkan SEBELUM kapitalisasi (mensyaratkan
+    // komptabel sama)" — tapi tak pernah ditegakkan di sini.
+    // Menyerap anak ekstra ke induk intra memindahkan nilai antar kolom
+    // komptabel TANPA satu pun baris `reklas_komptabel`. Rekonsiliasi tetap
+    // tie-out (intra naik oleh Kapitalisasi, ekstra turun oleh baris serap),
+    // jadi tak ada yang berteriak — padahal di atas kertas itu reklasifikasi
+    // yang tak pernah didokumenkan. Reklas komptabelnya dulu, baru kapitalisasi.
+    if (induk && (b.intra_ekstra ?? 'intra') !== (induk.intra_ekstra ?? 'intra')) {
+      return `beda komptabel (${kompLabel(b.intra_ekstra)} vs induk ${kompLabel(induk.intra_ekstra)}) — reklas komptabelnya dulu`
+    }
+    // ⚠️ Anak tak boleh LEBIH MUDA dari tanggal dokumen. Tanpa ini, rehab masuk
+    // ke induk pada periode ketika barang anaknya BELUM ADA — nilai bertambah
+    // dari ketiadaan, dan rantai Rekonsiliasi tetap menutup karena Kapitalisasi
+    // memang baris penambahan yang sah.
+    if (tgl && b.tgl_perolehan && b.tgl_perolehan > tgl) return `diperoleh ${b.tgl_perolehan}, lebih baru dari tanggal dokumen`
     return null
   }
 
@@ -488,6 +509,20 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
     if (bad) { setErr(`Barang anak "${bad.nama_barang}" ${anakInvalid(bad)} — tidak boleh.`); return }
     if (!fig) { setErr('Data induk belum siap, coba sebentar lagi.'); return }
     setErr(''); setSaving(true)
+    // ⚠️ Guard rantai arah MAJU (dipasang 2026-08-27). Selama ini rantai cuma
+    // dijaga saat MEMBATALKAN (`cekBolehBatal`); membuat kapitalisasi bertanggal
+    // MUNDUR ke aset yang sudah punya peristiwa sesudahnya sama sekali tak
+    // diperiksa. Engine mengurutkan replay by periode → tanggal → created_at,
+    // bukan by id, jadi baris baru bertanggal tua diproses SEBELUM peristiwa
+    // yang sudah ada — rantai state berubah tanpa satu pun baris lama disentuh
+    // dan tanpa satu pun error. Induk & SEMUA anak ikut diperiksa.
+    const urut = await cekBolehSisip(
+      supabase,
+      [{ aset_id: induk.id, label: induk.nama_barang || induk.nibar },
+       ...anak.map(a => ({ aset_id: a.id, label: a.nama_barang || a.nibar }))],
+      tgl, 'tanggal dokumen kapitalisasi ini',
+    )
+    if (!urut.boleh) { setErr(urut.pesan); setSaving(false); return }
     const snapshot = computeSnapshot(fig, induk.kode, rehab, bands, akumSerap, periodeDariTanggal(tgl))
     // ⚠️ `fig.npLama`, BUKAN `induk.nilai_perolehan`. Untuk transaksi baru
     // keduanya sama persis (fig diisi dari kolom itu). Bedanya cuma muncul saat
@@ -569,7 +604,10 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
             <p className="font-medium text-gray-800">{induk.nama_barang || '-'}</p>
             {/* Nilai dari `fig` — lihat alasannya di `simpan()`. Sebelum fig
                 termuat, kolom register dipakai sbg tampilan sementara. */}
-            <p className="text-xs text-gray-500 mt-0.5">{induk.nibar || '-'} · {induk.kode} · Tgl {induk.tgl_perolehan || '-'} · Nilai {formatRupiah(fig ? fig.npLama : induk.nilai_perolehan)}</p>
+            {/* Komptabel ikut ditampilkan sejak syarat "anak harus sekomptabel"
+                ditegakkan (2026-08-27) — tanpa itu operator tak punya cara tahu
+                kenapa barang anak tertentu ditolak. */}
+            <p className="text-xs text-gray-500 mt-0.5">{induk.nibar || '-'} · {induk.kode} · Tgl {induk.tgl_perolehan || '-'} · {kompLabel(induk.intra_ekstra)} · Nilai {formatRupiah(fig ? fig.npLama : induk.nilai_perolehan)}</p>
           </div>
         ) : <p className="text-xs text-gray-400">Belum dipilih.</p>}
       </div>
@@ -656,7 +694,7 @@ function BarangModal({ skpdId, golonganLabels, title, confirmLabel, multi, exclu
 
   async function tampilkan() {
     setLoading(true)
-    let q = supabase.from('aset').select('id,nibar,kode,nama_barang,nilai_perolehan,skpd_id,tgl_perolehan').eq('status', 'aktif').eq('skpd_id', skpdId)
+    let q = supabase.from('aset').select(BARANG_COLS).eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGol) q = q.like('kode', `${fGol}.%`)
     if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
     const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
@@ -700,7 +738,13 @@ function BarangModal({ skpdId, golonganLabels, title, confirmLabel, multi, exclu
             </div>
             <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
           </div>
-          {invalidFn && <p className="text-xs text-gray-400 mt-2">Hanya barang 1 rumpun jenis & tanggal perolehan ≥ induk yang bisa dipilih.</p>}
+          {invalidFn && (
+            <p className="text-xs text-gray-400 mt-2">
+              Hanya barang yang 1 rumpun jenis dgn induk, <b>sekomptabel</b> dgn induk, dan tanggal perolehannya
+              antara tgl induk s.d. tgl dokumen yang bisa dipilih. Baris yang tak memenuhi tetap ditampilkan
+              beserta <span className="text-red-500">alasannya</span> — supaya jelas kenapa, bukan sekadar hilang.
+            </p>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-5">

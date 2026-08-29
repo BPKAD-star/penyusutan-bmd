@@ -6,7 +6,7 @@
 // tak bersuara: tak ada error, cuma angka penyusutan yang salah.
 import { describe, it, expect } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { cekBolehBatal, type ItemBatal } from '@/lib/guardPembatalan'
+import { cekBolehBatal, cekBolehSisip, type ItemBatal } from '@/lib/guardPembatalan'
 
 type Jawaban = { data: { id: number }[] } | { error: { message: string } }
 
@@ -89,6 +89,96 @@ describe('cekBolehBatal — FAIL-CLOSED saat query gagal', () => {
     const { client } = fakeClient(a => (a === 'B' ? { error: { message: 'boom' } } : { data: [] }))
     const h = await cekBolehBatal(client, [item('A', 1), item('B', 2)], 'kapitalisasi ini')
     expect(h.boleh).toBe(false)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// cekBolehSisip — arah MAJU: jangan mencatat event bertanggal MUNDUR ke aset
+// yang sudah punya peristiwa sesudah tanggal itu. Engine mengurutkan replay by
+// periode → tanggal → created_at (BUKAN by id), jadi baris baru bertanggal tua
+// diproses SEBELUM peristiwa yang sudah ada — rantainya berubah tanpa satu pun
+// baris lama disentuh & tanpa satu pun error.
+type JawabSisip = { data: { jenis: string; tanggal: string }[] } | { error: { message: string } }
+
+/** Tiruan rantai `.from().select().eq().neq().gt().order().limit()`. */
+function fakeSisip(jawab: (asetId: string, tanggal: string, kecuali: string) => JawabSisip): SupabaseClient {
+  return {
+    from() {
+      let asetId = ''
+      let tanggal = ''
+      let kecuali = ''
+      const q = {
+        select: () => q,
+        eq: (_k: string, v: string) => { asetId = v; return q },
+        neq: (_k: string, v: string) => { kecuali = v; return q },
+        gt: (_k: string, v: string) => { tanggal = v; return q },
+        order: () => q,
+        limit: () => {
+          const r = jawab(asetId, tanggal, kecuali)
+          return Promise.resolve('error' in r ? { data: null, error: r.error } : { data: r.data, error: null })
+        },
+      }
+      return q
+    },
+  } as unknown as SupabaseClient
+}
+
+describe('cekBolehSisip', () => {
+  it('tak ada transaksi bertanggal lebih baru → boleh', async () => {
+    const c = fakeSisip(() => ({ data: [] }))
+    expect(await cekBolehSisip(c, [{ aset_id: 'A' }], '2026-08-27', 'tanggal dokumen')).toEqual({ boleh: true })
+  })
+
+  it('ada yang lebih baru → diblokir, pesannya menyebut barang, jenis & tanggalnya', async () => {
+    const c = fakeSisip(() => ({ data: [{ jenis: 'reklas_golongan', tanggal: '2026-09-10' }] }))
+    const h = await cekBolehSisip(c, [{ aset_id: 'A', label: 'Gedung Kantor' }], '2026-08-27', 'tanggal dokumen')
+    expect(h.boleh).toBe(false)
+    if (h.boleh) return
+    expect(h.pesan).toContain('Gedung Kantor')
+    expect(h.pesan).toContain('reklas_golongan')
+    expect(h.pesan).toContain('2026-09-10')
+    expect(h.pesan).toContain('2026-08-27')
+  })
+
+  it('SATU pelanggar di antara banyak sudah cukup memblokir', async () => {
+    const c = fakeSisip(a => (a === 'B' ? { data: [{ jenis: 'penghapusan_sebab_lain', tanggal: '2026-12-01' }] } : { data: [] }))
+    const h = await cekBolehSisip(c, [{ aset_id: 'A' }, { aset_id: 'B', label: 'Laptop' }, { aset_id: 'C' }], '2026-08-27', 'tanggal dokumen')
+    expect(h.boleh).toBe(false)
+    if (!h.boleh) expect(h.pesan).toContain('Laptop')
+  })
+
+  it('`batal_kapitalisasi` DIKECUALIKAN — alur Ubah tak diblokir pembatalannya sendiri', async () => {
+    // Kalau pengecualian ini dicabut, "✎ Ubah" mustahil menyimpan: reversal yang
+    // baru saja ditulisnya sendiri akan terbaca sebagai "transaksi lebih baru".
+    let terkecuali = ''
+    const c = fakeSisip((_a, _t, kecuali) => { terkecuali = kecuali; return { data: [] } })
+    await cekBolehSisip(c, [{ aset_id: 'A' }], '2026-08-27', 'tanggal dokumen')
+    expect(terkecuali).toBe('batal_kapitalisasi')
+  })
+
+  it('FAIL-CLOSED: query gagal → TIDAK boleh, sebabnya ikut disebut', async () => {
+    const c = fakeSisip(() => ({ error: { message: 'canceling statement due to statement timeout' } }))
+    const h = await cekBolehSisip(c, [{ aset_id: 'A', label: 'Gedung' }], '2026-08-27', 'tanggal dokumen')
+    expect(h.boleh).toBe(false)
+    if (h.boleh) return
+    expect(h.pesan).toContain('gagal memeriksa')
+    expect(h.pesan).toContain('statement timeout')
+  })
+
+  it('daftar kosong → boleh', async () => {
+    const c = fakeSisip(() => ({ data: [] }))
+    expect(await cekBolehSisip(c, [], '2026-08-27', 'tanggal dokumen')).toEqual({ boleh: true })
+  })
+
+  it('label kosong jatuh ke aset_id, bukan "undefined"', async () => {
+    const c = fakeSisip(() => ({ data: [{ jenis: 'kapitalisasi', tanggal: '2026-09-01' }] }))
+    for (const label of [undefined, null, '   ']) {
+      const h = await cekBolehSisip(c, [{ aset_id: 'aset-xyz', label }], '2026-08-27', 'ini')
+      if (!h.boleh) {
+        expect(h.pesan).toContain('aset-xyz')
+        expect(h.pesan).not.toContain('undefined')
+      }
+    }
   })
 })
 

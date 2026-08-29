@@ -2500,6 +2500,48 @@ menambah anak ke kartu yang sudah ada — itu ditolak, dan alasannya bukan seler
   ⚠️ TIDAK transaksional — gagal di tengah dilaporkan apa adanya & pemanggil
   wajib memuat ulang daftar.
 
+### Tiga lubang senyap di Kapitalisasi yang ditutup 2026-08-27
+
+Hasil penyisiran atas permintaan user ("ada potensi masalah lain?"). Ketiganya
+sekelas: menghasilkan angka salah yang **tetap tie-out**, jadi tak satu pun
+laporan akan berteriak.
+
+1. **KOMPTABEL WAJIB SAMA — dulu tak diperiksa sama sekali.** `anakInvalid`
+   hanya memeriksa golongan & tanggal. Padahal aturannya sudah lama dinyatakan
+   aplikasi ini sendiri: teks di menu Reklasifikasi berbunyi *"Ekstra → Intra
+   Komptabel … dibutuhkan SEBELUM kapitalisasi (mensyaratkan komptabel sama)"*.
+   Menyerap anak ekstra ke induk intra memindahkan nilai antar kolom komptabel
+   **tanpa satu pun baris `reklas_komptabel`** — dan Rekonsiliasi tetap tie-out
+   (intra naik oleh Kapitalisasi, ekstra turun oleh baris serap), jadi tak ada
+   yang berteriak. Di atas kertas itu reklasifikasi yang tak pernah
+   didokumenkan. Butuh `intra_ekstra` ikut di-`select` (`BARANG_COLS`).
+2. **Anak tak boleh LEBIH MUDA dari tanggal dokumen.** Dulu tanggal dokumen
+   bebas dimundurkan ke periode ketika barang anaknya BELUM ADA — rehab masuk ke
+   induk dari ketiadaan, dan rantainya tetap menutup karena Kapitalisasi memang
+   baris penambahan yang sah.
+3. **Guard rantai arah MAJU** — `cekBolehSisip()` di lib/guardPembatalan.ts,
+   dipanggil saat MENYIMPAN. Selama ini rantai cuma dijaga saat MEMBATALKAN
+   (`cekBolehBatal`); mencatat kapitalisasi bertanggal MUNDUR ke aset yang sudah
+   punya peristiwa sesudahnya tak diperiksa sama sekali. ⚠️ Engine mengurutkan
+   replay by **periode → tanggal → created_at, BUKAN by id**, jadi baris baru
+   bertanggal tua diproses SEBELUM peristiwa yang sudah ada — rantai state
+   berubah tanpa satu pun baris lama disentuh. Induk & SEMUA anak diperiksa.
+   ⚠️ `batal_kapitalisasi` DIKECUALIKAN dari pemeriksaan: ia baris reversal yang
+   dinetralkan engine lewat `target_trx_id` (bukan lewat urutan), dan alur
+   ✎ Ubah menulisnya lebih dulu — tanpa pengecualian ini transaksi penggantinya
+   akan diblokir oleh pembatalannya sendiri. Pasangannya (baris `kapitalisasi`
+   yang dibatalkan) tetap diperiksa karena tanggalnya sama, jadi kapitalisasi
+   lain yang sungguh lebih baru tetap tertangkap. Dikunci
+   lib/guardPembatalan.test.ts.
+
+**Menu lain yang mencatat event bertanggal bebas sebaiknya ikut memakai
+`cekBolehSisip`** — ia pasangan wajib `cekBolehBatal`, bukan khusus kapitalisasi.
+
+ℹ️ Yang TIDAK ditutup & sengaja: band tak ketemu di `admin_overhaul_band` →
+`tambahan = 0 tahun` tanpa peringatan (pratinjau menampilkan "+0 th", perlu
+kelengkapan DATA bukan kode); `akumulasi_diserap` yang beku bisa basi kalau
+engine di-run ulang untuk periode LAMPAU; penulisan ledger tidak transaksional.
+
 ### Pratinjau kapitalisasi: posisi "SEBELUM" salah periode (2026-08-27)
 
 Ditemukan user saat menguji pratinjau untuk BPK. `fig` induk dibaca dari baris
