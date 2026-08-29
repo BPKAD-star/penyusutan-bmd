@@ -1,4 +1,5 @@
 'use client'
+import { namaBerkasCetak } from '@/lib/cetakLembar'
 // ============================================================================
 // Cetak "Laporan Penerimaan BMD Berupa Aset Tetap Dengan Cara Perolehan Dari …"
 // Standalone (tanpa sidebar), A4 landscape.
@@ -269,8 +270,8 @@ export default function CetakPerolehanPage() {
   // Karakter terlarang Windows dibuang: nama SKPD boleh memuat garis miring.
   useEffect(() => {
     if (!skpd) return
-    const bersih = (t: string) => t.replace(/[\\/:*?"<>|]/g, '-').trim()
-    document.title = `Laporan Penerimaan ${info.judul}_${bersih(skpd.nama)}_${tahun}`
+    document.title = namaBerkasCetak(
+      `Laporan Penerimaan ${info.judul}`, skpd.nama, tahun)
   }, [skpd, info.judul, tahun])
 
   return (

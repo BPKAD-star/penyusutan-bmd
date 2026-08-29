@@ -23,13 +23,20 @@
 // (LaporanPengadaanModel3 → LaporanPengadaanPermendagri, 2026-08-29), dan
 // penunjuk yang basi tak akan menghasilkan satu pun error saat dijalankan.
 
+import type { Kertas } from './cetakLembar'
+
 export type LembarPermendagri = {
   /** Kode format resmi, spt tercetak di lampiran Permendagri 47/2021. */
   kode: string
   /** Judul yang tercetak di kepala lembar. */
   judul: string
-  /** Ukuran & orientasi kertas — samakan dengan `@page` di lembarnya. */
-  kertas: string
+  /**
+   * Ukuran & orientasi kertas. BERTIPE, bukan teks bebas: nilainya dipakai
+   * `cssCetakLembar` merakit `@page`, dan nilai tak dikenal menghasilkan
+   * `size: undefined` yang DIABAIKAN peramban — lembarnya diam-diam tercetak
+   * pada ukuran bawaan pengguna, bukan yang diminta format.
+   */
+  kertas: Kertas
   /** Berkas yang merender lembarnya, relatif akar repo. Diverifikasi test. */
   berkas: string
   /**

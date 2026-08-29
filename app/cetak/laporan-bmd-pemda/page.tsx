@@ -1,4 +1,5 @@
 'use client'
+import { namaBerkasCetak } from '@/lib/cetakLembar'
 // ============================================================================
 // Cetak LAPORAN BMD — Permendagri 47/2021 Format IV.L.4.4 (SE-PEMDA).
 // Kembaran IV.L.4.2 (app/cetak/laporan-bmd) untuk lingkup seluruh kabupaten.
@@ -133,7 +134,7 @@ export default function CetakLaporanBmdPemdaPage() {
   }
 
   useEffect(() => {
-    document.title = `Laporan BMD_Kab ${KABUPATEN}_${periode}`
+    document.title = namaBerkasCetak(`Laporan BMD_Kab ${KABUPATEN}`, periode)
   }, [periode])
 
   const opsi = (role: string) => (

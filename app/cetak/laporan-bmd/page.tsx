@@ -1,4 +1,5 @@
 'use client'
+import { namaBerkasCetak } from '@/lib/cetakLembar'
 // ============================================================================
 // Cetak LAPORAN BMD — Permendagri 47/2021 Format IV.L.4.2 (per SKPD).
 // Standalone (tanpa sidebar), A4 PORTRAIT — lembarnya cuma 4 kolom, jadi tak
@@ -168,8 +169,7 @@ export default function CetakLaporanBmdPage() {
 
   useEffect(() => {
     if (!skpd) return
-    const bersih = (t: string) => t.replace(/[\\/:*?"<>|]/g, '-').trim()
-    document.title = `Laporan BMD_${bersih(skpd.nama)}_${periode}`
+    document.title = namaBerkasCetak('Laporan BMD', skpd.nama, periode)
   }, [skpd, periode])
 
   return (

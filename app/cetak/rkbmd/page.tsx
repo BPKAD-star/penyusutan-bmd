@@ -1,4 +1,5 @@
 'use client'
+import { namaBerkasCetak } from '@/lib/cetakLembar'
 // Cetak "Usulan Rencana Kebutuhan Barang Milik Daerah" — kelima jenis.
 // Standalone, A4 landscape. Dua mode:
 //   ?id=<uuid rkbmd>                        → satu dokumen
@@ -345,12 +346,12 @@ export default function CetakRkbmdPage() {
   // ikut terbawa dialog simpannya menolak atau memotong namanya diam-diam.
   useEffect(() => {
     if (loading || err) return
-    const bersih = (s: string) => s.replace(/[\\/:*?"<>|]/g, '-').trim()
     if (sekab) {
-      document.title = `RKBMD_Kab ${KABUPATEN}_${sekab.tahun}`
+      document.title = namaBerkasCetak(`RKBMD_Kab ${KABUPATEN}`, sekab.tahun)
     } else if (lembar[0]) {
       const l = lembar[0]
-      document.title = `Usulan RKBMD_${bersih(l.skpd?.nama || `SKPD ${l.dok.skpd_id}`)}_${l.dok.tahun_anggaran}`
+      document.title = namaBerkasCetak(
+        'Usulan RKBMD', l.skpd?.nama || `SKPD ${l.dok.skpd_id}`, l.dok.tahun_anggaran)
     }
   }, [loading, err, sekab, lembar])
 

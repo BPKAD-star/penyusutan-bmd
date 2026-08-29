@@ -25,6 +25,7 @@ import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecah
 import { fetchReklasEvents, kodePada, JENIS_REKLAS_KODE } from '@/lib/reklasKode'
 import { rekapPerGolongan, nilaiBukuSel, zeroRekap, type RekapRpcRow } from '@/lib/rekapBmd'
 import { assertOk } from '@/shared/db/query'
+import { cssCetakLembar, namaBerkasCetak } from '@/lib/cetakLembar'
 
 // ── Model 3: jenis ledger per kategori Penambahan/Pengurangan (nilai
 // perolehan) — diverifikasi ke kode asli tiap alur (Pengadaan/PerolehanManual/
@@ -749,7 +750,9 @@ export default function LaporanBmdPage() {
     if (pemicuCetak === 0) return
     const judulAsli = document.title
     const nama = org.skpdId ? (skpdInfo?.nama || 'SKPD') : 'Kab Kediri'
-    document.title = `Rekapitulasi Mutasi BMD_${nama.replace(/[\\/:*?"<>|]/g, '-')}_${periode}`
+    // ⚠️ Dulu penyaringnya disalin di sini TANPA `.trim()` (salinan keenam di
+    // repo), jadi nama SKPD berspasi ujung menghasilkan "…_Dinas X _2026-S1".
+    document.title = namaBerkasCetak('Rekapitulasi Mutasi BMD', nama, periode)
     const pulih = () => { document.title = judulAsli }
     window.addEventListener('afterprint', pulih)
     const t = window.setTimeout(() => window.print(), 80)
@@ -945,22 +948,15 @@ export default function LaporanBmdPage() {
           elemen tak-terlihat tetap MENGISI tata letak. */}
       {sumberMutasi && konfigMutasi && (
         <>
-          <style>{`
-            @media print {
-              /* POTRET (permintaan user 2026-08-27) — sama dgn lembar posisi
-                 4.2/4.4, jadi keempat lampiran Laporan BMD seragam. Muat
-                 karena kolom angkanya cuma empat & fontnya 8px: 17 digit
-                 (~75px) di kolom selebar 17% dari ±703px = 119px. */
-              @page { size: A4 portrait; margin: 1.2cm; }
-              body { background: #fff; }
-              body * { visibility: hidden; }
-              #cetak-mutasi-bmd { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
-              #cetak-mutasi-bmd, #cetak-mutasi-bmd * { visibility: visible; }
-              #cetak-mutasi-bmd tr { break-inside: avoid; }
-              #cetak-mutasi-bmd thead { display: table-header-group; }
-              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            }
-          `}</style>
+          {/* POTRET (permintaan user 2026-08-27) — sama dgn lembar posisi
+              4.2/4.4, jadi keempat lampiran Laporan BMD seragam. Muat karena
+              kolom angkanya cuma empat & fontnya 8px: 17 digit (~75px) di
+              kolom selebar 17% dari ±703px = 119px.
+              Mekanik isolasinya dipegang `cssCetakLembar` (satu sumber untuk
+              semua lembar cetak sejak 2026-08-29). */}
+          <style>{cssCetakLembar({
+            id: 'cetak-mutasi-bmd', kertas: 'A4 potret', margin: '1.2cm',
+          })}</style>
           <LembarMutasiBmd periode={periode} komptabel={komptabel}
             sumber={sumberMutasi} konfig={konfigMutasi} />
         </>

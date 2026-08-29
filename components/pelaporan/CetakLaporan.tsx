@@ -17,36 +17,35 @@
 //   <div id="cetak-laporan"> … <KopCetak … /> …tabel… </div>
 //   — beri kelas `no-print` pada filter, tombol, dan catatan layar.
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { cssCetakLembar } from '@/lib/cetakLembar'
 
 const KABUPATEN = 'Kediri'
+
+/** id elemen lembar — dipakai penyusun CSS & markup halaman pemakainya. */
+export const ID_CETAK_LAPORAN = 'cetak-laporan'
 
 const tglID = () => new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 
 /** Aturan cetak. Dipasang sekali per halaman laporan. */
 export function GayaCetakLaporan() {
+  // Mekanik isolasinya (visibility, @page, thead berulang, print-color-adjust)
+  // dipegang `cssCetakLembar` — SATU sumber untuk semua lembar cetak sejak
+  // 2026-08-29. Yang tinggal di sini cuma aturan khas laporan pengelolaan:
+  // memadatkan tabel & membuka pemotongan/scroll milik tampilan layar.
   return (
-    <style>{`
-      @media print {
-        @page { size: A4 landscape; margin: 0.8cm; }
-        body { background: #fff; }
-        body * { visibility: hidden; }
-        #cetak-laporan, #cetak-laporan * { visibility: visible; }
-        #cetak-laporan { position: absolute; left: 0; top: 0; width: 100%; }
-        #cetak-laporan .no-print { display: none !important; }
-        #cetak-laporan .kop-cetak { display: block !important; }
-        #cetak-laporan .card { box-shadow: none; border: 0; border-radius: 0; margin: 0; }
-        #cetak-laporan table { font-size: 8px; width: 100%; }
-        #cetak-laporan th, #cetak-laporan td { padding: 1px 3px !important; line-height: 1.25; }
-        /* Judul kolom diulang di tiap halaman — laporan pengelolaan sering
-           berlembar-lembar, dan tabel tanpa kepala di halaman 2+ tak terbaca. */
-        #cetak-laporan thead { display: table-header-group; }
-        #cetak-laporan tr { break-inside: avoid; }
-        #cetak-laporan .overflow-x-auto, #cetak-laporan .overflow-auto,
-        #cetak-laporan .overflow-hidden { overflow: visible !important; }
-        #cetak-laporan .max-h-\\[65vh\\] { max-height: none !important; }
-        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      }
-    `}</style>
+    <style>{cssCetakLembar({
+      id: ID_CETAK_LAPORAN,
+      kertas: 'A4 lanskap',
+      margin: '0.8cm',
+      tambahan: `
+        #${ID_CETAK_LAPORAN} .kop-cetak { display: block !important; }
+        #${ID_CETAK_LAPORAN} .card { box-shadow: none; border: 0; border-radius: 0; margin: 0; }
+        #${ID_CETAK_LAPORAN} table { font-size: 8px; width: 100%; }
+        #${ID_CETAK_LAPORAN} th, #${ID_CETAK_LAPORAN} td { padding: 1px 3px !important; line-height: 1.25; }
+        #${ID_CETAK_LAPORAN} .overflow-x-auto, #${ID_CETAK_LAPORAN} .overflow-auto,
+        #${ID_CETAK_LAPORAN} .overflow-hidden { overflow: visible !important; }
+        #${ID_CETAK_LAPORAN} .max-h-\\[65vh\\] { max-height: none !important; }`,
+    })}</style>
   )
 }
 

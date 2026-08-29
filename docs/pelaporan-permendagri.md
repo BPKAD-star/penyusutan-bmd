@@ -176,6 +176,46 @@ Belum berlaku — jadi aturan resmi kalau dipindahkan ke rules.md.
 
 ---
 
+## 4b. Kerangka lembar — apa yang disatukan, apa yang TIDAK
+
+`lib/cetakLembar.ts` (2026-08-29). Dua fungsi MURNI, jadi bisa diuji tanpa DOM:
+
+- **`cssCetakLembar({ id, kertas, margin, sembunyikan, tambahan })`** — blok
+  `@media print`. Menggantikan **4 salinan** (`CetakLaporan.tsx`, Rekonsiliasi
+  ×2, Laporan BMD). MELEMPAR untuk dua kekeliruan yang menghasilkan berkas
+  KOSONG tanpa satu pun error: `id` diawali `#`/berspasi (selektornya jadi
+  `##id` → seluruh halaman tetap tersembunyi), dan `sembunyikan` memuat `id`
+  lembarnya sendiri.
+- **`namaBerkasCetak(...bagian)`** — nama bawaan "Save as PDF" lewat
+  `document.title`. Menggantikan **6 salinan**, salah satunya
+  (`bmd/page.tsx`) sudah menyimpang: kehilangan `.trim()`, jadi nama SKPD
+  berspasi ujung menghasilkan `…_Dinas X _2026-S1`.
+- `kertas` bertipe **`Kertas`**, bukan teks bebas — dan `LembarPermendagri.kertas`
+  di registry ikut bertipe itu. Nilai tak dikenal menghasilkan `size: undefined`
+  yang **diabaikan peramban**: lembarnya diam-diam tercetak pada ukuran bawaan
+  pengguna, bukan yang diminta format.
+
+⚠️ **Pop-upnya SENGAJA TIDAK disatukan.** `CetakMutasiBmdModal` (194 baris)
+cuma menanyakan penanda tangan & tanggal; `BeritaAcaraRekonModal` (372 baris)
+juga menanyakan nomor BA, DUA pihak berikut pangkat/jabatan, cakupan
+Intra/Ekstra, kop, & tiga catatan — karena Format V.2 memang memintanya.
+Bedanya bukan gaya penulisan, melainkan **bentuk formatnya**; memaksa keduanya
+jadi satu komponen menghasilkan penyatuan palsu yang parameternya lebih banyak
+daripada kode yang dihemat. Yang memang layak disatukan berikutnya cuma
+**pemilih penanda tangan + `localStorage`** (kini tersebar di 2 pop-up + 3
+halaman cetak) — itu Fase 2c, dan bentuknya sudah seragam: `fetchCalonTtd` +
+kunci per (SKPD × format).
+
+⚠️ **Tiga aturan IKUT TERPASANG** di lembar yang sebelumnya tak punya, dan
+sudah diperiksa aman: `.no-print{display:none}` di lembar BA & Mutasi (nol
+elemen `.no-print` di dalamnya → no-op); `thead{table-header-group}` &
+`tr{break-inside:avoid}` di tabel Rekonsiliasi (kartunya sudah
+`break-after:page` per golongan, jadi paling banter ia mengulang judul kolom
+kalau satu golongan melebihi satu halaman — perbaikan, bukan kemunduran).
+`display:block` yang kini selalu ikut juga no-op: ketiga lembar `<div>` polos.
+
+---
+
 ## 5. Urutan pengerjaan
 
 - **Fase 0 — SELESAI (2026-08-29).** Nomenklatur "Model 2"/"Model 3" dicabut dari
@@ -192,11 +232,8 @@ Belum berlaku — jadi aturan resmi kalau dipindahkan ke rules.md.
 - **Fase 2a — registry: SELESAI (2026-08-29).** `lib/permendagriFormat.ts` +
   test. R4 & R5 berlaku. Tak butuh rujukan Permendagri karena isinya diturunkan
   dari 7 keluarga format yang memang sudah terbangun di kode.
-- **Fase 2b — satukan kerangka lembar.** Pilih satu dari dua pasangan pola B
-  (`BeritaAcaraRekon`+Modal atau `LembarMutasiBmd`+`CetakMutasiBmdModal`) jadi
-  kerangka baku, lalu selaraskan yang satunya.
-  **Jangan bangun kerangka kosong** — kerangka tanpa pemakai nyata selalu salah
-  bentuk.
+- **Fase 2b — kerangka lembar: SELESAI (2026-08-29).** `lib/cetakLembar.ts` +
+  test. Yang disatukan MEKANIKNYA, bukan pop-upnya — lihat §4b.
 - **Fase 3 — uji kerangka pada bentuk yang paling BEDA**, yaitu satu laporan
   Pengelolaan (daftar transaksi, bukan rekap). Kalau kerangkanya bertahan tanpa
   dibedah, dia benar. Kalau harus dibedah, bedah SEKARANG selagi pemakainya
