@@ -2500,6 +2500,45 @@ menambah anak ke kartu yang sudah ada — itu ditolak, dan alasannya bukan seler
   ⚠️ TIDAK transaksional — gagal di tengah dilaporkan apa adanya & pemanggil
   wajib memuat ulang daftar.
 
+### Pratinjau kapitalisasi: posisi "SEBELUM" salah periode (2026-08-27)
+
+Ditemukan user saat menguji pratinjau untuk BPK. `fig` induk dibaca dari baris
+`penyusutan_semester` **TERBARU** (`order periode desc limit 1`) — bukan baris
+periode SEBELUM tanggal dokumen.
+
+- Kapitalisasi 27 Agustus 2026 (2026-S2) → baris terbaru justru **2026-S2**,
+  yakni posisi SESUDAH beban semester berjalan. Kolom "Induk — Sebelum"
+  menampilkan akumulasi **30.121.751,2** padahal posisi pembukanya
+  **27.970.197,2**; nilai buku & beban baru ikut meleset (`nb_lama`
+  185.033.608,8 vs state engine 187.185.162,8 — selisihnya persis satu beban).
+- **Obatnya baca periode P−1** (`previousPeriode(periodeDariTanggal(tgl))`),
+  yaitu keadaan pembuka periode kapitalisasi — persis state engine saat
+  memproses event itu. `tgl` ikut jadi dependency efeknya.
+- Bonusnya: cabang khusus "sedang mengubah" (yang sempat menyeed `fig` dari
+  `snapshot.*_lama` transaksi lama) jadi **tak perlu & dihapus**. Kapitalisasi
+  hidup di periode P, jadi baris P−1 tak pernah terpengaruh olehnya — bersih
+  sebelum maupun sesudah pembatalan, dan tak bergantung pada apakah engine sudah
+  dijalankan ulang. Itu sekaligus mencegah snapshot LAMA yang keliru menular ke
+  transaksi penggantinya.
+- **Nilai buku DITURUNKAN** (`np − akum`), tak lagi dibaca dari
+  `nilai_buku_akhir`: `npLama` datang dari register (memuat semua peristiwa s.d.
+  hari ini) sementara akumulasi dari baris P−1, jadi menurunkan menjamin
+  pratinjaunya konsisten sendiri.
+- **Jembatan ke menu Penyusutan.** Kolom "Sesudah" itu posisi TEPAT SAAT
+  kapitalisasi — beban periode berjalan belum dibebankan — sedangkan menu
+  Penyusutan & Laporan BMD menampilkan posisi AKHIR periode. Bedanya satu kali
+  beban, dan itu terbaca user sbg "akumulasinya kok tidak bertambah". Kini ada
+  dua baris tambahan: `Akumulasi s.d. akhir <P>` (= `akum_baru + beban_baru`) &
+  `Nilai buku akhir <P>` (= `nb_baru − beban_baru`), plus label periode di kedua
+  kepala kolom. Terbukti menutup: 27.970.197,2 + 5.221.852 = 33.192.049,2 dan
+  522.185.162,8 − 5.221.852 = 516.963.310,8 — sama persis dgn hasil engine.
+- **Menu Penyusutan kini menampilkan 2 DESIMAL.** Angka di
+  `penyusutan_semester` memang berdesimal (baseline e-BMD membawa akumulasi
+  25.818.643,2; engine cuma membulatkan BEBAN, tidak akumulasi/nilai buku).
+  Selama tampilan memotongnya, layar menampilkan 27.970.197 sementara Laporan
+  BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
+  dijumlah selalu nilai penuhnya.
+
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
 Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user

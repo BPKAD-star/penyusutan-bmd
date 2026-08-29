@@ -16,6 +16,10 @@ export type KapSnapshot = {
    *  Opsional: baris kapitalisasi lama tak punya kunci ini — di sana
    *  `akum_baru` memang sama dengan `akum_lama`. */
   akum_diserap?: number
+  /** Periode kapitalisasi & periode dasar posisi "sebelum" (P dan P−1).
+   *  Opsional — baris lama tak menyimpannya, kolomnya cuma tak berlabel. */
+  periode_kap?: string
+  periode_dasar?: string
 }
 export type KapAnak = {
   id: string; nibar: string | null; nama: string | null; nilai: number; tgl?: string | null
@@ -49,7 +53,9 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Sebelum */}
           <div className="border border-gray-200 rounded-lg p-3 min-w-0">
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Induk — Sebelum</p>
+            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+              Induk — Sebelum{s.periode_dasar ? <span className="normal-case font-normal text-gray-400"> · posisi akhir {s.periode_dasar}</span> : null}
+            </p>
             <Row label="Nilai perolehan induk" value={formatRupiah(s.np_lama)} />
             <Row label="Beban penyusutan / smt" value={formatRupiah(s.beban_lama)} />
             <Row label="Akumulasi penyusutan" value={formatRupiah(s.akum_lama)} />
@@ -90,13 +96,30 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
 
           {/* Sesudah */}
           <div className="border border-teal/40 bg-teal/5 rounded-lg p-3 min-w-0">
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Induk — Sesudah</p>
+            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
+              Induk — Sesudah{s.periode_kap ? <span className="normal-case font-normal text-gray-400"> · saat kapitalisasi</span> : null}
+            </p>
             <Row label="Nilai perolehan baru" value={formatRupiah(s.np_baru)} strong />
             <Row label="Nilai buku baru" value={formatRupiah(s.nb_baru)} strong />
             <Row label="Masa manfaat baru" value={`${s.masa_baru_tahun} th (${s.sisa_baru_smt} smt)`} strong />
             <Row label="Beban penyusutan / smt baru" value={formatRupiah(s.beban_baru)} strong />
             <Row label="Akumulasi penyusutan" value={formatRupiah(s.akum_baru)} />
             <Row label="Sisa masa manfaat baru" value={`${s.sisa_baru_smt} smt`} strong />
+            {/* ── Jembatan ke menu Penyusutan ────────────────────────────────
+                Kolom di atas adalah posisi TEPAT SAAT kapitalisasi — beban
+                semester berjalan belum dibebankan. Menu Penyusutan & Laporan
+                BMD menampilkan posisi AKHIR periode, jadi angkanya beda satu
+                kali beban dan itu dulu terbaca sebagai "akumulasinya kok tidak
+                bertambah". Dua baris ini yang menutup jaraknya, supaya
+                pratinjau bisa ditelusuri langsung ke laporan (permintaan user
+                2026-08-27: "biar kalau BPK tanya, auto kejawab lewat sini"). */}
+            {s.periode_kap && (
+              <div className="mt-2 pt-2 border-t border-teal/30">
+                <p className="text-[11px] text-gray-500 mb-1">Setelah beban {s.periode_kap} dibebankan:</p>
+                <Row label={`Akumulasi s.d. akhir ${s.periode_kap}`} value={formatRupiah(s.akum_baru + s.beban_baru)} />
+                <Row label={`Nilai buku akhir ${s.periode_kap}`} value={formatRupiah(s.nb_baru - s.beban_baru)} />
+              </div>
+            )}
           </div>
         </div>
       )}
