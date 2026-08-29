@@ -136,15 +136,27 @@ Belum berlaku — jadi aturan resmi kalau dipindahkan ke rules.md.
 - **R2 — Satu komponen lembar, dua pemakai** (tab pratinjau + halaman cetak).
   Pola D. Sudah berlaku di `LaporanPengadaanTabel` — tiru itu.
 - **R3 — Batas pola B vs C** seperti §2. Butuh `descendantIds`/angka mahal → B.
-- **R4 — Registry format, bukan cabang `if`.** Kode format, judul resmi, kertas,
-  orientasi, daftar kolom jadi DATA. Pelajaran `JUDUL_PENGADAAN`/`KOLOM_PENGADAAN`
-  di cetak RKBMD: dulu angka 12/10/8 ditulis tangan di sembilan tempat, jadi
-  menyisipkan satu kolom berarti menyunting sembilannya.
+- **R4 — Registry format, bukan cabang `if`.** ✅ **BERLAKU sejak 2026-08-29** —
+  `lib/permendagriFormat.ts` memuat 9 lembar dari 7 keluarga format (§1). Kode
+  format, judul resmi, kertas, & berkas perendernya jadi DATA. Pelajaran
+  `JUDUL_PENGADAAN`/`KOLOM_PENGADAAN` di cetak RKBMD: dulu angka 12/10/8 ditulis
+  tangan di sembilan tempat, jadi menyisipkan satu kolom berarti menyunting
+  sembilannya.
+  ⚠️ Registry SENGAJA cuma memuat lembar yang **sudah dibangun** — entri untuk
+  yang belum ada takkan pernah dibaca siapa pun lalu basi diam-diam (pelajaran
+  cache `aset.pemanfaatan`). Daftar yang BELUM punya padanan tinggal di §3,
+  bukan di kode.
+  ⚠️ Kolom `berkas` **diverifikasi test ada di disk**. Itu bukan formalitas:
+  berkas lembar sudah pernah di-rename (`LaporanPengadaanModel3` →
+  `LaporanPengadaanPermendagri`, 2026-08-29) dan penunjuk basi tak menghasilkan
+  satu pun error saat dijalankan.
 - **R5 — Tab "Format Permendagri" muncul dari registry, bukan prop boolean.**
-  Laporan tanpa entri → tab-nya TIDAK ADA sama sekali (bukan tab kosong /
-  "belum tersedia"). Itu yang bikin pencicilan aman: nambah entri = tab muncul
-  sendiri. Prop `formatPermendagri` di `LaporanPerolehan` adalah bentuk
-  ANTARA — gantikan begitu registry ada.
+  ✅ **BERLAKU sejak 2026-08-29** — `lib/permendagriFormat.ts`, dikunci
+  `lib/permendagriFormat.test.ts`. Laporan tanpa entri → tab-nya TIDAK ADA sama
+  sekali (bukan tab kosong / "belum tersedia"). Prop `formatPermendagri` sudah
+  DIHAPUS: prop opsional yang lupa dikirim tak menghasilkan error TypeScript,
+  jadi menu Perolehan keenam yang lupa mendaftarkannya akan kehilangan tabnya
+  DIAM-DIAM. Nambah lembar = nambah SATU entri; tabnya muncul sendiri.
 - **R6 — Kode format dicetak DI LEMBAR (kanan atas), bukan di nama tab/menu.**
   Sudah diterapkan 2026-08-29. Alasan: di lembar ia berguna (pemeriksa mencocokkan
   lampiran), di tab ia jargon.
@@ -177,9 +189,12 @@ Belum berlaku — jadi aturan resmi kalau dipindahkan ke rules.md.
   tabrakan arti itulah yang bikin angka di menu Perolehan harus pergi.
 - **Fase 1 — sisi kiri SELESAI** (dokumen ini). **Sisi kanan MENUNGGU** rujukan
   format dari Bidang Aset — lihat §6.
-- **Fase 2 — satukan kerangka yang SUDAH ada.** Pilih satu dari dua pasangan pola
-  B (`BeritaAcaraRekon`+Modal atau `LembarMutasiBmd`+`CetakMutasiBmdModal`) jadi
-  kerangka baku, lalu selaraskan yang satunya + bangun registry (R4) DARI mereka.
+- **Fase 2a — registry: SELESAI (2026-08-29).** `lib/permendagriFormat.ts` +
+  test. R4 & R5 berlaku. Tak butuh rujukan Permendagri karena isinya diturunkan
+  dari 7 keluarga format yang memang sudah terbangun di kode.
+- **Fase 2b — satukan kerangka lembar.** Pilih satu dari dua pasangan pola B
+  (`BeritaAcaraRekon`+Modal atau `LembarMutasiBmd`+`CetakMutasiBmdModal`) jadi
+  kerangka baku, lalu selaraskan yang satunya.
   **Jangan bangun kerangka kosong** — kerangka tanpa pemakai nyata selalu salah
   bentuk.
 - **Fase 3 — uji kerangka pada bentuk yang paling BEDA**, yaitu satu laporan

@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import { LEMBAR_PERMENDAGRI, labelFormat } from '@/lib/permendagriFormat'
 import {
   fetchLaporanPengadaan, groupByGolongan, grandTotal, fetchPenggunaBarangMap,
   type PengadaanRow, type PenggunaBarang,
@@ -112,7 +113,7 @@ function ReportBlock({ nama, periode, rows, kodeCols, pengguna, pageBreak }: {
           Pola yang sama dgn `kepalaLampiran` (BeritaAcaraRekon) & `KopKanan`
           (cetak RKBMD). */}
       <div className="text-right text-[10px] text-gray-500 mb-1">
-        Format IV.A — Permendagri 47/2021
+        {labelFormat(LEMBAR_PERMENDAGRI['perolehan-pengadaan'])}
       </div>
       <div className="text-center mb-3">
         <p className="font-bold uppercase text-[13px]">Laporan Pengadaan BMD Berupa Aset Tetap</p>

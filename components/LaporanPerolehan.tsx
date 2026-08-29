@@ -15,6 +15,7 @@ import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import LaporanPengadaanPermendagri from '@/components/pelaporan/LaporanPengadaanPermendagri'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { lembarPerolehan } from '@/lib/permendagriFormat'
 
 type Trx = {
   id: number
@@ -32,30 +33,29 @@ type Trx = {
   } | null
 }
 
-export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel, formatPermendagri }: {
+export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel }: {
   judul: string
   deskripsi: string
   jenis: string
   filePrefix: string
   /** Diisi (mis. "Pihak Pemberi Hibah") utk Hibah/Tukar Menukar → tambah kolom paling kiri. Null utk yang lain. */
   pihakLabel?: string | null
-  /**
-   * Aktifkan tab "Format Permendagri" — sementara ini hanya menu Pengadaan yang
-   * padanannya sudah dibangun (Format IV.A).
-   *
-   * ⚠️ Dulu bernama `enableModel3`. "Model 3" DICABUT dari nomenklatur menu ini
-   * (keputusan user 2026-08-29) karena angkanya menyesatkan: di Laporan BMD &
-   * Saldo Awal, "Model 1/2/3" itu penamaan aplikasi sendiri untuk tiga bentuk
-   * rekap (per golongan / matriks per SKPD / mutasi) — sedangkan di sini "Model
-   * 3" dipakai untuk hal yang sama sekali BERBEDA, yaitu lembar resmi Format
-   * IV.A. Satu kata, dua arti, di modul yang sama.
-   *
-   * Kode format resminya tetap terbaca, tapi dicetak DI LEMBARNYA (kanan atas,
-   * lihat LaporanPengadaanTabel) — di situ ia berguna untuk pemeriksa yang
-   * mencocokkan lampiran; di tab layar ia cuma jargon.
-   */
-  formatPermendagri?: boolean
 }) {
+  // ⚠️ ADA/TIDAKNYA tab "Format Permendagri" DITURUNKAN dari registry, bukan
+  // dari prop (R5, docs/pelaporan-permendagri.md). Dulu ia prop opsional
+  // `enableModel3` — dan prop opsional yang lupa dikirim TIDAK menghasilkan
+  // error TypeScript, jadi menu Perolehan keenam yang lupa mendaftarkannya akan
+  // kehilangan tabnya DIAM-DIAM. Sekarang mustahil: yang punya entri di
+  // registry dapat tabnya sendiri, yang tidak, tidak.
+  //
+  // ⚠️ Nama "Model 3" DICABUT dari nomenklatur menu ini (keputusan user
+  // 2026-08-29) karena angkanya menyesatkan: di Laporan BMD & Saldo Awal
+  // "Model 1/2/3" adalah penamaan aplikasi untuk tiga bentuk rekap (per
+  // golongan / matriks per SKPD / mutasi), sedangkan di sini "Model 3" dipakai
+  // untuk hal yang sama sekali BERBEDA — lembar resmi Format IV.A. Satu kata,
+  // dua arti, di modul yang sama. Kode formatnya tetap terbaca, tapi dicetak
+  // DI LEMBARNYA (LaporanPengadaanTabel).
+  const lembar = lembarPerolehan(jenis)
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
   const [rows, setRows] = useState<Trx[]>([])
@@ -286,7 +286,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Rekap per SKPD
         </button>
-        {formatPermendagri && (
+        {lembar && (
           <button onClick={() => setView('permendagri')}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === 'permendagri' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
             Format Permendagri
