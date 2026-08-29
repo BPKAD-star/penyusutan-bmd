@@ -1,4 +1,5 @@
 'use client'
+import { ingatanCetak, kunciTtdMutasiBmd } from '@/lib/ingatanCetak'
 // Pop-up "Cetak Format IV.L.4.1 / IV.L.4.3" — menanyakan penanda tangan &
 // tanggal, lalu menyerahkan konfignya ke halaman induk yang memicu cetak.
 //
@@ -32,15 +33,9 @@ const todayStr = () => {
 
 /** Preferensi tampilan, bukan gerbang wewenang — disimpan supaya cetak ulang
  *  menghasilkan lembar yang SAMA (lembar ini diteken lalu dipindai). */
-const keyOf = (skpdId: number | null) =>
-  skpdId == null ? 'bmd_mutasi_ttd_pemda' : `bmd_mutasi_ttd_skpd_${skpdId}`
+const ingatan = (skpdId: number | null) => ingatanCetak<Tersimpan>(kunciTtdMutasiBmd(skpdId))
 type Tersimpan = { ttd?: string; kiri?: string; tgl?: string }
-function baca(skpdId: number | null): Tersimpan | null {
-  try {
-    const v = localStorage.getItem(keyOf(skpdId))
-    return v ? (JSON.parse(v) as Tersimpan) : null
-  } catch { return null }
-}
+const baca = (skpdId: number | null): Tersimpan | null => ingatan(skpdId).baca()
 
 export default function CetakMutasiBmdModal({ skpdId, onClose, onCetak }: {
   /** null = lembar se-pemda (IV.L.4.3). */
@@ -104,7 +99,7 @@ export default function CetakMutasiBmdModal({ skpdId, onClose, onCetak }: {
       return p ? { nama: p.nama, nip: p.nip } : null
     }
     try {
-      localStorage.setItem(keyOf(skpdId), JSON.stringify({ ttd: ttdId, kiri: kiriId, tgl }))
+      ingatan(skpdId).simpan({ ttd: ttdId, kiri: kiriId, tgl })
     } catch { /* mode privat — abaikan */ }
     onCetak({
       ttd: perSkpd ? cariCalon(ttdId) : cariPegawai(ttdId),

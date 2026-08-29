@@ -202,9 +202,44 @@ Intra/Ekstra, kop, & tiga catatan — karena Format V.2 memang memintanya.
 Bedanya bukan gaya penulisan, melainkan **bentuk formatnya**; memaksa keduanya
 jadi satu komponen menghasilkan penyatuan palsu yang parameternya lebih banyak
 daripada kode yang dihemat. Yang memang layak disatukan berikutnya cuma
-**pemilih penanda tangan + `localStorage`** (kini tersebar di 2 pop-up + 3
-halaman cetak) — itu Fase 2c, dan bentuknya sudah seragam: `fetchCalonTtd` +
-kunci per (SKPD × format).
+**ingatan pilihan cetak** — itu Fase 2c di bawah.
+
+### Fase 2c — ingatan pilihan cetak (2026-08-29)
+
+`lib/ingatanCetak.ts`. Menggantikan pasangan baca/tulis `localStorage` yang
+disalin di **8 tempat** (5 halaman cetak + 2 pop-up + modal BA).
+
+- **`ingatanCetak<T>(kunci)`** — muatan JSON, dipakai 7 dari 8 lembar.
+- **`ingatanTeksCetak(kunci)`** — muatan TEKS POLOS. ⚠️ Dipakai SATU lembar
+  (RKBMD se-Kabupaten, `bmd_rkbmd_ttd_sekab`) yang menyimpan id pegawai apa
+  adanya sejak awal. Membacanya sebagai JSON akan `JSON.parse('<uuid>')` →
+  melempar → `null`, jadi pilihan yang sudah tersimpan di peramban operator
+  LENYAP tanpa satu pun error. Bentuknya **dipertahankan, bukan "dirapikan"**.
+- Semua kunci dikumpulkan di lib itu. ⚠️ **NILAINYA WARISAN & JANGAN DIGANTI** —
+  kunci itu tempat preferensi tersimpan di peramban OPERATOR; menggantinya tak
+  error sama sekali, cuma membuat semua pilihan lenyap dan lembar cetak ulang
+  mendadak bertitik-titik lagi. Penamaannya memang tak seragam
+  (`bmd_laporanbmd_…` vs `bmd_rkbmd_…` vs `bmd_ba_rekon_…`); menyeragamkannya
+  lebih mahal daripada manfaatnya. Dikunci HARFIAH di `lib/ingatanCetak.test.ts`.
+
+⚠️ **Cacat nyata yang ditutup: TIGA titik menulis TANPA `try/catch`**
+(`standar-harga`, `rkbmd` ×2). `localStorage.setItem` MELEMPAR di mode privat &
+saat kuota penuh, dan di ketiga titik itu ia dipanggil dari dalam
+`onChange`/`onPilih` — jadi sekadar *memilih penanda tangan* bisa menjatuhkan
+halaman cetaknya. Pembacanya sudah dijaga sejak awal di semua tempat; penulisnya
+yang kelewat.
+
+⚠️ **Bentuk MUATANNYA sengaja tidak diseragamkan** — `{id,tgl}` · `{kiri,kanan,tgl}`
+· `{id,plt,tgl}` · `{id,jabatan}` · `{ttd,kiri,tgl}` · `Partial<KonfigBA>`.
+Tiap lembar menyimpan hal berbeda karena formatnya memang menanyakan hal
+berbeda; yang disatukan MEKANIKNYA (generik `<T>`). Memaksa satu tipe bersama
+menghasilkan objek serba-opsional yang tak menjelaskan apa pun — alasan yang
+sama dengan tidak menyatukan pop-upnya.
+
+⚠️ **Pemilih penanda tangannya sendiri (`fetchCalonTtd` + dropdown + radio
+Definitif/Plt) BELUM disatukan** dan sengaja ditunda: bentuk UI-nya berbeda
+per lembar (per-SKPD vs se-pemda vs dua-pihak), jadi ia perlu ditelaah bareng
+Fase 3 ketika sudah ada pemakai ketiga yang bentuknya beda.
 
 ⚠️ **Tiga aturan IKUT TERPASANG** di lembar yang sebelumnya tak punya, dan
 sudah diperiksa aman: `.no-print{display:none}` di lembar BA & Mutasi (nol
@@ -234,6 +269,8 @@ kalau satu golongan melebihi satu halaman — perbaikan, bukan kemunduran).
   dari 7 keluarga format yang memang sudah terbangun di kode.
 - **Fase 2b — kerangka lembar: SELESAI (2026-08-29).** `lib/cetakLembar.ts` +
   test. Yang disatukan MEKANIKNYA, bukan pop-upnya — lihat §4b.
+- **Fase 2c — ingatan pilihan cetak: SELESAI (2026-08-29).** `lib/ingatanCetak.ts`
+  + test; 8 salinan jadi satu & 3 penulis tanpa `try/catch` ditutup — §4b.
 - **Fase 3 — uji kerangka pada bentuk yang paling BEDA**, yaitu satu laporan
   Pengelolaan (daftar transaksi, bukan rekap). Kalau kerangkanya bertahan tanpa
   dibedah, dia benar. Kalau harus dibedah, bedah SEKARANG selagi pemakainya

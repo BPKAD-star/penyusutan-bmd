@@ -1,4 +1,5 @@
 'use client'
+import { ingatanCetak, KUNCI_TTD_LAPORAN_BMD_PEMDA } from '@/lib/ingatanCetak'
 import { namaBerkasCetak } from '@/lib/cetakLembar'
 // ============================================================================
 // Cetak LAPORAN BMD — Permendagri 47/2021 Format IV.L.4.4 (SE-PEMDA).
@@ -61,14 +62,8 @@ const todayStr = () => {
 }
 
 /** Satu kunci se-pemda (tak ada SKPD yang membedakan), pola `bmd_rkbmd_ttd_sekab`. */
-const KEY_TTD = 'bmd_laporanbmd_ttd_pemda'
 type TtdTersimpan = { kiri?: string; kanan?: string; tgl?: string }
-function bacaTtd(): TtdTersimpan | null {
-  try {
-    const v = localStorage.getItem(KEY_TTD)
-    return v ? (JSON.parse(v) as TtdTersimpan) : null
-  } catch { return null }
-}
+const ingatan = ingatanCetak<TtdTersimpan>(KUNCI_TTD_LAPORAN_BMD_PEMDA)
 
 export default function CetakLaporanBmdPemdaPage() {
   const supabase = createClient()
@@ -101,7 +96,7 @@ export default function CetakLaporanBmdPemdaPage() {
         } catch { daftar = [] }
         setPegawai(daftar)
 
-        const simpan = bacaTtd()
+        const simpan = ingatan.baca()
         setKiriId(q.get('ttdKiri') || simpan?.kiri || daftar.find(p => p.role_bmd === ROLE_KIRI)?.id || '')
         setKananId(q.get('ttdKanan') || simpan?.kanan || daftar.find(p => p.role_bmd === ROLE_KANAN)?.id || '')
         setTglTtd(q.get('tgl') || simpan?.tgl || todayStr())
@@ -130,7 +125,7 @@ export default function CetakLaporanBmdPemdaPage() {
 
   function simpanTtd(next: Partial<TtdTersimpan>) {
     const v: TtdTersimpan = { kiri: kiriId, kanan: kananId, tgl: tglTtd, ...next }
-    try { localStorage.setItem(KEY_TTD, JSON.stringify(v)) } catch { /* mode privat — abaikan */ }
+    ingatan.simpan(v)
   }
 
   useEffect(() => {

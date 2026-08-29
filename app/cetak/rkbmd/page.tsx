@@ -1,4 +1,5 @@
 'use client'
+import { ingatanCetak, ingatanTeksCetak, kunciTtdRkbmdSkpd, KUNCI_TTD_RKBMD_SEKAB } from '@/lib/ingatanCetak'
 import { namaBerkasCetak } from '@/lib/cetakLembar'
 // Cetak "Usulan Rencana Kebutuhan Barang Milik Daerah" — kelima jenis.
 // Standalone, A4 landscape. Dua mode:
@@ -39,25 +40,21 @@ type Pegawai = { id: string | number; nama: string; nip: string | null; jabatan:
  *  SAMA — kalau tidak, dokumen yang sudah diedarkan bisa dicetak ulang dengan
  *  nama lain tanpa ada yang sadar. Pola & alasannya sama dgn `bmd_tahun_kerja_
  *  pilihan` (lib/tahunKerja.ts): preferensi tampilan, bukan gerbang wewenang. */
-const KEY_TTD = 'bmd_rkbmd_ttd_sekab'
 /** Idem untuk lembar per-SKPD, tapi DIPISAH PER SKPD: satu operator bisa
  *  mencetak lembar beberapa sub-OPD, dan satu kunci bersama akan membuat
  *  pilihan SKPD terakhir bocor ke lembar SKPD berikutnya. */
-const keyTtdSkpd = (skpdId: number) => `bmd_rkbmd_ttd_skpd_${skpdId}`
+const ingatanSkpd = (skpdId: number) => ingatanCetak<TtdTersimpan>(kunciTtdRkbmdSkpd(skpdId))
+/** ⚠️ Se-Kabupaten menyimpan id pegawai APA ADANYA (bukan JSON) sejak awal —
+ *  membacanya sbg JSON melenyapkan pilihan yang sudah tersimpan di peramban
+ *  operator tanpa satu pun error. Lihat lib/ingatanCetak.ts. */
+const ingatanSekab = ingatanTeksCetak(KUNCI_TTD_RKBMD_SEKAB)
 
 type TtdTersimpan = { id?: string; plt?: boolean }
 
 /** Isi localStorage itu data dari luar program: bisa cacat karena versi lama,
  *  suntingan manual, atau berbagi kunci dgn tab lain. Gagal mengurainya cukup
  *  berarti "belum pernah memilih" — jangan sampai menjatuhkan halaman cetak. */
-function bacaTtdTersimpan(skpdId: number): TtdTersimpan | null {
-  try {
-    const s = localStorage.getItem(keyTtdSkpd(skpdId))
-    return s ? (JSON.parse(s) as TtdTersimpan) : null
-  } catch {
-    return null
-  }
-}
+const bacaTtdTersimpan = (skpdId: number): TtdTersimpan | null => ingatanSkpd(skpdId).baca()
 
 type Item = {
   id: string; rkbmd_id: string; paket_id: string | null; no_urut: number | null
@@ -303,7 +300,7 @@ export default function CetakRkbmdPage() {
         const { data: pg } = await supabase.from('admin_pegawai')
           .select('id,nama,nip,jabatan,skpd_id').order('nama')
         setPegawai((pg || []) as Pegawai[])
-        const tersimpan = p.get('ttd') || localStorage.getItem(KEY_TTD) || ''
+        const tersimpan = p.get('ttd') || ingatanSekab.baca() || ''
         if (tersimpan) setTtdId(tersimpan)
       } else {
         // Per-SKPD: `?id=` selalu satu dokumen, jadi satu SKPD & satu pilihan.
@@ -385,8 +382,8 @@ export default function CetakRkbmdPage() {
                 onChange={e => {
                   setTtdId(e.target.value)
                   // Disimpan supaya cetak ulang menghasilkan lembar yang sama.
-                  if (e.target.value) localStorage.setItem(KEY_TTD, e.target.value)
-                  else localStorage.removeItem(KEY_TTD)
+                  if (e.target.value) ingatanSekab.simpan(e.target.value)
+                  else ingatanSekab.hapus()
                 }}
               >
                 <option value="">— belum dipilih (dibiarkan bertitik-titik) —</option>
@@ -425,8 +422,8 @@ export default function CetakRkbmdPage() {
             // lembar ini ditandatangani lalu dipindai jadi lampiran pengajuan,
             // jadi cetakan kedua yang berbeda nama akan menyulitkan penelaah.
             const sid = lembar[0].dok.skpd_id
-            if (v.id) localStorage.setItem(keyTtdSkpd(sid), JSON.stringify(v))
-            else localStorage.removeItem(keyTtdSkpd(sid))
+            if (v.id) ingatanSkpd(sid).simpan(v)
+            else ingatanSkpd(sid).hapus()
           }}
         />
       )}
