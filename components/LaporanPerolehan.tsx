@@ -13,7 +13,7 @@ import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
-import LaporanPengadaanModel3 from '@/components/pelaporan/LaporanPengadaanModel3'
+import LaporanPengadaanPermendagri from '@/components/pelaporan/LaporanPengadaanPermendagri'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 
 type Trx = {
@@ -32,15 +32,29 @@ type Trx = {
   } | null
 }
 
-export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel, enableModel3 }: {
+export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel, formatPermendagri }: {
   judul: string
   deskripsi: string
   jenis: string
   filePrefix: string
   /** Diisi (mis. "Pihak Pemberi Hibah") utk Hibah/Tukar Menukar → tambah kolom paling kiri. Null utk yang lain. */
   pihakLabel?: string | null
-  /** Aktifkan tab "Model 3" (format Permendagri) — hanya utk menu Pengadaan. */
-  enableModel3?: boolean
+  /**
+   * Aktifkan tab "Format Permendagri" — sementara ini hanya menu Pengadaan yang
+   * padanannya sudah dibangun (Format IV.A).
+   *
+   * ⚠️ Dulu bernama `enableModel3`. "Model 3" DICABUT dari nomenklatur menu ini
+   * (keputusan user 2026-08-29) karena angkanya menyesatkan: di Laporan BMD &
+   * Saldo Awal, "Model 1/2/3" itu penamaan aplikasi sendiri untuk tiga bentuk
+   * rekap (per golongan / matriks per SKPD / mutasi) — sedangkan di sini "Model
+   * 3" dipakai untuk hal yang sama sekali BERBEDA, yaitu lembar resmi Format
+   * IV.A. Satu kata, dua arti, di modul yang sama.
+   *
+   * Kode format resminya tetap terbaca, tapi dicetak DI LEMBARNYA (kanan atas,
+   * lihat LaporanPengadaanTabel) — di situ ia berguna untuk pemeriksa yang
+   * mencocokkan lampiran; di tab layar ia cuma jargon.
+   */
+  formatPermendagri?: boolean
 }) {
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
@@ -50,8 +64,8 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const [periodeList, setPeriodeList] = useState<string[]>([])
   const [periode, setPeriode] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
-  const [selSkpdId, setSelSkpdId] = useState<number | null>(null) // SKPD terpilih (utk footer Model 3)
-  // Model 2: rekap matriks per SKPD (root) x per golongan — dibangun lazy saat view dipindah.
+  const [selSkpdId, setSelSkpdId] = useState<number | null>(null) // SKPD terpilih (utk footer lembar Permendagri)
+  // Rekap per SKPD: matriks per SKPD (root) x per golongan — dibangun lazy saat view dipindah.
   const [view, setView] = useState<'list' | 'matrix' | 'permendagri'>('list')
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
   const [matrixLoading, setMatrixLoading] = useState(false)
@@ -142,7 +156,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
-  // Model 2: rekap matriks SKPD (root) x golongan — dibangun full (tak dibatasi 500 spt daftar transaksi).
+  // Rekap per SKPD: matriks SKPD (root) x golongan — dibangun full (tak dibatasi 500 spt daftar transaksi).
   useEffect(() => {
     if (view !== 'matrix' || !skpdLoaded) return
     ;(async () => {
@@ -270,12 +284,12 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         </button>
         <button onClick={() => setView('matrix')}
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-          Rekap per SKPD (Model 2)
+          Rekap per SKPD
         </button>
-        {enableModel3 && (
+        {formatPermendagri && (
           <button onClick={() => setView('permendagri')}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === 'permendagri' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-            Format Permendagri (Model 3)
+            Format Permendagri
           </button>
         )}
       </div>
@@ -296,7 +310,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       </div>
 
       {view === 'permendagri' ? (
-        <LaporanPengadaanModel3 periode={periode} skpdId={selSkpdId} descIds={descIds} />
+        <LaporanPengadaanPermendagri periode={periode} skpdId={selSkpdId} descIds={descIds} />
       ) : view === 'matrix' ? (
         <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={matrixLoading} />
       ) : (

@@ -1,6 +1,6 @@
 'use client'
 // Tabel Laporan Pengadaan format Permendagri 47/2021 (Format IV.A — aset tetap).
-// Dipakai ulang oleh tab "Model 3" (components/pelaporan/LaporanPengadaanModel3)
+// Dipakai ulang oleh tab "Format Permendagri" (components/pelaporan/LaporanPengadaanPermendagri)
 // dan halaman cetak (app/cetak/laporan-pengadaan). Header bertingkat 2 baris +
 // subtotal per golongan + footer tanda tangan Pengguna Barang (NIP bisa kosong utk
 // non-ASN RSUD). Data & grouping ada di lib/laporanPengadaan (satu sumber).
@@ -104,6 +104,16 @@ function ReportBlock({ nama, periode, rows, kodeCols, pengguna, pageBreak }: {
 
   return (
     <div className={`${pageBreak ? 'print:break-after-page' : ''} mb-10`}>
+      {/* Kode format resmi di KANAN ATAS, bukan di nama tab/menu (keputusan user
+          2026-08-29). Di sinilah ia berguna: pemeriksa mencocokkan lampiran yang
+          diterimanya dengan daftar format di Permendagri. Di layar ia cuma
+          jargon — dan di menu Perolehan angka "Model 3" malah menyesatkan,
+          karena "Model 1/2/3" di Laporan BMD artinya hal yang lain sama sekali.
+          Pola yang sama dgn `kepalaLampiran` (BeritaAcaraRekon) & `KopKanan`
+          (cetak RKBMD). */}
+      <div className="text-right text-[10px] text-gray-500 mb-1">
+        Format IV.A — Permendagri 47/2021
+      </div>
       <div className="text-center mb-3">
         <p className="font-bold uppercase text-[13px]">Laporan Pengadaan BMD Berupa Aset Tetap</p>
         <p className="font-semibold">SKPD: {nama}</p>
