@@ -98,7 +98,9 @@ async function batalkanKapitalisasi(
  * `npBaru − akumBaru`) supaya rumusnya persis sama seperti sebelumnya saat
  * `akumSerap` nol — pratinjau lama tak bergeser sedikit pun.
  */
-function computeSnapshot(fig: IndukFig, kode: string, rehab: number, bands: BandOverhaul[], akumSerap = 0): KapSnapshot {
+function computeSnapshot(
+  fig: IndukFig, kode: string, rehab: number, bands: BandOverhaul[], akumSerap = 0, periodeKap = '',
+): KapSnapshot {
   const persen = fig.npLama > 0 ? (rehab / fig.npLama) * 100 : 0
   const band = rehab > 0 ? cariBand(bands, kode, persen) : null
   const tambahan = band?.tambahan_tahun ?? 0
@@ -114,6 +116,8 @@ function computeSnapshot(fig: IndukFig, kode: string, rehab: number, bands: Band
     rehab, persen, tambahan_tahun: tambahan, masa_baru_tahun: masaBaruTahun, sisa_baru_smt: sisaBaruSmt,
     np_baru: npBaru, nb_baru: nbBaru, beban_baru: bebanBaru,
     akum_diserap: akumSerap, akum_baru: fig.akumLama + akumSerap,
+    periode_kap: periodeKap || undefined,
+    periode_dasar: periodeKap ? formatPeriode(previousPeriode(parsePeriode(periodeKap))) : undefined,
   }
 }
 
@@ -385,45 +389,54 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
     })()
   }, [ubah]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Posisi induk SEBELUM kapitalisasi = posisi pada AKHIR periode sebelum
+  // tanggal dokumen — yaitu keadaan pembuka periode kapitalisasi, persis state
+  // yang dipakai engine saat memproses event ini.
+  //
+  // ⚠️ Sampai 2026-08-27 ini membaca baris `penyusutan_semester` TERBARU
+  // (`order periode desc limit 1`). Untuk kapitalisasi bertanggal 27 Agustus
+  // 2026 (2026-S2), baris terbaru itu 2026-S2 — yakni posisi SESUDAH beban
+  // semester berjalan. Akibatnya kolom "Induk — Sebelum" menampilkan akumulasi
+  // 30.121.751,2 padahal posisi pembukanya 27.970.197,2, dan nilai buku +
+  // beban baru ikut meleset. Ketahuan user saat menguji pratinjau untuk BPK.
+  //
+  // Membaca periode P−1 juga membuat cabang khusus "sedang mengubah" tak perlu
+  // lagi: kapitalisasi hidup di periode P, jadi baris P−1 TIDAK PERNAH
+  // terpengaruh olehnya — bersih baik sebelum maupun sesudah pembatalan, dan
+  // tak bergantung pada apakah engine sudah dijalankan ulang.
   useEffect(() => {
     setFig(null)
     if (!induk) return
-    (async () => {
-      // ⚠️ Saat MENGUBAH dgn induk yang SAMA, posisi induk diambil dari
-      // `snapshot.*_lama` transaksi lama — itu persis "induk sebelum
-      // kapitalisasi ini", dan guard rantai menjamin tak ada peristiwa lain di
-      // antaranya. `penyusutan_semester` TIDAK dipakai di sini karena engine
-      // belum dijalankan ulang sesudah pembatalan barusan, jadi barisnya masih
-      // memuat jadwal hasil kapitalisasi yang baru saja dibatalkan (masa
-      // manfaat yang sudah diperpanjang, akumulasi & nilai buku ikutannya).
-      // Tanpa cabang ini, pratinjau & snapshot yang dibekukan ke ledger akan
-      // memuat angka "sesudah" yang dipakai sebagai "sebelum".
-      // Induk yang DIGANTI ke barang lain tak kena: aset itu tak pernah
-      // tersentuh kapitalisasi ini, jadi pembacaan biasa di bawah sudah benar.
-      if (ubah && induk.id === ubah.aset_id && ubah.snapshot) {
-        const s = ubah.snapshot
+    ;(async () => {
+      const { data: k } = await supabase.from('admin_kodefikasi_bmd').select('masa_manfaat_tahun').eq('kode', induk.kode).single()
+      const masaMaks = k?.masa_manfaat_tahun ?? null
+      const npLama = induk.nilai_perolehan
+      // Nilai buku DITURUNKAN (`np − akum`), bukan dibaca dari
+      // `nilai_buku_akhir`: `npLama` datang dari register (memuat semua
+      // peristiwa s.d. hari ini) sementara akumulasi dari baris P−1. Menurunkan
+      // menjamin pratinjaunya konsisten sendiri — tak mungkin menampilkan
+      // np − akum ≠ nb.
+      const dasar = formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))
+      const { data: ps } = await supabase.from('penyusutan_semester')
+        .select('akumulasi,beban,sisa_semester').eq('aset_id', induk.id).eq('periode', dasar).limit(1)
+      if (ps && ps.length) {
+        const akumLama = Number(ps[0].akumulasi) || 0
         setFig({
-          npLama: s.np_lama, nbLama: s.nb_lama, akumLama: s.akum_lama,
-          bebanLama: s.beban_lama, sisaLamaSmt: s.sisa_lama_smt, masaMaks: s.masa_maks_tahun,
+          npLama, akumLama, nbLama: Math.max(0, npLama - akumLama),
+          bebanLama: Number(ps[0].beban) || 0, sisaLamaSmt: ps[0].sisa_semester, masaMaks,
         })
         return
       }
-      const { data: k } = await supabase.from('admin_kodefikasi_bmd').select('masa_manfaat_tahun').eq('kode', induk.kode).single()
-      const masaMaks = k?.masa_manfaat_tahun ?? null
-      const { data: ps } = await supabase.from('penyusutan_semester')
-        .select('nilai_buku_akhir,akumulasi,beban,sisa_semester,periode').eq('aset_id', induk.id).order('periode', { ascending: false }).limit(1)
-      if (ps && ps.length) {
-        setFig({ npLama: induk.nilai_perolehan, nbLama: ps[0].nilai_buku_akhir, akumLama: ps[0].akumulasi, bebanLama: ps[0].beban, sisaLamaSmt: ps[0].sisa_semester, masaMaks })
-        return
-      }
+      // Belum ada baris engine untuk P−1 → pakai baseline e-BMD.
       const { data: sa } = await supabase.from('transaksi_bmd').select('payload').eq('aset_id', induk.id).eq('jenis', 'saldo_awal').limit(1)
       const p = (sa?.[0]?.payload || {}) as { nilai_buku_awal?: number; akumulasi_2025?: number; beban_per_smt?: number; sisa_masa_manfaat_smt?: number }
+      const akumLama = p.akumulasi_2025 ?? 0
       setFig({
-        npLama: induk.nilai_perolehan, nbLama: p.nilai_buku_awal ?? induk.nilai_perolehan, akumLama: p.akumulasi_2025 ?? 0,
+        npLama, akumLama, nbLama: Math.max(0, npLama - akumLama),
         bebanLama: p.beban_per_smt ?? 0, sisaLamaSmt: p.sisa_masa_manfaat_smt ?? 0, masaMaks,
       })
     })()
-  }, [induk]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [induk, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Akumulasi penyusutan tiap ANAK, dibaca pada periode SEBELUM tanggal
   // dokumen (pola sama dgn Penggabungan Barang). WAJIB dibekukan ke payload:
@@ -454,7 +467,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
 
   const rehab = anak.reduce((s, a) => s + (a.nilai_perolehan || 0), 0)
   const akumSerap = anak.reduce((s, a) => s + (akumAnak[a.id] || 0), 0)
-  const snap = induk && fig && rehab > 0 ? computeSnapshot(fig, induk.kode, rehab, bands, akumSerap) : null
+  const snap = induk && fig && rehab > 0 ? computeSnapshot(fig, induk.kode, rehab, bands, akumSerap, periodeDariTanggal(tgl)) : null
   const anakInfo = (): KapAnak[] => anak.map(a => ({
     id: a.id, nibar: a.nibar, nama: a.nama_barang, nilai: a.nilai_perolehan, tgl: a.tgl_perolehan,
     akum: akumAnak[a.id] || 0,
@@ -475,7 +488,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
     if (bad) { setErr(`Barang anak "${bad.nama_barang}" ${anakInvalid(bad)} — tidak boleh.`); return }
     if (!fig) { setErr('Data induk belum siap, coba sebentar lagi.'); return }
     setErr(''); setSaving(true)
-    const snapshot = computeSnapshot(fig, induk.kode, rehab, bands, akumSerap)
+    const snapshot = computeSnapshot(fig, induk.kode, rehab, bands, akumSerap, periodeDariTanggal(tgl))
     // ⚠️ `fig.npLama`, BUKAN `induk.nilai_perolehan`. Untuk transaksi baru
     // keduanya sama persis (fig diisi dari kolom itu). Bedanya cuma muncul saat
     // MENGUBAH dgn induk yang sama: di situ `fig.npLama` datang dari snapshot

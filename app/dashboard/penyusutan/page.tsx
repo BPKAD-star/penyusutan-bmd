@@ -90,8 +90,17 @@ type Rekap = {
   total_akumulasi: number; total_nilai_buku: number; tanpa_hasil_engine: number
 }
 
+// ⚠️ DUA DESIMAL, bukan dibulatkan ke rupiah penuh (permintaan user
+// 2026-08-27). Angka di `penyusutan_semester` memang BERDESIMAL: baseline e-BMD
+// membawa akumulasi seperti 25.818.643,2 dan engine hanya membulatkan BEBAN
+// (`Math.round(nilaiBuku / sisaSmt)`), bukan akumulasi & nilai bukunya. Selama
+// tampilan ini memotongnya, layar menampilkan 27.970.197 sementara Laporan BMD
+// menampilkan 27.970.197,2 untuk angka YANG SAMA — dan penelaah tak punya cara
+// tahu mana yang benar. Yang dijumlah selalu nilai penuhnya; ini murni
+// tampilan. `minimumFractionDigits` tidak dipasang supaya angka yang memang
+// bulat tak jadi berekor ",00" di seluruh tabel.
 const angka = (v: number | null | undefined) =>
-  v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
+  v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 
 // Visibilitas period-aware (event sembunyi/muncul/lahir) dari lib/visibilitas.ts
 // — dipakai bersama Daftar Barang & Rekonsiliasi supaya tak menyimpang lagi.
