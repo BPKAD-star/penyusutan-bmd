@@ -64,52 +64,64 @@ function SelKode({ kode, sampai, tebal }: { kode: string; sampai: number; tebal?
   )
 }
 
-function KopLembar({ judul, berupa, komptabel, skpd, periode, tahun, tambahan }: {
-  judul: string; berupa: string; komptabel: string
+/**
+ * Kop lembar.
+ *
+ * ⚠️ **Penanda `(1)`…`(8)` TIDAK dicetak** (keputusan user 2026-08-30). Angka
+ * dalam kurung di lembar Permendagri itu rujukan ke "petunjuk pengisian" —
+ * penanda TEMPLATE KOSONG, bukan bagian dokumen yang sudah terisi. Nomornya
+ * tetap hidup di `FORMAT_PEROLEHAN` sebagai tautan balik ke format aslinya &
+ * penjaga struktur kolom (lib/formatPermendagri.test.ts), cuma tak dirender.
+ *
+ * ⚠️ Baris ke-3 DIPILIH OTOMATIS dari level SKPD, tak lagi mencetak ketiga
+ * kemungkinan untuk dicoret salah satunya — levelnya sudah diketahui aplikasi.
+ * Baris ke-4 nama SKPD saja, TANPA kata "SKPD" (permintaan user).
+ */
+function KopLembar({ judul, berupa, komptabel, sebutan, skpd, periode, tahun, tambahan }: {
+  judul: string; berupa: string; komptabel: string; sebutan: string
   skpd: { kode: string; nama: string } | null
   periode: string; tahun: string; tambahan?: string
 }) {
   return (
     <>
       <div className="text-center leading-tight mb-2">
-        <p className="font-bold text-[11px]">{judul} {berupa}……..(1)</p>
+        <p className="font-bold text-[11px]">{judul} {berupa}</p>
         {tambahan && <p className="font-bold text-[11px]">{tambahan}</p>}
-        <p className="font-bold text-[11px]">{komptabel} (2)</p>
-        <p className="font-bold text-[11px]">
-          KUASA PENGGUNA BARANG, PENGGUNA BARANG ATAU PENGELOLA BARANG…………(3)
-        </p>
-        <p className="font-bold text-[11px]">SKPD {skpd?.nama || '……'}…….(4)</p>
-        <p className="font-bold text-[11px]">{periode}…….(5)</p>
-        <p className="font-bold text-[11px]">TAHUN {tahun}…….(6)</p>
+        <p className="font-bold text-[11px]">{komptabel}</p>
+        <p className="font-bold text-[11px]">{sebutan.toUpperCase()}</p>
+        <p className="font-bold text-[11px]">{(skpd?.nama || '').toUpperCase()}</p>
+        <p className="font-bold text-[11px]">{periode}</p>
+        <p className="font-bold text-[11px]">TAHUN {tahun}</p>
       </div>
       <table className="text-[9px] mb-1">
         <tbody>
-          <tr><td className="pr-6">Provinsi</td><td>: {PROVINSI}……(7)</td></tr>
-          <tr><td className="pr-6">Kabupaten/Kota</td><td>: {KABUPATEN}……(8)</td></tr>
+          <tr><td className="pr-6">Provinsi</td><td>: {PROVINSI}</td></tr>
+          <tr><td className="pr-6">Kabupaten/Kota</td><td>: {KABUPATEN}</td></tr>
         </tbody>
       </table>
     </>
   )
 }
 
-function BlokTtd({ sebutan, nama, nip, tgl, nomor }: {
+function BlokTtd({ sebutan, nama, nip, tgl }: {
   sebutan: string; nama: string | null; nip: string | null; tgl: string
-  nomor: { tanggal: number; jabatan: number; nama: number }
 }) {
   return (
     <div className="flex justify-end mt-8 text-[10px]">
       <div className="text-center w-80">
-        <p>…………………, {tglPanjang(tgl)} ({nomor.tanggal})</p>
+        {/* Tempat DITULIS, bukan titik-titik (permintaan user 2026-08-30) —
+            lembarnya memang selalu terbit di Kediri. */}
+        <p>{KABUPATEN}, {tglPanjang(tgl)}</p>
         {/* Lembar aslinya menuliskan ketiga kemungkinan untuk dicoret salah
             satunya; di sini yang benar langsung dipilih dari LEVEL SKPD
             (keputusan user 2026-08-30) — level 1 Pengguna Barang, sub unit
             Kuasa Pengguna Barang. */}
-        <p>{sebutan} ({nomor.jabatan})</p>
+        <p>{sebutan}</p>
         <div className="h-14" />
         {/* Yang belum dipilih DIBIARKAN bertitik-titik — mengarang nama di
             dokumen yang akan ditandatangani jauh lebih berbahaya. */}
-        <p className="font-semibold">{nama || '…………………………………'} ({nomor.nama})</p>
-        <p>NIP. {nip || '……………………'} ({nomor.nama})</p>
+        <p className="font-semibold">{nama || '…………………………………'}</p>
+        <p>NIP. {nip || '……………………'}</p>
       </div>
     </div>
   )
@@ -122,7 +134,7 @@ export type PropLembar = {
   /** Awalan kode → nama tingkat (lihat `petaNamaTingkat`). */
   namaTingkat: Map<string, string>
   skpd: { kode: string; nama: string } | null
-  /** Isian (1) "BERUPA…", diturunkan dari kelompok neraca yang ada datanya. */
+  /** Isian "BERUPA…", diturunkan dari kelompok neraca yang benar-benar ada datanya. */
   berupa: string
   labelKomptabel: string
   judulPeriode: string
@@ -189,7 +201,8 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
   const rata = (k: Kolom) =>
     k.rata === 'kanan' ? 'text-right' : k.rata === 'tengah' ? 'text-center' : ''
 
-  /** Kepala tabel: baris grup → baris kolom → baris nomor. */
+  /** Kepala tabel: baris grup → baris kolom. Baris nomor kolom sengaja tak
+   *  dicetak — lihat catatan di `KopLembar`. */
   function Thead({ kolomList }: { kolomList: Kolom[] }) {
     const sisa = kolomList.slice(1) // kolom[0] = 'nama', ikut blok Penggolongan
     const grup: { judul: string | undefined; kolom: Kolom[] }[] = []
@@ -214,12 +227,6 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
           {grup.filter(g => g.judul).flatMap(g =>
             g.kolom.map(k => <th key={k.key} className="border border-black px-1 py-1">{k.judul}</th>))}
         </tr>
-        <tr className="text-center italic">
-          <td className="border border-black px-1" colSpan={SEL_KODE}>(9)</td>
-          {kolomList.map(k => (
-            <td key={k.key} className="border border-black px-1">{k.rumus || `(${k.nomor})`}</td>
-          ))}
-        </tr>
       </thead>
     )
   }
@@ -232,7 +239,7 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
       <section>
         <p className="text-right text-[12px] mb-1">Format {f.kode}</p>
         <KopLembar judul={f.judul} berupa={berupa} komptabel={labelKomptabel}
-          skpd={skpd} periode={judulPeriode} tahun={tahun} />
+          sebutan={sebutan} skpd={skpd} periode={judulPeriode} tahun={tahun} />
         <table className="w-full table-fixed border-collapse text-[6.5px] leading-tight">
           <colgroup>
             {Array.from({ length: SEL_KODE }, (_, i) => (
@@ -250,7 +257,7 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
                 {f.kolom.map((k, j) => (
                   <td key={k.key} className={`border border-black px-1 py-0.5 ${rata(k)}`}>
                     {j === 0 ? nama(b.kode) || b.kode
-                      : j === iTotal ? <>{formatRupiah(b.nilai)} ({b.penanda})</>
+                      : j === iTotal ? formatRupiah(b.nilai)
                         : ''}
                   </td>
                 ))}
@@ -273,8 +280,7 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
             )}
           </tbody>
         </table>
-        <BlokTtd sebutan={sebutan} nama={ttd?.nama || null} nip={ttd?.nip || null}
-          tgl={tglTtd} nomor={f.kaki} />
+        <BlokTtd sebutan={sebutan} nama={ttd?.nama || null} nip={ttd?.nip || null} tgl={tglTtd} />
       </section>
     )
   }
@@ -295,8 +301,8 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
       <section className={pecahHalaman ? 'break-before-page' : ''}>
         <p className="text-right text-[12px] mb-1">Format {f.awalan}.{akhiran}</p>
         <KopLembar judul={f.judul.replace('LAPORAN ', 'REKAPITULASI ')} berupa={berupa}
-          komptabel={labelKomptabel} skpd={skpd} periode={judulPeriode} tahun={tahun}
-          tambahan={`MENURUT ${menurut}`} />
+          komptabel={labelKomptabel} sebutan={sebutan} skpd={skpd}
+          periode={judulPeriode} tahun={tahun} tambahan={`MENURUT ${menurut}`} />
         <table className="w-full table-fixed border-collapse text-[8px] leading-tight">
           <colgroup>
             {pakaiNo && <col style={{ width: '4%' }} />}
@@ -319,13 +325,6 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
             <tr className="text-center font-semibold">
               <th className="border border-black px-1 py-1" colSpan={kolomKode}>Kode Barang</th>
               <th className="border border-black px-1 py-1">Nama Barang</th>
-            </tr>
-            <tr className="text-center italic">
-              {pakaiNo && <td className="border border-black px-1">(9)</td>}
-              <td className="border border-black px-1" colSpan={kolomKode}>({pakaiNo ? 10 : 9})</td>
-              <td className="border border-black px-1">({pakaiNo ? 11 : 10})</td>
-              <td className="border border-black px-1">({pakaiNo ? 12 : 11})</td>
-              <td className="border border-black px-1">({pakaiNo ? 13 : 12})</td>
             </tr>
           </thead>
           <tbody>
@@ -355,7 +354,7 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
             {pakaiNo && (
               <tr className="font-bold">
                 <td className="border border-black px-1 py-0.5 text-center" colSpan={kolomKode + 2}>
-                  JUMLAH (14)
+                  JUMLAH
                 </td>
                 <td className="border border-black px-1 py-0.5 text-right">{total.jumlah}</td>
                 <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(total.nilai)}</td>
@@ -363,8 +362,7 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
             )}
           </tbody>
         </table>
-        <BlokTtd sebutan={sebutan} nama={ttd?.nama || null} nip={ttd?.nip || null}
-          tgl={tglTtd} nomor={f.kaki} />
+        <BlokTtd sebutan={sebutan} nama={ttd?.nama || null} nip={ttd?.nip || null} tgl={tglTtd} />
       </section>
     )
   }

@@ -386,6 +386,57 @@ kelihatan sah. Dikunci test.
 
 ---
 
+## 9c. Pemolesan lembar per-SKPD (user 2026-08-30, setelah menguji di layar)
+
+- **Penanda `(1)`…`(31)` TIDAK dicetak, semuanya.** Angka dalam kurung di format
+  Permendagri itu rujukan ke *petunjuk pengisian* — penanda TEMPLATE KOSONG,
+  bukan bagian dokumen yang sudah terisi. Termasuk baris nomor kolom di bawah
+  kepala tabel, penanda subtotal (`… (28)`), dan nomor di blok tanda tangan.
+  ⚠️ **Nomornya TETAP hidup di `FORMAT_PEROLEHAN`** sebagai tautan balik ke
+  lembar asli DAN penjaga struktur kolom (test "penanda subtotal & kaki
+  menyambung"). Jangan dicabut karena dikira data mati. Kalau pemeriksa suatu
+  saat minta rujukan nomor kolom, yang dihidupkan lagi cuma satu baris di
+  `Thead`.
+- **Baris ke-3 kop DIPILIH OTOMATIS** dari level SKPD — `PENGGUNA BARANG` untuk
+  SKPD induk, `KUASA PENGGUNA BARANG` untuk sub unit. Tak lagi mencetak ketiga
+  kemungkinan untuk dicoret salah satunya; levelnya sudah diketahui aplikasi.
+- **Baris ke-4 = nama SKPD saja, HURUF BESAR**, tanpa kata "SKPD".
+- **Blok tanda tangan diawali `Kediri, <tanggal>`** — tempatnya ditulis, bukan
+  titik-titik; lembar ini memang selalu terbit di Kediri.
+
+## 9d. IV.A.<n>.7–10 ternyata TIDAK seragam (2026-08-30)
+
+Sesudah keempat gambarnya dilihat, dugaan "sama semua, beda kedalaman" **salah**:
+
+| Format | Judul | Kolom | Penanda tangan |
+|---|---|---|---|
+| **.7** sub rincian objek | **LAPORAN** (bukan REKAPITULASI) | Kode (6) · Nama (7) · Jumlah (8) · Rp (9) | Pejabat Penatausahaan Barang |
+| **.8** rincian objek | REKAPITULASI | sama, (6)–(9) | idem |
+| **.9** objek | REKAPITULASI | sama, (6)–(9) | idem |
+| **.10** jenis | REKAPITULASI | **No (6) · Pengguna Barang dan Pengelola Barang (7)** · Kode (8) · Nama (9) · Jumlah (10) · Rp (11) | idem |
+
+⚠️ **Hanya `.10` yang punya kolom "Pengguna Barang"** — tiga lainnya polos empat
+kolom. Jadi "se-Kabupaten dengan rincian per SKPD" hanya berlaku di lembar
+terdangkal; `.7`–`.9` menjumlah se-kabupaten tanpa memecah per SKPD.
+
+⚠️ **`.7` berjudul LAPORAN, bukan REKAPITULASI** — ikuti apa adanya, sama
+seperti salah ketik "(14) dua kali" di IV.A.2.2 (§9).
+
+⚠️ **Penanda tangannya `Pejabat Penatausahaan Barang`**, BUKAN Pengelola Barang
+dan bukan turunan level SKPD. Perlu diperiksa dulu apakah peran itu ada di
+`admin_pegawai.role_bmd`; kalau tidak ada, jangan ditebak — biarkan
+bertitik-titik seperti aturan lembar bertanda tangan lainnya.
+
+**Hak akses (keputusan user 2026-08-30):** lembar se-Kabupaten hanya untuk
+`admin` (Pengelola Barang / Admin Pemda) & `pengawas` (Akuntansi/Auditor).
+⚠️ Alasannya BUKAN wewenang, tapi KEBENARAN: RLS tak menolak pengurus barang
+SKPD — ia cuma mengembalikan lebih sedikit baris. Hasilnya lembar berkop
+"PROVINSI, KABUPATEN/KOTA — Kediri" yang isinya satu SKPD, lalu ditandatangani.
+Gerbangnya wajib **menolak berikut alasan tertulis**, bukan sekadar
+menyembunyikan tombol.
+
+---
+
 ## 10. Temuan saat membangun IV.A.2.x (2026-08-30)
 
 **(a) Lembar REKAP itu HIERARKIS, bukan daftar datar.** Bacaan awal keliru:

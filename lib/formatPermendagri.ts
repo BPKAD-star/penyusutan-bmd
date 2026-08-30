@@ -19,6 +19,19 @@
 //
 // ⚠️ PENANDA SUBTOTAL JUGA BERGESER antar format karena jumlah kolomnya beda
 // (Hibah & Perolehan Lainnya 25–28; Inventarisasi & Tukar Menukar 26–29).
+//
+// ⚠️ NOMORNYA TIDAK DICETAK DI LEMBAR — JANGAN DIKIRA DATA MATI.
+// Angka dalam kurung di format Permendagri itu rujukan ke "petunjuk pengisian":
+// penanda TEMPLATE KOSONG, bukan bagian dokumen yang sudah terisi, jadi sejak
+// 2026-08-30 (keputusan user) tak satu pun dirender. Yang tersisa di sini dua
+// gunanya, dua-duanya nyata:
+//   (1) TAUTAN BALIK ke lembar aslinya — waktu seseorang mencocokkan kode ini
+//       dengan berkas Permendagri, `nomor` yang memberitahu kolom mana itu;
+//   (2) PENJAGA STRUKTUR — test "penanda subtotal & kaki menyambung tepat
+//       setelah kolom terakhir" menangkap kolom yang ditambah/dibuang tanpa
+//       menggeser sisanya, dan itu justru kesalahan yang tak bersuara.
+// Mencabutnya berarti kehilangan dua-duanya demi menghapus data yang tak
+// berbiaya apa pun.
 // ============================================================================
 
 /** Kedalaman kodefikasi yang punya baris subtotal, dari yang PALING DALAM. */
