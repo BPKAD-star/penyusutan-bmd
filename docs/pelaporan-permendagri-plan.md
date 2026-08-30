@@ -188,7 +188,7 @@ Diisi bertahap. `?` = kodenya belum dibaca dari mindmap/berkas aslinya.
 | Pengadaan APBD → Aset Lancar | IV.A.1.1.1 | IV.A.1.1.2–5 | IV.A.1.1.6–8 | ❌ di luar cakupan (§2.1) |
 | Pengadaan APBD → Aset Tetap | IV.A.1.2.1–2 | IV.A.1.2.3–19 | IV.A.1.2.20–26 | belum |
 | Pengadaan APBD → Aset Lainnya | IV.A.1.3.1 | IV.A.1.3.2–6 | IV.A.1.3.7–10 | belum |
-| Hibah / sumbangan | IV.A.2.1 | **IV.A.2.2–6 ✅** | IV.A.2.7–10 | **SELESAI** (semester); bulanan/tahunan tinggal ganti rentang |
+| Hibah / sumbangan | IV.A.2.1 | **IV.A.2.2–6 ✅** | IV.A.2.7–10 = **se-Kabupaten** (§9b) | per-SKPD **SELESAI**; se-Kabupaten belum |
 | Perjanjian Kontrak | ? | ? | ? | ⛔ belum ada menunya |
 | Ketentuan perundang-undangan | ? | ? | ? | ⛔ belum ada menunya |
 | Putusan Pengadilan berkekuatan hukum tetap | ? | ? | ? | ⛔ belum ada menunya |
@@ -339,6 +339,50 @@ susunannya BEDA, jadi `null` = tampilkan utuh, jangan menebak.
 - **Komptabel bisa diganti di bilah atas tanpa memuat ulang.** Kop (2)
   menyatakan SATU komptabel, jadi isinya disaring; barang tanpa nilai kolom itu
   dianggap intra, sejalan `klasifikasiKomptabel`.
+
+---
+
+## 9b. IV.A.<n>.7–10 = SE-KABUPATEN, bukan versi tahunan (2026-08-30)
+
+Mindmap mengelompokkan IV.A.2.7–10 sebagai "Tahunan", dan itu **menyesatkan**.
+Dibandingkan kop-nya, IV.A.2.10 ternyata versi **se-Kabupaten** dari IV.A.2.6:
+
+| | IV.A.2.6 | IV.A.2.10 |
+|---|---|---|
+| kop baris 3 | KUASA PENGGUNA/PENGGUNA/PENGELOLA (3) | **PROVINSI, KABUPATEN/KOTA (3)** |
+| baris SKPD | `SKPD……(4)` | **tidak ada** |
+| kolom tabel mulai | (9) | **(6)** |
+| kolom tambahan | — | **"Pengguna Barang dan Pengelola Barang" (7)** |
+
+Penomoran tabelnya yang menentukan: IV.A.2.6 mulai (9) karena kop-nya 8 isian;
+IV.A.2.10 mulai (6) karena kop-nya 5 — isian SKPD & pejabatnya hilang, diganti
+Provinsi/Kabupaten. Dan ia **masih menulis `SEMESTER…..(4)`**, jadi periode tetap
+isian, bukan pembeda format.
+
+**Keputusan (user 2026-08-30): periode = FILTER, bukan nama format.** Satu
+lembar dipakai untuk Semester I / Semester II / Akhir Tahun; yang berganti cuma
+isian kop. Memecah nama format per periode melahirkan tiga entri untuk lembar
+yang sama.
+
+Jadi centangnya dua kelompok:
+
+```
+Per SKPD       IV.A.<n>.2 rinci · .3 · .4 · .5 · .6
+Se-Kabupaten   IV.A.<n>.7 · .8 · .9 · .10        ← BELUM DIBANGUN
+```
+
+⚠️ Kelompok se-Kabupaten **tak boleh terkunci filter SKPD** — justru gunanya
+menjumlah seluruh SKPD, dengan tiap Pengguna Barang jadi baris. Itu wajib
+tertulis di layar supaya operator tak mengira angkanya tersaring. Pola yang sama
+dengan lembar RKBMD: per-SKPD diteken kepala kantor, se-Kabupaten diteken
+Pengelola Barang.
+
+⚠️ **"Akhir Tahun" bernilai TAHUN (mis. `2026`), bukan string kosong.** Kosong
+berarti SELURUH periode yang pernah ada — melintasi tahun lain, sehingga kop
+lembar berbohong tentang isinya. Penerjemahnya `periodeDiminta()` di
+lib/laporanPerolehanPermendagri.ts; **setiap query yang menyaring periode wajib
+lewat situ**, kalau tidak `.eq('periode','2026')` menghasilkan "0 transaksi" yang
+kelihatan sah. Dikunci test.
 
 ---
 

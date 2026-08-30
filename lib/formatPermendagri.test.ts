@@ -12,6 +12,7 @@ import {
   sebutanPejabat, levelSkpd, petaNamaTingkat, NAMA_KELOMPOK,
   type ItemLaporan,
 } from '@/lib/formatPermendagri'
+import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 
 const semua = Object.values(FORMAT_PEROLEHAN)
 
@@ -331,5 +332,32 @@ describe('nama tiap tingkat kodefikasi', () => {
 
   it('daftar kosong → tetap membawa kelompok neraca', () => {
     expect(petaNamaTingkat([]).get('1.3')).toBe('ASET TETAP')
+  })
+})
+
+describe('periodeDiminta — "Akhir Tahun" bernilai TAHUN, bukan string kosong', () => {
+  // ⚠️ Pemilih periode di menu Pelaporan mengirim `2026` untuk Akhir Tahun.
+  // Kalau ada query yang tetap `.eq('periode', '2026')`, ia tak cocok dengan
+  // apa pun dan menghasilkan "0 transaksi" / lembar KOSONG yang kelihatan sah —
+  // tak ada error sama sekali. Fungsi ini satu-satunya penerjemahnya.
+  it('tahun → kedua semester tahun itu', () => {
+    expect(periodeDiminta('2026')).toEqual(['2026-S1', '2026-S2'])
+  })
+
+  it('satu semester → apa adanya', () => {
+    expect(periodeDiminta('2026-S1')).toEqual(['2026-S1'])
+    expect(periodeDiminta('2026-S2')).toEqual(['2026-S2'])
+  })
+
+  it('kosong → daftar kosong (= SELURUH periode, bukan satu tahun)', () => {
+    // Sengaja dibedakan dari tahun: "semua periode" melintasi tahun lain, jadi
+    // ia TIDAK boleh dipakai untuk lembar bertanda tangan yang kop-nya menyebut
+    // satu tahun.
+    expect(periodeDiminta('')).toEqual([])
+  })
+
+  it('hanya empat digit yang dibaca sebagai tahun', () => {
+    expect(periodeDiminta('202')).toEqual(['202'])
+    expect(periodeDiminta('20261')).toEqual(['20261'])
   })
 })

@@ -16,6 +16,8 @@ import { useSkpdTree } from '@/components/useSkpdTree'
 import LaporanPengadaanModel3 from '@/components/pelaporan/LaporanPengadaanModel3'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import { FORMAT_PEROLEHAN } from '@/lib/formatPermendagri'
+import PerolehanFormatPermendagri from '@/components/pelaporan/PerolehanFormatPermendagri'
+import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 
 type Trx = {
   id: number
@@ -111,7 +113,13 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
-    if (periode) q = q.eq('periode', periode)
+    // ⚠️ `periode` bisa bernilai TAHUN saja (mis. `2026` = Akhir Tahun) —
+    // `.eq('periode','2026')` tak akan cocok dengan apa pun dan menghasilkan
+    // "0 transaksi" yang kelihatan sah. `periodeDiminta` yang menerjemahkannya
+    // jadi S1+S2 tahun itu; satu semester tetap `.eq`.
+    const per = periodeDiminta(periode)
+    if (per.length === 1) q = q.eq('periode', per[0])
+    else if (per.length > 1) q = q.in('periode', per)
     if (descIds && descIds.length > 0) {
       const list = descIds.join(',')
       q = q.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)
@@ -140,6 +148,9 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       }
     })()
   }, [buildQuery, saringVoid])
+
+  // Tahun yang punya transaksi — sumber pilihan "Akhir Tahun".
+  const tahunList = [...new Set(periodeList.map(p => p.slice(0, 4)))].sort().reverse()
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
@@ -292,12 +303,12 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         </button>
         <button onClick={() => setView('matrix')}
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-          Rekap per SKPD (Model 2)
+          Rekap per SKPD
         </button>
-        {enableModel3 && (
+        {(enableModel3 || FORMAT_PEROLEHAN[jenis]) && (
           <button onClick={() => setView('permendagri')}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === 'permendagri' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-            Format Permendagri (Model 3)
+            Format Permendagri
           </button>
         )}
       </div>
@@ -308,6 +319,12 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           <select className="select-filter" value={periode} onChange={e => setPeriode(e.target.value)}>
             <option value="">Semua Periode</option>
             {periodeList.map(p => <option key={p} value={p}>{p}</option>)}
+            {/* ⚠️ "Akhir Tahun" bernilai TAHUN saja (mis. `2026`), bukan string
+                kosong — kosong berarti SELURUH periode yang pernah ada, yang
+                melintasi tahun lain & membuat kop lembar Permendagri berbohong
+                tentang isinya. `periodeDiminta()` yang menerjemahkannya jadi
+                S1+S2 tahun itu. */}
+            {tahunList.map(t => <option key={t} value={t}>{t} — Akhir Tahun</option>)}
           </select>
         </div>
         <div className="min-w-[280px]">
@@ -318,7 +335,14 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       </div>
 
       {view === 'permendagri' ? (
-        <LaporanPengadaanModel3 periode={periode} skpdId={selSkpdId} descIds={descIds} />
+        // Pengadaan punya tabelnya sendiri (IV.A.1.2.x, sudah lama ada);
+        // keempat cara perolehan manual memakai penyusun lembar IV.A.<n>.2–6.
+        FORMAT_PEROLEHAN[jenis]
+          ? <PerolehanFormatPermendagri jenis={jenis} skpdId={selSkpdId} periode={periode} />
+          // ⚠️ Model 3 Pengadaan belum paham nilai TAHUN (Akhir Tahun); diberi
+          // '' supaya ia menampilkan seluruh periode, bukan nol baris senyap.
+          : <LaporanPengadaanModel3 periode={/^\d{4}$/.test(periode) ? '' : periode}
+              skpdId={selSkpdId} descIds={descIds} />
       ) : view === 'matrix' ? (
         <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={matrixLoading} />
       ) : (

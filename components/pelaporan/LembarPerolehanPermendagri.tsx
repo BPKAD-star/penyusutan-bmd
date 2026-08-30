@@ -131,11 +131,21 @@ export type PropLembar = {
   sebutan: string
   ttd: { nama: string; nip: string | null } | null
   tglTtd: string
+  /**
+   * Akhiran lembar yang ditampilkan: 2 = rinci, 3–6 = rekap. Kosong/undefined
+   * = semuanya.
+   *
+   * ⚠️ Yang dicentang operator menentukan APA YANG DICETAK, jadi ia harus
+   * menyaring di SINI — bukan disembunyikan lewat CSS. Lembar tersembunyi tetap
+   * ikut ke berkas PDF dan operator tak punya cara tahu.
+   */
+  lembar?: number[]
 }
 
 export default function LembarPerolehanPermendagri(p: PropLembar) {
   const { f, items, skpd, berupa, labelKomptabel, judulPeriode, tahun, sebutan, ttd, tglTtd } = p
   const nama = (kode: string) => p.namaTingkat.get(kode) || ''
+  const tampil = (akhiran: number) => !p.lembar || p.lembar.includes(akhiran)
 
   const nKolom = SEL_KODE + f.kolom.length
   const isiKolom = (k: Kolom, r: BarisLembar): React.ReactNode => {
@@ -270,14 +280,19 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
   }
 
   // ── Lembar REKAP (IV.A.<n>.3–6) ───────────────────────────────────────────
-  function LembarRekap({ akhiran, seg, menurut }: { akhiran: number; seg: number; menurut: string }) {
+  function LembarRekap({ akhiran, seg, menurut, pecahHalaman }: {
+    akhiran: number; seg: number; menurut: string; pecahHalaman: boolean
+  }) {
     const baris = susunRekap(items, seg)
     const total = totalSemua(items)
     // Hanya IV.A.<n>.6 yang punya kolom No & baris JUMLAH (14).
     const pakaiNo = akhiran === 6
     const kolomKode = SEL_KODE - 1 // rekap paling dalam 6 segmen
     return (
-      <section className="break-before-page">
+      // ⚠️ Page-break hanya kalau ADA lembar sebelumnya. Kalau lembar rinci
+      // tidak dicentang, break di lembar pertama menghasilkan satu halaman
+      // KOSONG di depan berkas — dan itu baru ketahuan sesudah dicetak.
+      <section className={pecahHalaman ? 'break-before-page' : ''}>
         <p className="text-right text-[12px] mb-1">Format {f.awalan}.{akhiran}</p>
         <KopLembar judul={f.judul.replace('LAPORAN ', 'REKAPITULASI ')} berupa={berupa}
           komptabel={labelKomptabel} skpd={skpd} periode={judulPeriode} tahun={tahun}
@@ -357,9 +372,10 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
 
   return (
     <>
-      <LembarRinci />
-      {TANGGA_REKAP.map(t => (
-        <LembarRekap key={t.akhiran} akhiran={t.akhiran} seg={t.seg} menurut={t.menurut} />
+      {tampil(2) && <LembarRinci />}
+      {TANGGA_REKAP.filter(t => tampil(t.akhiran)).map((t, i) => (
+        <LembarRekap key={t.akhiran} akhiran={t.akhiran} seg={t.seg} menurut={t.menurut}
+          pecahHalaman={tampil(2) || i > 0} />
       ))}
     </>
   )

@@ -33,6 +33,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 import { formatRupiah } from '@/lib/export'
 import { pecahNibar } from '@/lib/kodeRegister'
 import {
@@ -219,7 +220,12 @@ export default function CetakPerolehanPage() {
         // yang tak bisa jadi index-cond akan menyusuri seluruh ledger.
         let qq = supabase.from('transaksi_bmd').select(SEL)
           .eq('jenis', jns).order('id', { ascending: false })
-        if (per) qq = qq.eq('periode', per)
+        // ⚠️ `periode` bisa bernilai TAHUN saja (mis. `2026` = Akhir Tahun,
+        // dikirim menu Pelaporan sejak 2026-08-30). `.eq('periode','2026')` tak
+        // cocok dengan apa pun & menghasilkan lembar KOSONG yang kelihatan sah.
+        const perList = periodeDiminta(per)
+        if (perList.length === 1) qq = qq.eq('periode', perList[0])
+        else if (perList.length > 1) qq = qq.in('periode', perList)
         if (desc.length > 0) {
           const list = desc.join(',')
           qq = qq.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)

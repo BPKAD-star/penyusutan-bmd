@@ -4,79 +4,39 @@
 //
 //   ?jenis=hibah_masuk|hasil_inventarisasi|tukar_menukar|perolehan_lainnya
 //   &skpd=<id>                (WAJIB — kop lembar memuat identitas SKPD)
-//   &periode=YYYY-Sx          (kosong = seluruh periode → lembar TAHUNAN)
+//   &periode=2026-S1          atau &periode=2026 (AKHIR TAHUN: S1+S2 digabung)
 //   &komptabel=intra|ekstra   (bawaan: intra)
+//   &lembar=2,3,4,5,6         (bawaan: semuanya)
 //
-// SATU BERKAS berisi LIMA lembar (page-break antar lembar), pola yang sama
-// dengan BA Rekon: IV.A.<n>.2 rinci + IV.A.<n>.3–6 rekap. Sekali cetak, sekali
-// tanda tangan, dan tiap lembar tetap bisa diambil sendiri kalau diminta.
+// Lembar yang dicentang dirangkai jadi SATU berkas dengan page-break, pola yang
+// sama dengan BA Rekon: sekali cetak, sekali tanda tangan, dan tiap lembar tetap
+// bisa diambil sendiri kalau diminta.
 //
 // ⚠️ SUSUNAN & PENOMORAN KOLOMNYA DATA, BUKAN JSX — lihat `FORMAT_PEROLEHAN`
 // di lib/formatPermendagri.ts. Keempat cara perolehan identik di kolom (9)–(18)
-// dan hanya berbeda pada satu blok dokumen di tengah; menyalin halaman ini per
-// cara perolehan berarti empat tempat yang harus disunting tiap satu kolom
-// bergeser, dan yang terlewat tak akan pernah error — ia cuma mencetak lembar
-// yang beda susunan.
+// dan hanya berbeda pada satu blok dokumen di tengah.
+//
+// ⚠️ ANGKANYA DIMUAT `muatLembarPerolehan` — SAMA dengan tab "Format
+// Permendagri" di menu Pelaporan. Dua jalur angka untuk lembar yang sama adalah
+// cara paling gampang menghasilkan pratinjau yang berbeda dari berkas yang
+// akhirnya ditandatangani, dan bedanya tak akan bersuara.
 //
 // ⚠️ BEDA DARI /cetak/perolehan (2026-08-20). Yang itu lembar RINGKAS 14 kolom
 // A4 buatan sendiri; yang ini format BAKU Permendagri, F4 lanskap, dengan baris
-// subtotal bertingkat. Keduanya sengaja hidup berdampingan — jangan salah satu
-// dihapus tanpa keputusan user.
-//
-// ⚠️ FAIL-CLOSED. Baris yang dianulir dibuang lewat `fetchVoidedAsetIds`; kalau
-// pemeriksaannya gagal, lembarnya TIDAK dirakit sama sekali (CLAUDE.md, modul
-// pelaporan).
+// subtotal bertingkat. Keduanya sengaja hidup berdampingan.
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import {
   fetchCalonTtd, calonTtdAwal, labelAsalTtd,
   type CalonTtd, type SkpdNode,
 } from '@/lib/penandaTangan'
 import {
-  FORMAT_PEROLEHAN, SEG_MIN_REKAP, segmenKode, petaNamaTingkat,
-  sebutanPejabat, levelSkpd,
-  type FormatPerolehan, type ItemLaporan, type BarisKodefikasi,
+  FORMAT_PEROLEHAN, SEG_MIN_REKAP, segmenKode,
+  type FormatPerolehan, type ItemLaporan,
 } from '@/lib/formatPermendagri'
-import LembarPerolehanPermendagri, {
-  type BarisLembar,
-} from '@/components/pelaporan/LembarPerolehanPermendagri'
-
-const KABUPATEN = 'Kediri'
-const PROVINSI = 'Jawa Timur'
-
-type SkpdRow = { id: number; parent_id: number | null; nama: string; kode_skpd: string | null }
-
-function descendantsOf(all: SkpdRow[], root: number): number[] {
-  const anak = new Map<number, number[]>()
-  for (const s of all) {
-    if (s.parent_id == null) continue
-    const a = anak.get(s.parent_id) || []; a.push(s.id); anak.set(s.parent_id, a)
-  }
-  const out: number[] = []; const stack = [root]; const seen = new Set<number>()
-  while (stack.length) {
-    const id = stack.pop()!
-    if (seen.has(id)) continue
-    seen.add(id); out.push(id)
-    for (const c of anak.get(id) || []) stack.push(c)
-  }
-  return out
-}
-
-// Bentuk barisnya dipegang PENYAJI (satu rumah untuk satu fakta); di sini cuma
-// ditambah `aset_id`, yang dibutuhkan penyaringan void tapi tak ikut dicetak.
-type Baris = BarisLembar & { aset_id: string | null }
-
-const SEL = 'id,tanggal,nilai,keterangan,aset_id,header:header_id(no_sk,payload),' +
-  'aset:aset_id(kode,nama_barang,uraian_barang,nibar,spesifikasi_lainnya,satuan,jumlah,' +
-  'harga_satuan,kondisi_barang,tgl_perolehan,keterangan,intra_ekstra)'
-
-const tglID = (s: string | null | undefined) => {
-  if (!s) return ''
-  const [y, m, d] = s.slice(0, 10).split('-')
-  return y && m && d ? `${d}/${m}/${y}` : s
-}
+import { muatLembarPerolehan, type BarisPerolehan } from '@/lib/laporanPerolehanPermendagri'
+import LembarPerolehanPermendagri from '@/components/pelaporan/LembarPerolehanPermendagri'
 
 const todayStr = () => {
   const t = new Date()
@@ -93,35 +53,36 @@ function bacaTtd(skpdId: number): TtdTersimpan | null {
   } catch { return null }
 }
 
-/** '2026-S1' → 'SEMESTER I'; kosong = seluruh periode → lembar TAHUNAN. */
+/**
+ * Isian kop (5) & (6). `'2026-S1'` → Semester I; `'2026'` → AKHIR TAHUN.
+ *
+ * ⚠️ Periode kosong sengaja tak dilayani halaman ini — kop-nya wajib menyebut
+ * SATU tahun, dan "seluruh periode" akan membuatnya berbohong tentang isinya.
+ */
 function labelPeriode(periode: string): { judul: string; tahun: string } {
-  if (!periode) return { judul: 'TAHUNAN', tahun: String(new Date().getFullYear()) }
+  if (/^\d{4}$/.test(periode)) return { judul: 'AKHIR TAHUN', tahun: periode }
   const [th, smt] = periode.split('-')
-  return { judul: smt === 'S1' ? 'SEMESTER I' : smt === 'S2' ? 'SEMESTER II' : 'TAHUNAN', tahun: th }
+  return { judul: smt === 'S2' ? 'SEMESTER II' : 'SEMESTER I', tahun: th || String(new Date().getFullYear()) }
 }
 
 /**
  * Isian (1) "BERUPA…" — DITURUNKAN dari kelompok neraca yang benar-benar ada
- * datanya, bukan dipaku. Kalau lembar memuat 1.3.x saja ia "ASET TETAP"; kalau
- * bercampur, dikatakan apa adanya. Mengarang salah satunya membuat kop lembar
- * berbohong tentang isinya sendiri.
+ * datanya, bukan dipaku. Mengarang salah satunya membuat kop lembar berbohong
+ * tentang isinya sendiri.
  */
 function berupaDari(kodes: string[]): string {
   const kel = new Set(kodes.map(k => segmenKode(k).slice(0, SEG_MIN_REKAP).join('.')))
-  const punya = (k: string) => kel.has(k)
-  if (punya('1.3') && punya('1.5')) return 'ASET TETAP DAN ASET LAINNYA'
-  if (punya('1.5')) return 'ASET LAINNYA'
-  if (punya('1.3')) return 'ASET TETAP'
+  if (kel.has('1.3') && kel.has('1.5')) return 'ASET TETAP DAN ASET LAINNYA'
+  if (kel.has('1.5')) return 'ASET LAINNYA'
+  if (kel.has('1.3')) return 'ASET TETAP'
   return '…………………………'
 }
-
-// ── Halaman ─────────────────────────────────────────────────────────────────
 
 export default function CetakPerolehanPermendagriPage() {
   const supabase = createClient()
   const [siap, setSiap] = useState(false)
   const [gagal, setGagal] = useState('')
-  const [rows, setRows] = useState<Baris[]>([])
+  const [rows, setRows] = useState<BarisPerolehan[]>([])
   const [namaTingkat, setNamaTingkat] = useState<Map<string, string>>(new Map())
   const [skpd, setSkpd] = useState<{ kode: string; nama: string } | null>(null)
   const [skpdId, setSkpdId] = useState<number | null>(null)
@@ -129,6 +90,7 @@ export default function CetakPerolehanPermendagriPage() {
   const [jenis, setJenis] = useState('hibah_masuk')
   const [periode, setPeriode] = useState('')
   const [komptabel, setKomptabel] = useState<'intra' | 'ekstra'>('intra')
+  const [lembar, setLembar] = useState<number[] | undefined>(undefined)
   const [calon, setCalon] = useState<CalonTtd[]>([])
   const [ttdId, setTtdId] = useState('')
   const [plt, setPlt] = useState(false)
@@ -143,84 +105,34 @@ export default function CetakPerolehanPermendagriPage() {
           throw new Error(`Cara perolehan "${jns}" belum punya format Permendagri di aplikasi ini.`)
         }
         const per = q.get('periode') || ''
-        const komp = q.get('komptabel') === 'ekstra' ? 'ekstra' : 'intra'
+        if (!per) throw new Error('Periode belum dipilih. Kop lembar ini menyebut satu semester atau satu tahun, jadi wajib berperiode.')
         const sk = q.get('skpd') ? Number(q.get('skpd')) : null
-        setJenis(jns); setPeriode(per); setKomptabel(komp)  // komptabel awal; bisa diganti di bilah atas
         if (!sk) throw new Error('SKPD belum dipilih. Kop lembar ini memuat identitas SKPD, jadi wajib per-SKPD.')
+        setJenis(jns); setPeriode(per)
+        setKomptabel(q.get('komptabel') === 'ekstra' ? 'ekstra' : 'intra')
+        const pilih = (q.get('lembar') || '').split(',').map(Number).filter(n => n >= 2 && n <= 6)
+        setLembar(pilih.length > 0 ? pilih : undefined)
+        setSkpdId(sk)
 
-        const semua: SkpdRow[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data, error } = await supabase.from('admin_skpd')
-            .select('id,parent_id,nama,kode_skpd').range(from, from + 999)
-          if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
-          if (!data || data.length === 0) break
-          semua.push(...(data as SkpdRow[]))
-          if (data.length < 1000) break
-        }
-        const ini = semua.find(x => x.id === sk)
-        if (!ini) throw new Error(`SKPD #${sk} tidak ditemukan.`)
-        setSkpd({ kode: ini.kode_skpd || '', nama: ini.nama }); setSkpdId(sk)
-        // Sebutan pejabat penanda tangan diturunkan dari LEVEL node SKPD.
-        setSebutan(sebutanPejabat(levelSkpd(sk, new Map(semua.map(s => [s.id, s.parent_id])))))
-        const desc = descendantsOf(semua, sk)
+        const h = await muatLembarPerolehan(supabase, { jenis: jns, skpdId: sk, periode: per })
+        setRows(h.rows); setNamaTingkat(h.namaTingkat); setSkpd(h.skpd); setSebutan(h.sebutan)
 
+        // ⚠️ WAJIB `fetchCalonTtd`, bukan `admin_pegawai` ber-`.eq('skpd_id')`:
+        // dari 816 SKPD hanya 57 yang punya pegawai berjabatan "Kepala" & 756
+        // di antaranya sub-SKPD. Gagal memuatnya TIDAK menjatuhkan lembar —
+        // blok tanda tangan tinggal bertitik-titik, keadaan yang memang sah.
         const byId = new Map<number, SkpdNode>(
-          semua.map(x => [x.id, { id: x.id, nama: x.nama, parent_id: x.parent_id }]))
+          h.semuaSkpd.map(x => [x.id, { id: x.id, nama: x.nama, parent_id: x.parent_id }]))
         let daftar: CalonTtd[] = []
         try { daftar = await fetchCalonTtd(supabase, sk, byId) } catch { daftar = [] }
         setCalon(daftar)
+
         const simpan = bacaTtd(sk)
-        const awal = calonTtdAwal(daftar)
-        const idTerpilih = q.get('ttd') || simpan?.id || awal?.id || ''
+        const idTerpilih = q.get('ttd') || simpan?.id || calonTtdAwal(daftar)?.id || ''
         setTtdId(idTerpilih)
         setPlt(q.get('plt') === '1' ? true
           : simpan?.plt ?? (daftar.find(c => c.id === idTerpilih)?.pltDisarankan ?? false))
         setTglTtd(q.get('tgl') || simpan?.tgl || todayStr())
-
-        // Bentuk query SAMA dgn LaporanPerolehan & /cetak/perolehan supaya ikut
-        // dilayani partial index `idx_trx_perolehan_id` (migrasi 20260820_03).
-        let qq = supabase.from('transaksi_bmd').select(SEL)
-          .eq('jenis', jns).order('id', { ascending: false })
-        if (per) qq = qq.eq('periode', per)
-        if (desc.length > 0) {
-          const list = desc.join(',')
-          qq = qq.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)
-        }
-        const { data: trx, error: trxErr } = await qq.limit(2000)
-        if (trxErr) throw new Error(trxErr.message)
-
-        // ⚠️ Komptabel TIDAK disaring di sini — saringannya di `items` saat
-        // render, supaya pemilih di bilah atas bisa mengganti lembar tanpa
-        // memuat ulang seluruh data (dan tanpa menembak query kedua).
-        const semuaBaris = ((trx as never as Baris[]) || []).filter(r => r.aset)
-
-        const voided = await fetchVoidedAsetIds(
-          supabase, [], semuaBaris.map(r => r.aset_id).filter((x): x is string => !!x))
-
-        // ⚠️ URUTAN TOTAL & WAJIB — mesin subtotal memancarkan kelompok saat
-        // awalan kode BERUBAH, jadi barisnya harus sudah urut menaik menurut
-        // kode. Kunci kedua & ketiga pemecah seri: tanpanya barang bernama
-        // kembar bertukar tempat tiap lembar dicetak ulang.
-        const urut = semuaBaris
-          .filter(r => !(r.aset_id && voided.has(r.aset_id)))
-          .sort((a, b) =>
-            (a.aset!.kode || '').localeCompare(b.aset!.kode || '')
-            || (a.aset!.nama_barang || '').localeCompare(b.aset!.nama_barang || '', 'id', { numeric: true })
-            || (a.aset!.nibar || '').localeCompare(b.aset!.nibar || ''))
-        setRows(urut)
-
-        // ── Nama tiap tingkat kodefikasi ────────────────────────────────────
-        // ⚠️ Diambil dari KOLOM hierarki baris 7-segmen, BUKAN dari baris
-        // ber-kode pendek: tabel itu hanya berisi baris 7 segmen, jadi mencari
-        // '1.3.2' di kolom `kode` mengembalikan nol baris tanpa satu pun error.
-        const kodes = [...new Set(urut.map(r => r.aset!.kode))]
-        if (kodes.length > 0) {
-          const { data: kd, error: kdErr } = await supabase.from('admin_kodefikasi_bmd')
-            .select('kode,uraian,nama_jenis,nama_objek,nama_rincian,nama_sub_rincian')
-            .in('kode', kodes)
-          if (kdErr) throw new Error(`gagal membaca kodefikasi barang: ${kdErr.message}`)
-          setNamaTingkat(petaNamaTingkat((kd || []) as BarisKodefikasi[]))
-        }
       } catch (e) {
         setGagal((e as Error).message)
       } finally {
@@ -232,21 +144,13 @@ export default function CetakPerolehanPermendagriPage() {
   const f: FormatPerolehan = FORMAT_PEROLEHAN[jenis] || FORMAT_PEROLEHAN.hibah_masuk
   const ttd = calon.find(c => c.id === ttdId) || null
   const { judul: judulPeriode, tahun } = labelPeriode(periode)
-  const labelKomptabel = komptabel === 'ekstra' ? 'EKSTRAKOMPTABEL' : 'INTRAKOMPTABEL'
 
   // Lembar ini menyatakan SATU komptabel di kop (2), jadi isinya wajib
   // benar-benar satu komptabel. Barang tanpa nilai kolom itu dianggap intra,
   // sejalan dengan `klasifikasiKomptabel` (bawaannya intra).
-  const items: ItemLaporan<Baris>[] = rows
+  const items: ItemLaporan<BarisPerolehan>[] = rows
     .filter(r => (r.aset!.intra_ekstra ?? 'intra') === komptabel)
-    .map(r => ({
-    kode: r.aset!.kode,
-    jumlah: r.aset!.jumlah ?? 1,
-    nilai: r.nilai || 0,
-    data: r,
-    }))
-  const berupa = berupaDari(items.map(i => i.kode))
-  const nama = (kode: string) => namaTingkat.get(kode) || ''
+    .map(r => ({ kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r }))
 
   function simpanTtd(next: Partial<TtdTersimpan>) {
     if (skpdId == null) return
@@ -291,6 +195,9 @@ export default function CetakPerolehanPermendagriPage() {
               <input type="date" className="select-filter text-sm" value={tglTtd}
                 onChange={e => { setTglTtd(e.target.value); simpanTtd({ tgl: e.target.value }) }} />
             </label>
+            {/* Definitif/Plt DITANYAKAN, tak ditebak — statusnya tidak ada di
+                `admin_pegawai` maupun di mana pun; `pltDisarankan` cuma menaruh
+                centang awal di tempat yang paling sering benar. */}
             <label className="flex items-center gap-2 text-sm text-gray-600">
               Penanda tangan:
               <select className="select-filter text-sm max-w-sm" value={ttdId}
@@ -320,13 +227,13 @@ export default function CetakPerolehanPermendagriPage() {
         ) : gagal ? (
           <p className="py-8 text-center text-red-600 text-sm">Gagal menyiapkan lembar: {gagal}</p>
         ) : (
-          <>
-            <LembarPerolehanPermendagri
-              f={f} items={items} namaTingkat={namaTingkat} skpd={skpd} berupa={berupa}
-              labelKomptabel={labelKomptabel} judulPeriode={judulPeriode} tahun={tahun}
-              sebutan={sebutan} ttd={ttd ? { nama: ttd.nama, nip: ttd.nip } : null}
-              tglTtd={tglTtd} />
-          </>
+          <LembarPerolehanPermendagri
+            f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
+            berupa={berupaDari(items.map(i => i.kode))}
+            labelKomptabel={komptabel === 'ekstra' ? 'EKSTRAKOMPTABEL' : 'INTRAKOMPTABEL'}
+            judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
+            ttd={ttd ? { nama: ttd.nama, nip: ttd.nip } : null}
+            tglTtd={tglTtd} lembar={lembar} />
         )}
       </div>
     </div>
