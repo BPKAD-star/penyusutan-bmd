@@ -3,7 +3,8 @@
 // Cetak lembar PEROLEHAN sesuai Format baku Permendagri 47/2021 (cabang IV.A).
 //
 //   ?jenis=hibah_masuk|hasil_inventarisasi|tukar_menukar|perolehan_lainnya
-//   &skpd=<id>                (WAJIB — kop lembar memuat identitas SKPD)
+//   &skpd=<id>                WAJIB untuk lembar per-SKPD (2–6); lembar
+//                             se-Kabupaten (7–10) tak memerlukannya
 //   &periode=2026-S1          atau &periode=2026 (AKHIR TAHUN: S1+S2 digabung)
 //   &komptabel=intra|ekstra|semua  (bawaan: intra)
 //   &lembar=2,3,4,5,6         per-SKPD; 7,8,9,10 = se-KABUPATEN (bawaan: 2–6)
@@ -48,6 +49,8 @@ import LembarRekapKabupaten, { type ItemKab } from '@/components/pelaporan/Lemba
  *  Penatausahaan Barang, bukan kepala salah satu SKPD. */
 const KEY_TTD_KAB = 'bmd_perolehan_ttd_sekab'
 type Pegawai = { id: string; nama: string; nip: string | null; jabatan: string | null }
+
+const KABUPATEN = 'Kediri'
 
 const todayStr = () => {
   const t = new Date()
@@ -123,7 +126,6 @@ export default function CetakPerolehanPermendagriPage() {
         const per = q.get('periode') || ''
         if (!per) throw new Error('Periode belum dipilih. Kop lembar ini menyebut satu semester atau satu tahun, jadi wajib berperiode.')
         const sk = q.get('skpd') ? Number(q.get('skpd')) : null
-        if (!sk) throw new Error('SKPD belum dipilih. Kop lembar ini memuat identitas SKPD, jadi wajib per-SKPD.')
         setJenis(jns); setPeriode(per)
         const kmp = q.get('komptabel')
         setKomptabel(kmp === 'ekstra' || kmp === 'semua' ? kmp : 'intra')
@@ -131,25 +133,37 @@ export default function CetakPerolehanPermendagriPage() {
         setLembar(pilih.length > 0 ? pilih : undefined)
         setSkpdId(sk)
 
-        const h = await muatLembarPerolehan(supabase, { jenis: jns, skpdId: sk, periode: per })
-        setRows(h.rows); setNamaTingkat(h.namaTingkat); setSkpd(h.skpd); setSebutan(h.sebutan)
+        // ⚠️ SKPD wajib HANYA untuk lembar per-SKPD. Lembar se-Kabupaten
+        // menjumlah SELURUH SKPD — mensyaratkannya di situ bertentangan dengan
+        // gunanya. (`lembar` kosong = bawaan 2–6, jadi tetap butuh SKPD.)
+        const perluSkpd = pilih.length === 0 || pilih.some(n => n >= 2 && n <= 6)
+        if (perluSkpd && !sk) {
+          throw new Error('SKPD belum dipilih. Lembar per-SKPD (IV.A.…2–6) memuat identitas SKPD di kopnya, jadi wajib per-SKPD.')
+        }
 
-        // ⚠️ WAJIB `fetchCalonTtd`, bukan `admin_pegawai` ber-`.eq('skpd_id')`:
-        // dari 816 SKPD hanya 57 yang punya pegawai berjabatan "Kepala" & 756
-        // di antaranya sub-SKPD. Gagal memuatnya TIDAK menjatuhkan lembar —
-        // blok tanda tangan tinggal bertitik-titik, keadaan yang memang sah.
-        const byId = new Map<number, SkpdNode>(
-          h.semuaSkpd.map(x => [x.id, { id: x.id, nama: x.nama, parent_id: x.parent_id }]))
-        let daftar: CalonTtd[] = []
-        try { daftar = await fetchCalonTtd(supabase, sk, byId) } catch { daftar = [] }
-        setCalon(daftar)
+        if (perluSkpd && sk) {
+          const h = await muatLembarPerolehan(supabase, { jenis: jns, skpdId: sk, periode: per })
+          setRows(h.rows); setNamaTingkat(h.namaTingkat); setSkpd(h.skpd); setSebutan(h.sebutan)
 
-        const simpan = bacaTtd(sk)
-        const idTerpilih = q.get('ttd') || simpan?.id || calonTtdAwal(daftar)?.id || ''
-        setTtdId(idTerpilih)
-        setPlt(q.get('plt') === '1' ? true
-          : simpan?.plt ?? (daftar.find(c => c.id === idTerpilih)?.pltDisarankan ?? false))
-        setTglTtd(q.get('tgl') || simpan?.tgl || todayStr())
+          // ⚠️ WAJIB `fetchCalonTtd`, bukan `admin_pegawai` ber-`.eq('skpd_id')`:
+          // dari 816 SKPD hanya 57 yang punya pegawai berjabatan "Kepala" & 756
+          // di antaranya sub-SKPD. Gagal memuatnya TIDAK menjatuhkan lembar —
+          // blok tanda tangan tinggal bertitik-titik, keadaan yang memang sah.
+          const byId = new Map<number, SkpdNode>(
+            h.semuaSkpd.map(x => [x.id, { id: x.id, nama: x.nama, parent_id: x.parent_id }]))
+          let daftar: CalonTtd[] = []
+          try { daftar = await fetchCalonTtd(supabase, sk, byId) } catch { daftar = [] }
+          setCalon(daftar)
+
+          const simpan = bacaTtd(sk)
+          const idTerpilih = q.get('ttd') || simpan?.id || calonTtdAwal(daftar)?.id || ''
+          setTtdId(idTerpilih)
+          setPlt(q.get('plt') === '1' ? true
+            : simpan?.plt ?? (daftar.find(c => c.id === idTerpilih)?.pltDisarankan ?? false))
+          setTglTtd(q.get('tgl') || simpan?.tgl || todayStr())
+        } else {
+          setTglTtd(q.get('tgl') || todayStr())
+        }
 
         // ── Lembar se-Kabupaten (IV.A.<n>.7–10) ────────────────────────────
         // ⚠️ GERBANGNYA DI SINI, SEBELUM MEMUAT. RLS tidak MENOLAK pengurus
@@ -192,7 +206,7 @@ export default function CetakPerolehanPermendagriPage() {
   const { judul: judulPeriode, tahun } = labelPeriode(periode)
   // Lembar rinci ikut? (tak ada `lembar` = 2–6, jadi ikut.)
   const adaRinci = !lembar || lembar.includes(2)
-  const adaPerSkpd = !lembar || lembar.some(n => n >= 2 && n <= 6)
+  const adaPerSkpd = (!lembar || lembar.some(n => n >= 2 && n <= 6)) && skpdId != null
   const adaKab = !!lembar && lembar.some(n => n >= 7)
   const ttdKab = pegawai.find(x => x.id === ttdKabId) || null
 
@@ -221,6 +235,12 @@ export default function CetakPerolehanPermendagriPage() {
     const bersih = (t: string) => t.replace(/[\\/:*?"<>|]/g, '-').trim()
     document.title = `${f.kode} ${bersih(skpd.nama)} ${tahun}`
   }, [skpd, f.kode, tahun])
+
+  // Berkas se-Kabupaten tak punya nama SKPD di judulnya.
+  useEffect(() => {
+    if (skpd || !adaKab) return
+    document.title = `${f.awalan} se-Kabupaten ${KABUPATEN} ${tahun}`
+  }, [skpd, adaKab, f.awalan, tahun])
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">

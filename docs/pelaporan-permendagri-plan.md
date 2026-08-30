@@ -437,6 +437,30 @@ menyembunyikan tombol.
 
 ---
 
+## 9e. Dua prasyarat yang BERBEDA (2026-08-30)
+
+| Kelompok | Butuh Periode | Butuh SKPD |
+|---|---|---|
+| Per-SKPD `IV.A.<n>.2–6` | ya | **ya** — kopnya memuat identitas SKPD |
+| Se-Kabupaten `IV.A.<n>.7–10` | ya | **TIDAK** — justru menjumlah seluruh SKPD |
+
+⚠️ Versi pertama tab ini memakai SATU gerbang (`skpdId != null && periode`)
+untuk seluruh layar, sehingga kelompok se-Kabupaten **tak bisa dipakai sama
+sekali** tanpa memilih SKPD — bertentangan dengan gunanya sendiri. Sekarang
+dipisah, dan pesan "kenapa belum bisa" menyebut yang benar-benar kurang
+(`kurang` di PerolehanFormatPermendagri), bukan meminta dua-duanya.
+
+Berlaku juga di halaman cetak: `?skpd=` hanya wajib kalau `lembar=` memuat 2–6.
+Kalau `lembar` kosong, bawaannya 2–6 sehingga SKPD tetap wajib.
+
+⚠️ **Orientasi kertas: `@page` BERNAMA tidak dijalankan Chrome.** Percobaan
+`@page rinci/rekap { size }` + `page:` diabaikan — `size` pada @page bernama tak
+berlaku, seluruh berkas ikut orientasi bawaan. Yang berlaku sekarang SATU
+orientasi per berkas, ditentukan centangnya: ada lembar rinci → F4 lanskap,
+selain itu → F4 potret. Jangan dicoba lagi.
+
+---
+
 ## 10. Temuan saat membangun IV.A.2.x (2026-08-30)
 
 **(a) Lembar REKAP itu HIERARKIS, bukan daftar datar.** Bacaan awal keliru:

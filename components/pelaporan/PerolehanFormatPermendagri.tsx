@@ -20,8 +20,11 @@ import {
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
 import { fetchApprovalScope } from '@/lib/roles'
-import { muatLembarPerolehan, type BarisPerolehan } from '@/lib/laporanPerolehanPermendagri'
+import {
+  muatLembarPerolehan, muatLembarKabupaten, type BarisPerolehan,
+} from '@/lib/laporanPerolehanPermendagri'
 import LembarPerolehanPermendagri from './LembarPerolehanPermendagri'
+import LembarRekapKabupaten, { type ItemKab } from './LembarRekapKabupaten'
 
 /** Daftar lembar yang bisa dicentang: rinci + empat kedalaman rekap. */
 const PILIHAN = [
@@ -70,21 +73,39 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const bolehKab = bolehLembarKabupaten(role)
 
-  const siapDimuat = skpdId != null && !!periode
+  const [rowsKab, setRowsKab] = useState<BarisPerolehan[]>([])
+  const [namaKab, setNamaKab] = useState<Map<string, string>>(new Map())
+
+  // ⚠️ DUA PRASYARAT YANG BERBEDA, dan ini bukan detail: lembar SE-KABUPATEN
+  // menjumlah SELURUH SKPD, jadi mensyaratkan pemilihan SKPD di situ justru
+  // bertentangan dengan gunanya. Yang per-SKPD butuh keduanya; yang
+  // se-Kabupaten cukup periode.
+  const siapPerSkpd = skpdId != null && !!periode
+  const siapKab = !!periode
 
   useEffect(() => {
-    if (!siapDimuat || !f) { setRows([]); setSkpd(null); return }
+    if (!f) return
+    const perluSkpd = siapPerSkpd && pilih.length > 0
+    const perluKab = siapKab && pilihKab.length > 0 && bolehKab
+    if (!perluSkpd && !perluKab) { setRows([]); setSkpd(null); setRowsKab([]); return }
     let batal = false
     void (async () => {
       setLoading(true); setErr('')
       try {
-        const h = await muatLembarPerolehan(supabase, { jenis, skpdId: skpdId!, periode })
-        if (batal) return
-        setRows(h.rows); setNamaTingkat(h.namaTingkat); setSkpd(h.skpd); setSebutan(h.sebutan)
+        if (perluSkpd) {
+          const h = await muatLembarPerolehan(supabase, { jenis, skpdId: skpdId!, periode })
+          if (batal) return
+          setRows(h.rows); setNamaTingkat(h.namaTingkat); setSkpd(h.skpd); setSebutan(h.sebutan)
+        } else { setRows([]); setSkpd(null) }
+        if (perluKab) {
+          const hk = await muatLembarKabupaten(supabase, { jenis, periode })
+          if (batal) return
+          setRowsKab(hk.rows); setNamaKab(hk.namaTingkat)
+        } else { setRowsKab([]) }
       } catch (e) {
         // Fail-closed: modul pelaporan lebih baik menolak tampil daripada
         // menyajikan angka kurang-sebagian yang kelihatan sah.
-        if (!batal) { setErr((e as Error).message); setRows([]); setSkpd(null) }
+        if (!batal) { setErr((e as Error).message); setRows([]); setSkpd(null); setRowsKab([]) }
       } finally {
         // Di `finally`, BUKAN di akhir jalur sukses — kalau tidak, satu query
         // yang melempar meninggalkan "Memuat…" SELAMANYA.
@@ -92,7 +113,9 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
       }
     })()
     return () => { batal = true }
-  }, [jenis, skpdId, periode, siapDimuat, f]) // eslint-disable-line react-hooks/exhaustive-deps
+    // `pilih`/`pilihKab` sengaja ikut: kelompok yang tak dicentang tak perlu
+    // ditarik datanya sama sekali (se-Kabupaten itu query paling mahal di sini).
+  }, [jenis, skpdId, periode, siapPerSkpd, siapKab, pilih.length, pilihKab.length, bolehKab, f]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!f) {
     return (
@@ -107,9 +130,29 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
     .map(r => ({ kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r }))
 
   const { judul: judulPeriode, tahun } = labelPeriode(periode)
-  const semuaPilih = [...pilih, ...(bolehKab ? pilihKab : [])].sort((a, b) => a - b)
-  const urlCetak = `/cetak/perolehan-permendagri?jenis=${jenis}&skpd=${skpdId}`
+  const itemsKab: ItemKab<BarisPerolehan>[] = rowsKab
+    .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
+    .map(r => ({
+      kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0,
+      data: r, skpdRoot: r.skpd_root || '(tanpa SKPD)',
+    }))
+
+  const pilihAktif = siapPerSkpd ? pilih : []
+  const kabAktif = bolehKab ? pilihKab : []
+  const semuaPilih = [...pilihAktif, ...kabAktif].sort((a, b) => a - b)
+  // `skpd` hanya disertakan kalau memang ada lembar per-SKPD yang diminta —
+  // halaman cetak mensyaratkannya HANYA untuk kelompok itu.
+  const urlCetak = `/cetak/perolehan-permendagri?jenis=${jenis}`
+    + (pilihAktif.length > 0 ? `&skpd=${skpdId}` : '')
     + `&periode=${periode}&komptabel=${komptabel}&lembar=${semuaPilih.join(',')}`
+
+  /** Kenapa tombol Cetak mati / pratinjau kosong — dikatakan, bukan didiamkan. */
+  const kurang = !periode ? 'Pilih Periode dulu.'
+    : semuaPilih.length === 0
+      ? (pilih.length > 0 && skpdId == null
+        ? 'Lembar per-SKPD butuh SKPD — pilih SKPD di atas, atau centang kelompok Se-Kabupaten yang tidak memerlukannya.'
+        : 'Centang minimal satu lembar.')
+      : ''
 
   const toggle = (n: number) =>
     setPilih(p => p.includes(n) ? p.filter(x => x !== n) : [...p, n].sort((a, b) => a - b))
@@ -184,8 +227,8 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
               operator tak perlu mencetak dulu untuk tahu. Satu berkas hanya
               bisa satu orientasi (lihat catatan di halaman cetak). */}
           <p className="text-xs text-gray-500 self-end">
-            Kertas: <b>F4 {pilih.includes(2) ? 'lanskap' : 'potret'}</b>
-            {pilih.includes(2) && pilih.length > 1 && (
+            Kertas: <b>F4 {pilihAktif.includes(2) ? 'lanskap' : 'potret'}</b>
+            {pilihAktif.includes(2) && semuaPilih.length > 1 && (
               <span> — rekap ikut lanskap. Mau rekap potret? Cetak {f.kode} sendiri
                 dulu, lalu centang rekapnya saja.</span>
             )}
@@ -194,16 +237,13 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
             {/* ⚠️ Dimatikan berikut ALASANNYA — tombol mati tanpa keterangan itu
                 kegagalan senyap: operator menekan, tak terjadi apa-apa, dan tak
                 punya cara tahu kenapa. */}
-            {siapDimuat && semuaPilih.length > 0 && !err ? (
+            {!kurang && !err ? (
               <a href={urlCetak} target="_blank" rel="noreferrer" className="btn-primary whitespace-nowrap">
                 🖨 Cetak / Simpan PDF
               </a>
             ) : (
               <span className="btn-primary opacity-50 cursor-not-allowed whitespace-nowrap"
-                title={err ? 'Angkanya gagal dimuat — perbaiki dulu.'
-                  : !periode ? 'Pilih Periode dulu — kop lembar menyebut satu semester atau satu tahun.'
-                    : skpdId == null ? 'Pilih SKPD dulu — kop lembar memuat identitas SKPD.'
-                      : 'Centang minimal satu lembar.'}>
+                title={err ? 'Angkanya gagal dimuat — perbaiki dulu.' : kurang}>
                 🖨 Cetak / Simpan PDF
               </span>
             )}
@@ -220,18 +260,21 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
         </div>
       )}
 
-      {!siapDimuat ? (
+      {kurang ? (
         <div className="card p-6 text-sm text-gray-500">
-          Pilih <b>Periode</b> dan <b>SKPD</b> di atas untuk menyusun lembarnya.
-          Kop lembar Permendagri memuat identitas SKPD dan menyebut satu semester
-          atau satu tahun, jadi keduanya wajib.
+          {kurang}
+          <p className="text-xs text-gray-400 mt-2">
+            Lembar <b>per-SKPD</b> (IV.A.…2–6) memuat identitas SKPD di kop, jadi wajib
+            memilih SKPD. Lembar <b>Se-Kabupaten</b> (IV.A.…7–10) menjumlah seluruh SKPD,
+            jadi cukup Periode.
+          </p>
         </div>
       ) : loading ? (
         <div className="card p-6 text-sm text-gray-400">Memuat…</div>
       ) : err ? null : (
         <div className="card p-4">
           <p className="text-xs text-gray-500 mb-3">
-            Pratinjau — <b>{items.length.toLocaleString('id-ID')} barang</b> ·{' '}
+            Pratinjau — <b>{(pilihAktif.length > 0 ? items.length : itemsKab.length).toLocaleString('id-ID')} barang</b> ·{' '}
             {judulPeriode} {tahun} · {labelKomptabel(komptabel).toLowerCase()}.
             {/* Pratinjau sengaja tak memilih penanda tangan: pilihannya disimpan
                 per SKPD di layar cetak supaya cetak ulang menghasilkan lembar
@@ -239,13 +282,24 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
             {' '}Penanda tangan &amp; tanggal dipilih di layar cetak.
           </p>
           <div className="overflow-x-auto">
-            <div className="min-w-[1100px]">
-              <LembarPerolehanPermendagri
-                f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
-                berupa={berupaDari(items.map(i => i.kode))}
-                labelKomptabel={labelKomptabel(komptabel)}
-                judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
-                ttd={null} tglTtd="" lembar={pilih} />
+            <div className="min-w-[1100px] space-y-10">
+              {pilihAktif.length > 0 && (
+                <LembarPerolehanPermendagri
+                  f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
+                  berupa={berupaDari(items.map(i => i.kode))}
+                  labelKomptabel={labelKomptabel(komptabel)}
+                  judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
+                  ttd={null} tglTtd="" lembar={pilihAktif} />
+              )}
+              {kabAktif.length > 0 && (
+                <LembarRekapKabupaten
+                  judulDasar={f.judul.replace(/^LAPORAN /, '')} awalan={f.awalan}
+                  items={itemsKab} namaTingkat={namaKab}
+                  berupa={berupaDari(itemsKab.map(i => i.kode))}
+                  labelKomptabel={labelKomptabel(komptabel)}
+                  judulPeriode={judulPeriode} tahun={tahun}
+                  ttd={null} tglTtd="" lembar={kabAktif} />
+              )}
             </div>
           </div>
         </div>
