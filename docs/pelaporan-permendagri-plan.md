@@ -98,7 +98,33 @@ Buktinya ada di kaki formatnya sendiri: **IV.A.1.2.3** (Aset Tetap) memuat baris
 **IV.A.1.1.1** (Persediaan) tidak. Jadi kaki rekonsiliasi itu bagian yang paling
 tidak boleh dihilangkan dari format Aset Tetap.
 
-### 2.5 Kolom uang sebagian besar TURUNAN
+### 2.5 Tiap cara perolehan = 1 lembar RINCI + 4 lembar REKAP (2026-08-30)
+
+Susunannya berulang identik di seluruh IV.A:
+
+```
+IV.A.<n>.2   lembar RINCI    — 24 kolom, satu baris per barang
+IV.A.<n>.3   rekap menurut SUB RINCIAN OBJEK   (kode 6 segmen)
+IV.A.<n>.4   rekap menurut RINCIAN OBJEK       (kode 5 segmen)
+IV.A.<n>.5   rekap menurut OBJEK               (kode 4 segmen)
+IV.A.<n>.6   rekap menurut JENIS               (kode 3 segmen)
+```
+
+Terbukti di Hibah (IV.A.2.2–6), Hasil Inventarisasi (7.2–6), Tukar Menukar
+(8.2–6), Perolehan Lainnya (10.2–6).
+
+⚠️ **Keempat rekap itu SATU tabel di empat kedalaman**, bukan empat laporan.
+Kolomnya identik — Kode Barang · Nama Barang · Jumlah Barang · Jumlah (Rp) — dan
+satu-satunya yang berbeda adalah sampai level mana kode dijumlahkan. IV.A.2.6
+sendirian menambah kolom **No** dan baris **JUMLAH (14)**.
+
+Konsekuensi kerja: **mesin subtotal bertingkat yang dibangun untuk lembar RINCI
+itu juga yang melahirkan keempat rekapnya** — rekap = mesin yang sama dipanggil
+dengan parameter kedalaman, lalu berhenti sebelum baris barang. Jangan menulis
+agregasi terpisah untuk lembar rekap; kalau angkanya bisa berbeda dari lembar
+rinci, salah satunya pasti salah dan tak ada yang akan menyadarinya.
+
+### 2.6 Kolom uang sebagian besar TURUNAN
 
 Formatnya sendiri mencantumkan rumusnya, jadi jangan disimpan:
 
@@ -240,10 +266,54 @@ ber-`.eq('skpd_id')` — dari 816 SKPD hanya 57 yang punya pegawai berjabatan
 
 ## 8. Urutan pengerjaan
 
-Belum ditetapkan. Usul: mulai dari **IV.A.1.2.x (Pengadaan APBD → Aset Tetap)**
-— cabang paling besar, paling sering diminta, dan sudah punya tulang punggungnya
-(`LaporanPerolehan` + `/cetak/perolehan` 14 kolom, dibangun 2026-08-20). Begitu
-bentuknya jadi, cabang perolehan lain tinggal mengganti saringan jenis.
+**Mulai dari IV.A.2.2–6 (Hibah/Sumbangan, Semester)** — ditetapkan 2026-08-30.
+
+⚠️ Sengaja **BUKAN** IV.A.1.2.x walaupun itu cabang terbesar: ia terkunci dua
+keputusan yang belum diambil (biaya atribusi & kaki LRA, §6). Hibah tidak
+terkunci apa pun — formatnya tak punya kolom biaya atribusi maupun kaki
+rekonsiliasi LRA, sebab hibah memang bukan belanja modal.
+
+Urutan di dalamnya:
+
+1. **IV.A.2.2 (lembar RINCI)** — di sinilah seluruh sambungan datanya. Tulang
+   punggungnya sudah berdiri: `/cetak/perolehan` (2026-08-20), yang pada
+   dasarnya versi ringkas 14 kolom dari lembar ini. Dua kolom yang paling
+   "baru" — **Sumber Dana** & **Pihak Pemberi Hibah** — kebetulan sudah ada
+   sejak 2026-08-20 di `jurnal_header.payload`.
+2. **Mesin subtotal bertingkat** — bagian yang belum ada sama sekali, dan yang
+   dipakai ulang oleh SEMUA format lain di pohon ini.
+3. **IV.A.2.3–6 (rekap)** — jatuh hampir gratis dari langkah 2 (§2.5).
+4. **Cabang lain**: Hasil Inventarisasi (7.x), Tukar Menukar (8.x), Perolehan
+   Lainnya (10.x) — bentuknya identik, tinggal ganti saringan jenis ledger.
 
 Sesudah satu format selesai, catat sejarah & alasan desainnya di **CLAUDE.md**
 seperti fitur lain — berkas ini papan rencana, bukan tempat menyimpan sejarah.
+
+---
+
+## 9. Keputusan teknis lembar (2026-08-30)
+
+Berlaku untuk set IV.A.2.x; jadi bawaan untuk format berikutnya kecuali user
+menentukan lain.
+
+| Hal | Keputusan |
+|---|---|
+| Ukuran kertas | **F4 lanskap** (`330mm 215mm`) — sama dengan lembar se-Kabupaten RKBMD |
+| Kolom (12) NIBAR/NUSP | **NIBAR saja**; NUSP tidak dipakai |
+| Penomoran kolom | **ikuti lembar aslinya APA ADANYA** |
+
+⚠️ Soal penomoran: lembar asli IV.A.2.2 menomori "(14)" **dua kali** (Jumlah
+Barang & Satuan Barang) lalu lompat ke (16). Itu salah ketik di sumbernya, dan
+**tetap diikuti** — lembar resmi dicocokkan pemeriksa kolom per kolom, jadi
+merapikan penomoran justru membuatnya tak cocok. Jangan "diperbaiki" oleh siapa
+pun yang membaca kode ini nanti dan mengira itu kekeliruan kita.
+
+⚠️ NIBAR 45 digit + F4 lanskap: perhatikan pelajaran `/cetak/perolehan` —
+NIBAR dipenggal dua baris di **batas segmen** lewat `pecahNibar()`
+(lib/kodeRegister.ts), bukan `break-all`. Dan penjaganya sama dengan
+`prefixNibar`: 150.101 NIBAR warisan impor ATL Diknas juga 45 digit tapi
+susunannya BEDA, jadi `null` = tampilkan utuh, jangan menebak.
+
+**Belum diputuskan:** (a) apakah lembar REKAP punya blok tanda tangan — keempat
+gambar yang diserahkan terpotong di bawah tabel; (b) satu berkas berisi kelima
+lembar (usul: ya, page-break, pola BA Rekon) atau lima berkas terpisah.
