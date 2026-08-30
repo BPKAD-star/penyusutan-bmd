@@ -99,18 +99,26 @@ export type FormatPerolehan = {
 /** Sepuluh kolom pertama — IDENTIK di keempat format. `nomor` diisi pemanggil. */
 function kolomAwal(nomorSatuan: number): Kolom[] {
   return [
-    { key: 'nama', judul: 'Nama Barang', nomor: 10, lebar: 7.5, rata: 'kiri' },
-    { key: 'spek_nama', judul: 'Spesifikasi Nama Barang', nomor: 11, lebar: 7, rata: 'kiri' },
-    // ⚠️ NIBAR 45 digit — kolom ini TIDAK BOLEH dipersempit. Ia dipenggal dua
-    // baris di batas segmen oleh `pecahNibar()`; kalau lebarnya kurang, baris
-    // pertama membungkus sendiri lebih dulu dan hasilnya jadi TIGA baris.
-    { key: 'nibar', judul: 'NIBAR', nomor: 12, lebar: 9.5, rata: 'kiri' },
-    { key: 'spek_lain', judul: 'Spesifikasi Lainnya', nomor: 13, lebar: 6, rata: 'kiri' },
-    { key: 'jumlah', judul: 'Jumlah Barang', nomor: 14, lebar: 3.2, rata: 'kanan' },
-    { key: 'satuan', judul: 'Satuan Barang', nomor: nomorSatuan, lebar: 3.8, rata: 'tengah' },
-    { key: 'harga_satuan', judul: 'Harga Satuan (Rp)', nomor: 16, lebar: 6, rata: 'kanan' },
-    { key: 'total_nilai', judul: 'Total Nilai Barang (Rp)', nomor: 17, lebar: 6.5, rata: 'kanan', rumus: '(17) = (14)x(16)' },
-    { key: 'kondisi', judul: 'Kondisi Barang', nomor: 18, lebar: 4.5, rata: 'tengah' },
+    // ⚠️ LEBAR DISETEL DEMI UKURAN FONT (user 2026-08-30: "kekecilan, banyak
+    // komplain user"). Kolom ber-isi PENDEK & SERAGAM dipepet habis — jumlah,
+    // satuan, kondisi, kedua tanggal, & blok kode — supaya kelegaannya bisa
+    // dialihkan jadi font yang lebih besar untuk SEMUA kolom. Jangan melebarkan
+    // salah satunya tanpa mengecilkan yang lain: totalnya wajib tetap 100.
+    //
+    // ⚠️ NIBAR SATU-SATUNYA YANG TAK BISA IKUT DIPEPET. 45 digit, dipenggal dua
+    // baris di batas segmen oleh `pecahNibar()`, dan potongan PERTAMA 26 digit
+    // wajib muat SEBARIS — kalau tidak ia membungkus sendiri lebih dulu dan
+    // hasilnya TIGA baris. Karena itu selnya memakai font sendiri yang lebih
+    // kecil dari sisanya; kompromi yang disengaja, bukan kelalaian.
+    { key: 'nama', judul: 'Nama Barang', nomor: 10, lebar: 9.5, rata: 'kiri' },
+    { key: 'spek_nama', judul: 'Spesifikasi Nama Barang', nomor: 11, lebar: 8, rata: 'kiri' },
+    { key: 'nibar', judul: 'NIBAR', nomor: 12, lebar: 9, rata: 'kiri' },
+    { key: 'spek_lain', judul: 'Spesifikasi Lainnya', nomor: 13, lebar: 6.5, rata: 'kiri' },
+    { key: 'jumlah', judul: 'Jumlah Barang', nomor: 14, lebar: 2.5, rata: 'kanan' },
+    { key: 'satuan', judul: 'Satuan Barang', nomor: nomorSatuan, lebar: 3, rata: 'tengah' },
+    { key: 'harga_satuan', judul: 'Harga Satuan (Rp)', nomor: 16, lebar: 6.5, rata: 'kanan' },
+    { key: 'total_nilai', judul: 'Total Nilai Barang (Rp)', nomor: 17, lebar: 7, rata: 'kanan', rumus: '(17) = (14)x(16)' },
+    { key: 'kondisi', judul: 'Kondisi Barang', nomor: 18, lebar: 3.5, rata: 'tengah' },
   ]
 }
 
@@ -130,12 +138,12 @@ export const FORMAT_PEROLEHAN: Record<string, FormatPerolehan> = {
     // asli, sengaja diikuti. Lihat kepala berkas.
     kolom: [
       ...kolomAwal(14),
-      { key: 'sumber_dana', judul: 'Sumber Dana', nomor: 19, lebar: 5, rata: 'kiri' },
-      { key: 'pihak', judul: 'Pihak Pemberi Hibah/Sumbangan Atau Yang Sejenis', nomor: 20, lebar: 7, rata: 'kiri' },
-      { key: 'tgl_perolehan', judul: 'Tanggal, Bulan, Tahun Perolehan', nomor: 21, lebar: 5, rata: 'tengah' },
-      { key: 'ba_tanggal', judul: 'Tanggal', nomor: 22, grup: 'Berita Acara Serah Terima/dokumen pendukung lainnya', lebar: 4.5, rata: 'tengah' },
-      { key: 'ba_nomor', judul: 'Nomor', nomor: 23, grup: 'Berita Acara Serah Terima/dokumen pendukung lainnya', lebar: 5, rata: 'kiri' },
-      { key: 'keterangan', judul: 'Keterangan', nomor: 24, lebar: 5.3, rata: 'kiri' },
+      { key: 'sumber_dana', judul: 'Sumber Dana', nomor: 19, lebar: 5.5, rata: 'kiri' },
+      { key: 'pihak', judul: 'Pihak Pemberi Hibah/Sumbangan Atau Yang Sejenis', nomor: 20, lebar: 7.5, rata: 'kiri' },
+      { key: 'tgl_perolehan', judul: 'Tanggal, Bulan, Tahun Perolehan', nomor: 21, lebar: 4.3, rata: 'tengah' },
+      { key: 'ba_tanggal', judul: 'Tanggal', nomor: 22, grup: 'Berita Acara Serah Terima/dokumen pendukung lainnya', lebar: 4.3, rata: 'tengah' },
+      { key: 'ba_nomor', judul: 'Nomor', nomor: 23, grup: 'Berita Acara Serah Terima/dokumen pendukung lainnya', lebar: 6, rata: 'kiri' },
+      { key: 'keterangan', judul: 'Keterangan', nomor: 24, lebar: 5.9, rata: 'kiri' },
     ],
     subtotal: [25, 26, 27, 28],
     kaki: { tanggal: 29, jabatan: 30, nama: 31 },
@@ -149,13 +157,13 @@ export const FORMAT_PEROLEHAN: Record<string, FormatPerolehan> = {
     judul: 'LAPORAN PEROLEHAN/PENERIMAAN BMD DARI HASIL INVENTARISASI BERUPA',
     kolom: [
       ...kolomAwal(15),
-      { key: 'dok_nama', judul: 'Nama dokumen', nomor: 19, grup: 'Dokumen Lainnya', lebar: 5, rata: 'kiri' },
+      { key: 'dok_nama', judul: 'Nama dokumen', nomor: 19, grup: 'Dokumen Lainnya', lebar: 5.5, rata: 'kiri' },
       { key: 'dok_nomor', judul: 'Nomor', nomor: 20, grup: 'Dokumen Lainnya', lebar: 4.5, rata: 'kiri' },
-      { key: 'dok_tanggal', judul: 'Tanggal', nomor: 21, grup: 'Dokumen Lainnya', lebar: 4, rata: 'tengah' },
-      { key: 'tgl_perolehan', judul: 'Tanggal, Bulan, Tahun Perolehan', nomor: 22, lebar: 5, rata: 'tengah' },
-      { key: 'ba_tanggal', judul: 'Tanggal', nomor: 23, grup: 'Berita Acara Hasil Inventarisasi/dokumen pendukung lainnya', lebar: 4, rata: 'tengah' },
+      { key: 'dok_tanggal', judul: 'Tanggal', nomor: 21, grup: 'Dokumen Lainnya', lebar: 4.3, rata: 'tengah' },
+      { key: 'tgl_perolehan', judul: 'Tanggal, Bulan, Tahun Perolehan', nomor: 22, lebar: 4.3, rata: 'tengah' },
+      { key: 'ba_tanggal', judul: 'Tanggal', nomor: 23, grup: 'Berita Acara Hasil Inventarisasi/dokumen pendukung lainnya', lebar: 4.3, rata: 'tengah' },
       { key: 'ba_nomor', judul: 'Nomor', nomor: 24, grup: 'Berita Acara Hasil Inventarisasi/dokumen pendukung lainnya', lebar: 4.5, rata: 'kiri' },
-      { key: 'keterangan', judul: 'Keterangan', nomor: 25, lebar: 5.3, rata: 'kiri' },
+      { key: 'keterangan', judul: 'Keterangan', nomor: 25, lebar: 5.6, rata: 'kiri' },
     ],
     subtotal: [26, 27, 28, 29],
     kaki: { tanggal: 30, jabatan: 31, nama: 32 },
@@ -169,16 +177,16 @@ export const FORMAT_PEROLEHAN: Record<string, FormatPerolehan> = {
     judul: 'LAPORAN PEROLEHAN/PENERIMAAN BMD DARI HASIL TUKAR MENUKAR BERUPA',
     kolom: [
       ...kolomAwal(15),
-      { key: 'dok_tanggal', judul: 'Tanggal', nomor: 19, grup: 'Perjanjian Tukar Menukar', lebar: 4.5, rata: 'tengah' },
+      { key: 'dok_tanggal', judul: 'Tanggal', nomor: 19, grup: 'Perjanjian Tukar Menukar', lebar: 4.3, rata: 'tengah' },
       { key: 'dok_nomor', judul: 'Nomor', nomor: 20, grup: 'Perjanjian Tukar Menukar', lebar: 4.5, rata: 'kiri' },
       // Mitra memakai `payload.pihak` yang sama dengan Pihak Pemberi Hibah —
       // satu kolom di DB, label berbeda per cara perolehan (pola `pihakLabel`
       // di PerolehanManual).
-      { key: 'pihak', judul: 'Mitra Tukar Menukar', nomor: 21, lebar: 5.5, rata: 'kiri' },
-      { key: 'tgl_perolehan', judul: 'Tanggal, Bulan, Tahun Perolehan', nomor: 22, lebar: 5, rata: 'tengah' },
-      { key: 'ba_tanggal', judul: 'Tanggal', nomor: 23, grup: 'Berita Acara Serah Terima', lebar: 4, rata: 'tengah' },
+      { key: 'pihak', judul: 'Mitra Tukar Menukar', nomor: 21, lebar: 6, rata: 'kiri' },
+      { key: 'tgl_perolehan', judul: 'Tanggal, Bulan, Tahun Perolehan', nomor: 22, lebar: 4.3, rata: 'tengah' },
+      { key: 'ba_tanggal', judul: 'Tanggal', nomor: 23, grup: 'Berita Acara Serah Terima', lebar: 4.3, rata: 'tengah' },
       { key: 'ba_nomor', judul: 'Nomor', nomor: 24, grup: 'Berita Acara Serah Terima', lebar: 4.5, rata: 'kiri' },
-      { key: 'keterangan', judul: 'Keterangan', nomor: 25, lebar: 5.3, rata: 'kiri' },
+      { key: 'keterangan', judul: 'Keterangan', nomor: 25, lebar: 5.6, rata: 'kiri' },
     ],
     subtotal: [26, 27, 28, 29],
     kaki: { tanggal: 30, jabatan: 31, nama: 32 },
@@ -197,10 +205,10 @@ export const FORMAT_PEROLEHAN: Record<string, FormatPerolehan> = {
       ...kolomAwal(15),
       { key: 'dok_nama', judul: 'Nama Dokumen', nomor: 19, grup: 'Dokumen Sumber Perolehan', lebar: 5.5, rata: 'kiri' },
       { key: 'dok_nomor', judul: 'Nomor', nomor: 20, grup: 'Dokumen Sumber Perolehan', lebar: 5, rata: 'kiri' },
-      { key: 'dok_tanggal', judul: 'Tanggal', nomor: 21, grup: 'Dokumen Sumber Perolehan', lebar: 4.5, rata: 'tengah' },
-      { key: 'tgl_perolehan', judul: 'Tanggal, Bulan, Tahun Perolehan', nomor: 22, lebar: 5, rata: 'tengah' },
+      { key: 'dok_tanggal', judul: 'Tanggal', nomor: 21, grup: 'Dokumen Sumber Perolehan', lebar: 4.3, rata: 'tengah' },
+      { key: 'tgl_perolehan', judul: 'Tanggal, Bulan, Tahun Perolehan', nomor: 22, lebar: 4.3, rata: 'tengah' },
       { key: 'penyebab', judul: 'Penyebab Perolehan', nomor: 23, lebar: 6, rata: 'kiri' },
-      { key: 'keterangan', judul: 'Keterangan', nomor: 24, lebar: 5.8, rata: 'kiri' },
+      { key: 'keterangan', judul: 'Keterangan', nomor: 24, lebar: 6.4, rata: 'kiri' },
     ],
     subtotal: [25, 26, 27, 28],
     kaki: { tanggal: 29, jabatan: 30, nama: 31 },
@@ -218,6 +226,25 @@ export const FORMAT_PEROLEHAN: Record<string, FormatPerolehan> = {
 export function lebarKodeBlok(f: FormatPerolehan): number {
   const dipakai = f.kolom.reduce((a, k) => a + k.lebar, 0)
   return Math.round((100 - dipakai) * 100) / 100
+}
+
+// ── Komptabel ───────────────────────────────────────────────────────────────
+
+/** Cakupan komptabel. `semua` = intra + ekstra dalam satu lembar. */
+export type Komptabel = 'intra' | 'ekstra' | 'semua'
+
+/** Isian kop (2). Lembar aslinya "INTRAKOMPTABEL/EKSTRAKOMPTABEL" — dicoret
+ *  salah satunya; di sini yang berlaku langsung dicetak. */
+export function labelKomptabel(k: Komptabel): string {
+  return k === 'ekstra' ? 'EKSTRAKOMPTABEL'
+    : k === 'semua' ? 'INTRAKOMPTABEL DAN EKSTRAKOMPTABEL'
+      : 'INTRAKOMPTABEL'
+}
+
+/** `semua` tak menyaring apa pun. Barang tanpa nilai `intra_ekstra` dianggap
+ *  intra, sejalan dengan `klasifikasiKomptabel` (bawaannya intra). */
+export function cocokKomptabel(k: Komptabel, nilai: string | null | undefined): boolean {
+  return k === 'semua' || (nilai ?? 'intra') === k
 }
 
 // ── Kodefikasi ──────────────────────────────────────────────────────────────

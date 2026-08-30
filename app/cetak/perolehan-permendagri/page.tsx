@@ -5,7 +5,7 @@
 //   ?jenis=hibah_masuk|hasil_inventarisasi|tukar_menukar|perolehan_lainnya
 //   &skpd=<id>                (WAJIB — kop lembar memuat identitas SKPD)
 //   &periode=2026-S1          atau &periode=2026 (AKHIR TAHUN: S1+S2 digabung)
-//   &komptabel=intra|ekstra   (bawaan: intra)
+//   &komptabel=intra|ekstra|semua  (bawaan: intra)
 //   &lembar=2,3,4,5,6         (bawaan: semuanya)
 //
 // Lembar yang dicentang dirangkai jadi SATU berkas dengan page-break, pola yang
@@ -32,8 +32,8 @@ import {
   type CalonTtd, type SkpdNode,
 } from '@/lib/penandaTangan'
 import {
-  FORMAT_PEROLEHAN, SEG_MIN_REKAP, segmenKode,
-  type FormatPerolehan, type ItemLaporan,
+  FORMAT_PEROLEHAN, SEG_MIN_REKAP, segmenKode, labelKomptabel, cocokKomptabel,
+  type FormatPerolehan, type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
 import { muatLembarPerolehan, type BarisPerolehan } from '@/lib/laporanPerolehanPermendagri'
 import LembarPerolehanPermendagri from '@/components/pelaporan/LembarPerolehanPermendagri'
@@ -89,7 +89,7 @@ export default function CetakPerolehanPermendagriPage() {
   const [sebutan, setSebutan] = useState('Pengguna Barang')
   const [jenis, setJenis] = useState('hibah_masuk')
   const [periode, setPeriode] = useState('')
-  const [komptabel, setKomptabel] = useState<'intra' | 'ekstra'>('intra')
+  const [komptabel, setKomptabel] = useState<Komptabel>('intra')
   const [lembar, setLembar] = useState<number[] | undefined>(undefined)
   const [calon, setCalon] = useState<CalonTtd[]>([])
   const [ttdId, setTtdId] = useState('')
@@ -109,7 +109,8 @@ export default function CetakPerolehanPermendagriPage() {
         const sk = q.get('skpd') ? Number(q.get('skpd')) : null
         if (!sk) throw new Error('SKPD belum dipilih. Kop lembar ini memuat identitas SKPD, jadi wajib per-SKPD.')
         setJenis(jns); setPeriode(per)
-        setKomptabel(q.get('komptabel') === 'ekstra' ? 'ekstra' : 'intra')
+        const kmp = q.get('komptabel')
+        setKomptabel(kmp === 'ekstra' || kmp === 'semua' ? kmp : 'intra')
         const pilih = (q.get('lembar') || '').split(',').map(Number).filter(n => n >= 2 && n <= 6)
         setLembar(pilih.length > 0 ? pilih : undefined)
         setSkpdId(sk)
@@ -149,7 +150,7 @@ export default function CetakPerolehanPermendagriPage() {
   // benar-benar satu komptabel. Barang tanpa nilai kolom itu dianggap intra,
   // sejalan dengan `klasifikasiKomptabel` (bawaannya intra).
   const items: ItemLaporan<BarisPerolehan>[] = rows
-    .filter(r => (r.aset!.intra_ekstra ?? 'intra') === komptabel)
+    .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({ kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r }))
 
   function simpanTtd(next: Partial<TtdTersimpan>) {
@@ -166,11 +167,22 @@ export default function CetakPerolehanPermendagriPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
-      {/* F4 lanskap (keputusan user 2026-08-30) — 17 kolom mustahil muat di A4;
-          lembar RKBMD 13 kolom saja sudah terbukti tak cukup di lebar 215 mm. */}
+      {/* ORIENTASI BEDA PER LEMBAR (keputusan user 2026-08-30):
+          · RINCI  → F4 LANSKAP — 17 kolom mustahil muat di lebar 215 mm;
+            lembar RKBMD 13 kolom saja sudah terbukti tak cukup.
+          · REKAP  → F4 POTRET — cuma 4–6 kolom, jadi lanskap menyisakan lautan
+            ruang kosong dan justru bikin fontnya terlihat kecil.
+          Dipakai `@page` BERNAMA + properti `page:`. ⚠️ Kalau peramban tak
+          mendukungnya, SELURUH berkas jatuh ke @page bawaan (lanskap) — bukan
+          rusak, cuma rekapnya ikut lanskap. Jalan keluarnya sudah tersedia
+          tanpa kode: centang lembarnya dipisah, cetak dua kali. */}
       <style>{`@media print {
         .no-print { display: none !important; }
         @page { size: 330mm 215mm; margin: 8mm; }
+        @page rinci { size: 330mm 215mm; margin: 8mm; }
+        @page rekap { size: 215mm 330mm; margin: 12mm; }
+        .lembar-rinci { page: rinci; }
+        .lembar-rekap { page: rekap; }
         body { background: white; }
         .break-before-page { break-before: page; }
       }`}</style>
@@ -185,9 +197,10 @@ export default function CetakPerolehanPermendagriPage() {
             <label className="flex items-center gap-2 text-sm text-gray-600">
               Komptabel:
               <select className="select-filter text-sm" value={komptabel}
-                onChange={e => setKomptabel(e.target.value === 'ekstra' ? 'ekstra' : 'intra')}>
+                onChange={e => setKomptabel(e.target.value as Komptabel)}>
                 <option value="intra">Intrakomptabel</option>
                 <option value="ekstra">Ekstrakomptabel</option>
+                <option value="semua">Intra + Ekstra</option>
               </select>
             </label>
             <label className="flex items-center gap-2 text-sm text-gray-600">
@@ -230,7 +243,7 @@ export default function CetakPerolehanPermendagriPage() {
           <LembarPerolehanPermendagri
             f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
             berupa={berupaDari(items.map(i => i.kode))}
-            labelKomptabel={komptabel === 'ekstra' ? 'EKSTRAKOMPTABEL' : 'INTRAKOMPTABEL'}
+            labelKomptabel={labelKomptabel(komptabel)}
             judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
             ttd={ttd ? { nama: ttd.nama, nip: ttd.nip } : null}
             tglTtd={tglTtd} lembar={lembar} />

@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest'
 import {
   FORMAT_PEROLEHAN, TANGGA_REKAP, SEG_SUBTOTAL, lebarKodeBlok,
   prefixSeg, segmenKode, susunRinci, susunRekap, totalPer, totalSemua, SEG_MIN_REKAP,
-  sebutanPejabat, levelSkpd, petaNamaTingkat, NAMA_KELOMPOK,
+  sebutanPejabat, levelSkpd, petaNamaTingkat, NAMA_KELOMPOK, labelKomptabel, cocokKomptabel,
   type ItemLaporan,
 } from '@/lib/formatPermendagri'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
@@ -359,5 +359,33 @@ describe('periodeDiminta — "Akhir Tahun" bernilai TAHUN, bukan string kosong',
   it('hanya empat digit yang dibaca sebagai tahun', () => {
     expect(periodeDiminta('202')).toEqual(['202'])
     expect(periodeDiminta('20261')).toEqual(['20261'])
+  })
+})
+
+describe('cakupan komptabel', () => {
+  it('kop (2) menyebut yang BERLAKU, tak lagi "INTRA/EKSTRA" untuk dicoret', () => {
+    expect(labelKomptabel('intra')).toBe('INTRAKOMPTABEL')
+    expect(labelKomptabel('ekstra')).toBe('EKSTRAKOMPTABEL')
+    expect(labelKomptabel('semua')).toBe('INTRAKOMPTABEL DAN EKSTRAKOMPTABEL')
+  })
+
+  it('barang TANPA nilai intra_ekstra dihitung INTRA', () => {
+    // Sejalan `klasifikasiKomptabel` yang bawaannya intra. Kalau dianggap
+    // "bukan keduanya", barang lama tanpa kolom itu hilang dari lembar tanpa
+    // satu pun tanda.
+    expect(cocokKomptabel('intra', null)).toBe(true)
+    expect(cocokKomptabel('intra', undefined)).toBe(true)
+    expect(cocokKomptabel('ekstra', null)).toBe(false)
+  })
+
+  it('"semua" tidak menyaring apa pun', () => {
+    for (const v of ['intra', 'ekstra', null, undefined]) {
+      expect(cocokKomptabel('semua', v)).toBe(true)
+    }
+  })
+
+  it('intra & ekstra saling meniadakan', () => {
+    expect(cocokKomptabel('intra', 'ekstra')).toBe(false)
+    expect(cocokKomptabel('ekstra', 'ekstra')).toBe(true)
   })
 })

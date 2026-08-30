@@ -236,11 +236,13 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
     const baris = susunRinci(items, f.subtotal)
     const iTotal = f.kolom.findIndex(k => k.key === 'total_nilai')
     return (
-      <section>
+      // ⚠️ `lembar-rinci` menyalakan @page LANSKAP; lembar rekap potret
+      // (keputusan user 2026-08-30). Lihat catatan orientasi di halaman cetak.
+      <section className="lembar-rinci">
         <p className="text-right text-[12px] mb-1">Format {f.kode}</p>
         <KopLembar judul={f.judul} berupa={berupa} komptabel={labelKomptabel}
           sebutan={sebutan} skpd={skpd} periode={judulPeriode} tahun={tahun} />
-        <table className="w-full table-fixed border-collapse text-[6.5px] leading-tight">
+        <table className="w-full table-fixed border-collapse text-[8px] leading-tight">
           <colgroup>
             {Array.from({ length: SEL_KODE }, (_, i) => (
               <col key={i} style={{ width: `${lebarKodeBlok(f) / SEL_KODE}%` }} />
@@ -267,7 +269,12 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
                 <SelKode kode={b.kode} sampai={SEL_KODE} />
                 {f.kolom.map(k => (
                   <td key={k.key}
-                    className={`border border-black px-1 py-0.5 ${rata(k)} ${k.key === 'nibar' ? 'break-all tracking-tight' : 'break-words'}`}>
+                    // ⚠️ NIBAR memakai font SENDIRI yang lebih kecil: 45 digit,
+                    // dan potongan pertama 26 digit wajib muat sebaris. Sisanya
+                    // naik ke 8px demi keterbacaan (permintaan user).
+                    className={`border border-black px-1 py-0.5 ${rata(k)} ${
+                      k.key === 'nibar' ? 'break-all tracking-tighter text-[6.5px]'
+                        : k.rata === 'tengah' ? 'whitespace-nowrap' : 'break-words'}`}>
                     {isiKolom(k, b.data)}
                   </td>
                 ))}
@@ -298,20 +305,20 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
       // ⚠️ Page-break hanya kalau ADA lembar sebelumnya. Kalau lembar rinci
       // tidak dicentang, break di lembar pertama menghasilkan satu halaman
       // KOSONG di depan berkas — dan itu baru ketahuan sesudah dicetak.
-      <section className={pecahHalaman ? 'break-before-page' : ''}>
+      <section className={`lembar-rekap ${pecahHalaman ? 'break-before-page' : ''}`}>
         <p className="text-right text-[12px] mb-1">Format {f.awalan}.{akhiran}</p>
         <KopLembar judul={f.judul.replace('LAPORAN ', 'REKAPITULASI ')} berupa={berupa}
           komptabel={labelKomptabel} sebutan={sebutan} skpd={skpd}
           periode={judulPeriode} tahun={tahun} tambahan={`MENURUT ${menurut}`} />
-        <table className="w-full table-fixed border-collapse text-[8px] leading-tight">
+        <table className="w-full table-fixed border-collapse text-[9px] leading-tight">
           <colgroup>
-            {pakaiNo && <col style={{ width: '4%' }} />}
+            {pakaiNo && <col style={{ width: '5%' }} />}
             {Array.from({ length: kolomKode }, (_, i) => (
               <col key={i} style={{ width: `${26 / kolomKode}%` }} />
             ))}
-            <col style={{ width: pakaiNo ? '42%' : '46%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '14%' }} />
+            <col style={{ width: pakaiNo ? '37%' : '42%' }} />
+            <col style={{ width: '16%' }} />
+            <col style={{ width: '16%' }} />
           </colgroup>
           <thead>
             <tr className="text-center font-semibold">

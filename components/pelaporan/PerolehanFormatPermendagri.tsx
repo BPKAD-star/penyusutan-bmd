@@ -16,7 +16,8 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   FORMAT_PEROLEHAN, TANGGA_REKAP, SEG_MIN_REKAP, segmenKode,
-  type ItemLaporan,
+  labelKomptabel, cocokKomptabel,
+  type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
 import { muatLembarPerolehan, type BarisPerolehan } from '@/lib/laporanPerolehanPermendagri'
 import LembarPerolehanPermendagri from './LembarPerolehanPermendagri'
@@ -52,7 +53,7 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
   const [namaTingkat, setNamaTingkat] = useState<Map<string, string>>(new Map())
   const [skpd, setSkpd] = useState<{ kode: string; nama: string } | null>(null)
   const [sebutan, setSebutan] = useState('Pengguna Barang')
-  const [komptabel, setKomptabel] = useState<'intra' | 'ekstra'>('intra')
+  const [komptabel, setKomptabel] = useState<Komptabel>('intra')
   const [pilih, setPilih] = useState<number[]>(PILIHAN.map(p => p.akhiran))
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -90,7 +91,7 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
   }
 
   const items: ItemLaporan<BarisPerolehan>[] = rows
-    .filter(r => (r.aset!.intra_ekstra ?? 'intra') === komptabel)
+    .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({ kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r }))
 
   const { judul: judulPeriode, tahun } = labelPeriode(periode)
@@ -102,27 +103,31 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
 
   return (
     <div className="space-y-4">
-      <div className="card p-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <p className="text-xs text-gray-500 mb-2">Lembar yang disusun</p>
-            <div className="flex flex-wrap gap-x-5 gap-y-2">
-              {PILIHAN.map(p => (
-                <label key={p.akhiran} className="flex items-center gap-2 text-sm text-gray-700">
-                  <input type="checkbox" checked={pilih.includes(p.akhiran)}
-                    onChange={() => toggle(p.akhiran)} />
-                  <span className="font-medium">{f.awalan}.{p.akhiran}</span>
-                  <span className="text-gray-500">{p.label}</span>
-                </label>
-              ))}
-            </div>
+      <div className="card p-4 space-y-4">
+        {/* Baris 1: cakupan. Centang lembar sengaja di BARIS SENDIRI, di bawah
+            pemilih Periode & SKPD milik induk (permintaan user 2026-08-30) —
+            bersebelahan, kelimanya mendesak tombol Cetak keluar layar. */}
+        <div>
+          <p className="text-xs text-gray-500 mb-2">Lembar yang disusun</p>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {PILIHAN.map(p => (
+              <label key={p.akhiran} className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={pilih.includes(p.akhiran)}
+                  onChange={() => toggle(p.akhiran)} />
+                <span className="font-medium">{f.awalan}.{p.akhiran}</span>
+                <span className="text-gray-500">{p.label}</span>
+              </label>
+            ))}
           </div>
+        </div>
+        <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Komptabel</label>
             <select className="select-filter" value={komptabel}
-              onChange={e => setKomptabel(e.target.value === 'ekstra' ? 'ekstra' : 'intra')}>
+              onChange={e => setKomptabel(e.target.value as Komptabel)}>
               <option value="intra">Intrakomptabel</option>
               <option value="ekstra">Ekstrakomptabel</option>
+              <option value="semua">Intra + Ekstra</option>
             </select>
           </div>
           <div className="ml-auto">
@@ -167,7 +172,7 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
         <div className="card p-4">
           <p className="text-xs text-gray-500 mb-3">
             Pratinjau — <b>{items.length.toLocaleString('id-ID')} barang</b> ·{' '}
-            {judulPeriode} {tahun} · {komptabel === 'ekstra' ? 'Ekstrakomptabel' : 'Intrakomptabel'}.
+            {judulPeriode} {tahun} · {labelKomptabel(komptabel).toLowerCase()}.
             {/* Pratinjau sengaja tak memilih penanda tangan: pilihannya disimpan
                 per SKPD di layar cetak supaya cetak ulang menghasilkan lembar
                 yang SAMA — berkas ini diteken lalu dipindai. */}
@@ -178,7 +183,7 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
               <LembarPerolehanPermendagri
                 f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
                 berupa={berupaDari(items.map(i => i.kode))}
-                labelKomptabel={komptabel === 'ekstra' ? 'EKSTRAKOMPTABEL' : 'INTRAKOMPTABEL'}
+                labelKomptabel={labelKomptabel(komptabel)}
                 judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
                 ttd={null} tglTtd="" lembar={pilih} />
             </div>
