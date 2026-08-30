@@ -13,6 +13,7 @@ import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import { useTahunBukuMap } from '@/components/useTahunBuku'
 import LaporanPengadaanModel3 from '@/components/pelaporan/LaporanPengadaanModel3'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import { FORMAT_PEROLEHAN } from '@/lib/formatPermendagri'
@@ -47,6 +48,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 }) {
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
+  const tahunBuku = useTahunBukuMap()
   const [rows, setRows] = useState<Trx[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -149,8 +151,21 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     })()
   }, [buildQuery, saringVoid])
 
-  // Tahun yang punya transaksi — sumber pilihan "Akhir Tahun".
-  const tahunList = [...new Set(periodeList.map(p => p.slice(0, 4)))].sort().reverse()
+  // ── Pilihan periode ────────────────────────────────────────────────────────
+  // ⚠️ TAHUNNYA DARI `tahun_buku`, BUKAN dari periode yang kebetulan berisi.
+  // Versi sebelumnya menurunkan daftar dari `periodeList` — periode yang punya
+  // transaksi — sehingga SEMESTER YANG BELUM ADA TRANSAKSINYA TAK BISA DIPILIH
+  // sama sekali. Itu salah dua kali: (a) periode kosong adalah jawaban yang
+  // SAH, lembarnya memang mencetak "tidak ada perolehan pada periode ini" dan
+  // itulah yang dibutuhkan saat pemeriksa menanyakannya; (b) `periodeList`
+  // disaring `.limit(1000)` baris TERBARU, jadi untuk jenis yang barisnya
+  // banyak, tahun-tahun lama akan lenyap dari dropdown TANPA satu pun tanda.
+  // `tahun_buku` itu tabel kecil yang memang mendefinisikan tahun kerja
+  // aplikasi — tepat untuk dipakai di sini.
+  const tahunList = [...new Set([
+    ...Object.keys(tahunBuku),
+    ...periodeList.map(p => p.slice(0, 4)),   // jaga-jaga: periode di luar tahun_buku
+  ])].filter(t => /^\d{4}$/.test(t)).sort().reverse()
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
@@ -318,13 +333,22 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           <label className="block text-xs text-gray-500 mb-1">Periode</label>
           <select className="select-filter" value={periode} onChange={e => setPeriode(e.target.value)}>
             <option value="">Semua Periode</option>
-            {periodeList.map(p => <option key={p} value={p}>{p}</option>)}
-            {/* ⚠️ "Akhir Tahun" bernilai TAHUN saja (mis. `2026`), bukan string
+            {/* Tiap tahun SELALU menawarkan ketiganya — semester yang belum ada
+                transaksinya tetap bisa dipilih & dicetak (hasilnya lembar
+                "tidak ada perolehan pada periode ini", yang memang sah).
+                ⚠️ "Akhir Tahun" bernilai TAHUN saja (mis. `2026`), bukan string
                 kosong — kosong berarti SELURUH periode yang pernah ada, yang
                 melintasi tahun lain & membuat kop lembar Permendagri berbohong
                 tentang isinya. `periodeDiminta()` yang menerjemahkannya jadi
-                S1+S2 tahun itu. */}
-            {tahunList.map(t => <option key={t} value={t}>{t} — Akhir Tahun</option>)}
+                S1+S2 tahun itu.
+                ⚠️ Semester II = Jul–Des SAJA, tidak kumulatif: ini laporan ARUS,
+                dan S2 kumulatif membuat barang Februari tercetak dua kali kalau
+                orang mencetak S1 lalu S2. */}
+            {tahunList.flatMap(t => [
+              <option key={`${t}-S1`} value={`${t}-S1`}>{t} — Semester I</option>,
+              <option key={`${t}-S2`} value={`${t}-S2`}>{t} — Semester II</option>,
+              <option key={t} value={t}>{t} — Akhir Tahun</option>,
+            ])}
           </select>
         </div>
         <div className="min-w-[280px]">
