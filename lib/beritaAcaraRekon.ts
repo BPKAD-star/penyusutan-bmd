@@ -227,11 +227,12 @@ export const labelSemester = (periode: string) =>
  * dialog simpan akan menolaknya.
  */
 export function namaBerkasBA(namaSkpd: string, periode: string): string {
-  const bersih = (namaSkpd || '').replace(/[\\/:*?"<>|]/g, '-').trim()
-  return `Berita Acara Rekonsiliasi_${bersih || 'Kab Kediri'}_${periode}`
+  return namaBerkasCetak(
+    'Berita Acara Rekonsiliasi', namaBerkasCetak(namaSkpd) || 'Kab Kediri', periode)
 }
 
 // ── Lampiran 1 & 2: Saldo Awal / Saldo Akhir ────────────────────────────────
+import { namaBerkasCetak } from './cetakLembar'
 /**
  * Satu baris tabel saldo.
  *
@@ -377,7 +378,7 @@ export const BARIS_TRX: BarisTrx[] = [
     // barang yang sebenarnya cuma dipecah/digabung nomor registernya.
     no: '6', huruf: '', uraian: 'Koreksi', judul: false,
     keys: ['kapitalisasi', 'koreksi_tambah', 'pemecahan_masuk', 'penggabungan_masuk',
-      'koreksi_kurang', 'pemecahan_keluar', 'penggabungan_keluar'],
+      'koreksi_kurang', 'pemecahan_keluar', 'penggabungan_keluar', 'kapitalisasi_keluar'],
   },
   { no: '7', huruf: '', uraian: 'Penghapusan', keys: [], judul: true },
   {
@@ -451,6 +452,23 @@ export function selisihBA(sel: SelBA, awal: number, akhir: number): number {
 }
 
 /**
+ * Format angka lembar cetak — negatif dalam KURUNG, bukan tanda minus
+ * (permintaan user 2026-08-27, konvensi akuntansi baku). Baris "Akumulasi
+ * Penyusutan" & sejenisnya disimpan negatif di data (lihat `barisSaldoBA`),
+ * jadi tanpa ini lembar bertanda tangan mencetak "-5.518.654.408" — bukan
+ * salah hitung, tapi bukan format resmi yang biasa dibaca BPK/inspektorat.
+ *
+ * Satu fungsi dipakai DUA tempat: sel tabel (`BeritaAcaraRekon.tsx`) & kalimat
+ * "Catatan Hasil Rekonsiliasi" (`catatanSelisihBA` di bawah) — kalau
+ * masing-masing menulis formatternya sendiri, salah satu gampang ketinggalan
+ * saat konvensinya berubah lagi.
+ */
+export function angkaBA(v: number): string {
+  const n = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Math.abs(v || 0))
+  return v < 0 ? `(${n})` : n
+}
+
+/**
  * Catatan (15) yang WAJIB ikut tercetak: setiap jenis aset yang rantainya tak
  * menutup disebut berikut angkanya.
  *
@@ -470,7 +488,7 @@ export function catatanSelisihBA(
     const s = selisihBA(sel, golPerolehan(snapAwal, g.kode, komps), golPerolehan(snapAkhir, g.kode, komps))
     if (Math.round(s) === 0) continue
     out.push(
-      `${g.kode} ${g.uraian}: selisih Rp ${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(s)} ` +
+      `${g.kode} ${g.uraian}: selisih Rp ${angkaBA(s)} ` +
       'belum terpetakan ke baris Format V.2 (a.l. reklasifikasi Intrakomptabel↔Ekstrakomptabel).',
     )
   }

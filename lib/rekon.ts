@@ -313,7 +313,7 @@ export type MutasiKey =
   | 'pemecahan_masuk' | 'penggabungan_masuk' | 'reklas_fungsi_masuk' | 'reklas_kode_masuk'
   | 'hapus_penjualan' | 'hapus_hibah' | 'hapus_tukar' | 'hapus_penyertaan' | 'hapus_sebab_lain'
   | 'pengalihan_keluar' | 'internal_keluar' | 'koreksi_kurang' | 'pemecahan_keluar' | 'penggabungan_keluar'
-  | 'reklas_fungsi_keluar' | 'reklas_kode_keluar'
+  | 'reklas_fungsi_keluar' | 'reklas_kode_keluar' | 'kapitalisasi_keluar'
 // Tiga ukuran per kategori. Nilai Buku SENGAJA tidak ikut: ia SELALU diturunkan
 // (`perolehan − akumulasi`) dan tak pernah dijumlah vertikal — kalau disimpan
 // sbg angka sendiri, cepat atau lambat ada yang menjumlahkannya antar baris dan
@@ -416,6 +416,40 @@ async function fetchNetRemoved(supabase: SupabaseClient, asetIds: string[]): Pro
   return out
 }
 
+/**
+ * aset_id yang NET-TERSERAP kapitalisasi (`kapitalisasi_serap` belum
+ * dibatalkan) — replay "event terakhir menang", pola & alasan persis
+ * `fetchNetRemoved` di atas, termasuk pembatasan ke aset yang memang ditanya.
+ *
+ * ⚠️ TIDAK BISA memakai `fetchBatalTargets` seperti sisi INDUK. Saat
+ * kapitalisasi dibatalkan, `Kapitalisasi.tsx` menulis DUA baris
+ * `batal_kapitalisasi`: yang di induk membawa `payload.target_trx_id`
+ * (karena itu induknya bisa dicocokkan per-transaksi), sedangkan yang di ANAK
+ * cuma membawa `{induk_id, no_dokumen}` — tak ada target yang bisa dicocokkan.
+ * Yang tersedia hanya URUTAN KEJADIAN pada aset itu, dan itu memang cukup:
+ * siklus serap → batal → serap lagi selesai dengan "baris terakhir menang",
+ * persis cara replay visibilitas memutuskan barang tampil atau tidak.
+ */
+async function fetchNetSerap(supabase: SupabaseClient, asetIds: string[]): Promise<Set<string>> {
+  const latest = new Map<string, { periode: string; id: number; terserap: boolean }>()
+  const uniq = [...new Set(asetIds)]
+  for (let i = 0; i < uniq.length; i += 200) {
+    const { data, error } = await supabase.from('transaksi_bmd')
+      .select('id,aset_id,periode,jenis')
+      .in('jenis', ['kapitalisasi_serap', 'batal_kapitalisasi'] as never)
+      .in('aset_id', uniq.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca riwayat kapitalisasi: ${error.message}`)
+    for (const r of (data || []) as { id: number; aset_id: string; periode: string; jenis: string }[]) {
+      const cur = latest.get(r.aset_id)
+      if (!cur || r.periode > cur.periode || (r.periode === cur.periode && r.id > cur.id))
+        latest.set(r.aset_id, { periode: r.periode, id: r.id, terserap: r.jenis === 'kapitalisasi_serap' })
+    }
+  }
+  const out = new Set<string>()
+  for (const [id, s] of latest) if (s.terserap) out.add(id)
+  return out
+}
+
 // ── Baris rinci (bukti dukung): 1 transaksi = 1 baris (reklas = 2: keluar+masuk). ──
 export type MutasiArah = 'tambah' | 'kurang'
 export type MutasiLine = {
@@ -437,7 +471,7 @@ export type MutasiLine = {
 export const KURANG_KEYS: MutasiKey[] = [
   'hapus_penjualan', 'hapus_hibah', 'hapus_tukar', 'hapus_penyertaan', 'hapus_sebab_lain',
   'pengalihan_keluar', 'internal_keluar', 'koreksi_kurang', 'pemecahan_keluar', 'penggabungan_keluar',
-  'reklas_fungsi_keluar', 'reklas_kode_keluar',
+  'reklas_fungsi_keluar', 'reklas_kode_keluar', 'kapitalisasi_keluar',
 ]
 const KURANG_SET = new Set<MutasiKey>(KURANG_KEYS)
 
@@ -446,7 +480,9 @@ export const KATEGORI_LABEL: Record<MutasiKey, string> = {
   pengadaan: 'Pengadaan', belanja_jasa: 'Perolehan dari rekening Belanja Jasa',
   hibah: 'Hibah', tukar: 'Tukar Menukar', inventarisasi: 'Hasil Inventarisasi', lainnya: 'Perolehan Lainnya',
   penggunaan_masuk: 'Penggunaan (transfer masuk)', internal_masuk: 'Penerimaan Internal (transfer masuk)',
-  kapitalisasi: 'Kapitalisasi', koreksi_tambah: 'Koreksi Nilai (Tambah)',
+  kapitalisasi: 'Kapitalisasi (nilai masuk ke induk)',
+  kapitalisasi_keluar: 'Kapitalisasi (barang diserap induk)',
+  koreksi_tambah: 'Koreksi Nilai (Tambah)',
   pemecahan_masuk: 'Pemecahan Barang (pecahan baru)', pemecahan_keluar: 'Pemecahan Barang (induk dipecah)',
   penggabungan_masuk: 'Penggabungan Barang (nilai masuk ke induk)', penggabungan_keluar: 'Penggabungan Barang (barang dilebur)',
   reklas_fungsi_masuk: 'Reklas Perubahan Fungsi (Masuk)', reklas_kode_masuk: 'Reklas Kesalahan Kodefikasi (Masuk)',
@@ -487,11 +523,12 @@ async function computeMutasiLines(
   // Versi lama menanyakan keduanya atas SELURUH ledger (259rb baris) sekaligus
   // dgn baris periode ini — itu yang tembus statement timeout beruntun
   // 2026-07-28, dan biayanya bakal terus naik seiring ledger tumbuh.
-  const [cara, alih, internal, kap, kor, reklasG, reklasK, hapus, pecah, gabung] = await Promise.all([
+  const [cara, alih, internal, kap, serap, kor, reklasG, reklasK, hapus, pecah, gabung] = await Promise.all([
     fetchLed(supabase, JENIS_CARA, periode),
     fetchLed(supabase, ['pengalihan_status'], periode),
     fetchLed(supabase, ['mutasi_internal'], periode),
     fetchLed(supabase, ['kapitalisasi'], periode),
+    fetchLed(supabase, ['kapitalisasi_serap'], periode),
     fetchLed(supabase, ['koreksi_nilai'], periode),
     fetchLed(supabase, ['reklas_golongan'], periode),
     fetchLed(supabase, ['reklas_kode'], periode),
@@ -527,8 +564,9 @@ async function computeMutasiLines(
 
   // Tahap 2 — SEMUA terscope ke aset yang muncul di tahap 1. Tidak ada lagi
   // satu pun query di fungsi ini yang menyapu seluruh ledger.
-  const [kapBatal, korBatal, reklasBatal, alihBatal, internalBatal, voided, netRemoved, pecahBatal, gabungBatal] = await Promise.all([
+  const [kapBatal, netSerap, korBatal, reklasBatal, alihBatal, internalBatal, voided, netRemoved, pecahBatal, gabungBatal] = await Promise.all([
     fetchBatalTargets(supabase, ['batal_kapitalisasi'], kap.map(r => r.aset_id)),
+    fetchNetSerap(supabase, serap.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_koreksi_nilai'], kor.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_reklas'], [...reklasG, ...reklasK].map(r => r.aset_id)),
     // Pengalihan yang DIANULIR. Sempat kelewat (rules.md §1.7 titik 2 sudah
@@ -573,6 +611,26 @@ async function computeMutasiLines(
   for (const r of kap) {
     if (!r.aset || kapBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
     push(golPada(r), kompOf(r.aset.intra_ekstra), 'kapitalisasi', r.nilai, r)
+  }
+
+  // Kapitalisasi — sisi ANAK yang diserap induk (perbaikan 2026-08-27).
+  //
+  // ⚠️ SEBELUM INI `kapitalisasi_serap` TAK DIPETAKAN SAMA SEKALI, dan itu
+  // membuat rantai rekonsiliasi tak pernah tie-out untuk golongan yang punya
+  // kapitalisasi: induknya naik (baris Penambahan "Kapitalisasi") sementara
+  // barang yang diserap LENYAP dari Saldo Akhir — `kapitalisasi_serap` ada di
+  // SEMBUNYI (lib/visibilitas.ts) — tanpa satu pun baris Pengurangan yang
+  // menjelaskannya. Selisihnya jatuh ke baris "Selisih (belum terpetakan)",
+  // dan besarnya persis DUA KALI nilai rehab: sekali dari induk yang naik,
+  // sekali dari anak yang hilang.
+  //
+  // Kapitalisasi itu peristiwa DIAM secara nilai total — nilai berpindah dari
+  // anak ke induk, kekayaan pemda tak bertambah — jadi bentuk yang benar
+  // memang Penambahan & Pengurangan yang saling meniadakan, bukan salah
+  // satunya saja (keputusan user 2026-08-27).
+  for (const r of serap) {
+    if (!r.aset || !netSerap.has(r.aset_id) || !inScope(r.aset.skpd_id)) continue
+    push(golPada(r), kompOf(r.aset.intra_ekstra), 'kapitalisasi_keluar', r.nilai, r)
   }
 
   // Koreksi Nilai (delta ±) — tambah (>0) / kurang (<0), buang yg dibatalkan.

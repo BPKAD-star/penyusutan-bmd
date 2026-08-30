@@ -34,6 +34,7 @@ import RekonDetailModal from '@/components/pelaporan/RekonDetailModal'
 import BeritaAcaraRekon from '@/components/pelaporan/BeritaAcaraRekon'
 import BeritaAcaraRekonModal from '@/components/pelaporan/BeritaAcaraRekonModal'
 import { namaBerkasBA, type KonfigBA } from '@/lib/beritaAcaraRekon'
+import { cssCetakLembar } from '@/lib/cetakLembar'
 import { tahunAwal } from '@/lib/tahunKerja'
 import {
   fetchRekonRekap, fetchPosAset, fetchMutasiLines, attribusiLines,
@@ -101,6 +102,13 @@ const ROWS_KURANG: RowDef[] = [
   { kind: 'item', label: 'Penghapusan Pengalihan (transfer keluar)', key: 'pengalihan_keluar', indent: 1 },
   { kind: 'item', label: 'Pengeluaran Internal (transfer keluar)', key: 'internal_keluar', indent: 1 },
   { kind: 'item', label: 'Koreksi Kurang', key: 'koreksi_kurang', indent: 1 },
+  // Barang yang DISERAP induk saat kapitalisasi. Total nilainya SAMA dengan
+  // baris Kapitalisasi di blok Penambahan kalau induk & anak sekolom
+  // komptabel — memang saling meniadakan: nilai berpindah dari anak ke induk,
+  // kekayaan pemda tak bertambah. Sebelum 2026-08-27 baris ini tak ada sama
+  // sekali, jadi selisihnya jatuh ke "Selisih (belum terpetakan)" sebesar DUA
+  // KALI nilai rehab (induk naik + anak hilang).
+  { kind: 'item', label: 'Kapitalisasi (barang diserap induk)', key: 'kapitalisasi_keluar', indent: 1 },
   { kind: 'item', label: 'Pemecahan Barang (induk dipecah)', key: 'pemecahan_keluar', indent: 1 },
   // Barang sumber yang dilebur ke induk. Total nilainya SAMA dengan baris
   // Penggabungan di blok Penambahan kalau induk & sumber sekolom komptabel —
@@ -410,21 +418,21 @@ export default function RekonsiliasiPage() {
           Trik visibility saja tak cukup di sini: elemen yang tak terlihat tetap
           MENGISI tata letak, jadi #cetak-rekon yang tingginya ~8 halaman akan
           menghasilkan berkas BA berisi 8 lembar kosong di belakangnya. */}
+      {/* Mekanik isolasinya dipegang `cssCetakLembar` (satu sumber sejak
+          2026-08-29) — termasuk `sembunyikan`, yang menegakkan aturan
+          "saudaranya WAJIB display:none" di atas. Kalau salah satu lembar lupa
+          menyembunyikan yang lain, `cssCetakLembar` tak bisa menolongnya —
+          tapi kalau ia keliru menyembunyikan DIRINYA SENDIRI, fungsinya
+          melempar (dikunci lib/cetakLembar.test.ts). */}
       {modeCetak === 'ba' ? (
-        <style>{`
-          @media print {
-            @page { size: A4 portrait; margin: 1.4cm 1.5cm; }
-            body { background: #fff; }
-            body * { visibility: hidden; }
-            #cetak-rekon { display: none !important; }
-            #cetak-ba { display: block !important; position: absolute; left: 0; top: 0; width: 100%; }
-            #cetak-ba, #cetak-ba * { visibility: visible; }
+        <style>{cssCetakLembar({
+          id: 'cetak-ba', kertas: 'A4 potret', margin: '1.4cm 1.5cm',
+          sembunyikan: ['cetak-rekon'],
+          tambahan: `
             /* Satu lembar = satu halaman; lembar terakhir tak menyisakan
                halaman kosong (pola yang sama dgn kartu tabel di bawah). */
             #cetak-ba .lembar { break-after: page; break-inside: auto; }
             #cetak-ba .lembar:last-child { break-after: auto; }
-            #cetak-ba tr { break-inside: avoid; }
-            #cetak-ba thead { display: table-header-group; }
             /* ⚠️ Padatkan HANYA tabel lampiran (.tabel-ba), bukan semua <table>:
                blok isian Nama/NIP/Pangkat/Jabatan di lembar depan juga <table>
                dan tak boleh ikut mengecil. Tanpa pemadatan ini lembar transaksi
@@ -433,38 +441,29 @@ export default function RekonsiliasiPage() {
             #cetak-ba .tabel-ba { font-size: 8.5px; }
             #cetak-ba .tabel-ba th, #cetak-ba .tabel-ba td {
               padding: 1px 3px !important; line-height: 1.15;
-            }
-            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          }
-        `}</style>
+            }`,
+        })}</style>
       ) : (
-      <style>{`
-        @media print {
-          @page { size: A4 landscape; margin: 0.7cm; }
-          body { background: #fff; }
-          body * { visibility: hidden; }
-          #cetak-ba { display: none !important; }
-          #cetak-rekon, #cetak-rekon * { visibility: visible; }
-          #cetak-rekon { position: absolute; left: 0; top: 0; width: 100%; }
-          #cetak-rekon .no-print { display: none !important; }
-          #cetak-rekon .space-y-3 > * { margin-top: 0 !important; }
-          #cetak-rekon .card {
-            break-inside: avoid; break-after: page;
-            box-shadow: none; border: 0; border-radius: 0; margin: 0;
-          }
-          #cetak-rekon .card:last-child { break-after: auto; }
-          #cetak-rekon .judul-gol { padding: 0 0 2px 0 !important; background: none !important; border: 0 !important; }
-          #cetak-rekon .judul-gol p { font-size: 10px !important; }
-          #cetak-rekon table { font-size: 6.5px; table-layout: fixed; width: 100%; border-collapse: collapse; }
-          #cetak-rekon th, #cetak-rekon td { padding: 0.5px 2px !important; line-height: 1.2; }
-          #cetak-rekon th:first-child, #cetak-rekon td:first-child {
-            width: 20%; overflow-wrap: anywhere;
-          }
-          #cetak-rekon td:not(:first-child), #cetak-rekon th:not(:first-child) { white-space: nowrap; }
-          #cetak-rekon .overflow-x-auto { overflow: visible !important; }
-          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
-      `}</style>
+        <style>{cssCetakLembar({
+          id: 'cetak-rekon', kertas: 'A4 lanskap', margin: '0.7cm',
+          sembunyikan: ['cetak-ba'],
+          tambahan: `
+            #cetak-rekon .space-y-3 > * { margin-top: 0 !important; }
+            #cetak-rekon .card {
+              break-inside: avoid; break-after: page;
+              box-shadow: none; border: 0; border-radius: 0; margin: 0;
+            }
+            #cetak-rekon .card:last-child { break-after: auto; }
+            #cetak-rekon .judul-gol { padding: 0 0 2px 0 !important; background: none !important; border: 0 !important; }
+            #cetak-rekon .judul-gol p { font-size: 10px !important; }
+            #cetak-rekon table { font-size: 6.5px; table-layout: fixed; width: 100%; border-collapse: collapse; }
+            #cetak-rekon th, #cetak-rekon td { padding: 0.5px 2px !important; line-height: 1.2; }
+            #cetak-rekon th:first-child, #cetak-rekon td:first-child {
+              width: 20%; overflow-wrap: anywhere;
+            }
+            #cetak-rekon td:not(:first-child), #cetak-rekon th:not(:first-child) { white-space: nowrap; }
+            #cetak-rekon .overflow-x-auto { overflow: visible !important; }`,
+        })}</style>
       )}
 
       <div className="mb-6">
@@ -554,11 +553,20 @@ export default function RekonsiliasiPage() {
           </div>
           {GOLONGAN_REKAP.map(g => (
             <div key={g.kode} className="card overflow-hidden">
-              <div className="judul-gol px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
+              <div className="judul-gol px-4 py-1.5 border-b border-gray-100 bg-gray-50/60">
                 <p className="text-sm font-semibold text-gray-800">{g.kode} — {g.uraian}</p>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                {/* ⚠️ Dipadatkan lewat varian ber-SCOPE (`[&_.table-td]:…`),
+                    sengaja BUKAN dgn mengubah `.table-td`/`.table-th` di
+                    globals.css — dua kelas itu dipakai hampir seluruh tabel
+                    aplikasi, jadi menyunting yang di sana akan mengecilkan
+                    Daftar Barang, Penyusutan, & belasan menu lain sekaligus.
+                    Bawaan `py-3` (12px) × ~46 baris membuat satu jenis aset
+                    mustahil muat sepandangan; `py-0.5` memangkasnya ±500px
+                    sehingga blok Penambahan & Pengurangan terlihat bersamaan
+                    (permintaan user 2026-08-27). */}
+                <table className="w-full text-[11px] [&_.table-td]:px-2 [&_.table-td]:py-0.5 [&_.table-th]:px-2 [&_.table-th]:py-1 [&_.table-th]:normal-case [&_.table-th]:tracking-normal">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="table-th text-left" rowSpan={2}>Uraian</th>
@@ -588,7 +596,13 @@ export default function RekonsiliasiPage() {
                         : row.kind === 'selisih' ? 'text-gray-500 italic' : ''
                       return (
                         <tr key={ri} className={cls}>
-                          <td className="table-td text-xs" style={{ paddingLeft: `${0.75 + (row.indent || 0) * 1}rem` }}>{row.label}</td>
+                          {/* `text-xs` DICABUT dari sel — ia menimpa ukuran
+                              tabel (`text-[11px]`) & membuat pemadatannya
+                              tak berefek. Indentasi ikut dirapatkan (1rem →
+                              0.65rem per tingkat): hierarki tetap terbaca,
+                              tapi kolom Uraian tak lagi memakan lebar yang
+                              dibutuhkan delapan kolom angka. */}
+                          <td className="table-td whitespace-nowrap" style={{ paddingLeft: `${0.5 + (row.indent || 0) * 0.65}rem` }}>{row.label}</td>
                           {KOMPS.map(k => {
                             const v = nilaiBaris(row, mutasiCellOf(mutasi, g.kode, k),
                               measuresOf(snapAwal, g.kode, k), measuresOf(snapAkhir, g.kode, k), bebanAwalOf(g.kode, k))
@@ -608,7 +622,7 @@ export default function RekonsiliasiPage() {
                             const warna = row.grup === 'tambah' ? 'text-emerald-700'
                               : row.grup === 'kurang' ? 'text-red-600' : ''
                             const td = (id: string, v: number | null, border = false, onClick?: () => void) => (
-                              <td key={id} className={`table-td text-right text-xs tabular-nums ${border ? 'border-l border-gray-100' : ''}`}>
+                              <td key={id} className={`table-td text-right tabular-nums whitespace-nowrap ${border ? 'border-l border-gray-100' : ''}`}>
                                 {v == null ? <span className="text-gray-300">{isHead || row.kind === 'sub' ? '' : '–'}</span>
                                   : v === 0 ? <span className="text-gray-300">–</span>
                                   : onClick ? (

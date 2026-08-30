@@ -461,6 +461,37 @@ selain itu → F4 potret. Jangan dicoba lagi.
 
 ---
 
+## 9f. Penyelarasan dengan mekanik cetak bersama (2026-08-30)
+
+`main` sementara itu menyatukan mekanik lembar cetak, dan pekerjaan ini
+diselaraskan ke situ — BUKAN dibiarkan berdampingan:
+
+| Primitif di `main` | Dipakai untuk |
+|---|---|
+| `cssCetakLembar()` (lib/cetakLembar.ts) | blok `@media print`; dulu 4 salinan |
+| `ingatanCetak()` (lib/ingatanCetak.ts) | ingatan pilihan cetak; dulu 8 salinan |
+| `LEMBAR_PERMENDAGRI` (lib/permendagriFormat.ts) | ada/tidaknya tab Format Permendagri |
+
+Yang ditambahkan ke primitif itu: kertas **`F4 potret`** (lembar rekap cuma 4–6
+kolom), kunci **`KUNCI_TTD_PEROLEHAN_SEKAB`**, dan **empat entri lembar**
+(IV.A.2.2 / 7.2 / 8.2 / 10.2) — nomor formatnya kini sudah dikonfirmasi dari
+lampiran Permendagri, jadi catatan lama "belum dikonfirmasi Bidang Aset" dicabut
+berikut test yang menguncinya.
+
+⚠️ **DUA BERKAS BERNAMA NYARIS SAMA, PERTANYAANNYA BEDA — jangan tertukar:**
+
+```
+lib/permendagriFormat.ts  → "lembar ini SUDAH ADA atau belum, kode & kertasnya apa"
+lib/formatPermendagri.ts  → "BENTUK TABELNYA seperti apa" (kolom, penomoran, rekap)
+```
+
+Batasnya tegas: yang MENENTUKAN KEBERADAAN tab hanya `permendagriFormat`.
+`formatPermendagri` cuma memilih komponen mana yang dirender. Dua daftar yang
+sama-sama boleh bilang "ada" pasti menyimpang, dan gejalanya cuma tab yang
+muncul tanpa isi.
+
+---
+
 ## 10. Temuan saat membangun IV.A.2.x (2026-08-30)
 
 **(a) Lembar REKAP itu HIERARKIS, bukan daftar datar.** Bacaan awal keliru:

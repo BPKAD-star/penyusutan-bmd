@@ -1,6 +1,7 @@
-// Data & transform untuk Laporan Pengadaan "Model 3" (format Permendagri 47/2021,
-// Format IV.A — aset tetap). Dipakai bersama oleh komponen tab Model 3, halaman
-// cetak, dan export Excel — supaya fetch + grouping cuma ditulis sekali.
+// Data & transform untuk lembar Laporan Pengadaan format Permendagri 47/2021
+// (Format IV.A — aset tetap). Dipakai bersama oleh komponen tab "Format
+// Permendagri", halaman cetak, dan export Excel — supaya fetch + grouping cuma
+// ditulis sekali.
 //
 // Sumber: transaksi_bmd jenis IN ('pengadaan','akumulasi_kdp') — pengadaan reguler
 // + termin KDP/konstruksi. Difilter periode (semester) + subtree SKPD lewat

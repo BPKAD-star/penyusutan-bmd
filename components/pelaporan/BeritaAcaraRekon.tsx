@@ -28,12 +28,11 @@ import type { TdHTMLAttributes, ThHTMLAttributes } from 'react'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import type { Mutasi, Snapshot } from '@/lib/rekon'
 import {
-  KOMPS_DARI, LABEL_CAKUPAN, adaTransaksiBA, barisSaldoBA, barisTrxBA, butirCatatan,
+  KOMPS_DARI, LABEL_CAKUPAN, adaTransaksiBA, angkaBA, barisSaldoBA, barisTrxBA, butirCatatan,
   catatanSelisihBA, kalimatTanggal, labelSemester, selBA, tanggalCutoff, tglPanjang,
   totalTrxBA, varianInfo, type KonfigBA, type PihakBA,
 } from '@/lib/beritaAcaraRekon'
 
-const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
 const TITIK = '…………………………………'
 
 const TH = ({ children, className = '', ...rest }: ThHTMLAttributes<HTMLTableCellElement>) =>
@@ -43,7 +42,7 @@ const TD = ({ children, className = '', ...rest }: TdHTMLAttributes<HTMLTableCel
 
 /** Sel angka: `null` → dibiarkan KOSONG (pos yang aplikasi ini tak catat), bukan 0. */
 const Rp = ({ v }: { v: number | null }) => (
-  <span className="tabular-nums">{v == null ? '' : angka(v)}</span>
+  <span className="tabular-nums">{v == null ? '' : angkaBA(v)}</span>
 )
 
 const BarisIsian = ({ label, isi }: { label: string; isi: string }) => (

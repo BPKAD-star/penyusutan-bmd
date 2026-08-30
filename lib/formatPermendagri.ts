@@ -32,6 +32,19 @@
 //       menggeser sisanya, dan itu justru kesalahan yang tak bersuara.
 // Mencabutnya berarti kehilangan dua-duanya demi menghapus data yang tak
 // berbiaya apa pun.
+//
+// ⚠️ JANGAN TERTUKAR DENGAN `lib/permendagriFormat.ts` — namanya cuma beda
+// urutan kata, isinya beda pertanyaan:
+//
+//   permendagriFormat.ts  → "lembar ini SUDAH ADA atau belum, kode & kertasnya
+//                            apa" — satu entri per lembar, dan itulah yang
+//                            menentukan ada-tidaknya tab Format Permendagri.
+//   formatPermendagri.ts  → "BENTUK TABELNYA seperti apa" — susunan kolom,
+//                            penomoran, penanda subtotal, mesin rekap.
+//
+// Batasnya: yang MENENTUKAN KEBERADAAN lembar cuma `permendagriFormat`. Berkas
+// ini tak boleh dipakai menggerbangi tab — dua daftar yang sama-sama boleh
+// bilang "ada" pasti menyimpang, dan gejalanya cuma tab yang muncul tanpa isi.
 // ============================================================================
 
 /** Kedalaman kodefikasi yang punya baris subtotal, dari yang PALING DALAM. */

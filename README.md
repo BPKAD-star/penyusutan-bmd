@@ -43,6 +43,7 @@ sisanya sesuai kebutuhan.
 | [docs/insiden.md](docs/insiden.md) | **register insiden** — gejala · akar · perbaikan · test yang menjaganya. Alat cek janji TESTING.md §8 |
 | [docs/kamus.md](docs/kamus.md) | **pasangan yang mirip tapi beda** — kolom/istilah/konsep yang gampang tertukar, berikut bug yang pernah lahir darinya |
 | [docs/skema-database.md](docs/skema-database.md) | diagram ER (Mermaid) **per modul** — versi dalam dari `schema.md` |
+| [docs/pelaporan-permendagri.md](docs/pelaporan-permendagri.md) | **peta 21 laporan → format Permendagri 47/2021** — mana yang sudah punya lembar resmi, mana yang belum, empat pola cetak yang ada, & urutan pencicilannya |
 | [docs/lra-plan.md](docs/lra-plan.md) | rencana modul LRA |
 | [docs/pelaporan-permendagri-plan.md](docs/pelaporan-permendagri-plan.md) | **papan kerja format laporan Permendagri 47/2021** (`IV.x`/`V.x`) — daftar format, keputusan yang sudah diambil, & cara menyerahkan format baru |
 | [docs/rekonsiliasi-bmd-plan.md](docs/rekonsiliasi-bmd-plan.md) | rencana modul Rekonsiliasi |

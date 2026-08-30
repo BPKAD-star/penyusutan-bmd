@@ -41,13 +41,17 @@ import {
   muatLembarPerolehan, muatLembarKabupaten, type BarisPerolehan,
 } from '@/lib/laporanPerolehanPermendagri'
 import { fetchApprovalScope } from '@/lib/roles'
+// ⚠️ Mekanik cetak DIPAKAI BERSAMA, bukan disalin: `cssCetakLembar` menyatukan
+// blok @media print (dulu 4 salinan) & `ingatanCetak` menyatukan ingatan
+// pilihan cetak (dulu 8 salinan). Menulis ulang keduanya di sini akan jadi
+// salinan kelima & kesembilan — persis utang yang baru saja dibereskan.
+import { cssCetakLembar, namaBerkasCetak } from '@/lib/cetakLembar'
+import {
+  ingatanCetak, ingatanTeksCetak, kunciTtdPerolehan, KUNCI_TTD_PEROLEHAN_SEKAB,
+} from '@/lib/ingatanCetak'
 import LembarPerolehanPermendagri from '@/components/pelaporan/LembarPerolehanPermendagri'
 import LembarRekapKabupaten, { type ItemKab } from '@/components/pelaporan/LembarRekapKabupaten'
 
-/** Penanda tangan lembar se-Kabupaten dipilih BEBAS dari seluruh pegawai —
- *  pola `bmd_rkbmd_ttd_sekab`. Yang meneken rekap se-kabupaten itu Pejabat
- *  Penatausahaan Barang, bukan kepala salah satu SKPD. */
-const KEY_TTD_KAB = 'bmd_perolehan_ttd_sekab'
 type Pegawai = { id: string; nama: string; nip: string | null; jabatan: string | null }
 
 const KABUPATEN = 'Kediri'
@@ -57,15 +61,11 @@ const todayStr = () => {
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
 }
 
-const keyTtd = (skpdId: number) => `bmd_perolehan_ttd_skpd_${skpdId}`
 type TtdTersimpan = { id?: string; plt?: boolean; tgl?: string }
-
-function bacaTtd(skpdId: number): TtdTersimpan | null {
-  try {
-    const v = localStorage.getItem(keyTtd(skpdId))
-    return v ? (JSON.parse(v) as TtdTersimpan) : null
-  } catch { return null }
-}
+/** Kunci yang SAMA dengan lembar "Laporan Penerimaan BMD" — pilihan penanda
+ *  tangan per SKPD memang milik operatornya, bukan milik salah satu lembar. */
+const ingatan = (skpdId: number) => ingatanCetak<TtdTersimpan>(kunciTtdPerolehan(skpdId))
+const ingatanKab = ingatanTeksCetak(KUNCI_TTD_PEROLEHAN_SEKAB)
 
 /**
  * Isian kop (5) & (6). `'2026-S1'` → Semester I; `'2026'` → AKHIR TAHUN.
@@ -155,7 +155,7 @@ export default function CetakPerolehanPermendagriPage() {
           try { daftar = await fetchCalonTtd(supabase, sk, byId) } catch { daftar = [] }
           setCalon(daftar)
 
-          const simpan = bacaTtd(sk)
+          const simpan = ingatan(sk).baca()
           const idTerpilih = q.get('ttd') || simpan?.id || calonTtdAwal(daftar)?.id || ''
           setTtdId(idTerpilih)
           setPlt(q.get('plt') === '1' ? true
@@ -191,7 +191,7 @@ export default function CetakPerolehanPermendagriPage() {
             .select('id,nama,nip,jabatan').order('nama').limit(2000)
           if (pgErr) setPeringatan(`Daftar penanda tangan gagal dimuat (${pgErr.message}) — blok tanda tangan dibiarkan kosong.`)
           setPegawai((pg || []) as Pegawai[])
-          try { setTtdKabId(q.get('ttdkab') || localStorage.getItem(KEY_TTD_KAB) || '') } catch { /* mode privat */ }
+          setTtdKabId(q.get('ttdkab') || ingatanKab.baca() || '')
         }
       } catch (e) {
         setGagal((e as Error).message)
@@ -226,42 +226,35 @@ export default function CetakPerolehanPermendagriPage() {
 
   function simpanTtd(next: Partial<TtdTersimpan>) {
     if (skpdId == null) return
-    const v: TtdTersimpan = { id: ttdId, plt, tgl: tglTtd, ...next }
-    try { localStorage.setItem(keyTtd(skpdId), JSON.stringify(v)) } catch { /* kuota/mode privat */ }
+    ingatan(skpdId).simpan({ id: ttdId, plt, tgl: tglTtd, ...next })
   }
 
   useEffect(() => {
     if (!skpd) return
-    const bersih = (t: string) => t.replace(/[\\/:*?"<>|]/g, '-').trim()
-    document.title = `${f.kode} ${bersih(skpd.nama)} ${tahun}`
+    document.title = namaBerkasCetak(f.kode, skpd.nama, tahun)
   }, [skpd, f.kode, tahun])
 
   // Berkas se-Kabupaten tak punya nama SKPD di judulnya.
   useEffect(() => {
     if (skpd || !adaKab) return
-    document.title = `${f.awalan} se-Kabupaten ${KABUPATEN} ${tahun}`
+    document.title = namaBerkasCetak(f.awalan, `se-Kabupaten ${KABUPATEN}`, tahun)
   }, [skpd, adaKab, f.awalan, tahun])
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       {/* ORIENTASI DITENTUKAN OLEH LEMBAR YANG DICENTANG:
-          · ada lembar RINCI → F4 LANSKAP. 17 kolom mustahil muat di lebar
-            215 mm; lembar RKBMD 13 kolom saja sudah terbukti tak cukup.
-          · hanya REKAP      → F4 POTRET. Cuma 4–6 kolom, jadi lanskap
-            menyisakan lautan ruang kosong & bikin fontnya terlihat kecil.
-          ⚠️ Versi pertama memakai `@page` BERNAMA (`page: rinci|rekap`) supaya
-          satu berkas bisa memuat dua orientasi sekaligus. TERBUKTI TIDAK JALAN
-          di Chrome — `size` pada @page bernama diabaikan, seluruh berkas ikut
-          orientasi bawaan. Jangan dicoba lagi; yang berlaku sekarang SATU
-          orientasi per berkas, dan itu justru membuat perilakunya bisa
-          ditebak. Untuk mendapat rinci-lanskap + rekap-potret: pisahkan
-          centangnya, cetak dua kali. */}
-      <style>{`@media print {
-        .no-print { display: none !important; }
-        @page { size: ${adaRinci ? '330mm 215mm' : '215mm 330mm'}; margin: ${adaRinci ? '8mm' : '12mm'}; }
-        body { background: white; }
-        .break-before-page { break-before: page; }
-      }`}</style>
+          · ada lembar RINCI → F4 lanskap (17 kolom mustahil di lebar 215 mm)
+          · hanya REKAP      → F4 potret (cuma 4–6 kolom)
+          ⚠️ Versi pertama memakai `@page` BERNAMA supaya satu berkas memuat dua
+          orientasi sekaligus. TERBUKTI TIDAK JALAN di Chrome — `size` pada
+          @page bernama diabaikan. Jangan dicoba lagi; untuk mendapat keduanya,
+          pisahkan centangnya & cetak dua kali. */}
+      <style>{cssCetakLembar({
+        id: 'cetak-perolehan-permendagri',
+        kertas: adaRinci ? 'F4 lanskap' : 'F4 potret',
+        margin: adaRinci ? '8mm' : '12mm',
+        tambahan: '  .break-before-page { break-before: page; }',
+      })}</style>
 
       <div className="max-w-[1600px] mx-auto mb-3 flex flex-wrap items-center justify-end gap-3 no-print px-4">
         {siap && !gagal && (
@@ -310,8 +303,7 @@ export default function CetakPerolehanPermendagriPage() {
             Ttd se-Kabupaten:
             <select className="select-filter text-sm max-w-sm" value={ttdKabId}
               onChange={e => {
-                setTtdKabId(e.target.value)
-                try { localStorage.setItem(KEY_TTD_KAB, e.target.value) } catch { /* mode privat */ }
+                setTtdKabId(e.target.value); ingatanKab.simpan(e.target.value)
               }}>
               <option value="">— belum dipilih (dibiarkan bertitik-titik) —</option>
               {pegawai.map(x => (
@@ -333,7 +325,8 @@ export default function CetakPerolehanPermendagriPage() {
         </div>
       )}
 
-      <div className="max-w-[1600px] mx-auto bg-white p-6 shadow print:shadow-none print:p-0 space-y-10 print:space-y-0">
+      <div id="cetak-perolehan-permendagri"
+        className="max-w-[1600px] mx-auto bg-white p-6 shadow print:shadow-none print:p-0 space-y-10 print:space-y-0">
         {!siap ? (
           <p className="py-8 text-center text-gray-400 text-sm">Memuat…</p>
         ) : gagal ? (

@@ -9,23 +9,71 @@
 // semua (dulu cuma Pengadaan sebelum menu2 itu dibangun ulang dgn pola sama).
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
+import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
+import { barangKdpList, type KontrakKonstruksiPayload } from '@/lib/kdp'
 import { backdropClose } from '@/components/backdropClose'
 
-type CaraConfig = { key: string; label: string; jenisTransaksi: string; kategoriJurnal: string | null }
+// ⚠️ `kategoriJurnal` JAMAK — Pengadaan punya DUA pintu masuk yang memakai
+// kategori `jurnal_header` berbeda: entry non-fisik (`pengadaan`) dan Pekerjaan
+// Fisik/Konstruksi (`konstruksi`). Sampai 2026-08-27 kartu ini cuma menyapu
+// yang pertama, jadi kontrak konstruksi yang masih menunggu persetujuan TIDAK
+// pernah terhitung di angka "menunggu" & tak muncul di popup-nya — hilang
+// diam-diam, tanpa satu pun error. (Sisi "disetujui" tak kena: asetnya dibuat
+// dgn `cara_perolehan='pengadaan'` sama spt non-fisik, jadi `fn_dashboard_rekap`
+// sudah menghitungnya sejak awal.)
+type CaraConfig = { key: string; label: string; jenisTransaksi: string; kategoriJurnal: string[] }
 const CARA_LIST: CaraConfig[] = [
-  { key: 'pengadaan', label: 'Pengadaan', jenisTransaksi: 'pengadaan', kategoriJurnal: 'pengadaan' },
-  { key: 'hibah', label: 'Hibah', jenisTransaksi: 'hibah_masuk', kategoriJurnal: 'hibah_masuk' },
-  { key: 'tukarMenukar', label: 'Tukar Menukar', jenisTransaksi: 'tukar_menukar', kategoriJurnal: 'tukar_menukar' },
-  { key: 'inventarisasi', label: 'Hasil Inventarisasi', jenisTransaksi: 'hasil_inventarisasi', kategoriJurnal: 'hasil_inventarisasi' },
-  { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: 'perolehan_lainnya' },
+  { key: 'pengadaan', label: 'Pengadaan', jenisTransaksi: 'pengadaan', kategoriJurnal: ['pengadaan', 'konstruksi'] },
+  { key: 'hibah', label: 'Hibah', jenisTransaksi: 'hibah_masuk', kategoriJurnal: ['hibah_masuk'] },
+  { key: 'tukarMenukar', label: 'Tukar Menukar', jenisTransaksi: 'tukar_menukar', kategoriJurnal: ['tukar_menukar'] },
+  { key: 'inventarisasi', label: 'Hasil Inventarisasi', jenisTransaksi: 'hasil_inventarisasi', kategoriJurnal: ['hasil_inventarisasi'] },
+  { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: ['perolehan_lainnya'] },
 ]
 
 const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 const nf = (n: number) => n.toLocaleString('id-ID')
+/** Golongan yang punya kolom sendiri di matriks popup "disetujui". */
+const KODE_GOL = new Set(GOLONGAN_REKAP.map(g => g.kode))
 
 type DraftItemLite = { kode?: string; nama?: string; harga?: string }
-type PendingHeaderLite = { id: string; no_sk: string; tanggal: string; skpd_id: number; payload: { draft_items?: DraftItemLite[] } }
+type PayloadLite = { draft_items?: DraftItemLite[] } & Record<string, unknown>
+type PendingHeaderLite = { id: string; no_sk: string; tanggal: string; skpd_id: number; kategori: string; payload: PayloadLite }
+
+/** Satu barang yang menunggu persetujuan, sudah dinormalkan lintas kategori. */
+type ItemPending = { nama: string; kode: string; nilai: number }
+
+/**
+ * Barang menunggu persetujuan di SATU kartu — bentuk payloadnya BEDA antar
+ * kategori dan itu bukan kelalaian penamaan:
+ *   · Cara Perolehan biasa → `payload.draft_items[]`, tiap item punya `harga`;
+ *   · Konstruksi/KDP       → `payload.barang[]`, tiap barang dibayar BERTERMIN
+ *     sehingga nilainya = Σ `pembayaran[].nominal` (lihat lib/kdp.ts).
+ *
+ * Dinormalkan di satu tempat supaya ANGKA KARTU & ISI POPUP mustahil berbeda —
+ * dua penghitung terpisah untuk satu fakta adalah pola yang di repo ini sudah
+ * beberapa kali melahirkan "57 tampil 51" (lihat catatan `pindahAktif`).
+ *
+ * ⚠️ `barangKdpList` (bukan `payload.barang` telanjang) karena kontrak
+ * konstruksi versi lama menyimpan SATU KDP secara datar (`kode_kdp` +
+ * `pembayaran`) tanpa array `barang` — membacanya langsung akan melewatkan
+ * kontrak lama tanpa satu pun tanda.
+ */
+function itemsPending(kategori: string, payload: PayloadLite): ItemPending[] {
+  if (kategori === 'konstruksi') {
+    return barangKdpList(payload as KontrakKonstruksiPayload).map(b => ({
+      nama: b.nama || b.kode,
+      kode: b.kode,
+      nilai: (b.pembayaran || []).reduce((s, p) => s + Number(p.nominal || 0), 0),
+    }))
+  }
+  return (payload.draft_items || []).map(d => ({
+    nama: d.nama || d.kode || '',
+    kode: d.kode || '',
+    // Pembaca yang SAMA dgn versi sebelumnya — angka kartu tak boleh bergeser
+    // gara-gara perubahan yang niatnya cuma menyambungkan konstruksi.
+    nilai: parseFloat(d.harga || '0') || 0,
+  }))
+}
 
 export default function CaraPerolehanCards({ approved, approvedNilai }: {
   approved: Record<string, number>
@@ -46,13 +94,17 @@ export default function CaraPerolehanCards({ approved, approvedNilai }: {
   useEffect(() => {
     (async () => {
       const pasangan = await Promise.all(CARA_LIST.map(async c => {
-        if (!c.kategoriJurnal) return [c.key, 0] as const
+        if (c.kategoriJurnal.length === 0) return [c.key, 0] as const
         let total = 0
+        // `.in(...)` — satu cara perolehan bisa punya beberapa kategori kartu
+        // (Pengadaan = non-fisik + konstruksi), lihat catatan di CARA_LIST.
         for (let from = 0; ; from += 500) {
-          const { data } = await supabase.from('jurnal_header').select('payload')
-            .eq('kategori', c.kategoriJurnal).eq('approval_status', 'pending').range(from, from + 499)
+          const { data } = await supabase.from('jurnal_header').select('kategori,payload')
+            .in('kategori', c.kategoriJurnal).eq('approval_status', 'pending').range(from, from + 499)
           if (!data || data.length === 0) break
-          for (const r of data as { payload: { draft_items?: unknown[] } }[]) total += r.payload?.draft_items?.length || 0
+          for (const r of data as { kategori: string; payload: PayloadLite }[]) {
+            total += itemsPending(r.kategori, r.payload || {}).length
+          }
           if (data.length < 500) break
         }
         return [c.key, total] as const
@@ -127,39 +179,41 @@ function CaraCard({ cara, disetujui, belum, nilai, onClickApproved, onClickPendi
 }
 
 // ── Popup "Disetujui": breakdown SKPD × Jenis Aset — kuantitas & nilai ──────
+// Bentuk MATRIKS: baris = SKPD, kolom = jenis aset (permintaan user
+// 2026-08-27). Daftar datar sebelumnya melahirkan satu baris per kombinasi
+// SKPD×golongan — untuk cara perolehan yang menyentuh banyak SKPD, satu SKPD
+// terpecah jadi beberapa baris berjauhan dan membandingkan antar jenis aset
+// praktis mustahil. Matriks memuat data yang sama dalam satu pandangan, dan
+// memberi dua total sekaligus (per SKPD & per jenis aset).
+//
+// ⚠️ Kolomnya `GOLONGAN_REKAP` — daftar yang SAMA dipakai Laporan BMD &
+// Rekonsiliasi, jadi susunannya tak bisa menyimpang diam-diam. Barang yang
+// golongannya di luar daftar itu tetap dihitung, tapi masuk kolom "Lainnya"
+// supaya TOTAL-nya tak pernah bohong (lihat `LAIN`).
+type SelMatriks = { count: number; nilai: number }
+type BarisMatriks = { skpd: string; sel: Record<string, SelMatriks>; count: number; nilai: number }
+
+/** Kolom penampung golongan di luar GOLONGAN_REKAP — TIDAK ditampilkan kalau
+ *  kosong. Ada supaya total kolom & total baris selalu cocok; tanpa itu barang
+ *  bergolongan tak terduga hilang dari matriks tanpa satu pun tanda. */
+const LAIN = 'lain'
+
 function ApprovedDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () => void }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [rows, setRows] = useState<{ skpd: string; golongan: string; count: number; nilai: number }[]>([])
+  const [rows, setRows] = useState<BarisMatriks[]>([])
 
   useEffect(() => {
     (async () => {
-      const [skpdRes, golLabelsRaw] = await Promise.all([
-        (async () => {
-          const map: Record<number, string> = {}
-          for (let from = 0; ; from += 1000) {
-            const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-            if (!data || data.length === 0) break
-            for (const s of data as { id: number; nama: string }[]) map[s.id] = s.nama
-            if (data.length < 1000) break
-          }
-          return map
-        })(),
-        (async () => {
-          const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
-          const namaById = new Map((jenis || []).map((j: { id: number; nama: string }) => [j.id, j.nama]))
-          const labels: Record<string, string> = {}
-          await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-            const { data } = await supabase.from('admin_kodefikasi_bmd')
-              .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
-            const id = data?.[0]?.jenis_aset_id
-            labels[prefix] = (id != null && namaById.get(id)) || prefix
-          }))
-          return labels
-        })(),
-      ])
+      const skpdNama: Record<number, string> = {}
+      for (let from = 0; ; from += 1000) {
+        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
+        if (!data || data.length === 0) break
+        for (const s of data as { id: number; nama: string }[]) skpdNama[s.id] = s.nama
+        if (data.length < 1000) break
+      }
 
-      const agg = new Map<string, { skpdId: number; golongan: string; count: number; nilai: number }>()
+      const agg = new Map<number, Record<string, SelMatriks>>()
       for (let from = 0; ; from += 1000) {
         const { data } = await supabase.from('aset')
           .select('kode,nilai_perolehan,skpd_id').eq('cara_perolehan', cara.jenisTransaksi).eq('status', 'aktif')
@@ -167,60 +221,112 @@ function ApprovedDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () 
         if (!data || data.length === 0) break
         for (const r of data as { kode: string; nilai_perolehan: number; skpd_id: number }[]) {
           const g = kodeLevel3(r.kode)
-          const k = `${r.skpd_id}|${g}`
-          const cur = agg.get(k) || { skpdId: r.skpd_id, golongan: g, count: 0, nilai: 0 }
-          cur.count += 1; cur.nilai += r.nilai_perolehan || 0
-          agg.set(k, cur)
+          const kolom = KODE_GOL.has(g) ? g : LAIN
+          const baris = agg.get(r.skpd_id) || {}
+          const sel = baris[kolom] || { count: 0, nilai: 0 }
+          sel.count += 1; sel.nilai += r.nilai_perolehan || 0
+          baris[kolom] = sel
+          agg.set(r.skpd_id, baris)
         }
         if (data.length < 1000) break
       }
-      const out = [...agg.values()]
-        .map(v => ({ skpd: skpdRes[v.skpdId] || `SKPD #${v.skpdId}`, golongan: `${v.golongan} — ${golLabelsRaw[v.golongan] || ''}`, count: v.count, nilai: v.nilai }))
-        .sort((a, b) => a.skpd.localeCompare(b.skpd) || a.golongan.localeCompare(b.golongan))
-      setRows(out)
+
+      setRows([...agg.entries()]
+        .map(([id, sel]) => ({
+          skpd: skpdNama[id] || `SKPD #${id}`,
+          sel,
+          count: Object.values(sel).reduce((s, c) => s + c.count, 0),
+          nilai: Object.values(sel).reduce((s, c) => s + c.nilai, 0),
+        }))
+        .sort((a, b) => a.skpd.localeCompare(b.skpd)))
       setLoading(false)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const totalCount = rows.reduce((s, r) => s + r.count, 0)
-  const totalNilai = rows.reduce((s, r) => s + r.nilai, 0)
+  // Kolom "Lainnya" cuma muncul kalau memang terpakai — normalnya tidak.
+  const kolom = [
+    ...GOLONGAN_REKAP.map(g => ({ kode: g.kode, judul: g.kode, tip: g.uraian })),
+    ...(rows.some(r => r.sel[LAIN]) ? [{ kode: LAIN, judul: 'Lainnya', tip: 'Golongan di luar daftar baku' }] : []),
+  ]
+  const totalKolom = (k: string) => rows.reduce((s, r) => ({
+    count: s.count + (r.sel[k]?.count || 0), nilai: s.nilai + (r.sel[k]?.nilai || 0),
+  }), { count: 0, nilai: 0 })
+  const totalUmum = { count: rows.reduce((s, r) => s + r.count, 0), nilai: rows.reduce((s, r) => s + r.nilai, 0) }
 
   return (
-    <Modal title={`${cara.label} — Sudah Disetujui`} onClose={onClose}>
+    <Modal title={`${cara.label} — Sudah Disetujui`} onClose={onClose} lebar="max-w-6xl">
       {loading ? (
         <p className="text-sm text-gray-400 text-center py-8">Memuat...</p>
       ) : rows.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">Belum ada data.</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-100">
-            <tr>
-              <th className="table-th">SKPD</th>
-              <th className="table-th">Jenis Aset</th>
-              <th className="table-th text-center">Kuantitas</th>
-              <th className="table-th text-right">Nilai Perolehan</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {rows.map((r, i) => (
-              <tr key={i}>
-                <td className="table-td text-xs">{r.skpd}</td>
-                <td className="table-td text-xs">{r.golongan}</td>
-                <td className="table-td text-center text-xs">{nf(r.count)}</td>
-                <td className="table-td text-right text-xs">{formatRp(r.nilai)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold">
-              <td className="table-td text-xs" colSpan={2}>TOTAL</td>
-              <td className="table-td text-center text-xs">{nf(totalCount)}</td>
-              <td className="table-td text-right text-xs">{formatRp(totalNilai)}</td>
-            </tr>
-          </tfoot>
-        </table>
+        <>
+          <p className="text-xs text-gray-400 mb-2">
+            Tiap sel: jumlah unit di atas, nilai perolehan di bawah. Kolom = jenis aset.
+          </p>
+          {/* Kolom SKPD dibuat `sticky` — dgn 9 kolom rupiah tabelnya pasti
+              digeser mendatar, dan tanpa itu pembaca kehilangan acuan barisnya. */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="table-th text-left sticky left-0 bg-gray-50 z-10">SKPD</th>
+                  {kolom.map(k => (
+                    <th key={k.kode} className="table-th text-right whitespace-nowrap" title={k.tip}>{k.judul}</th>
+                  ))}
+                  <th className="table-th text-right whitespace-nowrap border-l border-gray-200">TOTAL</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {rows.map((r, i) => (
+                  <tr key={i}>
+                    <td className="table-td sticky left-0 bg-white whitespace-nowrap">{r.skpd}</td>
+                    {kolom.map(k => <SelAngka key={k.kode} sel={r.sel[k.kode]} />)}
+                    <td className="table-td text-right border-l border-gray-200">
+                      <SelIsi count={r.count} nilai={r.nilai} tebal />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold">
+                  <td className="table-td sticky left-0 bg-gray-50 whitespace-nowrap">TOTAL</td>
+                  {kolom.map(k => {
+                    const t = totalKolom(k.kode)
+                    return (
+                      <td key={k.kode} className="table-td text-right">
+                        {t.count === 0 ? <span className="text-gray-300">–</span> : <SelIsi count={t.count} nilai={t.nilai} tebal />}
+                      </td>
+                    )
+                  })}
+                  <td className="table-td text-right border-l border-gray-200">
+                    <SelIsi count={totalUmum.count} nilai={totalUmum.nilai} tebal />
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </>
       )}
     </Modal>
+  )
+}
+
+/** Sel matriks — kosong ditandai `–`, sengaja DIBEDAKAN dari nilai nol. */
+function SelAngka({ sel }: { sel?: SelMatriks }) {
+  return (
+    <td className="table-td text-right">
+      {!sel ? <span className="text-gray-300">–</span> : <SelIsi count={sel.count} nilai={sel.nilai} />}
+    </td>
+  )
+}
+
+function SelIsi({ count, nilai, tebal }: { count: number; nilai: number; tebal?: boolean }) {
+  return (
+    <div className="leading-tight whitespace-nowrap">
+      <div className="text-[10px] text-gray-400">{nf(count)}</div>
+      <div className={`tabular-nums ${tebal ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{formatRp(nilai)}</div>
+    </div>
   )
 }
 
@@ -231,7 +337,7 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
   const [bySkpd, setBySkpd] = useState<Record<string, PendingHeaderLite[]>>({})
 
   useEffect(() => {
-    if (!cara.kategoriJurnal) { setLoading(false); return }
+    if (cara.kategoriJurnal.length === 0) { setLoading(false); return }
     (async () => {
       const skpdMap: Record<number, string> = {}
       for (let from = 0; ; from += 1000) {
@@ -241,13 +347,13 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
         if (data.length < 1000) break
       }
       const { data: headers } = await supabase.from('jurnal_header')
-        .select('id,no_sk,tanggal,skpd_id,payload')
-        .eq('kategori', cara.kategoriJurnal).eq('approval_status', 'pending')
+        .select('id,no_sk,tanggal,skpd_id,kategori,payload')
+        .in('kategori', cara.kategoriJurnal).eq('approval_status', 'pending')
         .order('tanggal', { ascending: false })
       const grouped: Record<string, PendingHeaderLite[]> = {}
-      for (const h of (headers || []) as { id: string; no_sk: string; tanggal: string; skpd_id: number; payload: { draft_items?: DraftItemLite[] } }[]) {
+      for (const h of (headers || []) as PendingHeaderLite[]) {
         const nama = skpdMap[h.skpd_id] || `SKPD #${h.skpd_id}`
-        ;(grouped[nama] ||= []).push({ id: h.id, no_sk: h.no_sk, tanggal: h.tanggal, skpd_id: h.skpd_id, payload: h.payload || {} })
+        ;(grouped[nama] ||= []).push({ ...h, payload: h.payload || {} })
       }
       setBySkpd(grouped)
       setLoading(false)
@@ -258,7 +364,7 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
 
   return (
     <Modal title={`${cara.label} — Menunggu Persetujuan`} onClose={onClose}>
-      {!cara.kategoriJurnal ? (
+      {cara.kategoriJurnal.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">Cara perolehan ini belum pakai alur draft/approval — data langsung masuk saat diinput.</p>
       ) : loading ? (
         <p className="text-sm text-gray-400 text-center py-8">Memuat...</p>
@@ -271,13 +377,23 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
               <p className="text-sm font-semibold text-gray-800 mb-2">{nama}</p>
               <div className="space-y-2">
                 {bySkpd[nama].map(h => {
-                  const items = h.payload.draft_items || []
-                  const total = items.reduce((s, i) => s + (parseFloat(i.harga || '0') || 0), 0)
+                  const items = itemsPending(h.kategori, h.payload)
+                  const total = items.reduce((s, i) => s + i.nilai, 0)
                   return (
                     <div key={h.id} className="border border-gray-100 rounded-lg p-3">
-                      <p className="text-xs font-medium text-gray-700">Kontrak: {h.no_sk} · {h.tanggal} · {items.length} barang · {formatRp(total)}</p>
+                      <p className="text-xs font-medium text-gray-700">
+                        Kontrak: {h.no_sk} · {h.tanggal} · {items.length} barang · {formatRp(total)}
+                        {/* Penanda kontrak konstruksi — bentuk & alur entry-nya
+                            beda (bertermin), jadi operator perlu tahu kartu ini
+                            dibuka di menu Pekerjaan Fisik, bukan Entry Manual. */}
+                        {h.kategori === 'konstruksi' && (
+                          <span className="ml-1.5 text-[10px] font-normal text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">
+                            Konstruksi
+                          </span>
+                        )}
+                      </p>
                       <ul className="text-xs text-gray-500 mt-1 list-disc list-inside">
-                        {items.slice(0, 8).map((it, i) => <li key={i}>{it.nama || it.kode} <span className="text-gray-400">({it.kode})</span></li>)}
+                        {items.slice(0, 8).map((it, i) => <li key={i}>{it.nama} <span className="text-gray-400">({it.kode})</span></li>)}
                         {items.length > 8 && <li className="text-gray-400">...dan {items.length - 8} lainnya</li>}
                       </ul>
                     </div>
@@ -292,10 +408,15 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
   )
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+// `lebar` — popup "disetujui" berbentuk MATRIKS 9 kolom, jadi ia butuh lebih
+// lega daripada popup "menunggu" yang cuma daftar. Bawaannya tetap max-w-2xl
+// supaya popup lain tak ikut berubah.
+function Modal({ title, onClose, children, lebar = 'max-w-2xl' }: {
+  title: string; onClose: () => void; children: React.ReactNode; lebar?: string
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
-      <div className="card w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className={`card w-full ${lebar} max-h-[85vh] overflow-y-auto`} onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
           <h3 className="font-semibold text-gray-800">{title}</h3>
           <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>

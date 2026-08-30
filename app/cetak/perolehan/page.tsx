@@ -1,4 +1,7 @@
 'use client'
+import { ingatanCetak, kunciTtdPerolehan } from '@/lib/ingatanCetak'
+import { namaBerkasCetak } from '@/lib/cetakLembar'
+import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 // ============================================================================
 // Cetak "Laporan Penerimaan BMD Berupa Aset Tetap Dengan Cara Perolehan Dari …"
 // Standalone (tanpa sidebar), A4 landscape.
@@ -33,7 +36,6 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
-import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 import { formatRupiah } from '@/lib/export'
 import { pecahNibar } from '@/lib/kodeRegister'
 import {
@@ -126,20 +128,13 @@ const todayStr = () => {
  *  beberapa sub-OPD, dan satu kunci bersama akan membuat pilihan SKPD terakhir
  *  bocor ke lembar SKPD berikutnya (pola `bmd_rkbmd_ttd_skpd_<id>`).
  *  Preferensi tampilan, BUKAN gerbang wewenang. */
-const keyTtd = (skpdId: number) => `bmd_perolehan_ttd_skpd_${skpdId}`
 type TtdTersimpan = { id?: string; plt?: boolean; tgl?: string }
+const ingatan = (skpdId: number) => ingatanCetak<TtdTersimpan>(kunciTtdPerolehan(skpdId))
 
 /** Isi localStorage itu data dari luar program (versi lama, suntingan manual,
  *  tab lain). Gagal mengurainya cukup berarti "belum pernah memilih" — jangan
  *  sampai menjatuhkan halaman cetak. */
-function bacaTtd(skpdId: number): TtdTersimpan | null {
-  try {
-    const v = localStorage.getItem(keyTtd(skpdId))
-    return v ? (JSON.parse(v) as TtdTersimpan) : null
-  } catch {
-    return null
-  }
-}
+const bacaTtd = (skpdId: number): TtdTersimpan | null => ingatan(skpdId).baca()
 
 /** '2026-S1' → 'SEMESTER I'; kosong → 'AKHIR TAHUN' (seluruh periode). */
 function labelPeriode(periode: string): { judul: string; tahun: string } {
@@ -264,7 +259,7 @@ export default function CetakPerolehanPage() {
   function simpanTtd(next: Partial<TtdTersimpan>) {
     if (skpdId == null) return
     const v: TtdTersimpan = { id: ttdId, plt, tgl: tglTtd, ...next }
-    try { localStorage.setItem(keyTtd(skpdId), JSON.stringify(v)) } catch { /* kuota penuh / mode privat — abaikan */ }
+    ingatan(skpdId).simpan(v)
   }
 
   const info = JENIS_INFO[jenis] || JENIS_INFO.hibah_masuk
@@ -275,8 +270,8 @@ export default function CetakPerolehanPage() {
   // Karakter terlarang Windows dibuang: nama SKPD boleh memuat garis miring.
   useEffect(() => {
     if (!skpd) return
-    const bersih = (t: string) => t.replace(/[\\/:*?"<>|]/g, '-').trim()
-    document.title = `Laporan Penerimaan ${info.judul}_${bersih(skpd.nama)}_${tahun}`
+    document.title = namaBerkasCetak(
+      `Laporan Penerimaan ${info.judul}`, skpd.nama, tahun)
   }, [skpd, info.judul, tahun])
 
   return (

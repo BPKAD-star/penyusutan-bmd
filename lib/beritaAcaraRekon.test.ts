@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import { KATEGORI_LABEL, KURANG_KEYS, type Komptabel, type Measures, type Mutasi, type MutasiKey, type Snapshot } from '@/lib/rekon'
 import {
-  BARIS_TRX, VARIAN_BA, barisSaldoBA, barisTrxBA, totalTrxBA, selBA, selisihBA,
+  BARIS_TRX, VARIAN_BA, angkaBA, barisSaldoBA, barisTrxBA, totalTrxBA, selBA, selisihBA,
   adaTransaksiBA, catatanSelisihBA, terbilang, hariDari, tglPanjang, tanggalCutoff,
   kalimatTanggal, pangkatGol, saranPihak, butirCatatan, KOMPS_DARI, varianInfo,
   namaBerkasBA, type PegawaiBA, type SelBA,
@@ -157,7 +157,24 @@ describe('selisihBA', () => {
     const catatan = catatanSelisihBA(awal, akhirMeleset, mut, INTRA)
     expect(catatan).toHaveLength(1)
     expect(catatan[0]).toContain('1.3.2 Peralatan dan Mesin')
-    expect(catatan[0]).toContain('-50')
+    // Kurung, bukan tanda minus (permintaan user 2026-08-27) — lihat §angkaBA.
+    expect(catatan[0]).toContain('(50)')
+    expect(catatan[0]).not.toContain('-50')
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+describe('angkaBA — negatif dalam kurung, konvensi akuntansi baku', () => {
+  it('positif apa adanya, tanpa tanda', () => {
+    expect(angkaBA(5_518_654_408)).toBe('5.518.654.408')
+  })
+  it('negatif dalam kurung, TANPA tanda minus', () => {
+    expect(angkaBA(-5_518_654_408)).toBe('(5.518.654.408)')
+    expect(angkaBA(-5_518_654_408)).not.toContain('-')
+  })
+  it('nol tetap "0", bukan "(0)"', () => {
+    expect(angkaBA(0)).toBe('0')
+    expect(angkaBA(-0)).toBe('0')
   })
 })
 
