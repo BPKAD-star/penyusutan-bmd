@@ -16,9 +16,10 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
   FORMAT_PEROLEHAN, TANGGA_REKAP, SEG_MIN_REKAP, segmenKode,
-  labelKomptabel, cocokKomptabel,
+  labelKomptabel, cocokKomptabel, REKAP_KABUPATEN, bolehLembarKabupaten,
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
+import { fetchApprovalScope } from '@/lib/roles'
 import { muatLembarPerolehan, type BarisPerolehan } from '@/lib/laporanPerolehanPermendagri'
 import LembarPerolehanPermendagri from './LembarPerolehanPermendagri'
 
@@ -57,6 +58,17 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
   const [pilih, setPilih] = useState<number[]>(PILIHAN.map(p => p.akhiran))
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  // Peran menentukan boleh-tidaknya kelompok SE-KABUPATEN — lihat
+  // `bolehLembarKabupaten`: alasannya kebenaran lembar, bukan wewenang.
+  const [role, setRole] = useState<string | null>(null)
+  const [pilihKab, setPilihKab] = useState<number[]>([])
+
+  useEffect(() => {
+    void (async () => {
+      try { setRole((await fetchApprovalScope(supabase)).role) } catch { setRole(null) }
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const bolehKab = bolehLembarKabupaten(role)
 
   const siapDimuat = skpdId != null && !!periode
 
@@ -95,8 +107,9 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
     .map(r => ({ kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r }))
 
   const { judul: judulPeriode, tahun } = labelPeriode(periode)
+  const semuaPilih = [...pilih, ...(bolehKab ? pilihKab : [])].sort((a, b) => a - b)
   const urlCetak = `/cetak/perolehan-permendagri?jenis=${jenis}&skpd=${skpdId}`
-    + `&periode=${periode}&komptabel=${komptabel}&lembar=${pilih.join(',')}`
+    + `&periode=${periode}&komptabel=${komptabel}&lembar=${semuaPilih.join(',')}`
 
   const toggle = (n: number) =>
     setPilih(p => p.includes(n) ? p.filter(x => x !== n) : [...p, n].sort((a, b) => a - b))
@@ -120,6 +133,43 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
             ))}
           </div>
         </div>
+
+        {/* Kelompok SE-KABUPATEN — lembar yang menjumlah SELURUH SKPD. */}
+        <div>
+          <p className="text-xs text-gray-500 mb-2">
+            Se-Kabupaten{' '}
+            <span className="text-gray-400">
+              — menjumlah SELURUH SKPD, jadi filter SKPD di atas tidak berlaku untuk kelompok ini.
+            </span>
+          </p>
+          {bolehKab ? (
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {REKAP_KABUPATEN.map(r => (
+                <label key={r.akhiran} className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={pilihKab.includes(r.akhiran)}
+                    onChange={() => setPilihKab(p2 => p2.includes(r.akhiran)
+                      ? p2.filter(x => x !== r.akhiran)
+                      : [...p2, r.akhiran].sort((a, b) => a - b))} />
+                  <span className="font-medium">{f.awalan}.{r.akhiran}</span>
+                  <span className="text-gray-500">
+                    Rekap menurut {r.menurut.toLowerCase()}
+                    {r.perSkpd && ' (per Pengguna Barang)'}
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            // ⚠️ MENOLAK BERIKUT ALASAN, bukan menyembunyikan. Tanpa keterangan,
+            // operator cuma melihat kelompok yang tak bisa dicentang & tak punya
+            // cara tahu kenapa.
+            <p className="text-sm text-gray-400">
+              Hanya untuk <b>Pengelola Barang (Admin Pemda)</b> &amp; <b>Pengawas
+              (Akuntansi/Auditor)</b>. Data yang bisa Anda baca terbatas pada SKPD Anda,
+              jadi lembarnya akan berkop se-Kabupaten tapi berisi satu SKPD saja.
+            </p>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Komptabel</label>
@@ -130,11 +180,21 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
               <option value="semua">Intra + Ekstra</option>
             </select>
           </div>
+          {/* Orientasi kertas ikut centangnya — dikatakan di layar supaya
+              operator tak perlu mencetak dulu untuk tahu. Satu berkas hanya
+              bisa satu orientasi (lihat catatan di halaman cetak). */}
+          <p className="text-xs text-gray-500 self-end">
+            Kertas: <b>F4 {pilih.includes(2) ? 'lanskap' : 'potret'}</b>
+            {pilih.includes(2) && pilih.length > 1 && (
+              <span> — rekap ikut lanskap. Mau rekap potret? Cetak {f.kode} sendiri
+                dulu, lalu centang rekapnya saja.</span>
+            )}
+          </p>
           <div className="ml-auto">
             {/* ⚠️ Dimatikan berikut ALASANNYA — tombol mati tanpa keterangan itu
                 kegagalan senyap: operator menekan, tak terjadi apa-apa, dan tak
                 punya cara tahu kenapa. */}
-            {siapDimuat && pilih.length > 0 && !err ? (
+            {siapDimuat && semuaPilih.length > 0 && !err ? (
               <a href={urlCetak} target="_blank" rel="noreferrer" className="btn-primary whitespace-nowrap">
                 🖨 Cetak / Simpan PDF
               </a>

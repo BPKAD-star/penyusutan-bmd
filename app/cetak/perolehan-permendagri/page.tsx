@@ -6,7 +6,7 @@
 //   &skpd=<id>                (WAJIB — kop lembar memuat identitas SKPD)
 //   &periode=2026-S1          atau &periode=2026 (AKHIR TAHUN: S1+S2 digabung)
 //   &komptabel=intra|ekstra|semua  (bawaan: intra)
-//   &lembar=2,3,4,5,6         (bawaan: semuanya)
+//   &lembar=2,3,4,5,6         per-SKPD; 7,8,9,10 = se-KABUPATEN (bawaan: 2–6)
 //
 // Lembar yang dicentang dirangkai jadi SATU berkas dengan page-break, pola yang
 // sama dengan BA Rekon: sekali cetak, sekali tanda tangan, dan tiap lembar tetap
@@ -33,10 +33,21 @@ import {
 } from '@/lib/penandaTangan'
 import {
   FORMAT_PEROLEHAN, SEG_MIN_REKAP, segmenKode, labelKomptabel, cocokKomptabel,
+  bolehLembarKabupaten,
   type FormatPerolehan, type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
-import { muatLembarPerolehan, type BarisPerolehan } from '@/lib/laporanPerolehanPermendagri'
+import {
+  muatLembarPerolehan, muatLembarKabupaten, type BarisPerolehan,
+} from '@/lib/laporanPerolehanPermendagri'
+import { fetchApprovalScope } from '@/lib/roles'
 import LembarPerolehanPermendagri from '@/components/pelaporan/LembarPerolehanPermendagri'
+import LembarRekapKabupaten, { type ItemKab } from '@/components/pelaporan/LembarRekapKabupaten'
+
+/** Penanda tangan lembar se-Kabupaten dipilih BEBAS dari seluruh pegawai —
+ *  pola `bmd_rkbmd_ttd_sekab`. Yang meneken rekap se-kabupaten itu Pejabat
+ *  Penatausahaan Barang, bukan kepala salah satu SKPD. */
+const KEY_TTD_KAB = 'bmd_perolehan_ttd_sekab'
+type Pegawai = { id: string; nama: string; nip: string | null; jabatan: string | null }
 
 const todayStr = () => {
   const t = new Date()
@@ -91,6 +102,11 @@ export default function CetakPerolehanPermendagriPage() {
   const [periode, setPeriode] = useState('')
   const [komptabel, setKomptabel] = useState<Komptabel>('intra')
   const [lembar, setLembar] = useState<number[] | undefined>(undefined)
+  const [rowsKab, setRowsKab] = useState<BarisPerolehan[]>([])
+  const [namaKab, setNamaKab] = useState<Map<string, string>>(new Map())
+  const [pegawai, setPegawai] = useState<Pegawai[]>([])
+  const [ttdKabId, setTtdKabId] = useState('')
+  const [peringatan, setPeringatan] = useState('')
   const [calon, setCalon] = useState<CalonTtd[]>([])
   const [ttdId, setTtdId] = useState('')
   const [plt, setPlt] = useState(false)
@@ -111,7 +127,7 @@ export default function CetakPerolehanPermendagriPage() {
         setJenis(jns); setPeriode(per)
         const kmp = q.get('komptabel')
         setKomptabel(kmp === 'ekstra' || kmp === 'semua' ? kmp : 'intra')
-        const pilih = (q.get('lembar') || '').split(',').map(Number).filter(n => n >= 2 && n <= 6)
+        const pilih = (q.get('lembar') || '').split(',').map(Number).filter(n => n >= 2 && n <= 10)
         setLembar(pilih.length > 0 ? pilih : undefined)
         setSkpdId(sk)
 
@@ -134,6 +150,35 @@ export default function CetakPerolehanPermendagriPage() {
         setPlt(q.get('plt') === '1' ? true
           : simpan?.plt ?? (daftar.find(c => c.id === idTerpilih)?.pltDisarankan ?? false))
         setTglTtd(q.get('tgl') || simpan?.tgl || todayStr())
+
+        // ── Lembar se-Kabupaten (IV.A.<n>.7–10) ────────────────────────────
+        // ⚠️ GERBANGNYA DI SINI, SEBELUM MEMUAT. RLS tidak MENOLAK pengurus
+        // barang SKPD — ia cuma mengembalikan lebih sedikit baris, sehingga
+        // lembar berkop se-Kabupaten bisa terbit berisi satu SKPD saja: salah,
+        // tampak sah, tanpa satu pun error. Menolak berikut ALASAN, bukan
+        // sekadar menyembunyikan.
+        if (pilih.some(n => n >= 7)) {
+          const scope = await fetchApprovalScope(supabase)
+          if (!bolehLembarKabupaten(scope.role)) {
+            throw new Error(
+              'Lembar se-Kabupaten (IV.A.…7–10) hanya untuk Pengelola Barang (Admin Pemda) '
+              + '& Pengawas (Akuntansi/Auditor). Data yang bisa Anda baca terbatas pada SKPD '
+              + 'Anda, jadi lembarnya akan berkop se-Kabupaten tapi berisi satu SKPD saja.')
+          }
+          const hk = await muatLembarKabupaten(supabase, { jenis: jns, periode: per })
+          setRowsKab(hk.rows); setNamaKab(hk.namaTingkat)
+
+          // Daftar calon penanda tangan. ⚠️ Kegagalannya SENGAJA tidak
+          // menjatuhkan lembar — sama seperti `fetchCalonTtd` di atas: blok
+          // tanda tangan tinggal bertitik-titik, dan itu keadaan yang memang
+          // sah di sini. Yang TIDAK boleh cuma menelannya diam-diam, jadi
+          // errornya tetap dibaca & dilaporkan sebagai peringatan.
+          const { data: pg, error: pgErr } = await supabase.from('admin_pegawai')
+            .select('id,nama,nip,jabatan').order('nama').limit(2000)
+          if (pgErr) setPeringatan(`Daftar penanda tangan gagal dimuat (${pgErr.message}) — blok tanda tangan dibiarkan kosong.`)
+          setPegawai((pg || []) as Pegawai[])
+          try { setTtdKabId(q.get('ttdkab') || localStorage.getItem(KEY_TTD_KAB) || '') } catch { /* mode privat */ }
+        }
       } catch (e) {
         setGagal((e as Error).message)
       } finally {
@@ -145,6 +190,18 @@ export default function CetakPerolehanPermendagriPage() {
   const f: FormatPerolehan = FORMAT_PEROLEHAN[jenis] || FORMAT_PEROLEHAN.hibah_masuk
   const ttd = calon.find(c => c.id === ttdId) || null
   const { judul: judulPeriode, tahun } = labelPeriode(periode)
+  // Lembar rinci ikut? (tak ada `lembar` = 2–6, jadi ikut.)
+  const adaRinci = !lembar || lembar.includes(2)
+  const adaPerSkpd = !lembar || lembar.some(n => n >= 2 && n <= 6)
+  const adaKab = !!lembar && lembar.some(n => n >= 7)
+  const ttdKab = pegawai.find(x => x.id === ttdKabId) || null
+
+  const itemsKab: ItemKab<BarisPerolehan>[] = rowsKab
+    .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
+    .map(r => ({
+      kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0,
+      data: r, skpdRoot: r.skpd_root || '(tanpa SKPD)',
+    }))
 
   // Lembar ini menyatakan SATU komptabel di kop (2), jadi isinya wajib
   // benar-benar satu komptabel. Barang tanpa nilai kolom itu dianggap intra,
@@ -167,22 +224,21 @@ export default function CetakPerolehanPermendagriPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
-      {/* ORIENTASI BEDA PER LEMBAR (keputusan user 2026-08-30):
-          · RINCI  → F4 LANSKAP — 17 kolom mustahil muat di lebar 215 mm;
-            lembar RKBMD 13 kolom saja sudah terbukti tak cukup.
-          · REKAP  → F4 POTRET — cuma 4–6 kolom, jadi lanskap menyisakan lautan
-            ruang kosong dan justru bikin fontnya terlihat kecil.
-          Dipakai `@page` BERNAMA + properti `page:`. ⚠️ Kalau peramban tak
-          mendukungnya, SELURUH berkas jatuh ke @page bawaan (lanskap) — bukan
-          rusak, cuma rekapnya ikut lanskap. Jalan keluarnya sudah tersedia
-          tanpa kode: centang lembarnya dipisah, cetak dua kali. */}
+      {/* ORIENTASI DITENTUKAN OLEH LEMBAR YANG DICENTANG:
+          · ada lembar RINCI → F4 LANSKAP. 17 kolom mustahil muat di lebar
+            215 mm; lembar RKBMD 13 kolom saja sudah terbukti tak cukup.
+          · hanya REKAP      → F4 POTRET. Cuma 4–6 kolom, jadi lanskap
+            menyisakan lautan ruang kosong & bikin fontnya terlihat kecil.
+          ⚠️ Versi pertama memakai `@page` BERNAMA (`page: rinci|rekap`) supaya
+          satu berkas bisa memuat dua orientasi sekaligus. TERBUKTI TIDAK JALAN
+          di Chrome — `size` pada @page bernama diabaikan, seluruh berkas ikut
+          orientasi bawaan. Jangan dicoba lagi; yang berlaku sekarang SATU
+          orientasi per berkas, dan itu justru membuat perilakunya bisa
+          ditebak. Untuk mendapat rinci-lanskap + rekap-potret: pisahkan
+          centangnya, cetak dua kali. */}
       <style>{`@media print {
         .no-print { display: none !important; }
-        @page { size: 330mm 215mm; margin: 8mm; }
-        @page rinci { size: 330mm 215mm; margin: 8mm; }
-        @page rekap { size: 215mm 330mm; margin: 12mm; }
-        .lembar-rinci { page: rinci; }
-        .lembar-rekap { page: rekap; }
+        @page { size: ${adaRinci ? '330mm 215mm' : '215mm 330mm'}; margin: ${adaRinci ? '8mm' : '12mm'}; }
         body { background: white; }
         .break-before-page { break-before: page; }
       }`}</style>
@@ -229,10 +285,33 @@ export default function CetakPerolehanPermendagriPage() {
             </label>
           </>
         )}
+        {siap && !gagal && adaKab && (
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            Ttd se-Kabupaten:
+            <select className="select-filter text-sm max-w-sm" value={ttdKabId}
+              onChange={e => {
+                setTtdKabId(e.target.value)
+                try { localStorage.setItem(KEY_TTD_KAB, e.target.value) } catch { /* mode privat */ }
+              }}>
+              <option value="">— belum dipilih (dibiarkan bertitik-titik) —</option>
+              {pegawai.map(x => (
+                <option key={x.id} value={x.id}>{x.nama}{x.jabatan ? ` — ${x.jabatan}` : ''}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <button onClick={() => window.print()} disabled={!siap || !!gagal} className="btn-primary text-sm">
           🖨 Cetak / Simpan PDF
         </button>
       </div>
+
+      {peringatan && (
+        <div className="max-w-[1600px] mx-auto mb-3 px-4 no-print">
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            ⚠ {peringatan}
+          </p>
+        </div>
+      )}
 
       <div className="max-w-[1600px] mx-auto bg-white p-6 shadow print:shadow-none print:p-0 space-y-10 print:space-y-0">
         {!siap ? (
@@ -240,13 +319,29 @@ export default function CetakPerolehanPermendagriPage() {
         ) : gagal ? (
           <p className="py-8 text-center text-red-600 text-sm">Gagal menyiapkan lembar: {gagal}</p>
         ) : (
-          <LembarPerolehanPermendagri
-            f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
-            berupa={berupaDari(items.map(i => i.kode))}
-            labelKomptabel={labelKomptabel(komptabel)}
-            judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
-            ttd={ttd ? { nama: ttd.nama, nip: ttd.nip } : null}
-            tglTtd={tglTtd} lembar={lembar} />
+          <>
+            {adaPerSkpd && (
+              <LembarPerolehanPermendagri
+                f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
+                berupa={berupaDari(items.map(i => i.kode))}
+                labelKomptabel={labelKomptabel(komptabel)}
+                judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
+                ttd={ttd ? { nama: ttd.nama, nip: ttd.nip } : null}
+                tglTtd={tglTtd} lembar={lembar} />
+            )}
+            {adaKab && (
+              <div className={adaPerSkpd ? 'break-before-page' : ''}>
+                <LembarRekapKabupaten
+                  judulDasar={f.judul.replace(/^LAPORAN /, '')} awalan={f.awalan}
+                  items={itemsKab} namaTingkat={namaKab}
+                  berupa={berupaDari(itemsKab.map(i => i.kode))}
+                  labelKomptabel={labelKomptabel(komptabel)}
+                  judulPeriode={judulPeriode} tahun={tahun}
+                  ttd={ttdKab ? { nama: ttdKab.nama, nip: ttdKab.nip } : null}
+                  tglTtd={tglTtd} lembar={lembar} />
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

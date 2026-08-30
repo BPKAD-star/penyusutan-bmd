@@ -162,10 +162,18 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // banyak, tahun-tahun lama akan lenyap dari dropdown TANPA satu pun tanda.
   // `tahun_buku` itu tabel kecil yang memang mendefinisikan tahun kerja
   // aplikasi — tepat untuk dipakai di sini.
-  const tahunList = [...new Set([
-    ...Object.keys(tahunBuku),
-    ...periodeList.map(p => p.slice(0, 4)),   // jaga-jaga: periode di luar tahun_buku
-  ])].filter(t => /^\d{4}$/.test(t)).sort().reverse()
+  // ⚠️ HANYA TAHUN KERJA BERJALAN (keputusan user 2026-08-30) — tahun terkunci
+  // sengaja TIDAK ditawarkan di sini, walau tabelnya memuatnya. Sejalan dengan
+  // badge "Tahun Kerja" di TopBar: tahun terbuka TERBESAR.
+  // ⚠️ Konsekuensi yang DITERIMA: lembar Permendagri untuk tahun yang sudah
+  // ditutup tak bisa dibuat dari layar ini. Kalau kelak dibutuhkan (laporan
+  // final teraudit memang sering diminta), yang diubah cuma penyaring di bawah
+  // — datanya sendiri tetap ada & tab lain masih bisa membacanya lewat
+  // "Semua Periode".
+  const tahunTerbuka = Object.entries(tahunBuku)
+    .filter(([, st]) => st === 'terbuka').map(([t]) => Number(t))
+  const tahunKerja = tahunTerbuka.length > 0 ? Math.max(...tahunTerbuka) : new Date().getFullYear()
+  const tahunList = [String(tahunKerja)]
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 

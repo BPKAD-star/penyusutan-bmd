@@ -236,8 +236,9 @@ export default function LembarPerolehanPermendagri(p: PropLembar) {
     const baris = susunRinci(items, f.subtotal)
     const iTotal = f.kolom.findIndex(k => k.key === 'total_nilai')
     return (
-      // ⚠️ `lembar-rinci` menyalakan @page LANSKAP; lembar rekap potret
-      // (keputusan user 2026-08-30). Lihat catatan orientasi di halaman cetak.
+      // `lembar-rinci` / `lembar-rekap` tinggal PENANDA. Orientasi kertas
+      // ditentukan halaman cetak dari lembar mana yang dicentang — @page
+      // BERNAMA terbukti tak dijalankan Chrome (lihat catatannya di sana).
       <section className="lembar-rinci">
         <p className="text-right text-[12px] mb-1">Format {f.kode}</p>
         <KopLembar judul={f.judul} berupa={berupa} komptabel={labelKomptabel}

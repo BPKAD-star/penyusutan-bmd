@@ -228,6 +228,64 @@ export function lebarKodeBlok(f: FormatPerolehan): number {
   return Math.round((100 - dipakai) * 100) / 100
 }
 
+// ── Lembar SE-KABUPATEN (IV.A.<n>.7–10) ─────────────────────────────────────
+//
+// Versi se-kabupaten dari tangga rekap. Bedanya dengan yang per-SKPD BUKAN
+// cuma kop: kop-nya mengganti baris SKPD dengan "PROVINSI, KABUPATEN/KOTA",
+// jadi isiannya 5 (bukan 8) dan penomoran tabelnya mulai (6), bukan (9).
+//
+// ⚠️ KEEMPATNYA TIDAK SERAGAM — jangan diperlakukan sebagai satu bentuk:
+//   .7  MENURUT SUB RINCIAN OBJEK — berjudul **LAPORAN**, bukan REKAPITULASI
+//   .8  MENURUT RINCIAN OBJEK     — REKAPITULASI, 4 kolom
+//   .9  MENURUT OBJEK             — REKAPITULASI, 4 kolom
+//   .10 MENURUT JENIS             — REKAPITULASI, + kolom **No** dan
+//                                   **"Pengguna Barang dan Pengelola Barang"**
+// Jadi hanya `.10` yang memecah per SKPD; tiga lainnya menjumlah se-kabupaten
+// tanpa memecah sama sekali. Judul `.7` yang menyimpang diikuti apa adanya,
+// sama seperti salah ketik "(14) dua kali" di IV.A.2.2.
+//
+// ⚠️ PENANDA TANGANNYA "Pejabat Penatausahaan Barang" — BUKAN Pengelola Barang
+// dan BUKAN turunan level SKPD seperti lembar per-SKPD. Dipaku di sini karena
+// begitu tertulis di formatnya; jangan diturunkan dari peran pemakai.
+
+export const SEBUTAN_TTD_KABUPATEN = 'Pejabat Penatausahaan Barang'
+
+export type FormatRekapKab = {
+  /** Akhiran kode format: 7–10. */
+  akhiran: number
+  /** Kedalaman kode terdalam yang ditampilkan. */
+  seg: number
+  menurut: string
+  /** `.7` berjudul LAPORAN; sisanya REKAPITULASI. Diikuti apa adanya. */
+  judulAwal: 'LAPORAN' | 'REKAPITULASI'
+  /** Hanya `.10`: kolom No + "Pengguna Barang dan Pengelola Barang". */
+  perSkpd: boolean
+}
+
+export const REKAP_KABUPATEN: FormatRekapKab[] = [
+  { akhiran: 7, seg: 6, menurut: 'SUB RINCIAN OBJEK', judulAwal: 'LAPORAN', perSkpd: false },
+  { akhiran: 8, seg: 5, menurut: 'RINCIAN OBJEK', judulAwal: 'REKAPITULASI', perSkpd: false },
+  { akhiran: 9, seg: 4, menurut: 'OBJEK', judulAwal: 'REKAPITULASI', perSkpd: false },
+  { akhiran: 10, seg: 3, menurut: 'JENIS', judulAwal: 'REKAPITULASI', perSkpd: true },
+]
+
+/**
+ * Boleh menyusun lembar se-Kabupaten?
+ *
+ * ⚠️ Alasannya BUKAN wewenang, tapi KEBENARAN (keputusan user 2026-08-30).
+ * RLS tidak MENOLAK pengurus barang SKPD — ia cuma mengembalikan lebih sedikit
+ * baris. Hasilnya lembar berkop "PROVINSI, KABUPATEN/KOTA — Kediri" yang isinya
+ * satu SKPD saja, lalu ditandatangani dan dikirim sebagai rekap se-kabupaten:
+ * salah, tampak sah, tanpa satu pun error. Karena itu gerbangnya wajib MENOLAK
+ * BERIKUT ALASAN, bukan sekadar menyembunyikan tombol.
+ *
+ * `admin` = Pengelola Barang (Admin Pemda) — yang meneken.
+ * `pengawas` = Akuntansi/Auditor — cakupan bacanya memang se-kabupaten.
+ */
+export function bolehLembarKabupaten(role: string | null | undefined): boolean {
+  return role === 'admin' || role === 'pengawas'
+}
+
 // ── Komptabel ───────────────────────────────────────────────────────────────
 
 /** Cakupan komptabel. `semua` = intra + ekstra dalam satu lembar. */

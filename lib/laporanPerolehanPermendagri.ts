@@ -15,9 +15,14 @@ import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
 import type { BarisLembar } from '@/components/pelaporan/LembarPerolehanPermendagri'
 
-export type BarisPerolehan = BarisLembar & { aset_id: string | null }
+export type BarisPerolehan = BarisLembar & {
+  aset_id: string | null
+  skpd_tujuan: number | null
+  /** Nama SKPD INDUK (root) pemilik barang — kolom "Pengguna Barang" IV.A.<n>.10. */
+  skpd_root?: string
+}
 
-const SEL = 'id,tanggal,nilai,keterangan,aset_id,header:header_id(no_sk,payload),' +
+const SEL = 'id,tanggal,nilai,keterangan,aset_id,skpd_tujuan,header:header_id(no_sk,payload),' +
   'aset:aset_id(kode,nama_barang,uraian_barang,nibar,spesifikasi_lainnya,satuan,jumlah,' +
   'harga_satuan,kondisi_barang,tgl_perolehan,keterangan,intra_ekstra)'
 
@@ -142,4 +147,87 @@ export async function muatLembarPerolehan(
     sebutan: sebutanPejabat(levelSkpd(p.skpdId, new Map(semua.map(s => [s.id, s.parent_id])))),
     semuaSkpd: semua,
   }
+}
+
+// ── Lembar SE-KABUPATEN (IV.A.<n>.7–10) ─────────────────────────────────────
+
+/** Peta id SKPD → nama SKPD INDUK-nya (root, `parent_id` null). */
+function petaRoot(semua: SkpdRow[]): Map<number, string> {
+  const byId = new Map(semua.map(s => [s.id, s]))
+  const out = new Map<number, string>()
+  for (const s of semua) {
+    let kini: SkpdRow | undefined = s
+    // Dibatasi 20 langkah: pohon SKPD datang dari tabel yang bisa saja memuat
+    // lingkaran, dan lembar cetak tak boleh membeku gara-gara itu.
+    for (let i = 0; i < 20 && kini?.parent_id != null; i++) kini = byId.get(kini.parent_id)
+    if (kini) out.set(s.id, kini.nama)
+  }
+  return out
+}
+
+export type HasilKabupaten = {
+  rows: BarisPerolehan[]
+  namaTingkat: Map<string, string>
+}
+
+/**
+ * Muat SELURUH perolehan se-kabupaten untuk lembar IV.A.<n>.7–10.
+ *
+ * ⚠️ SENGAJA TANPA SARINGAN SKPD — justru itu gunanya. Yang membatasi cuma RLS,
+ * dan karena RLS tak MENOLAK melainkan hanya mengembalikan lebih sedikit baris,
+ * pemanggil WAJIB memeriksa `bolehLembarKabupaten(role)` LEBIH DULU. Tanpa itu
+ * pengurus barang SKPD mendapat lembar berkop se-Kabupaten yang isinya satu
+ * SKPD saja — salah, tampak sah, tanpa satu pun error.
+ */
+export async function muatLembarKabupaten(
+  supabase: SupabaseClient, p: { jenis: string; periode: string },
+): Promise<HasilKabupaten> {
+  const semua: SkpdRow[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase.from('admin_skpd')
+      .select('id,parent_id,nama,kode_skpd').range(from, from + 999)
+    if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
+    if (!data || data.length === 0) break
+    semua.push(...(data as SkpdRow[]))
+    if (data.length < 1000) break
+  }
+  const root = petaRoot(semua)
+
+  let qq = supabase.from('transaksi_bmd').select(SEL)
+    .eq('jenis', p.jenis).order('id', { ascending: false })
+  const per = periodeDiminta(p.periode)
+  if (per.length === 1) qq = qq.eq('periode', per[0])
+  else if (per.length > 1) qq = qq.in('periode', per)
+  // ⚠️ Batasnya dinaikkan dari 2.000: lembar ini menjumlah SELURUH SKPD, jadi
+  // barisnya berlipat. Kalau suatu saat tembus, angkanya akan KURANG tanpa satu
+  // pun tanda — pindahkan ke paginasi keyset, jangan sekadar naikkan lagi.
+  const { data: trx, error: trxErr } = await qq.limit(10000)
+  if (trxErr) throw new Error(trxErr.message)
+
+  const semuaBaris = ((trx as never as BarisPerolehan[]) || []).filter(r => r.aset)
+  const voided = await fetchVoidedAsetIds(
+    supabase, [], semuaBaris.map(r => r.aset_id).filter((x): x is string => !!x))
+
+  const rows = semuaBaris
+    .filter(r => !(r.aset_id && voided.has(r.aset_id)))
+    .map(r => ({ ...r, skpd_root: r.skpd_tujuan != null ? root.get(r.skpd_tujuan) : undefined }))
+    // ⚠️ Urutan WAJIB: SKPD induk dulu (lembar .10 mengelompokkan per Pengguna
+    // Barang), baru kode. Mesin subtotal memancarkan kelompok saat awalannya
+    // berubah, jadi urutan masuk menentukan segalanya.
+    .sort((a, b) =>
+      (a.skpd_root || '').localeCompare(b.skpd_root || '')
+      || (a.aset!.kode || '').localeCompare(b.aset!.kode || '')
+      || (a.aset!.nama_barang || '').localeCompare(b.aset!.nama_barang || '', 'id', { numeric: true })
+      || (a.aset!.nibar || '').localeCompare(b.aset!.nibar || ''))
+
+  let namaTingkat = petaNamaTingkat([])
+  const kodes = [...new Set(rows.map(r => r.aset!.kode))]
+  if (kodes.length > 0) {
+    const { data: kd, error: kdErr } = await supabase.from('admin_kodefikasi_bmd')
+      .select('kode,uraian,nama_jenis,nama_objek,nama_rincian,nama_sub_rincian')
+      .in('kode', kodes)
+    if (kdErr) throw new Error(`gagal membaca kodefikasi barang: ${kdErr.message}`)
+    namaTingkat = petaNamaTingkat((kd || []) as BarisKodefikasi[])
+  }
+  return { rows, namaTingkat }
 }
