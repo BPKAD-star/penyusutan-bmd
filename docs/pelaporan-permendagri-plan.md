@@ -188,15 +188,15 @@ Diisi bertahap. `?` = kodenya belum dibaca dari mindmap/berkas aslinya.
 | Pengadaan APBD → Aset Lancar | IV.A.1.1.1 | IV.A.1.1.2–5 | IV.A.1.1.6–8 | ❌ di luar cakupan (§2.1) |
 | Pengadaan APBD → Aset Tetap | IV.A.1.2.1–2 | IV.A.1.2.3–19 | IV.A.1.2.20–26 | belum |
 | Pengadaan APBD → Aset Lainnya | IV.A.1.3.1 | IV.A.1.3.2–6 | IV.A.1.3.7–10 | belum |
-| Hibah / sumbangan | IV.A.2.1 | IV.A.2.2–6 | IV.A.2.7–10 | belum |
+| Hibah / sumbangan | IV.A.2.1 | **IV.A.2.2–6 ✅** | IV.A.2.7–10 | **SELESAI** (semester); bulanan/tahunan tinggal ganti rentang |
 | Perjanjian Kontrak | ? | ? | ? | ⛔ belum ada menunya |
 | Ketentuan perundang-undangan | ? | ? | ? | ⛔ belum ada menunya |
 | Putusan Pengadilan berkekuatan hukum tetap | ? | ? | ? | ⛔ belum ada menunya |
 | Divestasi | ? | ? | ? | ⛔ belum ada menunya |
-| Hasil Inventarisasi | IV.A.7.1 | IV.A.7.2–6 | IV.A.7.7–10 | belum |
-| Hasil Tukar Menukar | IV.A.8.1 | IV.A.8.2–6 | IV.A.8.7–10 | belum |
+| Hasil Inventarisasi | IV.A.7.1 | IV.A.7.2–6 | IV.A.7.7–10 | lembar SIAP; kurang field header (§10) |
+| Hasil Tukar Menukar | IV.A.8.1 | IV.A.8.2–6 | IV.A.8.7–10 | lembar SIAP; kurang field header (§10) |
 | Pembatalan Penghapusan | ? | ? | ? | ⛔ belum ada menunya (§3) |
-| Perolehan Lainnya | IV.A.10.1 | IV.A.10.2–6 | IV.A.10.7–10 | belum |
+| Perolehan Lainnya | IV.A.10.1 | IV.A.10.2–6 | IV.A.10.7–10 | lembar SIAP; kurang field header (§10) |
 | Rekapitulasi gabungan perolehan/penerimaan | — | IV.A.11.1–4 | IV.A.11.5–8 | belum |
 
 ### Kategori lain
@@ -275,6 +275,12 @@ rekonsiliasi LRA, sebab hibah memang bukan belanja modal.
 
 Urutan di dalamnya:
 
+✅ **Langkah 1–3 SELESAI 2026-08-30** — `lib/formatPermendagri.ts` (registry +
+mesin subtotal, 43 test), `components/pelaporan/LembarPerolehanPermendagri.tsx`
+(penyaji), `app/cetak/perolehan-permendagri/page.tsx` (data), tombol di menu
+Pelaporan. Keempat cara perolehan sudah punya lembarnya; tiga di antaranya
+menunggu field header (§10d).
+
 1. **IV.A.2.2 (lembar RINCI)** — di sinilah seluruh sambungan datanya. Tulang
    punggungnya sudah berdiri: `/cetak/perolehan` (2026-08-20), yang pada
    dasarnya versi ringkas 14 kolom dari lembar ini. Dua kolom yang paling
@@ -314,6 +320,64 @@ NIBAR dipenggal dua baris di **batas segmen** lewat `pecahNibar()`
 `prefixNibar`: 150.101 NIBAR warisan impor ATL Diknas juga 45 digit tapi
 susunannya BEDA, jadi `null` = tampilkan utuh, jangan menebak.
 
-**Belum diputuskan:** (a) apakah lembar REKAP punya blok tanda tangan — keempat
-gambar yang diserahkan terpotong di bawah tabel; (b) satu berkas berisi kelima
-lembar (usul: ya, page-break, pola BA Rekon) atau lima berkas terpisah.
+**Diputuskan sambil membangun (2026-08-30):**
+
+- **Blok tanda tangan ada di SETIAP lembar**, rinci maupun rekap. Gambar rekap
+  yang diserahkan terpotong di bawah tabel jadi tak bisa dipastikan, dan user
+  meminta "sediakan aja penandatanganannya" — lembar bertanda tangan yang tak
+  terpakai jauh lebih murah daripada lembar yang harus dicetak ulang.
+- **SATU berkas berisi kelima lembar**, page-break antar lembar (pola BA Rekon).
+- **Sebutan pejabat DITURUNKAN dari level SKPD** (keputusan user): level 1
+  → `Pengguna Barang`, sub unit → `Kuasa Pengguna Barang`. Lembar aslinya
+  menuliskan ketiga kemungkinan untuk dicoret salah satunya; di sini yang benar
+  langsung dipilih karena levelnya sudah diketahui. ⚠️ `Pengelola Barang`
+  sengaja TIDAK pernah dihasilkan otomatis — itu jabatan pemda, bukan turunan
+  kedalaman node, dan menebaknya akan salah untuk BPKAD sendiri.
+- **Tanggal pelaporan bisa dipilih** (permintaan user), disimpan per SKPD di
+  `localStorage` bersama pilihan penanda tangan — berkas ini diteken lalu
+  dipindai, jadi cetak ulang wajib menghasilkan lembar yang SAMA.
+- **Komptabel bisa diganti di bilah atas tanpa memuat ulang.** Kop (2)
+  menyatakan SATU komptabel, jadi isinya disaring; barang tanpa nilai kolom itu
+  dianggap intra, sejalan `klasifikasiKomptabel`.
+
+---
+
+## 10. Temuan saat membangun IV.A.2.x (2026-08-30)
+
+**(a) Lembar REKAP itu HIERARKIS, bukan daftar datar.** Bacaan awal keliru:
+keempat lembar rekap ternyata membuka dengan baris `x. x.` — **2 segmen**
+(kelompok neraca `1.3` Aset Tetap / `1.5` Aset Lainnya) — lalu turun bertingkat
+sampai kedalaman masing-masing. Jadi rekap = hierarki yang SAMA dengan lembar
+rinci, dipotong lebih dangkal, bukan `GROUP BY` di satu tingkat. Lembar rinci
+sendiri mulai di 3 segmen. Keduanya kini dilayani satu penyusun
+(`jalanKelompok` di atas satu `petaTotal`) supaya mustahil menyimpang; dikunci
+lib/formatPermendagri.test.ts.
+
+**(b) `admin_kodefikasi_bmd` HANYA berisi baris 7 segmen** (15.353 baris,
+diverifikasi ke produksi). TIDAK ada baris tersendiri untuk awalan yang lebih
+pendek — jadi `.in('kode', <daftar awalan>)` mengembalikan **nol baris tanpa
+satu pun error**, dan kolom "Nama Barang" di SELURUH baris subtotal tinggal
+kosong. Nama tiap tingkat ada di KOLOM baris 7-segmen itu sendiri:
+`nama_jenis` (3 seg) · `nama_objek` (4) · `nama_rincian` (5) ·
+`nama_sub_rincian` (6) · `uraian` (7). Tingkat 2 segmen tak ada di mana pun →
+konstanta `NAMA_KELOMPOK`. **Ambil dari kolom hierarkinya, jangan mencari
+barisnya.**
+
+**(c) Seluruh 420.433 aset berkode TEPAT 7 segmen** (diverifikasi ke produksi),
+jadi tak ada kasus tepi kode pendek. Penjaganya tetap dipasang di
+`jalanKelompok` — kode pendek tak boleh melahirkan baris kelompok kembar.
+
+**(d) Tiga format masih kurang field HEADER**, semuanya kunci baru di
+`jurnal_header.payload` (jsonb — **nol migrasi**, persis cara `sumber_dana`
+ditambahkan 2026-08-20). Kolomnya sudah ada di lembar & sengaja dibiarkan
+KOSONG sampai form headernya menyediakan isian — bukan diisi tebakan:
+
+| Format | Kunci payload yang perlu ditambah |
+|---|---|
+| IV.A.7.2 Hasil Inventarisasi | `dok_nama` (+ nomor & tanggal "Dokumen Lainnya" — dokumen KEDUA di luar BA-nya) |
+| IV.A.8.2 Tukar Menukar | tanggal & nomor "Perjanjian Tukar Menukar" (dokumen kedua). Mitra sudah terlayani `pihak` |
+| IV.A.10.2 Perolehan Lainnya | `dok_nama`, `penyebab` |
+
+⚠️ Untuk IV.A.10.2 tak ada kolom BAST sama sekali — dokumen satu-satunya adalah
+"Dokumen Sumber Perolehan", jadi Nomor & Tanggal-nya dilayani `no_sk`/`tanggal`
+header yang sudah ada.

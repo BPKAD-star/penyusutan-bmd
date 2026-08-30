@@ -15,6 +15,7 @@ import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import LaporanPengadaanModel3 from '@/components/pelaporan/LaporanPengadaanModel3'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { FORMAT_PEROLEHAN } from '@/lib/formatPermendagri'
 
 type Trx = {
   id: number
@@ -251,6 +252,27 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
               <span className="btn-secondary opacity-50 cursor-not-allowed whitespace-nowrap"
                 title="Pilih SKPD dulu — lembar ini memuat identitas SKPD di kepalanya, jadi hanya sah per-SKPD.">
                 🖨 Cetak PDF
+              </span>
+            )
+          )}
+          {/* Lembar FORMAT BAKU Permendagri 47/2021 — beda dari "Cetak PDF" di
+              sebelahnya, yang lembar ringkas 14 kolom buatan sendiri. Satu
+              berkas berisi lima lembar: IV.A.<n>.2 rinci + .3–.6 rekap.
+              ⚠️ Hanya untuk cara perolehan yang formatnya sudah dibangun —
+              Pengadaan (IV.A.1.2.x) belum, karena masih terkunci keputusan
+              biaya atribusi & kaki rekonsiliasi LRA
+              (docs/pelaporan-permendagri-plan.md §6). */}
+          {view === 'list' && FORMAT_PEROLEHAN[jenis] && (
+            selSkpdId ? (
+              <a href={`/cetak/perolehan-permendagri?jenis=${jenis}&skpd=${selSkpdId}${periode ? `&periode=${periode}` : ''}`}
+                target="_blank" rel="noreferrer" className="btn-secondary whitespace-nowrap"
+                title={`Format ${FORMAT_PEROLEHAN[jenis].kode} + rekap ${FORMAT_PEROLEHAN[jenis].awalan}.3–.6 (F4 lanskap)`}>
+                🖨 Format {FORMAT_PEROLEHAN[jenis].kode}
+              </a>
+            ) : (
+              <span className="btn-secondary opacity-50 cursor-not-allowed whitespace-nowrap"
+                title="Pilih SKPD dulu — kop lembar Permendagri memuat identitas SKPD, jadi hanya sah per-SKPD.">
+                🖨 Format {FORMAT_PEROLEHAN[jenis].kode}
               </span>
             )
           )}
