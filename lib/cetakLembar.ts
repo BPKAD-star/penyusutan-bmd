@@ -29,14 +29,19 @@
  *
  * F4 (330×215mm) dipakai lembar se-Kabupaten RKBMD & Standar Harga — tabel
  * 13 kolom terbukti mustahil muat di lebar A4 215mm.
+ *
+ * `F4 potret` dipakai lembar REKAP Perolehan (IV.A.<n>.3–10): cuma 4–6 kolom,
+ * jadi lanskap menyisakan ruang kosong yang justru membuat fontnya terlihat
+ * kecil — sementara kertas fisiknya tetap F4 seperti lembar rincinya.
  */
-export type Kertas = 'A4 potret' | 'A4 lanskap' | 'F4 lanskap'
+export type Kertas = 'A4 potret' | 'A4 lanskap' | 'F4 lanskap' | 'F4 potret'
 
 /** Nilai `@page { size: … }` per kertas. */
 export const UKURAN_KERTAS: Record<Kertas, string> = {
   'A4 potret': 'A4 portrait',
   'A4 lanskap': 'A4 landscape',
   'F4 lanskap': '330mm 215mm',
+  'F4 potret': '215mm 330mm',
 }
 
 export type OpsiCetakLembar = {

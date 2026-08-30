@@ -13,9 +13,13 @@ import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import { useTahunBukuMap } from '@/components/useTahunBuku'
 import LaporanPengadaanPermendagri from '@/components/pelaporan/LaporanPengadaanPermendagri'
+import PerolehanFormatPermendagri from '@/components/pelaporan/PerolehanFormatPermendagri'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import { lembarPerolehan } from '@/lib/permendagriFormat'
+import { FORMAT_PEROLEHAN } from '@/lib/formatPermendagri'
+import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 
 type Trx = {
   id: number
@@ -58,6 +62,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const lembar = lembarPerolehan(jenis)
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
+  const tahunBuku = useTahunBukuMap()
   const [rows, setRows] = useState<Trx[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -124,7 +129,13 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
-    if (periode) q = q.eq('periode', periode)
+    // ⚠️ `periode` bisa bernilai TAHUN saja (mis. `2026` = Akhir Tahun) —
+    // `.eq('periode','2026')` tak akan cocok dengan apa pun dan menghasilkan
+    // "0 transaksi" yang kelihatan sah. `periodeDiminta` yang menerjemahkannya
+    // jadi S1+S2 tahun itu; satu semester tetap `.eq`.
+    const per = periodeDiminta(periode)
+    if (per.length === 1) q = q.eq('periode', per[0])
+    else if (per.length > 1) q = q.in('periode', per)
     if (descIds && descIds.length > 0) {
       const list = descIds.join(',')
       q = q.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)
@@ -153,6 +164,30 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       }
     })()
   }, [buildQuery, saringVoid])
+
+  // ── Pilihan periode ────────────────────────────────────────────────────────
+  // ⚠️ TAHUNNYA DARI `tahun_buku`, BUKAN dari periode yang kebetulan berisi.
+  // Versi sebelumnya menurunkan daftar dari `periodeList` — periode yang punya
+  // transaksi — sehingga SEMESTER YANG BELUM ADA TRANSAKSINYA TAK BISA DIPILIH
+  // sama sekali. Itu salah dua kali: (a) periode kosong adalah jawaban yang
+  // SAH, lembarnya memang mencetak "tidak ada perolehan pada periode ini" dan
+  // itulah yang dibutuhkan saat pemeriksa menanyakannya; (b) `periodeList`
+  // disaring `.limit(1000)` baris TERBARU, jadi untuk jenis yang barisnya
+  // banyak, tahun-tahun lama akan lenyap dari dropdown TANPA satu pun tanda.
+  // `tahun_buku` itu tabel kecil yang memang mendefinisikan tahun kerja
+  // aplikasi — tepat untuk dipakai di sini.
+  // ⚠️ HANYA TAHUN KERJA BERJALAN (keputusan user 2026-08-30) — tahun terkunci
+  // sengaja TIDAK ditawarkan di sini, walau tabelnya memuatnya. Sejalan dengan
+  // badge "Tahun Kerja" di TopBar: tahun terbuka TERBESAR.
+  // ⚠️ Konsekuensi yang DITERIMA: lembar Permendagri untuk tahun yang sudah
+  // ditutup tak bisa dibuat dari layar ini. Kalau kelak dibutuhkan (laporan
+  // final teraudit memang sering diminta), yang diubah cuma penyaring di bawah
+  // — datanya sendiri tetap ada & tab lain masih bisa membacanya lewat
+  // "Semua Periode".
+  const tahunTerbuka = Object.entries(tahunBuku)
+    .filter(([, st]) => st === 'terbuka').map(([t]) => Number(t))
+  const tahunKerja = tahunTerbuka.length > 0 ? Math.max(...tahunTerbuka) : new Date().getFullYear()
+  const tahunList = [String(tahunKerja)]
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
@@ -268,6 +303,27 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
               </span>
             )
           )}
+          {/* Lembar FORMAT BAKU Permendagri 47/2021 — beda dari "Cetak PDF" di
+              sebelahnya, yang lembar ringkas 14 kolom buatan sendiri. Satu
+              berkas berisi lima lembar: IV.A.<n>.2 rinci + .3–.6 rekap.
+              ⚠️ Hanya untuk cara perolehan yang formatnya sudah dibangun —
+              Pengadaan (IV.A.1.2.x) belum, karena masih terkunci keputusan
+              biaya atribusi & kaki rekonsiliasi LRA
+              (docs/pelaporan-permendagri-plan.md §6). */}
+          {view === 'list' && FORMAT_PEROLEHAN[jenis] && (
+            selSkpdId ? (
+              <a href={`/cetak/perolehan-permendagri?jenis=${jenis}&skpd=${selSkpdId}${periode ? `&periode=${periode}` : ''}`}
+                target="_blank" rel="noreferrer" className="btn-secondary whitespace-nowrap"
+                title={`Format ${FORMAT_PEROLEHAN[jenis].kode} + rekap ${FORMAT_PEROLEHAN[jenis].awalan}.3–.6 (F4 lanskap)`}>
+                🖨 Format {FORMAT_PEROLEHAN[jenis].kode}
+              </a>
+            ) : (
+              <span className="btn-secondary opacity-50 cursor-not-allowed whitespace-nowrap"
+                title="Pilih SKPD dulu — kop lembar Permendagri memuat identitas SKPD, jadi hanya sah per-SKPD.">
+                🖨 Format {FORMAT_PEROLEHAN[jenis].kode}
+              </span>
+            )
+          )}
           {view !== 'permendagri' && (
             <button onClick={view === 'list' ? handleExport : handleExportMatrix}
               disabled={view === 'list' ? exporting : matrix.length === 0} className="btn-primary">
@@ -286,6 +342,11 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Rekap per SKPD
         </button>
+        {/* ⚠️ SATU sumber untuk "tab ini ada atau tidak": `lembarPerolehan()`
+            (lib/permendagriFormat.ts). `FORMAT_PEROLEHAN` di bawah menjawab
+            pertanyaan LAIN — susunan kolom lembarnya — dan tak boleh ikut
+            menentukan keberadaan tab, kalau tidak dua daftar bisa menyimpang
+            lalu tabnya muncul tanpa isi (atau sebaliknya). */}
         {lembar && (
           <button onClick={() => setView('permendagri')}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === 'permendagri' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -299,7 +360,22 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           <label className="block text-xs text-gray-500 mb-1">Periode</label>
           <select className="select-filter" value={periode} onChange={e => setPeriode(e.target.value)}>
             <option value="">Semua Periode</option>
-            {periodeList.map(p => <option key={p} value={p}>{p}</option>)}
+            {/* Tiap tahun SELALU menawarkan ketiganya — semester yang belum ada
+                transaksinya tetap bisa dipilih & dicetak (hasilnya lembar
+                "tidak ada perolehan pada periode ini", yang memang sah).
+                ⚠️ "Akhir Tahun" bernilai TAHUN saja (mis. `2026`), bukan string
+                kosong — kosong berarti SELURUH periode yang pernah ada, yang
+                melintasi tahun lain & membuat kop lembar Permendagri berbohong
+                tentang isinya. `periodeDiminta()` yang menerjemahkannya jadi
+                S1+S2 tahun itu.
+                ⚠️ Semester II = Jul–Des SAJA, tidak kumulatif: ini laporan ARUS,
+                dan S2 kumulatif membuat barang Februari tercetak dua kali kalau
+                orang mencetak S1 lalu S2. */}
+            {tahunList.flatMap(t => [
+              <option key={`${t}-S1`} value={`${t}-S1`}>{t} — Semester I</option>,
+              <option key={`${t}-S2`} value={`${t}-S2`}>{t} — Semester II</option>,
+              <option key={t} value={t}>{t} — Akhir Tahun</option>,
+            ])}
           </select>
         </div>
         <div className="min-w-[280px]">
@@ -310,7 +386,14 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       </div>
 
       {view === 'permendagri' ? (
-        <LaporanPengadaanPermendagri periode={periode} skpdId={selSkpdId} descIds={descIds} />
+        // Pengadaan punya tabelnya sendiri (sudah lama ada); keempat cara
+        // perolehan manual memakai penyusun lembar IV.A.<n>.2–10.
+        FORMAT_PEROLEHAN[jenis]
+          ? <PerolehanFormatPermendagri jenis={jenis} skpdId={selSkpdId} periode={periode} />
+          // ⚠️ Lembar Pengadaan belum paham nilai TAHUN (Akhir Tahun); diberi
+          // '' supaya ia menampilkan seluruh periode, bukan nol baris senyap.
+          : <LaporanPengadaanPermendagri periode={/^\d{4}$/.test(periode) ? '' : periode}
+              skpdId={selSkpdId} descIds={descIds} />
       ) : view === 'matrix' ? (
         <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={matrixLoading} />
       ) : (

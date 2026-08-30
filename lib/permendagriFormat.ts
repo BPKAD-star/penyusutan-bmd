@@ -56,6 +56,10 @@ export type IdLembar =
   | 'inventarisasi-lhi'
   | 'kir'
   | 'perolehan-pengadaan'
+  | 'perolehan-hibah'
+  | 'perolehan-inventarisasi'
+  | 'perolehan-tukar-menukar'
+  | 'perolehan-lainnya'
   | 'mutasi-bmd-skpd'
   | 'laporan-bmd-skpd'
   | 'mutasi-bmd-pemda'
@@ -90,6 +94,43 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
     // salah satu pemakainya.
     berkas: 'components/pelaporan/LaporanPengadaanTabel.tsx',
     caraPerolehan: 'pengadaan',
+  },
+  // ── Empat cara perolehan MANUAL ──────────────────────────────────────────
+  // Nomor formatnya sudah DIKONFIRMASI dari lampiran Permendagri (gambar
+  // formatnya diserahkan user 2026-08-30), jadi tak lagi ditebak.
+  //
+  // ⚠️ `kode` di sini lembar RINCI-nya (`.2`). Tiap cara perolehan sebenarnya
+  // punya SEMBILAN lembar: rinci `.2`, rekap per-SKPD `.3–.6`, dan rekap
+  // se-Kabupaten `.7–.10`. Susunan kolom kesembilannya ada di
+  // `FORMAT_PEROLEHAN` (lib/formatPermendagri.ts) — registry ini sengaja cuma
+  // memegang identitas lembar & keberadaannya, bukan bentuk tabelnya.
+  'perolehan-hibah': {
+    kode: 'IV.A.2.2',
+    judul: 'Laporan Perolehan/Penerimaan BMD dari Hibah/Sumbangan atau Yang Sejenis',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPerolehanPermendagri.tsx',
+    caraPerolehan: 'hibah_masuk',
+  },
+  'perolehan-inventarisasi': {
+    kode: 'IV.A.7.2',
+    judul: 'Laporan Perolehan/Penerimaan BMD dari Hasil Inventarisasi',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPerolehanPermendagri.tsx',
+    caraPerolehan: 'hasil_inventarisasi',
+  },
+  'perolehan-tukar-menukar': {
+    kode: 'IV.A.8.2',
+    judul: 'Laporan Perolehan/Penerimaan BMD dari Hasil Tukar Menukar',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPerolehanPermendagri.tsx',
+    caraPerolehan: 'tukar_menukar',
+  },
+  'perolehan-lainnya': {
+    kode: 'IV.A.10.2',
+    judul: 'Laporan Perolehan/Penerimaan BMD dari Perolehan/Penerimaan Lainnya',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPerolehanPermendagri.tsx',
+    caraPerolehan: 'perolehan_lainnya',
   },
   'mutasi-bmd-skpd': {
     kode: 'IV.L.4.1',
@@ -137,11 +178,14 @@ export function labelFormat(l: LembarPermendagri): string {
  * tersedia". Tab yang ada tapi hampa bikin operator mengira lembarnya gagal
  * dimuat, lalu melapor bug yang tak pernah ada.
  *
- * Per 2026-08-29 baru `pengadaan` (IV.A) yang punya. Empat cara perolehan lain
- * sudah punya lembar cetak ("Laporan Penerimaan BMD", app/cetak/perolehan) tapi
- * nomor formatnya BELUM dikonfirmasi Bidang Aset — dan menebaknya di lembar
- * yang akan ditandatangani jauh lebih berbahaya daripada membiarkannya kosong.
- * Lihat docs/pelaporan-permendagri.md §6.
+ * Per 2026-08-30 KELIMA cara perolehan sudah punya: `pengadaan` (IV.A) plus
+ * empat cara perolehan manual (IV.A.2.2 / 7.2 / 8.2 / 10.2), yang nomor
+ * formatnya kini sudah dikonfirmasi dari lampiran Permendagri — catatan lama
+ * "belum dikonfirmasi Bidang Aset" sudah tidak berlaku.
+ *
+ * ⚠️ Lembar lama "Laporan Penerimaan BMD" (app/cetak/perolehan) TETAP hidup
+ * berdampingan: ia versi ringkas 14 kolom A4 buatan sendiri, bukan format baku.
+ * Jangan salah satu dihapus tanpa keputusan user.
  */
 export function lembarPerolehan(jenis: string): LembarPermendagri | null {
   for (const l of Object.values(LEMBAR_PERMENDAGRI)) {

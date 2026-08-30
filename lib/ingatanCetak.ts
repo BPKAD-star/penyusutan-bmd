@@ -132,6 +132,10 @@ export const kunciTtdMutasiBmd = (skpdId: number | null) =>
 /** Laporan Penerimaan BMD (menu Laporan Perolehan). */
 export const kunciTtdPerolehan = (skpdId: number) => `bmd_perolehan_ttd_skpd_${skpdId}`
 /** RKBMD — lembar per-SKPD & lembar se-Kabupaten (yang se-kab bermuatan TEKS). */
+/** Lembar se-Kabupaten Perolehan (IV.A.<n>.7–10) — penanda tangannya "Pejabat
+ *  Penatausahaan Barang", dipilih bebas & TIDAK terikat SKPD mana pun. */
+export const KUNCI_TTD_PEROLEHAN_SEKAB = 'bmd_perolehan_ttd_sekab'
+
 export const kunciTtdRkbmdSkpd = (skpdId: number) => `bmd_rkbmd_ttd_skpd_${skpdId}`
 export const KUNCI_TTD_RKBMD_SEKAB = 'bmd_rkbmd_ttd_sekab'
 /** Standar Harga se-Kabupaten. */

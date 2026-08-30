@@ -76,14 +76,29 @@ describe('lembarPerolehan', () => {
     expect(lembarPerolehan('pengadaan')?.kode).toBe('IV.A')
   })
 
+  // Keempat cara perolehan manual dapat lembarnya 2026-08-30, sesudah nomor
+  // formatnya dikonfirmasi dari lampiran Permendagri. Uji lama di sini
+  // mengunci premis "belum dibangun" & sudah dicabut — yang tersisa mengunci
+  // PEMETAANNYA, karena jenis yang tertukar tak menghasilkan satu pun error:
+  // menunya cuma menampilkan lembar milik cara perolehan lain.
+  it('tiap cara perolehan manual menunjuk kode formatnya sendiri', () => {
+    const harap: Record<string, string> = {
+      hibah_masuk: 'IV.A.2.2',
+      hasil_inventarisasi: 'IV.A.7.2',
+      tukar_menukar: 'IV.A.8.2',
+      perolehan_lainnya: 'IV.A.10.2',
+    }
+    for (const [jenis, kode] of Object.entries(harap)) {
+      expect(lembarPerolehan(jenis)?.kode, jenis).toBe(kode)
+    }
+  })
+
   // ⚠️ `null` WAJIB, bukan lembar kosong: pemakainya (LaporanPerolehan)
   // memakainya untuk MENIADAKAN tab. Kalau ini pernah berubah jadi objek
-  // default, keempat menu itu mendadak menampilkan tab yang isinya bukan
-  // laporan mereka.
-  it('null untuk cara perolehan yang lembarnya BELUM dibangun', () => {
-    for (const j of ['hibah_masuk', 'tukar_menukar', 'hasil_inventarisasi', 'perolehan_lainnya']) {
-      expect(lembarPerolehan(j), j).toBeNull()
-    }
+  // default, menu yang belum punya lembar mendadak menampilkan tab hampa.
+  it('null untuk cara perolehan yang lembarnya belum ada', () => {
+    // `saldo_awal` bukan menu Cara Perolehan & tak akan pernah punya lembar IV.A.
+    expect(lembarPerolehan('saldo_awal')).toBeNull()
   })
 
   it('null untuk jenis yang tak dikenal sama sekali', () => {
