@@ -136,9 +136,19 @@ export const BATAL_TARGET_JENIS = {
 // perginya DAN baris pulangnya, karena membatalkan separuh menyisakan rantai
 // yang tak nyambung. Dua-duanya dibaca supaya laporan tak perlu tahu bentuk
 // payload per jenis.
-type BatalPayload = { target_trx_id?: number; target_trx_ids?: unknown[] } | null
+export type BatalPayload = { target_trx_id?: number; target_trx_ids?: unknown[] } | null
 
-function idTarget(payload: BatalPayload): number[] {
+/**
+ * id baris ledger yang dianulir oleh satu baris `batal_*`.
+ *
+ * ⚠️ DIEKSPOR sejak 2026-08-31 karena `lib/guardPembatalan.ts` membutuhkannya:
+ * guard "tak boleh ada transaksi lebih baru" harus bisa mengenali baris yang
+ * SUDAH dianulir, kalau tidak sepasang (event + pembatalannya) mengunci
+ * selamanya event di bawahnya. Menyalin pembacanya ke sana akan melahirkan dua
+ * penafsiran payload yang bisa menyimpang — dan yang menyimpang di guard tak
+ * akan pernah bersuara.
+ */
+export function idTarget(payload: BatalPayload): number[] {
   const out: number[] = []
   const satu = Number(payload?.target_trx_id)
   if (Number.isFinite(satu)) out.push(satu)

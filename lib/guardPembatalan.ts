@@ -13,6 +13,7 @@
 // ⚠️ TIDAK ADA TRIGGER DB yang menegakkan ini (keputusan lama, tercatat di
 // CLAUDE.md). Jadi fungsi inilah satu-satunya penjaga. Perlakukan begitu.
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { idTarget, type BatalPayload } from '@/lib/voidedAset'
 
 /** Satu baris yang hendak dibatalkan. */
 export type ItemBatal = {
@@ -50,22 +51,113 @@ export type HasilGuard =
 // `ItemSisip` tak punya `trx_id`. Yang dibutuhkan cuma label & aset_id-nya.
 const sebut = (it: { aset_id: string; label?: string | null }) => it.label?.trim() || it.aset_id
 
+// ---- Apa yang dihitung sebagai "transaksi LEBIH BARU" ----------------------
+//
+// Sampai 2026-08-31 jawabannya "baris apa pun ber-id lebih besar", dan itu
+// membuat guard ini MENGUNCI SELAMANYA -- bukan sekadar galak. Ledger
+// append-only, jadi baris yang mencatat sebuah pembatalan tak pernah hilang; ia
+// duduk di atas event lama & memblokirnya untuk selama-lamanya, sementara pesan
+// penolakannya menyuruh operator "batalkan yang lebih baru dulu" -- yang justru
+// sudah ia lakukan, dan justru itu yang menambah baris pemblokirnya.
+//
+// Kejadian nyata (BKAD, 2026-08-31): KDP "Rehab Gedung Kantor BKAD" direklas ke
+// Gedung (#421057), dikapitalisasi ke induk (`kapitalisasi_serap` #421059), lalu
+// kapitalisasinya DIBATALKAN (`batal_kapitalisasi` #421061). Sesudah itu Batal
+// Reklas mustahil dijalankan: dua baris di atasnya sudah saling menghapus, tapi
+// guard tetap menghitung keduanya.
+//
+// Yang benar: baris yang SUDAH DIANULIR bukan peristiwa. Engine sendiri
+// memperlakukannya begitu saat replay (`kapDibatalkan`/`reklasDibatalkan` di
+// lib/engine/penyusutan.ts; `fetchBatalTargets`/`fetchNetSerap` di lib/rekon.ts),
+// jadi guard yang menghitungnya justru TIDAK sepakat dengan engine yang hendak
+// ia lindungi.
+//
+// WASPADA: yang diabaikan cuma PASANGAN UTUH DI ATAS AMBANG. Sebuah `batal_*`
+// yang menganulir baris di BAWAH `trx_id` tetap dihitung -- ia perubahan
+// keadaan yang nyata relatif terhadap event yang mau dibatalkan, bukan sepasang
+// yang saling meniadakan. Kapitalisasi/reklas/koreksi yang masih HIDUP (belum
+// dibatalkan) juga tetap memblokir persis seperti dulu; itu inti aturannya.
+
+type BarisLedger = { id: number; jenis: string; periode: string; payload: BatalPayload }
+
+// Pagu pengambilan. Satu aset praktis tak pernah punya sebanyak ini (yang
+// terpanjang di produksi: belasan baris), tapi kalau sampai kena, pasangan mana
+// yang utuh TIDAK bisa disimpulkan -- jadi jatuh ke perilaku lama (memblokir),
+// bukan menebak. Fail-closed, sama dengan kegagalan query.
+const PAGU_BARIS = 500
+
 /**
- * `true` kalau aset ini punya baris ledger ber-`id` lebih besar dari `trx_id`.
+ * Baris di atas `trx_id` yang MASIH BERLAKU -- pasangan (event + pembatalannya)
+ * yang utuh di atas ambang dibuang.
  *
- * ⚠️ Sengaja TIDAK memakai `{ count: 'exact', head: true }`. Respons HEAD tak
- * berbadan, sehingga supabase-js mengembalikan `error.message` KOSONG — pesan
- * yang justru paling dibutuhkan saat guard ini menolak karena gangguan, bukan
- * karena data. `.limit(1)` sudah cukup: yang ditanya "ada atau tidak", bukan
- * "berapa banyak".
+ * Diekspor supaya bisa diuji langsung tanpa klien tiruan: aturan inilah yang
+ * menentukan sebuah pembatalan bisa dijalankan atau tidak, dan salah di sini tak
+ * menghasilkan satu pun error -- cuma menu batal yang buntu (kalau terlalu
+ * ketat) atau rantai replay yang rusak (kalau terlalu longgar).
  */
-async function adaLebihBaru(
+export function barisMasihBerlaku(rows: BarisLedger[]): BarisLedger[] {
+  const diAtas = new Set(rows.map(r => r.id))
+  const netral = new Set<number>()
+
+  // (a) Pasangan ber-`payload.target_trx_id(s)` -- kapitalisasi (sisi INDUK),
+  //     reklas, koreksi nilai/spesifikasi/pencatatan ganda, pengalihan,
+  //     penggabungan. Pembacanya dipakai bersama lib/voidedAset.ts supaya tak
+  //     ada dua penafsiran payload yang bisa menyimpang.
+  for (const r of rows) {
+    if (!r.jenis.startsWith('batal_')) continue
+    const target = idTarget(r.payload)
+    // Tak ber-target -> bukan pasangan yang bisa dinilai di sini; lihat (b).
+    // Target di BAWAH ambang -> reversal-nya perubahan nyata, biarkan memblokir.
+    if (target.length === 0 || !target.every(id => diAtas.has(id))) continue
+    netral.add(r.id)
+    for (const id of target) netral.add(id)
+  }
+
+  // (b) Sisi ANAK kapitalisasi. Baris `batal_kapitalisasi` di anak cuma membawa
+  //     `{induk_id, no_dokumen}` -- tak ada target yang bisa dicocokkan, persis
+  //     keterbatasan yang sudah tercatat di `fetchNetSerap` (lib/rekon.ts). Yang
+  //     tersedia hanya URUTAN, dan itu memang cukup: siklus serap -> batal ->
+  //     serap lagi selesai dengan "baris terakhir menang". Diurutkan
+  //     (periode, id) supaya sepakat dengan `fetchNetSerap`.
+  const serap = rows
+    .filter(r => r.jenis === 'kapitalisasi_serap'
+      || (r.jenis === 'batal_kapitalisasi' && idTarget(r.payload).length === 0))
+    .sort((a, b) => a.periode.localeCompare(b.periode) || a.id - b.id)
+  // Syaratnya DUA, bukan cuma "yang terakhir batal": urutan di atas ambang harus
+  // BERANGKAT dari keadaan belum-terserap (baris pertamanya `kapitalisasi_serap`)
+  // dan PULANG ke sana. Kalau serapnya terjadi di bawah ambang & batalnya di
+  // atas, batal itu perubahan nyata -- biarkan memblokir.
+  if (serap.length >= 2
+    && serap[0].jenis === 'kapitalisasi_serap'
+    && serap[serap.length - 1].jenis === 'batal_kapitalisasi') {
+    for (const r of serap) netral.add(r.id)
+  }
+
+  return rows.filter(r => !netral.has(r.id))
+}
+
+/**
+ * Baris ledger aset ini ber-`id` lebih besar dari `trx_id`, sesudah pasangan
+ * yang saling meniadakan dibuang. `null` = tak ada penghalang.
+ *
+ * WASPADA: sengaja TIDAK memakai `{ count: 'exact', head: true }`. Respons HEAD
+ * tak berbadan, sehingga supabase-js mengembalikan `error.message` KOSONG --
+ * pesan yang justru paling dibutuhkan saat guard ini menolak karena gangguan,
+ * bukan karena data.
+ */
+async function lebihBaruEfektif(
   supabase: SupabaseClient, it: ItemBatal,
-): Promise<{ ada: boolean } | { gagal: string }> {
+): Promise<{ penghalang: BarisLedger | null } | { gagal: string }> {
   const { data, error } = await supabase.from('transaksi_bmd')
-    .select('id').eq('aset_id', it.aset_id).gt('id', it.trx_id).limit(1)
+    .select('id,jenis,periode,payload')
+    .eq('aset_id', it.aset_id).gt('id', it.trx_id)
+    .order('id', { ascending: true }).limit(PAGU_BARIS)
   if (error) return { gagal: error.message }
-  return { ada: (data?.length ?? 0) > 0 }
+  const rows = (data ?? []) as BarisLedger[]
+  if (rows.length >= PAGU_BARIS) {
+    return { gagal: `riwayatnya melebihi ${PAGU_BARIS} baris, pasangan pembatalan tak bisa dinilai` }
+  }
+  return { penghalang: barisMasihBerlaku(rows)[0] ?? null }
 }
 
 /**
@@ -80,7 +172,7 @@ export async function cekBolehBatal(
   supabase: SupabaseClient, items: ItemBatal[], konteks: string,
 ): Promise<HasilGuard> {
   for (const it of items) {
-    const r = await adaLebihBaru(supabase, it)
+    const r = await lebihBaruEfektif(supabase, it)
     if ('gagal' in r) {
       return {
         boleh: false,
@@ -89,11 +181,15 @@ export async function cekBolehBatal(
           + 'event di tengah rantai.',
       }
     }
-    if (r.ada) {
+    if (r.penghalang) {
+      // Jenis & periodenya IKUT DISEBUT. Pesan lama cuma bilang "ada yang lebih
+      // baru", jadi operator tak punya cara tahu menu mana yang harus dibuka —
+      // dan kalau tebakannya keliru ia justru menambah baris pemblokir baru.
       return {
         boleh: false,
         pesan: `Batal diblokir: "${sebut(it)}" punya transaksi LEBIH BARU setelah ${konteks} — `
-          + 'batalkan yang lebih baru dulu.',
+          + `"${r.penghalang.jenis}" (${r.penghalang.periode}). Batalkan yang itu dulu. `
+          + 'Transaksi yang sudah dibatalkan tidak lagi menghalangi.',
       }
     }
   }

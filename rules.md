@@ -41,12 +41,27 @@ kode, jadi ia harus stabil:
    (`jurnal_header.approval_status='ditolak'`).
 2. **Soft-delete.** Penghapusan barang = `aset.status='dihapus'` + transaksi.
    Tidak ada policy DELETE di `aset`.
-3. **Pembatalan hanya untuk event TERBARU aset itu.** Semua menu batal wajib
-   memasang guard: jika ada transaksi dengan `id > trx_id_yang_dibatalkan`
-   pada aset yang sama → blokir. Membatalkan event di tengah rantai merusak
-   replay engine. Pengecualian sengaja: Batal Pemanfaatan & Pengamanan (event
-   netral) — tapi keduanya tetap **menghitung** sebagai "transaksi lebih baru"
-   yang memblokir batal di bawahnya.
+3. **Pembatalan hanya untuk event TERBARU YANG MASIH BERLAKU pada aset itu.**
+   Semua menu batal wajib memasang guard `cekBolehBatal()`
+   (lib/guardPembatalan.ts): jika ada transaksi dengan
+   `id > trx_id_yang_dibatalkan` pada aset yang sama → blokir. Membatalkan
+   event di tengah rantai merusak replay engine.
+   ⚠️ **"Masih berlaku" itu bagian dari aturannya, bukan kelonggaran**
+   (2026-08-31). Baris yang SUDAH DIANULIR — sepasang event + `batal_*`-nya
+   yang duduk sama-sama di atas ambang — TIDAK dihitung. Tanpa pengecualian
+   itu guard ini bukan galak melainkan **buntu permanen**: ledger append-only,
+   jadi baris yang mencatat sebuah pembatalan tak pernah hilang dan event di
+   bawahnya terkunci selamanya, sementara pesan penolakannya menyuruh operator
+   "batalkan yang lebih baru dulu" — yang justru menambah baris pemblokirnya.
+   Engine sudah lama memperlakukannya begitu (`kapDibatalkan`,
+   `reklasDibatalkan`, `fetchNetSerap`), jadi guard yang menghitungnya justru
+   tak sepakat dengan engine yang hendak ia lindungi. Aturannya di
+   `barisMasihBerlaku()`, dikunci lib/guardPembatalan.test.ts.
+   Yang **tetap** memblokir: event yang belum dibatalkan, dan `batal_*` yang
+   targetnya ada di BAWAH ambang (itu perubahan keadaan yang nyata).
+   Pengecualian sengaja: Batal Pemanfaatan & Pengamanan (event netral) — tapi
+   keduanya tetap **menghitung** sebagai "transaksi lebih baru" yang memblokir
+   batal di bawahnya.
 4. **`penyusutan_semester` = turunan**, bukan sumber kebenaran. Boleh dihitung
    ulang kapan saja dari ledger.
 5. **Baseline `aset_awal_2026` beku.** Angkanya tidak pernah berubah; hanya

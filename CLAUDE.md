@@ -2581,6 +2581,69 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## Guard pembatalan MENGUNCI SELAMANYA sesudah satu pembatalan (2026-08-31)
+
+User mengerjakan satu rantai lengkap di BKAD: KDP "Rehab Gedung Kantor BKAD"
+(5 termin) → **reklas** ke Gedung & Bangunan (#421057) → **kapitalisasi** ke
+induk "Bangunan Gudang Kendaraan Terbuka" (`kapitalisasi` #421058 di induk,
+`kapitalisasi_serap` #421059 di anak) → run engine → **batal kapitalisasi**
+(#421060 di induk ber-`target_trx_id`, #421061 di anak) → run engine lagi.
+Datanya BERSIH sesudah itu (induk kembali 215.155.360, anak aktif 335.000.000).
+Lalu **Batal Reklas ditolak**: *"Rehab Gedung Kantor BKAD punya transaksi LEBIH
+BARU setelah reklas ini — batalkan yang lebih baru dulu."*
+
+- **Sebabnya `cekBolehBatal` menghitung baris yang SUDAH DIANULIR.** Ia cuma
+  bertanya "adakah baris ber-`id > trx_id` pada aset ini?", dan jawabannya YA —
+  #421059 & #421061, yaitu kapitalisasi yang barusan dibatalkan **berikut baris
+  pembatalannya sendiri**.
+- ⚠️ **Ini BUNTU PERMANEN, bukan sekadar guard yang galak.** `transaksi_bmd`
+  append-only, jadi kedua baris itu tak akan pernah hilang → reklas #421057
+  terkunci SELAMANYA. Lebih buruk lagi, pesannya menyuruh operator "batalkan
+  yang lebih baru dulu" — dan setiap kali ia menurutinya, baris pemblokir
+  bertambah satu. **Setiap menu batal kena**, bukan cuma Reklasifikasi: guardnya
+  satu sumber, jadi pola "batal A lalu mau batal B di bawahnya" mustahil di mana
+  pun (Koreksi, Penghapusan, Pengadaan, Kapitalisasi, Perolehan Manual, KDP).
+- **Yang benar: baris yang sudah dianulir bukan peristiwa** — dan seluruh
+  pembaca lain di repo ini SUDAH memperlakukannya begitu sejak lama
+  (`kapDibatalkan`/`reklasDibatalkan` di lib/engine/penyusutan.ts,
+  `fetchBatalTargets`/`fetchNetSerap` di lib/rekon.ts). Jadi guardnya justru
+  satu-satunya yang tak sepakat dengan engine yang hendak ia lindungi.
+- **Obatnya `barisMasihBerlaku()`** (lib/guardPembatalan.ts): baris di atas
+  ambang disaring dulu, PASANGAN yang saling meniadakan dibuang, sisanya barulah
+  penghalang. Dua bentuk pasangan, dan keduanya memang harus ditangani:
+  (a) **ber-`payload.target_trx_id(s)`** — sisi INDUK kapitalisasi, reklas,
+  koreksi, pengalihan, penggabungan. Pembacanya `idTarget` yang **dipakai
+  bersama lib/voidedAset.ts** (diekspor untuk ini), bukan disalin — dua
+  penafsiran payload yang menyimpang di guard tak akan pernah bersuara;
+  (b) **sisi ANAK kapitalisasi**, yang `batal_kapitalisasi`-nya cuma membawa
+  `{induk_id, no_dokumen}` tanpa target sama sekali (keterbatasan yang sudah
+  tercatat di `fetchNetSerap`). Di situ yang tersedia hanya URUTAN, dan itu
+  cukup: **"baris terakhir menang"**, diurutkan `(periode, id)` supaya sepakat
+  dengan `fetchNetSerap`.
+- ⚠️ **Yang diabaikan HANYA pasangan utuh DI ATAS AMBANG** — ini yang menjaga
+  aturannya tetap punya gigi:
+  - event yang **masih hidup** (kapitalisasi/reklas/koreksi belum dibatalkan)
+    tetap memblokir persis seperti dulu;
+  - `batal_*` yang targetnya di **BAWAH** ambang tetap memblokir — membatalkan
+    sesuatu yang lebih tua adalah perubahan keadaan yang NYATA relatif terhadap
+    event yang mau dibatalkan, bukan sepasang yang saling meniadakan;
+  - siklus serap → batal → **serap lagi** tetap memblokir (yang terakhir
+    menang), begitu pula batal-serap yang serapnya terjadi di bawah ambang.
+- **Pagu 500 baris per aset, dan kalau tembus → jatuh ke MEMBLOKIR** (perilaku
+  lama), bukan menebak. Pasangan mana yang utuh tak bisa disimpulkan dari
+  potongan; fail-closed, sama dengan kegagalan query.
+- **Pesan penolakannya kini menyebut JENIS & PERIODE penghalangnya.** Yang lama
+  cuma bilang "ada yang lebih baru", jadi operator tak punya cara tahu menu mana
+  yang harus dibuka — dan tebakan yang keliru justru menambah baris pemblokir.
+- **Tak ada migrasi** — murni logika klien; ledger, trigger, & RPC tak disentuh.
+  Dikunci lib/guardPembatalan.test.ts (termasuk rantai BKAD di atas apa adanya).
+- ⛔ **`cekBolehSisip` (arah MAJU) BELUM ikut disaring** — ia masih menghitung
+  transaksi bertanggal lebih baru tanpa memedulikan apakah sudah dianulir,
+  dengan satu pengecualian lama (`batal_kapitalisasi`). Belum jadi masalah
+  karena pembandingnya TANGGAL (bukan id) dan pasangan batal selalu bertanggal
+  sama dengan aslinya, jadi keduanya lolos/blokir bersamaan. Kalau nanti ada
+  yang mengeluh "tak bisa mencatat ulang sesudah membatalkan", di situ tempatnya.
+
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
 Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user

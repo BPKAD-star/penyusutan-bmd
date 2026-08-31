@@ -6,12 +6,23 @@
 // tak bersuara: tak ada error, cuma angka penyusutan yang salah.
 import { describe, it, expect } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { cekBolehBatal, cekBolehSisip, type ItemBatal } from '@/lib/guardPembatalan'
+import { barisMasihBerlaku, cekBolehBatal, cekBolehSisip, type ItemBatal } from '@/lib/guardPembatalan'
 
-type Jawaban = { data: { id: number }[] } | { error: { message: string } }
+// Baris ledger tiruan. `jenis`/`periode`/`payload` boleh dikosongkan — defaultnya
+// event biasa yang MEMBLOKIR, supaya uji-uji lama tetap menguji hal yang sama.
+type BarisUji = { id: number; jenis?: string; periode?: string; payload?: unknown }
+type Jawaban = { data: BarisUji[] } | { error: { message: string } }
+
+const lengkapi = (r: BarisUji) => ({
+  id: r.id,
+  jenis: r.jenis ?? 'koreksi_nilai',
+  periode: r.periode ?? '2026-S2',
+  payload: r.payload ?? null,
+})
 
 /**
- * Klien tiruan sekadar cukup untuk rantai `.from().select().eq().gt().limit()`.
+ * Klien tiruan sekadar cukup untuk rantai
+ * `.from().select().eq().gt().order().limit()`.
  * `jawab` menerima (aset_id, trx_id) dan mengembalikan baris ledger yang lebih
  * baru — atau bentuk error ala supabase-js.
  */
@@ -24,9 +35,13 @@ function fakeClient(jawab: (asetId: string, trxId: number) => Jawaban): { client
         select: () => q,
         eq: (_k: string, v: string) => { asetId = v; return q },
         gt: (_k: string, v: number) => { trxId = v; return q },
+        order: () => q,
+        neq: () => q,
         limit: () => {
           const r = jawab(asetId, trxId)
-          return Promise.resolve('error' in r ? { data: null, error: r.error } : { data: r.data, error: null })
+          return Promise.resolve('error' in r
+            ? { data: null, error: r.error }
+            : { data: r.data.map(lengkapi), error: null })
         },
       }
       return q
@@ -89,6 +104,121 @@ describe('cekBolehBatal — FAIL-CLOSED saat query gagal', () => {
     const { client } = fakeClient(a => (a === 'B' ? { error: { message: 'boom' } } : { data: [] }))
     const h = await cekBolehBatal(client, [item('A', 1), item('B', 2)], 'kapitalisasi ini')
     expect(h.boleh).toBe(false)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
+// Baris yang SUDAH DIANULIR bukan penghalang.
+//
+// Kenapa diuji terpisah & keras: sampai 2026-08-31 guard ini menghitung SEMUA
+// baris ber-id lebih besar, jadi sepasang (event + pembatalannya) mengunci event
+// di bawahnya SELAMANYA — ledger append-only, pasangan itu tak pernah hilang.
+// Yang rusak bukan angka melainkan JALAN KELUARNYA: operator diminta
+// "batalkan yang lebih baru dulu", ia melakukannya, dan justru itu yang menambah
+// baris pemblokir berikutnya.
+// ════════════════════════════════════════════════════════════════════════════
+
+const bl = (id: number, jenis: string, payload: unknown = null, periode = '2026-S2') =>
+  ({ id, jenis, periode, payload })
+
+describe('barisMasihBerlaku — pasangan yang saling meniadakan dibuang', () => {
+  it('INSIDEN BKAD 2026-08-31: serap + batal_kapitalisasi di anak → reklas bisa dibatalkan', () => {
+    // Rantai nyata aset b87ebdff (Rehab Gedung Kantor BKAD), di ATAS reklas #421057.
+    const rows = [
+      bl(421059, 'kapitalisasi_serap', { induk_id: 'fa4a', no_dokumen: '01' }),
+      bl(421061, 'batal_kapitalisasi', { induk_id: 'fa4a', no_dokumen: '01' }),
+    ]
+    expect(barisMasihBerlaku(rows)).toEqual([])
+  })
+
+  it('sisi INDUK: kapitalisasi + batal ber-target_trx_id → tak menghalangi', () => {
+    const rows = [
+      bl(421058, 'kapitalisasi'),
+      bl(421060, 'batal_kapitalisasi', { target_trx_id: 421058 }),
+    ]
+    expect(barisMasihBerlaku(rows)).toEqual([])
+  })
+
+  it('target JAMAK (batal_pengalihan) ikut terbaca', () => {
+    const rows = [
+      bl(10, 'pengalihan_status'),
+      bl(11, 'pengalihan_status', { reversal: true }),
+      bl(12, 'batal_pengalihan', { target_trx_ids: [10, 11] }),
+    ]
+    expect(barisMasihBerlaku(rows)).toEqual([])
+  })
+
+  it('kapitalisasi yang MASIH HIDUP tetap memblokir — ini inti aturannya', () => {
+    const rows = [bl(421058, 'kapitalisasi'), bl(421059, 'kapitalisasi_serap')]
+    expect(barisMasihBerlaku(rows).map(r => r.id)).toEqual([421058, 421059])
+  })
+
+  it('pasangan dibuang, event LAIN yang hidup tetap memblokir', () => {
+    const rows = [
+      bl(50, 'kapitalisasi'),
+      bl(51, 'batal_kapitalisasi', { target_trx_id: 50 }),
+      bl(52, 'koreksi_nilai'),
+    ]
+    expect(barisMasihBerlaku(rows).map(r => r.id)).toEqual([52])
+  })
+
+  it('batal_* yang targetnya di BAWAH ambang TETAP memblokir', () => {
+    // Membatalkan sesuatu yang lebih tua dari event ini adalah perubahan keadaan
+    // yang NYATA relatif terhadapnya — bukan sepasang yang saling meniadakan.
+    const rows = [bl(60, 'batal_koreksi_nilai', { target_trx_id: 5 })]
+    expect(barisMasihBerlaku(rows).map(r => r.id)).toEqual([60])
+  })
+
+  it('serap → batal → serap LAGI: yang terakhir menang, jadi tetap memblokir', () => {
+    const rows = [
+      bl(70, 'kapitalisasi_serap', { induk_id: 'X', no_dokumen: '01' }),
+      bl(71, 'batal_kapitalisasi', { induk_id: 'X', no_dokumen: '01' }),
+      bl(72, 'kapitalisasi_serap', { induk_id: 'Y', no_dokumen: '02' }),
+    ]
+    expect(barisMasihBerlaku(rows).map(r => r.id)).toEqual([70, 71, 72])
+  })
+
+  it('batal serap TANPA serap di atas ambang tetap memblokir', () => {
+    // Serapnya terjadi di BAWAH ambang; batalnya menghidupkan lagi barang ini —
+    // perubahan keadaan yang nyata, bukan pasangan.
+    const rows = [bl(80, 'batal_kapitalisasi', { induk_id: 'X', no_dokumen: '01' })]
+    expect(barisMasihBerlaku(rows).map(r => r.id)).toEqual([80])
+  })
+
+  it('urutan serap dinilai (periode, id) — sepakat dengan fetchNetSerap', () => {
+    const rows = [
+      bl(90, 'batal_kapitalisasi', { induk_id: 'X' }, '2027-S1'),
+      bl(91, 'kapitalisasi_serap', { induk_id: 'X' }, '2026-S2'),
+    ]
+    // id menaik ≠ urutan kejadian; yang berlaku periode.
+    expect(barisMasihBerlaku(rows)).toEqual([])
+  })
+
+  it('tak ada baris sama sekali → tak ada penghalang', () => {
+    expect(barisMasihBerlaku([])).toEqual([])
+  })
+})
+
+describe('cekBolehBatal — lewat klien, sesudah pasangan dibuang', () => {
+  it('rantai BKAD → BOLEH dibatalkan', async () => {
+    const { client } = fakeClient(() => ({
+      data: [
+        { id: 421059, jenis: 'kapitalisasi_serap', payload: { induk_id: 'fa4a' } },
+        { id: 421061, jenis: 'batal_kapitalisasi', payload: { induk_id: 'fa4a' } },
+      ],
+    }))
+    expect(await cekBolehBatal(client, [item('A', 421057)], 'reklas ini')).toEqual({ boleh: true })
+  })
+
+  it('pesan penolakan menyebut JENIS & PERIODE penghalangnya', async () => {
+    const { client } = fakeClient(() => ({
+      data: [{ id: 500, jenis: 'kapitalisasi', periode: '2026-S2' }],
+    }))
+    const h = await cekBolehBatal(client, [item('A', 100, 'Gedung X')], 'reklas ini')
+    expect(h.boleh).toBe(false)
+    if (h.boleh) return
+    expect(h.pesan).toContain('kapitalisasi')
+    expect(h.pesan).toContain('2026-S2')
   })
 })
 
