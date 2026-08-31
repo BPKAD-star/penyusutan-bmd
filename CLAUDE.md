@@ -2581,6 +2581,120 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## Laporan Penggunaan — Format Permendagri IV.B.1.2–1.6 (2026-08-31)
+
+Cabang KEDUA modul Pelaporan Permendagri 47/2021, sesudah IV.A (Perolehan).
+Menu Pelaporan → Pengelolaan → **Penggunaan** kini bertiga tab seperti Laporan
+Perolehan: **Daftar Transaksi · Rekap per SKPD · Format Permendagri**.
+Sumbernya jenis ledger `pengalihan_status`. **Tak ada migrasi** — seluruhnya
+menyusun ulang angka yang sudah ada.
+
+Berkasnya: `lib/formatPenggunaan.ts` (registry kolom) · `lib/laporanPenggunaan.ts`
+(pemuat) · `components/pelaporan/LembarPenggunaanPermendagri.tsx` (penyaji) ·
+`PenggunaanFormatPermendagri.tsx` (tab) · `LaporanPenggunaan.tsx` (halaman) ·
+`app/cetak/penggunaan-permendagri/page.tsx`. Dikunci lib/formatPenggunaan.test.ts
++ tests/lembarPenggunaan.test.tsx.
+
+- ⚠️ **SISI PENERIMA, bukan "asal ATAU tujuan".** Judul formatnya "LAPORAN
+  PENERIMAAN PENGGUNAAN…" dan kolom (22)-nya "Pihak yang menyerahkan", jadi yang
+  didaftar barang yang MASUK ke SKPD itu (`.in('skpd_tujuan', desc)`). Memakai
+  pola netral-arah `skpd_asal.in.(…) OR skpd_tujuan.in.(…)` — yang dipakai tab
+  Daftar Transaksi & `LaporanTransaksi` — akan memasukkan barang yang justru
+  DIKELUARKAN SKPD ini lalu mencantumkan SKPD itu sendiri sebagai "pihak yang
+  menyerahkan": salah, tampak sah, tanpa satu pun error.
+  **Karena itu tab 1 & tab 3 memang beda angkanya, dan itu WAJIB tertulis di
+  layar** (strip teal di atas tab Permendagri) — kalau tidak, operator melihat
+  dua angka berbeda untuk periode yang sama & mengira salah satunya bug. Tab
+  Daftar Transaksi dapat pemilih **Arah** (Semua/Masuk/Keluar) supaya keduanya
+  bisa disandingkan; pemilihnya mati kalau SKPD belum dipilih — se-kabupaten tak
+  punya sudut pandang.
+- ⚠️ **EMPAT beda struktural dari IV.A, jangan disamakan:** (1) **NIBAR kolom
+  (8), di LUAR blok kode & paling kiri** — di IV.A ia kolom (12) di tengah;
+  (2) ada **Akumulasi Penyusutan (17) & Nilai Buku (18)**; (3) lembar rekapnya
+  **6 kolom**, bukan 4; (4) rekapnya **mulai 3 segmen**, bukan 2 — tak ada baris
+  kelompok neraca `1.3 ASET TETAP` di paling atas. Karena itu penyajinya berdiri
+  sendiri; menyatukannya dengan penyaji IV.A akan melahirkan komponen
+  ber-belasan prop boolean (CODING-STANDARD §1.5).
+- ⚠️ **Yang DIPAKAI BERSAMA justru bagian yang berbahaya kalau menyimpang:**
+  mesin subtotal (`susunRinci`/`susunRekap`/`petaNamaTingkat`) di
+  lib/formatPermendagri.ts. Lembar rinci & keempat rekapnya terbit dalam SATU
+  berkas bertanda tangan — dua mesin yang bisa menyimpang berarti satu berkas
+  memuat dua angka berbeda tanpa satu pun yang berteriak. `susunRekap` kini
+  menerima `segMin` sebagai PARAMETER (bawaan 2 = IV.A); `ItemLaporan` &
+  `BarisGrup` membawa `akumulasi`/`nilaiBuku` opsional (0 untuk IV.A, yang tak
+  merendernya sama sekali).
+  ⚠️ **Memakai bawaan `SEG_MIN_REKAP` (2) di lembar IV.B menambahkan baris yang
+  TIDAK ADA di formatnya — dan angkanya tetap menjumlah dengan benar**, jadi tak
+  satu pun uji aritmetika menangkapnya. Dikunci DUA lapis: uji nilai + pemindai
+  sumber yang memastikan penyajinya benar-benar mengoper `SEG_MIN_REKAP_IVB`.
+- **Kolom (17)(18) memakai periode POSISI, bukan periode arus.** Untuk "Akhir
+  Tahun" (`2026`) jawabannya **`2026-S2`**, bukan S1 (`periodePosisi`): daftar
+  barangnya arus sepanjang tahun, saldonya posisi akhir tahun. Aturan "golongan
+  tak disusutkan → akumulasi 0, nilai buku = nilai perolehan" diambil dari
+  `fetchPenyusutanAset` (lib/rekon.ts), BUKAN ditulis ulang — itu aturan yang
+  sama yang dipakai Rekonsiliasi, dan dua salinannya akan menyimpang.
+  ⚠️ Barang yang belum punya baris `penyusutan_semester` dicetak **titik-titik,
+  bukan 0**, dan jumlahnya dilaporkan sbg strip amber di layar & halaman cetak.
+  Nol berarti "memang belum tersusut", tak-ketemu berarti "engine belum
+  dijalankan" — di lembar bertanda tangan keduanya tak boleh terlihat sama.
+- ⚠️ **Kolom (27)(28) "Surat Keputusan Penghapusan" SELALU KOSONG.** Aplikasi ini
+  tak menyimpan SK penghapusan sisi SKPD yang menyerahkan di mana pun; godaannya
+  mengisi dengan `no_sk` kartu pengalihan, yang artinya LAIN. Kolomnya tetap
+  dicetak supaya lembarnya cocok kolom-per-kolom saat diperiksa. Pola & alasan
+  yang sama dengan `dok_nama`/`penyebab` di IV.A. **Kolom (23)(24) "Asal Barang"
+  justru DIISI** kode & nama barang apa adanya — `pengalihan_status` tak
+  mengubah kodefikasi maupun nama, jadi identitas di SKPD yang menyerahkan
+  memang sama persis; itu fakta, bukan salinan asal-asalan.
+- **Baris ber-`payload.reversal` IKUT dihitung** (mekanik "Kembalikan" yang
+  sudah DICABUT 2026-08-12, 2 baris di seluruh ledger). Ledgernya menukar
+  asal↔tujuan, jadi bagi SKPD asal ia benar-benar penerimaan kembali —
+  `ownersAt` memperlakukannya begitu juga. Membuangnya membuat lembar ini tak
+  sepakat dengan siapa pemilik barangnya menurut register. Di tab Daftar
+  Transaksi ia ditandai "(pengembalian)".
+- **TIDAK ADA kelompok se-Kabupaten, dan itu bukan pekerjaan yang tertinggal.**
+  Kelima lembar IV.B.1.2–1.6 memuat "PENGGUNA BARANG ATAU PENGELOLA
+  BARANG………(3)" di kopnya → kelimanya per-SKPD. Bandingkan IV.A.<n>.7–10 yang
+  berkop "PROVINSI, KABUPATEN/KOTA".
+  ⚠️ Kop IV.B punya **7 isian** (IV.A: 8) karena baris SKPD & sebutan pejabat
+  disatukan jadi satu isian — itu sebabnya kolomnya mulai **(8)**, bukan (9).
+  Tetap dicetak DUA baris (sebutan, lalu nama SKPD huruf besar) mengikuti bentuk
+  yang sudah disetujui untuk IV.A; berdempetan dalam satu baris ("PENGGUNA
+  BARANG BADAN KEUANGAN…") terbaca sebagai satu nama jabatan yang tak pernah ada.
+- **Halaman cetaknya TANPA pemilih Definitif/Plt**, sengaja beda dari lembar
+  Perolehan & RKBMD. Kaki lembar ini mencetak PERAN ("Pengguna Barang" / "Kuasa
+  Pengguna Barang", dari level SKPD), bukan jabatan struktural — "Plt. Pengguna
+  Barang" bukan sebutan yang ada, jadi kendalinya tak akan mengubah apa pun di
+  kertas: no-op senyap. Kuncinya `bmd_penggunaan_ttd_skpd_<id>`, SENDIRI bukan
+  menumpang `kunciTtdPerolehan` (muatannya beda).
+- **Halaman ini berhenti memakai `LaporanTransaksi`.** Komponen generik itu tak
+  punya tab & pemilih periodenya daftar mentah periode yang kebetulan berisi;
+  menambahkan tiga tab ke sana akan mengubah enam menu Pengelolaan lain yang
+  belum diminta berubah. Ini kemiripan KEDUA dengan `LaporanPerolehan` →
+  CODING-STANDARD §1.2 "rule of three": **dicatat, belum diekstrak**. Begitu menu
+  Pengelolaan KETIGA butuh susunan tab yang sama, angkat kerangkanya.
+  ⚠️ Bareng itu `lib/sinkronisasiRpc.test.ts` §7 diperbaiki: pemindainya dulu
+  mencocokkan teks `LaporanTransaksi` APA ADANYA, jadi halaman yang PINDAH lalu
+  menjelaskan alasannya di komentar dituduh "memakai LaporanTransaksi tapi
+  jenisList tak terbaca" — merah palsu yang menghukum dokumentasi yang benar.
+  Sekarang yang dicari IMPORT-nya. Ditambah penjaga baru: menu Penggunaan (yang
+  kini di luar pemindai itu) tetap wajib tercakup index parsial
+  `idx_trx_pindah_id` & mengurut by `id`.
+- **`berupaAset()` & `labelPeriodeKop()` diekstrak ke lib/formatPermendagri.ts.**
+  Keduanya sudah disalin di dua berkas IV.A; cabang ini akan menambah dua lagi.
+  Kelas berbahaya: hasilnya DICETAK DI KOP lembar bertanda tangan, jadi dua
+  salinan yang menyimpang membuat dua lembar menyebut cakupan berbeda untuk data
+  yang sama.
+- **Diukur di peramban** (F4 lanskap, lebar tabel 1.157 px): 28 kolom muat tanpa
+  overflow, dan potongan PERTAMA NIBAR (26 digit) memakai 76 px dari jatah 98 px
+  — muat SEBARIS, jadi `pecahNibar()` menghasilkan dua baris seperti yang
+  dimaksud, bukan tiga. ⚠️ Total lebar kolom + blok kode WAJIB tepat 100
+  (`sisaLebar`), dikunci test; itu yang membuat `table-fixed` tak bisa melar.
+- ⚠️ **`esbuild: { jsx: 'automatic' }` ditambahkan ke vitest.config.ts.** Tanpa
+  itu test yang me-RENDER komponen gagal `ReferenceError: React is not defined`
+  — gejalanya menyesatkan (terlihat seperti komponennya yang rusak, padahal cuma
+  cara test mengompilasinya). Test hook yang sudah ada tak pernah kena karena
+  `renderHook` tak memuat JSX sama sekali.
+
 ## Guard pembatalan MENGUNCI SELAMANYA sesudah satu pembatalan (2026-08-31)
 
 User mengerjakan satu rantai lengkap di BKAD: KDP "Rehab Gedung Kantor BKAD"

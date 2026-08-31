@@ -79,8 +79,15 @@ export type KolomKey =
   | 'ba_tanggal' | 'ba_nomor'
   | 'penyebab'
 
-export type Kolom = {
-  key: KolomKey
+/**
+ * Satu kolom lembar. Generik atas kunci kolomnya supaya cabang lain
+ * (IV.B Penggunaan, dst.) bisa memakai bentuk & mesin yang SAMA dengan kunci
+ * mereka sendiri — kalau tidak, tiap cabang menyalin tipe ini berikut aturan
+ * lebar & penomorannya, dan salinan yang menyimpang tak akan bersuara.
+ * Bawaannya `KolomKey` (cabang IV.A), jadi pemakai lama tak berubah.
+ */
+export type Kolom<K extends string = KolomKey> = {
+  key: K
   judul: string
   /** Nomor kolom di lembar aslinya — DITULIS, bukan dihitung (lihat kepala berkas). */
   nomor: number
@@ -237,7 +244,21 @@ export const FORMAT_PEROLEHAN: Record<string, FormatPerolehan> = {
  * perolehan` — dua-duanya pernah kena. Dikunci test.
  */
 export function lebarKodeBlok(f: FormatPerolehan): number {
-  const dipakai = f.kolom.reduce((a, k) => a + k.lebar, 0)
+  return sisaLebar(f.kolom)
+}
+
+/**
+ * Sisa lebar (persen) sesudah seluruh kolom di `kolom` dipakai — yakni jatah
+ * blok "Kode Barang".
+ *
+ * Sengaja bertipe STRUKTURAL (`{ lebar }[]`), bukan `FormatPerolehan`: cabang
+ * IV.B punya susunan kolom sendiri (NIBAR berdiri di luar blok kode) tapi
+ * aturan "total wajib PERSIS 100" identik. Menyalin rumusnya ke sana berarti
+ * dua tempat yang harus dijaga sama, dan yang menyimpang cuma ketahuan sesudah
+ * lembarnya dicetak.
+ */
+export function sisaLebar(kolom: readonly { lebar: number }[]): number {
+  const dipakai = kolom.reduce((a, k) => a + k.lebar, 0)
   return Math.round((100 - dipakai) * 100) / 100
 }
 
@@ -318,6 +339,50 @@ export function cocokKomptabel(k: Komptabel, nilai: string | null | undefined): 
   return k === 'semua' || (nilai ?? 'intra') === k
 }
 
+// ── Isian kop yang dipakai SEMUA cabang ─────────────────────────────────────
+//
+// Keduanya sempat disalin di dua berkas cabang IV.A (tab Pelaporan & halaman
+// cetak). Begitu cabang IV.B menambah dua salinan lagi, jumlahnya empat —
+// CODING-STANDARD §1.2 "rule of three" mewajibkan ekstraksi, dan yang di sini
+// termasuk kelas berbahaya: hasilnya DICETAK DI KOP lembar bertanda tangan,
+// jadi dua salinan yang menyimpang membuat dua lembar menyebut cakupan berbeda
+// untuk data yang sama.
+
+/**
+ * Isian (1) "BERUPA…" — DITURUNKAN dari kelompok neraca yang benar-benar ada
+ * datanya, bukan dipaku. Mengarang salah satunya membuat kop lembar berbohong
+ * tentang isinya sendiri.
+ *
+ * ⚠️ Selalu dinilai pada 2 SEGMEN (kelompok neraca), termasuk untuk cabang yang
+ * lembar rekapnya mulai di 3 — "Aset Tetap vs Aset Lainnya" memang pertanyaan
+ * di tingkat itu, terlepas dari sedalam apa tabelnya merinci.
+ */
+export function berupaAset(kodes: string[]): string {
+  const kel = new Set(kodes.map(k => segmenKode(k).slice(0, 2).join('.')))
+  if (kel.has('1.3') && kel.has('1.5')) return 'ASET TETAP DAN ASET LAINNYA'
+  if (kel.has('1.5')) return 'ASET LAINNYA'
+  if (kel.has('1.3')) return 'ASET TETAP'
+  return '…………………………'
+}
+
+/**
+ * Isian kop periode & tahun. `'2026-S1'` → Semester I; `'2026'` → AKHIR TAHUN.
+ *
+ * ⚠️ Periode KOSONG sengaja tak punya jawaban di sini — kop lembar wajib
+ * menyebut SATU tahun, dan "seluruh periode" akan membuatnya berbohong tentang
+ * isinya. Pemanggil yang menolak periode kosong lebih dulu (lihat halaman
+ * cetak); yang lolos ke sini jatuh ke tahun berjalan supaya tak pernah
+ * mencetak "TAHUN " kosong.
+ */
+export function labelPeriodeKop(periode: string): { judul: string; tahun: string } {
+  if (/^\d{4}$/.test(periode)) return { judul: 'AKHIR TAHUN', tahun: periode }
+  const [th, smt] = periode.split('-')
+  return {
+    judul: smt === 'S2' ? 'SEMESTER II' : 'SEMESTER I',
+    tahun: th || String(new Date().getFullYear()),
+  }
+}
+
 // ── Kodefikasi ──────────────────────────────────────────────────────────────
 
 /** `'1.3.2.05.02.06.121'` → `['1','3','2','05','02','06','121']`. */
@@ -333,16 +398,36 @@ export function prefixSeg(kode: string, n: number): string {
 
 // ── Mesin subtotal ──────────────────────────────────────────────────────────
 
-/** Satu barang, seperlunya saja — sisanya dibawa `data` untuk dirender. */
-export type ItemLaporan<T> = { kode: string; jumlah: number; nilai: number; data: T }
+/**
+ * Satu barang, seperlunya saja — sisanya dibawa `data` untuk dirender.
+ *
+ * ⚠️ `akumulasi` & `nilaiBuku` OPSIONAL, dan itu disengaja: lembar cabang IV.A
+ * (Perolehan) tak punya kolomnya sama sekali, sedangkan cabang IV.B
+ * (Penggunaan) menjumlahkan keduanya di tiap baris subtotal. Yang tak mengisi
+ * dapat 0 — dan karena lembarnya juga tak merendernya, nol itu tak pernah
+ * terbaca siapa pun. Menambahnya di sini, bukan membuat mesin subtotal kedua,
+ * karena "berapa jumlah kelompok ini" adalah SATU aturan: dua mesin yang bisa
+ * menyimpang berarti lembar rinci & rekapnya dalam satu berkas bertanda tangan
+ * tak lagi cocok, tanpa satu pun yang berteriak.
+ */
+export type ItemLaporan<T> = {
+  kode: string; jumlah: number; nilai: number; data: T
+  akumulasi?: number
+  nilaiBuku?: number
+}
 
 /**
- * Kedalaman TERDANGKAL di lembar REKAP: 2 segmen = kelompok neraca
- * (`1.3` Aset Tetap, `1.5` Aset Lainnya).
+ * Kedalaman TERDANGKAL di lembar REKAP **cabang IV.A**: 2 segmen = kelompok
+ * neraca (`1.3` Aset Tetap, `1.5` Aset Lainnya).
  *
  * ⚠️ Lembar rinci mulai dari 3 segmen, rekap dari 2 — bukan kelalaian, memang
- * begitu lembar aslinya: keempat lembar rekap menampilkan baris `x. x.` di
- * paling atas, sedangkan lembar rinci mulai di `x x x`.
+ * begitu lembar aslinya: keempat lembar rekap IV.A menampilkan baris `x. x.`
+ * di paling atas, sedangkan lembar rinci mulai di `x x x`.
+ *
+ * ⚠️ **BUKAN nilai bersama seluruh Permendagri.** Lembar rekap cabang IV.B
+ * (Penggunaan) mulai di **3 segmen** — baris teratasnya `x x x`, tak ada baris
+ * kelompok neraca sama sekali. Karena itu `susunRekap` menerimanya sebagai
+ * parameter; jangan dipaku lagi di dalam mesinnya.
  */
 export const SEG_MIN_REKAP = 2
 
@@ -353,21 +438,31 @@ export type BarisGrup = {
   kode: string
   jumlah: number
   nilai: number
+  /** Σ akumulasi penyusutan kelompok ini. 0 untuk lembar yang tak punya kolomnya. */
+  akumulasi: number
+  /** Σ nilai buku kelompok ini. 0 untuk lembar yang tak punya kolomnya. */
+  nilaiBuku: number
   /** Penanda subtotal di lembar asli (mis. 25) — hanya di lembar RINCI. */
   penanda?: number
 }
 export type BarisItem<T> = { tipe: 'item'; kode: string; data: T; jumlah: number; nilai: number }
 export type BarisRinci<T> = BarisGrup | BarisItem<T>
 
+type Ukuran = { jumlah: number; nilai: number; akumulasi: number; nilaiBuku: number }
+const nolUkuran = (): Ukuran => ({ jumlah: 0, nilai: 0, akumulasi: 0, nilaiBuku: 0 })
+
 /** Total per (kedalaman, awalan). Satu sapuan, dipakai rinci MAUPUN rekap. */
-function petaTotal<T>(items: ItemLaporan<T>[], segs: number[]): Map<string, { jumlah: number; nilai: number }> {
-  const m = new Map<string, { jumlah: number; nilai: number }>()
+function petaTotal<T>(items: ItemLaporan<T>[], segs: number[]): Map<string, Ukuran> {
+  const m = new Map<string, Ukuran>()
   for (const it of items) {
     for (const seg of segs) {
       if (segmenKode(it.kode).length < seg) continue
       const k = `${seg}|${prefixSeg(it.kode, seg)}`
-      const t = m.get(k) || { jumlah: 0, nilai: 0 }
-      t.jumlah += it.jumlah; t.nilai += it.nilai
+      const t = m.get(k) || nolUkuran()
+      t.jumlah += it.jumlah
+      t.nilai += it.nilai
+      t.akumulasi += it.akumulasi ?? 0
+      t.nilaiBuku += it.nilaiBuku ?? 0
       m.set(k, t)
     }
   }
@@ -408,8 +503,8 @@ function jalanKelompok<T>(
       // Kelompok yang LEBIH DALAM wajib ikut terbuka lagi; kalau tidak,
       // kelompok bernama sama di cabang lain dikira sudah tercetak.
       for (const d of segs) if (d > seg) terakhir.delete(d)
-      const t = total.get(`${seg}|${pre}`) || { jumlah: 0, nilai: 0 }
-      emitGrup({ tipe: 'grup', seg, kode: pre, jumlah: t.jumlah, nilai: t.nilai })
+      const t = total.get(`${seg}|${pre}`) || nolUkuran()
+      emitGrup({ tipe: 'grup', seg, kode: pre, ...t })
     }
     emitItem?.(it)
   }
@@ -446,9 +541,11 @@ export function susunRinci<T>(
  * laporan akan berteriak — lembar rinci & rekapnya dalam SATU berkas yang
  * ditandatangani cuma tak lagi cocok. Dikunci test.
  */
-export function susunRekap<T>(items: ItemLaporan<T>[], segMax: number): BarisGrup[] {
+export function susunRekap<T>(
+  items: ItemLaporan<T>[], segMax: number, segMin: number = SEG_MIN_REKAP,
+): BarisGrup[] {
   const out: BarisGrup[] = []
-  jalanKelompok(items, SEG_MIN_REKAP, segMax, g => out.push(g))
+  jalanKelompok(items, segMin, segMax, g => out.push(g))
   return out
 }
 

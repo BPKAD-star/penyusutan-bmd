@@ -340,7 +340,13 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
       const f = path.join(DIR_HAL, d.name, 'page.tsx')
       if (!fs.existsSync(f)) continue
       const isi = fs.readFileSync(f, 'utf8')
-      if (!isi.includes('LaporanTransaksi')) continue
+      // ⚠️ Yang dicari IMPORT-nya, bukan sekadar penyebutan namanya. Halaman
+      // yang PINDAH dari komponen ini biasanya menjelaskan kenapa di komentar,
+      // dan pemindai yang mencocokkan teks apa adanya lalu menuduhnya "memakai
+      // LaporanTransaksi tapi jenisList tak terbaca" — merah palsu yang
+      // menghukum justru dokumentasi yang benar (kejadian 2026-08-31 waktu
+      // menu Penggunaan dipindah ke komponennya sendiri).
+      if (!isi.includes("from '@/components/LaporanTransaksi'")) continue
       const m = isi.match(/jenisList=\{\[([^\]]*)\]\}/)
       expect(m, `halaman ${d.name} memakai LaporanTransaksi tapi prop jenisList tak terbaca`).toBeTruthy()
       out.push({ halaman: d.name, jenis: kutipan(m![1]) })
@@ -376,6 +382,35 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
         `akan timeout begitu dibuka tanpa filter SKPD/periode (pola persis §6, kembar dgn insiden 2026-08-26)`,
       ).toBeGreaterThan(0)
     }
+  })
+
+  // ⚠️ Menu Pelaporan yang TIDAK memakai `LaporanTransaksi` tetap butuh penjaga
+  // yang sama — dan justru merekalah yang gampang lolos, karena pemindai di
+  // atas tak melihatnya sama sekali. Penggunaan (2026-08-31) yang pertama:
+  // komponennya sendiri, tapi bentuk query-nya sama persis
+  // (`.eq('jenis', …).order('id')`), jadi ia menanggung risiko timeout yang
+  // sama kalau jenisnya tak tercakup index parsial.
+  it('menu Penggunaan (komponen sendiri) tercakup index (id) WHERE jenis IN (…)', () => {
+    const berkas = [
+      'components/pelaporan/LaporanPenggunaan.tsx',
+      'lib/laporanPenggunaan.ts',
+    ]
+    for (const b of berkas) {
+      const f = path.join(AKAR, b)
+      expect(fs.existsSync(f), `berkas ${b} tak ditemukan — pemindaian rusak`).toBe(true)
+      const isi = fs.readFileSync(f, 'utf8')
+      expect(isi, `${b} tak menyaring jenis pengalihan_status`)
+        .toContain("eq('jenis', 'pengalihan_status')")
+      // Urutan menentukan index mana yang sanggup melayani: `jenis` bertipe
+      // ENUM tak bisa jadi index-cond di bawah RLS, jadi `order('periode')`
+      // atau `('tanggal')` menyusuri index lain sambil membuang ratusan ribu
+      // baris → timeout (CLAUDE.md "ronde 3").
+      expect(isi, `${b} tak mengurutkan by id`).toContain("order('id'")
+    }
+    const peta = predikatIndexId()
+    const cocok = [...peta.entries()].filter(([, predikat]) => predikat.includes('pengalihan_status'))
+    expect(cocok.length,
+      'pengalihan_status tak tercakup index (id) WHERE jenis IN (…) manapun').toBeGreaterThan(0)
   })
 
   it('idx_trx_kapitalisasi_id & idx_trx_koreksi_id dibuat PLAIN, bukan CONCURRENTLY', () => {

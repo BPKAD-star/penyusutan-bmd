@@ -33,8 +33,8 @@ import {
   type CalonTtd, type SkpdNode,
 } from '@/lib/penandaTangan'
 import {
-  FORMAT_PEROLEHAN, SEG_MIN_REKAP, segmenKode, labelKomptabel, cocokKomptabel,
-  bolehLembarKabupaten,
+  FORMAT_PEROLEHAN, labelKomptabel, cocokKomptabel, bolehLembarKabupaten,
+  berupaAset, labelPeriodeKop,
   type FormatPerolehan, type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
 import {
@@ -66,31 +66,6 @@ type TtdTersimpan = { id?: string; plt?: boolean; tgl?: string }
  *  tangan per SKPD memang milik operatornya, bukan milik salah satu lembar. */
 const ingatan = (skpdId: number) => ingatanCetak<TtdTersimpan>(kunciTtdPerolehan(skpdId))
 const ingatanKab = ingatanTeksCetak(KUNCI_TTD_PEROLEHAN_SEKAB)
-
-/**
- * Isian kop (5) & (6). `'2026-S1'` → Semester I; `'2026'` → AKHIR TAHUN.
- *
- * ⚠️ Periode kosong sengaja tak dilayani halaman ini — kop-nya wajib menyebut
- * SATU tahun, dan "seluruh periode" akan membuatnya berbohong tentang isinya.
- */
-function labelPeriode(periode: string): { judul: string; tahun: string } {
-  if (/^\d{4}$/.test(periode)) return { judul: 'AKHIR TAHUN', tahun: periode }
-  const [th, smt] = periode.split('-')
-  return { judul: smt === 'S2' ? 'SEMESTER II' : 'SEMESTER I', tahun: th || String(new Date().getFullYear()) }
-}
-
-/**
- * Isian (1) "BERUPA…" — DITURUNKAN dari kelompok neraca yang benar-benar ada
- * datanya, bukan dipaku. Mengarang salah satunya membuat kop lembar berbohong
- * tentang isinya sendiri.
- */
-function berupaDari(kodes: string[]): string {
-  const kel = new Set(kodes.map(k => segmenKode(k).slice(0, SEG_MIN_REKAP).join('.')))
-  if (kel.has('1.3') && kel.has('1.5')) return 'ASET TETAP DAN ASET LAINNYA'
-  if (kel.has('1.5')) return 'ASET LAINNYA'
-  if (kel.has('1.3')) return 'ASET TETAP'
-  return '…………………………'
-}
 
 export default function CetakPerolehanPermendagriPage() {
   const supabase = createClient()
@@ -203,7 +178,7 @@ export default function CetakPerolehanPermendagriPage() {
 
   const f: FormatPerolehan = FORMAT_PEROLEHAN[jenis] || FORMAT_PEROLEHAN.hibah_masuk
   const ttd = calon.find(c => c.id === ttdId) || null
-  const { judul: judulPeriode, tahun } = labelPeriode(periode)
+  const { judul: judulPeriode, tahun } = labelPeriodeKop(periode)
   // Lembar rinci ikut? (tak ada `lembar` = 2–6, jadi ikut.)
   const adaRinci = !lembar || lembar.includes(2)
   const adaPerSkpd = (!lembar || lembar.some(n => n >= 2 && n <= 6)) && skpdId != null
@@ -336,7 +311,7 @@ export default function CetakPerolehanPermendagriPage() {
             {adaPerSkpd && (
               <LembarPerolehanPermendagri
                 f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
-                berupa={berupaDari(items.map(i => i.kode))}
+                berupa={berupaAset(items.map(i => i.kode))}
                 labelKomptabel={labelKomptabel(komptabel)}
                 judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
                 ttd={ttd ? { nama: ttd.nama, nip: ttd.nip } : null}
@@ -347,7 +322,7 @@ export default function CetakPerolehanPermendagriPage() {
                 <LembarRekapKabupaten
                   judulDasar={f.judul.replace(/^LAPORAN /, '')} awalan={f.awalan}
                   items={itemsKab} namaTingkat={namaKab}
-                  berupa={berupaDari(itemsKab.map(i => i.kode))}
+                  berupa={berupaAset(itemsKab.map(i => i.kode))}
                   labelKomptabel={labelKomptabel(komptabel)}
                   judulPeriode={judulPeriode} tahun={tahun}
                   ttd={ttdKab ? { nama: ttdKab.nama, nip: ttdKab.nip } : null}

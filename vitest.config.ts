@@ -11,6 +11,14 @@ export default defineConfig({
     // Samakan dengan `paths` di tsconfig.json — engine meng-import '@/lib/bmd'.
     alias: { '@': path.resolve(__dirname, '.') },
   },
+  // ⚠️ JSX runtime OTOMATIS. Bawaan esbuild `jsx: 'transform'` (klasik)
+  // mensyaratkan `React` ada di lingkup berkas, sedangkan seluruh komponen di
+  // repo ini ditulis tanpa `import React` — Next.js memakai runtime otomatis.
+  // Tanpa setelan ini, test yang me-RENDER komponen gagal `ReferenceError:
+  // React is not defined`, dan gejalanya menyesatkan: terlihat seperti
+  // komponennya yang rusak, padahal cuma cara test mengompilasinya.
+  // (Test hook pertama tak kena karena `renderHook` tak memuat JSX sama sekali.)
+  esbuild: { jsx: 'automatic' },
   test: {
     environment: 'node',
     // ⚠️ `.test.tsx` WAJIB ikut. Sebelum Fase 1 pola-nya cuma `*.test.ts`, jadi

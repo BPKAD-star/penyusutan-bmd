@@ -199,14 +199,24 @@ Diisi bertahap. `?` = kodenya belum dibaca dari mindmap/berkas aslinya.
 | Perolehan Lainnya | IV.A.10.1 | IV.A.10.2–6 | IV.A.10.7–10 | lembar SIAP; kurang field header (§10) |
 | Rekapitulasi gabungan perolehan/penerimaan | — | IV.A.11.1–4 | IV.A.11.5–8 | belum |
 
+### IV.B — Penggunaan
+
+| Cabang | Lembar | Status |
+|---|---|---|
+| Penerimaan penggunaan dalam bentuk pengalihan / penyerahan status | **IV.B.1.2 rinci · 1.3–1.6 rekap ✅** | **SELESAI 2026-08-31** |
+
+Sumbernya jenis ledger `pengalihan_status`. Kelima lembarnya **per-SKPD** —
+kop-nya memuat "PENGGUNA BARANG ATAU PENGELOLA BARANG………(3)", jadi tak ada
+kelompok se-Kabupaten seperti IV.A.<n>.7–10. Rinciannya di CLAUDE.md.
+
 ### Kategori lain
 
 Kodenya belum dibaca; diisi saat user menyerahkan formatnya.
 
-Penggunaan · Penerimaan Internal · Pengeluaran Internal · Pemanfaatan (IV.E,
-a.l. IV.E.5) · Reklasifikasi · Koreksi · Penyusutan · Pengamanan (BMD PM & BMD
-GB) · Penghapusan (IV.K, rekap gabungan IV.K.7) · Rekapitulasi (Aset Lancar,
-Aset Tetap, Aset Lainnya, Lap BMD).
+Penerimaan Internal · Pengeluaran Internal · Pemanfaatan (IV.E, a.l. IV.E.5) ·
+Reklasifikasi · Koreksi · Penyusutan · Pengamanan (BMD PM & BMD GB) ·
+Penghapusan (IV.K, rekap gabungan IV.K.7) · Rekapitulasi (Aset Lancar, Aset
+Tetap, Aset Lainnya, Lap BMD).
 
 ### V — Rekonsiliasi
 
@@ -531,3 +541,59 @@ KOSONG sampai form headernya menyediakan isian — bukan diisi tebakan:
 ⚠️ Untuk IV.A.10.2 tak ada kolom BAST sama sekali — dokumen satu-satunya adalah
 "Dokumen Sumber Perolehan", jadi Nomor & Tanggal-nya dilayani `no_sk`/`tanggal`
 header yang sudah ada.
+
+---
+
+## 11. Yang dipelajari saat membangun IV.B.1.x (2026-08-31)
+
+**(a) "Satu cabang = satu bentuk tabel" TIDAK berlaku.** Dugaan dari IV.A —
+lembar rinci + empat rekap 4-kolom di empat kedalaman — patah di cabang
+pertama berikutnya. IV.B.1.x berbeda di EMPAT hal sekaligus: NIBAR berdiri di
+luar blok kode & jadi kolom paling kiri, ada kolom Akumulasi Penyusutan & Nilai
+Buku, rekapnya 6 kolom, dan **rekapnya mulai di 3 segmen, bukan 2** (tak ada
+baris kelompok neraca `1.3 ASET TETAP`).
+
+Konsekuensi kerja untuk cabang berikutnya: **jangan berasumsi lembar rekapnya
+sama**. Yang benar-benar bisa dipakai ulang cuma MESIN-nya (`susunRinci`,
+`susunRekap`, `petaNamaTingkat`, `sisaLebar`); susunan kolom & kedalamannya
+wajib dibaca ulang dari gambar formatnya.
+
+**(b) Kedalaman rekap sekarang PARAMETER, bukan konstanta.**
+`susunRekap(items, segMax, segMin)` — `SEG_MIN_REKAP` (2) tetap jadi bawaan
+cabang IV.A. ⚠️ Memakai bawaan di cabang yang mestinya 3 menambahkan baris yang
+TIDAK ADA di format aslinya, dan **angkanya tetap menjumlah dengan benar**, jadi
+tak satu pun uji aritmetika akan menangkapnya. Dikunci dua lapis: uji nilai di
+lib/formatPenggunaan.test.ts + pemindai sumber yang memastikan penyajinya
+benar-benar mengoper konstanta itu.
+
+**(c) `ItemLaporan` membawa `akumulasi`/`nilaiBuku` OPSIONAL.** Alternatifnya
+mesin subtotal kedua khusus cabang ber-kolom penyusutan — dan dua mesin yang
+bisa menyimpang berarti lembar rinci & rekapnya, yang terbit dalam SATU berkas
+bertanda tangan, bisa menjumlah ke angka berbeda tanpa satu pun yang berteriak.
+
+**(d) Kolom yang datanya TIDAK ADA dibiarkan KOSONG, bukan diisi yang mirip.**
+"Surat Keputusan Penghapusan" (27)(28) di IV.B.1.2 tak punya padanan di aplikasi
+ini. Godaannya mengisi dengan `no_sk` kartu pengalihan — dokumen yang artinya
+LAIN. Aturan yang sama sudah dipakai `dok_nama`/`penyebab` di IV.A.
+
+**(e) Kolom POSISI di lembar ARUS butuh periodenya sendiri.** Akumulasi & Nilai
+Buku itu saldo AKHIR periode, sedangkan daftar barangnya peristiwa sepanjang
+periode. Untuk "Akhir Tahun" jawabannya `<tahun>-S2`, bukan S1 (`periodePosisi`).
+Barang yang belum punya baris `penyusutan_semester` dicetak **titik-titik, bukan
+0** — nol berarti "memang belum tersusut", tak-ketemu berarti "engine belum
+dijalankan", dan di lembar bertanda tangan keduanya tak boleh terlihat sama.
+
+**(f) Uji STRUKTUR tabel terbukti berguna & bukan snapshot JSX.**
+tests/lembarPenggunaan.test.tsx merender lembarnya di jsdom lalu mengunci
+"jumlah sel tiap baris = jumlah kolom kepala = jumlah `<col>`". Di lembar
+28 kolom ber-`table-fixed`, satu sel yang bergeser TIDAK terlihat di layar —
+tabelnya tetap rapi, cuma angkanya jatuh di kolom yang salah. Ia menangkap
+kesalahan hitung kolom saat ditulis (dikira 29, ternyata 28).
+⚠️ Butuh `esbuild: { jsx: 'automatic' }` di vitest.config.ts — tanpa itu test
+yang me-RENDER komponen gagal `ReferenceError: React is not defined`, dan
+gejalanya menyesatkan (terlihat seperti komponennya yang rusak).
+
+**(g) Diukur di peramban, bukan diperkirakan** (F4 lanskap, lebar tabel
+1.157 px): 28 kolom muat tanpa overflow horizontal, dan potongan PERTAMA NIBAR
+(26 digit) memakai 76 px dari jatah 98 px — muat SEBARIS, jadi `pecahNibar()`
+menghasilkan dua baris seperti yang dimaksud, bukan tiga.

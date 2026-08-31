@@ -15,8 +15,9 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  FORMAT_PEROLEHAN, TANGGA_REKAP, SEG_MIN_REKAP, segmenKode,
+  FORMAT_PEROLEHAN, TANGGA_REKAP,
   labelKomptabel, cocokKomptabel, REKAP_KABUPATEN, bolehLembarKabupaten,
+  berupaAset, labelPeriodeKop,
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
 import { fetchApprovalScope } from '@/lib/roles'
@@ -31,20 +32,6 @@ const PILIHAN = [
   { akhiran: 2, label: 'Rinci (per barang)' },
   ...TANGGA_REKAP.map(t => ({ akhiran: t.akhiran, label: `Rekap menurut ${t.menurut.toLowerCase()}` })),
 ]
-
-function berupaDari(kodes: string[]): string {
-  const kel = new Set(kodes.map(k => segmenKode(k).slice(0, SEG_MIN_REKAP).join('.')))
-  if (kel.has('1.3') && kel.has('1.5')) return 'ASET TETAP DAN ASET LAINNYA'
-  if (kel.has('1.5')) return 'ASET LAINNYA'
-  if (kel.has('1.3')) return 'ASET TETAP'
-  return '…………………………'
-}
-
-function labelPeriode(periode: string): { judul: string; tahun: string } {
-  if (/^\d{4}$/.test(periode)) return { judul: 'AKHIR TAHUN', tahun: periode }
-  const [th, smt] = periode.split('-')
-  return { judul: smt === 'S2' ? 'SEMESTER II' : 'SEMESTER I', tahun: th || '' }
-}
 
 export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
   jenis: string
@@ -129,7 +116,7 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
     .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({ kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r }))
 
-  const { judul: judulPeriode, tahun } = labelPeriode(periode)
+  const { judul: judulPeriode, tahun } = labelPeriodeKop(periode)
   const itemsKab: ItemKab<BarisPerolehan>[] = rowsKab
     .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({
@@ -286,7 +273,7 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
               {pilihAktif.length > 0 && (
                 <LembarPerolehanPermendagri
                   f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
-                  berupa={berupaDari(items.map(i => i.kode))}
+                  berupa={berupaAset(items.map(i => i.kode))}
                   labelKomptabel={labelKomptabel(komptabel)}
                   judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
                   ttd={null} tglTtd="" lembar={pilihAktif} />
@@ -295,7 +282,7 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
                 <LembarRekapKabupaten
                   judulDasar={f.judul.replace(/^LAPORAN /, '')} awalan={f.awalan}
                   items={itemsKab} namaTingkat={namaKab}
-                  berupa={berupaDari(itemsKab.map(i => i.kode))}
+                  berupa={berupaAset(itemsKab.map(i => i.kode))}
                   labelKomptabel={labelKomptabel(komptabel)}
                   judulPeriode={judulPeriode} tahun={tahun}
                   ttd={null} tglTtd="" lembar={kabAktif} />

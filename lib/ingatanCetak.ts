@@ -131,6 +131,12 @@ export const kunciTtdMutasiBmd = (skpdId: number | null) =>
   skpdId == null ? 'bmd_mutasi_ttd_pemda' : `bmd_mutasi_ttd_skpd_${skpdId}`
 /** Laporan Penerimaan BMD (menu Laporan Perolehan). */
 export const kunciTtdPerolehan = (skpdId: number) => `bmd_perolehan_ttd_skpd_${skpdId}`
+/** IV.B.1.2–1.6 — Laporan Penerimaan Penggunaan (menu Laporan Penggunaan).
+ *  ⚠️ Kunci SENDIRI, bukan menumpang `kunciTtdPerolehan`: muatannya beda
+ *  (tanpa `plt`, lihat halaman cetaknya) dan lembarnya beda pula, jadi berbagi
+ *  kunci membuat pilihan di satu lembar diam-diam menggeser lembar yang lain. */
+export const kunciTtdPenggunaan = (skpdId: number) => `bmd_penggunaan_ttd_skpd_${skpdId}`
+
 /** RKBMD — lembar per-SKPD & lembar se-Kabupaten (yang se-kab bermuatan TEKS). */
 /** Lembar se-Kabupaten Perolehan (IV.A.<n>.7–10) — penanda tangannya "Pejabat
  *  Penatausahaan Barang", dipilih bebas & TIDAK terikat SKPD mana pun. */
