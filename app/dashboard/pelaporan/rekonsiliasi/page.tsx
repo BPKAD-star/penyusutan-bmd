@@ -567,18 +567,18 @@ export default function RekonsiliasiPage() {
                     sehingga blok Penambahan & Pengurangan terlihat bersamaan
                     (permintaan user 2026-08-27). */}
                 <table className="w-full text-[11px] [&_.table-td]:px-2 [&_.table-td]:py-0.5 [&_.table-th]:px-2 [&_.table-th]:py-1 [&_.table-th]:normal-case [&_.table-th]:tracking-normal">
-                  <thead className="bg-gray-50 border-b border-gray-100">
+                  <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="table-th text-left" rowSpan={2}>Uraian</th>
-                      {KOMPS.map(k => <th key={k} className="table-th text-center border-l border-gray-100" colSpan={4}>{k === 'intra' ? 'Intrakomptabel' : 'Ekstrakomptabel'}</th>)}
+                      {KOMPS.map(k => <th key={k} className="table-th text-center border-l border-gray-200" colSpan={4}>{k === 'intra' ? 'Intrakomptabel' : 'Ekstrakomptabel'}</th>)}
                     </tr>
                     <tr>
                       {KOMPS.map(k => ['Nilai Perolehan', 'Beban', 'Akumulasi', 'Nilai Buku'].map((lbl, i) => (
-                        <th key={`${k}-${lbl}`} className={`table-th text-right ${i === 0 ? 'border-l border-gray-100' : ''}`}>{lbl}</th>
+                        <th key={`${k}-${lbl}`} className={`table-th text-right ${i === 0 ? 'border-l border-gray-200' : ''}`}>{lbl}</th>
                       )))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody className="divide-y divide-gray-200">
                     {ROWS.map((row, ri) => {
                       const isSaldo = row.kind === 'saldo-awal' || row.kind === 'saldo-akhir'
                       const isJumlah = row.kind === 'jumlah-t' || row.kind === 'jumlah-k'
@@ -622,7 +622,7 @@ export default function RekonsiliasiPage() {
                             const warna = row.grup === 'tambah' ? 'text-emerald-700'
                               : row.grup === 'kurang' ? 'text-red-600' : ''
                             const td = (id: string, v: number | null, border = false, onClick?: () => void) => (
-                              <td key={id} className={`table-td text-right tabular-nums whitespace-nowrap ${border ? 'border-l border-gray-100' : ''}`}>
+                              <td key={id} className={`table-td text-right tabular-nums whitespace-nowrap ${border ? 'border-l border-gray-200' : ''}`}>
                                 {v == null ? <span className="text-gray-300">{isHead || row.kind === 'sub' ? '' : '–'}</span>
                                   : v === 0 ? <span className="text-gray-300">–</span>
                                   : onClick ? (
