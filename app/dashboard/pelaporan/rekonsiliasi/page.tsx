@@ -43,7 +43,19 @@ import {
   type PenyusutanAset, type UkuranMutasi, type Measures,
 } from '@/lib/rekon'
 
-const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
+// ⚠️ DUA DESIMAL TETAP (permintaan user 2026-09-01) — `minimumFractionDigits`
+// SENGAJA dipasang, kebalikan dari menu Penyusutan yang sengaja tak memasangnya
+// supaya angka bulat tak berekor ",00". Di sini alasannya berbalik: kolomnya
+// rata kanan & `tabular-nums`, jadi desimal yang muncul-hilang membuat digit
+// antar baris tak lagi sejajar — persis yang dipakai mata untuk membandingkan
+// Saldo Awal vs Saldo Akhir. Dan yang dicari di lembar ini justru selisih
+// receh: angka di `penyusutan_semester` memang berdesimal (engine cuma
+// membulatkan BEBAN, tidak akumulasi/nilai buku), jadi baris Selisih yang
+// tampil "0" karena dipotong tampilan akan terbaca sebagai rantai yang sudah
+// cocok padahal belum. Murni tampilan — yang dijumlah & yang diekspor ke Excel
+// selalu nilai penuhnya.
+const angka = (v: number) =>
+  new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0)
 const KOMPS: Komptabel[] = ['intra', 'ekstra']
 
 // ── Struktur baris laporan (image BA rekonsiliasi) ──────────────────────────
@@ -570,11 +582,17 @@ export default function RekonsiliasiPage() {
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="table-th text-left" rowSpan={2}>Uraian</th>
-                      {KOMPS.map(k => <th key={k} className="table-th text-center border-l border-gray-200" colSpan={4}>{k === 'intra' ? 'Intrakomptabel' : 'Ekstrakomptabel'}</th>)}
+                      {KOMPS.map(k => <th key={k} className="table-th text-center border-l border-gray-300" colSpan={4}>{k === 'intra' ? 'Intrakomptabel' : 'Ekstrakomptabel'}</th>)}
                     </tr>
                     <tr>
+                      {/* Setiap kolom angka bergaris (permintaan user
+                          2026-09-01) — delapan kolom rata kanan tanpa pemisah
+                          bikin mata gampang meleset satu kolom. Batas
+                          Intra↔Ekstra sengaja SETINGKAT LEBIH TEGAS
+                          (gray-300 vs gray-200) supaya pengelompokannya tetap
+                          terbaca sesudah garis dalamnya ikut ada. */}
                       {KOMPS.map(k => ['Nilai Perolehan', 'Beban', 'Akumulasi', 'Nilai Buku'].map((lbl, i) => (
-                        <th key={`${k}-${lbl}`} className={`table-th text-right ${i === 0 ? 'border-l border-gray-200' : ''}`}>{lbl}</th>
+                        <th key={`${k}-${lbl}`} className={`table-th text-right border-l ${i === 0 ? 'border-gray-300' : 'border-gray-200'}`}>{lbl}</th>
                       )))}
                     </tr>
                   </thead>
@@ -621,8 +639,11 @@ export default function RekonsiliasiPage() {
                             // cuma menambah bising, dan nol bukan mutasi.
                             const warna = row.grup === 'tambah' ? 'text-emerald-700'
                               : row.grup === 'kurang' ? 'text-red-600' : ''
-                            const td = (id: string, v: number | null, border = false, onClick?: () => void) => (
-                              <td key={id} className={`table-td text-right tabular-nums whitespace-nowrap ${border ? 'border-l border-gray-200' : ''}`}>
+                            // `batasKomp` = kolom pertama tiap blok komptabel;
+                            // garisnya lebih tegas dari garis antar-kolom biasa
+                            // (lihat komentar di kepala tabel).
+                            const td = (id: string, v: number | null, batasKomp = false, onClick?: () => void) => (
+                              <td key={id} className={`table-td text-right tabular-nums whitespace-nowrap border-l ${batasKomp ? 'border-gray-300' : 'border-gray-200'}`}>
                                 {v == null ? <span className="text-gray-300">{isHead || row.kind === 'sub' ? '' : '–'}</span>
                                   : v === 0 ? <span className="text-gray-300">–</span>
                                   : onClick ? (
