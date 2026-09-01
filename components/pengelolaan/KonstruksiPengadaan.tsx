@@ -509,7 +509,9 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
           <div className="p-4 border-t border-gray-100 bg-gray-50/40">
             {showAddBarang
               ? <TambahBarangPanel skpdId={kontrak.skpd_id} onTambah={tambahBarang} onCancel={() => setShowAddBarang(false)} onErr={onMsg} />
-              : <button className="btn-secondary text-sm" onClick={() => setShowAddBarang(true)}>+ Tambah Barang KDP</button>}
+              // Teal = aksi utama, seragam dgn "+ Tambah Barang" di kartu draft
+              // Pengadaan & PerolehanManual (user 2026-09-01).
+              : <button className="btn-primary text-sm" onClick={() => setShowAddBarang(true)}>+ Tambah Barang KDP</button>}
           </div>
         )}
 

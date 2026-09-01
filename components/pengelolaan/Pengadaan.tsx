@@ -483,32 +483,29 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     const items = [...(j.payload.draft_items || []), ...newItems]
     if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
   }
-  async function hapusDraftItem(key: string) {
-    const it = (j.payload.draft_items || []).find(i => i.key === key)
-    if (!(await konfirmasi({
-      nada: 'merah', ikon: '🗑', judul: 'Hapus barang ini dari draft?',
-      subjudul: it?.fields?.nama_barang || it?.kode || undefined,
-      // Draft belum menyentuh ledger sama sekali, jadi ini benar-benar cuma
-      // membuang baris dari payload — itu yang perlu ditenangkan ke operator.
-      isi: <>Barangnya belum pernah tercatat di Daftar Barang, jadi tak ada jejak yang ikut terhapus.</>,
-      labelYa: 'Hapus',
-    })).ya) return
-    const items = (j.payload.draft_items || []).filter(i => i.key !== key)
-    if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
-  }
-  // Hapus massal (barang yang dicentang). Draft belum menyentuh ledger sama
-  // sekali — ini cuma UPDATE payload jurnal_header, jadi tak melanggar
-  // append-only. Aset yang SUDAH disetujui tak lewat sini (kartunya read-only).
+  // Hapus massal (barang yang dicentang) — SATU-SATUNYA pintu hapus barang
+  // draft sejak ikon 🗑 per baris dicabut (user 2026-09-01). Draft belum
+  // menyentuh ledger sama sekali: ini cuma UPDATE payload jurnal_header, jadi
+  // tak melanggar append-only. Aset yang SUDAH disetujui tak lewat sini
+  // (kartunya read-only).
   async function hapusDraftItems(keys: string[]) {
     if (keys.length === 0) return
+    // ⚠️ Kalau cuma SATU barang, dialognya menyebut NAMANYA — itu yang dulu
+    // diberikan dialog per-baris, dan hilang begitu saja kalau di sini cuma
+    // ditulis "1 barang". Peringatan "centang bertahan lintas pencarian" justru
+    // tak berlaku untuk satu barang, jadi kalimatnya ikut menyesuaikan.
+    const it = keys.length === 1 ? (j.payload.draft_items || []).find(i => i.key === keys[0]) : undefined
     if (!(await konfirmasi({
-      nada: 'merah', ikon: '🗑', judul: 'Hapus barang yang dicentang?',
-      subjudul: `Kontrak ${j.no_sk}`,
-      rincian: [{ label: 'Barang dicentang', nilai: `${keys.length} barang` }],
-      isi: <>Centangnya bertahan lintas pencarian, jadi bisa ada barang terpilih yang sedang tidak
-        kelihatan di layar. Angka di atas itu yang akan dibuang.</>,
+      nada: 'merah', ikon: '🗑',
+      judul: it ? 'Hapus barang ini dari draft?' : 'Hapus barang yang dicentang?',
+      subjudul: it ? (it.fields?.nama_barang || it.kode || `Kontrak ${j.no_sk}`) : `Kontrak ${j.no_sk}`,
+      rincian: it ? undefined : [{ label: 'Barang dicentang', nilai: `${keys.length} barang` }],
+      isi: it
+        ? <>Barangnya belum pernah tercatat di Daftar Barang, jadi tak ada jejak yang ikut terhapus.</>
+        : <>Centangnya bertahan lintas pencarian, jadi bisa ada barang terpilih yang sedang tidak
+          kelihatan di layar. Angka di atas itu yang akan dibuang.</>,
       peringatan: <>Tidak bisa dibatalkan.</>,
-      labelYa: `Hapus ${keys.length} barang`,
+      labelYa: it ? 'Hapus' : `Hapus ${keys.length} barang`,
     })).ya) return
     const buang = new Set(keys)
     const items = (j.payload.draft_items || []).filter(i => !buang.has(i.key))
@@ -730,7 +727,6 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
           onEditHeader={() => setEditing(true)}
           onHapusKontrak={hapusKontrak}
           onTambah={tambahDraftItems}
-          onHapusItem={hapusDraftItem}
           onHapusItems={hapusDraftItems}
           onEditSpes={keys => setSpecKeys(keys)}
           onApprove={approveHeader}
@@ -780,11 +776,10 @@ function DokumenLinks({ paths }: { paths: string[] }) {
 
 // Ambil signed URL foto pertama tiap path (bucket privat) — dipakai preview kecil di baris.
 // ── Kartu "Menunggu Persetujuan" ─────────────────────────────────────────────
-function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKontrak, onTambah, onHapusItem, onHapusItems, onEditSpes, onApprove }: {
+function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKontrak, onTambah, onHapusItems, onEditSpes, onApprove }: {
   h: Jurnal; isAdmin: boolean; busy: boolean; golonganLabels: Record<string, string>
   onEditHeader: () => void; onHapusKontrak: () => void
   onTambah: (items: DraftItem[]) => void
-  onHapusItem: (key: string) => void
   onHapusItems: (keys: string[]) => void
   onEditSpes: (keys: string[]) => void
   onApprove: () => void
@@ -846,7 +841,13 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                     <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll}
                       title={sel.q ? 'Centang semua barang pada hasil pencarian' : 'Centang semua barang'} />
                   </th>
-                  <th className="table-th w-8 text-center"></th>
+                  {/* ⚠️ Kolom ikon 🗑 per baris DICABUT (user 2026-09-01).
+                      Menghapus & mengedit kini SATU pintu: centang → bilah aksi
+                      di bawah tabel. Dulu Hapus punya dua pintu sementara Edit
+                      cuma satu, dan tombol merahnya duduk PERSIS di sebelah
+                      kotak centang — satu meleset sekolom langsung membuka
+                      dialog hapus. Ongkos yang diterima: hapus satu barang jadi
+                      dua klik (centang → Hapus). */}
                   <th className="table-th">Kode Rekening</th>
                   <th className="table-th">Uraian Barang</th>
                   <th className="table-th">Spesifikasi Nama Barang</th>
@@ -861,11 +862,10 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                 {sel.terlihat.map(it => (
                   <DraftRow key={it.key} item={it} checked={sel.checked.has(it.key)}
                     onToggle={() => sel.toggleOne(it.key)}
-                    onDelete={() => onHapusItem(it.key)}
                     fotoUrl={it.foto[0] ? fotoUrls[it.foto[0]] : undefined} />
                 ))}
                 {sel.terlihat.length === 0 && (
-                  <tr><td colSpan={10} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
+                  <tr><td colSpan={9} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
                 )}
               </tbody>
             </table>
@@ -940,16 +940,13 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
 // Satu unit draft — nama/satuan/harga READ-ONLY (salah → hapus & tambah baru,
 // biar disiplin). Spesifikasi diedit lewat checklist+popup di kartu (bukan di
 // sini) — baris ini cuma preview ringkas satu baris + thumbnail foto kecil.
-function DraftRow({ item, checked, onToggle, onDelete, fotoUrl }: {
+function DraftRow({ item, checked, onToggle, fotoUrl }: {
   item: DraftItem; checked: boolean; onToggle: () => void
-  onDelete: () => void; fotoUrl?: string
+  fotoUrl?: string
 }) {
   return (
     <tr>
       <td className="table-td text-center"><input type="checkbox" checked={checked} onChange={onToggle} /></td>
-      <td className="table-td text-center">
-        <button onClick={onDelete} title="Hapus barang ini" className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
-      </td>
       <td className="table-td">
         <p className="text-xs text-gray-700">{item.rekening || <span className="text-gray-300">-</span>}</p>
       </td>
