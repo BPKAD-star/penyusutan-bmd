@@ -885,7 +885,13 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
             onTambah={newItems => { onTambah(newItems); setShowTambah(false) }}
             onCancel={() => setShowTambah(false)} />
         ) : (
-          <button className="btn-secondary text-xs" onClick={() => setShowTambah(true)}>+ Tambah Barang</button>
+          // ⚠️ `btn-primary` (teal), BUKAN kelas hijau baru — permintaan user
+          // 2026-09-01 "buat jadi warna ijo". Teal itu warna aksi utama
+          // aplikasi ini (lihat .btn-primary di globals.css) & sudah dipakai
+          // tombol Setujui di kartu yang sama, jadi memakainya menjaga satu
+          // bahasa warna; `bg-green-*` akan jadi hijau KEDUA yang artinya sama.
+          // Kembar dgn PerolehanManual.tsx — ubah satu, samakan yang lain.
+          <button className="btn-primary text-xs" onClick={() => setShowTambah(true)}>+ Tambah Barang</button>
         )}
       </div>
 

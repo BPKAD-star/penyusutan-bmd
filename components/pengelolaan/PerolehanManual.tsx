@@ -788,7 +788,12 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
             onTambah={newItems => { onTambah(newItems); setShowTambah(false) }}
             onCancel={() => setShowTambah(false)} />
         ) : (
-          <button className="btn-secondary text-xs" onClick={() => setShowTambah(true)}>+ Tambah Barang</button>
+          // Kembar dgn kartu draft Pengadaan.tsx (teal = aksi utama, sekeluarga
+          // dgn tombol Setujui di kartu yang sama) — ubah satu, samakan yang
+          // lain. Menu ini melayani Hibah, Tukar Menukar, Hasil Inventarisasi,
+          // & Perolehan Lainnya sekaligus, jadi kalau cuma Pengadaan yang
+          // dihijaukan, keempat menu itu tertinggal putih tanpa alasan.
+          <button className="btn-primary text-xs" onClick={() => setShowTambah(true)}>+ Tambah Barang</button>
         )}
       </div>
 
