@@ -233,7 +233,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
     </>
   )
   return embedded ? body : (
-    <FormShell judul="Pekerjaan Fisik (Konstruksi)" deskripsi="Kontrak konstruksi bisa berisi beberapa barang KDP; tiap barang punya termin sendiri. Approval per kontrak." msg={msg}>{body}</FormShell>
+    <FormShell judul="Konstruksi" deskripsi="Kontrak konstruksi bisa berisi beberapa barang KDP; tiap barang punya termin sendiri. Approval per kontrak." msg={msg}>{body}</FormShell>
   )
 }
 

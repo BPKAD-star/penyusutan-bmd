@@ -29,11 +29,11 @@ type MergedItem =
 function TypeBadge({ konstruksi }: { konstruksi: boolean }) {
   return konstruksi ? (
     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-      🏗️ Pekerjaan Konstruksi
+      🏗️ Konstruksi
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal/10 text-teal border border-teal/20">
-      📦 Pengadaan Non-fisik
+      📦 Non Konstruksi
     </span>
   )
 }
@@ -97,7 +97,7 @@ export default function PengadaanEntry() {
 
   return (
     <FormShell judul="Pengadaan" msg=""
-      deskripsi="Pilih SKPD — semua pengadaan (Non-fisik & Pekerjaan Fisik Konstruksi) tampil dalam satu daftar, diurutkan berdasarkan tanggal dokumen kontrak."
+      deskripsi="Pilih SKPD — semua pengadaan (Non Konstruksi & Konstruksi) tampil dalam satu daftar, diurutkan berdasarkan tanggal dokumen kontrak."
       headerRight={skpd ? (
         <div className="text-right flex-shrink-0">
           <p className="text-xs text-gray-400">Total Pengadaan</p>
@@ -128,8 +128,13 @@ export default function PengadaanEntry() {
               <button className="btn-primary" onClick={() => setPickOpen(v => !v)}>+ Tambah Pengadaan</button>
               {pickOpen && (
                 <div className="absolute right-0 top-full mt-1 z-10 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden text-sm">
-                  <button className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 whitespace-nowrap" onClick={() => { setPickOpen(false); setCreating('nonfisik') }}>Non-fisik (barang biasa)</button>
-                  <button className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 whitespace-nowrap border-t border-gray-100" onClick={() => { setPickOpen(false); setCreating('konstruksi') }}>Pekerjaan Fisik Konstruksi</button>
+                  {/* ⚠️ Label saja yang berganti (user 2026-09-01): "Non-fisik"
+                      → "Non Konstruksi", "Pekerjaan Fisik Konstruksi" →
+                      "Konstruksi". Nilai `Creating` ('nonfisik'/'konstruksi')
+                      & kategori `jurnal_header` SENGAJA TIDAK ikut — yang
+                      terakhir itu data tersimpan di DB. */}
+                  <button className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 whitespace-nowrap" onClick={() => { setPickOpen(false); setCreating('nonfisik') }}>Non Konstruksi</button>
+                  <button className="block w-full text-left px-4 py-2.5 hover:bg-gray-50 whitespace-nowrap border-t border-gray-100" onClick={() => { setPickOpen(false); setCreating('konstruksi') }}>Konstruksi</button>
                 </div>
               )}
             </div>
