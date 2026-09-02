@@ -61,6 +61,7 @@ export type IdLembar =
   | 'perolehan-tukar-menukar'
   | 'perolehan-lainnya'
   | 'penggunaan-pengalihan'
+  | 'penerimaan-internal'
   | 'mutasi-bmd-skpd'
   | 'laporan-bmd-skpd'
   | 'mutasi-bmd-pemda'
@@ -133,17 +134,24 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
     berkas: 'components/pelaporan/LembarPerolehanPermendagri.tsx',
     caraPerolehan: 'perolehan_lainnya',
   },
-  // ── Penggunaan (IV.B.1) ──────────────────────────────────────────────────
-  // Pengalihan Status Penggunaan antar SKPD, dari sisi SKPD PENERIMA.
-  // ⚠️ `kode` di sini lembar RINCI-nya (`.2`); rekapnya IV.B.1.3–1.6 dilayani
-  // komponen yang SAMA. Susunan kolom kelimanya ada di `FORMAT_PENGGUNAAN`
-  // (lib/formatPenggunaan.ts) — registry ini cuma memegang identitas lembar &
+  // ── Perpindahan barang, sisi PENERIMA (IV.B.1 & IV.C) ────────────────────
+  // Dua cabang, SATU penyaji: susunan kolomnya cuma beda 3 kolom & penomoran,
+  // selebihnya identik. Rinciannya di `FORMAT_PENERIMAAN`
+  // (lib/formatPenerimaan.ts) — registry ini cuma memegang identitas lembar &
   // keberadaannya, bukan bentuk tabelnya.
+  // ⚠️ `kode` di sini lembar RINCI-nya; keempat rekapnya dilayani komponen yang
+  // SAMA & tak punya entri sendiri (pola yang sama dgn empat cara perolehan).
   'penggunaan-pengalihan': {
     kode: 'IV.B.1.2',
     judul: 'Laporan Penerimaan Penggunaan dalam Bentuk Pengalihan atau Penyerahan Status Penggunaan BMD',
     kertas: 'F4 lanskap',
-    berkas: 'components/pelaporan/LembarPenggunaanPermendagri.tsx',
+    berkas: 'components/pelaporan/LembarPenerimaanPermendagri.tsx',
+  },
+  'penerimaan-internal': {
+    kode: 'IV.C.2',
+    judul: 'Laporan Penerimaan BMD Internal Pengguna Barang',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPenerimaanPermendagri.tsx',
   },
   'mutasi-bmd-skpd': {
     kode: 'IV.L.4.1',

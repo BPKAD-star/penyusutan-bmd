@@ -386,31 +386,48 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
 
   // ⚠️ Menu Pelaporan yang TIDAK memakai `LaporanTransaksi` tetap butuh penjaga
   // yang sama — dan justru merekalah yang gampang lolos, karena pemindai di
-  // atas tak melihatnya sama sekali. Penggunaan (2026-08-31) yang pertama:
-  // komponennya sendiri, tapi bentuk query-nya sama persis
-  // (`.eq('jenis', …).order('id')`), jadi ia menanggung risiko timeout yang
+  // atas tak melihatnya sama sekali. Dua sejauh ini: Penggunaan
+  // (`pengalihan_status`) & Penerimaan Internal (`mutasi_internal`), keduanya
+  // lewat `LaporanPerpindahan`. Bentuk query-nya sama persis dgn menu lain
+  // (`.eq('jenis', …).order('id')`), jadi mereka menanggung risiko timeout yang
   // sama kalau jenisnya tak tercakup index parsial.
-  it('menu Penggunaan (komponen sendiri) tercakup index (id) WHERE jenis IN (…)', () => {
-    const berkas = [
-      'components/pelaporan/LaporanPenggunaan.tsx',
-      'lib/laporanPenggunaan.ts',
-    ]
-    for (const b of berkas) {
-      const f = path.join(AKAR, b)
-      expect(fs.existsSync(f), `berkas ${b} tak ditemukan — pemindaian rusak`).toBe(true)
-      const isi = fs.readFileSync(f, 'utf8')
-      expect(isi, `${b} tak menyaring jenis pengalihan_status`)
-        .toContain("eq('jenis', 'pengalihan_status')")
-      // Urutan menentukan index mana yang sanggup melayani: `jenis` bertipe
-      // ENUM tak bisa jadi index-cond di bawah RLS, jadi `order('periode')`
-      // atau `('tanggal')` menyusuri index lain sambil membuang ratusan ribu
-      // baris → timeout (CLAUDE.md "ronde 3").
-      expect(isi, `${b} tak mengurutkan by id`).toContain("order('id'")
-    }
+  //
+  // ⚠️ Jenisnya dibaca dari HALAMANNYA (prop `jenis="…"`), bukan diketik ulang
+  // di sini — kalau diketik ulang, menu ketiga yang memakai kerangka yang sama
+  // tak akan pernah ikut terperiksa & tak ada yang menyadarinya.
+  const DIR_PERPINDAHAN = ['penggunaan', 'penerimaan']
+
+  it('menu ber-`LaporanPerpindahan` tercakup index (id) WHERE jenis IN (…)', () => {
+    const pemuat = path.join(AKAR, 'lib/laporanPenerimaan.ts')
+    expect(fs.existsSync(pemuat), 'lib/laporanPenerimaan.ts tak ditemukan — pemindaian rusak').toBe(true)
+    // Urutan menentukan index mana yang sanggup melayani: `jenis` bertipe ENUM
+    // tak bisa jadi index-cond di bawah RLS, jadi `order('periode')` atau
+    // `('tanggal')` menyusuri index lain sambil membuang ratusan ribu baris
+    // → timeout (CLAUDE.md "ronde 3").
+    expect(fs.readFileSync(pemuat, 'utf8'), 'pemuat lembar tak mengurutkan by id')
+      .toContain("order('id'")
+    const kerangka = path.join(AKAR, 'components/pelaporan/LaporanPerpindahan.tsx')
+    expect(fs.existsSync(kerangka), 'LaporanPerpindahan.tsx tak ditemukan').toBe(true)
+    expect(fs.readFileSync(kerangka, 'utf8'), 'kerangka tak mengurutkan by id')
+      .toContain("order('id'")
+
     const peta = predikatIndexId()
-    const cocok = [...peta.entries()].filter(([, predikat]) => predikat.includes('pengalihan_status'))
-    expect(cocok.length,
-      'pengalihan_status tak tercakup index (id) WHERE jenis IN (…) manapun').toBeGreaterThan(0)
+    let diperiksa = 0
+    for (const d of DIR_PERPINDAHAN) {
+      const f = path.join(DIR_HAL, d, 'page.tsx')
+      expect(fs.existsSync(f), `halaman ${d} tak ditemukan — pemindaian rusak`).toBe(true)
+      const isi = fs.readFileSync(f, 'utf8')
+      expect(isi, `halaman ${d} tak lagi memakai LaporanPerpindahan`).toContain('LaporanPerpindahan')
+      const m = isi.match(/jenis="([a-z_]+)"/)
+      expect(m, `prop jenis halaman ${d} tak terbaca`).toBeTruthy()
+      const cocok = [...peta.entries()].filter(([, predikat]) => predikat.includes(m![1]))
+      expect(cocok.length,
+        `'${m![1]}' (halaman ${d}) tak tercakup index (id) WHERE jenis IN (…) manapun — ` +
+        'akan timeout begitu dibuka tanpa filter SKPD/periode').toBeGreaterThan(0)
+      diperiksa++
+    }
+    // Pengaman anti-hampa: pemindai yang tak memeriksa apa pun akan "lulus".
+    expect(diperiksa).toBe(DIR_PERPINDAHAN.length)
   })
 
   it('idx_trx_kapitalisasi_id & idx_trx_koreksi_id dibuat PLAIN, bukan CONCURRENTLY', () => {

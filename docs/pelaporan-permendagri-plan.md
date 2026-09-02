@@ -199,24 +199,35 @@ Diisi bertahap. `?` = kodenya belum dibaca dari mindmap/berkas aslinya.
 | Perolehan Lainnya | IV.A.10.1 | IV.A.10.2–6 | IV.A.10.7–10 | lembar SIAP; kurang field header (§10) |
 | Rekapitulasi gabungan perolehan/penerimaan | — | IV.A.11.1–4 | IV.A.11.5–8 | belum |
 
-### IV.B — Penggunaan
+### IV.B & IV.C — PERPINDAHAN barang (satu keluarga lembar)
 
-| Cabang | Lembar | Status |
-|---|---|---|
-| Penerimaan penggunaan dalam bentuk pengalihan / penyerahan status | **IV.B.1.2 rinci · 1.3–1.6 rekap ✅** | **SELESAI 2026-08-31** |
+| Cabang | Lembar | Ledger | Status |
+|---|---|---|---|
+| Penerimaan penggunaan (pengalihan/penyerahan status) | **IV.B.1.2 rinci · 1.3–1.6 rekap ✅** | `pengalihan_status` | **SELESAI 2026-08-31** |
+| Penerimaan BMD internal Pengguna Barang | **IV.C.2 rinci · C.3–C.6 rekap ✅** | `mutasi_internal` | **SELESAI 2026-08-31** |
 
-Sumbernya jenis ledger `pengalihan_status`. Kelima lembarnya **per-SKPD** —
-kop-nya memuat "PENGGUNA BARANG ATAU PENGELOLA BARANG………(3)", jadi tak ada
-kelompok se-Kabupaten seperti IV.A.<n>.7–10. Rinciannya di CLAUDE.md.
+Kedua cabang **SATU registry & SATU penyaji** (`lib/formatPenerimaan.ts`,
+`components/pelaporan/LembarPenerimaanPermendagri.tsx`) — identik di 18 dari 21
+kolom & identik penuh di keempat lembar rekapnya. Bedanya cuma: IV.B punya
+kolom Lokasi + blok SK Penghapusan, penomorannya bergeser 1 (kop IV.B 7 isian,
+IV.C 8), dan IV.B punya baris judul kedua.
+
+Kelima lembar tiap cabang **per-SKPD** — kop-nya memuat sebutan pejabat & SKPD,
+jadi tak ada kelompok se-Kabupaten seperti IV.A.<n>.7–10. Rinciannya di CLAUDE.md.
+
+⛔ **Pengeluaran Internal belum punya lembar.** Ia membaca ledger yang SAMA
+(`mutasi_internal`) dari sisi sebaliknya, jadi kalau formatnya nanti diserahkan,
+yang perlu ditambah cuma satu entri di `FORMAT_PENERIMAAN` — kecuali kolom
+"Pihak yang menyerahkan" berganti jadi "Pihak yang menerima", yang berarti
+`asal_pihak` perlu pasangan `tujuan_pihak`.
 
 ### Kategori lain
 
 Kodenya belum dibaca; diisi saat user menyerahkan formatnya.
 
-Penerimaan Internal · Pengeluaran Internal · Pemanfaatan (IV.E, a.l. IV.E.5) ·
-Reklasifikasi · Koreksi · Penyusutan · Pengamanan (BMD PM & BMD GB) ·
-Penghapusan (IV.K, rekap gabungan IV.K.7) · Rekapitulasi (Aset Lancar, Aset
-Tetap, Aset Lainnya, Lap BMD).
+Pengeluaran Internal · Pemanfaatan (IV.E, a.l. IV.E.5) · Reklasifikasi ·
+Koreksi · Penyusutan · Pengamanan (BMD PM & BMD GB) · Penghapusan (IV.K, rekap
+gabungan IV.K.7) · Rekapitulasi (Aset Lancar, Aset Tetap, Aset Lainnya, Lap BMD).
 
 ### V — Rekonsiliasi
 
@@ -597,3 +608,61 @@ gejalanya menyesatkan (terlihat seperti komponennya yang rusak).
 1.157 px): 28 kolom muat tanpa overflow horizontal, dan potongan PERTAMA NIBAR
 (26 digit) memakai 76 px dari jatah 98 px — muat SEBARIS, jadi `pecahNibar()`
 menghasilkan dua baris seperti yang dimaksud, bukan tiga.
+
+---
+
+## 12. Yang dipelajari saat membangun IV.C (2026-08-31)
+
+**(a) Cabang KEDUA yang bentuknya mirip = saatnya mengekstrak, bukan menyalin.**
+IV.C.2 berbeda dari IV.B.1.2 hanya di 3 kolom & penomoran. Dua registry + dua
+penyaji berarti tiap satu kolom bergeser harus disunting di dua tempat, dan yang
+terlewat TIDAK menghasilkan error — ia cuma mencetak lembar yang beda susunan.
+Sekarang keduanya `FORMAT_PENERIMAAN` + satu penyaji, dan penyajinya **dikunci
+test supaya tak boleh punya satu pun cabang `if` per format** — begitu ia harus
+tahu sedang merender format yang mana, format ketiga akan menambah cabang lagi
+sampai berkasnya tak terbaca.
+
+**(b) Kerangka 3-tab akhirnya diekstrak di kemunculan KETIGA**
+(`LaporanPerpindahan`), tepat seperti yang dijanjikan waktu menu Penggunaan
+dibuat. Yang membedakan kedua menu cuma LIMA nilai (jenis ledger, judul,
+deskripsi, awalan nama berkas, arah bawaan) — semuanya prop teks. ⚠️ Kalau kelak
+perlu prop keenam yang MENGUBAH ALUR (bukan cuma teks), berhenti dulu: itu tanda
+kedua menu sudah berbeda cukup jauh untuk dipisah lagi (CODING-STANDARD §1.5).
+
+**(c) `arahAwal` WAJIB per menu.** Penerimaan & Pengeluaran Internal membaca
+ledger yang PERSIS SAMA; tanpa bawaan `masuk`/`keluar` keduanya menampilkan
+baris yang identik. Aturan ini sudah ada di `LaporanTransaksi` dan nyaris hilang
+waktu menunya dipindah — kalau prop-nya lupa dikirim, tak ada yang error, cuma
+dua menu yang isinya sama.
+
+**(d) Pindah dari `LaporanTransaksi` ikut menutup cacat lama.** Halaman
+Penerimaan Internal versi lama tak pernah mengirim `batalJenis`, jadi mutasi
+internal yang sudah DIBATALKAN tetap tampil seolah masih berlaku — beda dgn
+Daftar Barang & Rekonsiliasi yang sudah membuangnya. **Pengeluaran Internal
+masih memakai jalur lama & masih menanggungnya.**
+
+**(e) Kepala tabel butuh `overflow-wrap: anywhere`, bukan `break-words`.**
+Bedanya tepat di kasus yang menggigit: `break-word` tak memecah kata yang sudah
+berdiri sendirian di barisnya, jadi "Keterangan" (46 px) di sel 40 px MELUBER
+menimpa sel sebelah — dan `table-fixed` menyembunyikannya dengan rapi sampai
+kertasnya keluar. Sel kepala juga dipersempit ke `px-0.5`: di lembar 25–28 kolom,
+4 px padding kiri-kanan itu ~13% lebar kolom tersempit.
+
+**(f) Kolom bertanggal `whitespace-nowrap` PUNYA lebar minimum yang keras.**
+"13/05/2020" butuh 45 px; 3,4% dari lebar F4 lanskap cuma 39 px, jadi ia meluber
+di SETIAP baris. Sengaja tak dibungkus (memecah tanggal di tengah bikin tak
+terbaca), jadi yang harus menyesuaikan lebarnya. Ruangnya diambil dari blok SK
+Penghapusan yang memang selalu kosong.
+
+**(g) Ukur KEPALA, bukan cuma baris isi.** Ronde IV.B (2026-08-30) cuma mengukur
+sel isi & NIBAR, jadi 4 kepala kolom yang meluber lolos sepenuhnya sampai
+ronde ini. Daftar periksa lembar padat: (1) Σ lebar = 100 persis; (2) tak ada
+`th` ber-`scrollWidth > clientWidth`; (3) tak ada `td` begitu; (4) tak ada KATA
+di kepala yang lebih lebar dari kotak isinya (menangkap "Jumla h"); (5) potongan
+pertama NIBAR muat sebaris; (6) halaman tak overflow horizontal.
+
+**(h) Sisa yang DITERIMA & diukur:** di IV.B.1.2 (28 kolom) tiga kata kepala
+masih terpecah 1–3 px — "Spesifikasi", lalu "Tanggal" & "Nomor" milik blok SK
+Penghapusan yang SELALU KOSONG. Itu tempat paling tak merugikan untuk kompromi
+yang memang inheren di 28 kolom pada F4. IV.C.2 (25 kolom) **nol** temuan di
+keenam pemeriksaan.

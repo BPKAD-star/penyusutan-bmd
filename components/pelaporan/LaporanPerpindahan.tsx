@@ -1,27 +1,39 @@
 'use client'
 // ============================================================================
-// Menu Pelaporan → Pengelolaan → Penggunaan. Tiga tab, pola yang SAMA dengan
-// Laporan Perolehan (Hibah dkk.):
+// Kerangka menu laporan PERPINDAHAN barang — dipakai BERSAMA oleh:
 //
-//   Daftar Transaksi   — baris ledger `pengalihan_status` apa adanya
+//   Pelaporan → Pengelolaan → Penggunaan          (`pengalihan_status`, IV.B.1)
+//   Pelaporan → Pengelolaan → Penerimaan Internal (`mutasi_internal`,  IV.C)
+//
+// Tiga tab, pola yang SAMA dengan Laporan Perolehan (Hibah dkk.):
+//
+//   Daftar Transaksi   — baris ledger apa adanya, netral arah
 //   Rekap per SKPD     — matriks SKPD (root) × golongan
-//   Format Permendagri — lembar IV.B.1.2 rinci + IV.B.1.3–1.6 rekap
+//   Format Permendagri — lembar rinci + empat rekap
 //
-// ⚠️ SENGAJA BUKAN `LaporanTransaksi` (yang dipakai enam menu Pengelolaan lain).
-// Komponen itu tak punya tab sama sekali, pemilih periodenya daftar mentah
-// periode yang kebetulan berisi, dan menambahkan tiga tab ke sana berarti
-// mengubah perilaku enam menu yang belum diminta berubah. Ini kemiripan KEDUA
-// dengan `LaporanPerolehan` — CODING-STANDARD §1.2 "rule of three" bilang:
-// catat, jangan ekstrak dulu. **Catatannya di sini**: begitu menu Pengelolaan
-// KETIGA butuh susunan tab yang sama, angkat kerangkanya jadi komponen bersama.
-// Yang TIDAK boleh menunggu sampai saat itu adalah aturan integritasnya (mesin
-// subtotal, susunan kolom lembar, saringan pembatalan) — semua itu sudah di lib.
+// ⚠️ DIEKSTRAK 2026-08-31, di kemunculan KETIGA (CODING-STANDARD §1.2 "rule of
+// three": pertama biarkan, kedua catat, ketiga WAJIB diekstrak). Catatan
+// "kedua"-nya memang sudah ditulis waktu menu Penggunaan dibuat, berikut
+// janjinya: "begitu menu Pengelolaan KETIGA butuh susunan tab yang sama, angkat
+// kerangkanya". Ini penunaiannya.
+//
+// ⚠️ SENGAJA BUKAN `LaporanTransaksi` (yang masih dipakai lima menu Pengelolaan
+// lain). Komponen itu tak punya tab sama sekali, pemilih periodenya daftar
+// mentah periode yang kebetulan berisi, dan menambahkan tiga tab ke sana berarti
+// mengubah perilaku lima menu yang belum diminta berubah. Yang TIDAK boleh
+// menunggu adalah aturan integritasnya (mesin subtotal, susunan kolom lembar,
+// saringan pembatalan) — semua itu sudah di lib.
 //
 // ⚠️ TAB 1 & TAB 3 SENGAJA BEDA CAKUPAN, dan itu wajib tertulis di layar:
 // "Daftar Transaksi" netral arah (masuk & keluar), sedangkan lembar Permendagri
 // judulnya "LAPORAN PENERIMAAN…" jadi hanya barang yang MASUK. Tanpa keterangan
 // itu, operator melihat dua angka berbeda untuk periode yang sama & mengira
 // salah satunya bug.
+//
+// ⚠️ Yang BEDA antar kedua menu cuma lima nilai (jenis ledger, judul, deskripsi,
+// awalan nama berkas, arah bawaan) — semuanya prop. Kalau suatu saat perlu prop
+// keenam yang MENGUBAH ALUR (bukan cuma teks), berhenti dulu: itu tanda kedua
+// menu sudah berbeda cukup jauh untuk dipisah lagi (CODING-STANDARD §1.5).
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -33,8 +45,9 @@ import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
-import { LEMBAR_PERMENDAGRI } from '@/lib/permendagriFormat'
-import PenggunaanFormatPermendagri from './PenggunaanFormatPermendagri'
+import { LEMBAR_PERMENDAGRI, type IdLembar } from '@/lib/permendagriFormat'
+import { type IdPenerimaan } from '@/lib/formatPenerimaan'
+import PenerimaanFormatPermendagri from './PenerimaanFormatPermendagri'
 
 type Trx = {
   id: number
@@ -67,25 +80,47 @@ const ARAH_LABEL: Record<Arah, string> = {
   keluar: 'Keluar — diserahkan SKPD ini',
 }
 
-export default function LaporanPenggunaan() {
+export type PropLaporanPerpindahan = {
+  /** Cabang format Permendagri-nya; juga menentukan jenis ledger yang ditarik. */
+  id: IdPenerimaan
+  /** Entri registry lembar — penentu ADA/TIDAKNYA tab Format Permendagri. */
+  idLembar: IdLembar
+  /** Jenis ledger yang disaring. */
+  jenis: string
+  judul: string
+  deskripsi: string
+  /** Awalan nama berkas Excel. */
+  filePrefix: string
+  /**
+   * Arah bawaan tab Daftar Transaksi.
+   *
+   * ⚠️ BEDA per menu & wajib dipertahankan: menu "Penerimaan Internal" punya
+   * saudara "Pengeluaran Internal" yang membaca ledger yang SAMA, jadi tanpa
+   * bawaan `masuk` keduanya menampilkan baris yang persis sama. Menu Penggunaan
+   * tak punya pasangan semacam itu, jadi bawaannya `semua`.
+   */
+  arahAwal: Arah
+}
+
+export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
   const tahunBuku = useTahunBukuMap()
-  // ⚠️ Dibaca dari REGISTRY, bukan dari `FORMAT_PENGGUNAAN`. Registry-lah satu-
+  // ⚠️ Dibaca dari REGISTRY, bukan dari `FORMAT_PENERIMAAN`. Registry-lah satu-
   // satunya daftar yang menjawab "lembar ini sudah ada atau belum" (lihat
-  // kepala lib/permendagriFormat.ts); `FORMAT_PENGGUNAAN` menjawab pertanyaan
+  // kepala lib/permendagriFormat.ts); `FORMAT_PENERIMAAN` menjawab pertanyaan
   // lain — bentuk tabelnya. Dua daftar yang sama-sama boleh bilang "ada" pasti
   // menyimpang, dan gejalanya cuma tab yang muncul tanpa isi.
   // ⚠️ Sengaja BUKAN `lembarPerolehan()`: fungsi itu mencari lewat
-  // `caraPerolehan`, dan penggunaan bukan cara perolehan.
-  const lembar = LEMBAR_PERMENDAGRI['penggunaan-pengalihan']
+  // `caraPerolehan`, dan perpindahan bukan cara perolehan.
+  const lembar = LEMBAR_PERMENDAGRI[p.idLembar]
 
   const [rows, setRows] = useState<Trx[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [err, setErr] = useState('')
   const [periode, setPeriode] = useState('')
-  const [arah, setArah] = useState<Arah>('semua')
+  const [arah, setArah] = useState<Arah>(p.arahAwal)
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [selSkpdId, setSelSkpdId] = useState<number | null>(null)
   const [view, setView] = useState<'list' | 'matrix' | 'permendagri'>('list')
@@ -107,7 +142,7 @@ export default function LaporanPenggunaan() {
     // urutan yang dipakai menentukan index mana yang sanggup melayani. Bentuk
     // ini dilayani partial index `idx_trx_pindah_id` (migrasi 20260729_01).
     let q = supabase.from('transaksi_bmd').select(SEL)
-      .eq('jenis', 'pengalihan_status')
+      .eq('jenis', p.jenis)
       .order('id', { ascending: false })
     // ⚠️ `periode` bisa bernilai TAHUN saja (`2026` = Akhir Tahun) —
     // `.eq('periode','2026')` tak cocok dengan apa pun & menghasilkan "0
@@ -124,7 +159,7 @@ export default function LaporanPenggunaan() {
       }
     }
     return q
-  }, [periode, descIds, arah]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [periode, descIds, arah, p.jenis]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Buang pengalihan yang sudah DIBATALKAN (`batal_pengalihan`).
@@ -137,6 +172,16 @@ export default function LaporanPenggunaan() {
    * ⚠️ MELEMPAR kalau query-nya gagal — fail-closed. Set kosong yang berarti
    * "tak ada yang dibatalkan" akan menampilkan perpindahan yang sudah dianulir
    * sebagai masih berlaku, dan angkanya beda dgn Daftar Barang & Rekonsiliasi.
+   *
+   * ⚠️ Enum `batal_pengalihan` DIPAKAI BERSAMA `pengalihan_status` DAN
+   * `mutasi_internal` (CLAUDE.md "BATAL PERPINDAHAN") — sengaja, bukan
+   * kelalaian penamaan. Jadi satu daftar jenis ini benar untuk kedua menu.
+   *
+   * ⚠️ Menu Penerimaan/Pengeluaran Internal versi LAMA (`LaporanTransaksi`)
+   * TIDAK mengirim `batalJenis` sama sekali, jadi mutasi yang sudah dibatalkan
+   * tetap tampil di sana. Itu cacat lama yang ikut tertutup di menu Penerimaan
+   * begitu ia pindah ke sini; **Pengeluaran Internal masih memakai jalur lama
+   * dan masih menanggungnya.**
    */
   const saringBatal = useCallback(async (baris: Trx[]): Promise<Trx[]> => {
     const target = await fetchBatalTargets(
@@ -215,7 +260,7 @@ export default function LaporanPenggunaan() {
       }
       row['Total'] = total
       return row
-    }), `Laporan_Penggunaan_per_SKPD${periode ? '_' + periode : ''}`, 'Rekap per SKPD')
+    }), `${p.filePrefix}_per_SKPD${periode ? '_' + periode : ''}`, 'Rekap per SKPD')
   }
 
   async function handleExport() {
@@ -249,7 +294,7 @@ export default function LaporanPenggunaan() {
       'Nilai (Rp)': r.nilai,
       'Pengembalian': r.payload?.reversal ? 'Ya' : '',
       'Keterangan': r.keterangan || '',
-    })), `Laporan_Penggunaan${periode ? '_' + periode : ''}`, 'Laporan')
+    })), `${p.filePrefix}${periode ? '_' + periode : ''}`, 'Laporan')
     setExporting(false)
   }
 
@@ -262,10 +307,8 @@ export default function LaporanPenggunaan() {
       )}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Laporan Penggunaan</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            BMD yang dialihkan antar SKPD (pengalihan status penggunaan).
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">{p.judul}</h1>
+          <p className="text-gray-500 text-sm mt-1">{p.deskripsi}</p>
         </div>
         <div className="flex items-center gap-2">
           {view === 'permendagri' ? null : (
@@ -346,12 +389,12 @@ export default function LaporanPenggunaan() {
           {/* ⚠️ Perbedaan cakupan DIKATAKAN, bukan didiamkan — lihat catatan di
               kepala berkas. */}
           <div className="card p-4 mb-4 border-l-4 border-teal text-sm text-gray-600">
-            Lembar <b>{lembar.kode}</b> berjudul <i>&ldquo;Laporan PENERIMAAN Penggunaan&rdquo;</i>,
-            jadi isinya <b>hanya barang yang MASUK</b> ke SKPD terpilih — filter Arah di tab
-            Daftar Transaksi tidak berlaku di sini. Kalau angkanya lebih sedikit daripada tab
-            sebelah, itu memang begitu: yang diserahkan keluar dilaporkan oleh SKPD penerimanya.
+            Lembar <b>{lembar.kode}</b> berjudul <i>&ldquo;Laporan PENERIMAAN…&rdquo;</i>, jadi
+            isinya <b>hanya barang yang MASUK</b> ke SKPD terpilih — filter Arah di tab Daftar
+            Transaksi tidak berlaku di sini. Kalau angkanya berbeda dari tab sebelah, itu memang
+            begitu: yang diserahkan keluar dilaporkan oleh pihak penerimanya.
           </div>
-          <PenggunaanFormatPermendagri skpdId={selSkpdId} periode={periode} />
+          <PenerimaanFormatPermendagri id={p.id} skpdId={selSkpdId} periode={periode} />
         </>
       ) : view === 'matrix' ? (
         <>
@@ -363,7 +406,7 @@ export default function LaporanPenggunaan() {
       ) : (
         <>
           <div className="card p-4 mb-4 max-w-xs">
-            <p className="text-xs text-gray-500">Laporan Penggunaan</p>
+            <p className="text-xs text-gray-500">{p.judul}</p>
             <p className="text-lg font-bold text-gray-900 mt-1">
               {rows.length.toLocaleString('id-ID')}{' '}
               <span className="text-xs font-normal text-gray-400">transaksi</span>
@@ -405,7 +448,9 @@ export default function LaporanPenggunaan() {
                         {r.tujuan?.nama || '-'}
                         {/* Baris pengembalian (mekanik "Kembalikan" yang sudah
                             DICABUT 2026-08-12) menukar asal↔tujuan. Ditandai
-                            supaya tak terbaca sebagai pengalihan baru. */}
+                            supaya tak terbaca sebagai perpindahan baru. Cuma
+                            ada di `pengalihan_status` (2 baris di seluruh
+                            ledger); `mutasi_internal` tak punya satu pun. */}
                         {r.payload?.reversal && (
                           <span className="ml-1 text-[10px] text-amber-600">(pengembalian)</span>
                         )}

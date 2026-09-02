@@ -1,21 +1,21 @@
 'use client'
 // ============================================================================
-// Tab "Format Permendagri" di menu Pelaporan → Pengelolaan → Penggunaan.
+// Tab "Format Permendagri" di menu Pelaporan → Pengelolaan → Penggunaan
+// (IV.B.1) & Penerimaan Internal (IV.C).
 //
-// Operator memilih lembar mana yang mau disusun (IV.B.1.2 rinci + .3–.6 rekap),
-// melihat pratinjaunya, lalu mencetak. Filter Periode & SKPD datang dari
-// komponen induk (LaporanPenggunaan) supaya sama dengan dua tab lainnya.
+// Operator memilih lembar mana yang mau disusun (rinci + empat rekap), melihat
+// pratinjaunya, lalu mencetak. Filter Periode & SKPD datang dari komponen induk
+// (LaporanPerpindahan) supaya sama dengan dua tab lainnya.
 //
-// ⚠️ Angkanya dimuat `muatLembarPenggunaan` — SAMA dengan halaman cetak. Dua
+// ⚠️ Angkanya dimuat `muatLembarPenerimaan` — SAMA dengan halaman cetak. Dua
 // jalur angka untuk lembar yang sama adalah cara paling gampang menghasilkan
 // pratinjau yang berbeda dari berkas yang akhirnya ditandatangani, dan bedanya
 // tak akan bersuara.
 //
-// ⚠️ TIDAK ADA kelompok "se-Kabupaten" di cabang ini — dan itu bukan pekerjaan
-// yang tertinggal. Kelima lembar IV.B.1.2–1.6 memuat isian
-// "PENGGUNA BARANG ATAU PENGELOLA BARANG………(3)" di kopnya, jadi kelimanya
-// per-SKPD. Bandingkan cabang IV.A yang memang punya IV.A.<n>.7–10 berkop
-// "PROVINSI, KABUPATEN/KOTA".
+// ⚠️ TIDAK ADA kelompok "se-Kabupaten" di kedua cabang ini — dan itu bukan
+// pekerjaan yang tertinggal. Kelima lembarnya memuat isian sebutan pejabat &
+// SKPD di kop, jadi kelimanya per-SKPD. Bandingkan cabang IV.A yang memang
+// punya IV.A.<n>.7–10 berkop "PROVINSI, KABUPATEN/KOTA".
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -23,11 +23,11 @@ import {
   TANGGA_REKAP, labelKomptabel, cocokKomptabel, berupaAset, labelPeriodeKop,
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
-import { FORMAT_PENGGUNAAN } from '@/lib/formatPenggunaan'
+import { FORMAT_PENERIMAAN, type IdPenerimaan } from '@/lib/formatPenerimaan'
 import {
-  muatLembarPenggunaan, periodePosisi, type BarisPenggunaan,
-} from '@/lib/laporanPenggunaan'
-import LembarPenggunaanPermendagri from './LembarPenggunaanPermendagri'
+  muatLembarPenerimaan, periodePosisi, type BarisPenerimaan,
+} from '@/lib/laporanPenerimaan'
+import LembarPenerimaanPermendagri from './LembarPenerimaanPermendagri'
 
 /** Daftar lembar yang bisa dicentang: rinci + empat kedalaman rekap. */
 const PILIHAN = [
@@ -35,13 +35,15 @@ const PILIHAN = [
   ...TANGGA_REKAP.map(t => ({ akhiran: t.akhiran, label: `Rekap menurut ${t.menurut.toLowerCase()}` })),
 ]
 
-export default function PenggunaanFormatPermendagri({ skpdId, periode }: {
+export default function PenerimaanFormatPermendagri({ id, skpdId, periode }: {
+  /** Cabang formatnya — `'penggunaan'` (IV.B.1) atau `'internal'` (IV.C). */
+  id: IdPenerimaan
   skpdId: number | null
   periode: string
 }) {
   const supabase = createClient()
-  const f = FORMAT_PENGGUNAAN
-  const [rows, setRows] = useState<BarisPenggunaan[]>([])
+  const f = FORMAT_PENERIMAAN[id]
+  const [rows, setRows] = useState<BarisPenerimaan[]>([])
   const [namaTingkat, setNamaTingkat] = useState<Map<string, string>>(new Map())
   const [skpd, setSkpd] = useState<{ kode: string; nama: string } | null>(null)
   const [sebutan, setSebutan] = useState('Pengguna Barang')
@@ -59,7 +61,7 @@ export default function PenggunaanFormatPermendagri({ skpdId, periode }: {
     void (async () => {
       setLoading(true); setErr('')
       try {
-        const h = await muatLembarPenggunaan(supabase, { skpdId: skpdId!, periode })
+        const h = await muatLembarPenerimaan(supabase, { jenis: f.jenis, skpdId: skpdId!, periode })
         if (batal) return
         setRows(h.rows); setNamaTingkat(h.namaTingkat); setSkpd(h.skpd)
         setSebutan(h.sebutan); setTanpaPeny(h.tanpaPenyusutan)
@@ -76,12 +78,12 @@ export default function PenggunaanFormatPermendagri({ skpdId, periode }: {
     return () => { batal = true }
     // `pilih.length` ikut: kalau tak ada lembar dicentang, datanya tak perlu
     // ditarik sama sekali.
-  }, [skpdId, periode, siap, pilih.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, skpdId, periode, siap, pilih.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lembar ini menyatakan SATU komptabel di kop, jadi isinya wajib benar-benar
   // satu komptabel. Barang tanpa nilai kolom itu dianggap intra, sejalan dengan
   // `klasifikasiKomptabel` (bawaannya intra).
-  const items: ItemLaporan<BarisPenggunaan>[] = rows
+  const items: ItemLaporan<BarisPenerimaan>[] = rows
     .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({
       kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r,
@@ -89,12 +91,12 @@ export default function PenggunaanFormatPermendagri({ skpdId, periode }: {
     }))
 
   const { judul: judulPeriode, tahun } = labelPeriodeKop(periode)
-  const urlCetak = `/cetak/penggunaan-permendagri?skpd=${skpdId}`
+  const urlCetak = `/cetak/penerimaan-permendagri?lap=${id}&skpd=${skpdId}`
     + `&periode=${periode}&komptabel=${komptabel}&lembar=${[...pilih].sort((a, b) => a - b).join(',')}`
 
   /** Kenapa tombol Cetak mati / pratinjau kosong — dikatakan, bukan didiamkan. */
   const kurang = !periode ? 'Pilih Periode dulu.'
-    : skpdId == null ? 'Pilih SKPD dulu — kelima lembar IV.B.1.2–1.6 memuat identitas SKPD di kopnya.'
+    : skpdId == null ? `Pilih SKPD dulu — kelima lembar ${f.awalan}.x memuat identitas SKPD di kopnya.`
       : pilih.length === 0 ? 'Centang minimal satu lembar.'
         : ''
 
@@ -193,8 +195,8 @@ export default function PenggunaanFormatPermendagri({ skpdId, periode }: {
           </p>
           <div className="overflow-x-auto">
             <div className="min-w-[1400px] space-y-10">
-              <LembarPenggunaanPermendagri
-                items={items} namaTingkat={namaTingkat} skpd={skpd}
+              <LembarPenerimaanPermendagri
+                f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
                 berupa={berupaAset(items.map(i => i.kode))}
                 labelKomptabel={labelKomptabel(komptabel)}
                 judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}

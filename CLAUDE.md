@@ -2581,6 +2581,94 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## Laporan Penerimaan Internal — Format Permendagri IV.C.2–C.6 (2026-08-31)
+
+Cabang KETIGA modul Pelaporan Permendagri 47/2021. Menu Pelaporan → Pengelolaan
+→ **Penerimaan Internal** kini bertiga tab seperti Penggunaan & Laporan
+Perolehan. Sumbernya ledger `mutasi_internal`. **Tak ada migrasi.**
+
+Dikerjakan bersamaan dengan **ekstraksi** yang sudah dijanjikan di catatan
+Penggunaan — jadi yang bertambah bukan sekadar satu menu, tapi berkurangnya
+duplikasi:
+
+| Sebelum | Sesudah |
+|---|---|
+| `lib/formatPenggunaan.ts` | **`lib/formatPenerimaan.ts`** — dua registry, satu tipe |
+| `lib/laporanPenggunaan.ts` | **`lib/laporanPenerimaan.ts`** — satu pemuat, param `jenis` |
+| `LembarPenggunaanPermendagri` | **`LembarPenerimaanPermendagri`** — satu penyaji |
+| `PenggunaanFormatPermendagri` | **`PenerimaanFormatPermendagri`** — prop `id` |
+| `LaporanPenggunaan` | **`LaporanPerpindahan`** — kerangka 3 tab bersama |
+| `/cetak/penggunaan-permendagri` | **`/cetak/penerimaan-permendagri?lap=`** |
+
+- ⚠️ **EKSTRAKSI DI KEMUNCULAN KETIGA, sesuai janji yang tertulis.** Catatan
+  Penggunaan berbunyi: *"Begitu menu Pengelolaan KETIGA butuh susunan tab yang
+  sama, angkat kerangkanya."* CODING-STANDARD §1.2 "rule of three" — pertama
+  biarkan, kedua catat, ketiga WAJIB. Yang TIDAK menunggu sampai sekarang adalah
+  aturan integritasnya (mesin subtotal, susunan kolom, saringan pembatalan);
+  itu sudah di lib sejak cabang pertama.
+- ⚠️ **IV.C.2 vs IV.B.1.2 — TIGA beda, dan semuanya DATA, bukan cabang `if`:**
+  (1) IV.C tak punya kolom **Lokasi** maupun blok **Surat Keputusan
+  Penghapusan** — masuk akal, mutasi internal itu perpindahan DI DALAM satu
+  Pengguna Barang jadi tak ada penghapusan dari daftar siapa pun; (2)
+  penomorannya bergeser +1 karena kop IV.C memisahkan sebutan pejabat (3) &
+  `SKPD…(4)` sementara IV.B menyatukannya — jadi kolomnya mulai (9), bukan (8);
+  (3) IV.C tak punya baris judul kedua. Grup "Asal Barang" juga tanpa embel
+  "/Penyerahan dari". **Lembar rekapnya IDENTIK penuh.**
+  Penyajinya **dikunci test supaya tak boleh punya satu pun perbandingan per
+  format** (`=== 'internal'`, `f.kode ===`, dst.) — begitu ia harus tahu sedang
+  merender format yang mana, format keempat akan menambah cabang lagi.
+- ⚠️ **`arahAwal` WAJIB dikirim & berbeda per menu.** Penerimaan Internal
+  (`masuk`) & Pengeluaran Internal (`keluar`) membaca ledger yang PERSIS SAMA;
+  tanpa itu keduanya menampilkan baris identik. Aturan ini sudah berlaku di
+  `LaporanTransaksi` dan nyaris hilang saat menunya dipindah — prop yang lupa
+  dikirim tak menghasilkan error, cuma dua menu yang isinya sama.
+- **Pindah dari `LaporanTransaksi` ikut menutup cacat lama:** halaman Penerimaan
+  Internal versi lama tak pernah mengirim `batalJenis`, jadi mutasi yang sudah
+  DIBATALKAN tetap tampil seolah berlaku — beda dgn Daftar Barang &
+  Rekonsiliasi. ⛔ **Pengeluaran Internal masih memakai jalur lama & masih
+  menanggungnya.**
+- **Enum `batal_pengalihan` dipakai bersama kedua jenis** (CLAUDE.md "BATAL
+  PERPINDAHAN"), jadi satu `BATAL_TARGET_JENIS.pengalihan` benar untuk dua
+  cabang. Begitu pula partial index **`idx_trx_pindah_id`** yang predikatnya
+  memuat tepat dua jenis itu — dikunci lib/sinkronisasiRpc.test.ts, yang kini
+  membaca prop `jenis` dari HALAMANNYA (bukan diketik ulang) supaya menu
+  berikutnya yang memakai kerangka sama ikut terperiksa sendiri.
+- ⚠️ **Kepala tabel butuh `overflow-wrap: anywhere`, BUKAN `break-words`.**
+  Bedanya tepat di kasus yang menggigit: `break-word` tak memecah kata yang
+  sudah berdiri sendirian di barisnya, jadi "Keterangan" (46 px) di sel 40 px
+  MELUBER menimpa sel sebelah — dan `table-fixed` menyembunyikannya dengan rapi
+  sampai kertasnya keluar. Sel kepala juga `px-0.5`, bukan `px-1`: di lembar
+  25–28 kolom, 4 px padding itu ~13% lebar kolom tersempit. Baris SUBTOTAL ikut
+  dibungkus — justru di situ angkanya paling besar.
+- ⚠️ **Ronde IV.B (2026-08-30) cuma mengukur sel ISI & NIBAR**, jadi 4 kepala
+  kolom yang meluber lolos sepenuhnya sampai sekarang. **Daftar periksa lembar
+  padat, enam butir:** (1) Σ lebar = 100 persis; (2) tak ada `th`
+  ber-`scrollWidth > clientWidth`; (3) tak ada `td` begitu; (4) tak ada KATA di
+  kepala yang lebih lebar dari kotak isinya — ini yang menangkap "Jumla h";
+  (5) potongan pertama NIBAR muat sebaris; (6) halaman tak overflow horizontal.
+- **Kolom bertanggal `whitespace-nowrap` punya lebar minimum KERAS**:
+  "13/05/2020" butuh 45 px, dan 3,4% dari lebar F4 lanskap cuma 39 px — ia
+  meluber di SETIAP baris. Sengaja tak dibungkus (memecah tanggal di tengah bikin
+  tak terbaca), jadi lebarnya yang menyesuaikan; ruangnya diambil dari blok SK
+  Penghapusan yang memang selalu kosong.
+- **Diukur di peramban** (F4 lanskap, lebar tabel 1.157 px): **IV.C.2 nol
+  temuan** di keenam pemeriksaan — 25 kolom, tak ada yang meluber, NIBAR dua
+  baris (potongan pertama 76 px dari jatah 103 px). **IV.B.1.2** bersih untuk
+  sel isi & halaman; sisa yang DITERIMA: tiga kata kepala terpecah 1–3 px
+  ("Spesifikasi", lalu "Tanggal" & "Nomor" milik blok SK Penghapusan yang selalu
+  kosong) — kompromi yang inheren di 28 kolom pada F4, ditaruh di tempat paling
+  tak merugikan.
+- **Kunci ingatan penanda tangan dipisah per cabang**
+  (`bmd_penggunaan_ttd_skpd_<id>` & `bmd_penerimaan_internal_ttd_skpd_<id>`).
+  ⚠️ Nilai yang lama DIPERTAHANKAN apa adanya waktu berkas digeneralkan —
+  menggantinya tak error sama sekali, cuma membuat pilihan yang sudah disetel
+  operator lenyap diam-diam & lembar cetak ulang mendadak bertitik-titik lagi.
+- ⛔ **Pengeluaran Internal belum punya lembar Permendagri.** Ia membaca ledger
+  yang sama dari sisi sebaliknya, jadi kalau formatnya diserahkan, yang perlu
+  ditambah cuma satu entri di `FORMAT_PENERIMAAN` — kecuali kolom "Pihak yang
+  menyerahkan" berganti jadi "Pihak yang menerima", yang berarti `asal_pihak`
+  butuh pasangan `tujuan_pihak`.
+
 ## Laporan Penggunaan — Format Permendagri IV.B.1.2–1.6 (2026-08-31)
 
 Cabang KEDUA modul Pelaporan Permendagri 47/2021, sesudah IV.A (Perolehan).

@@ -1,8 +1,10 @@
 'use client'
 // ============================================================================
-// Cetak lembar PENGGUNAAN sesuai Format baku Permendagri 47/2021 (cabang IV.B.1).
+// Cetak lembar PENERIMAAN sesuai Format baku Permendagri 47/2021.
 //
-//   ?skpd=<id>                WAJIB — kelima lembar memuat identitas SKPD di kop
+//   ?lap=penggunaan           IV.B.1.2–1.6 (pengalihan status antar SKPD)
+//   ?lap=internal             IV.C.2–C.6   (mutasi internal antar sub-unit)
+//   &skpd=<id>                WAJIB — kelima lembar memuat identitas SKPD di kop
 //   &periode=2026-S1          atau &periode=2026 (AKHIR TAHUN: S1+S2 digabung)
 //   &komptabel=intra|ekstra|semua  (bawaan: intra)
 //   &lembar=2,3,4,5,6         bawaan: semuanya
@@ -12,13 +14,14 @@
 // sama dengan BA Rekon & lembar Perolehan: sekali cetak, sekali tanda tangan,
 // dan tiap lembar tetap bisa diambil sendiri kalau diminta.
 //
-// ⚠️ ANGKANYA DIMUAT `muatLembarPenggunaan` — SAMA dengan tab "Format
+// ⚠️ ANGKANYA DIMUAT `muatLembarPenerimaan` — SAMA dengan tab "Format
 // Permendagri" di menu Pelaporan. Dua jalur angka untuk lembar yang sama adalah
 // cara paling gampang menghasilkan pratinjau yang berbeda dari berkas yang
 // akhirnya ditandatangani, dan bedanya tak akan bersuara.
 //
-// ⚠️ SUSUNAN & PENOMORAN KOLOMNYA DATA, BUKAN JSX — lihat `FORMAT_PENGGUNAAN`
-// di lib/formatPenggunaan.ts.
+// ⚠️ SUSUNAN & PENOMORAN KOLOMNYA DATA, BUKAN JSX — lihat `FORMAT_PENERIMAAN`
+// di lib/formatPenerimaan.ts. Halaman ini tak punya satu pun cabang `if` per
+// format; yang membedakan keduanya seluruhnya registry.
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -30,15 +33,15 @@ import {
   labelKomptabel, cocokKomptabel, berupaAset, labelPeriodeKop,
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
-import { FORMAT_PENGGUNAAN } from '@/lib/formatPenggunaan'
+import { FORMAT_PENERIMAAN, type IdPenerimaan } from '@/lib/formatPenerimaan'
 import {
-  muatLembarPenggunaan, periodePosisi, type BarisPenggunaan,
-} from '@/lib/laporanPenggunaan'
+  muatLembarPenerimaan, periodePosisi, type BarisPenerimaan,
+} from '@/lib/laporanPenerimaan'
 // ⚠️ Mekanik cetak DIPAKAI BERSAMA, bukan disalin: `cssCetakLembar` menyatukan
 // blok @media print & `ingatanCetak` menyatukan ingatan pilihan cetak.
 import { cssCetakLembar, namaBerkasCetak } from '@/lib/cetakLembar'
-import { ingatanCetak, kunciTtdPenggunaan } from '@/lib/ingatanCetak'
-import LembarPenggunaanPermendagri from '@/components/pelaporan/LembarPenggunaanPermendagri'
+import { ingatanCetak, kunciTtdPenerimaan } from '@/lib/ingatanCetak'
+import LembarPenerimaanPermendagri from '@/components/pelaporan/LembarPenerimaanPermendagri'
 
 const todayStr = () => {
   const t = new Date()
@@ -48,7 +51,7 @@ const todayStr = () => {
 /**
  * ⚠️ TANPA `plt`, sengaja — beda dari lembar Perolehan & RKBMD yang menyimpannya.
  *
- * Kaki lembar IV.B.1.x mencetak **PERAN** ("Pengguna Barang" / "Kuasa Pengguna
+ * Kaki lembar ini mencetak **PERAN** ("Pengguna Barang" / "Kuasa Pengguna
  * Barang", diturunkan dari level SKPD), bukan jabatan struktural seperti
  * "Kepala Dinas". Peran itu melekat pada kantornya, jadi pemangkunya
  * menandatangani atas nama peran yang sama entah ia definitif atau pelaksana
@@ -61,14 +64,15 @@ const todayStr = () => {
  * (lib/penandaTangan.ts) sudah siap dipakai — hidupkan bersama kendalinya.
  */
 type TtdTersimpan = { id?: string; tgl?: string }
-const ingatan = (skpdId: number) => ingatanCetak<TtdTersimpan>(kunciTtdPenggunaan(skpdId))
+const ingatan = (lap: IdPenerimaan, skpdId: number) =>
+  ingatanCetak<TtdTersimpan>(kunciTtdPenerimaan(lap, skpdId))
 
-export default function CetakPenggunaanPermendagriPage() {
+export default function CetakPenerimaanPermendagriPage() {
   const supabase = createClient()
-  const f = FORMAT_PENGGUNAAN
+  const [lap, setLap] = useState<IdPenerimaan>('penggunaan')
   const [siap, setSiap] = useState(false)
   const [gagal, setGagal] = useState('')
-  const [rows, setRows] = useState<BarisPenggunaan[]>([])
+  const [rows, setRows] = useState<BarisPenerimaan[]>([])
   const [namaTingkat, setNamaTingkat] = useState<Map<string, string>>(new Map())
   const [skpd, setSkpd] = useState<{ kode: string; nama: string } | null>(null)
   const [skpdId, setSkpdId] = useState<number | null>(null)
@@ -85,6 +89,16 @@ export default function CetakPenggunaanPermendagriPage() {
     void (async () => {
       try {
         const q = new URLSearchParams(window.location.search)
+        // ⚠️ Nilai `lap` yang tak dikenal DITOLAK, bukan diam-diam jatuh ke
+        // salah satu cabang: lembar yang terbit akan berkop & berkolom milik
+        // format LAIN dari yang diminta, dan tak ada yang menandainya.
+        const lapQ = (q.get('lap') || 'penggunaan') as IdPenerimaan
+        if (!FORMAT_PENERIMAAN[lapQ]) {
+          throw new Error(`Lembar "${q.get('lap')}" tidak dikenal. Yang tersedia: `
+            + Object.keys(FORMAT_PENERIMAAN).join(', ') + '.')
+        }
+        setLap(lapQ)
+        const fq = FORMAT_PENERIMAAN[lapQ]
         const per = q.get('periode') || ''
         if (!per) {
           throw new Error('Periode belum dipilih. Kop lembar ini menyebut satu semester '
@@ -92,7 +106,7 @@ export default function CetakPenggunaanPermendagriPage() {
         }
         const sk = q.get('skpd') ? Number(q.get('skpd')) : null
         if (!sk) {
-          throw new Error('SKPD belum dipilih. Kelima lembar IV.B.1.2–1.6 memuat identitas '
+          throw new Error(`SKPD belum dipilih. Kelima lembar ${fq.awalan}.x memuat identitas `
             + 'SKPD di kopnya, jadi hanya sah per-SKPD.')
         }
         setPeriode(per); setSkpdId(sk)
@@ -101,7 +115,7 @@ export default function CetakPenggunaanPermendagriPage() {
         const pilih = (q.get('lembar') || '').split(',').map(Number).filter(n => n >= 2 && n <= 6)
         setLembar(pilih.length > 0 ? pilih : undefined)
 
-        const h = await muatLembarPenggunaan(supabase, { skpdId: sk, periode: per })
+        const h = await muatLembarPenerimaan(supabase, { jenis: fq.jenis, skpdId: sk, periode: per })
         setRows(h.rows); setNamaTingkat(h.namaTingkat); setSkpd(h.skpd)
         setSebutan(h.sebutan); setTanpaPeny(h.tanpaPenyusutan)
 
@@ -115,7 +129,7 @@ export default function CetakPenggunaanPermendagriPage() {
         try { daftar = await fetchCalonTtd(supabase, sk, byId) } catch { daftar = [] }
         setCalon(daftar)
 
-        const simpan = ingatan(sk).baca()
+        const simpan = ingatan(lapQ, sk).baca()
         setTtdId(q.get('ttd') || simpan?.id || calonTtdAwal(daftar)?.id || '')
         setTglTtd(q.get('tgl') || simpan?.tgl || todayStr())
       } catch (e) {
@@ -126,11 +140,12 @@ export default function CetakPenggunaanPermendagriPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const f = FORMAT_PENERIMAAN[lap]
   const ttd = calon.find(c => c.id === ttdId) || null
   const { judul: judulPeriode, tahun } = labelPeriodeKop(periode)
   const adaRinci = !lembar || lembar.includes(2)
 
-  const items: ItemLaporan<BarisPenggunaan>[] = rows
+  const items: ItemLaporan<BarisPenerimaan>[] = rows
     .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({
       kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r,
@@ -139,7 +154,7 @@ export default function CetakPenggunaanPermendagriPage() {
 
   function simpanTtd(next: Partial<TtdTersimpan>) {
     if (skpdId == null) return
-    ingatan(skpdId).simpan({ id: ttdId, tgl: tglTtd, ...next })
+    ingatan(lap, skpdId).simpan({ id: ttdId, tgl: tglTtd, ...next })
   }
 
   useEffect(() => {
@@ -150,14 +165,14 @@ export default function CetakPenggunaanPermendagriPage() {
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       {/* ORIENTASI DITENTUKAN OLEH LEMBAR YANG DICENTANG:
-          · ada lembar RINCI → F4 lanskap (28 kolom mustahil di lebar 215 mm)
+          · ada lembar RINCI → F4 lanskap (25–28 kolom mustahil di lebar 215 mm)
           · hanya REKAP      → F4 potret (cuma 6–9 kolom)
           ⚠️ `@page` BERNAMA (supaya satu berkas memuat dua orientasi sekaligus)
           TERBUKTI TIDAK JALAN di Chrome — `size` pada @page bernama diabaikan.
           Jangan dicoba lagi; untuk mendapat keduanya, pisahkan centangnya &
           cetak dua kali. */}
       <style>{cssCetakLembar({
-        id: 'cetak-penggunaan-permendagri',
+        id: 'cetak-penerimaan-permendagri',
         kertas: adaRinci ? 'F4 lanskap' : 'F4 potret',
         margin: adaRinci ? '6mm' : '12mm',
         tambahan: '  .break-before-page { break-before: page; }',
@@ -220,15 +235,15 @@ export default function CetakPenggunaanPermendagriPage() {
         </div>
       )}
 
-      <div id="cetak-penggunaan-permendagri"
+      <div id="cetak-penerimaan-permendagri"
         className="max-w-[1600px] mx-auto bg-white p-6 shadow print:shadow-none print:p-0 space-y-10 print:space-y-0">
         {!siap ? (
           <p className="py-8 text-center text-gray-400 text-sm">Memuat…</p>
         ) : gagal ? (
           <p className="py-8 text-center text-red-600 text-sm">Gagal menyiapkan lembar: {gagal}</p>
         ) : (
-          <LembarPenggunaanPermendagri
-            items={items} namaTingkat={namaTingkat} skpd={skpd}
+          <LembarPenerimaanPermendagri
+            f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
             berupa={berupaAset(items.map(i => i.kode))}
             labelKomptabel={labelKomptabel(komptabel)}
             judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}

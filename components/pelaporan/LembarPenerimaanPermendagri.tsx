@@ -1,22 +1,32 @@
 'use client'
 // ============================================================================
-// PENYAJI lembar PENGGUNAAN format Permendagri 47/2021 (cabang IV.B.1).
+// PENYAJI lembar PENERIMAAN format Permendagri 47/2021 — cabang IV.B.1 & IV.C.
 //
-// Murni tampilan — nol query, nol state. Angkanya dirakit `muatLembarPenggunaan`
-// (lib/laporanPenggunaan.ts), susunan & penomoran kolomnya datang dari
-// `FORMAT_PENGGUNAAN` (lib/formatPenggunaan.ts). Pemisahan ini mengikuti pola BA
+//   IV.B.1.2–1.6  Penerimaan PENGGUNAAN (pengalihan status antar SKPD)
+//   IV.C.2–C.6    Penerimaan BMD INTERNAL (mutasi internal antar sub-unit)
+//
+// Murni tampilan — nol query, nol state. Angkanya dirakit `muatLembarPenerimaan`
+// (lib/laporanPenerimaan.ts), susunan & penomoran kolomnya datang dari
+// `FORMAT_PENERIMAAN` (lib/formatPenerimaan.ts). Pemisahan ini mengikuti pola BA
 // Rekon & lembar Perolehan: presenter di components/pelaporan/, pengambil data
 // di lib + halaman.
 //
 // Satu pemanggilan menghasilkan LIMA lembar berurutan dengan page-break:
-// IV.B.1.2 rinci + IV.B.1.3–6 rekap.
+// lembar rinci + empat rekap.
+//
+// ⚠️ SATU PENYAJI UNTUK DUA CABANG — yang membedakan keduanya SELURUHNYA data
+// di `FORMAT_PENERIMAAN` (kolom mana yang ada, judulnya, penomorannya). Tak ada
+// satu pun cabang `if` per format di berkas ini, dan itu memang syaratnya:
+// begitu penyaji harus tahu sedang merender format yang mana, format ketiga
+// akan menambah cabang lagi sampai berkas ini jadi tak terbaca.
 //
 // ⚠️ SENGAJA BUKAN `LembarPerolehanPermendagri` yang di-prop-kan. Empat hal
-// berbeda secara struktural — NIBAR berdiri di luar blok kode, ada kolom
-// Akumulasi & Nilai Buku, rekapnya 6 kolom, dan rekapnya mulai di 3 segmen —
-// jadi menyatukannya berarti komponen ber-belasan prop boolean yang melanggar
-// CODING-STANDARD §1.5. Yang DIPAKAI BERSAMA justru bagian yang berbahaya kalau
-// menyimpang: mesin subtotal & peta nama tingkat (lib/formatPermendagri.ts).
+// berbeda secara struktural dari cabang IV.A — NIBAR berdiri di luar blok kode,
+// ada kolom Akumulasi & Nilai Buku, rekapnya 6 kolom, dan rekapnya mulai di 3
+// segmen — jadi menyatukannya berarti komponen ber-belasan prop boolean yang
+// melanggar CODING-STANDARD §1.5. Yang DIPAKAI BERSAMA justru bagian yang
+// berbahaya kalau menyimpang: mesin subtotal & peta nama tingkat
+// (lib/formatPermendagri.ts).
 // ============================================================================
 import { formatRupiah } from '@/lib/export'
 import { pecahNibar } from '@/lib/kodeRegister'
@@ -28,13 +38,31 @@ import {
   type ItemLaporan,
 } from '@/lib/formatPermendagri'
 import {
-  FORMAT_PENGGUNAAN, SEG_MIN_REKAP_IVB, SEL_KODE_IVB, lebarKodeIvb, judulRekapIvb,
-  type FormatPenggunaan, type KolomIvb,
-} from '@/lib/formatPenggunaan'
-import type { BarisPenggunaan } from '@/lib/laporanPenggunaan'
+  SEG_MIN_REKAP_PENERIMAAN, SEL_KODE_PENERIMAAN,
+  kolomLembar, lebarKodePenerimaan, judulRekapPenerimaan,
+  type FormatPenerimaan, type KolomLembar,
+} from '@/lib/formatPenerimaan'
+import type { BarisPenerimaan } from '@/lib/laporanPenerimaan'
 
 const KABUPATEN = 'Kediri'
 const PROVINSI = 'Jawa Timur'
+
+/**
+ * Kelas sel KEPALA tabel.
+ *
+ * ⚠️ `[overflow-wrap:anywhere]`, BUKAN `break-words`. Keduanya beda tepat di
+ * kasus yang menggigit di sini: `break-word` tak memecah kata yang sudah
+ * berdiri sendirian di barisnya, jadi "Keterangan" (46 px) di sel 40 px tetap
+ * meluber. `anywhere` memecahnya. Sama alasannya dgn label lembar BA Rekon.
+ */
+/**
+ * ⚠️ `px-0.5` (2 px), bukan `px-1`. Di lembar 25–28 kolom, 4 px padding kiri-
+ * kanan itu ~13% dari lebar kolom tersempit — cukup untuk memaksa "Perolehan",
+ * "Tanggal", & "menyerahkan" terpecah di tengah kata. Diukur di peramban
+ * 2026-08-31: menyempitkannya membuat ketiganya muat utuh. Sel ISI tetap
+ * `px-1`; di sana padding yang lega justru menolong keterbacaan angka.
+ */
+const WRAP = 'border border-black px-0.5 py-1 [overflow-wrap:anywhere]'
 
 const tglID = (s: string | null | undefined) => {
   if (!s) return ''
@@ -66,19 +94,22 @@ function SelKode({ kode, sampai, n, tebal }: {
  * ⚠️ Penanda `(1)`…`(7)` TIDAK dicetak — angka dalam kurung di lembar
  * Permendagri itu rujukan ke "petunjuk pengisian", penanda TEMPLATE KOSONG.
  * Keputusan user 2026-08-30, berlaku untuk seluruh lembar Permendagri di
- * aplikasi ini. Nomornya tetap hidup di `FORMAT_PENGGUNAAN` sebagai tautan
+ * aplikasi ini. Nomornya tetap hidup di `FORMAT_PENERIMAAN` sebagai tautan
  * balik ke format aslinya & penjaga struktur kolom lewat test.
  *
- * ⚠️ Isian (3) lembar aslinya SATU baris — "PENGGUNA BARANG ATAU PENGELOLA
- * BARANG………(3)" — sedangkan cabang IV.A memisahkannya jadi dua isian
- * (sebutan + SKPD). Di sini tetap dicetak DUA BARIS mengikuti bentuk yang sudah
- * disetujui untuk IV.A: sebutan yang benar dipilih otomatis dari level SKPD,
- * lalu nama SKPD-nya huruf besar. Mencetak keduanya berdempetan dalam satu
- * baris ("PENGGUNA BARANG BADAN KEUANGAN DAN ASET DAERAH") terbaca sebagai satu
- * nama jabatan yang tak pernah ada.
+ * ⚠️ Sebutan pejabat & nama SKPD SELALU dicetak DUA BARIS, walaupun IV.B.1.x
+ * menyatukannya jadi satu isian di lembar aslinya ("PENGGUNA BARANG ATAU
+ * PENGELOLA BARANG………(3)") sementara IV.C memisahkannya jadi (3) dan
+ * `SKPD…………(4)`. Berdempetan dalam satu baris ("PENGGUNA BARANG BADAN KEUANGAN
+ * DAN ASET DAERAH") terbaca sebagai satu nama jabatan yang tak pernah ada.
+ * Karena keduanya dicetak sama, perbedaan penomoran kop itu tak berakibat apa
+ * pun di kertas — ia cuma menggeser nomor kolom, yang memang tak dicetak.
+ *
+ * ⚠️ `judulLanjut` OPSIONAL: IV.B.1.x punya baris judul kedua ("DALAM BENTUK
+ * PENGGUNAAN PENGALIHAN…"), IV.C tidak.
  */
 function KopLembar({ judul, judulLanjut, berupa, komptabel, sebutan, skpd, periode, tahun, tambahan }: {
-  judul: string; judulLanjut: string; berupa: string; komptabel: string; sebutan: string
+  judul: string; judulLanjut?: string; berupa: string; komptabel: string; sebutan: string
   skpd: { kode: string; nama: string } | null
   periode: string; tahun: string; tambahan?: string
 }) {
@@ -86,7 +117,7 @@ function KopLembar({ judul, judulLanjut, berupa, komptabel, sebutan, skpd, perio
     <>
       <div className="text-center leading-tight mb-2">
         <p className="font-bold text-[11px]">{judul} {berupa}</p>
-        <p className="font-bold text-[11px]">{judulLanjut}</p>
+        {judulLanjut && <p className="font-bold text-[11px]">{judulLanjut}</p>}
         {tambahan && <p className="font-bold text-[11px]">{tambahan}</p>}
         <p className="font-bold text-[11px]">{komptabel}</p>
         <p className="font-bold text-[11px]">{sebutan.toUpperCase()}</p>
@@ -124,9 +155,10 @@ function BlokTtd({ sebutan, nama, nip, tgl }: {
   )
 }
 
-export type PropLembarPenggunaan = {
-  f?: FormatPenggunaan
-  items: ItemLaporan<BarisPenggunaan>[]
+export type PropLembarPenerimaan = {
+  /** Registry cabangnya — `FORMAT_PENERIMAAN.penggunaan` atau `.internal`. */
+  f: FormatPenerimaan
+  items: ItemLaporan<BarisPenerimaan>[]
   /** Awalan kode → nama tingkat (lihat `petaNamaTingkat`). */
   namaTingkat: Map<string, string>
   skpd: { kode: string; nama: string } | null
@@ -149,16 +181,14 @@ export type PropLembarPenggunaan = {
   lembar?: number[]
 }
 
-export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
-  const f = p.f || FORMAT_PENGGUNAAN
-  const { items, skpd, berupa, labelKomptabel, judulPeriode, tahun, sebutan, ttd, tglTtd } = p
+export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
+  const { f, items, skpd, berupa, labelKomptabel, judulPeriode, tahun, sebutan, ttd, tglTtd } = p
   const nama = (kode: string) => p.namaTingkat.get(kode) || ''
   const tampil = (akhiran: number) => !p.lembar || p.lembar.includes(akhiran)
 
-  const semuaKolom = [f.kolomKiri, f.kolomNama, ...f.kolom]
-  const nKolom = SEL_KODE_IVB + semuaKolom.length
+  const nKolom = SEL_KODE_PENERIMAAN + kolomLembar(f).length
 
-  const isiKolom = (k: KolomIvb, r: BarisPenggunaan): React.ReactNode => {
+  const isiKolom = (k: KolomLembar, r: BarisPenerimaan): React.ReactNode => {
     const a = r.aset!
     switch (k.key) {
       case 'nibar': {
@@ -167,10 +197,10 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
         const pc = pecahNibar(a.nibar)
         return pc ? <>{pc[0]}<br />{pc[1]}</> : (a.nibar || '')
       }
-      // ⚠️ Kolom (10) "Nama Barang" = NOMENKLATUR BAKU dari kodefikasi, bukan
-      // yang diketik operator; (11) "Spesifikasi Nama Barang" yang diketik.
-      // Dua hal berbeda — pola yang sama dipakai Daftar Barang, Penyusutan, &
-      // lembar RKBMD. Jangan ditukar.
+      // ⚠️ "Nama Barang" = NOMENKLATUR BAKU dari kodefikasi, bukan yang diketik
+      // operator; "Spesifikasi Nama Barang" yang diketik. Dua hal berbeda —
+      // pola yang sama dipakai Daftar Barang, Penyusutan, & lembar RKBMD.
+      // Jangan ditukar.
       case 'nama': return nama(a.kode) || a.uraian_barang || ''
       case 'spek_nama': return a.nama_barang || ''
       case 'spek_lain': return a.spesifikasi_lainnya || ''
@@ -185,27 +215,31 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
       case 'akumulasi': return r.tanpaPenyusutan ? '…' : formatRupiah(r.akumulasi ?? 0)
       case 'nilai_buku': return r.tanpaPenyusutan ? '…' : formatRupiah(r.nilaiBuku ?? 0)
       // ⚠️ Tanggal Perolehan = kapan barang DIBUAT/diperoleh pemkab pertama
-      // kali, BUKAN tanggal pengalihannya. Yang terakhir itu kolom (25).
+      // kali, BUKAN tanggal perpindahannya. Yang terakhir itu kolom BAST.
       case 'tgl_perolehan': return tglID(a.tgl_perolehan)
       // Isian operator menang; kosong jatuh ke label cara perolehan. Satu
       // sumber dgn Daftar Barang & Export — lihat `asalUsulTampil` (lib/bmd.ts).
       case 'cara_perolehan': return asalUsulTampil(a.asal_usul, a.cara_perolehan).teks
+      // ⚠️ HANYA ADA DI IV.B.1.2 — IV.C tak punya kolom Lokasi. Aman: kolom
+      // yang tak terdaftar di registry cabangnya tak pernah dirender.
       case 'lokasi': return a.alamat_detail || ''
       case 'asal_pihak': return r.asal_nama || ''
-      // (23)(24): identitas barang di SKPD yang menyerahkan. `pengalihan_status`
-      // tak mengubah kodefikasi maupun nama barang, jadi sama persis dengan
-      // (9)(10) — itu fakta, bukan salinan asal-asalan. Lihat catatannya di
-      // lib/formatPenggunaan.ts.
+      // "Asal Barang": identitas barang di pihak yang menyerahkan. Baik
+      // `pengalihan_status` maupun `mutasi_internal` tak mengubah kodefikasi
+      // maupun nama barang, jadi sama persis dengan blok Penggolongan — itu
+      // fakta, bukan salinan asal-asalan. Lihat catatannya di
+      // lib/formatPenerimaan.ts.
       case 'asal_kode': return a.kode || ''
       case 'asal_nama': return nama(a.kode) || a.uraian_barang || ''
-      // BAST = dokumen pengalihannya. `header.tanggal` tanggal dokumen sumber
+      // BAST = dokumen perpindahannya. `header.tanggal` tanggal dokumen sumber
       // (bisa lebih tua dari tanggal Terima); `no_sk` nomornya.
       case 'ba_tanggal': return tglID(r.header?.tanggal || r.payload?.tgl_dokumen_sumber || r.tanggal)
       case 'ba_nomor': return r.header?.no_sk || r.payload?.no_sk || ''
-      // ⚠️ (27)(28) SELALU KOSONG — aplikasi ini tak menyimpan SK Penghapusan
-      // sisi SKPD yang menyerahkan di mana pun. Diisi `no_sk` kartu pengalihan
-      // (yang artinya lain) berarti menaruh nomor dokumen yang salah di lembar
-      // bertanda tangan. Pola yang sama dgn `dok_nama`/`penyebab` di IV.A.
+      // ⚠️ SK Penghapusan SELALU KOSONG & hanya ada di IV.B.1.2 — aplikasi ini
+      // tak menyimpan SK Penghapusan sisi SKPD yang menyerahkan di mana pun.
+      // Diisi `no_sk` kartu pengalihan (yang artinya lain) berarti menaruh
+      // nomor dokumen yang salah di lembar bertanda tangan. Pola yang sama dgn
+      // `dok_nama`/`penyebab` di IV.A.
       case 'sk_tanggal': return ''
       case 'sk_nomor': return ''
       case 'keterangan': return a.keterangan || r.keterangan || ''
@@ -213,17 +247,27 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
     }
   }
 
-  const rata = (k: KolomIvb) =>
+  const rata = (k: KolomLembar) =>
     k.rata === 'kanan' ? 'text-right' : k.rata === 'tengah' ? 'text-center' : ''
 
   /**
-   * Kepala tabel. Tiga hal yang membedakannya dari cabang IV.A:
+   * Kepala tabel.
+   *
+   * ⚠️ `WRAP` di tiap `<th>` bukan hiasan. Judul kolom di lembar ini memuat kata
+   * tunggal yang lebih lebar dari selnya sendiri ("Spesifikasi", "Keterangan",
+   * "Perolehan") — tanpa `overflow-wrap: anywhere` kata itu MELUBER menimpa sel
+   * tetangga, dan `table-fixed` menyembunyikannya dengan rapi sampai kertasnya
+   * keluar. Diukur di peramban 2026-08-31: sebelum ditambahkan, 4 kepala kolom
+   * IV.B.1.2 meluber 2–6 px. `break-words` saja TIDAK cukup — ia tak memecah
+   * kata yang berdiri sendirian di barisnya.
+   *
+   * Tiga hal yang membedakan susunannya dari cabang IV.A:
    * NIBAR berdiri sendiri di paling kiri (`rowSpan` 2), blok "Penggolongan dan
    * Kodefikasi Barang" membungkus sel kode + Nama Barang, dan kolom bergrup
    * (Asal Barang / BAST / SK Penghapusan) turun ke baris kedua.
    */
   function Thead() {
-    const grup: { judul: string | undefined; kolom: KolomIvb[] }[] = []
+    const grup: { judul: string | undefined; kolom: KolomLembar[] }[] = []
     for (const k of f.kolom) {
       const t = grup[grup.length - 1]
       if (t && t.judul && t.judul === k.grup) t.kolom.push(k)
@@ -232,19 +276,19 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
     return (
       <thead>
         <tr className="text-center font-semibold">
-          <th className="border border-black px-1 py-1" rowSpan={2}>{f.kolomKiri.judul}</th>
-          <th className="border border-black px-1 py-1" colSpan={SEL_KODE_IVB + 1}>
+          <th className={WRAP} rowSpan={2}>{f.kolomKiri.judul}</th>
+          <th className={WRAP} colSpan={SEL_KODE_PENERIMAAN + 1}>
             Penggolongan dan Kodefikasi Barang
           </th>
           {grup.map((g, i) => g.judul
-            ? <th key={i} className="border border-black px-1 py-1" colSpan={g.kolom.length}>{g.judul}</th>
-            : <th key={i} className="border border-black px-1 py-1" rowSpan={2}>{g.kolom[0].judul}</th>)}
+            ? <th key={i} className={WRAP} colSpan={g.kolom.length}>{g.judul}</th>
+            : <th key={i} className={WRAP} rowSpan={2}>{g.kolom[0].judul}</th>)}
         </tr>
         <tr className="text-center font-semibold">
-          <th className="border border-black px-1 py-1" colSpan={SEL_KODE_IVB}>Kode Barang</th>
-          <th className="border border-black px-1 py-1">{f.kolomNama.judul}</th>
+          <th className={WRAP} colSpan={SEL_KODE_PENERIMAAN}>Kode Barang</th>
+          <th className={WRAP}>{f.kolomNama.judul}</th>
           {grup.filter(g => g.judul).flatMap(g =>
-            g.kolom.map(k => <th key={k.key} className="border border-black px-1 py-1">{k.judul}</th>))}
+            g.kolom.map(k => <th key={k.key} className={WRAP}>{k.judul}</th>))}
         </tr>
       </thead>
     )
@@ -262,8 +306,8 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
         <table className="w-full table-fixed border-collapse text-[7.5px] leading-tight">
           <colgroup>
             <col style={{ width: `${f.kolomKiri.lebar}%` }} />
-            {Array.from({ length: SEL_KODE_IVB }, (_, i) => (
-              <col key={i} style={{ width: `${lebarKodeIvb(f) / SEL_KODE_IVB}%` }} />
+            {Array.from({ length: SEL_KODE_PENERIMAAN }, (_, i) => (
+              <col key={i} style={{ width: `${lebarKodePenerimaan(f) / SEL_KODE_PENERIMAAN}%` }} />
             ))}
             <col style={{ width: `${f.kolomNama.lebar}%` }} />
             {f.kolom.map(k => <col key={k.key} style={{ width: `${k.lebar}%` }} />)}
@@ -276,10 +320,15 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
               // yang berisi — begitu bentuk lembar aslinya.
               <tr key={`g${i}`} className="font-bold italic">
                 <td className="border border-black px-1 py-0.5" />
-                <SelKode kode={b.kode} sampai={b.seg} n={SEL_KODE_IVB} tebal />
+                <SelKode kode={b.kode} sampai={b.seg} n={SEL_KODE_PENERIMAAN} tebal />
                 <td className="border border-black px-1 py-0.5 break-words">{nama(b.kode) || b.kode}</td>
                 {f.kolom.map(k => (
-                  <td key={k.key} className={`border border-black px-1 py-0.5 ${rata(k)}`}>
+                  // ⚠️ `anywhere` di sini juga — baris SUBTOTAL justru memuat
+                  // angka TERBESAR di lembar (jumlah se-golongan), jadi kalau
+                  // yang dibungkus cuma baris barangnya, yang meluber ke sel
+                  // sebelah malah angka yang paling diperhatikan pemeriksa.
+                  <td key={k.key}
+                    className={`border border-black px-1 py-0.5 ${rata(k)} [overflow-wrap:anywhere]`}>
                     {k.key === 'jumlah_total' ? formatRupiah(b.nilai)
                       : k.key === 'akumulasi' ? formatRupiah(b.akumulasi)
                         : k.key === 'nilai_buku' ? formatRupiah(b.nilaiBuku)
@@ -292,14 +341,19 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
                 <td className="border border-black px-1 py-0.5 break-all tracking-tighter text-[6px]">
                   {isiKolom(f.kolomKiri, b.data)}
                 </td>
-                <SelKode kode={b.kode} sampai={SEL_KODE_IVB} n={SEL_KODE_IVB} />
+                <SelKode kode={b.kode} sampai={SEL_KODE_PENERIMAAN} n={SEL_KODE_PENERIMAAN} />
                 <td className="border border-black px-1 py-0.5 break-words">
                   {isiKolom(f.kolomNama, b.data)}
                 </td>
                 {f.kolom.map(k => (
                   <td key={k.key}
+                    // ⚠️ `anywhere` di sel isi juga — nilai rupiah panjang
+                    // ("3.794.734.725") & nama barang tanpa spasi sama-sama bisa
+                    // melebihi selnya. Kolom bertanggal dikecualikan: memecah
+                    // "12/08/2026" di tengah justru bikin tak terbaca, dan
+                    // lebarnya memang sudah dianggarkan muat.
                     className={`border border-black px-1 py-0.5 ${rata(k)} ${
-                      k.rata === 'tengah' ? 'whitespace-nowrap' : 'break-words'}`}>
+                      k.rata === 'tengah' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
                     {isiKolom(k, b.data)}
                   </td>
                 ))}
@@ -307,7 +361,7 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
             ))}
             {items.length === 0 && (
               <tr><td colSpan={nKolom} className="border border-black px-1 py-3 text-center">
-                Tidak ada penerimaan penggunaan pada periode ini.
+                Tidak ada penerimaan pada periode ini.
               </td></tr>
             )}
           </tbody>
@@ -317,16 +371,18 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
     )
   }
 
-  // ── Lembar REKAP IV.B.1.3–1.6 ─────────────────────────────────────────────
+  // ── Lembar REKAP (IV.B.1.3–1.6 / IV.C.3–C.6) ──────────────────────────────
   //
+  // ⚠️ IDENTIK di kedua cabang — kolomnya sama, kedalamannya sama, judulnya cuma
+  //    beda di bagian yang sudah jadi data. Karena itu tak ada percabangan.
   // ⚠️ ENAM kolom (IV.A cuma empat): Akumulasi Penyusutan & Nilai Buku ikut.
-  // ⚠️ Mulai di 3 SEGMEN, bukan 2 — lihat `SEG_MIN_REKAP_IVB`.
+  // ⚠️ Mulai di 3 SEGMEN, bukan 2 — lihat `SEG_MIN_REKAP_PENERIMAAN`.
   // ⚠️ TANPA kolom "No" & TANPA baris JUMLAH — beda dari IV.A.<n>.6 yang punya
   //    keduanya. Diikuti apa adanya dari lembar aslinya.
   function LembarRekap({ akhiran, seg, menurut, pecahHalaman }: {
     akhiran: number; seg: number; menurut: string; pecahHalaman: boolean
   }) {
-    const baris = susunRekap(items, seg, SEG_MIN_REKAP_IVB)
+    const baris = susunRekap(items, seg, SEG_MIN_REKAP_PENERIMAAN)
     const nSel = seg
     return (
       // ⚠️ Page-break hanya kalau ADA lembar sebelumnya. Kalau lembar rinci tak
@@ -334,7 +390,7 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
       // depan berkas — dan itu baru ketahuan sesudah dicetak.
       <section className={`lembar-rekap ${pecahHalaman ? 'break-before-page' : ''}`}>
         <p className="text-right text-[12px] mb-1">Format {f.awalan}.{akhiran}</p>
-        <KopLembar judul={judulRekapIvb(f)} judulLanjut={f.judulLanjut} berupa={berupa}
+        <KopLembar judul={judulRekapPenerimaan(f)} judulLanjut={f.judulLanjut} berupa={berupa}
           komptabel={labelKomptabel} sebutan={sebutan} skpd={skpd}
           periode={judulPeriode} tahun={tahun} tambahan={`MENURUT ${menurut}`} />
         <table className="w-full table-fixed border-collapse text-[9px] leading-tight">
@@ -367,7 +423,7 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
           </thead>
           <tbody>
             {baris.map((b, i) => (
-              <tr key={i} className={b.seg <= SEG_MIN_REKAP_IVB ? 'font-bold' : ''}>
+              <tr key={i} className={b.seg <= SEG_MIN_REKAP_PENERIMAAN ? 'font-bold' : ''}>
                 <SelKode kode={b.kode} sampai={b.seg} n={nSel} />
                 <td className="border border-black px-1 py-0.5 break-words">{nama(b.kode) || b.kode}</td>
                 <td className="border border-black px-1 py-0.5 text-right">{b.jumlah}</td>
@@ -378,7 +434,7 @@ export default function LembarPenggunaanPermendagri(p: PropLembarPenggunaan) {
             ))}
             {baris.length === 0 && (
               <tr><td colSpan={nSel + 5} className="border border-black px-1 py-3 text-center">
-                Tidak ada penerimaan penggunaan pada periode ini.
+                Tidak ada penerimaan pada periode ini.
               </td></tr>
             )}
           </tbody>
