@@ -2581,6 +2581,88 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## Laporan Pengeluaran Internal — Format IV.D.2–D.6 & IV.D.7 (2026-09-02)
+
+Cabang KEEMPAT modul Pelaporan Permendagri 47/2021. Menu Pelaporan →
+Pengelolaan → **Pengeluaran Internal** kini bertiga tab seperti tiga menu
+sebelumnya, plus lembar **IV.D.7** (rekap gabungan). **Tak ada migrasi.**
+
+Berkasnya: `lib/formatGabunganInternal.ts` (+ test) ·
+`components/pelaporan/LembarGabunganInternal.tsx`. Sisanya menumpang keluarga
+yang sudah ada.
+
+- ⚠️ **KELUARGA LEMBARNYA DI-RENAME jadi PERPINDAHAN.** `formatPenerimaan.ts`
+  jadi menyesatkan begitu ia memuat lembar PENGELUARAN, jadi seluruhnya digeser:
+  `lib/formatPerpindahan.ts` · `lib/laporanPerpindahan.ts` ·
+  `LembarPerpindahanPermendagri` · `PerpindahanFormatPermendagri` ·
+  `/cetak/perpindahan-permendagri`. Lewat `git mv` supaya riwayatnya terbaca.
+- ⚠️ **IDENTITAS lembar = (jenis ledger, ARAH), bukan jenis saja.** IV.C
+  (Penerimaan) & IV.D (Pengeluaran) membaca `mutasi_internal` yang PERSIS SAMA;
+  yang membedakan cuma sisinya. Tanpa `arah` di registry, keduanya menghasilkan
+  lembar yang isinya KEMBAR — tak ada error, cuma dua dokumen resmi yang
+  sama-sama mengaku benar. `masuk` menyaring `skpd_tujuan`, `keluar` menyaring
+  `skpd_asal`, `semua` (khusus IV.D.7) salah satu sisi. Dikunci test
+  "(jenis, arah) unik" + "judul lembar menyatakan arahnya".
+- ⚠️ **IV.D.2 TIDAK menyebut pihak mana pun** — tak ada "Pihak yang menerima"
+  sekalipun, dan tak ada Spesifikasi Lainnya maupun blok Asal Barang. Itu bentuk
+  formatnya (21 kolom vs 25 di IV.C), dan sengaja TIDAK ditambal: menyisipkan
+  kolom yang tak ada di lembar resmi membuatnya tak cocok waktu pemeriksa
+  mencocokkannya kolom per kolom. Pasangan menyerahkan↔menerima adanya di IV.D.7.
+- ⚠️ **IV.D.7 DI LUAR keluarga itu & punya penyaji sendiri.** Bentuknya berbeda
+  mendasar: DATAR & bernomor (1,2,3…), TANPA satu pun subtotal, dua blok angka
+  BERCERMIN (Pengeluaran ↔ Penerimaan), ditutup satu baris "Jumlah Total".
+  Memaksanya masuk `FormatPerpindahan` berarti tipe itu harus menumbuhkan
+  bendera "punya subtotal atau tidak", "satu blok atau dua", "bernomor atau
+  tidak" — persis komponen ber-belasan prop boolean yang dilarang
+  CODING-STANDARD §1.5.
+- ⚠️ **IV.D.7 SATU RUMAH, bukan dua** (`CABANG_GABUNGAN = 'pengeluaran'`). Ia
+  melayani kedua arah, jadi godaannya menaruhnya di menu Penerimaan DAN
+  Pengeluaran. Yang dipilih **Pengeluaran**, dua alasannya: (1) nomornya milik
+  keluarga IV.D, dan lembar resmi dicari orang lewat nomornya; (2) dua pintu
+  untuk satu lembar cepat atau lambat menyimpang — pola yang sudah memakan
+  korban di modul RKBMD ("dua pintu untuk satu keputusan"). Menu Penerimaan
+  Internal diberi PENUNJUK di komentar halamannya, bukan salinan tombolnya.
+  Halaman cetak MENOLAK `lembar=…,7` untuk cabang lain — lembar yang diminta
+  tapi tak pernah terbit adalah berkas yang KURANG tanpa satu pun tanda.
+- ⚠️ **Baris "Jumlah Total" IV.D.7 MENYATAKAN ULANG, BUKAN mengecek silang.**
+  Formatnya dirancang untuk keadaan di mana sisi keluar & masuk dicatat
+  terpisah (mis. jumlah diserahkan ≠ diterima). Di aplikasi ini SATU baris
+  `mutasi_internal` merekam kedua sisi sekaligus — barang, jumlah, & nilainya
+  sama — jadi kedua blok pasti kembar dan kedua total pasti sama besar. **Jangan
+  pernah menyajikannya sebagai bukti "keluar = masuk sudah dicocokkan"**; yang
+  dibuktikan cuma bahwa satu baris ledger dibaca dua kali. Yang benar-benar
+  berbeda hanyalah PIHAK-nya. Dikatakan juga di layar, di bawah centangnya.
+- **Barisnya DITARIK TERSENDIRI dgn `arah: 'semua'`** — lembar IV.D.2–D.6 di
+  atasnya cuma memuat yang keluar. Menyaringnya di klien dari satu tarikan
+  mustahil: halaman tak tahu daftar sub-SKPD dalam scope, dan itu justru yang
+  menentukan sisi mana yang "di dalam". Jadi dua query, sengaja.
+- ⚠️ **Baris ber-`colSpan` WAJIB diuji Σ-nya.** Baris Jumlah Total memuat dua
+  label ber-colSpan + enam angka; kalau jumlahnya tak persis selebar tabel,
+  angka totalnya jatuh di kolom yang SALAH & `table-fixed` menyembunyikannya
+  sampai kertasnya keluar. Diuji langsung di jsdom (Σ colSpan == kolom kepala).
+- ⚠️ **Harga Satuan sengaja TIDAK ikut dijumlah** (`KOLOM_DIJUMLAH`).
+  Menjumlahkan harga satuan barang yang berbeda menghasilkan angka yang tak
+  berarti apa pun, dan begitu tercetak ia akan dikutip orang — pelajaran yang
+  sama dengan lembar Standar Harga.
+- ⚠️ **Ronde ketiga, kesalahan yang sama lagi: baris TOTAL kelewat dibungkus.**
+  `[overflow-wrap:anywhere]` sudah dipasang di baris barang & baris subtotal,
+  tapi baris Jumlah Total IV.D.7 yang baru lagi-lagi lupa — dan justru di situ
+  angkanya paling besar (terukur: 6 sel meluber 3 px). **Aturan umum: tiap kali
+  menambah baris ber-angka BARU di lembar padat, ia butuh kelas pembungkus yang
+  sama seperti baris di atasnya.**
+- **Menu Pengeluaran Internal ikut menutup cacat lama yang sama** dgn Penerimaan:
+  versi `LaporanTransaksi` tak pernah mengirim `batalJenis`, jadi mutasi yang
+  sudah DIBATALKAN tetap tampil seolah berlaku. Sekarang tersaring. Dgn ini
+  KETIGA menu perpindahan sudah pindah; `LaporanTransaksi` tinggal melayani 4
+  menu (Reklasifikasi, Koreksi, Kapitalisasi, Penghapusan) — ambang anti-hampa
+  di lib/sinkronisasiRpc.test.ts §7 ikut turun ke 4.
+- **Kunci ingatan penanda tangan** `bmd_pengeluaran_internal_ttd_skpd_<id>`;
+  nilai dua kunci lama DIPERTAHANKAN apa adanya waktu fungsinya digeneralkan.
+- **Diukur di peramban** (F4 lanskap, tabel 1.157 px): **IV.D.2 nol temuan** di
+  keenam pemeriksaan — 21 kolom, tinggi baris maks cuma 24 px (paling lega dari
+  seluruh keluarga). **IV.D.7 nol temuan** juga sesudah baris totalnya
+  dibungkus — 28 kolom, Σ colSpan baris total = 28.
+
 ## Laporan Penerimaan Internal — Format Permendagri IV.C.2–C.6 (2026-08-31)
 
 Cabang KETIGA modul Pelaporan Permendagri 47/2021. Menu Pelaporan → Pengelolaan

@@ -8,6 +8,11 @@
 // ledger yang PERSIS SAMA, jadi tanpa itu isinya identik dgn menu ini. Aturan
 // yang sama sudah berlaku waktu halaman ini masih memakai `LaporanTransaksi`.
 //
+// ⚠️ Rekap GABUNGAN pengeluaran + penerimaan (Format IV.D.7) TIDAK di sini —
+// rumahnya menu Pengeluaran Internal, karena nomornya milik keluarga IV.D dan
+// dua pintu untuk satu lembar cepat atau lambat menyimpang. Alasan lengkapnya
+// di `CABANG_GABUNGAN` (lib/formatPerpindahan.ts).
+//
 // ⚠️ Pindah ke sini ikut menutup satu cacat lama: versi `LaporanTransaksi` tak
 // pernah mengirim `batalJenis`, jadi mutasi internal yang sudah DIBATALKAN
 // (`batal_pengalihan` — enumnya sengaja dipakai bersama, CLAUDE.md) tetap

@@ -352,7 +352,13 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
       out.push({ halaman: d.name, jenis: kutipan(m![1]) })
     }
     // Pengaman anti-hampa: pemindai yang tak menemukan apa-apa akan "lulus".
-    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(5)
+    // ⚠️ Ambangnya TURUN tiap satu menu pindah ke kerangkanya sendiri — per
+    // 2026-08-31 sisa 4 (Reklasifikasi, Koreksi, Kapitalisasi, Penghapusan);
+    // Penggunaan, Penerimaan & Pengeluaran Internal sudah pakai
+    // `LaporanPerpindahan` dan dijaga uji di bawahnya. Kalau angka ini turun
+    // lagi, PASTIKAN menu yang pindah sudah masuk `DIR_PERPINDAHAN` — bukan
+    // sekadar menurunkan ambangnya, kalau tidak menu itu lolos dari kedua uji.
+    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(4)
     return out
   }
 
@@ -386,20 +392,20 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
 
   // ⚠️ Menu Pelaporan yang TIDAK memakai `LaporanTransaksi` tetap butuh penjaga
   // yang sama — dan justru merekalah yang gampang lolos, karena pemindai di
-  // atas tak melihatnya sama sekali. Dua sejauh ini: Penggunaan
-  // (`pengalihan_status`) & Penerimaan Internal (`mutasi_internal`), keduanya
-  // lewat `LaporanPerpindahan`. Bentuk query-nya sama persis dgn menu lain
+  // atas tak melihatnya sama sekali. Tiga sejauh ini: Penggunaan
+  // (`pengalihan_status`) plus Penerimaan & Pengeluaran Internal
+  // (`mutasi_internal`, dua arah) — semuanya lewat `LaporanPerpindahan`. Bentuk query-nya sama persis dgn menu lain
   // (`.eq('jenis', …).order('id')`), jadi mereka menanggung risiko timeout yang
   // sama kalau jenisnya tak tercakup index parsial.
   //
   // ⚠️ Jenisnya dibaca dari HALAMANNYA (prop `jenis="…"`), bukan diketik ulang
   // di sini — kalau diketik ulang, menu ketiga yang memakai kerangka yang sama
   // tak akan pernah ikut terperiksa & tak ada yang menyadarinya.
-  const DIR_PERPINDAHAN = ['penggunaan', 'penerimaan']
+  const DIR_PERPINDAHAN = ['penggunaan', 'penerimaan', 'pengeluaran']
 
   it('menu ber-`LaporanPerpindahan` tercakup index (id) WHERE jenis IN (…)', () => {
-    const pemuat = path.join(AKAR, 'lib/laporanPenerimaan.ts')
-    expect(fs.existsSync(pemuat), 'lib/laporanPenerimaan.ts tak ditemukan — pemindaian rusak').toBe(true)
+    const pemuat = path.join(AKAR, 'lib/laporanPerpindahan.ts')
+    expect(fs.existsSync(pemuat), 'lib/laporanPerpindahan.ts tak ditemukan — pemindaian rusak').toBe(true)
     // Urutan menentukan index mana yang sanggup melayani: `jenis` bertipe ENUM
     // tak bisa jadi index-cond di bawah RLS, jadi `order('periode')` atau
     // `('tanggal')` menyusuri index lain sambil membuang ratusan ribu baris

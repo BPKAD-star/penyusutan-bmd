@@ -5,9 +5,9 @@
 //   IV.B.1.2–1.6  Penerimaan PENGGUNAAN (pengalihan status antar SKPD)
 //   IV.C.2–C.6    Penerimaan BMD INTERNAL (mutasi internal antar sub-unit)
 //
-// Murni tampilan — nol query, nol state. Angkanya dirakit `muatLembarPenerimaan`
-// (lib/laporanPenerimaan.ts), susunan & penomoran kolomnya datang dari
-// `FORMAT_PENERIMAAN` (lib/formatPenerimaan.ts). Pemisahan ini mengikuti pola BA
+// Murni tampilan — nol query, nol state. Angkanya dirakit `muatLembarPerpindahan`
+// (lib/laporanPerpindahan.ts), susunan & penomoran kolomnya datang dari
+// `FORMAT_PERPINDAHAN` (lib/formatPerpindahan.ts). Pemisahan ini mengikuti pola BA
 // Rekon & lembar Perolehan: presenter di components/pelaporan/, pengambil data
 // di lib + halaman.
 //
@@ -15,7 +15,7 @@
 // lembar rinci + empat rekap.
 //
 // ⚠️ SATU PENYAJI UNTUK DUA CABANG — yang membedakan keduanya SELURUHNYA data
-// di `FORMAT_PENERIMAAN` (kolom mana yang ada, judulnya, penomorannya). Tak ada
+// di `FORMAT_PERPINDAHAN` (kolom mana yang ada, judulnya, penomorannya). Tak ada
 // satu pun cabang `if` per format di berkas ini, dan itu memang syaratnya:
 // begitu penyaji harus tahu sedang merender format yang mana, format ketiga
 // akan menambah cabang lagi sampai berkas ini jadi tak terbaca.
@@ -38,11 +38,11 @@ import {
   type ItemLaporan,
 } from '@/lib/formatPermendagri'
 import {
-  SEG_MIN_REKAP_PENERIMAAN, SEL_KODE_PENERIMAAN,
-  kolomLembar, lebarKodePenerimaan, judulRekapPenerimaan,
-  type FormatPenerimaan, type KolomLembar,
-} from '@/lib/formatPenerimaan'
-import type { BarisPenerimaan } from '@/lib/laporanPenerimaan'
+  SEG_MIN_REKAP_PERPINDAHAN, SEL_KODE_PERPINDAHAN,
+  kolomLembar, lebarKodePerpindahan, judulRekapPerpindahan,
+  type FormatPerpindahan, type KolomLembar,
+} from '@/lib/formatPerpindahan'
+import type { BarisPerpindahan } from '@/lib/laporanPerpindahan'
 
 const KABUPATEN = 'Kediri'
 const PROVINSI = 'Jawa Timur'
@@ -94,7 +94,7 @@ function SelKode({ kode, sampai, n, tebal }: {
  * ⚠️ Penanda `(1)`…`(7)` TIDAK dicetak — angka dalam kurung di lembar
  * Permendagri itu rujukan ke "petunjuk pengisian", penanda TEMPLATE KOSONG.
  * Keputusan user 2026-08-30, berlaku untuk seluruh lembar Permendagri di
- * aplikasi ini. Nomornya tetap hidup di `FORMAT_PENERIMAAN` sebagai tautan
+ * aplikasi ini. Nomornya tetap hidup di `FORMAT_PERPINDAHAN` sebagai tautan
  * balik ke format aslinya & penjaga struktur kolom lewat test.
  *
  * ⚠️ Sebutan pejabat & nama SKPD SELALU dicetak DUA BARIS, walaupun IV.B.1.x
@@ -155,10 +155,10 @@ function BlokTtd({ sebutan, nama, nip, tgl }: {
   )
 }
 
-export type PropLembarPenerimaan = {
-  /** Registry cabangnya — `FORMAT_PENERIMAAN.penggunaan` atau `.internal`. */
-  f: FormatPenerimaan
-  items: ItemLaporan<BarisPenerimaan>[]
+export type PropLembarPerpindahan = {
+  /** Registry cabangnya — `FORMAT_PERPINDAHAN.penggunaan` atau `.internal`. */
+  f: FormatPerpindahan
+  items: ItemLaporan<BarisPerpindahan>[]
   /** Awalan kode → nama tingkat (lihat `petaNamaTingkat`). */
   namaTingkat: Map<string, string>
   skpd: { kode: string; nama: string } | null
@@ -181,14 +181,14 @@ export type PropLembarPenerimaan = {
   lembar?: number[]
 }
 
-export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
+export default function LembarPerpindahanPermendagri(p: PropLembarPerpindahan) {
   const { f, items, skpd, berupa, labelKomptabel, judulPeriode, tahun, sebutan, ttd, tglTtd } = p
   const nama = (kode: string) => p.namaTingkat.get(kode) || ''
   const tampil = (akhiran: number) => !p.lembar || p.lembar.includes(akhiran)
 
-  const nKolom = SEL_KODE_PENERIMAAN + kolomLembar(f).length
+  const nKolom = SEL_KODE_PERPINDAHAN + kolomLembar(f).length
 
-  const isiKolom = (k: KolomLembar, r: BarisPenerimaan): React.ReactNode => {
+  const isiKolom = (k: KolomLembar, r: BarisPerpindahan): React.ReactNode => {
     const a = r.aset!
     switch (k.key) {
       case 'nibar': {
@@ -228,7 +228,7 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
       // `pengalihan_status` maupun `mutasi_internal` tak mengubah kodefikasi
       // maupun nama barang, jadi sama persis dengan blok Penggolongan — itu
       // fakta, bukan salinan asal-asalan. Lihat catatannya di
-      // lib/formatPenerimaan.ts.
+      // lib/formatPerpindahan.ts.
       case 'asal_kode': return a.kode || ''
       case 'asal_nama': return nama(a.kode) || a.uraian_barang || ''
       // BAST = dokumen perpindahannya. `header.tanggal` tanggal dokumen sumber
@@ -277,7 +277,7 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
       <thead>
         <tr className="text-center font-semibold">
           <th className={WRAP} rowSpan={2}>{f.kolomKiri.judul}</th>
-          <th className={WRAP} colSpan={SEL_KODE_PENERIMAAN + 1}>
+          <th className={WRAP} colSpan={SEL_KODE_PERPINDAHAN + 1}>
             Penggolongan dan Kodefikasi Barang
           </th>
           {grup.map((g, i) => g.judul
@@ -285,7 +285,7 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
             : <th key={i} className={WRAP} rowSpan={2}>{g.kolom[0].judul}</th>)}
         </tr>
         <tr className="text-center font-semibold">
-          <th className={WRAP} colSpan={SEL_KODE_PENERIMAAN}>Kode Barang</th>
+          <th className={WRAP} colSpan={SEL_KODE_PERPINDAHAN}>Kode Barang</th>
           <th className={WRAP}>{f.kolomNama.judul}</th>
           {grup.filter(g => g.judul).flatMap(g =>
             g.kolom.map(k => <th key={k.key} className={WRAP}>{k.judul}</th>))}
@@ -306,8 +306,8 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
         <table className="w-full table-fixed border-collapse text-[7.5px] leading-tight">
           <colgroup>
             <col style={{ width: `${f.kolomKiri.lebar}%` }} />
-            {Array.from({ length: SEL_KODE_PENERIMAAN }, (_, i) => (
-              <col key={i} style={{ width: `${lebarKodePenerimaan(f) / SEL_KODE_PENERIMAAN}%` }} />
+            {Array.from({ length: SEL_KODE_PERPINDAHAN }, (_, i) => (
+              <col key={i} style={{ width: `${lebarKodePerpindahan(f) / SEL_KODE_PERPINDAHAN}%` }} />
             ))}
             <col style={{ width: `${f.kolomNama.lebar}%` }} />
             {f.kolom.map(k => <col key={k.key} style={{ width: `${k.lebar}%` }} />)}
@@ -320,7 +320,7 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
               // yang berisi — begitu bentuk lembar aslinya.
               <tr key={`g${i}`} className="font-bold italic">
                 <td className="border border-black px-1 py-0.5" />
-                <SelKode kode={b.kode} sampai={b.seg} n={SEL_KODE_PENERIMAAN} tebal />
+                <SelKode kode={b.kode} sampai={b.seg} n={SEL_KODE_PERPINDAHAN} tebal />
                 <td className="border border-black px-1 py-0.5 break-words">{nama(b.kode) || b.kode}</td>
                 {f.kolom.map(k => (
                   // ⚠️ `anywhere` di sini juga — baris SUBTOTAL justru memuat
@@ -341,7 +341,7 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
                 <td className="border border-black px-1 py-0.5 break-all tracking-tighter text-[6px]">
                   {isiKolom(f.kolomKiri, b.data)}
                 </td>
-                <SelKode kode={b.kode} sampai={SEL_KODE_PENERIMAAN} n={SEL_KODE_PENERIMAAN} />
+                <SelKode kode={b.kode} sampai={SEL_KODE_PERPINDAHAN} n={SEL_KODE_PERPINDAHAN} />
                 <td className="border border-black px-1 py-0.5 break-words">
                   {isiKolom(f.kolomNama, b.data)}
                 </td>
@@ -376,13 +376,13 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
   // ⚠️ IDENTIK di kedua cabang — kolomnya sama, kedalamannya sama, judulnya cuma
   //    beda di bagian yang sudah jadi data. Karena itu tak ada percabangan.
   // ⚠️ ENAM kolom (IV.A cuma empat): Akumulasi Penyusutan & Nilai Buku ikut.
-  // ⚠️ Mulai di 3 SEGMEN, bukan 2 — lihat `SEG_MIN_REKAP_PENERIMAAN`.
+  // ⚠️ Mulai di 3 SEGMEN, bukan 2 — lihat `SEG_MIN_REKAP_PERPINDAHAN`.
   // ⚠️ TANPA kolom "No" & TANPA baris JUMLAH — beda dari IV.A.<n>.6 yang punya
   //    keduanya. Diikuti apa adanya dari lembar aslinya.
   function LembarRekap({ akhiran, seg, menurut, pecahHalaman }: {
     akhiran: number; seg: number; menurut: string; pecahHalaman: boolean
   }) {
-    const baris = susunRekap(items, seg, SEG_MIN_REKAP_PENERIMAAN)
+    const baris = susunRekap(items, seg, SEG_MIN_REKAP_PERPINDAHAN)
     const nSel = seg
     return (
       // ⚠️ Page-break hanya kalau ADA lembar sebelumnya. Kalau lembar rinci tak
@@ -390,7 +390,7 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
       // depan berkas — dan itu baru ketahuan sesudah dicetak.
       <section className={`lembar-rekap ${pecahHalaman ? 'break-before-page' : ''}`}>
         <p className="text-right text-[12px] mb-1">Format {f.awalan}.{akhiran}</p>
-        <KopLembar judul={judulRekapPenerimaan(f)} judulLanjut={f.judulLanjut} berupa={berupa}
+        <KopLembar judul={judulRekapPerpindahan(f)} judulLanjut={f.judulLanjut} berupa={berupa}
           komptabel={labelKomptabel} sebutan={sebutan} skpd={skpd}
           periode={judulPeriode} tahun={tahun} tambahan={`MENURUT ${menurut}`} />
         <table className="w-full table-fixed border-collapse text-[9px] leading-tight">
@@ -423,7 +423,7 @@ export default function LembarPenerimaanPermendagri(p: PropLembarPenerimaan) {
           </thead>
           <tbody>
             {baris.map((b, i) => (
-              <tr key={i} className={b.seg <= SEG_MIN_REKAP_PENERIMAAN ? 'font-bold' : ''}>
+              <tr key={i} className={b.seg <= SEG_MIN_REKAP_PERPINDAHAN ? 'font-bold' : ''}>
                 <SelKode kode={b.kode} sampai={b.seg} n={nSel} />
                 <td className="border border-black px-1 py-0.5 break-words">{nama(b.kode) || b.kode}</td>
                 <td className="border border-black px-1 py-0.5 text-right">{b.jumlah}</td>

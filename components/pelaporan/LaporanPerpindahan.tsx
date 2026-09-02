@@ -46,8 +46,8 @@ import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 import { LEMBAR_PERMENDAGRI, type IdLembar } from '@/lib/permendagriFormat'
-import { type IdPenerimaan } from '@/lib/formatPenerimaan'
-import PenerimaanFormatPermendagri from './PenerimaanFormatPermendagri'
+import { type IdPerpindahan } from '@/lib/formatPerpindahan'
+import PerpindahanFormatPermendagri from './PerpindahanFormatPermendagri'
 
 type Trx = {
   id: number
@@ -82,7 +82,7 @@ const ARAH_LABEL: Record<Arah, string> = {
 
 export type PropLaporanPerpindahan = {
   /** Cabang format Permendagri-nya; juga menentukan jenis ledger yang ditarik. */
-  id: IdPenerimaan
+  id: IdPerpindahan
   /** Entri registry lembar — penentu ADA/TIDAKNYA tab Format Permendagri. */
   idLembar: IdLembar
   /** Jenis ledger yang disaring. */
@@ -106,9 +106,9 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
   const tahunBuku = useTahunBukuMap()
-  // ⚠️ Dibaca dari REGISTRY, bukan dari `FORMAT_PENERIMAAN`. Registry-lah satu-
+  // ⚠️ Dibaca dari REGISTRY, bukan dari `FORMAT_PERPINDAHAN`. Registry-lah satu-
   // satunya daftar yang menjawab "lembar ini sudah ada atau belum" (lihat
-  // kepala lib/permendagriFormat.ts); `FORMAT_PENERIMAAN` menjawab pertanyaan
+  // kepala lib/permendagriFormat.ts); `FORMAT_PERPINDAHAN` menjawab pertanyaan
   // lain — bentuk tabelnya. Dua daftar yang sama-sama boleh bilang "ada" pasti
   // menyimpang, dan gejalanya cuma tab yang muncul tanpa isi.
   // ⚠️ Sengaja BUKAN `lembarPerolehan()`: fungsi itu mencari lewat
@@ -394,7 +394,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
             Transaksi tidak berlaku di sini. Kalau angkanya berbeda dari tab sebelah, itu memang
             begitu: yang diserahkan keluar dilaporkan oleh pihak penerimanya.
           </div>
-          <PenerimaanFormatPermendagri id={p.id} skpdId={selSkpdId} periode={periode} />
+          <PerpindahanFormatPermendagri id={p.id} skpdId={selSkpdId} periode={periode} />
         </>
       ) : view === 'matrix' ? (
         <>

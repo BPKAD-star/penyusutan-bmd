@@ -199,35 +199,41 @@ Diisi bertahap. `?` = kodenya belum dibaca dari mindmap/berkas aslinya.
 | Perolehan Lainnya | IV.A.10.1 | IV.A.10.2–6 | IV.A.10.7–10 | lembar SIAP; kurang field header (§10) |
 | Rekapitulasi gabungan perolehan/penerimaan | — | IV.A.11.1–4 | IV.A.11.5–8 | belum |
 
-### IV.B & IV.C — PERPINDAHAN barang (satu keluarga lembar)
+### IV.B, IV.C, IV.D — PERPINDAHAN barang (satu keluarga lembar)
 
-| Cabang | Lembar | Ledger | Status |
-|---|---|---|---|
-| Penerimaan penggunaan (pengalihan/penyerahan status) | **IV.B.1.2 rinci · 1.3–1.6 rekap ✅** | `pengalihan_status` | **SELESAI 2026-08-31** |
-| Penerimaan BMD internal Pengguna Barang | **IV.C.2 rinci · C.3–C.6 rekap ✅** | `mutasi_internal` | **SELESAI 2026-08-31** |
+| Cabang | Lembar | Ledger | Arah | Status |
+|---|---|---|---|---|
+| Penerimaan penggunaan (pengalihan/penyerahan status) | **IV.B.1.2 rinci · 1.3–1.6 rekap ✅** | `pengalihan_status` | masuk | **SELESAI 2026-08-31** |
+| Penerimaan BMD internal Pengguna Barang | **IV.C.2 rinci · C.3–C.6 rekap ✅** | `mutasi_internal` | masuk | **SELESAI 2026-08-31** |
+| Pengeluaran BMD internal Pengguna Barang | **IV.D.2 rinci · D.3–D.6 rekap ✅** | `mutasi_internal` | keluar | **SELESAI 2026-09-02** |
+| Rekap GABUNGAN pengeluaran + penerimaan internal | **IV.D.7 ✅** | `mutasi_internal` | keduanya | **SELESAI 2026-09-02** |
 
-Kedua cabang **SATU registry & SATU penyaji** (`lib/formatPenerimaan.ts`,
-`components/pelaporan/LembarPenerimaanPermendagri.tsx`) — identik di 18 dari 21
-kolom & identik penuh di keempat lembar rekapnya. Bedanya cuma: IV.B punya
-kolom Lokasi + blok SK Penghapusan, penomorannya bergeser 1 (kop IV.B 7 isian,
-IV.C 8), dan IV.B punya baris judul kedua.
+Ketiga cabang pertama **SATU registry & SATU penyaji**
+(`lib/formatPerpindahan.ts`, `components/pelaporan/LembarPerpindahanPermendagri.tsx`)
+— identik di sebagian besar kolom & identik penuh di keempat lembar rekapnya.
+Yang berbeda: IV.B punya Lokasi + blok SK Penghapusan; IV.B & IV.C punya blok
+Asal Barang, IV.D tidak; IV.D juga tanpa Spesifikasi Lainnya; penomoran IV.B
+bergeser 1 (kop IV.B 7 isian, IV.C & IV.D 8); hanya IV.B punya baris judul kedua.
 
-Kelima lembar tiap cabang **per-SKPD** — kop-nya memuat sebutan pejabat & SKPD,
-jadi tak ada kelompok se-Kabupaten seperti IV.A.<n>.7–10. Rinciannya di CLAUDE.md.
+⚠️ **IDENTITAS lembar = (jenis ledger, arah), BUKAN jenis saja.** IV.C & IV.D
+membaca `mutasi_internal` yang PERSIS SAMA; tanpa `arah`, keduanya memuat baris
+identik & sama-sama mengaku benar. Dikunci test.
 
-⛔ **Pengeluaran Internal belum punya lembar.** Ia membaca ledger yang SAMA
-(`mutasi_internal`) dari sisi sebaliknya, jadi kalau formatnya nanti diserahkan,
-yang perlu ditambah cuma satu entri di `FORMAT_PENERIMAAN` — kecuali kolom
-"Pihak yang menyerahkan" berganti jadi "Pihak yang menerima", yang berarti
-`asal_pihak` perlu pasangan `tujuan_pihak`.
+⚠️ **IV.D.7 di luar keluarga itu** — bentuknya datar & bernomor dengan dua blok
+cermin, ditutup baris Jumlah Total, tanpa satu pun subtotal. Registry & penyaji
+sendiri (`lib/formatGabunganInternal.ts`). Rumahnya menu **Pengeluaran
+Internal** (`CABANG_GABUNGAN`); menu Penerimaan cukup diberi penunjuk.
+
+Semua lembar **per-SKPD** — kop-nya memuat sebutan pejabat & SKPD, jadi tak ada
+kelompok se-Kabupaten seperti IV.A.<n>.7–10. Rinciannya di CLAUDE.md.
 
 ### Kategori lain
 
 Kodenya belum dibaca; diisi saat user menyerahkan formatnya.
 
-Pengeluaran Internal · Pemanfaatan (IV.E, a.l. IV.E.5) · Reklasifikasi ·
-Koreksi · Penyusutan · Pengamanan (BMD PM & BMD GB) · Penghapusan (IV.K, rekap
-gabungan IV.K.7) · Rekapitulasi (Aset Lancar, Aset Tetap, Aset Lainnya, Lap BMD).
+Pemanfaatan (IV.E, a.l. IV.E.5) · Reklasifikasi · Koreksi · Penyusutan ·
+Pengamanan (BMD PM & BMD GB) · Penghapusan (IV.K, rekap gabungan IV.K.7) ·
+Rekapitulasi (Aset Lancar, Aset Tetap, Aset Lainnya, Lap BMD).
 
 ### V — Rekonsiliasi
 
@@ -666,3 +672,59 @@ masih terpecah 1–3 px — "Spesifikasi", lalu "Tanggal" & "Nomor" milik blok S
 Penghapusan yang SELALU KOSONG. Itu tempat paling tak merugikan untuk kompromi
 yang memang inheren di 28 kolom pada F4. IV.C.2 (25 kolom) **nol** temuan di
 keenam pemeriksaan.
+
+---
+
+## 13. Yang dipelajari saat membangun IV.D (2026-09-02)
+
+**(a) Nama keluarga ikut berubah begitu anggotanya bertambah.**
+`formatPenerimaan.ts` jadi menyesatkan begitu ia memuat lembar PENGELUARAN, jadi
+seluruh keluarga di-rename ke **Perpindahan** (`formatPerpindahan.ts`,
+`laporanPerpindahan.ts`, `LembarPerpindahanPermendagri`,
+`/cetak/perpindahan-permendagri`). Nama yang berbohong di repo ini punya
+sejarahnya sendiri — lihat peringatan "DUA BERKAS BERNAMA NYARIS SAMA" di
+lib/permendagriFormat.ts. Rename-nya lewat `git mv` supaya riwayatnya terbaca.
+
+**(b) `arah` adalah bagian dari IDENTITAS lembar, bukan detail query.** IV.C &
+IV.D membaca ledger yang PERSIS SAMA. Tanpa `arah` di registry, keduanya
+menghasilkan lembar yang isinya kembar — tak ada error, cuma dua dokumen resmi
+yang sama-sama mengaku benar. Dikunci test "(jenis, arah) unik" + "judul lembar
+menyatakan arahnya".
+
+**(c) Lembar PENGELUARAN tak menyebut pihak mana pun** — bahkan "Pihak yang
+menerima" pun tidak ada di IV.D.2. Itu bentuk formatnya, dan sengaja TIDAK
+ditambal: menyisipkan kolom yang tak ada di lembar resmi membuatnya tak cocok
+waktu pemeriksa mencocokkannya kolom per kolom. Pasangan menyerahkan↔menerima
+adanya di IV.D.7.
+
+**(d) IV.D.7 SATU RUMAH, bukan dua.** Ia melayani kedua arah, jadi godaannya
+menaruhnya di menu Penerimaan DAN Pengeluaran. Yang dipilih **Pengeluaran**:
+nomornya milik keluarga IV.D (lembar resmi dicari lewat nomornya), dan dua pintu
+untuk satu lembar cepat atau lambat menyimpang — pola yang sudah memakan korban
+di modul RKBMD. Menu Penerimaan diberi PENUNJUK di komentar halamannya.
+
+**(e) Baris "Jumlah Total" IV.D.7 MENYATAKAN ULANG, bukan mengecek silang.**
+Formatnya dirancang untuk keadaan di mana sisi keluar & masuk dicatat terpisah.
+Di aplikasi ini satu baris `mutasi_internal` merekam kedua sisi sekaligus, jadi
+kedua blok pasti kembar & kedua total pasti sama. ⚠️ Jangan pernah
+menyajikannya ke pemeriksa sebagai bukti "keluar = masuk sudah dicocokkan" —
+yang dibuktikan cuma bahwa satu baris ledger dibaca dua kali. Dikatakan juga di
+layar, di bawah centangnya.
+
+**(f) Baris ber-`colSpan` wajib diuji Σ-nya.** Baris Jumlah Total IV.D.7 memuat
+dua label ber-colSpan + enam angka; kalau jumlahnya tak persis selebar tabel,
+angka totalnya jatuh di kolom yang SALAH dan `table-fixed` menyembunyikannya
+sampai kertasnya keluar. Diuji langsung di jsdom (Σ colSpan == jumlah kolom
+kepala).
+
+**(g) Ronde ketiga, kesalahan yang sama lagi: baris TOTAL kelewat dibungkus.**
+`[overflow-wrap:anywhere]` sudah dipasang di baris barang & baris subtotal
+lembar perpindahan, tapi baris Jumlah Total IV.D.7 yang baru lagi-lagi lupa —
+dan justru di situ angkanya paling besar (6 sel meluber 3 px). **Aturan umum:
+tiap kali menambah baris ber-angka BARU di lembar padat, ia butuh kelas
+pembungkus yang sama seperti baris di atasnya.**
+
+**(h) Diukur di peramban** (F4 lanskap, tabel 1.157 px): **IV.D.2 nol temuan**
+di keenam pemeriksaan (21 kolom, tinggi baris maks cuma 24 px — paling lega dari
+seluruh keluarga). **IV.D.7 nol temuan** juga sesudah (g) diperbaiki (28 kolom,
+Σ colSpan baris total = 28).

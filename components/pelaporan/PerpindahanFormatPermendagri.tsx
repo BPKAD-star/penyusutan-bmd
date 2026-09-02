@@ -7,7 +7,7 @@
 // pratinjaunya, lalu mencetak. Filter Periode & SKPD datang dari komponen induk
 // (LaporanPerpindahan) supaya sama dengan dua tab lainnya.
 //
-// ⚠️ Angkanya dimuat `muatLembarPenerimaan` — SAMA dengan halaman cetak. Dua
+// ⚠️ Angkanya dimuat `muatLembarPerpindahan` — SAMA dengan halaman cetak. Dua
 // jalur angka untuk lembar yang sama adalah cara paling gampang menghasilkan
 // pratinjau yang berbeda dari berkas yang akhirnya ditandatangani, dan bedanya
 // tak akan bersuara.
@@ -23,11 +23,13 @@ import {
   TANGGA_REKAP, labelKomptabel, cocokKomptabel, berupaAset, labelPeriodeKop,
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
-import { FORMAT_PENERIMAAN, type IdPenerimaan } from '@/lib/formatPenerimaan'
+import { FORMAT_PERPINDAHAN, CABANG_GABUNGAN, type IdPerpindahan } from '@/lib/formatPerpindahan'
+import { FORMAT_GABUNGAN_INTERNAL } from '@/lib/formatGabunganInternal'
+import LembarGabunganInternal from './LembarGabunganInternal'
 import {
-  muatLembarPenerimaan, periodePosisi, type BarisPenerimaan,
-} from '@/lib/laporanPenerimaan'
-import LembarPenerimaanPermendagri from './LembarPenerimaanPermendagri'
+  muatLembarPerpindahan, periodePosisi, type BarisPerpindahan,
+} from '@/lib/laporanPerpindahan'
+import LembarPerpindahanPermendagri from './LembarPerpindahanPermendagri'
 
 /** Daftar lembar yang bisa dicentang: rinci + empat kedalaman rekap. */
 const PILIHAN = [
@@ -35,24 +37,37 @@ const PILIHAN = [
   ...TANGGA_REKAP.map(t => ({ akhiran: t.akhiran, label: `Rekap menurut ${t.menurut.toLowerCase()}` })),
 ]
 
-export default function PenerimaanFormatPermendagri({ id, skpdId, periode }: {
+/**
+ * Akhiran lembar rekap GABUNGAN IV.D.7 — cuma ditawarkan di cabang
+ * `CABANG_GABUNGAN`. Angkanya sengaja 7 supaya sejajar nomor formatnya.
+ */
+const AKHIRAN_GABUNGAN = 7
+
+export default function PerpindahanFormatPermendagri({ id, skpdId, periode }: {
   /** Cabang formatnya — `'penggunaan'` (IV.B.1) atau `'internal'` (IV.C). */
-  id: IdPenerimaan
+  id: IdPerpindahan
   skpdId: number | null
   periode: string
 }) {
   const supabase = createClient()
-  const f = FORMAT_PENERIMAAN[id]
-  const [rows, setRows] = useState<BarisPenerimaan[]>([])
+  const f = FORMAT_PERPINDAHAN[id]
+  const [rows, setRows] = useState<BarisPerpindahan[]>([])
   const [namaTingkat, setNamaTingkat] = useState<Map<string, string>>(new Map())
   const [skpd, setSkpd] = useState<{ kode: string; nama: string } | null>(null)
   const [sebutan, setSebutan] = useState('Pengguna Barang')
   const [tanpaPeny, setTanpaPeny] = useState(0)
+  // ⚠️ Baris untuk IV.D.7 DITARIK TERSENDIRI dgn `arah: 'semua'` — lembar itu
+  // mendaftar KEDUA arah, sementara lembar IV.D.2–D.6 di atasnya cuma yang
+  // keluar. Menyaringnya di klien dari satu tarikan mustahil: halaman ini tak
+  // tahu daftar sub-SKPD dalam scope, dan itu justru yang menentukan sisi mana
+  // yang "di dalam".
+  const [rowsGab, setRowsGab] = useState<BarisPerpindahan[]>([])
   const [komptabel, setKomptabel] = useState<Komptabel>('intra')
   const [pilih, setPilih] = useState<number[]>(PILIHAN.map(p => p.akhiran))
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
+  const adaGabungan = id === CABANG_GABUNGAN
   const siap = skpdId != null && !!periode
 
   useEffect(() => {
@@ -61,14 +76,23 @@ export default function PenerimaanFormatPermendagri({ id, skpdId, periode }: {
     void (async () => {
       setLoading(true); setErr('')
       try {
-        const h = await muatLembarPenerimaan(supabase, { jenis: f.jenis, skpdId: skpdId!, periode })
+        const h = await muatLembarPerpindahan(supabase, {
+          jenis: f.jenis, arah: f.arah, skpdId: skpdId!, periode,
+        })
         if (batal) return
         setRows(h.rows); setNamaTingkat(h.namaTingkat); setSkpd(h.skpd)
         setSebutan(h.sebutan); setTanpaPeny(h.tanpaPenyusutan)
+        if (adaGabungan && pilih.includes(AKHIRAN_GABUNGAN)) {
+          const g = await muatLembarPerpindahan(supabase, {
+            jenis: f.jenis, arah: 'semua', skpdId: skpdId!, periode,
+          })
+          if (batal) return
+          setRowsGab(g.rows)
+        } else setRowsGab([])
       } catch (e) {
         // Fail-closed: modul pelaporan lebih baik menolak tampil daripada
         // menyajikan angka kurang-sebagian yang kelihatan sah.
-        if (!batal) { setErr((e as Error).message); setRows([]); setSkpd(null) }
+        if (!batal) { setErr((e as Error).message); setRows([]); setRowsGab([]); setSkpd(null) }
       } finally {
         // Di `finally`, BUKAN di akhir jalur sukses — kalau tidak, satu query
         // yang melempar meninggalkan "Memuat…" SELAMANYA.
@@ -78,20 +102,21 @@ export default function PenerimaanFormatPermendagri({ id, skpdId, periode }: {
     return () => { batal = true }
     // `pilih.length` ikut: kalau tak ada lembar dicentang, datanya tak perlu
     // ditarik sama sekali.
-  }, [id, skpdId, periode, siap, pilih.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [id, skpdId, periode, siap, pilih.length, pilih.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lembar ini menyatakan SATU komptabel di kop, jadi isinya wajib benar-benar
   // satu komptabel. Barang tanpa nilai kolom itu dianggap intra, sejalan dengan
   // `klasifikasiKomptabel` (bawaannya intra).
-  const items: ItemLaporan<BarisPenerimaan>[] = rows
+  const items: ItemLaporan<BarisPerpindahan>[] = rows
     .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({
       kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r,
       akumulasi: r.akumulasi ?? 0, nilaiBuku: r.nilaiBuku ?? 0,
     }))
 
+  const itemsGab = rowsGab.filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
   const { judul: judulPeriode, tahun } = labelPeriodeKop(periode)
-  const urlCetak = `/cetak/penerimaan-permendagri?lap=${id}&skpd=${skpdId}`
+  const urlCetak = `/cetak/perpindahan-permendagri?lap=${id}&skpd=${skpdId}`
     + `&periode=${periode}&komptabel=${komptabel}&lembar=${[...pilih].sort((a, b) => a - b).join(',')}`
 
   /** Kenapa tombol Cetak mati / pratinjau kosong — dikatakan, bukan didiamkan. */
@@ -117,7 +142,28 @@ export default function PenerimaanFormatPermendagri({ id, skpdId, periode }: {
                 <span className="text-gray-500">{p.label}</span>
               </label>
             ))}
+            {adaGabungan && (
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={pilih.includes(AKHIRAN_GABUNGAN)}
+                  onChange={() => toggle(AKHIRAN_GABUNGAN)} />
+                <span className="font-medium">{FORMAT_GABUNGAN_INTERNAL.kode}</span>
+                <span className="text-gray-500">Rekap gabungan (pengeluaran + penerimaan)</span>
+              </label>
+            )}
           </div>
+          {adaGabungan && pilih.includes(AKHIRAN_GABUNGAN) && (
+            // ⚠️ Dikatakan di layar, bukan didiamkan: lembar ini mendaftar KEDUA
+            // arah, jadi barisnya lebih banyak daripada lembar IV.D.2 di
+            // atasnya — dan tanpa keterangan itu operator mengira salah satunya
+            // bug. Sekalian diluruskan bahwa baris totalnya bukan cek silang.
+            <p className="text-xs text-gray-500 mt-2 border-l-2 border-teal pl-2">
+              <b>{FORMAT_GABUNGAN_INTERNAL.kode}</b> mendaftar <b>kedua arah</b> mutasi internal
+              (keluar &amp; masuk), jadi barisnya lebih banyak daripada lembar {f.awalan}.2 di atas —
+              itu memang begitu. Kedua blok angkanya kembar karena satu baris ledger merekam kedua
+              sisi sekaligus; yang berbeda cuma pihaknya, dan baris Jumlah Total-nya menyatakan
+              ulang, bukan mengecek silang.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-end gap-4">
@@ -186,7 +232,7 @@ export default function PenerimaanFormatPermendagri({ id, skpdId, periode }: {
       ) : err ? null : (
         <div className="card p-4">
           <p className="text-xs text-gray-500 mb-3">
-            Pratinjau — <b>{items.length.toLocaleString('id-ID')} barang diterima</b> ·{' '}
+            Pratinjau — <b>{items.length.toLocaleString('id-ID')} barang</b> ·{' '}
             {judulPeriode} {tahun} · {labelKomptabel(komptabel).toLowerCase()}.
             {/* Pratinjau sengaja tak memilih penanda tangan: pilihannya disimpan
                 per SKPD di layar cetak supaya cetak ulang menghasilkan lembar
@@ -195,12 +241,20 @@ export default function PenerimaanFormatPermendagri({ id, skpdId, periode }: {
           </p>
           <div className="overflow-x-auto">
             <div className="min-w-[1400px] space-y-10">
-              <LembarPenerimaanPermendagri
+              <LembarPerpindahanPermendagri
                 f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
                 berupa={berupaAset(items.map(i => i.kode))}
                 labelKomptabel={labelKomptabel(komptabel)}
                 judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
                 ttd={null} tglTtd="" lembar={pilih} />
+              {adaGabungan && pilih.includes(AKHIRAN_GABUNGAN) && (
+                <LembarGabunganInternal
+                  rows={itemsGab} namaTingkat={namaTingkat} skpd={skpd}
+                  berupa={berupaAset(itemsGab.map(r => r.aset!.kode))}
+                  labelKomptabel={labelKomptabel(komptabel)}
+                  judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
+                  ttd={null} tglTtd="" />
+              )}
             </div>
           </div>
         </div>

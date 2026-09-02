@@ -139,10 +139,16 @@ export const kunciTtdPerolehan = (skpdId: number) => `bmd_perolehan_ttd_skpd_${s
  *  digeneralkan (2026-08-31) — menggantinya tak error sama sekali, cuma membuat
  *  pilihan yang sudah disetel operator lenyap diam-diam & lembar cetak ulang
  *  mendadak bertitik-titik lagi. */
-export const kunciTtdPenerimaan = (lap: 'penggunaan' | 'internal', skpdId: number) =>
-  lap === 'penggunaan'
-    ? `bmd_penggunaan_ttd_skpd_${skpdId}`
-    : `bmd_penerimaan_internal_ttd_skpd_${skpdId}`
+export const kunciTtdPerpindahan = (
+  lap: 'penggunaan' | 'internal' | 'pengeluaran', skpdId: number,
+) => `bmd_${KUNCI_PERPINDAHAN[lap]}_ttd_skpd_${skpdId}`
+
+/** ⚠️ Nilainya WARISAN — dua yang pertama sudah dipakai sejak 2026-08-31. */
+const KUNCI_PERPINDAHAN = {
+  penggunaan: 'penggunaan',
+  internal: 'penerimaan_internal',
+  pengeluaran: 'pengeluaran_internal',
+} as const
 
 /** RKBMD — lembar per-SKPD & lembar se-Kabupaten (yang se-kab bermuatan TEKS). */
 /** Lembar se-Kabupaten Perolehan (IV.A.<n>.7–10) — penanda tangannya "Pejabat

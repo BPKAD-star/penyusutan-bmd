@@ -1,18 +1,25 @@
 // ============================================================================
-// Pemuat data lembar PENERIMAAN format Permendagri — cabang IV.B.1 & IV.C.
+// Pemuat data lembar PERPINDAHAN format Permendagri — IV.B.1, IV.C, IV.D.
 //
 // Dipakai BERSAMA oleh tab "Format Permendagri" di menu Pelaporan dan halaman
-// cetak /cetak/penerimaan-permendagri. Dua jalur angka untuk lembar yang sama
+// cetak /cetak/perpindahan-permendagri. Dua jalur angka untuk lembar yang sama
 // adalah cara paling gampang menghasilkan pratinjau yang berbeda dari berkas
 // yang akhirnya ditandatangani — dan bedanya tak akan bersuara.
 //
 // ⚠️ SATU PEMUAT UNTUK DUA JENIS LEDGER (`pengalihan_status` &
-// `mutasi_internal`), dan itu bukan penyederhanaan malas: kolom yang dibutuhkan
-// keduanya identik, saringan pembatalannya SAMA (`batal_pengalihan` sengaja
-// dipakai bersama — lihat CLAUDE.md "BATAL PERPINDAHAN"), dan index parsial
-// yang melayaninya juga sama (`idx_trx_pindah_id`). Dua pemuat berarti dua
-// tempat yang harus dijaga sepakat soal saringan pembatalan, dan yang menyimpang
-// akan menampilkan perpindahan yang sudah dianulir sebagai masih berlaku.
+// `mutasi_internal`) DAN DUA ARAH, dan itu bukan penyederhanaan malas: kolom
+// yang dibutuhkan semuanya identik, saringan pembatalannya SAMA
+// (`batal_pengalihan` sengaja dipakai bersama — lihat CLAUDE.md "BATAL
+// PERPINDAHAN"), dan index parsial yang melayaninya juga sama
+// (`idx_trx_pindah_id`). Dua pemuat berarti dua tempat yang harus dijaga
+// sepakat soal saringan pembatalan, dan yang menyimpang akan menampilkan
+// perpindahan yang sudah dianulir sebagai masih berlaku.
+//
+// ⚠️ `arah` MENENTUKAN SISI MANA YANG DISARING, dan tanpanya IV.C (Penerimaan
+// Internal) & IV.D (Pengeluaran Internal) akan memuat baris yang PERSIS SAMA:
+// keduanya membaca `mutasi_internal` yang sama, cuma dari sudut pandang
+// berlawanan. Tak ada error yang muncul kalau salah — cuma dua lembar resmi
+// yang isinya kembar & sama-sama mengaku benar.
 //
 // ⚠️ FAIL-CLOSED (CLAUDE.md, modul pelaporan): tiap kegagalan MELEMPAR, tak ada
 // yang ditelan jadi "datanya memang kosong". Pemanggil menampilkan pesannya dan
@@ -22,6 +29,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchPenyusutanAset } from '@/lib/rekon'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
+import type { ArahLembar } from '@/lib/formatPerpindahan'
 import { descendantsOf, periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 
 /**
@@ -31,7 +39,7 @@ import { descendantsOf, periodeDiminta } from '@/lib/laporanPerolehanPermendagri
  * `penyusutan_semester`), bukan ikut di query — keduanya posisi AKHIR PERIODE
  * per aset, bukan angka yang melekat pada transaksinya.
  */
-export type BarisPenerimaan = {
+export type BarisPerpindahan = {
   id: number
   tanggal: string
   periode: string
@@ -51,6 +59,15 @@ export type BarisPenerimaan = {
   } | null
   /** Nama SKPD/unit yang MENYERAHKAN. Dilengkapi sesudah query. */
   asal_nama?: string
+  /**
+   * Nama SKPD/unit yang MENERIMA. Dilengkapi sesudah query.
+   *
+   * ⚠️ Tak dipakai lembar IV.B/IV.C/IV.D (ketiganya tak punya kolomnya), tapi
+   * WAJIB untuk rekap GABUNGAN IV.D.7 yang mencetak kedua pihak berdampingan.
+   * Diisi di sini, bukan di pemuat terpisah, supaya kedua lembar itu mustahil
+   * memakai nama SKPD yang berbeda untuk baris ledger yang sama.
+   */
+  tujuan_nama?: string
   /** Posisi penyusutan akhir periode — kolom Akumulasi & Nilai Buku. */
   akumulasi?: number
   nilaiBuku?: number
@@ -71,17 +88,25 @@ const SEL =
 
 type SkpdRow = { id: number; parent_id: number | null; nama: string; kode_skpd: string | null }
 
-export type PermintaanPenerimaan = {
-  /** Jenis ledger: `pengalihan_status` (IV.B.1) atau `mutasi_internal` (IV.C). */
+export type PermintaanPerpindahan = {
+  /** Jenis ledger: `pengalihan_status` (IV.B.1) atau `mutasi_internal` (IV.C/IV.D). */
   jenis: string
-  /** SKPD PENERIMA. Kedua lembar ini laporan PENERIMAAN — lihat `muat…`. */
+  /**
+   * Sisi yang didaftar — dari `FORMAT_PERPINDAHAN[<cabang>].arah`.
+   *
+   * `masuk`  → saring `skpd_tujuan` (lembar PENERIMAAN, IV.B.1 & IV.C)
+   * `keluar` → saring `skpd_asal`   (lembar PENGELUARAN, IV.D)
+   * `semua`  → salah satu sisi ada di scope (rekap GABUNGAN IV.D.7)
+   */
+  arah: ArahLembar | 'semua'
+  /** SKPD yang jadi sudut pandang lembar. */
   skpdId: number
   /** `'2026-S1'` atau `'2026'` (AKHIR TAHUN = S1+S2). Kosong tak dilayani. */
   periode: string
 }
 
-export type HasilPenerimaan = {
-  rows: BarisPenerimaan[]
+export type HasilPerpindahan = {
+  rows: BarisPerpindahan[]
   namaTingkat: Map<string, string>
   skpd: { kode: string; nama: string }
   /** Sebutan pejabat penanda tangan, diturunkan dari LEVEL node SKPD. */
@@ -126,15 +151,16 @@ async function semuaSkpdRows(supabase: SupabaseClient): Promise<SkpdRow[]> {
 }
 
 /**
- * Muat baris lembar IV.B.1.2–1.6 / IV.C.2–C.6 untuk satu SKPD PENERIMA.
+ * Muat baris lembar perpindahan untuk satu SKPD, dari sisi `arah`.
  *
- * ⚠️ **SISI PENERIMA, bukan "asal ATAU tujuan".** Judul kedua format berbunyi
- * "LAPORAN PENERIMAAN…" dan kolomnya memuat "Pihak yang menyerahkan", jadi yang
- * didaftar adalah barang yang MASUK ke SKPD ini. Menyaring dengan
+ * ⚠️ **SATU SISI SAJA, bukan "asal ATAU tujuan".** Judul lembarnya menyatakan
+ * sisinya ("LAPORAN PENERIMAAN…" / "LAPORAN PENGELUARAN…"), jadi yang didaftar
+ * cuma barang yang bergerak ke arah itu. Menyaring dengan
  * `skpd_asal.in.(…) OR skpd_tujuan.in.(…)` — pola tab "Daftar Transaksi" yang
- * memang netral arah — akan memasukkan barang yang justru DIKELUARKAN SKPD ini,
- * lalu mencantumkan SKPD itu sendiri sebagai "pihak yang menyerahkan". Salah,
- * tampak sah, dan tak menghasilkan satu pun error.
+ * memang netral arah — akan memasukkan barang yang bergerak ke arah sebaliknya
+ * juga, lalu mencantumkan SKPD itu sendiri sebagai lawan transaksinya. Salah,
+ * tampak sah, dan tak menghasilkan satu pun error. `'semua'` HANYA untuk rekap
+ * gabungan IV.D.7, yang memang mendaftar kedua arah sekaligus.
  *
  * ⚠️ Baris ber-`payload.reversal` (pengembalian, mekanik "Kembalikan" yang sudah
  * DICABUT 2026-08-12) IKUT dihitung, dan itu disengaja: ledgernya menukar
@@ -144,9 +170,9 @@ async function semuaSkpdRows(supabase: SupabaseClient): Promise<SkpdRow[]> {
  * register. Per 2026-08-31 cuma ada 2 baris semacam itu di seluruh ledger,
  * semuanya `pengalihan_status`; `mutasi_internal` tak punya satu pun.
  */
-export async function muatLembarPenerimaan(
-  supabase: SupabaseClient, p: PermintaanPenerimaan,
-): Promise<HasilPenerimaan> {
+export async function muatLembarPerpindahan(
+  supabase: SupabaseClient, p: PermintaanPerpindahan,
+): Promise<HasilPerpindahan> {
   const semua = await semuaSkpdRows(supabase)
   const ini = semua.find(x => x.id === p.skpdId)
   if (!ini) throw new Error(`SKPD #${p.skpdId} tidak ditemukan.`)
@@ -163,14 +189,21 @@ export async function muatLembarPenerimaan(
   const per = periodeDiminta(p.periode)
   if (per.length === 1) qq = qq.eq('periode', per[0])
   else if (per.length > 1) qq = qq.in('periode', per)
-  if (desc.length > 0) qq = qq.in('skpd_tujuan', desc)
+  if (desc.length > 0) {
+    if (p.arah === 'masuk') qq = qq.in('skpd_tujuan', desc)
+    else if (p.arah === 'keluar') qq = qq.in('skpd_asal', desc)
+    else {
+      const list = desc.join(',')
+      qq = qq.or(`skpd_asal.in.(${list}),skpd_tujuan.in.(${list})`)
+    }
+  }
 
   const { data: trx, error: trxErr } = await qq.limit(5000)
-  if (trxErr) throw new Error(`gagal membaca transaksi penerimaan: ${trxErr.message}`)
+  if (trxErr) throw new Error(`gagal membaca transaksi perpindahan: ${trxErr.message}`)
 
   // ⚠️ Komptabel TIDAK disaring di sini — saringannya saat render, supaya
   // pemilihnya bisa berganti tanpa menembak query kedua.
-  const semuaBaris = ((trx as never as BarisPenerimaan[]) || []).filter(r => r.aset)
+  const semuaBaris = ((trx as never as BarisPerpindahan[]) || []).filter(r => r.aset)
 
   // Perpindahan yang DIBATALKAN (`batal_pengalihan`, migrasi 20260729_07 &
   // 20260812_04) dibuang. Tanpa ini barang yang perpindahannya dianggap tak
@@ -206,6 +239,7 @@ export async function muatLembarPenerimaan(
       return {
         ...r,
         asal_nama: r.skpd_asal != null ? namaSkpd.get(r.skpd_asal) : undefined,
+        tujuan_nama: r.skpd_tujuan != null ? namaSkpd.get(r.skpd_tujuan) : undefined,
         akumulasi: q?.akumulasi ?? 0,
         nilaiBuku: q?.nilaiBuku ?? 0,
         tanpaPenyusutan: !q,

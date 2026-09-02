@@ -62,6 +62,8 @@ export type IdLembar =
   | 'perolehan-lainnya'
   | 'penggunaan-pengalihan'
   | 'penerimaan-internal'
+  | 'pengeluaran-internal'
+  | 'gabungan-internal'
   | 'mutasi-bmd-skpd'
   | 'laporan-bmd-skpd'
   | 'mutasi-bmd-pemda'
@@ -136,8 +138,8 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
   },
   // ── Perpindahan barang, sisi PENERIMA (IV.B.1 & IV.C) ────────────────────
   // Dua cabang, SATU penyaji: susunan kolomnya cuma beda 3 kolom & penomoran,
-  // selebihnya identik. Rinciannya di `FORMAT_PENERIMAAN`
-  // (lib/formatPenerimaan.ts) — registry ini cuma memegang identitas lembar &
+  // selebihnya identik. Rinciannya di `FORMAT_PERPINDAHAN`
+  // (lib/formatPerpindahan.ts) — registry ini cuma memegang identitas lembar &
   // keberadaannya, bukan bentuk tabelnya.
   // ⚠️ `kode` di sini lembar RINCI-nya; keempat rekapnya dilayani komponen yang
   // SAMA & tak punya entri sendiri (pola yang sama dgn empat cara perolehan).
@@ -145,13 +147,29 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
     kode: 'IV.B.1.2',
     judul: 'Laporan Penerimaan Penggunaan dalam Bentuk Pengalihan atau Penyerahan Status Penggunaan BMD',
     kertas: 'F4 lanskap',
-    berkas: 'components/pelaporan/LembarPenerimaanPermendagri.tsx',
+    berkas: 'components/pelaporan/LembarPerpindahanPermendagri.tsx',
   },
   'penerimaan-internal': {
     kode: 'IV.C.2',
     judul: 'Laporan Penerimaan BMD Internal Pengguna Barang',
     kertas: 'F4 lanskap',
-    berkas: 'components/pelaporan/LembarPenerimaanPermendagri.tsx',
+    berkas: 'components/pelaporan/LembarPerpindahanPermendagri.tsx',
+  },
+  'pengeluaran-internal': {
+    kode: 'IV.D.2',
+    judul: 'Laporan Pengeluaran BMD Internal Pengguna Barang',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPerpindahanPermendagri.tsx',
+  },
+  // ⚠️ Bentuknya BEDA dari tiga entri di atas — datar & bernomor dengan dua blok
+  // cermin, bukan hierarki bersubtotal — jadi penyajinya pun berkas lain.
+  // Rumahnya menu Pengeluaran Internal; alasannya di `CABANG_GABUNGAN`
+  // (lib/formatPerpindahan.ts).
+  'gabungan-internal': {
+    kode: 'IV.D.7',
+    judul: 'Rekapitulasi Gabungan Pengeluaran dan Penerimaan BMD Internal Pengguna Barang',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarGabunganInternal.tsx',
   },
   'mutasi-bmd-skpd': {
     kode: 'IV.L.4.1',
