@@ -9,6 +9,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
+import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
@@ -66,6 +68,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const [rows, setRows] = useState<Trx[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
+  const namaSkpd = useNamaSkpd()
   const [periodeList, setPeriodeList] = useState<string[]>([])
   const [periode, setPeriode] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
@@ -234,7 +237,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       }
       row['Total'] = total
       return row
-    }), `${filePrefix}_per_SKPD${periode ? '_' + periode : ''}`, 'Rekap per SKPD')
+    }), namaBerkasLaporan({ laporan: filePrefix, periode, skpd: namaSkpd.nama, akhiran: ['per SKPD'] }), 'Rekap per SKPD')
   }
 
   async function handleExport() {
@@ -269,7 +272,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       'Periode': r.periode,
       'Nilai Perolehan (Rp)': r.nilai,
       'Keterangan': r.keterangan || '',
-    })), `${filePrefix}${periode ? '_' + periode : ''}`, 'Laporan')
+    })), namaBerkasLaporan({ laporan: filePrefix, periode, skpd: namaSkpd.nama }), 'Laporan')
     setExporting(false)
   }
 
@@ -380,7 +383,8 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         </div>
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-          <SkpdCombobox lockToOperator onChangeSelection={sel => { setDescIds(sel.descendantIds); setSelSkpdId(sel.skpdId) }} allowClear
+          <SkpdCombobox lockToOperator allowClear
+            onChangeSelection={sel => { setDescIds(sel.descendantIds); setSelSkpdId(sel.skpdId); namaSkpd.pilih(sel.skpdId) }}
             placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
         </div>
       </div>
@@ -393,7 +397,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           // ⚠️ Lembar Pengadaan belum paham nilai TAHUN (Akhir Tahun); diberi
           // '' supaya ia menampilkan seluruh periode, bukan nol baris senyap.
           : <LaporanPengadaanPermendagri periode={/^\d{4}$/.test(periode) ? '' : periode}
-              skpdId={selSkpdId} descIds={descIds} />
+              skpdId={selSkpdId} namaSkpd={namaSkpd.nama} descIds={descIds} />
       ) : view === 'matrix' ? (
         <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={matrixLoading} />
       ) : (

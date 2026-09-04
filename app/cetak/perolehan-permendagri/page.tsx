@@ -45,7 +45,8 @@ import { fetchApprovalScope } from '@/lib/roles'
 // blok @media print (dulu 4 salinan) & `ingatanCetak` menyatukan ingatan
 // pilihan cetak (dulu 8 salinan). Menulis ulang keduanya di sini akan jadi
 // salinan kelima & kesembilan — persis utang yang baru saja dibereskan.
-import { cssCetakLembar, namaBerkasCetak } from '@/lib/cetakLembar'
+import { cssCetakLembar } from '@/lib/cetakLembar'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import {
   ingatanCetak, ingatanTeksCetak, kunciTtdPerolehan, KUNCI_TTD_PEROLEHAN_SEKAB,
 } from '@/lib/ingatanCetak'
@@ -206,13 +207,13 @@ export default function CetakPerolehanPermendagriPage() {
 
   useEffect(() => {
     if (!skpd) return
-    document.title = namaBerkasCetak(f.kode, skpd.nama, tahun)
+    document.title = namaBerkasLaporan({ laporan: f.kode, periode: tahun, skpd: skpd.nama })
   }, [skpd, f.kode, tahun])
 
   // Berkas se-Kabupaten tak punya nama SKPD di judulnya.
   useEffect(() => {
     if (skpd || !adaKab) return
-    document.title = namaBerkasCetak(f.awalan, `se-Kabupaten ${KABUPATEN}`, tahun)
+    document.title = namaBerkasLaporan({ laporan: f.awalan, periode: tahun })
   }, [skpd, adaKab, f.awalan, tahun])
 
   return (

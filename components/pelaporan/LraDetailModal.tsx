@@ -4,10 +4,14 @@
 // Sumbernya baris LRA yang SUDAH ada di memori halaman (tak ada query baru).
 import { useMemo, useState } from 'react'
 import { formatRupiah, exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import type { LraRow } from '@/lib/lra'
 
-export default function LraDetailModal({ judul, rows, skpdNama, onClose }: {
+export default function LraDetailModal({ judul, periode, skpd, rows, skpdNama, onClose }: {
   judul: string
+  /** Tahun & SKPD ikut ke NAMA BERKAS — pop-up ini tak punya filternya sendiri. */
+  periode: string | number
+  skpd?: string
   rows: LraRow[]
   skpdNama: Map<number, string>
   onClose: () => void
@@ -49,7 +53,9 @@ export default function LraDetailModal({ judul, rows, skpdNama, onClose }: {
       'No. Bukti': r.no_bukti,
       Keterangan: r.keterangan || '',
       Debit: r.debit,
-    })), `Rincian_LRA_${judul.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60)}`, 'Rincian')
+    })), namaBerkasLaporan({
+      laporan: 'Rincian LRA', periode, skpd, akhiran: [judul],
+    }), 'Rincian')
   }
 
   return (

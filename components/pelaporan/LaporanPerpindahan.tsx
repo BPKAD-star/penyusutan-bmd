@@ -38,6 +38,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
+import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
@@ -119,6 +121,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [err, setErr] = useState('')
+  const namaSkpd = useNamaSkpd()
   const [periode, setPeriode] = useState('')
   const [arah, setArah] = useState<Arah>(p.arahAwal)
   const [descIds, setDescIds] = useState<number[] | null>(null)
@@ -260,7 +263,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
       }
       row['Total'] = total
       return row
-    }), `${p.filePrefix}_per_SKPD${periode ? '_' + periode : ''}`, 'Rekap per SKPD')
+    }), namaBerkasLaporan({ laporan: p.filePrefix, periode, skpd: namaSkpd.nama, akhiran: ['per SKPD'] }), 'Rekap per SKPD')
   }
 
   async function handleExport() {
@@ -294,7 +297,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
       'Nilai (Rp)': r.nilai,
       'Pengembalian': r.payload?.reversal ? 'Ya' : '',
       'Keterangan': r.keterangan || '',
-    })), `${p.filePrefix}${periode ? '_' + periode : ''}`, 'Laporan')
+    })), namaBerkasLaporan({ laporan: p.filePrefix, periode, skpd: namaSkpd.nama }), 'Laporan')
     setExporting(false)
   }
 
@@ -365,7 +368,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
           <SkpdCombobox lockToOperator allowClear
             placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..."
-            onChangeSelection={sel => { setDescIds(sel.descendantIds); setSelSkpdId(sel.skpdId) }} />
+            onChangeSelection={sel => { setDescIds(sel.descendantIds); setSelSkpdId(sel.skpdId); namaSkpd.pilih(sel.skpdId) }} />
         </div>
         {/* Arah hanya bermakna kalau ada SKPD yang jadi sudut pandangnya —
             se-kabupaten tiap barang selalu keluar dari satu SKPD & masuk ke

@@ -1,6 +1,6 @@
 'use client'
 import { ingatanCetak, kunciTtdPerolehan } from '@/lib/ingatanCetak'
-import { namaBerkasCetak } from '@/lib/cetakLembar'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 // ============================================================================
 // Cetak "Laporan Penerimaan BMD Berupa Aset Tetap Dengan Cara Perolehan Dari …"
@@ -270,8 +270,8 @@ export default function CetakPerolehanPage() {
   // Karakter terlarang Windows dibuang: nama SKPD boleh memuat garis miring.
   useEffect(() => {
     if (!skpd) return
-    document.title = namaBerkasCetak(
-      `Laporan Penerimaan ${info.judul}`, skpd.nama, tahun)
+    document.title = namaBerkasLaporan({
+      laporan: `Laporan Penerimaan ${info.judul}`, periode: tahun, skpd: skpd.nama })
   }, [skpd, info.judul, tahun])
 
   return (

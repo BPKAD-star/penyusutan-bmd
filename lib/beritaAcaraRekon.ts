@@ -226,13 +226,19 @@ export const labelSemester = (periode: string) =>
  * Karakter terlarang Windows dibuang: nama SKPD boleh memuat garis miring &
  * dialog simpan akan menolaknya.
  */
-export function namaBerkasBA(namaSkpd: string, periode: string): string {
-  return namaBerkasCetak(
-    'Berita Acara Rekonsiliasi', namaBerkasCetak(namaSkpd) || 'Kab Kediri', periode)
+export function namaBerkasBA(namaSkpd: string, periode: string, varian?: VarianBA): string {
+  return namaBerkasLaporan({
+    laporan: 'Berita Acara Rekonsiliasi', periode, skpd: namaSkpd,
+    // ⚠️ Varian ikut sbg akhiran: keempat varian (Pembantu↔Pengguna,
+    // Pengguna↔Pengelola, dst.) memakai ANGKA YANG SAMA untuk SKPD & periode
+    // yang sama — yang berbeda cuma pihaknya. Tanpa penandanya, mencetak varian
+    // kedua menimpa berkas varian pertama tanpa satu pun peringatan.
+    akhiran: [varian?.replace(/_/g, '-')],
+  })
 }
 
 // ── Lampiran 1 & 2: Saldo Awal / Saldo Akhir ────────────────────────────────
-import { namaBerkasCetak } from './cetakLembar'
+import { namaBerkasLaporan } from './namaBerkas'
 /**
  * Satu baris tabel saldo.
  *

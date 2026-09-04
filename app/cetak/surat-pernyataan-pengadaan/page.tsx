@@ -1,5 +1,5 @@
 'use client'
-import { namaBerkasCetak } from '@/lib/cetakLembar'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 // ============================================================================
 // Cetak "Surat Pernyataan" — pengakuan pencatatan BMD hasil Pengadaan APBD.
 // Standalone (tanpa sidebar, TANPA kop surat — permintaan user 2026-08-26).
@@ -181,8 +181,15 @@ export default function CetakSuratPernyataanPengadaanPage() {
 
   useEffect(() => {
     if (!header) return
-    document.title = namaBerkasCetak('Surat Pernyataan Pengadaan', header.no_sk)
-  }, [header])
+    // ⚠️ No SK WAJIB ikut sbg akhiran (bukan sekadar hiasan): satu SKPD bisa
+    // punya banyak kontrak dalam satu tahun, dan tanpa nomornya berkas kontrak
+    // kedua MENIMPA yang pertama di folder Unduhan — persis kegagalan yang
+    // bikin susunan nama ini dibakukan.
+    document.title = namaBerkasLaporan({
+      laporan: 'Surat Pernyataan Pengadaan', periode: header.tanggal.slice(0, 4),
+      skpd: skpd?.nama, akhiran: [header.no_sk],
+    })
+  }, [header, skpd])
 
   const tgl = header ? pecahTanggal(tanggalJakarta(header.created_at)) : null
   const labelPengurus = skpd ? (skpd.level <= 1 ? 'Pengurus Barang' : 'Pengurus Barang Pembantu') : 'Pengurus Barang'

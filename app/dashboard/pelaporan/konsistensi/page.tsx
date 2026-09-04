@@ -27,6 +27,8 @@ import { createClient } from '@/lib/supabase/client'
 import { assertOk } from '@/shared/db/query'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import { formatRupiah, exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
+import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { fetchSnapshot, measuresOf, type Snapshot, type Komptabel } from '@/lib/rekon'
 import { rekapPerGolongan, zeroRekap, type RekapRpcRow, type RekapUkuran } from '@/lib/rekapBmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
@@ -70,7 +72,8 @@ export default function UjiKonsistensiPage() {
   const [smt, setSmt] = useState<1 | 2>(1)
 
   const [rows, setRows] = useState<Baris[] | null>(null)
-  const [applied, setApplied] = useState<{ periode: string; skpd: string } | null>(null)
+  const [applied, setApplied] = useState<{ periode: string; skpd: string; namaSkpd: string } | null>(null)
+  const namaSkpd = useNamaSkpd()
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
@@ -89,7 +92,7 @@ export default function UjiKonsistensiPage() {
         rekapBmd(periode, skpdIds, 'ekstra'),
       ])
       setRows(susun(snap, bmdIntra, bmdEkstra))
-      setApplied({ periode, skpd: org.skpdId == null ? 'Seluruh Kabupaten' : 'SKPD terpilih' })
+      setApplied({ periode, skpd: org.skpdId == null ? 'Seluruh Kabupaten' : 'SKPD terpilih', namaSkpd: namaSkpd.nama })
     } catch (e) {
       setErr(`Gagal memeriksa: ${e instanceof Error ? e.message : String(e)}. Hasil tidak ditampilkan supaya tak terbaca sebagai "semuanya cocok".`)
     } finally {
@@ -121,7 +124,9 @@ export default function UjiKonsistensiPage() {
       'Nilai Buku (Laporan BMD)': r.nilai.nilaiBuku.bmd,
       'Selisih Nilai Buku': r.nilai.nilaiBuku.rekon - r.nilai.nilaiBuku.bmd,
       Status: r.cocok ? 'COCOK' : 'TIDAK COCOK',
-    })), `uji-konsistensi-${applied?.periode ?? ''}`)
+    })), namaBerkasLaporan({
+      laporan: 'Uji Konsistensi', periode: applied?.periode, skpd: applied?.namaSkpd,
+    }))
   }
 
   return (
@@ -139,7 +144,8 @@ export default function UjiKonsistensiPage() {
       <div className="card p-5 mb-4 space-y-3">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
-          <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear
+          <SkpdCombobox lockToOperator allowClear
+            onChangeSelection={sel => { setOrg(sel); namaSkpd.pilih(sel.skpdId) }}
             placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
         </div>
         <div className="flex items-center gap-3">

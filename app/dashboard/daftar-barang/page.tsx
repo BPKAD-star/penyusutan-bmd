@@ -25,6 +25,7 @@ import { fetchHiddenIds, belumAdaPada, SEMBUNYI_DAFTAR_BARANG } from '@/lib/visi
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
 import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset, type KursorKode } from '@/lib/keyset'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 
@@ -657,7 +658,10 @@ export default function DaftarBarangPage() {
       const obj: Record<string, string | number> = {}
       for (const k of keys) obj[COL_META[k].header] = cell(k)
       return obj
-    }), `Daftar_Barang_${applied.golongan}`, 'Daftar Barang')
+    }), namaBerkasLaporan({
+      laporan: 'Daftar Barang', periode: applied.periode, golongan: applied.golongan,
+      skpd: applied.skpdId ? skpdMap[applied.skpdId] : null,
+    }), 'Daftar Barang')
     } catch (e) {
       // Berkas Excel yang isinya kurang sebagian TIDAK BOLEH terlanjur terunduh —
       // sekali tersimpan, tak ada lagi tanda bahwa datanya tak lengkap.
@@ -724,7 +728,10 @@ export default function DaftarBarangPage() {
       obj['Jenis Penghapusan'] = HAPUS_LABEL[hi?.jenis || ''] || ''
       obj['Alasan Penghapusan'] = hi?.ket || ''
       return obj
-    }), `Daftar_Barang_${applied.golongan}_AUDIT`, 'Daftar Barang (Audit)')
+    }), namaBerkasLaporan({
+      laporan: 'Daftar Barang', periode: applied.periode, golongan: applied.golongan,
+      skpd: applied.skpdId ? skpdMap[applied.skpdId] : null, akhiran: ['Audit'],
+    }), 'Daftar Barang (Audit)')
     } catch (e) {
       // Ini berkas untuk BPK/inspektorat — justru yang PALING tak boleh
       // terunduh dalam keadaan kurang sebagian.

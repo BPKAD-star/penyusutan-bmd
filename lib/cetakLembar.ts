@@ -116,26 +116,6 @@ export function cssCetakLembar(o: OpsiCetakLembar): string {
   ].join('\n')
 }
 
-// ── Nama berkas ─────────────────────────────────────────────────────────────
-
-/**
- * Karakter yang DITOLAK dialog "Save as" Windows. Nama SKPD boleh memuat garis
- * miring ("Dinas A / B"), jadi tanpa penyaringan ini dialognya menolak menyimpan.
- */
-const TERLARANG = /[\\/:*?"<>|]/g
-
-/**
- * Nama berkas bawaan untuk "Save as PDF", dirakit dari beberapa bagian.
- *
- * ⚠️ `document.title` adalah SATU-SATUNYA cara menyetel nama bawaan itu dari
- * halaman web — dan pemanggilnya WAJIB memulihkan judul aslinya sesudah cetak,
- * kalau tidak judul tab dashboard berubah permanen.
- *
- * Bagian kosong/null DIBUANG, bukan jadi '__' di tengah nama.
- */
-export function namaBerkasCetak(...bagian: (string | number | null | undefined)[]): string {
-  return bagian
-    .map(b => (b == null ? '' : String(b)).replace(TERLARANG, '-').trim())
-    .filter(b => b !== '')
-    .join('_')
-}
+// ⚠️ Nama berkas PINDAH ke lib/namaBerkas.ts (2026-09-04) — dipakai bersama
+// Export Excel, bukan cuma lembar cetak, dan aturan susunannya kini satu untuk
+// seluruh aplikasi: <Nama Laporan>_<Tahun>_<Kode Jenis Aset>_<SKPD>.

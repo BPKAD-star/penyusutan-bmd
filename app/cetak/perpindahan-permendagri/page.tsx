@@ -43,7 +43,8 @@ import {
 } from '@/lib/laporanPerpindahan'
 // ⚠️ Mekanik cetak DIPAKAI BERSAMA, bukan disalin: `cssCetakLembar` menyatukan
 // blok @media print & `ingatanCetak` menyatukan ingatan pilihan cetak.
-import { cssCetakLembar, namaBerkasCetak } from '@/lib/cetakLembar'
+import { cssCetakLembar } from '@/lib/cetakLembar'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { ingatanCetak, kunciTtdPerpindahan } from '@/lib/ingatanCetak'
 import LembarPerpindahanPermendagri from '@/components/pelaporan/LembarPerpindahanPermendagri'
 
@@ -185,7 +186,7 @@ export default function CetakPerpindahanPermendagriPage() {
 
   useEffect(() => {
     if (!skpd) return
-    document.title = namaBerkasCetak(f.kode, skpd.nama, tahun)
+    document.title = namaBerkasLaporan({ laporan: f.kode, periode: tahun, skpd: skpd.nama })
   }, [skpd, f.kode, tahun])
 
   return (

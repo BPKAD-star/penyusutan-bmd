@@ -51,6 +51,7 @@ import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { koreksiFieldKeys, allSameGolongan, ASET_NUM_COLS, type FieldKey } from '@/lib/asetFields'
 import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset, type KursorKode } from '@/lib/keyset'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
 import EditSpesifikasiModal from '@/components/pengelolaan/EditSpesifikasiModal'
@@ -826,7 +827,12 @@ export default function Page() {
         obj[COL_META[k].header] = k === 'keterangan' ? (ket[r.nibar] || '') : cellValue(k, r, bd)
       }
       return obj
-    }), `Daftar_Barang_Awal_2026${applied.golongan ? `_${applied.golongan}` : ''}`, 'Daftar Barang Awal')
+    }), namaBerkasLaporan({
+      // Snapshot ini MEMANG cuma ada satu posisi (saldo awal 2026 = saldo akhir
+      // 2025), jadi tahunnya konstanta, bukan filter yang bisa digeser operator.
+      laporan: 'Daftar Barang Awal', periode: 2026, golongan: applied.golongan,
+      skpd: applied.org.skpdId ? skpdNama[applied.org.skpdId] : null,
+    }), 'Daftar Barang Awal')
     // Kolom pelengkap yang gagal dibaca WAJIB diberitahukan — berkas untuk BPK
     // tak boleh diam-diam berisi kolom kosong yang terbaca sbg "memang tak ada".
     if (pesan.length > 0) setWarn(p => [...p, ...pesan.map(m => `Berkas Excel: ${m}`)])

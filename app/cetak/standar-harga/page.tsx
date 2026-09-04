@@ -1,6 +1,6 @@
 'use client'
 import { ingatanCetak, KUNCI_TTD_STANDAR_SEKAB } from '@/lib/ingatanCetak'
-import { namaBerkasCetak } from '@/lib/cetakLembar'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 // Cetak Standar Harga — LAMPIRAN draft SK penetapan, satu berkas per jenis.
 // Standalone, F4 landscape (sama dgn lembar RKBMD se-Kabupaten).
 //
@@ -239,7 +239,7 @@ export default function CetakStandarHargaPage() {
   useEffect(() => {
     if (loading || err || !jenis) return
     const label = USULAN_JENIS.find(j => j.key === jenis)?.label || jenis
-    document.title = namaBerkasCetak('Standar Harga', label, `Kab ${KABUPATEN}`, tahun)
+    document.title = namaBerkasLaporan({ laporan: `Standar Harga ${label}`, periode: tahun })
   }, [loading, err, jenis, tahun])
 
   const kolom = useMemo(() => jenis ? kolomUntuk(jenis, uraian) : [], [jenis, uraian])

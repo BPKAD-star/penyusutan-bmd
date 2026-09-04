@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { fetchStandar, type StandarJenis, type StandarRow } from '@/lib/rkbmdStandar'
 import { USULAN_JENIS, type UsulanJenis } from '@/lib/rkbmdStandarUsulan'
 
@@ -105,7 +106,7 @@ export default function StandarPelaporan() {
         'Satuan Pengukur': r.satuan_pengukur,
         'Kuantitas Standar': r.kuantitas_standar,
         'Keterangan': r.keterangan || '',
-      })), `Standar-Kebutuhan-${tahun}`, `SBSK ${tahun}`)
+      })), namaBerkasLaporan({ laporan: 'Standar Kebutuhan', periode: tahun }), `SBSK ${tahun}`)
       return
     }
     // Urutan kolom DITENTUKAN USER (2026-08-13) & sama persis dengan layar —
@@ -124,7 +125,7 @@ export default function StandarPelaporan() {
       // sel dipisah "; " supaya tetap terbaca sebagai daftar, bukan hilang.
       'Kode Rekening': r.rekening.join('; '),
       'Keterangan': r.keterangan || '',
-    })), `${label}-${tahun}`, `${label} ${tahun}`)
+    })), namaBerkasLaporan({ laporan: label, periode: tahun }), `${label} ${tahun}`)
   }
 
   return (

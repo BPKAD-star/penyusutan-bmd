@@ -263,11 +263,30 @@ describe('tanggal & terbilang', () => {
     expect(tanggalCutoff('2026-S2')).toBe('31 Desember 2026')
   })
 
+  // Sejak 2026-09-04 lembar ini ikut susunan baku nama berkas laporan
+  // (lib/namaBerkas.ts): <Nama Laporan>_<Tahun>_<Jenis Aset>_<SKPD>.
+  it('namaBerkasBA mengikuti susunan baku nama berkas laporan', () => {
+    expect(namaBerkasBA('BKAD', '2026-S1'))
+      .toBe('Berita Acara Rekonsiliasi_2026-S1_Semua Jenis_BKAD')
+  })
+
   it('namaBerkasBA membuang karakter yang ditolak dialog simpan Windows', () => {
     // Nama SKPD boleh memuat garis miring; kalau ikut, dialog "Save as PDF"
     // menolak nama berkasnya tanpa menjelaskan kenapa.
-    expect(namaBerkasBA('Dinas A/B', '2026-S1')).toBe('Berita Acara Rekonsiliasi_Dinas A-B_2026-S1')
-    expect(namaBerkasBA('', '2026-S2')).toBe('Berita Acara Rekonsiliasi_Kab Kediri_2026-S2')
+    expect(namaBerkasBA('Dinas A/B', '2026-S1'))
+      .toBe('Berita Acara Rekonsiliasi_2026-S1_Semua Jenis_Dinas A-B')
+    expect(namaBerkasBA('', '2026-S2'))
+      .toBe('Berita Acara Rekonsiliasi_2026-S2_Semua Jenis_Kab Kediri')
+  })
+
+  // ⚠️ Keempat varian memakai ANGKA YANG SAMA untuk SKPD & periode yang sama —
+  // yang berbeda cuma pihaknya. Tanpa penanda varian di nama berkas, mencetak
+  // varian kedua MENIMPA berkas varian pertama tanpa satu pun peringatan.
+  it('varian ikut ke nama berkas & keempatnya menghasilkan nama BERBEDA', () => {
+    expect(namaBerkasBA('BKAD', '2026-S1', 'pengguna_pengelola'))
+      .toBe('Berita Acara Rekonsiliasi_2026-S1_Semua Jenis_BKAD_pengguna-pengelola')
+    const nama = VARIAN_BA.map(v => namaBerkasBA('BKAD', '2026-S1', v.value))
+    expect(new Set(nama).size).toBe(VARIAN_BA.length)
   })
 })
 

@@ -7,6 +7,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
 import { JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
@@ -96,7 +97,9 @@ export default function LaporanPemanfaatan() {
       'SKPD': r.skpd, 'Jenis Pemanfaatan': r.jenis, 'Mitra': r.mitra, 'NIBAR': r.nibar, 'Nama Barang': r.nama,
       'Lingkup': r.lingkup, 'Mulai': r.mulai, 'Berakhir': r.berakhir, 'Status': r.status,
       'Nilai Perolehan (Rp)': r.nilai, 'No. Dokumen': r.noDok,
-    })), `Laporan_Pemanfaatan${jenis ? '_' + jenis : ''}`, 'Pemanfaatan')
+    })), namaBerkasLaporan({
+      laporan: 'Laporan Pemanfaatan', skpd: skpdNama, akhiran: [jenis],
+    }), 'Pemanfaatan')
     setExporting(false)
   }
 

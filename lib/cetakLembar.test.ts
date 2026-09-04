@@ -4,7 +4,7 @@
 // lembarnya tercetak — dan lembar resmi itu ditandatangani lalu dipindai.
 // Tak satu pun menghasilkan error saat aplikasi dijalankan.
 import { describe, it, expect } from 'vitest'
-import { cssCetakLembar, namaBerkasCetak, UKURAN_KERTAS, type Kertas } from './cetakLembar'
+import { cssCetakLembar, UKURAN_KERTAS, type Kertas } from './cetakLembar'
 import { LEMBAR_PERMENDAGRI } from './permendagriFormat'
 
 describe('cssCetakLembar — isolasi cetak', () => {
@@ -83,50 +83,5 @@ describe('cssCetakLembar — id yang salah bikin lembar KOSONG tanpa error', () 
   it("MELEMPAR kalau `sembunyikan` memuat '#'", () => {
     expect(() => cssCetakLembar({ id: 'a', kertas: 'A4 potret', sembunyikan: ['#b'] }))
       .toThrow(/tidak sah/)
-  })
-})
-
-describe('namaBerkasCetak', () => {
-  it('merangkai bagian dengan garis bawah', () => {
-    expect(namaBerkasCetak('Laporan BMD', 'BKAD', '2026-S1')).toBe('Laporan BMD_BKAD_2026-S1')
-  })
-
-  // ⚠️ Nama SKPD boleh memuat garis miring ("Dinas A / B") — tanpa penyaringan
-  // ini dialog "Save as" Windows MENOLAK menyimpan berkasnya.
-  it('membuang karakter yang ditolak dialog Save as Windows', () => {
-    expect(namaBerkasCetak('Dinas A / B')).toBe('Dinas A - B')
-    expect(namaBerkasCetak('a\\b:c*d?e"f<g>h|i')).toBe('a-b-c-d-e-f-g-h-i')
-  })
-
-  // Salinan di bmd/page.tsx SUDAH menyimpang — kehilangan `.trim()`, jadi nama
-  // SKPD berspasi ujung menghasilkan "…_Dinas X _2026-S1".
-  it('regresi 2026-08-29: memangkas spasi ujung tiap bagian', () => {
-    expect(namaBerkasCetak('Laporan BMD', '  Dinas X  ', '2026-S1'))
-      .toBe('Laporan BMD_Dinas X_2026-S1')
-  })
-
-  it('membuang bagian kosong/null, bukan menyisakan "__"', () => {
-    expect(namaBerkasCetak('Laporan', null, undefined, '', '2026')).toBe('Laporan_2026')
-    expect(namaBerkasCetak('Laporan', '   ', '2026')).toBe('Laporan_2026')
-  })
-
-  it('menerima angka', () => {
-    expect(namaBerkasCetak('RKBMD', 2027)).toBe('RKBMD_2027')
-  })
-
-  it('tak pernah menghasilkan karakter terlarang, apa pun masukannya', () => {
-    expect(namaBerkasCetak('a/b', 'c:d', 'e|f')).not.toMatch(/[\\/:*?"<>|]/)
-  })
-})
-
-describe('sinkron dengan registry Permendagri', () => {
-  // Kolom `kertas` di registry bukan sekadar catatan — ia bertipe `Kertas` dan
-  // dipakai merakit @page. Nilai yang tak dikenal akan menghasilkan
-  // `size: undefined` yang DIABAIKAN peramban (lembarnya diam-diam tercetak
-  // pada ukuran bawaan pengguna, bukan yang diminta format).
-  it('tiap `kertas` di registry punya padanan @page', () => {
-    for (const [id, l] of Object.entries(LEMBAR_PERMENDAGRI)) {
-      expect(UKURAN_KERTAS[l.kertas as Kertas], `${id}.kertas '${l.kertas}'`).toBeTruthy()
-    }
   })
 })

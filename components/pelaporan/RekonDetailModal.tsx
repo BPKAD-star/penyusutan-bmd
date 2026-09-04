@@ -6,14 +6,18 @@
 // dengan angka yang diklik — dua-duanya dijumlah dari array yang sama.
 import { useMemo, useState } from 'react'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { KATEGORI_LABEL, type MutasiLine, type PenyusutanAset } from '@/lib/rekon'
 
 // Format polos bergaya id-ID tanpa "Rp" — mengikuti tabel Rekonsiliasi di
 // belakangnya, biar enak dibandingkan angkanya saat tie-out.
 const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
 
-export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, onClose }: {
+export default function RekonDetailModal({ judul, periode, skpd, rows, skpdNama, penyusutan, onClose }: {
   judul: string
+  /** Periode & SKPD ikut ke NAMA BERKAS — pop-up ini tak punya filternya sendiri. */
+  periode: string
+  skpd?: string
   rows: MutasiLine[]
   skpdNama: Record<number, string>
   penyusutan: Map<string, PenyusutanAset>
@@ -97,7 +101,9 @@ export default function RekonDetailModal({ judul, rows, skpdNama, penyusutan, on
         'Akumulasi barang': p ? p.akumulasi : '',
         'Nilai Buku': p ? p.nilaiBuku : '',
       }
-    }), `Rincian_Rekonsiliasi_${judul.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60)}`, 'Rincian')
+    }), namaBerkasLaporan({
+      laporan: 'Rincian Rekonsiliasi', periode, skpd, akhiran: [judul],
+    }), 'Rincian')
   }
 
   return (

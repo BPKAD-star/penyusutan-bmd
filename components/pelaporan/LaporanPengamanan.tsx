@@ -7,6 +7,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
 
@@ -87,7 +88,7 @@ export default function LaporanPengamanan() {
       'SKPD': r.skpd, 'Nama Pegawai': r.pegawai, 'NIP': r.nip, 'Pangkat/Golongan': r.pangkat, 'Jabatan': r.jabatan,
       'No. BAST': r.bastNo, 'Tgl BAST': r.bastTgl, 'No. Pakta': r.paktaNo, 'Tgl Pakta': r.paktaTgl,
       'NIBAR': r.nibar, 'Nama Barang': r.nama, 'Status': r.status, 'Nilai Perolehan (Rp)': r.nilai,
-    })), 'Laporan_Pengamanan', 'Pengamanan')
+    })), namaBerkasLaporan({ laporan: 'Laporan Pengamanan', skpd: skpdNama }), 'Pengamanan')
     setExporting(false)
   }
 

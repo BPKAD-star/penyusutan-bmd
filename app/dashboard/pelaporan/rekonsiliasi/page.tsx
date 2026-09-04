@@ -27,6 +27,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
@@ -263,6 +264,7 @@ export default function RekonsiliasiPage() {
       document.title = namaBerkasBA(
         applied.skpdId != null ? (skpdNama[applied.skpdId] || '') : '',
         `${applied.tahun}-S${applied.smt}`,
+        ba?.varian,
       )
     }
     const pulih = () => { document.title = judulAsli }
@@ -382,7 +384,9 @@ export default function RekonsiliasiPage() {
         rows.push(rec)
       }
     }
-    exportToExcel(rows, `Rekonsiliasi_BMD_${periodeLabel}`, 'Rekonsiliasi BMD')
+    exportToExcel(rows, namaBerkasLaporan({
+      laporan: 'Rekonsiliasi BMD', periode: periodeLabel, skpd: namaSkpdApplied,
+    }), 'Rekonsiliasi BMD')
   }
 
   // Export PDF = CETAK HALAMAN INI apa adanya (permintaan user: "sebagaimana
@@ -710,7 +714,8 @@ export default function RekonsiliasiPage() {
         </div>
       )}
       {detail && (
-        <RekonDetailModal judul={detail.judul} rows={detail.rows} skpdNama={skpdNama}
+        <RekonDetailModal judul={detail.judul} periode={periodeLabel} skpd={namaSkpdApplied}
+          rows={detail.rows} skpdNama={skpdNama}
           penyusutan={detail.peny} onClose={() => setDetail(null)} />
       )}
     </div>

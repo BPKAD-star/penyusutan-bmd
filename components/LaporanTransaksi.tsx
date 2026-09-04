@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { JENIS_TRANSAKSI_LABEL } from '@/lib/bmd'
 import { fetchBatalTargets } from '@/lib/voidedAset'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -195,7 +196,7 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       'SKPD Tujuan': r.tujuan?.nama || '',
       'Nilai (Rp)': r.nilai,
       'Keterangan': r.keterangan || '',
-    })), `${filePrefix}${periode ? '_' + periode : ''}`, 'Laporan')
+    })), namaBerkasLaporan({ laporan: filePrefix, periode, skpd: skpdNama }), 'Laporan')
     setExporting(false)
   }
 

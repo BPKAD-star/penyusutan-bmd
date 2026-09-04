@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
@@ -100,7 +101,11 @@ export default function Page() {
         'Akumulasi Penyusutan (Saldo Awal)': r.disusutkan ? r.akumulasi : '',
         'Beban Penyusutan / Smt': r.disusutkan ? r.beban : '',
         'Nilai Buku': r.nilaiBuku,
-      })), 'Rekap_Saldo_Awal_2026', 'Rekap Saldo Awal')
+      })), namaBerkasLaporan({
+        // Snapshot: satu-satunya posisi yang ada, bukan filter operator.
+        laporan: 'Rekap Saldo Awal', periode: 2026,
+        skpd: org.skpdId ? rootOf(org.skpdId)?.nama : null, akhiran: ['Model 1'],
+      }), 'Rekap Saldo Awal')
       return
     }
     // Model 2 matriks
@@ -116,7 +121,10 @@ export default function Page() {
         }
       }
       return row
-    }), 'Rekap_Saldo_Awal_2026_per_SKPD', 'Rekap per SKPD')
+    }), namaBerkasLaporan({
+      laporan: 'Rekap Saldo Awal', periode: 2026,
+      skpd: org.skpdId ? rootOf(org.skpdId)?.nama : null, akhiran: ['per SKPD'],
+    }), 'Rekap per SKPD')
   }
 
   const hasData = model === 1 ? (rows && rows.length > 0) : matrix.length > 0

@@ -497,6 +497,70 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
     tombolnya kini menampilkan jumlah baris yang sudah tertarik supaya lambat
     tak terbaca sebagai macet.
 
+- **NAMA BERKAS LAPORAN: SATU SUSUNAN UNTUK SEMUA** (keputusan user 2026-09-04,
+  `lib/namaBerkas.ts`). Tiap menu dulu menamai berkasnya sendiri-sendiri dan
+  hasilnya tak terbaca sebagai satu keluarga: `Daftar_Barang_1.3.2`,
+  `kendaraan-dinas`, `RKBMD-Ditetapkan-2027`, `uji-konsistensi-2026-S1`,
+  `rekap saldo awal`, `Laporan_Pengamanan`. Sekarang **semuanya**:
+
+      <Nama Laporan>_<Tahun>_<Kode Jenis Aset>_<SKPD>[_<akhiran>]
+      Daftar Barang_2026-S1_1.3.2_Dinas Pendidikan.xlsx
+
+  Berlaku untuk **Export Excel MAUPUN nama bawaan "Save as PDF"** lembar cetak —
+  dua-duanya lewat `namaBerkasLaporan()`.
+  - ⚠️ **Sebagian menu dulu tak menyebut SKPD sama sekali** (`Laporan_KIR`,
+    `Laporan_Pengamanan`, `Rekap_Saldo_Awal_2026`, `kendaraan-dinas`). Itu
+    bukan cuma soal rapi: begitu operator mengekspor SKPD KEDUA, berkas SKPD
+    pertama **TERTIMPA** di folder Unduhan tanpa satu pun peringatan.
+  - ⚠️ **Semester IKUT dibawa** (`2026-S1`), bukan tahunnya saja — laporan
+    semesteran itu mayoritas di sini, dan tanpa penandanya berkas Semester I &
+    II bernama sama persis. Tetap diawali tahun, jadi sortir by nama tetap urut.
+  - ⚠️ **Filter kosong DITULIS, bukan dihilangkan**: jenis aset kosong →
+    `Semua Jenis`, SKPD kosong → `Kab Kediri`. Susunan empat bagiannya jadi
+    selalu utuh sehingga posisi tiap bagian bisa dipercaya; kalau yang kosong
+    dibuang, `Daftar Barang_2026-S1_Dinas Pendidikan` tak bisa dibedakan dari
+    nama yang justru bagian SKPD-nya yang hilang. **Pemanggil TIDAK menyiapkan
+    penggantinya sendiri** — cukup oper nilai filternya apa adanya (termasuk
+    `null`), biar tak ada yang menulis "Semua"/"Se-Kabupaten" versinya sendiri.
+  - **Tahun satu-satunya bagian yang boleh ABSEN**, dan hanya untuk laporan yang
+    memang tak punya dimensi waktu: KIR, Pengamanan, Pemanfaatan, & Kendaraan
+    menampilkan POSISI TERKINI, bukan rentang periode. Mengarang tahun di situ
+    (mis. tahun berjalan) membuat berkas menyatakan cakupan yang tak pernah
+    difilter.
+  - Varian sebuah laporan masuk `akhiran` (`Audit`, `per SKPD`, `Model 1`), BUKAN
+    diselundupkan ke bagian `laporan` — kalau tidak posisi bagian yang lain
+    bergeser dan susunannya tak bisa dibaca balik.
+  - `_` di DALAM sebuah bagian diubah jadi spasi (`_` itu pemisah antar bagian),
+    karakter terlarang Windows (`\ / : * ? " < > |`) jadi `-` — nama SKPD di
+    data ini boleh memuat garis miring, dan peramban memotong nama unduhan di
+    karakter itu tanpa suara.
+  - **Dikunci lib/namaBerkas.test.ts**, termasuk PEMINDAI atas KEDUA pintu yang
+    menghasilkan berkas: berkas yang memanggil `exportToExcel` **dan** yang
+    menyetel `document.title` (nama bawaan "Save as PDF") WAJIB memanggil
+    `namaBerkasLaporan`. Itu yang menjaga aturannya berlaku untuk menu yang
+    BELUM ditulis — satu `exportToExcel(rows, 'Laporan_Anu_2026')` yang lolos
+    review langsung memecah keluarganya lagi, dan tak ada apa pun yang gagal.
+  - ⚠️ **TANPA PENGECUALIAN — perakit bebas `namaBerkasCetak` DICABUT**
+    (2026-09-04, sore). Surat Pernyataan Pengadaan & Berita Acara Rekonsiliasi
+    sempat dikecualikan ("identitasnya nomor dokumen, bukan periode + cakupan"),
+    lalu user memutuskan keduanya ikut seragam. Begitu keduanya pindah, perakit
+    bebasnya tak punya pemakai lagi — dan selama ia ada, ia pintu KEDUA yang
+    meloloskan nama di luar susunan baku tanpa ada yang menggagalkannya. Kalau
+    kelak ada lembar yang benar-benar tak muat susunan ini, tambahkan bagiannya
+    di `namaBerkasLaporan`; **jangan hidupkan lagi perakit bebasnya.**
+    - Surat Pernyataan: **No SK jadi `akhiran`, WAJIB ikut** — satu SKPD bisa
+      punya banyak kontrak dalam setahun, dan tanpa nomornya berkas kontrak
+      kedua menimpa yang pertama. `Surat Pernyataan Pengadaan_2026_Semua
+      Jenis_Dinas PU_027-12-418.32-2026`.
+    - BA Rekon: **varian jadi `akhiran`, WAJIB ikut** — keempat varian
+      (Pembantu↔Pengguna, Pengguna↔Pengelola, dst.) memakai ANGKA YANG SAMA
+      untuk SKPD & periode yang sama; yang berbeda cuma pihaknya. Dikunci test
+      "keempatnya menghasilkan nama BERBEDA".
+  - `useNamaSkpd` (components/) diangkat jadi hook di kemunculan KETIGA: nama
+    SKPD dibutuhkan kop lembar cetak DAN nama berkas, sementara `SkpdCombobox`
+    cuma memberi `skpdId`.
+  - **Tak ada migrasi** — murni penamaan berkas di sisi klien.
+
 - **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
   setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
   (batal_reklas, batal_penghapusan, batal_kapitalisasi, batal_koreksi_*, dst).

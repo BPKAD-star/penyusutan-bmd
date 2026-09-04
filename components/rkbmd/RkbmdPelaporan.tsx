@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { RKBMD_JENIS, STATUS_META, LABEL_NILAI, nilaiItemRkbmd, type RkbmdStatus, type RkbmdJenis, type RkbmdVersi } from '@/lib/rkbmd'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
@@ -156,7 +157,9 @@ export default function RkbmdPelaporan() {
       'Jumlah Item': r.jumlah_item,
       'Total Nilai': r.total,
       'Arti Total Nilai': LABEL_NILAI[r.jenis as RkbmdJenis] || '',
-    })), `RKBMD-Ditetapkan-${tahun}`, `RKBMD ${tahun}`)
+    })), namaBerkasLaporan({
+      laporan: 'RKBMD Ditetapkan', periode: tahun, akhiran: [jenis === 'semua' ? null : jenis],
+    }), `RKBMD ${tahun}`)
   }
 
   // `msg=""` disengaja: halaman ini baca-saja, tak ada aksi yang menghasilkan

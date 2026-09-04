@@ -7,6 +7,8 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
+import { useNamaSkpd } from '@/components/useNamaSkpd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import {
   tahunPerolehan, toIsiRuangan, RUANGAN_COLS, ASET_JOIN_COLS,
@@ -20,6 +22,7 @@ export default function LaporanKir() {
   const [kartu, setKartu] = useState<Kartu[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
+  const namaSkpd = useNamaSkpd()
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [cari, setCari] = useState('')
   const [buka, setBuka] = useState<Set<string>>(new Set())
@@ -79,7 +82,7 @@ export default function LaporanKir() {
       'Tahun Perolehan': tahunPerolehan(b.tgl_perolehan), 'Jumlah': b.jumlah, 'Satuan': b.satuan || '-',
       'Nilai Perolehan (Rp)': b.nilai_perolehan, 'Keterangan': b.keterangan || '',
     })))
-    exportToExcel(baris, 'Laporan_KIR', 'KIR')
+    exportToExcel(baris, namaBerkasLaporan({ laporan: 'Laporan KIR', skpd: namaSkpd.nama }), 'KIR')
     setExporting(false)
   }
 
@@ -98,7 +101,8 @@ export default function LaporanKir() {
       <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end">
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
-          <SkpdCombobox lockToOperator onChangeSelection={sel => setDescIds(sel.descendantIds)} allowClear
+          <SkpdCombobox lockToOperator allowClear
+            onChangeSelection={sel => { setDescIds(sel.descendantIds); namaSkpd.pilih(sel.skpdId) }}
             placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
         </div>
         <div className="flex-1 min-w-[200px]">

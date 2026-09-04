@@ -25,7 +25,8 @@ import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecah
 import { fetchReklasEvents, kodePada, JENIS_REKLAS_KODE } from '@/lib/reklasKode'
 import { rekapPerGolongan, nilaiBukuSel, zeroRekap, type RekapRpcRow } from '@/lib/rekapBmd'
 import { assertOk } from '@/shared/db/query'
-import { cssCetakLembar, namaBerkasCetak } from '@/lib/cetakLembar'
+import { cssCetakLembar } from '@/lib/cetakLembar'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 
 // ── Model 3: jenis ledger per kategori Penambahan/Pengurangan (nilai
 // perolehan) — diverifikasi ke kode asli tiap alur (Pengadaan/PerolehanManual/
@@ -688,7 +689,9 @@ export default function LaporanBmdPage() {
         [`Akumulasi Penyusutan s.d. ${periode}`]: r.disusutkan ? r.akumulasi : '',
         [`Beban Penyusutan ${periode}`]: r.disusutkan ? r.beban : '',
         'Nilai Buku': r.nilaiBuku,
-      })), `Laporan_BMD_${periode}`, 'Laporan BMD')
+      })), namaBerkasLaporan({
+        laporan: 'Laporan BMD', periode, skpd: skpdInfo?.nama, akhiran: ['Model 1'],
+      }), 'Laporan BMD')
       return
     }
     if (model === 3) {
@@ -702,7 +705,10 @@ export default function LaporanBmdPage() {
         [`Penambahan ${labelPeriode}`]: r.penambahan,
         [`Pengurangan ${labelPeriode}`]: r.pengurangan,
         [`Saldo Akhir (posisi ${periode})`]: r.saldoAkhir,
-      })), `Laporan_BMD_Mutasi_${smt === 'TH' ? tahun : periode}`, 'Laporan BMD Mutasi',
+      })), namaBerkasLaporan({
+        laporan: 'Laporan BMD Mutasi', periode: smt === 'TH' ? tahun : periode,
+        skpd: skpdInfo?.nama, akhiran: ['Model 3'],
+      }), 'Laporan BMD Mutasi',
         catatanMutasi())
       return
     }
@@ -718,7 +724,9 @@ export default function LaporanBmdPage() {
         }
       }
       return row
-    }), `Laporan_BMD_${periode}_per_SKPD`, 'Laporan BMD per SKPD')
+    }), namaBerkasLaporan({
+      laporan: 'Laporan BMD', periode, skpd: skpdInfo?.nama, akhiran: ['per SKPD'],
+    }), 'Laporan BMD per SKPD')
   }
 
   useEffect(() => {
@@ -752,7 +760,7 @@ export default function LaporanBmdPage() {
     const nama = org.skpdId ? (skpdInfo?.nama || 'SKPD') : 'Kab Kediri'
     // ⚠️ Dulu penyaringnya disalin di sini TANPA `.trim()` (salinan keenam di
     // repo), jadi nama SKPD berspasi ujung menghasilkan "…_Dinas X _2026-S1".
-    document.title = namaBerkasCetak('Rekapitulasi Mutasi BMD', nama, periode)
+    document.title = namaBerkasLaporan({ laporan: 'Rekapitulasi Mutasi BMD', periode, skpd: nama })
     const pulih = () => { document.title = judulAsli }
     window.addEventListener('afterprint', pulih)
     const t = window.setTimeout(() => window.print(), 80)

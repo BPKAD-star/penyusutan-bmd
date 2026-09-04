@@ -1,6 +1,6 @@
 'use client'
 import { ingatanCetak, kunciTtdLaporanBmd } from '@/lib/ingatanCetak'
-import { namaBerkasCetak } from '@/lib/cetakLembar'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 // ============================================================================
 // Cetak LAPORAN BMD — Permendagri 47/2021 Format IV.L.4.2 (per SKPD).
 // Standalone (tanpa sidebar), A4 PORTRAIT — lembarnya cuma 4 kolom, jadi tak
@@ -164,7 +164,7 @@ export default function CetakLaporanBmdPage() {
 
   useEffect(() => {
     if (!skpd) return
-    document.title = namaBerkasCetak('Laporan BMD', skpd.nama, periode)
+    document.title = namaBerkasLaporan({ laporan: 'Laporan BMD', periode, skpd: skpd.nama })
   }, [skpd, periode])
 
   return (

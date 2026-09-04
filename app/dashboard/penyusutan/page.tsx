@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP, perlakuanKode } from '@/lib/bmd'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
@@ -467,7 +468,10 @@ export default function PenyusutanPage() {
         'Sisa (Smt)': susut && p ? p.sisa_semester : '',
         'Periode': applied.periode,
       }
-    }), `Penyusutan_${applied.periode}`, 'Penyusutan')
+    }), namaBerkasLaporan({
+      laporan: 'Penyusutan', periode: applied.periode, golongan: applied.golongan,
+      skpd: applied.org.skpdId ? skpdNama[applied.org.skpdId] : null,
+    }), 'Penyusutan')
     } catch (e) {
       setErr(`gagal menyiapkan export: ${(e as Error).message} — berkas tidak dibuat supaya tidak ada Excel setengah jadi yang beredar.`)
     } finally {

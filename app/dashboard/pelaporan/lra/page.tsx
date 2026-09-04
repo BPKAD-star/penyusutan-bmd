@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import SkpdCombobox, { type SkpdSelection } from '@/components/SkpdCombobox'
 import LraImport from '@/components/pelaporan/LraImport'
 import LraTagModal from '@/components/pelaporan/LraTagModal'
@@ -125,7 +126,10 @@ export default function LraPage() {
         EntryAplikasi: mApp.totalJenis[j.grup], Selisih: check.perJenis[j.grup],
       })
     }
-    exportToExcel(out, `LRA_Rekonsiliasi_${tahun}`, 'LRA')
+    exportToExcel(out, namaBerkasLaporan({
+      laporan: 'LRA Rekonsiliasi', periode: tahun,
+      skpd: org.skpdId ? skpdNama.get(org.skpdId) : null,
+    }), 'LRA')
   }
 
   return (
@@ -258,7 +262,8 @@ export default function LraPage() {
           onDone={m => { setTagMode(null); setMsg(m); proses() }} />
       )}
       {detail && (
-        <LraDetailModal judul={detail.judul} rows={detail.rows} skpdNama={skpdNama} onClose={() => setDetail(null)} />
+        <LraDetailModal judul={detail.judul} periode={tahun} skpd={org.skpdId ? skpdNama.get(org.skpdId) : undefined}
+          rows={detail.rows} skpdNama={skpdNama} onClose={() => setDetail(null)} />
       )}
     </div>
   )

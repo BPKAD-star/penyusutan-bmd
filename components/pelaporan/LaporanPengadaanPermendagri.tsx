@@ -6,12 +6,13 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { fetchLaporanPengadaan, groupByGolongan, grandTotal } from '@/lib/laporanPengadaan'
 import LaporanPengadaanTabel from './LaporanPengadaanTabel'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
-export default function LaporanPengadaanPermendagri({ periode, skpdId, descIds }: {
-  periode: string; skpdId: number | null; descIds: number[] | null
+export default function LaporanPengadaanPermendagri({ periode, skpdId, namaSkpd, descIds }: {
+  periode: string; skpdId: number | null; namaSkpd?: string; descIds: number[] | null
 }) {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
@@ -57,7 +58,9 @@ export default function LaporanPengadaanPermendagri({ periode, skpdId, descIds }
     }
     flat.push({ 'Nama Barang': 'TOTAL', 'Total Nilai Barang (Rp)': grandTotal(rows),
       'Total Biaya Atribusi (Rp)': 0, 'Nilai Perolehan Barang (Rp)': grandTotal(rows) })
-    exportToExcel(flat, `Laporan_Pengadaan_Permendagri${periode ? '_' + periode : ''}`, 'Laporan Pengadaan')
+    exportToExcel(flat, namaBerkasLaporan({
+      laporan: 'Laporan Pengadaan', periode, skpd: namaSkpd,
+    }), 'Laporan Pengadaan')
     setExporting(false)
   }
 

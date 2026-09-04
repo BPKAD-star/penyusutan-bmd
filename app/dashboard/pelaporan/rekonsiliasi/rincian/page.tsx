@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { tahunAwal } from '@/lib/tahunKerja'
@@ -66,7 +67,10 @@ export default function RincianRekonsiliasiPage() {
 
   function handleExport() {
     if (!applied) return
-    exportToExcel(lines.map(baris), `Rincian_Rekonsiliasi_${applied}`, 'Rincian Rekonsiliasi')
+    exportToExcel(lines.map(baris), namaBerkasLaporan({
+      laporan: 'Rincian Rekonsiliasi', periode: applied,
+      skpd: org.skpdId ? skpdMap[org.skpdId] : null,
+    }), 'Rincian Rekonsiliasi')
   }
 
   return (

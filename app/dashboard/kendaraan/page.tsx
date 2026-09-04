@@ -27,6 +27,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
 
 const PREFIX_ALAT_ANGKUTAN = '1.3.2.02.'
@@ -202,7 +203,7 @@ export default function KendaraanPage() {
         'Penggunaan': teks(r.penggunaan_pengamanan),
         'Keterangan': teks(r.keterangan),
       })),
-      'kendaraan-dinas',
+      namaBerkasLaporan({ laporan: 'Kendaraan Dinas', golongan: '1.3.2.02' }),
       'Kendaraan',
     )
   }

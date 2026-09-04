@@ -14,6 +14,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
 import { exportToExcel } from '@/lib/export'
+import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import {
   GOLONGAN_OPSI, LHI_LABEL, LHI_URUT, REKOMENDASI, konfigLki, type LhiKode,
 } from '@/lib/inventarisasi'
@@ -45,7 +46,7 @@ export default function LaporanInventarisasiPage() {
         for (const k of kolom) o[k.grup ? `${k.grup} — ${k.label}` : k.label] = r[k.key] ?? ''
         return o
       }),
-      `LHI_${kode.replace(/\./g, '')}_${tahun}`,
+      namaBerkasLaporan({ laporan: 'LHI', periode: tahun, golongan: golongan, skpd: skpdNama }),
       kode,
     )
   }
