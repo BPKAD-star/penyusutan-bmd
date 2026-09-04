@@ -98,6 +98,46 @@ type JurnalLine = {
 export type Jurnal = Header & { lines: JurnalLine[]; total: number; hasLedger: boolean }
 
 const namaFile = (path: string) => path.split('/').pop() || path
+
+// Tombol unggah dokumen BAST — dipakai KontrakForm (baru) & EditHeaderModal
+// (edit), satu sumber supaya tak menyalin markup+state dua kali.
+//
+// ⚠️ Input file mentah DISEMBUNYIKAN (`hidden`), dipicu lewat tombol bergaya.
+// Tampilan bawaan browser ("Choose Files · No file chosen") gampang terlewat
+// operator & tak menunjukkan bahwa ini WAJIB — beda dari kolom teks biasa yang
+// keharusannya kelihatan begitu dikosongkan lalu disimpan.
+function DokumenBastField({ paths, uploading, onUpload, onHapus }: {
+  paths: string[]; uploading: boolean
+  onUpload: (files: FileList | null) => void; onHapus: (path: string) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <div>
+      <label className="block text-xs text-gray-500 mb-1">
+        Dokumen BAST <span className="text-red-500">*</span>
+        <span className="text-gray-400"> — wajib sebelum kontrak bisa disetujui (foto / PDF, bisa lebih dari satu)</span>
+      </label>
+      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
+        onChange={e => { onUpload(e.target.files); e.target.value = '' }} disabled={uploading} className="hidden" />
+      <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
+        className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+        📎 {uploading ? 'Mengunggah...' : 'Upload BAST'}
+      </button>
+      {paths.length === 0
+        ? <p className="text-xs text-amber-600 mt-1">Belum ada dokumen — wajib diunggah sebelum kontrak bisa disimpan.</p>
+        : (
+          <ul className="mt-2 space-y-1">
+            {paths.map(p => (
+              <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
+                <span className="truncate">{namaFile(p)}</span>
+                <button onClick={() => onHapus(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
+              </li>
+            ))}
+          </ul>
+        )}
+    </div>
+  )
+}
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
@@ -570,6 +610,15 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
   async function approveHeader() {
     const items = j.payload.draft_items || []
     if (items.length === 0) { onMsg('Error: kontrak ini belum ada barangnya — tambahkan dulu sebelum disetujui.'); return }
+    // ⚠️ Penjaga SESUNGGUHNYA dari "dokumen BAST wajib" — bukan cuma validasi di
+    // form. KontrakForm/EditHeaderModal mencegahnya sejak disimpan, TAPI kartu
+    // hasil Import Excel (PerolehanImport.tsx) tidak pernah mengisi
+    // `dokumen_paths` sama sekali, jadi tanpa pemeriksaan di sini kontrak impor
+    // tetap bisa lolos disetujui tanpa BAST. Di sinilah SEMUA jalur bertemu.
+    if (!j.payload.dokumen_paths || j.payload.dokumen_paths.length === 0) {
+      onMsg('Error: dokumen BAST belum diunggah — lengkapi dulu (Edit Kontrak & BAST) sebelum kontrak ini disetujui.')
+      return
+    }
     for (const it of items) {
       if (!it.kode) { onMsg('Error: ada barang draft tanpa kode.'); return }
       if (toNum(it.harga) <= 0) { onMsg(`Error: harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
@@ -1316,6 +1365,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
 
   async function simpan() {
     if (!noKontrak.trim()) { setErr('No. Kontrak wajib diisi.'); return }
+    if (dokPaths.length === 0) { setErr('Dokumen BAST wajib diunggah sebelum kontrak bisa disimpan.'); return }
     if (tglBast && tglBast < tglKontrak) { setErr('Tgl BAST tidak boleh lebih tua dari tgl kontrak.'); return }
     setErr(''); setSaving(true)
     const dup = await cekNomorDipakai(noKontrak.trim(), noBast.trim() || undefined)
@@ -1388,20 +1438,7 @@ function KontrakForm({ skpdId, skpdNama, cekNomorDipakai, onCancel, onSaved }: {
           </div>
           <div className="sm:col-span-2"><label className="block text-xs text-gray-500 mb-1">Keterangan BAST</label><input className="select-filter w-full" value={ketBast} onChange={e => setKetBast(e.target.value)} /></div>
           <div className="sm:col-span-2">
-            <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>
-            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-              onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
-            {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-            {dokPaths.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {dokPaths.map(p => (
-                  <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
-                    <span className="truncate">{namaFile(p)}</span>
-                    <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen} />
           </div>
         </div>
       </div>
@@ -1464,6 +1501,7 @@ function EditHeaderModal({ header, skpdId, cekNomorDipakai, onClose, onSaved }: 
 
   async function simpan() {
     if (!noKontrak.trim()) { setErr('No. Kontrak wajib diisi.'); return }
+    if (dokPaths.length === 0) { setErr('Dokumen BAST wajib diunggah sebelum kontrak bisa disimpan.'); return }
     if (pindahSemester) {
       setErr(`Tanggal kontrak masuk ${periodeDariTanggal(tgl)}, sedangkan jurnal ini di ${header.periode}. Pindah semester tidak diizinkan — batalkan & buat jurnal baru.`)
       return
@@ -1525,20 +1563,7 @@ function EditHeaderModal({ header, skpdId, cekNomorDipakai, onClose, onSaved }: 
             </div>
             <div className="mt-4"><label className="block text-xs text-gray-500 mb-1">Keterangan BAST</label><input className="select-filter w-full" value={ketBast} onChange={e => setKetBast(e.target.value)} /></div>
             <div className="mt-4">
-              <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>
-              <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-                onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
-              {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-              {dokPaths.length > 0 && (
-                <ul className="mt-2 space-y-1">
-                  {dokPaths.map(pth => (
-                    <li key={pth} className="flex items-center gap-2 text-xs text-gray-600">
-                      <span className="truncate">{namaFile(pth)}</span>
-                      <button onClick={() => hapusDokumen(pth)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen} />
             </div>
             {header.approval_status === 'disetujui' && (
               <p className="text-xs text-gray-400 mt-2">Kontrak sudah disetujui — ubah tgl BAST di sini TIDAK memindahkan tgl perolehan barang yang sudah tercatat (ledger beku).</p>
