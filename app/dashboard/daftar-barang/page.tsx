@@ -24,6 +24,7 @@ import { GOLONGAN_DAFTAR_BARANG, periodeDariTanggal, asalUsulTampil } from '@/li
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_DAFTAR_BARANG } from '@/lib/visibilitas'
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
+import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset, type KursorKode } from '@/lib/keyset'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
 
@@ -230,6 +231,11 @@ export default function DaftarBarangPage() {
   // (kalau errornya ditelan) — dua-duanya bisa berbulan-bulan tak ketahuan.
   const [err, setErr] = useState('')
   const [exporting, setExporting] = useState(false)
+  // Berapa baris sudah tertarik selama Export. Export golongan besar memang
+  // menit-menitan (218rb baris = 220 permintaan); tanpa angka yang bergerak,
+  // tombol "Mengekspor..." yang diam terbaca operator sbg macet, dan halaman
+  // ini sudah pernah benar-benar macet di situ — jadi bedanya harus kelihatan.
+  const [progres, setProgres] = useState(0)
 
   useEffect(() => {
     ;(async () => {
@@ -267,28 +273,34 @@ export default function DaftarBarangPage() {
     // pernah tampil, bahkan di mode Audit (includeDeleted). Hanya aktif/dihapus.
     let b = includeDeleted ? q.neq('status', 'draft') : q.eq('status', 'aktif')
     if (f.descIds && f.descIds.length > 0) b = b.in('skpd_id', f.descIds)
-    if (f.golongan) b = b.like('kode', `${f.golongan}.%`)
+    // ⚠️ `.eq('golongan', ...)`, BUKAN `.like('kode', 'gol.%')` (diganti
+    // 2026-09-03). Setara PERSIS — `aset.golongan` itu kolom GENERATED ALWAYS
+    // dari tiga segmen pertama `kode` (diperiksa ke DB: 0 baris menyimpang dari
+    // 420.463) — tapi `~~` (LIKE) tidak leakproof, jadi di bawah RLS ia tak
+    // pernah bisa jadi index condition & memaksa planner meninggalkan
+    // `idx_aset_gol_urut`. Ini ronde keempat dari cerita yang sama (GIS Tanah,
+    // Kendaraan, fetchOwnerOverrides); `fn_daftar_barang` sendiri sudah lama
+    // memakai `a.golongan = p_golongan`.
+    if (f.golongan) b = b.eq('golongan', f.golongan)
     if (f.komptabel) b = b.eq('intra_ekstra', f.komptabel)
     if (f.search) b = b.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
     return b
   }, [])
 
-  const buildQuery = useCallback((f: Applied, withCount: boolean, includeDeleted = false) => {
-    const q = supabase.from('aset')
-      .select(SELECT_COLS, withCount ? { count: 'exact' } : undefined)
-    // ⚠️ `.order('id')` itu PEMECAH SERI, jangan dicopot. Baris ditarik
-    // halaman-demi-halaman pakai `.range()`, dan `nilai_perolehan` punya
-    // BANYAK kembar (ribuan barang senilai sama) — dgn urutan yang tak total,
-    // Postgres tak menjamin baris kembar jatuh di halaman yang sama tiap query,
-    // jadi ada baris yang bisa terlewat & baris lain dobel TANPA SUARA. Urutan
-    // tampilnya sendiri ditentukan `bandingKode` di client; ini murni supaya
-    // pengambilannya utuh. Tak butuh index baru: sort node-nya toh sudah ada
-    // utk `nilai_perolehan` (tak ada index yang melayaninya), jadi nambah kunci
-    // kedua di sort yang sama ~gratis.
-    return applyFilters(q, f, includeDeleted)
-      .order('nilai_perolehan', { ascending: false })
-      .order('id')
-  }, [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Query MENTAH `aset` yang sudah tersaring tapi BELUM ber-`order` — urutannya
+  // dipasang per cabang kursor oleh `fetchAllRowsRaw`. Satu-satunya pemakai.
+  //
+  // ⚠️ `nilai_teks` = `nilai_perolehan` yang di-cast ke TEKS di sisi PostgREST,
+  // khusus untuk dipakai sebagai kursor. `nilai_perolehan` itu `numeric`
+  // sedangkan angka JSON di peramban float64, dan di produksi ada 1 baris yang
+  // tak selamat (1427689804.3600001 → 1427689804.36). Kursor yang sudah
+  // dibulatkan akan melewatkan baris yang sah TANPA satu pun error — lihat
+  // lib/keyset.ts.
+  const buildQueryRaw = useCallback((f: Applied) =>
+    applyFilters(
+      supabase.from('aset').select(`${SELECT_COLS},nilai_teks:nilai_perolehan::text`),
+      f, true,
+    ), [applyFilters]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ambil baris aset berdasar daftar id (utk barang yang PADA periode terpilih
   // milik SKPD terpilih tapi kini sudah pindah keluar — period-aware). Filter
@@ -369,8 +381,25 @@ export default function DaftarBarangPage() {
   // MELEMPAR kalau gagal — pemanggilnya (handleTampilkan/goPage/export) semuanya
   // punya try/catch + pesan yang DITAMPILKAN. Daftar yang kurang sebagian jauh
   // lebih berbahaya daripada daftar yang menolak tampil.
-  const fetchPage = useCallback(async (f: Applied, limit: number, offset: number): Promise<Row[]> => {
-    const { data, error } = await supabase.rpc('fn_daftar_barang', { ...rpcArgs(f), p_limit: limit, p_offset: offset })
+  //
+  // `afterId` = KURSOR (id baris terakhir halaman sebelumnya, migrasi
+  // 20260903_01). Layar tetap memakai `offset` — ia memang melompat ke halaman
+  // ke-N sesuka operator — sedangkan Export memakai kursor, karena di sana
+  // halamannya ditelusuri berurutan sampai habis dan offset yang makin dalam
+  // pasti menembus statement timeout (offset 50.000 = 51 dtk, terukur).
+  //
+  // ⚠️ `p_after_id` sengaja HANYA disertakan kalau kursornya benar-benar
+  // dipakai. PostgREST mencocokkan RPC lewat NAMA argumen, jadi mengirim
+  // parameter yang belum ada di DB membuat panggilannya gagal total ("Could not
+  // find the function … in the schema cache"). Dengan cara ini, kalau migrasi
+  // 20260903_01 telat dijalankan, yang mati cuma Export — LAYAR Daftar Barang
+  // (lapis 1) tetap hidup. Urutan yang benar tetap migrasi dulu, baru deploy;
+  // ini jaring pengamannya, bukan penggantinya.
+  const fetchPage = useCallback(async (f: Applied, limit: number, offset: number, afterId?: string | null): Promise<Row[]> => {
+    const { data, error } = await supabase.rpc('fn_daftar_barang', {
+      ...rpcArgs(f), p_limit: limit, p_offset: afterId ? 0 : offset,
+      ...(afterId ? { p_after_id: afterId } : {}),
+    })
     if (error) throw new Error(`gagal membaca daftar barang: ${error.message}`)
     return (data || []) as unknown as Row[]
   }, [rpcArgs]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -387,17 +416,20 @@ export default function DaftarBarangPage() {
     return { total: Number(r?.total_count ?? 0), grand: Number(r?.grand_total ?? 0) }
   }, [rpcArgs]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Seluruh baris visible — HANYA untuk Export. Layar tidak pernah memakainya
-  // lagi. Untuk 1.3.2 se-kabupaten ini tetap 219 permintaan, tapi kini cuma
-  // terjadi kalau operator SENGAJA menekan Export, bukan tiap membuka halaman.
-  async function fetchAllRows(f: Applied) {
-    const all: Row[] = []
-    for (let off = 0; ; off += 1000) {
-      const batch = await fetchPage(f, 1000, off)
-      all.push(...batch)
-      if (batch.length < 1000) break
-    }
-    return all
+  // Seluruh baris visible — HANYA untuk Export. Layar tidak pernah memakainya.
+  //
+  // ⚠️ KURSOR, bukan offset (2026-09-03). Versi lama memanggil RPC dgn offset
+  // 0, 1000, 2000, … dan itu GAGAL TOTAL untuk golongan besar: offset 50.000
+  // saja 51 detik, sementara pagunya 8 detik — jadi Export 1.3.2 selalu mati di
+  // sekitar halaman ke-20. Dengan kursor, ongkos tiap halaman rata (terukur
+  // 220 halaman, terburuk 428 ms, total 11,3 dtk untuk 218.257 baris).
+  async function fetchAllRows(f: Applied, onKemajuan?: (n: number) => void) {
+    return ambilSemuaKeyset<Row, string>({
+      halaman: (kursor, batas) => fetchPage(f, batas, 0, kursor),
+      kursor: r => r.id,
+      tanda: id => id,
+      onKemajuan,
+    })
   }
 
   // Jalur MENTAH — tanpa penyaringan visibilitas period-aware. HANYA untuk
@@ -406,18 +438,44 @@ export default function DaftarBarangPage() {
   //
   // ⚠️ JANGAN ganti dengan `fetchAllRows` di atas. RPC menyaring yang tersembunyi
   // — itu benar untuk layar & Export biasa, tapi untuk berkas audit justru
-  // MENGHILANGKAN baris yang jadi alasan berkas itu dibuat, tanpa satu pun
-  // pesan. Ini satu-satunya pemakai `buildQuery` yang tersisa.
-  async function fetchAllRowsRaw(f: Applied) {
-    const all: Row[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await buildQuery(f, false, true).range(from, from + 999)
+  // MENGHILANGKAN baris yang jadi alasan berkas itu dibuat, tanpa satu pun pesan.
+  //
+  // ⚠️ Urutan pengambilannya PINDAH dari `(nilai_perolehan DESC, id)` ke
+  // `(kode, nilai_perolehan DESC, id)` (2026-09-03). Bukan soal selera: urutan
+  // lama tak dilayani index mana pun, jadi tiap halaman menyeret sort penuh &
+  // dgn offset yang makin dalam ongkosnya tumbuh terus. Urutan baru KEMBAR
+  // dengan `idx_aset_gol_urut`, jadi kursornya benar-benar melompat. Susunan
+  // berkasnya sendiri TIDAK berubah — pemanggilnya tetap mengurutkan ulang
+  // dengan `bandingKode`, yang memang persis urutan ini.
+  async function fetchAllRowsRaw(f: Applied, onKemajuan?: (n: number) => void) {
+    type RowKursor = Row & { nilai_teks: string | null }
+    const jalankan = async (c: CabangKeyset) => {
+      let q = buildQueryRaw(f)
+      if (c.jenis === 'sisa') {
+        const { kode, nilai, seri } = c.kursor
+        q = q.eq('kode', kode).lte('nilai_perolehan', nilai)
+          .or(`nilai_perolehan.lt.${nilai},and(nilai_perolehan.eq.${nilai},id.gt.${seri})`)
+      } else if (c.setelahKode !== null) {
+        q = q.gt('kode', c.setelahKode)
+      }
+      // ⚠️ `.order('id')` itu PEMECAH SERI, jangan dicopot: `nilai_perolehan`
+      // punya ribuan kembar, dan tanpa urutan TOTAL, Postgres tak menjamin baris
+      // kembar jatuh di halaman yang sama tiap query — ada yang terlewat & ada
+      // yang dobel TANPA SUARA.
+      const { data, error } = await q
+        .order('kode').order('nilai_perolehan', { ascending: false }).order('id')
+        .limit(c.batas)
       if (error) throw new Error(`gagal membaca daftar barang (audit): ${error.message}`)
-      if (!data || data.length === 0) break
-      all.push(...(data as unknown as Row[]))
-      if (data.length < 1000) break
+      return (data || []) as unknown as RowKursor[]
     }
-    return all
+    return ambilSemuaKeyset<RowKursor, KursorKode>({
+      halaman: halamanDuaCabang<RowKursor>(jalankan),
+      // `nilai_teks` (hasil cast di server) yang dipakai, BUKAN angkanya —
+      // lihat catatan presisi di buildQueryRaw & lib/keyset.ts.
+      kursor: r => ({ kode: r.kode, nilai: r.nilai_teks ?? String(r.nilai_perolehan), seri: r.id }),
+      tanda: tandaKursorKode,
+      onKemajuan,
+    })
   }
 
 
@@ -559,7 +617,8 @@ export default function DaftarBarangPage() {
     // ⚠️ JANGAN kembalikan ke `allVisible`: state itu sekarang selalu kosong,
     // dan berkas Excel kosong yang terunduh tanpa pesan apa pun adalah persis
     // jenis kegagalan senyap yang paling mahal di modul ini.
-    const all = await fetchAllRows(applied)
+    const all = await fetchAllRows(applied, setProgres)
+    setProgres(0)
     const uraian = await fetchUraian(all.map(r => r.kode))
     // Peta bidang khusus baris yang diekspor — lihat catatan di `luasOf`.
     const bidangEx = applied.golongan === '1.3.1' ? await fetchBidangCount(all.map(r => r.id)) : {}
@@ -604,7 +663,7 @@ export default function DaftarBarangPage() {
       // sekali tersimpan, tak ada lagi tanda bahwa datanya tak lengkap.
       setErr(`gagal menyiapkan export: ${(e as Error).message} — berkas tidak dibuat supaya tidak ada Excel setengah jadi yang beredar.`)
     } finally {
-      setExporting(false)
+      setExporting(false); setProgres(0)
     }
   }
 
@@ -617,7 +676,8 @@ export default function DaftarBarangPage() {
     // Diurutkan sendiri: berkas ini TIDAK lewat `allVisible` (dia menarik ulang
     // termasuk barang yang sudah dihapus), jadi tanpa baris ini susunannya ikut
     // urutan ambil dari DB dan beda sendiri dari Export Excel & layar.
-    const all = (await fetchAllRowsRaw(applied)).sort(bandingKode)
+    const all = (await fetchAllRowsRaw(applied, setProgres)).sort(bandingKode)
+    setProgres(0)
     const uraian = await fetchUraian(all.map(r => r.kode))
     // Peta bidang khusus baris yang diekspor — `bidangCount` di state cuma
     // memuat halaman yang sedang tampil sejak paginasi pindah ke server.
@@ -670,7 +730,7 @@ export default function DaftarBarangPage() {
       // terunduh dalam keadaan kurang sebagian.
       setErr(`gagal menyiapkan Export Audit: ${(e as Error).message} — berkas tidak dibuat supaya tidak ada Excel setengah jadi yang beredar.`)
     } finally {
-      setExporting(false)
+      setExporting(false); setProgres(0)
     }
   }
 
@@ -841,7 +901,7 @@ export default function DaftarBarangPage() {
               {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>}
               <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs"
                 title={`Posisi barang pada ${applied.periode} (sesuai filter semester)`}>
-                {exporting ? 'Mengekspor...' : 'Export Excel'}
+                {exporting ? `Mengekspor${progres ? ` ${progres.toLocaleString('id-ID')} baris` : ''}...` : 'Export Excel'}
               </button>
               <button onClick={handleExportAudit} disabled={exporting} className="btn-secondary text-xs"
                 title="Audit/Mutasi — SEMUA barang termasuk yang dihapus + jejak SK penghapusan (untuk BPK, lintas periode)">

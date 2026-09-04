@@ -50,6 +50,7 @@ import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { koreksiFieldKeys, allSameGolongan, ASET_NUM_COLS, type FieldKey } from '@/lib/asetFields'
+import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset, type KursorKode } from '@/lib/keyset'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import KomptabelRadio from '@/components/KomptabelRadio'
 import EditSpesifikasiModal from '@/components/pengelolaan/EditSpesifikasiModal'
@@ -236,6 +237,10 @@ export default function Page() {
   // tapi tetap harus kelihatan, jangan ditelan.
   const [warn, setWarn] = useState<string[]>([])
   const [exporting, setExporting] = useState(false)
+  // Berapa baris sudah tertarik selama Export. Export golongan besar memang
+  // lama (132.694 baris = ratusan permintaan); tanpa angka yang bergerak,
+  // tombol "Mengekspor..." yang diam terbaca operator sbg macet.
+  const [progres, setProgres] = useState(0)
   const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
   // wilayah_kode → "Desa, Kec. X, Kabupaten Y" (rantai induk sudah dirangkai)
   const [wilayahNama, setWilayahNama] = useState<Record<string, string>>({})
@@ -308,9 +313,17 @@ export default function Page() {
   // tak pernah bisa menyala (regex-nya diuji atas string kosong). Menghitung
   // sambil membawa barisnya sekaligus jauh lebih murah daripada kehilangan
   // keterangan errornya: satu perjalanan, badan respons utuh.
-  function buildQuery(f: Applied, opts: { count?: boolean } = {}) {
+  // Saringan saja — TANPA `order`. Urutannya dipasang pemanggil: layar memakai
+  // urutan baku di `buildQuery`, Export memasangnya per cabang kursor.
+  //
+  // ⚠️ `nilai_teks` = `nilai_perolehan` yang di-cast ke TEKS di sisi PostgREST,
+  // khusus dipakai sebagai kursor Export. `nilai_perolehan` itu `numeric`
+  // sedangkan angka JSON di peramban float64; kursor yang sudah dibulatkan bisa
+  // MELEWATKAN baris yang sah tanpa satu pun error (lihat lib/keyset.ts).
+  function buildFilter(f: Applied, opts: { count?: boolean; kursor?: boolean } = {}) {
     let q = supabase.from('aset_awal_2026')
-      .select(COLS, opts.count ? { count: 'exact' } : undefined)
+      .select(opts.kursor ? `${COLS},nilai_teks:nilai_perolehan::text` : COLS,
+        opts.count ? { count: 'exact' } : undefined)
     if (f.org.descendantIds) q = q.in('skpd_id', f.org.descendantIds)
     // ⚠️ `.eq('golongan', ...)` — JANGAN dikembalikan jadi `.like('kode', 'gol.%')`.
     // `~~` (LIKE) tidak leakproof, jadi Postgres selalu mengevaluasinya SESUDAH
@@ -325,6 +338,11 @@ export default function Page() {
     if (f.golongan) q = q.eq('golongan', f.golongan)
     if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
     if (f.search) q = q.or(orCari(f.search))
+    return q
+  }
+
+  function buildQuery(f: Applied, opts: { count?: boolean } = {}) {
+    const q = buildFilter(f, opts)
     // Urutan: KODE BARANG A→Z (permintaan user 2026-07-30; dulu nilai perolehan
     // terbesar dulu), samakan dgn Daftar Barang & Penyusutan — nilai turun jadi
     // kunci kedua supaya di dalam satu kode barang mahal tetap di atas.
@@ -755,14 +773,38 @@ export default function Page() {
     const pesan: string[] = []
     try {
     // Layar boleh terpaginasi, ekspornya TIDAK — selalu seluruh hasil filter.
-    const all: Row[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data, error } = await buildQuery(applied).range(from, from + 999)
-      if (error) { setLoadErr(`Gagal mengekspor: ${error.message}`); return }
-      if (!data || data.length === 0) break
-      all.push(...(data as unknown as Row[]))
-      if (data.length < 1000) break
+    //
+    // ⚠️ KURSOR, bukan `.range()` (2026-09-03). Versi lama menarik offset 0,
+    // 1000, 2000, … dan itulah yang bikin strip merah "canceling statement due
+    // to statement timeout" begitu hasilnya 132.694 baris: OFFSET tidak
+    // melompat, Postgres tetap merakit tiap baris yang dilewati lalu
+    // membuangnya (terukur 0,13 dtk di offset 0 vs 1,8 dtk di offset 60.000,
+    // dan itu belum termasuk waktu PostgREST merangkai JSON-nya).
+    // Susunan berkasnya TIDAK berubah — kursornya mengikuti urutan yang sama
+    // persis dgn layar (kode ASC, nilai perolehan DESC, NIBAR ASC).
+    type RowKursor = Row & { nilai_teks: string | null }
+    const jalankan = async (c: CabangKeyset) => {
+      let q = buildFilter(applied, { kursor: true })
+      if (c.jenis === 'sisa') {
+        const { kode, nilai, seri } = c.kursor
+        q = q.eq('kode', kode).lte('nilai_perolehan', nilai)
+          .or(`nilai_perolehan.lt.${nilai},and(nilai_perolehan.eq.${nilai},nibar.gt.${seri})`)
+      } else if (c.setelahKode !== null) {
+        q = q.gt('kode', c.setelahKode)
+      }
+      const { data, error } = await q
+        .order('kode').order('nilai_perolehan', { ascending: false }).order('nibar')
+        .limit(c.batas)
+      if (error) throw new Error(error.message)
+      return (data || []) as unknown as RowKursor[]
     }
+    const all = await ambilSemuaKeyset<RowKursor, KursorKode>({
+      halaman: halamanDuaCabang<RowKursor>(jalankan),
+      kursor: r => ({ kode: r.kode, nilai: r.nilai_teks ?? String(r.nilai_perolehan), seri: r.nibar }),
+      tanda: tandaKursorKode,
+      onKemajuan: setProgres,
+    })
+    setProgres(0)
     // Ekspor bisa memuat baris di luar halaman yang tampil → keterangan & bidang
     // tanahnya diambil ulang untuk SELURUH hasil, jangan pakai state halaman
     // (kalau tidak, kolom Luas/Lokasi di Excel beda dari yang di layar).
@@ -791,7 +833,7 @@ export default function Page() {
     } catch (e) {
       setLoadErr(`Gagal mengekspor: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
-      setExporting(false)
+      setExporting(false); setProgres(0)
     }
   }
 
@@ -858,7 +900,7 @@ export default function Page() {
               )}
               {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1}{total == null ? '' : ` / ${totalPages || 1}`}</span>}
               <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-secondary text-xs">
-                {exporting ? 'Mengekspor...' : 'Export Excel'}
+                {exporting ? `Mengekspor${progres ? ` ${progres.toLocaleString('id-ID')} baris` : ''}...` : 'Export Excel'}
               </button>
             </div>
           </div>

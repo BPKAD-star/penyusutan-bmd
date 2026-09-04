@@ -51,7 +51,12 @@ function bacaMigrasi(): { nama: string; isi: string }[] {
  * yang berlaku di DB adalah definisi terakhir yang dijalankan.
  */
 function badanFungsi(nama: string): string {
-  const pembuka = new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+${nama}\\s*\\(`, 'i')
+  // `OR REPLACE` opsional: fungsi yang tanda tangannya berubah WAJIB di-DROP
+  // dulu lalu `CREATE FUNCTION` polos (pelajaran fn_rkbmd_standar_simpan —
+  // menambah parameter lewat CREATE OR REPLACE melahirkan overload, dan
+  // PostgREST menolaknya dgn "function is not unique"). Kalau pola itu tak ikut
+  // dikenali, pemindai ini diam-diam membaca definisi LAMA.
+  const pembuka = new RegExp(`CREATE\\s+(OR\\s+REPLACE\\s+)?FUNCTION\\s+${nama}\\s*\\(`, 'i')
   const kandidat = bacaMigrasi().filter(m => pembuka.test(m.isi))
   if (kandidat.length === 0) {
     throw new Error(
@@ -443,4 +448,121 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
       expect(mig[mig.length - 1].isi).not.toMatch(/CREATE\s+INDEX\s+CONCURRENTLY/i)
     }
   })
+})
+
+// ---------------------------------------------------------------------------
+describe('§8 Daftar Barang — tiga salinan klausa WHERE wajib sama persis', () => {
+  // Sejak migrasi 20260903_01 klausa penyaring Daftar Barang ditulis TIGA KALI:
+  // dua cabang kursor di `fn_daftar_barang` (cabang 'sisa' + cabang 'lanjut')
+  // dan sekali lagi di `fn_daftar_barang_rekap`. Pemecahannya perlu — urutan
+  // `kode ASC, nilai DESC, id ASC` arahnya campur, jadi satu WHERE ber-OR tak
+  // pernah bisa turun jadi index condition — tapi ongkosnya utang yang persis
+  // jenis paling mahal di repo ini: kalau salah satu disunting sendirian,
+  //   · isi halaman berhenti cocok dgn jumlah di kaki tabel, ATAU
+  //   · berkas Export berhenti cocok dgn yang tampil di layar,
+  // dan TIDAK ADA APA PUN YANG GAGAL. Yang muncul cuma angka yang beda.
+  //
+  // ⚠️ Kalau test ini merah, jawabannya menyamakan ketiganya — BUKAN
+  // melonggarkan pembandingnya.
+
+  /** Klausa WHERE (sesudah `a.status <> 'draft'`) di sebuah badan fungsi. */
+  function klausaWhere(badan: string): string[] {
+    const AWAL = "WHERE a.status <> 'draft'"
+    const out: string[] = []
+    for (let i = badan.indexOf(AWAL); i >= 0; i = badan.indexOf(AWAL, i + 1)) {
+      const sisa = badan.slice(i + AWAL.length)
+      const batas = [sisa.search(/\bORDER\s+BY\b/i), sisa.indexOf(';')].filter(n => n >= 0)
+      out.push(sisa.slice(0, batas.length ? Math.min(...batas) : sisa.length))
+    }
+    return out
+  }
+
+  /** Buang komentar & rapikan spasi, lalu cabut klausa khas kursor. */
+  const normal = (s: string) => s
+    .replace(/--[^\n]*/g, ' ')
+    .replace(/\s+/g, ' ')
+    // Cabang 'sisa': seek ke posisi kursor di dalam kode yang sama.
+    .replace(/AND a\.kode = v_kode AND a\.nilai_perolehan <= v_nilai AND \(a\.nilai_perolehan < v_nilai OR a\.id > p_after_id\)/, '')
+    // Cabang 'lanjut': loncat ke kode berikutnya.
+    .replace(/AND \(p_after_id IS NULL OR a\.kode > v_kode\)/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  it('dua cabang fn_daftar_barang + fn_daftar_barang_rekap identik', () => {
+    const cabang = klausaWhere(badanFungsi('fn_daftar_barang'))
+    const rekap = klausaWhere(badanFungsi('fn_daftar_barang_rekap'))
+    // Pengaman anti-hampa: pemindai yang tak menemukan apa pun akan "lulus".
+    expect(cabang.length, 'fn_daftar_barang tak lagi punya DUA cabang kursor — pemindaian rusak').toBe(2)
+    expect(rekap.length, 'klausa WHERE fn_daftar_barang_rekap tak terbaca — pemindaian rusak').toBe(1)
+
+    const [a, b] = cabang.map(normal)
+    expect(a.length, 'klausa WHERE terbaca kosong — pemindaian rusak').toBeGreaterThan(200)
+    expect(b, 'kedua cabang kursor fn_daftar_barang tidak sama').toBe(a)
+    expect(normal(rekap[0]), 'fn_daftar_barang_rekap menyaring beda dari halamannya').toBe(a)
+  })
+
+  it('kursor & offset tak pernah dipakai bersamaan', () => {
+    // OFFSET yang ikut jalan di atas kursor diam-diam MELEWATKAN baris — tak
+    // ada error, berkas Excel-nya saja yang kurang. Dijaga di SQL (CASE) dan
+    // sekali lagi di sisi pemanggil (`p_offset: afterId ? 0 : offset`).
+    expect(badanFungsi('fn_daftar_barang')).toMatch(
+      /OFFSET\s+CASE\s+WHEN\s+p_after_id\s+IS\s+NULL\s+THEN\s+COALESCE\(p_offset,\s*0\)\s+ELSE\s+0\s+END/i,
+    )
+    const hal = fs.readFileSync(path.join(AKAR, 'app', 'dashboard', 'daftar-barang', 'page.tsx'), 'utf8')
+    expect(hal, 'halaman Daftar Barang tak lagi menetralkan p_offset saat memakai kursor')
+      .toMatch(/p_offset:\s*afterId\s*\?\s*0\s*:\s*offset/)
+  })
+
+  it('kursor yang tidak dikenal DITOLAK, bukan diam-diam mulai dari awal', () => {
+    // Kalau kursor hilang lalu diperlakukan sbg "mulai dari awal", Export
+    // mengulang dari baris pertama & berkasnya berisi ribuan baris DOBEL yang
+    // kelihatan sah.
+    expect(badanFungsi('fn_daftar_barang')).toMatch(/RAISE EXCEPTION 'kursor daftar barang tidak dikenal/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+describe('§9 Export register tidak boleh kembali ke OFFSET', () => {
+  // Insiden 2026-09-03: ketiga tombol Export register masih memakai
+  // `.range()`/`p_offset` yang makin dalam, dan Export Daftar Barang Awal
+  // (132.694 baris) mati dgn "canceling statement due to statement timeout".
+  // Terukur: fn_daftar_barang offset 50.000 = 51 dtk, pagunya 8 dtk.
+  const HALAMAN = [
+    ['app/dashboard/daftar-barang/page.tsx', ['handleExport', 'handleExportAudit']],
+    ['app/dashboard/saldo-awal/daftar-barang/page.tsx', ['handleExport']],
+  ] as const
+
+  /** Badan sebuah `async function <nama>() { … }` di berkas TSX, dgn hitung kurung. */
+  function badanFungsiTs(isi: string, nama: string): string {
+    const i = isi.search(new RegExp(`async function ${nama}\\s*\\(`))
+    if (i < 0) throw new Error(`fungsi ${nama} tak ditemukan — pemindaian rusak`)
+    const buka = isi.indexOf('{', i)
+    let n = 0
+    for (let j = buka; j < isi.length; j++) {
+      if (isi[j] === '{') n++
+      else if (isi[j] === '}' && --n === 0) return isi.slice(buka, j + 1)
+    }
+    throw new Error(`kurung badan ${nama} tak tertutup — pemindaian rusak`)
+  }
+
+  for (const [rel, fungsi] of HALAMAN) {
+    it(`${rel} menarik seluruh hasil lewat kursor`, () => {
+      const isi = fs.readFileSync(path.join(AKAR, rel), 'utf8')
+      const n = [...isi.matchAll(/ambilSemuaKeyset</g)].length
+      expect(n, `${rel} punya ${n} pengambil kursor, seharusnya ${fungsi.length}`).toBe(fungsi.length)
+      for (const f of fungsi) {
+        // Komentar dibuang dulu — catatan "⚠️ KURSOR, bukan `.range()`" justru
+        // ada di dalam fungsi ini, dan menghitungnya sbg pelanggaran akan
+        // menghukum dokumentasi yang benar (pelajaran §7).
+        const badan = badanFungsiTs(isi, f).replace(/\/\/[^\n]*/g, '')
+        expect(badan.length, `badan ${f} terbaca kosong — pemindaian rusak`).toBeGreaterThan(200)
+        // `.range(` & `p_offset` masih SAH di tempat LAIN pada halaman yang sama
+        // (memuat peta SKPD/wilayah, dan paginasi LAYAR yang memang melompat ke
+        // halaman ke-N). Yang tak boleh: dipakai lagi oleh jalur EXPORT, yang
+        // menelusuri halaman berurutan sampai habis sehingga offsetnya
+        // menumpuk — dan justru itu yang menembus statement timeout.
+        expect(badan, `${f} di ${rel} kembali memakai .range()/offset`).not.toMatch(/\.range\(|p_offset/)
+      }
+    })
+  }
 })

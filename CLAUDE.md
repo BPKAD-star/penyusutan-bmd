@@ -428,6 +428,74 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   **Nambah `.order()` di kolektor baru → pastikan ada index yang memuat kolom
   urutnya**; dan JANGAN balas timeout dengan mencabut `ORDER BY`-nya — itu
   mengembalikan bug paginasi yang senyap.
+  ⚠️ **Aturan ini KELEWAT di ketiga tombol Export register sampai 2026-09-03** —
+  lihat bagian "Export register: OFFSET dicabut" di bawah.
+
+- **EXPORT REGISTER: OFFSET DICABUT, KURSOR DUA CABANG** (2026-09-03, migrasi
+  20260903_01). Export di Saldo Awal → Daftar Barang Awal mati dgn strip merah
+  "canceling statement due to statement timeout" begitu hasilnya 132.694 baris
+  (Dinas Pendidikan, 1.3.2 intra). Ketiga tombol Export register masih memakai
+  offset yang menumpuk, padahal aturan keyset di atas sudah lama tertulis.
+  **Terukur (RLS aktif):** `fn_daftar_barang` offset 0 = 1.067 ms, offset
+  50.000 = **51.221 ms**, pagunya 8 dtk — jadi Export Daftar Barang 1.3.2 sudah
+  GAGAL TOTAL di sekitar halaman ke-20, bukan cuma lambat. Menarik sekali jalan
+  (`p_limit 1000000`) juga tak bisa: 26.798 ms.
+  - ⚠️ **Kursornya DUA CABANG, dan itu wajib.** Urutan register `kode ASC,
+    nilai_perolehan DESC, id/nibar ASC` **arahnya campur**, jadi perbandingan
+    baris `(kode,nilai,seri) > (…)` tak bisa dipakai & bentuk OR biasa tak
+    pernah bisa turun jadi index condition. Diukur: OR polos → "Rows Removed by
+    Filter: 103.035" tiap halaman; OR + seek `kode >= K` → planner pindah ke
+    BitmapOr + top-N sort 68.261 baris = 3.549 ms. Yang dipakai:
+    cabang 1 `kode = K AND nilai <= N` (sisa kode kursor) + cabang 2 `kode > K`,
+    lalu digabung & diambil N teratas. **Seek `kode >= K` saja TIDAK cukup:**
+    satu kode di produksi dipegang **112.421 baris** (1.3.5.01.01.01.003).
+    Sisa yang dibuang cabang 1 dibatasi grup (kode, nilai) kembar — terbesar
+    5.481 baris, cuma 11 grup di atas 1.000.
+  - ⚠️ **KURSOR TAK BOLEH MEMBAWA ANGKA LEWAT JAVASCRIPT.** `nilai_perolehan`
+    itu `numeric`, angka JSON di peramban float64, dan ADA 1 baris di produksi
+    yang tak selamat: Jalan JAMBEAN - PURWODADI **1427689804.3600001** →
+    1427689804.36. Kursor yang sudah dibulatkan MELEWATKAN baris ber-nilai
+    1427689804.36 yang sah, tanpa satu pun error. Obatnya: RPC menerima kursor
+    berupa `p_after_id` saja & melihat sendiri kode/nilainya; jalur PostgREST
+    memakai kolom `nilai_teks:nilai_perolehan::text` (cast di server), BUKAN
+    angkanya.
+  - ⚠️ **`ORDER BY nilai_perolehan` jadi AMBIGU begitu ada `nilai_perolehan::text`
+    di select list tanpa alias** — nama kolom keluaran menang atas kolom tabel,
+    jadi urutannya diam-diam berubah jadi urutan TEKS ('1000000.00' <
+    '880000.00'). Ini benar-benar terjadi saat menguji perbaikan ini & bikin
+    38.763 baris hilang. PostgREST aman (alias `nilai_teks` + ORDER BY
+    terkualifikasi), tapi **kalau menulis SQL sendiri: beri alias & kualifikasi
+    tabelnya.**
+  - Kursor yang tak ketemu → `RAISE`, bukan diam-diam mulai dari awal (kalau
+    tidak, export mengulang dari baris pertama & berkasnya berisi ribuan baris
+    DOBEL yang kelihatan sah).
+  - **Hasil:** Diknas 1.3.2 intra 132.694 baris → 133 halaman, terburuk 399 ms,
+    total 8,0 dtk; 1.3.2 se-kab 218.257 baris → 220 halaman, terburuk 428 ms.
+    Export Audit ikut pindah dari urutan `(nilai DESC, id)` yang tak berindex ke
+    `(kode, nilai DESC, id)` yang kembar dgn `idx_aset_gol_urut` — halaman
+    terburuk 3.084 ms → **7 ms**. Semua dicocokkan BARIS-PER-BARIS dgn jalur
+    offset lama: jumlah, isi, & urutan SAMA, 0 baris beda.
+  - Mesin loop-nya SATU sumber: **lib/keyset.ts** (`ambilSemuaKeyset` +
+    `halamanDuaCabang`), dikunci lib/keyset.test.ts. Ia juga mengecilkan halaman
+    sendiri kalau kena timeout (cache dingin), berhenti HANYA di halaman kosong
+    (halaman pendek ≠ habis), dan gagal keras kalau kursornya tak maju.
+    **Jangan menulis loop offset baru di halaman register.** Dikunci juga
+    lib/sinkronisasiRpc.test.ts §8–§9.
+  - ⚠️ Bareng itu Export Audit berhenti memakai `.like('kode', 'gol.%')` &
+    memakai `.eq('golongan', …)` — setara PERSIS (`aset.golongan` itu kolom
+    GENERATED ALWAYS dari `kode`; diperiksa ke DB, 0 dari 420.463 baris
+    menyimpang) tapi `LIKE` tak pernah bisa jadi index-cond di bawah RLS. Ronde
+    keempat dari cerita yang sama.
+  - ⚠️ **Deploy-ordering: migrasi 20260903_01 WAJIB jalan SEBELUM deploy kode.**
+    Parameternya ber-DEFAULT NULL, jadi kode LAMA tetap jalan di jendela
+    antaranya; dan `p_after_id` hanya dikirim saat kursor benar-benar dipakai,
+    supaya kalau migrasinya telat yang mati cuma Export — LAYAR Daftar Barang
+    (lapis 1) tetap hidup.
+  - ⛔ **Yang BELUM disentuh:** `fetchAsetInfo`/`fetchBidang`/`fetchUraian` di
+    Daftar Barang Awal masih menanyakan register per 500 NIBAR, jadi export
+    132rb baris tetap ratusan permintaan tambahan. Itu lambat, bukan gagal —
+    tombolnya kini menampilkan jumlah baris yang sudah tertarik supaya lambat
+    tak terbaca sebagai macet.
 
 - **BATAL/reversal transaksi: BLOKIR kalau aset punya transaksi LEBIH BARU
   setelah transaksi yang mau dibatalkan.** Berlaku SEMUA jenis pembatalan
