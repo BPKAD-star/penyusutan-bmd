@@ -1,4 +1,6 @@
-// Konfigurasi 11 siklus BMD utk halaman Dokumen Sumber (app/dashboard/dokumen-sumber).
+// Konfigurasi 12 siklus BMD utk halaman Dokumen Sumber (app/dashboard/dokumen-sumber) —
+// 11 siklus resmi Permendagri 47 + "SK Pengelolaan BMD" (wadah SK di luar itu, mis. SK
+// Pengurus Barang).
 // Single source of truth: UI meng-iterate dari sini, bukan hardcode per-card,
 // supaya nambah/ubah siklus nanti tinggal edit file ini.
 //
@@ -87,7 +89,7 @@ export const DAFTAR_SIKLUS: SiklusConfig[] = [
   },
   {
     key: 'penilaian', label: 'Penilaian',
-    sumber: [{ tipe: 'kosong', label: 'Belum ada dokumen — modul ini menyusul' }],
+    sumber: [{ tipe: 'generic', label: 'Berita Acara / Dokumen Penilaian BMD', scope: 'global', dbSiklus: 'penilaian' }],
   },
   {
     key: 'pengamanan', label: 'Pengamanan',
@@ -121,5 +123,15 @@ export const DAFTAR_SIKLUS: SiklusConfig[] = [
   {
     key: 'pengawasan_pengendalian', label: 'Pengawasan dan Pengendalian',
     sumber: [{ tipe: 'kosong', label: 'Belum ada dokumen — modul ini menyusul' }],
+  },
+  // Wadah generik utk SK yang tak masuk siklus spesifik mana pun (mis. SK
+  // Pengurus Barang) — permintaan user 2026-09-05. Migrasi 20260905_03
+  // menambahkan 'sk_pengelolaan_bmd' ke CHECK constraint admin_dokumen.siklus.
+  {
+    key: 'sk_pengelolaan_bmd', label: 'SK Pengelolaan BMD',
+    sumber: [{
+      tipe: 'generic', label: 'SK Pengurus Barang & SK lain di luar siklus di atas',
+      scope: 'global', dbSiklus: 'sk_pengelolaan_bmd',
+    }],
   },
 ]
