@@ -30,9 +30,11 @@ type Note = {
   isi: string
   created_at: string
   updated_at: string
+  selesai: boolean
+  selesai_at: string | null
 }
 
-const COLS = 'id,author_id,skpd_id,penulis,skpd_nama,isi,created_at,updated_at'
+const COLS = 'id,author_id,skpd_id,penulis,skpd_nama,isi,created_at,updated_at,selesai,selesai_at'
 
 /** "16 Agu 2026, 14.05" — tanggal saja tak cukup, dalam satu hari bisa ada
  *  beberapa catatan dan urutannya jadi tak terbaca. */
@@ -120,6 +122,19 @@ export default function NotesPage() {
       if (!data || data.length === 0) throw new Error('Perubahan ditolak — catatan ini bukan milikmu.')
       setEditId(null)
     }, 'Catatan diperbarui.')
+  }
+
+  // ⚠️ Lewat RPC (fn_admin_notes_tandai), BUKAN `.update()` langsung ke tabel —
+  // policy `notes_update` membatasi UPDATE hanya utk penulis sendiri (keputusan
+  // 2026-08-16: admin sekalipun tidak boleh menyunting isi catatan orang lain).
+  // "Selesai" itu status alur kerja ADMIN, bukan isi catatan, jadi jalannya
+  // sendiri lewat RPC yang cuma menyentuh dua kolom ini & mengecek fn_is_admin()
+  // di sisi server (bukan cuma disembunyikan di layar).
+  async function tandaiSelesai(n: Note, selesai: boolean) {
+    await jalankan(async () => {
+      const { error } = await supabase.rpc('fn_admin_notes_tandai', { p_id: n.id, p_selesai: selesai })
+      if (error) throw new Error(`gagal menandai status: ${error.message}`)
+    }, selesai ? 'Ditandai selesai.' : 'Tanda selesai dibatalkan.')
   }
 
   async function hapus(n: Note) {
@@ -214,6 +229,11 @@ export default function NotesPage() {
                       (disunting)
                     </span>
                   )}
+                  {n.selesai && (
+                    <span className="text-[11px] font-medium text-teal bg-teal/10 px-2 py-0.5 rounded-full">
+                      ✓ Ditangani{n.selesai_at ? ` · ${waktu(n.selesai_at)}` : ''}
+                    </span>
+                  )}
                 </div>
 
                 {editId === n.id ? (
@@ -242,6 +262,15 @@ export default function NotesPage() {
                       {(milikSendiri(n) || scope.isAdmin) && (
                         <button className="text-xs text-red-500 hover:text-red-700" disabled={busy}
                           onClick={() => hapus(n)}>🗑 Hapus</button>
+                      )}
+                      {/* Menandai "selesai" itu wewenang admin (yang menindak-
+                          lanjuti masukan), bukan penulis catatan — RLS-nya lihat
+                          fn_admin_notes_tandai di migrasi 20260905_01. */}
+                      {scope.isAdmin && (
+                        <button className={`text-xs ${n.selesai ? 'text-gray-500 hover:text-gray-700' : 'text-teal hover:opacity-80'}`}
+                          disabled={busy} onClick={() => tandaiSelesai(n, !n.selesai)}>
+                          {n.selesai ? '↩ Batal Tertangani' : '✓ Tandai Selesai'}
+                        </button>
                       )}
                     </div>
                   </>

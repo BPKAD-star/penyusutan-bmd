@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 import NominalInput from '@/shared/ui/NominalInput'
+import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { catatTransaksi } from '@/lib/transaksi'
 import {
   periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi,
@@ -135,7 +136,6 @@ type JurnalLine = {
 }
 type Jurnal = Header & { lines: JurnalLine[]; total: number; hasLedger: boolean }
 
-const namaFile = (path: string) => path.split('/').pop() || path
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
@@ -377,6 +377,15 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   async function approveHeader(h: Jurnal) {
     const items = h.payload.draft_items || []
     if (items.length === 0) { setMsg('Error: dokumen ini belum ada barangnya — tambahkan dulu sebelum disetujui.'); return }
+    // ⚠️ Penjaga SESUNGGUHNYA dari "dokumen BAST wajib" — bukan cuma validasi di
+    // form. Sama alasannya dgn Pengadaan (commit 9910392): kartu hasil Import
+    // Excel (PerolehanImport.tsx) tidak pernah mengisi `dokumen_paths` sama
+    // sekali, jadi tanpa guard di titik approve ini dokumen hasil impor tetap
+    // bisa lolos disetujui tanpa BAST walau form manualnya sudah diwajibkan.
+    if (!h.payload.dokumen_paths || h.payload.dokumen_paths.length === 0) {
+      setMsg('Error: dokumen BAST belum diunggah — lengkapi dulu (✎ Edit Dokumen) sebelum dokumen ini disetujui.')
+      return
+    }
     for (const it of items) {
       if (!it.kode) { setMsg('Error: ada barang draft tanpa kode.'); return }
       if (!it.tglPerolehan) { setMsg(`Error: barang "${it.fields.nama_barang || it.kode}" belum ada tanggal perolehan.`); return }
@@ -666,24 +675,6 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
         )
       })()}
     </FormShell>
-  )
-}
-
-async function bukaDokumen(path: string) {
-  const supabase = createClient()
-  const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
-  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-}
-
-function DokumenLinks({ paths }: { paths: string[] }) {
-  if (paths.length === 0) return null
-  return (
-    <p className="text-xs text-gray-500 mt-1">
-      Dokumen:{' '}
-      {paths.map(p => (
-        <button key={p} onClick={() => bukaDokumen(p)} className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
-      ))}
-    </p>
   )
 }
 
@@ -1100,6 +1091,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
   async function simpan() {
     if (!noDok.trim()) { setErr('No. Dokumen wajib diisi.'); return }
     if (pihakLabel && !pihak.trim()) { setErr(`${pihakLabel} wajib diisi.`); return }
+    if (dokPaths.length === 0) { setErr('Dokumen BAST wajib diunggah sebelum dokumen ini bisa disimpan.'); return }
     setErr(''); setSaving(true)
     const dup = await cekNomorDipakai(noDok.trim())
     if (dup) { setErr(dup); setSaving(false); return }
@@ -1147,20 +1139,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
           <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
         </div>
         <div className="sm:col-span-2">
-          <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>
-          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-            onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
-          {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-          {dokPaths.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {dokPaths.map(p => (
-                <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
-                  <span className="truncate">{namaFile(p)}</span>
-                  <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen} />
         </div>
       </div>
       {err && <p className="text-sm text-red-600">{err}</p>}
@@ -1211,6 +1190,7 @@ function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai,
   async function simpan() {
     if (!noDok.trim()) { setErr('No. Dokumen wajib diisi.'); return }
     if (pihakLabel && !pihak.trim()) { setErr(`${pihakLabel} wajib diisi.`); return }
+    if (dokPaths.length === 0) { setErr('Dokumen BAST wajib diunggah sebelum dokumen ini bisa disimpan.'); return }
     if (pindahSemester) {
       setErr(`Tanggal masuk ${periodeDariTanggal(tgl)}, sedangkan jurnal ini di ${header.periode}. Pindah semester tidak diizinkan — batalkan & buat jurnal baru.`)
       return
@@ -1253,20 +1233,7 @@ function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai,
           </div>
           <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} /></div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Dokumen (foto / PDF, bisa lebih dari satu)</label>
-            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-              onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
-            {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-            {dokPaths.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {dokPaths.map(p => (
-                  <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
-                    <span className="truncate">{namaFile(p)}</span>
-                    <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen} />
           </div>
           {err && <p className="text-sm text-red-600">{err}</p>}
         </div>
