@@ -14,7 +14,7 @@ import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { tahunAwal } from '@/lib/tahunKerja'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { fetchApprovalScope } from '@/lib/roles'
-import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen } from '@/lib/dokumenSiklus'
+import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen, PEMINDAHTANGANAN_SUBJENIS } from '@/lib/dokumenSiklus'
 import { uploadDokumenSiklus, hapusFileDokumen, bukaDokumenSumber, namaFileDariPath } from '@/lib/dokumenStorage'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
@@ -142,38 +142,56 @@ function SumberSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap }
         mySkpdId={mySkpdId} skpdMap={skpdMap} />
     )
   }
-  const kategori = sumber.tipe === 'pull_pengadaan' ? 'pengadaan'
-    : sumber.tipe === 'pull_pengalihan' ? 'pengalihan_status' : 'penghapusan'
-  return <PullSection tahun={tahun} label={sumber.label} kategori={kategori} skpdMap={skpdMap} />
+  return <PullSection tahun={tahun} label={sumber.label} kategori={sumber.kategori}
+    perluApproval={!!sumber.perluApproval} skpdMap={skpdMap} />
+}
+
+// Label sub_jenis/jenis Penghapusan — dipakai badge di PullSection. Sengaja
+// TIDAK dipakai kategori lain (Pengadaan/Hibah/dst. tak punya sub_jenis sama
+// sekali, `jenisLabelBaris` mengembalikan null utk itu & badge-nya tak tampil).
+function jenisLabelBaris(jenis: string | null, subJenis: string | null): string | null {
+  if (jenis === 'penghapusan_sebab_lain') return 'Sebab Lain'
+  if (jenis === 'penghapusan_pemindahtanganan') {
+    return PEMINDAHTANGANAN_SUBJENIS.find(o => o.value === subJenis)?.label || subJenis || null
+  }
+  return null
 }
 
 // ── Sumber yang TARIK read-only dari jurnal_header modul lain ───────────────
-function PullSection({ tahun, label, kategori, skpdMap }: {
-  tahun: number; label: string; kategori: 'pengadaan' | 'pengalihan_status' | 'penghapusan'
+function PullSection({ tahun, label, kategori, perluApproval, skpdMap }: {
+  tahun: number; label: string; kategori: string; perluApproval: boolean
   skpdMap: Map<number, string>
 }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [rows, setRows] = useState<PulledRow[]>([])
+  const [rows, setRows] = useState<(PulledRow & { jenis: string | null; sub_jenis: string | null })[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
+    // ⚠️ `jenis`/`sub_jenis` DITARIK dari jurnal_header sendiri, BUKAN dari
+    // `payload` — `insertLines()` di Penghapusan.tsx menulis `payload: {}`
+    // KOSONG utk baris ledgernya, `sub_jenis` cuma tersimpan di sini. Lihat
+    // CLAUDE.md "sub_jenis dibaca dari payload KOSONG di 5 tempat".
     let q = supabase.from('jurnal_header')
-      .select('id,no_sk,tanggal,skpd_id,skpd_tujuan,payload,approval_status')
+      .select('id,no_sk,tanggal,skpd_id,skpd_tujuan,payload,jenis,sub_jenis,approval_status')
       .eq('kategori', kategori)
       .like('periode', `${tahun}-%`)
       .order('tanggal', { ascending: false })
-    if (kategori === 'pengadaan') q = q.eq('approval_status', 'disetujui')
+    if (perluApproval) q = q.eq('approval_status', 'disetujui')
     const { data } = await q
     const list = ((data || []) as unknown as {
       id: string; no_sk: string; tanggal: string; skpd_id: number; skpd_tujuan: number | null
+      jenis: string | null; sub_jenis: string | null
       payload: { dokumen_paths?: string[] } | null
     }[])
-      .map(h => ({ id: h.id, no_sk: h.no_sk, tanggal: h.tanggal, skpd_id: h.skpd_id, skpd_tujuan: h.skpd_tujuan, dokumen: h.payload?.dokumen_paths || [] }))
+      .map(h => ({
+        id: h.id, no_sk: h.no_sk, tanggal: h.tanggal, skpd_id: h.skpd_id, skpd_tujuan: h.skpd_tujuan,
+        jenis: h.jenis, sub_jenis: h.sub_jenis, dokumen: h.payload?.dokumen_paths || [],
+      }))
       .filter(h => h.dokumen.length > 0)
     setRows(list)
     setLoading(false)
-  }, [tahun, kategori]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tahun, kategori, perluApproval]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
 
@@ -186,24 +204,34 @@ function PullSection({ tahun, label, kategori, skpdMap }: {
         <p className="text-xs text-gray-400">Belum ada dokumen untuk tahun {tahun}.</p>
       ) : (
         <div className="space-y-2">
-          {rows.map(r => (
-            <div key={r.id} className="border border-gray-100 rounded-lg p-3 flex flex-wrap items-start justify-between gap-3">
-              <div className="text-xs text-gray-600">
-                <p className="font-medium text-gray-800">{r.no_sk} <span className="text-gray-400 font-normal">· {r.tanggal}</span></p>
-                <p className="text-gray-400">
-                  {skpdMap.get(r.skpd_id) || `SKPD #${r.skpd_id}`}
-                  {kategori === 'pengalihan_status' && r.skpd_tujuan ? ` → ${skpdMap.get(r.skpd_tujuan) || `SKPD #${r.skpd_tujuan}`}` : ''}
-                </p>
+          {rows.map(r => {
+            const jenisLabel = jenisLabelBaris(r.jenis, r.sub_jenis)
+            return (
+              <div key={r.id} className="border border-gray-100 rounded-lg p-3 flex flex-wrap items-start justify-between gap-3">
+                <div className="text-xs text-gray-600">
+                  <p className="font-medium text-gray-800">
+                    {r.no_sk} <span className="text-gray-400 font-normal">· {r.tanggal}</span>
+                    {jenisLabel && (
+                      <span className="ml-2 inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal/10 text-teal">
+                        {jenisLabel}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-gray-400">
+                    {skpdMap.get(r.skpd_id) || `SKPD #${r.skpd_id}`}
+                    {kategori === 'pengalihan_status' && r.skpd_tujuan ? ` → ${skpdMap.get(r.skpd_tujuan) || `SKPD #${r.skpd_tujuan}`}` : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 justify-end">
+                  {r.dokumen.map(p => (
+                    <button key={p} onClick={() => bukaDokumenSumber(p)} className="underline text-teal text-xs hover:opacity-80">
+                      {namaFileDariPath(p)}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2 justify-end">
-                {r.dokumen.map(p => (
-                  <button key={p} onClick={() => bukaDokumenSumber(p)} className="underline text-teal text-xs hover:opacity-80">
-                    {namaFileDariPath(p)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
