@@ -23,6 +23,7 @@ import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import WilayahPicker from '@/components/WilayahPicker'
 import { formatRupiah } from '@/lib/export'
+import NominalInput from '@/shared/ui/NominalInput'
 import {
   normalKondisi, klasifikasiLhi, LHI_LABEL,
   type InvBaris, type InvJawaban, type LkiConfig,
@@ -271,13 +272,13 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Harga Satuan (Rp)</label>
-                <input type="number" className="select-filter w-full" disabled={readOnly}
-                  value={j.baru?.harga_satuan ?? ''} onChange={e => setJumlahHarga('harga_satuan', e.target.value)} />
+                <NominalInput className="select-filter w-full" disabled={readOnly}
+                  value={String(j.baru?.harga_satuan ?? '')} onChange={v => setJumlahHarga('harga_satuan', v)} />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Nilai Perolehan (Rp)</label>
-                <input type="number" className="select-filter w-full" disabled={readOnly}
-                  value={j.baru?.nilai_perolehan ?? ''} onChange={e => setBaru('nilai_perolehan', Number(e.target.value))} />
+                <NominalInput className="select-filter w-full" disabled={readOnly}
+                  value={String(j.baru?.nilai_perolehan ?? '')} onChange={v => setBaru('nilai_perolehan', Number(v))} />
                 <p className="text-[11px] text-gray-400 mt-1">
                   Terisi otomatis dari Jumlah × Harga Satuan; boleh ditimpa manual.
                 </p>

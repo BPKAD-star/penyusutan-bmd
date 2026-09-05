@@ -13,6 +13,7 @@ import {
   getFPK, konversiIndeks, konversiIndeksTanggal, ST_MAX, NAMA_PARAMETER, BOBOT,
 } from '@/lib/ipaEngine'
 import type { KategoriIPA, Indeks, KelompokFPK } from '@/lib/ipaTypes'
+import NominalInput from '@/shared/ui/NominalInput'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Tipe
@@ -184,10 +185,10 @@ function InputInt({ value, onChange, placeholder = '0', min = 0 }: {
 
 function InputRp({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
-    <input
-      type="number" min={0} step={1} value={value || ''}
+    <NominalInput
+      value={value ? String(value) : ''}
       placeholder="0"
-      onChange={e => onChange(Math.max(0, parseFloat(e.target.value) || 0))}
+      onChange={raw => onChange(raw === '' ? 0 : Number(raw))}
       className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
     />
   )

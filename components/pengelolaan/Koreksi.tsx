@@ -20,6 +20,7 @@ import { useDateBounds, useTahunBukuMap } from '@/components/useTahunBuku'
 import FormShell from './FormShell'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import NominalInput from '@/shared/ui/NominalInput'
 
 // Field alasan "Spesifikasi Barang" (golongan-aware, + atribut satuan/asal usul/
 // tahun/kondisi) kini tinggal di lib/asetFields.ts sbg `koreksiFieldKeys` —
@@ -1385,8 +1386,8 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                         <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
                         <td className="table-td text-right">
                           {selNilai[b.id] && (
-                            <input type="number" min="0" step="1" className="select-filter w-full text-right"
-                              value={selNilai[b.id].nilaiBaru} onChange={e => ubahNilaiBaru(b.id, e.target.value)} />
+                            <NominalInput className="select-filter w-full text-right"
+                              value={selNilai[b.id].nilaiBaru} onChange={v => ubahNilaiBaru(b.id, v)} />
                           )}
                         </td>
                       </tr>
@@ -1671,8 +1672,8 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                               value={p.jumlah} onChange={e => setPecah(p.key, { jumlah: e.target.value })} />
                           </td>
                           <td className="table-td text-right">
-                            <input type="number" min="0" step="1" className="select-filter w-full text-right"
-                              value={p.nilai} placeholder="0" onChange={e => setPecah(p.key, { nilai: e.target.value })} />
+                            <NominalInput className="select-filter w-full text-right"
+                              value={p.nilai} placeholder="0" onChange={v => setPecah(p.key, { nilai: v })} />
                           </td>
                           <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.nb) : '-'}</td>
                           <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.ak) : '-'}</td>

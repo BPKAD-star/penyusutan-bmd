@@ -28,6 +28,7 @@ import {
   setStatusUsulan, type UsulanJenis, type UsulanHeader, type UsulanItem,
 } from '@/lib/rkbmdStandarUsulan'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import NominalInput from '@/shared/ui/NominalInput'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
 
@@ -544,8 +545,7 @@ function ItemModal({ jenis, tahun, usulanId, item, nomorBerikut, onTutup, onTers
             {adaHarga ? (
               <div>
                 <label className="block text-xs text-gray-500 mb-1">{LABEL_NILAI[jenis]} (Rp) <Wajib /></label>
-                <input type="number" min={0} step="any" className="select-filter w-full"
-                  value={harga} onChange={e => setHarga(e.target.value)} />
+                <NominalInput className="select-filter w-full" value={harga} onChange={setHarga} />
               </div>
             ) : (
               <div>

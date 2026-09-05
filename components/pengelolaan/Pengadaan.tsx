@@ -27,6 +27,7 @@ import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKo
 import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import { generateNibars } from '@/lib/nibar'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
+import NominalInput from '@/shared/ui/NominalInput'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { formatRupiah } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
@@ -1135,7 +1136,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
               <SearchSelect value={satuan} options={satuanList.map(s => ({ value: s.nama, label: s.nama }))} placeholder="ketik untuk mencari satuan..." onChange={setSatuan} />
             </div>
             <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
-            <div><label className="block text-xs text-gray-500 mb-1">Harga / item</label><input className="select-filter w-full text-sm" inputMode="numeric" value={harga} onChange={e => setHarga(e.target.value)} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Harga / item</label><NominalInput className="select-filter w-full text-sm" value={harga} onChange={setHarga} /></div>
           </div>
           <p className="text-xs text-gray-400">Kuantitas &gt; 1 langsung dipecah jadi beberapa barang terpisah — spesifikasi & foto diisi per-unit setelah ini (✎ Edit Spesifikasi).</p>
           {err && <p className="text-xs text-red-600">{err}</p>}

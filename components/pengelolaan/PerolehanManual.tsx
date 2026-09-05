@@ -12,6 +12,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
+import NominalInput from '@/shared/ui/NominalInput'
 import { catatTransaksi } from '@/lib/transaksi'
 import {
   periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi,
@@ -967,7 +968,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
               </select>
             </div>
             <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
-            <div><label className="block text-xs text-gray-500 mb-1">Nilai / item</label><input className="select-filter w-full text-sm" inputMode="numeric" value={harga} onChange={e => setHarga(e.target.value)} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Nilai / item</label><NominalInput className="select-filter w-full text-sm" value={harga} onChange={setHarga} /></div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Tgl Perolehan</label>
               <input type="date" className="select-filter w-full text-sm" max={todayStr()} value={tglPerolehan}

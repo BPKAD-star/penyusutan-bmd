@@ -21,6 +21,7 @@ import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import AsetMultiPicker from '@/components/rkbmd/AsetMultiPicker'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
+import NominalInput from '@/shared/ui/NominalInput'
 import {
   BENTUK_PEMANFAATAN, BENTUK_PEMINDAHTANGANAN, KONDISI_RKBMD,
   type RkbmdItem, type RkbmdJenis,
@@ -201,8 +202,7 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">{langkah()}. Estimasi Biaya Pemeliharaan (Rp)</label>
-              <input type="number" min={0} step="any" className="select-filter w-full"
-                value={biaya} onChange={e => setBiaya(e.target.value)} />
+              <NominalInput className="select-filter w-full" value={biaya} onChange={setBiaya} />
             </div>
           </div>
           {kondisi === 'Rusak Berat' && (
@@ -223,8 +223,7 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">{langkah()}. Estimasi Hasil Pemanfaatan (Rp)</label>
-            <input type="number" min={0} step="any" className="select-filter w-full"
-              value={hasil} onChange={e => setHasil(e.target.value)} />
+            <NominalInput className="select-filter w-full" value={hasil} onChange={setHasil} />
             <p className="text-[11px] text-gray-400 mt-1">Rencana penerimaan, bukan belanja.</p>
           </div>
           <div>

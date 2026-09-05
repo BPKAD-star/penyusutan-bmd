@@ -22,6 +22,7 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import { periodeDariTanggal } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import { KDP_KONSTRUKSI_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
+import NominalInput from '@/shared/ui/NominalInput'
 import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import {
   approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList,
@@ -271,7 +272,10 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
 
   const fld = (label: string, k: keyof typeof f, type = 'text') => (
     <div><label className="block text-xs text-gray-500 mb-1">{label}</label>
-      <input type={type} className="select-filter w-full" value={f[k]} onChange={e => set(k, e.target.value)} /></div>
+      {type === 'number'
+        ? <NominalInput className="select-filter w-full" value={f[k]} onChange={v => set(k, v)} />
+        : <input type={type} className="select-filter w-full" value={f[k]} onChange={e => set(k, e.target.value)} />}
+    </div>
   )
   return (
     <form onSubmit={submit} className="card p-5 mb-4 space-y-4 max-w-2xl">
@@ -622,7 +626,10 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
 
   const fld = (label: string, val: string, setVal: (v: string) => void, type = 'text') => (
     <div><label className="block text-xs text-gray-500 mb-1">{label}</label>
-      <input type={type} className="select-filter w-full" value={val} onChange={e => setVal(e.target.value)} /></div>
+      {type === 'number'
+        ? <NominalInput className="select-filter w-full" value={val} onChange={setVal} />
+        : <input type={type} className="select-filter w-full" value={val} onChange={e => setVal(e.target.value)} />}
+    </div>
   )
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
@@ -845,7 +852,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
                 <div><label className="block text-xs text-gray-500 mb-1">Nomor BAST</label><input className="select-filter w-full text-sm" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST <span className="text-gray-400">(≥ tgl kontrak {tglKontrak})</span></label><input type="date" min={minTgl} max={bounds.max} className="select-filter w-full text-sm" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
                 <div className="col-span-2 sm:col-span-3"><label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-gray-400">(cari & pilih sampai Sub Rincian Objek)</span></label><RekeningPicker value={rekening} onChange={setRekening} /></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Nominal (Rp)</label><input type="number" className="select-filter w-full text-sm" value={nominal} onChange={e => setNominal(e.target.value)} /></div>
+                <div><label className="block text-xs text-gray-500 mb-1">Nominal (Rp)</label><NominalInput className="select-filter w-full text-sm" value={nominal} onChange={setNominal} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full text-sm" value={ket} onChange={e => setKet(e.target.value)} /></div>
               </div>
               {err && <p className="text-xs text-red-600">{err}</p>}
