@@ -23,6 +23,14 @@ import { ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields
 export type PembayaranKdp = {
   komponen: 'perencanaan' | 'fisik' | 'biaya_umum' | 'pengawasan'
   no_bast?: string | null; tgl_bast: string; kode_rekening?: string | null; nominal: number; keterangan?: string | null
+  // Dokumen BAST termin ini (bucket `dokumen-sumber`) — WAJIB diisi sebelum
+  // rincian pembayaran bisa ditambahkan (keputusan user 2026-09-05, pola sama
+  // dgn `dokumen_paths` di Pengadaan non-konstruksi, tapi levelnya PER TERMIN:
+  // Perencanaan/Fisik Termin 1/Fisik Termin 2/Pengawasan/Biaya Umum masing-
+  // masing dokumen sumbernya sendiri, bukan satu dokumen utk seluruh kontrak).
+  // Termin LAMA (sebelum aturan ini) tak punya kunci ini sama sekali — dibaca
+  // sbg array kosong, tak diwajibkan retroaktif.
+  dokumen_paths?: string[]
 }
 // Satu barang KDP dalam kontrak (redesign multi-KDP 2026-07-13): 1 kontrak
 // konstruksi bisa berisi BEBERAPA barang (mis. paket jalan → beberapa ruas),
@@ -154,7 +162,7 @@ export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerI
   const trxRows = barangs.flatMap(b => (b.pembayaran || []).map(x => ({
     aset_id: asetIdByKey.get(b.key), jenis: 'akumulasi_kdp', periode: periodeDariTanggal(x.tgl_bast), tanggal: x.tgl_bast,
     nilai: Number(x.nominal || 0), skpd_tujuan: h.skpd_id, header_id: headerId,
-    payload: { komponen: x.komponen, no_bast: x.no_bast || null, kode_rekening: x.kode_rekening || null },
+    payload: { komponen: x.komponen, no_bast: x.no_bast || null, kode_rekening: x.kode_rekening || null, dokumen_paths: x.dokumen_paths || [] },
   })))
   const { error: tErr } = await supabase.from('transaksi_bmd').insert(trxRows)
   if (tErr) { await supabase.from('aset').update({ status: 'draft' }).in('id', createdAsetIds); return { error: `Gagal mencatat pembayaran: ${tErr.message}` } }

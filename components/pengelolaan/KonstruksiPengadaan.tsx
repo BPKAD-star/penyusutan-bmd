@@ -23,6 +23,7 @@ import { periodeDariTanggal } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import { KDP_KONSTRUKSI_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import NominalInput from '@/shared/ui/NominalInput'
+import { DokumenBastField, bukaDokumen, namaFile } from './DokumenBastField'
 import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import {
   approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList,
@@ -707,6 +708,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
   onTambahTermin: (item: PembayaranKdp) => void; onHapusTermin: (idx: number) => void
   onUbahKapInfo: (kapInfo: KapInfo | null) => void
 }) {
+  const supabase = createClient()
   const bounds = useDateBounds()
   const pembayaran = barang.pembayaran || []
   const total = barangTotal(barang)
@@ -716,6 +718,8 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
   const [rekening, setRekening] = useState('')
   const [nominal, setNominal] = useState('')
   const [ket, setKet] = useState('')
+  const [dokPaths, setDokPaths] = useState<string[]>([])
+  const [dokUploading, setDokUploading] = useState(false)
   const [err, setErr] = useState('')
   const [warnings, setWarnings] = useState<string[] | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -724,9 +728,31 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
   // Tgl BAST tak boleh lebih tua dari tgl kontrak (juga hormati batas tahun buku).
   const minTgl = [bounds.min, tglKontrak].filter(Boolean).sort().slice(-1)[0]
 
+  // ⚠️ Dokumen BAST WAJIB PER TERMIN (keputusan user 2026-09-05) — beda dari
+  // Pengadaan non-konstruksi yang satu dokumen utk seluruh kontrak. Di sini
+  // Perencanaan/Fisik Termin 1/Fisik Termin 2/Pengawasan/Biaya Umum masing-
+  // masing dokumen sumbernya sendiri, jadi kotak upload & guard-nya ikut
+  // formulir SATU termin, bukan formulir kontrak.
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `konstruksi-bast/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
+
   function submitTermin(e: React.FormEvent) {
     e.preventDefault()
     if (!tgl || !nominal) { setErr('Tgl BAST & nominal wajib diisi.'); return }
+    if (dokPaths.length === 0) { setErr('Dokumen BAST termin ini wajib diunggah sebelum rincian bisa ditambahkan.'); return }
     if (tglKontrak && tgl < tglKontrak) { setErr(`Tgl BAST (${tgl}) tidak boleh lebih tua dari tgl kontrak (${tglKontrak}).`); return }
     setErr('')
     // Peringatan kode rekening — pola & teks SAMA dgn Pengadaan non-fisik
@@ -739,14 +765,18 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
 
   function doTambahTermin() {
     setWarnings(null)
-    onTambahTermin({ komponen: komponen as PembayaranKdp['komponen'], no_bast: noBast || null, tgl_bast: tgl, kode_rekening: rekening || null, nominal: Number(nominal), keterangan: ket || null })
+    onTambahTermin({
+      komponen: komponen as PembayaranKdp['komponen'], no_bast: noBast || null, tgl_bast: tgl,
+      kode_rekening: rekening || null, nominal: Number(nominal), keterangan: ket || null, dokumen_paths: dokPaths,
+    })
     // ⚠️ `rekening` & `tgl` IKUT DIKOSONGKAN (permintaan user 2026-08-27).
     // Sebelumnya keduanya tertinggal dari termin sebelumnya, jadi termin
     // berikutnya terisi rekening lama secara diam-diam — operator yang tak
     // menyadarinya membukukan BAST ke kode rekening yang salah tanpa satu pun
     // tanda. Biarkan diisi ulang; salah-karena-lupa lebih murah daripada
-    // salah-karena-terisi-sendiri.
-    setNoBast(''); setNominal(''); setKet(''); setRekening(''); setTgl('')
+    // salah-karena-terisi-sendiri. `dokPaths` ikut dikosongkan dgn alasan sama —
+    // dokumen termin SEBELUMNYA tak boleh menempel diam-diam ke termin berikutnya.
+    setNoBast(''); setNominal(''); setKet(''); setRekening(''); setTgl(''); setDokPaths([])
     setShowForm(false)
   }
 
@@ -822,14 +852,22 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100"><tr>
-            <th className="table-th">Komponen</th><th className="table-th">No BAST</th><th className="table-th">Tgl</th><th className="table-th">Rekening</th><th className="table-th">Keterangan</th><th className="table-th text-right">Nominal</th>{pending && <th className="table-th"></th>}
+            <th className="table-th">Komponen</th><th className="table-th">No BAST</th><th className="table-th">Dokumen</th><th className="table-th">Tgl</th><th className="table-th">Rekening</th><th className="table-th">Keterangan</th><th className="table-th text-right">Nominal</th>{pending && <th className="table-th"></th>}
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
-            {pembayaran.length === 0 ? <tr><td colSpan={pending ? 7 : 6} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada pembayaran.</td></tr>
+            {pembayaran.length === 0 ? <tr><td colSpan={pending ? 8 : 7} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada pembayaran.</td></tr>
               : pembayaran.map((b, i) => (
                 <tr key={i}>
                   <td className="table-td text-xs">{komponenLabel(b.komponen)}</td>
                   <td className="table-td text-xs text-gray-500">{b.no_bast || '—'}</td>
+                  <td className="table-td text-xs">
+                    {(b.dokumen_paths || []).length === 0
+                      ? <span className="text-amber-600" title="Termin lama — belum ada dokumen tercatat">—</span>
+                      : (b.dokumen_paths || []).map(p => (
+                        <button key={p} onClick={() => bukaDokumen(p)}
+                          className="underline text-teal hover:opacity-80 block text-left">{namaFile(p)}</button>
+                      ))}
+                  </td>
                   <td className="table-td text-xs text-gray-500">{b.tgl_bast}</td>
                   <td className="table-td text-xs text-gray-500">{b.kode_rekening || '—'}</td>
                   <td className="table-td text-xs text-gray-600">{b.keterangan || '—'}</td>
@@ -851,6 +889,11 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
                   <select className="select-filter w-full text-sm" value={komponen} onChange={e => setKomponen(e.target.value)}>{KOMPONEN.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}</select></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Nomor BAST</label><input className="select-filter w-full text-sm" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST <span className="text-gray-400">(≥ tgl kontrak {tglKontrak})</span></label><input type="date" min={minTgl} max={bounds.max} className="select-filter w-full text-sm" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
+                <div className="col-span-2 sm:col-span-3">
+                  <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+                    hint={`wajib sebelum rincian "${komponenLabel(komponen)}" ini bisa ditambahkan (foto / PDF, bisa lebih dari satu)`}
+                    kosongText="Belum ada dokumen — wajib diunggah sebelum tombol + Tambah Rincian bisa dipakai." />
+                </div>
                 <div className="col-span-2 sm:col-span-3"><label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-gray-400">(cari & pilih sampai Sub Rincian Objek)</span></label><RekeningPicker value={rekening} onChange={setRekening} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Nominal (Rp)</label><NominalInput className="select-filter w-full text-sm" value={nominal} onChange={setNominal} /></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full text-sm" value={ket} onChange={e => setKet(e.target.value)} /></div>

@@ -28,6 +28,7 @@ import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import { generateNibars } from '@/lib/nibar'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 import NominalInput from '@/shared/ui/NominalInput'
+import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { formatRupiah } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
@@ -98,47 +99,6 @@ type JurnalLine = {
 // kini pending karena dibuka kunci) → tak boleh dihapus penuh (FK + append-only).
 export type Jurnal = Header & { lines: JurnalLine[]; total: number; hasLedger: boolean }
 
-const namaFile = (path: string) => path.split('/').pop() || path
-
-// Tombol unggah dokumen BAST — dipakai KontrakForm (baru) & EditHeaderModal
-// (edit), satu sumber supaya tak menyalin markup+state dua kali.
-//
-// ⚠️ Input file mentah DISEMBUNYIKAN (`hidden`), dipicu lewat tombol bergaya.
-// Tampilan bawaan browser ("Choose Files · No file chosen") gampang terlewat
-// operator & tak menunjukkan bahwa ini WAJIB — beda dari kolom teks biasa yang
-// keharusannya kelihatan begitu dikosongkan lalu disimpan.
-function DokumenBastField({ paths, uploading, onUpload, onHapus }: {
-  paths: string[]; uploading: boolean
-  onUpload: (files: FileList | null) => void; onHapus: (path: string) => void
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  return (
-    <div>
-      <label className="block text-xs text-gray-500 mb-1">
-        Dokumen BAST <span className="text-red-500">*</span>
-        <span className="text-gray-400"> — wajib sebelum kontrak bisa disetujui (foto / PDF, bisa lebih dari satu)</span>
-      </label>
-      <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-        onChange={e => { onUpload(e.target.files); e.target.value = '' }} disabled={uploading} className="hidden" />
-      <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
-        className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-        📎 {uploading ? 'Mengunggah...' : 'Upload BAST'}
-      </button>
-      {paths.length === 0
-        ? <p className="text-xs text-amber-600 mt-1">Belum ada dokumen — wajib diunggah sebelum kontrak bisa disimpan.</p>
-        : (
-          <ul className="mt-2 space-y-1">
-            {paths.map(p => (
-              <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
-                <span className="truncate">{namaFile(p)}</span>
-                <button onClick={() => onHapus(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-              </li>
-            ))}
-          </ul>
-        )}
-    </div>
-  )
-}
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
@@ -806,23 +766,6 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
   )
 }
 
-async function bukaDokumen(path: string) {
-  const supabase = createClient()
-  const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
-  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-}
-
-function DokumenLinks({ paths }: { paths: string[] }) {
-  if (paths.length === 0) return null
-  return (
-    <p className="text-xs text-gray-500 mt-1">
-      Dokumen:{' '}
-      {paths.map(p => (
-        <button key={p} onClick={() => bukaDokumen(p)} className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
-      ))}
-    </p>
-  )
-}
 
 // Ambil signed URL foto pertama tiap path (bucket privat) — dipakai preview kecil di baris.
 // ── Kartu "Menunggu Persetujuan" ─────────────────────────────────────────────
