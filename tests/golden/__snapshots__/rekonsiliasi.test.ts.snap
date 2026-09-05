@@ -110,11 +110,11 @@ exports[`golden — snapshot agregat > posisi Saldo Awal & Saldo Akhir per golon
         "perolehan": 0,
       },
       "intra": {
-        "akumulasi": 97600000,
-        "beban": 48800000,
-        "count": 12,
-        "nilaiBuku": 391400000,
-        "perolehan": 489000000,
+        "akumulasi": 106600000,
+        "beban": 53300000,
+        "count": 13,
+        "nilaiBuku": 427400000,
+        "perolehan": 534000000,
       },
     },
     "1.5.4": {
@@ -139,6 +139,11 @@ exports[`golden — snapshot agregat > posisi Saldo Awal & Saldo Akhir per golon
 
 exports[`golden — snapshot agregat > sel 1.3.2 intra — dirinci supaya perubahan angkanya terbaca di diff 1`] = `
 {
+  "hapus_hibah": {
+    "akumulasi": 0,
+    "beban": 0,
+    "perolehan": 45000000,
+  },
   "hapus_sebab_lain": {
     "akumulasi": 0,
     "beban": 0,
@@ -198,6 +203,11 @@ exports[`golden — snapshot agregat > tabel mutasi Rekonsiliasi 2026-S1 (scope 
       },
     },
     "intra": {
+      "hapus_hibah": {
+        "akumulasi": 0,
+        "beban": 0,
+        "perolehan": 45000000,
+      },
       "hapus_sebab_lain": {
         "akumulasi": 0,
         "beban": 0,

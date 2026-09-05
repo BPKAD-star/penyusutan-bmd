@@ -357,7 +357,7 @@ type LedRow = {
   header_id: string | null
   payload: Record<string, unknown> | null
   aset: { kode: string; skpd_id: number | null; intra_ekstra: string | null; nibar: string | null; nama_barang: string | null } | null
-  header: { no_sk: string | null } | null
+  header: { no_sk: string | null; sub_jenis: string | null } | null
 }
 
 async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: string): Promise<LedRow[]> {
@@ -365,7 +365,7 @@ async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: 
   let terakhir = 0
   for (;;) {
     const { data, error } = await supabase.from('transaksi_bmd')
-      .select('id,jenis,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,header_id,payload,aset:aset_id(kode,skpd_id,intra_ekstra,nibar,nama_barang),header:header_id(no_sk)')
+      .select('id,jenis,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,header_id,payload,aset:aset_id(kode,skpd_id,intra_ekstra,nibar,nama_barang),header:header_id(no_sk,sub_jenis)')
       .eq('periode', periode).in('jenis', jenisList as never)
       .gt('id', terakhir).order('id', { ascending: true }).limit(1000)
     if (error) throw new Error(`gagal membaca ledger (${jenisList.join(', ')}) periode ${periode}: ${error.message}`)
@@ -674,7 +674,14 @@ async function computeMutasiLines(
     if (!r.aset || !inScope(r.aset.skpd_id) || !netRemoved.has(r.aset_id) || seen.has(r.aset_id)) continue
     seen.add(r.aset_id)
     const gol = golPada(r), komp = kompOf(r.aset.intra_ekstra)
-    const sub = typeof r.payload?.sub_jenis === 'string' ? r.payload.sub_jenis : null
+    // ⚠️ `header?.sub_jenis`, BUKAN `payload?.sub_jenis` — ditemukan 2026-09-05.
+    // `insertLines()` di Penghapusan.tsx menulis baris ledger dgn `payload: {}`
+    // KOSONG; `sub_jenis` cuma pernah tersimpan di `jurnal_header.sub_jenis`.
+    // Sebelum ditambal, SELURUH penghapusan pemindahtanganan (hibah/penjualan/
+    // tukar menukar/penyertaan modal) jatuh ke default `hapus_sebab_lain` di
+    // sini — totalnya tetap tie-out (masih masuk kategori Penghapusan yg sama),
+    // tapi baris a/b/c/d yang dibaca BPK di Rekonsiliasi & BA Rekon SALAH.
+    const sub = r.header?.sub_jenis ?? null
     const key: MutasiKey = sub === 'penjualan' ? 'hapus_penjualan' : sub === 'hibah' ? 'hapus_hibah'
       : sub === 'tukar_menukar' ? 'hapus_tukar' : sub === 'penyertaan_modal' ? 'hapus_penyertaan' : 'hapus_sebab_lain'
     push(gol, komp, key, r.nilai, r)

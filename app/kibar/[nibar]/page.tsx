@@ -126,7 +126,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
 
   const [{ data: trxRaw }, wilayahParts, skpdChain, { data: kodefikasi }] = await Promise.all([
     admin.from('transaksi_bmd')
-      .select('id,jenis,periode,tanggal,nilai,skpd_asal,skpd_tujuan,payload,keterangan,header_id,jurnal_header(no_sk,tanggal,kategori,payload)')
+      .select('id,jenis,periode,tanggal,nilai,skpd_asal,skpd_tujuan,payload,keterangan,header_id,jurnal_header(no_sk,tanggal,kategori,sub_jenis,payload)')
       .eq('aset_id', aset.id).order('id', { ascending: true }),
     aset.wilayah_kode ? resolveWilayah(admin, aset.wilayah_kode) : Promise.resolve([] as string[]),
     aset.skpd_id ? resolveSkpdChain(admin, aset.skpd_id) : Promise.resolve([] as SkpdNode[]),
@@ -142,7 +142,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
     id: number; jenis: string; periode: string; tanggal: string; nilai: number
     skpd_asal: number | null; skpd_tujuan: number | null
     payload: Record<string, unknown> | null; keterangan: string | null; header_id: string | null
-    jurnal_header: { no_sk: string; tanggal: string; kategori: string; payload: Record<string, unknown> | null } | null
+    jurnal_header: { no_sk: string; tanggal: string; kategori: string; sub_jenis: string | null; payload: Record<string, unknown> | null } | null
   }[]
 
   // Nama SKPD utk kolom skpd_asal/tujuan di ledger (di luar rantai pemegang).
@@ -239,8 +239,13 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   const specRow = aset as unknown as Record<string, string | number | null>
   const specFields = fieldsForKode(aset.kode).filter(f => !shownFields.has(f) && specRow[f] != null && specRow[f] !== '')
 
+  // ⚠️ `jurnal_header.sub_jenis`, BUKAN `payload.sub_jenis` — ditemukan
+  // 2026-09-05: `insertLines()` di Penghapusan.tsx menulis baris ledger dgn
+  // `payload: {}` KOSONG, `sub_jenis` cuma pernah tersimpan di header-nya.
+  // Sebelum ditambal, centang Hibah/Penjualan/Tukar Menukar/Penyertaan Modal
+  // di kartu ini TAK PERNAH menyala walau penghapusannya sungguh terjadi.
   const hapusSub = penghapusan?.jenis === 'penghapusan_pemindahtanganan'
-    ? String(penghapusan.payload?.sub_jenis || '')
+    ? String(penghapusan.jurnal_header?.sub_jenis || '')
     : ''
 
   return (
@@ -481,7 +486,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
               {trx.map(t => {
                 const meta = KIBAR_JENIS_LABEL[t.jenis] || { label: t.jenis, tone: 'netral' as const }
                 const dotColor = meta.tone === 'masuk' ? 'bg-teal' : meta.tone === 'keluar' ? 'bg-rose-500' : 'bg-amber-400'
-                const detail = kibarDetail(t.jenis, t.payload, t.skpd_asal ? skpdNama[t.skpd_asal] : null, t.skpd_tujuan ? skpdNama[t.skpd_tujuan] : null)
+                const detail = kibarDetail(t.jenis, t.payload, t.skpd_asal ? skpdNama[t.skpd_asal] : null, t.skpd_tujuan ? skpdNama[t.skpd_tujuan] : null, t.jurnal_header?.sub_jenis)
                 return (
                   <li key={t.id} className="flex gap-3">
                     <div className="flex flex-col items-center flex-shrink-0 pt-1">

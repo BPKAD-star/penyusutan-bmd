@@ -104,10 +104,32 @@ const nolPenghapusan = (): PenghapusanData => ({
 async function countPenghapusan(sb: SB): Promise<{ data: PenghapusanData; err: string }> {
   const out = nolPenghapusan()
   try {
+    // ⚠️ `sub_jenis` dibaca dari `header:header_id(sub_jenis)`, BUKAN
+    // `payload.sub_jenis` — ditemukan 2026-09-05 (user memeriksa sebelum
+    // eksekusi penghapusan sungguhan): `insertLines()` di Penghapusan.tsx
+    // menulis baris ledger dengan `payload: {}` KOSONG; `sub_jenis` hanya
+    // pernah disimpan di `jurnal_header.sub_jenis` (header/kartu), tak pernah
+    // disalin ke baris. Akibatnya `payload?.sub_jenis` SELALU `undefined` →
+    // SEMUA penghapusan Hibah/Penjualan/Tukar Menukar/Penyertaan Modal jatuh
+    // ke cabang `else` dan tercatat sbg "Karena Sebab Lainnya" — keempat
+    // kartu mekanisme itu permanen 0 berapa pun banyaknya dieksekusi. Dibaca
+    // lewat FK `header_id` (satu-satunya sumber sebenarnya), bukan
+    // menduplikasi `sub_jenis` ke `payload` tiap baris (dua sumber yang bisa
+    // menyimpang — pola yang sama dgn `cara_perolehan`/`asal_usul`).
+    //
+    // ⚠️ Dedup PER ASET, bukan per baris: siklus hapus → Batal Penghapusan
+    // (aset balik 'aktif') → dihapus lagi (dgn sub_jenis lain, mis. tadinya
+    // salah pilih "Sebab Lain" lalu dibetulkan jadi "Hibah") menghasilkan DUA
+    // baris `penghapusan_*` utk aset yang SAMA. `aset.status` itu keadaan
+    // SEKARANG, bukan per-baris, jadi tanpa dedup KEDUA baris lolos cek
+    // `status==='dihapus'` & aset itu terhitung DUA KALI. Ditimpa per
+    // `aset_id` sambil membaca urut id ASC → yang tersisa di map selalu
+    // peristiwa TERAKHIR untuk aset itu.
+    const terakhirPerAset = new Map<string, { jenis: string; nilai: number; sub: string | null; status: string | null }>()
     let terakhir = 0
     for (;;) {
       const { data, error } = await sb.from('transaksi_bmd')
-        .select('id,jenis,nilai,payload,aset(status)')
+        .select('id,aset_id,jenis,nilai,aset(status),header:header_id(sub_jenis)')
         .in('jenis', ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain'])
         .gt('id', terakhir)
         .order('id', { ascending: true })
@@ -117,23 +139,27 @@ async function countPenghapusan(sb: SB): Promise<{ data: PenghapusanData; err: s
       if (error) return { data: nolPenghapusan(), err: error.message }
       if (!data || data.length === 0) break
       const rows = data as unknown as {
-        id: number; jenis: string; nilai: number
-        payload: { sub_jenis?: string } | null
+        id: number; aset_id: string | null; jenis: string; nilai: number
         aset: { status: string } | null
+        header: { sub_jenis: string | null } | null
       }[]
       for (const r of rows) {
         terakhir = r.id
-        if (r.aset?.status !== 'dihapus') continue
-        const nilai = r.nilai || 0
-        if (r.jenis === 'penghapusan_sebab_lain') { out.sebabLain.n++; out.sebabLain.nilai += nilai; continue }
-        const sub = r.payload?.sub_jenis
-        if (sub === 'hibah') { out.hibah.n++; out.hibah.nilai += nilai }
-        else if (sub === 'penjualan') { out.jual.n++; out.jual.nilai += nilai }
-        else if (sub === 'tukar_menukar') { out.tukar.n++; out.tukar.nilai += nilai }
-        else if (sub === 'penyertaan_modal') { out.modal.n++; out.modal.nilai += nilai }
-        else { out.sebabLain.n++; out.sebabLain.nilai += nilai } // fallback data lama tanpa sub_jenis dikenal
+        if (!r.aset_id) continue
+        terakhirPerAset.set(r.aset_id, {
+          jenis: r.jenis, nilai: r.nilai || 0, sub: r.header?.sub_jenis ?? null, status: r.aset?.status ?? null,
+        })
       }
       if (rows.length < 1000) break
+    }
+    for (const t of terakhirPerAset.values()) {
+      if (t.status !== 'dihapus') continue
+      if (t.jenis === 'penghapusan_sebab_lain') { out.sebabLain.n++; out.sebabLain.nilai += t.nilai; continue }
+      if (t.sub === 'hibah') { out.hibah.n++; out.hibah.nilai += t.nilai }
+      else if (t.sub === 'penjualan') { out.jual.n++; out.jual.nilai += t.nilai }
+      else if (t.sub === 'tukar_menukar') { out.tukar.n++; out.tukar.nilai += t.nilai }
+      else if (t.sub === 'penyertaan_modal') { out.modal.n++; out.modal.nilai += t.nilai }
+      else { out.sebabLain.n++; out.sebabLain.nilai += t.nilai } // fallback: sub_jenis tak dikenal / header hilang
     }
   } catch (e) {
     return { data: nolPenghapusan(), err: e instanceof Error ? e.message : String(e) }

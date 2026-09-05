@@ -94,12 +94,23 @@ export const ASET: AsetRow[] = [
   // selisihnya jatuh ke "Selisih (belum terpetakan)" sebesar DUA KALI rehab.
   aset('A20', PM, SKPD_A, 68_000_000),                            // induk sesudah menyerap (50jt + 18jt)
   aset('A21', PM, SKPD_A, 18_000_000, 'intra', '2024-01-01', 'dihapus'), // anak yang DISERAP
+  // A22 — hapus pemindahtanganan (hibah), NET-removed (tanpa batal). Ditambah
+  // 2026-09-05 sesudah bug lolos dari dataset ini: `computeMutasiLines`
+  // membaca `sub_jenis` dari `payload` (SELALU kosong — Penghapusan.tsx
+  // menulis `payload: {}`; `sub_jenis` cuma tersimpan di `jurnal_header`),
+  // jadi SEMUA penghapusan pemindahtanganan (hibah/penjualan/tukar menukar/
+  // penyertaan modal) jatuh ke `hapus_sebab_lain`. A04 (satu-satunya kasus
+  // pemindahtanganan sebelum ini) tak pernah menguji jalur ini — ia dibatalkan
+  // & dibuang SEBELUM baris kategorisasinya tercapai. A22 net-removed supaya
+  // baris kategorisasinya benar-benar dieksekusi.
+  aset('A22', PM, SKPD_A, 45_000_000),
 ]
 
-export const JURNAL: { id: string; no_sk: string }[] = [
+export const JURNAL: { id: string; no_sk: string; sub_jenis?: string }[] = [
   { id: 'H1', no_sk: 'SK-001/2026' },
   { id: 'H2', no_sk: 'SK-002/2026' },
   { id: 'HP', no_sk: 'SK-PECAH/2026' },
+  { id: 'H3', no_sk: 'SK-HAPUS-HIBAH/2026', sub_jenis: 'hibah' },
 ]
 
 type Trx = {
@@ -183,6 +194,11 @@ export const TRANSAKSI: Trx[] = [
   // (`fetchNetSerap`).
   t(210, 'kapitalisasi', 'A20', 18_000_000, { header_id: 'H2' }),
   t(211, 'kapitalisasi_serap', 'A21', 18_000_000, { header_id: 'H2', payload: { induk_id: 'A20' } }),
+
+  // A22 — hapus karena hibah (lihat catatan di ASET). `sub_jenis` HANYA di
+  // jurnal_header (H3), payload transaksi ini sengaja KOSONG — persis bentuk
+  // asli `insertLines()` di Penghapusan.tsx.
+  t(220, 'penghapusan_pemindahtanganan', 'A22', 45_000_000, { header_id: 'H3' }),
 ]
 
 // Hasil engine. Disederhanakan tapi KONSISTEN: nilai_buku = perolehan −
@@ -252,6 +268,8 @@ export const PENYUSUTAN: Peny[] = [
   // TAK punya baris periode ini — `kapitalisasi_serap` event SEMBUNYI, jadi ia
   // memang lenyap dari Saldo Akhir. Persis pola A12 (induk pemecahan).
   peny('A21', PERIODE_LALU, 18_000_000, 1_800_000, 3_600_000),
+  // A22 hapus karena hibah — pola sama dgn A03 (net-removed dalam periode ini).
+  ...susutBiasa('A22', 45_000_000, 9_000_000, 4_500_000),
 ]
 
 export const EMBED: Embed = {

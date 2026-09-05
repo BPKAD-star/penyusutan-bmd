@@ -67,6 +67,19 @@ function DetailModal({ label, jenis, subJenis, onClose }: { label: string; jenis
   // Daftar kosong yang lahir dari query gagal terbaca operator sbg "memang tak
   // ada barang yang dihapus" — popup inilah yang dipakai mencocokkan jumlah
   // barang, jadi ia fail-closed spt DisetujuiModal di MutasiTransferCards.
+  //
+  // ⚠️ `sub_jenis` dibaca dari `header:header_id(sub_jenis)`, BUKAN
+  // `payload.sub_jenis` (yang SELALU kosong — `insertLines()` di
+  // Penghapusan.tsx menulis `payload: {}`; `sub_jenis` cuma ada di
+  // `jurnal_header`). Ditemukan 2026-09-05: tanpa ini, keempat kartu
+  // pemindahtanganan (Hibah/Penjualan/Tukar Menukar/Penyertaan Modal) selalu
+  // menampilkan "Belum ada data" walau barangnya benar-benar ada — lihat
+  // rincian lengkap di countPenghapusan (app/dashboard/page.tsx).
+  //
+  // ⚠️ Dedup PER ASET (`aset_id`, keep TERAKHIR — rows terurut id ASC):
+  // siklus hapus → Batal Penghapusan → dihapus lagi (mis. sub_jenis dibetulkan)
+  // menghasilkan >1 baris utk aset yang sama; `aset.status` itu keadaan
+  // SEKARANG bukan per-baris, jadi tanpa dedup aset itu tertampil DUA KALI.
   useEffect(() => {
     (async () => {
       try {
@@ -82,13 +95,14 @@ function DetailModal({ label, jenis, subJenis, onClose }: { label: string; jenis
           if (batch.length < 1000) break
         }
         const rows: {
-          id: number; skpd_asal: number; nilai: number; payload: { sub_jenis?: string } | null
+          id: number; aset_id: string | null; skpd_asal: number; nilai: number
+          header: { sub_jenis: string | null } | null
           aset: { nama_barang: string | null; nibar: string | null; status: string } | null
         }[] = []
         let terakhir = 0
         for (;;) {
           const { data, error } = await supabase.from('transaksi_bmd')
-            .select('id,skpd_asal,nilai,payload,aset:aset_id(nama_barang,nibar,status)')
+            .select('id,aset_id,skpd_asal,nilai,header:header_id(sub_jenis),aset:aset_id(nama_barang,nibar,status)')
             .eq('jenis', jenis).gt('id', terakhir).order('id', { ascending: true }).limit(1000)
           if (error) throw new Error(`gagal membaca riwayat penghapusan: ${error.message}`)
           if (!data || data.length === 0) break
@@ -97,10 +111,13 @@ function DetailModal({ label, jenis, subJenis, onClose }: { label: string; jenis
           terakhir = batch[batch.length - 1].id
           if (batch.length < 1000) break
         }
+        const terakhirPerAset = new Map<string, typeof rows[number]>()
+        for (const r of rows) if (r.aset_id) terakhirPerAset.set(r.aset_id, r)
+
         const groupMap = new Map<number, { n: number; total: number; items: { nama_barang: string | null; nibar: string | null; nilai: number }[] }>()
-        for (const r of rows) {
+        for (const r of terakhirPerAset.values()) {
           if (!r.aset || r.aset.status !== 'dihapus') continue
-          if (subJenis && r.payload?.sub_jenis !== subJenis) continue
+          if (subJenis && r.header?.sub_jenis !== subJenis) continue
           const g = groupMap.get(r.skpd_asal) || { n: 0, total: 0, items: [] }
           g.n += 1
           g.total += r.nilai || 0

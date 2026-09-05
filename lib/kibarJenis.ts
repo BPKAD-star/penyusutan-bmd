@@ -61,6 +61,12 @@ export function kibarDetail(
   payload: Record<string, unknown> | null,
   skpdAsal?: string | null,
   skpdTujuan?: string | null,
+  // ⚠️ Pre-resolved dari `jurnal_header.sub_jenis` oleh pemanggil — BUKAN
+  // dibaca dari `payload.sub_jenis`. Ditemukan 2026-09-05: `insertLines()` di
+  // Penghapusan.tsx menulis baris ledger dgn `payload: {}` KOSONG; `sub_jenis`
+  // cuma pernah tersimpan di header-nya. Pola yang sama dgn `skpdAsal`/
+  // `skpdTujuan` di atas — dua-duanya juga bukan kolom `payload`.
+  subJenis?: string | null,
 ): string | null {
   const p = payload || {}
   switch (jenis) {
@@ -74,7 +80,7 @@ export function kibarDetail(
       return `Rehab ${formatRp(rehab)}${persen} — nilai jadi ${formatRp(baru)}`
     }
     case 'penghapusan_pemindahtanganan': {
-      const sub = typeof p.sub_jenis === 'string' ? p.sub_jenis : ''
+      const sub = subJenis || ''
       return SUB_JENIS_LABEL[sub] || sub || null
     }
     case 'reklas_kode':

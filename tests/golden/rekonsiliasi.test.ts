@@ -68,6 +68,18 @@ describe('golden — kasus yang pernah menggigit', () => {
     expect(lines.some(l => l.aset_id === 'A04')).toBe(false)
   })
 
+  it('hapus karena HIBAH: sub_jenis dibaca dari jurnal_header, bukan payload kosong (INS ditemukan 2026-09-05)', async () => {
+    const lines = await muatLines()
+
+    const hapus = lines.filter(l => l.aset_id === 'A22')
+    expect(hapus).toHaveLength(1)
+    // ⚠️ Sebelum ditambal, ini SELALU jatuh ke 'hapus_sebab_lain' — payload
+    // baris ledgernya memang kosong, `sub_jenis` cuma ada di jurnal_header.
+    expect(hapus[0].kategori).toBe('hapus_hibah')
+    expect(hapus[0].arah).toBe('kurang')
+    expect(hapus[0].nilai).toBe(45_000_000)
+  })
+
   it('pengalihan SKPD: dari sisi scope yang MEMUAT keduanya, tak ada baris (mutasi internal scope)', async () => {
     const lines = await muatLines()
 
