@@ -152,10 +152,15 @@ export default function NotesPage() {
   }
 
   // Kotak Cari hanya berguna di tampilan admin (banyak SKPD jadi satu daftar).
-  const tampil = useMemo(
-    () => (scope.isAdmin ? notes.filter(n => cocokCari(cari, [n.penulis, n.skpd_nama, n.isi])) : notes),
-    [notes, cari, scope.isAdmin]
-  )
+  const tampil = useMemo(() => {
+    const filtered = scope.isAdmin ? notes.filter(n => cocokCari(cari, [n.penulis, n.skpd_nama, n.isi])) : notes
+    // Yang sudah Ditangani digeser ke BAWAH (permintaan user 2026-09-05) —
+    // supaya yang masih perlu ditindaklanjuti selalu di atas, tak tercampur
+    // catatan lama yang kebetulan belum lama ditandai selesai. `sort` di JS
+    // stabil sejak ES2019, jadi urutan created_at desc di dalam tiap kelompok
+    // (belum/sudah ditangani) tetap terjaga apa adanya.
+    return [...filtered].sort((a, b) => Number(a.selesai) - Number(b.selesai))
+  }, [notes, cari, scope.isAdmin])
 
   const milikSendiri = (n: Note) => scope.userId != null && n.author_id === scope.userId
 
