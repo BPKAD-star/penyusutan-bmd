@@ -358,12 +358,15 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
     }
     // Pengaman anti-hampa: pemindai yang tak menemukan apa-apa akan "lulus".
     // ⚠️ Ambangnya TURUN tiap satu menu pindah ke kerangkanya sendiri — per
-    // 2026-08-31 sisa 4 (Reklasifikasi, Koreksi, Kapitalisasi, Penghapusan);
-    // Penggunaan, Penerimaan & Pengeluaran Internal sudah pakai
-    // `LaporanPerpindahan` dan dijaga uji di bawahnya. Kalau angka ini turun
-    // lagi, PASTIKAN menu yang pindah sudah masuk `DIR_PERPINDAHAN` — bukan
-    // sekadar menurunkan ambangnya, kalau tidak menu itu lolos dari kedua uji.
-    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(4)
+    // 2026-09-05 sisa 3 (Reklasifikasi, Koreksi, Penghapusan); Penggunaan,
+    // Penerimaan & Pengeluaran Internal sudah pakai `LaporanPerpindahan`
+    // (dijaga uji di bawahnya), dan Kapitalisasi sudah pindah ke
+    // `LaporanKapitalisasi` sendiri (dijaga uji terpisah di bawahnya juga,
+    // sebab format & sumber datanya beda total — bukan tabel transaksi datar).
+    // Kalau angka ini turun lagi, PASTIKAN menu yang pindah sudah masuk
+    // `DIR_PERPINDAHAN` atau punya uji index sendiri — bukan sekadar
+    // menurunkan ambangnya, kalau tidak menu itu lolos dari SEMUA uji.
+    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(3)
     return out
   }
 
@@ -439,6 +442,34 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
     }
     // Pengaman anti-hampa: pemindai yang tak memeriksa apa pun akan "lulus".
     expect(diperiksa).toBe(DIR_PERPINDAHAN.length)
+  })
+
+  // ⚠️ Kapitalisasi PINDAH ke `LaporanKapitalisasi` sendiri 2026-09-05 —
+  // insiden nyata: `LaporanTransaksi` memanggil `fetchBatalTargets(['batal_
+  // kapitalisasi'])` tanpa scope aset_id, dan `idx_trx_kapitalisasi_id` waktu
+  // itu cuma memuat 'kapitalisasi' (bukan 'batal_kapitalisasi') → timeout →
+  // promise REJECT tanpa `.catch()` → halaman macet SELAMANYA di "Memuat
+  // data..." (migrasi 20260905_02 memperlebar indexnya). Komponen baru
+  // menggabung KEDUA jenis dalam SATU query lalu menyaring di JS — jadi
+  // ujiannya beda dari §7 di atas: bukan "jenisList dari prop", tapi "kedua
+  // literal jenis di source-nya tercakup index yang sama".
+  it('LaporanKapitalisasi tercakup index (id) WHERE jenis IN (…) & mengurut by id', () => {
+    const f = path.join(AKAR, 'components/pelaporan/LaporanKapitalisasi.tsx')
+    expect(fs.existsSync(f), 'components/pelaporan/LaporanKapitalisasi.tsx tak ditemukan').toBe(true)
+    const isi = fs.readFileSync(f, 'utf8')
+    expect(isi, 'LaporanKapitalisasi tak mengurutkan by id').toContain("order('id'")
+
+    const halamanKap = path.join(DIR_HAL, 'kapitalisasi', 'page.tsx')
+    expect(fs.existsSync(halamanKap), 'halaman kapitalisasi tak ditemukan').toBe(true)
+    expect(fs.readFileSync(halamanKap, 'utf8'), 'halaman kapitalisasi tak lagi memakai LaporanKapitalisasi')
+      .toContain('LaporanKapitalisasi')
+
+    const peta = predikatIndexId()
+    for (const j of ['kapitalisasi', 'batal_kapitalisasi']) {
+      expect(isi, `literal jenis '${j}' tak ditemukan di LaporanKapitalisasi.tsx — pemindaian rusak`).toContain(`'${j}'`)
+      const cocok = [...peta.entries()].filter(([, predikat]) => predikat.includes(j))
+      expect(cocok.length, `'${j}' (LaporanKapitalisasi) tak tercakup index (id) WHERE jenis IN (…) manapun`).toBeGreaterThan(0)
+    }
   })
 
   it('idx_trx_kapitalisasi_id & idx_trx_koreksi_id dibuat PLAIN, bukan CONCURRENTLY', () => {
