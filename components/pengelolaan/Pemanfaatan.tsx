@@ -30,6 +30,7 @@ import {
 } from '@/lib/pemanfaatan'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
 const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
@@ -38,6 +39,7 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
 type PemPayload = {
   jenis_pemanfaatan?: string; mitra?: string; alamat_mitra?: string
   mulai?: string; masa_tahun?: number; berakhir?: string; peruntukan?: string; jenis_dokumen?: string
+  dokumen_paths?: string[]
 }
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string
@@ -277,6 +279,7 @@ export default function Pemanfaatan() {
                       </p>
                       {p.peruntukan && <p className="text-xs text-gray-500">Peruntukan: {p.peruntukan}</p>}
                       {p.jenis_dokumen && <p className="text-xs text-gray-500">Jenis Dokumen: {p.jenis_dokumen}</p>}
+                      <DokumenLinks paths={p.dokumen_paths || []} />
                       {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -378,9 +381,15 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
       return
     }
     setErr(''); setSaving(true)
+    // ⚠️ `dokumen_paths` WAJIB ikut disalin — modal ini menulis ulang payload
+    // dari nol (bukan `{ ...p, ... }`), dan tanpa baris ini berkas yang sudah
+    // diunggah saat pembuatan akan lenyap diam-diam begitu header diedit.
+    // Modal ini sendiri tidak menawarkan ganti berkas (pola sama dgn
+    // Pengamanan) — kalau perlu diganti, batalkan & buat pemanfaatan baru.
     const payload: PemPayload = {
       jenis_pemanfaatan: jenis, mitra: mitra.trim(), alamat_mitra: alamat.trim() || undefined,
       mulai, masa_tahun: masaNum, berakhir, peruntukan: peruntukan.trim() || undefined, jenis_dokumen: jenisDok.trim() || undefined,
+      dokumen_paths: p.dokumen_paths,
     }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload }).eq('id', header.id)
@@ -478,6 +487,8 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
   const [noSk, setNoSk] = useState('')
   const [tglDok, setTglDok] = useState(todayStr())
   const [ket, setKet] = useState('')
+  const [dokPaths, setDokPaths] = useState<string[]>([])
+  const [dokUploading, setDokUploading] = useState(false)
 
   const [fGolongan, setFGolongan] = useState('')
   const [fSearch, setFSearch] = useState('')
@@ -490,6 +501,22 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
 
   const masaNum = Number(masa)
   const berakhir = hitungBerakhir(mulai, masaNum)
+
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `pemanfaatan/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
 
   async function tampilkan() {
     setLoading(true)
@@ -528,6 +555,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
       if (!mitra.trim()) { setErr('Mitra pemanfaatan wajib diisi.'); return }
       if (!mulai) { setErr('Tanggal mulai pemanfaatan wajib diisi.'); return }
       if (!Number.isFinite(masaNum) || masaNum <= 0) { setErr('Masa pemanfaatan (tahun) harus > 0.'); return }
+      if (dokPaths.length === 0) { setErr('Dokumen pemanfaatan wajib diunggah.'); return }
     }
     if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }
     setErr(''); setSaving(true)
@@ -538,6 +566,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
       const payload: PemPayload = {
         jenis_pemanfaatan: jenis, mitra: mitra.trim(), alamat_mitra: alamat.trim() || undefined,
         mulai, masa_tahun: masaNum, berakhir, peruntukan: peruntukan.trim() || undefined, jenis_dokumen: jenisDok.trim() || undefined,
+        dokumen_paths: dokPaths,
       }
       const { data, error } = await supabase.from('jurnal_header').insert({
         skpd_id: skpdId, kategori: 'pemanfaatan', jenis: 'pemanfaatan',
@@ -579,10 +608,13 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
         </div>
 
         {header ? (
-          <p className="text-sm text-gray-500">
-            {JENIS_PEMANFAATAN_LABEL[p.jenis_pemanfaatan || ''] || 'Pemanfaatan'} · Mitra: {p.mitra || '-'}
-            {' · '}{p.mulai || '-'} s.d. {p.berakhir || '-'} · Tgl. {header.tanggal} · {header.periode}
-          </p>
+          <>
+            <p className="text-sm text-gray-500">
+              {JENIS_PEMANFAATAN_LABEL[p.jenis_pemanfaatan || ''] || 'Pemanfaatan'} · Mitra: {p.mitra || '-'}
+              {' · '}{p.mulai || '-'} s.d. {p.berakhir || '-'} · Tgl. {header.tanggal} · {header.periode}
+            </p>
+            <DokumenLinks paths={p.dokumen_paths || []} label="Dokumen Pemanfaatan" />
+          </>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -629,6 +661,12 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
             <div className="sm:col-span-2">
               <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
               <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
+            </div>
+            <div className="sm:col-span-2">
+              <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+                judul="Dokumen Pemanfaatan" labelTombol="Upload Dokumen"
+                hint="perjanjian pemanfaatan — wajib sebelum bisa disimpan (foto / PDF, bisa lebih dari satu)"
+                kosongText="Belum ada dokumen — wajib diunggah sebelum pemanfaatan ini bisa disimpan." />
             </div>
           </div>
         )}

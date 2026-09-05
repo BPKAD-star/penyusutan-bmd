@@ -30,6 +30,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { DokumenBastField, DokumenLinks, namaFile } from './DokumenBastField'
 
 type JenisHapus = 'penghapusan_pemindahtanganan' | 'penghapusan_sebab_lain' | 'pengalihan_status'
 
@@ -106,8 +107,6 @@ type JurnalLine = {
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,sub_jenis,keterangan,kategori,approval_status,skpd_tujuan,rejected_reason,payload'
-
-const namaFile = (path: string) => path.split('/').pop() || path
 
 export default function Penghapusan() {
   const supabase = createClient()
@@ -386,11 +385,6 @@ export default function Penghapusan() {
     loadJurnals(skpd)
   }
 
-  async function bukaDokumen(path: string) {
-    const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-  }
-
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
   const namaSkpdById = (id: number | null) => skpdList.find(s => s.id === id)?.nama || '-'
 
@@ -584,15 +578,7 @@ export default function Penghapusan() {
                     {ditolak && j.rejected_reason && (
                       <p className="text-xs text-red-600">Alasan penolakan: {j.rejected_reason}</p>
                     )}
-                    {isAlih && (j.payload?.dokumen_paths?.length || 0) > 0 && (
-                      <p className="text-xs text-gray-500">
-                        Dokumen:{' '}
-                        {j.payload!.dokumen_paths!.map(p => (
-                          <button key={p} onClick={() => bukaDokumen(p)}
-                            className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
-                        ))}
-                      </p>
-                    )}
+                    <DokumenLinks paths={j.payload?.dokumen_paths || []} label={isAlih ? 'Dokumen' : 'Dokumen SK'} />
                     {disetujui && (
                       <p className="text-xs text-gray-400 italic">Sudah diterima SKPD tujuan — read-only. Pengembalian dilakukan SKPD tujuan lewat menu Penggunaan.</p>
                     )}
@@ -780,6 +766,11 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [err, setErr] = useState('')
 
   const isAlih = header ? header.kategori === 'pengalihan_status' : jenis === 'pengalihan_status'
+  // Hanya menggate jurnal Penghapusan yang BENAR-BENAR baru — nambah barang ke
+  // jurnal yang sudah ada (`header` terisi) dokumennya sudah diwajibkan saat
+  // jurnal itu dibuat, dan Pengalihan Status punya alurnya sendiri (dokumen
+  // sumbernya tetap opsional, tidak diminta digate).
+  const perluDokumenDulu = !header && PENGHAPUSAN_JENIS.includes(jenis) && dokPaths.length === 0
 
   async function tampilkan() {
     setLoading(true)
@@ -799,7 +790,10 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     if (!files || files.length === 0) return
     setDokUploading(true)
     for (const file of Array.from(files)) {
-      const path = `pengalihan/${crypto.randomUUID()}/${file.name}`
+      // Prefix ikut konteksnya — dua jenis dokumen berbeda berbagi state
+      // `dokPaths` yang sama (keduanya tak pernah tampil bersamaan, ditentukan
+      // oleh `jenis`), tapi tetap terpisah rapi di bucket.
+      const path = `${jenis === 'pengalihan_status' ? 'pengalihan' : 'penghapusan-sk'}/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
       if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
@@ -885,10 +879,16 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     if (!h) {
       // Buat header baru dulu.
       if (!noSk.trim()) { setErr('No. SK / dasar penghapusan wajib diisi.'); setSaving(false); return }
+      // Penjaga SESUNGGUHNYA (bukan cuma UI yang menggate "Pilih Barang") —
+      // sama alasannya dgn Pengadaan (commit 9910392): kalau kelak ada jalur
+      // lain yang bisa memanggil `simpan()` tanpa lewat gate di layar, ini
+      // yang menahannya.
+      if (dokPaths.length === 0) { setErr('Dokumen SK Penghapusan wajib diunggah.'); setSaving(false); return }
       const { data, error } = await supabase.from('jurnal_header').insert({
         skpd_id: skpdId, kategori: 'penghapusan', jenis,
         sub_jenis: jenis === 'penghapusan_pemindahtanganan' ? subJenis : null,
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+        payload: { dokumen_paths: dokPaths },
       }).select(HEADER_COLS).single()
       if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
       h = data as unknown as Header
@@ -928,7 +928,8 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Jenis</label>
-              <select className="select-filter w-full" value={jenis} onChange={e => setJenis(e.target.value as JenisHapus)}>
+              <select className="select-filter w-full" value={jenis}
+                onChange={e => { setJenis(e.target.value as JenisHapus); setDokPaths([]) }}>
                 {JENIS_OPT.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -979,11 +980,29 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                 )}
               </div>
             )}
+            {/* Wajib & DIGATE (keputusan user 2026-09-05) — beda dari Dokumen
+                Sumber pengalihan di atas yang masih opsional. "Pilih Barang" di
+                bawah baru muncul sesudah berkas ini ada, lihat `perluDokumenDulu`. */}
+            {PENGHAPUSAN_JENIS.includes(jenis) && (
+              <div className="sm:col-span-2">
+                <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+                  judul="Dokumen SK Penghapusan" labelTombol="Upload Dokumen SK"
+                  hint="wajib sebelum barang bisa dipilih di bawah (foto / PDF, bisa lebih dari satu)"
+                  kosongText="Belum ada dokumen — upload dulu sebelum bisa memilih barang di bawah." />
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Filter & pilih barang */}
+      {/* Filter & pilih barang — DIGATE sampai Dokumen SK Penghapusan ada
+          (hanya utk jenis Penghapusan yang benar2 baru; nambah barang ke
+          jurnal yang sudah ada / jenis Pengalihan tak digate). */}
+      {perluDokumenDulu ? (
+        <div className="card p-10 text-center text-amber-600 text-sm">
+          ⚠ Upload Dokumen SK Penghapusan dulu di atas — barang baru bisa dipilih sesudah dokumennya ada.
+        </div>
+      ) : (
       <div className="card p-5">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang</h2>
         <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -1062,6 +1081,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
           </button>
         </div>
       </div>
+      )}
     </div>
   )
 }

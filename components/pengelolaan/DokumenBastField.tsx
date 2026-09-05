@@ -15,6 +15,14 @@
 // KontrakForm & EditHeaderModal) — CODING-STANDARD §1.2 "rule of three":
 // diangkat ke sini supaya perbaikan berikutnya tak perlu disalin tiga kali.
 //
+// 2026-09-05: dipakai JUGA di Pengamanan (Berkas BAST + Berkas Pakta
+// Integritas — dua field terpisah, dua instance komponen ini), Pemanfaatan
+// (Dokumen Pemanfaatan — field baru, sebelumnya tak ada upload sama sekali),
+// & Penghapusan (Dokumen SK Penghapusan, DIGATE: "Pilih Barang" baru tampil
+// sesudah dokumennya ada — beda dari menu lain yang cuma menolak saat submit).
+// Karena itu label & teks tombolnya kini bisa dikustom (`judul`,
+// `labelTombol`) — dokumennya tak selalu "BAST".
+//
 // ⚠️ Input file mentah DISEMBUNYIKAN (`hidden`), dipicu lewat tombol bergaya.
 // Tampilan bawaan browser ("Choose Files · No file chosen") gampang terlewat
 // operator & tak menunjukkan bahwa ini WAJIB — beda dari kolom teks biasa yang
@@ -49,12 +57,18 @@ export function DokumenLinks({ paths, label = 'Dokumen' }: { paths: string[]; la
 
 export function DokumenBastField({
   paths, uploading, onUpload, onHapus,
+  judul = 'Dokumen BAST',
+  labelTombol,
   hint = 'wajib sebelum kontrak bisa disetujui (foto / PDF, bisa lebih dari satu)',
   kosongText = 'Belum ada dokumen — wajib diunggah sebelum kontrak bisa disimpan.',
 }: {
   paths: string[]; uploading: boolean
   onUpload: (files: FileList | null) => void; onHapus: (path: string) => void
-  /** Kalimat sesudah "Dokumen BAST *" — sesuaikan dgn syarat menu pemanggil. */
+  /** Judul field, mis. "Dokumen SK Penghapusan" — dokumennya tak selalu BAST. */
+  judul?: string
+  /** Teks tombol saat tidak sedang mengunggah. Baku: "Upload {judul}". */
+  labelTombol?: string
+  /** Kalimat sesudah "{judul} *" — sesuaikan dgn syarat menu pemanggil. */
   hint?: string
   /** Peringatan amber selama `paths` masih kosong. */
   kosongText?: string
@@ -63,14 +77,14 @@ export function DokumenBastField({
   return (
     <div>
       <label className="block text-xs text-gray-500 mb-1">
-        Dokumen BAST <span className="text-red-500">*</span>
+        {judul} <span className="text-red-500">*</span>
         <span className="text-gray-400"> — {hint}</span>
       </label>
       <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
         onChange={e => { onUpload(e.target.files); e.target.value = '' }} disabled={uploading} className="hidden" />
       <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
         className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-        📎 {uploading ? 'Mengunggah...' : 'Upload BAST'}
+        📎 {uploading ? 'Mengunggah...' : (labelTombol || `Upload ${judul}`)}
       </button>
       {paths.length === 0
         ? <p className="text-xs text-amber-600 mt-1">{kosongText}</p>

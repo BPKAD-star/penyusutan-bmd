@@ -24,11 +24,11 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import { PANGKAT_GOLONGAN, PENGAMANAN_ELIGIBLE_GOLONGAN, isPengamananEligible, pengamananCache } from '@/lib/pengamanan'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { DokumenBastField, DokumenLinks, bukaDokumen } from './DokumenBastField'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
 const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
 const todayStr = () => new Date().toISOString().slice(0, 10)
-const namaFile = (path: string) => path.split('/').pop() || path
 
 type PengPayload = {
   nama_pegawai?: string; nip?: string; pangkat_golongan?: string; jabatan?: string
@@ -192,11 +192,6 @@ export default function Pengamanan() {
     loadJurnals(skpd)
   }
 
-  async function bukaDokumen(path: string) {
-    const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-  }
-
   return (
     <FormShell judul="Pengamanan" msg={msg}
       deskripsi="Pilih SKPD, serahkan barang ke pegawai penanggung jawab (BAST + Pakta Integritas), lalu centang barang. Barang bisa dikembalikan lalu diserahkan ke pegawai lain. Umumnya Peralatan & Mesin dan Gedung & Bangunan.">
@@ -239,13 +234,8 @@ export default function Pengamanan() {
                       <p className="text-xs text-gray-500">{p.pangkat_golongan || '-'}{p.jabatan ? ` · ${p.jabatan}` : ''}</p>
                       <p className="text-xs text-gray-500">BAST: {j.no_sk} · Tgl. {j.tanggal} · {j.periode}</p>
                       {(p.pakta_no || p.pakta_tgl) && <p className="text-xs text-gray-500">Pakta Integritas: {p.pakta_no || '-'}{p.pakta_tgl ? ` · ${p.pakta_tgl}` : ''}</p>}
-                      {(p.bast_paths?.length || p.pakta_paths?.length) ? (
-                        <p className="text-xs text-gray-500">
-                          Dokumen:{' '}
-                          {(p.bast_paths || []).map(pt => <button key={pt} onClick={() => bukaDokumen(pt)} className="underline text-teal hover:opacity-80 mr-2">BAST: {namaFile(pt)}</button>)}
-                          {(p.pakta_paths || []).map(pt => <button key={pt} onClick={() => bukaDokumen(pt)} className="underline text-teal hover:opacity-80 mr-2">Pakta: {namaFile(pt)}</button>)}
-                        </p>
-                      ) : null}
+                      <DokumenLinks paths={p.bast_paths || []} label="BAST" />
+                      <DokumenLinks paths={p.pakta_paths || []} label="Pakta Integritas" />
                       {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -487,6 +477,8 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
   async function simpan() {
     if (!nama.trim()) { setErr('Nama pegawai wajib diisi.'); return }
     if (!noSk.trim()) { setErr('No. BAST wajib diisi.'); return }
+    if (bastPaths.length === 0) { setErr('Berkas BAST (Berita Acara Penyerahan) wajib diunggah.'); return }
+    if (paktaPaths.length === 0) { setErr('Berkas Pakta Integritas wajib diunggah.'); return }
     if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }
     setErr(''); setSaving(true)
 
@@ -558,24 +550,16 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
             <input type="date" className="select-filter w-full" max={dateBounds.max} value={paktaTgl} onChange={e => setPaktaTgl(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Berkas BAST (PDF/gambar)</label>
-            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={e => upload(e.target.files, 'bast')} disabled={uploading} className="text-xs" />
-            {bastPaths.map(p => (
-              <div key={p} className="flex items-center gap-2 text-xs text-gray-600 mt-1">
-                <span className="truncate">{namaFile(p)}</span>
-                <button onClick={() => hapusDok(p, 'bast')} className="text-red-500 hover:text-red-700" title="Hapus">×</button>
-              </div>
-            ))}
+            <DokumenBastField paths={bastPaths} uploading={uploading} onUpload={f => upload(f, 'bast')} onHapus={p => hapusDok(p, 'bast')}
+              judul="Berkas BAST" labelTombol="Upload BAST"
+              hint="Berita Acara Penyerahan — wajib sebelum BAST pengamanan bisa disimpan (foto / PDF, bisa lebih dari satu)"
+              kosongText="Belum ada berkas BAST — wajib diunggah sebelum BAST pengamanan bisa disimpan." />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Berkas Pakta Integritas (PDF/gambar)</label>
-            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple onChange={e => upload(e.target.files, 'pakta')} disabled={uploading} className="text-xs" />
-            {paktaPaths.map(p => (
-              <div key={p} className="flex items-center gap-2 text-xs text-gray-600 mt-1">
-                <span className="truncate">{namaFile(p)}</span>
-                <button onClick={() => hapusDok(p, 'pakta')} className="text-red-500 hover:text-red-700" title="Hapus">×</button>
-              </div>
-            ))}
+            <DokumenBastField paths={paktaPaths} uploading={uploading} onUpload={f => upload(f, 'pakta')} onHapus={p => hapusDok(p, 'pakta')}
+              judul="Berkas Pakta Integritas" labelTombol="Upload Pakta Integritas"
+              hint="wajib sebelum BAST pengamanan bisa disimpan (foto / PDF, bisa lebih dari satu)"
+              kosongText="Belum ada berkas Pakta Integritas — wajib diunggah sebelum BAST pengamanan bisa disimpan." />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
