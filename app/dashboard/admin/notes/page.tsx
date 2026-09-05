@@ -36,6 +36,17 @@ type Note = {
 
 const COLS = 'id,author_id,skpd_id,penulis,skpd_nama,isi,created_at,updated_at,selesai,selesai_at'
 
+// Saringan status (permintaan user 2026-09-05): satu daftar campuran jadi tak
+// terbaca begitu isinya puluhan. Bawaannya 'todo' — yang paling sering dicari
+// justru "apa yang BELUM dikerjakan"; 'semua' tetap disediakan supaya daftar
+// utuhnya tak hilang, dan 'done' jadi arsip yang bisa ditengok kalau perlu.
+type StatusFilter = 'todo' | 'done' | 'semua'
+const STATUS_OPT: { value: StatusFilter; label: string }[] = [
+  { value: 'todo', label: 'Belum Ditangani' },
+  { value: 'done', label: 'Sudah Ditangani' },
+  { value: 'semua', label: 'Semua' },
+]
+
 /** "16 Agu 2026, 14.05" — tanggal saja tak cukup, dalam satu hari bisa ada
  *  beberapa catatan dan urutannya jadi tak terbaca. */
 function waktu(iso: string): string {
@@ -58,6 +69,7 @@ export default function NotesPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editIsi, setEditIsi] = useState('')
   const [cari, setCari] = useState('')
+  const [status, setStatus] = useState<StatusFilter>('todo')
 
   // ⚠️ Seluruh badan di dalam try, `setLoading(false)` di FINALLY, dan error
   // DITAMPILKAN — aturan baku repo ini (rules.md §2.2). Daftar kosong yang
@@ -151,16 +163,32 @@ export default function NotesPage() {
     }, 'Catatan dihapus.')
   }
 
+  // Jumlah per status dihitung dari SELURUH catatan (tak ikut kata kunci
+  // pencarian) — angka di tombol saringan itu jawaban "berapa yang belum
+  // dikerjakan", dan itu tak boleh berubah-ubah cuma karena kotak Cari terisi.
+  const jml = useMemo(() => ({
+    todo: notes.filter(n => !n.selesai).length,
+    done: notes.filter(n => n.selesai).length,
+    semua: notes.length,
+  }), [notes])
+
   // Kotak Cari hanya berguna di tampilan admin (banyak SKPD jadi satu daftar).
   const tampil = useMemo(() => {
-    const filtered = scope.isAdmin ? notes.filter(n => cocokCari(cari, [n.penulis, n.skpd_nama, n.isi])) : notes
-    // Yang sudah Ditangani digeser ke BAWAH (permintaan user 2026-09-05) —
-    // supaya yang masih perlu ditindaklanjuti selalu di atas, tak tercampur
-    // catatan lama yang kebetulan belum lama ditandai selesai. `sort` di JS
-    // stabil sejak ES2019, jadi urutan created_at desc di dalam tiap kelompok
-    // (belum/sudah ditangani) tetap terjaga apa adanya.
+    const dicari = scope.isAdmin ? notes.filter(n => cocokCari(cari, [n.penulis, n.skpd_nama, n.isi])) : notes
+    const filtered = status === 'semua' ? dicari : dicari.filter(n => n.selesai === (status === 'done'))
+    // Mode 'done' diurutkan dari yang PALING BARU ditangani — di daftar arsip,
+    // yang baru saja dikerjakan itu yang paling sering dicari lagi (mis. untuk
+    // dibatalkan karena salah tandai). `selesai_at` bisa null pada baris lama,
+    // jatuh ke created_at supaya urutannya tetap punya arti.
+    if (status === 'done') {
+      return [...filtered].sort((a, b) => (b.selesai_at || b.created_at).localeCompare(a.selesai_at || a.created_at))
+    }
+    // Mode 'semua' & 'todo': yang sudah Ditangani digeser ke BAWAH (permintaan
+    // user 2026-09-05) — supaya yang masih perlu ditindaklanjuti selalu di atas.
+    // `sort` di JS stabil sejak ES2019, jadi urutan created_at desc di dalam
+    // tiap kelompok tetap terjaga apa adanya.
     return [...filtered].sort((a, b) => Number(a.selesai) - Number(b.selesai))
-  }, [notes, cari, scope.isAdmin])
+  }, [notes, cari, scope.isAdmin, status])
 
   const milikSendiri = (n: Note) => scope.userId != null && n.author_id === scope.userId
 
@@ -198,17 +226,35 @@ export default function NotesPage() {
 
       {scope.isAdmin && notes.length > 0 && (
         <div className="card p-4 mb-4">
-          <CariBox nilai={cari} onChange={setCari} jumlah={tampil.length} total={notes.length}
+          {/* `total` = jumlah dalam STATUS yang sedang dipilih, bukan seluruh
+              catatan — kalau tidak, saat menyaring "Belum Ditangani" tulisannya
+              jadi "3 dari 26" & terbaca seolah pencariannya membuang 23 catatan
+              yang sebenarnya memang sedang tidak dalam lingkup. */}
+          <CariBox nilai={cari} onChange={setCari} jumlah={tampil.length} total={jml[status]}
             satuan="catatan" placeholder="Cari penulis, SKPD, atau isi catatan..." />
         </div>
       )}
 
       <div className="card overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-medium text-gray-700">
             {scope.isAdmin ? 'Semua catatan' : 'Catatan Anda'}
           </p>
-          <span className="text-xs text-gray-400">{notes.length} catatan</span>
+          {/* Saringan status — jumlahnya ikut ditulis di tombolnya sendiri
+              supaya "berapa yang belum dikerjakan" terbaca tanpa harus
+              menekan apa pun dulu. */}
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_OPT.map(o => (
+              <button key={o.value} type="button" onClick={() => setStatus(o.value)}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  status === o.value
+                    ? 'bg-teal text-white border-teal'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-teal'
+                }`}>
+                {o.label} <span className={status === o.value ? 'opacity-80' : 'text-gray-400'}>({jml[o.value]})</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading ? (
@@ -217,7 +263,11 @@ export default function NotesPage() {
           <p className="p-8 text-center text-sm text-gray-400">
             {notes.length === 0
               ? (scope.isAdmin ? 'Belum ada catatan masuk dari SKPD mana pun.' : 'Anda belum menulis catatan.')
-              : `Tidak ada catatan yang cocok dengan "${cari}".`}
+              : cari.trim() !== ''
+                ? `Tidak ada catatan yang cocok dengan "${cari}".`
+                : status === 'todo'
+                  ? 'Semua catatan sudah ditangani. 🎉'
+                  : 'Belum ada catatan yang ditandai selesai.'}
           </p>
         ) : (
           <ul className="divide-y divide-gray-100">
