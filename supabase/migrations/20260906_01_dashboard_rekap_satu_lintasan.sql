@@ -11,10 +11,23 @@
 -- (CLAUDE.md & schema.md masih menulis 418rb — sudah basi, ikut dibetulkan).
 --
 -- ── TEMUAN UTAMA: MARGINNYA TINGGAL 8% ─────────────────────────────────────
---                                    LAMA       BARU (index DINGIN, blm VACUUM)
---   admin pemda .................. 7.326 ms  →  3.516 ms
---   pengurus Dinas Pendidikan .... 5.199 ms  →  3.307 ms
+--                                    LAMA          SESUDAH (terpasang + VACUUM)
+--   admin pemda .................. 7.326 ms  →  **271 ms**   (27×)
+--   pengurus Dinas Pendidikan .... 5.199 ms  →  **210 ms**   (25×)
+--   Heap Fetches per lintasan ....   56.493  →      2.981
+--   lintasan pemindaian register .        2  →          1
 --   pagu `statement_timeout` role `authenticated`: **8.000 ms**
+--   → margin yang tadinya tinggal 8% kini 97%.
+--
+-- Diverifikasi sesudah migrasi ini benar-benar dijalankan (2026-09-06):
+-- `Index Only Scan using idx_aset_dashboard_rekap` (SATU node, dulu dua),
+-- `proconfig` masih {search_path=public, work_mem=64MB}, ketiga setelan
+-- autovacuum menempel, `n_ins_since_vacuum` kembali 0, dan keluaran
+-- `fn_dashboard_rekap()` IDENTIK karakter-per-karakter dgn sebelum migrasi.
+--
+-- ⚠️ Run PERTAMA sesudahnya tetap terlihat lambat (3.240 ms) karena indexnya
+-- masih dingin — 3.966 blok dibaca dari disk. Jangan menilai dari satu
+-- pengukuran; run kedua 271 ms tanpa satu pun baca disk.
 --
 -- Jadi Dashboard bukan "kadang lambat" — ia SUDAH berdiri di bibir pagu (sisa
 -- 8% untuk admin), dan beban serentak sedikit saja atau cache yang mendingin

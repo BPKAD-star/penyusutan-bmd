@@ -319,8 +319,10 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   WHERE status='aktif'` (31 MB) + badan fungsi menyapu SEKALI lewat
   **`GROUPING SETS`**. Satu index melayani dua cabang: admin memindainya penuh
   secara index-only (predikatnya membuktikan qual-nya), non-admin tetap dapat
-  index-cond `skpd_id`. Terukur (index masih dingin, VACUUM belum jalan):
-  admin **7.326 → 3.516 ms**, Diknas **5.199 → 3.307 ms**, buffer 20.511 → 9.821.
+  index-cond `skpd_id`. **Hasil sesudah migrasi + VACUUM dijalankan
+  (2026-09-06): admin 7.326 → 271 ms (27×), Diknas 5.199 → 210 ms (25×),
+  Heap Fetches 56.493 → 2.981, lintasan 2 → 1.** Margin yang tadinya
+  tinggal 8% kini 97%, & keluaran fungsinya identik karakter-per-karakter.
   ⚠️ Dugaan awal bahwa subquery `cara` jatuh ke **Seq Scan** ternyata KELIRU —
   planner tetap memakai `idx_aset_skpd_rekap` sebagai Index Only Scan dgn
   `Index Cond` pada kolom kunci KEDUA. Sekali lagi: **jangan simpulkan rencana
