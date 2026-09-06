@@ -276,6 +276,74 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   regresi 20×; menaikkannya "biar aman" membungkam alarm. Yang dinaikkan hanya
   `fn_rekon_pos`/`fn_rekon_rekap`/`fn_rekap_bmd`, yang memang butuh puluhan detik.
 
+- **IMPORT MASSAL WAJIB DITUTUP `VACUUM (ANALYZE)` — ini sebab "kadang error,
+  kadang tidak"** (insiden 2026-09-06, migrasi 20260906_01). User melaporkan
+  Dashboard **muncul-hilang** menampilkan strip merah *"Rekap aset gagal dimuat
+  — canceling statement due to statement timeout"*, seluruh kartu 0. Yang
+  muncul-hilang bukan datanya, melainkan BIAYA query-nya.
+  **Diukur ke produksi dgn RLS aktif** (bukan perkiraan): bentuk lama
+  **7.326 ms untuk admin & 5.199 ms untuk pengurus Dinas Pendidikan**, lawan
+  pagu `authenticated` **8.000 ms** — sisa margin admin cuma **8%**. Jadi
+  halamannya bukan "kadang lambat", ia sudah berdiri di bibir pagu dan beban
+  serentak sedikit saja menjatuhkannya. ⚠️ Cabang NON-ADMIN ikut memburuk tanpa
+  ada yang sadar: 20260818_06 mencatat 434 ms, hari ini 5.199 ms — **12×**.
+  **Sebabnya:** `n_ins_since_vacuum` **53.609 baris**, `last_vacuum`
+  **2026-08-10**, `last_autovacuum` **2026-07-29**. Import 20260904_02 &
+  20260905_06 (PM ekstrakomptabel, 22.795 baris Dinkes saja) tak ditutup
+  `VACUUM`, dan autovacuum bawaan baru menyala sesudah **20%** tabel berubah —
+  di `aset` yang kini **471.761 baris / 276 MB** itu ±94rb baris, jadi tak
+  pernah terpicu. Halaman baru tak ditandai all-visible → "Index Only Scan"
+  berhenti jadi index-only: **`Heap Fetches: 56.493` di SETIAP lintasan**.
+  Begitu autovacuum akhirnya menyusul ia cepat lagi — sampai import berikutnya.
+  Persis pola "kadang". (`last_autoanalyze` justru segar: ambang autoanalyze
+  memang lebih rendah, jadi yang tertinggal khusus VACUUM-nya.)
+  ⚠️ **Tabel di repo ini nyaris tak pernah di-UPDATE/DELETE** (ledger
+  append-only, register hampir selalu INSERT), jadi ambang autovacuum berbasis
+  *dead tuple* nyaris tak pernah tersentuh — yang menyegarkan visibility map
+  cuma **`autovacuum_vacuum_insert_scale_factor`**, dan itu yang paling sering
+  terlewat. 20260906_01 menyetelnya 0,02 (+ `analyze_scale_factor` 0,01) untuk
+  `aset`, `transaksi_bmd`, & `aset_awal_2026`. Itu mencabut SEBABNYA.
+  **Aturannya: tiap migrasi import massal ditutup `VACUUM (ANALYZE) <tabel>`,
+  dijalankan sebagai perintah LEPAS** (`VACUUM` di dalam transaksi = `25001`,
+  dan karena SQL Editor membungkus skrip jadi satu transaksi, seluruh migrasi
+  ikut ter-ROLLBACK — lihat 20260810_01).
+  ⚠️ **Angka 418rb di dokumen ini & schema.md sudah BASI sejak lama** (nyatanya
+  471.761). Verifikasi ke DB sebelum mengutip angka skala dari sini.
+
+- **`fn_dashboard_rekap` menyapu register DUA KALI** (sebab kedua insiden yang
+  sama). Badannya (20260810_02) berisi dua subquery ber-qual SAMA PERSIS — satu
+  GROUP BY golongan, satu GROUP BY cara_perolehan; Postgres tak bisa
+  menyatukannya sendiri, jadi 471.393 baris disapu dua kali (`idx_aset_rekap_bmd`
+  + `idx_aset_skpd_rekap`, buffer 20.511). Obatnya `idx_aset_dashboard_rekap` —
+  **partial** `(skpd_id) INCLUDE (id, golongan, cara_perolehan, nilai_perolehan)
+  WHERE status='aktif'` (31 MB) + badan fungsi menyapu SEKALI lewat
+  **`GROUPING SETS`**. Satu index melayani dua cabang: admin memindainya penuh
+  secara index-only (predikatnya membuktikan qual-nya), non-admin tetap dapat
+  index-cond `skpd_id`. Terukur (index masih dingin, VACUUM belum jalan):
+  admin **7.326 → 3.516 ms**, Diknas **5.199 → 3.307 ms**, buffer 20.511 → 9.821.
+  ⚠️ Dugaan awal bahwa subquery `cara` jatuh ke **Seq Scan** ternyata KELIRU —
+  planner tetap memakai `idx_aset_skpd_rekap` sebagai Index Only Scan dgn
+  `Index Cond` pada kolom kunci KEDUA. Sekali lagi: **jangan simpulkan rencana
+  query dari membaca kode, ukur.**
+  ⚠️ **`aset.golongan` AMAN dipakai menggantikan `split_part(kode,…)`** — ia
+  kolom `GENERATED ALWAYS … STORED` yang ekspresinya PERSIS
+  `split_part(kode,'.',1)||'.'||split_part(kode,'.',2)||'.'||split_part(kode,'.',3)`,
+  jadi setara MENURUT DEFINISI (diperiksa: 0 dari 471.393 baris aktif
+  menyimpang). **JANGAN samakan dgn `aset_awal_2026.golongan`**, yang dihitung
+  dari `substring(kode from '^\d+\.\d+\.\d+')` — varian ITU memang bisa berbeda
+  untuk kode < 3 segmen (NULL, bukan `'1.3.'`).
+  Kesetaraan hasilnya dibuktikan di DATA PRODUKSI: fungsi baru dibuat
+  berdampingan di dalam transaksi, keluarannya dibandingkan dgn yang hidup, lalu
+  ROLLBACK — **identik** untuk admin MAUPUN pengurus Dinas Pendidikan.
+
+- **⚠️ `CREATE OR REPLACE FUNCTION` MENGHAPUS setelan `ALTER FUNCTION … SET`.**
+  Berlaku umum, bukan cuma di sini. `fn_dashboard_rekap` dapat
+  `SET work_mem TO '64MB'` lewat `ALTER FUNCTION` (20260818_06, 5.741 → 434 ms);
+  me-`CREATE OR REPLACE` badannya tanpa menuliskan ulang baris `SET` itu akan
+  **membatalkan perbaikan tersebut diam-diam, tanpa satu pun error**. Sebelum
+  mengganti badan fungsi mana pun, cek dulu `SELECT proname, proconfig FROM
+  pg_proc WHERE proname = '<nama>'` — dan salin ulang seluruh isinya.
+
 - **UKUR SEBAGAI PENGURUS SKPD TERBESAR, JANGAN sebagai admin/service_role.**
   Ini bukan saran kehati-hatian, ini syarat: sebagai service_role query yang
   RUSAK pun tetap cepat. uid Dinas Pendidikan yang dipakai mengukur seluruh

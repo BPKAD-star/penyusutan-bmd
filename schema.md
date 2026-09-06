@@ -208,7 +208,8 @@ Pola yang sama untuk `aset_select`, `sa_select`, dan policy `*_viewer_select`.
 
 ## 5. Index — dan alasannya
 
-Skala saat ini: `aset` ± 418.144 baris, `transaksi_bmd` ± 418.452 baris (99,9%
+Skala saat ini (diukur 2026-09-06): `aset` **471.761** baris / 276 MB,
+`transaksi_bmd` ± 418.452 baris (99,9%
 di antaranya `saldo_awal` hasil import baseline + ATL).
 
 | Index | Melayani |
@@ -217,6 +218,7 @@ di antaranya `saldo_awal` hasil import baseline + ATL).
 | `idx_aset_kode (kode)`, `idx_aset_kode_pattern (kode text_pattern_ops)` | Pencarian & `LIKE 'gol.%'` (hanya efektif **tanpa** RLS) |
 | `idx_aset_nibar_pattern (nibar text_pattern_ops)` | `generateNibars` — `nibar LIKE '<prefix>%'`; UNIQUE bawaan tidak cukup |
 | `idx_aset_status`, `idx_aset_wilayah` | Filter status & wilayah |
+| `idx_aset_dashboard_rekap` | **Partial** `(skpd_id) INCLUDE (id, golongan, cara_perolehan, nilai_perolehan) WHERE status='aktif'` (31 MB) — `fn_dashboard_rekap`. Satu index dua cabang: admin memindainya penuh secara index-only, non-admin dapat index-cond `skpd_id`. Menggantikan peran `idx_aset_skpd_rekap`, yang sengaja belum di-drop (migrasi 20260906_01) |
 | `idx_aset_tanah_skpd`, `idx_aset_angkutan_skpd` | **Partial** `(skpd_id) WHERE kode LIKE '<prefix>' AND status='aktif'` — halaman golongan tunggal (GIS Tanah, Kendaraan) |
 | `idx_trx_aset (aset_id)` | Kolektor terscope per aset |
 | `idx_trx_jenis_aset (jenis, aset_id)` | Status void/batal per aset |

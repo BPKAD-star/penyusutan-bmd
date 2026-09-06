@@ -75,12 +75,48 @@ function itemsPending(kategori: string, payload: PayloadLite): ItemPending[] {
   }))
 }
 
-export default function CaraPerolehanCards({ approved, approvedNilai }: {
+/**
+ * Peta id→nama SKPD, dipakai KEDUA popup. Diangkat jadi satu fungsi karena
+ * blok yang sama sudah disalin di dua tempat, dan salinannya sama-sama membawa
+ * dua cacat yang tak pernah bersuara:
+ *   · `.range()` TANPA `.order()` — di atas 1.000 SKPD (per hari ini 816, jadi
+ *     ambangnya sudah dekat) Postgres tak menjamin urutan antar-halaman, jadi
+ *     ada SKPD yang terlewat & ada yang dobel. Yang terlewat tampil sebagai
+ *     "SKPD #123" di popup, terbaca operator sebagai data rusak.
+ *   · `const { data }` tanpa `error` — gagal jadi peta kosong, dan SELURUH
+ *     baris popup berubah jadi "SKPD #<id>" tanpa satu pun keterangan.
+ * MELEMPAR; pemanggilnya menangkap & menampilkan pesannya.
+ */
+async function fetchSkpdNama(supabase: ReturnType<typeof createClient>): Promise<Record<number, string>> {
+  const peta: Record<number, string> = {}
+  let terakhir = 0
+  for (;;) {
+    const { data, error } = await supabase.from('admin_skpd').select('id,nama')
+      .gt('id', terakhir).order('id', { ascending: true }).limit(1000)
+    if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
+    if (!data || data.length === 0) break
+    for (const s of data as { id: number; nama: string }[]) { peta[s.id] = s.nama; terakhir = s.id }
+    if (data.length < 1000) break
+  }
+  return peta
+}
+
+// `errApproved` — pesan kegagalan `fn_dashboard_rekap` dari server (page.tsx).
+// Sisi "disetujui" kartu ini datang dari RPC itu, jadi kalau ia gagal, angka
+// yang boleh ditampilkan adalah "tidak diketahui", BUKAN nol: nol di sini tak
+// bisa dibedakan dari "memang belum ada barang yang disetujui", dan donutnya
+// akan menghitung persentase dari angka yang tidak ada.
+export default function CaraPerolehanCards({ approved, approvedNilai, errApproved }: {
   approved: Record<string, number>
   approvedNilai?: Record<string, number>
+  errApproved?: string
 }) {
   const supabase = createClient()
   const [pending, setPending] = useState<Record<string, number>>({})
+  // Sisi "menunggu" punya jalur query SENDIRI (client, ke jurnal_header), jadi
+  // ia bisa gagal sendirian sementara sisi "disetujui" baik-baik saja — dan
+  // sebaliknya. Dua penanda terpisah, jangan disatukan.
+  const [errPending, setErrPending] = useState('')
   const [detail, setDetail] = useState<{ mode: 'approved' | 'pending'; cara: CaraConfig } | null>(null)
 
   // ⚠️ Kelima kategori ditarik BERBARENGAN, bukan satu per satu. Versi lama
@@ -93,16 +129,31 @@ export default function CaraPerolehanCards({ approved, approvedNilai }: {
   // baru bisa diminta setelah yang sekarang tiba.
   useEffect(() => {
     (async () => {
+      const galat: string[] = []
       const pasangan = await Promise.all(CARA_LIST.map(async c => {
         if (c.kategoriJurnal.length === 0) return [c.key, 0] as const
         let total = 0
+        let terakhir = ''
         // `.in(...)` — satu cara perolehan bisa punya beberapa kategori kartu
         // (Pengadaan = non-fisik + konstruksi), lihat catatan di CARA_LIST.
-        for (let from = 0; ; from += 500) {
-          const { data } = await supabase.from('jurnal_header').select('kategori,payload')
-            .in('kategori', c.kategoriJurnal).eq('approval_status', 'pending').range(from, from + 499)
+        //
+        // ⚠️ KEYSET (`.gt('id', terakhir)` + `.order('id')`), BUKAN `.range()`
+        // tanpa urutan seperti sebelumnya. Dua cacat sekaligus (CLAUDE.md,
+        // "kolektor halaman-demi-halaman"): (1) paginasi TANPA `ORDER BY` — di
+        // atas 500 kartu Postgres tak menjamin urutan antar-halaman, jadi ada
+        // yang terlewat & ada yang DOBEL diam-diam; (2) `const { data }` tanpa
+        // `error` — query gagal jadi terbaca "0 menunggu", persis kebalikan
+        // dari kenyataan (kartu yang belum disetujui justru jadi tak terlihat).
+        for (;;) {
+          let q = supabase.from('jurnal_header').select('id,kategori,payload')
+            .in('kategori', c.kategoriJurnal).eq('approval_status', 'pending')
+            .order('id', { ascending: true }).limit(500)
+          if (terakhir) q = q.gt('id', terakhir)
+          const { data, error } = await q
+          if (error) { galat.push(`${c.label}: ${error.message}`); return [c.key, 0] as const }
           if (!data || data.length === 0) break
-          for (const r of data as { kategori: string; payload: PayloadLite }[]) {
+          for (const r of data as { id: string; kategori: string; payload: PayloadLite }[]) {
+            terakhir = r.id
             total += itemsPending(r.kategori, r.payload || {}).length
           }
           if (data.length < 500) break
@@ -110,17 +161,32 @@ export default function CaraPerolehanCards({ approved, approvedNilai }: {
         return [c.key, total] as const
       }))
       setPending(Object.fromEntries(pasangan))
+      if (galat.length) setErrPending(galat.join(' · '))
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
+      {errApproved && (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">
+          <span className="font-semibold">Angka &ldquo;disetujui&rdquo; gagal dimuat</span> — {errApproved}.
+          Yang ditandai <span className="font-semibold">–</span> di bawah bukan nol, melainkan data yang tidak
+          berhasil diambil. Angka &ldquo;menunggu&rdquo; tetap benar. Muat ulang halaman; kalau berulang, kabari admin.
+        </div>
+      )}
+      {errPending && (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">
+          <span className="font-semibold">Angka &ldquo;menunggu&rdquo; gagal dimuat</span> — {errPending}.
+          Angka menunggu di bawah <span className="font-semibold">bukan nol yang sebenarnya</span>.
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         {CARA_LIST.map(c => {
           const disetujui = approved[c.key] || 0
           const belum = pending[c.key] || 0
           return (
             <CaraCard key={c.key} cara={c} disetujui={disetujui} belum={belum} nilai={approvedNilai?.[c.key] || 0}
+              gagalDisetujui={!!errApproved}
               onClickApproved={() => setDetail({ mode: 'approved', cara: c })}
               onClickPending={() => setDetail({ mode: 'pending', cara: c })} />
           )
@@ -136,16 +202,25 @@ export default function CaraPerolehanCards({ approved, approvedNilai }: {
   )
 }
 
-function CaraCard({ cara, disetujui, belum, nilai, onClickApproved, onClickPending }: {
-  cara: CaraConfig; disetujui: number; belum: number; nilai: number
+function CaraCard({ cara, disetujui, belum, nilai, gagalDisetujui, onClickApproved, onClickPending }: {
+  cara: CaraConfig; disetujui: number; belum: number; nilai: number; gagalDisetujui?: boolean
   onClickApproved: () => void; onClickPending: () => void
 }) {
   const total = disetujui + belum
-  const pct = total > 0 ? Math.round((disetujui / total) * 100) : 100
+  // ⚠️ TIGA keadaan, bukan dua — dan yang dua terakhir dulu ditampilkan sama:
+  //   · angkanya ada              → persentase sungguhan
+  //   · sisi "disetujui" GAGAL    → `null`, tampil `?` (dulu: 0% / 100%, yaitu
+  //     persentase yang dihitung dari angka yang tidak pernah terbaca)
+  //   · belum ada barang sama sekali → `null` juga. Versi lama menulis 100%
+  //     untuk "0 disetujui · 0 menunggu"; 100% dari NOL itu bukan kabar baik,
+  //     tapi terbaca persis seperti kabar baik.
+  const pct = gagalDisetujui || total === 0 ? null : Math.round((disetujui / total) * 100)
   return (
     <div className="card p-4">
       <p className="text-xs text-gray-600 leading-tight">{cara.label}</p>
-      <p className="text-sm font-bold text-teal mb-1 truncate" title={formatRp(nilai)}>{formatRp(nilai)}</p>
+      <p className="text-sm font-bold text-teal mb-1 truncate" title={gagalDisetujui ? 'Tidak dapat dibaca' : formatRp(nilai)}>
+        {gagalDisetujui ? <span className="text-gray-300">–</span> : formatRp(nilai)}
+      </p>
       {/* ⚠️ `min-w-0` di baris ini & di kolom keterangan BUKAN hiasan: tanpa itu
           min-width flex item = min-content, jadi kolom keterangan menolak
           menyempit dan teksnya MELUBER keluar kartu — di layar sempit (mis.
@@ -156,17 +231,25 @@ function CaraCard({ cara, disetujui, belum, nilai, onClickApproved, onClickPendi
       <div className="flex items-center gap-3 mt-1 min-w-0">
         <div
           className="relative flex-shrink-0"
-          style={{ width: 56, height: 56, borderRadius: '50%', background: `conic-gradient(#0d9488 ${pct}%, #fbbf24 ${pct}% 100%)` }}
-          title={`${pct}% disetujui`}
+          style={{
+            width: 56, height: 56, borderRadius: '50%',
+            background: pct === null ? '#e5e7eb' : `conic-gradient(#0d9488 ${pct}%, #fbbf24 ${pct}% 100%)`,
+          }}
+          title={pct === null
+            ? (gagalDisetujui ? 'Proporsi tidak dapat dihitung — angka disetujui gagal dimuat' : 'Belum ada barang')
+            : `${pct}% disetujui`}
         >
           <div className="absolute inset-[5px] bg-white rounded-full flex items-center justify-center">
-            <span className="text-[10px] font-semibold text-gray-700">{pct}%</span>
+            <span className="text-[10px] font-semibold text-gray-700">{pct === null ? (gagalDisetujui ? '?' : '–') : `${pct}%`}</span>
           </div>
         </div>
         <div className="text-xs space-y-1 min-w-0">
-          <button onClick={onClickApproved} className="flex items-start gap-1.5 hover:underline text-left min-w-0" disabled={disetujui === 0}>
+          {/* Tombolnya ikut dimatikan saat gagal: popup rinciannya menyusun
+              angkanya sendiri dari `aset`, jadi ia bisa menampilkan daftar yang
+              justru bertentangan dgn `–` di kartu ini. */}
+          <button onClick={onClickApproved} className="flex items-start gap-1.5 hover:underline text-left min-w-0" disabled={gagalDisetujui || disetujui === 0}>
             <span className="w-2 h-2 rounded-full bg-teal inline-block flex-shrink-0 mt-1" />
-            <span className="text-gray-700">{nf(disetujui)} disetujui</span>
+            <span className="text-gray-700">{gagalDisetujui ? <span className="text-gray-400">– disetujui</span> : `${nf(disetujui)} disetujui`}</span>
           </button>
           <button onClick={onClickPending} className="flex items-start gap-1.5 hover:underline text-left min-w-0" disabled={belum === 0}>
             <span className="w-2 h-2 rounded-full bg-amber-400 inline-block flex-shrink-0 mt-1" />
@@ -201,45 +284,63 @@ const LAIN = 'lain'
 function ApprovedDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () => void }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
   const [rows, setRows] = useState<BarisMatriks[]>([])
 
   useEffect(() => {
     (async () => {
-      const skpdNama: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data as { id: number; nama: string }[]) skpdNama[s.id] = s.nama
-        if (data.length < 1000) break
-      }
+      // ⚠️ Seluruh badan di dalam `try` + `setLoading(false)` di `finally`,
+      // BUKAN di akhir jalur sukses (CLAUDE.md, "kolektor fail-closed").
+      // Sebelumnya satu query yang gagal meninggalkan popup ini di "Memuat..."
+      // SELAMANYA, tanpa sepatah pun keterangan.
+      try {
+        const skpdNama = await fetchSkpdNama(supabase)
 
-      const agg = new Map<number, Record<string, SelMatriks>>()
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('aset')
-          .select('kode,nilai_perolehan,skpd_id').eq('cara_perolehan', cara.jenisTransaksi).eq('status', 'aktif')
-          .range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const r of data as { kode: string; nilai_perolehan: number; skpd_id: number }[]) {
-          const g = kodeLevel3(r.kode)
-          const kolom = KODE_GOL.has(g) ? g : LAIN
-          const baris = agg.get(r.skpd_id) || {}
-          const sel = baris[kolom] || { count: 0, nilai: 0 }
-          sel.count += 1; sel.nilai += r.nilai_perolehan || 0
-          baris[kolom] = sel
-          agg.set(r.skpd_id, baris)
+        const agg = new Map<number, Record<string, SelMatriks>>()
+        // ⚠️ KEYSET, bukan `.range()` tanpa urutan. Popup ini menjumlah RUPIAH
+        // per SKPD × jenis aset — paginasi tak berurutan berarti ada baris yang
+        // terlewat & ada yang DIHITUNG DUA KALI, dan hasilnya tetap terlihat
+        // masuk akal. `id` ikut di-select semata-mata sebagai kunci kursor.
+        let terakhir = ''
+        for (;;) {
+          let q = supabase.from('aset')
+            .select('id,kode,nilai_perolehan,skpd_id')
+            .eq('cara_perolehan', cara.jenisTransaksi).eq('status', 'aktif')
+            .order('id', { ascending: true }).limit(1000)
+          if (terakhir) q = q.gt('id', terakhir)
+          const { data, error } = await q
+          if (error) throw new Error(error.message)
+          if (!data || data.length === 0) break
+          for (const r of data as { id: string; kode: string; nilai_perolehan: number; skpd_id: number }[]) {
+            terakhir = r.id
+            const g = kodeLevel3(r.kode)
+            const kolom = KODE_GOL.has(g) ? g : LAIN
+            const baris = agg.get(r.skpd_id) || {}
+            const sel = baris[kolom] || { count: 0, nilai: 0 }
+            sel.count += 1; sel.nilai += r.nilai_perolehan || 0
+            baris[kolom] = sel
+            agg.set(r.skpd_id, baris)
+          }
+          if (data.length < 1000) break
         }
-        if (data.length < 1000) break
-      }
 
-      setRows([...agg.entries()]
-        .map(([id, sel]) => ({
-          skpd: skpdNama[id] || `SKPD #${id}`,
-          sel,
-          count: Object.values(sel).reduce((s, c) => s + c.count, 0),
-          nilai: Object.values(sel).reduce((s, c) => s + c.nilai, 0),
-        }))
-        .sort((a, b) => a.skpd.localeCompare(b.skpd)))
-      setLoading(false)
+        setRows([...agg.entries()]
+          .map(([id, sel]) => ({
+            skpd: skpdNama[id] || `SKPD #${id}`,
+            sel,
+            count: Object.values(sel).reduce((s, c) => s + c.count, 0),
+            nilai: Object.values(sel).reduce((s, c) => s + c.nilai, 0),
+          }))
+          .sort((a, b) => a.skpd.localeCompare(b.skpd)))
+      } catch (e) {
+        // Gagal di tengah = angka SEBAGIAN. Buang barisnya & katakan sebabnya —
+        // matriks rupiah yang kurang separuh jauh lebih mahal daripada popup
+        // yang jujur mengaku gagal.
+        setRows([])
+        setErr(e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoading(false)
+      }
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -257,6 +358,11 @@ function ApprovedDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () 
     <Modal title={`${cara.label} — Sudah Disetujui`} onClose={onClose} lebar="max-w-6xl">
       {loading ? (
         <p className="text-sm text-gray-400 text-center py-8">Memuat...</p>
+      ) : err ? (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          <span className="font-semibold">Rincian gagal dimuat</span> — {err}.
+          Tabelnya sengaja tidak ditampilkan: angka yang kurang sebagian terlihat sah.
+        </div>
       ) : rows.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">Belum ada data.</p>
       ) : (
@@ -334,29 +440,33 @@ function SelIsi({ count, nilai, tebal }: { count: number; nilai: number; tebal?:
 function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () => void }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
   const [bySkpd, setBySkpd] = useState<Record<string, PendingHeaderLite[]>>({})
 
   useEffect(() => {
     if (cara.kategoriJurnal.length === 0) { setLoading(false); return }
     (async () => {
-      const skpdMap: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data as { id: number; nama: string }[]) skpdMap[s.id] = s.nama
-        if (data.length < 1000) break
+      // `finally` yang menutup "Memuat...", bukan akhir jalur sukses — lihat
+      // catatan yang sama di ApprovedDetailModal.
+      try {
+        const skpdMap = await fetchSkpdNama(supabase)
+        const { data: headers, error } = await supabase.from('jurnal_header')
+          .select('id,no_sk,tanggal,skpd_id,kategori,payload')
+          .in('kategori', cara.kategoriJurnal).eq('approval_status', 'pending')
+          .order('tanggal', { ascending: false })
+        if (error) throw new Error(error.message)
+        const grouped: Record<string, PendingHeaderLite[]> = {}
+        for (const h of (headers || []) as PendingHeaderLite[]) {
+          const nama = skpdMap[h.skpd_id] || `SKPD #${h.skpd_id}`
+          ;(grouped[nama] ||= []).push({ ...h, payload: h.payload || {} })
+        }
+        setBySkpd(grouped)
+      } catch (e) {
+        setBySkpd({})
+        setErr(e instanceof Error ? e.message : String(e))
+      } finally {
+        setLoading(false)
       }
-      const { data: headers } = await supabase.from('jurnal_header')
-        .select('id,no_sk,tanggal,skpd_id,kategori,payload')
-        .in('kategori', cara.kategoriJurnal).eq('approval_status', 'pending')
-        .order('tanggal', { ascending: false })
-      const grouped: Record<string, PendingHeaderLite[]> = {}
-      for (const h of (headers || []) as PendingHeaderLite[]) {
-        const nama = skpdMap[h.skpd_id] || `SKPD #${h.skpd_id}`
-        ;(grouped[nama] ||= []).push({ ...h, payload: h.payload || {} })
-      }
-      setBySkpd(grouped)
-      setLoading(false)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -368,6 +478,11 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
         <p className="text-sm text-gray-400 text-center py-8">Cara perolehan ini belum pakai alur draft/approval — data langsung masuk saat diinput.</p>
       ) : loading ? (
         <p className="text-sm text-gray-400 text-center py-8">Memuat...</p>
+      ) : err ? (
+        <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          <span className="font-semibold">Rincian gagal dimuat</span> — {err}.
+          Daftar di bawah sengaja dikosongkan; jangan dibaca sebagai &ldquo;tidak ada yang menunggu&rdquo;.
+        </div>
       ) : skpdNames.length === 0 ? (
         <p className="text-sm text-gray-400 text-center py-8">Tidak ada kontrak yang menunggu persetujuan.</p>
       ) : (

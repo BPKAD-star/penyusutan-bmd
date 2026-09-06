@@ -309,8 +309,10 @@ async function SectionJenis() {
           data yang tidak berhasil diambil. Muat ulang halaman; kalau berulang, kabari admin.
         </div>
       )}
+      {/* Sub-judul ikut jujur: saat gagal, `Register BMD — 0 aset · 0` itu
+          statistik KARANGAN yang terbaca sebagai "registernya memang kosong". */}
       <Section title="Total Aset per Jenis"
-        sub={`Register BMD — ${nf(totalRegister)} aset · ${formatRp(totalNilai)}`}>
+        sub={scan.err ? 'Register BMD — jumlah tidak dapat dibaca' : `Register BMD — ${nf(totalRegister)} aset · ${formatRp(totalNilai)}`}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {GOLONGAN_REKAP.map(g => {
             const d = gol[g.kode] || { count: 0, nilai: 0 }
@@ -325,8 +327,13 @@ async function SectionJenis() {
                   <p className="text-[11px] text-gray-400">{g.kode}</p>
                 </div>
                 <p className="text-xs text-gray-600 leading-tight mt-2 h-8">{g.uraian}</p>
-                <p className="text-xl font-bold text-gray-900 mt-1">{nf(d.count)} <span className="text-xs font-normal text-gray-400">unit</span></p>
-                <p className="text-xs font-medium text-teal mt-1">{formatRp(d.nilai)}</p>
+                {/* Gagal → `–`, BUKAN `0 unit · 0`. Angka nol di kartu ini tak
+                    bisa dibedakan dari golongan yang memang belum ada isinya. */}
+                <p className="text-xl font-bold text-gray-900 mt-1">
+                  {scan.err ? <span className="text-gray-300">–</span>
+                            : <>{nf(d.count)} <span className="text-xs font-normal text-gray-400">unit</span></>}
+                </p>
+                <p className="text-xs font-medium text-teal mt-1">{scan.err ? <span className="text-gray-300">–</span> : formatRp(d.nilai)}</p>
               </div>
             )
           })}
@@ -336,12 +343,21 @@ async function SectionJenis() {
   )
 }
 
+// ⚠️ `errApproved` DIOPER, bukan cuma dipakai SectionJenis. Seksi ini membaca
+// `getScan()` yang SAMA, jadi kalau RPC-nya gagal, sisi "disetujui" di kelima
+// kartu ini ikut nol — dan sampai 2026-09-06 nol itu tampil TANPA satu pun
+// tanda di seksinya sendiri, lengkap dengan donut yang menghitung persentase
+// dari angka yang tidak ada ("0% disetujui" padahal yang benar "tidak
+// diketahui"). Banner di seksi ATAS tidak menutupinya: operator yang menggulir
+// langsung ke seksi ini tak pernah melihatnya. Keluarga INS-06/INS-08 — nol
+// yang terlihat sah lebih mahal daripada pesan error.
 async function SeksiCaraPerolehan() {
   const scan = await getScan()
   const cn = scan.caraNilai
   const cc = scan.caraCount
   return (
     <CaraPerolehanCards
+      errApproved={scan.err}
       approved={{ pengadaan: cc['pengadaan'] || 0, hibah: cc['hibah_masuk'] || 0, tukarMenukar: cc['tukar_menukar'] || 0, inventarisasi: cc['hasil_inventarisasi'] || 0, lainnya: cc['perolehan_lainnya'] || 0 }}
       approvedNilai={{ pengadaan: cn['pengadaan'] || 0, hibah: cn['hibah_masuk'] || 0, tukarMenukar: cn['tukar_menukar'] || 0, inventarisasi: cn['hasil_inventarisasi'] || 0, lainnya: cn['perolehan_lainnya'] || 0 }} />
   )
