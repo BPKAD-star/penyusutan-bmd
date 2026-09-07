@@ -16,6 +16,7 @@ import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode, koreksiFieldKeys, allSameGolongan, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
+import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { useDateBounds, useTahunBukuMap } from '@/components/useTahunBuku'
 import FormShell from './FormShell'
 import { backdropClose } from '@/components/backdropClose'
@@ -79,9 +80,13 @@ const kunciGabung = (k: { kode: string; nilai_perolehan: number; tgl_perolehan: 
   `${k.kode}|${Math.round(k.nilai_perolehan)}|${k.tgl_perolehan || '-'}`
 // prev = nilai field SEBELUM koreksi_spesifikasi (utk restore saat batal).
 type LinePayload = { nilai_lama?: number; nilai_perolehan_baru?: number; survivor_nibar?: string; prev?: Record<string, unknown> } & Record<string, unknown>
+// Dokumen sumber kartu koreksi. Sampai 2026-09-07 menu ini satu-satunya menu
+// ber-SK yang tak punya berkas sama sekali; sekarang WAJIB untuk Pemecahan
+// Barang (permintaan user) — alasan lain sengaja belum disentuh.
+type HeaderPayload = { dokumen_paths?: string[] } | null
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string; jenis: Alasan
-  keterangan: string | null; kategori: 'koreksi'
+  keterangan: string | null; kategori: 'koreksi'; payload: HeaderPayload
 }
 type JurnalLine = {
   trx_id: number         // id baris ledger koreksi — dipakai target_trx_id saat batal
@@ -91,7 +96,7 @@ type JurnalLine = {
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
 // ── Pemecahan Barang (alasan ke-4 di Tambah Jurnal: 1 induk → N pecahan) ────
-type PemecahanHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null }
+type PemecahanHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null; payload: HeaderPayload }
 type PemecahanRow = { trx_id: number; aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; jumlah: number; nilai: number }
 type PemecahanJurnal = PemecahanHeader & { induk: PemecahanRow | null; pecahan: PemecahanRow[]; total: number; dibatalkan: boolean }
 
@@ -99,14 +104,17 @@ type PemecahanJurnal = PemecahanHeader & { induk: PemecahanRow | null; pecahan: 
 // Cermin dari Pemecahan, dengan satu beda mendasar: hasil gabungan ADALAH
 // induknya sendiri (aset & NIBAR yang sudah ada), jadi tak ada aset baru dan
 // `penggabungan_masuk` TIDAK didaftarkan di `LAHIR` (lib/visibilitas.ts).
-type PenggabunganHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null }
+type PenggabunganHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null; payload: HeaderPayload }
 type PenggabunganRow = { trx_id: number; aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai: number }
 type PenggabunganJurnal = PenggabunganHeader & {
   induk: (PenggabunganRow & { nilaiLama: number; nilaiBaru: number }) | null
   sumber: PenggabunganRow[]; dibatalkan: boolean
 }
 
-const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori'
+const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori,payload'
+// Kolom `aset` yang dibutuhkan `Barang` — dipakai tabel pilih barang DAN saat
+// menyeret satu pecahan ke tab Spesifikasi dari kartu Pemecahan.
+const BARANG_COLS = 'id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id,tgl_perolehan,cara_perolehan,foto_paths,intra_ekstra'
 
 function ringkasanBaris(l: JurnalLine, jenis: Alasan): string {
   const p = l.payload || {}
@@ -149,6 +157,12 @@ function KoreksiTransaksi() {
   const [addTo, setAddTo] = useState<Header | null>(null)
   const [editing, setEditing] = useState<Header | null>(null)
   const [batalId, setBatalId] = useState<string | null>(null)
+  // Pintasan "✎ Spesifikasi" di kartu Pemecahan: barang pecahan diseret ke tab
+  // Spesifikasi jurnal BARU, sudah tercentang. Sengaja lewat alur koreksi yang
+  // sudah ada — bukan UPDATE senyap ke `aset` — supaya perbaikannya tetap punya
+  // baris ledger `koreksi_spesifikasi` + `payload.prev` yang bisa dibatalkan.
+  const [presetSpek, setPresetSpek] = useState<{ barang: Barang; asal: string } | null>(null)
+  const [presetBusy, setPresetBusy] = useState<string | null>(null)
   // Batal koreksi — pilih baris (per trx_id), lalu batalkan.
   const [selBatal, setSelBatal] = useState<Record<number, boolean>>({})
   const [batalling, setBatalling] = useState(false)
@@ -285,9 +299,22 @@ function KoreksiTransaksi() {
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null); setSelBatal({}) }, [skpd, loadJurnals])
+  useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null); setSelBatal({}); setPresetSpek(null) }, [skpd, loadJurnals])
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
+
+  // Koreksi spesifikasi satu pecahan yang TERLANJUR tersimpan kurang lengkap.
+  // Barangnya ditarik utuh dulu (bukan dioper dari baris kartu) — `Barang` butuh
+  // kolom yang tak ada di baris ledger, dan `foto_paths` yang salah bikin popup
+  // spesifikasi menimpa foto barang dgn daftar kosong.
+  async function koreksiSpekPecahan(p: PemecahanRow, j: PemecahanJurnal) {
+    setMsg(''); setPresetBusy(p.aset_id)
+    const { data, error } = await supabase.from('aset').select(BARANG_COLS).eq('id', p.aset_id).single()
+    setPresetBusy(null)
+    if (error || !data) { setMsg(`Error: gagal memuat barang pecahan — ${error?.message || 'tidak ditemukan'}`); return }
+    setPresetSpek({ barang: data as unknown as Barang, asal: j.no_sk })
+    setAddTo(null); setMode('tambah')
+  }
 
   // Batal Koreksi (Nilai / Spesifikasi / Pencatatan Ganda) — transaksi pembalik
   // append-only, dicatat HARI INI. Guard: barang tak boleh punya transaksi LEBIH
@@ -478,8 +505,9 @@ function KoreksiTransaksi() {
         <div className="card p-12 text-center text-gray-400 text-sm">Pilih SKPD di atas untuk melihat &amp; membuat jurnal koreksi.</div>
       ) : mode === 'tambah' ? (
         <KoreksiForm skpdId={Number(skpd)} skpdNama={skpdNama || ''} golonganLabels={golonganLabels} header={null}
-          onCancel={() => setMode('list')}
-          onSaved={n => { setMode('list'); setMsg(`Jurnal tersimpan — ${n} barang dikoreksi.`); loadJurnals(skpd) }} />
+          preset={presetSpek}
+          onCancel={() => { setMode('list'); setPresetSpek(null) }}
+          onSaved={n => { setMode('list'); setPresetSpek(null); setMsg(`Jurnal tersimpan — ${n} barang dikoreksi.`); loadJurnals(skpd) }} />
       ) : addTo ? (
         <KoreksiForm skpdId={Number(skpd)} skpdNama={skpdNama || ''} golonganLabels={golonganLabels} header={addTo}
           onCancel={() => setAddTo(null)}
@@ -488,7 +516,7 @@ function KoreksiTransaksi() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} koreksi · {pemecahanJurnals.length} pemecahan · {penggabunganJurnals.length} penggabungan</span>
-            <button className="btn-primary" onClick={() => { setMsg(''); setMode('tambah') }}>+ Tambah Jurnal</button>
+            <button className="btn-primary" onClick={() => { setMsg(''); setPresetSpek(null); setMode('tambah') }}>+ Tambah Jurnal</button>
           </div>
           {loadingJurnal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
@@ -498,6 +526,8 @@ function KoreksiTransaksi() {
             {pemecahanJurnals.map(j => (
               <PemecahanCard key={j.id} j={j} busy={batalId === j.id}
                 bisaBatal={tahunMap[parsePeriode(j.periode).tahun] === 'terbuka'}
+                spekBusy={presetBusy}
+                onKoreksiSpek={p => koreksiSpekPecahan(p, j)}
                 onBatal={() => handleBatalPemecahan(j)} />
             ))}
             {penggabunganJurnals.map(j => (
@@ -650,25 +680,33 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
 }
 
 // ── Sub-view: (opsional header baru) + alasan + pilih barang ────────────────
-function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSaved }: {
+function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCancel, onSaved }: {
   skpdId: number; skpdNama: string; golonganLabels: Record<string, string>
-  header: Header | null; onCancel: () => void; onSaved: (n: number) => void
+  header: Header | null
+  /** Datang dari "✎ Spesifikasi" di kartu Pemecahan: alasan dipaku ke
+   *  Spesifikasi Barang & pecahannya sudah tercentang. */
+  preset?: { barang: Barang; asal: string } | null
+  onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
   const dateBounds = useDateBounds()
 
-  const [alasan, setAlasan] = useState<Alasan>(header?.jenis || 'nilai_perolehan')
+  const [alasan, setAlasan] = useState<Alasan>(header?.jenis || (preset ? 'spesifikasi' : 'nilai_perolehan'))
   const [noSk, setNoSk] = useState('')
   const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
   const [ket, setKet] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  // Dokumen sumber kartu — sementara ini cuma dipakai (& diwajibkan) alasan
+  // Pemecahan Barang.
+  const [dokPaths, setDokPaths] = useState<string[]>([])
+  const [dokUploading, setDokUploading] = useState(false)
 
   // ── Nilai Perolehan: barang + nilai baru per-baris ──
   const [fGolongan, setFGolongan] = useState('')
   const [fSearch, setFSearch] = useState('')
-  const [rows, setRows] = useState<Barang[]>([])
-  const [loaded, setLoaded] = useState(false)
+  const [rows, setRows] = useState<Barang[]>(preset ? [preset.barang] : [])
+  const [loaded, setLoaded] = useState(!!preset)
   const [loading, setLoading] = useState(false)
   const [selNilai, setSelNilai] = useState<Record<string, { barang: Barang; nilaiBaru: string }>>({})
   // Uraian (nama baku per kode) — dipakai tabel pilih barang di tab Spesifikasi
@@ -682,7 +720,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   const [survivorId, setSurvivorId] = useState<string | null>(null)
 
   // ── Spesifikasi: pilih barang (golongan → list → centang) + edit lewat popup ──
-  const [selSpek, setSelSpek] = useState<Record<string, Barang>>({})
+  const [selSpek, setSelSpek] = useState<Record<string, Barang>>(preset ? { [preset.barang.id]: preset.barang } : {})
   const [spekModalOpen, setSpekModalOpen] = useState(false)
   const [spekInitFields, setSpekInitFields] = useState<Record<string, string>>({})
   const [spekInitFoto, setSpekInitFoto] = useState<string[]>([])
@@ -916,15 +954,42 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   const balancePecah = indukPecah != null && sumNPPecah === totalNPInduk
   const semuaPecahValid = alokasiPecah.length >= 2 && alokasiPecah.every(a => a.valid)
 
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `koreksi-pemecahan/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
+
+  // Preset dari kartu Pemecahan: barangnya sudah ada di `rows`, tinggal uraian
+  // baku per kodenya supaya kolom Kode Barang tak tampil "-" seolah kodenya
+  // tak terdaftar di kodefikasi.
+  useEffect(() => {
+    if (!preset) return
+    ;(async () => setUraianMap(await fetchUraian([preset.barang.kode])))()
+  }, [preset]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function tampilkan() {
     setLoading(true)
-    let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id,tgl_perolehan,cara_perolehan,foto_paths,intra_ekstra')
+    let q = supabase.from('aset').select(BARANG_COLS)
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
     if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
     const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
     const list = (data as unknown as Barang[]) || []
+    // Barang preset (dari kartu Pemecahan) tetap kelihatan walau filternya tak
+    // memuatnya — ia SUDAH tercentang, dan centang atas baris yang tak tampil
+    // adalah persis kebingungan yang dihindari `draftSeleksi` di menu lain.
+    if (preset && alasan === 'spesifikasi' && !list.some(b => b.id === preset.barang.id)) list.unshift(preset.barang)
     setRows(list)
     if (alasan === 'spesifikasi') setUraianMap(await fetchUraian(list.map(b => b.kode)))
     setLoaded(true)
@@ -1018,6 +1083,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       if (!noSk.trim()) { setErr('No. dokumen koreksi wajib diisi.'); return }
       if (alasan === 'pencatatan_ganda' && !ket.trim()) { setErr('Keterangan/justifikasi wajib diisi utk Pencatatan Ganda.'); return }
       if (alasan === 'penggabungan' && !ket.trim()) { setErr('Keterangan/justifikasi wajib diisi utk Penggabungan Barang.'); return }
+      // Penjaga SESUNGGUHNYA, bukan cuma gate tampilan `perluDokumenDulu` —
+      // pola & alasan sama dgn Dokumen SK Penghapusan.
+      if (alasan === 'pemecahan' && dokPaths.length === 0) { setErr('Dokumen sumber pemecahan wajib diunggah.'); return }
     }
 
     setSaving(true)
@@ -1026,6 +1094,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       const { data, error } = await supabase.from('jurnal_header').insert({
         skpd_id: skpdId, kategori: 'koreksi', jenis: alasan,
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+        ...(dokPaths.length > 0 ? { payload: { dokumen_paths: dokPaths } } : {}),
       }).select(HEADER_COLS).single()
       if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
       h = data as unknown as Header
@@ -1283,6 +1352,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
   }
 
   const alasanAktif = header?.jenis || alasan
+  const perluDokumenDulu = !header && alasanAktif === 'pemecahan' && dokPaths.length === 0
 
   return (
     <div className="space-y-4">
@@ -1334,6 +1404,19 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
                 </label>
                 <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
               </div>
+              {/* Wajib & DIGATE untuk Pemecahan Barang (permintaan user
+                  2026-09-07): satu barang dipecah jadi beberapa NIBAR baru —
+                  peristiwa yang paling sulit dijelaskan ke pemeriksa tanpa
+                  dokumen dasarnya. "Barang Induk" di bawah baru muncul sesudah
+                  berkasnya ada, lihat `perluDokumenDulu`. */}
+              {alasan === 'pemecahan' && (
+                <div className="sm:col-span-2">
+                  <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+                    judul="Dokumen Sumber Pemecahan" labelTombol="Upload Dokumen Sumber"
+                    hint="wajib sebelum barang induk bisa dipilih di bawah (foto / PDF, bisa lebih dari satu)"
+                    kosongText="Belum ada dokumen — upload dulu sebelum bisa memilih barang induk di bawah." />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1482,6 +1565,22 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
       {alasanAktif === 'spesifikasi' && (
         <div className="card p-5">
           <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang &amp; Edit Spesifikasi</h2>
+          {preset && (
+            <div className="mb-4 text-xs text-teal-800 bg-teal/5 border border-teal/30 rounded-lg px-3 py-2 space-y-1">
+              <p>
+                Barang pecahan dari <span className="font-medium">Pemecahan No. {preset.asal}</span> sudah dicentang —
+                isi No. Dokumen Koreksi &amp; tanggal di atas, lalu klik <span className="font-medium">✎ Edit Spesifikasi</span>.
+              </p>
+              {/* Bukan basa-basi: sesudah baris `koreksi_spesifikasi` ini ada,
+                  guard rantai (rules.md §1.3) menolak Batal Pemecahan-nya —
+                  dan operator baru tahu waktu tombolnya gagal. */}
+              <p className="text-amber-700">
+                ⚠ Sesudah koreksi ini tersimpan, <span className="font-medium">Batal Pemecahan</span> pada kartu itu
+                akan terblokir (pecahannya sudah punya transaksi lebih baru). Batalkan koreksi ini dulu kalau
+                pemecahannya memang mau dibatalkan.
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap items-end gap-3 mb-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Jenis Aset</label>
@@ -1564,7 +1663,13 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
         </div>
       )}
 
-      {alasanAktif === 'pemecahan' && (
+      {alasanAktif === 'pemecahan' && perluDokumenDulu && (
+        <div className="card p-10 text-center text-amber-600 text-sm">
+          ⚠ Upload Dokumen Sumber Pemecahan dulu di atas — barang induk baru bisa dipilih sesudah dokumennya ada.
+        </div>
+      )}
+
+      {alasanAktif === 'pemecahan' && !perluDokumenDulu && (
         <div className="card p-5">
           <h2 className="text-base font-semibold text-gray-800 mb-4">Barang Induk (yang Dipecah)</h2>
           {!indukPecah ? (
@@ -1935,8 +2040,12 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSav
 // ════════════════════════════════════════════════════════════════════════
 // Pemecahan Barang — kartu tampil (induk retire + N pecahan) + tombol Batal
 // ════════════════════════════════════════════════════════════════════════
-function PemecahanCard({ j, busy, bisaBatal, onBatal }: {
-  j: PemecahanJurnal; busy: boolean; bisaBatal: boolean; onBatal: () => void
+function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onBatal }: {
+  j: PemecahanJurnal; busy: boolean; bisaBatal: boolean
+  /** aset_id pecahan yang sedang ditarik untuk dikoreksi, atau null. */
+  spekBusy: string | null
+  onKoreksiSpek: (p: PemecahanRow) => void
+  onBatal: () => void
 }) {
   return (
     <div className="card overflow-hidden">
@@ -1949,6 +2058,13 @@ function PemecahanCard({ j, busy, bisaBatal, onBatal }: {
             </p>
             <p className="text-xs text-gray-500">Tgl. {j.tanggal} · {j.periode} · {j.pecahan.length} pecahan</p>
             {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
+            <DokumenLinks paths={j.payload?.dokumen_paths || []} label="Dokumen Sumber" />
+            {/* Kartu yang dibuat SEBELUM dokumen diwajibkan (2026-09-07) tak
+                punya berkas. Ledgernya append-only jadi kartunya tak bisa
+                diperbaiki — yang bisa dilakukan cuma mengatakannya terus terang. */}
+            {(j.payload?.dokumen_paths?.length || 0) === 0 && (
+              <p className="text-xs text-amber-600">⚠ Tanpa dokumen sumber (dibuat sebelum berkas diwajibkan).</p>
+            )}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="text-right">
@@ -1973,6 +2089,7 @@ function PemecahanCard({ j, busy, bisaBatal, onBatal }: {
               <th className="table-th">Kode Register / Nama Barang</th>
               <th className="table-th text-center">Jumlah</th>
               <th className="table-th text-right">Nilai Perolehan</th>
+              <th className="table-th w-32 text-center">Spesifikasi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -1985,6 +2102,9 @@ function PemecahanCard({ j, busy, bisaBatal, onBatal }: {
                 </td>
                 <td className="table-td text-center text-xs">{j.induk.jumlah}</td>
                 <td className="table-td text-right text-xs">{formatRupiah(j.induk.nilai)}</td>
+                {/* Induk sudah di-retire (status 'dihapus') — mengoreksi
+                    spesifikasinya tak mengubah apa pun yang masih dibaca laporan. */}
+                <td className="table-td text-center text-xs text-gray-300">—</td>
               </tr>
             )}
             {j.pecahan.map(p => (
@@ -1996,11 +2116,29 @@ function PemecahanCard({ j, busy, bisaBatal, onBatal }: {
                 </td>
                 <td className="table-td text-center text-xs">{p.jumlah}</td>
                 <td className="table-td text-right text-xs">{formatRupiah(p.nilai)}</td>
+                <td className="table-td text-center">
+                  {j.dibatalkan ? (
+                    <span className="text-xs text-gray-300">—</span>
+                  ) : (
+                    <button type="button" disabled={spekBusy != null} onClick={() => onKoreksiSpek(p)}
+                      title="Lengkapi/perbaiki spesifikasi pecahan ini lewat jurnal Koreksi → Spesifikasi Barang"
+                      className="text-xs text-teal hover:underline disabled:opacity-40 disabled:no-underline">
+                      {spekBusy === p.aset_id ? 'Membuka...' : '✎ Spesifikasi'}
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {!j.dibatalkan && (
+        <p className="px-5 py-2.5 text-xs text-gray-500 bg-gray-50/60 border-t border-gray-100">
+          Ada spesifikasi pecahan yang kurang? Klik <span className="font-medium">✎ Spesifikasi</span> di barisnya —
+          perbaikannya dicatat sebagai jurnal Koreksi tersendiri (ada jejak ledger &amp; bisa dibatalkan),
+          bukan diubah diam-diam.
+        </p>
+      )}
     </div>
   )
 }

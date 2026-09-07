@@ -3206,6 +3206,69 @@ periode koreksi, bukan surut ke semua periode; modul pelaporan yang memakai
 period-agnostic). Ini **melonggarkan** pengecualian yang tertulis di rules.md
 §1.9 untuk jenis tsb.
 
+## Dokumen sumber WAJIB: Pengeluaran Internal & Koreksi → Pemecahan (2026-09-07)
+
+Permintaan user. Dua menu terakhir yang masih menerima peristiwa ber-akibat
+ledger **tanpa satu pun berkas dasar** kini ikut pola yang sudah berlaku di
+Cara Perolehan & Penghapusan (`DokumenBastField`, keputusan 2026-09-05).
+**Tak ada migrasi** — `jurnal_header.payload` bertipe `jsonb`, jadi
+`dokumen_paths` cukup ditambahkan sbg kunci baru.
+
+- **DIGATE, bukan cuma ditolak saat Simpan.** "Pilih Barang" / "Barang Induk"
+  baru muncul sesudah berkasnya ada (`perluDokumenDulu`, pola Penghapusan).
+  Alasannya: operator yang sudah mencentang 40 barang lalu ditolak di tombol
+  Simpan akan mencari-cari apa yang salah; yang digate menyuruhnya lebih dulu.
+  Penjaga di `simpan()` **tetap dipasang** — gate tampilan bukan penegak.
+- ⚠️ **Cuma alasan Pemecahan yang diwajibkan di menu Koreksi.** Empat alasan
+  lain (Nilai Perolehan, Pencatatan Ganda, Spesifikasi, Penggabungan) sengaja
+  tak disentuh — belum diminta, dan mewajibkan berkas di alasan yang sudah
+  dipakai berarti kartu yang sedang disusun operator mendadak tak bisa
+  disimpan. Kalau kelak diminta: `alasan === 'pemecahan'` di
+  `Koreksi.tsx` tinggal dilebarkan, `payload` sudah menampungnya.
+- **Kartu LAMA tanpa berkas tak bisa & tak boleh dipaksa mundur.** Yang
+  dilakukan cuma mengatakannya terus terang (strip amber di kartu). Untuk
+  Pengeluaran Internal yang masih `pending`, berkasnya masih bisa dilengkapi
+  lewat ✎ Edit — `EditHeaderModal` di situ ikut dapat field-nya.
+  ⚠️ Update payload-nya **men-spread `header.payload`**, bukan menulis
+  `{ dokumen_paths }` polos: `draft_items` tinggal di objek yang sama, dan
+  menimpanya akan MEMBUANG seluruh barang draft kartu itu tanpa satu pun error.
+  Kartu Pemecahan tak punya jalur ini (ledgernya sudah terlanjur ada).
+- Prefix storage: `mutasi-internal/` & `koreksi-pemecahan/` di bucket
+  `dokumen-sumber` (privat, dibuka lewat signed URL). Tak perlu migrasi storage
+  — policy `dokumen_sumber_*` bersifat se-bucket, bukan per-prefix.
+
+### Pecahan yang terlanjur tersimpan kurang lengkap → ✎ Spesifikasi di kartunya
+
+Pertanyaan user: "setelah koreksi pemecahan itu bisa edit spesifikasinya nggak,
+kalau ada yang kurang — termasuk yang sudah terlanjur disimpan?" Bisa, dan
+sebenarnya sudah bisa sejak dulu lewat Koreksi → **Spesifikasi Barang** — cuma
+operator harus keluar dari kartunya lalu mencari pecahannya satu per satu di
+antara ratusan ribu baris. Yang ditambahkan **pintasan, bukan mekanisme baru**:
+tombol ✎ Spesifikasi di tiap baris pecahan menarik barangnya lalu membuka
+`KoreksiForm` dengan `preset` — alasan dipaku ke Spesifikasi Barang & barangnya
+sudah tercentang.
+
+- ⚠️ **SENGAJA lewat jalur koreksi ber-ledger, bukan UPDATE langsung ke `aset`.**
+  Godaannya menyalin pola Saldo Awal → Edit Spesifikasi (UPDATE polos, nol
+  ledger). Itu sah di sana karena `aset_awal_2026` snapshot beku yang tak pernah
+  dibaca engine; pecahan di sini barang HIDUP di register. Lewat
+  `koreksi_spesifikasi` ia dapat `payload.prev` → bisa dibatalkan, dan muncul
+  sbg kartu koreksi tersendiri yang bisa dibaca pemeriksa.
+- ⚠️ **Akibatnya Batal Pemecahan kartu itu jadi TERBLOKIR** — pecahannya kini
+  punya transaksi lebih baru (guard rantai, rules.md §1.3; `barisMasihBerlaku`
+  cuma mengabaikan pasangan yang saling meniadakan, dan koreksi yang masih hidup
+  bukan itu). Itu perilaku yang benar, tapi **senyap sampai tombolnya ditekan**,
+  jadi peringatannya ditulis di layar SEBELUM koreksinya disimpan. Jangan
+  dihapus demi kerapian.
+- Barang preset **ditarik utuh dari `aset` (`BARANG_COLS`), bukan dioper dari
+  baris kartu**: `Barang` butuh kolom yang tak ada di baris ledger, dan
+  `foto_paths` yang salah bikin popup spesifikasi menimpa foto barang dgn daftar
+  kosong. Ia juga di-`unshift` ke `rows` tiap kali Tampilkan ditekan — centang
+  atas baris yang tak tampil persis kebingungan yang dihindari `draftSeleksi`.
+- **Baris INDUK tak dapat tombolnya**: sesudah dipecah ia `status='dihapus'`,
+  jadi mengoreksi spesifikasinya tak mengubah apa pun yang masih dibaca laporan.
+  Kartu yang sudah `dibatalkan` juga tidak — pecahannya sudah tak hidup.
+
 ## Daftar Barang Awal — `head:true` menelan sebab kegagalan (2026-08-12)
 
 Gejala: Saldo Awal → Daftar Barang Awal, Jenis Aset 1.3.5 tanpa filter SKPD →

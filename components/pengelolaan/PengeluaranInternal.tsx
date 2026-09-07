@@ -7,7 +7,8 @@
 // 20260707_03).
 //   1. Pilih SKPD (asal).
 //   2. Tambah jurnal: No. Dokumen, tanggal, SKPD tujuan (dibatasi tree sama),
-//      keterangan, dokumen sumber (foto/PDF) → jurnal_header, approval_status
+//      keterangan, dokumen sumber (foto/PDF — WAJIB sejak 2026-09-07, permintaan
+//      user; digate spt Dokumen SK Penghapusan) → jurnal_header, approval_status
 //      'pending'. Barang ditampung sbg draft (payload.draft_items) — ledger &
 //      aset TIDAK disentuh sampai SKPD tujuan menyetujui lewat menu Penerimaan
 //      Internal (RPC fn_terima_mutasi_internal).
@@ -21,6 +22,7 @@ import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bm
 import { formatRupiah } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import FormShell from './FormShell'
+import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
@@ -44,7 +46,6 @@ type JurnalLine = DraftItem
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,keterangan,skpd_tujuan,approval_status,rejected_reason,payload'
-const namaFile = (path: string) => path.split('/').pop() || path
 
 export default function PengeluaranInternal() {
   const supabase = createClient()
@@ -207,11 +208,6 @@ export default function PengeluaranInternal() {
     loadJurnals(skpd)
   }
 
-  async function bukaDokumen(path: string) {
-    const { data } = await supabase.storage.from('dokumen-sumber').createSignedUrl(path, 3600)
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-  }
-
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
   const namaSkpdById = (id: number | null) => skpdList.find(s => s.id === id)?.nama || '-'
 
@@ -280,14 +276,12 @@ export default function PengeluaranInternal() {
                       {ditolak && j.rejected_reason && (
                         <p className="text-xs text-red-600">Alasan penolakan: {j.rejected_reason}</p>
                       )}
-                      {(j.payload?.dokumen_paths?.length || 0) > 0 && (
-                        <p className="text-xs text-gray-500">
-                          Dokumen:{' '}
-                          {j.payload!.dokumen_paths!.map(p => (
-                            <button key={p} onClick={() => bukaDokumen(p)}
-                              className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
-                          ))}
-                        </p>
+                      <DokumenLinks paths={j.payload?.dokumen_paths || []} label="Dokumen Sumber" />
+                      {/* Kartu lama (dibuat sebelum dokumen diwajibkan) tak punya
+                          berkas sama sekali — ditandai supaya bisa dilengkapi
+                          lewat ✎ Edit selama masih pending, bukan didiamkan. */}
+                      {pending && (j.payload?.dokumen_paths?.length || 0) === 0 && (
+                        <p className="text-xs text-amber-600">⚠ Belum ada dokumen sumber — lengkapi lewat ✎ Edit.</p>
                       )}
                       {disetujui && (
                         <p className="text-xs text-gray-400 italic">Sudah diterima SKPD tujuan — read-only. Pengembalian dilakukan SKPD tujuan lewat menu Penerimaan Internal.</p>
@@ -375,21 +369,46 @@ function EditHeaderModal({ header, onClose, onSaved }: {
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
   const [ket, setKet] = useState(header.keterangan || '')
+  const [dokPaths, setDokPaths] = useState<string[]>(header.payload?.dokumen_paths || [])
+  const [dokUploading, setDokUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
   const tglPeriode = periodeDariTanggal(tgl)
   const pindahSemester = tglPeriode !== header.periode
 
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `mutasi-internal/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
+
   async function simpan() {
     if (!noSk.trim()) { setErr('No. Dokumen wajib diisi.'); return }
+    if (dokPaths.length === 0) { setErr('Dokumen sumber wajib diunggah.'); return }
     if (pindahSemester) {
       setErr(`Tanggal masuk ${tglPeriode}, sedangkan jurnal ini di ${header.periode}. Pindah semester tidak diizinkan — hapus jurnal & entry ulang.`)
       return
     }
     setErr(''); setSaving(true)
+    // `payload` di-spread, BUKAN ditimpa: `draft_items` tinggal di sana juga —
+    // menulis `{ dokumen_paths }` polos akan MEMBUANG seluruh barang draftnya
+    // tanpa satu pun pesan error.
     const { error } = await supabase.from('jurnal_header')
-      .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null })
+      .update({
+        no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+        payload: { ...(header.payload || {}), dokumen_paths: dokPaths },
+      })
       .eq('id', header.id)
     if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
     setSaving(false); onSaved()
@@ -418,6 +437,10 @@ function EditHeaderModal({ header, onClose, onSaved }: {
             <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
             <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
           </div>
+          <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+            judul="Dokumen Sumber" labelTombol="Upload Dokumen Sumber"
+            hint="wajib (foto / PDF, bisa lebih dari satu)"
+            kosongText="Belum ada dokumen — wajib diunggah sebelum jurnal bisa disimpan." />
           {err && <p className="text-sm text-red-600">{err}</p>}
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
@@ -552,6 +575,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
 
     if (!noSk.trim()) { setErr('No. dokumen wajib diisi.'); setSaving(false); return }
     if (!tujuan) { setErr('SKPD tujuan wajib dipilih.'); setSaving(false); return }
+    // Penjaga SESUNGGUHNYA, bukan cuma gate tampilan di atas — kalau kelak ada
+    // jalur lain yang memanggil `simpan()` tanpa lewat layar itu, ini yang menahan.
+    if (dokPaths.length === 0) { setErr('Dokumen sumber wajib diunggah.'); setSaving(false); return }
     const { error } = await supabase.from('jurnal_header').insert({
       skpd_id: skpdId, kategori: 'mutasi_internal', jenis: null, sub_jenis: null,
       no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
@@ -563,6 +589,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   }
 
   const allSelected = rows.length > 0 && rows.every(r => sel[r.id])
+  const perluDokumenDulu = !header && dokPaths.length === 0
 
   return (
     <div className="space-y-4">
@@ -599,26 +626,26 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
               <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
               <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} placeholder="mis. Pemerataan sarana ke SDN Belor" />
             </div>
+            {/* Wajib & DIGATE — pola & alasan sama dgn Dokumen SK Penghapusan
+                (2026-09-05): "Pilih Barang" baru muncul sesudah berkasnya ada,
+                bukan cuma ditolak waktu Simpan ditekan. Lihat `perluDokumenDulu`. */}
             <div className="sm:col-span-2">
-              <label className="block text-xs text-gray-500 mb-1">Dokumen Sumber (foto / PDF, bisa lebih dari satu)</label>
-              <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-                onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
-              {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-              {dokPaths.length > 0 && (
-                <ul className="mt-2 space-y-1">
-                  {dokPaths.map(p => (
-                    <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
-                      <span className="truncate">{namaFile(p)}</span>
-                      <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+                judul="Dokumen Sumber" labelTombol="Upload Dokumen Sumber"
+                hint="wajib sebelum barang bisa dipilih di bawah (foto / PDF, bisa lebih dari satu)"
+                kosongText="Belum ada dokumen — upload dulu sebelum bisa memilih barang di bawah." />
             </div>
           </div>
         )}
       </div>
 
+      {/* Nambah barang ke jurnal yang sudah ada (header != null) tak digate:
+          dokumennya sudah diperiksa waktu kartunya dibuat. */}
+      {perluDokumenDulu ? (
+        <div className="card p-10 text-center text-amber-600 text-sm">
+          ⚠ Upload Dokumen Sumber dulu di atas — barang baru bisa dipilih sesudah dokumennya ada.
+        </div>
+      ) : (
       <div className="card p-5">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang</h2>
         <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -693,6 +720,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
           </button>
         </div>
       </div>
+      )}
     </div>
   )
 }
