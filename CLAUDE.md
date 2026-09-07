@@ -2783,12 +2783,13 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
-## Laporan Reklasifikasi — Format IV.F.2–F.6 (penambahan) (2026-09-07)
+## Laporan Reklasifikasi — Format IV.F.2–F.6 & IV.F.12–F.16 (2026-09-07)
 
 Cabang KELIMA modul Pelaporan Permendagri 47/2021. Menu Pelaporan →
 Pengelolaan → **Reklasifikasi** kini bertiga tab seperti keluarga Perpindahan,
 plus **penyaring ARAH (Penambahan / Pengurangan) di ATAS tab** — permintaan
-user. **Tak ada migrasi.**
+user. Dua keluarga lembar: **IV.F.2–F.6** (penambahan) & **IV.F.12–F.16**
+(pengurangan). **Tak ada migrasi.**
 
 Berkasnya: `lib/reklas.ts` · `lib/formatReklas.ts` (+ test) ·
 `lib/laporanReklas.ts` · `components/pelaporan/LembarReklasPermendagri.tsx`
@@ -2821,14 +2822,22 @@ Berkasnya: `lib/reklas.ts` · `lib/formatReklas.ts` (+ test) ·
   Dikunci `tests/lembarReklas.test.tsx` — dan uji itu **langsung menangkap satu
   bug nyata di percobaan pertama** (`nKolom` menghitung `lawan_kode` dua kali →
   baris "tidak ada data" ber-colSpan satu sel lebih lebar dari tabelnya).
-- ⚠️ **`segMin` lembar rekap BEDA PER LEMBAR** (`TANGGA_REKAP_REKLAS`):
-  IV.F.3 & IV.F.4 mulai **3 segmen**, IV.F.5 & IV.F.6 mulai **2 segmen**
-  (kelompok neraca `1.3`). Itu MENGIKUTI gambar formatnya, bukan kelalaian —
-  keluarga lain memang seragam (IV.A semuanya 2, IV.B/C/D semuanya 3), jadi
-  godaan menyeragamkan besar sekali. Jangan: menyeragamkannya TIDAK mengubah
-  satu pun angka (cuma menambah/menghilangkan baris kelompok teratas), jadi tak
-  ada uji aritmetika yang akan berteriak — dua uji khusus di
-  lib/formatReklas.test.ts & tests/lembarReklas.test.tsx satu-satunya penjaganya.
+- ⚠️ **`segMin` lembar rekap: 3 untuk tiga lembar terdalam, 2 untuk yang
+  terdangkal** (`TANGGA_REKAP_REKLAS`). Alasannya terbaca sendiri begitu
+  keempatnya disandingkan: lembar "MENURUT JENIS" berhenti di kedalaman yang
+  justru jadi tingkat pengelompokan lembar di atasnya, jadi kalau `segMin`-nya 3
+  juga ia berubah jadi daftar datar tanpa satu pun baris kelompok; yang 2
+  memberinya kelompok neraca (`1.3`) di atasnya. Keluarga lain memang seragam
+  (IV.A semuanya 2, IV.B/C/D semuanya 3), jadi godaan menyeragamkan besar
+  sekali. Jangan: menyeragamkannya TIDAK mengubah satu pun angka (cuma
+  menambah/menghilangkan baris kelompok teratas), jadi tak ada uji aritmetika
+  yang akan berteriak — dua uji khusus di lib/formatReklas.test.ts &
+  tests/lembarReklas.test.tsx satu-satunya penjaganya.
+  ⚠️ **KOREKSI dalam hari yang sama:** `.5` sempat disetel 2, dibaca dari gambar
+  IV.F.5 beresolusi rendah. Lembar cerminnya (IV.F.13–F.16, diserahkan
+  belakangan & jauh lebih terbaca) menunjukkan IV.F.15 membuka di `x x x` dan
+  HANYA IV.F.16 yang membuka di `x x`. Karena keduanya dicetak dari template
+  yang sama, yang berlaku pembacaan yang lebih jelas.
 - ⚠️ **Rekap IV.F LIMA kolom — TANPA "Jumlah Barang"** yang ada di rekap
   IV.B/IV.C/IV.D; lembar rincinya juga tak punya "Harga Satuan" & "Jumlah
   Total", cuma satu kolom "Nilai Perolehan (Rp)". Diikuti apa adanya.
@@ -2885,13 +2894,38 @@ Berkasnya: `lib/reklas.ts` · `lib/formatReklas.ts` (+ test) ·
   menunjuk terbalik separuh waktu. Kedua sel juga menampilkan komptabelnya —
   untuk `reklas_komptabel` kodenya sama persis & tanpa itu barisnya terbaca
   seolah tak terjadi apa-apa.
-- ⛔ **Lembar PENGURANGAN belum dibangun** — formatnya belum diserahkan. Tab
-  Format Permendagri-nya menolak dgn keterangan (bukan disembunyikan diam-diam,
-  bukan pula jatuh ke lembar penambahan), dan `?lap=` yang tak dikenal ditolak
-  di halaman cetak. Registry sudah bertipe `Record<IdReklas, …>` ber-`arah`
-  sebagai anggota tipe supaya cabang kedua cuma menambah SATU entri; **jangan
-  cabut `arah` "karena cuma ada satu cabang"** — justru itu penjaga yang bikin
-  cabang kedua tak bisa lahir sebagai kembaran senyap.
+- ⚠️ **PEMETAAN SISI = `sisiReklas()`** (lib/formatReklas.ts), fungsi MURNI &
+  satu-satunya tempat "penambahan → kelompokkan menurut `kode_baru`" ditulis.
+  Ia aturan inti keluarga IV.F dan kelas kesalahan paling senyap yang ada di
+  sini: kalau tertukar, lembar penambahan mengelompokkan barang menurut golongan
+  ASALNYA & blok lawannya menunjuk balik ke tujuan — dan karena kedua lembar
+  membaca baris yang SAMA, hasilnya tetap terisi penuh, footing-nya tetap benar,
+  dan tak ada satu pun laporan yang berteriak. Dikunci lib/formatReklas.test.ts
+  (diuji merah dulu dgn membalik pemetaannya) + uji render "blok utama & blok
+  lawan menampilkan kode yang BERBEDA".
+- ⚠️ **IV.F.2 & IV.F.12 BERKOLOM IDENTIK** sampai ke penomorannya (8)–(23),
+  penanda subtotal (24)–(27), & kaki (28)(29)(30) — yang berbeda **cuma judul
+  lembar & judul blok lawan** ("Reklasifikasi dari" vs "…ke"). Karena itu
+  kolomnya lahir dari SATU pabrik `kolomRinciReklas()`, bukan dua daftar yang
+  disalin; dikunci uji "kedua cabang berkolom IDENTIK". Pabriknya mengembalikan
+  array BARU tiap dipanggil supaya kedua entri registry tak berbagi objek yang
+  sama — daftar bersama gampang tersunting di tempat oleh pemakai yang mengira
+  ia salinannya sendiri.
+- ⚠️ **NOMOR LEMBAR MELOMPAT: pengurangan 12–16, bukan menyambung 7–11.** Memang
+  begitu di lampiran Permendagri; jangan "dirapikan" jadi berurutan — nomor
+  lembar itu yang dipakai orang mencari formatnya. Nomornya hidup di
+  `akhiranRinci`/`akhiranRekap` per cabang sementara BENTUK tangganya dipakai
+  bersama, dan keduanya disandingkan HANYA di `lembarRekapReklas(f)`. Pemakai
+  yang menyandingkannya sendiri lewat indeks akan mencetak "Format IV.F.6" di
+  atas tabel milik IV.F.16. Dikunci uji "nomor lembar TIDAK bertabrakan antar
+  cabang" — tanpa itu dua lembar berlawanan bisa sama-sama mengaku IV.F.5, dan
+  karena keduanya membaca ledger yang sama isinya tetap kelihatan masuk akal.
+  ⚠️ Konsekuensinya **rentang angka jangan pernah ditulis tangan**: `n >= 2 &&
+  n <= 6` di penyaring `?lembar=` akan menolak SELURUH lembar pengurangan
+  diam-diam & berkasnya terbit kosong. Pakai `akhiranLembarReklas(f)`.
+- Centang lembar di tab Format Permendagri **di-RESET tiap ganti arah** — nomor
+  lembarnya beda per cabang, jadi centang yang terbawa tak cocok dengan satu
+  lembar pun & pratinjaunya kosong tanpa keterangan.
 
 ## Laporan Pengeluaran Internal — Format IV.D.2–D.6 & IV.D.7 (2026-09-02)
 

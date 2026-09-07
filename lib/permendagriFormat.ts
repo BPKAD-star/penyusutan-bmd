@@ -65,6 +65,7 @@ export type IdLembar =
   | 'pengeluaran-internal'
   | 'gabungan-internal'
   | 'reklas-penambahan'
+  | 'reklas-pengurangan'
   | 'mutasi-bmd-skpd'
   | 'laporan-bmd-skpd'
   | 'mutasi-bmd-pemda'
@@ -176,13 +177,21 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
   // ⚠️ `kode` di sini lembar RINCI-nya; keempat rekapnya (IV.F.3–F.6) dilayani
   // komponen yang SAMA & tak punya entri sendiri (pola yang sama dgn empat cara
   // perolehan & keluarga perpindahan).
-  // ⛔ Lembar PENGURANGAN akibat reklasifikasi BELUM dibangun — formatnya belum
-  // diserahkan. Registry ini sengaja cuma memuat yang sudah jadi (lihat kepala
-  // berkas): entri untuk sesuatu yang belum ada tak akan pernah dibaca siapa pun
-  // lalu basi diam-diam.
+  // ⚠️ DUA entri, dan itu wajib: keduanya membaca baris ledger yang PERSIS SAMA
+  // dari sisi berlawanan, jadi tanpa entri terpisah tak ada yang membedakan
+  // "lembar penambahan sudah ada" dari "pengurangan sudah ada". `LaporanReklas`
+  // merakit kuncinya sebagai `reklas-${arah}` — jangan ganti pola namanya.
+  // ⚠️ Nomor lembar pengurangan MELOMPAT ke 12 (bukan menyambung 7): memang
+  // begitu di lampiran Permendagri.
   'reklas-penambahan': {
     kode: 'IV.F.2',
     judul: 'Laporan Penambahan akibat Reklasifikasi BMD',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarReklasPermendagri.tsx',
+  },
+  'reklas-pengurangan': {
+    kode: 'IV.F.12',
+    judul: 'Laporan Pengurangan akibat Reklasifikasi BMD',
     kertas: 'F4 lanskap',
     berkas: 'components/pelaporan/LembarReklasPermendagri.tsx',
   },

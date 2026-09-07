@@ -25,26 +25,37 @@ import {
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
 import {
-  FORMAT_REKLAS, TANGGA_REKAP_REKLAS,
+  FORMAT_REKLAS, lembarRekapReklas, akhiranLembarReklas,
   type IdReklas, type ArahReklas, type FormatReklas,
 } from '@/lib/formatReklas'
 import { muatLaporanReklas, periodePosisiReklas, type BarisReklas } from '@/lib/laporanReklas'
 import LembarReklasPermendagri from './LembarReklasPermendagri'
 
-/** Daftar lembar yang bisa dicentang: rinci + empat kedalaman rekap. */
-const PILIHAN = [
-  { akhiran: 2, label: 'Rinci (per barang)' },
-  ...TANGGA_REKAP_REKLAS.map(t => ({
-    akhiran: t.akhiran, label: `Rekap menurut ${t.menurut.toLowerCase()}`,
-  })),
-]
+/**
+ * Daftar lembar yang bisa dicentang: rinci + empat kedalaman rekap.
+ *
+ * ⚠️ DITURUNKAN dari cabangnya, bukan konstanta modul — nomor lembarnya BEDA
+ * (penambahan 2–6, pengurangan 12–16). Daftar tetap akan membuat seluruh
+ * centang cabang pengurangan tak cocok dengan lembarnya & pratinjaunya kosong,
+ * tanpa satu pun error.
+ */
+function pilihanLembar(f: FormatReklas) {
+  return [
+    { akhiran: f.akhiranRinci, label: 'Rinci (per barang)' },
+    ...lembarRekapReklas(f).map(t => ({
+      akhiran: t.akhiran, label: `Rekap menurut ${t.menurut.toLowerCase()}`,
+    })),
+  ]
+}
 
 export default function ReklasFormatPermendagri({ arah, skpdId, periode }: {
   /**
-   * Sisi yang dilaporkan. ⚠️ Cuma `'penambahan'` yang punya lembar hari ini —
-   * yang lain ditolak di sini, BUKAN diam-diam dijatuhkan ke penambahan: lembar
-   * berkop "PENAMBAHAN" yang diminta sebagai pengurangan adalah berkas yang
-   * salah tanpa satu pun tanda.
+   * Sisi yang dilaporkan — menentukan lembar mana yang disusun (IV.F.2–F.6 atau
+   * IV.F.12–F.16).
+   *
+   * ⚠️ Sisi yang belum punya lembar ditolak di sini dengan keterangan, BUKAN
+   * diam-diam dijatuhkan ke cabang lain: kedua lembar membaca baris ledger yang
+   * SAMA, jadi berkas berkop salah tetap terisi penuh & kelihatan masuk akal.
    */
   arah: ArahReklas
   skpdId: number | null
@@ -64,7 +75,16 @@ export default function ReklasFormatPermendagri({ arah, skpdId, periode }: {
   const [sebutan, setSebutan] = useState('Pengguna Barang')
   const [tanpaPeny, setTanpaPeny] = useState(0)
   const [komptabel, setKomptabel] = useState<Komptabel>('intra')
-  const [pilih, setPilih] = useState<number[]>(PILIHAN.map(p => p.akhiran))
+  // ⚠️ Di-RESET tiap ganti arah — nomor lembarnya beda per cabang, jadi centang
+  // yang terbawa dari cabang sebelumnya (mis. 2–6 di cabang pengurangan) tak
+  // cocok dengan satu lembar pun & pratinjaunya kosong tanpa keterangan.
+  // ⚠️ `f &&` bukan basa-basi: penginisialisasi `useState` jalan SEBELUM penjaga
+  // `if (!f) return` di bawah, jadi sisi yang belum punya lembar akan
+  // menjatuhkan komponennya di sini — bukan menampilkan keterangannya.
+  const [pilih, setPilih] = useState<number[]>(() => f ? akhiranLembarReklas(f) : [])
+  useEffect(() => {
+    if (f) setPilih(akhiranLembarReklas(f))
+  }, [arah]) // eslint-disable-line react-hooks/exhaustive-deps
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
@@ -115,7 +135,7 @@ export default function ReklasFormatPermendagri({ arah, skpdId, periode }: {
 
   /** Kenapa tombol Cetak mati / pratinjau kosong — dikatakan, bukan didiamkan. */
   const kurang = !f
-    ? `Lembar Permendagri untuk sisi "${arah}" belum dibangun — formatnya belum diserahkan. `
+    ? `Lembar Permendagri untuk sisi "${arah}" belum dibangun. `
       + 'Tab Daftar Transaksi & Rekap per SKPD tetap bisa dipakai.'
     : !periode ? 'Pilih Periode dulu.'
       : skpdId == null ? `Pilih SKPD dulu — kelima lembar ${f.awalan}.x memuat identitas SKPD di kopnya.`
@@ -133,7 +153,7 @@ export default function ReklasFormatPermendagri({ arah, skpdId, periode }: {
         <div>
           <p className="text-xs text-gray-500 mb-2">Lembar yang disusun</p>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
-            {PILIHAN.map(p => (
+            {pilihanLembar(f).map(p => (
               <label key={p.akhiran} className="flex items-center gap-2 text-sm text-gray-700">
                 <input type="checkbox" checked={pilih.includes(p.akhiran)}
                   onChange={() => toggle(p.akhiran)} />
@@ -158,8 +178,8 @@ export default function ReklasFormatPermendagri({ arah, skpdId, periode }: {
               operator tak perlu mencetak dulu untuk tahu. Satu berkas hanya bisa
               satu orientasi (`@page` BERNAMA terbukti tak dijalankan Chrome). */}
           <p className="text-xs text-gray-500 self-end">
-            Kertas: <b>F4 {pilih.includes(2) ? 'lanskap' : 'potret'}</b>
-            {pilih.includes(2) && pilih.length > 1 && (
+            Kertas: <b>F4 {pilih.includes(f.akhiranRinci) ? 'lanskap' : 'potret'}</b>
+            {pilih.includes(f.akhiranRinci) && pilih.length > 1 && (
               <span> — rekap ikut lanskap. Mau rekap potret? Cetak {f.kode} sendiri
                 dulu, lalu centang rekapnya saja.</span>
             )}

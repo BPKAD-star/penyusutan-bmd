@@ -45,7 +45,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
-import { LEMBAR_PERMENDAGRI } from '@/lib/permendagriFormat'
+import { LEMBAR_PERMENDAGRI, type IdLembar } from '@/lib/permendagriFormat'
 import { FORMAT_REKLAS, type ArahReklas, type IdReklas, type FormatReklas } from '@/lib/formatReklas'
 import { muatLaporanReklas, type BarisReklas } from '@/lib/laporanReklas'
 import ReklasFormatPermendagri from './ReklasFormatPermendagri'
@@ -80,7 +80,7 @@ export default function LaporanReklas() {
   // lib/permendagriFormat.ts); `FORMAT_REKLAS` menjawab pertanyaan lain — bentuk
   // tabelnya. Dua daftar yang sama-sama boleh bilang "ada" pasti menyimpang, dan
   // gejalanya cuma tab yang muncul tanpa isi.
-  const adaLembar = !!LEMBAR_PERMENDAGRI['reklas-penambahan'] && arah === 'penambahan'
+  const adaLembar = !!LEMBAR_PERMENDAGRI[`reklas-${arah}` as IdLembar]
   const f = FORMAT_REKLAS[arah as IdReklas] as FormatReklas | undefined
 
   // ⚠️ HANYA TAHUN KERJA BERJALAN, sejalan dgn Laporan Perolehan & Perpindahan.
@@ -198,8 +198,9 @@ export default function LaporanReklas() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Laporan Reklasifikasi</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Perubahan fungsi BMD, kesalahan kodefikasi, &amp; perpindahan keranjang komptabel.
-            Reklas yang sudah dibatalkan tidak ditampilkan.
+            Perubahan fungsi BMD, kesalahan kodefikasi, &amp; perpindahan keranjang komptabel —
+            Format Permendagri <b>IV.F.2–F.6</b> (penambahan) &amp; <b>IV.F.12–F.16</b>
+            (pengurangan). Reklas yang sudah dibatalkan tidak ditampilkan.
           </p>
         </div>
         {view !== 'permendagri' && (
@@ -217,7 +218,7 @@ export default function LaporanReklas() {
         <p className="text-xs text-gray-500 mb-2">Sisi yang dilaporkan</p>
         <div className="flex flex-wrap gap-2">
           {(Object.keys(ARAH_LABEL) as ArahReklas[]).map(a => (
-            <button key={a} onClick={() => { setArah(a); if (a !== 'penambahan') setView(v => v === 'permendagri' ? 'list' : v) }}
+            <button key={a} onClick={() => setArah(a)}
               className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
                 arah === a ? 'bg-teal text-white border-teal font-medium'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
@@ -251,12 +252,12 @@ export default function LaporanReklas() {
           </button>
         )}
       </div>
-      {/* ⛔ Dikatakan, bukan disembunyikan diam-diam: operator yang tahu menu
-          Penggunaan punya tab ketiga akan mencarinya di sini juga. */}
+      {/* ⛔ Kalau kelak ada sisi yang lembarnya belum ada, katakan — jangan
+          sembunyikan tabnya diam-diam: operator yang tahu menu Penggunaan punya
+          tab ketiga akan mencarinya di sini juga. */}
       {!adaLembar && (
         <p className="text-xs text-gray-500 mb-4">
-          Lembar Permendagri untuk sisi <b>pengurangan</b> belum dibangun — formatnya belum
-          diserahkan. Pilih <b>Penambahan</b> untuk menyusun Format IV.F.2–F.6.
+          Lembar Permendagri untuk sisi ini belum dibangun.
         </p>
       )}
 

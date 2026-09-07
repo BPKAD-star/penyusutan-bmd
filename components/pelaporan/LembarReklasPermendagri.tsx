@@ -33,7 +33,7 @@ import { pecahNibar } from '@/lib/kodeRegister'
 import { tglPanjang } from '@/lib/beritaAcaraRekon'
 import { segmenKode, susunRinci, susunRekap, type ItemLaporan } from '@/lib/formatPermendagri'
 import {
-  SEL_KODE_REKLAS, TANGGA_REKAP_REKLAS,
+  SEL_KODE_REKLAS, lembarRekapReklas,
   kolomLembarReklas, lebarKodeReklas, judulRekapReklas,
   type FormatReklas, type KolomLembarReklas,
 } from '@/lib/formatReklas'
@@ -161,7 +161,11 @@ export type PropLembarReklas = {
   ttd: { nama: string; nip: string | null } | null
   tglTtd: string
   /**
-   * Akhiran lembar yang ditampilkan: 2 = rinci, 3–6 = rekap. Kosong = semuanya.
+   * Akhiran lembar yang ditampilkan — `f.akhiranRinci` untuk rinci,
+   * `f.akhiranRekap` untuk rekapnya. Kosong = semuanya.
+   *
+   * ⚠️ Angkanya BEDA per cabang (2–6 vs 12–16), jadi jangan menuliskan rentang
+   * di sini maupun di pemanggil; pakai `akhiranLembarReklas(f)`.
    *
    * ⚠️ Yang dicentang operator menentukan APA YANG DICETAK, jadi ia menyaring
    * di SINI — bukan disembunyikan lewat CSS. Lembar tersembunyi tetap ikut ke
@@ -388,7 +392,8 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
   //    Diikuti apa adanya dari lembar aslinya; menambahkannya "biar seragam"
   //    membuat lembarnya tak cocok waktu pemeriksa mencocokkan kolom per kolom.
   // ⚠️ `segMin` DATANG DARI TANGGA, bukan konstanta bersama — IV.F.3/F.4 mulai
-  //    di 3 segmen, IV.F.5/F.6 di 2. Lihat `TANGGA_REKAP_REKLAS`.
+  //    tiga lembar terdalam 3 segmen, yang terdangkal 2. Lihat
+  //    `TANGGA_REKAP_REKLAS`.
   // ⚠️ TANPA kolom "No" & TANPA baris JUMLAH — sama dgn keluarga perpindahan.
   function LembarRekap({ akhiran, seg, segMin, menurut, pecahHalaman }: {
     akhiran: number; seg: number; segMin: number; menurut: string; pecahHalaman: boolean
@@ -455,10 +460,13 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
 
   return (
     <>
-      {tampil(2) && <LembarRinci />}
-      {TANGGA_REKAP_REKLAS.filter(t => tampil(t.akhiran)).map((t, i) => (
+      {tampil(f.akhiranRinci) && <LembarRinci />}
+      {/* ⚠️ Nomor lembar rekap datang dari `lembarRekapReklas(f)`, BUKAN dari
+          tangga langsung: penambahan memakai IV.F.3–F.6 & pengurangan
+          IV.F.13–F.16 di atas hierarki yang sama. */}
+      {lembarRekapReklas(f).filter(t => tampil(t.akhiran)).map((t, i) => (
         <LembarRekap key={t.akhiran} akhiran={t.akhiran} seg={t.seg} segMin={t.segMin}
-          menurut={t.menurut} pecahHalaman={tampil(2) || i > 0} />
+          menurut={t.menurut} pecahHalaman={tampil(f.akhiranRinci) || i > 0} />
       ))}
     </>
   )

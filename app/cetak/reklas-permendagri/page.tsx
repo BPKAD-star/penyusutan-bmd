@@ -2,11 +2,14 @@
 // ============================================================================
 // Cetak lembar REKLASIFIKASI sesuai Format baku Permendagri 47/2021.
 //
-//   ?lap=penambahan           IV.F.2–F.6 (penambahan akibat reklasifikasi)
+//   ?lap=penambahan           IV.F.2–F.6   (penambahan akibat reklasifikasi)
+//   ?lap=pengurangan          IV.F.12–F.16 (pengurangan akibat reklasifikasi)
 //   &skpd=<id>                WAJIB — semua lembar memuat identitas SKPD di kop
 //   &periode=2026-S1          atau &periode=2026 (AKHIR TAHUN: S1+S2 digabung)
 //   &komptabel=intra|ekstra|semua  (bawaan: intra)
-//   &lembar=2,3,4,5,6         bawaan: 2–6
+//   &lembar=2,3,4,5,6         bawaan: SELURUH lembar cabangnya
+//                             ⚠️ nomornya BEDA per cabang — 2–6 (penambahan)
+//                             vs 12–16 (pengurangan); yang tak dikenal ditolak
 //   &ttd=<id pegawai>&tgl=YYYY-MM-DD         (opsional, memaksa pilihan)
 //
 // Lembar yang dicentang dirangkai jadi SATU berkas dengan page-break, pola yang
@@ -21,9 +24,10 @@
 // ⚠️ SUSUNAN & PENOMORAN KOLOMNYA DATA, BUKAN JSX — lihat `FORMAT_REKLAS` di
 // lib/formatReklas.ts. Halaman ini tak punya satu pun cabang `if` per format.
 //
-// ⛔ `?lap=pengurangan` DITOLAK selama lembarnya belum dibangun — bukan
-// diam-diam dijatuhkan ke penambahan. Berkas berkop "PENAMBAHAN" yang diminta
-// sebagai pengurangan adalah dokumen yang salah tanpa satu pun tanda.
+// ⚠️ `?lap=` yang tak dikenal DITOLAK — bukan diam-diam dijatuhkan ke salah satu
+// cabang. Berkas berkop "PENAMBAHAN" yang diminta sebagai pengurangan adalah
+// dokumen yang salah tanpa satu pun tanda, dan keduanya memuat baris ledger yang
+// SAMA sehingga isinya pun tetap kelihatan masuk akal.
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -35,7 +39,9 @@ import {
   labelKomptabel, cocokKomptabel, berupaAset, labelPeriodeKop,
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
-import { FORMAT_REKLAS, type IdReklas, type FormatReklas } from '@/lib/formatReklas'
+import {
+  FORMAT_REKLAS, akhiranLembarReklas, type IdReklas, type FormatReklas,
+} from '@/lib/formatReklas'
 import { muatLaporanReklas, periodePosisiReklas, type BarisReklas } from '@/lib/laporanReklas'
 // ⚠️ Mekanik cetak DIPAKAI BERSAMA, bukan disalin: `cssCetakLembar` menyatukan
 // blok @media print & `ingatanCetak` menyatukan ingatan pilihan cetak.
@@ -60,6 +66,11 @@ const todayStr = () => {
  * pemilihnya berarti kendali yang tak mengubah apa pun di kertas: no-op senyap.
  */
 type TtdTersimpan = { id?: string; tgl?: string }
+/**
+ * ⚠️ Kunci ingatan DIPISAH per cabang. Kedua lembar terbit terpisah & bisa
+ * ditandatangani pejabat yang berbeda; berbagi kunci membuat pilihan di satu
+ * lembar diam-diam menggeser yang lain.
+ */
 const ingatan = (lap: IdReklas, skpdId: number) =>
   ingatanCetak<TtdTersimpan>(kunciTtdReklas(lap, skpdId))
 
@@ -108,7 +119,11 @@ export default function CetakReklasPermendagriPage() {
         setPeriode(per); setSkpdId(sk)
         const kmp = q.get('komptabel')
         setKomptabel(kmp === 'ekstra' || kmp === 'semua' ? kmp : 'intra')
-        const pilih = (q.get('lembar') || '').split(',').map(Number).filter(n => n >= 2 && n <= 6)
+        // ⚠️ Disaring lewat daftar akhiran CABANGNYA, bukan rentang angka yang
+        // ditulis tangan: `n >= 2 && n <= 6` akan menolak SELURUH lembar cabang
+        // pengurangan (12–16) diam-diam & berkasnya terbit kosong.
+        const sah = akhiranLembarReklas(fq)
+        const pilih = (q.get('lembar') || '').split(',').map(Number).filter(n => sah.includes(n))
         setLembar(pilih.length > 0 ? pilih : undefined)
 
         const h = await muatLaporanReklas(supabase, { arah: fq.arah, skpdId: sk, periode: per })
@@ -139,7 +154,7 @@ export default function CetakReklasPermendagriPage() {
   const f = FORMAT_REKLAS[lap]
   const ttd = calon.find(c => c.id === ttdId) || null
   const { judul: judulPeriode, tahun } = labelPeriodeKop(periode)
-  const adaRinci = !lembar || lembar.includes(2)
+  const adaRinci = !lembar || lembar.includes(f.akhiranRinci)
 
   const items: ItemLaporan<BarisReklas>[] = rows
     .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
@@ -163,7 +178,7 @@ export default function CetakReklasPermendagriPage() {
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       {/* ORIENTASI DITENTUKAN OLEH LEMBAR YANG DICENTANG:
-          · ada lembar RINCI → F4 lanskap (23 kolom + 14 sel segmen kode mustahil
+          · ada lembar RINCI → F4 lanskap (22 kolom + 14 sel segmen kode mustahil
             di lebar 215 mm)
           · hanya REKAP      → F4 potret (cuma 5–9 kolom)
           ⚠️ `@page` BERNAMA (supaya satu berkas memuat dua orientasi sekaligus)

@@ -150,12 +150,11 @@ const KUNCI_PERPINDAHAN = {
   pengeluaran: 'pengeluaran_internal',
 } as const
 
-/** Lembar REKLASIFIKASI — IV.F.2–F.6.
- *  ⚠️ Kunci SENDIRI per cabang (penambahan / kelak pengurangan), bukan satu
- *  kunci bersama: kedua lembar itu terbit terpisah & bisa ditandatangani
- *  pejabat yang berbeda, jadi berbagi kunci membuat pilihan di satu lembar
- *  diam-diam menggeser yang lain. */
-export const kunciTtdReklas = (lap: 'penambahan', skpdId: number) =>
+/** Lembar REKLASIFIKASI — IV.F.2–F.6 (penambahan) & IV.F.12–F.16 (pengurangan).
+ *  ⚠️ Kunci SENDIRI per cabang, bukan satu kunci bersama: kedua lembar itu
+ *  terbit terpisah & bisa ditandatangani pejabat yang berbeda, jadi berbagi
+ *  kunci membuat pilihan di satu lembar diam-diam menggeser yang lain. */
+export const kunciTtdReklas = (lap: 'penambahan' | 'pengurangan', skpdId: number) =>
   `bmd_reklas_${lap}_ttd_skpd_${skpdId}`
 
 /** RKBMD — lembar per-SKPD & lembar se-Kabupaten (yang se-kab bermuatan TEKS). */

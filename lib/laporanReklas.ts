@@ -39,7 +39,7 @@ import { fetchPenyusutanAset } from '@/lib/rekon'
 import { fetchReklasEvents, kodePada } from '@/lib/reklasKode'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
 import { ALASAN_LABEL, JENIS_REKLAS, type AlasanReklas } from '@/lib/reklas'
-import type { ArahReklas } from '@/lib/formatReklas'
+import { sisiReklas, type ArahReklas } from '@/lib/formatReklas'
 import { descendantsOf, periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 
 /**
@@ -293,18 +293,20 @@ export async function muatLaporanReklas(
     const kodeSaatItu = kodePada(reklasEv, r.aset_id || '', r.periode, r.id, a.kode || '')
     const kodeLama = typeof r.payload?.kode_lama === 'string' ? r.payload.kode_lama : kodeSaatItu
     const kodeBaru = typeof r.payload?.kode_baru === 'string' ? r.payload.kode_baru : kodeSaatItu
-    const utama = p.arah === 'penambahan' ? kodeBaru : kodeLama
-    const lawan = p.arah === 'penambahan' ? kodeLama : kodeBaru
+    // ⚠️ Pemetaan sisi → `sisiReklas()` (lib/formatReklas.ts), BUKAN ditulis
+    // di sini. Ia aturan inti keluarga IV.F dan satu-satunya yang kalau
+    // tertukar tetap menghasilkan lembar yang terisi penuh & foot dengan benar.
+    // Dikunci lib/formatReklas.test.ts.
     return {
       ...r,
-      kodeUtama: utama,
-      kodeLawan: lawan,
+      ...sisiReklas(p.arah, {
+        kodeLama, kodeBaru,
+        namaLama: r.payload?.nama_lama, namaBaru: r.payload?.nama_baru,
+        namaAset: a.nama_barang,
+      }),
       kodeLama,
       kodeBaru,
       penyebab: ALASAN_LABEL[(r.header?.jenis || '') as AlasanReklas] || '',
-      namaSpek: (p.arah === 'penambahan'
-        ? (r.payload?.nama_baru || a.nama_barang)
-        : (r.payload?.nama_lama || a.nama_barang)) || '',
       skpdNama: a.skpd_id != null ? namaSkpd.get(a.skpd_id) : undefined,
     }
   })
