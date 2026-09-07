@@ -3263,13 +3263,15 @@ Cara Perolehan & Penghapusan (`DokumenBastField`, keputusan 2026-09-05).
 - Prefix storage: `mutasi-internal/` & `koreksi/` di bucket `dokumen-sumber`
   (privat, dibuka lewat signed URL). Tak perlu migrasi storage — policy
   `dokumen_sumber_*` bersifat se-bucket, bukan per-prefix.
-- ⛔ **MUARA-nya belum tersambung.** Halaman **Dokumen Sumber**
-  (`app/dashboard/dokumen-sumber`, `lib/dokumenSiklus.ts`) menarik berkas dari
-  modul lain lewat `{ tipe: 'pull', kategori: <jurnal_header.kategori> }`, dan
-  dua kategori baru ini belum terdaftar di `DAFTAR_SIKLUS`: `mutasi_internal`
-  (masuk siklus **Penggunaan**, berdampingan dgn `pengalihan_status`) &
-  `koreksi` (siklus **Penatausahaan**, yang sekarang masih `kosong`). Selama
-  belum didaftarkan, berkasnya cuma kelihatan di kartu jurnalnya sendiri.
+- ✅ **MUARA-nya tersambung** sore harinya — lihat bagian "Dokumen Sumber:
+  tab penyaring + kelompok per SKPD" di bawah.
+- **Reklasifikasi ikut mewajibkan dokumen sumber** (permintaan user yang sama,
+  supaya siklus Penatausahaan ada isinya). ⚠️ Sampai hari itu menu Reklasifikasi
+  **tak punya jalan mengunggah berkas sama sekali** — komentar kepala berkasnya
+  sudah menyebut "dokumen sumber" sejak awal, tapi yang ada cuma NOMOR-nya.
+  ⚠️ `payload`-nya DIPAKAI BERSAMA `kode_tujuan`/`uraian_tujuan`: tiap penulis
+  wajib men-spread yang lama, kalau tidak reklas golongan/kode kehilangan kode
+  tujuannya tanpa satu pun error.
 
 ### Pecahan yang terlanjur tersimpan kurang lengkap → ✎ Spesifikasi di kartunya
 
@@ -3302,6 +3304,74 @@ sudah tercentang.
 - **Baris INDUK tak dapat tombolnya**: sesudah dipecah ia `status='dihapus'`,
   jadi mengoreksi spesifikasinya tak mengubah apa pun yang masih dibaca laporan.
   Kartu yang sudah `dibatalkan` juga tidak — pecahannya sudah tak hidup.
+
+## Dokumen Sumber: tab penyaring + kelompok per SKPD (2026-09-07)
+
+Halaman **Dokumen Sumber** (`app/dashboard/dokumen-sumber`) ditata ulang
+menurut permintaan user, dan bentuknya kini SATU pola untuk semua siklus:
+**tab penyaring di atas → daftar dikelompokkan PER SKPD → berkasnya**.
+
+`SumberDokumen` tipe `pull` sekarang memuat **`kelompok: PullKelompok[]`**
+menggantikan `kategori` tunggal. Satu kelompok = satu tab; kelompok tunggal
+(Pengamanan) tak menampilkan tab sama sekali. Yang dikandung tiap kelompok:
+`kategori` (jurnal_header.kategori PERSIS) · `perluApproval` · `cocok`
+(penyaring tambahan atas `jenis`/`sub_jenis`/`payload`) · `payloadKeys` ·
+`tujuan`.
+
+| Siklus | Tab | Sumber |
+|---|---|---|
+| Cara Perolehan | Pengadaan · Hibah · Tukar Menukar · Hasil Inventarisasi · Perolehan Lainnya | 5 kategori, semuanya `perluApproval` |
+| Penggunaan | Pengalihan Status Penggunaan · Pengeluaran Internal | `pengalihan_status` + `mutasi_internal` |
+| Pemanfaatan | Sewa · Pinjam Pakai · BGS/BSG · KSP · KSPI | `payload.jenis_pemanfaatan` |
+| Pengamanan | *(tanpa tab)* | `bast_paths` + `pakta_paths` |
+| Penatausahaan | Koreksi · Reklasifikasi | dulu `kosong` |
+| Penghapusan | Hibah · Penjualan · Tukar-Menukar · Penyertaan Modal · Sebab Lain | `jenis` + `sub_jenis` |
+
+Tak disentuh (tetap `generic`/`kosong`): Perencanaan Kebutuhan · Penilaian ·
+Pemindahtanganan · Pemusnahan · Pengawasan dan Pengendalian · SK Pengelolaan
+BMD.
+
+- ⚠️ **TIGA pintu upload generik DICABUT** (keputusan user): SK Penetapan Status
+  Penggunaan, Dokumen Perjanjian Pemanfaatan, & BAST/Pakta Pengamanan. Ketiganya
+  sekarang WAJIB diunggah di menunya masing-masing, jadi pintu kedua di sini cuma
+  melahirkan salinan yang tak terikat kartu mana pun — dan dua salinan untuk satu
+  peristiwa berarti pemeriksa tak punya cara tahu mana yang berlaku.
+  **Tak ada data yang hilang:** `admin_dokumen` seluruhnya cuma **1 baris**, di
+  siklus `perencanaan_kebutuhan` yang justru tetap generik (dicek ke produksi
+  2026-09-07). Kalau kelak tabelnya sudah berisi, JANGAN cabut entri generik
+  tanpa memeriksa ulang — mencabutnya menyembunyikan baris yang sudah terlanjur
+  diunggah, tanpa satu pun peringatan.
+- ⚠️ **`jenis_pemanfaatan` ada di PAYLOAD, bukan kolom `jenis`.** Kolom itu
+  isinya harfiah `'pemanfaatan'` untuk SEMUA barisnya. Menyaring lewat `h.jenis`
+  menghasilkan lima tab yang semuanya kosong — tanpa satu pun error. Dikunci
+  lib/dokumenSiklus.test.ts, **diuji merah dulu** dgn sengaja menggesernya ke
+  `h.jenis` (2 test gagal), bukan cuma diasumsikan menangkap.
+- ⚠️ **Penyaring Cara Perolehan itu `kategori`, BUKAN `jenis`.** Di kategori
+  `pengadaan`, kolom `jenis` isinya BENTUK KONTRAK (`spk` 16 · `surat_pesanan`
+  72 · `kwitansi` 4 · `bukti_pembelian` 1 · `surat_perjanjian` 1), bukan cara
+  perolehan.
+- **Penerimaan Internal TIDAK dapat tab sendiri.** Ia membaca baris
+  `mutasi_internal` yang SAMA dari sisi sebaliknya — satu dokumen, dua menu.
+  Tab kedua akan membuat berkas yang sama terhitung dua kali. Sesuai permintaan
+  user, kelompoknya per **SKPD yang MENGELUARKAN** (`jurnal_header.skpd_id`
+  memang sudah SKPD asal untuk pengalihan MAUPUN mutasi internal), dan tujuannya
+  ditulis per baris (`→ SKPD tujuan`).
+- **Tab awal = kelompok PERTAMA YANG ADA ISINYA**, bukan kelompok pertama begitu
+  saja: mendarat di tab kosong bikin operator mengira seluruh siklusnya belum
+  berisi, padahal isinya ada di tab sebelah. Jumlah dokumen ikut tercetak di tiap
+  chip supaya tak perlu diklik satu-satu.
+- **SATU query untuk seluruh kategori di siklus itu**, lalu disaring di memori.
+  `jurnal_header` per tahun itu ratusan baris, bukan ratusan ribu — memecahnya
+  jadi satu query per tab justru menembak DB 5× lebih sering cuma untuk memindah
+  tab. Query-nya juga berhenti menelan `error` (dulu `const { data } = await`):
+  daftar kosong yang sebenarnya "query gagal" terbaca operator sbg "dokumennya
+  memang belum ada".
+- ⛔ **Kontrak Konstruksi (KDP) belum bermuara.** Kategorinya sendiri
+  (`konstruksi`, 4 baris) & BAST-nya disimpan **per TERMIN** di dalam
+  `payload.barang[].pembayaran[]`, bukan di `payload.dokumen_paths` — jadi
+  `payloadKeys` yang datar tak bisa membacanya. Perlu penggali sendiri; belum
+  diminta.
+- **Tak ada migrasi** — murni pembacaan ulang `jurnal_header` yang sudah ada.
 
 ## Daftar Barang Awal — `head:true` menelan sebab kegagalan (2026-08-12)
 

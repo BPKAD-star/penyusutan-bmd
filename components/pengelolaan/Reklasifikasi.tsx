@@ -29,6 +29,7 @@ import { createClient } from '@/lib/supabase/client'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
+import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -76,7 +77,9 @@ type LinePayload = {
   kode_lama?: string; kode_baru?: string; uraian_baru?: string
   nama_lama?: string | null; nama_baru?: string
 }
-type HeaderPayload = { kode_tujuan?: string; uraian_tujuan?: string }
+// ⚠️ `dokumen_paths` menumpang payload yang SAMA dgn `kode_tujuan` — tiap
+// penulis payload di berkas ini WAJIB men-spread yang lama, bukan menimpanya.
+type HeaderPayload = { kode_tujuan?: string; uraian_tujuan?: string; dokumen_paths?: string[] }
 type Header = {
   id: string
   no_sk: string
@@ -323,6 +326,10 @@ export default function Reklasifikasi() {
                       {' · '}Tgl. {j.tanggal} · {j.periode}
                     </p>
                     {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
+                    <DokumenLinks paths={j.payload?.dokumen_paths || []} label="Dokumen Sumber" />
+                    {(j.payload?.dokumen_paths?.length || 0) === 0 && (
+                      <p className="text-xs text-amber-600">⚠ Belum ada dokumen sumber — lengkapi lewat ✎.</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <div className="text-right">
@@ -400,11 +407,29 @@ function EditHeaderModal({ header, onClose, onSaved }: {
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
   const [ket, setKet] = useState(header.keterangan || '')
+  const [dokPaths, setDokPaths] = useState<string[]>(header.payload?.dokumen_paths || [])
+  const [dokUploading, setDokUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
   const tglPeriode = periodeDariTanggal(tgl)
   const pindahSemester = tglPeriode !== header.periode
+
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `reklasifikasi/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
 
   async function simpan() {
     if (!noSk.trim()) { setErr('No. dokumen wajib diisi.'); return }
@@ -413,8 +438,13 @@ function EditHeaderModal({ header, onClose, onSaved }: {
       return
     }
     setErr(''); setSaving(true)
+    // ⚠️ payload di-SPREAD: `kode_tujuan`/`uraian_tujuan` tinggal di objek yang
+    // sama, dan menimpanya bikin reklas golongan/kode kehilangan kode tujuannya.
     const { error } = await supabase.from('jurnal_header')
-      .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null })
+      .update({
+        no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+        payload: { ...(header.payload || {}), dokumen_paths: dokPaths },
+      })
       .eq('id', header.id)
     if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
     setSaving(false); onSaved()
@@ -445,6 +475,15 @@ function EditHeaderModal({ header, onClose, onSaved }: {
             <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
             <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
           </div>
+          {/* Di sini dokumen TIDAK memblokir Simpan — kartu reklas sudah punya
+              baris ledger sejak detik ia dibuat, jadi menahan perbaikan salah
+              ketik No. Dokumen sampai berkasnya dipindai tak membatalkan apa
+              pun. Jendela ini justru melayani kartu lama yang lahir sebelum
+              aturan ini ada. Sama sikapnya dgn menu Koreksi. */}
+          <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+            judul="Dokumen Sumber Reklasifikasi" labelTombol="Upload Dokumen Sumber"
+            hint="foto / PDF, bisa lebih dari satu"
+            kosongText="Belum ada dokumen — kartu ini dibuat sebelum berkas diwajibkan; lengkapi di sini." />
           {err && <p className="text-sm text-red-600">{err}</p>}
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
@@ -469,6 +508,11 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [noSk, setNoSk] = useState('')
   const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
   const [ket, setKet] = useState('')
+  // Dokumen sumber — WAJIB sejak 2026-09-07. Komentar kepala berkas ini sudah
+  // menyebut "dokumen sumber" sejak awal, tapi yang ada cuma NOMOR-nya; berkasnya
+  // sendiri tak pernah bisa diunggah.
+  const [dokPaths, setDokPaths] = useState<string[]>([])
+  const [dokUploading, setDokUploading] = useState(false)
 
   // Kode tujuan (kasus golongan/kode) — dari header kalau tambah barang.
   const [kodeTujuan, setKodeTujuan] = useState<KodefikasiHasil | null>(
@@ -578,6 +622,22 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     return null
   }
 
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `reklasifikasi/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
+
   async function simpan() {
     if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }
     if (butuhKodeTujuan && !header && !kodeTujuan) { setErr('Pilih kode tujuan (reklas jadi apa) dulu.'); return }
@@ -588,10 +648,15 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     const headerBaru = !header
     if (!h) {
       if (!noSk.trim()) { setErr('No. dokumen sumber wajib diisi.'); setSaving(false); return }
+      // Penjaga SESUNGGUHNYA, bukan cuma gate tampilan `perluDokumenDulu`.
+      if (dokPaths.length === 0) { setErr('Dokumen sumber reklasifikasi wajib diunggah.'); setSaving(false); return }
       const { data, error } = await supabase.from('jurnal_header').insert({
         skpd_id: skpdId, kategori: 'reklasifikasi', jenis: alasan,
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
-        payload: butuhKodeTujuan ? { kode_tujuan: kodeTujuan!.kode, uraian_tujuan: kodeTujuan!.uraian } : null,
+        payload: {
+          dokumen_paths: dokPaths,
+          ...(butuhKodeTujuan ? { kode_tujuan: kodeTujuan!.kode, uraian_tujuan: kodeTujuan!.uraian } : {}),
+        },
       }).select(HEADER_COLS).single()
       if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
       h = data as unknown as Header
@@ -608,6 +673,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
 
   const validRows = rows.filter(r => !invalidReason(r))
   const allSelected = validRows.length > 0 && validRows.every(r => sel[r.id])
+  const perluDokumenDulu = !header && dokPaths.length === 0
 
   return (
     <div className="space-y-4">
@@ -662,12 +728,30 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                 <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)}
                   placeholder="mis. KDP selesai dibangun, serah terima gedung" />
               </div>
+              {/* Wajib & DIGATE — pola yang sama dgn Penghapusan, Koreksi, &
+                  Pengeluaran Internal. Reklasifikasi memindahkan barang antar
+                  golongan neraca (mis. KDP → Gedung) & bisa me-reset jadwal
+                  penyusutannya; itu peristiwa yang paling sering ditanya
+                  pemeriksa "dasarnya apa?". */}
+              <div className="sm:col-span-2">
+                <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+                  judul="Dokumen Sumber Reklasifikasi" labelTombol="Upload Dokumen Sumber"
+                  hint="wajib sebelum barang bisa dipilih di bawah (foto / PDF, bisa lebih dari satu)"
+                  kosongText="Belum ada dokumen — upload dulu sebelum bisa memilih barang di bawah." />
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* 2. Pilih barang yang mau direklas */}
+      {/* 2. Pilih barang yang mau direklas — DIGATE sampai dokumennya ada.
+             Nambah barang ke jurnal yang sudah ada tak digate: dokumennya sudah
+             diperiksa waktu kartunya dibuat. */}
+      {perluDokumenDulu ? (
+        <div className="card p-10 text-center text-amber-600 text-sm">
+          ⚠ Upload Dokumen Sumber Reklasifikasi dulu di atas — barang baru bisa dipilih sesudah dokumennya ada.
+        </div>
+      ) : (
       <div className="card p-5">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang yang Mau Direklas</h2>
         <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -736,6 +820,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
           {selList.length} barang dipilih · <span className="font-medium">{formatRupiah(selTotal)}</span>
         </p>
       </div>
+      )}
 
       {/* 3. Reklas jadi apa (kode tujuan berjenjang) — muncul setelah ada barang
              dicentang (barang DULU baru target), hanya golongan/kode & jurnal baru */}

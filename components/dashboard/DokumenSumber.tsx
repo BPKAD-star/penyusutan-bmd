@@ -14,16 +14,13 @@ import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { tahunAwal } from '@/lib/tahunKerja'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { fetchApprovalScope } from '@/lib/roles'
-import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen, PEMINDAHTANGANAN_SUBJENIS } from '@/lib/dokumenSiklus'
+import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen } from '@/lib/dokumenSiklus'
 import { uploadDokumenSiklus, hapusFileDokumen, bukaDokumenSumber, namaFileDariPath } from '@/lib/dokumenStorage'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type GenericDoc = {
   id: string; sub_jenis: string | null; skpd_id: number | null
   judul: string; keterangan: string | null; file_path: string; created_at: string
-}
-type PulledRow = {
-  id: string; no_sk: string; tanggal: string; skpd_id: number; skpd_tujuan: number | null; dokumen: string[]
 }
 
 export default function DokumenSumber() {
@@ -142,59 +139,48 @@ function SumberSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap }
         mySkpdId={mySkpdId} skpdMap={skpdMap} />
     )
   }
-  return <PullSection tahun={tahun} label={sumber.label} kategori={sumber.kategori}
-    perluApproval={!!sumber.perluApproval} skpdMap={skpdMap} />
+  return <PullSection tahun={tahun} sumber={sumber} skpdMap={skpdMap} />
 }
 
-// Label sub_jenis/jenis Penghapusan — dipakai badge di PullSection. Sengaja
-// TIDAK dipakai kategori lain (Pengadaan/Hibah/dst. tak punya sub_jenis sama
-// sekali, `jenisLabelBaris` mengembalikan null utk itu & badge-nya tak tampil).
-function jenisLabelBaris(jenis: string | null, subJenis: string | null): string | null {
-  if (jenis === 'penghapusan_sebab_lain') return 'Sebab Lain'
-  if (jenis === 'penghapusan_pemindahtanganan') {
-    return PEMINDAHTANGANAN_SUBJENIS.find(o => o.value === subJenis)?.label || subJenis || null
+// Baris `jurnal_header` apa adanya — `payload` sengaja dibiarkan mentah supaya
+// penyaring `cocok` di lib/dokumenSiklus.ts bisa melihat kunci apa pun
+// (`jenis_pemanfaatan`, dst.) tanpa tipe ini harus tahu isi tiap modul.
+type BarisPull = {
+  id: string; no_sk: string; tanggal: string
+  skpd_id: number; skpd_tujuan: number | null
+  jenis: string | null; sub_jenis: string | null
+  kategori: string; approval_status: string | null
+  payload: Record<string, unknown> | null
+}
+
+// Berkas satu baris = gabungan seluruh `payloadKeys` kelompoknya. Pengamanan
+// menyimpannya di DUA kunci (BAST + Pakta Integritas); yang lain cuma satu.
+function berkasDari(payload: Record<string, unknown> | null, keys: string[]): string[] {
+  const out: string[] = []
+  for (const k of keys) {
+    const v = payload?.[k]
+    if (Array.isArray(v)) out.push(...(v as string[]))
   }
-  return null
+  return out
 }
 
-type BarisPull = PulledRow & { jenis: string | null; sub_jenis: string | null }
-
-// Kelompok khusus kategori 'penghapusan' (permintaan user 2026-09-05): satu
-// kategori ledger memuat DUA jenis sekaligus (pemindahtanganan bersub_jenis +
-// sebab lain), jadi dipecah jadi LIMA kelompok terpisah — persis pola "Cara
-// Perolehan" yang tiap mekanismenya dapat blok sendiri — bukan cuma badge
-// inline di satu daftar rata. Urutan TETAP tampil semua walau kosong, supaya
-// jelas kelompok mana yang memang belum ada dokumennya.
-const KELOMPOK_PENGHAPUSAN: { key: string; label: string; cocok: (jenis: string | null, sub: string | null) => boolean }[] = [
-  ...PEMINDAHTANGANAN_SUBJENIS.map(o => ({
-    key: o.value, label: o.label,
-    cocok: (j: string | null, s: string | null) => j === 'penghapusan_pemindahtanganan' && s === o.value,
-  })),
-  { key: 'sebab_lain', label: 'Sebab Lain', cocok: (j: string | null) => j === 'penghapusan_sebab_lain' },
-]
-
-function BarisDokumen({ r, kategori, skpdMap, tampilkanJenis }: {
-  r: BarisPull; kategori: string; skpdMap: Map<number, string>; tampilkanJenis: boolean
+function BarisDokumen({ r, dokumen, tujuan, skpdMap }: {
+  r: BarisPull; dokumen: string[]; tujuan: boolean; skpdMap: Map<number, string>
 }) {
-  const jenisLabel = tampilkanJenis ? jenisLabelBaris(r.jenis, r.sub_jenis) : null
   return (
     <div className="border border-gray-100 rounded-lg p-3 flex flex-wrap items-start justify-between gap-3">
       <div className="text-xs text-gray-600">
         <p className="font-medium text-gray-800">
           {r.no_sk} <span className="text-gray-400 font-normal">· {r.tanggal}</span>
-          {jenisLabel && (
-            <span className="ml-2 inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal/10 text-teal">
-              {jenisLabel}
-            </span>
-          )}
         </p>
-        <p className="text-gray-400">
-          {skpdMap.get(r.skpd_id) || `SKPD #${r.skpd_id}`}
-          {kategori === 'pengalihan_status' && r.skpd_tujuan ? ` → ${skpdMap.get(r.skpd_tujuan) || `SKPD #${r.skpd_tujuan}`}` : ''}
-        </p>
+        {tujuan && (
+          <p className="text-gray-400">
+            → {r.skpd_tujuan ? (skpdMap.get(r.skpd_tujuan) || `SKPD #${r.skpd_tujuan}`) : '-'}
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap gap-2 justify-end">
-        {r.dokumen.map(p => (
+        {dokumen.map(p => (
           <button key={p} onClick={() => bukaDokumenSumber(p)} className="underline text-teal text-xs hover:opacity-80">
             {namaFileDariPath(p)}
           </button>
@@ -205,81 +191,126 @@ function BarisDokumen({ r, kategori, skpdMap, tampilkanJenis }: {
 }
 
 // ── Sumber yang TARIK read-only dari jurnal_header modul lain ───────────────
-function PullSection({ tahun, label, kategori, perluApproval, skpdMap }: {
-  tahun: number; label: string; kategori: string; perluApproval: boolean
+// Bentuknya: tab penyaring (satu per `kelompok`) → daftar dikelompokkan PER
+// SKPD. Kelompok tunggal (Pengamanan) tak menampilkan tab sama sekali.
+//
+// ⚠️ SATU query untuk seluruh kategori di siklus ini, lalu disaring di memori.
+// Jumlah `jurnal_header` per tahun itu ratusan, bukan ratusan ribu — memecahnya
+// jadi satu query per tab justru membuat halaman menembak 5x lebih sering
+// hanya untuk memindah tab.
+function PullSection({ tahun, sumber, skpdMap }: {
+  tahun: number
+  sumber: Extract<SumberDokumen, { tipe: 'pull' }>
   skpdMap: Map<number, string>
 }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
   const [rows, setRows] = useState<BarisPull[]>([])
+  const [aktif, setAktif] = useState<string | null>(null)
+
+  const kategoriList = [...new Set(sumber.kelompok.map(k => k.kategori))]
+  const kunci = kategoriList.join(',')
 
   const load = useCallback(async () => {
-    setLoading(true)
-    // ⚠️ `jenis`/`sub_jenis` DITARIK dari jurnal_header sendiri, BUKAN dari
-    // `payload` — `insertLines()` di Penghapusan.tsx menulis `payload: {}`
-    // KOSONG utk baris ledgernya, `sub_jenis` cuma tersimpan di sini. Lihat
-    // CLAUDE.md "sub_jenis dibaca dari payload KOSONG di 5 tempat".
-    let q = supabase.from('jurnal_header')
-      .select('id,no_sk,tanggal,skpd_id,skpd_tujuan,payload,jenis,sub_jenis,approval_status')
-      .eq('kategori', kategori)
+    setLoading(true); setErr('')
+    const { data, error } = await supabase.from('jurnal_header')
+      .select('id,no_sk,tanggal,skpd_id,skpd_tujuan,payload,jenis,sub_jenis,kategori,approval_status')
+      .in('kategori', kunci.split(','))
       .like('periode', `${tahun}-%`)
       .order('tanggal', { ascending: false })
-    if (perluApproval) q = q.eq('approval_status', 'disetujui')
-    const { data } = await q
-    const list = ((data || []) as unknown as {
-      id: string; no_sk: string; tanggal: string; skpd_id: number; skpd_tujuan: number | null
-      jenis: string | null; sub_jenis: string | null
-      payload: { dokumen_paths?: string[] } | null
-    }[])
-      .map(h => ({
-        id: h.id, no_sk: h.no_sk, tanggal: h.tanggal, skpd_id: h.skpd_id, skpd_tujuan: h.skpd_tujuan,
-        jenis: h.jenis, sub_jenis: h.sub_jenis, dokumen: h.payload?.dokumen_paths || [],
-      }))
-      .filter(h => h.dokumen.length > 0)
-    setRows(list)
+    if (error) {
+      // Ditampilkan, bukan ditelan: daftar kosong yang sebenarnya "query gagal"
+      // terbaca operator sbg "dokumennya memang belum ada".
+      setErr(`Gagal memuat dokumen: ${error.message}`); setRows([]); setLoading(false); return
+    }
+    setRows((data || []) as unknown as BarisPull[])
     setLoading(false)
-  }, [tahun, kategori, perluApproval]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tahun, kunci]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
 
+  // Baris + berkasnya per kelompok. Yang berkasnya kosong DIBUANG — halaman ini
+  // arsip dokumen, bukan daftar kartu jurnal.
+  const isiKelompok = sumber.kelompok.map(k => {
+    const keys = k.payloadKeys || ['dokumen_paths']
+    const baris = rows
+      .filter(r => r.kategori === k.kategori)
+      .filter(r => !k.perluApproval || r.approval_status === 'disetujui')
+      .filter(r => !k.cocok || k.cocok(r))
+      .map(r => ({ r, dokumen: berkasDari(r.payload, keys) }))
+      .filter(x => x.dokumen.length > 0)
+    return { k, baris }
+  })
+
+  // Tab awal = kelompok PERTAMA yang ada isinya. Menjatuhkannya ke kelompok
+  // pertama begitu saja bikin operator mendarat di tab kosong & mengira
+  // seluruh siklusnya belum berisi — padahal isinya cuma ada di tab sebelah.
+  const aktifKey = aktif ?? (isiKelompok.find(x => x.baris.length > 0)?.k.key || sumber.kelompok[0].key)
+  const terpilih = isiKelompok.find(x => x.k.key === aktifKey) || isiKelompok[0]
+
+  // Kelompokkan per SKPD (permintaan user 2026-09-07). Untuk siklus Penggunaan
+  // `skpd_id` = SKPD yang MENGELUARKAN barang — itu memang yang diminta.
+  const namaSkpd = (id: number) => skpdMap.get(id) || `SKPD #${id}`
+  const perSkpd = (() => {
+    const m = new Map<number, { r: BarisPull; dokumen: string[] }[]>()
+    for (const b of terpilih?.baris || []) {
+      const arr = m.get(b.r.skpd_id) || []
+      arr.push(b)
+      m.set(b.r.skpd_id, arr)
+    }
+    return [...m.entries()].sort((a, b) => namaSkpd(a[0]).localeCompare(namaSkpd(b[0])))
+  })()
+
   return (
     <div className="card p-5">
-      <h3 className="font-semibold text-gray-800 text-sm mb-3">{label}</h3>
-      {loading ? (
-        <p className="text-xs text-gray-400">Memuat...</p>
-      ) : kategori === 'penghapusan' ? (
-        <div className="space-y-4">
-          {KELOMPOK_PENGHAPUSAN.map(g => {
-            const groupRows = rows.filter(r => g.cocok(r.jenis, r.sub_jenis))
-            return (
-              <div key={g.key}>
-                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">{g.label}</p>
-                {groupRows.length === 0 ? (
-                  <p className="text-xs text-gray-400">Belum ada dokumen untuk tahun {tahun}.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {groupRows.map(r => (
-                      <BarisDokumen key={r.id} r={r} kategori={kategori} skpdMap={skpdMap} tampilkanJenis={false} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      ) : rows.length === 0 ? (
-        <p className="text-xs text-gray-400">Belum ada dokumen untuk tahun {tahun}.</p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map(r => (
-            <BarisDokumen key={r.id} r={r} kategori={kategori} skpdMap={skpdMap} tampilkanJenis />
+      <h3 className="font-semibold text-gray-800 text-sm">{sumber.label}</h3>
+      {sumber.catatan && <p className="text-xs text-gray-400 mt-0.5">{sumber.catatan}</p>}
+
+      {sumber.kelompok.length > 1 && (
+        <div className="flex flex-wrap gap-2 mt-3">
+          {isiKelompok.map(({ k, baris }) => (
+            <button key={k.key} onClick={() => setAktif(k.key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                k.key === aktifKey ? 'bg-teal text-white border-teal' : 'bg-white text-gray-600 border-gray-200 hover:border-teal'
+              }`}>
+              {k.label}
+              {/* Jumlahnya ikut di chip supaya tab yang berisi kelihatan tanpa
+                  harus diklik satu per satu. */}
+              <span className={`ml-1.5 ${k.key === aktifKey ? 'opacity-80' : 'text-gray-400'}`}>{baris.length}</span>
+            </button>
           ))}
         </div>
       )}
+
+      <div className="mt-4">
+        {loading ? (
+          <p className="text-xs text-gray-400">Memuat...</p>
+        ) : err ? (
+          <p className="text-xs text-red-600">{err}</p>
+        ) : perSkpd.length === 0 ? (
+          <p className="text-xs text-gray-400">Belum ada dokumen untuk tahun {tahun}.</p>
+        ) : (
+          <div className="space-y-4">
+            {perSkpd.map(([skpdId, baris]) => (
+              <div key={skpdId}>
+                <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  {namaSkpd(skpdId)} <span className="text-gray-300 font-normal">· {baris.length} dokumen</span>
+                </p>
+                <div className="space-y-2">
+                  {baris.map(b => (
+                    <BarisDokumen key={b.r.id} r={b.r} dokumen={b.dokumen}
+                      tujuan={!!terpilih?.k.tujuan} skpdMap={skpdMap} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
-
 // ── Sumber generik: upload baru ke tabel admin_dokumen ──────────────────────
 function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap }: {
   tahun: number
