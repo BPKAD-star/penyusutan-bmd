@@ -90,7 +90,7 @@ bukan membangun ulang. Jangan diasumsikan — konfirmasi dulu.
 | Laporan Penerimaan Internal | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
 | Laporan Pengeluaran Internal | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
 | Laporan Reklasifikasi | `LaporanReklas` | ✔ daftar · rekap | `/cetak/reklas-permendagri` | C | ✅ **IV.F.2–F.6** (penambahan) · **IV.F.12–F.16** (pengurangan) |
-| Laporan Koreksi | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
+| Laporan Koreksi | `LaporanKoreksi` | ✔ daftar · rekap | `/cetak/koreksi-permendagri` | C | ✅ **IV.G.2–G.7** (koreksi nilai) · ➖ empat alasan lain |
 | Laporan Kapitalisasi | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
 | Laporan Penghapusan | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
 | Laporan Pemanfaatan | `LaporanPemanfaatan` | ✔ | kop generik | A | ⬜ |

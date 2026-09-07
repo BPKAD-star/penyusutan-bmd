@@ -359,15 +359,16 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
     }
     // Pengaman anti-hampa: pemindai yang tak menemukan apa-apa akan "lulus".
     // ⚠️ Ambangnya TURUN tiap satu menu pindah ke kerangkanya sendiri — per
-    // 2026-09-07 sisa 2 (Koreksi, Penghapusan). Yang sudah pindah & dijaga uji
+    // 2026-09-07 sisa 1 (Penghapusan). Yang sudah pindah & dijaga uji
     // TERSENDIRI di bawah: Penggunaan/Penerimaan/Pengeluaran Internal
-    // (`LaporanPerpindahan`), Kapitalisasi (`LaporanKapitalisasi`, format &
-    // sumber datanya beda total), dan Reklasifikasi (`LaporanReklas`, butuh
-    // penyaring arah + lembar IV.F).
-    // Kalau angka ini turun lagi, PASTIKAN menu yang pindah sudah masuk
-    // `DIR_PERPINDAHAN` atau punya uji index sendiri — bukan sekadar
-    // menurunkan ambangnya, kalau tidak menu itu lolos dari SEMUA uji.
-    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(2)
+    // (`LaporanPerpindahan`), Kapitalisasi (`LaporanKapitalisasi`),
+    // Reklasifikasi (`LaporanReklas`, lembar IV.F), & Koreksi (`LaporanKoreksi`,
+    // lembar IV.G + penyaring "Asal baris").
+    // ⚠️ Kalau angka ini turun jadi 0, JANGAN sekadar menurunkan ambangnya —
+    // pemindai yang tak menemukan apa-apa akan "lulus" tanpa memeriksa apa pun,
+    // dan komponen `LaporanTransaksi` yang tak lagi dipakai siapa pun sebaiknya
+    // DIHAPUS, bukan dibiarkan tak terjaga.
+    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(1)
     return out
   }
 
@@ -508,6 +509,51 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
     expect(cocok.length,
       `JENIS_REKLAS (${JENIS_REKLAS.join(', ')}) tak tercakup SATU index (id) WHERE jenis IN (…) — `
       + 'menu Laporan Reklasifikasi akan timeout begitu dibuka tanpa filter periode').toBeGreaterThan(0)
+  })
+
+  // ⚠️ Koreksi PINDAH ke `LaporanKoreksi` sendiri 2026-09-07 (butuh tiga tab +
+  // lembar Permendagri IV.G.2–G.7 + penyaring "Asal baris"). Sejak itu ia lolos
+  // dari pemindai §7 di atas, jadi penjaganya harus di sini — dan KELIMA
+  // jenisnya wajib tercakup SATU index yang sama, karena kerangkanya menariknya
+  // dalam satu `.in('jenis', JENIS_KOREKSI)`.
+  //
+  // ⚠️ Jenisnya dibaca dari SUMBER komponennya, bukan diketik ulang di sini —
+  // kalau diketik ulang, jenis keenam yang kelak ditambahkan tak akan pernah
+  // ikut terperiksa & tak ada yang menyadarinya.
+  it('LaporanKoreksi: tiap jenis tercakup SATU index (id) yang sama & mengurut by id', () => {
+    const komponen = path.join(AKAR, 'components/pelaporan/LaporanKoreksi.tsx')
+    expect(fs.existsSync(komponen), 'components/pelaporan/LaporanKoreksi.tsx tak ditemukan').toBe(true)
+    const isi = fs.readFileSync(komponen, 'utf8')
+    expect(isi, 'LaporanKoreksi tak mengurutkan by id').toContain("order('id'")
+
+    const m = isi.match(/const JENIS_KOREKSI = \[([\s\S]*?)\] as const/)
+    expect(m, 'daftar JENIS_KOREKSI tak terbaca — pemindaian rusak').toBeTruthy()
+    const jenis = kutipan(m![1])
+    expect(jenis.length, 'JENIS_KOREKSI terbaca kosong').toBeGreaterThan(0)
+
+    const halaman = path.join(DIR_HAL, 'koreksi', 'page.tsx')
+    expect(fs.existsSync(halaman), 'halaman koreksi tak ditemukan').toBe(true)
+    expect(fs.readFileSync(halaman, 'utf8'), 'halaman koreksi tak lagi memakai LaporanKoreksi')
+      .toContain('LaporanKoreksi')
+
+    const peta = predikatIndexId()
+    const cocok = [...peta.entries()].filter(([, predikat]) => jenis.every(j => predikat.includes(j)))
+    expect(cocok.length,
+      `JENIS_KOREKSI (${jenis.join(', ')}) tak tercakup SATU index (id) WHERE jenis IN (…) — `
+      + 'menu Laporan Koreksi akan timeout begitu dibuka tanpa filter periode').toBeGreaterThan(0)
+  })
+
+  // Pemuat lembar IV.G menarik `koreksi_nilai` saja, keyset by id — bentuk yang
+  // sama & risiko timeout yang sama.
+  it('pemuat lembar IV.G mengurut by id & jenisnya tercakup index parsial', () => {
+    const pemuat = path.join(AKAR, 'lib/laporanKoreksi.ts')
+    expect(fs.existsSync(pemuat), 'lib/laporanKoreksi.ts tak ditemukan').toBe(true)
+    expect(fs.readFileSync(pemuat, 'utf8'), 'pemuat lembar IV.G tak mengurutkan by id')
+      .toContain("order('id'")
+    const peta = predikatIndexId()
+    const cocok = [...peta.entries()].filter(([, p]) => p.includes('koreksi_nilai'))
+    expect(cocok.length, "'koreksi_nilai' tak tercakup index (id) WHERE jenis IN (…) manapun")
+      .toBeGreaterThan(0)
   })
 
   it('idx_trx_kapitalisasi_id & idx_trx_koreksi_id dibuat PLAIN, bukan CONCURRENTLY', () => {

@@ -1,11 +1,22 @@
 'use client'
-import LaporanTransaksi from '@/components/LaporanTransaksi'
-import { BATAL_TARGET_JENIS } from '@/lib/voidedAset'
+// Menu Pelaporan → Pengelolaan → Koreksi.
+//
+// ⚠️ Sejak 2026-09-07 halaman ini TIDAK lagi memakai `LaporanTransaksi` yang
+// generik: ia butuh tiga tab (Daftar Transaksi · Rekap per SKPD · Format
+// Permendagri IV.G.2–G.7), dan komponen generik itu tak punya satu pun.
+//
+// ⚠️ Dua hal yang IKUT pindah & gampang tertinggal — lihat kepala
+// components/pelaporan/LaporanKoreksi.tsx:
+//   1. saringan `batal_koreksi_*`, kini TERSCOPE ke aset yang ditanya;
+//   2. penyaring "Asal baris" berbawaan `menu`, supaya 200 baris
+//      `koreksi_pencatatan_ganda` hasil batch SQL admin tak ikut tampil
+//      (keputusan user 2026-09-07).
+//
+// ⚠️ Kepindahan ini juga menutup cacat lama: `LaporanTransaksi` menyaring SKPD
+// lewat `skpd_asal`/`skpd_tujuan`, dan baris koreksi tak punya kedua kolom itu —
+// jadi memilih SKPD di menu lama menghasilkan 0 transaksi yang kelihatan sah.
+import LaporanKoreksi from '@/components/pelaporan/LaporanKoreksi'
+
 export default function Page() {
-  // Catatan: batal_pemecahan / batal_pemecahan_masuk SENGAJA tetap di jenisList
-  // (ditampilkan sbg baris tersendiri, bukan penganulir lewat target_trx_id) —
-  // pembatalan pemecahan adalah peristiwa yang memang perlu terlihat di rekap.
-  return <LaporanTransaksi judul="Laporan Koreksi" deskripsi="Rekap koreksi nilai, spesifikasi, pencatatan ganda, & pemecahan barang (koreksi yang sudah dibatalkan tidak ditampilkan)."
-    jenisList={['koreksi_nilai', 'koreksi_spesifikasi', 'koreksi_pencatatan_ganda', 'pemecahan_keluar', 'pemecahan_masuk', 'batal_pemecahan', 'batal_pemecahan_masuk']} filePrefix="Laporan_Koreksi"
-    batalJenis={BATAL_TARGET_JENIS.koreksi} />
+  return <LaporanKoreksi />
 }

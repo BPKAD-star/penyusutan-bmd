@@ -157,6 +157,9 @@ const KUNCI_PERPINDAHAN = {
 export const kunciTtdReklas = (lap: 'penambahan' | 'pengurangan', skpdId: number) =>
   `bmd_reklas_${lap}_ttd_skpd_${skpdId}`
 
+/** Lembar KOREKSI — IV.G.2–G.7. */
+export const kunciTtdKoreksi = (skpdId: number) => `bmd_koreksi_ttd_skpd_${skpdId}`
+
 /** RKBMD — lembar per-SKPD & lembar se-Kabupaten (yang se-kab bermuatan TEKS). */
 /** Lembar se-Kabupaten Perolehan (IV.A.<n>.7–10) — penanda tangannya "Pejabat
  *  Penatausahaan Barang", dipilih bebas & TIDAK terikat SKPD mana pun. */

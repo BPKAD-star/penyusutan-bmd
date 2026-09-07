@@ -66,6 +66,7 @@ export type IdLembar =
   | 'gabungan-internal'
   | 'reklas-penambahan'
   | 'reklas-pengurangan'
+  | 'koreksi-nilai'
   | 'mutasi-bmd-skpd'
   | 'laporan-bmd-skpd'
   | 'mutasi-bmd-pemda'
@@ -194,6 +195,22 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
     judul: 'Laporan Pengurangan akibat Reklasifikasi BMD',
     kertas: 'F4 lanskap',
     berkas: 'components/pelaporan/LembarReklasPermendagri.tsx',
+  },
+  // ── Koreksi (IV.G) ───────────────────────────────────────────────────────
+  // ⚠️ SATU entri saja, dan itu bukan pekerjaan yang tertinggal: lembar IV.G
+  // seluruh kolom uangnya "Nilai Perolehan / Akumulasi / Nilai Buku, sebelum &
+  // setelah" — ia format tentang PERUBAHAN NILAI. Empat alasan koreksi lain di
+  // aplikasi ini (Pencatatan Ganda · Spesifikasi · Pemecahan · Penggabungan)
+  // tak mengubah satu pun dari ketiganya, jadi menambahkan entri untuk mereka
+  // akan menerbitkan lembar resmi yang seluruh kolom uangnya nol atau berulang.
+  // Alasan lengkapnya di kepala lib/formatKoreksi.ts.
+  // ⚠️ `kode` di sini lembar RINCI-nya; kelima rekapnya (IV.G.3–G.7) dilayani
+  // komponen yang SAMA & tak punya entri sendiri.
+  'koreksi-nilai': {
+    kode: 'IV.G.2',
+    judul: 'Laporan Koreksi BMD (koreksi nilai)',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarKoreksiPermendagri.tsx',
   },
   'mutasi-bmd-skpd': {
     kode: 'IV.L.4.1',

@@ -79,7 +79,15 @@ type KandidatGabung = Kandidat & { satuan: string | null; merek_tipe: string | n
 const kunciGabung = (k: { kode: string; nilai_perolehan: number; tgl_perolehan: string | null }) =>
   `${k.kode}|${Math.round(k.nilai_perolehan)}|${k.tgl_perolehan || '-'}`
 // prev = nilai field SEBELUM koreksi_spesifikasi (utk restore saat batal).
-type LinePayload = { nilai_lama?: number; nilai_perolehan_baru?: number; survivor_nibar?: string; prev?: Record<string, unknown> } & Record<string, unknown>
+type LinePayload = {
+  nilai_lama?: number; nilai_perolehan_baru?: number
+  /** Akumulasi penyusutan pada periode SEBELUM tanggal dokumen, dibekukan saat
+   *  koreksi nilai disimpan. Dipakai lembar Permendagri IV.G.2 (kolom "Sebelum
+   *  Koreksi"); TIDAK dibaca engine. Absen pada baris sebelum 2026-09-07. */
+  akumulasi_lama?: number
+  basis_periode?: string
+  survivor_nibar?: string; prev?: Record<string, unknown>
+} & Record<string, unknown>
 // Dokumen sumber kartu koreksi. Sampai 2026-09-07 menu ini satu-satunya menu
 // ber-SK yang tak punya berkas sama sekali; sekarang WAJIB untuk Pemecahan
 // Barang (permintaan user) — alasan lain sengaja belum disentuh.
@@ -1138,13 +1146,64 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     if (alasan === 'nilai_perolehan') {
       const items = Object.values(selNilai)
       if (items.length === 0) { setErr('Centang minimal satu barang.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+      // ── Posisi penyusutan SEBELUM koreksi, dibekukan ke payload ────────────
+      //
+      // ⚠️ Lembar Permendagri IV.G.2 ("Laporan Koreksi BMD") menuntut Nilai
+      // Perolehan, Akumulasi, & Nilai Buku **sebelum DAN setelah** koreksi.
+      // Yang "setelah" bisa dibaca dari `penyusutan_semester` kapan saja; yang
+      // "SEBELUM" **tak tersimpan di mana pun** begitu engine di-run ulang —
+      // koreksi nilai mengubah basis penyusutan, jadi baris engine periode itu
+      // langsung memuat angka yang BARU. Tanpa dibekukan di sini, kolom
+      // (15)(16) & seluruh blok Selisih lembar itu mustahil diisi.
+      //
+      // Polanya SAMA PERSIS dengan `penggabungan_masuk` di berkas ini
+      // (`akumulasi_lama`/`akumulasi_baru`) dan dengan `akumulasi_diserap` di
+      // Kapitalisasi: dibaca pada periode SEBELUM tanggal dokumen — itulah
+      // posisi pembuka periode koreksi, persis state engine saat memproses
+      // event ini.
+      //
+      // ⚠️ TIDAK MEMBLOKIR kalau barisnya tak ketemu, sengaja BEDA dari
+      // Penggabungan yang menolak menyimpan. Di sana akumulasi yang jatuh ke 0
+      // benar-benar MENGHAPUS angka dari neraca; di sini ia cuma dipakai
+      // MELAPORKAN, jadi menahan koreksi nilai gara-gara engine belum
+      // dijalankan akan mengurung operator demi sebuah kolom laporan. Yang
+      // tak ketemu tak dibekukan sama sekali (bukan dibekukan sbg 0), dan
+      // lembar IV.G.2 mencetaknya titik-titik + menghitungnya di strip amber —
+      // nol berarti "memang belum tersusut", tak-ada berarti "tak diketahui".
+      const basisPeriode = formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(h.tanggal))))
+      const akumSebelum: Record<string, number> = {}
+      const idsNilai = items.map(i => i.barang.id)
+      for (let i = 0; i < idsNilai.length; i += 200) {
+        const { data, error } = await supabase.from('penyusutan_semester')
+          .select('aset_id,akumulasi').eq('periode', basisPeriode).in('aset_id', idsNilai.slice(i, i + 200))
+        // Kegagalannya DILAPORKAN & menghentikan penyimpanan: diam-diam
+        // melanjutkan tanpa snapshot membuat lembar IV.G.2 bertitik-titik
+        // selamanya untuk kartu ini, tanpa satu pun jejak kenapa.
+        if (error) {
+          setErr(`Gagal membaca akumulasi penyusutan ${basisPeriode}: ${error.message}`)
+          if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
+          setSaving(false); return
+        }
+        for (const r of (data || []) as { aset_id: string; akumulasi: number }[]) {
+          akumSebelum[r.aset_id] = Number(r.akumulasi) || 0
+        }
+      }
       for (const { barang, nilaiBaru } of items) {
         const baru = parseFloat(nilaiBaru)
         if (isNaN(baru) || baru < 0) { setErr(`Nilai baru "${barang.nama_barang || barang.nibar}" tidak valid.`); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
         const delta = baru - barang.nilai_perolehan
+        // Golongan yang memang tak disusutkan (Tanah/ATL/KDP) tak punya baris
+        // engine sama sekali — akumulasinya NOL, bukan "tak diketahui".
+        const akLama = perlakuanKode(barang.kode) === 'tidak' ? 0 : akumSebelum[barang.id]
         const { error } = await catatTransaksi(supabase, {
           asetId: barang.id, jenis: 'koreksi_nilai', nilai: delta, tanggal: h.tanggal, headerId: h.id,
-          payload: { nilai_lama: barang.nilai_perolehan, nilai_perolehan_baru: baru, delta },
+          payload: {
+            nilai_lama: barang.nilai_perolehan, nilai_perolehan_baru: baru, delta,
+            // Kunci baru (2026-09-07). Baris LAMA tak punya ini & itu tak
+            // merusak apa pun — engine tak membacanya sama sekali, cuma lembar
+            // IV.G yang memakainya.
+            ...(akLama != null ? { akumulasi_lama: akLama, basis_periode: basisPeriode } : {}),
+          },
           keterangan: h.keterangan || undefined,
         })
         if (error) { setErr(error); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }

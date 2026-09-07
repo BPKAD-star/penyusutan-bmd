@@ -414,6 +414,26 @@ export type ItemLaporan<T> = {
   kode: string; jumlah: number; nilai: number; data: T
   akumulasi?: number
   nilaiBuku?: number
+  /**
+   * Ukuran TAMBAHAN yang ikut dijumlah di tiap baris kelompok, bebas nama.
+   *
+   * ⚠️ Ditambahkan untuk cabang IV.G (Koreksi), yang butuh **dua belas** angka
+   * per kelompok — Nilai Perolehan · Akumulasi · Nilai Buku, masing-masing
+   * SEBELUM & SETELAH koreksi, plus pecahan TAMBAH/KURANG-nya di lembar rekap.
+   * Menambahkan dua belas ruas bernama ke tipe ini akan membebani lima cabang
+   * lain yang tak satu pun memakainya.
+   *
+   * ⚠️ Tetap SATU mesin subtotal, dan itu memang syaratnya: lembar rinci &
+   * keempat/kelima rekapnya terbit dalam SATU berkas bertanda tangan, jadi dua
+   * jalan menuju angka yang sama akan membuat satu berkas memuat dua kebenaran
+   * tanpa satu pun yang berteriak (alasan yang sama dgn `susunRekap` memakai
+   * `jalanKelompok` yang sama dgn `susunRinci`).
+   *
+   * ⚠️ Kunci yang TAK ADA di sebuah item dihitung 0, bukan diabaikan — kalau
+   * tidak, kelompok yang sebagian anggotanya tak punya kunci itu akan
+   * menjumlah hanya sebagian & hasilnya tetap kelihatan wajar.
+   */
+  ukuran?: Record<string, number>
 }
 
 /**
@@ -442,14 +462,19 @@ export type BarisGrup = {
   akumulasi: number
   /** Σ nilai buku kelompok ini. 0 untuk lembar yang tak punya kolomnya. */
   nilaiBuku: number
+  /** Σ tiap ukuran tambahan (lihat `ItemLaporan.ukuran`). Kosong kalau tak dipakai. */
+  ukuran: Record<string, number>
   /** Penanda subtotal di lembar asli (mis. 25) — hanya di lembar RINCI. */
   penanda?: number
 }
 export type BarisItem<T> = { tipe: 'item'; kode: string; data: T; jumlah: number; nilai: number }
 export type BarisRinci<T> = BarisGrup | BarisItem<T>
 
-type Ukuran = { jumlah: number; nilai: number; akumulasi: number; nilaiBuku: number }
-const nolUkuran = (): Ukuran => ({ jumlah: 0, nilai: 0, akumulasi: 0, nilaiBuku: 0 })
+type Ukuran = {
+  jumlah: number; nilai: number; akumulasi: number; nilaiBuku: number
+  ukuran: Record<string, number>
+}
+const nolUkuran = (): Ukuran => ({ jumlah: 0, nilai: 0, akumulasi: 0, nilaiBuku: 0, ukuran: {} })
 
 /** Total per (kedalaman, awalan). Satu sapuan, dipakai rinci MAUPUN rekap. */
 function petaTotal<T>(items: ItemLaporan<T>[], segs: number[]): Map<string, Ukuran> {
@@ -463,6 +488,12 @@ function petaTotal<T>(items: ItemLaporan<T>[], segs: number[]): Map<string, Ukur
       t.nilai += it.nilai
       t.akumulasi += it.akumulasi ?? 0
       t.nilaiBuku += it.nilaiBuku ?? 0
+      // ⚠️ `?? 0` per kunci: item yang tak punya ukuran itu menyumbang nol,
+      // BUKAN dilewati. Melewatinya membuat kelompok yang anggotanya campur
+      // menjumlah sebagian saja — dan hasilnya tetap kelihatan wajar.
+      for (const [nama, v] of Object.entries(it.ukuran ?? {})) {
+        t.ukuran[nama] = (t.ukuran[nama] ?? 0) + (v ?? 0)
+      }
       m.set(k, t)
     }
   }

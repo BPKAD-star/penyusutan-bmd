@@ -2783,6 +2783,115 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## Laporan Koreksi — Format IV.G.2–G.7 (KOREKSI NILAI saja) (2026-09-07)
+
+Cabang KEENAM modul Pelaporan Permendagri 47/2021. Menu Pelaporan →
+Pengelolaan → **Koreksi** pindah dari `LaporanTransaksi` ke `LaporanKoreksi`
+sendiri: tiga tab + lembar **IV.G.2** (rinci) & **IV.G.3–G.7** (rekap selisih).
+**Tak ada migrasi.**
+
+Berkasnya: `lib/formatKoreksi.ts` (+ test) · `lib/laporanKoreksi.ts` ·
+`components/pelaporan/LembarKoreksiPermendagri.tsx`
+(+ `tests/lembarKoreksi.test.tsx`) · `KoreksiFormatPermendagri.tsx` ·
+`LaporanKoreksi.tsx` · `app/cetak/koreksi-permendagri/page.tsx`.
+
+- **CAKUPANNYA HANYA `koreksi_nilai`, dan itu jawaban atas pertanyaan user
+  ("kayae cuman pelaporan untuk koreksi nilai aja… aman ya?"). Ya, aman —**
+  bukan karena yang lain belum dibangun, tapi karena formatnya memang bukan
+  tentang mereka. SELURUH kolom uang IV.G adalah "Nilai Perolehan / Akumulasi /
+  Nilai Buku, **sebelum & setelah**": ia format tentang PERUBAHAN NILAI.
+  · Koreksi **Spesifikasi** tak menyentuh satu pun dari ketiganya → tiap baris
+  akan bersisi sebelum = setelah & selisih nol; lembar penuh angka nol yang
+  ditandatangani lebih buruk daripada tak ada lembar.
+  · **Pencatatan Ganda** membuang barang dari daftar, bukan mengoreksi nilainya
+  — di aplikasi ini barisnya bahkan bernilai **Rp0** (diverifikasi ke produksi).
+  · **Pemecahan & Penggabungan** menata ulang barang dgn Σ nilai TETAP, lahir
+  dari kebutuhan aplikasi ini sendiri, dan di Format V.2 sudah dipetakan ke
+  baris "6 Koreksi".
+  ⚠️ Jadi kalau kelak ada yang hendak "melengkapi" lembar ini untuk keempatnya:
+  yang dibutuhkan **format lain sama sekali**, bukan entri registry baru.
+- ⚠️ **CELAH DATA YANG DITUTUP: `koreksi_nilai` kini MEMBEKUKAN `akumulasi_lama`
+  di payload** (Koreksi.tsx). Lembar IV.G.2 menuntut akumulasi & nilai buku
+  **sebelum** koreksi, dan itu **tak tersimpan di mana pun**: koreksi nilai
+  mengubah basis penyusutan, jadi begitu engine di-run ulang baris
+  `penyusutan_semester` periode itu SUDAH memuat angka yang baru. Dibaca pada
+  periode SEBELUM tanggal dokumen — pola & alasan yang sama persis dgn
+  `penggabungan_masuk` (`akumulasi_lama`/`akumulasi_baru`) & `akumulasi_diserap`
+  di Kapitalisasi. Aditif, tanpa migrasi, tak dibaca engine.
+  ⚠️ **TIDAK MEMBLOKIR** kalau baris engine-nya tak ketemu — sengaja BEDA dari
+  Penggabungan yang menolak menyimpan. Di sana akumulasi yang jatuh ke 0
+  benar-benar MENGHAPUS angka dari neraca; di sini ia cuma dipakai MELAPORKAN,
+  jadi menahan koreksi nilai gara-gara engine belum dijalankan akan mengurung
+  operator demi sebuah kolom laporan. Yang tak ketemu **tak dibekukan sama
+  sekali** (bukan dibekukan sbg 0) → lembarnya mencetak titik-titik + strip
+  amber menyebut jumlahnya. **Baris koreksi sebelum 2026-09-07 tak punya
+  snapshot ini**, jadi sisi "Sebelum" & seluruh "Selisih"-nya titik-titik
+  selamanya — angkanya memang tak pernah ada.
+- ⚠️ **DUA SISI, DUA SUMBER, dan itu disengaja:** "Sebelum" seluruhnya BEKU dari
+  payload; "Setelah" — Nilai Perolehan BEKU (`nilai_perolehan_baru`), Akumulasi
+  HIDUP dari `penyusutan_semester`. Nilai Perolehan setelah sengaja beku supaya
+  `selisih = setelah − sebelum` PERSIS sama dengan `payload.delta` alias
+  `transaksi_bmd.nilai` — angka yang sama yang dipakai Rekonsiliasi & Laporan
+  BMD. Kalau memakai nilai HIDUP, aset yang dikoreksi DUA KALI dalam satu
+  periode akan menampilkan selisih milik koreksi terakhir di baris koreksi
+  pertama, dan ketiga kolomnya tetap terlihat konsisten satu sama lain.
+  ⚠️ Nilai Buku **DITURUNKAN** (`perolehan − akumulasi`) di kedua sisi, tak
+  dibaca dari `nilai_buku_akhir` — itu yang menjamin `NP − Akumulasi = NB`
+  berlaku di kertas. Dikunci uji render "sebelum + selisih = setelah".
+  ⛔ Keterbatasan yang DITERIMA: akumulasi "setelah" posisi AKHIR periode
+  sementara "sebelum" posisi AWAL periode, jadi aset yang dikoreksi dua kali di
+  periode yang sama menampilkan pergerakan gabungan di baris pertamanya.
+- ⚠️ **`ItemLaporan.ukuran?: Record<string, number>`** ditambahkan ke mesin
+  subtotal bersama (lib/formatPermendagri.ts). IV.G butuh **DUA BELAS** angka
+  per kelompok; menambahkan dua belas ruas bernama akan membebani lima cabang
+  yang tak satu pun memakainya, dan menulis mesin subtotal kedua berarti lembar
+  rinci & kelima rekapnya — yang terbit dalam SATU berkas bertanda tangan —
+  bisa menjumlah berbeda. Kunci yang TAK ADA di sebuah item dihitung **0, bukan
+  diabaikan**: melewatinya membuat kelompok yang anggotanya campur menjumlah
+  sebagian saja & hasilnya tetap kelihatan wajar.
+- ⚠️ **TAMBAH & KURANG dijumlah TERPISAH, bukan diturunkan dari nettonya.**
+  Kelompok berisi +100 dan −40 bernetto +60, sementara IV.G.3–G.7 menuntut
+  Tambah 100 & Kurang 40 di dua kolom berbeda. Menurunkannya dari netto mencetak
+  "60 · 0" — angka yang tetap kelihatan wajar DAN tetap menjumlah benar ke
+  nettonya. KURANG disimpan sbg bilangan POSITIF (judul kolom sudah menyatakan
+  tandanya). Diuji merah dulu dgn menurunkannya dari netto.
+- ⚠️ **`punyaBarang` TERPISAH dari `bentuk`, dan IV.G.3 alasannya.** Lembar itu
+  berbentuk `selisih` TAPI masih memuat baris barang berikut NIBAR &
+  Spesifikasi Nama Barang. Menyimpulkan yang satu dari yang lain membuatnya
+  kehilangan SELURUH baris barangnya — dan angka kelompoknya tetap benar, jadi
+  tak ada yang berteriak. Diuji merah dulu.
+- ⚠️ **NIBAR kolom (10), DI TENGAH** — beda dari IV.B/IV.C/IV.D/IV.F yang
+  menaruhnya paling kiri di luar blok kode. Di IV.G blok "Kode Barang" yang
+  paling kiri dan BERDIRI SENDIRI: tak ada super-header "Penggolongan dan
+  Kodefikasi Barang". Jangan disamakan "biar seragam".
+- **`segMin` 3 untuk dua lembar berbaris barang (G.2, G.3), 2 untuk empat rekap
+  murni (G.4–G.7)** — mengikuti gambarnya. **IV.G.7 = MENURUT JENIS** (3
+  segmen), bentuknya ditegaskan user; gambarnya tak ikut diserahkan (batas
+  lampiran) tapi ia kelanjutan tangga yang sama.
+- **Kepala TIGA tingkat** di bentuk `selisih` ("Selisih Nilai Koreksi" → tiga
+  sub-blok ukuran → Tambah/Kurang) — satu baris kepala lebih banyak daripada
+  lembar mana pun lain di aplikasi ini. Dikunci uji render.
+- ⚠️ **`batal_pemecahan` & `batal_pemecahan_masuk` TETAP di daftar tab 1**,
+  dipertahankan apa adanya dari versi `LaporanTransaksi`: keduanya ditampilkan
+  sbg baris TERSENDIRI (bukan penganulir lewat `target_trx_id`) karena
+  pembatalan pemecahan memang perlu terlihat di rekap. Membuangnya tak
+  menghasilkan error — barisnya cuma hilang.
+  ⛔ `penggabungan_*` TIDAK ikut, sama seperti sebelumnya: predikat
+  `idx_trx_koreksi_id` belum memuatnya, jadi menambahkannya tanpa memperlebar
+  index lebih dulu = timeout (insiden 2026-08-26).
+- ⚠️ **Cacat lama yang ikut ditutup, sama persis dgn Reklasifikasi:** filter
+  SKPD di menu ini tak pernah bekerja — `LaporanTransaksi` menyaring
+  `skpd_asal`/`skpd_tujuan` yang di ledger koreksi SELALU NULL. Kini lewat
+  `aset.skpd_id`, disaring di memori (alasan & pagunya sama dgn
+  lib/laporanReklas.ts).
+- **Penyaring "Asal baris" IKUT PINDAH** berikut bawaannya `menu` — lihat
+  bagian di bawah. Tanpa itu 200 baris batch admin muncul lagi di menu ini.
+- ⚠️ §7 lib/sinkronisasiRpc.test.ts: ambang anti-hampa turun ke **1**
+  (tinggal Penghapusan yang memakai `LaporanTransaksi`), dan Koreksi dapat uji
+  index sendiri — diuji merah dulu dgn menyelundupkan jenis di luar predikat.
+  **Kalau ambang itu turun jadi 0, `LaporanTransaksi` sebaiknya DIHAPUS**, bukan
+  dibiarkan tak terjaga.
+
 ## "200 pencatatan ganda yang tak pernah saya entri" (2026-09-07)
 
 User membuka Pelaporan → Pengelolaan → **Koreksi** dan menemukan kartu
