@@ -2805,13 +2805,30 @@ Ketiganya sudah tercatat di bagian "Import massal JANGAN mencocokkan barang
 lewat KODE BARANG" di atas; yang belum pernah ada cuma **cara laporan
 mengatakannya**.
 
-- ⚠️ **Obatnya MENANDAI, BUKAN MENYEMBUNYIKAN.** Menyaringnya keluar membuat
-  menu ini satu-satunya yang tak sepakat dgn Daftar Barang, Penyusutan, Laporan
-  BMD, & Rekonsiliasi — keempatnya SUDAH menghitung barang-barang itu sebagai
-  nonaktif. Menghapus barisnya jelas terlarang (ledger append-only). Yang keliru
-  bukan datanya, melainkan laporan yang tak pernah menyebut asal barisnya.
-  Karena itu bawaan penyaring "Asal baris" WAJIB `semua`; dikunci
-  tests/laporanTransaksiAsal.test.ts.
+- **KEPUTUSAN USER: JANGAN DITAMPILKAN.** Versi pertama perbaikan ini cuma
+  MENANDAI barisnya (badge + strip penjelas) dengan alasan "menandai, bukan
+  menyembunyikan". User menilai laporannya tetap tak terbaca dengan 200 baris
+  yang bukan pekerjaannya, jadi penyaring **"Asal baris" berbawaan `menu`** —
+  laporan terbuka hanya dengan entri lewat aplikasi (216 → 16 baris di menu
+  Koreksi). Dikunci tests/laporanTransaksiAsal.test.ts.
+- ⚠️ **AMAN KARENA DIUKUR, bukan karena diasumsikan.** `sum(nilai)` seluruh 202
+  baris `koreksi_pencatatan_ganda` = **Rp0** (diverifikasi ke produksi
+  2026-09-07), jadi menyembunyikannya **tidak menggeser satu rupiah pun** —
+  yang berubah cuma jumlah barisnya. Satu-satunya baris batch yang membawa uang,
+  `koreksi_nilai` (Rp665.788.761), sudah dianulir penuh oleh 6
+  `batal_koreksi_nilai` sehingga memang tak pernah tampil.
+  **Kalau kelak ada jenis batch yang bernilai BUKAN nol, ukur ulang dulu** —
+  menyembunyikan baris berduit membuat laporan kurang-jumlah tanpa terlihat
+  terpotong, kelas kesalahan paling mahal di modul ini.
+- ⚠️ **DISEMBUNYIKAN, BUKAN DIHAPUS & BUKAN DIDIAMKAN.** Barisnya tetap bisa
+  dipanggil lewat penyaringnya — peristiwanya nyata & sudah dihitung Daftar
+  Barang, Penyusutan, Laporan BMD, serta Rekonsiliasi, jadi mencabut satu-satunya
+  tempat ia bisa ditelusuri di aplikasi akan menghilangkan jejaknya. Dan selama
+  penyaringnya aktif, **jumlah baris yang disaring TETAP disebut** di header
+  tabel ("200 baris perbaikan data admin disembunyikan") maupun di kop cetak.
+  Itu batas minimum yang tak boleh ikut dicabut: laporan yang menyaring sebagian
+  baris tanpa mengatakannya adalah dokumen yang **tak terlihat terpotong**.
+  Ada ujinya, diuji merah dulu dgn mencabut keterangannya.
 - ⚠️ **PEMBEDANYA `created_by IS NULL`, BUKAN `header_id IS NULL`** — dan ini
   jebakan yang sesungguhnya. `created_by` ber-DEFAULT **`auth.uid()`**
   (diverifikasi ke `information_schema`), jadi tulisan dari klien yang login
@@ -2825,13 +2842,15 @@ mengatakannya**.
 - ⚠️ **`created_by` WAJIB ikut di `.select()`.** Kolom yang tak diminta datang
   sbg `undefined`, dan `undefined == null` → SELURUH baris ditandai "perbaikan
   data". Kesalahan paling gampang & paling senyap di fitur ini; ada ujinya.
-- Yang ditambahkan di `components/LaporanTransaksi.tsx` (dipakai bersama menu
-  **Koreksi & Penghapusan**): penyaring **Asal baris**, strip keterangan, badge
-  per baris, sub-baris di kartu rekap ("N di antaranya perbaikan data admin"),
-  kolom **Asal Baris** di Excel, & baris "Asal baris: …" di kop cetak kalau
-  penyaringnya aktif. Penyaringnya ikut ke `ambilSemua()` — berkas yang
-  menyaring sebagian baris tanpa menyebutkannya adalah dokumen yang tak terlihat
-  terpotong.
+- Yang ada di `components/LaporanTransaksi.tsx` (dipakai bersama menu **Koreksi
+  & Penghapusan**): penyaring **Asal baris** (bawaan `menu`), keterangan jumlah
+  yang tersaring di header tabel, badge per baris & sub-baris kartu rekap (baru
+  terlihat kalau penyaringnya digeser ke "Semua asal"), kolom **Asal Baris** di
+  Excel, & baris "Asal baris: …" di kop cetak. Penyaringnya ikut ke
+  `ambilSemua()`, jadi Excel & PDF selalu sama isinya dengan layar.
+  ⚠️ Strip amber penjelas yang sempat ada DICABUT bersama keputusan
+  "jangan ditampilkan": begitu barisnya tak muncul, peringatan setinggi kartu
+  cuma jadi kebisingan tentang sesuatu yang tak kelihatan.
 - **Menu Penghapusan tak berubah tampilannya sama sekali**: seluruh barisnya
   ber-`created_by`, jadi `nPerbaikan = 0` dan kendali maupun stripnya tak muncul.
   Itu disengaja — kendali yang tak menyaring apa pun cuma jadi kotak mati.

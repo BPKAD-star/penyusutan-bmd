@@ -10,11 +10,28 @@
 // menonaktifkan aset betulan, jadi Daftar Barang, Penyusutan, Laporan BMD, &
 // Rekonsiliasi SUDAH memperhitungkannya.
 //
-// ⚠️ Karena itu obatnya **MENANDAI, bukan menyembunyikan**. Menyaringnya keluar
-// dari laporan akan membuat menu ini satu-satunya tempat yang tak sepakat
-// dengan seluruh modul lain — dan menghapus barisnya jelas terlarang (ledger
-// append-only, CLAUDE.md). Yang salah bukan datanya, melainkan laporan yang
-// tak pernah mengatakan dari mana barisnya datang.
+// ⚠️ **KEPUTUSAN USER (2026-09-07, sesudah ditandai): JANGAN DITAMPILKAN.**
+// Versi pertama perbaikan ini cuma MENANDAI barisnya (badge + strip); user
+// menilai laporan tetap tak terbaca dgn 200 baris yang bukan pekerjaannya, jadi
+// penyaring **"Asal baris" kini berbawaan `menu`** — laporan terbuka hanya
+// dengan entri lewat aplikasi.
+//
+// ⚠️ **Aman karena diukur, bukan karena diasumsikan.** Diperiksa ke produksi
+// 2026-09-07: `sum(nilai)` seluruh 202 baris `koreksi_pencatatan_ganda` =
+// **Rp0**, jadi menyembunyikannya tidak menggeser satu rupiah pun di laporan
+// ini — yang berubah cuma jumlah barisnya (216 → 16). Satu-satunya baris batch
+// yang membawa uang, `koreksi_nilai` (Rp665.788.761), sudah dianulir penuh oleh
+// 6 `batal_koreksi_nilai` sehingga memang tak pernah tampil.
+// **Kalau kelak ada jenis batch yang bernilai BUKAN nol, ukur ulang dulu** —
+// menyembunyikan baris berduit membuat laporan kurang-jumlah tanpa terlihat
+// terpotong, kelas kesalahan yang paling mahal di modul ini.
+//
+// ⚠️ **DISEMBUNYIKAN, BUKAN DIHAPUS & BUKAN DIDIAMKAN.** Barisnya tetap bisa
+// dilihat lewat penyaringnya (peristiwanya nyata & sudah dihitung Daftar
+// Barang, Penyusutan, Laporan BMD, & Rekonsiliasi), dan selama penyaringnya
+// aktif jumlah baris yang disaring TETAP disebut di header tabel maupun di kop
+// cetak. Laporan yang menyaring sebagian baris tanpa mengatakannya adalah
+// dokumen yang tak terlihat terpotong.
 //
 // ⚠️ PEMBEDANYA `created_by IS NULL`, **BUKAN `header_id IS NULL`**. Kolom
 // `created_by` ber-DEFAULT `auth.uid()` (diverifikasi ke produksi), jadi tulisan
@@ -65,9 +82,9 @@ const dariPerbaikanData = (r: Trx) => r.created_by == null
 /** Pilihan penyaring "Asal baris". */
 type AsalBaris = 'semua' | 'menu' | 'perbaikan'
 const ASAL_LABEL: Record<AsalBaris, string> = {
-  semua: 'Semua asal',
   menu: 'Lewat menu aplikasi',
-  perbaikan: 'Perbaikan data (admin)',
+  semua: 'Semua asal (termasuk perbaikan data)',
+  perbaikan: 'Perbaikan data (admin) saja',
 }
 
 function efektifPerAset(rows: Trx[], statusEfektif: string): Trx[] {
@@ -110,7 +127,10 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
   const [periodeList, setPeriodeList] = useState<string[]>([])
   const [periode, setPeriode] = useState('')
   const [jenis, setJenis] = useState('')
-  const [asal, setAsal] = useState<AsalBaris>('semua')
+  // ⚠️ Bawaannya `menu`, BUKAN `semua` — keputusan user 2026-09-07, lihat kepala
+  // berkas. Menu yang tak punya baris batch sama sekali (Penghapusan) tak
+  // terpengaruh: di sana `menu` tak menyaring apa pun.
+  const [asal, setAsal] = useState<AsalBaris>('menu')
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [skpdNama, setSkpdNama] = useState('')
   // Baris LENGKAP khusus untuk cetak. Tabel di layar sengaja dibatasi 500 baris,
@@ -184,8 +204,18 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       : baris.filter(r => dariPerbaikanData(r) === (asal === 'perbaikan')), [asal])
 
   const rowsTampil = saringAsal(rows)
-  /** Berapa baris yang lahir dari batch SQL — dihitung SEBELUM penyaring asal. */
+  /**
+   * Berapa baris yang lahir dari batch SQL — dihitung SEBELUM penyaring asal,
+   * jadi kendali & keterangannya tetap tahu ada berapa walau barisnya disaring.
+   *
+   * ⚠️ Dihitung dari `rows`, yang dibatasi 500 baris seperti tabelnya. Untuk
+   * data hari ini (216 baris di menu Koreksi) itu berarti angkanya persis;
+   * kalau suatu saat baris batch tembus 500, angka ini jadi "paling sedikit
+   * sekian". Export TIDAK terpengaruh — `ambilSemua()` memaginasi penuh.
+   */
   const nPerbaikan = rows.filter(dariPerbaikanData).length
+  /** Berapa baris yang SEDANG disembunyikan penyaring — 0 kalau 'semua'. */
+  const nTersaring = rows.length - rowsTampil.length
 
   // Rekap per jenis. `perbaikan` dihitung terpisah supaya kartunya bisa
   // menyebutkan berapa dari angka itu yang BUKAN entri operator — persis
@@ -346,23 +376,13 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
         )}
       </div>
 
-      {/* ⚠️ DIKATAKAN, bukan didiamkan — dan bukan pula disembunyikan dari
-          laporan. Baris-baris ini NYATA & sudah diperhitungkan Daftar Barang,
-          Penyusutan, Laporan BMD, & Rekonsiliasi; yang keliru selama ini cuma
-          laporan yang tak pernah menyebut dari mana asalnya, sehingga operator
-          melihat ratusan transaksi yang tak pernah ia entri. Lihat kepala
-          berkas untuk kejadiannya. */}
-      {nPerbaikan > 0 && (
-        <div className="card p-4 mb-4 border-l-4 border-amber-500 text-sm text-amber-800 no-print">
-          <b>{nPerbaikan.toLocaleString('id-ID')}</b> dari{' '}
-          {rows.length.toLocaleString('id-ID')} baris di bawah <b>bukan entri lewat menu</b> —
-          ia ditulis admin langsung ke basis data (perbaikan/impor massal), jadi tak ada kartu
-          jurnalnya. Barisnya <b>tetap ditampilkan</b> karena peristiwanya nyata: barangnya
-          memang sudah dinonaktifkan, dan Daftar Barang, Penyusutan, Laporan BMD, serta
-          Rekonsiliasi sudah menghitungnya. Pakai penyaring <b>Asal baris</b> di atas untuk
-          melihat entri menu saja.
-        </div>
-      )}
+      {/* ⚠️ Strip penjelas yang dulu di sini DICABUT bersama keputusan user
+          "gausah ditampilkan" — barisnya sudah tak muncul, jadi peringatan
+          setinggi kartu cuma jadi kebisingan tentang sesuatu yang tak kelihatan.
+          Penggantinya satu baris di header tabel (di bawah) yang menyebut berapa
+          baris sedang disaring: itu batas minimum yang tak boleh ikut dicabut —
+          laporan yang menyaring sebagian baris tanpa mengatakannya adalah
+          dokumen yang tak terlihat terpotong. */}
 
       {/* Rekap */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 no-print">
@@ -386,9 +406,15 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 no-print">
           <span className="text-sm text-gray-500">
-            {rowsTampil.length} transaksi
-            {asal !== 'semua' && <> ({ASAL_LABEL[asal].toLowerCase()} — dari {rows.length})</>}
-            {' '}(maks. 500 ditampilkan — export untuk semua)
+            {rowsTampil.length} transaksi (maks. 500 ditampilkan — export untuk semua)
+            {/* ⚠️ Batas minimum keterbukaan, JANGAN dicabut: tanpa kalimat ini
+                laporan diam-diam kehilangan 200 baris & tak ada yang bisa tahu.
+                Cuma muncul kalau memang ada yang tersaring. */}
+            {nTersaring > 0 && (
+              <> · <span className="text-amber-700">{nTersaring.toLocaleString('id-ID')} baris
+                perbaikan data admin disembunyikan</span> — pilih{' '}
+                <i>{ASAL_LABEL.semua}</i> untuk melihatnya.</>
+            )}
           </span>
         </div>
         <div className="overflow-x-auto">

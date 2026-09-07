@@ -4,9 +4,15 @@
 // "Pencatatan Ganda" yang tak pernah ia entri. Diperiksa ke produksi —
 // barisnya NYATA: 195 dari batch SQL "Import Gedung Bangunan Lengkap"
 // 2026-07-10, 5 dari batch dedup impor 9–10 Juli, 2 dari migrasi 20260819_01.
-// Obatnya MENANDAI, bukan menyembunyikan (barisnya sudah diperhitungkan Daftar
-// Barang, Penyusutan, Laporan BMD, & Rekonsiliasi; menghapusnya pun terlarang —
-// ledger append-only).
+// Versi pertama perbaikannya cuma MENANDAI barisnya; user menilai laporan tetap
+// tak terbaca dgn 200 baris yang bukan pekerjaannya, jadi sejak sore yang sama
+// penyaring "Asal baris" BERBAWAAN `menu` — barisnya DISEMBUNYIKAN (bukan
+// dihapus: ledger append-only, & peristiwanya sudah dihitung Daftar Barang,
+// Penyusutan, Laporan BMD, serta Rekonsiliasi).
+//
+// Aman karena DIUKUR: `sum(nilai)` seluruh 202 baris `koreksi_pencatatan_ganda`
+// = Rp0, jadi menyembunyikannya tak menggeser satu rupiah pun — yang berubah
+// cuma jumlah barisnya (216 -> 16).
 //
 // Yang dijaga di sini SATU hal, dan ia kelas kesalahan yang tak bersuara:
 // **pembedanya `created_by`, BUKAN `header_id`.**
@@ -69,12 +75,29 @@ describe('LaporanTransaksi — penanda asal baris', () => {
     expect([...k.matchAll(/dariPerbaikanData\(/g)].length).toBeGreaterThanOrEqual(4)
   })
 
-  it('baris perbaikan data TIDAK disaring keluar secara diam-diam', () => {
-    // ⚠️ Peristiwanya nyata & sudah dihitung Daftar Barang, Penyusutan, Laporan
-    // BMD, & Rekonsiliasi. Membuangnya membuat menu ini satu-satunya yang tak
-    // sepakat dgn semuanya — dan operator tak punya cara tahu ada yang hilang.
-    // Bawaan penyaringnya WAJIB 'semua'.
-    expect(kode()).toMatch(/useState<AsalBaris>\('semua'\)/)
+  it("bawaan penyaringnya 'menu' — baris perbaikan data tak ikut tampil", () => {
+    // Keputusan user 2026-09-07 (lihat kepala berkas). Aman karena barisnya
+    // bernilai Rp0; kalau kelak ada jenis batch yang berduit, ukur ulang dulu.
+    expect(kode()).toMatch(/useState<AsalBaris>\('menu'\)/)
+  })
+
+  it('yang tersaring TETAP disebut — laporan tak boleh diam-diam kurang baris', () => {
+    // ⚠️ Batas minimum yang tak boleh ikut dicabut waktu stripnya dihapus:
+    // laporan yang menyaring 200 baris tanpa mengatakannya adalah dokumen yang
+    // TAK TERLIHAT TERPOTONG — kelas kesalahan paling mahal di modul pelaporan.
+    const k = kode()
+    expect(k, 'penghitung baris tersaring hilang').toContain('const nTersaring')
+    expect(k, 'jumlah baris tersaring tak disebut di layar').toContain('nTersaring > 0')
+    expect(k, 'kop cetak tak menyebut penyaring asal yang sedang aktif')
+      .toContain("`Asal baris: ${ASAL_LABEL[asal]}`")
+  })
+
+  it('baris perbaikan data masih BISA dilihat — disembunyikan, bukan dihapus', () => {
+    // Peristiwanya nyata & sudah dihitung empat laporan lain; mencabut satu-
+    // satunya tempat ia bisa ditelusuri di aplikasi akan menghilangkan jejaknya.
+    const k = kode()
+    expect(k).toContain("semua: 'Semua asal")
+    expect(k).toContain("perbaikan: 'Perbaikan data (admin)")
   })
 
   it('penyaring asal ikut ke Export & ke kop cetak', () => {
@@ -87,9 +110,9 @@ describe('LaporanTransaksi — penanda asal baris', () => {
     expect(k, 'kolom Asal Baris tak ikut ke Excel').toContain("'Asal Baris'")
   })
 
-  it('kendali & keterangannya cuma muncul kalau memang ada barisnya', () => {
+  it('kendalinya cuma muncul kalau memang ada barisnya', () => {
     // Di menu yang seluruh barisnya lahir dari aplikasi (Penghapusan, per
     // 2026-09-07), kendali ini tak menyaring apa pun & hanya jadi kotak mati.
-    expect([...kode().matchAll(/nPerbaikan > 0/g)].length).toBeGreaterThanOrEqual(2)
+    expect([...kode().matchAll(/nPerbaikan > 0/g)].length).toBeGreaterThanOrEqual(1)
   })
 })
