@@ -54,6 +54,23 @@ const PROVINSI = 'Jawa Timur'
  */
 const WRAP = 'border border-black px-0.5 py-1 [overflow-wrap:anywhere]'
 
+/**
+ * Kelas sel ISI lembar RINCI.
+ *
+ * ⚠️ `px-0.5` (2 px), BUKAN `px-1` seperti keluarga perpindahan — dan itu bukan
+ * penyeragaman, melainkan pilihan yang diukur. Lembar ini punya **28 sel** per
+ * baris; padding kiri-kanan 4 px di 14 sel non-kode memakan ±56 px, sekitar
+ * 4,7% lebar cetak F4 lanskap. Ruang itu jauh lebih berguna dipakai kolom teks
+ * panjang ("Aset Tetap Tanah Yang Tidak Digunakan Dalam Operasional
+ * Pemerintah", 65 karakter) yang tiap barisnya membungkus 3–4 baris.
+ *
+ * ⚠️ `py-px` + `leading-[1.15]` menekan TINGGI baris, yang di lembar ini justru
+ * pengeluaran terbesar: satu barisnya bisa 4 baris teks, jadi tiap 1 px tinggi
+ * baris terkali empat. Jangan dikembalikan ke `py-0.5`/`leading-tight` tanpa
+ * mengukur ulang berapa baris yang muat sehalaman.
+ */
+const SEL_ISI = 'border border-black px-0.5 py-px'
+
 const tglID = (s: string | null | undefined) => {
   if (!s) return ''
   const [y, m, d] = s.slice(0, 10).split('-')
@@ -70,7 +87,7 @@ function SelKode({ kode, sampai, n, tebal }: {
   return (
     <>
       {Array.from({ length: n }, (_, i) => (
-        <td key={i} className={`border border-black px-0.5 py-0.5 text-center ${tebal ? 'font-bold' : ''}`}>
+        <td key={i} className={`border border-black px-0.5 py-px text-center ${tebal ? 'font-bold' : ''}`}>
           {i < sampai ? (seg[i] ?? '') : ''}
         </td>
       ))}
@@ -307,7 +324,7 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
         <p className="text-right text-[12px] mb-1">Format {f.kode}</p>
         <KopLembar judul={f.judul} berupa={berupa} komptabel={labelKomptabel}
           sebutan={sebutan} skpd={skpd} periode={judulPeriode} tahun={tahun} />
-        <table className="w-full table-fixed border-collapse text-[7.5px] leading-tight">
+        <table className="w-full table-fixed border-collapse text-[7.5px] leading-[1.15]">
           <colgroup>
             <col style={{ width: `${f.kolomKiri.lebar}%` }} />
             {Array.from({ length: SEL_KODE_REKLAS }, (_, i) => (
@@ -323,16 +340,16 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
               // kode sedalam tingkatnya, namanya, lalu HANYA ketiga kolom uang
               // yang berisi — begitu bentuk lembar aslinya.
               <tr key={`g${i}`} className="font-bold italic">
-                <td className="border border-black px-1 py-0.5" />
+                <td className={SEL_ISI} />
                 <SelKode kode={b.kode} sampai={b.seg} n={SEL_KODE_REKLAS} tebal />
-                <td className="border border-black px-1 py-0.5 break-words">{nama(b.kode) || b.kode}</td>
+                <td className={`${SEL_ISI} break-words`}>{nama(b.kode) || b.kode}</td>
                 {f.kolom.flatMap(k => k.key === 'lawan_kode'
                   // Blok lawan dikosongkan di baris kelompok: satu kelompok kode
                   // tujuan bisa berasal dari BANYAK kode asal yang berbeda, jadi
                   // mengisinya berarti menunjuk salah satunya seolah mewakili
                   // semuanya.
                   ? Array.from({ length: SEL_KODE_REKLAS }, (_, j) => (
-                    <td key={`${k.key}${j}`} className="border border-black px-0.5 py-0.5" />
+                    <td key={`${k.key}${j}`} className={SEL_ISI} />
                   ))
                   : [(
                     // ⚠️ `anywhere` di sini juga — baris SUBTOTAL justru memuat
@@ -340,7 +357,7 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
                     // yang dibungkus cuma baris barangnya, yang meluber ke sel
                     // sebelah malah angka yang paling diperhatikan pemeriksa.
                     <td key={k.key}
-                      className={`border border-black px-1 py-0.5 ${rata(k)} [overflow-wrap:anywhere]`}>
+                      className={`${SEL_ISI} ${rata(k)} [overflow-wrap:anywhere]`}>
                       {k.key === 'nilai_perolehan' ? formatRupiah(b.nilai)
                         : k.key === 'akumulasi' ? formatRupiah(b.akumulasi)
                           : k.key === 'nilai_buku' ? formatRupiah(b.nilaiBuku)
@@ -350,11 +367,11 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
               </tr>
             ) : (
               <tr key={`i${b.data.id}`} className="align-top">
-                <td className="border border-black px-1 py-0.5 break-all tracking-tighter text-[6px]">
+                <td className={`${SEL_ISI} break-all tracking-tighter text-[6px]`}>
                   {isiKolom(f.kolomKiri, b.data)}
                 </td>
                 <SelKode kode={b.kode} sampai={SEL_KODE_REKLAS} n={SEL_KODE_REKLAS} />
-                <td className="border border-black px-1 py-0.5 break-words">
+                <td className={`${SEL_ISI} break-words`}>
                   {isiKolom(f.kolomNama, b.data)}
                 </td>
                 {f.kolom.flatMap(k => k.key === 'lawan_kode'
@@ -366,7 +383,7 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
                       // bisa melebihi selnya. Kolom bertanggal dikecualikan:
                       // memecah "12/08/2026" di tengah bikin tak terbaca, dan
                       // lebarnya memang sudah dianggarkan muat.
-                      className={`border border-black px-1 py-0.5 ${rata(k)} ${
+                      className={`${SEL_ISI} ${rata(k)} ${
                         k.rata === 'tengah' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
                       {isiKolom(k, b.data)}
                     </td>
@@ -374,7 +391,7 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={nKolom} className="border border-black px-1 py-3 text-center">
+              <tr><td colSpan={nKolom} className="border border-black px-0.5 py-3 text-center">
                 Tidak ada penambahan akibat reklasifikasi pada periode ini.
               </td></tr>
             )}

@@ -301,6 +301,37 @@ describe('lebar kolom', () => {
     }
   })
 
+  it('kolom bertanggal punya BATAS BAWAH KERAS — ia tak boleh membungkus', () => {
+    // ⚠️ `dok_tanggal` dirender `whitespace-nowrap` (memecah "19/07/2026" di
+    // tengah bikin tak terbaca), jadi lebarnyalah yang harus menyesuaikan.
+    // 10 karakter @7,5px ≈ 42 px + padding ≈ 46 px; 4,0% dari lebar cetak F4
+    // lanskap (±1.200 px) = 48 px. Di bawah itu tanggalnya meluber ke sel
+    // sebelah DI SETIAP BARIS, dan `table-fixed` menyembunyikannya sampai
+    // kertasnya keluar.
+    for (const [id, f] of tiapCabang) {
+      const tgl = f.kolom.find(k => k.key === 'dok_tanggal')!
+      expect(tgl.rata, `${id}: kolom tanggal wajib rata tengah (yang dirender nowrap)`).toBe('tengah')
+      expect(tgl.lebar, `${id}: kolom tanggal terlalu sempit`).toBeGreaterThanOrEqual(4.0)
+    }
+  })
+
+  it('kolom teks panjang dapat porsi lebih besar dari kolom angka pendek', () => {
+    // ⚠️ Penjaga arah, bukan angka pasti: yang menentukan TINGGI baris lembar
+    // ini adalah kolom teks yang membungkus. Kalau suatu saat `nama` kembali
+    // lebih sempit dari kolom rupiah, barisnya melar lagi jadi 4 baris & yang
+    // "hemat" cuma kolom angka yang isinya memang pendek.
+    for (const [id, f] of tiapCabang) {
+      const l = (k: string) =>
+        kolomLembarReklas(f).find(x => x.key === k)!.lebar
+      expect(l('nama'), `${id}: Nama Barang (nomenklatur, terpanjang di lembar)`)
+        .toBeGreaterThan(l('nilai_perolehan'))
+      expect(l('spek_nama'), `${id}: Spesifikasi Nama Barang`).toBeGreaterThan(l('nilai_perolehan'))
+      // "Nama Dokumen" SELALU kosong — ia tak berhak atas ruang sebanyak kolom
+      // yang benar-benar berisi.
+      expect(l('dok_nama'), `${id}: dok_nama selalu kosong`).toBeLessThan(l('keterangan'))
+    }
+  })
+
   it('tiap kolom punya lebar positif', () => {
     for (const [id, f] of tiapCabang) {
       for (const k of kolomLembarReklas(f)) {

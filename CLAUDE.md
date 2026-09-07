@@ -2783,6 +2783,64 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## "200 pencatatan ganda yang tak pernah saya entri" (2026-09-07)
+
+User membuka Pelaporan → Pengelolaan → **Koreksi** dan menemukan kartu
+**"Koreksi Pencatatan Ganda (Duplikat) — 200 transaksi"** padahal ia tak pernah
+mengeksekusi satu pun.
+
+**Barisnya NYATA & BENAR.** Diperiksa ke produksi: `koreksi_pencatatan_ganda`
+**202 baris, SEMUANYA `created_by IS NULL` & `header_id IS NULL`** — tak satu pun
+lewat menu. Asalnya:
+
+| Ditulis | Jumlah | Keterangan barisnya |
+|---|---|---|
+| 2026-07-09 s.d. 07-10 | 5 | dedup impor ("versi lama diretire, versi file jadi survivor") |
+| **2026-07-10 16:20** | **195** | batch **"Import Gedung Bangunan Lengkap"** — "Dinonaktifkan admin — tidak ada di file" |
+| 2026-08-19 03:10 | 2 | migrasi 20260819_01 |
+
+(202 − 2 yang sudah di-`batal_koreksi_pencatatan_ganda` = **200** di layar.)
+
+Ketiganya sudah tercatat di bagian "Import massal JANGAN mencocokkan barang
+lewat KODE BARANG" di atas; yang belum pernah ada cuma **cara laporan
+mengatakannya**.
+
+- ⚠️ **Obatnya MENANDAI, BUKAN MENYEMBUNYIKAN.** Menyaringnya keluar membuat
+  menu ini satu-satunya yang tak sepakat dgn Daftar Barang, Penyusutan, Laporan
+  BMD, & Rekonsiliasi — keempatnya SUDAH menghitung barang-barang itu sebagai
+  nonaktif. Menghapus barisnya jelas terlarang (ledger append-only). Yang keliru
+  bukan datanya, melainkan laporan yang tak pernah menyebut asal barisnya.
+  Karena itu bawaan penyaring "Asal baris" WAJIB `semua`; dikunci
+  tests/laporanTransaksiAsal.test.ts.
+- ⚠️ **PEMBEDANYA `created_by IS NULL`, BUKAN `header_id IS NULL`** — dan ini
+  jebakan yang sesungguhnya. `created_by` ber-DEFAULT **`auth.uid()`**
+  (diverifikasi ke `information_schema`), jadi tulisan dari klien yang login
+  PASTI terisi & tulisan SQL Editor/service_role pasti kosong. `header_id`
+  TIDAK bisa dipakai: baris yang sah dari MENU juga banyak yang tak ber-header —
+  `batal_penghapusan` **14 dari 14**, `kapitalisasi` & `kapitalisasi_serap`
+  3 dari 3, dan 4 dari 14 `penghapusan_pemindahtanganan`. Memakainya berarti
+  menuduh transaksi yang benar-benar dientri operator sebagai "perbaikan data
+  admin" — tuduhan yang tercetak di layar DAN di berkas Excel, tanpa satu pun
+  error. Diuji merah dulu dgn sengaja menukarnya ke `header_id`.
+- ⚠️ **`created_by` WAJIB ikut di `.select()`.** Kolom yang tak diminta datang
+  sbg `undefined`, dan `undefined == null` → SELURUH baris ditandai "perbaikan
+  data". Kesalahan paling gampang & paling senyap di fitur ini; ada ujinya.
+- Yang ditambahkan di `components/LaporanTransaksi.tsx` (dipakai bersama menu
+  **Koreksi & Penghapusan**): penyaring **Asal baris**, strip keterangan, badge
+  per baris, sub-baris di kartu rekap ("N di antaranya perbaikan data admin"),
+  kolom **Asal Baris** di Excel, & baris "Asal baris: …" di kop cetak kalau
+  penyaringnya aktif. Penyaringnya ikut ke `ambilSemua()` — berkas yang
+  menyaring sebagian baris tanpa menyebutkannya adalah dokumen yang tak terlihat
+  terpotong.
+- **Menu Penghapusan tak berubah tampilannya sama sekali**: seluruh barisnya
+  ber-`created_by`, jadi `nPerbaikan = 0` dan kendali maupun stripnya tak muncul.
+  Itu disengaja — kendali yang tak menyaring apa pun cuma jadi kotak mati.
+- **Tak ada migrasi.** Murni pembacaan; ledger, trigger, & RPC tak disentuh.
+- ⚠️ **Alarm yang layak dibuat** (belum ada): `koreksi_*` ber-`created_by IS
+  NULL` yang jumlahnya melonjak tanpa migrasi yang menjelaskannya. Batch SQL
+  yang menonaktifkan ratusan aset seharusnya meninggalkan jejak yang bisa
+  ditelusuri lebih dari sekadar kolom `keterangan` bebas.
+
 ## Laporan Reklasifikasi — Format IV.F.2–F.6 & IV.F.12–F.16 (2026-09-07)
 
 Cabang KELIMA modul Pelaporan Permendagri 47/2021. Menu Pelaporan →
@@ -2887,6 +2945,25 @@ Berkasnya: `lib/reklas.ts` · `lib/formatReklas.ts` (+ test) ·
   penambahan memuat nama SESUDAH & pengurangan nama SEBELUM. Diputuskan di
   PEMUAT, bukan penyaji — begitu penyaji tahu sedang merender sisi yang mana,
   cabang berikutnya akan menyusul (dikunci uji "TIDAK bercabang per format").
+- **Lebar kolom lembar rinci DISETEL ULANG 2026-09-07** (user: "gabisa lebih
+  ramping kah? biar lebih efisien baris ke bawahnya"). Yang mahal di lembar ini
+  bukan lebar, tapi **TINGGI**: kolom teks sempit membuat tiap baris barang
+  membungkus 3–4 baris — "Aset Tetap Tanah Yang Tidak Digunakan Dalam
+  Operasional Pemerintah" (65 karakter) di kolom 6% mustahil muat kurang dari
+  empat baris, dan tiap 1 px tinggi baris terkali empat. Jadi ruang DIPINDAH
+  dari kolom ber-isi pendek & seragam ke kolom teks panjang: `nama` 6,0→9,5 ·
+  `spek_nama` 6,0→7,5 · `lawan_nama` 5,5→7,5 · `keterangan` 5,0→6,6 ·
+  `penyebab` 6,0→6,8; diambil dari kedua blok kode (13,0 → 11,4 & 11,0), ketiga
+  kolom rupiah (5,8→5,2), `dok_nama` (5,0→3,2 — memang SELALU kosong),
+  `dok_nomor` (5,5→4,2), `jumlah`/`satuan`, & NIBAR (8,0→7,6). Bareng itu sel
+  isi lembar rinci pindah ke `px-0.5`+`py-px`+`leading-[1.15]`: 28 sel per
+  baris, jadi padding 4 px di 14 sel non-kode saja memakan ±4,7% lebar cetak.
+  ⚠️ `dok_tanggal` punya **batas bawah keras 4,0%** — ia `whitespace-nowrap`
+  (memecah "19/07/2026" di tengah bikin tak terbaca), jadi lebarnya yang harus
+  menyesuaikan; di bawah itu tanggalnya meluber ke sel sebelah DI SETIAP BARIS &
+  `table-fixed` menyembunyikannya sampai kertasnya keluar. Dikunci
+  lib/formatReklas.test.ts, berikut penjaga arah "kolom teks panjang dapat
+  porsi lebih besar dari kolom angka pendek".
 - **Tab Daftar Transaksi menampilkan "Sebelum Reklas → Sesudah Reklas"**
   (permintaan user) dari `kodeLama`/`kodeBaru` yang **TIDAK ikut arah**:
   pertanyaan "sebelumnya apa, jadi apa" punya satu jawaban entah lembarnya

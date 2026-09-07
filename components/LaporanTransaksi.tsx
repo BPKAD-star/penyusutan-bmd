@@ -1,5 +1,28 @@
 'use client'
 // Rekap transaksi ledger per jenis / periode / SKPD + export Excel (PLAN §9).
+//
+// ── ASAL BARIS: menu vs perbaikan data admin (2026-09-07) ───────────────────
+// User membuka Laporan Koreksi dan menemukan **200 baris "Pencatatan Ganda"
+// yang tak pernah ia entri**. Diperiksa ke produksi: baris-barisnya NYATA &
+// BENAR — 195 di antaranya lahir dari batch SQL "Import Gedung Bangunan
+// Lengkap" 2026-07-10 yang menonaktifkan aset yang tak ada di berkasnya, 5 dari
+// batch dedup impor 9–10 Juli, dan 2 dari migrasi 20260819_01. Semuanya
+// menonaktifkan aset betulan, jadi Daftar Barang, Penyusutan, Laporan BMD, &
+// Rekonsiliasi SUDAH memperhitungkannya.
+//
+// ⚠️ Karena itu obatnya **MENANDAI, bukan menyembunyikan**. Menyaringnya keluar
+// dari laporan akan membuat menu ini satu-satunya tempat yang tak sepakat
+// dengan seluruh modul lain — dan menghapus barisnya jelas terlarang (ledger
+// append-only, CLAUDE.md). Yang salah bukan datanya, melainkan laporan yang
+// tak pernah mengatakan dari mana barisnya datang.
+//
+// ⚠️ PEMBEDANYA `created_by IS NULL`, **BUKAN `header_id IS NULL`**. Kolom
+// `created_by` ber-DEFAULT `auth.uid()` (diverifikasi ke produksi), jadi tulisan
+// dari klien mana pun yang login PASTI terisi & tulisan dari SQL Editor /
+// service_role pasti kosong. `header_id` TIDAK bisa dipakai: baris reversal yang
+// sah dari menu (`batal_penghapusan` 14 dari 14, `kapitalisasi` 3 dari 3) juga
+// tak ber-header, jadi memakainya akan menuduh transaksi operator sendiri
+// sebagai "perbaikan data".
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
@@ -18,6 +41,8 @@ type Trx = {
   tanggal: string
   nilai: number
   keterangan: string | null
+  /** `null` = ditulis di luar aplikasi (SQL Editor/migrasi) — lihat kepala berkas. */
+  created_by: string | null
   payload: Record<string, unknown>
   aset: { nibar: string | null; nama_barang: string | null; kode: string; status: string } | null
   asal: { nama: string } | null
@@ -28,6 +53,23 @@ type Trx = {
 // sisakan baris TERBARU per aset (id desc — ledger append-only), dan hanya kalau status aset
 // SEKARANG masih mencerminkan aksi itu. Ini mencegah rekap dobel-hitung ketika satu barang
 // sempat dicoba berkali-kali (aksi → batal → aksi lagi) sebelum mencapai status akhirnya.
+/**
+ * Baris ini ditulis di luar aplikasi (SQL Editor / migrasi), bukan lewat menu.
+ *
+ * ⚠️ SATU-SATUNYA definisi "asal baris" di berkas ini — dipakai penyaring,
+ * badge, kartu rekap, & Export sekaligus. Empat salinan yang bisa menyimpang
+ * berarti kartu bilang "5 perbaikan data" sementara tabelnya menandai 7.
+ */
+const dariPerbaikanData = (r: Trx) => r.created_by == null
+
+/** Pilihan penyaring "Asal baris". */
+type AsalBaris = 'semua' | 'menu' | 'perbaikan'
+const ASAL_LABEL: Record<AsalBaris, string> = {
+  semua: 'Semua asal',
+  menu: 'Lewat menu aplikasi',
+  perbaikan: 'Perbaikan data (admin)',
+}
+
 function efektifPerAset(rows: Trx[], statusEfektif: string): Trx[] {
   const seen = new Set<string>()
   return rows.filter(r => {
@@ -68,6 +110,7 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
   const [periodeList, setPeriodeList] = useState<string[]>([])
   const [periode, setPeriode] = useState('')
   const [jenis, setJenis] = useState('')
+  const [asal, setAsal] = useState<AsalBaris>('semua')
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [skpdNama, setSkpdNama] = useState('')
   // Baris LENGKAP khusus untuk cetak. Tabel di layar sengaja dibatasi 500 baris,
@@ -100,7 +143,7 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,aset_id,jenis,periode,tanggal,nilai,keterangan,payload,aset(nibar,nama_barang,kode,status),asal:skpd_asal(nama),tujuan:skpd_tujuan(nama)')
+      .select('id,aset_id,jenis,periode,tanggal,nilai,keterangan,created_by,payload,aset(nibar,nama_barang,kode,status),asal:skpd_asal(nama),tujuan:skpd_tujuan(nama)')
       .in('jenis', (jenis ? [jenis] : jenisList) as never)
       .order('id', { ascending: false })
     if (periode) q = q.eq('periode', periode)
@@ -131,12 +174,28 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
     })()
   }, [buildQuery, sembunyikanAsetDihapus, efektifPerAsetStatus, batalTargets])
 
-  // Rekap per jenis
-  const rekap = new Map<string, { n: number; nilai: number }>()
-  for (const r of rows) {
-    const cur = rekap.get(r.jenis) || { n: 0, nilai: 0 }
+  // ⚠️ Penyaring asal dipasang SESUDAH tarikan, bukan di query. Sengaja: kartu
+  // rekap & keterangan di layar tetap perlu tahu berapa banyak baris perbaikan
+  // data yang ADA — kalau disaring di server, memilih "Lewat menu aplikasi"
+  // membuat keterangannya ikut hilang & operator kehilangan justru penjelasan
+  // yang ia cari.
+  const saringAsal = useCallback((baris: Trx[]) =>
+    asal === 'semua' ? baris
+      : baris.filter(r => dariPerbaikanData(r) === (asal === 'perbaikan')), [asal])
+
+  const rowsTampil = saringAsal(rows)
+  /** Berapa baris yang lahir dari batch SQL — dihitung SEBELUM penyaring asal. */
+  const nPerbaikan = rows.filter(dariPerbaikanData).length
+
+  // Rekap per jenis. `perbaikan` dihitung terpisah supaya kartunya bisa
+  // menyebutkan berapa dari angka itu yang BUKAN entri operator — persis
+  // pertanyaan yang muncul waktu kartu "Pencatatan Ganda 200" bikin kaget.
+  const rekap = new Map<string, { n: number; nilai: number; perbaikan: number }>()
+  for (const r of rowsTampil) {
+    const cur = rekap.get(r.jenis) || { n: 0, nilai: 0, perbaikan: 0 }
     cur.n += 1
     cur.nilai += r.nilai || 0
+    if (dariPerbaikanData(r)) cur.perbaikan += 1
     rekap.set(r.jenis, cur)
   }
 
@@ -154,7 +213,10 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
     let hasil = batalTargets && batalTargets.size > 0 ? all.filter(r => !batalTargets.has(r.id)) : all
     if (sembunyikanAsetDihapus) hasil = hasil.filter(r => r.aset?.status !== 'dihapus')
     if (efektifPerAsetStatus) hasil = efektifPerAset(hasil, efektifPerAsetStatus)
-    return hasil
+    // ⚠️ Penyaring asal WAJIB ikut ke sini — kalau tidak, berkas Excel/PDF
+    // memuat baris yang tak ada di layar & tak ada satu pun tanda bahwa
+    // filternya tak berlaku.
+    return saringAsal(hasil)
   }
 
   async function handleCetak() {
@@ -195,6 +257,10 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       'SKPD Asal': r.asal?.nama || '',
       'SKPD Tujuan': r.tujuan?.nama || '',
       'Nilai (Rp)': r.nilai,
+      // ⚠️ IKUT ke berkas: pembaca Excel tak punya badge & tooltip, jadi tanpa
+      // kolom ini ia melihat 200 "pencatatan ganda" tanpa satu pun keterangan —
+      // persis kebingungan yang menu ini baru saja perbaiki di layar.
+      'Asal Baris': dariPerbaikanData(r) ? 'Perbaikan data (admin)' : 'Lewat menu aplikasi',
       'Keterangan': r.keterangan || '',
     })), namaBerkasLaporan({ laporan: filePrefix, periode, skpd: skpdNama }), 'Laporan')
     setExporting(false)
@@ -202,7 +268,7 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
 
   // Yang dicetak = barisCetak (lengkap) kalau sedang menyiapkan PDF; selain itu
   // tabel layar apa adanya.
-  const barisTampil = barisCetak ?? rows
+  const barisTampil = barisCetak ?? rowsTampil
 
   return (
     <div className="p-6" id="cetak-laporan">
@@ -211,6 +277,10 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
         `Periode: ${periode || 'Semua Periode'}`,
         `SKPD: ${skpdNama || 'Seluruh SKPD'}`,
         jenis ? `Jenis: ${JENIS_TRANSAKSI_LABEL[jenis] || jenis}` : null,
+        // ⚠️ Wajib tercetak kalau penyaringnya aktif: PDF yang menyaring
+        // sebagian baris tanpa menyebutkannya adalah dokumen yang tak terlihat
+        // terpotong — alasan yang sama dgn `barisCetak` di atas.
+        asal !== 'semua' ? `Asal baris: ${ASAL_LABEL[asal]}` : null,
         `${barisTampil.length.toLocaleString('id-ID')} transaksi`,
       ]} />
 
@@ -259,7 +329,40 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
               setSkpdNama((data as { nama: string } | null)?.nama || '')
             }} />
         </div>
+        {/* ⚠️ Penyaringnya cuma muncul kalau memang ADA baris perbaikan data —
+            di menu yang seluruh barisnya lahir dari aplikasi (Penghapusan, per
+            2026-09-07), kendali ini tak menyaring apa pun & hanya jadi kotak
+            mati yang bikin operator bertanya-tanya. */}
+        {nPerbaikan > 0 && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Asal baris</label>
+            <select className="select-filter" value={asal}
+              onChange={e => setAsal(e.target.value as AsalBaris)}>
+              {(Object.keys(ASAL_LABEL) as AsalBaris[]).map(a => (
+                <option key={a} value={a}>{ASAL_LABEL[a]}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
+
+      {/* ⚠️ DIKATAKAN, bukan didiamkan — dan bukan pula disembunyikan dari
+          laporan. Baris-baris ini NYATA & sudah diperhitungkan Daftar Barang,
+          Penyusutan, Laporan BMD, & Rekonsiliasi; yang keliru selama ini cuma
+          laporan yang tak pernah menyebut dari mana asalnya, sehingga operator
+          melihat ratusan transaksi yang tak pernah ia entri. Lihat kepala
+          berkas untuk kejadiannya. */}
+      {nPerbaikan > 0 && (
+        <div className="card p-4 mb-4 border-l-4 border-amber-500 text-sm text-amber-800 no-print">
+          <b>{nPerbaikan.toLocaleString('id-ID')}</b> dari{' '}
+          {rows.length.toLocaleString('id-ID')} baris di bawah <b>bukan entri lewat menu</b> —
+          ia ditulis admin langsung ke basis data (perbaikan/impor massal), jadi tak ada kartu
+          jurnalnya. Barisnya <b>tetap ditampilkan</b> karena peristiwanya nyata: barangnya
+          memang sudah dinonaktifkan, dan Daftar Barang, Penyusutan, Laporan BMD, serta
+          Rekonsiliasi sudah menghitungnya. Pakai penyaring <b>Asal baris</b> di atas untuk
+          melihat entri menu saja.
+        </div>
+      )}
 
       {/* Rekap */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 no-print">
@@ -268,6 +371,13 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
             <p className="text-xs text-gray-500">{JENIS_TRANSAKSI_LABEL[j] || j}</p>
             <p className="text-lg font-bold text-gray-900 mt-1">{v.n.toLocaleString('id-ID')} <span className="text-xs font-normal text-gray-400">transaksi</span></p>
             <p className="text-xs text-teal font-medium">{formatRupiah(v.nilai)}</p>
+            {/* Angka di kartu inilah yang bikin kaget duluan, jadi di sinilah
+                penjelasannya paling berguna — bukan cuma di strip di atas. */}
+            {v.perbaikan > 0 && (
+              <p className="text-[11px] text-amber-700 mt-1">
+                {v.perbaikan.toLocaleString('id-ID')} di antaranya perbaikan data admin
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -275,7 +385,11 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
       {/* Table */}
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-100 no-print">
-          <span className="text-sm text-gray-500">{rows.length} transaksi (maks. 500 ditampilkan — export untuk semua)</span>
+          <span className="text-sm text-gray-500">
+            {rowsTampil.length} transaksi
+            {asal !== 'semua' && <> ({ASAL_LABEL[asal].toLowerCase()} — dari {rows.length})</>}
+            {' '}(maks. 500 ditampilkan — export untuk semua)
+          </span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -297,7 +411,19 @@ export default function LaporanTransaksi({ judul, deskripsi, jenisList, filePref
               ) : barisTampil.map(r => (
                 <tr key={r.id}>
                   <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
-                  <td className="table-td text-xs">{JENIS_TRANSAKSI_LABEL[r.jenis] || r.jenis}</td>
+                  <td className="table-td text-xs">
+                    {JENIS_TRANSAKSI_LABEL[r.jenis] || r.jenis}
+                    {/* ⚠️ Ditandai per baris, bukan cuma dihitung di kartu:
+                        operator yang menelusuri satu barang tertentu perlu tahu
+                        baris ITU asalnya dari mana, dan angka agregat tak
+                        menjawabnya. */}
+                    {dariPerbaikanData(r) && (
+                      <span className="ml-1 inline-block rounded bg-amber-50 px-1 text-[10px] text-amber-700 border border-amber-200"
+                        title="Ditulis admin langsung ke basis data (perbaikan/impor massal), bukan lewat menu — jadi tak ada kartu jurnalnya.">
+                        perbaikan data
+                      </span>
+                    )}
+                  </td>
                   <td className="table-td text-xs">
                     <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
                     <p className="text-gray-400">{r.aset?.nibar || '-'}</p>

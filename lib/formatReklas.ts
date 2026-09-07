@@ -192,15 +192,15 @@ export type FormatReklas = {
  */
 function kolomRinciReklas(): KolomLembarReklas[] {
   return [
-    { key: 'spek_nama', judul: 'Spesifikasi Nama Barang', nomor: 11, lebar: 6.0, rata: 'kiri' },
-    { key: 'jumlah', judul: 'Jumlah', nomor: 12, lebar: 2.6, rata: 'kanan' },
-    { key: 'satuan', judul: 'Satuan', nomor: 13, lebar: 2.8, rata: 'tengah' },
+    { key: 'spek_nama', judul: 'Spesifikasi Nama Barang', nomor: 11, lebar: 7.5, rata: 'kiri' },
+    { key: 'jumlah', judul: 'Jumlah', nomor: 12, lebar: 2.3, rata: 'kanan' },
+    { key: 'satuan', judul: 'Satuan', nomor: 13, lebar: 2.6, rata: 'tengah' },
     // ⚠️ SATU kolom nilai saja — keluarga IV.F tak punya "Harga Satuan" &
     // "Jumlah Total" seperti IV.B/IV.C/IV.D. Menambahkannya "biar seragam"
     // membuat lembarnya tak cocok waktu pemeriksa mencocokkan kolom per kolom.
-    { key: 'nilai_perolehan', judul: 'Nilai Perolehan (Rp)', nomor: 14, lebar: 5.8, rata: 'kanan' },
-    { key: 'akumulasi', judul: 'Nilai Akumulasi Penyusutan atau Amortisasi (Rp)', nomor: 15, lebar: 5.8, rata: 'kanan' },
-    { key: 'nilai_buku', judul: 'Nilai Buku (Rp)', nomor: 16, lebar: 5.8, rata: 'kanan' },
+    { key: 'nilai_perolehan', judul: 'Nilai Perolehan (Rp)', nomor: 14, lebar: 5.2, rata: 'kanan' },
+    { key: 'akumulasi', judul: 'Nilai Akumulasi Penyusutan atau Amortisasi (Rp)', nomor: 15, lebar: 5.2, rata: 'kanan' },
+    { key: 'nilai_buku', judul: 'Nilai Buku (Rp)', nomor: 16, lebar: 5.2, rata: 'kanan' },
     // ── Blok lawan: identitas barang di sisi SEBERANG reklasifikasi ─────────
     // ⚠️ `lawan_kode` itu BLOK BERSEGMEN (7 sel), bukan kolom teks — lebarnya
     // dibagi rata di penyaji. Jangan diperlakukan seperti `asal_kode` di
@@ -208,9 +208,9 @@ function kolomRinciReklas(): KolomLembarReklas[] {
     // ⚠️ `grup: 'lawan'` itu PENANDA, bukan judul: judul sebenarnya ikut cabang
     // (`grupLawan`) & dirakit penyaji. Menuliskan judulnya di sini berarti
     // pabrik ini harus tahu sedang membuat cabang yang mana.
-    { key: 'lawan_kode', judul: 'Kode Barang', nomor: 17, grup: 'lawan', lebar: 13.0, rata: 'tengah' },
-    { key: 'lawan_nama', judul: 'Nama Barang', nomor: 18, grup: 'lawan', lebar: 5.5, rata: 'kiri' },
-    { key: 'penyebab', judul: 'Penyebab Reklasifikasi', nomor: 19, lebar: 6.0, rata: 'kiri' },
+    { key: 'lawan_kode', judul: 'Kode Barang', nomor: 17, grup: 'lawan', lebar: 11.0, rata: 'tengah' },
+    { key: 'lawan_nama', judul: 'Nama Barang', nomor: 18, grup: 'lawan', lebar: 7.5, rata: 'kiri' },
+    { key: 'penyebab', judul: 'Penyebab Reklasifikasi', nomor: 19, lebar: 6.8, rata: 'kiri' },
     // ⚠️ "Nama Dokumen" SENGAJA SELALU KOSONG — aplikasi ini tak menyimpan
     // JENIS/nama dokumen sumber reklasifikasi di mana pun (`jurnal_header`
     // cuma punya `no_sk`, `tanggal`, `keterangan`, & `payload.dokumen_paths`
@@ -220,24 +220,46 @@ function kolomRinciReklas(): KolomLembarReklas[] {
     // bertanda tangan. Kolomnya tetap dicetak supaya lembarnya cocok
     // kolom-per-kolom saat diperiksa. Pola & alasan yang sama dgn
     // `sk_tanggal`/`sk_nomor` di IV.B.1.2 dan `dok_nama` di IV.A.
-    { key: 'dok_nama', judul: 'Nama Dokumen', nomor: 20, grup: 'Dokumen Sumber', lebar: 5.0, rata: 'kiri' },
-    { key: 'dok_nomor', judul: 'Nomor', nomor: 21, grup: 'Dokumen Sumber', lebar: 5.5, rata: 'kiri' },
+    { key: 'dok_nama', judul: 'Nama Dokumen', nomor: 20, grup: 'Dokumen Sumber', lebar: 3.2, rata: 'kiri' },
+    { key: 'dok_nomor', judul: 'Nomor', nomor: 21, grup: 'Dokumen Sumber', lebar: 4.2, rata: 'kiri' },
     { key: 'dok_tanggal', judul: 'Tanggal', nomor: 22, grup: 'Dokumen Sumber', lebar: 4.2, rata: 'tengah' },
-    { key: 'keterangan', judul: 'Keterangan', nomor: 23, lebar: 5.0, rata: 'kiri' },
+    { key: 'keterangan', judul: 'Keterangan', nomor: 23, lebar: 6.6, rata: 'kiri' },
   ]
 }
 
 const KOLOM_KIRI: KolomLembarReklas =
-  { key: 'nibar', judul: 'NIBAR', nomor: 8, lebar: 8.0, rata: 'kiri' }
+  { key: 'nibar', judul: 'NIBAR', nomor: 8, lebar: 7.6, rata: 'kiri' }
 const KOLOM_NAMA: KolomLembarReklas =
-  { key: 'nama', judul: 'Nama Barang', nomor: 10, lebar: 6.0, rata: 'kiri' }
+  { key: 'nama', judul: 'Nama Barang', nomor: 10, lebar: 9.5, rata: 'kiri' }
 
 /**
  * ⚠️ LEBAR: totalnya + `sisaLebar` = 100 PERSIS, dan itu yang membuat lembarnya
- * "fit to window" di `table-fixed`. Di sini ada DUA blok bersegmen (7 sel
- * masing-masing, 14 sel total) — jadi keduanya dianggarkan bersamaan:
- * `lawan_kode` ~13% dan sisanya (blok kode utama) juga ~13%, ≈1,86% per sel.
- * Itu sudah lebih lega daripada IV.B (1,46%/sel) yang terbukti terbaca.
+ * "fit to window" di `table-fixed`.
+ *
+ * ⚠️ **DISETEL ULANG 2026-09-07** (user: "gabisa lebih ramping kah? biar lebih
+ * efisien baris ke bawahnya"). Yang mahal di lembar ini bukan lebar, tapi
+ * TINGGI: kolom teks yang sempit membuat tiap baris barang membungkus 3–4 baris
+ * — "Aset Tetap Tanah Yang Tidak Digunakan Dalam Operasional Pemerintah" (65
+ * karakter) di kolom 6% praktis mustahil muat kurang dari empat baris. Jadi
+ * ruang DIPINDAH dari kolom yang isinya pendek & seragam ke kolom teks panjang:
+ *
+ *   nama          6,0 → 9,5   ·  spek_nama   6,0 → 7,5
+ *   lawan_nama    5,5 → 7,5   ·  keterangan  5,0 → 6,6
+ *   penyebab      6,0 → 6,8
+ *   ← diambil dari: kedua blok kode (13,0 → 11,4 & 11,0), ketiga kolom rupiah
+ *     (5,8 → 5,2), `dok_nama` (5,0 → 3,2 — memang SELALU kosong), `dok_nomor`
+ *     (5,5 → 4,2), `jumlah`/`satuan`, & NIBAR (8,0 → 7,6).
+ *
+ * Sel kode jadi 1,63%/sel (≈19 px pada lebar cetak F4 lanskap ±1.200 px) —
+ * masih lebih lega daripada IV.B (1,46%/sel) yang terbukti terbaca, dan segmen
+ * terpanjangnya cuma 3 karakter.
+ *
+ * ⚠️ `dok_tanggal` PUNYA BATAS BAWAH KERAS 4,0%. Ia `whitespace-nowrap` (memecah
+ * "19/07/2026" di tengah bikin tak terbaca), jadi lebarnya yang harus
+ * menyesuaikan: 10 karakter @7,5px ≈ 42 px + padding ≈ 46 px, sementara 4,0%
+ * dari ±1.200 px = 48 px. Mempersempitnya membuat tanggalnya meluber ke sel
+ * sebelah DI SETIAP BARIS — dan `table-fixed` menyembunyikannya sampai
+ * kertasnya keluar. Dikunci lib/formatReklas.test.ts.
  *
  * ⚠️ NIBAR tak bisa ikut dipepet: 45 digit, dipenggal dua baris di batas segmen
  * oleh `pecahNibar()`, dan potongan pertama 26 digit wajib muat SEBARIS — kalau
