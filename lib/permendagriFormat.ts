@@ -64,6 +64,7 @@ export type IdLembar =
   | 'penerimaan-internal'
   | 'pengeluaran-internal'
   | 'gabungan-internal'
+  | 'reklas-penambahan'
   | 'mutasi-bmd-skpd'
   | 'laporan-bmd-skpd'
   | 'mutasi-bmd-pemda'
@@ -170,6 +171,20 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
     judul: 'Rekapitulasi Gabungan Pengeluaran dan Penerimaan BMD Internal Pengguna Barang',
     kertas: 'F4 lanskap',
     berkas: 'components/pelaporan/LembarGabunganInternal.tsx',
+  },
+  // ── Reklasifikasi (IV.F) ─────────────────────────────────────────────────
+  // ⚠️ `kode` di sini lembar RINCI-nya; keempat rekapnya (IV.F.3–F.6) dilayani
+  // komponen yang SAMA & tak punya entri sendiri (pola yang sama dgn empat cara
+  // perolehan & keluarga perpindahan).
+  // ⛔ Lembar PENGURANGAN akibat reklasifikasi BELUM dibangun — formatnya belum
+  // diserahkan. Registry ini sengaja cuma memuat yang sudah jadi (lihat kepala
+  // berkas): entri untuk sesuatu yang belum ada tak akan pernah dibaca siapa pun
+  // lalu basi diam-diam.
+  'reklas-penambahan': {
+    kode: 'IV.F.2',
+    judul: 'Laporan Penambahan akibat Reklasifikasi BMD',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarReklasPermendagri.tsx',
   },
   'mutasi-bmd-skpd': {
     kode: 'IV.L.4.1',

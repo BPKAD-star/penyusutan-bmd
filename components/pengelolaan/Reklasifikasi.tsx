@@ -36,27 +36,17 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
+import {
+  ALASAN_OPT, ALASAN_LABEL, LEDGER_JENIS,
+  perluKodeTujuan, targetKomptabel, filterKomptabelAwal,
+  type AlasanReklas,
+} from '@/lib/reklas'
 
-type Alasan = 'komptabel_ke_ekstra' | 'komptabel_ke_intra' | 'golongan' | 'kode'
-
-const ALASAN_OPT: { value: Alasan; label: string; deskripsi: string }[] = [
-  { value: 'komptabel_ke_ekstra', label: 'Intra → Ekstra Komptabel', deskripsi: 'Nilai penyusutan tetap sama, cuma status komptabel yang berubah.' },
-  { value: 'komptabel_ke_intra', label: 'Ekstra → Intra Komptabel', deskripsi: 'Nilai penyusutan tetap sama. Dibutuhkan sebelum kapitalisasi (mensyaratkan komptabel sama).' },
-  { value: 'golongan', label: 'Perubahan Fungsi BMD', deskripsi: 'Barang pindah golongan/jenis BMD sepenuhnya (mis. KDP selesai dibangun jadi Gedung, atau barang rusak berat direklas ke Aset Lain-Lain). Penyusutan mulai dihitung ULANG sejak tanggal reklas ini (bukan retroaktif).' },
-  { value: 'kode', label: 'Kesalahan Kodefikasi', deskripsi: 'Tetap dalam jenis BMD yang sama, cuma kodefikasi detailnya salah pilih. Penyusutan dihitung ulang RETROAKTIF dari tanggal perolehan asli, pakai masa manfaat kodefikasi tujuan.' },
-]
-const ALASAN_LABEL = Object.fromEntries(ALASAN_OPT.map(a => [a.value, a.label])) as Record<Alasan, string>
-
-const LEDGER_JENIS: Record<Alasan, string> = {
-  komptabel_ke_ekstra: 'reklas_komptabel',
-  komptabel_ke_intra: 'reklas_komptabel',
-  golongan: 'reklas_golongan',
-  kode: 'reklas_kode',
-}
-const perluKodeTujuan = (a: Alasan) => a === 'golongan' || a === 'kode'
-const targetKomptabel = (a: Alasan): 'intra' | 'ekstra' => a === 'komptabel_ke_ekstra' ? 'ekstra' : 'intra'
-const filterKomptabelAwal = (a: Alasan): 'intra' | 'ekstra' | null =>
-  a === 'komptabel_ke_ekstra' ? 'intra' : a === 'komptabel_ke_intra' ? 'ekstra' : null
+// ⚠️ Daftar alasan, labelnya, & pemetaan ke jenis ledger PINDAH ke lib/reklas.ts
+// (2026-09-07) begitu lembar Permendagri IV.F.2 ikut mencetak labelnya di kolom
+// "Penyebab Reklasifikasi". Label yang tercetak di lembar bertanda tangan tak
+// boleh punya salinan kedua yang bisa menyimpang diam-diam.
+type Alasan = AlasanReklas
 
 type Barang = {
   id: string

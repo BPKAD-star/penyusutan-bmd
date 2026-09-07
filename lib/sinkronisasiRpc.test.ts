@@ -32,6 +32,7 @@ import path from 'node:path'
 import { GOLONGAN_REKAP, perlakuanKode } from './bmd'
 import { SEMBUNYI_PENYUSUTAN, SEMBUNYI_DAFTAR_BARANG, MUNCUL, LAHIR } from './visibilitas'
 import { JENIS_REKLAS_KODE } from './reklasKode'
+import { JENIS_REKLAS } from './reklas'
 
 const AKAR = process.cwd()
 const DIR_MIGRASI = path.join(AKAR, 'supabase', 'migrations')
@@ -358,15 +359,15 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
     }
     // Pengaman anti-hampa: pemindai yang tak menemukan apa-apa akan "lulus".
     // ⚠️ Ambangnya TURUN tiap satu menu pindah ke kerangkanya sendiri — per
-    // 2026-09-05 sisa 3 (Reklasifikasi, Koreksi, Penghapusan); Penggunaan,
-    // Penerimaan & Pengeluaran Internal sudah pakai `LaporanPerpindahan`
-    // (dijaga uji di bawahnya), dan Kapitalisasi sudah pindah ke
-    // `LaporanKapitalisasi` sendiri (dijaga uji terpisah di bawahnya juga,
-    // sebab format & sumber datanya beda total — bukan tabel transaksi datar).
+    // 2026-09-07 sisa 2 (Koreksi, Penghapusan). Yang sudah pindah & dijaga uji
+    // TERSENDIRI di bawah: Penggunaan/Penerimaan/Pengeluaran Internal
+    // (`LaporanPerpindahan`), Kapitalisasi (`LaporanKapitalisasi`, format &
+    // sumber datanya beda total), dan Reklasifikasi (`LaporanReklas`, butuh
+    // penyaring arah + lembar IV.F).
     // Kalau angka ini turun lagi, PASTIKAN menu yang pindah sudah masuk
     // `DIR_PERPINDAHAN` atau punya uji index sendiri — bukan sekadar
     // menurunkan ambangnya, kalau tidak menu itu lolos dari SEMUA uji.
-    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(3)
+    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(2)
     return out
   }
 
@@ -470,6 +471,43 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
       const cocok = [...peta.entries()].filter(([, predikat]) => predikat.includes(j))
       expect(cocok.length, `'${j}' (LaporanKapitalisasi) tak tercakup index (id) WHERE jenis IN (…) manapun`).toBeGreaterThan(0)
     }
+  })
+
+  // ⚠️ Reklasifikasi PINDAH ke `LaporanReklas` sendiri 2026-09-07 (butuh
+  // penyaring arah penambahan/pengurangan + lembar Permendagri IV.F). Sejak itu
+  // ia lolos dari pemindai §7 di atas, jadi penjaganya harus di sini — dan
+  // ketiga jenisnya WAJIB tercakup SATU index yang sama, karena pemuatnya
+  // menariknya dalam satu `.in('jenis', JENIS_REKLAS)`. Insiden 2026-08-26
+  // (idx_trx_reklas_id ketinggalan 'reklas_komptabel' → 9.708 ms) tepatnya
+  // kelas ini.
+  //
+  // ⚠️ Jenisnya dibaca dari `JENIS_REKLAS` (lib/reklas.ts), BUKAN diketik ulang
+  // di sini — kalau diketik ulang, jenis reklas keempat yang kelak ditambahkan
+  // tak akan pernah ikut terperiksa & tak ada yang menyadarinya.
+  it('LaporanReklas: tiap JENIS_REKLAS tercakup SATU index (id) yang sama & mengurut by id', () => {
+    const pemuat = path.join(AKAR, 'lib/laporanReklas.ts')
+    expect(fs.existsSync(pemuat), 'lib/laporanReklas.ts tak ditemukan — pemindaian rusak').toBe(true)
+    // Urutan menentukan index mana yang sanggup melayani: `jenis` bertipe ENUM
+    // tak bisa jadi index-cond di bawah RLS, jadi `order('periode')`/`('tanggal')`
+    // menyusuri index lain sambil membuang ratusan ribu baris → timeout.
+    expect(fs.readFileSync(pemuat, 'utf8'), 'pemuat reklas tak mengurutkan by id')
+      .toContain("order('id'")
+
+    const halaman = path.join(DIR_HAL, 'reklasifikasi', 'page.tsx')
+    expect(fs.existsSync(halaman), 'halaman reklasifikasi tak ditemukan').toBe(true)
+    expect(fs.readFileSync(halaman, 'utf8'), 'halaman reklasifikasi tak lagi memakai LaporanReklas')
+      .toContain('LaporanReklas')
+
+    const peta = predikatIndexId()
+    // SATU index wajib memuat KETIGANYA sekaligus — pemuatnya menariknya dalam
+    // satu query `IN (…)`, jadi tercakup "masing-masing oleh index berbeda" TIDAK
+    // menolong: Postgres cuma bisa memakai index yang predikatnya menyiratkan
+    // seluruh qual.
+    const cocok = [...peta.entries()].filter(([, predikat]) =>
+      JENIS_REKLAS.every(j => predikat.includes(j)))
+    expect(cocok.length,
+      `JENIS_REKLAS (${JENIS_REKLAS.join(', ')}) tak tercakup SATU index (id) WHERE jenis IN (…) — `
+      + 'menu Laporan Reklasifikasi akan timeout begitu dibuka tanpa filter periode').toBeGreaterThan(0)
   })
 
   it('idx_trx_kapitalisasi_id & idx_trx_koreksi_id dibuat PLAIN, bukan CONCURRENTLY', () => {

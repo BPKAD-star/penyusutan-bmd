@@ -2783,6 +2783,116 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## Laporan Reklasifikasi — Format IV.F.2–F.6 (penambahan) (2026-09-07)
+
+Cabang KELIMA modul Pelaporan Permendagri 47/2021. Menu Pelaporan →
+Pengelolaan → **Reklasifikasi** kini bertiga tab seperti keluarga Perpindahan,
+plus **penyaring ARAH (Penambahan / Pengurangan) di ATAS tab** — permintaan
+user. **Tak ada migrasi.**
+
+Berkasnya: `lib/reklas.ts` · `lib/formatReklas.ts` (+ test) ·
+`lib/laporanReklas.ts` · `components/pelaporan/LembarReklasPermendagri.tsx`
+(+ `tests/lembarReklas.test.tsx`) · `ReklasFormatPermendagri.tsx` ·
+`LaporanReklas.tsx` · `app/cetak/reklas-permendagri/page.tsx`.
+
+- ⚠️ **SATU BARIS LEDGER = DUA SISI, dan itu inti keluarga ini.** Satu
+  `reklas_kode`/`reklas_golongan` memindahkan barang dari `payload.kode_lama`
+  ke `kode_baru`: bagi golongan TUJUAN ia penambahan, bagi golongan ASAL ia
+  pengurangan. Jadi **arah TIDAK menyaring baris** — jumlah transaksi kedua
+  sisi SAMA PERSIS. Hubungannya kembar dgn IV.C ↔ IV.D yang sama-sama membaca
+  `mutasi_internal`. Yang diubah arah cuma `kodeUtama` (kunci pengelompokan
+  Rekap & lembar) dan isi blok "Reklasifikasi dari/ke".
+  **Itu WAJIB tertulis di layar** — tanpa keterangannya operator melihat angka
+  yang sama di kedua sisi lalu mengira salah satunya bug. Stripnya ada di bawah
+  tombol arah; jangan dihapus demi kerapian.
+- ⚠️ **`kodeUtama` DIPAKAI mengelompokkan, BUKAN `aset.kode`.** Kolom itu memuat
+  posisi TERAKHIR barang, jadi barang yang direklas dua kali akan dibukukan di
+  golongan reklas TERBARU-nya di lembar periode lampau — persis cacat baris
+  mutasi Rekonsiliasi yang ditutup 2026-08-27. Berlaku di lembar, tab Rekap,
+  DAN `fetchPenyusutanAset` (kode itu yang menentukan barangnya disusutkan atau
+  tidak).
+- ⚠️ **DUA blok kode bersegmen** (kolom (9) tujuan + kolom (17) "Reklasifikasi
+  dari"), sementara keluarga perpindahan cuma satu — blok "Asal Barang"-nya di
+  sana kolom teks biasa karena perpindahan tak mengubah kodefikasi. Itu yang
+  membuat penyajinya berdiri sendiri, dan itu pula jebakan khas lembar ini:
+  `lawan_kode` **SATU kolom di registry tapi TUJUH sel di tabel**, jadi
+  `colSpan` kepala yang memakai `g.kolom.length` apa adanya menjanjikan 2 kolom
+  di atas 8 sel & SELURUH kolom di kanannya bergeser tanpa satu pun error.
+  Dikunci `tests/lembarReklas.test.tsx` — dan uji itu **langsung menangkap satu
+  bug nyata di percobaan pertama** (`nKolom` menghitung `lawan_kode` dua kali →
+  baris "tidak ada data" ber-colSpan satu sel lebih lebar dari tabelnya).
+- ⚠️ **`segMin` lembar rekap BEDA PER LEMBAR** (`TANGGA_REKAP_REKLAS`):
+  IV.F.3 & IV.F.4 mulai **3 segmen**, IV.F.5 & IV.F.6 mulai **2 segmen**
+  (kelompok neraca `1.3`). Itu MENGIKUTI gambar formatnya, bukan kelalaian —
+  keluarga lain memang seragam (IV.A semuanya 2, IV.B/C/D semuanya 3), jadi
+  godaan menyeragamkan besar sekali. Jangan: menyeragamkannya TIDAK mengubah
+  satu pun angka (cuma menambah/menghilangkan baris kelompok teratas), jadi tak
+  ada uji aritmetika yang akan berteriak — dua uji khusus di
+  lib/formatReklas.test.ts & tests/lembarReklas.test.tsx satu-satunya penjaganya.
+- ⚠️ **Rekap IV.F LIMA kolom — TANPA "Jumlah Barang"** yang ada di rekap
+  IV.B/IV.C/IV.D; lembar rincinya juga tak punya "Harga Satuan" & "Jumlah
+  Total", cuma satu kolom "Nilai Perolehan (Rp)". Diikuti apa adanya.
+- **`reklas_komptabel` IKUT**, dan payloadnya memang tak punya
+  `kode_lama`/`kode_baru` — yang berpindah keranjang komptabelnya, bukan
+  kodenya, jadi `kodeUtama === kodeLawan` & yang menjelaskan peristiwanya kolom
+  **Penyebab Reklasifikasi** ("Ekstra → Intra Komptabel"). Membuangnya akan
+  menghilangkan penambahan SUNGGUHAN dari lembar INTRAKOMPTABEL — kop lembar
+  menyatakan satu keranjang, dan barang yang baru masuk keranjang itu memang
+  bertambah di sana. Yang memisahkannya ke lembar yang benar penyaring
+  Komptabel. Kode barangnya diambil lewat `kodePada()` (replay ledger), BUKAN
+  `aset.kode`.
+- ⚠️ **CACAT LAMA yang ikut tertutup: filter SKPD di menu ini tak pernah
+  bekerja.** `LaporanTransaksi` menyaring `skpd_asal.in.(…),skpd_tujuan.in.(…)`,
+  dan baris reklas **tak punya kedua kolom itu** (barangnya tak berpindah SKPD)
+  → memilih SKPD menghasilkan **0 transaksi yang kelihatan sah**. Penggantinya
+  menyaring lewat `aset.skpd_id` **DI MEMORI**, dan itu terpaksa bukan malas:
+  menyaringnya di server butuh `aset!inner` + `.in('aset.skpd_id', <694 id>)`,
+  bentuk yang sudah berkali-kali jadi sebab timeout di repo ini.
+  ⚠️ Aman HANYA karena ledger reklas kecil — supaya asumsi itu tak berubah
+  diam-diam, sapuannya keyset & **MELEMPAR** kalau menembus `BATAS_SAPU`
+  (20.000), bukan memotong. Menu lama juga tak pernah mengirim `batalJenis`
+  lewat jalur terscope; sekarang `batal_reklas` disaring `fetchBatalTargets`
+  ber-`aset_id`.
+- **SATU pemuat untuk KETIGA tab** (`muatLaporanReklas`) — beda dari
+  `LaporanPerpindahan` yang tab 1-nya punya query sendiri. Di sana bedanya nyata
+  (tab 1 netral arah); di sini tidak, jadi dua jalur cuma bikin dua angka yang
+  bisa menyimpang. Konsekuensinya tab 1 **tak ber-`limit(500)`** — barisnya
+  memang seluruhnya.
+- **Daftar alasan reklas PINDAH ke `lib/reklas.ts`** dari konstanta privat
+  Reklasifikasi.tsx, karena labelnya kini TERCETAK di kolom "Penyebab
+  Reklasifikasi" lembar bertanda tangan. `JENIS_REKLAS` di situ **KEMBAR dgn
+  predikat `idx_trx_reklas_id`** (migrasi 20260826_01) — dikunci
+  lib/sinkronisasiRpc.test.ts §7, diuji merah dulu dgn sengaja menambah jenis
+  palsu. Menambah jenis tanpa memperlebar indexnya = timeout persis insiden
+  2026-08-26.
+- ⚠️ **Kolom (20) "Nama Dokumen" SELALU KOSONG** — aplikasi ini tak menyimpan
+  jenis/nama dokumen sumber reklasifikasi di mana pun (`jurnal_header` cuma
+  punya `no_sk`, `tanggal`, `keterangan`, & `payload.dokumen_paths` yang isinya
+  PATH berkas). Diisi nama berkas unggahan ("scan001.pdf") atau label alasan
+  yang sudah tercetak di kolom (19) berarti menaruh keterangan yang bukan itu di
+  lembar bertanda tangan. Kolomnya tetap dicetak supaya lembarnya cocok
+  kolom-per-kolom saat diperiksa — pola & alasan yang sama dgn `sk_tanggal`/
+  `sk_nomor` di IV.B.1.2 dan `dok_nama` di IV.A. Dikunci uji render.
+- **Nama barang di kolom Spesifikasi ikut SISI-nya** (`namaSpek`): reklas boleh
+  sekalian mengganti nama (`payload.nama_lama`/`nama_baru`), jadi lembar
+  penambahan memuat nama SESUDAH & pengurangan nama SEBELUM. Diputuskan di
+  PEMUAT, bukan penyaji — begitu penyaji tahu sedang merender sisi yang mana,
+  cabang berikutnya akan menyusul (dikunci uji "TIDAK bercabang per format").
+- **Tab Daftar Transaksi menampilkan "Sebelum Reklas → Sesudah Reklas"**
+  (permintaan user) dari `kodeLama`/`kodeBaru` yang **TIDAK ikut arah**:
+  pertanyaan "sebelumnya apa, jadi apa" punya satu jawaban entah lembarnya
+  penambahan atau pengurangan; menukarnya mengikuti arah membuat panah di layar
+  menunjuk terbalik separuh waktu. Kedua sel juga menampilkan komptabelnya —
+  untuk `reklas_komptabel` kodenya sama persis & tanpa itu barisnya terbaca
+  seolah tak terjadi apa-apa.
+- ⛔ **Lembar PENGURANGAN belum dibangun** — formatnya belum diserahkan. Tab
+  Format Permendagri-nya menolak dgn keterangan (bukan disembunyikan diam-diam,
+  bukan pula jatuh ke lembar penambahan), dan `?lap=` yang tak dikenal ditolak
+  di halaman cetak. Registry sudah bertipe `Record<IdReklas, …>` ber-`arah`
+  sebagai anggota tipe supaya cabang kedua cuma menambah SATU entri; **jangan
+  cabut `arah` "karena cuma ada satu cabang"** — justru itu penjaga yang bikin
+  cabang kedua tak bisa lahir sebagai kembaran senyap.
+
 ## Laporan Pengeluaran Internal — Format IV.D.2–D.6 & IV.D.7 (2026-09-02)
 
 Cabang KEEMPAT modul Pelaporan Permendagri 47/2021. Menu Pelaporan →
