@@ -24,6 +24,7 @@ import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import FormShell from './FormShell'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import SearchSelect from '@/components/SearchSelect'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
@@ -46,6 +47,13 @@ type JurnalLine = DraftItem
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,keterangan,skpd_tujuan,approval_status,rejected_reason,payload'
+// Sebutan resmi per level pohon SKPD (CLAUDE.md: level 1 = 60 pengguna barang,
+// 2 = 131 kuasa, 3 = 625 sub kuasa). Dipakai sbg baris kedua di pemilih SKPD
+// tujuan — nama sub-unit sering mirip ("UPTD Puskesmas ..."), jadi tingkatannya
+// yang membedakan.
+const LEVEL_SKPD: Record<number, string> = {
+  1: 'Pengguna Barang', 2: 'Kuasa Pengguna Barang', 3: 'Sub Kuasa Pengguna Barang',
+}
 
 export default function PengeluaranInternal() {
   const supabase = createClient()
@@ -607,10 +615,21 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">SKPD Tujuan <span className="text-gray-400">(satu induk dgn {skpdNama})</span></label>
-              <select className="select-filter w-full" value={tujuan} onChange={e => setTujuan(e.target.value)}>
-                <option value="">— pilih tujuan —</option>
-                {tujuanList.map(s => <option key={s.id} value={s.id}>{' '.repeat((s.level - 1) * 3)}{s.nama}</option>)}
-              </select>
+              {/* Diketik, bukan digulir (permintaan user 2026-09-07): satu SKPD
+                  induk bisa punya puluhan sub-unit — Dinas Kesehatan sendiri
+                  ~40 UPTD Puskesmas — dan mencarinya di <select> berarti
+                  menggulir daftar sepanjang itu tiap kali.
+                  ⚠️ SENGAJA `SearchSelect` atas `tujuanList`, BUKAN
+                  `SkpdCombobox`: combobox itu mencari ke SELURUH `admin_skpd`,
+                  sedangkan tujuan mutasi internal WAJIB satu tree dgn SKPD asal
+                  (migrasi 20260707_03). Kalau ditukar, operator bisa mengetik
+                  SKPD di luar tree lalu ditolak trigger DB dgn pesan mentah —
+                  daftar yang tak boleh dipilih memang tak boleh bisa dicari. */}
+              <SearchSelect value={tujuan} onChange={setTujuan}
+                options={tujuanList.map(s => ({
+                  value: String(s.id), label: s.nama, sub: LEVEL_SKPD[s.level] || `Level ${s.level}`,
+                }))}
+                placeholder="Ketik nama sub-unit tujuan..." />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">No. Dokumen</label>

@@ -3206,7 +3206,26 @@ periode koreksi, bukan surut ke semua periode; modul pelaporan yang memakai
 period-agnostic). Ini **melonggarkan** pengecualian yang tertulis di rules.md
 §1.9 untuk jenis tsb.
 
-## Dokumen sumber WAJIB: Pengeluaran Internal & Koreksi → Pemecahan (2026-09-07)
+## SKPD tujuan mutasi internal: diketik, bukan digulir (2026-09-07)
+
+Pemilih "SKPD Tujuan" di Pengeluaran Internal dulu `<select>` biasa. Dinas
+Kesehatan sendiri punya ~40 UPTD Puskesmas di bawahnya, jadi memilih satu berarti
+menggulir daftar sepanjang itu tiap kali. Kini `SearchSelect` (typeahead
+terbatas: yang tersimpan SELALU salah satu opsi, teks bebas tak pernah lolos).
+
+⚠️ **Sengaja `SearchSelect` atas `tujuanList`, BUKAN `SkpdCombobox`.** Combobox
+itu mencari ke SELURUH `admin_skpd`, sedangkan tujuan mutasi internal WAJIB satu
+tree dengan SKPD asal (migrasi 20260707_03). Kalau ditukar, operator bisa
+mengetik SKPD di luar tree lalu ditolak trigger DB dengan pesan mentah — daftar
+yang tak boleh dipilih memang tak boleh bisa dicari.
+
+Baris kedua tiap opsi = sebutan level (`LEVEL_SKPD`: Pengguna Barang / Kuasa
+Pengguna Barang / Sub Kuasa Pengguna Barang). Nama sub-unit sering nyaris kembar
+("UPTD Puskesmas …"), jadi tingkatannya yang membedakan. Indentasi spasi di
+`<option>` yang lama tak pernah benar-benar tampil — HTML meringkas spasi
+beruntun.
+
+## Dokumen sumber WAJIB: Pengeluaran Internal & Koreksi (kelima alasan) — 2026-09-07
 
 Permintaan user. Dua menu terakhir yang masih menerima peristiwa ber-akibat
 ledger **tanpa satu pun berkas dasar** kini ikut pola yang sudah berlaku di
@@ -3219,23 +3238,38 @@ Cara Perolehan & Penghapusan (`DokumenBastField`, keputusan 2026-09-05).
   Alasannya: operator yang sudah mencentang 40 barang lalu ditolak di tombol
   Simpan akan mencari-cari apa yang salah; yang digate menyuruhnya lebih dulu.
   Penjaga di `simpan()` **tetap dipasang** — gate tampilan bukan penegak.
-- ⚠️ **Cuma alasan Pemecahan yang diwajibkan di menu Koreksi.** Empat alasan
-  lain (Nilai Perolehan, Pencatatan Ganda, Spesifikasi, Penggabungan) sengaja
-  tak disentuh — belum diminta, dan mewajibkan berkas di alasan yang sudah
-  dipakai berarti kartu yang sedang disusun operator mendadak tak bisa
-  disimpan. Kalau kelak diminta: `alasan === 'pemecahan'` di
-  `Koreksi.tsx` tinggal dilebarkan, `payload` sudah menampungnya.
-- **Kartu LAMA tanpa berkas tak bisa & tak boleh dipaksa mundur.** Yang
-  dilakukan cuma mengatakannya terus terang (strip amber di kartu). Untuk
-  Pengeluaran Internal yang masih `pending`, berkasnya masih bisa dilengkapi
-  lewat ✎ Edit — `EditHeaderModal` di situ ikut dapat field-nya.
+- **KELIMA alasan koreksi ikut, bukan cuma Pemecahan** (permintaan user, sore
+  hari yang sama — "daripada satu per satu"). Nilai Perolehan · Pencatatan
+  Ganda · Spesifikasi · Pemecahan · Penggabungan: semuanya menyatakan catatan
+  yang sudah masuk neraca ternyata keliru, jadi tak satu pun pantas berdiri
+  tanpa dokumen dasar. Gate-nya SATU blok di atas kelima kartu alasan, bukan
+  disalin ke tiap kartu — alasan boleh diganti kapan saja, dan gate yang cuma
+  menempel di sebagian kartu membuat sebagian alasan bisa dipakai tanpa berkas.
+- **Kartu LAMA tanpa berkas tak dipaksa mundur** — ditandai strip amber, dan
+  bisa dilengkapi lewat ✎ Edit (kedua menu `EditHeaderModal`-nya dapat field
+  unggah).
+  ⚠️ **Wajib-tidaknya di ✎ Edit sengaja BEDA antar kedua menu, dan itu bukan
+  kelalaian.** Pengeluaran Internal: **memblokir** — kartunya masih `pending`,
+  belum menyentuh ledger, dan masih akan dimaterialisasi saat SKPD tujuan
+  menerima, jadi menahannya masih ada gunanya. Koreksi: **cuma memperingatkan**
+  — kartu koreksi sudah punya baris ledger sejak detik ia dibuat, jadi menahan
+  perbaikan salah ketik No. Dokumen sampai berkasnya dipindai tak membatalkan
+  apa pun, cuma mengurung operator.
   ⚠️ Update payload-nya **men-spread `header.payload`**, bukan menulis
   `{ dokumen_paths }` polos: `draft_items` tinggal di objek yang sama, dan
   menimpanya akan MEMBUANG seluruh barang draft kartu itu tanpa satu pun error.
-  Kartu Pemecahan tak punya jalur ini (ledgernya sudah terlanjur ada).
-- Prefix storage: `mutasi-internal/` & `koreksi-pemecahan/` di bucket
-  `dokumen-sumber` (privat, dibuka lewat signed URL). Tak perlu migrasi storage
-  — policy `dokumen_sumber_*` bersifat se-bucket, bukan per-prefix.
+  Kartu Pemecahan & Penggabungan tak punya jalur ini (ledgernya sudah terlanjur
+  ada) — keduanya cuma menampilkan berkasnya.
+- Prefix storage: `mutasi-internal/` & `koreksi/` di bucket `dokumen-sumber`
+  (privat, dibuka lewat signed URL). Tak perlu migrasi storage — policy
+  `dokumen_sumber_*` bersifat se-bucket, bukan per-prefix.
+- ⛔ **MUARA-nya belum tersambung.** Halaman **Dokumen Sumber**
+  (`app/dashboard/dokumen-sumber`, `lib/dokumenSiklus.ts`) menarik berkas dari
+  modul lain lewat `{ tipe: 'pull', kategori: <jurnal_header.kategori> }`, dan
+  dua kategori baru ini belum terdaftar di `DAFTAR_SIKLUS`: `mutasi_internal`
+  (masuk siklus **Penggunaan**, berdampingan dgn `pengalihan_status`) &
+  `koreksi` (siklus **Penatausahaan**, yang sekarang masih `kosong`). Selama
+  belum didaftarkan, berkasnya cuma kelihatan di kartu jurnalnya sendiri.
 
 ### Pecahan yang terlanjur tersimpan kurang lengkap → ✎ Spesifikasi di kartunya
 

@@ -552,6 +552,10 @@ function KoreksiTransaksi() {
                     <p className="font-semibold text-gray-800">No. Dokumen Koreksi: {j.no_sk}</p>
                     <p className="text-xs text-gray-500">{ALASAN_LABEL[j.jenis]} · Tgl. {j.tanggal} · {j.periode}</p>
                     {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
+                    <DokumenLinks paths={j.payload?.dokumen_paths || []} label="Dokumen Sumber" />
+                    {(j.payload?.dokumen_paths?.length || 0) === 0 && (
+                      <p className="text-xs text-amber-600">⚠ Belum ada dokumen sumber — lengkapi lewat ✎.</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <div className="text-right">
@@ -626,11 +630,29 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
   const [ket, setKet] = useState(header.keterangan || '')
+  const [dokPaths, setDokPaths] = useState<string[]>(header.payload?.dokumen_paths || [])
+  const [dokUploading, setDokUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
   const tglPeriode = periodeDariTanggal(tgl)
   const pindahSemester = tglPeriode !== header.periode
+
+  async function uploadDokumen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setDokUploading(true)
+    for (const file of Array.from(files)) {
+      const path = `koreksi/${crypto.randomUUID()}/${file.name}`
+      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      setDokPaths(prev => [...prev, path])
+    }
+    setDokUploading(false)
+  }
+  async function hapusDokumen(path: string) {
+    await supabase.storage.from('dokumen-sumber').remove([path])
+    setDokPaths(prev => prev.filter(p => p !== path))
+  }
 
   async function simpan() {
     if (!noSk.trim()) { setErr('No. dokumen koreksi wajib diisi.'); return }
@@ -640,7 +662,10 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
     }
     setErr(''); setSaving(true)
     const { error } = await supabase.from('jurnal_header')
-      .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null }).eq('id', header.id)
+      .update({
+        no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
+        payload: { ...(header.payload || {}), dokumen_paths: dokPaths },
+      }).eq('id', header.id)
     if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
     setSaving(false); onSaved()
   }
@@ -668,6 +693,16 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
             <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
             <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
           </div>
+          {/* Di sini dokumen TIDAK memblokir Simpan — sengaja beda dari form
+              jurnal baru & dari Pengeluaran Internal. Kartu koreksi SUDAH punya
+              baris ledger sejak detik ia dibuat, jadi menahan perbaikan salah
+              ketik No. Dokumen sampai berkasnya dipindai tak membatalkan apa pun
+              — cuma mengurung operator. Yang dilayani jendela ini justru kartu
+              lama yang lahir sebelum aturan ini ada. */}
+          <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+            judul="Dokumen Sumber Koreksi" labelTombol="Upload Dokumen Sumber"
+            hint="foto / PDF, bisa lebih dari satu"
+            kosongText="Belum ada dokumen — kartu ini dibuat sebelum berkas diwajibkan; lengkapi di sini." />
           {err && <p className="text-sm text-red-600">{err}</p>}
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
@@ -958,7 +993,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     if (!files || files.length === 0) return
     setDokUploading(true)
     for (const file of Array.from(files)) {
-      const path = `koreksi-pemecahan/${crypto.randomUUID()}/${file.name}`
+      const path = `koreksi/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
       if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
@@ -1085,7 +1120,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       if (alasan === 'penggabungan' && !ket.trim()) { setErr('Keterangan/justifikasi wajib diisi utk Penggabungan Barang.'); return }
       // Penjaga SESUNGGUHNYA, bukan cuma gate tampilan `perluDokumenDulu` —
       // pola & alasan sama dgn Dokumen SK Penghapusan.
-      if (alasan === 'pemecahan' && dokPaths.length === 0) { setErr('Dokumen sumber pemecahan wajib diunggah.'); return }
+      if (dokPaths.length === 0) { setErr('Dokumen sumber koreksi wajib diunggah.'); return }
     }
 
     setSaving(true)
@@ -1094,7 +1129,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       const { data, error } = await supabase.from('jurnal_header').insert({
         skpd_id: skpdId, kategori: 'koreksi', jenis: alasan,
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
-        ...(dokPaths.length > 0 ? { payload: { dokumen_paths: dokPaths } } : {}),
+        payload: { dokumen_paths: dokPaths },
       }).select(HEADER_COLS).single()
       if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
       h = data as unknown as Header
@@ -1352,7 +1387,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   }
 
   const alasanAktif = header?.jenis || alasan
-  const perluDokumenDulu = !header && alasanAktif === 'pemecahan' && dokPaths.length === 0
+  // Nambah barang ke jurnal yang SUDAH ada (header != null) tak digate —
+  // dokumennya sudah diperiksa waktu kartunya dibuat.
+  const perluDokumenDulu = !header && dokPaths.length === 0
 
   return (
     <div className="space-y-4">
@@ -1404,25 +1441,56 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                 </label>
                 <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
               </div>
-              {/* Wajib & DIGATE untuk Pemecahan Barang (permintaan user
-                  2026-09-07): satu barang dipecah jadi beberapa NIBAR baru —
-                  peristiwa yang paling sulit dijelaskan ke pemeriksa tanpa
-                  dokumen dasarnya. "Barang Induk" di bawah baru muncul sesudah
-                  berkasnya ada, lihat `perluDokumenDulu`. */}
-              {alasan === 'pemecahan' && (
-                <div className="sm:col-span-2">
-                  <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
-                    judul="Dokumen Sumber Pemecahan" labelTombol="Upload Dokumen Sumber"
-                    hint="wajib sebelum barang induk bisa dipilih di bawah (foto / PDF, bisa lebih dari satu)"
-                    kosongText="Belum ada dokumen — upload dulu sebelum bisa memilih barang induk di bawah." />
-                </div>
-              )}
+              {/* Wajib & DIGATE untuk KELIMA alasan (permintaan user 2026-09-07,
+                  memperluas keputusan pagi harinya yang cuma Pemecahan). Koreksi
+                  itu menyatakan catatan yang sudah masuk neraca ternyata keliru —
+                  tak satu pun dari kelimanya pantas berdiri tanpa dokumen dasar.
+                  Pemilihan barang di bawah baru muncul sesudah berkasnya ada,
+                  lihat `perluDokumenDulu`. */}
+              <div className="sm:col-span-2">
+                <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
+                  judul="Dokumen Sumber Koreksi" labelTombol="Upload Dokumen Sumber"
+                  hint="wajib sebelum barang bisa dipilih di bawah (foto / PDF, bisa lebih dari satu)"
+                  kosongText="Belum ada dokumen — upload dulu sebelum bisa memilih barang di bawah." />
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {alasanAktif === 'nilai_perolehan' && (
+      {/* Preset dari kartu Pemecahan — DI LUAR kartu alasan & DI ATAS gate
+          dokumen. Kalau ia ikut di dalam kartu Spesifikasi, ia tersembunyi
+          persis di saat paling dibutuhkan: operator menekan ✎ Spesifikasi lalu
+          mendarat di layar "upload dokumen dulu" tanpa satu pun keterangan
+          kenapa ia ada di situ. */}
+      {preset && (
+        <div className="text-xs text-teal-800 bg-teal/5 border border-teal/30 rounded-lg px-3 py-2.5 space-y-1">
+          <p>
+            Barang pecahan <span className="font-medium">{preset.barang.nama_barang || preset.barang.nibar || '-'}</span> dari
+            {' '}<span className="font-medium">Pemecahan No. {preset.asal}</span> sudah dicentang — isi No. Dokumen Koreksi,
+            tanggal, &amp; unggah dokumen sumbernya di atas, lalu klik <span className="font-medium">✎ Edit Spesifikasi</span>.
+          </p>
+          {/* Bukan basa-basi: sesudah baris `koreksi_spesifikasi` ini ada,
+              guard rantai (rules.md §1.3) menolak Batal Pemecahan-nya — dan
+              operator baru tahu waktu tombolnya gagal. */}
+          <p className="text-amber-700">
+            ⚠ Sesudah koreksi ini tersimpan, <span className="font-medium">Batal Pemecahan</span> pada kartu itu akan
+            terblokir (pecahannya sudah punya transaksi lebih baru). Batalkan koreksi ini dulu kalau pemecahannya
+            memang mau dibatalkan.
+          </p>
+        </div>
+      )}
+
+      {/* Satu gate untuk KELIMA alasan — sengaja di sini, bukan disalin ke tiap
+          kartu: alasan boleh diganti kapan saja, dan gate yang cuma menempel di
+          sebagian kartu akan membuat sebagian alasan bisa dipakai tanpa berkas. */}
+      {perluDokumenDulu && (
+        <div className="card p-10 text-center text-amber-600 text-sm">
+          ⚠ Upload Dokumen Sumber Koreksi dulu di atas — barang baru bisa dipilih sesudah dokumennya ada.
+        </div>
+      )}
+
+      {alasanAktif === 'nilai_perolehan' && !perluDokumenDulu && (
         <div className="card p-5">
           <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang &amp; Nilai Baru</h2>
           <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -1490,7 +1558,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         </div>
       )}
 
-      {alasanAktif === 'pencatatan_ganda' && (
+      {alasanAktif === 'pencatatan_ganda' && !perluDokumenDulu && (
         <div className="card p-5">
           <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Kandidat Duplikat</h2>
           <p className="text-sm text-gray-500 mb-3">
@@ -1562,25 +1630,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         </div>
       )}
 
-      {alasanAktif === 'spesifikasi' && (
+      {alasanAktif === 'spesifikasi' && !perluDokumenDulu && (
         <div className="card p-5">
           <h2 className="text-base font-semibold text-gray-800 mb-4">Pilih Barang &amp; Edit Spesifikasi</h2>
-          {preset && (
-            <div className="mb-4 text-xs text-teal-800 bg-teal/5 border border-teal/30 rounded-lg px-3 py-2 space-y-1">
-              <p>
-                Barang pecahan dari <span className="font-medium">Pemecahan No. {preset.asal}</span> sudah dicentang —
-                isi No. Dokumen Koreksi &amp; tanggal di atas, lalu klik <span className="font-medium">✎ Edit Spesifikasi</span>.
-              </p>
-              {/* Bukan basa-basi: sesudah baris `koreksi_spesifikasi` ini ada,
-                  guard rantai (rules.md §1.3) menolak Batal Pemecahan-nya —
-                  dan operator baru tahu waktu tombolnya gagal. */}
-              <p className="text-amber-700">
-                ⚠ Sesudah koreksi ini tersimpan, <span className="font-medium">Batal Pemecahan</span> pada kartu itu
-                akan terblokir (pecahannya sudah punya transaksi lebih baru). Batalkan koreksi ini dulu kalau
-                pemecahannya memang mau dibatalkan.
-              </p>
-            </div>
-          )}
           <div className="flex flex-wrap items-end gap-3 mb-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Jenis Aset</label>
@@ -1660,12 +1712,6 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {alasanAktif === 'pemecahan' && perluDokumenDulu && (
-        <div className="card p-10 text-center text-amber-600 text-sm">
-          ⚠ Upload Dokumen Sumber Pemecahan dulu di atas — barang induk baru bisa dipilih sesudah dokumennya ada.
         </div>
       )}
 
@@ -1828,7 +1874,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         </div>
       )}
 
-      {alasanAktif === 'penggabungan' && (
+      {alasanAktif === 'penggabungan' && !perluDokumenDulu && (
         <div className="card p-5">
           <h2 className="text-base font-semibold text-gray-800 mb-1">Barang yang Digabung</h2>
           <p className="text-sm text-gray-500 mb-4">
@@ -2160,6 +2206,13 @@ function PenggabunganCard({ j, busy, bisaBatal, onBatal }: {
             </p>
             <p className="text-xs text-gray-500">Tgl. {j.tanggal} · {j.periode} · {j.sumber.length} barang dilebur</p>
             {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
+            <DokumenLinks paths={j.payload?.dokumen_paths || []} label="Dokumen Sumber" />
+            {/* Kartu yang dibuat SEBELUM dokumen diwajibkan (2026-09-07) tak
+                punya berkas & ledgernya append-only — yang bisa dilakukan cuma
+                mengatakannya terus terang. */}
+            {(j.payload?.dokumen_paths?.length || 0) === 0 && (
+              <p className="text-xs text-amber-600">⚠ Tanpa dokumen sumber (dibuat sebelum berkas diwajibkan).</p>
+            )}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="text-right">
