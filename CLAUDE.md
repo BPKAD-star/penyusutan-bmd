@@ -3800,6 +3800,43 @@ Barang sendiri tak boleh ikut rusak.
   halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
   dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
 
+## Laporan Perolehan: kolom SKPD & Nama Penyedia (2026-09-08)
+
+Permintaan user di menu Laporan Pengadaan. Berlaku untuk **kelima** menu Laporan
+Perolehan sekaligus — `components/LaporanPerolehan.tsx` dipakai bersama.
+**Tak ada migrasi.**
+
+- **Kolom SKPD paling kiri, di kelima menu.** Sumbernya `skpd_tujuan` (SKPD
+  PENERIMA barang; terisi 100% di ketiga jenis yang ada datanya — diperiksa ke
+  produksi). ⚠️ Yang ditampilkan **UNIT-nya**, dengan induk sbg baris kedua —
+  bukan `rootOf` saja. Pelajarannya sama dgn Laporan Koreksi hari yang sama: dua
+  Bagian di bawah Sekretariat Daerah sama-sama tertulis "Sekretariat Daerah"
+  kalau cuma induknya, dan itu persis yang bikin satu kartu terasa "hilang".
+- **Kolom Nama Penyedia — HANYA Pengadaan**, dan itu bukan pilihan tata letak:
+  `nama_penyedia` cuma ada di header pengadaan (terisi 66/66 baris; 0 di hibah &
+  hasil inventarisasi). Di keempat menu lain lawan mainnya "Pihak Pemberi
+  Hibah"/"Pihak Tukar Menukar", yang sudah punya kolomnya sendiri lewat
+  `pihakLabel`.
+  ⚠️ **`nama_penyedia` tinggal di `jurnal_header.payload`, BUKAN di payload
+  baris ledger** — diperiksa ke produksi: 0 dari 501 baris perolehan punya kunci
+  itu. Jadi kolomnya WAJIB lewat join `header:header_id(no_sk,payload)`;
+  membacanya dari `r.payload` menghasilkan kolom kosong tanpa satu pun error.
+  ⚠️ Daftarnya diturunkan dari `jenis` lewat **`PUNYA_PENYEDIA`** di berkas itu,
+  sengaja BUKAN prop opsional baru — berkas yang sama sudah mencatat alasannya:
+  prop opsional yang lupa dikirim tak menghasilkan error TypeScript, jadi menu
+  Perolehan berikutnya akan kehilangan kolomnya DIAM-DIAM.
+- **Urut per SKPD** (induk → unit → tanggal terbaru → id), dipakai layar DAN
+  Export supaya susunan berkasnya sama dengan yang dilihat operator.
+  ⚠️ Ini TIDAK menggeser baris mana yang tampil: pagu 500 dipasang di QUERY
+  (`.limit(500)` ber-`order('id')`), jadi yang 500 itu tetap "terbaru" &
+  pengurutan cuma menata ulang yang sudah tertarik. Bedakan dari Laporan
+  Koreksi, yang memotongnya di KLIEN — di sana pemotongannya harus disebut.
+- **Export ikut**: kolom `SKPD` & `SKPD Induk` paling kiri, `Nama Penyedia`
+  tepat setelah `Nomor Dokumen Sumber` (hanya Pengadaan).
+- ⚠️ `colSpan` baris "Tidak ada transaksi" kini **DIHITUNG** (`nKolom`), dulu
+  `pihakLabel ? 11 : 10` ditulis tangan. Angka semacam itu diam-diam meleset
+  begitu ada kolom baru & tak ada yang gagal.
+
 ## "Pemecahan Tanah Masjid An-Nur kok hilang?" — SALAH BAGIAN (2026-09-08)
 
 User membuka Koreksi dengan SKPD **Bagian Perekonomian dan Sumber Daya Alam**

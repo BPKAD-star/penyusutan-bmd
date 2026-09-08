@@ -30,7 +30,11 @@ type Trx = {
   nilai: number
   keterangan: string | null
   payload: { pihak?: string } | null
-  header: { no_sk: string } | null
+  /** ⚠️ `nama_penyedia` tinggal di HEADER, bukan di payload baris ledger —
+   *  diperiksa ke produksi 2026-09-08: 0 dari 501 baris perolehan punya kunci
+   *  itu di `transaksi_bmd.payload`, sementara 94 dari 94 header pengadaan
+   *  punya. Jadi kolom Nama Penyedia WAJIB lewat join ini. */
+  header: { no_sk: string; payload: { nama_penyedia?: string } | null } | null
   skpd_tujuan: number | null
   aset_id: string | null
   aset: {
@@ -38,6 +42,20 @@ type Trx = {
     merek_tipe: string | null; spesifikasi_lainnya: string | null; intra_ekstra: string | null; status: string
   } | null
 }
+
+/**
+ * Cara perolehan yang punya rekanan/penyedia di `jurnal_header.payload
+ * .nama_penyedia`. SENGAJA diturunkan dari `jenis` di sini, BUKAN dijadikan
+ * prop opsional baru: berkas ini sendiri sudah mencatat kenapa (lihat catatan
+ * `lembarPerolehan` di bawah) — prop opsional yang lupa dikirim TIDAK
+ * menghasilkan error TypeScript, jadi menu Perolehan berikutnya akan kehilangan
+ * kolomnya DIAM-DIAM. Satu tempat, satu suntingan.
+ *
+ * Diperiksa ke produksi 2026-09-08: nama_penyedia terisi 66/66 baris pengadaan
+ * & 0 di hibah/hasil inventarisasi — di sana lawan mainnya "Pihak Pemberi",
+ * yang sudah punya kolomnya sendiri lewat `pihakLabel`.
+ */
+const PUNYA_PENYEDIA = new Set(['pengadaan'])
 
 export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel }: {
   judul: string
@@ -63,7 +81,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // DI LEMBARNYA (LaporanPengadaanTabel).
   const lembar = lembarPerolehan(jenis)
   const supabase = createClient()
-  const { rootOf, loaded: skpdLoaded } = useSkpdTree()
+  const { byId: skpdById, rootOf, loaded: skpdLoaded } = useSkpdTree()
   const tahunBuku = useTahunBukuMap()
   const [rows, setRows] = useState<Trx[]>([])
   const [loading, setLoading] = useState(true)
@@ -129,7 +147,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
+      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk,payload),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
     // ⚠️ `periode` bisa bernilai TAHUN saja (mis. `2026` = Akhir Tahun) —
@@ -191,6 +209,46 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     .filter(([, st]) => st === 'terbuka').map(([t]) => Number(t))
   const tahunKerja = tahunTerbuka.length > 0 ? Math.max(...tahunTerbuka) : new Date().getFullYear()
   const tahunList = [String(tahunKerja)]
+
+  // ── Identitas SKPD baris ────────────────────────────────────────────────
+  // `skpd_tujuan` = SKPD PENERIMA barang; terisi 100% di ketiga jenis yang ada
+  // datanya (diperiksa ke produksi 2026-09-08).
+  // ⚠️ UNIT-nya yang ditampilkan, bukan cuma induk — alasan & pelajarannya sama
+  // dgn Laporan Koreksi: dua Bagian di bawah Sekretariat Daerah sama-sama
+  // tertulis "Sekretariat Daerah" kalau yang dipakai `rootOf` saja, dan itu
+  // persis yang bikin satu kartu "hilang" 2026-09-08. Induk ikut sbg baris
+  // kedua, karena nama Bagian/UPTD sering tak menyebut induknya.
+  const unitNama = (r: Trx) =>
+    r.skpd_tujuan == null ? '(tanpa SKPD)' : (skpdById.get(r.skpd_tujuan)?.nama ?? `SKPD #${r.skpd_tujuan}`)
+  const indukNama = (r: Trx) => {
+    if (r.skpd_tujuan == null) return ''
+    const root = rootOf(r.skpd_tujuan)
+    return root && root.id !== r.skpd_tujuan ? root.nama : ''
+  }
+  const penyediaNama = (r: Trx) => r.header?.payload?.nama_penyedia || ''
+  const adaPenyedia = PUNYA_PENYEDIA.has(jenis)
+
+  // Urut: induk → unit → tanggal terbaru → id. Dipakai layar DAN export supaya
+  // berkasnya sama susunannya dgn yang dilihat operator.
+  // ⚠️ Pemecah seri `id` WAJIB: satu dokumen berisi banyak barang ber-SKPD &
+  // tanggal SAMA, dan tanpa urutan TOTAL isinya bisa bergeser tiap render
+  // (`Array.prototype.sort` tak dijamin stabil di semua mesin).
+  // ⚠️ Ini TIDAK menggeser baris mana yang tampil: pagu 500 dipasang di QUERY
+  // (`.limit(500)` ber-`order('id')`), jadi yang 500 itu tetap "terbaru" —
+  // pengurutan ini cuma menata ulang yang sudah tertarik.
+  const urutSkpd = (a: Trx, b: Trx) => {
+    const ia = indukNama(a) || unitNama(a), ib = indukNama(b) || unitNama(b)
+    if (ia !== ib) return ia.localeCompare(ib, 'id')
+    const ua = unitNama(a), ub = unitNama(b)
+    if (ua !== ub) return ua.localeCompare(ub, 'id')
+    if (a.tanggal !== b.tanggal) return a.tanggal < b.tanggal ? 1 : -1
+    return b.id - a.id
+  }
+  const rowsUrut = [...rows].sort(urutSkpd)
+  // ⚠️ DIHITUNG, bukan ditulis tangan. Dulu `pihakLabel ? 11 : 10`, dan angka
+  // seperti itu diam-diam meleset begitu ada kolom baru — baris "Tidak ada
+  // transaksi" jadi tak selebar tabelnya & tak ada yang gagal.
+  const nKolom = 10 + 1 + (pihakLabel ? 1 : 0) + (adaPenyedia ? 1 : 0)
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
@@ -258,7 +316,10 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     } catch (e) {
       setVoidedErr(pesanVoidGagal(e as Error)); setExporting(false); return
     }
-    exportToExcel(hasil.map(r => ({
+    exportToExcel(hasil.sort(urutSkpd).map(r => ({
+      // SKPD paling kiri: berkas ini dibaca & dipivot per SKPD.
+      'SKPD': unitNama(r),
+      'SKPD Induk': indukNama(r),
       ...(pihakLabel ? { [pihakLabel]: r.payload?.pihak || '' } : {}),
       'Kode Barang': r.aset?.kode || '',
       'Uraian Barang': r.aset?.uraian_barang || '',
@@ -268,6 +329,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       'Spesifikasi Lainnya': r.aset?.spesifikasi_lainnya || '',
       'Komptabel': (r.aset?.intra_ekstra || '').toUpperCase(),
       'Nomor Dokumen Sumber': r.header?.no_sk || '',
+      ...(adaPenyedia ? { 'Nama Penyedia': penyediaNama(r) } : {}),
       'Tanggal Perolehan (BAST)': r.tanggal,
       'Periode': r.periode,
       'Nilai Perolehan (Rp)': r.nilai,
@@ -416,6 +478,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
+                    <th className="table-th">SKPD</th>
                     {pihakLabel && <th className="table-th">{pihakLabel}</th>}
                     <th className="table-th">Kode Barang</th>
                     <th className="table-th">Uraian Barang</th>
@@ -424,6 +487,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                     <th className="table-th">Spesifikasi Lainnya</th>
                     <th className="table-th">Komptabel</th>
                     <th className="table-th">No. Dokumen Sumber</th>
+                    {adaPenyedia && <th className="table-th">Nama Penyedia</th>}
                     <th className="table-th">Tgl Perolehan (BAST)</th>
                     <th className="table-th text-right">Nilai Perolehan</th>
                     <th className="table-th">Keterangan</th>
@@ -431,11 +495,15 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {loading ? (
-                    <tr><td colSpan={pihakLabel ? 11 : 10} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                    <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={pihakLabel ? 11 : 10} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-                  ) : rows.map(r => (
+                    <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
+                  ) : rowsUrut.map(r => (
                     <tr key={r.id}>
+                      <td className="table-td text-xs">
+                        <p className="font-medium">{unitNama(r)}</p>
+                        {indukNama(r) && <p className="text-gray-400">{indukNama(r)}</p>}
+                      </td>
                       {pihakLabel && <td className="table-td text-xs">{r.payload?.pihak || '-'}</td>}
                       <td className="table-td text-xs">{r.aset?.kode || '-'}</td>
                       <td className="table-td text-xs">{r.aset?.uraian_barang || '-'}</td>
@@ -447,6 +515,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                       <td className="table-td text-xs">{r.aset?.spesifikasi_lainnya || '-'}</td>
                       <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
                       <td className="table-td text-xs">{r.header?.no_sk || '-'}</td>
+                      {adaPenyedia && <td className="table-td text-xs">{penyediaNama(r) || '-'}</td>}
                       <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
                       <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
                       <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.keterangan || '-'}</td>
