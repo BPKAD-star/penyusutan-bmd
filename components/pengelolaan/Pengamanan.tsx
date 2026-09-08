@@ -93,13 +93,18 @@ export default function Pengamanan() {
 
     if (hs.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,jenis,nilai,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
+        // ⚠️ `nilai` DIAMBIL DARI ASET, bukan dari baris ledger. Pengamanan itu
+        // peristiwa NETRAL, jadi baris ledgernya sengaja ditulis `nilai: 0`
+        // (lihat `kembalikanBarang`/`simpan` di bawah) — membaca kolom itu apa
+        // adanya membuat kolom Nilai kartu ini menampilkan Rp0 untuk SETIAP
+        // barang, tanpa satu pun error.
+        .select('id,header_id,jenis,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan,nilai_perolehan)')
         .in('jenis', ['pengamanan', 'pengembalian_pengamanan', 'batal_pengamanan'] as never)
         .in('header_id', hs.map(h => h.id))
         .order('id', { ascending: true })
       const rows = (data || []) as unknown as {
-        id: number; header_id: string; jenis: string; nilai: number
-        aset: Omit<Barang, 'nilai_perolehan' | 'skpd_id'> | null
+        id: number; header_id: string; jenis: string
+        aset: Omit<Barang, 'skpd_id'> | null
       }[]
       // Akumulasi kronologis per (header, aset), baris terakhir menentukan:
       //   'pengamanan'              → set baris, dikembalikan=false
@@ -112,7 +117,8 @@ export default function Pengamanan() {
         if (r.jenis === 'pengamanan') {
           acc.set(key, {
             aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
-            merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai, dikembalikan: false,
+            merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan,
+            nilai: r.aset.nilai_perolehan || 0, dikembalikan: false,
           })
         } else if (r.jenis === 'pengembalian_pengamanan') {
           const cur = acc.get(key); if (cur) cur.dikembalikan = true

@@ -2836,9 +2836,37 @@ Berkasnya: `lib/formatPengamanan.ts` (+ test) · `lib/laporanPengamanan.ts` ·
 
 - ⚠️ **BENTUKNYA DATAR & BERNOMOR** — satu-satunya keluarga lembar di aplikasi
   ini yang begitu. Kolom "Kode Barang" SATU kolom teks (BUKAN sel segmen),
-  barisnya bernomor 1,2,3…, tak ada baris kelompok maupun subtotal, dan **tak
-  ada lembar rekap `.3`–`.6`**. Penyajinya karena itu tak menyentuh mesin
-  subtotal sama sekali; dikunci uji "TIDAK memakai mesin subtotal".
+  barisnya bernomor 1,2,3…, tak ada baris kelompok maupun subtotal. Penyajinya
+  karena itu tak menyentuh mesin subtotal sama sekali; dikunci uji "TIDAK
+  memakai mesin subtotal".
+  ⛔ **`IV.J.1.3`–`.1.6` & `IV.J.2.3`–`.2.6` BELUM dibangun, dan catatan lama
+  yang bilang "tak ada lembar rekap `.3`–`.6`" itu DUGAAN saya, bukan fakta**
+  (dikoreksi 2026-09-09 setelah user menanyakannya). Gambarnya belum pernah
+  diserahkan. Keluarga lain (IV.B.1.2–1.6, IV.K.1.2–1.6) memang berpola
+  `.2` rinci + `.3`–`.6` tangga rekap, jadi kemungkinan besar ada — tapi susunan
+  kolomnya TIDAK bisa ditebak: lembar rinci IV.J tak punya satu pun kolom uang,
+  sementara rekap IV.B berkolom 6 (pakai "Jumlah Barang") & rekap IV.K berkolom
+  5. Mengarang bentuknya berarti mencetak lembar bertanda tangan yang tak cocok
+  saat pemeriksa mencocokkannya kolom per kolom. **Minta gambarnya dulu.**
+
+### Rekap per SKPD + kolom Nilai yang selalu Rp0 (2026-09-09)
+
+- Menu ini kini **tiga tab** (Daftar · Rekap per SKPD · Format Permendagri),
+  seragam dgn Reklasifikasi/Koreksi/Penghapusan. Matriksnya DITURUNKAN dari
+  baris yang sudah dimuat tab Daftar — tak ada query kedua, jadi mustahil
+  menyimpang; ia juga ikut penyaring **Status**, dan itu dikatakan di layar.
+- ⚠️ **`transaksi_bmd.nilai` baris pengamanan SELALU 0 — jangan dibaca.**
+  Pengamanan itu peristiwa NETRAL (kustodi fisik), jadi `Pengamanan.tsx` memang
+  menulis `nilai: 0`. Sampai hari ini kolom "Nilai" **di laporan MAUPUN di kartu
+  menu Pembukuan** membaca kolom itu apa adanya → **Rp0 untuk SETIAP barang**,
+  tanpa satu pun error, dan nol itu terbaca operator sbg "barangnya memang tak
+  bernilai". Keduanya kini membaca **`aset.nilai_perolehan`** lewat join. Rekap
+  per SKPD mustahil berarti apa-apa di atas kolom yang selalu nol, jadi
+  perbaikan ini syarat, bukan bonus.
+- Kolom identitas di tab Daftar ikut disamakan dgn form 2026-09-08: **Nomor
+  Identitas** (lewat `identitasPengamanan`, yang menjembatani kartu lama
+  ber-`nip`) & **Status Penghuni/Pemakai** menggantikan NIP + Pangkat/Golongan
+  yang sudah dicabut dari form. Export Excel ikut.
 - ⚠️ **SUSUNAN KOLOM SENGAJA MENYIMPANG dari lembar aslinya** (keputusan user),
   dan ini SATU-SATUNYA keluarga yang begitu. Di keluarga lain kolom yang datanya
   tak ada tetap dicetak KOSONG supaya lembarnya cocok kolom-per-kolom saat
@@ -4014,6 +4042,44 @@ Barang sendiri tak boleh ikut rusak.
   **pertanyaan termahal yang paling tidak penting**. Sebelum menambahkannya di
   halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
   dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
+
+## Pengadaan: "Tambah ke Draft" WAJIB lengkap (2026-09-09)
+
+Keputusan user. Dulu yang diperiksa cuma tiga (kode barang, kuantitas ≥ 1,
+harga > 0), jadi barang **tanpa kode rekening** & **tanpa satuan** bisa masuk
+draft lalu ikut disetujui:
+
+- `rekening` kosong → `draft_items[].rekening` kosong → anggaran kontrak tak
+  bisa dijumlahkan per kode rekening. ⚠️ Dan `cekWarningRekening` sengaja
+  MELEWATI rekening kosong ("kewajibannya ditegakkan validasi form
+  masing-masing pintu"), jadi tak ada satu pun yang berbunyi.
+- `satuan` kosong → `aset.satuan` NULL saat approve → kolom Satuan hilang di
+  Daftar Barang, KIBAR, & lembar Permendagri yang mencetaknya.
+
+Keduanya baru ketahuan berbulan kemudian, waktu barangnya sudah di register &
+memperbaikinya harus lewat Buka Kunci atau menu Koreksi.
+
+- Aturannya SATU tempat: **`kekuranganBarangPengadaan()`** di
+  lib/draftPengadaan.ts, dikunci lib/draftPengadaan.test.ts (diuji merah dulu
+  dgn mencabut dua pemeriksaan baru itu).
+- ⚠️ Mengembalikan **SELURUH kekurangan sekaligus**, bukan yang pertama saja.
+  Penolakan satu-per-satu memaksa operator menekan tombol lima kali untuk tahu
+  lima hal yang kurang, dan tiap penolakan terbaca sbg kesalahan baru.
+- ⚠️ **Tombolnya sengaja TIDAK dimatikan** (pola tombol Ajukan di Usulan Standar
+  Harga): tombol mati tanpa keterangan adalah kegagalan senyap. Yang dipakai:
+  label ber-`*` merah + baris amber "Belum lengkap — …" yang dihitung SAMBIL
+  DIKETIK, lalu penolakan berikut alasannya kalau tombolnya tetap ditekan.
+- ⚠️ Angka dioper SUDAH TERURAI (`toInt`/`toNum` milik formnya), bukan string
+  mentah — yang divalidasi harus angka yang SAMA dengan yang nanti disimpan.
+- ⛔ **PINTU SEBELAH MASIH TERBUKA & itu disengaja:** `PerolehanImport.tsx`
+  menulis `rekening: ''` HARDCODE untuk cabang Pengadaan, dan berkas yang
+  dibacanya adalah export e-BMD yang memang **tak punya kolom kode rekening**.
+  Mewajibkannya di sana akan mematikan importnya total. Jadi aturan ini berlaku
+  untuk ENTRY MANUAL saja. Kalau kelak import harus ikut, yang dibutuhkan kolom
+  baru di berkasnya — bukan sekadar memindahkan validasinya.
+- ⛔ **PerolehanManual (Hibah/Tukar Menukar/Hasil Inventarisasi/Perolehan
+  Lainnya) belum ikut** — di sana `satuan` masih boleh kosong (tak ada kode
+  rekening sama sekali di menu itu). Belum diminta.
 
 ## Laporan Perolehan: kolom SKPD & Nama Penyedia (2026-09-08)
 

@@ -25,6 +25,7 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import { cekWarningRekening } from '@/lib/rekeningBelanja'
+import { kekuranganBarangPengadaan } from '@/lib/draftPengadaan'
 import { generateNibars } from '@/lib/nibar'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 import NominalInput from '@/shared/ui/NominalInput'
@@ -1036,15 +1037,24 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
     setResults([])
   }
 
+  // ⚠️ Kekurangan dihitung SAMBIL DIKETIK (bukan cuma saat tombol ditekan)
+  // supaya operator tahu apa yang kurang sebelum mencoba. Aturannya di
+  // lib/draftPengadaan.ts — dikunci lib/draftPengadaan.test.ts.
+  const kurang = kekuranganBarangPengadaan({
+    rekening, kode: picked?.kode || '', satuan, kuantitas: toInt(qty), harga: toNum(harga),
+  })
+
   function simpan() {
-    if (!picked) { setErr('Pilih kode barang dulu.'); return }
-    const n = toInt(qty)
-    if (n < 1) { setErr('Kuantitas minimal 1.'); return }
-    if (toNum(harga) <= 0) { setErr('Harga harus > 0.'); return }
+    // ⚠️ Tombolnya sengaja TIDAK dimatikan (CLAUDE.md, pola tombol Ajukan di
+    // Usulan Standar Harga): tombol mati tanpa keterangan adalah kegagalan
+    // senyap — operator menekan, tak terjadi apa-apa, & tak punya cara tahu
+    // kenapa. Yang benar: menolak BERIKUT alasannya, seluruhnya sekaligus.
+    if (kurang.length > 0) { setErr(`Lengkapi dulu — ${kurang.join(' · ')}.`); return }
+    setErr('')
     // Aturannya di lib/rekeningBelanja.ts — dipakai bersama termin Pekerjaan
     // Konstruksi sejak 2026-08-27, jangan disalin balik ke sini.
     const w = cekWarningRekening(rekening, golongan, golonganLabels[golongan])
-    if (w.length > 0) { setErr(''); setWarnings(w); return } // tampilkan popup konfirmasi
+    if (w.length > 0) { setWarnings(w); return } // tampilkan popup konfirmasi
     doTambah()
   }
 
@@ -1064,12 +1074,12 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
   return (
     <div className="space-y-3">
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-gray-400">(cari & pilih sampai Sub Rincian Objek)</span></label>
+        <label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-red-500">*</span> <span className="text-gray-400">(cari & pilih sampai Sub Rincian Objek)</span></label>
         <RekeningPicker value={rekening} onChange={setRekening} className="w-full sm:max-w-2xl" />
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Jenis BMD</label>
+          <label className="block text-xs text-gray-500 mb-1">Jenis BMD <span className="text-red-500">*</span></label>
           <select className="select-filter" value={golongan} onChange={e => { setGolongan(e.target.value); setPicked(null); setResults([]) }}>
             <option value="">— pilih jenis —</option>
             {GOLONGAN_DAFTAR_BARANG.map(g => <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>)}
@@ -1108,13 +1118,16 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Satuan</label>
+              <label className="block text-xs text-gray-500 mb-1">Satuan <span className="text-red-500">*</span></label>
               <SearchSelect value={satuan} options={satuanList.map(s => ({ value: s.nama, label: s.nama }))} placeholder="ketik untuk mencari satuan..." onChange={setSatuan} />
             </div>
-            <div><label className="block text-xs text-gray-500 mb-1">Kuantitas</label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
-            <div><label className="block text-xs text-gray-500 mb-1">Harga / item</label><NominalInput className="select-filter w-full text-sm" value={harga} onChange={setHarga} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Kuantitas <span className="text-red-500">*</span></label><input className="select-filter w-full text-sm" inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Harga / item <span className="text-red-500">*</span></label><NominalInput className="select-filter w-full text-sm" value={harga} onChange={setHarga} /></div>
           </div>
           <p className="text-xs text-gray-400">Kuantitas &gt; 1 langsung dipecah jadi beberapa barang terpisah — spesifikasi & foto diisi per-unit setelah ini (✎ Edit Spesifikasi).</p>
+          {kurang.length > 0 && (
+            <p className="text-xs text-amber-700">⚠ Belum lengkap — {kurang.join(' · ')}. Semua kolom bertanda <span className="text-red-500">*</span> wajib diisi.</p>
+          )}
           {err && <p className="text-xs text-red-600">{err}</p>}
           <button className="btn-primary text-xs" onClick={simpan}>Tambah ke Draft</button>
         </div>
