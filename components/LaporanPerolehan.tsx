@@ -1,11 +1,11 @@
 'use client'
 // Laporan Cara Perolehan (Pengadaan/Hibah/Tukar Menukar/Hasil Inventarisasi/
 // Perolehan Lainnya) — kolom detail spesifikasi barang, BEDA dari
-// LaporanTransaksi generik (dipakai menu lain spt Reklasifikasi/Koreksi yang
-// gak butuh kolom sedetail ini). Kolom (kiri→kanan): [Pihak, kalau ada] Kode
-// Barang, Uraian Barang, Spesifikasi Nama Barang+NIBAR, Merk/Tipe, Spesifikasi
-// Lainnya, Komptabel, Nomor Dokumen Sumber, Tanggal Perolehan (BAST), Nilai
-// Perolehan, Keterangan.
+// LaporanTransaksi generik (SUDAH DIHAPUS 2026-09-07; dulu dipakai menu spt
+// Reklasifikasi/Koreksi yang gak butuh kolom sedetail ini). Kolom (kiri→kanan):
+// [Pihak, kalau ada] Kode Barang, Uraian Barang, Spesifikasi Nama Barang+NIBAR,
+// Merk/Tipe, Spesifikasi Lainnya, Komptabel, Nomor Dokumen Sumber, Tanggal
+// Perolehan (BAST), Nilai Perolehan, Keterangan.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'

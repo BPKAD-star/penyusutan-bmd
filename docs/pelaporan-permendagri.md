@@ -43,7 +43,7 @@ yang berbahaya kalau pola kelima lahir tanpa alasan.
 
 | # | Pola | Mekanik | Pemakai |
 |---|---|---|---|
-| **A** | Kerangka cetak bersama | `CetakLaporan.tsx` — `GayaCetakLaporan` (print CSS, isolasi `visibility:hidden` atas `body *`) + `KopCetak` + `TombolCetak` + `useKonfirmasiCetak` | `LaporanTransaksi` (7 laporan Pengelolaan), `LaporanPemanfaatan`, `LaporanPengamanan` → **9 laporan** |
+| **A** | Kerangka cetak bersama | `CetakLaporan.tsx` — `GayaCetakLaporan` (print CSS, isolasi `visibility:hidden` atas `body *`) + `KopCetak` + `TombolCetak` + `useKonfirmasiCetak` | `LaporanKapitalisasi`, `LaporanPemanfaatan`, `LaporanPengamanan` → **3 laporan**. ⚠️ `LaporanTransaksi` yang dulu melayani 7 laporan Pengelolaan sudah DIHAPUS 2026-09-07 — ketujuhnya kini punya kerangkanya masing-masing |
 | **B** | Lembar + pop-up, dirender di halaman itu juga | `window.print()` atas lembar tersembunyi | `BeritaAcaraRekon`+Modal (V.2), `LembarMutasiBmd`+`CetakMutasiBmdModal` (IV.L.4.1/4.3) |
 | **C** | Rute `/cetak/...` terpisah, query ulang | URL bawa `?skpd=&periode=`, subtree dihitung ulang di halaman cetak | `/cetak/perolehan`, `/cetak/laporan-pengadaan`, `/cetak/laporan-bmd`, `/cetak/laporan-bmd-pemda`, `/cetak/kir` |
 | **D** | Tabel layar Permendagri yang dipakai ulang oleh rute cetak | satu komponen tabel, dua pemakai | `LaporanPengadaanTabel` (tab + `/cetak/laporan-pengadaan`) |
@@ -86,22 +86,28 @@ bukan membangun ulang. Jangan diasumsikan — konfirmasi dulu.
 
 | Menu | Komponen | Excel | PDF | Pola | Format |
 |---|---|---|---|---|---|
-| Laporan Penggunaan | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
-| Laporan Penerimaan Internal | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
-| Laporan Pengeluaran Internal | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
+| Laporan Penggunaan | `LaporanPerpindahan` | ✔ daftar · rekap | `/cetak/perpindahan-permendagri` | C | ✅ **IV.B.1.2–1.6** |
+| Laporan Penerimaan Internal | `LaporanPerpindahan` | ✔ daftar · rekap | `/cetak/perpindahan-permendagri` | C | ✅ **IV.C.2–C.6** |
+| Laporan Pengeluaran Internal | `LaporanPerpindahan` | ✔ daftar · rekap | `/cetak/perpindahan-permendagri` | C | ✅ **IV.D.2–D.6 + IV.D.7** |
 | Laporan Reklasifikasi | `LaporanReklas` | ✔ daftar · rekap | `/cetak/reklas-permendagri` | C | ✅ **IV.F.2–F.6** (penambahan) · **IV.F.12–F.16** (pengurangan) |
 | Laporan Koreksi | `LaporanKoreksi` | ✔ daftar · rekap | `/cetak/koreksi-permendagri` | C | ✅ **IV.G.2–G.7** (koreksi nilai) · ➖ empat alasan lain |
-| Laporan Kapitalisasi | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
-| Laporan Penghapusan | `LaporanTransaksi` | ✔ | kop generik | A | ⬜ |
+| Laporan Kapitalisasi | `LaporanKapitalisasi` | ✔ | kop generik | A | ⬜ |
+| Laporan Penghapusan | `LaporanPenghapusan` | ✔ daftar · rekap | `/cetak/penghapusan-permendagri` | C | ✅ **IV.K.1 · IV.K.2 · IV.K.6** |
 | Laporan Pemanfaatan | `LaporanPemanfaatan` | ✔ | kop generik | A | ⬜ |
 | Laporan Pengamanan | `LaporanPengamanan` | ✔ | kop generik | A | ⬜ |
 
-⚠️ **Ini pusat gravitasi pekerjaannya: 9 dari 21 laporan, dan SEMUANYA belum
-punya lembar resmi.** Yang keluar sekarang tabel aplikasi ber-kop
-"Pemerintah Kabupaten Kediri" — sah sebagai berkas kerja, tapi bukan lampiran
-resmi. Tujuh di antaranya lahir dari SATU komponen (`LaporanTransaksi`), jadi
-kalau padanan formatnya ternyata sekeluarga, tujuh laporan bisa beres sekaligus.
-**Itu pertanyaan pertama yang perlu dijawab Bidang Aset.**
+⚠️ **Catatan ini sudah TERJAWAB & dikerjakan (Agustus–September 2026).** Dulu
+tertulis: "9 dari 21 laporan, SEMUANYA belum punya lembar resmi; tujuh di
+antaranya lahir dari SATU komponen (`LaporanTransaksi`), jadi kalau padanan
+formatnya sekeluarga, tujuh laporan bisa beres sekaligus."
+
+Ternyata **tidak sekeluarga** — tiap laporan punya susunan kolom & tangga rekap
+sendiri, jadi ketujuhnya dikerjakan satu per satu dan `LaporanTransaksi`
+akhirnya DIHAPUS (2026-09-07) karena tak lagi dipakai siapa pun. Yang berhasil
+dipakai bersama justru lapisan di bawahnya: mesin subtotal, peta nama tingkat,
+`berupaAset`, & mekanik cetak — semuanya di `lib/formatPermendagri.ts`.
+Sisa yang belum punya lembar resmi tinggal **Kapitalisasi, Pemanfaatan, &
+Pengamanan**.
 
 ### 3.3 Laporan lainnya (7)
 
@@ -276,7 +282,9 @@ kalau satu golongan melebihi satu halaman — perbaikan, bukan kemunduran).
   dibedah, dia benar. Kalau harus dibedah, bedah SEKARANG selagi pemakainya
   baru dua.
 - **Fase 4 — sisanya satu per satu**, tiap kali cuma menambah satu entri registry.
-  Tujuh laporan `LaporanTransaksi` kemungkinan sekali pukul.
+  ⚠️ Dugaan "tujuh laporan `LaporanTransaksi` kemungkinan sekali pukul" TIDAK
+  terbukti: susunan kolom & tangga rekapnya berbeda-beda, jadi ketujuhnya
+  dikerjakan satu per satu (selesai 2026-09-07, komponen generiknya dihapus).
 - **Fase 5 — halaman "Paket Laporan Permendagri"**: cetak beberapa lembar
   sekaligus untuk satu SKPD × periode. Ia KONSUMEN dari lembar yang sudah ada,
   bukan penggantinya.

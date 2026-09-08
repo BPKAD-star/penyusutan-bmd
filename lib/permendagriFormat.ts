@@ -67,6 +67,9 @@ export type IdLembar =
   | 'reklas-penambahan'
   | 'reklas-pengurangan'
   | 'koreksi-nilai'
+  | 'penghapusan-pemindahtanganan'
+  | 'penghapusan-pengalihan'
+  | 'penghapusan-sebab-lain'
   | 'mutasi-bmd-skpd'
   | 'laporan-bmd-skpd'
   | 'mutasi-bmd-pemda'
@@ -211,6 +214,34 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
     judul: 'Laporan Koreksi BMD (koreksi nilai)',
     kertas: 'F4 lanskap',
     berkas: 'components/pelaporan/LembarKoreksiPermendagri.tsx',
+  },
+  // ── Penghapusan (IV.K) ───────────────────────────────────────────────────
+  // TIGA entri, satu per sebab penghapusan — dan ketiganya WAJIB terpisah:
+  // lembarnya berbeda kolom & bernomor sendiri, jadi satu entri bersama tak bisa
+  // menjawab "cabang mana yang sudah ada". `LaporanPenghapusan` merakit kuncinya
+  // sebagai `penghapusan-${id}`; jangan ganti pola namanya.
+  // ⚠️ `kode` di sini lembar RINCI-nya; keempat rekapnya (`.3`–`.6`) dilayani
+  // komponen yang SAMA & tak punya entri sendiri (pola yang sama dgn keluarga
+  // perpindahan, reklas, & koreksi).
+  // ⚠️ Nomor cabangnya MELOMPAT 1 → 2 → 6, memang begitu di lampiran
+  // Permendagri (3–5 milik sebab penghapusan yang aplikasi ini tak catat).
+  'penghapusan-pemindahtanganan': {
+    kode: 'IV.K.1.2',
+    judul: 'Laporan Penghapusan BMD akibat Pemindahtanganan',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPenghapusanPermendagri.tsx',
+  },
+  'penghapusan-pengalihan': {
+    kode: 'IV.K.2.2',
+    judul: 'Laporan Penghapusan BMD karena Penyerahan atau Pengalihan Status Penggunaan',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPenghapusanPermendagri.tsx',
+  },
+  'penghapusan-sebab-lain': {
+    kode: 'IV.K.6.2',
+    judul: 'Laporan Penghapusan BMD akibat Sebab Lain',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPenghapusanPermendagri.tsx',
   },
   'mutasi-bmd-skpd': {
     kode: 'IV.L.4.1',

@@ -160,6 +160,14 @@ export const kunciTtdReklas = (lap: 'penambahan' | 'pengurangan', skpdId: number
 /** Lembar KOREKSI — IV.G.2–G.7. */
 export const kunciTtdKoreksi = (skpdId: number) => `bmd_koreksi_ttd_skpd_${skpdId}`
 
+/** Lembar PENGHAPUSAN — IV.K.1/2/6.
+ *  ⚠️ Kunci SENDIRI per cabang: ketiganya terbit terpisah & bisa ditandatangani
+ *  pejabat yang berbeda, jadi berbagi kunci membuat pilihan di satu lembar
+ *  diam-diam menggeser yang lain. */
+export const kunciTtdPenghapusan = (
+  lap: 'pemindahtanganan' | 'pengalihan' | 'sebab_lain', skpdId: number,
+) => `bmd_penghapusan_${lap}_ttd_skpd_${skpdId}`
+
 /** RKBMD — lembar per-SKPD & lembar se-Kabupaten (yang se-kab bermuatan TEKS). */
 /** Lembar se-Kabupaten Perolehan (IV.A.<n>.7–10) — penanda tangannya "Pejabat
  *  Penatausahaan Barang", dipilih bebas & TIDAK terikat SKPD mana pun. */

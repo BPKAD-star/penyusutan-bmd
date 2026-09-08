@@ -33,6 +33,7 @@ import { GOLONGAN_REKAP, perlakuanKode } from './bmd'
 import { SEMBUNYI_PENYUSUTAN, SEMBUNYI_DAFTAR_BARANG, MUNCUL, LAHIR } from './visibilitas'
 import { JENIS_REKLAS_KODE } from './reklasKode'
 import { JENIS_REKLAS } from './reklas'
+import { FORMAT_PENGHAPUSAN, URUT_PENGHAPUSAN } from './formatPenghapusan'
 
 const AKAR = process.cwd()
 const DIR_MIGRASI = path.join(AKAR, 'supabase', 'migrations')
@@ -320,57 +321,51 @@ describe('§6 Laporan Perolehan — predikat idx_trx_perolehan_id ↔ prop `jeni
 })
 
 // ---------------------------------------------------------------------------
-describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index (id) parsial', () => {
+describe('§7 Menu Pengelolaan — tiap jenis ledgernya tercakup index (id) parsial', () => {
   // Insiden 2026-08-26: dropdown "Periode" di Laporan Pengadaan kosong (pola
-  // §6). Menyisir components/LaporanTransaksi.tsx (dipakai Reklasifikasi/
-  // Koreksi/Kapitalisasi/Penghapusan/Pengalihan/Mutasi Internal) menemukan
-  // dua korban LAIN yang lebih parah, keduanya TIMEOUT SEJAK MENUNYA ADA
-  // (bukan cuma dropdown-nya): idx_trx_reklas_id ketinggalan 'reklas_komptabel'
-  // (dibuat 20260811_01 untuk fn_dbar_kode_at, bukan untuk laporan ini), dan
-  // 'kapitalisasi' tak pernah punya index parsial sama sekali. Diukur ke DB
-  // RLS aktif: reklasifikasi 9.708 ms, kapitalisasi 13.950 ms — dua-duanya di
-  // atas statement_timeout 8 dtk.
+  // §6). Menyisir menu Pengelolaan menemukan dua korban LAIN yang lebih parah,
+  // keduanya TIMEOUT SEJAK MENUNYA ADA (bukan cuma dropdown-nya):
+  // idx_trx_reklas_id ketinggalan 'reklas_komptabel' (dibuat 20260811_01 untuk
+  // fn_dbar_kode_at, bukan untuk laporan ini), dan 'kapitalisasi' tak pernah
+  // punya index parsial sama sekali. Diukur ke DB RLS aktif: reklasifikasi
+  // 9.708 ms, kapitalisasi 13.950 ms — dua-duanya di atas statement_timeout 8 dtk.
   //
   // Bedanya dari §6: di sana SATU index melayani lima halaman (jenis tunggal
   // per halaman, index-nya union kelimanya). Di sini SATU index bisa melayani
-  // SATU KELOMPOK menu (jenisList jamak per halaman) — jadi yang diperiksa
-  // bukan "satu index tunggal berisi semua", tapi "tiap jenisList tercakup
-  // OLEH SALAH SATU index (id) WHERE jenis IN (…) yang ada".
+  // SATU KELOMPOK menu (jenis jamak per halaman) — jadi yang diperiksa bukan
+  // "satu index tunggal berisi semua", tapi "tiap kelompok jenis tercakup OLEH
+  // SALAH SATU index (id) WHERE jenis IN (…) yang ada".
+  //
+  // ⚠️ **`components/LaporanTransaksi.tsx` SUDAH DIHAPUS (2026-09-07)** —
+  // menu terakhir yang memakainya (Penghapusan) pindah ke kerangkanya sendiri.
+  // Pemindai lamanya yang membaca prop `jenisList` ikut dicabut: pemindai yang
+  // tak menemukan apa pun akan "LULUS" tanpa memeriksa apa pun, dan itu jauh
+  // lebih berbahaya daripada tak punya test. Penggantinya uji PER MENU di
+  // bawah — tiap menu Pengelolaan yang menarik `transaksi_bmd` punya satu.
+  //
+  // ⚠️ Kalau kelak ada komponen laporan generik LAGI, ia WAJIB dapat pemindai
+  // sendiri di sini — bukan menumpang salah satu uji per-menu, yang jenisnya
+  // dipaku ke satu berkas.
   const DIR_HAL = path.join(AKAR, 'app', 'dashboard', 'pelaporan', 'pengelolaan')
 
-  /** Prop `jenisList={[...]}` dari tiap halaman yang memakai components/LaporanTransaksi. */
-  function jenisListHalaman(): { halaman: string; jenis: string[] }[] {
-    const out: { halaman: string; jenis: string[] }[] = []
-    for (const d of fs.readdirSync(DIR_HAL, { withFileTypes: true })) {
-      if (!d.isDirectory()) continue
-      const f = path.join(DIR_HAL, d.name, 'page.tsx')
-      if (!fs.existsSync(f)) continue
-      const isi = fs.readFileSync(f, 'utf8')
-      // ⚠️ Yang dicari IMPORT-nya, bukan sekadar penyebutan namanya. Halaman
-      // yang PINDAH dari komponen ini biasanya menjelaskan kenapa di komentar,
-      // dan pemindai yang mencocokkan teks apa adanya lalu menuduhnya "memakai
-      // LaporanTransaksi tapi jenisList tak terbaca" — merah palsu yang
-      // menghukum justru dokumentasi yang benar (kejadian 2026-08-31 waktu
-      // menu Penggunaan dipindah ke komponennya sendiri).
-      if (!isi.includes("from '@/components/LaporanTransaksi'")) continue
-      const m = isi.match(/jenisList=\{\[([^\]]*)\]\}/)
-      expect(m, `halaman ${d.name} memakai LaporanTransaksi tapi prop jenisList tak terbaca`).toBeTruthy()
-      out.push({ halaman: d.name, jenis: kutipan(m![1]) })
-    }
-    // Pengaman anti-hampa: pemindai yang tak menemukan apa-apa akan "lulus".
-    // ⚠️ Ambangnya TURUN tiap satu menu pindah ke kerangkanya sendiri — per
-    // 2026-09-07 sisa 1 (Penghapusan). Yang sudah pindah & dijaga uji
-    // TERSENDIRI di bawah: Penggunaan/Penerimaan/Pengeluaran Internal
-    // (`LaporanPerpindahan`), Kapitalisasi (`LaporanKapitalisasi`),
-    // Reklasifikasi (`LaporanReklas`, lembar IV.F), & Koreksi (`LaporanKoreksi`,
-    // lembar IV.G + penyaring "Asal baris").
-    // ⚠️ Kalau angka ini turun jadi 0, JANGAN sekadar menurunkan ambangnya —
-    // pemindai yang tak menemukan apa-apa akan "lulus" tanpa memeriksa apa pun,
-    // dan komponen `LaporanTransaksi` yang tak lagi dipakai siapa pun sebaiknya
-    // DIHAPUS, bukan dibiarkan tak terjaga.
-    expect(out.length, `hanya ${out.length} halaman Pengelolaan terbaca dari ${DIR_HAL}`).toBeGreaterThanOrEqual(1)
-    return out
-  }
+  it('komponen generik `LaporanTransaksi` benar-benar sudah tiada', () => {
+    // ⚠️ Bukan formalitas. Selama berkasnya masih ada, halaman baru bisa
+    // memakainya lagi & lolos dari SELURUH uji index di bawah (yang semuanya
+    // menunjuk komponen tertentu). Kalau ia dihidupkan lagi, hidupkan pula
+    // pemindai `jenisList`-nya.
+    expect(fs.existsSync(path.join(AKAR, 'components/LaporanTransaksi.tsx')),
+      'components/LaporanTransaksi.tsx hidup lagi — hidupkan juga pemindai jenisList-nya')
+      .toBe(false)
+    const sisa = fs.readdirSync(DIR_HAL, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .filter(d => {
+        const f = path.join(DIR_HAL, d.name, 'page.tsx')
+        return fs.existsSync(f)
+          && fs.readFileSync(f, 'utf8').includes("from '@/components/LaporanTransaksi'")
+      })
+      .map(d => d.name)
+    expect(sisa, `halaman masih mengimpor LaporanTransaksi: ${sisa.join(', ')}`).toEqual([])
+  })
 
   /**
    * Predikat TERAKHIR tiap index `(id) WHERE jenis IN (…)` atas transaksi_bmd,
@@ -388,21 +383,19 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
     return peta
   }
 
-  it('setiap jenisList tercakup SEKURANG-KURANGNYA satu index (id) WHERE jenis IN (…)', () => {
-    const peta = predikatIndexId()
-    expect(peta.size, 'tak ada satu pun index (id) WHERE jenis IN (…) terbaca dari migrasi — parser rusak').toBeGreaterThan(0)
-    for (const { halaman, jenis } of jenisListHalaman()) {
-      const cocok = [...peta.entries()].filter(([, predikat]) => jenis.every(j => predikat.includes(j)))
-      expect(cocok.length,
-        `halaman '${halaman}' (jenisList: ${jenis.join(', ')}) tak tercakup index manapun — ` +
-        `akan timeout begitu dibuka tanpa filter SKPD/periode (pola persis §6, kembar dgn insiden 2026-08-26)`,
-      ).toBeGreaterThan(0)
-    }
+  it('migrasi memang punya index (id) WHERE jenis IN (…) — parsernya hidup', () => {
+    // Pengaman anti-hampa untuk SELURUH uji per-menu di bawah: kalau regex
+    // pembaca migrasinya rusak, `predikatIndexId()` mengembalikan peta kosong &
+    // setiap `filter(...)` di bawah jadi kosong juga — semuanya akan merah,
+    // tapi dengan pesan yang menyesatkan ("tak tercakup index manapun").
+    expect(predikatIndexId().size,
+      'tak ada satu pun index (id) WHERE jenis IN (…) terbaca dari migrasi — parser rusak')
+      .toBeGreaterThan(0)
   })
 
-  // ⚠️ Menu Pelaporan yang TIDAK memakai `LaporanTransaksi` tetap butuh penjaga
-  // yang sama — dan justru merekalah yang gampang lolos, karena pemindai di
-  // atas tak melihatnya sama sekali. Tiga sejauh ini: Penggunaan
+  // ⚠️ Tiap menu Pengelolaan yang menarik `transaksi_bmd` butuh penjaga
+  // sendiri — dan justru merekalah yang gampang lolos, karena tak ada lagi
+  // pemindai generik yang melihat semuanya sekaligus. Yang pertama: Penggunaan
   // (`pengalihan_status`) plus Penerimaan & Pengeluaran Internal
   // (`mutasi_internal`, dua arah) — semuanya lewat `LaporanPerpindahan`. Bentuk query-nya sama persis dgn menu lain
   // (`.eq('jenis', …).order('id')`), jadi mereka menanggung risiko timeout yang
@@ -541,6 +534,36 @@ describe('§7 Laporan Transaksi (Pengelolaan) — tiap jenisList tercakup index 
     expect(cocok.length,
       `JENIS_KOREKSI (${jenis.join(', ')}) tak tercakup SATU index (id) WHERE jenis IN (…) — `
       + 'menu Laporan Koreksi akan timeout begitu dibuka tanpa filter periode').toBeGreaterThan(0)
+  })
+
+  // ⚠️ Penghapusan PINDAH ke `LaporanPenghapusan` sendiri 2026-09-07 (butuh
+  // penyaring alasan + lembar Permendagri IV.K.1/2/6). Ia menarik SATU jenis per
+  // cabang, jadi yang diperiksa: tiap `jenis` di registry tercakup index parsial.
+  //
+  // ⚠️ Jenisnya dibaca dari `FORMAT_PENGHAPUSAN`, BUKAN diketik ulang — cabang
+  // keempat yang kelak ditambahkan otomatis ikut terperiksa.
+  it('LaporanPenghapusan: tiap jenis cabang tercakup index (id) & mengurut by id', () => {
+    const pemuat = path.join(AKAR, 'lib/laporanPenghapusan.ts')
+    expect(fs.existsSync(pemuat), 'lib/laporanPenghapusan.ts tak ditemukan').toBe(true)
+    expect(fs.readFileSync(pemuat, 'utf8'), 'pemuat lembar IV.K tak mengurutkan by id')
+      .toContain("order('id'")
+
+    const halaman = path.join(DIR_HAL, 'penghapusan', 'page.tsx')
+    expect(fs.existsSync(halaman), 'halaman penghapusan tak ditemukan').toBe(true)
+    expect(fs.readFileSync(halaman, 'utf8'), 'halaman penghapusan tak lagi memakai LaporanPenghapusan')
+      .toContain('LaporanPenghapusan')
+
+    const peta = predikatIndexId()
+    const jenis = URUT_PENGHAPUSAN.map(id => FORMAT_PENGHAPUSAN[id].jenis)
+    // Pengaman anti-hampa: registry kosong akan membuat loop di bawah tak
+    // memeriksa apa pun & ujinya "lulus".
+    expect(jenis.length, 'FORMAT_PENGHAPUSAN terbaca kosong').toBeGreaterThanOrEqual(3)
+    for (const j of jenis) {
+      const cocok = [...peta.entries()].filter(([, predikat]) => predikat.includes(j))
+      expect(cocok.length,
+        `'${j}' (cabang Laporan Penghapusan) tak tercakup index (id) WHERE jenis IN (…) manapun — `
+        + 'akan timeout begitu dibuka tanpa filter SKPD/periode').toBeGreaterThan(0)
+    }
   })
 
   // Pemuat lembar IV.G menarik `koreksi_nilai` saja, keyset by id — bentuk yang

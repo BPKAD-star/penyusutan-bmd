@@ -2783,6 +2783,91 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## Laporan Penghapusan — Format IV.K.1 · IV.K.2 · IV.K.6 (2026-09-07)
+
+Cabang KETUJUH — dan TERAKHIR — modul Pelaporan Permendagri untuk menu
+Pengelolaan. Menu Pelaporan → Pengelolaan → **Penghapusan** dapat **penyaring
+ALASAN di atas tiga tab** (permintaan user), tiap alasan menerbitkan keluarga
+lembarnya sendiri. **Tak ada migrasi** — kedua index parsial yang dibutuhkan
+(`idx_trx_penghapusan_id` 20260814_03 & `idx_trx_pindah_id` 20260729_07) sudah
+mencakup ketiga jenisnya.
+
+Berkasnya: `lib/penghapusan.ts` · `lib/formatPenghapusan.ts` (+ test) ·
+`lib/laporanPenghapusan.ts` · `components/pelaporan/LembarPenghapusanPermendagri.tsx`
+(+ `tests/lembarPenghapusan.test.tsx`) · `PenghapusanFormatPermendagri.tsx` ·
+`LaporanPenghapusan.tsx` · `app/cetak/penghapusan-permendagri/page.tsx`.
+
+| Alasan | Ledger | Lembar |
+|---|---|---|
+| Pemindahtanganan | `penghapusan_pemindahtanganan` | IV.K.1.2–1.6 |
+| Pengalihan Status | `pengalihan_status`, sisi **`skpd_asal`** | IV.K.2.2–2.6 |
+| Sebab Lain | `penghapusan_sebab_lain` | IV.K.6.2–6.6 |
+
+- ⚠️ **ALASAN DI SINI MENYARING BARIS SUNGGUHAN** — beda dari penyaring arah di
+  menu Reklasifikasi, yang cuma sudut pandang atas baris yang sama. Ketiganya
+  membaca jenis ledger yang BERBEDA.
+- ⚠️ **IV.K.2 DIBACA DARI SISI SKPD PEMBERI (`skpd_asal`)**, dan itu keputusan
+  yang paling gampang terbalik. `pengalihan_status` di aplikasi ini BUKAN
+  penghapusan — barangnya tetap milik pemda, cuma pindah SKPD. Permendagri
+  memandangnya dari sudut SKPD yang MELEPAS: bagi dia barang itu hilang dari
+  daftarnya. Jadi lembar ini **cerminan persis IV.B.1.2** (Penerimaan
+  Penggunaan) yang membaca `skpd_tujuan` atas baris ledger yang SAMA. Menyaring
+  sisi yang salah menghasilkan lembar berkop "PENGHAPUSAN" berisi barang yang
+  justru baru DITERIMA — terisi penuh, footing benar, tanpa satu pun error.
+  Dikunci lib/formatPenghapusan.test.ts, diuji merah dulu.
+  **Itu WAJIB tertulis di layar** — dua menu yang menampilkan angka berbeda atas
+  baris yang sama akan terbaca sebagai bug.
+- ⚠️ **KEEMPAT cara pemindahtanganan memakai LEMBAR YANG SAMA.** Hibah,
+  penjualan, tukar-menukar, & penyertaan modal semuanya IV.K.1.2; yang
+  membedakan cuma kolom **(20) Cara Pemindahtanganan**, diisi
+  `jurnal_header.sub_jenis`. Permendagri tak memberi lembar terpisah per cara —
+  kalau kelak ada yang membuatkan cabang per cara, uji "keempatnya memakai
+  lembar yang SAMA" yang menjelaskan kenapa itu keliru.
+  `SUBJENIS_OPT` karena itu diangkat ke **lib/penghapusan.ts**: labelnya kini
+  TERCETAK di lembar bertanda tangan, jadi salinan kedua yang menyimpang membuat
+  dokumen resmi menyebut cara yang berbeda dari yang tercatat di pembukuannya.
+- **Ketiga cabang berbeda HANYA di satu blok tengah** — K.1: Lokasi + Cara
+  Pemindahtanganan · K.2: Tgl Perolehan + Cara Perolehan + Lokasi + Penerima
+  Penyerahan · K.6: Lokasi. Sepuluh kolom pertama & blok penutup (SK
+  Penghapusan + Keterangan) IDENTIK, begitu pula keempat lembar rekapnya —
+  karena itu satu registry + satu penyaji, dikunci uji "sepuluh kolom pertama
+  IDENTIK".
+- ⚠️ **Blok "Surat Keputusan Penghapusan" JUSTRU BERISI di sini** — beda dari
+  kolom bernama sama di IV.B.1.2 yang SELALU kosong. Di keluarga IV.K, SK-nya
+  memang kartu jurnal penghapusan itu sendiri (`jurnal_header.no_sk` &
+  `tanggal`). Jangan ikut dikosongkan "biar seragam dgn IV.B".
+- ⚠️ **Rekap IV.K LIMA kolom** (Kode · Nama · Jumlah Rp · Akumulasi · Nilai
+  Buku) — TANPA "Jumlah Barang" yang ada di rekap IV.B/IV.C/IV.D. Lembar
+  aslinya bahkan menuliskan rumusnya terang-terangan: `(12) = (10) - (11)`.
+- ⚠️ **Rekapnya mulai di 2 SEGMEN** (kelompok neraca `1.3` ASET TETAP), bukan 3
+  seperti keluarga perpindahan. Memakai 3 MENGHILANGKAN baris yang ADA di format
+  aslinya, dan karena angkanya tetap menjumlah benar tak satu pun uji aritmetika
+  menangkapnya. Diuji merah dulu.
+- **Lebar kolom disetel "fit to window"** (permintaan user: "jangan boros ke
+  sampingnya"): ketiganya mendarat di **1,46–1,51% per sel kode**, sepadat
+  IV.B yang sudah terbukti terbaca, dan sisa ruangnya diberikan ke kolom teks
+  panjang yang justru penentu TINGGI baris. Dikunci DUA arah — sel kode tak
+  boleh < 1,4% (segmen membungkus) DAN tak boleh ≥ 2,0% (boros; ruang itu jatah
+  kolom teks).
+- ⚠️ **Cacat lama yang ikut ditutup: cabang PENGALIHAN tak pernah masuk laporan
+  ini sama sekali.** `jenisList` versi lama cuma memuat dua jenis
+  `penghapusan_*`, padahal Permendagri memberinya lembar sendiri (IV.K.2).
+- ⚠️ **`efektifPerAsetStatus="dihapus"` DIGANTI**, bukan dibuang: versi lama
+  menyisakan baris terbaru per aset yang statusnya SEKARANG masih `dihapus`
+  (supaya siklus hapus→batal→hapus tak dobel-hitung). Penggantinya menyaring
+  `batal_penghapusan` lewat `fetchBatalTargets` yang TERSCOPE — menjawab
+  pertanyaan yang sama dengan cara yang sepakat dgn seluruh modul pelaporan lain.
+- ⚠️ **`components/LaporanTransaksi.tsx` DIHAPUS.** Ini menu TERAKHIR yang
+  memakainya. Pemindai `jenisList` di lib/sinkronisasiRpc.test.ts §7 ikut
+  dicabut — **pemindai yang tak menemukan apa pun akan "LULUS" tanpa memeriksa
+  apa pun**, jauh lebih berbahaya daripada tak punya test. Penggantinya uji PER
+  MENU, plus satu uji baru yang memastikan komponen generiknya benar-benar
+  tiada; kalau ia dihidupkan lagi, pemindai `jenisList`-nya wajib ikut hidup.
+  Diuji merah dulu dgn membuat berkasnya kembali.
+  ⚠️ `tests/laporanTransaksiAsal.test.ts` ikut pindah jadi
+  `tests/laporanKoreksiAsal.test.ts` — penanda "Asal baris" sekarang tinggal di
+  `LaporanKoreksi`, satu-satunya menu yang punya baris perbaikan data admin.
+
 ## Laporan Koreksi — Format IV.G.2–G.7 (KOREKSI NILAI saja) (2026-09-07)
 
 Cabang KEENAM modul Pelaporan Permendagri 47/2021. Menu Pelaporan →

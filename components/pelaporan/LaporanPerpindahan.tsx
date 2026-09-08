@@ -17,12 +17,14 @@
 // janjinya: "begitu menu Pengelolaan KETIGA butuh susunan tab yang sama, angkat
 // kerangkanya". Ini penunaiannya.
 //
-// ⚠️ SENGAJA BUKAN `LaporanTransaksi` (yang masih dipakai lima menu Pengelolaan
-// lain). Komponen itu tak punya tab sama sekali, pemilih periodenya daftar
-// mentah periode yang kebetulan berisi, dan menambahkan tiga tab ke sana berarti
-// mengubah perilaku lima menu yang belum diminta berubah. Yang TIDAK boleh
-// menunggu adalah aturan integritasnya (mesin subtotal, susunan kolom lembar,
-// saringan pembatalan) — semua itu sudah di lib.
+// ⚠️ SENGAJA BUKAN `LaporanTransaksi` yang generik. Komponen itu tak punya tab
+// sama sekali & pemilih periodenya daftar mentah periode yang kebetulan berisi,
+// jadi menambahkan tiga tab ke sana berarti mengubah perilaku menu lain yang
+// belum diminta berubah. Yang TIDAK boleh menunggu adalah aturan integritasnya
+// (mesin subtotal, susunan kolom lembar, saringan pembatalan) — semua itu sudah
+// di lib.
+// ⚠️ Per 2026-09-07 `LaporanTransaksi` SUDAH DIHAPUS: menu terakhir yang
+// memakainya (Penghapusan) ikut pindah ke kerangkanya sendiri.
 //
 // ⚠️ TAB 1 & TAB 3 SENGAJA BEDA CAKUPAN, dan itu wajib tertulis di layar:
 // "Daftar Transaksi" netral arah (masuk & keluar), sedangkan lembar Permendagri

@@ -20,6 +20,7 @@
 //     Pengembalian barang HANYA lewat SKPD penerima (menu Penggunaan).
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { SUBJENIS_OPT, JENIS_PENGHAPUSAN, type JenisHapus } from '@/lib/penghapusan'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
@@ -32,21 +33,19 @@ import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks, namaFile } from './DokumenBastField'
 
-type JenisHapus = 'penghapusan_pemindahtanganan' | 'penghapusan_sebab_lain' | 'pengalihan_status'
-
+// ⚠️ `SUBJENIS_OPT` (cara pemindahtanganan) & daftar jenis ledgernya PINDAH ke
+// lib/penghapusan.ts (2026-09-07) begitu lembar Permendagri IV.K.1.2 ikut
+// mencetak labelnya di kolom "Cara Pemindahtanganan". Label yang tercetak di
+// lembar bertanda tangan tak boleh punya salinan kedua yang bisa menyimpang.
 const JENIS_OPT: { value: JenisHapus; label: string }[] = [
   { value: 'penghapusan_pemindahtanganan', label: 'Pemindahtanganan' },
   { value: 'penghapusan_sebab_lain', label: 'Sebab Lain (force majeure)' },
   { value: 'pengalihan_status', label: 'Pengalihan Status Penggunaan (Transfer Keluar)' },
 ]
-const SUBJENIS_OPT = [
-  { value: 'hibah', label: 'Hibah' },
-  { value: 'penjualan', label: 'Penjualan' },
-  { value: 'tukar_menukar', label: 'Tukar-Menukar' },
-  { value: 'penyertaan_modal', label: 'Penyertaan Modal Pemerintah' },
-]
 
-const PENGHAPUSAN_JENIS = ['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain']
+// `string[]`, bukan tuple sempit: dipakai `.includes()` atas `JenisHapus`
+// yang juga memuat `pengalihan_status`.
+const PENGHAPUSAN_JENIS: string[] = [...JENIS_PENGHAPUSAN]
 
 // Label pendek khusus bilah filter — `JENIS_OPT.label` dipakai di formulir dan
 // terlalu panjang untuk dijejer sebagai tombol.

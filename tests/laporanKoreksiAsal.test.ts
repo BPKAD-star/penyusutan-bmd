@@ -1,4 +1,9 @@
-// Penjaga penanda "asal baris" di components/LaporanTransaksi.tsx.
+// Penjaga penanda "asal baris" di components/pelaporan/LaporanKoreksi.tsx.
+//
+// ⚠️ Dulu ia hidup di `components/LaporanTransaksi.tsx` yang generik. Komponen
+// itu DIHAPUS 2026-09-07 begitu menu terakhirnya (Penghapusan) pindah ke
+// kerangkanya sendiri; penandanya ikut pindah ke `LaporanKoreksi`, satu-satunya
+// menu yang benar-benar punya baris perbaikan data admin.
 //
 // Latarnya (2026-09-07): user membuka Laporan Koreksi & menemukan 200 baris
 // "Pencatatan Ganda" yang tak pernah ia entri. Diperiksa ke produksi —
@@ -37,12 +42,27 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 
-const BERKAS = path.join(path.resolve(__dirname, '..'), 'components/LaporanTransaksi.tsx')
-const isi = () => fs.readFileSync(BERKAS, 'utf8')
+const BERKAS = path.join(path.resolve(__dirname, '..'), 'components/pelaporan/LaporanKoreksi.tsx')
+// ⚠️ Akhiran baris DINORMALKAN. Berkasnya pernah berpindah ke CRLF (2026-09-08)
+// & seluruh regex ber-`\n\n` di sini diam-diam berhenti cocok — pemindai yang
+// "tak menemukan apa pun" lalu memerahkan uji dengan pesan yang menyesatkan.
+const isi = () => fs.readFileSync(BERKAS, 'utf8').replace(/\r\n/g, '\n')
 /** Sumber tanpa baris komentar — supaya catatan penjelas tak ikut terbaca. */
 const kode = () => isi().split('\n').filter(b => !b.trim().startsWith('//')).join('\n')
+/**
+ * Isi deklarasi `const SEL = …` saja.
+ *
+ * ⚠️ Dipisah, bukan dicocokkan dgn regex lintas-berkas: `const SEL =[\s\S]*?x`
+ * akan menemukan `x` di MANA PUN sesudah deklarasinya, jadi ujinya menuduh
+ * daftar kolom memuat sesuatu yang sebenarnya ada di bagian lain berkas.
+ */
+function selBlok(): string {
+  const m = kode().match(/const SEL =([\s\S]*?)\n\n/)
+  expect(m, 'deklarasi `const SEL` tak terbaca — pemindaian rusak').toBeTruthy()
+  return m![1]
+}
 
-describe('LaporanTransaksi — penanda asal baris', () => {
+describe('LaporanKoreksi — penanda asal baris', () => {
   it('berkasnya ada & tak hampa', () => {
     expect(fs.existsSync(BERKAS)).toBe(true)
     expect(isi().length).toBeGreaterThan(2000)
@@ -52,16 +72,21 @@ describe('LaporanTransaksi — penanda asal baris', () => {
     // Kolom yang tak ikut di `.select()` datang sbg `undefined`, dan
     // `undefined == null` → SELURUH baris ditandai "perbaikan data". Kesalahan
     // yang paling gampang terjadi & paling tak bersuara di fitur ini.
-    expect(kode(), 'created_by tak ada di select query').toMatch(/select\([^)]*created_by/)
+    // Daftar kolomnya konstanta modul (`SEL`), bukan literal di dalam
+    // `.select(...)` — jadi yang diperiksa keberadaannya di daftar itu.
+    expect(selBlok(), 'created_by tak ada di daftar kolom yang di-select').toContain('created_by')
   })
 
   it('pembedanya `created_by`, BUKAN `header_id`', () => {
     const k = kode()
     expect(k, 'fungsi pembeda `dariPerbaikanData` hilang').toContain('dariPerbaikanData')
     expect(k).toMatch(/dariPerbaikanData\s*=\s*\(r: Trx\)\s*=>\s*r\.created_by\s*==\s*null/)
-    // ⚠️ `header_id` tak boleh dipakai menilai asal baris sama sekali di sini —
-    // lihat angka produksinya di kepala berkas.
+    // ⚠️ `header_id` tak boleh IKUT DITARIK maupun dipakai menilai asal baris —
+    // lihat angka produksinya di kepala berkas. (Penyebutannya di komentar
+    // penjelas justru diharapkan, jadi yang diperiksa kodenya saja.)
     expect(k, 'header_id dipakai menilai asal baris — itu SALAH (lihat kepala berkas)')
+      .not.toMatch(/dariPerbaikanData[\s\S]{0,80}header_id/)
+    expect(selBlok(), 'header_id ikut di-select — tak dipakai & mengundang salah pakai')
       .not.toContain('header_id')
   })
 
@@ -71,8 +96,13 @@ describe('LaporanTransaksi — penanda asal baris', () => {
     const k = kode()
     const def = [...k.matchAll(/const dariPerbaikanData/g)].length
     expect(def, 'definisi `dariPerbaikanData` lebih dari satu').toBe(1)
-    // Dipakai di: penyaring, hitungan kartu, badge baris, & kolom Excel.
-    expect([...k.matchAll(/dariPerbaikanData\(/g)].length).toBeGreaterThanOrEqual(4)
+    // Dipakai di: penyaring, hitungan `nPerbaikan`, badge baris, & kolom Excel.
+    // ⚠️ Dihitung SEMUA penyebutannya (termasuk yang dioper sbg referensi ke
+    // `.filter(dariPerbaikanData)`, tanpa kurung) — kalau cuma yang berkurung,
+    // memindahkan salah satu pemakai ke bentuk referensi bikin uji ini lolos
+    // padahal pemakainya berkurang.
+    const pakai = [...k.matchAll(/dariPerbaikanData\b/g)].length - 1 // −1 = definisinya
+    expect(pakai, `cuma ${pakai} pemakai`).toBeGreaterThanOrEqual(4)
   })
 
   it("bawaan penyaringnya 'menu' — baris perbaikan data tak ikut tampil", () => {
@@ -88,8 +118,6 @@ describe('LaporanTransaksi — penanda asal baris', () => {
     const k = kode()
     expect(k, 'penghitung baris tersaring hilang').toContain('const nTersaring')
     expect(k, 'jumlah baris tersaring tak disebut di layar').toContain('nTersaring > 0')
-    expect(k, 'kop cetak tak menyebut penyaring asal yang sedang aktif')
-      .toContain("`Asal baris: ${ASAL_LABEL[asal]}`")
   })
 
   it('baris perbaikan data masih BISA dilihat — disembunyikan, bukan dihapus', () => {
@@ -100,13 +128,23 @@ describe('LaporanTransaksi — penanda asal baris', () => {
     expect(k).toContain("perbaikan: 'Perbaikan data (admin)")
   })
 
-  it('penyaring asal ikut ke Export & ke kop cetak', () => {
+  it('penyaring asal ikut ke Export — bukan `rows` mentah', () => {
+    // ⚠️ Berkas Excel yang isinya beda dari layar tak punya satu pun tanda bahwa
+    // filternya tak berlaku. Yang diperiksa: baris yang diekspor DITURUNKAN dari
+    // `rowsTampil` (yang sudah tersaring) — bukan dipaku ke satu ekspresi
+    // tertentu, karena urutannya boleh saja disisipkan di tengah (`rowsUrut =
+    // [...rowsTampil].sort(…)`, ditambahkan 2026-09-08).
     const k = kode()
-    // Berkas yang menyaring sebagian baris tanpa menyebutkannya adalah dokumen
-    // yang tak terlihat terpotong — alasan yang sama dgn `barisCetak`.
-    expect(k, 'ambilSemua() tak menerapkan penyaring asal').toContain('return saringAsal(hasil)')
-    expect(k, 'kop cetak tak menyebut penyaring asal yang sedang aktif')
-      .toContain("`Asal baris: ${ASAL_LABEL[asal]}`")
+    const m = k.match(/exportToExcel\((\w+)\.map\(/)
+    expect(m, 'panggilan exportToExcel(<baris>.map(…)) tak terbaca — pemindaian rusak').toBeTruthy()
+    const sumber = m![1]
+    expect(sumber, 'export memakai `rows` MENTAH — penyaring "Asal baris" tak berlaku di Excel')
+      .not.toBe('rows')
+    if (sumber !== 'rowsTampil') {
+      // Variabel antara (mis. hasil pengurutan) WAJIB berasal dari `rowsTampil`.
+      expect(k, `'${sumber}' tak diturunkan dari rowsTampil`)
+        .toMatch(new RegExp(`const ${sumber} =[^\n]*rowsTampil`))
+    }
     expect(k, 'kolom Asal Baris tak ikut ke Excel').toContain("'Asal Baris'")
   })
 
