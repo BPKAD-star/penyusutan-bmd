@@ -3800,6 +3800,60 @@ Barang sendiri tak boleh ikut rusak.
   halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
   dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
 
+## "Pemecahan Tanah Masjid An-Nur kok hilang?" — SALAH BAGIAN (2026-09-08)
+
+User membuka Koreksi dengan SKPD **Bagian Perekonomian dan Sumber Daya Alam**
+dan mendapati "0 koreksi · 0 pemecahan · 0 penggabungan", padahal Laporan
+Koreksi menampilkan pemecahan Tanah Masjid An-Nur bertanggal 2026-07-14.
+
+**TIDAK ADA YANG HILANG — datanya utuh dan benar.** Diperiksa ke produksi:
+kartu `71b3b78e…` (No. 1, "Pemecahan sertipikat", 2026-07-14, 2026-S2) berisi
+tepat 3 baris — `pemecahan_keluar` induk Tanah Masjid An-Nur 1.160.892.000
+(status `dihapus`) + dua `pemecahan_masuk`: Tanah Masjid An-Nur 1.149.492.869 &
+Tanah Kantor Kementerian Haji 11.399.131. **Σ pecahan = nilai induk PERSIS**, dan
+ketiganya di **SKPD 184 = Bagian Kesejahteraan Rakyat**. Sementara yang dibuka
+user SKPD **185 = Bagian Perekonomian dan Sumber Daya Alam**. Keduanya anak
+Sekretariat Daerah (26) & bertetangga di daftar. Di ketiga SKPD itu (26/184/185)
+cuma ADA SATU kartu koreksi, yaitu yang itu.
+
+- ⚠️ **Filter daftar kartu SENGAJA TETAP `.eq('skpd_id')`, bukan subtree.** Menu
+  Koreksi (& Reklasifikasi) itu layar ENTRY: "+ Tambah Jurnal" membuat header
+  untuk SKPD yang terpilih, dan tombol Batal/✎ bekerja atas kartu SKPD itu.
+  Melebarkannya ke subtree akan membuat operator induk membatalkan kartu milik
+  sub-unit tanpa sadar. **Jangan "perbaiki" dengan melonggarkan filternya.**
+- Yang ditambah **PENUNJUK ARAH**: kalau SKPD terpilih kosong, layar menyebut
+  di SKPD mana kartu koreksi ada, berikut jumlahnya, dan namanya bisa diklik
+  untuk pindah ke sana. Cuma jalan saat daftarnya kosong; kegagalan query-nya
+  tak ditampilkan (ini petunjuk arah, bukan angka laporan — kalau gagal, layar
+  kembali seperti sebelum penunjuk ini ada).
+
+### Daftar Transaksi Laporan Koreksi: kolom & urutan SKPD
+
+Tabelnya **tak punya kolom SKPD sama sekali** dan urutannya `id DESC` — jadi
+untuk memastikan sebuah pemecahan ada di Bagian mana, satu-satunya cara adalah
+menyetel filter SKPD lalu menghitung selisihnya. Sekarang: kolom **SKPD** paling
+kiri, urut **induk → unit → tanggal terbaru → id**.
+
+- ⚠️ Yang ditampilkan **UNIT-nya, bukan cuma induk**. Kalau cuma induk, "Bagian
+  Kesejahteraan Rakyat" dan "Bagian Perekonomian" sama-sama tertulis
+  "Sekretariat Daerah" dan laporan ini tak menolong sama sekali — persis kasus
+  di atas. Nama induk ikut sbg baris kedua, karena nama Bagian/UPTD sering tak
+  menyebut induknya. (Bandingkan tab **Rekap per SKPD**, yang memang
+  dikelompokkan per induk lewat `rootOf` — itu beda pertanyaan.)
+- ⚠️ **Pemecah seri `id` di pengurut WAJIB ada**: satu SKPD bisa punya puluhan
+  baris bertanggal sama, dan tanpa urutan TOTAL isinya bisa bergeser tiap render
+  (`Array.prototype.sort` tak dijamin stabil di semua mesin) — daftar yang
+  berpindah sendiri bikin operator mengira datanya berubah.
+- ⚠️ **Pemotongan 500 baris jadi berbahaya begitu urutannya per SKPD**, dan itu
+  ditutup di putaran yang sama: dulu potongannya "500 terbaru" (wajar), sekarang
+  ia membuang SELURUH baris SKPD yang urutannya di belakang — tanpa satu pun
+  tanda. Header tabel kini mengatakannya & menunjuk ke Export Excel, yang tetap
+  memuat semuanya (dan ikut berkolom SKPD + SKPD Induk, urutan sama dgn layar).
+- ⛔ **Laporan Reklasifikasi belum ikut** — bentuknya kembar & punya kekurangan
+  yang sama; belum diminta.
+
+**Tak ada migrasi**, tak ada perbaikan data — tak ada yang perlu diperbaiki.
+
 ## ✎ Edit Header untuk kartu Pemecahan & Penggabungan (2026-09-08)
 
 User menanyakan kenapa Reklasifikasi punya ikon ✎ sementara kartu Pemecahan di

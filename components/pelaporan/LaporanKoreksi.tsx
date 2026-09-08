@@ -101,7 +101,7 @@ const ASAL_LABEL: Record<AsalBaris, string> = {
 
 export default function LaporanKoreksi() {
   const supabase = createClient()
-  const { rootOf, loaded: skpdLoaded } = useSkpdTree()
+  const { byId: skpdById, rootOf, loaded: skpdLoaded } = useSkpdTree()
   const tahunBuku = useTahunBukuMap()
   const namaSkpd = useNamaSkpd()
   const lembar = LEMBAR_PERMENDAGRI['koreksi-nilai']
@@ -202,6 +202,40 @@ export default function LaporanKoreksi() {
   const nPerbaikan = rows.filter(dariPerbaikanData).length
   const nTersaring = rows.length - rowsTampil.length
 
+  // ── Identitas SKPD baris ────────────────────────────────────────────────
+  // ⚠️ UNIT-nya, bukan cuma induknya. Insiden 2026-09-08: satu pemecahan tanah
+  // dicatat di "Bagian Kesejahteraan Rakyat" lalu dicari di "Bagian Perekonomian
+  // dan Sumber Daya Alam" — dua Bagian bertetangga di bawah Sekretariat Daerah
+  // yang sama. Kalau yang ditampilkan cuma induknya, keduanya sama-sama tertulis
+  // "Sekretariat Daerah" & laporan ini tak menolong sama sekali. Nama induk
+  // tetap ikut sbg baris kedua, karena nama Bagian/UPTD sendiri sering tak
+  // menyebut induknya.
+  const unitNama = (r: Trx) => {
+    const sid = r.aset?.skpd_id
+    if (sid == null) return '(tanpa SKPD)'
+    return skpdById.get(sid)?.nama ?? `SKPD #${sid}`
+  }
+  const indukNama = (r: Trx) => {
+    const sid = r.aset?.skpd_id
+    if (sid == null) return ''
+    const root = rootOf(sid)
+    return root && root.id !== sid ? root.nama : ''
+  }
+
+  // Urut: induk → unit → tanggal terbaru dulu → id (pemecah seri).
+  // ⚠️ Pemecah seri `id` WAJIB ada: satu SKPD bisa punya puluhan baris
+  // bertanggal sama, dan tanpa urutan TOTAL isinya bisa bergeser tiap render
+  // (Array.prototype.sort tak dijamin stabil di semua mesin) — daftar yang
+  // berpindah-pindah sendiri bikin operator mengira datanya berubah.
+  const rowsUrut = [...rowsTampil].sort((a, b) => {
+    const ia = indukNama(a) || unitNama(a), ib = indukNama(b) || unitNama(b)
+    if (ia !== ib) return ia.localeCompare(ib, 'id')
+    const ua = unitNama(a), ub = unitNama(b)
+    if (ua !== ub) return ua.localeCompare(ub, 'id')
+    if (a.tanggal !== b.tanggal) return a.tanggal < b.tanggal ? 1 : -1
+    return b.id - a.id
+  })
+
   const rekap = new Map<string, { n: number; nilai: number }>()
   for (const r of rowsTampil) {
     const cur = rekap.get(r.jenis) || { n: 0, nilai: 0 }
@@ -226,7 +260,11 @@ export default function LaporanKoreksi() {
 
   function handleExport() {
     setExporting(true)
-    exportToExcel(rowsTampil.map(r => ({
+    exportToExcel(rowsUrut.map(r => ({
+      // SKPD paling kiri: berkasnya memang dibaca per SKPD, dan kolom pertama
+      // itu yang dipakai orang menyortir/mem-pivot di Excel.
+      'SKPD': unitNama(r),
+      'SKPD Induk': indukNama(r),
       'Tanggal': r.tanggal,
       'Periode': r.periode,
       'Jenis': JENIS_TRANSAKSI_LABEL[r.jenis] || r.jenis,
@@ -348,12 +386,22 @@ export default function LaporanKoreksi() {
                   <> · <span className="text-amber-700">{nTersaring.toLocaleString('id-ID')} baris
                     perbaikan data admin disembunyikan</span> — pilih <i>{ASAL_LABEL.semua}</i> untuk melihatnya.</>
                 )}
+                {/* ⚠️ Tabel memang cuma merender 500 baris pertama, dan sejak
+                    urutannya PER SKPD (2026-09-08) pemotongan itu tak lagi
+                    "yang terbaru saja" melainkan membuang SKPD yang urutannya
+                    di belakang — SELURUH barisnya, tanpa satu pun tanda. Excel
+                    tetap memuat semuanya. Jangan hapus keterangan ini. */}
+                {rowsUrut.length > 500 && (
+                  <> · <span className="text-amber-700">tabel menampilkan 500 baris pertama</span> —
+                    SKPD di urutan berikutnya belum tampil; pakai Export Excel untuk seluruhnya.</>
+                )}
               </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
+                    <th className="table-th">SKPD</th>
                     <th className="table-th">Tanggal</th>
                     <th className="table-th">Jenis</th>
                     <th className="table-th">Barang</th>
@@ -364,11 +412,15 @@ export default function LaporanKoreksi() {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {loading ? (
-                    <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                    <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rowsTampil.length === 0 ? (
-                    <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-                  ) : rowsTampil.slice(0, 500).map(r => (
+                    <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
+                  ) : rowsUrut.slice(0, 500).map(r => (
                     <tr key={r.id}>
+                      <td className="table-td text-xs">
+                        <p className="font-medium">{unitNama(r)}</p>
+                        {indukNama(r) && <p className="text-gray-400">{indukNama(r)}</p>}
+                      </td>
                       <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
                       <td className="table-td text-xs">
                         {JENIS_TRANSAKSI_LABEL[r.jenis] || r.jenis}
