@@ -789,6 +789,18 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
             <Baris lebar="w-44" label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
             <Baris lebar="w-44" label="Lokasi" value={barang.spec?.alamat_detail} />
             <Baris lebar="w-44" label="Keterangan" value={barang.spec?.keterangan} />
+            {/* ⚠️ DIPAKU "Intra", bukan dihitung — dan itu memang yang tercatat:
+                `approveKontrakKonstruksi` (lib/kdp.ts) menulis
+                `intra_ekstra: 'intra'` untuk SETIAP barang KDP, tanpa pernah
+                melihat batas kapitalisasi. Alasannya pekerjaan konstruksi itu
+                belanja modal atas barang yang sedang dikerjakan; klasifikasi
+                sesungguhnya baru relevan saat KDP direklas ke aset tetap.
+                Menampilkannya di sini SENGAJA: kartu ini dibaca berdampingan
+                dgn kartu Pengadaan non-konstruksi yang komptabelnya memang
+                berbeda-beda, jadi kolom yang absen bikin operator mengira
+                KDP belum diklasifikasi. Kalau kelak aturannya berubah, ubah
+                lib/kdp.ts DAN baris ini bersamaan. */}
+            <Baris lebar="w-44" label="Komptabel" value="Intra" />
             {barang.kap_info?.menambah && <Baris lebar="w-44" label="Menambah Manfaat" value={barang.kap_info.target_nama || '(aset dipilih)'} />}
           </div>
         </div>

@@ -44,6 +44,7 @@ import { BENTUK_KONTRAK_OPT, bentukKontrakLabel, type BentukKontrak } from '@/li
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { useDraftSeleksi, DraftSearchBar, DraftBulkBar } from './draftSeleksi'
+import { useKomptabelDraft } from './useKomptabelDraft'
 import PreviewDraftModal from './PreviewDraftModal'
 
 // Bentuk/Jenis Kontrak kini dari konstanta bersama (lib/bentukKontrak) — 5 opsi
@@ -613,7 +614,17 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
 
     // Klasifikasi intra/ekstrakomptabel per barang: nilai vs batas_kapitalisasi
     // (kodefikasi_bmd) — >= batas → intra, < batas → ekstra (lib/bmd.ts).
-    const batasMap = await fetchBatasKapitalisasi(supabase, items.map(it => it.kode))
+    // ⚠️ Ditangkap & DITAMPILKAN, pola yang sama dgn `generateNibars` di bawah.
+    // Kalau lookup ini gagal & dibiarkan lolos, `klasifikasiKomptabel` jatuh ke
+    // 'intra' untuk SEMUA barang — masuk neraca padahal mestinya ekstra, tanpa
+    // satu pun error. Melempar tanpa penangkap juga tak boleh: `busy` tak pernah
+    // dilepas & tombol Setujui nyangkut "Memproses..." selamanya.
+    let batasMap: Map<string, number | null>
+    try {
+      batasMap = await fetchBatasKapitalisasi(supabase, items.map(it => it.kode))
+    } catch (e) {
+      onMsg(`Error: ${(e as Error).message}`); setBusy(false); return
+    }
     const itemsWithKlas = items.map(it => ({ ...it, intraEkstra: klasifikasiKomptabel(toNum(it.harga), batasMap.get(it.kode)) }))
 
     let nibarMap: Map<string, string>
@@ -783,6 +794,10 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
   const fotoUrls = useFotoThumbs(items.map(i => i.foto[0]).filter(Boolean))
   // Pencarian + seleksi + aksi massal: modul bersama dgn PerolehanManual.
   const sel = useDraftSeleksi(items)
+  // Komptabel PRATAYANG — rumus & sumber batasnya SAMA PERSIS dgn yang dipakai
+  // saat approve (lihat useKomptabelDraft), jadi yang terbaca di sini memang
+  // yang akan tercatat di `aset.intra_ekstra`.
+  const klas = useKomptabelDraft(items.map(i => i.kode))
 
   return (
     <div className="card overflow-hidden border-amber-200">
@@ -826,6 +841,14 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
       {items.length > 0 && (
         <>
           <DraftSearchBar q={sel.q} setQ={sel.setQ} jml={sel.terlihat.length} total={items.length} />
+          {/* Kolom Komptabel yang gagal dihitung DITAMPILKAN, bukan didiamkan:
+              selnya cuma berisi '…' dan tanpa keterangan itu terbaca sbg
+              "barangnya memang belum punya klasifikasi". */}
+          {klas.err && (
+            <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800">
+              Kolom Komptabel belum bisa dihitung — {klas.err}
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
@@ -847,6 +870,10 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                   <th className="table-th">Merk/Tipe</th>
                   <th className="table-th w-12 text-center">Foto</th>
                   <th className="table-th w-16 text-center">Satuan</th>
+                  {/* Urutannya SAMA dgn kartu yang sudah disetujui (Satuan →
+                      Komptabel → Nilai) — dua kartu itu dibaca berdampingan
+                      saat operator mencocokkan draft dgn hasil approve. */}
+                  <th className="table-th w-20 text-center">Komptabel</th>
                   <th className="table-th w-28 text-right">Harga/item</th>
                   <th className="table-th">Keterangan</th>
                 </tr>
@@ -855,10 +882,11 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                 {sel.terlihat.map(it => (
                   <DraftRow key={it.key} item={it} checked={sel.checked.has(it.key)}
                     onToggle={() => sel.toggleOne(it.key)}
-                    fotoUrl={it.foto[0] ? fotoUrls[it.foto[0]] : undefined} />
+                    fotoUrl={it.foto[0] ? fotoUrls[it.foto[0]] : undefined}
+                    komptabel={klas.komptabel(it.kode, toNum(it.harga))} />
                 ))}
                 {sel.terlihat.length === 0 && (
-                  <tr><td colSpan={9} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
+                  <tr><td colSpan={10} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
                 )}
               </tbody>
             </table>
@@ -933,9 +961,11 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
 // Satu unit draft — nama/satuan/harga READ-ONLY (salah → hapus & tambah baru,
 // biar disiplin). Spesifikasi diedit lewat checklist+popup di kartu (bukan di
 // sini) — baris ini cuma preview ringkas satu baris + thumbnail foto kecil.
-function DraftRow({ item, checked, onToggle, fotoUrl }: {
+function DraftRow({ item, checked, onToggle, fotoUrl, komptabel }: {
   item: DraftItem; checked: boolean; onToggle: () => void
   fotoUrl?: string
+  /** null = batas kapitalisasi belum terbaca — JANGAN ditebak 'intra'. */
+  komptabel: 'intra' | 'ekstra' | null
 }) {
   return (
     <tr>
@@ -957,6 +987,9 @@ function DraftRow({ item, checked, onToggle, fotoUrl }: {
         <FotoSel paths={item.foto} thumbUrl={fotoUrl} judul={item.fields?.nama_barang || item.uraianBarang} />
       </td>
       <td className="table-td text-center text-xs text-gray-600">{item.satuan || '-'}</td>
+      <td className="table-td text-center text-xs text-gray-600 capitalize">
+        {komptabel ?? <span className="text-gray-300" title="Batas kapitalisasi belum terbaca">…</span>}
+      </td>
       <td className="table-td text-right text-xs text-gray-600">{formatRupiah(toNum(item.harga))}</td>
       <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{item.fields?.keterangan || '-'}</td>
     </tr>

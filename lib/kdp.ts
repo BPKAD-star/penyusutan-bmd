@@ -13,7 +13,13 @@
 //   (enum sudah ada di DB; alur reklasnya belum dibangun ulang di model ini)
 // ============================================================================
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { periodeDariTanggal, klasifikasiKomptabel, fetchBatasKapitalisasi } from '@/lib/bmd'
+// ⚠️ `klasifikasiKomptabel`/`fetchBatasKapitalisasi` SENGAJA tidak diimpor di
+// sini: barang KDP SELALU intrakomptabel (`intra_ekstra: 'intra'` di bawah),
+// tak pernah dihitung dari batas kapitalisasi. Keduanya sempat ikut terimpor
+// tanpa pernah dipakai, dan import mati semacam itu membuat pembaca mengira
+// modul ini mengklasifikasi — padahal tidak. Kalau suatu saat KDP memang perlu
+// diklasifikasi, ubah baris `intra_ekstra` di bawah, jangan cuma impornya.
+import { periodeDariTanggal } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'

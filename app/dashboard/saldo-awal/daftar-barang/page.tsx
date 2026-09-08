@@ -159,6 +159,13 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   sisa: { header: 'Sisa (Smt)', align: 'center' },
   asal_usul: { header: 'Asal Usul' }, penggunaan: { header: 'Penggunaan' },
   keterangan: { header: 'Keterangan' },
+  // ── Dua kolom GABUNGAN, HANYA untuk layar (lihat colsLayar) ──────────────
+  // Excel tetap memakai kolom terpisah — di berkas kerja orang menyortir &
+  // mem-pivot per kolom, jadi menggabungnya di sana justru merusak. Yang
+  // digabung cuma tampilannya, dan itu yang membeli ruang untuk kolom
+  // Spesifikasi Lainnya tanpa membuat tabelnya perlu digeser.
+  mmsisa: { header: 'Masa / Sisa (Smt)', align: 'center' },
+  asalguna: { header: 'Asal Usul / Penggunaan' },
 }
 
 // SALINAN kolom layar Daftar Barang (app/dashboard/daftar-barang/page.tsx →
@@ -174,7 +181,11 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 const BASE_COLS: Record<string, string[]> = {
   '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel
   '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // Gedung & Bangunan: + Spesifikasi Lainnya (permintaan user 2026-09-08).
+  // Golongan ini tak punya Merek/Tipe — yang menerangkan barangnya justru
+  // Spesifikasi Lainnya, dan sampai hari ini ia cuma ada di Excel. Kembar dgn
+  // COLS['1.3.3'] di Daftar Barang; ubah satu, samakan yang lain.
+  '1.3.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
@@ -200,12 +211,43 @@ const SUSUT_KEYS = new Set([...SUSUT_SEBELUM, ...SUSUT_SESUDAH])
 const disusutkan = (golongan: string) =>
   golongan === '' || (GOLONGAN_REKAP.find(g => g.kode === golongan)?.disusutkan ?? true)
 
+/** Kolom LOGIS — satu kolom = satu kolom di Excel. Dipakai Export. */
 function colsFor(golongan: string): string[] {
   const base = BASE_COLS[golongan] || BASE_DEFAULT
   if (!disusutkan(golongan)) return base
   const out: string[] = []
   for (const k of base) {
     if (k === 'nilai') out.push(...SUSUT_SEBELUM, 'nilai', ...SUSUT_SESUDAH)
+    else out.push(k)
+  }
+  return out
+}
+
+/**
+ * Kolom LAYAR — `colsFor` dengan dua pasang digabung jadi satu sel.
+ *
+ * ⚠️ ADA KARENA LEBAR, dan pilihannya disengaja (keputusan user 2026-09-08:
+ * "harus fit to window, gaboleh ada geser kanan kiri"). Halaman ini membawa 5
+ * kolom penyusutan baseline yang tak dimiliki Daftar Barang, jadi Gedung &
+ * Bangunan sudah 16 kolom SEBELUM Spesifikasi Lainnya ditambahkan — dan sudah
+ * meleber keluar layar. Yang digabung dipilih yang pasangannya memang dibaca
+ * bersamaan & isinya pendek:
+ *   mm + sisa            -> "100 / 88"  (dua-duanya semester, selalu dibaca
+ *                           berpasangan: berapa umurnya, tinggal berapa)
+ *   asal_usul + penggunaan -> ditumpuk  (dua keterangan pendek, bukan angka)
+ *
+ * ⚠️ EXPORT TIDAK IKUT DIGABUNG — `handleExport` tetap memakai `colsFor`.
+ * Di berkas kerja orang menyortir & mem-pivot per kolom; "100 / 88" dalam satu
+ * sel mematikan itu, dan Excel tak punya batas lebar yang perlu dihormati.
+ * Pola yang sama sudah dipakai kode+uraian & nama+NIBAR (ditumpuk di layar,
+ * rata di Excel).
+ */
+function colsLayar(golongan: string): string[] {
+  const out: string[] = []
+  for (const k of colsFor(golongan)) {
+    if (k === 'mm') out.push('mmsisa')
+    else if (k === 'asal_usul') out.push('asalguna')
+    else if (k === 'sisa' || k === 'penggunaan') continue // sudah ikut pasangannya
     else out.push(k)
   }
   return out
@@ -750,7 +792,11 @@ export default function Page() {
     if (key === 'nama') return (
       <>
         <p className="font-medium text-gray-800 text-xs">{r.nama_barang || '-'}</p>
-        <p className="text-gray-400 text-xs mt-0.5">{r.nibar}</p>
+        {/* ⚠️ `break-all` WAJIB: NIBAR 45 digit itu SATU kata tanpa spasi, jadi
+            lebar min-content selnya ±270px dan ia yang memaksa tabel melebar
+            berapa pun paddingnya dirampingkan. Membiarkannya dipenggal adalah
+            syarat "fit to window" (pola yang sama dipakai lembar Permendagri). */}
+        <p className="text-gray-400 text-xs mt-0.5 break-all">{r.nibar}</p>
       </>
     )
     if (key === 'lokasi') {
@@ -760,6 +806,25 @@ export default function Page() {
         <>
           <p className="text-xs text-gray-600">{alamat || '-'}</p>
           {wilayah && <p className="text-gray-400 text-xs mt-0.5">{wilayah}</p>}
+        </>
+      )
+    }
+    // Dua sel GABUNGAN — cuma ada di layar (lihat colsLayar). Nilainya tetap
+    // diambil lewat `cellValue` kolom aslinya, jadi tak ada rumus kedua yang
+    // bisa menyimpang dari yang diekspor.
+    if (key === 'mmsisa') {
+      const mm = r.masa_manfaat_smt
+      const sisa = r.sisa_masa_manfaat_smt
+      return <span className="whitespace-nowrap">{mm ?? '-'} / {sisa ?? '-'}</span>
+    }
+    if (key === 'asalguna') {
+      const asal = r.asal_usul || ''
+      const guna = r.penggunaan_pengamanan || ''
+      if (!asal && !guna) return <span className="text-gray-300">-</span>
+      return (
+        <>
+          <p className="text-xs text-gray-600">{asal || '-'}</p>
+          {guna && <p className="text-gray-400 text-xs mt-0.5">{guna}</p>}
         </>
       )
     }
@@ -867,7 +932,9 @@ export default function Page() {
   }
 
   const totalPages = total == null ? 0 : Math.ceil(total / PAGE_SIZE)
-  const cols = colsFor(applied?.golongan ?? '')
+  // ⚠️ LAYAR pakai `colsLayar` (dua pasang digabung), EXPORT pakai `colsFor`
+  // (rata, satu kolom per data). Jangan disatukan — lihat catatan di colsLayar.
+  const cols = colsLayar(applied?.golongan ?? '')
   const kolom = cols.length + (isViewer ? 0 : 1)
   const nilaiIdx = cols.indexOf('nilai')
   const subtotal = (key: string) => rows.reduce((s, r) => s + (Number(cellValue(key, r)) || 0), 0)
@@ -970,8 +1037,16 @@ export default function Page() {
               {spekErr && <p className="text-xs text-red-600">{spekErr}</p>}
             </div>
           )}
+          {/* ⚠️ Tabel DIPADATKAN (user 2026-09-08: "fit to window, gaboleh geser
+              kanan kiri"). Kelasnya KEMBAR dgn tabel Rekonsiliasi — bukan gaya
+              baru. Yang dibeli: padding sel 32px→16px (×15 kolom = 240px) dan
+              kepala kolom berhenti HURUF BESAR ber-`tracking-wider`, yang
+              selama ini memaksa lebar minimum jauh di atas isinya
+              ("NILAI PEROLEHAN" vs "Nilai Perolehan"). `overflow-x-auto`
+              SENGAJA dipertahankan sbg jaring pengaman untuk layar sempit —
+              mencabutnya tak membuat tabel muat, cuma memotong isinya diam-diam. */}
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full text-[11px] [&_.table-td]:px-2 [&_.table-td]:py-1.5 [&_.table-th]:px-2 [&_.table-th]:py-2 [&_.table-th]:normal-case [&_.table-th]:tracking-normal">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {!isViewer && <th className="table-th w-8" />}

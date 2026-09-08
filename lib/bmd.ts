@@ -5,12 +5,23 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type Perlakuan = 'penyusutan' | 'amortisasi' | 'tidak' | 'lain_lain'
 
-/** Ambil batas_kapitalisasi (kodefikasi_bmd) utk sekumpulan kode sekaligus — batch, hindari N+1. */
+/** Ambil batas_kapitalisasi (kodefikasi_bmd) utk sekumpulan kode sekaligus — batch, hindari N+1.
+ *
+ *  ⚠️ MELEMPAR kalau query gagal (2026-09-08) — dulu `const { data } = await`
+ *  telanjang. Ini fungsi yang MENGHITUNG, bukan sekadar menampilkan: hasilnya
+ *  masuk `klasifikasiKomptabel`, yang jatuh ke 'intra' untuk kode yang tak ada
+ *  di peta. Jadi satu query gagal = SELURUH barang satu kontrak tercatat
+ *  intrakomptabel diam-diam, dan intra/ekstra itu yang menentukan barang ikut
+ *  neraca atau tidak. Tak ada satu pun error yang muncul; ketahuannya baru saat
+ *  laporan tak cocok. Pola & alasan yang sama dgn `generateNibars` (lib/nibar.ts,
+ *  CLAUDE.md — "generator yang menghitung harus gagal KERAS").
+ *  Keempat pemanggilnya menangkap & menampilkan pesannya. */
 export async function fetchBatasKapitalisasi(supabase: SupabaseClient, kodes: string[]): Promise<Map<string, number | null>> {
   const map = new Map<string, number | null>()
   const distinct = [...new Set(kodes)]
   for (let i = 0; i < distinct.length; i += 300) {
-    const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,batas_kapitalisasi').in('kode', distinct.slice(i, i + 300))
+    const { data, error } = await supabase.from('admin_kodefikasi_bmd').select('kode,batas_kapitalisasi').in('kode', distinct.slice(i, i + 300))
+    if (error) throw new Error(`gagal membaca batas kapitalisasi kodefikasi: ${error.message}`)
     for (const r of (data || []) as { kode: string; batas_kapitalisasi: number | null }[]) map.set(r.kode, r.batas_kapitalisasi)
   }
   return map

@@ -3800,6 +3800,106 @@ Barang sendiri tak boleh ikut rusak.
   halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
   dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
 
+## Penyelarasan kolom kartu perolehan & Gedung-Bangunan (2026-09-08)
+
+Tiga permintaan user dalam satu putaran. **Tak ada migrasi** — seluruhnya
+tampilan, kecuali satu perbaikan fail-closed di `lib/bmd.ts`.
+
+### (1) Komptabel di kartu DRAFT Pengadaan & di Pekerjaan Konstruksi
+
+Kartu yang sudah DISETUJUI sejak dulu punya kolom Komptabel; kartu draft-nya
+tidak, jadi operator baru tahu barangnya intra atau ekstra SESUDAH menyetujui —
+padahal itu yang menentukan barang ikut neraca atau tidak.
+
+- **`useKomptabelDraft`** (components/pengelolaan/) memanggil
+  `fetchBatasKapitalisasi` + `klasifikasiKomptabel` **YANG SAMA** dengan yang
+  dipakai saat approve. ⚠️ Ini syarat, bukan kerapian: kolom pratayang yang
+  memakai rumus sendiri akan sesekali berbeda dari hasil approve, dan operator
+  yang sudah memeriksanya di layar tak punya cara tahu.
+- ⚠️ **Selagi batas belum terbaca hasilnya `null` → sel berisi '…', BUKAN
+  'Intra'.** `klasifikasiKomptabel` memang jatuh ke 'intra' kalau batasnya null
+  (kode tanpa batas terdaftar) dan itu benar sebagai ATURAN — tapi "belum
+  dimuat" bukan "tak punya batas". Kegagalannya ditampilkan sbg strip amber di
+  atas tabel; sel '…' tanpa keterangan terbaca sbg "barangnya memang belum
+  diklasifikasi".
+- **Pekerjaan Konstruksi: dipaku "Intra", dan itu memang yang tercatat.**
+  `approveKontrakKonstruksi` (lib/kdp.ts) menulis `intra_ekstra: 'intra'` untuk
+  SETIAP barang KDP, tak pernah melihat batas kapitalisasi — klasifikasi
+  sesungguhnya baru relevan saat KDP direklas ke aset tetap. Ditampilkan sbg
+  baris di panel barang (bukan kolom; di sana tabelnya tabel TERMIN, bukan
+  tabel barang). ⚠️ Bareng itu import mati `klasifikasiKomptabel`/
+  `fetchBatasKapitalisasi` di lib/kdp.ts DICABUT — import yang tak pernah
+  dipakai membuat pembaca mengira modul itu mengklasifikasi, padahal tidak.
+
+⚠️ **`fetchBatasKapitalisasi` kini MELEMPAR** (dulu `const { data } = await`
+telanjang). Ini fungsi yang MENGHITUNG: hasilnya masuk `klasifikasiKomptabel`,
+yang jatuh ke 'intra' untuk kode yang tak ada di peta — jadi satu query gagal =
+SELURUH barang satu kontrak tercatat intrakomptabel diam-diam, masuk neraca
+padahal mestinya ekstra, tanpa satu pun error. Persis pola yang sudah lama
+dilarang CLAUDE.md ("kode yang MENGHITUNG, bukan cuma menampilkan"). Kedua
+pemanggilnya (Pengadaan & PerolehanManual) membungkusnya try/catch + `setBusy`
+dilepas — pola yang sama dgn `generateNibars` beberapa baris di bawahnya.
+Melempar tanpa penangkap justru membuat tombol Setujui nyangkut "Memproses..."
+selamanya.
+
+### (2) Merk/Tipe · Spesifikasi Lainnya · Keterangan di keempat menu perolehan manual
+
+Hibah · Tukar Menukar · Hasil Inventarisasi · Perolehan Lainnya (satu komponen,
+`PerolehanManual.tsx`), di kartu draft MAUPUN kartu disetujui. Ketiganya SUDAH
+ada di `item.fields`/`l.fields` (loader sudah menarik seluruh `ASET_FIELD_COLS`
+lewat join ke `aset`) — cuma tak pernah ditampilkan, jadi memeriksanya harus
+membuka popup Edit Spesifikasi satu per satu. **Nol query baru.** Urutannya
+dibuat kembar dgn tabel draft Pengadaan: Merk/Tipe sesudah Spesifikasi Nama
+Barang, Keterangan paling kanan.
+
+⛔ Kartu DRAFT PerolehanManual masih belum punya kolom Komptabel (kartu
+disetujuinya punya) — user cuma meminta itu untuk Pengadaan. Kalau nanti
+diminta, `useKomptabelDraft` tinggal dipasang, polanya sudah ada.
+
+### (3) Spesifikasi Lainnya untuk Gedung & Bangunan (1.3.3) — DIUKUR, bukan dikira
+
+Golongan ini tak punya Merek/Tipe; yang menerangkan barangnya justru
+Spesifikasi Lainnya, dan sampai hari ini ia hanya ikut di Export.
+
+- **Daftar Barang**: 10 → 11 kolom. Muat, tak ada perubahan lain.
+- **Daftar Barang Awal**: masalahnya nyata — halaman ini membawa 5 kolom
+  penyusutan baseline, jadi 1.3.3 sudah **16 kolom dan sudah meleber** sebelum
+  ditambah apa pun. Syarat user: "harus fit to window, gaboleh ada geser kanan
+  kiri". Tiga hal dikerjakan bersamaan:
+  1. **`colsLayar`** — dua pasang digabung KHUSUS DI LAYAR: `mm`+`sisa` →
+     "100 / 99", `asal_usul`+`penggunaan` → ditumpuk. ⚠️ **Export tetap
+     `colsFor` (rata, satu kolom per data)** — di berkas kerja orang menyortir &
+     mem-pivot per kolom, dan Excel tak punya batas lebar yang perlu dihormati.
+     Pola yang sama sudah dipakai kode+uraian & nama+NIBAR.
+  2. **Tabel dipadatkan** dgn kelas yang KEMBAR dgn tabel Rekonsiliasi (bukan
+     gaya baru): padding sel 32px→16px dan kepala kolom berhenti HURUF BESAR
+     ber-`tracking-wider` — "NILAI PEROLEHAN" memaksa lebar minimum jauh di atas
+     isinya.
+  3. **`break-all` pada NIBAR.** Ini yang paling menentukan: 45 digit tanpa
+     spasi itu SATU kata, lebar min-content-nya ±270px, dan ia yang memaksa
+     tabel melebar berapa pun paddingnya dirampingkan.
+- **Terukur di peramban** dgn data TERBURUK yang benar-benar ada di produksi
+  untuk 1.3.3 (nama 115 char, alamat 184, SKPD 93, penggunaan 93, nilai
+  132.276.778.652, NIBAR 45 digit):
+
+  | Viewport | Lebar wadah | Layout LAMA | Layout BARU |
+  |---|---|---|---|
+  | 1920 | 1.599 px | 1.885 px → meleber **286** | 1.599 px → **0** |
+  | 1600 | 1.279 px | 1.885 px → meleber **606** | 1.279 px → **0** |
+  | 1366 | 1.045 px | 1.885 px → meleber **840** | 1.275 px → meleber 230 |
+
+  Lebar minimum tabel baru **1.275 px** → muat tanpa geser di viewport ≥ ±1.600 px.
+- ⚠️ **`overflow-x-auto` SENGAJA DIPERTAHANKAN.** Di laptop 1366/1440 tabelnya
+  masih perlu digeser (jauh lebih sedikit dari sebelumnya); mencabut
+  pembungkusnya tidak membuat tabel muat, cuma memotong isinya diam-diam.
+  Kalau kelak harus muat di 1366 juga, obatnya `table-fixed` + `<colgroup>`
+  ber-total 100% (pola lembar Permendagri) — dan konsekuensinya angka rupiah
+  bisa ikut membungkus.
+- ⚠️ **Daftar Barang TIDAK ikut dipadatkan** — 11 kolom memang sudah muat, dan
+  memadatkannya berarti mengubah tampilan kedelapan jenis aset yang tak diminta
+  berubah. Konsekuensi yang diterima: dua halaman kembar ini kini beda kerapatan
+  tabelnya.
+
 ## Aset Lain-Lain (1.5.4): kolomnya GABUNGAN semua golongan (migrasi 20260908_01)
 
 Permintaan user 2026-09-08. Di **Daftar Barang** dan **Saldo Awal → Daftar

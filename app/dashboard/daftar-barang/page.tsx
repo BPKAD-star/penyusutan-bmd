@@ -114,9 +114,11 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 // ── Kolom TAMPILAN LAYAR (diringkas 2026-07-19) ─────────────────────────────
 // - `uraian` TIDAK jadi kolom sendiri lagi → ditumpuk di bawah `kode` (spt nibar
 //   di bawah nama). Lihat cellContent('kode').
-// - `spesifikasi` (Spesifikasi Lainnya) HANYA utk Peralatan & Mesin di layar.
-//   Golongan lain (Tanah/Gedung/Jalan/KDP/ATB/Aset Lain-Lain) TIDAK menampilkan
-//   Spesifikasi Lainnya di layar (2026-07-20) — masih ada di Export (EXPORT_COLS).
+// - `spesifikasi` (Spesifikasi Lainnya) di layar HANYA untuk Peralatan & Mesin
+//   (1.3.2), Aset Lain-Lain (1.5.4, sejak 2026-09-08), & Gedung dan Bangunan
+//   (1.3.3, sejak 2026-09-08 — golongan itu tak punya Merek/Tipe, jadi
+//   Spesifikasi Lainnya-lah yang menerangkan barangnya). Sisanya
+//   (Tanah/Jalan/KDP/ATB) tetap Export-only lewat EXPORT_COLS.
 // - `lokasi` (alamat_detail) tetap setelah nama utk golongan berlokasi.
 // - `asal_usul` (Asal Usul) & `penggunaan` (Penggunaan → kolom penggunaan_pengamanan)
 //   ditampilkan sebelum Keterangan di SEMUA jenis aset (2026-07-20).
@@ -126,7 +128,13 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 const COLS: Record<string, string[]> = {
   '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel; dokumen kepemilikan → GIS/Export
   '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],    // Peralatan & Mesin
-  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Gedung & Bangunan
+  // Gedung & Bangunan: + Spesifikasi Lainnya (permintaan user 2026-09-08).
+  // Golongan ini tak punya Merek/Tipe — yang menerangkan barangnya justru
+  // Spesifikasi Lainnya, dan sampai hari ini ia cuma ikut di Export
+  // (EXPORT_COLS sudah memuatnya sejak lama), tak pernah di layar. 11 kolom,
+  // masih muat tanpa geser. ⚠️ Kembar dgn BASE_COLS['1.3.3'] di Saldo Awal →
+  // Daftar Barang Awal; ubah satu, samakan yang lain.
+  '1.3.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Gedung & Bangunan
   '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Jalan, Jaringan, Irigasi
   '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],                   // Aset Tetap Lainnya
   '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // KDP
