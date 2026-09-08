@@ -30,11 +30,23 @@ type Trx = {
   nilai: number
   keterangan: string | null
   payload: { pihak?: string } | null
-  /** ⚠️ `nama_penyedia` tinggal di HEADER, bukan di payload baris ledger —
-   *  diperiksa ke produksi 2026-09-08: 0 dari 501 baris perolehan punya kunci
-   *  itu di `transaksi_bmd.payload`, sementara 94 dari 94 header pengadaan
-   *  punya. Jadi kolom Nama Penyedia WAJIB lewat join ini. */
-  header: { no_sk: string; payload: { nama_penyedia?: string } | null } | null
+  /**
+   * ⚠️ `nama_penyedia` tinggal di HEADER, bukan di payload baris ledger —
+   * diperiksa ke produksi 2026-09-08: 0 dari 501 baris perolehan punya kunci itu
+   * di `transaksi_bmd.payload`, sementara 94 dari 94 header pengadaan punya.
+   * Jadi kolom Nama Penyedia WAJIB lewat join ini.
+   *
+   * ⚠️ SATU RUAS SAJA (`payload->>nama_penyedia`), JANGAN `payload` UTUH.
+   * Versi pertama kolom ini menarik `payload` seluruhnya dan itu MEMATIKAN
+   * Laporan Hibah dalam sehari: `jurnal_header.payload` memuat `draft_items` —
+   * seluruh barang dokumen itu — dan header hibah terbesar di produksi
+   * **431 kB**. PostgREST menyisipkan header per BARIS, jadi 430 baris hibah ×
+   * 431 kB ≈ 185 MB JSON untuk satu halaman → `canceling statement due to
+   * statement timeout`. Dengan `->>` yang dikirim cuma satu string.
+   * Sintaks arrow di dalam embedded resource sudah diuji ke API proyek ini
+   * (HTTP 200; bentuk yang sengaja dirusak dibalas PGRST100), bukan diasumsikan.
+   */
+  header: { no_sk: string; nama_penyedia: string | null } | null
   skpd_tujuan: number | null
   aset_id: string | null
   aset: {
@@ -142,12 +154,26 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     return baris.filter(r => !(r.aset_id && voided.has(r.aset_id)))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pesanVoidGagal = (e: Error) =>
-    `Gagal memuat daftar transaksi yang dibatalkan: ${e.message}. Angka di halaman ini TIDAK ditampilkan — muat ulang halaman dulu.`
+  /**
+   * ⚠️ NETRAL, jangan menyebut query tertentu. Sampai 2026-09-08 pesan ini
+   * berbunyi "Gagal memuat daftar transaksi yang dibatalkan: …" dan dipakai
+   * untuk SETIAP kegagalan di loader — termasuk saat yang tumbang justru query
+   * UTAMA-nya. Akibatnya strip merah menunjuk ke `fetchVoidedAsetIds` yang
+   * sebenarnya sehat (terukur 17 ms), dan penelusurannya berangkat dari
+   * tersangka yang salah. Kelas yang sama dgn "merah palsu" di
+   * lib/sinkronisasiRpc.test.ts §7: penjelasan yang keliru lebih mahal daripada
+   * tak ada penjelasan.
+   *
+   * Yang benar-benar gagal tetap terbaca dari `e.message` — `fetchVoidedAsetIds`
+   * melempar dgn awalan "gagal membaca transaksi pembatalan (…)", jadi kalau
+   * memang dia yang tumbang, pesannya menyebut dirinya sendiri.
+   */
+  const pesanGagal = (e: Error) =>
+    `Gagal memuat laporan: ${e.message}. Angka di halaman ini TIDAK ditampilkan — muat ulang halaman dulu.`
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk,payload),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
+      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk,nama_penyedia:payload->>nama_penyedia),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
     // ⚠️ `periode` bisa bernilai TAHUN saja (mis. `2026` = Akhir Tahun) —
@@ -177,7 +203,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       } catch (e) {
         // Fail-closed (CLAUDE.md): modul pelaporan lebih baik menolak tampil
         // daripada menyajikan angka kurang-sebagian yang kelihatan sah.
-        setVoidedErr(pesanVoidGagal(e as Error)); setRows([])
+        setVoidedErr(pesanGagal(e as Error)); setRows([])
       } finally {
         // Di `finally`, BUKAN di akhir jalur sukses — kalau tidak, satu query
         // yang melempar meninggalkan tabel "Memuat data..." SELAMANYA.
@@ -225,7 +251,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     const root = rootOf(r.skpd_tujuan)
     return root && root.id !== r.skpd_tujuan ? root.nama : ''
   }
-  const penyediaNama = (r: Trx) => r.header?.payload?.nama_penyedia || ''
+  const penyediaNama = (r: Trx) => r.header?.nama_penyedia || ''
   const adaPenyedia = PUNYA_PENYEDIA.has(jenis)
 
   // Urut: induk → unit → tanggal terbaru → id. Dipakai layar DAN export supaya
@@ -279,7 +305,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       }
       setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
       } catch (e) {
-        setVoidedErr(pesanVoidGagal(e as Error)); setMatrix([])
+        setVoidedErr(pesanGagal(e as Error)); setMatrix([])
       } finally { setMatrixLoading(false) }
     })()
   }, [view, buildQuery, skpdLoaded, saringVoid]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -314,7 +340,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         if (data.length < 1000) break
       }
     } catch (e) {
-      setVoidedErr(pesanVoidGagal(e as Error)); setExporting(false); return
+      setVoidedErr(pesanGagal(e as Error)); setExporting(false); return
     }
     exportToExcel(hasil.sort(urutSkpd).map(r => ({
       // SKPD paling kiri: berkas ini dibaca & dipivot per SKPD.

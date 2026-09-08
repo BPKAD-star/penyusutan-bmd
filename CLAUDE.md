@@ -3819,8 +3819,11 @@ Perolehan sekaligus — `components/LaporanPerolehan.tsx` dipakai bersama.
   `pihakLabel`.
   ⚠️ **`nama_penyedia` tinggal di `jurnal_header.payload`, BUKAN di payload
   baris ledger** — diperiksa ke produksi: 0 dari 501 baris perolehan punya kunci
-  itu. Jadi kolomnya WAJIB lewat join `header:header_id(no_sk,payload)`;
-  membacanya dari `r.payload` menghasilkan kolom kosong tanpa satu pun error.
+  itu. Jadi kolomnya WAJIB lewat join ke header; membacanya dari `r.payload`
+  menghasilkan kolom kosong tanpa satu pun error.
+  ⚠️⚠️ **JOIN-nya SATU RUAS (`payload->>nama_penyedia`), JANGAN `payload`
+  UTUH.** Versi pertama kolom ini menarik `payload` seluruhnya dan **mematikan
+  Laporan Hibah dalam sehari** — lihat insiden di bawah.
   ⚠️ Daftarnya diturunkan dari `jenis` lewat **`PUNYA_PENYEDIA`** di berkas itu,
   sengaja BUKAN prop opsional baru — berkas yang sama sudah mencatat alasannya:
   prop opsional yang lupa dikirim tak menghasilkan error TypeScript, jadi menu
@@ -3836,6 +3839,50 @@ Perolehan sekaligus — `components/LaporanPerolehan.tsx` dipakai bersama.
 - ⚠️ `colSpan` baris "Tidak ada transaksi" kini **DIHITUNG** (`nKolom`), dulu
   `pihakLabel ? 11 : 10` ditulis tangan. Angka semacam itu diam-diam meleset
   begitu ada kolom baru & tak ada yang gagal.
+
+## JOIN `payload` UTUH ke tabel ledger = 53 MB JSON (insiden 2026-09-08)
+
+Laporan Hibah mati total sehari sesudah kolom Nama Penyedia dipasang:
+strip merah *"canceling statement due to statement timeout"*, 0 transaksi.
+**Regresi yang dibuat sendiri**, bukan data.
+
+- **Sebabnya PostgREST menyisipkan embedded resource PER BARIS.** Select-nya
+  sempat berbunyi `header:header_id(no_sk,payload)` — dan
+  `jurnal_header.payload` memuat **`draft_items`**, yaitu SELURUH barang dokumen
+  itu. Header hibah terbesar di produksi **431 kB**; laporan hibah menarik 430
+  baris yang semuanya menggantung di segelintir header yang sama.
+  **Terukur ke produksi:**
+
+  | jenis | baris | `payload` utuh | `payload->>nama_penyedia` |
+  |---|---|---|---|
+  | hibah_masuk | 430 | **53 MB** | 0 bytes |
+  | pengadaan | 66 | 192 kB | 1.135 bytes |
+  | hasil_inventarisasi | 5 | 3.746 bytes | 0 bytes |
+
+  Obatnya `header:header_id(no_sk,nama_penyedia:payload->>nama_penyedia)` —
+  yang dikirim tinggal satu string.
+- ⚠️ **Aturan umum: jangan pernah men-join kolom `jsonb` UTUH dari
+  `jurnal_header` ke query yang mengembalikan banyak baris ledger.** Payload
+  kartu di repo ini memuat `draft_items`/`barang[]`, jadi ukurannya ikut jumlah
+  BARANG di dokumen sementara barisnya juga sebanyak barang itu — biayanya
+  kuadratik. Ambil ruas yang dibutuhkan dengan `->>`.
+- ⚠️ **Sintaks `alias:payload->>kunci` di dalam embedded resource DIUJI ke API
+  proyek ini, bukan diasumsikan**: bentuk yang dipakai dibalas HTTP 200,
+  sementara bentuk yang sengaja dirusak (`payload->>>bogus`) dibalas
+  **PGRST100 "failed to parse select parameter"** — jadi ujinya benar-benar
+  membedakan, bukan sekadar "tidak error". Repo ini sudah lama memakai arrow
+  yang sama di `.eq('payload->>no_bast', …)` (Pengadaan.tsx).
+- ⚠️ **PESAN ERRORNYA BERBOHONG, dan itu ikut diperbaiki.** Strip merahnya
+  berbunyi *"Gagal memuat daftar transaksi yang dibatalkan: …"* padahal
+  `fetchVoidedAsetIds` SEHAT — terukur **17 ms** dgn RLS aktif, sementara yang
+  tumbang query utamanya. Sebabnya `pesanVoidGagal` dipakai untuk SETIAP
+  kegagalan di loader, termasuk yang bukan urusannya. Sekarang `pesanGagal`
+  yang netral ("Gagal memuat laporan: …"); yang benar-benar gagal tetap terbaca
+  dari pesan aslinya, karena `fetchVoidedAsetIds` melempar dgn awalan "gagal
+  membaca transaksi pembatalan (…)" — ia menyebut dirinya sendiri kalau memang
+  dia. **Kelas yang sama dgn "merah palsu" di lib/sinkronisasiRpc.test.ts §7:
+  penjelasan yang keliru lebih mahal daripada tak ada penjelasan** — ia
+  memberangkatkan penelusuran dari tersangka yang salah.
 
 ## "Pemecahan Tanah Masjid An-Nur kok hilang?" — SALAH BAGIAN (2026-09-08)
 
