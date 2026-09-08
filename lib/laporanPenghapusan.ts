@@ -26,9 +26,79 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchPenyusutanAset } from '@/lib/rekon'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
-import { SUBJENIS_LABEL } from '@/lib/penghapusan'
+import { SUBJENIS_LABEL, JENIS_PENGHAPUSAN } from '@/lib/penghapusan'
 import type { FormatPenghapusan } from '@/lib/formatPenghapusan'
 import { descendantsOf, periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
+
+/**
+ * Baris `penghapusan_*` yang MASIH BERLAKU — replay "peristiwa terakhir menang"
+ * per aset.
+ *
+ * ⚠️ **`batal_penghapusan` TIDAK membawa `target_trx_id`.** Payloadnya `{}`
+ * (diverifikasi ke produksi 2026-09-08), jadi `fetchBatalTargets` — yang
+ * mencocokkan per baris lewat payload — mengembalikan set KOSONG dan tak
+ * menyaring apa pun. Itu persis bug yang membuat menu ini menampilkan 14 barang
+ * (Rp252 M) sementara Dashboard & menu Pembukuan sama-sama menampilkan 0:
+ * keenam asetnya sudah dibatalkan penghapusannya waktu uji coba, tapi baris
+ * ledgernya tetap ada & ikut terhitung.
+ *
+ * Yang tersedia hanya URUTAN KEJADIAN pada aset itu, dan itu memang cukup —
+ * pola & alasan PERSIS `fetchNetSerap`/`fetchNetRemoved` di lib/rekon.ts.
+ *
+ * ⚠️ Ini menjawab pertanyaan yang BERBEDA dari `fetchNetRemoved`: yang di sana
+ * "aset ini sekarang terhapus atau tidak" (per ASET), yang di sini "baris
+ * penghapusan MANA yang mewakilinya" (per BARIS). Laporan butuh yang kedua —
+ * satu aset yang dihapus-batal-dihapus lagi punya BEBERAPA baris penghapusan,
+ * dan cuma yang TERAKHIR boleh tampil; kalau tidak barangnya terhitung
+ * berkali-kali. Itulah yang dulu dikerjakan `efektifPerAsetStatus="dihapus"` di
+ * `LaporanTransaksi`, dengan cara membaca `aset.status`.
+ *
+ * ⚠️ Sengaja lewat LEDGER, bukan `aset.status`: status itu hasil akhir dari
+ * BANYAK jenis peristiwa (reklas, kapitalisasi, pemecahan…), jadi ia tak bisa
+ * menjawab pertanyaan tentang SATU jenis — pelajaran yang sama dgn kartu Mutasi
+ * & Transfer di Dashboard (CLAUDE.md, INS-24).
+ *
+ * ⚠️ Diurutkan `(periode, id)`, bukan `id` saja — supaya sepakat dgn
+ * `fetchNetRemoved` & replay visibilitas. MELEMPAR kalau query gagal
+ * (fail-closed): set kosong berarti "tak ada yang berlaku" dan laporannya
+ * diam-diam jadi kosong.
+ */
+export type EvHapus = { id: number; aset_id: string; periode: string; jenis: string }
+
+/**
+ * Bagian MURNI dari replay di atas — dipisah supaya bisa diuji tanpa DB.
+ *
+ * Mengembalikan id baris penghapusan yang MASIH BERLAKU: satu per aset,
+ * peristiwa terakhirnya, dan hanya kalau peristiwa itu bukan `batal_penghapusan`.
+ */
+export function penghapusanEfektif(rows: EvHapus[]): Set<number> {
+  const terakhir = new Map<string, { periode: string; id: number; hapus: boolean }>()
+  for (const r of rows) {
+    const cur = terakhir.get(r.aset_id)
+    if (!cur || r.periode > cur.periode || (r.periode === cur.periode && r.id > cur.id)) {
+      terakhir.set(r.aset_id, { periode: r.periode, id: r.id, hapus: r.jenis !== 'batal_penghapusan' })
+    }
+  }
+  const out = new Set<number>()
+  for (const s of terakhir.values()) if (s.hapus) out.add(s.id)
+  return out
+}
+
+async function fetchPenghapusanEfektif(
+  supabase: SupabaseClient, asetIds: string[],
+): Promise<Set<number>> {
+  const rows: EvHapus[] = []
+  const uniq = [...new Set(asetIds)]
+  for (let i = 0; i < uniq.length; i += 200) {
+    const { data, error } = await supabase.from('transaksi_bmd')
+      .select('id,aset_id,periode,jenis')
+      .in('jenis', [...JENIS_PENGHAPUSAN, 'batal_penghapusan'] as never)
+      .in('aset_id', uniq.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca riwayat penghapusan: ${error.message}`)
+    rows.push(...((data || []) as EvHapus[]))
+  }
+  return penghapusanEfektif(rows)
+}
 
 /**
  * Pagu sapuan cabang ber-`scope: 'aset'`. Bukan paginasi tampilan — ini
@@ -184,16 +254,26 @@ export async function muatLaporanPenghapusan(
 
   // Yang sudah DIBATALKAN dibuang — tanpa ini penghapusan yang dianggap tak
   // pernah terjadi tetap tampil sebagai penghapusan sah, dan angkanya beda dgn
-  // Daftar Barang, Penyusutan, & Rekonsiliasi. Terscope ke aset yang ditanya.
-  // ⚠️ Jenis pembatalannya BEDA per cabang: `penghapusan_*` dianulir
-  // `batal_penghapusan`, sedangkan `pengalihan_status` oleh `batal_pengalihan`
-  // (enum yang dipakai bersama mutasi internal, CLAUDE.md).
+  // Dashboard, Daftar Barang, Penyusutan, & Rekonsiliasi.
+  //
+  // ⚠️ **DUA MEKANIK YANG BERBEDA, dan menyamakannya adalah bug nyata
+  // (2026-09-08).** `batal_pengalihan` membawa `payload.target_trx_ids`, jadi
+  // pembatalannya bisa dicocokkan PER BARIS lewat `fetchBatalTargets`.
+  // `batal_penghapusan` TIDAK — payloadnya `{}` — jadi jalur yang sama
+  // mengembalikan set kosong & tak menyaring apa pun. Gejalanya: menu ini
+  // menampilkan 14 barang (Rp252 M) sementara Dashboard & Pembukuan sama-sama
+  // 0, karena keenam asetnya sudah dibatalkan penghapusannya waktu uji coba.
+  // Untuk cabang `penghapusan_*` yang benar replay "peristiwa terakhir menang"
+  // — lihat `fetchPenghapusanEfektif`.
   const asetIds = dalamScope.map(r => r.aset_id).filter((x): x is string => !!x)
-  const dibatalkan = await fetchBatalTargets(
-    supabase,
-    p.f.jenis === 'pengalihan_status' ? BATAL_TARGET_JENIS.pengalihan : ['batal_penghapusan'],
-    asetIds)
-  const hidup = dalamScope.filter(r => !dibatalkan.has(r.id))
+  let hidup: BarisPenghapusan[]
+  if (p.f.jenis === 'pengalihan_status') {
+    const dibatalkan = await fetchBatalTargets(supabase, BATAL_TARGET_JENIS.pengalihan, asetIds)
+    hidup = dalamScope.filter(r => !dibatalkan.has(r.id))
+  } else {
+    const efektif = await fetchPenghapusanEfektif(supabase, asetIds)
+    hidup = dalamScope.filter(r => efektif.has(r.id))
+  }
 
   // Posisi penyusutan akhir periode. Aturan "golongan tak disusutkan →
   // akumulasi 0, nilai buku = nilai perolehan" ikut `fetchPenyusutanAset`

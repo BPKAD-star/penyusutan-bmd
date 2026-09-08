@@ -168,6 +168,11 @@ export const kunciTtdPenghapusan = (
   lap: 'pemindahtanganan' | 'pengalihan' | 'sebab_lain', skpdId: number,
 ) => `bmd_penghapusan_${lap}_ttd_skpd_${skpdId}`
 
+/** Lembar PENGAMANAN — IV.J.1.2 & IV.J.2.2. */
+export const kunciTtdPengamanan = (
+  lap: 'peralatan_mesin' | 'rumah_negara', skpdId: number,
+) => `bmd_pengamanan_${lap}_ttd_skpd_${skpdId}`
+
 /** RKBMD — lembar per-SKPD & lembar se-Kabupaten (yang se-kab bermuatan TEKS). */
 /** Lembar se-Kabupaten Perolehan (IV.A.<n>.7–10) — penanda tangannya "Pejabat
  *  Penatausahaan Barang", dipilih bebas & TIDAK terikat SKPD mana pun. */

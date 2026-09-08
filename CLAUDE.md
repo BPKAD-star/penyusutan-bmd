@@ -2783,6 +2783,115 @@ periode SEBELUM tanggal dokumen.
   BMD menampilkan 27.970.197,2 untuk angka YANG SAMA. Murni tampilan — yang
   dijumlah selalu nilai penuhnya.
 
+## Penghapusan uji coba masih tampil di Pelaporan (2026-09-08)
+
+User membandingkan tiga layar: menu **Pembukuan → Penghapusan** untuk PENGELOLA
+BARANG menampilkan **0 jurnal**, kartu **Penghapusan Barang** di Dashboard
+menampilkan **0** untuk kelima sebabnya — tapi **Pelaporan → Penghapusan**
+menampilkan **14 barang, Rp252 M**. Yang salah laporannya.
+
+**Sebabnya `batal_penghapusan` TIDAK membawa `payload.target_trx_id`.**
+Payloadnya harfiah `{}` (diverifikasi ke produksi). `fetchBatalTargets` —
+yang mencocokkan pembatalan PER BARIS lewat payload — karena itu mengembalikan
+set KOSONG dan tak menyaring apa pun. Diperiksa ke produksi: 14 baris
+`penghapusan_pemindahtanganan` + 14 `batal_penghapusan` di atas **6 aset**, dan
+untuk keenamnya peristiwa TERAKHIR adalah `batal_penghapusan` (`aset.status`
+keenamnya `'aktif'`). Jadi penghapusan efektif = **0**, persis seperti Dashboard
+& Pembukuan.
+
+- **Obatnya replay "peristiwa terakhir menang" per aset** —
+  `penghapusanEfektif()` di lib/laporanPenghapusan.ts, pola & alasan PERSIS
+  `fetchNetRemoved`/`fetchNetSerap` di lib/rekon.ts. Bagian murninya diekspor &
+  dikunci lib/formatPenghapusan.test.ts (diuji merah dulu dgn mengabaikan
+  pembatalan).
+- ⚠️ **Ia menjawab pertanyaan yang BERBEDA dari `fetchNetRemoved`**: yang di sana
+  "aset ini sekarang terhapus atau tidak" (per ASET), yang di sini "baris
+  penghapusan MANA yang mewakilinya" (per BARIS). Laporan butuh yang kedua —
+  satu aset yang dihapus→batal→dihapus lagi punya BEBERAPA baris, dan cuma yang
+  TERAKHIR boleh tampil; kalau tidak barangnya terhitung berkali-kali. Itulah
+  yang dulu dikerjakan `efektifPerAsetStatus="dihapus"` lewat `aset.status`.
+- ⚠️ **DUA MEKANIK PEMBATALAN YANG BERBEDA, dan menyamakannya adalah bugnya.**
+  `batal_pengalihan` MEMBAWA `payload.target_trx_ids` → cabang IV.K.2 tetap
+  memakai `fetchBatalTargets`. `batal_penghapusan` tidak → cabang IV.K.1 & IV.K.6
+  memakai replay. Satu jalur untuk keduanya PASTI salah di salah satunya.
+- ⚠️ **Pelajaran umum: sebelum memakai `fetchBatalTargets` untuk jenis baru,
+  PERIKSA payload `batal_*`-nya ke DB.** Yang tak ber-`target_trx_id` menyaring
+  NOL baris & laporannya kelihatan sah — tak ada satu pun error. Yang sudah
+  diketahui tak membawanya: `batal_penghapusan`, `batal_pengamanan`,
+  `pengembalian_pengamanan`, dan sisi ANAK `batal_kapitalisasi`.
+- **Tak ada migrasi** — murni pembacaan; ledger tak disentuh & ke-14 barisnya
+  tetap ada (append-only).
+
+## Laporan Pengamanan — Format IV.J.1.2 & IV.J.2.2 (2026-09-08)
+
+Cabang KEDELAPAN modul Pelaporan Permendagri. Menu Pelaporan → Pengelolaan →
+**Pengamanan** dapat tab **Format Permendagri** dengan dua cabang: **IV.J.1.2**
+(Peralatan & Mesin, 1.3.2) & **IV.J.2.2** (Gedung & Bangunan berupa Rumah
+Negara, 1.3.3). Bareng itu **form isian menu Pengamanan diubah** supaya sejalan.
+**Tak ada migrasi** — `jurnal_header.payload` bertipe `jsonb`.
+
+Berkasnya: `lib/formatPengamanan.ts` (+ test) · `lib/laporanPengamanan.ts` ·
+`components/pelaporan/LembarPengamananPermendagri.tsx` ·
+`PengamananFormatPermendagri.tsx` · `app/cetak/pengamanan-permendagri/page.tsx`.
+
+- ⚠️ **BENTUKNYA DATAR & BERNOMOR** — satu-satunya keluarga lembar di aplikasi
+  ini yang begitu. Kolom "Kode Barang" SATU kolom teks (BUKAN sel segmen),
+  barisnya bernomor 1,2,3…, tak ada baris kelompok maupun subtotal, dan **tak
+  ada lembar rekap `.3`–`.6`**. Penyajinya karena itu tak menyentuh mesin
+  subtotal sama sekali; dikunci uji "TIDAK memakai mesin subtotal".
+- ⚠️ **SUSUNAN KOLOM SENGAJA MENYIMPANG dari lembar aslinya** (keputusan user),
+  dan ini SATU-SATUNYA keluarga yang begitu. Di keluarga lain kolom yang datanya
+  tak ada tetap dicetak KOSONG supaya lembarnya cocok kolom-per-kolom saat
+  diperiksa (`dok_nama` di IV.A/IV.F, blok SK Penghapusan di IV.B.1.2). Di sini:
+  · **Surat Ijin Penghunian (SIP)** (hanya di IV.J.2.2) DIBUANG;
+  · **Dokumen Pendukung Lainnya** (Nama·Nomor·Tanggal, di keduanya) DIBUANG;
+  · **Dokumen Sumber Penggunaan** diisi yang memang dimiliki aplikasi ini:
+    **BAST** (Nomor·Tanggal) + **Pakta Integritas** (Nomor·Tanggal).
+  Kalau kelak diminta kembali ke bentuk aslinya, yang perlu ditambah bukan cuma
+  kolomnya — tapi TEMPAT MENYIMPANNYA di kartu.
+- ⚠️ **Kedua cabang berkolom IDENTIK** ("disamakan aja"); yang berbeda cuma
+  judul lembar, judul blok identitas (**Pemakai** vs **Penghuni**), & golongan
+  yang disaring. Dikunci uji.
+- ⚠️ **URUTAN blok identitas: Nama → Nomor Identitas → Status → Jabatan →
+  Alamat**, ditentukan user & SENGAJA sama dengan form isiannya. Lembar aslinya
+  menaruh Nomor Identitas SESUDAH Jabatan; menukarnya balik membuat operator
+  mengisi form dalam urutan yang berbeda dari lembar yang ia salin. Diuji merah
+  dulu.
+- ⚠️ **LEMBAR INI POSISI, BUKAN ARUS.** Judulnya "Laporan Penggunaan/PEMAKAIAN"
+  & tiap barisnya menyebut siapa pemakainya — jadi yang didaftar kustodi yang
+  MASIH BERLAKU pada akhir periode. Keanggotaannya lewat `pengamananBerlaku()`:
+  baris terakhir per aset menang, kecuali `pengembalian_pengamanan` atau
+  `batal_pengamanan`. **`fetchBatalTargets` TAK BISA dipakai** — keduanya tak
+  membawa `target_trx_id`, persis kelas bug Laporan Penghapusan di atas.
+  ⚠️ Konsekuensinya riwayat ditarik UTUH lalu dipotong `periode <= batas`, bukan
+  disaring periode di query: untuk tahu pemakai pada akhir 2026-S1, baris
+  pengembalian di 2026-S1 WAJIB ikut terbaca. Kalau riwayatnya dipotong lebih
+  dulu, barang yang sudah dikembalikan tetap tercetak sbg masih dipakai.
+  Perbedaan cakupan dgn tab Daftar (yang menampilkan kartunya) DIKATAKAN di layar.
+
+### Form isian Pengamanan disamakan dgn lembarnya (2026-09-08)
+
+- Isiannya kini **Nama · Nomor Identitas · Status Penghuni · Jabatan · Alamat**,
+  lalu No/Tgl BAST & No/Tgl Pakta Integritas. **Pangkat/Golongan DICABUT dari
+  form** (tak ada di lembar mana pun).
+- **Tersusun KE BAWAH, bukan dua kolom bersebelahan** (permintaan user): kelima
+  isian identitas dibaca sebagai satu rangkaian; bersebelahan, mata melompat
+  kiri-kanan & urutan yang disepakati tak lagi terbaca. Dikunci uji
+  ("`sm:grid-cols-2` tak boleh kembali").
+- ⚠️ **Nomor Identitas boleh NIK ATAU NIP** — teks bebas. `Status Penghuni` juga
+  teks bebas, BUKAN dropdown: taksonomi itu tak pernah ditetapkan di aplikasi ini
+  maupun di data mana pun, jadi daftar pilihan apa pun yang dikarang akan memaksa
+  operator memilih yang tak tepat.
+- ⚠️ **DUA GENERASI KUNCI PAYLOAD, dan yang lama WAJIB tetap dibaca.** Kartu
+  sebelum 2026-09-08 menyimpan nomor identitasnya di **`nip`** & pangkatnya di
+  `pangkat_golongan`. Keduanya TIDAK dihapus dari tipe; `identitasPengamanan()`
+  membaca `nomor_identitas` lalu jatuh ke `nip`. Tanpa cadangan itu, kolom
+  "Nomor Identitas" di lembar bertanda tangan tercetak KOSONG untuk SELURUH
+  kartu lama — tanpa satu pun error. Dikunci uji.
+- ⚠️ Simpan header tetap men-**spread `...p`**: payload kartu juga memuat
+  `bast_paths`/`pakta_paths`; menulis objek polos akan MEMBUANG berkas
+  unggahannya tanpa satu pun error.
+
 ## Laporan Penghapusan — Format IV.K.1 · IV.K.2 · IV.K.6 (2026-09-07)
 
 Cabang KETUJUH — dan TERAKHIR — modul Pelaporan Permendagri untuk menu

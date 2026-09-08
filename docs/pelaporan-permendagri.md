@@ -94,7 +94,7 @@ bukan membangun ulang. Jangan diasumsikan — konfirmasi dulu.
 | Laporan Kapitalisasi | `LaporanKapitalisasi` | ✔ | kop generik | A | ⬜ |
 | Laporan Penghapusan | `LaporanPenghapusan` | ✔ daftar · rekap | `/cetak/penghapusan-permendagri` | C | ✅ **IV.K.1 · IV.K.2 · IV.K.6** |
 | Laporan Pemanfaatan | `LaporanPemanfaatan` | ✔ | kop generik | A | ⬜ |
-| Laporan Pengamanan | `LaporanPengamanan` | ✔ | kop generik | A | ⬜ |
+| Laporan Pengamanan | `LaporanPengamanan` | ✔ | `/cetak/pengamanan-permendagri` | A + C | ✅ **IV.J.1.2 · IV.J.2.2** |
 
 ⚠️ **Catatan ini sudah TERJAWAB & dikerjakan (Agustus–September 2026).** Dulu
 tertulis: "9 dari 21 laporan, SEMUANYA belum punya lembar resmi; tujuh di

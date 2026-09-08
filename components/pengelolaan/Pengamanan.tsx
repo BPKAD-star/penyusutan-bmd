@@ -21,7 +21,7 @@ import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
-import { PANGKAT_GOLONGAN, PENGAMANAN_ELIGIBLE_GOLONGAN, isPengamananEligible, pengamananCache } from '@/lib/pengamanan'
+import { identitasPengamanan, PENGAMANAN_ELIGIBLE_GOLONGAN, isPengamananEligible, pengamananCache } from '@/lib/pengamanan'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks, bukaDokumen } from './DokumenBastField'
@@ -32,6 +32,7 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
 
 type PengPayload = {
   nama_pegawai?: string; nip?: string; pangkat_golongan?: string; jabatan?: string
+  nomor_identitas?: string; status_penghuni?: string; alamat?: string
   pakta_no?: string; pakta_tgl?: string; bast_paths?: string[]; pakta_paths?: string[]
 }
 type Header = {
@@ -229,9 +230,16 @@ export default function Pengamanan() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="text-sm space-y-0.5">
                       <p className="font-semibold text-gray-800">{p.nama_pegawai || '-'}
-                        {p.nip && <span className="ml-2 text-xs font-normal text-gray-500">NIP {p.nip}</span>}
+                        {identitasPengamanan(p) && (
+                          <span className="ml-2 text-xs font-normal text-gray-500">
+                            No. Identitas {identitasPengamanan(p)}
+                          </span>
+                        )}
                       </p>
-                      <p className="text-xs text-gray-500">{p.pangkat_golongan || '-'}{p.jabatan ? ` · ${p.jabatan}` : ''}</p>
+                      <p className="text-xs text-gray-500">
+                        {[p.status_penghuni, p.jabatan, p.pangkat_golongan].filter(Boolean).join(' · ') || '-'}
+                      </p>
+                      {p.alamat && <p className="text-xs text-gray-500">{p.alamat}</p>}
                       <p className="text-xs text-gray-500">BAST: {j.no_sk} · Tgl. {j.tanggal} · {j.periode}</p>
                       {(p.pakta_no || p.pakta_tgl) && <p className="text-xs text-gray-500">Pakta Integritas: {p.pakta_no || '-'}{p.pakta_tgl ? ` · ${p.pakta_tgl}` : ''}</p>}
                       <DokumenLinks paths={p.bast_paths || []} label="BAST" />
@@ -306,9 +314,13 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
   const dateBounds = useDateBounds()
   const p = header.payload || {}
   const [nama, setNama] = useState(p.nama_pegawai || '')
-  const [nip, setNip] = useState(p.nip || '')
-  const [pangkat, setPangkat] = useState(p.pangkat_golongan || '')
+  // ⚠️ Cadangan ke `nip`: kartu sebelum 2026-09-08 menyimpan nomor identitasnya
+  // di sana, dan tanpa ini membuka Edit Header pada kartu lama menampilkan
+  // kolom KOSONG — lalu menyimpannya MENGHAPUS nomor yang sudah ada.
+  const [identitas, setIdentitas] = useState(identitasPengamanan(p))
+  const [status, setStatus] = useState(p.status_penghuni || '')
   const [jabatan, setJabatan] = useState(p.jabatan || '')
+  const [alamat, setAlamat] = useState(p.alamat || '')
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
   const [paktaNo, setPaktaNo] = useState(p.pakta_no || '')
@@ -326,8 +338,15 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
     if (pindahSemester) { setErr(`Tanggal masuk ${tglPeriode}, sedangkan BAST ini di ${header.periode}. Pindah semester tidak diizinkan — batalkan & buat BAST baru.`); return }
     setErr(''); setSaving(true)
     const payload: PengPayload = {
-      ...p, nama_pegawai: nama.trim(), nip: nip.trim() || undefined, pangkat_golongan: pangkat || undefined,
-      jabatan: jabatan.trim() || undefined, pakta_no: paktaNo.trim() || undefined, pakta_tgl: paktaTgl || undefined,
+      // ⚠️ `...p` DIPERTAHANKAN: payload kartu ini juga memuat `bast_paths`,
+      // `pakta_paths`, & kunci warisan (`nip`, `pangkat_golongan`). Menulis
+      // objek polos akan MEMBUANG berkas unggahannya tanpa satu pun error.
+      ...p, nama_pegawai: nama.trim(),
+      nomor_identitas: identitas.trim() || undefined,
+      status_penghuni: status.trim() || undefined,
+      jabatan: jabatan.trim() || undefined,
+      alamat: alamat.trim() || undefined,
+      pakta_no: paktaNo.trim() || undefined, pakta_tgl: paktaTgl || undefined,
     }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload }).eq('id', header.id)
@@ -339,7 +358,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
     const state = new Map<string, boolean>()
     for (const r of (ev || []) as { aset_id: string; jenis: string }[]) state.set(r.aset_id, r.jenis === 'pengamanan')
     const aktifIds = [...state.entries()].filter(([, on]) => on).map(([id]) => id)
-    if (aktifIds.length) await supabase.from('aset').update({ pengamanan: pengamananCache(nama.trim(), nip.trim()) }).in('id', aktifIds)
+    if (aktifIds.length) await supabase.from('aset').update({ pengamanan: pengamananCache(nama.trim(), identitas.trim()) }).in('id', aktifIds)
     setSaving(false); onSaved()
   }
 
@@ -350,25 +369,41 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
           <h3 className="font-semibold text-gray-800">Edit Header Pengamanan</h3>
           <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>
         </div>
-        <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="p-5 grid grid-cols-1 gap-4">
+          {/* ⚠️ URUT KE BAWAH, bukan dua kolom bersebelahan (keputusan user
+              2026-09-08). Kelima isian identitas penghuni dibaca sebagai satu
+              rangkaian; ditata bersebelahan, mata melompat kiri-kanan & urutan
+              yang disepakati tak lagi terbaca.
+              ⚠️ URUTANNYA DITENTUKAN USER & SENGAJA SAMA dengan kolom lembar
+              Permendagri IV.J: Nama → Nomor Identitas → Status → Jabatan →
+              Alamat. Menukarnya membuat operator mengisi form dalam urutan yang
+              berbeda dari lembar yang ia salin. */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Nama Pegawai</label>
+            <label className="block text-xs text-gray-500 mb-1">Nama Penghuni / Pemakai</label>
             <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">NIP</label>
-            <input className="select-filter w-full" value={nip} onChange={e => setNip(e.target.value)} />
+            <label className="block text-xs text-gray-500 mb-1">
+              Nomor Identitas <span className="text-gray-400">(NIK atau NIP)</span>
+            </label>
+            <input className="select-filter w-full" value={identitas} onChange={e => setIdentitas(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Pangkat / Golongan</label>
-            <select className="select-filter w-full" value={pangkat} onChange={e => setPangkat(e.target.value)}>
-              <option value="">— pilih —</option>
-              {PANGKAT_GOLONGAN.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
+            {/* ⚠️ Teks bebas, BUKAN dropdown: taksonomi "status penghuni" tak
+                pernah ditetapkan di aplikasi ini maupun di data mana pun, jadi
+                daftar pilihan apa pun yang saya karang akan memaksa operator
+                memilih yang tak tepat. */}
+            <label className="block text-xs text-gray-500 mb-1">Status Penghuni / Pemakai</label>
+            <input className="select-filter w-full" value={status} onChange={e => setStatus(e.target.value)}
+              placeholder="mis. PNS, PPPK, Tenaga Kontrak" />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
             <input className="select-filter w-full" value={jabatan} onChange={e => setJabatan(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Alamat</label>
+            <input className="select-filter w-full" value={alamat} onChange={e => setAlamat(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">No. BAST <span className="text-gray-400">(tetap di {header.periode})</span></label>
@@ -411,8 +446,9 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
   const dateBounds = useDateBounds()
 
   const [nama, setNama] = useState('')
-  const [nip, setNip] = useState('')
-  const [pangkat, setPangkat] = useState('')
+  const [identitas, setIdentitas] = useState('')
+  const [status, setStatus] = useState('')
+  const [alamat, setAlamat] = useState('')
   const [jabatan, setJabatan] = useState('')
   const [noSk, setNoSk] = useState('')
   const [tgl, setTgl] = useState(todayStr())
@@ -483,8 +519,12 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
     setErr(''); setSaving(true)
 
     const payload: PengPayload = {
-      nama_pegawai: nama.trim(), nip: nip.trim() || undefined, pangkat_golongan: pangkat || undefined,
-      jabatan: jabatan.trim() || undefined, pakta_no: paktaNo.trim() || undefined, pakta_tgl: paktaTgl || undefined,
+      nama_pegawai: nama.trim(),
+      nomor_identitas: identitas.trim() || undefined,
+      status_penghuni: status.trim() || undefined,
+      jabatan: jabatan.trim() || undefined,
+      alamat: alamat.trim() || undefined,
+      pakta_no: paktaNo.trim() || undefined, pakta_tgl: paktaTgl || undefined,
       bast_paths: bastPaths, pakta_paths: paktaPaths,
     }
     const { data, error } = await supabase.from('jurnal_header').insert({
@@ -500,7 +540,7 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
     }))
     const { error: e1 } = await supabase.from('transaksi_bmd').insert(trxRows)
     if (e1) { await supabase.from('jurnal_header').delete().eq('id', h.id); setErr(`Gagal mencatat transaksi: ${e1.message}`); setSaving(false); return }
-    await supabase.from('aset').update({ pengamanan: pengamananCache(nama.trim(), nip.trim()) }).in('id', selList.map(b => b.id))
+    await supabase.from('aset').update({ pengamanan: pengamananCache(nama.trim(), identitas.trim()) }).in('id', selList.map(b => b.id))
 
     setSaving(false); onSaved(selList.length)
   }
@@ -512,25 +552,41 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
           <h2 className="text-base font-semibold text-gray-800">BAST Pengamanan Baru — {skpdNama}</h2>
           <button className="btn-secondary text-xs" onClick={onCancel}>← Kembali</button>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
+          {/* ⚠️ URUT KE BAWAH, bukan dua kolom bersebelahan (keputusan user
+              2026-09-08). Kelima isian identitas penghuni dibaca sebagai satu
+              rangkaian; ditata bersebelahan, mata melompat kiri-kanan & urutan
+              yang disepakati tak lagi terbaca.
+              ⚠️ URUTANNYA DITENTUKAN USER & SENGAJA SAMA dengan kolom lembar
+              Permendagri IV.J: Nama → Nomor Identitas → Status → Jabatan →
+              Alamat. Menukarnya membuat operator mengisi form dalam urutan yang
+              berbeda dari lembar yang ia salin. */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Nama Pegawai</label>
+            <label className="block text-xs text-gray-500 mb-1">Nama Penghuni / Pemakai</label>
             <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">NIP</label>
-            <input className="select-filter w-full" value={nip} onChange={e => setNip(e.target.value)} />
+            <label className="block text-xs text-gray-500 mb-1">
+              Nomor Identitas <span className="text-gray-400">(NIK atau NIP)</span>
+            </label>
+            <input className="select-filter w-full" value={identitas} onChange={e => setIdentitas(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Pangkat / Golongan</label>
-            <select className="select-filter w-full" value={pangkat} onChange={e => setPangkat(e.target.value)}>
-              <option value="">— pilih —</option>
-              {PANGKAT_GOLONGAN.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
+            {/* ⚠️ Teks bebas, BUKAN dropdown: taksonomi "status penghuni" tak
+                pernah ditetapkan di aplikasi ini maupun di data mana pun, jadi
+                daftar pilihan apa pun yang saya karang akan memaksa operator
+                memilih yang tak tepat. */}
+            <label className="block text-xs text-gray-500 mb-1">Status Penghuni / Pemakai</label>
+            <input className="select-filter w-full" value={status} onChange={e => setStatus(e.target.value)}
+              placeholder="mis. PNS, PPPK, Tenaga Kontrak" />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
             <input className="select-filter w-full" value={jabatan} onChange={e => setJabatan(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Alamat</label>
+            <input className="select-filter w-full" value={alamat} onChange={e => setAlamat(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">No. Dokumen BAST</label>

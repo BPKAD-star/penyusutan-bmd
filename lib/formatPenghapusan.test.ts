@@ -25,7 +25,7 @@ import {
 } from './formatPenghapusan'
 import { SEG_SUBTOTAL, susunRinci, susunRekap, sisaLebar, type ItemLaporan } from './formatPermendagri'
 import { SUBJENIS_OPT, SUBJENIS_LABEL, JENIS_PENGHAPUSAN } from './penghapusan'
-import { periodePosisiPenghapusan } from './laporanPenghapusan'
+import { periodePosisiPenghapusan, penghapusanEfektif } from './laporanPenghapusan'
 
 const AKAR = path.resolve(__dirname, '..')
 const tiapCabang = URUT_PENGHAPUSAN.map(id => [id, FORMAT_PENGHAPUSAN[id]] as const)
@@ -340,6 +340,69 @@ describe('cara pemindahtanganan (kolom 20 IV.K.1.2)', () => {
     // ini bukan baris penghapusan melainkan perpindahan antar SKPD.
     expect([...JENIS_PENGHAPUSAN]).toEqual(['penghapusan_pemindahtanganan', 'penghapusan_sebab_lain'])
     expect([...JENIS_PENGHAPUSAN]).not.toContain('pengalihan_status')
+  })
+})
+
+describe('penghapusanEfektif — replay "peristiwa terakhir menang"', () => {
+  // ⚠️ BUG NYATA 2026-09-08: menu ini menampilkan 14 barang (Rp252 M) sementara
+  // Dashboard & Pembukuan sama-sama 0. Sebabnya `batal_penghapusan` TIDAK
+  // membawa `payload.target_trx_id` (payloadnya `{}` — diverifikasi ke
+  // produksi), jadi `fetchBatalTargets` mengembalikan set kosong & tak
+  // menyaring apa pun. Keenam asetnya sudah dibatalkan penghapusannya waktu uji
+  // coba, tapi baris ledgernya tetap terhitung.
+  const ev = (id: number, aset: string, jenis: string, periode = '2026-S2') =>
+    ({ id, aset_id: aset, periode, jenis })
+
+  it('dibatalkan → TIDAK berlaku (kasus produksi yang jadi sebab bug)', () => {
+    expect([...penghapusanEfektif([
+      ev(1, 'a', 'penghapusan_pemindahtanganan'),
+      ev(2, 'a', 'batal_penghapusan'),
+    ])]).toEqual([])
+  })
+
+  it('dihapus lalu dibiarkan → berlaku', () => {
+    expect([...penghapusanEfektif([ev(1, 'a', 'penghapusan_pemindahtanganan')])]).toEqual([1])
+  })
+
+  it('hapus → batal → hapus lagi: HANYA yang terakhir berlaku', () => {
+    // ⚠️ Ini yang mencegah satu barang terhitung BERKALI-KALI. Itulah yang dulu
+    // dikerjakan `efektifPerAsetStatus="dihapus"` lewat `aset.status`.
+    expect([...penghapusanEfektif([
+      ev(1, 'a', 'penghapusan_pemindahtanganan'),
+      ev(2, 'a', 'batal_penghapusan'),
+      ev(3, 'a', 'penghapusan_sebab_lain'),
+    ])]).toEqual([3])
+  })
+
+  it('urutan masukan tak berpengaruh — yang menentukan (periode, id)', () => {
+    const acak = [
+      ev(3, 'a', 'penghapusan_sebab_lain'),
+      ev(1, 'a', 'penghapusan_pemindahtanganan'),
+      ev(2, 'a', 'batal_penghapusan'),
+    ]
+    expect([...penghapusanEfektif(acak)]).toEqual([3])
+  })
+
+  it('PERIODE menang atas id — baris ber-id besar di periode lampau tak menang', () => {
+    // Baris pembatalan bisa saja ber-id lebih besar tapi bertanggal mundur ke
+    // periode sebelumnya; yang menentukan kapan peristiwanya terjadi.
+    expect([...penghapusanEfektif([
+      ev(1, 'a', 'penghapusan_pemindahtanganan', '2026-S2'),
+      ev(99, 'a', 'batal_penghapusan', '2026-S1'),
+    ])]).toEqual([1])
+  })
+
+  it('tiap aset dinilai SENDIRI-SENDIRI', () => {
+    const hasil = penghapusanEfektif([
+      ev(1, 'a', 'penghapusan_pemindahtanganan'),
+      ev(2, 'a', 'batal_penghapusan'),
+      ev(3, 'b', 'penghapusan_pemindahtanganan'),
+    ])
+    expect([...hasil]).toEqual([3])
+  })
+
+  it('riwayat kosong → tak ada yang berlaku', () => {
+    expect([...penghapusanEfektif([])]).toEqual([])
   })
 })
 

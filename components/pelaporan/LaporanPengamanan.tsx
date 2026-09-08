@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import PengamananFormatPermendagri from './PengamananFormatPermendagri'
 import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
 
 type HeaderPayload = {
@@ -28,6 +29,14 @@ export default function LaporanPengamanan() {
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
   const [status, setStatus] = useState('')
+  // ── Tab "Format Permendagri" (IV.J.1.2 & IV.J.2.2) ──────────────────────
+  // ⚠️ `skpdId` DIPISAH dari `descIds`: tab Daftar menyaring se-subtree
+  // (`descendantIds`), sementara lembar Permendagri per-SKPD & memuat identitas
+  // SKPD itu di kopnya. Memakai satu nilai untuk dua maksud membuat lembar
+  // berkop satu SKPD berisi barang seluruh subtree-nya.
+  const [skpdId, setSkpdId] = useState<number | null>(null)
+  const [periode, setPeriode] = useState('')
+  const [tab, setTab] = useState<'daftar' | 'permendagri'>('daftar')
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [skpdNama, setSkpdNama] = useState('')
 
@@ -113,27 +122,57 @@ export default function LaporanPengamanan() {
           <h1 className="text-2xl font-bold text-gray-900">Laporan Pengamanan</h1>
           <p className="text-gray-500 text-sm mt-1">Rekap barang dalam kustodi pegawai penanggung jawab. Kosongkan SKPD untuk se-kabupaten.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-primary">{exporting ? 'Mengekspor...' : 'Export Excel'}</button>
-          <TombolCetak onClick={handleCetak} disabled={loading || rows.length === 0} />
-        </div>
+        {tab === 'daftar' && (
+          <div className="flex items-center gap-2">
+            <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-primary">{exporting ? 'Mengekspor...' : 'Export Excel'}</button>
+            <TombolCetak onClick={handleCetak} disabled={loading || rows.length === 0} />
+          </div>
+        )}
+      </div>
+
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm no-print">
+        {([['daftar', 'Daftar'], ['permendagri', 'Format Permendagri']] as const).map(([v, label]) => (
+          <button key={v} onClick={() => setTab(v)}
+            className={`px-4 py-1.5 rounded-md transition-colors ${tab === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end no-print">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Status</label>
-          <select className="select-filter" value={status} onChange={e => setStatus(e.target.value)}>
-            <option value="">Semua</option>
-            <option value="Diamankan">Diamankan</option>
-            <option value="Dikembalikan">Dikembalikan</option>
-          </select>
-        </div>
+        {/* Periode cuma dipakai lembar Permendagri — tab Daftar menampilkan
+            posisi TERKINI & memang tak punya dimensi waktu (lihat aturan nama
+            berkas di CLAUDE.md: KIR/Pengamanan/Pemanfaatan/Kendaraan). */}
+        {tab === 'permendagri' && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Periode</label>
+            <select className="select-filter" value={periode} onChange={e => setPeriode(e.target.value)}>
+              <option value="">— pilih —</option>
+              {[String(new Date().getFullYear()), String(new Date().getFullYear() - 1)].flatMap(t => [
+                <option key={`${t}-S1`} value={`${t}-S1`}>{t} — Semester I</option>,
+                <option key={`${t}-S2`} value={`${t}-S2`}>{t} — Semester II</option>,
+                <option key={t} value={t}>{t} — Akhir Tahun</option>,
+              ])}
+            </select>
+          </div>
+        )}
+        {tab === 'daftar' && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Status</label>
+            <select className="select-filter" value={status} onChange={e => setStatus(e.target.value)}>
+              <option value="">Semua</option>
+              <option value="Diamankan">Diamankan</option>
+              <option value="Dikembalikan">Dikembalikan</option>
+            </select>
+          </div>
+        )}
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
           <SkpdCombobox lockToOperator allowClear
             placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..."
             onChangeSelection={async sel => {
               setDescIds(sel.descendantIds)
+              setSkpdId(sel.skpdId)
               if (sel.skpdId == null) { setSkpdNama(''); return }
               const { data } = await supabase.from('admin_skpd').select('nama').eq('id', sel.skpdId).maybeSingle()
               setSkpdNama((data as { nama: string } | null)?.nama || '')
@@ -141,6 +180,10 @@ export default function LaporanPengamanan() {
         </div>
       </div>
 
+      {tab === 'permendagri' ? (
+        <PengamananFormatPermendagri skpdId={skpdId} periode={periode} />
+      ) : (
+        <>
       <div className="grid grid-cols-3 gap-3 mb-4 no-print">
         <div className="card p-4"><p className="text-xs text-gray-500">Total Barang</p><p className="text-lg font-bold text-gray-900 mt-1">{rows.length.toLocaleString('id-ID')}</p></div>
         <div className="card p-4"><p className="text-xs text-gray-500">Diamankan</p><p className="text-lg font-bold text-green-700 mt-1">{nDiamankan.toLocaleString('id-ID')}</p></div>
@@ -178,6 +221,8 @@ export default function LaporanPengamanan() {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

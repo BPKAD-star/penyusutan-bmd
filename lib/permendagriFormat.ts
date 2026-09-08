@@ -70,6 +70,8 @@ export type IdLembar =
   | 'penghapusan-pemindahtanganan'
   | 'penghapusan-pengalihan'
   | 'penghapusan-sebab-lain'
+  | 'pengamanan-peralatan-mesin'
+  | 'pengamanan-rumah-negara'
   | 'mutasi-bmd-skpd'
   | 'laporan-bmd-skpd'
   | 'mutasi-bmd-pemda'
@@ -242,6 +244,26 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
     judul: 'Laporan Penghapusan BMD akibat Sebab Lain',
     kertas: 'F4 lanskap',
     berkas: 'components/pelaporan/LembarPenghapusanPermendagri.tsx',
+  },
+  // ── Pengamanan / pemakaian (IV.J) ────────────────────────────────────────
+  // ⚠️ Bentuknya BEDA dari seluruh keluarga lain: DATAR & bernomor, kolom "Kode
+  // Barang" satu kolom teks (bukan sel segmen), tanpa subtotal, dan TANPA lembar
+  // rekap `.3`–`.6`. Penyajinya karena itu tak menyentuh mesin subtotal.
+  // ⚠️ Susunan kolom kedua cabang SENGAJA DISAMAKAN & menyimpang dari lembar
+  // aslinya (SIP & "Dokumen Pendukung Lainnya" dibuang, diganti BAST + Pakta
+  // Integritas) — keputusan user 2026-09-08; alasannya di kepala
+  // lib/formatPengamanan.ts.
+  'pengamanan-peralatan-mesin': {
+    kode: 'IV.J.1.2',
+    judul: 'Laporan Penggunaan/Pemakaian BMD Peralatan dan Mesin',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPengamananPermendagri.tsx',
+  },
+  'pengamanan-rumah-negara': {
+    kode: 'IV.J.2.2',
+    judul: 'Laporan Penggunaan/Pemakaian BMD Gedung dan Bangunan berupa Rumah Negara',
+    kertas: 'F4 lanskap',
+    berkas: 'components/pelaporan/LembarPengamananPermendagri.tsx',
   },
   'mutasi-bmd-skpd': {
     kode: 'IV.L.4.1',
