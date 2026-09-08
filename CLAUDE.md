@@ -3858,11 +3858,23 @@ cuma ADA SATU kartu koreksi, yaitu yang itu.
   untuk SKPD yang terpilih, dan tombol Batal/✎ bekerja atas kartu SKPD itu.
   Melebarkannya ke subtree akan membuat operator induk membatalkan kartu milik
   sub-unit tanpa sadar. **Jangan "perbaiki" dengan melonggarkan filternya.**
-- Yang ditambah **PENUNJUK ARAH**: kalau SKPD terpilih kosong, layar menyebut
-  di SKPD mana kartu koreksi ada, berikut jumlahnya, dan namanya bisa diklik
-  untuk pindah ke sana. Cuma jalan saat daftarnya kosong; kegagalan query-nya
-  tak ditampilkan (ini petunjuk arah, bukan angka laporan — kalau gagal, layar
-  kembali seperti sebelum penunjuk ini ada).
+- ⛔ **"Penunjuk arah" di layar kosong SEMPAT DIBUAT, lalu DICABUT atas
+  permintaan user (2026-09-08, sore) — JANGAN dibuat lagi.** Bentuknya: kalau
+  SKPD terpilih kosong, layar menyebut di SKPD mana kartu koreksi ada berikut
+  jumlahnya, namanya bisa diklik untuk pindah. Begitu user melihatnya di layar
+  (dgn SKPD Dinas Sosial: *"Ada kartu koreksi di SKPD lain: Badan Keuangan dan
+  Aset Daerah (1) · Dinas Perhubungan (1) · Bagian Kesejahteraan Rakyat (1) …"*)
+  ia minta dikembalikan seperti semula — begitu sebabnya ketahuan cuma salah
+  pilih Bagian, daftar SKPD lain itu jadi kebisingan yang muncul di SETIAP SKPD
+  yang kebetulan belum punya koreksi, yaitu keadaan yang normal.
+  `components/pengelolaan/Koreksi.tsx` dikembalikan **byte-identik** ke keadaan
+  sebelum penunjuk itu ada (diverifikasi `git diff` kosong terhadap commit
+  sebelumnya). Layar kosongnya kembali satu kalimat: *"Belum ada koreksi
+  transaksi untuk SKPD ini."*
+- **Yang TETAP dari putaran ini** cuma kolom & urutan SKPD di **Laporan
+  Koreksi** (bagian di bawah) — itu yang memang diminta user, dan itu pula jalan
+  yang benar untuk menjawab "kartu ini ada di SKPD mana": lewat menu Pelaporan,
+  bukan lewat tebakan di layar entry.
 
 ### Daftar Transaksi Laporan Koreksi: kolom & urutan SKPD
 

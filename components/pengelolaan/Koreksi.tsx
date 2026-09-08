@@ -168,9 +168,6 @@ function KoreksiTransaksi() {
   const [pemecahanJurnals, setPemecahanJurnals] = useState<PemecahanJurnal[]>([])
   const [penggabunganJurnals, setPenggabunganJurnals] = useState<PenggabunganJurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
-  // Kartu koreksi yang ada di SKPD LAIN — cuma dihitung kalau SKPD terpilih
-  // kosong. Lihat catatan di loadJurnals.
-  const [kartuSkpdLain, setKartuSkpdLain] = useState<{ id: number; n: number }[]>([])
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [addTo, setAddTo] = useState<Header | null>(null)
@@ -213,7 +210,7 @@ function KoreksiTransaksi() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadJurnals = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setJurnals([]); setPemecahanJurnals([]); setPenggabunganJurnals([]); setKartuSkpdLain([]); return }
+    if (!skpdId) { setJurnals([]); setPemecahanJurnals([]); setPenggabunganJurnals([]); return }
     setLoadingJurnal(true)
     const { data: headers } = await supabase.from('jurnal_header')
       .select(HEADER_COLS).eq('kategori', 'koreksi').eq('skpd_id', Number(skpdId))
@@ -314,35 +311,7 @@ function KoreksiTransaksi() {
         } else j.sumber.push(row)
       }
     }
-    const gabHidup = [...gmap.values()].filter(j => j.induk || j.sumber.length > 0)
-    setPenggabunganJurnals(gabHidup)
-
-    // ── Kalau SKPD ini KOSONG, tunjukkan di mana kartunya ada ───────────────
-    // ⚠️ ADA KARENA INSIDEN 2026-09-08. Satu pemecahan tanah dicatat di "Bagian
-    // Kesejahteraan Rakyat" lalu dicari di "Bagian Perekonomian dan Sumber Daya
-    // Alam" — dua Bagian bertetangga di bawah Sekretariat Daerah yang sama —
-    // dan layar cuma berkata "Belum ada koreksi transaksi untuk SKPD ini".
-    // Datanya utuh; yang hilang cuma petunjuk arahnya.
-    //
-    // Filter daftar kartu SENGAJA TETAP `.eq('skpd_id')` (bukan subtree): menu
-    // ini layar ENTRY — "+ Tambah Jurnal" membuat header untuk SKPD yang
-    // terpilih, dan tombol Batal/✎ di kartu bekerja atas SKPD itu. Melebarkannya
-    // ke subtree akan membuat operator induk membatalkan kartu milik sub-unit
-    // tanpa sadar. Jadi yang ditambah PENUNJUK, bukan pelonggaran filter.
-    //
-    // Cuma jalan saat kosong, & kegagalannya tak ditampilkan: ini petunjuk
-    // arah, bukan angka laporan — kalau query-nya gagal, layar kembali seperti
-    // sebelum penunjuk ini ada.
-    if (hs.length === 0 && pemHeaders.length === 0 && gabHeaders.length === 0) {
-      const { data: lain } = await supabase.from('jurnal_header')
-        .select('skpd_id').eq('kategori', 'koreksi').neq('skpd_id', Number(skpdId)).limit(2000)
-      const n = new Map<number, number>()
-      for (const r of (lain || []) as { skpd_id: number | null }[]) {
-        if (r.skpd_id == null) continue
-        n.set(r.skpd_id, (n.get(r.skpd_id) || 0) + 1)
-      }
-      setKartuSkpdLain([...n.entries()].map(([id, jml]) => ({ id, n: jml })).sort((a, b) => b.n - a.n))
-    } else setKartuSkpdLain([])
+    setPenggabunganJurnals([...gmap.values()].filter(j => j.induk || j.sumber.length > 0))
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -568,23 +537,7 @@ function KoreksiTransaksi() {
           {loadingJurnal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
           ) : (jurnals.length === 0 && pemecahanJurnals.length === 0 && penggabunganJurnals.length === 0) ? (
-            <div className="card p-12 text-center text-sm">
-              <p className="text-gray-400">Belum ada koreksi transaksi untuk SKPD ini.</p>
-              {kartuSkpdLain.length > 0 && (
-                <p className="text-gray-500 mt-3">
-                  Ada kartu koreksi di SKPD lain:{' '}
-                  {kartuSkpdLain.slice(0, 6).map((k, i) => (
-                    <span key={k.id}>
-                      {i > 0 && ' · '}
-                      <button className="text-teal hover:underline" onClick={() => setSkpd(String(k.id))}>
-                        {skpdList.find(x => x.id === k.id)?.nama || `SKPD #${k.id}`} ({k.n})
-                      </button>
-                    </span>
-                  ))}
-                  {kartuSkpdLain.length > 6 && ` · +${kartuSkpdLain.length - 6} lainnya`}
-                </p>
-              )}
-            </div>
+            <div className="card p-12 text-center text-gray-400 text-sm">Belum ada koreksi transaksi untuk SKPD ini.</div>
           ) : (<>
             {pemecahanJurnals.map(j => (
               <PemecahanCard key={j.id} j={j} busy={batalId === j.id}
