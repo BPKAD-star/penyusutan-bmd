@@ -38,9 +38,15 @@ export type LraRow = {
   jenis_tujuan: string | null
 }
 
-// Baris pengadaan sisi aplikasi (sudah dinormalisasi ke grup 5.2.0x).
+// Baris pengadaan sisi aplikasi, hasil `fn_lra_belanja_modal`.
+//   grup     = jenis belanja (5.2.0x) dari `payload.kode_rekening`;
+//   golongan = jenis BARANG (3 segmen kode BMD, mis. '1.3.2') dari `aset.golongan`.
+// Dua sumbu itulah yang bikin tabel Persilangan mungkin — lihat `silangRekBarang`.
 // grup null / di luar 5.2.01–05 → masuk `luarJenis`, tidak hilang diam-diam.
-export type AppRow = { grup: string | null; bulan: number; nilai: number }
+// ⚠️ `golongan` bisa `undefined` kalau kode dideploy sebelum migrasi
+// 20260909_01 jalan. Itu SENGAJA dibedakan dari null/'' — "tak bisa dinilai",
+// bukan "tak punya golongan"; lihat `statusSilang`.
+export type AppRow = { grup: string | null; golongan: string | null; bulan: number; nilai: number }
 
 // ── Parse sel Excel ─────────────────────────────────────────────────────────
 
@@ -138,8 +144,22 @@ export const rekapKapitalisasi = (rows: LraRow[]): RekapMatrix =>
 export const rekapReklas = (rows: LraRow[]): RekapMatrix =>
   buildMatrix(rows.filter(r => r.klasifikasi === 'reklas_keluar').map(r => ({ grup: r.kode_grup3, bulan: r.bulan, nilai: r.debit })))
 
+// Entryan aplikasi, DASAR KODE REKENING — sebanding langsung dgn box LRA
+// (keduanya dikelompokkan per jenis belanja).
 export const rekapApp = (rows: AppRow[]): RekapMatrix =>
   buildMatrix(rows.map(r => ({ grup: r.grup, bulan: r.bulan, nilai: r.nilai })))
+
+// Entryan aplikasi, DASAR KODE BARANG — golongan BMD dipetakan ke jenis belanja
+// padanannya supaya tabelnya tetap 5 baris & Check tetap sebanding dgn LRA.
+// ⚠️ Golongan TANPA padanan (1.3.6 KDP, 1.5.3 ATB, 1.5.4 Aset Lain-Lain) jatuh
+// ke `luarJenis`, jadi TOTAL kedua dasar BISA BERBEDA — dan itu memang jawaban
+// yang benar: termin konstruksi adalah realisasi belanja modal yang BELUM jadi
+// aset tetap. Halaman WAJIB melaporkan angka itu (jangan dibuang diam-diam).
+export const rekapAppBarang = (rows: AppRow[]): RekapMatrix =>
+  buildMatrix(rows.map(r => ({
+    grup: r.golongan ? GOLONGAN_KE_GRUP[r.golongan] ?? null : null,
+    bulan: r.bulan, nilai: r.nilai,
+  })))
 
 // Check per (jenis, bulan): LRA + Kapitalisasi − Reklas − BelanjaModalApp.
 // 0 = cocok. Dipakai badge ✓/selisih.
@@ -152,4 +172,103 @@ export function selisihMatrix(lra: RekapMatrix, kap: RekapMatrix, rek: RekapMatr
     total += d
   }
   return { perJenis, total }
+}
+
+// ── Persilangan rekening × kode barang ──────────────────────────────────────
+// "Belanja dari rekening A, barangnya golongan B." Sampai 2026-09-09 hal ini
+// MUSTAHIL terlihat di halaman LRA: kedua sisi Check sama-sama dihitung dari
+// rekening, jadi persilangan apa pun tetap ✓. Kejadian nyata yang melahirkan
+// tabel ini: "Backdrop" Kecamatan Banyakan Rp19.955.000 — rekening 5.2.03
+// (Gedung dan Bangunan), kode barang 1.3.2.05.02.06.027 (Alat Hiasan =
+// Peralatan dan Mesin).
+
+/** Label kolom Persilangan. Kelima jenis aset tetap + KDP SELALU tampil (kolom
+ *  nol pun berarti: "tak ada belanja yang mendarat di sini"); golongan lain
+ *  yang muncul di data ditambahkan sbg kolom ekstra oleh `silangRekBarang`. */
+export const GOL_TETAP = ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6']
+export const GOL_URAIAN: Record<string, string> = {
+  '1.3.1': 'Tanah',
+  '1.3.2': 'Peralatan dan Mesin',
+  '1.3.3': 'Gedung dan Bangunan',
+  '1.3.4': 'Jalan, Jaringan dan Irigasi',
+  '1.3.5': 'Aset Tetap Lainnya',
+  '1.3.6': 'Konstruksi Dalam Pengerjaan',
+  '1.5.3': 'Aset Tidak Berwujud',
+  '1.5.4': 'Aset Lain-Lain',
+}
+
+/** Kunci baris/kolom untuk nilai yang tak punya rekening / tak punya golongan.
+ *  Sengaja BUKAN dibuang: yang tak bisa dinilai tetap harus kelihatan. */
+export const TANPA_REK = '(tanpa kode rekening)'
+export const TANPA_GOL = '(tanpa kode barang)'
+
+/**
+ * Apakah rekening & golongan sepadan?
+ *   true  = cocok (mis. 5.2.02 ↔ 1.3.2)
+ *   false = SILANG — inilah yang dicari
+ *   null  = TAK BISA DINILAI (salah satu sisi tak diketahui, atau golongannya
+ *           tak punya padanan jenis belanja spt 1.3.6 KDP)
+ * ⚠️ `null` sengaja dibedakan dari `false`, pola yang sama dgn
+ * `bergeserDariNibar` (lib/kodeRegister.ts): yang tak bisa dinilai JANGAN
+ * ditandai temuan — menuduh persilangan yang tak terbukti sama buruknya dgn
+ * melewatkan yang terbukti.
+ */
+export function statusSilang(grup: string | null, golongan: string | null): boolean | null {
+  if (!grup || !golongan) return null
+  const padanan = GOLONGAN_KE_GRUP[golongan]
+  if (!padanan) return null
+  return padanan === grup
+}
+
+export type Silang = {
+  /** Kunci baris, urut: GRUP_LIST → grup lain yang muncul → TANPA_REK. */
+  baris: string[]
+  /** Kunci kolom, urut: GOL_TETAP → golongan lain yang muncul → TANPA_GOL. */
+  kolom: string[]
+  sel: Record<string, Record<string, number>>
+  totalBaris: Record<string, number>
+  totalKolom: Record<string, number>
+  total: number
+  /** Σ sel yang statusnya TERBUKTI silang (false). Yang `null` tidak ikut. */
+  nilaiSilang: number
+  /** Banyaknya sel silang — dipakai kalimat ringkasan di layar. */
+  nSelSilang: number
+}
+
+export function silangRekBarang(rows: AppRow[]): Silang {
+  const sel: Record<string, Record<string, number>> = {}
+  const barisExtra = new Set<string>()
+  const kolomExtra = new Set<string>()
+  let adaTanpaRek = false, adaTanpaGol = false
+
+  for (const r of rows) {
+    const b = r.grup || TANPA_REK
+    const k = r.golongan || TANPA_GOL
+    if (b === TANPA_REK) adaTanpaRek = true
+    else if (!GRUP_LIST.includes(b)) barisExtra.add(b)
+    if (k === TANPA_GOL) adaTanpaGol = true
+    else if (!GOL_TETAP.includes(k)) kolomExtra.add(k)
+    ;(sel[b] ??= {})[k] = (sel[b]?.[k] ?? 0) + r.nilai
+  }
+
+  const baris = [...GRUP_LIST, ...[...barisExtra].sort(), ...(adaTanpaRek ? [TANPA_REK] : [])]
+  const kolom = [...GOL_TETAP, ...[...kolomExtra].sort(), ...(adaTanpaGol ? [TANPA_GOL] : [])]
+
+  const totalBaris: Record<string, number> = {}
+  const totalKolom: Record<string, number> = {}
+  let total = 0, nilaiSilang = 0, nSelSilang = 0
+  for (const b of baris) {
+    totalBaris[b] = 0
+    for (const k of kolom) {
+      const v = sel[b]?.[k] ?? 0
+      totalBaris[b] += v
+      totalKolom[k] = (totalKolom[k] ?? 0) + v
+      total += v
+      if (v !== 0 && statusSilang(b === TANPA_REK ? null : b, k === TANPA_GOL ? null : k) === false) {
+        nilaiSilang += v
+        nSelSilang += 1
+      }
+    }
+  }
+  return { baris, kolom, sel, totalBaris, totalKolom, total, nilaiSilang, nSelSilang }
 }

@@ -205,6 +205,13 @@ Reuse: `PerolehanImport` (baca Excel), `SkpdCombobox lockToOperator`,
   golongan lewat `GOLONGAN_KE_GRUP`, aset ber-`batal_pengadaan` dibuang);
   blok **Check** per jenis + badge reconcile ✓/selisih. Export Excel mencakup
   kelima blok.
+- **Fase D** ✅ **SELESAI 2026-09-09** — **Persilangan rekening × kode barang**
+  (migrasi `20260909_01`): `fn_lra_belanja_modal` dapat kolom keluaran
+  `golongan`, blok Entryan Aplikasi dapat tuas **Dasar** (Kode Rekening /
+  Kode Barang) yang ikut menggerakkan Check, plus tabel matriks Persilangan.
+  Menutup buta-warna yang sudah ada sejak Fase B: kedua sisi Check dihitung
+  dari rekening, jadi "belanja rekening A, barangnya golongan B" tetap ✓.
+  Rincian & jebakannya di CLAUDE.md §"LRA — Persilangan rekening × kode barang".
 - **Fase C (opsional)** — validasi `kode_rekening` saat import via tabel
   referensi **`admin_rekening`** (migrasi `20260722_04`, PK `kode_sub_rincian`)
   supaya kode ngawur ditolak, bukan cuma cek prefix 5.1/5.2. Catatan:

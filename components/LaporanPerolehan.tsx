@@ -22,6 +22,8 @@ import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import { lembarPerolehan } from '@/lib/permendagriFormat'
 import { FORMAT_PEROLEHAN } from '@/lib/formatPermendagri'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
+import { splitKodeUraian } from '@/lib/laporanPengadaan'
+import { fetchUraianRekening } from '@/lib/rkbmdStandar'
 
 type Trx = {
   id: number
@@ -29,7 +31,7 @@ type Trx = {
   tanggal: string
   nilai: number
   keterangan: string | null
-  payload: { pihak?: string } | null
+  payload: { pihak?: string; kode_rekening?: string } | null
   /**
    * ⚠️ `nama_penyedia` tinggal di HEADER, bukan di payload baris ledger —
    * diperiksa ke produksi 2026-09-08: 0 dari 501 baris perolehan punya kunci itu
@@ -46,7 +48,7 @@ type Trx = {
    * Sintaks arrow di dalam embedded resource sudah diuji ke API proyek ini
    * (HTTP 200; bentuk yang sengaja dirusak dibalas PGRST100), bukan diasumsikan.
    */
-  header: { no_sk: string; nama_penyedia: string | null } | null
+  header: { no_sk: string; nama_penyedia: string | null; sub_kegiatan: string | null } | null
   skpd_tujuan: number | null
   aset_id: string | null
   aset: {
@@ -68,6 +70,25 @@ type Trx = {
  * yang sudah punya kolomnya sendiri lewat `pihakLabel`.
  */
 const PUNYA_PENYEDIA = new Set(['pengadaan'])
+
+/**
+ * Cara perolehan yang punya SANDARAN ANGGARAN — kode rekening belanja
+ * (`transaksi_bmd.payload.kode_rekening`, per barang) & sub kegiatan
+ * (`jurnal_header.payload.sub_kegiatan`, per dokumen). Kolomnya ditambahkan
+ * 2026-09-09 atas permintaan user: dua keterangan itu sudah lama tersimpan &
+ * sudah dicetak di lembar Format Permendagri, tapi tab "Daftar Transaksi" —
+ * yang justru paling sering dipakai kerja harian — tak pernah menampilkannya.
+ *
+ * ⚠️ HANYA `pengadaan`, dan itu bukan kelalaian: hibah/tukar menukar/hasil
+ * inventarisasi/perolehan lainnya TIDAK dibiayai APBD, jadi keempatnya tak
+ * pernah punya kode rekening maupun sub kegiatan. Menambahkan kolomnya di sana
+ * cuma melahirkan dua kolom yang SELALU '-'.
+ *
+ * ⚠️ Diturunkan dari `jenis` di sini — SAMA alasannya dgn PUNYA_PENYEDIA di
+ * atas: prop opsional yang lupa dikirim tak menghasilkan error TypeScript, jadi
+ * menu Perolehan berikutnya akan kehilangan kolomnya DIAM-DIAM.
+ */
+const PUNYA_ANGGARAN = new Set(['pengadaan'])
 
 export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel }: {
   judul: string
@@ -132,6 +153,17 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // kegagalan itu ditandai supaya operator tahu angkanya belum bisa dipercaya.
   const [voidedErr, setVoidedErr] = useState('')
 
+  /**
+   * kode_sub_rincian → nama belanja, untuk kolom "Kode Rekening".
+   * ⚠️ Kunci join-nya `admin_rekening.kode_sub_rincian`, BUKAN `kode_rekening`
+   * — kolom yang namanya paling menggoda itu isinya cuma level teratas
+   * (harfiah '5') di SELURUH barisnya, jadi menjoin ke sana mengembalikan 0
+   * baris TANPA error & uraiannya tinggal kosong (CLAUDE.md 2026-08-13).
+   * Sengaja TIDAK fail-closed: uraian itu hiasan di atas kode yang sudah benar,
+   * dan cadangannya (kode saja) persis tampilan sebelum kolom ini ada.
+   */
+  const [uraianRek, setUraianRek] = useState<Map<string, string>>(new Map())
+
   // ⚠️ DITANYAKAN PER BARIS YANG SUDAH DITARIK, bukan disapu di muka
   // (2026-08-20). Versi lama memanggil `fetchVoidedAsetIds(supabase)` TANPA
   // daftar aset, di sebuah useEffect ber-deps `[]` — jadi ia menyisir SELURUH
@@ -173,7 +205,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk,nama_penyedia:payload->>nama_penyedia),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
+      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk,nama_penyedia:payload->>nama_penyedia,sub_kegiatan:payload->>sub_kegiatan),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
     // ⚠️ `periode` bisa bernilai TAHUN saja (mis. `2026` = Akhir Tahun) —
@@ -253,6 +285,24 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   }
   const penyediaNama = (r: Trx) => r.header?.nama_penyedia || ''
   const adaPenyedia = PUNYA_PENYEDIA.has(jenis)
+  const adaAnggaran = PUNYA_ANGGARAN.has(jenis)
+
+  // ── Sandaran anggaran ────────────────────────────────────────────────────
+  const rekKode = (r: Trx) => r.payload?.kode_rekening || ''
+  const rekUraian = (r: Trx) => uraianRek.get(rekKode(r)) || ''
+  /** `sub_kegiatan` disimpan ProgramPicker sbg "kode — uraian" (satu string). */
+  const subKeg = (r: Trx) => splitKodeUraian(r.header?.sub_kegiatan)
+
+  // Uraian belanja untuk baris yang SEDANG tampil. Dipisah dari query utama
+  // supaya kegagalannya tak menjatuhkan tabel (lihat catatan `uraianRek`).
+  useEffect(() => {
+    if (!adaAnggaran) return
+    const kode = [...new Set(rows.map(rekKode).filter(Boolean))]
+    if (kode.length === 0) { setUraianRek(new Map()); return }
+    let hidup = true
+    fetchUraianRekening(supabase, kode).then(m => { if (hidup) setUraianRek(m) })
+    return () => { hidup = false }
+  }, [rows, adaAnggaran]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Urut: induk → unit → tanggal terbaru → id. Dipakai layar DAN export supaya
   // berkasnya sama susunannya dgn yang dilihat operator.
@@ -274,7 +324,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // ⚠️ DIHITUNG, bukan ditulis tangan. Dulu `pihakLabel ? 11 : 10`, dan angka
   // seperti itu diam-diam meleset begitu ada kolom baru — baris "Tidak ada
   // transaksi" jadi tak selebar tabelnya & tak ada yang gagal.
-  const nKolom = 10 + 1 + (pihakLabel ? 1 : 0) + (adaPenyedia ? 1 : 0)
+  const nKolom = 10 + 1 + (pihakLabel ? 1 : 0) + (adaPenyedia ? 1 : 0) + (adaAnggaran ? 2 : 0)
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
@@ -342,6 +392,14 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     } catch (e) {
       setVoidedErr(pesanGagal(e as Error)); setExporting(false); return
     }
+    // ⚠️ Dilookup ULANG untuk himpunan EXPORT, bukan memakai `uraianRek` milik
+    // layar: layar dibatasi 500 baris terbaru sementara berkas ini memuat
+    // SEMUANYA, jadi memakai peta layar akan mengosongkan kolom uraian untuk
+    // baris ke-501 dan seterusnya — kekosongan yang di Excel terbaca sbg
+    // "rekening ini memang tak punya nama".
+    const uraianEx = adaAnggaran
+      ? await fetchUraianRekening(supabase, hasil.map(rekKode).filter(Boolean))
+      : new Map<string, string>()
     exportToExcel(hasil.sort(urutSkpd).map(r => ({
       // SKPD paling kiri: berkas ini dibaca & dipivot per SKPD.
       'SKPD': unitNama(r),
@@ -356,6 +414,15 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       'Komptabel': (r.aset?.intra_ekstra || '').toUpperCase(),
       'Nomor Dokumen Sumber': r.header?.no_sk || '',
       ...(adaPenyedia ? { 'Nama Penyedia': penyediaNama(r) } : {}),
+      // Empat kolom TERPISAH di berkas (bukan ditumpuk seperti di layar):
+      // berkas kerja dipivot & disortir per kolom, dan kode yang menempel pada
+      // uraiannya tak bisa dipakai sbg kunci.
+      ...(adaAnggaran ? {
+        'Kode Rekening': rekKode(r),
+        'Uraian Belanja': uraianEx.get(rekKode(r)) || '',
+        'Kode Sub Kegiatan': subKeg(r)[0],
+        'Uraian Sub Kegiatan': subKeg(r)[1],
+      } : {}),
       'Tanggal Perolehan (BAST)': r.tanggal,
       'Periode': r.periode,
       'Nilai Perolehan (Rp)': r.nilai,
@@ -514,6 +581,8 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                     <th className="table-th">Komptabel</th>
                     <th className="table-th">No. Dokumen Sumber</th>
                     {adaPenyedia && <th className="table-th">Nama Penyedia</th>}
+                    {adaAnggaran && <th className="table-th">Kode Rekening</th>}
+                    {adaAnggaran && <th className="table-th">Sub Kegiatan</th>}
                     <th className="table-th">Tgl Perolehan (BAST)</th>
                     <th className="table-th text-right">Nilai Perolehan</th>
                     <th className="table-th">Keterangan</th>
@@ -542,6 +611,18 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                       <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
                       <td className="table-td text-xs">{r.header?.no_sk || '-'}</td>
                       {adaPenyedia && <td className="table-td text-xs">{penyediaNama(r) || '-'}</td>}
+                      {adaAnggaran && (
+                        <td className="table-td text-xs">
+                          <p className="font-medium whitespace-nowrap">{rekKode(r) || '-'}</p>
+                          {rekUraian(r) && <p className="text-gray-400">{rekUraian(r)}</p>}
+                        </td>
+                      )}
+                      {adaAnggaran && (
+                        <td className="table-td text-xs">
+                          <p className="font-medium whitespace-nowrap">{subKeg(r)[0] || '-'}</p>
+                          {subKeg(r)[1] && <p className="text-gray-400">{subKeg(r)[1]}</p>}
+                        </td>
+                      )}
                       <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
                       <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
                       <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.keterangan || '-'}</td>

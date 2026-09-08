@@ -52,7 +52,11 @@ type Raw = {
   } | null
 }
 
-const splitKodeUraian = (s: string | undefined | null): [string, string] => {
+/** "1.02.01 — Uraian" → ['1.02.01', 'Uraian']. Tanpa pemisah → seluruhnya jadi
+ *  kode (data lama sempat berisi teks bebas spt 'Tes'). Diekspor sejak
+ *  2026-09-09: tab "Daftar Transaksi" Laporan Perolehan memakai pembagian yang
+ *  SAMA, dan dua salinan akan menyimpang tanpa satu pun yang gagal. */
+export const splitKodeUraian = (s: string | undefined | null): [string, string] => {
   const parts = (s || '').split(' — ')
   return [(parts[0] || '').trim(), (parts.slice(1).join(' — ') || '').trim()]
 }

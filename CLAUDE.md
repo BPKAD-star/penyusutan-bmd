@@ -4527,6 +4527,103 @@ perolehannya (257.153.961 vs 169.105.349) sehingga engine memaksa nilai buku ke
   lain (`batal_pengadaan`/`batal_penghapusan`/`batal_kapitalisasi`) memang sudah
   begitu sejak awal; yang ini kelewat.
 
+## LRA — Persilangan rekening × kode barang (migrasi 20260909_01)
+
+Permintaan user 2026-09-09. Box LRA hasil import dikelompokkan per **kode
+rekening**, dan blok "Belanja Modal — Entryan Aplikasi" ternyata **juga**
+(`payload.kode_rekening`, fallback golongan). Jadi blok Check membandingkan
+rekening lawan rekening: ia menjawab **kelengkapan entry** dan **TIDAK PERNAH
+bisa** memperlihatkan pertanyaan kedua — *belanja dari rekening A, barangnya
+golongan B*. Persilangan seperti itu tetap ✓ di layar.
+
+Kejadian nyatanya (Kecamatan Banyakan 2026): **Backdrop Rp19.955.000** dibeli
+dgn rekening **5.2.03 Gedung dan Bangunan**, kode barangnya
+`1.3.2.05.02.06.027` (Alat Hiasan) = **Peralatan dan Mesin**. Di LRA ia menambah
+Gedung, di Neraca/Daftar Barang ia menambah Peralatan & Mesin. Rekonsiliasinya
+tetap tie-out — kelas kesalahan yang sama dgn Kapitalisasi 2026-08-27:
+**"Selisih nol" bukan bukti benar.**
+
+- **RPC dapat satu kolom keluaran baru: `golongan`.** Filter, scope RLS, daftar
+  jenis, & pembuangan baris batal TIDAK disentuh — total per grup wajib identik
+  dgn sebelum migrasi, yang berubah cuma seberapa halus ia dipecah.
+  ⚠️ `RETURNS TABLE` tak bisa diubah lewat `CREATE OR REPLACE` → **DROP dulu**,
+  dan karena itu `SET search_path` + GRANT WAJIB ditulis ulang.
+  ⚠️ **Deploy-ordering AMAN DUA ARAH** (jarang, jadi dicatat): migrasi duluan →
+  klien lama mengabaikan kolomnya & `buildMatrix` tetap menjumlah ke sel yang
+  sama; kode duluan → `golongan` `undefined` → tabel Persilangan menampilkan
+  strip amber "migrasinya belum jalan", blok lain tetap benar.
+- ⚠️ **Golongan = POSISI TERKINI (`aset.golongan`), sengaja BUKAN period-aware.**
+  Pertanyaannya "belanja ini akhirnya jadi aset golongan apa", dan untuk termin
+  konstruksi jawabannya memang berpindah dari 1.3.6 ke golongan tujuan begitu
+  selesai. **Jangan disamakan** dgn baris mutasi Rekonsiliasi, yang justru WAJIB
+  `kodePada()` (2026-08-27) — di sana pertanyaannya berbeda.
+- **Tuas "Dasar" di blok Entryan Aplikasi**: `Kode Rekening` (bawaan = PERILAKU
+  LAMA PERSIS) / `Kode Barang`. Ia menggerakkan tabel **dan** kolom "Entry
+  Aplikasi" di Check, jadi Check-nya berganti pertanyaan: kelengkapan entry
+  (rekening) vs ketepatan klasifikasi (barang). **Selisih TOTALNYA sama di
+  kedua dasar** — yang bergeser cuma sebarannya antar jenis, jadi memindah tuas
+  tak pernah bisa menyembunyikan uang. Itu wajib tetap benar.
+- ⚠️ **Dasar kode barang: golongan tanpa padanan jenis belanja (1.3.6 KDP,
+  1.5.3 ATB, 1.5.4) jatuh ke `luarJenis`**, jadi TOTAL kedua dasar bisa berbeda
+  — dan itu jawaban yang benar (termin konstruksi = realisasi belanja modal yang
+  belum jadi aset tetap). Angkanya WAJIB dilaporkan di note, jangan dibuang.
+- **Tabel Persilangan** (baris rekening × kolom golongan): baris TOTAL = angka
+  dasar rekening, kolom TOTAL = angka dasar barang — ia jembatan kedua tuas.
+  Sel di luar diagonal berlatar amber.
+  ⚠️ **Tiga keadaan, bukan dua** (`statusSilang`): cocok / silang / **`null` tak
+  bisa dinilai** (salah satu sisi tak diketahui, atau golongannya memang tak
+  punya padanan spt KDP). `null` sengaja dibedakan dari `false`, pola yang sama
+  dgn `bergeserDariNibar` — menuduh persilangan yang tak terbukti sama
+  merugikannya dgn melewatkan yang terbukti.
+  Baris/kolom "(tanpa kode …)" & rekening di luar 5.2.01–05 **ditampilkan**,
+  bukan dibuang diam-diam.
+- **Export membawa KEDUA dasar + seluruh sel Persilangan ber-kolom `Status`**
+  (`SILANG`/`cocok`/`tak bisa dinilai`). Berkas yang cuma memuat dasar yang
+  kebetulan aktif di layar tak bisa dibaca balik.
+- ⚠️ `GOLONGAN_KE_GRUP` (lib/lra.ts) **KEMBAR** dgn CASE fallback di badan
+  `fn_lra_belanja_modal` — dikunci **lib/lra.test.ts** (diuji merah dulu dgn
+  menyimpangkan satu pasangan), berikut penjaga bahwa kolom `golongan` benar-
+  benar ada di `RETURNS TABLE` & ikut `GROUP BY`.
+- **Terukur ke produksi 2026-09-09 (RLS aktif, uid admin): 11,8 ms se-kabupaten,
+  shared hit 3.118** — pagu `authenticated` 8.000 ms. Se-kabupaten 2026 ada
+  **tepat SATU sel silang**: 5.2.03 × 1.3.2 = Rp19.955.000 (Backdrop Banyakan)
+  di antara Rp1.677.914.837 yang cocok. Σ kedua dasar identik
+  (Rp1.697.869.837), jadi janji "mindah tuas tak bisa sembunyikan uang"
+  terbukti di data hidup, bukan cuma di test.
+  ⚠️ **Sebagai `service_role` fungsi ini mengembalikan 0 BARIS** — bukan rusak,
+  melainkan `fn_is_admin()`/`fn_skpd_visible()` yang direplikasi di WHERE
+  dua-duanya false tanpa klaim JWT. Kebalikan dari jebakan biasa ("service_role
+  bikin query rusak tetap cepat"): di sini ia bikin fungsi yang SEHAT terlihat
+  kosong. Ukur dgn `SET LOCAL role authenticated` + `request.jwt.claims`.
+
+## Laporan Perolehan: kode rekening & sub kegiatan di Daftar Transaksi (2026-09-09)
+
+Permintaan user yang sama. Keduanya sudah lama tersimpan & sudah dicetak di tab
+**Format Permendagri**, tapi tab **Daftar Transaksi** — yang justru dipakai
+kerja harian — tak pernah menampilkannya. Layar: dua kolom bertumpuk (kode di
+atas, uraian abu-abu di bawah); Excel: **empat kolom terpisah** (berkas kerja
+dipivot & disortir per kolom, dan kode yang menempel pada uraiannya tak bisa
+dipakai sbg kunci).
+
+- ⚠️ **HANYA `pengadaan`** (`PUNYA_ANGGARAN`, sebaris `PUNYA_PENYEDIA`): hibah /
+  tukar menukar / hasil inventarisasi / perolehan lainnya tak dibiayai APBD,
+  jadi kolomnya di sana akan SELALU '-'. Diturunkan dari `jenis` di berkas itu,
+  BUKAN prop opsional — prop yang lupa dikirim tak bikin error TypeScript.
+- ⚠️ **`sub_kegiatan` diambil `payload->>sub_kegiatan`, JANGAN `payload` utuh** —
+  pelajaran 2026-09-08 (join payload utuh = 53 MB JSON → Laporan Hibah mati).
+  Nilainya "kode — uraian" (bentukan `ProgramPicker`); pembelahnya
+  `splitKodeUraian` yang **diekspor** dari lib/laporanPengadaan.ts supaya lembar
+  Permendagri & tab ini membelah dgn cara yang sama.
+- ⚠️ **Uraian belanja join ke `admin_rekening.kode_sub_rincian`**, BUKAN
+  `kode_rekening` (kolom itu isinya harfiah `'5'` di seluruh barisnya —
+  CLAUDE.md 2026-08-13). Sengaja **tidak fail-closed**: uraian itu hiasan di
+  atas kode yang sudah benar.
+- ⚠️ **Export me-lookup ULANG untuk himpunan export**, bukan memakai peta layar:
+  layar dibatasi 500 baris terbaru sementara berkasnya memuat semuanya, jadi
+  peta layar akan mengosongkan uraian baris ke-501 dst — kekosongan yang di
+  Excel terbaca "rekening ini memang tak punya nama".
+- **Tak ada migrasi** untuk bagian ini.
+
 ## Pola jurnal ber-SK (Penghapusan, Kapitalisasi, dan menu ber-No SK lain)
 
 Menu yang punya "kartu jurnal" dengan No SK/No Dokumen + tanggal + daftar barang
@@ -5185,7 +5282,19 @@ BUKAN public URL. Draft (belum py `aset.id`) pakai prefix `draft/<key-client>/..
     `git log` — gaya rinci, bukan satu baris), diakhiri
     `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
   - Heredoc `<<'EOF'` (kutip tunggal) supaya `$`/backtick di pesan tak diexpand.
-  - Push ke `main` langsung — repo ini memang tak pakai branch/PR.
+  - Push ke `main` langsung — repo ini memang tak pakai branch/PR. ⚠️ **Tapi
+    perintahnya `git push origin HEAD:main`, BUKAN `git push origin main`.**
+    Kerja di worktree selalu berada di branch sendiri (`claude/<tugas>`), dan
+    `push origin main` mendorong ref **`main` LOKAL** — yang di worktree itu
+    nyaris selalu basi, ketinggalan beberapa commit. Gejalanya menyesatkan:
+    `! [rejected] main -> main (non-fast-forward)` yang terbaca seperti konflik
+    dgn orang lain, padahal commit yang barusan dibuat bahkan TIDAK ikut
+    terdorong. Kejadian 2026-09-09. `HEAD:main` mendorong commit yang benar &
+    fast-forward selama branch-nya sudah memuat `origin/main`.
+  - Jalankan `cd <path worktree>` di depan perintahnya kalau kerjanya di
+    worktree — user bisa saja sedang berada di worktree lain, dan `git add`
+    akan gagal "did not match any files" untuk berkas yang jelas-jelas ada
+    (kejadian 2026-09-09).
   - Kalau ada migrasi baru: **ingatkan jalankan migrasi dulu** sebelum push,
     urutan deploy-ordering di CLAUDE.md.
   - Jalan di terminal user, BUKAN dijalankan Claude — commit/push tetap

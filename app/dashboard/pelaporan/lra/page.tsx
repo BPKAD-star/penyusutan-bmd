@@ -1,9 +1,21 @@
 'use client'
 // LRA — Rekonsiliasi Belanja Modal. Fase B (lengkap):
 //   LRA (5.2) + Kapitalisasi (5.1 ditandai) − Reklasifikasi (5.2 ditandai)
-//   =? Belanja Modal (Entryan Aplikasi, dari ledger `pengadaan`)
-// Lihat docs/lra-plan.md.
-import { useCallback, useEffect, useState } from 'react'
+//   =? Belanja Modal (Entryan Aplikasi, dari ledger `pengadaan` + termin KDP)
+//
+// ⚠️ DUA DASAR PENGELOMPOKAN, dan bedanya justru yang paling berguna di sini
+// (permintaan user 2026-09-09):
+//   · KODE REKENING — jenis BELANJA-nya (`payload.kode_rekening`). Sebanding
+//     langsung dgn box LRA, jadi Check-nya menjawab **kelengkapan entry**:
+//     "apakah semua realisasi belanja sudah dicatat sbg aset di aplikasi?"
+//   · KODE BARANG — jenis ASET-nya (`aset.golongan`). Inilah yang masuk
+//     Neraca/Daftar Barang, jadi Check-nya menjawab **ketepatan klasifikasi**:
+//     "apakah barangnya mendarat di jenis aset yang sesuai belanjanya?"
+// Selisih TOTALNYA sama di kedua dasar (yang bergeser cuma sebarannya antar
+// jenis), jadi memindah tuas ini tak pernah bisa menyembunyikan uang.
+// Tabel **Persilangan** di bawahnya yang MENJELASKAN pergeseran itu baris per
+// baris. Lihat docs/lra-plan.md.
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -12,9 +24,10 @@ import LraImport from '@/components/pelaporan/LraImport'
 import LraTagModal from '@/components/pelaporan/LraTagModal'
 import LraDetailModal from '@/components/pelaporan/LraDetailModal'
 import {
-  JENIS_BM, BULAN_SINGKAT,
-  rekapModal, rekapKapitalisasi, rekapReklas, rekapApp, selisihMatrix,
-  type LraRow, type AppRow, type RekapMatrix,
+  JENIS_BM, BULAN_SINGKAT, GOL_URAIAN, TANPA_REK, TANPA_GOL,
+  rekapModal, rekapKapitalisasi, rekapReklas, rekapApp, rekapAppBarang,
+  selisihMatrix, silangRekBarang, statusSilang,
+  type LraRow, type AppRow, type RekapMatrix, type Silang,
 } from '@/lib/lra'
 import { tahunAwal } from '@/lib/tahunKerja'
 import { fetchApprovalScope } from '@/lib/roles'
@@ -34,6 +47,10 @@ export default function LraPage() {
   const [skpdNama, setSkpdNama] = useState<Map<number, string>>(new Map())
   const [detail, setDetail] = useState<{ judul: string; rows: LraRow[] } | null>(null)
   const [msg, setMsg] = useState('')
+  // Dasar pengelompokan blok "Entryan Aplikasi" + kolom "Entry Aplikasi" di
+  // Check. Bawaannya `rekening` = PERILAKU LAMA PERSIS — menambah tuas tak
+  // boleh diam-diam mengubah angka yang sudah dibaca operator kemarin.
+  const [dasar, setDasar] = useState<'rekening' | 'barang'>('rekening')
   // Import Excel LRA = admin-only (permintaan user 2026-08-26) — Pengurus
   // Barang/Pembantu/Pengawas tak perlu. Penegak sesungguhnya trigger DB
   // fn_lra_realisasi_guard (migrasi 20260826_02); ini cuma menyembunyikan
@@ -68,8 +85,12 @@ export default function LraPage() {
       p_skpd_ids: desc,
     })
     if (appErr) { setMsg(`Error: ${appErr.message}`); setLoading(false); return }
-    const appRows: AppRow[] = ((appData || []) as { grup: string | null; bulan: number; nilai: number }[])
-      .map(d => ({ grup: d.grup, bulan: Number(d.bulan), nilai: Number(d.nilai || 0) }))
+    // ⚠️ `golongan` baru ada sejak migrasi 20260909_01. Kalau migrasinya belum
+    // jalan ia `undefined` → dinormalisasi jadi `null` = "tak bisa dinilai",
+    // dan halaman MENGATAKANNYA (strip amber di tabel Persilangan) alih-alih
+    // menampilkan matriks kosong yang terbaca "tak ada persilangan".
+    const appRows: AppRow[] = ((appData || []) as { grup: string | null; golongan?: string | null; bulan: number; nilai: number }[])
+      .map(d => ({ grup: d.grup, golongan: d.golongan ?? null, bulan: Number(d.bulan), nilai: Number(d.nilai || 0) }))
 
     // 3) Nama SKPD untuk popup rincian (hanya id yang muncul di data).
     const ids = [...new Set(lra.map(r => r.skpd_id))]
@@ -86,7 +107,15 @@ export default function LraPage() {
   const mLra = rows ? rekapModal(rows) : null
   const mKap = rows ? rekapKapitalisasi(rows) : null
   const mRek = rows ? rekapReklas(rows) : null
-  const mApp = rows ? rekapApp(app) : null
+  // Kedua dasar dihitung SELALU (bukan cuma yang sedang dipilih): keduanya
+  // dipakai bersamaan — satu untuk tabel & Check, satunya untuk kalimat
+  // "kalau dasarnya ditukar, angkanya jadi begini".
+  const mAppRek = rows ? rekapApp(app) : null
+  const mAppBar = rows ? rekapAppBarang(app) : null
+  const mApp = dasar === 'barang' ? mAppBar : mAppRek
+  const silang = rows ? silangRekBarang(app) : null
+  // Migrasi 20260909_01 belum jalan → seluruh baris tanpa `golongan`.
+  const golonganKosong = !!rows && app.length > 0 && app.every(r => !r.golongan)
   const check = mLra && mKap && mRek && mApp ? selisihMatrix(mLra, mKap, mRek, mApp) : null
 
   const nBarjas = rows ? rows.filter(r => r.kelompok === 'barjas').length : 0
@@ -117,14 +146,35 @@ export default function LraPage() {
     push('LRA (Belanja Modal)', mLra)
     push('Kapitalisasi', mKap)
     push('Reklasifikasi', mRek)
-    push('Belanja Modal (Entry Aplikasi)', mApp)
+    // ⚠️ KEDUA dasar ikut ke berkas, bukan cuma yang sedang tampil di layar.
+    // Berkas yang cuma memuat salah satunya tak bisa dibaca balik: pembacanya
+    // tak punya cara tahu tuas mana yang aktif waktu tombol Export ditekan.
+    push('Belanja Modal Aplikasi (dasar kode rekening)', mAppRek!)
+    push('Belanja Modal Aplikasi (dasar kode barang)', mAppBar!)
     for (const j of JENIS_BM) {
       out.push({
-        Blok: 'CHECK', Jenis: `${j.grup} — ${j.uraian}`,
+        Blok: `CHECK (dasar ${dasar === 'barang' ? 'kode barang' : 'kode rekening'})`,
+        Jenis: `${j.grup} — ${j.uraian}`,
         LRA: mLra.totalJenis[j.grup], Kapitalisasi: mKap.totalJenis[j.grup], Reklasifikasi: mRek.totalJenis[j.grup],
         Seharusnya: mLra.totalJenis[j.grup] + mKap.totalJenis[j.grup] - mRek.totalJenis[j.grup],
         EntryAplikasi: mApp.totalJenis[j.grup], Selisih: check.perJenis[j.grup],
       })
+    }
+    // Persilangan: satu baris per (rekening × golongan) yang ada isinya, plus
+    // penanda SILANG supaya bisa disaring/di-pivot langsung di Excel.
+    if (silang) {
+      for (const b of silang.baris) for (const k of silang.kolom) {
+        const v = silang.sel[b]?.[k] ?? 0
+        if (v === 0) continue
+        const st = statusSilang(b === TANPA_REK ? null : b, k === TANPA_GOL ? null : k)
+        out.push({
+          Blok: 'PERSILANGAN',
+          Jenis: `${b} — ${JENIS_BM.find(j => j.grup === b)?.uraian ?? ''}`.replace(/ — $/, ''),
+          KodeBarang: `${k} — ${GOL_URAIAN[k] ?? ''}`.replace(/ — $/, ''),
+          Nilai: v,
+          Status: st === false ? 'SILANG' : st === true ? 'cocok' : 'tak bisa dinilai',
+        })
+      }
     }
     exportToExcel(out, namaBerkasLaporan({
       laporan: 'LRA Rekonsiliasi', periode: tahun,
@@ -200,13 +250,30 @@ export default function LraPage() {
             onDrill={drill('Kapitalisasi', rows.filter(r => r.klasifikasi === 'kapitalisasi'), r => r.jenis_tujuan)} />
           <MatrixTable judul="Reklasifikasi (belanja modal dikeluarkan)" m={mRek!} kosongNote="Belum ada baris ditandai Reklasifikasi."
             onDrill={drill('Reklasifikasi', rows.filter(r => r.klasifikasi === 'reklas_keluar'), r => r.kode_grup3)} />
-          <MatrixTable judul="Belanja Modal — Entryan Aplikasi (dari Pengadaan)" m={mApp!}
-            note={mApp!.luarJenis > 0 ? `${angka(mApp!.luarJenis)} dari pengadaan berada di luar objek 5.2.01–05 (mis. 5.2.06 Aset Tidak Berwujud) — tidak masuk tabel ini.` : undefined} />
+          <MatrixTable
+            judul={`Belanja Modal — Entryan Aplikasi (dasar ${dasar === 'barang' ? 'KODE BARANG' : 'KODE REKENING'})`}
+            m={mApp!}
+            aksi={<DasarSwitch nilai={dasar} onGanti={setDasar} />}
+            note={mApp!.luarJenis > 0
+              ? (dasar === 'barang'
+                ? `${angka(mApp!.luarJenis)} belanja mendarat di golongan yang BUKAN aset tetap 1.3.1–1.3.5 — mis. 1.3.6 Konstruksi Dalam Pengerjaan (termin kontrak yang belum selesai), Aset Tidak Berwujud, atau Aset Lain-Lain. Realisasinya nyata, cuma belum jadi aset tetap; rinciannya ada di tabel Persilangan.`
+                : `${angka(mApp!.luarJenis)} dari pengadaan berada di luar objek 5.2.01–05 (mis. 5.2.06 Aset Tidak Berwujud), atau termin KDP yang kode rekeningnya belum diisi — tidak masuk tabel ini.`)
+              : undefined} />
+
+          {/* ── PERSILANGAN rekening × kode barang ──
+              Ini yang menjelaskan kenapa dua dasar di atas bisa beda sebaran.
+              Diagonal = belanja mendarat di jenis aset yang sesuai; di luar
+              diagonal = temuan yang perlu penjelasan di CaLK / koreksi
+              reklasifikasi. */}
+          <SilangTable s={silang!} belumMigrasi={golonganKosong} />
 
           {/* ── CHECK ── */}
           <div className="card overflow-hidden">
             <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between">
-              <p className="text-sm font-semibold text-gray-800">Check — LRA + Kapitalisasi − Reklasifikasi vs Entry Aplikasi</p>
+              <p className="text-sm font-semibold text-gray-800">
+                Check — LRA + Kapitalisasi − Reklasifikasi vs Entry Aplikasi
+                <span className="ml-2 text-xs font-normal text-gray-500">(dasar {dasar === 'barang' ? 'kode barang' : 'kode rekening'})</span>
+              </p>
               {check!.total === 0
                 ? <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded">Reconcile ✓</span>
                 : <span className="text-xs font-medium text-red-700 bg-red-50 px-2 py-0.5 rounded">Selisih {angka(check!.total)}</span>}
@@ -248,6 +315,9 @@ export default function LraPage() {
             <div className="px-4 py-2 border-t border-gray-100 text-xs text-gray-400">
               Selisih positif = LRA lebih besar dari entry aplikasi (kemungkinan ada belanja yang belum dientry / belum ditandai reklas).
               Negatif = entry aplikasi lebih besar (kemungkinan ada barjas yang belum ditandai kapitalisasi).
+              {dasar === 'barang'
+                ? ' Dasar KODE BARANG: selisih per jenis di sini juga memuat persilangan klasifikasi — belanja rekening A yang barangnya golongan B. Lihat tabel Persilangan di atas.'
+                : ' Dasar KODE REKENING: kedua sisi dikelompokkan per jenis belanja, jadi persilangan klasifikasi TIDAK terlihat di sini — pindahkan tuas ke Kode Barang, atau baca tabel Persilangan di atas.'}
             </div>
           </div>
         </div>
@@ -271,9 +341,11 @@ export default function LraPage() {
 
 // Tabel matriks jenis × 12 bulan + Total. Kalau `onDrill` diisi, angka non-nol
 // jadi tombol → buka rincian (grup/bulan null = "semua", untuk sel Total).
-function MatrixTable({ judul, m, note, kosongNote, onDrill }: {
+function MatrixTable({ judul, m, note, kosongNote, onDrill, aksi }: {
   judul: string; m: RekapMatrix; note?: string; kosongNote?: string
   onDrill?: (grup: string | null, bulan: number | null) => void
+  /** Kendali kecil di kanan judul (mis. tuas Dasar pengelompokan). */
+  aksi?: ReactNode
 }) {
   const kosong = m.totalKeseluruhan === 0
   const Sel = ({ v, grup, bulan, cls }: { v: number; grup: string | null; bulan: number | null; cls?: string }) => (
@@ -287,8 +359,9 @@ function MatrixTable({ judul, m, note, kosongNote, onDrill }: {
   )
   return (
     <div className="card overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
+      <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between gap-3">
         <p className="text-sm font-semibold text-gray-800">{judul}</p>
+        {aksi}
       </div>
       {kosong && kosongNote ? (
         <div className="p-6 text-center text-gray-400 text-sm">{kosongNote}</div>
@@ -320,6 +393,140 @@ function MatrixTable({ judul, m, note, kosongNote, onDrill }: {
         </div>
       )}
       {note && <div className="px-4 py-2 border-t border-gray-100 text-xs text-amber-700 bg-amber-50/50">{note}</div>}
+    </div>
+  )
+}
+
+/**
+ * Tuas dasar pengelompokan blok Entryan Aplikasi.
+ * ⚠️ Judulnya menyebut PERTANYAAN yang dijawab, bukan cuma nama kolomnya —
+ * "Kode Rekening" vs "Kode Barang" saja tak memberi tahu operator kenapa ia
+ * perlu memindahkannya, dan tuas yang tak dimengerti tak akan pernah dipakai.
+ */
+function DasarSwitch({ nilai, onGanti }: {
+  nilai: 'rekening' | 'barang'
+  onGanti: (v: 'rekening' | 'barang') => void
+}) {
+  const Btn = ({ v, label, title }: { v: 'rekening' | 'barang'; label: string; title: string }) => (
+    <button type="button" title={title} onClick={() => onGanti(v)}
+      className={`px-3 py-1 rounded-md transition-colors ${nilai === v
+        ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+      {label}
+    </button>
+  )
+  return (
+    <div className="flex items-center gap-2 flex-shrink-0">
+      <span className="text-xs text-gray-500">Dasar:</span>
+      <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs">
+        <Btn v="rekening" label="Kode Rekening"
+          title="Jenis BELANJA-nya (payload.kode_rekening). Sebanding langsung dgn box LRA — Check menjawab kelengkapan entry." />
+        <Btn v="barang" label="Kode Barang"
+          title="Jenis ASET-nya (golongan BMD, yang masuk Neraca & Daftar Barang) — Check menjawab ketepatan klasifikasi." />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Persilangan **kode rekening (belanja) × kode barang (aset)**.
+ *
+ * Kenapa tabel ini ada: box LRA dan blok Entryan Aplikasi sama-sama
+ * dikelompokkan per rekening, jadi kasus "belanja rekening Gedung & Bangunan
+ * tapi barangnya Peralatan & Mesin" TIDAK PERNAH muncul sbg selisih — Check
+ * tetap ✓. Kejadian nyata yang melahirkannya: Backdrop (Alat Hiasan,
+ * 1.3.2.05.02.06.027) Rp19.955.000 di Kecamatan Banyakan, dibeli dgn rekening
+ * 5.2.03.
+ *
+ * Cara bacanya: **diagonal = cocok**, di luar diagonal = persilangan. Baris
+ * total = angka dasar KODE REKENING, kolom total = angka dasar KODE BARANG —
+ * jadi tabel ini sekaligus jembatan antara kedua tuas di atas.
+ *
+ * ⚠️ Sel yang TAK BISA DINILAI (rekening/golongan tak diketahui, atau golongan
+ * yang memang tak punya padanan jenis belanja spt 1.3.6 KDP) sengaja TIDAK
+ * ditandai temuan — pola yang sama dgn `bergeserDariNibar`: menuduh
+ * persilangan yang tak terbukti sama merugikannya dgn melewatkan yang terbukti.
+ */
+function SilangTable({ s, belumMigrasi }: { s: Silang; belumMigrasi: boolean }) {
+  const judulKolom = (k: string) => k === TANPA_GOL ? k : `${k} ${GOL_URAIAN[k] ?? ''}`.trim()
+  const judulBaris = (b: string) => b === TANPA_REK ? b : `${b} ${JENIS_BM.find(j => j.grup === b)?.uraian ?? ''}`.trim()
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50/60 flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-gray-800">
+          Persilangan — Kode Rekening (belanja) × Kode Barang (aset)
+        </p>
+        {!belumMigrasi && (s.nSelSilang === 0
+          ? <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded flex-shrink-0">Tidak ada persilangan ✓</span>
+          : <span className="text-xs font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded flex-shrink-0">
+              {s.nSelSilang} sel silang · {angka(s.nilaiSilang)}
+            </span>)}
+      </div>
+
+      {belumMigrasi ? (
+        <div className="p-6 text-center text-sm text-amber-700 bg-amber-50/50">
+          Kode barang belum ikut terbaca dari server — migrasi
+          <span className="font-medium"> 20260909_01_lra_belanja_modal_silang.sql </span>
+          belum dijalankan. Angka di blok lain TIDAK terpengaruh.
+        </div>
+      ) : s.total === 0 ? (
+        <div className="p-6 text-center text-gray-400 text-sm">Belum ada belanja modal hasil entry aplikasi pada lingkup ini.</div>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="table-th text-left sticky left-0 bg-gray-50">Rekening \ Barang</th>
+                  {s.kolom.map(k => <th key={k} className="table-th text-right whitespace-nowrap">{judulKolom(k)}</th>)}
+                  <th className="table-th text-right border-l border-gray-100">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {s.baris.map(b => (
+                  <tr key={b}>
+                    <td className="table-td sticky left-0 bg-white whitespace-nowrap">{judulBaris(b)}</td>
+                    {s.kolom.map(k => {
+                      const v = s.sel[b]?.[k] ?? 0
+                      const st = statusSilang(b === TANPA_REK ? null : b, k === TANPA_GOL ? null : k)
+                      const silang = v !== 0 && st === false
+                      return (
+                        <td key={k}
+                          title={v === 0 ? undefined : silang
+                            ? `SILANG — dibelanjakan dari ${judulBaris(b)}, barangnya ${judulKolom(k)}`
+                            : st === true ? 'Cocok — rekening & jenis barangnya sepadan'
+                            : 'Tak bisa dinilai — tak ada padanan jenis belanja untuk golongan ini'}
+                          className={`table-td text-right tabular-nums ${silang ? 'bg-amber-50 text-amber-800 font-semibold' : ''}`}>
+                          {v === 0 ? <span className="text-gray-300">–</span> : angka(v)}
+                        </td>
+                      )
+                    })}
+                    <td className="table-td text-right tabular-nums font-medium border-l border-gray-100">
+                      {s.totalBaris[b] === 0 ? <span className="text-gray-300">–</span> : angka(s.totalBaris[b])}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-gray-50 font-semibold text-gray-900">
+                  <td className="table-td sticky left-0 bg-gray-50">TOTAL (dasar kode barang)</td>
+                  {s.kolom.map(k => (
+                    <td key={k} className="table-td text-right tabular-nums">
+                      {(s.totalKolom[k] ?? 0) === 0 ? <span className="text-gray-300">–</span> : angka(s.totalKolom[k])}
+                    </td>
+                  ))}
+                  <td className="table-td text-right tabular-nums border-l border-gray-100">{angka(s.total)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className={`px-4 py-2 border-t border-gray-100 text-xs ${s.nSelSilang > 0 ? 'text-amber-800 bg-amber-50/50' : 'text-gray-400'}`}>
+            {s.nSelSilang > 0
+              ? <>Sel berlatar kuning = <span className="font-medium">persilangan</span>: belanja dari rekening di baris itu, tapi barangnya masuk golongan di kolom itu.
+                  Totalnya {angka(s.nilaiSilang)}. Di LRA nilai itu menambah jenis belanjanya, di Neraca/Daftar Barang ia menambah golongan barangnya —
+                  perlu penjelasan di CaLK atau koreksi (reklasifikasi belanja / perbaikan kode barang).</>
+              : <>Semua belanja mendarat di jenis aset yang sepadan dgn rekeningnya. Baris TOTAL = angka dasar kode rekening; kolom TOTAL = angka dasar kode barang.</>}
+          </div>
+        </>
+      )}
     </div>
   )
 }
