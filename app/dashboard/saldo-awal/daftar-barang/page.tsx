@@ -72,6 +72,10 @@ type Row = {
   no_polisi: string | null; no_rangka: string | null; no_mesin: string | null; no_bpkb: string | null
   alamat_detail: string | null; wilayah_kode: string | null
   luas: number | null; jenis_hak: string | null
+  // Dokumen kepemilikan — dipakai kolom Tanah-like DAN Aset Lain-Lain (1.5.4).
+  nomor_dokumen_kepemilikan: string | null
+  tanggal_dokumen_kepemilikan: string | null
+  nama_dokumen_kepemilikan: string | null
   asal_usul: string | null; penggunaan_pengamanan: string | null
 }
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; search: string }
@@ -89,6 +93,7 @@ const COLS = [
   'beban_penyusutan_per_smt', 'foto_paths',
   'merek_tipe', 'spesifikasi_lainnya', 'no_polisi', 'no_rangka', 'no_mesin', 'no_bpkb',
   'alamat_detail', 'wilayah_kode', 'luas', 'jenis_hak',
+  'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
   'asal_usul', 'penggunaan_pengamanan',
 ].join(',')
 
@@ -140,6 +145,11 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   nopol: { header: 'No. Polisi' }, rangka: { header: 'No. Rangka' },
   mesin: { header: 'No. Mesin' }, bpkb: { header: 'No. BPKB' },
   lokasi: { header: 'Lokasi' }, luas: { header: 'Luas (m²)', align: 'right' }, hak: { header: 'Jenis Hak' },
+  // Judulnya SAMA PERSIS dgn Daftar Barang (COL_META di sana) — dua menu ini
+  // mengekspor barang yang sama & berkasnya sering disandingkan.
+  no_sertifikat: { header: 'Nomor Dokumen Kepemilikan' },
+  tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' },
+  atas_nama: { header: 'Nama Dokumen Kepemilikan' },
   komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
   mm: { header: 'Masa Manfaat (Smt)', align: 'center' },
   nilai: { header: 'Nilai Perolehan', align: 'right' },
@@ -159,6 +169,8 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 // Lainnya, sementara Daftar Barang belum. Identitas kendaraan itu yang paling
 // sering dicocokkan saat menelusuri baseline 2025; kalau nanti Daftar Barang
 // mau ikut, tinggal salin empat kunci ini ke sana.
+// (Sejak 2026-09-08 Daftar Barang SUDAH membawa keempatnya — tapi khusus di
+// golongan 1.5.4, yang di kedua menu ini kolomnya memang sengaja disamakan.)
 const BASE_COLS: Record<string, string[]> = {
   '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel
   '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
@@ -167,7 +179,15 @@ const BASE_COLS: Record<string, string[]> = {
   '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.5.3': ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // Aset Lain-Lain — kolom GABUNGAN semua template, sama persis dgn
+  // COLS['1.5.4'] di Daftar Barang (permintaan user 2026-09-08). Golongan ini
+  // diisi barang hasil reklasifikasi dari SEMUA golongan lain, jadi satu tabel
+  // memuat sekaligus bekas Tanah (luas, jenis hak, dokumen kepemilikan) DAN
+  // bekas Peralatan & Mesin (no. polisi/rangka/mesin/BPKB). Sel yang tak berlaku
+  // tampil "-" — itu yang justru dicari, supaya kelihatan mana yang masih kosong.
+  '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
+    'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
+    'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
 }
 const BASE_DEFAULT = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
 
@@ -198,7 +218,7 @@ const TOTAL_KEYS = new Set(['nilai', 'beban', 'akum', 'buku'])
 // pecah jadi tiga baris di kolom sempit & tak lagi terbaca sebagai satu nomor
 // polisi (permintaan user 2026-07-30). Tabelnya memang sudah bisa digeser
 // horizontal, jadi melebar sedikit lebih baik daripada nomor yang terbelah.
-const NOWRAP_KEYS = new Set(['nopol', 'rangka', 'mesin', 'bpkb', 'tgl'])
+const NOWRAP_KEYS = new Set(['nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'tgl_sertifikat'])
 function thClass(key: string) {
   const a = COL_META[key]?.align
   return `table-th${a === 'right' ? ' text-right' : a === 'center' ? ' text-center' : ''}`
@@ -700,6 +720,9 @@ export default function Page() {
       case 'lokasi': { const l = lokasiOf(r, bd); return [l.alamat, l.wilayah].filter(Boolean).join(' — ') }
       case 'luas': return luasOf(r, bd) ?? ''
       case 'hak': return r.jenis_hak || ''
+      case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
+      case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
+      case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
       case 'komptabel': return r.intra_ekstra || ''
       case 'tgl': return r.tgl_perolehan || ''
       case 'mm': return r.masa_manfaat_smt ?? ''

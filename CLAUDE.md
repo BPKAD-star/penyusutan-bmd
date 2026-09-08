@@ -3800,6 +3800,59 @@ Barang sendiri tak boleh ikut rusak.
   halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
   dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
 
+## Aset Lain-Lain (1.5.4): kolomnya GABUNGAN semua golongan (migrasi 20260908_01)
+
+Permintaan user 2026-09-08. Di **Daftar Barang** dan **Saldo Awal → Daftar
+Barang Awal**, golongan 1.5.4 kini menampilkan kolom lengkap: Spesifikasi
+Lainnya · **No. Polisi · No. Rangka · No. Mesin · No. BPKB** · Lokasi · **Luas ·
+Jenis Hak · Nomor/Tanggal/Nama Dokumen Kepemilikan**. Tabelnya jadi lebar &
+digeser horizontal — itu memang yang diminta.
+
+- **Sebabnya bukan selera tampilan.** 1.5.4 diisi barang hasil REKLASIFIKASI
+  dari semua golongan lain, jadi satu tabel memuat sekaligus bekas Tanah (butuh
+  luas & dokumen kepemilikan) dan bekas Peralatan & Mesin (butuh nomor rangka).
+  Aturan itu sudah lebih dulu tertulis di **`ASET_LAIN_LAIN_EXTRA`**
+  (lib/asetFields.ts), yang sejak awal menawarkan sembilan field yang sama di
+  form Koreksi Spesifikasi. ⚠️ **Daftar kolom 1.5.4 di kedua halaman SENGAJA
+  himpunan yang sama dengan konstanta itu** — ubah satu, samakan semuanya:
+  operator bisa MENGISI field yang tak pernah bisa ia LIHAT adalah keadaan yang
+  paling membingungkan dari dua-duanya.
+- **Golongan lain TIDAK disentuh** (user: "khusus yang aset lain lain aja").
+  Termasuk 1.3.2 di Daftar Barang, yang masih belum membawa nomor kendaraan
+  walau Daftar Barang Awal sudah — penyimpangan yang memang sudah tercatat.
+  Sekarang kolomnya sudah ada di `COL_META` & `cellContent`, jadi kalau nanti
+  diminta, cukup menyalin empat kunci itu ke `COLS['1.3.2']`.
+- ⚠️ **BUTUH MIGRASI, dan itu tidak terduga.** Layar & Export Daftar Barang tak
+  lagi men-`select` tabel `aset` sejak paginasi pindah ke server
+  (20260814_05..08) — keduanya membaca **`fn_daftar_barang`**. Kolom yang tak
+  ada di `RETURNS TABLE`-nya MUSTAHIL ditampilkan halaman, seberapa pun kodenya
+  disunting, dan gejalanya cuma kolom berisi "-" di semua baris. Fungsinya
+  **DI-DROP dulu** (RETURNS TABLE tak bisa diubah lewat `CREATE OR REPLACE`) →
+  GRANT & `SET search_path` WAJIB ditulis ulang. Tanda tangan argumennya tak
+  berubah, jadi tak ada overload baru. Badan fungsinya dibandingkan
+  baris-per-baris dgn 20260903_01: **satu-satunya beda = empat kolom baru di
+  empat tempat**, filter/urutan/kursor/guard identik.
+- **Daftar Barang Awal tak butuh migrasi** — ia membaca `aset_awal_2026`
+  langsung, dan kolomnya sudah ada sejak 20260704_20. Yang ditambah cuma tiga
+  kolom dokumen kepemilikan di `select` + `Row`.
+- Terisinya memang sedikit (dari 8.659 baris 1.5.4 aktif: no_polisi 113,
+  no_rangka 113, no_bpkb 94, no_mesin 17, luas 16, jenis_hak 13, dokumen
+  kepemilikan 33 — diukur ke produksi 2026-09-08). **Justru itu gunanya**:
+  selama kolomnya tak pernah tampil, tak ada yang tahu mana yang masih kosong.
+  Pengisiannya lewat Pembukuan → Koreksi → Spesifikasi Barang, atau (untuk
+  barang yang belum bergerak) Saldo Awal → Edit Spesifikasi.
+- **Export ikut kolom yang sama dengan layar** di kedua menu — berkas Excel yang
+  lebih miskin dari layar bikin operator yang sudah melihat nomor rangkanya di
+  aplikasi mengira datanya hilang. Di Daftar Barang urutannya tetap dipegang
+  `EXPORT_ORDER` (satu tempat); keempat kunci kendaraan disisipkan sesudah
+  `spesifikasi`, sama dgn urutan layar.
+- `NOWRAP_KEYS` ikut dipasang di Daftar Barang (sebelumnya cuma ada di Daftar
+  Barang Awal): tanpa itu "AG 1021 EP" pecah tiga baris di kolom sempit & tak
+  lagi terbaca sebagai satu nomor polisi.
+- ⚠️ **Deploy-ordering: migrasi 20260908_01 WAJIB jalan SEBELUM deploy kode.**
+  Kalau terbalik, keempat kolom baru tampil "-" untuk SEMUA baris tanpa satu pun
+  error — dan itu terbaca operator sebagai "datanya memang kosong".
+
 ## Import massal JANGAN mencocokkan barang lewat KODE BARANG (migrasi 20260819_01)
 
 Insiden 2026-08-19. User membuka Laporan BMD Model 3 (1.3.3, 2026-S2) dan

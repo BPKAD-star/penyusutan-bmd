@@ -9,8 +9,9 @@
 // bidang di GIS — badge "N bidang"), tetap ada di Export (EXPORT_COLS, utk BPK).
 //   - Tanah (1.3.1): tanpa kolom Komptabel (semua intrakomptabel); + Luas & Jenis Hak
 //   - Peralatan & Mesin (1.3.2): + Merek/Tipe + Spesifikasi
-// Catatan: field kendaraan (nopol, no rangka/mesin) belum ada kolom terstruktur
-// di DB — sementara pakai Keterangan/Spesifikasi bila terisi.
+//   - Aset Lain-Lain (1.5.4): SEMUA kolom sekaligus (2026-09-08) — luas, jenis
+//     hak, dokumen kepemilikan, DAN no. polisi/rangka/mesin/BPKB. Lihat
+//     COLS['1.5.4']; tabelnya memang jadi lebar & digeser horizontal.
 //
 // Tampilan: kalau hasil filter ≤ SHOW_ALL_MAX baris → tampilkan SEMUA (tanpa
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
@@ -42,7 +43,12 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 // — dipakai bersama Penyusutan & Rekonsiliasi. Varian daftar SEMBUNYI di sini
 // beda sendiri (plus `kdp_selesai_keluar`); itu disengaja, lihat modulnya.
 
-const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak'
+// ⚠️ KEMBAR dgn RETURNS TABLE `fn_daftar_barang` (migrasi 20260908_01) — jalur
+// ini cuma dipakai Export Audit yang memang men-`select` tabel langsung, tapi
+// dua-duanya mengisi `Row` yang SAMA. Kolom yang cuma ditambahkan di salah satu
+// bikin berkas Audit (untuk BPK) kekurangan kolom yang ada di layar, tanpa satu
+// pun error.
+const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -72,6 +78,12 @@ type Row = {
   tanggal_dokumen_kepemilikan: string | null
   nama_dokumen_kepemilikan: string | null
   jenis_hak: string | null
+  // Identitas kendaraan — dipakai kolom Aset Lain-Lain (1.5.4), yang isinya
+  // campuran hasil reklasifikasi dari semua golongan (lihat COLS['1.5.4']).
+  no_polisi: string | null
+  no_rangka: string | null
+  no_mesin: string | null
+  no_bpkb: string | null
 }
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
@@ -92,6 +104,8 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   luas: { header: 'Luas (m²)', align: 'right' }, no_sertifikat: { header: 'Nomor Dokumen Kepemilikan' },
   tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' }, atas_nama: { header: 'Nama Dokumen Kepemilikan' },
   hak: { header: 'Jenis Hak' },
+  nopol: { header: 'No. Polisi' }, rangka: { header: 'No. Rangka' },
+  mesin: { header: 'No. Mesin' }, bpkb: { header: 'No. BPKB' },
   // Dua kolom identitas — EXPORT-ONLY (tak pernah masuk COLS layar; di layar
   // NIBAR & kode register ditumpuk di sel Nama Barang). Ada di COL_META supaya
   // ikut satu sistem urutan yang sama dgn kolom lain (EXPORT_ORDER).
@@ -117,7 +131,22 @@ const COLS: Record<string, string[]> = {
   '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],                   // Aset Tetap Lainnya
   '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // KDP
   '1.5.3': ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],             // Aset Tidak Berwujud
-  '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Aset Lain-Lain — campuran (ada yg mirip P&M, ada yg mirip Tanah), tampilkan keduanya
+  // Aset Lain-Lain — SATU-SATUNYA golongan yang kolomnya GABUNGAN semua
+  // template (permintaan user 2026-09-08), dan itu bukan kelonggaran: 1.5.4
+  // diisi barang yang direklasifikasi dari SEMUA golongan lain, jadi satu tabel
+  // memuat sekaligus bekas Tanah (butuh luas, jenis hak, dokumen kepemilikan)
+  // DAN bekas Peralatan & Mesin (butuh no. polisi/rangka/mesin/BPKB). Kolom yang
+  // tak berlaku untuk satu baris tampil "-", dan itu justru yang dicari: selama
+  // kolomnya tak pernah muncul, tak ada yang tahu mana yang masih kosong.
+  // ⚠️ Aturannya sudah lebih dulu ada di `ASET_LAIN_LAIN_EXTRA`
+  // (lib/asetFields.ts) yang menawarkan sembilan field yang sama di form Koreksi
+  // Spesifikasi — daftar di sini SENGAJA memuat himpunan yang sama, jadi kalau
+  // salah satu berubah, samakan yang lain.
+  // Tabelnya jadi lebar & digeser horizontal; itu diterima, lihat catatan
+  // NOWRAP_KEYS di bawah.
+  '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
+    'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
+    'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
 }
 const DEFAULT_COLS = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
 const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
@@ -143,7 +172,8 @@ const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
 // memang ditampilkan Daftar Barang untuk jenis aset itu.
 const EXPORT_ORDER = [
   'skpd', 'kode', 'uraian', 'nibar', 'kode_register', 'nama',
-  'merek', 'spesifikasi', 'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
+  'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
+  'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
   'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan',
 ]
 // Dua kolom identitas ini SELALU ikut, apa pun golongannya — sengaja di luar
@@ -157,7 +187,12 @@ const EXPORT_COLS: Record<string, string[]> = {
   '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // Aset Lain-Lain: berkasnya membawa kolom yang SAMA dgn layar (lihat
+  // COLS['1.5.4']) — Excel yang lebih miskin dari layar bikin operator yang
+  // sudah melihat nomor rangkanya di aplikasi menganggap datanya hilang.
+  '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
+    'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
+    'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
 }
 const EXPORT_DEFAULT = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
 // Himpunan kolom golongan + yang selalu ikut, DIURUTKAN oleh EXPORT_ORDER.
@@ -188,15 +223,22 @@ const HAPUS_LABEL: Record<string, string> = {
   penghapusan_sebab_lain: 'Sebab Lain',
 }
 
+// Kolom yang isinya SATU nomor utuh — dipaksa satu baris. Tanpa ini "AG 1021 EP"
+// pecah jadi tiga baris di kolom sempit & tak lagi terbaca sebagai satu nomor
+// polisi. Aturan & alasannya kembar dgn Saldo Awal → Daftar Barang Awal
+// (NOWRAP_KEYS di sana); tabelnya memang sudah bisa digeser horizontal, jadi
+// melebar sedikit lebih baik daripada nomor yang terbelah.
+const NOWRAP_KEYS = new Set(['nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'tgl_sertifikat'])
 function thClass(key: string) {
   const a = COL_META[key]?.align
   return `table-th${a === 'right' ? ' text-right' : a === 'center' ? ' text-center' : ''}`
+    + (NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : '')
 }
 function tdClass(key: string) {
   if (key === 'nama' || key === 'kode') return 'table-td align-top'
   if (key === 'nilai' || key === 'luas') return 'table-td text-right text-xs'
   if (key === 'komptabel') return 'table-td text-center text-xs capitalize'
-  return 'table-td text-xs text-gray-600 align-top'
+  return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
 }
 
 export default function DaftarBarangPage() {
@@ -652,6 +694,10 @@ export default function DaftarBarangPage() {
           case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
           case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
           case 'hak': return r.jenis_hak || ''
+          case 'nopol': return r.no_polisi || ''
+          case 'rangka': return r.no_rangka || ''
+          case 'mesin': return r.no_mesin || ''
+          case 'bpkb': return r.no_bpkb || ''
           default: return ''
         }
       }
@@ -716,6 +762,10 @@ export default function DaftarBarangPage() {
           case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
           case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
           case 'hak': return r.jenis_hak || ''
+          case 'nopol': return r.no_polisi || ''
+          case 'rangka': return r.no_rangka || ''
+          case 'mesin': return r.no_mesin || ''
+          case 'bpkb': return r.no_bpkb || ''
           default: return ''
         }
       }
@@ -817,6 +867,10 @@ export default function DaftarBarangPage() {
       case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || '-'
       case 'atas_nama': return r.nama_dokumen_kepemilikan || '-'
       case 'hak': return r.jenis_hak || '-'
+      case 'nopol': return r.no_polisi || '-'
+      case 'rangka': return r.no_rangka || '-'
+      case 'mesin': return r.no_mesin || '-'
+      case 'bpkb': return r.no_bpkb || '-'
       default: return '-'
     }
   }
