@@ -2874,10 +2874,31 @@ Berkasnya: `lib/formatPengamanan.ts` (+ test) · `lib/laporanPengamanan.ts` ·
 - Isiannya kini **Nama · Nomor Identitas · Status Penghuni · Jabatan · Alamat**,
   lalu No/Tgl BAST & No/Tgl Pakta Integritas. **Pangkat/Golongan DICABUT dari
   form** (tak ada di lembar mana pun).
-- **Tersusun KE BAWAH, bukan dua kolom bersebelahan** (permintaan user): kelima
-  isian identitas dibaca sebagai satu rangkaian; bersebelahan, mata melompat
-  kiri-kanan & urutan yang disepakati tak lagi terbaca. Dikunci uji
-  ("`sm:grid-cols-2` tak boleh kembali").
+- ⚠️ **TATA LETAKNYA: DUA KOLOM BERPASANGAN + BLOK DOKUMEN TERPISAH** — bukan
+  satu kolom panjang. Saya sempat salah membaca "jangan samping-sampingan" jadi
+  "satu kolom"; yang dimaksud user ternyata **pasangannya yang kacau**, bukan
+  jumlah kolomnya. Sketsanya (2026-09-08):
+
+      Nama              | Nomor Identitas
+      Status Penghuni   | Jabatan
+      Alamat            | Keterangan
+      [BAST: No · Tgl · Berkas]  |  [Pakta: No · Tgl · Berkas]
+
+  Pasangan tiap barisnya BUKAN kebetulan: yang sebaris adalah hal yang diisi
+  bersamaan dari SATU sumber — Nama & Nomor Identitas dari KTP/SK yang sama,
+  Status & Jabatan sama-sama soal kedudukan orangnya, Alamat & Keterangan
+  sama-sama teks bebas panjang.
+  ⚠️ Yang SUNGGUH salah di versi lama: isian dokumen **diselang-seling** dengan
+  identitas, jadi "Alamat" sebaris dengan "No. Dokumen BAST" dan "Tanggal BAST"
+  sebaris dengan "No. Pakta Integritas" — mata harus melompat antar dokumen di
+  tiap baris, dan kedua tombol unggah terpencar jauh dari nomor/tanggal
+  dokumennya sendiri. Sekarang tiap dokumen jadi SATU kotak berisi Nomor ·
+  Tanggal · Berkas, dan peringatan "wajib diunggah" berdiri tepat di bawah
+  dokumen yang dimaksudnya.
+  ⚠️ Satu kolom panjang bukan perbaikan: ia membuat formulir dua kali lebih
+  tinggi tanpa menambah satu pun kejelasan. Dikunci uji — yang dijaga
+  PENGELOMPOKANNYA (tiap dokumen satu blok) & urutan isiannya, BUKAN jumlah
+  kolomnya.
 - ⚠️ **Nomor Identitas boleh NIK ATAU NIP** — teks bebas. `Status Penghuni` juga
   teks bebas, BUKAN dropdown: taksonomi itu tak pernah ditetapkan di aplikasi ini
   maupun di data mana pun, jadi daftar pilihan apa pun yang dikarang akan memaksa

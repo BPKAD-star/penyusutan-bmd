@@ -297,9 +297,34 @@ describe('form isian menu Pengamanan sejalan dgn lembarnya', () => {
     }
   })
 
-  it('formnya URUT KE BAWAH, bukan dua kolom bersebelahan', () => {
-    // Keputusan user 2026-09-08. `sm:grid-cols-2` mengembalikan tata letak lama.
+  it('identitas & dokumen DIPISAH — dokumen dikelompokkan per dokumennya', () => {
+    // ⚠️ Susunan ditentukan user lewat sketsa (2026-09-08, revisi dari
+    // "urut ke bawah" yang sempat saya buat & ternyata salah baca). Yang
+    // dijaga di sini BUKAN jumlah kolomnya, tapi PENGELOMPOKANNYA: nomor,
+    // tanggal, & berkas tiap dokumen harus duduk dalam satu blok. Versi
+    // sebelumnya menyelang-nyeling keduanya, jadi "Tanggal BAST" bisa sebaris
+    // dengan "No. Pakta Integritas" & tombol unggahnya terpencar jauh dari
+    // nomor/tanggal dokumennya sendiri.
     const isi = fs.readFileSync(form, 'utf8')
-    expect(isi, 'form kembali dua kolom').not.toContain('sm:grid-cols-2')
+    for (const judul of ['Berita Acara Serah Terima (BAST)', 'Pakta Integritas']) {
+      expect(isi, `blok '${judul}' hilang`).toContain(judul)
+    }
+    // Tiap blok dokumen memuat tombol unggahnya sendiri.
+    expect([...isi.matchAll(/rounded-lg border border-gray-200 p-4 space-y-3/g)].length,
+      'blok dokumen tak lagi berdiri sendiri').toBeGreaterThanOrEqual(4)
+  })
+
+  it('pasangan sebaris = hal yang diisi dari sumber yang sama', () => {
+    // Nama|Nomor Identitas · Status|Jabatan · Alamat|Keterangan — urutan itu
+    // yang menentukan pasangannya di grid dua kolom.
+    const isi = fs.readFileSync(form, 'utf8')
+    const urut = ['Nama Penghuni / Pemakai', 'Nomor Identitas', 'Status Penghuni / Pemakai',
+      'Jabatan', 'Alamat', 'Keterangan']
+    let pos = -1
+    for (const label of urut) {
+      const i = isi.indexOf(label, pos + 1)
+      expect(i, `label '${label}' tak ditemukan sesudah yang sebelumnya`).toBeGreaterThan(pos)
+      pos = i
+    }
   })
 })

@@ -369,15 +369,26 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
           <h3 className="font-semibold text-gray-800">Edit Header Pengamanan</h3>
           <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>
         </div>
-        <div className="p-5 grid grid-cols-1 gap-4">
-          {/* ⚠️ URUT KE BAWAH, bukan dua kolom bersebelahan (keputusan user
-              2026-09-08). Kelima isian identitas penghuni dibaca sebagai satu
-              rangkaian; ditata bersebelahan, mata melompat kiri-kanan & urutan
-              yang disepakati tak lagi terbaca.
-              ⚠️ URUTANNYA DITENTUKAN USER & SENGAJA SAMA dengan kolom lembar
-              Permendagri IV.J: Nama → Nomor Identitas → Status → Jabatan →
-              Alamat. Menukarnya membuat operator mengisi form dalam urutan yang
-              berbeda dari lembar yang ia salin. */}
+        <div className="p-5 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+          {/* ── Identitas penghuni/pemakai — DUA KOLOM YANG BERPASANGAN ──────
+              ⚠️ Susunannya ditentukan user 2026-09-08 lewat sketsa, dan
+              pasangan tiap barisnya BUKAN kebetulan: yang sebaris adalah hal
+              yang diisi bersamaan dari satu sumber. Nama & Nomor Identitas
+              dibaca dari KTP/SK yang sama; Status & Jabatan sama-sama soal
+              kedudukan orangnya; Alamat & Keterangan sama-sama teks bebas
+              panjang. Menata ulang jadi satu kolom panjang (yang sempat saya
+              lakukan) membuat formulir jadi dua kali lebih tinggi tanpa
+              menambah satu pun kejelasan.
+              ⚠️ Blok dokumen SENGAJA DIPISAH ke bawah & dikelompokkan per
+              dokumen (BAST | Pakta), bukan diselang-seling seperti sebelumnya —
+              dulu "Alamat" bisa sebaris dengan "No. Dokumen BAST" & "Tanggal
+              BAST" sebaris dengan "No. Pakta", jadi mata harus melompat antar
+              dokumen di tiap baris.
+              ⚠️ URUTAN ISIANNYA sendiri SENGAJA sama dgn kolom lembar
+              Permendagri IV.J (Nama → Nomor Identitas → Status → Jabatan →
+              Alamat) supaya operator tak mengisi form dalam urutan yang berbeda
+              dari lembar yang ia salin. */}
           <div>
             <label className="block text-xs text-gray-500 mb-1">Nama Penghuni / Pemakai</label>
             <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} />
@@ -406,28 +417,44 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
             <input className="select-filter w-full" value={alamat} onChange={e => setAlamat(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">No. BAST <span className="text-gray-400">(tetap di {header.periode})</span></label>
-            <input className="select-filter w-full" value={noSk} onChange={e => setNoSk(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Tanggal BAST</label>
-            <input type="date" className="select-filter w-full" max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
-            {pindahSemester && <p className="text-xs text-red-600 mt-1">Tanggal ini masuk {tglPeriode} — di luar semester BAST.</p>}
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">No. Pakta Integritas</label>
-            <input className="select-filter w-full" value={paktaNo} onChange={e => setPaktaNo(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Tanggal Pakta Integritas</label>
-            <input type="date" className="select-filter w-full" max={dateBounds.max} value={paktaTgl} onChange={e => setPaktaTgl(e.target.value)} />
-          </div>
-          <div className="sm:col-span-2">
             <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
             <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
           </div>
-          {err && <p className="sm:col-span-2 text-sm text-red-600">{err}</p>}
-          <p className="sm:col-span-2 text-xs text-gray-400">Catatan: berkas PDF BAST/Pakta diatur saat pembuatan BAST. Untuk mengganti berkas, batalkan & buat BAST baru.</p>
+        </div>
+
+        {/* ── Dokumen: satu blok per dokumen, berdampingan ────────────────────
+            Tiap blok berdiri sendiri (Nomor · Tanggal), jadi operator menyalin
+            satu lembar dokumen tanpa berpindah kolom. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-700">Berita Acara Serah Terima (BAST)</p>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">
+                No. BAST <span className="text-gray-400">(tetap di {header.periode})</span>
+              </label>
+              <input className="select-filter w-full" value={noSk} onChange={e => setNoSk(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Tanggal BAST</label>
+              <input type="date" className="select-filter w-full" max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
+              {pindahSemester && <p className="text-xs text-red-600 mt-1">Tanggal ini masuk {tglPeriode} — di luar semester BAST.</p>}
+            </div>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-700">Pakta Integritas</p>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">No. Pakta Integritas</label>
+              <input className="select-filter w-full" value={paktaNo} onChange={e => setPaktaNo(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Tanggal Pakta Integritas</label>
+              <input type="date" className="select-filter w-full" max={dateBounds.max} value={paktaTgl} onChange={e => setPaktaTgl(e.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        {err && <p className="text-sm text-red-600">{err}</p>}
+        <p className="text-xs text-gray-400">Catatan: berkas PDF BAST/Pakta diatur saat pembuatan BAST. Untuk mengganti berkas, batalkan &amp; buat BAST baru.</p>
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white">
           <button className="btn-secondary" onClick={onClose}>Batal</button>
@@ -552,76 +579,94 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
           <h2 className="text-base font-semibold text-gray-800">BAST Pengamanan Baru — {skpdNama}</h2>
           <button className="btn-secondary text-xs" onClick={onCancel}>← Kembali</button>
         </div>
-        <div className="grid grid-cols-1 gap-4">
-          {/* ⚠️ URUT KE BAWAH, bukan dua kolom bersebelahan (keputusan user
-              2026-09-08). Kelima isian identitas penghuni dibaca sebagai satu
-              rangkaian; ditata bersebelahan, mata melompat kiri-kanan & urutan
-              yang disepakati tak lagi terbaca.
-              ⚠️ URUTANNYA DITENTUKAN USER & SENGAJA SAMA dengan kolom lembar
-              Permendagri IV.J: Nama → Nomor Identitas → Status → Jabatan →
-              Alamat. Menukarnya membuat operator mengisi form dalam urutan yang
-              berbeda dari lembar yang ia salin. */}
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Nama Penghuni / Pemakai</label>
-            <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} />
+        <div className="space-y-4">
+          {/* ── Identitas penghuni/pemakai — DUA KOLOM YANG BERPASANGAN ──────
+              ⚠️ Susunannya ditentukan user 2026-09-08 lewat sketsa, dan pasangan
+              tiap barisnya BUKAN kebetulan: yang sebaris adalah hal yang diisi
+              bersamaan dari satu sumber. Nama & Nomor Identitas dibaca dari
+              KTP/SK yang sama; Status & Jabatan sama-sama soal kedudukan
+              orangnya; Alamat & Keterangan sama-sama teks bebas panjang.
+              ⚠️ Blok dokumen SENGAJA DIPISAH ke bawah & dikelompokkan PER
+              DOKUMEN (BAST | Pakta) berikut tombol unggahnya masing-masing —
+              bukan diselang-seling seperti sebelumnya, waktu "Tanggal BAST"
+              bisa sebaris dengan "No. Pakta Integritas" & kedua tombol unggah
+              terpencar jauh dari nomor/tanggal dokumennya sendiri.
+              ⚠️ URUTAN ISIANNYA SENGAJA sama dgn kolom lembar Permendagri IV.J
+              (Nama → Nomor Identitas → Status → Jabatan → Alamat) supaya
+              operator tak mengisi form dalam urutan yang berbeda dari lembar
+              yang ia salin. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Nama Penghuni / Pemakai</label>
+              <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">
+                Nomor Identitas <span className="text-gray-400">(NIK atau NIP)</span>
+              </label>
+              <input className="select-filter w-full" value={identitas} onChange={e => setIdentitas(e.target.value)} />
+            </div>
+            <div>
+              {/* ⚠️ Teks bebas, BUKAN dropdown: taksonomi "status penghuni" tak
+                  pernah ditetapkan di aplikasi ini maupun di data mana pun. */}
+              <label className="block text-xs text-gray-500 mb-1">Status Penghuni / Pemakai</label>
+              <input className="select-filter w-full" value={status} onChange={e => setStatus(e.target.value)}
+                placeholder="mis. PNS, PPPK, Tenaga Kontrak" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
+              <input className="select-filter w-full" value={jabatan} onChange={e => setJabatan(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Alamat</label>
+              <input className="select-filter w-full" value={alamat} onChange={e => setAlamat(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
+              <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">
-              Nomor Identitas <span className="text-gray-400">(NIK atau NIP)</span>
-            </label>
-            <input className="select-filter w-full" value={identitas} onChange={e => setIdentitas(e.target.value)} />
+
+          {/* ── Dokumen: satu blok per dokumen, berdampingan ──────────────────
+              Nomor · Tanggal · Berkas dikumpulkan dalam SATU kotak per dokumen,
+              jadi operator menyalin satu lembar tanpa berpindah kolom — dan
+              peringatan "wajib diunggah" berdiri tepat di bawah dokumen yang
+              dimaksudnya, bukan di seberang halaman. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+              <p className="text-xs font-semibold text-gray-700">Berita Acara Serah Terima (BAST)</p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">No. Dokumen BAST</label>
+                <input className="select-filter w-full" value={noSk} onChange={e => setNoSk(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Tanggal BAST</label>
+                <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
+                <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tgl)}</p>
+              </div>
+              <DokumenBastField paths={bastPaths} uploading={uploading} onUpload={f => upload(f, 'bast')} onHapus={p => hapusDok(p, 'bast')}
+                judul="Berkas BAST" labelTombol="Upload BAST"
+                hint="Berita Acara Penyerahan — foto / PDF, bisa lebih dari satu"
+                kosongText="Belum ada berkas BAST — wajib diunggah sebelum bisa disimpan." />
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+              <p className="text-xs font-semibold text-gray-700">Pakta Integritas</p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">No. Pakta Integritas</label>
+                <input className="select-filter w-full" value={paktaNo} onChange={e => setPaktaNo(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Tanggal Pakta Integritas</label>
+                <input type="date" className="select-filter w-full" max={dateBounds.max} value={paktaTgl} onChange={e => setPaktaTgl(e.target.value)} />
+              </div>
+              <DokumenBastField paths={paktaPaths} uploading={uploading} onUpload={f => upload(f, 'pakta')} onHapus={p => hapusDok(p, 'pakta')}
+                judul="Berkas Pakta Integritas" labelTombol="Upload Pakta Integritas"
+                hint="foto / PDF, bisa lebih dari satu"
+                kosongText="Belum ada berkas Pakta Integritas — wajib diunggah sebelum bisa disimpan." />
+            </div>
           </div>
-          <div>
-            {/* ⚠️ Teks bebas, BUKAN dropdown: taksonomi "status penghuni" tak
-                pernah ditetapkan di aplikasi ini maupun di data mana pun, jadi
-                daftar pilihan apa pun yang saya karang akan memaksa operator
-                memilih yang tak tepat. */}
-            <label className="block text-xs text-gray-500 mb-1">Status Penghuni / Pemakai</label>
-            <input className="select-filter w-full" value={status} onChange={e => setStatus(e.target.value)}
-              placeholder="mis. PNS, PPPK, Tenaga Kontrak" />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Jabatan</label>
-            <input className="select-filter w-full" value={jabatan} onChange={e => setJabatan(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Alamat</label>
-            <input className="select-filter w-full" value={alamat} onChange={e => setAlamat(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">No. Dokumen BAST</label>
-            <input className="select-filter w-full" value={noSk} onChange={e => setNoSk(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Tanggal BAST</label>
-            <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
-            <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tgl)}</p>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">No. Pakta Integritas</label>
-            <input className="select-filter w-full" value={paktaNo} onChange={e => setPaktaNo(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Tanggal Pakta Integritas</label>
-            <input type="date" className="select-filter w-full" max={dateBounds.max} value={paktaTgl} onChange={e => setPaktaTgl(e.target.value)} />
-          </div>
-          <div>
-            <DokumenBastField paths={bastPaths} uploading={uploading} onUpload={f => upload(f, 'bast')} onHapus={p => hapusDok(p, 'bast')}
-              judul="Berkas BAST" labelTombol="Upload BAST"
-              hint="Berita Acara Penyerahan — wajib sebelum BAST pengamanan bisa disimpan (foto / PDF, bisa lebih dari satu)"
-              kosongText="Belum ada berkas BAST — wajib diunggah sebelum BAST pengamanan bisa disimpan." />
-          </div>
-          <div>
-            <DokumenBastField paths={paktaPaths} uploading={uploading} onUpload={f => upload(f, 'pakta')} onHapus={p => hapusDok(p, 'pakta')}
-              judul="Berkas Pakta Integritas" labelTombol="Upload Pakta Integritas"
-              hint="wajib sebelum BAST pengamanan bisa disimpan (foto / PDF, bisa lebih dari satu)"
-              kosongText="Belum ada berkas Pakta Integritas — wajib diunggah sebelum BAST pengamanan bisa disimpan." />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
-            <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)} />
-          </div>
-          {uploading && <p className="sm:col-span-2 text-xs text-gray-400">Mengunggah...</p>}
+
+          {uploading && <p className="text-xs text-gray-400">Mengunggah...</p>}
         </div>
       </div>
 
