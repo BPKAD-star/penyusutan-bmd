@@ -3800,6 +3800,58 @@ Barang sendiri tak boleh ikut rusak.
   halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
   dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
 
+## ✎ Edit Header untuk kartu Pemecahan & Penggabungan (2026-09-08)
+
+User menanyakan kenapa Reklasifikasi punya ikon ✎ sementara kartu Pemecahan di
+menu Koreksi tidak. Jawabannya: **tak ada alasan yang sahih** — dan alasan yang
+tertulis di kode ternyata KELIRU.
+
+- **Komentar lamanya salah baca aturan repo ini.** Di `PemecahanCard` &
+  `PenggabunganCard` tertulis *"Ledgernya append-only jadi kartunya tak bisa
+  diperbaiki"*. Yang append-only cuma **`transaksi_bmd`**; dokumen sumber
+  tinggal di **`jurnal_header.payload`**, tabel yang memang boleh di-UPDATE (itu
+  seluruh dasar pola jurnal ber-SK: "Header menyimpan No SK, tanggal, periode,
+  jenis, keterangan — boleh diedit. Baris ledger tetap beku"). Buktinya kartu
+  koreksi biasa (nilai/spesifikasi/pencatatan ganda) juga sudah punya baris
+  ledger sejak detik ia dibuat, dan ✎-nya ada sejak dulu.
+- Konsekuensinya kartu Pemecahan/Penggabungan yang lahir **sebelum** dokumen
+  sumber diwajibkan (2026-09-07) terkunci selamanya tanpa berkas — padahal
+  stripnya sendiri menyuruh melengkapi. Strip amber-nya kini berbunyi sama dgn
+  kartu lain: "⚠ Belum ada dokumen sumber — lengkapi lewat ✎."
+- **`EditHeaderModal` prop-nya dilonggarkan ke `HeaderEditable`** (id · no_sk ·
+  tanggal · periode · keterangan · payload) — sengaja LEBIH SEMPIT dari
+  `Header`, karena `PemecahanHeader`/`PenggabunganHeader` tak punya `jenis`
+  bertipe `Alasan` maupun `kategori`. Melonggarkan tipe lebih baik daripada
+  meng-`as`-kan tiga bentuk header jadi satu.
+- **✎ tetap muncul di kartu yang sudah DIBATALKAN**, beda dari tombol Batal.
+  Peristiwanya tetap pernah terjadi & dokumen dasarnya tetap perlu bisa
+  dilampirkan; DB pun tak melarangnya.
+- ⚠️ Yang TIDAK ikut longgar: **pindah semester**. Lihat bagian di bawah.
+
+**Tak ada migrasi** — murni tampilan; `payload` sudah `jsonb` & policy-nya sudah
+ada sejak kartu koreksi biasa memakai jalur yang sama.
+
+### Pindah semester lewat ✎ — sudah dicekal, TIGA lapis
+
+Pertanyaan user: "edit tanggal tapi beda semester itu gabisa klik simpan kan?"
+Betul, dan penjaganya berlapis (diperiksa ulang 2026-09-08, bukan diasumsikan):
+
+1. **Tombol Simpan MATI** (`disabled={saving || pindahSemester}`) — di
+   `EditHeaderModal` Koreksi MAUPUN Reklasifikasi.
+2. **Keterangan merah di bawah kotak tanggal**, muncul begitu tanggalnya
+   diketik: *"Tanggal ini masuk 2026-S1 — di luar semester jurnal. Ganti
+   tanggal, atau batalkan & entry ulang."* ⚠️ Ini yang membuat tombol mati itu
+   bukan kegagalan senyap; jangan dihapus kalau kelak merapikan tampilan.
+3. **`simpan()` memeriksa ulang** sebelum menembak DB (jaga-jaga kalau
+   tombolnya kelak dihidupkan tanpa sengaja).
+
+Penegak SESUNGGUHNYA tetap **trigger DB `fn_jurnal_header_guard`**, yang berlaku
+untuk SEMUA kartu ber-`jurnal_header` — termasuk Pemecahan & Penggabungan yang
+baru dapat ✎ hari ini, jadi pintu barunya tak menambah celah:
+`'Tanggal (%) di luar semester jurnal (%). Untuk pindah semester, batalkan
+jurnal & entry ulang.'` Trigger yang sama juga memaksa `periode` tetap beku
+(`NEW.periode := OLD.periode`) & menolak `skpd_id`/`kategori` berubah.
+
 ## Penyelarasan kolom kartu perolehan & Gedung-Bangunan (2026-09-08)
 
 Tiga permintaan user dalam satu putaran. **Tak ada migrasi** — seluruhnya

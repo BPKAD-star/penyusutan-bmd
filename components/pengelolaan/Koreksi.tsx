@@ -96,6 +96,14 @@ type Header = {
   id: string; no_sk: string; tanggal: string; periode: string; jenis: Alasan
   keterangan: string | null; kategori: 'koreksi'; payload: HeaderPayload
 }
+/** Yang benar-benar dibutuhkan `EditHeaderModal` — sengaja LEBIH SEMPIT dari
+ *  `Header`, supaya kartu Pemecahan & Penggabungan (yang tak punya `jenis`
+ *  bertipe `Alasan` maupun `kategori`) ikut bisa memakainya tanpa dipaksa
+ *  di-cast. Ketiga bentuk header di berkas ini memuat kelima ruas ini. */
+type HeaderEditable = {
+  id: string; no_sk: string; tanggal: string; periode: string
+  keterangan: string | null; payload: HeaderPayload
+}
 type JurnalLine = {
   trx_id: number         // id baris ledger koreksi — dipakai target_trx_id saat batal
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
@@ -163,7 +171,7 @@ function KoreksiTransaksi() {
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [addTo, setAddTo] = useState<Header | null>(null)
-  const [editing, setEditing] = useState<Header | null>(null)
+  const [editing, setEditing] = useState<HeaderEditable | null>(null)
   const [batalId, setBatalId] = useState<string | null>(null)
   // Pintasan "✎ Spesifikasi" di kartu Pemecahan: barang pecahan diseret ke tab
   // Spesifikasi jurnal BARU, sudah tercentang. Sengaja lewat alur koreksi yang
@@ -536,11 +544,13 @@ function KoreksiTransaksi() {
                 bisaBatal={tahunMap[parsePeriode(j.periode).tahun] === 'terbuka'}
                 spekBusy={presetBusy}
                 onKoreksiSpek={p => koreksiSpekPecahan(p, j)}
+                onEdit={() => { setMsg(''); setEditing(j) }}
                 onBatal={() => handleBatalPemecahan(j)} />
             ))}
             {penggabunganJurnals.map(j => (
               <PenggabunganCard key={j.id} j={j} busy={batalId === j.id}
                 bisaBatal={tahunMap[parsePeriode(j.periode).tahun] === 'terbuka'}
+                onEdit={() => { setMsg(''); setEditing(j) }}
                 onBatal={() => handleBatalPenggabungan(j)} />
             ))}
             {jurnals.map(j => {
@@ -632,7 +642,7 @@ function KoreksiTransaksi() {
 }
 
 // ── Modal edit header: No dokumen + tanggal (kunci semester sama) + keterangan ──
-function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose: () => void; onSaved: () => void }) {
+function EditHeaderModal({ header, onClose, onSaved }: { header: HeaderEditable; onClose: () => void; onSaved: () => void }) {
   const supabase = createClient()
   const dateBounds = useDateBounds()
   const [noSk, setNoSk] = useState(header.no_sk)
@@ -2145,11 +2155,12 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
 // ════════════════════════════════════════════════════════════════════════
 // Pemecahan Barang — kartu tampil (induk retire + N pecahan) + tombol Batal
 // ════════════════════════════════════════════════════════════════════════
-function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onBatal }: {
+function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onEdit, onBatal }: {
   j: PemecahanJurnal; busy: boolean; bisaBatal: boolean
   /** aset_id pecahan yang sedang ditarik untuk dikoreksi, atau null. */
   spekBusy: string | null
   onKoreksiSpek: (p: PemecahanRow) => void
+  onEdit: () => void
   onBatal: () => void
 }) {
   return (
@@ -2164,11 +2175,15 @@ function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onBatal }:
             <p className="text-xs text-gray-500">Tgl. {j.tanggal} · {j.periode} · {j.pecahan.length} pecahan</p>
             {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
             <DokumenLinks paths={j.payload?.dokumen_paths || []} label="Dokumen Sumber" />
-            {/* Kartu yang dibuat SEBELUM dokumen diwajibkan (2026-09-07) tak
-                punya berkas. Ledgernya append-only jadi kartunya tak bisa
-                diperbaiki — yang bisa dilakukan cuma mengatakannya terus terang. */}
+            {/* ⚠️ Kartu ini SEKARANG bisa dilengkapi lewat ✎ (2026-09-08).
+                Sebelumnya di sini tertulis "ledgernya append-only jadi kartunya
+                tak bisa diperbaiki" — dan itu KELIRU: yang append-only cuma
+                `transaksi_bmd`, sedangkan dokumen sumber tinggal di
+                `jurnal_header.payload` yang memang boleh di-UPDATE. Kartu
+                koreksi biasa (nilai/spesifikasi/ganda) juga sudah punya baris
+                ledger sejak detik ia dibuat & tetap punya ✎ sejak dulu. */}
             {(j.payload?.dokumen_paths?.length || 0) === 0 && (
-              <p className="text-xs text-amber-600">⚠ Tanpa dokumen sumber (dibuat sebelum berkas diwajibkan).</p>
+              <p className="text-xs text-amber-600">⚠ Belum ada dokumen sumber — lengkapi lewat ✎.</p>
             )}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
@@ -2176,6 +2191,12 @@ function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onBatal }:
               <p className="text-xs text-gray-400">Total Nilai Pecahan</p>
               <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
             </div>
+            {/* ✎ tetap ada walau kartunya sudah DIBATALKAN: dokumen sumber
+                peristiwa yang pernah terjadi tetap perlu bisa dilampirkan, dan
+                DB tak melarangnya. Yang dikunci cuma pindah semester. */}
+            <button title="Edit No dokumen / tanggal (dalam semester yang sama) & unggah dokumen sumber"
+              onClick={onEdit}
+              className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
             {!j.dibatalkan && (
               <button disabled={busy || !bisaBatal} onClick={onBatal}
                 title={bisaBatal ? 'Batalkan pemecahan — induk kembali aktif' : 'Tahun sudah terkunci — tidak bisa dibatalkan'}
@@ -2251,8 +2272,8 @@ function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onBatal }:
 // ════════════════════════════════════════════════════════════════════════
 // Penggabungan Barang — kartu tampil (induk + N sumber yang dilebur) + Batal
 // ════════════════════════════════════════════════════════════════════════
-function PenggabunganCard({ j, busy, bisaBatal, onBatal }: {
-  j: PenggabunganJurnal; busy: boolean; bisaBatal: boolean; onBatal: () => void
+function PenggabunganCard({ j, busy, bisaBatal, onEdit, onBatal }: {
+  j: PenggabunganJurnal; busy: boolean; bisaBatal: boolean; onEdit: () => void; onBatal: () => void
 }) {
   return (
     <div className="card overflow-hidden">
@@ -2266,11 +2287,9 @@ function PenggabunganCard({ j, busy, bisaBatal, onBatal }: {
             <p className="text-xs text-gray-500">Tgl. {j.tanggal} · {j.periode} · {j.sumber.length} barang dilebur</p>
             {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
             <DokumenLinks paths={j.payload?.dokumen_paths || []} label="Dokumen Sumber" />
-            {/* Kartu yang dibuat SEBELUM dokumen diwajibkan (2026-09-07) tak
-                punya berkas & ledgernya append-only — yang bisa dilakukan cuma
-                mengatakannya terus terang. */}
+            {/* Bisa dilengkapi lewat ✎ — lihat catatan kembar di PemecahanCard. */}
             {(j.payload?.dokumen_paths?.length || 0) === 0 && (
-              <p className="text-xs text-amber-600">⚠ Tanpa dokumen sumber (dibuat sebelum berkas diwajibkan).</p>
+              <p className="text-xs text-amber-600">⚠ Belum ada dokumen sumber — lengkapi lewat ✎.</p>
             )}
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
@@ -2278,6 +2297,9 @@ function PenggabunganCard({ j, busy, bisaBatal, onBatal }: {
               <p className="text-xs text-gray-400">Nilai Hasil Gabungan</p>
               <p className="font-semibold text-gray-800">{formatRupiah(j.induk?.nilaiBaru || 0)}</p>
             </div>
+            <button title="Edit No dokumen / tanggal (dalam semester yang sama) & unggah dokumen sumber"
+              onClick={onEdit}
+              className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
             {!j.dibatalkan && (
               <button disabled={busy || !bisaBatal} onClick={onBatal}
                 title={bisaBatal ? 'Batalkan penggabungan — barang yang dilebur kembali & induk balik ke nilai semula' : 'Tahun sudah terkunci — tidak bisa dibatalkan'}
