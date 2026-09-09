@@ -21,6 +21,7 @@ export type PengadaanRow = {
   kode: string                // aset.kode
   namaBarang: string          // uraian_barang (baku dari kodefikasi)
   spesifikasi: string         // aset.nama_barang
+  spesifikasiLainnya: string  // aset.spesifikasi_lainnya
   merekTipe: string
   jumlah: number
   satuan: string
@@ -48,6 +49,7 @@ type Raw = {
   } | null
   aset: {
     skpd_id: number; kode: string; uraian_barang: string | null; nama_barang: string | null
+    spesifikasi_lainnya: string | null
     merek_tipe: string | null; satuan: string | null; status: string
   } | null
 }
@@ -78,7 +80,7 @@ export async function fetchLaporanPengadaan(
     const { data } = await supabase.from('transaksi_bmd')
       .select('id,periode,tanggal,nilai,keterangan,jenis,payload,aset_id,' +
         'header:header_id(id,no_sk,jenis,payload),' +
-        'aset:aset_id(skpd_id,kode,uraian_barang,nama_barang,merek_tipe,satuan,status)')
+        'aset:aset_id(skpd_id,kode,uraian_barang,nama_barang,spesifikasi_lainnya,merek_tipe,satuan,status)')
       .in('jenis', ['pengadaan', 'akumulasi_kdp'])
       .eq('periode', opts.periode)
       .order('id', { ascending: true })
@@ -123,6 +125,7 @@ export async function fetchLaporanPengadaan(
       kode: r.aset!.kode || '',
       namaBarang: r.aset!.uraian_barang || '',
       spesifikasi: r.aset!.nama_barang || '',
+      spesifikasiLainnya: r.aset!.spesifikasi_lainnya || '',
       merekTipe: r.aset!.merek_tipe || '',
       satuan: r.aset!.satuan || '',
       kodeSubKegiatan: kodeSK,

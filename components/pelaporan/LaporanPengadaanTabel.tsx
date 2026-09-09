@@ -1,12 +1,23 @@
 'use client'
 // Tabel Laporan Pengadaan format Permendagri 47/2021 (Format IV.A — aset tetap).
 // Dipakai ulang oleh tab "Format Permendagri" (components/pelaporan/LaporanPengadaanPermendagri)
-// dan halaman cetak (app/cetak/laporan-pengadaan). Header bertingkat 2 baris +
+// dan halaman cetak (app/cetak/laporan-pengadaan). Kepala tabel satu baris +
 // subtotal per golongan + footer tanda tangan Pengguna Barang (NIP bisa kosong utk
 // non-ASN RSUD). Data & grouping ada di lib/laporanPengadaan (satu sumber).
 //
-// Kolom "Kode Barang" dipecah per level kodefikasi (x|x|x|xx|xx|xx…) seperti format
-// aslinya — jumlah sub-kolom = maksimum segmen `kode` pada data (min 6).
+// SUSUNAN KOLOM DIRAMPINGKAN (permintaan user 2026-09-09) — 15 kolom, sepadan
+// dgn tabel di layar tab "Format Permendagri". Yang diubah dari bentuk IV.A
+// penuh:
+//  - "Kode Barang" tak lagi dipecah per segmen (x|x|x|xx…) → satu sel
+//    "Kode Barang / Uraian Barang" (kode di atas, uraian abu-abu di bawah);
+//  - Sub Kegiatan & Rekening masing-masing dari 2 kolom → 1 sel bertumpuk;
+//  - 3 kolom IV.A DIBUANG: Total Biaya Atribusi, Nilai Perolehan Barang, Harga
+//    Satuan Perolehan — di data ini ketiganya selalu 0 / duplikat (atribusi 0 →
+//    Nilai Perolehan = Total Nilai; Harga Perolehan = Harga Satuan), jadi tak
+//    ada informasi yang hilang;
+//  - super-header ("Penggolongan…", "Sub Kegiatan dan Rekening…", "Dokumen
+//    Sumber Perolehan") dilepas → kepala tabel satu baris.
+// Export Excel SENGAJA tak ikut diubah (masih 20 kolom, pivot-friendly).
 //
 // SATU BLOK PER SKPD: laporan Permendagri ditandatangani per Pengguna Barang (SKPD
 // induk). Pilih satu SKPD → satu blok. Mode se-kabupaten (SKPD kosong) → satu blok
@@ -22,71 +33,70 @@ import {
   type PengadaanRow, type PenggunaBarang,
 } from '@/lib/laporanPengadaan'
 
-// Pecah kode jadi tepat `n` segmen sel; sel terakhir menyerap sisa segmen.
-function kodeSegments(kode: string, n: number): string[] {
-  const seg = (kode || '').split('.')
-  const out: string[] = []
-  for (let i = 0; i < n; i++) out.push(i < n - 1 ? (seg[i] ?? '') : seg.slice(n - 1).join('.'))
-  return out
-}
+// 15 kolom; `NCOL` dipakai untuk colSpan baris kelompok & "tidak ada data".
+const NCOL = 15
 
-function SubtotalRow({ label, nilai, kodeCols, grand }: {
-  label: string; nilai: number; kodeCols: number; grand?: boolean
+// Baris subtotal/total: label rata-kanan menutup 5 kolom pertama, lalu Jumlah
+// Barang, Harga Satuan (kosong), Total Nilai, lalu 7 kolom sisa kosong.
+function SubtotalRow({ label, jumlah, nilai, grand }: {
+  label: string; jumlah: number; nilai: number; grand?: boolean
 }) {
-  // Kolom "label" sebelum Total Nilai = kodeCols + (Nama, Spesifikasi, Merek,
-  // Jumlah, Satuan, Harga Satuan) = kodeCols + 6. Tail setelah Nilai Perolehan = 10.
   return (
     <tr className={grand ? 'bg-gray-200 font-bold' : 'bg-gray-100 font-semibold'}>
-      <td className="brd px-2 py-1 text-right" colSpan={kodeCols + 6}>{label}</td>
+      <td className="brd px-2 py-1 text-right" colSpan={5}>{label}</td>
+      <td className="brd px-2 py-1 text-right">{jumlah}</td>
+      <td className="brd px-2 py-1" />
       <td className="brd px-2 py-1 text-right">{formatRupiah(nilai)}</td>
-      <td className="brd px-2 py-1 text-right">{formatRupiah(0)}</td>
-      <td className="brd px-2 py-1 text-right">{formatRupiah(nilai)}</td>
-      <td className="brd px-2 py-1" colSpan={10}></td>
+      <td className="brd px-2 py-1" colSpan={7} />
     </tr>
   )
 }
 
-function DataRow({ r, kodeCols }: { r: PengadaanRow; kodeCols: number }) {
-  const c = 'brd px-2 py-1 align-top'
-  const num = 'brd px-2 py-1 align-top text-right whitespace-nowrap'
+// Sel bertumpuk: baris 1 kode (nowrap), baris 2 uraian abu-abu (boleh membungkus).
+function SelTumpuk({ kode, uraian }: { kode: string; uraian: string }) {
+  return (
+    <td className="brd px-1.5 py-1 align-top">
+      <div className="whitespace-nowrap">{kode || '-'}</div>
+      {uraian && <div className="text-gray-500 break-words">{uraian}</div>}
+    </td>
+  )
+}
+
+function DataRow({ r }: { r: PengadaanRow }) {
+  const c = 'brd px-1.5 py-1 align-top break-words'
+  const num = 'brd px-1.5 py-1 align-top text-right whitespace-nowrap'
   return (
     <tr>
-      {kodeSegments(r.kode, kodeCols).map((s, i) => (
-        <td key={i} className="brd px-1 py-1 align-top text-center whitespace-nowrap">{s || ''}</td>
-      ))}
-      <td className={c}>{r.namaBarang || '-'}</td>
+      <SelTumpuk kode={r.kode} uraian={r.namaBarang} />
       <td className={c}>{r.spesifikasi || '-'}</td>
       <td className={c}>{r.merekTipe || '-'}</td>
-      <td className={num}>{r.jumlah}</td>
+      <td className={c}>{r.spesifikasiLainnya || '-'}</td>
       <td className={c}>{r.satuan || '-'}</td>
+      <td className={num}>{r.jumlah}</td>
       <td className={num}>{formatRupiah(r.hargaSatuan)}</td>
       <td className={num}>{formatRupiah(r.totalNilai)}</td>
-      <td className={num}>{formatRupiah(0)}</td>
-      <td className={num}>{formatRupiah(r.totalNilai)}</td>
-      <td className={num}>{formatRupiah(r.hargaSatuan)}</td>
-      <td className={c + ' whitespace-nowrap'}>{r.kodeSubKegiatan || '-'}</td>
-      <td className={c}>{r.namaSubKegiatan || '-'}</td>
-      <td className={c + ' whitespace-nowrap'}>{r.kodeRekening || '-'}</td>
-      <td className={c}>{r.uraianBelanja || '-'}</td>
+      <SelTumpuk kode={r.kodeSubKegiatan} uraian={r.namaSubKegiatan} />
+      <SelTumpuk kode={r.kodeRekening} uraian={r.uraianBelanja} />
       <td className={c + ' whitespace-nowrap'}>{r.tanggal}</td>
-      <td className={c}>{r.bentukKontrak}</td>
+      <td className={c}>{r.bentukKontrak || '-'}</td>
       <td className={c}>{r.namaPenyedia || '-'}</td>
-      <td className={c + ' whitespace-nowrap'}>{r.nomor || '-'}</td>
+      <td className={c}>{r.nomor || '-'}</td>
       <td className={c}>{r.keterangan || '-'}</td>
     </tr>
   )
 }
 
-function FragmentGroup({ kode, uraian, rows, subtotal, kodeCols, totalCols }: {
-  kode: string; uraian: string; rows: PengadaanRow[]; subtotal: number; kodeCols: number; totalCols: number
+function FragmentGroup({ kode, uraian, rows, subtotal }: {
+  kode: string; uraian: string; rows: PengadaanRow[]; subtotal: number
 }) {
+  const jml = rows.reduce((s, r) => s + r.jumlah, 0)
   return (
     <>
       <tr className="bg-teal/5">
-        <td className="brd px-2 py-1 font-semibold" colSpan={totalCols}>{kode} — {uraian}</td>
+        <td className="brd px-2 py-1 font-semibold" colSpan={NCOL}>{kode} — {uraian}</td>
       </tr>
-      {rows.map((r, i) => <DataRow key={i} r={r} kodeCols={kodeCols} />)}
-      <SubtotalRow label={`Jumlah ${uraian}`} nilai={subtotal} kodeCols={kodeCols} />
+      {rows.map((r, i) => <DataRow key={i} r={r} />)}
+      <SubtotalRow label={`Jumlah ${uraian}`} jumlah={jml} nilai={subtotal} />
     </>
   )
 }
@@ -94,14 +104,18 @@ function FragmentGroup({ kode, uraian, rows, subtotal, kodeCols, totalCols }: {
 const th = 'brd px-2 py-1 text-center font-semibold bg-gray-50'
 const tglID = () => new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 
+// Lebar kolom (jumlah = 100) → `table-fixed`, jadi 15 kolom muat A4 landscape
+// tanpa geser kanan-kiri; teks panjang membungkus, tinggi baris menyesuaikan.
+const LEBAR = [11, 8, 6, 6, 4, 4, 7, 7, 9, 9, 5, 5, 7, 6, 6]
+
 // Satu laporan lengkap utk SATU SKPD (judul + tabel + subtotal + total + footer TTD).
-function ReportBlock({ nama, periode, rows, kodeCols, pengguna, pageBreak }: {
-  nama: string; periode: string; rows: PengadaanRow[]; kodeCols: number
+function ReportBlock({ nama, periode, rows, pengguna, pageBreak }: {
+  nama: string; periode: string; rows: PengadaanRow[]
   pengguna: PenggunaBarang | null; pageBreak: boolean
 }) {
   const groups = groupByGolongan(rows)
   const total = grandTotal(rows)
-  const totalCols = kodeCols + 19
+  const totalJml = rows.reduce((s, r) => s + r.jumlah, 0)
 
   return (
     <div className={`${pageBreak ? 'print:break-after-page' : ''} mb-10`}>
@@ -126,42 +140,35 @@ function ReportBlock({ nama, periode, rows, kodeCols, pengguna, pageBreak }: {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="border-collapse w-full">
+        <table className="border-collapse w-full table-fixed">
+          <colgroup>
+            {LEBAR.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}
+          </colgroup>
           <thead>
             <tr>
-              <th className={th} colSpan={kodeCols + 1}>Penggolongan dan Kodefikasi Barang</th>
-              <th className={th} rowSpan={2}>Spesifikasi Nama Barang</th>
-              <th className={th} rowSpan={2}>Merek/Tipe</th>
-              <th className={th} rowSpan={2}>Jumlah Barang</th>
-              <th className={th} rowSpan={2}>Satuan Barang</th>
-              <th className={th} rowSpan={2}>Harga Satuan (Rp)</th>
-              <th className={th} rowSpan={2}>Total Nilai Barang (Rp)</th>
-              <th className={th} rowSpan={2}>Total Biaya Atribusi (Rp)</th>
-              <th className={th} rowSpan={2}>Nilai Perolehan Barang (Rp)</th>
-              <th className={th} rowSpan={2}>Harga Satuan Perolehan (Rp)</th>
-              <th className={th} colSpan={4}>Sub Kegiatan dan Rekening Anggaran Belanja Daerah Atas Pengadaan Barang</th>
-              <th className={th} rowSpan={2}>Tanggal Perolehan</th>
-              <th className={th} colSpan={3}>Dokumen Sumber Perolehan</th>
-              <th className={th} rowSpan={2}>Keterangan</th>
-            </tr>
-            <tr>
-              <th className={th} colSpan={kodeCols}>Kode Barang</th>
-              <th className={th}>Nama Barang</th>
-              <th className={th}>Kode Sub Kegiatan</th>
-              <th className={th}>Nama Sub Kegiatan</th>
-              <th className={th}>Kode Rekening</th>
-              <th className={th}>Uraian Belanja</th>
+              <th className={th}>Kode Barang / Uraian Barang</th>
+              <th className={th}>Spesifikasi Nama Barang</th>
+              <th className={th}>Merk / Tipe</th>
+              <th className={th}>Spesifikasi Lainnya</th>
+              <th className={th}>Satuan Barang</th>
+              <th className={th}>Jumlah Barang</th>
+              <th className={th}>Harga Satuan</th>
+              <th className={th}>Total Nilai Barang</th>
+              <th className={th}>Kode Sub Kegiatan / Uraian Kegiatan</th>
+              <th className={th}>Kode Rekening / Uraian Rekening</th>
+              <th className={th}>Tanggal Perolehan</th>
               <th className={th}>Bentuk Kontrak</th>
               <th className={th}>Nama Penyedia</th>
-              <th className={th}>Nomor</th>
+              <th className={th}>Nomor Kontrak</th>
+              <th className={th}>Keterangan</th>
             </tr>
           </thead>
           <tbody>
             {groups.map(g => (
               <FragmentGroup key={g.kode} kode={g.kode} uraian={g.uraian} rows={g.rows}
-                subtotal={g.subtotal} kodeCols={kodeCols} totalCols={totalCols} />
+                subtotal={g.subtotal} />
             ))}
-            <SubtotalRow label="TOTAL" nilai={total} kodeCols={kodeCols} grand />
+            <SubtotalRow label="TOTAL" jumlah={totalJml} nilai={total} grand />
           </tbody>
         </table>
       </div>
@@ -223,12 +230,6 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
       .sort((a, b) => a.nama.localeCompare(b.nama))
   }, [rows, skpdId, loaded, byId, rootOf])
 
-  // Kode sub-kolom seragam lintas blok = maksimum segmen pada seluruh data (min 6).
-  const kodeCols = useMemo(
-    () => Math.max(6, ...rows.map(r => (r.kode || '').split('.').length)),
-    [rows],
-  )
-
   // Ambil Pengguna Barang utk semua SKPD yang muncul (footer per blok).
   const blockIdsKey = blocks.map(b => b.skpdId).join(',')
   useEffect(() => {
@@ -259,7 +260,7 @@ export default function LaporanPengadaanTabel({ periode, skpdId, descIds }: {
       ) : (
         blocks.map((b, i) => (
           <ReportBlock key={b.skpdId} nama={b.nama} periode={periode} rows={b.rows}
-            kodeCols={kodeCols} pengguna={pgMap.get(b.skpdId) || null} pageBreak={i < blocks.length - 1} />
+            pengguna={pgMap.get(b.skpdId) || null} pageBreak={i < blocks.length - 1} />
         ))
       )}
     </div>
