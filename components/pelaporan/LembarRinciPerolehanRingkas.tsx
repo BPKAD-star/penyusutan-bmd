@@ -78,7 +78,7 @@ const kolSpekNibar: KolomRingkas = {
     return (
       <>
         <p>{a.nama_barang || ''}</p>
-        <p className="text-gray-500 break-all text-[7px] tracking-tight">
+        <p className="text-gray-500 break-all text-[6.5px] tracking-tighter">
           {p ? <>{p[0]}<br />{p[1]}</> : (a.nibar || '')}
         </p>
       </>
@@ -117,7 +117,7 @@ const kolKeterangan: KolomRingkas = { key: 'ket', judul: 'Keterangan', lebar: 0,
  * generik di bawah bisa menghitung colSpan-nya sekali untuk semuanya.
  * Sisanya (9+) beda per jenis, dihitung agar total selalu tepat 100.
  */
-const LEBAR_DASAR = [11, 11, 7, 7, 4, 4, 7, 7, 4] // Kode/Uraian..Kondisi, Σ=62
+const LEBAR_DASAR = [12, 12, 8, 8, 3.5, 3, 6.5, 6.5, 3.5] // Kode/Uraian..Kondisi, Σ=63
 
 /** Bagi sisa (100 − Σ LEBAR_DASAR) rata ke N kolom sisa, pembulatan ke kolom
  *  TERAKHIR (Keterangan) supaya totalnya presisi 100. */
@@ -134,22 +134,26 @@ export function kolomRingkas(jenis: string, namaTingkat: Map<string, string>): K
       return beriLebar(
         [kode, kolSpekNibar, kolMerekTipe, kolSpekLain, kolSatuan, kolJumlah, kolHarga, kolTotal, kolKondisi,
           kolPihakHibah, kolSumberDana, kolTglPengadaan, kolNoBast, kolTglBast, kolKeterangan],
-        [8, 5, 5, 8, 5, 7]) // Pihak, Sumber Dana, Tgl Pengadaan, No BAST, Tgl BAST, Keterangan = 38
+        [7, 3, 4.5, 12, 4.5, 6]) // Pihak, Sumber Dana, Tgl Pengadaan, No BAST, Tgl BAST, Keterangan = 37
+        // ⚠️ Nomor BAST diberi PALING LEBAR di kelompok ini (12) — isinya
+        // nomor dokumen SKPD lengkap ("KN.01.06/B.VI/SOPHI/2556/2026 -
+        // 400.7.3.2/12081/418.25/2026", 60+ karakter), yang di lebar sempit
+        // membungkus 3 baris & memaksa SELURUH baris ikut setinggi itu.
     case 'hasil_inventarisasi':
       return beriLebar(
         [kode, kolSpekNibar, kolMerekTipe, kolSpekLain, kolSatuan, kolJumlah, kolHarga, kolTotal, kolKondisi,
           kolTglPengadaan, kolDokHasilInv, kolTglDokumen, kolKeterangan],
-        [6, 10, 6, 16]) // Tgl Pengadaan, Dokumen, Tgl Dokumen, Keterangan = 38
+        [4.5, 13, 4.5, 15]) // Tgl Pengadaan, Dokumen, Tgl Dokumen, Keterangan = 37
     case 'perolehan_lainnya':
       return beriLebar(
         [kode, kolSpekNibar, kolMerekTipe, kolSpekLain, kolSatuan, kolJumlah, kolHarga, kolTotal, kolKondisi,
           kolTglPengadaan, kolDokSumber, kolTglDokumen, kolKeterangan],
-        [6, 10, 6, 16])
+        [4.5, 13, 4.5, 15])
     case 'tukar_menukar':
       return beriLebar(
         [kode, kolSpekNibar, kolMerekTipe, kolSpekLain, kolSatuan, kolJumlah, kolHarga, kolTotal, kolKondisi,
           kolPihakTukar, kolTglPengadaan, kolDokTukar, kolTglDokumen, kolKeterangan],
-        [9, 5, 9, 5, 10]) // Pihak, Tgl Pengadaan, Dokumen, Tgl Dokumen, Keterangan = 38
+        [8, 4.5, 12, 4.5, 8]) // Pihak, Tgl Pengadaan, Dokumen, Tgl Dokumen, Keterangan = 37
     default:
       return null
   }
