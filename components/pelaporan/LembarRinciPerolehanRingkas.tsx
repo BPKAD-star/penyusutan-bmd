@@ -28,7 +28,7 @@ import { KopLembar, BlokTtd, type BarisLembar } from './LembarPerolehanPermendag
 import type { FormatPerolehan, ItemLaporan } from '@/lib/formatPermendagri'
 
 const brd = 'border border-gray-400'
-const th = `${brd} px-1 py-1 text-center font-semibold bg-gray-50`
+const th = `${brd} px-2 py-1 text-center font-semibold bg-gray-50`
 
 const tglID = (s: string | null | undefined) => {
   if (!s) return ''
@@ -78,7 +78,7 @@ const kolSpekNibar: KolomRingkas = {
     return (
       <>
         <p>{a.nama_barang || ''}</p>
-        <p className="text-gray-500 break-all text-[6.5px] tracking-tighter">
+        <p className="text-gray-500 break-all text-[8px] tracking-tight">
           {p ? <>{p[0]}<br />{p[1]}</> : (a.nibar || '')}
         </p>
       </>
@@ -117,7 +117,15 @@ const kolKeterangan: KolomRingkas = { key: 'ket', judul: 'Keterangan', lebar: 0,
  * generik di bawah bisa menghitung colSpan-nya sekali untuk semuanya.
  * Sisanya (9+) beda per jenis, dihitung agar total selalu tepat 100.
  */
-const LEBAR_DASAR = [12, 12, 8, 8, 3.5, 3, 6.5, 6.5, 3.5] // Kode/Uraian..Kondisi, Σ=63
+// ⚠️ DIUKUR untuk font 11px di F4 lanskap (330mm − margin 8mm×2 ≈ 1187px),
+// bukan dikira-kira. Yang harus MUAT SEBARIS & jadi batas bawahnya:
+//   · kode barang "1.3.2.07.01.22.005" (18 karakter) → butuh ±110px
+//   · potongan pertama NIBAR, 26 digit @8px          → butuh ±116px
+//   · "552.702.000" di kolom Total                   → butuh ±61px
+//   · "25/05/2026" (nowrap!) di kedua kolom tanggal   → butuh ±56px
+// Kolom ber-isi pendek & seragam (Satuan, Jumlah, Kondisi) dipepet; kelegaannya
+// dialihkan ke kolom teks panjang. Σ = 66, sisa 34 dibagi per jenis di bawah.
+const LEBAR_DASAR = [12, 12, 8, 8, 4, 4, 7, 7, 4] // Kode/Uraian..Kondisi, Σ=66
 
 /** Bagi sisa (100 − Σ LEBAR_DASAR) rata ke N kolom sisa, pembulatan ke kolom
  *  TERAKHIR (Keterangan) supaya totalnya presisi 100. */
@@ -134,7 +142,7 @@ export function kolomRingkas(jenis: string, namaTingkat: Map<string, string>): K
       return beriLebar(
         [kode, kolSpekNibar, kolMerekTipe, kolSpekLain, kolSatuan, kolJumlah, kolHarga, kolTotal, kolKondisi,
           kolPihakHibah, kolSumberDana, kolTglPengadaan, kolNoBast, kolTglBast, kolKeterangan],
-        [7, 3, 4.5, 12, 4.5, 6]) // Pihak, Sumber Dana, Tgl Pengadaan, No BAST, Tgl BAST, Keterangan = 37
+        [6, 4, 5.5, 8, 5.5, 5]) // Pihak, Sumber Dana, Tgl Pengadaan, No BAST, Tgl BAST, Keterangan = 34
         // ⚠️ Nomor BAST diberi PALING LEBAR di kelompok ini (12) — isinya
         // nomor dokumen SKPD lengkap ("KN.01.06/B.VI/SOPHI/2556/2026 -
         // 400.7.3.2/12081/418.25/2026", 60+ karakter), yang di lebar sempit
@@ -143,17 +151,17 @@ export function kolomRingkas(jenis: string, namaTingkat: Map<string, string>): K
       return beriLebar(
         [kode, kolSpekNibar, kolMerekTipe, kolSpekLain, kolSatuan, kolJumlah, kolHarga, kolTotal, kolKondisi,
           kolTglPengadaan, kolDokHasilInv, kolTglDokumen, kolKeterangan],
-        [4.5, 13, 4.5, 15]) // Tgl Pengadaan, Dokumen, Tgl Dokumen, Keterangan = 37
+        [5.5, 12, 5.5, 11]) // Tgl Pengadaan, Dokumen, Tgl Dokumen, Keterangan = 34
     case 'perolehan_lainnya':
       return beriLebar(
         [kode, kolSpekNibar, kolMerekTipe, kolSpekLain, kolSatuan, kolJumlah, kolHarga, kolTotal, kolKondisi,
           kolTglPengadaan, kolDokSumber, kolTglDokumen, kolKeterangan],
-        [4.5, 13, 4.5, 15])
+        [5.5, 12, 5.5, 11])
     case 'tukar_menukar':
       return beriLebar(
         [kode, kolSpekNibar, kolMerekTipe, kolSpekLain, kolSatuan, kolJumlah, kolHarga, kolTotal, kolKondisi,
           kolPihakTukar, kolTglPengadaan, kolDokTukar, kolTglDokumen, kolKeterangan],
-        [8, 4.5, 12, 4.5, 8]) // Pihak, Tgl Pengadaan, Dokumen, Tgl Dokumen, Keterangan = 37
+        [6, 5.5, 11, 5.5, 6]) // Pihak, Tgl Pengadaan, Dokumen, Tgl Dokumen, Keterangan = 34
     default:
       return null
   }
@@ -208,7 +216,7 @@ export default function LembarRinciPerolehanRingkas(p: PropRinciRingkas) {
       <p className="text-right text-[12px] mb-1">Format {f.kode}</p>
       <KopLembar judul={f.judul} berupa={berupa} komptabel={labelKomptabel}
         sebutan={sebutan} skpd={skpd} periode={judulPeriode} tahun={tahun} />
-      <table className="w-full table-fixed border-collapse text-[8px] leading-tight">
+      <table className="w-full table-fixed border-collapse text-[11px] leading-tight">
         <colgroup>
           {kolom.map(k => <col key={k.key} style={{ width: `${k.lebar}%` }} />)}
         </colgroup>
@@ -219,35 +227,40 @@ export default function LembarRinciPerolehanRingkas(p: PropRinciRingkas) {
           {grup.map(g => (
             <Fragment key={g.kode}>
               <tr className="bg-teal/5">
-                <td className={`${brd} px-1 py-1 font-semibold`} colSpan={nKolom}>{g.kode} — {nama(g.kode)}</td>
+                <td className={`${brd} px-2 py-1 font-semibold`} colSpan={nKolom}>{g.kode} — {nama(g.kode)}</td>
               </tr>
               {g.rows.map(it => (
                 <tr key={`i-${it.data.id}`} className="align-top">
                   {kolom.map(k => (
                     <td key={k.key}
-                      className={`${brd} px-1 py-0.5 break-words ${k.rata === 'kanan' ? 'text-right' : k.rata === 'tengah' ? 'text-center' : ''}`}>
+                      // ⚠️ Kolom rata-TENGAH = yang paling sempit DAN isinya
+                      // `whitespace-nowrap` (dua kolom tanggal). Padding 12px
+                      // di kolom ±65px memakan seperlimanya & tanggalnya
+                      // MELEBER tiap baris — kelas kegagalan yang sudah dua
+                      // kali tercatat di CLAUDE.md. Karena itu px-0.5.
+                      className={`${brd} py-1 break-words ${k.rata === 'kanan' ? 'px-1.5 text-right' : k.rata === 'tengah' ? 'px-0.5 text-center' : 'px-1.5'}`}>
                       {k.render(it.data)}
                     </td>
                   ))}
                 </tr>
               ))}
               <tr className="bg-gray-100 font-semibold">
-                <td className={`${brd} px-1 py-0.5 text-right`} colSpan={IDX_JUMLAH}>Jumlah {nama(g.kode)}</td>
-                <td className={`${brd} px-1 py-0.5 text-right`}>{g.jumlah}</td>
-                <td className={`${brd} px-1 py-0.5`} />
-                <td className={`${brd} px-1 py-0.5 text-right`}>{formatRupiah(g.subtotal)}</td>
+                <td className={`${brd} px-1.5 py-1 text-right`} colSpan={IDX_JUMLAH}>Jumlah {nama(g.kode)}</td>
+                <td className={`${brd} px-1.5 py-1 text-right`}>{g.jumlah}</td>
+                <td className={`${brd} px-1.5 py-1`} />
+                <td className={`${brd} px-1.5 py-1 text-right`}>{formatRupiah(g.subtotal)}</td>
                 {sisaSetelahTotal > 0 && <td className={brd} colSpan={sisaSetelahTotal} />}
               </tr>
             </Fragment>
           ))}
           {items.length === 0 && (
-            <tr><td colSpan={nKolom} className={`${brd} px-1 py-3 text-center`}>Tidak ada perolehan pada periode ini.</td></tr>
+            <tr><td colSpan={nKolom} className={`${brd} px-2 py-3 text-center`}>Tidak ada perolehan pada periode ini.</td></tr>
           )}
           <tr className="bg-gray-200 font-bold">
-            <td className={`${brd} px-1 py-0.5 text-right`} colSpan={IDX_JUMLAH}>TOTAL</td>
-            <td className={`${brd} px-1 py-0.5 text-right`}>{totalJml}</td>
-            <td className={`${brd} px-1 py-0.5`} />
-            <td className={`${brd} px-1 py-0.5 text-right`}>{formatRupiah(total)}</td>
+            <td className={`${brd} px-1.5 py-1 text-right`} colSpan={IDX_JUMLAH}>TOTAL</td>
+            <td className={`${brd} px-1.5 py-1 text-right`}>{totalJml}</td>
+            <td className={`${brd} px-1.5 py-1`} />
+            <td className={`${brd} px-1.5 py-1 text-right`}>{formatRupiah(total)}</td>
             {sisaSetelahTotal > 0 && <td className={brd} colSpan={sisaSetelahTotal} />}
           </tr>
         </tbody>

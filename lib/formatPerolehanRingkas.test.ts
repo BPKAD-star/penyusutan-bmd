@@ -25,6 +25,29 @@ describe('kolomRingkas — lebar kolom', () => {
     for (const k of semua.slice(1)) expect(k).toEqual(semua[0])
   })
 
+  // ⚠️ Kolom tanggal `whitespace-nowrap` punya BATAS BAWAH KERAS: "25/05/2026"
+  // di font 11px butuh ±56px, dan pada F4 lanskap (±1187px bersih) itu ±4,7%.
+  // Di bawah itu tanggalnya MELEBER ke sel sebelah DI SETIAP BARIS, dan
+  // `table-fixed` menyembunyikannya sampai kertasnya keluar — kelas kegagalan
+  // yang sudah dua kali tercatat di CLAUDE.md (IV.B & IV.C).
+  it('kolom tanggal tak pernah di bawah 5% (nowrap, batas bawah keras)', () => {
+    for (const j of jenisList) {
+      for (const k of kolomRingkas(j, new Map())!) {
+        if (k.key.startsWith('tgl_')) expect(k.lebar, `${j}/${k.key}`).toBeGreaterThanOrEqual(5)
+      }
+    }
+  })
+
+  // Kode barang (18 karakter) & potongan pertama NIBAR (26 digit) sama-sama
+  // wajib muat sebaris di sel bertumpuknya masing-masing.
+  it('kolom bertumpuk (kode & spesifikasi/NIBAR) minimal 11%', () => {
+    for (const j of jenisList) {
+      const kolom = kolomRingkas(j, new Map())!
+      expect(kolom[0].lebar, `${j}/kode`).toBeGreaterThanOrEqual(11)
+      expect(kolom[1].lebar, `${j}/spek+nibar`).toBeGreaterThanOrEqual(11)
+    }
+  })
+
   it('jenis tak dikenal mengembalikan null (jatuh ke lembar official lama)', () => {
     expect(kolomRingkas('entah_apa', new Map())).toBeNull()
   })
