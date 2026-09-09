@@ -24,7 +24,7 @@ export type BarisPerolehan = BarisLembar & {
 
 const SEL = 'id,tanggal,nilai,keterangan,aset_id,skpd_tujuan,header:header_id(no_sk,payload),' +
   'aset:aset_id(kode,nama_barang,uraian_barang,nibar,spesifikasi_lainnya,satuan,jumlah,' +
-  'harga_satuan,kondisi_barang,tgl_perolehan,keterangan,intra_ekstra)'
+  'harga_satuan,kondisi_barang,tgl_perolehan,keterangan,intra_ekstra,merek_tipe)'
 
 type SkpdRow = { id: number; parent_id: number | null; nama: string; kode_skpd: string | null }
 

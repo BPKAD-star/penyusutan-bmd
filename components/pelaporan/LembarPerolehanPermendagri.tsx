@@ -45,6 +45,10 @@ export type BarisLembar = {
     spesifikasi_lainnya: string | null; satuan: string | null; jumlah: number | null
     harga_satuan: number | null; kondisi_barang: string | null; tgl_perolehan: string | null
     keterangan: string | null; intra_ekstra: string | null
+    /** Dipakai lembar RINGKAS (LembarRinciPerolehanRingkas), 2026-09-09 — kolom
+     *  Merk/Tipe tak ada di format resmi IV.A, tapi ada di mockup yang diminta
+     *  user, pola sama dgn Pengadaan yang juga menambahkannya. */
+    merek_tipe: string | null
   } | null
 }
 
@@ -77,7 +81,7 @@ function SelKode({ kode, sampai, tebal }: { kode: string; sampai: number; tebal?
  * kemungkinan untuk dicoret salah satunya — levelnya sudah diketahui aplikasi.
  * Baris ke-4 nama SKPD saja, TANPA kata "SKPD" (permintaan user).
  */
-function KopLembar({ judul, berupa, komptabel, sebutan, skpd, periode, tahun, tambahan }: {
+export function KopLembar({ judul, berupa, komptabel, sebutan, skpd, periode, tahun, tambahan }: {
   judul: string; berupa: string; komptabel: string; sebutan: string
   skpd: { kode: string; nama: string } | null
   periode: string; tahun: string; tambahan?: string
@@ -103,7 +107,7 @@ function KopLembar({ judul, berupa, komptabel, sebutan, skpd, periode, tahun, ta
   )
 }
 
-function BlokTtd({ sebutan, nama, nip, tgl }: {
+export function BlokTtd({ sebutan, nama, nip, tgl }: {
   sebutan: string; nama: string | null; nip: string | null; tgl: string
 }) {
   return (

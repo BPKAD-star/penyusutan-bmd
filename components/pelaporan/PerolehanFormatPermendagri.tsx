@@ -25,6 +25,7 @@ import {
   muatLembarPerolehan, muatLembarKabupaten, type BarisPerolehan,
 } from '@/lib/laporanPerolehanPermendagri'
 import LembarPerolehanPermendagri from './LembarPerolehanPermendagri'
+import LembarRinciPerolehanRingkas, { kolomRingkas } from './LembarRinciPerolehanRingkas'
 import LembarRekapKabupaten, { type ItemKab } from './LembarRekapKabupaten'
 
 /** Daftar lembar yang bisa dicentang: rinci + empat kedalaman rekap. */
@@ -117,6 +118,9 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
     .map(r => ({ kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r }))
 
   const { judul: judulPeriode, tahun } = labelPeriodeKop(periode)
+  // `null` = jenis ini tak punya lembar ringkas (kolomRingkas belum
+  // mengenalnya) → rinci-nya jatuh ke penyaji lama, sama spt sebelum ini.
+  const ringkas = kolomRingkas(f.jenis, namaTingkat)
   const itemsKab: ItemKab<BarisPerolehan>[] = rowsKab
     .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({
@@ -270,13 +274,27 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
           </p>
           <div className="overflow-x-auto">
             <div className="min-w-[1100px] space-y-10">
-              {pilihAktif.length > 0 && (
+              {/* ⚠️ Lembar RINCI (.2) & REKAP (.3–.6) sengaja BEDA penyaji sejak
+                  2026-09-09: rinci-nya dirampingkan (permintaan user, sepadan
+                  dgn tabel Pengadaan), rekap tangga TETAP format official —
+                  belum diminta berubah. `ringkas` null utk jenis yang belum
+                  punya lembar ringkas → rinci-nya jatuh ke penyaji lama juga. */}
+              {pilihAktif.includes(2) && ringkas && (
+                <LembarRinciPerolehanRingkas
+                  f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
+                  berupa={berupaAset(items.map(i => i.kode))}
+                  labelKomptabel={labelKomptabel(komptabel)}
+                  judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
+                  ttd={null} tglTtd="" />
+              )}
+              {pilihAktif.filter(n => n !== 2 || !ringkas).length > 0 && (
                 <LembarPerolehanPermendagri
                   f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
                   berupa={berupaAset(items.map(i => i.kode))}
                   labelKomptabel={labelKomptabel(komptabel)}
                   judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
-                  ttd={null} tglTtd="" lembar={pilihAktif} />
+                  ttd={null} tglTtd=""
+                  lembar={pilihAktif.filter(n => n !== 2 || !ringkas)} />
               )}
               {kabAktif.length > 0 && (
                 <LembarRekapKabupaten

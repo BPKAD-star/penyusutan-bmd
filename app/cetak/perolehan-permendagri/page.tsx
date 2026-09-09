@@ -51,6 +51,7 @@ import {
   ingatanCetak, ingatanTeksCetak, kunciTtdPerolehan, KUNCI_TTD_PEROLEHAN_SEKAB,
 } from '@/lib/ingatanCetak'
 import LembarPerolehanPermendagri from '@/components/pelaporan/LembarPerolehanPermendagri'
+import LembarRinciPerolehanRingkas, { kolomRingkas } from '@/components/pelaporan/LembarRinciPerolehanRingkas'
 import LembarRekapKabupaten, { type ItemKab } from '@/components/pelaporan/LembarRekapKabupaten'
 
 type Pegawai = { id: string; nama: string; nip: string | null; jabatan: string | null }
@@ -199,6 +200,16 @@ export default function CetakPerolehanPermendagriPage() {
   const items: ItemLaporan<BarisPerolehan>[] = rows
     .filter(r => cocokKomptabel(komptabel, r.aset!.intra_ekstra))
     .map(r => ({ kode: r.aset!.kode, jumlah: r.aset!.jumlah ?? 1, nilai: r.nilai || 0, data: r }))
+  // ⚠️ Berlaku SAMA persis dgn tab "Format Permendagri" (PerolehanFormatPermendagri):
+  // lembar RINCI (.2) yg dirampingkan 2026-09-09 GANTI yg lama, REKAP (.3–.6)
+  // TIDAK disentuh. Angka lahir dari data yang SAMA (`muatLembarPerolehan`),
+  // cuma penyajinya beda — pratinjau & berkas bertanda tangan wajib sepakat.
+  const ringkas = kolomRingkas(f.jenis, namaTingkat)
+  // `lembar` undefined = bawaan 2–6 (SEMUA per-SKPD ikut) — begitu rinci-nya
+  // dialihkan ke penyaji baru, "semua" untuk yang LAMA wajib eksplisit jadi
+  // [3,4,5,6], bukan tetap undefined (yang berarti "semua" lagi bagi
+  // `LembarPerolehanPermendagri` sendiri → rinci lama ikut nongol dobel).
+  const lembarLama = !ringkas ? lembar : (lembar ? lembar.filter(n => n !== 2) : [3, 4, 5, 6])
 
   function simpanTtd(next: Partial<TtdTersimpan>) {
     if (skpdId == null) return
@@ -309,14 +320,25 @@ export default function CetakPerolehanPermendagriPage() {
           <p className="py-8 text-center text-red-600 text-sm">Gagal menyiapkan lembar: {gagal}</p>
         ) : (
           <>
-            {adaPerSkpd && (
-              <LembarPerolehanPermendagri
+            {adaPerSkpd && adaRinci && ringkas && (
+              <LembarRinciPerolehanRingkas
                 f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
                 berupa={berupaAset(items.map(i => i.kode))}
                 labelKomptabel={labelKomptabel(komptabel)}
                 judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
                 ttd={ttd ? { nama: ttd.nama, nip: ttd.nip } : null}
-                tglTtd={tglTtd} lembar={lembar} />
+                tglTtd={tglTtd} />
+            )}
+            {adaPerSkpd && (!lembarLama || lembarLama.length > 0) && (
+              <div className={adaRinci && ringkas ? 'break-before-page' : ''}>
+                <LembarPerolehanPermendagri
+                  f={f} items={items} namaTingkat={namaTingkat} skpd={skpd}
+                  berupa={berupaAset(items.map(i => i.kode))}
+                  labelKomptabel={labelKomptabel(komptabel)}
+                  judulPeriode={judulPeriode} tahun={tahun} sebutan={sebutan}
+                  ttd={ttd ? { nama: ttd.nama, nip: ttd.nip } : null}
+                  tglTtd={tglTtd} lembar={lembarLama} />
+              </div>
             )}
             {adaKab && (
               <div className={adaPerSkpd ? 'break-before-page' : ''}>
