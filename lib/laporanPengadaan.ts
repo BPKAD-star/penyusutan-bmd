@@ -11,6 +11,7 @@ import type { createClient } from '@/lib/supabase/client'
 import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { bentukKontrakLabel } from '@/lib/bentukKontrak'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 
 type Supabase = ReturnType<typeof createClient>
 
@@ -51,6 +52,10 @@ type Raw = {
     skpd_id: number; kode: string; uraian_barang: string | null; nama_barang: string | null
     spesifikasi_lainnya: string | null
     merek_tipe: string | null; satuan: string | null; status: string
+    /** ⚠️ Diisi operator lewat field spesifikasi; `transaksi_bmd.keterangan`
+     *  (ledger perolehan) selalu kosong — cadangan saja. Pola persis
+     *  `app/cetak/perolehan/page.tsx` (2026-08-20). */
+    keterangan: string | null
   } | null
 }
 
@@ -77,12 +82,18 @@ export async function fetchLaporanPengadaan(
     // Filter periode di server (kolom top-level); filter SKPD di JS via aset.skpd_id
     // — akumulasi_kdp TIDAK mengisi skpd_tujuan, jadi filter lewat aset lebih seragam
     // & andal daripada filter kolom embedded.
-    const { data } = await supabase.from('transaksi_bmd')
+    // ⚠️ `opts.periode` bisa bernilai TAHUN saja (mis. '2026' = Akhir Tahun) —
+    // periodeDiminta() menerjemahkannya jadi kedua semester (`.in()`), sama
+    // seperti muatLembarPerolehan (2026-09-09, biar selaras dgn keempat menu
+    // perolehan manual). `.eq('periode','2026')` tak akan cocok apa pun.
+    const per = periodeDiminta(opts.periode)
+    let qq = supabase.from('transaksi_bmd')
       .select('id,periode,tanggal,nilai,keterangan,jenis,payload,aset_id,' +
         'header:header_id(id,no_sk,jenis,payload),' +
-        'aset:aset_id(skpd_id,kode,uraian_barang,nama_barang,spesifikasi_lainnya,merek_tipe,satuan,status)')
+        'aset:aset_id(skpd_id,kode,uraian_barang,nama_barang,spesifikasi_lainnya,merek_tipe,satuan,status,keterangan)')
       .in('jenis', ['pengadaan', 'akumulasi_kdp'])
-      .eq('periode', opts.periode)
+    qq = per.length === 1 ? qq.eq('periode', per[0]) : qq.in('periode', per)
+    const { data } = await qq
       .order('id', { ascending: true })
       .range(from, from + 999)
     if (!data || data.length === 0) break
@@ -136,7 +147,7 @@ export async function fetchLaporanPengadaan(
       bentukKontrak: isKdp ? bentukKontrakLabel(r.header?.payload?.sumber) : bentukKontrakLabel(r.header?.jenis),
       namaPenyedia: (isKdp ? r.header?.payload?.penyedia : r.header?.payload?.nama_penyedia) || '',
       nomor: r.header?.no_sk || '',
-      keterangan: r.keterangan || '',
+      keterangan: r.aset!.keterangan || r.keterangan || '',
     }
   }
 

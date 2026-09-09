@@ -28,6 +28,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { LEMBAR_PERMENDAGRI, labelFormat } from '@/lib/permendagriFormat'
+import { labelPeriodeKop } from '@/lib/formatPermendagri'
 import {
   fetchLaporanPengadaan, groupByGolongan, grandTotal, fetchPenggunaBarangMap,
   type PengadaanRow, type PenggunaBarang,
@@ -132,7 +133,11 @@ function ReportBlock({ nama, periode, rows, pengguna, pageBreak }: {
       <div className="text-center mb-3">
         <p className="font-bold uppercase text-[13px]">Laporan Pengadaan BMD Berupa Aset Tetap</p>
         <p className="font-semibold">SKPD: {nama}</p>
-        <p>Semester: {periode || '—'}</p>
+        {/* `labelPeriodeKop` — sama dgn keempat menu perolehan manual lain
+            (lib/formatPermendagri.ts): '2026-S1' -> Semester I, '2026' (bare
+            year) -> Akhir Tahun. Dulu ia mencetak periode mentah ("Semester:
+            2026" utk Akhir Tahun), yang salah baca krn '2026' bukan semester. */}
+        <p>{labelPeriodeKop(periode).judul} TAHUN {labelPeriodeKop(periode).tahun}</p>
       </div>
       <div className="mb-2 text-[11px]">
         <p>Provinsi&nbsp;: Jawa Timur</p>

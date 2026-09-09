@@ -54,6 +54,13 @@ type Trx = {
   aset: {
     kode: string; uraian_barang: string | null; nama_barang: string | null; nibar: string | null
     merek_tipe: string | null; spesifikasi_lainnya: string | null; intra_ekstra: string | null; status: string
+    /**
+     * ⚠️ Keterangan yang DIISI OPERATOR per barang (field spesifikasi) —
+     * `transaksi_bmd.keterangan` (baris ledger perolehan) memang SELALU
+     * KOSONG, ia cuma dipakai sbg cadangan. Pola & alasan persis
+     * `app/cetak/perolehan/page.tsx` (2026-08-20).
+     */
+    keterangan: string | null
   } | null
 }
 
@@ -205,7 +212,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk,nama_penyedia:payload->>nama_penyedia,sub_kegiatan:payload->>sub_kegiatan),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status)')
+      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk,nama_penyedia:payload->>nama_penyedia,sub_kegiatan:payload->>sub_kegiatan),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status,keterangan)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
     // ⚠️ `periode` bisa bernilai TAHUN saja (mis. `2026` = Akhir Tahun) —
@@ -324,7 +331,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // ⚠️ DIHITUNG, bukan ditulis tangan. Dulu `pihakLabel ? 11 : 10`, dan angka
   // seperti itu diam-diam meleset begitu ada kolom baru — baris "Tidak ada
   // transaksi" jadi tak selebar tabelnya & tak ada yang gagal.
-  const nKolom = 10 + 1 + (pihakLabel ? 1 : 0) + (adaPenyedia ? 1 : 0) + (adaAnggaran ? 2 : 0)
+  const nKolom = 9 + 1 + (pihakLabel ? 1 : 0) + (adaPenyedia ? 1 : 0) + (adaAnggaran ? 2 : 0)
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
@@ -426,7 +433,9 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
       'Tanggal Perolehan (BAST)': r.tanggal,
       'Periode': r.periode,
       'Nilai Perolehan (Rp)': r.nilai,
-      'Keterangan': r.keterangan || '',
+      // aset.keterangan = diisi operator lewat field spesifikasi;
+      // transaksi_bmd.keterangan (ledger perolehan) selalu kosong, cadangan saja.
+      'Keterangan': r.aset?.keterangan || r.keterangan || '',
     })), namaBerkasLaporan({ laporan: filePrefix, periode, skpd: namaSkpd.nama }), 'Laporan')
     setExporting(false)
   }
@@ -549,9 +558,10 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         // perolehan manual memakai penyusun lembar IV.A.<n>.2–10.
         FORMAT_PEROLEHAN[jenis]
           ? <PerolehanFormatPermendagri jenis={jenis} skpdId={selSkpdId} periode={periode} />
-          // ⚠️ Lembar Pengadaan belum paham nilai TAHUN (Akhir Tahun); diberi
-          // '' supaya ia menampilkan seluruh periode, bukan nol baris senyap.
-          : <LaporanPengadaanPermendagri periode={/^\d{4}$/.test(periode) ? '' : periode}
+          // Lembar Pengadaan kini paham nilai TAHUN (Akhir Tahun) juga — lihat
+          // periodeDiminta() di lib/laporanPengadaan.ts (2026-09-09, biar
+          // selaras dgn keempat menu perolehan manual lainnya).
+          : <LaporanPengadaanPermendagri periode={periode}
               skpdId={selSkpdId} namaSkpd={namaSkpd.nama} descIds={descIds} />
       ) : view === 'matrix' ? (
         <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={matrixLoading} />
@@ -574,7 +584,6 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                     <th className="table-th">SKPD</th>
                     {pihakLabel && <th className="table-th">{pihakLabel}</th>}
                     <th className="table-th">Kode Barang</th>
-                    <th className="table-th">Uraian Barang</th>
                     <th className="table-th">Spesifikasi Nama Barang / NIBAR</th>
                     <th className="table-th">Merk/Tipe</th>
                     <th className="table-th">Spesifikasi Lainnya</th>
@@ -600,8 +609,10 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                         {indukNama(r) && <p className="text-gray-400">{indukNama(r)}</p>}
                       </td>
                       {pihakLabel && <td className="table-td text-xs">{r.payload?.pihak || '-'}</td>}
-                      <td className="table-td text-xs">{r.aset?.kode || '-'}</td>
-                      <td className="table-td text-xs">{r.aset?.uraian_barang || '-'}</td>
+                      <td className="table-td text-xs align-top">
+                        <p className="font-medium">{r.aset?.kode || '-'}</p>
+                        <p className="text-gray-400 mt-0.5">{r.aset?.uraian_barang || '-'}</p>
+                      </td>
                       <td className="table-td text-xs">
                         <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
                         <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
@@ -625,7 +636,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                       )}
                       <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
                       <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
-                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.keterangan || '-'}</td>
+                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.aset?.keterangan || r.keterangan || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
