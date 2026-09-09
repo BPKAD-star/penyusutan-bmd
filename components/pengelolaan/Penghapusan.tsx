@@ -102,6 +102,15 @@ type JurnalLine = {
   jumlah: number
   satuan: string | null
   nilai: number
+  // Kolom tampilan tambahan (permintaan user 2026-09-09). Opsional: baris draft
+  // pengalihan yang masih pending diambil dari `payload.draft_items` yang tak
+  // memuat kolom-kolom ini → tampil '-'.
+  uraian_barang?: string | null
+  spesifikasi_lainnya?: string | null
+  no_polisi?: string | null
+  no_rangka?: string | null
+  no_mesin?: string | null
+  tgl_perolehan?: string | null
 }
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
@@ -194,14 +203,18 @@ export default function Penghapusan() {
     const ledgerIds = hs.filter(h => h.kategori === 'penghapusan' || h.approval_status === 'disetujui').map(h => h.id)
     if (ledgerIds.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan,status)')
+        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,uraian_barang,kode,merek_tipe,' +
+          'spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,tgl_perolehan,jumlah,satuan,status)')
         .in('jenis', [...PENGHAPUSAN_JENIS, 'pengalihan_status'] as never)
         .in('header_id', ledgerIds)
         .order('id', { ascending: false })
 
       const rows = (data || []) as unknown as {
         id: number; header_id: string; nilai: number; payload: { reversal?: boolean } | null
-        aset: (Barang & { status: string }) | null
+        aset: (Barang & {
+          status: string; uraian_barang: string | null; spesifikasi_lainnya: string | null
+          no_polisi: string | null; no_rangka: string | null; no_mesin: string | null; tgl_perolehan: string | null
+        }) | null
       }[]
       // Dedup per aset: baris TERBARU (id desc) menentukan keanggotaan.
       // Penghapusan: dedup global by aset (barang cuma bisa 'dihapus' di satu
@@ -243,6 +256,9 @@ export default function Penghapusan() {
         j.lines.push({
           trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
+          uraian_barang: r.aset.uraian_barang, spesifikasi_lainnya: r.aset.spesifikasi_lainnya,
+          no_polisi: r.aset.no_polisi, no_rangka: r.aset.no_rangka, no_mesin: r.aset.no_mesin,
+          tgl_perolehan: r.aset.tgl_perolehan,
         })
         j.total += r.nilai
       }
@@ -619,15 +635,20 @@ export default function Penghapusan() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="table-th w-10 text-center">Aksi</th>
-                      <th className="table-th">Kode Register / Nama Barang</th>
-                      <th className="table-th">Merek / Tipe</th>
+                      <th className="table-th">Kode Barang / Uraian</th>
+                      <th className="table-th">Merk / Tipe · NIBAR</th>
+                      <th className="table-th">Spesifikasi Lainnya</th>
+                      <th className="table-th">No. Polisi</th>
+                      <th className="table-th">No. Rangka</th>
+                      <th className="table-th">No. Mesin</th>
+                      <th className="table-th">Tgl Perolehan</th>
                       <th className="table-th text-center">Jumlah</th>
                       <th className="table-th text-right">Nilai</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {j.lines.length === 0 ? (
-                      <tr><td colSpan={5} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada barang — klik + untuk menambah.</td></tr>
+                      <tr><td colSpan={10} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada barang — klik + untuk menambah.</td></tr>
                     ) : j.lines.map(l => (
                       <tr key={l.aset_id}>
                         <td className="table-td text-center">
@@ -640,10 +661,18 @@ export default function Penghapusan() {
                           ) : <span className="text-gray-300 text-xs">—</span>}
                         </td>
                         <td className="table-td">
-                          <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
+                          <p className="font-medium text-gray-800 text-xs">{l.kode || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{l.uraian_barang || l.nama_barang || '-'}</p>
                         </td>
-                        <td className="table-td text-xs text-gray-600">{l.merek_tipe || '-'}</td>
+                        <td className="table-td">
+                          <p className="text-gray-700 text-xs">{l.merek_tipe || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'}</p>
+                        </td>
+                        <td className="table-td text-xs text-gray-600">{l.spesifikasi_lainnya || '-'}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_polisi || '-'}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_rangka || '-'}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_mesin || '-'}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.tgl_perolehan || '-'}</td>
                         <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
                         <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
                       </tr>
@@ -778,7 +807,11 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
     if (fKomptabel) q = q.eq('intra_ekstra', fKomptabel)
-    if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
+    // Cari: nama barang / NIBAR / kode (prefix) + nomor kendaraan (polisi /
+    // rangka / mesin) — permintaan user 2026-09-09.
+    if (fSearch) q = q.or(
+      `nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%,` +
+      `no_polisi.ilike.%${fSearch}%,no_rangka.ilike.%${fSearch}%,no_mesin.ilike.%${fSearch}%`)
     const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
     setRows((data as unknown as Barang[]) || [])
     setLoaded(true)
@@ -1022,7 +1055,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
           </div>
           <div className="flex-1 min-w-[180px]">
             <label className="block text-xs text-gray-500 mb-1">Cari</label>
-            <input className="select-filter w-full" placeholder="Nama barang / NIBAR / kode..."
+            <input className="select-filter w-full" placeholder="Nama / NIBAR / kode / no. polisi / rangka / mesin..."
               value={fSearch} onChange={e => setFSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
           </div>
