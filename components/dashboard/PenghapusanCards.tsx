@@ -119,9 +119,12 @@ function DetailModal({ label, jenis, subJenis, onClose }: { label: string; jenis
           if (!r.aset || r.aset.status !== 'dihapus') continue
           if (subJenis && r.header?.sub_jenis !== subJenis) continue
           const g = groupMap.get(r.skpd_asal) || { n: 0, total: 0, items: [] }
+          // `nilai` = `numeric` → STRING dari supabase-js. Tanpa `Number()`,
+          // `g.total += r.nilai` menggabung string, bukan menjumlah.
+          const nilai = Number(r.nilai) || 0
           g.n += 1
-          g.total += r.nilai || 0
-          g.items.push({ nama_barang: r.aset.nama_barang, nibar: r.aset.nibar, nilai: r.nilai })
+          g.total += nilai
+          g.items.push({ nama_barang: r.aset.nama_barang, nibar: r.aset.nibar, nilai })
           groupMap.set(r.skpd_asal, g)
         }
         const out = [...groupMap.entries()]

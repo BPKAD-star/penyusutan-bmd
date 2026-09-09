@@ -6,6 +6,17 @@ import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
 import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/PenghapusanCards'
 
+// ⚠️ Dashboard WAJIB mencerminkan ledger HIDUP. `@supabase/ssr` tak menyetel
+// `cache: 'no-store'`, jadi query `.from(...).select(...)` (GET) — Penghapusan &
+// Mutasi — diam-diam dilayani dari Next Data Cache: penghapusan/mutasi yang
+// BARU dieksekusi tak pernah muncul di kartunya walau halaman di-reload, dan
+// tak ada satu pun error. Seksi lain (Total Aset, Cara Perolehan) kebetulan
+// selamat karena lewat `supabase.rpc()` yang POST & tak pernah di-cache Next.
+// `force-dynamic` mematikan Data Cache utk seluruh fetch di halaman ini —
+// halaman ini memang sudah dinamis (baca `cookies()`), jadi tak ada ongkos
+// render tambahan; pola yang sama dgn app/kibar/[nibar]/page.tsx.
+export const dynamic = 'force-dynamic'
+
 const PERIODE = '2026-S1'
 
 function formatRp(val: number) {
@@ -147,7 +158,11 @@ async function countPenghapusan(sb: SB): Promise<{ data: PenghapusanData; err: s
         terakhir = r.id
         if (!r.aset_id) continue
         terakhirPerAset.set(r.aset_id, {
-          jenis: r.jenis, nilai: r.nilai || 0, sub: r.header?.sub_jenis ?? null, status: r.aset?.status ?? null,
+          // `nilai` = kolom `numeric` → supabase-js mengembalikannya sbg STRING.
+          // Tanpa `Number()` di sini, `out.*.nilai += t.nilai` di bawah jadi
+          // penggabungan string ("1262167700"+"17103000" → 1.26e17), bukan
+          // penjumlahan — kartu tampil angka ngawur tanpa satu pun error.
+          jenis: r.jenis, nilai: Number(r.nilai) || 0, sub: r.header?.sub_jenis ?? null, status: r.aset?.status ?? null,
         })
       }
       if (rows.length < 1000) break
