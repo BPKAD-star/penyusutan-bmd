@@ -13,6 +13,7 @@
 // panggilan RPC.
 //
 // Di layar `hidden`; print CSS di halaman induk yang menyalakannya.
+import { formatRupiah2 } from '@/lib/export'
 import {
   BARIS_LAPORAN_BMD, nilaiBarisMutasi, labelKomptabel, pecahPeriode,
   type SumberMutasi,
@@ -21,7 +22,13 @@ import {
 const KABUPATEN = 'Kediri'
 const PROVINSI = 'Jawa Timur'
 
-const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
+// SELALU 2 desimal, seragam dgn Model 1 & 2 di menu yang sama (RekapTable /
+// RekapMatrixTable) — sebelumnya lembar ini membulatkan ke 0 desimal, jadi
+// angka yang SAMA terbaca beda tergantung model yang dibuka.
+// ⚠️ Muat di lebar kolom yang sudah disetel: catatan di bawah menghitung 17
+// digit @8px ≈ 75px pada jatah 17% ≈ 119px; +3 karakter (",00") ≈ 88px, masih
+// di bawah pagunya.
+const angka = (v: number) => formatRupiah2(v || 0)
 const kurung = (v: number) => `(${angka(v)})`
 
 const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',

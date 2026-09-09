@@ -1,7 +1,7 @@
 'use client'
 // Tabel rekapitulasi penyusutan per golongan (mirip e-SIMBADA "Saldo Awal/Akhir
 // Penyusutan"). Presentational: menerima rows sudah teragregasi.
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 
 export type RekapRow = {
   kode: string
@@ -20,7 +20,7 @@ export default function RekapTable({ rows, loading, labelAkumulasi, labelBeban }
   labelAkumulasi: string
   labelBeban: string
 }) {
-  const dash = (v: number, show: boolean) => (show ? formatRupiah(v) : <span className="text-gray-300">-</span>)
+  const dash = (v: number, show: boolean) => (show ? formatRupiah2(v) : <span className="text-gray-300">-</span>)
   const tot = rows.reduce((a, r) => ({
     kuantitas: a.kuantitas + r.kuantitas,
     perolehan: a.perolehan + r.perolehan,
@@ -52,10 +52,10 @@ export default function RekapTable({ rows, loading, labelAkumulasi, labelBeban }
                 <td className="table-td text-xs">{r.kode}</td>
                 <td className="table-td text-xs font-medium">{r.uraian}</td>
                 <td className="table-td text-right text-xs">{r.kuantitas.toLocaleString('id-ID')}</td>
-                <td className="table-td text-right text-xs">{formatRupiah(r.perolehan)}</td>
+                <td className="table-td text-right text-xs">{formatRupiah2(r.perolehan)}</td>
                 <td className="table-td text-right text-xs">{dash(r.akumulasi, r.disusutkan)}</td>
                 <td className="table-td text-right text-xs">{dash(r.beban, r.disusutkan)}</td>
-                <td className="table-td text-right text-xs">{formatRupiah(r.nilaiBuku)}</td>
+                <td className="table-td text-right text-xs">{formatRupiah2(r.nilaiBuku)}</td>
               </tr>
             ))}
           </tbody>
@@ -64,10 +64,10 @@ export default function RekapTable({ rows, loading, labelAkumulasi, labelBeban }
               <tr>
                 <td className="table-td text-xs font-bold" colSpan={2}>TOTAL</td>
                 <td className="table-td text-right text-xs font-bold">{tot.kuantitas.toLocaleString('id-ID')}</td>
-                <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.perolehan)}</td>
-                <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.akumulasi)}</td>
-                <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.beban)}</td>
-                <td className="table-td text-right text-xs font-bold text-teal">{formatRupiah(tot.nilaiBuku)}</td>
+                <td className="table-td text-right text-xs font-bold">{formatRupiah2(tot.perolehan)}</td>
+                <td className="table-td text-right text-xs font-bold">{formatRupiah2(tot.akumulasi)}</td>
+                <td className="table-td text-right text-xs font-bold">{formatRupiah2(tot.beban)}</td>
+                <td className="table-td text-right text-xs font-bold text-teal">{formatRupiah2(tot.nilaiBuku)}</td>
               </tr>
             </tfoot>
           )}

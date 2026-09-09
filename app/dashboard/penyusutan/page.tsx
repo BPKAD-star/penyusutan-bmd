@@ -13,7 +13,7 @@
 // visibilitas tetap disesuaikan engine + histori transaksi. Angka polos tanpa "Rp".
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP, perlakuanKode } from '@/lib/bmd'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
@@ -98,10 +98,14 @@ type Rekap = {
 // tampilan ini memotongnya, layar menampilkan 27.970.197 sementara Laporan BMD
 // menampilkan 27.970.197,2 untuk angka YANG SAMA — dan penelaah tak punya cara
 // tahu mana yang benar. Yang dijumlah selalu nilai penuhnya; ini murni
-// tampilan. `minimumFractionDigits` tidak dipasang supaya angka yang memang
-// bulat tak jadi berekor ",00" di seluruh tabel.
-const angka = (v: number | null | undefined) =>
-  v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
+// tampilan.
+//
+// ⚠️ SEJAK 2026-09-09 `minimumFractionDigits` IKUT DIPASANG (keputusan user):
+// dulu sengaja dilepas "supaya angka bulat tak berekor ,00", tapi hasilnya
+// justru `3.082.881,75` berjejer dengan `2.400.000` di kolom yang sama — yang
+// berdesimal terlihat seperti anomali, padahal keduanya sama-sama benar.
+// Sekarang satu format untuk kelima menu; lihat `formatRupiah2` di lib/export.
+const angka = formatRupiah2
 
 // Visibilitas period-aware (event sembunyi/muncul/lahir) dari lib/visibilitas.ts
 // — dipakai bersama Daftar Barang & Rekonsiliasi supaya tak menyimpang lagi.

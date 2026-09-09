@@ -2,7 +2,7 @@
 // Rekap Model 2: matriks per SKPD (baris) × per jenis/golongan BMD (kolom).
 // Metrik yang ditampilkan bisa dipilih: perolehan / akumulasi / beban / nilai buku,
 // atau 'semua' (4 metrik per jenis). Presentational: rows sudah teragregasi.
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import type { RekapRow } from '@/components/RekapTable'
 
 export type Metric = 'perolehan' | 'akumulasi' | 'beban' | 'nilaiBuku'
@@ -56,7 +56,7 @@ export default function RekapMatrixTable({ rows, golongan, metric, loading }: {
   }
 
   const cellVal = (c: MatrixCell, m: Metric, g: Golongan) =>
-    applicable(m, g) ? formatRupiah(c[m]) : dash
+    applicable(m, g) ? formatRupiah2(c[m]) : dash
 
   const rowTotal = (r: MatrixRow, m: Metric) =>
     golongan.reduce((a, g) => a + (applicable(m, g) ? (r.cells[g.kode]?.[m] || 0) : 0), 0)
@@ -125,7 +125,7 @@ export default function RekapMatrixTable({ rows, golongan, metric, loading }: {
                       </td>
                     ))}
                 {!showAll && (
-                  <td className="table-td text-right text-xs font-semibold">{formatRupiah(rowTotal(r, metric))}</td>
+                  <td className="table-td text-right text-xs font-semibold">{formatRupiah2(rowTotal(r, metric))}</td>
                 )}
               </tr>
             ))}
@@ -139,17 +139,17 @@ export default function RekapMatrixTable({ rows, golongan, metric, loading }: {
                   ? golongan.map(g =>
                       SUB_METRICS.map((m, i) => (
                         <td key={g.kode + m} className={`table-td text-right text-xs font-bold ${i === 0 ? 'border-l border-gray-200' : ''}`}>
-                          {applicable(m, g) ? formatRupiah(totals[g.kode][m]) : dash}
+                          {applicable(m, g) ? formatRupiah2(totals[g.kode][m]) : dash}
                         </td>
                       ))
                     )
                   : golongan.map(g => (
                       <td key={g.kode} className="table-td text-right text-xs font-bold">
-                        {applicable(metric, g) ? formatRupiah(totals[g.kode][metric]) : dash}
+                        {applicable(metric, g) ? formatRupiah2(totals[g.kode][metric]) : dash}
                       </td>
                     ))}
                 {!showAll && (
-                  <td className="table-td text-right text-xs font-bold text-teal">{formatRupiah(colGrand(metric))}</td>
+                  <td className="table-td text-right text-xs font-bold text-teal">{formatRupiah2(colGrand(metric))}</td>
                 )}
               </tr>
             </tfoot>

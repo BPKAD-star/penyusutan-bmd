@@ -42,3 +42,33 @@ export function formatRupiah(val: number | null | undefined): string {
   if (val == null) return '-'
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(val)
 }
+
+/**
+ * Sama dengan `formatRupiah` tapi **SELALU dua angka di belakang koma**
+ * (`2.400.000,00`), termasuk untuk angka bulat.
+ *
+ * Latar (keputusan user 2026-09-09): lima menu yang menampilkan angka rupiah
+ * yang SAMA — Saldo Awal → Rekapitulasi, Laporan BMD (Model 1/2/3), Saldo Awal
+ * → Daftar Barang Awal, Daftar Barang, & Penyusutan — dulu formatnya
+ * berbeda-beda: sebagian `maximumFractionDigits: 0` (desimalnya DIBULATKAN
+ * hilang), sebagian `maximumFractionDigits: 2` tanpa minimum (jadi
+ * `3.082.881,75` bersebelahan dengan `2.400.000`). Akibatnya satu angka yang
+ * sama terbaca berbeda tergantung menunya, dan yang berdesimal terlihat seperti
+ * anomali padahal justru yang bulat itu hasil pembulatan tampilan.
+ *
+ * ⚠️ MURNI TAMPILAN — yang dijumlah & yang masuk Excel selalu nilai penuhnya.
+ * Di Daftar Barang / Daftar Barang Awal fungsi ini hanya dipakai `cellContent`
+ * (layar); `cell()`/`cellValue()` untuk Export tetap mengembalikan angka mentah
+ * supaya selnya bertipe angka di Excel, bukan teks.
+ *
+ * ⚠️ `formatRupiah` SENGAJA TIDAK ikut diubah. Ia dipakai ~67 berkas, termasuk
+ * lembar cetak Permendagri yang lebar kolomnya sudah disetel ketat (IV.A/B/C/
+ * D/F/G/J/K) — menambah ",00" di sana menggeser kolom & baru ketahuan sesudah
+ * kertasnya keluar. Yang butuh dua desimal memanggil fungsi ini secara sadar.
+ */
+export function formatRupiah2(val: number | null | undefined): string {
+  if (val == null) return '-'
+  return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(val)
+}

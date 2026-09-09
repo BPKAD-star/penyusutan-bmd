@@ -47,7 +47,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { koreksiFieldKeys, allSameGolongan, ASET_NUM_COLS, type FieldKey } from '@/lib/asetFields'
 import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset, type KursorKode } from '@/lib/keyset'
@@ -97,7 +97,18 @@ const COLS = [
   'asal_usul', 'penggunaan_pengamanan',
 ].join(',')
 
-const angka = (v: number | null | undefined) =>
+// Angka RUPIAH polos bergaya id-ID tanpa "Rp" — SELALU 2 desimal sejak
+// 2026-09-09 (keputusan user): halaman ini dulu membulatkan ke 0 desimal
+// sementara Saldo Awal → Rekapitulasi & Laporan BMD menampilkan desimalnya,
+// jadi angka baseline yang SAMA terbaca beda tergantung menu. Satu sumber:
+// `formatRupiah2` di lib/export.
+// ⚠️ Cuma dipakai `cellContent` (layar) & baris subtotal. `cellValue()` untuk
+// Export tetap mengembalikan angka MENTAH supaya selnya bertipe angka di Excel.
+const angka = formatRupiah2
+
+// LUAS (m²) BUKAN rupiah — tetap tanpa desimal paksa, dipisah supaya perubahan
+// format uang di atas tak ikut mengubah kolom luas.
+const angkaLuas = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 // ── Kotak "Cari" (server-side, PostgREST `or=`) ─────────────────────────────
@@ -833,7 +844,7 @@ export default function Page() {
       const v = luasOf(r)
       return (
         <>
-          <p className="text-xs text-gray-600">{v != null ? angka(v) : <span className="text-gray-300">-</span>}</p>
+          <p className="text-xs text-gray-600">{v != null ? angkaLuas(v) : <span className="text-gray-300">-</span>}</p>
           {b && b.n > 0 && (
             <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar)}`}
               className="text-[11px] text-teal hover:underline"
@@ -848,7 +859,8 @@ export default function Page() {
     }
     const v = cellValue(key, r)
     if (v === '' || v == null) return <span className="text-gray-300">-</span>
-    if (typeof v === 'number' && (TOTAL_KEYS.has(key) || key === 'luas')) return angka(v)
+    if (typeof v === 'number' && TOTAL_KEYS.has(key)) return angka(v)
+    if (typeof v === 'number' && key === 'luas') return angkaLuas(v)
     return v
   }
 

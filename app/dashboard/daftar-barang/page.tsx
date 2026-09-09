@@ -20,7 +20,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { exportToExcel } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { GOLONGAN_DAFTAR_BARANG, periodeDariTanggal, asalUsulTampil } from '@/lib/bmd'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_DAFTAR_BARANG } from '@/lib/visibilitas'
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
@@ -90,8 +90,18 @@ type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | nul
 
 type Applied = { descIds: number[] | null; skpdId: number | null; golongan: string; komptabel: string; search: string; periode: string }
 
-// Angka polos bergaya id-ID tanpa "Rp" (enak di-copas ke Excel).
-const angka = (v: number | null | undefined) =>
+// Angka RUPIAH polos bergaya id-ID tanpa "Rp" — SELALU 2 desimal sejak
+// 2026-09-09 (keputusan user): sebelumnya halaman ini membulatkan ke 0 desimal
+// sementara Penyusutan & Laporan BMD menampilkan desimalnya, jadi nilai
+// perolehan yang SAMA terbaca beda tergantung menu yang dibuka. Satu sumber:
+// `formatRupiah2` di lib/export.
+// ⚠️ Cuma dipakai `cellContent` (layar) & baris TOTAL. `cell()` untuk Export
+// tetap mengembalikan angka MENTAH supaya selnya bertipe angka di Excel.
+const angka = formatRupiah2
+
+// LUAS (m²) BUKAN rupiah — tetap tanpa desimal paksa. Dipisah supaya perubahan
+// format uang di atas tak diam-diam mengubah kolom luas jadi "1.234,00 m²".
+const angkaLuas = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 // ── Kolom per jenis aset (pakai field yang tersedia) ────────────────────────
@@ -870,7 +880,7 @@ export default function DaftarBarangPage() {
       }
       case 'penggunaan': return r.penggunaan_pengamanan || '-'
       case 'keterangan': return r.keterangan || '-'
-      case 'luas': { const v = luasOf(r); return v != null ? angka(v) : '-' }
+      case 'luas': { const v = luasOf(r); return v != null ? angkaLuas(v) : '-' }
       case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || '-'
       case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || '-'
       case 'atas_nama': return r.nama_dokumen_kepemilikan || '-'
