@@ -124,7 +124,10 @@ describe('seluruh Export Excel & lembar cetak memakai namaBerkasLaporan', () => 
       const isi = pemakai.find(x => x.rel === f)!.isi
       // `namaBerkasBA` dihitung sah: ia sendiri cuma pembungkus tipis di atas
       // `namaBerkasLaporan` (lib/beritaAcaraRekon.ts), bukan perakit kedua.
-      expect(/namaBerkasLaporan|namaBerkasBA/.test(isi),
+      // `namaBerkasKibar` (lib/kibarJenis.ts) juga sah: KIBAR kartu identitas
+      // SATU barang (NIBAR + nama), bukan laporan berperiode/berjenis/ber-SKPD
+      // — jadi ia fungsi khusus SATU pemakai, bukan perakit bebas yang dicabut.
+      expect(/namaBerkasLaporan|namaBerkasBA|namaBerkasKibar/.test(isi),
         `${f} menghasilkan berkas tapi tak memanggil namaBerkasLaporan`).toBe(true)
     })
   }

@@ -3,7 +3,23 @@
 // lahir/muncul/nilai naik, "keluar" = barang hilang dari register/nilai
 // terserap, "netral" = barang tetap ada tapi atributnya berubah (koreksi,
 // reklasifikasi, transfer SKPD).
+import { bagianNamaBerkas } from './namaBerkas'
+
 export type Tone = 'masuk' | 'keluar' | 'netral'
+
+/**
+ * Nama berkas unduhan KIBAR (dipakai `document.title` — nama bawaan "Save as
+ * PDF" di app/kibar/[nibar]/page.tsx). SENGAJA bukan `namaBerkasLaporan`: itu
+ * susunan 4 bagian utk laporan berperiode/berjenis/ber-SKPD, sedangkan KIBAR
+ * kartu identitas SATU barang yg dibuka lewat scan QR fisik — kuncinya
+ * identitas barangnya sendiri (NIBAR + nama), bukan cakupan laporan. Memakai
+ * `namaBerkasLaporan` di sini akan menyisipkan "Semua Jenis"/"Kab Kediri" yang
+ * tak relevan utk kartu per-barang.
+ */
+export function namaBerkasKibar(nibar: string, namaBarang: string | null | undefined): string {
+  const bagian = [bagianNamaBerkas(nibar), bagianNamaBerkas(namaBarang)].filter(x => x !== '')
+  return ['KIBAR', ...bagian].join('_')
+}
 
 export const KIBAR_JENIS_LABEL: Record<string, { label: string; tone: Tone }> = {
   saldo_awal: { label: 'Saldo Awal (Baseline e-BMD 2025)', tone: 'masuk' },

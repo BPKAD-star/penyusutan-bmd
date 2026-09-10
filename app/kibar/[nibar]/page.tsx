@@ -259,7 +259,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
         }
       `}</style>
       <div className="max-w-3xl mx-auto mb-3 flex justify-end kibar-no-print">
-        <PrintPageButton />
+        <PrintPageButton nibar={aset.nibar || ''} namaBarang={aset.nama_barang || uraianBarang || null} />
       </div>
 
       <div id="kibar-print-area" className="max-w-3xl mx-auto bg-white border border-gray-300 rounded-lg overflow-hidden">
