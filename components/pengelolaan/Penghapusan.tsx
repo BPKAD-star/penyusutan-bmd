@@ -22,7 +22,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { SUBJENIS_OPT, JENIS_PENGHAPUSAN, type JenisHapus } from '@/lib/penghapusan'
 import { catatTransaksi } from '@/lib/transaksi'
-import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
+import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
@@ -61,7 +61,14 @@ type Barang = {
   nibar: string | null
   kode: string
   nama_barang: string | null
+  uraian_barang: string | null
   merek_tipe: string | null
+  spesifikasi_lainnya: string | null
+  no_polisi: string | null
+  no_rangka: string | null
+  no_mesin: string | null
+  tgl_perolehan: string | null
+  tahun_pengadaan: number | null
   jumlah: number
   satuan: string | null
   nilai_perolehan: number
@@ -803,7 +810,8 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   async function tampilkan() {
     setLoading(true)
     let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id')
+      .select('id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,' +
+        'no_polisi,no_rangka,no_mesin,tgl_perolehan,tahun_pengadaan,jumlah,satuan,nilai_perolehan,skpd_id')
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
     if (fKomptabel) q = q.eq('intra_ekstra', fKomptabel)
@@ -1073,26 +1081,43 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                     <th className="table-th w-10 text-center">
                       <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                     </th>
-                    <th className="table-th">Barang</th>
-                    <th className="table-th">Merek / Tipe</th>
+                    <th className="table-th">Kode Barang / Uraian</th>
+                    <th className="table-th">Spesifikasi Nama · NIBAR</th>
+                    <th className="table-th">Merk / Tipe</th>
+                    <th className="table-th">Spesifikasi Lainnya</th>
+                    <th className="table-th">No. Polisi</th>
+                    <th className="table-th">No. Rangka</th>
+                    <th className="table-th">No. Mesin</th>
                     <th className="table-th text-center">Jumlah</th>
+                    <th className="table-th">Tgl Perolehan</th>
+                    <th className="table-th text-center">Tahun Pengadaan</th>
                     <th className="table-th text-right">Nilai Perolehan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {rows.length === 0 ? (
-                    <tr><td colSpan={5} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
+                    <tr><td colSpan={12} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
                   ) : rows.map(b => (
                     <tr key={b.id} className={sel[b.id] ? 'bg-teal/5' : ''}>
                       <td className="table-td text-center">
                         <input type="checkbox" checked={!!sel[b.id]} onChange={() => toggle(b)} />
                       </td>
                       <td className="table-td">
-                        <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode} · {golonganLabels[kodeLevel3(b.kode)] || kodeLevel3(b.kode)}</p>
+                        <p className="font-medium text-gray-800 text-xs">{b.kode || '-'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{b.uraian_barang || '-'}</p>
+                      </td>
+                      <td className="table-td">
+                        <p className="text-gray-700 text-xs">{b.nama_barang || '-'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'}</p>
                       </td>
                       <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
+                      <td className="table-td text-xs text-gray-600">{b.spesifikasi_lainnya || '-'}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_polisi || '-'}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_rangka || '-'}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_mesin || '-'}</td>
                       <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.tgl_perolehan || '-'}</td>
+                      <td className="table-td text-center text-xs">{b.tahun_pengadaan ?? '-'}</td>
                       <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
                     </tr>
                   ))}
