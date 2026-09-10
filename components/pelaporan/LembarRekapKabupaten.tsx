@@ -54,15 +54,23 @@ export default function LembarRekapKabupaten<T>(p: PropRekapKab<T>) {
   function Kop({ judulAwal, menurut }: { judulAwal: string; menurut: string }) {
     return (
       <>
-        <div className="text-center leading-tight mb-2">
-          <p className="font-bold text-[11px]">{judulAwal} {p.judulDasar} {p.berupa}</p>
-          <p className="font-bold text-[11px]">MENURUT {menurut}</p>
-          <p className="font-bold text-[11px]">{p.labelKomptabel}</p>
-          {/* ⚠️ Baris ini yang membedakannya dari lembar per-SKPD: TIDAK ada
-              nama SKPD & tidak ada sebutan pejabat penggunanya. */}
-          <p className="font-bold text-[11px]">PROVINSI {PROVINSI.toUpperCase()}, KABUPATEN {KABUPATEN.toUpperCase()}</p>
-          <p className="font-bold text-[11px]">{p.judulPeriode}</p>
-          <p className="font-bold text-[11px]">TAHUN {p.tahun}</p>
+        {/* Logo kiri + spacer kanan selebar sama (permintaan user 2026-09-10),
+            sama persis dgn `KopLembar` (lembar per-SKPD) — biar kop lembar
+            se-Kabupaten & per-SKPD di keluarga Perolehan ini seragam. */}
+        <div className="flex items-start gap-2 mb-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-kab-kediri.png" alt="Logo Kabupaten Kediri" className="w-11 h-auto flex-shrink-0" />
+          <div className="flex-1 text-center leading-tight">
+            <p className="font-bold text-[11px]">{judulAwal} {p.judulDasar} {p.berupa}</p>
+            <p className="font-bold text-[11px]">MENURUT {menurut}</p>
+            <p className="font-bold text-[11px]">{p.labelKomptabel}</p>
+            {/* ⚠️ Baris ini yang membedakannya dari lembar per-SKPD: TIDAK ada
+                nama SKPD & tidak ada sebutan pejabat penggunanya. */}
+            <p className="font-bold text-[11px]">PROVINSI {PROVINSI.toUpperCase()}, KABUPATEN {KABUPATEN.toUpperCase()}</p>
+            <p className="font-bold text-[11px]">{p.judulPeriode}</p>
+            <p className="font-bold text-[11px]">TAHUN {p.tahun}</p>
+          </div>
+          <div className="w-11 flex-shrink-0" aria-hidden="true" />
         </div>
         <table className="text-[9px] mb-1">
           <tbody>
