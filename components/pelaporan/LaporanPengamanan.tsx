@@ -27,8 +27,9 @@ import { exportToExcel, formatRupiah } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { useIsAdmin } from '@/components/useIsAdmin'
+import { useProfilRole } from '@/components/useProfilRole'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
+import { bangunPohonRekap, ratakanPohon, type LeafRekap } from '@/lib/rekapPohon'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { identitasPengamanan, type PayloadPengamanan } from '@/lib/pengamanan'
 import PengamananFormatPermendagri from './PengamananFormatPermendagri'
@@ -42,10 +43,14 @@ type Row = {
 }
 
 export default function LaporanPengamanan() {
-  const isAdmin = useIsAdmin()
+  const { role, skpdId: myScopeId } = useProfilRole()
+  const isAdmin = role === 'admin'
   const supabase = createClient()
   const konfirmasiCetak = useKonfirmasiCetak()
-  const { rootOf, loaded: skpdLoaded } = useSkpdTree()
+  const { byId: skpdById, childrenOf, rootOf, loaded: skpdLoaded } = useSkpdTree()
+  // Rekap per SKPD = admin ATAU siapa pun yang punya anak SKPD di bawahnya
+  // (keputusan user 2026-09-10) — lihat catatan sama di LaporanPerolehan.tsx.
+  const bolehRekap = isAdmin || (myScopeId != null && (childrenOf.get(myScopeId)?.length ?? 0) > 0)
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -130,18 +135,21 @@ export default function LaporanPengamanan() {
   // kedua, jadi mustahil beda dari tab sebelah (termasuk saat Status disaring).
   const matrix: MatrixRow[] = (() => {
     if (!skpdLoaded) return []
-    const mtx: Record<number, MatrixRow> = {}
+    const leaf = new Map<number, LeafRekap>()
     for (const r of rows) {
       // Diatribusikan ke SKPD PEMEGANG KARTU (`jurnal_header.skpd_id`) — sama
       // dgn kolom SKPD di tab Daftar & sama dgn yang disaring picker di atas.
       // Pengamanan tak pernah lintas-SKPD, jadi ia juga pemilik barangnya.
-      const root = rootOf(r.skpdId)
-      const rid = root?.id ?? r.skpdId
-      mtx[rid] ??= { skpdId: rid, skpdNama: root?.nama ?? r.skpd, cells: {} }
-      const c = (mtx[rid].cells[kodeLevel3(r.kode)] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
+      const nama = skpdById.get(r.skpdId)?.nama ?? r.skpd
+      const l = leaf.get(r.skpdId) ?? { nama, cells: {} }
+      const c = (l.cells[kodeLevel3(r.kode)] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
       c.perolehan += r.nilai
+      leaf.set(r.skpdId, l)
     }
-    return Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama))
+    const akarIds = isAdmin
+      ? [...new Set([...leaf.keys()].map(id => rootOf(id)?.id ?? id))]
+      : (myScopeId != null ? [myScopeId] : [])
+    return bangunPohonRekap(leaf, skpdById, akarIds)
   })()
 
   const namaBerkas = (akhiran?: string[]) =>
@@ -160,8 +168,8 @@ export default function LaporanPengamanan() {
   }
 
   function handleExportMatrix() {
-    exportToExcel(matrix.map(r => {
-      const row: Record<string, unknown> = { SKPD: r.skpdNama }
+    exportToExcel(ratakanPohon(matrix).map(({ row: r, namaBerindentasi }) => {
+      const row: Record<string, unknown> = { SKPD: namaBerindentasi }
       let total = 0
       for (const g of GOLONGAN_REKAP) { const v = r.cells[g.kode]?.perolehan || 0; row[g.uraian] = v; total += v }
       row['Total'] = total
@@ -202,10 +210,10 @@ export default function LaporanPengamanan() {
       </div>
 
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm no-print">
-        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10) —
-            lihat catatan sama di LaporanPerolehan.tsx. */}
+        {/* Rekap per SKPD = admin ATAU siapa pun yang punya anak SKPD di
+            bawahnya (keputusan user 2026-09-10) — lihat `bolehRekap`. */}
         {([['daftar', 'Daftar'] as const,
-          ...(isAdmin ? [['matrix', 'Rekap per SKPD'] as const] : []),
+          ...(bolehRekap ? [['matrix', 'Rekap per SKPD'] as const] : []),
           ['permendagri', 'Format Permendagri'] as const] as const).map(([v, label]) => (
           <button key={v} onClick={() => setTab(v)}
             className={`px-4 py-1.5 rounded-md transition-colors ${tab === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>

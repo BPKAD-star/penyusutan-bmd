@@ -25,6 +25,21 @@ export function useSkpdTree() {
 
   const byId = useMemo(() => new Map(all.map(s => [s.id, s])), [all])
 
+  // Peta induk → anak langsung. Dipakai Rekap per SKPD berjenjang (2026-09-10):
+  // buat tahu SKPD ini punya anak atau tidak (gerbang tab "Rekap per SKPD" —
+  // yg tanpa anak tak dapat tab itu, rekapnya cuma bakal 1 baris) & buat
+  // menyusun pohon drill-down (lib/rekapPohon.ts).
+  const childrenOf = useMemo(() => {
+    const m = new Map<number, SkpdNode[]>()
+    for (const s of all) {
+      if (s.parent_id == null) continue
+      const arr = m.get(s.parent_id) || []
+      arr.push(s)
+      m.set(s.parent_id, arr)
+    }
+    return m
+  }, [all])
+
   // SKPD level-1 (root) dari id manapun; naik lewat parent_id sampai mentok.
   function rootOf(id: number): SkpdNode | null {
     let cur = byId.get(id) || null
@@ -36,5 +51,5 @@ export function useSkpdTree() {
     return cur
   }
 
-  return { all, byId, rootOf, loaded: all.length > 0 }
+  return { all, byId, childrenOf, rootOf, loaded: all.length > 0 }
 }

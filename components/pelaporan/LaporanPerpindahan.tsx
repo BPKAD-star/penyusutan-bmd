@@ -44,8 +44,9 @@ import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { useIsAdmin } from '@/components/useIsAdmin'
+import { useProfilRole } from '@/components/useProfilRole'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
+import { bangunPohonRekap, ratakanPohon, type LeafRekap } from '@/lib/rekapPohon'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
@@ -108,9 +109,13 @@ export type PropLaporanPerpindahan = {
 }
 
 export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
-  const isAdmin = useIsAdmin()
+  const { role, skpdId: myScopeId } = useProfilRole()
+  const isAdmin = role === 'admin'
   const supabase = createClient()
-  const { rootOf, loaded: skpdLoaded } = useSkpdTree()
+  const { byId: skpdById, childrenOf, rootOf, loaded: skpdLoaded } = useSkpdTree()
+  // Rekap per SKPD = admin ATAU siapa pun yang punya anak SKPD di bawahnya
+  // (keputusan user 2026-09-10) — lihat catatan sama di LaporanPerolehan.tsx.
+  const bolehRekap = isAdmin || (myScopeId != null && (childrenOf.get(myScopeId)?.length ?? 0) > 0)
   const tahunBuku = useTahunBukuMap()
   // ⚠️ Dibaca dari REGISTRY, bukan dari `FORMAT_PERPINDAHAN`. Registry-lah satu-
   // satunya daftar yang menjawab "lembar ini sudah ada atau belum" (lihat
@@ -232,33 +237,35 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
     ;(async () => {
       setMatrixLoading(true); setErr('')
       try {
-        const mtx: Record<number, MatrixRow> = {}
+        const leaf = new Map<number, LeafRekap>()
         for (let from = 0; ; from += 1000) {
           const { data, error } = await buildQuery().range(from, from + 999)
           if (error) throw new Error(error.message)
           if (!data || data.length === 0) break
           for (const r of await saringBatal(data as never as Trx[])) {
             if (!r.skpd_tujuan) continue
-            const root = rootOf(r.skpd_tujuan)
-            const rid = root?.id ?? r.skpd_tujuan
-            const rnama = root?.nama ?? `SKPD #${r.skpd_tujuan}`
+            const nama = skpdById.get(r.skpd_tujuan)?.nama ?? `SKPD #${r.skpd_tujuan}`
             const g = kodeLevel3(r.aset?.kode || '')
-            mtx[rid] ??= { skpdId: rid, skpdNama: rnama, cells: {} }
-            const c = (mtx[rid].cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
+            const l = leaf.get(r.skpd_tujuan) ?? { nama, cells: {} }
+            const c = (l.cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
             c.perolehan += r.nilai || 0
+            leaf.set(r.skpd_tujuan, l)
           }
           if (data.length < 1000) break
         }
-        setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
+        const akarIds = isAdmin
+          ? [...new Set([...leaf.keys()].map(id => rootOf(id)?.id ?? id))]
+          : (myScopeId != null ? [myScopeId] : [])
+        setMatrix(bangunPohonRekap(leaf, skpdById, akarIds))
       } catch (e) {
         setErr(pesanGagal(e as Error)); setMatrix([])
       } finally { setMatrixLoading(false) }
     })()
-  }, [view, buildQuery, skpdLoaded, saringBatal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, buildQuery, skpdLoaded, saringBatal, isAdmin, myScopeId, skpdById, rootOf]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleExportMatrix() {
-    exportToExcel(matrix.map(r => {
-      const row: Record<string, unknown> = { SKPD: r.skpdNama }
+    exportToExcel(ratakanPohon(matrix).map(({ row: r, namaBerindentasi }) => {
+      const row: Record<string, unknown> = { SKPD: namaBerindentasi }
       let total = 0
       for (const g of GOLONGAN_REKAP) {
         const v = r.cells[g.kode]?.perolehan || 0
@@ -332,12 +339,9 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Daftar Transaksi
         </button>
-        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10) —
-            pengurus barang sudah terkunci SkpdCombobox ke subtree-nya sendiri,
-            jadi matriksnya buat dia cuma berisi satu SKPD (degenerate, bukan
-            celah data — RLS tetap menjaga), dan tombolnya memang tak pantas
-            ditawarkan. */}
-        {isAdmin && (
+        {/* Rekap per SKPD = admin ATAU siapa pun yang punya anak SKPD di
+            bawahnya (keputusan user 2026-09-10) — lihat `bolehRekap`. */}
+        {bolehRekap && (
           <button onClick={() => setView('matrix')}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
             Rekap per SKPD

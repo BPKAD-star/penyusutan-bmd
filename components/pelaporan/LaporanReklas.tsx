@@ -42,8 +42,9 @@ import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { useIsAdmin } from '@/components/useIsAdmin'
+import { useProfilRole } from '@/components/useProfilRole'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
+import { bangunPohonRekap, ratakanPohon, type LeafRekap } from '@/lib/rekapPohon'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { LEMBAR_PERMENDAGRI, type IdLembar } from '@/lib/permendagriFormat'
@@ -57,9 +58,13 @@ const ARAH_LABEL: Record<ArahReklas, string> = {
 }
 
 export default function LaporanReklas() {
-  const isAdmin = useIsAdmin()
+  const { role, skpdId: myScopeId } = useProfilRole()
+  const isAdmin = role === 'admin'
   const supabase = createClient()
-  const { rootOf, loaded: skpdLoaded } = useSkpdTree()
+  const { byId: skpdById, childrenOf, rootOf, loaded: skpdLoaded } = useSkpdTree()
+  // Rekap per SKPD = admin ATAU siapa pun yang punya anak SKPD di bawahnya
+  // (keputusan user 2026-09-10) — lihat catatan sama di LaporanPerolehan.tsx.
+  const bolehRekap = isAdmin || (myScopeId != null && (childrenOf.get(myScopeId)?.length ?? 0) > 0)
   const tahunBuku = useTahunBukuMap()
   const namaSkpd = useNamaSkpd()
 
@@ -127,26 +132,28 @@ export default function LaporanReklas() {
   // Rekonsiliasi yang ditutup 2026-08-27.
   const matrix: MatrixRow[] = (() => {
     if (!skpdLoaded) return []
-    const mtx: Record<number, MatrixRow> = {}
+    const leaf = new Map<number, LeafRekap>()
     for (const r of rows) {
       const sid = r.aset?.skpd_id
       if (!sid) continue
-      const root = rootOf(sid)
-      const rid = root?.id ?? sid
-      const rnama = root?.nama ?? `SKPD #${sid}`
+      const nama = skpdById.get(sid)?.nama ?? `SKPD #${sid}`
       const g = kodeLevel3(r.kodeUtama)
-      mtx[rid] ??= { skpdId: rid, skpdNama: rnama, cells: {} }
-      const c = (mtx[rid].cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
+      const l = leaf.get(sid) ?? { nama, cells: {} }
+      const c = (l.cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
       c.perolehan += r.nilai || 0
       c.akumulasi += r.akumulasi || 0
       c.nilaiBuku += r.nilaiBuku || 0
+      leaf.set(sid, l)
     }
-    return Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama))
+    const akarIds = isAdmin
+      ? [...new Set([...leaf.keys()].map(id => rootOf(id)?.id ?? id))]
+      : (myScopeId != null ? [myScopeId] : [])
+    return bangunPohonRekap(leaf, skpdById, akarIds)
   })()
 
   function handleExportMatrix() {
-    exportToExcel(matrix.map(r => {
-      const row: Record<string, unknown> = { SKPD: r.skpdNama }
+    exportToExcel(ratakanPohon(matrix).map(({ row: r, namaBerindentasi }) => {
+      const row: Record<string, unknown> = { SKPD: namaBerindentasi }
       let total = 0
       for (const g of GOLONGAN_REKAP) {
         const v = r.cells[g.kode]?.perolehan || 0
@@ -243,9 +250,9 @@ export default function LaporanReklas() {
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Daftar Transaksi
         </button>
-        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10) —
-            lihat catatan sama di LaporanPerolehan.tsx/LaporanPerpindahan.tsx. */}
-        {isAdmin && (
+        {/* Rekap per SKPD = admin ATAU siapa pun yang punya anak SKPD di
+            bawahnya (keputusan user 2026-09-10) — lihat `bolehRekap`. */}
+        {bolehRekap && (
           <button onClick={() => setView('matrix')}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
             Rekap per SKPD

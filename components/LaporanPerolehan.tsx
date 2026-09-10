@@ -13,8 +13,9 @@ import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { useIsAdmin } from '@/components/useIsAdmin'
+import { useProfilRole } from '@/components/useProfilRole'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
+import { bangunPohonRekap, ratakanPohon, type LeafRekap } from '@/lib/rekapPohon'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import LaporanPengadaanPermendagri from '@/components/pelaporan/LaporanPengadaanPermendagri'
@@ -121,9 +122,15 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // dua arti, di modul yang sama. Kode formatnya tetap terbaca, tapi dicetak
   // DI LEMBARNYA (LaporanPengadaanTabel).
   const lembar = lembarPerolehan(jenis)
-  const isAdmin = useIsAdmin()
+  const { role, skpdId: myScopeId } = useProfilRole()
+  const isAdmin = role === 'admin'
   const supabase = createClient()
-  const { byId: skpdById, rootOf, loaded: skpdLoaded } = useSkpdTree()
+  const { byId: skpdById, childrenOf, rootOf, loaded: skpdLoaded } = useSkpdTree()
+  // Rekap per SKPD = wewenang admin pemda ATAU siapa pun yang punya anak SKPD
+  // di bawahnya (keputusan user 2026-09-10) — tanpa anak, rekapnya cuma bakal
+  // 1 baris (dirinya sendiri), sama saja dgn total yang sudah ada di tab
+  // Daftar Transaksi, jadi tabnya tak usah ditawarkan sama sekali.
+  const bolehRekap = isAdmin || (myScopeId != null && (childrenOf.get(myScopeId)?.length ?? 0) > 0)
   const tahunBuku = useTahunBukuMap()
   const [rows, setRows] = useState<Trx[]>([])
   const [loading, setLoading] = useState(true)
@@ -337,13 +344,15 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
-  // Rekap per SKPD: matriks SKPD (root) x golongan — dibangun full (tak dibatasi 500 spt daftar transaksi).
+  // Rekap per SKPD: dikumpulkan per SKPD PERSIS (leaf, bukan root lagi) lalu
+  // disusun berjenjang oleh `bangunPohonRekap` (2026-09-10) — dibangun full
+  // (tak dibatasi 500 spt daftar transaksi).
   useEffect(() => {
     if (view !== 'matrix' || !skpdLoaded) return
     ;(async () => {
       setMatrixLoading(true); setVoidedErr('')
       try {
-      const mtx: Record<number, MatrixRow> = {}
+      const leaf = new Map<number, LeafRekap>()
       for (let from = 0; ; from += 1000) {
         const { data, error } = await buildQuery().range(from, from + 999)
         if (error) throw new Error(error.message)
@@ -352,26 +361,32 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
         // biayanya datar berapa pun besar ledgernya.
         for (const r of await saringVoid((data as never as Trx[]))) {
           if (!r.skpd_tujuan) continue
-          const root = rootOf(r.skpd_tujuan)
-          const rid = root?.id ?? r.skpd_tujuan
-          const rnama = root?.nama ?? `SKPD #${r.skpd_tujuan}`
+          const nama = skpdById.get(r.skpd_tujuan)?.nama ?? `SKPD #${r.skpd_tujuan}`
           const g = kodeLevel3(r.aset?.kode || '')
-          mtx[rid] ??= { skpdId: rid, skpdNama: rnama, cells: {} }
-          const c = (mtx[rid].cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
+          const l = leaf.get(r.skpd_tujuan) ?? { nama, cells: {} }
+          const c = (l.cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
           c.perolehan += r.nilai || 0
+          leaf.set(r.skpd_tujuan, l)
         }
         if (data.length < 1000) break
       }
-      setMatrix(Object.values(mtx).sort((a, b) => a.skpdNama.localeCompare(b.skpdNama)))
+      // Akar pohon: admin lihat SEMUA induk (level-1) yang punya data; yang
+      // lain cuma lihat SKPD-nya sendiri (berapa pun levelnya) sbg akar.
+      const akarIds = isAdmin
+        ? [...new Set([...leaf.keys()].map(id => rootOf(id)?.id ?? id))]
+        : (myScopeId != null ? [myScopeId] : [])
+      setMatrix(bangunPohonRekap(leaf, skpdById, akarIds))
       } catch (e) {
         setVoidedErr(pesanGagal(e as Error)); setMatrix([])
       } finally { setMatrixLoading(false) }
     })()
-  }, [view, buildQuery, skpdLoaded, saringVoid]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, buildQuery, skpdLoaded, saringVoid, isAdmin, myScopeId, skpdById, rootOf]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleExportMatrix() {
-    exportToExcel(matrix.map(r => {
-      const row: Record<string, unknown> = { SKPD: r.skpdNama }
+    // Seluruh jenjang diratakan (bukan cuma baris teratas) — berkas Excel
+    // wajib membawa rinciannya utuh, bukan cuma yang kelihatan sebelum di-expand.
+    exportToExcel(ratakanPohon(matrix).map(({ row: r, namaBerindentasi }) => {
+      const row: Record<string, unknown> = { SKPD: namaBerindentasi }
       let total = 0
       for (const g of GOLONGAN_REKAP) {
         const v = r.cells[g.kode]?.perolehan || 0
@@ -507,12 +522,10 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Daftar Transaksi
         </button>
-        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10):
-            pengurus barang sudah dikunci SkpdCombobox ke subtree-nya sendiri,
-            jadi matriks "per SKPD" buat dia cuma akan berisi SKPD-nya sendiri
-            — degenerate & membingungkan, bukan celah data (RLS tetap
-            menjaga), tapi tombolnya memang tak pantas ditawarkan. */}
-        {isAdmin && (
+        {/* Rekap per SKPD = admin ATAU siapa pun yang punya anak SKPD di
+            bawahnya (keputusan user 2026-09-10) — lihat `bolehRekap`. Yang
+            tak punya anak tak dapat tab ini sama sekali. */}
+        {bolehRekap && (
           <button onClick={() => setView('matrix')}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
             Rekap per SKPD
