@@ -17,8 +17,6 @@ import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/P
 // render tambahan; pola yang sama dgn app/kibar/[nibar]/page.tsx.
 export const dynamic = 'force-dynamic'
 
-const PERIODE = '2026-S1'
-
 function formatRp(val: number) {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(val)
 }
@@ -265,10 +263,7 @@ export default function DashboardHome() {
     // di kiri & kanan dan terasa tak sejajar dengan menu di sebelahnya.
     <div className="p-6">
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500 text-sm mt-1">Ringkasan BMD Kabupaten Kediri — Periode {PERIODE}</p>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
         <div className="text-right">
           <p className="text-xs text-gray-400">Total Nilai BMD</p>
           <Suspense fallback={<p className="text-2xl font-bold text-gray-200 animate-pulse">••••</p>}>
@@ -283,7 +278,7 @@ export default function DashboardHome() {
       </Suspense>
 
       {/* Perolehan */}
-      <Section title="Total Barang per Cara Perolehan" sub="Jumlah barang masuk berdasarkan cara perolehan — klik utk rincian disetujui/menunggu">
+      <Section title="Total Barang per Cara Perolehan">
         <Suspense fallback={<CardsSkeleton n={5} kolom={5} />}>
           <SeksiCaraPerolehan />
         </Suspense>
@@ -305,15 +300,21 @@ export default function DashboardHome() {
 async function TotalNilai() {
   const scan = await getScan()
   const totalNilai = Object.values(scan.gol).reduce((s, v) => s + v.nilai, 0)
+  const totalRegister = Object.values(scan.gol).reduce((s, v) => s + v.count, 0)
   // Saat gagal: JANGAN tampilkan Rp0 — itu angka yang terlihat sah.
-  return <p className="text-2xl font-bold text-teal">{scan.err ? '—' : formatRp(totalNilai)}</p>
+  return (
+    <>
+      <p className="text-2xl font-bold text-teal">{scan.err ? '—' : formatRp(totalNilai)}</p>
+      {/* Jumlah unit register — dipindah ke sini dari sub-judul "Total Aset per
+          Jenis" (permintaan user 2026-09-10). */}
+      {!scan.err && <p className="text-xs text-gray-400 mt-0.5">{nf(totalRegister)} aset</p>}
+    </>
+  )
 }
 
 async function SectionJenis() {
   const scan = await getScan()
   const gol = scan.gol
-  const totalRegister = Object.values(gol).reduce((s, v) => s + v.count, 0)
-  const totalNilai = Object.values(gol).reduce((s, v) => s + v.nilai, 0)
 
   return (
     <>
@@ -324,10 +325,9 @@ async function SectionJenis() {
           data yang tidak berhasil diambil. Muat ulang halaman; kalau berulang, kabari admin.
         </div>
       )}
-      {/* Sub-judul ikut jujur: saat gagal, `Register BMD — 0 aset · 0` itu
-          statistik KARANGAN yang terbaca sebagai "registernya memang kosong". */}
-      <Section title="Total Aset per Jenis"
-        sub={scan.err ? 'Register BMD — jumlah tidak dapat dibaca' : `Register BMD — ${nf(totalRegister)} aset · ${formatRp(totalNilai)}`}>
+      {/* Sub-judul "Register BMD — N aset · Rp…" dipindah: jumlah aset kini di
+          bawah "Total Nilai BMD" (kanan atas), lihat TotalNilai. */}
+      <Section title="Total Aset per Jenis">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {GOLONGAN_REKAP.map(g => {
             const d = gol[g.kode] || { count: 0, nilai: 0 }
@@ -381,7 +381,7 @@ async function SeksiCaraPerolehan() {
 async function SectionMutasi() {
   const pindah = await getPindah()
   return (
-    <Section title="Mutasi & Transfer" sub="Perpindahan barang antar / dalam SKPD — proporsi sudah di-acc vs masih menunggu persetujuan">
+    <Section title="Mutasi & Transfer">
       {/* Sama alasannya dgn banner scanAset: angka 0 yang lahir dari query
           gagal terbaca sebagai "belum ada perpindahan" — katakan apa adanya. */}
       {pindah.err && (
@@ -398,7 +398,7 @@ async function SectionMutasi() {
 async function SectionPenghapusan() {
   const hapus = await getHapus()
   return (
-    <Section title="Penghapusan Barang" sub="Barang yang dihapus dari laporan (data tetap tersimpan) — klik utk rincian per SKPD">
+    <Section title="Penghapusan Barang">
       {hapus.err && (
         <div role="alert" className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-3">
           <span className="font-semibold">Riwayat penghapusan gagal dimuat</span> — {hapus.err}.
@@ -410,12 +410,12 @@ async function SectionPenghapusan() {
   )
 }
 
-function Section({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
+function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
     <div className="mb-8">
       <div className="mb-3">
         <h2 className="text-base font-semibold text-gray-800">{title}</h2>
-        <p className="text-xs text-gray-400">{sub}</p>
+        {sub && <p className="text-xs text-gray-400">{sub}</p>}
       </div>
       {children}
     </div>

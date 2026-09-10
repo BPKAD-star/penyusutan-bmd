@@ -16,7 +16,7 @@ const nf = (n: number) => n.toLocaleString('id-ID')
 
 type Kategori = 'pengalihan_status' | 'mutasi_internal'
 type Arah = 'keluar' | 'masuk'
-type CardDef = { key: string; label: string; note: string; kategori: Kategori; arah: Arah; disetujui: number; belum: number }
+type CardDef = { key: string; label: string; kategori: Kategori; arah: Arah; disetujui: number; belum: number }
 
 export default function MutasiTransferCards({ approved }: {
   approved: { transfer: number; mutasiInternal: number }
@@ -47,17 +47,17 @@ export default function MutasiTransferCards({ approved }: {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cards: CardDef[] = [
-    { key: 'transfer-keluar', label: 'Transfer Keluar SKPD', note: 'Pengalihan status — sisi pengirim', kategori: 'pengalihan_status', arah: 'keluar', disetujui: approved.transfer, belum: pending.transfer },
-    { key: 'transfer-masuk', label: 'Transfer Masuk SKPD', note: 'Pengalihan status — sisi penerima', kategori: 'pengalihan_status', arah: 'masuk', disetujui: approved.transfer, belum: pending.transfer },
-    { key: 'keluar-internal', label: 'Pengeluaran Internal', note: 'Mutasi antar sub-SKPD — sisi pengirim', kategori: 'mutasi_internal', arah: 'keluar', disetujui: approved.mutasiInternal, belum: pending.mutasiInternal },
-    { key: 'masuk-internal', label: 'Penerimaan Internal', note: 'Mutasi antar sub-SKPD — sisi penerima', kategori: 'mutasi_internal', arah: 'masuk', disetujui: approved.mutasiInternal, belum: pending.mutasiInternal },
+    { key: 'transfer-keluar', label: 'Transfer Keluar SKPD', kategori: 'pengalihan_status', arah: 'keluar', disetujui: approved.transfer, belum: pending.transfer },
+    { key: 'transfer-masuk', label: 'Transfer Masuk SKPD', kategori: 'pengalihan_status', arah: 'masuk', disetujui: approved.transfer, belum: pending.transfer },
+    { key: 'keluar-internal', label: 'Pengeluaran Internal', kategori: 'mutasi_internal', arah: 'keluar', disetujui: approved.mutasiInternal, belum: pending.mutasiInternal },
+    { key: 'masuk-internal', label: 'Penerimaan Internal', kategori: 'mutasi_internal', arah: 'masuk', disetujui: approved.mutasiInternal, belum: pending.mutasiInternal },
   ]
 
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {cards.map(c => (
-          <DonutCard key={c.key} label={c.label} note={c.note} disetujui={c.disetujui} belum={c.belum}
+          <DonutCard key={c.key} label={c.label} disetujui={c.disetujui} belum={c.belum}
             onClickDisetujui={() => setDetail({ kategori: c.kategori, arah: c.arah, mode: 'disetujui', label: c.label })}
             onClickMenunggu={() => setDetail({ kategori: c.kategori, arah: c.arah, mode: 'menunggu', label: c.label })} />
         ))}
@@ -72,8 +72,8 @@ export default function MutasiTransferCards({ approved }: {
   )
 }
 
-function DonutCard({ label, note, disetujui, belum, onClickDisetujui, onClickMenunggu }: {
-  label: string; note: string; disetujui: number; belum: number
+function DonutCard({ label, disetujui, belum, onClickDisetujui, onClickMenunggu }: {
+  label: string; disetujui: number; belum: number
   onClickDisetujui: () => void; onClickMenunggu: () => void
 }) {
   const total = disetujui + belum
@@ -104,8 +104,7 @@ function DonutCard({ label, note, disetujui, belum, onClickDisetujui, onClickMen
             <span className="text-gray-700">{nf(belum)} menunggu</span>
           </button>
         </div>
-      </div>
-      <p className="text-[11px] text-gray-400 mt-1 leading-tight">{note}</p>
+      </div>
     </div>
   )
 }
