@@ -180,7 +180,7 @@ export default function CaraPerolehanCards({ approved, approvedNilai, errApprove
           Angka menunggu di bawah <span className="font-semibold">bukan nol yang sebenarnya</span>.
         </div>
       )}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
         {CARA_LIST.map(c => {
           const disetujui = approved[c.key] || 0
           const belum = pending[c.key] || 0
@@ -216,7 +216,7 @@ function CaraCard({ cara, disetujui, belum, nilai, gagalDisetujui, onClickApprov
   //     tapi terbaca persis seperti kabar baik.
   const pct = gagalDisetujui || total === 0 ? null : Math.round((disetujui / total) * 100)
   return (
-    <div className="card p-4">
+    <div className="card p-3">
       <p className="text-xs text-gray-600 leading-tight">{cara.label}</p>
       <p className="text-sm font-bold text-teal mb-1 truncate" title={gagalDisetujui ? 'Tidak dapat dibaca' : formatRp(nilai)}>
         {gagalDisetujui ? <span className="text-gray-300">–</span> : formatRp(nilai)}
@@ -232,14 +232,14 @@ function CaraCard({ cara, disetujui, belum, nilai, gagalDisetujui, onClickApprov
         <div
           className="relative flex-shrink-0"
           style={{
-            width: 56, height: 56, borderRadius: '50%',
+            width: 48, height: 48, borderRadius: '50%',
             background: pct === null ? '#e5e7eb' : `conic-gradient(#0d9488 ${pct}%, #fbbf24 ${pct}% 100%)`,
           }}
           title={pct === null
             ? (gagalDisetujui ? 'Proporsi tidak dapat dihitung — angka disetujui gagal dimuat' : 'Belum ada barang')
             : `${pct}% disetujui`}
         >
-          <div className="absolute inset-[5px] bg-white rounded-full flex items-center justify-center">
+          <div className="absolute inset-[4px] bg-white rounded-full flex items-center justify-center">
             <span className="text-[10px] font-semibold text-gray-700">{pct === null ? (gagalDisetujui ? '?' : '–') : `${pct}%`}</span>
           </div>
         </div>

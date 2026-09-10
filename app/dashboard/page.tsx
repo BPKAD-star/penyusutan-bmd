@@ -261,8 +261,8 @@ export default function DashboardHome() {
     // `p-6` polos, TANPA `max-w-6xl mx-auto`: semua halaman lain di dashboard
     // memakai lebar penuh, jadi yang lama membuat Dashboard menjorok masuk ~250px
     // di kiri & kanan dan terasa tak sejajar dengan menu di sebelahnya.
-    <div className="p-6">
-      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+    <div className="px-6 py-4">
+      <div className="mb-4 flex items-start justify-between gap-4 flex-wrap">
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
         <div className="text-right">
           <p className="text-xs text-gray-400">Total Nilai BMD</p>
@@ -328,11 +328,11 @@ async function SectionJenis() {
       {/* Sub-judul "Register BMD — N aset · Rp…" dipindah: jumlah aset kini di
           bawah "Total Nilai BMD" (kanan atas), lihat TotalNilai. */}
       <Section title="Total Aset per Jenis">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
           {GOLONGAN_REKAP.map(g => {
             const d = gol[g.kode] || { count: 0, nilai: 0 }
             return (
-              <div key={g.kode} className="card p-4">
+              <div key={g.kode} className="card p-3">
                 <div className="flex items-start justify-between gap-2">
                   <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-teal/10 text-teal flex-shrink-0">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -341,7 +341,7 @@ async function SectionJenis() {
                   </span>
                   <p className="text-[11px] text-gray-400">{g.kode}</p>
                 </div>
-                <p className="text-xs text-gray-600 leading-tight mt-2 h-8">{g.uraian}</p>
+                <p className="text-xs text-gray-600 leading-tight mt-1.5 h-7">{g.uraian}</p>
                 {/* Gagal → `–`, BUKAN `0 unit · 0`. Angka nol di kartu ini tak
                     bisa dibedakan dari golongan yang memang belum ada isinya. */}
                 <p className="text-xl font-bold text-gray-900 mt-1">
@@ -412,8 +412,8 @@ async function SectionPenghapusan() {
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="mb-8">
-      <div className="mb-3">
+    <div className="mb-5">
+      <div className="mb-2">
         <h2 className="text-base font-semibold text-gray-800">{title}</h2>
         {sub && <p className="text-xs text-gray-400">{sub}</p>}
       </div>
@@ -429,16 +429,16 @@ function CardsSkeleton({ n, kolom }: { n: number; kolom: 4 | 5 }) {
   // memindai kode sumber secara literal, jadi `lg:grid-cols-${kolom}` tak akan
   // pernah ikut ter-generate ke CSS-nya.
   const grid = kolom === 5
-    ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3'
-    : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3'
+    ? 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2'
+    : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2'
   return (
     <div className={grid} aria-hidden="true">
       {Array.from({ length: n }, (_, i) => (
-        <div key={i} className="card p-4 animate-pulse">
+        <div key={i} className="card p-3 animate-pulse">
           <div className="h-9 w-9 rounded-lg bg-gray-100" />
-          <div className="h-3 w-3/4 rounded bg-gray-100 mt-3" />
+          <div className="h-3 w-3/4 rounded bg-gray-100 mt-2" />
           <div className="h-5 w-1/2 rounded bg-gray-100 mt-2" />
-          <div className="h-3 w-2/3 rounded bg-gray-100 mt-2" />
+          <div className="h-3 w-2/3 rounded bg-gray-100 mt-1.5" />
         </div>
       ))}
     </div>

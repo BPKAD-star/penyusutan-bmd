@@ -55,7 +55,7 @@ export default function MutasiTransferCards({ approved }: {
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {cards.map(c => (
           <DonutCard key={c.key} label={c.label} disetujui={c.disetujui} belum={c.belum}
             onClickDisetujui={() => setDetail({ kategori: c.kategori, arah: c.arah, mode: 'disetujui', label: c.label })}
@@ -79,18 +79,18 @@ function DonutCard({ label, disetujui, belum, onClickDisetujui, onClickMenunggu 
   const total = disetujui + belum
   const pct = total > 0 ? Math.round((disetujui / total) * 100) : 100
   return (
-    <div className="card p-4">
-      <p className="text-xs text-gray-600 leading-tight h-8">{label}</p>
+    <div className="card p-3">
+      <p className="text-xs text-gray-600 leading-tight h-7">{label}</p>
       {/* ⚠️ `min-w-0` — lihat penjelasannya di CaraPerolehanCards.tsx (kartu ini
           KEMBAR dengannya). Tanpa itu keterangannya meluber keluar kartu di
           layar sempit. Ubah satu, samakan yang lain. */}
       <div className="flex items-center gap-3 mt-1 min-w-0">
         <div
           className="relative flex-shrink-0"
-          style={{ width: 56, height: 56, borderRadius: '50%', background: `conic-gradient(#0d9488 ${pct}%, #fbbf24 ${pct}% 100%)` }}
+          style={{ width: 48, height: 48, borderRadius: '50%', background: `conic-gradient(#0d9488 ${pct}%, #fbbf24 ${pct}% 100%)` }}
           title={`${pct}% disetujui`}
         >
-          <div className="absolute inset-[5px] bg-white rounded-full flex items-center justify-center">
+          <div className="absolute inset-[4px] bg-white rounded-full flex items-center justify-center">
             <span className="text-[10px] font-semibold text-gray-700">{pct}%</span>
           </div>
         </div>

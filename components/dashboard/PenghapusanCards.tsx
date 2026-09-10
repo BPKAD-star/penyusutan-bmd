@@ -26,12 +26,12 @@ export default function PenghapusanCards({ data }: { data: PenghapusanData }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
         {kartu.map(k => (
           <button key={k.key} type="button" disabled={k.n === 0}
             onClick={() => setDetail({ label: k.label, jenis: k.jenis, subJenis: k.subJenis })}
-            className="card p-4 text-left hover:border-teal transition-colors disabled:cursor-default disabled:hover:border-gray-100">
-            <p className="text-xs text-gray-600 leading-tight h-8">{k.label}</p>
+            className="card p-3 text-left hover:border-teal transition-colors disabled:cursor-default disabled:hover:border-gray-100">
+            <p className="text-xs text-gray-600 leading-tight h-7">{k.label}</p>
             <p className="text-xl font-bold text-gray-900 mt-1">{k.n.toLocaleString('id-ID')}</p>
             <p className="text-xs font-medium text-rose-600 mt-1">{formatRupiah(k.nilai)}</p>
             {k.note && <p className="text-[11px] text-gray-400 mt-1 leading-tight">{k.note}</p>}
