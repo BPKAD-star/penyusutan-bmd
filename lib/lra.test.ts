@@ -9,11 +9,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   GOLONGAN_KE_GRUP, GRUP_LIST, GOL_TETAP, TANPA_REK, TANPA_GOL,
-  rekapApp, rekapAppBarang, silangRekBarang, statusSilang, type AppRow,
+  rekapApp, rekapAppBarang, silangRekBarang, statusSilang, leafLra,
+  type AppRow, type LraRow,
 } from './lra'
 
 const baris = (grup: string | null, golongan: string | null, bulan: number, nilai: number): AppRow =>
-  ({ grup, golongan, bulan, nilai })
+  ({ skpd_id: null, grup, golongan, bulan, nilai })
 
 // Kasus NYATA yang melahirkan fitur ini (Kecamatan Banyakan, 2026):
 //  · Backdrop  Rp19.955.000 — rekening 5.2.03 (Gedung), barang 1.3.2 (P&M) → SILANG
@@ -87,6 +88,60 @@ describe('dua dasar pengelompokan', () => {
     const bar = rekapAppBarang([baris('5.2.03', '1.3.6', 8, 500_000_000)])
     expect(bar.totalKeseluruhan).toBe(0)
     expect(bar.luarJenis).toBe(500_000_000)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `leafLra` — bahan Rekap per SKPD berjenjang (2026-09-10). Bukan uji drill-
+// down (itu lib/lraPohon.test.ts); ini uji AGREGASI PER SKPD LEAF-nya sendiri,
+// sebelum disusun jadi pohon.
+describe('leafLra', () => {
+  const lraRow = (over: Partial<LraRow>): LraRow => ({
+    id: 1, skpd_id: 1, tanggal: '2026-01-05', bulan: 1, no_bukti: 'X',
+    kode_rekening: '5.2.02', kode_grup3: '5.2.02', kelompok: 'modal',
+    uraian: '', keterangan: '', debit: 0, klasifikasi: null, jenis_tujuan: null,
+    ...over,
+  })
+
+  it('totalLra = SELURUH baris kelompok modal, termasuk yg ditandai reklas', () => {
+    const rows = [
+      lraRow({ skpd_id: 1, debit: 100 }),
+      lraRow({ skpd_id: 1, debit: 40, klasifikasi: 'reklas_keluar' }),
+    ]
+    const leaf = leafLra(rows, [])
+    expect(leaf.get(1)!.totalLra).toBe(140)
+    expect(leaf.get(1)!.reklas).toBe(40)
+  })
+
+  it('kapitalisasi & reklas dari baris ber-klasifikasi, terpisah per SKPD', () => {
+    const rows = [
+      lraRow({ skpd_id: 1, debit: 100, kelompok: 'barjas', klasifikasi: 'kapitalisasi', jenis_tujuan: '5.2.03' }),
+      lraRow({ skpd_id: 2, debit: 30, klasifikasi: 'reklas_keluar' }),
+    ]
+    const leaf = leafLra(rows, [])
+    expect(leaf.get(1)!.kapitalisasi).toBe(100)
+    expect(leaf.get(1)!.totalLra).toBe(0) // barjas, bukan kelompok modal
+    expect(leaf.get(2)!.reklas).toBe(30)
+  })
+
+  it('belanjaModal dijumlah dari app per skpd_id, TOTAL tanpa peduli golongannya valid', () => {
+    const app: AppRow[] = [
+      { skpd_id: 1, grup: '5.2.02', golongan: '1.3.2', bulan: 1, nilai: 50 },
+      { skpd_id: 1, grup: null, golongan: '1.3.6', bulan: 2, nilai: 25 }, // termin KDP, tanpa grup
+    ]
+    const leaf = leafLra([], app)
+    expect(leaf.get(1)!.belanjaModal).toBe(75)
+  })
+
+  it('baris app TANPA skpd_id (migrasi belum jalan) dibuang, bukan masuk SKPD #0', () => {
+    const app: AppRow[] = [{ skpd_id: null, grup: '5.2.02', golongan: '1.3.2', bulan: 1, nilai: 99 }]
+    const leaf = leafLra([], app)
+    expect(leaf.size).toBe(0)
+  })
+
+  it('SKPD yang cuma ada di app (tak punya baris LRA) tetap muncul sbg leaf', () => {
+    const leaf = leafLra([], [{ skpd_id: 7, grup: '5.2.02', golongan: '1.3.2', bulan: 1, nilai: 10 }])
+    expect(leaf.get(7)).toEqual({ totalLra: 0, kapitalisasi: 0, reklas: 0, belanjaModal: 10 })
   })
 })
 

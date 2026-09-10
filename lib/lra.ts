@@ -46,7 +46,10 @@ export type LraRow = {
 // ⚠️ `golongan` bisa `undefined` kalau kode dideploy sebelum migrasi
 // 20260909_01 jalan. Itu SENGAJA dibedakan dari null/'' — "tak bisa dinilai",
 // bukan "tak punya golongan"; lihat `statusSilang`.
-export type AppRow = { grup: string | null; golongan: string | null; bulan: number; nilai: number }
+// ⚠️ `skpd_id` baru ada sejak migrasi 20260910_05 (Rekap per SKPD berjenjang) —
+// `COALESCE(t.skpd_tujuan, a.skpd_id)`, sama persis dgn ekspresi yg dipakai
+// WHERE-clause RPC-nya sendiri. `null` kalau migrasinya belum jalan.
+export type AppRow = { skpd_id: number | null; grup: string | null; golongan: string | null; bulan: number; nilai: number }
 
 // ── Parse sel Excel ─────────────────────────────────────────────────────────
 
@@ -233,6 +236,50 @@ export type Silang = {
   nilaiSilang: number
   /** Banyaknya sel silang — dipakai kalimat ringkasan di layar. */
   nSelSilang: number
+}
+
+// ── Rekap per SKPD berjenjang (2026-09-10) ──────────────────────────────────
+// Kolom yang diminta user: Total LRA · Kapitalisasi · Reklasifikasi · Belanja
+// Modal (App). SENGAJA tidak dipecah per jenis/bulan spt RekapMatrix di atas —
+// pohon SKPD sudah cukup dalam (bisa 3-4 level), menambah kolom jenis×bulan di
+// atasnya bikin tabelnya mustahil dibaca. Rincian per jenis/bulan tetap ada di
+// tab "Ringkasan" (matriks datar yang sudah ada), yang sudah bisa difilter ke
+// satu SKPD lewat SkpdCombobox.
+export type LraCell = { totalLra: number; kapitalisasi: number; reklas: number; belanjaModal: number }
+
+/**
+ * Kumpulkan `rows` (LRA) + `app` (Entryan Aplikasi, dasar KODE REKENING —
+ * sebanding langsung dgn box LRA, sama seperti Check bawaan) per SKPD LEAF
+ * (`r.skpd_id`/`a.skpd_id` apa adanya, BUKAN root-nya — root diselesaikan
+ * `bangunPohonLra` seperti `bangunPohonRekap`).
+ *
+ * ⚠️ `totalLra` = SELURUH belanja modal (5.2), termasuk yg ditandai reklas —
+ * definisi yg SAMA dgn `rekapModal`. `kapitalisasi`/`reklas` dari baris yg
+ * SUDAH ditandai (`klasifikasi`). `belanjaModal` dari `app` tanpa peduli
+ * golongan/grup-nya valid atau tidak — ini TOTAL, bukan per-jenis, jadi baris
+ * yg jatuh ke `luarJenis` di RekapMatrix (mis. termin KDP) tetap ikut di sini.
+ *
+ * ⚠️ Baris `app` tanpa `skpd_id` (migrasi 20260910_05 belum jalan di
+ * lingkungan itu) DIBUANG dari peta — bukan dijumlahkan ke SKPD #0 mana pun.
+ * Pemanggil (halaman) yg mendeteksi ini & menampilkan strip amber, sama pola
+ * dgn `golonganKosong` utk migrasi 20260909_01.
+ */
+export function leafLra(rows: LraRow[], app: AppRow[]): Map<number, LraCell> {
+  const m = new Map<number, LraCell>()
+  const get = (id: number): LraCell => {
+    let c = m.get(id)
+    if (!c) { c = { totalLra: 0, kapitalisasi: 0, reklas: 0, belanjaModal: 0 }; m.set(id, c) }
+    return c
+  }
+  for (const r of rows) {
+    if (r.kelompok === 'modal') get(r.skpd_id).totalLra += r.debit
+    if (r.klasifikasi === 'kapitalisasi') get(r.skpd_id).kapitalisasi += r.debit
+    if (r.klasifikasi === 'reklas_keluar') get(r.skpd_id).reklas += r.debit
+  }
+  for (const a of app) {
+    if (a.skpd_id != null) get(a.skpd_id).belanjaModal += a.nilai
+  }
+  return m
 }
 
 export function silangRekBarang(rows: AppRow[]): Silang {
