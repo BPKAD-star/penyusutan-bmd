@@ -44,6 +44,7 @@ import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useIsAdmin } from '@/components/useIsAdmin'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
@@ -107,6 +108,7 @@ export type PropLaporanPerpindahan = {
 }
 
 export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
+  const isAdmin = useIsAdmin()
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
   const tahunBuku = useTahunBukuMap()
@@ -330,10 +332,17 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Daftar Transaksi
         </button>
-        <button onClick={() => setView('matrix')}
-          className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-          Rekap per SKPD
-        </button>
+        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10) —
+            pengurus barang sudah terkunci SkpdCombobox ke subtree-nya sendiri,
+            jadi matriksnya buat dia cuma berisi satu SKPD (degenerate, bukan
+            celah data — RLS tetap menjaga), dan tombolnya memang tak pantas
+            ditawarkan. */}
+        {isAdmin && (
+          <button onClick={() => setView('matrix')}
+            className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+            Rekap per SKPD
+          </button>
+        )}
         {/* ⚠️ SATU sumber untuk "tab ini ada atau tidak": registry lembar
             (lib/permendagriFormat.ts). `FORMAT_PENGGUNAAN` menjawab pertanyaan
             LAIN — susunan kolomnya — dan tak boleh ikut menentukan keberadaan

@@ -42,6 +42,7 @@ import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useIsAdmin } from '@/components/useIsAdmin'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
@@ -56,6 +57,7 @@ const ARAH_LABEL: Record<ArahReklas, string> = {
 }
 
 export default function LaporanReklas() {
+  const isAdmin = useIsAdmin()
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
   const tahunBuku = useTahunBukuMap()
@@ -241,10 +243,14 @@ export default function LaporanReklas() {
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Daftar Transaksi
         </button>
-        <button onClick={() => setView('matrix')}
-          className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-          Rekap per SKPD
-        </button>
+        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10) —
+            lihat catatan sama di LaporanPerolehan.tsx/LaporanPerpindahan.tsx. */}
+        {isAdmin && (
+          <button onClick={() => setView('matrix')}
+            className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+            Rekap per SKPD
+          </button>
+        )}
         {adaLembar && (
           <button onClick={() => setView('permendagri')}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === 'permendagri' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>

@@ -13,6 +13,7 @@ import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useIsAdmin } from '@/components/useIsAdmin'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
@@ -120,6 +121,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // dua arti, di modul yang sama. Kode formatnya tetap terbaca, tapi dicetak
   // DI LEMBARNYA (LaporanPengadaanTabel).
   const lembar = lembarPerolehan(jenis)
+  const isAdmin = useIsAdmin()
   const supabase = createClient()
   const { byId: skpdById, rootOf, loaded: skpdLoaded } = useSkpdTree()
   const tahunBuku = useTahunBukuMap()
@@ -505,10 +507,17 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           className={`px-4 py-1.5 rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
           Daftar Transaksi
         </button>
-        <button onClick={() => setView('matrix')}
-          className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
-          Rekap per SKPD
-        </button>
+        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10):
+            pengurus barang sudah dikunci SkpdCombobox ke subtree-nya sendiri,
+            jadi matriks "per SKPD" buat dia cuma akan berisi SKPD-nya sendiri
+            — degenerate & membingungkan, bukan celah data (RLS tetap
+            menjaga), tapi tombolnya memang tak pantas ditawarkan. */}
+        {isAdmin && (
+          <button onClick={() => setView('matrix')}
+            className={`px-4 py-1.5 rounded-md transition-colors ${view === 'matrix' ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+            Rekap per SKPD
+          </button>
+        )}
         {/* ⚠️ SATU sumber untuk "tab ini ada atau tidak": `lembarPerolehan()`
             (lib/permendagriFormat.ts). `FORMAT_PEROLEHAN` di bawah menjawab
             pertanyaan LAIN — susunan kolom lembarnya — dan tak boleh ikut

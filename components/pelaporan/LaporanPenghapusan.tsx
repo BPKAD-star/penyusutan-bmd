@@ -36,6 +36,7 @@ import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useIsAdmin } from '@/components/useIsAdmin'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
@@ -51,6 +52,7 @@ const kunciLembar = (id: IdPenghapusan) =>
   `penghapusan-${id.replace('_', '-')}` as IdLembar
 
 export default function LaporanPenghapusan() {
+  const isAdmin = useIsAdmin()
   const supabase = createClient()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
   const tahunBuku = useTahunBukuMap()
@@ -224,7 +226,10 @@ export default function LaporanPenghapusan() {
       </div>
 
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
-        {([['list', 'Daftar Transaksi'], ['matrix', 'Rekap per SKPD'],
+        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10) —
+            lihat catatan sama di LaporanPerolehan.tsx. */}
+        {([['list', 'Daftar Transaksi'] as const,
+          ...(isAdmin ? [['matrix', 'Rekap per SKPD'] as const] : []),
           ...(adaLembar ? [['permendagri', 'Format Permendagri'] as const] : [])] as const).map(([v, label]) => (
           <button key={v} onClick={() => setView(v as typeof view)}
             className={`px-4 py-1.5 rounded-md transition-colors ${view === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>

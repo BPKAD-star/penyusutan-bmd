@@ -27,6 +27,7 @@ import { exportToExcel, formatRupiah } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
+import { useIsAdmin } from '@/components/useIsAdmin'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { identitasPengamanan, type PayloadPengamanan } from '@/lib/pengamanan'
@@ -41,6 +42,7 @@ type Row = {
 }
 
 export default function LaporanPengamanan() {
+  const isAdmin = useIsAdmin()
   const supabase = createClient()
   const konfirmasiCetak = useKonfirmasiCetak()
   const { rootOf, loaded: skpdLoaded } = useSkpdTree()
@@ -200,7 +202,11 @@ export default function LaporanPengamanan() {
       </div>
 
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm no-print">
-        {([['daftar', 'Daftar'], ['matrix', 'Rekap per SKPD'], ['permendagri', 'Format Permendagri']] as const).map(([v, label]) => (
+        {/* Rekap per SKPD = wewenang admin pemda (keputusan user 2026-09-10) —
+            lihat catatan sama di LaporanPerolehan.tsx. */}
+        {([['daftar', 'Daftar'] as const,
+          ...(isAdmin ? [['matrix', 'Rekap per SKPD'] as const] : []),
+          ['permendagri', 'Format Permendagri'] as const] as const).map(([v, label]) => (
           <button key={v} onClick={() => setTab(v)}
             className={`px-4 py-1.5 rounded-md transition-colors ${tab === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
             {label}
