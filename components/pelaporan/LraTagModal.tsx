@@ -11,16 +11,18 @@ import { JENIS_BM, type LraRow } from '@/lib/lra'
 type Mode = 'kapitalisasi' | 'reklas_keluar'
 const SELECT_COLS = 'id,skpd_id,tanggal,bulan,no_bukti,kode_rekening,kode_grup3,kelompok,uraian,keterangan,debit,klasifikasi,jenis_tujuan'
 
-export default function LraTagModal({ mode, tahun, descendantIds, onClose, onDone }: {
+export default function LraTagModal({ mode, tahun, descendantIds, initialTab, onClose, onDone }: {
   mode: Mode
   tahun: string
   descendantIds: number[] | null
+  /** Tab yang dibuka pertama — 'ditandai' saat dipanggil untuk BATAL tanda. */
+  initialTab?: 'kandidat' | 'ditandai'
   onClose: () => void
   onDone: (msg: string) => void
 }) {
   const supabase = createClient()
   const isKap = mode === 'kapitalisasi'
-  const [tab, setTab] = useState<'kandidat' | 'ditandai'>('kandidat')
+  const [tab, setTab] = useState<'kandidat' | 'ditandai'>(initialTab ?? 'kandidat')
   const [rows, setRows] = useState<LraRow[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
@@ -57,7 +59,7 @@ export default function LraTagModal({ mode, tahun, descendantIds, onClose, onDon
   const tampil = (tab === 'kandidat' ? kandidat : ditandai).filter(cocok)
 
   const nSel = Object.keys(sel).length
-  const belumPilihJenis = isKap && Object.values(sel).some(v => !v)
+  const belumPilihJenis = isKap && tab === 'kandidat' && Object.values(sel).some(v => !v)
 
   function toggle(r: LraRow) {
     setSel(prev => {
@@ -92,13 +94,24 @@ export default function LraTagModal({ mode, tahun, descendantIds, onClose, onDon
     }
   }
 
-  async function hapusTanda(r: LraRow) {
+  // Batal tanda — massal (baris tercentang di tab "Sudah ditandai"). Sekadar
+  // menyetel klasifikasi & jenis_tujuan kembali null; TIDAK menyentuh transaksi
+  // BMD apa pun (tanda ini memang cuma untuk hitungan Check).
+  async function batalTandai() {
+    const ids = Object.keys(sel).map(Number)
+    if (ids.length === 0) return
     setSaving(true); setErr('')
-    const { error } = await supabase.from('lra_realisasi')
-      .update({ klasifikasi: null, jenis_tujuan: null }).eq('id', r.id)
-    if (error) { setErr(error.message); setSaving(false); return }
-    setSaving(false)
-    await load()
+    try {
+      for (let i = 0; i < ids.length; i += 200) {
+        const { error } = await supabase.from('lra_realisasi')
+          .update({ klasifikasi: null, jenis_tujuan: null })
+          .in('id', ids.slice(i, i + 200))
+        if (error) throw new Error(error.message)
+      }
+      onDone(`${ids.length} baris batal ditandai.`)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e)); setSaving(false)
+    }
   }
 
   const totalSel = Object.keys(sel).reduce((s, id) => s + (rows.find(r => r.id === Number(id))?.debit || 0), 0)
@@ -115,9 +128,11 @@ export default function LraTagModal({ mode, tahun, descendantIds, onClose, onDon
 
         <div className="p-5 space-y-3">
           <p className="text-xs text-gray-500">
-            {isKap
-              ? <>Pilih baris <b>5.1</b> yang dikapitalisasi jadi belanja modal, lalu tentukan <b>jenis aset tujuan</b>. Nilainya <b>seluruh baris</b> (tak bisa sebagian).</>
-              : <>Pilih baris <b>5.2</b> yang <b>dikeluarkan</b> dari belanja modal. Jenisnya otomatis mengikuti kode rekening baris itu. Nilainya <b>seluruh baris</b>.</>}
+            {tab === 'ditandai'
+              ? <>Centang baris yang <b>salah ditandai</b> lalu klik <b>Batal Tandai</b> — klasifikasinya kembali kosong. Aman diulang.</>
+              : isKap
+                ? <>Pilih baris <b>5.1</b> yang dikapitalisasi jadi belanja modal, lalu tentukan <b>jenis aset tujuan</b>. Nilainya <b>seluruh baris</b> (tak bisa sebagian).</>
+                : <>Pilih baris <b>5.2</b> yang <b>dikeluarkan</b> dari belanja modal. Jenisnya otomatis mengikuti kode rekening baris itu. Nilainya <b>seluruh baris</b>.</>}
             {' '}Tanda ini hanya untuk perhitungan Check — <b>tidak</b> membuat transaksi BMD.
           </p>
 
@@ -160,9 +175,7 @@ export default function LraTagModal({ mode, tahun, descendantIds, onClose, onDon
                       return (
                         <tr key={r.id} className={checked ? 'bg-teal/5' : ''}>
                           <td className="table-td">
-                            {tab === 'kandidat'
-                              ? <input type="checkbox" checked={checked} onChange={() => toggle(r)} />
-                              : <button className="text-red-500 hover:text-red-700" title="Hapus tanda" disabled={saving} onClick={() => hapusTanda(r)}>✕</button>}
+                            <input type="checkbox" checked={checked} onChange={() => toggle(r)} />
                           </td>
                           <td className="table-td whitespace-nowrap">{r.tanggal}</td>
                           <td className="table-td whitespace-nowrap">{r.kode_rekening}</td>
@@ -195,13 +208,19 @@ export default function LraTagModal({ mode, tahun, descendantIds, onClose, onDon
 
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-100">
           <span className="text-sm text-gray-500">
-            {tab === 'kandidat' && nSel > 0 && <>{nSel} baris dipilih · <b>{formatRupiah(totalSel)}</b></>}
+            {nSel > 0 && <>{nSel} baris dipilih · <b>{formatRupiah(totalSel)}</b></>}
           </span>
           <div className="flex gap-3">
             <button className="btn-secondary" onClick={onClose} disabled={saving}>Tutup</button>
-            {tab === 'kandidat' && (
+            {tab === 'kandidat' ? (
               <button className="btn-primary" disabled={saving || nSel === 0} onClick={simpan}>
                 {saving ? 'Menyimpan…' : `Tandai ${nSel} Baris`}
+              </button>
+            ) : (
+              <button
+                className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-white text-sm font-medium disabled:opacity-50"
+                disabled={saving || nSel === 0} onClick={batalTandai}>
+                {saving ? 'Memproses…' : `Batal Tandai ${nSel} Baris`}
               </button>
             )}
           </div>

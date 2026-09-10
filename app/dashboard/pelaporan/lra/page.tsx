@@ -44,6 +44,9 @@ export default function LraPage() {
   const [loading, setLoading] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [tagMode, setTagMode] = useState<'kapitalisasi' | 'reklas_keluar' | null>(null)
+  // Tab awal modal tanda: 'kandidat' saat "Tandai", 'ditandai' saat "Kelola tanda"
+  // (batal tandai). Satu modal melayani keduanya.
+  const [tagTab, setTagTab] = useState<'kandidat' | 'ditandai'>('kandidat')
   const [skpdNama, setSkpdNama] = useState<Map<number, string>>(new Map())
   const [detail, setDetail] = useState<{ judul: string; rows: LraRow[] } | null>(null)
   const [msg, setMsg] = useState('')
@@ -239,16 +242,18 @@ export default function LraPage() {
               {nBukti} No. Bukti · {rows.length} baris · {nBarjas} baris barjas (5.1){nBelumTag > 0 && `, ${nBelumTag} belum ditandai`}
             </div>
             <div className="flex gap-2 ml-auto">
-              <button className="btn-secondary" onClick={() => setTagMode('kapitalisasi')}>+ Tandai Kapitalisasi</button>
-              <button className="btn-secondary" onClick={() => setTagMode('reklas_keluar')}>+ Tandai Reklasifikasi</button>
+              <button className="btn-secondary" onClick={() => { setTagTab('kandidat'); setTagMode('kapitalisasi') }}>Tandai Kapitalisasi</button>
+              <button className="btn-secondary" onClick={() => { setTagTab('kandidat'); setTagMode('reklas_keluar') }}>Tandai Reklasifikasi</button>
             </div>
           </div>
 
           <MatrixTable judul={`LRA — Belanja Modal (5.2) ${tahun}`} m={mLra!}
             onDrill={drill('LRA', rows.filter(r => r.kelompok === 'modal'), r => r.kode_grup3)} />
           <MatrixTable judul="Kapitalisasi (belanja barjas 5.1 → belanja modal)" m={mKap!} kosongNote="Belum ada baris ditandai Kapitalisasi."
+            aksi={<KelolaTandaBtn onClick={() => { setTagTab('ditandai'); setTagMode('kapitalisasi') }} />}
             onDrill={drill('Kapitalisasi', rows.filter(r => r.klasifikasi === 'kapitalisasi'), r => r.jenis_tujuan)} />
           <MatrixTable judul="Reklasifikasi (belanja modal dikeluarkan)" m={mRek!} kosongNote="Belum ada baris ditandai Reklasifikasi."
+            aksi={<KelolaTandaBtn onClick={() => { setTagTab('ditandai'); setTagMode('reklas_keluar') }} />}
             onDrill={drill('Reklasifikasi', rows.filter(r => r.klasifikasi === 'reklas_keluar'), r => r.kode_grup3)} />
           <MatrixTable
             judul={`Belanja Modal — Entryan Aplikasi (dasar ${dasar === 'barang' ? 'KODE BARANG' : 'KODE REKENING'})`}
@@ -327,7 +332,7 @@ export default function LraPage() {
         <LraImport onClose={() => setShowImport(false)} onDone={m => { setShowImport(false); setMsg(m); proses() }} />
       )}
       {tagMode && (
-        <LraTagModal mode={tagMode} tahun={tahun} descendantIds={org.descendantIds ?? null}
+        <LraTagModal mode={tagMode} initialTab={tagTab} tahun={tahun} descendantIds={org.descendantIds ?? null}
           onClose={() => { setTagMode(null); proses() }}
           onDone={m => { setTagMode(null); setMsg(m); proses() }} />
       )}
@@ -336,6 +341,19 @@ export default function LraPage() {
           rows={detail.rows} skpdNama={skpdNama} onClose={() => setDetail(null)} />
       )}
     </div>
+  )
+}
+
+// Tombol kecil di kanan judul matriks Kapitalisasi/Reklasifikasi → buka modal
+// tanda langsung di tab "Sudah ditandai" untuk MEMBATALKAN tanda (satu / massal).
+// Ditaruh di sini karena inilah tempat operator melihat hasil penandaan; dulu
+// batal-tandai cuma ada terkubur di dalam tombol "+ Tandai".
+function KelolaTandaBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      className="text-xs text-gray-500 hover:text-teal underline decoration-dotted flex-shrink-0">
+      Kelola / batal tanda
+    </button>
   )
 }
 
