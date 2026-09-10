@@ -4,9 +4,9 @@ import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
-type Skpd = { id: number; nama: string; level: number; parent_id: number | null; kode_skpd: string | null }
+type Skpd = { id: number; nama: string; level: number; parent_id: number | null; kode_skpd: string | null; alamat: string | null }
 
-const FORM_KOSONG = { nama: '', kode_skpd: '', parent_id: '' as number | '' }
+const FORM_KOSONG = { nama: '', kode_skpd: '', parent_id: '' as number | '', alamat: '' }
 
 // Urutan sibling: by Kode SKPD (bukan alfabetis nama) — kode sudah zero-padded
 // per segmen (mis. "02.00.00.0003.0000") jadi localeCompare string = urutan
@@ -32,7 +32,7 @@ export default function AdminSkpdPage() {
   async function load() {
     const rows: Skpd[] = []
     for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id,kode_skpd').range(from, from + 999)
+      const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id,kode_skpd,alamat').range(from, from + 999)
       if (!data || data.length === 0) break
       rows.push(...(data as Skpd[]))
       if (data.length < 1000) break
@@ -76,13 +76,13 @@ export default function AdminSkpdPage() {
 
   function openCreate(parentId: number | null) {
     setEditId(null)
-    setForm({ nama: '', kode_skpd: '', parent_id: parentId ?? '' })
+    setForm({ nama: '', kode_skpd: '', parent_id: parentId ?? '', alamat: '' })
     setShowForm(true)
   }
 
   function openEdit(s: Skpd) {
     setEditId(s.id)
-    setForm({ nama: s.nama, kode_skpd: s.kode_skpd || '', parent_id: s.parent_id ?? '' })
+    setForm({ nama: s.nama, kode_skpd: s.kode_skpd || '', parent_id: s.parent_id ?? '', alamat: s.alamat || '' })
     setShowForm(true)
   }
 
@@ -100,6 +100,7 @@ export default function AdminSkpdPage() {
     const payload = {
       nama: form.nama, kode_skpd: form.kode_skpd.trim() || null,
       parent_id: form.parent_id === '' ? null : Number(form.parent_id),
+      alamat: form.alamat.trim() || null,
     }
     const { error } = editId
       ? await supabase.from('admin_skpd').update(payload).eq('id', editId)
@@ -168,6 +169,15 @@ export default function AdminSkpdPage() {
                 ))}
               </select>
               <p className="text-xs text-gray-400 mt-1">Level & path dihitung otomatis dari induk yang dipilih.</p>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Alamat</label>
+              <textarea className="select-filter w-full" rows={2} value={form.alamat}
+                onChange={e => setForm(f => ({ ...f, alamat: e.target.value }))} />
+              <p className="text-xs text-gray-400 mt-1">
+                Dipakai KIBAR (I.4 Alamat). Kosongkan kalau belum tahu — kartu akan
+                memakai alamat induk terdekat yang sudah diisi, bukan menampilkan kosong.
+              </p>
             </div>
             <button type="submit" disabled={saving} className="btn-primary">
               {saving ? 'Menyimpan...' : 'Simpan'}

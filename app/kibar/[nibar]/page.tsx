@@ -6,7 +6,6 @@
 // Bagian I–XII menarik dari `aset` + seluruh `transaksi_bmd` per aset (diturunkan
 // per-jenis dari ledger, bukan kolom snapshot). Beberapa field SENGAJA dikosongkan
 // dulu karena datanya belum ada di model (keputusan user 2026-07-21):
-//   • I.4  Alamat SKPD            — kolom alamat SKPD belum ada
 //   • III.7 Biaya Atribusi        — belum dipisah dari nilai_perolehan
 //   • III.10 Pihak Menyerahkan    — belum disimpan di payload perolehan
 //   • III.12 Dokumen Pendukung    — belum disimpan
@@ -60,7 +59,10 @@ async function resolveWilayah(admin: Admin, kode: string): Promise<string[]> {
   return parts
 }
 
-type SkpdNode = { id: number; nama: string; level: number; parent_id: number | null; kode_lokasi: string | null; kode_skpd: string | null }
+type SkpdNode = {
+  id: number; nama: string; level: number; parent_id: number | null
+  kode_lokasi: string | null; kode_skpd: string | null; alamat: string | null
+}
 // Rantai SKPD dari akar (level 1, Pengguna Barang) → daun (unit pemegang / Kuasa
 // Pengguna Barang). Iteratif naik lewat parent_id — pohon SKPD cuma ~4 level.
 async function resolveSkpdChain(admin: Admin, skpdId: number): Promise<SkpdNode[]> {
@@ -68,7 +70,7 @@ async function resolveSkpdChain(admin: Admin, skpdId: number): Promise<SkpdNode[
   let cur: number | null = skpdId
   for (let i = 0; i < 6 && cur; i++) {
     const { data } = await admin.from('admin_skpd')
-      .select('id,nama,level,parent_id,kode_lokasi,kode_skpd').eq('id', cur).maybeSingle()
+      .select('id,nama,level,parent_id,kode_lokasi,kode_skpd,alamat').eq('id', cur).maybeSingle()
     if (!data) break
     chain.unshift(data as SkpdNode)
     cur = (data as SkpdNode).parent_id
@@ -232,6 +234,14 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   // titik = segmen SKPD di NIBAR/kode register). `kode_lokasi` tetap didahulukan
   // kalau suatu saat diisi, supaya kolom bernama-tepat itu yang menang.
   const kodeLokasi = daun?.kode_lokasi || daun?.kode_skpd || null
+  // Alamat (I.4): milik unit PEMEGANG (daun), sejalan dgn Kuasa Pengguna
+  // Barang & Kode Lokasi di atas — barang tercatat di sub-sub-OPD tertentu,
+  // jadi alamatnya yang ditampilkan alamat unit itu, bukan alamat root.
+  // Jatuh ke INDUK TERDEKAT yang sudah terisi kalau unit itu sendiri belum
+  // diisi (`admin_skpd.alamat`, migrasi 20260910_04) — data akan terisi
+  // bertahap lewat Admin > SKPD, dan "belum diisi di level ini" semestinya
+  // tak berarti kartu menampilkan kosong kalau induknya sudah punya alamat.
+  const alamatUnit = [...skpdChain].reverse().find(s => s.alamat)?.alamat || null
 
   // Spesifikasi lainnya = field golongan yang belum tampil di row eksplisit II.
   const shownFields = new Set<FieldKey>(['nama_barang', 'keterangan', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude',
@@ -292,7 +302,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
           <Row label="1. Kuasa Pengguna Barang" value={kuasaPengguna} />
           <Row label="2. Pengguna Barang" value={penggunaBarang} />
           <Row label="3. Pengelola Barang" value="Badan Pengelola Keuangan dan Aset Daerah (BPKAD)" />
-          <Row label="4. Alamat" value="-" />
+          <Row label="4. Alamat" value={dash(alamatUnit)} />
         </Section>
 
         {/* II. Data Barang */}
