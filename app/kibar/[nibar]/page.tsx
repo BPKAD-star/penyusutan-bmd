@@ -258,32 +258,33 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
           .kibar-no-print { display: none !important; }
         }
       `}</style>
-      <div className="max-w-3xl mx-auto mb-3 flex justify-end kibar-no-print">
+      <div className="max-w-3xl mx-auto mb-3 flex justify-end gap-2 kibar-no-print">
+        <PrintLabelButton item={{
+          nibar: aset.nibar || '-',
+          namaBarang: aset.nama_barang || uraianBarang || '-',
+          merekTipe: aset.merek_tipe,
+          skpdNama: pemegang,
+          tglPerolehan: aset.tgl_perolehan,
+        }} />
         <PrintPageButton nibar={aset.nibar || ''} namaBarang={aset.nama_barang || uraianBarang || null} />
       </div>
 
       <div id="kibar-print-area" className="max-w-3xl mx-auto bg-white border border-gray-300 rounded-lg overflow-hidden">
 
-        {/* Kepala formulir */}
-        <div className="px-4 py-4 flex flex-col sm:flex-row gap-4 justify-between items-start border-b-2 border-gray-800">
-          <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-bold text-gray-900 tracking-wide">KARTU IDENTITAS BARANG (KIBAR)</h1>
+        {/* Kepala formulir — KOP: logo kiri, identitas tengah, QR kanan.
+            Kolom kiri/kanan disamakan lebarnya supaya teks tengah benar-benar
+            di tengah halaman, bukan cuma di tengah sisa ruang antara logo &
+            QR (yang lebarnya beda kalau kolomnya cuma auto-size). */}
+        <div className="px-4 py-4 grid grid-cols-[56px_1fr_56px] sm:grid-cols-[84px_1fr_84px] items-center gap-3 sm:gap-4 border-b-2 border-gray-800">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-kab-kediri.png" alt="Logo Kabupaten Kediri" className="w-full h-auto object-contain" />
+          <div className="min-w-0 text-center px-1">
+            <h1 className="text-sm sm:text-lg font-bold text-gray-900 tracking-wide">KARTU IDENTITAS BARANG (KIBAR)</h1>
             <p className="text-sm font-semibold text-gray-700 mt-0.5">{golonganUraian(aset.kode)}</p>
             <p className="text-sm text-gray-600">PEMERINTAH KABUPATEN KEDIRI</p>
-            <p className="text-xs text-gray-500 mt-2 break-all">NIBAR: {aset.nibar}</p>
+            <p className="text-xs text-gray-500 mt-2 break-all">{aset.nibar}</p>
           </div>
-          <div className="flex flex-col items-center gap-2 flex-shrink-0">
-            <div className="w-[140px] h-[140px]" dangerouslySetInnerHTML={{ __html: qrSvg }} />
-            <div className="kibar-no-print">
-              <PrintLabelButton item={{
-                nibar: aset.nibar || '-',
-                namaBarang: aset.nama_barang || uraianBarang || '-',
-                merekTipe: aset.merek_tipe,
-                skpdNama: pemegang,
-                tglPerolehan: aset.tgl_perolehan,
-              }} />
-            </div>
-          </div>
+          <div className="w-full [&>svg]:w-full [&>svg]:h-auto" dangerouslySetInnerHTML={{ __html: qrSvg }} />
         </div>
 
         {/* I. Unit Pemakai */}
