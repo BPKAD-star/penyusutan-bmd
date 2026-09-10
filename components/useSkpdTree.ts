@@ -1,7 +1,7 @@
 'use client'
 // Muat pohon SKPD sekali, sediakan pemetaan id → SKPD level-1 (root). Dipakai
 // rekap Model 2 (per SKPD per jenis) untuk mengelompokkan barang ke induk SKPD-nya.
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 export type SkpdNode = { id: number; nama: string; level: number; parent_id: number | null }
@@ -41,7 +41,16 @@ export function useSkpdTree() {
   }, [all])
 
   // SKPD level-1 (root) dari id manapun; naik lewat parent_id sampai mentok.
-  function rootOf(id: number): SkpdNode | null {
+  //
+  // ⚠️ `useCallback` BUKAN hiasan — ini yang menutup insiden 2026-09-10 "Rekap
+  // per SKPD" macet di "Memuat data..." selamanya. Sebagai fungsi polos (baru
+  // dibuat tiap render), referensinya berubah tiap kali komponen re-render;
+  // begitu ia dipakai di array dependency `useEffect` (buat membangun pohon
+  // rekap), efeknya jadi LOOP TAK BERUJUNG: efek jalan → `setMatrix` bikin
+  // render baru → `rootOf` dapat referensi baru → dependency dianggap berubah
+  // → efek jalan lagi → ... Dibungkus `useCallback([byId])` supaya
+  // referensinya stabil selama `byId` (yang sudah `useMemo`) tak berubah.
+  const rootOf = useCallback((id: number): SkpdNode | null => {
     let cur = byId.get(id) || null
     const seen = new Set<number>()
     while (cur && cur.parent_id != null && byId.has(cur.parent_id) && !seen.has(cur.id)) {
@@ -49,7 +58,7 @@ export function useSkpdTree() {
       cur = byId.get(cur.parent_id)!
     }
     return cur
-  }
+  }, [byId])
 
   return { all, byId, childrenOf, rootOf, loaded: all.length > 0 }
 }
