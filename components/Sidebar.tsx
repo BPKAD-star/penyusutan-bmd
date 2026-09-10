@@ -160,6 +160,7 @@ const navTree: NavNode[] = [
       },
       { type: 'leaf', href: '/dashboard/inventarisasi/validasi', label: 'Validasi' },
       { type: 'leaf', href: '/dashboard/inventarisasi/laporan', label: 'Laporan Hasil (LHI)' },
+      { type: 'leaf', href: '/dashboard/inventarisasi/tindak-lanjut', label: 'Tindak Lanjut' },
     ],
   },
   { type: 'leaf', href: '/dashboard/wasdal', label: 'WasDal' },
