@@ -1001,9 +1001,13 @@ export default function Page() {
               {selList.length > 0 && <span className="text-teal font-medium"> · {selList.length} dicentang</span>}
             </span>
             <div className="flex items-center gap-3">
-              {!isViewer && (
-                <button onClick={openSpek} disabled={selList.length === 0 || !selSameGol || spekSaving} className="btn-secondary text-xs">
-                  {spekSaving ? 'Menyimpan...' : '✎ Edit Spesifikasi...'}
+              {/* Muncul HANYA setelah ada baris dicentang (permintaan user
+                  2026-09-10) — dulu selalu tampil dalam keadaan disabled. Kasus
+                  centang beda jenis aset tetap disabled + dijelaskan strip amber
+                  di bawah toolbar. */}
+              {!isViewer && selList.length > 0 && (
+                <button onClick={openSpek} disabled={!selSameGol || spekSaving} className="btn-secondary text-xs">
+                  {spekSaving ? 'Menyimpan...' : `✎ Edit Spesifikasi (${selList.length})...`}
                 </button>
               )}
               {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1}{total == null ? '' : ` / ${totalPages || 1}`}</span>}
