@@ -86,14 +86,21 @@ function KopLembar({ judul, berupa, menurut, komptabel, sebutan, skpd, periode, 
 }) {
   return (
     <>
-      <div className="text-center leading-tight mb-2">
-        <p className="font-bold text-[11px]">{judul} {berupa}</p>
-        {menurut && <p className="font-bold text-[11px]">MENURUT {menurut}</p>}
-        <p className="font-bold text-[11px]">{komptabel}</p>
-        <p className="font-bold text-[11px]">{sebutan.toUpperCase()}</p>
-        <p className="font-bold text-[11px]">{(skpd?.nama || '').toUpperCase()}</p>
-        <p className="font-bold text-[11px]">{periode}</p>
-        <p className="font-bold text-[11px]">TAHUN {tahun}</p>
+      {/* Logo kiri + spacer kanan selebar sama (permintaan user 2026-09-10) —
+          pola sama dgn KOP KIBAR & keluarga IV.A (Perolehan). */}
+      <div className="flex items-start gap-2 mb-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-kab-kediri.png" alt="Logo Kabupaten Kediri" className="w-11 h-auto flex-shrink-0" />
+        <div className="flex-1 text-center leading-tight">
+          <p className="font-bold text-[11px]">{judul} {berupa}</p>
+          {menurut && <p className="font-bold text-[11px]">MENURUT {menurut}</p>}
+          <p className="font-bold text-[11px]">{komptabel}</p>
+          <p className="font-bold text-[11px]">{sebutan.toUpperCase()}</p>
+          <p className="font-bold text-[11px]">{(skpd?.nama || '').toUpperCase()}</p>
+          <p className="font-bold text-[11px]">{periode}</p>
+          <p className="font-bold text-[11px]">TAHUN {tahun}</p>
+        </div>
+        <div className="w-11 flex-shrink-0" aria-hidden="true" />
       </div>
       <table className="text-[9px] mb-1">
         <tbody>

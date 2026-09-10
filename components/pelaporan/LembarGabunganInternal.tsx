@@ -194,13 +194,18 @@ export default function LembarGabunganInternal(p: PropLembarGabungan) {
   return (
     <section className="lembar-gabungan">
       <p className="text-right text-[12px] mb-1">Format {f.kode}</p>
-      <div className="text-center leading-tight mb-2">
-        <p className="font-bold text-[11px]">{f.judul} {berupa}</p>
-        <p className="font-bold text-[11px]">{labelKomptabel}</p>
-        <p className="font-bold text-[11px]">{sebutan.toUpperCase()}</p>
-        <p className="font-bold text-[11px]">{(skpd?.nama || '').toUpperCase()}</p>
-        <p className="font-bold text-[11px]">{judulPeriode}</p>
-        <p className="font-bold text-[11px]">TAHUN {tahun}</p>
+      <div className="flex items-start gap-2 mb-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-kab-kediri.png" alt="Logo Kabupaten Kediri" className="w-11 h-auto flex-shrink-0" />
+        <div className="flex-1 text-center leading-tight">
+          <p className="font-bold text-[11px]">{f.judul} {berupa}</p>
+          <p className="font-bold text-[11px]">{labelKomptabel}</p>
+          <p className="font-bold text-[11px]">{sebutan.toUpperCase()}</p>
+          <p className="font-bold text-[11px]">{(skpd?.nama || '').toUpperCase()}</p>
+          <p className="font-bold text-[11px]">{judulPeriode}</p>
+          <p className="font-bold text-[11px]">TAHUN {tahun}</p>
+        </div>
+        <div className="w-11 flex-shrink-0" aria-hidden="true" />
       </div>
       <table className="text-[9px] mb-1">
         <tbody>
