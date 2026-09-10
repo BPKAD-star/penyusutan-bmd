@@ -13,7 +13,7 @@ import { formatRupiah } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
-import { ASET_FIELD_COLS, ASET_NUM_COLS, fieldsForKode, koreksiFieldKeys, allSameGolongan, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
+import { ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset, fieldsForKode, koreksiFieldKeys, allSameGolongan, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
@@ -173,12 +173,16 @@ function KoreksiTransaksi() {
   const [addTo, setAddTo] = useState<Header | null>(null)
   const [editing, setEditing] = useState<HeaderEditable | null>(null)
   const [batalId, setBatalId] = useState<string | null>(null)
-  // Pintasan "✎ Spesifikasi" di kartu Pemecahan: barang pecahan diseret ke tab
-  // Spesifikasi jurnal BARU, sudah tercentang. Sengaja lewat alur koreksi yang
-  // sudah ada — bukan UPDATE senyap ke `aset` — supaya perbaikannya tetap punya
-  // baris ledger `koreksi_spesifikasi` + `payload.prev` yang bisa dibatalkan.
+  // "✎ Spesifikasi" di baris pecahan — CADANGAN saja: dipakai HANYA kalau
+  // pecahannya sudah pernah kena koreksi_spesifikasi (lihat bukaSpekPecahan).
   const [presetSpek, setPresetSpek] = useState<{ barang: Barang; asal: string } | null>(null)
   const [presetBusy, setPresetBusy] = useState<string | null>(null)
+  // Jalur UTAMA "✎ Spesifikasi" pecahan: pop-up langsung, tanpa jurnal baru.
+  const [spekPecah, setSpekPecah] = useState<{
+    asetId: string; nama: string; kode: string; keys: FieldKey[]
+    initFields: Record<string, string>; initFoto: string[]
+  } | null>(null)
+  const [spekPecahSaving, setSpekPecahSaving] = useState(false)
   // Batal koreksi — pilih baris (per trx_id), lalu batalkan.
   const [selBatal, setSelBatal] = useState<Record<number, boolean>>({})
   const [batalling, setBatalling] = useState(false)
@@ -323,13 +327,89 @@ function KoreksiTransaksi() {
   // Barangnya ditarik utuh dulu (bukan dioper dari baris kartu) — `Barang` butuh
   // kolom yang tak ada di baris ledger, dan `foto_paths` yang salah bikin popup
   // spesifikasi menimpa foto barang dgn daftar kosong.
-  async function koreksiSpekPecahan(p: PemecahanRow, j: PemecahanJurnal) {
+  // ✎ Spesifikasi di baris pecahan — POP-UP LANGSUNG (keputusan user 2026-09-10,
+  // MENGGANTI jalur "seret ke jurnal Koreksi" 2026-09-07).
+  //
+  // Alasannya: melengkapi spesifikasi pecahan itu MENERUSKAN entri pemecahan yang
+  // sama, bukan peristiwa akuntansi baru — nilai, penyusutan, golongan, & pemilik
+  // tak bergerak sedikit pun. Jadi ia UPDATE biasa ke `aset`, pola & alasan yang
+  // sama dgn Saldo Awal → Edit Spesifikasi dan KIR ("spesifikasi = data
+  // deskriptif, bukan peristiwa akuntansi" — CLAUDE.md).
+  //
+  // Dua hal IKUT BENAR justru karena tak ada baris ledger baru:
+  //   (1) tak lahir kartu Koreksi kedua yang harus ditelusuri terpisah — satu
+  //       peristiwa tetap terbaca di satu kartu;
+  //   (2) **Batal Pemecahan tetap hidup.** `cekBolehBatal` memblokir kalau ada
+  //       transaksi LEBIH BARU di induk/pecahan, jadi jalur lama (yang menulis
+  //       `koreksi_spesifikasi`) mengunci tombol Batal Pemecahan SELAMANYA
+  //       begitu satu pecahan dilengkapi.
+  //
+  // ⚠️ PENGECUALIAN — pecahan yang SUDAH pernah kena `koreksi_spesifikasi` /
+  // `batal_koreksi_spesifikasi` tetap dilempar ke menu Koreksi. Di situ UPDATE
+  // senyap berbahaya: tombol Batal koreksi itu me-restore ke `payload.prev` yang
+  // direkam SEBELUM update kita, jadi perubahan ini hilang tanpa satu pun jejak.
+  // Bahaya yang PERSIS SAMA yang mengunci pintu Saldo Awal (CLAUDE.md).
+  async function bukaSpekPecahan(p: PemecahanRow, j: PemecahanJurnal) {
     setMsg(''); setPresetBusy(p.aset_id)
-    const { data, error } = await supabase.from('aset').select(BARANG_COLS).eq('id', p.aset_id).single()
-    setPresetBusy(null)
-    if (error || !data) { setMsg(`Error: gagal memuat barang pecahan — ${error?.message || 'tidak ditemukan'}`); return }
-    setPresetSpek({ barang: data as unknown as Barang, asal: j.no_sk })
-    setAddTo(null); setMode('tambah')
+    try {
+      // `error` DIPERIKSA — kalau query ini gagal dan kita anggap "belum pernah
+      // dikoreksi", kita justru mengambil jalur yang berbahaya itu diam-diam.
+      const { data: kor, error: korErr } = await supabase.from('transaksi_bmd')
+        .select('id').eq('aset_id', p.aset_id)
+        .in('jenis', ['koreksi_spesifikasi', 'batal_koreksi_spesifikasi']).limit(1)
+      if (korErr) { setMsg(`Error: gagal memeriksa riwayat koreksi pecahan — ${korErr.message}`); return }
+
+      const { data, error } = await supabase.from('aset').select(BARANG_COLS).eq('id', p.aset_id).single()
+      if (error || !data) { setMsg(`Error: gagal memuat barang pecahan — ${error?.message || 'tidak ditemukan'}`); return }
+      const barang = data as unknown as Barang
+
+      if (kor && kor.length > 0) {
+        setPresetSpek({ barang, asal: j.no_sk })
+        setAddTo(null); setMode('tambah')
+        setMsg('Pecahan ini sudah pernah dikoreksi lewat jurnal — perbaikannya diteruskan ke menu Koreksi supaya tombol Batal koreksi lamanya tetap nyambung.')
+        return
+      }
+
+      const keys = koreksiFieldKeys(barang.kode)
+      const { data: row, error: rowErr } = await supabase.from('aset')
+        .select([...keys, 'foto_paths'].join(',')).eq('id', p.aset_id).single()
+      if (rowErr) { setMsg(`Error: gagal memuat spesifikasi — ${rowErr.message}`); return }
+      const r = (row || {}) as Record<string, unknown>
+      const f: Record<string, string> = {}
+      for (const k of keys) { const v = r[k]; if (v != null) f[k] = String(v) }
+      setSpekPecah({
+        asetId: p.aset_id, kode: barang.kode,
+        nama: barang.nama_barang || barang.nibar || 'Pecahan',
+        keys, initFields: f,
+        initFoto: Array.isArray(r.foto_paths) ? (r.foto_paths as string[]) : [],
+      })
+    } finally {
+      setPresetBusy(null)
+    }
+  }
+
+  // Simpan spesifikasi pecahan — UPDATE `aset` saja, NOL baris ledger.
+  // `single: true` di modalnya berarti REPLACE penuh: field yang dikosongkan
+  // operator memang dimaksudkan jadi kosong, jadi ditulis `null` (bukan
+  // dilewati seperti mode massal).
+  async function simpanSpekPecah(fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
+    if (!spekPecah) return
+    setSpekPecahSaving(true)
+    const patch: Record<string, unknown> = {}
+    for (const k of spekPecah.keys) {
+      const v = fields[k]
+      // ⚠️ `angkaKolomAset`, BUKAN parser rupiah: kolom numeriknya memuat
+      // latitude/longitude yang boleh NEGATIF & luas yang berdesimal
+      // (insiden 20260820_04). Yang tak terbaca sbg angka → null, bukan 0.
+      patch[k] = v == null || v === '' ? null : (ASET_NUM_COLS.has(k) ? angkaKolomAset(v) : v)
+    }
+    if (foto.replace) patch.foto_paths = foto.replace
+    const { error } = await supabase.from('aset').update(patch).eq('id', spekPecah.asetId)
+    setSpekPecahSaving(false)
+    if (error) { setMsg(`Error: gagal menyimpan spesifikasi — ${error.message}`); return }
+    setSpekPecah(null)
+    setMsg(`Spesifikasi pecahan diperbarui — tanpa jurnal baru, Batal Pemecahan tetap bisa dipakai.`)
+    loadJurnals(skpd)
   }
 
   // Batal Koreksi (Nilai / Spesifikasi / Pencatatan Ganda) — transaksi pembalik
@@ -543,7 +623,7 @@ function KoreksiTransaksi() {
               <PemecahanCard key={j.id} j={j} busy={batalId === j.id}
                 bisaBatal={tahunMap[parsePeriode(j.periode).tahun] === 'terbuka'}
                 spekBusy={presetBusy}
-                onKoreksiSpek={p => koreksiSpekPecahan(p, j)}
+                onKoreksiSpek={p => bukaSpekPecahan(p, j)}
                 onEdit={() => { setMsg(''); setEditing(j) }}
                 onBatal={() => handleBatalPemecahan(j)} />
             ))}
@@ -636,6 +716,22 @@ function KoreksiTransaksi() {
         <EditHeaderModal header={editing}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); setMsg('Header jurnal diperbarui.'); loadJurnals(skpd) }} />
+      )}
+
+      {/* Pop-up spesifikasi pecahan — POPUP YANG SAMA dgn yang dipakai saat
+          mengisi pemecahan, jadi operator tak berpindah alur. `single` supaya
+          field & foto REPLACE penuh (bisa dikosongkan). */}
+      {spekPecah && (
+        <EditSpesifikasiModal
+          title={`Spesifikasi pecahan — ${spekPecah.nama}`}
+          fieldKeys={spekPecah.keys}
+          storagePrefix={`draft/pecah-spek/${spekPecah.asetId}`}
+          initialFields={spekPecah.initFields}
+          initialFoto={spekPecah.initFoto}
+          single
+          onSave={simpanSpekPecah}
+          onClose={() => { if (!spekPecahSaving) setSpekPecah(null) }}
+        />
       )}
     </>
   )
@@ -2261,8 +2357,9 @@ function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onEdit, on
       {!j.dibatalkan && (
         <p className="px-5 py-2.5 text-xs text-gray-500 bg-gray-50/60 border-t border-gray-100">
           Ada spesifikasi pecahan yang kurang? Klik <span className="font-medium">✎ Spesifikasi</span> di barisnya —
-          perbaikannya dicatat sebagai jurnal Koreksi tersendiri (ada jejak ledger &amp; bisa dibatalkan),
-          bukan diubah diam-diam.
+          langsung pop-up, <span className="font-medium">tanpa jurnal baru</span>. Ini melengkapi entri pemecahan
+          yang sama (nilai &amp; penyusutan tak bergerak), jadi <span className="font-medium">Batal Pemecahan tetap
+          bisa dipakai</span>. Pecahan yang sudah pernah dikoreksi lewat jurnal akan diarahkan ke menu Koreksi.
         </p>
       )}
     </div>
