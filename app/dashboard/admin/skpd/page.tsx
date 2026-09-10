@@ -97,14 +97,19 @@ export default function AdminSkpdPage() {
       return
     }
 
-    const payload = {
-      nama: form.nama, kode_skpd: form.kode_skpd.trim() || null,
-      parent_id: form.parent_id === '' ? null : Number(form.parent_id),
-      alamat: form.alamat.trim() || null,
-    }
+    const parentId = form.parent_id === '' ? null : Number(form.parent_id)
+    const alamat = form.alamat.trim() || null
+    // Kode SKPD TIDAK ikut payload UPDATE (permintaan user 2026-09-10) —
+    // dipakai generate NIBAR barang baru, jadi kolom paling berisiko diedit
+    // asal. Form-nya sendiri sudah mengunci inputnya (disabled saat editId),
+    // ini lapis kedua: sekalipun state form kebawa nilai lama, INSERT baru
+    // yang boleh menuliskannya, bukan UPDATE. Dua pemanggilan terpisah
+    // (bukan satu `payload` bersama) supaya TypeScript tak menyatukannya jadi
+    // union — union bikin overload `.update()`/`.insert()` supabase-js gagal
+    // disimpulkan.
     const { error } = editId
-      ? await supabase.from('admin_skpd').update(payload).eq('id', editId)
-      : await supabase.from('admin_skpd').insert(payload)
+      ? await supabase.from('admin_skpd').update({ nama: form.nama, parent_id: parentId, alamat }).eq('id', editId)
+      : await supabase.from('admin_skpd').insert({ nama: form.nama, kode_skpd: form.kode_skpd.trim() || null, parent_id: parentId, alamat })
 
     if (error) {
       setMsg(`Error: ${error.message}`)
@@ -155,9 +160,17 @@ export default function AdminSkpdPage() {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Kode SKPD</label>
-              <input className="select-filter w-full" placeholder="mis. 01.02.03.4567.8901" value={form.kode_skpd}
+              <input className="select-filter w-full disabled:bg-gray-100 disabled:text-gray-400"
+                placeholder="mis. 01.02.03.4567.8901" value={form.kode_skpd} disabled={!!editId}
                 onChange={e => setForm(f => ({ ...f, kode_skpd: e.target.value }))} />
-              <p className="text-xs text-amber-600 mt-1">Hati-hati: dipakai buat generate NIBAR barang baru (Pengadaan/PerolehanManual). Barang lama yang sudah py NIBAR TIDAK ikut berubah kalau kode ini diedit.</p>
+              {editId ? (
+                <p className="text-xs text-gray-400 mt-1">
+                  Terkunci — dipakai generate NIBAR barang baru, jadi tak bisa diubah dari sini
+                  supaya barang lama tak ikut tak sinkron.
+                </p>
+              ) : (
+                <p className="text-xs text-amber-600 mt-1">Hati-hati: dipakai buat generate NIBAR barang baru (Pengadaan/PerolehanManual).</p>
+              )}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Induk (Parent)</label>
