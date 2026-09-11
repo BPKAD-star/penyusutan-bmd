@@ -12,7 +12,15 @@
 // Lembar posisi (4.2/4.4) boleh berdiri sendiri karena angkanya cuma satu
 // panggilan RPC.
 //
-// Di layar `hidden`; print CSS di halaman induk yang menyalakannya.
+// ⚠️ SEJAK 2026-09-11 (relabeling tab, permintaan user "langsung nampilin
+// sesuai format permendagri") komponen ini TERLIHAT DI LAYAR sebagai pratinjau
+// utama tab "Rekapitulasi Tambah Kurang" — bukan lagi `hidden` sampai print.
+// `konfig` boleh berisi `ttd`/`ttdKiri` KOSONG (belum dipilih) untuk pratinjau
+// sebelum modal cetak dibuka; itu memang tampilan yang benar (bertitik-titik).
+// Isolasi cetak (`cssCetakLembar`) tetap bekerja apa adanya — ia memaksa
+// `display:block`/`visibility:visible` khusus dalam `@media print` TANPA
+// peduli status tampil di layar, jadi mencabut `hidden` di sini tidak
+// mengganggu mekanisme cetaknya sama sekali.
 import { formatRupiah2 } from '@/lib/export'
 import {
   BARIS_LAPORAN_BMD, nilaiBarisMutasi, labelKomptabel, pecahPeriode,
@@ -68,7 +76,7 @@ export default function LembarMutasiBmd({ periode, komptabel, sumber, konfig }: 
   const titik = '…………………………………………'
 
   return (
-    <div id="cetak-mutasi-bmd" className="hidden text-[11px] text-black">
+    <div id="cetak-mutasi-bmd" className="text-[11px] text-black">
       <div className="text-center leading-tight mb-4">
         <p className="font-bold text-[13px]">
           {perSkpd
