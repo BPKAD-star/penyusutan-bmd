@@ -5260,6 +5260,50 @@ BUKAN public URL. Draft (belum py `aset.id`) pakai prefix `draft/<key-client>/..
   penanda `{n}📷` yang TETAP BISA DIKLIK, dan pop-up (yang punya jalur tanda
   tangannya sendiri, ber-`error`) menampilkan pesan aslinya.
 
+## Data Cache Vercel membekukan halaman SERVER — `force-dynamic` tak cukup (2026-09-11)
+
+Sesudah perbaikan kode register KIBAR dipush & **statusnya Ready + Production di
+Vercel (commit `e276631`, branch `main`)**, user membuka
+`bmdlastgame.vercel.app/kibar/<nibar>` — termasuk lewat **Incognito** — dan
+kartunya MASIH menampilkan kode barang, kode register, uraian, & satuan yang
+LAMA. Di saat yang sama URL deployment **preview** dgn commit yang **SAMA
+PERSIS** menampilkan semuanya dgn benar.
+
+- ⚠️ **Gejalanya menyamar jadi "kodenya belum ke-deploy", padahal kodenya SUDAH
+  jalan.** Di layar yang sama, label "Pengelola Barang" sudah berbunyi **BKAD**
+  — teks yang baru lahir di commit itu juga. Jadi kode baru + data lama,
+  berbarengan. **Kalau dua hal dari satu commit tak sama-sama muncul, yang
+  membeku DATANYA, bukan build-nya.**
+- **Dibuktikan, bukan ditebak:** yang tampil di production persis
+  `aset_kode_register.kode_lama` (`…1310101050010000002`, kebetulan = NIBAR
+  karena backfill 20260729_04 mewarisi NIBAR untuk barang yang belum pernah
+  bergerak). Keempat kolomnya versi lama & konsisten satu sama lain → itu FOTO
+  baris `aset` sebelum reklas 03:54 UTC, bukan salah baca kolom.
+- **Sebabnya Data Cache Vercel di lapisan `fetch`.** Next.js App Router
+  membungkus `fetch` global — dan supabase-js memakai `fetch` itu — dengan cache
+  yang **PERSISTEN LINTAS DEPLOYMENT** & **namespace-nya TERPISAH antara
+  Production dan Preview**. Itu menjelaskan dua hal sekaligus: preview segar
+  (namespace baru) & deploy ulang tak menyembuhkan (cache tak ikut dibuang).
+- ⚠️ **`export const dynamic = 'force-dynamic'` TIDAK MENUTUPNYA.** Halaman
+  KIBAR sudah memakainya sejak awal & tetap kena; `app/dashboard/page.tsx` juga
+  memakainya, jadi jangan menganggap halaman lain otomatis aman karena punya
+  baris itu.
+- **Obatnya di SATU sumber: `lib/supabase/server.ts`.** Kedua pabrik klien
+  server (`createClient` & `createAdminClient`) kini menyuntikkan
+  `global: { fetch }` yang selalu `cache: 'no-store'`. Sengaja **bukan** per
+  halaman: halaman server BARU yang lupa menambahkan gerbangnya akan menyajikan
+  angka basi **tanpa satu pun error** — dan di repo ini aturan yang harus
+  disalin manual sudah berkali-kali terbukti dilanggar. Halaman KIBAR tetap
+  diberi `revalidate = 0` + `fetchCache = 'force-no-store'` sbg lapis kedua yang
+  disengaja (kartunya dipindai dari QR di badan barang & dibaca pemeriksa
+  sebagai keadaan HARI INI).
+- ⚠️ **Klien BROWSER tak pernah kena** (Daftar Barang & Penyusutan membaca lewat
+  `lib/supabase/client.ts`) — itu sebabnya Daftar Barang menampilkan kode baru
+  yang benar di saat KIBAR masih basi. **Jangan pakai "halaman lain benar" sbg
+  bukti datanya benar**; tanyakan dulu halaman itu membaca dari server atau dari
+  browser.
+- **Tak ada migrasi** — murni runtime; DB, ledger, & RPC tak disentuh.
+
 ## Lingkungan kerja
 
 - Deploy via Vercel. **Type-check BERSIH — 0 error** (diverifikasi 2026-08-05):

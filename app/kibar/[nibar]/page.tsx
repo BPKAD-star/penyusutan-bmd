@@ -28,6 +28,17 @@ import PrintLabelButton from '@/components/kibar/PrintLabelButton'
 import PrintPageButton from '@/components/kibar/PrintPageButton'
 
 export const dynamic = 'force-dynamic'
+// ⚠️ `force-dynamic` SAJA TIDAK CUKUP — sudah terbukti di produksi 2026-09-11:
+// kartu ini menampilkan foto baris aset SEBELUM reklas selama berjam-jam di
+// domain production, sementara deployment preview dgn commit yang SAMA
+// menampilkan data segar. Yang membekukan Data Cache Vercel di lapisan
+// `fetch`, bukan rendering halamannya. Penjaga sesungguhnya ada di
+// `createAdminClient` (lib/supabase/server.ts, `cache: 'no-store'`); dua baris
+// di bawah ini lapis keduanya & sengaja dipertahankan walau terkesan mubazir —
+// kartu inilah yang paling mahal kalau basi: ia dipindai dari QR di badan
+// barang, dan pemeriksa membacanya sebagai keadaan barang HARI INI.
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
 export const metadata = {
   title: 'KIBAR — Kartu Identitas Barang',
   robots: { index: false, follow: false },
