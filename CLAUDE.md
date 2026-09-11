@@ -5319,21 +5319,32 @@ PERSIS** menampilkan semuanya dgn benar.
   browser.
 - **Tak ada migrasi** — murni runtime; DB, ledger, & RPC tak disentuh.
 
-## Daftar Bidang Tanah — Pelaporan → GIS (2026-09-11)
+## Daftar Bidang Tanah — sub-menu GIS Tanah (2026-09-11)
 
-Menu Pelaporan → **Daftar Bidang Tanah** (`app/dashboard/pelaporan/bidang-tanah`,
-`components/pelaporan/LaporanBidangTanah.tsx`). Permintaan user: "fungsinya
-cuman ngelihat daftar bidang aja sih" — jadi satu halaman baru yang MURNI baca
-`aset_bidang_tanah` + Export Excel, tanpa satu pun jalan menulis.
+Menu **GIS Tanah** kini SUB-MENU berisi dua anak: **Peta** (`/dashboard/gis`,
+halaman lama, tak berubah — satu-satunya tempat menambah/mengubah/menghapus
+bidang lewat `KelolaBidangPanel`) & **Daftar Bidang**
+(`app/dashboard/gis/daftar-bidang`, `components/gis/DaftarBidangTanah.tsx`,
+BARU). Permintaan user: "fungsinya cuman ngelihat daftar bidang aja sih" — jadi
+halaman baru yang MURNI baca `aset_bidang_tanah` + Export Excel, tanpa satu pun
+jalan menulis.
 
-- **Ditaruh di Pelaporan, bukan dijadikan sub-menu GIS Tanah — mengulang pola
-  KIR yang sudah lebih dulu ada.** KIR sudah memisahkan "tempat mengerjakan"
-  (Pembukuan → KIR) dari "tempat melihat & mengunduh hasilnya" (Pelaporan →
-  KIR); GIS Tanah persis begitu juga — halaman peta (`app/dashboard/gis`,
-  leaf tersendiri di luar grup Pelaporan) tetap satu-satunya tempat
-  menambah/mengubah/menghapus bidang lewat `KelolaBidangPanel`. Menu baru ini
-  cuma menautkan balik ke sana (tombol "GIS" per baris + kalimat pengantar di
-  kepala halaman) — tak ada form di sini sama sekali.
+⚠️ **Letak ini KOREKSI dari percobaan pertama di sesi yang sama** — sejam
+sebelumnya halaman ini sempat ditaruh sbg leaf tersendiri di
+`Pelaporan → Daftar Bidang Tanah` (mengikuti pola KIR: "Pembukuan → KIR" kerja
+terpisah dari "Pelaporan → KIR" lihat+Export). User membatalkannya: "Gimana
+kalau sub menu GIS aja bang? Jadi GIS itu ada Map dan Daftar Bidang gitu aja."
+Jadi pemisahan kerja-vs-lihat TETAP berlaku (Peta menulis, Daftar Bidang cuma
+baca), tapi dikelompokkan jadi **satu grup sidebar** ("GIS Tanah" ▸ Peta ▸
+Daftar Bidang), bukan dua entri top-level yang terpisah jauh spt KIR. Logika
+& query komponennya dipindah utuh dari letak pertama, cuma nama berkas & teks
+tautan yang menyesuaikan ("Peta" bukan "GIS Tanah").
+- **`components/Sidebar.tsx`**: node top-level `GIS Tanah` yg tadinya
+  `type:'leaf'` jadi `type:'group'` ber-`icon: ICON.gis` (groups mengambil
+  ikonnya dari field ini, BUKAN dari `iconFor()` — makanya baris
+  `if (label === 'GIS Tanah') return ICON.gis` di `iconFor()` ikut dicabut,
+  jadi kode mati). Anaknya (`Peta`, `Daftar Bidang`) tampil sbg titik polos
+  tanpa ikon sendiri — konsisten dgn anak grup lain (RKBMD, Pelaporan, dst).
 - **Cakupan lewat `SkpdCombobox lockToOperator allowClear`**, pola yang sama
   dgn LaporanKir: pengurus barang → terkunci ke SKPD-nya (+ turunannya), admin
   pemda → bebas, kosongkan = se-kabupaten. Bukan gerbang keamanan — RLS
@@ -5348,7 +5359,7 @@ cuman ngelihat daftar bidang aja sih" — jadi satu halaman baru yang MURNI baca
   lebih murah daripada mengukur ulang dari nol.
 - **Kolom tabel & Export**: SKPD · Nama Tanah/NIBAR · Nama Bidang · Jenis Hak ·
   Nomor Dokumen · Tanggal Terbit · Luas (m²) · Sertifikat (tautan signed URL
-  kalau ada) · tautan balik ke GIS. Export menambahkan Kode Barang, Nama
+  kalau ada) · tautan balik ke tab Peta. Export menambahkan Kode Barang, Nama
   Dokumen, Tanggal Berakhir Hak, Alamat/Lokasi Bidang, Latitude/Longitude, &
   Keterangan — kolom yang di layar dipadatkan demi lebar, di Excel tetap rata.
 - **Kartu ringkasan "Luas Terpetakan"** memakai label & caveat yang SAMA dgn

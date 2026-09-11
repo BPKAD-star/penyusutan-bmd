@@ -2,13 +2,16 @@
 // Daftar Bidang Tanah — daftar SEMUA bidang (aset_bidang_tanah) untuk DILIHAT &
 // DIUNDUH, TANPA kemampuan ubah (permintaan user 2026-09-11: "fungsinya cuman
 // ngelihat daftar bidang aja"). Pengerjaan (tambah/ubah/hapus bidang) TETAP di
-// menu GIS Tanah (app/dashboard/gis) — halaman itu satu-satunya penulis
+// tab Peta (app/dashboard/gis) — halaman itu satu-satunya penulis
 // aset_bidang_tanah, di sini murni baca.
 //
-// Ditaruh di Pelaporan, BUKAN dijadikan sub-menu GIS Tanah: polanya sudah ada
-// presedennya — KIR (menu kerja) & Pelaporan → KIR (daftar + Export) sudah
-// lebih dulu memisahkan "tempat mengerjakan" dari "tempat melihat & mengunduh
-// hasilnya". Halaman ini mengulang pola yang sama utk Tanah.
+// Sub-menu GIS Tanah (Peta · Daftar Bidang) — keputusan user 2026-09-11,
+// membatalkan letak awal (Pelaporan → Daftar Bidang Tanah) yang sempat
+// dikerjakan sejam sebelumnya. Alasannya tetap sama dgn preseden KIR
+// (Pembukuan → KIR kerja, Pelaporan → KIR daftar+Export): "tempat mengerjakan"
+// terpisah dari "tempat melihat & mengunduh" — bedanya di sini keduanya
+// dikelompokkan jadi SATU submenu GIS Tanah, bukan dua menu top-level yang
+// jauh terpisah di sidebar.
 //
 // Cakupan (permintaan user, pola `lockToOperator` yg sudah dipakai LaporanKir
 // dkk): pengurus barang → SKPD dia (+ turunannya); admin pemda → se-kabupaten
@@ -40,7 +43,7 @@ const fmtTgl = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID',
 // unitnya sendiri di teksnya.
 const fmtLuas = (v: number | null) => v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 
-export default function LaporanBidangTanah() {
+export default function DaftarBidangTanah() {
   const supabase = createClient()
   const namaSkpd = useNamaSkpd()
   const [descIds, setDescIds] = useState<number[] | null>(null)
@@ -144,7 +147,7 @@ export default function LaporanBidangTanah() {
           <h1 className="text-2xl font-bold text-gray-900">Daftar Bidang Tanah</h1>
           <p className="text-gray-500 text-sm mt-1">
             Daftar bidang (sertifikat/hamparan) Tanah untuk dilihat & diunduh. Kosongkan SKPD untuk se-kabupaten.
-            {' '}Untuk menambah/mengubah bidang, buka <Link href="/dashboard/gis" className="text-teal hover:underline">GIS Tanah</Link>.
+            {' '}Untuk menambah/mengubah bidang, buka tab <Link href="/dashboard/gis" className="text-teal hover:underline">Peta</Link>.
           </p>
         </div>
         <button onClick={handleExport} disabled={exporting || shown.length === 0} className="btn-primary flex-shrink-0">
@@ -198,7 +201,7 @@ export default function LaporanBidangTanah() {
                 <th className="table-th">Tanggal Terbit</th>
                 <th className="table-th text-right">Luas (m²)</th>
                 <th className="table-th">Sertifikat</th>
-                <th className="table-th">GIS</th>
+                <th className="table-th">Peta</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">

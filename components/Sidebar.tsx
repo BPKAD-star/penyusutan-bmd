@@ -100,7 +100,17 @@ const navTree: NavNode[] = [
   },
   { type: 'leaf', href: '/dashboard/daftar-barang', label: 'Daftar Barang' },
   { type: 'leaf', href: '/dashboard/penyusutan', label: 'Penyusutan' },
-  { type: 'leaf', href: '/dashboard/gis', label: 'GIS Tanah' },
+  {
+    // Sub-menu (keputusan user 2026-09-11): "Peta" = satu-satunya penulis
+    // aset_bidang_tanah (KelolaBidangPanel); "Daftar Bidang" = murni
+    // lihat+Export (pola KIR "kerja vs lihat", tapi dikelompokkan jadi SATU
+    // grup di sini, bukan dua entri top-level terpisah — permintaan eksplisit
+    // user, membatalkan letak awal "Pelaporan → Daftar Bidang Tanah").
+    type: 'group', label: 'GIS Tanah', icon: ICON.gis, children: [
+      { type: 'leaf', href: '/dashboard/gis', label: 'Peta' },
+      { type: 'leaf', href: '/dashboard/gis/daftar-bidang', label: 'Daftar Bidang' },
+    ],
+  },
   { type: 'leaf', href: '/dashboard/kendaraan', label: 'Kendaraan' },
   {
     type: 'group', label: 'Pelaporan', icon: ICON.pelaporan, children: [
@@ -136,9 +146,6 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi/rincian', label: 'Rincian Transaksi (Bukti Dukung)' },
       { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
       { type: 'leaf', href: '/dashboard/pelaporan/kir', label: 'KIR' },
-      // Pola yang sama dgn KIR di atas: "GIS Tanah" (leaf tersendiri, di luar
-      // grup ini) tempat MENGERJAKAN bidang; di sini cuma MELIHAT + Export.
-      { type: 'leaf', href: '/dashboard/pelaporan/bidang-tanah', label: 'Daftar Bidang Tanah' },
     ],
   },
   {
@@ -212,7 +219,6 @@ const adminGroupOperator: NavNode = {
 
 const iconFor = (label: string): React.ReactNode => {
   if (label === 'IPA') return ICON.ipa
-  if (label === 'GIS Tanah') return ICON.gis
   if (label === 'Kendaraan') return ICON.kendaraan
   if (label === 'Daftar Barang') return ICON.daftar
   if (label === 'Penyusutan') return ICON.penyusutan
