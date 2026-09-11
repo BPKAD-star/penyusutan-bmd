@@ -136,6 +136,9 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi/rincian', label: 'Rincian Transaksi (Bukti Dukung)' },
       { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
       { type: 'leaf', href: '/dashboard/pelaporan/kir', label: 'KIR' },
+      // Pola yang sama dgn KIR di atas: "GIS Tanah" (leaf tersendiri, di luar
+      // grup ini) tempat MENGERJAKAN bidang; di sini cuma MELIHAT + Export.
+      { type: 'leaf', href: '/dashboard/pelaporan/bidang-tanah', label: 'Daftar Bidang Tanah' },
     ],
   },
   {

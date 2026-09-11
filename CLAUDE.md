@@ -5319,6 +5319,48 @@ PERSIS** menampilkan semuanya dgn benar.
   browser.
 - **Tak ada migrasi** — murni runtime; DB, ledger, & RPC tak disentuh.
 
+## Daftar Bidang Tanah — Pelaporan → GIS (2026-09-11)
+
+Menu Pelaporan → **Daftar Bidang Tanah** (`app/dashboard/pelaporan/bidang-tanah`,
+`components/pelaporan/LaporanBidangTanah.tsx`). Permintaan user: "fungsinya
+cuman ngelihat daftar bidang aja sih" — jadi satu halaman baru yang MURNI baca
+`aset_bidang_tanah` + Export Excel, tanpa satu pun jalan menulis.
+
+- **Ditaruh di Pelaporan, bukan dijadikan sub-menu GIS Tanah — mengulang pola
+  KIR yang sudah lebih dulu ada.** KIR sudah memisahkan "tempat mengerjakan"
+  (Pembukuan → KIR) dari "tempat melihat & mengunduh hasilnya" (Pelaporan →
+  KIR); GIS Tanah persis begitu juga — halaman peta (`app/dashboard/gis`,
+  leaf tersendiri di luar grup Pelaporan) tetap satu-satunya tempat
+  menambah/mengubah/menghapus bidang lewat `KelolaBidangPanel`. Menu baru ini
+  cuma menautkan balik ke sana (tombol "GIS" per baris + kalimat pengantar di
+  kepala halaman) — tak ada form di sini sama sekali.
+- **Cakupan lewat `SkpdCombobox lockToOperator allowClear`**, pola yang sama
+  dgn LaporanKir: pengurus barang → terkunci ke SKPD-nya (+ turunannya), admin
+  pemda → bebas, kosongkan = se-kabupaten. Bukan gerbang keamanan — RLS
+  `aset_select`/`abt_select` tetap penjaga akhir, ini murni UX.
+- **Query-nya MENIRU PERSIS `app/dashboard/gis/page.tsx`**, bukan menulis pola
+  baru: register Tanah (`kode LIKE '1.3.1.%' AND status='aktif'`) ditarik
+  keyset `.range()` + pemecah seri `nama_barang,id` (nama tanah banyak
+  kembar); bidangnya ditarik SEKALI lewat keyset `id` lalu disaring ke
+  register yang ada di scope — bukan `.in('aset_id', ...)` per-batch, karena
+  policy `abt_select` sudah membatasi lewat SKPD induk asetnya (lihat catatan
+  di GIS Tanah, CLAUDE.md). Meniru query yang sudah terbukti aman di bawah RLS
+  lebih murah daripada mengukur ulang dari nol.
+- **Kolom tabel & Export**: SKPD · Nama Tanah/NIBAR · Nama Bidang · Jenis Hak ·
+  Nomor Dokumen · Tanggal Terbit · Luas (m²) · Sertifikat (tautan signed URL
+  kalau ada) · tautan balik ke GIS. Export menambahkan Kode Barang, Nama
+  Dokumen, Tanggal Berakhir Hak, Alamat/Lokasi Bidang, Latitude/Longitude, &
+  Keterangan — kolom yang di layar dipadatkan demi lebar, di Excel tetap rata.
+- **Kartu ringkasan "Luas Terpetakan"** memakai label & caveat yang SAMA dgn
+  GIS Tanah ("dari N bidang berluas"), BUKAN "Luas total" — angkanya cuma Σ
+  bidang yang sudah diisi luasnya, bukan klaim luas tanah pemda seutuhnya.
+  Kartu "Sudah Berbidang" (N dari M register) memberi konteks progres
+  pendataan yang tak bisa dibaca dari daftar bidang saja.
+- **Tanpa `periode` di nama berkas** (`namaBerkasLaporan`) — bidang itu POSISI
+  terkini, bukan arus/rentang periode, pola yang sama dgn KIR & Pengamanan.
+- **Tak ada migrasi** — murni pembacaan `aset` + `aset_bidang_tanah` yang
+  sudah ada; tak ada kolom atau RLS baru.
+
 ## Lingkungan kerja
 
 - Deploy via Vercel. **Type-check BERSIH — 0 error** (diverifikasi 2026-08-05):
