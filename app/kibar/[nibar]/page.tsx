@@ -48,6 +48,11 @@ type Admin = ReturnType<typeof createAdminClient>
 
 const formatRp = (v: number | null | undefined) =>
   v == null ? '-' : 'Rp ' + new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
+// `aset.harga_satuan` kosong untuk banyak barang baseline e-BMD (cuma total
+// nilai perolehan yang diimpor) — jatuh ke nilai_perolehan ÷ jumlah, bukan
+// mengarang angka: itu memang definisi harga satuan saat kuantitasnya utuh.
+const hargaSatuan = (a: { harga_satuan: number | null; nilai_perolehan: number | null; jumlah: number | null }) =>
+  a.harga_satuan ?? (a.jumlah && a.jumlah > 0 && a.nilai_perolehan != null ? a.nilai_perolehan / a.jumlah : null)
 const fmtTgl = (s: string | null | undefined) => s
   ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
   : '-'
@@ -325,7 +330,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
           <Row label="5. Nama Barang" value={dash(aset.nama_barang)} />
           <Row label="6. Luas" value={aset.luas != null ? String(aset.luas) : '-'} />
           <Row label="7. Satuan Barang" value={dash(aset.satuan)} />
-          <Row label="8. Harga Satuan Perolehan" value={formatRp(aset.harga_satuan)} />
+          <Row label="8. Harga Satuan Perolehan" value={formatRp(hargaSatuan(aset))} />
           <Row label="9. Nilai Perolehan" value={formatRp(aset.nilai_perolehan)} />
           <Row label="10. Kondisi Barang" value={dash(aset.kondisi_barang)} />
           <div className="text-sm py-1 text-gray-700 font-medium">11. Lokasi</div>
@@ -350,6 +355,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
             <Row label="14. Transaksi Terakhir" value={trxTerakhir
               ? `${KIBAR_JENIS_LABEL[trxTerakhir.jenis]?.label || trxTerakhir.jenis} — ${fmtTgl(trxTerakhir.tanggal)}`
               : '-'} />
+            <Row label="15. Keterangan" value={dash(aset.keterangan)} />
           </div>
         </Section>
 
@@ -359,7 +365,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
           <Row label="2. Tanggal Perolehan" value={fmtTgl(aset.tgl_perolehan)} />
           <Row label="3. Luas" value={aset.luas != null ? String(aset.luas) : '-'} />
           <Row label="4. Satuan Barang" value={dash(aset.satuan)} />
-          <Row label="5. Harga Satuan Perolehan" value={formatRp(aset.harga_satuan)} />
+          <Row label="5. Harga Satuan Perolehan" value={formatRp(hargaSatuan(aset))} />
           <Row label="6. Nilai Total Barang" value={formatRp(aset.nilai_perolehan)} />
           <Row label="7. Biaya Atribusi" value="-" />
           <Row label="8. Nilai Perolehan" value={formatRp(aset.nilai_perolehan)} />
