@@ -4356,10 +4356,11 @@ Spesifikasi Lainnya, dan sampai hari ini ia hanya ikut di Export.
   ditambah apa pun. Syarat user: "harus fit to window, gaboleh ada geser kanan
   kiri". Tiga hal dikerjakan bersamaan:
   1. **`colsLayar`** — dua pasang digabung KHUSUS DI LAYAR: `mm`+`sisa` →
-     "100 / 99", `asal_usul`+`penggunaan` → ditumpuk. ⚠️ **Export tetap
-     `colsFor` (rata, satu kolom per data)** — di berkas kerja orang menyortir &
-     mem-pivot per kolom, dan Excel tak punya batas lebar yang perlu dihormati.
-     Pola yang sama sudah dipakai kode+uraian & nama+NIBAR.
+     "100 / 99", **`penggunaan`+`keterangan`** → ditumpuk (semula
+     `asal_usul`+`penggunaan` — diganti 2026-09-11, lihat catatan di bawah).
+     ⚠️ **Export tetap `colsFor` (rata, satu kolom per data)** — di berkas kerja
+     orang menyortir & mem-pivot per kolom, dan Excel tak punya batas lebar yang
+     perlu dihormati. Pola yang sama sudah dipakai kode+uraian & nama+NIBAR.
   2. **Tabel dipadatkan** dgn kelas yang KEMBAR dgn tabel Rekonsiliasi (bukan
      gaya baru): padding sel 32px→16px dan kepala kolom berhenti HURUF BESAR
      ber-`tracking-wider` — "NILAI PEROLEHAN" memaksa lebar minimum jauh di atas
@@ -4388,6 +4389,20 @@ Spesifikasi Lainnya, dan sampai hari ini ia hanya ikut di Export.
   memadatkannya berarti mengubah tampilan kedelapan jenis aset yang tak diminta
   berubah. Konsekuensi yang diterima: dua halaman kembar ini kini beda kerapatan
   tabelnya.
+
+### Pasangan gabungan kedua ditukar: Penggunaan+Keterangan, Asal Usul sendiri (2026-09-11)
+
+Permintaan user, murni preferensi tampilan — jumlah kolom & lebar tabel TIDAK
+berubah, cuma pasangannya ditukar. `colsLayar()` semula memasangkan
+`asal_usul`+`penggunaan`; sekarang **Asal Usul tampil sendiri** & yang
+ditumpuk **`penggunaan`+`keterangan`** (`gunaket`, menggantikan `asalguna` di
+`COL_META`). `cellContent()` untuk sel gabungan itu kini membaca
+`r.penggunaan_pengamanan` (baris atas) & `ketMap[r.nibar]` (baris bawah, abu) —
+sumbernya sama persis dgn kolom `keterangan` & `penggunaan` yang berdiri
+sendiri (`cellValue`), jadi tak ada rumus kedua yang bisa menyimpang dari
+Export. **Export tak disentuh** — `handleExport` tetap `colsFor` (rata, kolom
+terpisah), tak pernah memanggil `colsLayar`. **Tak ada migrasi** — murni JSX +
+satu fungsi tampilan di satu berkas.
 
 ## Aset Lain-Lain (1.5.4): kolomnya GABUNGAN semua golongan (migrasi 20260908_01)
 

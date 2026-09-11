@@ -176,7 +176,9 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   // digabung cuma tampilannya, dan itu yang membeli ruang untuk kolom
   // Spesifikasi Lainnya tanpa membuat tabelnya perlu digeser.
   mmsisa: { header: 'Masa / Sisa (Smt)', align: 'center' },
-  asalguna: { header: 'Asal Usul / Penggunaan' },
+  // Penggunaan digabung dgn Keterangan (permintaan user 2026-09-11); Asal Usul
+  // sekarang tampil sendiri — lihat rationale di colsLayar().
+  gunaket: { header: 'Penggunaan / Keterangan' },
 }
 
 // SALINAN kolom layar Daftar Barang (app/dashboard/daftar-barang/page.tsx →
@@ -243,9 +245,14 @@ function colsFor(golongan: string): string[] {
  * Bangunan sudah 16 kolom SEBELUM Spesifikasi Lainnya ditambahkan — dan sudah
  * meleber keluar layar. Yang digabung dipilih yang pasangannya memang dibaca
  * bersamaan & isinya pendek:
- *   mm + sisa            -> "100 / 88"  (dua-duanya semester, selalu dibaca
- *                           berpasangan: berapa umurnya, tinggal berapa)
- *   asal_usul + penggunaan -> ditumpuk  (dua keterangan pendek, bukan angka)
+ *   mm + sisa               -> "100 / 88"  (dua-duanya semester, selalu dibaca
+ *                              berpasangan: berapa umurnya, tinggal berapa)
+ *   penggunaan + keterangan -> ditumpuk  (dua keterangan pendek, bukan angka)
+ *
+ * ⚠️ Pasangan kedua BERUBAH 2026-09-11 (permintaan user): semula
+ * asal_usul+penggunaan, sekarang Asal Usul tampil SENDIRI & yang digabung
+ * penggunaan+keterangan. Alasannya bukan lebar — kolomnya sama banyak — murni
+ * supaya Asal Usul terbaca sendiri tanpa harus membedah sel gabungan.
  *
  * ⚠️ EXPORT TIDAK IKUT DIGABUNG — `handleExport` tetap memakai `colsFor`.
  * Di berkas kerja orang menyortir & mem-pivot per kolom; "100 / 88" dalam satu
@@ -257,8 +264,8 @@ function colsLayar(golongan: string): string[] {
   const out: string[] = []
   for (const k of colsFor(golongan)) {
     if (k === 'mm') out.push('mmsisa')
-    else if (k === 'asal_usul') out.push('asalguna')
-    else if (k === 'sisa' || k === 'penggunaan') continue // sudah ikut pasangannya
+    else if (k === 'penggunaan') out.push('gunaket')
+    else if (k === 'sisa' || k === 'keterangan') continue // sudah ikut pasangannya
     else out.push(k)
   }
   return out
@@ -828,14 +835,14 @@ export default function Page() {
       const sisa = r.sisa_masa_manfaat_smt
       return <span className="whitespace-nowrap">{mm ?? '-'} / {sisa ?? '-'}</span>
     }
-    if (key === 'asalguna') {
-      const asal = r.asal_usul || ''
+    if (key === 'gunaket') {
       const guna = r.penggunaan_pengamanan || ''
-      if (!asal && !guna) return <span className="text-gray-300">-</span>
+      const ket = ketMap[r.nibar] || ''
+      if (!guna && !ket) return <span className="text-gray-300">-</span>
       return (
         <>
-          <p className="text-xs text-gray-600">{asal || '-'}</p>
-          {guna && <p className="text-gray-400 text-xs mt-0.5">{guna}</p>}
+          <p className="text-xs text-gray-600">{guna || '-'}</p>
+          {ket && <p className="text-gray-400 text-xs mt-0.5">{ket}</p>}
         </>
       )
     }
