@@ -1,6 +1,17 @@
 'use client'
-// Pemilih tampilan rekap: Model 1 (per golongan) / Model 2 (matriks per SKPD per
-// jenis). Saat Model 2 aktif, muncul pilihan metrik yang ditampilkan.
+// Pemilih tampilan rekap: Rekap per Golongan (dulu "Model 1") / Rekap per SKPD
+// (dulu "Model 2") / Mutasi Tambah-Kurang (dulu "Model 3"). Saat Rekap per SKPD
+// aktif, muncul pilihan metrik yang ditampilkan.
+//
+// ⚠️ Relabeling 2026-09-11 (permintaan user, "diselaraskan kyk pelaporan
+// lainnya") — MURNI TAMPILAN: nama & gaya tombolnya diganti dari radio "Model
+// N" jadi pill tab (pola yang sama dgn tab bar Perolehan/Reklasifikasi/Koreksi/
+// dst.), TAPI posisi & pemanggilnya di kedua halaman TIDAK dipindah — masih di
+// dalam kartu "Filter data", masih 3 opsi yang sama, `model` masih bertipe
+// `1 | 2 | 3` apa adanya. Tak ada logika/alur data yang disentuh: baik
+// Laporan BMD (yang tombol Cetak Format IV.L.4.1–4.4-nya bersandar pada Model 1
+// & Model 3) maupun Saldo Awal → Rekapitulasi (yang cuma pakai Model 1 & 2)
+// sama-sama tetap jalan seperti sebelumnya.
 import { METRIC_LABEL, type Metric, type MetricOrAll } from '@/components/RekapMatrixTable'
 
 const METRIC_OPTIONS: { value: MetricOrAll; label: string }[] = [
@@ -9,9 +20,9 @@ const METRIC_OPTIONS: { value: MetricOrAll; label: string }[] = [
 ]
 
 const MODEL_LABEL: Record<1 | 2 | 3, string> = {
-  1: 'Model 1 — per golongan',
-  2: 'Model 2 — per SKPD per jenis',
-  3: 'Model 3 — mutasi (saldo awal/akhir)',
+  1: 'Rekap per Golongan',
+  2: 'Rekap per SKPD',
+  3: 'Mutasi (Tambah-Kurang)',
 }
 
 export default function RekapModelControls({ model, onModel, metric, onMetric, models = [1, 2] }: {
@@ -24,13 +35,13 @@ export default function RekapModelControls({ model, onModel, metric, onMetric, m
   return (
     <>
       <div className="flex items-center gap-3">
-        <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Model tampilan :</label>
-        <div className="flex gap-4">
+        <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Tampilan :</label>
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
           {models.map(v => (
-            <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
-              <input type="radio" name="rekap-model" checked={model === v} onChange={() => onModel(v)} />
+            <button key={v} type="button" onClick={() => onModel(v)}
+              className={`px-4 py-1.5 rounded-md transition-colors ${model === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
               {MODEL_LABEL[v]}
-            </label>
+            </button>
           ))}
         </div>
       </div>
