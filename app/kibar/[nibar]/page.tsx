@@ -301,7 +301,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
         <Section num="I" title="Unit Pemakai">
           <Row label="1. Kuasa Pengguna Barang" value={kuasaPengguna} />
           <Row label="2. Pengguna Barang" value={penggunaBarang} />
-          <Row label="3. Pengelola Barang" value="Badan Pengelola Keuangan dan Aset Daerah (BPKAD)" />
+          <Row label="3. Pengelola Barang" value="Badan Keuangan dan Aset Daerah (BKAD)" />
           <Row label="4. Alamat" value={dash(alamatUnit)} />
         </Section>
 
@@ -309,7 +309,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
         <Section num="II" title="Data Barang">
           <Row label="1. Kode Barang" value={dash(aset.kode)} mono />
           <Row label="2. Kode Lokasi" value={dash(kodeLokasi)} mono />
-          <Row label="3. Kode Register Barang" value={dash(aset.nibar)} mono />
+          <Row label="3. Kode Register Barang" value={dash(aset.kode_register)} mono />
           <Row label="4. Uraian Barang" value={dash(uraianBarang)} />
           <Row label="5. Nama Barang" value={dash(aset.nama_barang)} />
           <Row label="6. Luas" value={aset.luas != null ? String(aset.luas) : '-'} />

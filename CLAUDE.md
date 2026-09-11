@@ -1122,8 +1122,14 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
   migrasi massal**, bukan sesudah.
 - **BELUM SELESAI:** tampilan belum period-aware (Daftar Barang menampilkan kode
   TERKINI walau membuka periode lampau — belum terasa karena tabel riwayat masih
-  nyaris kosong, tapi salah begitu ada perpindahan yang tak dibatalkan); KIBAR
-  masih mengisi kolom "Nomor Register" dengan NIBAR.
+  nyaris kosong, tapi salah begitu ada perpindahan yang tak dibatalkan).
+  ✅ **KIBAR sudah tak lagi mengisi "3. Kode Register Barang" dengan NIBAR**
+  (diperbaiki 2026-09-11, keputusan user — kartu itu menampilkan kolom
+  `aset.kode_register` yang benar sekarang, `app/kibar/[nibar]/page.tsx`).
+  Sama seperti Export & layar register, KIBAR **belum period-aware** untuk kolom
+  ini — yang tampil kode TERKINI, bukan kode pada periode transaksi yang sedang
+  dilihat di kartu itu; itu memang keterbatasan yang sama yang berlaku
+  se-aplikasi, bukan regresi baru.
 - **Export Daftar Barang SUDAH membawa kode register** (2026-07-30, keputusan
   user): kolom **"Kode Register"** ikut di Export Excel & Export Audit. Bersama
   NIBAR ia masuk `EXPORT_ALWAYS` — dua kolom identitas itu sengaja di luar
