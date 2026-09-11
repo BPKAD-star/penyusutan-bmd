@@ -7,7 +7,7 @@
 ## 1. Kerangka Halaman
 
 - **Layout**: sidebar navigasi kiri (`components/Sidebar.tsx`, grup bersarang
-  bisa dilipat) + top bar (`TopBar.tsx`: brand "BMD last game", badge
+  bisa dilipat) + top bar (`TopBar.tsx`: brand "ASSET Management", badge
   "Tahun Kerja", user dropdown). Dirangkai `DashboardChrome.tsx`.
 - **Bahasa**: seluruh UI berbahasa Indonesia, istilah resmi penatausahaan BMD
   (SKPD, NIBAR, intra/ekstrakomptabel, KIB, dst.).

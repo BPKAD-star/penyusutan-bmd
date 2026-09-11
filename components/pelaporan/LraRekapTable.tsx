@@ -13,8 +13,14 @@
 // sini — realisasi belanja modal anak-anaknya (694 unit di bawahnya) dicatat
 // atas nama Dinas Pendidikan sendiri di ledger `pengadaan`, sementara sebagian
 // box LRA-nya mungkin tercatat di SKPD anak. Itu bukan bug (keputusan &
-// pengakuan user 2026-09-10, "sah sah aja sih") — makanya kolom Selisih TIDAK
-// diberi badge merah/hijau seperti Check di tab Ringkasan; ia angka biasa.
+// pengakuan user 2026-09-10, "sah sah aja sih") — makanya kolom Selisih itu
+// sendiri TIDAK diberi badge merah/hijau; angka biasa.
+//
+// Kolom **Status** (2026-09-11, permintaan user) beda maksud dari Selisih:
+// ia cuma menandai "pas 0 atau tidak" per baris — badge hijau "Balance ✓"
+// kalau Selisih-nya 0, amber "Selisih" kalau tidak. BUKAN vonis benar/salah
+// (lihat catatan di atas) — sekadar penanda cepat baris mana yang perlu
+// ditelusuri lebih lanjut di antara puluhan/ratusan baris pohon.
 import { useState } from 'react'
 import { formatRupiah2 } from '@/lib/export'
 import type { LraNode } from '@/lib/lraPohon'
@@ -69,14 +75,15 @@ export default function LraRekapTable({ rows, loading }: {
               <th className="table-th text-right">Reklasifikasi</th>
               <th className="table-th text-right border-l border-gray-100">Belanja Modal (App)</th>
               <th className="table-th text-right border-l border-gray-100">Selisih</th>
+              <th className="table-th text-center border-l border-gray-100">Status</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-gray-50">
             {loading ? (
-              <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+              <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
             ) : baris.length === 0 ? (
-              <tr><td colSpan={6} className="table-td text-center py-12 text-gray-400">Tidak ada data.</td></tr>
+              <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Tidak ada data.</td></tr>
             ) : baris.map(({ r, depth }) => {
               const adaAnak = (r.anak?.length ?? 0) > 0
               const d = selisih(r.cell)
@@ -86,13 +93,13 @@ export default function LraRekapTable({ rows, loading }: {
                     <span className="inline-flex items-center gap-1" style={{ paddingLeft: `${depth * 16}px` }}>
                       {adaAnak ? (
                         <button type="button" onClick={() => toggle(r.skpdId)}
-                          className="w-4 h-4 flex-shrink-0 flex items-center justify-center text-gray-400 hover:text-teal transition-colors"
+                          className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-sm text-gray-400 hover:text-teal transition-colors"
                           aria-label={terbuka.has(r.skpdId) ? `Tutup ${r.skpdNama}` : `Buka ${r.skpdNama}`}
                           aria-expanded={terbuka.has(r.skpdId)}>
                           {terbuka.has(r.skpdId) ? '▾' : '▸'}
                         </button>
                       ) : (
-                        <span className="w-4 flex-shrink-0" aria-hidden="true" />
+                        <span className="w-5 flex-shrink-0" aria-hidden="true" />
                       )}
                       <span>{r.skpdNama}</span>
                     </span>
@@ -103,6 +110,11 @@ export default function LraRekapTable({ rows, loading }: {
                   <td className="table-td text-right text-xs tabular-nums border-l border-gray-100">{formatRupiah2(r.cell.belanjaModal)}</td>
                   <td className={`table-td text-right text-xs tabular-nums border-l border-gray-100 ${d === 0 ? 'text-gray-400' : 'font-medium text-amber-700'}`}>
                     {formatRupiah2(d)}
+                  </td>
+                  <td className="table-td text-center border-l border-gray-100">
+                    {d === 0
+                      ? <span className="text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded whitespace-nowrap">Balance ✓</span>
+                      : <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded whitespace-nowrap">Selisih</span>}
                   </td>
                 </tr>
               )
@@ -118,6 +130,11 @@ export default function LraRekapTable({ rows, loading }: {
                 <td className="table-td text-right text-xs font-bold">{formatRupiah2(total.reklas)}</td>
                 <td className="table-td text-right text-xs font-bold border-l border-gray-200">{formatRupiah2(total.belanjaModal)}</td>
                 <td className="table-td text-right text-xs font-bold border-l border-gray-200 text-teal">{formatRupiah2(selisih(total))}</td>
+                <td className="table-td text-center border-l border-gray-200">
+                  {selisih(total) === 0
+                    ? <span className="text-[10px] font-medium text-green-700 bg-green-50 px-1.5 py-0.5 rounded whitespace-nowrap">Balance ✓</span>
+                    : <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded whitespace-nowrap">Selisih</span>}
+                </td>
               </tr>
             </tfoot>
           )}

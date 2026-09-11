@@ -153,13 +153,13 @@ export default function RekapMatrixTable({ rows, golongan, metric, loading }: {
                     <span className="inline-flex items-center gap-1" style={{ paddingLeft: `${depth * 16}px` }}>
                       {adaAnak ? (
                         <button type="button" onClick={() => toggle(r.skpdId)}
-                          className="w-4 h-4 flex-shrink-0 flex items-center justify-center text-gray-400 hover:text-teal transition-colors"
+                          className="w-5 h-5 flex-shrink-0 flex items-center justify-center text-sm text-gray-400 hover:text-teal transition-colors"
                           aria-label={terbuka.has(r.skpdId) ? `Tutup ${r.skpdNama}` : `Buka ${r.skpdNama}`}
                           aria-expanded={terbuka.has(r.skpdId)}>
                           {terbuka.has(r.skpdId) ? '▾' : '▸'}
                         </button>
                       ) : (
-                        <span className="w-4 flex-shrink-0" aria-hidden="true" />
+                        <span className="w-5 flex-shrink-0" aria-hidden="true" />
                       )}
                       <span>{r.skpdNama}</span>
                     </span>

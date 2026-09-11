@@ -58,3 +58,31 @@ describe('LraRekapTable — drill-down', () => {
     expect(screen.getAllByText('90,00').length).toBeGreaterThan(0)
   })
 })
+
+describe('LraRekapTable — kolom Status (Balance, permintaan user 2026-09-11)', () => {
+  it('Selisih 0 → badge hijau "Balance ✓"', () => {
+    const balance: LraNode[] = [{ skpdId: 9, skpdNama: 'SKPD Pas', cell: cell(100, 100) }]
+    render(<LraRekapTable rows={balance} loading={false} />)
+    expect(screen.getAllByText('Balance ✓').length).toBeGreaterThan(0)
+    // "Selisih" muncul sbg judul kolom — yang diperiksa BADGE-nya (span), bukan
+    // header <th>, jadi `selector: 'span'` supaya tak salah tangkap.
+    expect(screen.queryByText('Selisih', { selector: 'span' })).toBeNull()
+  })
+
+  it('Selisih bukan 0 → badge amber "Selisih", BUKAN "Balance ✓"', () => {
+    render(<LraRekapTable rows={pohon} loading={false} />)
+    // Dinas Induk (100 LRA vs 90 Belanja Modal): selisih 10, bukan 0.
+    expect(screen.getAllByText('Selisih', { selector: 'span' }).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Balance ✓')).toBeNull()
+  })
+
+  it('footer TOTAL punya status sendiri, dihitung dari Σ baris akar', () => {
+    const dua: LraNode[] = [
+      { skpdId: 1, skpdNama: 'A', cell: cell(100, 100) },
+      { skpdId: 2, skpdNama: 'B', cell: cell(50, 50) },
+    ]
+    render(<LraRekapTable rows={dua} loading={false} />)
+    // Kedua baris balance (selisih 0 tiap baris) → footer juga balance.
+    expect(screen.getAllByText('Balance ✓').length).toBe(3) // 2 baris + 1 footer
+  })
+})
