@@ -52,7 +52,7 @@ export default function TopBar({ userName, userJk, onToggleSidebar }: {
           <button onClick={() => setMenuOpen(v => !v)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors">
             <AvatarPegawai jk={userJk} nama={userName} />
-            <span className="text-sm text-gray-700">Welcome, <span className="font-medium">{userName}</span></span>
+            <span className="hidden sm:inline text-sm text-gray-700">Welcome, <span className="font-medium">{userName}</span></span>
             <svg className={`w-4 h-4 text-gray-400 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

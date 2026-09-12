@@ -862,7 +862,7 @@ export default function LaporanBmdPage() {
           utk admin: itulah satu-satunya tab yg menampilkan penyusutan sbg
           KOLOM (rincian per golongan); dua tab pertama sengaja PATUH format
           resmi (penyusutan sbg BARIS). */}
-      <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
+      <div className="mb-4 inline-flex flex-wrap rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
         {([['mutasi', 'Rekapitulasi Tambah Kurang'] as const,
           ['posisi', 'Rekapitulasi BMD'] as const,
           ['skpd', 'Rekap per SKPD'] as const,
@@ -915,35 +915,37 @@ export default function LaporanBmdPage() {
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">SKPD / Lokasi :</label>
             <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
           <KomptabelRadio value={komptabel} onChange={setKomptabel} />
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">
               {tab === 'mutasi' ? 'Periode laporan :' : 'Sampai Semester :'}
             </label>
-            <select className="select-filter w-28" value={tahun} onChange={e => setTahun(e.target.value)}>
-              {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <div className="flex gap-4">
-              {/* "Akhir Tahun" HANYA untuk tab Mutasi — Posisi/per-SKPD/Admin
-                  laporan posisi "s.d. periode", jadi di sana akhir tahun =
-                  Semester II. */}
-              {(tab === 'mutasi'
-                ? [['1', 'Semester I'], ['2', 'Semester II'], ['TH', 'Akhir Tahun']]
-                : [['1', 'Semester I'], ['2', 'Semester II']]).map(([v, l]) => (
-                <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <input type="radio" name="smt" checked={smt === v} onChange={() => setSmt(v)} />{l}
-                </label>
-              ))}
+            <div className="flex flex-wrap items-center gap-3">
+              <select className="select-filter w-28" value={tahun} onChange={e => setTahun(e.target.value)}>
+                {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <div className="flex flex-wrap gap-4">
+                {/* "Akhir Tahun" HANYA untuk tab Mutasi — Posisi/per-SKPD/Admin
+                    laporan posisi "s.d. periode", jadi di sana akhir tahun =
+                    Semester II. */}
+                {(tab === 'mutasi'
+                  ? [['1', 'Semester I'], ['2', 'Semester II'], ['TH', 'Akhir Tahun']]
+                  : [['1', 'Semester I'], ['2', 'Semester II']]).map(([v, l]) => (
+                  <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input type="radio" name="smt" checked={smt === v} onChange={() => setSmt(v)} />{l}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
           {tab === 'mutasi' && (
-            <div className="flex items-start gap-3">
-              <span className="w-40 flex-shrink-0" />
-              <p className="text-xs text-gray-500">
+            <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3">
+              <span className="hidden sm:block sm:w-40 flex-shrink-0" />
+              <p className="text-xs text-gray-500 min-w-0">
                 Saldo Awal = posisi <span className="font-medium">{periodeAwal}</span> ·
                 mutasi {smt === 'TH' ? 'sepanjang tahun' : `periode ${periode}`} ·
                 Saldo Akhir = posisi <span className="font-medium">{periode}</span>.
@@ -952,8 +954,8 @@ export default function LaporanBmdPage() {
           )}
           {/* Metrik hanya relevan di tab "Rekap per SKPD" (matriks). */}
           {tab === 'skpd' && (
-            <div className="flex items-start gap-3">
-              <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0 pt-0.5">Tampilkan nilai :</label>
+            <div className="flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-3">
+              <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0 sm:pt-0.5">Tampilkan nilai :</label>
               <div className="flex flex-wrap gap-x-4 gap-y-2">
                 {([...(['perolehan', 'akumulasi', 'beban', 'nilaiBuku'] as Metric[]).map(m => ({ value: m as MetricOrAll, label: METRIC_LABEL[m] })),
                   { value: 'semua' as MetricOrAll, label: 'Semua nilai' }]).map(o => (
@@ -965,8 +967,8 @@ export default function LaporanBmdPage() {
               </div>
             </div>
           )}
-          <div className="flex items-center gap-3">
-            <span className="w-40 flex-shrink-0" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <span className="hidden sm:block sm:w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={tab === 'mutasi' ? prosesMutasi : proses} disabled={loading}>{loading ? 'Memproses...' : 'Proses'}</button>
             {hasData && <button className="btn-secondary" onClick={handleExport}>Export Excel</button>}
             {/* Lembar resmi Permendagri 47/2021 — cuma di tab "Rekapitulasi
