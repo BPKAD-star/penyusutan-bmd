@@ -515,23 +515,23 @@ export default function PenyusutanPage() {
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">SKPD / Lokasi :</label>
             <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear
               placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Jenis Aset :</label>
-            <select className="select-filter flex-1" value={golongan} onChange={e => setGolongan(e.target.value)}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Jenis Aset :</label>
+            <select className="select-filter w-full sm:flex-1 min-w-0" value={golongan} onChange={e => setGolongan(e.target.value)}>
               <option value="">Semua Jenis (KIB Tanah s.d. Aset Lain-Lain)</option>
               {GOLONGAN_REKAP.map(g => <option key={g.kode} value={g.kode}>{g.kode} — {g.uraian}</option>)}
             </select>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Komptabel :</label>
-            <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Komptabel :</label>
+            <div className="flex flex-wrap gap-4">
               {[['', 'Semua'], ['intra', 'Intrakomptabel'], ['ekstra', 'Ekstrakomptabel']].map(([v, l]) => (
                 <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
                   <input type="radio" name="komptabel" checked={komptabel === v} onChange={() => setKomptabel(v)} />{l}
@@ -540,29 +540,31 @@ export default function PenyusutanPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Semester :</label>
-            <select className="select-filter w-28" value={tahun} onChange={e => setTahun(e.target.value)}>
-              {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <div className="flex gap-4">
-              {[['1', 'Semester I'], ['2', 'Semester II']].map(([v, l]) => (
-                <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <input type="radio" name="smt" checked={smt === v} onChange={() => setSmt(v)} />{l}
-                </label>
-              ))}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Semester :</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <select className="select-filter w-28" value={tahun} onChange={e => setTahun(e.target.value)}>
+                {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <div className="flex flex-wrap gap-4">
+                {[['1', 'Semester I'], ['2', 'Semester II']].map(([v, l]) => (
+                  <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input type="radio" name="smt" checked={smt === v} onChange={() => setSmt(v)} />{l}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Cari :</label>
-            <input className="select-filter flex-1" placeholder="Nama barang / NIBAR / kode..."
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Cari :</label>
+            <input className="select-filter w-full sm:flex-1 min-w-0" placeholder="Nama barang / NIBAR / kode..."
               value={search} onChange={e => setSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="w-40 flex-shrink-0" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <span className="hidden sm:block sm:w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
             {isAdmin && (
               <button className="btn-secondary" onClick={runEngine} disabled={engineRunning} title="Hitung ulang penyusutan semua aset untuk periode terpilih (admin)">
@@ -571,15 +573,15 @@ export default function PenyusutanPage() {
             )}
           </div>
           {tahunBukuMap[Number(tahun)] === 'terkunci' && (
-            <div className="flex items-start gap-3">
-              <span className="w-40 flex-shrink-0" />
-              <TahunTerkunciNote tahun={Number(tahun)} />
+            <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3">
+              <span className="hidden sm:block sm:w-40 flex-shrink-0" />
+              <div className="min-w-0 flex-1"><TahunTerkunciNote tahun={Number(tahun)} /></div>
             </div>
           )}
           {engineMsg && (
-            <div className="flex items-start gap-3">
-              <span className="w-40 flex-shrink-0" />
-              <p className={`text-xs ${engineMsg.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>{engineMsg}</p>
+            <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3">
+              <span className="hidden sm:block sm:w-40 flex-shrink-0" />
+              <p className={`text-xs min-w-0 ${engineMsg.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>{engineMsg}</p>
             </div>
           )}
         </div>

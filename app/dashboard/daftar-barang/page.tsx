@@ -904,14 +904,14 @@ export default function DaftarBarangPage() {
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Lokasi / SKPD :</label>
             <SkpdCombobox lockToOperator onChangeSelection={sel => setFSel({ skpdId: sel.skpdId, descIds: sel.descendantIds })} allowClear
               placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Jenis Aset :</label>
-            <select className="select-filter flex-1" value={fGolongan} onChange={e => setFGolongan(e.target.value)}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Jenis Aset :</label>
+            <select className="select-filter w-full sm:flex-1 min-w-0" value={fGolongan} onChange={e => setFGolongan(e.target.value)}>
               <option value="">— pilih jenis aset (wajib) —</option>
               {GOLONGAN_DAFTAR_BARANG.map(g => (
                 <option key={g} value={g}>{g} — {golonganLabels[g] || '...'}</option>
@@ -919,36 +919,38 @@ export default function DaftarBarangPage() {
             </select>
           </div>
           {fGolongan !== '1.3.1' && (
-            <div className="flex items-center gap-3">
-              <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Komptabel :</label>
-              <select className="select-filter flex-1" value={fKomptabel} onChange={e => setFKomptabel(e.target.value)}>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+              <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Komptabel :</label>
+              <select className="select-filter w-full sm:flex-1 min-w-0" value={fKomptabel} onChange={e => setFKomptabel(e.target.value)}>
                 <option value="">Semua</option>
                 <option value="intra">Intrakomptabel</option>
                 <option value="ekstra">Ekstrakomptabel</option>
               </select>
             </div>
           )}
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Posisi Semester :</label>
-            <select className="select-filter w-28" value={fTahun} onChange={e => setFTahun(e.target.value)}>
-              {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <div className="flex gap-4">
-              {[['1', 'Semester I'], ['2', 'Semester II']].map(([v, l]) => (
-                <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                  <input type="radio" name="db_smt" checked={fSmt === v} onChange={() => setFSmt(v)} />{l}
-                </label>
-              ))}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Posisi Semester :</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <select className="select-filter w-28" value={fTahun} onChange={e => setFTahun(e.target.value)}>
+                {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <div className="flex flex-wrap gap-4">
+                {[['1', 'Semester I'], ['2', 'Semester II']].map(([v, l]) => (
+                  <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input type="radio" name="db_smt" checked={fSmt === v} onChange={() => setFSmt(v)} />{l}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Cari :</label>
-            <input className="select-filter flex-1" placeholder="Nama barang / NIBAR / kode..."
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Cari :</label>
+            <input className="select-filter w-full sm:flex-1 min-w-0" placeholder="Nama barang / NIBAR / kode..."
               value={fSearch} onChange={e => setFSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleTampilkan() }} />
           </div>
-          <div className="flex items-center gap-3">
-            <span className="w-40 flex-shrink-0" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <span className="hidden sm:block sm:w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={handleTampilkan} disabled={loading || !fGolongan}>
               {loading ? 'Memuat...' : 'Tampilkan'}
             </button>
