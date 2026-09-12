@@ -247,13 +247,26 @@ const HAPUS_LABEL: Record<string, string> = {
 // (NOWRAP_KEYS di sana); tabelnya memang sudah bisa digeser horizontal, jadi
 // melebar sedikit lebih baik daripada nomor yang terbelah.
 const NOWRAP_KEYS = new Set(['nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'tgl_sertifikat'])
+// Kolom `nama` (sel 3-baris: nama · NIBAR · kode register — satu-satunya yang
+// menjawab "barang ini yang mana?") dibuat STICKY di sisi kiri (permintaan
+// user 2026-09-12): tabel golongan lebar (mis. 1.5.4, 20 kolom) digeser jauh
+// ke kanan bikin orang lupa lagi lihat baris siapa. `skpd`/`kode` di depannya
+// TIDAK ikut sticky — begitu keduanya sudah tergulir lewat, `nama` otomatis
+// menempel di tepi kiri (perilaku baku CSS sticky utk sel bukan-kolom-pertama:
+// yang di depannya cukup sudah scroll keluar, tak perlu ikut sticky juga).
+// Butuh background SOLID (bukan transparan) supaya kolom di belakangnya yang
+// masih tergulir tak tembus pandang — dan itu HARUS ikut warna zebra baris
+// (bg-white/bg-gray-50 berselang), bukan putih rata, kalau tidak baris genap
+// akan salah warna cuma di kolom ini. Makanya `tdClass` menerima `striped`.
 function thClass(key: string) {
   const a = COL_META[key]?.align
   return `table-th${a === 'right' ? ' text-right' : a === 'center' ? ' text-center' : ''}`
     + (NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : '')
+    + (key === 'nama' ? ' sticky left-0 z-10 bg-gray-50 border-r border-gray-200' : '')
 }
-function tdClass(key: string) {
-  if (key === 'nama' || key === 'kode') return 'table-td align-top'
+function tdClass(key: string, striped?: boolean) {
+  if (key === 'nama') return `table-td align-top sticky left-0 z-10 border-r border-gray-200 ${striped ? 'bg-gray-50/50' : 'bg-white'}`
+  if (key === 'kode') return 'table-td align-top'
   if (key === 'nilai' || key === 'luas') return 'table-td text-right text-xs'
   if (key === 'komptabel') return 'table-td text-center text-xs capitalize'
   return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
@@ -1002,7 +1015,7 @@ export default function DaftarBarangPage() {
                   <tr><td colSpan={cols.length} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
                 ) : data.map((row, i) => (
                   <tr key={row.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                    {cols.map(k => <td key={k} className={tdClass(k)}>{cellContent(k, row)}</td>)}
+                    {cols.map(k => <td key={k} className={tdClass(k, i % 2 !== 0)}>{cellContent(k, row)}</td>)}
                   </tr>
                 ))}
               </tbody>
