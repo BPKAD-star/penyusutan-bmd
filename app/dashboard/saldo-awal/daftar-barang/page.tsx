@@ -968,28 +968,28 @@ export default function Page() {
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">SKPD / Lokasi :</label>
             <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Jenis Aset :</label>
-            <select className="select-filter flex-1" value={golongan} onChange={e => setGolongan(e.target.value)}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Jenis Aset :</label>
+            <select className="select-filter w-full sm:flex-1 min-w-0" value={golongan} onChange={e => setGolongan(e.target.value)}>
               <option value="">Semua Jenis Aset</option>
               {GOLONGAN_REKAP.map(g => <option key={g.kode} value={g.kode}>{g.kode} — {g.uraian}</option>)}
             </select>
           </div>
           {/* Tanah: semua intrakomptabel — filternya tak relevan (pola Daftar Barang) */}
           {golongan !== '1.3.1' && <KomptabelRadio value={komptabel} onChange={setKomptabel} />}
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Cari :</label>
-            <input className="select-filter flex-1"
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Cari :</label>
+            <input className="select-filter w-full sm:flex-1 min-w-0"
               placeholder="Nama barang / NIBAR / kode / merek / no. polisi / rangka / mesin / nilai perolehan..."
               value={search} onChange={e => setSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
           </div>
-          <div className="flex items-center gap-3">
-            <span className="w-40 flex-shrink-0" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <span className="hidden sm:block sm:w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
           </div>
         </div>

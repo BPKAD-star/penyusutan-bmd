@@ -34,9 +34,9 @@ export default function RekapModelControls({ model, onModel, metric, onMetric, m
 }) {
   return (
     <>
-      <div className="flex items-center gap-3">
-        <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Tampilan :</label>
-        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+        <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Tampilan :</label>
+        <div className="inline-flex flex-wrap rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
           {models.map(v => (
             <button key={v} type="button" onClick={() => onModel(v)}
               className={`px-4 py-1.5 rounded-md transition-colors ${model === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -47,8 +47,8 @@ export default function RekapModelControls({ model, onModel, metric, onMetric, m
       </div>
 
       {model === 2 && (
-        <div className="flex items-start gap-3">
-          <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0 pt-0.5">Tampilkan nilai :</label>
+        <div className="flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-3">
+          <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0 sm:pt-0.5">Tampilkan nilai :</label>
           <div className="flex flex-wrap gap-x-4 gap-y-2">
             {METRIC_OPTIONS.map(o => (
               <label key={o.value} className="flex items-center gap-1.5 text-sm cursor-pointer">

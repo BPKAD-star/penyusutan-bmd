@@ -140,13 +140,13 @@ export default function Page() {
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
         <div className="space-y-3 max-w-3xl">
           <RekapModelControls model={model} onModel={setModel} metric={metric} onMetric={setMetric} />
-          <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">SKPD / Lokasi :</label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+            <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">SKPD / Lokasi :</label>
             <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
           <KomptabelRadio value={komptabel} onChange={setKomptabel} />
-          <div className="flex items-center gap-3">
-            <span className="w-40 flex-shrink-0" />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <span className="hidden sm:block sm:w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={proses} disabled={loading}>{loading ? 'Memproses...' : 'Proses'}</button>
             {hasData && <button className="btn-secondary" onClick={handleExport}>Export Excel</button>}
           </div>

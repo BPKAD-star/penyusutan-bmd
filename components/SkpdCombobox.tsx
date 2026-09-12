@@ -188,7 +188,7 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
   // SKPD-nya, tak bisa diubah. Filter/laporan tidak lewat sini — lihat subtreeMode.
   if (lockSkpd != null && !subtreeMode) {
     return (
-      <div className="relative flex-1">
+      <div className="relative flex-1 min-w-0">
         <input
           readOnly disabled
           className="select-filter w-full bg-gray-100 text-gray-600 cursor-not-allowed"
@@ -200,7 +200,7 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
   }
 
   return (
-    <div className="relative flex-1" ref={boxRef}>
+    <div className="relative flex-1 min-w-0" ref={boxRef}>
       <div className="flex items-center gap-2">
         <input
           className="select-filter w-full"
