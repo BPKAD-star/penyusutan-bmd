@@ -704,3 +704,92 @@ describe('§9 Export register tidak boleh kembali ke OFFSET', () => {
     })
   }
 })
+
+// ---------------------------------------------------------------------------
+describe('§10 kode register period-aware — fn_dbar_kode_register_at ↔ lib/kodeRegisterRiwayat.ts', () => {
+  // Latarnya: kode register mengikuti POSISI TERAKHIR barang, jadi membaca
+  // `aset.kode_register` untuk periode LAMPAU menyebut kode yang saat itu belum
+  // terbit. Terukur 2026-09-13 — 66 aset aktif, 29 di antaranya di SATU SKPD —
+  // dan tak ada satu pun error yang muncul. Ditutup migrasi 20260913_01.
+
+  it('fn_dbar_kode_register_at WAJIB SECURITY DEFINER, bukan INVOKER', () => {
+    // ⚠️ Ini pengecek paling penting di §10, dan alasannya DIUKUR, bukan
+    // diperkirakan. Policy `akr_select` menengok `aset` PER BARIS (`EXISTS` +
+    // `fn_aset_pernah_dikelola`). Query yang sama, di produksi:
+    //   sbg pemilik fungsi (DEFINER)  0,718 ms ·     16 buffer · 67 baris
+    //   sbg authenticated (INVOKER)   424     ms · 18.942 buffer ·  3 baris
+    // Bukan cuma 591× lebih lambat — sbg INVOKER JAWABANNYA SALAH: 64 dari 67
+    // aset diam-diam jatuh ke `aset.kode_register`, yaitu persis bug yang
+    // migrasi ini hendak menutup, cuma bersembunyi di balik fungsi yang
+    // kelihatan sudah benar.
+    const mig = bacaMigrasi().filter(m => /CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+fn_dbar_kode_register_at/i.test(m.isi))
+    expect(mig.length, 'migrasi fn_dbar_kode_register_at tak ditemukan').toBeGreaterThan(0)
+    const isi = mig[mig.length - 1].isi
+    const kepala = isi.slice(
+      isi.search(/CREATE\s+(OR\s+REPLACE\s+)?FUNCTION\s+fn_dbar_kode_register_at/i),
+      isi.indexOf('$function$'),
+    )
+    expect(kepala, 'fn_dbar_kode_register_at tidak SECURITY DEFINER').toMatch(/SECURITY\s+DEFINER/i)
+    expect(kepala, 'fn_dbar_kode_register_at diubah jadi SECURITY INVOKER').not.toMatch(/SECURITY\s+INVOKER/i)
+    // `SET search_path` lenyap tiap badan fungsi dibuat ulang (CLAUDE.md).
+    expect(kepala, 'fn_dbar_kode_register_at tak menyetel search_path').toMatch(/SET\s+search_path/i)
+  })
+
+  // ⚠️ PENGECEK YANG PALING MUDAH DIANGGAP BERLEBIHAN, dan justru yang paling
+  // dibutuhkan: kedua RPC ini SUDAH PERNAH dibuat ulang dari nol (20260903_01
+  // lalu 20260908_01 men-DROP & CREATE `fn_daftar_barang` demi menambah kolom).
+  // Sekali lagi itu terjadi tanpa menyalin CTE `kodereg`, kode register balik
+  // jadi posisi terakhir untuk SEMUA periode — tanpa satu pun error, tanpa satu
+  // pun angka bergeser, dan cuma terlihat kalau ada yang membandingkan kolom
+  // identitas periode lampau dengan riwayatnya.
+  for (const fn of ['fn_daftar_barang', 'fn_penyusutan']) {
+    it(`${fn} memanggil fn_dbar_kode_register_at`, () => {
+      expect(badanFungsi(fn), `${fn} tak lagi period-aware untuk kode register`)
+        .toMatch(/fn_dbar_kode_register_at\s*\(\s*p_periode\s*\)/)
+    })
+
+    it(`${fn} mempertahankan penjaga "belum berkode tetap NULL"`, () => {
+      // Barang `draft` sengaja belum berkode, tapi riwayatnya bisa sudah berisi
+      // (kontrak KDP yang dibuka kunci — 1 aset di produksi). Tanpa penjaga ini
+      // fungsi ini MENERBITKAN kode untuk barang yang belum resmi.
+      const badan = badanFungsi(fn).replace(/--[^\n]*/g, '')
+      expect(badan, `${fn} kehilangan penjaga NULL kode_register`)
+        .toMatch(/CASE\s+WHEN\s+\w+\.kode_register\s+IS\s+NULL\s+THEN\s+NULL/i)
+    })
+  }
+
+  it('kolektor TS TIDAK menyaring pembatalan — ia pemulihan, bukan penganulir', () => {
+    // Beda paling penting dari `fetchReklasEvents`, yang sumbernya LEDGER &
+    // WAJIB membuang baris yang dianulir `batal_reklas`. Di sini sumbernya tabel
+    // RIWAYAT: pembatalan MENAMBAH BARIS BARU yang memulihkan kode lama (cabang
+    // GUC `app.batal_pengalihan`), jadi menyaringnya justru MENGANULIR
+    // pemulihannya. Rantai 4 baris yang membuktikannya ada di produksi & jadi
+    // fixture lib/kodeRegisterRiwayat.test.ts.
+    const isi = fs.readFileSync(path.join(AKAR, 'lib', 'kodeRegisterRiwayat.ts'), 'utf8')
+    const kode = isi.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(kode, 'kolektor riwayat kode register mulai menyaring batal_*')
+      .not.toMatch(/batal_|target_trx_id/)
+    // Dan ia tetap fail-closed + keyset (rules.md §2.1 & §3).
+    expect(kode, 'kolektor tak lagi MELEMPAR saat query gagal').toMatch(/throw new Error/)
+    expect(kode, 'kolektor tak lagi keyset').toMatch(/\.gt\('id',/)
+    expect(kode, 'kolektor kembali memakai .range()/offset').not.toMatch(/\.range\(/)
+  })
+
+  // Jalur MENTAH — yang TIDAK lewat RPC, jadi tak kebagian period-aware gratis.
+  // Keduanya sengaja mentah (Export wajib memuat seluruh hasil filter; Export
+  // Audit wajib memuat barang yang di layar sudah tersembunyi), jadi aturannya
+  // harus dipasang tangan — dan itulah yang gampang kelupaan.
+  const MENTAH: [string, string][] = [
+    ['app/dashboard/penyusutan/page.tsx', 'Export Penyusutan (assembleRows)'],
+    ['app/dashboard/daftar-barang/page.tsx', 'Export Audit Daftar Barang'],
+  ]
+  for (const [rel, nama] of MENTAH) {
+    it(`${nama} memakai kodeRegisterPada`, () => {
+      const isi = fs.readFileSync(path.join(AKAR, rel), 'utf8')
+      expect(isi, `${rel} tak lagi mengimpor kodeRegisterPada`)
+        .toMatch(/from '@\/lib\/kodeRegisterRiwayat'/)
+      expect(isi, `${nama} tak lagi menimpa kode_register per periode`)
+        .toMatch(/kode_register:\s*kodeRegisterPada\(/)
+    })
+  }
+})

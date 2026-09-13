@@ -100,6 +100,19 @@ baris pun, tapi riwayatnya tetap bisa direkonstruksi: kode pada periode V =
 `kode_lama` baris paling awal. Bentuk & cara bacanya **sengaja kembar** dengan
 `ownersAt()` di `lib/pengalihan.ts`.
 
+Aturan baca itu **sudah terpasang** sejak migrasi `20260913_01`, dua tempat yang
+harus diubah bersamaan (dikunci `lib/sinkronisasiRpc.test.ts` §10):
+`fn_dbar_kode_register_at(periode)` untuk jalur RPC (layar & Export Daftar
+Barang, layar Penyusutan) dan `kodeRegisterPada()`
+(`lib/kodeRegisterRiwayat.ts`) untuk jalur mentah (Export Penyusutan & Export
+Audit). ⚠️ Fungsi SQL-nya WAJIB `SECURITY DEFINER`: policy `akr_select` menengok
+`aset` per baris, jadi sebagai INVOKER ia bukan cuma 591× lebih lambat tapi
+mengembalikan 3 dari 67 baris — sisanya diam-diam jatuh ke kode terkini.
+⚠️ **Tabel ini append-only** (trigger `fn_aset_kode_register_immutable`) dan
+pembatalan perpindahan MENAMBAH baris pemulihan, bukan menghapus baris. Karena
+itu pembacanya **tidak** menyaring `batal_*` — beda dari `fn_dbar_kode_at` yang
+sumbernya ledger.
+
 Arah penunjuknya **riwayat → ledger** (`trx_id`), bukan sebaliknya: menyalin
 kode ke `transaksi_bmd` hanya menduplikasi data yang sudah bisa diturunkan.
 Ditulis hanya oleh trigger SECURITY DEFINER; `authenticated` cuma punya SELECT.

@@ -20,6 +20,7 @@ import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibil
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
+import { fetchRiwayatKodeRegister, kodeRegisterPada } from '@/lib/kodeRegisterRiwayat'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
@@ -30,8 +31,13 @@ const BASE_COLS = 'id,nibar,kode_register,kode_barang:kode,nama_barang,skpd_id,n
 
 type Base = {
   id: string; nibar: string
-  // Kode register 45 digit — DIBACA dari kolom (diterbitkan & dibekukan trigger
-  // trg_aset_kode_register), tampil di layar (baris ke-3 sel Nama Barang) & Export.
+  // Kode register 45 digit — DIBACA, bukan dihitung (diterbitkan & dibekukan
+  // trigger trg_aset_kode_register). Tampil di layar (baris ke-3 sel Nama Barang)
+  // & Export.
+  // ⚠️ PERIOD-AWARE sejak 2026-09-13. Layar mewarisinya dari `fn_penyusutan`
+  // (`fn_dbar_kode_register_at`); Export — yang sengaja lewat jalur MENTAH —
+  // menghitungnya di `assembleRows` lewat `kodeRegisterPada`. Aturan yang sama di
+  // dua tempat, dikunci lib/sinkronisasiRpc.test.ts.
   kode_register: string | null
   kode_barang: string; nama_barang: string; skpd_id: number
   nilai_perolehan: number; intra_ekstra: string | null
@@ -307,6 +313,14 @@ export default function PenyusutanPage() {
   async function assembleRows(f: Applied): Promise<(Base & { p?: Peny; ownerSkpd?: number | null })[]> {
     const base = await fetchAllBase(f)
     const owners = await fetchOwnerOverrides(supabase, f.periode)
+    // ⚠️ Kode register PADA periode itu, bukan posisi terakhir (2026-09-13).
+    // Layar Penyusutan sudah period-aware DI SERVER (`fn_penyusutan` memanggil
+    // `fn_dbar_kode_register_at`), tapi Export sengaja tetap lewat jalur MENTAH
+    // ini supaya berkasnya memuat SELURUH hasil filter — jadi ia butuh aturan
+    // yang sama di sisi klien, kalau tidak berkas periode lampau untuk BPK
+    // menyebut kode yang saat itu belum terbit. Fail-closed: `fetchRiwayat…`
+    // MELEMPAR & `handleExport` sudah membungkusnya try/catch/finally.
+    const riwayatKodeReg = await fetchRiwayatKodeRegister(supabase)
 
     let combined = base
     if (f.org.descendantIds && f.org.descendantIds.length > 0) {
@@ -329,7 +343,12 @@ export default function PenyusutanPage() {
     return combined
       .filter(b => !hidden.has(b.id) && !belumAdaPada(b.tgl_perolehan, f.periode))
       .sort(bandingKode)
-      .map(b => ({ ...b, p: pmap.get(b.id), ownerSkpd: owners.get(b.id) ?? b.skpd_id }))
+      .map(b => ({
+        ...b,
+        kode_register: kodeRegisterPada(riwayatKodeReg, b.id, f.periode, b.kode_register),
+        p: pmap.get(b.id),
+        ownerSkpd: owners.get(b.id) ?? b.skpd_id,
+      }))
   }
 
   // ⚠️ try/catch/finally WAJIB & `setLoading(false)` di FINALLY — bukan di akhir

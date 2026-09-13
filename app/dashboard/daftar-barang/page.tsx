@@ -25,6 +25,7 @@ import { GOLONGAN_DAFTAR_BARANG, periodeDariTanggal, asalUsulTampil } from '@/li
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_DAFTAR_BARANG } from '@/lib/visibilitas'
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
+import { fetchRiwayatKodeRegister, kodeRegisterPada } from '@/lib/kodeRegisterRiwayat'
 import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset, type KursorKode } from '@/lib/keyset'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
@@ -53,9 +54,14 @@ const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
   nibar: string | null
-  // Kode register 45 digit — DIBACA dari kolom, bukan dihitung di layar. Nomor
-  // urutnya diterbitkan & dibekukan di DB (trigger trg_aset_kode_register);
-  // menghitungnya di sini akan menggeser nomor tiap kali ada barang hilang.
+  // Kode register 45 digit — DIBACA, bukan dihitung di layar. Nomor urutnya
+  // diterbitkan & dibekukan di DB (trigger trg_aset_kode_register); menghitungnya
+  // di sini akan menggeser nomor tiap kali ada barang hilang.
+  // ⚠️ PERIOD-AWARE sejak 2026-09-13: yang datang dari `fn_daftar_barang` adalah
+  // kode PADA periode terpilih (`fn_dbar_kode_register_at`), bukan posisi
+  // terakhir di `aset.kode_register`. Jalur MENTAH (Export Audit) menghitungnya
+  // sendiri lewat `kodeRegisterPada` — aturan yang sama, dua tempat, dikunci
+  // lib/sinkronisasiRpc.test.ts.
   kode_register: string | null
   kode: string
   nama_barang: string | null
@@ -172,10 +178,12 @@ const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
 // ── Kolom EKSPOR (Excel/BPK) — TETAP flat & lengkap: `uraian` jadi kolom
 // sendiri, dan Tanah tetap membawa Dokumen Kepemilikan (no/tgl/atas nama).
 // Sengaja beda dari tampilan layar yang diringkas.
-// ⚠️ Kode Register yang diekspor = kode TERKINI (kolom `aset.kode_register`),
-// BELUM period-aware — sama seperti tampilan layar. Kalau nanti tampilan dibuat
-// period-aware lewat `aset_kode_register`, export WAJIB ikut, kalau tidak berkas
-// periode lampau menyebut kode yang saat itu belum terbit.
+// ✅ Kode Register yang diekspor sudah PERIOD-AWARE (2026-09-13) — sama seperti
+// tampilan layar. Export Excel biasa mewarisinya dari `fn_daftar_barang`; Export
+// AUDIT (jalur mentah) menghitungnya sendiri lewat `kodeRegisterPada`. Kalau
+// kelak ada tombol export BARU di halaman ini, ia WAJIB ikut salah satu dari dua
+// jalur itu: berkas periode lampau yang menyebut kode yang saat itu belum terbit
+// tak menghasilkan satu pun error, dan ia dibaca BPK.
 //
 // URUTAN kolom kiri→kanan DITENTUKAN USER (2026-07-30) & dipegang SATU tempat:
 // EXPORT_ORDER di bawah. `EXPORT_COLS` cuma menentukan kolom mana yang IKUT per
@@ -757,7 +765,20 @@ export default function DaftarBarangPage() {
     // Diurutkan sendiri: berkas ini TIDAK lewat `allVisible` (dia menarik ulang
     // termasuk barang yang sudah dihapus), jadi tanpa baris ini susunannya ikut
     // urutan ambil dari DB dan beda sendiri dari Export Excel & layar.
-    const all = (await fetchAllRowsRaw(applied, setProgres)).sort(bandingKode)
+    const allMentah = (await fetchAllRowsRaw(applied, setProgres)).sort(bandingKode)
+    // ⚠️ Kode register PADA periode itu, bukan posisi terakhir (2026-09-13).
+    // Layar & Export Excel biasa sudah period-aware DI SERVER (`fn_daftar_barang`
+    // memanggil `fn_dbar_kode_register_at`), tapi berkas AUDIT sengaja lewat
+    // jalur MENTAH supaya barang yang di layar sudah tersembunyi tetap ikut —
+    // jadi ia butuh aturan yang sama di sisi klien. Tanpa ini berkas audit
+    // periode lampau untuk BPK menyebut kode yang saat itu belum terbit,
+    // sementara Export Excel di menu yang SAMA menyebut kode yang benar.
+    // Fail-closed: `fetchRiwayat…` MELEMPAR & handler ini sudah try/catch/finally.
+    const riwayatKodeReg = await fetchRiwayatKodeRegister(supabase)
+    const all = allMentah.map(r => ({
+      ...r,
+      kode_register: kodeRegisterPada(riwayatKodeReg, r.id, applied.periode, r.kode_register),
+    }))
     setProgres(0)
     const uraian = await fetchUraian(all.map(r => r.kode))
     // Peta bidang khusus baris yang diekspor — `bidangCount` di state cuma

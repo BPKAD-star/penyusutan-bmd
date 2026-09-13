@@ -1120,16 +1120,69 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
   Supabase 54% → 96% → project READ-ONLY → seluruh app mati (504 di middleware,
   karena refresh sesi auth itu operasi tulis). **Cek sisa disk SEBELUM menjalankan
   migrasi massal**, bukan sesudah.
-- **BELUM SELESAI:** tampilan belum period-aware (Daftar Barang menampilkan kode
-  TERKINI walau membuka periode lampau — belum terasa karena tabel riwayat masih
-  nyaris kosong, tapi salah begitu ada perpindahan yang tak dibatalkan).
+- ✅ **TAMPILAN & EXPORT SUDAH PERIOD-AWARE** (2026-09-13, migrasi 20260913_01).
+  Catatan lama di sini berbunyi *"belum terasa karena tabel riwayat masih nyaris
+  kosong"* — **alasan itu sudah kedaluwarsa**, dan diukur ke produksi
+  2026-09-13: `aset_kode_register` **188 baris / 67 aset**, kode register berubah
+  di **67 aset (66 masih `aktif`)**, seluruh perpindahannya di **2026-S2**. Jadi
+  membuka Daftar Barang / Penyusutan / Export untuk **2026-S1** — semester yang
+  SUDAH dilaporkan — menampilkan kode 2026-S2 untuk 66 barang, kode yang saat itu
+  belum terbit, tanpa satu pun error. Terukur dgn RLS aktif sbg pengurus barang
+  Dinas PM & PTSP: **29 dari 618 baris** salah di satu SKPD itu saja.
+  Sumber tunggalnya **`fn_dbar_kode_register_at(periode)`** (SQL) +
+  **`kodeRegisterPada`** (`lib/kodeRegisterRiwayat.ts`, untuk jalur MENTAH).
+  Aturannya kembar dgn `ownersAt`/`kodePada`: baris terakhir ber-`periode <= V`
+  menang; semua perpindahan sesudah V → `kode_lama` baris paling awal.
+  Empat jalur, dua mekanisme:
+  · layar **Daftar Barang** & Export Excel-nya → `fn_daftar_barang`;
+  · layar **Penyusutan** → `fn_penyusutan`;
+  · **Export Penyusutan** (`assembleRows`) & **Export Audit Daftar Barang**
+    (`fetchAllRowsRaw`) → `kodeRegisterPada` di klien, karena keduanya sengaja
+    TIDAK lewat RPC (yang satu wajib memuat seluruh hasil filter, yang satu wajib
+    memuat barang yang di layar sudah tersembunyi).
+  ⚠️ **`fn_dbar_kode_register_at` WAJIB `SECURITY DEFINER`** — dan ini diukur,
+  bukan gaya: policy `akr_select` menengok `aset` PER BARIS (`EXISTS` +
+  `fn_aset_pernah_dikelola`), jadi sbg INVOKER query yang sama **424 ms /
+  18.942 buffer / 3 baris** lawan **0,718 ms / 16 buffer / 67 baris**. Bukan cuma
+  591× lebih lambat — **jawabannya SALAH**: 64 aset diam-diam jatuh ke
+  `aset.kode_register`, yaitu bug yang sama, cuma bersembunyi di balik fungsi
+  yang kelihatan sudah benar.
+  ⚠️ **TIDAK ada penyaringan `batal_*` di sini, dan itu BUKAN kelalaian** — beda
+  paling penting dari `fn_dbar_kode_at`/`fetchReklasEvents`, yang sumbernya
+  LEDGER sehingga wajib membuang baris yang dianulir. `aset_kode_register` tabel
+  RIWAYAT yang ditulis trigger, dan **pembatalan MENAMBAH BARIS BARU** yang
+  memulihkan kode lama (cabang GUC `app.batal_pengalihan`); rantainya utuh
+  (`kode_register` baris ke-n = `kode_lama` baris ke-n+1, diverifikasi pada aset
+  ber-4 baris `pindah → pindah → batal → pindah`). Menyaring pembatalan di sini
+  justru MENGANULIR pemulihannya.
+  ⚠️ **`kode_register IS NULL` DIPERTAHANKAN NULL**, tak diterbitkan dari
+  riwayat: barang `draft` sengaja belum berkode, tapi riwayatnya bisa sudah
+  berisi — kontrak KDP yang dibuka kunci meng-NULL-kan kolomnya sementara baris
+  riwayatnya tetap ada (1 aset di produksi, "Rehab Gedung Kantor BKAD"). Hari ini
+  efeknya nol karena `draft` disaring di keempat jalur; ia penjaga MAKNA.
+  Dikunci **lib/kodeRegisterRiwayat.test.ts** (18 test, fixture-nya rantai NYATA
+  dari produksi) + **lib/sinkronisasiRpc.test.ts §10** — termasuk pengecek bahwa
+  kedua RPC benar-benar MEMANGGIL fungsinya. Pengecek terakhir itu yang paling
+  penting: `fn_daftar_barang` sudah PERNAH dibuat ulang dari nol (20260903_01,
+  lalu 20260908_01 men-DROP & CREATE demi menambah kolom), dan sekali lagi itu
+  terjadi tanpa menyalin CTE `kodereg`, kode register balik jadi posisi terakhir
+  untuk SEMUA periode — tanpa error, tanpa satu pun angka bergeser.
+  ⚠️ **Deploy-ordering: AMAN DUA ARAH** — satu-satunya migrasi RPC di repo ini
+  yang begitu, jadi dicatat. Bentuk `RETURNS TABLE` tak berubah (yang berubah
+  NILAI satu kolom), sehingga migrasi-dulu membuat klien lama langsung benar &
+  kode-dulu berperilaku seperti hari ini. Tetap jalankan migrasi lebih dulu —
+  itu yang menutup Lapis 1.
+  ⛔ **KIBAR & menu Kendaraan SENGAJA TIDAK ikut** (bukan pekerjaan tertinggal):
+  keduanya tak punya pemilih periode sama sekali — mereka menampilkan POSISI
+  TERKINI, jadi `aset.kode_register` memang jawaban yang benar di situ. Alasan
+  yang sama dgn "tahun absen dari nama berkas" untuk KIR/Pengamanan/Kendaraan.
   ✅ **KIBAR sudah tak lagi mengisi "3. Kode Register Barang" dengan NIBAR**
   (diperbaiki 2026-09-11, keputusan user — kartu itu menampilkan kolom
-  `aset.kode_register` yang benar sekarang, `app/kibar/[nibar]/page.tsx`).
-  Sama seperti Export & layar register, KIBAR **belum period-aware** untuk kolom
-  ini — yang tampil kode TERKINI, bukan kode pada periode transaksi yang sedang
-  dilihat di kartu itu; itu memang keterbatasan yang sama yang berlaku
-  se-aplikasi, bukan regresi baru.
+  `aset.kode_register`, `app/kibar/[nibar]/page.tsx`).
+  ⛔ **Yang masih pakai kode TERKINI & memang punya dimensi waktu:** menu export
+  lain yang belum membawa kolom ini sama sekali (Daftar Barang Awal, GIS, modul
+  Pelaporan) — begitu salah satunya menambahkannya, ia WAJIB lewat salah satu
+  dari dua mekanisme di atas.
 - **Export Daftar Barang SUDAH membawa kode register** (2026-07-30, keputusan
   user): kolom **"Kode Register"** ikut di Export Excel & Export Audit. Bersama
   NIBAR ia masuk `EXPORT_ALWAYS` — dua kolom identitas itu sengaja di luar
@@ -1137,10 +1190,10 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
   kelupaan di salah satu entri. Diisi langsung dari kolom `aset.kode_register`
   (sudah ada di `SELECT_COLS`), string → sel Excel bertipe teks, jadi 45 digitnya
   tak dibulatkan jadi notasi ilmiah.
-  ⚠️ Ikut menanggung keterbatasan yang sama dgn layar: **kode TERKINI, belum
-  period-aware**. Begitu tampilan dibuat period-aware lewat `aset_kode_register`,
-  export WAJIB diubah bareng — kalau tidak, berkas periode lampau untuk BPK
-  menyebut kode yang saat itu belum terbit. **Export Penyusutan ikut** (kolom
+  ✅ Sejak 2026-09-13 keduanya **period-aware** (lihat butir di atas): Export
+  Excel mewarisinya dari `fn_daftar_barang`, Export Audit menghitungnya sendiri
+  lewat `kodeRegisterPada` karena ia sengaja lewat jalur mentah. **Export
+  Penyusutan ikut** (kolom
   sama, tepat setelah NIBAR; `kode_register` ditambahkan ke `BASE_COLS`) —
   sekaligus `handleExport`-nya dibungkus try/catch/finally yang tadinya TIDAK
   ada padahal `assembleRows` memanggil `fetchOwnerOverrides` yang fail-closed
