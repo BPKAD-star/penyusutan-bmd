@@ -97,13 +97,28 @@
 -- deploy-ordering. Tetap: jalankan migrasi dulu, karena itu yang menutup
 -- Lapis 1 (layar + Export Daftar Barang, yang sepenuhnya lewat RPC).
 --
--- ⚠️ `CREATE OR REPLACE`, BUKAN `DROP` + `CREATE` — sengaja, dan bedanya nyata:
--- `RETURNS TABLE` tak berubah sehingga OR REPLACE sah, dan dengan begitu GRANT
--- kedua fungsi TIDAK hilang (20260908_01 harus men-DROP karena menambah kolom,
--- lalu wajib GRANT ulang). `SET search_path TO 'public'` tetap DITULIS ULANG di
--- badan tiap fungsi: CLAUDE.md — setelan `ALTER FUNCTION … SET` lenyap tiap
--- badan fungsi dibuat ulang, dan diverifikasi lewat `pg_proc.proconfig`
+-- ⚠️ `CREATE OR REPLACE`, BUKAN `DROP` + `CREATE` — sengaja: `RETURNS TABLE` tak
+-- DIUBAH oleh migrasi ini (yang berubah NILAI satu kolom), jadi OR REPLACE sah &
+-- GRANT kedua fungsi TIDAK hilang. `SET search_path TO 'public'` tetap DITULIS
+-- ULANG di badan tiap fungsi: CLAUDE.md — setelan `ALTER FUNCTION … SET` lenyap
+-- tiap badan fungsi dibuat ulang, diverifikasi lewat `pg_proc.proconfig`
 -- sesudahnya (lihat PEMERIKSAAN SILANG di bawah).
+--
+-- ⚠️⚠️ PRASYARAT: **20260908_01 WAJIB SUDAH DIJALANKAN LEBIH DULU.**
+-- Ini bukan kehati-hatian — ia sudah menggigit saat migrasi ini pertama kali
+-- dicoba (2026-09-13). Sebabnya `RETURNS TABLE` di bawah disalin dari
+-- 20260908_01 (27 kolom, memuat no_polisi/no_rangka/no_mesin/no_bpkb),
+-- sementara fungsi yang HIDUP di produksi ternyata masih versi 20260903_01
+-- (23 kolom, berhenti di `jenis_hak`) — 20260908_01 tak pernah dijalankan
+-- padahal KODENYA sudah lama ter-deploy. `CREATE OR REPLACE` menolaknya dgn
+-- `42P13 cannot change return type of existing function`, yaitu pesan yang
+-- menuduh migrasi INI padahal yang kurang migrasi SEBELUMNYA.
+-- Karena itu di bawah ada penjaga eksplisit yang menyebut berkasnya. Jangan
+-- dicabut, dan JANGAN "diperbaiki" dengan men-DROP fungsinya di sini: kalau
+-- migrasi ini yang men-DROP lalu membuat ulang 27 kolom, siapa pun yang kelak
+-- menjalankan 20260908_01 (yang memang masih terdaftar sbg migrasi tertunda)
+-- akan MENGEMBALIKAN badan fungsi tanpa CTE `kodereg` — period-aware-nya lenyap
+-- diam-diam, tanpa satu pun error. Urutan berkas yang dijaga, bukan diakali.
 
 -- ── 1. Kode register efektif pada sebuah periode ───────────────────────────
 CREATE OR REPLACE FUNCTION fn_dbar_kode_register_at(p_periode text)
@@ -120,6 +135,27 @@ AS $function$
 $function$;
 
 GRANT EXECUTE ON FUNCTION fn_dbar_kode_register_at(text) TO anon, authenticated, service_role;
+
+-- ── PENJAGA PRASYARAT ──────────────────────────────────────────────────────
+-- Berbunyi JELAS kalau 20260908_01 belum jalan, menggantikan `42P13` mentah yang
+-- menunjuk ke tersangka yang salah. Pelajaran yang sama dgn "pesan errornya
+-- berbohong" di Laporan Hibah (CLAUDE.md 2026-09-08): penjelasan yang keliru
+-- lebih mahal daripada tak ada penjelasan.
+DO $guard$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = 'fn_daftar_barang'
+       AND pg_get_function_result(p.oid) LIKE '%no_polisi%'
+  ) THEN
+    RAISE EXCEPTION
+      'Migrasi 20260908_01 belum dijalankan. fn_daftar_barang di database ini '
+      'masih 23 kolom (berhenti di jenis_hak), sedangkan migrasi ini menulis '
+      'versi 27 kolom. Jalankan 20260908_01_daftar_barang_identitas_kendaraan.sql '
+      'LEBIH DULU, baru ulangi berkas ini.';
+  END IF;
+END
+$guard$;
 
 -- ── 2. fn_daftar_barang — layar & Export Daftar Barang ─────────────────────
 -- Badan fungsinya DISALIN APA ADANYA dari 20260903_01 + 20260908_01; yang

@@ -1167,11 +1167,23 @@ tahun perolehan), kode barang (`reklas_kode`/`reklas_golongan`).
   lalu 20260908_01 men-DROP & CREATE demi menambah kolom), dan sekali lagi itu
   terjadi tanpa menyalin CTE `kodereg`, kode register balik jadi posisi terakhir
   untuk SEMUA periode — tanpa error, tanpa satu pun angka bergeser.
-  ⚠️ **Deploy-ordering: AMAN DUA ARAH** — satu-satunya migrasi RPC di repo ini
-  yang begitu, jadi dicatat. Bentuk `RETURNS TABLE` tak berubah (yang berubah
-  NILAI satu kolom), sehingga migrasi-dulu membuat klien lama langsung benar &
-  kode-dulu berperilaku seperti hari ini. Tetap jalankan migrasi lebih dulu —
-  itu yang menutup Lapis 1.
+  ⚠️ **Deploy-ordering KODE: AMAN DUA ARAH** — satu-satunya migrasi RPC di repo
+  ini yang begitu, jadi dicatat. Bentuk `RETURNS TABLE` tak DIUBAH migrasi ini
+  (yang berubah NILAI satu kolom), sehingga migrasi-dulu membuat klien lama
+  langsung benar & kode-dulu berperilaku seperti hari ini. Tetap jalankan
+  migrasi lebih dulu — itu yang menutup Lapis 1.
+  ⚠️⚠️ **TAPI ADA PRASYARAT MIGRASI: `20260908_01` wajib jalan lebih dulu**, dan
+  itu ketahuan dgn cara yang mahal (2026-09-13). `RETURNS TABLE` di 20260913_01
+  disalin dari 20260908_01 (27 kolom), sementara fungsi HIDUP di produksi masih
+  versi 20260903_01 (23 kolom, berhenti di `jenis_hak`) — **20260908_01 tak
+  pernah dijalankan padahal kodenya sudah ter-deploy sejak 2026-09-08.** Postgres
+  menolaknya dgn `42P13 cannot change return type of existing function`, pesan
+  yang menuduh migrasi yang BARU padahal yang kurang migrasi SEBELUMNYA.
+  20260913_01 karena itu dibuka **penjaga eksplisit** yang menyebut nama
+  berkasnya (diuji ke produksi: benar-benar menolak). ⚠️ Jangan "diperbaiki"
+  dgn men-DROP fungsinya di 20260913_01 — siapa pun yang kelak menjalankan
+  20260908_01 yang masih tertunda akan MENGEMBALIKAN badan fungsi tanpa CTE
+  `kodereg`, dan period-aware-nya lenyap diam-diam tanpa satu pun error.
   ⛔ **KIBAR & menu Kendaraan SENGAJA TIDAK ikut** (bukan pekerjaan tertinggal):
   keduanya tak punya pemilih periode sama sekali — mereka menampilkan POSISI
   TERKINI, jadi `aset.kode_register` memang jawaban yang benar di situ. Alasan
@@ -4509,6 +4521,19 @@ digeser horizontal — itu memang yang diminta.
 - ⚠️ **Deploy-ordering: migrasi 20260908_01 WAJIB jalan SEBELUM deploy kode.**
   Kalau terbalik, keempat kolom baru tampil "-" untuk SEMUA baris tanpa satu pun
   error — dan itu terbaca operator sebagai "datanya memang kosong".
+  ⚠️⚠️ **DAN ITU PERSIS YANG TERJADI: migrasinya TIDAK dijalankan** (ketahuan
+  2026-09-13, sebulan kemudian, dan cuma karena migrasi LAIN kebetulan menyentuh
+  fungsi yang sama lalu ditolak `42P13`). Kodenya sudah di `origin/main` sejak
+  2026-09-08, jadi selama sebulan itu keempat kolom di Daftar Barang 1.5.4
+  memang tampil "-" untuk seluruh baris — tepat kegagalan senyap yang
+  diperingatkan kalimat di atas, dan tak ada satu pun yang melaporkannya.
+  Disapu ke DB hari itu: dari enam migrasi terakhir HANYA yang ini yang kelewat
+  (20260903_01, 20260906_01, 20260909_01, 20260910_04, 20260910_05 semuanya
+  sudah jalan) — jadi bukan urutan yang kacau, satu berkas yang terlompati.
+  **Pelajaran: "deploy-ordering WAJIB" di dokumen ini tidak menjalankan apa pun.
+  Sesudah menulis migrasi yang mengubah RPC, PERIKSA ke DB bahwa ia benar-benar
+  ada** — `pg_get_function_result(oid)` untuk kolom baru, `pg_proc.proconfig`
+  untuk setelan — jangan percaya bahwa berkasnya ada di repo berarti ia jalan.
 
 ## Import massal JANGAN mencocokkan barang lewat KODE BARANG (migrasi 20260819_01)
 
