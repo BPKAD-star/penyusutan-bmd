@@ -47,6 +47,26 @@ const IKON_GOLONGAN: Record<string, React.ReactNode> = {
 }
 const IKON_LAIN = IKON_GOLONGAN['1.5.4']
 
+// ── Ilustrasi per golongan (sisi kanan kartu "Total Aset per Jenis") ────────
+// Berkasnya di public/dashboard/, sudah DIOLAH dari PNG 1920×1080 aslinya
+// (±500 KB/gambar): latar putih dibuang jadi transparan, dipotong ke objeknya,
+// diperkecil ke ±360×270 px (3× kotak tampil, tetap tajam di layar retina),
+// lalu disimpan WebP → ±20 KB/gambar, 176 KB untuk kedelapannya.
+// Daftarnya EKSPLISIT, sengaja tak dirakit dari kode golongan: golongan baru
+// yang belum punya gambar cukup tak bergambar, bukan ikon gambar rusak.
+// Mengganti gambar → ganti NAMA berkasnya juga, supaya peramban yang sudah
+// menyimpan versi lama tak terus menampilkannya.
+const ILUSTRASI_GOLONGAN: Record<string, string> = {
+  '1.3.1': '/dashboard/aset-1-3-1.webp',
+  '1.3.2': '/dashboard/aset-1-3-2.webp',
+  '1.3.3': '/dashboard/aset-1-3-3.webp',
+  '1.3.4': '/dashboard/aset-1-3-4.webp',
+  '1.3.5': '/dashboard/aset-1-3-5.webp',
+  '1.3.6': '/dashboard/aset-1-3-6.webp',
+  '1.5.3': '/dashboard/aset-1-5-3.webp',
+  '1.5.4': '/dashboard/aset-1-5-4.webp',
+}
+
 type SB = ReturnType<typeof createClient>
 
 // transaksi_bmd bersifat append-only: batal (pengalihan/penghapusan) DICATAT
@@ -341,14 +361,31 @@ async function SectionJenis() {
                   </span>
                   <p className="text-[11px] text-gray-400">{g.kode}</p>
                 </div>
-                <p className="text-xs text-gray-600 leading-tight mt-1.5 h-7">{g.uraian}</p>
-                {/* Gagal → `–`, BUKAN `0 unit · 0`. Angka nol di kartu ini tak
-                    bisa dibedakan dari golongan yang memang belum ada isinya. */}
-                <p className="text-xl font-bold text-gray-900 mt-1">
-                  {scan.err ? <span className="text-gray-300">–</span>
-                            : <>{nf(d.count)} <span className="text-xs font-normal text-gray-400">unit</span></>}
-                </p>
-                <p className="text-xs font-medium text-teal mt-1">{scan.err ? <span className="text-gray-300">–</span> : formatRp(d.nilai)}</p>
+                {/* Teks kiri tak boleh menyusut (angka rupiah tak boleh
+                    terpotong/membungkus); gambar kanan yang MENGALAH — di kartu
+                    sempit ia mengecil sendiri (`min-w-0` + object-contain),
+                    jadi tak pernah menimpa angka di lebar layar mana pun.
+                    Di 1024–1279 px (4 kolom + sidebar) ruangnya tinggal ±30 px,
+                    jadi gambarnya disembunyikan (`lg:max-xl:hidden`) daripada
+                    tampil sebesar perangko. Diukur di peramban, bukan dikira. */}
+                <div className="flex items-end justify-between gap-2">
+                  <div className="flex-shrink-0">
+                    <p className="text-xs text-gray-600 leading-tight mt-1.5 h-7">{g.uraian}</p>
+                    {/* Gagal → `–`, BUKAN `0 unit · 0`. Angka nol di kartu ini tak
+                        bisa dibedakan dari golongan yang memang belum ada isinya. */}
+                    <p className="text-xl font-bold text-gray-900 mt-1 whitespace-nowrap">
+                      {scan.err ? <span className="text-gray-300">–</span>
+                                : <>{nf(d.count)} <span className="text-xs font-normal text-gray-400">unit</span></>}
+                    </p>
+                    <p className="text-xs font-medium text-teal mt-1 whitespace-nowrap">{scan.err ? <span className="text-gray-300">–</span> : formatRp(d.nilai)}</p>
+                  </div>
+                  {ILUSTRASI_GOLONGAN[g.kode] && (
+                    // eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer
+                    <img src={ILUSTRASI_GOLONGAN[g.kode]} alt="" aria-hidden="true"
+                      width={120} height={90} decoding="async" draggable={false}
+                      className="lg:max-xl:hidden min-w-0 w-[120px] h-[90px] -mb-1 object-contain object-right-bottom select-none drop-shadow-[0_3px_4px_rgba(15,23,42,0.18)]" />
+                  )}
+                </div>
               </div>
             )
           })}
