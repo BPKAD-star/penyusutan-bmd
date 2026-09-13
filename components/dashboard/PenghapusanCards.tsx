@@ -11,17 +11,22 @@ import { backdropClose } from '@/components/backdropClose'
 export type PenghapusanCount = { n: number; nilai: number }
 export type PenghapusanData = Record<'hibah' | 'jual' | 'tukar' | 'modal' | 'sebabLain', PenghapusanCount>
 
-type Kartu = { key: string; label: string; jenis: string; subJenis: string | null; note?: string } & PenghapusanCount
+// `ilustrasi` = gambar di sisi kanan kartu (public/dashboard/), diolah dari PNG
+// Canva 1920×1080 dgn cara yang sama dgn ilustrasi Cara Perolehan: bingkai &
+// halo dibuang, bayangan lembut dipertahankan semi-transparan. Disimpan 2×
+// ukuran tampil (bukan 3×) & WebP q80 → ±13 KB/gambar. Ganti gambar → ganti
+// NAMA berkasnya juga, supaya peramban tak terus menampilkan versi lama.
+type Kartu = { key: string; label: string; jenis: string; subJenis: string | null; note?: string; ilustrasi: string } & PenghapusanCount
 
 export default function PenghapusanCards({ data }: { data: PenghapusanData }) {
   const [detail, setDetail] = useState<{ label: string; jenis: string; subJenis: string | null } | null>(null)
 
   const kartu: Kartu[] = [
-    { key: 'hibah', label: 'Karena Hibah', jenis: 'penghapusan_pemindahtanganan', subJenis: 'hibah', ...data.hibah },
-    { key: 'jual', label: 'Karena Penjualan', jenis: 'penghapusan_pemindahtanganan', subJenis: 'penjualan', ...data.jual },
-    { key: 'tukar', label: 'Karena Tukar Menukar', jenis: 'penghapusan_pemindahtanganan', subJenis: 'tukar_menukar', ...data.tukar },
-    { key: 'modal', label: 'Karena Penyertaan Modal', jenis: 'penghapusan_pemindahtanganan', subJenis: 'penyertaan_modal', ...data.modal },
-    { key: 'sebabLain', label: 'Karena Sebab Lainnya', jenis: 'penghapusan_sebab_lain', subJenis: null, note: 'Force majeure, dsb.', ...data.sebabLain },
+    { key: 'hibah', label: 'Karena Hibah', jenis: 'penghapusan_pemindahtanganan', subJenis: 'hibah', ilustrasi: '/dashboard/hapus-hibah.webp', ...data.hibah },
+    { key: 'jual', label: 'Karena Penjualan', jenis: 'penghapusan_pemindahtanganan', subJenis: 'penjualan', ilustrasi: '/dashboard/hapus-penjualan.webp', ...data.jual },
+    { key: 'tukar', label: 'Karena Tukar Menukar', jenis: 'penghapusan_pemindahtanganan', subJenis: 'tukar_menukar', ilustrasi: '/dashboard/hapus-tukar-menukar.webp', ...data.tukar },
+    { key: 'modal', label: 'Karena Penyertaan Modal', jenis: 'penghapusan_pemindahtanganan', subJenis: 'penyertaan_modal', ilustrasi: '/dashboard/hapus-penyertaan-modal.webp', ...data.modal },
+    { key: 'sebabLain', label: 'Karena Sebab Lainnya', jenis: 'penghapusan_sebab_lain', subJenis: null, note: 'Force majeure, dsb.', ilustrasi: '/dashboard/hapus-sebab-lain.webp', ...data.sebabLain },
   ]
 
   return (
@@ -31,10 +36,24 @@ export default function PenghapusanCards({ data }: { data: PenghapusanData }) {
           <button key={k.key} type="button" disabled={k.n === 0}
             onClick={() => setDetail({ label: k.label, jenis: k.jenis, subJenis: k.subJenis })}
             className="card p-3 text-left hover:border-teal transition-colors disabled:cursor-default disabled:hover:border-gray-100">
-            <p className="text-xs text-gray-600 leading-tight h-7">{k.label}</p>
-            <p className="text-xl font-bold text-gray-900 mt-1">{k.n.toLocaleString('id-ID')}</p>
-            <p className="text-xs font-medium text-rose-600 mt-1">{formatRupiah(k.nilai)}</p>
-            {k.note && <p className="text-[11px] text-gray-400 mt-1 leading-tight">{k.note}</p>}
+            {/* Ilustrasi kanan HANYA di ≥1536 px (`2xl`), pola yang sama dgn
+                kartu Cara Perolehan: di lebar itu kolom teks dikunci
+                `2xl:shrink-0` & gambarnya yang mengecil (`min-w-0`, terkecil
+                ±73 px), jadi label/angka/rupiah tak pernah terlipat atau
+                tertimpa. Di bawah 2xl gambar tak dirender & kolom teks kembali
+                `min-w-0` — tata letaknya persis seperti sebelum ada gambar.
+                Diukur di peramban pada 12 lebar layar dgn rupiah terpanjang. */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex-auto min-w-0 2xl:shrink-0">
+                <p className="text-xs text-gray-600 leading-tight h-7 2xl:whitespace-nowrap">{k.label}</p>
+                <p className="text-xl font-bold text-gray-900 mt-1">{k.n.toLocaleString('id-ID')}</p>
+                <p className="text-xs font-medium text-rose-600 mt-1">{formatRupiah(k.nilai)}</p>
+                {k.note && <p className="text-[11px] text-gray-400 mt-1 leading-tight">{k.note}</p>}
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer */}
+              <img src={k.ilustrasi} alt="" aria-hidden="true" width={110} height={84} decoding="async" draggable={false}
+                className="hidden 2xl:block w-[110px] h-[84px] min-w-0 ml-auto object-contain object-right select-none drop-shadow-[0_3px_4px_rgba(15,23,42,0.18)]" />
+            </div>
           </button>
         ))}
       </div>
