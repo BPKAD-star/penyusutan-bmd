@@ -21,13 +21,18 @@ import { backdropClose } from '@/components/backdropClose'
 // diam-diam, tanpa satu pun error. (Sisi "disetujui" tak kena: asetnya dibuat
 // dgn `cara_perolehan='pengadaan'` sama spt non-fisik, jadi `fn_dashboard_rekap`
 // sudah menghitungnya sejak awal.)
-type CaraConfig = { key: string; label: string; jenisTransaksi: string; kategoriJurnal: string[] }
+// `ilustrasi` = gambar di sisi kanan kartu (public/dashboard/). Berkasnya sudah
+// DIOLAH dari PNG Canva 1920×1080: berbeda dari ilustrasi jenis aset, latarnya
+// TIDAK putih murni — ada bingkai samar & halo sisa Canva + bayangan lembut —
+// jadi bingkai/halo dibuang sebagai komponen lepas, bayangannya dipertahankan
+// semi-transparan. Ganti gambar → ganti NAMA berkasnya juga (cache peramban).
+type CaraConfig = { key: string; label: string; jenisTransaksi: string; kategoriJurnal: string[]; ilustrasi: string }
 const CARA_LIST: CaraConfig[] = [
-  { key: 'pengadaan', label: 'Pengadaan', jenisTransaksi: 'pengadaan', kategoriJurnal: ['pengadaan', 'konstruksi'] },
-  { key: 'hibah', label: 'Hibah', jenisTransaksi: 'hibah_masuk', kategoriJurnal: ['hibah_masuk'] },
-  { key: 'tukarMenukar', label: 'Tukar Menukar', jenisTransaksi: 'tukar_menukar', kategoriJurnal: ['tukar_menukar'] },
-  { key: 'inventarisasi', label: 'Hasil Inventarisasi', jenisTransaksi: 'hasil_inventarisasi', kategoriJurnal: ['hasil_inventarisasi'] },
-  { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: ['perolehan_lainnya'] },
+  { key: 'pengadaan', label: 'Pengadaan', jenisTransaksi: 'pengadaan', kategoriJurnal: ['pengadaan', 'konstruksi'], ilustrasi: '/dashboard/cara-pengadaan.webp' },
+  { key: 'hibah', label: 'Hibah', jenisTransaksi: 'hibah_masuk', kategoriJurnal: ['hibah_masuk'], ilustrasi: '/dashboard/cara-hibah.webp' },
+  { key: 'tukarMenukar', label: 'Tukar Menukar', jenisTransaksi: 'tukar_menukar', kategoriJurnal: ['tukar_menukar'], ilustrasi: '/dashboard/cara-tukar-menukar.webp' },
+  { key: 'inventarisasi', label: 'Hasil Inventarisasi', jenisTransaksi: 'hasil_inventarisasi', kategoriJurnal: ['hasil_inventarisasi'], ilustrasi: '/dashboard/cara-hasil-inventarisasi.webp' },
+  { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: ['perolehan_lainnya'], ilustrasi: '/dashboard/cara-perolehan-lainnya.webp' },
 ]
 
 const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
@@ -217,6 +222,15 @@ function CaraCard({ cara, disetujui, belum, nilai, gagalDisetujui, onClickApprov
   const pct = gagalDisetujui || total === 0 ? null : Math.round((disetujui / total) * 100)
   return (
     <div className="card p-3">
+      {/* Ilustrasi kanan HANYA di ≥1536 px (`2xl`): di bawah itu kartu 5 kolom
+          sudah sempit dan teks "1.244 disetujui" terlipat. Di lebar itu kolom
+          teks dikunci `2xl:shrink-0` — yang mengalah gambarnya (`min-w-0`),
+          jadi teks tak pernah ikut terlipat karena gambar. Di bawah 2xl kolom
+          teks tetap `min-w-0` persis seperti dulu (lihat catatan di bawah).
+          Diukur di peramban pada 10 lebar layar: perilaku teks IDENTIK dgn
+          markup sebelum gambar ditambahkan. */}
+      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex-auto min-w-0 2xl:shrink-0">
       <p className="text-xs text-gray-600 leading-tight">{cara.label}</p>
       <p className="text-sm font-bold text-teal mb-1 truncate" title={gagalDisetujui ? 'Tidak dapat dibaca' : formatRp(nilai)}>
         {gagalDisetujui ? <span className="text-gray-300">–</span> : formatRp(nilai)}
@@ -256,6 +270,11 @@ function CaraCard({ cara, disetujui, belum, nilai, gagalDisetujui, onClickApprov
             <span className="text-gray-700">{nf(belum)} menunggu</span>
           </button>
         </div>
+      </div>
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer */}
+      <img src={cara.ilustrasi} alt="" aria-hidden="true" width={110} height={84} decoding="async" draggable={false}
+        className="hidden 2xl:block w-[110px] h-[84px] min-w-0 ml-auto object-contain object-right select-none drop-shadow-[0_3px_4px_rgba(15,23,42,0.18)]" />
       </div>
     </div>
   )
