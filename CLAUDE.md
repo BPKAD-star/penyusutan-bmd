@@ -4313,14 +4313,27 @@ kiri, urut **induk → unit → tanggal terbaru → id**.
   ia membuang SELURUH baris SKPD yang urutannya di belakang — tanpa satu pun
   tanda. Header tabel kini mengatakannya & menunjuk ke Export Excel, yang tetap
   memuat semuanya (dan ikut berkolom SKPD + SKPD Induk, urutan sama dgn layar).
-- 🟡 **Laporan Reklasifikasi: kolomnya SUDAH ada, urutannya BELUM** (disisir
-  2026-09-13; catatan ini sempat berbunyi "belum ikut" seluruhnya). Yang sudah:
-  kolom **SKPD** paling kiri di tab Daftar Transaksi. Yang belum: **urutan
-  induk → unit → tanggal → id**, dan kolom **SKPD Induk** di Export.
+- ✅ **Laporan Reklasifikasi menyusul 2026-09-13** — kolom SKPD-nya sudah ada
+  sejak awal; yang ditambahkan **urutan induk → unit → tanggal → id**, sel SKPD
+  dua baris (unit di atas, induk abu di bawah), & kolom **SKPD Induk** di Export.
   ⚠️ Yang TIDAK berlaku di sana: peringatan pemotongan 500 baris — menu itu
   memang sengaja **tanpa `.limit(500)`** (ledger reklas kecil & disapu penuh
   lewat keyset yang MELEMPAR di `BATAS_SAPU` 20.000), jadi tak ada baris yang
   dibuang diam-diam & tak ada yang perlu diumumkan di header tabel.
+  ⚠️ **Komparatornya diangkat ke `lib/urutSkpd.ts` (`urutPerSkpd`) di kemunculan
+  KEDUA, bukan ketiga** — penyimpangan yang disengaja dari "rule of three"
+  (CODING-STANDARD §1.2). Yang dijaga bukan kerapian melainkan **pemecah seri
+  `id`**: satu-satunya bagian yang kalau hilang tak menghasilkan error apa pun —
+  daftarnya cuma bergeser sendiri tiap render (`Array.prototype.sort` tak
+  dijamin stabil) & operator membacanya sbg "datanya berubah". Dikunci
+  lib/urutSkpd.test.ts, termasuk uji **seluruh 120 permutasi** yang membuktikan
+  urutannya TOTAL. Diuji merah dgn 4 mutasi (pemecah seri dicabut · arah tanggal
+  ditukar · fallback unit dicabut · sort di tempat), tiap mutasi jatuh di test
+  yang tepat.
+  ⚠️ Yang SENGAJA tak ikut diangkat: cara tiap menu MENDAPATKAN nama unit &
+  induknya — Laporan Koreksi dari `skpdById` (pohon SKPD di klien), Laporan
+  Reklasifikasi dari `r.skpdNama` yang sudah dibawa pemuatnya. Dua jalan itu
+  memang berbeda & dua-duanya benar; yang wajib sama cuma URUTANNYA.
 
 **Tak ada migrasi**, tak ada perbaikan data — tak ada yang perlu diperbaiki.
 

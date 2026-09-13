@@ -36,6 +36,7 @@ import { useProfilRole } from '@/components/useProfilRole'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { bangunPohonRekap, ratakanPohon, type LeafRekap } from '@/lib/rekapPohon'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import { urutPerSkpd } from '@/lib/urutSkpd'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
@@ -234,14 +235,7 @@ export default function LaporanKoreksi() {
   // bertanggal sama, dan tanpa urutan TOTAL isinya bisa bergeser tiap render
   // (Array.prototype.sort tak dijamin stabil di semua mesin) — daftar yang
   // berpindah-pindah sendiri bikin operator mengira datanya berubah.
-  const rowsUrut = [...rowsTampil].sort((a, b) => {
-    const ia = indukNama(a) || unitNama(a), ib = indukNama(b) || unitNama(b)
-    if (ia !== ib) return ia.localeCompare(ib, 'id')
-    const ua = unitNama(a), ub = unitNama(b)
-    if (ua !== ub) return ua.localeCompare(ub, 'id')
-    if (a.tanggal !== b.tanggal) return a.tanggal < b.tanggal ? 1 : -1
-    return b.id - a.id
-  })
+  const rowsUrut = urutPerSkpd(rowsTampil, { unit: unitNama, induk: indukNama })
 
   const rekap = new Map<string, { n: number; nilai: number }>()
   for (const r of rowsTampil) {

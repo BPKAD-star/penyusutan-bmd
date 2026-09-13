@@ -882,7 +882,7 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 
 | Metrik | Awal | **Sekarang ⟨2026-09-13⟩** | 3 bln | 6 bln | 12 bln |
 |---|---|---|---|---|---|
-| Test unit domain | 0 | **1.225** di **51** berkas — target 12 bln terlampaui **4×** | 60 | 150 | 300 |
+| Test unit domain | 0 | **1.231** di **52** berkas — target 12 bln terlampaui **4×** | 60 | 150 | 300 |
 | Test integrasi DB (`authenticated`) | 0 | **0** — satu-satunya metrik yang **belum bergerak sama sekali** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **29 test + 1 snapshot** ⟨Rekonsiliasi BMD⟩ | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 ⚠️ | **68** kemunculan di **60** berkas — 🔴 naik dari 63 | 90 | 40 | < 10 |
@@ -900,7 +900,7 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 **Tinjauan 2026-09-13 — perintahnya, supaya bisa diulang persis:**
 
 ```bash
-npm test                          # 1.225 test / 51 berkas
+npm test                          # 1.231 test / 52 berkas
 npx vitest run tests/golden       # 29 test
 npm run typecheck                 # exit 0
 npm run lint                      # 604 warning, 0 error

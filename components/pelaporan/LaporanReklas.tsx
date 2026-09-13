@@ -46,6 +46,7 @@ import { useProfilRole } from '@/components/useProfilRole'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { bangunPohonRekap, ratakanPohon, type LeafRekap } from '@/lib/rekapPohon'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import { urutPerSkpd } from '@/lib/urutSkpd'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { LEMBAR_PERMENDAGRI, type IdLembar } from '@/lib/permendagriFormat'
 import { FORMAT_REKLAS, type ArahReklas, type IdReklas, type FormatReklas } from '@/lib/formatReklas'
@@ -123,6 +124,33 @@ export default function LaporanReklas() {
     return () => { batal = true }
   }, [arah, skpdId, periode]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Nama SKPD baris: UNIT-nya, dgn induk sbg baris kedua.
+  // ⚠️ Yang ditampilkan unitnya, BUKAN `rootOf` saja — kalau cuma induk, dua
+  // Bagian di bawah Sekretariat Daerah sama-sama tertulis "Sekretariat Daerah"
+  // dan laporan ini tak menolong sama sekali (pelajaran Laporan Koreksi,
+  // CLAUDE.md 2026-09-08). Nama induk tetap ikut karena nama Bagian/UPTD
+  // sering tak menyebut induknya.
+  // ⚠️ `r.skpdNama` dari pemuat SUDAH nama unit — dipakai apa adanya supaya
+  // layar & Export tak punya dua sumber nama yang bisa menyimpang.
+  const unitNama = (r: BarisReklas) =>
+    r.skpdNama || (r.aset?.skpd_id != null ? `SKPD #${r.aset.skpd_id}` : '(tanpa SKPD)')
+  const indukNama = (r: BarisReklas) => {
+    const sid = r.aset?.skpd_id
+    if (sid == null) return ''
+    const root = rootOf(sid)
+    return root && root.id !== sid ? root.nama : ''
+  }
+
+  // Urut: induk → unit → tanggal terbaru dulu → id (pemecah seri).
+  // ⚠️ Pemecah seri `id` WAJIB ada: satu SKPD bisa punya puluhan baris
+  // bertanggal sama, dan tanpa urutan TOTAL isinya bisa bergeser tiap render
+  // (`Array.prototype.sort` tak dijamin stabil di semua mesin) — daftar yang
+  // berpindah sendiri bikin operator mengira datanya berubah.
+  // ℹ️ Beda dari Laporan Koreksi: di sini TAK ADA pemotongan 500 baris yang
+  // perlu diumumkan — pemuatnya menyapu penuh lewat keyset & MELEMPAR di
+  // `BATAS_SAPU`, jadi urutan per SKPD tak bisa membuang baris diam-diam.
+  const rowsUrut = urutPerSkpd(rows, { unit: unitNama, induk: indukNama })
+
   // Rekap per SKPD: matriks SKPD (root) × jenis aset, diturunkan dari baris yang
   // SUDAH dimuat — tak ada query kedua, jadi mustahil beda dari tab sebelah.
   //
@@ -172,8 +200,13 @@ export default function LaporanReklas() {
     // Tak ada paginasi & tak ada `await` di sini: barisnya sudah lengkap di
     // memori (pemuatnya menyapu penuh dgn keyset), jadi export tak bisa berbeda
     // dari yang di layar.
-    exportToExcel(rows.map(r => ({
-      'SKPD': r.skpdNama || '',
+    exportToExcel(rowsUrut.map(r => ({
+      // SKPD paling kiri: berkasnya memang dibaca per SKPD, dan kolom pertama
+      // itu yang dipakai orang menyortir/mem-pivot di Excel. Urutannya SAMA
+      // dgn layar (`rowsUrut`) — berkas yang tersusun lain dari yang dilihat
+      // operator bikin dia mengira isinya berbeda.
+      'SKPD': unitNama(r),
+      'SKPD Induk': indukNama(r),
       'NIBAR': r.aset?.nibar || '',
       'Spesifikasi Nama Barang': r.aset?.nama_barang || '',
       'Kode Barang Sebelum': r.kodeLama,
@@ -349,9 +382,12 @@ export default function LaporanReklas() {
                     <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
                     <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-                  ) : rows.map(r => (
+                  ) : rowsUrut.map(r => (
                     <tr key={r.id}>
-                      <td className="table-td text-xs">{r.skpdNama || '-'}</td>
+                      <td className="table-td text-xs">
+                        <p>{unitNama(r)}</p>
+                        {indukNama(r) && <p className="text-gray-400">{indukNama(r)}</p>}
+                      </td>
                       <td className="table-td text-xs">
                         <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
                         <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
