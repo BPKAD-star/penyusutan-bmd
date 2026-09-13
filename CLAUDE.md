@@ -2641,10 +2641,20 @@ Bangunan lalu digabung ke induk. **Tak ada migrasi** — seluruhnya perilaku kod
   ℹ️ `fn_rekap_bmd` (Laporan BMD) memakai `fn_dbar_kode_at` = kode pada AKHIR
   periode, jadi untuk kasus reklas-seperiode Laporan BMD & Rekonsiliasi bisa
   berbeda pada golongan asal. Belum disentuh — perlu telaah tersendiri.
-  ⛔ **Kapitalisasi/penggabungan ke induk BELUM ditangani** — `kapitalisasi_serap`
-  tidak dipetakan ke satu pun `MutasiKey`, jadi barang yang terserap hilang dari
-  Saldo Akhir tanpa baris mutasi & jatuh ke baris Selisih. Sengaja ditunda
-  (user: "kapitalisasi nanti kita bahas lagi").
+  ✅ **Kapitalisasi sisi ANAK SUDAH dipetakan** (2026-08-27; catatan ini sempat
+  berbunyi "BELUM ditangani" sampai disisir 2026-09-13). `kapitalisasi_serap`
+  kini mendarat di `MutasiKey` **`kapitalisasi_keluar`** — "Kapitalisasi (barang
+  diserap induk)" — di lib/rekon.ts. Sebelum itu ia tak dipetakan sama sekali,
+  dan akibatnya rantai rekonsiliasi tak pernah tie-out untuk golongan yang punya
+  kapitalisasi: induknya naik lewat baris Penambahan sementara barang yang
+  diserap LENYAP dari Saldo Akhir (`kapitalisasi_serap` ada di SEMBUNYI), tanpa
+  satu pun baris Pengurangan yang menjelaskannya — selisihnya persis DUA KALI
+  nilai rehab. Bentuk yang benar memang Penambahan & Pengurangan yang saling
+  meniadakan: kapitalisasi itu peristiwa DIAM secara nilai total, nilai berpindah
+  dari anak ke induk & kekayaan pemda tak bertambah (keputusan user 2026-08-27).
+  ⛔ **`penggabungan_*` yang masih di luar** — bukan karena belum dipetakan
+  (ia sudah punya cabang `attribusiLines` sendiri), tapi karena predikat
+  `idx_trx_koreksi_id` belum memuatnya; lihat catatan Laporan Koreksi di bawah.
 - **Spesifikasi barang KDP tak lagi menawarkan dokumen kepemilikan & jenis hak**
   (`KDP_KONSTRUKSI_FIELDS` di lib/asetFields.ts). Dulu ia `GOLONGAN_FIELDS['1.3.1']`
   apa adanya — template Tanah lengkap. Sertifikat/IMB baru terbit SESUDAH
@@ -3572,8 +3582,11 @@ duplikasi:
 - **Pindah dari `LaporanTransaksi` ikut menutup cacat lama:** halaman Penerimaan
   Internal versi lama tak pernah mengirim `batalJenis`, jadi mutasi yang sudah
   DIBATALKAN tetap tampil seolah berlaku — beda dgn Daftar Barang &
-  Rekonsiliasi. ⛔ **Pengeluaran Internal masih memakai jalur lama & masih
-  menanggungnya.**
+  Rekonsiliasi. ✅ **Pengeluaran Internal menyusul 2026-09-02** — ia kini
+  memakai `LaporanPerpindahan` yang sama (`arahAwal="keluar"`), jadi cacat
+  `batalJenis` itu tertutup di kedua menu. `components/LaporanTransaksi.tsx`
+  sendiri sudah DIHAPUS 2026-09-07; kalau ada yang menghidupkannya lagi,
+  pemindai `jenisList` di lib/sinkronisasiRpc.test.ts §7 wajib ikut hidup.
 - **Enum `batal_pengalihan` dipakai bersama kedua jenis** (CLAUDE.md "BATAL
   PERPINDAHAN"), jadi satu `BATAL_TARGET_JENIS.pengalihan` benar untuk dua
   cabang. Begitu pula partial index **`idx_trx_pindah_id`** yang predikatnya
@@ -3610,11 +3623,14 @@ duplikasi:
   ⚠️ Nilai yang lama DIPERTAHANKAN apa adanya waktu berkas digeneralkan —
   menggantinya tak error sama sekali, cuma membuat pilihan yang sudah disetel
   operator lenyap diam-diam & lembar cetak ulang mendadak bertitik-titik lagi.
-- ⛔ **Pengeluaran Internal belum punya lembar Permendagri.** Ia membaca ledger
-  yang sama dari sisi sebaliknya, jadi kalau formatnya diserahkan, yang perlu
-  ditambah cuma satu entri di `FORMAT_PENERIMAAN` — kecuali kolom "Pihak yang
-  menyerahkan" berganti jadi "Pihak yang menerima", yang berarti `asal_pihak`
-  butuh pasangan `tujuan_pihak`.
+- ✅ **Pengeluaran Internal SUDAH punya lembar Permendagri** — IV.D.2–D.6 &
+  IV.D.7, dibangun 2026-09-02 (catatan ini sempat berbunyi "belum punya" sampai
+  disisir 2026-09-13). Bareng itu keluarga lembarnya di-RENAME jadi
+  **Perpindahan** (`lib/formatPerpindahan.ts`, `LembarPerpindahanPermendagri`,
+  `/cetak/perpindahan-permendagri`) karena nama "Penerimaan" jadi menyesatkan
+  begitu ia memuat lembar PENGELUARAN. Rincian lengkapnya di bagian "Laporan
+  Pengeluaran Internal" di atas — termasuk kenapa identitas lembar itu
+  **(jenis ledger, ARAH)** dan bukan jenis saja.
 
 ## Laporan Penggunaan — Format Permendagri IV.B.1.2–1.6 (2026-08-31)
 
@@ -4297,8 +4313,14 @@ kiri, urut **induk → unit → tanggal terbaru → id**.
   ia membuang SELURUH baris SKPD yang urutannya di belakang — tanpa satu pun
   tanda. Header tabel kini mengatakannya & menunjuk ke Export Excel, yang tetap
   memuat semuanya (dan ikut berkolom SKPD + SKPD Induk, urutan sama dgn layar).
-- ⛔ **Laporan Reklasifikasi belum ikut** — bentuknya kembar & punya kekurangan
-  yang sama; belum diminta.
+- 🟡 **Laporan Reklasifikasi: kolomnya SUDAH ada, urutannya BELUM** (disisir
+  2026-09-13; catatan ini sempat berbunyi "belum ikut" seluruhnya). Yang sudah:
+  kolom **SKPD** paling kiri di tab Daftar Transaksi. Yang belum: **urutan
+  induk → unit → tanggal → id**, dan kolom **SKPD Induk** di Export.
+  ⚠️ Yang TIDAK berlaku di sana: peringatan pemotongan 500 baris — menu itu
+  memang sengaja **tanpa `.limit(500)`** (ledger reklas kecil & disapu penuh
+  lewat keyset yang MELEMPAR di `BATAS_SAPU` 20.000), jadi tak ada baris yang
+  dibuang diam-diam & tak ada yang perlu diumumkan di header tabel.
 
 **Tak ada migrasi**, tak ada perbaikan data — tak ada yang perlu diperbaiki.
 

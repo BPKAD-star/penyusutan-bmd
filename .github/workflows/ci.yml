@@ -5,8 +5,8 @@
 # dengan tidak punya CI, karena semua orang belajar mengabaikannya.
 #
 #   1. npm run typecheck  ← Fase 0.6, APA ADANYA (repo ini 0 error)
-#   2. npm test           ← Fase 0.2–0.8, Fase 1, golden test — 264 test
-#   3. npm run lint       ← Fase 0.5, terpasang 2026-08-06 (0 error, 569 warning)
+#   2. npm test           ← Fase 0.2–0.8, Fase 1, golden test — 1.225 test
+#   3. npm run lint       ← Fase 0.5, terpasang 2026-08-06 (0 error, 604 warning)
 #
 # ⚠️ `typecheck` sengaja TANPA berkas baseline. Rencana awal membekukan error
 # lama ke `.typecheck-baseline.txt`, tapi ternyata nol error bisa dicapai
@@ -14,7 +14,8 @@
 # error baru. Kalau suatu saat ada yang menambahkannya, itu langkah MUNDUR:
 # perbaiki errornya, jangan bekukan.
 #
-# Yang dijaga CI ini hari ini: 238 test domain, termasuk lib/sinkronisasi.test.ts
+# Yang dijaga CI ini hari ini: 1.225 test di 51 berkas (tinjauan 2026-09-13),
+# termasuk lib/sinkronisasi.test.ts
 # yang menegakkan rules.md §1.7 & §5.5 — daftar konstanta kembar yang selama ini
 # hanya dijaga ingatan dan sudah berkali-kali bocor. Sejak Fase 0.8 ia juga
 # membandingkan shared/types/database.types.ts dengan migrasi, jadi menambah
@@ -50,9 +51,17 @@ jobs:
       - run: npm test
 
       # SENGAJA TANPA `--max-warnings`. Warning di sini = utang lama yang sudah
-      # terukur & sengaja dibiarkan (569: 294 `const { data } = await`, 260
-      # floating promise di app/components, 15 berkas > 500 baris) — memerahkan
+      # terukur & sengaja dibiarkan (604 per 2026-09-13: 303 floating promise,
+      # 279 `const { data } = await`, 22 max-lines) — memerahkan
       # CI karenanya sama saja dengan tidak punya CI. Yang memerahkan CI cuma
       # yang berstatus `error`, dan itu semua dipilih dari kelompok yang HARI
       # INI nol pelanggaran. Rinciannya di eslint.config.mjs.
       - run: npm run lint
+
+      # ⚠️ `npm run test:coverage` SENGAJA TIDAK di sini — dan itu utang, bukan
+      # keputusan. Per 2026-09-13 ia MERAH (67,83% < ambang 80%) karena tiga
+      # berkas shared/ui yang lahir sesudah ambangnya dipasang tak pernah
+      # diberi test (FotoBarang, KonfirmasiModal, konfirmasi — 0% ketiganya).
+      # Menambahkannya sekarang = CI merah permanen. Yang harus diputuskan:
+      # beri test ketiganya, atau turunkan ambangnya ke angka yang jujur.
+      # Lihat REFACTOR-PLAN.md §10 "Temuan tinjauan" butir 1.

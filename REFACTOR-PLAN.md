@@ -568,8 +568,26 @@ minimal satu komentar peringatan bisa dihapus.
 
 ## 6. Fase 3 — Pecah komponen raksasa (hanya saat disentuh fitur)
 
-Target: `Pengadaan.tsx` (1.437/60), `Koreksi.tsx` (1.422/49),
-`PerolehanManual.tsx` (1.043/42), `Penghapusan.tsx` (840/32).
+Target, **diukur ulang 2026-09-13** (baris / `useState`) — ⚠️ urutannya
+sudah BERTUKAR sejak §6 ini ditulis:
+
+| Berkas | Saat §6 ditulis | **Hari ini** | |
+|---|---|---|---|
+| `Koreksi.tsx` | 1.422 / 49 | **2.451 / 72** | 🔴 +72% — kini yang **terbesar** |
+| `Pengadaan.tsx` | 1.437 / 60 | **1.571 / 60** | +9% |
+| `PerolehanManual.tsx` | 1.043 / 42 | **1.278 / 43** | +23% |
+| `Penghapusan.tsx` | 840 / 32 | **1.144 / 35** | +36% |
+
+⚠️ **Jangan membaca urutan daftar di bawah sebagai prioritas.** Pola pemecahan
+dicontohkan dengan `Pengadaan.tsx` karena waktu itu ia yang terbesar; per hari
+ini `Koreksi.tsx` sudah 880 baris di atasnya dan `useState`-nya 72. Polanya
+sama, berkasnya yang berbeda.
+
+⚠️ `Koreksi.tsx` juga berkas yang paling sering bertambah — kelima alasan
+koreksi (Nilai · Spesifikasi · Pencatatan Ganda · Pemecahan · Penggabungan)
+tinggal di satu komponen, dan tiap alasan baru menambah satu mesin state lagi.
+Kalau ada fitur yang mendarat di sana, **pecah per alasan** — itu batas yang
+sudah ada dengan sendirinya, bukan garis yang dikarang.
 
 **Jangan pecah secara spekulatif.** Tunggu sampai ada permintaan fitur yang
 memang mendarat di berkas itu, lalu pecah *seperlunya untuk fitur itu*.
@@ -862,61 +880,123 @@ supaya tak ada alasan tidak mengukurnya.
 kolom itu tabel ini cuma daftar cita-cita — tidak ada tempat mencatat posisi
 hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 
-| Metrik | Awal | **Sekarang** | 3 bln | 6 bln | 12 bln |
+| Metrik | Awal | **Sekarang ⟨2026-09-13⟩** | 3 bln | 6 bln | 12 bln |
 |---|---|---|---|---|---|
-| Test unit domain | 0 | **380** ⟨`npm test`, 2026-08-18 — 17 berkas⟩ — target 12 bln sudah terlampaui | 60 | 150 | 300 |
-| Test integrasi DB (`authenticated`) | 0 | **0** | 10 | 40 | 60 |
-| Golden test laporan | 0 | **26 test + 3 snapshot** ⟨Rekonsiliasi BMD, 2026-08-06⟩ | 5 | 15 | 20 |
-| Loop paginasi tulis-tangan | 126 ⚠️ | **63** kemunculan di **47** berkas ⟨2026-08-06⟩ — lihat catatan | 90 | 40 | < 10 |
-| `const { data } = await` | 166 | **166** ⟨2026-08-06⟩ — **tidak bergerak**, memang belum ada adopsi `assertOk()` | 110 | 50 | < 10 |
-| Berkas > 500 baris | 19 | **20** ⟨2026-08-06⟩ — **naik 1** | 15 | 8 | ≤ 3 |
-| Komentar "ubah satu, samakan yang lain" | ~6 pasang | **5 + 1 keluarga baru** ⟨lihat catatan⟩ | 4 | 2 | 0 |
-| Query per pemuatan Daftar Barang | 8–15 | **2** ⟨2026-08-14, RPC⟩ | 8–15 | ≤ 5 | ≤ 5 |
-| Query per pemuatan Penyusutan | ≈1.466 ⟨SKPD terbesar⟩ | **2** ⟨2026-08-18, RPC⟩ | — | ≤ 5 | ≤ 5 |
-| Query per "Proses" Rekonsiliasi | ≈8.455 ⟨SKPD terbesar⟩ | **52** halaman utuh · **3** jalur snapshot ⟨2026-08-18⟩ | — | ≤ 5 | ≤ 5 |
-| RPC agregat berat tanpa `work_mem` | — | **0** ⟨audit `pg_proc.proconfig`, 2026-08-18; sebelumnya 3 dari 6⟩ | — | 0 | 0 |
-| Coverage `domain/` + `shared/` | — | engine 99% stmt · `lib/bmd` 93% | 60% | 80% | 85% |
+| Test unit domain | 0 | **1.225** di **51** berkas — target 12 bln terlampaui **4×** | 60 | 150 | 300 |
+| Test integrasi DB (`authenticated`) | 0 | **0** — satu-satunya metrik yang **belum bergerak sama sekali** | 10 | 40 | 60 |
+| Golden test laporan | 0 | **29 test + 1 snapshot** ⟨Rekonsiliasi BMD⟩ | 5 | 15 | 20 |
+| Loop paginasi tulis-tangan | 126 ⚠️ | **68** kemunculan di **60** berkas — 🔴 naik dari 63 | 90 | 40 | < 10 |
+| `const { data } = await` | 166 | **158** — 🟡 turun 8, adopsi `assertOk()` masih nol | 110 | 50 | < 10 |
+| Berkas > 500 baris | 19 | **35** mentah · **22** kode-saja — 🔴 naik dari 20 | 15 | 8 | ≤ 3 |
+| Komentar "ubah satu, samakan yang lain" | ~6 pasang | **21** kemunculan: **16 aktif** + 5 retrospektif; **16 seksi test penegak** | 4 | 2 | 0 |
+| Query per pemuatan Daftar Barang | 8–15 | **2** ⟨RPC, tak berubah sejak 2026-08-14⟩ | 8–15 | ≤ 5 | ≤ 5 |
+| Query per pemuatan Penyusutan | ≈1.466 ⟨SKPD terbesar⟩ | **2** ⟨RPC, tak berubah sejak 2026-08-18⟩ | — | ≤ 5 | ≤ 5 |
+| Query per "Proses" Rekonsiliasi | ≈8.455 ⟨SKPD terbesar⟩ | **52** halaman utuh · **3** jalur snapshot | — | ≤ 5 | ≤ 5 |
+| RPC agregat berat tanpa `work_mem` | — | **0** ⟨audit `pg_proc.proconfig` ke produksi⟩ | — | 0 | 0 |
+| Coverage `domain/` + `shared/` | — | 🔴 **global 67,83% — GAGAL ambang 80%** (rincian di bawah) | 60% | 80% | 85% |
+| ESLint | 0 error / 569 warning ⟨08-06⟩ | **0 error / 604 warning** — 303 floating promise · 279 `const { data }` · 22 max-lines | — | — | — |
+| Typecheck | 0 error | **0 error** (exit 0) | — | — | — |
 
-Rincian 264 test (`npm test`, ±1,5 dtk): `lib/engine/penyusutan.test.ts` 79 ·
-`lib/bmd.test.ts` 74 · `tests/golden/rekonsiliasi.test.ts` 26 ·
-`lib/rekon.test.ts` 21 · `lib/visibilitas.test.ts` 18 ·
-`shared/db/paginate.test.ts` 15 · `lib/sinkronisasi.test.ts` 12 ·
-`shared/ui/useAsyncData.test.tsx` 10 · `shared/db/query.test.ts` 9.
-**Tinjauan 2026-08-06 — cara mengukurnya, supaya bisa diulang persis:**
+**Tinjauan 2026-09-13 — perintahnya, supaya bisa diulang persis:**
 
 ```bash
-grep -rn 'from + 999'            --include='*.ts*' app components lib | wc -l   # 63  kemunculan
-grep -rc 'from + 999'            --include='*.ts*' app components lib | grep -v ':0' | wc -l   # 47 berkas
-grep -rn 'const { data } = await' --include='*.ts*' app components lib | wc -l  # 166
+npm test                          # 1.225 test / 51 berkas
+npx vitest run tests/golden       # 29 test
+npm run typecheck                 # exit 0
+npm run lint                      # 604 warning, 0 error
+npm run test:coverage             # ⚠️ GAGAL — 67,83% < ambang 80%
+
+grep -rn 'from + 999'             --include='*.ts*' app components lib | wc -l          # 68
+grep -rc 'from + 999'             --include='*.ts*' app components lib | grep -v ':0' | wc -l   # 60 berkas
+grep -rn 'const { data } = await' --include='*.ts*' app components lib | wc -l          # 158
 find app components lib -name '*.ts' -o -name '*.tsx' | xargs wc -l \
-  | awk '$2 != "total" && $1 > 500' | wc -l                                     # 20
+  | awk '$2 != "total" && $1 > 500' | wc -l                                             # 35
+grep -rniE 'ubah satu,? (samakan|ubah)|samakan yang lain' \
+  --include='*.ts*' app components lib shared | wc -l                                    # 21
 ```
+
+### ⚠️ Temuan tinjauan ini yang paling perlu ditindaklanjuti
+
+**1. `npm run test:coverage` MERAH, dan tak ada yang menjalankannya.** Ambang
+global 80% di `vitest.config.ts` sudah dilewati ke bawah — 67,83%. Sebabnya
+bukan kode domain yang memburuk (justru sebaliknya), melainkan tiga berkas
+`shared/ui/` yang lahir sesudah ambangnya dipasang & tak pernah diberi test:
+
+| Berkas | Stmt |
+|---|---|
+| `lib/engine/penyusutan.ts` | 99,28% |
+| `lib/bmd.ts` | 86,36% |
+| `shared/db/paginate.ts`, `query.ts` | 100% |
+| `shared/ui/useAsyncData.ts`, `NominalInput.tsx` | 100% |
+| `shared/ui/FotoBarang.tsx` | **0%** |
+| `shared/ui/KonfirmasiModal.tsx` | **0%** |
+| `shared/ui/konfirmasi.tsx` | **0%** |
+
+⚠️ **`.github/workflows/ci.yml` menjalankan `typecheck` + `test` + `lint`, TIDAK
+`test:coverage`.** Jadi ambang itu gagal DIAM-DIAM sejak entah kapan — jaring
+pengaman yang tak pernah ditembak. Dua jalan, dan keduanya sah asal DIPUTUSKAN:
+beri test ketiga berkas itu, atau turunkan ambangnya ke angka yang jujur dan
+catat alasannya. Yang tidak boleh: membiarkannya merah sambil mengaku Fase 0
+"8/8 bersih".
+
+**2. Fase 3 memburuk jauh lebih cepat dari yang tercatat.** Angka 2026-08-06
+berbunyi 19 → 20 berkas; kenyataannya **19 → 35**. Rincian keempat target
+Fase 3 (§6) per hari ini:
+
+| Berkas | §6 tertulis | Hari ini | |
+|---|---|---|---|
+| `Koreksi.tsx` | 1.422 / 49 `useState` | **2.451 / 72** | +72% |
+| `Pengadaan.tsx` | 1.437 / 60 | **1.571 / 60** | +9% |
+| `PerolehanManual.tsx` | 1.043 / 42 | **1.278 / 43** | +23% |
+| `Penghapusan.tsx` | 840 / 32 | **1.144 / 35** | +36% |
+
+⚠️ **Urutannya sudah BERTUKAR: `Koreksi.tsx` kini yang terbesar, bukan
+`Pengadaan.tsx`.** §6 masih menyebut Pengadaan lebih dulu karena ditulis waktu
+ia memang yang terbesar; siapa pun yang memulai Fase 3 dari urutan itu akan
+memecah berkas yang salah. Aturan "jangan pecah secara spekulatif" TIDAK
+berubah — yang berubah hanya berkas mana yang antre paling depan begitu ada
+fitur yang mendarat di sana.
+
+**3. Loop paginasi naik (63 → 68) sementara `const { data } = await` turun
+(166 → 158).** Dua-duanya bergerak tanpa ada yang menyentuh utangnya dengan
+sengaja — ini efek sampingan menu-menu Pelaporan Permendagri yang lahir
+Agustus–September. ESLint memang memperingatkan tiap pelanggaran baru, tapi
+peringatan `warn` tidak menghentikan siapa pun; angkanya naik persis seperti
+yang bisa diduga.
+
+**4. Konstanta kembar: 21 kemunculan, tapi 16 di antaranya sudah punya
+penegak.** Naik dari "~6 pasang" bukan karena memburuk, melainkan karena
+dihitung lebih jujur (lihat peringatan di bawah). Yang penting justru
+pembaginya: `lib/sinkronisasiRpc.test.ts` kini **10 seksi** (§1–§10) dan
+`lib/sinkronisasi.test.ts` **6 seksi** — 16 aturan kembar yang dulu hanya
+dijaga ingatan sekarang dijaga test. Lima kemunculan sisanya **retrospektif**
+(komentar yang menjelaskan kenapa sebuah ekstraksi dilakukan — `draftSeleksi`,
+`cetakLembar`, `FotoBarang`, kepala tabel RKBMD), jadi menghitungnya sebagai
+utang aktif justru salah baca.
+
+### Catatan historis yang masih berlaku
 
 ⚠️ **Angka awal "126" TIDAK bisa direproduksi** dengan perintah mana pun di
 atas — yang mendekati cuma `.range(` (74 kemunculan / 50 berkas) dan
 `from, from +` (66). Metodenya tak pernah dicatat, jadi **jangan membaca
-"126 → 63" sebagai penurunan separuh**: tak ada satu pun loop paginasi yang
-diperbaiki dalam pekerjaan Fase 0. Yang benar: **angka 2026-08-06 di atas
-adalah baseline baru yang reproducible**, dan "126" dipensiunkan. Ini persis
-alasan kolom `Sekarang` wajib menyebutkan perintahnya, bukan cuma angkanya.
+"126 → 68" sebagai penurunan**: tak ada satu pun loop paginasi yang diperbaiki
+dalam pekerjaan Fase 0. Yang benar: **angka 2026-08-06 adalah baseline baru
+yang reproducible**, dan "126" dipensiunkan. Ini persis alasan kolom `Sekarang`
+wajib menyebutkan perintahnya, bukan cuma angkanya.
 
-Dua baris yang **memburuk**, dan itu memang harus terbaca begitu: berkas > 500
-baris 19 → **20** (`Pengadaan.tsx` 1.437 → 1.445, `Koreksi.tsx` 1.422 → 1.429 —
-berkas besar terus tumbuh selama belum ada fitur yang memicu Fase 3), dan
-`const { data } = await` **tidak bergerak sama sekali** dari 166. Fase 0 memang
-tidak menyentuh keduanya: ia memasang alat ukurnya (ESLint kini memperingatkan
-tiap pelanggaran baru), bukan melunasi utangnya.
+⚠️ **"Berkas > 500 baris" punya DUA angka dan keduanya benar** — 35 dengan
+`wc -l` mentah, 22 menurut ESLint `max-lines` (yang ber-`skipBlankLines` &
+`skipComments`). Repo ini berkomentar sangat padat, jadi selisih 13 berkas itu
+wajar, bukan kesalahan hitung. Tabel di atas memakai **angka mentah** supaya
+sebanding dengan baseline "19"; kalau nanti diganti ke angka ESLint, ganti
+baseline-nya juga — kalau tidak, tabelnya membandingkan dua hal berbeda.
+
+⚠️ Baris konstanta kembar dihitung dari komentar yang ADA; duplikat yang tak
+berkomentar tak masuk hitungan sama sekali. **Perhitungan berbasis komentar itu
+batas bawah, bukan jumlah sebenarnya** — perlakukan begitu saat meninjau.
 
 Jangan diisi kira-kira — lebih baik kosong daripada angka karangan, dan lebih
 baik lagi angka yang disertai perintahnya.
-
-⚠️ Baris konstanta kembar **naik, bukan turun**: `visibilitas` berhasil
-disatukan (−1), tapi sisir `tukar_menukar` 2026-08-05 menemukan keluarga yang
-sebelumnya tak terhitung — daftar "cara perolehan" ada di **lima** tempat
-(§5 Temuan 0.3 #1). Angka awal "~6 pasang" ternyata terlalu optimis karena
-dihitung dari komentar yang ADA; duplikat yang tak berkomentar tak masuk
-hitungan sama sekali. **Perhitungan berbasis komentar itu batas bawah, bukan
-jumlah sebenarnya** — perlakukan begitu saat meninjau.
 
 Kolom terakhir yang paling penting: **nol pasang konstanta kembar** berarti
 setiap aturan yang hari ini dijaga oleh peringatan tertulis sudah berubah
@@ -925,6 +1005,53 @@ jadi aturan yang dijaga oleh kompilator.
 ---
 
 ## 11. Kalau hanya sempat mengerjakan satu hal
+
+**Diperbarui 2026-09-13.** Jawaban lama — *"Fase 0.2, test untuk
+`lib/engine/penyusutan.ts`"* — **sudah dikerjakan**: 79 test, coverage 99,28%
+statement. Ia dipertahankan di bawah sebagai catatan, bukan sebagai saran.
+
+Yang menggantikannya: **test integrasi DB dengan RLS aktif.**
+
+Itu satu-satunya baris di §10 yang **masih nol setelah tiga bulan**, sementara
+setiap metrik lain sudah bergerak dan sebagian melampaui target 12 bulan. Dan
+ia bukan sekadar angka yang tertinggal — ia menutup kelas kesalahan yang
+paling mahal & paling senyap di repo ini, yang buktinya sudah menumpuk di
+CLAUDE.md:
+
+- `fn_dbar_kode_register_at` sebagai INVOKER menjawab **3 baris**, sebagai
+  DEFINER **67** — bukan cuma 591× lebih lambat, **jawabannya salah**
+  (2026-09-13).
+- `fetchOwnerOverrides` 0,2 dtk sebagai service_role, **timeout** sebagai
+  `authenticated` — itu sebabnya migrasi 20260728_05 lolos verifikasi padahal
+  tak memperbaiki apa pun.
+- `fn_rekap_bmd` **9.144 ms** untuk Dinas Pendidikan — Laporan BMD tak bisa
+  dibuka sama sekali oleh SKPD terbesar, dan selama berbulan-bulan itu terbaca
+  sebagai "halaman tak mau tampil untuk satu SKPD", bukan sebagai bug.
+- `fn_lra_belanja_modal` mengembalikan **0 baris** sebagai service_role —
+  kebalikannya: fungsi yang SEHAT terlihat kosong.
+
+Polanya selalu sama: **diukur sebagai admin/service_role, semuanya kelihatan
+beres.** Aturan "UKUR SEBAGAI PENGURUS SKPD TERBESAR" sudah lama tertulis di
+CLAUDE.md, tapi sampai hari ini ia dijalankan **manual, satu per satu, hanya
+ketika ada yang curiga** — tak satu pun yang otomatis. Setiap kali aturan itu
+kelewat, yang lahir bukan error melainkan halaman yang diam-diam salah.
+
+Bentuk paling murah yang sudah terbukti: `SET LOCAL role authenticated` +
+`SET LOCAL request.jwt.claims` memakai uid pengurus SKPD terbesar
+(`306a752a-34e5-4c18-8d26-66237325d002`, Dinas Pendidikan — 707 unit /
+295.141 aset), lalu panggil RPC-nya & periksa jumlah baris + waktu. Sepuluh
+test semacam itu menutup kelima halaman Lapis 1.
+
+⚠️ Prasyaratnya satu: CI butuh kredensial DB, dan `ci.yml` hari ini sengaja
+**tanpa** rahasia apa pun. Jadi keputusan pertamanya bukan teknis melainkan
+kebijakan — test ini jalan di CI (perlu secret) atau jalan lokal sebelum push
+(perlu disiplin). **Pilih salah satu dan catat di sini**; yang tidak boleh
+adalah menulis testnya lalu membiarkannya tak pernah dijalankan siapa pun,
+persis nasib `npm run test:coverage` hari ini.
+
+---
+
+### Catatan: saran lama (sudah selesai)
 
 Kerjakan **Fase 0.2** — test untuk `lib/engine/penyusutan.ts`.
 

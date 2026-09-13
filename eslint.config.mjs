@@ -8,12 +8,18 @@
 // insiden nyata ([docs/insiden.md](docs/insiden.md)).
 //
 // ── error vs warn: dipilih dari ANGKA, bukan dari selera ────────────────────
-// Diukur 2026-08-06 atas `app components lib middleware.ts`:
+// Diukur 2026-08-06, diukur ulang 2026-09-13 atas `app components lib
+// middleware.ts` — 569 → 604 warning:
 //
-//   260  no-floating-promises   → 178 di components/, 82 di app/, **0 di lib/**
-//   294  no-restricted-syntax   (`const { data } = await` tanpa `error`)
-//    15  max-lines              (> 500 baris)
+//   303  no-floating-promises   (2026-08-06: 260 — naik 43)
+//   279  no-restricted-syntax   (`const { data } = await` tanpa `error`; 294 — turun 15)
+//    22  max-lines              (> 500 baris kode; 15 — naik 7)
 //     0  no-restricted-imports  (`modules/` belum ada)
+//
+// ⚠️ Dua dari tiga NAIK tanpa ada yang menyentuh utangnya dengan sengaja —
+// efek sampingan menu Pelaporan Permendagri yang lahir Agustus–September.
+// `warn` memang tak menghentikan siapa pun; itu harga yang diterima, tapi
+// angkanya harus tetap dibaca tiap tinjauan (REFACTOR-PLAN.md §10).
 //
 //   * `error` dipakai hanya di tempat yang **hari ini nol pelanggaran**, jadi
 //     tiap merah berarti pelanggaran BARU dan CI tetap hijau.
@@ -96,7 +102,8 @@ export default tseslint.config(
       }],
 
       // ── Berkas raksasa (Fase 3) ───────────────────────────────────────────
-      // 15 berkas melewati ambang; terbesar Pengadaan.tsx 1.437 baris / 60
+      // 22 berkas melewati ambang (2026-09-13); terbesar kini Koreksi.tsx
+      // 2.451 baris / 72 useState — BUKAN lagi Pengadaan.tsx 1.571 / 60
       // useState. `warn` — memecahnya SPEKULATIF dilarang REFACTOR-PLAN §6,
       // tunggu ada fitur yang memang mendarat di berkasnya.
       'max-lines': ['warn', { max: 500, skipBlankLines: true, skipComments: true }],
