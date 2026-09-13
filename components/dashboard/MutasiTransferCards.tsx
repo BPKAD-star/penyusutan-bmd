@@ -16,7 +16,16 @@ const nf = (n: number) => n.toLocaleString('id-ID')
 
 type Kategori = 'pengalihan_status' | 'mutasi_internal'
 type Arah = 'keluar' | 'masuk'
-type CardDef = { key: string; label: string; kategori: Kategori; arah: Arah; disetujui: number; belum: number }
+// `ilustrasi` = gambar di sisi kanan kartu (public/dashboard/), diolah dgn cara
+// yang sama dgn ilustrasi Cara Perolehan/Penghapusan. SATU gambar dipakai
+// BERPASANGAN — Transfer Keluar & Transfer Masuk SKPD sama-sama menampilkan
+// `transfer-skpd.webp` (dua gedung TERPISAH, saling bertukar), Pengeluaran &
+// Penerimaan Internal sama-sama `internal-skpd.webp` (gedung besar+kecil di
+// SATU platform). Ini sengaja mengikuti komentar di atas: keempat kartu ini
+// memang menampilkan ANGKA yang sama dari sisi berlawanan, jadi gambarnya pun
+// wajar sama — bukan salinan yang lupa dibedakan. Ganti gambar → ganti NAMA
+// berkasnya juga, supaya peramban tak terus menampilkan versi lama.
+type CardDef = { key: string; label: string; kategori: Kategori; arah: Arah; disetujui: number; belum: number; ilustrasi: string }
 
 export default function MutasiTransferCards({ approved }: {
   approved: { transfer: number; mutasiInternal: number }
@@ -47,17 +56,17 @@ export default function MutasiTransferCards({ approved }: {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cards: CardDef[] = [
-    { key: 'transfer-keluar', label: 'Transfer Keluar SKPD', kategori: 'pengalihan_status', arah: 'keluar', disetujui: approved.transfer, belum: pending.transfer },
-    { key: 'transfer-masuk', label: 'Transfer Masuk SKPD', kategori: 'pengalihan_status', arah: 'masuk', disetujui: approved.transfer, belum: pending.transfer },
-    { key: 'keluar-internal', label: 'Pengeluaran Internal', kategori: 'mutasi_internal', arah: 'keluar', disetujui: approved.mutasiInternal, belum: pending.mutasiInternal },
-    { key: 'masuk-internal', label: 'Penerimaan Internal', kategori: 'mutasi_internal', arah: 'masuk', disetujui: approved.mutasiInternal, belum: pending.mutasiInternal },
+    { key: 'transfer-keluar', label: 'Transfer Keluar SKPD', kategori: 'pengalihan_status', arah: 'keluar', disetujui: approved.transfer, belum: pending.transfer, ilustrasi: '/dashboard/transfer-skpd.webp' },
+    { key: 'transfer-masuk', label: 'Transfer Masuk SKPD', kategori: 'pengalihan_status', arah: 'masuk', disetujui: approved.transfer, belum: pending.transfer, ilustrasi: '/dashboard/transfer-skpd.webp' },
+    { key: 'keluar-internal', label: 'Pengeluaran Internal', kategori: 'mutasi_internal', arah: 'keluar', disetujui: approved.mutasiInternal, belum: pending.mutasiInternal, ilustrasi: '/dashboard/internal-skpd.webp' },
+    { key: 'masuk-internal', label: 'Penerimaan Internal', kategori: 'mutasi_internal', arah: 'masuk', disetujui: approved.mutasiInternal, belum: pending.mutasiInternal, ilustrasi: '/dashboard/internal-skpd.webp' },
   ]
 
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {cards.map(c => (
-          <DonutCard key={c.key} label={c.label} disetujui={c.disetujui} belum={c.belum}
+          <DonutCard key={c.key} label={c.label} disetujui={c.disetujui} belum={c.belum} ilustrasi={c.ilustrasi}
             onClickDisetujui={() => setDetail({ kategori: c.kategori, arah: c.arah, mode: 'disetujui', label: c.label })}
             onClickMenunggu={() => setDetail({ kategori: c.kategori, arah: c.arah, mode: 'menunggu', label: c.label })} />
         ))}
@@ -72,15 +81,25 @@ export default function MutasiTransferCards({ approved }: {
   )
 }
 
-function DonutCard({ label, disetujui, belum, onClickDisetujui, onClickMenunggu }: {
-  label: string; disetujui: number; belum: number
+function DonutCard({ label, disetujui, belum, ilustrasi, onClickDisetujui, onClickMenunggu }: {
+  label: string; disetujui: number; belum: number; ilustrasi: string
   onClickDisetujui: () => void; onClickMenunggu: () => void
 }) {
   const total = disetujui + belum
   const pct = total > 0 ? Math.round((disetujui / total) * 100) : 100
   return (
     <div className="card p-3">
-      <p className="text-xs text-gray-600 leading-tight h-7">{label}</p>
+      {/* Ilustrasi kanan HANYA di ≥1280 px (`xl`) — beda dari kartu Cara
+          Perolehan/Penghapusan (2xl/1536) karena grid di sini cuma 4 kolom,
+          bukan 5, jadi kartunya lebih lebar & gambarnya sudah muat lebih
+          awal. Diukur di peramban lintas breakpoint (xl/lg/md dicoba, xl yang
+          TIDAK menambah satu pun overflow baru dibanding markup lama — grid
+          4-kolom ini SUDAH overflow sendiri di 500–860 px bahkan tanpa
+          gambar, itu bukan regresi dari perubahan ini). Kolom teks dikunci
+          `xl:shrink-0`, gambar yang mengalah (`min-w-0`). */}
+      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex-auto min-w-0 xl:shrink-0">
+      <p className="text-xs text-gray-600 leading-tight h-7 xl:whitespace-nowrap">{label}</p>
       {/* ⚠️ `min-w-0` — lihat penjelasannya di CaraPerolehanCards.tsx (kartu ini
           KEMBAR dengannya). Tanpa itu keterangannya meluber keluar kartu di
           layar sempit. Ubah satu, samakan yang lain. */}
@@ -104,7 +123,12 @@ function DonutCard({ label, disetujui, belum, onClickDisetujui, onClickMenunggu 
             <span className="text-gray-700">{nf(belum)} menunggu</span>
           </button>
         </div>
-      </div>
+      </div>
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer */}
+      <img src={ilustrasi} alt="" aria-hidden="true" width={110} height={84} decoding="async" draggable={false}
+        className="hidden xl:block w-[110px] h-[84px] min-w-0 ml-auto object-contain object-right select-none drop-shadow-[0_3px_4px_rgba(15,23,42,0.18)]" />
+      </div>
     </div>
   )
 }
