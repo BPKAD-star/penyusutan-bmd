@@ -33,5 +33,7 @@ describe('generateNibars tak memakai LIKE', () => {
       .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n')
     expect(src).not.toMatch(/\.like\(\s*'nibar'/)
     expect(src).toMatch(/\.gte\('nibar'/)
+    // insiden 2026-09-14: NIBAR baru tak boleh menabrak kode register barang lain
+    expect(src).toMatch(/\.gte\('kode_register'/)
   })
 })

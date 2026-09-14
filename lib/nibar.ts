@@ -106,10 +106,27 @@ export async function generateNibars(
     // urutan teks antar-panjang tak menjamin nomor urut tertinggi, dan slice(-7)
     // pada NIBAR berbentuk lain mengembalikan potongan yang bukan nomor urut.
     // Yang dihitung hanya NIBAR yang bentuknya persis prefiks + 7 digit.
+    //
+    // ⚠️ KODE REGISTER seprefiks IKUT dihitung (insiden 2026-09-14). NIBAR &
+    // kode register berbagi susunan 45 digit yang sama; barang yang PINDAH ke
+    // prefiks ini dapat nomor kode register dari counter, dan kalau generator
+    // cuma melihat NIBAR ia bisa menerbitkan NIBAR = kode register barang lain
+    // → cari satu nomor menampilkan dua barang. UNIQUE tak menjaga lintas kolom.
+    const { data: dataReg, error: errReg } = await supabase.from('aset').select('kode_register')
+      .gte('kode_register', prefix38).lt('kode_register', batasAtasPrefix(prefix38))
+      .order('kode_register', { ascending: false }).limit(1000)
+    if (errReg) {
+      throw new Error(
+        `gagal membaca nomor kode register terakhir untuk kode ${group[0].kode}: ${errReg.message}. ` +
+        'NIBAR tidak digenerate supaya tidak bertabrakan dengan kode register barang lain — coba lagi.')
+    }
     let seq = 0
-    for (const r of (data || []) as { nibar: string | null }[]) {
-      const n = r.nibar || ''
-      if (n.length !== prefix38.length + PANJANG_SEQ || !n.startsWith(prefix38)) continue
+    const nomor = [
+      ...((data || []) as { nibar: string | null }[]).map(r => r.nibar),
+      ...((dataReg || []) as { kode_register: string | null }[]).map(r => r.kode_register),
+    ]
+    for (const n of nomor) {
+      if (!n || n.length !== prefix38.length + PANJANG_SEQ || !n.startsWith(prefix38)) continue
       const v = parseInt(n.slice(prefix38.length), 10)
       if (Number.isFinite(v) && v > seq) seq = v
     }
