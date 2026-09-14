@@ -36,6 +36,23 @@ export function kodeLokasiNibar(kodeSkpd: string): string {
   return digitsPad(kodeSkpd, 14)
 }
 
+/**
+ * Batas atas EKSKLUSIF untuk rentang prefiks berdigit: "…3002" → "…3003",
+ * "…1999" → "…2000". `nibar >= prefix AND nibar < batasAtas(prefix)` setara
+ * PERSIS dgn `nibar LIKE 'prefix%'` selama NIBAR cuma berisi digit (diperiksa
+ * ke produksi 2026-09-14: 0 NIBAR berkarakter non-digit, dan urutan collation
+ * ICU DB identik dgn urutan byte untuk seluruh 473.623 NIBAR).
+ */
+export function batasAtasPrefix(prefix: string): string {
+  if (!/^\d+$/.test(prefix)) throw new Error(`prefiks NIBAR bukan deretan digit: ${prefix}`)
+  const d = prefix.split('')
+  let i = d.length - 1
+  while (i >= 0 && d[i] === '9') { d[i] = '0'; i-- }
+  if (i < 0) throw new Error(`prefiks NIBAR tak punya batas atas: ${prefix}`)
+  d[i] = String(Number(d[i]) + 1)
+  return d.join('')
+}
+
 export async function generateNibars(
   supabase: ReturnType<typeof createClient>,
   items: { key: string; kode: string; intraEkstra: 'intra' | 'ekstra'; tahun: string }[],
@@ -66,13 +83,23 @@ export async function generateNibars(
     // baru menabrak nomor terpakai. Yang menyelamatkan selama ini cuma constraint
     // UNIQUE — gagal approve itu gejala, bukan penyakitnya. Kalau constraint itu
     // tak ada, NIBAR dobel masuk diam-diam & jauh lebih sulit dibereskan.
+    //
+    // ⚠️ RENTANG `gte`/`lt`, BUKAN `.like('nibar', 'prefix%')` (insiden
+    // 2026-09-14, Pemecahan Barang gagal "statement timeout"). `~~` (LIKE) TIDAK
+    // leakproof, jadi di bawah RLS ia tak pernah bisa jadi index condition —
+    // index `idx_aset_nibar_pattern` (20260728_04) ternyata tak pernah menolong
+    // jalur ini. Diukur sbg admin dgn RLS aktif: LIKE = Seq Scan 473.618 baris,
+    // 13.084 ms (pagu 8 dtk); rentang = Index Scan Backward aset_nibar_key, 2 ms,
+    // 5 baris yang sama. `>=`/`<` pada text leakproof. Ronde kelima dari cerita
+    // `LIKE` di bawah RLS (GIS Tanah, Kendaraan, Daftar Barang Awal, Export Audit).
     const { data, error } = await supabase.from('aset').select('nibar')
-      .like('nibar', `${prefix38}%`).order('nibar', { ascending: false }).limit(1000)
+      .gte('nibar', prefix38).lt('nibar', batasAtasPrefix(prefix38))
+      .order('nibar', { ascending: false }).limit(1000)
     if (error) {
       throw new Error(
         `gagal membaca nomor urut NIBAR terakhir untuk kode ${group[0].kode}: ${error.message}. ` +
         'NIBAR tidak digenerate supaya tidak menimpa nomor yang sudah terpakai — coba lagi, ' +
-        'kalau terus berulang kemungkinan migrasi 20260728_04 (index nibar) belum dijalankan.')
+        'kalau terus berulang laporkan ke admin (query nomor urut NIBAR terlalu lambat).')
     }
     // Ambil nomor TERBESAR secara ANGKA, bukan lewat urutan teks + slice(-7).
     // `aset` memuat NIBAR warisan e-BMD yang panjangnya beda (43 vs 45 digit);
@@ -82,7 +109,7 @@ export async function generateNibars(
     let seq = 0
     for (const r of (data || []) as { nibar: string | null }[]) {
       const n = r.nibar || ''
-      if (n.length !== prefix38.length + PANJANG_SEQ) continue
+      if (n.length !== prefix38.length + PANJANG_SEQ || !n.startsWith(prefix38)) continue
       const v = parseInt(n.slice(prefix38.length), 10)
       if (Number.isFinite(v) && v > seq) seq = v
     }
