@@ -9,7 +9,42 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { useState } from 'react'
-import NominalInput, { bersihkanAngka, formatRibuan } from './NominalInput'
+import NominalInput, { bacaTampilan, bersihkanAngka, formatRibuan } from './NominalInput'
+
+// 2026-09-14: desimal. Nilai perolehan warisan e-BMD berdesimal; versi bulat
+// menampilkan "104893870444.53" sbg 10.489.387.044.453 & mengirim angka 100×
+// lipat begitu satu digit diketik.
+describe('desimal (koma = pemisah desimal di tampilan, titik di raw)', () => {
+  it('formatRibuan membaca titik di raw sbg desimal', () => {
+    expect(formatRibuan('104893870444.53')).toBe('104.893.870.444,53')
+    expect(formatRibuan('1500.')).toBe('1.500,')
+    expect(formatRibuan('0.5')).toBe('0,5')
+  })
+  it('bacaTampilan: koma → titik, titik ribuan dibuang, maks 2 angka sen', () => {
+    expect(bacaTampilan('104.893.870.444,53')).toBe('104893870444.53')
+    expect(bacaTampilan('1.234,567')).toBe('1234.56')
+    expect(bacaTampilan('1.500.000')).toBe('1500000')
+    expect(bacaTampilan(',5')).toBe('0.5')
+  })
+  it('mengedit nilai berdesimal dari DB TIDAK melipatgandakannya 100×', () => {
+    function Harness() {
+      const [raw, setRaw] = useState('104893870444.53')
+      return (
+        <div>
+          <NominalInput value={raw} onChange={setRaw} placeholder="d" />
+          <span data-testid="rawd">{raw}</span>
+        </div>
+      )
+    }
+    render(<Harness />)
+    const input = screen.getByPlaceholderText('d') as HTMLInputElement
+    expect(input.value).toBe('104.893.870.444,53')
+    // hapus satu digit sen terakhir
+    fireEvent.change(input, { target: { value: '104.893.870.444,5' } })
+    expect(screen.getByTestId('rawd').textContent).toBe('104893870444.5')
+    expect(Number(screen.getByTestId('rawd').textContent)).toBeLessThan(2e11)
+  })
+})
 
 describe('bersihkanAngka', () => {
   it('membuang segala sesuatu selain digit', () => {

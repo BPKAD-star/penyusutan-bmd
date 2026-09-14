@@ -52,6 +52,11 @@ type Barang = {
 }
 // Edit spesifikasi yang disusun di popup, menunggu di-commit oleh Simpan.
 type SpekEdit = { fields: Record<string, string>; foto: { replace?: string[]; append?: string[] } }
+/** Rupiah → sen (bilangan bulat). Nilai perolehan di DB boleh berdesimal
+ *  (warisan e-BMD); menjumlah & membandingkannya dalam sen menghindari galat
+ *  float sekaligus TIDAK membuang sen seperti `Math.round` ke rupiah. */
+const keSen = (n: number) => Math.round((Number(n) || 0) * 100)
+
 // ── Pemecahan: baris pecahan (jumlah + nilai + spesifikasi per barang) ───────
 type BasisPecah = { nilai_buku: number; akumulasi: number; sisa_smt: number; masa_tahun: number | null; disusutkan: boolean }
 type PecahanItem = { key: string; jumlah: string; nilai: string; fields: Record<string, string>; foto: string[] }
@@ -967,7 +972,10 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   }, [gabungList, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const indukGabung = gabungList.find(k => k.id === indukGabungId) || null
-  const totalNPGabung = gabungList.reduce((s, k) => s + Math.round(k.nilai_perolehan), 0)
+  // Dalam SEN, bukan rupiah bulat — lihat catatan `alokasiPecah`. `Math.round`
+  // per anggota membuang sen tiap barang sumber, padahal barang itu duduk di
+  // Saldo Awal dgn nilai berdesimalnya; selisihnya jatuh ke Rekonsiliasi.
+  const totalNPGabung = gabungList.reduce((s, k) => s + keSen(k.nilai_perolehan), 0) / 100
   const totalAkumGabung = basisGabung ? gabungList.reduce((s, k) => s + (basisGabung[k.id] || 0), 0) : 0
   // Ketiga syarat sekaligus (keputusan user 2026-08-11). Nama, merek, satuan, &
   // spesifikasi BOLEH beda — justru itu yang selama ini menghalangi kasus pagar.
@@ -1081,26 +1089,32 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   function removePecah(key: string) { setPecahan(prev => prev.length <= 2 ? prev : prev.filter(p => p.key !== key)) }
 
   // Alokasi proporsional by nilai; sisa pembulatan (NB/akumulasi) diserap di pecahan TERAKHIR.
+  // ⚠️ SEMUA HITUNGAN DALAM SEN (bilangan bulat), bukan rupiah bulat (2026-09-14).
+  // Versi lama `Math.round` ke rupiah: induk 104.893.870.444,53 dianggap
+  // ...445, jadi Σ pecahan (…445) ≠ baris `pemecahan_keluar` induk (…444,53) —
+  // Rp0,47 "tercipta" di ledger & jatuh ke Selisih Rekonsiliasi selamanya.
+  // Sen dipakai (bukan float rupiah) supaya perbandingan balance EKSAK.
   const alokasiPecah = (() => {
     if (!indukPecah || !basisPecah) return [] as { np: number; nb: number; ak: number; beban: number; valid: boolean }[]
-    const totalNP = Math.round(indukPecah.nilai_perolehan)
+    const totalSen = keSen(indukPecah.nilai_perolehan)
+    const nbSen = keSen(basisPecah.nilai_buku), akSen = keSen(basisPecah.akumulasi)
     let accNB = 0, accAk = 0
     return pecahan.map((p, i) => {
       const jumlah = parseInt(p.jumlah, 10)
-      const np = Math.round(parseFloat(p.nilai))
-      const valid = Number.isFinite(jumlah) && jumlah >= 1 && Number.isFinite(np) && np > 0
-      const prop = totalNP > 0 && Number.isFinite(np) ? np / totalNP : 0
+      const npSen = keSen(parseFloat(p.nilai))
+      const valid = Number.isFinite(jumlah) && jumlah >= 1 && Number.isFinite(npSen) && npSen > 0
+      const prop = totalSen > 0 && Number.isFinite(npSen) ? npSen / totalSen : 0
       const last = i === pecahan.length - 1
-      const nb = last ? basisPecah.nilai_buku - accNB : Math.round(prop * basisPecah.nilai_buku)
-      const ak = last ? basisPecah.akumulasi - accAk : Math.round(prop * basisPecah.akumulasi)
+      const nb = last ? nbSen - accNB : Math.round(prop * nbSen)
+      const ak = last ? akSen - accAk : Math.round(prop * akSen)
       accNB += nb; accAk += ak
-      const beban = basisPecah.sisa_smt > 0 ? Math.round(nb / basisPecah.sisa_smt) : 0
-      return { np: Number.isFinite(np) ? np : 0, nb, ak, beban, valid }
+      const beban = basisPecah.sisa_smt > 0 ? Math.round(nb / 100 / basisPecah.sisa_smt) : 0
+      return { np: Number.isFinite(npSen) ? npSen / 100 : 0, nb: nb / 100, ak: ak / 100, beban, valid }
     })
   })()
-  const totalNPInduk = indukPecah ? Math.round(indukPecah.nilai_perolehan) : 0
-  const sumNPPecah = alokasiPecah.reduce((s, a) => s + a.np, 0)
-  const balancePecah = indukPecah != null && sumNPPecah === totalNPInduk
+  const totalNPInduk = indukPecah ? keSen(indukPecah.nilai_perolehan) / 100 : 0
+  const sumNPPecah = alokasiPecah.reduce((s, a) => s + keSen(a.np), 0) / 100
+  const balancePecah = indukPecah != null && keSen(sumNPPecah) === keSen(totalNPInduk)
   const semuaPecahValid = alokasiPecah.length >= 2 && alokasiPecah.every(a => a.valid)
 
   async function uploadDokumen(files: FileList | null) {
@@ -1381,7 +1395,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       if (!basis) { setErr('Basis akumulasi belum termuat.'); await delHeader(); setSaving(false); return }
 
       const sumber = gabungList.filter(k => k.id !== induk.id)
-      const nilaiLama = Math.round(induk.nilai_perolehan)
+      const nilaiLama = keSen(induk.nilai_perolehan) / 100
       const npBaru = totalNPGabung
       const akumLama = basis[induk.id] || 0
       const akBaru = totalAkumGabung
@@ -1415,7 +1429,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       // kalau induk di-rebasis lebih dulu lalu penulisan sumber gagal.
       for (const s of sumber) {
         const { error } = await catatTransaksi(supabase, {
-          asetId: s.id, jenis: 'penggabungan_keluar', tanggal: h.tanggal, nilai: Math.round(s.nilai_perolehan), headerId: h.id,
+          asetId: s.id, jenis: 'penggabungan_keluar', tanggal: h.tanggal, nilai: keSen(s.nilai_perolehan) / 100, headerId: h.id,
           payload: { induk_aset_id: induk.id, induk_nibar: induk.nibar, akumulasi_diserap: basis[s.id] || 0 },
           keterangan: `Digabung ke ${induk.nibar || induk.nama_barang || 'induk'} (${h.no_sk})`,
         })
@@ -1428,7 +1442,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         // induk sudah duduk di Saldo Awal, jadi nilai penuh akan menggelembungkan
         // baris Penambahan Rekonsiliasi tepat sebesar nilai induk sendiri.
         // Nilai penuhnya tetap terekam di payload (dipakai engine & register).
-        nilai: npBaru - nilaiLama, headerId: h.id,
+        nilai: (keSen(npBaru) - keSen(nilaiLama)) / 100, headerId: h.id,
         payload: {
           nilai_lama: nilaiLama, akumulasi_lama: akumLama,
           nilai_perolehan_baru: npBaru, akumulasi_baru: akBaru,
@@ -1968,7 +1982,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                     <tr>
                       <th className="table-th w-12 text-center">#</th>
                       <th className="table-th w-20 text-center">Jumlah</th>
-                      <th className="table-th text-right w-40">Nilai Perolehan</th>
+                      <th className="table-th text-right w-52">Nilai Perolehan</th>
                       <th className="table-th text-right">Nilai Buku</th>
                       <th className="table-th text-right">Akumulasi</th>
                       <th className="table-th text-right">Beban/Smt</th>
@@ -1989,7 +2003,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                           </td>
                           <td className="table-td text-right">
                             <NominalInput className="select-filter w-full text-right"
-                              value={p.nilai} placeholder="0" onChange={v => setPecah(p.key, { nilai: v })} />
+                              value={p.nilai} placeholder="0,00" onChange={v => setPecah(p.key, { nilai: v })} />
                           </td>
                           <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.nb) : '-'}</td>
                           <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.ak) : '-'}</td>
@@ -2018,7 +2032,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                 </table>
               </div>
               {!balancePecah && <p className="mt-2 text-xs text-red-600">Total nilai pecahan harus sama dengan nilai perolehan induk. Selisih {formatRupiah(sumNPPecah - totalNPInduk)}.</p>}
-              <p className="mt-2 text-xs text-gray-400">Klik nama di kolom Spesifikasi untuk isi/ubah spesifikasi tiap pecahan (format per golongan, sama seperti Cara Perolehan). Nilai awal diwarisi dari induk. NIBAR digenerate baru.</p>
+              <p className="mt-2 text-xs text-gray-400">Klik nama di kolom Spesifikasi untuk isi/ubah spesifikasi tiap pecahan (format per golongan, sama seperti Cara Perolehan). Nilai awal diwarisi dari induk. NIBAR digenerate baru. Sen ketik pakai <span className="font-medium">koma</span> (mis. 104.893.870.444,53) — total pecahan wajib sama PERSIS sampai sen.</p>
               {kodeLevel3(indukPecah.kode) === '1.3.1' && (
                 <p className="mt-1 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">
                   Tanah: sertifikat, jenis hak &amp; bidang TIDAK diisi di sini — tiap pecahan otomatis muncul di

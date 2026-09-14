@@ -24,9 +24,19 @@
 // (bukan `type="number"`) — HTML number input menolak mentah-mentah karakter
 // titik, jadi format tampilan seperti ini mustahil dengan `type="number"`.
 //
-// Bilangan BULAT saja (tanpa desimal) — seluruh field nominal di aplikasi ini
-// memang rupiah utuh, dan `type="number"` yang digantikan juga tak pernah
-// menampilkan koma desimal di layar manapun yang dipakai komponen ini.
+// ⚠️ DESIMAL (2 angka di belakang koma) DIDUKUNG sejak 2026-09-14. Versi awal
+// komponen ini "bulat saja", dan itu ternyata JEBAKAN, bukan penyederhanaan:
+// nilai perolehan di DB banyak yang berdesimal (warisan e-BMD, mis.
+// 104.893.870.444,53). Pemanggil yang mengisi awal `value` dari DB
+// (`String(b.nilai_perolehan)` → "104893870444.53") membuat versi lama
+// menampilkan 10.489.387.044.453 — dan begitu operator mengetik SATU digit,
+// `bersihkanAngka` membuang titik desimalnya lalu mengirim angka 100× LIPAT ke
+// state, tanpa satu pun error. Selain itu Pemecahan Barang mustahil menyamai
+// induk berdesimal, sehingga total pecahan selalu dibulatkan & selisih sen-nya
+// "tercipta" di ledger.
+// Tampilan: titik = ribuan, KOMA = desimal ("1.234.567,89"). Raw: titik =
+// desimal ("1234567.89") — tetap aman untuk `Number()`/`parseFloat`/`toNum`.
+// Karena kontraknya raw TANPA titik ribuan, titik di raw pasti desimal.
 // ============================================================================
 import { useLayoutEffect, useRef } from 'react'
 
@@ -36,11 +46,30 @@ export function bersihkanAngka(s: unknown): string {
   return digits.replace(/^0+(?=\d)/, '')
 }
 
-/** "1500000" → "1.500.000". Kosong tetap kosong (bukan "0"), supaya placeholder tampil. */
+/**
+ * Teks TAMPILAN ("1.234,5") → raw ("1234.5"). Koma pertama = pemisah desimal,
+ * maksimal 2 angka sesudahnya; titik dianggap pemisah ribuan & dibuang.
+ * Koma di akhir dipertahankan ("1234.") supaya operator bisa lanjut mengetik sen.
+ */
+export function bacaTampilan(s: unknown): string {
+  const str = String(s ?? '')
+  const iKoma = str.indexOf(',')
+  if (iKoma < 0) return bersihkanAngka(str)
+  const bulat = bersihkanAngka(str.slice(0, iKoma)) || '0'
+  const sen = str.slice(iKoma + 1).replace(/[^0-9]/g, '').slice(0, 2)
+  return `${bulat}.${sen}`
+}
+
+/** "1500000" → "1.500.000"; "1500000.5" → "1.500.000,5". Kosong tetap kosong (bukan "0"). */
 export function formatRibuan(raw: unknown): string {
-  const digits = bersihkanAngka(raw)
-  if (!digits) return ''
-  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const str = String(raw ?? '')
+  const iTitik = str.indexOf('.')
+  const bulatRaw = iTitik < 0 ? str : str.slice(0, iTitik)
+  const digits = bersihkanAngka(bulatRaw)
+  const bulat = digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  if (iTitik < 0) return bulat
+  const sen = str.slice(iTitik + 1).replace(/[^0-9]/g, '').slice(0, 2)
+  return `${bulat || '0'},${sen}`
 }
 
 interface NominalInputProps {
@@ -85,7 +114,7 @@ export default function NominalInput({
     <input
       ref={ref}
       type="text"
-      inputMode="numeric"
+      inputMode="decimal"
       autoComplete="off"
       id={id}
       disabled={disabled}
@@ -96,8 +125,10 @@ export default function NominalInput({
       onChange={e => {
         const el = e.target
         const cursorPos = el.selectionStart ?? el.value.length
-        digitsBeforeCursor.current = bersihkanAngka(el.value.slice(0, cursorPos)).length
-        onChange(bersihkanAngka(el.value))
+        // Koma di tampilan = titik di raw, jadi keduanya terhitung satu karakter
+        // di kedua sisi (pemulih kursor menghitung semua selain '.').
+        digitsBeforeCursor.current = bacaTampilan(el.value.slice(0, cursorPos)).length
+        onChange(bacaTampilan(el.value))
       }}
       onBlur={onBlur}
     />
