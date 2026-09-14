@@ -42,35 +42,18 @@ const ILUSTRASI_GOLONGAN: Record<string, string> = {
   '1.5.4': '/dashboard/aset-1-5-4.webp',
 }
 
-// Dua gumpal hijau bergradasi di sisi kanan kartu, meniru acuan desain user:
-// gumpal luar paling muda, gumpal dalam sedikit lebih tua, plus pendar putih
-// tipis di bawah objek. `xMaxYMid slice` — BUKAN `none`: versi pertama yang
-// `none` meregangkan lengkungnya jadi pita miring kaku di kartu yang lebar.
+// Latar dua lengkung S di sisi kanan kartu, meniru gambar acuan user
+// (2026-09-14): pita luar hijau sangat muda, bidang dalam hijau mint, keduanya
+// berpangkal di tepi atas lalu melebar ke bawah-kiri. Koordinatnya dipetakan
+// langsung dari acuan 1920×1080, jadi viewBox-nya pun sama.
+// `slice` — BUKAN `none`: `none` meregangkan lengkungnya jadi pita miring kaku.
 // Warna HEX utuh lewat atribut, bukan kelas Tailwind yang dirakit.
-// `id` gradien diberi awalan per golongan: satu halaman memuat delapan SVG ini,
-// dan `id` kembar membuat semuanya diam-diam memakai gradien milik yang pertama.
-function LatarIlustrasi({ id }: { id: string }) {
-  const k = `latar-${id.replace(/\./g, '-')}`
+function LatarIlustrasi() {
   return (
-    <svg aria-hidden="true" viewBox="0 0 240 120" preserveAspectRatio="xMaxYMid slice"
-      className="lg:max-xl:hidden absolute inset-y-0 right-0 w-[60%] h-full pointer-events-none">
-      <defs>
-        <linearGradient id={`${k}-a`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#F4FBF7" />
-          <stop offset="1" stopColor="#E4F4EA" />
-        </linearGradient>
-        <linearGradient id={`${k}-b`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#E2F3E8" />
-          <stop offset="1" stopColor="#CFEAD9" />
-        </linearGradient>
-        <radialGradient id={`${k}-c`}>
-          <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.75" />
-          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <path fill={`url(#${k}-a)`} d="M92,0 C74,18 52,30 50,62 C48,94 70,112 96,120 L240,120 L240,0 Z" />
-      <path fill={`url(#${k}-b)`} d="M150,0 C128,16 110,36 116,64 C122,94 150,110 184,116 C208,120 228,114 240,106 L240,0 Z" />
-      <ellipse cx="184" cy="96" rx="52" ry="16" fill={`url(#${k}-c)`} />
+    <svg aria-hidden="true" viewBox="0 0 1920 1080" preserveAspectRatio="xMaxYMid slice"
+      className="lg:max-xl:hidden absolute inset-0 w-full h-full pointer-events-none">
+      <path fill="#ECFBF1" d="M1470,0 C1400,210 1160,330 960,460 C790,570 700,760 700,1080 L1920,1080 L1920,0 Z" />
+      <path fill="#CDF1D9" d="M1480,0 C1420,230 1190,380 1070,520 C985,620 985,820 990,1080 L1920,1080 L1920,0 Z" />
     </svg>
   )
 }
@@ -360,49 +343,46 @@ async function SectionJenis() {
           {GOLONGAN_REKAP.map(g => {
             const d = gol[g.kode] || { count: 0, nilai: 0 }
             return (
-              <div key={g.kode} className="card p-3 relative overflow-hidden">
-                {/* Latar dua warna di belakang ilustrasi (permintaan user
-                    2026-09-14, menggantikan ikon di pojok kiri atas). SVG
-                    menempel ke tepi atas, kanan, & bawah kartu. Ikut
-                    disembunyikan di 1024–1279 px bersama gambarnya — latar
-                    tanpa objek di depannya cuma noda. */}
-                {ILUSTRASI_GOLONGAN[g.kode] && <LatarIlustrasi id={g.kode} />}
-                {/* Judul SATU BARIS selebar kartu, di luar kolom angka: waktu
-                    ia di dalam kolom, JIJ/KDP/ATB turun ke baris kedua & nilai
-                    perolehan terdorong jauh dari judulnya (keluhan user
-                    2026-09-14). `z-10` supaya tetap terbaca kalau di kartu
-                    sempit ekornya bersinggungan dgn gambar. */}
-                <p className="relative z-10 text-xs text-gray-700 leading-tight whitespace-nowrap truncate" title={`${g.kode} · ${g.uraian}`}>
-                  <span className="text-gray-400">{g.kode}</span> · {g.uraian}
-                </p>
-                {/* Teks kiri tak boleh menyusut (angka rupiah tak boleh
-                    terpotong/membungkus); gambar kanan yang MENGALAH — di kartu
-                    sempit ia mengecil sendiri (`min-w-0` + object-contain),
-                    jadi tak pernah menimpa angka di lebar layar mana pun.
-                    Di 1024–1279 px (4 kolom + sidebar) ruangnya tinggal ±30 px,
-                    jadi gambarnya disembunyikan (`lg:max-xl:hidden`) daripada
-                    tampil sebesar perangko. Diukur di peramban, bukan dikira. */}
-                <div className="relative flex items-start justify-between gap-2">
-                  {/* Urutan (permintaan user 2026-09-14): jenis aset → nilai
-                      perolehan (dibesarkan, rapat ke judul) → jumlah unit. */}
-                  <div className="flex-shrink-0">
+              // Tinggi 164 px (dulu ±111): di 1920×1080 zoom 90% halaman
+              // menyisakan ruang kosong di bawah, jadi kartu jenis aset yang
+              // dibesarkan (permintaan user 2026-09-14).
+              <div key={g.kode} className="card relative overflow-hidden min-h-[164px] flex gap-2 px-4 py-4">
+                {/* Latar dua lengkung, menggantikan ikon di pojok kiri atas.
+                    Ikut disembunyikan di 1024–1279 px bersama gambarnya —
+                    latar tanpa objek di depannya cuma noda. */}
+                {ILUSTRASI_GOLONGAN[g.kode] && <LatarIlustrasi />}
+                {/* Kolom kiri: jenis aset + nilai perolehan RATA KIRI ATAS,
+                    jumlah unit RATA KIRI BAWAH (`justify-between`). Kolom ini
+                    tak boleh menyusut (angka rupiah tak boleh terpotong); kolom
+                    gambar yang MENGALAH. */}
+                <div className="relative z-10 flex-shrink-0 flex flex-col justify-between">
+                  <div>
+                    {/* `w-0 min-w-full` + nowrap: judul tetap SATU BARIS tapi
+                        TIDAK ikut menentukan lebar kolom — kalau ikut, judul
+                        panjang (KDP) melebarkan kolom & gambarnya menciut.
+                        Ekornya boleh melewati kolom (z-10 di atas gambar). */}
+                    <p className="w-0 min-w-full whitespace-nowrap text-xs min-[1800px]:text-[13px] text-gray-700 leading-tight" title={`${g.kode} · ${g.uraian}`}>
+                      <span className="text-gray-400">{g.kode}</span> · {g.uraian}
+                    </p>
                     {/* Gagal → `–`, BUKAN `0`. Angka nol di kartu ini tak bisa
                         dibedakan dari golongan yang memang belum ada isinya.
-                        `text-base` baru di ≥1536 px: di bawahnya angka 20 digit
-                        itu menjepit gambar sampai tinggal ±45 px. */}
-                    <p className="text-sm 2xl:text-base font-bold text-teal mt-1 whitespace-nowrap">{scan.err ? <span className="text-gray-300">–</span> : formatRp(d.nilai)}</p>
-                    <p className="text-xl font-bold text-gray-900 mt-2 whitespace-nowrap">
-                      {scan.err ? <span className="text-gray-300">–</span>
-                                : <>{nf(d.count)} <span className="text-xs font-normal text-gray-500">unit</span></>}
-                    </p>
+                        Ukurannya naik bertahap: di layar sempit angka 20 digit
+                        itu yang menjepit gambar. */}
+                    <p className="text-sm 2xl:text-base min-[1800px]:text-lg font-bold text-teal mt-1 whitespace-nowrap">{scan.err ? <span className="text-gray-300">–</span> : formatRp(d.nilai)}</p>
                   </div>
-                  {ILUSTRASI_GOLONGAN[g.kode] && (
-                    // eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer
-                    <img src={ILUSTRASI_GOLONGAN[g.kode]} alt="" aria-hidden="true"
-                      width={120} height={90} decoding="async" draggable={false}
-                      className="lg:max-xl:hidden min-w-0 w-[120px] h-[90px] -mt-4 -mb-1 object-contain object-right-bottom select-none drop-shadow-[0_3px_4px_rgba(15,23,42,0.18)]" />
-                  )}
+                  <p className="text-xl min-[1800px]:text-2xl font-bold text-gray-900 whitespace-nowrap leading-none">
+                    {scan.err ? <span className="text-gray-300">–</span>
+                              : <>{nf(d.count)} <span className="text-xs font-normal text-gray-500">unit</span></>}
+                  </p>
                 </div>
+                {ILUSTRASI_GOLONGAN[g.kode] && (
+                  <div className="lg:max-xl:hidden relative flex-1 min-w-0 flex items-center justify-end">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer */}
+                    <img src={ILUSTRASI_GOLONGAN[g.kode]} alt="" aria-hidden="true"
+                      width={160} height={120} decoding="async" draggable={false}
+                      className="w-full max-w-[160px] h-auto max-h-[124px] object-contain object-right select-none drop-shadow-[0_4px_6px_rgba(15,23,42,0.18)]" />
+                  </div>
+                )}
               </div>
             )
           })}
@@ -466,7 +446,10 @@ async function SectionPenghapusan() {
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="mb-5">
+    // `last:mb-0`: margin seksi TERAKHIR (Penghapusan) + padding halaman
+    // membuat Dashboard lebih tinggi ±10 px dari layar 1920×1080 zoom 90%,
+    // jadi muncul scrollbar untuk ruang kosong (keluhan user 2026-09-14).
+    <div className="mb-5 last:mb-0">
       <div className="mb-2">
         <h2 className="text-base font-semibold text-gray-800">{title}</h2>
         {sub && <p className="text-xs text-gray-400">{sub}</p>}
