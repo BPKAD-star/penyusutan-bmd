@@ -35,7 +35,10 @@ export default function TopBar({ userName, userJk, onToggleSidebar }: {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-kab-kediri.png" alt="Logo Kabupaten Kediri" className="w-8 h-8 object-contain flex-shrink-0" />
         <div className="flex items-center gap-2">
-          <span className="font-bold text-gray-800 text-lg leading-none">ASSET Management</span>
+          <span className="font-bold text-lg leading-none">
+            <span style={{ color: '#264c7d' }}>E-Simbada</span>{' '}
+            <span style={{ color: '#f44141' }}>V.2</span>
+          </span>
           <span className="text-[10px] font-semibold bg-amber-400 text-white px-1.5 py-0.5 rounded">Kabupaten Kediri</span>
         </div>
       </div>
