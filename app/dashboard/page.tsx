@@ -22,31 +22,6 @@ function formatRp(val: number) {
 }
 const nf = (n: number) => n.toLocaleString('id-ID')
 
-// ── Ikon per golongan (kartu "Total Aset per Jenis") ────────────────────────
-// Outline 24×24 stroke-currentColor, satu gaya dgn ikon sidebar. Ukurannya
-// sengaja dipatok: badge 36px (w-9) berisi ikon 20px (w-5) — ikon mengisi ~55%
-// kotaknya, jadi tidak tenggelam maupun sesak. Kalau menambah golongan baru,
-// tambahkan ikonnya di sini; yang tak terdaftar jatuh ke ikon kotak arsip.
-const IKON_GOLONGAN: Record<string, React.ReactNode> = {
-  // Tanah — pin peta
-  '1.3.1': <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></>,
-  // Peralatan & Mesin — perangkat/komputer
-  '1.3.2': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25A2.25 2.25 0 015.25 3h13.5A2.25 2.25 0 0121 5.25z" />,
-  // Gedung & Bangunan — gedung kantor
-  '1.3.3': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />,
-  // Jalan, Jaringan & Irigasi — badan jalan bermarka
-  '1.3.4': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M4.5 21L8.25 3M19.5 21L15.75 3M12 4.5v3m0 3.75v3m0 3.75v3" />,
-  // Aset Tetap Lainnya — buku (koleksi perpustakaan, tanaman, hewan)
-  '1.3.5': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />,
-  // Konstruksi Dalam Pengerjaan — crane menara
-  '1.3.6': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M4.5 21h6M7.5 21V4.5m-4 2.25h16.5M7.5 10.5l3.75-3.75M15.75 6.75v4.5m-1.875 0h3.75" />,
-  // Aset Tidak Berwujud — kurung kode (perangkat lunak, lisensi)
-  '1.5.3': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M17.25 6.75L22.5 12l-5.25 5.25M6.75 17.25L1.5 12l5.25-5.25M14.25 3.75l-4.5 16.5" />,
-  // Aset Lain-Lain — kotak arsip barang rusak/tak terpakai
-  '1.5.4': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M9.75 11.25l4.5 4.5m0-4.5l-4.5 4.5M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />,
-}
-const IKON_LAIN = IKON_GOLONGAN['1.5.4']
-
 // ── Ilustrasi per golongan (sisi kanan kartu "Total Aset per Jenis") ────────
 // Berkasnya di public/dashboard/, sudah DIOLAH dari PNG 1920×1080 aslinya
 // (±500 KB/gambar): latar putih dibuang jadi transparan, dipotong ke objeknya,
@@ -65,6 +40,19 @@ const ILUSTRASI_GOLONGAN: Record<string, string> = {
   '1.3.6': '/dashboard/aset-1-3-6.webp',
   '1.5.3': '/dashboard/aset-1-5-3.webp',
   '1.5.4': '/dashboard/aset-1-5-4.webp',
+}
+
+// Dua gumpal hijau lembut di sisi kanan kartu, meniru acuan desain user: gumpal
+// luar paling muda, gumpal dalam sedikit lebih tua. Warnanya ditulis sbg HEX
+// utuh (bukan kelas Tailwind yang dirakit) — dipakai lewat atribut `fill`.
+function LatarIlustrasi() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none"
+      className="lg:max-xl:hidden absolute inset-y-0 right-0 w-[52%] h-full pointer-events-none">
+      <path fill="#EEF9F1" d="M46,0 C34,22 12,38 9,62 C6,84 18,96 26,100 L100,100 L100,0 Z" />
+      <path fill="#DDEFE3" d="M68,0 C56,20 36,36 38,58 C40,80 64,87 100,89 L100,0 Z" />
+    </svg>
+  )
 }
 
 type SB = ReturnType<typeof createClient>
@@ -352,15 +340,14 @@ async function SectionJenis() {
           {GOLONGAN_REKAP.map(g => {
             const d = gol[g.kode] || { count: 0, nilai: 0 }
             return (
-              <div key={g.kode} className="card p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-teal/10 text-teal flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                      {IKON_GOLONGAN[g.kode] ?? IKON_LAIN}
-                    </svg>
-                  </span>
-                  <p className="text-[11px] text-gray-400">{g.kode}</p>
-                </div>
+              <div key={g.kode} className="card p-3 relative overflow-hidden">
+                {/* Latar dua warna di belakang ilustrasi (permintaan user
+                    2026-09-14, menggantikan ikon di pojok kiri atas). SVG
+                    ber-`preserveAspectRatio="none"` supaya ia selalu menempel
+                    ke tepi atas, kanan, & bawah kartu berapa pun lebarnya.
+                    Ikut disembunyikan di 1024–1279 px bersama gambarnya —
+                    latar tanpa objek di depannya cuma noda. */}
+                {ILUSTRASI_GOLONGAN[g.kode] && <LatarIlustrasi />}
                 {/* Teks kiri tak boleh menyusut (angka rupiah tak boleh
                     terpotong/membungkus); gambar kanan yang MENGALAH — di kartu
                     sempit ia mengecil sendiri (`min-w-0` + object-contain),
@@ -368,16 +355,26 @@ async function SectionJenis() {
                     Di 1024–1279 px (4 kolom + sidebar) ruangnya tinggal ±30 px,
                     jadi gambarnya disembunyikan (`lg:max-xl:hidden`) daripada
                     tampil sebesar perangko. Diukur di peramban, bukan dikira. */}
-                <div className="flex items-end justify-between gap-2">
+                <div className="relative flex items-end justify-between gap-2">
+                  {/* Urutan (permintaan user 2026-09-14): jenis aset → nilai
+                      perolehan (dibesarkan) → jumlah unit. */}
                   <div className="flex-shrink-0">
-                    <p className="text-xs text-gray-600 leading-tight mt-1.5 h-7">{g.uraian}</p>
-                    {/* Gagal → `–`, BUKAN `0 unit · 0`. Angka nol di kartu ini tak
-                        bisa dibedakan dari golongan yang memang belum ada isinya. */}
-                    <p className="text-xl font-bold text-gray-900 mt-1 whitespace-nowrap">
-                      {scan.err ? <span className="text-gray-300">–</span>
-                                : <>{nf(d.count)} <span className="text-xs font-normal text-gray-400">unit</span></>}
+                    {/* `w-0 min-w-full`: judul MENGIKUTI lebar kolom angka, tak
+                        ikut menentukannya. Tanpa itu "Konstruksi Dalam
+                        Pengerjaan" melebarkan kolom & gambar di layar 1280 px
+                        menciut jadi 19 px (diukur di peramban). */}
+                    <p className="w-0 min-w-full text-xs text-gray-700 leading-tight h-8">
+                      <span className="text-gray-400">{g.kode}</span> · {g.uraian}
                     </p>
-                    <p className="text-xs font-medium text-teal mt-1 whitespace-nowrap">{scan.err ? <span className="text-gray-300">–</span> : formatRp(d.nilai)}</p>
+                    {/* Gagal → `–`, BUKAN `0`. Angka nol di kartu ini tak bisa
+                        dibedakan dari golongan yang memang belum ada isinya.
+                        `text-base` baru di ≥1536 px: di bawahnya angka 20 digit
+                        itu menjepit gambar sampai tinggal ±45 px. */}
+                    <p className="text-sm 2xl:text-base font-bold text-teal mt-1 whitespace-nowrap">{scan.err ? <span className="text-gray-300">–</span> : formatRp(d.nilai)}</p>
+                    <p className="text-xl font-bold text-gray-900 mt-2 whitespace-nowrap">
+                      {scan.err ? <span className="text-gray-300">–</span>
+                                : <>{nf(d.count)} <span className="text-xs font-normal text-gray-500">unit</span></>}
+                    </p>
                   </div>
                   {ILUSTRASI_GOLONGAN[g.kode] && (
                     // eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer
