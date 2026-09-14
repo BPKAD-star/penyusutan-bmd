@@ -30,6 +30,7 @@ import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset,
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { tahunAwal } from '@/lib/tahunKerja'
+import { orCari } from '@/lib/cariBarang'
 
 // Baris per halaman. Sejak paginasi pindah ke server (migrasi 20260814_05..08)
 // angka ini menentukan `p_limit` RPC, bukan besar potongan array di memori —
@@ -365,7 +366,9 @@ export default function DaftarBarangPage() {
     // memakai `a.golongan = p_golongan`.
     if (f.golongan) b = b.eq('golongan', f.golongan)
     if (f.komptabel) b = b.eq('intra_ekstra', f.komptabel)
-    if (f.search) b = b.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
+    // Kolom kembar dgn `fn_aset_teks_cari` di RPC — lib/cariBarang.ts.
+    const cari = orCari(f.search)
+    if (cari) b = b.or(cari)
     return b
   }, [])
 
@@ -394,7 +397,8 @@ export default function DaftarBarangPage() {
       let q = supabase.from('aset').select(SELECT_COLS).in('id', ids.slice(i, i + 200))
       if (f.golongan) q = q.like('kode', `${f.golongan}.%`)
       if (f.komptabel) q = q.eq('intra_ekstra', f.komptabel)
-      if (f.search) q = q.or(`nama_barang.ilike.%${f.search}%,nibar.ilike.%${f.search}%,kode.ilike.${f.search}%`)
+      const cari = orCari(f.search)
+      if (cari) q = q.or(cari)
       const { data, error } = await q
       if (error) throw new Error(`gagal membaca barang yang sudah pindah SKPD: ${error.message}`)
       out.push(...((data as unknown as Row[]) || []))
@@ -595,7 +599,7 @@ export default function DaftarBarangPage() {
       setErr('Pilih SKPD dulu, atau pilih jenis aset kalau ingin melihat se-kabupaten. Menampilkan semua jenis aset untuk semua SKPD sekaligus tidak didukung.')
       return
     }
-    const f: Applied = { descIds: fSel.descIds, skpdId: fSel.skpdId, golongan: fGolongan, komptabel: fKomptabel, search: fSearch, periode: `${fTahun}-S${fSmt}` }
+    const f: Applied = { descIds: fSel.descIds, skpdId: fSel.skpdId, golongan: fGolongan, komptabel: fKomptabel, search: fSearch.trim(), periode: `${fTahun}-S${fSmt}` }
     setApplied(f); setPage(0); setGrandTotal(0)
     setLoading(true); setErr('')
 
@@ -937,7 +941,7 @@ export default function DaftarBarangPage() {
       {/* Filter data */}
       <div className="card p-5 mb-4">
         <h2 className="text-base font-semibold text-gray-800 mb-4">Filter data</h2>
-        <div className="space-y-3 max-w-3xl">
+        <div className="space-y-3 max-w-5xl">
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
             <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Lokasi / SKPD :</label>
             <SkpdCombobox lockToOperator onChangeSelection={sel => setFSel({ skpdId: sel.skpdId, descIds: sel.descendantIds })} allowClear
@@ -979,10 +983,18 @@ export default function DaftarBarangPage() {
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
             <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Cari :</label>
-            <input className="select-filter w-full sm:flex-1 min-w-0" placeholder="Nama barang / NIBAR / kode..."
+            <input className="select-filter w-full sm:flex-1 min-w-0"
+              placeholder="Nama barang / kode barang / NIBAR / kode register / merek / no. polisi / no. rangka / no. mesin / alamat / kode wilayah / keterangan..."
               value={fSearch} onChange={e => setFSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleTampilkan() }} />
           </div>
+          {fSearch.trim().length > 0 && fSearch.trim().length < 3 && (
+            <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-3">
+              <span className="hidden sm:block sm:w-40 flex-shrink-0" />
+              {/* Index trigram (20260914_01) cuma menolong kata kunci ≥ 3 huruf. */}
+              <span className="text-xs text-amber-700">Kata kunci kurang dari 3 karakter — pencarian tetap jalan, tapi jauh lebih lambat.</span>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <span className="hidden sm:block sm:w-40 flex-shrink-0" />
             <button className="btn-primary" onClick={handleTampilkan} disabled={loading || !fGolongan}>
