@@ -221,7 +221,9 @@ function CaraCard({ cara, disetujui, belum, nilai, gagalDisetujui, onClickApprov
   //     tapi terbaca persis seperti kabar baik.
   const pct = gagalDisetujui || total === 0 ? null : Math.round((disetujui / total) * 100)
   return (
-    <div className="card p-3">
+    // Aksen hijau tipis (permintaan user 2026-09-14) — sewarna keluarga
+    // perolehan, sengaja hampir putih supaya donut & angka tetap menonjol.
+    <div className="card p-3 bg-[#f4fff7]">
       {/* Ilustrasi kanan HANYA di ≥1536 px (`2xl`): di bawah itu kartu 5 kolom
           sudah sempit dan teks "1.244 disetujui" terlipat. Di lebar itu kolom
           teks dikunci `2xl:shrink-0` — yang mengalah gambarnya (`min-w-0`),

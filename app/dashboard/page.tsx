@@ -446,7 +446,10 @@ async function SectionPenghapusan() {
 
 function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="mb-5">
+    // `last:mb-0`: margin seksi TERAKHIR (Penghapusan) + padding halaman
+    // membuat Dashboard lebih tinggi ±10 px dari layar 1920×1080 zoom 90%,
+    // jadi muncul scrollbar untuk ruang kosong (keluhan user 2026-09-14).
+    <div className="mb-5 last:mb-0">
       <div className="mb-2">
         <h2 className="text-base font-semibold text-gray-800">{title}</h2>
         {sub && <p className="text-xs text-gray-400">{sub}</p>}

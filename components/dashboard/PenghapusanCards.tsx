@@ -35,20 +35,22 @@ export default function PenghapusanCards({ data }: { data: PenghapusanData }) {
         {kartu.map(k => (
           <button key={k.key} type="button" disabled={k.n === 0}
             onClick={() => setDetail({ label: k.label, jenis: k.jenis, subJenis: k.subJenis })}
-            className="card p-3 text-left hover:border-teal transition-colors disabled:cursor-default disabled:hover:border-gray-100">
-            {/* Ilustrasi kanan HANYA di ≥1536 px (`2xl`), pola yang sama dgn
+            className="card bg-[#fff5f5] min-h-[120px] flex px-4 py-3.5 text-left hover:border-teal transition-colors disabled:cursor-default disabled:hover:border-gray-100">
+            {/* Susunan kembar dgn kartu jenis aset (permintaan user
+                2026-09-14): label + nilai RATA KIRI ATAS, jumlah barang RATA
+                KIRI BAWAH. Latar merah tipis = keluarga penghapusan.
+                Ilustrasi kanan HANYA di ≥1536 px (`2xl`), pola yang sama dgn
                 kartu Cara Perolehan: di lebar itu kolom teks dikunci
-                `2xl:shrink-0` & gambarnya yang mengecil (`min-w-0`, terkecil
-                ±73 px), jadi label/angka/rupiah tak pernah terlipat atau
-                tertimpa. Di bawah 2xl gambar tak dirender & kolom teks kembali
-                `min-w-0` — tata letaknya persis seperti sebelum ada gambar.
-                Diukur di peramban pada 12 lebar layar dgn rupiah terpanjang. */}
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="flex-auto min-w-0 2xl:shrink-0">
-                <p className="text-xs text-gray-600 leading-tight h-7 2xl:whitespace-nowrap">{k.label}</p>
-                <p className="text-xl font-bold text-gray-900 mt-1">{k.n.toLocaleString('id-ID')}</p>
-                <p className="text-xs font-medium text-rose-600 mt-1">{formatRupiah(k.nilai)}</p>
-                {k.note && <p className="text-[11px] text-gray-400 mt-1 leading-tight">{k.note}</p>}
+                `2xl:shrink-0` & gambarnya yang mengecil (`min-w-0`), jadi
+                label/angka/rupiah tak pernah terlipat atau tertimpa. */}
+            <div className="flex-1 flex items-center gap-2 min-w-0">
+              <div className="self-stretch flex-auto min-w-0 2xl:shrink-0 flex flex-col justify-between">
+                <div>
+                  <p className="text-xs text-gray-700 leading-tight 2xl:whitespace-nowrap">{k.label}</p>
+                  <p className="text-sm 2xl:text-base font-bold text-rose-600 mt-1">{formatRupiah(k.nilai)}</p>
+                  {k.note && <p className="text-[11px] text-gray-400 leading-tight">{k.note}</p>}
+                </div>
+                <p className="text-xl font-bold text-gray-900 leading-none mt-2">{k.n.toLocaleString('id-ID')}</p>
               </div>
               {/* eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer */}
               <img src={k.ilustrasi} alt="" aria-hidden="true" width={110} height={84} decoding="async" draggable={false}
