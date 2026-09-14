@@ -42,15 +42,35 @@ const ILUSTRASI_GOLONGAN: Record<string, string> = {
   '1.5.4': '/dashboard/aset-1-5-4.webp',
 }
 
-// Dua gumpal hijau lembut di sisi kanan kartu, meniru acuan desain user: gumpal
-// luar paling muda, gumpal dalam sedikit lebih tua. Warnanya ditulis sbg HEX
-// utuh (bukan kelas Tailwind yang dirakit) — dipakai lewat atribut `fill`.
-function LatarIlustrasi() {
+// Dua gumpal hijau bergradasi di sisi kanan kartu, meniru acuan desain user:
+// gumpal luar paling muda, gumpal dalam sedikit lebih tua, plus pendar putih
+// tipis di bawah objek. `xMaxYMid slice` — BUKAN `none`: versi pertama yang
+// `none` meregangkan lengkungnya jadi pita miring kaku di kartu yang lebar.
+// Warna HEX utuh lewat atribut, bukan kelas Tailwind yang dirakit.
+// `id` gradien diberi awalan per golongan: satu halaman memuat delapan SVG ini,
+// dan `id` kembar membuat semuanya diam-diam memakai gradien milik yang pertama.
+function LatarIlustrasi({ id }: { id: string }) {
+  const k = `latar-${id.replace(/\./g, '-')}`
   return (
-    <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none"
-      className="lg:max-xl:hidden absolute inset-y-0 right-0 w-[52%] h-full pointer-events-none">
-      <path fill="#EEF9F1" d="M46,0 C34,22 12,38 9,62 C6,84 18,96 26,100 L100,100 L100,0 Z" />
-      <path fill="#DDEFE3" d="M68,0 C56,20 36,36 38,58 C40,80 64,87 100,89 L100,0 Z" />
+    <svg aria-hidden="true" viewBox="0 0 240 120" preserveAspectRatio="xMaxYMid slice"
+      className="lg:max-xl:hidden absolute inset-y-0 right-0 w-[60%] h-full pointer-events-none">
+      <defs>
+        <linearGradient id={`${k}-a`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#F4FBF7" />
+          <stop offset="1" stopColor="#E4F4EA" />
+        </linearGradient>
+        <linearGradient id={`${k}-b`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#E2F3E8" />
+          <stop offset="1" stopColor="#CFEAD9" />
+        </linearGradient>
+        <radialGradient id={`${k}-c`}>
+          <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.75" />
+          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <path fill={`url(#${k}-a)`} d="M92,0 C74,18 52,30 50,62 C48,94 70,112 96,120 L240,120 L240,0 Z" />
+      <path fill={`url(#${k}-b)`} d="M150,0 C128,16 110,36 116,64 C122,94 150,110 184,116 C208,120 228,114 240,106 L240,0 Z" />
+      <ellipse cx="184" cy="96" rx="52" ry="16" fill={`url(#${k}-c)`} />
     </svg>
   )
 }
@@ -343,11 +363,18 @@ async function SectionJenis() {
               <div key={g.kode} className="card p-3 relative overflow-hidden">
                 {/* Latar dua warna di belakang ilustrasi (permintaan user
                     2026-09-14, menggantikan ikon di pojok kiri atas). SVG
-                    ber-`preserveAspectRatio="none"` supaya ia selalu menempel
-                    ke tepi atas, kanan, & bawah kartu berapa pun lebarnya.
-                    Ikut disembunyikan di 1024–1279 px bersama gambarnya —
-                    latar tanpa objek di depannya cuma noda. */}
-                {ILUSTRASI_GOLONGAN[g.kode] && <LatarIlustrasi />}
+                    menempel ke tepi atas, kanan, & bawah kartu. Ikut
+                    disembunyikan di 1024–1279 px bersama gambarnya — latar
+                    tanpa objek di depannya cuma noda. */}
+                {ILUSTRASI_GOLONGAN[g.kode] && <LatarIlustrasi id={g.kode} />}
+                {/* Judul SATU BARIS selebar kartu, di luar kolom angka: waktu
+                    ia di dalam kolom, JIJ/KDP/ATB turun ke baris kedua & nilai
+                    perolehan terdorong jauh dari judulnya (keluhan user
+                    2026-09-14). `z-10` supaya tetap terbaca kalau di kartu
+                    sempit ekornya bersinggungan dgn gambar. */}
+                <p className="relative z-10 text-xs text-gray-700 leading-tight whitespace-nowrap truncate" title={`${g.kode} · ${g.uraian}`}>
+                  <span className="text-gray-400">{g.kode}</span> · {g.uraian}
+                </p>
                 {/* Teks kiri tak boleh menyusut (angka rupiah tak boleh
                     terpotong/membungkus); gambar kanan yang MENGALAH — di kartu
                     sempit ia mengecil sendiri (`min-w-0` + object-contain),
@@ -355,17 +382,10 @@ async function SectionJenis() {
                     Di 1024–1279 px (4 kolom + sidebar) ruangnya tinggal ±30 px,
                     jadi gambarnya disembunyikan (`lg:max-xl:hidden`) daripada
                     tampil sebesar perangko. Diukur di peramban, bukan dikira. */}
-                <div className="relative flex items-end justify-between gap-2">
+                <div className="relative flex items-start justify-between gap-2">
                   {/* Urutan (permintaan user 2026-09-14): jenis aset → nilai
-                      perolehan (dibesarkan) → jumlah unit. */}
+                      perolehan (dibesarkan, rapat ke judul) → jumlah unit. */}
                   <div className="flex-shrink-0">
-                    {/* `w-0 min-w-full`: judul MENGIKUTI lebar kolom angka, tak
-                        ikut menentukannya. Tanpa itu "Konstruksi Dalam
-                        Pengerjaan" melebarkan kolom & gambar di layar 1280 px
-                        menciut jadi 19 px (diukur di peramban). */}
-                    <p className="w-0 min-w-full text-xs text-gray-700 leading-tight h-8">
-                      <span className="text-gray-400">{g.kode}</span> · {g.uraian}
-                    </p>
                     {/* Gagal → `–`, BUKAN `0`. Angka nol di kartu ini tak bisa
                         dibedakan dari golongan yang memang belum ada isinya.
                         `text-base` baru di ≥1536 px: di bawahnya angka 20 digit
@@ -380,7 +400,7 @@ async function SectionJenis() {
                     // eslint-disable-next-line @next/next/no-img-element -- berkas statis yang SUDAH dioptimasi; next/image cuma menambah panggilan optimizer
                     <img src={ILUSTRASI_GOLONGAN[g.kode]} alt="" aria-hidden="true"
                       width={120} height={90} decoding="async" draggable={false}
-                      className="lg:max-xl:hidden min-w-0 w-[120px] h-[90px] -mb-1 object-contain object-right-bottom select-none drop-shadow-[0_3px_4px_rgba(15,23,42,0.18)]" />
+                      className="lg:max-xl:hidden min-w-0 w-[120px] h-[90px] -mt-4 -mb-1 object-contain object-right-bottom select-none drop-shadow-[0_3px_4px_rgba(15,23,42,0.18)]" />
                   )}
                 </div>
               </div>
