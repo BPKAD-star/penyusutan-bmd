@@ -6,7 +6,9 @@
 //     DEFERRED / Pencatatan Ganda) → pilih barang.
 //   - "Koreksi Spesifikasi" (alur lama, standalone single-item): DI LUAR
 //     "3 sebab" yang diminta user, sengaja TIDAK ikut pola ber-SK.
-import { alokasiPemecahan, balancePemecahan, keSen, semuaPecahanValid } from '@/lib/pemecahanNilai'
+import { keSen } from '@/lib/pemecahanNilai'
+import { usePemecahan, newKey, TANAH_DOK_FIELDS } from './koreksi/usePemecahan'
+import type { Barang, PecahanItem } from './koreksi/tipe'
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
@@ -45,25 +47,11 @@ const ALASAN_OPT: { value: Alasan; label: string; deskripsi: string; disabled?: 
 const ALASAN_LABEL = Object.fromEntries(ALASAN_OPT.map(a => [a.value, a.label])) as Record<Alasan, string>
 const tahunDari = (tgl: string | null) => tgl ? tgl.slice(0, 4) : '-'
 
-type Barang = {
-  id: string; nibar: string | null; kode: string; nama_barang: string | null
-  merek_tipe: string | null; jumlah: number; satuan: string | null; nilai_perolehan: number; skpd_id: number | null
-  tgl_perolehan: string | null; cara_perolehan: string | null; foto_paths: string[] | null
-  intra_ekstra: string | null
-}
 // Edit spesifikasi yang disusun di popup, menunggu di-commit oleh Simpan.
 type SpekEdit = { fields: Record<string, string>; foto: { replace?: string[]; append?: string[] } }
 // `keSen` & seluruh aritmetika pemecahan → lib/pemecahanNilai.ts (diangkat
 // 2026-09-15); alasan "sen, bukan rupiah" ada di kepala berkas itu.
 
-// ── Pemecahan: baris pecahan (jumlah + nilai + spesifikasi per barang) ───────
-type BasisPecah = { nilai_buku: number; akumulasi: number; sisa_smt: number; masa_tahun: number | null; disusutkan: boolean }
-type PecahanItem = { key: string; jumlah: string; nilai: string; fields: Record<string, string>; foto: string[] }
-const newKey = () => Math.random().toString(36).slice(2)
-// Tanah: dokumen kepemilikan/sertifikat & jenis hak per-BIDANG → diisi di GIS BMD
-// (Kelola Bidang) setelah pemecahan, BUKAN di form ini (satu sumber). Field ini
-// disembunyikan dari modal spesifikasi pecahan tanah & tidak diwarisi dari induk.
-const TANAH_DOK_FIELDS: FieldKey[] = ['jenis_hak', 'nomor_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan']
 function pieceFieldKeys(kode: string): FieldKey[] {
   const base = fieldsForKode(kode)
   return kodeLevel3(kode) === '1.3.1' ? base.filter(k => !TANAH_DOK_FIELDS.includes(k)) : base
@@ -903,35 +891,17 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   const [gabungSpekFoto, setGabungSpekFoto] = useState<string[]>([])
   const [gabungSpekOpen, setGabungSpekOpen] = useState(false)
 
-  // ── Pemecahan: 1 induk → N pecahan (jumlah + nilai + spesifikasi per barang) ──
-  const [indukPecah, setIndukPecah] = useState<Barang | null>(null)
-  const [basisPecah, setBasisPecah] = useState<BasisPecah | null>(null)
-  const [basisPecahErr, setBasisPecahErr] = useState('')
-  const [basisPecahLoading, setBasisPecahLoading] = useState(false)
-  const [indukFields, setIndukFields] = useState<Record<string, string>>({})
-  const [pecahan, setPecahan] = useState<PecahanItem[]>([])
-  const [editPecahIdx, setEditPecahIdx] = useState<number | null>(null)
-
-  // Basis alokasi induk = state engine di semester SEBELUM cutover (dari tgl dok).
-  useEffect(() => {
-    if (!indukPecah) { setBasisPecah(null); setBasisPecahErr(''); return }
-    ;(async () => {
-      setBasisPecahLoading(true); setBasisPecahErr(''); setBasisPecah(null)
-      const basisPeriode = formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))
-      const { data } = await supabase.from('penyusutan_semester')
-        .select('nilai_buku_akhir,akumulasi,sisa_semester,masa_manfaat_tahun')
-        .eq('aset_id', indukPecah.id).eq('periode', basisPeriode).maybeSingle()
-      if (data) {
-        const d = data as { nilai_buku_akhir: number; akumulasi: number; sisa_semester: number; masa_manfaat_tahun: number | null }
-        setBasisPecah({ nilai_buku: d.nilai_buku_akhir, akumulasi: d.akumulasi, sisa_smt: d.sisa_semester, masa_tahun: d.masa_manfaat_tahun, disusutkan: true })
-      } else if (perlakuanKode(indukPecah.kode) === 'tidak') {
-        setBasisPecah({ nilai_buku: indukPecah.nilai_perolehan, akumulasi: 0, sisa_smt: 0, masa_tahun: null, disusutkan: false })
-      } else {
-        setBasisPecahErr(`Belum ada data penyusutan induk untuk periode ${basisPeriode}. Jalankan engine dulu untuk periode itu, atau pilih tanggal dokumen di semester berikutnya.`)
-      }
-      setBasisPecahLoading(false)
-    })()
-  }, [indukPecah, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ── Pemecahan: 1 induk → N pecahan ──────────────────────────────────────────
+  // State, efek basis, & penyunting pecahannya → ./koreksi/usePemecahan.ts
+  // (REFACTOR-PLAN Fase 3, "pecah per alasan"). Nama lokalnya SENGAJA
+  // dipertahankan apa adanya supaya JSX & `simpan()` tak ikut berubah —
+  // pemindahan yang menyeret ratusan baris JSX tak bisa dibuktikan setara.
+  const {
+    induk: indukPecah, basis: basisPecah, basisErr: basisPecahErr, basisLoading: basisPecahLoading,
+    indukFields, pecahan, editIdx: editPecahIdx, setEditIdx: setEditPecahIdx, setPecahan,
+    pilihInduk, setPecah, addPecah, removePecah, reset: resetPecah, gantiInduk: gantiIndukPecah,
+    alokasi: alokasiPecah, totalNPInduk, sumNPPecah, balance: balancePecah, semuaValid: semuaPecahValid,
+  } = usePemecahan(tgl)
 
   // ── Penggabungan: basis akumulasi seluruh anggota pada semester SEBELUM cutover ──
   // Sengaja MENOLAK kalau ada satu saja anggota yang belum punya baris engine di
@@ -1065,41 +1035,6 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     setGabungSpekOpen(true)
   }
 
-  // Pilih induk → warisi field spesifikasi induk sbg titik awal tiap pecahan.
-  async function pilihInduk(b: Barang) {
-    setIndukPecah(b)
-    const { data } = await supabase.from('aset').select(ASET_FIELD_COLS.join(',')).eq('id', b.id).single()
-    const f: Record<string, string> = {}
-    // `as unknown as`: `.select()` diberi string rakitan runtime → supabase-js
-    // tak bisa menurunkan bentuk barisnya (tipenya jadi `GenericStringError`).
-    if (data) for (const k of ASET_FIELD_COLS) { const v = (data as unknown as Record<string, unknown>)[k]; if (v != null) f[k] = String(v) }
-    // Tanah: sertifikat/jenis hak TIDAK diwarisi — tiap pecahan sertifikatnya sendiri, diisi di GIS.
-    if (kodeLevel3(b.kode) === '1.3.1') for (const k of TANAH_DOK_FIELDS) delete f[k]
-    setIndukFields(f)
-    setPecahan([
-      { key: newKey(), jumlah: '1', nilai: '', fields: { ...f }, foto: [] },
-      { key: newKey(), jumlah: '1', nilai: '', fields: { ...f }, foto: [] },
-    ])
-  }
-  function setPecah(key: string, patch: Partial<PecahanItem>) {
-    setPecahan(prev => prev.map(p => p.key === key ? { ...p, ...patch } : p))
-  }
-  function addPecah() { setPecahan(prev => [...prev, { key: newKey(), jumlah: '1', nilai: '', fields: { ...indukFields }, foto: [] }]) }
-  function removePecah(key: string) { setPecahan(prev => prev.length <= 2 ? prev : prev.filter(p => p.key !== key)) }
-
-  // Alokasi nilai pecahan → **lib/pemecahanNilai.ts** (diangkat 2026-09-15).
-  // Ia aritmetika UANG Lapis 1 — angkanya masuk ledger `pemecahan_masuk`/
-  // `pemecahan_keluar` & ikut ke neraca — dan sampai hari itu tinggal di dalam
-  // komponen ini tanpa satu pun test. Dua invarian yang dijaganya (Σ pecahan ==
-  // induk EKSAK, sisa pembulatan diserap pecahan TERAKHIR) pelanggarannya
-  // SENYAP: tak ada error, cuma selisih yang muncul di Rekonsiliasi berbulan
-  // kemudian. Dikunci lib/pemecahanNilai.test.ts — **jangan ditulis ulang di
-  // sini.**
-  const alokasiPecah = alokasiPemecahan(indukPecah?.nilai_perolehan, basisPecah, pecahan)
-  const totalNPInduk = indukPecah ? keSen(indukPecah.nilai_perolehan) / 100 : 0
-  const sumNPPecah = alokasiPecah.reduce((s, a) => s + keSen(a.np), 0) / 100
-  const balancePecah = balancePemecahan(indukPecah?.nilai_perolehan, alokasiPecah)
-  const semuaPecahValid = semuaPecahanValid(alokasiPecah)
 
   async function uploadDokumen(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -1575,7 +1510,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                       onChange={() => {
                         setAlasan(o.value); setSelNilai({}); setKandidat([]); setSurvivorId(null); setRows([]); setLoaded(false)
                         setSelSpek({}); setSpekEdit(null); setSpekModalOpen(false)
-                        setIndukPecah(null); setBasisPecah(null); setBasisPecahErr(''); setPecahan([]); setIndukFields({}); setEditPecahIdx(null)
+                        resetPecah()
                         setGabungList([]); setIndukGabungId(null); setHasilGabung([]); setQGabung('')
                         setSejenis([]); setSelSejenis({}); setGabungSpek(null); setGabungSpekOpen(false)
                       }} />
@@ -1950,7 +1885,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                     </p>
                   ) : null}
               </div>
-              <button className="text-xs text-gray-500 hover:text-red-600" onClick={() => { setIndukPecah(null); setBasisPecah(null); setBasisPecahErr(''); setPecahan([]) }}>Ganti</button>
+              <button className="text-xs text-gray-500 hover:text-red-600" onClick={() => gantiIndukPecah()}>Ganti</button>
             </div>
           )}
 
