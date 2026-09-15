@@ -73,10 +73,10 @@ centangnya.
 
 | Fase | Status | Ukuran hari ini | Cara mengukur |
 |---|---|---|---|
-| **0** Jaring pengaman | ✅ **8/8, dan sejak hari ini BENAR-BENAR bersih** | typecheck 0 error · 1.329 test / 58 berkas · lint 0 error (597 warning) · coverage 97,51% | `npm run typecheck && npm test && npm run lint && npm run test:coverage` |
+| **0** Jaring pengaman | ✅ **8/8, dan sejak hari ini BENAR-BENAR bersih** | typecheck 0 error · **1.499 test / 67 berkas** · lint 0 error (597 warning) · coverage **97,68%** | `npm run typecheck && npm test && npm run lint && npm run test:coverage` |
 | **1** Primitif bersama | 🟡 ditulis semua, **adopsinya timpang** | `assertOk` **5 berkas** · `paginate` **1** · `useAsyncData` **0** | `grep -rl "from '@/shared/db/query'" app components lib` |
 | **2** Ekstrak domain | 🟡 **4 dari 6 selesai** (2.1 · 2.1b · 2.3 · 2.4); 2.2 tujuannya tercapai (sisanya kerjaan Fase 5); 2.5 & 2.6 sebagian | `lib/rekon.ts` masih 1.034 baris | lihat perintah di §5 |
-| **3** Pecah komponen raksasa | 🔴 **nol progres, dan memburuk** | berkas > 500 baris **35** (patokan 19) · `Koreksi.tsx` **2.465 baris / 72 useState** | `find app components lib -name '*.ts*' \| xargs wc -l \| awk '$2!="total" && $1>500' \| wc -l` |
+| **3** Pecah komponen raksasa | 🟡 **menu Koreksi tuntas, sisanya belum** | `KoreksiForm` **46 → 8 useState** · `Koreksi.tsx` 2.449 → **1.989** · berkas > 500 baris **33** (patokan 19) | `find app components lib -name '*.ts*' \| xargs wc -l \| awk '$2!="total" && $1>500' \| wc -l` |
 | **4** Baca ke server | ✅ **5/5 halaman** | Daftar Barang · Penyusutan · Rekonsiliasi · Laporan BMD · Dashboard, semuanya lewat RPC | `grep -c fn_daftar_barang app/dashboard/daftar-barang/page.tsx` |
 | **5** Struktur folder | 🔴 **belum mulai** (memang paling akhir) | `modules/` belum ada · `lib/` 66 berkas · `components/` 111 berkas | `test -d modules` |
 
@@ -609,31 +609,100 @@ minimal satu komentar peringatan bisa dihapus.
 
 ## 6. Fase 3 — Pecah komponen raksasa (hanya saat disentuh fitur)
 
-Target, **diukur ulang 2026-09-13** (baris / `useState`) — ⚠️ urutannya
-sudah BERTUKAR sejak §6 ini ditulis:
+### ⚠️ UKUR PER KOMPONEN, BUKAN PER BERKAS (koreksi 2026-09-15)
 
-| Berkas | Saat §6 ditulis | **Hari ini** | |
+Sampai hari ini §6 mendaftar target lewat **ukuran berkas**, dan itu
+**menyesatkan** — terbukti memakan korban: sesudah menu Koreksi tuntas,
+sasaran berikutnya dipilih dari tabel itu (`Pengadaan.tsx`, 1.571 baris), lalu
+pengukuran per komponen membalik keputusannya sebelum satu baris pun disentuh.
+
+| Berkas | Baris | Komponen TERBESAR di dalamnya |
+|---|---|---|
+| `Pengadaan.tsx` | 1.571 | 318 baris / **3** useState ← paling SEHAT |
+| `PerolehanManual.tsx` | 1.278 | 546 / 11 |
+| `Penghapusan.tsx` | 1.103 | 584 / 12 |
+
+`Pengadaan.tsx` ternyata berkas besar berisi **13 komponen berukuran wajar**,
+bukan komponen raksasa. Yang jadi masalah di Fase 3 adalah **beberapa mesin
+state yang berdesakan di SATU komponen** — dan itu tak terbaca dari `wc -l`.
+
+**Perintah yang benar** (baris × `useState` per komponen, bukan per berkas):
+
+```bash
+for f in $(find app components -name '*.tsx' | grep -v test); do
+  awk -v F="$f" '/^(export )?(default )?function [A-Za-z]/{
+    if(n!=""&&c>0) printf "%4d %3d %s (%s)\n", NR-s, c, n, F
+    n=$0; sub(/^(export )?(default )?function /,"",n); sub(/[({ ].*/,"",n); s=NR; c=0
+  } /useState/{c++} END{if(n!=""&&c>0) printf "%4d %3d %s (%s)\n", NR-s, c, n, F}' "$f"
+done | sort -rn | head -10
+```
+
+### Sasaran TERUKUR — 2026-09-15
+
+| Komponen | Baris | `useState` | Catatan |
 |---|---|---|---|
-| `Koreksi.tsx` | 1.422 / 49 | **2.451 / 72** | 🔴 +72% — kini yang **terbesar** |
-| `Pengadaan.tsx` | 1.437 / 60 | **1.571 / 60** | +9% |
-| `PerolehanManual.tsx` | 1.043 / 42 | **1.278 / 43** | +23% |
-| `Penghapusan.tsx` | 840 / 32 | **1.144 / 35** | +36% |
+| `Page` — Saldo Awal → Daftar Barang Awal | 867 | **30** | 🔴 terpadat se-repo · **Lapis 1** |
+| `DaftarBarangPage` | 793 | **22** | 🔴 **Lapis 1** |
+| `LaporanBmdPage` | 969 | 20 | 🔴 **Lapis 1** |
+| `PenyusutanPage` | 646 | 20 | 🔴 **Lapis 1** |
+| `AdminPegawaiPage` | 541 | 19 | 🔴 |
+| `KoreksiForm` | 1.128 | **8** | 🟡 sisanya JSX & `simpan()` |
 
-⚠️ **Jangan membaca urutan daftar di bawah sebagai prioritas.** Pola pemecahan
-dicontohkan dengan `Pengadaan.tsx` karena waktu itu ia yang terbesar; per hari
-ini `Koreksi.tsx` sudah 880 baris di atasnya dan `useState`-nya 72. Polanya
-sama, berkasnya yang berbeda.
+⚠️⚠️ **Komponen terpadat di repo ini ada di `app/dashboard/**`, dan EMPAT di
+antaranya Lapis 1** (Daftar Barang · Penyusutan · Laporan BMD · Saldo Awal).
+Tabel lama tak pernah menyebut satu pun halaman dashboard — ia hanya memuat
+empat berkas `components/pengelolaan/`. Itu sebabnya "Fase 3" selama ini
+terbaca seolah hanya soal menu Pembukuan.
 
-⚠️ `Koreksi.tsx` juga berkas yang paling sering bertambah — kelima alasan
-koreksi (Nilai · Spesifikasi · Pencatatan Ganda · Pemecahan · Penggabungan)
-tinggal di satu komponen, dan tiap alasan baru menambah satu mesin state lagi.
-Kalau ada fitur yang mendarat di sana, **pecah per alasan** — itu batas yang
-sudah ada dengan sendirinya, bukan garis yang dikarang.
+⚠️ Metrik "berkas > 500 baris" (33, patokan 19) **nyaris tak bergerak** oleh
+pekerjaan Fase 3 — mengangkat state ke hook MENAMBAH berkas, bukan
+mengurangi. Itu bukan tanda gagal; itu tanda metriknya mengukur hal lain.
+Yang benar-benar turun: `useState` per komponen.
 
-**Jangan pecah secara spekulatif.** Tunggu sampai ada permintaan fitur yang
-memang mendarat di berkas itu, lalu pecah *seperlunya untuk fitur itu*.
-Membelah komponen 1.400 baris tanpa pemicu berarti menanggung seluruh risiko
-regresi tanpa satu pun manfaat langsung.
+### Yang SUDAH dipecah (2026-09-15)
+
+Menu **Koreksi** tuntas — kelima alasan + pemilih barang + pemuat kartu punya
+mesin statenya sendiri, semuanya bertest & ber-mutasi:
+
+```
+lib/pemecahanNilai.ts · penggabunganNilai.ts · pencatatanGanda.ts   aturan murni
+components/pengelolaan/koreksi/
+  tipe.ts · usePemecahan · usePenggabungan · usePencatatanGanda
+  useSpesifikasi · useKoreksiNilai · usePemilihBarang · useJurnalKoreksi
+components/pengelolaan/penghapusan/usePemilihBarang.ts
+```
+
+Hasil: `KoreksiForm` **46 → 8** `useState`, `Koreksi.tsx` 2.449 → 1.989.
+
+⚠️ **Resep yang terbukti**, dipakai 7× berturut-turut tanpa satu pun regresi:
+1. aturan MURNI dulu ke `lib/` + test (kalau ada angka yang masuk ledger)
+2. state + efek ke `use*.ts`, **nama lokal dipertahankan lewat destructuring
+   beralias** — JSX & fungsi simpan tak berubah satu karakter pun, jadi
+   pemindahannya bisa dibuktikan setara
+3. test hook + **mutasi**; tiap mutasi WAJIB jatuh di test yang tepat
+4. `tsc` yang menemukan setter yatim, bukan mata
+
+⚠️ Perilaku JANGGAL dipertahankan apa adanya & ditandai komentar (mis. query
+yang tak memeriksa `error`). Membetulkannya bareng pemindahan membuat
+pemindahannya tak bisa dibuktikan setara — itu pekerjaan Fase 1, terpisah.
+
+### "Jangan pecah spekulatif" — DILONGGARKAN oleh user 2026-09-15
+
+Aturan aslinya: *tunggu sampai ada permintaan fitur yang mendarat di berkas
+itu, lalu pecah seperlunya untuk fitur itu.* Alasannya masih sahih —
+membelah komponen tanpa pemicu berarti menanggung seluruh risiko regresi
+tanpa manfaat langsung.
+
+**User memutuskan menggarapnya tanpa menunggu pemicu fitur**, sesudah
+aturan ini diangkat ke permukaan dan ia menegaskan keputusannya. Yang
+dituntut sebagai gantinya: tiap pemecahan harus **bisa dibuktikan setara**,
+bukan sekadar "kelihatan jalan". Itu yang melahirkan resep 4 langkah di atas
+— dan sejauh ini 7 pemecahan berturut-turut, 0 regresi, 60+ mutasi semuanya
+tertangkap.
+
+⚠️ Kalau kelak keadaan berubah (tenggat fitur menumpuk, tak ada yang sempat
+menjalankan mutasi), aturan aslinya yang berlaku lagi. Jangan pecah tanpa
+jaring — itu yang dilarang, bukan memecahnya.
 
 Pola pemecahan (berurutan, tiap langkah bisa berhenti di tengah):
 
