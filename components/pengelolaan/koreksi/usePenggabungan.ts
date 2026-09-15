@@ -13,9 +13,9 @@
 // Seluruh ATURAN & aritmetikanya → lib/penggabunganNilai.ts (dikunci test +
 // 6 mutasi). Di sini tak ada satu pun angka yang dihitung sendiri.
 //
-// ⚠️ MURNI PINDAH. Perilaku yang JANGGAL pun dipertahankan — lihat
-// `openGabungSpek` yang tak memeriksa `error`. Membetulkannya bareng
-// pemindahan membuat pemindahannya tak bisa dibuktikan setara.
+// ✅ Fase 1 (2026-09-15): `openSpek()` tak lagi menelan `error` — popup tak
+// dibuka kalau prefill-nya gagal, supaya field kosong tak terbaca sbg "nilai
+// lamanya memang kosong" lalu tertulis ke register.
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -206,7 +206,8 @@ export function usePenggabungan(tgl: string, skpdId: number | null, onErr: (msg:
     const b = induk
     if (!b) return
     const keys = koreksiFieldKeys(b.kode)
-    const { data } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
+    const { data, error } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
+    if (error) { onErr(`gagal memuat spesifikasi induk: ${error.message}`); return }
     const row = (data || {}) as Record<string, unknown>
     const f: Record<string, string> = {}
     for (const k of keys) { const v = row[k]; if (v != null) f[k] = String(v) }

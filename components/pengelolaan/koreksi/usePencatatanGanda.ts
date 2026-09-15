@@ -7,9 +7,9 @@
 // (apa yang boleh berbeda antar duplikat, dan mana yang MEMBLOKIR) →
 // lib/pencatatanGanda.ts, dikunci test terpisah.
 //
-// ⚠️ MURNI PINDAH — termasuk `cari()` yang tak memeriksa `error`. Lihat
-// catatannya di bawah; membetulkannya bareng pemindahan membuat pemindahan
-// ini tak bisa dibuktikan setara.
+// ✅ Fase 1 (2026-09-15): `cari()` tak lagi menelan `error` — kegagalannya
+// dialirkan ke saluran error form, supaya query gagal tak terbaca operator
+// sebagai "tak ada barang yang cocok".
 // ============================================================================
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -32,7 +32,7 @@ export type PencatatanGanda = {
   beda: { kode: boolean; nilai: boolean; tahun: boolean; nama: boolean }
 }
 
-export function usePencatatanGanda(skpdId: number | null): PencatatanGanda {
+export function usePencatatanGanda(skpdId: number | null, onErr: (msg: string) => void): PencatatanGanda {
   const supabase = createClient()
 
   const [q, setQ] = useState('')
@@ -42,13 +42,14 @@ export function usePencatatanGanda(skpdId: number | null): PencatatanGanda {
 
   async function cari() {
     if (!q.trim()) return
-    // ⚠️ `error` sengaja tak diperiksa — bentuk aslinya begitu, dipertahankan
-    // saat pengangkatan. Akibatnya query gagal terbaca sebagai "tak ada yang
-    // cocok". Layak dibetulkan, tapi sebagai perubahan tersendiri.
-    const { data } = await supabase.from('aset').select(KANDIDAT_COLS)
+    const { data, error } = await supabase.from('aset').select(KANDIDAT_COLS)
       .eq('status', 'aktif').eq('skpd_id', skpdId)
       .or(`nibar.ilike.%${q}%,nama_barang.ilike.%${q}%,kode.ilike.%${q}%`)
       .limit(10)
+    // ⚠️ Hasil DIKOSONGKAN & errornya dilaporkan — bukan dibiarkan berisi hasil
+    // pencarian SEBELUMNYA, yang akan terbaca sebagai jawaban atas kata kunci
+    // yang baru.
+    if (error) { setHasil([]); onErr(`gagal mencari barang: ${error.message}`); return }
     setHasil((data as Kandidat[]) || [])
   }
 

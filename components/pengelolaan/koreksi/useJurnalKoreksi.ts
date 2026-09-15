@@ -13,10 +13,15 @@
 //   · pemecahan      — 1 induk → N pecahan
 //   · penggabungan   — N sumber → 1 induk
 //
-// ⚠️ MURNI PINDAH. Perilaku janggal dipertahankan & ditandai: tak satu pun
-// query di sini memeriksa `error`, jadi kegagalan terbaca operator sebagai
-// "belum ada koreksi untuk SKPD ini". Layak dibetulkan — sebagai perubahan
-// tersendiri, supaya pemindahannya bisa dibuktikan setara.
+// ✅ Fase 1 (2026-09-15): kelima query di sini tak lagi menelan `error`.
+// Sebelumnya kegagalan apa pun menghasilkan daftar kartu KOSONG, yang di layar
+// tak bisa dibedakan dari "SKPD ini memang belum punya koreksi" — kelas INS-06,
+// dan di menu ini konsekuensinya bukan cuma tampilan: operator yang melihat
+// "0 koreksi" bisa menyimpulkan jurnalnya belum dibuat lalu membuatnya lagi.
+//
+// ⚠️ FAIL-CLOSED: begitu satu query gagal, KETIGA daftar dikosongkan & `err`
+// diisi. Menampilkan sebagian kartu jauh lebih berbahaya daripada tak
+// menampilkan apa pun — daftar yang kurang-sebagian terlihat sah.
 //
 // ⚠️ Baris yang DIBATALKAN diperlakukan BERBEDA per bentuk, dan itu disengaja:
 //   · koreksi biasa → baris yang dianulir DISEMBUNYIKAN dari kartu
@@ -36,6 +41,8 @@ import {
 } from './tipe'
 
 export type JurnalKoreksi = {
+  /** Kosong = benar-benar tak ada. Kegagalan query → `err`, bukan daftar kosong. */
+  err: string
   jurnals: Jurnal[]
   pemecahanJurnals: PemecahanJurnal[]
   penggabunganJurnals: PenggabunganJurnal[]
@@ -49,13 +56,16 @@ export function useJurnalKoreksi(): JurnalKoreksi {
   const [pemecahanJurnals, setPemecahanJurnals] = useState<PemecahanJurnal[]>([])
   const [penggabunganJurnals, setPenggabunganJurnals] = useState<PenggabunganJurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
+  const [err, setErr] = useState('')
 
   const load = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setJurnals([]); setPemecahanJurnals([]); setPenggabunganJurnals([]); return }
-    setLoadingJurnal(true)
-    const { data: headers } = await supabase.from('jurnal_header')
+    if (!skpdId) { setJurnals([]); setPemecahanJurnals([]); setPenggabunganJurnals([]); setErr(''); return }
+    setLoadingJurnal(true); setErr('')
+    try {
+    const { data: headers, error: hErr } = await supabase.from('jurnal_header')
       .select(HEADER_COLS).eq('kategori', 'koreksi').eq('skpd_id', Number(skpdId))
       .order('tanggal', { ascending: false })
+    if (hErr) throw new Error(`gagal memuat kartu koreksi: ${hErr.message}`)
     const allHeaders = (headers || []) as unknown as (Header & { jenis: string })[]
     const hs = allHeaders.filter(h => h.jenis !== 'pemecahan' && h.jenis !== 'penggabungan') as unknown as Header[]
     const pemHeaders = allHeaders.filter(h => h.jenis === 'pemecahan') as unknown as PemecahanHeader[]
@@ -68,20 +78,25 @@ export function useJurnalKoreksi(): JurnalKoreksi {
     if (headerIds.length > 0) {
       // Baris batal_koreksi_* → kumpulkan target_trx_id yg sudah dibatalkan (utk
       // disembunyikan dari kartu, pola sama dgn Reklasifikasi).
-      const { data: batalRows } = await supabase.from('transaksi_bmd')
+      const { data: batalRows, error: bErr } = await supabase.from('transaksi_bmd')
         .select('payload')
         .in('jenis', ['batal_koreksi_nilai', 'batal_koreksi_spesifikasi', 'batal_koreksi_pencatatan_ganda'] as never)
         .in('header_id', headerIds)
+      // ⚠️ MELEMPAR, bukan dilewati: set pembatalan yang gagal dimuat berarti
+      // baris yang SUDAH dianulir tampil lagi sebagai koreksi yang berlaku —
+      // kebalikan dari kenyataan, dan itu persis INS-06 di lib/voidedAset.ts.
+      if (bErr) throw new Error(`gagal membaca transaksi pembatalan: ${bErr.message}`)
       const dibatalkan = new Set<number>()
       for (const b of (batalRows || []) as { payload: { target_trx_id?: number } | null }[]) {
         const t = Number(b.payload?.target_trx_id); if (Number.isFinite(t)) dibatalkan.add(t)
       }
 
-      const { data } = await supabase.from('transaksi_bmd')
+      const { data, error } = await supabase.from('transaksi_bmd')
         .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode)')
         .in('jenis', ['koreksi_nilai', 'koreksi_pencatatan_ganda', 'koreksi_spesifikasi'] as never)
         .in('header_id', headerIds)
         .order('id', { ascending: true })
+      if (error) throw new Error(`gagal memuat baris koreksi: ${error.message}`)
       const rows = (data || []) as unknown as {
         id: number; header_id: string; nilai: number; payload: LinePayload | null
         aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string } | null
@@ -102,11 +117,12 @@ export function useJurnalKoreksi(): JurnalKoreksi {
     for (const h of pemHeaders) pmap.set(h.id, { ...h, induk: null, pecahan: [], total: 0, dibatalkan: false })
     const pemIds = pemHeaders.map(h => h.id)
     if (pemIds.length > 0) {
-      const { data } = await supabase.from('transaksi_bmd')
+      const { data, error } = await supabase.from('transaksi_bmd')
         .select('id,header_id,jenis,nilai,aset:aset_id(id,nibar,nama_barang,kode,jumlah)')
         .in('jenis', ['pemecahan_keluar', 'pemecahan_masuk', 'batal_pemecahan'] as never)
         .in('header_id', pemIds)
         .order('id', { ascending: true })
+      if (error) throw new Error(`gagal memuat baris pemecahan: ${error.message}`)
       const rows = (data || []) as unknown as {
         id: number; header_id: string; jenis: string; nilai: number
         aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; jumlah: number } | null
@@ -131,11 +147,12 @@ export function useJurnalKoreksi(): JurnalKoreksi {
     for (const h of gabHeaders) gmap.set(h.id, { ...h, induk: null, sumber: [], dibatalkan: false })
     const gabIds = gabHeaders.map(h => h.id)
     if (gabIds.length > 0) {
-      const { data } = await supabase.from('transaksi_bmd')
+      const { data, error } = await supabase.from('transaksi_bmd')
         .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode)')
         .in('jenis', ['penggabungan_keluar', 'penggabungan_masuk', 'batal_penggabungan', 'batal_penggabungan_masuk'] as never)
         .in('header_id', gabIds)
         .order('id', { ascending: true })
+      if (error) throw new Error(`gagal memuat baris penggabungan: ${error.message}`)
       const rows = (data || []) as unknown as {
         id: number; header_id: string; jenis: string; nilai: number
         payload: { nilai_lama?: number; nilai_perolehan_baru?: number } | null
@@ -153,8 +170,15 @@ export function useJurnalKoreksi(): JurnalKoreksi {
       }
     }
     setPenggabunganJurnals([...gmap.values()].filter(j => j.induk || j.sumber.length > 0))
-    setLoadingJurnal(false)
+    } catch (e) {
+      // FAIL-CLOSED: kosongkan KETIGANYA. Daftar yang terisi sebagian
+      // terlihat sah, dan itu yang paling mahal di menu ini.
+      setJurnals([]); setPemecahanJurnals([]); setPenggabunganJurnals([])
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoadingJurnal(false)   // di `finally`, bukan jalur sukses (INS-10)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { jurnals, pemecahanJurnals, penggabunganJurnals, loading: loadingJurnal, load }
+  return { err, jurnals, pemecahanJurnals, penggabunganJurnals, loading: loadingJurnal, load }
 }

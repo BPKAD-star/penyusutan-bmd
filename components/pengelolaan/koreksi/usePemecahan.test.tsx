@@ -21,6 +21,8 @@ import { act, renderHook, waitFor, cleanup } from '@testing-library/react'
 
 /** Baris `penyusutan_semester` yang akan dijawab, di-keyed per periode. */
 let barisEngine: Record<string, unknown> = {}
+let engineErr: { message: string } | null = null
+let asetErr: { message: string } | null = null
 /** Periode yang BENAR-BENAR ditanyakan ke DB — inti uji "semester sebelum". */
 let periodeDiminta: string[] = []
 /** Kolom `aset` yang dijawab saat induk dipilih. */
@@ -34,11 +36,11 @@ vi.mock('@/lib/supabase/client', () => ({
         const q = {
           select: () => q,
           eq: (kolom: string, nilai: string) => { if (kolom === 'periode') { periode = nilai; periodeDiminta.push(nilai) } return q },
-          maybeSingle: async () => ({ data: barisEngine[periode] ?? null, error: null }),
+          maybeSingle: async () => ({ data: barisEngine[periode] ?? null, error: engineErr }),
         }
         return q
       }
-      const q2 = { select: () => q2, eq: () => q2, single: async () => ({ data: kolomAset, error: null }) }
+      const q2 = { select: () => q2, eq: () => q2, single: async () => ({ data: kolomAset, error: asetErr }) }
       return q2
     },
   }),
@@ -60,13 +62,16 @@ const barang = (over: Partial<Barang> = {}): Barang => ({
 
 const ENGINE = { nilai_buku_akhir: 600_000, akumulasi: 400_000, sisa_semester: 10, masa_manfaat_tahun: 5 }
 
-beforeEach(() => { barisEngine = {}; periodeDiminta = []; kolomAset = {} })
+let errs: string[] = []
+const onErr = (m: string) => { errs.push(m) }
+
+beforeEach(() => { barisEngine = {}; periodeDiminta = []; kolomAset = {}; errs = []; engineErr = null; asetErr = null })
 afterEach(cleanup)
 
 describe('basis dibaca dari semester SEBELUM tanggal dokumen', () => {
   it('dokumen 2026-S2 → yang ditanyakan 2026-S1', async () => {
     barisEngine['2026-S1'] = ENGINE
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang()) })
     await waitFor(() => expect(result.current.basis).not.toBeNull())
 
@@ -76,7 +81,7 @@ describe('basis dibaca dari semester SEBELUM tanggal dokumen', () => {
 
   it('dokumen 2026-S1 → MENYEBERANG tahun, yang ditanyakan 2025-S2', async () => {
     barisEngine['2025-S2'] = ENGINE
-    const { result } = renderHook(() => usePemecahan('2026-03-01'))
+    const { result } = renderHook(() => usePemecahan('2026-03-01', onErr))
     await act(async () => { await result.current.pilihInduk(barang()) })
     await waitFor(() => expect(result.current.basis).not.toBeNull())
 
@@ -86,7 +91,7 @@ describe('basis dibaca dari semester SEBELUM tanggal dokumen', () => {
   it('ganti tanggal ke semester lain → basis DIMUAT ULANG', async () => {
     barisEngine['2026-S1'] = ENGINE
     barisEngine['2025-S2'] = { ...ENGINE, akumulasi: 111_111 }
-    const { result, rerender } = renderHook(({ t }) => usePemecahan(t), { initialProps: { t: '2026-08-27' } })
+    const { result, rerender } = renderHook(({ t }) => usePemecahan(t, onErr), { initialProps: { t: '2026-08-27' } })
     await act(async () => { await result.current.pilihInduk(barang()) })
     await waitFor(() => expect(result.current.basis?.akumulasi).toBe(400_000))
 
@@ -98,7 +103,7 @@ describe('basis dibaca dari semester SEBELUM tanggal dokumen', () => {
 
 describe('basis tak ketemu: nol yang SAH vs error', () => {
   it('golongan tak disusutkan (Tanah) → basis NOL, tanpa error', async () => {
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang({ kode: '1.3.1.01.01.01.001', nilai_perolehan: 900_000 })) })
     await waitFor(() => expect(result.current.basis).not.toBeNull())
 
@@ -107,7 +112,7 @@ describe('basis tak ketemu: nol yang SAH vs error', () => {
   })
 
   it('golongan DISUSUTKAN tapi baris engine tak ada → ERROR, bukan nol diam-diam', async () => {
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang()) })
     await waitFor(() => expect(result.current.basisErr).not.toBe(''))
 
@@ -116,7 +121,7 @@ describe('basis tak ketemu: nol yang SAH vs error', () => {
   })
 
   it('basisLoading kembali false di KEDUA jalur', async () => {
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang()) })
     await waitFor(() => expect(result.current.basisErr).not.toBe(''))
     expect(result.current.basisLoading).toBe(false)
@@ -126,7 +131,7 @@ describe('basis tak ketemu: nol yang SAH vs error', () => {
 describe('pilih induk → dua pecahan kosong yang mewarisi spesifikasi', () => {
   it('mewarisi field induk & langsung berbentuk SAH (2 baris)', async () => {
     kolomAset = { merek_tipe: 'Besi Hollow', kondisi_barang: 'Baik' }
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang()) })
 
     expect(result.current.pecahan).toHaveLength(2)
@@ -137,7 +142,7 @@ describe('pilih induk → dua pecahan kosong yang mewarisi spesifikasi', () => {
 
   it('TANAH tidak mewarisi dokumen kepemilikan induk — tiap pecahan sertifikatnya sendiri', async () => {
     kolomAset = { merek_tipe: null, jenis_hak: 'Hak Pakai', nomor_dokumen_kepemilikan: '123/HP', luas: '500' }
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang({ kode: '1.3.1.01.01.01.001' })) })
 
     for (const k of TANAH_DOK_FIELDS) expect(result.current.indukFields[k]).toBeUndefined()
@@ -148,7 +153,7 @@ describe('pilih induk → dua pecahan kosong yang mewarisi spesifikasi', () => {
 
   it('golongan lain TETAP mewarisi jenis hak (pengecualiannya khusus 1.3.1)', async () => {
     kolomAset = { jenis_hak: 'Hak Pakai' }
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang({ kode: '1.3.3.01.01.01.001' })) })
     expect(result.current.indukFields.jenis_hak).toBe('Hak Pakai')
   })
@@ -156,7 +161,7 @@ describe('pilih induk → dua pecahan kosong yang mewarisi spesifikasi', () => {
 
 describe('menyunting daftar pecahan', () => {
   const siap = async () => {
-    const h = renderHook(() => usePemecahan('2026-08-27'))
+    const h = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await h.result.current.pilihInduk(barang()) })
     return h
   }
@@ -196,7 +201,7 @@ describe('menyunting daftar pecahan', () => {
 describe('reset vs gantiInduk — sengaja BERBEDA', () => {
   const siap = async () => {
     kolomAset = { merek_tipe: 'Besi Hollow' }
-    const h = renderHook(() => usePemecahan('2026-08-27'))
+    const h = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await h.result.current.pilihInduk(barang()) })
     act(() => h.result.current.setEditIdx(1))
     return h
@@ -233,7 +238,7 @@ describe('reset vs gantiInduk — sengaja BERBEDA', () => {
 describe('turunan angka diteruskan dari lib/pemecahanNilai', () => {
   it('Σ pecahan == induk → balance true & semuaValid true', async () => {
     barisEngine['2026-S1'] = ENGINE
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang()) })
     await waitFor(() => expect(result.current.basis).not.toBeNull())
 
@@ -249,7 +254,7 @@ describe('turunan angka diteruskan dari lib/pemecahanNilai', () => {
 
   it('Σ meleset seratus rupiah → balance false', async () => {
     barisEngine['2026-S1'] = ENGINE
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang()) })
     await waitFor(() => expect(result.current.basis).not.toBeNull())
 
@@ -260,9 +265,33 @@ describe('turunan angka diteruskan dari lib/pemecahanNilai', () => {
   })
 
   it('basis belum termuat → alokasi KOSONG, bukan angka nol yang kelihatan sah', async () => {
-    const { result } = renderHook(() => usePemecahan('2026-08-27'))
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
     await act(async () => { await result.current.pilihInduk(barang()) })
     await waitFor(() => expect(result.current.basisErr).not.toBe(''))
     expect(result.current.alokasi).toEqual([])
+  })
+})
+
+describe('Fase 1 — kegagalan query tak menyamar jadi "engine belum dijalankan"', () => {
+  it('basis GAGAL dibaca → pesannya menyebut kegagalan, bukan menuduh engine', async () => {
+    engineErr = { message: 'canceling statement due to statement timeout' }
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
+    await act(async () => { await result.current.pilihInduk(barang()) })
+    await waitFor(() => expect(result.current.basisErr).not.toBe(''))
+
+    expect(result.current.basisErr).toContain('Gagal membaca akumulasi')
+    expect(result.current.basisErr).not.toContain('Jalankan engine')
+    expect(result.current.basis).toBeNull()
+    expect(result.current.basisLoading).toBe(false)
+  })
+
+  it('spesifikasi induk gagal → pecahan TIDAK dilahirkan dgn field kosong', async () => {
+    asetErr = { message: 'timeout' }
+    const { result } = renderHook(() => usePemecahan('2026-08-27', onErr))
+    await act(async () => { await result.current.pilihInduk(barang()) })
+
+    expect(errs[0]).toContain('gagal memuat spesifikasi induk')
+    expect(result.current.pecahan).toEqual([])
+    expect(result.current.indukFields).toEqual({})
   })
 })

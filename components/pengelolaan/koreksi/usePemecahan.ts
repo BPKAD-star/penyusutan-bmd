@@ -13,9 +13,10 @@
 // lib/pemecahanNilai.ts. Yang tersisa di sini state, satu efek, & empat
 // penyunting; tak ada satu pun angka yang dihitung di berkas ini.
 //
-// ⚠️ MURNI PINDAH. Tak ada perilaku yang berubah, termasuk yang JANGGAL —
-// lihat catatan `pilihInduk` soal `error` yang tidak diperiksa. Membetulkannya
-// bareng pemindahan membuat pemindahannya tak bisa dibuktikan setara.
+// ✅ Fase 1 (2026-09-15): kedua query di sini tak lagi menelan `error`.
+// Basis yang gagal dibaca kini memakai `basisErr` yang SUDAH ada (jadi Simpan
+// tetap terblokir), dan `pilihInduk` yang gagal mengambil spesifikasi induk
+// melaporkannya alih-alih mewariskan field kosong ke seluruh pecahan.
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -60,7 +61,7 @@ export type Pemecahan = {
  *   (`periode − 1`), jadi mengubah tanggal WAJIB memuat ulang basisnya —
  *   karena itu ia dependency efek di bawah, bukan sekadar argumen simpan.
  */
-export function usePemecahan(tgl: string): Pemecahan {
+export function usePemecahan(tgl: string, onErr: (msg: string) => void): Pemecahan {
   const supabase = createClient()
 
   const [induk, setInduk] = useState<Barang | null>(null)
@@ -77,9 +78,16 @@ export function usePemecahan(tgl: string): Pemecahan {
     ;(async () => {
       setBasisLoading(true); setBasisErr(''); setBasis(null)
       const basisPeriode = formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))
-      const { data } = await supabase.from('penyusutan_semester')
+      const { data, error } = await supabase.from('penyusutan_semester')
         .select('nilai_buku_akhir,akumulasi,sisa_semester,masa_manfaat_tahun')
         .eq('aset_id', induk.id).eq('periode', basisPeriode).maybeSingle()
+      // ⚠️ Lewat `basisErr`, BUKAN `onErr`: pesan itu yang memblokir tombol
+      // Simpan. Query gagal yang jatuh ke cabang "belum ada data penyusutan"
+      // akan menuduh engine belum dijalankan padahal sebabnya lain.
+      if (error) {
+        setBasisErr(`Gagal membaca akumulasi penyusutan ${basisPeriode}: ${error.message}`)
+        setBasisLoading(false); return
+      }
       if (data) {
         const d = data as { nilai_buku_akhir: number; akumulasi: number; sisa_semester: number; masa_manfaat_tahun: number | null }
         setBasis({ nilai_buku: d.nilai_buku_akhir, akumulasi: d.akumulasi, sisa_smt: d.sisa_semester, masa_tahun: d.masa_manfaat_tahun, disusutkan: true })
@@ -98,7 +106,11 @@ export function usePemecahan(tgl: string): Pemecahan {
   // Pilih induk → warisi field spesifikasi induk sbg titik awal tiap pecahan.
   async function pilihInduk(b: Barang) {
     setInduk(b)
-    const { data } = await supabase.from('aset').select(ASET_FIELD_COLS.join(',')).eq('id', b.id).single()
+    const { data, error } = await supabase.from('aset').select(ASET_FIELD_COLS.join(',')).eq('id', b.id).single()
+    // ⚠️ Berhenti sebelum `setPecahan`: kalau diteruskan, KEDUA pecahan lahir
+    // dgn spesifikasi KOSONG yang tak bisa dibedakan dari "induknya memang
+    // kosong" — dan itu yang tersimpan ke register saat Simpan.
+    if (error) { onErr(`gagal memuat spesifikasi induk: ${error.message}`); return }
     const f: Record<string, string> = {}
     // `as unknown as`: `.select()` diberi string rakitan runtime → supabase-js
     // tak bisa menurunkan bentuk barisnya (tipenya jadi `GenericStringError`).

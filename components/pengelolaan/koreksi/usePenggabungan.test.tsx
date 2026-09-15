@@ -25,6 +25,7 @@ let periodeDiminta: string[] = []
 /** Baris yang dijawab query `aset` (pencarian & sejenis). */
 let asetRows: unknown[] = []
 let asetErr: { message: string } | null = null
+let spekErr: { message: string } | null = null
 /** Query `aset` yang benar-benar dijalankan — bukti penyaringnya terpasang. */
 let asetCalls: { eq: Record<string, unknown>; or?: string; isNull?: string }[] = []
 
@@ -55,7 +56,7 @@ vi.mock('@/lib/supabase/client', () => ({
         or: (v: string) => { call.or = v; return q2 },
         order: () => q2,
         limit: async () => ({ data: asetRows, error: asetErr }),
-        single: async () => ({ data: asetRows[0] ?? {}, error: null }),
+        single: async () => ({ data: asetRows[0] ?? {}, error: spekErr }),
       })
       return q2
     },
@@ -77,7 +78,7 @@ const pasang = (tgl = '2026-08-27') => {
   return { ...h, errs }
 }
 
-beforeEach(() => { engine = {}; periodeDiminta = []; asetRows = []; asetErr = null; asetCalls = [] })
+beforeEach(() => { engine = {}; periodeDiminta = []; asetRows = []; asetErr = null; spekErr = null; asetCalls = [] })
 afterEach(cleanup)
 
 describe('basis akumulasi: semester SEBELUM tanggal dokumen', () => {
@@ -310,5 +311,17 @@ describe('turunan angka & reset', () => {
     expect(result.current.sejenis).toEqual([])
     expect(result.current.spek).toBeNull()
     expect(result.current.q).toBe('')
+  })
+})
+
+describe('Fase 1 — prefill spesifikasi induk gagal', () => {
+  it('popup TIDAK dibuka & errornya dilaporkan', async () => {
+    const { result, errs } = pasang()
+    await act(async () => { result.current.tambah(k({ id: 'p1' })) })
+    spekErr = { message: 'timeout' }
+    await act(async () => { await result.current.openSpek() })
+
+    expect(result.current.spekOpen).toBe(false)
+    expect(errs.some(m => m.includes('gagal memuat spesifikasi induk'))).toBe(true)
   })
 })

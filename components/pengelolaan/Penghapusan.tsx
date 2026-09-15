@@ -799,14 +799,17 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [dokPaths, setDokPaths] = useState<string[]>([]) // dokumen sumber (pengalihan)
   const [dokUploading, setDokUploading] = useState(false)
 
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
   // Pemilih barang (filter + cari + centang) → ./penghapusan/usePemilihBarang.ts
   // (REFACTOR-PLAN Fase 3). Nama lokal dipertahankan supaya JSX tetap.
+  // ⚠️ `err` sengaja dideklarasikan DI ATAS: hook ini menerima `setErr`
+  // sebagai saluran pelaporan (Fase 1), jadi urutannya bukan selera.
   const {
     fGolongan, setFGolongan, fKomptabel, setFKomptabel, fSearch, setFSearch,
     rows, loaded, loading, tampilkan, sel, setSel, selList, selTotal, toggle, toggleAll,
-  } = usePemilihBarangHapus(skpdId)
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState('')
+  } = usePemilihBarangHapus(skpdId, setErr)
 
   const isAlih = header ? header.kategori === 'pengalihan_status' : jenis === 'pengalihan_status'
   // Hanya menggate jurnal yang BENAR-BENAR baru — nambah barang ke jurnal yang

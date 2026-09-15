@@ -23,7 +23,9 @@
 // anti-pola yang dilarang CODING-STANDARD §1.5. **Kalau menu KETIGA butuh
 // pemilih serupa, barulah angkat bentuk bersamanya.**
 //
-// ⚠️ MURNI PINDAH, termasuk `tampilkan()` yang tak memeriksa `error`.
+// ✅ Fase 1 (2026-09-15): `tampilkan()` tak lagi menelan `error` —
+// kegagalannya dialirkan ke saluran error form & `loaded` TIDAK diset, supaya
+// layar tak berkata "tidak ada barang" untuk query yang sebenarnya gagal.
 // ============================================================================
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -72,7 +74,7 @@ export type PemilihBarangHapus = {
   toggleAll: () => void
 }
 
-export function usePemilihBarangHapus(skpdId: number | null): PemilihBarangHapus {
+export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string) => void): PemilihBarangHapus {
   const supabase = createClient()
 
   const [fGolongan, setFGolongan] = useState('')
@@ -85,6 +87,7 @@ export function usePemilihBarangHapus(skpdId: number | null): PemilihBarangHapus
 
   async function tampilkan() {
     setLoading(true)
+    try {
     let q = supabase.from('aset').select(BARANG_COLS)
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
@@ -94,10 +97,15 @@ export function usePemilihBarangHapus(skpdId: number | null): PemilihBarangHapus
     if (fSearch) q = q.or(
       `nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%,` +
       `no_polisi.ilike.%${fSearch}%,no_rangka.ilike.%${fSearch}%,no_mesin.ilike.%${fSearch}%`)
-    const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
+    const { data, error } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
+    if (error) throw new Error(`gagal memuat daftar barang: ${error.message}`)
     setRows((data as unknown as BarangHapus[]) || [])
     setLoaded(true)
-    setLoading(false)
+    } catch (e) {
+      onErr(e instanceof Error ? e.message : String(e))   // `loaded` tetap false
+    } finally {
+      setLoading(false)   // di `finally`, bukan jalur sukses (INS-10)
+    }
   }
 
   function toggle(b: BarangHapus) {

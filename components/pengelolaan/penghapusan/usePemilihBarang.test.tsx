@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, renderHook, cleanup } from '@testing-library/react'
 
 let asetRows: unknown[] = []
+let qErr: { message: string } | null = null
 let q: { eq: Record<string, unknown>; like?: string; or?: string } | null = null
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -28,7 +29,7 @@ vi.mock('@/lib/supabase/client', () => ({
         like: (_k: string, v: string) => { call.like = v; return b },
         or: (v: string) => { call.or = v; return b },
         order: () => b,
-        limit: async () => ({ data: asetRows, error: null }),
+        limit: async () => ({ data: asetRows, error: qErr }),
       })
       return b
     },
@@ -44,19 +45,22 @@ const br = (over: Partial<BarangHapus> = {}): BarangHapus => ({
   nilai_perolehan: 100_000_000, skpd_id: 3, ...over,
 })
 
-beforeEach(() => { asetRows = []; q = null })
+let errs: string[] = []
+const onErr = (m: string) => { errs.push(m) }
+
+beforeEach(() => { asetRows = []; q = null; errs = []; qErr = null })
 afterEach(cleanup)
 
 const isi = async (rows: BarangHapus[]) => {
   asetRows = rows
-  const h = renderHook(() => usePemilihBarangHapus(3))
+  const h = renderHook(() => usePemilihBarangHapus(3, onErr))
   await act(async () => { await h.result.current.tampilkan() })
   return h
 }
 
 describe('filter sampai ke query', () => {
   it('golongan jadi `like` berprefiks; SKPD & status ikut', async () => {
-    const h = renderHook(() => usePemilihBarangHapus(3))
+    const h = renderHook(() => usePemilihBarangHapus(3, onErr))
     act(() => h.result.current.setFGolongan('1.3.2'))
     await act(async () => { await h.result.current.tampilkan() })
 
@@ -66,14 +70,14 @@ describe('filter sampai ke query', () => {
   })
 
   it('komptabel jadi `eq` pada intra_ekstra', async () => {
-    const h = renderHook(() => usePemilihBarangHapus(3))
+    const h = renderHook(() => usePemilihBarangHapus(3, onErr))
     act(() => h.result.current.setFKomptabel('ekstra'))
     await act(async () => { await h.result.current.tampilkan() })
     expect(q!.eq['intra_ekstra']).toBe('ekstra')
   })
 
   it('kata kunci menyisir nama/NIBAR/kode DAN nomor kendaraan', async () => {
-    const h = renderHook(() => usePemilihBarangHapus(3))
+    const h = renderHook(() => usePemilihBarangHapus(3, onErr))
     act(() => h.result.current.setFSearch('AG 1021'))
     await act(async () => { await h.result.current.tampilkan() })
 
@@ -83,7 +87,7 @@ describe('filter sampai ke query', () => {
   })
 
   it('tanpa filter → tak ada like/or yang dikirim', async () => {
-    const h = renderHook(() => usePemilihBarangHapus(3))
+    const h = renderHook(() => usePemilihBarangHapus(3, onErr))
     await act(async () => { await h.result.current.tampilkan() })
     expect(q!.like).toBeUndefined()
     expect(q!.or).toBeUndefined()
@@ -148,5 +152,17 @@ describe('centang massal', () => {
     act(() => h.result.current.toggleAll())
     // b1 (tampil) ikut tercentang, `luar` tetap ada.
     expect(h.result.current.selList.map(b => b.id).sort()).toEqual(['b1', 'luar'])
+  })
+})
+
+describe('Fase 1 — query gagal dilaporkan, bukan jadi "tak ada barang"', () => {
+  it('error sampai ke saluran form & `loaded` TETAP false', async () => {
+    qErr = { message: 'statement timeout' }
+    const h = renderHook(() => usePemilihBarangHapus(3, onErr))
+    await act(async () => { await h.result.current.tampilkan() })
+
+    expect(errs[0]).toContain('gagal memuat daftar barang')
+    expect(h.result.current.loaded).toBe(false)
+    expect(h.result.current.loading).toBe(false)
   })
 })
