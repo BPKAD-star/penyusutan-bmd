@@ -146,10 +146,19 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
 
   const selectedLabel = effectiveId ? pathOf(Number(effectiveId)) : ''
   const q = query.trim().toLowerCase()
-  const filtered = useMemo(
-    () => (q ? options.filter(o => o.label.toLowerCase().includes(q)) : options).slice(0, 60),
+  // ⚠️ `all` SUDAH seluruh SKPD — dimuat SEKALI penuh saat mount (paginasi
+  // `.range()` di atas, tanpa filter), bukan per keystroke. Jadi menaikkan
+  // batas render di sini murni biaya DOM (816 SKPD per catatan CLAUDE.md),
+  // BUKAN biaya query — beda kelas dari batas 500/1.000 baris di halaman
+  // register yang memang menahan biaya query. `RENDER_MAX` tetap dipasang
+  // (bukan dihapus) supaya kalau datanya kelak membengkak jauh, dropdown
+  // tak diam-diam memotong tanpa tanda — lihat penanda di bawah daftar.
+  const filteredAll = useMemo(
+    () => (q ? options.filter(o => o.label.toLowerCase().includes(q)) : options),
     [q, options]
   )
+  const RENDER_MAX = 1000
+  const filtered = useMemo(() => filteredAll.slice(0, RENDER_MAX), [filteredAll])
 
   function pilih(id: number) {
     setInternalId(String(id))
@@ -238,6 +247,13 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
               {o.label}
             </button>
           ))}
+          {/* Kalau `RENDER_MAX` kelak benar-benar terpotong (bukan cuma di
+              816 SKPD hari ini) — beritahu, jangan diam-diam memotong. */}
+          {filteredAll.length > filtered.length && (
+            <div className="px-3 py-2 text-[11px] text-gray-400 text-center">
+              Menampilkan {filtered.length} dari {filteredAll.length} — ketik untuk mempersempit.
+            </div>
+          )}
         </div>
       )}
     </div>
