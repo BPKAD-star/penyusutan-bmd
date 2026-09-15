@@ -113,9 +113,22 @@ const angkaLuas = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 // ── Kotak "Cari" (server-side, PostgREST `or=`) ─────────────────────────────
-// Bidang yang dicocokkan: nama barang, NIBAR, kode (prefix), merek/tipe, dan
-// nomor identitas kendaraan (polisi/rangka/mesin) + nilai perolehan
-// (permintaan user 2026-07-30).
+// Bidang yang dicocokkan: nama barang, NIBAR, kode, merek/tipe, nomor identitas
+// kendaraan (polisi/rangka/mesin), alamat & kode wilayah, + nilai perolehan
+// (permintaan user 2026-07-30, dilebarkan 2026-09-15 supaya SEJAJAR dgn Daftar
+// Barang — lihat `KOLOM_CARI` di lib/cariBarang.ts).
+//
+// ⚠️ DUA KOLOM Daftar Barang TAK BISA ikut disamakan, dan itu BUKAN kelupaan:
+//   - `kode_register` TAK ADA di `aset_awal_2026` sama sekali — tabel ini
+//     snapshot BEKU posisi akhir 2025, sedangkan kode register itu konsep
+//     "posisi TERAKHIR" yang cuma berlaku di register hidup (`aset`).
+//   - `keterangan` juga tak tersimpan di tabel ini; kolom yang tampil di layar
+//     (`ketMap`) hasil lookup TERPISAH ke `aset` per NIBAR SESUDAH baris
+//     snapshot-nya ditarik (lihat `fetchAsetInfo`) — bukan filter yang bisa
+//     dilipat ke `.or()` tanpa subquery/join tambahan.
+// Sebaliknya `nilai_perolehan` di sini LEBIH LEBAR dari Daftar Barang (yang
+// belum mendukungnya sama sekali) — dipertahankan, bukan dibuang, demi
+// "samain" bukan berarti menyempitkan yang sudah ada.
 //
 // Nilai WAJIB dikutip ganda. Tanpa itu satu koma / tanda kurung yang diketik
 // operator memecah sintaks `or=` di tengah jalan → PostgREST menolak dgn
@@ -136,11 +149,15 @@ function orCari(cari: string): string {
   const klausa = [
     `nama_barang.ilike.${suka}`,
     `nibar.ilike.${suka}`,
-    `kode.ilike.${kutip(`${q}%`)}`,
+    // Substring, bukan prefix — dulu `kode.ilike.'${q}%'`, disamakan dgn Daftar
+    // Barang yang mencocokkan kode di posisi mana pun.
+    `kode.ilike.${suka}`,
     `merek_tipe.ilike.${suka}`,
     `no_polisi.ilike.${suka}`,
     `no_rangka.ilike.${suka}`,
     `no_mesin.ilike.${suka}`,
+    `alamat_detail.ilike.${suka}`,
+    `wilayah_kode.ilike.${suka}`,
   ]
   const bersih = q.replace(/[.,\s]/g, '')
   if (bersih && /^\d+$/.test(bersih)) klausa.push(`nilai_perolehan.eq.${bersih}`)
@@ -999,7 +1016,7 @@ export default function Page() {
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
             <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Cari :</label>
             <input className="select-filter w-full sm:flex-1 min-w-0"
-              placeholder="Nama barang / NIBAR / kode / merek / no. polisi / rangka / mesin / nilai perolehan..."
+              placeholder="Nama barang / NIBAR / kode / merek / no. polisi / rangka / mesin / alamat / kode wilayah / nilai perolehan..."
               value={search} onChange={e => setSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
           </div>
