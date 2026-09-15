@@ -158,8 +158,10 @@ prefix `NEXT_PUBLIC_`.
 ```bash
 npm install
 npm run dev
-npm test        # unit test (Vitest) — 264 hijau, termasuk golden test laporan
-npm run lint    # ESLint, 6 aturan (eslint.config.mjs)
+npm test             # Vitest — 1.329 hijau di 58 berkas ⟨2026-09-15⟩, termasuk
+                     # golden test laporan & test komponen (jsdom)
+npm run lint         # ESLint, 6 aturan (eslint.config.mjs)
+npm run test:coverage # ambang 80% untuk lib/engine, lib/bmd, shared/** — CI menjalankannya
 ```
 
 Tipe database digenerate ke
@@ -175,10 +177,17 @@ client-nya sendiri belum bertipe) ada di
 [CODING-STANDARD.md](CODING-STANDARD.md) §4.4.
 
 Type-check: `npx tsc --noEmit -p tsconfig.json` — **bersih, 0 error**
-(2026-08-05). Exit code-nya bisa dibaca apa adanya; tidak perlu disaring lagi.
+(2026-09-15). Exit code-nya bisa dibaca apa adanya; tidak perlu disaring lagi.
 `npm run build` belum diuji.
 
-Lint **0 error / 569 warning** (2026-08-06). Warning-nya utang lama yang sudah
+⚠️ **Node 22+ WAJIB** (`jsdom@30` & `undici@8` mensyaratkannya). `npm ci` cuma
+MEMPERINGATKAN soal `engines`, tidak memblokir — di Node 20 paketnya tetap
+terpasang lalu seluruh test komponen gagal DIMUAT, dan vitest melaporkannya sbg
+"Errors" bukan test gagal, jadi hitungan "passed" tetap kelihatan wajar. Itu
+terjadi berbulan di CI tanpa ada yang tahu (REFACTOR-PLAN §10 butir 1b).
+**Cocokkan jumlah test di CI dgn jumlah lokal, jangan cuma baca "passed".**
+
+Lint **0 error / 597 warning** (2026-09-15). Warning-nya utang lama yang sudah
 terukur dan sengaja tidak memerahkan CI — alasan per aturan ada di
 [`eslint.config.mjs`](eslint.config.mjs); adopsinya lewat *boy-scout rule*
 ([CODING-STANDARD.md](CODING-STANDARD.md) §10).

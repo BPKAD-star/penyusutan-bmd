@@ -63,6 +63,31 @@ Fase 4  Pindahkan baca ke server 3 minggu ███ per halaman berat, terukur
 Fase 5  Pindah struktur folder berjalan   ██████ paling akhir, sengaja
 ```
 
+### Status TERUKUR — 2026-09-15
+
+⚠️ **Tabel ini WAJIB diperbarui dgn cara MENGUKUR, bukan mengingat.** Sebelum
+ada tabel ini, pertanyaan "sudah sampai mana?" dijawab dari tabel §5 yang
+ternyata basi berbulan — dan jawabannya keliru (lihat peringatan di §5).
+Perintah pengukurannya ada di kolom paling kanan; jalankan, jangan percaya
+centangnya.
+
+| Fase | Status | Ukuran hari ini | Cara mengukur |
+|---|---|---|---|
+| **0** Jaring pengaman | ✅ **8/8, dan sejak hari ini BENAR-BENAR bersih** | typecheck 0 error · 1.329 test / 58 berkas · lint 0 error (597 warning) · coverage 97,51% | `npm run typecheck && npm test && npm run lint && npm run test:coverage` |
+| **1** Primitif bersama | 🟡 ditulis semua, **adopsinya timpang** | `assertOk` **5 berkas** · `paginate` **1** · `useAsyncData` **0** | `grep -rl "from '@/shared/db/query'" app components lib` |
+| **2** Ekstrak domain | 🟡 **4 dari 6 selesai** (2.1 · 2.1b · 2.3 · 2.4); 2.2 tujuannya tercapai (sisanya kerjaan Fase 5); 2.5 & 2.6 sebagian | `lib/rekon.ts` masih 1.034 baris | lihat perintah di §5 |
+| **3** Pecah komponen raksasa | 🔴 **nol progres, dan memburuk** | berkas > 500 baris **35** (patokan 19) · `Koreksi.tsx` **2.465 baris / 72 useState** | `find app components lib -name '*.ts*' \| xargs wc -l \| awk '$2!="total" && $1>500' \| wc -l` |
+| **4** Baca ke server | ✅ **5/5 halaman** | Daftar Barang · Penyusutan · Rekonsiliasi · Laporan BMD · Dashboard, semuanya lewat RPC | `grep -c fn_daftar_barang app/dashboard/daftar-barang/page.tsx` |
+| **5** Struktur folder | 🔴 **belum mulai** (memang paling akhir) | `modules/` belum ada · `lib/` 66 berkas · `components/` 111 berkas | `test -d modules` |
+
+⚠️ **Fase 0 "8/8 bersih" sempat TIDAK BENAR selama berbulan** dan tak ada yang
+tahu: CI merah, `test:coverage` merah & tak pernah dijalankan, dan 12 berkas
+test jsdom gagal DIMUAT di CI tanpa memerahkan hitungan "passed" (§10 butir 1 &
+1b). Ditutup 2026-09-15. **Kalau tabel ini kelak menyatakan sesuatu "bersih",
+pastikan itu hasil menjalankan perintahnya — bukan warisan baris sebelumnya.**
+
+---
+
 **Kenapa struktur folder paling akhir** — ini kebalikan dari naluri
 kebanyakan orang. Memindahkan folder lebih dulu memaksimalkan konflik merge
 dengan pekerjaan fitur dan **nol** memperbaiki perilaku. Setelah Fase 2,
@@ -902,21 +927,21 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Test integrasi DB (`authenticated`) | 0 | **0** — satu-satunya metrik yang **belum bergerak sama sekali** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **29 test + 1 snapshot** ⟨Rekonsiliasi BMD⟩ | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 ⚠️ | **68** kemunculan di **60** berkas — 🔴 naik dari 63 | 90 | 40 | < 10 |
-| `const { data } = await` | 166 | **156** ⟨09-15⟩ — 🟡 turun 10, adopsi `assertOk()` masih nol | 110 | 50 | < 10 |
+| `const { data } = await` | 166 | **156** ⟨09-15⟩ — 🟡 turun 10. ⚠️ Catatan lama "adopsi `assertOk()` masih nol" **KELIRU**: diukur 2026-09-15 ia dipakai **5 berkas** (Laporan BMD, 2 lembar cetaknya, Uji Konsistensi, Saldo Awal Rekapitulasi). Yang benar-benar nol pemakai: **`useAsyncData`** | 110 | 50 | < 10 |
 | Berkas > 500 baris | 19 | **35** mentah · **22** kode-saja — 🔴 naik dari 20 | 15 | 8 | ≤ 3 |
-| Komentar "ubah satu, samakan yang lain" | ~6 pasang | **21** kemunculan: **16 aktif** + 5 retrospektif; **16 seksi test penegak** | 4 | 2 | 0 |
+| Komentar "ubah satu, samakan yang lain" | ~6 pasang | **21** kemunculan ⟨09-13⟩; **2 pasang DICABUT 09-15** — kolom Daftar Barang ↔ Daftar Barang Awal & 1.5.4 ↔ `ASET_LAIN_LAIN_EXTRA` kini dijaga `lib/kolomBarang.test.ts`, bukan komentar | 4 | 2 | 0 |
 | Query per pemuatan Daftar Barang | 8–15 | **2** ⟨RPC, tak berubah sejak 2026-08-14⟩ | 8–15 | ≤ 5 | ≤ 5 |
 | Query per pemuatan Penyusutan | ≈1.466 ⟨SKPD terbesar⟩ | **2** ⟨RPC, tak berubah sejak 2026-08-18⟩ | — | ≤ 5 | ≤ 5 |
 | Query per "Proses" Rekonsiliasi | ≈8.455 ⟨SKPD terbesar⟩ | **52** halaman utuh · **3** jalur snapshot | — | ≤ 5 | ≤ 5 |
 | RPC agregat berat tanpa `work_mem` | — | **0** ⟨audit `pg_proc.proconfig` ke produksi⟩ | — | 0 | 0 |
-| Coverage `domain/` + `shared/` | — | ✅ **97,51% stmt / 87,68% branch** ⟨2026-09-15; sebelumnya 🔴 67,83%⟩ | 60% | 80% | 85% |
+| Coverage `domain/` + `shared/` | — | ✅ **97,51% stmt / 87,68% branch** ⟨2026-09-15; sebelumnya 🔴 67,83%⟩ — **CI menjalankannya** | 60% | 80% | 85% |
 | ESLint | 0 error / 569 warning ⟨08-06⟩ | **0 error / 597 warning** ⟨09-15⟩ — 301 floating promise · 274 `const { data }` · 22 max-lines | — | — | — |
 | Typecheck | 0 error | **0 error** (exit 0) | — | — | — |
 
 **Tinjauan 2026-09-13 — perintahnya, supaya bisa diulang persis:**
 
 ```bash
-npm test                          # 1.302 test / 57 berkas ⟨2026-09-15⟩
+npm test                          # 1.329 test / 58 berkas ⟨2026-09-15, sesudah Fase 2.3⟩
 npx vitest run tests/golden       # 29 test
 npm run typecheck                 # exit 0
 npm run lint                      # 597 warning, 0 error ⟨2026-09-15⟩

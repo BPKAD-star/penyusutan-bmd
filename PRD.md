@@ -116,7 +116,8 @@ UI hanya cerminan (menyembunyikan tombol).
 1. Angka Rekonsiliasi = angka halaman Penyusutan = angka Laporan BMD untuk
    periode & scope yang sama (tie-out).
 2. Semua halaman berat tetap responsif (< timeout 8 dtk) pada skala saat ini
-   (± 418rb baris aset & ledger) — termasuk sebagai pengurus barang SKPD
+   (**± 517rb baris aset & ledger**, diukur 2026-09-15 — angka lama "418rb"
+   sudah dua kali terlampaui) — termasuk sebagai pengurus barang SKPD
    terbesar, bukan hanya admin.
 3. Setiap kegagalan query **terlihat** oleh operator (banner error), tidak
    pernah tampil sebagai "0 barang" palsu atau halaman beku.

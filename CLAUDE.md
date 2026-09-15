@@ -307,8 +307,16 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   dijalankan sebagai perintah LEPAS** (`VACUUM` di dalam transaksi = `25001`,
   dan karena SQL Editor membungkus skrip jadi satu transaksi, seluruh migrasi
   ikut ter-ROLLBACK — lihat 20260810_01).
-  ⚠️ **Angka 418rb di dokumen ini & schema.md sudah BASI sejak lama** (nyatanya
-  471.761). Verifikasi ke DB sebelum mengutip angka skala dari sini.
+  ⚠️ **ANGKA SKALA DI DOKUMEN INI SELALU KETINGGALAN — verifikasi ke DB sebelum
+  mengutipnya.** Riwayat angkanya sendiri buktinya: 418rb (dikutip di belasan
+  tempat) → 471.761 (2026-09-06) → **517.011 (diukur 2026-09-15)**. Impor massal
+  di repo ini datang beberapa kali sebulan, jadi tiap angka yang ditulis di sini
+  basi dalam hitungan minggu.
+  **Posisi terukur 2026-09-15** (`pg_stat_user_tables.n_live_tup`, produksi):
+  `aset` **517.011** · `transaksi_bmd` **517.026** · `aset_awal_2026` **514.158**
+  · `penyusutan_semester` **676.998** · `aset_kode_register` **189**
+  (⚠️ yang terakhir `n_live_tup`-nya menyesatkan — tabel itu belum pernah
+  di-`ANALYZE` & statistiknya menunjukkan 1; hitung `count(*)` sungguhan).
 
 - **`fn_dashboard_rekap` menyapu register DUA KALI** (sebab kedua insiden yang
   sama). Badannya (20260810_02) berisi dua subquery ber-qual SAMA PERSIS — satu
@@ -5497,7 +5505,19 @@ tautan yang menyesuaikan ("Peta" bukan "GIS Tanah").
 
 ## Lingkungan kerja
 
-- Deploy via Vercel. **Type-check BERSIH — 0 error** (diverifikasi 2026-08-05):
+- **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
+  (`>=22.19.0`). ⚠️ `npm ci` cuma MEMPERINGATKAN soal `engines`, TIDAK memblokir:
+  di Node 20 paketnya tetap terpasang lalu SELURUH test komponen gagal DIMUAT,
+  dan vitest melaporkannya sbg "Errors" — bukan test gagal — sehingga hitungan
+  "passed" tetap terbaca wajar. Persis itu yang terjadi di CI berbulan tanpa ada
+  yang tahu (12 berkas jsdom lenyap diam-diam; ditutup 2026-09-15, `ci.yml` kini
+  Node 22). **Jumlah test di log CI wajib dicocokkan dgn jumlah lokal.**
+- **CI menjalankan 4 langkah**: `typecheck` · `test` · `lint` · `test:coverage`.
+  Coverage baru ikut sejak 2026-09-15; ambang 80% berlaku untuk `lib/engine`,
+  `lib/bmd`, `shared/**` (lihat `coverage.include` di vitest.config.ts), bukan
+  seluruh repo. Melebarkannya ke `components/**` akan memerahkan CI seketika —
+  kalau itu dikerjakan, turunkan ambangnya di commit yang SAMA.
+- Deploy via Vercel. **Type-check BERSIH — 0 error** (diverifikasi 2026-09-15):
   `npx tsc --noEmit -p tsconfig.json`. **Exit code-nya sekarang bisa dipercaya
   apa adanya** — jangan disaring lagi, error apa pun yang muncul berarti dari
   perubahanmu sendiri.

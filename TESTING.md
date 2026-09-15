@@ -13,7 +13,7 @@ supaya paragraf di atas tidak terbaca sebagai keadaan hari ini:
 
 | | Status |
 |---|---|
-| Unit domain | ✅ **1.302 test / 57 berkas, semua hijau** ⟨diukur 2026-09-15; angka lama "264" sudah basi⟩ (`npm test`, ±13 dtk) — terbesar: `engine/penyusutan` 91 · `bmd` 74 · `formatPerpindahan` 68 · `formatPermendagri` 51 · `formatReklas` 50 · `namaBerkas` 49 · `formatPenghapusan` 47 · `sinkronisasiRpc` 41. Termasuk 6 invarian property-based (`fast-check`) |
+| Unit domain | ✅ **1.329 test / 58 berkas, semua hijau** ⟨diukur 2026-09-15; angka lama "264" sudah basi⟩ (`npm test`, ±13 dtk) — terbesar: `engine/penyusutan` 91 · `bmd` 74 · `formatPerpindahan` 68 · `formatPermendagri` 51 · `formatReklas` 50 · `namaBerkas` 49 · `formatPenghapusan` 47 · `sinkronisasiRpc` 41. Termasuk 6 invarian property-based (`fast-check`) |
 | Komponen / hook (jsdom) | ✅ lembar Permendagri (`tests/lembar*.test.tsx`, 5 berkas) + SELURUH primitif `shared/ui/` — `FotoBarang` 19 · `KonfirmasiModal` 25 · `konfirmasi` 12 · `NominalInput` 10 · `useAsyncData` 10. Coverage `shared/ui` **0% → 100%** statement (2026-09-15) |
 | Coverage (`npm run test:coverage`) | ✅ **97,51% stmt / 87,68% branch**, dan **CI menjalankannya** sejak 2026-09-15. Sebelumnya merah 67,83% & tak pernah dijalankan siapa pun — lihat REFACTOR-PLAN §10 temuan 1 |
 | Integrasi DB (`authenticated`) | ⬜ belum ada — **ini lubang terbesar**, lihat §5 |

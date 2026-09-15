@@ -5,7 +5,7 @@
 # dengan tidak punya CI, karena semua orang belajar mengabaikannya.
 #
 #   1. npm run typecheck  ← Fase 0.6, APA ADANYA (repo ini 0 error)
-#   2. npm test           ← Fase 0.2–0.8, Fase 1, golden test — 1.302 test
+#   2. npm test           ← Fase 0.2–0.8, Fase 1, golden test — 1.329 test
 #   3. npm run lint       ← Fase 0.5, terpasang 2026-08-06 (0 error, 597 warning)
 #   4. npm run test:coverage ← ditambahkan 2026-09-15 (97,51% stmt / 87,68% branch)
 #
@@ -15,14 +15,14 @@
 # error baru. Kalau suatu saat ada yang menambahkannya, itu langkah MUNDUR:
 # perbaiki errornya, jangan bekukan.
 #
-# Yang dijaga CI ini hari ini: 1.302 test di 57 berkas (tinjauan 2026-09-15),
+# Yang dijaga CI ini hari ini: 1.329 test di 58 berkas (tinjauan 2026-09-15),
 # termasuk lib/sinkronisasi.test.ts
 # yang menegakkan rules.md §1.7 & §5.5 — daftar konstanta kembar yang selama ini
 # hanya dijaga ingatan dan sudah berkali-kali bocor. Sejak Fase 0.8 ia juga
 # membandingkan shared/types/database.types.ts dengan migrasi, jadi menambah
 # nilai enum tanpa `npm run gen:types` langsung merah.
 #
-# ⚠️ Angka "1.302 / 57" itu baru BENAR sejak Node dinaikkan ke 22 (lihat alasan
+# ⚠️ Angka test di atas baru BENAR sejak Node dinaikkan ke 22 (lihat alasan
 # di langkah setup-node di bawah). Sebelum itu CI diam-diam cuma menjalankan
 # 1.013 test di 45 berkas — 12 berkas jsdom gagal DIMUAT, dan vitest
 # melaporkannya sbg "Errors", BUKAN sbg test gagal. Kalau suatu saat jumlah
