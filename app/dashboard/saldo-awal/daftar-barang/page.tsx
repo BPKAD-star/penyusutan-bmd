@@ -49,6 +49,8 @@ import { KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { luasBidangSah, luasEfektif } from '@/lib/luasBidang'
+
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { koreksiFieldKeys, allSameGolongan, ASET_NUM_COLS, type FieldKey } from '@/lib/asetFields'
@@ -744,11 +746,9 @@ export default function Page() {
   // supaya angka di dua menu tak pernah beda tanpa sebab.
   // Parameter `bd` bisa diisi peta bidang lain (dipakai Export, yang cakupan
   // barisnya lebih luas dari layar); default = milik halaman.
-  const luasBidangSah = (b: BidangAgg | undefined) => !!b && b.n > 0 && b.nLuas === b.n && b.luas != null
-  const luasOf = (r: Row, bd: Record<string, BidangAgg> = bidang): number | null => {
-    const b = bd[r.nibar]
-    return luasBidangSah(b) ? b.luas : r.luas
-  }
+  // Aturannya → lib/luasBidang.ts (diangkat 2026-09-15, kemunculan ketiga).
+  const luasOf = (r: Row, bd: Record<string, BidangAgg> = bidang): number | null =>
+    luasEfektif(bd[r.nibar], r.luas)
   // Satu register bisa punya banyak bidang di lokasi berbeda — kalau tak bisa
   // diringkas jadi satu baris, jangan dipaksakan: tunjuk saja ke GIS Tanah.
   function lokasiOf(r: Row, bd: Record<string, BidangAgg> = bidang): { alamat: string; wilayah: string } {
