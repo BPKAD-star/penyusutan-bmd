@@ -886,29 +886,29 @@ hari ini, jadi tinjauan bulanannya secara harfiah tak bisa dilakukan.
 | Test integrasi DB (`authenticated`) | 0 | **0** — satu-satunya metrik yang **belum bergerak sama sekali** | 10 | 40 | 60 |
 | Golden test laporan | 0 | **29 test + 1 snapshot** ⟨Rekonsiliasi BMD⟩ | 5 | 15 | 20 |
 | Loop paginasi tulis-tangan | 126 ⚠️ | **68** kemunculan di **60** berkas — 🔴 naik dari 63 | 90 | 40 | < 10 |
-| `const { data } = await` | 166 | **158** — 🟡 turun 8, adopsi `assertOk()` masih nol | 110 | 50 | < 10 |
+| `const { data } = await` | 166 | **156** ⟨09-15⟩ — 🟡 turun 10, adopsi `assertOk()` masih nol | 110 | 50 | < 10 |
 | Berkas > 500 baris | 19 | **35** mentah · **22** kode-saja — 🔴 naik dari 20 | 15 | 8 | ≤ 3 |
 | Komentar "ubah satu, samakan yang lain" | ~6 pasang | **21** kemunculan: **16 aktif** + 5 retrospektif; **16 seksi test penegak** | 4 | 2 | 0 |
 | Query per pemuatan Daftar Barang | 8–15 | **2** ⟨RPC, tak berubah sejak 2026-08-14⟩ | 8–15 | ≤ 5 | ≤ 5 |
 | Query per pemuatan Penyusutan | ≈1.466 ⟨SKPD terbesar⟩ | **2** ⟨RPC, tak berubah sejak 2026-08-18⟩ | — | ≤ 5 | ≤ 5 |
 | Query per "Proses" Rekonsiliasi | ≈8.455 ⟨SKPD terbesar⟩ | **52** halaman utuh · **3** jalur snapshot | — | ≤ 5 | ≤ 5 |
 | RPC agregat berat tanpa `work_mem` | — | **0** ⟨audit `pg_proc.proconfig` ke produksi⟩ | — | 0 | 0 |
-| Coverage `domain/` + `shared/` | — | 🔴 **global 67,83% — GAGAL ambang 80%** (rincian di bawah) | 60% | 80% | 85% |
-| ESLint | 0 error / 569 warning ⟨08-06⟩ | **0 error / 604 warning** — 303 floating promise · 279 `const { data }` · 22 max-lines | — | — | — |
+| Coverage `domain/` + `shared/` | — | ✅ **97,51% stmt / 87,68% branch** ⟨2026-09-15; sebelumnya 🔴 67,83%⟩ | 60% | 80% | 85% |
+| ESLint | 0 error / 569 warning ⟨08-06⟩ | **0 error / 597 warning** ⟨09-15⟩ — 301 floating promise · 274 `const { data }` · 22 max-lines | — | — | — |
 | Typecheck | 0 error | **0 error** (exit 0) | — | — | — |
 
 **Tinjauan 2026-09-13 — perintahnya, supaya bisa diulang persis:**
 
 ```bash
-npm test                          # 1.231 test / 52 berkas
+npm test                          # 1.302 test / 57 berkas ⟨2026-09-15⟩
 npx vitest run tests/golden       # 29 test
 npm run typecheck                 # exit 0
-npm run lint                      # 604 warning, 0 error
-npm run test:coverage             # ⚠️ GAGAL — 67,83% < ambang 80%
+npm run lint                      # 597 warning, 0 error ⟨2026-09-15⟩
+npm run test:coverage             # 97,51% (2026-09-15; saat tinjauan 13-09 masih GAGAL 67,83%)
 
 grep -rn 'from + 999'             --include='*.ts*' app components lib | wc -l          # 68
 grep -rc 'from + 999'             --include='*.ts*' app components lib | grep -v ':0' | wc -l   # 60 berkas
-grep -rn 'const { data } = await' --include='*.ts*' app components lib | wc -l          # 158
+grep -rn 'const { data } = await' --include='*.ts*' app components lib | wc -l          # 156
 find app components lib -name '*.ts' -o -name '*.tsx' | xargs wc -l \
   | awk '$2 != "total" && $1 > 500' | wc -l                                             # 35
 grep -rniE 'ubah satu,? (samakan|ubah)|samakan yang lain' \
@@ -917,27 +917,55 @@ grep -rniE 'ubah satu,? (samakan|ubah)|samakan yang lain' \
 
 ### ⚠️ Temuan tinjauan ini yang paling perlu ditindaklanjuti
 
-**1. `npm run test:coverage` MERAH, dan tak ada yang menjalankannya.** Ambang
-global 80% di `vitest.config.ts` sudah dilewati ke bawah — 67,83%. Sebabnya
-bukan kode domain yang memburuk (justru sebaliknya), melainkan tiga berkas
-`shared/ui/` yang lahir sesudah ambangnya dipasang & tak pernah diberi test:
+**1. ✅ `npm run test:coverage` sudah HIJAU & CI menjalankannya** (ditutup
+2026-09-15). Saat tinjauan ini ditulis ia merah — 67,83% lawan ambang 80% —
+dan `.github/workflows/ci.yml` hanya menjalankan `typecheck` + `test` + `lint`,
+jadi ambang itu gagal DIAM-DIAM sejak entah kapan: jaring pengaman yang tak
+pernah ditembak. Sebabnya bukan kode domain yang memburuk (justru sebaliknya),
+melainkan tiga berkas `shared/ui/` yang lahir SESUDAH ambangnya dipasang & tak
+pernah diberi test.
 
-| Berkas | Stmt |
-|---|---|
-| `lib/engine/penyusutan.ts` | 99,28% |
-| `lib/bmd.ts` | 86,36% |
-| `shared/db/paginate.ts`, `query.ts` | 100% |
-| `shared/ui/useAsyncData.ts`, `NominalInput.tsx` | 100% |
-| `shared/ui/FotoBarang.tsx` | **0%** |
-| `shared/ui/KonfirmasiModal.tsx` | **0%** |
-| `shared/ui/konfirmasi.tsx` | **0%** |
+Dari dua jalan yang tersedia — beri test, atau turunkan ambangnya ke angka yang
+jujur — **yang diambil jalan pertama**, karena ketiganya bukan berkas pinggiran:
+`KonfirmasiModal`/`konfirmasi` adalah SATU-SATUNYA pintu konfirmasi sejak
+`confirm()`/`prompt()`/`alert()` dilarang se-repo (CODING-STANDARD §4.5), dipakai
+menyetujui & membuka kunci dokumen RKBMD dan Standar Harga.
 
-⚠️ **`.github/workflows/ci.yml` menjalankan `typecheck` + `test` + `lint`, TIDAK
-`test:coverage`.** Jadi ambang itu gagal DIAM-DIAM sejak entah kapan — jaring
-pengaman yang tak pernah ditembak. Dua jalan, dan keduanya sah asal DIPUTUSKAN:
-beri test ketiga berkas itu, atau turunkan ambangnya ke angka yang jujur dan
-catat alasannya. Yang tidak boleh: membiarkannya merah sambil mengaku Fase 0
-"8/8 bersih".
+| Berkas | Stmt sebelum | Stmt sesudah |
+|---|---|---|
+| `lib/engine/penyusutan.ts` | 99,28% | 99,28% |
+| `lib/bmd.ts` | 86,36% | 86,36% |
+| `shared/db/paginate.ts`, `query.ts` | 100% | 100% |
+| `shared/ui/useAsyncData.ts`, `NominalInput.tsx` | 100% | 100% |
+| `shared/ui/FotoBarang.tsx` | **0%** | **100%** |
+| `shared/ui/KonfirmasiModal.tsx` | **0%** | **100%** |
+| `shared/ui/konfirmasi.tsx` | **0%** | **100%** |
+| **Global** | **67,83%** | **97,51%** |
+
+55 test baru (`shared/ui/{konfirmasi,KonfirmasiModal,FotoBarang}.test.tsx`).
+⚠️ **Coverage-nya sendiri BUKAN yang dijaga** — yang dijaga tujuh aturan yang
+kalau lepas tak menghasilkan satu pun error: promise konfirmasi yang tertimpa
+wajib diselesaikan sbg batal (kalau menggantung, fungsi pemanggil berhenti di
+tengah tanpa jejak), `kerjakan` yang melempar wajib ikut menolak promise-nya,
+pop-up wajib tetap terbuka selama pekerjaannya berjalan, kelas Tailwind wajib
+string utuh, klik-di-luar tak boleh menutup saat teks sedang diblok,
+`useFotoThumbs` wajib TIDAK melempar, dan tanda tangan foto tak boleh diulang
+tiap render. Seluruhnya **diuji merah dulu lewat mutasi** (10 mutasi).
+
+⚠️ **Dua di antaranya awalnya HIJAU PALSU, dan cuma ketahuan lewat mutasi itu:**
+(a) uji "isi kotak catatan tak terbawa" ditulis sbg "jawab A lalu buka B" —
+padahal di alur itu pop-upnya memang dibongkar & state-nya reset sendiri, jadi
+ia tetap hijau walau `key={seri}` dicabut; yang sungguh dijaga `key` adalah
+pergantian opsi TANPA pembongkaran. (b) uji "`useFotoThumbs` tidak melempar"
+cuma memeriksa petanya tetap `{}` — padahal efeknya berjalan di dalam async
+IIFE, jadi `throw` di sana hanya jadi *unhandled rejection* & petanya TETAP `{}`
+di kedua keadaan. **Pelajarannya sama dgn yang sudah berkali-kali tercatat di
+repo ini: test yang tak pernah dibuat merah belum tentu menguji apa pun.**
+
+⚠️ Ambangnya berlaku untuk `coverage.include` di `vitest.config.ts` (logika
+murni + `shared`), BUKAN seluruh repo. Melebarkannya ke `components/**` akan
+memerahkan CI seketika — kalau itu dikerjakan, turunkan ambangnya di commit yang
+SAMA.
 
 **2. Fase 3 memburuk jauh lebih cepat dari yang tercatat.** Angka 2026-08-06
 berbunyi 19 → 20 berkas; kenyataannya **19 → 35**. Rincian keempat target
@@ -1046,8 +1074,11 @@ test semacam itu menutup kelima halaman Lapis 1.
 **tanpa** rahasia apa pun. Jadi keputusan pertamanya bukan teknis melainkan
 kebijakan — test ini jalan di CI (perlu secret) atau jalan lokal sebelum push
 (perlu disiplin). **Pilih salah satu dan catat di sini**; yang tidak boleh
-adalah menulis testnya lalu membiarkannya tak pernah dijalankan siapa pun,
-persis nasib `npm run test:coverage` hari ini.
+adalah menulis testnya lalu membiarkannya tak pernah dijalankan siapa pun —
+persis nasib `npm run test:coverage`, yang ambangnya gagal diam-diam berbulan
+sampai ditutup 2026-09-15 (lihat §10 temuan 1). Jaring pengaman yang tak pernah
+ditembak tidak lebih baik daripada tak ada jaring; ia lebih buruk, karena
+memberi rasa aman.
 
 ---
 

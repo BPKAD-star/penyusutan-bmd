@@ -5,8 +5,9 @@
 # dengan tidak punya CI, karena semua orang belajar mengabaikannya.
 #
 #   1. npm run typecheck  ← Fase 0.6, APA ADANYA (repo ini 0 error)
-#   2. npm test           ← Fase 0.2–0.8, Fase 1, golden test — 1.225 test
-#   3. npm run lint       ← Fase 0.5, terpasang 2026-08-06 (0 error, 604 warning)
+#   2. npm test           ← Fase 0.2–0.8, Fase 1, golden test — 1.302 test
+#   3. npm run lint       ← Fase 0.5, terpasang 2026-08-06 (0 error, 597 warning)
+#   4. npm run test:coverage ← ditambahkan 2026-09-15 (97,51% stmt / 87,68% branch)
 #
 # ⚠️ `typecheck` sengaja TANPA berkas baseline. Rencana awal membekukan error
 # lama ke `.typecheck-baseline.txt`, tapi ternyata nol error bisa dicapai
@@ -14,7 +15,7 @@
 # error baru. Kalau suatu saat ada yang menambahkannya, itu langkah MUNDUR:
 # perbaiki errornya, jangan bekukan.
 #
-# Yang dijaga CI ini hari ini: 1.225 test di 51 berkas (tinjauan 2026-09-13),
+# Yang dijaga CI ini hari ini: 1.302 test di 57 berkas (tinjauan 2026-09-15),
 # termasuk lib/sinkronisasi.test.ts
 # yang menegakkan rules.md §1.7 & §5.5 — daftar konstanta kembar yang selama ini
 # hanya dijaga ingatan dan sudah berkali-kali bocor. Sejak Fase 0.8 ia juga
@@ -51,17 +52,24 @@ jobs:
       - run: npm test
 
       # SENGAJA TANPA `--max-warnings`. Warning di sini = utang lama yang sudah
-      # terukur & sengaja dibiarkan (604 per 2026-09-13: 303 floating promise,
-      # 279 `const { data } = await`, 22 max-lines) — memerahkan
+      # terukur & sengaja dibiarkan (597 per 2026-09-15: 301 floating promise,
+      # 274 `const { data } = await`, 22 max-lines) — memerahkan
       # CI karenanya sama saja dengan tidak punya CI. Yang memerahkan CI cuma
       # yang berstatus `error`, dan itu semua dipilih dari kelompok yang HARI
       # INI nol pelanggaran. Rinciannya di eslint.config.mjs.
       - run: npm run lint
 
-      # ⚠️ `npm run test:coverage` SENGAJA TIDAK di sini — dan itu utang, bukan
-      # keputusan. Per 2026-09-13 ia MERAH (67,83% < ambang 80%) karena tiga
-      # berkas shared/ui yang lahir sesudah ambangnya dipasang tak pernah
-      # diberi test (FotoBarang, KonfirmasiModal, konfirmasi — 0% ketiganya).
-      # Menambahkannya sekarang = CI merah permanen. Yang harus diputuskan:
-      # beri test ketiganya, atau turunkan ambangnya ke angka yang jujur.
-      # Lihat REFACTOR-PLAN.md §10 "Temuan tinjauan" butir 1.
+      # Coverage IKUT MEMERAHKAN CI sejak 2026-09-15. Sampai hari itu ia sengaja
+      # tak dijalankan karena MERAH (67,83% < ambang 80%): tiga berkas shared/ui
+      # yang lahir sesudah ambangnya dipasang tak pernah diberi test
+      # (FotoBarang, KonfirmasiModal, konfirmasi — 0% ketiganya). Utang itu
+      # dibayar, bukan ambangnya yang diturunkan — ketiganya justru primitif
+      # yang dipakai MENYETUJUI & MEMBUKA KUNCI dokumen. Sesudahnya: 97,51%
+      # statement / 87,68% branch.
+      #
+      # ⚠️ Ambangnya cuma berlaku untuk `coverage.include` di vitest.config.ts
+      # (logika murni + shared), BUKAN seluruh repo. Melebarkan `include` ke
+      # `components/**` akan memerahkan CI seketika — kalau itu dikerjakan,
+      # turunkan ambangnya di commit yang SAMA, jangan biarkan merah menggantung
+      # (CI merah permanen = semua orang belajar mengabaikannya).
+      - run: npm run test:coverage

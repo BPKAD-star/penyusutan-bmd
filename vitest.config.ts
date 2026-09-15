@@ -1,8 +1,11 @@
 // Konfigurasi Vitest — Fase 0.1 (lihat TESTING.md §4.2).
 //
-// Lingkup awal SENGAJA sempit: hanya logika MURNI (engine, helper domain).
-// Test komponen & integrasi DB punya kebutuhan berbeda (jsdom, Postgres) dan
-// ditambahkan saat lapisannya sudah siap — bukan sekarang.
+// Lingkup awalnya SENGAJA sempit: hanya logika MURNI (engine, helper domain).
+// Sejak itu test KOMPONEN menyusul (jsdom, lihat `esbuild.jsx` di bawah) — kini
+// lembar Permendagri, primitif `shared/ui`, & hook. Yang MASIH belum ada:
+// integrasi DB dgn RLS aktif; itu butuh kredensial Postgres & keputusan
+// kebijakan (jalan di CI dgn secret, atau lokal sebelum push) — lihat
+// REFACTOR-PLAN.md §11.
 import { defineConfig } from 'vitest/config'
 import path from 'node:path'
 
