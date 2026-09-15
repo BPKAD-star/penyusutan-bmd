@@ -6,6 +6,7 @@
 //     DEFERRED / Pencatatan Ganda) → pilih barang.
 //   - "Koreksi Spesifikasi" (alur lama, standalone single-item): DI LUAR
 //     "3 sebab" yang diminta user, sengaja TIDAK ikut pola ber-SK.
+import { alokasiPemecahan, balancePemecahan, keSen, semuaPecahanValid } from '@/lib/pemecahanNilai'
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
@@ -52,10 +53,8 @@ type Barang = {
 }
 // Edit spesifikasi yang disusun di popup, menunggu di-commit oleh Simpan.
 type SpekEdit = { fields: Record<string, string>; foto: { replace?: string[]; append?: string[] } }
-/** Rupiah → sen (bilangan bulat). Nilai perolehan di DB boleh berdesimal
- *  (warisan e-BMD); menjumlah & membandingkannya dalam sen menghindari galat
- *  float sekaligus TIDAK membuang sen seperti `Math.round` ke rupiah. */
-const keSen = (n: number) => Math.round((Number(n) || 0) * 100)
+// `keSen` & seluruh aritmetika pemecahan → lib/pemecahanNilai.ts (diangkat
+// 2026-09-15); alasan "sen, bukan rupiah" ada di kepala berkas itu.
 
 // ── Pemecahan: baris pecahan (jumlah + nilai + spesifikasi per barang) ───────
 type BasisPecah = { nilai_buku: number; akumulasi: number; sisa_smt: number; masa_tahun: number | null; disusutkan: boolean }
@@ -1088,34 +1087,19 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   function addPecah() { setPecahan(prev => [...prev, { key: newKey(), jumlah: '1', nilai: '', fields: { ...indukFields }, foto: [] }]) }
   function removePecah(key: string) { setPecahan(prev => prev.length <= 2 ? prev : prev.filter(p => p.key !== key)) }
 
-  // Alokasi proporsional by nilai; sisa pembulatan (NB/akumulasi) diserap di pecahan TERAKHIR.
-  // ⚠️ SEMUA HITUNGAN DALAM SEN (bilangan bulat), bukan rupiah bulat (2026-09-14).
-  // Versi lama `Math.round` ke rupiah: induk 104.893.870.444,53 dianggap
-  // ...445, jadi Σ pecahan (…445) ≠ baris `pemecahan_keluar` induk (…444,53) —
-  // Rp0,47 "tercipta" di ledger & jatuh ke Selisih Rekonsiliasi selamanya.
-  // Sen dipakai (bukan float rupiah) supaya perbandingan balance EKSAK.
-  const alokasiPecah = (() => {
-    if (!indukPecah || !basisPecah) return [] as { np: number; nb: number; ak: number; beban: number; valid: boolean }[]
-    const totalSen = keSen(indukPecah.nilai_perolehan)
-    const nbSen = keSen(basisPecah.nilai_buku), akSen = keSen(basisPecah.akumulasi)
-    let accNB = 0, accAk = 0
-    return pecahan.map((p, i) => {
-      const jumlah = parseInt(p.jumlah, 10)
-      const npSen = keSen(parseFloat(p.nilai))
-      const valid = Number.isFinite(jumlah) && jumlah >= 1 && Number.isFinite(npSen) && npSen > 0
-      const prop = totalSen > 0 && Number.isFinite(npSen) ? npSen / totalSen : 0
-      const last = i === pecahan.length - 1
-      const nb = last ? nbSen - accNB : Math.round(prop * nbSen)
-      const ak = last ? akSen - accAk : Math.round(prop * akSen)
-      accNB += nb; accAk += ak
-      const beban = basisPecah.sisa_smt > 0 ? Math.round(nb / 100 / basisPecah.sisa_smt) : 0
-      return { np: Number.isFinite(npSen) ? npSen / 100 : 0, nb: nb / 100, ak: ak / 100, beban, valid }
-    })
-  })()
+  // Alokasi nilai pecahan → **lib/pemecahanNilai.ts** (diangkat 2026-09-15).
+  // Ia aritmetika UANG Lapis 1 — angkanya masuk ledger `pemecahan_masuk`/
+  // `pemecahan_keluar` & ikut ke neraca — dan sampai hari itu tinggal di dalam
+  // komponen ini tanpa satu pun test. Dua invarian yang dijaganya (Σ pecahan ==
+  // induk EKSAK, sisa pembulatan diserap pecahan TERAKHIR) pelanggarannya
+  // SENYAP: tak ada error, cuma selisih yang muncul di Rekonsiliasi berbulan
+  // kemudian. Dikunci lib/pemecahanNilai.test.ts — **jangan ditulis ulang di
+  // sini.**
+  const alokasiPecah = alokasiPemecahan(indukPecah?.nilai_perolehan, basisPecah, pecahan)
   const totalNPInduk = indukPecah ? keSen(indukPecah.nilai_perolehan) / 100 : 0
   const sumNPPecah = alokasiPecah.reduce((s, a) => s + keSen(a.np), 0) / 100
-  const balancePecah = indukPecah != null && keSen(sumNPPecah) === keSen(totalNPInduk)
-  const semuaPecahValid = alokasiPecah.length >= 2 && alokasiPecah.every(a => a.valid)
+  const balancePecah = balancePemecahan(indukPecah?.nilai_perolehan, alokasiPecah)
+  const semuaPecahValid = semuaPecahanValid(alokasiPecah)
 
   async function uploadDokumen(files: FileList | null) {
     if (!files || files.length === 0) return

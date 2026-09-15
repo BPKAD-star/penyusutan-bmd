@@ -46,7 +46,7 @@ export default defineConfig({
       provider: 'v8',
       // Ambang HANYA untuk logika murni. Menetapkan target coverage global di
       // repo yang mulai dari nol cuma menghasilkan test basa-basi (TESTING.md §10).
-      include: ['lib/engine/**', 'lib/bmd.ts', 'modules/**/domain/**', 'shared/**'],
+      include: ['lib/engine/**', 'lib/bmd.ts', 'lib/pemecahanNilai.ts', 'modules/**/domain/**', 'shared/**'],
       // Berkas test tidak ikut dihitung sbg kode yang diukur — kalau ikut,
       // angkanya naik palsu karena test selalu 100% menjalankan dirinya sendiri.
       exclude: ['**/*.test.ts', '**/*.test.tsx'],
