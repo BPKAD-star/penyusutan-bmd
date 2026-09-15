@@ -9,6 +9,9 @@
 import { keSen } from '@/lib/pemecahanNilai'
 import { usePemecahan, newKey, TANAH_DOK_FIELDS } from './koreksi/usePemecahan'
 import { usePenggabungan } from './koreksi/usePenggabungan'
+import { usePencatatanGanda } from './koreksi/usePencatatanGanda'
+import { useSpesifikasi } from './koreksi/useSpesifikasi'
+import { tahunDari } from '@/lib/pencatatanGanda'
 import type { Barang, PecahanItem, SpekEdit, Kandidat, KandidatGabung } from './koreksi/tipe'
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -46,7 +49,6 @@ const ALASAN_OPT: { value: Alasan; label: string; deskripsi: string; disabled?: 
   { value: 'penggabungan', label: 'Penggabungan Barang', deskripsi: 'SATU barang yang terlanjur tercatat jadi beberapa baris (mis. pagar 125 m jadi 125 baris karena satuannya bukan "unit") dilebur jadi satu — nilai & akumulasi DIJUMLAHKAN ke barang induk, total nilai TIDAK berubah.' },
 ]
 const ALASAN_LABEL = Object.fromEntries(ALASAN_OPT.map(a => [a.value, a.label])) as Record<Alasan, string>
-const tahunDari = (tgl: string | null) => tgl ? tgl.slice(0, 4) : '-'
 
 // Edit spesifikasi yang disusun di popup, menunggu di-commit oleh Simpan.
 // `keSen` & seluruh aritmetika pemecahan → lib/pemecahanNilai.ts (diangkat
@@ -840,19 +842,22 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   // (kolom Kode Barang, sama pola dgn Daftar Barang).
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
-  // ── Pencatatan Ganda: cari & tambah kandidat ──
-  const [qGanda, setQGanda] = useState('')
-  const [hasilGanda, setHasilGanda] = useState<Kandidat[]>([])
-  const [kandidat, setKandidat] = useState<Kandidat[]>([])
-  const [survivorId, setSurvivorId] = useState<string | null>(null)
-
-  // ── Spesifikasi: pilih barang (golongan → list → centang) + edit lewat popup ──
-  const [selSpek, setSelSpek] = useState<Record<string, Barang>>(preset ? { [preset.barang.id]: preset.barang } : {})
-  const [spekModalOpen, setSpekModalOpen] = useState(false)
-  const [spekInitFields, setSpekInitFields] = useState<Record<string, string>>({})
-  const [spekInitFoto, setSpekInitFoto] = useState<string[]>([])
-  const [spekPrefix, setSpekPrefix] = useState('')
-  const [spekEdit, setSpekEdit] = useState<SpekEdit | null>(null)
+  // ── Pencatatan Ganda & Spesifikasi ──────────────────────────────────────────
+  // State & penyuntingnya → ./koreksi/usePencatatanGanda.ts & ./useSpesifikasi.ts
+  // (REFACTOR-PLAN Fase 3). Aturan "apa yang boleh berbeda antar duplikat" →
+  // lib/pencatatanGanda.ts. Nama lokal SENGAJA dipertahankan supaya JSX tetap.
+  const {
+    q: qGanda, setQ: setQGanda, hasil: hasilGanda, kandidat, survivorId, setSurvivorId,
+    cari: cariKandidat, tambah: tambahKandidat, hapus: hapusKandidat, reset: resetGanda,
+    beda: bedaGanda,
+  } = usePencatatanGanda(skpdId)
+  const { kode: kodeBeda, nilai: nilaiBeda, tahun: tahunBeda, nama: namaBeda } = bedaGanda
+  const {
+    sel: selSpek, setSel: setSelSpek, list: selSpekList, sameGol: spekSameGol, toggle: toggleSpek,
+    modalOpen: spekModalOpen, setModalOpen: setSpekModalOpen, openModal: openSpekModal,
+    initFields: spekInitFields, initFoto: spekInitFoto, prefix: spekPrefix,
+    edit: spekEdit, setEdit: setSpekEdit, reset: resetSpek,
+  } = useSpesifikasi(preset)
 
   // ── Penggabungan: N barang → 1 induk (kebalikan pemecahan) ──────────────────
   // State, efek basis, pencarian, & daftar sejenisnya → ./koreksi/usePenggabungan.ts
@@ -950,60 +955,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     setSelNilai(prev => prev[id] ? { ...prev, [id]: { ...prev[id], nilaiBaru: v } } : prev)
   }
 
-  // ── Spesifikasi: centang barang (multi) → popup EditSpesifikasiModal ──
-  function toggleSpek(b: Barang) {
-    setSelSpek(prev => {
-      const next = { ...prev }
-      if (next[b.id]) delete next[b.id]; else next[b.id] = b
-      return next
-    })
-    setSpekEdit(null) // seleksi berubah → edit tersusun tak lagi valid
-  }
-  const selSpekList = Object.values(selSpek)
-  const spekSameGol = allSameGolongan(selSpekList.map(b => b.kode))
-  // Buka popup: single → prefill nilai field & foto barang; bulk → kosong.
-  async function openSpekModal() {
-    if (selSpekList.length === 0 || !spekSameGol) return
-    const single = selSpekList.length === 1
-    setSpekPrefix(`draft/koreksi-spek/${single ? selSpekList[0].id : newKey()}`)
-    if (single) {
-      const b = selSpekList[0]
-      const keys = koreksiFieldKeys(b.kode)
-      const { data } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
-      const row = (data || {}) as Record<string, unknown>
-      const f: Record<string, string> = {}
-      for (const k of keys) { const v = row[k]; if (v != null) f[k] = String(v) }
-      setSpekInitFields(f)
-      setSpekInitFoto(Array.isArray(row.foto_paths) ? (row.foto_paths as string[]) : [])
-    } else {
-      setSpekInitFields({}); setSpekInitFoto([])
-    }
-    setSpekModalOpen(true)
-  }
 
-  async function cariKandidat() {
-    if (!qGanda.trim()) return
-    const { data } = await supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi_lainnya,nilai_perolehan,tgl_perolehan')
-      .eq('status', 'aktif').eq('skpd_id', skpdId)
-      .or(`nibar.ilike.%${qGanda}%,nama_barang.ilike.%${qGanda}%,kode.ilike.%${qGanda}%`)
-      .limit(10)
-    setHasilGanda((data as Kandidat[]) || [])
-  }
-  function tambahKandidat(k: Kandidat) {
-    if (kandidat.some(x => x.id === k.id)) return
-    setKandidat(prev => [...prev, k])
-    setHasilGanda([]); setQGanda('')
-    setSurvivorId(prev => prev ?? k.id)
-  }
-  function hapusKandidat(id: string) {
-    setKandidat(prev => prev.filter(k => k.id !== id))
-    setSurvivorId(prev => prev === id ? null : prev)
-  }
-  const kodeBeda = kandidat.length > 1 && kandidat.some(k => k.kode !== kandidat[0].kode)
-  const nilaiBeda = kandidat.length > 1 && kandidat.some(k => k.nilai_perolehan !== kandidat[0].nilai_perolehan)
-  const tahunBeda = kandidat.length > 1 && kandidat.some(k => tahunDari(k.tgl_perolehan) !== tahunDari(kandidat[0].tgl_perolehan))
-  const namaBeda = kandidat.length > 1 && kandidat.some(k => (k.nama_barang || '') !== (kandidat[0].nama_barang || ''))
 
   async function simpan() {
     setErr('')
@@ -1357,10 +1309,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                   <label key={o.value} className={`flex items-start gap-2 p-2.5 rounded-lg border text-sm ${o.disabled ? 'opacity-50 cursor-not-allowed border-gray-200' : alasan === o.value ? 'border-teal bg-teal/5 cursor-pointer' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'}`}>
                     <input type="radio" className="mt-0.5" checked={alasan === o.value} disabled={o.disabled}
                       onChange={() => {
-                        setAlasan(o.value); setSelNilai({}); setKandidat([]); setSurvivorId(null); setRows([]); setLoaded(false)
-                        setSelSpek({}); setSpekEdit(null); setSpekModalOpen(false)
-                        resetPecah()
-                        resetGabung()
+                        // Pindah alasan → buang jejak SEMUA alasan, bukan cuma yang
+                        // ditinggalkan: operator bisa bolak-balik, dan sisa dari alasan
+                        // lain akan ikut tersimpan tanpa pernah terlihat di layar.
+                        setAlasan(o.value); setSelNilai({}); setRows([]); setLoaded(false)
+                        resetGanda(); resetSpek(); resetPecah(); resetGabung()
                       }} />
                     <span>
                       <span className="font-medium text-gray-800">{o.label}</span>
