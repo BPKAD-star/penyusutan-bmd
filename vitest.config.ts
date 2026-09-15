@@ -35,6 +35,9 @@ export default defineConfig({
       // Fase 3 memecah komponen raksasa jadi hook per-alasan; testnya duduk di
       // sebelah berkasnya, bukan di tests/ — kalau tidak, ia tak ikut terbaca.
       'components/**/*.test.ts', 'components/**/*.test.tsx',
+      // Fase 3 kini menyentuh HALAMAN dashboard juga (komponen terpadat se-repo
+      // ternyata di app/, bukan components/ — REFACTOR-PLAN §6).
+      'app/**/*.test.ts', 'app/**/*.test.tsx',
       'modules/**/*.test.ts', 'modules/**/*.test.tsx',
       'shared/**/*.test.ts', 'shared/**/*.test.tsx',
       'tests/**/*.test.ts', 'tests/**/*.test.tsx',
