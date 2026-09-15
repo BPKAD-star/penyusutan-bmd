@@ -5,7 +5,9 @@
 //
 // Diangkat dari `KoreksiForm` 2026-09-15 (REFACTOR-PLAN Fase 3).
 //
-// ⚠️ MURNI PINDAH, termasuk `openModal()` yang tak memeriksa `error`.
+// ✅ Fase 1 (2026-09-15): `openModal()` tak lagi menelan `error`. Dulu query
+// yang gagal membuat popup terbuka dgn field KOSONG — dan operator yang
+// menekan Simpan di situ menulis kekosongan itu ke register sbg "koreksi".
 // ============================================================================
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -35,7 +37,7 @@ export type Spesifikasi = {
  *   dari kartu Pemecahan. Dibaca SEKALI sbg nilai awal; menggantinya kemudian
  *   tak memindahkan centang (pola `useState(() => …)` yang memang disengaja).
  */
-export function useSpesifikasi(preset?: { barang: Barang } | null): Spesifikasi {
+export function useSpesifikasi(preset: { barang: Barang } | null | undefined, onErr: (msg: string) => void): Spesifikasi {
   const supabase = createClient()
 
   const [sel, setSel] = useState<Record<string, Barang>>(preset ? { [preset.barang.id]: preset.barang } : {})
@@ -70,7 +72,11 @@ export function useSpesifikasi(preset?: { barang: Barang } | null): Spesifikasi 
     if (single) {
       const b = list[0]
       const keys = koreksiFieldKeys(b.kode)
-      const { data } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
+      const { data, error } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
+      // ⚠️ Popup TIDAK dibuka kalau prefill-nya gagal: field kosong di popup
+      // koreksi spesifikasi terbaca sbg "nilai lamanya memang kosong", dan
+      // Simpan akan menuliskannya ke register.
+      if (error) { onErr(`gagal memuat spesifikasi barang: ${error.message}`); return }
       const row = (data || {}) as Record<string, unknown>
       const f: Record<string, string> = {}
       for (const k of keys) { const v = row[k]; if (v != null) f[k] = String(v) }

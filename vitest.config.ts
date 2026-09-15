@@ -35,6 +35,9 @@ export default defineConfig({
       // Fase 3 memecah komponen raksasa jadi hook per-alasan; testnya duduk di
       // sebelah berkasnya, bukan di tests/ — kalau tidak, ia tak ikut terbaca.
       'components/**/*.test.ts', 'components/**/*.test.tsx',
+      // Fase 3 kini menyentuh HALAMAN dashboard juga (komponen terpadat se-repo
+      // ternyata di app/, bukan components/ — REFACTOR-PLAN §6).
+      'app/**/*.test.ts', 'app/**/*.test.tsx',
       'modules/**/*.test.ts', 'modules/**/*.test.tsx',
       'shared/**/*.test.ts', 'shared/**/*.test.tsx',
       'tests/**/*.test.ts', 'tests/**/*.test.tsx',
@@ -49,7 +52,7 @@ export default defineConfig({
       provider: 'v8',
       // Ambang HANYA untuk logika murni. Menetapkan target coverage global di
       // repo yang mulai dari nol cuma menghasilkan test basa-basi (TESTING.md §10).
-      include: ['lib/engine/**', 'lib/bmd.ts', 'lib/pemecahanNilai.ts', 'lib/penggabunganNilai.ts', 'lib/pencatatanGanda.ts', 'modules/**/domain/**', 'shared/**'],
+      include: ['lib/engine/**', 'lib/bmd.ts', 'lib/pemecahanNilai.ts', 'lib/penggabunganNilai.ts', 'lib/pencatatanGanda.ts', 'lib/luasBidang.ts', 'modules/**/domain/**', 'shared/**'],
       // Berkas test tidak ikut dihitung sbg kode yang diukur — kalau ikut,
       // angkanya naik palsu karena test selalu 100% menjalankan dirinya sendiri.
       exclude: ['**/*.test.ts', '**/*.test.tsx'],

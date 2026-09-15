@@ -49,6 +49,10 @@ import { KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useEditSpekAwal } from './useEditSpekAwal'
+import type { Row, BidangAgg } from './tipe'
+import { luasBidangSah, luasEfektif } from '@/lib/luasBidang'
+
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { koreksiFieldKeys, allSameGolongan, ASET_NUM_COLS, type FieldKey } from '@/lib/asetFields'
@@ -62,25 +66,6 @@ import { useIsViewer } from '@/components/useIsViewer'
 const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 
-type Row = {
-  nibar: string; kode: string; nama_barang: string; skpd_id: number
-  intra_ekstra: string | null; tgl_perolehan: string | null; tahun_pengadaan: number | null
-  nilai_perolehan: number
-  akumulasi_2025: number; nilai_buku_awal: number; sisa_masa_manfaat_smt: number
-  masa_manfaat_smt: number | null; beban_penyusutan_per_smt: number | null
-  foto_paths: string[] | null
-  // Kolom spesifikasi — dipakai kolom per jenis aset (sama spt Daftar Barang)
-  merek_tipe: string | null; spesifikasi_lainnya: string | null
-  // Identitas kendaraan — cuma dipakai kolom Peralatan & Mesin (1.3.2).
-  no_polisi: string | null; no_rangka: string | null; no_mesin: string | null; no_bpkb: string | null
-  alamat_detail: string | null; wilayah_kode: string | null
-  luas: number | null; jenis_hak: string | null
-  // Dokumen kepemilikan — dipakai kolom Tanah-like DAN Aset Lain-Lain (1.5.4).
-  nomor_dokumen_kepemilikan: string | null
-  tanggal_dokumen_kepemilikan: string | null
-  nama_dokumen_kepemilikan: string | null
-  asal_usul: string | null; penggunaan_pengamanan: string | null
-}
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; search: string }
 // Rekap bidang tanah per aset (dari aset_bidang_tanah, menu GIS Tanah).
 // luas = Σ bidang; wilayah/alamat = daftar UNIK (satu register bisa banyak bidang).
@@ -88,7 +73,6 @@ type Applied = { org: OrgSelection; golongan: string; komptabel: string; search:
 // kalau cuma sebagian bidang yang berisi, jumlahnya lebih kecil dari luas
 // sebenarnya & bakal terbaca sebagai penyusutan luas yang tak pernah terjadi.
 // (Per 2026-07-28 ini bukan kasus langka: dari 529 bidang, baru 4 yang berluas.)
-type BidangAgg = { n: number; nLuas: number; luas: number | null; wilayah: string[]; alamat: string[] }
 
 const COLS = [
   'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'tahun_pengadaan', 'nilai_perolehan',
@@ -330,21 +314,7 @@ export default function Page() {
   // NIBAR → rekap bidang tanah (hanya golongan 1.3.1 yang punya isi)
   const [bidang, setBidang] = useState<Record<string, BidangAgg>>({})
   // ── Koreksi spesifikasi: centang barang (multi) → popup EditSpesifikasiModal ──
-  const [sel, setSel] = useState<Record<string, Row>>({}) // key = NIBAR
-  const [spekOpen, setSpekOpen] = useState(false)
-  const [spekPrefix, setSpekPrefix] = useState('')
-  // Field yang ditawarkan popup — dihitung saat dibuka (bukan saat render),
-  // karena untuk Tanah isinya bergantung ada/tidaknya bidang.
-  const [spekKeys, setSpekKeys] = useState<FieldKey[]>([])
-  const [spekInitFields, setSpekInitFields] = useState<Record<string, string>>({})
-  const [spekInitFoto, setSpekInitFoto] = useState<string[]>([])
-  const [spekMsg, setSpekMsg] = useState('')
-  const [spekErr, setSpekErr] = useState('')
-  const [spekSaving, setSpekSaving] = useState(false)
-  // NIBAR yang TERKUNCI dari pintu ini: asetnya pernah kena transaksi yang
-  // menyentuh spesifikasi/golongan/SKPD → koreksinya wajib lewat menu Koreksi
-  // (lihat migrasi 20260728_01 bagian 3). Dihitung server-side per halaman.
-  const [terkunci, setTerkunci] = useState<Set<string>>(new Set())
+
 
   useEffect(() => {
     (async () => {
@@ -606,18 +576,16 @@ export default function Page() {
       : `Gagal memuat data: ${p}`)
   }
 
-  // Penegak sesungguhnya tetap trigger DB — ini cuma supaya operator tak klik
-  // lalu kena error. Gagal RPC (mis. migrasi belum dijalankan) → set kosong,
-  // tombolnya tetap hidup dan DB yang menolak.
-  async function fetchTerkunci(nibars: string[], pesan: string[]) {
-    const out = new Set<string>()
-    for (let i = 0; i < nibars.length; i += 500) {
-      const { data, error } = await supabase.rpc('fn_aset_awal_2026_terkunci_batch', { p_nibars: nibars.slice(i, i + 500) })
-      if (error) { pesan.push(`Tanda 🔒 tidak ditampilkan — gagal memeriksa barang yang terkunci: ${error.message}. Centang tetap bisa diklik; kalau barangnya memang terkunci, database yang menolak saat Simpan.`); break }
-      for (const d of (data || []) as { nibar: string }[]) out.add(d.nibar)
-    }
-    return out
-  }
+
+
+  // ── Edit Spesifikasi (centang → popup → tulis snapshot + register) ────────
+  // → ./useEditSpekAwal.ts (REFACTOR-PLAN Fase 3). Nama lokal dipertahankan
+  // supaya JSX halaman ini tak ikut berubah.
+  const {
+    sel, setSel, selList, selSameGol, toggleSel, terkunci, setTerkunci, fetchTerkunci,
+    spekOpen, setSpekOpen, spekPrefix, spekKeys, spekInitFields, spekInitFoto,
+    spekMsg, spekErr, spekSaving, spekTanpaBidang, openSpek, simpanSpek,
+  } = useEditSpekAwal(bidang, () => { if (applied) load(applied, page) })
 
   function tampilkan() {
     const f: Applied = { org, golongan, komptabel, search }
@@ -625,130 +593,16 @@ export default function Page() {
   }
   function goPage(pg: number) { if (applied) { setPage(pg); load(applied, pg) } }
 
-  // ── Koreksi spesifikasi ───────────────────────────────────────────────────
-  const selList = Object.values(sel)
-  const selSameGol = allSameGolongan(selList.map(r => r.kode))
 
-  function toggleSel(r: Row) {
-    if (terkunci.has(r.nibar)) return
-    setSel(prev => {
-      const next = { ...prev }
-      if (next[r.nibar]) delete next[r.nibar]; else next[r.nibar] = r
-      return next
-    })
-    setSpekMsg(''); setSpekErr('')
-  }
-
-  // Tanah: luas & lokasi cuma boleh dikoreksi dari sini kalau SEMUA yang
-  // dicentang belum punya bidang. Yang sudah punya → GIS Tanah yang berwenang
-  // (kalau tidak, angka manual di sini bakal ketutup Σ bidang & bikin bingung).
-  const spekTanpaBidang = selList.every(r => !(bidang[r.nibar]?.n))
-
-  // Buka popup: 1 barang → prefill nilai sekarang (dari snapshot, itu yang
-  // ditampilkan halaman ini); banyak barang → kosong (isi = diterapkan ke semua).
-  async function openSpek() {
-    if (selList.length === 0 || !selSameGol) return
-    setSpekMsg(''); setSpekErr('')
-    const single = selList.length === 1
-    setSpekPrefix(`draft/saldo-awal-spek/${single ? selList[0].nibar : newKey()}`)
-    const keys = koreksiFieldKeys(selList[0].kode, { tanahTanpaBidang: spekTanpaBidang })
-    setSpekKeys(keys)
-    if (single) {
-      const { data } = await supabase.from('aset_awal_2026')
-        .select([...keys, 'foto_paths'].join(',')).eq('nibar', selList[0].nibar).single()
-      const row = (data || {}) as Record<string, unknown>
-      const f: Record<string, string> = {}
-      for (const k of keys) { const v = row[k]; if (v != null) f[k] = String(v) }
-      setSpekInitFields(f)
-      setSpekInitFoto(Array.isArray(row.foto_paths) ? (row.foto_paths as string[]) : [])
-    } else {
-      setSpekInitFields({}); setSpekInitFoto([])
-    }
-    setSpekOpen(true)
-  }
-
-  // Commit langsung (halaman ini tak punya kartu jurnal — tak ada tombol Simpan
-  // terpisah spt menu Koreksi). Menulis ke snapshot + register `aset` by NIBAR.
-  async function simpanSpek(fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
-    const list = selList
-    const single = list.length === 1
-    // Modal ditutup DULU: pesan hasil/error tampil di strip halaman, yang bakal
-    // ketutup overlay modal (z-50) kalau modalnya dibiarkan terbuka.
-    setSpekOpen(false); setSpekMsg(''); setSpekErr('')
-    // Single: modal prefill nilai sekarang → simpan HANYA yang berubah.
-    // Bulk: initial kosong → semua yang diisi = perubahan, diterapkan ke semua.
-    const initial = single ? spekInitFields : {}
-    const base: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(fields)) {
-      const val = (v ?? '').toString().trim()
-      if (val === '' || val === (initial[k] ?? '').toString().trim()) continue
-      if (ASET_NUM_COLS.has(k) || k === 'tahun_pengadaan') { const n = Number(val); if (Number.isFinite(n)) base[k] = n }
-      else base[k] = val
-    }
-    const fotoReplace = single ? (foto.replace || []) : null
-    const fotoAppend = !single ? (foto.append || []) : null
-    const fotoBerubah = single ? JSON.stringify(fotoReplace) !== JSON.stringify(spekInitFoto) : (fotoAppend?.length ?? 0) > 0
-    if (Object.keys(base).length === 0 && !fotoBerubah) { setSpekErr('Tidak ada field yang diubah — centangannya masih utuh, klik "Edit Spesifikasi" lagi.'); return }
-    setSpekSaving(true)
-
-    // Foto di `aset` bisa beda dari snapshot (mis. ditambah lewat menu Koreksi
-    // setelah baseline dibekukan) → append relatif ke daftar masing-masing tabel.
-    const nibars = list.map(r => r.nibar)
-    const fotoAset = new Map<string, string[]>()
-    for (let i = 0; i < nibars.length; i += 300) {
-      const { data } = await supabase.from('aset').select('nibar,foto_paths').in('nibar', nibars.slice(i, i + 300))
-      for (const a of (data || []) as { nibar: string | null; foto_paths: string[] | null }[]) {
-        if (a.nibar) fotoAset.set(a.nibar, a.foto_paths || [])
-      }
-    }
-
-    let okSnapshot = 0, okAset = 0
-    for (const r of list) {
-      const patchSnapshot: Record<string, unknown> = { ...base }
-      const patchAset: Record<string, unknown> = { ...base }
-      if (fotoBerubah) {
-        if (single) { patchSnapshot.foto_paths = fotoReplace; patchAset.foto_paths = fotoReplace }
-        else {
-          patchSnapshot.foto_paths = [...(r.foto_paths || []), ...(fotoAppend || [])]
-          patchAset.foto_paths = [...(fotoAset.get(r.nibar) || []), ...(fotoAppend || [])]
-        }
-      }
-      const nama = r.nama_barang || r.nibar
-      const sudah = okSnapshot ? ` (${okSnapshot} barang sebelumnya sudah tersimpan)` : ''
-      const gagal = (pesan: string) => { setSpekSaving(false); setSpekErr(pesan); if (applied) load(applied, page) }
-      // `.select()` WAJIB: UPDATE yang ditolak RLS tidak melempar error, cuma
-      // mengembalikan 0 baris — tanpa ini kegagalan (mis. migrasi 20260728_01
-      // belum dijalankan, policy sa_update belum ada) dilaporkan sbg "berhasil".
-      const { data: d1, error: e1 } = await supabase.from('aset_awal_2026').update(patchSnapshot).eq('nibar', r.nibar).select('nibar')
-      if (e1) { gagal(`Gagal menyimpan "${nama}": ${e1.message}${sudah}`); return }
-      if (!d1 || d1.length === 0) { gagal(`Perubahan "${nama}" ditolak database — barang di luar wewenang SKPD-mu, atau migrasi 20260728_01 belum dijalankan.${sudah}`); return }
-      okSnapshot++
-      // Register `aset`: barang baseline yang sudah dihapus/tak pernah termigrasi
-      // bisa saja tak punya baris pasangan — bukan error, cuma dilaporkan.
-      if (fotoAset.has(r.nibar)) {
-        const { data: d2, error: e2 } = await supabase.from('aset').update(patchAset).eq('nibar', r.nibar).select('nibar')
-        if (e2) { gagal(`Saldo awal "${nama}" tersimpan, tapi register aset gagal: ${e2.message}`); return }
-        if (d2 && d2.length > 0) okAset++
-      }
-    }
-
-    setSpekSaving(false); setSel({})
-    setSpekMsg(okAset === okSnapshot
-      ? `${okSnapshot} barang diperbarui (saldo awal + register aset).`
-      : `${okSnapshot} barang diperbarui di saldo awal; ${okAset} di antaranya punya pasangan di register aset (sisanya tidak ada / di luar wewenangmu).`)
-    if (applied) load(applied, page)
-  }
 
   // ── Luas & Lokasi: bidang tanah menang, kolom snapshot jadi cadangan ───────
   // Aturannya sama persis dipakai Daftar Barang (bedanya cadangannya `aset.luas`),
   // supaya angka di dua menu tak pernah beda tanpa sebab.
   // Parameter `bd` bisa diisi peta bidang lain (dipakai Export, yang cakupan
   // barisnya lebih luas dari layar); default = milik halaman.
-  const luasBidangSah = (b: BidangAgg | undefined) => !!b && b.n > 0 && b.nLuas === b.n && b.luas != null
-  const luasOf = (r: Row, bd: Record<string, BidangAgg> = bidang): number | null => {
-    const b = bd[r.nibar]
-    return luasBidangSah(b) ? b.luas : r.luas
-  }
+  // Aturannya → lib/luasBidang.ts (diangkat 2026-09-15, kemunculan ketiga).
+  const luasOf = (r: Row, bd: Record<string, BidangAgg> = bidang): number | null =>
+    luasEfektif(bd[r.nibar], r.luas)
   // Satu register bisa punya banyak bidang di lokasi berbeda — kalau tak bisa
   // diringkas jadi satu baris, jangan dipaksakan: tunjuk saja ke GIS Tanah.
   function lokasiOf(r: Row, bd: Record<string, BidangAgg> = bidang): { alamat: string; wilayah: string } {

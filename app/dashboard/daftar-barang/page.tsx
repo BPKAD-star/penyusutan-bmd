@@ -20,6 +20,8 @@ import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kol
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { luasEfektif } from '@/lib/luasBidang'
+
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { GOLONGAN_DAFTAR_BARANG, periodeDariTanggal, asalUsulTampil } from '@/lib/bmd'
@@ -666,9 +668,10 @@ export default function DaftarBarangPage() {
   // memakainya untuk seluruh isi Export akan diam-diam menjatuhkan hampir semua
   // baris ke `aset.luas` — padahal Σ bidang yang otoritatif. Export menghitung
   // petanya sendiri atas baris yang benar-benar diekspor.
+  // Aturannya (Σ hanya sah kalau SEMUA bidang berluas) → lib/luasBidang.ts.
+  // Diangkat 2026-09-15 di kemunculan KETIGA; jangan ditulis ulang di sini.
   function luasOf(r: Row, bc: Record<string, { n: number; nLuas: number; luas: number | null }> = bidangCount): number | null {
-    const b = bc[r.id]
-    return b && b.n > 0 && b.nLuas === b.n && b.luas != null ? b.luas : r.luas
+    return luasEfektif(bc[r.id], r.luas)
   }
 
   async function handleExport() {

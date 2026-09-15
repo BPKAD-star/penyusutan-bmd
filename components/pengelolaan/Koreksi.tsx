@@ -104,7 +104,7 @@ function KoreksiTransaksi() {
   const [skpd, setSkpd] = useState('')
 
   // Pemuat ketiga bentuk kartu → ./koreksi/useJurnalKoreksi.ts (Fase 3).
-  const { jurnals, pemecahanJurnals, penggabunganJurnals, loading: loadingJurnal, load: loadJurnals } = useJurnalKoreksi()
+  const { err: jurnalErr, jurnals, pemecahanJurnals, penggabunganJurnals, loading: loadingJurnal, load: loadJurnals } = useJurnalKoreksi()
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [addTo, setAddTo] = useState<Header | null>(null)
@@ -448,6 +448,16 @@ function KoreksiTransaksi() {
           </div>
           {loadingJurnal ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Memuat jurnal...</div>
+          ) : jurnalErr ? (
+            /* ⚠️ Cabang ini WAJIB di ATAS cabang "belum ada koreksi" (Fase 1).
+               Tanpanya, query yang GAGAL tampil sebagai "SKPD ini memang belum
+               punya koreksi" — dan operator bisa menyimpulkan jurnalnya belum
+               dibuat lalu membuatnya lagi. */
+            <div className="card p-6 text-sm">
+              <p className="text-red-600 font-medium">Gagal memuat kartu koreksi.</p>
+              <p className="text-gray-500 mt-1">{jurnalErr}</p>
+              <p className="text-gray-400 mt-2 text-xs">Daftar sengaja TIDAK ditampilkan sebagian — kartu yang kurang terlihat sah. Muat ulang halaman, atau pilih SKPD lain.</p>
+            </div>
           ) : (jurnals.length === 0 && pemecahanJurnals.length === 0 && penggabunganJurnals.length === 0) ? (
             <div className="card p-12 text-center text-gray-400 text-sm">Belum ada koreksi transaksi untuk SKPD ini.</div>
           ) : (<>
@@ -691,7 +701,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   const {
     fGolongan, setFGolongan, fSearch, setFSearch, rows, setRows, loaded, setLoaded,
     loading, uraianMap, tampilkan, fetchUraian, reset: resetPilih,
-  } = usePemilihBarang(skpdId, alasan, preset)
+  } = usePemilihBarang(skpdId, alasan, preset, setErr)
 
   // ── Pencatatan Ganda & Spesifikasi ──────────────────────────────────────────
   // State & penyuntingnya → ./koreksi/usePencatatanGanda.ts & ./useSpesifikasi.ts
@@ -701,14 +711,14 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     q: qGanda, setQ: setQGanda, hasil: hasilGanda, kandidat, survivorId, setSurvivorId,
     cari: cariKandidat, tambah: tambahKandidat, hapus: hapusKandidat, reset: resetGanda,
     beda: bedaGanda,
-  } = usePencatatanGanda(skpdId)
+  } = usePencatatanGanda(skpdId, setErr)
   const { kode: kodeBeda, nilai: nilaiBeda, tahun: tahunBeda, nama: namaBeda } = bedaGanda
   const {
     sel: selSpek, setSel: setSelSpek, list: selSpekList, sameGol: spekSameGol, toggle: toggleSpek,
     modalOpen: spekModalOpen, setModalOpen: setSpekModalOpen, openModal: openSpekModal,
     initFields: spekInitFields, initFoto: spekInitFoto, prefix: spekPrefix,
     edit: spekEdit, setEdit: setSpekEdit, reset: resetSpek,
-  } = useSpesifikasi(preset)
+  } = useSpesifikasi(preset, setErr)
 
   // ── Penggabungan: N barang → 1 induk (kebalikan pemecahan) ──────────────────
   // State, efek basis, pencarian, & daftar sejenisnya → ./koreksi/usePenggabungan.ts
@@ -736,7 +746,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     indukFields, pecahan, editIdx: editPecahIdx, setEditIdx: setEditPecahIdx, setPecahan,
     pilihInduk, setPecah, addPecah, removePecah, reset: resetPecah, gantiInduk: gantiIndukPecah,
     alokasi: alokasiPecah, totalNPInduk, sumNPPecah, balance: balancePecah, semuaValid: semuaPecahValid,
-  } = usePemecahan(tgl)
+  } = usePemecahan(tgl, setErr)
 
 
 

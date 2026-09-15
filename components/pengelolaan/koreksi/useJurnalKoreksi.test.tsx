@@ -22,6 +22,8 @@ let headers: Row[] = []
 /** jenis[0] → baris yang dijawab untuk query itu. */
 let ledger: Record<string, Row[]> = {}
 let skpdDiminta: number[] = []
+let hErr: { message: string } | null = null
+let trxErr: { message: string } | null = null
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
@@ -36,12 +38,12 @@ vi.mock('@/lib/supabase/client', () => ({
           return k === 'jenis' ? q : q
         },
         order: async () => t === 'jurnal_header'
-          ? { data: headers, error: null }
-          : { data: ledger[jenis0] || [], error: null },
+          ? { data: headers, error: hErr }
+          : { data: ledger[jenis0] || [], error: trxErr },
       })
       // Query batal_koreksi_* berakhir di `.in()`, tanpa `.order()`.
       ;(q as { then?: unknown }).then = (res: (v: unknown) => void) =>
-        res({ data: ledger[jenis0] || [], error: null })
+        res({ data: ledger[jenis0] || [], error: trxErr })
       return q
     },
   }),
@@ -55,7 +57,7 @@ const hdr = (over: Row = {}): Row => ({
 })
 const aset = (id = 'a1') => ({ id, nibar: 'N' + id, nama_barang: 'Barang ' + id, kode: '1.3.2.01.01.01.001', jumlah: 1 })
 
-beforeEach(() => { headers = []; ledger = {}; skpdDiminta = [] })
+beforeEach(() => { headers = []; ledger = {}; skpdDiminta = []; hErr = null; trxErr = null })
 afterEach(cleanup)
 
 // ⚠️ Pemanggilnya sengaja ditulis `(await muat()).result`, bukan
@@ -224,5 +226,63 @@ describe('kartu hampa disaring', () => {
     headers = [hdr({ id: 'h1' })]
     const result = (await muat()).result
     expect(result.current.jurnals).toEqual([])
+  })
+})
+
+// ============================================================================
+// Fase 1 — kegagalan tak boleh menyamar jadi "belum ada koreksi" (INS-06).
+// ============================================================================
+describe('query GAGAL: fail-closed, bukan daftar kosong', () => {
+  it('header gagal → `err` terisi & ketiga daftar kosong', async () => {
+    hErr = { message: 'canceling statement due to statement timeout' }
+    const result = (await muat()).result
+    expect(result.current.err).toContain('gagal memuat kartu koreksi')
+    expect(result.current.err).toContain('statement timeout')
+    expect(result.current.jurnals).toEqual([])
+  })
+
+  it('⚠️ kartu yang SUDAH termuat ikut DIBUANG saat gagal — daftar sebagian terlihat sah', async () => {
+    headers = [hdr({ id: 'h1' }), hdr({ id: 'h2', jenis: 'pemecahan' })]
+    ledger['koreksi_nilai'] = [{ id: 1, header_id: 'h1', nilai: 100, payload: null, aset: aset('a1') }]
+    ledger['pemecahan_keluar'] = [{ id: 2, header_id: 'h2', jenis: 'pemecahan_keluar', nilai: 900, aset: aset('a2') }]
+
+    const h = renderHook(() => useJurnalKoreksi())
+    await act(async () => { await h.result.current.load('5') })
+    expect(h.result.current.jurnals).toHaveLength(1)
+
+    trxErr = { message: 'boom' }
+    await act(async () => { await h.result.current.load('5') })
+    expect(h.result.current.err).not.toBe('')
+    expect(h.result.current.jurnals).toEqual([])
+    expect(h.result.current.pemecahanJurnals).toEqual([])
+    expect(h.result.current.penggabunganJurnals).toEqual([])
+  })
+
+  it('`loading` kembali false walau gagal — layar tak nyangkut "Memuat jurnal..."', async () => {
+    hErr = { message: 'boom' }
+    const result = (await muat()).result
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('muat ulang yang BERHASIL membersihkan err sebelumnya', async () => {
+    hErr = { message: 'boom' }
+    const h = renderHook(() => useJurnalKoreksi())
+    await act(async () => { await h.result.current.load('5') })
+    expect(h.result.current.err).not.toBe('')
+
+    hErr = null
+    headers = [hdr({ id: 'h1' })]
+    ledger['koreksi_nilai'] = [{ id: 1, header_id: 'h1', nilai: 100, payload: null, aset: aset('a1') }]
+    await act(async () => { await h.result.current.load('5') })
+    expect(h.result.current.err).toBe('')
+    expect(h.result.current.jurnals).toHaveLength(1)
+  })
+
+  it('SKPD dilepas membersihkan err juga', async () => {
+    hErr = { message: 'boom' }
+    const h = renderHook(() => useJurnalKoreksi())
+    await act(async () => { await h.result.current.load('5') })
+    await act(async () => { await h.result.current.load('') })
+    expect(h.result.current.err).toBe('')
   })
 })

@@ -12,6 +12,8 @@
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
+import { luasBidangSah, ringkasDaftarBidang } from '@/lib/luasBidang'
+
 import { FIELD_OPTIONS } from '@/lib/asetFields'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
@@ -209,9 +211,13 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   // sebagai penyusutan luas yang tak pernah terjadi. Aturan yang SAMA dengan
   // Daftar Barang & Daftar Barang Awal (lihat CLAUDE.md): yang belum lengkap
   // ditandai, bukan diam-diam dijumlah.
-  const nLuas = rows.filter(b => b.luas != null).length
-  const luasTotal = rows.reduce((s, b) => s + (b.luas || 0), 0)
-  const luasLengkap = rows.length > 0 && nLuas === rows.length
+  // Aturan "Σ hanya sah kalau SEMUA bidang berluas" → lib/luasBidang.ts.
+  // Panel ini sumber DAFTAR MENTAHnya; jawabannya wajib sama dgn kedua menu
+  // yang menampilkannya (Daftar Barang & Daftar Barang Awal).
+  const ringkas = ringkasDaftarBidang(rows)
+  const nLuas = ringkas.nLuas
+  const luasTotal = ringkas.luas ?? 0
+  const luasLengkap = luasBidangSah(ringkas)
 
   return (
     <div className="card p-4">

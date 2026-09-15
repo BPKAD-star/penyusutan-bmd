@@ -9,9 +9,12 @@
 // milik satu alasan — itu sebabnya ia berdiri sendiri, bukan ditempelkan ke
 // salah satu hook alasan.
 //
-// ⚠️ MURNI PINDAH, termasuk `tampilkan()` yang tak memeriksa `error` —
-// kegagalan query terbaca operator sebagai "barangnya memang tak ada". Layak
-// dibetulkan, tapi sebagai perubahan tersendiri.
+// ✅ Fase 1 (2026-09-15): `error` TIDAK lagi ditelan. Sebelumnya kedua query
+// di sini memakai `const { data } = await …` telanjang, jadi query yang GAGAL
+// menghasilkan daftar kosong yang terbaca operator sebagai "barangnya memang
+// tak ada" — persis kelas INS-06. Sekarang kegagalannya dialirkan ke saluran
+// error form (`onErr`) DAN `loaded` sengaja TIDAK diset, supaya layar tak
+// pernah berkata "tidak ada hasil" untuk sesuatu yang sebenarnya gagal.
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -50,7 +53,8 @@ export type PemilihBarang = {
 export function usePemilihBarang(
   skpdId: number | null,
   alasan: string,
-  preset?: { barang: Barang } | null,
+  preset: { barang: Barang } | null | undefined,
+  onErr: (msg: string) => void,
 ): PemilihBarang {
   const supabase = createClient()
 
@@ -68,7 +72,11 @@ export function usePemilihBarang(
     // Per 200: `.in()` yang terlalu panjang ditolak PostgREST, dan satu halaman
     // daftar bisa memuat 500 barang.
     for (let i = 0; i < uniq.length; i += 200) {
-      const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      const { data, error } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      // MELEMPAR, tak sekadar dilaporkan: pemanggilnya menaruh hasilnya di
+      // kolom "Uraian Barang", dan peta yang separuh terisi terbaca sebagai
+      // "kode ini memang tak terdaftar di kodefikasi".
+      if (error) throw new Error(`gagal membaca uraian kodefikasi: ${error.message}`)
       for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
     }
     return map
@@ -79,16 +87,21 @@ export function usePemilihBarang(
   // tak terdaftar di kodefikasi.
   useEffect(() => {
     if (!preset) return
-    ;(async () => setUraianMap(await fetchUraian([preset.barang.kode])))()
+    ;(async () => {
+      try { setUraianMap(await fetchUraian([preset.barang.kode])) }
+      catch (e) { onErr(e instanceof Error ? e.message : String(e)) }
+    })()
   }, [preset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function tampilkan() {
     setLoading(true)
+    try {
     let q = supabase.from('aset').select(BARANG_COLS)
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
     if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
-    const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
+    const { data, error } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
+    if (error) throw new Error(`gagal memuat daftar barang: ${error.message}`)
     const list = (data as unknown as Barang[]) || []
     // Barang preset (dari kartu Pemecahan) tetap kelihatan walau filternya tak
     // memuatnya — ia SUDAH tercentang, dan centang atas baris yang tak tampil
@@ -97,7 +110,14 @@ export function usePemilihBarang(
     setRows(list)
     if (alasan === 'spesifikasi') setUraianMap(await fetchUraian(list.map(b => b.kode)))
     setLoaded(true)
-    setLoading(false)
+    } catch (e) {
+      // `loaded` SENGAJA dibiarkan false — layar yang berkata "tidak ada
+      // hasil" untuk query yang gagal itu kebohongan yang paling mahal di
+      // halaman daftar (CLAUDE.md, INS-06).
+      onErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)   // di `finally`, bukan di jalur sukses (INS-10)
+    }
   }
 
   /** Pindah alasan → daftar dikosongkan; filternya SENGAJA dibiarkan. */
