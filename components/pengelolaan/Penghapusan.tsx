@@ -20,6 +20,7 @@
 //     Pengembalian barang HANYA lewat SKPD penerima (menu Penggunaan).
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { usePemilihBarangHapus } from './penghapusan/usePemilihBarang'
 import { SUBJENIS_OPT, JENIS_PENGHAPUSAN, type JenisHapus } from '@/lib/penghapusan'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
@@ -798,14 +799,12 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [dokPaths, setDokPaths] = useState<string[]>([]) // dokumen sumber (pengalihan)
   const [dokUploading, setDokUploading] = useState(false)
 
-  const [fGolongan, setFGolongan] = useState('')
-  const [fKomptabel, setFKomptabel] = useState('')
-  const [fSearch, setFSearch] = useState('')
-
-  const [rows, setRows] = useState<Barang[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [sel, setSel] = useState<Record<string, Barang>>({})
+  // Pemilih barang (filter + cari + centang) → ./penghapusan/usePemilihBarang.ts
+  // (REFACTOR-PLAN Fase 3). Nama lokal dipertahankan supaya JSX tetap.
+  const {
+    fGolongan, setFGolongan, fKomptabel, setFKomptabel, fSearch, setFSearch,
+    rows, loaded, loading, tampilkan, sel, setSel, selList, selTotal, toggle, toggleAll,
+  } = usePemilihBarangHapus(skpdId)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
@@ -816,24 +815,6 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   // dikecualikan & dokumennya opsional.
   const perluDokumenDulu = !header && WAJIB_DOKUMEN_JENIS.includes(jenis) && dokPaths.length === 0
 
-  async function tampilkan() {
-    setLoading(true)
-    let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,' +
-        'no_polisi,no_rangka,no_mesin,tgl_perolehan,tahun_pengadaan,jumlah,satuan,nilai_perolehan,skpd_id')
-      .eq('status', 'aktif').eq('skpd_id', skpdId)
-    if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
-    if (fKomptabel) q = q.eq('intra_ekstra', fKomptabel)
-    // Cari: nama barang / NIBAR / kode (prefix) + nomor kendaraan (polisi /
-    // rangka / mesin) — permintaan user 2026-09-09.
-    if (fSearch) q = q.or(
-      `nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%,` +
-      `no_polisi.ilike.%${fSearch}%,no_rangka.ilike.%${fSearch}%,no_mesin.ilike.%${fSearch}%`)
-    const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
-    setRows((data as unknown as Barang[]) || [])
-    setLoaded(true)
-    setLoading(false)
-  }
 
   async function uploadDokumen(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -855,25 +836,6 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     setDokPaths(prev => prev.filter(p => p !== path))
   }
 
-  function toggle(b: Barang) {
-    setSel(prev => {
-      const next = { ...prev }
-      if (next[b.id]) delete next[b.id]; else next[b.id] = b
-      return next
-    })
-  }
-  function toggleAll() {
-    setSel(prev => {
-      const allSelected = rows.length > 0 && rows.every(r => prev[r.id])
-      if (allSelected) return {}
-      const next = { ...prev }
-      for (const r of rows) next[r.id] = r
-      return next
-    })
-  }
-
-  const selList = Object.values(sel)
-  const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
 
   const draftDari = (b: Barang): DraftItem => ({
     aset_id: b.id, nibar: b.nibar, kode: b.kode, nama_barang: b.nama_barang,
