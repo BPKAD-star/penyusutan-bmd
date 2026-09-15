@@ -3,7 +3,7 @@
 // SKPD → Jenis Aset (WAJIB pilih satu) → Komptabel → Cari → klik Tampilkan.
 //
 // Kolom menyesuaikan jenis aset (KIB) memakai field yang tersedia di DB. Layar
-// DIRINGKAS (lihat COLS): `uraian` ditumpuk di bawah `kode`, `nibar` di bawah
+// DIRINGKAS (lihat `kolomGolongan`, lib/kolomBarang.ts): `uraian` ditumpuk di bawah `kode`, `nibar` di bawah
 // `nama`. Tanah/Gedung/Jalan/KDP/Aset Lain-Lain + Spesifikasi Lainnya & Lokasi
 // (alamat_detail) setelah nama. Tanah: dokumen kepemilikan TIDAK di layar (per
 // bidang di GIS — badge "N bidang"), tetap ada di Export (EXPORT_COLS, utk BPK).
@@ -11,11 +11,12 @@
 //   - Peralatan & Mesin (1.3.2): + Merek/Tipe + Spesifikasi
 //   - Aset Lain-Lain (1.5.4): SEMUA kolom sekaligus (2026-09-08) — luas, jenis
 //     hak, dokumen kepemilikan, DAN no. polisi/rangka/mesin/BPKB. Lihat
-//     COLS['1.5.4']; tabelnya memang jadi lebar & digeser horizontal.
+//     KOLOM_GOLONGAN['1.5.4']; tabelnya memang jadi lebar & digeser horizontal.
 //
 // Tampilan: kalau hasil filter ≤ SHOW_ALL_MAX baris → tampilkan SEMUA (tanpa
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
 // selalu menjumlahkan nilai perolehan SELURUH hasil filter. Angka tanpa "Rp".
+import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -86,7 +87,7 @@ type Row = {
   nama_dokumen_kepemilikan: string | null
   jenis_hak: string | null
   // Identitas kendaraan — dipakai kolom Aset Lain-Lain (1.5.4), yang isinya
-  // campuran hasil reklasifikasi dari semua golongan (lihat COLS['1.5.4']).
+  // campuran hasil reklasifikasi dari semua golongan (lihat KOLOM_GOLONGAN['1.5.4']).
   no_polisi: string | null
   no_rangka: string | null
   no_mesin: string | null
@@ -112,20 +113,17 @@ const angkaLuas = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 
 // ── Kolom per jenis aset (pakai field yang tersedia) ────────────────────────
+// Judul & perataan kolom. Yang DIPAKAI BERSAMA Daftar Barang Awal ada di
+// lib/kolomBarang.ts (`KOLOM_META`) — di sini tinggal tiga kolom yang memang
+// hanya milik halaman ini.
 const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> = {
-  skpd: { header: 'SKPD' }, nama: { header: 'Nama Barang' }, kode: { header: 'Kode Barang' },
-  uraian: { header: 'Uraian Barang' }, merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
-  lokasi: { header: 'Lokasi' }, komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
-  nilai: { header: 'Nilai Perolehan', align: 'right' }, keterangan: { header: 'Keterangan' },
-  asal_usul: { header: 'Asal Usul' }, penggunaan: { header: 'Penggunaan' },
-  luas: { header: 'Luas (m²)', align: 'right' }, no_sertifikat: { header: 'Nomor Dokumen Kepemilikan' },
-  tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' }, atas_nama: { header: 'Nama Dokumen Kepemilikan' },
-  hak: { header: 'Jenis Hak' },
-  nopol: { header: 'No. Polisi' }, rangka: { header: 'No. Rangka' },
-  mesin: { header: 'No. Mesin' }, bpkb: { header: 'No. BPKB' },
-  // Dua kolom identitas — EXPORT-ONLY (tak pernah masuk COLS layar; di layar
-  // NIBAR & kode register ditumpuk di sel Nama Barang). Ada di COL_META supaya
-  // ikut satu sistem urutan yang sama dgn kolom lain (EXPORT_ORDER).
+  ...KOLOM_META,
+  // `uraian` tak jadi kolom sendiri di layar (ditumpuk di bawah `kode`), tapi
+  // TETAP kolom penuh di Export — lihat EXPORT_ORDER.
+  uraian: { header: 'Uraian Barang' },
+  // Dua kolom identitas — EXPORT-ONLY (tak pernah masuk kolom layar; di layar
+  // NIBAR & kode register ditumpuk di sel Nama Barang). Ada di sini supaya ikut
+  // satu sistem urutan yang sama dgn kolom lain (EXPORT_ORDER).
   nibar: { header: 'NIBAR' }, kode_register: { header: 'Kode Register' },
 }
 // ── Kolom TAMPILAN LAYAR (diringkas 2026-07-19) ─────────────────────────────
@@ -142,39 +140,20 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 // - Tanah: kolom Dokumen Kepemilikan (no/tgl/atas nama) SENGAJA tidak di layar —
 //   satu register bisa banyak bidang & dokumennya dikelola per-bidang di GIS
 //   (badge "🗺 N bidang" di sel nama link ke sana). TETAP ada di Export (BPK).
-const COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel; dokumen kepemilikan → GIS/Export
-  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],    // Peralatan & Mesin
-  // Gedung & Bangunan: + Spesifikasi Lainnya (permintaan user 2026-09-08).
-  // Golongan ini tak punya Merek/Tipe — yang menerangkan barangnya justru
-  // Spesifikasi Lainnya, dan sampai hari ini ia cuma ikut di Export
-  // (EXPORT_COLS sudah memuatnya sejak lama), tak pernah di layar. 11 kolom,
-  // masih muat tanpa geser. ⚠️ Kembar dgn BASE_COLS['1.3.3'] di Saldo Awal →
-  // Daftar Barang Awal; ubah satu, samakan yang lain.
-  '1.3.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Gedung & Bangunan
-  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // Jalan, Jaringan, Irigasi
-  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],                   // Aset Tetap Lainnya
-  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],   // KDP
-  '1.5.3': ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],             // Aset Tidak Berwujud
-  // Aset Lain-Lain — SATU-SATUNYA golongan yang kolomnya GABUNGAN semua
-  // template (permintaan user 2026-09-08), dan itu bukan kelonggaran: 1.5.4
-  // diisi barang yang direklasifikasi dari SEMUA golongan lain, jadi satu tabel
-  // memuat sekaligus bekas Tanah (butuh luas, jenis hak, dokumen kepemilikan)
-  // DAN bekas Peralatan & Mesin (butuh no. polisi/rangka/mesin/BPKB). Kolom yang
-  // tak berlaku untuk satu baris tampil "-", dan itu justru yang dicari: selama
-  // kolomnya tak pernah muncul, tak ada yang tahu mana yang masih kosong.
-  // ⚠️ Aturannya sudah lebih dulu ada di `ASET_LAIN_LAIN_EXTRA`
-  // (lib/asetFields.ts) yang menawarkan sembilan field yang sama di form Koreksi
-  // Spesifikasi — daftar di sini SENGAJA memuat himpunan yang sama, jadi kalau
-  // salah satu berubah, samakan yang lain.
-  // Tabelnya jadi lebar & digeser horizontal; itu diterima, lihat catatan
-  // NOWRAP_KEYS di bawah.
-  '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
-    'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
-    'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-}
-const DEFAULT_COLS = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
-const colsFor = (golongan: string) => COLS[golongan] || DEFAULT_COLS
+// Kolom per jenis aset → **lib/kolomBarang.ts**, dipakai BERSAMA dgn Daftar
+// Barang Awal (REFACTOR-PLAN §5 butir 2.3). Sebelum 2026-09-15 daftarnya
+// ditulis dua kali & cuma dijaga komentar "ubah satu, samakan yang lain" —
+// kelupaan di salah satu sisi tak menghasilkan error apa pun, cuma dua menu
+// yang menampilkan barang sama dgn isi berbeda.
+//
+// ⚠️ `kendaraanPM` SENGAJA tak disetel di sini: Peralatan & Mesin (1.3.2) di
+// halaman ini belum membawa No. Polisi/Rangka/Mesin/BPKB, sementara Daftar
+// Barang Awal membawa (permintaan user 2026-07-30). Kalau kelak halaman ini
+// mau ikut, setel benderanya jadi `true` — JANGAN menyalin empat kuncinya ke
+// daftar terpisah, itu mengembalikan kekembaran yang baru saja dicabut.
+// Golongan 1.5.4 tak terpengaruh bendera itu: isinya campuran hasil
+// reklasifikasi semua golongan, jadi kendaraan memang selalu ikut.
+const colsFor = (golongan: string) => kolomGolongan(golongan)
 
 // ── Kolom EKSPOR (Excel/BPK) — TETAP flat & lengkap: `uraian` jadi kolom
 // sendiri, dan Tanah tetap membawa Dokumen Kepemilikan (no/tgl/atas nama).
@@ -215,7 +194,7 @@ const EXPORT_COLS: Record<string, string[]> = {
   '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   // Aset Lain-Lain: berkasnya membawa kolom yang SAMA dgn layar (lihat
-  // COLS['1.5.4']) — Excel yang lebih miskin dari layar bikin operator yang
+  // KOLOM_GOLONGAN['1.5.4']) — Excel yang lebih miskin dari layar bikin operator yang
   // sudah melihat nomor rangkanya di aplikasi menganggap datanya hilang.
   '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
     'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
@@ -255,7 +234,7 @@ const HAPUS_LABEL: Record<string, string> = {
 // polisi. Aturan & alasannya kembar dgn Saldo Awal → Daftar Barang Awal
 // (NOWRAP_KEYS di sana); tabelnya memang sudah bisa digeser horizontal, jadi
 // melebar sedikit lebih baik daripada nomor yang terbelah.
-const NOWRAP_KEYS = new Set(['nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'tgl_sertifikat'])
+// NOWRAP_KEYS → lib/kolomBarang.ts (kembar dgn Daftar Barang Awal).
 // Kolom `nama` (sel 3-baris: nama · NIBAR · kode register — satu-satunya yang
 // menjawab "barang ini yang mana?") dibuat STICKY di sisi kiri (permintaan
 // user 2026-09-12): tabel golongan lebar (mis. 1.5.4, 20 kolom) digeser jauh
@@ -849,7 +828,7 @@ export default function DaftarBarangPage() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const skpdNama = applied?.skpdId ? skpdMap[applied.skpdId] : undefined
-  const cols = applied ? colsFor(applied.golongan) : DEFAULT_COLS
+  const cols = applied ? colsFor(applied.golongan) : KOLOM_DEFAULT
   const nilaiIdx = cols.indexOf('nilai')
 
   // SKPD pemilik pada periode terpilih (period-aware): override kalau barang

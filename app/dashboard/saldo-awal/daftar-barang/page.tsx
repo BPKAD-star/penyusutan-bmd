@@ -3,8 +3,9 @@
 // saldo awal 2026 (= saldo akhir 2025), sumber aset_awal_2026 (angka penyusutan
 // baseline: masa manfaat, beban/smt, akumulasi 2025, nilai buku awal, sisa).
 //
-// KOLOM MENGIKUTI DAFTAR BARANG per jenis aset (BASE_COLS = salinan persis COLS
-// di app/dashboard/daftar-barang/page.tsx), lalu DISISIPI kolom penyusutan
+// KOLOM MENGIKUTI DAFTAR BARANG per jenis aset — dan sejak 2026-09-15 keduanya
+// benar-benar MEMBACA DAFTAR YANG SAMA (`kolomGolongan` di lib/kolomBarang.ts),
+// bukan lagi dua salinan yang dijaga komentar. Lalu DISISIPI kolom penyusutan
 // baseline di sekitar Nilai Perolehan: Masa Manfaat sebelum, Beban/Smt ·
 // Akumulasi 2025 · Nilai Buku Awal · Sisa sesudah. Jenis aset yang MEMANG TIDAK
 // DISUSUTKAN (Tanah 1.3.1, Aset Tetap Lainnya 1.3.5, KDP 1.3.6 — flag
@@ -44,6 +45,7 @@
 // spesifikasi, reklas kode/golongan, atau pindah SKPD ditandai 🔒 dan centangnya
 // mati — koreksinya wajib lewat menu Koreksi. Penegaknya trigger DB (migrasi
 // 20260728_01 bagian 3); 🔒 di sini cuma biar operator tak klik lalu kena error.
+import { KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -168,27 +170,20 @@ const golLabel = (kode: string) => GOLONGAN_REKAP.find(g => g.kode === kodeLevel
 const newKey = () => Math.random().toString(36).slice(2)
 
 // ── Kolom per jenis aset ────────────────────────────────────────────────────
+// Judul & perataan kolom. Yang DIPAKAI BERSAMA Daftar Barang ada di
+// lib/kolomBarang.ts (`KOLOM_META`) — termasuk ketiga judul Dokumen
+// Kepemilikan, yang WAJIB sama persis di dua menu karena berkasnya sering
+// disandingkan berdampingan. Di bawah ini tinggal kolom yang memang hanya
+// milik halaman ini.
 const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> = {
-  skpd: { header: 'SKPD' }, kode: { header: 'Kode Barang' }, nama: { header: 'Nama Barang' },
-  merek: { header: 'Merek / Tipe' }, spesifikasi: { header: 'Spesifikasi Lainnya' },
-  nopol: { header: 'No. Polisi' }, rangka: { header: 'No. Rangka' },
-  mesin: { header: 'No. Mesin' }, bpkb: { header: 'No. BPKB' },
-  lokasi: { header: 'Lokasi' }, luas: { header: 'Luas (m²)', align: 'right' }, hak: { header: 'Jenis Hak' },
-  // Judulnya SAMA PERSIS dgn Daftar Barang (COL_META di sana) — dua menu ini
-  // mengekspor barang yang sama & berkasnya sering disandingkan.
-  no_sertifikat: { header: 'Nomor Dokumen Kepemilikan' },
-  tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' },
-  atas_nama: { header: 'Nama Dokumen Kepemilikan' },
-  komptabel: { header: 'Komptabel', align: 'center' }, tgl: { header: 'Tgl Perolehan' },
+  ...KOLOM_META,
+  // ── Kolom penyusutan baseline — tak ada di Daftar Barang ────────────────
   mm: { header: 'Masa Manfaat (Smt)', align: 'center' },
-  nilai: { header: 'Nilai Perolehan', align: 'right' },
   beban: { header: 'Beban / Smt', align: 'right' },
   akum: { header: 'Akumulasi 2025', align: 'right' },
   buku: { header: 'Nilai Buku Awal', align: 'right' },
   sisa: { header: 'Sisa (Smt)', align: 'center' },
-  asal_usul: { header: 'Asal Usul' }, penggunaan: { header: 'Penggunaan' },
-  keterangan: { header: 'Keterangan' },
-  // ── Dua kolom GABUNGAN, HANYA untuk layar (lihat colsLayar) ──────────────
+  // ── Dua kolom GABUNGAN, HANYA untuk layar (lihat colsLayar) ─────────────
   // Excel tetap memakai kolom terpisah — di berkas kerja orang menyortir &
   // mem-pivot per kolom, jadi menggabungnya di sana justru merusak. Yang
   // digabung cuma tampilannya, dan itu yang membeli ruang untuk kolom
@@ -209,29 +204,18 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 // mau ikut, tinggal salin empat kunci ini ke sana.
 // (Sejak 2026-09-08 Daftar Barang SUDAH membawa keempatnya — tapi khusus di
 // golongan 1.5.4, yang di kedua menu ini kolomnya memang sengaja disamakan.)
-const BASE_COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel
-  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  // Gedung & Bangunan: + Spesifikasi Lainnya (permintaan user 2026-09-08).
-  // Golongan ini tak punya Merek/Tipe — yang menerangkan barangnya justru
-  // Spesifikasi Lainnya, dan sampai hari ini ia cuma ada di Excel. Kembar dgn
-  // COLS['1.3.3'] di Daftar Barang; ubah satu, samakan yang lain.
-  '1.3.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.5.3': ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  // Aset Lain-Lain — kolom GABUNGAN semua template, sama persis dgn
-  // COLS['1.5.4'] di Daftar Barang (permintaan user 2026-09-08). Golongan ini
-  // diisi barang hasil reklasifikasi dari SEMUA golongan lain, jadi satu tabel
-  // memuat sekaligus bekas Tanah (luas, jenis hak, dokumen kepemilikan) DAN
-  // bekas Peralatan & Mesin (no. polisi/rangka/mesin/BPKB). Sel yang tak berlaku
-  // tampil "-" — itu yang justru dicari, supaya kelihatan mana yang masih kosong.
-  '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
-    'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
-    'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-}
-const BASE_DEFAULT = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
+// Kolom per jenis aset → **lib/kolomBarang.ts**, dipakai BERSAMA dgn Daftar
+// Barang (REFACTOR-PLAN §5 butir 2.3). Sebelum 2026-09-15 daftarnya ditulis dua
+// kali & cuma dijaga komentar "ubah satu, samakan yang lain".
+//
+// ⚠️ `kendaraanPM: true` = SATU-SATUNYA penyimpangan yang disengaja dari Daftar
+// Barang: Peralatan & Mesin (1.3.2) di sini membawa No. Polisi/Rangka/Mesin/
+// BPKB sesudah Spesifikasi Lainnya (permintaan user 2026-07-30 — identitas
+// kendaraan itu yang paling sering dicocokkan saat menelusuri baseline 2025).
+// Dulu bedanya hidup sbg selisih diam-diam antara dua daftar yang sepintas
+// kembar; sekarang ia satu bendera bernama, dan `lib/kolomBarang.test.ts`
+// menjaga bahwa TAK ADA beda lain yang menyelinap.
+const BASE_KENDARAAN_PM = true
 
 // Kolom penyusutan baseline — disisipkan mengapit Nilai Perolehan.
 const SUSUT_SEBELUM = ['mm']
@@ -244,7 +228,7 @@ const disusutkan = (golongan: string) =>
 
 /** Kolom LOGIS — satu kolom = satu kolom di Excel. Dipakai Export. */
 function colsFor(golongan: string): string[] {
-  const base = BASE_COLS[golongan] || BASE_DEFAULT
+  const base = kolomGolongan(golongan, { kendaraanPM: BASE_KENDARAAN_PM })
   if (!disusutkan(golongan)) return base
   const out: string[] = []
   for (const k of base) {
@@ -296,7 +280,7 @@ const TOTAL_KEYS = new Set(['nilai', 'beban', 'akum', 'buku'])
 // pecah jadi tiga baris di kolom sempit & tak lagi terbaca sebagai satu nomor
 // polisi (permintaan user 2026-07-30). Tabelnya memang sudah bisa digeser
 // horizontal, jadi melebar sedikit lebih baik daripada nomor yang terbelah.
-const NOWRAP_KEYS = new Set(['nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'tgl_sertifikat'])
+// NOWRAP_KEYS → lib/kolomBarang.ts (kembar dgn Daftar Barang).
 function thClass(key: string) {
   const a = COL_META[key]?.align
   return `table-th${a === 'right' ? ' text-right' : a === 'center' ? ' text-center' : ''}`

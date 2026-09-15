@@ -772,14 +772,22 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   pintu itu sekarang SATU sumber: `koreksiFieldKeys` di lib/asetFields.ts
   (dipindah dari Koreksi.tsx) — termasuk pengecualian Tanah 1.3.1 yang dokumen
   kepemilikan/luas/lokasinya tetap milik menu GIS BMD.
-  **Kolom Daftar Barang Awal = salinan kolom Daftar Barang per jenis aset**
-  (`BASE_COLS` di halaman itu = `COLS` di app/dashboard/daftar-barang/page.tsx —
-  ubah salah satu, samakan yang lain) — **kecuali SATU penyimpangan yang
-  disengaja** (permintaan user 2026-07-30): Peralatan & Mesin (1.3.2) di Daftar
-  Barang Awal membawa **No. Polisi · No. Rangka · No. Mesin · No. BPKB** sesudah
-  Spesifikasi Lainnya, sementara Daftar Barang belum. Kolomnya sudah lama ada di
-  `aset_awal_2026` (migrasi 20260704_20) tapi tak pernah ditampilkan. Kalau nanti
-  Daftar Barang mau ikut, salin empat kunci itu ke `COLS` + `cellContent`-nya.
+  ✅ **Kolom kedua halaman kini SATU SUMBER: `kolomGolongan()` di
+  lib/kolomBarang.ts** (2026-09-15, REFACTOR-PLAN §5 butir 2.3). Sebelumnya
+  `BASE_COLS` di Daftar Barang Awal adalah SALINAN `COLS` di Daftar Barang, dan
+  yang menjaganya cuma kalimat "ubah salah satu, samakan yang lain" — aturan
+  yang di repo ini sudah berkali-kali terbukti dilanggar, dan pelanggarannya di
+  sini **tak menghasilkan satu pun error**: dua menu sekadar menampilkan barang
+  yang sama dgn isi berbeda.
+  **SATU penyimpangan yang disengaja tetap ada, tapi kini PUNYA NAMA**
+  (permintaan user 2026-07-30): Peralatan & Mesin (1.3.2) di Daftar Barang Awal
+  membawa **No. Polisi · No. Rangka · No. Mesin · No. BPKB** sesudah Spesifikasi
+  Lainnya, sementara Daftar Barang belum — sekarang itu bendera `kendaraanPM`,
+  bukan selisih diam-diam antara dua daftar yang sepintas kembar. Kalau nanti
+  Daftar Barang mau ikut: **setel benderanya jadi `true`** (+ `cellContent`-nya),
+  JANGAN menyalin empat kunci itu ke daftar terpisah — itu mengembalikan
+  kekembaran yang baru saja dicabut. Dikunci **lib/kolomBarang.test.ts**, yang
+  juga memastikan TAK ADA beda lain yang menyelinap di antara kedua menu.
   **Kotak Cari-nya juga sudah lebih luas** (2026-07-30): nama barang, NIBAR,
   kode (prefix), merek/tipe, no. polisi/rangka/mesin, + **nilai perolehan**
   (`orCari`). Dua jebakan yang ditutup di situ & jangan dibuka lagi: (1) nilai
@@ -4517,10 +4525,12 @@ digeser horizontal — itu memang yang diminta.
   luas & dokumen kepemilikan) dan bekas Peralatan & Mesin (butuh nomor rangka).
   Aturan itu sudah lebih dulu tertulis di **`ASET_LAIN_LAIN_EXTRA`**
   (lib/asetFields.ts), yang sejak awal menawarkan sembilan field yang sama di
-  form Koreksi Spesifikasi. ⚠️ **Daftar kolom 1.5.4 di kedua halaman SENGAJA
-  himpunan yang sama dengan konstanta itu** — ubah satu, samakan semuanya:
-  operator bisa MENGISI field yang tak pernah bisa ia LIHAT adalah keadaan yang
-  paling membingungkan dari dua-duanya.
+  form Koreksi Spesifikasi. ⚠️ **Daftar kolom 1.5.4 SENGAJA himpunan yang sama
+  dengan konstanta itu** — operator yang bisa MENGISI field tapi tak pernah bisa
+  MELIHATnya (atau sebaliknya) adalah keadaan yang paling membingungkan dari
+  dua-duanya. ✅ Sejak 2026-09-15 kekembaran itu **tak lagi dijaga komentar**:
+  kolomnya satu sumber di `KOLOM_GOLONGAN['1.5.4']` (lib/kolomBarang.ts) dan
+  kesamaan himpunannya dikunci DUA ARAH oleh lib/kolomBarang.test.ts.
 - **Golongan lain TIDAK disentuh** (user: "khusus yang aset lain lain aja").
   Termasuk 1.3.2 di Daftar Barang, yang masih belum membawa nomor kendaraan
   walau Daftar Barang Awal sudah — penyimpangan yang memang sudah tercatat.

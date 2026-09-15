@@ -459,11 +459,27 @@ komponen 1.400 baris ke fungsi murni **berikut test-nya**.
 |---|---|---|---|
 | 2.1 | ~~`aset/domain/visibilitas.ts`~~ — **SUDAH, sebagian (2026-08-05)**: `lib/visibilitas.ts` + `lib/visibilitas.test.ts`, menyatukan Daftar Barang, Penyusutan, & `lib/rekon.ts` (3 dari 6 berkas, plus daftar baru `LAHIR`). **Sisa — MENGECIL 2026-08-18**: `fn_rekap_bmd` tak lagi punya daftarnya sendiri; CTE `vis`/`lahir_setelah`/`hidden`-nya diganti panggilan ke `fn_dbar_hidden` (migrasi 20260818_05), sesudah dibuktikan setara ke DB (227=227, selisih 0 dua arah). Jadi kembar SQL tinggal SATU (`fn_dbar_hidden` ↔ `lib/visibilitas.ts`), dan **daftarnya kini dikunci** `lib/sinkronisasiRpc.test.ts` §2 — menambah jenis di satu sisi saja langsung merah. ⚠️ Yang **belum** ditutup: test itu membandingkan KONSTANTA di berkas migrasi, bukan menjalankan kedua sisi. Kesetaraan runtime masih perlu test integrasi ber-DB (pola sama dgn 2.4). ⟨`fn_rekap_bmd_periodik` **tak lagi disebut di sini**: sudah di-DROP migrasi 20260725_07, diverifikasi ke DB 2026-08-06 — tinggal SATU kembaran SQL, bukan dua⟩ | duplikasi terbanyak; urutan kronologisnya halus (aksi terakhir menang, bukan "batal selalu menang") |
 | 2.1b | ~~`aset/domain/guardPembatalan.ts`~~ — **SELESAI 2026-08-18**: `lib/guardPembatalan.ts` + `lib/guardPembatalan.test.ts`, **8 titik panggil di 6 berkas** tersatukan (lihat catatan di bawah) | `Koreksi.tsx` ×3, `Penghapusan.tsx`, `Pengadaan.tsx`, `Kapitalisasi.tsx`, `Reklasifikasi.tsx`, **`lib/kdp.ts`** | guard integritas ledger terduplikasi; kelupaan di menu batal baru = rantai replay engine RUSAK, bukan cuma laporan salah — satu tingkat di atas visibilitas |
-| 2.2 | `pengalihan/domain/kepemilikan.ts` — `ownersAt` | `lib/pengalihan.ts` + 2 halaman | atribusi SKPD period-aware, sudah pernah salah |
-| 2.3 | `aset/domain/kolom.ts` — `COLS`/`EXPORT_ORDER`/`EXPORT_COLS` | Daftar Barang ↔ Daftar Barang Awal | pasangan kembar yang dijaga komentar; sekali ekstrak, "kelupaan" jadi mustahil |
-| 2.4 | `kode-register/domain/` — `prefixKodeRegister`, `bergeserDariNibar` | `lib/kodeRegister.ts` | pembedaan `null` vs `false` mudah rusak; kembar dengan `fn_prefix_kode_register` di SQL — ekstraksi WAJIB disertai test yang membandingkan output TS vs `fn_prefix_kode_register` lewat query nyata, bukan cuma memindahkan fungsinya |
-| 2.5 | `pelaporan/domain/` — agregasi rekonsiliasi | `lib/rekon.ts` (25 KB) | berkas terbesar di `lib/`, murni-nya bisa dipisah dari I/O-nya |
-| 2.6 | `perolehan/domain/draft.ts` — validasi & materialisasi draft | `Pengadaan.tsx` + `PerolehanManual.tsx` | aturan approval terjepit di dalam JSX |
+| 2.2 | ~~`pengalihan/domain/kepemilikan.ts`~~ — **TUJUANNYA SUDAH TERCAPAI** (diukur 2026-09-15): `ownersAt` hidup di `lib/pengalihan.ts` & dibaca **7 berkas** (Daftar Barang, Penyusutan, `lib/rekon.ts`, `laporanPerpindahan`, `reklasKode`, `kodeRegisterRiwayat`). Tak ada salinan kedua. **Sisanya cuma PINDAH FOLDER, dan itu pekerjaan Fase 5 — bukan utang Fase 2** | atribusi SKPD period-aware, sudah pernah salah |
+| 2.3 | ~~`aset/domain/kolom.ts`~~ — **SELESAI 2026-09-15**: `lib/kolomBarang.ts` + `lib/kolomBarang.test.ts` (27 test, 6 mutasi). `COLS` (Daftar Barang) & `BASE_COLS` (Daftar Barang Awal) dilebur jadi `kolomGolongan()`; penyimpangan No. Polisi/Rangka/Mesin/BPKB di 1.3.2 kini satu **bendera bernama** `kendaraanPM`, bukan selisih diam-diam antara dua daftar yang sepintas kembar. Ikut dikunci: kekembaran kolom 1.5.4 ↔ `ASET_LAIN_LAIN_EXTRA` (lib/asetFields.ts), yang sebelumnya cuma dijaga komentar | pasangan kembar yang dijaga komentar; sekali ekstrak, "kelupaan" jadi mustahil |
+| 2.4 | ~~`kode-register/domain/`~~ — **SEBAGIAN BESAR SUDAH**: `lib/kodeRegister.ts` + `lib/kodeRegister.test.ts` memuat `prefixKodeRegister`, `bergeserDariNibar`, `pecahNibar` (termasuk pembedaan `null` vs `false`). ⛔ **Yang BELUM & memang belum bisa**: test yang membandingkan keluaran TS dgn `fn_prefix_kode_register` lewat query NYATA — itu butuh test integrasi ber-DB (§11), bukan ekstraksi | pembedaan `null` vs `false` mudah rusak; kembar dengan `fn_prefix_kode_register` di SQL |
+| 2.5 | `pelaporan/domain/` — agregasi rekonsiliasi. **SEBAGIAN**: `lib/rekon.ts` masih **1.034 baris**, tapi turunannya sudah lahir satu per satu menumpang fitur — `rekapBmd`, `rekapPohon`, `laporanBmdFormat`, & 7 modul `laporan*` lain | berkas terbesar di `lib/`, murni-nya bisa dipisah dari I/O-nya |
+| 2.6 | `perolehan/domain/draft.ts` — validasi & materialisasi draft. **SEBAGIAN**: `lib/draftPengadaan.ts` (2026-09-09) sudah memegang VALIDASI kelengkapan barang, tapi baru dipakai `Pengadaan.tsx`; **`PerolehanManual.tsx` belum ikut**, dan materialisasi draft masih di dalam komponen | aturan approval terjepit di dalam JSX |
+
+⚠️ **Tabel ini pernah BASI berbulan & itu menyesatkan pembacanya** (2026-09-15):
+2.2 & 2.4 masih tertulis "belum" padahal modulnya sudah lama ada, sehingga
+laporan status yang dibaca dari sini menyebut Fase 2 nyaris tak bergerak —
+padahal ekstraksi berjalan terus menumpang fitur, persis seperti yang dijanjikan
+judul fase ini. **Sebelum mengutip status dari tabel ini, UKUR ke kode**, jangan
+percaya centangnya:
+
+```bash
+grep -rn 'export function ownersAt' lib/                    # 2.2
+ls lib/kolomBarang.ts lib/kodeRegister.ts lib/draftPengadaan.ts   # 2.3 · 2.4 · 2.6
+wc -l lib/rekon.ts                                          # 2.5
+```
+
+Itu pelajaran yang sama dgn yang sudah berkali-kali tercatat di CLAUDE.md untuk
+angka skala & rencana query: **jangan simpulkan dari membaca dokumen, ukur.**
 
 ### Catatan 2.1b — "dikonfirmasi grep, 5 berkas" ternyata KURANG SATU
 
