@@ -11,6 +11,8 @@ import { usePemecahan, newKey, TANAH_DOK_FIELDS } from './koreksi/usePemecahan'
 import { usePenggabungan } from './koreksi/usePenggabungan'
 import { usePencatatanGanda } from './koreksi/usePencatatanGanda'
 import { useSpesifikasi } from './koreksi/useSpesifikasi'
+import { usePemilihBarang } from './koreksi/usePemilihBarang'
+import { useKoreksiNilai } from './koreksi/useKoreksiNilai'
 import { tahunDari } from '@/lib/pencatatanGanda'
 import type { Barang, PecahanItem, SpekEdit, Kandidat, KandidatGabung } from './koreksi/tipe'
 import { useEffect, useState, useCallback } from 'react'
@@ -832,15 +834,14 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   const [dokUploading, setDokUploading] = useState(false)
 
   // ── Nilai Perolehan: barang + nilai baru per-baris ──
-  const [fGolongan, setFGolongan] = useState('')
-  const [fSearch, setFSearch] = useState('')
-  const [rows, setRows] = useState<Barang[]>(preset ? [preset.barang] : [])
-  const [loaded, setLoaded] = useState(!!preset)
-  const [loading, setLoading] = useState(false)
-  const [selNilai, setSelNilai] = useState<Record<string, { barang: Barang; nilaiBaru: string }>>({})
-  // Uraian (nama baku per kode) — dipakai tabel pilih barang di tab Spesifikasi
-  // (kolom Kode Barang, sama pola dgn Daftar Barang).
-  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
+  // ── Koreksi Nilai: centang barang + nilai barunya → ./koreksi/useKoreksiNilai.ts
+  const { sel: selNilai, list: nilaiList, toggle: toggleNilai, ubahNilaiBaru, reset: resetNilai } = useKoreksiNilai()
+  // ── Pemilih barang (dipakai Koreksi Nilai · Spesifikasi · Pemecahan) ────────
+  // → ./koreksi/usePemilihBarang.ts (REFACTOR-PLAN Fase 3).
+  const {
+    fGolongan, setFGolongan, fSearch, setFSearch, rows, setRows, loaded, setLoaded,
+    loading, uraianMap, tampilkan, fetchUraian, reset: resetPilih,
+  } = usePemilihBarang(skpdId, alasan, preset)
 
   // ── Pencatatan Ganda & Spesifikasi ──────────────────────────────────────────
   // State & penyuntingnya → ./koreksi/usePencatatanGanda.ts & ./useSpesifikasi.ts
@@ -906,54 +907,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     setDokPaths(prev => prev.filter(p => p !== path))
   }
 
-  // Preset dari kartu Pemecahan: barangnya sudah ada di `rows`, tinggal uraian
-  // baku per kodenya supaya kolom Kode Barang tak tampil "-" seolah kodenya
-  // tak terdaftar di kodefikasi.
-  useEffect(() => {
-    if (!preset) return
-    ;(async () => setUraianMap(await fetchUraian([preset.barang.kode])))()
-  }, [preset]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function tampilkan() {
-    setLoading(true)
-    let q = supabase.from('aset').select(BARANG_COLS)
-      .eq('status', 'aktif').eq('skpd_id', skpdId)
-    if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
-    if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
-    const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
-    const list = (data as unknown as Barang[]) || []
-    // Barang preset (dari kartu Pemecahan) tetap kelihatan walau filternya tak
-    // memuatnya — ia SUDAH tercentang, dan centang atas baris yang tak tampil
-    // adalah persis kebingungan yang dihindari `draftSeleksi` di menu lain.
-    if (preset && alasan === 'spesifikasi' && !list.some(b => b.id === preset.barang.id)) list.unshift(preset.barang)
-    setRows(list)
-    if (alasan === 'spesifikasi') setUraianMap(await fetchUraian(list.map(b => b.kode)))
-    setLoaded(true)
-    setLoading(false)
-  }
-
-  // Uraian baku per kode (admin_kodefikasi_bmd) — utk kolom Kode Barang di tabel
-  // pilih barang tab Spesifikasi.
-  async function fetchUraian(kodes: string[]) {
-    const uniq = [...new Set(kodes)]
-    const map: Record<string, string> = {}
-    for (let i = 0; i < uniq.length; i += 200) {
-      const { data } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
-      for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
-    }
-    return map
-  }
-  function toggleNilai(b: Barang) {
-    setSelNilai(prev => {
-      const next = { ...prev }
-      if (next[b.id]) delete next[b.id]
-      else next[b.id] = { barang: b, nilaiBaru: String(b.nilai_perolehan) }
-      return next
-    })
-  }
-  function ubahNilaiBaru(id: string, v: string) {
-    setSelNilai(prev => prev[id] ? { ...prev, [id]: { ...prev[id], nilaiBaru: v } } : prev)
-  }
 
 
 
@@ -984,7 +938,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     }
 
     if (alasan === 'nilai_perolehan') {
-      const items = Object.values(selNilai)
+      const items = nilaiList
       if (items.length === 0) { setErr('Centang minimal satu barang.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
       // ── Posisi penyusutan SEBELUM koreksi, dibekukan ke payload ────────────
       //
@@ -1312,8 +1266,8 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                         // Pindah alasan → buang jejak SEMUA alasan, bukan cuma yang
                         // ditinggalkan: operator bisa bolak-balik, dan sisa dari alasan
                         // lain akan ikut tersimpan tanpa pernah terlihat di layar.
-                        setAlasan(o.value); setSelNilai({}); setRows([]); setLoaded(false)
-                        resetGanda(); resetSpek(); resetPecah(); resetGabung()
+                        setAlasan(o.value)
+                        resetNilai(); resetPilih(); resetGanda(); resetSpek(); resetPecah(); resetGabung()
                       }} />
                     <span>
                       <span className="font-medium text-gray-800">{o.label}</span>
