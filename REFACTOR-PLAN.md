@@ -967,6 +967,41 @@ murni + `shared`), BUKAN seluruh repo. Melebarkannya ke `components/**` akan
 memerahkan CI seketika — kalau itu dikerjakan, turunkan ambangnya di commit yang
 SAMA.
 
+**1b. ⚠️ SELURUH test jsdom TAK PERNAH JALAN DI CI** (ditemukan & ditutup
+2026-09-15, beberapa jam sesudah butir 1 — dan ditemukannya justru KARENA butir
+1: sesudah langkah coverage ditambahkan, log CI diperiksa, dan jumlah testnya
+tak cocok dgn lokal).
+
+`ci.yml` memaku `node-version: '20'`, sementara `jsdom@30` ber-engines
+`^22.22.2 || ^24.15.0 || >=26` dan `undici@8` (dependensi jsdom) `>=22.19.0`.
+**`npm ci` cuma MEMPERINGATKAN soal `engines`, tidak memblokir**, jadi
+paketnya tetap terpasang lalu meledak saat dimuat:
+`TypeError: webidl.util.markAsUncloneable is not a function`.
+
+⚠️ **Yang membuatnya bertahan lama: vitest melaporkannya sbg "Errors", BUKAN
+sbg test yang gagal.** Ringkasannya tetap berbunyi `45 passed`, yang sepintas
+terbaca wajar. Terukur pada commit `b16ff33`:
+
+| | Lokal | CI (Node 20) |
+|---|---|---|
+| Berkas | 57 | **45** |
+| Test | 1.302 | **1.013** |
+| Errors | 0 | **12** |
+
+57 − 45 = **tepat 12** = jumlah berkas ber-`@vitest-environment jsdom`. Jadi
+SELURUH test komponen tak pernah dijalankan CI sejak berkas jsdom pertama
+masuk — termasuk kelima `tests/lembar*.test.tsx` yang menjaga **lembar
+Permendagri bertanda tangan** (susunan kolom, Σ `colSpan`, pemetaan sisi
+reklas). Ditutup dgn menaikkan CI ke Node 22, disamakan dgn Node pengembangan.
+
+⚠️ **Pelajaran yang berlaku umum & belum tercatat di mana pun: jumlah test di
+log CI wajib dicocokkan dgn jumlah lokal.** Test yang gagal DIMUAT tidak
+memerahkan hitungan "passed" — ia cuma lenyap. Ini varian ketiga dari cacat
+yang sama yang sudah dua kali tercatat di repo ini: pola `include` vitest yang
+melewatkan `*.test.tsx` (vitest.config.ts) & pemindai `jenisList` yang "lulus"
+karena tak menemukan apa pun (CLAUDE.md, Laporan Penghapusan). **Test yang tak
+terpungut lebih berbahaya daripada tak punya test.**
+
 **2. Fase 3 memburuk jauh lebih cepat dari yang tercatat.** Angka 2026-08-06
 berbunyi 19 → 20 berkas; kenyataannya **19 → 35**. Rincian keempat target
 Fase 3 (§6) per hari ini:

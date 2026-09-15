@@ -21,6 +21,13 @@
 # hanya dijaga ingatan dan sudah berkali-kali bocor. Sejak Fase 0.8 ia juga
 # membandingkan shared/types/database.types.ts dengan migrasi, jadi menambah
 # nilai enum tanpa `npm run gen:types` langsung merah.
+#
+# ⚠️ Angka "1.302 / 57" itu baru BENAR sejak Node dinaikkan ke 22 (lihat alasan
+# di langkah setup-node di bawah). Sebelum itu CI diam-diam cuma menjalankan
+# 1.013 test di 45 berkas — 12 berkas jsdom gagal DIMUAT, dan vitest
+# melaporkannya sbg "Errors", BUKAN sbg test gagal. Kalau suatu saat jumlah
+# test di log CI berbeda dari jumlah lokal, itu gejalanya & bukan kebetulan:
+# baca baris "Errors" di ringkasan vitest, jangan cuma baris "passed".
 name: CI
 
 on:
@@ -35,9 +42,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ⚠️ Node 22, BUKAN 20 — dan ini bukan sekadar "biar baru".
+      # `jsdom@30` ber-engines `^22.22.2 || ^24.15.0 || >=26`, dan `undici@8`
+      # (dependensi jsdom) `>=22.19.0`. Di Node 20 keduanya TETAP TERPASANG —
+      # `npm ci` cuma MEMPERINGATKAN soal `engines`, tidak memblokir — lalu
+      # meledak saat dimuat: `TypeError: webidl.util.markAsUncloneable is not a
+      # function`.
+      #
+      # Akibatnya SELURUH berkas test ber-`@vitest-environment jsdom` gagal
+      # DIMUAT, dan `npm test` melaporkannya sbg "Errors", bukan sbg test yang
+      # gagal — jadi barisnya tetap berbunyi "45 passed" dan kelihatan wajar
+      # sepintas. Terukur pada commit b16ff33: CI 45 berkas / 1.013 test + 12
+      # error, lokal 57 berkas / 1.302 test. Selisihnya TEPAT 12 = jumlah
+      # berkas jsdom. Artinya seluruh test komponen — termasuk lembar
+      # Permendagri yang menjaga berkas BERTANDA TANGAN — tak pernah sekali pun
+      # dijalankan CI sejak berkas jsdom pertama masuk.
+      #
+      # Samakan dgn Node yang dipakai mengembangkan (v22.22.2). Kalau kelak
+      # dinaikkan lagi, cek `engines` jsdom & undici dulu — versi yang TIDAK
+      # cocok tak akan menggagalkan `npm ci`, ia cuma bikin test jsdom lenyap
+      # diam-diam dari CI.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       # `npm ci` (bukan `npm install`) — dipasang persis dari package-lock.json,
