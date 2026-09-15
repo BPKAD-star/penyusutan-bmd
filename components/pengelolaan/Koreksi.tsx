@@ -12,9 +12,16 @@ import { usePenggabungan } from './koreksi/usePenggabungan'
 import { usePencatatanGanda } from './koreksi/usePencatatanGanda'
 import { useSpesifikasi } from './koreksi/useSpesifikasi'
 import { usePemilihBarang } from './koreksi/usePemilihBarang'
+import { useJurnalKoreksi } from './koreksi/useJurnalKoreksi'
 import { useKoreksiNilai } from './koreksi/useKoreksiNilai'
 import { tahunDari } from '@/lib/pencatatanGanda'
-import type { Barang, PecahanItem, SpekEdit, Kandidat, KandidatGabung } from './koreksi/tipe'
+import {
+  HEADER_COLS,
+  type Barang, type PecahanItem, type SpekEdit, type Kandidat, type KandidatGabung,
+  type Alasan, type LinePayload, type HeaderPayload, type Header, type HeaderEditable,
+  type JurnalLine, type Jurnal, type PemecahanHeader, type PemecahanRow, type PemecahanJurnal,
+  type PenggabunganHeader, type PenggabunganRow, type PenggabunganJurnal,
+} from './koreksi/tipe'
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
@@ -38,7 +45,6 @@ import NominalInput from '@/shared/ui/NominalInput'
 // spesifikasi menawarkan field yang persis sama.
 
 // ── Koreksi — satu alur ber-SK, 4 alasan ─────────────────────────────────────
-type Alasan = 'nilai_perolehan' | 'pencatatan_ganda' | 'spesifikasi' | 'pemecahan' | 'penggabungan'
 const ALASAN_OPT: { value: Alasan; label: string; deskripsi: string; disabled?: boolean }[] = [
   { value: 'nilai_perolehan', label: 'Nilai Perolehan', deskripsi: 'Koreksi nilai perolehan barang — beban penyusutan disebar ulang ke sisa umur oleh engine.' },
   // ⚠️ Kalimat pembeda di dua deskripsi ini BUKAN hiasan. Memakai Pencatatan
@@ -61,55 +67,6 @@ function pieceFieldKeys(kode: string): FieldKey[] {
   return kodeLevel3(kode) === '1.3.1' ? base.filter(k => !TANAH_DOK_FIELDS.includes(k)) : base
 }
 // prev = nilai field SEBELUM koreksi_spesifikasi (utk restore saat batal).
-type LinePayload = {
-  nilai_lama?: number; nilai_perolehan_baru?: number
-  /** Akumulasi penyusutan pada periode SEBELUM tanggal dokumen, dibekukan saat
-   *  koreksi nilai disimpan. Dipakai lembar Permendagri IV.G.2 (kolom "Sebelum
-   *  Koreksi"); TIDAK dibaca engine. Absen pada baris sebelum 2026-09-07. */
-  akumulasi_lama?: number
-  basis_periode?: string
-  survivor_nibar?: string; prev?: Record<string, unknown>
-} & Record<string, unknown>
-// Dokumen sumber kartu koreksi. Sampai 2026-09-07 menu ini satu-satunya menu
-// ber-SK yang tak punya berkas sama sekali; sekarang WAJIB untuk Pemecahan
-// Barang (permintaan user) — alasan lain sengaja belum disentuh.
-type HeaderPayload = { dokumen_paths?: string[] } | null
-type Header = {
-  id: string; no_sk: string; tanggal: string; periode: string; jenis: Alasan
-  keterangan: string | null; kategori: 'koreksi'; payload: HeaderPayload
-}
-/** Yang benar-benar dibutuhkan `EditHeaderModal` — sengaja LEBIH SEMPIT dari
- *  `Header`, supaya kartu Pemecahan & Penggabungan (yang tak punya `jenis`
- *  bertipe `Alasan` maupun `kategori`) ikut bisa memakainya tanpa dipaksa
- *  di-cast. Ketiga bentuk header di berkas ini memuat kelima ruas ini. */
-type HeaderEditable = {
-  id: string; no_sk: string; tanggal: string; periode: string
-  keterangan: string | null; payload: HeaderPayload
-}
-type JurnalLine = {
-  trx_id: number         // id baris ledger koreksi — dipakai target_trx_id saat batal
-  aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
-  nilai: number; payload: LinePayload | null
-}
-type Jurnal = Header & { lines: JurnalLine[]; total: number }
-
-// ── Pemecahan Barang (alasan ke-4 di Tambah Jurnal: 1 induk → N pecahan) ────
-type PemecahanHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null; payload: HeaderPayload }
-type PemecahanRow = { trx_id: number; aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; jumlah: number; nilai: number }
-type PemecahanJurnal = PemecahanHeader & { induk: PemecahanRow | null; pecahan: PemecahanRow[]; total: number; dibatalkan: boolean }
-
-// ── Penggabungan Barang (alasan ke-5: N baris → 1 induk) ────────────────────
-// Cermin dari Pemecahan, dengan satu beda mendasar: hasil gabungan ADALAH
-// induknya sendiri (aset & NIBAR yang sudah ada), jadi tak ada aset baru dan
-// `penggabungan_masuk` TIDAK didaftarkan di `LAHIR` (lib/visibilitas.ts).
-type PenggabunganHeader = { id: string; no_sk: string; tanggal: string; periode: string; keterangan: string | null; payload: HeaderPayload }
-type PenggabunganRow = { trx_id: number; aset_id: string; nibar: string | null; kode: string; nama_barang: string | null; nilai: number }
-type PenggabunganJurnal = PenggabunganHeader & {
-  induk: (PenggabunganRow & { nilaiLama: number; nilaiBaru: number }) | null
-  sumber: PenggabunganRow[]; dibatalkan: boolean
-}
-
-const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori,payload'
 // Kolom `aset` yang dibutuhkan `Barang` — dipakai tabel pilih barang DAN saat
 // menyeret satu pecahan ke tab Spesifikasi dari kartu Pemecahan.
 const BARANG_COLS = 'id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id,tgl_perolehan,cara_perolehan,foto_paths,intra_ekstra'
@@ -146,10 +103,8 @@ function KoreksiTransaksi() {
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [skpd, setSkpd] = useState('')
 
-  const [jurnals, setJurnals] = useState<Jurnal[]>([])
-  const [pemecahanJurnals, setPemecahanJurnals] = useState<PemecahanJurnal[]>([])
-  const [penggabunganJurnals, setPenggabunganJurnals] = useState<PenggabunganJurnal[]>([])
-  const [loadingJurnal, setLoadingJurnal] = useState(false)
+  // Pemuat ketiga bentuk kartu → ./koreksi/useJurnalKoreksi.ts (Fase 3).
+  const { jurnals, pemecahanJurnals, penggabunganJurnals, loading: loadingJurnal, load: loadJurnals } = useJurnalKoreksi()
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [addTo, setAddTo] = useState<Header | null>(null)
@@ -195,111 +150,6 @@ function KoreksiTransaksi() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadJurnals = useCallback(async (skpdId: string) => {
-    if (!skpdId) { setJurnals([]); setPemecahanJurnals([]); setPenggabunganJurnals([]); return }
-    setLoadingJurnal(true)
-    const { data: headers } = await supabase.from('jurnal_header')
-      .select(HEADER_COLS).eq('kategori', 'koreksi').eq('skpd_id', Number(skpdId))
-      .order('tanggal', { ascending: false })
-    const allHeaders = (headers || []) as unknown as (Header & { jenis: string })[]
-    const hs = allHeaders.filter(h => h.jenis !== 'pemecahan' && h.jenis !== 'penggabungan') as unknown as Header[]
-    const pemHeaders = allHeaders.filter(h => h.jenis === 'pemecahan') as unknown as PemecahanHeader[]
-    const gabHeaders = allHeaders.filter(h => h.jenis === 'penggabungan') as unknown as PenggabunganHeader[]
-
-    const jmap = new Map<string, Jurnal>()
-    for (const h of hs) jmap.set(h.id, { ...h, lines: [], total: 0 })
-
-    const headerIds = hs.map(h => h.id)
-    if (headerIds.length > 0) {
-      // Baris batal_koreksi_* → kumpulkan target_trx_id yg sudah dibatalkan (utk
-      // disembunyikan dari kartu, pola sama dgn Reklasifikasi).
-      const { data: batalRows } = await supabase.from('transaksi_bmd')
-        .select('payload')
-        .in('jenis', ['batal_koreksi_nilai', 'batal_koreksi_spesifikasi', 'batal_koreksi_pencatatan_ganda'] as never)
-        .in('header_id', headerIds)
-      const dibatalkan = new Set<number>()
-      for (const b of (batalRows || []) as { payload: { target_trx_id?: number } | null }[]) {
-        const t = Number(b.payload?.target_trx_id); if (Number.isFinite(t)) dibatalkan.add(t)
-      }
-
-      const { data } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode)')
-        .in('jenis', ['koreksi_nilai', 'koreksi_pencatatan_ganda', 'koreksi_spesifikasi'] as never)
-        .in('header_id', headerIds)
-        .order('id', { ascending: true })
-      const rows = (data || []) as unknown as {
-        id: number; header_id: string; nilai: number; payload: LinePayload | null
-        aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string } | null
-      }[]
-      for (const r of rows) {
-        if (!r.aset || dibatalkan.has(r.id)) continue // baris yg dibatalkan → sembunyikan
-        const j = jmap.get(r.header_id)
-        if (!j) continue
-        j.lines.push({ trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, nilai: r.nilai, payload: r.payload })
-        j.total += r.nilai
-      }
-    }
-    // Jurnal yg SEMUA barisnya dibatalkan → lines kosong → otomatis tersembunyi.
-    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
-
-    // ── Jurnal Pemecahan: induk (pemecahan_keluar) + pecahan (pemecahan_masuk) ──
-    const pmap = new Map<string, PemecahanJurnal>()
-    for (const h of pemHeaders) pmap.set(h.id, { ...h, induk: null, pecahan: [], total: 0, dibatalkan: false })
-    const pemIds = pemHeaders.map(h => h.id)
-    if (pemIds.length > 0) {
-      const { data } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,jenis,nilai,aset:aset_id(id,nibar,nama_barang,kode,jumlah)')
-        .in('jenis', ['pemecahan_keluar', 'pemecahan_masuk', 'batal_pemecahan'] as never)
-        .in('header_id', pemIds)
-        .order('id', { ascending: true })
-      const rows = (data || []) as unknown as {
-        id: number; header_id: string; jenis: string; nilai: number
-        aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; jumlah: number } | null
-      }[]
-      for (const r of rows) {
-        const j = pmap.get(r.header_id)
-        if (!j) continue
-        if (r.jenis === 'batal_pemecahan') { j.dibatalkan = true; continue }
-        if (!r.aset) continue
-        const row: PemecahanRow = { trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, jumlah: r.aset.jumlah, nilai: r.nilai }
-        if (r.jenis === 'pemecahan_keluar') j.induk = row
-        else { j.pecahan.push(row); j.total += r.nilai }
-      }
-    }
-    setPemecahanJurnals([...pmap.values()].filter(j => j.induk || j.pecahan.length > 0))
-
-    // ── Jurnal Penggabungan: induk (penggabungan_masuk) + sumber (penggabungan_keluar) ──
-    // Baris batal ikut ditarik supaya kartu yang sudah dibatalkan tampil
-    // ber-badge, BUKAN hilang — sama pola dgn kartu Pemecahan. Peristiwanya
-    // memang pernah terjadi; yang berubah cuma akibatnya.
-    const gmap = new Map<string, PenggabunganJurnal>()
-    for (const h of gabHeaders) gmap.set(h.id, { ...h, induk: null, sumber: [], dibatalkan: false })
-    const gabIds = gabHeaders.map(h => h.id)
-    if (gabIds.length > 0) {
-      const { data } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode)')
-        .in('jenis', ['penggabungan_keluar', 'penggabungan_masuk', 'batal_penggabungan', 'batal_penggabungan_masuk'] as never)
-        .in('header_id', gabIds)
-        .order('id', { ascending: true })
-      const rows = (data || []) as unknown as {
-        id: number; header_id: string; jenis: string; nilai: number
-        payload: { nilai_lama?: number; nilai_perolehan_baru?: number } | null
-        aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string } | null
-      }[]
-      for (const r of rows) {
-        const j = gmap.get(r.header_id)
-        if (!j) continue
-        if (r.jenis === 'batal_penggabungan' || r.jenis === 'batal_penggabungan_masuk') { j.dibatalkan = true; continue }
-        if (!r.aset) continue
-        const row: PenggabunganRow = { trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang, nilai: r.nilai }
-        if (r.jenis === 'penggabungan_masuk') {
-          j.induk = { ...row, nilaiLama: Number(r.payload?.nilai_lama ?? 0), nilaiBaru: Number(r.payload?.nilai_perolehan_baru ?? 0) }
-        } else j.sumber.push(row)
-      }
-    }
-    setPenggabunganJurnals([...gmap.values()].filter(j => j.induk || j.sumber.length > 0))
-    setLoadingJurnal(false)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null); setSelBatal({}); setPresetSpek(null) }, [skpd, loadJurnals])
 
