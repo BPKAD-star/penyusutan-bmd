@@ -62,7 +62,8 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 
 type Row = {
   nibar: string; kode: string; nama_barang: string; skpd_id: number
-  intra_ekstra: string | null; tgl_perolehan: string | null; nilai_perolehan: number
+  intra_ekstra: string | null; tgl_perolehan: string | null; tahun_pengadaan: number | null
+  nilai_perolehan: number
   akumulasi_2025: number; nilai_buku_awal: number; sisa_masa_manfaat_smt: number
   masa_manfaat_smt: number | null; beban_penyusutan_per_smt: number | null
   foto_paths: string[] | null
@@ -88,7 +89,7 @@ type Applied = { org: OrgSelection; golongan: string; komptabel: string; search:
 type BidangAgg = { n: number; nLuas: number; luas: number | null; wilayah: string[]; alamat: string[] }
 
 const COLS = [
-  'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'nilai_perolehan',
+  'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'tahun_pengadaan', 'nilai_perolehan',
   'akumulasi_2025', 'sisa_masa_manfaat_smt', 'nilai_buku_awal', 'masa_manfaat_smt',
   'beban_penyusutan_per_smt', 'foto_paths',
   'merek_tipe', 'spesifikasi_lainnya', 'no_polisi', 'no_rangka', 'no_mesin', 'no_bpkb',
@@ -846,6 +847,20 @@ export default function Page() {
         </>
       )
     }
+    // Tgl Perolehan / Tahun Pengadaan ditumpuk (permintaan user) — dua tanggal
+    // yang bisa berbeda jauh (barang bekas: `tgl_perolehan` = tahun barang
+    // dibuat, `tahun_pengadaan` = tahun masuk ke pemda ini). Nilai tetap dari
+    // `cellValue`/`tahun_pengadaan` langsung, bukan rumus kedua yang bisa
+    // menyimpang. Export tetap kolom `tgl` polos (tak diminta ikut).
+    if (key === 'tgl') {
+      if (!r.tgl_perolehan) return <span className="text-gray-300">-</span>
+      return (
+        <>
+          <p className="text-xs text-gray-600 whitespace-nowrap">{r.tgl_perolehan}</p>
+          {r.tahun_pengadaan != null && <p className="text-gray-400 text-xs mt-0.5">{r.tahun_pengadaan}</p>}
+        </>
+      )
+    }
     if (key === 'luas') {
       const b = bidang[r.nibar]
       const v = luasOf(r)
@@ -1013,7 +1028,8 @@ export default function Page() {
                   centang beda jenis aset tetap disabled + dijelaskan strip amber
                   di bawah toolbar. */}
               {!isViewer && selList.length > 0 && (
-                <button onClick={openSpek} disabled={!selSameGol || spekSaving} className="btn-secondary text-xs">
+                <button onClick={openSpek} disabled={!selSameGol || spekSaving}
+                  className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors">
                   {spekSaving ? 'Menyimpan...' : `✎ Edit Spesifikasi (${selList.length})...`}
                 </button>
               )}

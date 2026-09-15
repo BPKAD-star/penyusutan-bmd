@@ -31,7 +31,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
-import { DokumenBastField, DokumenLinks, namaFile } from './DokumenBastField'
+import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 
 // ⚠️ `SUBJENIS_OPT` (cara pemindahtanganan) & daftar jenis ledgernya PINDAH ke
 // lib/penghapusan.ts (2026-09-07) begitu lembar Permendagri IV.K.1.2 ikut
@@ -46,6 +46,12 @@ const JENIS_OPT: { value: JenisHapus; label: string }[] = [
 // `string[]`, bukan tuple sempit: dipakai `.includes()` atas `JenisHapus`
 // yang juga memuat `pengalihan_status`.
 const PENGHAPUSAN_JENIS: string[] = [...JENIS_PENGHAPUSAN]
+
+// Jenis yang mewajibkan dokumen sumber sebelum barang bisa dipilih — kini
+// TERMASUK Pengalihan Status (permintaan user): dulu dokumennya opsional &
+// lewat `<input type="file">` polos, beda perlakuan dari Penghapusan yang
+// sudah digate `DokumenBastField` sejak 2026-09-05 tanpa alasan yang kuat.
+const WAJIB_DOKUMEN_JENIS: string[] = [...PENGHAPUSAN_JENIS, 'pengalihan_status']
 
 // Label pendek khusus bilah filter — `JENIS_OPT.label` dipakai di formulir dan
 // terlalu panjang untuk dijejer sebagai tombol.
@@ -642,9 +648,9 @@ export default function Penghapusan() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="table-th w-10 text-center">Aksi</th>
-                      <th className="table-th">Kode Barang / Uraian</th>
-                      <th className="table-th">Merk / Tipe · NIBAR</th>
-                      <th className="table-th">Spesifikasi Lainnya</th>
+                      <th className="table-th">Kode Barang / Uraian Barang</th>
+                      <th className="table-th">Spesifikasi Nama Barang / NIBAR</th>
+                      <th className="table-th">Merk / Spesifikasi Lainnya</th>
                       <th className="table-th">No. Polisi</th>
                       <th className="table-th">No. Rangka</th>
                       <th className="table-th">No. Mesin</th>
@@ -669,13 +675,16 @@ export default function Penghapusan() {
                         </td>
                         <td className="table-td">
                           <p className="font-medium text-gray-800 text-xs">{l.kode || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{l.uraian_barang || l.nama_barang || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{l.uraian_barang || '-'}</p>
+                        </td>
+                        <td className="table-td">
+                          <p className="text-gray-700 text-xs">{l.nama_barang || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'}</p>
                         </td>
                         <td className="table-td">
                           <p className="text-gray-700 text-xs">{l.merek_tipe || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{l.spesifikasi_lainnya || '-'}</p>
                         </td>
-                        <td className="table-td text-xs text-gray-600">{l.spesifikasi_lainnya || '-'}</td>
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_polisi || '-'}</td>
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_rangka || '-'}</td>
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_mesin || '-'}</td>
@@ -801,11 +810,11 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [err, setErr] = useState('')
 
   const isAlih = header ? header.kategori === 'pengalihan_status' : jenis === 'pengalihan_status'
-  // Hanya menggate jurnal Penghapusan yang BENAR-BENAR baru — nambah barang ke
-  // jurnal yang sudah ada (`header` terisi) dokumennya sudah diwajibkan saat
-  // jurnal itu dibuat, dan Pengalihan Status punya alurnya sendiri (dokumen
-  // sumbernya tetap opsional, tidak diminta digate).
-  const perluDokumenDulu = !header && PENGHAPUSAN_JENIS.includes(jenis) && dokPaths.length === 0
+  // Hanya menggate jurnal yang BENAR-BENAR baru — nambah barang ke jurnal yang
+  // sudah ada (`header` terisi) dokumennya sudah diwajibkan saat jurnal itu
+  // dibuat. Pengalihan Status kini ikut digate juga (permintaan user) — dulu
+  // dikecualikan & dokumennya opsional.
+  const perluDokumenDulu = !header && WAJIB_DOKUMEN_JENIS.includes(jenis) && dokPaths.length === 0
 
   async function tampilkan() {
     setLoading(true)
@@ -903,6 +912,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
       if (!noSk.trim()) { setErr('No. dokumen sumber wajib diisi.'); setSaving(false); return }
       if (!tujuan) { setErr('SKPD tujuan wajib dipilih.'); setSaving(false); return }
       if (Number(tujuan) === skpdId) { setErr('SKPD tujuan tidak boleh sama dengan SKPD asal.'); setSaving(false); return }
+      // Penjaga SESUNGGUHNYA (bukan cuma UI yang menggate "Pilih Barang" lewat
+      // `perluDokumenDulu`) — sama polanya dgn Penghapusan di bawah.
+      if (dokPaths.length === 0) { setErr('Dokumen Sumber Pengalihan wajib diunggah.'); setSaving(false); return }
       const { error } = await supabase.from('jurnal_header').insert({
         skpd_id: skpdId, kategori: 'pengalihan_status', jenis: 'pengalihan_status', sub_jenis: null,
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
@@ -1002,31 +1014,16 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
               <input className="select-filter w-full" value={ket} onChange={e => setKet(e.target.value)}
                 placeholder={isAlih ? 'mis. Pengalihan kendaraan dinas ke Dinas Kesehatan' : 'mis. Penghapusan Lelang'} />
             </div>
-            {jenis === 'pengalihan_status' && (
-              <div className="sm:col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Dokumen Sumber (foto / PDF, bisa lebih dari satu)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple
-                  onChange={e => uploadDokumen(e.target.files)} disabled={dokUploading} className="text-xs" />
-                {dokUploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-                {dokPaths.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {dokPaths.map(p => (
-                      <li key={p} className="flex items-center gap-2 text-xs text-gray-600">
-                        <span className="truncate">{namaFile(p)}</span>
-                        <button onClick={() => hapusDokumen(p)} className="text-red-500 hover:text-red-700" title="Hapus dokumen">×</button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-            {/* Wajib & DIGATE (keputusan user 2026-09-05) — beda dari Dokumen
-                Sumber pengalihan di atas yang masih opsional. "Pilih Barang" di
-                bawah baru muncul sesudah berkas ini ada, lihat `perluDokumenDulu`. */}
-            {PENGHAPUSAN_JENIS.includes(jenis) && (
+            {/* Wajib & DIGATE (keputusan user 2026-09-05, diperluas ke Pengalihan
+                Status 2026-09-15) — "Pilih Barang" di bawah baru muncul sesudah
+                berkas ini ada, lihat `perluDokumenDulu`. Dulu Pengalihan Status
+                punya uploader polos tersendiri & dokumennya opsional; sekarang
+                satu komponen yang sama, judulnya cuma disesuaikan isAlih. */}
+            {WAJIB_DOKUMEN_JENIS.includes(jenis) && (
               <div className="sm:col-span-2">
                 <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
-                  judul="Dokumen SK Penghapusan" labelTombol="Upload Dokumen SK"
+                  judul={isAlih ? 'Dokumen Sumber Pengalihan' : 'Dokumen SK Penghapusan'}
+                  labelTombol={isAlih ? 'Upload Dokumen Sumber' : 'Upload Dokumen SK'}
                   hint="wajib sebelum barang bisa dipilih di bawah (foto / PDF, bisa lebih dari satu)"
                   kosongText="Belum ada dokumen — upload dulu sebelum bisa memilih barang di bawah." />
               </div>

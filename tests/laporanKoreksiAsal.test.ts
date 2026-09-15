@@ -81,13 +81,13 @@ describe('LaporanKoreksi — penanda asal baris', () => {
     const k = kode()
     expect(k, 'fungsi pembeda `dariPerbaikanData` hilang').toContain('dariPerbaikanData')
     expect(k).toMatch(/dariPerbaikanData\s*=\s*\(r: Trx\)\s*=>\s*r\.created_by\s*==\s*null/)
-    // ⚠️ `header_id` tak boleh IKUT DITARIK maupun dipakai menilai asal baris —
-    // lihat angka produksinya di kepala berkas. (Penyebutannya di komentar
-    // penjelas justru diharapkan, jadi yang diperiksa kodenya saja.)
+    // ⚠️ `header_id` tak boleh dipakai MENILAI ASAL BARIS — lihat angka
+    // produksinya di kepala berkas. Ia BOLEH ikut di-select untuk keperluan
+    // lain (sejak 2026-09-15: join `header:header_id(no_sk)` menampilkan No.
+    // Dokumen Sumber di baris Pemecahan Barang) — yang dijaga di sini cuma
+    // supaya `dariPerbaikanData` sendiri tak menyentuhnya.
     expect(k, 'header_id dipakai menilai asal baris — itu SALAH (lihat kepala berkas)')
       .not.toMatch(/dariPerbaikanData[\s\S]{0,80}header_id/)
-    expect(selBlok(), 'header_id ikut di-select — tak dipakai & mengundang salah pakai')
-      .not.toContain('header_id')
   })
 
   it('SATU definisi asal baris, dipakai bersama layar & export', () => {

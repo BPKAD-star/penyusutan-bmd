@@ -81,9 +81,12 @@ type Trx = {
     nibar: string | null; nama_barang: string | null; kode: string
     intra_ekstra: string | null; skpd_id: number | null
   } | null
+  /** No. dokumen sumber kartunya — dipakai menunjukkan induk↔pecahan satu SK. */
+  header: { no_sk: string | null } | null
 }
 
 const SEL = 'id,aset_id,jenis,periode,tanggal,nilai,keterangan,created_by,'
+  + 'header:header_id(no_sk),'
   + 'aset:aset_id(nibar,nama_barang,kode,intra_ekstra,skpd_id)'
 
 /**
@@ -272,6 +275,7 @@ export default function LaporanKoreksi() {
       'Tanggal': r.tanggal,
       'Periode': r.periode,
       'Jenis': JENIS_TRANSAKSI_LABEL[r.jenis] || r.jenis,
+      'No. Dokumen Sumber': r.header?.no_sk || '',
       'NIBAR': r.aset?.nibar || '',
       'Nama Barang': r.aset?.nama_barang || '',
       'Kode': r.aset?.kode || '',
@@ -422,31 +426,38 @@ export default function LaporanKoreksi() {
                     <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rowsTampil.length === 0 ? (
                     <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-                  ) : rowsUrut.slice(0, 500).map(r => (
-                    <tr key={r.id}>
+                  ) : rowsUrut.slice(0, 500).map(r => {
+                    // Induk dipecah dibold — supaya di antara pecahan-pecahan
+                    // di bawahnya (satu No. Dokumen yang sama), yang mana induk
+                    // & yang mana anak langsung kelihatan (permintaan user).
+                    const induk = r.jenis === 'pemecahan_keluar'
+                    return (
+                    <tr key={r.id} className={induk ? 'font-semibold bg-gray-50' : ''}>
                       <td className="table-td text-xs">
                         <p className="font-medium">{unitNama(r)}</p>
-                        {indukNama(r) && <p className="text-gray-400">{indukNama(r)}</p>}
+                        {indukNama(r) && <p className="text-gray-400 font-normal">{indukNama(r)}</p>}
                       </td>
-                      <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
+                      <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400 font-normal">{r.periode}</span></td>
                       <td className="table-td text-xs">
                         {JENIS_TRANSAKSI_LABEL[r.jenis] || r.jenis}
                         {dariPerbaikanData(r) && (
-                          <span className="ml-1 inline-block rounded bg-amber-50 px-1 text-[10px] text-amber-700 border border-amber-200"
+                          <span className="ml-1 inline-block rounded bg-amber-50 px-1 text-[10px] text-amber-700 border border-amber-200 font-normal"
                             title="Ditulis admin langsung ke basis data (perbaikan/impor massal), bukan lewat menu.">
                             perbaikan data
                           </span>
                         )}
+                        {r.header?.no_sk && <p className="text-gray-400 font-normal">No. Dok: {r.header.no_sk}</p>}
                       </td>
                       <td className="table-td text-xs">
                         <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
-                        <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
+                        <p className="text-gray-400 font-normal">{r.aset?.nibar || '-'}</p>
                       </td>
                       <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
                       <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
-                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.keterangan || '-'}</td>
+                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate font-normal">{r.keterangan || '-'}</td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
