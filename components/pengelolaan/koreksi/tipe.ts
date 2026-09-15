@@ -41,3 +41,20 @@ export type PecahanItem = {
   fields: Record<string, string>
   foto: string[]
 }
+
+/** Edit spesifikasi yang disusun di popup, menunggu di-commit oleh Simpan. */
+export type SpekEdit = { fields: Record<string, string>; foto: { replace?: string[]; append?: string[] } }
+
+/** Baris hasil pencarian barang untuk Pencatatan Ganda & Penggabungan. */
+export type Kandidat = {
+  id: string; nibar: string | null; kode: string; nama_barang: string | null
+  spesifikasi_lainnya: string | null; nilai_perolehan: number; tgl_perolehan: string | null
+}
+
+/**
+ * Kandidat Penggabungan. `satuan` ikut karena justru DI SITU jejak masalahnya
+ * kelihatan — satu pagar yang terpecah tersebar di satuan "Meter Persegi" /
+ * "unit" / "Buah" / "Set", dan satuan yang berbeda-beda itulah yang selama ini
+ * membuat barangnya tak pernah ketemu kalau dicari lewat nama.
+ */
+export type KandidatGabung = Kandidat & { satuan: string | null; merek_tipe: string | null }

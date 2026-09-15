@@ -8,7 +8,8 @@
 //     "3 sebab" yang diminta user, sengaja TIDAK ikut pola ber-SK.
 import { keSen } from '@/lib/pemecahanNilai'
 import { usePemecahan, newKey, TANAH_DOK_FIELDS } from './koreksi/usePemecahan'
-import type { Barang, PecahanItem } from './koreksi/tipe'
+import { usePenggabungan } from './koreksi/usePenggabungan'
+import type { Barang, PecahanItem, SpekEdit, Kandidat, KandidatGabung } from './koreksi/tipe'
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
@@ -48,7 +49,6 @@ const ALASAN_LABEL = Object.fromEntries(ALASAN_OPT.map(a => [a.value, a.label]))
 const tahunDari = (tgl: string | null) => tgl ? tgl.slice(0, 4) : '-'
 
 // Edit spesifikasi yang disusun di popup, menunggu di-commit oleh Simpan.
-type SpekEdit = { fields: Record<string, string>; foto: { replace?: string[]; append?: string[] } }
 // `keSen` & seluruh aritmetika pemecahan → lib/pemecahanNilai.ts (diangkat
 // 2026-09-15); alasan "sen, bukan rupiah" ada di kepala berkas itu.
 
@@ -56,20 +56,6 @@ function pieceFieldKeys(kode: string): FieldKey[] {
   const base = fieldsForKode(kode)
   return kodeLevel3(kode) === '1.3.1' ? base.filter(k => !TANAH_DOK_FIELDS.includes(k)) : base
 }
-type Kandidat = {
-  id: string; nibar: string | null; kode: string; nama_barang: string | null
-  spesifikasi_lainnya: string | null; nilai_perolehan: number; tgl_perolehan: string | null
-}
-// ── Penggabungan: kandidat + basis akumulasi per barang ─────────────────────
-// `satuan` ikut karena justru DI SITU jejak masalahnya kelihatan (satu pagar
-// tersebar di satuan "Meter Persegi"/"Buah"/"Set"); operator perlu melihatnya
-// waktu memilih. Ia TIDAK ikut jadi syarat gabung — keputusan user 2026-08-11:
-// syaratnya cuma nilai perolehan + tanggal perolehan + KODE BARANG.
-type KandidatGabung = Kandidat & { satuan: string | null; merek_tipe: string | null }
-// Kunci kelayakan gabung. Dipakai sebagai perbandingan string tunggal supaya
-// tak ada satu pun tempat yang membandingkan dua dari tiga syaratnya saja.
-const kunciGabung = (k: { kode: string; nilai_perolehan: number; tgl_perolehan: string | null }) =>
-  `${k.kode}|${Math.round(k.nilai_perolehan)}|${k.tgl_perolehan || '-'}`
 // prev = nilai field SEBELUM koreksi_spesifikasi (utk restore saat batal).
 type LinePayload = {
   nilai_lama?: number; nilai_perolehan_baru?: number
@@ -868,28 +854,21 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   const [spekPrefix, setSpekPrefix] = useState('')
   const [spekEdit, setSpekEdit] = useState<SpekEdit | null>(null)
 
-  // ── Penggabungan: N barang → 1 induk (kebalikan pemecahan) ──
-  const [qGabung, setQGabung] = useState('')
-  const [hasilGabung, setHasilGabung] = useState<KandidatGabung[]>([])
-  const [gabungList, setGabungList] = useState<KandidatGabung[]>([])
-  const [indukGabungId, setIndukGabungId] = useState<string | null>(null)
-  // Daftar barang SEJENIS (kode + nilai + tgl perolehan sama persis) — dimuat
-  // sekali begitu barang pertama dipilih. Tanpa ini fitur ini tak terpakai:
-  // kasus yang melahirkannya punya 35 baris, dan mencarinya satu per satu lewat
-  // kotak cari bukan pekerjaan yang masuk akal.
-  const [sejenis, setSejenis] = useState<KandidatGabung[]>([])
-  const [selSejenis, setSelSejenis] = useState<Record<string, boolean>>({})
-  const [sejenisLoading, setSejenisLoading] = useState(false)
-  // aset_id → akumulasi penyusutan pada semester SEBELUM cutover. Basis ini yang
-  // dijumlah jadi `akumulasi_baru`; tanpanya akumulasi barang yang dilebur
-  // lenyap & nilai bukunya melonjak.
-  const [basisGabung, setBasisGabung] = useState<Record<string, number> | null>(null)
-  const [basisGabungErr, setBasisGabungErr] = useState('')
-  const [basisGabungLoading, setBasisGabungLoading] = useState(false)
-  const [gabungSpek, setGabungSpek] = useState<SpekEdit | null>(null)
-  const [gabungSpekInit, setGabungSpekInit] = useState<Record<string, string>>({})
-  const [gabungSpekFoto, setGabungSpekFoto] = useState<string[]>([])
-  const [gabungSpekOpen, setGabungSpekOpen] = useState(false)
+  // ── Penggabungan: N barang → 1 induk (kebalikan pemecahan) ──────────────────
+  // State, efek basis, pencarian, & daftar sejenisnya → ./koreksi/usePenggabungan.ts
+  // (REFACTOR-PLAN Fase 3). Aturan & aritmetikanya → lib/penggabunganNilai.ts.
+  // Nama lokalnya SENGAJA dipertahankan supaya JSX & `simpan()` tak ikut berubah.
+  const {
+    q: qGabung, setQ: setQGabung, hasil: hasilGabung, list: gabungList,
+    indukId: indukGabungId, setIndukId: setIndukGabungId, induk: indukGabung,
+    sejenis, sejenisTersisa, selSejenis, setSelSejenis, sejenisLoading,
+    basis: basisGabung, basisErr: basisGabungErr, basisLoading: basisGabungLoading,
+    spek: gabungSpek, setSpek: setGabungSpek, spekInit: gabungSpekInit,
+    spekFoto: gabungSpekFoto, spekOpen: gabungSpekOpen, setSpekOpen: setGabungSpekOpen,
+    cari: cariGabung, tambah: tambahGabung, tambahSejenisTerpilih,
+    hapus: hapusGabung, openSpek: openGabungSpek, reset: resetGabung,
+    totalNP: totalNPGabung, totalAkum: totalAkumGabung, syaratOk: gabungSyaratOk,
+  } = usePenggabungan(tgl, skpdId, setErr)
 
   // ── Pemecahan: 1 induk → N pecahan ──────────────────────────────────────────
   // State, efek basis, & penyunting pecahannya → ./koreksi/usePemecahan.ts
@@ -903,137 +882,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     alokasi: alokasiPecah, totalNPInduk, sumNPPecah, balance: balancePecah, semuaValid: semuaPecahValid,
   } = usePemecahan(tgl)
 
-  // ── Penggabungan: basis akumulasi seluruh anggota pada semester SEBELUM cutover ──
-  // Sengaja MENOLAK kalau ada satu saja anggota yang belum punya baris engine di
-  // periode itu. Jatuh ke 0 diam-diam akan menghapus akumulasi barang tsb dari
-  // neraca — persis kerusakan yang fitur ini justru harus menghindari, dan tak
-  // akan ada satu pun pesan yang memberi tahu.
-  useEffect(() => {
-    if (gabungList.length === 0) { setBasisGabung(null); setBasisGabungErr(''); return }
-    ;(async () => {
-      setBasisGabungLoading(true); setBasisGabungErr(''); setBasisGabung(null)
-      const basisPeriode = formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))
-      const ids = gabungList.map(k => k.id)
-      // Golongan yang memang tak disusutkan (Tanah/ATL/KDP) tak punya baris
-      // engine sama sekali — akumulasinya nol, bukan "belum dihitung".
-      if (perlakuanKode(gabungList[0].kode) === 'tidak') {
-        setBasisGabung(Object.fromEntries(ids.map(id => [id, 0] as const)))
-        setBasisGabungLoading(false); return
-      }
-      const map: Record<string, number> = {}
-      for (let i = 0; i < ids.length; i += 200) {
-        const { data, error } = await supabase.from('penyusutan_semester')
-          .select('aset_id,akumulasi').eq('periode', basisPeriode).in('aset_id', ids.slice(i, i + 200))
-        if (error) {
-          setBasisGabungErr(`Gagal membaca akumulasi penyusutan ${basisPeriode}: ${error.message}`)
-          setBasisGabungLoading(false); return
-        }
-        for (const r of (data || []) as { aset_id: string; akumulasi: number }[]) map[r.aset_id] = Number(r.akumulasi) || 0
-      }
-      const belum = ids.filter(id => map[id] === undefined)
-      if (belum.length > 0) {
-        setBasisGabungErr(`${belum.length} dari ${ids.length} barang belum punya hasil penyusutan periode ${basisPeriode}. Jalankan Engine untuk periode itu dulu, atau pilih tanggal dokumen di semester berikutnya — kalau diteruskan, akumulasi barang itu hilang dari neraca.`)
-        setBasisGabungLoading(false); return
-      }
-      setBasisGabung(map)
-      setBasisGabungLoading(false)
-    })()
-  }, [gabungList, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const indukGabung = gabungList.find(k => k.id === indukGabungId) || null
-  // Dalam SEN, bukan rupiah bulat — lihat catatan `alokasiPecah`. `Math.round`
-  // per anggota membuang sen tiap barang sumber, padahal barang itu duduk di
-  // Saldo Awal dgn nilai berdesimalnya; selisihnya jatuh ke Rekonsiliasi.
-  const totalNPGabung = gabungList.reduce((s, k) => s + keSen(k.nilai_perolehan), 0) / 100
-  const totalAkumGabung = basisGabung ? gabungList.reduce((s, k) => s + (basisGabung[k.id] || 0), 0) : 0
-  // Ketiga syarat sekaligus (keputusan user 2026-08-11). Nama, merek, satuan, &
-  // spesifikasi BOLEH beda — justru itu yang selama ini menghalangi kasus pagar.
-  const gabungSyaratOk = gabungList.length >= 2 && gabungList.every(k => kunciGabung(k) === kunciGabung(gabungList[0]))
-  const sejenisTersisa = sejenis.filter(k => !gabungList.some(x => x.id === k.id))
-
-  // Semua barang aktif se-SKPD yang kode + nilai + tanggal perolehannya SAMA
-  // PERSIS dgn barang pertama. `.eq` bertumpuk, bukan pencarian teks: syarat
-  // gabung itu kesamaan angka, dan mencocokkannya lewat nama justru yang bikin
-  // kasus pagar (nama & satuannya berbeda-beda) tak pernah ketemu.
-  async function muatSejenis(k0: KandidatGabung) {
-    setSejenisLoading(true)
-    let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi_lainnya,nilai_perolehan,tgl_perolehan,satuan,merek_tipe')
-      .eq('status', 'aktif').eq('skpd_id', skpdId)
-      .eq('kode', k0.kode).eq('nilai_perolehan', k0.nilai_perolehan)
-    q = k0.tgl_perolehan ? q.eq('tgl_perolehan', k0.tgl_perolehan) : q.is('tgl_perolehan', null)
-    const { data, error } = await q.order('nibar', { ascending: true }).limit(500)
-    if (error) { setErr(`Gagal memuat barang sejenis: ${error.message}`); setSejenisLoading(false); return }
-    setSejenis((data as unknown as KandidatGabung[]) || [])
-    setSelSejenis({})
-    setSejenisLoading(false)
-  }
-
-  async function cariGabung() {
-    if (!qGabung.trim()) return
-    let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,spesifikasi_lainnya,nilai_perolehan,tgl_perolehan,satuan,merek_tipe')
-      .eq('status', 'aktif').eq('skpd_id', skpdId)
-      .or(`nibar.ilike.%${qGabung}%,nama_barang.ilike.%${qGabung}%,kode.ilike.%${qGabung}%`)
-    // Begitu anggota pertama ada, hasil carinya ikut disaring ke yang LAYAK
-    // gabung — supaya operator tak menemukan barang yang lalu ditolak.
-    const k0 = gabungList[0]
-    if (k0) {
-      q = q.eq('kode', k0.kode).eq('nilai_perolehan', k0.nilai_perolehan)
-      q = k0.tgl_perolehan ? q.eq('tgl_perolehan', k0.tgl_perolehan) : q.is('tgl_perolehan', null)
-    }
-    const { data, error } = await q.limit(20)
-    if (error) { setErr(`Gagal mencari barang: ${error.message}`); return }
-    setHasilGabung((data as unknown as KandidatGabung[]) || [])
-  }
-
-  function tambahGabung(k: KandidatGabung) {
-    if (gabungList.some(x => x.id === k.id)) return
-    const k0 = gabungList[0]
-    // Penjaga lapis kedua: query di atas sudah menyaring, tapi syarat ini yang
-    // menentukan benar/salahnya neraca — jangan andalkan filter tampilan saja.
-    if (k0 && kunciGabung(k) !== kunciGabung(k0)) {
-      setErr('Barang itu beda kode / nilai perolehan / tanggal perolehan — tidak bisa digabung dengan yang sudah dipilih.')
-      return
-    }
-    setErr('')
-    setGabungList(prev => [...prev, k])
-    setIndukGabungId(prev => prev ?? k.id)
-    setHasilGabung([]); setQGabung('')
-    if (!k0) muatSejenis(k)
-  }
-
-  function tambahSejenisTerpilih() {
-    const pilih = sejenisTersisa.filter(k => selSejenis[k.id])
-    if (pilih.length === 0) return
-    setGabungList(prev => [...prev, ...pilih.filter(k => !prev.some(x => x.id === k.id))])
-    setSelSejenis({})
-  }
-
-  function hapusGabung(id: string) {
-    setGabungList(prev => {
-      const next = prev.filter(k => k.id !== id)
-      if (next.length === 0) { setSejenis([]); setSelSejenis({}) }
-      return next
-    })
-    setIndukGabungId(prev => prev === id ? null : prev)
-    setGabungSpek(null) // induk/anggota berubah → edit tersusun tak lagi tentu valid
-  }
-
-  // Spesifikasi HASIL gabungan = spesifikasi induk yang boleh dikoreksi
-  // (mis. satuan "Meter Persegi" → "Unit", nama jadi "Pagar Besi 125 m").
-  async function openGabungSpek() {
-    const b = indukGabung
-    if (!b) return
-    const keys = koreksiFieldKeys(b.kode)
-    const { data } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
-    const row = (data || {}) as Record<string, unknown>
-    const f: Record<string, string> = {}
-    for (const k of keys) { const v = row[k]; if (v != null) f[k] = String(v) }
-    setGabungSpekInit(f)
-    setGabungSpekFoto(Array.isArray(row.foto_paths) ? (row.foto_paths as string[]) : [])
-    setGabungSpekOpen(true)
-  }
 
 
   async function uploadDokumen(files: FileList | null) {
@@ -1511,8 +1360,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                         setAlasan(o.value); setSelNilai({}); setKandidat([]); setSurvivorId(null); setRows([]); setLoaded(false)
                         setSelSpek({}); setSpekEdit(null); setSpekModalOpen(false)
                         resetPecah()
-                        setGabungList([]); setIndukGabungId(null); setHasilGabung([]); setQGabung('')
-                        setSejenis([]); setSelSejenis({}); setGabungSpek(null); setGabungSpekOpen(false)
+                        resetGabung()
                       }} />
                     <span>
                       <span className="font-medium text-gray-800">{o.label}</span>
