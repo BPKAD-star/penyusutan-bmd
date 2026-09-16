@@ -25,6 +25,8 @@
 // pencarian berikutnya INSTAN di client tanpa query ulang. Tidak period-aware
 // (beda dgn Daftar Barang/Penyusutan): ini register posisi TERKINI (status='aktif').
 import { useEffect, useMemo, useState } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -80,24 +82,15 @@ export default function KendaraanPage() {
   const supabase = createClient()
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<Row[]>([])
-  const [skpdMap, setSkpdMap] = useState<Record<number, string>>({})
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { peta: skpdMap, err: errSkpd } = useNamaSkpdMap()
   const [applied, setApplied] = useState(false) // gerbang "Tampilkan" — belum ada tabel sebelum diklik
   const [loaded, setLoaded] = useState(false)    // sudah pernah fetch rows sekali
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    ;(async () => {
-      const map: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data) map[s.id] = s.nama
-        if (data.length < 1000) break
-      }
-      setSkpdMap(map)
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchRows() {
     setLoading(true)
@@ -210,6 +203,7 @@ export default function KendaraanPage() {
 
   return (
     <div className="p-6">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Kendaraan</h1>
         <p className="text-gray-500 text-sm mt-1">

@@ -7,6 +7,7 @@
 // disetujui/menunggu → popup rincian (per-SKPD utk disetujui, per-jurnal utk
 // menunggu), sama pola dgn popup di CaraPerolehanCards.
 import { useEffect, useState } from 'react'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { fetchPindahEvents, pindahAktif } from '@/lib/pengalihan'
 import { formatRupiah } from '@/lib/export'
@@ -134,14 +135,7 @@ function DonutCard({ label, disetujui, belum, ilustrasi, onClickDisetujui, onCli
 }
 
 async function fetchSkpdMap(supabase: ReturnType<typeof createClient>): Promise<Record<number, string>> {
-  const map: Record<number, string> = {}
-  for (let from = 0; ; from += 1000) {
-    const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-    if (!data || data.length === 0) break
-    for (const s of data as { id: number; nama: string }[]) map[s.id] = s.nama
-    if (data.length < 1000) break
-  }
-  return map
+  return petaNamaSkpd(await fetchDaftarSkpd(supabase))
 }
 
 // ── Popup "Disetujui": kelompok per SKPD (asal utk arah keluar, tujuan utk

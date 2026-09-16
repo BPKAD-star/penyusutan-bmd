@@ -12,6 +12,7 @@
 // mengimpor subtree SKPD-nya sendiri (allowedIds/mySkpdId), sekarang kode itu
 // dihapus krn tak pernah tereksekusi lagi (satu-satunya pemanggil sudah admin).
 import { useEffect, useState } from 'react'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
@@ -51,15 +52,16 @@ export default function LraImport({ onClose, onDone }: { onClose: () => void; on
 
   useEffect(() => {
     (async () => {
-      // Master SKPD (id→nama) — cuma utk validasi id_skpd & label preview.
-      const all: { id: number; nama: string }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        all.push(...(data as { id: number; nama: string }[]))
-        if (data.length < 1000) break
+      // Master SKPD (id→nama) — dipakai MEMVALIDASI id_skpd, bukan cuma label.
+      // ⚠️ Karena itu kegagalannya WAJIB terlihat: peta kosong membuat SELURUH
+      // baris berkas ditandai "SKPD tidak ditemukan", lalu operator
+      // memperbaiki berkas yang sebenarnya sudah benar.
+      try {
+        setSkpdNama(mapNamaSkpd(await fetchDaftarSkpd(supabase)))
+      } catch (e) {
+        setErr(`Gagal memuat master SKPD: ${e instanceof Error ? e.message : String(e)}`)
+        return   // `ready` TIDAK diset — layar tak boleh mengaku siap
       }
-      setSkpdNama(new Map(all.map(s => [s.id, s.nama])))
       setReady(true)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

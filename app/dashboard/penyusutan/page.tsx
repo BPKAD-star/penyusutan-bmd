@@ -12,6 +12,8 @@
 // perolehan baru, atau backfill saldo_awal susulan) ikut kebaca di sini. Angka &
 // visibilitas tetap disesuaikan engine + histori transaksi. Angka polos tanpa "Rp".
 import { useEffect, useState } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -138,7 +140,11 @@ export default function PenyusutanPage() {
   const [rekap, setRekap] = useState<Rekap | null>(null)
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { peta: skpdNama, err: errSkpd } = useNamaSkpdMap()
   const [kapMap, setKapMap] = useState<Record<string, KapItem[]>>({})
   // kode barang → uraian baku kodefikasi (ditumpuk di bawah Kode Barang, pola
   // Daftar Barang). `aset.uraian_barang` TIDAK dipakai supaya uraiannya selalu
@@ -153,19 +159,6 @@ export default function PenyusutanPage() {
     isAdmin, running: engineRunning, msg: engineMsg, setMsg: setEngineMsg, jalankan: jalankanEngine,
   } = useEngineRun(angka)
 
-
-  useEffect(() => {
-    (async () => {
-      const map: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data) map[s.id] = s.nama
-        if (data.length < 1000) break
-      }
-      setSkpdNama(map)
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sumber register = tabel aset (hidup, includeDeleted implisit — visibilitas
   // period-aware diserahkan ke fetchHiddenIds di bawah, sama seperti Daftar Barang).
@@ -490,6 +483,7 @@ export default function PenyusutanPage() {
 
   return (
     <div className="p-6">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Penyusutan BMD</h1>
         <p className="text-gray-500 text-sm mt-1">Detail penyusutan & amortisasi per aset per semester (hasil engine)</p>

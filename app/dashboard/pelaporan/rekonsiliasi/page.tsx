@@ -25,6 +25,8 @@
 // PERIODE per ASET, beda jenis dari kolom Nilai yang per TRANSAKSI, jadi
 // totalnya dihitung per aset unik. Lihat fetchPenyusutanAset di lib/rekon.ts.
 import { useEffect, useState } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -237,7 +239,11 @@ export default function RekonsiliasiPage() {
   // Agregatnya dijumlah dari array yang SAMA (aggregateMutasi), jadi total di
   // popup tak mungkin beda dari angka yang diklik.
   const [lines, setLines] = useState<MutasiLine[]>([])
-  const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { peta: skpdNama, err: errSkpd } = useNamaSkpdMap()
   const [detail, setDetail] = useState<{ judul: string; rows: MutasiLine[]; peny: Map<string, PenyusutanAset> } | null>(null)
   const [detailBusy, setDetailBusy] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -276,19 +282,6 @@ export default function RekonsiliasiPage() {
       pulih()
     }
   }, [pemicuCetak]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    (async () => {
-      const map: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data as { id: number; nama: string }[]) map[s.id] = s.nama
-        if (data.length < 1000) break
-      }
-      setSkpdNama(map)
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function proses() {
     setLoading(true)
@@ -416,6 +409,7 @@ export default function RekonsiliasiPage() {
 
   return (
     <div className="p-6">
+      <PeringatanNamaSkpd err={errSkpd} />
       {/* Saat mencetak: sembunyikan SELURUH halaman lalu tampilkan hanya
           #cetak-rekon. Teknik visibility ini sengaja dipilih supaya tidak perlu
           tahu susunan layout dashboard (sidebar, top bar) — kalau layoutnya

@@ -9,6 +9,7 @@
 //   - Admin SKPD induk (py sub-OPD) -> upload HANYA siklus Pengamanan, subtree sendiri.
 //   - Non-admin                     -> lihat & download saja.
 import { useEffect, useState, useCallback } from 'react'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { tahunAwal } from '@/lib/tahunKerja'
@@ -57,14 +58,7 @@ export default function DokumenSumber() {
       setAdminInduk(!!induk)
     })()
     ;(async () => {
-      const map = new Map<number, string>()
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data as { id: number; nama: string }[]) map.set(s.id, s.nama)
-        if (data.length < 1000) break
-      }
-      setSkpdMap(map)
+      setSkpdMap(mapNamaSkpd(await fetchDaftarSkpd(supabase)))
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

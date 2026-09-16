@@ -5,6 +5,8 @@
 // (LabelSheet: QR kiri, 4 baris kanan — SKPD, Spesifikasi Nama Barang, NIBAR,
 // Tanggal Perolehan).
 import { useEffect, useState } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
@@ -35,7 +37,11 @@ export default function KibarSearchPage() {
   const [golongan, setGolongan] = useState('')
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [search, setSearch] = useState('')
-  const [skpdMap, setSkpdMap] = useState<Record<number, string>>({})
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { peta: skpdMap, err: errSkpd } = useNamaSkpdMap()
   const [rows, setRows] = useState<Row[] | null>(null)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
@@ -43,16 +49,6 @@ export default function KibarSearchPage() {
   const [printOpen, setPrintOpen] = useState(false)
 
   useEffect(() => {
-    (async () => {
-      const map: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data as { id: number; nama: string }[]) map[s.id] = s.nama
-        if (data.length < 1000) break
-      }
-      setSkpdMap(map)
-    })()
     ;(async () => {
       const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
@@ -123,6 +119,7 @@ export default function KibarSearchPage() {
 
   return (
     <div className="p-6">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">KIBAR</h1>
         <p className="text-gray-500 text-sm mt-1">Cari barang, buka Kartu Inventaris Barang (riwayat lengkap), atau cetak label QR sekaligus.</p>

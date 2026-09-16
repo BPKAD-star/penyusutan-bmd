@@ -27,6 +27,7 @@
 // yang begitu wajib fail-closed lewat saluran `err` merah halaman.
 // ============================================================================
 import { useEffect, useState } from 'react'
+import { fetchPetaNamaSkpd } from '@/lib/namaSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
 
@@ -52,17 +53,7 @@ export function useReferensiDaftarBarang(): ReferensiDaftarBarang {
 
     ;(async () => {
       try {
-        const map: Record<number, string> = {}
-        // Keyset per 1.000: `admin_skpd` 816 baris hari ini, tapi batas bawaan
-        // PostgREST membuat halaman tunggal tak bisa dipercaya kalau bertambah.
-        for (let from = 0; ; from += 1000) {
-          const { data, error } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-          if (error) throw new Error(error.message)
-          if (!data || data.length === 0) break
-          for (const s of data) map[s.id] = s.nama
-          if (data.length < 1000) break
-        }
-        setSkpdMap(map)
+        setSkpdMap(await fetchPetaNamaSkpd(supabase))
       } catch (e) { lapor('Nama SKPD', e) }
     })()
 

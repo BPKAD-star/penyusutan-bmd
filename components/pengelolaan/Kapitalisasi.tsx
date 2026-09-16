@@ -9,6 +9,8 @@
 //      diserap ('kapitalisasi_serap'). Batal → 'batal_kapitalisasi' (kembali semula).
 // Perhitungan final tetap di engine (overhaul_band); snapshot disimpan di payload.
 import { useEffect, useState, useCallback } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah } from '@/lib/export'
@@ -128,7 +130,11 @@ function computeSnapshot(
 export default function Kapitalisasi() {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { daftar: skpdList, err: errSkpd } = useNamaSkpdMap()
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [bands, setBands] = useState<BandOverhaul[]>([])
   const [skpd, setSkpd] = useState('')
@@ -143,16 +149,6 @@ export default function Kapitalisasi() {
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
-    ;(async () => {
-      const rows: { id: number; nama: string }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...data)
-        if (data.length < 1000) break
-      }
-      setSkpdList(rows)
-    })()
     supabase.from('admin_overhaul_band').select('kode_prefix,band_no,pct_min,pct_max,tambahan_tahun').then(({ data }) => setBands((data as BandOverhaul[]) || []))
     ;(async () => {
       const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
@@ -264,6 +260,7 @@ export default function Kapitalisasi() {
   return (
     <FormShell judul="Kapitalisasi" msg={msg}
       deskripsi="Pilih SKPD, buat transaksi kapitalisasi: barang induk + barang anak (penambahan masa manfaat). Nilai anak diserap ke induk.">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>

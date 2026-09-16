@@ -10,6 +10,8 @@
 //   - Riwayat disetujui ditampilkan dari ledger (baris reversal = barang yang
 //     pengalihannya sudah dibatalkan, tidak ditampilkan sbg anggota).
 import { useEffect, useState, useCallback } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
@@ -58,7 +60,11 @@ const namaFile = (path: string) => path.split('/').pop() || path
 export default function PenggunaanMasuk() {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { daftar: skpdList, err: errSkpd } = useNamaSkpdMap()
   const [skpd, setSkpd] = useState('')
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loading, setLoading] = useState(false)
@@ -66,18 +72,6 @@ export default function PenggunaanMasuk() {
   const [msg, setMsg] = useState('')
   const [errLoad, setErrLoad] = useState('')
 
-  useEffect(() => {
-    (async () => {
-      const rows: { id: number; nama: string }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...data)
-        if (data.length < 1000) break
-      }
-      setSkpdList(rows)
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⚠️ Badan fungsi di dalam try, `setLoading(false)` di FINALLY —
   // `fetchBatalTargets` MELEMPAR (fail-closed). Tanpa ini halaman membeku di
@@ -315,6 +309,7 @@ export default function PenggunaanMasuk() {
 
   return (
     <div className="p-6">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Penggunaan</h1>
         <p className="text-gray-500 text-sm mt-1">

@@ -19,6 +19,8 @@
 //   - SATU PINTU: setelah disetujui, kartu di sisi PENGIRIM jadi read-only.
 //     Pengembalian barang HANYA lewat SKPD penerima (menu Penggunaan).
 import { useEffect, useState, useCallback } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { usePemilihBarangHapus } from './penghapusan/usePemilihBarang'
 import { SUBJENIS_OPT, JENIS_PENGHAPUSAN, type JenisHapus } from '@/lib/penghapusan'
@@ -134,7 +136,11 @@ export default function Penghapusan() {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
 
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { daftar: skpdList, err: errSkpd } = useNamaSkpdMap()
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [skpd, setSkpd] = useState('')
 
@@ -158,16 +164,6 @@ export default function Penghapusan() {
 
   // ── Referensi awal ──
   useEffect(() => {
-    ;(async () => {
-      const rows: { id: number; nama: string }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...data)
-        if (data.length < 1000) break
-      }
-      setSkpdList(rows)
-    })()
     ;(async () => {
       const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
@@ -464,6 +460,7 @@ export default function Penghapusan() {
   return (
     <FormShell judul="Penghapusan" msg={msg}
       deskripsi="Pilih SKPD, buat jurnal (No SK/tanggal), lalu centang barang. Penghapusan = soft-delete; Pengalihan Status = transfer ke SKPD lain, menunggu persetujuan SKPD tujuan.">
+      <PeringatanNamaSkpd err={errSkpd} />
       {/* Pilih SKPD */}
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">

@@ -16,6 +16,8 @@
 // SATU BARANG = SATU RUANGAN: ditegakkan UNIQUE(aset_id) di DB; picker juga
 // menyaring barang yang sudah ditempatkan supaya operator tak kena error mentah.
 import { useCallback, useEffect, useState } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useSeleksiBarang } from '@/shared/ui/useSeleksiBarang'
@@ -41,7 +43,11 @@ export default function Kir() {
   const konfirmasi = useKonfirmasi()
 
   const [skpd, setSkpd] = useState('')
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { daftar: skpdList, err: errSkpd } = useNamaSkpdMap()
   const [ruangans, setRuangans] = useState<RuanganLengkap[]>([])
   const [pegawai, setPegawai] = useState<PegawaiRuangan[]>([])
   const [loading, setLoading] = useState(false)
@@ -50,18 +56,6 @@ export default function Kir() {
   const [formRuangan, setFormRuangan] = useState<Ruangan | 'baru' | null>(null)
   const [tambahBarangKe, setTambahBarangKe] = useState<RuanganLengkap | null>(null)
 
-  useEffect(() => {
-    ;(async () => {
-      const rows: { id: number; nama: string }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...data)
-        if (data.length < 1000) break
-      }
-      setSkpdList(rows)
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama || ''
 
@@ -141,6 +135,7 @@ export default function Kir() {
   return (
     <FormShell judul="KIR — Kartu Inventaris Ruangan" msg={msg}
       deskripsi="Pilih SKPD, buat ruangan beserta penanggung jawabnya, lalu tempatkan barang (Peralatan & Mesin, Aset Tetap Lainnya, Aset Lain-Lain). Satu barang hanya boleh berada di satu ruangan.">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>

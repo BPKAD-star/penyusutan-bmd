@@ -6,6 +6,7 @@
 // (penyusutan_semester) pada periode terpilih. Model 1: per golongan. Model 2:
 // matriks per SKPD × per jenis. Model 3: mutasi saldo awal/akhir.
 import { useState } from 'react'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
@@ -273,14 +274,7 @@ export default function LaporanBmdPage() {
   }
 
   async function fetchSkpdMapM3(): Promise<Record<number, string>> {
-    const map: Record<number, string> = {}
-    for (let from = 0; ; from += 1000) {
-      const data = assertOk(await supabase.from('admin_skpd').select('id,nama').range(from, from + 999), 'daftar SKPD')
-      if (!data || data.length === 0) break
-      for (const s of data as { id: number; nama: string }[]) map[s.id] = s.nama
-      if (data.length < 1000) break
-    }
-    return map
+    return petaNamaSkpd(await fetchDaftarSkpd(supabase))
   }
 
   // Baris ledger + join aset relevan (kode/nama/nibar/skpd/komptabel) utk satu

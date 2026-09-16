@@ -18,6 +18,8 @@
 // Akhiri: baris 'pemanfaatan_selesai' (append-only) + null cache. Header (No/Tgl
 // dokumen) boleh diedit selama semester sama (guard fn_jurnal_header_guard).
 import { useEffect, useState, useCallback } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { periodeDariTanggal, kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
@@ -70,7 +72,11 @@ export default function Pemanfaatan() {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
 
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { daftar: skpdList, err: errSkpd } = useNamaSkpdMap()
   const [skpd, setSkpd] = useState('')
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
@@ -80,18 +86,6 @@ export default function Pemanfaatan() {
   const [editing, setEditing] = useState<Header | null>(null)
   const [msg, setMsg] = useState('')
 
-  useEffect(() => {
-    ;(async () => {
-      const rows: { id: number; nama: string }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...data)
-        if (data.length < 1000) break
-      }
-      setSkpdList(rows)
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama || ''
 
@@ -228,6 +222,7 @@ export default function Pemanfaatan() {
   return (
     <FormShell judul="Pemanfaatan" msg={msg}
       deskripsi="Pilih SKPD, buat perjanjian pemanfaatan (sewa/pinjam pakai/KSP/BGS-BSG/KSPI), lalu centang barang + lingkupnya. Hanya Tanah, Gedung, Jalan/Jaringan/Irigasi, & Aset Lain-Lain yang bisa dimanfaatkan — barang bergerak reklas ke Aset Lain-Lain dulu.">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>

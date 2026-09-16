@@ -1,5 +1,6 @@
 'use client'
 import { ingatanCetak, KUNCI_TTD_STANDAR_SEKAB } from '@/lib/ingatanCetak'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 // Cetak Standar Harga — LAMPIRAN draft SK penetapan, satu berkas per jenis.
 // Standalone, F4 landscape (sama dgn lembar RKBMD se-Kabupaten).
@@ -213,14 +214,7 @@ export default function CetakStandarHargaPage() {
         if (ePg) throw new Error(`gagal membaca daftar pegawai: ${ePg.message}`)
         setPegawai((pg || []) as Pegawai[])
 
-        const skpd: { id: number; nama: string }[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-          if (!data || data.length === 0) break
-          skpd.push(...(data as { id: number; nama: string }[]))
-          if (data.length < 1000) break
-        }
-        setSkpdNama(new Map(skpd.map(s => [s.id, s.nama] as [number, string])))
+        setSkpdNama(mapNamaSkpd(await fetchDaftarSkpd(supabase)))
 
         const tersimpan = bacaTtdTersimpan()
         setTtdId(p.get('ttd') || tersimpan?.id || '')

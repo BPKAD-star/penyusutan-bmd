@@ -28,7 +28,10 @@ vi.mock('@/lib/supabase/client', () => ({
       const b: Record<string, unknown> = {}
       Object.assign(b, {
         select: () => (tabel === 'admin_jenis_aset' ? Promise.resolve(jenisRes) : b),
-        range: async () => skpdPages[skpdCalls++] ?? { data: [], error: null },
+        // ⚠️ Bentuk KEYSET (`gt` → `order` → `limit`), bukan `range()`:
+        // sejak 2026-09-16 pemuat SKPD lewat `fetchDaftarSkpd` (lib/namaSkpd.ts)
+        // yang dibangun di atas `paginate`.
+        gt: () => ({ order: () => ({ limit: async () => skpdPages[skpdCalls++] ?? { data: [], error: null } }) }),
         eq: () => b,
         not: () => b,
         limit: async () => kodefikasiRes,
@@ -59,23 +62,17 @@ describe('skpdMap', () => {
     expect(result.current.err).toBe('')
   })
 
-  it('menyapu KEYSET sampai habis, tak berhenti di halaman pertama', async () => {
-    // Halaman PENUH (1.000) berarti "mungkin masih ada" — berhenti di situ
-    // membuat SKPD ke-1.001 dst tampil "-" tanpa satu pun error.
-    skpdPages = [
-      { data: skpd(1000), error: null },
-      { data: skpd(3, 1000), error: null },
-    ]
-    const { result } = renderHook(() => useReferensiDaftarBarang())
-    await waitFor(() => expect(result.current.skpdMap[1003]).toBe('SKPD 1003'))
-    expect(Object.keys(result.current.skpdMap)).toHaveLength(1003)
-  })
+  // ⚠️ Sapuan keyset-nya sendiri (halaman berlanjut, urutan, kursor maju,
+  // `error` melempar) diuji di lib/namaSkpd.test.ts — di sini yang dijaga
+  // cuma bahwa hook ini MEMAKAINYA & menurunkan kegagalannya jadi peringatan.
 
   it('query gagal → DIKATAKAN, tak ditelan (INS-06)', async () => {
     skpdPages = [{ data: null, error: { message: 'statement timeout' } }]
     const { result } = renderHook(() => useReferensiDaftarBarang())
     await waitFor(() => expect(result.current.err).toContain('statement timeout'))
     expect(result.current.err).toContain('Nama SKPD')
+    // Label dari `paginate` ikut terbawa — buktinya ia benar-benar lewat sana.
+    expect(result.current.err).toContain('daftar SKPD')
   })
 
   it('gagal TIDAK menjatuhkan peta jenis aset (bukan fail-closed)', async () => {

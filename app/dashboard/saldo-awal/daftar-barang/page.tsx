@@ -46,6 +46,8 @@
 // mati — koreksinya wajib lewat menu Koreksi. Penegaknya trigger DB (migrasi
 // 20260728_01 bagian 3); 🔒 di sini cuma biar operator tak klik lalu kena error.
 import { KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -308,7 +310,11 @@ export default function Page() {
   // lama (132.694 baris = ratusan permintaan); tanpa angka yang bergerak,
   // tombol "Mengekspor..." yang diam terbaca operator sbg macet.
   const [progres, setProgres] = useState(0)
-  const [skpdNama, setSkpdNama] = useState<Record<number, string>>({})
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { peta: skpdNama, err: errSkpd } = useNamaSkpdMap()
   // wilayah_kode → "Desa, Kec. X, Kabupaten Y" (rantai induk sudah dirangkai)
   const [wilayahNama, setWilayahNama] = useState<Record<string, string>>({})
   // NIBAR → rekap bidang tanah (hanya golongan 1.3.1 yang punya isi)
@@ -317,16 +323,6 @@ export default function Page() {
 
 
   useEffect(() => {
-    (async () => {
-      const map: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data) map[s.id] = s.nama
-        if (data.length < 1000) break
-      }
-      setSkpdNama(map)
-    })()
     // Wilayah: dataset kecil (Jatim + Kab./Kota Kediri, ~400 baris) → tarik
     // sekali, rangkai rantai induknya di sini. Provinsi sengaja dibuang (semua
     // aset di Jatim, cuma bikin panjang); level 3 diberi awalan "Kec." karena
@@ -830,6 +826,7 @@ export default function Page() {
 
   return (
     <div className="p-6">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Daftar Barang Awal</h1>
         <p className="text-gray-500 text-sm mt-1">Daftar aset + penyusutan pada posisi saldo awal 2026 (= saldo akhir 2025).</p>

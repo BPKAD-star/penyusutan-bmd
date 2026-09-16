@@ -4,6 +4,8 @@
 // (SAMA dgn agregat Rekonsiliasi), jadi rincian ini pasti menjumlah ke angka
 // mutasi. Se-pemda (SKPD kosong) atau per SKPD. Deliverable utama = Export Excel.
 import { useState } from 'react'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -24,7 +26,11 @@ export default function RincianRekonsiliasiPage() {
   const [smt, setSmt] = useState('1')
   const [applied, setApplied] = useState<string | null>(null)
   const [lines, setLines] = useState<MutasiLine[]>([])
-  const [skpdMap, setSkpdMap] = useState<Record<number, string>>({})
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { peta: skpdMap, err: errSkpd } = useNamaSkpdMap()
   const [loading, setLoading] = useState(false)
 
   async function proses() {
@@ -34,14 +40,6 @@ export default function RincianRekonsiliasiPage() {
     const [rows] = await Promise.all([
       fetchMutasiLines(supabase, periode, org.descendantIds ?? null),
       (async () => {
-        const map: Record<number, string> = {}
-        for (let from = 0; ; from += 1000) {
-          const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-          if (!data || data.length === 0) break
-          for (const s of data as { id: number; nama: string }[]) map[s.id] = s.nama
-          if (data.length < 1000) break
-        }
-        setSkpdMap(map)
       })(),
     ])
     // urut: golongan (urutan KIB) → arah (tambah dulu) → kategori
@@ -75,6 +73,7 @@ export default function RincianRekonsiliasiPage() {
 
   return (
     <div className="p-6">
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Rincian Transaksi Rekonsiliasi</h1>
         <p className="text-gray-500 text-sm mt-1">

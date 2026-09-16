@@ -7,6 +7,8 @@
 //   - "Koreksi Spesifikasi" (alur lama, standalone single-item): DI LUAR
 //     "3 sebab" yang diminta user, sengaja TIDAK ikut pola ber-SK.
 import { keSen } from '@/lib/pemecahanNilai'
+import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
+import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { usePemecahan, newKey, TANAH_DOK_FIELDS } from './koreksi/usePemecahan'
 import { usePenggabungan } from './koreksi/usePenggabungan'
 import { usePencatatanGanda } from './koreksi/usePencatatanGanda'
@@ -99,7 +101,11 @@ function KoreksiTransaksi() {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
   const tahunMap = useTahunBukuMap()
-  const [skpdList, setSkpdList] = useState<{ id: number; nama: string }[]>([])
+  // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
+  // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
+  // menelan `error`, jadi query gagal = peta kosong = kolom SKPD tampil
+  // "-" di tiap baris, terbaca operator sbg "barang ini tak bertuan".
+  const { daftar: skpdList, err: errSkpd } = useNamaSkpdMap()
   const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
   const [skpd, setSkpd] = useState('')
 
@@ -126,16 +132,6 @@ function KoreksiTransaksi() {
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
-    ;(async () => {
-      const rows: { id: number; nama: string }[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...data)
-        if (data.length < 1000) break
-      }
-      setSkpdList(rows)
-    })()
     ;(async () => {
       const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
       const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
@@ -417,6 +413,7 @@ function KoreksiTransaksi() {
 
   return (
     <>
+      <PeringatanNamaSkpd err={errSkpd} />
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
           <label className="w-32 text-sm text-gray-600 text-right flex-shrink-0">Lokasi / SKPD :</label>
