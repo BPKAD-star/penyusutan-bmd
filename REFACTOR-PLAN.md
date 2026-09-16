@@ -63,7 +63,7 @@ Fase 4  Pindahkan baca ke server 3 minggu ███ per halaman berat, terukur
 Fase 5  Pindah struktur folder berjalan   ██████ paling akhir, sengaja
 ```
 
-### Status TERUKUR — 2026-09-15
+### Status TERUKUR — diukur ulang 2026-09-16
 
 ⚠️ **Tabel ini WAJIB diperbarui dgn cara MENGUKUR, bukan mengingat.** Sebelum
 ada tabel ini, pertanyaan "sudah sampai mana?" dijawab dari tabel §5 yang
@@ -71,14 +71,24 @@ ternyata basi berbulan — dan jawabannya keliru (lihat peringatan di §5).
 Perintah pengukurannya ada di kolom paling kanan; jalankan, jangan percaya
 centangnya.
 
-| Fase | Status | Ukuran hari ini | Cara mengukur |
+| Fase | Status | Ukuran 2026-09-16 | Cara mengukur |
 |---|---|---|---|
-| **0** Jaring pengaman | ✅ **8/8, dan sejak hari ini BENAR-BENAR bersih** | typecheck 0 error · **1.499 test / 67 berkas** · lint 0 error (597 warning) · coverage **97,68%** | `npm run typecheck && npm test && npm run lint && npm run test:coverage` |
-| **1** Primitif bersama | 🟡 ditulis semua, **adopsinya timpang** | `assertOk` **5 berkas** · `paginate` **1** · `useAsyncData` **0** | `grep -rl "from '@/shared/db/query'" app components lib` |
-| **2** Ekstrak domain | 🟡 **4 dari 6 selesai** (2.1 · 2.1b · 2.3 · 2.4); 2.2 tujuannya tercapai (sisanya kerjaan Fase 5); 2.5 & 2.6 sebagian | `lib/rekon.ts` masih 1.034 baris | lihat perintah di §5 |
-| **3** Pecah komponen raksasa | 🟡 **menu Koreksi tuntas, sisanya belum** | `KoreksiForm` **46 → 8 useState** · `Koreksi.tsx` 2.449 → **1.989** · berkas > 500 baris **33** (patokan 19) | `find app components lib -name '*.ts*' \| xargs wc -l \| awk '$2!="total" && $1>500' \| wc -l` |
+| **0** Jaring pengaman | ✅ **8/8** | typecheck 0 error · **1.734 test / 81 berkas** · lint 0 error (575 warning) · coverage **97,82%** | `npm run typecheck && npm test && npm run lint && npm run test:coverage` |
+| **1** Primitif bersama | 🟡 ditulis semua, **adopsinya masih timpang** | `assertOk` **5 berkas** · `paginate` **1** · `useAsyncData` **0** · `useSeleksiBarang` **5** (baru, 2026-09-16) | `grep -rl "from '@/shared/db/query'" app components lib` |
+| **2** Ekstrak domain | 🟡 **4 dari 6 selesai** (2.1 · 2.1b · 2.3 · 2.4); 2.2 tujuannya tercapai (sisanya kerja Fase 5); **2.5 & 2.6 sebagian** | `lib/rekon.ts` masih **1.034 baris** · `lib/draftPengadaan.ts` baru dipakai **1** berkas | lihat perintah di §5 |
+| **3** Pecah komponen raksasa | 🟡 **berjalan — 6 komponen tuntas, ≥8 tersisa** | `KoreksiForm` 46→8 · gelombang kedua 5 komponen (lihat §6) · berkas > 500 baris **32** (patokan 19) | perintah ukur per komponen di §6 |
 | **4** Baca ke server | ✅ **5/5 halaman** | Daftar Barang · Penyusutan · Rekonsiliasi · Laporan BMD · Dashboard, semuanya lewat RPC | `grep -c fn_daftar_barang app/dashboard/daftar-barang/page.tsx` |
-| **5** Struktur folder | 🔴 **belum mulai** (memang paling akhir) | `modules/` belum ada · `lib/` 66 berkas · `components/` 111 berkas | `test -d modules` |
+| **5** Struktur folder | 🔴 **belum mulai** (memang paling akhir) | `modules/` belum ada · `lib/` **77** berkas + 48 test · `components/` **131** | `test -d modules` |
+
+⚠️ **Metrik "berkas > 500 baris" (32, patokan 19) TIDAK akan tercapai lewat
+Fase 3, dan itu bukan kegagalan.** Mengangkat state ke hook MENAMBAH berkas;
+enam komponen tuntas cuma menggeser angkanya 33 → 32. Yang benar-benar turun
+`useState` per komponen. Lima berkas teratas (Koreksi 1.999 · Pengadaan 1.571 ·
+PerolehanManual 1.278 · Penghapusan 1.106 · Reklasifikasi 1.047) besar karena
+memuat BANYAK komponen berukuran wajar — bukan karena ada komponen raksasa di
+dalamnya (§6). **Kalau metrik ini mau dipertahankan, ia harus diganti "berkas
+> 500 baris yang memuat komponen > 300 baris"; kalau tidak, ia mengukur hal
+yang tak sedang dikerjakan siapa pun.**
 
 ⚠️ **Fase 0 "8/8 bersih" sempat TIDAK BENAR selama berbulan** dan tak ada yang
 tahu: CI merah, `test:coverage` merah & tak pernah dijalankan, dan 12 berkas
