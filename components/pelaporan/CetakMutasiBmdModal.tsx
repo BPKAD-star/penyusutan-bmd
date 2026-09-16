@@ -1,5 +1,6 @@
 'use client'
 import { ingatanCetak, kunciTtdMutasiBmd } from '@/lib/ingatanCetak'
+import { fetchSkpd } from '@/lib/skpdMaster'
 // Pop-up "Cetak Format IV.L.4.1 / IV.L.4.3" — menanyakan penanda tangan &
 // tanggal, lalu menyerahkan konfignya ke halaman induk yang memicu cetak.
 //
@@ -58,14 +59,7 @@ export default function CetakMutasiBmdModal({ skpdId, onClose, onCetak }: {
       const simpan = baca(skpdId)
       try {
         if (perSkpd) {
-          const semua: (SkpdNode & Record<string, unknown>)[] = []
-          for (let from = 0; ; from += 1000) {
-            const { data } = await supabase.from('admin_skpd')
-              .select('id,nama,parent_id').range(from, from + 999)
-            if (!data || data.length === 0) break
-            semua.push(...(data as typeof semua))
-            if (data.length < 1000) break
-          }
+          const semua = await fetchSkpd<(SkpdNode & Record<string, unknown>)>(supabase, 'id,nama,parent_id')
           const byId = new Map<number, SkpdNode>(
             semua.map(x => [x.id as number, { id: x.id as number, nama: x.nama as string, parent_id: (x.parent_id ?? null) as number | null }]))
           const daftar = await fetchCalonTtd(supabase, skpdId, byId)

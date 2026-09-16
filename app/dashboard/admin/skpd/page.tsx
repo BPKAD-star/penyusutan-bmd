@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
@@ -30,13 +31,7 @@ export default function AdminSkpdPage() {
   const [msg, setMsg] = useState('')
 
   async function load() {
-    const rows: Skpd[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id,kode_skpd,alamat').range(from, from + 999)
-      if (!data || data.length === 0) break
-      rows.push(...(data as Skpd[]))
-      if (data.length < 1000) break
-    }
+    const rows = await fetchSkpd<Skpd>(supabase, 'id,nama,level,parent_id,kode_skpd,alamat')
     setAll(rows)
     setLoading(false)
   }

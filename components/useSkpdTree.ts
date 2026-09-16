@@ -2,6 +2,7 @@
 // Muat pohon SKPD sekali, sediakan pemetaan id → SKPD level-1 (root). Dipakai
 // rekap Model 2 (per SKPD per jenis) untuk mengelompokkan barang ke induk SKPD-nya.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 
 export type SkpdNode = { id: number; nama: string; level: number; parent_id: number | null }
@@ -12,13 +13,7 @@ export function useSkpdTree() {
   useEffect(() => {
     const supabase = createClient()
     ;(async () => {
-      const rows: SkpdNode[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...(data as SkpdNode[]))
-        if (data.length < 1000) break
-      }
+      const rows = await fetchSkpd<SkpdNode>(supabase, 'id,nama,level,parent_id')
       setAll(rows)
     })()
   }, [])

@@ -1,6 +1,6 @@
 'use client'
 import { ingatanCetak, KUNCI_TTD_STANDAR_SEKAB } from '@/lib/ingatanCetak'
-import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/skpdMaster'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 // Cetak Standar Harga — LAMPIRAN draft SK penetapan, satu berkas per jenis.
 // Standalone, F4 landscape (sama dgn lembar RKBMD se-Kabupaten).

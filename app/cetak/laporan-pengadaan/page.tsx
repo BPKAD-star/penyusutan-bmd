@@ -4,6 +4,7 @@
 // Subtree SKPD dihitung ulang di sini dari `skpd` (URL ringkas — tak bawa daftar
 // id). Isi tabel + footer diserahkan ke LaporanPengadaanTabel (satu sumber render).
 import { useEffect, useState } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import LaporanPengadaanTabel from '@/components/pelaporan/LaporanPengadaanTabel'
 
@@ -42,13 +43,7 @@ export default function CetakLaporanPengadaanPage() {
       const sk = q.get('skpd') ? Number(q.get('skpd')) : null
       setPeriode(per); setSkpdId(sk)
       if (sk) {
-        const all: SkpdRow[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data } = await supabase.from('admin_skpd').select('id,parent_id').range(from, from + 999)
-          if (!data || data.length === 0) break
-          all.push(...(data as SkpdRow[]))
-          if (data.length < 1000) break
-        }
+        const all = await fetchSkpd<SkpdRow>(supabase, 'id,parent_id')
         setDescIds(descendantsOf(all, sk))
       } else {
         setDescIds(null)

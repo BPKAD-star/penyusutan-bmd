@@ -7,7 +7,10 @@
 // lama berada: urutan, kursor yang maju, dan `error` yang tak bisa ditelan.
 // ============================================================================
 import { describe, it, expect, vi } from 'vitest'
-import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd, fetchPetaNamaSkpd, type SkpdRingkas } from './namaSkpd'
+import {
+  fetchSkpd, fetchDaftarSkpd, fetchPohonSkpd, petaNamaSkpd, mapNamaSkpd, fetchPetaNamaSkpd,
+  type SkpdRingkas,
+} from './skpdMaster'
 
 type Hal = { data: SkpdRingkas[] | null; error: { message: string } | null }
 
@@ -111,6 +114,42 @@ describe('fetchDaftarSkpd', () => {
       { data: sk(1000), error: null },   // id-nya mengulang dari 1
     ])
     await expect(fetchDaftarSkpd(db)).rejects.toThrow(/tidak urut naik|kursor tidak maju/)
+  })
+})
+
+describe('fetchSkpd — proyeksi bebas', () => {
+  it('meneruskan proyeksi apa adanya ke `select`', async () => {
+    const { db, kolom } = klien([{ data: [{ id: 1, nama: 'A' }], error: null }])
+    await fetchSkpd(db, 'id,nama,level,parent_id')
+    expect(kolom).toEqual(['id,nama,level,parent_id'])
+  })
+
+  it('MENOLAK proyeksi tanpa `id` — kursornya mustahil maju', async () => {
+    // Tanpa `id`, `paginate` tak bisa memajukan kursor & loopnya berhenti di
+    // halaman pertama TANPA satu pun tanda: hasilnya cuma "kurang".
+    const { db } = klien([])
+    await expect(fetchSkpd(db, 'nama,parent_id')).rejects.toThrow(/tak memuat/)
+  })
+
+  it('`id` sbg bagian nama kolom lain TIDAK dihitung', async () => {
+    // `parent_id` memuat huruf "id" tapi bukan kolom `id`. Tanpa batas kata,
+    // proyeksi yang cacat akan lolos.
+    const { db } = klien([])
+    await expect(fetchSkpd(db, 'parent_id,nama')).rejects.toThrow(/tak memuat/)
+  })
+
+  it('label ikut ke pesan error, supaya sebabnya bisa ditelusuri', async () => {
+    const { db } = klien([{ data: null, error: { message: 'boom' } }])
+    await expect(fetchSkpd(db, 'id,parent_id', 'pohon SKPD')).rejects.toThrow(/pohon SKPD.*boom/)
+  })
+})
+
+describe('fetchPohonSkpd', () => {
+  it('memakai proyeksi pohon & membawa parent_id', async () => {
+    const { db, kolom } = klien([{ data: [{ id: 1, nama: 'A', level: 1, parent_id: null }] as never, error: null }])
+    const hasil = await fetchPohonSkpd(db)
+    expect(kolom).toEqual(['id,nama,level,parent_id'])
+    expect(hasil[0]).toMatchObject({ parent_id: null, level: 1 })
   })
 })
 

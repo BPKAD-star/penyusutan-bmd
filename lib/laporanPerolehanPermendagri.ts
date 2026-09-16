@@ -11,6 +11,7 @@
 // MENOLAK menyusun lembar.
 // ============================================================================
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
 import type { BarisLembar } from '@/components/pelaporan/LembarPerolehanPermendagri'
@@ -79,15 +80,7 @@ export function periodeDiminta(periode: string): string[] {
 export async function muatLembarPerolehan(
   supabase: SupabaseClient, p: PermintaanLembar,
 ): Promise<HasilLembar> {
-  const semua: SkpdRow[] = []
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase.from('admin_skpd')
-      .select('id,parent_id,nama,kode_skpd').range(from, from + 999)
-    if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
-    if (!data || data.length === 0) break
-    semua.push(...(data as SkpdRow[]))
-    if (data.length < 1000) break
-  }
+  const semua = await fetchSkpd<SkpdRow>(supabase, 'id,parent_id,nama,kode_skpd')
   const ini = semua.find(x => x.id === p.skpdId)
   if (!ini) throw new Error(`SKPD #${p.skpdId} tidak ditemukan.`)
   const desc = descendantsOf(semua, p.skpdId)
@@ -182,15 +175,7 @@ export type HasilKabupaten = {
 export async function muatLembarKabupaten(
   supabase: SupabaseClient, p: { jenis: string; periode: string },
 ): Promise<HasilKabupaten> {
-  const semua: SkpdRow[] = []
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase.from('admin_skpd')
-      .select('id,parent_id,nama,kode_skpd').range(from, from + 999)
-    if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
-    if (!data || data.length === 0) break
-    semua.push(...(data as SkpdRow[]))
-    if (data.length < 1000) break
-  }
+  const semua = await fetchSkpd<SkpdRow>(supabase, 'id,parent_id,nama,kode_skpd')
   const root = petaRoot(semua)
 
   let qq = supabase.from('transaksi_bmd').select(SEL)

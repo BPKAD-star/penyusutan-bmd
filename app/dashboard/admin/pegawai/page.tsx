@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
@@ -182,13 +183,7 @@ export default function AdminPegawaiPage() {
   }
 
   async function loadSkpdOrder() {
-    const rows: SkpdTreeRow[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('admin_skpd').select('id,nama,parent_id,kode_skpd').range(from, from + 999)
-      if (!data || data.length === 0) break
-      rows.push(...(data as SkpdTreeRow[]))
-      if (data.length < 1000) break
-    }
+    const rows = await fetchSkpd<SkpdTreeRow>(supabase, 'id,nama,parent_id,kode_skpd')
     setSkpdOrder(buildSkpdOrder(rows))
     setRsudIds(new Set(rows.filter(s => isNamaRsud(s.nama)).map(s => s.id)))
   }

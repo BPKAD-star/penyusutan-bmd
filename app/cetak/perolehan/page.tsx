@@ -1,5 +1,6 @@
 'use client'
 import { ingatanCetak, kunciTtdPerolehan } from '@/lib/ingatanCetak'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 // ============================================================================
@@ -168,15 +169,7 @@ export default function CetakPerolehanPage() {
         if (!sk) throw new Error('SKPD belum dipilih. Lembar ini memuat identitas SKPD di kepalanya, jadi wajib per-SKPD.')
 
         // ── SKPD: identitas kepala lembar + subtree utk penyaringan ──────────
-        const semua: (SkpdRow & { nama: string; kode_skpd: string | null })[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data, error } = await supabase.from('admin_skpd')
-            .select('id,parent_id,nama,kode_skpd').range(from, from + 999)
-          if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
-          if (!data || data.length === 0) break
-          semua.push(...(data as typeof semua))
-          if (data.length < 1000) break
-        }
+        const semua = await fetchSkpd<(SkpdRow & { nama: string; kode_skpd: string | null })>(supabase, 'id,parent_id,nama,kode_skpd')
         const ini = semua.find(x => x.id === sk)
         if (!ini) throw new Error(`SKPD #${sk} tidak ditemukan.`)
         setSkpd({ kode: ini.kode_skpd || '', nama: ini.nama })

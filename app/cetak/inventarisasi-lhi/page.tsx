@@ -5,6 +5,7 @@
 // Subtree SKPD dihitung ulang di sini (URL ringkas, tak membawa daftar id) —
 // pola sama dgn app/cetak/laporan-pengadaan/page.tsx.
 import { useEffect, useMemo, useState } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
@@ -53,13 +54,7 @@ export default function CetakLhiPage() {
       setTahun(t); setGolongan(g); setKode(k); setSkpdId(sk)
 
       if (sk) {
-        const all: SkpdRow[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data } = await supabase.from('admin_skpd').select('id,parent_id').range(from, from + 999)
-          if (!data || data.length === 0) break
-          all.push(...(data as SkpdRow[]))
-          if (data.length < 1000) break
-        }
+        const all = await fetchSkpd<SkpdRow>(supabase, 'id,parent_id')
         setSkpdRows(all)
         setSkpdIds(descendantsOf(all, sk))
       }

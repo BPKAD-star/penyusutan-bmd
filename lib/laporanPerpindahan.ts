@@ -26,6 +26,7 @@
 // MENOLAK menyusun lembar.
 // ============================================================================
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchPenyusutanAset } from '@/lib/rekon'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
@@ -138,15 +139,7 @@ export function periodePosisi(periode: string): string {
 }
 
 async function semuaSkpdRows(supabase: SupabaseClient): Promise<SkpdRow[]> {
-  const out: SkpdRow[] = []
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase.from('admin_skpd')
-      .select('id,parent_id,nama,kode_skpd').range(from, from + 999)
-    if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
-    if (!data || data.length === 0) break
-    out.push(...(data as SkpdRow[]))
-    if (data.length < 1000) break
-  }
+  const out = await fetchSkpd<SkpdRow>(supabase, 'id,parent_id,nama,kode_skpd')
   return out
 }
 

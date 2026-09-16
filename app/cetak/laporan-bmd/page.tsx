@@ -1,5 +1,6 @@
 'use client'
 import { ingatanCetak, kunciTtdLaporanBmd } from '@/lib/ingatanCetak'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 // ============================================================================
 // Cetak LAPORAN BMD — Permendagri 47/2021 Format IV.L.4.2 (per SKPD).
@@ -111,15 +112,7 @@ export default function CetakLaporanBmdPage() {
         if (!per) throw new Error('Periode belum dipilih.')
         if (!sk) throw new Error('SKPD belum dipilih. Lembar ini memuat identitas SKPD di kepalanya, jadi wajib per-SKPD.')
 
-        const semua: SkpdRow[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data, error } = await supabase.from('admin_skpd')
-            .select('id,nama,parent_id,level,kode_skpd,kode_lokasi').range(from, from + 999)
-          if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
-          if (!data || data.length === 0) break
-          semua.push(...(data as SkpdRow[]))
-          if (data.length < 1000) break
-        }
+        const semua = await fetchSkpd<SkpdRow>(supabase, 'id,nama,parent_id,level,kode_skpd,kode_lokasi')
         const ini = semua.find(s => s.id === sk)
         if (!ini) throw new Error(`SKPD #${sk} tidak ditemukan.`)
         setSkpd(ini)

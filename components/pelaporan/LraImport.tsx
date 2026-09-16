@@ -12,7 +12,7 @@
 // mengimpor subtree SKPD-nya sendiri (allowedIds/mySkpdId), sekarang kode itu
 // dihapus krn tak pernah tereksekusi lagi (satu-satunya pemanggil sudah admin).
 import { useEffect, useState } from 'react'
-import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/skpdMaster'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'

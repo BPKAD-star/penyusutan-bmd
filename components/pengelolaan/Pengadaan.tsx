@@ -20,6 +20,7 @@
 //      jejak ledger permanen (append-only) → tak bisa dihapus penuh; hanya
 //      draft murni (belum pernah disetujui) yang bisa dihapus.
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
@@ -301,13 +302,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
   useEffect(() => {
     (async () => {
       type SkpdRow = { id: number; nama: string; level: number; parent_id: number | null }
-      const rows: SkpdRow[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...(data as SkpdRow[]))
-        if (data.length < 1000) break
-      }
+      const rows = await fetchSkpd<SkpdRow>(supabase, 'id,nama,level,parent_id')
       const byId = new Map(rows.map(s => [s.id, s]))
       const paths: Record<number, string> = {}
       for (const s of rows) {

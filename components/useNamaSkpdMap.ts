@@ -18,7 +18,7 @@
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd, type SkpdRingkas } from '@/lib/namaSkpd'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd, type SkpdRingkas } from '@/lib/skpdMaster'
 
 export type NamaSkpdMap = {
   /** Daftar mentah, urut `id` — untuk pemanggil yang butuh dropdown. */

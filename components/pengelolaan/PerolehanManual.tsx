@@ -9,6 +9,7 @@
 //     oleh engine saat "Jalankan Engine" dijalankan ulang (lihat migrasi
 //     20260707_02 yg membuka whitelist tahun_buku utk jenis-jenis ini).
 import { useEffect, useState, useCallback } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
@@ -168,13 +169,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   useEffect(() => {
     (async () => {
       type SkpdRow = { id: number; nama: string; level: number; parent_id: number | null }
-      const rows: SkpdRow[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...(data as SkpdRow[]))
-        if (data.length < 1000) break
-      }
+      const rows = await fetchSkpd<SkpdRow>(supabase, 'id,nama,level,parent_id')
       const byId = new Map(rows.map(s => [s.id, s]))
       const paths: Record<number, string> = {}
       for (const s of rows) {

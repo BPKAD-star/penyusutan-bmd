@@ -1,5 +1,6 @@
 'use client'
 import { ingatanCetak, ingatanTeksCetak, kunciTtdRkbmdSkpd, KUNCI_TTD_RKBMD_SEKAB } from '@/lib/ingatanCetak'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 // Cetak "Usulan Rencana Kebutuhan Barang Milik Daerah" — kelima jenis.
 // Standalone, A4 landscape. Dua mode:
@@ -260,13 +261,7 @@ export default function CetakRkbmdPage() {
       }
 
       // Seluruh SKPD (untuk nama, kode, & rantai induk).
-      const rows: SkpdRow[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama,parent_id,kode_skpd').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...(data as SkpdRow[]))
-        if (data.length < 1000) break
-      }
+      const rows = await fetchSkpd<SkpdRow>(supabase, 'id,nama,parent_id,kode_skpd')
       const skpdById = new Map(rows.map(s => [s.id, s]))
 
       // (Daftar calon penanda tangan per-SKPD dipindah ke cabang `else` di

@@ -1,5 +1,10 @@
 // ============================================================================
-// Daftar & peta nama SKPD — SATU sumber.
+// Pembacaan master `admin_skpd` — SATU sumber.
+//
+// ⚠️ Berkas ini sempat bernama `lib/namaSkpd.ts` (2026-09-16 pagi) waktu
+// isinya baru peta id→nama. Diganti di hari yang sama begitu ia melayani
+// proyeksi lain (`id,parent_id` untuk pohon SKPD) — nama lamanya akan
+// menyesatkan pembaca yang mencari pemuat pohon.
 //
 // Diangkat 2026-09-16 (REFACTOR-PLAN Fase 1, adopsi `paginate`). Loop yang
 // sama persis — `range(from, from + 999)` sampai habis, `error` ditelan —
@@ -33,14 +38,17 @@ import { paginate } from '@/shared/db/paginate'
 
 export type SkpdRingkas = { id: number; nama: string }
 
+/** Pohon SKPD — bentuk yang dipakai `useSkpdTree` & modul pelaporan. */
+export type SkpdNode = { id: number; nama: string; level: number; parent_id: number | null }
+
 /** Bentuk minimal klien Supabase yang dibutuhkan — sengaja bukan tipe
  *  supabase-js, supaya bisa diuji tanpa jaringan & tanpa menyeret kliennya. */
-type KlienMinimal = {
+type KlienMinimal<T> = {
   from: (tabel: string) => {
     select: (kolom: string) => {
       gt: (kolom: string, nilai: number) => {
         order: (kolom: string, opts: { ascending: boolean }) => {
-          limit: (n: number) => PromiseLike<{ data: SkpdRingkas[] | null; error: { message: string } | null }>
+          limit: (n: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
         }
       }
     }
@@ -48,19 +56,39 @@ type KlienMinimal = {
 }
 
 /**
- * SELURUH SKPD, urut `id`. MELEMPAR kalau query gagal.
+ * SELURUH baris `admin_skpd`, urut `id`, dengan proyeksi apa pun.
+ * MELEMPAR kalau query gagal.
  *
  * ⚠️ Kursornya `.gt('id', …)`, bukan `.range()`. Selain lebih murah, itu yang
  * membuat penjaga urutan di `paginate()` bisa bekerja — ia MENOLAK hasil yang
  * terbukti tak urut naik, yaitu cacat paling senyap dari ketiganya.
+ *
+ * ⚠️ `kolom` WAJIB memuat `id` — kursornya bersandar pada kolom itu. Tanpa
+ * `id`, `paginate` tak bisa memajukan kursornya & loopnya berhenti di halaman
+ * pertama tanpa satu pun tanda.
  */
-export async function fetchDaftarSkpd(supabase: unknown): Promise<SkpdRingkas[]> {
-  const db = supabase as KlienMinimal
-  return paginate<number, SkpdRingkas>('daftar SKPD', kursor =>
-    db.from('admin_skpd').select('id,nama')
+export async function fetchSkpd<T extends { id: number }>(
+  supabase: unknown, kolom: string, label = 'daftar SKPD',
+): Promise<T[]> {
+  if (!/\bid\b/.test(kolom)) {
+    throw new Error(`fetchSkpd: proyeksi "${kolom}" tak memuat \`id\` — kursor paginasi mustahil maju.`)
+  }
+  const db = supabase as KlienMinimal<T>
+  return paginate<number, T>(label, kursor =>
+    db.from('admin_skpd').select(kolom)
       .gt('id', kursor ?? 0)
       .order('id', { ascending: true })
       .limit(1000))
+}
+
+/** `id,nama` — proyeksi paling sering dipakai. */
+export async function fetchDaftarSkpd(supabase: unknown): Promise<SkpdRingkas[]> {
+  return fetchSkpd<SkpdRingkas>(supabase, 'id,nama')
+}
+
+/** `id,nama,level,parent_id` — pohon SKPD. */
+export async function fetchPohonSkpd(supabase: unknown): Promise<SkpdNode[]> {
+  return fetchSkpd<SkpdNode>(supabase, 'id,nama,level,parent_id', 'pohon SKPD')
 }
 
 /** `id → nama`. Bentuk yang dipakai mayoritas pemanggil. */

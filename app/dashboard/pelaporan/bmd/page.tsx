@@ -6,7 +6,7 @@
 // (penyusutan_semester) pada periode terpilih. Model 1: per golongan. Model 2:
 // matriks per SKPD × per jenis. Model 3: mutasi saldo awal/akhir.
 import { useState } from 'react'
-import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'

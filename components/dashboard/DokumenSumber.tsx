@@ -9,7 +9,7 @@
 //   - Admin SKPD induk (py sub-OPD) -> upload HANYA siklus Pengamanan, subtree sendiri.
 //   - Non-admin                     -> lihat & download saja.
 import { useEffect, useState, useCallback } from 'react'
-import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { tahunAwal } from '@/lib/tahunKerja'

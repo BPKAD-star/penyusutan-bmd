@@ -7,7 +7,7 @@
 // disetujui/menunggu → popup rincian (per-SKPD utk disetujui, per-jurnal utk
 // menunggu), sama pola dgn popup di CaraPerolehanCards.
 import { useEffect, useState } from 'react'
-import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/namaSkpd'
+import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { fetchPindahEvents, pindahAktif } from '@/lib/pengalihan'
 import { formatRupiah } from '@/lib/export'

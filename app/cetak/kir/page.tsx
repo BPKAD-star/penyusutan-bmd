@@ -5,6 +5,7 @@
 //   ?ruangan=<id kir_ruangan>  → satu ruangan
 //   ?skpd=<id admin_skpd>      → seluruh ruangan milik SKPD itu
 import { useEffect, useState } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import {
   tahunPerolehan, toIsiRuangan, RUANGAN_COLS, ASET_JOIN_COLS,
@@ -167,13 +168,7 @@ export default function CetakKirPage() {
         for (const r of list) r.isi.sort((a, b) => (a.nibar || '').localeCompare(b.nibar || ''))
 
         // SKPD (+ rantai induknya) untuk blok kepala kartu.
-        const rows: SkpdRow[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data } = await supabase.from('admin_skpd').select('id,nama,parent_id,kode_skpd').range(from, from + 999)
-          if (!data || data.length === 0) break
-          rows.push(...(data as SkpdRow[]))
-          if (data.length < 1000) break
-        }
+        const rows = await fetchSkpd<SkpdRow>(supabase, 'id,nama,parent_id,kode_skpd')
         setSkpdById(new Map(rows.map(s => [s.id, s])))
 
         // Pengurus Barang per SKPD untuk blok tanda tangan kiri.

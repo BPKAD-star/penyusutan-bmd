@@ -27,7 +27,7 @@
 // yang begitu wajib fail-closed lewat saluran `err` merah halaman.
 // ============================================================================
 import { useEffect, useState } from 'react'
-import { fetchPetaNamaSkpd } from '@/lib/namaSkpd'
+import { fetchPetaNamaSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
 

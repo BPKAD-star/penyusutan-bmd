@@ -4,6 +4,7 @@
 // Emit { skpdId, descendantIds } — descendantIds = node terpilih + semua turunannya
 // (dipakai query .in('skpd_id', ...)). Null = semua SKPD.
 import { useEffect, useMemo, useState } from 'react'
+import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 
 export type Skpd = { id: number; nama: string; level: number; parent_id: number | null }
@@ -25,13 +26,7 @@ export default function OrgFilter({ onChange }: { onChange: (sel: OrgSelection) 
 
   useEffect(() => {
     (async () => {
-      const rows: Skpd[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama,level,parent_id').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...(data as Skpd[]))
-        if (data.length < 1000) break
-      }
+      const rows = await fetchSkpd<Skpd>(supabase, 'id,nama,level,parent_id')
       setAll(rows)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

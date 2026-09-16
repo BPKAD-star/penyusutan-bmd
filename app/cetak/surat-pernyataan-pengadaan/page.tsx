@@ -1,5 +1,6 @@
 'use client'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
+import { fetchSkpd } from '@/lib/skpdMaster'
 // ============================================================================
 // Cetak "Surat Pernyataan" — pengakuan pencatatan BMD hasil Pengadaan APBD.
 // Standalone (tanpa sidebar, TANPA kop surat — permintaan user 2026-08-26).
@@ -111,15 +112,7 @@ export default function CetakSuratPernyataanPengadaanPage() {
         setSubNama(sisa.join(' — ').trim())
 
         // ── SKPD (leaf + rantai ke akar, utk lingkup pencarian PPK) ──────────
-        const semua: SkpdRow[] = []
-        for (let from = 0; ; from += 1000) {
-          const { data, error } = await supabase.from('admin_skpd')
-            .select('id,nama,parent_id,level').range(from, from + 999)
-          if (error) throw new Error(`gagal membaca daftar SKPD: ${error.message}`)
-          if (!data || data.length === 0) break
-          semua.push(...(data as SkpdRow[]))
-          if (data.length < 1000) break
-        }
+        const semua = await fetchSkpd<SkpdRow>(supabase, 'id,nama,parent_id,level')
         const byId = new Map<number, SkpdNode>(semua.map(s => [s.id, s]))
         const ini = semua.find(s => s.id === h.skpd_id)
         if (!ini) throw new Error(`SKPD #${h.skpd_id} tidak ditemukan.`)
