@@ -74,7 +74,7 @@ centangnya.
 | Fase | Status | Ukuran 2026-09-16 | Cara mengukur |
 |---|---|---|---|
 | **0** Jaring pengaman | ✅ **8/8** | typecheck 0 error · **1.734 test / 81 berkas** · lint 0 error (575 warning) · coverage **97,82%** | `npm run typecheck && npm test && npm run lint && npm run test:coverage` |
-| **1** Primitif bersama | 🟡 ditulis semua, **adopsinya masih timpang** | `assertOk` **5 berkas** · `paginate` **1** · `useAsyncData` **0** · `useSeleksiBarang` **5** (baru, 2026-09-16) | `grep -rl "from '@/shared/db/query'" app components lib` |
+| **1** Primitif bersama | 🟡 `paginate` **selesai untuk kasus yang dilayaninya**; `useAsyncData` belum tersentuh | `paginate` **7** langsung + 28 lewat `lib/skpdMaster.ts` (dari 1) · `assertOk` **5** · `useAsyncData` **0** · `useSeleksiBarang` **5** | `grep -rl "from '@/shared/db/paginate'" app components lib` |
 | **2** Ekstrak domain | 🟡 **4 dari 6 selesai** (2.1 · 2.1b · 2.3 · 2.4); 2.2 tujuannya tercapai (sisanya kerja Fase 5); **2.5 & 2.6 sebagian** | `lib/rekon.ts` masih **1.034 baris** · `lib/draftPengadaan.ts` baru dipakai **1** berkas | lihat perintah di §5 |
 | **3** Pecah komponen raksasa | 🟡 **berjalan — 6 komponen tuntas, ≥8 tersisa** | `KoreksiForm` 46→8 · gelombang kedua 5 komponen (lihat §6) · berkas > 500 baris **32** (patokan 19) | perintah ukur per komponen di §6 |
 | **4** Baca ke server | ✅ **5/5 halaman** | Daftar Barang · Penyusutan · Rekonsiliasi · Laporan BMD · Dashboard, semuanya lewat RPC | `grep -c fn_daftar_barang app/dashboard/daftar-barang/page.tsx` |
@@ -733,6 +733,43 @@ sering menemukan bug — itu keuntungan, bukan gangguan.**
 ⚠️ Perilaku JANGGAL dipertahankan apa adanya & ditandai komentar (mis. query
 yang tak memeriksa `error`). Membetulkannya bareng pemindahan membuat
 pemindahannya tak bisa dibuktikan setara — itu pekerjaan Fase 1, terpisah.
+
+### Batas adopsi `paginate` — 16 loop yang SENGAJA ditinggal (2026-09-16)
+
+Adopsi `paginate` berhenti di titik yang dipilih sadar, bukan kehabisan waktu.
+Berkas ber-`from += 1000` turun **60 → 16**; enam belas sisanya TIDAK boleh
+dipaksa, dan alasannya ada di kontrak primitifnya sendiri:
+
+`paginate` berkursor **keyset-by-`id`**. Loop yang tersisa mengurut kolom
+**TAMPILAN** — `nama_barang`, `kode_prefix`, `created_at`, `tanggal` — dan
+beberapa membawa komentar tegas bahwa urutan gandanya KEMBAR dengan sebuah
+index (`idx_aset_tanah_nama`, migrasi 20260814_04). Memaksakannya menggeser
+urutan yang dilihat operator DAN membuang index yang melayaninya tanpa node
+Sort. Tiga lagi membaca `admin_wilayah`, yang berkunci `kode` & tak punya
+kolom `id` sama sekali.
+
+**Pembagian yang sebenarnya, dan ini yang perlu diingat sebelum "melanjutkan
+adopsi":**
+
+| Primitif | Untuk |
+|---|---|
+| `shared/db/paginate` | kumpulkan SEMUA, urutan tak berarti (peta/himpunan) |
+| `lib/keyset.ts` | urutan register (`kode` ASC, `nilai` DESC, seri ASC) |
+| — belum ada — | daftar berurutan TAMPILAN selain urutan register |
+
+Baris ketiga itu yang memuat keenam belas sisanya. Menambahkan primitif untuk
+itu adalah pekerjaan tersendiri; **memaksa mereka ke `paginate` bukan adopsi,
+melainkan risiko tanpa hasil.**
+
+⚠️ Satu pelajaran mekanis dari sapuan ini: **sesudah sapuan bertumpu regex,
+HITUNG ULANG sisanya.** `lib/laporanPerolehanPermendagri.ts` punya DUA loop di
+satu berkas & sapuan otomatis cuma mengganti yang pertama — ketahuan dari
+pengukuran ulang, bukan dari asumsi.
+
+⚠️ Pelajaran kedua, lebih mahal: **klasifikasi lewat grep KURANG-MEMBACA kode.**
+Dua kali dalam satu sesi daftar "cocok dikonversi" ternyata salah karena
+potongan yang di-grep tak memuat `.order()` yang menyusul beberapa baris di
+bawahnya. Yang menyelamatkan cuma membaca berkasnya.
 
 ### Peta nama SKPD ditulis 22 kali — sasaran adopsi `paginate` (2026-09-16)
 
