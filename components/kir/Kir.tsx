@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useSeleksiBarang } from '@/shared/ui/useSeleksiBarang'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import FormShell from '@/components/pengelolaan/FormShell'
@@ -370,7 +371,9 @@ function TambahBarangModal({ skpdId, ruangan, onClose, onSaved }: {
   const [rows, setRows] = useState<AsetKir[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [sel, setSel] = useState<Record<string, AsetKir>>({})
+  // Mesin centang bersama (shared/ui/useSeleksiBarang.ts) — kemunculan
+  // kelima bentuk yang sama; diangkat 2026-09-16.
+  const { sel, setSel, selList, allSelected, toggle, toggleAll } = useSeleksiBarang<AsetKir>(rows)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
@@ -397,18 +400,6 @@ function TambahBarangModal({ skpdId, ruangan, onClose, onSaved }: {
     setLoaded(true); setLoading(false)
   }
 
-  function toggle(b: AsetKir) {
-    setSel(prev => { const next = { ...prev }; if (next[b.id]) delete next[b.id]; else next[b.id] = b; return next })
-  }
-  function toggleAll() {
-    setSel(prev => {
-      const all = rows.length > 0 && rows.every(r => prev[r.id])
-      if (all) return {}
-      const next = { ...prev }; for (const r of rows) next[r.id] = r; return next
-    })
-  }
-  const selList = Object.values(sel)
-  const allSelected = rows.length > 0 && rows.every(r => sel[r.id])
 
   async function simpan() {
     if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }

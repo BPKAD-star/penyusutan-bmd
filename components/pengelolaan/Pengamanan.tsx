@@ -21,10 +21,12 @@ import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
-import { identitasPengamanan, PENGAMANAN_ELIGIBLE_GOLONGAN, isPengamananEligible, pengamananCache } from '@/lib/pengamanan'
+import { identitasPengamanan, PENGAMANAN_ELIGIBLE_GOLONGAN, pengamananCache } from '@/lib/pengamanan'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks, bukaDokumen } from './DokumenBastField'
+import { useDokumenBast } from './pengamanan/useDokumenBast'
+import { usePemilihBarangPengamanan, type BarangPengamanan } from './pengamanan/usePemilihBarang'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
 const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
@@ -45,10 +47,12 @@ type Line = {
 }
 type Jurnal = Header & { lines: Line[] }
 
-type Barang = {
-  id: string; nibar: string | null; kode: string; nama_barang: string | null
-  merek_tipe: string | null; jumlah: number; satuan: string | null; nilai_perolehan: number; skpd_id: number | null
-}
+// ⚠️ ALIAS, bukan salinan: bentuk barang di kartu jurnal PERSIS sama dengan
+// yang ditarik pemilih barang. Dua deklarasi kembar di dua berkas adalah utang
+// "ubah satu, samakan yang lain" yang di repo ini sudah berkali-kali dilanggar
+// — dan pelanggarannya di sini tak menghasilkan satu pun error, cuma kolom
+// yang diam-diam tak terbaca.
+type Barang = BarangPengamanan
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,keterangan,payload'
 
@@ -478,70 +482,34 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
   const supabase = createClient()
   const dateBounds = useDateBounds()
 
+  // ── Isian identitas penghuni/pemakai ──────────────────────────────────────
+  // Sengaja TETAP `useState` polos di sini: enam kotak teks yang tak punya
+  // aturan apa pun di antaranya bukan mesin state — mengangkatnya ke hook cuma
+  // memindahkan `useState` ke berkas lain tanpa menyembunyikan satu keputusan
+  // pun (CODING-STANDARD §1.5).
   const [nama, setNama] = useState('')
   const [identitas, setIdentitas] = useState('')
   const [status, setStatus] = useState('')
   const [alamat, setAlamat] = useState('')
   const [jabatan, setJabatan] = useState('')
-  const [noSk, setNoSk] = useState('')
-  const [tgl, setTgl] = useState(todayStr())
-  const [paktaNo, setPaktaNo] = useState('')
-  const [paktaTgl, setPaktaTgl] = useState('')
   const [ket, setKet] = useState('')
-  const [bastPaths, setBastPaths] = useState<string[]>([])
-  const [paktaPaths, setPaktaPaths] = useState<string[]>([])
-  const [uploading, setUploading] = useState(false)
 
-  const [fGolongan, setFGolongan] = useState('')
-  const [fSearch, setFSearch] = useState('')
-  const [rows, setRows] = useState<Barang[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [sel, setSel] = useState<Record<string, Barang>>({})
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
-  async function tampilkan() {
-    setLoading(true)
-    let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id')
-      .eq('status', 'aktif').eq('skpd_id', skpdId).is('pengamanan', null)
-    if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
-    else q = q.or(PENGAMANAN_ELIGIBLE_GOLONGAN.map(g => `kode.like.${g}.%`).join(','))
-    if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
-    const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
-    setRows(((data as unknown as Barang[]) || []).filter(b => isPengamananEligible(b.kode)))
-    setLoaded(true); setLoading(false)
-  }
+  // ── Dua mesin state yang diangkat 2026-09-16 (REFACTOR-PLAN Fase 3) ───────
+  // Namanya SENGAJA dipertahankan lewat destructuring, jadi seluruh JSX di
+  // bawah tak berubah sebaris pun — itu yang membuat "murni pindah" bisa
+  // diverifikasi lewat `git diff` alih-alih dipercaya.
+  const {
+    noSk, setNoSk, tgl, setTgl, paktaNo, setPaktaNo, paktaTgl, setPaktaTgl,
+    bastPaths, paktaPaths, uploading, upload, hapusDok,
+  } = useDokumenBast(todayStr(), setErr)
 
-  async function upload(files: FileList | null, target: 'bast' | 'pakta') {
-    if (!files || files.length === 0) return
-    setUploading(true)
-    for (const file of Array.from(files)) {
-      const path = `pengamanan-${target}/${crypto.randomUUID()}/${file.name}`
-      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
-      if (target === 'bast') setBastPaths(prev => [...prev, path]); else setPaktaPaths(prev => [...prev, path])
-    }
-    setUploading(false)
-  }
-  async function hapusDok(path: string, target: 'bast' | 'pakta') {
-    await supabase.storage.from('dokumen-sumber').remove([path])
-    if (target === 'bast') setBastPaths(prev => prev.filter(p => p !== path)); else setPaktaPaths(prev => prev.filter(p => p !== path))
-  }
-
-  function toggle(b: Barang) {
-    setSel(prev => { const next = { ...prev }; if (next[b.id]) delete next[b.id]; else next[b.id] = b; return next })
-  }
-  function toggleAll() {
-    setSel(prev => {
-      const all = rows.length > 0 && rows.every(r => prev[r.id])
-      if (all) return {}
-      const next = { ...prev }; for (const r of rows) next[r.id] = r; return next
-    })
-  }
-  const selList = Object.values(sel)
-  const allSelected = rows.length > 0 && rows.every(r => sel[r.id])
+  const {
+    fGolongan, setFGolongan, fSearch, setFSearch, rows, loaded, loading, tampilkan,
+    sel, selList, allSelected, toggle, toggleAll,
+  } = usePemilihBarangPengamanan(skpdId, setErr)
 
   async function simpan() {
     if (!nama.trim()) { setErr('Nama pegawai wajib diisi.'); return }

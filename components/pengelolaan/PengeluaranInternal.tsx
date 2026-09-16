@@ -18,6 +18,7 @@
 //      Pengembalian hanya lewat SKPD penerima (menu Penerimaan Internal).
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useSeleksiBarang } from '@/shared/ui/useSeleksiBarang'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
@@ -483,7 +484,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [rows, setRows] = useState<Barang[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [sel, setSel] = useState<Record<string, Barang>>({})
+  // Mesin centang bersama (shared/ui/useSeleksiBarang.ts) — kemunculan kelima
+  // bentuk yang sama; diangkat 2026-09-16.
+  const { sel, setSel, selList, allSelected, toggle, toggleAll } = useSeleksiBarang<Barang>(rows)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
@@ -542,24 +545,6 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     setDokPaths(prev => prev.filter(p => p !== path))
   }
 
-  function toggle(b: Barang) {
-    setSel(prev => {
-      const next = { ...prev }
-      if (next[b.id]) delete next[b.id]; else next[b.id] = b
-      return next
-    })
-  }
-  function toggleAll() {
-    setSel(prev => {
-      const allSelected = rows.length > 0 && rows.every(r => prev[r.id])
-      if (allSelected) return {}
-      const next = { ...prev }
-      for (const r of rows) next[r.id] = r
-      return next
-    })
-  }
-
-  const selList = Object.values(sel)
   const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
 
   const draftDari = (b: Barang): DraftItem => ({
@@ -596,7 +581,6 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     setSaving(false); onSaved(selList.length)
   }
 
-  const allSelected = rows.length > 0 && rows.every(r => sel[r.id])
   const perluDokumenDulu = !header && dokPaths.length === 0
 
   return (

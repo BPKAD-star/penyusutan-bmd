@@ -20,8 +20,13 @@
 //   · di sana ada `preset` & uraian baku; di sini tidak
 //   · di sini ada centang MASSAL; di sana tidak
 // Menyatukannya sekarang berarti satu hook ber-belasan bendera — persis
-// anti-pola yang dilarang CODING-STANDARD §1.5. **Kalau menu KETIGA butuh
-// pemilih serupa, barulah angkat bentuk bersamanya.**
+// anti-pola yang dilarang CODING-STANDARD §1.5.
+//
+// ✅ 2026-09-16 — menu KETIGA datang (Pengamanan), dan janji di atas ditagih
+// SEBAGIAN: yang diangkat bersama HANYA mesin centangnya
+// (`shared/ui/useSeleksiBarang.ts`, kemunculan kelima), bukan pemilihnya.
+// Kelima perbedaan yang didaftar di atas masih berlaku & masih jadi alasan
+// query-nya tetap berdiri sendiri.
 //
 // ✅ Fase 1 (2026-09-15): `tampilkan()` tak lagi menelan `error` —
 // kegagalannya dialirkan ke saluran error form & `loaded` TIDAK diset, supaya
@@ -29,6 +34,7 @@
 // ============================================================================
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useSeleksiBarang, type SeleksiBarang } from '@/shared/ui/useSeleksiBarang'
 
 /** Kolom yang dibutuhkan tabel pemilih — nomor kendaraan ikut karena kotak
  *  carinya menyisir ketiganya. */
@@ -55,7 +61,7 @@ export type BarangHapus = {
   skpd_id: number | null
 }
 
-export type PemilihBarangHapus = {
+export type PemilihBarangHapus = SeleksiBarang<BarangHapus> & {
   fGolongan: string
   setFGolongan: (v: string) => void
   fKomptabel: string
@@ -66,12 +72,9 @@ export type PemilihBarangHapus = {
   loaded: boolean
   loading: boolean
   tampilkan: () => Promise<void>
-  sel: Record<string, BarangHapus>
-  setSel: React.Dispatch<React.SetStateAction<Record<string, BarangHapus>>>
-  selList: BarangHapus[]
+  /** Σ nilai perolehan yang tercentang — dihitung di sini, bukan di mesin
+   *  centang bersama: hanya menu ini yang menampilkannya. */
   selTotal: number
-  toggle: (b: BarangHapus) => void
-  toggleAll: () => void
 }
 
 export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string) => void): PemilihBarangHapus {
@@ -83,7 +86,7 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
   const [rows, setRows] = useState<BarangHapus[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [sel, setSel] = useState<Record<string, BarangHapus>>({})
+  const seleksi = useSeleksiBarang<BarangHapus>(rows)
 
   async function tampilkan() {
     setLoading(true)
@@ -108,39 +111,10 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
     }
   }
 
-  function toggle(b: BarangHapus) {
-    setSel(prev => {
-      const next = { ...prev }
-      if (next[b.id]) delete next[b.id]; else next[b.id] = b
-      return next
-    })
-  }
-
-  /**
-   * Centang/lepas SEMUA baris yang sedang tampil.
-   *
-   * ⚠️ Dianggap "semua tercentang" hanya kalau SELURUH baris tampil ada di
-   * centang — dan centang di luar hasil filter TIDAK ikut dilepas, karena
-   * `{}` cuma dikembalikan pada keadaan itu. Konsekuensi yang disengaja:
-   * operator bisa mengumpulkan barang dari beberapa kata kunci, pola yang
-   * sama dengan `draftSeleksi` di menu Pengadaan.
-   */
-  function toggleAll() {
-    setSel(prev => {
-      const allSelected = rows.length > 0 && rows.every(r => prev[r.id])
-      if (allSelected) return {}
-      const next = { ...prev }
-      for (const r of rows) next[r.id] = r
-      return next
-    })
-  }
-
-  const selList = Object.values(sel)
-  const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
-
   return {
     fGolongan, setFGolongan, fKomptabel, setFKomptabel, fSearch, setFSearch,
     rows, loaded, loading, tampilkan,
-    sel, setSel, selList, selTotal, toggle, toggleAll,
+    ...seleksi,
+    selTotal: seleksi.selList.reduce((s, b) => s + b.nilai_perolehan, 0),
   }
 }

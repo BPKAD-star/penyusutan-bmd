@@ -26,6 +26,7 @@
 // ada komentar sama sekali.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useSeleksiBarang } from '@/shared/ui/useSeleksiBarang'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah } from '@/lib/export'
 import FormShell from './FormShell'
@@ -701,7 +702,6 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [rows, setRows] = useState<Barang[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [sel, setSel] = useState<Record<string, Barang>>({})
 
   // Edit nama barang — per-barang, opt-in (centang dulu baru muncul field).
   const [editNama, setEditNama] = useState<Record<string, boolean>>({})
@@ -739,27 +739,15 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     return null
   }
 
-  function toggle(b: Barang) {
-    setSel(prev => {
-      const next = { ...prev }
-      if (next[b.id]) { delete next[b.id]; return next }  // buang centang: selalu boleh
-      if (invalidReason(b)) return prev                    // tambah: cegah kalau tak cocok
-      next[b.id] = b
-      return next
-    })
-  }
-  function toggleAll() {
-    const valid = rows.filter(r => !invalidReason(r))
-    setSel(prev => {
-      const allSelected = valid.length > 0 && valid.every(r => prev[r.id])
-      if (allSelected) return {}
-      const next = { ...prev }
-      for (const r of valid) next[r.id] = r
-      return next
-    })
-  }
+  // Mesin centang bersama (shared/ui/useSeleksiBarang.ts) — kemunculan kelima
+  // bentuk yang sama; diangkat 2026-09-16. Menu ini satu-satunya yang memakai
+  // predikat `bolehPilih`: barang yang tak cocok dengan golongan/kode tujuan
+  // tak boleh ikut tercentang. MEMBUANG centang tetap selalu boleh — target
+  // bisa diganti SESUDAH barang tercentang, dan centang yang tak bisa dilepas
+  // akan mengunci operator.
+  const { sel, setSel, selList, allSelected, toggle, toggleAll } =
+    useSeleksiBarang<Barang>(rows, b => !invalidReason(b))
 
-  const selList = Object.values(sel)
   const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
   const invalidSel = selList.filter(b => invalidReason(b))
   // Kesalahan Kodefikasi = tetap satu jenis BMD → kunci Jenis BMD picker ke
@@ -845,8 +833,6 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     onSaved(selList.length)
   }
 
-  const validRows = rows.filter(r => !invalidReason(r))
-  const allSelected = validRows.length > 0 && validRows.every(r => sel[r.id])
   const perluDokumenDulu = !header && dokPaths.length === 0
 
   return (
