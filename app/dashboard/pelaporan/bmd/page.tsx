@@ -5,7 +5,7 @@
 // perolehan baru, period-aware) + akumulasi/beban/nilai buku dari hasil engine
 // (penyusutan_semester) pada periode terpilih. Model 1: per golongan. Model 2:
 // matriks per SKPD × per jenis. Model 3: mutasi saldo awal/akhir.
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
@@ -14,14 +14,16 @@ import KomptabelRadio from '@/components/KomptabelRadio'
 import RekapTable, { type RekapRow } from '@/components/RekapTable'
 import RekapMatrixTable, { METRIC_LABEL, type MatrixRow, type MatrixCell, type MetricOrAll, type Metric } from '@/components/RekapMatrixTable'
 import RekapMutasiTable, { type MutasiRow, type MutasiDetail, type MutasiDetailLine } from '@/components/RekapMutasiTable'
-import LembarMutasiBmd, { type KonfigMutasi } from '@/components/pelaporan/LembarMutasiBmd'
+import LembarMutasiBmd from '@/components/pelaporan/LembarMutasiBmd'
 import CetakMutasiBmdModal from '@/components/pelaporan/CetakMutasiBmdModal'
 import PratinjauLaporanBmd from '@/components/pelaporan/PratinjauLaporanBmd'
 import { ukuranPerGolongan, type SumberMutasi, type UkuranGolongan } from '@/lib/laporanBmdFormat'
 import { useProfilRole } from '@/components/useProfilRole'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
-import { tahunAwal } from '@/lib/tahunKerja'
+import { useFilterLaporanBmd, type TabBmd } from './useFilterLaporanBmd'
+import { useLembarMutasi } from './useLembarMutasi'
+import type { SemesterBmd } from '@/lib/periodeLaporanBmd'
 import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
 import { fetchReklasEvents, kodePada, JENIS_REKLAS_KODE } from '@/lib/reklasKode'
 import { rekapPerGolongan, nilaiBukuSel, zeroRekap, type RekapRpcRow } from '@/lib/rekapBmd'
@@ -112,7 +114,6 @@ const SUB_METRICS: Metric[] = ['perolehan', 'akumulasi', 'beban', 'nilaiBuku']
  *              panggilan `proses()`), jadi Proses di salah satu tab
  *              otomatis mengisi keduanya.
  */
-type TabBmd = 'mutasi' | 'posisi' | 'skpd' | 'admin'
 
 export default function LaporanBmdPage() {
   const supabase = createClient()
@@ -122,14 +123,16 @@ export default function LaporanBmdPage() {
   // "punya anak SKPD"), sesuai permintaan user.
   const { role } = useProfilRole()
   const isAdmin = role === 'admin'
-  const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
-  // Default 'intra' (angka neraca) — sejak ekstra ikut disusutkan (2026-07-13),
-  // "Semua" = campuran intra+ekstra, bukan lagi tampilan default yang aman.
-  const [komptabel, setKomptabel] = useState('intra')
-  const [tahun, setTahun] = useState(() => tahunAwal('2026'))
-  const [smt, setSmt] = useState('2')
-  const [tab, setTab] = useState<TabBmd>('posisi')
-  const [metric, setMetric] = useState<MetricOrAll>('perolehan')
+  // Filter + periode-periode turunannya. Nama dipertahankan lewat
+  // destructuring supaya seluruh JSX & kedua `proses*()` tak berubah sebaris
+  // pun. Aturan periodenya di lib/periodeLaporanBmd.ts (MURNI, bertest &
+  // ber-mutasi) — ia menentukan rentang yang dibaca `fn_rekap_bmd` &
+  // `computeMutasiLines`, jadi tak boleh cuma jadi baris turunan di sini.
+  const {
+    org, setOrg, komptabel, setKomptabel, tahun, setTahun, smt, setSmt,
+    tab, setTab, metric, setMetric,
+    smtEfektif, periode, periodeAwal, periodeMutasi, labelPeriode,
+  } = useFilterLaporanBmd()
   const [rows, setRows] = useState<RekapRow[] | null>(null)
   const [peta, setPeta] = useState<Map<string, UkuranGolongan>>(new Map())
   const [matrix, setMatrix] = useState<MatrixRow[]>([])
@@ -142,16 +145,6 @@ export default function LaporanBmdPage() {
   const [akumMutasi, setAkumMutasi] = useState<{
     awal: Map<string, number>; akhir: Map<string, number>; beban: Map<string, number>
   } | null>(null)
-  // Identitas SKPD terpilih untuk kop lembar (SkpdSelection cuma membawa id).
-  // `level` menentukan sebutan penanda tangan: 1 = Pengguna Barang, di
-  // bawahnya = Kuasa Pengguna Barang.
-  const [skpdInfo, setSkpdInfo] = useState<{ nama: string; kodeLokasi: string; level: number } | null>(null)
-  const [modalMutasi, setModalMutasi] = useState(false)
-  const [konfigMutasi, setKonfigMutasi] = useState<KonfigMutasi | null>(null)
-  // Pemicu COUNTER, bukan boolean yang di-reset: `window.print()` harus jalan
-  // SESUDAH React merender lembarnya, dan boolean gampang jadi "klik kedua tak
-  // melakukan apa-apa" kalau `afterprint` tak menyala (beda antar peramban).
-  const [pemicuCetak, setPemicuCetak] = useState(0)
   const [mutErr, setMutErr] = useState('')
   // Error Model 1 & 2 (Model 3 sudah punya `mutErr` sejak awal). WAJIB
   // ditampilkan — lihat komentar di blok catch `proses()`.
@@ -160,28 +153,6 @@ export default function LaporanBmdPage() {
   // Periode saldo awal yang belum pernah dihitung engine (kosong = aman).
   const [awalTakTerhitung, setAwalTakTerhitung] = useState('')
   const [loading, setLoading] = useState(false)
-  // `smt` = '1' | '2' | 'TH'. 'TH' (Akhir Tahun) HANYA untuk Model 3 — Model 1
-  // & 2 memang laporan posisi "s.d. periode", jadi akhir tahun = sama dengan
-  // Semester II dan pilihannya tak berarti apa-apa di sana.
-  const smtEfektif = smt === 'TH' ? '2' : smt
-  const periode = `${tahun}-S${smtEfektif}`
-
-  // ── Periode pembanding Model 3 (keputusan user 2026-08-10) ────────────────
-  // Saldo Awal mengikuti JENIS laporannya, bukan selalu semester sebelumnya:
-  //   Semester I   → saldo awal TAHUN  ({tahun-1}-S2), mutasi = S1
-  //   Semester II  → saldo akhir S1    ({tahun}-S1),   mutasi = S2
-  //   Akhir Tahun  → saldo awal TAHUN  ({tahun-1}-S2), mutasi = S1 + S2
-  //
-  // ⚠️ Saldo awal tahun sengaja diambil lewat `fn_rekap_bmd({tahun-1}-S2)`,
-  // BUKAN dari tabel `aset_awal_2026`. Alasannya: dua ujung laporan harus
-  // dilihat dengan LENSA YANG SAMA, kalau tidak selisihnya tak akan pernah
-  // bisa direkonsiliasi. Diverifikasi 2026-08-10 — keduanya cuma beda
-  // 14.000.000 / 3 barang, dan ketiganya sudah teridentifikasi (kamar mandi
-  // SDN yang `ekstra` di register tapi `intra` di snapshot; INS-20).
-  const periodeAwal = smt === '2' ? `${tahun}-S1` : `${Number(tahun) - 1}-S2`
-  // Periode ledger yang ditarik sebagai mutasi.
-  const periodeMutasi = smt === 'TH' ? [`${tahun}-S1`, `${tahun}-S2`] : [periode]
-  const labelPeriode = smt === 'TH' ? `${tahun} (setahun)` : periode
 
   // (`rootId`/`mtxKey` DIHAPUS bersama blok rekonsiliasi nilai buku per sel —
   // aturannya kini per BARIS RPC lewat `nilaiBukuSel`, jadi tak ada lagi yang
@@ -766,51 +737,7 @@ export default function LaporanBmdPage() {
     }), 'Laporan BMD per SKPD')
   }
 
-  useEffect(() => {
-    // Lingkup lembar mutasi (skpd/pemda) & identitas kop-nya berubah begitu
-    // SKPD berganti — reset supaya efek auto-init di atas menyusunnya ulang
-    // dari `skpdInfo` yang baru, bukan menyisakan konfig SKPD lama.
-    setKonfigMutasi(null)
-    if (org.skpdId == null) { setSkpdInfo(null); return }
-    let batal = false
-    void (async () => {
-      // Gagal memuatnya tak menjatuhkan apa pun — kop lembar tinggal memakai
-      // cadangan ("SKPD #id") & kode lokasinya bertitik-titik.
-      const { data } = await supabase.from('admin_skpd')
-        .select('nama,level,kode_skpd,kode_lokasi').eq('id', org.skpdId).maybeSingle()
-      if (batal) return
-      const r = data as { nama: string; level: number; kode_skpd: string | null; kode_lokasi: string | null } | null
-      setSkpdInfo(r ? {
-        nama: r.nama,
-        // `kode_lokasi` KOSONG di seluruh 816 baris (CLAUDE.md) — yang terisi
-        // & jadi identitas resmi SKPD adalah `kode_skpd`. Kolom bernama-tepat
-        // tetap didahulukan kalau suatu saat diisi (pola KIBAR).
-        kodeLokasi: r.kode_lokasi || r.kode_skpd || '',
-        level: r.level ?? 1,
-      } : null)
-    })()
-    return () => { batal = true }
-  }, [org.skpdId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cetak lembar mutasi: `document.title` = nama bawaan berkas saat "Save as
-  // PDF" (satu-satunya cara menyetelnya dari halaman), dipulihkan sesudahnya
-  // supaya judul tab dashboard tak berubah permanen.
-  useEffect(() => {
-    if (pemicuCetak === 0) return
-    const judulAsli = document.title
-    const nama = org.skpdId ? (skpdInfo?.nama || 'SKPD') : 'Kab Kediri'
-    // ⚠️ Dulu penyaringnya disalin di sini TANPA `.trim()` (salinan keenam di
-    // repo), jadi nama SKPD berspasi ujung menghasilkan "…_Dinas X _2026-S1".
-    document.title = namaBerkasLaporan({ laporan: 'Rekapitulasi Mutasi BMD', periode, skpd: nama })
-    const pulih = () => { document.title = judulAsli }
-    window.addEventListener('afterprint', pulih)
-    const t = window.setTimeout(() => window.print(), 80)
-    return () => {
-      window.clearTimeout(t)
-      window.removeEventListener('afterprint', pulih)
-      pulih()
-    }
-  }, [pemicuCetak]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Sumber angka lembar IV.L.4.1/4.3 — dirakit dari data Model 3 yang SUDAH
    *  di layar, jadi tak ada jalur hitung kedua. */
@@ -822,25 +749,15 @@ export default function LaporanBmdPage() {
     akumAwal: akumMutasi.awal, akumAkhir: akumMutasi.akhir, beban: akumMutasi.beban,
   } : null
 
-  // ⚠️ Pratinjau lembar IV.L.4.1/4.3 kini TAMPIL LANGSUNG di tab "Rekapitulasi
-  // Tambah Kurang" begitu diproses (permintaan user 2026-09-11), bukan lagi
-  // menunggu tombol Cetak dibuka. `konfig` karena itu diinisialisasi KOSONG
-  // (ttd/ttdKiri null, tanggal '') begitu datanya siap — penanda tangan tetap
-  // "belum dipilih" sampai operator benar-benar membuka pop-up Export PDF &
-  // memilihnya; itu memang tampilan yang benar (bertitik-titik), sama seperti
-  // pratinjau Koreksi/Reklasifikasi/dst yang juga TANPA ttd. Direset ke null
-  // tiap SKPD berganti (lingkup skpd/pemda ikut berubah) lewat efek `skpdInfo`
-  // di bawah supaya kop-nya tak nyasar ke SKPD lama.
-  useEffect(() => {
-    if (!sumberMutasi || konfigMutasi) return
-    setKonfigMutasi({
-      lingkup: org.skpdId ? 'skpd' : 'pemda',
-      namaSkpd: skpdInfo?.nama || (org.skpdId ? `SKPD #${org.skpdId}` : ''),
-      kodeLokasi: skpdInfo?.kodeLokasi || '',
-      sebutan: (skpdInfo?.level ?? 1) <= 1 ? 'Pengguna Barang' : 'Kuasa Pengguna Barang',
-      tanggal: '', ttd: null, ttdKiri: null,
-    })
-  }, [sumberMutasi, konfigMutasi, org.skpdId, skpdInfo])
+  // Lembar resmi IV.L.4.1/4.3: identitas kop, konfigurasi tanda tangan, &
+  // pemicu cetaknya. Nama dipertahankan lewat destructuring beralias supaya
+  // JSX di bawah tak berubah. Perakitan konfignya SATU sumber (`konfigAwal`) —
+  // sampai 2026-09-16 ia ditulis dua kali & bisa menyimpang diam-diam.
+  const {
+    skpdInfo, konfig: konfigMutasi, modalTerbuka: modalMutasi, setModalTerbuka: setModalMutasi,
+    setKonfig: setKonfigMutasi, konfigAwal, cetak: cetakLembarMutasi,
+  } = useLembarMutasi(org.skpdId, periode, !!sumberMutasi)
+
 
   // Export ikut fail-closed (rules.md §2.3): kalau ada kegagalan, tombolnya
   // tidak muncul sama sekali — Excel setengah jadi yang terlanjur terunduh tak
@@ -932,9 +849,14 @@ export default function LaporanBmdPage() {
                 {/* "Akhir Tahun" HANYA untuk tab Mutasi — Posisi/per-SKPD/Admin
                     laporan posisi "s.d. periode", jadi di sana akhir tahun =
                     Semester II. */}
+                {/* ⚠️ `SemesterBmd[]`, bukan `string[][]` yang tersirat: sampai
+                    2026-09-16 `setSmt` menerima string apa pun, jadi salah ketik
+                    di sini ('S1', 'TH2') lolos kompilasi lalu menghasilkan
+                    periode `2026-SS1` yang tak pernah ada — dan `fn_rekap_bmd`
+                    membalasnya dengan hasil KOSONG, bukan error. */}
                 {(tab === 'mutasi'
-                  ? [['1', 'Semester I'], ['2', 'Semester II'], ['TH', 'Akhir Tahun']]
-                  : [['1', 'Semester I'], ['2', 'Semester II']]).map(([v, l]) => (
+                  ? ([['1', 'Semester I'], ['2', 'Semester II'], ['TH', 'Akhir Tahun']] as [SemesterBmd, string][])
+                  : ([['1', 'Semester I'], ['2', 'Semester II']] as [SemesterBmd, string][])).map(([v, l]) => (
                   <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
                     <input type="radio" name="smt" checked={smt === v} onChange={() => setSmt(v)} />{l}
                   </label>
@@ -1067,18 +989,11 @@ export default function LaporanBmdPage() {
         <CetakMutasiBmdModal skpdId={org.skpdId}
           onClose={() => setModalMutasi(false)}
           onCetak={v => {
-            setKonfigMutasi({
-              lingkup: org.skpdId ? 'skpd' : 'pemda',
-              namaSkpd: skpdInfo?.nama || (org.skpdId ? `SKPD #${org.skpdId}` : ''),
-              kodeLokasi: skpdInfo?.kodeLokasi || '',
-              // Sebutan ikut level: 1 = Pengguna Barang, di bawahnya Kuasa
-              // Pengguna Barang (lampiran menyebut ketiganya karena satu
-              // format melayani semua tingkatan).
-              sebutan: (skpdInfo?.level ?? 1) <= 1 ? 'Pengguna Barang' : 'Kuasa Pengguna Barang',
-              tanggal: v.tanggal, ttd: v.ttd, ttdKiri: v.ttdKiri,
-            })
+            // Konfig bawaan + tanda tangan pilihan operator — SATU sumber
+            // dgn pratinjau di layar, jadi yang tercetak tak bisa menyimpang.
+            setKonfigMutasi(konfigAwal(v))
             setModalMutasi(false)
-            setPemicuCetak(n => n + 1)
+            cetakLembarMutasi()
           }} />
       )}
     </div>
