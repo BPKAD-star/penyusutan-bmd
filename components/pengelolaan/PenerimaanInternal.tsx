@@ -353,7 +353,7 @@ export default function PenerimaanInternal() {
                         <button disabled={busy} onClick={() => batalSeluruh(j)}
                           title="Batalkan SEMUA barang di kartu ini sekaligus, lalu kartunya bisa diterima ulang"
                           className="px-3 py-2 rounded-lg text-xs font-medium text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-40">
-                          {busy ? '...' : 'Batal Seluruh Mutasi'}
+                          {busy ? '...' : 'Batal'}
                         </button>
                       )}
                     </div>
