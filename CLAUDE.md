@@ -3516,39 +3516,63 @@ Insiden nyata: reklas dicatat di Pembukuan → Reklasifikasi dengan "Lokasi/SKPD
 = **Pengelola Barang** (jurnal_header.skpd_id = Pengelola Barang, DAN picker
 barangnya sendiri sudah `.eq('skpd_id', skpdId)` — jadi konsisten persis di
 titik itu). Begitu barangnya kemudian dipindah SKPD (Pengalihan Status
-Penggunaan/Mutasi Internal) ke **RSUD Kabupaten Kediri**, Pelaporan → Laporan
-Pengelolaan → Reklasifikasi menampilkan kolom SKPD transaksi LAMA itu sebagai
-RSUD — bukan Pengelola Barang tempat ia sungguh dicatat.
+Penggunaan/Mutasi Internal) ke **RSUD Kabupaten Kediri** — di semester yang
+SAMA — Pelaporan → Laporan Pengelolaan → Reklasifikasi menampilkan kolom SKPD
+transaksi LAMA itu sebagai RSUD, bukan Pengelola Barang tempat ia sungguh
+dicatat.
 
 - **Sebabnya `lib/laporanReklas.ts` & `lib/laporanKoreksi.ts` membaca
-  `aset.skpd_id` POSISI TERKINI**, bukan pemilik pada periode transaksi.
-  Reklas/koreksi tak memindahkan SKPD, tapi barangnya TETAP AKTIF sesudahnya —
-  beda dari Pemecahan/Kapitalisasi yang menonaktifkan barang sumbernya — jadi
-  ia tetap jadi target Pengalihan/Mutasi Internal kapan pun sesudahnya. Kelas
-  bug yang PERSIS SAMA yang sudah dibetulkan di Daftar Barang, Penyusutan, &
-  Laporan BMD lewat `ownersAt`/`fetchOwnerOverrides` (lib/pengalihan.ts;
-  rules.md "'Barang ini masih berpindah?' JANGAN dijawab dari `aset.skpd_id`
-  hari ini") — dua menu pelaporan Pengelolaan yang lebih baru (Koreksi &
-  Reklasifikasi, dibangun 2026-09-07) luput dari pola itu.
+  `aset.skpd_id` POSISI TERKINI**, bukan SKPD yang mencatat jurnalnya. Reklas/
+  koreksi tak memindahkan SKPD, tapi barangnya TETAP AKTIF sesudahnya — beda
+  dari Pemecahan/Kapitalisasi yang menonaktifkan barang sumbernya — jadi ia
+  tetap jadi target Pengalihan/Mutasi Internal kapan pun sesudahnya.
+- ⚠️ **RONDE PERTAMA PERBAIKAN (2026-09-17, siang) SALAH — dicatat di sini
+  supaya tidak terulang.** Sempat "diperbaiki" dgn menganggap ini kelas bug
+  yang sama dgn Daftar Barang/Penyusutan/Laporan BMD (yang benar dibetulkan
+  lewat `ownersAt`/`fetchOwnerOverrides`, lib/pengalihan.ts — rules.md "'Barang
+  ini masih berpindah?' JANGAN dijawab dari `aset.skpd_id` hari ini"), jadi
+  ditambal dgn `ownersAt(fetchPindahEvents(...), r.periode)`: replay posisi
+  barang PADA PERIODE transaksi. User langsung menguji ulang & baris yang sama
+  MASIH menampilkan RSUD — perbaikannya tak menyelesaikan apa-apa.
+  **Sebabnya granularitas `ownersAt` itu SEMESTER, bukan tanggal.** Reklas
+  (2026-09-11) & pindah SKPD-nya sama-sama jatuh di **2026-S2**, jadi
+  `ownersAt(..., '2026-S2')` mengembalikan pemilik di AKHIR semester itu — yang
+  sudah RSUD. Replay posisi barang dari ledger perpindahan TAK PERNAH bisa
+  presisi di bawah satu semester, betapa pun "period-aware" kelihatannya.
+- **Obat yang BENAR: `jurnal_header.skpd_id`**, bukan posisi barang sama
+  sekali. Kolom itu **DIKUNCI PERMANEN** sejak jurnal dibuat — trigger
+  `fn_jurnal_header_guard` menolak perubahan `skpd_id`/`kategori` (lihat "Pola
+  jurnal ber-SK") — dan diisi persis dari SKPD yang dipilih di layar
+  Reklasifikasi/Koreksi saat itu, yang picker barangnya SENDIRI sudah
+  `.eq('skpd_id', skpdId)` (dikonfirmasi berlaku utk semua bentuk kartu Koreksi
+  — nilai/spesifikasi/pencatatan ganda/pemecahan/penggabungan — karena
+  kelimanya satu tabel `jurnal_header` lewat `useJurnalKoreksi.ts`). Jadi
+  `header.skpd_id` BENAR pada detik jurnal dibuat & TAK PERNAH bergeser
+  sesudahnya — sama sekali tak perlu "menghitung ulang" apa pun dari ledger
+  perpindahan. **Pelajaran umum: kalau sebuah field sudah DIKUNCI di baris
+  sumbernya sendiri, pakai itu — jangan menebaknya dari replay state lain,
+  seberapa pun canggih replay-nya.**
 - **Dampaknya DUA ARAH, dan arah kedua lebih berbahaya**: (1) kolom SKPD di
   layar/Export salah untuk transaksi lama; (2) **filter SKPD di scope-nya
   ikut salah** — transaksi yang BENAR-BENAR dicatat SKPD X bisa **hilang**
   dari laporan SKPD X sendiri begitu asetnya pindah keluar, karena penyaring
-  scope (`dalamScope`) juga membandingkan `aset.skpd_id` terkini terhadap
+  scope (`dalamScope`) juga membandingkan SKPD terkini terhadap
   `descendantIds` SKPD yang difilter.
-- **Obatnya field baru `skpdIdSaatItu`** pada `BarisReklas`/`BarisKoreksi`:
-  dihitung lewat `ownersAt(fetchPindahEvents(...), r.periode)` (di-cache per
-  periode karena satu laporan biasanya cuma menyentuh S1/S2), jatuh ke
-  `aset.skpd_id` HANYA kalau barangnya memang tak pernah tercatat pindah SKPD
-  sama sekali. Dipakai untuk scope filter MAUPUN `skpdNama` — dua tempat yang
-  tadinya berdiri sendiri-sendiri.
+- **Field `skpdIdSaatItu`** pada `BarisReklas`/`BarisKoreksi` kini
+  `r.header?.skpd_id ?? r.aset?.skpd_id ?? null` — `aset.skpd_id` cuma cadangan
+  utk baris tanpa header (harusnya tak pernah terjadi utk reklas; utk Koreksi
+  yang relevan cuma batch admin `koreksi_pencatatan_ganda` ber-`header_id`
+  NULL, yang sudah tersaring default lewat filter "Asal baris" — lihat
+  "'200 pencatatan ganda...'" di atas). Dipakai utk scope filter MAUPUN
+  `skpdNama` — dua tempat yang tadinya berdiri sendiri-sendiri.
   ⚠️ **`LaporanKoreksi.tsx` (tab Daftar Transaksi & Rekap) & `LaporanReklas.tsx`
   (indukNama + matriks Rekap per SKPD) punya kalkulasi SKPD sendiri di luar
   pemuatnya** (`lib/laporanKoreksi.ts` cuma dipakai tab Format Permendagri) —
   jadi perbaikannya WAJIB dua lapis di keduanya, bukan cukup di `lib/laporan*`
-  saja. `LaporanKoreksi.tsx`'s `saring()` kini menghitung `skpdIdSaatItu` per
-  baris SEBELUM menyaring scope; `LaporanReklas.tsx` memakai `r.skpdIdSaatItu`
-  dari pemuatnya untuk `unitNama`/`indukNama`/matriks, bukan `r.aset?.skpd_id`
+  saja. `LaporanKoreksi.tsx` menambahkan `skpd_id` ke `SEL` embedded resource
+  header-nya (sebelumnya cuma menarik `no_sk`) lalu `saring()` menghitung
+  `skpdIdSaatItu` dari situ; `LaporanReklas.tsx` memakai `r.skpdIdSaatItu` dari
+  pemuatnya untuk `unitNama`/`indukNama`/matriks, bukan `r.aset?.skpd_id`
   mentah lagi.
 - ⛔ **`lib/laporanPenghapusan.ts` PUNYA POLA SERUPA tapi SENGAJA BELUM
   disentuh** untuk cabang non-`pengalihan_status` (`penghapusan_pemindahtanganan`/
@@ -3556,10 +3580,12 @@ RSUD — bukan Pengelola Barang tempat ia sungguh dicatat.
   sudah `status='dihapus'` biasanya tak lagi jadi target Pengalihan/Mutasi
   Internal. Cabang `scope='asal'`-nya sendiri SUDAH aman: ia membaca
   `r.skpd_asal` yang dibekukan LANGSUNG di baris ledger saat pengalihan
-  dicatat, bukan diturunkan dari `aset.skpd_id`. Kalau nanti ada laporan lain
-  di keluarga Pengelolaan yang menampilkan kolom SKPD per baris, **cek dulu
-  apakah field-nya beku di baris ledger (aman) atau diturunkan dari
-  `aset.skpd_id` (butuh `skpdIdSaatItu`)**.
+  dicatat. Kalau nanti ada laporan lain di keluarga Pengelolaan yang
+  menampilkan kolom SKPD per baris, **cek dulu apakah ada field yang DIKUNCI
+  di baris sumbernya sendiri** (`jurnal_header.skpd_id`, `skpd_asal`/
+  `skpd_tujuan`) **sebelum mempertimbangkan replay posisi (`ownersAt`) —
+  yang terakhir itu presisi PER SEMESTER, bukan per kejadian, dan tak cocok
+  untuk pertanyaan "siapa yang mencatat transaksi INI".**
 - **Tak ada migrasi** — murni turunan di klien; ledger & RPC tak disentuh.
   Dikunci: fixture `tests/lembarReklas.test.tsx`, `tests/lembarKoreksi.test.tsx`,
   `lib/formatKoreksi.test.ts` diperbarui memuat `skpdIdSaatItu`.

@@ -55,7 +55,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchSkpd } from '@/lib/skpdMaster'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchPenyusutanAset } from '@/lib/rekon'
-import { fetchPindahEvents, ownersAt } from '@/lib/pengalihan'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
 import { descendantsOf, periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 import { UK } from '@/lib/formatKoreksi'
@@ -95,16 +94,21 @@ export type BarisKoreksi = {
 
   // ── Dilengkapi sesudah query ────────────────────────────────────────────
   /**
-   * SKPD pemilik barang PADA PERIODE transaksi ini (`r.periode`), BUKAN
-   * pemilik hari ini. Koreksi tidak memindahkan SKPD, tapi barangnya TETAP
-   * aktif sesudahnya & bisa saja dipindah SKPD (pengalihan_status/
-   * mutasi_internal) belakangan — kalau itu terjadi, `aset.skpd_id` mentah
-   * akan menampilkan SKPD BARU untuk transaksi LAMA yang dicatat SKPD lain.
-   * Kelas bug yang sama dgn lib/laporanReklas.ts (insiden 2026-09, lihat
-   * dokumentasinya di sana); dihitung lewat `ownersAt` (lib/pengalihan.ts).
+   * SKPD yang MENCATAT jurnal koreksi ini — `jurnal_header.skpd_id` (dikunci
+   * permanen sejak jurnal dibuat, trigger `fn_jurnal_header_guard` menolak
+   * perubahannya), BUKAN `aset.skpd_id` hari ini.
+   *
+   * ⚠️ Koreksi tidak memindahkan SKPD, tapi barangnya TETAP aktif sesudahnya
+   * & bisa dipindah SKPD (pengalihan_status/mutasi_internal) belakangan —
+   * `aset.skpd_id` mentah akan menampilkan SKPD BARU untuk transaksi LAMA yang
+   * dicatat SKPD lain. Kelas bug & perbaikan yang sama dgn
+   * lib/laporanReklas.ts (insiden 2026-09-11 — dokumentasi lengkap & kenapa
+   * `ownersAt`/posisi-per-periode TIDAK CUKUP ada di kepala berkas itu).
+   * `aset.skpd_id` cuma cadangan kalau `header` null (harusnya tak pernah
+   * terjadi utk `koreksi_nilai` lewat menu).
    */
   skpdIdSaatItu: number | null
-  /** Nama SKPD pemilik barang PADA PERIODE transaksi (lihat `skpdIdSaatItu`). */
+  /** Nama SKPD yang mencatat jurnal (lihat `skpdIdSaatItu`). */
   skpdNama?: string
   /**
    * Posisi SEBELUM & SETELAH koreksi. `null` = tak diketahui (bukan nol) —
@@ -209,22 +213,15 @@ export async function muatLaporanKoreksi(
     if (baris.length < 1000) break
   }
 
-  // Riwayat pindah SKPD (pengalihan_status/mutasi_internal) — dibutuhkan untuk
-  // menilai SKPD pemilik barang PADA SAAT koreksi terjadi, bukan hari ini.
-  // Lihat dokumentasi `skpdIdSaatItu` di atas.
-  const pindahEv = await fetchPindahEvents(supabase)
-  const ownersCache = new Map<string, Map<string, number | null>>()
-  const ownerSaatItu = (asetId: string, periode: string, fallback: number | null): number | null => {
-    let m = ownersCache.get(periode)
-    if (!m) { m = ownersAt(pindahEv, periode); ownersCache.set(periode, m) }
-    const v = m.get(asetId)
-    return v !== undefined ? v : fallback
-  }
+  // SKPD pencatat jurnal — `header.skpd_id` DIKUNCI PERMANEN, lihat dokumentasi
+  // `skpdIdSaatItu` di atas. `aset.skpd_id` cuma cadangan untuk baris tanpa
+  // header.
+  const skpdJurnal = (r: BarisKoreksi): number | null => r.header?.skpd_id ?? r.aset?.skpd_id ?? null
 
   const punyaAset = mentah.filter(r => r.aset)
   const dalamScope = desc
     ? punyaAset.filter(r => {
-        const sid = ownerSaatItu(r.aset_id || '', r.periode, r.aset!.skpd_id)
+        const sid = skpdJurnal(r)
         return sid != null && desc!.includes(sid)
       })
     : punyaAset
@@ -254,7 +251,6 @@ export async function muatLaporanKoreksi(
 
   const rows: BarisKoreksi[] = hidup
     .map(r => {
-      const a = r.aset!
       const q = r.aset_id ? pos.get(r.aset_id) : undefined
       const npLama = typeof r.payload?.nilai_lama === 'number' ? r.payload.nilai_lama : null
       const npBaru = typeof r.payload?.nilai_perolehan_baru === 'number'
@@ -266,7 +262,7 @@ export async function muatLaporanKoreksi(
       const akLama = typeof r.payload?.akumulasi_lama === 'number' ? r.payload.akumulasi_lama : null
       if (akLama == null) tanpaSnapshot++
       if (!q && posPeriode) tanpaPenyusutan++
-      const skpdIdSaatItu = ownerSaatItu(r.aset_id || '', r.periode, a.skpd_id)
+      const skpdIdSaatItu = skpdJurnal(r)
       return {
         ...r,
         skpdIdSaatItu,

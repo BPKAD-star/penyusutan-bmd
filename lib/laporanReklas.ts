@@ -23,18 +23,31 @@
 //   `skpd_asal.in.(…),skpd_tujuan.in.(…)` yang di ledger reklas SELALU NULL,
 //   jadi memilih SKPD di sana menghasilkan **0 transaksi** yang kelihatan sah.
 //
-// ⚠️ `aset.skpd_id` DIPAKAI SEBAGAI CADANGAN SAJA, bukan langsung — reklas
-// tidak memindahkan SKPD, tapi barangnya TETAP aktif sesudahnya dan bisa saja
-// dipindah SKPD (pengalihan_status/mutasi_internal) BELAKANGAN. Insiden nyata
-// 2026-09: reklas dicatat di SKPD "Pengelola Barang", barangnya lalu dipindah
-// ke RSUD Kabupaten Kediri, dan laporan yang membaca `aset.skpd_id` mentah
-// langsung menampilkan RSUD untuk transaksi LAMA itu — baik di kolom SKPD
-// maupun (lebih parah) di filter scope: transaksi yang benar-benar dicatat
-// SKPD pencatatnya bisa hilang dari laporan SKPD itu sendiri begitu asetnya
-// pindah keluar. Obatnya `ownerSaatItu()` di bawah — replay `fetchPindahEvents`
-// (lib/pengalihan.ts) untuk SKPD pemilik PADA PERIODE (`r.periode`) transaksi
-// reklas itu, baru jatuh ke `aset.skpd_id` kalau barangnya memang tak pernah
-// tercatat pindah SKPD sama sekali. Lihat field `skpdIdSaatItu`.
+// ⚠️ SKPD-nya `jurnal_header.skpd_id`, BUKAN `aset.skpd_id` — dan ini bukan
+// selera, ini SATU-SATUNYA sumber yang benar. `header.skpd_id` DIKUNCI PERMANEN
+// saat jurnal dibuat (trigger `fn_jurnal_header_guard` menolak perubahan
+// `skpd_id`/`kategori`; lihat "Pola jurnal ber-SK" di CLAUDE.md) & diisi persis
+// dari SKPD yang dipilih di layar Reklasifikasi — yang picker barangnya sendiri
+// sudah `.eq('skpd_id', skpdId)`, jadi ia BENAR pada detik jurnal itu dibuat &
+// TAK PERNAH bergeser sesudahnya. `aset.skpd_id` sebaliknya TERUS BERUBAH kalau
+// barangnya kelak dipindah lewat Pengalihan Status/Mutasi Internal — reklas tak
+// memindahkan SKPD, tapi barangnya TETAP aktif & bisa jadi target pindah kapan
+// pun sesudahnya.
+//
+// ⚠️ RONDE PERTAMA perbaikan ini (2026-09-17) SALAH: sempat memakai
+// `ownersAt`/`fetchPindahEvents` (lib/pengalihan.ts) untuk menghitung "pemilik
+// pada periode transaksi" dari riwayat pindah — kedengarannya benar, tapi
+// granularitasnya SEMESTER, bukan tanggal. Insiden aslinya: reklas dicatat di
+// SKPD "Pengelola Barang" 2026-09-11, barangnya lalu dipindah ke RSUD Kabupaten
+// Kediri — SAMA-SAMA di 2026-S2. `ownersAt(..., '2026-S2')` mengembalikan
+// pemilik di AKHIR semester itu (RSUD), jadi laporan TETAP salah walau sudah
+// "period-aware". Replay posisi barang tak pernah bisa presisi di bawah satu
+// semester; yang presisi cuma kolom yang memang dikunci di baris jurnalnya
+// sendiri. Lihat field `skpdIdSaatItu`.
+//
+// `aset.skpd_id` tetap dipakai sbg CADANGAN kalau `header`/`header.skpd_id`
+// null (baris warisan yang ditulis di luar menu, sebelum pola jurnal_header
+// ada — reklas TAK PERNAH begitu, tapi ini jaga-jaga fail-safe).
 //
 // ⚠️ Aman disaring di memori HANYA karena ledger reklas kecil (ratusan baris,
 // bukan ratusan ribu). Supaya asumsi itu tak berubah diam-diam, sapuannya
@@ -51,7 +64,6 @@ import { fetchSkpd } from '@/lib/skpdMaster'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchPenyusutanAset } from '@/lib/rekon'
 import { fetchReklasEvents, kodePada } from '@/lib/reklasKode'
-import { fetchPindahEvents, ownersAt } from '@/lib/pengalihan'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
 import { ALASAN_LABEL, JENIS_REKLAS, type AlasanReklas } from '@/lib/reklas'
 import { sisiReklas, type ArahReklas } from '@/lib/formatReklas'
@@ -130,23 +142,24 @@ export type BarisReklas = {
    */
   namaSpek: string
   /**
-   * SKPD pemilik barang PADA PERIODE transaksi ini (`r.periode`), BUKAN
-   * pemilik hari ini. Reklas tidak memindahkan SKPD, tapi barangnya TETAP
-   * aktif sesudah direklas dan bisa saja dipindah SKPD (pengalihan_status/
-   * mutasi_internal) belakangan.
+   * SKPD yang MENCATAT jurnal reklas ini — `jurnal_header.skpd_id` (dikunci
+   * permanen sejak jurnal dibuat), BUKAN `aset.skpd_id` hari ini.
    *
-   * ⚠️ Insiden 2026-09: reklas dicatat saat barang masih di SKPD "Pengelola
-   * Barang" (jurnal_header.skpd_id = Pengelola Barang, dan barang pickernya
-   * sendiri sudah `.eq('skpd_id', skpdId)` — jadi konsisten di titik itu), tapi
-   * begitu barangnya kemudian dipindah ke RSUD Kabupaten Kediri, laporan yang
-   * membaca `aset.skpd_id` mentah langsung menampilkan RSUD untuk transaksi
-   * LAMA yang sama — padahal historisnya kejadian di Pengelola Barang. Kelas
-   * bug yang sama yang sudah dibetulkan di Daftar Barang/Penyusutan/Laporan BMD
-   * lewat `lib/pengalihan.ts` (`ownersAt`); di sini dihitung per baris karena
-   * satu laporan bisa memuat baris dari periode berbeda-beda.
+   * ⚠️ Insiden 2026-09-11: reklas dicatat di SKPD "Pengelola Barang"
+   * (jurnal_header.skpd_id = Pengelola Barang, dan barang pickernya sendiri
+   * sudah `.eq('skpd_id', skpdId)` — jadi konsisten di titik itu), lalu
+   * barangnya dipindah ke RSUD Kabupaten Kediri. Laporan yang membaca
+   * `aset.skpd_id` mentah langsung menampilkan RSUD untuk transaksi LAMA itu —
+   * salah, karena reklas itu memang dicatat & dikerjakan Pengelola Barang.
+   * ⚠️ RONDE PERTAMA (2026-09-17) sempat "diperbaiki" dgn `ownersAt` (posisi
+   * barang per PERIODE) — tetap salah untuk kasus ini karena reklas & pindah
+   * SKPD-nya sama-sama jatuh di semester yang sama (2026-S2), dan `ownersAt`
+   * cuma presisi per semester. Yang benar `header.skpd_id`: field itu memang
+   * dikunci di baris JURNALNYA sendiri, bukan ditebak dari posisi barang.
+   * Lihat kepala berkas ini.
    */
   skpdIdSaatItu: number | null
-  /** Nama SKPD pemilik barang PADA PERIODE transaksi (lihat `skpdIdSaatItu`). */
+  /** Nama SKPD yang mencatat jurnal (lihat `skpdIdSaatItu`). */
   skpdNama?: string
   /** Posisi penyusutan akhir periode — kolom Akumulasi & Nilai Buku. */
   akumulasi?: number
@@ -287,30 +300,20 @@ export async function muatLaporanReklas(
   // `fetchReklasEvents` yang sudah ada, bukan menurunkannya dari sapuan di bawah:
   // sapuan itu dibatasi periode, dan reklas yang terjadi SESUDAH periode yang
   // dilihat justru yang membuktikan `aset.kode` sekarang bukan kode saat itu.
-  const [mentah, reklasEv, pindahEv] = await Promise.all([
+  const [mentah, reklasEv] = await Promise.all([
     sapuBaris(supabase, p.periode),
     fetchReklasEvents(supabase),
-    // Riwayat pindah SKPD (pengalihan_status/mutasi_internal) — dibutuhkan
-    // untuk menilai SKPD pemilik barang PADA SAAT reklas terjadi, bukan hari
-    // ini. Lihat dokumentasi `skpdIdSaatItu` di atas.
-    fetchPindahEvents(supabase),
   ])
 
-  // `ownersAt` per periode, di-cache: satu laporan biasanya cuma menyentuh 1-2
-  // periode berbeda (S1/S2), jadi jauh lebih murah daripada memanggilnya per
-  // baris tanpa cache.
-  const ownersCache = new Map<string, Map<string, number | null>>()
-  const ownerSaatItu = (asetId: string, periode: string, fallback: number | null): number | null => {
-    let m = ownersCache.get(periode)
-    if (!m) { m = ownersAt(pindahEv, periode); ownersCache.set(periode, m) }
-    const v = m.get(asetId)
-    return v !== undefined ? v : fallback
-  }
+  // SKPD pemilik jurnal ini — `header.skpd_id` DIKUNCI PERMANEN, lihat kepala
+  // berkas. `aset.skpd_id` cuma cadangan untuk baris tanpa header (fail-safe,
+  // seharusnya tak pernah terjadi utk reklas).
+  const skpdJurnal = (r: BarisReklas): number | null => r.header?.skpd_id ?? r.aset?.skpd_id ?? null
 
   const punyaAset = mentah.filter(r => r.aset)
   const dalamScope = desc
     ? punyaAset.filter(r => {
-        const sid = ownerSaatItu(r.aset_id || '', r.periode, r.aset!.skpd_id)
+        const sid = skpdJurnal(r)
         return sid != null && desc!.includes(sid)
       })
     : punyaAset
@@ -335,8 +338,8 @@ export async function muatLaporanReklas(
     const kodeSaatItu = kodePada(reklasEv, r.aset_id || '', r.periode, r.id, a.kode || '')
     const kodeLama = typeof r.payload?.kode_lama === 'string' ? r.payload.kode_lama : kodeSaatItu
     const kodeBaru = typeof r.payload?.kode_baru === 'string' ? r.payload.kode_baru : kodeSaatItu
-    // SKPD pemilik PADA PERIODE reklas ini — lihat dokumentasi `skpdIdSaatItu`.
-    const skpdIdSaatItu = ownerSaatItu(r.aset_id || '', r.periode, a.skpd_id)
+    // SKPD yang mencatat jurnal ini — lihat dokumentasi `skpdIdSaatItu` di atas.
+    const skpdIdSaatItu = skpdJurnal(r)
     // ⚠️ Pemetaan sisi → `sisiReklas()` (lib/formatReklas.ts), BUKAN ditulis
     // di sini. Ia aturan inti keluarga IV.F dan satu-satunya yang kalau
     // tertukar tetap menghasilkan lembar yang terisi penuh & foot dengan benar.

@@ -39,7 +39,6 @@ import { useSkpdTree } from '@/components/useSkpdTree'
 import { urutPerSkpd } from '@/lib/urutSkpd'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
-import { fetchPindahEvents, ownersAt } from '@/lib/pengalihan'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 import { LEMBAR_PERMENDAGRI } from '@/lib/permendagriFormat'
 import KoreksiFormatPermendagri from './KoreksiFormatPermendagri'
@@ -83,20 +82,24 @@ type Trx = {
     intra_ekstra: string | null; skpd_id: number | null
   } | null
   /** No. dokumen sumber kartunya — dipakai menunjukkan induk↔pecahan satu SK. */
-  header: { no_sk: string | null } | null
+  header: { no_sk: string | null; skpd_id: number | null } | null
   /**
-   * SKPD pemilik barang PADA PERIODE transaksi ini (`periode`), diisi `saring()`
-   * — BUKAN pemilik hari ini. Koreksi tidak memindahkan SKPD, tapi barangnya
-   * TETAP aktif sesudahnya & bisa dipindah SKPD (pengalihan_status/
-   * mutasi_internal) belakangan; kalau itu terjadi, `aset.skpd_id` mentah
-   * menampilkan SKPD BARU untuk transaksi LAMA yang dicatat SKPD lain. Kelas
-   * bug yang sama dgn lib/laporanReklas.ts (insiden 2026-09).
+   * SKPD yang MENCATAT jurnal ini — `header.skpd_id` (dikunci permanen sejak
+   * jurnal dibuat), diisi `saring()`. BUKAN `aset.skpd_id` hari ini: koreksi
+   * tidak memindahkan SKPD, tapi barangnya TETAP aktif sesudahnya & bisa
+   * dipindah SKPD (pengalihan_status/mutasi_internal) belakangan — kalau itu
+   * terjadi, `aset.skpd_id` mentah menampilkan SKPD BARU untuk transaksi LAMA
+   * yang dicatat SKPD lain. `aset.skpd_id` cuma cadangan untuk baris tanpa
+   * header (batch admin `koreksi_pencatatan_ganda` — lihat CLAUDE.md "200
+   * pencatatan ganda yang tak pernah saya entri", sudah tersaring default lewat
+   * filter "Asal baris"). Kelas bug & perbaikan yang sama dgn
+   * lib/laporanReklas.ts (insiden 2026-09-11).
    */
   skpdIdSaatItu?: number | null
 }
 
 const SEL = 'id,aset_id,jenis,periode,tanggal,nilai,keterangan,created_by,'
-  + 'header:header_id(no_sk),'
+  + 'header:header_id(no_sk,skpd_id),'
   + 'aset:aset_id(nibar,nama_barang,kode,intra_ekstra,skpd_id)'
 
 /**
@@ -160,11 +163,21 @@ export default function LaporanKoreksi() {
   /**
    * Buang koreksi yang sudah DIBATALKAN & yang di luar scope SKPD.
    *
-   * ⚠️ SKPD disaring DI MEMORI: baris koreksi tak punya `skpd_asal`/
-   * `skpd_tujuan` (barangnya tak berpindah SKPD), jadi satu-satunya penunjuknya
-   * `aset.skpd_id`. Menyaringnya di server butuh `aset!inner` +
+   * ⚠️ SKPD-nya `header.skpd_id`, BUKAN `aset.skpd_id` — `header.skpd_id`
+   * DIKUNCI PERMANEN sejak jurnal dibuat (`fn_jurnal_header_guard` menolak
+   * perubahan `skpd_id`), diisi persis dari SKPD yang dipilih di layar Koreksi
+   * (yang picker barangnya sendiri sudah `.eq('skpd_id', skpdId)`), sedangkan
+   * `aset.skpd_id` TERUS BERUBAH kalau barangnya kelak dipindah lewat
+   * Pengalihan/Mutasi Internal. RONDE PERTAMA (2026-09-17) sempat memakai
+   * `fetchPindahEvents`/`ownersAt` (posisi barang per PERIODE) — tetap salah
+   * kalau reklas/koreksi & pindah SKPD-nya jatuh di semester yang SAMA, karena
+   * `ownersAt` cuma presisi per semester. Detail insidennya di kepala
+   * lib/laporanReklas.ts. `aset.skpd_id` cuma cadangan untuk baris tanpa
+   * header (batch admin, sudah tersaring default lewat filter "Asal baris").
+   *
+   * ⚠️ Menyaring SKPD di SERVER butuh `aset!inner` +
    * `.in('aset.skpd_id', <694 id>)` — bentuk yang sudah berkali-kali jadi sebab
-   * timeout di repo ini. Sama persis dengan lib/laporanReklas.ts.
+   * timeout di repo ini, jadi tetap disaring di memori.
    *   ⚠️ Ini juga MEMPERBAIKI cacat lama: versi `LaporanTransaksi` menyaring
    *   `skpd_asal`/`skpd_tujuan` yang di ledger koreksi SELALU NULL, jadi memilih
    *   SKPD di sana menghasilkan 0 transaksi yang kelihatan sah.
@@ -172,25 +185,11 @@ export default function LaporanKoreksi() {
    * ⚠️ MELEMPAR kalau query pembatalan gagal — fail-closed. Set kosong berarti
    * "tak ada yang dibatalkan" & koreksi yang sudah dianulir tampil seolah
    * berlaku, beda dgn engine, Laporan BMD, & Rekonsiliasi.
-   *
-   * ⚠️ SKPD scope-nya dinilai dari `skpdIdSaatItu` (pemilik PADA PERIODE
-   * transaksi, via `fetchPindahEvents`/`ownersAt`), BUKAN `aset.skpd_id`
-   * mentah — kalau tidak, koreksi yang benar-benar dicatat SKPD ini bisa
-   * hilang dari laporan SKPD ini sendiri begitu barangnya kemudian dipindah
-   * ke SKPD lain (insiden nyata di Laporan Reklasifikasi, CLAUDE.md 2026-09).
    */
   const saring = useCallback(async (baris: Trx[]): Promise<Trx[]> => {
     const punyaAset = baris.filter(r => r.aset)
-    const pindahEv = await fetchPindahEvents(supabase)
-    const ownersCache = new Map<string, Map<string, number | null>>()
-    const ownerSaatItu = (asetId: string, periode: string, fallback: number | null): number | null => {
-      let m = ownersCache.get(periode)
-      if (!m) { m = ownersAt(pindahEv, periode); ownersCache.set(periode, m) }
-      const v = m.get(asetId)
-      return v !== undefined ? v : fallback
-    }
     const berpemilik = punyaAset.map(r => ({
-      ...r, skpdIdSaatItu: ownerSaatItu(r.aset_id || '', r.periode, r.aset!.skpd_id),
+      ...r, skpdIdSaatItu: r.header?.skpd_id ?? r.aset!.skpd_id,
     }))
     const scoped = descIds && descIds.length > 0
       ? berpemilik.filter(r => r.skpdIdSaatItu != null && descIds.includes(r.skpdIdSaatItu))
