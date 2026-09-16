@@ -62,7 +62,7 @@ export default function CetakLhiPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { headers, loading, barisUntuk } = useLhiData({ tahun, golongan, skpdIds })
+  const { headers, loading, err, barisUntuk } = useLhiData({ tahun, golongan, skpdIds })
   const rows = useMemo(
     () => (siap ? barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1)) : []),
     [siap, barisUntuk, kode],
@@ -81,6 +81,11 @@ export default function CetakLhiPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
+      {err && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {err} — laporan TIDAK ditampilkan supaya tak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat.
+        </div>
+      )}
       <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>
 
       <div className="max-w-[1400px] mx-auto mb-3 flex justify-end no-print px-4">

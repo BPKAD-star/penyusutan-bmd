@@ -5,6 +5,7 @@
 // 20260710_15_chat_dm.sql). Realtime via Postgres Changes, satu channel utk
 // semua room — RLS chat_select yang menyaring mana row yang boleh saya lihat.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { paginate } from '@/shared/db/paginate'
 import { createClient } from '@/lib/supabase/client'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
@@ -111,14 +112,26 @@ export default function ChatWidget() {
       if (!user) return
 
       const map: Record<string, Profile> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_profiles')
-          .select('id,email,pegawai:admin_pegawai(nama),skpd:admin_skpd(nama)').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const p of data as unknown as ProfileRow[]) {
-          map[p.id] = { id: p.id, nama: p.pegawai?.nama || p.email || 'User', skpd: p.skpd?.nama || null }
-        }
-        if (data.length < 1000) break
+      // Generik `{ id: string }` saja — bentuk embedded select (`pegawai:…`)
+      // disimpulkan supabase-js sbg ARRAY, jadi menyebut `ProfileRow` di sini
+      // justru bertabrakan. Yang dibutuhkan `paginate` cuma `id` (kursornya).
+      // ⚠️ `paginate` MELEMPAR. Ditangkap di sini supaya kegagalannya jadi
+      // daftar pengguna yang KOSONG dgn sebab yang terbaca di konsol, bukan
+      // unhandled rejection yang menghentikan sisa efek ini (pesan awal &
+      // langganan realtime ikut tak jadi dipasang).
+      let semua: { id: string }[] = []
+      try {
+        semua = await paginate<string, { id: string }>('daftar pengguna', kursor => {
+        let q = supabase.from('admin_profiles')
+          .select('id,email,pegawai:admin_pegawai(nama),skpd:admin_skpd(nama)')
+          if (kursor !== null) q = q.gt('id', kursor)
+          return q.order('id').limit(1000)
+        })
+      } catch (e) {
+        console.error('Daftar pengguna gagal dimuat:', e)
+      }
+      for (const p of semua as never as ProfileRow[]) {
+        map[p.id] = { id: p.id, nama: p.pegawai?.nama || p.email || 'User', skpd: p.skpd?.nama || null }
       }
       setProfiles(map)
 

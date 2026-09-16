@@ -8,6 +8,7 @@
 // aset.skpd_id (akumulasi_kdp TIDAK mengisi skpd_tujuan, jadi filter via aset yang
 // seragam untuk keduanya). Biaya atribusi selalu 0 → Nilai Perolehan = Total Nilai.
 import type { createClient } from '@/lib/supabase/client'
+import { paginate } from '@/shared/db/paginate'
 import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { bentukKontrakLabel } from '@/lib/bentukKontrak'
 import { fetchVoidedAsetIds } from '@/lib/voidedAset'
@@ -77,8 +78,13 @@ export async function fetchLaporanPengadaan(
   // paginasi/agregasi, jangan tarik semua). UI sudah memaksa pilih semester.
   if (!opts.periode) return []
 
-  const raws: Raw[] = []
-  for (let from = 0; ; from += 1000) {
+  // ⚠️ `error` dulu DITELAN di sini (`const { data } = await qq`): query gagal
+  // → `raws` kosong → lembar Laporan Pengadaan terbit TANPA satu pun baris &
+  // tanpa satu pun tanda bahwa isinya kurang. `paginate` MELEMPAR (INS-06).
+  // Generik `{ id: number }` saja — select-nya dirakit dari string bersambung
+  // + embedded resource, jadi supabase-js tak bisa menyimpulkan bentuknya &
+  // menyebut `Raw` di sini justru bertabrakan. `paginate` cuma butuh `id`.
+  const raws = await paginate<number, { id: number }>('transaksi pengadaan', kursor => {
     // Filter periode di server (kolom top-level); filter SKPD di JS via aset.skpd_id
     // — akumulasi_kdp TIDAK mengisi skpd_tujuan, jadi filter lewat aset lebih seragam
     // & andal daripada filter kolom embedded.
@@ -93,13 +99,13 @@ export async function fetchLaporanPengadaan(
         'aset:aset_id(skpd_id,kode,uraian_barang,nama_barang,spesifikasi_lainnya,merek_tipe,satuan,status,keterangan)')
       .in('jenis', ['pengadaan', 'akumulasi_kdp'])
     qq = per.length === 1 ? qq.eq('periode', per[0]) : qq.in('periode', per)
-    const { data } = await qq
-      .order('id', { ascending: true })
-      .range(from, from + 999)
-    if (!data || data.length === 0) break
-    raws.push(...(data as never as Raw[]))
-    if (data.length < 1000) break
-  }
+    if (kursor !== null) qq = qq.gt('id', kursor)
+    // ⚠️ `as unknown as` — keterbatasan inferensi supabase-js saat `.select()`
+    // diberi string yang dirakit runtime + embedded resource: ia jatuh ke
+    // `GenericStringError[]`. Pola yang sama sudah dianut di repo ini.
+    return qq.order('id', { ascending: true }).limit(1000) as unknown as
+      PromiseLike<{ data: { id: number }[] | null; error: { message: string } | null }>
+  }) as never as Raw[]
 
   // PERIOD-CORRECT: buang HANYA aset yang dianggap tak pernah diperoleh (void:
   // batal_pengadaan / koreksi ganda / unapprove KDP). JANGAN pakai

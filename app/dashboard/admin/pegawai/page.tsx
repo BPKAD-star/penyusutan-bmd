@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
+import { paginate } from '@/shared/db/paginate'
 import { fetchSkpd } from '@/lib/skpdMaster'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
@@ -169,17 +170,24 @@ export default function AdminPegawaiPage() {
   }
 
   async function loadRangkap() {
+    try {
     const rows: PenugasanRangkap[] = []
-    for (let from = 0; ; from += 1000) {
-      const { data } = await supabase.from('admin_pegawai_penugasan')
-        .select('id,pegawai_id,skpd_id,no_sk,tmt,aktif,skpd:admin_skpd(nama)').range(from, from + 999)
-      if (!data || data.length === 0) break
-      rows.push(...(data as never as PenugasanRangkap[]))
-      if (data.length < 1000) break
-    }
+    rows.push(...(await paginate<number, { id: number }>('penugasan rangkap', kursor => {
+      let q = supabase.from('admin_pegawai_penugasan')
+        .select('id,pegawai_id,skpd_id,no_sk,tmt,aktif,skpd:admin_skpd(nama)')
+      if (kursor !== null) q = q.gt('id', kursor)
+      return q.order('id').limit(1000)
+    }) as never as PenugasanRangkap[]))
     const m = new Map<string, PenugasanRangkap[]>()
     for (const r of rows) { const a = m.get(r.pegawai_id) || []; a.push(r); m.set(r.pegawai_id, a) }
     setRangkapMap(m)
+    } catch (e) {
+      // ⚠️ PERINGATAN, bukan pembatal: penugasan rangkap itu kolom TAMBAHAN di
+      // Daftar Pegawai — daftarnya sendiri tetap benar tanpanya. Yang tak boleh
+      // cuma MENELANNYA (sebelum 2026-09-16 `error`-nya ditelan seluruhnya),
+      // karena peta kosong terbaca sebagai "tak ada yang merangkap".
+      setMsg(`Error: penugasan rangkap gagal dimuat — ${e instanceof Error ? e.message : String(e)}`)
+    }
   }
 
   async function loadSkpdOrder() {

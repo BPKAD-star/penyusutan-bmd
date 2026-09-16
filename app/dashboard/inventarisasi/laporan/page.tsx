@@ -30,7 +30,7 @@ export default function LaporanInventarisasiPage() {
   const [skpdNama, setSkpdNama] = useState('')
   const [kode, setKode] = useState<LhiKode>('III.B.7')
 
-  const { headers, loading, barisUntuk, hitungPerFormat } = useLhiData({ tahun, golongan, skpdIds })
+  const { headers, loading, err, barisUntuk, hitungPerFormat } = useLhiData({ tahun, golongan, skpdIds })
   const hitung = useMemo(() => hitungPerFormat(), [hitungPerFormat])
 
   const rows = useMemo(
@@ -70,6 +70,11 @@ export default function LaporanInventarisasiPage() {
         </div>
       }
     >
+      {err && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {err} — laporan TIDAK ditampilkan supaya tak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat.
+        </div>
+      )}
       {/* Filter: SKPD satu baris penuh, lalu Tahun / Jenis Aset / Format Laporan.
           Format Laporan dibuat DROPDOWN (bukan 11 kartu) — daftar sepanjang itu
           bikin halaman ramai & sulit dibaca; jumlah temuan tetap ditampilkan

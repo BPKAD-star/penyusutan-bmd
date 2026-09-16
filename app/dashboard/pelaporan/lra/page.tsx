@@ -16,6 +16,7 @@
 // Tabel **Persilangan** di bawahnya yang MENJELASKAN pergeseran itu baris per
 // baris. Lihat docs/lra-plan.md.
 import { useCallback, useEffect, useState } from 'react'
+import { paginate } from '@/shared/db/paginate'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -51,17 +52,13 @@ const LRA_COLS = 'id,skpd_id,tanggal,bulan,no_bukti,kode_rekening,kode_grup3,kel
 async function fetchLraData(
   supabase: ReturnType<typeof createClient>, tahunVal: string, desc: number[] | null,
 ): Promise<{ lra: LraRow[]; appRows: AppRow[] }> {
-  const lra: LraRow[] = []
-  for (let from = 0; ; from += 1000) {
+  const lra = await paginate<number, LraRow>('realisasi LRA', kursor => {
     let q = supabase.from('lra_realisasi').select(LRA_COLS)
-      .eq('tahun', Number(tahunVal)).order('id').range(from, from + 999)
+      .eq('tahun', Number(tahunVal))
     if (desc) q = q.in('skpd_id', desc)
-    const { data, error } = await q
-    if (error) throw new Error(error.message)
-    const batch = (data || []) as LraRow[]
-    lra.push(...batch)
-    if (batch.length < 1000) break
-  }
+    if (kursor !== null) q = q.gt('id', kursor)
+    return q.order('id').limit(1000)
+  }) as LraRow[]
 
   // Belanja modal sisi aplikasi (ledger `pengadaan`) — DIAGREGASI DI SERVER.
   // Dulu ditarik mentah ke browser → RLS aset per-baris + ~227rb aset bikin
