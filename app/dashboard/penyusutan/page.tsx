@@ -17,14 +17,15 @@ import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP, perlakuanKode } from '@/lib/bmd'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
-import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
+import SkpdCombobox from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
 import { fetchRiwayatKodeRegister, kodeRegisterPada } from '@/lib/kodeRegisterRiwayat'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
-import { tahunAwal } from '@/lib/tahunKerja'
+import { useFilterPenyusutan, type Applied } from './useFilterPenyusutan'
+import { useEngineRun } from './useEngineRun'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const BASE_COLS = 'id,nibar,kode_register,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,merek_tipe,alamat_detail'
@@ -67,7 +68,6 @@ const GOL_MEREK = ['1.3.2', '1.5.3', '1.5.4']
 const GOL_LOKASI = ['1.3.1', '1.3.3', '1.3.4', '1.3.6', '1.5.4']
 // Hasil engine (penyusutan_semester) — angka period-aware.
 type Peny = { nilai_perolehan: number; beban: number; akumulasi: number; nilai_buku_akhir: number; sisa_semester: number; masa_manfaat_tahun: number | null }
-type Applied = { org: OrgSelection; golongan: string; komptabel: string; periode: string; search: string }
 
 // ── Paginasi DI SERVER (Fase 4, migrasi 20260818_01) ───────────────────────
 // Layar tak lagi menarik seluruh baris ke browser. Terukur 2026-08-18 (Dinas
@@ -121,16 +121,15 @@ export default function PenyusutanPage() {
   const konfirmasi = useKonfirmasi()
   const tahunBukuMap = useTahunBukuMap()
 
-  const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
-  const [golongan, setGolongan] = useState('')
-  // Default 'intra' (angka neraca) — sejak ekstra ikut disusutkan (2026-07-13),
-  // "Semua" = campuran intra+ekstra, bukan lagi tampilan default yang aman.
-  const [komptabel, setKomptabel] = useState('intra')
-  const [tahun, setTahun] = useState(() => tahunAwal('2026'))
-  const [smt, setSmt] = useState('1')
-  const [search, setSearch] = useState('')
+  // Filter: nilai yang sedang DIKETIK (org/golongan/…) vs yang sudah
+  // DITERAPKAN (`applied`). Nama dipertahankan lewat destructuring supaya
+  // seluruh JSX di bawah tak berubah sebaris pun. Lihat ./useFilterPenyusutan.ts.
+  const {
+    org, setOrg, golongan, setGolongan, komptabel, setKomptabel,
+    tahun, setTahun, smt, setSmt, search, setSearch,
+    applied, setApplied, periode: periodeDiketik, rakit,
+  } = useFilterPenyusutan()
 
-  const [applied, setApplied] = useState<Applied | null>(null)
   const [rows, setRows] = useState<(Base & { p?: Peny; ownerSkpd?: number | null })[]>([])
   // Halaman aktif (0-based) & rekap seluruh hasil filter. `rekap` null =
   // hitungannya gagal/belum ada — DIBEDAKAN dari 0, supaya "0 aset" tak pernah
@@ -146,23 +145,14 @@ export default function PenyusutanPage() {
   // ikut kodefikasi terkini, sama seperti halaman itu.
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [detail, setDetail] = useState<{ nama: string; items: KapItem[] } | null>(null)
-  const [engineRunning, setEngineRunning] = useState(false)
-  const [engineMsg, setEngineMsg] = useState('')
   // Pesan kegagalan query (bukan pesan engine) — lihat catatan di `load`.
   const [err, setErr] = useState('')
-  const [isAdmin, setIsAdmin] = useState(false)
+  // Tombol "Jalankan Engine": hak akses, kemajuan, & loop batch-nya.
+  // `isAdmin` cuma menyembunyikan tombol — /api/engine/run yang menjaga (403).
+  const {
+    isAdmin, running: engineRunning, msg: engineMsg, setMsg: setEngineMsg, jalankan: jalankanEngine,
+  } = useEngineRun(angka)
 
-  // "Jalankan Engine" khusus admin pemda (Pengelola Barang) — server (/api/engine/run)
-  // sudah menolak non-admin (403), ini cuma menyembunyikan tombolnya di UI supaya
-  // pengurus_barang/pengurus_pembantu tidak klik lalu dapat error.
-  useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: profile } = await supabase.from('admin_profiles').select('role').eq('id', user.id).single()
-      setIsAdmin(profile?.role === 'admin')
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     (async () => {
@@ -391,7 +381,7 @@ export default function PenyusutanPage() {
   }
 
   function tampilkan() {
-    const f: Applied = { org, golongan, komptabel, periode: `${tahun}-S${smt}`, search }
+    const f = rakit()
     // Ganti filter → WAJIB balik ke halaman 1. Tanpa ini operator yang sedang di
     // halaman 40 lalu mempersempit filternya mendarat di halaman kosong dan
     // membacanya sebagai "tidak ada data".
@@ -399,7 +389,10 @@ export default function PenyusutanPage() {
   }
 
   async function runEngine() {
-    const periode = `${tahun}-S${smt}`
+    // ⚠️ Periode yang sedang DIKETIK, bukan `applied.periode`: operator
+    // menjalankan engine untuk periode yang ia pilih di filter, bukan untuk
+    // periode yang kebetulan sedang tampil di tabel.
+    const periode = periodeDiketik
     // TIDAK memakai `kerjakan`: engine dijalankan bertahap (batch per-aset) dan
     // kemajuannya sudah dilaporkan sendiri lewat `engineMsg` — "Memproses… N
     // aset". Menahan pop-up di depan layar justru menutupi angka itu.
@@ -412,39 +405,10 @@ export default function PenyusutanPage() {
         yang terlewati saat replay tidak ditimpa.</>,
       labelYa: 'Ya, jalankan',
     })).ya) return
-    setEngineRunning(true); setEngineMsg('Memproses… 0 aset')
-    // Engine di-BATCH per-aset di server (keyset by id). Client loop tiap batch
-    // sampai `done`, akumulasi statistik + tampilkan progress. Mencegah timeout
-    // serverless yang dulu bikin respons kosong ("Unexpected end of JSON input").
-    try {
-      let afterId = ''
-      let totalProses = 0, totalDisusutkan = 0, totalBeban = 0, totalDilindungi = 0
-      // batas iterasi jaga-jaga (218rb / 3000 ≈ 73; 1000 lebih dari cukup)
-      for (let guard = 0; guard < 1000; guard++) {
-        const res = await fetch('/api/engine/run', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ periode, after_id: afterId }),
-        })
-        const j = await res.json()
-        if (!res.ok) { setEngineMsg(`Error: ${j.error || `HTTP ${res.status}`}`); setEngineRunning(false); return }
-        totalProses += Number(j.processed || 0)
-        totalDisusutkan += Number(j.disusutkan || 0)
-        totalBeban += Number(j.total_beban || 0)
-        totalDilindungi += Number(j.rows_dilindungi_tahun_terkunci || 0)
-        setEngineMsg(`Memproses… ${totalProses.toLocaleString('id-ID')} aset`)
-        if (j.done) break
-        afterId = j.last_id
-        if (!afterId) break // jaga-jaga: tak ada kursor → hentikan
-      }
-      const proteksi = totalDilindungi > 0
-        ? ` (${totalDilindungi.toLocaleString('id-ID')} baris di tahun terkunci dilindungi, tidak ditimpa.)`
-        : ''
-      setEngineMsg(`✓ Engine selesai untuk ${periode} — ${totalProses.toLocaleString('id-ID')} aset diproses, ${totalDisusutkan.toLocaleString('id-ID')} disusutkan, total beban ${angka(totalBeban)}.${proteksi}`)
-      if (applied && applied.periode === periode) load(applied)
-    } catch (e) {
-      setEngineMsg(`Error: ${e instanceof Error ? e.message : String(e)}`)
-    }
-    setEngineRunning(false)
+    const hasil = await jalankanEngine(periode)
+    // Muat ulang HANYA kalau yang tampil memang periode yang barusan dihitung —
+    // kalau tidak, angka periode lain ditimpa hasil periode ini di layar.
+    if (hasil && applied && applied.periode === periode) void load(applied)
   }
 
   // ⚠️ try/catch/finally WAJIB, alasan sama dgn `load`: assembleRows memanggil
