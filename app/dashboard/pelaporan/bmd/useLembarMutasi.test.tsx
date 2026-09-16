@@ -147,39 +147,36 @@ describe('auto-init konfig', () => {
     await waitFor(() => expect(h.result.current.konfig?.tanggal).toBe('2026-09-16'))
   })
 
-  it('⚠️ CACAT YANG DIPERTAHANKAN: ganti SKPD → kop membawa nama SKPD SEBELUMNYA', async () => {
-    // Lebih parah dari kasus di bawah, dan justru inilah yang diklaim dicegah
-    // oleh komentar di efeknya ("bukan menyisakan konfig SKPD lama"):
-    // reset → null jalan, tapi konfig LANGSUNG disusun ulang dari `skpdInfo`
-    // yang masih milik SKPD LAMA (query-nya async), lalu tak pernah disegarkan
-    // lagi. Lembar bertanda tangan untuk Dinas B berkop Dinas A.
-    // WARISAN — lihat catatan di uji berikutnya.
-    skpdRow = { nama: 'Dinas A', level: 1, kode_skpd: '01', kode_lokasi: null }
-    const h = pasang(7, true)
-    await waitFor(() => expect(h.result.current.skpdInfo?.nama).toBe('Dinas A'))
-    skpdRow = { nama: 'Dinas B', level: 2, kode_skpd: '02', kode_lokasi: null }
-    h.rerender({ id: 8, s: true })
-    await waitFor(() => expect(h.result.current.skpdInfo?.nama).toBe('Dinas B'))
-    expect(h.result.current.konfig?.namaSkpd).toBe('Dinas A')   // ← seharusnya 'Dinas B'
-    expect(h.result.current.konfig?.sebutan).toBe('Pengguna Barang') // ← seharusnya Kuasa
+  it('ganti SKPD → kop ikut SKPD BARU, bukan yang sebelumnya', () => {
+    // Regresi yang diperbaiki 2026-09-16. Guard lamanya merakit konfig dari
+    // `skpdInfo` yang masih milik SKPD lama, lalu tak pernah menyegarkannya —
+    // jadi lembar bertanda tangan untuk Dinas B berkop Dinas A.
+    return (async () => {
+      skpdRow = { nama: 'Dinas A', level: 1, kode_skpd: '01', kode_lokasi: null }
+      const h = pasang(7, true)
+      await waitFor(() => expect(h.result.current.konfig?.namaSkpd).toBe('Dinas A'))
+      skpdRow = { nama: 'Dinas B', level: 2, kode_skpd: '02', kode_lokasi: null }
+      h.rerender({ id: 8, s: true })
+      await waitFor(() => expect(h.result.current.konfig?.namaSkpd).toBe('Dinas B'))
+      expect(h.result.current.konfig?.sebutan).toBe('Kuasa Pengguna Barang')
+    })()
   })
 
-  it('⚠️ CACAT YANG DIPERTAHANKAN: konfig dirakit SEBELUM nama SKPD sempat termuat', async () => {
-    // Guard-nya `if (!siapSumber || konfig) return` — begitu konfig terisi, ia
-    // TAK PERNAH disusun ulang, padahal `skpdInfo` datang belakangan (query
-    // async). Akibatnya kop lembar menyebut cadangan "SKPD #7" alih-alih nama
-    // sungguhannya, dan lembar itu DITANDATANGANI.
-    //
-    // Ini WARISAN, bukan bawaan pemindahan 2026-09-16: guard & dependency-nya
-    // disalin PERSIS dari `LaporanBmdPage` (`if (!sumberMutasi || konfigMutasi)
-    // return`, deps `[sumberMutasi, konfigMutasi, org.skpdId, skpdInfo]`).
-    // Dipatok di sini supaya pemindahannya terbukti SETARA; perbaikannya
-    // commit tersendiri, dan uji ini ikut dibalik di sana.
+  it('konfig MENUNGGU nama SKPD termuat — kop tak pernah "SKPD #7"', async () => {
+    // Pasangan dari uji di atas: bahkan pada pemuatan PERTAMA, konfig tak
+    // dirakit sampai identitasnya ada.
     skpdRow = { nama: 'Dinas Pendidikan', level: 1, kode_skpd: '01', kode_lokasi: null }
     const h = pasang(7, true)
     await waitFor(() => expect(h.result.current.konfig).not.toBeNull())
-    await waitFor(() => expect(h.result.current.skpdInfo?.nama).toBe('Dinas Pendidikan'))
-    expect(h.result.current.konfig?.namaSkpd).toBe('SKPD #7')   // ← seharusnya 'Dinas Pendidikan'
+    expect(h.result.current.konfig?.namaSkpd).toBe('Dinas Pendidikan')
+  })
+
+  it('se-kabupaten TIDAK menunggu identitas — lembarnya tetap terbit', async () => {
+    // `skpdId == null` tak punya identitas SKPD untuk dimuat; menunggunya
+    // berarti lembar se-kabupaten tak pernah terbit sama sekali.
+    const h = pasang(null, true)
+    await waitFor(() => expect(h.result.current.konfig).not.toBeNull())
+    expect(h.result.current.konfig?.lingkup).toBe('pemda')
   })
 })
 

@@ -81,7 +81,14 @@ export function useLembarMutasi(skpdId: number | null, periode: string, siapSumb
     // berganti — reset supaya efek auto-init di bawah menyusunnya ulang dari
     // `skpdInfo` yang BARU, bukan menyisakan konfig SKPD lama.
     setKonfig(null)
-    if (skpdId == null) { setSkpdInfo(null); return }
+    // ⚠️ Identitas lama ikut DIBUANG, bukan dibiarkan sampai yang baru datang
+    // (diperbaiki 2026-09-16). Membiarkannya membuat `skpdInfo` memuat SKPD
+    // LAMA sementara `skpdId` sudah SKPD baru — dan setiap pembaca yang
+    // percaya keduanya sepadan (kop lembar, `namaSkpd`) menampilkan nama yang
+    // salah tanpa satu pun tanda. Selama yang baru dimuat, pembacanya jatuh
+    // ke cadangan "SKPD #id" — jujur tak tahu, bukan menebak yang lama.
+    setSkpdInfo(null)
+    if (skpdId == null) return
     let batal = false
     void (async () => {
       // Gagal memuatnya tak menjatuhkan apa pun — kop lembar tinggal memakai
@@ -107,10 +114,23 @@ export function useLembarMutasi(skpdId: number | null, periode: string, siapSumb
   // tangan tetap "belum dipilih" sampai operator membuka pop-up & memilihnya;
   // itu memang tampilan yang benar (bertitik-titik), sama seperti pratinjau
   // Koreksi/Reklasifikasi yang juga TANPA ttd.
+  //
+  // ⚠️ SYARATNYA `skpdInfo` SUDAH ADA, bukan cuma `siapSumber` (diperbaiki
+  // 2026-09-16). Guard lamanya `if (!siapSumber || konfig) return` merakit
+  // konfig dari `skpdInfo` yang masih null / masih milik SKPD LAMA — query
+  // identitasnya async — lalu TAK PERNAH menyegarkannya lagi karena `konfig`
+  // sudah terisi. Akibatnya kop lembar BERTANDA TANGAN menyebut "SKPD #7",
+  // atau lebih buruk: nama SKPD sebelumnya sesudah operator berganti SKPD —
+  // persis yang diklaim dicegah komentar reset di efek atas.
+  //
+  // `skpdId == null` (se-kabupaten) TIDAK menunggu apa pun: di situ memang
+  // tak ada identitas SKPD yang perlu dimuat, dan menunggunya berarti lembar
+  // se-kabupaten tak pernah terbit sama sekali.
+  const identitasSiap = skpdId == null || skpdInfo != null
   useEffect(() => {
-    if (!siapSumber || konfig) return
+    if (!siapSumber || !identitasSiap || konfig) return
     setKonfig(konfigAwal())
-  }, [siapSumber, konfig, skpdId, skpdInfo]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [siapSumber, identitasSiap, konfig, skpdId, skpdInfo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // `document.title` = nama bawaan berkas saat "Save as PDF" (satu-satunya
   // cara menyetelnya dari halaman), DIPULIHKAN sesudahnya supaya judul tab
