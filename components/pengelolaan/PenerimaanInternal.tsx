@@ -35,7 +35,16 @@ type Header = {
   rejected_reason: string | null
   payload: { dokumen_paths?: string[]; draft_items?: DraftItem[] } | null
 }
-type Line = DraftItem
+// Kolom tampilan tambahan (permintaan user 2026-09-16, pola yang sama dgn
+// Penggunaan/PenggunaanMasuk.tsx). Opsional: baris draft mutasi yang masih
+// pending diambil dari `payload.draft_items`, yang tak memuat kolom-kolom ini
+// (`draftDari` di PengeluaranInternal.tsx belum menyalinnya) → tampil '-'.
+type Line = DraftItem & {
+  uraian_barang?: string | null
+  spesifikasi_lainnya?: string | null
+  tgl_perolehan?: string | null
+  tahun_pengadaan?: number | null
+}
 type Jurnal = Header & { lines: Line[]; total: number }
 
 const namaFile = (path: string) => path.split('/').pop() || path
@@ -92,14 +101,19 @@ export default function PenerimaanInternal() {
     const approvedIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
     if (approvedIds.length > 0) {
       const { data, error: errT } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
+        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,uraian_barang,kode,merek_tipe,' +
+          'spesifikasi_lainnya,tgl_perolehan,tahun_pengadaan,jumlah,satuan)')
         .eq('jenis', 'mutasi_internal')
         .in('header_id', approvedIds)
         .order('id', { ascending: false })
       if (errT) throw new Error(errT.message)
       const rows = (data || []) as unknown as {
         id: number; header_id: string; nilai: number
-        aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; merek_tipe: string | null; jumlah: number; satuan: string | null } | null
+        aset: {
+          id: string; nibar: string | null; nama_barang: string | null; uraian_barang: string | null
+          kode: string; merek_tipe: string | null; spesifikasi_lainnya: string | null
+          tgl_perolehan: string | null; tahun_pengadaan: number | null; jumlah: number; satuan: string | null
+        } | null
       }[]
       // Barang yang mutasinya dibatalkan keluar TOTAL dari kartu — pembatalan
       // menyatakan perpindahannya tak pernah terjadi. Dikunci per ID BARIS
@@ -122,6 +136,8 @@ export default function PenerimaanInternal() {
         j.lines.push({
           aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
+          uraian_barang: r.aset.uraian_barang, spesifikasi_lainnya: r.aset.spesifikasi_lainnya,
+          tgl_perolehan: r.aset.tgl_perolehan, tahun_pengadaan: r.aset.tahun_pengadaan,
         })
         j.total += r.nilai
       }
@@ -347,9 +363,13 @@ export default function PenerimaanInternal() {
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        <th className="table-th">Kode Register / Nama Barang</th>
+                        <th className="table-th">Kode Barang / Uraian Barang</th>
+                        <th className="table-th">Nama Barang / NIBAR</th>
                         <th className="table-th">Merek / Tipe</th>
+                        <th className="table-th">Spesifikasi Lainnya</th>
+                        <th className="table-th">Tgl Perolehan / Tahun Pengadaan</th>
                         <th className="table-th text-center">Jumlah</th>
+                        <th className="table-th">Satuan</th>
                         <th className="table-th text-right">Nilai</th>
                         {disetujui && <th className="table-th text-center w-28">Aksi</th>}
                       </tr>
@@ -358,11 +378,21 @@ export default function PenerimaanInternal() {
                       {j.lines.map(l => (
                         <tr key={l.aset_id}>
                           <td className="table-td">
-                            <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
-                            <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
+                            <p className="font-medium text-gray-800 text-xs">{l.kode || '-'}</p>
+                            <p className="text-gray-400 text-xs mt-0.5">{l.uraian_barang || '-'}</p>
+                          </td>
+                          <td className="table-td">
+                            <p className="text-gray-700 text-xs">{l.nama_barang || '-'}</p>
+                            <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'}</p>
                           </td>
                           <td className="table-td text-xs text-gray-600">{l.merek_tipe || '-'}</td>
-                          <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
+                          <td className="table-td text-xs text-gray-600">{l.spesifikasi_lainnya || '-'}</td>
+                          <td className="table-td text-xs text-gray-600 whitespace-nowrap">
+                            <p>{l.tgl_perolehan || '-'}</p>
+                            <p className="text-gray-400 mt-0.5">{l.tahun_pengadaan ?? '-'}</p>
+                          </td>
+                          <td className="table-td text-center text-xs">{l.jumlah}</td>
+                          <td className="table-td text-xs text-gray-600">{l.satuan || '-'}</td>
                           <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
                           {disetujui && (
                             <td className="table-td text-center">
