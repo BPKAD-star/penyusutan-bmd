@@ -401,6 +401,7 @@ function baris(o: {
       nibar: '1'.repeat(45), satuan: 'Unit', jumlah: 1,
       keterangan: null, intra_ekstra: 'intra', skpd_id: 1,
     },
+    skpdIdSaatItu: 1,
     npSebelum: o.npSebelum ?? null, akSebelum: o.akSebelum ?? null,
     npSetelah: o.npSetelah ?? null, akSetelah: o.akSetelah ?? null,
     tanpaSnapshot: o.akSebelum == null, tanpaPenyusutan: o.akSetelah == null,

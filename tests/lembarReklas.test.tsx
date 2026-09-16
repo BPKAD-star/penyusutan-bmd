@@ -75,6 +75,7 @@ function baris(
     ...sisiReklas(arah, { kodeLama, kodeBaru, namaAset: nama }),
     kodeLama, kodeBaru,
     penyebab: 'Perubahan Fungsi BMD',
+    skpdIdSaatItu: 1,
     skpdNama: 'Badan Keuangan dan Aset Daerah',
     akumulasi: Math.round(nilai / 4), nilaiBuku: nilai - Math.round(nilai / 4),
     tanpaPenyusutan: false,

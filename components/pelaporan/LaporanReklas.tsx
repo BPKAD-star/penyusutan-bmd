@@ -130,12 +130,17 @@ export default function LaporanReklas() {
   // dan laporan ini tak menolong sama sekali (pelajaran Laporan Koreksi,
   // CLAUDE.md 2026-09-08). Nama induk tetap ikut karena nama Bagian/UPTD
   // sering tak menyebut induknya.
-  // ⚠️ `r.skpdNama` dari pemuat SUDAH nama unit — dipakai apa adanya supaya
-  // layar & Export tak punya dua sumber nama yang bisa menyimpang.
+  // ⚠️ `r.skpdNama` dari pemuat SUDAH nama unit PADA PERIODE transaksi
+  // (`skpdIdSaatItu`, lihat lib/laporanReklas.ts) — dipakai apa adanya supaya
+  // layar & Export tak punya dua sumber nama yang bisa menyimpang. `indukNama`
+  // & rekap di bawah WAJIB ikut `skpdIdSaatItu`, BUKAN `r.aset?.skpd_id`
+  // mentah — kalau tidak, baris yang barangnya sudah pindah SKPD sesudah
+  // direklas akan menampilkan induk & masuk rekap SKPD yang SALAH (SKPD
+  // tujuan pindah, bukan SKPD tempat reklas itu dicatat).
   const unitNama = (r: BarisReklas) =>
-    r.skpdNama || (r.aset?.skpd_id != null ? `SKPD #${r.aset.skpd_id}` : '(tanpa SKPD)')
+    r.skpdNama || (r.skpdIdSaatItu != null ? `SKPD #${r.skpdIdSaatItu}` : '(tanpa SKPD)')
   const indukNama = (r: BarisReklas) => {
-    const sid = r.aset?.skpd_id
+    const sid = r.skpdIdSaatItu
     if (sid == null) return ''
     const root = rootOf(sid)
     return root && root.id !== sid ? root.nama : ''
@@ -158,11 +163,13 @@ export default function LaporanReklas() {
   // bukan `aset.kode`. Memakai kode terkini akan menaruh barang yang direklas
   // dua kali di golongan reklas TERAKHIRNYA — persis cacat baris mutasi
   // Rekonsiliasi yang ditutup 2026-08-27.
+  // ⚠️ SKPD-nya dari `skpdIdSaatItu` (pemilik PADA PERIODE reklas), bukan
+  // `r.aset?.skpd_id` mentah — lihat catatan `unitNama` di atas.
   const matrix: MatrixRow[] = (() => {
     if (!skpdLoaded) return []
     const leaf = new Map<number, LeafRekap>()
     for (const r of rows) {
-      const sid = r.aset?.skpd_id
+      const sid = r.skpdIdSaatItu
       if (!sid) continue
       const nama = skpdById.get(sid)?.nama ?? `SKPD #${sid}`
       const g = kodeLevel3(r.kodeUtama)

@@ -54,6 +54,7 @@ function baris(kode: string, o: {
       kode, nama_barang: 'Laptop Dinas', uraian_barang: 'Uraian', nibar: '1'.repeat(45),
       satuan: 'Unit', jumlah: 1, keterangan: null, intra_ekstra: 'intra', skpd_id: 1,
     },
+    skpdIdSaatItu: 1,
     npSebelum: o.npSebelum, akSebelum: o.akSebelum,
     npSetelah: o.npSetelah, akSetelah: o.akSetelah,
     tanpaSnapshot: o.akSebelum == null, tanpaPenyusutan: o.akSetelah == null,

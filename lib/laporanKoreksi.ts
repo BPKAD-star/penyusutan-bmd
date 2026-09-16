@@ -55,6 +55,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchSkpd } from '@/lib/skpdMaster'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchPenyusutanAset } from '@/lib/rekon'
+import { fetchPindahEvents, ownersAt } from '@/lib/pengalihan'
 import { petaNamaTingkat, sebutanPejabat, levelSkpd, type BarisKodefikasi } from '@/lib/formatPermendagri'
 import { descendantsOf, periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 import { UK } from '@/lib/formatKoreksi'
@@ -93,7 +94,17 @@ export type BarisKoreksi = {
   } | null
 
   // ── Dilengkapi sesudah query ────────────────────────────────────────────
-  /** Nama SKPD pemilik barang. */
+  /**
+   * SKPD pemilik barang PADA PERIODE transaksi ini (`r.periode`), BUKAN
+   * pemilik hari ini. Koreksi tidak memindahkan SKPD, tapi barangnya TETAP
+   * aktif sesudahnya & bisa saja dipindah SKPD (pengalihan_status/
+   * mutasi_internal) belakangan — kalau itu terjadi, `aset.skpd_id` mentah
+   * akan menampilkan SKPD BARU untuk transaksi LAMA yang dicatat SKPD lain.
+   * Kelas bug yang sama dgn lib/laporanReklas.ts (insiden 2026-09, lihat
+   * dokumentasinya di sana); dihitung lewat `ownersAt` (lib/pengalihan.ts).
+   */
+  skpdIdSaatItu: number | null
+  /** Nama SKPD pemilik barang PADA PERIODE transaksi (lihat `skpdIdSaatItu`). */
   skpdNama?: string
   /**
    * Posisi SEBELUM & SETELAH koreksi. `null` = tak diketahui (bukan nol) —
@@ -198,9 +209,24 @@ export async function muatLaporanKoreksi(
     if (baris.length < 1000) break
   }
 
+  // Riwayat pindah SKPD (pengalihan_status/mutasi_internal) — dibutuhkan untuk
+  // menilai SKPD pemilik barang PADA SAAT koreksi terjadi, bukan hari ini.
+  // Lihat dokumentasi `skpdIdSaatItu` di atas.
+  const pindahEv = await fetchPindahEvents(supabase)
+  const ownersCache = new Map<string, Map<string, number | null>>()
+  const ownerSaatItu = (asetId: string, periode: string, fallback: number | null): number | null => {
+    let m = ownersCache.get(periode)
+    if (!m) { m = ownersAt(pindahEv, periode); ownersCache.set(periode, m) }
+    const v = m.get(asetId)
+    return v !== undefined ? v : fallback
+  }
+
   const punyaAset = mentah.filter(r => r.aset)
   const dalamScope = desc
-    ? punyaAset.filter(r => r.aset!.skpd_id != null && desc!.includes(r.aset!.skpd_id))
+    ? punyaAset.filter(r => {
+        const sid = ownerSaatItu(r.aset_id || '', r.periode, r.aset!.skpd_id)
+        return sid != null && desc!.includes(sid)
+      })
     : punyaAset
 
   // Koreksi yang sudah DIBATALKAN dibuang — tanpa ini koreksi yang dianggap tak
@@ -240,9 +266,11 @@ export async function muatLaporanKoreksi(
       const akLama = typeof r.payload?.akumulasi_lama === 'number' ? r.payload.akumulasi_lama : null
       if (akLama == null) tanpaSnapshot++
       if (!q && posPeriode) tanpaPenyusutan++
+      const skpdIdSaatItu = ownerSaatItu(r.aset_id || '', r.periode, a.skpd_id)
       return {
         ...r,
-        skpdNama: a.skpd_id != null ? namaSkpd.get(a.skpd_id) : undefined,
+        skpdIdSaatItu,
+        skpdNama: skpdIdSaatItu != null ? namaSkpd.get(skpdIdSaatItu) : undefined,
         npSebelum: npLama,
         akSebelum: akLama,
         npSetelah: npBaru,

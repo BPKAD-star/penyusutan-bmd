@@ -3510,6 +3510,60 @@ Berkasnya: `lib/reklas.ts` · `lib/formatReklas.ts` (+ test) ·
   lembarnya beda per cabang, jadi centang yang terbawa tak cocok dengan satu
   lembar pun & pratinjaunya kosong tanpa keterangan.
 
+### Kolom SKPD Laporan Reklasifikasi & Koreksi terbaca `aset.skpd_id` HARI INI (2026-09-17)
+
+Insiden nyata: reklas dicatat di Pembukuan → Reklasifikasi dengan "Lokasi/SKPD"
+= **Pengelola Barang** (jurnal_header.skpd_id = Pengelola Barang, DAN picker
+barangnya sendiri sudah `.eq('skpd_id', skpdId)` — jadi konsisten persis di
+titik itu). Begitu barangnya kemudian dipindah SKPD (Pengalihan Status
+Penggunaan/Mutasi Internal) ke **RSUD Kabupaten Kediri**, Pelaporan → Laporan
+Pengelolaan → Reklasifikasi menampilkan kolom SKPD transaksi LAMA itu sebagai
+RSUD — bukan Pengelola Barang tempat ia sungguh dicatat.
+
+- **Sebabnya `lib/laporanReklas.ts` & `lib/laporanKoreksi.ts` membaca
+  `aset.skpd_id` POSISI TERKINI**, bukan pemilik pada periode transaksi.
+  Reklas/koreksi tak memindahkan SKPD, tapi barangnya TETAP AKTIF sesudahnya —
+  beda dari Pemecahan/Kapitalisasi yang menonaktifkan barang sumbernya — jadi
+  ia tetap jadi target Pengalihan/Mutasi Internal kapan pun sesudahnya. Kelas
+  bug yang PERSIS SAMA yang sudah dibetulkan di Daftar Barang, Penyusutan, &
+  Laporan BMD lewat `ownersAt`/`fetchOwnerOverrides` (lib/pengalihan.ts;
+  rules.md "'Barang ini masih berpindah?' JANGAN dijawab dari `aset.skpd_id`
+  hari ini") — dua menu pelaporan Pengelolaan yang lebih baru (Koreksi &
+  Reklasifikasi, dibangun 2026-09-07) luput dari pola itu.
+- **Dampaknya DUA ARAH, dan arah kedua lebih berbahaya**: (1) kolom SKPD di
+  layar/Export salah untuk transaksi lama; (2) **filter SKPD di scope-nya
+  ikut salah** — transaksi yang BENAR-BENAR dicatat SKPD X bisa **hilang**
+  dari laporan SKPD X sendiri begitu asetnya pindah keluar, karena penyaring
+  scope (`dalamScope`) juga membandingkan `aset.skpd_id` terkini terhadap
+  `descendantIds` SKPD yang difilter.
+- **Obatnya field baru `skpdIdSaatItu`** pada `BarisReklas`/`BarisKoreksi`:
+  dihitung lewat `ownersAt(fetchPindahEvents(...), r.periode)` (di-cache per
+  periode karena satu laporan biasanya cuma menyentuh S1/S2), jatuh ke
+  `aset.skpd_id` HANYA kalau barangnya memang tak pernah tercatat pindah SKPD
+  sama sekali. Dipakai untuk scope filter MAUPUN `skpdNama` — dua tempat yang
+  tadinya berdiri sendiri-sendiri.
+  ⚠️ **`LaporanKoreksi.tsx` (tab Daftar Transaksi & Rekap) & `LaporanReklas.tsx`
+  (indukNama + matriks Rekap per SKPD) punya kalkulasi SKPD sendiri di luar
+  pemuatnya** (`lib/laporanKoreksi.ts` cuma dipakai tab Format Permendagri) —
+  jadi perbaikannya WAJIB dua lapis di keduanya, bukan cukup di `lib/laporan*`
+  saja. `LaporanKoreksi.tsx`'s `saring()` kini menghitung `skpdIdSaatItu` per
+  baris SEBELUM menyaring scope; `LaporanReklas.tsx` memakai `r.skpdIdSaatItu`
+  dari pemuatnya untuk `unitNama`/`indukNama`/matriks, bukan `r.aset?.skpd_id`
+  mentah lagi.
+- ⛔ **`lib/laporanPenghapusan.ts` PUNYA POLA SERUPA tapi SENGAJA BELUM
+  disentuh** untuk cabang non-`pengalihan_status` (`penghapusan_pemindahtanganan`/
+  `penghapusan_sebab_lain`) — risikonya jauh lebih kecil karena barang yang
+  sudah `status='dihapus'` biasanya tak lagi jadi target Pengalihan/Mutasi
+  Internal. Cabang `scope='asal'`-nya sendiri SUDAH aman: ia membaca
+  `r.skpd_asal` yang dibekukan LANGSUNG di baris ledger saat pengalihan
+  dicatat, bukan diturunkan dari `aset.skpd_id`. Kalau nanti ada laporan lain
+  di keluarga Pengelolaan yang menampilkan kolom SKPD per baris, **cek dulu
+  apakah field-nya beku di baris ledger (aman) atau diturunkan dari
+  `aset.skpd_id` (butuh `skpdIdSaatItu`)**.
+- **Tak ada migrasi** — murni turunan di klien; ledger & RPC tak disentuh.
+  Dikunci: fixture `tests/lembarReklas.test.tsx`, `tests/lembarKoreksi.test.tsx`,
+  `lib/formatKoreksi.test.ts` diperbarui memuat `skpdIdSaatItu`.
+
 ## Laporan Pengeluaran Internal — Format IV.D.2–D.6 & IV.D.7 (2026-09-02)
 
 Cabang KEEMPAT modul Pelaporan Permendagri 47/2021. Menu Pelaporan →

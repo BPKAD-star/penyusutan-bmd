@@ -39,6 +39,7 @@ import { useSkpdTree } from '@/components/useSkpdTree'
 import { urutPerSkpd } from '@/lib/urutSkpd'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
+import { fetchPindahEvents, ownersAt } from '@/lib/pengalihan'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 import { LEMBAR_PERMENDAGRI } from '@/lib/permendagriFormat'
 import KoreksiFormatPermendagri from './KoreksiFormatPermendagri'
@@ -83,6 +84,15 @@ type Trx = {
   } | null
   /** No. dokumen sumber kartunya — dipakai menunjukkan induk↔pecahan satu SK. */
   header: { no_sk: string | null } | null
+  /**
+   * SKPD pemilik barang PADA PERIODE transaksi ini (`periode`), diisi `saring()`
+   * — BUKAN pemilik hari ini. Koreksi tidak memindahkan SKPD, tapi barangnya
+   * TETAP aktif sesudahnya & bisa dipindah SKPD (pengalihan_status/
+   * mutasi_internal) belakangan; kalau itu terjadi, `aset.skpd_id` mentah
+   * menampilkan SKPD BARU untuk transaksi LAMA yang dicatat SKPD lain. Kelas
+   * bug yang sama dgn lib/laporanReklas.ts (insiden 2026-09).
+   */
+  skpdIdSaatItu?: number | null
 }
 
 const SEL = 'id,aset_id,jenis,periode,tanggal,nilai,keterangan,created_by,'
@@ -162,12 +172,29 @@ export default function LaporanKoreksi() {
    * ⚠️ MELEMPAR kalau query pembatalan gagal — fail-closed. Set kosong berarti
    * "tak ada yang dibatalkan" & koreksi yang sudah dianulir tampil seolah
    * berlaku, beda dgn engine, Laporan BMD, & Rekonsiliasi.
+   *
+   * ⚠️ SKPD scope-nya dinilai dari `skpdIdSaatItu` (pemilik PADA PERIODE
+   * transaksi, via `fetchPindahEvents`/`ownersAt`), BUKAN `aset.skpd_id`
+   * mentah — kalau tidak, koreksi yang benar-benar dicatat SKPD ini bisa
+   * hilang dari laporan SKPD ini sendiri begitu barangnya kemudian dipindah
+   * ke SKPD lain (insiden nyata di Laporan Reklasifikasi, CLAUDE.md 2026-09).
    */
   const saring = useCallback(async (baris: Trx[]): Promise<Trx[]> => {
     const punyaAset = baris.filter(r => r.aset)
+    const pindahEv = await fetchPindahEvents(supabase)
+    const ownersCache = new Map<string, Map<string, number | null>>()
+    const ownerSaatItu = (asetId: string, periode: string, fallback: number | null): number | null => {
+      let m = ownersCache.get(periode)
+      if (!m) { m = ownersAt(pindahEv, periode); ownersCache.set(periode, m) }
+      const v = m.get(asetId)
+      return v !== undefined ? v : fallback
+    }
+    const berpemilik = punyaAset.map(r => ({
+      ...r, skpdIdSaatItu: ownerSaatItu(r.aset_id || '', r.periode, r.aset!.skpd_id),
+    }))
     const scoped = descIds && descIds.length > 0
-      ? punyaAset.filter(r => r.aset!.skpd_id != null && descIds.includes(r.aset!.skpd_id))
-      : punyaAset
+      ? berpemilik.filter(r => r.skpdIdSaatItu != null && descIds.includes(r.skpdIdSaatItu))
+      : berpemilik
     const target = await fetchBatalTargets(
       supabase, BATAL_TARGET_JENIS.koreksi,
       scoped.map(r => r.aset_id).filter((id): id is string => !!id))
@@ -222,12 +249,12 @@ export default function LaporanKoreksi() {
   // tetap ikut sbg baris kedua, karena nama Bagian/UPTD sendiri sering tak
   // menyebut induknya.
   const unitNama = (r: Trx) => {
-    const sid = r.aset?.skpd_id
+    const sid = r.skpdIdSaatItu
     if (sid == null) return '(tanpa SKPD)'
     return skpdById.get(sid)?.nama ?? `SKPD #${sid}`
   }
   const indukNama = (r: Trx) => {
-    const sid = r.aset?.skpd_id
+    const sid = r.skpdIdSaatItu
     if (sid == null) return ''
     const root = rootOf(sid)
     return root && root.id !== sid ? root.nama : ''
@@ -251,7 +278,7 @@ export default function LaporanKoreksi() {
     if (!skpdLoaded) return []
     const leaf = new Map<number, LeafRekap>()
     for (const r of rowsTampil) {
-      const sid = r.aset?.skpd_id
+      const sid = r.skpdIdSaatItu
       if (!sid) continue
       const nama = skpdById.get(sid)?.nama ?? `SKPD #${sid}`
       const l = leaf.get(sid) ?? { nama, cells: {} }
