@@ -734,31 +734,31 @@ sering menemukan bug — itu keuntungan, bukan gangguan.**
 yang tak memeriksa `error`). Membetulkannya bareng pemindahan membuat
 pemindahannya tak bisa dibuktikan setara — itu pekerjaan Fase 1, terpisah.
 
-### ⛔ Temuan yang BELUM digarap — peta nama SKPD ditulis 29 kali (2026-09-16)
+### Peta nama SKPD ditulis 22 kali — sasaran adopsi `paginate` (2026-09-16)
 
-Ditemukan saat memecah `PenyusutanPage`. `from('admin_skpd').select('id,nama')`
-muncul di **29 berkas**, dan yang berbahaya bukan jumlahnya:
+⚠️ **KOREKSI atas versi pertama catatan ini, yang ditulis beberapa jam
+sebelumnya & SALAH.** Ia menyebut "29 salinan, 6 di antaranya tanpa paginasi —
+bom waktu". Keliru di dua hal, dan sebabnya layak dicatat: pengklasifikasinya
+memakai KETIADAAN `range(from` sebagai tanda "tak berpaginasi", padahal loop
+keyset memakai `.gt('id',` dan pencarian terscope memang tak perlu paginasi
+sama sekali.
 
-- **23 memakai sapuan keyset** (`range(from, from + 999)` sampai habis) — benar.
-- **6 TIDAK**, jadi ia bergantung pada batas bawaan PostgREST (1.000 baris):
-  `app/kibar/[nibar]/page.tsx` · `components/pelaporan/LaporanPengamanan.tsx` ·
-  `LaporanPemanfaatan.tsx` · `LaporanKir.tsx` ·
-  `components/dashboard/CaraPerolehanCards.tsx` · `PenghapusanCards.tsx`
+Klasifikasi yang benar (diukur ulang, `admin_skpd.select('id,nama')`):
 
-⚠️ **Hari ini keenamnya BEKERJA** — `admin_skpd` 816 baris, di bawah batas. Ia
-bom waktu, bukan bug: begitu SKPD ke-1.001 dibuat, SKPD di atas ambang itu
-tampil **"-"** di keenam layar tsb, tanpa satu pun error, dan operator
-membacanya sebagai "barang ini memang tak bertuan".
+| Bentuk | Berkas | Nilai |
+|---|---|---|
+| **OFFSET penuh** — `range(from, from + 999)` | **22** | ← sasaran; menelan `error`, & offset makin dalam makin mahal |
+| **KEYSET penuh** — `.gt('id', …)` + cek `error` | 2 | sudah BENAR (`CaraPerolehanCards`, `PenghapusanCards`) — justru contohnya |
+| **Terscope** — `.in('id', idYangDibutuhkan)` | 5 | pola LEBIH BAIK: cuma meminta yang dipakai |
 
-⚠️ Hampir semuanya juga menelan `error` (`const { data } = await` telanjang),
-jadi query yang GAGAL tak bisa dibedakan dari "SKPD-nya memang tak ada".
+Kelima yang terscope menurunkan `skpdIds` dari baris yang SUDAH ditarik lalu
+men-`Set`-nya, jadi terbatas pada jumlah SKPD berbeda di hasil — bukan bom
+waktu. (`lra/page.tsx` bahkan sudah memotongnya per 200.)
 
-**Bentuk yang benar sudah ada** di `app/dashboard/daftar-barang/
-useReferensiDaftarBarang.ts` (keyset + `error` dilaporkan sbg PERINGATAN, bukan
-pembatal — nama SKPD itu label di atas angka yang sudah benar). Yang perlu:
-angkat jadi hook bersama lalu alihkan ke-29-nya. **Ukur `count(*)` sungguhan
-`admin_skpd` sebelum mengerjakannya** — angka 816 di dokumen ini pun sudah
-berkali-kali terbukti basi.
+**Pelajaran yang lebih penting dari temuannya sendiri: klasifikasi lewat
+KETIADAAN sebuah pola hampir selalu salah** — ia menganggap semua yang bukan
+bentuk-yang-kucari sebagai bentuk-yang-rusak. Yang benar: sebutkan setiap
+bentuk yang sah, lalu lihat apa yang tersisa.
 
 ### "Jangan pecah spekulatif" — DILONGGARKAN oleh user 2026-09-15
 
