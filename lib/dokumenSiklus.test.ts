@@ -3,7 +3,7 @@
 // tab yang selamanya kosong — dan operator membacanya sebagai "dokumennya belum
 // diunggah", bukan "aplikasinya salah cari".
 import { describe, it, expect } from 'vitest'
-import { DAFTAR_SIKLUS, PEMINDAHTANGANAN_SUBJENIS, type PullKelompok, type BarisHeader } from './dokumenSiklus'
+import { DAFTAR_SIKLUS, PEMINDAHTANGANAN_SUBJENIS, dokumenMasihLive, type PullKelompok, type BarisHeader } from './dokumenSiklus'
 import { JENIS_PEMANFAATAN } from './pemanfaatan'
 
 const pullDari = (key: string): PullKelompok[] => {
@@ -111,5 +111,26 @@ describe('Penggunaan & Penatausahaan — muara yang baru disambung', () => {
 
   it('Cara Perolehan hanya menarik yang SUDAH disetujui', () => {
     for (const k of pullDari('cara_perolehan')) expect(k.perluApproval, k.key).toBe(true)
+  })
+})
+
+describe('dokumenMasihLive — arsip (`ditolak`) tak boleh muncul lagi (insiden 2026-09-17)', () => {
+  // Kartu Pengalihan/Mutasi Internal yang PERNAH diterima lalu dibatalkan tak
+  // bisa dihapus (append-only) — `hapusJurnal` (Penghapusan.tsx) menandainya
+  // `ditolak` sbg ganti DELETE, dan header-nya (berikut dokumen) tetap ada
+  // SELAMANYA. Kelompok `pengalihan`/`internal` tak punya `perluApproval`,
+  // jadi tanpa `dokumenMasihLive` tak ada satu pun filter approval_status yang
+  // menghalanginya tampil lagi.
+  it('ditolak (arsip ATAU ditolak sungguhan) tak lolos', () => {
+    expect(dokumenMasihLive('ditolak')).toBe(false)
+  })
+
+  it('pending & disetujui tetap lolos — cuma arsip yang disaring', () => {
+    expect(dokumenMasihLive('pending')).toBe(true)
+    expect(dokumenMasihLive('disetujui')).toBe(true)
+  })
+
+  it('null (kategori tanpa alur approval sama sekali) tetap lolos', () => {
+    expect(dokumenMasihLive(null)).toBe(true)
   })
 })

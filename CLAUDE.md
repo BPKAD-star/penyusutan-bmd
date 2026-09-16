@@ -4209,6 +4209,30 @@ BMD.
   tab. Query-nya juga berhenti menelan `error` (dulu `const { data } = await`):
   daftar kosong yang sebenarnya "query gagal" terbaca operator sbg "dokumennya
   memang belum ada".
+- ⚠️ **Kartu yang DIARSIPKAN (`approval_status='ditolak'`) tetap muncul selamanya
+  — ketahuan 2026-09-17.** User menghapus kartu Pengalihan uji-coba
+  (BKAD→Pengelola Barang) dari menu Penghapusan, tapi dokumennya tetap
+  nangkring di sini. Sebabnya: kartu itu PERNAH diterima lalu dibatalkan
+  (siklus terima→batal, jadi `punyaLedger=true`), dan `hapusJurnal`
+  (Penghapusan.tsx) untuk kartu semacam itu **tak benar-benar DELETE** — ia
+  menandai `approval_status='ditolak'` sbg ganti, karena ledgernya append-only
+  & FK `transaksi_bmd.header_id` + trigger `trg_jurnal_header_hapus_guard`
+  memang menolak DELETE-nya. Header (berikut `payload.dokumen_paths`) tetap
+  ada SELAMANYA di `jurnal_header` — itu bukan bug, itu syarat ledger.
+  **Yang bug**: kelompok `pengalihan`/`internal` di siklus Penggunaan tak
+  punya `perluApproval`, jadi sebelum ini TAK ADA filter approval_status APA
+  PUN yang menghalangi kartu arsip tampil lagi seolah masih berlaku.
+  `ditolak` di repo ini punya DUA ASAL yang SAMA-SAMA berarti "bukan lagi
+  peristiwa yang berlaku": ditolak sungguhan oleh penerima
+  (`fn_tolak_pengalihan`) ATAU diarsipkan sesudah dibatalkan (pola yang sama
+  juga dipakai `hapusKontrak` di Pengadaan.tsx untuk Cara Perolehan).
+  **Obatnya `dokumenMasihLive()`** (lib/dokumenSiklus.ts) — `approvalStatus
+  !== 'ditolak'` — dipasang di `PullSection` utk SEMUA kelompok, bukan cuma
+  yang `perluApproval` (Cara Perolehan sendiri sudah kebal krn `perluApproval`
+  mensyaratkan tepat `'disetujui'`, jadi `ditolak` otomatis tersaring; yang
+  bolong justru kelompok TANPA `perluApproval` — Pengalihan, Mutasi Internal,
+  Pemanfaatan, Pengamanan, Koreksi, Reklasifikasi, Penghapusan). Dikunci
+  lib/dokumenSiklus.test.ts.
 - ⛔ **Kontrak Konstruksi (KDP) belum bermuara.** Kategorinya sendiri
   (`konstruksi`, 4 baris) & BAST-nya disimpan **per TERMIN** di dalam
   `payload.barang[].pembayaran[]`, bukan di `payload.dokumen_paths` — jadi

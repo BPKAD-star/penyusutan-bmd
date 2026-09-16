@@ -88,6 +88,30 @@ const jenisPemanfaatan = (v: string) => (h: BarisHeader) =>
 const subPemindahtanganan = (v: string) => (h: BarisHeader) =>
   h.jenis === 'penghapusan_pemindahtanganan' && h.sub_jenis === v
 
+/**
+ * Baris `jurnal_header` masih LIVE (bukan arsip) — dipakai `PullSection`
+ * (components/dashboard/DokumenSumber.tsx) menyaring SEMUA kelompok pull,
+ * terlepas dari `perluApproval`.
+ *
+ * ⚠️ `approval_status='ditolak'` di repo ini punya DUA ASAL, dan dua-duanya
+ * berarti "dokumen ini bukan lagi peristiwa yang berlaku":
+ *   1. Ditolak SUNGGUHAN oleh penerima (`fn_tolak_pengalihan`, Pengalihan
+ *      Status/Mutasi Internal) — perpindahannya tak pernah terjadi.
+ *   2. DIARSIPKAN sesudah pernah diterima lalu dibatalkan — kartu yang
+ *      `punyaLedger` TAK BOLEH dihapus (append-only), jadi `hapusJurnal`
+ *      (Penghapusan.tsx) & `hapusKontrak` (Pengadaan.tsx) menandainya
+ *      `ditolak` sbg pengganti DELETE. Header-nya (berikut `dokumen_paths`)
+ *      TETAP ADA SELAMANYA di `jurnal_header` — itu bukan bug, itu syarat
+ *      ledger append-only.
+ * Insiden nyata 2026-09-17: kartu pengalihan uji-coba BKAD→Pengelola Barang
+ * yang "sudah dihapus" user ternyata diarsipkan (punya ledger dari siklus
+ * terima→batal), dan `PullSection` menampilkannya lagi karena kelompok
+ * `pengalihan`/`internal` tak punya `perluApproval` sama sekali — tak ada
+ * filter approval_status APA PUN yang menghalanginya.
+ * `null`/`'pending'`/`'disetujui'` tetap LIVE dan lolos di sini.
+ */
+export const dokumenMasihLive = (approvalStatus: string | null): boolean => approvalStatus !== 'ditolak'
+
 export const DAFTAR_SIKLUS: SiklusConfig[] = [
   {
     key: 'perencanaan_kebutuhan', label: 'Perencanaan Kebutuhan',

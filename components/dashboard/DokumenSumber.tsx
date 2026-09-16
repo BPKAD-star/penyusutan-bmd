@@ -15,7 +15,7 @@ import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { tahunAwal } from '@/lib/tahunKerja'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { fetchApprovalScope } from '@/lib/roles'
-import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen } from '@/lib/dokumenSiklus'
+import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen, dokumenMasihLive } from '@/lib/dokumenSiklus'
 import { uploadDokumenSiklus, hapusFileDokumen, bukaDokumenSumber, namaFileDariPath } from '@/lib/dokumenStorage'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
@@ -226,10 +226,22 @@ function PullSection({ tahun, sumber, skpdMap }: {
 
   // Baris + berkasnya per kelompok. Yang berkasnya kosong DIBUANG — halaman ini
   // arsip dokumen, bukan daftar kartu jurnal.
+  //
+  // ⚠️ `dokumenMasihLive` dipasang utk SEMUA kelompok, bukan cuma yang
+  // `perluApproval` — kartu yang DIARSIPKAN (`approval_status='ditolak'`,
+  // dua asal: ditolak sungguhan ATAU dihapus-tapi-punya-ledger, lihat
+  // lib/dokumenSiklus.ts) bukan lagi peristiwa yang berlaku, jadi dokumennya
+  // tak boleh muncul di sini lagi walau baris `jurnal_header`-nya (berikut
+  // `dokumen_paths`) tetap ada selamanya (append-only). Insiden nyata
+  // 2026-09-17: kartu Pengalihan uji-coba yang "sudah dihapus" user ternyata
+  // diarsipkan (punya ledger dari siklus terima→batal), dan kelompok
+  // `pengalihan`/`internal` tak punya `perluApproval` sama sekali — sebelum
+  // ini, tak ada filter approval_status APA PUN yang menghalanginya tampil.
   const isiKelompok = sumber.kelompok.map(k => {
     const keys = k.payloadKeys || ['dokumen_paths']
     const baris = rows
       .filter(r => r.kategori === k.kategori)
+      .filter(r => dokumenMasihLive(r.approval_status))
       .filter(r => !k.perluApproval || r.approval_status === 'disetujui')
       .filter(r => !k.cocok || k.cocok(r))
       .map(r => ({ r, dokumen: berkasDari(r.payload, keys) }))
