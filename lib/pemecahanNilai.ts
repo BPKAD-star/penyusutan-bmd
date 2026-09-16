@@ -38,6 +38,13 @@ export type BasisPemecahan = {
   nilai_buku: number
   akumulasi: number
   sisa_smt: number
+  /**
+   * Masa manfaat TOTAL barang, dalam TAHUN (`penyusutan_semester.
+   * masa_manfaat_tahun` induk) — dipakai sbg PEMBAGI TETAP saat menghitung
+   * `beban` tiap pecahan. `null` utk golongan yang tak disusutkan (Tanah/ATL/
+   * KDP), sama seperti `disusutkan:false` di `BasisPecah`.
+   */
+  masa_tahun: number | null
 }
 
 /** Isian mentah satu baris pecahan di form — sengaja `string`, apa adanya dari input. */
@@ -50,7 +57,11 @@ export type AlokasiPecahan = {
   nb: number
   /** Akumulasi penyusutan hasil alokasi proporsional (rupiah). */
   ak: number
-  /** Beban per semester = nilai buku ÷ sisa semester, dibulatkan ke rupiah. */
+  /**
+   * Beban per semester = nilai perolehan PECAHAN ÷ masa manfaat TOTAL (dlm
+   * semester), dibulatkan ke rupiah — tarif garis-lurus yang KONSTAN
+   * sepanjang umur aset, sama seperti cara induknya sendiri disusutkan.
+   */
   beban: number
   /** Isian barisnya sudah sah (jumlah ≥ 1 & nilai > 0). */
   valid: boolean
@@ -72,6 +83,19 @@ export function alokasiPemecahan(
   const totalSen = keSen(nilaiInduk)
   const nbSen = keSen(basis.nilai_buku)
   const akSen = keSen(basis.akumulasi)
+  // ⚠️ INSIDEN 2026-09-16: `beban` di sini dulu `nb / sisa_smt` — menghitung
+  // ULANG tarif dari nilai buku & sisa umur SAAT INI, padahal garis-lurus
+  // (straight-line) tarifnya KONSTAN sepanjang umur aset, persis cara induknya
+  // sendiri dihitung engine (`nilai_perolehan / masa_manfaat_smt`, TETAP dari
+  // semester pertama sampai terakhir). Rumus lama itu diam-diam MEMPERCEPAT
+  // penyusutan pecahan begitu induknya sudah lewat separuh umur (sisa_smt <
+  // separuh masa_manfaat_smt) — Σ NP/NB/AK tetap eksak sama dgn induk, jadi
+  // tak satu pun uji balance di atas menangkapnya; yang salah cuma TARIFNYA.
+  // Terbukti di produksi: pecahan Jalan Kab. Kolektor (Dinas PU, 2026-09-14) —
+  // rumus lama 14.104.958/smt, seharusnya 12.694.462/smt (Σ 8 pecahan × Σ smt
+  // tersisa = kelebihan beban yang bertumpuk tiap semester tanpa pernah
+  // dikoreksi sendiri, karena tak ada satu pun error yang menandainya).
+  const masaSmt = basis.masa_tahun != null ? Math.round(basis.masa_tahun * 2) : 0
   let accNB = 0, accAk = 0
   return pecahan.map((p, i) => {
     const jumlah = parseInt(p.jumlah, 10)
@@ -84,7 +108,10 @@ export function alokasiPemecahan(
     const nb = last ? nbSen - accNB : Math.round(prop * nbSen)
     const ak = last ? akSen - accAk : Math.round(prop * akSen)
     accNB += nb; accAk += ak
-    const beban = basis.sisa_smt > 0 ? Math.round(nb / 100 / basis.sisa_smt) : 0
+    // `Number.isFinite(npSen)` dijaga sama seperti `prop` di atas — nilai yg
+    // tak terbaca (mis. deretan angka >309 digit → Infinity) tak boleh
+    // menular ke `beban`; barisnya toh sudah `valid:false`.
+    const beban = masaSmt > 0 && Number.isFinite(npSen) ? Math.round(npSen / 100 / masaSmt) : 0
     return { np: Number.isFinite(npSen) ? npSen / 100 : 0, nb: nb / 100, ak: ak / 100, beban, valid }
   })
 }

@@ -778,6 +778,34 @@ describe('hitungJadwalAset — pemecahan barang', () => {
     expect(hasil[0].akumulasi).toBe(12_500_000)
   })
 
+  it('beban DITURUNKAN dari nilai÷masa_manfaat_smt, BUKAN dipercaya dari payload.beban_per_smt yang keliru', () => {
+    // Insiden 2026-09-16 (lib/pemecahanNilai.ts): `beban_per_smt` yang ditulis
+    // saat Pemecahan Barang disimpan dulu dihitung `nilai_buku ÷ sisa_smt` —
+    // tarif yang dihitung ULANG dari keadaan SAAT PEMECAHAN, bukan tarif ASLI
+    // garis-lurus (nilai_perolehan ÷ masa_manfaat_smt TOTAL, konstan sepanjang
+    // umur aset). Baris seperti ini SUDAH TERLANJUR masuk ledger produksi (10
+    // pecahan), dan `transaksi_bmd` append-only — tak bisa dibetulkan langsung.
+    // Engine karena itu WAJIB menurunkan `beban` sendiri dari nilai/masaSmt
+    // (dua-duanya selalu benar), bukan mempercayai `beban_per_smt` yang bisa
+    // saja keliru — itu yang membuat kesepuluh pecahan produksi otomatis pulih
+    // cukup dgn menjalankan ulang Engine, tanpa migrasi ledger.
+    //
+    // Simulasi: pecahan nilai 20jt, masa manfaat 10 semester, sudah separuh
+    // lebih tersusut (nilai buku tersisa cuma 4jt dari sisa 3 semester) saat
+    // dipecah — payload.beban_per_smt ditulis KELIRU 1.333.333 (= 4jt ÷ 3).
+    const hasil = jalankan(
+      aset(),
+      [trx({ jenis: 'pemecahan_masuk', periode: '2026-S1', nilai: 20_000_000,
+             payload: { nilai_buku_awal: 4_000_000, akumulasi: 16_000_000,
+                        sisa_masa_manfaat_smt: 3, masa_manfaat_smt: 10,
+                        beban_per_smt: 1_333_333 } })],
+      masa(KODE_PM, 5),
+      '2026-S2',
+    )
+    expect(hasil[0].beban).toBe(2_000_000)      // BENAR: 20.000.000 ÷ 10
+    expect(hasil[0].beban).not.toBe(1_333_333)  // rumus lama (nilai buku ÷ sisa) ditolak
+  })
+
   it('checkpoint tutup tahun MENANG atas baseline pemecahan yang lebih lama', () => {
     const hasil = jalankan(
       aset(),

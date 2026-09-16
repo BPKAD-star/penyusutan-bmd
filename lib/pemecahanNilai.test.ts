@@ -18,8 +18,8 @@ import {
   type BasisPemecahan, type PecahanInput,
 } from './pemecahanNilai'
 
-const basis = (nb: number, ak: number, sisa = 10): BasisPemecahan =>
-  ({ nilai_buku: nb, akumulasi: ak, sisa_smt: sisa })
+const basis = (nb: number, ak: number, sisa = 10, masaTahun: number | null = 10): BasisPemecahan =>
+  ({ nilai_buku: nb, akumulasi: ak, sisa_smt: sisa, masa_tahun: masaTahun })
 const pecah = (...nilai: (string | number)[]): PecahanInput[] =>
   nilai.map(n => ({ jumlah: '1', nilai: String(n) }))
 
@@ -85,15 +85,42 @@ describe('(2) sisa pembulatan diserap pecahan TERAKHIR', () => {
   })
 })
 
-describe('beban per semester', () => {
-  it('nilai buku ÷ sisa semester, dibulatkan ke rupiah', () => {
-    const a = alokasiPemecahan(100, basis(1_000, 0, 4), pecah(100))
-    expect(a[0].beban).toBe(250)
+// ⚠️ INSIDEN 2026-09-16: sampai hari itu `beban` dihitung `nb ÷ sisa_smt` —
+// tarif yang dihitung ULANG dari nilai buku & sisa umur SAAT PEMECAHAN,
+// padahal garis-lurus tarifnya wajib KONSTAN sepanjang umur aset (sama
+// persis cara induknya sendiri dihitung engine: nilai_perolehan ÷
+// masa_manfaat_smt, tetap dari semester pertama sampai terakhir). Σ NP/NB/AK
+// tetap eksak sama dgn induk walau rumus lama dipakai — jadi tak satu pun uji
+// "(1) Σ pecahan == induk" di atas pernah menangkap ini; yang salah cuma
+// TARIFNYA, dan itu baru kelihatan berbulan kemudian di Penyusutan.
+describe('beban per semester — TARIF KONSTAN (nilai perolehan pecahan ÷ masa manfaat TOTAL)', () => {
+  it('BUKAN nilai buku ÷ sisa semester', () => {
+    // masa_tahun=2 → 4 semester total. np=100, nb=1000 (nb sengaja beda jauh
+    // dari np supaya dua rumus menghasilkan angka yg jelas berbeda kalau
+    // salah satu dipakai keliru: nb/sisa = 1000/4 = 250, np/masaSmt = 100/4 = 25).
+    const a = alokasiPemecahan(100, basis(1_000, 0, 4, 2), pecah(100))
+    expect(a[0].beban).toBe(25)
+    expect(a[0].beban).not.toBe(250) // rumus lama (nb ÷ sisa_smt)
   })
-  it('sisa semester 0 → beban 0, bukan Infinity', () => {
-    const a = alokasiPemecahan(100, basis(1_000, 0, 0), pecah(100))
+  it('masa manfaat tak diketahui (golongan tak disusutkan) → beban 0, bukan Infinity', () => {
+    const a = alokasiPemecahan(100, basis(1_000, 0, 4, null), pecah(100))
     expect(a[0].beban).toBe(0)
     expect(Number.isFinite(a[0].beban)).toBe(true)
+  })
+  it('INSIDEN NYATA 2026-09-16: pecahan Jalan Kab. Kolektor Dinas PU — rumus lama MEMPERCEPAT begitu >separuh umur lewat', () => {
+    // Data produksi: induk masa manfaat 10 tahun (20 semester); sudah separuh
+    // umurnya lewat (sisa 9 dari 20 semester, `penyusutan_semester.sisa_semester`)
+    // saat dipecah 2026-09-14. Pecahan #1: nilai 253.889.242, nilai buku alokasi
+    // 126.944.620,98, akumulasi alokasi 126.944.621,02.
+    //   rumus LAMA (nb ÷ sisa)      : round(126944620,98 / 9)  = 14.104.958
+    //   rumus BENAR (np ÷ masa total): round(253889242 / 20)   = 12.694.462
+    const a = alokasiPemecahan(
+      253_889_242,
+      basis(126_944_620.98, 126_944_621.02, 9, 10),
+      pecah(253_889_242),
+    )
+    expect(a[0].beban).toBe(12_694_462)
+    expect(a[0].beban).not.toBe(14_104_958)
   })
 })
 

@@ -228,7 +228,23 @@ export function hitungJadwalAset(
     nilaiBuku = Number(p.nilai_buku_awal ?? 0)
     akumulasi = Number(p.akumulasi ?? 0)
     sisaSmt = Math.max(0, Math.trunc(Number(p.sisa_masa_manfaat_smt ?? 0)))
-    beban = Math.round(Number(p.beban_per_smt ?? 0))
+    const masaSmtPemecahan = Math.max(0, Math.round(Number(p.masa_manfaat_smt ?? 0)))
+    // ⚠️ INSIDEN 2026-09-16: `beban` DITURUNKAN dari `nilai_perolehan ÷
+    // masa_manfaat_smt`, BUKAN dipercaya dari `payload.beban_per_smt`.
+    // Checkpoint pemecahan ini ditulis OLEH APLIKASI KITA SENDIRI saat
+    // Pemecahan Barang disimpan (beda dari `saldo_awal`, yang diimpor APA
+    // ADANYA dari e-BMD — di situ mempercayai beban_per_smt memang benar,
+    // karena tak ada rumus lain buat menghitung ulang riwayat sistem lama).
+    // Untuk pemecahan, tarifnya SELALU harus persis nilai/masaSmt (garis-lurus
+    // konstan, sama dgn cara induknya sendiri disusutkan) — jadi kalau
+    // penulisnya (`lib/pemecahanNilai.ts`) pernah salah hitung, engine tak
+    // ikut mewarisi kesalahannya. `transaksi_bmd` append-only, jadi baris yg
+    // terlanjur menyimpan `beban_per_smt` KELIRU (ditemukan pada 10 pecahan
+    // produksi, akar masalah: rumus lama `nilai_buku ÷ sisa_smt` memakai
+    // keadaan SAAT INI alih-alih tarif ASLI) tak bisa dibetulkan langsung —
+    // menurunkannya di sini membuat kesepuluhnya PULIH OTOMATIS begitu Engine
+    // dijalankan ulang, tanpa migrasi ledger sama sekali.
+    beban = masaSmtPemecahan > 0 ? Math.round(nilaiPerolehan / masaSmtPemecahan) : 0
     masaTahun = p.masa_manfaat_smt ? Number(p.masa_manfaat_smt) / 2 : (masaManfaatKode.get(kode) ?? null)
     // Akrual mulai TEPAT di periode pemecahan → baseline = periode sebelumnya.
     mulaiSetelah = prevPeriodeOf(pemecahanMasuk.periode)
