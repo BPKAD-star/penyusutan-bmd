@@ -36,6 +36,8 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
+import { koreksiFieldKeys, ASET_NUM_COLS, angkaKolomAset, type FieldKey } from '@/lib/asetFields'
+import EditSpesifikasiModal from './EditSpesifikasiModal'
 import {
   ALASAN_OPT, ALASAN_LABEL, LEDGER_JENIS,
   perluKodeTujuan, targetKomptabel, filterKomptabelAwal,
@@ -90,18 +92,35 @@ type JurnalLine = {
   jumlah: number
   satuan: string | null
   nilai: number
+  tgl_perolehan: string | null
   payload: LinePayload | null
 }
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori,payload'
 
-function ringkasanBaris(l: JurnalLine): string {
+// Kode SEBELUM/SESUDAH reklas per baris. Untuk `reklas_komptabel` (kode tak
+// berubah, cuma keranjang intra/ekstra) dua-duanya jatuh ke `l.kode` — sengaja,
+// itu memang faktanya: kodenya tak pernah berbeda.
+const kodeAwal = (l: JurnalLine) => l.payload?.kode_lama || l.kode
+const kodeAkhir = (l: JurnalLine) => l.payload?.kode_baru || l.kode
+// Nama SEBELUM reklas — kalau tak pernah diganti (kunci `nama_lama` TAK ADA di
+// payload), sama dgn nama sekarang (`l.nama_barang`, yg juga jadi nilai
+// "sesudah"nya sendiri di kolom Spesifikasi Nama Barang Akhir).
+// ⚠️ Dicek pakai `'nama_lama' in p`, BUKAN `??` — nama lama yang TERCATAT
+// `null` (barang memang belum bernama sebelum diganti) beda dari kuncinya
+// yang TAK ADA (tak pernah diganti sama sekali); `??` menyamakan keduanya dan
+// diam-diam menampilkan nama SESUDAH sbg "sebelum" utk kasus pertama.
+const namaAwal = (l: JurnalLine): string | null => {
   const p = l.payload || {}
-  const nama = p.nama_baru ? ` · nama: "${p.nama_lama || '-'}" → "${p.nama_baru}"` : ''
-  if (p.kode_baru) return `${p.kode_lama || l.kode} → ${p.kode_baru}${nama}`
-  if (p.intra_ekstra) return `${(p.intra_ekstra_lama || '-').toUpperCase()} → ${p.intra_ekstra.toUpperCase()}${nama}`
-  return '-'
+  return 'nama_lama' in p ? (p.nama_lama ?? null) : l.nama_barang
+}
+// Perubahan komptabel (Intra↔Ekstra) — satu-satunya info yg HILANG kalau cuma
+// mengandalkan kode awal/akhir, karena utk alasan ini kodenya memang sama.
+// Ditampilkan sbg baris tambahan di sel Kode Akhir, bukan dibuang.
+const perubahanKomptabel = (l: JurnalLine): string | null => {
+  const p = l.payload || {}
+  return p.intra_ekstra ? `${(p.intra_ekstra_lama || '-').toUpperCase()} → ${p.intra_ekstra.toUpperCase()}` : null
 }
 
 export default function Reklasifikasi() {
@@ -114,6 +133,11 @@ export default function Reklasifikasi() {
 
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
+  // Uraian baku (kodefikasi TERKINI) per kode — dipakai utk kode AWAL & AKHIR
+  // sekaligus, dgn satu lookup. Pola sama dgn Daftar Barang/Penyusutan: ikut
+  // kodefikasi terkini, BUKAN `aset.uraian_barang` yg basi sesudah reklas
+  // (`insertLines` di bawah cuma menulis ulang `kode`, bukan `uraian_barang`).
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [addTo, setAddTo] = useState<Header | null>(null)
@@ -123,6 +147,89 @@ export default function Reklasifikasi() {
   // Batal reklas — pilih baris (per trx_id), lalu batalkan.
   const [selBatal, setSelBatal] = useState<Record<number, boolean>>({})
   const [batalling, setBatalling] = useState(false)
+
+  // ✎ Spesifikasi per baris reklas — pop-up LANGSUNG, tanpa jurnal baru.
+  const [spekBusy, setSpekBusy] = useState<string | null>(null)
+  const [spekEdit, setSpekEdit] = useState<{
+    asetId: string; nama: string; keys: FieldKey[]
+    initFields: Record<string, string>; initFoto: string[]
+  } | null>(null)
+  const [spekSaving, setSpekSaving] = useState(false)
+
+  // Melengkapi/memperbaiki spesifikasi barang yang BARU DIREKLAS — pop-up
+  // LANGSUNG, TANPA jurnal baru. Pola & alasan PERSIS "✎ Spesifikasi" pecahan
+  // di menu Koreksi (2026-09-10, lihat komentarnya di sana): reklas tak
+  // mengubah nilai/penyusutan/pemilik, cuma kode & (opsional) nama — jadi
+  // melengkapi spesifikasi barangnya UPDATE biasa ke `aset`, bukan peristiwa
+  // akuntansi baru. Dua keuntungan yang sama: (1) tak melahirkan kartu Koreksi
+  // kedua yang harus ditelusuri terpisah; (2) **Batal Reklas tetap hidup** —
+  // `cekBolehBatal` memblokir kalau aset itu punya transaksi LEBIH BARU, dan
+  // menulis `koreksi_spesifikasi` akan mengunci tombol Batal Reklas SELAMANYA
+  // begitu satu barang dilengkapi lewat jalur ber-ledger.
+  //
+  // ⚠️ PENGECUALIAN — barang yang SUDAH pernah kena `koreksi_spesifikasi`/
+  // `batal_koreksi_spesifikasi` tetap diarahkan ke menu Koreksi, bukan
+  // dipopup di sini: UPDATE senyap di situ berbahaya — tombol Batal koreksi
+  // lamanya me-restore ke `payload.prev` yang direkam SEBELUM update ini,
+  // jadi perubahan ini hilang tanpa satu pun jejak. Bahaya yang PERSIS SAMA
+  // yang mengunci pintu Saldo Awal (CLAUDE.md).
+  //
+  // Field-nya dipilih dari `l.kode` — kode SEKARANG (sudah = kode_baru untuk
+  // baris reklas kode/golongan), karena spesifikasi yang relevan memang milik
+  // golongan HASIL reklas, bukan golongan asalnya.
+  async function bukaSpekReklas(l: JurnalLine) {
+    setMsg(''); setSpekBusy(l.aset_id)
+    try {
+      // `error` DIPERIKSA — kalau query ini gagal dan kita anggap "belum
+      // pernah dikoreksi", kita justru mengambil jalur yang berbahaya itu
+      // diam-diam.
+      const { data: kor, error: korErr } = await supabase.from('transaksi_bmd')
+        .select('id').eq('aset_id', l.aset_id)
+        .in('jenis', ['koreksi_spesifikasi', 'batal_koreksi_spesifikasi']).limit(1)
+      if (korErr) { setMsg(`Error: gagal memeriksa riwayat koreksi barang ini — ${korErr.message}`); return }
+      if (kor && kor.length > 0) {
+        setMsg('Barang ini sudah pernah dikoreksi spesifikasi lewat jurnal — lengkapi lewat Pembukuan > Koreksi > Spesifikasi Barang (bukan dari sini), supaya tombol Batal koreksi lamanya tetap nyambung.')
+        return
+      }
+      const keys = koreksiFieldKeys(l.kode)
+      const { data: row, error: rowErr } = await supabase.from('aset')
+        .select([...keys, 'foto_paths'].join(',')).eq('id', l.aset_id).single()
+      if (rowErr) { setMsg(`Error: gagal memuat spesifikasi — ${rowErr.message}`); return }
+      const r = (row || {}) as Record<string, unknown>
+      const f: Record<string, string> = {}
+      for (const k of keys) { const v = r[k]; if (v != null) f[k] = String(v) }
+      setSpekEdit({
+        asetId: l.aset_id, nama: l.nama_barang || l.nibar || 'Barang',
+        keys, initFields: f,
+        initFoto: Array.isArray(r.foto_paths) ? (r.foto_paths as string[]) : [],
+      })
+    } finally {
+      setSpekBusy(null)
+    }
+  }
+
+  // Simpan spesifikasi hasil reklas — UPDATE `aset` saja, NOL baris ledger.
+  // `single: true` di modalnya berarti REPLACE penuh: field yang dikosongkan
+  // operator memang dimaksudkan jadi kosong, jadi ditulis `null`.
+  async function simpanSpekReklas(fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
+    if (!spekEdit) return
+    setSpekSaving(true)
+    const patch: Record<string, unknown> = {}
+    for (const k of spekEdit.keys) {
+      const v = fields[k]
+      // ⚠️ `angkaKolomAset`, BUKAN parser rupiah: kolom numeriknya memuat
+      // latitude/longitude yang boleh NEGATIF & luas yang berdesimal
+      // (insiden 20260820_04). Yang tak terbaca sbg angka → null, bukan 0.
+      patch[k] = v == null || v === '' ? null : (ASET_NUM_COLS.has(k) ? angkaKolomAset(v) : v)
+    }
+    if (foto.replace) patch.foto_paths = foto.replace
+    const { error } = await supabase.from('aset').update(patch).eq('id', spekEdit.asetId)
+    setSpekSaving(false)
+    if (error) { setMsg(`Error: gagal menyimpan spesifikasi — ${error.message}`); return }
+    setSpekEdit(null)
+    setMsg('Spesifikasi barang diperbarui — tanpa jurnal baru, Batal Reklas tetap bisa dipakai.')
+    loadJurnals(skpd)
+  }
 
   // Balikkan reklas terpilih ke posisi semula: guard (tak boleh ada transaksi
   // lebih baru) → insert batal_reklas (append-only) + kembalikan kode/intra/nama
@@ -228,7 +335,7 @@ export default function Reklasifikasi() {
       }
 
       const { data } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
+        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan,tgl_perolehan)')
         .in('jenis', ['reklas_kode', 'reklas_komptabel', 'reklas_golongan'] as never)
         .in('header_id', headerIds)
         .order('id', { ascending: true })
@@ -243,13 +350,40 @@ export default function Reklasifikasi() {
         j.lines.push({
           trx_id: r.id, aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
+          tgl_perolehan: r.aset.tgl_perolehan ?? null,
           payload: r.payload,
         })
         j.total += r.nilai
       }
     }
     // Jurnal yg SEMUA barisnya dibatalkan → lines kosong → otomatis tersembunyi.
-    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
+    const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
+    setJurnals(hasil)
+
+    // Uraian baku (kodefikasi TERKINI) utk kode AWAL & AKHIR sekaligus — satu
+    // lookup, dedup. Gagalnya cuma menurunkan kolom Uraian ke "-" (dilaporkan
+    // lewat `msg`), TIDAK menjatuhkan tabelnya — uraian di sini hiasan
+    // identitas, bukan angka yang dihitung.
+    const kodeSet = new Set<string>()
+    for (const j of hasil) for (const l of j.lines) { kodeSet.add(kodeAwal(l)); kodeSet.add(kodeAkhir(l)) }
+    if (kodeSet.size > 0) {
+      try {
+        const uniq = [...kodeSet]
+        const map: Record<string, string> = {}
+        for (let i = 0; i < uniq.length; i += 200) {
+          const { data: kf, error: kfErr } = await supabase.from('admin_kodefikasi_bmd')
+            .select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+          if (kfErr) throw new Error(kfErr.message)
+          for (const r of kf || []) if (r.uraian) map[r.kode] = r.uraian
+        }
+        setUraianMap(map)
+      } catch (e) {
+        setUraianMap({})
+        setMsg(`Uraian barang gagal dimuat: ${e instanceof Error ? e.message : String(e)} — kolom Uraian tampil "-".`)
+      }
+    } else {
+      setUraianMap({})
+    }
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -347,31 +481,65 @@ export default function Reklasifikasi() {
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       <th className="table-th w-10 text-center"><input type="checkbox" checked={allSel} onChange={toggleAllJ} title="Pilih semua (untuk batal)" /></th>
-                      <th className="table-th">Kode Register / Nama Barang</th>
-                      <th className="table-th">Perubahan</th>
+                      <th className="table-th">Kode Barang Awal / Uraian Barang Awal</th>
+                      <th className="table-th">Nama Barang / NIBAR</th>
+                      <th className="table-th">Kode Barang Akhir / Uraian Barang Akhir</th>
+                      <th className="table-th">Spesifikasi Nama Barang Akhir</th>
+                      <th className="table-th">Tgl Perolehan</th>
                       <th className="table-th text-center">Jumlah</th>
+                      <th className="table-th">Satuan</th>
                       <th className="table-th text-right">Nilai</th>
+                      <th className="table-th text-center w-28">Spesifikasi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {j.lines.map(l => (
+                    {j.lines.map(l => {
+                      const kAwal = kodeAwal(l)
+                      const kAkhir = kodeAkhir(l)
+                      const komptabel = perubahanKomptabel(l)
+                      return (
                       <tr key={l.aset_id} className={selBatal[l.trx_id] ? 'bg-red-50/50' : ''}>
                         <td className="table-td text-center">
                           <input type="checkbox" checked={!!selBatal[l.trx_id]}
                             onChange={() => setSelBatal(prev => { const n = { ...prev }; if (n[l.trx_id]) delete n[l.trx_id]; else n[l.trx_id] = true; return n })} />
                         </td>
                         <td className="table-td">
-                          <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
+                          <p className="font-medium text-gray-800 text-xs">{kAwal}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{uraianMap[kAwal] || '-'}</p>
                         </td>
-                        <td className="table-td text-xs text-gray-600">{ringkasanBaris(l)}</td>
-                        <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
+                        <td className="table-td">
+                          <p className="text-gray-700 text-xs">{namaAwal(l) || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'}</p>
+                        </td>
+                        <td className="table-td">
+                          <p className="font-medium text-gray-800 text-xs">{kAkhir}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{uraianMap[kAkhir] || '-'}</p>
+                          {komptabel && <p className="text-[11px] text-amber-600 mt-0.5">{komptabel}</p>}
+                        </td>
+                        <td className="table-td text-xs text-gray-600">{l.nama_barang || '-'}</td>
+                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.tgl_perolehan || '-'}</td>
+                        <td className="table-td text-center text-xs">{l.jumlah}</td>
+                        <td className="table-td text-xs text-gray-600">{l.satuan || '-'}</td>
                         <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                        <td className="table-td text-center">
+                          <button type="button" disabled={spekBusy != null} onClick={() => bukaSpekReklas(l)}
+                            title="Lengkapi/perbaiki spesifikasi barang ini — pop-up langsung, tanpa jurnal baru"
+                            className="text-xs text-teal hover:underline disabled:opacity-40 disabled:no-underline">
+                            {spekBusy === l.aset_id ? 'Membuka...' : '✎ Spesifikasi'}
+                          </button>
+                        </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
+              <p className="px-5 py-2.5 text-xs text-gray-500 bg-gray-50/60 border-t border-gray-100">
+                Ada spesifikasi yang kurang/keliru sesudah reklas? Klik <span className="font-medium">✎ Spesifikasi</span> di
+                barisnya — langsung pop-up, <span className="font-medium">tanpa jurnal baru</span>. Ini melengkapi entri
+                reklas yang sama (nilai &amp; penyusutan tak bergerak), jadi <span className="font-medium">Batal Reklas tetap
+                bisa dipakai</span>.
+              </p>
             </div>
             )
           })}
@@ -382,6 +550,22 @@ export default function Reklasifikasi() {
         <EditHeaderModal header={editing}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); setMsg('Header jurnal diperbarui.'); loadJurnals(skpd) }}
+        />
+      )}
+
+      {/* Pop-up ✎ Spesifikasi — POPUP YANG SAMA dgn pengisian spesifikasi
+          barang di menu lain (Pengadaan, Koreksi pecahan), jadi operator tak
+          berpindah alur. `single` supaya field & foto REPLACE penuh. */}
+      {spekEdit && (
+        <EditSpesifikasiModal
+          title={`Spesifikasi — ${spekEdit.nama}`}
+          fieldKeys={spekEdit.keys}
+          storagePrefix={`draft/reklas-spek/${spekEdit.asetId}`}
+          initialFields={spekEdit.initFields}
+          initialFoto={spekEdit.initFoto}
+          single
+          onSave={simpanSpekReklas}
+          onClose={() => { if (!spekSaving) setSpekEdit(null) }}
         />
       )}
     </FormShell>
