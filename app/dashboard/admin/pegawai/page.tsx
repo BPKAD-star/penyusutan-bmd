@@ -9,6 +9,8 @@ import CariBox from '@/components/admin/CariBox'
 import { cocokCari } from '@/lib/cari'
 import { jkDariNip } from '@/lib/usulanPengurus'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import type { BarisImportPegawai } from '@/lib/importPegawai'
+import { useImportPegawai } from './useImportPegawai'
 
 type Pegawai = {
   id: string
@@ -118,26 +120,8 @@ const isNamaRsud = (nama: string | null | undefined) => /^\s*rsud/i.test(nama ||
 // tanpa draft/approval spt PerolehanImport (itu perlu krn nyentuh ledger; ini
 // tidak). NIP yg sudah ada di-UPDATE (keputusan user 2026-07-14) — pas utk
 // file "data terbaru dari BKD" yg dikirim berkala.
-type ImportRow = {
-  nip: string; nama: string; pangkat: string; golongan: string; jabatan: string
-  jenis_kelamin: string; role_bmd: string; skpd_id: number | null
-  valid: boolean; masalah: string[]
-}
-
-function normHeader(s: unknown): string {
-  return String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '')
-}
-
-// Kolom Role BMD di Excel boleh berisi slug ('pengurus_barang') atau label
-// tampilan ('Pengurus Barang') — kosong → default sama dgn FORM_KOSONG/DB.
-function mapRoleBmd(raw: string): string | null {
-  const s = raw.trim()
-  if (!s) return 'pengurus_barang'
-  const byValue = ROLE_BMD.find(r => r.value === s)
-  if (byValue) return byValue.value
-  const byLabel = ROLE_BMD.find(r => r.label.toLowerCase() === s.toLowerCase())
-  return byLabel ? byLabel.value : null
-}
+// Pembacaan & validasi berkasnya MURNI & bertest — lib/importPegawai.ts.
+type ImportRow = BarisImportPegawai
 
 export default function AdminPegawaiPage() {
   const supabase = createClient()
@@ -158,12 +142,14 @@ export default function AdminPegawaiPage() {
     setTimeout(() => { setShowForm(false); setClosingForm(false) }, 160)
   }
 
-  const [showImport, setShowImport] = useState(false)
-  const [importRows, setImportRows] = useState<ImportRow[]>([])
-  const [importFileName, setImportFileName] = useState('')
-  const [parsingImport, setParsingImport] = useState(false)
-  const [committingImport, setCommittingImport] = useState(false)
-  const [importMsg, setImportMsg] = useState('')
+  // Import Excel — pop-up, pembacaan berkas, & commit-nya. Nama dipertahankan
+  // lewat destructuring beralias supaya seluruh JSX tak berubah. Aturan
+  // pembacaannya MURNI & bertest di lib/importPegawai.ts.
+  const {
+    terbuka: showImport, setTerbuka: setShowImport, rows: importRows,
+    namaBerkas: importFileName, parsing: parsingImport, committing: committingImport,
+    msg: importMsg, bacaBerkas: handleImportFile, commit: handleImportCommit,
+  } = useImportPegawai(ROLE_BMD, load, { normalisasiGolongan, pangkatDariGolongan })
 
   const [skpdOrder, setSkpdOrder] = useState<Map<number, number>>(new Map())
   // id SKPD yang tergolong RSUD — hanya di sini Pengguna Barang boleh non-ASN (tanpa NIP).
@@ -328,104 +314,6 @@ export default function AdminPegawaiPage() {
       return
     }
     load()
-  }
-
-  async function handleImportFile(f: File) {
-    setParsingImport(true); setImportMsg(''); setImportFileName(f.name); setImportRows([])
-    try {
-      const buf = await f.arrayBuffer()
-      const wb = XLSX.read(buf, { cellDates: true })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const grid: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-
-      const headerIdx = grid.findIndex(r => r.some(c => normHeader(c).includes('nip')))
-      if (headerIdx < 0) throw new Error("Header 'NIP' tidak ditemukan di file.")
-      const header = grid[headerIdx].map(normHeader)
-      const col = (...names: string[]) => {
-        for (const n of names) { const i = header.findIndex(h => h.includes(n)); if (i >= 0) return i }
-        return -1
-      }
-      const cNip = col('nip'), cNama = col('nama', 'namalengkap')
-      const cGolongan = col('golongan'), cJabatan = col('jabatan')
-      const cGender = col('jeniskelamin', 'gender'), cRole = col('rolebmd', 'role')
-      const cSkpd = col('skpdid', 'idskpd', 'skpd')
-      const str = (r: unknown[], i: number) => (i >= 0 ? String(r[i] ?? '').trim() : '')
-
-      const parsed: ImportRow[] = []
-      for (const r of grid.slice(headerIdx + 1)) {
-        const nip = str(r, cNip)
-        if (!nip) continue
-        const golonganRaw = str(r, cGolongan)
-        const golongan = golonganRaw ? normalisasiGolongan(golonganRaw) : ''
-        const skpdRaw = str(r, cSkpd)
-        const skpdNum = skpdRaw ? Number(skpdRaw) : NaN
-        parsed.push({
-          nip, nama: str(r, cNama),
-          pangkat: pangkatDariGolongan(golongan) || '',
-          golongan, jabatan: str(r, cJabatan),
-          jenis_kelamin: str(r, cGender).toUpperCase(),
-          role_bmd: str(r, cRole),
-          skpd_id: skpdRaw && !isNaN(skpdNum) ? skpdNum : null,
-          valid: true, masalah: [],
-        })
-      }
-      if (parsed.length === 0) throw new Error('Tidak ada baris data terbaca.')
-
-      // NIP dobel DALAM file yang sama (bukan yg sudah ada di DB — itu sengaja
-      // di-upsert/update, lihat komentar di atas FORM_KOSONG).
-      const nipCount = new Map<string, number>()
-      for (const p of parsed) nipCount.set(p.nip, (nipCount.get(p.nip) || 0) + 1)
-
-      // Validasi skpd_id ke admin_skpd (format kolom = ID numerik, bukan nama).
-      const skpdIds = [...new Set(parsed.map(p => p.skpd_id).filter((x): x is number => x != null))]
-      const skpdValid = new Set<number>()
-      for (let i = 0; i < skpdIds.length; i += 200) {
-        const { data } = await supabase.from('admin_skpd').select('id').in('id', skpdIds.slice(i, i + 200))
-        for (const s of (data || []) as { id: number }[]) skpdValid.add(s.id)
-      }
-
-      for (const p of parsed) {
-        if ((nipCount.get(p.nip) || 0) > 1) p.masalah.push('NIP dobel dalam file ini')
-        if (!p.nama) p.masalah.push('nama kosong')
-        const roleResolved = mapRoleBmd(p.role_bmd)
-        if (roleResolved === null) p.masalah.push(`role_bmd tidak dikenali: "${p.role_bmd}"`)
-        else p.role_bmd = roleResolved
-        if (p.jenis_kelamin && !['L', 'P'].includes(p.jenis_kelamin)) p.masalah.push(`jenis kelamin harus L/P: "${p.jenis_kelamin}"`)
-        if (p.skpd_id != null && !skpdValid.has(p.skpd_id)) p.masalah.push(`SKPD id ${p.skpd_id} tidak ditemukan`)
-        p.valid = p.masalah.length === 0
-      }
-      setImportRows(parsed)
-    } catch (e) {
-      setImportMsg(`Error: ${e instanceof Error ? e.message : String(e)}`)
-    }
-    setParsingImport(false)
-  }
-
-  async function handleImportCommit() {
-    const valid = importRows.filter(r => r.valid)
-    if (valid.length === 0) return
-    setCommittingImport(true); setImportMsg('')
-
-    const payload = valid.map(r => ({
-      nip: r.nip, nama: r.nama, pangkat: r.pangkat || null, golongan: r.golongan || null,
-      jabatan: r.jabatan || null, jenis_kelamin: r.jenis_kelamin || null,
-      role_bmd: r.role_bmd, skpd_id: r.skpd_id,
-    }))
-
-    let sukses = 0
-    const gagal: string[] = []
-    for (let i = 0; i < payload.length; i += 200) {
-      const chunk = payload.slice(i, i + 200)
-      const { error } = await supabase.from('admin_pegawai').upsert(chunk, { onConflict: 'nip' })
-      if (error) gagal.push(error.message)
-      else sukses += chunk.length
-    }
-
-    setImportMsg(gagal.length
-      ? `Error: ${sukses} baris berhasil, gagal: ${gagal.join(' | ')}`
-      : `${sukses} pegawai berhasil diimpor (dibuat baru atau diperbarui berdasarkan NIP).`)
-    if (sukses > 0) { setImportRows([]); setImportFileName(''); setShowImport(false); load() }
-    setCommittingImport(false)
   }
 
   // Non-ASN (tanpa NIP) hanya utk Pengguna Barang di SKPD RSUD (lihat migrasi
