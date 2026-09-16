@@ -753,23 +753,61 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   tak bisa di-Batal; yang butuh audit trail tetap lewat Pembukuan → Koreksi →
   Spesifikasi Barang (`koreksi_spesifikasi` + `payload.prev`).
   **PINTU INI CUMA UNTUK BARANG YANG BELUM BERGERAK** (keputusan user
-  2026-07-28). Aset yang pernah kena `koreksi_spesifikasi`/
-  `batal_koreksi_spesifikasi`, `reklas_kode`/`reklas_golongan`, atau
-  `pengalihan_status`/`mutasi_internal` **TERKUNCI** — wajib lewat menu Koreksi.
-  Bukan kehati-hatian belaka, ini menutup 2 kerusakan nyata: (a) UPDATE senyap
-  menimpa nilai yang di-set `koreksi_spesifikasi` → tombol Batal-nya nanti
-  me-restore ke `payload.prev` yang tak nyambung kenyataan; (b) sesudah reklas,
-  kode di snapshot (golongan lama) ≠ di register (golongan baru), padahal field
-  template dipilih dari kode SNAPSHOT → bisa nulis kolom golongan yang salah ke
-  `aset`. ⚠️ `saldo_awal`/`saldo_awal_checkpoint` **WAJIB dikecualikan** dari
+  2026-07-28). Bukan kehati-hatian belaka, ini menutup 2 kerusakan nyata:
+  (a) UPDATE senyap menimpa nilai yang di-set `koreksi_spesifikasi` → tombol
+  Batal-nya nanti me-restore ke `payload.prev` yang tak nyambung kenyataan;
+  (b) sesudah reklas, kode di snapshot (golongan lama) ≠ di register (golongan
+  baru), padahal field template dipilih dari kode SNAPSHOT → bisa nulis kolom
+  golongan yang salah ke `aset`.
+  ✅ **KUNCINYA SELF-HEALING sejak migrasi 20260916_01 — pembatalan MEMBUKA
+  kuncinya lagi** (keputusan user 2026-09-16). Sampai hari itu aturannya
+  "PERNAH KENA": `fn_aset_awal_2026_terkunci` cuma bertanya "adakah baris
+  ber-jenis ini?" atas 22 jenis — dan karena ledger append-only, baris aslinya
+  tak akan pernah hilang, jadi sekali tersentuh TERKUNCI SELAMANYA. Lebih
+  jauh: tiap `batal_*` ikut didaftarkan sbg jenis pengunci, sehingga
+  MEMBATALKAN justru menambah satu alasan kunci lagi. Terbukti di data hidup:
+  2 Tanah Dinas Perhubungan yang koreksi spesifikasinya sudah dibatalkan
+  (`aset.nama_barang` benar-benar pulih ke nilai semula) tetap 🔒 & tak akan
+  pernah terbuka. Sekarang yang diperiksa **KEADAAN, bukan riwayat jenis**:
+  `aset.status <> 'aktif'` (keluar register) · `aset.kode <> snapshot.kode`
+  (reklas) · `aset.skpd_id <> snapshot.skpd_id` (pengalihan/mutasi) — ketiganya
+  pulih sendiri begitu peristiwanya dibatalkan, tanpa perlu mendaftar satu pun
+  `batal_*`.
+  ⚠️ **Kelompok KEEMPAT tetap WAJIB melihat ledger & paling gampang terlewat
+  kalau fungsi ini kelak "disederhanakan" lagi:** `koreksi_spesifikasi` &
+  `penggabungan_masuk` TIDAK meninggalkan jejak keadaan apa pun — status, kode,
+  & SKPD-nya tak bergeser sedikit pun. Bahayanya bukan ketidakcocokan keadaan,
+  melainkan **tombol Batal yang masih hidup**: `payload.prev` (koreksi) &
+  `payload.spek_prev` (penggabungan) akan me-restore nilai yang terlanjur
+  ditimpa dari Saldo Awal. Jadi yang dicek "adakah baris jenis ini yang BELUM
+  dibatalkan?".
+  ⚠️ Pencocokan pembatalan memakai perbandingan **TEKS**
+  (`payload->>'target_trx_id' = t.id::text`), sengaja BUKAN cast ke bigint —
+  payload aneh bikin cast MELEDAK & menjatuhkan halaman Saldo Awal + trigger
+  sekaligus; dgn teks, payload aneh cuma berarti pembatalannya tak terbaca →
+  barang **TETAP TERKUNCI**, arah gagal yang benar untuk penjaga.
+  **Diukur ke produksi sebelum ditulis:** terkunci 138 → **124**, **0 kunci
+  baru**, **14 terbuka** — keempat-belasnya disisir satu per satu & semuanya
+  kasus "dibatalkan lalu balik normal"; snapshot 514.158 baris, 0 yatim; pada
+  ukuran panggilan SEBENARNYA (UI meng-slice per **500** NIBAR, bukan 50)
+  **110,7 ms** lawan pagu 8.000 ms — kedua EXISTS jadi hashed SubPlan yang
+  dijalankan SEKALI per statement, jadi biayanya ikut jumlah NIBAR yang
+  ditanya, bukan besar ledger. Skalar vs `_batch` dibandingkan atas 438 barang:
+  **0 beda**.
+  ⚠️ `saldo_awal`/`saldo_awal_checkpoint` **WAJIB dikecualikan** dari
   daftar kunci: migrasi 20260702_03 bikin baris `saldo_awal` sintetis di SETIAP
   aset baseline, jadi kalau ikut dihitung fiturnya mati total di hari pertama.
+  (Sejak 20260916_01 ini otomatis aman — jenis ledger tak lagi jadi dasar kunci
+  kecuali dua jenis di atas.)
   Yang sengaja TIDAK mengunci krn tak menyentuh kolom spesifikasi: pemanfaatan/
   pengamanan (kustodi), koreksi_nilai/kapitalisasi/akumulasi_kdp (murni angka),
   reklas_komptabel (keranjang laporan). **Nambah jenis ledger baru yang mengubah
-  kolom spesifikasi, golongan, atau `skpd_id` → WAJIB tambahkan ke daftar kunci**
-  di `fn_aset_awal_2026_terkunci` + `fn_aset_awal_2026_terkunci_batch` (dua-duanya,
-  daftarnya kembar). Penegaknya trigger DB (bukan cuma UI spt guard pembatalan);
+  kolom spesifikasi, golongan, atau `skpd_id`**: kalau ia menggeser
+  status/kode/`skpd_id`, kuncinya sudah ikut OTOMATIS — tak ada daftar yang
+  perlu disunting. Yang WAJIB ditambahkan manual cuma jenis yang mengubah
+  spesifikasi **tanpa** menggeser ketiganya (pola `koreksi_spesifikasi`), dan
+  itu di `fn_aset_awal_2026_terkunci` + `fn_aset_awal_2026_terkunci_batch`
+  (dua-duanya, badannya kembar). Penegaknya trigger DB (bukan cuma UI spt guard pembatalan);
   `fn_aset_awal_2026_terkunci` SECURITY DEFINER karena kalau dievaluasi sbg
   pemanggil, RLS justru menyembunyikan baris ledger yg jadi alasan penguncian
   (aset yg sudah pindah SKPD) → guard bocor. Sengaja DIPISAH dari fungsi trigger:
