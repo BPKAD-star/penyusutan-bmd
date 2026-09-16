@@ -17,14 +17,14 @@
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
 // selalu menjumlahkan nilai perolehan SELURUH hasil filter. Angka tanpa "Rp".
 import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { luasEfektif } from '@/lib/luasBidang'
 
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
-import { GOLONGAN_DAFTAR_BARANG, periodeDariTanggal, asalUsulTampil } from '@/lib/bmd'
+import { GOLONGAN_DAFTAR_BARANG, asalUsulTampil } from '@/lib/bmd'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_DAFTAR_BARANG } from '@/lib/visibilitas'
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
@@ -32,7 +32,8 @@ import { fetchRiwayatKodeRegister, kodeRegisterPada } from '@/lib/kodeRegisterRi
 import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset, type KursorKode } from '@/lib/keyset'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
-import { tahunAwal } from '@/lib/tahunKerja'
+import { useFilterDaftarBarang, type Applied } from './useFilterDaftarBarang'
+import { useReferensiDaftarBarang } from './useReferensiDaftarBarang'
 import { orCari } from '@/lib/cariBarang'
 
 // Baris per halaman. Sejak paginasi pindah ke server (migrasi 20260814_05..08)
@@ -98,7 +99,6 @@ type Row = {
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
 
-type Applied = { descIds: number[] | null; skpdId: number | null; golongan: string; komptabel: string; search: string; periode: string }
 
 // Angka RUPIAH polos bergaya id-ID tanpa "Rp" — SELALU 2 desimal sejak
 // 2026-09-09 (keputusan user): sebelumnya halaman ini membulatkan ke 0 desimal
@@ -265,19 +265,20 @@ function tdClass(key: string, striped?: boolean) {
 export default function DaftarBarangPage() {
   const supabase = createClient()
 
-  // ── Nilai filter (belum diterapkan) ──
-  const [skpdMap, setSkpdMap] = useState<Record<number, string>>({}) // id→nama semua level (resolve nama SKPD baris)
-  const [golonganLabels, setGolonganLabels] = useState<Record<string, string>>({})
-  const [fSel, setFSel] = useState<{ skpdId: number | null; descIds: number[] | null }>({ skpdId: null, descIds: null })
-  const [fGolongan, setFGolongan] = useState('')
-  const [fKomptabel, setFKomptabel] = useState('')
-  const [fSearch, setFSearch] = useState('')
-  const now = periodeDariTanggal(new Date().toISOString().slice(0, 10))
-  const [fTahun, setFTahun] = useState(() => tahunAwal(now.slice(0, 4)))
-  const [fSmt, setFSmt] = useState(now.slice(-1))
+  // ── Peta rujukan (nama SKPD & nama jenis aset) ──
+  // Kegagalannya PERINGATAN, bukan pembatal: keduanya label di atas data yang
+  // sudah benar. Lihat alasannya di ./useReferensiDaftarBarang.ts.
+  const { skpdMap, golonganLabels, err: errRef } = useReferensiDaftarBarang()
 
-  // ── Filter yang sudah diterapkan (dipakai query) ──
-  const [applied, setApplied] = useState<Applied | null>(null)
+  // ── Filter: nilai yang sedang DIKETIK (f*) vs yang sudah DITERAPKAN ──
+  // ⚠️ Query halaman ini — paginasi, rekap, kedua Export — WAJIB membaca
+  // `applied`, bukan `f*`. Namanya dipertahankan lewat destructuring supaya
+  // seluruh JSX di bawah tak berubah sebaris pun.
+  const {
+    fSel, setFSel, fGolongan, setFGolongan, fKomptabel, setFKomptabel,
+    fSearch, setFSearch, fTahun, setFTahun, fSmt, setFSmt,
+    applied, setApplied, pesanFilter, rakit,
+  } = useFilterDaftarBarang()
 
   const [data, setData] = useState<Row[]>([])          // baris yang tampil (halaman aktif / semua)
   const [allVisible, setAllVisible] = useState<Row[]>([]) // seluruh baris visible di periode (utk paginasi & export)
@@ -301,30 +302,6 @@ export default function DaftarBarangPage() {
   // ini sudah pernah benar-benar macet di situ — jadi bedanya harus kelihatan.
   const [progres, setProgres] = useState(0)
 
-  useEffect(() => {
-    ;(async () => {
-      const map: Record<number, string> = {}
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('admin_skpd').select('id,nama').range(from, from + 999)
-        if (!data || data.length === 0) break
-        for (const s of data) map[s.id] = s.nama
-        if (data.length < 1000) break
-      }
-      setSkpdMap(map)
-    })()
-    ;(async () => {
-      const { data: jenis } = await supabase.from('admin_jenis_aset').select('id,nama')
-      const namaById = new Map((jenis || []).map(j => [j.id, j.nama]))
-      const labels: Record<string, string> = {}
-      await Promise.all(GOLONGAN_DAFTAR_BARANG.map(async prefix => {
-        const { data } = await supabase.from('admin_kodefikasi_bmd')
-          .select('jenis_aset_id').eq('kode_jenis', prefix).not('jenis_aset_id', 'is', null).limit(1)
-        const id = data?.[0]?.jenis_aset_id
-        labels[prefix] = (id != null && namaById.get(id)) || prefix
-      }))
-      setGolonganLabels(labels)
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter dipisah agar dipakai bareng query utama & export. Sumber = tabel utama
   // `aset` (bukan view) supaya `id` = aset.id, sehingga filter sembunyi period-aware
@@ -574,13 +551,11 @@ export default function DaftarBarangPage() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleTampilkan() {
-    // Aturan dua mode (user 2026-08-14). Penegak sesungguhnya `fn_dbar_guard`
-    // di DB; ini cuma supaya pesannya ramah & muncul sebelum query ditembak.
-    if (!fGolongan && !(fSel.descIds && fSel.descIds.length > 0)) {
-      setErr('Pilih SKPD dulu, atau pilih jenis aset kalau ingin melihat se-kabupaten. Menampilkan semua jenis aset untuk semua SKPD sekaligus tidak didukung.')
-      return
-    }
-    const f: Applied = { descIds: fSel.descIds, skpdId: fSel.skpdId, golongan: fGolongan, komptabel: fKomptabel, search: fSearch.trim(), periode: `${fTahun}-S${fSmt}` }
+    // Aturan dua mode (user 2026-08-14) diperiksa `rakit()`. Penegak
+    // sesungguhnya `fn_dbar_guard` di DB; ini cuma supaya pesannya ramah &
+    // muncul sebelum query ditembak.
+    if (pesanFilter) { setErr(pesanFilter); return }
+    const f = rakit()
     setApplied(f); setPage(0); setGrandTotal(0)
     setLoading(true); setErr('')
 
@@ -989,6 +964,17 @@ export default function DaftarBarangPage() {
 
       {err && (
         <div className="card border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
+      )}
+
+      {/* ⚠️ PERINGATAN (amber), bukan pembatal (merah): peta rujukan cuma
+          LABEL — nama SKPD per baris & nama jenis aset di dropdown. Tak satu
+          pun angka bergantung padanya, jadi menjatuhkan daftar gara-gara ini
+          justru merugikan. Yang tak boleh cuma MENELANNYA: kolom SKPD yang
+          tampil "-" terbaca operator sbg "barang ini memang tak bertuan". */}
+      {errRef && (
+        <div className="card border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          {errRef} — daftar & angkanya tetap benar, yang terdampak cuma nama yang ditampilkan.
+        </div>
       )}
 
       {/* Hasil */}
