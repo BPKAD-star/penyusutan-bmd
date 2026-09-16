@@ -186,6 +186,69 @@ describe('golden — kasus yang pernah menggigit', () => {
 })
 
 // ════════════════════════════════════════════════════════════════════════════
+// 1b. Insiden nyata 2026-09-17: reklas dicatat SKPD A, asetnya lalu pindah ke
+//     SKPD B DI PERIODE YANG SAMA — baris reklas WAJIB tetap tampil di
+//     Rekonsiliasi SKPD A (yang mencatatnya), bukan cuma di SKPD B (yang
+//     kini "kebetulan" memegang asetnya).
+//
+// Fixture MINIMAL & TERPISAH dari `tabelFixture()` — sengaja, supaya tak perlu
+// memodelkan Saldo Awal/Akhir seluruh golongan lain hanya untuk menguji SATU
+// keputusan scoping. Golongan yang dipakai (1.3.4 / 1.5.3) sengaja TIDAK
+// dipakai baris mana pun di `fixture.ts`, supaya nol interaksi dengan
+// tie-out/snapshot dataset yang sudah ada.
+//
+// ⚠️ Ini bukan hipotetis — persis kronologi kejadian nyata: reklas
+// "Kesalahan Kodefikasi" dicatat di menu Reklasifikasi saat "Lokasi/SKPD" =
+// Pengelola Barang (picker barangnya sendiri `.eq('skpd_id', skpdId)`, jadi
+// benar pada detik itu), lalu barangnya dipindah ke RSUD Kabupaten Kediri
+// lewat Pengalihan Status — dua-duanya di semester yang SAMA. Ronde pertama
+// perbaikan (`ownersAt`, posisi per semester) TIDAK CUKUP untuk kasus ini
+// (lihat kepala lib/laporanReklas.ts); yang benar `header.skpd_id`, yang
+// dikunci permanen sejak jurnal dibuat.
+// ════════════════════════════════════════════════════════════════════════════
+describe('golden — reklas dicatat SKPD A, asetnya lalu pindah ke SKPD B (2026-09-17)', () => {
+  const JIJ = '1.3.4.01.01.01.001'  // Jalan, Irigasi, Jaringan — tak dipakai fixture lain
+  const ATB = '1.5.3.01.01.01.001'  // Aset Tak Berwujud — tak dipakai fixture lain
+
+  const minimalDb = () => fakeSupabase(
+    {
+      // `aset.skpd_id` = posisi TERKINI (sesudah pengalihan) — SKPD_B.
+      aset: [{ id: 'A23', kode: ATB, skpd_id: SKPD_B, intra_ekstra: 'intra', nibar: 'NB-A23', nama_barang: 'Barang A23' }],
+      // `jurnal_header.skpd_id` = SKPD yang MENCATAT reklasnya — SKPD_A.
+      jurnal_header: [{ id: 'H4', skpd_id: SKPD_A }],
+      transaksi_bmd: [
+        // id 500: reklas Kesalahan Kodefikasi, dicatat SKPD_A.
+        { id: 500, jenis: 'reklas_kode', aset_id: 'A23', nilai: 24_000_000, tanggal: '2026-09-11',
+          periode: PERIODE, skpd_asal: null, skpd_tujuan: null, header_id: 'H4',
+          payload: { kode_lama: JIJ, kode_baru: ATB } },
+        // id 501 (BELAKANGAN, id lebih besar): asetnya dipindah ke SKPD_B.
+        { id: 501, jenis: 'pengalihan_status', aset_id: 'A23', nilai: 24_000_000, tanggal: '2026-09-15',
+          periode: PERIODE, skpd_asal: SKPD_A, skpd_tujuan: SKPD_B, header_id: null, payload: null },
+      ],
+    },
+    EMBED,
+  )
+
+  it('scope SKPD A (yang mencatat reklasnya) TETAP melihat kedua baris reklas', async () => {
+    const lines = await fetchMutasiLines(minimalDb(), PERIODE, [SKPD_A])
+    expect(nilai(lines, '1.3.4', 'intra', 'reklas_kode_keluar')).toBe(24_000_000)
+    expect(nilai(lines, '1.5.3', 'intra', 'reklas_kode_masuk')).toBe(24_000_000)
+  })
+
+  it('scope SKPD B (baru menerima BELAKANGAN, tak pernah mencatat reklasnya) TIDAK melihat baris reklasnya', async () => {
+    const lines = await fetchMutasiLines(minimalDb(), PERIODE, [SKPD_B])
+    expect(lines.some(l => l.aset_id === 'A23' && l.kategori.includes('reklas_kode'))).toBe(false)
+  })
+
+  it('pengalihannya sendiri tetap tampil dari sisi masing-masing — bukti scope A/B beneran diuji, bukan kebetulan kosong', async () => {
+    const dariA = await fetchMutasiLines(minimalDb(), PERIODE, [SKPD_A])
+    expect(dariA.some(l => l.aset_id === 'A23' && l.kategori === 'pengalihan_keluar')).toBe(true)
+    const dariB = await fetchMutasiLines(minimalDb(), PERIODE, [SKPD_B])
+    expect(dariB.some(l => l.aset_id === 'A23' && l.kategori === 'penggunaan_masuk')).toBe(true)
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
 // 2. Snapshot posisi (Saldo Awal & Saldo Akhir).
 // ════════════════════════════════════════════════════════════════════════════
 describe('golden — snapshot posisi', () => {

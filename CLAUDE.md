@@ -3589,6 +3589,36 @@ dicatat.
 - **Tak ada migrasi** — murni turunan di klien; ledger & RPC tak disentuh.
   Dikunci: fixture `tests/lembarReklas.test.tsx`, `tests/lembarKoreksi.test.tsx`,
   `lib/formatKoreksi.test.ts` diperbarui memuat `skpdIdSaatItu`.
+- ⚠️⚠️ **BUG YANG SAMA JUGA ADA DI REKONSILIASI BMD (Lapis 1!) — ketahuan
+  begitu user menguji SKPD Pengelola Barang/Semester II & baris "Reklasifikasi
+  → Kesalahan Kodefikasi" (1.3.1 Tanah) tampil "–" padahal transaksinya
+  persis yang dicatat di atas.** `computeMutasiLines` → `doReklas`
+  (lib/rekon.ts) menyaring `inScope(r.aset.skpd_id)` — POSISI TERKINI — untuk
+  memutuskan apakah baris reklas ikut dihitung dalam scope SKPD yang sedang
+  dilihat. Begitu asetnya pindah SKPD (Pengalihan/Mutasi Internal) di semester
+  yang sama, baris reklasnya **hilang total** dari Rekonsiliasi SKPD yang
+  justru mencatatnya — bukan cuma salah label kolom seperti di Laporan
+  Reklasifikasi/Koreksi, di sini ANGKANYA HILANG dari lembar yang dikirim ke
+  BPK/inspektorat.
+  - **Obatnya SAMA**: `doReklas` kini pakai `r.header?.skpd_id ?? r.aset.skpd_id`
+    utk `inScope()` MAUPUN utk `skpd_id` yang dicatat di `MutasiLine` (dipakai
+    drill-down "Rincian Transaksi"). `LedRow.header` & query `fetchLed`
+    ditambah kolom `skpd_id`.
+  - **Kategori LAIN di `computeMutasiLines` (cara perolehan, kapitalisasi,
+    koreksi nilai, pemecahan, penggabungan, penghapusan) SENGAJA BELUM
+    disentuh** — bisa jadi kena pola yang sama, tapi mengubah semuanya
+    sekaligus di berkas Lapis 1 ini tanpa diminta & tanpa mengukur dampaknya
+    satu-satu adalah risiko yang tak sepadan saat ini. `pengalihan_status`/
+    `mutasi_internal` sendiri SUDAH aman (pakai `skpd_asal`/`skpd_tujuan`
+    langsung dari baris, bukan `aset.skpd_id`).
+  - **Dikunci golden test BARU** (`tests/golden/rekonsiliasi.test.ts`, describe
+    "reklas dicatat SKPD A, asetnya lalu pindah ke SKPD B") — SENGAJA memakai
+    fixture MINIMAL terpisah dari `tabelFixture()` (golongan 1.3.4/1.5.3 yang
+    tak dipakai baris fixture lain sama sekali), supaya menguji SATU keputusan
+    scoping ini tak perlu memodelkan Saldo Awal/Akhir seluruh golongan lain di
+    dataset bersama. Diuji merah dulu (revert manual ke `r.aset.skpd_id`,
+    2 dari 3 test gagal persis seperti gejala di produksi) sebelum dikunci hijau.
+  - **Tak ada migrasi** di sini juga.
 
 ## Laporan Pengeluaran Internal — Format IV.D.2–D.6 & IV.D.7 (2026-09-02)
 

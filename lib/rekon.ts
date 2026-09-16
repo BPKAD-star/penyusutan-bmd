@@ -357,7 +357,7 @@ type LedRow = {
   header_id: string | null
   payload: Record<string, unknown> | null
   aset: { kode: string; skpd_id: number | null; intra_ekstra: string | null; nibar: string | null; nama_barang: string | null } | null
-  header: { no_sk: string | null; sub_jenis: string | null } | null
+  header: { no_sk: string | null; sub_jenis: string | null; skpd_id: number | null } | null
 }
 
 async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: string): Promise<LedRow[]> {
@@ -365,7 +365,7 @@ async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: 
   let terakhir = 0
   for (;;) {
     const { data, error } = await supabase.from('transaksi_bmd')
-      .select('id,jenis,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,header_id,payload,aset:aset_id(kode,skpd_id,intra_ekstra,nibar,nama_barang),header:header_id(no_sk,sub_jenis)')
+      .select('id,jenis,aset_id,nilai,tanggal,skpd_asal,skpd_tujuan,header_id,payload,aset:aset_id(kode,skpd_id,intra_ekstra,nibar,nama_barang),header:header_id(no_sk,sub_jenis,skpd_id)')
       .eq('periode', periode).in('jenis', jenisList as never)
       .gt('id', terakhir).order('id', { ascending: true }).limit(1000)
     if (error) throw new Error(`gagal membaca ledger (${jenisList.join(', ')}) periode ${periode}: ${error.message}`)
@@ -712,15 +712,32 @@ async function computeMutasiLines(
   }
 
   // Reklas Perubahan Fungsi (golongan) & Kesalahan Kodefikasi (kode).
+  //
+  // ⚠️ Scope-nya `header.skpd_id` — SKPD yang MENCATAT jurnal reklas ini —
+  // BUKAN `aset.skpd_id` posisi terkini (insiden nyata 2026-09-17). Reklas tak
+  // memindahkan SKPD, tapi barangnya TETAP AKTIF sesudahnya & bisa dipindah
+  // SKPD lain lewat Pengalihan Status/Mutasi Internal belakangan. Kalau
+  // scope-nya tetap `aset.skpd_id`, baris reklas ini SILANG HILANG dari
+  // Rekonsiliasi SKPD yang justru mencatatnya, begitu asetnya pindah keluar —
+  // padahal reklas itu memang terjadi & dikerjakan SKPD tsb.
+  // `header.skpd_id` DIKUNCI PERMANEN sejak jurnal dibuat (trigger
+  // `fn_jurnal_header_guard`, lihat "Pola jurnal ber-SK" di CLAUDE.md), jadi
+  // ia tak punya masalah granularitas semester spt `ownersAt` — lihat kepala
+  // lib/laporanReklas.ts utk kronologi lengkap kenapa `ownersAt` TIDAK CUKUP
+  // di sini (reklas & pindah SKPD-nya bisa jatuh di semester yang SAMA).
+  // `aset.skpd_id` cuma cadangan utk baris tanpa header (harusnya tak pernah
+  // terjadi utk reklas).
   const doReklas = (rows: LedRow[], masuk: MutasiKey, keluar: MutasiKey) => {
     for (const r of rows) {
-      if (!r.aset || reklasBatal.has(r.id) || !inScope(r.aset.skpd_id)) continue
+      if (!r.aset || reklasBatal.has(r.id)) continue
+      const sid = r.header?.skpd_id ?? r.aset.skpd_id
+      if (!inScope(sid)) continue
       const komp = kompOf(r.aset.intra_ekstra)
       const kodeLama = typeof r.payload?.kode_lama === 'string' ? r.payload.kode_lama : null
       const kodeBaru = typeof r.payload?.kode_baru === 'string' ? r.payload.kode_baru : null
       if (!kodeLama || !kodeBaru) continue
-      push(kodeLevel3(kodeLama), komp, keluar, r.nilai, r)
-      push(kodeLevel3(kodeBaru), komp, masuk, r.nilai, r)
+      push(kodeLevel3(kodeLama), komp, keluar, r.nilai, r, sid)
+      push(kodeLevel3(kodeBaru), komp, masuk, r.nilai, r, sid)
     }
   }
   doReklas(reklasG, 'reklas_fungsi_masuk', 'reklas_fungsi_keluar')
