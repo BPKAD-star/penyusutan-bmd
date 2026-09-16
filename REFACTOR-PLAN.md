@@ -637,29 +637,38 @@ for f in $(find app components -name '*.tsx' | grep -v test); do
 done | sort -rn | head -10
 ```
 
-### Sasaran TERUKUR — 2026-09-15
+### Sasaran TERUKUR — diukur ulang 2026-09-16
+
+⚠️ **Tabel ini basi dalam hitungan hari.** Versi 2026-09-15 mendaftar EMPAT
+komponen dan terbaca seolah itu seluruh sisanya; begitu keempatnya digarap,
+pengukuran ulang menampilkan DELAPAN yang tak pernah tercantum — termasuk
+`CetakPerolehanPermendagriPage` (20) & `BarangForm` Pemanfaatan (20), yang
+sudah sepadat yang di puncak daftar lama. **Jalankan perintahnya, jangan
+percaya tabelnya.**
 
 | Komponen | Baris | `useState` | Catatan |
 |---|---|---|---|
-| `Page` — Saldo Awal → Daftar Barang Awal | 867 | **30** | 🔴 terpadat se-repo · **Lapis 1** |
-| `DaftarBarangPage` | 793 | **22** | 🔴 **Lapis 1** |
-| `LaporanBmdPage` | 969 | 20 | 🔴 **Lapis 1** |
-| `PenyusutanPage` | 646 | 20 | 🔴 **Lapis 1** |
-| `AdminPegawaiPage` | 541 | 19 | 🔴 |
-| `KoreksiForm` | 1.128 | **8** | 🟡 sisanya JSX & `simpan()` |
+| `Page` — Saldo Awal → Daftar Barang Awal | 737 | **20** | 🔴 **Lapis 1** · sisa: filter + paginasi + export |
+| `CetakPerolehanPermendagriPage` | 288 | **20** | lembar cetak bertanda tangan |
+| `BarangForm` — Pemanfaatan | 283 | **20** | kembar bentuk dgn Pengamanan (sudah dipecah) |
+| `LraPage` | 413 | 19 | |
+| `RekonsiliasiPage` | 508 | 18 | 🔴 **Lapis 1** |
+| `ChatWidget` | 472 | 16 | |
+| `ReklasForm` | 372 | 16 | |
+| `KontrakForm` — Pengadaan | 131 | 16 | 131 baris/16 state — terpadat per baris se-repo |
 
-⚠️⚠️ **Komponen terpadat di repo ini ada di `app/dashboard/**`, dan EMPAT di
-antaranya Lapis 1** (Daftar Barang · Penyusutan · Laporan BMD · Saldo Awal).
-Tabel lama tak pernah menyebut satu pun halaman dashboard — ia hanya memuat
-empat berkas `components/pengelolaan/`. Itu sebabnya "Fase 3" selama ini
-terbaca seolah hanya soal menu Pembukuan.
+⚠️⚠️ **Komponen terpadat di repo ini ada di `app/dashboard/**` & `app/cetak/**`,
+bukan di `components/pengelolaan/`.** Tabel sebelum 2026-09-15 tak pernah
+menyebut satu pun halaman dashboard; tabel 2026-09-15 tak pernah menyebut satu
+pun halaman cetak. Itu sebabnya "Fase 3" berkali-kali terbaca lebih sempit dari
+kenyataannya.
 
-⚠️ Metrik "berkas > 500 baris" (33, patokan 19) **nyaris tak bergerak** oleh
-pekerjaan Fase 3 — mengangkat state ke hook MENAMBAH berkas, bukan
-mengurangi. Itu bukan tanda gagal; itu tanda metriknya mengukur hal lain.
-Yang benar-benar turun: `useState` per komponen.
+⚠️ Metrik "berkas > 500 baris" **nyaris tak bergerak** oleh pekerjaan Fase 3 —
+mengangkat state ke hook MENAMBAH berkas, bukan mengurangi. Itu bukan tanda
+gagal; itu tanda metriknya mengukur hal lain. Yang benar-benar turun:
+`useState` per komponen.
 
-### Yang SUDAH dipecah (2026-09-15)
+### Yang SUDAH dipecah
 
 Menu **Koreksi** tuntas — kelima alasan + pemilih barang + pemuat kartu punya
 mesin statenya sendiri, semuanya bertest & ber-mutasi:
@@ -674,6 +683,35 @@ components/pengelolaan/penghapusan/usePemilihBarang.ts
 
 Hasil: `KoreksiForm` **46 → 8** `useState`, `Koreksi.tsx` 2.449 → 1.989.
 
+**Gelombang kedua (2026-09-16)** — lima komponen, masing-masing satu commit:
+
+| Komponen | `useState` | Yang diangkat |
+|---|---|---|
+| `BarangForm` — Pengamanan | 21 → 8 | `pengamanan/usePemilihBarang` · `useDokumenBast` |
+| `DaftarBarangPage` 🔴 | 22 → 14 | `useFilterDaftarBarang` · `useReferensiDaftarBarang` |
+| `PenyusutanPage` 🔴 | 20 → 10 | `useFilterPenyusutan` · `useEngineRun` |
+| `LaporanBmdPage` 🔴 | 20 → 10 | `lib/periodeLaporanBmd` · `useFilterLaporanBmd` · `useLembarMutasi` |
+| `AdminPegawaiPage` | 19 → 13 | `lib/importPegawai` · `useImportPegawai` |
+
+Bareng itu **`shared/ui/useSeleksiBarang.ts`** diangkat di kemunculan KELIMA
+(KIR · PengeluaranInternal · Reklasifikasi · penghapusan · pengamanan) —
+deduplikasi sungguhan, kelimanya dialihkan.
+
+⚠️ **Yang paling berharga dari gelombang ini BUKAN hitungan `useState`,
+melainkan dua ATURAN Lapis 1 yang selama ini tak punya satu pun test** karena
+hidup sebagai baris turunan di dalam komponen: `lib/periodeLaporanBmd.ts`
+(saldo awal mengikuti JENIS laporan, keputusan user 2026-08-10) &
+`lib/importPegawai.ts` (siapa yang jadi Pengurus Barang di tiap SKPD).
+**Kalau sebuah komponen menyembunyikan aturan semacam itu, angkat aturannya
+lebih dulu — sisa `useState`-nya bonus.**
+
+⚠️ Pemecahan mengungkap DUA cacat warisan yang tak pernah bersuara, dan
+keduanya diperbaiki di commit TERPISAH supaya pemindahannya tetap terbukti
+setara: kop lembar Rekapitulasi Mutasi membawa nama SKPD yang SALAH
+(`fix(laporan-bmd)`), dan `commit` Import Pegawai tak punya penangkap untuk
+kegagalan jaringan. **Menulis test untuk kode yang "cuma dipindah" memang
+sering menemukan bug — itu keuntungan, bukan gangguan.**
+
 ⚠️ **Resep yang terbukti**, dipakai 7× berturut-turut tanpa satu pun regresi:
 1. aturan MURNI dulu ke `lib/` + test (kalau ada angka yang masuk ledger)
 2. state + efek ke `use*.ts`, **nama lokal dipertahankan lewat destructuring
@@ -685,6 +723,32 @@ Hasil: `KoreksiForm` **46 → 8** `useState`, `Koreksi.tsx` 2.449 → 1.989.
 ⚠️ Perilaku JANGGAL dipertahankan apa adanya & ditandai komentar (mis. query
 yang tak memeriksa `error`). Membetulkannya bareng pemindahan membuat
 pemindahannya tak bisa dibuktikan setara — itu pekerjaan Fase 1, terpisah.
+
+### ⛔ Temuan yang BELUM digarap — peta nama SKPD ditulis 29 kali (2026-09-16)
+
+Ditemukan saat memecah `PenyusutanPage`. `from('admin_skpd').select('id,nama')`
+muncul di **29 berkas**, dan yang berbahaya bukan jumlahnya:
+
+- **23 memakai sapuan keyset** (`range(from, from + 999)` sampai habis) — benar.
+- **6 TIDAK**, jadi ia bergantung pada batas bawaan PostgREST (1.000 baris):
+  `app/kibar/[nibar]/page.tsx` · `components/pelaporan/LaporanPengamanan.tsx` ·
+  `LaporanPemanfaatan.tsx` · `LaporanKir.tsx` ·
+  `components/dashboard/CaraPerolehanCards.tsx` · `PenghapusanCards.tsx`
+
+⚠️ **Hari ini keenamnya BEKERJA** — `admin_skpd` 816 baris, di bawah batas. Ia
+bom waktu, bukan bug: begitu SKPD ke-1.001 dibuat, SKPD di atas ambang itu
+tampil **"-"** di keenam layar tsb, tanpa satu pun error, dan operator
+membacanya sebagai "barang ini memang tak bertuan".
+
+⚠️ Hampir semuanya juga menelan `error` (`const { data } = await` telanjang),
+jadi query yang GAGAL tak bisa dibedakan dari "SKPD-nya memang tak ada".
+
+**Bentuk yang benar sudah ada** di `app/dashboard/daftar-barang/
+useReferensiDaftarBarang.ts` (keyset + `error` dilaporkan sbg PERINGATAN, bukan
+pembatal — nama SKPD itu label di atas angka yang sudah benar). Yang perlu:
+angkat jadi hook bersama lalu alihkan ke-29-nya. **Ukur `count(*)` sungguhan
+`admin_skpd` sebelum mengerjakannya** — angka 816 di dokumen ini pun sudah
+berkali-kali terbukti basi.
 
 ### "Jangan pecah spekulatif" — DILONGGARKAN oleh user 2026-09-15
 
