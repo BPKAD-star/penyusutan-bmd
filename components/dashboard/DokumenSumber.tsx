@@ -17,6 +17,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { fetchApprovalScope } from '@/lib/roles'
 import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen, dokumenMasihLive } from '@/lib/dokumenSiklus'
 import { uploadDokumenSiklus, hapusFileDokumen, bukaDokumenSumber, namaFileDariPath } from '@/lib/dokumenStorage'
+import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type GenericDoc = {
@@ -147,6 +148,15 @@ type BarisPull = {
   payload: Record<string, unknown> | null
 }
 
+// Kategori "Penggunaan" (Pengalihan Status & Mutasi Internal) — SATU-SATUNYA
+// keluarga di siklus ini yang barang-per-barangnya bisa di-BATAL tanpa
+// menyentuh `jurnal_header.approval_status` sama sekali (lihat catatan
+// `headerTanpaBarisLive` di PullSection). `mutasi_internal` pakai enum batal
+// yang SAMA (`batal_pengalihan`, migrasi 20260812_04) — bukan kelalaian
+// penamaan, lihat CLAUDE.md "BATAL PERPINDAHAN".
+const JENIS_LEDGER_PENGALIHAN = ['pengalihan_status', 'mutasi_internal']
+const KATEGORI_PENGALIHAN = new Set(JENIS_LEDGER_PENGALIHAN)
+
 // Berkas satu baris = gabungan seluruh `payloadKeys` kelompoknya. Pengamanan
 // menyimpannya di DUA kunci (BAST + Pakta Integritas); yang lain cuma satu.
 function berkasDari(payload: Record<string, unknown> | null, keys: string[]): string[] {
@@ -202,6 +212,9 @@ function PullSection({ tahun, sumber, skpdMap }: {
   const [err, setErr] = useState('')
   const [rows, setRows] = useState<BarisPull[]>([])
   const [aktif, setAktif] = useState<string | null>(null)
+  // Header Pengalihan/Mutasi Internal yang SEMUA baris ledgernya sudah
+  // di-Batal — lihat catatan panjang di `isiKelompok` di bawah.
+  const [headerTanpaBarisLive, setHeaderTanpaBarisLive] = useState<Set<string>>(new Set())
 
   const kategoriList = [...new Set(sumber.kelompok.map(k => k.kategori))]
   const kunci = kategoriList.join(',')
@@ -218,7 +231,39 @@ function PullSection({ tahun, sumber, skpdMap }: {
       // terbaca operator sbg "dokumennya memang belum ada".
       setErr(`Gagal memuat dokumen: ${error.message}`); setRows([]); setLoading(false); return
     }
-    setRows((data || []) as unknown as BarisPull[])
+    const hs = (data || []) as unknown as BarisPull[]
+    setRows(hs)
+
+    // ⚠️ Kartu Pengalihan/Mutasi Internal yang SEMUA barangnya sudah di-Batal
+    // tetap approval_status='disetujui' — Batal itu peristiwa LEDGER per aset
+    // (`fn_batal_pengalihan_barang`), bukan aksi yang menyentuh header sama
+    // sekali. Tanpa cek ini, kartu yang isinya sudah kosong nangkring
+    // SELAMANYA di sini — persis kelas bug yang sama dgn `dokumenMasihLive`
+    // (insiden 2026-09-17 ronde kedua), cuma mekanismenya beda: yang itu
+    // header diarsipkan tapi bendera status berubah, yang ini bendera status
+    // TAK PERNAH berubah sama sekali walau isinya sudah nol.
+    const headerAlih = hs.filter(h => KATEGORI_PENGALIHAN.has(h.kategori)).map(h => h.id)
+    if (headerAlih.length === 0) { setHeaderTanpaBarisLive(new Set()); setLoading(false); return }
+    try {
+      const { data: baris, error: bErr } = await supabase.from('transaksi_bmd')
+        .select('id,header_id,aset_id')
+        .in('jenis', JENIS_LEDGER_PENGALIHAN as never)
+        .in('header_id', headerAlih)
+      if (bErr) throw new Error(bErr.message)
+      const barisAlih = (baris || []) as { id: number; header_id: string; aset_id: string }[]
+      const batal = await fetchBatalTargets(
+        supabase, BATAL_TARGET_JENIS.pengalihan, [...new Set(barisAlih.map(r => r.aset_id))])
+      const hidup = new Set<string>()
+      for (const r of barisAlih) if (!batal.has(r.id)) hidup.add(r.header_id)
+      setHeaderTanpaBarisLive(new Set(headerAlih.filter(id => !hidup.has(id))))
+    } catch (e) {
+      // Gagal MEMERIKSA bukan berarti kartunya kosong — arsip dokumen legal
+      // jauh lebih berbahaya kalau salah sembunyi daripada salah tampil, jadi
+      // gagal di sini jatuh ke "jangan sembunyikan apa pun" (fail-open),
+      // sambil tetap melaporkan pesannya.
+      setErr(`Sebagian status kartu Pengalihan gagal diperiksa: ${e instanceof Error ? e.message : String(e)}`)
+      setHeaderTanpaBarisLive(new Set())
+    }
     setLoading(false)
   }, [tahun, kunci]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -237,11 +282,19 @@ function PullSection({ tahun, sumber, skpdMap }: {
   // diarsipkan (punya ledger dari siklus terima→batal), dan kelompok
   // `pengalihan`/`internal` tak punya `perluApproval` sama sekali — sebelum
   // ini, tak ada filter approval_status APA PUN yang menghalanginya tampil.
+  //
+  // ⚠️ `headerTanpaBarisLive` MENYUSUL kartu yang sama, kasus KEDUA: kartu itu
+  // sebetulnya sudah di-Batal (bukan diarsipkan) — semua barisnya dianulir
+  // `batal_pengalihan`, tapi `approval_status`-nya tetap 'disetujui' selamanya
+  // karena Batal tak pernah menyentuh header. `dokumenMasihLive` saja TIDAK
+  // CUKUP untuk kasus ini; keduanya dipasang berdampingan, bukan saling
+  // menggantikan.
   const isiKelompok = sumber.kelompok.map(k => {
     const keys = k.payloadKeys || ['dokumen_paths']
     const baris = rows
       .filter(r => r.kategori === k.kategori)
       .filter(r => dokumenMasihLive(r.approval_status))
+      .filter(r => !headerTanpaBarisLive.has(r.id))
       .filter(r => !k.perluApproval || r.approval_status === 'disetujui')
       .filter(r => !k.cocok || k.cocok(r))
       .map(r => ({ r, dokumen: berkasDari(r.payload, keys) }))

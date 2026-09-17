@@ -4342,6 +4342,47 @@ BMD.
   bolong justru kelompok TANPA `perluApproval` — Pengalihan, Mutasi Internal,
   Pemanfaatan, Pengamanan, Koreksi, Reklasifikasi, Penghapusan). Dikunci
   lib/dokumenSiklus.test.ts.
+- ⚠️ **RONDE KEDUA dari kartu yang sama, mekanisme BEDA — ketahuan sesaat
+  setelah ronde pertama di atas dipush (2026-09-17).** Kartu uji-coba
+  BKAD→Pengelola Barang (`no_sk='01'`) MASIH nangkring walau `dokumenMasihLive`
+  sudah terpasang & sudah live 9+ jam. Diperiksa langsung ke DB:
+  `approval_status='disetujui'` (BUKAN `ditolak`) — jadi filter ronde pertama
+  memang tak pernah menyala untuk kartu ini. Barisnya: pergi (id 9657) → pulang
+  lewat "Kembalikan" warisan (`payload.reversal:true`, id 9658 — fitur ini
+  sendiri sudah DICABUT 2026-08-12, tapi baris lamanya tetap ada, append-only)
+  → **kedua-duanya di-Batal** (`batal_pengalihan`, `target_trx_ids:[9657,9658]`).
+  User memang menekan **Batal**, bukan Hapus.
+  **Sebabnya: Batal itu peristiwa LEDGER PER ASET (`fn_batal_pengalihan_barang`),
+  BUKAN aksi yang menyentuh `jurnal_header` sama sekali.** Beda total dari
+  Hapus (`hapusJurnal`, ronde pertama di atas) yang mengubah `approval_status`.
+  Jadi kartu yang SEMUA barangnya sudah dibatalkan tetap `approval_status`
+  apa pun nilainya semula (`disetujui` di sini) — `dokumenMasihLive` yang cuma
+  menyaring approval_status TIDAK BISA menangkap kelas kekosongan ini sama
+  sekali, dan itu bukan celah di rumusnya, itu memang pertanyaan yang berbeda.
+  **Obatnya `headerTanpaBarisLive`** (PullSection, DokumenSumber.tsx) — dipasang
+  KHUSUS kelompok `pengalihan_status`/`mutasi_internal` (satu-satunya kategori
+  di siklus ini yang barang-per-barangnya bisa dibatalkan lewat
+  `batal_pengalihan`): tarik baris `transaksi_bmd` ber-`header_id` kelompok itu,
+  saring lewat `fetchBatalTargets(..., BATAL_TARGET_JENIS.pengalihan, asetIds)`
+  (pola yang sama dgn `lib/pengalihan.ts`/Rekonsiliasi), lalu buang header yang
+  TAK PUNYA satu pun baris hidup. Persis pola "jurnal tanpa barang → otomatis
+  tersembunyi" yang sudah lama dipakai Reklasifikasi/Koreksi/Penghapusan di
+  menu Pembukuan — cuma di sini pemuatnya beda tabel (jurnal_header POLOS,
+  bukan replay lines seperti kartu jurnal ber-SK).
+  ⚠️ **Gagal MEMERIKSA (query error) sengaja FAIL-OPEN** (tak menyembunyikan
+  apa pun, cuma menampilkan pesan) — kebalikan dari kebiasaan modul Pelaporan
+  yang fail-closed. Alasannya: ini arsip dokumen legal, dan menyembunyikan SK/
+  BAST yang sebenarnya masih berlaku karena satu query gagal jauh lebih mahal
+  daripada menampilkan satu kartu ekstra yang seharusnya sudah kosong.
+  ⚠️ **Pelajaran untuk kelak: `dokumenMasihLive` (status header) dan
+  `headerTanpaBarisLive` (isi ledgernya) BUKAN saling menggantikan — keduanya
+  menjawab pertanyaan berbeda dan HARUS dipasang berdampingan** untuk kategori
+  mana pun yang (a) py alur approval/arsip DAN (b) barang-per-barangnya bisa
+  dibatalkan lewat ledger tanpa menyentuh header. Kalau nanti kelompok LAIN di
+  siklus ini (mis. Pemanfaatan/Pengamanan/Koreksi/Reklasifikasi) dapat aksi
+  Batal per-barang yang serupa, sisir ulang apakah `headerTanpaBarisLive`-nya
+  perlu digeneralkan — sekarang sengaja khusus `pengalihan_status`/
+  `mutasi_internal` saja (rule of three: baru SATU kelompok yang butuh).
 - ⛔ **Kontrak Konstruksi (KDP) belum bermuara.** Kategorinya sendiri
   (`konstruksi`, 4 baris) & BAST-nya disimpan **per TERMIN** di dalam
   `payload.barang[].pembayaran[]`, bukan di `payload.dokumen_paths` — jadi
