@@ -31,6 +31,14 @@
 // ✅ Fase 1 (2026-09-15): `tampilkan()` tak lagi menelan `error` —
 // kegagalannya dialirkan ke saluran error form & `loaded` TIDAK diset, supaya
 // layar tak berkata "tidak ada barang" untuk query yang sebenarnya gagal.
+//
+// ✅ 2026-09-17: `uraianMap` (lookup `admin_kodefikasi_bmd` per kode LIVE)
+// digabung ke sini bareng `useSeleksiBarang` — dua perubahan yang sempat
+// bentrok jadi satu commit ber-marker konflik yang KETINGGALAN belum
+// dibereskan (`<<<<<<<`/`=======`/`>>>>>>>` sampai ikut ter-push ke
+// origin/main, lihat CLAUDE.md). Keduanya independen: yang satu mengganti
+// mesin centang jadi hook bersama, yang satu menambah lookup uraian —
+// tak ada alasan salah satu dikorbankan.
 // ============================================================================
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -75,15 +83,10 @@ export type PemilihBarangHapus = SeleksiBarang<BarangHapus> & {
   /** Σ nilai perolehan yang tercentang — dihitung di sini, bukan di mesin
    *  centang bersama: hanya menu ini yang menampilkannya. */
   selTotal: number
-<<<<<<< HEAD
-=======
-  toggle: (b: BarangHapus) => void
-  toggleAll: () => void
   /** Uraian baku per kode (`admin_kodefikasi_bmd`) — cadangan atas kolom
    *  `uraian_barang` tersimpan, yang basi begitu barang direklas sesudah
    *  dibuat (kolom itu cuma disalin sekali, tak ikut kode yang berubah). */
   uraianMap: Record<string, string>
->>>>>>> e534d53 (fix(penghapusan,daftar-barang): uraian barang basi sesudah reklas + kejelasan header)
 }
 
 export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string) => void): PemilihBarangHapus {
@@ -95,10 +98,7 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
   const [rows, setRows] = useState<BarangHapus[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
-<<<<<<< HEAD
   const seleksi = useSeleksiBarang<BarangHapus>(rows)
-=======
-  const [sel, setSel] = useState<Record<string, BarangHapus>>({})
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   /** Uraian baku per kode (`admin_kodefikasi_bmd`) — pola sama Reklasifikasi/
@@ -114,7 +114,6 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
     }
     return map
   }
->>>>>>> e534d53 (fix(penghapusan,daftar-barang): uraian barang basi sesudah reklas + kejelasan header)
 
   async function tampilkan() {
     setLoading(true)
@@ -144,11 +143,8 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
   return {
     fGolongan, setFGolongan, fKomptabel, setFKomptabel, fSearch, setFSearch,
     rows, loaded, loading, tampilkan,
-<<<<<<< HEAD
     ...seleksi,
     selTotal: seleksi.selList.reduce((s, b) => s + b.nilai_perolehan, 0),
-=======
-    sel, setSel, selList, selTotal, toggle, toggleAll, uraianMap,
->>>>>>> e534d53 (fix(penghapusan,daftar-barang): uraian barang basi sesudah reklas + kejelasan header)
+    uraianMap,
   }
 }
