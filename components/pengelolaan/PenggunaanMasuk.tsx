@@ -71,6 +71,12 @@ export default function PenggunaanMasuk() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [errLoad, setErrLoad] = useState('')
+  // Uraian baku (kodefikasi TERKINI) per kode barang — pola sama dgn
+  // Penghapusan/Reklasifikasi/Daftar Barang: `aset.uraian_barang` cuma
+  // disalin SEKALI saat barang dibuat & tak ikut kode yang berubah sesudah
+  // reklas, jadi barang yang direklas lalu dipindah lewat menu ini akan
+  // menampilkan uraian BASI kalau dibaca dari kolom itu (CLAUDE.md 2026-09-17).
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
 
   // ⚠️ Badan fungsi di dalam try, `setLoading(false)` di FINALLY —
@@ -153,7 +159,34 @@ export default function PenggunaanMasuk() {
         if (!dikembalikan) j.total += r.nilai
       }
     }
-    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
+    const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
+    setJurnals(hasil)
+
+    // Uraian baku (kodefikasi TERKINI) — pola sama dgn Reklasifikasi/
+    // Penghapusan. Kolom `uraian_barang` tersimpan tetap dibaca sbg CADANGAN
+    // (draft pending & barang lama), tapi lookup ini menang begitu ada.
+    // Gagalnya cuma menurunkan kolom Uraian ke cadangan/"-", TIDAK
+    // menjatuhkan tabelnya — uraian di sini hiasan identitas.
+    const kodeSet = new Set<string>()
+    for (const j of hasil) for (const l of j.lines) if (l.kode) kodeSet.add(l.kode)
+    if (kodeSet.size > 0) {
+      try {
+        const uniq = [...kodeSet]
+        const map: Record<string, string> = {}
+        for (let i = 0; i < uniq.length; i += 200) {
+          const { data: kf, error: kfErr } = await supabase.from('admin_kodefikasi_bmd')
+            .select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+          if (kfErr) throw new Error(kfErr.message)
+          for (const r of kf || []) if (r.uraian) map[r.kode] = r.uraian
+        }
+        setUraianMap(map)
+      } catch (e) {
+        setUraianMap({})
+        setMsg(`Uraian barang gagal dimuat: ${e instanceof Error ? e.message : String(e)} — kolom Uraian tampil dari data tersimpan / "-".`)
+      }
+    } else {
+      setUraianMap({})
+    }
     } catch (e) {
       setJurnals([])
       setErrLoad(`Gagal memuat pengalihan masuk: ${e instanceof Error ? e.message : String(e)}. Daftar tidak ditampilkan supaya tak terbaca sebagai "belum ada pengalihan masuk".`)
@@ -420,7 +453,7 @@ export default function PenggunaanMasuk() {
                         <tr key={l.aset_id}>
                           <td className="table-td">
                             <p className="font-medium text-gray-800 text-xs">{l.kode || '-'}</p>
-                            <p className="text-gray-400 text-xs mt-0.5">{l.uraian_barang || '-'}</p>
+                            <p className="text-gray-400 text-xs mt-0.5">{uraianMap[l.kode] || l.uraian_barang || '-'}</p>
                           </td>
                           <td className="table-td">
                             <p className="text-gray-700 text-xs">{l.nama_barang || '-'}</p>
