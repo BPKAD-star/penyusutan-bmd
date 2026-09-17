@@ -15,6 +15,7 @@ import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
+import { fetchBarisTerkunci, type Penghalang } from '@/lib/pengalihanTerkunci'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
@@ -77,6 +78,11 @@ export default function PenggunaanMasuk() {
   // reklas, jadi barang yang direklas lalu dipindah lewat menu ini akan
   // menampilkan uraian BASI kalau dibaca dari kolom itu (CLAUDE.md 2026-09-17).
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
+  // Status kunci batal per kartu (permintaan user 2026-09-17) — 🔒 menggantikan
+  // 🗑 Batal utk barang yang akan ditolak `fn_batal_pengalihan_barang`. MURNI
+  // HIASAN: kegagalan memuatnya TIDAK menjatuhkan halaman, cukup tak ada kunci
+  // yang tampil (fail-open, lihat lib/pengalihanTerkunci.ts).
+  const [terkunciMap, setTerkunciMap] = useState<Record<string, Map<string, Penghalang | null>>>({})
 
 
   // ⚠️ Badan fungsi di dalam try, `setLoading(false)` di FINALLY —
@@ -161,6 +167,26 @@ export default function PenggunaanMasuk() {
     }
     const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
     setJurnals(hasil)
+
+    // Status kunci batal — SATU panggilan RPC per kartu disetujui (bukan per
+    // barang), lihat lib/pengalihanTerkunci.ts. Fail-open: gagal cukup
+    // menurunkan ke "tak ada kunci yang tampil" + strip peringatan, tombol
+    // Batal tetap ada seperti sebelum fitur ini ada — bukan sesuatu yang
+    // menjatuhkan tabelnya.
+    const disetujuiIds = hasil.filter(j => j.approval_status === 'disetujui').map(j => j.id)
+    if (disetujuiIds.length > 0) {
+      try {
+        const entries = await Promise.all(
+          disetujuiIds.map(async id => [id, await fetchBarisTerkunci(supabase, id)] as const),
+        )
+        setTerkunciMap(Object.fromEntries(entries))
+      } catch (e) {
+        setTerkunciMap({})
+        setMsg(`Status kunci barang gagal dimuat: ${e instanceof Error ? e.message : String(e)} — tombol Batal tetap tampil untuk semua barang (penjaganya tetap jalan saat ditekan).`)
+      }
+    } else {
+      setTerkunciMap({})
+    }
 
     // Uraian baku (kodefikasi TERKINI) — pola sama dgn Reklasifikasi/
     // Penghapusan. Kolom `uraian_barang` tersimpan tetap dibaca sbg CADANGAN
@@ -299,6 +325,21 @@ export default function PenggunaanMasuk() {
     })
   }
 
+  // Pengganti `alert()` (CODING-STANDARD §4.5) untuk 🔒 — MURNI INFORMASI, tak
+  // ada apa pun yang dijalankan. Menyebut jenis & periode penghalangnya persis
+  // seperti pesan penolakan `fn_batal_pengalihan_barang`, supaya operator tahu
+  // menu mana yang harus dibuka lebih dulu tanpa perlu mencoba-coba klik Batal.
+  async function infoTerkunci(l: Line, p: Penghalang) {
+    await konfirmasi({
+      nada: 'amber', ikon: '🔒', judul: 'Barang ini belum bisa dibatalkan',
+      subjudul: l.nama_barang || l.nibar || 'barang ini',
+      isi: <>Ada transaksi <b>LEBIH BARU</b> pada barang ini: <b>&ldquo;{p.jenis}&rdquo;</b> ({p.periode}).
+        Batalkan transaksi itu dulu, baru pengalihan ini bisa dibatalkan. Transaksi yang sudah dibatalkan
+        tidak lagi menghalangi.</>,
+      labelYa: 'Mengerti', tanpaBatal: true,
+    })
+  }
+
   // Batal SELURUH kartu. Bukan sekadar pintasan dari mengklik Batal satu per
   // satu: kartu yang seluruh barangnya dibatalkan KEMBALI ke "Menunggu
   // Persetujuan" (migrasi 20260811_02), jadi bisa diterima ulang tanpa SKPD
@@ -374,6 +415,13 @@ export default function PenggunaanMasuk() {
             const pending = j.approval_status === 'pending'
             const ditolak = j.approval_status === 'ditolak'
             const disetujui = j.approval_status === 'disetujui'
+            // fn_batal_seluruh_pengalihan itu SATU transaksi (rules.md §1.7) —
+            // kalau ada satu saja barang terkunci, Batal Seluruh akan GAGAL
+            // TOTAL, bukan melewati yang terkunci. Tombolnya tetap dibiarkan
+            // hidup (tombol mati tanpa keterangan itu kegagalan senyap), tapi
+            // operator perlu tahu dulu kenapa nanti bisa ditolak.
+            const terkunciList = terkunciMap[j.id]
+            const terkunciCount = terkunciList ? [...terkunciList.values()].filter(Boolean).length : 0
             return (
               <div key={j.id} className={`card overflow-hidden ${pending ? 'border-amber-300' : ''}`}>
                 <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/60">
@@ -404,6 +452,12 @@ export default function PenggunaanMasuk() {
                             <button key={p} onClick={() => bukaDokumen(p)}
                               className="underline text-teal hover:opacity-80 mr-2">{namaFile(p)}</button>
                           ))}
+                        </p>
+                      )}
+                      {terkunciCount > 0 && (
+                        <p className="text-xs text-amber-600">
+                          🔒 {terkunciCount} dari {j.lines.length} barang terkunci — Batal Seluruh akan
+                          ditolak sampai transaksi penghalangnya dibatalkan dulu.
                         </p>
                       )}
                     </div>
@@ -477,11 +531,22 @@ export default function PenggunaanMasuk() {
                             <td className="table-td text-center">
                               {/* Barang yang terlanjur dipulangkan lewat aksi lama tetap
                                   boleh DIBATALKAN — justru itu yang biasanya salah pencet. */}
-                              <button disabled={busy} onClick={() => batalPengalihan(j, l)}
-                                title="Batalkan — pengalihannya dianggap tak pernah terjadi & barang balik ke SKPD asal"
-                                className="px-3 py-1 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50">
-                                🗑 Batal
-                              </button>
+                              {(() => {
+                                const p = terkunciList?.get(l.aset_id)
+                                return p ? (
+                                  <button onClick={() => infoTerkunci(l, p)}
+                                    title={`Terkunci — ada transaksi lebih baru: ${p.jenis} (${p.periode})`}
+                                    className="px-3 py-1 rounded text-xs bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200">
+                                    🔒 Terkunci
+                                  </button>
+                                ) : (
+                                  <button disabled={busy} onClick={() => batalPengalihan(j, l)}
+                                    title="Batalkan — pengalihannya dianggap tak pernah terjadi & barang balik ke SKPD asal"
+                                    className="px-3 py-1 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50">
+                                    🗑 Batal
+                                  </button>
+                                )
+                              })()}
                             </td>
                           )}
                         </tr>

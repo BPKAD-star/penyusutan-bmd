@@ -133,6 +133,25 @@ export function barisMasihBerlaku(rows: BarisLedger[]): BarisLedger[] {
     for (const r of serap) netral.add(r.id)
   }
 
+  // (c) Penghapusan <-> batal_penghapusan TANPA target — payload-nya harfiah
+  //     `{}` (CLAUDE.md, "Penghapusan uji coba masih tampil di Pelaporan",
+  //     2026-09-07), persis keterbatasan (b) tapi utk jenis lain. Ditemukan
+  //     2026-09-17 lewat pertanyaan user: "kalau sesudahnya dihapus (dijual)
+  //     lalu penghapusannya dibatalkan, apa masih ketahan?" — sebelum ini,
+  //     jawabannya IYA, terkunci SELAMANYA, walau secara state sudah balik
+  //     netral. Pola sama persis dengan (b): bookend pertama=penghapusan,
+  //     terakhir=batal_penghapusan → seluruh siklus di antaranya netral;
+  //     berakhir di penghapusan yang BELUM dibatalkan tetap memblokir.
+  const hapus = rows
+    .filter(r => r.jenis === 'penghapusan_pemindahtanganan' || r.jenis === 'penghapusan_sebab_lain'
+      || (r.jenis === 'batal_penghapusan' && idTarget(r.payload).length === 0))
+    .sort((a, b) => a.periode.localeCompare(b.periode) || a.id - b.id)
+  if (hapus.length >= 2
+    && (hapus[0].jenis === 'penghapusan_pemindahtanganan' || hapus[0].jenis === 'penghapusan_sebab_lain')
+    && hapus[hapus.length - 1].jenis === 'batal_penghapusan') {
+    for (const r of hapus) netral.add(r.id)
+  }
+
   return rows.filter(r => !netral.has(r.id))
 }
 

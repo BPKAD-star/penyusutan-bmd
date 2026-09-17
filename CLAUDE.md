@@ -4022,6 +4022,66 @@ menemukan guard itu **belum ikut perbaikan 2026-08-31 di atas**.
   salinan kedua yang tetap bisa menyimpang — dan menyimpangnya baru ketahuan
   saat ditanyakan langsung, bukan lewat gejala di layar.
 
+### `batal_penghapusan` JUGA belum dinetralkan, & UI 🔒 status kunci (2026-09-17, migrasi 20260917_02)
+
+Lanjutan pertanyaan user di atas: "rantainya kan macem-macem — bisa jadi
+sesudahnya DIHAPUS krn dijual, bukan cuma dikapitalisasi lagi. Gimana?"
+
+- **Deteksi "ada apa di depan" SUDAH generik sejak awal** — `fn_baris_
+  penghalang_batal`/`barisMasihBerlaku` menanya "ada baris APA PUN sesudah
+  ini di aset yang sama", tak peduli jenisnya. Yang TIDAK generik adalah
+  pengenalan "penghalang itu sudah dinetralkan sendiri" — sampai hari ini
+  cuma berlaku utk jenis yang `batal_*`-nya bawa `payload.target_trx_id(s)`
+  (kapitalisasi/reklas/koreksi/pengalihan/penggabungan) + kasus khusus
+  `kapitalisasi_serap`↔`batal_kapitalisasi`. **`batal_penghapusan` payload-nya
+  harfiah `{}`** (sudah tercatat sejak insiden "Penghapusan uji coba masih
+  tampil di Pelaporan", 2026-09-07) — jadi sepasang "dihapus (mis. krn dijual)
+  lalu penghapusannya dibatalkan" TIDAK dikenali sbg netral, dan event di
+  bawahnya terkunci SELAMANYA walau keadaannya sudah balik normal. Kelas bug
+  yang PERSIS sama dgn BKAD 2026-08-31 & guard SQL 20260917_01, cuma jenisnya
+  beda & baru ketahuan karena ditanyakan langsung, bukan lewat gejala nyata.
+- **Ditambal DUA sisi sekaligus**, pola identik `serap`/`netral_b`:
+  `lib/guardPembatalan.ts` (`barisMasihBerlaku`, dipakai Reklasifikasi/Koreksi/
+  Kapitalisasi/Penghapusan sendiri) DAN `fn_baris_penghalang_batal` (SQL,
+  dipakai `fn_batal_pengalihan_barang`). Bookend pertama=penghapusan (jenis
+  apa pun), terakhir=`batal_penghapusan` → seluruh rantai di antaranya netral;
+  berakhir di penghapusan yang BELUM dibatalkan tetap memblokir.
+  Diverifikasi ke produksi (transaksi+ROLLBACK): "hapus lalu batal" → 0
+  penghalang; "hapus, batal, hapus LAGI" → tetap terhalang. Dikunci
+  lib/guardPembatalan.test.ts (6 kasus baru).
+- **RPC BARU `fn_pengalihan_baris_terkunci(header_id)`** — batch PER-KARTU,
+  bukan per-halaman/per-baris (isi satu kartu terbatas; satu halaman bisa
+  memuat banyak kartu — membatasi cakupannya menghindari pola N-query yang
+  sudah berkali-kali bikin timeout di repo ini). Wewenangnya SAMA dgn
+  `fn_batal_pengalihan_barang` (admin atau SKPD tujuan); tak berwenang/header
+  tak cocok → mengembalikan HAMPA, bukan `RAISE` (murni informasional).
+  ⚠️ **Diukur dgn RLS AKTIF (`SET LOCAL role authenticated` + klaim JWT uid
+  admin sungguhan), BUKAN service_role** — sebagai service_role fungsi ini
+  lolos gate `fn_is_admin()` walau JWT-nya kosong, jadi pengujian tanpa
+  simulasi itu akan "kelihatan benar" padahal belum pernah teruji sungguhan
+  (persis jebakan yang sudah tercatat berkali-kali di CLAUDE.md).
+- **UI: 🔒 menggantikan 🗑 Batal per baris** di Penerimaan Internal & Penggunaan
+  (`PenerimaanInternal.tsx`/`PenggunaanMasuk.tsx`) untuk barang yang akan
+  ditolak `fn_batal_pengalihan_barang`. Diklik → pop-up info (`useKonfirmasi`
+  dgn `tanpaBatal: true`, pengganti `alert()`) menyebut jenis & periode
+  penghalangnya — bukan cuma "gak bisa", operator tahu menu mana yang harus
+  dibuka dulu tanpa perlu mencoba-coba klik Batal lebih dulu.
+  ⚠️ **MURNI HIASAN, bukan penjaga** (`lib/pengalihanTerkunci.ts`) — kegagalan
+  memuatnya sengaja **fail-open**: tombol Batal tetap tampil seperti sebelum
+  fitur ini ada (penjaga sungguhan tetap jalan saat ditekan), BUKAN fail-closed
+  spt guard pembatalan sungguhan — beda perlakuan yang disengaja karena ini
+  cuma query informasional, gagal memuatnya tak boleh mengunci operator dari
+  tombol yang sebenarnya masih sah dipakai.
+- **Header-level "Batal Seluruh" TETAP HIDUP walau ada barang terkunci** —
+  `fn_batal_seluruh_pengalihan` satu transaksi (rules.md §1.7): kalau ada SATU
+  saja barang terkunci, tombol itu akan GAGAL TOTAL, bukan melewati yang
+  terkunci. Daripada mematikannya (kegagalan senyap tanpa keterangan), kartu
+  menampilkan strip "🔒 N dari M barang terkunci — Batal Seluruh akan ditolak
+  sampai transaksi penghalangnya dibatalkan dulu" — operator tahu KONSEKUENSI
+  sebelum menekan, bukan sesudah gagal.
+- **Tak ada migrasi enum, tanda tangan fungsi lain tak berubah** → deploy-
+  ordering bebas.
+
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
 Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user

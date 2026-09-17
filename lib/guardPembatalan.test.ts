@@ -197,6 +197,56 @@ describe('barisMasihBerlaku — pasangan yang saling meniadakan dibuang', () => 
   it('tak ada baris sama sekali → tak ada penghalang', () => {
     expect(barisMasihBerlaku([])).toEqual([])
   })
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 2026-09-17: penghapusan <-> batal_penghapusan, kelas bug yang SAMA dengan
+  // kapitalisasi (b) tapi belum tertutup sampai ditanyakan user. Payload
+  // `batal_penghapusan` harfiah `{}` (tak ber-target), jadi tanpa blok ini
+  // sepasang "dihapus lalu dibatalkan" mengunci event di bawahnya SELAMANYA
+  // persis seperti insiden BKAD — cuma jenisnya beda.
+  // ──────────────────────────────────────────────────────────────────────────
+  it('dihapus (dijual) lalu penghapusannya dibatalkan → tak lagi menghalangi', () => {
+    const rows = [
+      bl(200, 'penghapusan_pemindahtanganan'),
+      bl(201, 'batal_penghapusan'),
+    ]
+    expect(barisMasihBerlaku(rows)).toEqual([])
+  })
+
+  it('penghapusan sebab lain juga ikut dikenali sbg sisi pertama pasangan', () => {
+    const rows = [bl(210, 'penghapusan_sebab_lain'), bl(211, 'batal_penghapusan')]
+    expect(barisMasihBerlaku(rows)).toEqual([])
+  })
+
+  it('penghapusan yang MASIH HIDUP (belum dibatalkan) tetap memblokir', () => {
+    const rows = [bl(220, 'penghapusan_pemindahtanganan')]
+    expect(barisMasihBerlaku(rows).map(r => r.id)).toEqual([220])
+  })
+
+  it('dihapus → batal → dihapus LAGI: yang terakhir menang, tetap memblokir', () => {
+    const rows = [
+      bl(230, 'penghapusan_pemindahtanganan'),
+      bl(231, 'batal_penghapusan'),
+      bl(232, 'penghapusan_sebab_lain'),
+    ]
+    expect(barisMasihBerlaku(rows).map(r => r.id)).toEqual([230, 231, 232])
+  })
+
+  it('pasangan penghapusan dibuang, event LAIN yang hidup tetap memblokir', () => {
+    const rows = [
+      bl(240, 'penghapusan_pemindahtanganan'),
+      bl(241, 'batal_penghapusan'),
+      bl(242, 'koreksi_nilai'),
+    ]
+    expect(barisMasihBerlaku(rows).map(r => r.id)).toEqual([242])
+  })
+
+  it('`batal_penghapusan` ber-target_trx_id TIDAK ikut pasangan (c) — bukan jenis ini di produksi, tapi jangan bergantung asumsi', () => {
+    // Kalau suatu saat payloadnya berubah membawa target, jalur (a) yang wajib
+    // menanganinya (dan berhasil, karena targetnya ada di himpunan baris).
+    const rows = [bl(250, 'penghapusan_pemindahtanganan'), bl(251, 'batal_penghapusan', { target_trx_id: 250 })]
+    expect(barisMasihBerlaku(rows)).toEqual([])
+  })
 })
 
 describe('cekBolehBatal — lewat klien, sesudah pasangan dibuang', () => {
