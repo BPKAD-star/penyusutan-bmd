@@ -3973,6 +3973,55 @@ BARU setelah reklas ini — batalkan yang lebih baru dulu."*
   sama dengan aslinya, jadi keduanya lolos/blokir bersamaan. Kalau nanti ada
   yang mengeluh "tak bisa mencatat ulang sesudah membatalkan", di situ tempatnya.
 
+### Guard Batal Pengalihan/Mutasi punya bug YANG SAMA, tapi di SQL (2026-09-17, migrasi 20260917_01)
+
+User bertanya "kalau ada pengelolaan lanjutan (Pengeluaran Internal → Penerimaan
+Internal → Penghapusan/Pengalihan → Penggunaan), apa batal langkah pertama
+diblokir?" — jawabannya IYA, sudah ada guard-nya, tapi menelusuri jawabannya
+menemukan guard itu **belum ikut perbaikan 2026-08-31 di atas**.
+
+- **Kenapa ada DUA implementasi guard "tak boleh ada transaksi lebih baru"**:
+  `lib/guardPembatalan.ts` dipakai CLIENT-SIDE oleh Reklasifikasi/Koreksi/
+  Kapitalisasi/Penghapusan; `fn_batal_pengalihan_barang` (SQL, SECURITY
+  DEFINER, migrasi 20260729_07 → digeneralkan 20260812_04) punya guard-nya
+  SENDIRI ditulis langsung di badan fungsi — dan untuk Pengalihan Status/Mutasi
+  Internal, **client-side-nya TIDAK memanggil `cekBolehBatal` sama sekali**,
+  jadi guard SQL inilah satu-satunya penjaga.
+- **Guard SQL itu masih bentuk NAIF** — `count(*) FROM transaksi_bmd WHERE
+  aset_id=... AND id > v_id_terakhir`, PERSIS bentuk `cekBolehBatal` SEBELUM
+  diperbaiki 2026-08-31. Perbaikan hari itu cuma menyentuh sisi TypeScript;
+  sisi SQL kelewat karena hidup di bahasa lain & tak pernah disatukan.
+  Akibatnya: aset yang dipindah lalu kena event lain (mis. dikapitalisasi sbg
+  anak) yang BELAKANGAN dibatalkan lagi, akan mengunci pemindahan LAMANYA
+  SELAMANYA — walau kedua event di atasnya sudah saling meniadakan. Persis
+  skenario BKAD yang melahirkan perbaikan 2026-08-31, cuma di rantai
+  pengalihan/mutasi, dan belum ketahuan sampai ditanyakan hari ini.
+- **Obatnya `fn_baris_penghalang_batal(aset_id, trx_id_batas)`** — mengulang
+  ALGORITMA `barisMasihBerlaku()` PERSIS di SQL (bukan aturan ketiga yang bisa
+  menyimpang lagi): pasangan `batal_%` ber-`target_trx_id(s)` yang SELURUH
+  targetnya ada di atas ambang jadi netral; sisi ANAK kapitalisasi
+  (`kapitalisasi_serap` ↔ `batal_kapitalisasi` tanpa target) netral kalau baris
+  PALING AWAL di atas ambang `kapitalisasi_serap` & PALING AKHIR
+  `batal_kapitalisasi`. Pagu 500 baris tetap fail-closed sama seperti versi TS.
+  `fn_batal_seluruh_pengalihan` tak perlu disentuh — ia cuma memutar fungsi
+  per-barang, jadi otomatis ikut benar.
+- **Diverifikasi ke PRODUKSI sebelum ditulis** (transaksi + ROLLBACK, pola yang
+  sama dgn pembuktian kesetaraan lain di dokumen ini): skenario "kapitalisasi_
+  serap lalu dibatalkan" — guard LAMA menghitung 2 baris (SALAH, akan
+  memblokir); fungsi BARU 0 penghalang (BENAR). Skenario "ditambah satu event
+  hidup sesudahnya" — fungsi BARU tetap memblokir tepat di baris itu (BENAR,
+  tak jadi longgar). Nol baris tersisa di produksi sesudah ROLLBACK.
+- ⚠️ **`fn_baris_penghalang_batal` SENGAJA TIDAK di-GRANT ke `authenticated`/
+  `anon`** — internal-only, dipanggil dari dalam `fn_batal_pengalihan_barang`
+  yang sudah SECURITY DEFINER. Sejalan dgn pengetatan GRANT 20260914_03.
+- **Tanda tangan `fn_batal_pengalihan_barang` tak berubah** → urutan deploy
+  bebas. Tak ada nilai enum baru.
+- **Pelajaran umum**: aturan yang didokumentasikan sbg "satu sumber" (lib/
+  guardPembatalan.ts) ternyata cuma satu sumber untuk pembaca TypeScript.
+  Guard yang sama yang ditulis ulang di SQL demi SECURITY DEFINER adalah
+  salinan kedua yang tetap bisa menyimpang — dan menyimpangnya baru ketahuan
+  saat ditanyakan langsung, bukan lewat gejala di layar.
+
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
 Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user
