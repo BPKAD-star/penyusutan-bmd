@@ -262,6 +262,30 @@ function tdClass(key: string, striped?: boolean) {
   return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
 }
 
+// Label kepala kolom KODE & NAMA menyebut isi yang ditumpuk di bawahnya
+// (permintaan user 2026-09-17 — operator bingung melihat Uraian Barang/NIBAR/
+// Kode Register muncul di sel tanpa keterangan apa pun di headernya). Sengaja
+// TERPISAH dari `COL_META[k].header`: field itu juga jadi judul kolom EXPORT
+// (di sana Uraian/NIBAR/Kode Register sudah kolom Excel SENDIRI — lihat
+// EXPORT_ORDER), jadi menumpuk labelnya di situ akan menulis ulang judul
+// berkas Excel, bukan cuma kepala tabel layar.
+function thContent(key: string): React.ReactNode {
+  if (key === 'kode') return (
+    <>
+      Kode Barang
+      <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">Uraian Barang</span>
+    </>
+  )
+  if (key === 'nama') return (
+    <>
+      Nama Barang
+      <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">NIBAR</span>
+      <span className="block normal-case font-normal tracking-normal text-gray-400">Kode Register</span>
+    </>
+  )
+  return COL_META[key].header
+}
+
 export default function DaftarBarangPage() {
   const supabase = createClient()
 
@@ -1007,7 +1031,7 @@ export default function DaftarBarangPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>{cols.map(k => <th key={k} className={thClass(k)}>{COL_META[k].header}</th>)}</tr>
+                <tr>{cols.map(k => <th key={k} className={thClass(k)}>{thContent(k)}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (

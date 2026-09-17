@@ -161,6 +161,12 @@ export default function Penghapusan() {
   // padahal jejaknya sudah ada. Ini yang membedakan hapus vs arsipkan.
   const [jurnalBerledger, setJurnalBerledger] = useState<Record<string, number>>({})
   const [errLoad, setErrLoad] = useState('')
+  // Uraian baku (kodefikasi TERKINI) per kode barang — pola sama dgn
+  // Reklasifikasi & Daftar Barang. `aset.uraian_barang` cuma disalin SEKALI
+  // saat barang dibuat & tak ikut saat kodenya berubah (reklas), jadi barang
+  // yang direklas lalu masuk sini (mis. Pengalihan Status) menampilkan uraian
+  // BASI kalau dibaca dari kolom itu — lihat CLAUDE.md 2026-09-17.
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   // ── Referensi awal ──
   useEffect(() => {
@@ -291,7 +297,35 @@ export default function Penghapusan() {
     // Sembunyikan jurnal tanpa barang (auto-ilang): entah karena semua barang
     // sudah dibatalkan, atau header orphan sisa entry yang gagal. Header tetap di
     // DB (baris ledger yg pernah ada memblok DELETE via FK), cukup tak ditampilkan.
-    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
+    const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
+    setJurnals(hasil)
+
+    // Uraian baku (kodefikasi TERKINI) — pola sama dgn Reklasifikasi. Kolom
+    // `uraian_barang` tersimpan di `aset` tetap dibaca sbg CADANGAN (draft
+    // pengalihan pending & barang lama yg belum pernah tersentuh kodefikasi
+    // baru), tapi lookup ini yg menang begitu ada. Gagalnya cuma menurunkan
+    // kolom Uraian ke cadangan/"-" (dilaporkan lewat `msg`), TIDAK menjatuhkan
+    // tabelnya — uraian di sini hiasan identitas, bukan angka yang dihitung.
+    const kodeSet = new Set<string>()
+    for (const j of hasil) for (const l of j.lines) if (l.kode) kodeSet.add(l.kode)
+    if (kodeSet.size > 0) {
+      try {
+        const uniq = [...kodeSet]
+        const map: Record<string, string> = {}
+        for (let i = 0; i < uniq.length; i += 200) {
+          const { data: kf, error: kfErr } = await supabase.from('admin_kodefikasi_bmd')
+            .select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+          if (kfErr) throw new Error(kfErr.message)
+          for (const r of kf || []) if (r.uraian) map[r.kode] = r.uraian
+        }
+        setUraianMap(map)
+      } catch (e) {
+        setUraianMap({})
+        setMsg(`Uraian barang gagal dimuat: ${e instanceof Error ? e.message : String(e)} — kolom Uraian tampil dari data tersimpan / "-".`)
+      }
+    } else {
+      setUraianMap({})
+    }
     } catch (e) {
       setJurnals([])
       setErrLoad(`Gagal memuat jurnal: ${e instanceof Error ? e.message : String(e)}. Daftar tidak ditampilkan supaya tak terbaca sebagai "belum ada jurnal".`)
@@ -673,7 +707,7 @@ export default function Penghapusan() {
                         </td>
                         <td className="table-td">
                           <p className="font-medium text-gray-800 text-xs">{l.kode || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{l.uraian_barang || '-'}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{uraianMap[l.kode] || l.uraian_barang || '-'}</p>
                         </td>
                         <td className="table-td">
                           <p className="text-gray-700 text-xs">{l.nama_barang || '-'}</p>
@@ -806,6 +840,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const {
     fGolongan, setFGolongan, fKomptabel, setFKomptabel, fSearch, setFSearch,
     rows, loaded, loading, tampilkan, sel, setSel, selList, selTotal, toggle, toggleAll,
+    uraianMap: uraianMapPicker,
   } = usePemilihBarangHapus(skpdId, setErr)
 
   const isAlih = header ? header.kategori === 'pengalihan_status' : jenis === 'pengalihan_status'
@@ -1063,7 +1098,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                       </td>
                       <td className="table-td">
                         <p className="font-medium text-gray-800 text-xs">{b.kode || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{b.uraian_barang || '-'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{uraianMapPicker[b.kode] || b.uraian_barang || '-'}</p>
                       </td>
                       <td className="table-td">
                         <p className="text-gray-700 text-xs">{b.nama_barang || '-'}</p>

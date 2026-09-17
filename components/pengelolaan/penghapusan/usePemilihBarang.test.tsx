@@ -16,10 +16,22 @@ import { act, renderHook, cleanup } from '@testing-library/react'
 let asetRows: unknown[] = []
 let qErr: { message: string } | null = null
 let q: { eq: Record<string, unknown>; like?: string; or?: string } | null = null
+// Uraian baku (admin_kodefikasi_bmd) — dipanggil sesudah tiap `tampilkan()`,
+// sama pola dgn koreksi/usePemilihBarang.test.tsx. Default array kosong: tak
+// ada test di sini yang MENGUJI isinya, cuma memastikan panggilannya tak gagal
+// (kalau gagal, `tampilkan()` MELEMPAR & `loaded` tetap false — persis kelas
+// bug yang dijaga suite "Fase 1" di bawah).
+let kodeErr: { message: string } | null = null
+let kodefikasi: { kode: string; uraian: string | null }[] = []
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
-    from: () => {
+    from: (t: string) => {
+      if (t === 'admin_kodefikasi_bmd') {
+        const kq: Record<string, unknown> = {}
+        Object.assign(kq, { select: () => kq, in: async () => ({ data: kodefikasi, error: kodeErr }) })
+        return kq
+      }
       const call = { eq: {} as Record<string, unknown> } as { eq: Record<string, unknown>; like?: string; or?: string }
       q = call
       const b: Record<string, unknown> = {}
@@ -48,7 +60,7 @@ const br = (over: Partial<BarangHapus> = {}): BarangHapus => ({
 let errs: string[] = []
 const onErr = (m: string) => { errs.push(m) }
 
-beforeEach(() => { asetRows = []; q = null; errs = []; qErr = null })
+beforeEach(() => { asetRows = []; q = null; errs = []; qErr = null; kodefikasi = []; kodeErr = null })
 afterEach(cleanup)
 
 const isi = async (rows: BarangHapus[]) => {

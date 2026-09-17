@@ -280,6 +280,26 @@ function tdClass(key: string) {
   return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
 }
 
+// Label kepala kolom KODE & NAMA menyebut isi yang ditumpuk di bawahnya —
+// pola sama dgn Daftar Barang (2026-09-17). Beda dari sana: sel Nama di sini
+// cuma dua baris (nama + NIBAR), TANPA Kode Register — tabel ini snapshot
+// `aset_awal_2026`, yang tak punya kolom itu sama sekali.
+function thContent(key: string): React.ReactNode {
+  if (key === 'kode') return (
+    <>
+      Kode Barang
+      <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">Uraian Barang</span>
+    </>
+  )
+  if (key === 'nama') return (
+    <>
+      Nama Barang
+      <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">NIBAR</span>
+    </>
+  )
+  return COL_META[key].header
+}
+
 export default function Page() {
   const supabase = createClient()
   const isViewer = useIsViewer()
@@ -941,7 +961,7 @@ export default function Page() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {!isViewer && <th className="table-th w-8" />}
-                  {cols.map(k => <th key={k} className={thClass(k)}>{COL_META[k].header}</th>)}
+                  {cols.map(k => <th key={k} className={thClass(k)}>{thContent(k)}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">

@@ -75,6 +75,15 @@ export type PemilihBarangHapus = SeleksiBarang<BarangHapus> & {
   /** Σ nilai perolehan yang tercentang — dihitung di sini, bukan di mesin
    *  centang bersama: hanya menu ini yang menampilkannya. */
   selTotal: number
+<<<<<<< HEAD
+=======
+  toggle: (b: BarangHapus) => void
+  toggleAll: () => void
+  /** Uraian baku per kode (`admin_kodefikasi_bmd`) — cadangan atas kolom
+   *  `uraian_barang` tersimpan, yang basi begitu barang direklas sesudah
+   *  dibuat (kolom itu cuma disalin sekali, tak ikut kode yang berubah). */
+  uraianMap: Record<string, string>
+>>>>>>> e534d53 (fix(penghapusan,daftar-barang): uraian barang basi sesudah reklas + kejelasan header)
 }
 
 export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string) => void): PemilihBarangHapus {
@@ -86,7 +95,26 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
   const [rows, setRows] = useState<BarangHapus[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
+<<<<<<< HEAD
   const seleksi = useSeleksiBarang<BarangHapus>(rows)
+=======
+  const [sel, setSel] = useState<Record<string, BarangHapus>>({})
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
+
+  /** Uraian baku per kode (`admin_kodefikasi_bmd`) — pola sama Reklasifikasi/
+   *  Daftar Barang: selalu ikut kodefikasi TERKINI, bukan `aset.uraian_barang`
+   *  yang basi sesudah reklas. */
+  async function fetchUraian(kodes: string[]) {
+    const uniq = [...new Set(kodes)]
+    const map: Record<string, string> = {}
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data, error } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      if (error) throw new Error(`gagal membaca uraian kodefikasi: ${error.message}`)
+      for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
+    }
+    return map
+  }
+>>>>>>> e534d53 (fix(penghapusan,daftar-barang): uraian barang basi sesudah reklas + kejelasan header)
 
   async function tampilkan() {
     setLoading(true)
@@ -102,7 +130,9 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
       `no_polisi.ilike.%${fSearch}%,no_rangka.ilike.%${fSearch}%,no_mesin.ilike.%${fSearch}%`)
     const { data, error } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
     if (error) throw new Error(`gagal memuat daftar barang: ${error.message}`)
-    setRows((data as unknown as BarangHapus[]) || [])
+    const list = (data as unknown as BarangHapus[]) || []
+    setRows(list)
+    setUraianMap(await fetchUraian(list.map(b => b.kode)))
     setLoaded(true)
     } catch (e) {
       onErr(e instanceof Error ? e.message : String(e))   // `loaded` tetap false
@@ -114,7 +144,11 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
   return {
     fGolongan, setFGolongan, fKomptabel, setFKomptabel, fSearch, setFSearch,
     rows, loaded, loading, tampilkan,
+<<<<<<< HEAD
     ...seleksi,
     selTotal: seleksi.selList.reduce((s, b) => s + b.nilai_perolehan, 0),
+=======
+    sel, setSel, selList, selTotal, toggle, toggleAll, uraianMap,
+>>>>>>> e534d53 (fix(penghapusan,daftar-barang): uraian barang basi sesudah reklas + kejelasan header)
   }
 }
