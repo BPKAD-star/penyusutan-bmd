@@ -82,15 +82,20 @@ const navTree: NavNode[] = [
         ],
       },
       {
+        // Urutan mengikuti Permendagri 47/2021 (permintaan user 2026-09-18):
+        // Penggunaan · Penerimaan Internal · Pengeluaran Internal ·
+        // Pemanfaatan · Reklasifikasi · Koreksi · Kapitalisasi · Pengamanan ·
+        // Penghapusan. Cuma urutan tampil — tak ada logika/route yg bergantung
+        // pada posisi array ini.
         type: 'group', label: 'Pengelolaan', children: [
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/penggunaan', label: 'Penggunaan' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/penerimaan', label: 'Penerimaan Internal' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/pengeluaran', label: 'Pengeluaran Internal' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/pemanfaatan', label: 'Pemanfaatan' },
-          { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/pengamanan', label: 'Pengamanan' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/reklasifikasi', label: 'Reklasifikasi' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/koreksi', label: 'Koreksi' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/kapitalisasi', label: 'Kapitalisasi' },
+          { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/pengamanan', label: 'Pengamanan' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/penghapusan', label: 'Penghapusan' },
         ],
       },
@@ -124,15 +129,17 @@ const navTree: NavNode[] = [
         ],
       },
       {
+        // Urutan mengikuti Permendagri 47/2021, KEMBAR dgn grup "Pengelolaan"
+        // di atas (Pembukuan) — samakan kalau salah satu diubah lagi.
         type: 'group', label: 'Laporan Pengelolaan', children: [
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/penggunaan', label: 'Laporan Penggunaan' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/penerimaan', label: 'Laporan Penerimaan Internal' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/pengeluaran', label: 'Laporan Pengeluaran Internal' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/pemanfaatan', label: 'Laporan Pemanfaatan' },
-          { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/pengamanan', label: 'Laporan Pengamanan' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/reklasifikasi', label: 'Laporan Reklasifikasi' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/koreksi', label: 'Laporan Koreksi' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/kapitalisasi', label: 'Laporan Kapitalisasi' },
+          { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/pengamanan', label: 'Laporan Pengamanan' },
           { type: 'leaf', href: '/dashboard/pelaporan/pengelolaan/penghapusan', label: 'Laporan Penghapusan' },
         ],
       },
