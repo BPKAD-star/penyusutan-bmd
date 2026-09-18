@@ -304,6 +304,13 @@ export default function Page() {
   const supabase = createClient()
   const isViewer = useIsViewer()
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
+  // true = SKPD + seluruh turunannya (bawaan, `org.descendantIds` apa adanya);
+  // false = SKPD yang dipilih SAJA. Combobox sendiri tak punya mode "node ini
+  // saja" (`descendants()` selalu jalan penuh) — filter ini mempersempit
+  // balik ke satu id saat operator memintanya; `org.descendantIds` tak
+  // disentuh, jadi kembali ke Konsolidasi memberi hasil yang sama seperti
+  // semula. `org.skpdId == null` (se-kabupaten/belum pilih) → tak berlaku.
+  const [konsolidasi, setKonsolidasi] = useState(true)
   const [golongan, setGolongan] = useState('')
   const [komptabel, setKomptabel] = useState('')
   const [search, setSearch] = useState('')
@@ -604,7 +611,9 @@ export default function Page() {
   } = useEditSpekAwal(bidang, () => { if (applied) load(applied, page) })
 
   function tampilkan() {
-    const f: Applied = { org, golongan, komptabel, search }
+    const orgEfektif: OrgSelection = (!konsolidasi && org.skpdId != null)
+      ? { skpdId: org.skpdId, descendantIds: [org.skpdId] } : org
+    const f: Applied = { org: orgEfektif, golongan, komptabel, search }
     setApplied(f); setPage(0); load(f, 0)
   }
   function goPage(pg: number) { if (applied) { setPage(pg); load(applied, pg) } }
@@ -859,6 +868,21 @@ export default function Page() {
             <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">SKPD / Lokasi :</label>
             <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
+          {org.skpdId != null && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+              <span className="hidden sm:block sm:w-40 flex-shrink-0" />
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="dba_konsol" checked={konsolidasi} onChange={() => setKonsolidasi(true)} />
+                  Konsolidasi (+ seluruh unit di bawahnya)
+                </label>
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="dba_konsol" checked={!konsolidasi} onChange={() => setKonsolidasi(false)} />
+                  SKPD ini saja
+                </label>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
             <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Jenis Aset :</label>
             <select className="select-filter w-full sm:flex-1 min-w-0" value={golongan} onChange={e => setGolongan(e.target.value)}>

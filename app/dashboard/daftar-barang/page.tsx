@@ -299,7 +299,7 @@ export default function DaftarBarangPage() {
   // `applied`, bukan `f*`. Namanya dipertahankan lewat destructuring supaya
   // seluruh JSX di bawah tak berubah sebaris pun.
   const {
-    fSel, setFSel, fGolongan, setFGolongan, fKomptabel, setFKomptabel,
+    fSel, setFSel, fKonsolidasi, setFKonsolidasi, fGolongan, setFGolongan, fKomptabel, setFKomptabel,
     fSearch, setFSearch, fTahun, setFTahun, fSmt, setFSmt,
     applied, setApplied, pesanFilter, rakit,
   } = useFilterDaftarBarang()
@@ -928,6 +928,21 @@ export default function DaftarBarangPage() {
             <SkpdCombobox lockToOperator onChangeSelection={sel => setFSel({ skpdId: sel.skpdId, descIds: sel.descendantIds })} allowClear
               placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
+          {fSel.skpdId != null && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+              <span className="hidden sm:block sm:w-40 flex-shrink-0" />
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="db_konsol" checked={fKonsolidasi} onChange={() => setFKonsolidasi(true)} />
+                  Konsolidasi (+ seluruh unit di bawahnya)
+                </label>
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="db_konsol" checked={!fKonsolidasi} onChange={() => setFKonsolidasi(false)} />
+                  SKPD ini saja
+                </label>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
             <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Jenis Aset :</label>
             <select className="select-filter w-full sm:flex-1 min-w-0" value={fGolongan} onChange={e => setFGolongan(e.target.value)}>

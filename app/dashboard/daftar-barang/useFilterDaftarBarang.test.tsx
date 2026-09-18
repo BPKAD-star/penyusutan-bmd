@@ -21,7 +21,7 @@ import { act, renderHook, cleanup } from '@testing-library/react'
 
 vi.mock('@/lib/tahunKerja', () => ({ tahunAwal: (fallback: string) => fallback }))
 
-import { cekFilterDaftarBarang, useFilterDaftarBarang } from './useFilterDaftarBarang'
+import { cekFilterDaftarBarang, idsKonsolidasi, useFilterDaftarBarang } from './useFilterDaftarBarang'
 
 beforeEach(() => { vi.useRealTimers() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
@@ -49,6 +49,27 @@ describe('cekFilterDaftarBarang — aturan dua mode', () => {
 
   it('dua-duanya dipilih → BOLEH', () => {
     expect(cekFilterDaftarBarang('1.3.2', [7])).toBeNull()
+  })
+})
+
+describe('idsKonsolidasi — filter Konsolidasi / SKPD ini saja (2026-09-18)', () => {
+  it('konsolidasi=true → descIds mentah (subtree penuh) apa adanya', () => {
+    expect(idsKonsolidasi({ skpdId: 7, descIds: [7, 8, 9] }, true)).toEqual([7, 8, 9])
+  })
+
+  it('konsolidasi=false & SKPD terpilih → dipersempit ke SATU id itu', () => {
+    expect(idsKonsolidasi({ skpdId: 7, descIds: [7, 8, 9] }, false)).toEqual([7])
+  })
+
+  it('konsolidasi=false tapi belum pilih SKPD (se-kabupaten) → tak berlaku, tetap null', () => {
+    expect(idsKonsolidasi({ skpdId: null, descIds: null }, false)).toBeNull()
+  })
+
+  it('descIds mentah TIDAK ikut berubah — kembali ke konsolidasi memberi hasil semula', () => {
+    const sel = { skpdId: 7, descIds: [7, 8, 9] }
+    idsKonsolidasi(sel, false)
+    expect(sel.descIds).toEqual([7, 8, 9])
+    expect(idsKonsolidasi(sel, true)).toEqual([7, 8, 9])
   })
 })
 
@@ -96,6 +117,23 @@ describe('useFilterDaftarBarang', () => {
       descIds: [7, 8], skpdId: 7, golongan: '1.3.2',
       komptabel: 'intra', search: '', periode: '2025-S1',
     })
+  })
+
+  it('fKonsolidasi bawaan TRUE (perilaku lama: SKPD + turunannya)', () => {
+    const { result } = renderHook(() => useFilterDaftarBarang())
+    expect(result.current.fKonsolidasi).toBe(true)
+  })
+
+  it('fKonsolidasi=false mempersempit descIds rakit() ke SKPD terpilih saja', () => {
+    const { result } = renderHook(() => useFilterDaftarBarang())
+    act(() => {
+      result.current.setFSel({ skpdId: 7, descIds: [7, 8, 9] })
+      result.current.setFKonsolidasi(false)
+    })
+    expect(result.current.rakit().descIds).toEqual([7])
+    // Balik ke Konsolidasi → subtree penuh lagi, bukan cuma [7] yang "membeku".
+    act(() => result.current.setFKonsolidasi(true))
+    expect(result.current.rakit().descIds).toEqual([7, 8, 9])
   })
 
   it('rakit() men-`trim()` kata kunci', () => {

@@ -34,6 +34,20 @@ export type Applied = {
 export type SelSkpd = { skpdId: number | null; descIds: number[] | null }
 
 /**
+ * SKPD dipilih itu selalu node + SELURUH turunannya (`SkpdCombobox`,
+ * `descendants()`) — combobox tak punya cara meminta "node ini saja". Filter
+ * "Konsolidasi / Tidak" (permintaan user 2026-09-18) mempersempit balik ke
+ * SATU id itu saat `false`; `descIds` mentah dari combobox tak disentuh sama
+ * sekali (dipakai lagi begitu operator kembali ke Konsolidasi).
+ * `skpdId == null` (se-kabupaten / belum pilih) → tak ada yang bisa
+ * dipersempit, filter ini tak berlaku.
+ */
+export function idsKonsolidasi(sel: SelSkpd, konsolidasi: boolean): number[] | null {
+  if (!konsolidasi && sel.skpdId != null) return [sel.skpdId]
+  return sel.descIds
+}
+
+/**
  * Aturan DUA MODE (keputusan user 2026-08-14): per-SKPD (jenis aset bebas)
  * ATAU se-kabupaten (wajib satu jenis aset). "Semua jenis aset untuk semua
  * SKPD" tidak didukung — itu yang dulu membuat halaman ini timeout total.
@@ -55,6 +69,9 @@ export function cekFilterDaftarBarang(golongan: string, descIds: number[] | null
 export type FilterDaftarBarang = {
   fSel: SelSkpd
   setFSel: (v: SelSkpd) => void
+  /** true = SKPD + seluruh turunannya (bawaan); false = SKPD yang dipilih saja. */
+  fKonsolidasi: boolean
+  setFKonsolidasi: (v: boolean) => void
   fGolongan: string
   setFGolongan: (v: string) => void
   fKomptabel: string
@@ -78,6 +95,7 @@ export function useFilterDaftarBarang(): FilterDaftarBarang {
   const now = periodeDariTanggal(new Date().toISOString().slice(0, 10))
 
   const [fSel, setFSel] = useState<SelSkpd>({ skpdId: null, descIds: null })
+  const [fKonsolidasi, setFKonsolidasi] = useState(true)
   const [fGolongan, setFGolongan] = useState('')
   const [fKomptabel, setFKomptabel] = useState('')
   const [fSearch, setFSearch] = useState('')
@@ -89,7 +107,7 @@ export function useFilterDaftarBarang(): FilterDaftarBarang {
 
   function rakit(): Applied {
     return {
-      descIds: fSel.descIds,
+      descIds: idsKonsolidasi(fSel, fKonsolidasi),
       skpdId: fSel.skpdId,
       golongan: fGolongan,
       komptabel: fKomptabel,
@@ -102,10 +120,10 @@ export function useFilterDaftarBarang(): FilterDaftarBarang {
   }
 
   return {
-    fSel, setFSel, fGolongan, setFGolongan, fKomptabel, setFKomptabel,
+    fSel, setFSel, fKonsolidasi, setFKonsolidasi, fGolongan, setFGolongan, fKomptabel, setFKomptabel,
     fSearch, setFSearch, fTahun, setFTahun, fSmt, setFSmt,
     applied, setApplied,
-    pesanFilter: cekFilterDaftarBarang(fGolongan, fSel.descIds),
+    pesanFilter: cekFilterDaftarBarang(fGolongan, idsKonsolidasi(fSel, fKonsolidasi)),
     rakit,
   }
 }
