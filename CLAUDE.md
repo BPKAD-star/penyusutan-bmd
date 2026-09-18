@@ -4095,6 +4095,78 @@ sesudahnya DIHAPUS krn dijual, bukan cuma dikapitalisasi lagi. Gimana?"
 - **Tak ada migrasi enum, tanda tangan fungsi lain tak berubah** → deploy-
   ordering bebas.
 
+### Guard arah MAJU untuk Pengalihan/Mutasi Internal — tanggal tak boleh mundur (2026-09-18, migrasi 20260918_01)
+
+User bertanya (2026-09-18) sesudah mengeksekusi rantai nyata: barang dipindah
+Kec. Ngancar → Pengelola Barang, lalu Pengelola Barang → Bakesbangpol. Apa ada
+kunci yang menolak kalau tanggal pengalihan KEDUA lebih tua dari yang PERTAMA?
+
+**Jawabannya sebelum hari ini: TIDAK ADA, dan itu bukan cuma kekhawatiran
+teoretis.** `cekBolehSisip` (lib/guardPembatalan.ts, guard arah MAJU — "jangan
+sisipkan event bertanggal mundur ke aset yang sudah punya peristiwa sesudah
+tanggal itu") sejak dipasang 2026-08-27 **cuma dipakai Kapitalisasi**. Menu lain
+(Reklasifikasi, Koreksi, Pengadaan, Penghapusan, PerolehanManual) cuma punya
+`cekBolehBatal` (arah MUNDUR — "jangan batalkan kalau ada transaksi lebih baru
+di atasnya"), dan **Pengalihan Status Penggunaan / Mutasi Internal malah tak
+menyentuh `guardPembatalan.ts` sama sekali** — materialisasinya lewat RPC
+SECURITY DEFINER (`fn_terima_pengalihan`/`fn_terima_mutasi_internal`), bukan
+komponen React yang mengimpor lib client.
+
+⚠️ **Dan celahnya baru benar-benar terbuka sejak migrasi 20260811_02/
+20260812_02.** Sebelum itu kedua RPC mencatat ledger pakai `current_date`
+(tanggal SKPD tujuan klik Terima) — itu otomatis mencegah backdate, karena hari
+ini selalu ≥ tanggal transaksi lama. Begitu dipindah ke **tanggal DOKUMEN**
+(bebas diisi SKPD asal, demi konsisten dgn Pengadaan yang pakai tanggal BAST),
+jaminan itu hilang tanpa digantikan apa pun: RPC-nya cuma menolak tanggal masa
+depan & tahun terkunci, tidak pernah membandingkan ke riwayat ledger aset itu.
+Jadi Pengelola → Bakesbangpol BISA didokumentasikan lebih tua dari Ngancar →
+Pengelola, dan diterima tanpa satu pun penolakan — padahal engine mengurutkan
+replay by periode → tanggal → created_at (BUKAN by id), jadi baris kedua yang
+bertanggal mundur akan diproses SEBELUM baris pertama & merusak rantai state
+tanpa satu pun error.
+
+**Obatnya: guard arah maju DI DALAM kedua RPC**, pola yang sama dgn
+`cekBolehSisip` (termasuk pengecualian `batal_kapitalisasi` — reversal yang
+dinetralkan lewat `target_trx_id`, bukan lewat urutan tanggal). Untuk tiap
+barang di `draft_items`, sebelum INSERT: cari baris `transaksi_bmd` aset itu
+ber-`tanggal > v_h.tanggal` (selain `batal_kapitalisasi`) — ketemu → `RAISE
+EXCEPTION` menyebut jenis & tanggal penghalangnya, persis gaya pesan
+`cekBolehSisip`. ⚠️ **Sengaja DI RPC ("Terima"), bukan saat draft dibuat** —
+aset bisa saja kena transaksi baru di rentang waktu antara draft dibuat & SKPD
+tujuan klik Terima, jadi pemeriksaan yang benar harus terhadap keadaan ledger
+PADA SAAT MATERIALISASI, bukan pada saat tanggal diketik.
+
+⚠️ **BUKAN dipasang lewat `cekBolehSisip` yang sudah ada** — fungsi itu query
+lewat `supabase-js` (tunduk RLS pemanggil), sementara kedua RPC ini SECURITY
+DEFINER & jalan di dalam transaksi yang sudah memegang `FOR UPDATE` di baris
+`aset`/`jurnal_header`. Menyalin ulang logikanya ke SQL (bukan memanggil balik
+fungsi TypeScript) itu memang satu-satunya jalan.
+
+**Bareng itu, cacat yang memicu kejadian ini di dunia nyata ikut ditutup**:
+kotak "Tanggal" di form Tambah Jurnal Penghapusan/Pengalihan
+(`Penghapusan.tsx`) & Pengeluaran Internal (`PengeluaranInternal.tsx`)
+**berdefault tanggal HARI INI** — persis pola yang sudah lama dicurigai
+berbahaya di repo ini ("mundur diam-diam ke hari ini akan menyimpan tanggal
+yang bukan maunya siapa pun", catatan migrasi 20260811_02/20260812_02 sendiri).
+Operator yang lupa mengisinya menyimpan jurnal bertanggal hari ini padahal
+maksudnya tanggal dokumen yang sebenarnya — dan karena baris ledgernya memang
+dicatat bertanggal itu (bukan tanggal Terima), salah isi di sini langsung salah
+semester tanpa satu pun tanda. **Sekarang default-nya KOSONG**, dan `simpan()`
+menolak dgn pesan kalau belum diisi (pola yang sama dgn validasi No. SK/dokumen
+yang sudah ada) — tombol yang menyimpan diam-diam pakai tanggal yang tak pernah
+dimaksud lebih berbahaya daripada tombol yang menolak sampai diisi.
+
+⚠️ **Cakupan migrasi ini SENGAJA DIBATASI ke Pengalihan Status Penggunaan &
+Mutasi Internal** (keputusan user) — Koreksi/Reklasifikasi/Pengadaan/
+PerolehanManual masih TIDAK punya guard arah maju sama sekali (cuma
+`cekBolehBatal`), dan default tanggal "hari ini" di form-nya (Koreksi.tsx,
+Reklasifikasi.tsx, dll.) juga belum disentuh. Kalau nanti keluhan yang sama
+muncul di menu lain, pola yang sama (guard di titik materialisasi + default
+tanggal kosong) tinggal diulang di sana.
+
+- **Tak ada perubahan tanda tangan fungsi** (`RETURNS integer`, param sama) →
+  boleh dijalankan kapan saja, tidak ada deploy-ordering.
+
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
 Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user

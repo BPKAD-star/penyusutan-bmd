@@ -467,7 +467,12 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const dateBounds = useDateBounds()
 
   const [noSk, setNoSk] = useState('')
-  const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
+  // ⚠️ SENGAJA KOSONG, bukan hari ini (permintaan user 2026-09-18) — pola sama
+  // dgn Penghapusan.tsx. Default "hari ini" bikin operator lupa mengisi tanggal
+  // dokumen sesungguhnya & jurnal terlanjur bertanggal hari ini, padahal baris
+  // ledger mutasi internal dicatat bertanggal DOKUMEN ini (migrasi 20260812_02),
+  // bukan tanggal Terima — jadi salah isi di sini langsung salah semester.
+  const [tgl, setTgl] = useState('')
   const [ket, setKet] = useState('')
   const [tujuanList, setTujuanList] = useState<{ id: number; nama: string; level: number }[]>([])
   const [tujuan, setTujuan] = useState('')
@@ -564,6 +569,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     }
 
     if (!noSk.trim()) { setErr('No. dokumen wajib diisi.'); setSaving(false); return }
+    if (!tgl) { setErr('Tanggal dokumen wajib diisi.'); setSaving(false); return }
     if (!tujuan) { setErr('SKPD tujuan wajib dipilih.'); setSaving(false); return }
     // Penjaga SESUNGGUHNYA, bukan cuma gate tampilan di atas — kalau kelak ada
     // jalur lain yang memanggil `simpan()` tanpa lewat layar itu, ini yang menahan.
@@ -620,7 +626,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
               <label className="block text-xs text-gray-500 mb-1">Tanggal</label>
               <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max}
                 value={tgl} onChange={e => setTgl(e.target.value)} />
-              <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tgl)}</p>
+              {tgl && <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tgl)}</p>}
             </div>
             <div className="sm:col-span-2">
               <label className="block text-xs text-gray-500 mb-1">Keterangan</label>

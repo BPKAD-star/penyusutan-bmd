@@ -824,7 +824,13 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [jenis, setJenis] = useState<JenisHapus>('penghapusan_pemindahtanganan')
   const [subJenis, setSubJenis] = useState('hibah')
   const [noSk, setNoSk] = useState('')
-  const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
+  // ⚠️ SENGAJA KOSONG, bukan hari ini (permintaan user 2026-09-18). Default
+  // "hari ini" pernah bikin operator lupa mengisi tanggal dokumen yang
+  // sesungguhnya & jurnal terlanjur tersimpan bertanggal hari ini — untuk
+  // Pengalihan Status Penggunaan itu langsung salah semester tanpa satu pun
+  // tanda (baris ledgernya memang bertanggal dokumen ini, bukan hari ini
+  // materialisasi — lihat migrasi 20260811_02).
+  const [tgl, setTgl] = useState('')
   const [ket, setKet] = useState('')
   const [tujuan, setTujuan] = useState('')          // SKPD tujuan (pengalihan)
   const [dokPaths, setDokPaths] = useState<string[]>([]) // dokumen sumber (pengalihan)
@@ -907,6 +913,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         setSaving(false); onSaved(selList.length, true); return
       }
       if (!noSk.trim()) { setErr('No. dokumen sumber wajib diisi.'); setSaving(false); return }
+      if (!tgl) { setErr('Tanggal dokumen sumber wajib diisi.'); setSaving(false); return }
       if (!tujuan) { setErr('SKPD tujuan wajib dipilih.'); setSaving(false); return }
       if (Number(tujuan) === skpdId) { setErr('SKPD tujuan tidak boleh sama dengan SKPD asal.'); setSaving(false); return }
       // Penjaga SESUNGGUHNYA (bukan cuma UI yang menggate "Pilih Barang" lewat
@@ -928,6 +935,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     if (!h) {
       // Buat header baru dulu.
       if (!noSk.trim()) { setErr('No. SK / dasar penghapusan wajib diisi.'); setSaving(false); return }
+      if (!tgl) { setErr('Tanggal wajib diisi.'); setSaving(false); return }
       // Penjaga SESUNGGUHNYA (bukan cuma UI yang menggate "Pilih Barang") —
       // sama alasannya dgn Pengadaan (commit 9910392): kalau kelak ada jalur
       // lain yang bisa memanggil `simpan()` tanpa lewat gate di layar, ini
@@ -1004,7 +1012,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
               <label className="block text-xs text-gray-500 mb-1">{isAlih ? 'Tanggal Dokumen Sumber' : 'Tanggal'}</label>
               <input type="date" className="select-filter w-full" min={dateBounds.min} max={dateBounds.max}
                 value={tgl} onChange={e => setTgl(e.target.value)} />
-              <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tgl)}</p>
+              {tgl && <p className="text-xs text-gray-400 mt-1">Periode: {periodeDariTanggal(tgl)}</p>}
             </div>
             <div className="sm:col-span-2">
               <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
