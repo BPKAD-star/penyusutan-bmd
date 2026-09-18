@@ -9,11 +9,18 @@ import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
-import { GOLONGAN_REKAP } from '@/lib/bmd'
+import { GOLONGAN_REKAP, periodeDariTanggal } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { tahunAwal } from '@/lib/tahunKerja'
 import { fetchMutasiLines, KATEGORI_LABEL, type MutasiLine } from '@/lib/rekon'
 import { urutanKategoriRincian } from '@/lib/rincianRekonUrutan'
+// Konsep "Akhir Tahun" REUSE dari Laporan BMD (satu-satunya menu lain yang
+// sudah punya ini) — bukan pengertian baru. Di sana 'TH' cuma berarti sesuatu
+// utk laporan ARUS (Model 3); halaman ini juga arus (daftar transaksi, bukan
+// saldo), jadi cocok dgn arti yg SAMA: `periodeMutasi` jadi DUA periode
+// (`YYYY-S1` & `YYYY-S2`) yg ditarik & digabung, bukan satu string "YYYY" yg
+// tak pernah ada di ledger (`parsePeriode`, lib/bmd.ts, selalu YYYY-S1/S2).
+import { periodeLaporanBmd, type SemesterBmd } from '@/lib/periodeLaporanBmd'
 
 const angka = (v: number) => formatRupiah2(v || 0)
 const PREVIEW_MAX = 1000
@@ -24,8 +31,12 @@ export default function RincianRekonsiliasiPage() {
   const supabase = createClient()
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
   const [tahun, setTahun] = useState(() => tahunAwal('2026'))
-  const [smt, setSmt] = useState('1')
-  const [applied, setApplied] = useState<string | null>(null)
+  const [smt, setSmt] = useState<SemesterBmd>('1')
+  // Dibekukan saat Proses ditekan (pola `applied` yg sudah dipakai halaman
+  // lain di modul ini) — `periode` utk nama berkas Export (tahun polos saat
+  // Akhir Tahun, spt Laporan BMD Model 3), `label` utk teks di layar & kolom
+  // header Excel.
+  const [applied, setApplied] = useState<{ periode: string; label: string } | null>(null)
   const [lines, setLines] = useState<MutasiLine[]>([])
   // Peta nama SKPD — SATU sumber, lewat `paginate` (lib/namaSkpd.ts).
   // ⚠️ `errSkpd` WAJIB ditampilkan: sebelum 2026-09-16 loop di sini
@@ -36,26 +47,35 @@ export default function RincianRekonsiliasiPage() {
 
   async function proses() {
     setLoading(true)
-    const periode = `${tahun}-S${smt}`
-    // map SKPD id→nama (murah) + daftar rinci
-    const [rows] = await Promise.all([
-      fetchMutasiLines(supabase, periode, org.descendantIds ?? null),
-      (async () => {
-      })(),
-    ])
+    const { periodeMutasi, labelPeriode } = periodeLaporanBmd(tahun, smt)
+    // Akhir Tahun = DUA panggilan (S1 + S2) digabung, bukan satu query dgn
+    // periode "YYYY" yg tak pernah ada. Aman disatukan tanpa dobel-hitung:
+    // `transaksi_bmd.periode` itu kolom TETAP per baris (bukan dihitung saat
+    // tampil), jadi hasil S1 & S2 dijamin TAK TUMPANG TINDIH — baris yg sama
+    // mustahil lolos filter `periode` DUA kali. Pola & alasan sama dgn
+    // `fetchLedgerM3` di Laporan BMD (lib/periodeLaporanBmd.ts).
+    const hasil = await Promise.all(
+      periodeMutasi.map(p => fetchMutasiLines(supabase, p, org.descendantIds ?? null)),
+    )
+    const rows = hasil.flat()
     // Urut: silsilah kategori (permintaan user 2026-09-18 — lihat
     // lib/rincianRekonUrutan.ts utk penjelasan lengkap "Cara Perolehan →
     // Transfer Masuk → Transfer Keluar → Koreksi [Nilai/Kapitalisasi/
     // Pemecahan/Penggabungan/Reklasifikasi] → Penghapusan") → golongan (urutan
     // KIB) → tanggal → NIBAR sbg pemecah seri TOTAL, supaya urutannya stabil
     // & tak bergeser sendiri tiap render (Array.prototype.sort tak dijamin
-    // stabil di semua mesin).
+    // stabil di semua mesin). Tanggal sbg kunci ketiga ini SEKALIGUS yg
+    // merapikan Akhir Tahun: baris S1 & S2 dalam kategori/golongan yg sama
+    // otomatis terurut kronologis, bukan "semua S1 dulu baru semua S2".
     rows.sort((a, b) => urutanKategoriRincian(a.kategori) - urutanKategoriRincian(b.kategori)
       || golIdx(a.golongan) - golIdx(b.golongan)
       || a.tanggal.localeCompare(b.tanggal)
       || (a.nibar || '').localeCompare(b.nibar || ''))
     setLines(rows)
-    setApplied(periode)
+    // Nama berkas Export: tahun POLOS saat Akhir Tahun (pola persis Laporan
+    // BMD Model 3 — "2026", bukan "2026-S1" yg cuma separuh benar), selain itu
+    // periode tunggal spt biasa.
+    setApplied({ periode: smt === 'TH' ? tahun : periodeMutasi[0], label: labelPeriode })
     setLoading(false)
   }
 
@@ -63,7 +83,11 @@ export default function RincianRekonsiliasiPage() {
 
   function baris(l: MutasiLine): Record<string, string | number> {
     return {
-      'Periode': applied || '', 'Arah': l.arah === 'tambah' ? 'Penambahan' : 'Pengurangan',
+      // ⚠️ Periode per BARIS (dari tanggalnya sendiri), BUKAN `applied.label`
+      // yg konstan — begitu Akhir Tahun menggabung S1+S2 dalam satu tabel,
+      // label filter ("2026 (setahun)") tak lagi menjawab "baris ini semester
+      // berapa". `periodeDariTanggal` sama dgn yg dipakai seluruh aplikasi.
+      'Periode': periodeDariTanggal(l.tanggal), 'Arah': l.arah === 'tambah' ? 'Penambahan' : 'Pengurangan',
       'Kategori': KATEGORI_LABEL[l.kategori], 'Jenis Ledger': l.jenis, 'Tanggal': l.tanggal,
       'No Dokumen/SK': l.no_dokumen || '', 'SKPD': (l.skpd_id != null && skpdMap[l.skpd_id]) || '',
       'Golongan': `${l.golongan} — ${golUraian(l.golongan)}`, 'Kode Barang': l.kode, 'NIBAR': l.nibar || '',
@@ -74,7 +98,7 @@ export default function RincianRekonsiliasiPage() {
   function handleExport() {
     if (!applied) return
     exportToExcel(lines.map(baris), namaBerkasLaporan({
-      laporan: 'Rincian Rekonsiliasi', periode: applied,
+      laporan: 'Rincian Rekonsiliasi', periode: applied.periode,
       skpd: org.skpdId ? skpdMap[org.skpdId] : null,
     }), 'Rincian Rekonsiliasi')
   }
@@ -97,12 +121,15 @@ export default function RincianRekonsiliasiPage() {
             <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear placeholder="Kosongkan = se-pemda; atau ketik SKPD / Sub OPD..." />
           </div>
           <div className="flex items-center gap-3">
-            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Semester :</label>
+            <label className="w-40 text-sm text-gray-600 text-right flex-shrink-0">Periode :</label>
             <select className="select-filter w-28" value={tahun} onChange={e => setTahun(e.target.value)}>
               {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
             </select>
             <div className="flex gap-4">
-              {[['1', 'Semester I'], ['2', 'Semester II']].map(([v, l]) => (
+              {/* Akhir Tahun = seluruh transaksi setahun (S1+S2 digabung) —
+                  pola & label yg SAMA dgn Laporan BMD (lib/periodeLaporanBmd.ts),
+                  bukan konsep baru. */}
+              {([['1', 'Semester I'], ['2', 'Semester II'], ['TH', 'Akhir Tahun']] as [SemesterBmd, string][]).map(([v, l]) => (
                 <label key={v} className="flex items-center gap-1.5 text-sm cursor-pointer">
                   <input type="radio" name="smt" checked={smt === v} onChange={() => setSmt(v)} />{l}
                 </label>
@@ -129,7 +156,7 @@ export default function RincianRekonsiliasiPage() {
         <div className="card overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 text-sm text-gray-600">
             <span>
-              <span className="font-semibold text-gray-900">{lines.length.toLocaleString('id-ID')}</span> transaksi · periode {applied}
+              <span className="font-semibold text-gray-900">{lines.length.toLocaleString('id-ID')}</span> transaksi · periode {applied?.label}
               <span className="text-gray-300 mx-2">·</span>
               Penambahan <span className="font-semibold text-teal">{angka(tot.tambah)}</span>
               <span className="text-gray-300 mx-2">·</span>
