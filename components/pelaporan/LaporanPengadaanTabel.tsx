@@ -25,7 +25,7 @@
 // dan footer tanda tangannya sendiri + page-break saat dicetak.
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { LEMBAR_PERMENDAGRI, labelFormat } from '@/lib/permendagriFormat'
 import { labelPeriodeKop } from '@/lib/formatPermendagri'
@@ -47,7 +47,7 @@ function SubtotalRow({ label, jumlah, nilai, grand }: {
       <td className="brd px-2 py-1 text-right" colSpan={5}>{label}</td>
       <td className="brd px-2 py-1 text-right">{jumlah}</td>
       <td className="brd px-2 py-1" />
-      <td className="brd px-2 py-1 text-right">{formatRupiah(nilai)}</td>
+      <td className="brd px-2 py-1 text-right">{formatRupiah2(nilai)}</td>
       <td className="brd px-2 py-1" colSpan={7} />
     </tr>
   )
@@ -74,8 +74,8 @@ function DataRow({ r }: { r: PengadaanRow }) {
       <td className={c}>{r.spesifikasiLainnya || '-'}</td>
       <td className={c}>{r.satuan || '-'}</td>
       <td className={num}>{r.jumlah}</td>
-      <td className={num}>{formatRupiah(r.hargaSatuan)}</td>
-      <td className={num}>{formatRupiah(r.totalNilai)}</td>
+      <td className={num}>{formatRupiah2(r.hargaSatuan)}</td>
+      <td className={num}>{formatRupiah2(r.totalNilai)}</td>
       <SelTumpuk kode={r.kodeSubKegiatan} uraian={r.namaSubKegiatan} />
       <SelTumpuk kode={r.kodeRekening} uraian={r.uraianBelanja} />
       <td className={c + ' whitespace-nowrap'}>{r.tanggal}</td>

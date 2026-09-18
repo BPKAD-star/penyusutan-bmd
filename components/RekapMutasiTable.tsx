@@ -4,7 +4,7 @@
 // Penambahan/Pengurangan → modal breakdown per kategori sumbernya (pola sama
 // dgn drill-down di components/dashboard/MutasiTransferCards.tsx).
 import { useMemo, useState } from 'react'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { backdropClose } from '@/components/backdropClose'
 
 export type MutasiRow = {
@@ -65,22 +65,22 @@ export default function RekapMutasiTable({ rows, detail, loading }: {
                 <tr key={r.kode}>
                   <td className="table-td text-xs">{r.kode}</td>
                   <td className="table-td text-xs font-medium">{r.uraian}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(r.saldoAwal)}</td>
+                  <td className="table-td text-right text-xs">{formatRupiah2(r.saldoAwal)}</td>
                   <td className="table-td text-right text-xs">
                     {r.penambahan > 0 ? (
                       <button className="text-teal hover:underline" onClick={() => setModal({ kode: r.kode, uraian: r.uraian, arah: 'tambah' })}>
-                        {formatRupiah(r.penambahan)}
+                        {formatRupiah2(r.penambahan)}
                       </button>
-                    ) : formatRupiah(0)}
+                    ) : formatRupiah2(0)}
                   </td>
                   <td className="table-td text-right text-xs">
                     {r.pengurangan > 0 ? (
                       <button className="text-red-600 hover:underline" onClick={() => setModal({ kode: r.kode, uraian: r.uraian, arah: 'kurang' })}>
-                        {formatRupiah(r.pengurangan)}
+                        {formatRupiah2(r.pengurangan)}
                       </button>
-                    ) : formatRupiah(0)}
+                    ) : formatRupiah2(0)}
                   </td>
-                  <td className="table-td text-right text-xs font-medium">{formatRupiah(r.saldoAkhir)}</td>
+                  <td className="table-td text-right text-xs font-medium">{formatRupiah2(r.saldoAkhir)}</td>
                 </tr>
               ))}
             </tbody>
@@ -88,10 +88,10 @@ export default function RekapMutasiTable({ rows, detail, loading }: {
               <tfoot className="bg-gray-100 border-t-2 border-gray-200">
                 <tr>
                   <td className="table-td text-xs font-bold" colSpan={2}>TOTAL</td>
-                  <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.saldoAwal)}</td>
-                  <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.penambahan)}</td>
-                  <td className="table-td text-right text-xs font-bold">{formatRupiah(tot.pengurangan)}</td>
-                  <td className="table-td text-right text-xs font-bold text-teal">{formatRupiah(tot.saldoAkhir)}</td>
+                  <td className="table-td text-right text-xs font-bold">{formatRupiah2(tot.saldoAwal)}</td>
+                  <td className="table-td text-right text-xs font-bold">{formatRupiah2(tot.penambahan)}</td>
+                  <td className="table-td text-right text-xs font-bold">{formatRupiah2(tot.pengurangan)}</td>
+                  <td className="table-td text-right text-xs font-bold text-teal">{formatRupiah2(tot.saldoAkhir)}</td>
                 </tr>
               </tfoot>
             )}
@@ -138,7 +138,7 @@ function DetailModal({ title, lines, onClose }: { title: string; lines: MutasiDe
                 <div key={kategori}>
                   <div className="flex items-baseline justify-between mb-2">
                     <p className="text-sm font-semibold text-gray-800">{kategori}</p>
-                    <p className="text-xs text-teal font-medium">{formatRupiah(g.total)}</p>
+                    <p className="text-xs text-teal font-medium">{formatRupiah2(g.total)}</p>
                   </div>
                   <ul className="border border-gray-100 rounded-lg divide-y divide-gray-50">
                     {g.lines.map((l, i) => (
@@ -147,7 +147,7 @@ function DetailModal({ title, lines, onClose }: { title: string; lines: MutasiDe
                           {l.namaBarang || '-'} <span className="text-gray-400">({l.nibar || '-'})</span>
                           <span className="text-gray-400"> — {l.skpdNama} · {l.tanggal}</span>
                         </span>
-                        <span className="text-gray-600 flex-shrink-0 ml-3">{formatRupiah(l.nilai)}</span>
+                        <span className="text-gray-600 flex-shrink-0 ml-3">{formatRupiah2(l.nilai)}</span>
                       </li>
                     ))}
                   </ul>

@@ -12,7 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import LkiForm from '@/components/inventarisasi/LkiForm'
 import { fetchApprovalScope, SCOPE_KOSONG, type ApprovalScope } from '@/lib/roles'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import {
   STATUS_LABEL, STATUS_BADGE, konfigLki, klasifikasiLhi, sudahDiisi, normalKondisi,
   type InvHeader, type InvBaris, type InvJawaban, type Petugas,
@@ -356,7 +356,7 @@ export default function DetailInventarisasiPage() {
                       {(b.aset_id ? b.snapshot?.tgl_perolehan : baru?.tgl_perolehan) || '—'}
                     </td>
                     <td className="table-td text-xs text-right whitespace-nowrap">
-                      {formatRupiah(b.aset_id ? (b.snapshot?.nilai_perolehan || 0) : (baru?.nilai_perolehan || 0))}
+                      {formatRupiah2(b.aset_id ? (b.snapshot?.nilai_perolehan || 0) : (baru?.nilai_perolehan || 0))}
                     </td>
                     <td className="table-td text-xs text-gray-500">{normalKondisi(b.snapshot?.kondisi) || '—'}</td>
                     <td className="table-td">

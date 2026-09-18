@@ -24,6 +24,7 @@ import { fieldsForKode, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { KIBAR_JENIS_LABEL, kibarDetail } from '@/lib/kibarJenis'
 import { JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
+import { formatRupiah2 } from '@/lib/export'
 import PrintLabelButton from '@/components/kibar/PrintLabelButton'
 import PrintPageButton from '@/components/kibar/PrintPageButton'
 
@@ -47,7 +48,7 @@ export const metadata = {
 type Admin = ReturnType<typeof createAdminClient>
 
 const formatRp = (v: number | null | undefined) =>
-  v == null ? '-' : 'Rp ' + new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
+  v == null ? '-' : 'Rp ' + formatRupiah2(v)
 // `aset.harga_satuan` kosong untuk banyak barang baseline e-BMD (cuma total
 // nilai perolehan yang diimpor) — jatuh ke nilai_perolehan ÷ jumlah, bukan
 // mengarang angka: itu memang definisi harga satuan saat kuantitasnya utuh.

@@ -61,10 +61,16 @@ export function formatRupiah(val: number | null | undefined): string {
  * (layar); `cell()`/`cellValue()` untuk Export tetap mengembalikan angka mentah
  * supaya selnya bertipe angka di Excel, bukan teks.
  *
- * ⚠️ `formatRupiah` SENGAJA TIDAK ikut diubah. Ia dipakai ~67 berkas, termasuk
- * lembar cetak Permendagri yang lebar kolomnya sudah disetel ketat (IV.A/B/C/
- * D/F/G/J/K) — menambah ",00" di sana menggeser kolom & baru ketahuan sesudah
- * kertasnya keluar. Yang butuh dua desimal memanggil fungsi ini secara sadar.
+ * ⚠️ Sejak 2026-09-18, TAMPILAN LAYAR di seluruh aplikasi sudah disatukan ke
+ * fungsi ini — bukan lagi 8 menu dari ~75 pemakai `formatRupiah`. `formatRupiah`
+ * (0–2 desimal) SENGAJA TIDAK ikut & kini HANYA dipakai dua kelas berkas:
+ * (1) lembar cetak Permendagri (`app/cetak/**`, `components/pelaporan/
+ * Lembar*.tsx`) — lebar kolomnya sudah disetel ketat (IV.A/B/C/D/F/G/J/K);
+ * menambah ",00" di sana berisiko menggeser kolom & baru ketahuan sesudah
+ * kertasnya keluar; (2) `angkaBA` (lib/beritaAcaraRekon.ts) — konvensi Berita
+ * Acara sendiri (0 desimal + tanda kurung akuntansi utk nilai negatif).
+ * Menyatukan keduanya ke layar BUKAN pekerjaan putaran ini — risikonya beda
+ * (kertas, bukan layar) & sengaja ditunda sbg keputusan terpisah.
  */
 export function formatRupiah2(val: number | null | undefined): string {
   if (val == null) return '-'

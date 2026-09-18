@@ -26,7 +26,7 @@ import { usePemilihBarangHapus } from './penghapusan/usePemilihBarang'
 import { SUBJENIS_OPT, JENIS_PENGHAPUSAN, type JenisHapus } from '@/lib/penghapusan'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import FormShell from './FormShell'
@@ -556,7 +556,7 @@ export default function Penghapusan() {
                 <p className="text-xs text-gray-400">
                   Total Nilai{filterJenis !== 'semua' ? ` — ${FILTER_LABEL[filterJenis]}` : ''}
                 </p>
-                <p className="text-xl font-bold text-gray-800">{formatRupiah(totalTampil)}</p>
+                <p className="text-xl font-bold text-gray-800">{formatRupiah2(totalTampil)}</p>
                 <p className="text-xs text-gray-400">{jurnalAktif.length} jurnal · {jumlahBarangTampil} barang</p>
                 {/* Kartu yang disembunyikan tetap DISEBUT jumlahnya. Daftar yang
                     diam-diam membuang baris adalah cara paling halus membuat
@@ -646,7 +646,7 @@ export default function Penghapusan() {
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <div className="text-right">
                       <p className="text-xs text-gray-400">{isAlih ? 'Total Nilai' : 'Total Penghapusan'}</p>
-                      <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+                      <p className="font-semibold text-gray-800">{formatRupiah2(j.total)}</p>
                     </div>
                     {(!isAlih || pending) && (
                       <button title="Edit No dokumen / tanggal (dalam semester yang sama)"
@@ -722,7 +722,7 @@ export default function Penghapusan() {
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_mesin || '-'}</td>
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.tgl_perolehan || '-'}</td>
                         <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
-                        <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                        <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1112,7 +1112,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
                       <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
                       <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.tgl_perolehan || '-'}</td>
                       <td className="table-td text-center text-xs">{b.tahun_pengadaan ?? '-'}</td>
-                      <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                      <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1125,7 +1125,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
 
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
           <span className="text-sm text-gray-600">
-            {selList.length} barang dipilih · <span className="font-medium">{formatRupiah(selTotal)}</span>
+            {selList.length} barang dipilih · <span className="font-medium">{formatRupiah2(selTotal)}</span>
           </span>
           <button className="btn-primary" onClick={simpan} disabled={saving || selList.length === 0}>
             {saving ? 'Menyimpan...' : header ? 'Tambah ke Jurnal' : isAlih ? 'Simpan Pengalihan (Menunggu Persetujuan)' : 'Simpan Penghapusan'}

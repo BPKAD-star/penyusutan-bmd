@@ -23,7 +23,7 @@ import {
 } from '@/lib/bmd'
 import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import FormShell from './FormShell'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
@@ -586,7 +586,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       headerRight={skpd ? (
         <div className="text-right flex-shrink-0">
           <p className="text-xs text-gray-400">Total {judul} ({skpdNama})</p>
-          <p className="text-lg font-bold text-gray-900">{formatRupiah(totalSemua)}</p>
+          <p className="text-lg font-bold text-gray-900">{formatRupiah2(totalSemua)}</p>
         </div>
       ) : undefined}>
       <div className="card p-5 mb-4">
@@ -717,7 +717,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
           <div className="flex flex-col items-end justify-between">
             <div className="text-right">
               <p className="text-xs text-gray-400">Estimasi Total</p>
-              <p className="font-semibold text-gray-800">{formatRupiah(draftTotal(items))}</p>
+              <p className="font-semibold text-gray-800">{formatRupiah2(draftTotal(items))}</p>
             </div>
             <div className="flex items-center gap-2 mt-2">
               <button title="Edit dokumen" onClick={onEditHeader}
@@ -865,7 +865,7 @@ function DraftRow({ item, checked, onToggle, fotoUrl }: {
         <FotoSel paths={item.foto} thumbUrl={fotoUrl} judul={item.fields?.nama_barang || item.uraianBarang} />
       </td>
       <td className="table-td text-center text-xs text-gray-600">{item.satuan || '-'}</td>
-      <td className="table-td text-right text-xs text-gray-600">{formatRupiah(toNum(item.harga))}</td>
+      <td className="table-td text-right text-xs text-gray-600">{formatRupiah2(toNum(item.harga))}</td>
       <td className="table-td text-xs text-gray-500 truncate max-w-[160px]" title={item.fields?.keterangan || ''}>{item.fields?.keterangan || '-'}</td>
     </tr>
   )
@@ -965,7 +965,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
             <span className="text-gray-500">Sub Rincian Objek</span><span className="font-medium text-gray-700">{picked.nama_sub_rincian || '-'}</span>
             <span className="text-gray-500">Uraian Barang</span><span className="font-medium text-gray-700">{picked.uraian || '-'}</span>
             <span className="text-gray-500">Masa Manfaat</span><span className="font-medium text-gray-700">{picked.masa_manfaat_tahun != null ? `${picked.masa_manfaat_tahun} tahun` : '-'}</span>
-            <span className="text-gray-500">Nilai Kapitalisasi</span><span className="font-medium text-gray-700">{formatRupiah(picked.batas_kapitalisasi)}</span>
+            <span className="text-gray-500">Nilai Kapitalisasi</span><span className="font-medium text-gray-700">{formatRupiah2(picked.batas_kapitalisasi)}</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
@@ -1016,7 +1016,7 @@ function ApprovedCard({ j, isAdmin, busy, pihakLabel, onUnapprove }: {
           <div className="flex flex-col items-end justify-between">
             <div className="text-right">
               <p className="text-xs text-gray-400">Total</p>
-              <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+              <p className="font-semibold text-gray-800">{formatRupiah2(j.total)}</p>
             </div>
             {isAdmin ? (
               <button title="Buka kunci (unapprove) — kembalikan ke draft utk diedit" onClick={onUnapprove} disabled={busy}
@@ -1068,7 +1068,7 @@ function ApprovedCard({ j, isAdmin, busy, pihakLabel, onUnapprove }: {
                   </td>
                   <td className="table-td text-center text-xs">{l.satuan || '-'}</td>
                   <td className="table-td text-center text-xs capitalize">{l.intra_ekstra || '-'}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                  <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
                   <td className="table-td text-xs text-gray-500 truncate max-w-[160px]" title={l.fields?.keterangan || ''}>{l.fields?.keterangan || '-'}</td>
                 </tr>
               )

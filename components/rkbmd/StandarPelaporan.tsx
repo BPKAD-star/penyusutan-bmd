@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { fetchStandar, type StandarJenis, type StandarRow } from '@/lib/rkbmdStandar'
 import { USULAN_JENIS, type UsulanJenis } from '@/lib/rkbmdStandarUsulan'
@@ -263,7 +263,7 @@ export default function StandarPelaporan() {
                   <td className="table-td text-xs text-gray-800">{r.nama}</td>
                   <td className="table-td text-xs text-gray-600">{r.merk_tipe || '—'}</td>
                   <td className="table-td text-xs text-gray-500">{r.satuan || '—'}</td>
-                  <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(r.harga)}</td>
+                  <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah2(r.harga)}</td>
                   <td className="table-td text-xs text-center whitespace-nowrap">
                     {r.tkdn != null ? `${r.tkdn}%` : '—'}
                   </td>

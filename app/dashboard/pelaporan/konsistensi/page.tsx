@@ -26,7 +26,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { assertOk } from '@/shared/db/query'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
-import { formatRupiah, exportToExcel } from '@/lib/export'
+import { formatRupiah2, exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { fetchSnapshot, measuresOf, type Snapshot, type Komptabel } from '@/lib/rekon'
@@ -218,7 +218,7 @@ export default function UjiKonsistensiPage() {
                           <td key={`${u.key}-r`} className="table-td text-right border-l border-gray-200 whitespace-nowrap">{tampil(s.rekon)}</td>,
                           <td key={`${u.key}-b`} className="table-td text-right whitespace-nowrap">{tampil(s.bmd)}</td>,
                           <td key={`${u.key}-d`} className={`table-td text-right whitespace-nowrap ${ok ? 'text-gray-300' : 'text-red-600 font-semibold'}`}>
-                            {ok ? '–' : formatRupiah(beda)}
+                            {ok ? '–' : formatRupiah2(beda)}
                           </td>,
                         ]
                       })}
@@ -241,7 +241,7 @@ export default function UjiKonsistensiPage() {
   )
 }
 
-const tampil = (n: number) => (Math.abs(n) < 0.005 ? '–' : formatRupiah(n))
+const tampil = (n: number) => (Math.abs(n) < 0.005 ? '–' : formatRupiah2(n))
 
 // Susun baris pembanding. SEMUA golongan di GOLONGAN_REKAP selalu ditampilkan,
 // termasuk yang dua-duanya nol: baris yang HILANG tak bisa dibedakan dari baris

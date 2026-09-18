@@ -7,14 +7,14 @@ import { useState } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { tahunAwal } from '@/lib/tahunKerja'
 import { fetchMutasiLines, KATEGORI_LABEL, type MutasiLine } from '@/lib/rekon'
 
-const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
+const angka = (v: number) => formatRupiah2(v || 0)
 const PREVIEW_MAX = 1000
 const golUraian = (kode: string) => GOLONGAN_REKAP.find(g => g.kode === kode)?.uraian || kode
 const golIdx = (kode: string) => { const i = GOLONGAN_REKAP.findIndex(g => g.kode === kode); return i < 0 ? 99 : i }

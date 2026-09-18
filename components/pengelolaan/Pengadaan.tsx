@@ -32,7 +32,7 @@ import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 import NominalInput from '@/shared/ui/NominalInput'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import FormShell from './FormShell'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
@@ -447,7 +447,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
       headerRight={skpd ? (
         <div className="text-right flex-shrink-0">
           <p className="text-xs text-gray-400">Total Pengadaan ({skpdNama})</p>
-          <p className="text-lg font-bold text-gray-900">{formatRupiah(totalSemua)}</p>
+          <p className="text-lg font-bold text-gray-900">{formatRupiah2(totalSemua)}</p>
         </div>
       ) : undefined}>{body}</FormShell>
   )
@@ -821,7 +821,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
           <div className="flex flex-col items-end justify-between">
             <div className="text-right">
               <p className="text-xs text-gray-400">Estimasi Total</p>
-              <p className="font-semibold text-gray-800">{formatRupiah(draftTotal(items))}</p>
+              <p className="font-semibold text-gray-800">{formatRupiah2(draftTotal(items))}</p>
             </div>
             <div className="flex items-center gap-2 mt-2">
               <button title="Edit kontrak / BAST" onClick={onEditHeader}
@@ -986,7 +986,7 @@ function DraftRow({ item, checked, onToggle, fotoUrl, komptabel }: {
       <td className="table-td text-center text-xs text-gray-600 capitalize">
         {komptabel ?? <span className="text-gray-300" title="Batas kapitalisasi belum terbaca">…</span>}
       </td>
-      <td className="table-td text-right text-xs text-gray-600">{formatRupiah(toNum(item.harga))}</td>
+      <td className="table-td text-right text-xs text-gray-600">{formatRupiah2(toNum(item.harga))}</td>
       <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{item.fields?.keterangan || '-'}</td>
     </tr>
   )
@@ -1109,7 +1109,7 @@ function TambahBarangPanel({ golonganLabels, onTambah, onCancel }: {
             <span className="text-gray-500">Sub Rincian Objek</span><span className="font-medium text-gray-700">{picked.nama_sub_rincian || '-'}</span>
             <span className="text-gray-500">Uraian Barang</span><span className="font-medium text-gray-700">{picked.uraian || '-'}</span>
             <span className="text-gray-500">Masa Manfaat</span><span className="font-medium text-gray-700">{picked.masa_manfaat_tahun != null ? `${picked.masa_manfaat_tahun} tahun` : '-'}</span>
-            <span className="text-gray-500">Nilai Kapitalisasi</span><span className="font-medium text-gray-700">{formatRupiah(picked.batas_kapitalisasi)}</span>
+            <span className="text-gray-500">Nilai Kapitalisasi</span><span className="font-medium text-gray-700">{formatRupiah2(picked.batas_kapitalisasi)}</span>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -1186,7 +1186,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
           <div className="flex flex-col items-end justify-between gap-3">
             <div className="text-right">
               <p className="text-xs text-gray-400">Total Pengadaan</p>
-              <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+              <p className="font-semibold text-gray-800">{formatRupiah2(j.total)}</p>
             </div>
             {/* Dua tombol dijejer SAMA LEBAR (w-40) & sejajar — bukan cuma
                 ditumpuk btn-secondary spt sebelumnya. Warna beda peran: teal =
@@ -1249,7 +1249,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
                   </td>
                   <td className="table-td text-center text-xs">{l.satuan || '-'}</td>
                   <td className="table-td text-center text-xs capitalize">{l.intra_ekstra || '-'}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                  <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
                   <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{f.keterangan || '-'}</td>
                 </tr>
               )

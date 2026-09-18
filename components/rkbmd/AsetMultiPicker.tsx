@@ -12,7 +12,7 @@
 //     "terpilih" di bawah, jadi tak ada yang tersembunyi.
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import type { AsetRingkas } from '@/components/AsetPicker'
 
 export default function AsetMultiPicker({ terpilih, onChange, skpdId, kodePrefix }: {
@@ -109,7 +109,7 @@ export default function AsetMultiPicker({ terpilih, onChange, skpdId, kodePrefix
                       <span className="block text-xs font-medium text-gray-800">{a.nama_barang || a.uraian_barang || '-'}</span>
                       <span className="block text-[11px] text-gray-400">
                         {a.nibar || '-'} · {a.kode}{a.merek_tipe ? ` · ${a.merek_tipe}` : ''}
-                        {a.tgl_perolehan ? ` · ${a.tgl_perolehan}` : ''} · {formatRupiah(a.nilai_perolehan)}
+                        {a.tgl_perolehan ? ` · ${a.tgl_perolehan}` : ''} · {formatRupiah2(a.nilai_perolehan)}
                       </span>
                     </span>
                   </label>
@@ -123,7 +123,7 @@ export default function AsetMultiPicker({ terpilih, onChange, skpdId, kodePrefix
       <div className="rounded-lg border border-teal/30 bg-teal/5">
         <div className="flex items-center justify-between px-3 py-2 border-b border-teal/20">
           <span className="text-xs font-medium text-gray-700">
-            Terpilih: {terpilih.length} barang · nilai perolehan {formatRupiah(totalNilai)}
+            Terpilih: {terpilih.length} barang · nilai perolehan {formatRupiah2(totalNilai)}
           </span>
           {terpilih.length > 0 && (
             <button type="button" onClick={() => onChange([])} className="text-xs text-red-500 hover:text-red-700">

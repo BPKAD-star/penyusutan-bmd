@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react'
 import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/skpdMaster'
 import * as XLSX from 'xlsx'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { parseKodeUraian, parseDebit, parseTanggal, kelompokDari } from '@/lib/lra'
 
 type Parsed = {
@@ -245,7 +245,7 @@ export default function LraImport({ onClose, onDone }: { onClose: () => void; on
                 </div>
               )}
 
-              <div className="text-sm text-gray-600">Total debit valid: <b>{formatRupiah(totalDebit)}</b></div>
+              <div className="text-sm text-gray-600">Total debit valid: <b>{formatRupiah2(totalDebit)}</b></div>
 
               <div className="card overflow-hidden">
                 <div className="overflow-x-auto max-h-80 overflow-y-auto">
@@ -264,7 +264,7 @@ export default function LraImport({ onClose, onDone }: { onClose: () => void; on
                           <td className="table-td">{p.kode || '-'}</td>
                           <td className="table-td">{p.no_bukti || '-'}</td>
                           <td className="table-td">{p.skpd_id != null ? (skpdNama.get(p.skpd_id) || p.skpd_id) : '-'}</td>
-                          <td className="table-td text-right">{formatRupiah(p.debit)}</td>
+                          <td className="table-td text-right">{formatRupiah2(p.debit)}</td>
                         </tr>
                       ))}
                     </tbody>

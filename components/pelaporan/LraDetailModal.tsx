@@ -3,7 +3,7 @@
 // → lihat baris pembentuknya, dikelompokkan per SKPD + subtotal.
 // Sumbernya baris LRA yang SUDAH ada di memori halaman (tak ada query baru).
 import { useMemo, useState } from 'react'
-import { formatRupiah, exportToExcel } from '@/lib/export'
+import { formatRupiah2, exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import type { LraRow } from '@/lib/lra'
 
@@ -65,7 +65,7 @@ export default function LraDetailModal({ judul, periode, skpd, rows, skpdNama, o
           <div>
             <h2 className="text-base font-semibold text-gray-800">Rincian — {judul}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {tampil.length} baris · {grup.length} SKPD · total <b>{formatRupiah(total)}</b>
+              {tampil.length} baris · {grup.length} SKPD · total <b>{formatRupiah2(total)}</b>
             </p>
           </div>
           <button className="text-gray-400 hover:text-gray-600 text-xl leading-none flex-shrink-0" onClick={onClose}>×</button>
@@ -96,7 +96,7 @@ export default function LraDetailModal({ judul, periode, skpd, rows, skpdNama, o
                   <tbody key={g.id} className="divide-y divide-gray-50">
                     <tr className="bg-teal/5">
                       <td className="table-td font-semibold text-gray-800 whitespace-nowrap" colSpan={5}>{g.nama}</td>
-                      <td className="table-td text-right font-semibold tabular-nums text-gray-800 whitespace-nowrap">{formatRupiah(g.total)}</td>
+                      <td className="table-td text-right font-semibold tabular-nums text-gray-800 whitespace-nowrap">{formatRupiah2(g.total)}</td>
                     </tr>
                     {g.rows.map(r => (
                       <tr key={r.id}>
@@ -105,7 +105,7 @@ export default function LraDetailModal({ judul, periode, skpd, rows, skpdNama, o
                         <td className="table-td whitespace-nowrap">{r.uraian || '-'}</td>
                         <td className="table-td whitespace-nowrap">{r.no_bukti}</td>
                         <td className="table-td whitespace-nowrap">{r.keterangan || '-'}</td>
-                        <td className="table-td text-right tabular-nums whitespace-nowrap">{formatRupiah(r.debit)}</td>
+                        <td className="table-td text-right tabular-nums whitespace-nowrap">{formatRupiah2(r.debit)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -113,7 +113,7 @@ export default function LraDetailModal({ judul, periode, skpd, rows, skpdNama, o
               <tfoot className="border-t-2 border-gray-200 bg-gray-50 sticky bottom-0">
                 <tr>
                   <td className="table-td font-semibold text-gray-900 whitespace-nowrap" colSpan={5}>TOTAL</td>
-                  <td className="table-td text-right font-semibold tabular-nums text-gray-900 whitespace-nowrap">{formatRupiah(total)}</td>
+                  <td className="table-td text-right font-semibold tabular-nums text-gray-900 whitespace-nowrap">{formatRupiah2(total)}</td>
                 </tr>
               </tfoot>
             </table>

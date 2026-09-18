@@ -14,7 +14,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import Pengadaan, { PengadaanCard, fetchPengadaanJurnals, useGolonganLabels, draftTotal, type Jurnal } from './Pengadaan'
 import KonstruksiPengadaan, { KontrakDetail, fetchKonstruksiKontraks, kontrakTotal, type Kontrak } from './KonstruksiPengadaan'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
@@ -101,7 +101,7 @@ export default function PengadaanEntry() {
       headerRight={skpd ? (
         <div className="text-right flex-shrink-0">
           <p className="text-xs text-gray-400">Total Pengadaan</p>
-          <p className="text-lg font-bold text-gray-900">{formatRupiah(total)}</p>
+          <p className="text-lg font-bold text-gray-900">{formatRupiah2(total)}</p>
         </div>
       ) : undefined}>
       <div className="card p-5 mb-4">

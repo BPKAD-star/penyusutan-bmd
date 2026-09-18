@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 
 type Kodefikasi = {
   kode: string
@@ -129,7 +129,7 @@ export default function AdminKodefikasiPage() {
                     <td className="table-td text-xs text-gray-600">{row.nama_sub_rincian || '-'}</td>
                     <td className="table-td text-xs text-gray-800 max-w-xs truncate" title={row.uraian || ''}>{row.uraian || '-'}</td>
                     <td className="table-td text-xs text-gray-600">{row.masa_manfaat_tahun ?? '-'}</td>
-                    <td className="table-td text-xs text-gray-600">{formatRupiah(row.batas_kapitalisasi)}</td>
+                    <td className="table-td text-xs text-gray-600">{formatRupiah2(row.batas_kapitalisasi)}</td>
                     <td className="table-td">
                       {isAdmin ? (
                         <button onClick={() => toggleAktif(row)} disabled={togglingKode === row.kode}

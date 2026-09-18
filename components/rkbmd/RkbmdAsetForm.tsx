@@ -20,7 +20,7 @@ import { createClient } from '@/lib/supabase/client'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import AsetMultiPicker from '@/components/rkbmd/AsetMultiPicker'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import NominalInput from '@/shared/ui/NominalInput'
 import {
   BENTUK_PEMANFAATAN, BENTUK_PEMINDAHTANGANAN, KONDISI_RKBMD,
@@ -251,7 +251,7 @@ export default function RkbmdAsetForm({ jenis, rkbmdId, skpdId, editItem, onSave
         <div className="rounded-lg bg-gray-50 px-4 py-2 text-[11px] text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
           <span>Dibekukan ke dokumen —</span>
           <span>Tgl perolehan: <span className="font-medium text-gray-700">{aset.tgl_perolehan || '—'}</span></span>
-          <span>Nilai perolehan: <span className="font-medium text-gray-700">{formatRupiah(aset.nilai_perolehan)}</span></span>
+          <span>Nilai perolehan: <span className="font-medium text-gray-700">{formatRupiah2(aset.nilai_perolehan)}</span></span>
         </div>
       )}
       {bolehBanyak && banyak.length > 0 && (

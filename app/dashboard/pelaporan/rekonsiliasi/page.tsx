@@ -28,7 +28,7 @@ import { useEffect, useState } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
@@ -57,8 +57,7 @@ import {
 // tampil "0" karena dipotong tampilan akan terbaca sebagai rantai yang sudah
 // cocok padahal belum. Murni tampilan — yang dijumlah & yang diekspor ke Excel
 // selalu nilai penuhnya.
-const angka = (v: number) =>
-  new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0)
+const angka = (v: number) => formatRupiah2(v || 0)
 const KOMPS: Komptabel[] = ['intra', 'ekstra']
 
 // ── Struktur baris laporan (image BA rekonsiliasi) ──────────────────────────

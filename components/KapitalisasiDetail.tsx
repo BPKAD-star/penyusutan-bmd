@@ -3,7 +3,7 @@
 // Kapitalisasi dan di popup "mata" (menu Kapitalisasi & Penyusutan). Disusun
 // se-eksplisit mungkin agar mudah diperiksa (BPK): semua angka induk sebelum,
 // nilai/persen anak, dan hasil sesudah kapitalisasi.
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { backdropClose } from '@/components/backdropClose'
 
 export type KapSnapshot = {
@@ -56,10 +56,10 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
               Induk — Sebelum{s.periode_dasar ? <span className="normal-case font-normal text-gray-400"> · posisi akhir {s.periode_dasar}</span> : null}
             </p>
-            <Row label="Nilai perolehan induk" value={formatRupiah(s.np_lama)} />
-            <Row label="Beban penyusutan / smt" value={formatRupiah(s.beban_lama)} />
-            <Row label="Akumulasi penyusutan" value={formatRupiah(s.akum_lama)} />
-            <Row label="Nilai buku induk" value={formatRupiah(s.nb_lama)} />
+            <Row label="Nilai perolehan induk" value={formatRupiah2(s.np_lama)} />
+            <Row label="Beban penyusutan / smt" value={formatRupiah2(s.beban_lama)} />
+            <Row label="Akumulasi penyusutan" value={formatRupiah2(s.akum_lama)} />
+            <Row label="Nilai buku induk" value={formatRupiah2(s.nb_lama)} />
             <Row label="Sisa masa manfaat" value={`${s.sisa_lama_smt} smt`} />
             {s.masa_maks_tahun != null && <Row label="Masa manfaat maks (kode)" value={`${s.masa_maks_tahun} th`} />}
           </div>
@@ -72,7 +72,7 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
                 <li key={a.id} className="text-xs text-gray-700 min-w-0">
                   <div className="flex justify-between gap-3 min-w-0">
                     <span className="min-w-0 break-words">{a.nama || '-'}{a.tgl ? <span className="text-gray-400"> · {a.tgl}</span> : null}</span>
-                    <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah(a.nilai)}</span>
+                    <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah2(a.nilai)}</span>
                   </div>
                   {/* Akumulasi anak ditampilkan PER BARANG, bukan cuma totalnya:
                       inilah angka yang berpindah ke induk, dan operator perlu
@@ -80,15 +80,15 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
                   {a.akum != null && (
                     <div className="flex justify-between gap-3 min-w-0 text-gray-400">
                       <span>akumulasi ikut pindah</span>
-                      <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah(a.akum)}</span>
+                      <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah2(a.akum)}</span>
                     </div>
                   )}
                 </li>
               ))}
             </ul>
-            <Row label="Total nilai anak (rehab)" value={formatRupiah(s.rehab)} strong />
+            <Row label="Total nilai anak (rehab)" value={formatRupiah2(s.rehab)} strong />
             {s.akum_diserap != null && (
-              <Row label="Akumulasi anak yang diserap" value={formatRupiah(s.akum_diserap)} strong />
+              <Row label="Akumulasi anak yang diserap" value={formatRupiah2(s.akum_diserap)} strong />
             )}
             <Row label="Persentase thd nilai induk" value={`${s.persen.toFixed(2)}%`} />
             <Row label="Tambahan masa manfaat" value={`+${s.tambahan_tahun} th`} />
@@ -99,11 +99,11 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
             <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">
               Induk — Sesudah{s.periode_kap ? <span className="normal-case font-normal text-gray-400"> · saat kapitalisasi</span> : null}
             </p>
-            <Row label="Nilai perolehan baru" value={formatRupiah(s.np_baru)} strong />
-            <Row label="Nilai buku baru" value={formatRupiah(s.nb_baru)} strong />
+            <Row label="Nilai perolehan baru" value={formatRupiah2(s.np_baru)} strong />
+            <Row label="Nilai buku baru" value={formatRupiah2(s.nb_baru)} strong />
             <Row label="Masa manfaat baru" value={`${s.masa_baru_tahun} th (${s.sisa_baru_smt} smt)`} strong />
-            <Row label="Beban penyusutan / smt baru" value={formatRupiah(s.beban_baru)} strong />
-            <Row label="Akumulasi penyusutan" value={formatRupiah(s.akum_baru)} />
+            <Row label="Beban penyusutan / smt baru" value={formatRupiah2(s.beban_baru)} strong />
+            <Row label="Akumulasi penyusutan" value={formatRupiah2(s.akum_baru)} />
             <Row label="Sisa masa manfaat baru" value={`${s.sisa_baru_smt} smt`} strong />
             {/* ── Jembatan ke menu Penyusutan ────────────────────────────────
                 Kolom di atas adalah posisi TEPAT SAAT kapitalisasi — beban
@@ -116,8 +116,8 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
             {s.periode_kap && (
               <div className="mt-2 pt-2 border-t border-teal/30">
                 <p className="text-[11px] text-gray-500 mb-1">Setelah beban {s.periode_kap} dibebankan:</p>
-                <Row label={`Akumulasi s.d. akhir ${s.periode_kap}`} value={formatRupiah(s.akum_baru + s.beban_baru)} />
-                <Row label={`Nilai buku akhir ${s.periode_kap}`} value={formatRupiah(s.nb_baru - s.beban_baru)} />
+                <Row label={`Akumulasi s.d. akhir ${s.periode_kap}`} value={formatRupiah2(s.akum_baru + s.beban_baru)} />
+                <Row label={`Nilai buku akhir ${s.periode_kap}`} value={formatRupiah2(s.nb_baru - s.beban_baru)} />
               </div>
             )}
           </div>

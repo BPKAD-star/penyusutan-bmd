@@ -4,6 +4,7 @@
 // terserap, "netral" = barang tetap ada tapi atributnya berubah (koreksi,
 // reklasifikasi, transfer SKPD).
 import { bagianNamaBerkas } from './namaBerkas'
+import { formatRupiah2 } from './export'
 
 export type Tone = 'masuk' | 'keluar' | 'netral'
 
@@ -65,8 +66,6 @@ const SUB_JENIS_LABEL: Record<string, string> = {
   hibah: 'Hibah', penjualan: 'Penjualan', tukar_menukar: 'Tukar Menukar', penyertaan_modal: 'Penyertaan Modal',
 }
 
-const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
-
 // Ringkasan 1 baris dari payload, spesifik per jenis — dipakai KIBAR biar
 // timeline-nya nggak cuma nampilin "keterangan" mentah. Tidak exhaustive utk
 // SEMUA kemungkinan payload key, cukup yang paling sering dibutuhkan audit.
@@ -88,12 +87,12 @@ export function kibarDetail(
   switch (jenis) {
     case 'koreksi_nilai': {
       const lama = Number(p.nilai_lama ?? 0), baru = Number(p.nilai_perolehan_baru ?? 0)
-      return `${formatRp(lama)} → ${formatRp(baru)}`
+      return `${formatRupiah2(lama)} → ${formatRupiah2(baru)}`
     }
     case 'kapitalisasi': {
       const rehab = Number(p.nilai_rehab ?? 0), baru = Number(p.nilai_perolehan_baru ?? 0)
       const persen = p.persen_rehab != null ? ` (${p.persen_rehab}%)` : ''
-      return `Rehab ${formatRp(rehab)}${persen} — nilai jadi ${formatRp(baru)}`
+      return `Rehab ${formatRupiah2(rehab)}${persen} — nilai jadi ${formatRupiah2(baru)}`
     }
     case 'penghapusan_pemindahtanganan': {
       const sub = subJenis || ''

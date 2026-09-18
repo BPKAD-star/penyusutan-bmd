@@ -19,6 +19,7 @@
 // tersendiri, bukan penambahan diam-diam di berkas ini.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { GOLONGAN_REKAP, kodeLevel3, perlakuanKode } from '@/lib/bmd'
+import { formatRupiah2 } from '@/lib/export'
 
 /** Batas keras jumlah baris yang boleh dikembalikan ke model. Bukan sekadar
  *  penghemat token: tanpa ini, satu pertanyaan seperti "sebutkan semua barang"
@@ -26,7 +27,11 @@ import { GOLONGAN_REKAP, kodeLevel3, perlakuanKode } from '@/lib/bmd'
  *  permanen di `chat_messages_ai`. */
 const MAKS_BARIS = 10
 
-const rp = (n: number | null | undefined) =>
+// Rupiah — SELALU 2 desimal (samakan dgn layar lain, lib/export.ts).
+const rp = (n: number | null | undefined) => formatRupiah2(n)
+// Angka satuan BUKAN rupiah (jumlah unit barang) — tetap TANPA desimal paksa;
+// jangan pakai `rp` di sini, itu akan mencetak "150,00 unit".
+const fmtN = (n: number | null | undefined) =>
   n == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n)
 
 const GOL_URAIAN: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
@@ -181,8 +186,8 @@ async function rekapAset(sb: SupabaseClient, golongan: string): Promise<string> 
   const totRp = baris.reduce((s, r) => s + r.nilai, 0)
   return [
     'Rekap aset AKTIF (lingkup SKPD pengguna):',
-    ...baris.map(r => `- ${r.kode} ${r.uraian}: ${rp(r.n)} unit, nilai perolehan Rp${rp(r.nilai)}`),
-    `TOTAL: ${rp(totN)} unit, Rp${rp(totRp)}`,
+    ...baris.map(r => `- ${r.kode} ${r.uraian}: ${fmtN(r.n)} unit, nilai perolehan Rp${rp(r.nilai)}`),
+    `TOTAL: ${fmtN(totN)} unit, Rp${rp(totRp)}`,
   ].join('\n')
 }
 

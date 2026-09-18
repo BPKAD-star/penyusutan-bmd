@@ -5,13 +5,13 @@
 // (hasil fetchMutasiLines), jadi tak ada query baru DAN totalnya dijamin sama
 // dengan angka yang diklik — dua-duanya dijumlah dari array yang sama.
 import { useMemo, useState } from 'react'
-import { exportToExcel } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { KATEGORI_LABEL, type MutasiLine, type PenyusutanAset } from '@/lib/rekon'
 
 // Format polos bergaya id-ID tanpa "Rp" — mengikuti tabel Rekonsiliasi di
 // belakangnya, biar enak dibandingkan angkanya saat tie-out.
-const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
+const angka = (v: number) => formatRupiah2(v || 0)
 
 export default function RekonDetailModal({ judul, periode, skpd, rows, skpdNama, penyusutan, onClose }: {
   judul: string

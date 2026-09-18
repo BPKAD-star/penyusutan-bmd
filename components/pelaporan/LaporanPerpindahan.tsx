@@ -39,7 +39,7 @@
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
@@ -429,7 +429,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
               {rows.length.toLocaleString('id-ID')}{' '}
               <span className="text-xs font-normal text-gray-400">transaksi</span>
             </p>
-            <p className="text-xs text-teal font-medium">{formatRupiah(totalNilai)}</p>
+            <p className="text-xs text-teal font-medium">{formatRupiah2(totalNilai)}</p>
           </div>
 
           <div className="card overflow-hidden">
@@ -485,7 +485,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
                         {r.header?.tanggal || r.payload?.tgl_dokumen_sumber || '-'}
                         <br /><span className="text-gray-400">{r.periode}</span>
                       </td>
-                      <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
+                      <td className="table-td text-xs text-right">{formatRupiah2(r.nilai)}</td>
                       <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.keterangan || '-'}</td>
                     </tr>
                   ))}

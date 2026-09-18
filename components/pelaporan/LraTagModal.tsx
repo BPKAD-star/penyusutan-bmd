@@ -5,7 +5,7 @@
 // Tanda ini hanya untuk hitungan Check; TIDAK membuat transaksi BMD (keputusan #5).
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { JENIS_BM, type LraRow } from '@/lib/lra'
 
 type Mode = 'kapitalisasi' | 'reklas_keluar'
@@ -181,7 +181,7 @@ export default function LraTagModal({ mode, tahun, descendantIds, initialTab, on
                           <td className="table-td whitespace-nowrap">{r.kode_rekening}</td>
                           <td className="table-td max-w-[260px] truncate" title={r.uraian || ''}>{r.uraian || '-'}</td>
                           <td className="table-td max-w-[160px] truncate" title={r.no_bukti}>{r.no_bukti}</td>
-                          <td className="table-td text-right tabular-nums">{formatRupiah(r.debit)}</td>
+                          <td className="table-td text-right tabular-nums">{formatRupiah2(r.debit)}</td>
                           <td className="table-td">
                             {tab === 'ditandai' ? (
                               <span className="text-gray-600">{r.jenis_tujuan || r.kode_grup3}</span>
@@ -208,7 +208,7 @@ export default function LraTagModal({ mode, tahun, descendantIds, initialTab, on
 
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-100">
           <span className="text-sm text-gray-500">
-            {nSel > 0 && <>{nSel} baris dipilih · <b>{formatRupiah(totalSel)}</b></>}
+            {nSel > 0 && <>{nSel} baris dipilih · <b>{formatRupiah2(totalSel)}</b></>}
           </span>
           <div className="flex gap-3">
             <button className="btn-secondary" onClick={onClose} disabled={saving}>Tutup</button>

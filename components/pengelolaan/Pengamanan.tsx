@@ -19,7 +19,7 @@ import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { periodeDariTanggal, kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -293,7 +293,7 @@ export default function Pengamanan() {
                               ? <span className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-500">Dikembalikan</span>
                               : <span className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-green-100 text-green-700">Diamankan</span>}
                           </td>
-                          <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                          <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -685,7 +685,7 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
                       </td>
                       <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
                       <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
-                      <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                      <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                     </tr>
                   ))}
                 </tbody>

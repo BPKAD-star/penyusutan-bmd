@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -115,7 +115,7 @@ export default function LaporanKir() {
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="card p-4"><p className="text-xs text-gray-500">Ruangan</p><p className="text-lg font-bold text-gray-900 mt-1">{shown.length.toLocaleString('id-ID')}</p></div>
         <div className="card p-4"><p className="text-xs text-gray-500">Barang Tercatat</p><p className="text-lg font-bold text-gray-900 mt-1">{totalBarang.toLocaleString('id-ID')}</p></div>
-        <div className="card p-4"><p className="text-xs text-gray-500">Nilai Perolehan</p><p className="text-lg font-bold text-gray-900 mt-1">{formatRupiah(totalNilai)}</p></div>
+        <div className="card p-4"><p className="text-xs text-gray-500">Nilai Perolehan</p><p className="text-lg font-bold text-gray-900 mt-1">{formatRupiah2(totalNilai)}</p></div>
       </div>
 
       {loading ? (
@@ -168,7 +168,7 @@ export default function LaporanKir() {
                               <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
                               <td className="table-td text-center text-xs">{tahunPerolehan(b.tgl_perolehan)}</td>
                               <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
-                              <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                              <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                             </tr>
                           ))}
                         </tbody>

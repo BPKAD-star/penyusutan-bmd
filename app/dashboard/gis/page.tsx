@@ -29,7 +29,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { GIS_TANAH_KODE_FILTER } from '@/lib/gisTanah'
 import KelolaBidangPanel from '@/components/gis/KelolaBidangPanel'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -308,7 +308,7 @@ export default function GisPage() {
                 {/* Luas dihilangkan dari kartu (keputusan user 2026-08-05) —
                     lihat catatan di panel kanan. */}
                 <div className="flex items-center gap-3 mt-1 text-gray-500">
-                  <span>{formatRupiah(r.nilai_perolehan)}</span>
+                  <span>{formatRupiah2(r.nilai_perolehan)}</span>
                   {r.latitude == null && <span className="text-gray-300">Blm titik</span>}
                 </div>
               </button>
@@ -332,7 +332,7 @@ export default function GisPage() {
               {' '}{stats.registerBerbidang.toLocaleString('id-ID')} dari {stats.total.toLocaleString('id-ID')} register sudah berbidang
             </p>
           </div>
-          <div className="flex justify-between"><span className="text-gray-400">Nilai perolehan</span><span className="font-semibold text-gray-800">{formatRupiah(stats.nilai)}</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Nilai perolehan</span><span className="font-semibold text-gray-800">{formatRupiah2(stats.nilai)}</span></div>
           <div className="flex justify-between pt-1 border-t border-gray-100"><span className="text-gray-400">Bersertifikat</span><span className="font-semibold text-teal">{stats.bersertifikat.toLocaleString('id-ID')} ({stats.persen}%)</span></div>
           <div className="flex justify-between"><span className="text-gray-400">Proses sertifikat</span><span className="font-semibold text-amber-600">{stats.proses.toLocaleString('id-ID')}</span></div>
           <div className="flex justify-between"><span className="text-gray-400">Dalam sengketa</span><span className="font-semibold text-rose-600">{stats.sengketa.toLocaleString('id-ID')}</span></div>
@@ -368,7 +368,7 @@ export default function GisPage() {
                   di panel Dokumen Kepemilikan di bawah, yang sumbernya tunggal.
                   Rencana penyatuannya: REFACTOR-PLAN.md §5. */}
               <div className="flex justify-between gap-3"><span className="text-gray-400">Tanggal Perolehan</span><span className="text-gray-700 text-right">{fmtTgl(selected.tgl_perolehan)}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400">Nilai Perolehan</span><span className="text-gray-700 text-right">{formatRupiah(selected.nilai_perolehan)}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-gray-400">Nilai Perolehan</span><span className="text-gray-700 text-right">{formatRupiah2(selected.nilai_perolehan)}</span></div>
             </div>
           </div>
           <KelolaBidangPanel asetId={selected.id}

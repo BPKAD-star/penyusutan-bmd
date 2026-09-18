@@ -18,6 +18,7 @@ import { createClient } from '@/lib/supabase/client'
 import { backdropClose } from '@/components/backdropClose'
 import { STANDAR_CONFIG, SLOT_REKENING, unduhTemplateStandar, type StandarJenis } from '@/lib/rkbmdStandar'
 import { simpanItem, validasiItemUsulan, pakaiMerk } from '@/lib/rkbmdStandarUsulan'
+import { formatRupiah2 } from '@/lib/export'
 
 /** Satu baris hasil baca berkas + hasil pemeriksaannya. */
 type Baris = {
@@ -334,7 +335,7 @@ export default function StandarImport({ jenis, tahun, usulanId, nomorBerikut, on
                         <td className="table-td text-xs text-gray-800">{r.nama || '—'}</td>
                         {pakaiMerk(jenis) && <td className="table-td text-xs text-gray-500">{r.merk || '—'}</td>}
                         <td className="table-td text-xs text-gray-500">{r.satuan || '—'}</td>
-                        <td className="table-td text-xs text-right whitespace-nowrap">{r.harga.toLocaleString('id-ID')}</td>
+                        <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah2(r.harga)}</td>
                         <td className="table-td text-xs text-gray-500">{r.rekening.join(', ') || '—'}</td>
                         {cfg.pakaiTkdn && <td className="table-td text-xs text-right">{r.tkdn != null ? `${r.tkdn}%` : '—'}</td>}
                         <td className="table-td text-xs">

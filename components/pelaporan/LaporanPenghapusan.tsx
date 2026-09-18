@@ -31,7 +31,7 @@
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
@@ -284,7 +284,7 @@ export default function LaporanPenghapusan() {
               {rows.length.toLocaleString('id-ID')}{' '}
               <span className="text-xs font-normal text-gray-400">barang</span>
             </p>
-            <p className="text-xs text-teal font-medium">{formatRupiah(totalNilai)}</p>
+            <p className="text-xs text-teal font-medium">{formatRupiah2(totalNilai)}</p>
           </div>
 
           <div className="card overflow-hidden">
@@ -329,9 +329,9 @@ export default function LaporanPenghapusan() {
                         {r.header?.no_sk || '-'}
                         <br /><span className="text-gray-400">{r.header?.tanggal || r.tanggal}</span>
                       </td>
-                      <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
+                      <td className="table-td text-xs text-right">{formatRupiah2(r.nilai)}</td>
                       <td className="table-td text-xs text-right">
-                        {r.tanpaPenyusutan ? <span className="text-gray-400">…</span> : formatRupiah(r.nilaiBuku ?? 0)}
+                        {r.tanpaPenyusutan ? <span className="text-gray-400">…</span> : formatRupiah2(r.nilaiBuku ?? 0)}
                       </td>
                       <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">
                         {r.keterangan || r.aset?.keterangan || '-'}

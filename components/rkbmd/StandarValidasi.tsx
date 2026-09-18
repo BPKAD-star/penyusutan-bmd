@@ -21,7 +21,7 @@ import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { backdropClose } from '@/components/backdropClose'
 import KonfirmasiModal from '@/shared/ui/KonfirmasiModal'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import {
   USULAN_JENIS, USULAN_STATUS_META, pakaiKodeBarang, pakaiRekening,
   fetchUsulanAntrean, fetchUsulanItems, setStatusUsulan, setujuiUsulan, ringkasHasil,
@@ -361,7 +361,7 @@ function DetailModal({ h, onClose }: { h: Baris; onClose: () => void }) {
                       <td className="table-td text-xs text-gray-500">{it.satuan || '—'}</td>
                       {sbsk && <td className="table-td text-xs text-gray-500">{it.satuan_pengukur || '—'}</td>}
                       <td className="table-td text-xs text-right whitespace-nowrap">
-                        {sbsk ? (it.kuantitas_standar ?? '—') : formatRupiah(it.harga)}
+                        {sbsk ? (it.kuantitas_standar ?? '—') : formatRupiah2(it.harga)}
                         {it.tkdn != null && <span className="block text-[10px] text-gray-400">TKDN {it.tkdn}%</span>}
                       </td>
                       {adaRek && (

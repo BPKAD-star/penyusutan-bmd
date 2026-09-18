@@ -18,7 +18,7 @@
 // generik tak bisa menampilkannya tanpa mengarang kolom per-jenis lagi.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { idTarget, type BatalPayload } from '@/lib/voidedAset'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -249,14 +249,14 @@ export default function LaporanKapitalisasi() {
                       <td className="table-td text-xs font-medium">{r.skpd}</td>
                       <td className="table-td text-xs text-right">{r.dokumen}</td>
                       <td className="table-td text-xs text-right">{r.anak}</td>
-                      <td className="table-td text-xs text-right">{formatRupiah(r.rehab)}</td>
+                      <td className="table-td text-xs text-right">{formatRupiah2(r.rehab)}</td>
                     </tr>
                   ))}
                   <tr className="bg-gray-50 font-semibold">
                     <td className="table-td text-xs">JUMLAH ({rekap.length} SKPD)</td>
                     <td className="table-td text-xs text-right">{valid.length}</td>
                     <td className="table-td text-xs text-right">{totalAnak}</td>
-                    <td className="table-td text-xs text-right">{formatRupiah(totalRehab)}</td>
+                    <td className="table-td text-xs text-right">{formatRupiah2(totalRehab)}</td>
                   </tr>
                 </>
               )}
@@ -310,16 +310,16 @@ export default function LaporanKapitalisasi() {
                   <td className="table-td text-xs">
                     <p className="font-medium">{b.anakNama}</p>
                     <p className="text-gray-400">{b.anakNibar}</p>
-                    {b.anakNilai > 0 && <p className="text-gray-400">Nilai {formatRupiah(b.anakNilai)} · Akum {formatRupiah(b.anakAkum)}</p>}
+                    {b.anakNilai > 0 && <p className="text-gray-400">Nilai {formatRupiah2(b.anakNilai)} · Akum {formatRupiah2(b.anakAkum)}</p>}
                   </td>
-                  <td className="table-td text-xs text-right">{formatRupiah(b.npAwal)}</td>
-                  <td className="table-td text-xs text-right">{formatRupiah(b.bebanAwal)}</td>
-                  <td className="table-td text-xs text-right">{formatRupiah(b.akumAwal)}</td>
-                  <td className="table-td text-xs text-right">{formatRupiah(b.nbAwal)}</td>
-                  <td className="table-td text-xs text-right font-medium">{formatRupiah(b.npAkhir)}</td>
-                  <td className="table-td text-xs text-right font-medium">{formatRupiah(b.bebanAkhir)}</td>
-                  <td className="table-td text-xs text-right font-medium">{formatRupiah(b.akumAkhir)}</td>
-                  <td className="table-td text-xs text-right font-medium">{formatRupiah(b.nbAkhir)}</td>
+                  <td className="table-td text-xs text-right">{formatRupiah2(b.npAwal)}</td>
+                  <td className="table-td text-xs text-right">{formatRupiah2(b.bebanAwal)}</td>
+                  <td className="table-td text-xs text-right">{formatRupiah2(b.akumAwal)}</td>
+                  <td className="table-td text-xs text-right">{formatRupiah2(b.nbAwal)}</td>
+                  <td className="table-td text-xs text-right font-medium">{formatRupiah2(b.npAkhir)}</td>
+                  <td className="table-td text-xs text-right font-medium">{formatRupiah2(b.bebanAkhir)}</td>
+                  <td className="table-td text-xs text-right font-medium">{formatRupiah2(b.akumAkhir)}</td>
+                  <td className="table-td text-xs text-right font-medium">{formatRupiah2(b.nbAkhir)}</td>
                 </tr>
               ))}
             </tbody>

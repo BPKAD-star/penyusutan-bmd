@@ -9,7 +9,7 @@ import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import LabelSheet, { LabelItem } from '@/components/kibar/LabelSheet'
 
@@ -185,7 +185,7 @@ export default function KibarSearchPage() {
                     <td className="table-td text-xs">{r.nama_barang || '-'}</td>
                     <td className="table-td text-xs">{r.merek_tipe || '-'}</td>
                     <td className="table-td text-xs">{fmtTgl(r.tgl_perolehan)}</td>
-                    <td className="table-td text-xs text-right">{formatRupiah(r.nilai_perolehan)}</td>
+                    <td className="table-td text-xs text-right">{formatRupiah2(r.nilai_perolehan)}</td>
                     <td className="table-td text-center">
                       {r.nibar && (
                         <a href={`/kibar/${r.nibar}`} target="_blank" rel="noopener noreferrer" className="text-teal text-xs hover:underline">

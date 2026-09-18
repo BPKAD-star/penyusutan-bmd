@@ -4,7 +4,7 @@
 // kolom ber-`grup` (mis. "Data Awal/Induk", "Sebelum/Setelah Inventarisasi")
 // digabung jadi satu sel span di baris pertama.
 import { useMemo } from 'react'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { LHI_LABEL, type LhiKode } from '@/lib/inventarisasi'
 import {
   CATATAN_KAKI, jalurGrup, kolomLhi, kolomLhiCetak, nilaiSelCetak, totalNilaiLhi,
@@ -113,7 +113,7 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
                     return (
                       <td key={k.key}
                         className={`brd px-2 py-1 align-top ${k.tanda ? 'text-center' : ''} ${k.angka ? 'text-right whitespace-nowrap' : ''}`}>
-                        {rupiah ? (typeof v === 'number' ? formatRupiah(v) : '') : v}
+                        {rupiah ? (typeof v === 'number' ? formatRupiah2(v) : '') : v}
                       </td>
                     )
                   })}
@@ -123,7 +123,7 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
                 <td className="brd px-2 py-1 text-right" colSpan={kolom.findIndex(k => k.key === 'nilai') || 1}>
                   Jumlah (Rp)
                 </td>
-                <td className="brd px-2 py-1 text-right whitespace-nowrap">{formatRupiah(total)}</td>
+                <td className="brd px-2 py-1 text-right whitespace-nowrap">{formatRupiah2(total)}</td>
                 <td className="brd px-2 py-1" colSpan={Math.max(0, kolom.length - (kolom.findIndex(k => k.key === 'nilai') + 1))}></td>
               </tr>
             </tbody>

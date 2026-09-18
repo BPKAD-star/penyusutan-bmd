@@ -22,7 +22,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { backdropClose } from '@/components/backdropClose'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { fetchStandar, fetchUraianRekening, labelRekening, type StandarRow } from '@/lib/rkbmdStandar'
 import type { RkbmdItem } from '@/lib/rkbmd'
 
@@ -185,7 +185,7 @@ export default function RkbmdPengadaanForm({ rkbmdId, paketId, skpdId, tahun, ed
                 <option value="">{golongan ? '— pilih barang —' : 'pilih jenis aset dulu'}</option>
                 {pilihan.map(r => (
                   <option key={r.id} value={String(r.id)}>
-                    {r.kode} — {r.nama}{r.satuan ? ` (${r.satuan})` : ''} · {formatRupiah(r.harga)}
+                    {r.kode} — {r.nama}{r.satuan ? ` (${r.satuan})` : ''} · {formatRupiah2(r.harga)}
                   </option>
                 ))}
               </select>
@@ -231,12 +231,12 @@ export default function RkbmdPengadaanForm({ rkbmdId, paketId, skpdId, tahun, ed
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Harga Satuan (SSH)</label>
-                  <div className="select-filter w-full bg-gray-100 text-gray-700">{formatRupiah(harga)}</div>
+                  <div className="select-filter w-full bg-gray-100 text-gray-700">{formatRupiah2(harga)}</div>
                   <p className="text-[11px] text-gray-400 mt-1">Terkunci — perbaiki lewat menu SSH bila keliru.</p>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">5. Total Anggaran</label>
-                  <div className="select-filter w-full bg-teal/5 text-gray-900 font-semibold">{formatRupiah(total)}</div>
+                  <div className="select-filter w-full bg-teal/5 text-gray-900 font-semibold">{formatRupiah2(total)}</div>
                   <p className="text-[11px] text-gray-400 mt-1">Dihitung sistem: kuantitas × harga.</p>
                 </div>
               </div>
@@ -343,7 +343,7 @@ function EksistingModal({ skpdId, kode, nama, onClose }: {
           ) : (
             <>
               <p className="text-xs text-gray-500 mb-3">
-                {rows.length} baris · {totalUnit} unit · nilai perolehan {formatRupiah(totalNilai)}
+                {rows.length} baris · {totalUnit} unit · nilai perolehan {formatRupiah2(totalNilai)}
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -369,7 +369,7 @@ function EksistingModal({ skpdId, kode, nama, onClose }: {
                         <td className="table-td text-xs text-gray-500">{r.merek_tipe || '—'}</td>
                         <td className="table-td text-xs text-gray-500 whitespace-nowrap">{r.tgl_perolehan || '—'}</td>
                         <td className="table-td text-xs text-right">{r.jumlah ?? '—'} {r.satuan || ''}</td>
-                        <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(r.nilai_perolehan)}</td>
+                        <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah2(r.nilai_perolehan)}</td>
                         <td className="table-td text-xs text-gray-500">{r.kondisi_barang || '—'}</td>
                       </tr>
                     ))}

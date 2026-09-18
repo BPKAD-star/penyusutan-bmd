@@ -27,7 +27,7 @@ import {
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
@@ -80,7 +80,7 @@ function ringkasanBaris(l: JurnalLine, jenis: Alasan): string {
     if ('foto_paths' in p) labels.push('Foto')
     return labels.length ? `Spesifikasi diubah: ${labels.join(', ')}` : '-'
   }
-  if (p.nilai_perolehan_baru != null) return `${formatRupiah(p.nilai_lama || 0)} → ${formatRupiah(p.nilai_perolehan_baru)}`
+  if (p.nilai_perolehan_baru != null) return `${formatRupiah2(p.nilai_lama || 0)} → ${formatRupiah2(p.nilai_perolehan_baru)}`
   if (p.survivor_nibar) return `Digabung ke NIBAR ${p.survivor_nibar}`
   return '-'
 }
@@ -497,7 +497,7 @@ function KoreksiTransaksi() {
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <div className="text-right">
                       <p className="text-xs text-gray-400">Total Nilai</p>
-                      <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+                      <p className="font-semibold text-gray-800">{formatRupiah2(j.total)}</p>
                     </div>
                     {selLines.length > 0 && (
                       <button title="Batalkan koreksi baris terpilih (kembali ke keadaan semula)"
@@ -539,7 +539,7 @@ function KoreksiTransaksi() {
                           <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
                         </td>
                         <td className="table-td text-xs text-gray-600">{ringkasanBaris(l, j.jenis)}</td>
-                        <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                        <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -995,7 +995,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       if (!basis) { setErr('Basis alokasi belum termuat.'); await delHeader(); setSaving(false); return }
       if (pecahan.length < 2) { setErr('Minimal 2 pecahan.'); await delHeader(); setSaving(false); return }
       if (!semuaPecahValid) { setErr('Tiap pecahan wajib: jumlah ≥ 1 dan nilai perolehan > 0.'); await delHeader(); setSaving(false); return }
-      if (!balancePecah) { setErr(`Total nilai pecahan (${formatRupiah(sumNPPecah)}) harus SAMA dengan nilai induk (${formatRupiah(totalNPInduk)}). Selisih ${formatRupiah(sumNPPecah - totalNPInduk)}.`); await delHeader(); setSaving(false); return }
+      if (!balancePecah) { setErr(`Total nilai pecahan (${formatRupiah2(sumNPPecah)}) harus SAMA dengan nilai induk (${formatRupiah2(totalNPInduk)}). Selisih ${formatRupiah2(sumNPPecah - totalNPInduk)}.`); await delHeader(); setSaving(false); return }
 
       const { data: skpdRow, error: skpdErr } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', skpdId).single()
       if (skpdErr || !(skpdRow as { kode_skpd?: string } | null)?.kode_skpd) { setErr(`Gagal ambil kode lokasi SKPD utk NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`); await delHeader(); setSaving(false); return }
@@ -1244,7 +1244,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                           <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
                           <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode} · {golonganLabels[kodeLevel3(b.kode)] || kodeLevel3(b.kode)}</p>
                         </td>
-                        <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                        <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                         <td className="table-td text-right">
                           {selNilai[b.id] && (
                             <NominalInput className="select-filter w-full text-right"
@@ -1287,7 +1287,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                 {hasilGanda.map(k => (
                   <button key={k.id} type="button" onClick={() => tambahKandidat(k)} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs">
                     <span className="font-medium text-gray-800">{k.nama_barang || '-'}</span>
-                    <span className="text-gray-400"> — {k.nibar || '-'} · {k.kode} · {formatRupiah(k.nilai_perolehan)}</span>
+                    <span className="text-gray-400"> — {k.nibar || '-'} · {k.kode} · {formatRupiah2(k.nilai_perolehan)}</span>
                   </button>
                 ))}
               </div>
@@ -1315,7 +1315,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                       </td>
                       <td className="table-td text-xs">{k.kode}</td>
                       <td className="table-td text-xs">{k.nama_barang || '-'}<p className="text-gray-400 mt-0.5">{k.nibar || '-'}</p></td>
-                      <td className="table-td text-right text-xs">{formatRupiah(k.nilai_perolehan)}</td>
+                      <td className="table-td text-right text-xs">{formatRupiah2(k.nilai_perolehan)}</td>
                       <td className="table-td text-center text-xs">{tahunDari(k.tgl_perolehan)}</td>
                       <td className="table-td text-center">
                         <button type="button" onClick={() => hapusKandidat(k.id)} className="text-red-500 hover:text-red-700">×</button>
@@ -1390,7 +1390,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                           <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'}</p>
                         </td>
                         <td className="table-td text-center text-xs capitalize">{b.intra_ekstra || '-'}</td>
-                        <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                        <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1469,7 +1469,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                               <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode}</p>
                             </td>
                             <td className="table-td text-center text-xs">{b.jumlah}</td>
-                            <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                            <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                             <td className="table-td text-center">
                               <button className="btn-primary text-xs px-3 py-1" onClick={() => pilihInduk(b)}>Pilih</button>
                             </td>
@@ -1486,13 +1486,13 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
               <div className="text-sm">
                 <p className="font-medium text-gray-800">{indukPecah.nama_barang || '-'}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{indukPecah.nibar || '-'} · {indukPecah.kode} · Jumlah {indukPecah.jumlah}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Nilai perolehan: <span className="font-medium">{formatRupiah(indukPecah.nilai_perolehan)}</span></p>
+                <p className="text-xs text-gray-500 mt-0.5">Nilai perolehan: <span className="font-medium">{formatRupiah2(indukPecah.nilai_perolehan)}</span></p>
                 {basisPecahLoading ? <p className="text-xs text-gray-400 mt-1">Memuat basis alokasi…</p>
                   : basisPecahErr ? <p className="text-xs text-red-600 mt-1">{basisPecahErr}</p>
                   : basisPecah ? (
                     <p className="text-xs text-gray-500 mt-1">
                       Basis (akhir {formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))}):
-                      nilai buku {formatRupiah(basisPecah.nilai_buku)} · akumulasi {formatRupiah(basisPecah.akumulasi)} · sisa {basisPecah.sisa_smt} smt
+                      nilai buku {formatRupiah2(basisPecah.nilai_buku)} · akumulasi {formatRupiah2(basisPecah.akumulasi)} · sisa {basisPecah.sisa_smt} smt
                       {!basisPecah.disusutkan && ' (tidak disusutkan)'}
                     </p>
                   ) : null}
@@ -1536,9 +1536,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                             <NominalInput className="select-filter w-full text-right"
                               value={p.nilai} placeholder="0,00" onChange={v => setPecah(p.key, { nilai: v })} />
                           </td>
-                          <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.nb) : '-'}</td>
-                          <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.ak) : '-'}</td>
-                          <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah(a.beban) : '-'}</td>
+                          <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah2(a.nb) : '-'}</td>
+                          <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah2(a.ak) : '-'}</td>
+                          <td className="table-td text-right text-xs text-gray-600">{a ? formatRupiah2(a.beban) : '-'}</td>
                           <td className="table-td">
                             <button type="button" onClick={() => setEditPecahIdx(i)} className="text-xs text-teal hover:underline">
                               {p.foto.length > 0 ? `✎ ${nama} · ${p.foto.length}📷` : `✎ ${nama}`}
@@ -1555,14 +1555,14 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                   <tfoot>
                     <tr className={`border-t border-gray-200 ${balancePecah ? '' : 'bg-red-50'}`}>
                       <td className="table-td text-xs font-medium text-center" colSpan={2}>Total</td>
-                      <td className={`table-td text-right text-xs font-semibold ${balancePecah ? 'text-gray-800' : 'text-red-700'}`}>{formatRupiah(sumNPPecah)}</td>
-                      <td className="table-td text-right text-xs text-gray-500" colSpan={4}>Induk: {formatRupiah(totalNPInduk)}</td>
+                      <td className={`table-td text-right text-xs font-semibold ${balancePecah ? 'text-gray-800' : 'text-red-700'}`}>{formatRupiah2(sumNPPecah)}</td>
+                      <td className="table-td text-right text-xs text-gray-500" colSpan={4}>Induk: {formatRupiah2(totalNPInduk)}</td>
                       <td className="table-td"></td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
-              {!balancePecah && <p className="mt-2 text-xs text-red-600">Total nilai pecahan harus sama dengan nilai perolehan induk. Selisih {formatRupiah(sumNPPecah - totalNPInduk)}.</p>}
+              {!balancePecah && <p className="mt-2 text-xs text-red-600">Total nilai pecahan harus sama dengan nilai perolehan induk. Selisih {formatRupiah2(sumNPPecah - totalNPInduk)}.</p>}
               <p className="mt-2 text-xs text-gray-400">Klik nama di kolom Spesifikasi untuk isi/ubah spesifikasi tiap pecahan (format per golongan, sama seperti Cara Perolehan). Nilai awal diwarisi dari induk. NIBAR digenerate baru. Sen ketik pakai <span className="font-medium">koma</span> (mis. 104.893.870.444,53) — total pecahan wajib sama PERSIS sampai sen.</p>
               {kodeLevel3(indukPecah.kode) === '1.3.1' && (
                 <p className="mt-1 text-xs text-amber-700 bg-amber-50 rounded-lg p-2">
@@ -1609,7 +1609,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                     disabled={gabungList.some(x => x.id === k.id)}
                     className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs disabled:opacity-40">
                     <span className="font-medium text-gray-800">{k.nama_barang || '-'}</span>
-                    <span className="text-gray-400"> — {k.nibar || '-'} · {k.kode} · {formatRupiah(k.nilai_perolehan)} · {tahunDari(k.tgl_perolehan)}{k.satuan ? ` · ${k.satuan}` : ''}</span>
+                    <span className="text-gray-400"> — {k.nibar || '-'} · {k.kode} · {formatRupiah2(k.nilai_perolehan)} · {tahunDari(k.tgl_perolehan)}{k.satuan ? ` · ${k.satuan}` : ''}</span>
                   </button>
                 ))}
               </div>
@@ -1650,7 +1650,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                               <p className="font-medium text-gray-800">{k.nama_barang || '-'}</p>
                               <p className="text-gray-400 mt-0.5">{k.nibar || '-'}{k.satuan ? ` · ${k.satuan}` : ''}{k.merek_tipe ? ` · ${k.merek_tipe}` : ''}</p>
                             </td>
-                            <td className="table-td text-right">{formatRupiah(k.nilai_perolehan)}</td>
+                            <td className="table-td text-right">{formatRupiah2(k.nilai_perolehan)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1688,9 +1688,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                         <p className="text-gray-400 mt-0.5">{k.nibar || '-'} · {k.kode} · {tahunDari(k.tgl_perolehan)}</p>
                       </td>
                       <td className="table-td text-xs text-gray-600">{k.satuan || '-'}</td>
-                      <td className="table-td text-right text-xs">{formatRupiah(k.nilai_perolehan)}</td>
+                      <td className="table-td text-right text-xs">{formatRupiah2(k.nilai_perolehan)}</td>
                       <td className="table-td text-right text-xs text-gray-600">
-                        {basisGabung ? formatRupiah(basisGabung[k.id] || 0) : '—'}
+                        {basisGabung ? formatRupiah2(basisGabung[k.id] || 0) : '—'}
                       </td>
                       <td className="table-td text-center">
                         <button type="button" onClick={() => hapusGabung(k.id)} className="text-red-500 hover:text-red-700">×</button>
@@ -1701,8 +1701,8 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
                 <tfoot>
                   <tr className="border-t border-gray-200 bg-gray-50/60">
                     <td className="table-td text-xs font-medium text-center" colSpan={3}>Hasil gabungan ({gabungList.length} barang)</td>
-                    <td className="table-td text-right text-xs font-semibold text-gray-800">{formatRupiah(totalNPGabung)}</td>
-                    <td className="table-td text-right text-xs font-semibold text-gray-800">{basisGabung ? formatRupiah(totalAkumGabung) : '—'}</td>
+                    <td className="table-td text-right text-xs font-semibold text-gray-800">{formatRupiah2(totalNPGabung)}</td>
+                    <td className="table-td text-right text-xs font-semibold text-gray-800">{basisGabung ? formatRupiah2(totalAkumGabung) : '—'}</td>
                     <td className="table-td"></td>
                   </tr>
                 </tfoot>
@@ -1714,7 +1714,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
               )}
               <p className="text-xs text-gray-500 px-3 py-2 bg-gray-50/60 border-t border-gray-100">
                 Total nilai perolehan &amp; akumulasi TIDAK berubah — keduanya cuma pindah ke induk.
-                Nilai buku hasil gabungan: <span className="font-medium">{basisGabung ? formatRupiah(totalNPGabung - totalAkumGabung) : '—'}</span>.
+                Nilai buku hasil gabungan: <span className="font-medium">{basisGabung ? formatRupiah2(totalNPGabung - totalAkumGabung) : '—'}</span>.
               </p>
             </div>
           )}
@@ -1830,7 +1830,7 @@ function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onEdit, on
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="text-right">
               <p className="text-xs text-gray-400">Total Nilai Pecahan</p>
-              <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+              <p className="font-semibold text-gray-800">{formatRupiah2(j.total)}</p>
             </div>
             {/* ✎ tetap ada walau kartunya sudah DIBATALKAN: dokumen sumber
                 peristiwa yang pernah terjadi tetap perlu bisa dilampirkan, dan
@@ -1868,7 +1868,7 @@ function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onEdit, on
                   <p className="text-gray-400 text-xs mt-0.5">{j.induk.nibar || '-'} · {j.induk.kode}</p>
                 </td>
                 <td className="table-td text-center text-xs">{j.induk.jumlah}</td>
-                <td className="table-td text-right text-xs">{formatRupiah(j.induk.nilai)}</td>
+                <td className="table-td text-right text-xs">{formatRupiah2(j.induk.nilai)}</td>
                 {/* Induk sudah di-retire (status 'dihapus') — mengoreksi
                     spesifikasinya tak mengubah apa pun yang masih dibaca laporan. */}
                 <td className="table-td text-center text-xs text-gray-300">—</td>
@@ -1882,7 +1882,7 @@ function PemecahanCard({ j, busy, bisaBatal, spekBusy, onKoreksiSpek, onEdit, on
                   <p className="text-gray-400 text-xs mt-0.5">{p.nibar || '-'} · {p.kode}</p>
                 </td>
                 <td className="table-td text-center text-xs">{p.jumlah}</td>
-                <td className="table-td text-right text-xs">{formatRupiah(p.nilai)}</td>
+                <td className="table-td text-right text-xs">{formatRupiah2(p.nilai)}</td>
                 <td className="table-td text-center">
                   {j.dibatalkan ? (
                     <span className="text-xs text-gray-300">—</span>
@@ -1937,7 +1937,7 @@ function PenggabunganCard({ j, busy, bisaBatal, onEdit, onBatal }: {
           <div className="flex items-center gap-3 flex-shrink-0">
             <div className="text-right">
               <p className="text-xs text-gray-400">Nilai Hasil Gabungan</p>
-              <p className="font-semibold text-gray-800">{formatRupiah(j.induk?.nilaiBaru || 0)}</p>
+              <p className="font-semibold text-gray-800">{formatRupiah2(j.induk?.nilaiBaru || 0)}</p>
             </div>
             <button title="Edit No dokumen / tanggal (dalam semester yang sama) & unggah dokumen sumber"
               onClick={onEdit}
@@ -1973,8 +1973,8 @@ function PenggabunganCard({ j, busy, bisaBatal, onEdit, onBatal }: {
                     BARU, tapi tanpa nilai lamanya kartu ini tak menjelaskan
                     apa-apa waktu dibaca ulang setahun kemudian. */}
                 <td className="table-td text-right text-xs">
-                  <p className="font-medium text-gray-800">{formatRupiah(j.induk.nilaiBaru)}</p>
-                  <p className="text-gray-400 mt-0.5">semula {formatRupiah(j.induk.nilaiLama)}</p>
+                  <p className="font-medium text-gray-800">{formatRupiah2(j.induk.nilaiBaru)}</p>
+                  <p className="text-gray-400 mt-0.5">semula {formatRupiah2(j.induk.nilaiLama)}</p>
                 </td>
               </tr>
             )}
@@ -1985,7 +1985,7 @@ function PenggabunganCard({ j, busy, bisaBatal, onEdit, onBatal }: {
                   <p className="font-medium text-gray-800 text-xs">{s.nama_barang || '-'}</p>
                   <p className="text-gray-400 text-xs mt-0.5">{s.nibar || '-'} · {s.kode}</p>
                 </td>
-                <td className="table-td text-right text-xs">{formatRupiah(s.nilai)}</td>
+                <td className="table-td text-right text-xs">{formatRupiah2(s.nilai)}</td>
               </tr>
             ))}
           </tbody>

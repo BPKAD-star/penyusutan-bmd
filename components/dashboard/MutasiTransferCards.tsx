@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { fetchDaftarSkpd, petaNamaSkpd, mapNamaSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { fetchPindahEvents, pindahAktif } from '@/lib/pengalihan'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { backdropClose } from '@/components/backdropClose'
 
 const nf = (n: number) => n.toLocaleString('id-ID')
@@ -211,7 +211,7 @@ function DisetujuiModal({ kategori, arah, label, onClose }: { kategori: Kategori
             <div key={g.skpdNama}>
               <div className="flex items-baseline justify-between mb-2">
                 <p className="text-sm font-semibold text-gray-800">{g.skpdNama}</p>
-                <p className="text-xs text-teal font-medium">{formatRupiah(g.total)}</p>
+                <p className="text-xs text-teal font-medium">{formatRupiah2(g.total)}</p>
               </div>
               <ul className="border border-gray-100 rounded-lg divide-y divide-gray-50">
                 {g.lines.map((l, i) => (
@@ -220,7 +220,7 @@ function DisetujuiModal({ kategori, arah, label, onClose }: { kategori: Kategori
                       {l.nama_barang || '-'} <span className="text-gray-400">({l.nibar || '-'})</span>
                       <span className="text-gray-400"> — {arah === 'keluar' ? 'ke' : 'dari'} {l.lawanNama}</span>
                     </span>
-                    <span className="text-gray-600 flex-shrink-0 ml-3">{formatRupiah(l.nilai)}</span>
+                    <span className="text-gray-600 flex-shrink-0 ml-3">{formatRupiah2(l.nilai)}</span>
                   </li>
                 ))}
               </ul>

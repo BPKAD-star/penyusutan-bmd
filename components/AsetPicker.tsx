@@ -2,7 +2,7 @@
 // Pemilih aset dengan pencarian (NIBAR / nama / kode) — dipakai semua modul Pengelolaan.
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 
 export type AsetRingkas = {
   id: string
@@ -71,7 +71,7 @@ export default function AsetPicker({ selected, onSelect, skpdId, kodePrefix }: {
           <p className="text-xs text-gray-600 mt-0.5">
             {selected.merek_tipe ? `${selected.merek_tipe} · ` : ''}
             {selected.tgl_perolehan ? `${selected.tgl_perolehan} · ` : ''}
-            Nilai perolehan: {formatRupiah(selected.nilai_perolehan)}
+            Nilai perolehan: {formatRupiah2(selected.nilai_perolehan)}
           </p>
         </div>
         <button type="button" className="btn-secondary text-xs" onClick={() => onSelect(null)}>Ganti</button>
@@ -104,7 +104,7 @@ export default function AsetPicker({ selected, onSelect, skpdId, kodePrefix }: {
             >
               <p className="font-medium text-gray-800 text-xs">{a.nama_barang || a.uraian_barang || '-'}</p>
               <p className="text-gray-400 text-xs">
-                {a.nibar || '-'} · {a.kode}{a.merek_tipe ? ` · ${a.merek_tipe}` : ''} · {a.skpd?.nama || '-'} · {formatRupiah(a.nilai_perolehan)}
+                {a.nibar || '-'} · {a.kode}{a.merek_tipe ? ` · ${a.merek_tipe}` : ''} · {a.skpd?.nama || '-'} · {formatRupiah2(a.nilai_perolehan)}
               </p>
             </button>
           ))}

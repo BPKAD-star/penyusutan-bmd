@@ -27,7 +27,7 @@
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { GOLONGAN_REKAP, kodeLevel3, JENIS_TRANSAKSI_LABEL } from '@/lib/bmd'
@@ -407,7 +407,7 @@ export default function LaporanKoreksi() {
                 <p className="text-lg font-bold text-gray-900 mt-1">
                   {v.n.toLocaleString('id-ID')} <span className="text-xs font-normal text-gray-400">transaksi</span>
                 </p>
-                <p className="text-xs text-teal font-medium">{formatRupiah(v.nilai)}</p>
+                <p className="text-xs text-teal font-medium">{formatRupiah2(v.nilai)}</p>
               </div>
             ))}
           </div>
@@ -479,7 +479,7 @@ export default function LaporanKoreksi() {
                         <p className="text-gray-400 font-normal">{r.aset?.nibar || '-'}</p>
                       </td>
                       <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
-                      <td className="table-td text-xs text-right">{formatRupiah(r.nilai)}</td>
+                      <td className="table-td text-xs text-right">{formatRupiah2(r.nilai)}</td>
                       <td className="table-td text-xs text-gray-500 max-w-[200px] truncate font-normal">{r.keterangan || '-'}</td>
                     </tr>
                     )

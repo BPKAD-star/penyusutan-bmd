@@ -39,7 +39,7 @@
 // ============================================================================
 import { useMemo } from 'react'
 import { backdropClose } from '@/components/backdropClose'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import type { BarangKdp, PembayaranKdp } from '@/lib/kdp'
 
@@ -101,7 +101,7 @@ export default function PreviewKonstruksiModal({ judul, subjudul, barangs, field
             <h2 className="text-base font-semibold text-gray-800">Pratinjau Belanja — {judul}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               {subjudul ? `${subjudul} · ` : ''}{barangs.length} barang KDP · {semuaTermin.length} termin ·
-              total <b>{formatRupiah(total)}</b>
+              total <b>{formatRupiah2(total)}</b>
             </p>
           </div>
           <button className="text-gray-400 hover:text-gray-600 text-xl leading-none flex-shrink-0" onClick={onClose}>×</button>
@@ -137,7 +137,7 @@ export default function PreviewKonstruksiModal({ judul, subjudul, barangs, field
         </div>
 
         <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
-          <span className="text-sm text-gray-600">Total seluruh termin: <b>{formatRupiah(total)}</b></span>
+          <span className="text-sm text-gray-600">Total seluruh termin: <b>{formatRupiah2(total)}</b></span>
           <button className="btn-secondary" onClick={onClose}>Tutup</button>
         </div>
       </div>
@@ -165,7 +165,7 @@ function BarisRekap({ kiri, n, nilai, tandai }: { kiri: string; n: number; nilai
       <span className={tandai ? 'text-amber-700 font-medium' : 'text-gray-700'}>{kiri}</span>
       <span className="flex items-center gap-3">
         <span className="text-gray-400">{n} termin</span>
-        <span className="tabular-nums font-medium text-gray-800">{formatRupiah(nilai)}</span>
+        <span className="tabular-nums font-medium text-gray-800">{formatRupiah2(nilai)}</span>
       </span>
     </div>
   )
@@ -194,7 +194,7 @@ function KartuBarang({ barang, fieldKeys }: { barang: BarangKdp; fieldKeys: Fiel
         </div>
         <div className="text-right flex-shrink-0">
           <p className="text-[11px] text-gray-400">Nilai (Σ termin)</p>
-          <p className="font-semibold text-gray-800">{formatRupiah(total)}</p>
+          <p className="font-semibold text-gray-800">{formatRupiah2(total)}</p>
         </div>
       </div>
 
@@ -234,7 +234,7 @@ function KartuBarang({ barang, fieldKeys }: { barang: BarangKdp; fieldKeys: Fiel
                   {p.kode_rekening || <span className="text-amber-600">belum diisi</span>}
                 </td>
                 <td className="table-td text-gray-600">{p.keterangan || '-'}</td>
-                <td className="table-td text-right tabular-nums whitespace-nowrap">{formatRupiah(p.nominal)}</td>
+                <td className="table-td text-right tabular-nums whitespace-nowrap">{formatRupiah2(p.nominal)}</td>
               </tr>
             ))}
           </tbody>
@@ -242,7 +242,7 @@ function KartuBarang({ barang, fieldKeys }: { barang: BarangKdp; fieldKeys: Fiel
             <tfoot className="border-t border-gray-200 bg-gray-50">
               <tr>
                 <td className="table-td font-semibold text-gray-800" colSpan={5}>Jumlah</td>
-                <td className="table-td text-right font-semibold tabular-nums text-gray-800 whitespace-nowrap">{formatRupiah(total)}</td>
+                <td className="table-td text-right font-semibold tabular-nums text-gray-800 whitespace-nowrap">{formatRupiah2(total)}</td>
               </tr>
             </tfoot>
           )}

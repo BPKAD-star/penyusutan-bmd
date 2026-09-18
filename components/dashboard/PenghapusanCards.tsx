@@ -5,7 +5,7 @@
 // nilai + daftar barang), sama pola dgn MutasiTransferCards.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { backdropClose } from '@/components/backdropClose'
 
 export type PenghapusanCount = { n: number; nilai: number }
@@ -47,7 +47,7 @@ export default function PenghapusanCards({ data }: { data: PenghapusanData }) {
               <div className="self-stretch flex-auto min-w-0 2xl:shrink-0 flex flex-col justify-between">
                 <div>
                   <p className="text-xs text-gray-700 leading-tight 2xl:whitespace-nowrap">{k.label}</p>
-                  <p className="text-sm 2xl:text-base font-bold text-rose-600 mt-1">{formatRupiah(k.nilai)}</p>
+                  <p className="text-sm 2xl:text-base font-bold text-rose-600 mt-1">{formatRupiah2(k.nilai)}</p>
                   {k.note && <p className="text-[11px] text-gray-400 leading-tight">{k.note}</p>}
                 </div>
                 <p className="text-xl font-bold text-gray-900 leading-none mt-2">{k.n.toLocaleString('id-ID')}</p>
@@ -182,13 +182,13 @@ function DetailModal({ label, jenis, subJenis, onClose }: { label: string; jenis
                 <div key={g.skpdNama}>
                   <div className="flex items-baseline justify-between mb-2">
                     <p className="text-sm font-semibold text-gray-800">{g.skpdNama}</p>
-                    <p className="text-xs text-gray-500">{g.n} barang · <span className="text-rose-600 font-medium">{formatRupiah(g.total)}</span></p>
+                    <p className="text-xs text-gray-500">{g.n} barang · <span className="text-rose-600 font-medium">{formatRupiah2(g.total)}</span></p>
                   </div>
                   <ul className="border border-gray-100 rounded-lg divide-y divide-gray-50">
                     {g.items.map((it, i) => (
                       <li key={i} className="px-3 py-2 flex items-center justify-between text-xs">
                         <span className="text-gray-700">{it.nama_barang || '-'} <span className="text-gray-400">({it.nibar || '-'})</span></span>
-                        <span className="text-gray-600 flex-shrink-0 ml-3">{formatRupiah(it.nilai)}</span>
+                        <span className="text-gray-600 flex-shrink-0 ml-3">{formatRupiah2(it.nilai)}</span>
                       </li>
                     ))}
                   </ul>

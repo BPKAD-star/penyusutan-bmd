@@ -31,7 +31,7 @@ import { createClient } from '@/lib/supabase/client'
 import { backdropClose } from '@/components/backdropClose'
 import { fieldsForKode, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import { kodeLevel3 } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 
 /** Satu barang draft, dinormalkan oleh pemanggil (bentuk DraftItem-nya beda tipis). */
@@ -222,7 +222,7 @@ export default function PreviewDraftModal({
                               </td>
                             ))}
                             <td className="table-td align-top text-gray-600">{it.satuan || <span className="text-amber-600">—</span>}</td>
-                            <td className="table-td align-top text-right text-gray-700 whitespace-nowrap">{formatRupiah(it.harga || 0)}</td>
+                            <td className="table-td align-top text-right text-gray-700 whitespace-nowrap">{formatRupiah2(it.harga || 0)}</td>
                             <td className="table-td align-top text-center">
                               <FotoSel paths={it.foto || []} thumbUrl={it.foto?.[0] ? thumbs[it.foto[0]] : undefined}
                                 judul={it.fields?.nama_barang || it.uraianBarang} />

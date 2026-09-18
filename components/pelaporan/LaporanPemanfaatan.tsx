@@ -6,7 +6,7 @@
 // menentukan; batal_pemanfaatan dibuang). Export Excel.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
@@ -190,7 +190,7 @@ export default function LaporanPemanfaatan() {
                   <td className="table-td text-xs">{r.lingkup}</td>
                   <td className="table-td text-xs">{r.mulai} s.d. {r.berakhir}</td>
                   <td className="table-td text-center text-xs">{r.status}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(r.nilai)}</td>
+                  <td className="table-td text-right text-xs">{formatRupiah2(r.nilai)}</td>
                 </tr>
               ))}
             </tbody>

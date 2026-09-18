@@ -23,7 +23,7 @@
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -280,7 +280,7 @@ export default function LaporanPengamanan() {
         <div className="card p-4"><p className="text-xs text-gray-500">Total Barang</p><p className="text-lg font-bold text-gray-900 mt-1">{rows.length.toLocaleString('id-ID')}</p></div>
         <div className="card p-4"><p className="text-xs text-gray-500">Diamankan</p><p className="text-lg font-bold text-green-700 mt-1">{nDiamankan.toLocaleString('id-ID')}</p></div>
         <div className="card p-4"><p className="text-xs text-gray-500">Dikembalikan</p><p className="text-lg font-bold text-gray-500 mt-1">{nKembali.toLocaleString('id-ID')}</p></div>
-        <div className="card p-4"><p className="text-xs text-gray-500">Nilai Perolehan</p><p className="text-lg font-bold text-teal mt-1">{formatRupiah(totalNilai)}</p></div>
+        <div className="card p-4"><p className="text-xs text-gray-500">Nilai Perolehan</p><p className="text-lg font-bold text-teal mt-1">{formatRupiah2(totalNilai)}</p></div>
       </div>
 
       <div className="card overflow-hidden">
@@ -307,7 +307,7 @@ export default function LaporanPengamanan() {
                   <td className="table-td text-xs">{r.paktaNo}<br /><span className="text-gray-400">{r.paktaTgl}</span></td>
                   <td className="table-td text-xs"><p className="font-medium">{r.nama}</p><p className="text-gray-400">{r.nibar}</p></td>
                   <td className="table-td text-center text-xs">{r.status}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah(r.nilai)}</td>
+                  <td className="table-td text-right text-xs">{formatRupiah2(r.nilai)}</td>
                 </tr>
               ))}
             </tbody>

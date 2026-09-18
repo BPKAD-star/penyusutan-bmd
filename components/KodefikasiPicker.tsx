@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 
 export type KodefikasiHasil = {
   kode: string
@@ -61,7 +61,7 @@ export default function KodefikasiPicker({ picked, onPick, golonganTetap, detail
             <span className="text-gray-500">Sub Rincian Objek</span><span className="font-medium text-gray-700">{picked.nama_sub_rincian || '-'}</span>
             <span className="text-gray-500">Uraian Barang</span><span className="font-medium text-gray-700">{picked.uraian || '-'}</span>
             <span className="text-gray-500">Masa Manfaat</span><span className="font-medium text-gray-700">{picked.masa_manfaat_tahun != null ? `${picked.masa_manfaat_tahun} tahun` : '-'}</span>
-            <span className="text-gray-500">Nilai Kapitalisasi</span><span className="font-medium text-gray-700">{formatRupiah(picked.batas_kapitalisasi)}</span>
+            <span className="text-gray-500">Nilai Kapitalisasi</span><span className="font-medium text-gray-700">{formatRupiah2(picked.batas_kapitalisasi)}</span>
           </div>
           <button type="button" onClick={() => onPick(null)} className="mt-2 text-xs text-gray-500 hover:text-gray-700">Ganti</button>
         </div>

@@ -19,7 +19,7 @@ import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiP
 import RekeningPicker from '@/components/RekeningPicker'
 import StandarImport from '@/components/rkbmd/StandarImport'
 import { backdropClose } from '@/components/backdropClose'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { SLOT_REKENING, type StandarJenis } from '@/lib/rkbmdStandar'
 import {
   USULAN_JENIS, USULAN_STATUS_META, LABEL_NAMA, LABEL_NILAI,
@@ -375,7 +375,7 @@ function TabelItem({ jenis, items, bisaSunting, busy, onEdit, onHapus }: {
               <td className="table-td text-xs text-gray-500">{it.satuan || '—'}</td>
               {sbsk && <td className="table-td text-xs text-gray-500">{it.satuan_pengukur || '—'}</td>}
               <td className="table-td text-xs text-right whitespace-nowrap">
-                {sbsk ? (it.kuantitas_standar ?? '—') : formatRupiah(it.harga)}
+                {sbsk ? (it.kuantitas_standar ?? '—') : formatRupiah2(it.harga)}
                 {pakaiTkdn(jenis) && it.tkdn != null && (
                   <span className="block text-[10px] text-gray-400">TKDN {it.tkdn}%</span>
                 )}

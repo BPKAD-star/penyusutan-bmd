@@ -20,7 +20,7 @@ import EditSpesifikasiModal from './EditSpesifikasiModal'
 import PreviewKonstruksiModal from './PreviewKonstruksiModal'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { periodeDariTanggal } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { KDP_KONSTRUKSI_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import NominalInput from '@/shared/ui/NominalInput'
 import { DokumenBastField, bukaDokumen, namaFile } from './DokumenBastField'
@@ -208,7 +208,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
       ) : (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500">{list.length} kontrak konstruksi · {formatRupiah(list.reduce((s, k) => s + kontrakTotal(k.payload), 0))}</span>
+            <span className="text-sm text-gray-500">{list.length} kontrak konstruksi · {formatRupiah2(list.reduce((s, k) => s + kontrakTotal(k.payload), 0))}</span>
             {!hideAdd && <button className="btn-primary" onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Batal' : '+ Buat Kontrak'}</button>}
           </div>
           {!hideAdd && showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={() => { setShowCreate(false); load(skpd); setMsg('Kontrak dibuat (draft) — tambah barang KDP & rincian pembayaran lalu tunggu approval.') }} onErr={setMsg} />}
@@ -342,7 +342,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
       subjudul: b?.nama || b?.kode || undefined,
       rincian: [
         { label: 'Termin ikut terhapus', nilai: `${nTermin} termin` },
-        { label: 'Nilai barang', nilai: formatRupiah(b ? barangTotal(b) : 0) },
+        { label: 'Nilai barang', nilai: formatRupiah2(b ? barangTotal(b) : 0) },
       ],
       isi: <>Kontraknya masih draft, jadi belum ada aset KDP yang tercatat — yang dibuang cuma
         rancangannya.</>,
@@ -385,7 +385,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
       subjudul: `Kontrak ${kontrak.no_sk}`,
       rincian: [
         { label: 'Barang KDP', nilai: `${barangs.length} barang` },
-        { label: 'Total nilai', nilai: formatRupiah(total) },
+        { label: 'Total nilai', nilai: formatRupiah2(total) },
       ],
       isi: <>Seluruh barang KDP <b>resmi tercatat</b> di Daftar Barang berikut akumulasi terminnya —
         satu paket, tak ada yang bisa disetujui separuh.</>,
@@ -482,8 +482,8 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
             </div>
             <div className="text-right flex-shrink-0">
               <p className="text-xs text-gray-400">Total ({barangs.length} barang KDP) · {periodeDariTanggal(kontrak.tanggal)}</p>
-              <p className="text-lg font-bold text-navy">{formatRupiah(total)}</p>
-              {p.nilai_kontrak ? <p className="text-[11px] text-gray-400">Nilai kontrak {formatRupiah(p.nilai_kontrak)}</p> : null}
+              <p className="text-lg font-bold text-navy">{formatRupiah2(total)}</p>
+              {p.nilai_kontrak ? <p className="text-[11px] text-gray-400">Nilai kontrak {formatRupiah2(p.nilai_kontrak)}</p> : null}
               {pending && (
                 <div className="flex items-center justify-end gap-2 mt-2">
                   <button title="Edit Kontrak" onClick={() => setShowEdit(true)}
@@ -807,7 +807,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
         <div className="flex items-start gap-3 flex-shrink-0">
           <div className="text-right">
             <p className="text-[11px] text-gray-400">Nilai (Σ termin)</p>
-            <p className="font-semibold text-gray-800">{formatRupiah(total)}</p>
+            <p className="font-semibold text-gray-800">{formatRupiah2(total)}</p>
           </div>
           {/* Tombol berkotak & SAMA LEBAR (w-36) — dulu tiga tautan bergaris
               bawah dgn panjang berbeda-beda sehingga tepinya tak rata. Warna
@@ -883,7 +883,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
                   <td className="table-td text-xs text-gray-500">{b.tgl_bast}</td>
                   <td className="table-td text-xs text-gray-500">{b.kode_rekening || '—'}</td>
                   <td className="table-td text-xs text-gray-600">{b.keterangan || '—'}</td>
-                  <td className="table-td text-xs text-right">{formatRupiah(b.nominal)}</td>
+                  <td className="table-td text-xs text-right">{formatRupiah2(b.nominal)}</td>
                   {pending && <td className="table-td text-right"><button className="text-red-500 hover:text-red-700 text-xs" onClick={() => onHapusTermin(i)}>Hapus</button></td>}
                 </tr>
               ))}

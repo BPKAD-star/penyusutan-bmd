@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { barangKdpList, type KontrakKonstruksiPayload } from '@/lib/kdp'
 import { backdropClose } from '@/components/backdropClose'
+import { formatRupiah2 } from '@/lib/export'
 
 // ⚠️ `kategoriJurnal` JAMAK — Pengadaan punya DUA pintu masuk yang memakai
 // kategori `jurnal_header` berbeda: entry non-fisik (`pengadaan`) dan Pekerjaan
@@ -35,7 +36,6 @@ const CARA_LIST: CaraConfig[] = [
   { key: 'lainnya', label: 'Perolehan Lainnya', jenisTransaksi: 'perolehan_lainnya', kategoriJurnal: ['perolehan_lainnya'], ilustrasi: '/dashboard/cara-perolehan-lainnya.webp' },
 ]
 
-const formatRp = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 const nf = (n: number) => n.toLocaleString('id-ID')
 /** Golongan yang punya kolom sendiri di matriks popup "disetujui". */
 const KODE_GOL = new Set(GOLONGAN_REKAP.map(g => g.kode))
@@ -234,8 +234,8 @@ function CaraCard({ cara, disetujui, belum, nilai, gagalDisetujui, onClickApprov
       <div className="flex items-center gap-2 min-w-0">
       <div className="flex-auto min-w-0 2xl:shrink-0">
       <p className="text-xs text-gray-600 leading-tight">{cara.label}</p>
-      <p className="text-sm font-bold text-teal mb-1 truncate" title={gagalDisetujui ? 'Tidak dapat dibaca' : formatRp(nilai)}>
-        {gagalDisetujui ? <span className="text-gray-300">–</span> : formatRp(nilai)}
+      <p className="text-sm font-bold text-teal mb-1 truncate" title={gagalDisetujui ? 'Tidak dapat dibaca' : formatRupiah2(nilai)}>
+        {gagalDisetujui ? <span className="text-gray-300">–</span> : formatRupiah2(nilai)}
       </p>
       {/* ⚠️ `min-w-0` di baris ini & di kolom keterangan BUKAN hiasan: tanpa itu
           min-width flex item = min-content, jadi kolom keterangan menolak
@@ -452,7 +452,7 @@ function SelIsi({ count, nilai, tebal }: { count: number; nilai: number; tebal?:
   return (
     <div className="leading-tight whitespace-nowrap">
       <div className="text-[10px] text-gray-400">{nf(count)}</div>
-      <div className={`tabular-nums ${tebal ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{formatRp(nilai)}</div>
+      <div className={`tabular-nums ${tebal ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{formatRupiah2(nilai)}</div>
     </div>
   )
 }
@@ -518,7 +518,7 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
                   return (
                     <div key={h.id} className="border border-gray-100 rounded-lg p-3">
                       <p className="text-xs font-medium text-gray-700">
-                        Kontrak: {h.no_sk} · {h.tanggal} · {items.length} barang · {formatRp(total)}
+                        Kontrak: {h.no_sk} · {h.tanggal} · {items.length} barang · {formatRupiah2(total)}
                         {/* Penanda kontrak konstruksi — bentuk & alur entry-nya
                             beda (bertermin), jadi operator perlu tahu kartu ini
                             dibuka di menu Pekerjaan Fisik, bukan Entry Manual. */}

@@ -13,7 +13,7 @@ import { useEffect, useState, useCallback } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchBarisTerkunci, type Penghalang } from '@/lib/pengalihanTerkunci'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -464,7 +464,7 @@ export default function PenggunaanMasuk() {
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <div className="text-right">
                         <p className="text-xs text-gray-400">Total Nilai</p>
-                        <p className="font-semibold text-gray-800">{formatRupiah(j.total)}</p>
+                        <p className="font-semibold text-gray-800">{formatRupiah2(j.total)}</p>
                       </div>
                       {pending && (
                         <>
@@ -526,7 +526,7 @@ export default function PenggunaanMasuk() {
                           </td>
                           <td className="table-td text-center text-xs">{l.jumlah}</td>
                           <td className="table-td text-xs text-gray-600">{l.satuan || '-'}</td>
-                          <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                          <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
                           {disetujui && (
                             <td className="table-td text-center">
                               {/* Barang yang terlanjur dipulangkan lewat aksi lama tetap

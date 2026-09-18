@@ -13,7 +13,7 @@ import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, parsePeriode, previousPeriode, formatPeriode } from '@/lib/bmd'
 import { cariBand, type BandOverhaul } from '@/lib/engine/penyusutan'
 import { KapitalisasiRincian, KapitalisasiDetailModal, type KapSnapshot, type KapAnak, type KapItem } from '@/components/KapitalisasiDetail'
@@ -195,7 +195,7 @@ export default function Kapitalisasi() {
       subjudul: `No. Dok ${j.no_dokumen}`,
       rincian: [
         { label: 'Barang induk', nilai: j.induk?.nama_barang || j.induk?.nibar || '—' },
-        { label: 'Nilai rehab dibalik', nilai: formatRupiah(j.nilai) },
+        { label: 'Nilai rehab dibalik', nilai: formatRupiah2(j.nilai) },
         { label: 'Barang anak aktif lagi', nilai: `${j.anak.length} barang` },
       ],
       isi: <>Nilai perolehan induk &amp; masa manfaatnya <b>kembali seperti semula</b>, dan barang anak
@@ -240,7 +240,7 @@ export default function Kapitalisasi() {
       rincian: [
         { label: 'Barang induk', nilai: j.induk?.nama_barang || j.induk?.nibar || '—' },
         { label: 'Barang anak', nilai: `${j.anak.length} barang` },
-        { label: 'Nilai kapitalisasi', nilai: formatRupiah(j.nilai) },
+        { label: 'Nilai kapitalisasi', nilai: formatRupiah2(j.nilai) },
       ],
       isi: <>Kapitalisasi ini <b>dibatalkan lebih dulu</b>, lalu formnya dibuka kembali sudah terisi —
         induk &amp; barang anaknya bebas diganti, termasuk menukar mana yang jadi induk.</>,
@@ -311,7 +311,7 @@ export default function Kapitalisasi() {
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="text-right">
                     <p className="text-xs text-gray-400">Nilai Kapitalisasi</p>
-                    <p className="font-semibold text-gray-800">{formatRupiah(j.nilai)}</p>
+                    <p className="font-semibold text-gray-800">{formatRupiah2(j.nilai)}</p>
                   </div>
                   <button title="Lihat rincian penambahan masa manfaat"
                     onClick={() => setDetail([{ no_dokumen: j.no_dokumen, tanggal: j.tanggal, keterangan: j.keterangan, snapshot: j.snapshot, anak: j.anak }])}
@@ -335,7 +335,7 @@ export default function Kapitalisasi() {
                     {j.anak.map(a => (
                       <li key={a.id} className="flex items-center justify-between px-3 py-1.5 text-xs">
                         <span className="text-gray-700">{a.nama || '-'} <span className="text-gray-400">· {a.nibar || '-'}{a.tgl ? ` · ${a.tgl}` : ''}</span></span>
-                        <span className="text-gray-600">{formatRupiah(a.nilai)}</span>
+                        <span className="text-gray-600">{formatRupiah2(a.nilai)}</span>
                       </li>
                     ))}
                   </ul>
@@ -604,7 +604,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
             {/* Komptabel ikut ditampilkan sejak syarat "anak harus sekomptabel"
                 ditegakkan (2026-08-27) — tanpa itu operator tak punya cara tahu
                 kenapa barang anak tertentu ditolak. */}
-            <p className="text-xs text-gray-500 mt-0.5">{induk.nibar || '-'} · {induk.kode} · Tgl {induk.tgl_perolehan || '-'} · {kompLabel(induk.intra_ekstra)} · Nilai {formatRupiah(fig ? fig.npLama : induk.nilai_perolehan)}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{induk.nibar || '-'} · {induk.kode} · Tgl {induk.tgl_perolehan || '-'} · {kompLabel(induk.intra_ekstra)} · Nilai {formatRupiah2(fig ? fig.npLama : induk.nilai_perolehan)}</p>
           </div>
         ) : <p className="text-xs text-gray-400">Belum dipilih.</p>}
       </div>
@@ -620,7 +620,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
               {anak.map(a => (
                 <li key={a.id} className="flex items-center justify-between px-3 py-1.5 text-xs">
                   <span className="text-gray-700">{a.nama_barang || '-'} <span className="text-gray-400">· {a.nibar || '-'} · {a.kode} · Tgl {a.tgl_perolehan || '-'}</span></span>
-                  <span className="text-gray-600">{formatRupiah(a.nilai_perolehan)}</span>
+                  <span className="text-gray-600">{formatRupiah2(a.nilai_perolehan)}</span>
                 </li>
               ))}
             </ul>
@@ -771,7 +771,7 @@ function BarangModal({ skpdId, golonganLabels, title, confirmLabel, multi, exclu
                         <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode}{bad && <span className="text-red-500"> · {bad}</span>}</p>
                       </td>
                       <td className="table-td text-xs text-gray-600">{b.tgl_perolehan || '-'}</td>
-                      <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                      <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                     </tr>
                   )
                 })}
@@ -781,7 +781,7 @@ function BarangModal({ skpdId, golonganLabels, title, confirmLabel, multi, exclu
         </div>
 
         <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-          <span className="text-sm text-gray-600">{selList.length} dipilih{multi ? ` · ${formatRupiah(selTotal)}` : ''}</span>
+          <span className="text-sm text-gray-600">{selList.length} dipilih{multi ? ` · ${formatRupiah2(selTotal)}` : ''}</span>
           <div className="flex gap-2">
             <button className="btn-secondary" onClick={onClose}>Batal</button>
             <button className="btn-primary" disabled={selList.length === 0} onClick={() => onConfirm(selList)}>{confirmLabel}</button>

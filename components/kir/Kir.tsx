@@ -22,7 +22,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useSeleksiBarang } from '@/shared/ui/useSeleksiBarang'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import {
@@ -230,7 +230,7 @@ export default function Kir() {
                           <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
                           <td className="table-td text-center text-xs">{tahunPerolehan(b.tgl_perolehan)}</td>
                           <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
-                          <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                          <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -469,7 +469,7 @@ function TambahBarangModal({ skpdId, ruangan, onClose, onSaved }: {
                         <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
                         <td className="table-td text-center text-xs">{tahunPerolehan(b.tgl_perolehan)}</td>
                         <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
-                        <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                        <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                       </tr>
                     ))}
                   </tbody>

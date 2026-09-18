@@ -8,8 +8,9 @@ import {
   JENIS_BM, BULAN_SINGKAT, GOL_URAIAN, TANPA_REK, TANPA_GOL, statusSilang,
   type RekapMatrix, type Silang,
 } from '@/lib/lra'
+import { formatRupiah2 } from '@/lib/export'
 
-export const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
+export const angka = (v: number) => formatRupiah2(v || 0)
 
 // Tombol kecil di kanan judul matriks Kapitalisasi/Reklasifikasi → buka modal
 // tanda langsung di tab "Sudah ditandai" untuk MEMBATALKAN tanda (satu / massal).

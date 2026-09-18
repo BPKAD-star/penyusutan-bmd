@@ -28,7 +28,7 @@ import { useEffect, useMemo, useState } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { exportToExcel } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
 
@@ -66,8 +66,11 @@ type Row = {
 const SELECT_COLS =
   'id,nibar,kode_register,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,penggunaan_pengamanan,keterangan,skpd_id'
 
-// Angka polos bergaya id-ID tanpa "Rp" — sama dengan Daftar Barang (enak di-copas ke Excel).
-const angka = (v: number | null | undefined) =>
+// Rupiah — 2 desimal (formatRupiah2), sama dgn Daftar Barang.
+const angka = (v: number | null | undefined) => formatRupiah2(v)
+// Angka satuan (jumlah unit) BUKAN rupiah — tetap tanpa desimal paksa; jangan
+// pakai `angka` di sini (akan mencetak "3,00 kendaraan").
+const angkaN = (v: number | null | undefined) =>
   v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v)
 const teks = (v: string | number | null | undefined) => {
   const s = v == null ? '' : String(v).trim()
@@ -237,13 +240,13 @@ export default function KendaraanPage() {
             <span className="text-sm text-gray-500">
               {loading ? 'Memuat...' : (
                 <>
-                  <span className="font-semibold text-gray-900">{angka(stats.jumlah)}</span> kendaraan
+                  <span className="font-semibold text-gray-900">{angkaN(stats.jumlah)}</span> kendaraan
                   <span className="text-gray-300 mx-2">·</span>
                   nilai perolehan <span className="font-semibold text-gray-900">{angka(stats.nilai)}</span>
                   {stats.belum > 0 && (
                     <>
                       <span className="text-gray-300 mx-2">·</span>
-                      <span className="text-amber-700">{angka(stats.belum)} belum lengkap</span>
+                      <span className="text-amber-700">{angkaN(stats.belum)} belum lengkap</span>
                     </>
                   )}
                 </>

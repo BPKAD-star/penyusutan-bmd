@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
-import { exportToExcel, formatRupiah } from '@/lib/export'
+import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { RKBMD_JENIS, STATUS_META, LABEL_NILAI, nilaiItemRkbmd, type RkbmdStatus, type RkbmdJenis, type RkbmdVersi } from '@/lib/rkbmd'
 
@@ -176,7 +176,7 @@ export default function RkbmdPelaporan() {
           <p className="text-xs text-gray-400">
             {jenis === 'semua' ? 'Total Nilai (gabungan semua jenis)' : LABEL_NILAI[jenis as RkbmdJenis] || 'Total Nilai'}
           </p>
-          <p className="text-lg font-bold text-gray-900">{err ? '—' : formatRupiah(total)}</p>
+          <p className="text-lg font-bold text-gray-900">{err ? '—' : formatRupiah2(total)}</p>
         </div>
       }
     >
@@ -255,7 +255,7 @@ export default function RkbmdPelaporan() {
             {perJenis.map(([k, v]) => (
               <div key={k} className="card p-3">
                 <p className="text-[11px] text-gray-400">{JENIS_LABEL[k] || k}</p>
-                <p className="text-sm font-semibold text-gray-900">{formatRupiah(v.total)}</p>
+                <p className="text-sm font-semibold text-gray-900">{formatRupiah2(v.total)}</p>
                 <p className="text-[11px] text-gray-400">
                   {v.n} dokumen
                   {v.nihil > 0 && <span className="text-slate-500"> · {v.nihil} nihil</span>}
@@ -312,7 +312,7 @@ export default function RkbmdPelaporan() {
                     : r.jumlah_item}
                 </td>
                 <td className="table-td text-xs text-right whitespace-nowrap"
-                  title={LABEL_NILAI[r.jenis as RkbmdJenis]}>{r.nihil ? '–' : formatRupiah(r.total)}</td>
+                  title={LABEL_NILAI[r.jenis as RkbmdJenis]}>{r.nihil ? '–' : formatRupiah2(r.total)}</td>
               </tr>
             ))}
           </tbody>

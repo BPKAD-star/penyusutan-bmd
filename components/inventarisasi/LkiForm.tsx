@@ -22,7 +22,7 @@ import { createClient } from '@/lib/supabase/client'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import WilayahPicker from '@/components/WilayahPicker'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import NominalInput from '@/shared/ui/NominalInput'
 import {
   normalKondisi, klasifikasiLhi, LHI_LABEL,
@@ -452,7 +452,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
               </Seksi>
 
               <Seksi kode="H" judul="Nilai Perolehan Barang">
-                <Tampilan nilai={formatRupiah(s.nilai_perolehan || 0)} />
+                <Tampilan nilai={formatRupiah2(s.nilai_perolehan || 0)} />
               </Seksi>
 
               <Seksi kode="I" judul="Apakah nilai perolehan merupakan biaya atribusi / menambah kapasitas manfaat?">

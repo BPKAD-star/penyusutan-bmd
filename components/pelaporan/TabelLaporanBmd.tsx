@@ -9,8 +9,12 @@
 // TIDAK dicetak — itu penomoran petunjuk pengisian di template, bukan bagian
 // dari laporan jadi.
 import { BARIS_LAPORAN_BMD, nilaiBaris, type UkuranGolongan } from '@/lib/laporanBmdFormat'
+import { formatRupiah2 } from '@/lib/export'
 
-const angka = (v: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(v || 0)
+// 2 desimal (formatRupiah2) — menyamakan dgn LembarMutasiBmd.tsx, lembar LAIN
+// utk laporan yang SAMA (IV.L.4). Sebelum ini keduanya berselisih desimal utk
+// data yang sama persis, di berkas cetak yang sama pula.
+const angka = (v: number) => formatRupiah2(v || 0)
 /** Akun lawan dicetak dalam kurung — konvensi neraca untuk nilai pengurang. */
 const kurung = (v: number) => `(${angka(v)})`
 

@@ -19,7 +19,7 @@ import ProgramPicker from '@/components/ProgramPicker'
 import RkbmdPengadaanForm from '@/components/rkbmd/RkbmdPengadaanForm'
 import RkbmdAsetForm from '@/components/rkbmd/RkbmdAsetForm'
 import RkbmdLampiran from '@/components/rkbmd/RkbmdLampiran'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import {
   RKBMD_JENIS, STATUS_META, LABEL_NILAI, nilaiItemRkbmd,
   type RkbmdJenis, type RkbmdVersi,
@@ -288,7 +288,7 @@ function DokumenPanel({
             <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">NIHIL</span>
           ) : (
             <span className="text-xs text-gray-400">
-              {berkartu && `${pakets.length} kartu · `}{items.length} item · Total {formatRupiah(total)}
+              {berkartu && `${pakets.length} kartu · `}{items.length} item · Total {formatRupiah2(total)}
             </span>
           )}
         </div>
@@ -423,7 +423,7 @@ function DokumenPanel({
           )}
           <div className="card p-4 flex items-center justify-between">
             <span className="text-sm text-gray-600">Total seluruh kartu ({items.length} item)</span>
-            <span className="text-lg font-bold text-gray-900">{formatRupiah(total)}</span>
+            <span className="text-lg font-bold text-gray-900">{formatRupiah2(total)}</span>
           </div>
         </>
       ) : (
@@ -742,7 +742,7 @@ function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi, onUbah }:
       subjudul: paket.sub_kegiatan || '(sub kegiatan belum dipilih)',
       rincian: items.length > 0 ? [
         { label: 'Item ikut terhapus', nilai: `${items.length} barang` },
-        { label: 'Nilai', nilai: formatRupiah(total) },
+        { label: 'Nilai', nilai: formatRupiah2(total) },
       ] : undefined,
       isi: items.length > 0
         ? <>Seluruh item barang di kartu ini <b>ikut terhapus</b>.</>
@@ -761,7 +761,7 @@ function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi, onUbah }:
     if (!(await konfirmasi({
       nada: 'merah', ikon: '🗑', judul: 'Hapus item ini dari kartu?',
       subjudul: it.nama_barang || it.kode || undefined,
-      rincian: [{ label: 'Nilai', nilai: formatRupiah(it.total_anggaran) }],
+      rincian: [{ label: 'Nilai', nilai: formatRupiah2(it.total_anggaran) }],
       labelYa: 'Hapus item',
     })).ya) return
     const { error } = await supabase.from('rkbmd_item').delete().eq('id', it.id)
@@ -846,8 +846,8 @@ function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi, onUbah }:
                   <td className="table-td text-xs text-gray-700">{it.nama_barang || '—'}</td>
                   <td className="table-td text-xs text-gray-500 whitespace-nowrap">{it.kode_rekening || '—'}</td>
                   <td className="table-td text-xs text-right whitespace-nowrap">{it.jumlah_kebutuhan ?? 0} {it.satuan || ''}</td>
-                  <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(it.harga_satuan)}</td>
-                  <td className="table-td text-xs text-right whitespace-nowrap font-medium">{formatRupiah(it.total_anggaran)}</td>
+                  <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah2(it.harga_satuan)}</td>
+                  <td className="table-td text-xs text-right whitespace-nowrap font-medium">{formatRupiah2(it.total_anggaran)}</td>
                   <td className="table-td text-xs text-gray-500">{it.keterangan || '—'}</td>
                   {canEdit && (
                     <td className="table-td whitespace-nowrap">
@@ -861,7 +861,7 @@ function KartuPaket({ paket, header, items, canEdit, onMsg, reloadIsi, onUbah }:
             <tfoot className="bg-gray-50 border-t border-gray-100">
               <tr>
                 <td className="table-td text-xs font-semibold" colSpan={6}>Subtotal kartu ini</td>
-                <td className="table-td text-xs text-right font-bold whitespace-nowrap">{formatRupiah(total)}</td>
+                <td className="table-td text-xs text-right font-bold whitespace-nowrap">{formatRupiah2(total)}</td>
                 <td className="table-td" colSpan={canEdit ? 2 : 1} />
               </tr>
             </tfoot>
@@ -891,7 +891,7 @@ function DaftarItemDatar({ header, items, canEdit, reloadIsi, onMsg }: {
       subjudul: it.nama_barang || it.kode || undefined,
       // "Nilai" artinya beda per jenis RKBMD (belanja / pendapatan / nilai
       // perolehan) — satu sumber di lib/rkbmd.ts, jangan dihitung ulang di sini.
-      rincian: [{ label: LABEL_NILAI[header.jenis as RkbmdJenis] || 'Nilai', nilai: formatRupiah(nilaiItemRkbmd(header.jenis, it)) }],
+      rincian: [{ label: LABEL_NILAI[header.jenis as RkbmdJenis] || 'Nilai', nilai: formatRupiah2(nilaiItemRkbmd(header.jenis, it)) }],
       labelYa: 'Hapus barang',
     })).ya) return
     const { error } = await supabase.from('rkbmd_item').delete().eq('id', it.id)
@@ -959,16 +959,16 @@ function DaftarItemDatar({ header, items, canEdit, reloadIsi, onMsg }: {
 function ringkasItem(jenis: RkbmdJenis, it: RkbmdItem): string {
   switch (jenis) {
     case 'pengadaan':
-      return `${it.jumlah_kebutuhan ?? 0} ${it.satuan || ''} · ${formatRupiah(it.total_anggaran)}`
+      return `${it.jumlah_kebutuhan ?? 0} ${it.satuan || ''} · ${formatRupiah2(it.total_anggaran)}`
     case 'pemeliharaan':
-      return [it.kondisi, formatRupiah(it.total_anggaran)].filter(Boolean).join(' · ')
+      return [it.kondisi, formatRupiah2(it.total_anggaran)].filter(Boolean).join(' · ')
     case 'pemanfaatan':
-      return [it.bentuk, it.jangka_waktu, it.estimasi_hasil != null ? formatRupiah(it.estimasi_hasil) : null]
+      return [it.bentuk, it.jangka_waktu, it.estimasi_hasil != null ? formatRupiah2(it.estimasi_hasil) : null]
         .filter(Boolean).join(' · ') || '—'
     case 'pemindahtanganan':
-      return [it.bentuk, formatRupiah(it.nilai_perolehan)].filter(Boolean).join(' · ')
+      return [it.bentuk, formatRupiah2(it.nilai_perolehan)].filter(Boolean).join(' · ')
     case 'penghapusan':
-      return formatRupiah(it.nilai_perolehan)
+      return formatRupiah2(it.nilai_perolehan)
     default:
       return '—'
   }

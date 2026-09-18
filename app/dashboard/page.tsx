@@ -2,6 +2,7 @@ import { Suspense, cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import { fetchPindahEvents, pindahAktif } from '@/lib/pengalihan'
+import { formatRupiah2 } from '@/lib/export'
 import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
 import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/PenghapusanCards'
@@ -17,9 +18,6 @@ import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/P
 // render tambahan; pola yang sama dgn app/kibar/[nibar]/page.tsx.
 export const dynamic = 'force-dynamic'
 
-function formatRp(val: number) {
-  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(val)
-}
 const nf = (n: number) => n.toLocaleString('id-ID')
 
 // ── Ilustrasi per golongan (sisi kanan kartu "Total Aset per Jenis") ────────
@@ -315,7 +313,7 @@ async function TotalNilai() {
   // Saat gagal: JANGAN tampilkan Rp0 — itu angka yang terlihat sah.
   return (
     <>
-      <p className="text-2xl font-bold text-teal">{scan.err ? '—' : formatRp(totalNilai)}</p>
+      <p className="text-2xl font-bold text-teal">{scan.err ? '—' : formatRupiah2(totalNilai)}</p>
       {/* Jumlah unit register — dipindah ke sini dari sub-judul "Total Aset per
           Jenis" (permintaan user 2026-09-10). */}
       {!scan.err && <p className="text-xs text-gray-400 mt-0.5">{nf(totalRegister)} aset</p>}
@@ -368,7 +366,7 @@ async function SectionJenis() {
                         dibedakan dari golongan yang memang belum ada isinya.
                         Ukurannya naik bertahap: di layar sempit angka 20 digit
                         itu yang menjepit gambar. */}
-                    <p className="text-sm 2xl:text-base min-[1800px]:text-lg font-bold text-teal mt-1 whitespace-nowrap">{scan.err ? <span className="text-gray-300">–</span> : formatRp(d.nilai)}</p>
+                    <p className="text-sm 2xl:text-base min-[1800px]:text-lg font-bold text-teal mt-1 whitespace-nowrap">{scan.err ? <span className="text-gray-300">–</span> : formatRupiah2(d.nilai)}</p>
                   </div>
                   <p className="text-xl min-[1800px]:text-2xl font-bold text-gray-900 whitespace-nowrap leading-none">
                     {scan.err ? <span className="text-gray-300">–</span>

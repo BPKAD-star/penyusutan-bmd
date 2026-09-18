@@ -22,7 +22,7 @@ import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { periodeDariTanggal, kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -322,7 +322,7 @@ export default function Pemanfaatan() {
                             {l.lingkup === 'sebagian' ? `Sebagian${l.bagian ? ` — ${l.bagian}` : ''}` : 'Seluruhnya'}
                           </td>
                           <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
-                          <td className="table-td text-right text-xs">{formatRupiah(l.nilai)}</td>
+                          <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -728,7 +728,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
                             </div>
                           ) : <span className="text-gray-300 text-xs">—</span>}
                         </td>
-                        <td className="table-td text-right text-xs">{formatRupiah(b.nilai_perolehan)}</td>
+                        <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                       </tr>
                     )
                   })}

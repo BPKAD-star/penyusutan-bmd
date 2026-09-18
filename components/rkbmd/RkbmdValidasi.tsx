@@ -15,7 +15,7 @@ import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
 import { backdropClose } from '@/components/backdropClose'
 import KonfirmasiModal from '@/shared/ui/KonfirmasiModal'
-import { formatRupiah } from '@/lib/export'
+import { formatRupiah2 } from '@/lib/export'
 import { RKBMD_JENIS, STATUS_META, type RkbmdStatus, type RkbmdPaket } from '@/lib/rkbmd'
 
 const TAHUN_DEFAULT = new Date().getFullYear() + 1
@@ -261,7 +261,7 @@ export default function RkbmdValidasi() {
                   )}
                 </td>
                 <td className="table-td text-xs text-right">{h.jumlah_item}</td>
-                <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(h.total)}</td>
+                <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah2(h.total)}</td>
                 <td className="table-td text-xs text-gray-400 whitespace-nowrap">{h.diajukan_at?.slice(0, 10) || '—'}</td>
                 <td className="table-td whitespace-nowrap">
                   {/* Pop-up di tempat — dulu menautkan ke menu Usulan, yang justru
@@ -332,7 +332,7 @@ function KonfirmasiRkbmd({ k, busy, onYa, onBatal }: {
     : [
         { label: 'Kartu', nilai: `${h.pakets.length} kartu` },
         { label: 'Item', nilai: `${h.jumlah_item} item` },
-        { label: 'Total anggaran', nilai: formatRupiah(h.total) },
+        { label: 'Total anggaran', nilai: formatRupiah2(h.total) },
       ]
 
   if (aksi === 'setujui') {
@@ -513,8 +513,8 @@ function DetailModal({ h, onClose }: { h: Antrean; onClose: () => void }) {
                               <td className="table-td text-xs text-gray-800">{r.nama_barang || '—'}</td>
                               <td className="table-td text-xs text-right">{r.jumlah_kebutuhan ?? 0}</td>
                               <td className="table-td text-xs text-gray-500">{r.satuan || '—'}</td>
-                              <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah(r.harga_satuan)}</td>
-                              <td className="table-td text-xs text-right whitespace-nowrap font-medium">{formatRupiah(r.total_anggaran)}</td>
+                              <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah2(r.harga_satuan)}</td>
+                              <td className="table-td text-xs text-right whitespace-nowrap font-medium">{formatRupiah2(r.total_anggaran)}</td>
                               <td className="table-td text-xs text-right">{r.tkdn != null ? `${r.tkdn}%` : '—'}</td>
                               <td className="table-td text-xs text-right">{r.jumlah_eksisting ?? '—'}</td>
                               <td className="table-td text-xs text-gray-500">{r.keterangan || '—'}</td>
@@ -525,7 +525,7 @@ function DetailModal({ h, onClose }: { h: Antrean; onClose: () => void }) {
                           <tr>
                             <td className="table-td text-xs font-semibold" colSpan={7}>Subtotal</td>
                             <td className="table-td text-xs text-right font-bold whitespace-nowrap">
-                              {formatRupiah(isi.reduce((s, r) => s + (r.total_anggaran || 0), 0))}
+                              {formatRupiah2(isi.reduce((s, r) => s + (r.total_anggaran || 0), 0))}
                             </td>
                             <td className="table-td" colSpan={3} />
                           </tr>
@@ -538,7 +538,7 @@ function DetailModal({ h, onClose }: { h: Antrean; onClose: () => void }) {
 
               <div className="rounded-lg bg-teal/5 border border-teal/20 px-4 py-3 flex items-center justify-between">
                 <span className="text-sm text-gray-600">Total Rencana Anggaran ({rows.length} item)</span>
-                <span className="text-lg font-bold text-gray-900">{formatRupiah(totalDok)}</span>
+                <span className="text-lg font-bold text-gray-900">{formatRupiah2(totalDok)}</span>
               </div>
             </>
           )}
