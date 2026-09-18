@@ -64,6 +64,7 @@ import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/S
 import KomptabelRadio from '@/components/KomptabelRadio'
 import EditSpesifikasiModal from '@/components/pengelolaan/EditSpesifikasiModal'
 import { useIsViewer } from '@/components/useIsViewer'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
@@ -605,10 +606,30 @@ export default function Page() {
   // → ./useEditSpekAwal.ts (REFACTOR-PLAN Fase 3). Nama lokal dipertahankan
   // supaya JSX halaman ini tak ikut berubah.
   const {
-    sel, setSel, selList, selSameGol, toggleSel, terkunci, setTerkunci, fetchTerkunci,
+    sel, setSel, selList, selSameGol, toggleSel, terkunci, setTerkunci, fetchTerkunci, terkunciInfo,
     spekOpen, setSpekOpen, spekPrefix, spekKeys, spekInitFields, spekInitFoto,
     spekMsg, spekErr, spekSaving, spekTanpaBidang, openSpek, simpanSpek,
   } = useEditSpekAwal(bidang, () => { if (applied) load(applied, page) })
+  const konfirmasi = useKonfirmasi()
+
+  // Pengganti `alert()` (CODING-STANDARD §4.5) untuk 🔒 — MURNI INFORMASI.
+  // Menyebut transaksi TERAKHIR pada barang itu; lihat catatan `terkunciInfo`
+  // di useEditSpekAwal.ts soal kenapa ini proxy, bukan jawaban pasti.
+  async function infoTerkunci(r: Row) {
+    const info = terkunciInfo[r.nibar]
+    await konfirmasi({
+      nada: 'amber', ikon: '🔒', judul: 'Kenapa barang ini terkunci?',
+      subjudul: r.nama_barang || r.nibar,
+      isi: info
+        ? <>Transaksi TERAKHIR pada barang ini: <b>&ldquo;{info.jenis}&rdquo;</b> ({info.periode}). Kalau ada
+          yang perlu dikoreksi, lewat <b>Pembukuan → Koreksi → Spesifikasi Barang</b> — di sana ada jejak
+          ledger & bisa dibatalkan.</>
+        : <>Barang ini sudah punya transaksi yang mengubah spesifikasi, golongan, atau SKPD-nya, tapi jenis
+          transaksinya tak terbaca dari sini. Koreksinya tetap lewat <b>Pembukuan → Koreksi → Spesifikasi
+          Barang</b>.</>,
+      labelYa: 'Mengerti', tanpaBatal: true,
+    })
+  }
 
   function tampilkan() {
     const orgEfektif: OrgSelection = (!konsolidasi && org.skpdId != null)
@@ -1000,8 +1021,9 @@ export default function Page() {
                     {!isViewer && (
                       <td className="table-td">
                         {terkunci.has(r.nibar) ? (
-                          <span title="Barang ini sudah punya transaksi yang mengubah spesifikasi, golongan, atau SKPD-nya. Koreksi spesifikasinya lewat Pembukuan → Koreksi → Spesifikasi Barang."
-                            className="text-gray-400 cursor-help">🔒</span>
+                          <button onClick={() => infoTerkunci(r)}
+                            title="Klik untuk lihat transaksi yang menguncinya"
+                            className="text-gray-400 hover:text-gray-600">🔒</button>
                         ) : (
                           <input type="checkbox" checked={!!sel[r.nibar]} onChange={() => toggleSel(r)} />
                         )}

@@ -794,6 +794,19 @@ menyentuh lapis 1. Sebelum menggarapnya, periksa dulu kelima modul itu.
   dijalankan SEKALI per statement, jadi biayanya ikut jumlah NIBAR yang
   ditanya, bukan besar ledger. Skalar vs `_batch` dibandingkan atas 438 barang:
   **0 beda**.
+  ✅ **🔒 diklik kini menyebut SEBAB-nya** (2026-09-18, migrasi 20260918_01,
+  pola yang sama dgn Pengalihan 20260917_02): jenis & periode transaksi
+  TERAKHIR pada aset itu, dikecualikan `saldo_awal`/`saldo_awal_checkpoint`.
+  ⚠️ **Sengaja versi "cepat", BUKAN versi presisi** (keputusan user) — beda dari
+  Pengalihan, di mana "terkunci" ARTINYA "ada transaksi sesudah ini" (jadi
+  menyebut transaksinya = jawaban PASTI): di sini kuncinya lahir dari EMPAT
+  kondisi berbeda (status/kode/skpd_id berubah, atau koreksi_spesifikasi/
+  penggabungan_masuk belum dibatalkan), jadi "transaksi terakhir" cuma PROXY —
+  kalau sebuah aset kebetulan kena DUA kondisi sekaligus (mis. direklas lalu
+  dipindah SKPD), yang tampil cuma yang paling akhir. Diterima karena mayoritas
+  barang cuma kena SATU peristiwa, dan tetap jauh lebih informatif daripada
+  sekadar "terkunci" tanpa keterangan. `RETURNS TABLE` berubah bentuk
+  (nibar) → (nibar, jenis_terakhir, periode_terakhir) → fungsinya DI-DROP dulu.
   ⚠️ `saldo_awal`/`saldo_awal_checkpoint` **WAJIB dikecualikan** dari
   daftar kunci: migrasi 20260702_03 bikin baris `saldo_awal` sintetis di SETIAP
   aset baseline, jadi kalau ikut dihitung fiturnya mati total di hari pertama.

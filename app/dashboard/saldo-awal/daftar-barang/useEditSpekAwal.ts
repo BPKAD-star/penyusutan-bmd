@@ -56,17 +56,32 @@ export function useEditSpekAwal(bidang: Record<string, BidangAgg>, reload: () =>
   // menyentuh spesifikasi/golongan/SKPD → koreksinya wajib lewat menu Koreksi
   // (lihat migrasi 20260728_01 bagian 3). Dihitung server-side per halaman.
   const [terkunci, setTerkunci] = useState<Set<string>>(new Set())
+  // Sebab kunci per NIBAR (permintaan user 2026-09-18, migrasi 20260918_01) —
+  // jenis & periode transaksi TERAKHIR pada aset itu (di luar `saldo_awal`/
+  // `saldo_awal_checkpoint`), MURNI HIASAN informasional saat 🔒 diklik.
+  // ⚠️ Ini PROXY, bukan jawaban pasti: `fn_aset_awal_2026_terkunci_batch`
+  // mengunci lewat EMPAT kondisi berbeda (status/kode/skpd_id berubah, atau
+  // ada koreksi_spesifikasi/penggabungan_masuk belum dibatalkan) — kalau
+  // sebuah aset kebetulan kena DUA kondisi sekaligus, yang tampil cuma yang
+  // PALING AKHIR. Beda dari 🔒 di Pengalihan (migrasi 20260917_02), yang di
+  // situ "terkunci" definisinya PERSIS "ada transaksi sesudah ini".
+  const [terkunciInfo, setTerkunciInfo] = useState<Record<string, { jenis: string; periode: string } | null>>({})
 
   // Penegak sesungguhnya tetap trigger DB — ini cuma supaya operator tak klik
   // lalu kena error. Gagal RPC (mis. migrasi belum dijalankan) → set kosong,
   // tombolnya tetap hidup dan DB yang menolak.
   async function fetchTerkunci(nibars: string[], pesan: string[]) {
     const out = new Set<string>()
+    const info: Record<string, { jenis: string; periode: string } | null> = {}
     for (let i = 0; i < nibars.length; i += 500) {
       const { data, error } = await supabase.rpc('fn_aset_awal_2026_terkunci_batch', { p_nibars: nibars.slice(i, i + 500) })
       if (error) { pesan.push(`Tanda 🔒 tidak ditampilkan — gagal memeriksa barang yang terkunci: ${error.message}. Centang tetap bisa diklik; kalau barangnya memang terkunci, database yang menolak saat Simpan.`); break }
-      for (const d of (data || []) as { nibar: string }[]) out.add(d.nibar)
+      for (const d of (data || []) as { nibar: string; jenis_terakhir: string | null; periode_terakhir: string | null }[]) {
+        out.add(d.nibar)
+        info[d.nibar] = d.jenis_terakhir ? { jenis: d.jenis_terakhir, periode: d.periode_terakhir || '-' } : null
+      }
     }
+    setTerkunciInfo(info)
     return out
   }
   // ── Koreksi spesifikasi ───────────────────────────────────────────────────
@@ -188,7 +203,7 @@ export function useEditSpekAwal(bidang: Record<string, BidangAgg>, reload: () =>
   }
 
   return {
-    sel, setSel, selList, selSameGol, toggleSel, terkunci, setTerkunci, fetchTerkunci,
+    sel, setSel, selList, selSameGol, toggleSel, terkunci, setTerkunci, fetchTerkunci, terkunciInfo,
     spekOpen, setSpekOpen, spekPrefix, spekKeys, spekInitFields, spekInitFoto,
     spekMsg, spekErr, spekSaving, spekTanpaBidang, openSpek, simpanSpek,
   }
