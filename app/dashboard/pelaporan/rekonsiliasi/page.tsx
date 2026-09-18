@@ -467,6 +467,12 @@ export default function RekonsiliasiPage() {
             #cetak-rekon .judul-gol { padding: 0 0 2px 0 !important; background: none !important; border: 0 !important; }
             #cetak-rekon .judul-gol p { font-size: 10px !important; }
             #cetak-rekon table { font-size: 6.5px; table-layout: fixed; width: 100%; border-collapse: collapse; }
+            /* colgroup layar (2026-09-18, w-80/w-36 px tetap) MENANG atas
+               width:20% di bawah kalau tak dimatikan di sini — pada
+               table-layout:fixed, lebar col selalu diutamakan atas lebar
+               th:first-child. Tanpa baris ini cetakan memakai px absolut layar,
+               bukan proporsi 20%/80% yang sudah pas-pasan muat satu halaman. */
+            #cetak-rekon col { width: auto !important; }
             #cetak-rekon th, #cetak-rekon td { padding: 0.5px 2px !important; line-height: 1.2; }
             #cetak-rekon th:first-child, #cetak-rekon td:first-child {
               width: 20%; overflow-wrap: anywhere;
@@ -577,6 +583,25 @@ export default function RekonsiliasiPage() {
                     sehingga blok Penambahan & Pengurangan terlihat bersamaan
                     (permintaan user 2026-08-27). */}
                 <table className="w-full text-[11px] [&_.table-td]:px-2 [&_.table-td]:py-0.5 [&_.table-th]:px-2 [&_.table-th]:py-1 [&_.table-th]:normal-case [&_.table-th]:tracking-normal">
+                  {/* Lebar kolom disamakan LINTAS golongan (permintaan user
+                      2026-09-18): tanpa ini tiap `<table>` menyesuaikan diri ke
+                      isinya sendiri-sendiri — Tanah & Peralatan bisa beda lebar,
+                      dan Ekstrakomptabel (banyak "–") mengempis dibanding
+                      Intrakomptabel. `<colgroup>` di sini SAMA di setiap
+                      golongan, jadi kesembilan kolom rata di seluruh tabel &
+                      Intra=Ekstra otomatis simetris (4 kolom angka lebar sama).
+                      ⚠️ SENGAJA lebar MINIMUM (`table-layout` tetap `auto`,
+                      BUKAN `table-fixed`) — ini lembar rekonsiliasi keuangan,
+                      angka yang kebetulan lebih panjang dari perkiraan harus
+                      tetap tumbuh & terbaca utuh, bukan terpotong demi
+                      kerapian. Kalau nanti nilainya di luar perkiraan ini,
+                      browser melebarkan kolom itu sendiri (aman), cuma
+                      kesejajaran antar golongan yang sedikit longgar — jauh
+                      lebih baik daripada angka yang diam-diam terpotong. */}
+                  <colgroup>
+                    <col className="w-80" />
+                    {KOMPS.map(k => [0, 1, 2, 3].map(i => <col key={`${k}-${i}`} className="w-36" />))}
+                  </colgroup>
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="table-th text-left" rowSpan={2}>Uraian</th>
