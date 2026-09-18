@@ -22,6 +22,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
+import { GIS_TANAH_KODE_FILTER } from '@/lib/gisTanah'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 
@@ -64,7 +65,9 @@ export default function DaftarBidangTanah() {
     // jumlahnya >1000.
     const aset: AsetRow[] = []
     for (let from = 0; ; from += 1000) {
-      let q = supabase.from('aset').select(ASET_COLS).like('kode', '1.3.1.%').eq('status', 'aktif')
+      // Cakupan kode KEMBAR dgn app/dashboard/gis/page.tsx — lihat
+      // GIS_TANAH_KODE_FILTER (lib/gisTanah.ts) utk alasan kode kedua ini.
+      let q = supabase.from('aset').select(ASET_COLS).or(GIS_TANAH_KODE_FILTER).eq('status', 'aktif')
       if (descIds) q = q.in('skpd_id', descIds)
       const { data, error: e } = await q.order('nama_barang', { ascending: true }).order('id').range(from, from + 999)
       if (e) { setError(`Gagal membaca register Tanah: ${e.message}`); setLoading(false); return }

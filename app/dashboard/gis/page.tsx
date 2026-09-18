@@ -1,12 +1,16 @@
 'use client'
-// GIS BMD — peta Tanah (golongan 1.3.1 SAJA), gantiin link eksternal lama (yg
-// nembak database aset_tanah terpisah, bikin dual-entry). WHITELIST 1.3.1: dulu
+// GIS BMD — peta Tanah, gantiin link eksternal lama (yg nembak database
+// aset_tanah terpisah, bikin dual-entry). WHITELIST (bukan blacklist): dulu
 // sempat ikut narik 1.3.4 (Jalan/Jaringan/Irigasi), tapi begitu data JIJ
 // diimport lengkap (migrasi 20260713_02) isinya banyak yg bukan bidang lahan
 // (drainase, jaringan komputer, SIMDA online) & nyampah di peta — keputusan
-// user 2026-07-15: GIS khusus TANAH. Filter whitelist (bukan blacklist) ini
-// sekaligus jamin import golongan lain ke depan (1.3.2/1.3.5/1.5.4) TIDAK ikut
-// nyangkut. Tanah tetap bisa punya dokumen kepemilikan + banyak bidang/
+// user 2026-07-15: GIS khusus TANAH. Filter whitelist ini sekaligus jamin
+// import golongan lain ke depan (1.3.2/1.3.5) TIDAK ikut nyangkut.
+//
+// Sejak 2026-09-18 whitelist-nya BUKAN cuma golongan 1.3.1 lagi — lihat
+// GIS_TANAH_KODE_FILTER (lib/gisTanah.ts) utk kode kedua yg ikut & alasannya
+// (tanah idle yg direklas ke Aset Lain-Lain, tapi tetap bidang fisik). Tanah
+// tetap bisa punya dokumen kepemilikan + banyak bidang/
 // sertifikat per register (TEMPLATE_TANAH di lib/asetFields.ts). Data langsung
 // dari `aset` + tabel anak aset_bidang_tanah (1 NIBAR bisa banyak bidang). Edit
 // field spesifikasi umum (nama/dll) tetap lewat menu Koreksi Spesifikasi —
@@ -26,6 +30,7 @@ import { useEffect, useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah } from '@/lib/export'
+import { GIS_TANAH_KODE_FILTER } from '@/lib/gisTanah'
 import KelolaBidangPanel from '@/components/gis/KelolaBidangPanel'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import type { GisMarker } from '@/components/gis/GisMap'
@@ -78,9 +83,10 @@ export default function GisPage() {
       // Scope SKPD operator utk mempercepat query (bukan gerbang keamanan — RLS
       // tetap penjaga akhir). Non-admin → array skpd_id subtree; disuntik
       // .in('skpd_id', ...) supaya planner pakai idx_aset_skpd. Tanpa ini,
-      // `kode LIKE '1.3.1.%'` tak bisa jadi index-cond di bawah RLS (operator
-      // ~~ tak leakproof) → Seq Scan 400rb+ baris → statement timeout (500) buat
-      // pengurus_barang. Admin → null → tanpa filter (lihat se-kabupaten).
+      // `kode LIKE '1.3.1.%'` (di dalam GIS_TANAH_KODE_FILTER) tak bisa jadi
+      // index-cond di bawah RLS (operator ~~ tak leakproof) → Seq Scan 400rb+
+      // baris → statement timeout (500) buat pengurus_barang. Admin → null →
+      // tanpa filter (lihat se-kabupaten).
       // `error` RPC ini WAJIB dibaca: kalau fn_my_skpd_scope gagal (mis. belum
       // ter-deploy di DB), `scope` cuma null → `.in('skpd_id', ...)` di bawah
       // TIDAK tersuntik → query jalan TANPA filter → Seq Scan → timeout, dan
@@ -100,7 +106,7 @@ export default function GisPage() {
         // ada — bikin salah sangka datanya hilang, padahal query yang gagal.
         let q = supabase.from('aset')
           .select(SELECT_COLS)
-          .like('kode', '1.3.1.%')
+          .or(GIS_TANAH_KODE_FILTER)
           .eq('status', 'aktif')
         if (Array.isArray(scope) && scope.length) q = q.in('skpd_id', scope)
         // ⚠️ `.order('id')` itu PEMECAH SERI, jangan dicopot. Dari 2.733 tanah
@@ -111,8 +117,8 @@ export default function GisPage() {
         // DOBEL tanpa satu pun pesan. Di peta itu terlihat sbg bidang yang
         // "kadang ada kadang hilang" saat halaman dimuat ulang.
         // Urutan dua kunci ini KEMBAR dgn `idx_aset_tanah_nama` (migrasi
-        // 20260814_04) yang melayaninya tanpa node Sort — ubah salah satu,
-        // ubah dua-duanya.
+        // 20260814_04, diperlebar predikatnya 20260918_02) yang melayaninya
+        // tanpa node Sort — ubah salah satu, ubah dua-duanya.
         const { data, error } = await q
           .order('nama_barang', { ascending: true })
           .order('id')
