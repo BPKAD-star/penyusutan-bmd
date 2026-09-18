@@ -147,7 +147,15 @@ export default function PenerimaanInternal() {
         j.total += r.nilai
       }
     }
-    const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
+    // ⚠️ `ditolak` DIBUANG TOTAL, bukan cuma yg kosong (permintaan user
+    // 2026-09-18, bug yang sama dgn PenggunaanMasuk.tsx). `hapusJurnal`
+    // (Penghapusan.tsx) mengarsipkan kartu yg sudah diterima lalu dibatalkan
+    // seluruhnya dgn cara ini (ledger append-only, tak bisa DELETE beneran),
+    // dan `payload.draft_items` lamanya TIDAK ikut dikosongkan — jadi
+    // `lines.length > 0` saja tetap meloloskan kartu basi ini, dan ia muncul
+    // lagi berdampingan dgn kartu pengganti yg baru. Pola sama dgn
+    // Pengadaan.tsx ("Baris 'ditolak' legacy disaring.").
+    const hasil = [...jmap.values()].filter(j => j.lines.length > 0 && j.approval_status !== 'ditolak')
     setJurnals(hasil)
 
     // Status kunci batal — SATU panggilan RPC per kartu disetujui (bukan per
@@ -365,6 +373,10 @@ export default function PenerimaanInternal() {
         <div className="space-y-4">
           {[...pendings, ...riwayat].map(j => {
             const pending = j.approval_status === 'pending'
+            // Praktis TAK PERNAH `true` lagi sejak filter `load()` di atas
+            // membuang `ditolak` sebelum masuk state `jurnals` — dibiarkan
+            // (bukan dihapus) sbg jaga-jaga & supaya badge merahnya tetap
+            // benar kalau filternya kelak dilonggarkan.
             const ditolak = j.approval_status === 'ditolak'
             const disetujui = j.approval_status === 'disetujui'
             // fn_batal_seluruh_pengalihan itu SATU transaksi (rules.md §1.7) —

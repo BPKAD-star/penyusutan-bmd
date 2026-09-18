@@ -165,7 +165,18 @@ export default function PenggunaanMasuk() {
         if (!dikembalikan) j.total += r.nilai
       }
     }
-    const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
+    // ⚠️ `ditolak` DIBUANG TOTAL, bukan cuma yg kosong (permintaan user
+    // 2026-09-18). Kartu ini bukan penolakan biasa — `hapusJurnal`
+    // (Penghapusan.tsx) mengarsipkan kartu yg SUDAH PERNAH diterima lalu
+    // dibatalkan seluruhnya dgn cara ini (ledgernya append-only, jadi tak bisa
+    // benar² DELETE), dan `payload.draft_items` lamanya TIDAK ikut dikosongkan
+    // — jadi `lines.length > 0` di atas tetap lolos & kartu basi ini muncul
+    // lagi berdampingan dgn kartu pengganti yg baru. Pola & alasan SAMA dgn
+    // Pengadaan.tsx ("Tampilkan hanya pending & disetujui(berisi). Baris
+    // 'ditolak' legacy disaring."). Kartu penolakan SUNGGUHAN
+    // (`fn_tolak_pengalihan`) ikut tersaring juga — begitu ditolak, draftnya
+    // balik utuh ke SKPD asal & tak lagi actionable di sisi penerima ini.
+    const hasil = [...jmap.values()].filter(j => j.lines.length > 0 && j.approval_status !== 'ditolak')
     setJurnals(hasil)
 
     // Status kunci batal — SATU panggilan RPC per kartu disetujui (bukan per
@@ -413,6 +424,10 @@ export default function PenggunaanMasuk() {
         <div className="space-y-4">
           {[...pendings, ...riwayat].map(j => {
             const pending = j.approval_status === 'pending'
+            // Praktis TAK PERNAH `true` lagi sejak filter `load()` di atas
+            // membuang `ditolak` sebelum masuk state `jurnals` — dibiarkan
+            // (bukan dihapus) sbg jaga-jaga kalau filternya kelak dilonggarkan,
+            // & supaya badge merahnya tetap benar kalau itu terjadi.
             const ditolak = j.approval_status === 'ditolak'
             const disetujui = j.approval_status === 'disetujui'
             // fn_batal_seluruh_pengalihan itu SATU transaksi (rules.md §1.7) —
