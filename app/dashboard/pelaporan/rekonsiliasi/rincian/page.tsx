@@ -13,6 +13,7 @@ import { GOLONGAN_REKAP } from '@/lib/bmd'
 import SkpdCombobox, { type SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { tahunAwal } from '@/lib/tahunKerja'
 import { fetchMutasiLines, KATEGORI_LABEL, type MutasiLine } from '@/lib/rekon'
+import { urutanKategoriRincian } from '@/lib/rincianRekonUrutan'
 
 const angka = (v: number) => formatRupiah2(v || 0)
 const PREVIEW_MAX = 1000
@@ -42,10 +43,17 @@ export default function RincianRekonsiliasiPage() {
       (async () => {
       })(),
     ])
-    // urut: golongan (urutan KIB) → arah (tambah dulu) → kategori
-    rows.sort((a, b) => golIdx(a.golongan) - golIdx(b.golongan)
-      || (a.arah === b.arah ? 0 : a.arah === 'tambah' ? -1 : 1)
-      || a.kategori.localeCompare(b.kategori))
+    // Urut: silsilah kategori (permintaan user 2026-09-18 — lihat
+    // lib/rincianRekonUrutan.ts utk penjelasan lengkap "Cara Perolehan →
+    // Transfer Masuk → Transfer Keluar → Koreksi [Nilai/Kapitalisasi/
+    // Pemecahan/Penggabungan/Reklasifikasi] → Penghapusan") → golongan (urutan
+    // KIB) → tanggal → NIBAR sbg pemecah seri TOTAL, supaya urutannya stabil
+    // & tak bergeser sendiri tiap render (Array.prototype.sort tak dijamin
+    // stabil di semua mesin).
+    rows.sort((a, b) => urutanKategoriRincian(a.kategori) - urutanKategoriRincian(b.kategori)
+      || golIdx(a.golongan) - golIdx(b.golongan)
+      || a.tanggal.localeCompare(b.tanggal)
+      || (a.nibar || '').localeCompare(b.nibar || ''))
     setLines(rows)
     setApplied(periode)
     setLoading(false)
