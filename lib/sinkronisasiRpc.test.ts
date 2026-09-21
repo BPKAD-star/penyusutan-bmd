@@ -246,6 +246,37 @@ describe('§5 RPC agregat berat wajib punya work_mem', () => {
 })
 
 // ---------------------------------------------------------------------------
+describe('§5a Cari Penyusutan — trigram untuk halaman DAN rekap', () => {
+  // 2026-09-21: halaman Penyusutan dengan pencarian kode timeout bukan saat
+  // mengambil 100 baris, melainkan saat rekap menghitung SELURUH hasil. Kedua
+  // RPC harus memakai indeks teks yang sama; membetulkan salah satunya tetap
+  // membuat UI fail-closed karena `load()` menolak menampilkan angka separuh.
+  const mig = bacaMigrasi().find(m => m.nama === '20260921_01_penyusutan_cari_trigram.sql')
+
+  it('migrasi perbaikan Cari Penyusutan ada', () => {
+    expect(mig, 'migrasi Cari Penyusutan tidak ditemukan').toBeTruthy()
+  })
+
+  it('menambal fn_penyusutan dan fn_penyusutan_rekap lewat definisi hidup', () => {
+    const isi = mig!.isi
+    for (const fn of ['fn_penyusutan', 'fn_penyusutan_rekap']) {
+      expect(isi, `${fn} tidak masuk daftar patch`).toMatch(new RegExp(`'${fn}'`))
+    }
+    expect(isi, 'predikat lama tidak dijaga jumlah kecocokannya').toMatch(/regexp_matches\(v_def, v_pola, 'g'\)/)
+    expect(isi, 'pencarian tidak memakai ekspresi trigram bersama').toMatch(/fn_aset_teks_cari/)
+    expect(isi, 'migrasi tidak memverifikasi kedua RPC sudah tertambal').toMatch(/tidak terpasang pada kedua RPC Penyusutan/)
+  })
+
+  it('mengembalikan konfigurasi eksekusi yang terhapus saat fungsi diganti', () => {
+    const isi = mig!.isi
+    expect(isi, 'fn_penyusutan tidak memakai custom plan').toMatch(/fn_penyusutan\([^)]*\)\s*\n?\s*SET plan_cache_mode TO force_custom_plan/i)
+    expect(isi, 'fn_penyusutan_rekap kehilangan work_mem 64MB').toMatch(/fn_penyusutan_rekap\([^)]*\)\s*\n?\s*SET work_mem TO '64MB'/i)
+    expect(isi, 'fn_penyusutan_rekap tidak memakai custom plan').toMatch(/fn_penyusutan_rekap\([^)]*\)\s*\n?\s*SET plan_cache_mode TO force_custom_plan/i)
+    expect(isi, 'konfigurasi rekap tidak diverifikasi sesudah patch').toMatch(/konfigurasi fn_penyusutan_rekap tidak pulih lengkap/)
+  })
+})
+
+// ---------------------------------------------------------------------------
 describe('§6 Laporan Perolehan — predikat idx_trx_perolehan_id ↔ prop `jenis` halamannya', () => {
   // Insiden 2026-08-20: kelima menu Laporan Perolehan timeout begitu dibuka &
   // baru muncul setelah SKPD dipilih. `jenis` (ENUM) tak bisa jadi index-cond
