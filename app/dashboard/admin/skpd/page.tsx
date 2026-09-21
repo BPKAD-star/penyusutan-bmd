@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
+import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Skpd = { id: number; nama: string; level: number; parent_id: number | null; kode_skpd: string | null; alamat: string | null }
@@ -81,6 +82,22 @@ export default function AdminSkpdPage() {
     setShowForm(true)
   }
 
+  function closeForm(force = false) {
+    if (saving && !force) return
+    setShowForm(false)
+    setForm(FORM_KOSONG)
+    setEditId(null)
+  }
+
+  // Form edit adalah modal: Esc mengikuti kebiasaan dialog aplikasi, tetapi
+  // sengaja tidak bisa menutupnya ketika simpan masih berjalan.
+  useEffect(() => {
+    if (!showForm || !editId) return
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeForm() }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showForm, editId, saving]) // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -110,9 +127,7 @@ export default function AdminSkpdPage() {
       setMsg(`Error: ${error.message}`)
     } else {
       setMsg(editId ? 'SKPD berhasil diperbarui.' : 'SKPD berhasil ditambahkan.')
-      setShowForm(false)
-      setForm(FORM_KOSONG)
-      setEditId(null)
+      closeForm(true)
       load()
     }
     setSaving(false)
@@ -136,61 +151,89 @@ export default function AdminSkpdPage() {
     else load()
   }
 
+  const skpdForm = (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Nama</label>
+        <input required className="select-filter w-full" value={form.nama}
+          onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Kode SKPD</label>
+        <input className="select-filter w-full disabled:bg-gray-100 disabled:text-gray-400"
+          placeholder="mis. 01.02.03.4567.8901" value={form.kode_skpd} disabled={!!editId}
+          onChange={e => setForm(f => ({ ...f, kode_skpd: e.target.value }))} />
+        {editId ? (
+          <p className="text-xs text-gray-400 mt-1">
+            Terkunci — dipakai generate NIBAR barang baru, jadi tak bisa diubah dari sini
+            supaya barang lama tak ikut tak sinkron.
+          </p>
+        ) : (
+          <p className="text-xs text-amber-600 mt-1">Hati-hati: dipakai buat generate NIBAR barang baru (Pengadaan/PerolehanManual).</p>
+        )}
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Induk (Parent)</label>
+        <select className="select-filter w-full" value={form.parent_id}
+          onChange={e => setForm(f => ({ ...f, parent_id: e.target.value ? Number(e.target.value) : '' }))}>
+          <option value="">— tanpa induk (root / SKPD utama) —</option>
+          {flatTree.filter(s => s.id !== editId).map(s => (
+            <option key={s.id} value={s.id}>{'—'.repeat(s.depth)} {s.nama}</option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-400 mt-1">Level & path dihitung otomatis dari induk yang dipilih.</p>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Alamat</label>
+        <textarea className="select-filter w-full" rows={2} value={form.alamat}
+          onChange={e => setForm(f => ({ ...f, alamat: e.target.value }))} />
+        <p className="text-xs text-gray-400 mt-1">
+          Dipakai KIBAR (I.4 Alamat). Kosongkan kalau belum tahu — kartu akan
+          memakai alamat induk terdekat yang sudah diisi, bukan menampilkan kosong.
+        </p>
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        {editId && <button type="button" onClick={() => closeForm()} disabled={saving} className="btn-secondary">Batal</button>}
+        <button type="submit" disabled={saving} className="btn-primary">
+          {saving ? 'Menyimpan...' : 'Simpan'}
+        </button>
+      </div>
+    </form>
+  )
+
   return (
     <FormShell judul="SKPD" deskripsi="Struktur organisasi SKPD / Sub OPD — dipakai untuk akses data per unit" msg={msg}>
       <div className="flex justify-end mb-4">
-        <button onClick={() => (showForm ? setShowForm(false) : openCreate(null))} className="btn-primary">
+        <button onClick={() => (showForm ? closeForm() : openCreate(null))} disabled={saving} className="btn-primary">
           {showForm ? 'Batal' : '+ Tambah SKPD'}
         </button>
       </div>
 
-      {showForm && (
+      {showForm && !editId && (
         <div className="card p-6 mb-6 max-w-lg">
-          <h2 className="text-base font-semibold text-gray-800 mb-4">{editId ? 'Edit SKPD' : 'Tambah SKPD Baru'}</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Nama</label>
-              <input required className="select-filter w-full" value={form.nama}
-                onChange={e => setForm(f => ({ ...f, nama: e.target.value }))} />
+          <h2 className="text-base font-semibold text-gray-800 mb-4">Tambah SKPD Baru</h2>
+          {skpdForm}
+        </div>
+      )}
+
+      {showForm && editId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 animate-fade-in"
+          {...backdropClose(() => closeForm())}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-skpd-title"
+        >
+          <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-2xl animate-bubble-in"
+            onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4 rounded-t-2xl">
+              <h2 id="edit-skpd-title" className="text-base font-semibold text-gray-800">Edit SKPD</h2>
+              <button type="button" onClick={() => closeForm()} disabled={saving}
+                className="text-xl leading-none text-gray-400 hover:text-gray-700 disabled:opacity-50"
+                aria-label="Tutup form edit SKPD">×</button>
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Kode SKPD</label>
-              <input className="select-filter w-full disabled:bg-gray-100 disabled:text-gray-400"
-                placeholder="mis. 01.02.03.4567.8901" value={form.kode_skpd} disabled={!!editId}
-                onChange={e => setForm(f => ({ ...f, kode_skpd: e.target.value }))} />
-              {editId ? (
-                <p className="text-xs text-gray-400 mt-1">
-                  Terkunci — dipakai generate NIBAR barang baru, jadi tak bisa diubah dari sini
-                  supaya barang lama tak ikut tak sinkron.
-                </p>
-              ) : (
-                <p className="text-xs text-amber-600 mt-1">Hati-hati: dipakai buat generate NIBAR barang baru (Pengadaan/PerolehanManual).</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Induk (Parent)</label>
-              <select className="select-filter w-full" value={form.parent_id}
-                onChange={e => setForm(f => ({ ...f, parent_id: e.target.value ? Number(e.target.value) : '' }))}>
-                <option value="">— tanpa induk (root / SKPD utama) —</option>
-                {flatTree.filter(s => s.id !== editId).map(s => (
-                  <option key={s.id} value={s.id}>{'—'.repeat(s.depth)} {s.nama}</option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-400 mt-1">Level & path dihitung otomatis dari induk yang dipilih.</p>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Alamat</label>
-              <textarea className="select-filter w-full" rows={2} value={form.alamat}
-                onChange={e => setForm(f => ({ ...f, alamat: e.target.value }))} />
-              <p className="text-xs text-gray-400 mt-1">
-                Dipakai KIBAR (I.4 Alamat). Kosongkan kalau belum tahu — kartu akan
-                memakai alamat induk terdekat yang sudah diisi, bukan menampilkan kosong.
-              </p>
-            </div>
-            <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? 'Menyimpan...' : 'Simpan'}
-            </button>
-          </form>
+            <div className="p-6">{skpdForm}</div>
+          </div>
         </div>
       )}
 
