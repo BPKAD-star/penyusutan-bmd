@@ -30,7 +30,7 @@ import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah2 } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
-import { cekBolehBatal } from '@/lib/guardPembatalan'
+import { cekBolehBatal, cekBolehSisip } from '@/lib/guardPembatalan'
 import { ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset, fieldsForKode, koreksiFieldKeys, allSameGolongan, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
@@ -797,6 +797,14 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     if (alasan === 'nilai_perolehan') {
       const items = nilaiList
       if (items.length === 0) { setErr('Centang minimal satu barang.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+      // Guard arah MAJU (2026-09-18, pola cekBolehSisip Kapitalisasi): tanggal
+      // dokumen ini bebas dipilih dalam tahun buku terbuka, jadi bisa mundur ke
+      // periode yang aset-nya SUDAH punya transaksi lain — menyisipkannya di
+      // tengah rantai merusak replay penyusutan tanpa satu pun error.
+      const guardSisip = await cekBolehSisip(supabase,
+        items.map(i => ({ aset_id: i.barang.id, label: i.barang.nama_barang || i.barang.nibar })),
+        h.tanggal, 'koreksi nilai perolehan ini')
+      if (!guardSisip.boleh) { setErr(guardSisip.pesan); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
       // ── Posisi penyusutan SEBELUM koreksi, dibekukan ke payload ────────────
       //
       // ⚠️ Lembar Permendagri IV.G.2 ("Laporan Koreksi BMD") menuntut Nilai
@@ -868,6 +876,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       if (list.length === 0) { setErr('Centang minimal satu barang.'); await delHeader(); setSaving(false); return }
       if (!allSameGolongan(list.map(b => b.kode))) { setErr('Barang beda jenis aset — pisahkan per jenis (field spesifikasinya beda).'); await delHeader(); setSaving(false); return }
       if (!spekEdit) { setErr('Klik "Edit Spesifikasi" lalu isi field yang diubah dulu.'); await delHeader(); setSaving(false); return }
+      // Guard arah MAJU — lihat catatan di cabang 'nilai_perolehan' di atas.
+      const guardSisipSpek = await cekBolehSisip(supabase,
+        list.map(b => ({ aset_id: b.id, label: b.nama_barang || b.nibar })),
+        h.tanggal, 'koreksi spesifikasi ini')
+      if (!guardSisipSpek.boleh) { setErr(guardSisipSpek.pesan); await delHeader(); setSaving(false); return }
       const single = list.length === 1
       // Payload field non-kosong (cast numeric utk luas/lat/long/tahun). Single:
       // modal prefill nilai sekarang, jadi rekam HANYA yang BERUBAH dari nilai awal
@@ -924,6 +937,13 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       if (!gabungSyaratOk) { setErr('Semua barang wajib sama KODE BARANG, NILAI PEROLEHAN, dan TANGGAL PEROLEHAN.'); await delHeader(); setSaving(false); return }
       if (basisGabungErr) { setErr(basisGabungErr); await delHeader(); setSaving(false); return }
       if (!basis) { setErr('Basis akumulasi belum termuat.'); await delHeader(); setSaving(false); return }
+      // Guard arah MAJU — lihat catatan di cabang 'nilai_perolehan' di atas.
+      // Diperiksa atas SELURUH barang di gabungan (induk + sumber): keduanya
+      // sama-sama menerima baris ledger baru bertanggal dokumen ini.
+      const guardSisipGabung = await cekBolehSisip(supabase,
+        gabungList.map(k => ({ aset_id: k.id, label: k.nama_barang || k.nibar })),
+        h.tanggal, 'penggabungan ini')
+      if (!guardSisipGabung.boleh) { setErr(guardSisipGabung.pesan); await delHeader(); setSaving(false); return }
 
       const sumber = gabungList.filter(k => k.id !== induk.id)
       const nilaiLama = keSen(induk.nilai_perolehan) / 100
@@ -996,6 +1016,13 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       if (pecahan.length < 2) { setErr('Minimal 2 pecahan.'); await delHeader(); setSaving(false); return }
       if (!semuaPecahValid) { setErr('Tiap pecahan wajib: jumlah ≥ 1 dan nilai perolehan > 0.'); await delHeader(); setSaving(false); return }
       if (!balancePecah) { setErr(`Total nilai pecahan (${formatRupiah2(sumNPPecah)}) harus SAMA dengan nilai induk (${formatRupiah2(totalNPInduk)}). Selisih ${formatRupiah2(sumNPPecah - totalNPInduk)}.`); await delHeader(); setSaving(false); return }
+      // Guard arah MAJU — lihat catatan di cabang 'nilai_perolehan' di atas.
+      // Hanya INDUK yang diperiksa: pecahannya aset BARU, jadi tak mungkin
+      // punya rantai transaksi lama yang bisa disisipi mundur.
+      const guardSisipPecah = await cekBolehSisip(supabase,
+        [{ aset_id: induk.id, label: induk.nama_barang || induk.nibar }],
+        h.tanggal, 'pemecahan ini')
+      if (!guardSisipPecah.boleh) { setErr(guardSisipPecah.pesan); await delHeader(); setSaving(false); return }
 
       const { data: skpdRow, error: skpdErr } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', skpdId).single()
       if (skpdErr || !(skpdRow as { kode_skpd?: string } | null)?.kode_skpd) { setErr(`Gagal ambil kode lokasi SKPD utk NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`); await delHeader(); setSaving(false); return }
@@ -1070,6 +1097,13 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     if (kodeBeda) { setErr('Semua kandidat harus kode barang yang SAMA PERSIS.'); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
     const survivor = kandidat.find(k => k.id === survivorId)!
     const lainnya = kandidat.filter(k => k.id !== survivorId)
+    // Guard arah MAJU — lihat catatan di cabang 'nilai_perolehan' di atas.
+    // Hanya `lainnya` yang diperiksa: survivor sendiri tak menerima baris
+    // ledger baru, cuma dirujuk dari payload duplikatnya.
+    const guardSisipGanda = await cekBolehSisip(supabase,
+      lainnya.map(k => ({ aset_id: k.id, label: k.nama_barang || k.nibar })),
+      h.tanggal, 'pencatatan ganda ini')
+    if (!guardSisipGanda.boleh) { setErr(guardSisipGanda.pesan); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
     for (const k of lainnya) {
       // `tanggal` = tanggal DOKUMEN koreksi (h.tanggal), bukan tanggal
       // perolehan barangnya (keputusan user 2026-08-11). Dulu `k.tgl_perolehan

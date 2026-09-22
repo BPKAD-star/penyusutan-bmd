@@ -4157,15 +4157,56 @@ yang sudah ada) — tombol yang menyimpan diam-diam pakai tanggal yang tak perna
 dimaksud lebih berbahaya daripada tombol yang menolak sampai diisi.
 
 ⚠️ **Cakupan migrasi ini SENGAJA DIBATASI ke Pengalihan Status Penggunaan &
-Mutasi Internal** (keputusan user) — Koreksi/Reklasifikasi/Pengadaan/
+Mutasi Internal** (keputusan user) — waktu itu Koreksi/Reklasifikasi/Pengadaan/
 PerolehanManual masih TIDAK punya guard arah maju sama sekali (cuma
-`cekBolehBatal`), dan default tanggal "hari ini" di form-nya (Koreksi.tsx,
-Reklasifikasi.tsx, dll.) juga belum disentuh. Kalau nanti keluhan yang sama
-muncul di menu lain, pola yang sama (guard di titik materialisasi + default
-tanggal kosong) tinggal diulang di sana.
+`cekBolehBatal`). ✅ **Koreksi & Reklasifikasi menyusul 2026-09-22** — lihat
+bagian di bawah. Pengadaan/PerolehanManual TETAP belum, tapi risikonya beda
+kelas (lihat alasannya di situ).
 
 - **Tak ada perubahan tanda tangan fungsi** (`RETURNS integer`, param sama) →
   boleh dijalankan kapan saja, tidak ada deploy-ordering.
+
+### Guard arah MAJU menyusul di Koreksi & Reklasifikasi (2026-09-22)
+
+Lanjutan permintaan user dari bagian di atas — cakupannya sengaja dipersempit
+lagi sebelum dikerjakan: **Pengadaan & Perolehan Manual TIDAK ikut**, karena
+keduanya melahirkan aset BARU (belum ada rantai transaksi lama yang bisa
+disisipi mundur), beda kelas risiko dari Koreksi/Reklasifikasi yang menulis ke
+aset yang **sudah ada** dan tanggalnya bebas dipilih dalam tahun buku terbuka.
+
+- **Dipasang lewat `cekBolehSisip` yang SUDAH ADA** (lib/guardPembatalan.ts) —
+  beda dari Pengalihan/Mutasi Internal kemarin: Koreksi & Reklasifikasi menulis
+  ledger LANGSUNG dari komponen React (bukan lewat RPC SECURITY DEFINER), jadi
+  guard TypeScript yang sudah dipakai Kapitalisasi tinggal dipanggil di titik
+  yang sama — sebelum `catatTransaksi`/insert `transaksi_bmd`, sesudah validasi
+  lain, sebelum header baru (kalau ada) dihapus balik jika guard menolak.
+- **Koreksi.tsx — LIMA titik, satu per alasan** (semuanya menulis ke aset yang
+  sudah ada, kecuali pecahan barunya sendiri):
+  - `nilai_perolehan`: cek seluruh `items` (barang yang nilainya dikoreksi).
+  - `spesifikasi`: cek seluruh `list` (barang yang field-nya diubah).
+  - `penggabungan`: cek SELURUH `gabungList` (induk + sumber) — keduanya
+    sama-sama menerima baris ledger baru bertanggal dokumen ini.
+  - `pemecahan`: cek HANYA `induk` — pecahannya aset BARU (`status='draft'`
+    baru dibuat di fungsi yang sama), jadi tak mungkin punya rantai lama.
+  - `pencatatan_ganda` (cabang default): cek `lainnya` (kandidat yang dibuang),
+    BUKAN `survivor` — survivor tak menerima baris ledger baru, cuma dirujuk
+    dari payload duplikatnya.
+- **Reklasifikasi.tsx — SATU titik** di `simpan()` (`ReklasForm`), tepat sebelum
+  memanggil `insertLines(h)`: cek `selList` (barang yang direklas). Satu titik
+  saja cukup karena `simpan()` melayani DUA kasus sekaligus — jurnal baru
+  maupun "Tambah Barang" ke jurnal yang sudah ada — lewat fungsi `insertLines`
+  yang sama; beda dari Koreksi yang punya lima cabang alasan terpisah.
+  ⚠️ `batal_reklas` (fungsi `batalReklas`, beda dari `simpan()`) **TIDAK ikut**
+  — baris itu selalu dicatat `current_date` (bukan tanggal pilihan operator),
+  jadi jaminan "hari ini selalu ≥ transaksi lama" yang sudah menutup celah ini
+  di Pengalihan/Mutasi (sebelum 20260811_02) masih berlaku persis di sini.
+- **Tak ada migrasi & tak ada perubahan default tanggal** untuk putaran ini —
+  kotak "Tanggal" di Koreksi.tsx/Reklasifikasi.tsx masih default hari ini
+  (belum diminta disamakan dengan Penghapusan/PengeluaranInternal).
+- **Diverifikasi**: `npx tsc --noEmit` 0 error, 84 berkas test / 1783 test
+  tetap hijau (tak satu pun test lama menyentuh jalur ini — guard baru murni
+  menambah satu pemeriksaan sebelum insert yang sudah ada, tak mengubah bentuk
+  payload atau urutan tulis).
 
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 

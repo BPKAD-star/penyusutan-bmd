@@ -38,7 +38,7 @@ import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiP
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
-import { cekBolehBatal } from '@/lib/guardPembatalan'
+import { cekBolehBatal, cekBolehSisip } from '@/lib/guardPembatalan'
 import { koreksiFieldKeys, ASET_NUM_COLS, angkaKolomAset, type FieldKey } from '@/lib/asetFields'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import {
@@ -819,6 +819,21 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
       }).select(HEADER_COLS).single()
       if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
       h = data as unknown as Header
+    }
+
+    // Guard arah MAJU (2026-09-18, pola cekBolehSisip Kapitalisasi/Pengalihan):
+    // tanggal dokumen ini bebas dipilih dalam tahun buku terbuka, jadi bisa
+    // mundur ke periode yang aset-nya SUDAH punya transaksi lain (mis. sudah
+    // dipindah SKPD atau dikapitalisasi sesudahnya) — menyisipkannya di tengah
+    // rantai merusak replay penyusutan tanpa satu pun error. Berlaku baik untuk
+    // jurnal baru maupun "Tambah Barang" ke jurnal yang sudah ada, karena
+    // keduanya sama-sama menulis baris ledger baru bertanggal `h.tanggal`.
+    const guardSisip = await cekBolehSisip(supabase,
+      selList.map(b => ({ aset_id: b.id, label: b.nama_barang || b.nibar })),
+      h.tanggal, 'reklasifikasi ini')
+    if (!guardSisip.boleh) {
+      if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
+      setErr(guardSisip.pesan); setSaving(false); return
     }
 
     const e = await insertLines(h)
