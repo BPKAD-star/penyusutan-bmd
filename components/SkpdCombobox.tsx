@@ -174,19 +174,40 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
     setOpen(false); setQuery('')
   }
 
+  // Buka dropdown dgn sorotan awal di posisi SKPD yang SEDANG terpilih (bukan
+  // selalu index 0/teratas) — permintaan user 2026-09-22: mengecek SKPD satu
+  // per satu jadi cuma perlu panah atas/bawah dari situ, tanpa scroll dari
+  // "Badan..." paling atas tiap kali. Dicari di `options` (daftar PENUH,
+  // BUKAN `filtered` yang bisa berisi query lama sesaat sebelum di-reset di
+  // sini) — aman krn jumlah SKPD (816) masih < RENDER_MAX, jadi `filtered`
+  // sesudah query dikosongkan pasti sama dgn `options`. Tak ketemu (mis. mode
+  // subtree lagi di "semua unit", nilainya sengaja disaring keluar `options`)
+  // → jatuh ke 0, perilaku lama.
+  function bukaKeSorotanTerpilih() {
+    setOpen(true); setQuery('')
+    const idx = effectiveId ? options.findIndex(o => o.id === Number(effectiveId)) : -1
+    setHi(idx >= 0 ? idx : 0)
+  }
+
   function onKeyDown(e: React.KeyboardEvent) {
-    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); setQuery(''); setHi(0); return }
+    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { bukaKeSorotanTerpilih(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)) }
     else if (e.key === 'Enter') { e.preventDefault(); if (filtered[hi]) pilih(filtered[hi].id) }
     else if (e.key === 'Escape') { setOpen(false) }
   }
 
+  // Baris pintas ("— Semua / kosongkan —") ikut jadi child pertama `listRef`
+  // kalau tampil, jadi index child-nya SELALU satu lebih banyak dari index
+  // `hi` (yang murni menghitung `filtered`) — dulu tak kentara krn `hi` cuma
+  // pernah 0/1/2 dari puncak; sejak `bukaKeSorotanTerpilih` bisa melompat jauh
+  // ke tengah daftar, offset yang meleset ini scroll ke baris tetangganya.
+  const showPintasan = allowClear || (subtreeMode && modeFilter)
   useEffect(() => {
     if (!open || !listRef.current) return
-    const el = listRef.current.children[hi] as HTMLElement | undefined
+    const el = listRef.current.children[hi + (showPintasan ? 1 : 0)] as HTMLElement | undefined
     el?.scrollIntoView({ block: 'nearest' })
-  }, [hi, open])
+  }, [hi, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mode terkunci MATI (operator non-admin, picker form entry): tampilkan
   // SKPD-nya, tak bisa diubah. Filter/laporan tidak lewat sini — lihat subtreeMode.
@@ -210,7 +231,7 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
           className="select-filter w-full"
           placeholder={subtreeMode && modeFilter ? 'Ketik utk cari Sub OPD / Sub Sub OPD...' : (placeholder || 'Ketik utk cari SKPD / Sub OPD / Lokasi...')}
           value={open ? query : selectedLabel}
-          onFocus={() => { setOpen(true); setQuery(''); setHi(0) }}
+          onFocus={bukaKeSorotanTerpilih}
           onChange={e => { setQuery(e.target.value); setHi(0); if (!open) setOpen(true) }}
           onKeyDown={onKeyDown}
         />
@@ -227,7 +248,7 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
           {/* Baris pintas ini cuma utk mode filter ("semua unit saya"). Di mode
               form node induk sudah jadi opsi biasa di daftar bawah — tidak perlu,
               dan kata "semua" justru menyesatkan (pemilik barang harus satu). */}
-          {(allowClear || (subtreeMode && modeFilter)) && (
+          {showPintasan && (
             <button type="button" onClick={clear} className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs text-gray-500 italic">
               {subtreeMode && modeFilter ? `— Semua unit di ${byId.get(lockSkpd!)?.nama || 'SKPD Anda'} —` : '— Semua / kosongkan —'}
             </button>
