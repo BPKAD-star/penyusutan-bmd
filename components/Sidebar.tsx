@@ -21,13 +21,23 @@ const ICON = {
   kendaraan: ic('M8 17a2 2 0 11-4 0 2 2 0 014 0zm12 0a2 2 0 11-4 0 2 2 0 014 0zM4 17H3v-4m0 0l2-5h9l4 5m-15 0h15m0 0h2v4h-1M13 8V5a1 1 0 00-1-1H4'),
   user: ic('M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z'),
   saldo: ic('M9 7h1m-1 4h1m4-4h1m-1 4h1m-6 8V5a2 2 0 012-2h6a2 2 0 012 2v14M5 21h14M9 21v-4a1 1 0 011-1h4a1 1 0 011 1v4'),
-  building: ic('M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4'),
   external: ic('M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14'),
   logout: ic('M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1'),
 }
 
+// Urutan top-level DITENTUKAN USER (2026-09-22): Dashboard · Saldo Awal ·
+// RKBMD · Pembukuan · Inventarisasi · Daftar Barang · Penyusutan · GIS Tanah ·
+// Kendaraan · IPA · Pelaporan · (Admin, ditempel terpisah di bawah — lihat
+// `menuTree`). Murni urutan tampil, sama sekali tak menyentuh struktur di
+// dalam tiap grup — jangan disusun ulang lagi tanpa permintaan baru.
 const navTree: NavNode[] = [
   { type: 'leaf', href: '/dashboard', label: 'Dashboard' },
+  {
+    type: 'group', label: 'Saldo Awal', icon: ICON.saldo, children: [
+      { type: 'leaf', href: '/dashboard/saldo-awal/rekapitulasi', label: 'Rekapitulasi' },
+      { type: 'leaf', href: '/dashboard/saldo-awal/daftar-barang', label: 'Daftar Barang Awal' },
+    ],
+  },
   {
     // RKBMD jadi grup 2026-08-10. Standar Harga PINDAH ke sini dari menu Admin
     // (SSH & SBSK) — bukan lagi urusan admin saja, karena SSH kini bak bersama
@@ -65,12 +75,6 @@ const navTree: NavNode[] = [
     ],
   },
   {
-    type: 'group', label: 'Saldo Awal', icon: ICON.saldo, children: [
-      { type: 'leaf', href: '/dashboard/saldo-awal/rekapitulasi', label: 'Rekapitulasi' },
-      { type: 'leaf', href: '/dashboard/saldo-awal/daftar-barang', label: 'Daftar Barang Awal' },
-    ],
-  },
-  {
     type: 'group', label: 'Pembukuan', icon: ICON.pembukuan, children: [
       {
         type: 'group', label: 'Cara Perolehan', children: [
@@ -97,10 +101,42 @@ const navTree: NavNode[] = [
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/kapitalisasi', label: 'Kapitalisasi' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/pengamanan', label: 'Pengamanan' },
           { type: 'leaf', href: '/dashboard/pembukuan/pengelolaan/penghapusan', label: 'Penghapusan' },
+          // WasDal PINDAH ke sini dari top-level (permintaan user 2026-09-22,
+          // "taruh dibawah Pengelolaan >> Penghapusan") — murni penataan
+          // sidebar, rute & isinya (/dashboard/wasdal) tak berubah sama
+          // sekali. Sengaja di LUAR urutan Permendagri di atas: WasDal bukan
+          // salah satu jenis ledger pengelolaan itu, cuma dititipkan di
+          // deretan yang sama karena tempatnya paling pas menurut user.
+          { type: 'leaf', href: '/dashboard/wasdal', label: 'WasDal' },
         ],
       },
       { type: 'leaf', href: '/dashboard/pelaporan/lra', label: 'LRA' },
       { type: 'leaf', href: '/dashboard/pembukuan/kir', label: 'KIR' },
+    ],
+  },
+  {
+    // LHI di sini BEDA dgn "Laporan Hasil Inventarisasi" di grup Pelaporan —
+    // yang itu laporan cara perolehan (ledger `hasil_inventarisasi`).
+    type: 'group', label: 'Inventarisasi', icon: ICON.pembukuan, children: [
+      {
+        // Satu menu per jenis aset — tiap jenis punya format LKI sendiri
+        // (III.A.1–III.A.6). Pakai segmen path, bukan ?golongan=, supaya
+        // penanda menu aktif (yang membandingkan pathname) tidak menyala
+        // di kedelapan menu sekaligus.
+        type: 'group', label: 'Lembar Kerja (LKI)', children: [
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.1', label: 'Tanah' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.2', label: 'Peralatan dan Mesin' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.3', label: 'Gedung dan Bangunan' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.4', label: 'Jalan, Jaringan dan Irigasi' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.5', label: 'Aset Tetap Lainnya' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.6', label: 'Konstruksi Dalam Pengerjaan' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.5.3', label: 'Aset Tidak Berwujud' },
+          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.5.4', label: 'Aset Lain-Lain' },
+        ],
+      },
+      { type: 'leaf', href: '/dashboard/inventarisasi/validasi', label: 'Validasi' },
+      { type: 'leaf', href: '/dashboard/inventarisasi/laporan', label: 'Laporan Hasil (LHI)' },
+      { type: 'leaf', href: '/dashboard/inventarisasi/tindak-lanjut', label: 'Tindak Lanjut' },
     ],
   },
   { type: 'leaf', href: '/dashboard/daftar-barang', label: 'Daftar Barang' },
@@ -117,6 +153,12 @@ const navTree: NavNode[] = [
     ],
   },
   { type: 'leaf', href: '/dashboard/kendaraan', label: 'Kendaraan' },
+  {
+    type: 'group', label: 'IPA', icon: ICON.ipa, children: [
+      { type: 'leaf', href: '/dashboard/ipa', label: 'Dashboard IPA' },
+      { type: 'leaf', href: '/dashboard/ipa/penilaian', label: 'Input Penilaian' },
+    ],
+  },
   {
     type: 'group', label: 'Pelaporan', icon: ICON.pelaporan, children: [
       {
@@ -153,38 +195,6 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi/rincian', label: 'Rincian Transaksi (Bukti Dukung)' },
       { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
       { type: 'leaf', href: '/dashboard/pelaporan/kir', label: 'KIR' },
-    ],
-  },
-  {
-    // LHI di sini BEDA dgn "Laporan Hasil Inventarisasi" di grup Pelaporan —
-    // yang itu laporan cara perolehan (ledger `hasil_inventarisasi`).
-    type: 'group', label: 'Inventarisasi', icon: ICON.pembukuan, children: [
-      {
-        // Satu menu per jenis aset — tiap jenis punya format LKI sendiri
-        // (III.A.1–III.A.6). Pakai segmen path, bukan ?golongan=, supaya
-        // penanda menu aktif (yang membandingkan pathname) tidak menyala
-        // di kedelapan menu sekaligus.
-        type: 'group', label: 'Lembar Kerja (LKI)', children: [
-          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.1', label: 'Tanah' },
-          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.2', label: 'Peralatan dan Mesin' },
-          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.3', label: 'Gedung dan Bangunan' },
-          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.4', label: 'Jalan, Jaringan dan Irigasi' },
-          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.5', label: 'Aset Tetap Lainnya' },
-          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.3.6', label: 'Konstruksi Dalam Pengerjaan' },
-          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.5.3', label: 'Aset Tidak Berwujud' },
-          { type: 'leaf', href: '/dashboard/inventarisasi/jenis/1.5.4', label: 'Aset Lain-Lain' },
-        ],
-      },
-      { type: 'leaf', href: '/dashboard/inventarisasi/validasi', label: 'Validasi' },
-      { type: 'leaf', href: '/dashboard/inventarisasi/laporan', label: 'Laporan Hasil (LHI)' },
-      { type: 'leaf', href: '/dashboard/inventarisasi/tindak-lanjut', label: 'Tindak Lanjut' },
-    ],
-  },
-  { type: 'leaf', href: '/dashboard/wasdal', label: 'WasDal' },
-  {
-    type: 'group', label: 'IPA', icon: ICON.ipa, children: [
-      { type: 'leaf', href: '/dashboard/ipa', label: 'Dashboard IPA' },
-      { type: 'leaf', href: '/dashboard/ipa/penilaian', label: 'Input Penilaian' },
     ],
   },
 ]
@@ -232,7 +242,6 @@ const iconFor = (label: string): React.ReactNode => {
   if (label === 'Dashboard') return ICON.dashboard
   if (label === 'RKBMD') return ICON.pelaporan
   if (label === 'Inventarisasi') return ICON.daftar
-  if (label === 'WasDal') return ICON.building
   return null
 }
 
