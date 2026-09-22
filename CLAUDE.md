@@ -4208,6 +4208,42 @@ aset yang **sudah ada** dan tanggalnya bebas dipilih dalam tahun buku terbuka.
   menambah satu pemeriksaan sebelum insert yang sudah ada, tak mengubah bentuk
   payload atau urutan tulis).
 
+### Pengadaan/PerolehanManual/KDP DIPERIKSA & MEMANG kebal (2026-09-22)
+
+User bertanya lagi apakah Pengadaan & Perolehan Manual perlu ikut ditambal.
+**Dibaca kodenya langsung** (bukan diasumsikan dari catatan lama) — `approve*`
+di ketiganya (`Pengadaan.tsx` line ~654, `PerolehanManual.tsx` `approveHeader`
+line ~464, `lib/kdp.ts` `approveKontrakKonstruksi` Pass 1) **selalu
+`INSERT` baris `aset` yang BARU**, tak pernah menulis event ledger ke aset_id
+yang sudah ada sebelumnya. Jadi kelas bug yang dijaga `cekBolehSisip`
+("menyisipkan event bertanggal mundur ke aset yang SUDAH punya rantai
+transaksi") **secara struktural tak bisa terjadi di sini** — setiap approve
+selalu mulai dari rantai yang kosong.
+
+Satu-satunya jalan yang kelihatannya bisa mendaur ulang aset lama —
+Buka Kunci (`unapproveHeader`/`unapproveKontrakKonstruksi`) → edit → Setujui
+ulang — **TIDAK reuse `aset_id` sama sekali**: `unapprove*` cuma menyetel
+`aset.status='draft'` (barangnya jadi cadangan audit, NIBAR-nya "dibekukan"
+di situ) lalu `draft_items` direkonstruksi TANPA `aset_id`; approve berikutnya
+selalu bikin baris `aset` baru lagi (NIBAR digenerate ulang). Dan yang paling
+penting: **Buka Kunci itu sendiri sudah digerbangi `cekBolehBatal`**
+(Pengadaan.tsx L711, PerolehanManual.tsx L545, lib/kdp.ts L210) — begitu aset
+sudah punya transaksi lebih baru (reklas/kapitalisasi/pengalihan/dst.), Buka
+Kunci DITOLAK, jadi jalur "sisipkan termin/barang lama ke rantai yang sudah
+bergerak" tertutup di titik SEBELUM approve ulang sempat dijalankan.
+
+`batal_pengadaan`/`batal_hibah_masuk`/dst. (koreksi pasca-approve) juga bukan
+celah: baris itu dicatat `tanggal: l.tanggal` — TANGGAL YANG SAMA dengan baris
+yang dibatalkannya, bukan tanggal baru bebas pilih — jadi tak bisa dipakai
+menyisipkan apa pun.
+
+**Kesimpulan: tak ada perubahan kode.** Ketiganya kebal BUKAN karena kebetulan
+belum ketahuan, tapi karena bentuk approve-nya sendiri (always-fresh-aset +
+Buka Kunci digerbangi cekBolehBatal) menutup jalan masuknya. Kalau kelak
+pola approve-nya berubah jadi "tulis ke aset yang sudah ada" (mis. approve
+ulang mulai reuse aset_id demi mempertahankan riwayat), guard arah maju ini
+WAJIB ikut dipasang di titik itu juga.
+
 ## Koreksi → Penggabungan Barang (N baris → 1 induk, migrasi 20260811_01+02)
 
 Alasan KELIMA di menu Pembukuan → Pengelolaan → Koreksi (keputusan user
