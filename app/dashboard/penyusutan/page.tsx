@@ -11,7 +11,7 @@
 // beku saldo_awal_2026, supaya barang yang diimport/ditambah SETELAH baseline (mis.
 // perolehan baru, atau backfill saldo_awal susulan) ikut kebaca di sini. Angka &
 // visibilitas tetap disesuaikan engine + histori transaksi. Angka polos tanpa "Rp".
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
@@ -29,6 +29,7 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { useFilterPenyusutan, type Applied } from './useFilterPenyusutan'
 import { useEngineRun } from './useEngineRun'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { rpcUlangJikaTimeout } from '@/lib/rpcUlang'
 
 const BASE_COLS = 'id,nibar,kode_register,kode_barang:kode,nama_barang,skpd_id,nilai_perolehan,intra_ekstra,tgl_perolehan,merek_tipe,alamat_detail'
 
@@ -158,6 +159,11 @@ export default function PenyusutanPage() {
   // (amber) di atas tabel yang barisnya justru berhasil dimuat, bukan sbg
   // strip merah yang menyuruh operator mengira seluruh datanya gagal.
   const [errRekap, setErrRekap] = useState('')
+  // Rekap dijalankan DI LATAR (2026-09-22) — lihat `mulaiRekap`. `rekapJalan`
+  // supaya kaki tabel bisa berkata "menghitung..." alih-alih diam; `reqSeq`
+  // supaya hasil yang pulang terlambat tak menimpa filter yang sudah berganti.
+  const [rekapJalan, setRekapJalan] = useState(false)
+  const reqSeq = useRef(0)
   // Tombol "Jalankan Engine": hak akses, kemajuan, & loop batch-nya.
   // `isAdmin` cuma menyembunyikan tombol — /api/engine/run yang menjaga (403).
   const {
@@ -339,13 +345,65 @@ export default function PenyusutanPage() {
       }))
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // REKAP DI LATAR (2026-09-22). Menghitung SELURUH hasil filter jauh lebih
+  // mahal daripada mengambil satu halaman — diukur ke produksi hari itu: satu
+  // halaman `fn_penyusutan` ~0,5 dtk, sedangkan `fn_penyusutan_rekap` 11.791 ms
+  // (Dinas Kesehatan 1.3.2 intra, TANPA kata kunci) s.d. 34.916 ms
+  // (se-kabupaten), lawan pagu `authenticated` 8.000 ms. Jadi yang tumbang
+  // SELALU rekapnya duluan, tak pernah barisnya.
+  //
+  // Sampai hari ini rekap ditunggu SEBELUM `setLoading(false)`, jadi layar
+  // berbunyi "Memuat..." selama belasan detik padahal barisnya sudah siap sejak
+  // detik pertama — lalu berakhir di strip amber juga. Sekarang ia jalan
+  // sendiri: baris tampil segera, angkanya menyusul (atau gagal jadi strip
+  // amber, perbaikan f3cb247 yang tetap berlaku).
+  //
+  // ⚠️ AKALAN sementara, bukan obatnya. Sebabnya mesin DB kekecilan —
+  // shared_buffers 224 MB lawan ±3,2 GB data panas, jadi rekapnya terikat I/O
+  // (rinciannya di CLAUDE.md "REKAP yang gagal TIDAK BOLEH membunuh
+  // daftarnya"). `SET work_mem TO '64MB'` sudah terpasang di fungsinya & TIDAK
+  // menolong; jangan diulang mencobanya.
+  //
+  // ⚠️ `seq` diperiksa SESUDAH `await`: rekap yang baru pulang 30 detik
+  // kemudian akan menaruh angka milik filter LAMA di kaki tabel filter yang
+  // baru — kebohongan yang tak akan pernah terlihat sbg error.
+  async function mulaiRekap(arg: Record<string, unknown>, seq: number) {
+    setRekapJalan(true)
+    try {
+      // Coba-ulang sekali kalau timeout — lihat lib/rpcUlang.ts. Aman justru
+      // karena rekapnya jalan di LATAR: percobaan kedua tak menahan barisnya.
+      const { data: rk, error: eRk } = await rpcUlangJikaTimeout(() => supabase.rpc('fn_penyusutan_rekap', arg))
+      if (seq !== reqSeq.current) return
+      if (eRk) throw new Error(eRk.message)
+      const row = ((rk || []) as Rekap[])[0]
+      setRekap(row ? {
+        jumlah_baris: Number(row.jumlah_baris),
+        total_perolehan: Number(row.total_perolehan), total_beban: Number(row.total_beban),
+        total_akumulasi: Number(row.total_akumulasi), total_nilai_buku: Number(row.total_nilai_buku),
+        tanpa_hasil_engine: Number(row.tanpa_hasil_engine),
+      } : null)
+    } catch (e) {
+      if (seq !== reqSeq.current) return
+      setRekap(null)
+      setErrRekap(`Jumlah & total di kaki tabel tak bisa dihitung: ${(e as Error).message}. Barisnya sendiri TETAP benar — yang absen cuma angka rekapitulasinya. Persempit filter (pilih SKPD / jenis aset) supaya totalnya ikut terhitung.`)
+    } finally {
+      if (seq === reqSeq.current) setRekapJalan(false)
+    }
+  }
+
   // ⚠️ try/catch/finally WAJIB & `setLoading(false)` di FINALLY — bukan di akhir
   // jalur sukses. Sejak paginasi pindah ke server yang melempar bukan lagi
   // kolektor klien melainkan RPC-nya sendiri (`fn_penyusutan` bisa gagal karena
   // timeout / guard), tapi akibatnya sama persis: tanpa penangkap, halaman beku
   // di "Memuat..." selamanya tanpa sepatah pun keterangan. Lihat CLAUDE.md.
   async function load(f: Applied, halaman = 0) {
-    setLoading(true); setErr(''); setErrRekap('')
+    // Seq dinaikkan HANYA saat filter berganti (halaman 0). Pindah halaman tak
+    // mengubah hasil rekap, jadi membatalkannya di situ cuma membuang hitungan
+    // yang sudah berjalan lalu meninggalkan kaki tabel kosong tanpa sebab.
+    const seq = halaman === 0 ? ++reqSeq.current : reqSeq.current
+    setLoading(true); setErr('')
+    if (halaman === 0) setErrRekap('')
     try {
       const { baris, arg } = await fetchHalaman(f, halaman)
       setRows(baris)
@@ -353,41 +411,8 @@ export default function PenyusutanPage() {
 
       // Rekap ditarik SEKALI per perubahan filter, bukan tiap ganti halaman —
       // ia menghitung seluruh hasil filter dan tak berubah saat berpindah
-      // halaman.
-      if (halaman === 0) {
-        // ⚠️ TRY/CATCH SENDIRI & kegagalannya TIDAK MEMBUNUH HALAMAN
-        // (2026-09-22). Menghitung SELURUH hasil filter jauh lebih mahal
-        // daripada mengambil satu halaman — diukur ke produksi hari itu:
-        // satu halaman ~0,5 dtk, rekapnya 9.439 ms (Dinas Kesehatan 1.3.2
-        // intra) s.d. 34.916 ms (se-kabupaten), lawan pagu 8 dtk. Jadi begitu
-        // datanya membesar (aset 517rb → 906rb), yang tumbang SELALU
-        // rekapnya duluan, tak pernah barisnya.
-        //
-        // Dulu ia dilempar ke `catch` bersama, dan di sana `setRows([])`
-        // MEMBUANG baris yang sudah berhasil dimuat — layar jadi "Tidak ada
-        // data untuk filter ini" + strip merah, padahal datanya ada & benar.
-        // Itu kegagalan yang jauh lebih mahal daripada angka kaki tabel yang
-        // tak terhitung. Pola & alasannya sama persis dgn Saldo Awal →
-        // Daftar Barang Awal (CLAUDE.md: "count & pengambilan baris punya
-        // biaya yang JAUH berbeda, jadi tak boleh satu nasib").
-        //
-        // `rekap = null` SUDAH lama berarti "jumlah tak terhitung" di kaki
-        // tabel — jadi tak ada yang berbohong, cuma angkanya absen.
-        try {
-          const { data: rk, error: eRk } = await supabase.rpc('fn_penyusutan_rekap', arg)
-          if (eRk) throw new Error(eRk.message)
-          const row = ((rk || []) as Rekap[])[0]
-          setRekap(row ? {
-            jumlah_baris: Number(row.jumlah_baris),
-            total_perolehan: Number(row.total_perolehan), total_beban: Number(row.total_beban),
-            total_akumulasi: Number(row.total_akumulasi), total_nilai_buku: Number(row.total_nilai_buku),
-            tanpa_hasil_engine: Number(row.tanpa_hasil_engine),
-          } : null)
-        } catch (e) {
-          setRekap(null)
-          setErrRekap(`Jumlah & total di kaki tabel tak bisa dihitung: ${(e as Error).message}. Barisnya sendiri TETAP benar — yang absen cuma angka rekapitulasinya. Persempit filter (pilih SKPD / jenis aset) supaya totalnya ikut terhitung.`)
-        }
-      }
+      // halaman. Sejak 2026-09-22 ia juga tak di-`await`; lihat `mulaiRekap`.
+      if (halaman === 0) { setRekap(null); void mulaiRekap(arg, seq) }
 
       setKapMap(await fetchKap(f))
       setUraianMap(await fetchUraian(baris.map(b => b.kode_barang)))
@@ -395,7 +420,11 @@ export default function PenyusutanPage() {
       // Fail-closed: daftar penyusutan yang kurang sebagian lebih berbahaya
       // daripada halaman yang menolak tampil.
       setErr(`${(e as Error).message} — daftar tidak ditampilkan supaya tidak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat. Coba Tampilkan lagi; kalau berulang, kabari admin.`)
-      setRows([]); setRekap(null)
+      setRows([])
+      // Barisnya gagal → angka rekap yang masih berjalan ikut dibatalkan:
+      // "25.031 aset" di kaki tabel yang isinya kosong terbaca sbg "datanya
+      // ada, cuma layarnya ngadat", padahal yang benar sebaliknya.
+      if (halaman === 0) { setRekap(null); reqSeq.current++; setRekapJalan(false) }
     } finally {
       setLoading(false)
     }
@@ -646,7 +675,7 @@ export default function PenyusutanPage() {
               {/* Jumlah SELURUH hasil filter (dari rekap server), bukan jumlah
                   baris di halaman ini. `null` = rekapnya gagal dihitung —
                   dikatakan apa adanya, jangan diganti angka 0. */}
-              {totalBaris == null ? 'jumlah tak terhitung' : `${totalBaris.toLocaleString('id-ID')} aset`}
+              {totalBaris == null ? (rekapJalan ? 'menghitung jumlah…' : 'jumlah tak terhitung') : `${totalBaris.toLocaleString('id-ID')} aset`}
               {' · '}periode {applied.periode}
               {applied.org.skpdId && skpdNama[applied.org.skpdId] ? ` · ${skpdNama[applied.org.skpdId]}` : ''}
               {rekap && rekap.tanpa_hasil_engine > 0 && (

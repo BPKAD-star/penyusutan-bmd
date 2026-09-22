@@ -17,7 +17,7 @@
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
 // selalu menjumlahkan nilai perolehan SELURUH hasil filter. Angka tanpa "Rp".
 import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { luasEfektif } from '@/lib/luasBidang'
@@ -35,6 +35,7 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { useFilterDaftarBarang, type Applied } from './useFilterDaftarBarang'
 import { useReferensiDaftarBarang } from './useReferensiDaftarBarang'
 import { orCari } from '@/lib/cariBarang'
+import { rpcUlangJikaTimeout } from '@/lib/rpcUlang'
 
 // Baris per halaman. Sejak paginasi pindah ke server (migrasi 20260814_05..08)
 // angka ini menentukan `p_limit` RPC, bukan besar potongan array di memori —
@@ -327,6 +328,21 @@ export default function DaftarBarangPage() {
   // `handleTampilkan`. Amber (peringatan) di atas tabel yang barisnya justru
   // berhasil dimuat, bukan merah yang menyuruh operator mengira semuanya gagal.
   const [errRekap, setErrRekap] = useState('')
+  // Rekap dijalankan DI LATAR (2026-09-22) — lihat `handleTampilkan`. Dua
+  // penanda yang dibutuhkan pola itu:
+  //   `rekapJalan` → kaki tabel bisa berkata "menghitung..." alih-alih diam;
+  //   `reqSeq`/`pageRef` → hasil rekap yang datang TERLAMBAT tak boleh menimpa
+  //   layar yang sudah berganti filter atau sudah dipindah halamannya.
+  const [rekapJalan, setRekapJalan] = useState(false)
+  const reqSeq = useRef(0)
+  const pageRef = useRef(0)
+  // ⚠️ Penanda "baris halaman pertama sudah mendarat". Rekap bisa pulang LEBIH
+  // DULU daripada barisnya (filter sempit → rekapnya ringan), dan tanpa
+  // penanda ini mode "tampilkan semua" menaruh 500 baris ke tabel lalu jalur
+  // utama menimpanya dgn 100 baris halaman pertama — sementara paginasi sudah
+  // terlanjur disembunyikan, jadi 400 baris sisanya lenyap TANPA satu pun
+  // tanda. Urutan mendaratnya tak bisa ditebak, jadi harus dipaksa.
+  const barisSiap = useRef<Promise<void>>(Promise.resolve())
   const [exporting, setExporting] = useState(false)
   // Berapa baris sudah tertarik selama Export. Export golongan besar memang
   // menit-menitan (218rb baris = 220 permintaan); tanpa angka yang bergerak,
@@ -486,7 +502,10 @@ export default function DaftarBarangPage() {
   // digabung jadi satu query (window function), LIMIT tak bisa berhenti lebih
   // awal & halamannya balik jadi 9,8 dtk. Lihat migrasi 20260814_06.
   const fetchRekap = useCallback(async (f: Applied): Promise<{ total: number; grand: number }> => {
-    const { data, error } = await supabase.rpc('fn_daftar_barang_rekap', rpcArgs(f))
+    // Coba-ulang sekali kalau timeout — lihat lib/rpcUlang.ts. Aman dipasang
+    // di sini justru karena rekapnya kini jalan di LATAR: percobaan kedua tak
+    // menahan satu baris pun.
+    const { data, error } = await rpcUlangJikaTimeout(() => supabase.rpc('fn_daftar_barang_rekap', rpcArgs(f)))
     if (error) throw new Error(`gagal menghitung total daftar barang: ${error.message}`)
     const r = ((data || []) as unknown as { total_count: number; grand_total: number }[])[0]
     return { total: Number(r?.total_count ?? 0), grand: Number(r?.grand_total ?? 0) }
@@ -582,14 +601,77 @@ export default function DaftarBarangPage() {
     setBidangCount(golongan === '1.3.1' ? await fetchBidangCount(rows.map(r => r.id)) : {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // REKAP DI LATAR (2026-09-22). Dulu `handleTampilkan` MENUNGGU rekap sebelum
+  // meminta baris pertamanya, dan itu yang membuat halaman ini terasa mati:
+  // diukur ke produksi, `fn_daftar_barang_rekap` se-kabupaten 1.3.2 + kata
+  // kunci = 16.299 ms (pagu `authenticated` 8.000 ms) sementara SATU HALAMAN
+  // `fn_daftar_barang` cuma ratusan milidetik. Jadi operator menunggu rekap
+  // tumbang lebih dulu, baru barisnya muncul — padahal barisnya sudah siap
+  // sejak detik pertama. Sekarang keduanya jalan berbarengan: baris dulu,
+  // angka menyusul (atau gagal jadi strip amber, perbaikan f3cb247).
+  //
+  // ⚠️ Ini AKALAN sementara, bukan obatnya. Sebabnya mesin DB kekecilan —
+  // shared_buffers 224 MB lawan ±3,2 GB data panas, jadi rekapnya terikat I/O
+  // (rinciannya di CLAUDE.md "REKAP yang gagal TIDAK BOLEH membunuh
+  // daftarnya"). Begitu servernya pindah, yang perlu ditinjau ulang cuma
+  // ambang SHOW_ALL_MAX di bawah, bukan pola ini.
+  //
+  // ⚠️ `seq` WAJIB diperiksa di TIAP titik sesudah `await`: rekap yang baru
+  // pulang 20 detik kemudian akan menimpa layar yang sudah berganti filter,
+  // dan angka milik filter lain yang duduk di kaki tabel yang benar adalah
+  // kebohongan yang tak akan pernah terlihat sbg error.
+  async function mulaiRekap(f: Applied, seq: number) {
+    // Ditangkap SEKARANG, bukan dibaca dari ref sesudah `await`: kalau operator
+    // menekan Tampilkan lagi di tengah jalan, ref-nya sudah menunjuk permintaan
+    // LAIN dan yang ditunggu jadi baris milik filter yang bukan ini.
+    const tunggu = barisSiap.current
+    setRekapJalan(true)
+    try {
+      const rk = await fetchRekap(f)
+      if (seq !== reqSeq.current) return
+      setTotal(rk.total); setGrandTotal(rk.grand)
+      // Mode "tampilkan semua" (≤ SHOW_ALL_MAX) dipertahankan persis seperti
+      // dulu — cuma keputusannya kini diambil SESUDAH halaman pertama tampil.
+      // Tak diterapkan kalau operator sudah pindah halaman duluan: mengganti
+      // isi tabel di bawah tangannya lebih membingungkan daripada berguna.
+      if (rk.total > SHOW_ALL_MAX) return
+      // Tunggu jalur utama selesai dulu — lihat `barisSiap`.
+      await tunggu
+      if (seq !== reqSeq.current || pageRef.current !== 0) return
+      if (rk.total > PAGE_SIZE) {
+        const semua = await fetchPage(f, Math.max(rk.total, 1), 0)
+        if (seq !== reqSeq.current || pageRef.current !== 0) return
+        setData(semua)
+        await lengkapiHalaman(semua, f.golongan)
+        if (seq !== reqSeq.current) return
+      }
+      setShowAll(true)
+    } catch (e) {
+      if (seq !== reqSeq.current) return
+      setErrRekap(`Jumlah & total nilai tak bisa dihitung: ${(e as Error).message}. Daftarnya sendiri TETAP benar — yang absen cuma angka rekapitulasinya. Persempit filter (pilih SKPD / jenis aset) supaya totalnya ikut terhitung.`)
+    } finally {
+      if (seq === reqSeq.current) setRekapJalan(false)
+    }
+  }
+
   async function handleTampilkan() {
     // Aturan dua mode (user 2026-08-14) diperiksa `rakit()`. Penegak
     // sesungguhnya `fn_dbar_guard` di DB; ini cuma supaya pesannya ramah &
     // muncul sebelum query ditembak.
     if (pesanFilter) { setErr(pesanFilter); return }
     const f = rakit()
-    setApplied(f); setPage(0); setGrandTotal(0)
+    const seq = ++reqSeq.current
+    pageRef.current = 0
+    setApplied(f); setPage(0)
     setLoading(true); setErr(''); setErrRekap('')
+    // Angka rekap milik filter LAMA tak boleh nongkrong di kaki tabel selama
+    // filter baru dimuat. `null` = BELUM/TAK terhitung, sengaja bukan 0.
+    setTotal(null); setGrandTotal(null); setShowAll(false)
+    let tandaiBarisSiap: () => void = () => {}
+    barisSiap.current = new Promise<void>(res => { tandaiBarisSiap = res })
+    // Sengaja TIDAK di-`await` — lihat catatan di `mulaiRekap`.
+    void mulaiRekap(f, seq)
 
     // ⚠️ SELURUH isi fungsi ini WAJIB di dalam try/finally. Sebelumnya tidak:
     // begitu satu query melempar (fetchOwnerOverrides sudah melempar sejak
@@ -613,37 +695,11 @@ export default function DaftarBarangPage() {
     const posisi = await fetchPosisiOverrides(supabase, f.periode)
     setPosisiOverride(posisi)
 
-    // Rekap DULU, baru halamannya: jumlahnya yang menentukan berapa baris
-    // diminta. Kalau hasilnya kecil (<= SHOW_ALL_MAX) halaman ini tetap
-    // menampilkan semuanya sekaligus seperti dulu — perilaku itu dipertahankan,
-    // cuma pemotongannya kini di server.
-    //
-    // ⚠️ TRY/CATCH SENDIRI & kegagalannya TIDAK MEMBUNUH HALAMAN (2026-09-22).
-    // `fn_daftar_barang_rekap` menyapu SELURUH hasil filter sementara
-    // `fn_daftar_barang` berhenti setelah 100 baris — diukur ke produksi hari
-    // itu: se-kabupaten 1.3.2 + kata kunci = 16.299 ms lawan pagu 8 dtk,
-    // sedangkan halamannya sendiri ratusan milidetik. Jadi yang tumbang SELALU
-    // rekapnya duluan. Dulu kegagalannya jatuh ke `catch` bersama & mengosongkan
-    // `data` — layar berbunyi "0 barang · Tidak ada data untuk filter ini",
-    // yang terbaca operator sbg "barangnya memang tak ada". Itu kegagalan
-    // SENYAP kelas paling mahal di modul ini, ditukar dgn angka total yang
-    // cuma hiasan. Pola & alasan sama dgn Saldo Awal → Daftar Barang Awal.
-    let rekap: { total: number; grand: number } | null = null
-    try {
-      rekap = await fetchRekap(f)
-    } catch (e) {
-      setErrRekap(`Jumlah & total nilai tak bisa dihitung: ${(e as Error).message}. Daftarnya sendiri TETAP benar — yang absen cuma angka rekapitulasinya. Persempit filter (pilih SKPD / jenis aset) supaya totalnya ikut terhitung.`)
-    }
-    // `null` = TAK TERHITUNG, sengaja dibedakan dari 0 — lihat `total`/`grandTotal`.
-    setTotal(rekap ? rekap.total : null)
-    setGrandTotal(rekap ? rekap.grand : null)
-    // Tak terhitung → JANGAN coba tampilkan semuanya sekaligus: tanpa tahu
-    // jumlahnya, `Math.max(total,1)` bisa berarti menarik ratusan ribu baris ke
-    // DOM. Jatuh ke paginasi biasa, yang memang selalu aman.
-    const semua = rekap !== null && rekap.total <= SHOW_ALL_MAX
-    setShowAll(semua)
-
-    const rows = await fetchPage(f, semua ? Math.max(rekap!.total, 1) : PAGE_SIZE, 0)
+    // Halaman PERTAMA, seukuran halaman biasa. Kalau rekap nanti melaporkan
+    // hasilnya kecil (≤ SHOW_ALL_MAX), `mulaiRekap` yang menggantinya dengan
+    // seluruh baris — jadi mode "tampilkan semua" tak hilang, cuma tak lagi
+    // menyandera baris pertama.
+    const rows = await fetchPage(f, PAGE_SIZE, 0)
     setData(rows)
     // Tak ada lagi "seluruh baris" di memori — Export menariknya sendiri.
     setAllVisible([])
@@ -657,10 +713,17 @@ export default function DaftarBarangPage() {
       // `null`, BUKAN 0 — di sini barisnya memang gagal dimuat, jadi jumlahnya
       // tak diketahui. "0 barang" akan berbohong tentang datanya.
       setAllVisible([]); setData([]); setTotal(null); setGrandTotal(null)
+      // Rekap yang masih berjalan DIBATALKAN: "1.937 barang" di kaki tabel yang
+      // barisnya justru gagal dimuat terbaca sbg "datanya ada, cuma layarnya
+      // ngadat" — padahal yang benar sebaliknya.
+      reqSeq.current++; setRekapJalan(false)
     } finally {
       // Di `finally`, BUKAN di akhir jalur sukses — kalau tidak, satu query
       // gagal bikin tombolnya nyangkut "Memuat..." selamanya.
       setLoading(false)
+      // Dilepas di `finally` juga: kalau tidak, satu baris yang gagal dimuat
+      // membuat rekap yang sehat menunggu selamanya.
+      tandaiBarisSiap()
     }
   }
 
@@ -675,6 +738,9 @@ export default function DaftarBarangPage() {
   // selamanya tanpa sepatah pun keterangan.
   async function goPage(pg: number) {
     if (!applied) return
+    // Dibaca `mulaiRekap` yang berjalan di latar: begitu operator pindah
+    // halaman, mode "tampilkan semua" tak boleh lagi menimpa isi tabelnya.
+    pageRef.current = pg
     setPage(pg)
     setLoading(true); setErr('')
     try {
@@ -1067,7 +1133,7 @@ export default function DaftarBarangPage() {
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
-              {total == null ? 'jumlah tak terhitung' : `${total.toLocaleString('id-ID')} barang`}{skpdNama ? ` — ${skpdNama}` : ''}
+              {total == null ? (rekapJalan ? 'menghitung jumlah…' : 'jumlah tak terhitung') : `${total.toLocaleString('id-ID')} barang`}{skpdNama ? ` — ${skpdNama}` : ''}
               {applied.golongan ? ` · ${applied.golongan} ${golonganLabels[applied.golongan] || ''}` : ''}
               {` · posisi ${applied.periode}`}
             </span>
@@ -1108,9 +1174,9 @@ export default function DaftarBarangPage() {
                         jumlah halaman berjalan di baris TOTAL akan dibaca sbg
                         total SELURUH hasil filter, dan itu berbohong. */}
                     <td className="table-td text-xs" colSpan={nilaiIdx}>
-                      TOTAL ({total == null ? 'jumlah tak terhitung' : `${total.toLocaleString('id-ID')} barang`})
+                      TOTAL ({total == null ? (rekapJalan ? 'menghitung jumlah…' : 'jumlah tak terhitung') : `${total.toLocaleString('id-ID')} barang`})
                     </td>
-                    <td className="table-td text-right text-xs">{grandTotal == null ? 'tak terhitung' : grandTotal ? angka(grandTotal) : '…'}</td>
+                    <td className="table-td text-right text-xs">{grandTotal == null ? (rekapJalan ? 'menghitung…' : 'tak terhitung') : grandTotal ? angka(grandTotal) : '…'}</td>
                     {cols.length - nilaiIdx - 1 > 0 && <td className="table-td" colSpan={cols.length - nilaiIdx - 1} />}
                   </tr>
                 </tfoot>

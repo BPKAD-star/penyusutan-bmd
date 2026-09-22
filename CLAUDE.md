@@ -4761,7 +4761,13 @@ CPU — jadi menyetel ulang SQL-nya cuma memindahkan rasa sakit.
   mengubah kesimpulan (biaya intinya melahirkan 729rb baris, bukan heap fetch).
 - ⛔ **`fn_daftar_barang_rekap` BELUM punya `SET work_mem TO '64MB'`** padahal
   `fn_penyusutan_rekap` punya — melanggar aturan "RPC agregat berat WAJIB
-  work_mem" di atas. Belum disentuh; kandidat perbaikan berikutnya.
+  work_mem" di atas. **Tapi JANGAN berharap itu obatnya: sudah DIUKUR & tak
+  menolong.** Panggilan yang sama dijalankan dgn `set local work_mem='64MB'`
+  di sesinya: **30.885 ms** (`total_count` 1.937) lawan 16.299 ms tanpa —
+  artinya sama sekali tak ada perbaikan, yang terlihat cuma derau keadaan
+  cache. Masuk akal: yang kurang bukan memori kerja per node, melainkan
+  `shared_buffers` (lihat di bawah). Memasangnya tetap layak demi konsistensi
+  aturan, bukan demi kecepatan.
 - ⛔ **Kata kunci berbentuk PREFIKS KODE terbukti bisa 23× lebih cepat.**
   Predikat pencarian sekarang merakit 11 kolom jadi satu teks lalu
   `ILIKE '%…%'` (`fn_aset_teks_cari`) — mustahil diindeks, leading wildcard.
@@ -4778,6 +4784,58 @@ CPU — jadi menyetel ulang SQL-nya cuma memindahkan rasa sakit.
   I/O karena datanya belasan kali lebih besar dari cache, menukar-nukar rencana
   query TIDAK menyelamatkannya.** Ukur `shared_buffers` lawan ukuran tabel
   SEBELUM menghabiskan waktu menulis ulang SQL-nya.
+
+### AKALAN sementara sampai mesinnya pindah (2026-09-22, keputusan user)
+
+User punya server sendiri tapi migrasinya belum jalan ("diakali dulu?"), dan
+**melarang menyentuh cara pencarian** ("Jangan disentuh dulu") — jadi jalur
+prefiks-kode di atas TIDAK dikerjakan. Yang dikerjakan murni di sisi klien;
+**nol migrasi, nol perubahan RPC, nol perubahan semantik.**
+
+- **REKAP PINDAH KE LATAR.** Sampai hari ini kedua halaman MENUNGGU rekapnya
+  sebelum melepas "Memuat..." — Daftar Barang bahkan menunggunya sebelum
+  MEMINTA baris pertamanya (jumlahnya yang menentukan mode "tampilkan semua").
+  Jadi operator menunggu 9–35 dtk untuk angka kaki tabel, padahal barisnya
+  sudah siap sejak ratusan milidetik pertama. Sekarang baris dulu, angka
+  menyusul; yang gagal tetap jatuh ke strip amber "tak terhitung" (f3cb247).
+  Selama dihitung, kaki tabel berbunyi **"menghitung jumlah…"** — sengaja
+  dibedakan dari "jumlah tak terhitung", karena keduanya artinya berlawanan
+  (satu masih berjalan, satu sudah menyerah).
+  ⚠️ **`seq` (nomor permintaan) WAJIB diperiksa SESUDAH tiap `await`.** Rekap
+  yang baru pulang 30 dtk kemudian akan menaruh angka milik filter LAMA di kaki
+  tabel filter yang BARU — kebohongan yang tak akan pernah muncul sebagai error.
+  Kegagalan BARIS juga menaikkan `seq`, supaya "1.937 barang" tak duduk di atas
+  tabel yang justru kosong.
+  ⚠️ **Mode "tampilkan semua" (≤ `SHOW_ALL_MAX`) DIPERTAHANKAN**, cuma
+  keputusannya diambil SESUDAH halaman pertama tampil — dan penarikan seluruh
+  barisnya WAJIB menunggu jalur utama selesai (`barisSiap`). Untuk filter sempit
+  rekap bisa pulang LEBIH DULU daripada barisnya; tanpa penantian itu, 500 baris
+  yang sudah terpasang ditimpa 100 baris halaman pertama sementara paginasi
+  sudah terlanjur disembunyikan → **400 baris lenyap tanpa satu pun tanda.**
+  Operator yang sudah pindah halaman juga tak diganggu (`pageRef`).
+- **COBA-ULANG SEKALI KALAU TIMEOUT — `lib/rpcUlang.ts`** (`pesanTimeout` +
+  `rpcUlangJikaTimeout`), dipakai `fn_dashboard_rekap`, `fn_daftar_barang_rekap`,
+  & `fn_penyusutan_rekap`. **Bukan "ulangi saja siapa tahu berhasil":** diukur
+  ke produksi, `fn_dashboard_rekap` **9.248 ms DINGIN** (lewat pagu → 57014,
+  itulah strip merah Dashboard yang "kadang" muncul) lawan **721 ms HANGAT**
+  dgn `shared hit=13.770`, yaitu seluruhnya dari cache — dan `VACUUM`-nya segar,
+  jadi bukan itu sebabnya. Percobaan pertama yang tumbang tetap MENARIK
+  halamannya ke cache sebelum mati, jadi percobaan kedua berangkat hangat.
+  ⚠️ **HANYA untuk timeout** (`57014`/"statement timeout"); error lain hasilnya
+  akan sama persis kalau diulang & cuma menggandakan beban. ⚠️ **TEPAT sekali**,
+  bukan sampai berhasil. ⚠️ Kegagalan percobaan kedua dikembalikan APA ADANYA —
+  modul ini tak pernah boleh mengubah kegagalan jadi keberhasilan yang
+  kelihatan sah. Dikunci lib/rpcUlang.test.ts.
+  ⚠️ `PromiseLike`, bukan `Promise`: builder supabase-js itu thenable tanpa
+  `.catch`/`.finally`, jadi `Promise<R>` membuat inferensi gagal diam-diam &
+  `R` jatuh ke batasan generiknya.
+- **`app/dashboard/page.tsx` dapat `maxDuration = 60`** — bawaannya tak cukup
+  untuk dua kali 8 dtk, dan percobaan kedua yang dipotong runtime menghasilkan
+  504, kegagalan yang lebih buruk daripada strip merah yang hendak ditutup.
+- ⚠️ **Semua ini MENUTUPI gejala, bukan sebabnya.** Begitu servernya pindah &
+  `shared_buffers` sepadan dgn datanya, yang layak ditinjau ulang: apakah rekap
+  masih perlu di latar (boleh tetap — ia tak merugikan), dan apakah
+  `SHOW_ALL_MAX` masih ambang yang benar.
 
 ## Pengadaan: "Tambah ke Draft" WAJIB lengkap (2026-09-09)
 

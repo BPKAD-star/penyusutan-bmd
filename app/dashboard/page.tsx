@@ -6,6 +6,7 @@ import { formatRupiah2 } from '@/lib/export'
 import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
 import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/PenghapusanCards'
+import { rpcUlangJikaTimeout } from '@/lib/rpcUlang'
 
 // ⚠️ Dashboard WAJIB mencerminkan ledger HIDUP. `@supabase/ssr` tak menyetel
 // `cache: 'no-store'`, jadi query `.from(...).select(...)` (GET) — Penghapusan &
@@ -17,6 +18,12 @@ import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/P
 // halaman ini memang sudah dinamis (baca `cookies()`), jadi tak ada ongkos
 // render tambahan; pola yang sama dgn app/kibar/[nibar]/page.tsx.
 export const dynamic = 'force-dynamic'
+// ⚠️ Dinaikkan 2026-09-22 bersama percobaan-ulang di `scanAset`. Bawaannya tak
+// cukup untuk dua kali 8 dtk, dan percobaan kedua yang dipotong runtime justru
+// menghasilkan 504 — kegagalan yang lebih buruk daripada strip merah yang
+// hendak ditutup. Halaman ini streaming (`cache()` + slot), jadi angka besar di
+// sini tak menahan bagian lain ikut tampil.
+export const maxDuration = 60
 
 const nf = (n: number) => n.toLocaleString('id-ID')
 
@@ -223,7 +230,12 @@ async function scanAset(sb: SB): Promise<{
   const caraNilai: Record<string, number> = {}
   const caraCount: Record<string, number> = {}
   try {
-    const { data, error } = await sb.rpc('fn_dashboard_rekap')
+    // ⚠️ SATU KALI COBA ULANG KALAU TIMEOUT (akalan 2026-09-22, sementara
+    // sampai mesin DB-nya pindah). Diukur ke produksi hari itu, sbg admin dgn
+    // RLS aktif: panggilan DINGIN **9.248 ms** (lewat pagu 8.000 ms → 57014,
+    // itulah strip merah yang "kadang" muncul) lawan panggilan HANGAT
+    // **721 ms** dgn `shared hit=13.770`. Alasan lengkapnya di lib/rpcUlang.ts.
+    const { data, error } = await rpcUlangJikaTimeout(() => sb.rpc('fn_dashboard_rekap'))
     if (error) return { gol, caraNilai, caraCount, err: error.message }
     if (!data) return { gol, caraNilai, caraCount, err: 'data kosong' }
     const d = data as {
