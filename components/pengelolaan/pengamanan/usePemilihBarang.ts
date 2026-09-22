@@ -6,7 +6,8 @@
 // Diangkat dari `BarangForm` (components/pengelolaan/Pengamanan.tsx) 2026-09-16
 // (REFACTOR-PLAN Fase 3). Ia KEMUNCULAN KETIGA bentuk pemilih barang (koreksi ·
 // penghapusan · pengamanan), jadi syarat yang ditulis di
-// penghapusan/usePemilihBarang.ts terpenuhi — tapi yang diangkat bersama HANYA
+// usePemilihBarangLengkap.ts (dulu penghapusan/usePemilihBarang.ts, dipindah &
+// di-rename 2026-09-22) terpenuhi — tapi yang diangkat bersama HANYA
 // mesin centangnya (`shared/ui/useSeleksiBarang.ts`), bukan pemilihnya.
 // Query ketiga menu berbeda nyata, dan yang ini paling jauh menyimpang:
 //   · qual tambahan `.is('pengamanan', null)` — barang yang sedang dipegang

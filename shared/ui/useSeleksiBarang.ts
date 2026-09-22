@@ -8,9 +8,11 @@
 //   · components/kir/Kir.tsx
 //   · components/pengelolaan/PengeluaranInternal.tsx
 //   · components/pengelolaan/Reklasifikasi.tsx        (+ predikat `bolehPilih`)
-//   · components/pengelolaan/penghapusan/usePemilihBarang.ts
+//   · components/pengelolaan/penghapusan/usePemilihBarang.ts (2026-09-22:
+//     dipindah & di-rename jadi components/pengelolaan/usePemilihBarangLengkap.ts
+//     begitu Pengeluaran Internal jadi pemakai ketiganya — path di atas historis)
 //   · components/pengelolaan/Pengamanan.tsx
-// Catatan di penghapusan/usePemilihBarang.ts sudah menuliskan syaratnya:
+// Catatan di usePemilihBarangLengkap.ts sudah menuliskan syaratnya:
 // *"Kalau menu KETIGA butuh pemilih serupa, barulah angkat bentuk bersamanya."*
 //
 // ⚠️ Yang diangkat CUMA mesin centangnya, BUKAN pemilihnya. Query kelima menu

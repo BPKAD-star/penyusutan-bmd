@@ -20,8 +20,8 @@ import { useEffect, useState, useCallback } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { useSeleksiBarang } from '@/shared/ui/useSeleksiBarang'
-import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3 } from '@/lib/bmd'
+import { usePemilihBarangLengkap, type BarangLengkap } from './usePemilihBarangLengkap'
+import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
 import { formatRupiah2 } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import FormShell from './FormShell'
@@ -32,10 +32,10 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
-type Barang = {
-  id: string; nibar: string | null; kode: string; nama_barang: string | null
-  merek_tipe: string | null; jumlah: number; satuan: string | null; nilai_perolehan: number; skpd_id: number | null
-}
+// = bentuk yang dikembalikan usePemilihBarangLengkap (kolom kendaraan & uraian
+// baku ikut, sekalipun "Barang" di sini cuma memakai sebagian — lihat
+// draftDari). Alias lokal dipertahankan supaya JSX & fungsi lain tak berubah.
+type Barang = BarangLengkap
 type DraftItem = {
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
   merek_tipe: string | null; jumlah: number; satuan: string | null; nilai: number
@@ -479,18 +479,19 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [dokPaths, setDokPaths] = useState<string[]>([])
   const [dokUploading, setDokUploading] = useState(false)
 
-  const [fGolongan, setFGolongan] = useState('')
-  const [fKomptabel, setFKomptabel] = useState('')
-  const [fSearch, setFSearch] = useState('')
-
-  const [rows, setRows] = useState<Barang[]>([])
-  const [loaded, setLoaded] = useState(false)
-  const [loading, setLoading] = useState(false)
-  // Mesin centang bersama (shared/ui/useSeleksiBarang.ts) — kemunculan kelima
-  // bentuk yang sama; diangkat 2026-09-16.
-  const { sel, setSel, selList, allSelected, toggle, toggleAll } = useSeleksiBarang<Barang>(rows)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  // Pemilih barang (filter + cari + centang) → ./usePemilihBarangLengkap.ts —
+  // SAMA PERSIS dgn Penghapusan/Pengalihan Status (permintaan user 2026-09-22:
+  // "search bar & kolom yang tertampil biar sama"). Nama lokal dipertahankan
+  // supaya JSX di bawah tetap. ⚠️ `err` sengaja dideklarasikan DI ATAS: hook
+  // ini menerima `setErr` sbg saluran pelaporan, jadi urutannya bukan selera.
+  const {
+    fGolongan, setFGolongan, fKomptabel, setFKomptabel, fSearch, setFSearch,
+    rows, loaded, loading, tampilkan, sel, setSel, selList, selTotal, toggle, toggleAll,
+    uraianMap: uraianMapPicker,
+  } = usePemilihBarangLengkap(skpdId, setErr)
 
   // Daftar tujuan = SKPD induk (root) + semua anak + semua cucu dari root yg
   // sama dgn skpdId — HANYA relevan saat bikin jurnal baru (header===null);
@@ -517,20 +518,6 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     })()
   }, [skpdId, header]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function tampilkan() {
-    setLoading(true)
-    let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id')
-      .eq('status', 'aktif').eq('skpd_id', skpdId)
-    if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
-    if (fKomptabel) q = q.eq('intra_ekstra', fKomptabel)
-    if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
-    const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
-    setRows((data as unknown as Barang[]) || [])
-    setLoaded(true)
-    setLoading(false)
-  }
-
   async function uploadDokumen(files: FileList | null) {
     if (!files || files.length === 0) return
     setDokUploading(true)
@@ -546,8 +533,6 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     await supabase.storage.from('dokumen-sumber').remove([path])
     setDokPaths(prev => prev.filter(p => p !== path))
   }
-
-  const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
 
   const draftDari = (b: Barang): DraftItem => ({
     aset_id: b.id, nibar: b.nibar, kode: b.kode, nama_barang: b.nama_barang,
@@ -585,6 +570,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   }
 
   const perluDokumenDulu = !header && dokPaths.length === 0
+  const allSelected = rows.length > 0 && rows.every(r => sel[r.id])
 
   return (
     <div className="space-y-4">
@@ -672,7 +658,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
           </div>
           <div className="flex-1 min-w-[180px]">
             <label className="block text-xs text-gray-500 mb-1">Cari</label>
-            <input className="select-filter w-full" placeholder="Nama barang / NIBAR / kode..."
+            <input className="select-filter w-full" placeholder="Nama / NIBAR / kode / no. polisi / rangka / mesin..."
               value={fSearch} onChange={e => setFSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
           </div>
@@ -687,25 +673,46 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
                   <tr>
-                    <th className="table-th w-10 text-center"><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
-                    <th className="table-th">Barang</th>
-                    <th className="table-th">Merek / Tipe</th>
+                    <th className="table-th w-10 text-center">
+                      <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                    </th>
+                    <th className="table-th">Kode Barang / Uraian</th>
+                    <th className="table-th">Spesifikasi Nama · NIBAR</th>
+                    <th className="table-th">Merk / Tipe</th>
+                    <th className="table-th">Spesifikasi Lainnya</th>
+                    <th className="table-th">No. Polisi</th>
+                    <th className="table-th">No. Rangka</th>
+                    <th className="table-th">No. Mesin</th>
                     <th className="table-th text-center">Jumlah</th>
+                    <th className="table-th">Tgl Perolehan</th>
+                    <th className="table-th text-center">Tahun Pengadaan</th>
                     <th className="table-th text-right">Nilai Perolehan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {rows.length === 0 ? (
-                    <tr><td colSpan={5} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
+                    <tr><td colSpan={12} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
                   ) : rows.map(b => (
                     <tr key={b.id} className={sel[b.id] ? 'bg-teal/5' : ''}>
-                      <td className="table-td text-center"><input type="checkbox" checked={!!sel[b.id]} onChange={() => toggle(b)} /></td>
+                      <td className="table-td text-center">
+                        <input type="checkbox" checked={!!sel[b.id]} onChange={() => toggle(b)} />
+                      </td>
                       <td className="table-td">
-                        <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode} · {golonganLabels[kodeLevel3(b.kode)] || kodeLevel3(b.kode)}</p>
+                        <p className="font-medium text-gray-800 text-xs">{b.kode || '-'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{uraianMapPicker[b.kode] || b.uraian_barang || '-'}</p>
+                      </td>
+                      <td className="table-td">
+                        <p className="text-gray-700 text-xs">{b.nama_barang || '-'}</p>
+                        <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'}</p>
                       </td>
                       <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
+                      <td className="table-td text-xs text-gray-600">{b.spesifikasi_lainnya || '-'}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_polisi || '-'}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_rangka || '-'}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_mesin || '-'}</td>
                       <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
+                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.tgl_perolehan || '-'}</td>
+                      <td className="table-td text-center text-xs">{b.tahun_pengadaan ?? '-'}</td>
                       <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                     </tr>
                   ))}

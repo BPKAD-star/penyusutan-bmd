@@ -688,7 +688,9 @@ lib/pemecahanNilai.ts · penggabunganNilai.ts · pencatatanGanda.ts   aturan mur
 components/pengelolaan/koreksi/
   tipe.ts · usePemecahan · usePenggabungan · usePencatatanGanda
   useSpesifikasi · useKoreksiNilai · usePemilihBarang · useJurnalKoreksi
-components/pengelolaan/penghapusan/usePemilihBarang.ts
+components/pengelolaan/usePemilihBarangLengkap.ts   (dulu penghapusan/usePemilihBarang.ts,
+                                                     dipindah 2026-09-22 saat jadi pemakai
+                                                     ketiga bareng Pengeluaran Internal)
 ```
 
 Hasil: `KoreksiForm` **46 → 8** `useState`, `Koreksi.tsx` 2.449 → 1.989.

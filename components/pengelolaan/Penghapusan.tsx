@@ -22,7 +22,7 @@ import { useEffect, useState, useCallback } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { usePemilihBarangHapus } from './penghapusan/usePemilihBarang'
+import { usePemilihBarangLengkap, type BarangLengkap } from './usePemilihBarangLengkap'
 import { SUBJENIS_OPT, JENIS_PENGHAPUSAN, type JenisHapus } from '@/lib/penghapusan'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
@@ -65,24 +65,9 @@ const FILTER_LABEL: Record<'semua' | JenisHapus, string> = {
   pengalihan_status: 'Pengalihan Status',
 }
 
-type Barang = {
-  id: string
-  nibar: string | null
-  kode: string
-  nama_barang: string | null
-  uraian_barang: string | null
-  merek_tipe: string | null
-  spesifikasi_lainnya: string | null
-  no_polisi: string | null
-  no_rangka: string | null
-  no_mesin: string | null
-  tgl_perolehan: string | null
-  tahun_pengadaan: number | null
-  jumlah: number
-  satuan: string | null
-  nilai_perolehan: number
-  skpd_id: number | null
-}
+// = bentuk yang dikembalikan usePemilihBarangLengkap. Alias lokal dipertahankan
+// (bukan mengganti tiap pemakaian jadi `BarangLengkap`) supaya diff minimal.
+type Barang = BarangLengkap
 
 // Snapshot barang di draft pengalihan (payload.draft_items) — dipakai tampilan;
 // nilai otoritatif dibaca ulang dari aset oleh RPC saat SKPD tujuan menerima.
@@ -839,15 +824,17 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
-  // Pemilih barang (filter + cari + centang) → ./penghapusan/usePemilihBarang.ts
-  // (REFACTOR-PLAN Fase 3). Nama lokal dipertahankan supaya JSX tetap.
+  // Pemilih barang (filter + cari + centang) → ./usePemilihBarangLengkap.ts
+  // (REFACTOR-PLAN Fase 3; diangkat dari folder khusus Penghapusan ke sini
+  // 2026-09-22 begitu Pengeluaran Internal jadi pemakai KETIGA — lihat header
+  // berkas itu). Nama lokal dipertahankan supaya JSX tetap.
   // ⚠️ `err` sengaja dideklarasikan DI ATAS: hook ini menerima `setErr`
   // sebagai saluran pelaporan (Fase 1), jadi urutannya bukan selera.
   const {
     fGolongan, setFGolongan, fKomptabel, setFKomptabel, fSearch, setFSearch,
     rows, loaded, loading, tampilkan, sel, setSel, selList, selTotal, toggle, toggleAll,
     uraianMap: uraianMapPicker,
-  } = usePemilihBarangHapus(skpdId, setErr)
+  } = usePemilihBarangLengkap(skpdId, setErr)
 
   const isAlih = header ? header.kategori === 'pengalihan_status' : jenis === 'pengalihan_status'
   // Hanya menggate jurnal yang BENAR-BENAR baru — nambah barang ke jurnal yang

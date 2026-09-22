@@ -1,7 +1,8 @@
 'use client'
 // ============================================================================
-// Pemilih barang di form Penghapusan — filter golongan + komptabel + cari →
-// daftar barang aktif se-SKPD, dengan centang (satuan & massal).
+// Pemilih barang "lengkap" — filter golongan + komptabel + cari (nama / NIBAR
+// / kode / no. polisi / rangka / mesin) → daftar barang aktif se-SKPD, dengan
+// centang (satuan & massal) + kolom identitas kendaraan & uraian baku.
 //
 // Diangkat dari `BarangForm` (components/pengelolaan/Penghapusan.tsx)
 // 2026-09-15, REFACTOR-PLAN Fase 3. `BarangForm` komponen paling padat state
@@ -10,8 +11,8 @@
 //
 // ⚠️ KEMUNCULAN KEDUA dari bentuk yang sama — koreksi/usePemilihBarang.ts
 // mengerjakan hal serupa untuk menu Koreksi. SENGAJA TIDAK disatukan
-// (CODING-STANDARD §1.2 "rule of three": kedua dicatat, ketiga baru
-// diekstrak). Keduanya berbeda nyata, bukan cuma beda nama:
+// (CODING-STANDARD §1.2 "rule of three"). Keduanya berbeda nyata, bukan cuma
+// beda nama:
 //   · di sini ada filter KOMPTABEL; di sana tidak
 //   · kolom yang ditarik berbeda (di sini nomor kendaraan & tahun pengadaan,
 //     di sana kolom yang dipakai koreksi spesifikasi)
@@ -26,7 +27,7 @@
 // SEBAGIAN: yang diangkat bersama HANYA mesin centangnya
 // (`shared/ui/useSeleksiBarang.ts`, kemunculan kelima), bukan pemilihnya.
 // Kelima perbedaan yang didaftar di atas masih berlaku & masih jadi alasan
-// query-nya tetap berdiri sendiri.
+// query Pengamanan tetap berdiri sendiri.
 //
 // ✅ Fase 1 (2026-09-15): `tampilkan()` tak lagi menelan `error` —
 // kegagalannya dialirkan ke saluran error form & `loaded` TIDAK diset, supaya
@@ -39,6 +40,18 @@
 // origin/main, lihat CLAUDE.md). Keduanya independen: yang satu mengganti
 // mesin centang jadi hook bersama, yang satu menambah lookup uraian —
 // tak ada alasan salah satu dikorbankan.
+//
+// ✅ 2026-09-22 — DIANGKAT & DIRENAME (`usePemilihBarangHapus` →
+// `usePemilihBarangLengkap`) dari folder khusus Penghapusan ke sini (sibling
+// `Penghapusan.tsx` & `PengeluaranInternal.tsx`): permintaan user, "search bar
+// & kolom yang tertampil biar sama" antara Pengeluaran Internal dan
+// Penghapusan/Pengalihan Status. Beda dari kasus Koreksi/Pengamanan di atas —
+// di sana perbedaannya NYATA (filter/kolom/kotak cari berbeda), sedangkan di
+// sini yang diminta memang kesamaan PERSIS, jadi ini "kemunculan ketiga" yang
+// sungguh memenuhi rule of three (Penghapusan + Pengalihan Status sudah dua
+// pemakai sejak awal — dua jenis kartu yang berbagi `BarangForm` yang sama di
+// Penghapusan.tsx — dan Pengeluaran Internal jadi yang ketiga). Nama & isi
+// TIDAK berubah selain penamaan; perilaku persis sama dgn sebelum dipindah.
 // ============================================================================
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -50,7 +63,7 @@ const BARANG_COLS =
   'id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,' +
   'no_polisi,no_rangka,no_mesin,tgl_perolehan,tahun_pengadaan,jumlah,satuan,nilai_perolehan,skpd_id'
 
-export type BarangHapus = {
+export type BarangLengkap = {
   id: string
   nibar: string | null
   kode: string
@@ -69,19 +82,19 @@ export type BarangHapus = {
   skpd_id: number | null
 }
 
-export type PemilihBarangHapus = SeleksiBarang<BarangHapus> & {
+export type PemilihBarangLengkap = SeleksiBarang<BarangLengkap> & {
   fGolongan: string
   setFGolongan: (v: string) => void
   fKomptabel: string
   setFKomptabel: (v: string) => void
   fSearch: string
   setFSearch: (v: string) => void
-  rows: BarangHapus[]
+  rows: BarangLengkap[]
   loaded: boolean
   loading: boolean
   tampilkan: () => Promise<void>
   /** Σ nilai perolehan yang tercentang — dihitung di sini, bukan di mesin
-   *  centang bersama: hanya menu ini yang menampilkannya. */
+   *  centang bersama: hanya sebagian pemakai yang menampilkannya. */
   selTotal: number
   /** Uraian baku per kode (`admin_kodefikasi_bmd`) — cadangan atas kolom
    *  `uraian_barang` tersimpan, yang basi begitu barang direklas sesudah
@@ -89,16 +102,16 @@ export type PemilihBarangHapus = SeleksiBarang<BarangHapus> & {
   uraianMap: Record<string, string>
 }
 
-export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string) => void): PemilihBarangHapus {
+export function usePemilihBarangLengkap(skpdId: number | null, onErr: (msg: string) => void): PemilihBarangLengkap {
   const supabase = createClient()
 
   const [fGolongan, setFGolongan] = useState('')
   const [fKomptabel, setFKomptabel] = useState('')
   const [fSearch, setFSearch] = useState('')
-  const [rows, setRows] = useState<BarangHapus[]>([])
+  const [rows, setRows] = useState<BarangLengkap[]>([])
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
-  const seleksi = useSeleksiBarang<BarangHapus>(rows)
+  const seleksi = useSeleksiBarang<BarangLengkap>(rows)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   /** Uraian baku per kode (`admin_kodefikasi_bmd`) — pola sama Reklasifikasi/
@@ -129,7 +142,7 @@ export function usePemilihBarangHapus(skpdId: number | null, onErr: (msg: string
       `no_polisi.ilike.%${fSearch}%,no_rangka.ilike.%${fSearch}%,no_mesin.ilike.%${fSearch}%`)
     const { data, error } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
     if (error) throw new Error(`gagal memuat daftar barang: ${error.message}`)
-    const list = (data as unknown as BarangHapus[]) || []
+    const list = (data as unknown as BarangLengkap[]) || []
     setRows(list)
     setUraianMap(await fetchUraian(list.map(b => b.kode)))
     setLoaded(true)
