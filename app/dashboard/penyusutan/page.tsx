@@ -153,6 +153,11 @@ export default function PenyusutanPage() {
   const [detail, setDetail] = useState<{ nama: string; items: KapItem[] } | null>(null)
   // Pesan kegagalan query (bukan pesan engine) — lihat catatan di `load`.
   const [err, setErr] = useState('')
+  // Kegagalan REKAP sengaja punya salurannya sendiri & TIDAK fatal — lihat
+  // alasannya di `load()`. Dipisah dari `err` supaya bisa tampil sbg peringatan
+  // (amber) di atas tabel yang barisnya justru berhasil dimuat, bukan sbg
+  // strip merah yang menyuruh operator mengira seluruh datanya gagal.
+  const [errRekap, setErrRekap] = useState('')
   // Tombol "Jalankan Engine": hak akses, kemajuan, & loop batch-nya.
   // `isAdmin` cuma menyembunyikan tombol — /api/engine/run yang menjaga (403).
   const {
@@ -340,25 +345,48 @@ export default function PenyusutanPage() {
   // timeout / guard), tapi akibatnya sama persis: tanpa penangkap, halaman beku
   // di "Memuat..." selamanya tanpa sepatah pun keterangan. Lihat CLAUDE.md.
   async function load(f: Applied, halaman = 0) {
-    setLoading(true); setErr('')
+    setLoading(true); setErr(''); setErrRekap('')
     try {
       const { baris, arg } = await fetchHalaman(f, halaman)
       setRows(baris)
       setHal(halaman)
 
       // Rekap ditarik SEKALI per perubahan filter, bukan tiap ganti halaman —
-      // ia menghitung seluruh hasil filter (561 ms utk 132rb baris) dan tak
-      // berubah saat berpindah halaman.
+      // ia menghitung seluruh hasil filter dan tak berubah saat berpindah
+      // halaman.
       if (halaman === 0) {
-        const { data: rk, error: eRk } = await supabase.rpc('fn_penyusutan_rekap', arg)
-        if (eRk) throw new Error(`gagal menghitung rekap penyusutan: ${eRk.message}`)
-        const row = ((rk || []) as Rekap[])[0]
-        setRekap(row ? {
-          jumlah_baris: Number(row.jumlah_baris),
-          total_perolehan: Number(row.total_perolehan), total_beban: Number(row.total_beban),
-          total_akumulasi: Number(row.total_akumulasi), total_nilai_buku: Number(row.total_nilai_buku),
-          tanpa_hasil_engine: Number(row.tanpa_hasil_engine),
-        } : null)
+        // ⚠️ TRY/CATCH SENDIRI & kegagalannya TIDAK MEMBUNUH HALAMAN
+        // (2026-09-22). Menghitung SELURUH hasil filter jauh lebih mahal
+        // daripada mengambil satu halaman — diukur ke produksi hari itu:
+        // satu halaman ~0,5 dtk, rekapnya 9.439 ms (Dinas Kesehatan 1.3.2
+        // intra) s.d. 34.916 ms (se-kabupaten), lawan pagu 8 dtk. Jadi begitu
+        // datanya membesar (aset 517rb → 906rb), yang tumbang SELALU
+        // rekapnya duluan, tak pernah barisnya.
+        //
+        // Dulu ia dilempar ke `catch` bersama, dan di sana `setRows([])`
+        // MEMBUANG baris yang sudah berhasil dimuat — layar jadi "Tidak ada
+        // data untuk filter ini" + strip merah, padahal datanya ada & benar.
+        // Itu kegagalan yang jauh lebih mahal daripada angka kaki tabel yang
+        // tak terhitung. Pola & alasannya sama persis dgn Saldo Awal →
+        // Daftar Barang Awal (CLAUDE.md: "count & pengambilan baris punya
+        // biaya yang JAUH berbeda, jadi tak boleh satu nasib").
+        //
+        // `rekap = null` SUDAH lama berarti "jumlah tak terhitung" di kaki
+        // tabel — jadi tak ada yang berbohong, cuma angkanya absen.
+        try {
+          const { data: rk, error: eRk } = await supabase.rpc('fn_penyusutan_rekap', arg)
+          if (eRk) throw new Error(eRk.message)
+          const row = ((rk || []) as Rekap[])[0]
+          setRekap(row ? {
+            jumlah_baris: Number(row.jumlah_baris),
+            total_perolehan: Number(row.total_perolehan), total_beban: Number(row.total_beban),
+            total_akumulasi: Number(row.total_akumulasi), total_nilai_buku: Number(row.total_nilai_buku),
+            tanpa_hasil_engine: Number(row.tanpa_hasil_engine),
+          } : null)
+        } catch (e) {
+          setRekap(null)
+          setErrRekap(`Jumlah & total di kaki tabel tak bisa dihitung: ${(e as Error).message}. Barisnya sendiri TETAP benar — yang absen cuma angka rekapitulasinya. Persempit filter (pilih SKPD / jenis aset) supaya totalnya ikut terhitung.`)
+        }
       }
 
       setKapMap(await fetchKap(f))
@@ -479,7 +507,14 @@ export default function PenyusutanPage() {
   }
 
   const totalBaris = rekap?.jumlah_baris ?? null
-  const halTerakhir = totalBaris == null ? hal : Math.max(0, Math.ceil(totalBaris / PAGE_SIZE) - 1)
+  // ⚠️ Tanpa total (rekap gagal dihitung), batas halaman TIDAK boleh jatuh ke
+  // `hal` — itu mematikan "Berikutnya" & MENGURUNG operator di halaman 1
+  // padahal barisnya ada. Pandunya "halaman ini penuh" (`adaLagi`), pola yang
+  // sama dgn Saldo Awal → Daftar Barang Awal (CLAUDE.md).
+  const adaLagi = rows.length === PAGE_SIZE
+  const halTerakhir = totalBaris == null
+    ? (adaLagi ? hal + 1 : hal)
+    : Math.max(0, Math.ceil(totalBaris / PAGE_SIZE) - 1)
 
   return (
     <div className="p-6">
@@ -585,6 +620,14 @@ export default function PenyusutanPage() {
 
       {err && (
         <div className="card border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</div>
+      )}
+
+      {/* Rekap gagal ≠ data gagal. Sengaja AMBER (peringatan), bukan merah:
+          barisnya di bawah benar & lengkap, yang absen cuma angka kaki tabel.
+          Strip merah di sini dulu membuat operator mengira seluruh datanya
+          tak bisa dipercaya. */}
+      {errRekap && (
+        <div className="card border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">⚠ {errRekap}</div>
       )}
 
       {applied === null ? (

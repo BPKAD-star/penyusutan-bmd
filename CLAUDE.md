@@ -4681,6 +4681,104 @@ Barang sendiri tak boleh ikut rusak.
   halaman baru, tanya dulu apakah operator benar-benar butuh angka totalnya —
   dan kalau butuh, pastikan kegagalannya tak ikut menjatuhkan daftarnya.
 
+## REKAP yang gagal TIDAK BOLEH membunuh daftarnya (2026-09-22)
+
+User melaporkan Penyusutan & Daftar Barang menampilkan strip MERAH *"canceling
+statement due to statement timeout"* lalu **"Tidak ada data untuk filter ini"**
+— padahal barisnya baik-baik saja. Yang tumbang di kedua layar itu query
+**REKAP**-nya, bukan pengambilan barisnya, dan kegagalannya ikut menyeret baris
+yang SUDAH berhasil dimuat ke tempat sampah (`setRows([])` / `setData([])` di
+`catch` bersama).
+
+**Diukur ke produksi 2026-09-22 (RLS aktif, uid admin), pagu `authenticated`
+8.000 ms:**
+
+| Panggilan | Terukur |
+|---|---|
+| `fn_penyusutan_rekap` Diknes 1.3.2 intra + cari | **14.421 ms** |
+| `fn_penyusutan_rekap` Diknes 1.3.2 intra, TANPA cari | **11.791 ms** |
+| `fn_penyusutan_rekap` se-kabupaten 1.3.2 intra | **34.916 ms** |
+| `fn_daftar_barang_rekap` se-kabupaten 1.3.2 + cari | **16.299 ms** |
+| `fn_daftar_barang_rekap` Diknes 1.3.2 + cari | 2.311 ms ✅ |
+| satu HALAMAN `fn_penyusutan`/`fn_daftar_barang` | ratusan ms ✅ |
+
+⚠️ **Perhatikan baris kedua: gagal walau TANPA kata kunci.** Jadi ini bukan
+soal pencariannya — rekap Penyusutan memang sudah lewat pagu untuk SKPD besar
+mana pun.
+
+- **Perbaikan yang dikerjakan hari ini (murni klien, tanpa migrasi):** rekap
+  dapat `try/catch` SENDIRI di kedua halaman. Gagal → `rekap = null` /
+  `total = null` ("jumlah tak terhitung", bentuk yang UI-nya memang sudah
+  punya) + strip **AMBER** (peringatan), dan **barisnya tetap tampil**.
+  Strip merah dipertahankan HANYA untuk kegagalan yang benar-benar menjatuhkan
+  barisnya. Pola & alasannya sama persis dgn Saldo Awal → Daftar Barang Awal
+  (lihat bagian `head:true` di atas: *"count & pengambilan baris punya biaya
+  yang JAUH berbeda, jadi tak boleh satu nasib"*).
+- ⚠️ **Pasangan wajibnya: paginasi tak boleh ikut mati.** `totalPages`/
+  `halTerakhir` yang diturunkan dari total `null` akan jatuh ke 0/`hal` dan
+  **MEMATIKAN tombol "Berikutnya"** — operator terkurung di halaman 1 padahal
+  barisnya ada. Pandunya "halaman ini penuh" (`adaLagi = rows.length ===
+  PAGE_SIZE`). Penyebut "/ N" juga disembunyikan saat tak terhitung, jangan
+  dikarang dari `adaLagi`.
+- ⚠️ **`null` ≠ `0`, dan itu inti perbaikannya.** "0 barang" pernyataan tentang
+  DATA; "tak terhitung" pernyataan tentang QUERY. Menyamakannya membuat timeout
+  terbaca operator sbg "barangnya memang tak ada" — kegagalan senyap kelas
+  paling mahal di modul ini. `total`/`grandTotal` di Daftar Barang karena itu
+  bertipe `number | null`.
+
+### Sebab sesungguhnya: MESIN DB-nya yang kekecilan, bukan cuma query-nya
+
+Diukur hari yang sama:
+
+- `shared_buffers` **224 MB** · `effective_cache_size` **384 MB** ·
+  `work_mem` bawaan **2,1 MB** · `max_parallel_workers_per_gather` **1**
+  → itu instance Supabase kelas **Micro (±1 GB RAM)**.
+- Lawan datanya: `aset` **1.401 MB** (906.586 baris) · `transaksi_bmd` 619 MB
+  (907.450) · `aset_awal_2026` 610 MB (904.551) · `penyusutan_semester`
+  **544 MB (1.417.861 baris)** — **± 3,2 GB**, ±14× besar cache.
+  `idx_ps_periode_rekap` SENDIRIAN 168 MB = 75% seluruh `shared_buffers`.
+- ⚠️ **Angka skala di dokumen ini (lagi-lagi) basi**: 517.011 (2026-09-15) →
+  **906.586** (2026-09-22). Datanya nyaris DUA KALI LIPAT; mesinnya tidak ikut.
+
+**Plan `fn_penyusutan_rekap` (EXPLAIN ANALYZE, Diknes 1.3.2 intra):** CTE
+`ps AS MATERIALIZED` melahirkan **729.381 baris dalam 7,1–8,1 dtk** lalu
+di-hash-join ke hanya **25.031** baris `aset` (sisi aset cuma 490–874 ms).
+Tiga alternatif diuji & SEMUANYA lebih buruk — jadi jangan diulang:
+
+| Strategi | Terukur |
+|---|---|
+| `AS MATERIALIZED` + hash join (yang sekarang) | **8.856 ms** ← terbaik |
+| CTE di-inline → nested loop per aset | 36.792 ms |
+| `aset_id = ANY(array 25rb)` index scan | 25.117 ms |
+| idem, dipaksa bitmap (`enable_indexscan=off`) | 27.093 ms |
+
+Sebabnya semua jalur per-id kalah: **25 ribu kali turun btree ± 1 ms/lookup**
+pada index 100 MB + heap 544 MB yang tak muat cache. Ini **terikat I/O**, bukan
+CPU — jadi menyetel ulang SQL-nya cuma memindahkan rasa sakit.
+
+- ✅ **`VACUUM (ANALYZE) penyusutan_semester` dijalankan 2026-09-22** —
+  `Heap Fetches` di index-only scan-nya **114.403 → 0**. Nyata, tapi tak
+  mengubah kesimpulan (biaya intinya melahirkan 729rb baris, bukan heap fetch).
+- ⛔ **`fn_daftar_barang_rekap` BELUM punya `SET work_mem TO '64MB'`** padahal
+  `fn_penyusutan_rekap` punya — melanggar aturan "RPC agregat berat WAJIB
+  work_mem" di atas. Belum disentuh; kandidat perbaikan berikutnya.
+- ⛔ **Kata kunci berbentuk PREFIKS KODE terbukti bisa 23× lebih cepat.**
+  Predikat pencarian sekarang merakit 11 kolom jadi satu teks lalu
+  `ILIKE '%…%'` (`fn_aset_teks_cari`) — mustahil diindeks, leading wildcard.
+  Terukur: `kode LIKE '1.3.2.02.01%'` dilayani `idx_aset_kode_pattern` sbg
+  index-cond → **705 ms** (bitmap index scan-nya sendiri 11,7 ms), lawan
+  **16.299 ms** lewat jalur teks-gabungan. ⚠️ Menambahkan jalur cepat itu
+  **MENGUBAH SEMANTIK pencarian** (hari ini "1.3.2.02.01" juga mencocoki NIBAR/
+  kode register/keterangan yang memuat potongan itu), jadi **jangan dikerjakan
+  tanpa keputusan user**. Alternatif yang menjaga semantik utuh: index GIN
+  `pg_trgm` atas ekspresi gabungannya — tapi itu menambah index BESAR lagi ke
+  mesin yang cache-nya sudah 14× kekecilan, jadi urutannya: **naikkan mesin
+  dulu, baru timbang index.**
+- ⚠️ Pelajaran umum yang layak diingat: **begitu sebuah query sudah terikat
+  I/O karena datanya belasan kali lebih besar dari cache, menukar-nukar rencana
+  query TIDAK menyelamatkannya.** Ukur `shared_buffers` lawan ukuran tabel
+  SEBELUM menghabiskan waktu menulis ulang SQL-nya.
+
 ## Pengadaan: "Tambah ke Draft" WAJIB lengkap (2026-09-09)
 
 Keputusan user. Dulu yang diperiksa cuma tiga (kode barang, kuantitas ≥ 1,

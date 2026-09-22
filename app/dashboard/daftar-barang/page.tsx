@@ -309,8 +309,12 @@ export default function DaftarBarangPage() {
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
   const [bidangCount, setBidangCount] = useState<Record<string, { n: number; nLuas: number; luas: number | null }>>({}) // aset_id → jumlah bidang & Σ luas (Tanah, dari aset_bidang_tanah)
   const [posisiOverride, setPosisiOverride] = useState<Map<string, PosisiPeriode>>(new Map()) // aset_id → SKPD pemilik + tahun masuk, period-aware
-  const [total, setTotal] = useState(0)
-  const [grandTotal, setGrandTotal] = useState(0)
+  // ⚠️ `null` = TAK TERHITUNG (rekap gagal/timeout), sengaja DIBEDAKAN dari 0.
+  // "0 barang" itu pernyataan tentang data; "tak terhitung" pernyataan tentang
+  // query — menyamakannya membuat kegagalan terbaca sbg "barangnya memang tak
+  // ada", kegagalan senyap kelas paling mahal di modul ini.
+  const [total, setTotal] = useState<number | null>(0)
+  const [grandTotal, setGrandTotal] = useState<number | null>(0)
   const [showAll, setShowAll] = useState(false)
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -319,6 +323,10 @@ export default function DaftarBarangPage() {
   // melempar) atau terbaca operator sbg "0 barang / datanya memang kosong"
   // (kalau errornya ditelan) — dua-duanya bisa berbulan-bulan tak ketahuan.
   const [err, setErr] = useState('')
+  // Kegagalan REKAP punya salurannya SENDIRI & tidak fatal — lihat alasannya di
+  // `handleTampilkan`. Amber (peringatan) di atas tabel yang barisnya justru
+  // berhasil dimuat, bukan merah yang menyuruh operator mengira semuanya gagal.
+  const [errRekap, setErrRekap] = useState('')
   const [exporting, setExporting] = useState(false)
   // Berapa baris sudah tertarik selama Export. Export golongan besar memang
   // menit-menitan (218rb baris = 220 permintaan); tanpa angka yang bergerak,
@@ -581,7 +589,7 @@ export default function DaftarBarangPage() {
     if (pesanFilter) { setErr(pesanFilter); return }
     const f = rakit()
     setApplied(f); setPage(0); setGrandTotal(0)
-    setLoading(true); setErr('')
+    setLoading(true); setErr(''); setErrRekap('')
 
     // ⚠️ SELURUH isi fungsi ini WAJIB di dalam try/finally. Sebelumnya tidak:
     // begitu satu query melempar (fetchOwnerOverrides sudah melempar sejak
@@ -609,13 +617,33 @@ export default function DaftarBarangPage() {
     // diminta. Kalau hasilnya kecil (<= SHOW_ALL_MAX) halaman ini tetap
     // menampilkan semuanya sekaligus seperti dulu — perilaku itu dipertahankan,
     // cuma pemotongannya kini di server.
-    const rekap = await fetchRekap(f)
-    setTotal(rekap.total)
-    setGrandTotal(rekap.grand)
-    const semua = rekap.total <= SHOW_ALL_MAX
+    //
+    // ⚠️ TRY/CATCH SENDIRI & kegagalannya TIDAK MEMBUNUH HALAMAN (2026-09-22).
+    // `fn_daftar_barang_rekap` menyapu SELURUH hasil filter sementara
+    // `fn_daftar_barang` berhenti setelah 100 baris — diukur ke produksi hari
+    // itu: se-kabupaten 1.3.2 + kata kunci = 16.299 ms lawan pagu 8 dtk,
+    // sedangkan halamannya sendiri ratusan milidetik. Jadi yang tumbang SELALU
+    // rekapnya duluan. Dulu kegagalannya jatuh ke `catch` bersama & mengosongkan
+    // `data` — layar berbunyi "0 barang · Tidak ada data untuk filter ini",
+    // yang terbaca operator sbg "barangnya memang tak ada". Itu kegagalan
+    // SENYAP kelas paling mahal di modul ini, ditukar dgn angka total yang
+    // cuma hiasan. Pola & alasan sama dgn Saldo Awal → Daftar Barang Awal.
+    let rekap: { total: number; grand: number } | null = null
+    try {
+      rekap = await fetchRekap(f)
+    } catch (e) {
+      setErrRekap(`Jumlah & total nilai tak bisa dihitung: ${(e as Error).message}. Daftarnya sendiri TETAP benar — yang absen cuma angka rekapitulasinya. Persempit filter (pilih SKPD / jenis aset) supaya totalnya ikut terhitung.`)
+    }
+    // `null` = TAK TERHITUNG, sengaja dibedakan dari 0 — lihat `total`/`grandTotal`.
+    setTotal(rekap ? rekap.total : null)
+    setGrandTotal(rekap ? rekap.grand : null)
+    // Tak terhitung → JANGAN coba tampilkan semuanya sekaligus: tanpa tahu
+    // jumlahnya, `Math.max(total,1)` bisa berarti menarik ratusan ribu baris ke
+    // DOM. Jatuh ke paginasi biasa, yang memang selalu aman.
+    const semua = rekap !== null && rekap.total <= SHOW_ALL_MAX
     setShowAll(semua)
 
-    const rows = await fetchPage(f, semua ? Math.max(rekap.total, 1) : PAGE_SIZE, 0)
+    const rows = await fetchPage(f, semua ? Math.max(rekap!.total, 1) : PAGE_SIZE, 0)
     setData(rows)
     // Tak ada lagi "seluruh baris" di memori — Export menariknya sendiri.
     setAllVisible([])
@@ -626,7 +654,9 @@ export default function DaftarBarangPage() {
       // berbahaya daripada daftar yang menolak tampil — operator tak punya cara
       // tahu barangnya kurang, dan angkanya ikut diekspor ke Excel.
       setErr(`${(e as Error).message} — daftar tidak ditampilkan supaya tidak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat. Coba klik Tampilkan lagi; kalau berulang, kabari admin.`)
-      setAllVisible([]); setData([]); setTotal(0); setGrandTotal(0)
+      // `null`, BUKAN 0 — di sini barisnya memang gagal dimuat, jadi jumlahnya
+      // tak diketahui. "0 barang" akan berbohong tentang datanya.
+      setAllVisible([]); setData([]); setTotal(null); setGrandTotal(null)
     } finally {
       // Di `finally`, BUKAN di akhir jalur sukses — kalau tidak, satu query
       // gagal bikin tombolnya nyangkut "Memuat..." selamanya.
@@ -828,7 +858,12 @@ export default function DaftarBarangPage() {
     }
   }
 
-  const totalPages = Math.ceil(total / PAGE_SIZE)
+  // ⚠️ Tanpa total (rekap gagal), jumlah halaman TAK DIKETAHUI — dan `0` di
+  // sini akan MEMATIKAN tombol "Berikutnya" lalu mengurung operator di halaman
+  // 1 padahal barisnya ada. Pandunya "halaman ini penuh" (`adaLagi`), pola yang
+  // sama dgn Saldo Awal → Daftar Barang Awal (CLAUDE.md).
+  const adaLagi = data.length === PAGE_SIZE
+  const totalPages = total == null ? (adaLagi ? page + 2 : page + 1) : Math.ceil(total / PAGE_SIZE)
   const skpdNama = applied?.skpdId ? skpdMap[applied.skpdId] : undefined
   const cols = applied ? colsFor(applied.golongan) : KOLOM_DEFAULT
   const nilaiIdx = cols.indexOf('nilai')
@@ -1016,6 +1051,11 @@ export default function DaftarBarangPage() {
         </div>
       )}
 
+      {/* Rekap gagal ≠ data gagal — amber, bukan merah. Lihat `handleTampilkan`. */}
+      {errRekap && (
+        <div className="card border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">⚠ {errRekap}</div>
+      )}
+
       {/* Hasil */}
       {applied === null ? (
         <div className="card p-12 text-center text-gray-400 text-sm">
@@ -1027,12 +1067,14 @@ export default function DaftarBarangPage() {
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm text-gray-500">
-              {total.toLocaleString('id-ID')} barang{skpdNama ? ` — ${skpdNama}` : ''}
+              {total == null ? 'jumlah tak terhitung' : `${total.toLocaleString('id-ID')} barang`}{skpdNama ? ` — ${skpdNama}` : ''}
               {applied.golongan ? ` · ${applied.golongan} ${golonganLabels[applied.golongan] || ''}` : ''}
               {` · posisi ${applied.periode}`}
             </span>
             <div className="flex items-center gap-3">
-              {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1} / {totalPages || 1}</span>}
+              {/* Penyebut disembunyikan kalau totalnya tak terhitung — "/ 2"
+                  yang dikarang dari "halaman ini penuh" akan berbohong. */}
+              {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1}{total == null ? '' : ` / ${totalPages || 1}`}</span>}
               <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs"
                 title={`Posisi barang pada ${applied.periode} (sesuai filter semester)`}>
                 {exporting ? `Mengekspor${progres ? ` ${progres.toLocaleString('id-ID')} baris` : ''}...` : 'Export Excel'}
@@ -1062,8 +1104,13 @@ export default function DaftarBarangPage() {
               {!loading && data.length > 0 && (
                 <tfoot>
                   <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-gray-800">
-                    <td className="table-td text-xs" colSpan={nilaiIdx}>TOTAL ({total.toLocaleString('id-ID')} barang)</td>
-                    <td className="table-td text-right text-xs">{grandTotal ? angka(grandTotal) : '…'}</td>
+                    {/* Tak terhitung → katakan TERUS TERANG. Angka nol atau
+                        jumlah halaman berjalan di baris TOTAL akan dibaca sbg
+                        total SELURUH hasil filter, dan itu berbohong. */}
+                    <td className="table-td text-xs" colSpan={nilaiIdx}>
+                      TOTAL ({total == null ? 'jumlah tak terhitung' : `${total.toLocaleString('id-ID')} barang`})
+                    </td>
+                    <td className="table-td text-right text-xs">{grandTotal == null ? 'tak terhitung' : grandTotal ? angka(grandTotal) : '…'}</td>
                     {cols.length - nilaiIdx - 1 > 0 && <td className="table-td" colSpan={cols.length - nilaiIdx - 1} />}
                   </tr>
                 </tfoot>
