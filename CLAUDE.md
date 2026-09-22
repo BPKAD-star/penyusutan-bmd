@@ -4208,6 +4208,57 @@ aset yang **sudah ada** dan tanggalnya bebas dipilih dalam tahun buku terbuka.
   menambah satu pemeriksaan sebelum insert yang sudah ada, tak mengubah bentuk
   payload atau urutan tulis).
 
+### Guard arah MAJU Pengalihan/Mutasi TERNYATA NAIF — memakan korban nyata sehari kemudian (2026-09-22, migrasi 20260922_01)
+
+Guard yang baru dipasang 20260918_01 langsung kena kasus nyata: user mencatat
+Pengalihan Plemahan→Semen, lupa isi tanggal (kartu ini dibuat SEBELUM default
+tanggal dikosongkan) → tersimpan bertanggal hari itu → sadar salah → **Batal**
+(`fn_batal_pengalihan_barang`, menulis `batal_pengalihan` ber-`target_trx_ids`
+yang menetralkan baris lama) → arsipkan kartunya → catat KARTU BARU dgn
+tanggal yang benar → SKPD tujuan tekan Terima → **DITOLAK**: "sudah punya
+transaksi 'pengalihan_status' … LEBIH BARU". Penolakannya SALAH — baris lama
+itu sudah dinetralkan oleh pembatalannya sendiri.
+
+**Sebabnya guard arah maju yang ditulis 20260918_01 masih NAIF** — persis
+`fn_batal_pengalihan_barang` SEBELUM 20260917_01 & `cekBolehBatal` SEBELUM
+2026-08-31: cuma `WHERE aset_id=... AND jenis <> 'batal_kapitalisasi' AND
+tanggal > v_h.tanggal`, tanpa mengecek apakah baris itu sudah dinetralkan
+pasangan `batal_*`-nya. Append-only → baris lama & pembatalannya tak pernah
+hilang → kartu baru TERKUNCI SELAMANYA kalau tak ditambal, dan pesannya
+("batalkan yang lebih baru dulu") menyesatkan karena itu SUDAH terjadi.
+
+**Obatnya `fn_baris_penghalang_sisip(aset_id, tanggal_batas)`** — mengulang
+ALGORITMA `fn_baris_penghalang_batal` PERSIS (netral_a target_trx_id(s),
+netral_b kapitalisasi_serap↔batal_kapitalisasi, netral_c penghapusan↔batal_
+penghapusan), cuma di-scope `tanggal > p_tanggal_batas` (bukan `id >
+p_trx_id_batas`, karena guard arah maju memeriksa tanggal dokumen yang BELUM
+jadi baris — tak ada trx_id buat batasnya) & diurut `tanggal ASC, id ASC`
+(bukan `id ASC`) supaya pesan errornya menunjuk penghalang PALING AWAL.
+Dipasang di `fn_terima_pengalihan` & `fn_terima_mutasi_internal`, plus pagu
+500 baris fail-closed (pola sama dgn `fn_batal_pengalihan_barang`) sbg
+pre-check sebelum memanggilnya.
+
+⚠️ **Pelajaran umum: menambah guard baru yang meniru pola yang sudah ada tetap
+wajib memeriksa apakah pola SUMBERNYA sudah "self-healing" atau masih versi
+naif yang lama.** 20260918_01 ditulis SESUDAH 20260917_01 ada, tapi salah satu
+guard-nya (arah maju) tetap ditulis naif dari nol alih-alih menurunkan dari
+`fn_baris_penghalang_batal` yang sudah benar — celah yang sama persis kembali
+terbuka lewat pintu yang berbeda, dan baru ketahuan lewat kejadian nyata,
+bukan lewat review.
+
+Diverifikasi ke PRODUKSI sebelum ditulis (transaksi + ROLLBACK): rantai
+pengalihan+batal_pengalihan bertanggal sama pada aset yang sama — fungsi LAMA
+menghitung 1 penghalang (SALAH); fungsi BARU 0 (BENAR). Skenario "ditambah
+event HIDUP sesudahnya" → tetap memblokir (BENAR, tak jadi longgar). Tanda
+tangan `fn_terima_pengalihan`/`fn_terima_mutasi_internal` tak berubah →
+boleh dijalankan kapan saja, tidak ada deploy-ordering.
+
+⛔ **Data korban kejadian ini (kartu Plemahan→Semen yang terlanjur diarsipkan)
+belum otomatis pulih** — migrasi ini cuma membuka jalan supaya kartu BARU
+(tanggal benar) bisa diterima lagi; kartu lama yang sudah diarsipkan
+(`approval_status='ditolak'`) tetap arsip, dan itu memang sudah benar (bukan
+peristiwa yang berlaku lagi).
+
 ### Pengadaan/PerolehanManual/KDP DIPERIKSA & MEMANG kebal (2026-09-22)
 
 User bertanya lagi apakah Pengadaan & Perolehan Manual perlu ikut ditambal.
