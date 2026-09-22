@@ -580,6 +580,15 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     for (const it of items) {
       if (!it.kode) { onMsg('Error: ada barang draft tanpa kode.'); return }
       if (toNum(it.harga) <= 0) { onMsg(`Error: harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
+      // Wajib foto per barang (permintaan user 2026-09-22, berlaku utk approval
+      // SELANJUTNYA — kartu yang SUDAH disetujui sebelum ini tak disentuh &
+      // tak diminta melengkapi apa pun). Pola & titik penegakan sama persis dgn
+      // BAST di atas: cek di sinilah SEMUA jalur bertemu (entry manual + Import
+      // Excel, yang draft_items-nya juga tak pernah mengisi `foto`).
+      if (!it.foto || it.foto.length === 0) {
+        onMsg(`Error: barang "${it.fields.nama_barang || it.kode}" belum ada foto — lengkapi dulu (✎ Edit Spesifikasi) sebelum kontrak ini disetujui.`)
+        return
+      }
     }
     const perolehanDate = j.payload.tgl_bast || j.tanggal
     // Tanggal perolehan efektif = tanggal BAST, BUKAN tanggal approve — dan itu

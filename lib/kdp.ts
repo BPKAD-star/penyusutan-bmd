@@ -120,6 +120,10 @@ export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerI
     const bayar = b.pembayaran || []
     const total = bayar.reduce((s, x) => s + Number(x.nominal || 0), 0)
     if (bayar.length === 0 || total <= 0) return { error: `Barang "${b.nama || b.kode}" belum ada pembayaran (nilai 0) — lengkapi atau hapus dulu.` }
+    // Wajib foto per barang (permintaan user 2026-09-22, berlaku utk approval
+    // SELANJUTNYA saja) — pola & titik penegakan kembar dgn Pengadaan.tsx &
+    // PerolehanManual.tsx: di sinilah SATU-SATUNYA jalur approve KDP bertemu.
+    if (!b.foto || b.foto.length === 0) return { error: `Barang "${b.nama || b.kode}" belum ada foto — lengkapi dulu sebelum kontrak ini disetujui.` }
   }
 
   const kodeSkpd = await skpdKode(supabase, h.skpd_id)

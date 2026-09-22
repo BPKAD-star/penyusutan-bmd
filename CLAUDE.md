@@ -4719,6 +4719,43 @@ memperbaikinya harus lewat Buka Kunci atau menu Koreksi.
   Lainnya) belum ikut** — di sana `satuan` masih boleh kosong (tak ada kode
   rekening sama sekali di menu itu). Belum diminta.
 
+## Foto WAJIB sebelum disetujui — kelima menu Cara Perolehan (2026-09-22)
+
+Keputusan user: barang di kartu Cara Perolehan (Pengadaan Non-Konstruksi,
+Pekerjaan Konstruksi/KDP, Hibah, Tukar Menukar, Hasil Inventarisasi, Perolehan
+Lainnya) tak boleh disetujui kalau belum ada fotonya — persis pola dokumen
+BAST yang sudah lebih dulu diwajibkan.
+
+- **BERLAKU UNTUK APPROVAL SELANJUTNYA SAJA** (keputusan user eksplisit,
+  "yang sudah-sudah ya yasudah gitu"). Kartu yang SUDAH `disetujui` sebelum
+  perubahan ini TIDAK disentuh & TIDAK diminta melengkapi apa pun — cek ini
+  cuma jalan di jalur `approveHeader`/`approve()`, yang memang hanya bisa
+  dipanggil atas kartu berstatus `pending`, jadi kartu lama otomatis kebal
+  tanpa perlu pengecualian eksplisit.
+- **Titik penegakannya sama persis dgn BAST**: di dalam fungsi approve itu
+  sendiri, BUKAN cuma validasi form — supaya kartu hasil Import Excel
+  (`PerolehanImport.tsx`, yang `draft_items`-nya juga tak pernah mengisi
+  `foto`) ikut tertangkap. Tiga titik, tiga jalur approve berbeda:
+  - `Pengadaan.tsx` → `approveHeader()`, loop `for (const it of items)` yang
+    sudah memeriksa kode & harga — foto ikut diperiksa di situ.
+  - `PerolehanManual.tsx` → `approveHeader(h)` (dipakai bersama Hibah/Tukar
+    Menukar/Hasil Inventarisasi/Perolehan Lainnya) — pola sama.
+  - `lib/kdp.ts` → `approveKontrakKonstruksi()`, loop yang sudah memeriksa
+    kode & total pembayaran per barang KDP — foto ikut diperiksa di situ.
+    Pekerjaan Konstruksi tak lewat komponen manapun selain ini utk approve,
+    jadi satu titik itu sudah menutup seluruh jalur.
+- Pesannya menyebut NAMA barangnya & mengarahkan ke "✎ Edit Spesifikasi"
+  (tempat foto diunggah) — bukan sekadar "Error: foto kosong".
+- **Tak ada migrasi** — murni validasi tambahan di klien; `aset.foto_paths`
+  sudah lama ada (bucket `aset-foto`, lihat bagian "Foto barang" di atas).
+- ⛔ **PerolehanImport.tsx (Import Excel) TIDAK ikut diwajibkan mengisi
+  `foto`** — sama alasannya dgn `rekening` di atas: berkas e-BMD yang dibaca
+  import tak membawa berkas foto, jadi barang hasil import akan tertahan di
+  gate ini sampai operator melengkapi fotonya lewat ✎ Edit Spesifikasi
+  sebelum kartu itu bisa disetujui. Itu memang perilaku yang diinginkan
+  (bukan celah) — barang impor pun sekarang wajib difoto sebelum disetujui,
+  cuma tak bisa "sudah lengkap" sejak dari file Excel-nya.
+
 ## Laporan Perolehan: kolom SKPD & Nama Penyedia (2026-09-08)
 
 Permintaan user di menu Laporan Pengadaan. Berlaku untuk **kelima** menu Laporan

@@ -385,6 +385,12 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       if (!it.kode) { setMsg('Error: ada barang draft tanpa kode.'); return }
       if (!it.tglPerolehan) { setMsg(`Error: barang "${it.fields.nama_barang || it.kode}" belum ada tanggal perolehan.`); return }
       if (toNum(it.harga) <= 0) { setMsg(`Error: nilai "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
+      // Wajib foto per barang (permintaan user 2026-09-22, berlaku utk approval
+      // SELANJUTNYA saja) — pola & titik penegakan kembar dgn Pengadaan.tsx.
+      if (!it.foto || it.foto.length === 0) {
+        setMsg(`Error: barang "${it.fields.nama_barang || it.kode}" belum ada foto — lengkapi dulu (✎ Edit Spesifikasi) sebelum dokumen ini disetujui.`)
+        return
+      }
     }
     // Beda dari Pengadaan: di sini TIAP BARANG punya tanggal perolehannya
     // sendiri (boleh backdate), jadi rentangnya yang ditampilkan — bukan satu
