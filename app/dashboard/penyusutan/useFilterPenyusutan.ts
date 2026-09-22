@@ -29,6 +29,7 @@
 import { useState } from 'react'
 import type { SkpdSelection as OrgSelection } from '@/components/SkpdCombobox'
 import { tahunAwal } from '@/lib/tahunKerja'
+import { idsKonsolidasi } from '@/lib/konsolidasiSkpd'
 
 export type Applied = {
   org: OrgSelection
@@ -41,6 +42,11 @@ export type Applied = {
 export type FilterPenyusutan = {
   org: OrgSelection
   setOrg: (v: OrgSelection) => void
+  /** true = SKPD + seluruh turunannya (bawaan, spt Daftar Barang); false =
+   *  SKPD yang dipilih saja. Permintaan user 2026-09-22 — lihat
+   *  lib/konsolidasiSkpd.ts. */
+  fKonsolidasi: boolean
+  setFKonsolidasi: (v: boolean) => void
   golongan: string
   setGolongan: (v: string) => void
   komptabel: string
@@ -61,6 +67,7 @@ export type FilterPenyusutan = {
 
 export function useFilterPenyusutan(): FilterPenyusutan {
   const [org, setOrg] = useState<OrgSelection>({ skpdId: null, descendantIds: null })
+  const [fKonsolidasi, setFKonsolidasi] = useState(true)
   const [golongan, setGolongan] = useState('')
   // Bawaan 'intra' (angka neraca) — sejak ekstra ikut disusutkan (2026-07-13),
   // "Semua" = campuran intra+ekstra, bukan lagi tampilan bawaan yang aman.
@@ -75,10 +82,16 @@ export function useFilterPenyusutan(): FilterPenyusutan {
   // bukan periode yang kebetulan sedang tampil di tabel.
   const periode = `${tahun}-S${smt}`
 
-  const rakit = (): Applied => ({ org, golongan, komptabel, periode, search })
+  // `org.descendantIds` dipersempit ke `[org.skpdId]` saat "SKPD ini saja"
+  // dipilih — `org` sendiri TAK disentuh, jadi kembali ke Konsolidasi memberi
+  // hasil yang sama seperti semula. Lihat lib/konsolidasiSkpd.ts.
+  const rakit = (): Applied => ({
+    org: { skpdId: org.skpdId, descendantIds: idsKonsolidasi(org.skpdId, org.descendantIds, fKonsolidasi) },
+    golongan, komptabel, periode, search,
+  })
 
   return {
-    org, setOrg, golongan, setGolongan, komptabel, setKomptabel,
+    org, setOrg, fKonsolidasi, setFKonsolidasi, golongan, setGolongan, komptabel, setKomptabel,
     tahun, setTahun, smt, setSmt, search, setSearch,
     applied, setApplied, periode, rakit,
   }

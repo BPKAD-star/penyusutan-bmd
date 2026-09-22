@@ -127,7 +127,7 @@ export default function PenyusutanPage() {
   // DITERAPKAN (`applied`). Nama dipertahankan lewat destructuring supaya
   // seluruh JSX di bawah tak berubah sebaris pun. Lihat ./useFilterPenyusutan.ts.
   const {
-    org, setOrg, golongan, setGolongan, komptabel, setKomptabel,
+    org, setOrg, fKonsolidasi, setFKonsolidasi, golongan, setGolongan, komptabel, setKomptabel,
     tahun, setTahun, smt, setSmt, search, setSearch,
     applied, setApplied, periode: periodeDiketik, rakit,
   } = useFilterPenyusutan()
@@ -497,6 +497,25 @@ export default function PenyusutanPage() {
             <SkpdCombobox lockToOperator onChangeSelection={setOrg} allowClear
               placeholder="Semua — atau ketik SKPD / Sub OPD / Lokasi..." />
           </div>
+          {/* Konsolidasi / SKPD ini saja — pola & alasan SAMA dgn Daftar Barang
+              (permintaan user 2026-09-22), lihat lib/konsolidasiSkpd.ts. Cuma
+              tampil begitu satu SKPD dipilih — se-kabupaten tak punya arti
+              "unit di bawahnya". */}
+          {org.skpdId != null && (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+              <span className="hidden sm:block sm:w-40 flex-shrink-0" />
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="peny_konsol" checked={fKonsolidasi} onChange={() => setFKonsolidasi(true)} />
+                  Konsolidasi (+ seluruh unit di bawahnya)
+                </label>
+                <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                  <input type="radio" name="peny_konsol" checked={!fKonsolidasi} onChange={() => setFKonsolidasi(false)} />
+                  SKPD ini saja
+                </label>
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
             <label className="sm:w-40 text-sm text-gray-600 sm:text-right flex-shrink-0">Jenis Aset :</label>

@@ -23,6 +23,7 @@ import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { GIS_TANAH_KODE_FILTER } from '@/lib/gisTanah'
+import { idsKonsolidasi } from '@/lib/konsolidasiSkpd'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import SkpdCombobox from '@/components/SkpdCombobox'
 
@@ -47,7 +48,11 @@ const fmtLuas = (v: number | null) => v == null ? '-' : new Intl.NumberFormat('i
 export default function DaftarBidangTanah() {
   const supabase = createClient()
   const namaSkpd = useNamaSkpd()
+  const [skpdId, setSkpdId] = useState<number | null>(null)
   const [descIds, setDescIds] = useState<number[] | null>(null)
+  // Bawaan FALSE, sama seperti tab Peta (permintaan user 2026-09-22) — lihat
+  // lib/konsolidasiSkpd.ts.
+  const [konsolidasi, setKonsolidasi] = useState(false)
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<Row[]>([])
   const [totalRegister, setTotalRegister] = useState(0)
@@ -63,12 +68,15 @@ export default function DaftarBidangTanah() {
     // tanah kembar (2.733 tanah aktif cuma 2.326 nama unik, CLAUDE.md), jadi
     // tanpa pemecah seri baris kembar bisa terlewat/dobel diam-diam begitu
     // jumlahnya >1000.
+    // `idsKonsolidasi` mempersempit balik ke SATU SKPD saat centang
+    // Konsolidasi dimatikan — lihat lib/konsolidasiSkpd.ts.
+    const scopeIds = idsKonsolidasi(skpdId, descIds, konsolidasi)
     const aset: AsetRow[] = []
     for (let from = 0; ; from += 1000) {
       // Cakupan kode KEMBAR dgn app/dashboard/gis/page.tsx — lihat
       // GIS_TANAH_KODE_FILTER (lib/gisTanah.ts) utk alasan kode kedua ini.
       let q = supabase.from('aset').select(ASET_COLS).or(GIS_TANAH_KODE_FILTER).eq('status', 'aktif')
-      if (descIds) q = q.in('skpd_id', descIds)
+      if (scopeIds) q = q.in('skpd_id', scopeIds)
       const { data, error: e } = await q.order('nama_barang', { ascending: true }).order('id').range(from, from + 999)
       if (e) { setError(`Gagal membaca register Tanah: ${e.message}`); setLoading(false); return }
       if (!data || data.length === 0) break
@@ -105,7 +113,7 @@ export default function DaftarBidangTanah() {
     setTotalRegister(aset.length)
     setRegisterBerbidang(registerDenganBidang.size)
     setLoading(false)
-  }, [descIds]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [skpdId, descIds, konsolidasi]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
 
@@ -162,8 +170,16 @@ export default function DaftarBidangTanah() {
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
           <SkpdCombobox lockToOperator allowClear
-            onChangeSelection={sel => { setDescIds(sel.descendantIds); namaSkpd.pilih(sel.skpdId) }}
+            onChangeSelection={sel => { setSkpdId(sel.skpdId); setDescIds(sel.descendantIds); namaSkpd.pilih(sel.skpdId) }}
             placeholder="Semua SKPD — atau ketik SKPD / Sub OPD..." />
+          {/* Bawaan MATI, pola & alasan sama dgn tab Peta — hanya tampil
+              begitu satu SKPD dipilih. */}
+          {skpdId != null && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer mt-1.5">
+              <input type="checkbox" checked={konsolidasi} onChange={e => setKonsolidasi(e.target.checked)} />
+              Konsolidasi (+ seluruh unit di bawahnya)
+            </label>
+          )}
         </div>
         <div className="flex-1 min-w-[200px]">
           <label className="block text-xs text-gray-500 mb-1">Cari nama tanah / NIBAR / SKPD</label>

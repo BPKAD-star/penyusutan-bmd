@@ -31,6 +31,7 @@ import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { formatRupiah2 } from '@/lib/export'
 import { GIS_TANAH_KODE_FILTER } from '@/lib/gisTanah'
+import { idsKonsolidasi } from '@/lib/konsolidasiSkpd'
 import KelolaBidangPanel from '@/components/gis/KelolaBidangPanel'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import type { GisMarker } from '@/components/gis/GisMap'
@@ -70,6 +71,12 @@ const STATUS_BADGE: Record<Status, { label: string; cls: string; dot: string }> 
 export default function GisPage() {
   const supabase = createClient()
   const [skpdSel, setSkpdSel] = useState<{ skpdId: number | null; descendantIds: number[] | null }>({ skpdId: null, descendantIds: null })
+  // Bawaan FALSE (beda dari Daftar Barang/Penyusutan) — permintaan user
+  // 2026-09-22: memilih "Dinas Pendidikan" di GIS mestinya cuma menampilkan
+  // tanah level induknya, bukan otomatis menyeret ratusan sekolah di
+  // bawahnya ke peta. Centang "Konsolidasi" di sebelah kotak SKPD menyalakan
+  // subtree penuh kalau memang diminta. Lihat lib/konsolidasiSkpd.ts.
+  const [konsolidasi, setKonsolidasi] = useState(false)
   const [search, setSearch] = useState('')
   const [rows, setRows] = useState<AsetRow[]>([])
   const [bidangByAset, setBidangByAset] = useState<Record<string, BidangRingkas[]>>({})
@@ -184,15 +191,18 @@ export default function GisPage() {
   }
 
   // Filter INSTAN di client (SKPD + cari) — dataset sudah dimuat sekali di atas.
+  // `idsKonsolidasi` mempersempit balik ke SATU SKPD saat centang Konsolidasi
+  // dimatikan — lihat lib/konsolidasiSkpd.ts.
   const filtered = useMemo(() => {
-    const scope = skpdSel.descendantIds ? new Set(skpdSel.descendantIds) : null
+    const ids = idsKonsolidasi(skpdSel.skpdId, skpdSel.descendantIds, konsolidasi)
+    const scope = ids ? new Set(ids) : null
     const q = search.trim().toLowerCase()
     return rows.filter(r => {
       if (scope && !(r.skpd_id != null && scope.has(r.skpd_id))) return false
       if (q && !(r.nama_barang?.toLowerCase().includes(q) || r.nibar?.toLowerCase().includes(q) || r.kode.toLowerCase().includes(q))) return false
       return true
     })
-  }, [rows, skpdSel, search])
+  }, [rows, skpdSel, konsolidasi, search])
 
   // Auto-pilih kalau hasil pencarian (mis. dari deep-link) tepat 1 aset.
   useEffect(() => {
@@ -282,6 +292,15 @@ export default function GisPage() {
             value={search} onChange={e => setSearch(e.target.value)} />
           <SkpdCombobox lockToOperator onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} allowClear
             placeholder="Semua SKPD..." />
+          {/* Bawaan MATI (lihat catatan di `konsolidasi` state) — hanya tampil
+              begitu satu SKPD dipilih, se-kabupaten tak punya arti "unit di
+              bawahnya". */}
+          {skpdSel.skpdId != null && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer mt-2">
+              <input type="checkbox" checked={konsolidasi} onChange={e => setKonsolidasi(e.target.checked)} />
+              Konsolidasi (+ seluruh unit di bawahnya)
+            </label>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-hide pointer-events-auto space-y-2 pr-0.5">
