@@ -1249,58 +1249,74 @@ export type Database = {
           },
         ]
       }
-      inventarisasi: {
+      inventarisasi_barang: {
         Row: {
+          aset_id: string | null
           catatan_validator: string | null
           created_at: string
-          created_by: string | null
-          diajukan_at: string | null
+          diisi_at: string
+          diisi_by: string | null
           divalidasi_at: string | null
           divalidasi_by: string | null
+          foto_paths: string[]
           golongan: string
           id: string
-          keterangan: string | null
-          petugas: Json
+          jawaban: Json
           skpd_id: number
+          snapshot: Json
           status: string
           tahun: number
+          trx_id_terakhir: number | null
           updated_at: string
         }
         Insert: {
+          aset_id?: string | null
           catatan_validator?: string | null
           created_at?: string
-          created_by?: string | null
-          diajukan_at?: string | null
+          diisi_at?: string
+          diisi_by?: string | null
           divalidasi_at?: string | null
           divalidasi_by?: string | null
+          foto_paths?: string[]
           golongan: string
           id?: string
-          keterangan?: string | null
-          petugas?: Json
+          jawaban?: Json
           skpd_id: number
+          snapshot?: Json
           status?: string
           tahun: number
+          trx_id_terakhir?: number | null
           updated_at?: string
         }
         Update: {
+          aset_id?: string | null
           catatan_validator?: string | null
           created_at?: string
-          created_by?: string | null
-          diajukan_at?: string | null
+          diisi_at?: string
+          diisi_by?: string | null
           divalidasi_at?: string | null
           divalidasi_by?: string | null
+          foto_paths?: string[]
           golongan?: string
           id?: string
-          keterangan?: string | null
-          petugas?: Json
+          jawaban?: Json
           skpd_id?: number
+          snapshot?: Json
           status?: string
           tahun?: number
+          trx_id_terakhir?: number | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "inventarisasi_skpd_id_fkey"
+            foreignKeyName: "inventarisasi_barang_aset_id_fkey"
+            columns: ["aset_id"]
+            isOneToOne: false
+            referencedRelation: "aset"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventarisasi_barang_skpd_id_fkey"
             columns: ["skpd_id"]
             isOneToOne: false
             referencedRelation: "admin_skpd"
@@ -1308,50 +1324,37 @@ export type Database = {
           },
         ]
       }
-      inventarisasi_baris: {
+      inventarisasi_tim: {
         Row: {
-          aset_id: string | null
           created_at: string
-          foto_paths: string[]
           id: string
-          inventarisasi_id: string
-          jawaban: Json
-          snapshot: Json
+          petugas: Json
+          skpd_id: number
+          tahun: number
           updated_at: string
         }
         Insert: {
-          aset_id?: string | null
           created_at?: string
-          foto_paths?: string[]
           id?: string
-          inventarisasi_id: string
-          jawaban?: Json
-          snapshot?: Json
+          petugas?: Json
+          skpd_id: number
+          tahun: number
           updated_at?: string
         }
         Update: {
-          aset_id?: string | null
           created_at?: string
-          foto_paths?: string[]
           id?: string
-          inventarisasi_id?: string
-          jawaban?: Json
-          snapshot?: Json
+          petugas?: Json
+          skpd_id?: number
+          tahun?: number
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "inventarisasi_baris_aset_id_fkey"
-            columns: ["aset_id"]
+            foreignKeyName: "inventarisasi_tim_skpd_id_fkey"
+            columns: ["skpd_id"]
             isOneToOne: false
-            referencedRelation: "aset"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "inventarisasi_baris_inventarisasi_id_fkey"
-            columns: ["inventarisasi_id"]
-            isOneToOne: false
-            referencedRelation: "inventarisasi"
+            referencedRelation: "admin_skpd"
             referencedColumns: ["id"]
           },
         ]
@@ -2938,21 +2941,43 @@ export type Database = {
         }[]
       }
       fn_dashboard_rekap: { Args: never; Returns: Json }
+      fn_inventarisasi_batal_validasi: {
+        Args: { p_catatan?: string; p_id: string }
+        Returns: undefined
+      }
+      fn_inventarisasi_hapus_belum_tercatat: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      fn_inventarisasi_ringkas: {
+        Args: { p_golongan: string; p_skpd_ids?: number[]; p_tahun: number }
+        Returns: {
+          belum_tercatat: number
+          berubah: number
+          divalidasi: number
+          menunggu: number
+          total_aset: number
+        }[]
+      }
+      fn_inventarisasi_simpan: {
+        Args: {
+          p_aset_id: string
+          p_foto: string[]
+          p_golongan: string
+          p_id: string
+          p_jawaban: Json
+          p_skpd_id: number
+        }
+        Returns: string
+      }
+      fn_inventarisasi_validasi: { Args: { p_ids: string[] }; Returns: Json }
       fn_ipa_role: { Args: never; Returns: string }
       fn_is_admin: { Args: never; Returns: boolean }
       fn_is_pengurus_barang_atas: {
         Args: { p_skpd_id: number }
         Returns: boolean
       }
-      fn_is_pengurus_barang_skpd_induk: {
-        Args: { p_skpd_id: number }
-        Returns: boolean
-      }
       fn_is_viewer: { Args: never; Returns: boolean }
-      fn_kembalikan_inventarisasi: {
-        Args: { p_catatan: string; p_id: string }
-        Returns: undefined
-      }
       fn_lra_belanja_modal: {
         Args: { p_skpd_ids?: number[]; p_tahun: number }
         Returns: {
@@ -3047,10 +3072,6 @@ export type Database = {
       fn_tutup_tahun: {
         Args: { p_catatan?: string; p_tahun: number }
         Returns: number
-      }
-      fn_validasi_inventarisasi: {
-        Args: { p_catatan?: string; p_id: string }
-        Returns: undefined
       }
       match_regulasi: {
         Args: {

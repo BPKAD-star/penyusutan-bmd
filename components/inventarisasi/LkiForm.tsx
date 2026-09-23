@@ -25,7 +25,7 @@ import WilayahPicker from '@/components/WilayahPicker'
 import { formatRupiah2 } from '@/lib/export'
 import NominalInput from '@/shared/ui/NominalInput'
 import {
-  normalKondisi, klasifikasiLhi, LHI_LABEL,
+  normalKondisi, klasifikasiLhi, kekuranganLki, LHI_LABEL,
   type InvBaris, type InvJawaban, type LkiConfig,
   type KondisiFisik, type PihakPengguna,
 } from '@/lib/inventarisasi'
@@ -91,14 +91,18 @@ function SesuaiRadio({ sesuai, onSesuai, disabled, nilaiLama, children }: {
   )
 }
 
-export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onSimpan, onTutup }: {
+export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pesanReadOnly, onSimpan, onTutup }: {
   baris: InvBaris
   config: LkiConfig
   /** Golongan lembar ini — mengunci pilihan kodefikasi & pencarian induk. */
   golongan: string
-  /** SKPD lembar ini — mengunci pencarian induk & pasangan tercatat-ganda. */
+  /** SKPD barang ini — mengunci pencarian induk & pasangan tercatat-ganda. */
   skpdId: number
   readOnly?: boolean
+  /** Alasan lembar hanya bisa dilihat — beda per keadaan (sudah divalidasi,
+   *  barang sudah pindah, pengawas). Tanpa alasan, lembar yang tak bisa
+   *  disimpan terbaca sebagai form yang rusak. */
+  pesanReadOnly?: string
   onSimpan: (jawaban: InvJawaban, fotoPaths: string[]) => Promise<void>
   onTutup: () => void
 }) {
@@ -166,6 +170,11 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
   }
 
   async function simpan() {
+    // Penjaga SAMA dgn daftar kekurangan di bawah form — satu aturan
+    // (`kekuranganLki`), dua pintu. Tombolnya sengaja TIDAK dimatikan: tombol
+    // mati tanpa keterangan adalah kegagalan senyap.
+    const k = kekuranganLki({ aset_id: baris.aset_id, jawaban: j })
+    if (k.length > 0) { setErr(`Belum lengkap: ${k.join(', ')}.`); return }
     setSaving(true); setErr('')
     try { await onSimpan(j, foto); onTutup() }
     catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
@@ -175,6 +184,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
   // Pratinjau LHI: fungsi klasifikasi yang SAMA dgn laporan, jadi isi laporan
   // tak mungkin berbeda dari yang terlihat di sini.
   const lhi = klasifikasiLhi({ ...baris, jawaban: j })
+  const kurang = readOnly ? [] : kekuranganLki({ aset_id: baris.aset_id, jawaban: j })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onTutup)}>
@@ -195,7 +205,12 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
           {err && <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{err}</div>}
           {readOnly && (
             <div className="p-3 rounded-lg bg-gray-50 text-gray-600 text-xs">
-              Inventarisasi sudah divalidasi — lembar ini hanya bisa dilihat.
+              {pesanReadOnly || 'Lembar ini hanya bisa dilihat.'}
+            </div>
+          )}
+          {!readOnly && baris.catatan_validator && (
+            <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-xs">
+              <b>Catatan Pengelola Barang:</b> {baris.catatan_validator}
             </div>
           )}
 
@@ -752,11 +767,14 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, onS
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white rounded-b-2xl">
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-2 sticky bottom-0 bg-white rounded-b-2xl">
+          {kurang.length > 0 && (
+            <p className="mr-auto text-[11px] text-amber-700">Belum lengkap: {kurang.join(', ')}</p>
+          )}
           <button onClick={onTutup} className="btn-secondary text-sm">Tutup</button>
           {!readOnly && (
             <button onClick={simpan} disabled={saving} className="btn-primary text-sm">
-              {saving ? 'Menyimpan...' : 'Simpan Lembar'}
+              {saving ? 'Menyimpan...' : 'Simpan Isian'}
             </button>
           )}
         </div>

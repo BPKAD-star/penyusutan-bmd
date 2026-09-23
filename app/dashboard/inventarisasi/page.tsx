@@ -1,9 +1,8 @@
-'use client'
-// Lembar Kerja Inventarisasi — SEMUA jenis aset. Sidebar biasanya mengarahkan ke
-// /dashboard/inventarisasi/jenis/<golongan> (terkunci satu jenis); halaman ini
-// jadi tampilan gabungan bila diakses langsung.
-import DaftarInventarisasi from '@/components/inventarisasi/DaftarInventarisasi'
+import { redirect } from 'next/navigation'
 
+// Model lama (daftar "lembar kerja" per SKPD × jenis aset) sudah dicabut —
+// migrasi 20260923_03. Lembar Kerja kini per jenis aset & membaca register
+// hidup; rute ini tinggal pengalih.
 export default function Page() {
-  return <DaftarInventarisasi />
+  redirect('/dashboard/inventarisasi/jenis/1.3.1')
 }

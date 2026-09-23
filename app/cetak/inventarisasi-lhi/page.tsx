@@ -9,10 +9,11 @@ import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
-import { konfigLki, type LhiKode } from '@/lib/inventarisasi'
+import { konfigLki, type LhiKode, type Petugas } from '@/lib/inventarisasi'
 import { nilaiBarisLhi } from '@/lib/inventarisasiLaporan'
+import { muatTimUntukCetak } from '@/lib/inventarisasiData'
 
-type SkpdRow = { id: number; parent_id: number | null }
+type SkpdRow = { id: number; parent_id: number | null; nama: string }
 
 function descendantsOf(all: SkpdRow[], root: number): number[] {
   const childrenOf = new Map<number, number[]>()
@@ -43,6 +44,8 @@ export default function CetakLhiPage() {
   const [skpdId, setSkpdId] = useState<number | null>(null)
   const [skpdIds, setSkpdIds] = useState<number[] | null>(null)
   const [skpdRows, setSkpdRows] = useState<SkpdRow[]>([])
+  const [petugas, setPetugas] = useState<Petugas[]>([])
+  const [timErr, setTimErr] = useState('')
 
   useEffect(() => {
     (async () => {
@@ -54,21 +57,25 @@ export default function CetakLhiPage() {
       setTahun(t); setGolongan(g); setKode(k); setSkpdId(sk)
 
       if (sk) {
-        const all = await fetchSkpd<SkpdRow>(supabase, 'id,parent_id')
+        const all = await fetchSkpd<SkpdRow>(supabase, 'id,parent_id,nama')
         setSkpdRows(all)
         setSkpdIds(descendantsOf(all, sk))
+        // Tim per SKPD per tahun (cadangan: tim SKPD induk). Gagal membacanya
+        // tak menjatuhkan laporan — blok petugasnya saja yang kosong, dan
+        // itu DIKATAKAN di layar, bukan disembunyikan.
+        try { setPetugas((await muatTimUntukCetak(supabase, sk, t)).petugas) }
+        catch (e) { setTimErr(e instanceof Error ? e.message : String(e)) }
       }
       setSiap(true)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { headers, loading, err, barisUntuk } = useLhiData({ tahun, golongan, skpdIds })
+  const { loading, err, barisUntuk } = useLhiData({ tahun, golongan, skpdIds })
   const rows = useMemo(
     () => (siap ? barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1)) : []),
     [siap, barisUntuk, kode],
   )
-  const namaSkpd = skpdId ? headers.find(h => h.skpd_id === skpdId)?.skpd?.nama : undefined
-  const petugas = headers[0]?.petugas || []
+  const namaSkpd = skpdId ? skpdRows.find(r => r.id === skpdId)?.nama : undefined
 
   // Butir (3)–(5) kop lampiran. SKPD induk = Pengguna Barang, sub-unit =
   // Kuasa Pengguna Barang. Pengelola Barang (BPKAD) tidak ada di data modul
@@ -84,6 +91,11 @@ export default function CetakLhiPage() {
       {err && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {err} — laporan TIDAK ditampilkan supaya tak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat.
+        </div>
+      )}
+      {timErr && (
+        <div className="no-print mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Tim pelaksana tidak terbaca ({timErr}) — blok petugas di lembar ini kosong.
         </div>
       )}
       <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>

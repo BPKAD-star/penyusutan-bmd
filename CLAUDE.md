@@ -6847,6 +6847,128 @@ tak pernah tahu ada cache Pemanfaatan/Pengamanan aktif sama sekali.
 - **Tak ada migrasi** — murni perluasan `select()` + JSX; `aset.pemanfaatan`/
   `aset.pengamanan` & RLS-nya sudah lama ada.
 
+## Inventarisasi PER BARANG — model lama dicabut (migrasi 20260923_03)
+
+Keputusan user 2026-09-23. Model lama (20260725_08 + 20260727_04): satu "lembar
+kerja" per SKPD × tahun × jenis aset yang saat dibuat MENARIK SELURUH barang lalu
+MEMBEKUKANNYA jadi baris, divalidasi SEKALIGUS per lembar lewat alur
+draft → diajukan → divalidasi/dikembalikan. Dua cacatnya: (1) barang itu dinamis
+(penghapusan, pengadaan baru, reklas, pengalihan, pemecahan, kapitalisasi) jadi
+lembarnya basi sejak detik dibuat; (2) di Peralatan & Mesin — **661.766 barang
+aktif, 522.975 di bawah Dinas Pendidikan saja** — satu barang keliru
+mengembalikan ribuan barang sekaligus. Tabel lama terverifikasi KOSONG di
+produksi sebelum dirombak (0 header, 0 baris); migrasinya tetap membawa langkah
+pindah-data defensif.
+
+**Bentuk baru:**
+
+| | Sumber | Isi |
+|---|---|---|
+| **Lembar Kerja** (per jenis aset) | register HIDUP lewat `fn_inventarisasi_lembar` | tiap barang + status inventarisasinya + tombol "Isi Inventarisasi" |
+| **Validasi** (per jenis aset) | ISIAN tersimpan lewat `fn_inventarisasi_hasil` | Menunggu · Divalidasi · Posisi berubah · Semua |
+| **LHI** | `inventarisasi_barang` status `divalidasi` | tak berubah bentuk |
+
+- **SATU BARIS PER BARANG** di `inventarisasi_barang`, begitu disimpan. **Tak ada
+  "Ajukan".** Status tersimpan cuma `diisi` / `divalidasi`; "belum" = belum ada
+  barisnya. Form LKI-nya SAMA (`LkiForm`, `LKI_CONFIG`) — yang diganti cuma
+  wadahnya.
+- **Validasi = PENGELOLA BARANG (admin) saja**, per barang atau centang massal
+  per halaman (`fn_inventarisasi_validasi(uuid[])` — yang tak memenuhi syarat
+  DILEWATI & dihitung, bukan menggagalkan semuanya). Wewenang Pengurus Barang
+  SKPD induk (20260727_04) dicabut bersama `fn_is_pengurus_barang_skpd_induk`.
+  **Batal Validasi** mengembalikan isian ke `diisi` + catatan opsional yang
+  tampil di Lembar Kerja SKPD.
+- **Tim pelaksana per SKPD × tahun** (`inventarisasi_tim`), di-snapshot dari
+  `admin_pegawai`. Cetak LKI memakai tim unit itu, atau tim SKPD induk terdekat
+  kalau unitnya tak menyusun tim (`muatTimUntukCetak`) — sub-unit (UPTD,
+  sekolah) umumnya diinventarisasi tim dinas induknya.
+- ⚠️ **SATU PINTU TULIS.** `inventarisasi_barang` TANPA policy tulis & GRANT
+  tulisnya dicabut — seluruh perubahan lewat RPC SECURITY DEFINER
+  (`fn_inventarisasi_simpan` / `_hapus_belum_tercatat` / `_validasi` /
+  `_batal_validasi`). Sebabnya: **snapshot "SEBELUM" & baseline notifikasi
+  dibangun SERVER** (`fn_inventarisasi_snapshot`, `max(transaksi_bmd.id)`),
+  jadi klien tak bisa mengarangnya, dan status tak bisa diloncati. Diuji: INSERT
+  langsung sebagai pengguna login → `permission denied`.
+- ⚠️ **Tiap simpan MENYEGARKAN snapshot & baseline.** Isian terbaru adalah
+  pernyataan SKPD atas keadaan barang PADA SAAT ITU — jadi sesudah Batal
+  Validasi & diisi ulang, notifikasi transaksinya ikut hilang.
+
+**POSISI & KUNCI (keputusan user butir 2):** posisi = **(SKPD, jenis aset, masih
+aktif)**, dibandingkan dgn posisi saat diinventarisasi (`fn_inventarisasi_posisi`
++ CASE kembar di RPC baca). Berubah → isian di posisi lama **TERKUNCI**: tak bisa
+diubah, divalidasi, maupun dibatalkan validasinya. Di posisi baru barang itu
+tampil "belum diinventarisasi" — **SKPD baru WAJIB menginventarisasinya lagi**
+(kunci unik `(aset_id, tahun, skpd_id, golongan)`). **SELF-HEALING**: begitu
+barangnya kembali ke posisi semula (mis. pengalihannya dibatalkan), terbuka
+lagi — pola `fn_aset_awal_2026_terkunci` 20260916_01, yang dinilai KEADAAN,
+bukan riwayat.
+- ⚠️ **Reklas JENIS aset ikut mengunci**, bukan cuma pindah SKPD — keputusan
+  saya (bukan eksplisit user), alasannya lembar kerja & format LKI memang per
+  jenis aset (III.A.2 vs III.A.6), jadi isian format Peralatan & Mesin tak bisa
+  dibaca sbg isian Aset Lain-Lain. Reklas KODE dalam jenis yang sama TIDAK
+  mengunci — cukup notifikasi.
+- Menunggu · Divalidasi · Posisi berubah **SALING LEPAS** — yang posisinya
+  berubah hanya masuk "Posisi berubah" apa pun statusnya, supaya ketiganya
+  menjumlah pas (dipakai `fn_inventarisasi_ringkas` & tab Validasi).
+
+**NOTIFIKASI "ada transaksi sesudah diinventarisasi":** `trx_id_terakhir` = id
+baris ledger terakhir aset saat isian terakhir disimpan; yang sesudahnya dibaca
+lewat **`fn_baris_berlaku_sesudah`**, yang membuang pasangan yang saling
+meniadakan (reklas lalu batal reklas, dst.). Patokannya ID, bukan tanggal —
+transaksi yang dicatat mundur tetap tertangkap. `saldo_awal`/
+`saldo_awal_checkpoint` dikecualikan (Tutup Tahun menulis checkpoint ke SETIAP
+aset aktif). Tampil sbg ⚠ di Lembar Kerja & Validasi; diklik → daftar jenis &
+periode (label dari `KIBAR_JENIS_LABEL`, satu sumber dgn kartu KIBAR).
+- ⚠️ **`fn_baris_penghalang_batal` DIPECAH, bukan disalin.** Fungsi itu
+  (20260917_01/02) mengembalikan **HANYA baris pertama** (`LIMIT 1`) — cukup
+  untuk guard, tapi notifikasi butuh seluruhnya. Ketahuan saat diuji ke
+  produksi: baseline 0 → baris pertamanya `saldo_awal`, yang lalu disaring, jadi
+  notifikasinya KOSONG untuk barang yang jelas sudah direklas & dipindah — tanpa
+  satu pun error. Badannya kini pindah UTUH ke `fn_baris_berlaku_sesudah` (tanpa
+  LIMIT) & fungsi lama tinggal `… ORDER BY id LIMIT 1` di atasnya. **Dibuktikan
+  setara ke produksi: 2.595 pasangan (aset × baseline), 230 aset berantai
+  `batal_*`, 0 berbeda.** Menyalin algoritmanya akan jadi salinan KETIGA (TS
+  `barisMasihBerlaku` + SQL ini sudah dua). Kalau kelak algoritmanya disunting,
+  suntingnya di `fn_baris_berlaku_sesudah` — `fn_baris_penghalang_sisip`
+  (20260922_01) tetap salinan terpisah berbasis tanggal.
+
+**Kelengkapan isian WAJIB** sebelum Simpan (`kekuranganLki`, lib/inventarisasi.ts,
+dikunci lib/inventarisasi.test.ts): keberadaan; kondisi kalau barangnya ada;
+"Tidak Sesuai" wajib menyebut yang seharusnya; induk & kembaran ganda wajib
+dipilih kalau opsinya dicentang; BMD Belum Tercatat wajib kode/jumlah/satuan/
+kondisi. Dulu tidak wajib — di model lama lembar setengah isi cuma tampil
+"Belum"; di model baru begitu ada barisnya barang itu terhitung selesai & masuk
+antrean validasi. Tombol Simpan sengaja TIDAK dimatikan: ia menolak berikut
+daftar kekurangannya, yang juga tampil hidup di kaki form.
+
+**LHI hanya memuat isian yang SUDAH DIVALIDASI** — keluaran resmi yang
+ditandatangani tak boleh memuat angka yang masih bisa berubah. Yang divalidasi
+lalu barangnya pindah/keluar TETAP ikut (hasil sah tahun itu). Kolom "Kode
+Register" di LHI kini terisi dari snapshot (dulu dikosongkan karena aplikasi
+belum punya kode register).
+
+**Terukur ke produksi** (transaksi yang digagalkan, RLS aktif): pengurus Dinas
+Pendidikan P&M — hal. 1 241 ms · cari 555 ms · filter "belum" 8 ms · ringkasan
+3.599 ms · hal. 101 (offset 5.000) 3.926 ms; admin se-kab — hal. 1 7 ms · cari
+42 ms · ringkasan 730 ms. ⚠️ **Halaman dalam memang mahal** (OFFSET) — jalan
+cepatnya Cari / filter status / pilih unit; kalau kelak dikeluhkan, obatnya
+kursor keyset pola `fn_daftar_barang`, bukan index baru. Ringkasan dimuat **di
+latar** & boleh gagal tanpa menjatuhkan daftarnya (pola 2026-09-22).
+
+- Sidebar: Inventarisasi → **Lembar Kerja (8 jenis) · Validasi (8 jenis)** ·
+  LHI · Tindak Lanjut; daftar kedelapan jenisnya satu sumber
+  (`menuJenisInventarisasi`). `/dashboard/inventarisasi` & `/validasi` tinggal
+  `redirect()`; `/dashboard/inventarisasi/[id]` & `DaftarInventarisasi` dihapus.
+- Cetak LKI: `?id=<isian>` (satu lembar) atau `?skpd=&golongan=&tahun=` (seluruh
+  isian SATU unit, bukan subtree). Tombol 🖨 per baris di kedua menu.
+- `shared/types/database.types.ts` disunting tangan untuk tabel & RPC tulis yang
+  baru (pengecek `.from()` di lib/sinkronisasi.test.ts menuntutnya); RPC baca
+  (`_lembar`, `_hasil`) belum — jalankan `npm run gen:types` sesudah migrasinya.
+- ⚠️ **Deploy-ordering: migrasi 20260923_03 WAJIB jalan SEBELUM deploy kode.**
+  Halaman baru memanggil RPC & tabel di migrasi itu; kalau terbalik, seluruh
+  menu Inventarisasi gagal memuat (pesan error tampil, tak ada yang tertulis).
+  Sebaliknya menu lama mati begitu migrasinya jalan — diterima, tabelnya kosong.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

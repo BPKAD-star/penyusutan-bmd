@@ -1,16 +1,26 @@
 'use client'
 // Cetak Lembar Kerja Inventarisasi (LKI) — Format III.A.x.
 // LKI adalah form PER-BARANG, jadi halaman ini mencetak SATU LEMBAR PER BARANG
-// (page-break antar lembar). Standalone, A4 potrait. Query: ?inv=<id inventarisasi>
+// (page-break antar lembar). Standalone, A4 potrait. Query:
+//   ?id=<id isian>                            → satu lembar
+//   ?skpd=<id>&golongan=<kode>&tahun=<tahun>  → seluruh isian SATU unit
+//                                               (unit itu sendiri, bukan subtree)
+// Model per-barang (migrasi 20260923_03): tak ada lagi "header inventarisasi";
+// SKPD, tahun & jenis aset melekat di tiap isian, tim pelaksana diambil dari
+// `inventarisasi_tim` (cadangan: tim SKPD induk).
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { paginate } from '@/shared/db/paginate'
 import { formatRupiah } from '@/lib/export'
 import {
-  konfigLki, normalKondisi,
-  type InvBaris, type InvHeader, type LkiConfig, type SesuaiField,
+  konfigLki, normalKondisi, STATUS_LABEL,
+  type InvBaris, type LkiConfig, type Petugas, type SesuaiField,
 } from '@/lib/inventarisasi'
+import { muatTimUntukCetak } from '@/lib/inventarisasiData'
 
-const HDR_COLS = 'id,skpd_id,tahun,golongan,status,catatan_validator,petugas,keterangan,diajukan_at,divalidasi_at,created_at'
+/** Isian + posisi yang melekat padanya — pengganti header model lama. */
+type Isian = InvBaris & { skpd_id: number; tahun: number; golongan: string; skpd?: { nama: string } | null }
+const KOLOM = 'id,aset_id,snapshot,jawaban,foto_paths,status,catatan_validator,skpd_id,tahun,golongan,skpd:admin_skpd(nama)'
 const tglID = () => new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 
 /** Tampilkan jawaban "Sesuai / Tidak Sesuai" beserta nilai seharusnya. */
@@ -30,7 +40,7 @@ function Baris({ kode, label, children }: { kode: string; label: string; childre
   )
 }
 
-function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: LkiConfig; no: number }) {
+function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; config: LkiConfig; no: number }) {
   const s = b.snapshot || {}
   const j = b.jawaban || {}
   const belumTercatat = !b.aset_id
@@ -48,8 +58,11 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
       </div>
 
       <div className="mb-2 space-y-0.5">
-        <p>Kuasa Pengguna Barang / Pengguna Barang : <b>{hdr.skpd?.nama || `SKPD #${hdr.skpd_id}`}</b></p>
-        <p>Tahun Inventarisasi : <b>{hdr.tahun}</b> &nbsp;·&nbsp; Lembar ke-{no}</p>
+        <p>Kuasa Pengguna Barang / Pengguna Barang : <b>{b.skpd?.nama || `SKPD #${b.skpd_id}`}</b></p>
+        <p>
+          Tahun Inventarisasi : <b>{b.tahun}</b> &nbsp;·&nbsp; Lembar ke-{no}
+          {b.status && <span className="no-print text-gray-500"> &nbsp;·&nbsp; {STATUS_LABEL[b.status]}</span>}
+        </p>
         {!belumTercatat && <p>NIBAR : <b>{s.nibar || '—'}</b></p>}
       </div>
 
@@ -180,9 +193,9 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
       <div className="mt-6 flex justify-between">
         <div>
           <p className="font-semibold mb-1">Pelaksana / Petugas Inventarisasi</p>
-          {(hdr.petugas || []).length === 0 ? <p className="text-gray-400">—</p> : (
+          {petugas.length === 0 ? <p className="text-gray-400">—</p> : (
             <ol className="list-decimal ml-4 space-y-0.5">
-              {(hdr.petugas || []).map(p => <li key={p.pegawai_id}>{p.nama}{p.nip ? ` — NIP. ${p.nip}` : ''}</li>)}
+              {petugas.map(p => <li key={p.pegawai_id}>{p.nama}{p.nip ? ` — NIP. ${p.nip}` : ''}</li>)}
             </ol>
           )}
         </div>
@@ -198,51 +211,68 @@ function Lembar({ b, hdr, config, no }: { b: InvBaris; hdr: InvHeader; config: L
 
 export default function CetakLkiPage() {
   const supabase = createClient()
-  const [hdr, setHdr] = useState<InvHeader | null>(null)
-  const [baris, setBaris] = useState<InvBaris[]>([])
+  const [baris, setBaris] = useState<Isian[]>([])
+  const [petugas, setPetugas] = useState<Petugas[]>([])
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
 
   useEffect(() => {
     (async () => {
-      const id = new URLSearchParams(window.location.search).get('inv')
-      if (!id) { setLoading(false); return }
-      const { data: h } = await supabase.from('inventarisasi')
-        .select(`${HDR_COLS},skpd:admin_skpd(nama)`).eq('id', id).maybeSingle()
-      setHdr((h as never as InvHeader) || null)
+      // Fail-closed: lembar yang dicetak & diteken tak boleh diam-diam kurang.
+      try {
+        const q = new URLSearchParams(window.location.search)
+        const id = q.get('id')
+        const skpd = q.get('skpd') ? Number(q.get('skpd')) : null
+        const golongan = q.get('golongan')
+        const tahun = q.get('tahun') ? Number(q.get('tahun')) : null
 
-      const rows: InvBaris[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data } = await supabase.from('inventarisasi_baris')
-          .select('id,inventarisasi_id,aset_id,snapshot,jawaban,foto_paths')
-          .eq('inventarisasi_id', id).order('created_at').range(from, from + 999)
-        if (!data || data.length === 0) break
-        rows.push(...(data as never as InvBaris[]))
-        if (data.length < 1000) break
+        let rows: Isian[] = []
+        if (id) {
+          const { data, error } = await supabase.from('inventarisasi_barang').select(KOLOM).eq('id', id).maybeSingle()
+          if (error) throw new Error(`gagal membaca isian: ${error.message}`)
+          if (data) rows = [data as never as Isian]
+        } else if (skpd != null && golongan && tahun) {
+          rows = await paginate<string, { id: string }>('isian inventarisasi', kursor => {
+            let qq = supabase.from('inventarisasi_barang').select(KOLOM)
+              .eq('skpd_id', skpd).eq('golongan', golongan).eq('tahun', tahun)
+            if (kursor !== null) qq = qq.gt('id', kursor)
+            return qq.order('id').limit(1000)
+          }) as never as Isian[]
+          rows.sort((a, b) => (a.snapshot?.kode || a.jawaban?.baru?.kode_barang || '')
+            .localeCompare(b.snapshot?.kode || b.jawaban?.baru?.kode_barang || '') || a.id.localeCompare(b.id))
+        }
+        setBaris(rows)
+        if (rows.length > 0) {
+          setPetugas((await muatTimUntukCetak(supabase, rows[0].skpd_id, rows[0].tahun)).petugas)
+        }
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e))
+        setBaris([])
+      } finally {
+        setLoading(false)
       }
-      setBaris(rows)
-      setLoading(false)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const config = konfigLki(hdr?.golongan || '')
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       <style>{`@media print { .no-print { display: none !important; } @page { size: A4 portrait; margin: 1.2cm; } body { background: white; } }`}</style>
 
       <div className="max-w-4xl mx-auto mb-3 flex justify-end no-print px-4">
-        <button onClick={() => window.print()} className="btn-primary text-sm">🖨 Cetak / Simpan PDF</button>
+        <button onClick={() => window.print()} disabled={!!err || baris.length === 0} className="btn-primary text-sm">
+          🖨 Cetak / Simpan PDF
+        </button>
       </div>
 
       <div className="max-w-4xl mx-auto">
         {loading ? (
           <div className="bg-white p-8 text-sm text-gray-400">Memuat…</div>
-        ) : !hdr ? (
-          <div className="bg-white p-8 text-sm text-gray-500">Inventarisasi tidak ditemukan.</div>
+        ) : err ? (
+          <div className="bg-white p-8 text-sm text-red-700">{err} — lembar tidak dirakit.</div>
         ) : baris.length === 0 ? (
-          <div className="bg-white p-8 text-sm text-gray-500">Belum ada barang pada inventarisasi ini.</div>
+          <div className="bg-white p-8 text-sm text-gray-500">Isian inventarisasi tidak ditemukan.</div>
         ) : (
-          baris.map((b, i) => <Lembar key={b.id} b={b} hdr={hdr} config={config} no={i + 1} />)
+          baris.map((b, i) => <Lembar key={b.id} b={b} petugas={petugas} config={konfigLki(b.golongan)} no={i + 1} />)
         )}
       </div>
     </div>

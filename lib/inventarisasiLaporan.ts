@@ -310,7 +310,9 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
 
   // Kode Barang & Nama Barang berpasangan: koreksi kodenya sekaligus membawa
   // uraian barunya. Jumlah & nilai perolehan TIDAK bisa diubah lewat LKI, jadi
-  // selalu dari snapshot. "Kode Register" tak ada di sistem → dikosongkan.
+  // selalu dari snapshot. Kode Register dari snapshot (sejak 2026-09-23 —
+  // sebelumnya dikosongkan karena aplikasi belum punya kode register); ia
+  // juga tak bisa diubah lewat LKI, jadi sebelum = sesudah.
   const kodeEfektif = j.kode_barang?.sesuai === false
     ? (j.kode_barang.kode_baru || '(kosong)')
     : (s.kode || '')
@@ -324,7 +326,7 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
   const inti = {
     no,
     nibar: s.nibar || '',
-    kode_register: '',
+    kode_register: s.kode_register || '',
     kode_barang: kodeEfektif,
     nama_barang: uraianEfektif,
     spesifikasi: efektif(j.spesifikasi, s.nama_barang),
@@ -405,11 +407,11 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
       return {
         no, nibar: s.nibar || '',
         sb_kode_barang: s.kode || '', sb_nama_barang: s.uraian_barang || '',
-        sb_kode_register: '', sb_spesifikasi: s.nama_barang || '',
+        sb_kode_register: s.kode_register || '', sb_spesifikasi: s.nama_barang || '',
         sb_jumlah: s.jumlah ?? '', sb_alamat: s.alamat || '',
         st_kode_barang: kodeEfektif,
         st_nama_barang: uraianEfektif,
-        st_kode_register: '',
+        st_kode_register: s.kode_register || '',
         st_spesifikasi: efektif(j.spesifikasi, s.nama_barang),
         // Jumlah tak bisa diubah lewat LKI → sebelum = sesudah.
         st_jumlah: s.jumlah ?? '',

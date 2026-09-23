@@ -1,6 +1,13 @@
 // Modul Inventarisasi BMD (Permendagri 47/2021) — tipe, konfigurasi form, dan
 // klasifikasi laporan. NON-LEDGER: tak ada satu pun fungsi di sini yang menulis
-// `transaksi_bmd` atau mengubah `aset` (lihat migrasi 20260725_08).
+// `transaksi_bmd` atau mengubah `aset`.
+//
+// MODEL (migrasi 20260923_03, keputusan user 2026-09-23): SATU BARIS PER
+// BARANG di `inventarisasi_barang`. Lembar Kerja = tampilan register HIDUP;
+// isian tersimpan begitu disimpan (tanpa "Ajukan"); Pengelola Barang
+// memvalidasi per barang. Model lama (satu lembar per SKPD × jenis aset yang
+// menarik & membekukan seluruh barang) sudah dicabut — lembarnya basi sejak
+// dibuat & validasinya semua-atau-tidak.
 //
 // KONSEP INTI — LKI SUMBER, LHI TURUNAN:
 //   Lembar Kerja Inventarisasi (LKI, Format III.A.1–III.A.7) = form PER-BARANG
@@ -9,43 +16,64 @@
 //   LKI lewat `klasifikasiLhi()`. Satu baris boleh masuk BEBERAPA LHI sekaligus
 //   (mis. kondisi berubah DAN tercatat ganda).
 import { GOLONGAN_REKAP } from '@/lib/bmd'
+import { KIBAR_JENIS_LABEL } from '@/lib/kibarJenis'
 
-// ── Header ──────────────────────────────────────────────────────────────────
-export type InvStatus = 'draft' | 'diajukan' | 'divalidasi' | 'dikembalikan'
+// ── Status per barang ───────────────────────────────────────────────────────
+/** Status yang TERSIMPAN. "Belum" bukan status — ia berarti belum ada barisnya. */
+export type InvStatus = 'diisi' | 'divalidasi'
+export type StatusTampil = 'belum' | InvStatus
 
-export const STATUS_LABEL: Record<InvStatus, string> = {
-  draft: 'Draft', diajukan: 'Diajukan', divalidasi: 'Divalidasi', dikembalikan: 'Dikembalikan',
+export const STATUS_LABEL: Record<StatusTampil, string> = {
+  belum: 'Belum diinventarisasi',
+  diisi: 'Menunggu validasi',
+  divalidasi: 'Divalidasi',
 }
-export const STATUS_BADGE: Record<InvStatus, string> = {
-  draft: 'bg-gray-100 text-gray-600',
-  diajukan: 'bg-amber-100 text-amber-700',
+export const STATUS_BADGE: Record<StatusTampil, string> = {
+  belum: 'bg-gray-100 text-gray-500',
+  diisi: 'bg-amber-100 text-amber-700',
   divalidasi: 'bg-teal/10 text-teal',
-  dikembalikan: 'bg-red-100 text-red-700',
 }
 
-/** Petugas/pelaksana inventarisasi — diambil dari admin_pegawai, bukan ketik bebas. */
+/** Petugas/pelaksana inventarisasi — diambil dari admin_pegawai, bukan ketik bebas.
+ *  Satu tim per SKPD per tahun (`inventarisasi_tim`). */
 export type Petugas = { pegawai_id: string; nama: string; nip: string | null; jabatan: string | null }
 
-export type InvHeader = {
-  id: string
-  skpd_id: number
-  tahun: number
-  golongan: string
-  status: InvStatus
-  catatan_validator: string | null
-  petugas: Petugas[]
-  keterangan: string | null
-  diajukan_at: string | null
-  divalidasi_at: string | null
-  created_at: string
-  /** kode_skpd dipakai mengurutkan daftar sesuai struktur organisasi (Admin > SKPD). */
-  skpd?: { nama: string; kode_skpd?: string | null } | null
+// ── Posisi & kunci ──────────────────────────────────────────────────────────
+/**
+ * Posisi barang SEKARANG dibanding posisi saat diinventarisasi — dihitung
+ * server (`fn_inventarisasi_posisi` & kembarannya di RPC baca). `null` = masih
+ * di tempat. Selain itu hasil inventarisasinya TERKUNCI sampai barangnya
+ * kembali ke posisi semula (self-healing, keputusan user 2026-09-23).
+ */
+export type PosisiBerubah = 'keluar' | 'pindah_skpd' | 'reklas'
+
+export function labelPosisi(
+  p: PosisiBerubah | null | undefined,
+  skpdBaru?: string | null,
+  golonganBaru?: string | null,
+): string | null {
+  if (!p) return null
+  if (p === 'pindah_skpd') return `Pindah ke ${skpdBaru || 'SKPD lain'}`
+  if (p === 'reklas') {
+    const label = golonganBaru ? (LKI_CONFIG[golonganBaru]?.label || golonganBaru) : null
+    return `Direklas ke ${label ? `${label} (${golonganBaru})` : 'jenis aset lain'}`
+  }
+  return 'Keluar dari Daftar Barang (dihapus / diserap induk / dipecah / digabung)'
+}
+
+/** Satu transaksi ledger yang MASIH BERLAKU sesudah barang terakhir diisi. */
+export type TransaksiSesudah = { jenis: string; periode: string }
+
+export function labelTransaksi(t: TransaksiSesudah): string {
+  return `${KIBAR_JENIS_LABEL[t.jenis]?.label || t.jenis} (${t.periode})`
 }
 
 // ── Baris (satu lembar LKI) ─────────────────────────────────────────────────
-/** Kondisi "SEBELUM" — dibekukan saat baris digenerate dari `aset`. */
+/** Kondisi "SEBELUM" — dibangun SERVER dari `aset` tiap kali isian disimpan
+ *  (`fn_inventarisasi_snapshot`). Kunci-kuncinya KEMBAR dgn fungsi itu. */
 export type InvSnapshot = {
   nibar?: string | null
+  kode_register?: string | null
   kode?: string
   uraian_barang?: string | null
   nama_barang?: string | null
@@ -162,12 +190,15 @@ export type InvJawaban = {
 }
 
 export type InvBaris = {
+  /** '' = belum pernah disimpan (lembar dibuka dari register hidup). */
   id: string
-  inventarisasi_id: string
   aset_id: string | null
   snapshot: InvSnapshot
   jawaban: InvJawaban
   foto_paths: string[]
+  status?: InvStatus
+  /** Catatan Pengelola saat membatalkan validasi — satu-satunya keterangan ke SKPD. */
+  catatan_validator?: string | null
 }
 
 // ── Konfigurasi form LKI per golongan ───────────────────────────────────────
@@ -353,11 +384,56 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
   return out
 }
 
-/** Baris dianggap "sudah diisi" kalau minimal keberadaan & kondisi terjawab. */
-export function sudahDiisi(b: InvBaris): boolean {
-  if (!b.aset_id) return !!b.jawaban?.baru?.nama_barang
+/**
+ * Isian yang masih kurang sebelum lembar boleh disimpan. Mengembalikan SELURUH
+ * kekurangan sekaligus (pola `kekuranganBarangPengadaan`) — penolakan satu per
+ * satu memaksa operator menekan Simpan berulang kali.
+ *
+ * Kenapa sekarang wajib (dulu tidak): di model per-barang, begitu ada barisnya
+ * barang itu DIHITUNG "sudah diinventarisasi" & masuk antrean validasi. Lembar
+ * yang disimpan tanpa keberadaan/kondisi dulu cuma tampil "Belum" di lembarnya
+ * sendiri; sekarang ia akan terbaca selesai padahal kosong.
+ *
+ * Dipakai form (pesan hidup) DAN penjaga tombol Simpan — satu aturan, dua pintu.
+ */
+export function kekuranganLki(b: Pick<InvBaris, 'aset_id' | 'jawaban'>): string[] {
   const j = b.jawaban || {}
-  return !!j.keberadaan && (j.keberadaan !== 'ada' || !!j.kondisi)
+  const kurang: string[] = []
+
+  if (!b.aset_id) {
+    const baru = j.baru || {}
+    if (!baru.kode_barang) kurang.push('Kode Barang')
+    if (!(Number(baru.jumlah) > 0)) kurang.push('Jumlah')
+    if (!baru.satuan) kurang.push('Satuan Barang')
+    if (!baru.kondisi) kurang.push('Kondisi Barang')
+    return kurang
+  }
+
+  if (!j.keberadaan) kurang.push('Keberadaan Barang (G)')
+  if (j.keberadaan === 'ada' && !j.kondisi) kurang.push('Kondisi Barang (K)')
+
+  // "Tidak Sesuai" tanpa menyebut yang seharusnya → LHI III.B.8 mencetak
+  // "(kosong)" di kolom Setelah Inventarisasi. Itu bukan temuan, itu isian
+  // yang tertinggal.
+  if (j.kode_barang?.sesuai === false && !j.kode_barang.kode_baru) kurang.push('Kode Barang yang seharusnya (B–C)')
+  if (j.alamat?.sesuai === false && !j.alamat.wilayah_kode && !(j.alamat.alamat_detail || '').trim()) {
+    kurang.push('Alamat yang seharusnya (J)')
+  }
+  const teks: [keyof InvJawaban, string][] = [
+    ['spesifikasi', 'Nama Spesifikasi Barang (D)'], ['satuan', 'Satuan Barang (F)'],
+    ['merek_tipe', 'Merek / Tipe'], ['no_polisi', 'Nomor Polisi'],
+    ['no_rangka', 'Nomor Rangka'], ['no_mesin', 'Nomor Mesin'],
+    ['jenis_perkerasan', 'Jenis Perkerasan Jalan'], ['jenis_bahan_jembatan', 'Jenis Bahan Struktur Jembatan'],
+    ['no_ruas_jalan', 'Nomor Ruas Jalan'], ['no_jaringan_irigasi', 'Nomor Jaringan Irigasi'],
+  ]
+  for (const [k, label] of teks) {
+    const f = j[k] as SesuaiField | undefined
+    if (f?.sesuai === false && !(f.seharusnya || '').trim()) kurang.push(`${label} yang seharusnya`)
+  }
+
+  if (j.atribusi === 'ya_induk_diketahui' && !j.induk?.aset_id) kurang.push('Barang induk (I)')
+  if (j.ganda && !j.ganda_data?.aset_id) kurang.push('Barang kembaran yang tercatat ganda (M)')
+  return kurang
 }
 
 // ── Rekomendasi tindak lanjut (TAMPILAN SAJA) ───────────────────────────────

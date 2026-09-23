@@ -13,6 +13,7 @@ import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
+import { useNamaSkpd } from '@/components/useNamaSkpd'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import {
@@ -27,10 +28,10 @@ export default function LaporanInventarisasiPage() {
   const [golongan, setGolongan] = useState('1.3.3')
   const [skpdIds, setSkpdIds] = useState<number[] | null>(null)
   const [skpdId, setSkpdId] = useState<number | null>(null)
-  const [skpdNama, setSkpdNama] = useState('')
+  const { nama: skpdNama, pilih: pilihNamaSkpd } = useNamaSkpd()
   const [kode, setKode] = useState<LhiKode>('III.B.7')
 
-  const { headers, loading, err, barisUntuk, hitungPerFormat } = useLhiData({ tahun, golongan, skpdIds })
+  const { baris, loading, err, barisUntuk, hitungPerFormat } = useLhiData({ tahun, golongan, skpdIds })
   const hitung = useMemo(() => hitungPerFormat(), [hitungPerFormat])
 
   const rows = useMemo(
@@ -61,7 +62,7 @@ export default function LaporanInventarisasiPage() {
       msg=""
       headerRight={
         <div className="flex items-center gap-2">
-          <Link href="/dashboard/inventarisasi" className="btn-secondary text-sm">← Lembar Kerja</Link>
+          <Link href={`/dashboard/inventarisasi/jenis/${golongan}`} className="btn-secondary text-sm">← Lembar Kerja</Link>
           <a href={cetakUrl} target="_blank" rel="noopener noreferrer"
             className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
             🖨 Cetak / PDF
@@ -83,7 +84,7 @@ export default function LaporanInventarisasiPage() {
         <div>
           <label className="block text-xs text-gray-500 mb-1">SKPD</label>
           <SkpdCombobox lockToOperator allowClear
-            onChangeSelection={sel => { setSkpdIds(sel.descendantIds); setSkpdId(sel.skpdId) }}
+            onChangeSelection={sel => { setSkpdIds(sel.descendantIds); setSkpdId(sel.skpdId); pilihNamaSkpd(sel.skpdId) }}
             placeholder="Semua SKPD — atau ketik nama SKPD..." />
         </div>
         <div className="flex flex-wrap gap-3 items-end">
@@ -115,19 +116,20 @@ export default function LaporanInventarisasiPage() {
         {REKOMENDASI[kode].menu !== '—' && <> <span className="text-gray-400">(menu: {REKOMENDASI[kode].menu})</span></>}
         <p className="text-[11px] text-gray-400 mt-1">
           Inventarisasi tidak mengeksekusi apa pun ke buku besar — tindak lanjut dikerjakan manual di menu terkait.
+          Laporan ini hanya memuat isian yang <b>sudah divalidasi</b> Pengelola Barang.
         </p>
       </div>
 
       <div className="card p-4 overflow-x-auto">
         {loading ? (
           <p className="py-8 text-center text-gray-400 text-sm">Memuat data...</p>
-        ) : headers.length === 0 ? (
+        ) : err ? null : baris.length === 0 ? (
           <p className="py-8 text-center text-gray-400 text-sm">
-            Belum ada inventarisasi {konfigLki(golongan).label} tahun {tahun}.
+            Belum ada isian inventarisasi {konfigLki(golongan).label} tahun {tahun} yang divalidasi.
           </p>
         ) : (
           <LhiTabel kode={kode} rows={rows} periodeLabel={periodeLabel}
-            judulSkpd={skpdId ? (headers.find(h => h.skpd_id === skpdId)?.skpd?.nama || undefined) : undefined} />
+            judulSkpd={skpdId ? (skpdNama || undefined) : undefined} />
         )}
       </div>
     </FormShell>
