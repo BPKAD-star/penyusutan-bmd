@@ -41,7 +41,7 @@
 // ============================================================================
 
 export type KolomBarangKey =
-  | 'kode' | 'spek' | 'merek' | 'spesifikasi' | 'nopol' | 'mesin' | 'rangka'
+  | 'kode' | 'spek' | 'merek' | 'spesifikasi' | 'nopol' | 'rangka' | 'mesin'
   | 'luas' | 'alamat' | 'tgl' | 'jumlah' | 'nilai'
 
 export type MetaKolomBarang = { header: string; berat: number; align?: 'right' | 'center' }
@@ -61,8 +61,10 @@ export const KOLOM_BARANG_TRANSAKSI: Record<KolomBarangKey, MetaKolomBarang> = {
   merek: { header: 'Merk/Tipe', berat: 8 },
   spesifikasi: { header: 'Spesifikasi Lainnya', berat: 10 },
   nopol: { header: 'No. Polisi', berat: 6 },
-  mesin: { header: 'No. Mesin', berat: 7 },
-  rangka: { header: 'No. Rangka', berat: 7 },
+  // Rangka (VIN, ±17 digit) selalu lebih panjang dari nomor mesin — koreksi
+  // 2026-09-23 (bobot sempat sama-rata & keduanya bertabrakan di layar).
+  rangka: { header: 'No. Rangka', berat: 9 },
+  mesin: { header: 'No. Mesin', berat: 6 },
   // Suffix "(m²)" kembar dgn lib/kolomBarang.ts (Daftar Barang / Daftar
   // Barang Awal) — satuan yang sama, jangan sebut beda di menu berbeda.
   luas: { header: 'Luas (m²)', berat: 5, align: 'right' },
@@ -73,9 +75,13 @@ export const KOLOM_BARANG_TRANSAKSI: Record<KolomBarangKey, MetaKolomBarang> = {
   nilai: { header: 'Nilai', berat: 9, align: 'right' },
 }
 
-/** Urutan TETAP kiri→kanan — jangan diacak per pemanggil. */
+/**
+ * Urutan TETAP kiri→kanan — jangan diacak per pemanggil.
+ * ⚠️ Rangka SEBELUM Mesin (dikoreksi 2026-09-23; urutan pertama sempat
+ * kebalik jadi Mesin-lalu-Rangka).
+ */
 export const KOLOM_BARANG_URUTAN: readonly KolomBarangKey[] = [
-  'kode', 'spek', 'merek', 'spesifikasi', 'nopol', 'mesin', 'rangka',
+  'kode', 'spek', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin',
   'luas', 'alamat', 'tgl', 'jumlah', 'nilai',
 ]
 

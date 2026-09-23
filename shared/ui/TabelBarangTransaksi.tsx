@@ -78,8 +78,8 @@ export function KolomBarangCells({ barang: b }: { barang: BarangTransaksi }) {
       {cell(b.merekTipe)}
       {cell(b.spesifikasiLainnya)}
       {cell(b.noPolisi, 'whitespace-nowrap')}
-      {cell(b.noMesin, 'whitespace-nowrap')}
       {cell(b.noRangka, 'whitespace-nowrap')}
+      {cell(b.noMesin, 'whitespace-nowrap')}
       {cell(b.luas == null || b.luas === '' ? null : b.luas, 'text-right')}
       {cell(b.alamatDetail)}
       {cell(b.tglPerolehan, 'text-center whitespace-nowrap')}

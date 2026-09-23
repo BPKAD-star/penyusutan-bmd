@@ -10,9 +10,11 @@ describe('KOLOM_BARANG_URUTAN', () => {
 
   // Urutan ini yang dibaca operator sbg "standar" — kalau bergeser tanpa
   // sengaja, kesembilan menu ikut bergeser tanpa satu pun yang sadar.
-  it('urutannya PERSIS seperti disepakati (2026-09-23)', () => {
+  // ⚠️ Rangka SEBELUM Mesin — dikoreksi 2026-09-23 (urutan pertama sempat
+  // terbalik jadi Mesin-lalu-Rangka).
+  it('urutannya PERSIS seperti disepakati (2026-09-23, dikoreksi hari yang sama)', () => {
     expect(KOLOM_BARANG_URUTAN).toEqual([
-      'kode', 'spek', 'merek', 'spesifikasi', 'nopol', 'mesin', 'rangka',
+      'kode', 'spek', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin',
       'luas', 'alamat', 'tgl', 'jumlah', 'nilai',
     ])
   })

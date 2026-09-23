@@ -6245,8 +6245,24 @@ di dalam kartu jurnal, di **sembilan menu**:
 
 Urutannya: **Kode Barang+Uraian Barang** (ditumpuk) → **Spesifikasi Nama
 Barang+NIBAR** (ditumpuk) → Merk/Tipe → Spesifikasi Lainnya → No. Polisi →
-No. Mesin → No. Rangka → Luas → Alamat Detail → Tgl Perolehan →
+**No. Rangka → No. Mesin** → Luas → Alamat Detail → Tgl Perolehan →
 **Jumlah+Satuan** (ditumpuk) → Nilai.
+
+⚠️ **KOREKSI di hari yang sama: Rangka & Mesin sempat TERBALIK, dan kolomnya
+BERTABRAKAN di layar.** Rilis pertama menaruh Mesin sebelum Rangka dengan
+bobot lebar yang SAMA-RATA (7:7); nomor rangka (VIN, ±17 digit) hampir selalu
+lebih panjang dari nomor mesin, jadi teks `whitespace-nowrap` di sel Mesin yang
+sempit meluber & bertumpuk dgn sel Rangka di sebelahnya — dua nomor beda
+tampil seolah satu string acak. Diperbaiki: urutan ditukar jadi **Rangka lalu
+Mesin** (kembali ke urutan picker LAMA yang justru sudah benar sejak awal —
+lihat catatan "Urutan No. Polisi/Mesin/Rangka di picker LAMA … diam-diam beda"
+di bawah, yang ternyata pickernya yang benar, bukan standar barunya), dan
+bobot lebarnya DIBEDAKAN (Rangka 9, Mesin 6, dari 7:7) di
+`KOLOM_BARANG_TRANSAKSI` (lib/kolomBarangTransaksi.ts). ⚠️ Urutan `<td>` di
+`KolomBarangCells` (shared/ui/TabelBarangTransaksi.tsx) **ditulis tangan**,
+TIDAK diturunkan dari `KOLOM_BARANG_URUTAN` — mengubah urutan array saja
+TIDAK CUKUP, sel Rangka/Mesin di situ wajib ditukar manual juga, kalau tidak
+kepala kolom & isinya jadi tak sinkron tanpa satu pun error.
 
 ⚠️ **LIMA MENU SENGAJA TIDAK IKUT** (permintaan user eksplisit): Pemanfaatan,
 Reklasifikasi, Koreksi, Kapitalisasi, Pengamanan. Bentuknya beda — barang di
