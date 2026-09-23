@@ -28,7 +28,9 @@
 //
 // Kolom aset.pemanfaatan (cache di atas) kini juga DITAMPILKAN — lihat
 // lib/penggunaanTampil.ts & kolom "Penggunaan" di Daftar Barang (2026-09-23).
-import { useEffect, useState, useCallback } from 'react'
+// Tautan hijau di kolom itu deep-link ke sini via `?skpd=<id>&nibar=<nibar>`
+// — SKPD terpilih otomatis & baris barangnya disorot + di-scroll ke tampilan.
+import { useEffect, useState, useCallback, useRef } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
@@ -97,6 +99,24 @@ export default function Pemanfaatan() {
   const [editing, setEditing] = useState<Header | null>(null)
   const [msg, setMsg] = useState('')
 
+  // Deep-link dari badge Pemanfaatan di Daftar Barang (permintaan user
+  // 2026-09-23): `?skpd=<id>&nibar=<nibar>` → SKPD terpilih otomatis & baris
+  // barangnya disorot + di-scroll ke tampilan. Dibaca SEKALI saat mount, pola
+  // sama dgn `cari` di app/dashboard/gis/page.tsx.
+  const [highlightNibar, setHighlightNibar] = useState('')
+  const highlightRef = useRef<HTMLTableRowElement | null>(null)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const skpdParam = params.get('skpd')
+    const nibarParam = params.get('nibar')
+    if (skpdParam) setSkpd(skpdParam)
+    if (nibarParam) setHighlightNibar(nibarParam)
+  }, [])
+  useEffect(() => {
+    if (!highlightNibar || jurnals.length === 0) return
+    const t = setTimeout(() => highlightRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    return () => clearTimeout(t)
+  }, [highlightNibar, jurnals])
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama || ''
 
@@ -314,7 +334,8 @@ export default function Pemanfaatan() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {j.lines.map(l => (
-                        <tr key={l.aset_id} className={l.selesai ? 'opacity-50' : ''}>
+                        <tr key={l.aset_id} ref={l.nibar === highlightNibar ? highlightRef : undefined}
+                          className={`${l.selesai ? 'opacity-50' : ''} ${l.nibar && l.nibar === highlightNibar ? 'bg-teal/10' : ''}`}>
                           <td className="table-td text-center">
                             <div className="flex items-center justify-center gap-1">
                               {!l.selesai && (

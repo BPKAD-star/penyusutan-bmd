@@ -6611,6 +6611,31 @@ pun sejak dibuat.
   — kalau terbalik, kolom Penggunaan tetap menampilkan teks lama; bukan error,
   cache yang baru dicatat cuma belum kelihatan sampai migrasinya jalan.
 
+### Ruas Pemanfaatan jadi tautan HIJAU + deep-link ke menunya (2026-09-23)
+
+Permintaan user sesudah melihat kolom Penggunaan hidup di layar. `penggunaanTampil()`
+diubah dari `{ baris: string[] }` datar jadi **tiga ruas terpisah**
+(`pengamanan` · `pemanfaatan` · `dasar`) — supaya pemanggil bisa memberi
+perlakuan BEDA ke tiap ruas: `pemanfaatan` sekarang `<Link>` hijau
+(`text-green-700`) ke `/dashboard/pembukuan/pengelolaan/pemanfaatan?skpd=<id>&nibar=<nibar>`;
+`pengamanan` tetap teks abu polos (menu Pengamanan tak punya deep-link
+per barang, jadi tak ada tempat yang layak dituju).
+
+- **Deep-link-nya DIBACA sekali di mount** (`components/pengelolaan/
+  Pemanfaatan.tsx`, pola sama `?cari=` di `app/dashboard/gis/page.tsx`):
+  `skpd` → `setSkpd()` (SKPD terpilih otomatis, `SkpdCombobox` yang memang
+  controlled lewat prop `value`), `nibar` → `highlightNibar`, dipakai
+  menyorot (`bg-teal/10`) & `scrollIntoView({block:'center'})` baris barang
+  itu begitu `jurnals` termuat. **Bukan gerbang keamanan** — cuma navigasi;
+  RLS `jurnal_header`/`transaksi_bmd` tetap penjaga akhir siapa yang benar-
+  benar bisa melihat kartunya.
+- ⚠️ **Export (`cell()`, dua closure) & layar (`cellContent`) WAJIB dibaca
+  dari ruas yang SAMA** — `[t.pengamanan, t.pemanfaatan].filter(Boolean)
+  .join(' · ') || t.dasar || ''`. Tiga ruas terpisah artinya tiga tempat yang
+  bisa salah menyusunnya balik; dikunci lib/penggunaanTampil.test.ts.
+- **Tak ada migrasi lagi** — murni tampilan + satu deep-link baru di atas
+  RPC/kolom yang sudah dibuka migrasi 20260923_02 di atas.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

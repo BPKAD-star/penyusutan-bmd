@@ -818,7 +818,7 @@ export default function DaftarBarangPage() {
           // ini). Di Excel tak ditandai apa-apa: bagi pembaca berkas keduanya
           // sama-sama "asal usul barang", dan penandaan cuma bikin bingung.
           case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
-          case 'penggunaan': return penggunaanTampil(r).baris.join(' · ')
+          case 'penggunaan': { const t = penggunaanTampil(r); return [t.pengamanan, t.pemanfaatan].filter(Boolean).join(' · ') || t.dasar || '' }
           case 'keterangan': return r.keterangan || ''
           case 'luas': return luasOf(r, bidangEx) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
@@ -899,7 +899,7 @@ export default function DaftarBarangPage() {
           // ini). Di Excel tak ditandai apa-apa: bagi pembaca berkas keduanya
           // sama-sama "asal usul barang", dan penandaan cuma bikin bingung.
           case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
-          case 'penggunaan': return penggunaanTampil(r).baris.join(' · ')
+          case 'penggunaan': { const t = penggunaanTampil(r); return [t.pengamanan, t.pemanfaatan].filter(Boolean).join(' · ') || t.dasar || '' }
           case 'keterangan': return r.keterangan || ''
           case 'luas': return luasOf(r, bidangEx) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
@@ -1008,8 +1008,25 @@ export default function DaftarBarangPage() {
         // ⚠️ Gedung & Bangunan bisa punya KEDUANYA sekaligus (satu ruang
         // dikustodi, ruang lain disewakan) → ditumpuk, bukan salah satu dibuang.
         const t = penggunaanTampil(r)
-        if (t.baris.length === 0) return '-'
-        return <>{t.baris.map((b, i) => <p key={i} className="text-xs text-gray-600">{b}</p>)}</>
+        if (!t.pengamanan && !t.pemanfaatan) return t.dasar || '-'
+        return (
+          <>
+            {t.pengamanan && <p className="text-xs text-gray-600">{t.pengamanan}</p>}
+            {t.pemanfaatan && (
+              // Hijau + tautan (permintaan user 2026-09-23): satu-satunya
+              // ruas yang punya "rumah" untuk dituju — kartu Pemanfaatan
+              // barang ini, lewat deep-link `?skpd=&nibar=` (lihat komentar
+              // kepala components/pengelolaan/Pemanfaatan.tsx). Pengamanan
+              // TIDAK ditautkan: menunya tak punya deep-link per barang.
+              <Link
+                href={`/dashboard/pembukuan/pengelolaan/pemanfaatan?skpd=${r.skpd_id ?? ''}&nibar=${encodeURIComponent(r.nibar || '')}`}
+                className="text-xs text-green-700 hover:underline hover:text-green-800"
+                title="Lihat perjanjian pemanfaatan barang ini di menu Pemanfaatan">
+                {t.pemanfaatan}
+              </Link>
+            )}
+          </>
+        )
       }
       case 'keterangan': return r.keterangan || '-'
       case 'luas': { const v = luasOf(r); return v != null ? angkaLuas(v) : '-' }
