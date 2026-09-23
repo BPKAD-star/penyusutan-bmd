@@ -25,20 +25,17 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { ASET_NUM_COLS, allSameGolongan, koreksiFieldKeys, type FieldKey } from '@/lib/asetFields'
-import type { Row, BidangAgg } from './tipe'
+import type { Row } from './tipe'
 
 const newKey = () => Math.random().toString(36).slice(2)
 
 export type EditSpekAwal = ReturnType<typeof useEditSpekAwal>
 
 /**
- * @param bidang ringkasan bidang per NIBAR — menentukan apakah Tanah boleh
- *   mengoreksi luas/lokasi dari sini (kalau sudah punya bidang, GIS yang
- *   berwenang).
  * @param reload muat ulang daftar halaman sesudah menyimpan. Disuntik, bukan
  *   dipanggil langsung, supaya hook ini tak perlu tahu filter & halaman aktif.
  */
-export function useEditSpekAwal(bidang: Record<string, BidangAgg>, reload: () => void) {
+export function useEditSpekAwal(reload: () => void) {
   const supabase = createClient()
 
   const [sel, setSel] = useState<Record<string, Row>>({}) // key = NIBAR
@@ -98,11 +95,6 @@ export function useEditSpekAwal(bidang: Record<string, BidangAgg>, reload: () =>
     setSpekMsg(''); setSpekErr('')
   }
 
-  // Tanah: luas & lokasi cuma boleh dikoreksi dari sini kalau SEMUA yang
-  // dicentang belum punya bidang. Yang sudah punya → GIS Tanah yang berwenang
-  // (kalau tidak, angka manual di sini bakal ketutup Σ bidang & bikin bingung).
-  const spekTanpaBidang = selList.every(r => !(bidang[r.nibar]?.n))
-
   // Buka popup: 1 barang → prefill nilai sekarang (dari snapshot, itu yang
   // ditampilkan halaman ini); banyak barang → kosong (isi = diterapkan ke semua).
   async function openSpek() {
@@ -110,7 +102,7 @@ export function useEditSpekAwal(bidang: Record<string, BidangAgg>, reload: () =>
     setSpekMsg(''); setSpekErr('')
     const single = selList.length === 1
     setSpekPrefix(`draft/saldo-awal-spek/${single ? selList[0].nibar : newKey()}`)
-    const keys = koreksiFieldKeys(selList[0].kode, { tanahTanpaBidang: spekTanpaBidang })
+    const keys = koreksiFieldKeys(selList[0].kode)
     setSpekKeys(keys)
     if (single) {
       const { data, error } = await supabase.from('aset_awal_2026')
@@ -205,6 +197,6 @@ export function useEditSpekAwal(bidang: Record<string, BidangAgg>, reload: () =>
   return {
     sel, setSel, selList, selSameGol, toggleSel, terkunci, setTerkunci, fetchTerkunci, terkunciInfo,
     spekOpen, setSpekOpen, spekPrefix, spekKeys, spekInitFields, spekInitFoto,
-    spekMsg, spekErr, spekSaving, spekTanpaBidang, openSpek, simpanSpek,
+    spekMsg, spekErr, spekSaving, openSpek, simpanSpek,
   }
 }

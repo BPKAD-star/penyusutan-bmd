@@ -10,14 +10,11 @@
 // non-editable dengan tombol "Lengkapi" — begitu diisi, jadi baris bidang
 // resmi pertama (form ke-prefill dari data aset itu).
 import { useEffect, useState } from 'react'
-import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { luasBidangSah, ringkasDaftarBidang } from '@/lib/luasBidang'
 
 import { FIELD_OPTIONS } from '@/lib/asetFields'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
-
-const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false, loading: () => <div className="h-[180px] bg-gray-50 rounded-lg animate-pulse" /> })
 
 type Bidang = {
   id: string; aset_id: string; nama_bidang: string | null; luas: number | null; jenis_hak: string | null
@@ -32,7 +29,7 @@ type AsetDokumen = {
 
 const FORM_KOSONG = {
   nama_bidang: '', luas: '', jenis_hak: '', nomor_dokumen_kepemilikan: '', tanggal_dokumen_kepemilikan: '',
-  nama_dokumen_kepemilikan: '', tanggal_berakhir_hak: '', alamat_detail: '', latitude: '', longitude: '', keterangan: '',
+  nama_dokumen_kepemilikan: '', tanggal_berakhir_hak: '',
 }
 
 const namaFile = (path: string) => path.split('/').pop() || path
@@ -75,8 +72,6 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
       nama_bidang: b.nama_bidang || '', luas: b.luas != null ? String(b.luas) : '', jenis_hak: b.jenis_hak || '',
       nomor_dokumen_kepemilikan: b.nomor_dokumen_kepemilikan || '', tanggal_dokumen_kepemilikan: b.tanggal_dokumen_kepemilikan || '',
       nama_dokumen_kepemilikan: b.nama_dokumen_kepemilikan || '', tanggal_berakhir_hak: b.tanggal_berakhir_hak || '',
-      alamat_detail: b.alamat_detail || '', latitude: b.latitude != null ? String(b.latitude) : '', longitude: b.longitude != null ? String(b.longitude) : '',
-      keterangan: b.keterangan || '',
     })
     setSertifikatPath(b.sertifikat_path)
     setShowForm(true)
@@ -126,8 +121,12 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true); setMsg('')
-    const latitude = form.latitude.trim() ? parseFloat(form.latitude) : null
-    const longitude = form.longitude.trim() ? parseFloat(form.longitude) : null
+    // ⚠️ `alamat_detail`/`latitude`/`longitude`/`keterangan` SENGAJA tak ikut dikirim
+    // (keputusan user 2026-09-23): lokasi & titik koordinat kini milik
+    // REGISTER, diisi dari Saldo Awal → Daftar Barang Awal / Koreksi. Tak
+    // dikirim = nilai lama bidang (kalau ada) tetap utuh, tidak ter-NULL-kan
+    // diam-diam — peta masih memakainya sbg cadangan utk tanah yang registernya
+    // belum bertitik.
     const payload = {
       aset_id: asetId,
       nama_bidang: form.nama_bidang.trim() || null,
@@ -137,10 +136,7 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
       tanggal_dokumen_kepemilikan: form.tanggal_dokumen_kepemilikan || null,
       nama_dokumen_kepemilikan: form.nama_dokumen_kepemilikan.trim() || null,
       tanggal_berakhir_hak: form.tanggal_berakhir_hak || null,
-      alamat_detail: form.alamat_detail.trim() || null,
-      latitude, longitude,
       sertifikat_path: sertifikatPath,
-      keterangan: form.keterangan.trim() || null,
     }
     const { error } = editId
       ? await supabase.from('aset_bidang_tanah').update(payload).eq('id', editId)
@@ -172,11 +168,9 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
     //       tinggal diwakili satu titik. Kalau bidang itu kemudian dihapus,
     //       tanahnya kehilangan titik SAMA SEKALI, tanpa jalan pulang.
     //
-    // Aturan barunya satu kalimat: **bidang MENANG saat tampil, register
-    // BERTAHAN sebagai cadangan.** Penyaringnya sudah benar di GIS
-    // (`bidangBerkoordinat.length > 0 ? titik bidang : titik register`), jadi
-    // yang perlu dicabut memang cuma penulisan balik ini — bukan logika
-    // tampilannya.
+    // Sejak 2026-09-23 titik koordinat milik REGISTER saja (form ini tak lagi
+    // punya isian lokasi/titik); luas tetap: Σ bidang menang saat tampil,
+    // register cadangan.
     setMsg(editId ? 'Bidang diperbarui.' : 'Bidang ditambahkan.')
     setShowForm(false); setEditId(null); setForm(FORM_KOSONG); setSertifikatPath(null)
     load(); onChanged?.()
@@ -190,7 +184,7 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
       rincian: b.luas != null ? [{ label: 'Luas', nilai: `${b.luas} m²` }] : undefined,
       // Luas & lokasi Tanah dihitung dari bidang-bidangnya (CLAUDE.md), jadi
       // menghapus satu bidang menggeser angka yang tampil di Daftar Barang.
-      isi: <>Luas &amp; lokasi tanah ini <b>dijumlahkan dari bidang-bidangnya</b>, jadi angkanya di
+      isi: <>Luas tanah ini <b>dijumlahkan dari bidang-bidangnya</b>, jadi angkanya di
         Daftar Barang ikut berubah begitu bidang ini hilang.</>,
       peringatan: b.sertifikat_path
         ? <>Berkas sertifikat yang menempel di bidang ini <b>ikut dibuang</b> dari penyimpanan.</>
@@ -341,12 +335,12 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Nomor Sertifikat</label>
+              <label className="block text-xs text-gray-500 mb-1">Nomor Sertipikat</label>
               <input className="select-filter w-full" value={form.nomor_dokumen_kepemilikan}
                 onChange={e => setForm(f => ({ ...f, nomor_dokumen_kepemilikan: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Nama Dokumen</label>
+              <label className="block text-xs text-gray-500 mb-1">Nama dalam Dokumen</label>
               <input className="select-filter w-full" value={form.nama_dokumen_kepemilikan}
                 onChange={e => setForm(f => ({ ...f, nama_dokumen_kepemilikan: e.target.value }))} />
             </div>
@@ -360,21 +354,10 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
               <input type="date" className="select-filter w-full" value={form.tanggal_berakhir_hak}
                 onChange={e => setForm(f => ({ ...f, tanggal_berakhir_hak: e.target.value }))} />
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Alamat / Detail Lokasi</label>
-              <input className="select-filter w-full" value={form.alamat_detail}
-                onChange={e => setForm(f => ({ ...f, alamat_detail: e.target.value }))} />
-            </div>
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Titik Koordinat</label>
-            <MapPicker latitude={form.latitude} longitude={form.longitude}
-              onChange={(lat, lng) => setForm(f => ({ ...f, latitude: lat, longitude: lng }))} />
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Sertifikat (PDF/gambar, maks 10MB)</label>
+            <label className="block text-xs text-gray-500 mb-1">Upload Dokumen <span className="text-gray-400">(PDF/gambar, maks 10MB)</span></label>
             {sertifikatPath ? (
               <div className="flex items-center gap-2 text-xs">
                 <button type="button" onClick={() => lihatSertifikat(sertifikatPath)} className="text-teal hover:underline truncate">{namaFile(sertifikatPath)}</button>
@@ -385,11 +368,6 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
                 onChange={e => uploadSertifikat(e.target.files)} disabled={uploading} className="text-xs" />
             )}
             {uploading && <p className="text-xs text-gray-400 mt-1">Mengunggah...</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Keterangan</label>
-            <input className="select-filter w-full" value={form.keterangan} onChange={e => setForm(f => ({ ...f, keterangan: e.target.value }))} />
           </div>
 
           <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Menyimpan...' : 'Simpan Bidang'}</button>

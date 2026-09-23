@@ -157,22 +157,17 @@ export function entryFieldsForKode(kode: string): FieldKey[] {
 // Tanah di bawah. Kalau ditaruh lokal di salah satu komponen, yang satunya
 // bakal pelan-pelan menyimpang.
 //
-// Tanah (1.3.1): dokumen kepemilikan, jenis hak, luas & lokasi/koordinat TIDAK
-// diedit di sini — dikelola khusus di menu GIS BMD (aset_bidang_tanah), biar
-// gak ada 2 sumber. Golongan lain (termasuk Gedung/Jalan) boleh koreksi
-// dokumen & lokasi.
-export const TANAH_GIS_FIELDS: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'wilayah_kode', 'alamat_detail', 'latitude', 'longitude']
-// PENGECUALIAN dari pengecualian (2026-07-28): Tanah yang BELUM punya satu pun
-// baris di `aset_bidang_tanah` boleh diisi luas & lokasinya dari pintu koreksi.
-// Alasannya praktis: kalau tidak, luas/lokasi tanah warisan baseline e-BMD tak
-// bisa diisi dari mana pun kecuali operator membuat bidang di GIS — padahal
-// banyak tanah yang memang cuma satu hamparan tanpa rincian per sertifikat.
-// Aturan "gak ada 2 sumber" tetap utuh karena syaratnya BELUM ADA BIDANG: begitu
-// bidang pertama dibuat, GIS yang menang & field ini hilang lagi dari popup
-// (tampilan luas ikut jadi Σ bidang). Dokumen kepemilikan, jenis hak & koordinat
-// TETAP di GIS apa pun keadaannya — itu melekat per sertifikat/bidang, bukan per
-// register; koordinat juga tak masuk akal dipukul rata satu titik.
-export const TANAH_TANPA_BIDANG_FIELDS: FieldKey[] = ['luas', 'wilayah_kode', 'alamat_detail']
+// Tanah (1.3.1): dokumen kepemilikan & jenis hak TIDAK diedit di sini — itu
+// melekat per SERTIFIKAT, jadi milik bidang di menu GIS (aset_bidang_tanah).
+// Golongan lain (termasuk Gedung/Jalan) boleh koreksi dokumen & lokasi.
+//
+// Sejak 2026-09-23 (keputusan user, "I need simplicity") luas, lokasi
+// (wilayah + alamat) & TITIK KOORDINAT milik REGISTER dan SELALU bisa diedit
+// dari sini, ada bidang atau tidak. Koordinat tak lagi dititik per bidang —
+// satu titik per register. Luas register tetap jadi CADANGAN tampilan: kalau
+// semua bidang berluas, Daftar Barang & GIS menampilkan Σ bidang (dihitung
+// saat tampil, tak pernah disimpan balik).
+export const TANAH_GIS_FIELDS: FieldKey[] = ['jenis_hak', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan']
 export const ATRIBUT_KOREKSI: FieldKey[] = ['satuan', 'asal_usul', 'tahun_pengadaan', 'kondisi_barang']
 // Aset Lain-Lain (1.5.4) isinya campuran — ada yg mirip Tanah (butuh dokumen
 // kepemilikan/jenis hak/luas), ada yg mirip kendaraan Peralatan & Mesin (butuh
@@ -181,18 +176,9 @@ export const ATRIBUT_KOREKSI: FieldKey[] = ['satuan', 'asal_usul', 'tahun_pengad
 // HANYA muncul di form koreksi, bukan di form input awal Pengadaan.
 export const ASET_LAIN_LAIN_EXTRA: FieldKey[] = ['jenis_hak', 'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi']
 
-// opts.tanahTanpaBidang — SEMUA aset yang dicentang bergolongan Tanah & belum
-// punya bidang di aset_bidang_tanah. Pemanggil yang tak tahu (mis. menu Koreksi
-// yang tak menghitung bidang) cukup tidak mengisinya → perilaku lama, luas &
-// lokasi Tanah tetap tertutup. Fail-closed, bukan fail-open.
-export function koreksiFieldKeys(kode: string, opts: { tanahTanpaBidang?: boolean } = {}): FieldKey[] {
+export function koreksiFieldKeys(kode: string): FieldKey[] {
   let keys = fieldsForKode(kode)
-  if (kodeLevel3(kode) === '1.3.1') {
-    const buang = opts.tanahTanpaBidang
-      ? TANAH_GIS_FIELDS.filter(k => !TANAH_TANPA_BIDANG_FIELDS.includes(k))
-      : TANAH_GIS_FIELDS
-    keys = keys.filter(k => !buang.includes(k))
-  }
+  if (kodeLevel3(kode) === '1.3.1') keys = keys.filter(k => !TANAH_GIS_FIELDS.includes(k))
   else if (kodeLevel3(kode) === '1.5.4') keys = [...keys, ...ASET_LAIN_LAIN_EXTRA.filter(k => !keys.includes(k))]
   return [...keys, ...ATRIBUT_KOREKSI.filter(k => !keys.includes(k))]
 }

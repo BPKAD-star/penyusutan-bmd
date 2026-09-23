@@ -14,11 +14,10 @@
 // "Lokasi" di sini = `alamat_detail` + rantai wilayah (`wilayah_kode` → Desa,
 // Kec., Kabupaten), sementara Daftar Barang baru menampilkan alamat_detail saja.
 //
-// TANAH — luas & lokasi punya DUA kemungkinan sumber, dan bidang yang menang:
-// kalau asetnya punya baris di `aset_bidang_tanah` (menu GIS Tanah), Luas = Σ
-// bidang & Lokasi diringkas dari bidang-bidangnya; kalau belum punya bidang
-// sama sekali, jatuh ke kolom snapshot yang BOLEH diisi manual lewat Edit
-// Spesifikasi (TANAH_TANPA_BIDANG_FIELDS di lib/asetFields.ts). Σ-nya dihitung
+// TANAH — luas punya DUA kemungkinan sumber, dan bidang yang menang: kalau
+// asetnya punya baris di `aset_bidang_tanah` (menu GIS Tanah), Luas = Σ bidang;
+// kalau belum, jatuh ke kolom snapshot yang diisi lewat Edit Spesifikasi.
+// Lokasi & koordinat milik REGISTER saja (keputusan user 2026-09-23). Σ-nya dihitung
 // SAAT TAMPIL, sengaja TIDAK disimpan balik ke kolom mana pun: angka tersimpan
 // bakal basi tiap bidang ditambah/diedit/dihapus (tak ada trigger/cron yang
 // menjaganya), dan snapshot 2025 tak boleh ikut bergerak mengikuti data hidup.
@@ -456,13 +455,12 @@ export default function Page() {
     return map
   }
 
-  // Bidang tanah per aset (kalau ada) — luas & lokasi Tanah yang sebenarnya
-  // dikelola PER BIDANG di menu GIS Tanah, bukan di kolom `luas`/`alamat_detail`
-  // level register. Yang punya bidang: luas = Σ bidang (dihitung SAAT TAMPIL,
-  // sengaja TIDAK disimpan ke kolom mana pun — angka tersimpan bakal basi tiap
-  // bidang ditambah/diedit/dihapus, dan snapshot 2025 tak boleh ikut bergerak
-  // mengikuti data hidup). Yang belum punya bidang: jatuh ke kolom snapshot,
-  // yang boleh diisi manual lewat Edit Spesifikasi (lihat TANAH_TANPA_BIDANG_FIELDS).
+  // Bidang tanah per aset (kalau ada) — cuma LUAS-nya yang dipakai: luas =
+  // Σ bidang (dihitung SAAT TAMPIL, sengaja TIDAK disimpan ke kolom mana pun —
+  // angka tersimpan bakal basi tiap bidang ditambah/diedit/dihapus, dan
+  // snapshot 2025 tak boleh ikut bergerak mengikuti data hidup). Yang belum
+  // punya bidang: jatuh ke kolom snapshot. Lokasi & koordinat sejak 2026-09-23
+  // milik REGISTER, jadi tak dibaca dari bidang lagi.
   async function fetchBidang(info: Record<string, { id: string }>, rs: Row[], pesan: string[]) {
     const tanah = rs.filter(r => kodeLevel3(r.kode) === '1.3.1' && info[r.nibar])
     if (tanah.length === 0) return {}
@@ -471,16 +469,14 @@ export default function Page() {
     const agg: Record<string, BidangAgg> = {}
     for (let i = 0; i < ids.length; i += 500) {
       const { data, error } = await supabase.from('aset_bidang_tanah')
-        .select('aset_id,luas,wilayah_kode,alamat_detail').in('aset_id', ids.slice(i, i + 500))
-      if (error) { pesan.push(`Luas & Lokasi tanah masih dari kolom saldo awal, bukan Σ bidang — gagal membaca bidang tanah: ${error.message}`); break }
-      for (const b of (data || []) as { aset_id: string; luas: number | null; wilayah_kode: string | null; alamat_detail: string | null }[]) {
+        .select('aset_id,luas').in('aset_id', ids.slice(i, i + 500))
+      if (error) { pesan.push(`Luas tanah masih dari kolom saldo awal, bukan Σ bidang — gagal membaca bidang tanah: ${error.message}`); break }
+      for (const b of (data || []) as { aset_id: string; luas: number | null }[]) {
         const nibar = nibarByAset.get(b.aset_id)
         if (!nibar) continue
-        const a = agg[nibar] || (agg[nibar] = { n: 0, nLuas: 0, luas: null, wilayah: [], alamat: [] })
+        const a = agg[nibar] || (agg[nibar] = { n: 0, nLuas: 0, luas: null })
         a.n++
         if (b.luas != null) { a.nLuas++; a.luas = (a.luas ?? 0) + Number(b.luas) }
-        if (b.wilayah_kode && !a.wilayah.includes(b.wilayah_kode)) a.wilayah.push(b.wilayah_kode)
-        if (b.alamat_detail && !a.alamat.includes(b.alamat_detail)) a.alamat.push(b.alamat_detail)
       }
     }
     return agg
@@ -608,8 +604,8 @@ export default function Page() {
   const {
     sel, setSel, selList, selSameGol, toggleSel, terkunci, setTerkunci, fetchTerkunci, terkunciInfo,
     spekOpen, setSpekOpen, spekPrefix, spekKeys, spekInitFields, spekInitFoto,
-    spekMsg, spekErr, spekSaving, spekTanpaBidang, openSpek, simpanSpek,
-  } = useEditSpekAwal(bidang, () => { if (applied) load(applied, page) })
+    spekMsg, spekErr, spekSaving, openSpek, simpanSpek,
+  } = useEditSpekAwal(() => { if (applied) load(applied, page) })
   const konfirmasi = useKonfirmasi()
 
   // Pengganti `alert()` (CODING-STANDARD §4.5) untuk 🔒 — MURNI INFORMASI.
@@ -649,18 +645,8 @@ export default function Page() {
   // Aturannya → lib/luasBidang.ts (diangkat 2026-09-15, kemunculan ketiga).
   const luasOf = (r: Row, bd: Record<string, BidangAgg> = bidang): number | null =>
     luasEfektif(bd[r.nibar], r.luas)
-  // Satu register bisa punya banyak bidang di lokasi berbeda — kalau tak bisa
-  // diringkas jadi satu baris, jangan dipaksakan: tunjuk saja ke GIS Tanah.
-  function lokasiOf(r: Row, bd: Record<string, BidangAgg> = bidang): { alamat: string; wilayah: string } {
-    const b = bd[r.nibar]
-    if (b && b.n > 0) {
-      const wil = [...new Set(b.wilayah.map(k => wilayahNama[k]).filter(Boolean))]
-      const wilayah = wil.length === 0 ? '' : wil.length <= 2 ? wil.join(' · ') : `${wil.length} wilayah — lihat GIS Tanah`
-      const alamat = b.alamat.length === 0 ? '' : b.alamat.length === 1 ? b.alamat[0] : `${b.n} bidang`
-      if (wilayah || alamat) return { alamat, wilayah }
-      // Bidangnya ada tapi lokasinya belum diisi → jangan tampilkan kosong,
-      // pakai apa yang ada di snapshot.
-    }
+  // Lokasi milik REGISTER (sejak 2026-09-23) — tak lagi diringkas dari bidang.
+  function lokasiOf(r: Row): { alamat: string; wilayah: string } {
     return { alamat: r.alamat_detail || '', wilayah: r.wilayah_kode ? (wilayahNama[r.wilayah_kode] || '') : '' }
   }
 
@@ -679,7 +665,7 @@ export default function Page() {
       case 'bpkb': return r.no_bpkb || ''
       // Lokasi = alamat jalan + wilayah administratif (dua kolom DB yang beda,
       // digabung; di layar ditumpuk, di Excel jadi satu sel).
-      case 'lokasi': { const l = lokasiOf(r, bd); return [l.alamat, l.wilayah].filter(Boolean).join(' — ') }
+      case 'lokasi': { const l = lokasiOf(r); return [l.alamat, l.wilayah].filter(Boolean).join(' — ') }
       case 'luas': return luasOf(r, bd) ?? ''
       case 'hak': return r.jenis_hak || ''
       case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
@@ -977,10 +963,11 @@ export default function Page() {
               {selList.length > 0 && !selSameGol && (
                 <p className="text-xs text-amber-600">Barang beda jenis aset — pisahkan per jenis, field spesifikasinya beda.</p>
               )}
-              {selList.length > 0 && selSameGol && !spekTanpaBidang && kodeLevel3(selList[0].kode) === '1.3.1' && (
+              {selList.length > 0 && selSameGol && kodeLevel3(selList[0].kode) === '1.3.1'
+                && selList.some(r => bidang[r.nibar]?.n) && (
                 <p className="text-xs text-amber-600">
-                  Ada tanah yang sudah punya bidang di GIS Tanah — luas & lokasinya tidak ditawarkan di popup ini.
-                  Yang punya bidang, koreksinya per bidang di menu GIS Tanah (luas di tabel = Σ bidang).
+                  Ada tanah yang sudah punya bidang di GIS Tanah — luas yang tampil di tabel tetap Σ luas bidangnya.
+                  Luas yang diisi di sini jadi cadangan kalau bidangnya belum lengkap berluas.
                 </p>
               )}
               {selList.length > 0 && selSameGol && (

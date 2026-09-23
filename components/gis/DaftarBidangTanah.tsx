@@ -31,13 +31,13 @@ type AsetRow = { id: string; nibar: string | null; kode: string; nama_barang: st
 type Bidang = {
   id: string; aset_id: string; nama_bidang: string | null; luas: number | null; jenis_hak: string | null
   nomor_dokumen_kepemilikan: string | null; nama_dokumen_kepemilikan: string | null; tanggal_dokumen_kepemilikan: string | null
-  tanggal_berakhir_hak: string | null; alamat_detail: string | null; latitude: number | null; longitude: number | null
+  tanggal_berakhir_hak: string | null
   sertifikat_path: string | null; keterangan: string | null
 }
 type Row = Bidang & { namaTanah: string; nibar: string | null; kode: string; skpdNama: string }
 
 const ASET_COLS = 'id,nibar,kode,nama_barang,skpd_id,skpd:skpd_id(nama)'
-const BIDANG_COLS = 'id,aset_id,nama_bidang,luas,jenis_hak,nomor_dokumen_kepemilikan,nama_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,tanggal_berakhir_hak,alamat_detail,latitude,longitude,sertifikat_path,keterangan'
+const BIDANG_COLS = 'id,aset_id,nama_bidang,luas,jenis_hak,nomor_dokumen_kepemilikan,nama_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,tanggal_berakhir_hak,sertifikat_path,keterangan'
 
 const fmtTgl = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
 // TANPA suffix "m²" — dipakai di sel tabel yang headernya sudah berjudul
@@ -139,8 +139,8 @@ export default function DaftarBidangTanah() {
         'Nama Bidang': r.nama_bidang || '-', 'Jenis Hak': r.jenis_hak || '-',
         'Nomor Dokumen': r.nomor_dokumen_kepemilikan || '-', 'Nama Dokumen': r.nama_dokumen_kepemilikan || '-',
         'Tanggal Terbit': fmtTgl(r.tanggal_dokumen_kepemilikan), 'Tanggal Berakhir Hak': fmtTgl(r.tanggal_berakhir_hak),
-        'Luas (m²)': r.luas ?? '-', 'Alamat / Lokasi Bidang': r.alamat_detail || '-',
-        'Latitude': r.latitude ?? '-', 'Longitude': r.longitude ?? '-',
+        // Lokasi & titik koordinat milik REGISTER sejak 2026-09-23, bukan bidang.
+        'Luas (m²)': r.luas ?? '-',
         'Sertifikat': r.sertifikat_path ? 'Ada' : 'Tidak ada', 'Keterangan': r.keterangan || '-',
       }))
       // Tanpa `periode`: posisi TERKINI, bukan rentang periode — pola sama dgn

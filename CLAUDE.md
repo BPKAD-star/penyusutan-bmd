@@ -6413,6 +6413,51 @@ Permintaan user: jadikan pop-up.
 - **Tak ada migrasi** — murni interaksi UI, satu berkas (`draftSeleksi.tsx`),
   dipakai bersama kedua menu.
 
+## TANAH disederhanakan: koordinat & lokasi milik REGISTER, bidang cuma sertifikat (2026-09-23)
+
+Keputusan user ("I need simplicity"). Mengubah pembagian di bagian "TANAH:
+bidang MENANG saat tampil" & `TANAH_GIS_FIELDS` di atas — yang tertulis di sini
+yang berlaku.
+
+    aset (register)     → luas (cadangan), wilayah, alamat, TITIK KOORDINAT
+    aset_bidang_tanah   → nama bidang, luas, jenis hak, nomor sertipikat,
+                          nama dalam dokumen, tgl terbit, tgl berakhir, berkas
+
+- **Edit Spesifikasi Tanah (Daftar Barang Awal & Koreksi → Spesifikasi)** kini
+  menawarkan 13 isian, ADA BIDANG ATAU TIDAK: Spesifikasi Nama Barang ·
+  Spesifikasi Lainnya · Luas · Wilayah · Alamat Detail · Titik Koordinat ·
+  Kondisi · Penggunaan · Keterangan · Satuan · Asal Usul · Tahun Pengadaan.
+  `TANAH_GIS_FIELDS` menyusut jadi 4 (jenis hak + 3 dokumen kepemilikan);
+  `TANAH_TANPA_BIDANG_FIELDS` & opsi `tanahTanpaBidang` di `koreksiFieldKeys`
+  DICABUT, begitu pula parameter `bidang` di `useEditSpekAwal`.
+- **Luas tampil tidak berubah aturannya** (lib/luasBidang.ts): Σ bidang kalau
+  SEMUA bidang berluas, kalau tidak jatuh ke luas register. Luas yang diisi dari
+  Edit Spesifikasi = cadangan itu. Kini juga tampil di kartu kanan atas GIS
+  (di atas Nilai Perolehan) dgn aturan yang SAMA, bukan salinan.
+- **Form bidang di GIS tinggal 8 isian** — Alamat/Detail Lokasi, Titik
+  Koordinat, & Keterangan dicabut. ⚠️ Ketiganya juga **tidak dikirim** saat
+  menyimpan bidang, supaya nilai lama yang terlanjur ada TIDAK ter-NULL-kan
+  diam-diam.
+- **Pin peta = titik register.** ⚠️ Titik lama milik bidang tetap dipakai sbg
+  CADANGAN untuk tanah yang registernya belum bertitik — diukur ke produksi
+  2026-09-23: 2.741 tanah aktif, 2.376 bertitik register, **21 hanya bertitik di
+  bidangnya** (536 bidang bertitik). Tanpa cadangan itu 21 pin lenyap dari peta
+  tanpa satu pun tanda. Begitu registernya dititik, pin register yang menang.
+- Daftar Barang Awal: kolom Lokasi kini murni register (tak lagi diringkas dari
+  bidang); `BidangAgg` cuma membawa luas. Export Daftar Bidang tak lagi memuat
+  alamat/koordinat bidang.
+- **Tak ada migrasi** — GRANT UPDATE per-kolom `aset_awal_2026` (20260728_01)
+  sudah memuat `luas`, `wilayah_kode`, `alamat_detail`, `latitude`, `longitude`,
+  dan trigger `fn_aset_awal_2026_spek_only` tak mengunci kolom-kolom itu.
+  Pintunya tetap cuma untuk barang yang belum bergerak (🔒).
+
+### Sidebar: dua menu menyala bersamaan
+
+Di `/dashboard/gis/daftar-bidang`, "Peta" (`/dashboard/gis`) ikut menyala
+karena cocok lewat `startsWith`. Kini yang menyala hanya menu yang cocok
+**paling panjang** (`hrefAktif`, components/Sidebar.tsx) — berlaku untuk semua
+grup, bukan cuma GIS.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

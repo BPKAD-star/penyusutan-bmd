@@ -32,6 +32,7 @@ import { createClient } from '@/lib/supabase/client'
 import { formatRupiah2 } from '@/lib/export'
 import { GIS_TANAH_KODE_FILTER } from '@/lib/gisTanah'
 import { idsKonsolidasi } from '@/lib/konsolidasiSkpd'
+import { luasBidangSah, luasEfektif, ringkasDaftarBidang } from '@/lib/luasBidang'
 import KelolaBidangPanel from '@/components/gis/KelolaBidangPanel'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import type { GisMarker } from '@/components/gis/GisMap'
@@ -210,28 +211,29 @@ export default function GisPage() {
   }, [loading, filtered, selectedId])
 
   const selected = rows.find(r => r.id === selectedId) || null
+  const ringkasSel = ringkasDaftarBidang(selected ? bidangByAset[selected.id] || [] : [])
 
-  // Titik lokasi ada di 2 sumber independen (aset.latitude/longitude — dari
-  // import awal — DAN aset_bidang_tanah.latitude/longitude per bidang), yang
-  // nggak saling sinkron krn KelolaBidangPanel cuma nulis ke aset_bidang_tanah
-  // (aset TIDAK pernah ikut ke-update — lihat komponen itu). Begitu 1 aset
-  // sudah py minimal 1 bidang berkoordinat, bidang itu JADI SATU-SATUNYA
-  // sumber titik (dianggap lebih presisi/terkini) — titik umum aset di-skip,
-  // supaya nggak dobel utk lokasi yg sama (keputusan user 2026-07-10).
+  // Titik lokasi milik REGISTER (keputusan user 2026-09-23, "cukup register
+  // aja yang diatur") — satu tanah = satu titik, diisi lewat Saldo Awal →
+  // Daftar Barang Awal / Koreksi. Titik per bidang tak lagi bisa diisi dari
+  // form bidang; yang TERLANJUR ada (536 bidang, diukur 2026-09-23) cuma
+  // dipakai sbg CADANGAN untuk tanah yang registernya belum bertitik — 21 tanah
+  // hanya punya titik di bidangnya, dan tanpa cadangan ini pin-nya lenyap dari
+  // peta tanpa satu pun tanda.
   const markers = useMemo<GisMarker[]>(() => {
     const out: GisMarker[] = []
     for (const r of filtered) {
-      const bidangList = bidangByAset[r.id] || []
-      const bidangBerkoordinat = bidangList.filter(b => b.latitude != null && b.longitude != null)
-      if (bidangBerkoordinat.length > 0) {
-        for (const b of bidangBerkoordinat) {
-          const bColor: GisMarker['color'] = b.jenis_hak === 'Sengketa' ? 'red' : b.nomor_dokumen_kepemilikan ? 'teal' : 'amber'
-          out.push({ id: r.id, lat: b.latitude!, lng: b.longitude!, color: bColor, title: r.nama_barang || '-', sub: `${r.nibar || '-'} (bidang)`, active: r.id === selectedId })
-        }
-      } else if (r.latitude != null && r.longitude != null) {
+      if (r.latitude != null && r.longitude != null) {
         const st = statusOf(r)
         const color: GisMarker['color'] = st === 'sengketa' ? 'red' : st === 'bersertifikat' ? 'teal' : 'amber'
         out.push({ id: r.id, lat: r.latitude, lng: r.longitude, color, title: r.nama_barang || '-', sub: r.nibar || '-', active: r.id === selectedId })
+        continue
+      }
+      // Cadangan: titik lama milik bidang (lihat catatan di atas).
+      for (const b of bidangByAset[r.id] || []) {
+        if (b.latitude == null || b.longitude == null) continue
+        const bColor: GisMarker['color'] = b.jenis_hak === 'Sengketa' ? 'red' : b.nomor_dokumen_kepemilikan ? 'teal' : 'amber'
+        out.push({ id: r.id, lat: b.latitude, lng: b.longitude, color: bColor, title: r.nama_barang || '-', sub: `${r.nibar || '-'} (bidang)`, active: r.id === selectedId })
       }
     }
     return out
@@ -380,13 +382,20 @@ export default function GisPage() {
                   dilebarkan ke 480px supaya muat sebaris. */}
               <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">NIBAR</span><span className="text-gray-700 text-right whitespace-nowrap">{selected.nibar || '-'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Alamat Detail</span><span className="text-gray-700 text-right">{selected.alamat_detail || '-'}</span></div>
-              {/* Luas SENGAJA tidak ditampilkan di sini (keputusan user 2026-08-05).
-                  `aset.luas` level register belum jelas hubungannya dengan Σ luas
-                  bidang di aset_bidang_tanah — dua sumber untuk satu besaran, dan
-                  yang otoritatif belum diputuskan. Luas per bidang + totalnya ada
-                  di panel Dokumen Kepemilikan di bawah, yang sumbernya tunggal.
-                  Rencana penyatuannya: REFACTOR-PLAN.md §5. */}
               <div className="flex justify-between gap-3"><span className="text-gray-400">Tanggal Perolehan</span><span className="text-gray-700 text-right">{fmtTgl(selected.tgl_perolehan)}</span></div>
+              {/* Luas (permintaan user 2026-09-23) — aturan yang SAMA dgn Daftar
+                  Barang (lib/luasBidang.ts): Σ bidang kalau semua bidangnya
+                  berluas, kalau tidak jatuh ke luas register. */}
+              <div className="flex justify-between gap-3"><span className="text-gray-400">Luas</span>
+                <span className="text-gray-700 text-right">
+                  {fmtLuas(luasEfektif(ringkasSel, selected.luas))}
+                  {ringkasSel.n > 0 && (
+                    <span className={`block text-[10px] ${luasBidangSah(ringkasSel) ? 'text-gray-400' : 'text-amber-600'}`}>
+                      {luasBidangSah(ringkasSel) ? `Σ ${ringkasSel.n} bidang` : `${ringkasSel.n} bidang · luas belum lengkap`}
+                    </span>
+                  )}
+                </span>
+              </div>
               <div className="flex justify-between gap-3"><span className="text-gray-400">Nilai Perolehan</span><span className="text-gray-700 text-right">{formatRupiah2(selected.nilai_perolehan)}</span></div>
             </div>
           </div>
@@ -395,9 +404,8 @@ export default function GisPage() {
             onChanged={() => {
               supabase.from('aset_bidang_tanah').select(BIDANG_COLS).eq('aset_id', selected.id)
                 .then(({ data }) => setBidangByAset(prev => ({ ...prev, [selected.id]: (data as BidangRingkas[]) || [] })))
-              // Kelola Bidang ikut sinkron sebagian kolom aset (identitas dokumen +
-              // NULL-kan titik aset kalau bidang py titik sendiri) — refresh baris
-              // aset ini juga biar panel kanan & peta nggak nampilin data basi.
+              // Kelola Bidang tak menulis ke `aset`; baris aset tetap dimuat ulang
+              // supaya panel kanan & peta tak menampilkan data basi.
               supabase.from('aset').select(SELECT_COLS).eq('id', selected.id).single()
                 .then(({ data }) => { if (data) setRows(prev => prev.map(r => (r.id === selected.id ? (data as unknown as AsetRow) : r))) })
             }} />

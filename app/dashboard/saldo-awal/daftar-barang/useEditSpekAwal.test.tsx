@@ -45,7 +45,7 @@ vi.mock('@/lib/supabase/client', () => ({
 }))
 
 import { useEditSpekAwal } from './useEditSpekAwal'
-import type { Row, BidangAgg } from './tipe'
+import type { Row } from './tipe'
 
 const r = (over: Partial<Row> = {}): Row => ({
   nibar: 'N1', kode: '1.3.2.01.01.01.001', nama_barang: 'Laptop', skpd_id: 1,
@@ -56,9 +56,9 @@ const r = (over: Partial<Row> = {}): Row => ({
   ...over,   // ⚠️ jangan dihapus — tanpa ini SEMUA baris identik & test golongan-campur hijau palsu
 } as Row)
 
-const pasang = (bidang: Record<string, BidangAgg> = {}) => {
+const pasang = () => {
   const reload = vi.fn()
-  const h = renderHook(() => useEditSpekAwal(bidang, reload))
+  const h = renderHook(() => useEditSpekAwal(reload))
   return { ...h, reload }
 }
 
@@ -151,20 +151,18 @@ describe('openSpek', () => {
     expect(result.current.spekErr).toContain('Gagal memuat spesifikasi barang')
   })
 
-  it('Tanah yang SUDAH punya bidang → luas/lokasi tak ditawarkan', async () => {
-    const { result } = pasang({ N1: { n: 2, nLuas: 2, luas: 500, wilayah: [], alamat: [] } })
-    act(() => result.current.toggleSel(r({ nibar: 'N1', kode: '1.3.1.01.01.01.001' })))
-    expect(result.current.spekTanpaBidang).toBe(false)
-    await act(async () => { await result.current.openSpek() })
-    expect(result.current.spekKeys).not.toContain('luas')
-  })
-
-  it('Tanah TANPA bidang → luas boleh dikoreksi dari sini', async () => {
+  // Sejak 2026-09-23: luas, lokasi & koordinat Tanah milik REGISTER — selalu
+  // ditawarkan, ada bidang atau tidak. Dokumen kepemilikan & jenis hak tetap
+  // milik bidang di GIS.
+  it('Tanah → luas, lokasi & koordinat ditawarkan; dokumen kepemilikan tidak', async () => {
     const { result } = pasang()
     act(() => result.current.toggleSel(r({ nibar: 'N1', kode: '1.3.1.01.01.01.001' })))
-    expect(result.current.spekTanpaBidang).toBe(true)
     await act(async () => { await result.current.openSpek() })
-    expect(result.current.spekKeys).toContain('luas')
+    expect(result.current.spekKeys).toEqual([
+      'nama_barang', 'spesifikasi_lainnya', 'luas', 'wilayah_kode', 'alamat_detail',
+      'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan',
+      'satuan', 'asal_usul', 'tahun_pengadaan',
+    ])
   })
 })
 
@@ -173,9 +171,9 @@ describe('simpanSpek — menulis ke DUA tabel', () => {
   // bentuk kedua kena no-restricted-syntax (pemburu query Supabase penelan
   // `error`). Positif palsu di sini, tapi angka warning repo dibaca tiap
   // tinjauan §10 — 7 peringatan palsu menggesernya.
-  const siapkan = async (bidang = {}) => {
+  const siapkan = async () => {
     singleRes = { data: { merek_tipe: 'Lama' }, error: null }
-    const h = pasang(bidang)
+    const h = pasang()
     act(() => h.result.current.toggleSel(r({ nibar: 'N1' })))
     await act(async () => { await h.result.current.openSpek() })
     return h

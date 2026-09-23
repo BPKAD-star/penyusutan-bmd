@@ -261,11 +261,19 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
     router.refresh()
   }
 
-  const isActive = (href: string) =>
+  const cocok = (href: string) =>
     href === '/dashboard' ? pathname === '/dashboard' : pathname === href || pathname.startsWith(href + '/')
 
-  const groupActive = (node: NavNode) => leafHrefs(node).some(h => !h.startsWith('http') && isActive(h))
   const menuTree = userRole === 'admin' ? [...navTree, adminGroup] : [...navTree, adminGroupOperator]
+
+  // ⚠️ Yang menyala hanya menu yang cocok PALING PANJANG. Tanpa ini, menu yang
+  // rutenya jadi awalan menu lain ikut menyala: di /dashboard/gis/daftar-bidang,
+  // "Peta" (/dashboard/gis) juga cocok lewat startsWith → dua menu mentereng.
+  const semuaHref = menuTree.flatMap(leafHrefs).filter(h => !h.startsWith('http'))
+  const hrefAktif = semuaHref.filter(cocok).sort((a, b) => b.length - a.length)[0] ?? null
+  const isActive = (href: string) => href === hrefAktif
+
+  const groupActive = (node: NavNode) => leafHrefs(node).some(h => !h.startsWith('http') && isActive(h))
 
   // ⚠️ `jalur` = kunci buka-tutup, dirakit dari SELURUH jalur label — bukan
   // labelnya saja. Dulu `open[node.label]`, dan itu membuat dua grup bernama

@@ -25,4 +25,4 @@ export type Row = {
 }
 
 /** Ringkasan bidang tanah per NIBAR — `n` bidang, `nLuas` yang berluas. */
-export type BidangAgg = { n: number; nLuas: number; luas: number | null; wilayah: string[]; alamat: string[] }
+export type BidangAgg = { n: number; nLuas: number; luas: number | null }
