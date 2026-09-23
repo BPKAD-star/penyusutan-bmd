@@ -6765,6 +6765,53 @@ kelihatan **polos, tanpa satu pun warna** — bukan salah baca, memang begitu.
   (kode `bandPemanfaatan` sendiri) sudah benar sejak awal, cuma CSS hasil
   build-nya yang kurang lengkap.
 
+## Pengamanan menyusul Pemanfaatan: ruas `pengamanan` di kolom Penggunaan jadi tautan hijau (2026-09-23)
+
+Permintaan user, sesaat sesudah tautan `pemanfaatan` di atas jalan: "sekarang
+di pengamanan juga buat sama seperti pemanfaatan bang, buat warna ijo, terus
+bisa di klik dan ngelink ke menu pengamanan." Ini **MEMBALIK** keputusan yang
+tertulis di komentar kepala `lib/penggunaanTampil.ts` sejak pagi hari yang sama
+("`pengamanan` tak bisa ditautkan sama — menu Pengamanan tak punya deep-link
+per barang") — sebabnya kini tak berlaku lagi: `components/pengelolaan/
+Pengamanan.tsx` DIBERI deep-link, bukan disimpulkan sudah punya.
+
+- **Ditambahkan ke `Pengamanan.tsx` pola PERSIS `Pemanfaatan.tsx`** (2026-09-23,
+  bagian di atas): baca `?skpd=<id>&nibar=<nibar>` sekali saat mount
+  (`useEffect` + `URLSearchParams`), `setSkpd()` untuk auto-select (SkpdCombobox
+  sudah controlled lewat prop `value`), lalu `highlightNibar` + `highlightRef`
+  + `scrollIntoView({behavior:'smooth', block:'center'})` begitu `jurnals`
+  termuat. Baris tabel yang cocok NIBAR-nya dapat kelas `bg-teal/10` — kelas &
+  urutan efek yang SAMA dgn Pemanfaatan, sengaja tak diaransemen ulang supaya
+  dua menu kembar ini gampang dibandingkan kalau salah satu perlu ditambal lagi.
+- **`app/dashboard/daftar-barang/page.tsx`, `case 'penggunaan':`** — ruas
+  `t.pengamanan` yang sebelumnya `<p className="text-xs text-gray-600">`
+  (teks abu polos) kini `<Link>` hijau (`text-green-700`) ke
+  `/dashboard/pembukuan/pengelolaan/pengamanan?skpd=<id>&nibar=<nibar>`, dengan
+  `title="Lihat BAST pengamanan barang ini di menu Pengamanan"`. Bentuknya
+  KEMBAR dgn `t.pemanfaatan` di bawahnya, cuma beda menu tujuan & kalimat title.
+  ⚠️ **Kedua `<Link>` diberi `className="block ..."`** (sebelumnya `pemanfaatan`
+  tak perlu krn ia satu-satunya elemen inline yang menyusul sebuah `<p>` block
+  — begitu `pengamanan` juga jadi `<Link>` inline, dua `<Link>` berturutan TANPA
+  `block` akan menyatu di baris yang sama saat KEDUANYA terisi (kasus Gedung &
+  Bangunan yang bisa punya Pengamanan & Pemanfaatan sekaligus) — `block`
+  memaksa masing-masing tetap di barisnya sendiri, mempertahankan tampilan
+  "ditumpuk" yang sudah didokumentasikan di `lib/penggunaanTampil.ts`.
+- **Export Excel (kedua closure `case 'penggunaan':`, baris kode~821 & ~902)
+  TIDAK disentuh** — tetap `[t.pengamanan, t.pemanfaatan].filter(Boolean)
+  .join(' · ') || t.dasar || ''`, teks polos. Sel Excel tak bisa menampung
+  elemen `<Link>`; ini pola yang sama dgn `pemanfaatan` sejak awal (ditautkan
+  HANYA di layar, plain text di berkas export).
+- **Komentar header `lib/penggunaanTampil.ts` diperbarui** — pernyataan lama
+  "`pengamanan` tak bisa ditautkan sama" dicabut & diganti catatan bahwa kedua
+  ruas kini sama-sama ditautkan hijau, tetap dipisah sbg dua field karena
+  hrefnya menuju DUA menu berbeda (Pengamanan vs Pemanfaatan). Bentuk
+  `PenggunaanTampil` (tiga ruas: `pengamanan`/`pemanfaatan`/`dasar`) TIDAK
+  berubah — tak ada kebutuhan menambah field href, `page.tsx` merakit URL-nya
+  sendiri dari `r.skpd_id`/`r.nibar` yang sudah tersedia, sama seperti
+  `pemanfaatan`.
+- **Tak ada migrasi** — murni tampilan (JSX) + deep-link handling di klien;
+  `aset.pengamanan` & RLS-nya sudah lama ada, tak disentuh sama sekali.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

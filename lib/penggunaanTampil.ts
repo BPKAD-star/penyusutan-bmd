@@ -17,10 +17,12 @@
 // keduanya ditumpuk — tak ada yang diprioritaskan/dibuang.
 //
 // ⚠️ Bentuknya SENGAJA tiga ruas terpisah (bukan `baris: string[]` polos,
-// versi pertama berkas ini) — layar 2026-09-23 menautkan HANYA ruas
-// `pemanfaatan` jadi tautan hijau ke menu Pemanfaatan (lib/pengelolaan/
-// Pemanfaatan.tsx); `pengamanan` tak bisa ditautkan sama (menu Pengamanan tak
-// punya deep-link per barang), jadi keduanya wajib bisa dibedakan pemanggil.
+// versi pertama berkas ini) — layar 2026-09-23 menautkan `pemanfaatan` jadi
+// tautan hijau ke menu Pemanfaatan (components/pengelolaan/Pemanfaatan.tsx).
+// ✅ Sesudahnya (hari yang sama) `pengamanan` MENYUSUL: menu Pengamanan kini
+// JUGA punya deep-link per barang (`?skpd=&nibar=`, komentar kepala
+// components/pengelolaan/Pengamanan.tsx) — jadi kedua ruas kini sama-sama
+// ditautkan hijau di layar, tetap dipisah di sini krn hrefnya beda menu.
 // ============================================================================
 import { namaPemakaiPengamanan } from '@/lib/pengamanan'
 

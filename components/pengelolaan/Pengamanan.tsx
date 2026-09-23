@@ -14,7 +14,13 @@
 // berkustodi). Serah ke pegawai baru = kembalikan dulu (⤺ pengembalian_
 // pengamanan) → barang bebas → buat kartu pengamanan baru utk pegawai lain.
 // Batal (🗑 batal_pengamanan) = koreksi salah catat (barang hilang dari kartu).
-import { useEffect, useState, useCallback } from 'react'
+//
+// Kolom aset.pengamanan (cache nama kustodian) kini juga DITAMPILKAN — lihat
+// lib/penggunaanTampil.ts & kolom "Penggunaan" di Daftar Barang (2026-09-23).
+// Tautan hijau di kolom itu deep-link ke sini via `?skpd=<id>&nibar=<nibar>`
+// — SKPD terpilih otomatis & baris barangnya disorot + di-scroll ke tampilan,
+// pola PERSIS `components/pengelolaan/Pemanfaatan.tsx`.
+import { useEffect, useState, useCallback, useRef } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
@@ -75,6 +81,24 @@ export default function Pengamanan() {
   const [editing, setEditing] = useState<Header | null>(null)
   const [msg, setMsg] = useState('')
 
+  // Deep-link dari tautan Pengamanan di Daftar Barang (permintaan user
+  // 2026-09-23): `?skpd=<id>&nibar=<nibar>` → SKPD terpilih otomatis & baris
+  // barangnya disorot + di-scroll ke tampilan. Dibaca SEKALI saat mount, pola
+  // sama dgn Pemanfaatan.tsx.
+  const [highlightNibar, setHighlightNibar] = useState('')
+  const highlightRef = useRef<HTMLTableRowElement | null>(null)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const skpdParam = params.get('skpd')
+    const nibarParam = params.get('nibar')
+    if (skpdParam) setSkpd(skpdParam)
+    if (nibarParam) setHighlightNibar(nibarParam)
+  }, [])
+  useEffect(() => {
+    if (!highlightNibar || jurnals.length === 0) return
+    const t = setTimeout(() => highlightRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50)
+    return () => clearTimeout(t)
+  }, [highlightNibar, jurnals])
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama || ''
 
@@ -272,7 +296,8 @@ export default function Pengamanan() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {j.lines.map(l => (
-                        <tr key={l.aset_id} className={l.dikembalikan ? 'opacity-50' : ''}>
+                        <tr key={l.aset_id} ref={l.nibar === highlightNibar ? highlightRef : undefined}
+                          className={`${l.dikembalikan ? 'opacity-50' : ''} ${l.nibar && l.nibar === highlightNibar ? 'bg-teal/10' : ''}`}>
                           <td className="table-td text-center">
                             <div className="flex items-center justify-center gap-1">
                               {!l.dikembalikan && (

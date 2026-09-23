@@ -1011,16 +1011,25 @@ export default function DaftarBarangPage() {
         if (!t.pengamanan && !t.pemanfaatan) return t.dasar || '-'
         return (
           <>
-            {t.pengamanan && <p className="text-xs text-gray-600">{t.pengamanan}</p>}
+            {t.pengamanan && (
+              // Hijau + tautan (permintaan user 2026-09-23, menyusul
+              // pemanfaatan hari yang sama): deep-link `?skpd=&nibar=` ke
+              // kartu BAST Pengamanan barang ini (lihat komentar kepala
+              // components/pengelolaan/Pengamanan.tsx).
+              <Link
+                href={`/dashboard/pembukuan/pengelolaan/pengamanan?skpd=${r.skpd_id ?? ''}&nibar=${encodeURIComponent(r.nibar || '')}`}
+                className="block text-xs text-green-700 hover:underline hover:text-green-800"
+                title="Lihat BAST pengamanan barang ini di menu Pengamanan">
+                {t.pengamanan}
+              </Link>
+            )}
             {t.pemanfaatan && (
-              // Hijau + tautan (permintaan user 2026-09-23): satu-satunya
-              // ruas yang punya "rumah" untuk dituju — kartu Pemanfaatan
-              // barang ini, lewat deep-link `?skpd=&nibar=` (lihat komentar
-              // kepala components/pengelolaan/Pemanfaatan.tsx). Pengamanan
-              // TIDAK ditautkan: menunya tak punya deep-link per barang.
+              // Hijau + tautan (permintaan user 2026-09-23): kartu
+              // Pemanfaatan barang ini, lewat deep-link `?skpd=&nibar=`
+              // (lihat komentar kepala components/pengelolaan/Pemanfaatan.tsx).
               <Link
                 href={`/dashboard/pembukuan/pengelolaan/pemanfaatan?skpd=${r.skpd_id ?? ''}&nibar=${encodeURIComponent(r.nibar || '')}`}
-                className="text-xs text-green-700 hover:underline hover:text-green-800"
+                className="block text-xs text-green-700 hover:underline hover:text-green-800"
                 title="Lihat perjanjian pemanfaatan barang ini di menu Pemanfaatan">
                 {t.pemanfaatan}
               </Link>
