@@ -23,7 +23,7 @@ import {
   klasifikasiKomptabel, fetchMasaManfaat, comparePeriode, periodeRange,
   previousPeriode, parsePeriode, formatPeriode,
 } from '@/lib/bmd'
-import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
+import { entryFieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
 import { formatRupiah2 } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
@@ -712,7 +712,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
         return (
           <EditSpesifikasiModal
             title={single ? (single.fields.nama_barang || single.kode) : `${items.length} barang dicentang`}
-            fieldKeys={fieldsForKode(items[0]?.kode || '')}
+            fieldKeys={entryFieldsForKode(items[0]?.kode || '')}
             initialFields={single ? single.fields : {}}
             initialFoto={single ? single.foto : []}
             single={!!single}

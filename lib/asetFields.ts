@@ -118,11 +118,37 @@ export function fieldsForKode(kode: string): FieldKey[] {
 // (Koreksi, Daftar Barang Awal) memakai template ASET_LAINNYA yang membawa
 // Merek/Tipe & tanpa luas. Pintu ini punya kebutuhan sendiri; menyamakannya
 // akan menyeret dua menu lain ikut berubah.
-const KDP_TANPA_DOKUMEN: FieldKey[] = [
+// Diekspor (dulu privat `KDP_TANPA_DOKUMEN`) karena kini dipakai DUA titik
+// pengecualian — KDP di bawah ini & `entryFieldsForKode` sesudahnya.
+export const DOKUMEN_KEPEMILIKAN_FIELDS: FieldKey[] = [
   'jenis_hak', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
 ]
 export const KDP_KONSTRUKSI_FIELDS: FieldKey[] =
-  TEMPLATE_TANAH.filter(k => !KDP_TANPA_DOKUMEN.includes(k))
+  TEMPLATE_TANAH.filter(k => !DOKUMEN_KEPEMILIKAN_FIELDS.includes(k))
+
+// ── Gedung & Bangunan (1.3.3) / Jalan-Jaringan-Irigasi (1.3.4) NON-KONSTRUKSI
+// — bangunan/jaringan yang SELESAI dalam satu TA & dicatat langsung lewat
+// Pengadaan/PerolehanManual, bukan lewat Pekerjaan Konstruksi (KDP). Keputusan
+// user 2026-09-23: dokumen kepemilikan & jenis hak TIDAK ditawarkan di sini —
+// keempatnya field sertifikat LAHAN, bukan bangunan/jaringan. `luas` SENGAJA
+// TETAP ada ("luasnya biarin", permintaan user eksplisit).
+//
+// ⚠️ Beda alasan dari KDP_KONSTRUKSI_FIELDS di atas: KDP menyembunyikan
+// dokumen krn sertifikatnya BELUM terbit (baru ada sesudah direklas); di sini
+// dokumennya memang TAK PERNAH relevan utk golongan ini, entah kapan pun.
+//
+// ⚠️ HANYA di titik entry non-konstruksi (Pengadaan.tsx, PerolehanManual.tsx,
+// & PreviewDraftModal yang menurunkan kolomnya dari fungsi ini) — pola yang
+// SAMA dgn KDP_KONSTRUKSI_FIELDS: **Koreksi → Spesifikasi Barang, Saldo Awal →
+// Daftar Barang Awal, & KIBAR TIDAK ikut berubah** (masih lewat `fieldsForKode`
+// polos). Menyeret `GOLONGAN_FIELDS`/`fieldsForKode` sendiri akan mengubah
+// menu lain yang tak diminta berubah.
+const ENTRY_NON_KONSTRUKSI_TANPA_DOKUMEN = new Set(['1.3.3', '1.3.4'])
+export function entryFieldsForKode(kode: string): FieldKey[] {
+  const keys = fieldsForKode(kode)
+  if (!ENTRY_NON_KONSTRUKSI_TANPA_DOKUMEN.has(kodeLevel3(kode))) return keys
+  return keys.filter(k => !DOKUMEN_KEPEMILIKAN_FIELDS.includes(k))
+}
 
 // ── Field set untuk KOREKSI spesifikasi (bukan form input awal) ─────────────
 // Dipakai bareng oleh menu Koreksi → Spesifikasi Barang (register `aset`) dan

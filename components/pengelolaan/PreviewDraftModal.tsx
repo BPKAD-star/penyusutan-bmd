@@ -13,12 +13,14 @@
 // kosong) lolos ke register tanpa ada yang sadar. Karena itu yang KOSONG
 // justru ditandai paling menonjol di sini.
 //
-// ⚠️ KOLOM DITURUNKAN DARI `fieldsForKode()`, JANGAN diketik ulang per jenis
-// aset. Fungsi itu SUMBER YANG SAMA yang dipakai form isian
-// (EditSpesifikasiModal) untuk memutuskan field mana yang ditawarkan. Menyalin
-// daftarnya ke sini akan melahirkan penyimpangan yang paling berbahaya untuk
-// fitur ini: preview yang bilang "lengkap" karena kolom yang belum terisi
-// kebetulan tak ikut ditampilkan.
+// ⚠️ KOLOM DITURUNKAN DARI `entryFieldsForKode()`, JANGAN diketik ulang per
+// jenis aset. Fungsi itu SUMBER YANG SAMA yang dipakai form isian
+// (EditSpesifikasiModal, lewat Pengadaan.tsx/PerolehanManual.tsx) untuk
+// memutuskan field mana yang ditawarkan — termasuk pengecualian dokumen
+// kepemilikan utk Gedung & Bangunan/JIJ non-konstruksi (2026-09-23). Menyalin
+// daftarnya ke sini, atau memakai `fieldsForKode` polos, akan melahirkan
+// penyimpangan yang paling berbahaya untuk fitur ini: preview yang menandai
+// "belum diisi" utk field yang justru sengaja tidak ditawarkan di form.
 //
 // Satu kartu BOLEH berisi beberapa golongan sekaligus (mis. kontrak berisi
 // kendaraan + gedung), jadi barang DIKELOMPOKKAN per golongan dan tiap
@@ -29,7 +31,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { backdropClose } from '@/components/backdropClose'
-import { fieldsForKode, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
+import { entryFieldsForKode, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import { kodeLevel3 } from '@/lib/bmd'
 import { formatRupiah2 } from '@/lib/export'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
@@ -151,7 +153,7 @@ export default function PreviewDraftModal({
 
   /** Berapa field spesifikasi yang masih kosong di satu barang. */
   const jmlKosong = (it: PreviewItem) =>
-    fieldsForKode(it.kode).filter(k => nilaiField(it, k, wilayah) === KOSONG).length
+    entryFieldsForKode(it.kode).filter(k => nilaiField(it, k, wilayah) === KOSONG).length
 
   const belumLengkap = items.filter(it => jmlKosong(it) > 0).length
 
@@ -187,7 +189,7 @@ export default function PreviewDraftModal({
 
         <div className="overflow-auto flex-1 px-5 py-4 space-y-6">
           {kelompok.map(([gol, list]) => {
-            const kolom = fieldsForKode(list[0].kode)
+            const kolom = entryFieldsForKode(list[0].kode)
             return (
               <div key={gol}>
                 <p className="text-xs font-semibold text-gray-700 mb-2">

@@ -24,7 +24,7 @@ import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
-import { fieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
+import { entryFieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import { kekuranganBarangPengadaan } from '@/lib/draftPengadaan'
 import { generateNibars } from '@/lib/nibar'
@@ -832,7 +832,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       {specKeys && (
         <EditSpesifikasiModal
           title={single ? (single.fields.nama_barang || single.kode) : `${specItems.length} barang dicentang`}
-          fieldKeys={fieldsForKode(specItems[0]?.kode || '')}
+          fieldKeys={entryFieldsForKode(specItems[0]?.kode || '')}
           initialFields={single ? single.fields : {}}
           initialFoto={single ? single.foto : []}
           single={!!single}

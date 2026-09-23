@@ -18,6 +18,7 @@
 //     itu WAJIB ditampilkan di bilah aksi (lihat `tersembunyi`) — kalau tidak,
 //     tombol Hapus akan membuang barang yang tak terlihat di layar.
 import { useMemo, useState } from 'react'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 // Bentuk minimum satu baris draft yang dipakai pencarian. Sengaja serba
 // opsional: Pengadaan punya `rekening`, PerolehanManual punya `tglPerolehan`.
@@ -104,19 +105,40 @@ export function DraftSearchBar({ q, setQ, jml, total }: {
 // Bilah aksi massal. `tersembunyi` = jumlah barang tercentang yang TIDAK lolos
 // pencarian saat ini — ditampilkan supaya operator tak menghapus/mengedit
 // barang yang tak kelihatan di layar.
+//
+// ⚠️ Tombol Edit Spesifikasi SENGAJA TIDAK dimatikan lagi saat golongannya
+// beda (permintaan user 2026-09-23, "notifikasinya buat pop up") — pola yang
+// sama dgn `gagalSetujui`/tombol Ajukan Usulan Standar Harga: tombol mati
+// tanpa keterangan adalah kegagalan senyap. Klik-nya sendiri yang memutuskan:
+// beda golongan → pop-up (`useKonfirmasi`, satu tombol) menjelaskan kenapa,
+// TANPA membuka `EditSpesifikasiModal` (yang kalau dipaksa jalan akan memakai
+// kolom milik barang pertama saja utk seluruh centangan — salah diam-diam).
 export function DraftBulkBar({ jml, tersembunyi, sameGol, onEdit, onHapus }: {
   jml: number; tersembunyi: number; sameGol: boolean
   onEdit: () => void; onHapus: () => void
 }) {
+  const konfirmasi = useKonfirmasi()
+  async function handleEdit() {
+    if (!sameGol) {
+      await konfirmasi({
+        nada: 'amber', ikon: '△', tanpaBatal: true, labelYa: 'Mengerti',
+        judul: 'Barang yang dicentang beda jenis BMD',
+        isi: <>Kolom spesifikasi tiap jenis BMD berbeda-beda, jadi barang yang dicentang harus{' '}
+          <b>satu jenis yang sama</b> supaya bisa diedit bersamaan. Centang ulang hanya barang yang
+          golongannya sama, lalu coba lagi.</>,
+      })
+      return
+    }
+    onEdit()
+  }
   return (
     <div className="px-5 py-3 border-t border-gray-100 bg-teal/5 flex items-center justify-between gap-3 flex-wrap">
       <span className="text-xs text-gray-600">
         {jml} barang dicentang
         {tersembunyi > 0 && <span className="text-gray-500"> ({tersembunyi} di luar hasil pencarian)</span>}
-        {!sameGol && <span className="text-amber-600"> — beda jenis BMD, tak bisa edit bersamaan (kolomnya beda)</span>}
       </span>
       <div className="flex items-center gap-2">
-        <button className="btn-primary text-xs" disabled={!sameGol} onClick={onEdit}>✎ Edit Spesifikasi ({jml})</button>
+        <button className="btn-primary text-xs" onClick={handleEdit}>✎ Edit Spesifikasi ({jml})</button>
         <button onClick={onHapus}
           className="inline-flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">🗑 Hapus ({jml})</button>
       </div>

@@ -6363,6 +6363,56 @@ Sekarang uraiannya ikut ditampilkan, ditumpuk di bawah kode (pola sel
 - **Tak ada migrasi** — murni tampilan + satu query batch tambahan ke
   `admin_rekening` yang sudah lama ada.
 
+## Gedung & Bangunan/JIJ non-konstruksi: dokumen kepemilikan dicabut dari entry (2026-09-23)
+
+Permintaan user. Popup Edit Spesifikasi untuk Gedung & Bangunan (1.3.3) dan
+Jalan/Jaringan/Irigasi (1.3.4) yang dicatat LANGSUNG lewat Pengadaan/
+PerolehanManual (selesai dalam satu TA, BUKAN lewat Pekerjaan Konstruksi/KDP)
+menampilkan Jenis Hak · Nomor Dokumen Kepemilikan · Tanggal Dokumen
+Kepemilikan · Nama Dokumen Kepemilikan — keempatnya field sertifikat TANAH,
+bukan bangunan/jaringan. Dicabut dari titik entry ini. **Luas TETAP ada**
+(permintaan user eksplisit "luasnya biarin ya").
+
+- **`entryFieldsForKode()`** (lib/asetFields.ts) — `fieldsForKode()` dikurangi
+  `DOKUMEN_KEPEMILIKAN_FIELDS` (`jenis_hak`/`nomor_dokumen_kepemilikan`/
+  `tanggal_dokumen_kepemilikan`/`nama_dokumen_kepemilikan`, dulu privat
+  `KDP_TANPA_DOKUMEN` — diekspor & dinamai ulang karena kini dipakai DUA
+  pengecualian) khusus golongan 1.3.3/1.3.4. ⚠️ Beda ALASAN dari
+  `KDP_KONSTRUKSI_FIELDS`: KDP menyembunyikan dokumen krn sertifikatnya BELUM
+  terbit (baru ada sesudah direklas); di sini dokumennya memang TAK PERNAH
+  relevan utk golongan ini, entah kapan pun.
+- **HANYA di titik entry non-konstruksi** — `Pengadaan.tsx` (popup Edit
+  Spesifikasi draft), `PerolehanManual.tsx` (sama, Hibah/Tukar Menukar/Hasil
+  Inventarisasi/Perolehan Lainnya), & `PreviewDraftModal.tsx` (kolom +
+  pemeriksa kekosongan, yang memang harus ikut sumber yang sama supaya tak
+  menandai "belum diisi" utk field yang sengaja tak ditawarkan). Pola PERSIS
+  `KDP_KONSTRUKSI_FIELDS`: **Koreksi → Spesifikasi Barang, Saldo Awal →
+  Daftar Barang Awal, & KIBAR TIDAK ikut berubah** — ketiganya masih lewat
+  `fieldsForKode()`/`GOLONGAN_FIELDS` polos, jadi field itu tetap bisa
+  dikoreksi/dilihat di sana kalau suatu saat memang terisi (mis. data lama).
+  `KonstruksiPengadaan.tsx` (KDP) juga tak disentuh — sudah punya
+  `KDP_KONSTRUKSI_FIELDS`-nya sendiri.
+- **Tak ada migrasi** — murni field mana yang ditawarkan popup; kolomnya
+  sendiri (`aset.jenis_hak` dkk) tetap ada & tak disentuh.
+
+### Peringatan "beda jenis BMD" di bilah aksi massal jadi pop-up
+
+Tombol **✎ Edit Spesifikasi** di bilah aksi massal (`DraftBulkBar`,
+lib/pengelolaan/draftSeleksi.tsx — dipakai kartu draft Pengadaan &
+PerolehanManual) dulu **dimatikan** (`disabled`) begitu barang yang dicentang
+beda golongan, dengan teks amber di sebelahnya menjelaskan alasannya.
+Permintaan user: jadikan pop-up.
+
+- **Tombolnya kini SELALU aktif** (pola `gagalSetujui`/tombol Ajukan Usulan
+  Standar Harga yang sudah lebih dulu ada: tombol mati tanpa keterangan itu
+  kegagalan senyap). Diklik saat golongannya beda → pop-up
+  (`useKonfirmasi`, `tanpaBatal:true`) menjelaskan kenapa, TANPA membuka
+  `EditSpesifikasiModal` — kalau dipaksa jalan, modal itu akan memakai kolom
+  milik barang PERTAMA saja utk seluruh centangan, salah diam-diam utk barang
+  lainnya. Diklik saat golongannya sama → jalan seperti biasa.
+- **Tak ada migrasi** — murni interaksi UI, satu berkas (`draftSeleksi.tsx`),
+  dipakai bersama kedua menu.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
