@@ -6334,6 +6334,35 @@ sudah punya tata letak sendiri yang belum diminta diseragamkan. Jangan
   kolom/RLS baru (`no_polisi` dkk sudah lama ada di `aset` sejak
   `lib/asetFields.ts`).
 
+## Kode Rekening di Pengadaan kini menampilkan uraiannya (2026-09-23)
+
+Permintaan user: kolom "Kode Rekening" di kartu Pengadaan (draft & disetujui)
+cukup menampilkan kode mentah (mis. `5.2.02.05.001.00005`) — operator harus
+menghafal atau membuka RekeningPicker lagi untuk tahu itu belanja apa.
+Sekarang uraiannya ikut ditampilkan, ditumpuk di bawah kode (pola sel
+"kode+uraian" yang sama dgn kolom Kode Barang di `KolomBarangCells`).
+
+- **KHUSUS Pengadaan, sengaja tidak disentuh di PerolehanManual.tsx** — Hibah,
+  Tukar Menukar, Hasil Inventarisasi, & Perolehan Lainnya tak punya field kode
+  rekening sama sekali di menu itu (bukan dibiayai APBD).
+- **Memakai ulang `fetchUraianRekening`** (lib/rkbmdStandar.ts) yang sudah
+  dipakai RKBMD Pengadaan, Laporan Perolehan, & Surat Pernyataan Pengadaan —
+  bukan menulis lookup baru. Join-nya `admin_rekening.kode_sub_rincian`
+  (BUKAN `kode_rekening`, yang isinya harfiah `'5'` di seluruh baris —
+  CLAUDE.md 2026-08-13). Sengaja **tidak fail-closed**, mengikuti sifat fungsi
+  itu sendiri: uraian itu hiasan di atas kode yang sudah benar, gagal
+  memuatnya cukup jatuh ke tampilan lama (kode saja), bukan menjatuhkan tabel.
+- **`useRekeningUraian()`** (hook privat di Pengadaan.tsx) mem-batch kode
+  rekening yang benar-benar tampil di kartu itu (dari `items`/`j.lines`),
+  dipakai DUA tempat — `PendingCard`→`DraftRow` (uraian dioper sbg prop,
+  bukan whole map, karena `DraftRow` sudah menerima props tunggal yang sudah
+  terhitung spt `komptabel`) & `ApprovedCard` (langsung, tak ada row-component
+  terpisah di situ).
+- **Tak ikut**: pop-up 🔍 Pratinjau (`PreviewDraftModal`, `kolomEkstra`) — di
+  luar cakupan permintaan; kolom `rekening` di situ tetap kode mentah.
+- **Tak ada migrasi** — murni tampilan + satu query batch tambahan ke
+  `admin_rekening` yang sudah lama ada.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

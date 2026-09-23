@@ -31,6 +31,7 @@ import { generateNibars } from '@/lib/nibar'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
 import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
 import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
+import { fetchUraianRekening } from '@/lib/rkbmdStandar'
 import NominalInput from '@/shared/ui/NominalInput'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
@@ -136,6 +137,27 @@ function barangDariLine(l: JurnalLine): BarangTransaksi {
     luas: f.luas || null, alamatDetail: f.alamat_detail || null,
     tglPerolehan: l.tanggal, jumlah: 1, satuan: l.satuan, nilai: l.nilai,
   }
+}
+
+// Uraian Kode Rekening (lib/rkbmdStandar.ts, dipakai bersama RKBMD & Laporan
+// Perolehan) — KHUSUS Pengadaan (permintaan user 2026-09-23): keempat menu
+// Cara Perolehan lain (Hibah/Tukar Menukar/Hasil Inventarisasi/Perolehan
+// Lainnya, PerolehanManual.tsx) tak punya field kode rekening sama sekali.
+// Sengaja TIDAK fail-closed — mengikuti sifat `fetchUraianRekening` sendiri:
+// uraian itu hiasan di atas kode yang sudah benar, gagal memuatnya cukup
+// jatuh ke tampilan lama (kode saja), bukan menjatuhkan tabelnya.
+function useRekeningUraian(kodes: (string | null | undefined)[]): Record<string, string> {
+  const supabase = createClient()
+  const [map, setMap] = useState<Record<string, string>>({})
+  const key = [...new Set(kodes.filter((k): k is string => !!k))].sort().join('|')
+  useEffect(() => {
+    if (!key) { setMap({}); return }
+    (async () => {
+      const m = await fetchUraianRekening(supabase, key.split('|'))
+      setMap(Object.fromEntries(m))
+    })()
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  return map
 }
 
 // Baris label:value ringkas utk header kartu kontrak (Pengadaan & konstruksi).
@@ -850,6 +872,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
   // saat approve (lihat useKomptabelDraft), jadi yang terbaca di sini memang
   // yang akan tercatat di `aset.intra_ekstra`.
   const klas = useKomptabelDraft(items.map(i => i.kode))
+  const rekeningUraian = useRekeningUraian(items.map(i => i.rekening))
 
   return (
     <div className="card overflow-hidden border-amber-200">
@@ -941,7 +964,8 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                     onToggle={() => sel.toggleOne(it.key)}
                     tglBast={tglBastPratinjau}
                     fotoUrl={it.foto[0] ? fotoUrls[it.foto[0]] : undefined}
-                    komptabel={klas.komptabel(it.kode, toNum(it.harga))} />
+                    komptabel={klas.komptabel(it.kode, toNum(it.harga))}
+                    uraianRekening={it.rekening ? rekeningUraian[it.rekening] : undefined} />
                 ))}
                 {sel.terlihat.length === 0 && (
                   <tr><td colSpan={17} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
@@ -1019,18 +1043,20 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
 // Satu unit draft — nama/satuan/harga READ-ONLY (salah → hapus & tambah baru,
 // biar disiplin). Spesifikasi diedit lewat checklist+popup di kartu (bukan di
 // sini) — baris ini cuma preview ringkas satu baris + thumbnail foto kecil.
-function DraftRow({ item, checked, onToggle, tglBast, fotoUrl, komptabel }: {
+function DraftRow({ item, checked, onToggle, tglBast, fotoUrl, komptabel, uraianRekening }: {
   item: DraftItem; checked: boolean; onToggle: () => void
   tglBast: string | null
   fotoUrl?: string
   /** null = batas kapitalisasi belum terbaca — JANGAN ditebak 'intra'. */
   komptabel: 'intra' | 'ekstra' | null
+  uraianRekening?: string
 }) {
   return (
     <tr>
       <td className="table-td text-center"><input type="checkbox" checked={checked} onChange={onToggle} /></td>
       <td className="table-td">
         <p className="text-xs text-gray-700">{item.rekening || <span className="text-gray-300">-</span>}</p>
+        {item.rekening && <p className="text-[11px] text-gray-400">{uraianRekening || '-'}</p>}
       </td>
       <KolomBarangCells barang={barangDariDraft(item, tglBast)} />
       <td className="table-td text-center">
@@ -1209,6 +1235,7 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
   onUnapprove: () => void
 }) {
   const fotoUrls = useFotoThumbs(j.lines.map(l => l.foto_paths[0]).filter(Boolean))
+  const rekeningUraian = useRekeningUraian(j.lines.map(l => l.rekening))
   const [showSurat, setShowSurat] = useState(false)
 
   return (
@@ -1290,7 +1317,10 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
               const fotoUrl = l.foto_paths[0] ? fotoUrls[l.foto_paths[0]] : undefined
               return (
                 <tr key={l.aset_id}>
-                  <td className="table-td text-xs text-gray-700">{l.rekening || <span className="text-gray-300">-</span>}</td>
+                  <td className="table-td">
+                    <p className="text-xs text-gray-700">{l.rekening || <span className="text-gray-300">-</span>}</p>
+                    {l.rekening && <p className="text-[11px] text-gray-400">{rekeningUraian[l.rekening] || '-'}</p>}
+                  </td>
                   <KolomBarangCells barang={barangDariLine(l)} />
                   <td className="table-td text-center">
                     <FotoSel paths={l.foto_paths} thumbUrl={fotoUrl} judul={l.nama_barang || l.uraian_barang} />
