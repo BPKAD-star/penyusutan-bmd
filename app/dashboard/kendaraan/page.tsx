@@ -25,12 +25,14 @@
 // pencarian berikutnya INSTAN di client tanpa query ulang. Tidak period-aware
 // (beda dgn Daftar Barang/Penyusutan): ini register posisi TERKINI (status='aktif').
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
+import { penggunaanTampil } from '@/lib/penggunaanTampil'
 
 const PREFIX_ALAT_ANGKUTAN = '1.3.2.02.'
 
@@ -54,6 +56,15 @@ type Row = {
   nilai_perolehan: number
   kondisi_barang: string | null
   penggunaan_pengamanan: string | null   // kolom berlabel "Penggunaan" (lihat lib/asetFields.ts)
+  // Cache Pemanfaatan/Pengamanan aktif (2026-09-23, pola Daftar Barang) — MENDUDUKI
+  // `penggunaan_pengamanan` kalau ada, lewat lib/penggunaanTampil.ts. Kendaraan
+  // (1.3.2.02, subset Peralatan & Mesin) TIDAK eligible utk Pemanfaatan
+  // (PEMANFAATAN_ELIGIBLE_GOLONGAN), tapi ELIGIBLE utk Pengamanan
+  // (PENGAMANAN_ELIGIBLE_GOLONGAN memuat 1.3.2) — jadi `pemanfaatan` di sini
+  // secara praktik akan selalu null, tapi tetap ditarik & dilewatkan ke fungsi
+  // bersama supaya tak ada rumus kedua yang bisa menyimpang dari Daftar Barang.
+  pemanfaatan: string | null
+  pengamanan: string | null
   keterangan: string | null
   skpd_id: number | null
 }
@@ -64,7 +75,7 @@ type Row = {
 // diresolve dari map id→nama yang di-fetch sekali dari admin_skpd (ratusan
 // baris, murah) — pola yang sama dengan Daftar Barang.
 const SELECT_COLS =
-  'id,nibar,kode_register,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,penggunaan_pengamanan,keterangan,skpd_id'
+  'id,nibar,kode_register,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,no_polisi,no_bpkb,no_rangka,no_mesin,tahun_pengadaan,tgl_perolehan,nilai_perolehan,kondisi_barang,penggunaan_pengamanan,pemanfaatan,pengamanan,keterangan,skpd_id'
 
 // Rupiah — 2 desimal (formatRupiah2), sama dgn Daftar Barang.
 const angka = (v: number | null | undefined) => formatRupiah2(v)
@@ -196,7 +207,13 @@ export default function KendaraanPage() {
         'No. BPKB': teks(r.no_bpkb),
         'Nilai Perolehan': r.nilai_perolehan ?? 0,
         'Kondisi': teks(r.kondisi_barang),
-        'Penggunaan': teks(r.penggunaan_pengamanan),
+        // ⚠️ SATU SUMBER dgn layar & Daftar Barang: penggunaanTampil() —
+        // JANGAN baca `r.penggunaan_pengamanan` mentah, itu cuma cadangan
+        // begitu tak ada cache Pemanfaatan/Pengamanan aktif.
+        'Penggunaan': (() => {
+          const t = penggunaanTampil(r)
+          return teks([t.pengamanan, t.pemanfaatan].filter(Boolean).join(' · ') || t.dasar || '')
+        })(),
         'Keterangan': teks(r.keterangan),
       })),
       namaBerkasLaporan({ laporan: 'Kendaraan Dinas', golongan: '1.3.2.02' }),
@@ -302,6 +319,7 @@ export default function KendaraanPage() {
                   {filtered.map(r => {
                     const belumLengkap = isiKosong(r.no_polisi) && isiKosong(r.no_rangka) && isiKosong(r.no_mesin)
                     const bergeser = bergeserDariNibar(r.nibar, r.kode_register)
+                    const t = penggunaanTampil(r)
                     return (
                       <tr key={r.id} className="hover:bg-gray-50/60 align-top">
                         <td className="table-td text-xs text-gray-600 min-w-[150px]">{teks(namaSkpd(r))}</td>
@@ -343,7 +361,35 @@ export default function KendaraanPage() {
                         <td className="table-td text-xs text-gray-600 whitespace-nowrap">{teks(r.no_bpkb)}</td>
                         <td className="table-td text-right text-xs whitespace-nowrap tabular-nums">{angka(r.nilai_perolehan)}</td>
                         <td className="table-td text-xs text-gray-600 text-center whitespace-nowrap">{teks(r.kondisi_barang)}</td>
-                        <td className="table-td text-xs text-gray-600 min-w-[120px]">{teks(r.penggunaan_pengamanan)}</td>
+                        {/* Pemanfaatan/Pengamanan aktif MENDUDUKI teks baseline
+                            (pola & sumber PERSIS Daftar Barang, 2026-09-23) —
+                            keduanya tautan hijau ke kartunya masing-masing.
+                            Kendaraan praktiknya cuma pernah punya `pengamanan`
+                            (kustodi ke pegawai); `pemanfaatan` disertakan juga
+                            supaya rumusnya sama persis, bukan karena golongan
+                            ini pernah eligible utk Pemanfaatan. */}
+                        <td className="table-td text-xs min-w-[120px]">
+                          {!t.pengamanan && !t.pemanfaatan ? teks(t.dasar) : (
+                            <>
+                              {t.pengamanan && (
+                                <Link
+                                  href={`/dashboard/pembukuan/pengelolaan/pengamanan?skpd=${r.skpd_id ?? ''}&nibar=${encodeURIComponent(r.nibar || '')}`}
+                                  className="block text-green-700 hover:underline hover:text-green-800"
+                                  title="Lihat BAST pengamanan barang ini di menu Pengamanan">
+                                  {t.pengamanan}
+                                </Link>
+                              )}
+                              {t.pemanfaatan && (
+                                <Link
+                                  href={`/dashboard/pembukuan/pengelolaan/pemanfaatan?skpd=${r.skpd_id ?? ''}&nibar=${encodeURIComponent(r.nibar || '')}`}
+                                  className="block text-green-700 hover:underline hover:text-green-800"
+                                  title="Lihat perjanjian pemanfaatan barang ini di menu Pemanfaatan">
+                                  {t.pemanfaatan}
+                                </Link>
+                              )}
+                            </>
+                          )}
+                        </td>
                         <td className="table-td text-xs text-gray-600 min-w-[160px]">{teks(r.keterangan)}</td>
                       </tr>
                     )

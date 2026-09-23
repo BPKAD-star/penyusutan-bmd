@@ -6812,6 +6812,41 @@ Pengamanan.tsx` DIBERI deep-link, bukan disimpulkan sudah punya.
 - **Tak ada migrasi** — murni tampilan (JSX) + deep-link handling di klien;
   `aset.pengamanan` & RLS-nya sudah lama ada, tak disentuh sama sekali.
 
+## Menu Kendaraan menyusul: kolom "Penggunaan" jadi tautan hijau juga (2026-09-23)
+
+Permintaan user, kemunculan KETIGA pola yang sama hari ini: "kalo sekarang di
+menu kendaraan juga ikut digitukan bisa ga? Sama kyk di daftar barang." Menu
+Kendaraan (`app/dashboard/kendaraan/page.tsx`) punya kolom "Penggunaan"
+sendiri yang sampai hari ini cuma membaca `r.penggunaan_pengamanan` mentah —
+tak pernah tahu ada cache Pemanfaatan/Pengamanan aktif sama sekali.
+
+- **Query diperluas**: `SELECT_COLS` menambah `pemanfaatan,pengamanan` (kedua
+  kolom cache sudah lama ada di `aset`, tak butuh migrasi). `Row` ikut
+  bertambah dua field.
+- **Sel & Export SAMA PERSIS pola Daftar Barang** — `penggunaanTampil(r)`
+  dipakai di KEDUANYA (bukan rumus baru): sel layar merender `t.pengamanan`
+  & `t.pemanfaatan` sbg `<Link>` hijau (`text-green-700`, `className="block
+  ..."` supaya keduanya tetap di baris sendiri-sendiri kalau berdua terisi),
+  jatuh ke `t.dasar` (teks baseline) kalau tak ada cache aktif; closure Export
+  Excel tetap teks polos `[pengamanan, pemanfaatan].filter(Boolean).join(' · ')
+  || dasar`.
+- ⚠️ **Kendaraan (Alat Angkutan, 1.3.2.02) TIDAK eligible untuk Pemanfaatan**
+  (`PEMANFAATAN_ELIGIBLE_GOLONGAN` tak memuat 1.3.2) — jadi `t.pemanfaatan` di
+  halaman ini secara praktik SELALU `null`; yang benar-benar terpakai cuma
+  `t.pengamanan` (kendaraan memang eligible untuk Pengamanan, kustodi ke
+  pegawai — persis kasus nyata di screenshot: "Sepeda Motor AG 3837 GP" milik
+  Sukirman). Kedua ruas tetap DIBACA & dilewatkan ke `penggunaanTampil()` apa
+  adanya, BUKAN dipangkas jadi "cuma pengamanan saja": memangkasnya berarti
+  menuliskan cabang golongan kedua di luar `penggunaanTampil()`, yang justru
+  jadi rumus KEDUA yang bisa menyimpang dari Daftar Barang begitu suatu saat
+  Kendaraan ikut diperluas eligibilitasnya.
+- **Deep-link ke Pengamanan sudah otomatis jalan** — `Pengamanan.tsx` sudah
+  dibekali pembaca `?skpd=&nibar=` di bagian sebelumnya (hari yang sama), jadi
+  tautan dari menu Kendaraan langsung terhubung tanpa perubahan tambahan di
+  sisi Pengamanan.
+- **Tak ada migrasi** — murni perluasan `select()` + JSX; `aset.pemanfaatan`/
+  `aset.pengamanan` & RLS-nya sudah lama ada.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
