@@ -13,6 +13,17 @@ const config: Config = {
     // tanpa JSX ber-kelas, jadi lubangnya tak pernah kelihatan.
     // Menambah folder ber-JSX baru → daftarkan di sini juga.
     './shared/**/*.{ts,tsx}',
+    // ⚠️ WAJIB juga — insiden 2026-09-23: `WARNA_BAND_PEMANFAATAN` (warna bar
+    // persentase Laporan Pemanfaatan) hidup di lib/pemanfaatan.ts sbg string
+    // kelas ('bg-green-500' dkk), dan tanpa baris ini Tailwind TAK PERNAH
+    // men-generate-nya — bar tampil TANPA WARNA SAMA SEKALI, tanpa satu pun
+    // error. `lib/` memang murni logika, tapi beberapa berkas (di sini &
+    // usulanPengurus.ts/rkbmdStandarUsulan.ts/rkbmd.ts/inventarisasi.ts)
+    // menaruh string kelas Tailwind bersebelahan dgn fungsi murninya (satu
+    // sumber warna+aturan, pola yang sama dgn `bandPemanfaatan`). Kalau lib/
+    // BENAR-BENAR tak pernah lagi menaruh string kelas, baris ini boleh
+    // dicabut — tapi verifikasi dulu (grep `bg-\w\|text-\w.*-[0-9]` ke lib/).
+    './lib/**/*.{ts,tsx}',
   ],
   theme: {
     extend: {

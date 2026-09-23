@@ -6728,6 +6728,43 @@ Barang - NIBAR · Lingkup · Mulai s.d. Berakhir (+ bar persentase) · Persentas
   `persenMasaPemanfaatan` (termasuk kasus zona waktu & rentang tak valid),
   `bandPemanfaatan` (kelima pita & batasnya), `perluPeringatanPenarikan`.
 
+### Bar-nya TERPASANG tapi TANPA WARNA — `lib/` tak pernah disisir Tailwind
+
+Ketahuan sesaat sesudah dipush: user membuka layarnya & bar persentasenya
+kelihatan **polos, tanpa satu pun warna** — bukan salah baca, memang begitu.
+
+- **Sebabnya `tailwind.config.ts` `content` cuma menyisir `app/`, `components/`,
+  `shared/`** — **`lib/` TIDAK PERNAH ikut**, dan `WARNA_BAND_PEMANFAATAN`
+  (`bg-green-500`/`bg-yellow-500`/dst.) hidup di `lib/pemanfaatan.ts`. Persis
+  kelas bug yang komentar di file config itu SENDIRI sudah peringatkan
+  (insiden `KonfirmasiModal` 2026-08-19 — "kelas yang HANYA dipakai di berkas
+  luar daftar ini tidak pernah ikut ter-generate… TANPA satu pun error"), cuma
+  kali ini korbannya folder yang belum pernah didaftarkan sama sekali.
+  **Diverifikasi lewat grep, bukan diasumsikan**: `bg-green-500`,
+  `bg-yellow-500`, `text-yellow-700`, `text-orange-700` **NOL kemunculan** di
+  seluruh `app/`, `components/`, `shared/` — jadi keempatnya benar-benar absen
+  dari CSS hasil build, bukan cuma dugaan. (`bg-orange-500`/`bg-red-500`/
+  `bg-black`/`text-green-700`/`text-red-700` kebetulan SELAMAT karena dipakai
+  juga di berkas lain yang disisir — itu yang bikin dua baris pertama di layar
+  user, yang KEBETULAN sama-sama di pita hijau, tampil polos sepenuhnya.)
+- **Obatnya: `./lib/**/*.{ts,tsx}` ditambahkan ke `content`.** Sekaligus
+  menutup **empat lubang laten lain** yang baru ketahuan lewat grep yang sama:
+  `lib/usulanPengurus.ts`, `lib/rkbmdStandarUsulan.ts`, `lib/rkbmd.ts`, &
+  `lib/inventarisasi.ts` juga menaruh string kelas Tailwind — belum diperiksa
+  satu-satu apakah kelasnya kebetulan "selamat" spt `bg-orange-500` di atas
+  atau ikut hilang; menambah `lib/` ke `content` menutup SEMUANYA sekaligus
+  tanpa perlu menyisir tiap berkas manual.
+  ⚠️ **`lib/` memang murni logika**, tapi menaruh peta warna bersebelahan dgn
+  fungsi murni yang menentukannya (`bandPemanfaatan` + `WARNA_BAND_PEMANFAATAN`
+  di file yang sama) itu pola yang disengaja di repo ini — supaya warna & aturan
+  band tak pernah menyimpang. Pola itu lebih penting daripada menjaga `lib/`
+  sepenuhnya bebas string CSS; scan tambahan `content` ini murni build-time,
+  nol biaya di runtime.
+- **Tak ada migrasi.** Murni konfigurasi build; DB/RPC/ledger tak disentuh.
+  ⚠️ Perbaikan ini **berlaku begitu di-deploy ulang** — commit sebelumnya
+  (kode `bandPemanfaatan` sendiri) sudah benar sejak awal, cuma CSS hasil
+  build-nya yang kurang lengkap.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
