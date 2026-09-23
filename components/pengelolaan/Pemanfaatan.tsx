@@ -17,6 +17,17 @@
 //
 // Akhiri: baris 'pemanfaatan_selesai' (append-only) + null cache. Header (No/Tgl
 // dokumen) boleh diedit selama semester sama (guard fn_jurnal_header_guard).
+//
+// "Mulai Pemanfaatan" tak boleh sebelum tahun kerja berjalan (`useDateBounds()`,
+// keputusan user 2026-09-23) — fokus di tahun terbuka, bukan historis. Ini
+// pengecualian sengaja dari komentar `useTahunBuku.ts` ("JANGAN dipakai utk
+// field atribut/dokumen … itu bisa historis"): di sini `mulai` memang dianggap
+// tanggal peristiwa berjalan, bukan tanggal dokumen historis spt sertifikat.
+// Ditegakkan `min` di kedua form (BarangForm & EditHeaderModal) + validasi ulang
+// di `simpan()` — UI saja, bukan trigger DB.
+//
+// Kolom aset.pemanfaatan (cache di atas) kini juga DITAMPILKAN — lihat
+// lib/penggunaanTampil.ts & kolom "Penggunaan" di Daftar Barang (2026-09-23).
 import { useEffect, useState, useCallback } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
@@ -370,6 +381,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
     if (!noSk.trim()) { setErr('No. dokumen wajib diisi.'); return }
     if (!mitra.trim()) { setErr('Mitra pemanfaatan wajib diisi.'); return }
     if (!mulai) { setErr('Tanggal mulai pemanfaatan wajib diisi.'); return }
+    if (mulai < dateBounds.min) { setErr(`Tanggal mulai pemanfaatan tidak boleh sebelum tahun kerja berjalan (${dateBounds.min}).`); return }
     if (!Number.isFinite(masaNum) || masaNum <= 0) { setErr('Masa pemanfaatan (tahun) harus > 0.'); return }
     if (pindahSemester) {
       setErr(`Tanggal masuk ${tglPeriode}, sedangkan jurnal ini di ${header.periode}. Pindah semester tidak diizinkan — batalkan & buat pemanfaatan baru.`)
@@ -430,7 +442,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Mulai Pemanfaatan</label>
-            <input type="date" className="select-filter w-full" value={mulai} onChange={e => setMulai(e.target.value)} />
+            <input type="date" className="select-filter w-full" min={dateBounds.min} value={mulai} onChange={e => setMulai(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Masa (tahun)</label>
@@ -549,6 +561,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
       if (!noSk.trim()) { setErr('No. dokumen wajib diisi.'); return }
       if (!mitra.trim()) { setErr('Mitra pemanfaatan wajib diisi.'); return }
       if (!mulai) { setErr('Tanggal mulai pemanfaatan wajib diisi.'); return }
+      if (mulai < dateBounds.min) { setErr(`Tanggal mulai pemanfaatan tidak boleh sebelum tahun kerja berjalan (${dateBounds.min}) — fokus di tahun kerja berjalan saja.`); return }
       if (!Number.isFinite(masaNum) || masaNum <= 0) { setErr('Masa pemanfaatan (tahun) harus > 0.'); return }
       if (dokPaths.length === 0) { setErr('Dokumen pemanfaatan wajib diunggah.'); return }
     }
@@ -632,7 +645,8 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Mulai Pemanfaatan</label>
-              <input type="date" className="select-filter w-full" value={mulai} onChange={e => setMulai(e.target.value)} />
+              <input type="date" className="select-filter w-full" min={dateBounds.min} value={mulai} onChange={e => setMulai(e.target.value)} />
+              <p className="text-xs text-gray-400 mt-1">Tak boleh sebelum tahun kerja berjalan ({dateBounds.min}).</p>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Masa Pemanfaatan (tahun)</label>

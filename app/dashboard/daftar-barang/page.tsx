@@ -25,6 +25,7 @@ import { luasEfektif } from '@/lib/luasBidang'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { GOLONGAN_DAFTAR_BARANG, asalUsulTampil } from '@/lib/bmd'
+import { penggunaanTampil } from '@/lib/penggunaanTampil'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_DAFTAR_BARANG } from '@/lib/visibilitas'
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
 import { bergeserDariNibar } from '@/lib/kodeRegister'
@@ -55,7 +56,7 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 // dua-duanya mengisi `Row` yang SAMA. Kolom yang cuma ditambahkan di salah satu
 // bikin berkas Audit (untuk BPK) kekurangan kolom yang ada di layar, tanpa satu
 // pun error.
-const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb'
+const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb,pemanfaatan,pengamanan'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -96,6 +97,11 @@ type Row = {
   no_rangka: string | null
   no_mesin: string | null
   no_bpkb: string | null
+  // Cache aktif Pemanfaatan/Pengamanan (migrasi 20260923_02) — MENDUDUKI
+  // `penggunaan_pengamanan` di kolom "Penggunaan" kalau ada. Lihat
+  // lib/penggunaanTampil.ts.
+  pemanfaatan: string | null
+  pengamanan: string | null
 }
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
@@ -140,6 +146,10 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 // - `lokasi` (alamat_detail) tetap setelah nama utk golongan berlokasi.
 // - `asal_usul` (Asal Usul) & `penggunaan` (Penggunaan → kolom penggunaan_pengamanan)
 //   ditampilkan sebelum Keterangan di SEMUA jenis aset (2026-07-20).
+// - `penggunaan` sejak 2026-09-23 kini bisa berisi Pemanfaatan/Pengamanan AKTIF
+//   (MENDUDUKI teks baseline, pola sama dgn Σ luas bidang) — lihat
+//   lib/penggunaanTampil.ts & migrasi 20260923_02 (RPC-nya baru mengembalikan
+//   `pemanfaatan`/`pengamanan` sejak migrasi itu).
 // - Tanah: kolom Dokumen Kepemilikan (no/tgl/atas nama) SENGAJA tidak di layar —
 //   satu register bisa banyak bidang & dokumennya dikelola per-bidang di GIS
 //   (badge "🗺 N bidang" di sel Jenis Hak, permintaan user 2026-09-23, link ke
@@ -808,7 +818,7 @@ export default function DaftarBarangPage() {
           // ini). Di Excel tak ditandai apa-apa: bagi pembaca berkas keduanya
           // sama-sama "asal usul barang", dan penandaan cuma bikin bingung.
           case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
-          case 'penggunaan': return r.penggunaan_pengamanan || ''
+          case 'penggunaan': return penggunaanTampil(r).baris.join(' · ')
           case 'keterangan': return r.keterangan || ''
           case 'luas': return luasOf(r, bidangEx) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
@@ -889,7 +899,7 @@ export default function DaftarBarangPage() {
           // ini). Di Excel tak ditandai apa-apa: bagi pembaca berkas keduanya
           // sama-sama "asal usul barang", dan penandaan cuma bikin bingung.
           case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
-          case 'penggunaan': return r.penggunaan_pengamanan || ''
+          case 'penggunaan': return penggunaanTampil(r).baris.join(' · ')
           case 'keterangan': return r.keterangan || ''
           case 'luas': return luasOf(r, bidangEx) ?? ''
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
@@ -992,7 +1002,15 @@ export default function DaftarBarangPage() {
           </span>
         )
       }
-      case 'penggunaan': return r.penggunaan_pengamanan || '-'
+      case 'penggunaan': {
+        // Pemanfaatan/Pengamanan aktif MENDUDUKI teks baseline (permintaan
+        // user 2026-09-23) — pola persis Σ luas bidang vs luas register.
+        // ⚠️ Gedung & Bangunan bisa punya KEDUANYA sekaligus (satu ruang
+        // dikustodi, ruang lain disewakan) → ditumpuk, bukan salah satu dibuang.
+        const t = penggunaanTampil(r)
+        if (t.baris.length === 0) return '-'
+        return <>{t.baris.map((b, i) => <p key={i} className="text-xs text-gray-600">{b}</p>)}</>
+      }
       case 'keterangan': return r.keterangan || '-'
       case 'luas': { const v = luasOf(r); return v != null ? angkaLuas(v) : '-' }
       case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || '-'

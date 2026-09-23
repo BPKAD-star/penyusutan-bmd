@@ -6539,6 +6539,78 @@ page.tsx` (+ align-top yang sama di Daftar Barang Awal, lihat di bawah).
   `align-top`) — ikut ditambal di putaran yang sama karena kelasnya identik,
   bukan permintaan terpisah.
 
+## Kolom "Penggunaan" di Daftar Barang kini menampilkan Pemanfaatan & Pengamanan aktif (2026-09-23, migrasi 20260923_02)
+
+Permintaan user. `aset.pemanfaatan` (migrasi 20260721_02) & `aset.pengamanan`
+(20260722_02) sudah lama ditulis oleh menu Pemanfaatan & Pengamanan sbg
+CACHE — dan diverifikasi lewat grep sebelum menyentuh apa pun: **NOL halaman
+membacanya**. Kedua kolom itu ada di DB tapi tak pernah ditampilkan di mana
+pun sejak dibuat.
+
+- **Aturannya SAMA PERSIS dgn Σ luas bidang** (lib/luasBidang.ts): entri yang
+  HIDUP (Pemanfaatan/Pengamanan aktif tahun berjalan) **MENDUDUKI** kolom
+  Penggunaan — menggantikan, bukan menambah — teks baseline
+  `penggunaan_pengamanan` (warisan impor e-BMD). Kalau tak ada satu pun cache
+  aktif, kolom jatuh ke teks baseline itu seperti sebelumnya.
+- **`aset.pemanfaatan` DIPAKAI APA ADANYA** — `pemanfaatanCache(jenis, mitra,
+  berakhir)` sudah persis berbentuk "Jenis Pemanfaatan — Pihak Pemanfaatan
+  (s.d. tanggal)", yaitu yang diminta user ("Jenis Pemanfaatan" dan "Pihak
+  Pemanfaatan"). Tak perlu helper baru.
+- **`aset.pengamanan` DIURAI dulu** — `pengamananCache(nama, identitas)`
+  menghasilkan "Budi Santoso (NIP 123)", sementara yang diminta cuma **"Nama
+  Pemakai"** (tanpa NIP/NIK). `namaPemakaiPengamanan()` baru
+  (lib/pengamanan.ts) membuang ekor `" (...)"` — parsing, bukan kolom baru,
+  supaya badge/filter lain yang mungkin nanti membaca `aset.pengamanan` mentah
+  tak perlu berubah.
+- **Logika gabungannya SATU tempat: `lib/penggunaanTampil.ts`**
+  (`penggunaanTampil()`), dipakai KETIGA jalur yang menampilkan kolom ini —
+  layar (`cellContent`) DAN kedua closure `cell()` Export (Excel biasa +
+  Export Audit) — pola yang sama dgn `asalUsulTampil`. Tiga salinan yang
+  menyimpang berarti berkas Excel bisa berbeda dari yang tampil di layar.
+- ⚠️ **Golongan Pemanfaatan (Tanah 1.3.1/Gedung 1.3.3/JIJ 1.3.4/Aset
+  Lain-Lain 1.5.4) & Pengamanan (Peralatan&Mesin 1.3.2/Gedung 1.3.3)
+  BERIRISAN di Gedung & Bangunan** — satu gedung bisa punya Pengamanan
+  (sebagian ruang dikustodi pegawai) **dan** Pemanfaatan (sebagian disewakan)
+  sekaligus. Keduanya SAH berdampingan, jadi **ditumpuk** (dua baris), bukan
+  salah satu diprioritaskan/dibuang.
+- **Migrasi WAJIB**: sejak paginasi Daftar Barang pindah ke server
+  (20260814_05..08), layar & Export Excel biasa sama sekali tak `select`
+  `aset` — keduanya membaca `fn_daftar_barang`, dan kolom yang tak ada di
+  `RETURNS TABLE`-nya mustahil ditampilkan (persis pelajaran 20260908_01, yang
+  sempat lolos ter-deploy sebulan tanpa migrasinya jalan — gejalanya "-" utk
+  semua baris, TANPA error). Export Audit (jalur mentah, `SELECT_COLS`) cukup
+  ditambah nama kolom — sudah ber-GRANT sejak kolomnya dibuat.
+- ⚠️ **Migrasi 20260923_02 SENGAJA text-surgery atas `pg_get_functiondef`
+  yang HIDUP, bukan menulis ulang badan fungsi dari nol** — fungsi ini sudah
+  3× direvisi (908_01/913_01/914_01) dan 913_01 sendiri nyaris gagal krn
+  menyalin RETURNS TABLE dari salinan BASI (lihat catatan kode register di
+  atas). Pola yang sama dgn 914_01: ambil `pg_get_functiondef`, sisipkan lewat
+  `regexp_replace` TERGUARD (count dicek dulu, RAISE kalau meleset), DROP,
+  jalankan definisi hasil sisipan. Bonus: `pg_get_functiondef` memuat SELURUH
+  `SET` config (search_path *dan* plan_cache_mode, keduanya di
+  `pg_proc.proconfig`) — jadi begitu definisi hasil sisip dieksekusi ulang,
+  plan_cache_mode ikut terbawa OTOMATIS tanpa ALTER FUNCTION susulan.
+  Migrasi ini juga memeriksa CTE `kodereg` & predikat `fn_aset_teks_cari`
+  tetap ada sesudahnya — dua hal yang PERSIS pernah hilang diam-diam di
+  migrasi-migrasi sebelumnya.
+- **Daftar Barang Awal (baseline) SENGAJA TIDAK ikut** — `aset_awal_2026`
+  tak (dan tak boleh) punya kolom pemanfaatan/pengamanan live: baseline itu
+  foto BEKU 2025, dan menampilkan cache tahun berjalan di situ akan membuat
+  halaman "beku" ikut bergerak mengikuti data hari ini — alasan yang sama
+  persis dgn keputusan Luas hari ini juga (lihat bagian di atas).
+- **Aturan baru: "Mulai Pemanfaatan" tak boleh sebelum tahun kerja berjalan**
+  (permintaan user — "fokus di tahun kerja berjalan aja"). Ditegakkan lewat
+  `useDateBounds().min` (sudah ada, dipakai bidang tanggal ledger lain) sbg
+  `min` di kedua form (`BarangForm` & `EditHeaderModal`, komponen Pemanfaatan)
+  + validasi ulang di `simpan()` — murni UI, BUKAN trigger DB (beda dari guard
+  tahun buku `fn_cek_tahun_buku` yang menahan tanggal LEDGER; di sini yang
+  dibatasi tanggal AWAL PERISTIWA, field yang secara umum boleh historis).
+- **Tak ada migrasi lain** selain 20260923_02. Dikunci
+  lib/penggunaanTampil.test.ts & lib/pengamanan.test.ts.
+- ⚠️ **Deploy-ordering: migrasi 20260923_02 WAJIB jalan SEBELUM deploy kode**
+  — kalau terbalik, kolom Penggunaan tetap menampilkan teks lama; bukan error,
+  cache yang baru dicatat cuma belum kelihatan sampai migrasinya jalan.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

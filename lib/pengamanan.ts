@@ -76,3 +76,20 @@ export function pengamananCache(nama: string, identitas: string): string {
   const idTxt = identitas ? ` (NIP ${identitas})` : ''
   return `${nama}${idTxt}`
 }
+
+/**
+ * Nama pemakai SAJA dari `aset.pengamanan` — buang ekor "(NIP …)"/"(NIK …)"
+ * yang ditempel `pengamananCache`.
+ *
+ * Dipakai kolom "Penggunaan" di Daftar Barang (permintaan user 2026-09-23):
+ * di situ yang diminta cuma "Nama Pemakai", bukan identitasnya — menampilkan
+ * cache mentah akan membocorkan NIP/NIK ke kolom yang bukan tempatnya.
+ * ⚠️ Sengaja tetap MENGURAI cache, bukan menambah kolom nama terpisah:
+ * `aset.pengamanan` satu-satunya sumber & format cache sudah stabil sejak
+ * 2026-07-22, jadi mengurainya di sini lebih murah daripada dua kolom yang
+ * bisa saling menyimpang.
+ */
+export function namaPemakaiPengamanan(cache: string | null | undefined): string | null {
+  const s = (cache || '').replace(/\s*\([^)]*\)\s*$/, '').trim()
+  return s || null
+}
