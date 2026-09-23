@@ -375,29 +375,47 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
     setSpecBarang(null); onMsg('Spesifikasi disimpan.')
   }
 
+  // Pengganti `alert()` (CODING-STANDARD §4.5) untuk kegagalan "Setujui" —
+  // pola & alasan kembar dgn Pengadaan.tsx/PerolehanManual.tsx: strip merah di
+  // ATAS halaman luput kalau kartunya di tengah daftar panjang; pop-up muncul
+  // TEPAT di tempat tombol Setujui ditekan.
+  async function gagalSetujui(pesan: string) {
+    await konfirmasi({ nada: 'merah', ikon: '⚠', judul: 'Belum bisa disetujui', isi: pesan, labelYa: 'Mengerti', tanpaBatal: true })
+  }
+
   // Approve & unapprove KDP itu ATOMIK PER KONTRAK dan bisa menyentuh puluhan
   // aset + seluruh terminnya sekaligus — jadi keduanya dijalankan lewat
   // `kerjakan`, supaya pop-upnya tetap terbuka menampilkan "Memproses…".
   // Dengan `confirm()` lama, layar cuma diam beberapa detik tanpa keterangan.
   async function approve() {
-    await konfirmasi({
-      nada: 'teal', ikon: '✓', judul: 'Setujui kontrak konstruksi ini?',
-      subjudul: `Kontrak ${kontrak.no_sk}`,
-      rincian: [
-        { label: 'Barang KDP', nilai: `${barangs.length} barang` },
-        { label: 'Total nilai', nilai: formatRupiah2(total) },
-      ],
-      isi: <>Seluruh barang KDP <b>resmi tercatat</b> di Daftar Barang berikut akumulasi terminnya —
-        satu paket, tak ada yang bisa disetujui separuh.</>,
-      labelYa: 'Ya, setujui',
-      kerjakan: async () => {
-        setBusy(true); onMsg('')
-        const { error } = await approveKontrakKonstruksi(supabase, kontrak.id)
-        setBusy(false)
-        if (error) { onMsg(`Error: ${error}`); return }
-        onMsg('Kontrak disetujui — semua barang KDP resmi tercatat.'); onChanged()
-      },
-    })
+    // `kerjakan` MELEMPAR kalau gagal (bukan `onMsg`) — begitu ia melempar,
+    // pop-up "Setujui?" ini menutup & promise-nya ikut ditolak (lihat
+    // shared/ui/konfirmasi.tsx), lalu `catch` di bawah membuka pop-up KEDUA
+    // yang menyebut sebabnya. Sebelumnya kegagalan (mis. barang belum ada
+    // foto) cuma jadi `onMsg` — pop-up "Setujui?" tetap menutup seolah
+    // berhasil, dan errornya jadi strip merah biasa.
+    try {
+      await konfirmasi({
+        nada: 'teal', ikon: '✓', judul: 'Setujui kontrak konstruksi ini?',
+        subjudul: `Kontrak ${kontrak.no_sk}`,
+        rincian: [
+          { label: 'Barang KDP', nilai: `${barangs.length} barang` },
+          { label: 'Total nilai', nilai: formatRupiah2(total) },
+        ],
+        isi: <>Seluruh barang KDP <b>resmi tercatat</b> di Daftar Barang berikut akumulasi terminnya —
+          satu paket, tak ada yang bisa disetujui separuh.</>,
+        labelYa: 'Ya, setujui',
+        kerjakan: async () => {
+          setBusy(true); onMsg('')
+          const { error } = await approveKontrakKonstruksi(supabase, kontrak.id)
+          setBusy(false)
+          if (error) throw new Error(error)
+          onMsg('Kontrak disetujui — semua barang KDP resmi tercatat.'); onChanged()
+        },
+      })
+    } catch (e) {
+      await gagalSetujui((e as Error).message)
+    }
   }
   async function unapprove() {
     await konfirmasi({

@@ -564,29 +564,39 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     onChanged()
   }
 
+  // Pengganti `alert()` (CODING-STANDARD §4.5) untuk kegagalan "Setujui" —
+  // baik yang GAGAL DIVALIDASI (barang belum lengkap) maupun yang GAGAL SAAT
+  // DIEKSEKUSI (query gagal di tengah materialize). Dulu keduanya cuma
+  // `onMsg('Error: ...')` → strip merah di ATAS halaman, di luar jangkauan
+  // mata kalau kartunya ada di tengah daftar panjang; sekarang pop-up muncul
+  // TEPAT di tempat tombol Setujui ditekan.
+  async function gagalSetujui(pesan: string, nada: 'merah' | 'amber' = 'merah') {
+    await konfirmasi({ nada, ikon: nada === 'merah' ? '⚠' : '△', judul: 'Belum bisa disetujui', isi: pesan, labelYa: 'Mengerti', tanpaBatal: true })
+  }
+
   // ── Approve: materialize draft_items → aset + transaksi_bmd ────────────────
   async function approveHeader() {
     const items = j.payload.draft_items || []
-    if (items.length === 0) { onMsg('Error: kontrak ini belum ada barangnya — tambahkan dulu sebelum disetujui.'); return }
+    if (items.length === 0) { await gagalSetujui('Kontrak ini belum ada barangnya — tambahkan dulu sebelum disetujui.'); return }
     // ⚠️ Penjaga SESUNGGUHNYA dari "dokumen BAST wajib" — bukan cuma validasi di
     // form. KontrakForm/EditHeaderModal mencegahnya sejak disimpan, TAPI kartu
     // hasil Import Excel (PerolehanImport.tsx) tidak pernah mengisi
     // `dokumen_paths` sama sekali, jadi tanpa pemeriksaan di sini kontrak impor
     // tetap bisa lolos disetujui tanpa BAST. Di sinilah SEMUA jalur bertemu.
     if (!j.payload.dokumen_paths || j.payload.dokumen_paths.length === 0) {
-      onMsg('Error: dokumen BAST belum diunggah — lengkapi dulu (Edit Kontrak & BAST) sebelum kontrak ini disetujui.')
+      await gagalSetujui('Dokumen BAST belum diunggah — lengkapi dulu (Edit Kontrak & BAST) sebelum kontrak ini disetujui.')
       return
     }
     for (const it of items) {
-      if (!it.kode) { onMsg('Error: ada barang draft tanpa kode.'); return }
-      if (toNum(it.harga) <= 0) { onMsg(`Error: harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
+      if (!it.kode) { await gagalSetujui('Ada barang draft tanpa kode.'); return }
+      if (toNum(it.harga) <= 0) { await gagalSetujui(`Harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
       // Wajib foto per barang (permintaan user 2026-09-22, berlaku utk approval
       // SELANJUTNYA — kartu yang SUDAH disetujui sebelum ini tak disentuh &
       // tak diminta melengkapi apa pun). Pola & titik penegakan sama persis dgn
       // BAST di atas: cek di sinilah SEMUA jalur bertemu (entry manual + Import
       // Excel, yang draft_items-nya juga tak pernah mengisi `foto`).
       if (!it.foto || it.foto.length === 0) {
-        onMsg(`Error: barang "${it.fields.nama_barang || it.kode}" belum ada foto — lengkapi dulu (✎ Edit Spesifikasi) sebelum kontrak ini disetujui.`)
+        await gagalSetujui(`Barang "${it.fields.nama_barang || it.kode}" belum ada foto — lengkapi dulu (✎ Edit Spesifikasi) sebelum kontrak ini disetujui.`)
         return
       }
     }
@@ -612,7 +622,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     // Generate NIBAR otomatis — perlu kode lokasi SKPD (skpd.kode_skpd, ber-titik).
     const { data: skpdRow, error: skpdErr } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', skpdId).single()
     if (skpdErr || !skpdRow?.kode_skpd) {
-      onMsg(`Error: gagal ambil kode lokasi SKPD utk generate NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`)
+      await gagalSetujui(`Gagal ambil kode lokasi SKPD utk generate NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`)
       setBusy(false); return
     }
     const tahun = String(new Date(perolehanDate).getFullYear())
@@ -628,7 +638,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     try {
       batasMap = await fetchBatasKapitalisasi(supabase, items.map(it => it.kode))
     } catch (e) {
-      onMsg(`Error: ${(e as Error).message}`); setBusy(false); return
+      await gagalSetujui((e as Error).message); setBusy(false); return
     }
     const itemsWithKlas = items.map(it => ({ ...it, intraEkstra: klasifikasiKomptabel(toNum(it.harga), batasMap.get(it.kode)) }))
 
@@ -636,7 +646,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     try {
       nibarMap = await generateNibars(supabase, itemsWithKlas.map(it => ({ ...it, tahun })), skpdRow.kode_skpd)
     } catch (e) {
-      onMsg(`Error: ${(e as Error).message}`); setBusy(false); return
+      await gagalSetujui((e as Error).message); setBusy(false); return
     }
 
     const asetRows = itemsWithKlas.map(it => {
@@ -661,7 +671,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       return row
     })
     const { data: inserted, error: asetErr } = await supabase.from('aset').insert(asetRows).select('id,nilai_perolehan')
-    if (asetErr || !inserted) { onMsg(`Error: gagal membuat barang: ${asetErr?.message}`); setBusy(false); return }
+    if (asetErr || !inserted) { await gagalSetujui(`Gagal membuat barang: ${asetErr?.message}`); setBusy(false); return }
 
     // inserted[i] sejajar dengan items[i] (PostgREST kembalikan dlm urutan insert).
     const trxRows = (inserted as { id: string; nilai_perolehan: number }[]).map((a, i) => ({
@@ -682,14 +692,14 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       // error. 'draft' disaring SEMUA pembaca Lapis 1 tanpa perlu ledger, dan
       // rollback approve Konstruksi/KDP (lib/kdp.ts) memang sudah begitu.
       await supabase.from('aset').update({ status: 'draft' }).in('id', (inserted as { id: string }[]).map(a => a.id))
-      onMsg(`Error: gagal mencatat transaksi: ${trxErr.message}`); setBusy(false); return
+      await gagalSetujui(`Gagal mencatat transaksi: ${trxErr.message}`); setBusy(false); return
     }
 
     const { data: { user } } = await supabase.auth.getUser()
     const { error: appErr } = await supabase.from('jurnal_header')
       .update({ approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString() })
       .eq('id', j.id)
-    if (appErr) { onMsg(`Barang sudah tercatat, tapi status approval gagal diupdate: ${appErr.message}`); setBusy(false); onChanged(); return }
+    if (appErr) { await gagalSetujui(`Barang sudah tercatat, tapi status approval gagal diupdate: ${appErr.message} — cek Daftar Barang, kontrak ini mungkin perlu di-\u201cSetujui\u201d ulang manual.`, 'amber'); setBusy(false); onChanged(); return }
 
     onMsg(`Kontrak ${j.no_sk} disetujui — ${asetRows.length} barang resmi tercatat (tgl perolehan ${perolehanDate}).`)
     setBusy(false)
