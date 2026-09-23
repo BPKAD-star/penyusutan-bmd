@@ -13,6 +13,8 @@ import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
+import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
+import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
 import NominalInput from '@/shared/ui/NominalInput'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { catatTransaksi } from '@/lib/transaksi'
@@ -141,6 +143,38 @@ const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
 const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toNum(i.harga), 0)
+
+// ── Standar kolom barang (lib/kolomBarangTransaksi.ts, keputusan user
+// 2026-09-23) — dua mapper, kembar dgn Pengadaan.tsx.
+function barangDariDraft(it: DraftItem): BarangTransaksi {
+  const f = it.fields || {}
+  return {
+    kode: it.kode, uraianBarang: it.uraianBarang, nibar: null,
+    namaBarang: f.nama_barang || null, merekTipe: f.merek_tipe || null,
+    spesifikasiLainnya: f.spesifikasi_lainnya || null,
+    noPolisi: f.no_polisi || null, noMesin: f.no_mesin || null, noRangka: f.no_rangka || null,
+    luas: f.luas || null, alamatDetail: f.alamat_detail || null,
+    tglPerolehan: it.tglPerolehan || null, jumlah: 1, satuan: it.satuan || null, nilai: toNum(it.harga),
+  }
+}
+// ⚠️ `l.tgl_perolehan`, BUKAN `l.tanggal` — kolom "Tgl Perolehan" di tabel
+// approved SEBELUM ini salah membaca `l.tanggal` (tanggal BAST/ledger),
+// bukan tanggal barang itu DIBUAT. Bug tampilan murni (bukan ledger — baris
+// ledgernya sendiri sudah benar), ketahuan & ditutup sekalian saat menyusun
+// mapper ini; lihat komentar `JurnalLine.tgl_perolehan` di atas & peringatan
+// baris ~574 ("WAJIB l.tgl_perolehan, BUKAN l.tanggal") yang sudah lama ada
+// utk jalur Buka Kunci — kolom tampilan ini kelewat.
+function barangDariLine(l: JurnalLine): BarangTransaksi {
+  const f = l.fields || {}
+  return {
+    kode: l.kode, uraianBarang: l.uraian_barang, nibar: l.nibar,
+    namaBarang: l.nama_barang, merekTipe: f.merek_tipe || null,
+    spesifikasiLainnya: f.spesifikasi_lainnya || null,
+    noPolisi: f.no_polisi || null, noMesin: f.no_mesin || null, noRangka: f.no_rangka || null,
+    luas: f.luas || null, alamatDetail: f.alamat_detail || null,
+    tglPerolehan: l.tgl_perolehan || null, jumlah: 1, satuan: l.satuan, nilai: l.nilai,
+  }
+}
 
 export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   kategori: KategoriPerolehan; judul: string; pihakLabel: string | null
@@ -748,10 +782,17 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
         <>
           <DraftSearchBar q={sel.q} setQ={sel.setQ} jml={sel.terlihat.length} total={items.length} />
           <div className="overflow-x-auto">
-            <table className="w-full">
+            {/* `table-fixed` + colgroup TETAP (lib/kolomBarangTransaksi.ts,
+                keputusan user 2026-09-23) — lihat catatan panjang di
+                Pengadaan.tsx (`PendingCard`); kolom ekstra di sini cuma
+                Foto & Keterangan (Komptabel baru tampil sesudah approve). */}
+            <table className="w-full table-fixed">
+              <ColgroupBarang
+                sebelum={[{ key: 'chk', berat: 3 }]}
+                sesudah={[{ key: 'foto', berat: 5 }, { key: 'keterangan', berat: 10 }]} />
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="table-th w-8 text-center">
+                  <th className="table-th text-center">
                     <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll}
                       title={sel.q ? 'Centang semua barang pada hasil pencarian' : 'Centang semua barang'} />
                   </th>
@@ -759,22 +800,8 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
                       Pengadaan.tsx; alasan lengkapnya di sana (satu pintu
                       hapus/edit lewat centang, & tombol merah yang dulu duduk
                       persis di sebelah kotak centang). */}
-                  <th className="table-th">Uraian Barang</th>
-                  <th className="table-th">Spesifikasi Nama Barang</th>
-                  {/* Merk/Tipe · Spesifikasi Lainnya · Keterangan (user
-                      2026-09-08). Ketiganya SUDAH ada di `item.fields` — diisi
-                      lewat popup Edit Spesifikasi & ikut tersimpan ke `aset`
-                      saat approve (ASET_FIELD_COLS) — cuma tak pernah tampil,
-                      jadi operator harus membuka popup satu per satu untuk
-                      memeriksanya. Urutannya dibuat kembar dgn tabel draft
-                      Pengadaan (Merk/Tipe sesudah Spesifikasi Nama Barang,
-                      Keterangan paling kanan). */}
-                  <th className="table-th">Merk/Tipe</th>
-                  <th className="table-th">Spesifikasi Lainnya</th>
-                  <th className="table-th w-24 text-center">Tgl Perolehan</th>
-                  <th className="table-th w-12 text-center">Foto</th>
-                  <th className="table-th w-16 text-center">Satuan</th>
-                  <th className="table-th w-28 text-right">Nilai/item</th>
+                  <KolomBarangHead />
+                  <th className="table-th text-center">Foto</th>
                   <th className="table-th">Keterangan</th>
                 </tr>
               </thead>
@@ -785,7 +812,7 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, pihakLabel, onEditHeade
                     fotoUrl={it.foto[0] ? fotoUrls[it.foto[0]] : undefined} />
                 ))}
                 {sel.terlihat.length === 0 && (
-                  <tr><td colSpan={10} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
+                  <tr><td colSpan={15} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
                 )}
               </tbody>
             </table>
@@ -863,24 +890,18 @@ function DraftRow({ item, checked, onToggle, fotoUrl }: {
   return (
     <tr>
       <td className="table-td text-center"><input type="checkbox" checked={checked} onChange={onToggle} /></td>
-      <td className="table-td">
-        <p className="text-xs text-gray-800 font-medium truncate max-w-[220px]">{item.uraianBarang || '-'}</p>
-        <p className="text-[11px] text-gray-400">{item.kode}</p>
-      </td>
-      <td className="table-td">
-        <p className="text-xs text-gray-600 truncate max-w-[200px]" title={item.fields?.nama_barang || ''}>
-          {item.fields?.nama_barang || <span className="text-amber-600">⚠ Belum diisi</span>}
-        </p>
-      </td>
-      <td className="table-td text-xs text-gray-600 truncate max-w-[120px]" title={item.fields?.merek_tipe || ''}>{item.fields?.merek_tipe || '-'}</td>
-      <td className="table-td text-xs text-gray-600 truncate max-w-[200px]" title={item.fields?.spesifikasi_lainnya || ''}>{item.fields?.spesifikasi_lainnya || '-'}</td>
-      <td className="table-td text-center text-xs text-gray-600">{item.tglPerolehan || <span className="text-amber-600">⚠</span>}</td>
+      {/* ⚠️ Tanggal Perolehan kosong tampil '-' generik (KolomBarangCells),
+          BUKAN lagi tanda ⚠ khusus spt sebelumnya — kolom kanonik dipakai
+          sama di sembilan menu & tak bisa tahu menu mana yang mewajibkannya.
+          Validasi sesungguhnya TETAP ada di `approveHeader` (`gagalSetujui`
+          menolak barang tanpa tanggal perolehan sebelum Setujui), jadi
+          operator tetap tak bisa lolos menyimpan tanpa mengisinya — yang
+          hilang cuma peringatan dini di tabel, bukan penjaganya. */}
+      <KolomBarangCells barang={barangDariDraft(item)} />
       <td className="table-td text-center">
         <FotoSel paths={item.foto} thumbUrl={fotoUrl} judul={item.fields?.nama_barang || item.uraianBarang} />
       </td>
-      <td className="table-td text-center text-xs text-gray-600">{item.satuan || '-'}</td>
-      <td className="table-td text-right text-xs text-gray-600">{formatRupiah2(toNum(item.harga))}</td>
-      <td className="table-td text-xs text-gray-500 truncate max-w-[160px]" title={item.fields?.keterangan || ''}>{item.fields?.keterangan || '-'}</td>
+      <td className="table-td text-xs text-gray-500 truncate" title={item.fields?.keterangan || ''}>{item.fields?.keterangan || '-'}</td>
     </tr>
   )
 }
@@ -1042,21 +1063,18 @@ function ApprovedCard({ j, isAdmin, busy, pihakLabel, onUnapprove }: {
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full">
+        {/* `table-fixed` + colgroup TETAP — lihat catatan panjang di
+            Pengadaan.tsx (`PendingCard`/`ApprovedCard`). */}
+        <table className="w-full table-fixed">
+          <ColgroupBarang sesudah={[{ key: 'foto', berat: 5 }, { key: 'komptabel', berat: 6 }, { key: 'keterangan', berat: 10 }]} />
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              <th className="table-th">Uraian Barang / NIBAR</th>
-              <th className="table-th">Spesifikasi Nama Barang</th>
               {/* Kembar dgn kartu draft di atas — ubah satu, samakan yang lain.
                   Sumbernya `l.fields`, yang sudah memuat SELURUH ASET_FIELD_COLS
                   hasil join ke `aset` (lihat loader), jadi tak ada query baru. */}
-              <th className="table-th">Merk/Tipe</th>
-              <th className="table-th">Spesifikasi Lainnya</th>
-              <th className="table-th w-24 text-center">Tgl Perolehan</th>
-              <th className="table-th w-12 text-center">Foto</th>
-              <th className="table-th w-16 text-center">Satuan</th>
-              <th className="table-th w-20 text-center">Komptabel</th>
-              <th className="table-th w-28 text-right">Nilai</th>
+              <KolomBarangHead />
+              <th className="table-th text-center">Foto</th>
+              <th className="table-th text-center">Komptabel</th>
               <th className="table-th">Keterangan</th>
             </tr>
           </thead>
@@ -1065,25 +1083,12 @@ function ApprovedCard({ j, isAdmin, busy, pihakLabel, onUnapprove }: {
               const fotoUrl = l.foto_paths[0] ? fotoUrls[l.foto_paths[0]] : undefined
               return (
                 <tr key={l.aset_id}>
-                  <td className="table-td">
-                    <p className="font-medium text-gray-800 text-xs truncate max-w-[220px]">{l.uraian_barang || '-'}</p>
-                    <p className="text-[11px] text-gray-400">{l.kode} · {l.nibar || '(NIBAR belum diisi)'}</p>
-                  </td>
-                  <td className="table-td">
-                    <p className="text-xs text-gray-600 truncate max-w-[200px]" title={l.nama_barang || ''}>
-                      {l.nama_barang || <span className="text-amber-600">⚠ Belum diisi</span>}
-                    </p>
-                  </td>
-                  <td className="table-td text-xs text-gray-600 truncate max-w-[120px]" title={l.fields?.merek_tipe || ''}>{l.fields?.merek_tipe || '-'}</td>
-                  <td className="table-td text-xs text-gray-600 truncate max-w-[200px]" title={l.fields?.spesifikasi_lainnya || ''}>{l.fields?.spesifikasi_lainnya || '-'}</td>
-                  <td className="table-td text-center text-xs">{l.tanggal}</td>
+                  <KolomBarangCells barang={barangDariLine(l)} />
                   <td className="table-td text-center">
                     <FotoSel paths={l.foto_paths} thumbUrl={fotoUrl} judul={l.nama_barang || l.uraian_barang} />
                   </td>
-                  <td className="table-td text-center text-xs">{l.satuan || '-'}</td>
                   <td className="table-td text-center text-xs capitalize">{l.intra_ekstra || '-'}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
-                  <td className="table-td text-xs text-gray-500 truncate max-w-[160px]" title={l.fields?.keterangan || ''}>{l.fields?.keterangan || '-'}</td>
+                  <td className="table-td text-xs text-gray-500 truncate" title={l.fields?.keterangan || ''}>{l.fields?.keterangan || '-'}</td>
                 </tr>
               )
             })}

@@ -22,7 +22,7 @@ import { useEffect, useState, useCallback } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { usePemilihBarangLengkap, type BarangLengkap } from './usePemilihBarangLengkap'
+import { usePemilihBarangLengkap, barangDariPilihan, type BarangLengkap } from './usePemilihBarangLengkap'
 import { SUBJENIS_OPT, JENIS_PENGHAPUSAN, type JenisHapus } from '@/lib/penghapusan'
 import { catatTransaksi } from '@/lib/transaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
@@ -35,6 +35,8 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
+import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
+import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
 
 // ⚠️ `SUBJENIS_OPT` (cara pemindahtanganan) & daftar jenis ledgernya PINDAH ke
 // lib/penghapusan.ts (2026-09-07) begitu lembar Permendagri IV.K.1.2 ikut
@@ -71,9 +73,13 @@ type Barang = BarangLengkap
 
 // Snapshot barang di draft pengalihan (payload.draft_items) — dipakai tampilan;
 // nilai otoritatif dibaca ulang dari aset oleh RPC saat SKPD tujuan menerima.
+// Kolom standar tambahan (2026-09-23) opsional: draft LAMA tak menyimpannya.
 type DraftItem = {
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
   merek_tipe: string | null; jumlah: number; satuan: string | null; nilai: number
+  uraian_barang?: string | null; spesifikasi_lainnya?: string | null
+  no_polisi?: string | null; no_rangka?: string | null; no_mesin?: string | null
+  luas?: number | string | null; alamat_detail?: string | null; tgl_perolehan?: string | null
 }
 type HeaderPayload = { dokumen_paths?: string[]; draft_items?: DraftItem[] }
 
@@ -103,17 +109,31 @@ type JurnalLine = {
   jumlah: number
   satuan: string | null
   nilai: number
-  // Kolom tampilan tambahan (permintaan user 2026-09-09). Opsional: baris draft
-  // pengalihan yang masih pending diambil dari `payload.draft_items` yang tak
-  // memuat kolom-kolom ini → tampil '-'.
+  // Kolom tampilan tambahan (permintaan user 2026-09-09, diperluas 2026-09-23).
+  // Opsional: baris draft pengalihan yang masih pending diambil dari
+  // `payload.draft_items` yang tak memuat kolom-kolom ini → tampil '-'.
   uraian_barang?: string | null
   spesifikasi_lainnya?: string | null
   no_polisi?: string | null
   no_rangka?: string | null
   no_mesin?: string | null
+  luas?: number | string | null
+  alamat_detail?: string | null
   tgl_perolehan?: string | null
 }
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
+
+// Standar kolom barang (lib/kolomBarangTransaksi.ts, keputusan user 2026-09-23).
+function barangDariLine(l: JurnalLine, uraian: string | null): BarangTransaksi {
+  return {
+    kode: l.kode, uraianBarang: uraian || l.uraian_barang || null, nibar: l.nibar,
+    namaBarang: l.nama_barang, merekTipe: l.merek_tipe,
+    spesifikasiLainnya: l.spesifikasi_lainnya ?? null,
+    noPolisi: l.no_polisi ?? null, noMesin: l.no_mesin ?? null, noRangka: l.no_rangka ?? null,
+    luas: l.luas ?? null, alamatDetail: l.alamat_detail ?? null,
+    tglPerolehan: l.tgl_perolehan ?? null, jumlah: l.jumlah, satuan: l.satuan, nilai: l.nilai,
+  }
+}
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,sub_jenis,keterangan,kategori,approval_status,skpd_tujuan,rejected_reason,payload'
 
@@ -205,7 +225,7 @@ export default function Penghapusan() {
     if (ledgerIds.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
         .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,uraian_barang,kode,merek_tipe,' +
-          'spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,tgl_perolehan,jumlah,satuan,status)')
+          'spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,luas,alamat_detail,tgl_perolehan,jumlah,satuan,status)')
         .in('jenis', [...PENGHAPUSAN_JENIS, 'pengalihan_status'] as never)
         .in('header_id', ledgerIds)
         .order('id', { ascending: false })
@@ -259,7 +279,7 @@ export default function Penghapusan() {
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
           uraian_barang: r.aset.uraian_barang, spesifikasi_lainnya: r.aset.spesifikasi_lainnya,
           no_polisi: r.aset.no_polisi, no_rangka: r.aset.no_rangka, no_mesin: r.aset.no_mesin,
-          tgl_perolehan: r.aset.tgl_perolehan,
+          luas: r.aset.luas, alamat_detail: r.aset.alamat_detail, tgl_perolehan: r.aset.tgl_perolehan,
         })
         j.total += r.nilai
       }
@@ -661,24 +681,19 @@ export default function Penghapusan() {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full">
+                {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                    Penggunaan/Pengeluaran Internal (lib/kolomBarangTransaksi.ts). */}
+                <table className="w-full table-fixed">
+                  <ColgroupBarang sebelum={[{ key: 'aksi', berat: 3 }]} />
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
-                      <th className="table-th w-10 text-center">Aksi</th>
-                      <th className="table-th">Kode Barang / Uraian Barang</th>
-                      <th className="table-th">Spesifikasi Nama Barang / NIBAR</th>
-                      <th className="table-th">Merk / Spesifikasi Lainnya</th>
-                      <th className="table-th">No. Polisi</th>
-                      <th className="table-th">No. Rangka</th>
-                      <th className="table-th">No. Mesin</th>
-                      <th className="table-th">Tgl Perolehan</th>
-                      <th className="table-th text-center">Jumlah</th>
-                      <th className="table-th text-right">Nilai</th>
+                      <th className="table-th text-center">Aksi</th>
+                      <KolomBarangHead />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {j.lines.length === 0 ? (
-                      <tr><td colSpan={10} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada barang — klik + untuk menambah.</td></tr>
+                      <tr><td colSpan={13} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada barang — klik + untuk menambah.</td></tr>
                     ) : j.lines.map(l => (
                       <tr key={l.aset_id}>
                         <td className="table-td text-center">
@@ -690,24 +705,7 @@ export default function Penghapusan() {
                             >🗑</button>
                           ) : <span className="text-gray-300 text-xs">—</span>}
                         </td>
-                        <td className="table-td">
-                          <p className="font-medium text-gray-800 text-xs">{l.kode || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{uraianMap[l.kode] || l.uraian_barang || '-'}</p>
-                        </td>
-                        <td className="table-td">
-                          <p className="text-gray-700 text-xs">{l.nama_barang || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'}</p>
-                        </td>
-                        <td className="table-td">
-                          <p className="text-gray-700 text-xs">{l.merek_tipe || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{l.spesifikasi_lainnya || '-'}</p>
-                        </td>
-                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_polisi || '-'}</td>
-                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_rangka || '-'}</td>
-                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.no_mesin || '-'}</td>
-                        <td className="table-td text-xs text-gray-600 whitespace-nowrap">{l.tgl_perolehan || '-'}</td>
-                        <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
-                        <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
+                        <KolomBarangCells barang={barangDariLine(l, uraianMap[l.kode] || null)} />
                       </tr>
                     ))}
                   </tbody>
@@ -868,6 +866,11 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const draftDari = (b: Barang): DraftItem => ({
     aset_id: b.id, nibar: b.nibar, kode: b.kode, nama_barang: b.nama_barang,
     merek_tipe: b.merek_tipe, jumlah: b.jumlah, satuan: b.satuan, nilai: b.nilai_perolehan,
+    // Kolom standar (2026-09-23) — dibawa dari picker supaya draft yang baru
+    // dibuat SUDAH lengkap di kartu, bukan cuma sesudah disetujui.
+    uraian_barang: b.uraian_barang, spesifikasi_lainnya: b.spesifikasi_lainnya,
+    no_polisi: b.no_polisi, no_rangka: b.no_rangka, no_mesin: b.no_mesin,
+    luas: b.luas, alamat_detail: b.alamat_detail, tgl_perolehan: b.tgl_perolehan,
   })
 
   // Insert baris penghapusan untuk header tertentu.
@@ -1064,50 +1067,27 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         ) : (
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-              <table className="w-full">
+              {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                  kartu jurnal di atas & Pengeluaran Internal (lib/kolomBarangTransaksi.ts). */}
+              <table className="w-full table-fixed">
+                <ColgroupBarang sebelum={[{ key: 'chk', berat: 3 }]} />
                 <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
                   <tr>
                     <th className="table-th w-10 text-center">
                       <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                     </th>
-                    <th className="table-th">Kode Barang / Uraian</th>
-                    <th className="table-th">Spesifikasi Nama · NIBAR</th>
-                    <th className="table-th">Merk / Tipe</th>
-                    <th className="table-th">Spesifikasi Lainnya</th>
-                    <th className="table-th">No. Polisi</th>
-                    <th className="table-th">No. Rangka</th>
-                    <th className="table-th">No. Mesin</th>
-                    <th className="table-th text-center">Jumlah</th>
-                    <th className="table-th">Tgl Perolehan</th>
-                    <th className="table-th text-center">Tahun Pengadaan</th>
-                    <th className="table-th text-right">Nilai Perolehan</th>
+                    <KolomBarangHead />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {rows.length === 0 ? (
-                    <tr><td colSpan={12} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
+                    <tr><td colSpan={13} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
                   ) : rows.map(b => (
                     <tr key={b.id} className={sel[b.id] ? 'bg-teal/5' : ''}>
                       <td className="table-td text-center">
                         <input type="checkbox" checked={!!sel[b.id]} onChange={() => toggle(b)} />
                       </td>
-                      <td className="table-td">
-                        <p className="font-medium text-gray-800 text-xs">{b.kode || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{uraianMapPicker[b.kode] || b.uraian_barang || '-'}</p>
-                      </td>
-                      <td className="table-td">
-                        <p className="text-gray-700 text-xs">{b.nama_barang || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'}</p>
-                      </td>
-                      <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
-                      <td className="table-td text-xs text-gray-600">{b.spesifikasi_lainnya || '-'}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_polisi || '-'}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_rangka || '-'}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_mesin || '-'}</td>
-                      <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.tgl_perolehan || '-'}</td>
-                      <td className="table-td text-center text-xs">{b.tahun_pengadaan ?? '-'}</td>
-                      <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
+                      <KolomBarangCells barang={barangDariPilihan(b, uraianMapPicker[b.kode] || null)} />
                     </tr>
                   ))}
                 </tbody>

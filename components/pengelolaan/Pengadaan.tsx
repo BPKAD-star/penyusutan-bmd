@@ -29,6 +29,8 @@ import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import { kekuranganBarangPengadaan } from '@/lib/draftPengadaan'
 import { generateNibars } from '@/lib/nibar'
 import { useFotoThumbs, FotoSel } from '@/shared/ui/FotoBarang'
+import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
+import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
 import NominalInput from '@/shared/ui/NominalInput'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
@@ -106,6 +108,35 @@ const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g
 const toInt = (s: string) => { const n = parseInt(String(s).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
 export const draftTotal = (items: DraftItem[]) => items.reduce((s, i) => s + toNum(i.harga), 0)
+
+// ── Standar kolom barang (lib/kolomBarangTransaksi.ts, keputusan user
+// 2026-09-23) — dua mapper, satu untuk draft (belum ber-NIBAR/tanggal per
+// item, Pengadaan sengaja SATU tanggal BAST utk seluruh kontrak) & satu utk
+// baris yang SUDAH disetujui (`JurnalLine`, sudah ber-NIBAR & tanggal
+// efektifnya sendiri). `tglBast` dioper terpisah krn draft belum tentu sudah
+// diisi — ditampilkan sbg pratinjau tanggal yang AKAN berlaku sesudah Setujui.
+function barangDariDraft(it: DraftItem, tglBast: string | null): BarangTransaksi {
+  const f = it.fields || {}
+  return {
+    kode: it.kode, uraianBarang: it.uraianBarang, nibar: null,
+    namaBarang: f.nama_barang || null, merekTipe: f.merek_tipe || null,
+    spesifikasiLainnya: f.spesifikasi_lainnya || null,
+    noPolisi: f.no_polisi || null, noMesin: f.no_mesin || null, noRangka: f.no_rangka || null,
+    luas: f.luas || null, alamatDetail: f.alamat_detail || null,
+    tglPerolehan: tglBast, jumlah: 1, satuan: it.satuan || null, nilai: toNum(it.harga),
+  }
+}
+function barangDariLine(l: JurnalLine): BarangTransaksi {
+  const f = l.fields || {}
+  return {
+    kode: l.kode, uraianBarang: l.uraian_barang, nibar: l.nibar,
+    namaBarang: l.nama_barang, merekTipe: f.merek_tipe || null,
+    spesifikasiLainnya: f.spesifikasi_lainnya || null,
+    noPolisi: f.no_polisi || null, noMesin: f.no_mesin || null, noRangka: f.no_rangka || null,
+    luas: f.luas || null, alamatDetail: f.alamat_detail || null,
+    tglPerolehan: l.tanggal, jumlah: 1, satuan: l.satuan, nilai: l.nilai,
+  }
+}
 
 // Baris label:value ringkas utk header kartu kontrak (Pengadaan & konstruksi).
 function Baris({ label, value }: { label: string; value?: string | null }) {
@@ -804,6 +835,12 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
   onApprove: () => void
 }) {
   const items = h.payload.draft_items || []
+  // Pratinjau "Tanggal Perolehan" — Pengadaan memakai SATU tanggal (BAST)
+  // utk seluruh kontrak, ditetapkan saat approve; ditampilkan di sini SUPAYA
+  // kolom kanonik "Tgl Perolehan" (lib/kolomBarangTransaksi.ts) tak kosong
+  // begitu saja saat masih draft — nilainya sudah pasti (BAST sudah diisi
+  // sejak kontrak dibuat), cuma belum resmi tercatat.
+  const tglBastPratinjau = h.payload?.tgl_bast || h.tanggal
   const [showTambah, setShowTambah] = useState(items.length === 0)
   const [showPreview, setShowPreview] = useState(false)
   const fotoUrls = useFotoThumbs(items.map(i => i.foto[0]).filter(Boolean))
@@ -865,10 +902,22 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
             </div>
           )}
           <div className="overflow-x-auto">
-            <table className="w-full">
+            {/* `table-fixed` + colgroup TETAP (lib/kolomBarangTransaksi.ts,
+                keputusan user 2026-09-23) — tanpa ini lebar tiap kolom
+                mengikuti KONTEN kartu itu sendiri, jadi dua kontrak yang
+                ditumpuk di halaman yang sama bisa punya batas kolom berbeda
+                persis karena isinya beda panjang ("tidak rata dari atas ke
+                bawah"). Kolom ekstra Pengadaan: checkbox & Kode Rekening di
+                depan blok kanonik, Foto/Komptabel/Keterangan di belakangnya —
+                urutan ini SAMA dgn kartu yang sudah disetujui di bawah, supaya
+                draft & hasil approve-nya enak dicocokkan berdampingan. */}
+            <table className="w-full table-fixed">
+              <ColgroupBarang
+                sebelum={[{ key: 'chk', berat: 3 }, { key: 'rekening', berat: 9 }]}
+                sesudah={[{ key: 'foto', berat: 5 }, { key: 'komptabel', berat: 6 }, { key: 'keterangan', berat: 10 }]} />
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <th className="table-th w-8 text-center">
+                  <th className="table-th text-center">
                     <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll}
                       title={sel.q ? 'Centang semua barang pada hasil pencarian' : 'Centang semua barang'} />
                   </th>
@@ -880,16 +929,9 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                       dialog hapus. Ongkos yang diterima: hapus satu barang jadi
                       dua klik (centang → Hapus). */}
                   <th className="table-th">Kode Rekening</th>
-                  <th className="table-th">Uraian Barang</th>
-                  <th className="table-th">Spesifikasi Nama Barang</th>
-                  <th className="table-th">Merk/Tipe</th>
-                  <th className="table-th w-12 text-center">Foto</th>
-                  <th className="table-th w-16 text-center">Satuan</th>
-                  {/* Urutannya SAMA dgn kartu yang sudah disetujui (Satuan →
-                      Komptabel → Nilai) — dua kartu itu dibaca berdampingan
-                      saat operator mencocokkan draft dgn hasil approve. */}
-                  <th className="table-th w-20 text-center">Komptabel</th>
-                  <th className="table-th w-28 text-right">Harga/item</th>
+                  <KolomBarangHead />
+                  <th className="table-th text-center">Foto</th>
+                  <th className="table-th text-center">Komptabel</th>
                   <th className="table-th">Keterangan</th>
                 </tr>
               </thead>
@@ -897,11 +939,12 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
                 {sel.terlihat.map(it => (
                   <DraftRow key={it.key} item={it} checked={sel.checked.has(it.key)}
                     onToggle={() => sel.toggleOne(it.key)}
+                    tglBast={tglBastPratinjau}
                     fotoUrl={it.foto[0] ? fotoUrls[it.foto[0]] : undefined}
                     komptabel={klas.komptabel(it.kode, toNum(it.harga))} />
                 ))}
                 {sel.terlihat.length === 0 && (
-                  <tr><td colSpan={10} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
+                  <tr><td colSpan={17} className="table-td text-center text-xs text-gray-400 py-6">Tak ada barang yang cocok dengan pencarian.</td></tr>
                 )}
               </tbody>
             </table>
@@ -976,8 +1019,9 @@ function PendingCard({ h, isAdmin, busy, golonganLabels, onEditHeader, onHapusKo
 // Satu unit draft — nama/satuan/harga READ-ONLY (salah → hapus & tambah baru,
 // biar disiplin). Spesifikasi diedit lewat checklist+popup di kartu (bukan di
 // sini) — baris ini cuma preview ringkas satu baris + thumbnail foto kecil.
-function DraftRow({ item, checked, onToggle, fotoUrl, komptabel }: {
+function DraftRow({ item, checked, onToggle, tglBast, fotoUrl, komptabel }: {
   item: DraftItem; checked: boolean; onToggle: () => void
+  tglBast: string | null
   fotoUrl?: string
   /** null = batas kapitalisasi belum terbaca — JANGAN ditebak 'intra'. */
   komptabel: 'intra' | 'ekstra' | null
@@ -988,25 +1032,14 @@ function DraftRow({ item, checked, onToggle, fotoUrl, komptabel }: {
       <td className="table-td">
         <p className="text-xs text-gray-700">{item.rekening || <span className="text-gray-300">-</span>}</p>
       </td>
-      <td className="table-td">
-        <p className="text-xs text-gray-800 font-medium truncate max-w-[220px]">{item.uraianBarang || '-'}</p>
-        <p className="text-[11px] text-gray-400">{item.kode}</p>
-      </td>
-      <td className="table-td">
-        <p className="text-xs text-gray-600 truncate max-w-[200px]" title={item.fields?.nama_barang || ''}>
-          {item.fields?.nama_barang || <span className="text-amber-600">⚠ Belum diisi</span>}
-        </p>
-      </td>
-      <td className="table-td text-xs text-gray-600 truncate max-w-[120px]">{item.fields?.merek_tipe || '-'}</td>
+      <KolomBarangCells barang={barangDariDraft(item, tglBast)} />
       <td className="table-td text-center">
         <FotoSel paths={item.foto} thumbUrl={fotoUrl} judul={item.fields?.nama_barang || item.uraianBarang} />
       </td>
-      <td className="table-td text-center text-xs text-gray-600">{item.satuan || '-'}</td>
       <td className="table-td text-center text-xs text-gray-600 capitalize">
         {komptabel ?? <span className="text-gray-300" title="Batas kapitalisasi belum terbaca">…</span>}
       </td>
-      <td className="table-td text-right text-xs text-gray-600">{formatRupiah2(toNum(item.harga))}</td>
-      <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{item.fields?.keterangan || '-'}</td>
+      <td className="table-td text-xs text-gray-500 truncate">{item.fields?.keterangan || '-'}</td>
     </tr>
   )
 }
@@ -1234,16 +1267,20 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
       </div>
       {showSurat && <SuratPernyataanModal header={j} onClose={() => setShowSurat(false)} />}
       <div className="overflow-x-auto">
-        <table className="w-full">
+        {/* `table-fixed` + colgroup TETAP — lihat catatan panjang di kartu
+            draft (`PendingCard`) di atas; kolom ekstra & urutannya SAMA PERSIS
+            di sini (Kode Rekening di depan, Foto/Komptabel/Keterangan di
+            belakang) supaya kartu draft & hasil approve enak dicocokkan. */}
+        <table className="w-full table-fixed">
+          <ColgroupBarang
+            sebelum={[{ key: 'rekening', berat: 9 }]}
+            sesudah={[{ key: 'foto', berat: 5 }, { key: 'komptabel', berat: 6 }, { key: 'keterangan', berat: 10 }]} />
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              <th className="table-th">Uraian Barang / NIBAR</th>
-              <th className="table-th">Spesifikasi Nama Barang</th>
-              <th className="table-th">Merk/Tipe</th>
-              <th className="table-th w-12 text-center">Foto</th>
-              <th className="table-th w-16 text-center">Satuan</th>
-              <th className="table-th w-20 text-center">Komptabel</th>
-              <th className="table-th w-28 text-right">Nilai</th>
+              <th className="table-th">Kode Rekening</th>
+              <KolomBarangHead />
+              <th className="table-th text-center">Foto</th>
+              <th className="table-th text-center">Komptabel</th>
               <th className="table-th">Keterangan</th>
             </tr>
           </thead>
@@ -1253,23 +1290,13 @@ function ApprovedCard({ j, isAdmin, busy, onUnapprove }: {
               const fotoUrl = l.foto_paths[0] ? fotoUrls[l.foto_paths[0]] : undefined
               return (
                 <tr key={l.aset_id}>
-                  <td className="table-td">
-                    <p className="font-medium text-gray-800 text-xs truncate max-w-[220px]">{l.uraian_barang || '-'}</p>
-                    <p className="text-[11px] text-gray-400">{l.kode} · {l.nibar || '(NIBAR belum diisi)'}{l.rekening ? ` · Rek ${l.rekening}` : ''}</p>
-                  </td>
-                  <td className="table-td">
-                    <p className="text-xs text-gray-600 truncate max-w-[200px]" title={l.nama_barang || ''}>
-                      {l.nama_barang || <span className="text-amber-600">⚠ Belum diisi</span>}
-                    </p>
-                  </td>
-                  <td className="table-td text-xs text-gray-600 truncate max-w-[120px]">{f.merek_tipe || '-'}</td>
+                  <td className="table-td text-xs text-gray-700">{l.rekening || <span className="text-gray-300">-</span>}</td>
+                  <KolomBarangCells barang={barangDariLine(l)} />
                   <td className="table-td text-center">
                     <FotoSel paths={l.foto_paths} thumbUrl={fotoUrl} judul={l.nama_barang || l.uraian_barang} />
                   </td>
-                  <td className="table-td text-center text-xs">{l.satuan || '-'}</td>
                   <td className="table-td text-center text-xs capitalize">{l.intra_ekstra || '-'}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
-                  <td className="table-td text-xs text-gray-500 truncate max-w-[160px]">{f.keterangan || '-'}</td>
+                  <td className="table-td text-xs text-gray-500 truncate">{f.keterangan || '-'}</td>
                 </tr>
               )
             })}

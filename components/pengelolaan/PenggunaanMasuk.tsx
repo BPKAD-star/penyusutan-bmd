@@ -18,6 +18,8 @@ import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { fetchBarisTerkunci, type Penghalang } from '@/lib/pengalihanTerkunci'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
+import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
 
 type DraftItem = {
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
@@ -51,12 +53,32 @@ type Line = DraftItem & {
   dikembalikan?: boolean
   uraian_barang?: string | null
   spesifikasi_lainnya?: string | null
+  no_polisi?: string | null
+  no_mesin?: string | null
+  no_rangka?: string | null
+  luas?: number | string | null
+  alamat_detail?: string | null
   tgl_perolehan?: string | null
-  tahun_pengadaan?: number | null
 }
 type Jurnal = Header & { lines: Line[]; total: number }
 
 const namaFile = (path: string) => path.split('/').pop() || path
+
+// Standar kolom barang (lib/kolomBarangTransaksi.ts, keputusan user
+// 2026-09-23). Baris draft (pending/ditolak) tak punya kolom² ini di
+// `payload.draft_items` — jatuh ke `null`, tampil '-' (lihat komentar di
+// atas `type Line`). `uraianMap` (kodefikasi TERKINI) menang atas
+// `uraian_barang` tersimpan yang bisa basi sesudah reklas.
+function barangDariLine(l: Line, uraian: string | null): BarangTransaksi {
+  return {
+    kode: l.kode, uraianBarang: uraian || l.uraian_barang || null, nibar: l.nibar,
+    namaBarang: l.nama_barang, merekTipe: l.merek_tipe,
+    spesifikasiLainnya: l.spesifikasi_lainnya ?? null,
+    noPolisi: l.no_polisi ?? null, noMesin: l.no_mesin ?? null, noRangka: l.no_rangka ?? null,
+    luas: l.luas ?? null, alamatDetail: l.alamat_detail ?? null,
+    tglPerolehan: l.tgl_perolehan ?? null, jumlah: l.jumlah, satuan: l.satuan, nilai: l.nilai,
+  }
+}
 
 export default function PenggunaanMasuk() {
   const supabase = createClient()
@@ -112,7 +134,7 @@ export default function PenggunaanMasuk() {
     if (approvedIds.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
         .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,uraian_barang,kode,merek_tipe,' +
-          'spesifikasi_lainnya,tgl_perolehan,tahun_pengadaan,jumlah,satuan)')
+          'spesifikasi_lainnya,no_polisi,no_mesin,no_rangka,luas,alamat_detail,tgl_perolehan,jumlah,satuan)')
         .eq('jenis', 'pengalihan_status')
         .in('header_id', approvedIds)
         .order('id', { ascending: false })
@@ -121,7 +143,9 @@ export default function PenggunaanMasuk() {
         aset: {
           id: string; nibar: string | null; nama_barang: string | null; uraian_barang: string | null
           kode: string; merek_tipe: string | null; spesifikasi_lainnya: string | null
-          tgl_perolehan: string | null; tahun_pengadaan: number | null; jumlah: number; satuan: string | null
+          no_polisi: string | null; no_mesin: string | null; no_rangka: string | null
+          luas: number | string | null; alamat_detail: string | null
+          tgl_perolehan: string | null; jumlah: number; satuan: string | null
         } | null
       }[]
       // Baris ledger yang DIBATALKAN — per ID BARIS, bukan per (kartu, barang).
@@ -157,7 +181,8 @@ export default function PenggunaanMasuk() {
           aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
           uraian_barang: r.aset.uraian_barang, spesifikasi_lainnya: r.aset.spesifikasi_lainnya,
-          tgl_perolehan: r.aset.tgl_perolehan, tahun_pengadaan: r.aset.tahun_pengadaan,
+          no_polisi: r.aset.no_polisi, no_mesin: r.aset.no_mesin, no_rangka: r.aset.no_rangka,
+          luas: r.aset.luas, alamat_detail: r.aset.alamat_detail, tgl_perolehan: r.aset.tgl_perolehan,
           dikembalikan,
         })
         // Barang yang sudah pulang TIDAK ikut total kartu — totalnya menyatakan
@@ -503,45 +528,34 @@ export default function PenggunaanMasuk() {
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                      Pengadaan/PerolehanManual (lib/kolomBarangTransaksi.ts). Kolom
+                      Status hanya utk kartu disetujui (draft/ditolak tak pernah
+                      `dikembalikan`); Aksi ikut disetujui. */}
+                  <table className="w-full table-fixed">
+                    <ColgroupBarang sesudah={disetujui
+                      ? [{ key: 'status', berat: 6 }, { key: 'aksi', berat: 8 }]
+                      : []} />
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        <th className="table-th">Kode Barang / Uraian Barang</th>
-                        <th className="table-th">Nama Barang / NIBAR</th>
-                        <th className="table-th">Merek / Tipe</th>
-                        <th className="table-th">Spesifikasi Lainnya</th>
-                        <th className="table-th">Tgl Perolehan / Tahun Pengadaan</th>
-                        <th className="table-th text-center">Jumlah</th>
-                        <th className="table-th">Satuan</th>
-                        <th className="table-th text-right">Nilai</th>
-                        {disetujui && <th className="table-th text-center w-28">Aksi</th>}
+                        <KolomBarangHead />
+                        {disetujui && <th className="table-th text-center">Status</th>}
+                        {disetujui && <th className="table-th text-center">Aksi</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {j.lines.map(l => (
                         <tr key={l.aset_id}>
-                          <td className="table-td">
-                            <p className="font-medium text-gray-800 text-xs">{l.kode || '-'}</p>
-                            <p className="text-gray-400 text-xs mt-0.5">{uraianMap[l.kode] || l.uraian_barang || '-'}</p>
-                          </td>
-                          <td className="table-td">
-                            <p className="text-gray-700 text-xs">{l.nama_barang || '-'}</p>
-                            <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'}</p>
-                            {l.dikembalikan && (
-                              <span className="inline-block mt-1 px-2 py-0.5 rounded text-[11px] bg-gray-100 text-gray-500">
-                                Dikembalikan
-                              </span>
-                            )}
-                          </td>
-                          <td className="table-td text-xs text-gray-600">{l.merek_tipe || '-'}</td>
-                          <td className="table-td text-xs text-gray-600">{l.spesifikasi_lainnya || '-'}</td>
-                          <td className="table-td text-xs text-gray-600 whitespace-nowrap">
-                            <p>{l.tgl_perolehan || '-'}</p>
-                            <p className="text-gray-400 mt-0.5">{l.tahun_pengadaan ?? '-'}</p>
-                          </td>
-                          <td className="table-td text-center text-xs">{l.jumlah}</td>
-                          <td className="table-td text-xs text-gray-600">{l.satuan || '-'}</td>
-                          <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
+                          <KolomBarangCells barang={barangDariLine(l, uraianMap[l.kode] || null)} />
+                          {disetujui && (
+                            <td className="table-td text-center">
+                              {l.dikembalikan && (
+                                <span className="inline-block px-2 py-0.5 rounded text-[11px] bg-gray-100 text-gray-500">
+                                  Dikembalikan
+                                </span>
+                              )}
+                            </td>
+                          )}
                           {disetujui && (
                             <td className="table-td text-center">
                               {/* Barang yang terlanjur dipulangkan lewat aksi lama tetap

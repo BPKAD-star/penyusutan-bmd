@@ -56,12 +56,14 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSeleksiBarang, type SeleksiBarang } from '@/shared/ui/useSeleksiBarang'
+import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
 
 /** Kolom yang dibutuhkan tabel pemilih — nomor kendaraan ikut karena kotak
- *  carinya menyisir ketiganya. */
+ *  carinya menyisir ketiganya. `luas`/`alamat_detail` ditambahkan 2026-09-23
+ *  supaya tabel pemilih ikut standar kolom barang (lib/kolomBarangTransaksi.ts). */
 const BARANG_COLS =
   'id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,' +
-  'no_polisi,no_rangka,no_mesin,tgl_perolehan,tahun_pengadaan,jumlah,satuan,nilai_perolehan,skpd_id'
+  'no_polisi,no_rangka,no_mesin,luas,alamat_detail,tgl_perolehan,tahun_pengadaan,jumlah,satuan,nilai_perolehan,skpd_id'
 
 export type BarangLengkap = {
   id: string
@@ -74,12 +76,29 @@ export type BarangLengkap = {
   no_polisi: string | null
   no_rangka: string | null
   no_mesin: string | null
+  luas: number | string | null
+  alamat_detail: string | null
   tgl_perolehan: string | null
   tahun_pengadaan: number | null
   jumlah: number
   satuan: string | null
   nilai_perolehan: number
   skpd_id: number | null
+}
+
+// Standar kolom barang (lib/kolomBarangTransaksi.ts, keputusan user 2026-09-23)
+// — SATU mapper dipakai kedua pemakai (Penghapusan.tsx & PengeluaranInternal.tsx)
+// supaya tabel pemilih di dua menu itu benar² identik, bukan disalin dua kali.
+// `uraian` dioper terpisah (bukan dibaca dari `b.uraian_barang`) krn pemanggil
+// sudah py lookup kodefikasi TERKINI (`uraianMap`) yang wajib menang.
+export function barangDariPilihan(b: BarangLengkap, uraian: string | null): BarangTransaksi {
+  return {
+    kode: b.kode, uraianBarang: uraian || b.uraian_barang, nibar: b.nibar,
+    namaBarang: b.nama_barang, merekTipe: b.merek_tipe, spesifikasiLainnya: b.spesifikasi_lainnya,
+    noPolisi: b.no_polisi, noMesin: b.no_mesin, noRangka: b.no_rangka,
+    luas: b.luas, alamatDetail: b.alamat_detail, tglPerolehan: b.tgl_perolehan,
+    jumlah: b.jumlah, satuan: b.satuan, nilai: b.nilai_perolehan,
+  }
 }
 
 export type PemilihBarangLengkap = SeleksiBarang<BarangLengkap> & {

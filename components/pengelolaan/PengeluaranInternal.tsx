@@ -20,7 +20,9 @@ import { useEffect, useState, useCallback } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { usePemilihBarangLengkap, type BarangLengkap } from './usePemilihBarangLengkap'
+import { usePemilihBarangLengkap, barangDariPilihan, type BarangLengkap } from './usePemilihBarangLengkap'
+import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
+import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG } from '@/lib/bmd'
 import { formatRupiah2 } from '@/lib/export'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
@@ -39,6 +41,11 @@ type Barang = BarangLengkap
 type DraftItem = {
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
   merek_tipe: string | null; jumlah: number; satuan: string | null; nilai: number
+  // Kolom standar (lib/kolomBarangTransaksi.ts, 2026-09-23) — opsional krn
+  // draft LAMA (sebelum tanggal ini) tak menyimpannya, jatuh ke '-' di tabel.
+  uraian_barang?: string | null; spesifikasi_lainnya?: string | null
+  no_polisi?: string | null; no_mesin?: string | null; no_rangka?: string | null
+  luas?: number | string | null; alamat_detail?: string | null; tgl_perolehan?: string | null
 }
 type HeaderPayload = { dokumen_paths?: string[]; draft_items?: DraftItem[] }
 type Header = {
@@ -48,6 +55,18 @@ type Header = {
 }
 type JurnalLine = DraftItem
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
+
+// Standar kolom barang (lib/kolomBarangTransaksi.ts, keputusan user 2026-09-23).
+function barangDariLine(l: JurnalLine, uraian: string | null): BarangTransaksi {
+  return {
+    kode: l.kode, uraianBarang: uraian || l.uraian_barang || null, nibar: l.nibar,
+    namaBarang: l.nama_barang, merekTipe: l.merek_tipe,
+    spesifikasiLainnya: l.spesifikasi_lainnya ?? null,
+    noPolisi: l.no_polisi ?? null, noMesin: l.no_mesin ?? null, noRangka: l.no_rangka ?? null,
+    luas: l.luas ?? null, alamatDetail: l.alamat_detail ?? null,
+    tglPerolehan: l.tgl_perolehan ?? null, jumlah: l.jumlah, satuan: l.satuan, nilai: l.nilai,
+  }
+}
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,keterangan,skpd_tujuan,approval_status,rejected_reason,payload'
 // Sebutan resmi per level pohon SKPD (CLAUDE.md: level 1 = 60 pengguna barang,
@@ -78,6 +97,11 @@ export default function PengeluaranInternal() {
   const [addTo, setAddTo] = useState<Header | null>(null)
   const [editing, setEditing] = useState<Header | null>(null)
   const [msg, setMsg] = useState('')
+  // Uraian baku (kodefikasi TERKINI) per kode barang — pola sama dgn
+  // Penggunaan/Penerimaan Internal (CLAUDE.md 2026-09-17: `aset.uraian_barang`
+  // basi begitu barang direklas). Gagal memuatnya cuma menurunkan ke cadangan
+  // tersimpan/"-", tak menjatuhkan tabel.
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   useEffect(() => {
     ;(async () => {
@@ -121,14 +145,21 @@ export default function PengeluaranInternal() {
     const approvedIds = hs.filter(h => h.approval_status === 'disetujui').map(h => h.id)
     if (approvedIds.length > 0) {
       const { data, error: errT } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
+        .select('id,header_id,nilai,payload,aset:aset_id(id,nibar,nama_barang,uraian_barang,kode,merek_tipe,' +
+          'spesifikasi_lainnya,no_polisi,no_mesin,no_rangka,luas,alamat_detail,tgl_perolehan,jumlah,satuan)')
         .eq('jenis', 'mutasi_internal')
         .in('header_id', approvedIds)
         .order('id', { ascending: false })
       if (errT) throw new Error(errT.message)
       const rows = (data || []) as unknown as {
         id: number; header_id: string; nilai: number
-        aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; merek_tipe: string | null; jumlah: number; satuan: string | null } | null
+        aset: {
+          id: string; nibar: string | null; nama_barang: string | null; uraian_barang: string | null
+          kode: string; merek_tipe: string | null; spesifikasi_lainnya: string | null
+          no_polisi: string | null; no_mesin: string | null; no_rangka: string | null
+          luas: number | string | null; alamat_detail: string | null
+          tgl_perolehan: string | null; jumlah: number; satuan: string | null
+        } | null
       }[]
       // Barang yang mutasinya DIBATALKAN keluar dari kartu — juga di sisi
       // PENGIRIM. rules.md §1.7 titik 3 menyebut sisi ini yang paling sering
@@ -149,11 +180,39 @@ export default function PengeluaranInternal() {
         j.lines.push({
           aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
           merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
+          uraian_barang: r.aset.uraian_barang, spesifikasi_lainnya: r.aset.spesifikasi_lainnya,
+          no_polisi: r.aset.no_polisi, no_mesin: r.aset.no_mesin, no_rangka: r.aset.no_rangka,
+          luas: r.aset.luas, alamat_detail: r.aset.alamat_detail, tgl_perolehan: r.aset.tgl_perolehan,
         })
         j.total += r.nilai
       }
     }
-    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
+    const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
+    setJurnals(hasil)
+
+    // Uraian baku (kodefikasi TERKINI) — pola sama dgn Penggunaan/Penerimaan
+    // Internal. Gagalnya cuma menurunkan kolom Uraian ke cadangan/"-", TIDAK
+    // menjatuhkan tabelnya.
+    const kodeSet = new Set<string>()
+    for (const j of hasil) for (const l of j.lines) if (l.kode) kodeSet.add(l.kode)
+    if (kodeSet.size > 0) {
+      try {
+        const uniq = [...kodeSet]
+        const map: Record<string, string> = {}
+        for (let i = 0; i < uniq.length; i += 200) {
+          const { data: kf, error: kfErr } = await supabase.from('admin_kodefikasi_bmd')
+            .select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+          if (kfErr) throw new Error(kfErr.message)
+          for (const r of kf || []) if (r.uraian) map[r.kode] = r.uraian
+        }
+        setUraianMap(map)
+      } catch (e) {
+        setUraianMap({})
+        setMsg(`Uraian barang gagal dimuat: ${e instanceof Error ? e.message : String(e)} — kolom Uraian tampil dari data tersimpan / "-".`)
+      }
+    } else {
+      setUraianMap({})
+    }
     } catch (e) {
       setJurnals([])
       setErrLoad(`Gagal memuat jurnal mutasi internal: ${e instanceof Error ? e.message : String(e)}. Daftar tidak ditampilkan supaya tak terbaca sebagai "belum ada jurnal".`)
@@ -317,19 +376,19 @@ export default function PengeluaranInternal() {
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                      Penggunaan/Penerimaan Internal (lib/kolomBarangTransaksi.ts). */}
+                  <table className="w-full table-fixed">
+                    <ColgroupBarang sebelum={[{ key: 'aksi', berat: 3 }]} />
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        <th className="table-th w-10 text-center">Aksi</th>
-                        <th className="table-th">Kode Register / Nama Barang</th>
-                        <th className="table-th">Merek / Tipe</th>
-                        <th className="table-th text-center">Jumlah</th>
-                        <th className="table-th text-right">Nilai</th>
+                        <th className="table-th text-center">Aksi</th>
+                        <KolomBarangHead />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {j.lines.length === 0 ? (
-                        <tr><td colSpan={5} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada barang — klik + untuk menambah.</td></tr>
+                        <tr><td colSpan={13} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada barang — klik + untuk menambah.</td></tr>
                       ) : j.lines.map(l => (
                         <tr key={l.aset_id}>
                           <td className="table-td text-center">
@@ -338,13 +397,7 @@ export default function PengeluaranInternal() {
                                 className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
                             ) : <span className="text-gray-300 text-xs">—</span>}
                           </td>
-                          <td className="table-td">
-                            <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
-                            <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode}</p>
-                          </td>
-                          <td className="table-td text-xs text-gray-600">{l.merek_tipe || '-'}</td>
-                          <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
-                          <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
+                          <KolomBarangCells barang={barangDariLine(l, uraianMap[l.kode] || null)} />
                         </tr>
                       ))}
                     </tbody>
@@ -537,6 +590,11 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   const draftDari = (b: Barang): DraftItem => ({
     aset_id: b.id, nibar: b.nibar, kode: b.kode, nama_barang: b.nama_barang,
     merek_tipe: b.merek_tipe, jumlah: b.jumlah, satuan: b.satuan, nilai: b.nilai_perolehan,
+    // Kolom standar (2026-09-23) — dibawa dari picker supaya draft yang baru
+    // dibuat SUDAH lengkap di kartu, bukan cuma sesudah disetujui.
+    uraian_barang: b.uraian_barang, spesifikasi_lainnya: b.spesifikasi_lainnya,
+    no_polisi: b.no_polisi, no_mesin: b.no_mesin, no_rangka: b.no_rangka,
+    luas: b.luas, alamat_detail: b.alamat_detail, tgl_perolehan: b.tgl_perolehan,
   })
 
   async function simpan() {
@@ -670,50 +728,27 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         ) : (
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-              <table className="w-full">
+              {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                  kartu jurnal di bawah & Penghapusan.tsx (lib/kolomBarangTransaksi.ts). */}
+              <table className="w-full table-fixed">
+                <ColgroupBarang sebelum={[{ key: 'chk', berat: 3 }]} />
                 <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
                   <tr>
                     <th className="table-th w-10 text-center">
                       <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                     </th>
-                    <th className="table-th">Kode Barang / Uraian</th>
-                    <th className="table-th">Spesifikasi Nama · NIBAR</th>
-                    <th className="table-th">Merk / Tipe</th>
-                    <th className="table-th">Spesifikasi Lainnya</th>
-                    <th className="table-th">No. Polisi</th>
-                    <th className="table-th">No. Rangka</th>
-                    <th className="table-th">No. Mesin</th>
-                    <th className="table-th text-center">Jumlah</th>
-                    <th className="table-th">Tgl Perolehan</th>
-                    <th className="table-th text-center">Tahun Pengadaan</th>
-                    <th className="table-th text-right">Nilai Perolehan</th>
+                    <KolomBarangHead />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {rows.length === 0 ? (
-                    <tr><td colSpan={12} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
+                    <tr><td colSpan={13} className="table-td text-center py-10 text-gray-400">Tidak ada barang aktif untuk filter ini.</td></tr>
                   ) : rows.map(b => (
                     <tr key={b.id} className={sel[b.id] ? 'bg-teal/5' : ''}>
                       <td className="table-td text-center">
                         <input type="checkbox" checked={!!sel[b.id]} onChange={() => toggle(b)} />
                       </td>
-                      <td className="table-td">
-                        <p className="font-medium text-gray-800 text-xs">{b.kode || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{uraianMapPicker[b.kode] || b.uraian_barang || '-'}</p>
-                      </td>
-                      <td className="table-td">
-                        <p className="text-gray-700 text-xs">{b.nama_barang || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'}</p>
-                      </td>
-                      <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
-                      <td className="table-td text-xs text-gray-600">{b.spesifikasi_lainnya || '-'}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_polisi || '-'}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_rangka || '-'}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.no_mesin || '-'}</td>
-                      <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
-                      <td className="table-td text-xs text-gray-600 whitespace-nowrap">{b.tgl_perolehan || '-'}</td>
-                      <td className="table-td text-center text-xs">{b.tahun_pengadaan ?? '-'}</td>
-                      <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
+                      <KolomBarangCells barang={barangDariPilihan(b, uraianMapPicker[b.kode] || null)} />
                     </tr>
                   ))}
                 </tbody>

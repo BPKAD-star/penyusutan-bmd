@@ -54,6 +54,7 @@ import { usePemilihBarangLengkap, type BarangLengkap } from './usePemilihBarangL
 const br = (over: Partial<BarangLengkap> = {}): BarangLengkap => ({
   id: 'b1', nibar: null, kode: '1.3.2.01.01.01.001', nama_barang: 'Mobil', uraian_barang: null,
   merek_tipe: null, spesifikasi_lainnya: null, no_polisi: 'AG 1021 EP', no_rangka: null, no_mesin: null,
+  luas: null, alamat_detail: null,
   tgl_perolehan: '2020-01-01', tahun_pengadaan: 2020, jumlah: 1, satuan: 'unit',
   nilai_perolehan: 100_000_000, skpd_id: 3, ...over,
 })

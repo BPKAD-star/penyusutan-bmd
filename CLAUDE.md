@@ -6231,6 +6231,93 @@ tautan yang menyesuaikan ("Peta" bukan "GIS Tanah").
 - **Tak ada migrasi** — murni pembacaan `aset` + `aset_bidang_tanah` yang
   sudah ada; tak ada kolom atau RLS baru.
 
+## Standar kolom "informasi barang" di kartu transaksi (2026-09-23)
+
+Keputusan user: SATU urutan kolom untuk seluruh tabel yang menampilkan barang
+di dalam kartu jurnal, di **sembilan menu**:
+
+- **Cara Perolehan**: Pengadaan · Hibah · Tukar Menukar · Hasil Inventarisasi ·
+  Perolehan Lainnya (`Pengadaan.tsx` + `PerolehanManual.tsx`, yang kedua
+  melayani empat kategori sekaligus).
+- **Pengelolaan**: Penggunaan · Penerimaan Internal · Pengeluaran Internal ·
+  Penghapusan (`PenggunaanMasuk.tsx`, `PenerimaanInternal.tsx`,
+  `PengeluaranInternal.tsx`, `Penghapusan.tsx`).
+
+Urutannya: **Kode Barang+Uraian Barang** (ditumpuk) → **Spesifikasi Nama
+Barang+NIBAR** (ditumpuk) → Merk/Tipe → Spesifikasi Lainnya → No. Polisi →
+No. Mesin → No. Rangka → Luas → Alamat Detail → Tgl Perolehan →
+**Jumlah+Satuan** (ditumpuk) → Nilai.
+
+⚠️ **LIMA MENU SENGAJA TIDAK IKUT** (permintaan user eksplisit): Pemanfaatan,
+Reklasifikasi, Koreksi, Kapitalisasi, Pengamanan. Bentuknya beda — barang di
+situ tunggal per baris ledger (bukan daftar barang per dokumen/kontrak) atau
+sudah punya tata letak sendiri yang belum diminta diseragamkan. Jangan
+"ikut menyeragamkan" kelima menu itu tanpa diminta ulang.
+
+- **Sumbernya `lib/kolomBarangTransaksi.ts`** (murni logika — daftar
+  `KOLOM_BARANG_URUTAN`, meta label+bobot `KOLOM_BARANG_TRANSAKSI`, bentuk
+  data generik `BarangTransaksi`, & `hitungLebarKolom()`) + `shared/ui/
+  TabelBarangTransaksi.tsx` (bagian LAYAR — `<ColgroupBarang/>`,
+  `<KolomBarangHead/>`, `<KolomBarangCells/>`). Dikunci
+  lib/kolomBarangTransaksi.test.ts.
+- ⚠️ **KEDUA BELAS KOLOM SELALU TAMPIL, urutan TETAP, isi '-' kalau field-nya
+  tak berlaku** untuk golongan barang itu (mis. Luas kosong utk Peralatan &
+  Mesin) — SENGAJA bukan disembunyikan per golongan seperti `lib/
+  kolomBarang.ts` (yang menyembunyikan kolom sesuai golongan untuk halaman
+  register Daftar Barang). Kolom yang boleh hilang-tampil tergantung isi kartu
+  akan mengembalikan masalah yang mau ditutup: kartu-kartu berisi golongan
+  berbeda dalam satu dokumen jadi TAK SEJAJAR lagi. "Rata dari atas ke bawah"
+  (permintaan user) cuma bisa dijamin kalau SETIAP kartu, apa pun golongan
+  barangnya, memakai colgroup yang identik.
+- **Dua CACAT tampilan lama ikut ditutup**, bukan cuma soal urutan:
+  1. **Tanpa `table-fixed`+`<colgroup>` tetap, lebar kolom mengikuti KONTEN
+     kartu itu sendiri** (`table-layout:auto` bawaan) — kartu A & B di halaman
+     yang sama bisa punya batas kolom berbeda persis karena isinya beda
+     panjang. Pola `table-fixed`+colgroup yang sebelumnya cuma dipakai lembar
+     CETAK Permendagri (`lib/formatPermendagri.ts`) dipakai lagi di sini, kali
+     PERTAMA untuk tabel LAYAR (bukan cetak).
+  2. **Luas & Alamat Detail TAK PERNAH ditampilkan di menu Pengelolaan** walau
+     datanya ada di `aset` — bukan cuma perkara urutan, dua kolom itu benar²
+     kolom BARU di keempat menu Pengelolaan begitu perbaikan ini jalan.
+- **Lebar kolom DIHITUNG dari BOBOT (`hitungLebarKolom`), bukan hardcode %.**
+  `ColgroupBarang` menerima kolom EKSTRA milik tiap pemanggil (`sebelum`/
+  `sesudah`: checkbox, Kode Rekening, Foto, Komptabel, Keterangan, Status,
+  Aksi — beda-beda per menu) dan menggabungnya dengan 12 kolom kanonik supaya
+  totalnya selalu PERSIS 100%. Sisa pembulatan ditaruh di kolom TERAKHIR.
+- **Query yang belum menarik kolomnya DIPERLUAS** — sebelum ini
+  `PenggunaanMasuk.tsx`/`PenerimaanInternal.tsx`/`PengeluaranInternal.tsx`
+  tak pernah men-`select` `no_polisi`/`no_mesin`/`no_rangka`/`luas`/
+  `alamat_detail` dari `aset` sama sekali. Diperluas di keempat menu
+  Pengelolaan (approved-lines query + tipe `Line`/`JurnalLine`), dan
+  `draftDari()`/DraftItem masing-masing ikut membawanya supaya draft yang
+  BARU dibuat sudah lengkap di kartu — bukan cuma nongol sesudah disetujui.
+  Draft LAMA (dibuat sebelum perubahan ini) tak menyimpan kolom² itu di
+  `payload.draft_items` → jatuh ke '-', field-nya karena itu opsional di tipe.
+- ⚠️ **Bug pre-existing yang ikut ketemu & dibetulkan saat menulis mapper
+  `PerolehanManual.tsx`**: tabel baris disetujui membaca kolom "Tgl Perolehan"
+  dari `l.tanggal` (tanggal BAST/ledger), padahal seharusnya `l.tgl_perolehan`
+  (tanggal barang sungguh dibuat) — dua tanggal yang jelas-jelas beda menurut
+  komentar tipe di berkas itu sendiri. Diperbaiki sbg efek samping menulis
+  `barangDariLine` yang benar.
+- **Tabel PEMILIH barang** (picker centang sebelum disimpan, dipakai
+  `PengeluaranInternal.tsx` & `Penghapusan.tsx` lewat `usePemilihBarangLengkap.
+  ts`) IKUT diseragamkan — ini bagian "tampilan barang" juga, bukan cuma kartu
+  sesudah tersimpan. `BarangLengkap` diperluas dgn `luas`/`alamat_detail`, dan
+  mapper **`barangDariPilihan()`** ditaruh SATU tempat di
+  `usePemilihBarangLengkap.ts` (dipakai KEDUA menu) supaya tabel pemilihnya
+  benar² identik, bukan disalin dua kali. ⚠️ Urutan No. Polisi/Mesin/Rangka di
+  picker LAMA (Rangka sebelum Mesin) diam-diam beda dari kartu hasil transaksi
+  di menu yang sama — persis kelas ketidaksejajaran yang mau ditutup.
+- **Kolom non-kanonik yang beda per menu** (tak ikut standar krn memang bukan
+  "informasi barang"): Kode Rekening (Pengadaan), Komptabel & Foto (Cara
+  Perolehan), Status "Dikembalikan" (Penggunaan — hanya kartu disetujui, krn
+  cuma baris dari ledger yang bisa `dikembalikan`), Aksi (Batal/Terkunci/dsb).
+  Semuanya lewat `sebelum`/`sesudah` di `ColgroupBarang`, tak pernah disisipkan
+  di TENGAH 12 kolom kanonik.
+- **Tak ada migrasi** — murni tampilan + perluasan `select()` klien; tak ada
+  kolom/RLS baru (`no_polisi` dkk sudah lama ada di `aset` sejak
+  `lib/asetFields.ts`).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
