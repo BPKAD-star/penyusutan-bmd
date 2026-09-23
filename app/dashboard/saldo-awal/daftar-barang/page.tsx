@@ -14,14 +14,15 @@
 // "Lokasi" di sini = `alamat_detail` + rantai wilayah (`wilayah_kode` → Desa,
 // Kec., Kabupaten), sementara Daftar Barang baru menampilkan alamat_detail saja.
 //
-// TANAH — luas punya DUA kemungkinan sumber, dan bidang yang menang: kalau
-// asetnya punya baris di `aset_bidang_tanah` (menu GIS Tanah), Luas = Σ bidang;
-// kalau belum, jatuh ke kolom snapshot yang diisi lewat Edit Spesifikasi.
-// Lokasi & koordinat milik REGISTER saja (keputusan user 2026-09-23). Σ-nya dihitung
-// SAAT TAMPIL, sengaja TIDAK disimpan balik ke kolom mana pun: angka tersimpan
-// bakal basi tiap bidang ditambah/diedit/dihapus (tak ada trigger/cron yang
-// menjaganya), dan snapshot 2025 tak boleh ikut bergerak mengikuti data hidup.
-// Aturan yang sama dipakai Daftar Barang, bedanya cadangannya `aset.luas`.
+// TANAH — Luas di sini SELALU kolom snapshot sendiri (`aset_awal_2026.luas`,
+// diisi lewat Edit Spesifikasi), TIDAK ikut Σ bidang GIS lagi (keputusan user
+// 2026-09-23). Alasannya: baseline ini "beku" (foto posisi akhir 2025) sementara
+// bidang tanah (`aset_bidang_tanah`) itu data HIDUP yang menempel ke register
+// `aset` SEKARANG — kalau operator menambah bidang di GIS hari ini, angka di
+// halaman yang seharusnya beku ikut bergeser tanpa satu pun transaksi menyentuh
+// `aset_awal_2026`. Σ bidang cuma berlaku di Daftar Barang (register tahun
+// berjalan), yang memang menampilkan posisi TERKINI. Lokasi & koordinat sudah
+// lebih dulu milik REGISTER saja sejak putaran keputusan yang sama.
 //
 // TAMPILAN mengikuti pola Daftar Barang juga: hasil ≤ SHOW_ALL_MAX baris →
 // tampilkan SEMUA sekaligus (tanpa halaman); lebih dari itu → paginasi SERVER
@@ -48,11 +49,9 @@ import { KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useEditSpekAwal } from './useEditSpekAwal'
-import type { Row, BidangAgg } from './tipe'
-import { luasBidangSah, luasEfektif } from '@/lib/luasBidang'
+import type { Row } from './tipe'
 
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
@@ -69,12 +68,6 @@ const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 
 type Applied = { org: OrgSelection; golongan: string; komptabel: string; search: string }
-// Rekap bidang tanah per aset (dari aset_bidang_tanah, menu GIS Tanah).
-// luas = Σ bidang; wilayah/alamat = daftar UNIK (satu register bisa banyak bidang).
-// nLuas = berapa bidang yang luasnya terisi. Σ HANYA sah kalau nLuas === n —
-// kalau cuma sebagian bidang yang berisi, jumlahnya lebih kecil dari luas
-// sebenarnya & bakal terbaca sebagai penyusutan luas yang tak pernah terjadi.
-// (Per 2026-07-28 ini bukan kasus langka: dari 529 bidang, baru 4 yang berluas.)
 
 const COLS = [
   'nibar', 'kode', 'nama_barang', 'skpd_id', 'intra_ekstra', 'tgl_perolehan', 'tahun_pengadaan', 'nilai_perolehan',
@@ -329,7 +322,7 @@ export default function Page() {
   const [loading, setLoading] = useState(false)
   const [loadErr, setLoadErr] = useState('')
   // Kegagalan yang TIDAK membatalkan tabel (kolom pelengkap: keterangan, uraian,
-  // bidang tanah, tanda 🔒). Barangnya sudah benar, cuma hiasannya kurang —
+  // tanda 🔒). Barangnya sudah benar, cuma hiasannya kurang —
   // tapi tetap harus kelihatan, jangan ditelan.
   const [warn, setWarn] = useState<string[]>([])
   const [exporting, setExporting] = useState(false)
@@ -344,8 +337,6 @@ export default function Page() {
   const { peta: skpdNama, err: errSkpd } = useNamaSkpdMap()
   // wilayah_kode → "Desa, Kec. X, Kabupaten Y" (rantai induk sudah dirangkai)
   const [wilayahNama, setWilayahNama] = useState<Record<string, string>>({})
-  // NIBAR → rekap bidang tanah (hanya golongan 1.3.1 yang punya isi)
-  const [bidang, setBidang] = useState<Record<string, BidangAgg>>({})
   // ── Koreksi spesifikasi: centang barang (multi) → popup EditSpesifikasiModal ──
 
 
@@ -433,53 +424,24 @@ export default function Page() {
       .order('nibar', { ascending: true })
   }
 
-  // Register `aset` per NIBAR: keterangan (sengaja versi TERKINI, bukan kolom
-  // keterangan di snapshot — sama dgn yang tampil di Daftar Barang) + `id`, yang
-  // dibutuhkan untuk menengok bidang tanah (aset_bidang_tanah pakai aset_id,
-  // sementara halaman ini berkunci NIBAR).
-  // ⚠️ `pesan` = penampung keluhan. Keempat pelengkap di bawah ini dulu memakai
-  // `const { data } = await ...` telanjang: query gagal → `data` null → kolomnya
-  // diam-diam kosong dan terbaca operator sebagai "barang ini memang tak punya
-  // keterangan/uraian/bidang". Sekarang kegagalannya DILAPORKAN (strip kuning di
-  // atas tabel) tapi TIDAK membatalkan tabel — barisnya sendiri sudah benar,
-  // dan mengosongkan halaman gara-gara kolom hiasan justru merugikan.
+  // Keterangan TERKINI per NIBAR, dibaca dari register `aset` (sengaja bukan
+  // kolom keterangan di snapshot — sama dgn yang tampil di Daftar Barang).
+  // ⚠️ `pesan` = penampung keluhan. Dulu memakai `const { data } = await ...`
+  // telanjang: query gagal → `data` null → kolomnya diam-diam kosong dan
+  // terbaca operator sebagai "barang ini memang tak punya keterangan".
+  // Sekarang kegagalannya DILAPORKAN (strip kuning di atas tabel) tapi TIDAK
+  // membatalkan tabel — barisnya sendiri sudah benar, dan mengosongkan halaman
+  // gara-gara kolom hiasan justru merugikan.
   async function fetchAsetInfo(nibars: string[], pesan: string[]) {
-    const map: Record<string, { id: string; keterangan: string | null }> = {}
+    const map: Record<string, string> = {}
     for (let i = 0; i < nibars.length; i += 500) {
-      const { data, error } = await supabase.from('aset').select('id,nibar,keterangan').in('nibar', nibars.slice(i, i + 500))
-      if (error) { pesan.push(`Kolom Keterangan (dan Luas/Lokasi tanah) tidak lengkap — gagal membaca register aset: ${error.message}`); break }
-      for (const a of (data || []) as { id: string; nibar: string | null; keterangan: string | null }[]) {
-        if (a.nibar) map[a.nibar] = { id: a.id, keterangan: a.keterangan }
+      const { data, error } = await supabase.from('aset').select('nibar,keterangan').in('nibar', nibars.slice(i, i + 500))
+      if (error) { pesan.push(`Kolom Keterangan tidak lengkap — gagal membaca register aset: ${error.message}`); break }
+      for (const a of (data || []) as { nibar: string | null; keterangan: string | null }[]) {
+        if (a.nibar && a.keterangan) map[a.nibar] = a.keterangan
       }
     }
     return map
-  }
-
-  // Bidang tanah per aset (kalau ada) — cuma LUAS-nya yang dipakai: luas =
-  // Σ bidang (dihitung SAAT TAMPIL, sengaja TIDAK disimpan ke kolom mana pun —
-  // angka tersimpan bakal basi tiap bidang ditambah/diedit/dihapus, dan
-  // snapshot 2025 tak boleh ikut bergerak mengikuti data hidup). Yang belum
-  // punya bidang: jatuh ke kolom snapshot. Lokasi & koordinat sejak 2026-09-23
-  // milik REGISTER, jadi tak dibaca dari bidang lagi.
-  async function fetchBidang(info: Record<string, { id: string }>, rs: Row[], pesan: string[]) {
-    const tanah = rs.filter(r => kodeLevel3(r.kode) === '1.3.1' && info[r.nibar])
-    if (tanah.length === 0) return {}
-    const nibarByAset = new Map(tanah.map(r => [info[r.nibar].id, r.nibar]))
-    const ids = [...nibarByAset.keys()]
-    const agg: Record<string, BidangAgg> = {}
-    for (let i = 0; i < ids.length; i += 500) {
-      const { data, error } = await supabase.from('aset_bidang_tanah')
-        .select('aset_id,luas').in('aset_id', ids.slice(i, i + 500))
-      if (error) { pesan.push(`Luas tanah masih dari kolom saldo awal, bukan Σ bidang — gagal membaca bidang tanah: ${error.message}`); break }
-      for (const b of (data || []) as { aset_id: string; luas: number | null }[]) {
-        const nibar = nibarByAset.get(b.aset_id)
-        if (!nibar) continue
-        const a = agg[nibar] || (agg[nibar] = { n: 0, nLuas: 0, luas: null })
-        a.n++
-        if (b.luas != null) { a.nLuas++; a.luas = (a.luas ?? 0) + Number(b.luas) }
-      }
-    }
-    return agg
   }
 
   // Uraian (nama baku kodefikasi) per kode — ditumpuk di bawah Kode Barang,
@@ -556,11 +518,7 @@ export default function Page() {
       setAdaLagi(tot == null && rs.length === PAGE_SIZE)
       setSel({}) // seleksi lama tak lagi nyambung dgn baris yang tampil
 
-      const info = await fetchAsetInfo(rs.map(r => r.nibar), pesan)
-      const ket: Record<string, string> = {}
-      for (const [nibar, x] of Object.entries(info)) if (x.keterangan) ket[nibar] = x.keterangan
-      setKetMap(ket)
-      setBidang(await fetchBidang(info, rs, pesan))
+      setKetMap(await fetchAsetInfo(rs.map(r => r.nibar), pesan))
       setUraianMap(await fetchUraian(rs.map(r => r.kode), pesan))
       setTerkunci(await fetchTerkunci(rs.map(r => r.nibar), pesan))
       setWarn(pesan)
@@ -587,7 +545,7 @@ export default function Page() {
   // `load`, supaya tak ada jalur keluar yang bisa melewatkannya.
   function gagalMuat(pesan: string) {
     setRows([]); setTotal(0); setShowAll(false); setAdaLagi(false)
-    setKetMap({}); setUraianMap({}); setBidang({}); setTerkunci(new Set())
+    setKetMap({}); setUraianMap({}); setTerkunci(new Set())
     // Respons tanpa keterangan apa pun sudah pernah terjadi & bikin operator
     // buntu ("Gagal memuat data:" lalu kosong). Kalau terulang, katakan begitu.
     const p = pesan || 'database tidak mengirim keterangan apa pun'
@@ -637,21 +595,13 @@ export default function Page() {
 
 
 
-  // ── Luas & Lokasi: bidang tanah menang, kolom snapshot jadi cadangan ───────
-  // Aturannya sama persis dipakai Daftar Barang (bedanya cadangannya `aset.luas`),
-  // supaya angka di dua menu tak pernah beda tanpa sebab.
-  // Parameter `bd` bisa diisi peta bidang lain (dipakai Export, yang cakupan
-  // barisnya lebih luas dari layar); default = milik halaman.
-  // Aturannya → lib/luasBidang.ts (diangkat 2026-09-15, kemunculan ketiga).
-  const luasOf = (r: Row, bd: Record<string, BidangAgg> = bidang): number | null =>
-    luasEfektif(bd[r.nibar], r.luas)
   // Lokasi milik REGISTER (sejak 2026-09-23) — tak lagi diringkas dari bidang.
   function lokasiOf(r: Row): { alamat: string; wilayah: string } {
     return { alamat: r.alamat_detail || '', wilayah: r.wilayah_kode ? (wilayahNama[r.wilayah_kode] || '') : '' }
   }
 
   // Nilai polos per kolom — dipakai Export (layar pakai cellContent yang boleh JSX).
-  function cellValue(key: string, r: Row, bd: Record<string, BidangAgg> = bidang): string | number {
+  function cellValue(key: string, r: Row): string | number {
     switch (key) {
       case 'skpd': return skpdNama[r.skpd_id] || ''
       case 'kode': return r.kode
@@ -666,7 +616,7 @@ export default function Page() {
       // Lokasi = alamat jalan + wilayah administratif (dua kolom DB yang beda,
       // digabung; di layar ditumpuk, di Excel jadi satu sel).
       case 'lokasi': { const l = lokasiOf(r); return [l.alamat, l.wilayah].filter(Boolean).join(' — ') }
-      case 'luas': return luasOf(r, bd) ?? ''
+      case 'luas': return r.luas ?? ''
       case 'hak': return r.jenis_hak || ''
       case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
       case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
@@ -749,22 +699,9 @@ export default function Page() {
       )
     }
     if (key === 'luas') {
-      const b = bidang[r.nibar]
-      const v = luasOf(r)
-      return (
-        <>
-          <p className="text-xs text-gray-600">{v != null ? angkaLuas(v) : <span className="text-gray-300">-</span>}</p>
-          {b && b.n > 0 && (
-            <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar)}`}
-              className="text-[11px] text-teal hover:underline"
-              title={luasBidangSah(b)
-                ? 'Luas ini penjumlahan seluruh bidang di GIS Tanah — koreksinya di sana, per bidang'
-                : `Ada ${b.n} bidang di GIS Tanah tapi baru ${b.nLuas} yang berisi luas — angka di atas masih dari saldo awal, bukan Σ bidang`}>
-              {luasBidangSah(b) ? `Σ ${b.n} bidang` : `${b.n} bidang · luas belum lengkap`}
-            </Link>
-          )}
-        </>
-      )
+      return r.luas != null
+        ? <p className="text-xs text-gray-600">{angkaLuas(r.luas)}</p>
+        : <span className="text-gray-300">-</span>
     }
     const v = cellValue(key, r)
     if (v === '' || v == null) return <span className="text-gray-300">-</span>
@@ -815,13 +752,11 @@ export default function Page() {
       onKemajuan: setProgres,
     })
     setProgres(0)
-    // Ekspor bisa memuat baris di luar halaman yang tampil → keterangan & bidang
-    // tanahnya diambil ulang untuk SELURUH hasil, jangan pakai state halaman
-    // (kalau tidak, kolom Luas/Lokasi di Excel beda dari yang di layar).
-    const info = await fetchAsetInfo(all.map(r => r.nibar), pesan)
-    const ket: Record<string, string> = {}
-    for (const [nibar, a] of Object.entries(info)) if (a.keterangan) ket[nibar] = a.keterangan
-    const bd = await fetchBidang(info, all, pesan)
+    // Ekspor bisa memuat baris di luar halaman yang tampil → keterangannya
+    // diambil ulang untuk SELURUH hasil, jangan pakai state halaman (kalau
+    // tidak, kolom Keterangan di Excel beda dari yang di layar). Luas & Lokasi
+    // sudah kolom snapshot polos — tak perlu tarikan tambahan.
+    const ket = await fetchAsetInfo(all.map(r => r.nibar), pesan)
     const uraian = await fetchUraian(all.map(r => r.kode), pesan)
     // Ekspor pakai kolom yang sama dgn layar, + Uraian & NIBAR jadi kolom sendiri
     // (di layar keduanya ditumpuk; di Excel harus rata biar bisa disortir/pivot).
@@ -833,7 +768,7 @@ export default function Page() {
         // "Uraian Barang", bukan "Uraian" — samakan dgn Export Daftar Barang,
         // Penyusutan, & Kendaraan (2026-07-30).
         if (k === 'uraian') { obj['Uraian Barang'] = uraian[r.kode] || ''; continue }
-        obj[COL_META[k].header] = k === 'keterangan' ? (ket[r.nibar] || '') : cellValue(k, r, bd)
+        obj[COL_META[k].header] = k === 'keterangan' ? (ket[r.nibar] || '') : cellValue(k, r)
       }
       return obj
     }), namaBerkasLaporan({
@@ -962,13 +897,6 @@ export default function Page() {
               )}
               {selList.length > 0 && !selSameGol && (
                 <p className="text-xs text-amber-600">Barang beda jenis aset — pisahkan per jenis, field spesifikasinya beda.</p>
-              )}
-              {selList.length > 0 && selSameGol && kodeLevel3(selList[0].kode) === '1.3.1'
-                && selList.some(r => bidang[r.nibar]?.n) && (
-                <p className="text-xs text-amber-600">
-                  Ada tanah yang sudah punya bidang di GIS Tanah — luas yang tampil di tabel tetap Σ luas bidangnya.
-                  Luas yang diisi di sini jadi cadangan kalau bidangnya belum lengkap berluas.
-                </p>
               )}
               {selList.length > 0 && selSameGol && (
                 <p className="text-xs text-gray-500">

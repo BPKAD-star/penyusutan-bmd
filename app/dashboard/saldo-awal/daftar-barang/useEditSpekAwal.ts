@@ -42,7 +42,8 @@ export function useEditSpekAwal(reload: () => void) {
   const [spekOpen, setSpekOpen] = useState(false)
   const [spekPrefix, setSpekPrefix] = useState('')
   // Field yang ditawarkan popup — dihitung saat dibuka (bukan saat render),
-  // karena untuk Tanah isinya bergantung ada/tidaknya bidang.
+  // supaya `selList` yang jadi dasarnya sudah stabil (barang tercentang tak
+  // berubah lagi di tengah popup terbuka).
   const [spekKeys, setSpekKeys] = useState<FieldKey[]>([])
   const [spekInitFields, setSpekInitFields] = useState<Record<string, string>>({})
   const [spekInitFoto, setSpekInitFoto] = useState<string[]>([])

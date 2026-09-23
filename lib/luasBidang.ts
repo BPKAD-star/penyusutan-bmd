@@ -9,6 +9,11 @@
 // Daftar Barang… supaya angka di dua menu tak pernah beda tanpa sebab"). Yang
 // menjaganya selama ini cuma kalimat itu.
 //
+// ⚠️ Sejak 2026-09-23, Daftar Barang Awal TIDAK LAGI dipakaikan aturan ini —
+// baseline itu foto BEKU 2025, sementara bidang menempel ke register HIDUP,
+// jadi Σ-nya di sana justru membuat halaman "beku" ikut bergerak mengikuti
+// data hari ini. Pemakainya sekarang tinggal Daftar Barang & panel GIS.
+//
 // ⚠️ INI LAPIS 1. Aturannya bukan kerapian tampilan:
 //
 //   **Σ hanya sah kalau SEMUA bidang punya luas.** Kalau baru sebagian diisi,

@@ -23,6 +23,3 @@ export type Row = {
   nama_dokumen_kepemilikan: string | null
   asal_usul: string | null; penggunaan_pengamanan: string | null
 }
-
-/** Ringkasan bidang tanah per NIBAR — `n` bidang, `nLuas` yang berluas. */
-export type BidangAgg = { n: number; nLuas: number; luas: number | null }

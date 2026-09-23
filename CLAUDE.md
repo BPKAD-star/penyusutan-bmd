@@ -6430,10 +6430,12 @@ yang berlaku.
   `TANAH_GIS_FIELDS` menyusut jadi 4 (jenis hak + 3 dokumen kepemilikan);
   `TANAH_TANPA_BIDANG_FIELDS` & opsi `tanahTanpaBidang` di `koreksiFieldKeys`
   DICABUT, begitu pula parameter `bidang` di `useEditSpekAwal`.
-- **Luas tampil tidak berubah aturannya** (lib/luasBidang.ts): Σ bidang kalau
-  SEMUA bidang berluas, kalau tidak jatuh ke luas register. Luas yang diisi dari
-  Edit Spesifikasi = cadangan itu. Kini juga tampil di kartu kanan atas GIS
-  (di atas Nilai Perolehan) dgn aturan yang SAMA, bukan salinan.
+- **Luas tampil di Daftar Barang & GIS tidak berubah aturannya** (lib/luasBidang.ts):
+  Σ bidang kalau SEMUA bidang berluas, kalau tidak jatuh ke luas register. Luas
+  yang diisi dari Edit Spesifikasi = cadangan itu. Kini juga tampil di kartu
+  kanan atas GIS (di atas Nilai Perolehan) dgn aturan yang SAMA, bukan salinan.
+  ⚠️ **Daftar Barang Awal TIDAK ikut aturan ini lagi** — lihat subbagian di
+  bawah, ditambal hari yang sama sesudah user mempertanyakannya.
 - **Form bidang di GIS tinggal 8 isian** — Alamat/Detail Lokasi, Titik
   Koordinat, & Keterangan dicabut. ⚠️ Ketiganya juga **tidak dikirim** saat
   menyimpan bidang, supaya nilai lama yang terlanjur ada TIDAK ter-NULL-kan
@@ -6453,8 +6455,7 @@ yang berlaku.
   rata-rata) aman. `aset_bidang_tanah` sendiri tak disentuh. Non-ledger, UPDATE
   biasa (pola sama dgn migrasi 20260820_04).
 - Daftar Barang Awal: kolom Lokasi kini murni register (tak lagi diringkas dari
-  bidang); `BidangAgg` cuma membawa luas. Export Daftar Bidang tak lagi memuat
-  alamat/koordinat bidang.
+  bidang). Export Daftar Bidang tak lagi memuat alamat/koordinat bidang.
 - **Tak ada migrasi** — GRANT UPDATE per-kolom `aset_awal_2026` (20260728_01)
   sudah memuat `luas`, `wilayah_kode`, `alamat_detail`, `latitude`, `longitude`,
   dan trigger `fn_aset_awal_2026_spek_only` tak mengunci kolom-kolom itu.
@@ -6466,6 +6467,53 @@ Di `/dashboard/gis/daftar-bidang`, "Peta" (`/dashboard/gis`) ikut menyala
 karena cocok lewat `startsWith`. Kini yang menyala hanya menu yang cocok
 **paling panjang** (`hrefAktif`, components/Sidebar.tsx) — berlaku untuk semua
 grup, bukan cuma GIS.
+
+### Sidebar: GIS Tanah & Kendaraan pindah ke bawah Inventarisasi
+
+Permintaan user, murni urutan tampil `navTree` (components/Sidebar.tsx): GIS
+Tanah & Kendaraan digeser dari "sesudah Penyusutan, sebelum IPA" ke "sesudah
+Inventarisasi, sebelum Daftar Barang". Urutan top-level sekarang: Dashboard ·
+Saldo Awal · RKBMD · Pembukuan · Inventarisasi · GIS Tanah · Kendaraan ·
+Daftar Barang · Penyusutan · IPA · Pelaporan · Admin. Tak menyentuh struktur
+di dalam grup mana pun, tak ada migrasi.
+
+### Daftar Barang Awal: Luas berhenti ikut Σ bidang GIS
+
+Lanjutan putaran di atas, sesudah user mempertanyakan: *"kalau untuk daftar
+barang awal ini di display luasnya itu ya pakai hard code dari apa yang ada
+di daftar barang awal aja... Baru di daftar barang tahun berjalan itu kalau
+di GIS ada bidangnya, pakai yang ada di GIS, tapi kalau ndak ada, ya pakai
+yang ada di daftar barang awal."*
+
+- **Sebelum ini** Daftar Barang Awal DIAM-DIAM ikut aturan "Σ bidang menang"
+  yang sama dengan Daftar Barang (lewat `luasEfektif(bidang[r.nibar], r.luas)`)
+  — walau bagian di atas (siang hari yang sama) sudah menyatakan "Luas tampil
+  tidak berubah aturannya", itu justru masalahnya: aturan itu ditulis untuk
+  register HIDUP (`aset`), tapi ikut dipasang juga di halaman "beku"
+  (`aset_awal_2026`).
+- **Kenapa itu salah**: `aset_bidang_tanah` menempel ke register `aset` **saat
+  ini** (dicocokkan ke snapshot lewat NIBAR). Baseline dinyatakan "foto BEKU
+  posisi akhir 2025, display-only" — begitu operator menambah/mengedit bidang
+  di GIS **hari ini** (2026), angka Luas di layar yang seharusnya beku ikut
+  bergerak, padahal tak satu pun baris `aset_awal_2026` disentuh. Snapshot yang
+  angkanya diam-diam mengikuti data hidup bukan snapshot lagi.
+- **Obatnya: Daftar Barang Awal sekarang HANYA membaca `aset_awal_2026.luas`
+  apa adanya** (yang bisa dikoreksi lewat Edit Spesifikasi, seperti biasa) —
+  tak ada lagi lookup ke `aset_bidang_tanah` sama sekali di halaman ini.
+  `fetchBidang`, state `bidang`, dan tipe `BidangAgg` (tipe.ts) DIHAPUS dari
+  `app/dashboard/saldo-awal/daftar-barang/page.tsx` — bukan cuma tak dipakai
+  tampil, query-nya sendiri tak ada alasan jalan lagi. Strip amber "Ada tanah
+  yang sudah punya bidang..." di panel Edit Spesifikasi ikut dicabut (tak
+  relevan lagi di halaman ini).
+- **Daftar Barang (register tahun berjalan) TIDAK berubah** — tetap Σ bidang
+  kalau lengkap, kalau tidak jatuh ke `aset.luas` (lib/luasBidang.ts), karena
+  di sana yang ditampilkan memang POSISI TERKINI, bukan foto 2025.
+- `fetchAsetInfo` ikut disederhanakan: dulu mengembalikan `{id, keterangan}`
+  per NIBAR (`id`-nya cuma dipakai menjembatani ke `aset_bidang_tanah`), kini
+  cukup `Record<string, string>` (NIBAR → keterangan) karena tak ada lagi yang
+  butuh `aset.id`.
+- **Tak ada migrasi** — murni logika tampil di klien; `aset_awal_2026` &
+  `aset_bidang_tanah` tak disentuh.
 
 ## Lingkungan kerja
 
