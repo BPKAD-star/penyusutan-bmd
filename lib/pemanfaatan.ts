@@ -61,3 +61,66 @@ export function pemanfaatanCache(jenis: string, mitra: string, berakhir: string)
   const berakhirTxt = berakhir ? ` (s.d. ${fmtTglPendek(berakhir)})` : ''
   return `${label}${mitraTxt}${berakhirTxt}`
 }
+
+// ── Nilai Pemanfaatan (2026-09-23) ──────────────────────────────────────────
+// Cuma jenis yang MENGHASILKAN PENDAPATAN yang butuh nominal — Pinjam Pakai
+// itu non-profit (keputusan user), jadi field-nya tak boleh ditawarkan sama
+// sekali utk jenis itu (bukan sekadar dikosongkan). Disimpan di
+// `jurnal_header.payload.nilai_pemanfaatan`, BUKAN `transaksi_bmd.nilai` —
+// baris ledger pemanfaatan SENGAJA selalu `nilai:0` (event netral, tak
+// mengubah nilai/penyusutan; lihat `BarangForm.simpan()` di
+// components/pengelolaan/Pemanfaatan.tsx). Satu perjanjian = satu nominal,
+// pola yang sama dgn `estimasi_hasil` RKBMD (rencana pendapatan, kolom
+// TERSENDIRI — bukan menumpang kolom lain).
+export const JENIS_BERPENDAPATAN: JenisPemanfaatan[] = ['sewa', 'ksp', 'bgs_bsg', 'kspi']
+
+export function perluNilaiPemanfaatan(jenis: string): boolean {
+  return (JENIS_BERPENDAPATAN as string[]).includes(jenis)
+}
+
+// ── Visualisasi masa berlangsung (Laporan Pemanfaatan, 2026-09-23) ─────────
+// Persentase = seberapa jauh HARI INI berada di antara `mulai` dan `berakhir`.
+// `hariIni` WAJIB dioper (bukan `new Date()` di dalam fungsi) — pola yang sama
+// dgn `hitungBerakhir` di atas: fungsi pekat tak boleh diam-diam bergantung
+// jam sistem, supaya bisa diuji & tak bergeser sehari krn zona waktu.
+export type BandPemanfaatan = 'hijau' | 'kuning' | 'oranye' | 'merah' | 'hitam'
+
+function tglUtc(tgl: string): number | null {
+  if (!tgl) return null
+  const [y, m, d] = tgl.split('-').map(Number)
+  if (!y || !m || !d) return null
+  return Date.UTC(y, m - 1, d)
+}
+
+/** null = tak bisa dinilai (tanggal kosong/tak valid, atau berakhir <= mulai). */
+export function persenMasaPemanfaatan(mulai: string, berakhir: string, hariIni: string): number | null {
+  const t0 = tglUtc(mulai)
+  const t1 = tglUtc(berakhir)
+  const tNow = tglUtc(hariIni)
+  if (t0 == null || t1 == null || tNow == null || t1 <= t0) return null
+  return ((tNow - t0) / (t1 - t0)) * 100
+}
+
+// Batas SENGAJA "<" (bukan "<="), pas 25/50/75/100 masuk band di ATASNYA —
+// konsisten dgn cara "under 25%/50%/75%/100%" dibaca user secara harfiah.
+export function bandPemanfaatan(persen: number): BandPemanfaatan {
+  if (persen < 25) return 'hijau'
+  if (persen < 50) return 'kuning'
+  if (persen < 75) return 'oranye'
+  if (persen < 100) return 'merah'
+  return 'hitam'
+}
+
+export const WARNA_BAND_PEMANFAATAN: Record<BandPemanfaatan, { bar: string; teks: string }> = {
+  hijau: { bar: 'bg-green-500', teks: 'text-green-700' },
+  kuning: { bar: 'bg-yellow-500', teks: 'text-yellow-700' },
+  oranye: { bar: 'bg-orange-500', teks: 'text-orange-700' },
+  merah: { bar: 'bg-red-500', teks: 'text-red-700' },
+  hitam: { bar: 'bg-black', teks: 'text-gray-900' },
+}
+
+/** Notif "siap-siap" HANYA di band merah (75–99%) — permintaan user eksplisit
+ *  ("Di range merah itu ada notif"), bukan di hitam (sudah lewat batas). */
+export function perluPeringatanPenarikan(band: BandPemanfaatan): boolean {
+  return band === 'merah'
+}

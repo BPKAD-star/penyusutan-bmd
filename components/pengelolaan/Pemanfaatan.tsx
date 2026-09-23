@@ -42,6 +42,7 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import {
   JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL, LINGKUP_OPT, type Lingkup,
   PEMANFAATAN_ELIGIBLE_GOLONGAN, isPemanfaatanEligible, hitungBerakhir, pemanfaatanCache,
+  perluNilaiPemanfaatan,
 } from '@/lib/pemanfaatan'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
@@ -55,6 +56,10 @@ type PemPayload = {
   jenis_pemanfaatan?: string; mitra?: string; alamat_mitra?: string
   mulai?: string; masa_tahun?: number; berakhir?: string; peruntukan?: string; jenis_dokumen?: string
   dokumen_paths?: string[]
+  // Nominal pemanfaatan (2026-09-23) — HANYA utk jenis berpendapatan (Sewa/
+  // KSP/BGS-BSG/KSPI, `perluNilaiPemanfaatan`); Pinjam Pakai non-profit, field
+  // ini tak pernah ditawarkan utk jenis itu & selalu undefined di sana.
+  nilai_pemanfaatan?: number
 }
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string
@@ -303,6 +308,13 @@ export default function Pemanfaatan() {
                         {p.mulai || '-'} s.d. {p.berakhir || '-'} ({p.masa_tahun || '-'} th)
                         {' · '}No. Dok: {j.no_sk} · Tgl. {j.tanggal} · {j.periode}
                       </p>
+                      {perluNilaiPemanfaatan(p.jenis_pemanfaatan || '') && (
+                        <p className="text-xs text-gray-500">
+                          Nilai Pemanfaatan: {p.nilai_pemanfaatan ? formatRupiah2(p.nilai_pemanfaatan) : (
+                            <span className="text-amber-600">belum diisi — lengkapi lewat ✎</span>
+                          )}
+                        </p>
+                      )}
                       {p.peruntukan && <p className="text-xs text-gray-500">Peruntukan: {p.peruntukan}</p>}
                       {p.jenis_dokumen && <p className="text-xs text-gray-500">Jenis Dokumen: {p.jenis_dokumen}</p>}
                       <DokumenLinks paths={p.dokumen_paths || []} />
@@ -387,6 +399,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
   const [alamat, setAlamat] = useState(p.alamat_mitra || '')
   const [mulai, setMulai] = useState(p.mulai || '')
   const [masa, setMasa] = useState(String(p.masa_tahun ?? ''))
+  const [nilaiPemanfaatan, setNilaiPemanfaatan] = useState(String(p.nilai_pemanfaatan ?? ''))
   const [peruntukan, setPeruntukan] = useState(p.peruntukan || '')
   const [jenisDok, setJenisDok] = useState(p.jenis_dokumen || '')
   const [ket, setKet] = useState(header.keterangan || '')
@@ -404,6 +417,10 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
     if (!mulai) { setErr('Tanggal mulai pemanfaatan wajib diisi.'); return }
     if (mulai < dateBounds.min) { setErr(`Tanggal mulai pemanfaatan tidak boleh sebelum tahun kerja berjalan (${dateBounds.min}).`); return }
     if (!Number.isFinite(masaNum) || masaNum <= 0) { setErr('Masa pemanfaatan (tahun) harus > 0.'); return }
+    const nilaiNum = Number(nilaiPemanfaatan)
+    if (perluNilaiPemanfaatan(jenis) && (!nilaiPemanfaatan.trim() || !Number.isFinite(nilaiNum) || nilaiNum <= 0)) {
+      setErr('Nilai Pemanfaatan wajib diisi (> 0) untuk jenis ini.'); return
+    }
     if (pindahSemester) {
       setErr(`Tanggal masuk ${tglPeriode}, sedangkan jurnal ini di ${header.periode}. Pindah semester tidak diizinkan — batalkan & buat pemanfaatan baru.`)
       return
@@ -418,6 +435,10 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
       jenis_pemanfaatan: jenis, mitra: mitra.trim(), alamat_mitra: alamat.trim() || undefined,
       mulai, masa_tahun: masaNum, berakhir, peruntukan: peruntukan.trim() || undefined, jenis_dokumen: jenisDok.trim() || undefined,
       dokumen_paths: p.dokumen_paths,
+      // Berganti jenis ke Pinjam Pakai → nilainya IKUT DIBUANG (bukan
+      // ditinggal basi): jenis itu non-profit, menyisakan angka lama akan
+      // terbaca sbg pendapatan yang tak pernah ada.
+      nilai_pemanfaatan: perluNilaiPemanfaatan(jenis) ? nilaiNum : undefined,
     }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload }).eq('id', header.id)
@@ -470,6 +491,14 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
             <input type="number" min={1} className="select-filter w-full" value={masa} onChange={e => setMasa(e.target.value)} />
             <p className="text-xs text-gray-400 mt-1">Berakhir: {berakhir || '—'}</p>
           </div>
+          {perluNilaiPemanfaatan(jenis) && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Nilai Pemanfaatan (Rp)</label>
+              <input type="number" min={0} step="0.01" className="select-filter w-full"
+                value={nilaiPemanfaatan} onChange={e => setNilaiPemanfaatan(e.target.value)} placeholder="mis. 25000000" />
+              {Number(nilaiPemanfaatan) > 0 && <p className="text-xs text-gray-400 mt-1">{formatRupiah2(Number(nilaiPemanfaatan))}</p>}
+            </div>
+          )}
           <div>
             <label className="block text-xs text-gray-500 mb-1">Tanggal Dokumen</label>
             <input type="date" className="select-filter w-full" max={dateBounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
@@ -510,6 +539,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
   const [alamat, setAlamat] = useState('')
   const [mulai, setMulai] = useState(todayStr())
   const [masa, setMasa] = useState('1')
+  const [nilaiPemanfaatan, setNilaiPemanfaatan] = useState('')
   const [peruntukan, setPeruntukan] = useState('')
   const [jenisDok, setJenisDok] = useState('')
   const [noSk, setNoSk] = useState('')
@@ -584,6 +614,9 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
       if (!mulai) { setErr('Tanggal mulai pemanfaatan wajib diisi.'); return }
       if (mulai < dateBounds.min) { setErr(`Tanggal mulai pemanfaatan tidak boleh sebelum tahun kerja berjalan (${dateBounds.min}) — fokus di tahun kerja berjalan saja.`); return }
       if (!Number.isFinite(masaNum) || masaNum <= 0) { setErr('Masa pemanfaatan (tahun) harus > 0.'); return }
+      if (perluNilaiPemanfaatan(jenis) && (!nilaiPemanfaatan.trim() || !Number.isFinite(Number(nilaiPemanfaatan)) || Number(nilaiPemanfaatan) <= 0)) {
+        setErr('Nilai Pemanfaatan wajib diisi (> 0) untuk jenis ini.'); return
+      }
       if (dokPaths.length === 0) { setErr('Dokumen pemanfaatan wajib diunggah.'); return }
     }
     if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }
@@ -596,6 +629,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
         jenis_pemanfaatan: jenis, mitra: mitra.trim(), alamat_mitra: alamat.trim() || undefined,
         mulai, masa_tahun: masaNum, berakhir, peruntukan: peruntukan.trim() || undefined, jenis_dokumen: jenisDok.trim() || undefined,
         dokumen_paths: dokPaths,
+        nilai_pemanfaatan: perluNilaiPemanfaatan(jenis) ? Number(nilaiPemanfaatan) : undefined,
       }
       const { data, error } = await supabase.from('jurnal_header').insert({
         skpd_id: skpdId, kategori: 'pemanfaatan', jenis: 'pemanfaatan',
@@ -641,6 +675,9 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
             <p className="text-sm text-gray-500">
               {JENIS_PEMANFAATAN_LABEL[p.jenis_pemanfaatan || ''] || 'Pemanfaatan'} · Mitra: {p.mitra || '-'}
               {' · '}{p.mulai || '-'} s.d. {p.berakhir || '-'} · Tgl. {header.tanggal} · {header.periode}
+              {perluNilaiPemanfaatan(p.jenis_pemanfaatan || '') && (
+                <> · Nilai: {p.nilai_pemanfaatan ? formatRupiah2(p.nilai_pemanfaatan) : 'belum diisi — lengkapi lewat ✎'}</>
+              )}
             </p>
             <DokumenLinks paths={p.dokumen_paths || []} label="Dokumen Pemanfaatan" />
           </>
@@ -660,6 +697,14 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
               <label className="block text-xs text-gray-500 mb-1">Alamat Mitra</label>
               <input className="select-filter w-full" value={alamat} onChange={e => setAlamat(e.target.value)} />
             </div>
+            {perluNilaiPemanfaatan(jenis) && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Nilai Pemanfaatan (Rp)</label>
+                <input type="number" min={0} step="0.01" className="select-filter w-full"
+                  value={nilaiPemanfaatan} onChange={e => setNilaiPemanfaatan(e.target.value)} placeholder="mis. 25000000" />
+                {Number(nilaiPemanfaatan) > 0 && <p className="text-xs text-gray-400 mt-1">{formatRupiah2(Number(nilaiPemanfaatan))}</p>}
+              </div>
+            )}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Peruntukan Pemanfaatan</label>
               <input className="select-filter w-full" value={peruntukan} onChange={e => setPeruntukan(e.target.value)} placeholder="mis. Kantor kas / ATM" />

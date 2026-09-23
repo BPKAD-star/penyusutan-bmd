@@ -10,18 +10,47 @@ import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
-import { JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
+import {
+  JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL, perluNilaiPemanfaatan,
+  persenMasaPemanfaatan, bandPemanfaatan, perluPeringatanPenarikan, WARNA_BAND_PEMANFAATAN,
+  type BandPemanfaatan,
+} from '@/lib/pemanfaatan'
 
 type HeaderPayload = {
   jenis_pemanfaatan?: string; mitra?: string; alamat_mitra?: string
-  mulai?: string; berakhir?: string; peruntukan?: string
+  mulai?: string; berakhir?: string; peruntukan?: string; nilai_pemanfaatan?: number
 }
 type Row = {
-  key: string; skpd: string; jenis: string; mitra: string; nibar: string; nama: string
-  lingkup: string; mulai: string; berakhir: string; status: string; nilai: number; noDok: string
+  key: string; skpd: string; jenis: string; jenisRaw: string; mitra: string; nibar: string; nama: string
+  lingkup: string; mulai: string; berakhir: string; status: string
+  // null = tak berlaku (Pinjam Pakai, non-profit) — beda dari 0 (berpendapatan
+  // tapi belum diisi angkanya).
+  nilai: number | null
+  noDok: string
+  persen: number | null
+  band: BandPemanfaatan | null
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
+
+// Visualisasi masa berlangsung pemanfaatan (permintaan user 2026-09-23) —
+// warna & ambangnya SATU sumber (lib/pemanfaatan.ts `bandPemanfaatan`), jangan
+// dihitung ulang di sini supaya bar & kolom Persentase tak pernah menyimpang.
+function BarMasaPemanfaatan({ persen, band }: { persen: number | null; band: BandPemanfaatan | null }) {
+  if (persen == null || band == null) return <span className="text-gray-300 text-xs">—</span>
+  const warna = WARNA_BAND_PEMANFAATAN[band]
+  const lebar = Math.min(100, Math.max(0, persen))
+  return (
+    <div className="w-36">
+      <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+        <div className={`h-full ${warna.bar}`} style={{ width: `${lebar}%` }} />
+      </div>
+      {perluPeringatanPenarikan(band) && (
+        <p className="text-[10px] text-red-600 mt-1 leading-tight">⚠ Siapkan penarikan barang / perpanjangan perjanjian</p>
+      )}
+    </div>
+  )
+}
 
 export default function LaporanPemanfaatan() {
   const supabase = createClient()
@@ -57,7 +86,7 @@ export default function LaporanPemanfaatan() {
       aset: { id: string; nibar: string | null; nama_barang: string | null } | null
     }[]
 
-    const acc = new Map<string, { nibar: string; nama: string; lingkup: string; nilai: number; selesai: boolean; headerId: string }>()
+    const acc = new Map<string, { nibar: string; nama: string; lingkup: string; selesai: boolean; headerId: string }>()
     for (const r of ledRows) {
       if (!r.aset || !hById.has(r.header_id)) continue
       const key = `${r.header_id}|${r.aset.id}`
@@ -65,7 +94,7 @@ export default function LaporanPemanfaatan() {
         acc.set(key, {
           nibar: r.aset.nibar || '-', nama: r.aset.nama_barang || '-',
           lingkup: r.payload?.lingkup === 'sebagian' ? `Sebagian${r.payload?.bagian ? ` — ${r.payload.bagian}` : ''}` : 'Seluruhnya',
-          nilai: r.nilai, selesai: false, headerId: r.header_id,
+          selesai: false, headerId: r.header_id,
         })
       } else if (r.jenis === 'pemanfaatan_selesai') {
         const cur = acc.get(key); if (cur) cur.selesai = true
@@ -76,11 +105,22 @@ export default function LaporanPemanfaatan() {
     for (const [key, v] of acc) {
       const h = hById.get(v.headerId)!
       const p = h.payload || {}
+      const jenisRaw = p.jenis_pemanfaatan || ''
       const status = v.selesai ? 'Selesai' : (p.berakhir && today > p.berakhir ? 'Berakhir' : 'Aktif')
+      const mulai = p.mulai || ''
+      const berakhir = p.berakhir || ''
+      const persen = persenMasaPemanfaatan(mulai, berakhir, today)
+      // Nilai TIDAK datang dari `transaksi_bmd.nilai` (baris pemanfaatan SELALU
+      // 0 — event netral) melainkan dari nominal yang dientri di header
+      // (jurnal_header.payload.nilai_pemanfaatan). null = jenisnya memang tak
+      // berpendapatan (Pinjam Pakai); angka (termasuk 0) = berpendapatan tapi
+      // mungkin belum diisi.
       out.push({
-        key, skpd: skpdNama[h.skpd_id] || '-', jenis: JENIS_PEMANFAATAN_LABEL[p.jenis_pemanfaatan || ''] || (p.jenis_pemanfaatan || '-'),
+        key, skpd: skpdNama[h.skpd_id] || '-', jenis: JENIS_PEMANFAATAN_LABEL[jenisRaw] || (jenisRaw || '-'), jenisRaw,
         mitra: p.mitra || '-', nibar: v.nibar, nama: v.nama, lingkup: v.lingkup,
-        mulai: p.mulai || '-', berakhir: p.berakhir || '-', status, nilai: v.nilai, noDok: h.no_sk,
+        mulai, berakhir, status,
+        nilai: perluNilaiPemanfaatan(jenisRaw) ? (p.nilai_pemanfaatan ?? 0) : null,
+        noDok: h.no_sk, persen, band: persen == null ? null : bandPemanfaatan(persen),
       })
     }
     return out
@@ -95,8 +135,11 @@ export default function LaporanPemanfaatan() {
     setExporting(true)
     exportToExcel(rows.map(r => ({
       'SKPD': r.skpd, 'Jenis Pemanfaatan': r.jenis, 'Mitra': r.mitra, 'NIBAR': r.nibar, 'Nama Barang': r.nama,
-      'Lingkup': r.lingkup, 'Mulai': r.mulai, 'Berakhir': r.berakhir, 'Status': r.status,
-      'Nilai Perolehan (Rp)': r.nilai, 'No. Dokumen': r.noDok,
+      'Lingkup': r.lingkup, 'Mulai': r.mulai, 'Berakhir': r.berakhir,
+      'Persentase Masa Berlangsung': r.persen == null ? '-' : `${Math.round(r.persen)}%`,
+      'Status': r.status,
+      'Nilai Pemanfaatan (Rp)': r.nilai == null ? '-' : r.nilai,
+      'No. Dokumen': r.noDok,
     })), namaBerkasLaporan({
       laporan: 'Laporan Pemanfaatan', skpd: skpdNama, akhiran: [jenis],
     }), 'Pemanfaatan')
@@ -172,15 +215,17 @@ export default function LaporanPemanfaatan() {
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <th className="table-th">SKPD</th><th className="table-th">Jenis</th><th className="table-th">Mitra</th>
-                <th className="table-th">Barang</th><th className="table-th">Lingkup</th><th className="table-th">Mulai s.d. Berakhir</th>
+                <th className="table-th">Barang - NIBAR</th><th className="table-th">Lingkup</th>
+                <th className="table-th">Mulai s.d. Berakhir</th>
+                <th className="table-th text-center">Persentase</th>
                 <th className="table-th text-center">Status</th><th className="table-th text-right">Nilai</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="table-td text-center py-12 text-gray-400">Tidak ada data pemanfaatan</td></tr>
+                <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Tidak ada data pemanfaatan</td></tr>
               ) : rows.map(r => (
                 <tr key={r.key}>
                   <td className="table-td text-xs">{r.skpd}</td>
@@ -188,9 +233,13 @@ export default function LaporanPemanfaatan() {
                   <td className="table-td text-xs">{r.mitra}</td>
                   <td className="table-td text-xs"><p className="font-medium">{r.nama}</p><p className="text-gray-400">{r.nibar}</p></td>
                   <td className="table-td text-xs">{r.lingkup}</td>
-                  <td className="table-td text-xs">{r.mulai} s.d. {r.berakhir}</td>
+                  <td className="table-td text-xs">
+                    <p>{r.mulai || '-'} s.d. {r.berakhir || '-'}</p>
+                    <div className="mt-1"><BarMasaPemanfaatan persen={r.persen} band={r.band} /></div>
+                  </td>
+                  <td className="table-td text-center text-xs">{r.persen == null ? '-' : `${Math.round(r.persen)}%`}</td>
                   <td className="table-td text-center text-xs">{r.status}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah2(r.nilai)}</td>
+                  <td className="table-td text-right text-xs">{r.nilai == null ? '-' : formatRupiah2(r.nilai)}</td>
                 </tr>
               ))}
             </tbody>

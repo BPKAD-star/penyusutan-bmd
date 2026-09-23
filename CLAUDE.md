@@ -6636,6 +6636,98 @@ per barang, jadi tak ada tempat yang layak dituju).
 - **Tak ada migrasi lagi** — murni tampilan + satu deep-link baru di atas
   RPC/kolom yang sudah dibuka migrasi 20260923_02 di atas.
 
+## Nilai Pemanfaatan (nominal sewa/KSP/BGS-BSG/KSPI) & Laporan Pemanfaatan divisualisasi (2026-09-23)
+
+Dua permintaan user sekaligus. **Tak ada migrasi** — keduanya murni
+`jurnal_header.payload` (jsonb) + tampilan.
+
+### (1) Form "Nilai Pemanfaatan" — lupa disediakan sejak fitur ini dibuat
+
+Empat jenis yang MENGHASILKAN PENDAPATAN (Sewa, KSP, BGS/BSG, KSPI) tak pernah
+punya field nominal sejak menu Pemanfaatan dibangun (20260721_01) — cuma
+identitas mitra/masa/dokumen yang ditawarkan, angka sewanya sendiri tak ada di
+mana pun. Pinjam Pakai **non-profit** (keputusan user eksplisit "ndak perlu
+ada form nilai pemanfaatan") — field-nya TAK DITAWARKAN sama sekali utk jenis
+itu, bukan sekadar boleh dikosongkan.
+
+- **Predikat SATU tempat**: `perluNilaiPemanfaatan(jenis)` (lib/pemanfaatan.ts,
+  `JENIS_BERPENDAPATAN = ['sewa','ksp','bgs_bsg','kspi']`), dipakai KETIGA
+  titik yang perlu tahu — `BarangForm` (buat baru), `EditHeaderModal` (edit),
+  & `LaporanPemanfaatan` (kolom Nilai). Nambah jenis pemanfaatan baru yang
+  berpendapatan → cukup masuk daftar itu, jangan menulis kondisi baru di
+  ketiga tempat.
+- **Disimpan di `jurnal_header.payload.nilai_pemanfaatan`, BUKAN
+  `transaksi_bmd.nilai`.** Baris ledger pemanfaatan SENGAJA selalu `nilai:0`
+  (event NETRAL — CLAUDE.md 20260721_01, tak mengubah nilai/penyusutan), jadi
+  menulis nominalnya ke situ berarti melanggar kesengajaan itu. Header = SATU
+  perjanjian, jadi satu nominal per header — pola yang sama dgn `estimasi_hasil`
+  RKBMD (rencana pendapatan, kolom TERSENDIRI, bukan menumpang kolom lain).
+  ⚠️ Kalau satu header memuat BEBERAPA barang, nominal yang sama tercetak di
+  SETIAP baris Laporan (bukan dibagi rata) — konsisten dgn "satu nominal
+  mewakili SATU perjanjian", tapi berarti Σ kolom Nilai di Laporan BUKAN
+  penjumlahan yang aman kalau ada header multi-barang. Belum ada UI yang
+  menjumlahkannya, jadi belum jadi masalah nyata; kalau nanti ditambah kartu
+  rekap "Total Nilai", ia wajib menjumlah PER HEADER, bukan per baris.
+- **WAJIB DIISI (> 0) saat jenisnya berpendapatan**, di KEDUA form — `BarangForm`
+  (header baru) DAN `EditHeaderModal` (retroaktif utk kartu yang terlanjur
+  dibuat sebelum field ini ada, persis yang diminta user: "kalo di bagian edit
+  juga sediain"). Berganti jenis ke Pinjam Pakai di Edit → nilainya IKUT
+  DIBUANG dari payload (`perluNilaiPemanfaatan(jenis) ? nilaiNum : undefined`),
+  bukan ditinggal basi — kalau tidak, angka lama terbaca sbg pendapatan yang
+  tak pernah ada utk perjanjian yang sudah dinyatakan non-profit.
+- **Kartu LAMA yang belum diisi ditandai amber "belum diisi — lengkapi lewat
+  ✎"** di ringkasan header (list utama & panel "Tambah Barang"), bukan
+  dibiarkan tampil `Rp0` yang bisa dibaca sbg "memang gratis".
+
+### (2) Laporan Pemanfaatan: kolom baku + visualisasi masa berlangsung
+
+Susunan kolom BARU (permintaan user, urutan persis): **SKPD · Jenis · Mitra ·
+Barang - NIBAR · Lingkup · Mulai s.d. Berakhir (+ bar persentase) · Persentase
+· Status · Nilai**.
+
+- **"Nilai" kini nominal pemanfaatan (poin 1 di atas), BUKAN lagi
+  `transaksi_bmd.nilai`** — sebelum ini kolom itu (berjudul salah kaprah
+  "Nilai Perolehan (Rp)" di Export) selalu menampilkan **0** utk SEMUA baris,
+  krn memang membaca kolom ledger yang sengaja selalu nol. `null` (tampil `-`)
+  = jenisnya Pinjam Pakai (tak berlaku); angka (termasuk 0) = jenis
+  berpendapatan yang mungkin belum diisi — dua keadaan itu SENGAJA dibedakan
+  (`Row.nilai: number | null`), pola yang sama dgn "belum diisi" vs "memang
+  nol" di berbagai tempat lain repo ini.
+- **Bar & angka Persentase SATU SUMBER**: `persenMasaPemanfaatan(mulai,
+  berakhir, hariIni)` + `bandPemanfaatan(persen)` (lib/pemanfaatan.ts), dipakai
+  bersama oleh warna bar (`BarMasaPemanfaatan` di LaporanPemanfaatan.tsx) DAN
+  kolom Persentase — dua penyaji yang membaca fungsi berbeda akan cepat atau
+  lambat menampilkan warna & angka yang tak sinkron untuk baris yang sama.
+  ⚠️ `hariIni` WAJIB DIOPER, bukan `new Date()` di dalam fungsi pekat itu
+  sendiri — pola yang sama dgn `hitungBerakhir` (lib/pemanfaatan.ts lama):
+  fungsi murni tak boleh diam-diam bergantung jam sistem, supaya bisa diuji &
+  tak bergeser sehari krn zona waktu. Tanggal diurai manual (`Date.UTC`), bukan
+  `new Date(str)` — jebakan yang sama yang berkali-kali dicatat di dokumen ini.
+- **Lima pita warna, batas ATAS eksklusif** (`bandPemanfaatan`): <25% hijau,
+  25–49% kuning, 50–74% oranye, 75–99% merah, ≥100% hitam. Bacaan harfiah dari
+  kalimat user ("under 25% ijo, under 50% kuning, …") — angka PERSIS di batas
+  (25/50/75/100) masuk pita di ATASNYA, bukan di bawahnya.
+- **Notifikasi "siapkan penarikan/perpanjangan" HANYA di pita MERAH (75–99%)**
+  — `perluPeringatanPenarikan(band) = band === 'merah'`, PERSIS seperti diminta
+  user ("Di range merah itu ada notif"). Pita HITAM (≥100%, sudah lewat tanggal
+  berakhir) SENGAJA tak dapat notif ini lagi — bacaan literal instruksinya,
+  bukan diperluas "supaya lebih aman", krn kalau sudah lewat maka peringatan
+  "siap-siap" sudah tak relevan (yang relevan justru tindakan SEKARANG, bukan
+  peringatan dini).
+  ⚠️ `persen == null` (tanggal mulai/berakhir kosong atau rentangnya tak
+  masuk akal — `berakhir <= mulai`) → bar & kolom Persentase menampilkan `—`/
+  `-`, BUKAN dipaksa 0%: nol berarti "baru mulai", `null` berarti "tak bisa
+  dinilai" — dua hal yang berbeda persis seperti `bergeserDariNibar`/
+  `statusSilang` di tempat lain repo ini.
+- **Export Excel ikut kolom & semantik baru**: "Persentase Masa Berlangsung"
+  & "Nilai Pemanfaatan (Rp)" (bukan lagi "Nilai Perolehan (Rp)" yang salah
+  kaprah) ditambahkan/diganti namanya, `-` untuk kedua keadaan null di atas.
+- **Header "Barang" diganti "Barang - NIBAR"** — permintaan user, kolomnya
+  sendiri sudah lama menumpuk nama+NIBAR, cuma labelnya belum menyebutkan itu.
+- Dikunci **lib/pemanfaatan.test.ts** (baru): `perluNilaiPemanfaatan`,
+  `persenMasaPemanfaatan` (termasuk kasus zona waktu & rentang tak valid),
+  `bandPemanfaatan` (kelima pita & batasnya), `perluPeringatanPenarikan`.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
