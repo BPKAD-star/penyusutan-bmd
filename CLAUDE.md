@@ -6438,11 +6438,20 @@ yang berlaku.
   Koordinat, & Keterangan dicabut. ⚠️ Ketiganya juga **tidak dikirim** saat
   menyimpan bidang, supaya nilai lama yang terlanjur ada TIDAK ter-NULL-kan
   diam-diam.
-- **Pin peta = titik register.** ⚠️ Titik lama milik bidang tetap dipakai sbg
-  CADANGAN untuk tanah yang registernya belum bertitik — diukur ke produksi
-  2026-09-23: 2.741 tanah aktif, 2.376 bertitik register, **21 hanya bertitik di
-  bidangnya** (536 bidang bertitik). Tanpa cadangan itu 21 pin lenyap dari peta
-  tanpa satu pun tanda. Begitu registernya dititik, pin register yang menang.
+- **Pin peta = titik register.** Titik lama milik bidang tetap dipakai sbg
+  CADANGAN untuk tanah yang registernya belum bertitik — tanpa cadangan itu
+  tanah yang cuma bertitik di bidangnya lenyap dari peta tanpa satu pun tanda.
+  Begitu registernya dititik, pin register yang menang.
+- **BACKFILL migrasi 20260923_01**: 18 tanah yang registernya `latitude IS
+  NULL` tapi punya bidang berkoordinat — titik bidang PALING AWAL (created_at,
+  lalu id) disalin ke `aset`. Ketahuan lewat pemakaian nyata: kartu "Blm titik"
+  di daftar (baca `aset.latitude`) tetap menampilkan pin di peta (jatuh ke
+  cadangan bidang) — dua sumber tak sinkron untuk satu tanah yang sama.
+  Diverifikasi transaksi+ROLLBACK sebelum ditulis (18 baris), lalu dijalankan.
+  ⚠️ Kasus TERBURUK 3 bidang berkoordinat ("Tanah Jalan Sukorejo -
+  Brenggolo") — jaraknya cuma puluhan meter, jadi memilih SATU (bukan
+  rata-rata) aman. `aset_bidang_tanah` sendiri tak disentuh. Non-ledger, UPDATE
+  biasa (pola sama dgn migrasi 20260820_04).
 - Daftar Barang Awal: kolom Lokasi kini murni register (tak lagi diringkas dari
   bidang); `BidangAgg` cuma membawa luas. Export Daftar Bidang tak lagi memuat
   alamat/koordinat bidang.
