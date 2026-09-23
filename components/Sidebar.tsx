@@ -25,9 +25,9 @@ const ICON = {
   logout: ic('M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1'),
 }
 
-// Urutan top-level DITENTUKAN USER (2026-09-22): Dashboard · Saldo Awal ·
-// RKBMD · Pembukuan · Inventarisasi · Daftar Barang · Penyusutan · GIS Tanah ·
-// Kendaraan · IPA · Pelaporan · (Admin, ditempel terpisah di bawah — lihat
+// Urutan top-level DITENTUKAN USER (2026-09-23): Dashboard · Saldo Awal ·
+// RKBMD · Pembukuan · Inventarisasi · GIS Tanah · Kendaraan · Daftar Barang ·
+// Penyusutan · IPA · Pelaporan · (Admin, ditempel terpisah di bawah — lihat
 // `menuTree`). Murni urutan tampil, sama sekali tak menyentuh struktur di
 // dalam tiap grup — jangan disusun ulang lagi tanpa permintaan baru.
 const navTree: NavNode[] = [
@@ -139,20 +139,22 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/inventarisasi/tindak-lanjut', label: 'Tindak Lanjut' },
     ],
   },
-  { type: 'leaf', href: '/dashboard/daftar-barang', label: 'Daftar Barang' },
-  { type: 'leaf', href: '/dashboard/penyusutan', label: 'Penyusutan' },
   {
     // Sub-menu (keputusan user 2026-09-11): "Peta" = satu-satunya penulis
     // aset_bidang_tanah (KelolaBidangPanel); "Daftar Bidang" = murni
     // lihat+Export (pola KIR "kerja vs lihat", tapi dikelompokkan jadi SATU
     // grup di sini, bukan dua entri top-level terpisah — permintaan eksplisit
     // user, membatalkan letak awal "Pelaporan → Daftar Bidang Tanah").
+    // Posisi (2026-09-23, permintaan user): di bawah Inventarisasi, di atas
+    // Daftar Barang — bukan lagi sesudah Penyusutan.
     type: 'group', label: 'GIS Tanah', icon: ICON.gis, children: [
       { type: 'leaf', href: '/dashboard/gis', label: 'Peta' },
       { type: 'leaf', href: '/dashboard/gis/daftar-bidang', label: 'Daftar Bidang' },
     ],
   },
   { type: 'leaf', href: '/dashboard/kendaraan', label: 'Kendaraan' },
+  { type: 'leaf', href: '/dashboard/daftar-barang', label: 'Daftar Barang' },
+  { type: 'leaf', href: '/dashboard/penyusutan', label: 'Penyusutan' },
   {
     type: 'group', label: 'IPA', icon: ICON.ipa, children: [
       { type: 'leaf', href: '/dashboard/ipa', label: 'Dashboard IPA' },
