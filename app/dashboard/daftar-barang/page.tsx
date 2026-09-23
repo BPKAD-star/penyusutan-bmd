@@ -142,7 +142,8 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 //   ditampilkan sebelum Keterangan di SEMUA jenis aset (2026-07-20).
 // - Tanah: kolom Dokumen Kepemilikan (no/tgl/atas nama) SENGAJA tidak di layar —
 //   satu register bisa banyak bidang & dokumennya dikelola per-bidang di GIS
-//   (badge "🗺 N bidang" di sel nama link ke sana). TETAP ada di Export (BPK).
+//   (badge "🗺 N bidang" di sel Jenis Hak, permintaan user 2026-09-23, link ke
+//   sana). TETAP ada di Export (BPK).
 // Kolom per jenis aset → **lib/kolomBarang.ts**, dipakai BERSAMA dgn Daftar
 // Barang Awal (REFACTOR-PLAN §5 butir 2.3). Sebelum 2026-09-15 daftarnya
 // ditulis dua kali & cuma dijaga komentar "ubah satu, samakan yang lain" —
@@ -258,8 +259,8 @@ function thClass(key: string) {
 function tdClass(key: string, striped?: boolean) {
   if (key === 'nama') return `table-td align-top sticky left-0 z-10 border-r border-gray-200 ${striped ? 'bg-gray-50/50' : 'bg-white'}`
   if (key === 'kode') return 'table-td align-top'
-  if (key === 'nilai' || key === 'luas') return 'table-td text-right text-xs'
-  if (key === 'komptabel') return 'table-td text-center text-xs capitalize'
+  if (key === 'nilai' || key === 'luas') return 'table-td text-right text-xs align-top'
+  if (key === 'komptabel') return 'table-td text-center text-xs capitalize align-top'
   return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
 }
 
@@ -961,13 +962,6 @@ export default function DaftarBarangPage() {
               : 'Kode register (posisi terakhir barang)'}>
             {r.kode_register ? `REG ${r.kode_register}${bergeser ? ' ⚠' : ''}` : 'REG —'}
           </p>
-          {(bidangCount[r.id]?.n || 0) > 0 && (
-            <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar || '')}`}
-              className="inline-flex items-center gap-1 mt-1 text-[11px] text-teal hover:underline"
-              title="Tanah ini terbagi beberapa bidang/sertifikat — kelola & lihat di GIS Tanah">
-              🗺 {bidangCount[r.id].n} bidang
-            </Link>
-          )}
         </>
         )
       }
@@ -1004,7 +998,21 @@ export default function DaftarBarangPage() {
       case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || '-'
       case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || '-'
       case 'atas_nama': return r.nama_dokumen_kepemilikan || '-'
-      case 'hak': return r.jenis_hak || '-'
+      case 'hak': {
+        const b = bidangCount[r.id]
+        return (
+          <>
+            <p className="text-xs text-gray-600">{r.jenis_hak || '-'}</p>
+            {(b?.n || 0) > 0 && (
+              <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar || '')}`}
+                className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-teal hover:underline"
+                title="Tanah ini terbagi beberapa bidang/sertifikat — kelola & lihat di GIS Tanah">
+                🗺 {b.n} bidang
+              </Link>
+            )}
+          </>
+        )
+      }
       case 'nopol': return r.no_polisi || '-'
       case 'rangka': return r.no_rangka || '-'
       case 'mesin': return r.no_mesin || '-'

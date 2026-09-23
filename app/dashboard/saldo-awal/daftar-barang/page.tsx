@@ -268,8 +268,8 @@ function thClass(key: string) {
 function tdClass(key: string) {
   if (key === 'nama' || key === 'kode') return 'table-td align-top'
   const a = COL_META[key]?.align
-  if (a === 'right') return 'table-td text-right text-xs'
-  if (a === 'center') return 'table-td text-center text-xs' + (key === 'komptabel' ? ' capitalize' : '')
+  if (a === 'right') return 'table-td text-right text-xs align-top'
+  if (a === 'center') return 'table-td text-center text-xs align-top' + (key === 'komptabel' ? ' capitalize' : '')
   return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
 }
 

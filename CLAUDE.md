@@ -6515,6 +6515,30 @@ yang ada di daftar barang awal."*
 - **Tak ada migrasi** — murni logika tampil di klien; `aset_awal_2026` &
   `aset_bidang_tanah` tak disentuh.
 
+### Daftar Barang: badge "N bidang" pindah ke Jenis Hak, sel angka diratakan atas
+
+Dua keluhan tampilan di menu Daftar Barang (register tahun berjalan), sama
+hari. **Tak ada migrasi** — murni JSX/CSS di `app/dashboard/daftar-barang/
+page.tsx` (+ align-top yang sama di Daftar Barang Awal, lihat di bawah).
+
+- **Badge 🗺 "N bidang"** (link ke GIS Tanah untuk tanah yang sudah terbagi
+  beberapa sertifikat) dulu nangkring di baris keempat sel `nama` (di bawah
+  Nama Barang · NIBAR · Kode Register) — permintaan user: pindahkan ke sel
+  **Jenis Hak**. Sel `nama` sekarang balik ke tiga baris; `case 'hak'` di
+  `cellContent` menampilkan `jenis_hak` lalu badgenya di bawah, dgn `bidangCount`
+  yang sama (tak ada query baru).
+- **`nilai`/`luas`/`komptabel` tidak `align-top`** — beda dari kolom lain
+  (`nama`/`kode`/kolom teks biasa) yang sudah `align-top` sejak awal. Tabel HTML
+  default `vertical-align: middle`, jadi begitu sel `nama` di baris yang sama
+  jadi 3–4 baris tinggi (nama panjang, atau — sebelum perbaikan ini — badge
+  bidang), ketiga kolom itu kelihatan "melayang" di tengah sementara kolom lain
+  rata di atas. Ditambal dgn menyisipkan `align-top` di ketiga cabang `tdClass`
+  yang sebelumnya kelewat.
+  ⚠️ **Bug yang SAMA ada di Daftar Barang Awal** (`tdClass` di sana ber-bentuk
+  serupa, cabang `align === 'right'`/`'center'` juga tak pernah dapat
+  `align-top`) — ikut ditambal di putaran yang sama karena kelasnya identik,
+  bukan permintaan terpisah.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
