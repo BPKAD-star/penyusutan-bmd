@@ -88,6 +88,8 @@ export type InvSnapshot = {
   no_polisi?: string | null
   no_rangka?: string | null
   no_mesin?: string | null
+  latitude?: number | null
+  longitude?: number | null
   skpd_id?: number | null
 }
 
@@ -127,7 +129,8 @@ export type InvJawaban = {
   alamat?: SesuaiField & { wilayah_kode?: string; alamat_detail?: string }
   // K
   kondisi?: KondisiFisik
-  // L — Penggunaan Barang
+  // L — Penggunaan Barang. `null` = eksplisit "Digunakan sendiri" (bedanya dgn
+  // `undefined` — "belum dijawab" — lihat `digunakanSendiriTampil` di bawah).
   penggunaan?: {
     pihak: PihakPengguna
     nama?: string              // nama instansi / pihak lain / pengguna barang lainnya
@@ -139,7 +142,7 @@ export type InvJawaban = {
     // khusus pempus / pemda_lain / pihak_lain
     dasar_ada?: boolean        // ada dokumen penguasaan?
     nama_dokumen?: string
-  }
+  } | null
   // M — tercatat ganda. Barang kembarannya dipilih dari daftar barang SKPD
   // lembar ini sendiri (sama seperti induk di bagian I), bukan diketik bebas.
   ganda?: boolean
@@ -323,6 +326,40 @@ export function normalKondisi(v: string | null | undefined): KondisiFisik | null
   if (s === 'rr' || s.includes('ringan')) return 'RR'
   if (s === 'rb' || s.includes('berat')) return 'RB'
   return null
+}
+
+// ── Nilai TAMPILAN radio (keputusan user 2026-09-24) ────────────────────────
+// Lembar yang BELUM PERNAH disimpan (`isBaru`) sengaja polos — tak satu pun
+// radio tercentang sampai user benar-benar mengklik, supaya form tidak diam-
+// diam "menjawab sendiri" sebelum disentuh. Lembar yang SUDAH pernah disimpan
+// tetap memakai bacaan LAMA (kosong = tersirat jawaban default) supaya isian
+// lama tak berubah tampilannya begitu dibuka ulang. Nilai yang TERSIMPAN sama
+// sekali tak berubah oleh ketiga fungsi ini — murni bagaimana ia dirender.
+
+/** Sesuai/Tidak Sesuai (bagian B–D, F, J, L, M–O jij/kendaraan). */
+export function sesuaiTampil(f: SesuaiField | undefined, isBaru: boolean): boolean | undefined {
+  if (f?.sesuai != null) return f.sesuai
+  return isBaru ? undefined : true
+}
+
+/** Bagian I — biaya atribusi / kapitalisasi. */
+export function atribusiTampil(
+  v: InvJawaban['atribusi'], isBaru: boolean,
+): InvJawaban['atribusi'] {
+  if (v) return v
+  return isBaru ? undefined : 'bukan'
+}
+
+/**
+ * Bagian L — "Digunakan sendiri" dikodekan sbg `penggunaan` KOSONG, yang sama
+ * persis dgn "belum dijawab". `null` (baru) = eksplisit dipilih; `undefined`
+ * pada lembar LAMA = tersirat "sendiri" (perilaku sebelum 2026-09-24);
+ * `undefined` pada lembar BARU = belum dijawab sama sekali.
+ */
+export function digunakanSendiriTampil(p: InvJawaban['penggunaan'], isBaru: boolean): boolean {
+  if (p) return false
+  if (p === null) return true
+  return !isBaru
 }
 
 const tidakSesuai = (f: SesuaiField | undefined) => f != null && f.sesuai === false

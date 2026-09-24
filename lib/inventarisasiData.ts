@@ -24,6 +24,8 @@ export type BarisLembar = {
   tgl_perolehan: string | null
   kondisi_barang: string | null
   alamat_detail: string | null
+  latitude: number | null
+  longitude: number | null
   no_polisi: string | null
   no_rangka: string | null
   no_mesin: string | null
@@ -113,7 +115,8 @@ export function snapshotDariLembar(r: BarisLembar): InvSnapshot {
     nama_barang: r.nama_barang, spesifikasi_lainnya: r.spesifikasi_lainnya, merek_tipe: r.merek_tipe,
     jumlah: r.jumlah, satuan: r.satuan, nilai_perolehan: r.nilai_perolehan, alamat: r.alamat_detail,
     kondisi: r.kondisi_barang, tgl_perolehan: r.tgl_perolehan,
-    no_polisi: r.no_polisi, no_rangka: r.no_rangka, no_mesin: r.no_mesin, skpd_id: r.skpd_id,
+    no_polisi: r.no_polisi, no_rangka: r.no_rangka, no_mesin: r.no_mesin,
+    latitude: r.latitude, longitude: r.longitude, skpd_id: r.skpd_id,
   }
 }
 

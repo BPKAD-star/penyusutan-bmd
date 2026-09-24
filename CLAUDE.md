@@ -7155,6 +7155,54 @@ user: jadikan pop-up, dan berlaku di **semua** menu Cara Perolehan & Pengelolaan
   (primitif serupa, ditulis lebih dulu tapi belum ada pemakainya) tak disentuh.
   1843 test tetap hijau, 0 error typecheck/lint.
 
+## Lembar Kerja Inventarisasi (LKI): radio polos, kotak "Tercatat", titik koordinat live (2026-09-24, migrasi 20260924_04)
+
+Tiga keluhan user atas `LkiForm.tsx` sekaligus, semuanya di bagian Sesuai/Tidak
+Sesuai (B–D, F, J, L–O), atribusi (I), & Penggunaan Barang (L):
+
+- **Radio TAK LAGI pre-checked untuk lembar yang BELUM PERNAH disimpan.**
+  Sebelumnya `sesuai={j.field?.sesuai !== false}`, `atribusi === 'bukan' ||
+  !j.atribusi`, dan `checked={!j.penggunaan}` semuanya diam-diam merender
+  jawaban "Sesuai"/"Bukan biaya atribusi"/"Digunakan sendiri" TERCENTANG
+  sebelum user mengklik apa pun — form seolah sudah menjawab sendiri.
+  Obatnya tiga helper TAMPILAN di lib/inventarisasi.ts (`sesuaiTampil`,
+  `atribusiTampil`, `digunakanSendiriTampil`), dipakai bersama flag
+  `isBaru = !baris.id`: **lembar baru → polos** (tak satu pun radio
+  tercentang sampai diklik); **lembar yang SUDAH pernah disimpan → bacaan
+  lama dipertahankan** (kosong tetap tersirat "Sesuai"/dst), supaya isian
+  lama tak berubah tampilan begitu dibuka ulang. Nilai yang TERSIMPAN sama
+  sekali tak berubah — murni cara merendernya.
+  ⚠️ **"Digunakan sendiri" butuh sentinel `null` baru** (`InvJawaban.
+  penggunaan?: {...} | null`) — field itu dikodekan sbg OBJEK KOSONG, sama
+  persis dgn "belum dijawab" (`undefined`), jadi tanpa sentinel eksplisit
+  tak ada cara membedakan "user mengklik Digunakan Sendiri" dari "belum
+  disentuh sama sekali" pada lembar baru. `null` = eksplisit dipilih;
+  `undefined` pada lembar lama tetap tersirat "sendiri" (kompat mundur).
+- **"Tercatat: ..." jadi kotak biru tipis** (`KotakTercatat`, dulu satu
+  baris teks abu-abu polos di dalam `SesuaiRadio`) — permintaan user "kotak
+  yang rapi". Dipakai bersama section Sesuai/Tidak Sesuai DAN Titik
+  Koordinat (poin berikut).
+- **Titik Koordinat (O) kini menarik dari `aset.latitude/longitude` LIVE**,
+  bukan cuma dari `j.latitude/longitude` (isian koreksi) yang selalu kosong
+  di lembar baru. `InvSnapshot` dapat `latitude`/`longitude`; peta terisi
+  titik yang sudah tercatat, dan begitu user mengklik/mengetik ulang,
+  `j.latitude/longitude` eksplisit (termasuk `null` kalau dihapus) menang
+  atas nilai live.
+  ⚠️ **Migrasi WAJIB** — dua fungsi tak pernah membawa lat/long sama
+  sekali: `fn_inventarisasi_snapshot` (dibaca SAAT SIMPAN, membekukan
+  snapshot "sebelum" ke `inventarisasi_barang.snapshot`; `RETURNS jsonb` →
+  `CREATE OR REPLACE` cukup) & `fn_inventarisasi_lembar` (pratinjau lembar
+  yang BELUM disimpan; `RETURNS TABLE` → WAJIB `DROP` dulu, GRANT ditulis
+  ulang). `fn_inventarisasi_hasil` **TIDAK disentuh** — untuk barang yang
+  SUDAH disimpan ia mengembalikan `h.snapshot` (kolom jsonb tersimpan) apa
+  adanya, jadi begitu `fn_inventarisasi_snapshot` membawa lat/long, isian
+  BARU otomatis ikut membawanya lewat kolom itu tanpa fungsi ini disentuh.
+  Isian LAMA (sebelum migrasi ini) tak retroaktif dapat titik koordinat di
+  snapshot-nya — konsisten dgn "snapshot dibekukan saat disimpan, bukan
+  dihitung ulang" yang sudah berlaku di modul ini.
+- **Tak ada migrasi lain** selain 20260924_04. Dikunci lib/inventarisasi.
+  test.ts; 1843 test tetap hijau, 0 error typecheck.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
