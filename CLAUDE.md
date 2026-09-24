@@ -6969,6 +6969,33 @@ latar** & boleh gagal tanpa menjatuhkan daftarnya (pola 2026-09-22).
   menu Inventarisasi gagal memuat (pesan error tampil, tak ada yang tertulis).
   Sebaliknya menu lama mati begitu migrasinya jalan — diterima, tabelnya kosong.
 
+## Kondisi Tanah diisi "Baik" (migrasi 20260924_01)
+
+Permintaan user 2026-09-24: isi `kondisi_barang` yang kosong untuk seluruh
+Tanah (1.3.1) jadi `'Baik'`, di **Daftar Barang live** (`aset`) **dan Saldo
+Awal** (`aset_awal_2026`). Non-ledger, murni kolom deskriptif — sama seperti
+koreksi spesifikasi lain lewat Saldo Awal (20260728_01) atau Koreksi.
+
+- **Diverifikasi ke produksi SEBELUM dijalankan**: seluruh Tanah cuma punya DUA
+  keadaan — `NULL` atau sudah `'Baik'`. **Tidak ada satu pun** baris berkondisi
+  'Rusak Ringan'/'Rusak Berat'/'Hilang'/'Tidak Ditemukan' yang bisa tertimpa —
+  jadi ini murni mengisi kekosongan, bukan menimpa penilaian kondisi yang sudah
+  ada. Predikatnya tetap `WHERE kondisi_barang IS NULL` (bukan tanpa syarat),
+  supaya nilai lain yang mungkin masuk di antara verifikasi & eksekusi tak ikut
+  tertimpa diam-diam.
+- **Scope**: `aset` hanya `status='aktif'` (yang tampil di Daftar Barang) —
+  Tanah `status='dihapus'` (6 baris NULL) sengaja DILEWATI, barang yang sudah
+  keluar register tak perlu kondisi baru. `aset_awal_2026` tak punya kolom
+  status (snapshot beku), seluruh barisnya diisi.
+- **Hasil**: `aset` aktif Tanah 126→**2.741** baris 'Baik' (2.615 diisi);
+  `aset_awal_2026` 118→**2.732** baris 'Baik' (2.614 diisi); 6 baris `dihapus`
+  tetap NULL (tak disentuh).
+- **Tak menyentuh ledger, tak butuh run ulang engine** — kolom ini di luar
+  perhitungan penyusutan & Laporan BMD sepenuhnya.
+- Migrasinya **idempotent** (`WHERE ... IS NULL`) & sudah dijalankan langsung
+  ke produksi lewat MCP Supabase saat ditulis — menjalankannya lagi di SQL
+  Editor aman, jadi no-op.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
