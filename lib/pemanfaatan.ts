@@ -24,10 +24,12 @@ export const LINGKUP_OPT: { value: Lingkup; label: string }[] = [
 ]
 
 // Golongan yang BOLEH langsung dimanfaatkan (BLOKIR KERAS utk sisanya):
-// real estate (Tanah, Gedung & Bangunan, Jalan/Jaringan/Irigasi) + Aset
-// Lain-Lain. Barang bergerak (Peralatan & Mesin, ATL) & lainnya WAJIB direklas
-// ke Aset Lain-Lain (1.5.4) dulu — keputusan user 2026-07-21.
-export const PEMANFAATAN_ELIGIBLE_GOLONGAN = ['1.3.1', '1.3.3', '1.3.4', '1.5.4']
+// Gedung & Bangunan + Aset Lain-Lain. Tanah (1.3.1) & Jalan/Jaringan/Irigasi
+// (1.3.4) DICABUT dari daftar ini (keputusan user 2026-09-24, membatalkan
+// cakupan awal 2026-07-21 yang juga memuat keduanya). Barang bergerak
+// (Peralatan & Mesin, ATL) & golongan lain WAJIB direklas ke Aset Lain-Lain
+// (1.5.4) dulu.
+export const PEMANFAATAN_ELIGIBLE_GOLONGAN = ['1.3.3', '1.5.4']
 
 export function isPemanfaatanEligible(kode: string): boolean {
   return PEMANFAATAN_ELIGIBLE_GOLONGAN.includes(kodeLevel3(kode))

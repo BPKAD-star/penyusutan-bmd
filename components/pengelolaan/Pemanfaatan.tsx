@@ -11,9 +11,10 @@
 // CACHE ringkas (badge/filter) — di-set saat catat, di-null saat selesai;
 // sumber kebenaran tetap ledger.
 //
-// BLOKIR KERAS: hanya real estate (Tanah/Gedung/Jalan-Jaringan-Irigasi) + Aset
-// Lain-Lain yang boleh dipilih. Barang bergerak (Peralatan&Mesin/ATL) WAJIB
-// direklas ke Aset Lain-Lain dulu (lib/pemanfaatan.PEMANFAATAN_ELIGIBLE_GOLONGAN).
+// BLOKIR KERAS: hanya Gedung & Bangunan + Aset Lain-Lain yang boleh dipilih
+// (Tanah & Jalan/Jaringan/Irigasi DICABUT dari cakupan 2026-09-24). Barang
+// bergerak (Peralatan&Mesin/ATL) WAJIB direklas ke Aset Lain-Lain dulu
+// (lib/pemanfaatan.PEMANFAATAN_ELIGIBLE_GOLONGAN).
 //
 // Akhiri: baris 'pemanfaatan_selesai' (append-only) + null cache. Header (No/Tgl
 // dokumen) boleh diedit selama semester sama (guard fn_jurnal_header_guard).
@@ -257,7 +258,7 @@ export default function Pemanfaatan() {
 
   return (
     <FormShell judul="Pemanfaatan" msg={msg}
-      deskripsi="Pilih SKPD, buat perjanjian pemanfaatan (sewa/pinjam pakai/KSP/BGS-BSG/KSPI), lalu centang barang + lingkupnya. Hanya Tanah, Gedung, Jalan/Jaringan/Irigasi, & Aset Lain-Lain yang bisa dimanfaatkan — barang bergerak reklas ke Aset Lain-Lain dulu.">
+      deskripsi="Pilih SKPD, buat perjanjian pemanfaatan (sewa/pinjam pakai/KSP/BGS-BSG/KSPI), lalu centang barang + lingkupnya. Hanya Gedung & Bangunan dan Aset Lain-Lain yang bisa dimanfaatkan — barang bergerak reklas ke Aset Lain-Lain dulu.">
       <PeringatanNamaSkpd err={errSkpd} />
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">
@@ -749,7 +750,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
 
       <div className="card p-5">
         <h2 className="text-base font-semibold text-gray-800 mb-1">Pilih Barang</h2>
-        <p className="text-xs text-gray-400 mb-4">Hanya Tanah, Gedung & Bangunan, Jalan/Jaringan/Irigasi, dan Aset Lain-Lain yang muncul. Barang bergerak harus direklas ke Aset Lain-Lain dulu.</p>
+        <p className="text-xs text-gray-400 mb-4">Hanya Gedung & Bangunan dan Aset Lain-Lain yang muncul. Barang bergerak harus direklas ke Aset Lain-Lain dulu.</p>
         <div className="flex flex-wrap items-end gap-3 mb-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Jenis Aset</label>

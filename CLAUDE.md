@@ -6996,6 +6996,24 @@ koreksi spesifikasi lain lewat Saldo Awal (20260728_01) atau Koreksi.
   ke produksi lewat MCP Supabase saat ditulis — menjalankannya lagi di SQL
   Editor aman, jadi no-op.
 
+## Pemanfaatan: Tanah & Jalan/Jaringan/Irigasi dicabut dari cakupan (2026-09-24)
+
+Keputusan user, membatalkan sebagian cakupan awal 2026-07-21. Golongan yang
+boleh dipilih di menu Pemanfaatan (`PEMANFAATAN_ELIGIBLE_GOLONGAN`,
+lib/pemanfaatan.ts) menyusut dari empat jadi dua: **Gedung & Bangunan (1.3.3)
+dan Aset Lain-Lain (1.5.4) saja** — Tanah (1.3.1) & Jalan/Jaringan/Irigasi
+(1.3.4) dicabut.
+
+- **Murni satu konstanta** — `isPemanfaatanEligible()` (dipakai picker query
+  `.or(...)` & filter klien di `Pemanfaatan.tsx`) otomatis ikut menyempit,
+  jadi tak ada tempat lain yang perlu disentuh. Teks deskripsi di layar &
+  komentar kepala berkas ikut disamakan supaya tak menyebut Tanah/JIJ lagi.
+- **TIDAK menyentuh kartu yang SUDAH ada.** Eligibilitas cuma memfilter
+  barang yang bisa DITAMBAHKAN ke perjanjian baru — kartu Pemanfaatan lama
+  atas Tanah/JIJ (kalau ada) tetap tampil & bisa diakhiri/dibatalkan seperti
+  biasa, ledgernya tak disentuh sama sekali.
+- **Tak ada migrasi** — murni konstanta TypeScript.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
