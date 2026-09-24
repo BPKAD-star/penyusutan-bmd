@@ -7106,6 +7106,55 @@ sehingga SEMUA policy tulis menolak. Yang salah cuma sisi BACA agregatnya.
   → GRANT lama tetap berlaku, CREATE OR REPLACE mempertahankan ACL selama
   tanda tangannya sama.
 
+## Kegagalan menulis: pop-up bertema, bukan lagi teks Postgres mentah (2026-09-24)
+
+User menguji "Simpan Kontrak" di Pengadaan sebagai akun pengawas (yang memang
+diblokir RLS — lihat bagian di atas) dan melihat strip merah polos "Gagal
+menyimpan kontrak: new row violates row-level security policy for table
+'jurnal_header'" — pesan Postgres mentah, bukan tampilan aplikasi. Permintaan
+user: jadikan pop-up, dan berlaku di **semua** menu Cara Perolehan & Pengelolaan
+— dugaan itu benar, pola yang sama ada di sebelas berkas.
+
+- **`konfirmasiGagal(konfirmasi, pesan, judul?)`** (shared/ui/konfirmasi.tsx) —
+  pop-up satu tombol (nada `merah`, `tanpaBatal: true`), mengangkat pola
+  `gagalSetujui` yang sudah lebih dulu ada khusus alur Setujui di Pengadaan/
+  PerolehanManual/KonstruksiPengadaan jadi satu sumber dipakai SEMUA menu.
+  Pesannya tetap ditampilkan APA ADANYA — helper ini cuma mengganti wadahnya
+  (banner inline yang gampang terlewat → pop-up yang wajib ditutup), bukan
+  menerjemahkan istilah Postgres/RLS ke bahasa awam (belum diminta).
+- **Diterapkan di 11 komponen**: Pengadaan, PerolehanManual, KonstruksiPengadaan
+  (Cara Perolehan); PenggunaanMasuk, PenerimaanInternal, PengeluaranInternal,
+  Penghapusan, Pemanfaatan, Pengamanan, Reklasifikasi, Koreksi (Pengelolaan).
+  Setiap kegagalan **MENULIS** (insert/update/delete/RPC yang ditolak DB) kini
+  pop-up: kartu draft (Simpan/Edit Header), upload dokumen, Hapus/Arsipkan
+  jurnal, Buka Kunci, Batal (Reklas/Koreksi/Pemecahan/Penggabungan/Pengalihan/
+  Mutasi Internal), dan seluruh cabang `KoreksiForm.simpan()` (nilai perolehan,
+  spesifikasi, penggabungan, pemecahan, pencatatan ganda).
+- ⚠️ **SENGAJA TIDAK disentuh**: validasi field sinkron ("No. Kontrak wajib
+  diisi", "Centang minimal satu barang") — itu bukan "pesan" yang dikeluhkan
+  user (pesan Postgres mentah), dan tetap pantas inline karena langsung
+  terlihat tanpa menutup pop-up dulu. Juga banner kegagalan MEMUAT
+  (`setErrLoad`/pesan "gagal memuat …") — itu keadaan yang bertahan di layar,
+  bukan hasil satu aksi, jadi tetap banner persisten (pola fail-closed modul
+  Pelaporan). Dan channel `setErr` yang dipakai BERSAMA sub-hook load-only
+  (`usePemilihBarang`, `usePencatatanGanda`, `useSpesifikasi`, dst.) — hanya
+  error hasil TULIS langsung di `simpan()`/handler kartu yang dikonversi.
+- ⚠️ **Pop-up TAK PERNAH dipanggil dari dalam `kerjakan` milik `konfirmasi()`
+  lain** — `KonfirmasiProvider` cuma satu instance modal; memanggil
+  `konfirmasi()` kedua kali selagi yang pertama masih `busy` akan
+  membatalkan promise pertama & menutup pop-up kedua secara prematur saat
+  `kerjakan` selesai. Pola yang dipakai di PenggunaanMasuk/PenerimaanInternal
+  (`terima`/`tolak`/`batal*`, yang sebelumnya sudah pakai `kerjakan`):
+  `kerjakan` **THROW** alih-alih memanggil popup, `await konfirmasi({...})`
+  dibungkus `try/catch` di LUAR, dan `konfirmasiGagal` dipanggil di `catch`
+  — persis pola `approve()` KonstruksiPengadaan yang sudah lebih dulu benar.
+  Di menu lain (`if (!(await konfirmasi(...)).ya) return` lalu DB call
+  terpisah sesudahnya) tak ada isu nesting, jadi `konfirmasiGagal` dipanggil
+  langsung di titik gagalnya.
+- **Tak ada migrasi** — murni tampilan; `shared/db/query.ts`'s `assertTulisOk`
+  (primitif serupa, ditulis lebih dulu tapi belum ada pemakainya) tak disentuh.
+  1843 test tetap hijau, 0 error typecheck/lint.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

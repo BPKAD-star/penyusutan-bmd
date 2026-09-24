@@ -32,7 +32,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import SearchSelect from '@/components/SearchSelect'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
-import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 
 // = bentuk yang dikembalikan usePemilihBarangLengkap (kolom kendaraan & uraian
 // baku ikut, sekalipun "Barang" di sini cuma memakai sebagian — lihat
@@ -237,7 +237,7 @@ export default function PengeluaranInternal() {
         labelYa: 'Ya, hapus kartunya',
       })).ya) return
       const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
-      if (error) { setMsg(`Error: ${error.message}`); return }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal menghapus jurnal: ${error.message}`); return }
       setMsg('Jurnal mutasi internal dihapus.')
     } else {
       if (!(await konfirmasi({
@@ -250,7 +250,7 @@ export default function PengeluaranInternal() {
       })).ya) return
       const { error } = await supabase.from('jurnal_header')
         .update({ payload: { ...(j.payload || {}), draft_items: sisa } }).eq('id', j.id)
-      if (error) { setMsg(`Error: ${error.message}`); return }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
       setMsg('Barang dikeluarkan dari draft.')
     }
     loadJurnals(skpd)
@@ -267,7 +267,7 @@ export default function PengeluaranInternal() {
       labelYa: 'Hapus kartu',
     })).ya) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
-    if (error) { setMsg(`Error: ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menghapus jurnal: ${error.message}`); return }
     setMsg('Jurnal mutasi internal dihapus.')
     loadJurnals(skpd)
   }
@@ -424,6 +424,7 @@ function EditHeaderModal({ header, onClose, onSaved }: {
   header: Header; onClose: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
@@ -442,7 +443,7 @@ function EditHeaderModal({ header, onClose, onSaved }: {
     for (const file of Array.from(files)) {
       const path = `mutasi-internal/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -469,8 +470,9 @@ function EditHeaderModal({ header, onClose, onSaved }: {
         payload: { ...(header.payload || {}), dokumen_paths: dokPaths },
       })
       .eq('id', header.id)
-    if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
-    setSaving(false); onSaved()
+    setSaving(false)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
+    onSaved()
   }
 
   return (
@@ -517,6 +519,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   header: Header | null; onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
 
   const [noSk, setNoSk] = useState('')
@@ -577,7 +580,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     for (const file of Array.from(files)) {
       const path = `mutasi-internal/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -607,8 +610,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
       const gabung = [...lama, ...selList.filter(b => !ada.has(b.id)).map(draftDari)]
       const { error } = await supabase.from('jurnal_header')
         .update({ payload: { ...(header.payload || {}), draft_items: gabung } }).eq('id', header.id)
-      if (error) { setErr(`Gagal menambah barang: ${error.message}`); setSaving(false); return }
-      setSaving(false); onSaved(selList.length); return
+      setSaving(false)
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal menambah barang: ${error.message}`); return }
+      onSaved(selList.length); return
     }
 
     if (!noSk.trim()) { setErr('No. dokumen wajib diisi.'); setSaving(false); return }
@@ -623,8 +627,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
       skpd_tujuan: Number(tujuan), approval_status: 'pending',
       payload: { dokumen_paths: dokPaths, draft_items: selList.map(draftDari) },
     })
-    if (error) { setErr(`Gagal membuat jurnal: ${error.message}`); setSaving(false); return }
-    setSaving(false); onSaved(selList.length)
+    setSaving(false)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal membuat jurnal: ${error.message}`); return }
+    onSaved(selList.length)
   }
 
   const perluDokumenDulu = !header && dokPaths.length === 0

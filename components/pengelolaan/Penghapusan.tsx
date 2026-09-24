@@ -33,7 +33,7 @@ import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
-import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
 import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
@@ -365,7 +365,7 @@ export default function Penghapusan() {
         })).ya) return
         const { error } = await supabase.from('jurnal_header')
           .update({ payload: { ...(j.payload || {}), draft_items: sisa } }).eq('id', j.id)
-        if (error) { setMsg(`Error: ${error.message}`); return }
+        if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
         setMsg('Barang dikeluarkan dari draft pengalihan.')
       }
       loadJurnals(skpd)
@@ -387,14 +387,14 @@ export default function Penghapusan() {
       [{ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.nibar }],
       'penghapusan ini',
     )
-    if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); return }
+    if (!guard.boleh) { await konfirmasiGagal(konfirmasi, guard.pesan, 'Belum bisa dibatalkan'); return }
     // Reversal dicatat di PERIODE penghapusan asli (header.tanggal), bukan hari ini —
     // supaya di view periode itu barang langsung kembali muncul (konsisten Daftar Barang).
     const { error } = await catatTransaksi(supabase, {
       asetId: l.aset_id, jenis: 'batal_penghapusan', tanggal: j.tanggal,
       keterangan: `Pembatalan dari jurnal ${j.no_sk}`,
     })
-    if (error) { setMsg(`Error: ${error}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, String(error)); return }
     setMsg('Barang dikeluarkan dari jurnal — kembali aktif, penyusutan dilanjutkan.')
     loadJurnals(skpd)
   }
@@ -439,11 +439,11 @@ export default function Penghapusan() {
       const { error } = await supabase.from('jurnal_header')
         .update({ approval_status: 'ditolak', rejected_reason: 'Ditarik kembali oleh SKPD asal (kartu sudah pernah diterima lalu dibatalkan).' })
         .eq('id', j.id)
-      if (error) { setMsg(`Error: ${error.message}`); return }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal mengarsipkan kartu: ${error.message}`); return }
       setMsg(`Kartu ${j.no_sk} diarsipkan — tak lagi muncul di antrean persetujuan SKPD tujuan.`)
     } else {
       const { error } = await supabase.from('jurnal_header').delete().eq('id', j.id)
-      if (error) { setMsg(`Error: ${error.message}`); return }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal menghapus kartu: ${error.message}`); return }
       setMsg('Jurnal pengalihan dihapus.')
     }
     loadJurnals(skpd)
@@ -732,6 +732,7 @@ function EditHeaderModal({ header, onClose, onSaved }: {
   header: Header; onClose: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
@@ -753,8 +754,9 @@ function EditHeaderModal({ header, onClose, onSaved }: {
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null })
       .eq('id', header.id)
-    if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
-    setSaving(false); onSaved()
+    setSaving(false)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
+    onSaved()
   }
 
   return (
@@ -802,6 +804,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   header: Header | null; onCancel: () => void; onSaved: (n: number, pengalihan: boolean) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
 
   const [jenis, setJenis] = useState<JenisHapus>('penghapusan_pemindahtanganan')
@@ -851,7 +854,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
       // oleh `jenis`), tapi tetap terpisah rapi di bucket.
       const path = `${jenis === 'pengalihan_status' ? 'pengalihan' : 'penghapusan-sk'}/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -899,8 +902,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         const gabung = [...lama, ...selList.filter(b => !ada.has(b.id)).map(draftDari)]
         const { error } = await supabase.from('jurnal_header')
           .update({ payload: { ...(header.payload || {}), draft_items: gabung } }).eq('id', header.id)
-        if (error) { setErr(`Gagal menambah barang: ${error.message}`); setSaving(false); return }
-        setSaving(false); onSaved(selList.length, true); return
+        setSaving(false)
+        if (error) { await konfirmasiGagal(konfirmasi, `Gagal menambah barang: ${error.message}`); return }
+        onSaved(selList.length, true); return
       }
       if (!noSk.trim()) { setErr('No. dokumen sumber wajib diisi.'); setSaving(false); return }
       if (!tgl) { setErr('Tanggal dokumen sumber wajib diisi.'); setSaving(false); return }
@@ -915,8 +919,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         skpd_tujuan: Number(tujuan), approval_status: 'pending',
         payload: { dokumen_paths: dokPaths, draft_items: selList.map(draftDari) },
       })
-      if (error) { setErr(`Gagal membuat jurnal pengalihan: ${error.message}`); setSaving(false); return }
-      setSaving(false); onSaved(selList.length, true); return
+      setSaving(false)
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal membuat jurnal pengalihan: ${error.message}`); return }
+      onSaved(selList.length, true); return
     }
 
     // ── PENGHAPUSAN: alur lama (ledger + soft-delete langsung) ──
@@ -937,7 +942,7 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
         payload: { dokumen_paths: dokPaths },
       }).select(HEADER_COLS).single()
-      if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
+      if (error || !data) { setSaving(false); await konfirmasiGagal(konfirmasi, `Gagal membuat header jurnal: ${error?.message}`); return }
       h = data as unknown as Header
     }
 
@@ -946,7 +951,9 @@ function BarangForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
       // Header baru + gagal isi barang → hapus header supaya tak jadi orphan
       // (kartu jurnal kosong). Header lama (tambah barang) dibiarkan utuh.
       if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
-      setErr(e); setSaving(false); return
+      setSaving(false)
+      await konfirmasiGagal(konfirmasi, e)
+      return
     }
     setSaving(false)
     onSaved(selList.length, false)

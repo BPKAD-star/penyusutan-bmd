@@ -170,3 +170,34 @@ export function useKonfirmasi(): Tanya {
   if (!t) throw new Error('useKonfirmasi dipakai di luar <KonfirmasiProvider> (dipasang di DashboardChrome).')
   return t
 }
+
+/**
+ * Pop-up SATU TOMBOL untuk kegagalan menyimpan/menghapus/dsb — pengganti
+ * banner inline merah yang menampilkan teks Postgres/RLS mentah apa adanya
+ * (mis. "new row violates row-level security policy for table 'jurnal_
+ * header'"), yang sampai 2026-09-24 tersebar di HAMPIR SEMUA menu Cara
+ * Perolehan & Pengelolaan (Pengadaan, PerolehanManual, KonstruksiPengadaan,
+ * PenggunaanMasuk, PenerimaanInternal, PengeluaranInternal, Penghapusan,
+ * Pemanfaatan, Pengamanan, Reklasifikasi, Koreksi, Kapitalisasi) — permintaan
+ * user: "itu kan berarti berlaku di semua cara perolehan, dan pengelolaan
+ * kan?". Polanya sama persis dgn `gagalSetujui` yang sudah lebih dulu ada di
+ * Pengadaan.tsx (khusus alur Setujui); helper ini mengangkatnya jadi satu
+ * sumber dipakai bersama seluruh menu itu, supaya nada & susunannya tak
+ * disalin bebas di tiap `catch`/`if (error)`.
+ *
+ * ⚠️ Pesan mentahnya (`pesan`) TETAP ditampilkan apa adanya — helper ini cuma
+ * mengganti WADAHNYA (dari banner inline yang gampang terlewat mata jadi
+ * pop-up yang wajib ditutup dulu), BUKAN menerjemahkan istilah Postgres/RLS
+ * ke bahasa awam. Itu pekerjaan terpisah & belum diminta.
+ *
+ * Dipakai untuk kegagalan MENULIS (insert/update/RPC yang menolak) — bukan
+ * pengganti validasi field sinkron ("No. Kontrak wajib diisi") yang memang
+ * pantas tetap inline & langsung terlihat tanpa menutup dulu sebuah pop-up.
+ */
+export async function konfirmasiGagal(
+  konfirmasi: Tanya,
+  pesan: string,
+  judul = 'Gagal menyimpan',
+): Promise<void> {
+  await konfirmasi({ nada: 'merah', ikon: '⚠', judul, isi: pesan, labelYa: 'Mengerti', tanpaBatal: true })
+}

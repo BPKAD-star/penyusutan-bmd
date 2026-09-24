@@ -37,7 +37,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
-import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import { cekBolehBatal, cekBolehSisip } from '@/lib/guardPembatalan'
 import { koreksiFieldKeys, ASET_NUM_COLS, angkaKolomAset, type FieldKey } from '@/lib/asetFields'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
@@ -193,7 +193,7 @@ export default function Reklasifikasi() {
       const { data: kor, error: korErr } = await supabase.from('transaksi_bmd')
         .select('id').eq('aset_id', l.aset_id)
         .in('jenis', ['koreksi_spesifikasi', 'batal_koreksi_spesifikasi']).limit(1)
-      if (korErr) { setMsg(`Error: gagal memeriksa riwayat koreksi barang ini — ${korErr.message}`); return }
+      if (korErr) { await konfirmasiGagal(konfirmasi, `Gagal memeriksa riwayat koreksi barang ini — ${korErr.message}`); return }
       if (kor && kor.length > 0) {
         setMsg('Barang ini sudah pernah dikoreksi spesifikasi lewat jurnal — lengkapi lewat Pembukuan > Koreksi > Spesifikasi Barang (bukan dari sini), supaya tombol Batal koreksi lamanya tetap nyambung.')
         return
@@ -201,7 +201,7 @@ export default function Reklasifikasi() {
       const keys = koreksiFieldKeys(l.kode)
       const { data: row, error: rowErr } = await supabase.from('aset')
         .select([...keys, 'foto_paths'].join(',')).eq('id', l.aset_id).single()
-      if (rowErr) { setMsg(`Error: gagal memuat spesifikasi — ${rowErr.message}`); return }
+      if (rowErr) { await konfirmasiGagal(konfirmasi, `Gagal memuat spesifikasi — ${rowErr.message}`); return }
       const r = (row || {}) as Record<string, unknown>
       const f: Record<string, string> = {}
       for (const k of keys) { const v = r[k]; if (v != null) f[k] = String(v) }
@@ -232,7 +232,7 @@ export default function Reklasifikasi() {
     if (foto.replace) patch.foto_paths = foto.replace
     const { error } = await supabase.from('aset').update(patch).eq('id', spekEdit.asetId)
     setSpekSaving(false)
-    if (error) { setMsg(`Error: gagal menyimpan spesifikasi — ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan spesifikasi — ${error.message}`); return }
     setSpekEdit(null)
     setMsg('Spesifikasi barang diperbarui — tanpa jurnal baru, Batal Reklas tetap bisa dipakai.')
     loadJurnals(skpd)
@@ -264,7 +264,7 @@ export default function Reklasifikasi() {
       lines.map(l => ({ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.nibar })),
       'reklas ini',
     )
-    if (!guard.boleh) { setMsg(guard.pesan); setBatalling(false); return }
+    if (!guard.boleh) { setBatalling(false); await konfirmasiGagal(konfirmasi, guard.pesan, 'Belum bisa dibatalkan'); return }
     const today = new Date().toISOString().slice(0, 10)
     const periode = periodeDariTanggal(today)
     const trxRows = lines.map(l => ({
@@ -274,7 +274,7 @@ export default function Reklasifikasi() {
       keterangan: `Batal reklas (${ALASAN_LABEL[j.jenis]})`,
     }))
     const { error } = await supabase.from('transaksi_bmd').insert(trxRows as never)
-    if (error) { setMsg(`Gagal mencatat pembatalan: ${error.message}`); setBatalling(false); return }
+    if (error) { setBatalling(false); await konfirmasiGagal(konfirmasi, `Gagal mencatat pembatalan: ${error.message}`); return }
     // Kembalikan aset ke nilai lama, per baris.
     for (const l of lines) {
       const p = l.payload || {}
@@ -284,7 +284,11 @@ export default function Reklasifikasi() {
       if (p.nama_baru && p.nama_lama) patch.nama_barang = p.nama_lama // nama juga dikembalikan (kalau tadi diedit)
       if (Object.keys(patch).length === 0) continue
       const { error: e2 } = await supabase.from('aset').update(patch).eq('id', l.aset_id)
-      if (e2) { setMsg(`Pembatalan tercatat, tapi kembalikan aset "${l.nama_barang || l.nibar}" gagal: ${e2.message}`); setBatalling(false); loadJurnals(skpd); return }
+      if (e2) {
+        setBatalling(false); loadJurnals(skpd)
+        await konfirmasiGagal(konfirmasi, `Pembatalan tercatat, tapi kembalikan aset "${l.nama_barang || l.nibar}" gagal: ${e2.message}`)
+        return
+      }
     }
     setBatalling(false)
     setSelBatal({})
@@ -575,6 +579,7 @@ function EditHeaderModal({ header, onClose, onSaved }: {
   header: Header; onClose: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
@@ -593,7 +598,7 @@ function EditHeaderModal({ header, onClose, onSaved }: {
     for (const file of Array.from(files)) {
       const path = `reklasifikasi/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -618,8 +623,9 @@ function EditHeaderModal({ header, onClose, onSaved }: {
         payload: { ...(header.payload || {}), dokumen_paths: dokPaths },
       })
       .eq('id', header.id)
-    if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
-    setSaving(false); onSaved()
+    setSaving(false)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
+    onSaved()
   }
 
   return (
@@ -674,6 +680,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   header: Header | null; onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
 
   const [alasan, setAlasan] = useState<Alasan>(header?.jenis || 'komptabel_ke_ekstra')
@@ -787,7 +794,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     for (const file of Array.from(files)) {
       const path = `reklasifikasi/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -817,7 +824,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
           ...(butuhKodeTujuan ? { kode_tujuan: kodeTujuan!.kode, uraian_tujuan: kodeTujuan!.uraian } : {}),
         },
       }).select(HEADER_COLS).single()
-      if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
+      if (error || !data) { setSaving(false); await konfirmasiGagal(konfirmasi, `Gagal membuat header jurnal: ${error?.message}`); return }
       h = data as unknown as Header
     }
 
@@ -833,13 +840,17 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
       h.tanggal, 'reklasifikasi ini')
     if (!guardSisip.boleh) {
       if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
-      setErr(guardSisip.pesan); setSaving(false); return
+      setSaving(false)
+      await konfirmasiGagal(konfirmasi, guardSisip.pesan, 'Belum bisa disimpan')
+      return
     }
 
     const e = await insertLines(h)
     if (e) {
       if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
-      setErr(e); setSaving(false); return
+      setSaving(false)
+      await konfirmasiGagal(konfirmasi, e)
+      return
     }
     setSaving(false)
     onSaved(selList.length)

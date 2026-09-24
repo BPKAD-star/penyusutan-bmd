@@ -34,7 +34,7 @@ import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
 import { useDraftSeleksi, DraftSearchBar, DraftBulkBar } from './draftSeleksi'
 import PreviewDraftModal from './PreviewDraftModal'
-import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 
 export type KategoriPerolehan = 'hibah_masuk' | 'tukar_menukar' | 'hasil_inventarisasi' | 'perolehan_lainnya'
 
@@ -323,7 +323,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
 
   async function savePayload(headerId: string, payload: HeaderPayload) {
     const { error } = await supabase.from('jurnal_header').update({ payload }).eq('id', headerId)
-    if (error) { setMsg(`Error: gagal menyimpan draft: ${error.message}`); return false }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan draft: ${error.message}`); return false }
     return true
   }
   async function tambahDraftItems(h: Jurnal, newItems: DraftItem[]) {
@@ -382,7 +382,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
         labelYa: 'Arsipkan',
       })).ya) return
       const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', h.id)
-      if (error) { setMsg(`Error: gagal mengarsipkan dokumen: ${error.message}`); return }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal mengarsipkan dokumen: ${error.message}`); return }
       setMsg(`Dokumen ${h.no_sk} diarsipkan.`)
       loadJurnals(skpd)
       return
@@ -397,7 +397,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       labelYa: 'Hapus dokumen',
     })).ya) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', h.id)
-    if (error) { setMsg(`Error: gagal menghapus dokumen: ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menghapus dokumen: ${error.message}`); return }
     setMsg(`Dokumen ${h.no_sk} dihapus.`)
     loadJurnals(skpd)
   }
@@ -595,13 +595,13 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       j.lines.map(l => ({ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.uraian_barang || l.nibar })),
       `${judul.toLowerCase()} ini (mis. pengalihan/pemanfaatan/kapitalisasi)`,
     )
-    if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); setBusyId(null); return }
+    if (!guard.boleh) { setBusyId(null); await konfirmasiGagal(konfirmasi, guard.pesan, 'Belum bisa dibuka kunci'); return }
     for (const l of j.lines) {
       const { error } = await catatTransaksi(supabase, {
         asetId: l.aset_id, jenis: `batal_${kategori}`, tanggal: l.tanggal, headerId: j.id,
         keterangan: `Unapprove dokumen ${j.no_sk} — dikembalikan ke draft`,
       })
-      if (error) { setMsg(`Error: ${error}`); setBusyId(null); return }
+      if (error) { setBusyId(null); await konfirmasiGagal(konfirmasi, String(error)); return }
     }
     const draftItems: DraftItem[] = j.lines.map(l => ({
       key: newKey(), golongan: kodeLevel3(l.kode), kode: l.kode, uraianBarang: l.uraian_barang || '',
@@ -619,9 +619,9 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     const { error } = await supabase.from('jurnal_header')
       .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...j.payload, draft_items: draftItems } })
       .eq('id', j.id)
-    if (error) { setMsg(`Error: gagal buka kunci: ${error.message}`); setBusyId(null); return }
-    setMsg(`Dokumen ${j.no_sk} dibuka kunci — kembali ke draft. Edit lalu setujui ulang.`)
     setBusyId(null)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal buka kunci: ${error.message}`); return }
+    setMsg(`Dokumen ${j.no_sk} dibuka kunci — kembali ke draft. Edit lalu setujui ulang.`)
     loadJurnals(skpd)
   }
 
@@ -1106,6 +1106,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
   onCancel: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
   const [noDok, setNoDok] = useState('')
   const [tglDok, setTglDok] = useState(todayStr())
@@ -1123,7 +1124,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
     for (const file of Array.from(files)) {
       const path = `${kategori}/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -1146,8 +1147,9 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
       no_sk: noDok.trim(), tanggal: tglDok, keterangan: ket.trim() || null,
       payload, approval_status: 'pending',
     })
-    if (error) { setErr(`Gagal menyimpan dokumen: ${error.message}`); setSaving(false); return }
-    setSaving(false); onSaved()
+    setSaving(false)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan dokumen: ${error.message}`); return }
+    onSaved()
   }
 
   return (
@@ -1202,6 +1204,7 @@ function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai,
   onClose: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
   const p = header.payload || {}
   const [noDok, setNoDok] = useState(header.no_sk)
@@ -1222,7 +1225,7 @@ function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai,
     for (const file of Array.from(files)) {
       const path = `${kategori}/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -1247,8 +1250,9 @@ function EditHeaderModal({ header, judul, pihakLabel, kategori, cekNomorDipakai,
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noDok.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload })
       .eq('id', header.id)
-    if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
-    setSaving(false); onSaved()
+    setSaving(false)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
+    onSaved()
   }
 
   return (

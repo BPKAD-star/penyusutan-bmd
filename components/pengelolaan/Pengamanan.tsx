@@ -31,7 +31,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { identitasPengamanan, PENGAMANAN_ELIGIBLE_GOLONGAN, pengamananCache } from '@/lib/pengamanan'
 import { backdropClose } from '@/components/backdropClose'
-import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks, bukaDokumen } from './DokumenBastField'
 import { useDokumenBast } from './pengamanan/useDokumenBast'
 import { usePemilihBarangPengamanan, type BarangPengamanan } from './pengamanan/usePemilihBarang'
@@ -161,7 +161,7 @@ export default function Pengamanan() {
     const { error } = await supabase.from('transaksi_bmd').insert({
       aset_id: l.aset_id, jenis, periode: periodeDariTanggal(tgl), tanggal: tgl, nilai: 0, header_id: j.id, payload: {},
     })
-    if (error) { setMsg(`Error: ${error.message}`); return false }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal mencatat transaksi: ${error.message}`); return false }
     await supabase.from('aset').update({ pengamanan: null }).eq('id', l.aset_id)
     return true
   }
@@ -215,7 +215,7 @@ export default function Pengamanan() {
       aset_id: l.aset_id, jenis: 'batal_pengamanan', periode: periodeDariTanggal(tgl), tanggal: tgl, nilai: 0, header_id: j.id, payload: {},
     }))
     const { error } = await supabase.from('transaksi_bmd').insert(rows)
-    if (error) { setMsg(`Error: ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal mencatat transaksi: ${error.message}`); return }
     await supabase.from('aset').update({ pengamanan: null }).in('id', j.lines.map(l => l.aset_id))
     setMsg('Seluruh BAST pengamanan dibatalkan (salah catat).')
     loadJurnals(skpd)
@@ -341,6 +341,7 @@ export default function Pengamanan() {
 // ── Edit header: pegawai + BAST No/Tgl (kunci semester) + Pakta ──────────────
 function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose: () => void; onSaved: () => void }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
   const p = header.payload || {}
   const [nama, setNama] = useState(p.nama_pegawai || '')
@@ -380,7 +381,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
     }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload }).eq('id', header.id)
-    if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); setSaving(false); return }
     // Segarkan cache utk barang yang MASIH diamankan (belum dikembalikan/batal) di header ini.
     const { data: ev } = await supabase.from('transaksi_bmd')
       .select('aset_id,jenis,id').eq('header_id', header.id)
@@ -500,6 +501,7 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
   skpdId: number; skpdNama: string; onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
 
   // ── Isian identitas penghuni/pemakai ──────────────────────────────────────
@@ -552,7 +554,7 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
       skpd_id: skpdId, kategori: 'pengamanan', jenis: 'pengamanan',
       no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload,
     }).select(HEADER_COLS).single()
-    if (error || !data) { setErr(`Gagal membuat BAST pengamanan: ${error?.message}`); setSaving(false); return }
+    if (error || !data) { setSaving(false); await konfirmasiGagal(konfirmasi, `Gagal membuat BAST pengamanan: ${error?.message}`); return }
     const h = data as unknown as Header
 
     const trxRows = selList.map(b => ({
@@ -560,7 +562,12 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
       skpd_asal: b.skpd_id, header_id: h.id, payload: {},
     }))
     const { error: e1 } = await supabase.from('transaksi_bmd').insert(trxRows)
-    if (e1) { await supabase.from('jurnal_header').delete().eq('id', h.id); setErr(`Gagal mencatat transaksi: ${e1.message}`); setSaving(false); return }
+    if (e1) {
+      await supabase.from('jurnal_header').delete().eq('id', h.id)
+      setSaving(false)
+      await konfirmasiGagal(konfirmasi, `Gagal mencatat transaksi: ${e1.message}`)
+      return
+    }
     await supabase.from('aset').update({ pengamanan: pengamananCache(nama.trim(), identitas.trim()) }).in('id', selList.map(b => b.id))
 
     setSaving(false); onSaved(selList.length)

@@ -38,7 +38,7 @@ import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 import { useDateBounds, useTahunBukuMap } from '@/components/useTahunBuku'
 import FormShell from './FormShell'
 import { backdropClose } from '@/components/backdropClose'
-import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import NominalInput from '@/shared/ui/NominalInput'
 
 // Field alasan "Spesifikasi Barang" (golongan-aware, + atribut satuan/asal usul/
@@ -185,10 +185,10 @@ function KoreksiTransaksi() {
       const { data: kor, error: korErr } = await supabase.from('transaksi_bmd')
         .select('id').eq('aset_id', p.aset_id)
         .in('jenis', ['koreksi_spesifikasi', 'batal_koreksi_spesifikasi']).limit(1)
-      if (korErr) { setMsg(`Error: gagal memeriksa riwayat koreksi pecahan — ${korErr.message}`); return }
+      if (korErr) { await konfirmasiGagal(konfirmasi, `Gagal memeriksa riwayat koreksi pecahan — ${korErr.message}`); return }
 
       const { data, error } = await supabase.from('aset').select(BARANG_COLS).eq('id', p.aset_id).single()
-      if (error || !data) { setMsg(`Error: gagal memuat barang pecahan — ${error?.message || 'tidak ditemukan'}`); return }
+      if (error || !data) { await konfirmasiGagal(konfirmasi, `Gagal memuat barang pecahan — ${error?.message || 'tidak ditemukan'}`); return }
       const barang = data as unknown as Barang
 
       if (kor && kor.length > 0) {
@@ -201,7 +201,7 @@ function KoreksiTransaksi() {
       const keys = koreksiFieldKeys(barang.kode)
       const { data: row, error: rowErr } = await supabase.from('aset')
         .select([...keys, 'foto_paths'].join(',')).eq('id', p.aset_id).single()
-      if (rowErr) { setMsg(`Error: gagal memuat spesifikasi — ${rowErr.message}`); return }
+      if (rowErr) { await konfirmasiGagal(konfirmasi, `Gagal memuat spesifikasi — ${rowErr.message}`); return }
       const r = (row || {}) as Record<string, unknown>
       const f: Record<string, string> = {}
       for (const k of keys) { const v = r[k]; if (v != null) f[k] = String(v) }
@@ -234,7 +234,7 @@ function KoreksiTransaksi() {
     if (foto.replace) patch.foto_paths = foto.replace
     const { error } = await supabase.from('aset').update(patch).eq('id', spekPecah.asetId)
     setSpekPecahSaving(false)
-    if (error) { setMsg(`Error: gagal menyimpan spesifikasi — ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan spesifikasi — ${error.message}`); return }
     setSpekPecah(null)
     setMsg(`Spesifikasi pecahan diperbarui — tanpa jurnal baru, Batal Pemecahan tetap bisa dipakai.`)
     loadJurnals(skpd)
@@ -264,7 +264,7 @@ function KoreksiTransaksi() {
       lines.map(l => ({ aset_id: l.aset_id, trx_id: l.trx_id, label: l.nama_barang || l.nibar })),
       'koreksi ini',
     )
-    if (!guard.boleh) { setMsg(guard.pesan); setBatalling(false); return }
+    if (!guard.boleh) { setBatalling(false); await konfirmasiGagal(konfirmasi, guard.pesan, 'Belum bisa dibatalkan'); return }
     const today = new Date().toISOString().slice(0, 10)
     for (const l of lines) {
       let jenis: string
@@ -282,7 +282,11 @@ function KoreksiTransaksi() {
         asetId: l.aset_id, jenis, tanggal: today, headerId: j.id, payload,
         keterangan: `Batal koreksi (${label})`,
       })
-      if (error) { setMsg(`Error: ${error} — sebagian mungkin sudah dibatalkan, muat ulang.`); setBatalling(false); loadJurnals(skpd); return }
+      if (error) {
+        setBatalling(false); loadJurnals(skpd)
+        await konfirmasiGagal(konfirmasi, `${error} — sebagian mungkin sudah dibatalkan, muat ulang.`)
+        return
+      }
     }
     setBatalling(false); setSelBatal({})
     setMsg(`${lines.length} koreksi (${label}) dibatalkan. Jalankan Engine lagi untuk memperbarui penyusutan.`)
@@ -296,7 +300,7 @@ function KoreksiTransaksi() {
   async function handleBatalPemecahan(j: PemecahanJurnal) {
     const tahun = parsePeriode(j.periode).tahun
     if (tahunMap[tahun] !== 'terbuka') {
-      setMsg(`Error: Tahun ${tahun} sudah terkunci — pemecahan tidak bisa dibatalkan. Koreksi lewat pemecahan/gabung baru di periode berjalan.`)
+      await konfirmasiGagal(konfirmasi, `Tahun ${tahun} sudah terkunci — pemecahan tidak bisa dibatalkan. Koreksi lewat pemecahan/gabung baru di periode berjalan.`, 'Belum bisa dibatalkan')
       return
     }
     if (!(await konfirmasi({
@@ -321,7 +325,7 @@ function KoreksiTransaksi() {
           .map(r => ({ aset_id: r.aset_id, trx_id: r.trx_id, label: r.nama_barang || r.nibar })),
         'pemecahan ini',
       )
-      if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); return }
+      if (!guard.boleh) { await konfirmasiGagal(konfirmasi, guard.pesan, 'Belum bisa dibatalkan'); return }
     }
     setBatalId(j.id)
     setMsg('')
@@ -330,14 +334,18 @@ function KoreksiTransaksi() {
         asetId: j.induk.aset_id, jenis: 'batal_pemecahan', tanggal: j.tanggal, nilai: j.induk.nilai, headerId: j.id,
         payload: { induk_nibar: j.induk.nibar }, keterangan: `Pembatalan pemecahan ${j.no_sk}`,
       })
-      if (error) { setMsg(`Error: ${error}`); setBatalId(null); return }
+      if (error) { setBatalId(null); await konfirmasiGagal(konfirmasi, String(error)); return }
     }
     for (const p of j.pecahan) {
       const { error } = await catatTransaksi(supabase, {
         asetId: p.aset_id, jenis: 'batal_pemecahan_masuk', tanggal: j.tanggal, nilai: p.nilai, headerId: j.id,
         payload: { induk_nibar: j.induk?.nibar || null }, keterangan: `Pembatalan pemecahan ${j.no_sk}`,
       })
-      if (error) { setMsg(`Sebagian batal gagal: ${error} — ulangi untuk menuntaskan.`); setBatalId(null); loadJurnals(skpd); return }
+      if (error) {
+        setBatalId(null); loadJurnals(skpd)
+        await konfirmasiGagal(konfirmasi, `Sebagian batal gagal: ${error} — ulangi untuk menuntaskan.`)
+        return
+      }
     }
     setBatalId(null)
     setMsg(`Pemecahan ${j.no_sk} dibatalkan — induk kembali aktif. Jalankan engine untuk memperbarui penyusutan.`)
@@ -358,7 +366,7 @@ function KoreksiTransaksi() {
   async function handleBatalPenggabungan(j: PenggabunganJurnal) {
     const tahun = parsePeriode(j.periode).tahun
     if (tahunMap[tahun] !== 'terbuka') {
-      setMsg(`Error: Tahun ${tahun} sudah terkunci — penggabungan tidak bisa dibatalkan. Koreksi lewat jurnal baru di periode berjalan.`)
+      await konfirmasiGagal(konfirmasi, `Tahun ${tahun} sudah terkunci — penggabungan tidak bisa dibatalkan. Koreksi lewat jurnal baru di periode berjalan.`, 'Belum bisa dibatalkan')
       return
     }
     if (!(await konfirmasi({
@@ -383,7 +391,7 @@ function KoreksiTransaksi() {
           .map(r => ({ aset_id: r.aset_id, trx_id: r.trx_id, label: r.nama_barang || r.nibar })),
         'penggabungan ini',
       )
-      if (!guard.boleh) { setMsg(`Error: ${guard.pesan}`); return }
+      if (!guard.boleh) { await konfirmasiGagal(konfirmasi, guard.pesan, 'Belum bisa dibatalkan'); return }
     }
     setBatalId(j.id)
     setMsg('')
@@ -396,7 +404,7 @@ function KoreksiTransaksi() {
         payload: { target_trx_id: j.induk.trx_id, nilai_perolehan_baru: j.induk.nilaiLama },
         keterangan: `Pembatalan penggabungan ${j.no_sk}`,
       })
-      if (error) { setMsg(`Error: ${error}`); setBatalId(null); return }
+      if (error) { setBatalId(null); await konfirmasiGagal(konfirmasi, String(error)); return }
     }
     for (const s of j.sumber) {
       const { error } = await catatTransaksi(supabase, {
@@ -404,7 +412,11 @@ function KoreksiTransaksi() {
         payload: { target_trx_id: s.trx_id, induk_nibar: j.induk?.nibar || null },
         keterangan: `Pembatalan penggabungan ${j.no_sk}`,
       })
-      if (error) { setMsg(`Sebagian batal gagal: ${error} — ulangi untuk menuntaskan.`); setBatalId(null); loadJurnals(skpd); return }
+      if (error) {
+        setBatalId(null); loadJurnals(skpd)
+        await konfirmasiGagal(konfirmasi, `Sebagian batal gagal: ${error} — ulangi untuk menuntaskan.`)
+        return
+      }
     }
     setBatalId(null)
     setMsg(`Penggabungan ${j.no_sk} dibatalkan — ${j.sumber.length} barang kembali. Jalankan engine untuk memperbarui penyusutan.`)
@@ -579,6 +591,7 @@ function KoreksiTransaksi() {
 // ── Modal edit header: No dokumen + tanggal (kunci semester sama) + keterangan ──
 function EditHeaderModal({ header, onClose, onSaved }: { header: HeaderEditable; onClose: () => void; onSaved: () => void }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
   const [noSk, setNoSk] = useState(header.no_sk)
   const [tgl, setTgl] = useState(header.tanggal)
@@ -597,7 +610,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: HeaderEditable;
     for (const file of Array.from(files)) {
       const path = `koreksi/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -619,8 +632,9 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: HeaderEditable;
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
         payload: { ...(header.payload || {}), dokumen_paths: dokPaths },
       }).eq('id', header.id)
-    if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
-    setSaving(false); onSaved()
+    setSaving(false)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
+    onSaved()
   }
 
   return (
@@ -677,6 +691,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
 
   const [alasan, setAlasan] = useState<Alasan>(header?.jenis || (preset ? 'spesifikasi' : 'nilai_perolehan'))
@@ -754,7 +769,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     for (const file of Array.from(files)) {
       const path = `koreksi/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -790,7 +805,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null,
         payload: { dokumen_paths: dokPaths },
       }).select(HEADER_COLS).single()
-      if (error || !data) { setErr(`Gagal membuat header jurnal: ${error?.message}`); setSaving(false); return }
+      if (error || !data) { setSaving(false); await konfirmasiGagal(konfirmasi, `Gagal membuat header jurnal: ${error?.message}`); return }
       h = data as unknown as Header
     }
 
@@ -804,7 +819,12 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       const guardSisip = await cekBolehSisip(supabase,
         items.map(i => ({ aset_id: i.barang.id, label: i.barang.nama_barang || i.barang.nibar })),
         h.tanggal, 'koreksi nilai perolehan ini')
-      if (!guardSisip.boleh) { setErr(guardSisip.pesan); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+      if (!guardSisip.boleh) {
+        if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
+        setSaving(false)
+        await konfirmasiGagal(konfirmasi, guardSisip.pesan, 'Belum bisa disimpan')
+        return
+      }
       // ── Posisi penyusutan SEBELUM koreksi, dibekukan ke payload ────────────
       //
       // ⚠️ Lembar Permendagri IV.G.2 ("Laporan Koreksi BMD") menuntut Nilai
@@ -839,9 +859,10 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         // melanjutkan tanpa snapshot membuat lembar IV.G.2 bertitik-titik
         // selamanya untuk kartu ini, tanpa satu pun jejak kenapa.
         if (error) {
-          setErr(`Gagal membaca akumulasi penyusutan ${basisPeriode}: ${error.message}`)
           if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
-          setSaving(false); return
+          setSaving(false)
+          await konfirmasiGagal(konfirmasi, `Gagal membaca akumulasi penyusutan ${basisPeriode}: ${error.message}`)
+          return
         }
         for (const r of (data || []) as { aset_id: string; akumulasi: number }[]) {
           akumSebelum[r.aset_id] = Number(r.akumulasi) || 0
@@ -865,7 +886,12 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
           },
           keterangan: h.keterangan || undefined,
         })
-        if (error) { setErr(error); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+        if (error) {
+          if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
+          setSaving(false)
+          await konfirmasiGagal(konfirmasi, error)
+          return
+        }
       }
       setSaving(false); onSaved(items.length); return
     }
@@ -880,7 +906,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       const guardSisipSpek = await cekBolehSisip(supabase,
         list.map(b => ({ aset_id: b.id, label: b.nama_barang || b.nibar })),
         h.tanggal, 'koreksi spesifikasi ini')
-      if (!guardSisipSpek.boleh) { setErr(guardSisipSpek.pesan); await delHeader(); setSaving(false); return }
+      if (!guardSisipSpek.boleh) {
+        await delHeader(); setSaving(false)
+        await konfirmasiGagal(konfirmasi, guardSisipSpek.pesan, 'Belum bisa disimpan')
+        return
+      }
       const single = list.length === 1
       // Payload field non-kosong (cast numeric utk luas/lat/long/tahun). Single:
       // modal prefill nilai sekarang, jadi rekam HANYA yang BERUBAH dari nilai awal
@@ -924,7 +954,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
           asetId: b.id, jenis: 'koreksi_spesifikasi', tanggal: h.tanggal, headerId: h.id,
           payload, keterangan: h.keterangan || undefined,
         })
-        if (error) { setErr(error); setSaving(false); return }
+        if (error) { setSaving(false); await konfirmasiGagal(konfirmasi, error); return }
       }
       setSaving(false); onSaved(list.length); return
     }
@@ -943,7 +973,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       const guardSisipGabung = await cekBolehSisip(supabase,
         gabungList.map(k => ({ aset_id: k.id, label: k.nama_barang || k.nibar })),
         h.tanggal, 'penggabungan ini')
-      if (!guardSisipGabung.boleh) { setErr(guardSisipGabung.pesan); await delHeader(); setSaving(false); return }
+      if (!guardSisipGabung.boleh) {
+        await delHeader(); setSaving(false)
+        await konfirmasiGagal(konfirmasi, guardSisipGabung.pesan, 'Belum bisa disimpan')
+        return
+      }
 
       const sumber = gabungList.filter(k => k.id !== induk.id)
       const nilaiLama = keSen(induk.nilai_perolehan) / 100
@@ -984,7 +1018,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
           payload: { induk_aset_id: induk.id, induk_nibar: induk.nibar, akumulasi_diserap: basis[s.id] || 0 },
           keterangan: `Digabung ke ${induk.nibar || induk.nama_barang || 'induk'} (${h.no_sk})`,
         })
-        if (error) { setErr(`Gagal melebur "${s.nama_barang || s.nibar}": ${error}. Batalkan lewat kartu jurnal penggabungan lalu ulangi.`); setSaving(false); return }
+        if (error) {
+          setSaving(false)
+          await konfirmasiGagal(konfirmasi, `Gagal melebur "${s.nama_barang || s.nibar}": ${error}. Batalkan lewat kartu jurnal penggabungan lalu ulangi.`)
+          return
+        }
       }
 
       const { error: masukErr } = await catatTransaksi(supabase, {
@@ -1002,7 +1040,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         },
         keterangan: `Gabungan ${gabungList.length} barang (${h.no_sk})`,
       })
-      if (masukErr) { setErr(`Gagal me-rebasis induk: ${masukErr}. Batalkan lewat kartu jurnal penggabungan lalu ulangi.`); setSaving(false); return }
+      if (masukErr) {
+        setSaving(false)
+        await konfirmasiGagal(konfirmasi, `Gagal me-rebasis induk: ${masukErr}. Batalkan lewat kartu jurnal penggabungan lalu ulangi.`)
+        return
+      }
 
       setSaving(false); onSaved(gabungList.length); return
     }
@@ -1022,10 +1064,18 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       const guardSisipPecah = await cekBolehSisip(supabase,
         [{ aset_id: induk.id, label: induk.nama_barang || induk.nibar }],
         h.tanggal, 'pemecahan ini')
-      if (!guardSisipPecah.boleh) { setErr(guardSisipPecah.pesan); await delHeader(); setSaving(false); return }
+      if (!guardSisipPecah.boleh) {
+        await delHeader(); setSaving(false)
+        await konfirmasiGagal(konfirmasi, guardSisipPecah.pesan, 'Belum bisa disimpan')
+        return
+      }
 
       const { data: skpdRow, error: skpdErr } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', skpdId).single()
-      if (skpdErr || !(skpdRow as { kode_skpd?: string } | null)?.kode_skpd) { setErr(`Gagal ambil kode lokasi SKPD utk NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`); await delHeader(); setSaving(false); return }
+      if (skpdErr || !(skpdRow as { kode_skpd?: string } | null)?.kode_skpd) {
+        await delHeader(); setSaving(false)
+        await konfirmasiGagal(konfirmasi, `Gagal ambil kode lokasi SKPD utk NIBAR: ${skpdErr?.message || 'kode_skpd kosong'}`)
+        return
+      }
       const kodeSkpd = (skpdRow as { kode_skpd: string }).kode_skpd
 
       const batas = (await fetchBatasKapitalisasi(supabase, [induk.kode])).get(induk.kode)
@@ -1040,7 +1090,9 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
       try {
         nibarMap = await generateNibars(supabase, nibarItems, kodeSkpd)
       } catch (e) {
-        setErr((e as Error).message); await delHeader(); setSaving(false); return
+        await delHeader(); setSaving(false)
+        await konfirmasiGagal(konfirmasi, (e as Error).message)
+        return
       }
 
       // Aset pecahan — status 'draft' (tersembunyi) sampai commit di akhir.
@@ -1061,7 +1113,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         return row
       })
       const { data: inserted, error: insErr } = await supabase.from('aset').insert(asetRows).select('id')
-      if (insErr || !inserted) { setErr(`Gagal membuat pecahan: ${insErr?.message}`); await delHeader(); setSaving(false); return }
+      if (insErr || !inserted) {
+        await delHeader(); setSaving(false)
+        await konfirmasiGagal(konfirmasi, `Gagal membuat pecahan: ${insErr?.message}`)
+        return
+      }
       const pieceIds = (inserted as { id: string }[]).map(r => r.id)
 
       const masaSmt = basis.masa_tahun ? Math.round(basis.masa_tahun * 2) : 0
@@ -1075,7 +1131,11 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
           },
           keterangan: `Pecahan dari ${induk.nibar || induk.nama_barang || 'induk'} (${h.no_sk})`,
         })
-        if (error) { setErr(`Gagal mencatat pecahan ke-${i + 1}: ${error}. Induk tetap utuh; batalkan lewat kartu jurnal pemecahan.`); setSaving(false); return }
+        if (error) {
+          setSaving(false)
+          await konfirmasiGagal(konfirmasi, `Gagal mencatat pecahan ke-${i + 1}: ${error}. Induk tetap utuh; batalkan lewat kartu jurnal pemecahan.`)
+          return
+        }
       }
 
       const { error: keluarErr } = await catatTransaksi(supabase, {
@@ -1083,10 +1143,18 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         payload: { jumlah_pecahan: alokasiPecah.length, pecahan_ids: pieceIds, pecahan_nibars: alokasiPecah.map((_, i) => nibarMap.get(String(i)) || null) },
         keterangan: `Dipecah jadi ${alokasiPecah.length} pecahan (${h.no_sk})`,
       })
-      if (keluarErr) { setErr(`Gagal me-retire induk: ${keluarErr}. Batalkan lewat kartu jurnal pemecahan.`); setSaving(false); return }
+      if (keluarErr) {
+        setSaving(false)
+        await konfirmasiGagal(konfirmasi, `Gagal me-retire induk: ${keluarErr}. Batalkan lewat kartu jurnal pemecahan.`)
+        return
+      }
 
       const { error: flipErr } = await supabase.from('aset').update({ status: 'aktif' }).in('id', pieceIds)
-      if (flipErr) { setErr(`Aktivasi pecahan gagal: ${flipErr.message}. Induk sudah di-retire — batalkan lewat kartu jurnal lalu ulangi.`); setSaving(false); return }
+      if (flipErr) {
+        setSaving(false)
+        await konfirmasiGagal(konfirmasi, `Aktivasi pecahan gagal: ${flipErr.message}. Induk sudah di-retire — batalkan lewat kartu jurnal lalu ulangi.`)
+        return
+      }
 
       setSaving(false); onSaved(alokasiPecah.length); return
     }
@@ -1103,7 +1171,12 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     const guardSisipGanda = await cekBolehSisip(supabase,
       lainnya.map(k => ({ aset_id: k.id, label: k.nama_barang || k.nibar })),
       h.tanggal, 'pencatatan ganda ini')
-    if (!guardSisipGanda.boleh) { setErr(guardSisipGanda.pesan); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+    if (!guardSisipGanda.boleh) {
+      if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
+      setSaving(false)
+      await konfirmasiGagal(konfirmasi, guardSisipGanda.pesan, 'Belum bisa disimpan')
+      return
+    }
     for (const k of lainnya) {
       // `tanggal` = tanggal DOKUMEN koreksi (h.tanggal), bukan tanggal
       // perolehan barangnya (keputusan user 2026-08-11). Dulu `k.tgl_perolehan
@@ -1125,7 +1198,12 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
         payload: { survivor_aset_id: survivor.id, survivor_nibar: survivor.nibar },
         keterangan: h.keterangan || undefined,
       })
-      if (error) { setErr(error); if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id); setSaving(false); return }
+      if (error) {
+        if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
+        setSaving(false)
+        await konfirmasiGagal(konfirmasi, error)
+        return
+      }
     }
     setSaving(false); onSaved(lainnya.length)
   }

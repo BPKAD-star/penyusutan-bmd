@@ -46,7 +46,7 @@ import {
   perluNilaiPemanfaatan,
 } from '@/lib/pemanfaatan'
 import { backdropClose } from '@/components/backdropClose'
-import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
@@ -203,7 +203,7 @@ export default function Pemanfaatan() {
       aset_id: l.aset_id, jenis: 'pemanfaatan_selesai', periode: periodeDariTanggal(tgl), tanggal: tgl,
       nilai: 0, header_id: j.id, payload: {},
     })
-    if (error) { setMsg(`Error: ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal mencatat transaksi: ${error.message}`); return }
     await supabase.from('aset').update({ pemanfaatan: null }).eq('id', l.aset_id)
     setMsg('Pemanfaatan barang diakhiri.')
     loadJurnals(skpd)
@@ -226,7 +226,7 @@ export default function Pemanfaatan() {
       aset_id: l.aset_id, jenis: 'batal_pemanfaatan', periode: periodeDariTanggal(tgl), tanggal: tgl,
       nilai: 0, header_id: j.id, payload: {},
     })
-    if (error) { setMsg(`Error: ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal mencatat transaksi: ${error.message}`); return }
     await supabase.from('aset').update({ pemanfaatan: null }).eq('id', l.aset_id)
     setMsg('Pemanfaatan barang dibatalkan (salah catat).')
     loadJurnals(skpd)
@@ -250,7 +250,7 @@ export default function Pemanfaatan() {
       nilai: 0, header_id: j.id, payload: {},
     }))
     const { error } = await supabase.from('transaksi_bmd').insert(rows)
-    if (error) { setMsg(`Error: ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal mencatat transaksi: ${error.message}`); return }
     await supabase.from('aset').update({ pemanfaatan: null }).in('id', j.lines.map(l => l.aset_id))
     setMsg('Seluruh perjanjian pemanfaatan dibatalkan (salah catat).')
     loadJurnals(skpd)
@@ -391,6 +391,7 @@ export default function Pemanfaatan() {
 // ── Edit header: No/Tgl dokumen (kunci semester) + detail perjanjian ─────────
 function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose: () => void; onSaved: () => void }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
   const p = header.payload || {}
   const [noSk, setNoSk] = useState(header.no_sk)
@@ -443,7 +444,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
     }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload }).eq('id', header.id)
-    if (error) { setErr(`Gagal menyimpan: ${error.message}`); setSaving(false); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); setSaving(false); return }
     // Segarkan cache aset.pemanfaatan utk barang yang MASIH aktif di header ini.
     const { data: aktif } = await supabase.from('transaksi_bmd')
       .select('aset_id,jenis,id').eq('header_id', header.id)
@@ -533,6 +534,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
   skpdId: number; skpdNama: string; header: Header | null; onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
 
   const [jenis, setJenis] = useState('sewa')
@@ -567,7 +569,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
     for (const file of Array.from(files)) {
       const path = `pemanfaatan/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
@@ -636,7 +638,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
         skpd_id: skpdId, kategori: 'pemanfaatan', jenis: 'pemanfaatan',
         no_sk: noSk.trim(), tanggal: tglDok, keterangan: ket.trim() || null, payload,
       }).select(HEADER_COLS).single()
-      if (error || !data) { setErr(`Gagal membuat header pemanfaatan: ${error?.message}`); setSaving(false); return }
+      if (error || !data) { setSaving(false); await konfirmasiGagal(konfirmasi, `Gagal membuat header pemanfaatan: ${error?.message}`); return }
       h = data as unknown as Header
     }
 
@@ -648,7 +650,9 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
     const { error: e1 } = await supabase.from('transaksi_bmd').insert(trxRows)
     if (e1) {
       if (headerBaru) await supabase.from('jurnal_header').delete().eq('id', h.id)
-      setErr(`Gagal mencatat transaksi: ${e1.message}`); setSaving(false); return
+      setSaving(false)
+      await konfirmasiGagal(konfirmasi, `Gagal mencatat transaksi: ${e1.message}`)
+      return
     }
     // Cache badge di aset.
     const hp = h.payload || {}

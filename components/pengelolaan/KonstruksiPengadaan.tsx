@@ -32,7 +32,7 @@ import {
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import { BENTUK_KONTRAK_KONSTRUKSI, bentukKontrakLabel } from '@/lib/bentukKontrak'
 import { backdropClose } from '@/components/backdropClose'
-import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 
 // created_by: pemisahan tugas — pembuat kartu tak boleh menyetujui sendiri.
 export type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload; created_by: string | null }
@@ -242,6 +242,7 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
 // ── Form buat kontrak (header saja — barang KDP ditambah di detail) ─────────
 function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k: Kontrak) => void; onErr: (m: string) => void }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const bounds = useDateBounds()
   const [f, setF] = useState({ nama: '', noKontrak: '', tglKontrak: '', program: '', kegiatan: '', subKeg: '', penyedia: '', nilaiKontrak: '', keterangan: '' })
   const [sumber, setSumber] = useState<string>('spk')
@@ -268,7 +269,8 @@ function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k
       keterangan: f.keterangan || null, approval_status: 'pending', payload,
     }).select('id,skpd_id,no_sk,tanggal,approval_status,payload').single()
     setSaving(false)
-    if (error || !data) onErr(`Error: ${error?.message}`); else onSaved(data as Kontrak)
+    if (error || !data) await konfirmasiGagal(konfirmasi, `Gagal menyimpan kontrak: ${error?.message || 'data kosong'}`)
+    else onSaved(data as Kontrak)
   }
 
   const fld = (label: string, k: keyof typeof f, type = 'text') => (
@@ -328,7 +330,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
     delete (rest as Record<string, unknown>).kode_kdp; delete (rest as Record<string, unknown>).pembayaran
     delete (rest as Record<string, unknown>).spec; delete (rest as Record<string, unknown>).foto; delete (rest as Record<string, unknown>).aset_id
     const { error } = await supabase.from('jurnal_header').update({ payload: { ...rest, barang: next } }).eq('id', kontrak.id)
-    if (error) onMsg(`Error: ${error.message}`); else onChanged()
+    if (error) await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); else onChanged()
   }
   async function tambahBarang(kode: string, nama: string, kapInfo: KapInfo | null) {
     await saveBarang([...barangs, { key: newKey(), kode, nama, pembayaran: [], kap_info: kapInfo }])
@@ -431,7 +433,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
         setBusy(true); onMsg('')
         const { error } = await unapproveKontrakKonstruksi(supabase, kontrak.id)
         setBusy(false)
-        if (error) { onMsg(`Error: ${error}`); return }
+        if (error) { await konfirmasiGagal(konfirmasi, String(error), 'Belum bisa dibuka kunci'); return }
         onMsg('Kontrak dibuka kunci — semua barang KDP kembali draft.'); onChanged()
       },
     })
@@ -455,7 +457,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
         labelYa: 'Arsipkan',
       })).ya) return
       const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', kontrak.id)
-      if (error) { onMsg(`Error: gagal mengarsipkan kontrak: ${error.message}`); return }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal mengarsipkan kontrak: ${error.message}`); return }
       onMsg(`Kontrak ${kontrak.no_sk} diarsipkan — No. SPK bisa dipakai lagi.`)
       onBack()
       return
@@ -470,7 +472,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
       labelYa: 'Hapus kontrak',
     })).ya) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', kontrak.id)
-    if (error) onMsg(`Error: ${error.message}`); else onBack()
+    if (error) await konfirmasiGagal(konfirmasi, `Gagal menghapus kontrak: ${error.message}`); else onBack()
   }
 
   return (
@@ -593,6 +595,7 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
   kontrak: Kontrak; onClose: () => void; onSaved: () => void; onErr: (m: string) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const bounds = useDateBounds()
   const p = kontrak.payload || ({} as KontrakKonstruksiPayload)
   const [nama, setNama] = useState(p.nama_pekerjaan || '')
@@ -639,7 +642,7 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
       .update({ no_sk: noKontrak.trim(), tanggal: tgl, keterangan: keterangan.trim() || null, payload })
       .eq('id', kontrak.id)
     setSaving(false)
-    if (error) { setErr(`Gagal menyimpan: ${error.message}`); onErr(`Error: ${error.message}`); return }
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
     onSaved()
   }
 
@@ -727,6 +730,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
   onUbahKapInfo: (kapInfo: KapInfo | null) => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const bounds = useDateBounds()
   const pembayaran = barang.pembayaran || []
   const total = barangTotal(barang)
@@ -757,7 +761,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
     for (const file of Array.from(files)) {
       const path = `konstruksi-bast/${crypto.randomUUID()}/${file.name}`
       const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
       setDokPaths(prev => [...prev, path])
     }
     setDokUploading(false)
