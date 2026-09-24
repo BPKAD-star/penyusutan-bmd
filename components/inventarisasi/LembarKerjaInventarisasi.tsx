@@ -176,16 +176,16 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
       msg={msg}
     >
       <div className="card p-4 mb-4 space-y-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">SKPD / Unit</label>
-          <SkpdCombobox lockToOperator allowClear
-            onChangeSelection={sel => {
-              setSkpdId(sel.skpdId); setSkpdIds(sel.descendantIds); setHal(0); setSkpdSiap(true)
-            }}
-            placeholder="Semua SKPD — atau ketik nama SKPD / unit..." />
-        </div>
         <div className="flex flex-wrap gap-3 items-end">
-          <form className="flex gap-2 items-end flex-1 min-w-[280px]"
+          <div className="w-full sm:w-56 flex-shrink-0">
+            <label className="block text-xs text-gray-500 mb-1">SKPD / Unit</label>
+            <SkpdCombobox lockToOperator allowClear
+              onChangeSelection={sel => {
+                setSkpdId(sel.skpdId); setSkpdIds(sel.descendantIds); setHal(0); setSkpdSiap(true)
+              }}
+              placeholder="Semua SKPD..." />
+          </div>
+          <form className="flex gap-2 items-end flex-1 min-w-[220px]"
             onSubmit={e => { e.preventDefault(); setCari(cariKetik); setHal(0) }}>
             <div className="flex-1">
               <label className="block text-xs text-gray-500 mb-1">Cari</label>
@@ -232,8 +232,46 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
       </div>
 
       {skpdId != null && (
-        <div className="card p-4 mb-4">
-          <TimPanel skpdId={skpdId} tahun={TAHUN} bolehUbah={!pengawas} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-start">
+          <div className="card p-4">
+            <TimPanel skpdId={skpdId} tahun={TAHUN} bolehUbah={!pengawas} />
+          </div>
+          <div className="card p-4">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-sm font-semibold text-gray-800">BMD Belum Tercatat (Format III.A.7)</p>
+              {!pengawas && (
+                <button onClick={() => bukaBelumTercatat(null)} className="btn-primary text-xs">+ Tambah temuan</button>
+              )}
+            </div>
+            {belumTercatat.length === 0 ? (
+              <p className="text-xs text-gray-400">Belum ada temuan untuk unit ini.</p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {belumTercatat.map(b => {
+                  const st: StatusTampil = b.status || 'diisi'
+                  return (
+                    <li key={b.id} className="py-2 flex items-center justify-between gap-3 text-xs">
+                      <div>
+                        <p className="font-medium text-gray-800">{b.jawaban?.baru?.nama_barang || '(tanpa nama)'}</p>
+                        <p className="text-gray-400">{b.jawaban?.baru?.kode_barang || '—'} · {b.jawaban?.baru?.spesifikasi || '—'}</p>
+                      </div>
+                      <div className="flex items-center gap-3 whitespace-nowrap">
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span>
+                        <button onClick={() => bukaBelumTercatat(b)} className="text-teal hover:underline font-medium">
+                          {st === 'diisi' && !pengawas ? 'Ubah' : 'Lihat'}
+                        </button>
+                        {st === 'diisi' && !pengawas && (
+                          <button onClick={() => hapusBelumTercatat(b)} className="text-red-500 hover:text-red-700">Hapus</button>
+                        )}
+                        <a href={`/cetak/inventarisasi-lki?id=${b.id}`} target="_blank" rel="noopener noreferrer"
+                          className="text-gray-500 hover:text-gray-800">🖨</a>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
         </div>
       )}
 
@@ -313,45 +351,6 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
             <button className="btn-secondary text-xs" disabled={!adaLagi || loading} onClick={() => setHal(h => h + 1)}>Berikutnya →</button>
           </div>
         </div>
-      </div>
-
-      <div className="card p-4">
-        <div className="flex items-center justify-between gap-3 mb-2">
-          <p className="text-sm font-semibold text-gray-800">BMD Belum Tercatat (Format III.A.7)</p>
-          {skpdId != null && !pengawas && (
-            <button onClick={() => bukaBelumTercatat(null)} className="btn-secondary text-xs">+ Tambah temuan</button>
-          )}
-        </div>
-        {skpdId == null ? (
-          <p className="text-xs text-gray-400">Pilih satu SKPD / unit dulu untuk mencatat barang yang ditemukan tapi belum ada di Daftar Barang.</p>
-        ) : belumTercatat.length === 0 ? (
-          <p className="text-xs text-gray-400">Belum ada temuan untuk unit ini.</p>
-        ) : (
-          <ul className="divide-y divide-gray-100">
-            {belumTercatat.map(b => {
-              const st: StatusTampil = b.status || 'diisi'
-              return (
-                <li key={b.id} className="py-2 flex items-center justify-between gap-3 text-xs">
-                  <div>
-                    <p className="font-medium text-gray-800">{b.jawaban?.baru?.nama_barang || '(tanpa nama)'}</p>
-                    <p className="text-gray-400">{b.jawaban?.baru?.kode_barang || '—'} · {b.jawaban?.baru?.spesifikasi || '—'}</p>
-                  </div>
-                  <div className="flex items-center gap-3 whitespace-nowrap">
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span>
-                    <button onClick={() => bukaBelumTercatat(b)} className="text-teal hover:underline font-medium">
-                      {st === 'diisi' && !pengawas ? 'Ubah' : 'Lihat'}
-                    </button>
-                    {st === 'diisi' && !pengawas && (
-                      <button onClick={() => hapusBelumTercatat(b)} className="text-red-500 hover:text-red-700">Hapus</button>
-                    )}
-                    <a href={`/cetak/inventarisasi-lki?id=${b.id}`} target="_blank" rel="noopener noreferrer"
-                      className="text-gray-500 hover:text-gray-800">🖨</a>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        )}
       </div>
 
       {terbuka && (
