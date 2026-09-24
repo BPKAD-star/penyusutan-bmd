@@ -176,8 +176,12 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
       msg={msg}
     >
       <div className="card p-4 mb-4 space-y-3">
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="w-full sm:w-56 flex-shrink-0">
+        {/* Grid 2 kolom KEMBAR dgn baris Tim/BMD di bawah — supaya batas kolom
+            (garis tengah) SKPD↔Cari sejajar dgn batas Tim Pelaksana↔BMD Belum
+            Tercatat. Padding p-4 di kartu ini simetris kiri-kanan, jadi garis
+            tengahnya tetap sama walau lebar kartu berbeda dgn baris di bawah. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+          <div className="min-w-0">
             <label className="block text-xs text-gray-500 mb-1">SKPD / Unit</label>
             <SkpdCombobox lockToOperator allowClear
               onChangeSelection={sel => {
@@ -185,24 +189,26 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
               }}
               placeholder="Semua SKPD..." />
           </div>
-          <form className="flex gap-2 items-end flex-1 min-w-[220px]"
-            onSubmit={e => { e.preventDefault(); setCari(cariKetik); setHal(0) }}>
-            <div className="flex-1">
-              <label className="block text-xs text-gray-500 mb-1">Cari</label>
-              <input className="select-filter w-full" value={cariKetik} onChange={e => setCariKetik(e.target.value)}
-                placeholder="Nama barang, NIBAR, kode register, kode barang, merek, no. polisi..." />
+          <div className="flex gap-2 items-end min-w-0">
+            <form className="flex gap-2 items-end flex-1 min-w-0"
+              onSubmit={e => { e.preventDefault(); setCari(cariKetik); setHal(0) }}>
+              <div className="flex-1 min-w-0">
+                <label className="block text-xs text-gray-500 mb-1">Cari</label>
+                <input className="select-filter w-full" value={cariKetik} onChange={e => setCariKetik(e.target.value)}
+                  placeholder="Nama barang, NIBAR, kode register, kode barang, merek, no. polisi..." />
+              </div>
+              <button type="submit" className="btn-secondary text-sm">Cari</button>
+            </form>
+            <div className="flex-shrink-0">
+              <label className="block text-xs text-gray-500 mb-1">Status</label>
+              <select className="select-filter" value={status}
+                onChange={e => { setStatus(e.target.value as FilterLembar); setHal(0) }}>
+                <option value="semua">Semua barang</option>
+                <option value="belum">Belum diinventarisasi</option>
+                <option value="diisi">Menunggu validasi</option>
+                <option value="divalidasi">Divalidasi</option>
+              </select>
             </div>
-            <button type="submit" className="btn-secondary text-sm">Cari</button>
-          </form>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Status</label>
-            <select className="select-filter" value={status}
-              onChange={e => { setStatus(e.target.value as FilterLembar); setHal(0) }}>
-              <option value="semua">Semua barang</option>
-              <option value="belum">Belum diinventarisasi</option>
-              <option value="diisi">Menunggu validasi</option>
-              <option value="divalidasi">Divalidasi</option>
-            </select>
           </div>
         </div>
 
@@ -233,10 +239,15 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
 
       {skpdId != null && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-start">
-          <div className="card p-4">
+          {/* min-w-0 di KEDUA kolom — tanpa ini, isi "BMD Belum Tercatat" yang
+              ber-whitespace-nowrap (tombol Ubah/Hapus/🖨 sebaris) memaksa
+              lebar minimum kolomnya membengkak (grid item default
+              min-width:auto = min-content), sehingga kolom kanan jadi LEBIH
+              LEBAR dari kolom Tim Pelaksana walau sama-sama diberi 1fr. */}
+          <div className="card p-4 min-w-0">
             <TimPanel skpdId={skpdId} tahun={TAHUN} bolehUbah={!pengawas} />
           </div>
-          <div className="card p-4">
+          <div className="card p-4 min-w-0">
             <div className="flex items-center justify-between gap-3 mb-2">
               <p className="text-sm font-semibold text-gray-800">BMD Belum Tercatat (Format III.A.7)</p>
               {!pengawas && (
@@ -251,11 +262,11 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
                   const st: StatusTampil = b.status || 'diisi'
                   return (
                     <li key={b.id} className="py-2 flex items-center justify-between gap-3 text-xs">
-                      <div>
-                        <p className="font-medium text-gray-800">{b.jawaban?.baru?.nama_barang || '(tanpa nama)'}</p>
-                        <p className="text-gray-400">{b.jawaban?.baru?.kode_barang || '—'} · {b.jawaban?.baru?.spesifikasi || '—'}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-800 truncate">{b.jawaban?.baru?.nama_barang || '(tanpa nama)'}</p>
+                        <p className="text-gray-400 truncate">{b.jawaban?.baru?.kode_barang || '—'} · {b.jawaban?.baru?.spesifikasi || '—'}</p>
                       </div>
-                      <div className="flex items-center gap-3 whitespace-nowrap">
+                      <div className="flex items-center gap-3 whitespace-nowrap flex-shrink-0">
                         <span className={`text-[11px] px-2 py-0.5 rounded-full ${STATUS_BADGE[st]}`}>{STATUS_LABEL[st]}</span>
                         <button onClick={() => bukaBelumTercatat(b)} className="text-teal hover:underline font-medium">
                           {st === 'diisi' && !pengawas ? 'Ubah' : 'Lihat'}
