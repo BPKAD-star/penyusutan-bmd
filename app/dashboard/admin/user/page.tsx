@@ -141,18 +141,26 @@ export default function AdminUserPage() {
     loadProfiles()
   }
 
+  // Ketiganya WAJIB baca `error` — sebelumnya `await supabase...update()` tanpa
+  // penangkap sama sekali, jadi kegagalan (mis. ditolak CHECK constraint)
+  // sepenuhnya senyap: dropdown-nya "kembali sendiri" ke nilai lama sesudah
+  // loadProfiles() tanpa satu pun pesan. Persis kelas bug yg melahirkan
+  // migrasi 20260924_02 (CHECK constraint yg belum memuat 'pengawas').
   async function handleChangeRole(id: string, role: string) {
-    await supabase.from('admin_profiles').update({ role }).eq('id', id)
+    const { error } = await supabase.from('admin_profiles').update({ role }).eq('id', id)
+    if (error) setMsg(`Error: gagal mengubah role — ${error.message}`)
     loadProfiles()
   }
 
   async function handleChangeSkpd(id: string, skpdId: string) {
-    await supabase.from('admin_profiles').update({ skpd_id: skpdId ? Number(skpdId) : null }).eq('id', id)
+    const { error } = await supabase.from('admin_profiles').update({ skpd_id: skpdId ? Number(skpdId) : null }).eq('id', id)
+    if (error) setMsg(`Error: gagal mengubah SKPD — ${error.message}`)
     loadProfiles()
   }
 
   async function handleChangeIpaRole(id: string, ipaRole: string) {
-    await supabase.from('admin_profiles').update({ ipa_role: ipaRole || null }).eq('id', id)
+    const { error } = await supabase.from('admin_profiles').update({ ipa_role: ipaRole || null }).eq('id', id)
+    if (error) setMsg(`Error: gagal mengubah Role IPA — ${error.message}`)
     loadProfiles()
   }
 

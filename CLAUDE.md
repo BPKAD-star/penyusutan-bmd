@@ -7014,6 +7014,47 @@ dan Aset Lain-Lain (1.5.4) saja** — Tanah (1.3.1) & Jalan/Jaringan/Irigasi
   biasa, ledgernya tak disentuh sama sekali.
 - **Tak ada migrasi** — murni konstanta TypeScript.
 
+## Role "pengawas" MUSTAHIL disimpan sejak dibuat — CHECK constraint tak pernah dilebarkan (migrasi 20260924_02)
+
+Dilaporkan user 2026-09-24: di Admin → Daftar User, memilih **"Pengawas
+(Baca-saja) — Akuntansi/Auditor"** di dropdown Role untuk seorang user tidak
+"nempel" — dropdownnya kembali ke role lama tanpa satu pun pesan error.
+
+- **Sebabnya `admin_profiles_role_check` TAK PERNAH memuat `'pengawas'`.**
+  Migrasi 20260713_04 membuat CHECK `role IN ('admin', 'pengurus_barang',
+  'pengurus_pembantu')`. Sehari kemudian, **20260714_04_role_pengawas_view_
+  only.sql** menambahkan role KEEMPAT — 'pengawas', view-only lintas SKPD utk
+  akuntansi/auditor/inspektorat — lengkap dgn `fn_is_viewer()`, `fn_skpd_
+  visible()` yg menguncinya ke `false`, & policy SELECT permissive di 12
+  tabel. Migrasi itu **lupa melebarkan CHECK constraint-nya**. Jadi seluruh
+  mekanisme otorisasi 'pengawas' sudah lengkap di DB & di kode (`lib/roles.ts`
+  `ROLE_LABEL`/`ROLE_VALUES` memuatnya, dropdown Admin→User menawarkannya) —
+  tapi baris `admin_profiles` tak pernah bisa BENAR-BENAR diset ke nilai itu.
+  Diverifikasi ke produksi sebelum ditulis: constraint hidup persis versi lama
+  (3 nilai), & distribusi role saat itu admin=13 / pengurus_barang=59 /
+  pengurus_pembantu=0 / **pengawas=0** — nol baris pernah berhasil.
+- ⚠️ **Kegagalannya SENYAP TOTAL, bug KEDUA yg ditutup di commit yang sama.**
+  `handleChangeRole` (app/dashboard/admin/user/page.tsx) menulis
+  `await supabase.from('admin_profiles').update({role}).eq('id',id)` **TANPA
+  membaca `error`** — pola "const { data } = await tanpa error" yang
+  berkali-kali dicatat di dokumen ini sbg sumber kegagalan senyap paling mahal
+  di repo ini. UPDATE ditolak Postgres dgn `23514` (check violation), errornya
+  dibuang, `loadProfiles()` menampilkan lagi role lama — operator cuma melihat
+  dropdown "kembali sendiri". `handleChangeSkpd` & `handleChangeIpaRole` di
+  berkas yang sama punya cacat identik (tak pernah ketahuan krn `skpd_id`/
+  `ipa_role` tak punya CHECK yg bisa gagal), ikut diperbaiki sekalian —
+  ketiganya sekarang membaca `error` & menampilkan pesannya di strip `msg`
+  yang sudah ada di halaman itu.
+- **Migrasi**: `ALTER TABLE admin_profiles DROP CONSTRAINT
+  admin_profiles_role_check` lalu buat ulang memuat `'pengawas'`. Nol baris
+  berdampak (murni melebarkan constraint) — sudah dijalankan langsung ke
+  produksi via MCP saat ditulis, migrasinya idempotent lewat DROP+ADD sehingga
+  aman dijalankan ulang di SQL Editor (akan gagal "constraint tidak ada" kalau
+  sudah pernah jalan — itu tandanya sudah beres, bukan galat).
+- **Tak ada perubahan lain** — `fn_is_viewer()`/`fn_skpd_visible()`/policy
+  SELECT viewer sudah benar sejak 20260714_04; yang kurang cuma satu baris
+  CHECK constraint di migrasi itu.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
