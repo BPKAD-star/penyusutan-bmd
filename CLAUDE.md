@@ -7055,6 +7055,57 @@ Dilaporkan user 2026-09-24: di Admin → Daftar User, memilih **"Pengawas
   SELECT viewer sudah benar sejak 20260714_04; yang kurang cuma satu baris
   CHECK constraint di migrasi itu.
 
+## Role "pengawas": Dashboard & Laporan BMD tampil 0, padahal boleh lihat semua (migrasi 20260924_03)
+
+Sesudah migrasi di atas membuat role "pengawas" bisa disimpan, user langsung
+menguji akun auditornya & melaporkan: Dashboard "Total Nilai BMD 0,00 · 0
+aset", seluruh kartu "Total Aset per Jenis" 0 unit, seluruh kartu "Total
+Barang per Cara Perolehan" 0,00 — padahal menu Pembukuan (Pengadaan,
+Penghapusan) untuk SKPD yang SAMA menampilkan data sungguhan (4 kontrak
+pengadaan, Rp1.415.950.000; 2 jurnal penghapusan, Rp226.650.000). User juga
+mengonfirmasi Pembukuan (Cara Perolehan & Pengelolaan) memang tak bisa
+Simpan & menampilkan pesan RLS ("new row violates row-level security policy
+for table 'jurnal_header'") — itu **BENAR & disengaja**, bukan bug: pengawas
+memang view-only, `fn_skpd_visible()` dikunci `false` untuknya (20260714_04)
+sehingga SEMUA policy tulis menolak. Yang salah cuma sisi BACA agregatnya.
+
+- **Sebabnya `fn_dashboard_rekap`, `fn_rekap_bmd`, & `fn_rekap_saldo_awal`
+  (RPC SECURITY DEFINER Dashboard/Laporan BMD/Saldo Awal → Rekapitulasi)
+  menghitung scope-nya SENDIRI di badan fungsi, bukan lewat RLS tabel** —
+  jadi policy SELECT permissive `fn_is_viewer()` yang sudah benar sejak
+  20260714_04 TIDAK PERNAH menyentuh ketiganya (SECURITY DEFINER melewati RLS
+  sepenuhnya). Pola di ketiganya: `v_scope := CASE WHEN fn_is_viewer() THEN
+  ARRAY[]::bigint[] ELSE fn_my_skpd_scope() END` lalu `WHERE ... (v_is_admin
+  OR skpd_id = ANY(v_scope) OR ...)` — `fn_is_viewer()` cuma dipakai
+  MENGOSONGKAN `v_scope` (optimasi: viewer tak perlu `fn_my_skpd_scope()`),
+  tapi kondisi WHERE akhirnya TAK PERNAH menambahkan `OR fn_is_viewer()`. Jadi
+  untuk pengawas: `v_is_admin`=false, `v_scope`=[] → filter selalu `false` →
+  nol baris. Bug yang SAMA disalin ke tiga fungsi lewat komentar "Pola &
+  jebakannya sama persis dengan fn_dashboard_rekap" — satu bug asli yang
+  diwariskan copy-paste, bukan tiga bug independen.
+  ⚠️ **Kontras dengan pola yang SUDAH BENAR** di `fn_rekon_pos`,
+  `fn_daftar_barang`, `fn_penyusutan`, dst.: mereka memakai `v_lihat_semua
+  boolean := fn_is_admin() OR fn_is_viewer();` lalu `v_lihat_semua OR
+  skpd_id = ANY(scope)` — "viewer melihat semua" benar-benar masuk kondisi
+  akhir. Hanya ketiga fungsi rekap yang menyimpang, karena ditulis dari pola
+  `v_scope`/`v_pernah` yang lebih tua (20260810_02/_03) sebelum pola
+  `v_lihat_semua` distandarkan.
+- **Obatnya**: tambahkan `v_is_viewer boolean := fn_is_viewer();` (dievaluasi
+  SEKALI, pola InitPlan baku di repo ini), pakai variabel itu menggantikan
+  panggilan `fn_is_viewer()` di `v_scope`, lalu OR-kan `v_is_viewer` ke
+  kondisi WHERE akhir ketiga fungsi. Text-surgery atas `pg_get_functiondef`
+  yang HIDUP (pola 20260914_03/20260923_02), bukan menulis ulang badan fungsi
+  — supaya index hint/CTE/komentar/`SET work_mem`/`SET statement_timeout`
+  ikut terbawa apa adanya.
+- **Diverifikasi ke produksi SEBELUM & SESUDAH** (RLS aktif, uid pengawas,
+  `SET LOCAL role authenticated` + `request.jwt.claims`):
+  `fn_dashboard_rekap()` 0 baris → seluruh golongan & cara perolehan terisi;
+  `fn_rekap_saldo_awal(NULL,NULL)` 0 → 299 baris; `fn_rekap_bmd('2026-S1',
+  ARRAY[1], NULL)` 0 → 5 baris.
+- **Tak ada perubahan tanda tangan fungsi** (RETURNS TABLE/json tak berubah)
+  → GRANT lama tetap berlaku, CREATE OR REPLACE mempertahankan ACL selama
+  tanda tangannya sama.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
