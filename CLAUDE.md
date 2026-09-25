@@ -7646,3 +7646,66 @@ Tanah" untuk tab Peta, di atas judul untuk tab Daftar Bidang.
   `PetaView`/`DaftarBidangTanah` disunting — `no-floating-promises` &
   `assertOk` di jalur `lihatSertifikat`/loader, sudah ada sebelum perubahan
   ini, bukan hasilnya).
+
+## GIS Tanah: filter titik/status + "Set Titik Koordinat" langsung dari peta (2026-09-26)
+
+Lanjutan permintaan user di atas, hari yang sama. Dua tambahan ke `PetaView`:
+
+1. **Filter "Titik Koordinat" (Semua/Bertitik/Belum) & "Status" (Semua/
+   Bersertifikat/Proses/Sengketa)** — pil kecil di bawah kotak SKPD, murni
+   filter atas data yang sudah dimuat (`r.latitude`/`statusOf(r)`), bukan
+   query baru. "Belum Titik" dipakai menyisir tanah yang perlu dititik; status
+   dipakai menyisir mana yang sudah *clean and clear* vs perlu ditindaklanjuti.
+2. **"Set Titik Koordinat" langsung dari peta** — menggeser SEBAGIAN KECIL
+   "Edit Spesifikasi" (Saldo Awal → Daftar Barang Awal) ke sini, **KHUSUS
+   titik koordinat, tak ada field lain**. Tombol di panel kanan (tanah
+   terpilih) → mode "pick" → klik lokasi di peta → pin draft biru putus-putus
+   muncul → tinjau koordinatnya → tombol **Simpan** (atau **Batal**).
+
+- **Pola interaksinya "draft dulu, konfirmasi baru simpan"** (keputusan user,
+  bukan langsung-klik-tersimpan) — supaya klik yang tak sengaja saat geser/zoom
+  peta tak langsung menimpa titik lama. `GisMap.tsx` dapat tiga prop opsional
+  baru: `pickMode`, `draftPoint`, `onPick`. `PickHandler` (pola PERSIS
+  `ClickHandler` di `MapPicker.tsx`, `useMapEvents({click})`) menangkap klik di
+  AREA KOSONG peta; marker sungguhan tetap bisa diklik untuk pindah tanah
+  (`bubblingMouseEvents={false}` dipasang di tiap `<Marker>` supaya klik
+  marker TIDAK ikut membangunkan `PickHandler` dengan koordinat marker itu —
+  Leaflet Marker default-nya meneruskan klik ke peta juga, bukan cuma ke
+  marker-nya sendiri).
+- **Double-write SAMA PERSIS dgn `useEditSpekAwal.ts` `simpanSpek`** (Daftar
+  Barang Awal → Edit Spesifikasi) — bukan mekanisme baru, cuma pintunya
+  dipindah ke peta:
+  1. **`aset` (LIVE) — SELALU ditulis**, di mana pun tanah itu SEKARANG berada
+     (kalau sudah pindah SKPD, di SKPD barunya). `.select()` WAJIB (pola yang
+     sudah berkali-kali ditulis di dokumen ini): UPDATE yang ditolak RLS tak
+     melempar error, cuma mengembalikan 0 baris.
+  2. **`aset_awal_2026` (BASELINE) — HANYA kalau NIBAR-nya BELUM 🔒
+     terkunci.** Dicek lewat `fn_aset_awal_2026_terkunci_batch` (migrasi
+     20260918_01): baris HADIR di hasilnya = terkunci (fungsi itu sendiri yang
+     memfilter `WHERE ... AND (empat kondisi kunci)`), tak ada baris = boleh
+     ditulis. Kalau terkunci, baseline SENGAJA tak disentuh & pesannya
+     menyebut jenis+periode transaksi terakhir (kalau ada) — **inilah jawaban
+     atas pertanyaan user "berarti nanti akan bertitik di daftar barang live
+     aja ya? Di tempat SKPD baru?": BENAR**, tanah yang sudah bergerak (pindah
+     SKPD/direklas/dst.) cuma dapat titik di register LIVE; Daftar Barang Awal
+     (baseline 2025) tetap beku apa adanya, sama seperti Edit Spesifikasi
+     field lain yang sudah lebih dulu berlaku begitu.
+  ⚠️ Ini BUKAN ledger event (pola KIR/spesifikasi deskriptif, bukan peristiwa
+  akuntansi) — dua UPDATE polos, tanpa `catatTransaksi`, tanpa jejak di
+  `transaksi_bmd`, tak bisa di-Batal. Konsisten dgn sifat kolom
+  `latitude`/`longitude` itu sendiri sejak "TANAH disederhanakan" (2026-09-23).
+- **Bukan dua sumber kebenaran yang bisa menyimpang** (beda dari kelas bug
+  cache `aset.pemanfaatan`): `aset.latitude`/`longitude` sudah lama diedit dari
+  BEBERAPA pintu (Koreksi → Spesifikasi, Saldo Awal → Edit Spesifikasi) —
+  keduanya UPDATE langsung ke kolom yang sama, tanpa turunan/cache di
+  antaranya. Menambah GIS sbg pintu KETIGA tak menambah kelas risiko baru,
+  cuma menambah satu tempat lagi yang menulis kolom yang sama dengan cara yang
+  sama.
+- **Draft pin dibatalkan otomatis** saat operator ganti tanah terpilih atau
+  menutup panel kanan (`useEffect` di `[selectedId]`) — draft yang nyangkut ke
+  tanah lama akan membingungkan kalau dibiarkan hidup begitu pindah ke tanah
+  lain.
+- **Tak ada migrasi** — kolom & GRANT (`aset_awal_2026.latitude/longitude`,
+  migrasi 20260728_01) serta RPC (`fn_aset_awal_2026_terkunci_batch`, migrasi
+  20260918_01) sudah ada, murni dipakai ulang. Diverifikasi: tsc 0 error, 1869
+  test tetap hijau, 0 lint warning baru.
