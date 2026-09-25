@@ -7203,6 +7203,46 @@ Sesuai (B–D, F, J, L–O), atribusi (I), & Penggunaan Barang (L):
 - **Tak ada migrasi lain** selain 20260924_04. Dikunci lib/inventarisasi.
   test.ts; 1843 test tetap hijau, 0 error typecheck.
 
+## Inventarisasi: Tolak (sebelum validasi) & Hapus Isian (2026-09-25, migrasi 20260925_01)
+
+Dua aksi baru menutup pertanyaan user "alurnya searah aja ya?" — jawabannya
+BUKAN murni satu arah, tapi loop-back-nya cuma boleh terjadi di titik yang
+kewenangannya memang berpindah tangan.
+
+- **Tolak** (Pengelola Barang, tab "Menunggu validasi") — beda dari "Batal
+  Validasi" yang cuma sah kalau isiannya SUDAH divalidasi. Tolak sebaliknya
+  cuma sah kalau BELUM divalidasi (status `diisi`): jalur langsung "isian ini
+  kurang, tolong lengkapi" tanpa muter lewat validasi-dulu-baru-dibatalkan.
+  Statusnya TETAP `diisi` — yang berubah cuma `catatan_validator`, kolom yang
+  SUDAH dibaca kedua sisi sejak fitur validasi dibangun (badge "↩ Dikembalikan:
+  ..." di Lembar Kerja SKPD), jadi Tolak tinggal mengisinya lewat jalur yang
+  lurus, bukan fitur tampilan baru. **Catatan WAJIB diisi** (beda dari Batal
+  Validasi yang opsional) — satu-satunya isi aksi ini memang pesannya.
+- **Hapus Isian** (SKPD sendiri, atau admin) — DELETE baris ke-database secara
+  utuh, BUKAN reset status. Begitu dihapus, barang itu kembali "belum
+  diinventarisasi" & isi ulang dari nol — jawaban, foto, catatan Pengelola,
+  semuanya hilang bersama barisnya. Aman krn `inventarisasi_barang` NON-LEDGER
+  (beda `transaksi_bmd`): sudah di-UPDATE in-place sejak awal oleh
+  `fn_inventarisasi_simpan`/`fn_inventarisasi_batal_validasi`, jadi DELETE di
+  sini tak melanggar append-only apa pun. Cuma untuk isian ber-`aset_id` (barang
+  nyata di register) — "BMD Belum Tercatat" tetap pakai `fn_inventarisasi_
+  hapus_belum_tercatat` yang sudah ada (pesannya beda konteks: "Daftar Barang
+  tidak tersentuh", karena barangnya memang tak pernah ada di sana).
+  ⚠️ **Cuma sah kalau status `diisi`** — kalau sudah `divalidasi`, WAJIB "Batal
+  Validasi" dulu (menu Pengelola Barang) baru bisa "Hapus Isian" (menu SKPD).
+  Urutan wewenang tetap terjaga: SKPD tak bisa langsung mencabut isian yang
+  sudah disahkan Pengelola Barang.
+- **Tak ada "ajukan" ke Pengelola Barang, dan itu SENGAJA dipertahankan**
+  (keputusan user, menegaskan desain 20260923_03 yang sudah begitu sejak awal):
+  begitu SKPD Simpan, isian langsung berstatus `diisi` & langsung kelihatan di
+  tab "Menunggu validasi" — Pengelola Barang yang proaktif memeriksa (browse,
+  cari, filter per SKPD), bukan SKPD yang mengajukan lalu menunggu. Tolak &
+  Hapus Isian keduanya menumpang model yang sama: dua-duanya dipicu dari
+  daftar yang sudah tampil, tak ada tombol kirim/ajukan baru yang ditambahkan.
+- **Tak ada perubahan skema** (kolom/CHECK/index) — murni dua RPC baru di atas
+  tabel & pola wewenang yang sudah ada. 1843 test tetap hijau, 0 error
+  typecheck, 0 lint warning.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

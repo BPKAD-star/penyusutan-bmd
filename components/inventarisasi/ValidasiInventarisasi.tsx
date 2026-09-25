@@ -110,6 +110,7 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
   }
 
   const bisaDivalidasi = (r: BarisHasil) => pengelola && r.status === 'diisi' && !r.posisi
+  const bisaDitolak = (r: BarisHasil) => pengelola && r.status === 'diisi' && !r.posisi
   const bisaDibatalkan = (r: BarisHasil) => pengelola && r.status === 'divalidasi' && !r.posisi
   const calon = useMemo(() => rows.filter(bisaDivalidasi), [rows, pengelola]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -131,6 +132,27 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
         const h = (data || {}) as { divalidasi?: number; dilewati?: number }
         setMsg(`${h.divalidasi ?? 0} barang divalidasi` +
           (h.dilewati ? ` · ${h.dilewati} dilewati (sudah divalidasi atau posisinya berubah)` : '') + '.')
+        await muat(); muatRingkasan()
+      },
+    })
+  }
+
+  async function tolak(r: BarisHasil) {
+    await konfirmasi({
+      nada: 'merah', ikon: '✕', judul: 'Tolak isian ini?',
+      subjudul: namaBarang(r),
+      isi: <>Isian <b>tetap tersimpan</b>, tidak divalidasi. SKPD melihat catatan di bawah di Lembar Kerja
+        & bisa langsung memperbaikinya.</>,
+      catatan: {
+        label: 'Alasan penolakan (wajib)',
+        placeholder: 'Mis. foto kondisi barang belum diunggah, atau kondisi tercatat tidak sesuai foto.',
+        petunjuk: <>Tanpa alasan yang jelas, SKPD tak tahu apa yang perlu dibenahi.</>,
+      },
+      labelYa: 'Ya, tolak',
+      kerjakan: async catatan => {
+        const { error } = await supabase.rpc('fn_inventarisasi_tolak', { p_id: r.id, p_catatan: catatan })
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg('Isian ditolak — catatan tampil di Lembar Kerja SKPD.')
         await muat(); muatRingkasan()
       },
     })
@@ -316,6 +338,11 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
                       {bisaDivalidasi(r) && (
                         <button onClick={() => validasi([r.id], 'Validasi isian barang ini?')}
                           className="ml-3 text-teal hover:underline font-medium">✓ Validasi</button>
+                      )}
+                      {bisaDitolak(r) && (
+                        <button onClick={() => tolak(r)} className="ml-3 text-red-600 hover:underline font-medium">
+                          ✕ Tolak
+                        </button>
                       )}
                       {bisaDibatalkan(r) && (
                         <button onClick={() => batalValidasi(r)} className="ml-3 text-amber-700 hover:underline font-medium">

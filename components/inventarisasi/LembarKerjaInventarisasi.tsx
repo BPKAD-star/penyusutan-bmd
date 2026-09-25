@@ -151,6 +151,25 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
     muatSamping()
   }
 
+  async function hapusIsian(r: BarisLembar) {
+    const id = r.inv_id
+    if (!id) return
+    await konfirmasi({
+      nada: 'merah', ikon: '🗑', judul: 'Hapus isian barang ini?',
+      subjudul: r.nama_barang || r.kode,
+      isi: <>Isian yang tersimpan <b>dihapus total</b> — barang ini kembali ke status &ldquo;belum
+        diinventarisasi&rdquo; dan harus diisi ulang dari awal (jawaban, foto, & catatan Pengelola Barang
+        ikut hilang). Daftar Barang tidak tersentuh.</>,
+      labelYa: 'Ya, hapus isian',
+      kerjakan: async () => {
+        const { error } = await supabase.rpc('fn_inventarisasi_hapus_isian', { p_id: id })
+        if (error) { setMsg(`Error: ${error.message}`); return }
+        setMsg('Isian dihapus — barang ini bisa diinventarisasi ulang.')
+        await muat(); muatSamping()
+      },
+    })
+  }
+
   async function hapusBelumTercatat(b: InvBaris) {
     await konfirmasi({
       nada: 'merah', ikon: '🗑', judul: 'Hapus lembar "BMD Belum Tercatat" ini?',
@@ -344,6 +363,11 @@ export default function LembarKerjaInventarisasi({ golongan }: { golongan: strin
                         {st === 'belum' ? (pengawas ? 'Lihat' : 'Isi Inventarisasi')
                           : st === 'diisi' && !pengawas ? 'Ubah Isian' : 'Lihat'}
                       </button>
+                      {st === 'diisi' && !pengawas && (
+                        <button onClick={() => hapusIsian(r)} className="ml-3 text-red-500 hover:text-red-700">
+                          Hapus Isian
+                        </button>
+                      )}
                       {r.inv_id && (
                         <a href={`/cetak/inventarisasi-lki?id=${r.inv_id}`} target="_blank" rel="noopener noreferrer"
                           className="ml-3 text-gray-500 hover:text-gray-800" title="Cetak lembar kerja barang ini">🖨</a>

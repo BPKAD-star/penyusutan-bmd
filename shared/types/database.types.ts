@@ -2949,6 +2949,10 @@ export type Database = {
         Args: { p_id: string }
         Returns: undefined
       }
+      fn_inventarisasi_hapus_isian: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       fn_inventarisasi_ringkas: {
         Args: { p_golongan: string; p_skpd_ids?: number[]; p_tahun: number }
         Returns: {
@@ -2969,6 +2973,10 @@ export type Database = {
           p_skpd_id: number
         }
         Returns: string
+      }
+      fn_inventarisasi_tolak: {
+        Args: { p_catatan: string; p_id: string }
+        Returns: undefined
       }
       fn_inventarisasi_validasi: { Args: { p_ids: string[] }; Returns: Json }
       fn_ipa_role: { Args: never; Returns: string }
