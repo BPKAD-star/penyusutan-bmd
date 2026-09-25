@@ -36,6 +36,14 @@ export type BarisLembar = {
   inv_catatan: string | null
   inv_diisi_at: string | null
   transaksi_sesudah: TransaksiSesudah[]
+  // Ditambahkan migrasi 20260925_02 — opsional supaya layar tetap jalan
+  // di jendela sebelum migrasinya dijalankan (kolomnya cuma tak terisi).
+  no_bpkb?: string | null
+  luas?: number | null
+  wilayah_kode?: string | null
+  wilayah?: string | null
+  keterangan?: string | null
+  foto_paths?: string[] | null
 }
 
 export type FilterLembar = 'semua' | 'belum' | 'diisi' | 'divalidasi'
@@ -115,7 +123,9 @@ export function snapshotDariLembar(r: BarisLembar): InvSnapshot {
     nama_barang: r.nama_barang, spesifikasi_lainnya: r.spesifikasi_lainnya, merek_tipe: r.merek_tipe,
     jumlah: r.jumlah, satuan: r.satuan, nilai_perolehan: r.nilai_perolehan, alamat: r.alamat_detail,
     kondisi: r.kondisi_barang, tgl_perolehan: r.tgl_perolehan,
-    no_polisi: r.no_polisi, no_rangka: r.no_rangka, no_mesin: r.no_mesin,
+    no_polisi: r.no_polisi, no_rangka: r.no_rangka, no_mesin: r.no_mesin, no_bpkb: r.no_bpkb ?? null,
+    luas: r.luas ?? null, wilayah_kode: r.wilayah_kode ?? null, wilayah: r.wilayah ?? null,
+    keterangan: r.keterangan ?? null, foto_paths: r.foto_paths ?? [],
     latitude: r.latitude, longitude: r.longitude, skpd_id: r.skpd_id,
   }
 }

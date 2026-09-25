@@ -17,7 +17,6 @@
 //   (mis. kondisi berubah DAN tercatat ganda).
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import { KIBAR_JENIS_LABEL } from '@/lib/kibarJenis'
-import { GOLONGAN_FIELDS, type FieldKey } from '@/lib/asetFields'
 
 // ── Status per barang ───────────────────────────────────────────────────────
 /** Status yang TERSIMPAN. "Belum" bukan status — ia berarti belum ada barisnya. */
@@ -89,6 +88,14 @@ export type InvSnapshot = {
   no_polisi?: string | null
   no_rangka?: string | null
   no_mesin?: string | null
+  no_bpkb?: string | null
+  luas?: number | null
+  wilayah_kode?: string | null
+  /** Rantai nama wilayah (Desa, Kec., Kabupaten) — `fn_wilayah_label`. */
+  wilayah?: string | null
+  keterangan?: string | null
+  /** Foto barang di register (`aset.foto_paths`, bucket `aset-foto`). */
+  foto_paths?: string[] | null
   latitude?: number | null
   longitude?: number | null
   skpd_id?: number | null
@@ -157,9 +164,20 @@ export type InvJawaban = {
   // N — Gedung & Bangunan / JIJ: berdiri di atas tanah milik siapa
   tanah_milik?: PihakPengguna
   tanah_milik_nama?: string
-  // O–Q
+  // O — Titik koordinat. Sesuai/Tidak Sesuai terhadap titik register; kalau
+  // Tidak Sesuai, titik yang seharusnya di `latitude`/`longitude`.
+  koordinat?: { sesuai: boolean }
   latitude?: number | null
   longitude?: number | null
+  // Spesifikasi Lainnya · Luas · No. BPKB (per golongan, lihat LKI_MATRIX).
+  spesifikasi_lainnya?: SesuaiField
+  luas?: SesuaiField
+  no_bpkb?: SesuaiField
+  // Q — Keterangan barang di register (`aset.keterangan`). Beda dgn
+  // `keterangan` di bawah, yang catatan bebas petugas di lembar kerja.
+  keterangan_barang?: SesuaiField
+  // R — Foto barang. Tidak Sesuai → foto baru WAJIB diunggah ke lembar ini.
+  foto_barang?: { sesuai: boolean }
   lainnya?: string
   keterangan?: string
   // Merek/Tipe — P&M (III.A.2) dan juga ATL (III.A.5) & ATB (III.A.6),
@@ -225,54 +243,72 @@ export type LkiConfig = {
   tanahMilik: boolean
   /** Judul bagian N, beda per format ("Gedung dan Bangunan"/"Jalan" di atas…). */
   tanahMilikLabel?: string
-  /** Titik koordinat. */
+  /** Titik koordinat (bagian O) — seluruh golongan. */
   titikKoordinat: boolean
-  /** Bagian I — biaya atribusi/menambah kapasitas manfaat (keputusan user
-   *  2026-09-25): hanya golongan yang lazim menerima rehab/upgrade yang
-   *  DIGABUNG ke induk lewat menu Kapitalisasi — Peralatan & Mesin, Gedung &
-   *  Bangunan, JIJ, & Aset Tidak Berwujud (mis. modul baru pada aplikasi induk).
-   *  Tanah/ATL/KDP/Aset Lain-Lain TIDAK punya konsep ini. */
+  /** Spesifikasi Lainnya (register `aset.spesifikasi_lainnya`). */
+  spesifikasiLainnya: boolean
+  /** Luas (m²) (register `aset.luas`). */
+  luas: boolean
+  /** Bagian I — biaya atribusi/menambah kapasitas manfaat (digabung ke induk
+   *  lewat menu Kapitalisasi). Lihat `LKI_MATRIX.atribusi`. */
   atribusi: boolean
 }
 
-// merekTipe, nomorKendaraan, & titikKoordinat DITURUNKAN dari `GOLONGAN_FIELDS`
-// (lib/asetFields.ts) — field spesifikasi yang SAMA yang dipakai Edit
-// Spesifikasi/Koreksi (keputusan user 2026-09-25), bukan daftar boolean yang
-// dijaga manual di sini. Konsekuensinya `titikKoordinat` kini true untuk
-// SEMUA golongan (P&M/ATL/KDP/ATB/Aset Lain-Lain kini IKUT — dulu sengaja
-// dimatikan "ikut format apa adanya", tapi register mereka MEMANG punya kolom
-// `latitude`/`longitude` yang bisa dikoreksi lewat Edit Spesifikasi, jadi LKI
-// yang tak pernah menanyakannya adalah celah, bukan kesengajaan yang benar).
-// `jijTeknis`/`pemakaiRumahNegara`/`tanahMilik`/`hilangVsTidakDitemukan` TETAP
-// manual — murni struktur survei Permendagri, tak ada kolom `aset` padanannya.
-const NOMOR_KENDARAAN_KEYS: FieldKey[] = ['no_polisi', 'no_rangka', 'no_mesin', 'no_bpkb']
-const punyaField = (golongan: string, ...keys: FieldKey[]): boolean => {
-  const fields = GOLONGAN_FIELDS[golongan] || []
-  return keys.some(k => fields.includes(k))
-}
-const ATRIBUSI_GOLONGAN = new Set(['1.3.2', '1.3.3', '1.3.4', '1.5.3'])
+/**
+ * MATRIKS ISIAN LKI per golongan — disalin dari berkas kerja user
+ * "Alur Inventarisasi.xlsx" (2026-09-25). KHUSUS LKI: sengaja TIDAK diturunkan
+ * dari `GOLONGAN_FIELDS` (lib/asetFields.ts). Template itu dipakai bersama Edit
+ * Spesifikasi, Koreksi, & Daftar Barang; menyempitkannya demi LKI akan
+ * MENYEMBUNYIKAN data yang sudah tersimpan di menu-menu itu (mis. Spesifikasi
+ * Lainnya Gedung). Yang ditanyakan saat inventarisasi fisik memang lebih sempit
+ * dari yang bisa disimpan register.
+ *
+ * Isian yang ditanyakan di SEMUA golongan (tak perlu tercantum di sini): NIBAR,
+ * Kode Barang, Spesifikasi Nama Barang, Jumlah, Satuan, Keberadaan, Nilai,
+ * Alamat (wilayah + detail), Titik Koordinat, Kondisi, Penggunaan, Tercatat
+ * Ganda, Keterangan, Foto/Denah.
+ */
+export const LKI_MATRIX = {
+  merek_tipe: ['1.3.2', '1.3.5', '1.5.4'],
+  spesifikasi_lainnya: ['1.3.1', '1.3.2', '1.3.5', '1.5.4'],
+  /** No. Polisi · No. Rangka · No. Mesin · No. BPKB. */
+  nomor_kendaraan: ['1.3.2', '1.5.4'],
+  luas: ['1.3.1', '1.3.3', '1.3.4', '1.3.6', '1.5.4'],
+  /** Peralatan & Mesin SENGAJA tidak (keputusan user 2026-09-25): rehab/upgrade
+   *  P&M dicatat sbg barang tersendiri, tak digabung ke induk. ATB ikut —
+   *  belanja modul baru pada aplikasi induk memang menambah nilai induknya. */
+  atribusi: ['1.3.3', '1.3.4', '1.5.3'],
+  /** Bagian N "berdiri di atas tanah milik". */
+  tanah_milik: ['1.3.3', '1.3.4', '1.5.4'],
+} as const
+
+const ada = (daftar: readonly string[], golongan: string) => daftar.includes(golongan)
 
 type OverrideConfig = Partial<
-  Pick<LkiConfig, 'jijTeknis' | 'hilangVsTidakDitemukan' | 'pemakaiRumahNegara' | 'tanahMilik' | 'tanahMilikLabel'>
+  Pick<LkiConfig, 'jijTeknis' | 'hilangVsTidakDitemukan' | 'pemakaiRumahNegara' | 'tanahMilikLabel'>
 >
 
 function konfig(golongan: string, format: string, label: string, override: OverrideConfig = {}): LkiConfig {
   return {
     format, label,
-    merekTipe: punyaField(golongan, 'merek_tipe'),
-    nomorKendaraan: punyaField(golongan, ...NOMOR_KENDARAAN_KEYS),
-    titikKoordinat: punyaField(golongan, 'latitude'),
-    atribusi: ATRIBUSI_GOLONGAN.has(golongan),
-    jijTeknis: false, hilangVsTidakDitemukan: false, pemakaiRumahNegara: false, tanahMilik: false,
+    merekTipe: ada(LKI_MATRIX.merek_tipe, golongan),
+    spesifikasiLainnya: ada(LKI_MATRIX.spesifikasi_lainnya, golongan),
+    nomorKendaraan: ada(LKI_MATRIX.nomor_kendaraan, golongan),
+    luas: ada(LKI_MATRIX.luas, golongan),
+    atribusi: ada(LKI_MATRIX.atribusi, golongan),
+    tanahMilik: ada(LKI_MATRIX.tanah_milik, golongan),
+    tanahMilikLabel: 'Barang di atas tanah milik',
+    titikKoordinat: true,
+    jijTeknis: false, hilangVsTidakDitemukan: false, pemakaiRumahNegara: false,
     ...override,
   }
 }
 
 // Konfigurasi di bawah SUDAH diverifikasi baris-per-baris terhadap Lampiran
 // Permendagri 47/2021 (Format III.A.1–III.A.6), termasuk hal. 7–12 (2026-07-28).
-// Yang manual di sini HANYA bagian yang tak ada padanan kolom `aset` (lihat
-// komentar di atas `konfig()`); merekTipe/nomorKendaraan/titikKoordinat/
-// atribusi diturunkan otomatis, tak perlu ditulis di sini.
+// Isian yang ditanyakan per golongan dipegang `LKI_MATRIX`; yang tertulis di
+// sini HANYA struktur survei Permendagri (jijTeknis/pemakaiRumahNegara/
+// hilangVsTidakDitemukan) & judul bagian N.
 //
 // Catatan penting hasil verifikasi:
 // - III.A.4 (JIJ) punya bagian N "Jalan di atas tanah milik" — sama seperti GB,
@@ -287,11 +323,10 @@ export const LKI_CONFIG: Record<string, LkiConfig> = {
   '1.3.1': konfig('1.3.1', 'III.A.1', 'Tanah'),
   '1.3.2': konfig('1.3.2', 'III.A.2', 'Peralatan dan Mesin', { hilangVsTidakDitemukan: true }),
   '1.3.3': konfig('1.3.3', 'III.A.3', 'Gedung dan Bangunan', {
-    pemakaiRumahNegara: true, tanahMilik: true,
-    tanahMilikLabel: 'Gedung dan Bangunan di atas tanah milik',
+    pemakaiRumahNegara: true, tanahMilikLabel: 'Gedung dan Bangunan di atas tanah milik',
   }),
   '1.3.4': konfig('1.3.4', 'III.A.4', 'Jalan, Jaringan dan Irigasi', {
-    jijTeknis: true, tanahMilik: true, tanahMilikLabel: 'Jalan di atas tanah milik',
+    jijTeknis: true, tanahMilikLabel: 'Jalan di atas tanah milik',
   }),
   '1.3.5': konfig('1.3.5', 'III.A.5', 'Aset Tetap Lainnya', { hilangVsTidakDitemukan: true }),
   '1.3.6': konfig('1.3.6', 'III.A.6', 'Konstruksi Dalam Pengerjaan', { hilangVsTidakDitemukan: true }),
@@ -425,6 +460,8 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
     tidakSesuai(j.kode_barang) || tidakSesuai(j.spesifikasi) || tidakSesuai(j.satuan) ||
     tidakSesuai(j.alamat) || tidakSesuai(j.merek_tipe) ||
     tidakSesuai(j.no_polisi) || tidakSesuai(j.no_rangka) || tidakSesuai(j.no_mesin) ||
+    tidakSesuai(j.no_bpkb) || tidakSesuai(j.spesifikasi_lainnya) || tidakSesuai(j.luas) ||
+    tidakSesuai(j.keterangan_barang) || j.koordinat?.sesuai === false || j.foto_barang?.sesuai === false ||
     tidakSesuai(j.jenis_perkerasan) || tidakSesuai(j.jenis_bahan_jembatan) ||
     tidakSesuai(j.no_ruas_jalan) || tidakSesuai(j.no_jaringan_irigasi)
   ) out.push('III.B.8')
@@ -450,7 +487,9 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
  *
  * Dipakai form (pesan hidup) DAN penjaga tombol Simpan — satu aturan, dua pintu.
  */
-export function kekuranganLki(b: Pick<InvBaris, 'aset_id' | 'jawaban'>): string[] {
+export function kekuranganLki(
+  b: Pick<InvBaris, 'aset_id' | 'jawaban'> & { foto_paths?: string[] },
+): string[] {
   const j = b.jawaban || {}
   const kurang: string[] = []
 
@@ -476,7 +515,9 @@ export function kekuranganLki(b: Pick<InvBaris, 'aset_id' | 'jawaban'>): string[
   const teks: [keyof InvJawaban, string][] = [
     ['spesifikasi', 'Nama Spesifikasi Barang (D)'], ['satuan', 'Satuan Barang (F)'],
     ['merek_tipe', 'Merek / Tipe'], ['no_polisi', 'Nomor Polisi'],
-    ['no_rangka', 'Nomor Rangka'], ['no_mesin', 'Nomor Mesin'],
+    ['no_rangka', 'Nomor Rangka'], ['no_mesin', 'Nomor Mesin'], ['no_bpkb', 'Nomor BPKB'],
+    ['spesifikasi_lainnya', 'Spesifikasi Lainnya'], ['luas', 'Luas'],
+    ['keterangan_barang', 'Keterangan (Q)'],
     ['jenis_perkerasan', 'Jenis Perkerasan Jalan'], ['jenis_bahan_jembatan', 'Jenis Bahan Struktur Jembatan'],
     ['no_ruas_jalan', 'Nomor Ruas Jalan'], ['no_jaringan_irigasi', 'Nomor Jaringan Irigasi'],
   ]
@@ -484,6 +525,14 @@ export function kekuranganLki(b: Pick<InvBaris, 'aset_id' | 'jawaban'>): string[
     const f = j[k] as SesuaiField | undefined
     if (f?.sesuai === false && !(f.seharusnya || '').trim()) kurang.push(`${label} yang seharusnya`)
   }
+
+  if (j.luas?.sesuai === false && (j.luas.seharusnya || '').trim() && !(Number(j.luas.seharusnya) > 0)) {
+    kurang.push('Luas yang seharusnya harus berupa angka > 0')
+  }
+  if (j.koordinat?.sesuai === false && (j.latitude == null || j.longitude == null)) {
+    kurang.push('Titik Koordinat yang seharusnya (O)')
+  }
+  if (j.foto_barang?.sesuai === false && !(b.foto_paths || []).length) kurang.push('Foto barang terbaru (R)')
 
   if (j.atribusi === 'ya_induk_diketahui' && !j.induk?.aset_id) kurang.push('Barang induk (I)')
   if (j.ganda && !j.ganda_data?.aset_id) kurang.push('Barang kembaran yang tercatat ganda (M)')

@@ -89,47 +89,60 @@ describe('belumDiinventarisasi — hitungan dari ringkasan server', () => {
   })
 })
 
-describe('konfigLki — atribusi digerbang, merekTipe/nomorKendaraan/titikKoordinat diturunkan dari GOLONGAN_FIELDS (2026-09-25)', () => {
-  it('atribusi hanya untuk golongan yang lazim direhab/upgrade & digabung ke induk', () => {
-    expect(konfigLki('1.3.2').atribusi).toBe(true) // Peralatan & Mesin
-    expect(konfigLki('1.3.3').atribusi).toBe(true) // Gedung & Bangunan
-    expect(konfigLki('1.3.4').atribusi).toBe(true) // Jalan, Jaringan & Irigasi
-    expect(konfigLki('1.5.3').atribusi).toBe(true) // Aset Tidak Berwujud
-    expect(konfigLki('1.3.1').atribusi).toBe(false) // Tanah
-    expect(konfigLki('1.3.5').atribusi).toBe(false) // Aset Tetap Lainnya
-    expect(konfigLki('1.3.6').atribusi).toBe(false) // KDP
-    expect(konfigLki('1.5.4').atribusi).toBe(false) // Aset Lain-Lain
+describe('konfigLki — matriks isian dari "Alur Inventarisasi.xlsx" (2026-09-25)', () => {
+  const SEMUA = ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']
+  const yang = (flag: 'merekTipe' | 'spesifikasiLainnya' | 'nomorKendaraan' | 'luas' | 'atribusi' | 'tanahMilik') =>
+    SEMUA.filter(g => konfigLki(g)[flag])
+
+  it('setiap isian per golongan persis sama dengan matriks user', () => {
+    expect(yang('merekTipe')).toEqual(['1.3.2', '1.3.5', '1.5.4'])
+    expect(yang('spesifikasiLainnya')).toEqual(['1.3.1', '1.3.2', '1.3.5', '1.5.4'])
+    expect(yang('nomorKendaraan')).toEqual(['1.3.2', '1.5.4'])
+    expect(yang('luas')).toEqual(['1.3.1', '1.3.3', '1.3.4', '1.3.6', '1.5.4'])
+    expect(yang('tanahMilik')).toEqual(['1.3.3', '1.3.4', '1.5.4'])
   })
 
-  it('titik koordinat kini true untuk SEMUA golongan — register semuanya punya latitude/longitude', () => {
-    for (const g of ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
-      expect(konfigLki(g).titikKoordinat).toBe(true)
-    }
+  it('atribusi: Gedung, JIJ, ATB saja — Peralatan & Mesin SENGAJA tidak', () => {
+    expect(yang('atribusi')).toEqual(['1.3.3', '1.3.4', '1.5.3'])
   })
 
-  it('merekTipe & nomorKendaraan tetap sama seperti sebelum diturunkan dari GOLONGAN_FIELDS', () => {
-    expect(konfigLki('1.3.2').merekTipe).toBe(true)
-    expect(konfigLki('1.3.5').merekTipe).toBe(true)
-    expect(konfigLki('1.3.6').merekTipe).toBe(true)
-    expect(konfigLki('1.5.3').merekTipe).toBe(true)
-    expect(konfigLki('1.5.4').merekTipe).toBe(true)
-    expect(konfigLki('1.3.1').merekTipe).toBe(false)
-    expect(konfigLki('1.3.3').merekTipe).toBe(false)
-    expect(konfigLki('1.3.4').merekTipe).toBe(false)
-
-    expect(konfigLki('1.3.2').nomorKendaraan).toBe(true)
-    for (const g of ['1.3.1', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
-      expect(konfigLki(g).nomorKendaraan).toBe(false)
-    }
+  it('titik koordinat untuk SEMUA golongan', () => {
+    for (const g of SEMUA) expect(konfigLki(g).titikKoordinat).toBe(true)
   })
 
-  it('golongan manual (jijTeknis/pemakaiRumahNegara/tanahMilik/hilangVsTidakDitemukan) tak berubah', () => {
+  it('struktur survei Permendagri tetap', () => {
     expect(konfigLki('1.3.4').jijTeknis).toBe(true)
     expect(konfigLki('1.3.3').pemakaiRumahNegara).toBe(true)
-    expect(konfigLki('1.3.3').tanahMilik).toBe(true)
-    expect(konfigLki('1.3.4').tanahMilik).toBe(true)
+    expect(konfigLki('1.3.3').tanahMilikLabel).toBe('Gedung dan Bangunan di atas tanah milik')
     expect(konfigLki('1.3.2').hilangVsTidakDitemukan).toBe(true)
     expect(konfigLki('1.3.1').hilangVsTidakDitemukan).toBe(false)
+  })
+})
+
+describe('isian matriks baru ikut LHI III.B.8 & kekurangan', () => {
+  const b = (jawaban: InvJawaban): InvBaris => ({ id: 'x', aset_id: 'a', snapshot: {}, jawaban, foto_paths: [] })
+
+  it('BPKB/luas/spesifikasi lainnya/keterangan/koordinat/foto Tidak Sesuai → III.B.8', () => {
+    const kasus: InvJawaban[] = [
+      { no_bpkb: { sesuai: false, seharusnya: 'X' } },
+      { luas: { sesuai: false, seharusnya: '100' } },
+      { spesifikasi_lainnya: { sesuai: false, seharusnya: 'x' } },
+      { keterangan_barang: { sesuai: false, seharusnya: 'x' } },
+      { koordinat: { sesuai: false }, latitude: -7.8, longitude: 112 },
+      { foto_barang: { sesuai: false } },
+    ]
+    for (const j of kasus) expect(klasifikasiLhi(b(j))).toContain('III.B.8')
+    expect(klasifikasiLhi(b({ koordinat: { sesuai: true }, foto_barang: { sesuai: true } }))).toEqual([])
+  })
+
+  it('koordinat Tidak Sesuai wajib titik; foto Tidak Sesuai wajib unggahan; luas wajib angka', () => {
+    const dasar: InvJawaban = { keberadaan: 'ada', kondisi: 'B' }
+    expect(kekuranganLki(aset({ ...dasar, koordinat: { sesuai: false } }))).toEqual(['Titik Koordinat yang seharusnya (O)'])
+    expect(kekuranganLki(aset({ ...dasar, foto_barang: { sesuai: false } }))).toEqual(['Foto barang terbaru (R)'])
+    expect(kekuranganLki({ ...aset({ ...dasar, foto_barang: { sesuai: false } }), foto_paths: ['p'] })).toEqual([])
+    expect(kekuranganLki(aset({ ...dasar, luas: { sesuai: false, seharusnya: 'abc' } })))
+      .toEqual(['Luas yang seharusnya harus berupa angka > 0'])
+    expect(kekuranganLki(aset({ ...dasar, no_bpkb: { sesuai: false } }))).toEqual(['Nomor BPKB yang seharusnya'])
   })
 })
 

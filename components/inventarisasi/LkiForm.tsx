@@ -24,6 +24,7 @@ import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiP
 import WilayahPicker from '@/components/WilayahPicker'
 import { formatRupiah2 } from '@/lib/export'
 import NominalInput from '@/shared/ui/NominalInput'
+import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
   normalKondisi, klasifikasiLhi, kekuranganLki, LHI_LABEL,
   sesuaiTampil, atribusiTampil, digunakanSendiriTampil,
@@ -195,7 +196,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
     // Penjaga SAMA dgn daftar kekurangan di bawah form — satu aturan
     // (`kekuranganLki`), dua pintu. Tombolnya sengaja TIDAK dimatikan: tombol
     // mati tanpa keterangan adalah kegagalan senyap.
-    const k = kekuranganLki({ aset_id: baris.aset_id, jawaban: j })
+    const k = kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto })
     if (k.length > 0) { setErr(`Belum lengkap: ${k.join(', ')}.`); return }
     setSaving(true); setErr('')
     try { await onSimpan(j, foto); onTutup() }
@@ -206,14 +207,37 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   // Pratinjau LHI: fungsi klasifikasi yang SAMA dgn laporan, jadi isi laporan
   // tak mungkin berbeda dari yang terlihat di sini.
   const lhi = klasifikasiLhi({ ...baris, jawaban: j })
-  const kurang = readOnly ? [] : kekuranganLki({ aset_id: baris.aset_id, jawaban: j })
+  const kurang = readOnly ? [] : kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto })
   const atribusiVal = atribusiTampil(j.atribusi, isBaru)
   const digunakanSendiri = digunakanSendiriTampil(j.penggunaan, isBaru)
-  // Titik Koordinat (O) narik dari data LIVE (`aset.latitude/longitude`) selama
-  // belum dikoreksi — begitu user mengklik peta, `j.latitude/longitude`
-  // eksplisit (termasuk `null` kalau dihapus) & menang atas nilai live.
+  // Titik Koordinat (O): peta di dalam "Tidak Sesuai" berangkat dari titik
+  // register, lalu yang diklik/diketik menang (termasuk `null` kalau dihapus).
   const latTampil = j.latitude !== undefined ? j.latitude : (s.latitude ?? null)
   const lngTampil = j.longitude !== undefined ? j.longitude : (s.longitude ?? null)
+  const titikTercatat = s.latitude != null && s.longitude != null ? `${s.latitude}, ${s.longitude}` : null
+  const alamatTercatat = [s.wilayah, s.alamat].filter(Boolean).join(' — ') || null
+  const fotoReg = s.foto_paths || []
+  const fotoThumbs = useFotoThumbs(fotoReg.slice(0, 1))
+
+  /** Satu isian teks Sesuai/Tidak Sesuai — bentuk yang sama dipakai banyak bagian. */
+  const isianTeks = (
+    key: 'spesifikasi_lainnya' | 'luas' | 'merek_tipe' | 'no_polisi' | 'no_rangka' | 'no_mesin' | 'no_bpkb' | 'keterangan_barang',
+    lama: string | number | null | undefined,
+    opsi: { angka?: boolean } = {},
+  ) => (
+    <SesuaiRadio
+      nilaiLama={lama == null || lama === '' ? null : String(lama)}
+      sesuai={sesuaiTampil(j[key], isBaru)}
+      disabled={readOnly}
+      onSesuai={v => set(key, v ? { sesuai: true } : { sesuai: false, seharusnya: j[key]?.seharusnya || '' })}
+    >
+      <input className="select-filter w-full" disabled={readOnly}
+        type={opsi.angka ? 'number' : 'text'}
+        placeholder="sebutkan yang seharusnya..."
+        value={j[key]?.seharusnya || ''}
+        onChange={e => set(key, { sesuai: false, seharusnya: e.target.value })} />
+    </SesuaiRadio>
+  )
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onTutup)}>
@@ -411,6 +435,12 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                 </SesuaiRadio>
               </Seksi>
 
+              {config.spesifikasiLainnya && (
+                <Seksi kode="D" judul="Spesifikasi Lainnya">
+                  {isianTeks('spesifikasi_lainnya', s.spesifikasi_lainnya)}
+                </Seksi>
+              )}
+
               {/* Format III.A.4 menyisipkan 4 isian teknis di sini, SEBELUM
                   Jumlah Barang. Di dokumen aslinya huruf E–H terpakai dua kali;
                   di layar dipendekkan jadi satu blok supaya tak membingungkan.
@@ -462,6 +492,12 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                   <p className="text-[11px] text-gray-400 mt-1">Daftar dari menu Admin → Daftar Satuan.</p>
                 </SesuaiRadio>
               </Seksi>
+
+              {config.luas && (
+                <Seksi kode="F" judul="Luas (m²)">
+                  {isianTeks('luas', s.luas, { angka: true })}
+                </Seksi>
+              )}
 
               <Seksi kode="G" judul="Keberadaan Barang">
                 <div className="flex flex-wrap gap-4 text-xs">
@@ -543,7 +579,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
 
               <Seksi kode="J" judul="Alamat">
                 <SesuaiRadio
-                  nilaiLama={s.alamat}
+                  nilaiLama={alamatTercatat}
                   sesuai={sesuaiTampil(j.alamat, isBaru)}
                   disabled={readOnly}
                   onSesuai={v => set('alamat', v ? { sesuai: true } : { sesuai: false })}
@@ -563,10 +599,16 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
 
               {config.titikKoordinat && (
                 <Seksi kode="O" judul="Titik Koordinat">
+                  <SesuaiRadio
+                    nilaiLama={titikTercatat}
+                    sesuai={j.koordinat?.sesuai ?? (isBaru ? undefined : true)}
+                    disabled={readOnly}
+                    onSesuai={v => setJ(p => v
+                      // Sesuai → buang titik koreksi supaya tak ada titik "seharusnya" yatim.
+                      ? { ...p, koordinat: { sesuai: true }, latitude: undefined, longitude: undefined }
+                      : { ...p, koordinat: { sesuai: false } })}
+                  >
                   <div className="space-y-2">
-                    <KotakTercatat
-                      nilai={s.latitude != null && s.longitude != null ? `${s.latitude}, ${s.longitude}` : null}
-                    />
                     <MapPicker
                       latitude={latTampil != null ? String(latTampil) : ''}
                       longitude={lngTampil != null ? String(lngTampil) : ''}
@@ -577,10 +619,11 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                       }))}
                     />
                     <p className="text-[11px] text-gray-400">
-                      Peta terisi titik yang sudah tercatat — klik untuk menandai ulang, atau ketik
-                      koordinatnya langsung.
+                      Peta berangkat dari titik yang tercatat — klik untuk menandai titik yang
+                      seharusnya, atau ketik koordinatnya langsung.
                     </p>
                   </div>
+                  </SesuaiRadio>
                 </Seksi>
               )}
 
@@ -599,40 +642,24 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
               </Seksi>
 
               {config.merekTipe && (
-                <Seksi kode="L" judul={config.nomorKendaraan ? 'Merek / Tipe' : 'Merek / Tipe / Spesifikasi Lainnya'}>
-                  <SesuaiRadio
-                    nilaiLama={s.merek_tipe}
-                    sesuai={sesuaiTampil(j.merek_tipe, isBaru)}
-                    disabled={readOnly}
-                    onSesuai={v => set('merek_tipe', v ? { sesuai: true } : { sesuai: false, seharusnya: j.merek_tipe?.seharusnya || '' })}
-                  >
-                    <input className="select-filter w-full" disabled={readOnly} placeholder="sebutkan yang seharusnya..."
-                      value={j.merek_tipe?.seharusnya || ''}
-                      onChange={e => set('merek_tipe', { sesuai: false, seharusnya: e.target.value })} />
-                  </SesuaiRadio>
+                <Seksi kode="L" judul="Merek / Tipe">
+                  {isianTeks('merek_tipe', s.merek_tipe)}
                 </Seksi>
               )}
 
               {config.nomorKendaraan && (
-                <Seksi kode="M–O" judul="Nomor Polisi / Rangka / Mesin (kendaraan dinas)">
+                <Seksi kode="M–O" judul="Nomor Polisi / Rangka / Mesin / BPKB (kendaraan)">
+                  <p className="text-[11px] text-gray-400 mb-2">Bukan kendaraan? Cukup pilih Sesuai.</p>
                   <div className="space-y-3">
                     {([
                       ['no_polisi', 'Nomor Polisi', s.no_polisi],
                       ['no_rangka', 'Nomor Rangka', s.no_rangka],
                       ['no_mesin', 'Nomor Mesin', s.no_mesin],
+                      ['no_bpkb', 'Nomor BPKB', s.no_bpkb],
                     ] as const).map(([key, label, lama]) => (
                       <div key={key}>
                         <p className="text-[11px] font-medium text-gray-600 mb-1">{label}</p>
-                        <SesuaiRadio
-                          nilaiLama={lama}
-                          sesuai={sesuaiTampil(j[key], isBaru)}
-                          disabled={readOnly}
-                          onSesuai={v => set(key, v ? { sesuai: true } : { sesuai: false, seharusnya: j[key]?.seharusnya || '' })}
-                        >
-                          <input className="select-filter w-full" disabled={readOnly} placeholder="sebutkan yang seharusnya..."
-                            value={j[key]?.seharusnya || ''}
-                            onChange={e => set(key, { sesuai: false, seharusnya: e.target.value })} />
-                        </SesuaiRadio>
+                        {isianTeks(key, lama)}
                       </div>
                     ))}
                   </div>
@@ -764,11 +791,38 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
           </Seksi>
 
           <Seksi kode="Q" judul="Keterangan">
-            <textarea className="select-filter w-full" rows={2} disabled={readOnly} placeholder="Keterangan..."
+            {!belumTercatat && (
+              <div className="mb-2">{isianTeks('keterangan_barang', s.keterangan)}</div>
+            )}
+            <textarea className="select-filter w-full" rows={2} disabled={readOnly}
+              placeholder={belumTercatat ? 'Keterangan...' : 'Catatan petugas inventarisasi (tidak mengubah keterangan barang)...'}
               value={j.keterangan || ''} onChange={e => set('keterangan', e.target.value)} />
           </Seksi>
 
           <Seksi kode="R" judul="Foto / Denah">
+            {!belumTercatat && (
+              <div className="mb-2 space-y-1.5">
+                <div className="rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-1.5 flex items-center gap-2">
+                  <p className="text-[10px] font-medium text-blue-400 uppercase tracking-wide">Tercatat</p>
+                  {fotoReg.length > 0
+                    ? <FotoSel paths={fotoReg} thumbUrl={fotoThumbs[fotoReg[0]]} judul={s.nama_barang} />
+                    : <span className="text-xs text-blue-900">— belum ada foto di register</span>}
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" disabled={readOnly}
+                      checked={(j.foto_barang?.sesuai ?? (isBaru ? undefined : true)) === true}
+                      onChange={() => set('foto_barang', { sesuai: true })} />
+                    Sesuai
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" disabled={readOnly} checked={j.foto_barang?.sesuai === false}
+                      onChange={() => set('foto_barang', { sesuai: false })} />
+                    Tidak Sesuai — unggah foto terbaru di bawah
+                  </label>
+                </div>
+              </div>
+            )}
             {!readOnly && (
               <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
                 className="text-xs" disabled={uploading} onChange={e => upload(e.target.files)} />

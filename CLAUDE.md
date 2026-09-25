@@ -7310,6 +7310,50 @@ sendiri yang bisa menyimpang dari field yang sungguh ada di register.
   warning baru (1 warning max-lines pre-existing di LkiForm.tsx, sudah ada
   sebelum perubahan ini).
 
+### ⚠️ DIGANTI hari yang sama: matriks LKI sendiri, BUKAN GOLONGAN_FIELDS (migrasi 20260925_02)
+
+User menyerahkan berkas kerja **"Alur Inventarisasi.xlsx"** berisi isian LKI
+per jenis aset, lalu memutuskan: **"PM gak usah atribusi, khusus LKI aja"**.
+Bagian di atas yang menurunkan flag dari `GOLONGAN_FIELDS` & memberi atribusi
+ke P&M **sudah tidak berlaku** — yang berlaku ini:
+
+- **`LKI_MATRIX`** (lib/inventarisasi.ts) = satu-satunya sumber isian per
+  golongan: Merek/Tipe (1.3.2 · 1.3.5 · 1.5.4) · Spesifikasi Lainnya (1.3.1 ·
+  1.3.2 · 1.3.5 · 1.5.4) · No. Polisi/Rangka/Mesin/**BPKB** (1.3.2 · 1.5.4) ·
+  Luas (1.3.1 · 1.3.3 · 1.3.4 · 1.3.6 · 1.5.4) · Atribusi (1.3.3 · 1.3.4 ·
+  1.5.3 — **P&M dicabut**) · Tanah milik/bagian N (1.3.3 · 1.3.4 · 1.5.4).
+  Isian lain (kode, spesifikasi, jumlah, satuan, keberadaan, nilai, alamat,
+  titik koordinat, kondisi, penggunaan, ganda, keterangan, foto) ke SEMUA
+  golongan.
+  ⚠️ **SENGAJA KHUSUS LKI — `GOLONGAN_FIELDS` TIDAK disentuh.** Template itu
+  dipakai Edit Spesifikasi, Koreksi, & Daftar Barang; menyempitkannya demi LKI
+  akan menyembunyikan data yang sudah tersimpan di menu-menu itu (mis.
+  Spesifikasi Lainnya Gedung). Yang ditanyakan di lapangan memang lebih sempit
+  dari yang bisa disimpan register — dua daftar ini BOLEH berbeda.
+- **Isian checklist BARU** (Sesuai/Tidak Sesuai terhadap nilai register):
+  `spesifikasi_lainnya`, `luas`, `no_bpkb`, `koordinat` (Tidak Sesuai → peta
+  titik seharusnya, wajib lat & long), `keterangan_barang` (vs
+  `aset.keterangan` — BEDA dgn `jawaban.keterangan` yang catatan bebas petugas
+  & dipertahankan), `foto_barang` (Tidak Sesuai → WAJIB unggah foto terbaru,
+  `kekuranganLki` kini menerima `foto_paths`). Keenamnya ikut **LHI III.B.8**.
+  Alamat J kini menampilkan rantai wilayah + alamat detail sbg "Tercatat".
+  Merek/Tipe berjudul "Merek / Tipe" saja — Spesifikasi Lainnya punya isian
+  sendiri.
+- **Migrasi 20260925_02**: `fn_wilayah_label(kode)` baru (Desa, Kec.,
+  Kabupaten — provinsi dibuang); `fn_inventarisasi_snapshot` membekukan
+  `no_bpkb`/`luas`/`wilayah_kode`/`wilayah`/`keterangan`/`foto_paths`;
+  `fn_inventarisasi_lembar` DI-DROP & dibuat ulang dgn 6 kolom tambahan di
+  UJUNG `RETURNS TABLE` (GRANT & `SET` ditulis ulang). Diuji transaksi +
+  ROLLBACK. ⚠️ **Deploy-ordering: jalankan migrasi dulu**, tapi arah
+  sebaliknya tak merusak — kolom baru di `BarisLembar` opsional, jadi sebelum
+  migrasi isian barunya cuma menampilkan "Tercatat —".
+- **Tak ada data lama yang perlu dijembatani**: `inventarisasi_barang` 0 baris
+  di produksi saat ini dikerjakan.
+- ⛔ **Lembar CETAK LKI** (`app/cetak/inventarisasi-lki`) belum memuat isian
+  baru — format resminya (Permendagri) tak punya barisnya & gambarnya belum
+  diserahkan. **Tindak Lanjut** (pemisahan Kode Barang → Surat Usulan Reklas
+  vs data lain → Koreksi) juga belum dibangun.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
