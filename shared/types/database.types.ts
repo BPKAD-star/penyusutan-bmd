@@ -14,45 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      // ⚠️ DITAMBAHKAN TANGAN 2026-08-18, bukan hasil `gen:types`. Migrasi
-      // 20260816_01 sudah membuat tabel ini di DB, tapi CLI Supabase belum
-      // terpasang di mesin ini (butuh SUPABASE_ACCESS_TOKEN), sementara
-      // `lib/sinkronisasi.test.ts` — benar — menolak `.from('admin_notes')`
-      // yang tak ada di berkas ini. Blok ini akan TERTIMPA sendiri begitu
-      // `npm run gen:types` sungguhan dijalankan; itu memang yang diharapkan.
-      admin_notes: {
-        Row: {
-          author_id: string | null
-          created_at: string
-          id: string
-          isi: string
-          penulis: string | null
-          skpd_id: number | null
-          skpd_nama: string | null
-          updated_at: string
-        }
-        Insert: {
-          author_id?: string | null
-          created_at?: string
-          id?: string
-          isi: string
-          penulis?: string | null
-          skpd_id?: number | null
-          skpd_nama?: string | null
-          updated_at?: string
-        }
-        Update: {
-          author_id?: string | null
-          created_at?: string
-          id?: string
-          isi?: string
-          penulis?: string | null
-          skpd_id?: number | null
-          skpd_nama?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       admin_broadcast: {
         Row: {
           aktif: boolean
@@ -212,6 +173,60 @@ export type Database = {
             columns: ["jenis_aset_id"]
             isOneToOne: false
             referencedRelation: "admin_jenis_aset"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      admin_notes: {
+        Row: {
+          author_id: string | null
+          created_at: string
+          id: string
+          isi: string
+          penulis: string | null
+          selesai: boolean
+          selesai_at: string | null
+          skpd_id: number | null
+          skpd_nama: string | null
+          updated_at: string
+        }
+        Insert: {
+          author_id?: string | null
+          created_at?: string
+          id?: string
+          isi: string
+          penulis?: string | null
+          selesai?: boolean
+          selesai_at?: string | null
+          skpd_id?: number | null
+          skpd_nama?: string | null
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string | null
+          created_at?: string
+          id?: string
+          isi?: string
+          penulis?: string | null
+          selesai?: boolean
+          selesai_at?: string | null
+          skpd_id?: number | null
+          skpd_nama?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_notes_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "admin_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_notes_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: false
+            referencedRelation: "admin_skpd"
             referencedColumns: ["id"]
           },
         ]
@@ -529,6 +544,7 @@ export type Database = {
       }
       admin_skpd: {
         Row: {
+          alamat: string | null
           created_at: string | null
           fpk_laporan: number | null
           fpk_temuan: number | null
@@ -544,6 +560,7 @@ export type Database = {
           path: unknown
         }
         Insert: {
+          alamat?: string | null
           created_at?: string | null
           fpk_laporan?: number | null
           fpk_temuan?: number | null
@@ -559,6 +576,7 @@ export type Database = {
           path?: unknown
         }
         Update: {
+          alamat?: string | null
           created_at?: string | null
           fpk_laporan?: number | null
           fpk_temuan?: number | null
@@ -1000,6 +1018,270 @@ export type Database = {
           },
         ]
       }
+      aset_awal_2026_hapus_bendosari_20260816: {
+        Row: {
+          akumulasi_2025: number | null
+          alamat_detail: string | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          created_at: string | null
+          dihapus_at: string | null
+          foto_paths: string[] | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jenis_hak: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          latitude: number | null
+          longitude: number | null
+          luas: number | null
+          masa_manfaat_smt: number | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nama_dokumen_kepemilikan: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          no_bpkb: string | null
+          no_mesin: string | null
+          no_polisi: string | null
+          no_rangka: string | null
+          nomor_dokumen_kepemilikan: string | null
+          pemanfaatan: string | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tanggal_dokumen_kepemilikan: string | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+          wilayah_kode: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          alamat_detail?: string | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          created_at?: string | null
+          dihapus_at?: string | null
+          foto_paths?: string[] | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jenis_hak?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          luas?: number | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nama_dokumen_kepemilikan?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          nomor_dokumen_kepemilikan?: string | null
+          pemanfaatan?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tanggal_dokumen_kepemilikan?: string | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+          wilayah_kode?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          alamat_detail?: string | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          created_at?: string | null
+          dihapus_at?: string | null
+          foto_paths?: string[] | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jenis_hak?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          luas?: number | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nama_dokumen_kepemilikan?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          nomor_dokumen_kepemilikan?: string | null
+          pemanfaatan?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tanggal_dokumen_kepemilikan?: string | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+          wilayah_kode?: string | null
+        }
+        Relationships: []
+      }
+      aset_awal_2026_hapus_duplikat_20260816: {
+        Row: {
+          akumulasi_2025: number | null
+          alamat_detail: string | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          created_at: string | null
+          dihapus_at: string | null
+          foto_paths: string[] | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jenis_hak: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          latitude: number | null
+          longitude: number | null
+          luas: number | null
+          masa_manfaat_smt: number | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nama_dokumen_kepemilikan: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          no_bpkb: string | null
+          no_mesin: string | null
+          no_polisi: string | null
+          no_rangka: string | null
+          nomor_dokumen_kepemilikan: string | null
+          pemanfaatan: string | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tanggal_dokumen_kepemilikan: string | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+          wilayah_kode: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          alamat_detail?: string | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          created_at?: string | null
+          dihapus_at?: string | null
+          foto_paths?: string[] | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jenis_hak?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          luas?: number | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nama_dokumen_kepemilikan?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          nomor_dokumen_kepemilikan?: string | null
+          pemanfaatan?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tanggal_dokumen_kepemilikan?: string | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+          wilayah_kode?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          alamat_detail?: string | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          created_at?: string | null
+          dihapus_at?: string | null
+          foto_paths?: string[] | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jenis_hak?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          luas?: number | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nama_dokumen_kepemilikan?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          nomor_dokumen_kepemilikan?: string | null
+          pemanfaatan?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tanggal_dokumen_kepemilikan?: string | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+          wilayah_kode?: string | null
+        }
+        Relationships: []
+      }
       aset_bidang_tanah: {
         Row: {
           alamat_detail: string | null
@@ -1359,6 +1641,57 @@ export type Database = {
           },
         ]
       }
+      ipa_aspek: {
+        Row: {
+          kode: string
+          nama: string
+          urut: number
+        }
+        Insert: {
+          kode: string
+          nama: string
+          urut: number
+        }
+        Update: {
+          kode?: string
+          nama?: string
+          urut?: number
+        }
+        Relationships: []
+      }
+      ipa_bobot_aspek: {
+        Row: {
+          aspek: string
+          bobot: number
+          klaster: string
+        }
+        Insert: {
+          aspek: string
+          bobot: number
+          klaster: string
+        }
+        Update: {
+          aspek?: string
+          bobot?: number
+          klaster?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ipa_bobot_aspek_aspek_fkey"
+            columns: ["aspek"]
+            isOneToOne: false
+            referencedRelation: "ipa_aspek"
+            referencedColumns: ["kode"]
+          },
+          {
+            foreignKeyName: "ipa_bobot_aspek_klaster_fkey"
+            columns: ["klaster"]
+            isOneToOne: false
+            referencedRelation: "ipa_klaster"
+            referencedColumns: ["kode"]
+          },
+        ]
+      }
       ipa_dokumen_bukti: {
         Row: {
           created_at: string
@@ -1410,6 +1743,140 @@ export type Database = {
           },
         ]
       }
+      ipa_indikator: {
+        Row: {
+          aspek: string
+          bobot: number
+          cara_skor: string
+          keterangan: string | null
+          kode: string
+          label_pembilang: string
+          label_penyebut: string
+          nama: string
+          sumber: string
+          urut: number
+        }
+        Insert: {
+          aspek: string
+          bobot: number
+          cara_skor?: string
+          keterangan?: string | null
+          kode: string
+          label_pembilang: string
+          label_penyebut: string
+          nama: string
+          sumber: string
+          urut: number
+        }
+        Update: {
+          aspek?: string
+          bobot?: number
+          cara_skor?: string
+          keterangan?: string | null
+          kode?: string
+          label_pembilang?: string
+          label_penyebut?: string
+          nama?: string
+          sumber?: string
+          urut?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ipa_indikator_aspek_fkey"
+            columns: ["aspek"]
+            isOneToOne: false
+            referencedRelation: "ipa_aspek"
+            referencedColumns: ["kode"]
+          },
+        ]
+      }
+      ipa_isian: {
+        Row: {
+          bukti_paths: string[]
+          catatan: string | null
+          catatan_verifikator: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          indikator: string
+          pembilang: number | null
+          penyebut: number | null
+          skpd_id: number
+          status: string
+          tahun: number
+          tanggal_capaian: string
+          tidak_ada: boolean
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          bukti_paths?: string[]
+          catatan?: string | null
+          catatan_verifikator?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          indikator: string
+          pembilang?: number | null
+          penyebut?: number | null
+          skpd_id: number
+          status?: string
+          tahun: number
+          tanggal_capaian: string
+          tidak_ada?: boolean
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          bukti_paths?: string[]
+          catatan?: string | null
+          catatan_verifikator?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          indikator?: string
+          pembilang?: number | null
+          penyebut?: number | null
+          skpd_id?: number
+          status?: string
+          tahun?: number
+          tanggal_capaian?: string
+          tidak_ada?: boolean
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ipa_isian_indikator_fkey"
+            columns: ["indikator"]
+            isOneToOne: false
+            referencedRelation: "ipa_indikator"
+            referencedColumns: ["kode"]
+          },
+          {
+            foreignKeyName: "ipa_isian_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: false
+            referencedRelation: "ipa_skpd"
+            referencedColumns: ["skpd_id"]
+          },
+        ]
+      }
+      ipa_klaster: {
+        Row: {
+          kode: string
+          nama: string
+        }
+        Insert: {
+          kode: string
+          nama: string
+        }
+        Update: {
+          kode?: string
+          nama?: string
+        }
+        Relationships: []
+      }
       ipa_log: {
         Row: {
           aksi: string
@@ -1447,6 +1914,138 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ipa_otomatis: {
+        Row: {
+          bulan: number
+          dihitung_at: string
+          dihitung_by: string | null
+          indikator: string
+          pembilang: number
+          penyebut: number
+          rincian: Json
+          skpd_id: number
+          tahun: number
+        }
+        Insert: {
+          bulan: number
+          dihitung_at?: string
+          dihitung_by?: string | null
+          indikator: string
+          pembilang: number
+          penyebut: number
+          rincian?: Json
+          skpd_id: number
+          tahun: number
+        }
+        Update: {
+          bulan?: number
+          dihitung_at?: string
+          dihitung_by?: string | null
+          indikator?: string
+          pembilang?: number
+          penyebut?: number
+          rincian?: Json
+          skpd_id?: number
+          tahun?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ipa_otomatis_indikator_fkey"
+            columns: ["indikator"]
+            isOneToOne: false
+            referencedRelation: "ipa_indikator"
+            referencedColumns: ["kode"]
+          },
+          {
+            foreignKeyName: "ipa_otomatis_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: false
+            referencedRelation: "ipa_skpd"
+            referencedColumns: ["skpd_id"]
+          },
+        ]
+      }
+      ipa_pajak_kendaraan: {
+        Row: {
+          aset_id: string
+          bukti_paths: string[]
+          catatan: string | null
+          catatan_verifikator: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          skpd_id: number
+          status: string
+          tahun: number
+          tanggal_bayar: string
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          aset_id: string
+          bukti_paths?: string[]
+          catatan?: string | null
+          catatan_verifikator?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          skpd_id: number
+          status?: string
+          tahun: number
+          tanggal_bayar: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          aset_id?: string
+          bukti_paths?: string[]
+          catatan?: string | null
+          catatan_verifikator?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          skpd_id?: number
+          status?: string
+          tahun?: number
+          tanggal_bayar?: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ipa_pajak_kendaraan_aset_id_fkey"
+            columns: ["aset_id"]
+            isOneToOne: false
+            referencedRelation: "aset"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ipa_pajak_kendaraan_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: false
+            referencedRelation: "ipa_skpd"
+            referencedColumns: ["skpd_id"]
+          },
+        ]
+      }
+      ipa_parameter: {
+        Row: {
+          keterangan: string
+          kunci: string
+          nilai: number
+        }
+        Insert: {
+          keterangan: string
+          kunci: string
+          nilai: number
+        }
+        Update: {
+          keterangan?: string
+          kunci?: string
+          nilai?: number
+        }
+        Relationships: []
       }
       ipa_parameter_nilai: {
         Row: {
@@ -1578,6 +2177,123 @@ export type Database = {
             columns: ["tahun_id"]
             isOneToOne: false
             referencedRelation: "ipa_tahun_anggaran"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ipa_rekon_pelaksanaan: {
+        Row: {
+          bukti_paths: string[]
+          catatan: string | null
+          catatan_verifikator: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          periode_id: string
+          skpd_id: number
+          status: string
+          tanggal_pelaksanaan: string
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          bukti_paths?: string[]
+          catatan?: string | null
+          catatan_verifikator?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          periode_id: string
+          skpd_id: number
+          status?: string
+          tanggal_pelaksanaan: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          bukti_paths?: string[]
+          catatan?: string | null
+          catatan_verifikator?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          periode_id?: string
+          skpd_id?: number
+          status?: string
+          tanggal_pelaksanaan?: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ipa_rekon_pelaksanaan_periode_id_fkey"
+            columns: ["periode_id"]
+            isOneToOne: false
+            referencedRelation: "ipa_rekon_periode"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ipa_rekon_pelaksanaan_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: false
+            referencedRelation: "ipa_skpd"
+            referencedColumns: ["skpd_id"]
+          },
+        ]
+      }
+      ipa_rekon_periode: {
+        Row: {
+          batas_tanggal: string
+          created_at: string
+          id: string
+          nama: string
+          tahun: number
+        }
+        Insert: {
+          batas_tanggal: string
+          created_at?: string
+          id?: string
+          nama: string
+          tahun: number
+        }
+        Update: {
+          batas_tanggal?: string
+          created_at?: string
+          id?: string
+          nama?: string
+          tahun?: number
+        }
+        Relationships: []
+      }
+      ipa_skpd: {
+        Row: {
+          klaster: string
+          sertakan_turunan: boolean
+          skpd_id: number
+        }
+        Insert: {
+          klaster: string
+          sertakan_turunan?: boolean
+          skpd_id: number
+        }
+        Update: {
+          klaster?: string
+          sertakan_turunan?: boolean
+          skpd_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ipa_skpd_klaster_fkey"
+            columns: ["klaster"]
+            isOneToOne: false
+            referencedRelation: "ipa_klaster"
+            referencedColumns: ["kode"]
+          },
+          {
+            foreignKeyName: "ipa_skpd_skpd_id_fkey"
+            columns: ["skpd_id"]
+            isOneToOne: true
+            referencedRelation: "admin_skpd"
             referencedColumns: ["id"]
           },
         ]
@@ -1927,6 +2643,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      perbaikan_nibar_semen_20260816: {
+        Row: {
+          dicatat_at: string | null
+          id: string | null
+          kode_register: string | null
+          nama_barang: string | null
+          nibar_lama: string | null
+          status: string | null
+        }
+        Insert: {
+          dicatat_at?: string | null
+          id?: string | null
+          kode_register?: string | null
+          nama_barang?: string | null
+          nibar_lama?: string | null
+          status?: string | null
+        }
+        Update: {
+          dicatat_at?: string | null
+          id?: string | null
+          kode_register?: string | null
+          nama_barang?: string | null
+          nibar_lama?: string | null
+          status?: string | null
+        }
+        Relationships: []
       }
       proyek_barang: {
         Row: {
@@ -2747,6 +3490,792 @@ export type Database = {
           },
         ]
       }
+      stg_bidang_tanah: {
+        Row: {
+          jenis_hak: string | null
+          luas: number
+          nibar: string
+          nomor_sertipikat: string | null
+          status_sertipikat: string
+          tanggal_sertipikat: string | null
+          urut: number
+        }
+        Insert: {
+          jenis_hak?: string | null
+          luas: number
+          nibar: string
+          nomor_sertipikat?: string | null
+          status_sertipikat: string
+          tanggal_sertipikat?: string | null
+          urut: number
+        }
+        Update: {
+          jenis_hak?: string | null
+          luas?: number
+          nibar?: string
+          nomor_sertipikat?: string | null
+          status_sertipikat?: string
+          tanggal_sertipikat?: string | null
+          urut?: number
+        }
+        Relationships: []
+      }
+      stg_dup_pariwisata: {
+        Row: {
+          nibar: string
+        }
+        Insert: {
+          nibar: string
+        }
+        Update: {
+          nibar?: string
+        }
+        Relationships: []
+      }
+      stg_dup_pariwisata_snapshot: {
+        Row: {
+          akumulasi_2025: number | null
+          alamat_detail: string | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          created_at: string | null
+          foto_paths: string[] | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jenis_hak: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          latitude: number | null
+          longitude: number | null
+          luas: number | null
+          masa_manfaat_smt: number | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nama_dokumen_kepemilikan: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          no_bpkb: string | null
+          no_mesin: string | null
+          no_polisi: string | null
+          no_rangka: string | null
+          nomor_dokumen_kepemilikan: string | null
+          pemanfaatan: string | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tanggal_dokumen_kepemilikan: string | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+          wilayah_kode: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          alamat_detail?: string | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          created_at?: string | null
+          foto_paths?: string[] | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jenis_hak?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          luas?: number | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nama_dokumen_kepemilikan?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          nomor_dokumen_kepemilikan?: string | null
+          pemanfaatan?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tanggal_dokumen_kepemilikan?: string | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+          wilayah_kode?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          alamat_detail?: string | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          created_at?: string | null
+          foto_paths?: string[] | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jenis_hak?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          luas?: number | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nama_dokumen_kepemilikan?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          nomor_dokumen_kepemilikan?: string | null
+          pemanfaatan?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tanggal_dokumen_kepemilikan?: string | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+          wilayah_kode?: string | null
+        }
+        Relationships: []
+      }
+      stg_import_asetlain_ekstra: {
+        Row: {
+          akumulasi_2025: number | null
+          alamat_detail: string | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          masa_manfaat_smt: number | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          no_bpkb: string | null
+          no_mesin: string | null
+          no_polisi: string | null
+          no_rangka: string | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          alamat_detail?: string | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          alamat_detail?: string | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Relationships: []
+      }
+      stg_import_atl_ekstrakom: {
+        Row: {
+          asal_usul: string | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+        }
+        Insert: {
+          asal_usul?: string | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Update: {
+          asal_usul?: string | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Relationships: []
+      }
+      stg_import_gb_ekstra: {
+        Row: {
+          akumulasi_2025: number | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          luas: number | null
+          masa_manfaat_smt: number | null
+          nama_barang: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          tahun_pengadaan: number | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          luas?: number | null
+          masa_manfaat_smt?: number | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          luas?: number | null
+          masa_manfaat_smt?: number | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Relationships: []
+      }
+      stg_import_pm_ekstra: {
+        Row: {
+          akumulasi_2025: number | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          masa_manfaat_smt: number | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          no_bpkb: string | null
+          no_mesin: string | null
+          no_polisi: string | null
+          no_rangka: string | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Relationships: []
+      }
+      stg_import_pm_ekstra_diknas: {
+        Row: {
+          akumulasi_2025: number | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          masa_manfaat_smt: number | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          no_bpkb: string | null
+          no_mesin: string | null
+          no_polisi: string | null
+          no_rangka: string | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Relationships: []
+      }
+      stg_import_pm_ekstra_dinkes: {
+        Row: {
+          akumulasi_2025: number | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          masa_manfaat_smt: number | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          no_bpkb: string | null
+          no_mesin: string | null
+          no_polisi: string | null
+          no_rangka: string | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Relationships: []
+      }
+      stg_import_pm_ekstra_disdag_pertanian: {
+        Row: {
+          akumulasi_2025: number | null
+          asal_usul: string | null
+          beban_penyusutan_per_smt: number | null
+          golongan: string | null
+          harga_satuan: number | null
+          intra_ekstra: string | null
+          jumlah: number | null
+          keterangan: string | null
+          kode: string | null
+          kondisi_barang: string | null
+          masa_manfaat_smt: number | null
+          merek_tipe: string | null
+          nama_barang: string | null
+          nibar: string | null
+          nilai_buku_awal: number | null
+          nilai_perolehan: number | null
+          no_bpkb: string | null
+          no_mesin: string | null
+          no_polisi: string | null
+          no_rangka: string | null
+          penggunaan_pengamanan: string | null
+          satuan: string | null
+          sisa_masa_manfaat_smt: number | null
+          skpd_id: number | null
+          spesifikasi_lainnya: string | null
+          tahun_pengadaan: number | null
+          tgl_perolehan: string | null
+          uraian_barang: string | null
+        }
+        Insert: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Update: {
+          akumulasi_2025?: number | null
+          asal_usul?: string | null
+          beban_penyusutan_per_smt?: number | null
+          golongan?: string | null
+          harga_satuan?: number | null
+          intra_ekstra?: string | null
+          jumlah?: number | null
+          keterangan?: string | null
+          kode?: string | null
+          kondisi_barang?: string | null
+          masa_manfaat_smt?: number | null
+          merek_tipe?: string | null
+          nama_barang?: string | null
+          nibar?: string | null
+          nilai_buku_awal?: number | null
+          nilai_perolehan?: number | null
+          no_bpkb?: string | null
+          no_mesin?: string | null
+          no_polisi?: string | null
+          no_rangka?: string | null
+          penggunaan_pengamanan?: string | null
+          satuan?: string | null
+          sisa_masa_manfaat_smt?: number | null
+          skpd_id?: number | null
+          spesifikasi_lainnya?: string | null
+          tahun_pengadaan?: number | null
+          tgl_perolehan?: string | null
+          uraian_barang?: string | null
+        }
+        Relationships: []
+      }
       tahun_buku: {
         Row: {
           catatan: string | null
@@ -2880,6 +4409,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      fn_admin_notes_tandai: {
+        Args: { p_id: string; p_selesai: boolean }
+        Returns: {
+          author_id: string | null
+          created_at: string
+          id: string
+          isi: string
+          penulis: string | null
+          selesai: boolean
+          selesai_at: string | null
+          skpd_id: number | null
+          skpd_nama: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "admin_notes"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      fn_akhir_periode: { Args: { p_periode: string }; Returns: string }
       fn_alokasi_nomor_register: {
         Args: { p_prefix38: string }
         Returns: number
@@ -2891,10 +4442,53 @@ export type Database = {
       fn_aset_awal_2026_terkunci_batch: {
         Args: { p_nibars: string[] }
         Returns: {
+          jenis_terakhir: string
           nibar: string
+          periode_terakhir: string
         }[]
       }
       fn_aset_pernah_dikelola: { Args: { p_aset_id: string }; Returns: boolean }
+      fn_aset_teks_cari: {
+        Args: {
+          p_alamat: string
+          p_keterangan: string
+          p_kode: string
+          p_kode_register: string
+          p_merek: string
+          p_nama: string
+          p_nibar: string
+          p_no_mesin: string
+          p_no_polisi: string
+          p_no_rangka: string
+          p_wilayah: string
+        }
+        Returns: string
+      }
+      fn_baris_berlaku_sesudah: {
+        Args: { p_aset_id: string; p_trx_id_batas: number }
+        Returns: {
+          id: number
+          jenis: string
+          periode: string
+        }[]
+      }
+      fn_baris_penghalang_batal: {
+        Args: { p_aset_id: string; p_trx_id_batas: number }
+        Returns: {
+          id: number
+          jenis: string
+          periode: string
+        }[]
+      }
+      fn_baris_penghalang_sisip: {
+        Args: { p_aset_id: string; p_tanggal_batas: string }
+        Returns: {
+          id: number
+          jenis: string
+          periode: string
+          tanggal: string
+        }[]
+      }
       fn_batal_pengalihan_barang: {
         Args: { p_aset_id: string; p_header_id: string }
         Returns: undefined
@@ -2907,9 +4501,14 @@ export type Database = {
         Args: { p_id: string }
         Returns: undefined
       }
+      fn_counter_register_minimal: {
+        Args: { p_nomor: number; p_prefix38: string }
+        Returns: undefined
+      }
       fn_daftar_barang: {
         Args: {
-          p_golongan: string
+          p_after_id?: string
+          p_golongan?: string
           p_komptabel?: string
           p_limit?: number
           p_offset?: number
@@ -2918,29 +4517,89 @@ export type Database = {
           p_skpd_ids?: number[]
         }
         Returns: {
-          grand_total: number
+          alamat_detail: string
+          asal_usul: string
+          cara_perolehan: string
           id: string
           intra_ekstra: string
           jenis_hak: string
           keterangan: string
           kode: string
+          kode_register: string
           luas: number
           merek_tipe: string
           nama_barang: string
           nama_dokumen_kepemilikan: string
           nibar: string
           nilai_perolehan: number
+          no_bpkb: string
+          no_mesin: string
+          no_polisi: string
+          no_rangka: string
           nomor_dokumen_kepemilikan: string
           owner_skpd: number
+          pemanfaatan: string
+          pengamanan: string
+          penggunaan_pengamanan: string
           skpd_id: number
           spesifikasi_lainnya: string
           status: string
           tanggal_dokumen_kepemilikan: string
           tgl_perolehan: string
+        }[]
+      }
+      fn_daftar_barang_rekap: {
+        Args: {
+          p_golongan?: string
+          p_komptabel?: string
+          p_periode: string
+          p_search?: string
+          p_skpd_ids?: number[]
+        }
+        Returns: {
+          grand_total: number
           total_count: number
         }[]
       }
       fn_dashboard_rekap: { Args: never; Returns: Json }
+      fn_dbar_guard: {
+        Args: { p_golongan: string; p_skpd_ids: number[] }
+        Returns: undefined
+      }
+      fn_dbar_hidden: {
+        Args: { p_periode: string; p_varian?: string }
+        Returns: {
+          aset_id: string
+        }[]
+      }
+      fn_dbar_kode_at: {
+        Args: { p_periode: string }
+        Returns: {
+          aset_id: string
+          kode_eff: string
+        }[]
+      }
+      fn_dbar_kode_register_at: {
+        Args: { p_periode: string }
+        Returns: {
+          aset_id: string
+          kode_reg_eff: string
+        }[]
+      }
+      fn_dbar_owner: {
+        Args: { p_periode: string }
+        Returns: {
+          aset_id: string
+          owner_skpd: number
+        }[]
+      }
+      fn_dbar_scope: {
+        Args: { p_lihat_semua: boolean }
+        Returns: {
+          pernah: string[]
+          scope: number[]
+        }[]
+      }
       fn_inventarisasi_batal_validasi: {
         Args: { p_catatan?: string; p_id: string }
         Returns: undefined
@@ -2952,6 +4611,84 @@ export type Database = {
       fn_inventarisasi_hapus_isian: {
         Args: { p_id: string }
         Returns: undefined
+      }
+      fn_inventarisasi_hasil: {
+        Args: {
+          p_cari?: string
+          p_filter?: string
+          p_golongan: string
+          p_limit?: number
+          p_offset?: number
+          p_skpd_ids?: number[]
+          p_tahun: number
+        }
+        Returns: {
+          aset_id: string
+          catatan_validator: string
+          diisi_at: string
+          divalidasi_at: string
+          foto_paths: string[]
+          golongan: string
+          id: string
+          jawaban: Json
+          posisi: string
+          posisi_golongan: string
+          posisi_skpd_nama: string
+          skpd_id: number
+          skpd_nama: string
+          snapshot: Json
+          status: string
+          tahun: number
+          transaksi_sesudah: Json
+        }[]
+      }
+      fn_inventarisasi_lembar: {
+        Args: {
+          p_cari?: string
+          p_golongan: string
+          p_limit?: number
+          p_offset?: number
+          p_skpd_ids?: number[]
+          p_status?: string
+        }
+        Returns: {
+          alamat_detail: string
+          aset_id: string
+          foto_paths: string[]
+          inv_catatan: string
+          inv_diisi_at: string
+          inv_id: string
+          inv_status: string
+          jumlah: number
+          keterangan: string
+          kode: string
+          kode_register: string
+          kondisi_barang: string
+          latitude: number
+          longitude: number
+          luas: number
+          merek_tipe: string
+          nama_barang: string
+          nibar: string
+          nilai_perolehan: number
+          no_bpkb: string
+          no_mesin: string
+          no_polisi: string
+          no_rangka: string
+          satuan: string
+          skpd_id: number
+          skpd_nama: string
+          spesifikasi_lainnya: string
+          tgl_perolehan: string
+          transaksi_sesudah: Json
+          uraian: string
+          wilayah: string
+          wilayah_kode: string
+        }[]
+      }
+      fn_inventarisasi_posisi: {
+        Args: { p_aset_id: string; p_golongan: string; p_skpd_id: number }
+        Returns: string
       }
       fn_inventarisasi_ringkas: {
         Args: { p_golongan: string; p_skpd_ids?: number[]; p_tahun: number }
@@ -2974,12 +4711,49 @@ export type Database = {
         }
         Returns: string
       }
+      fn_inventarisasi_snapshot: { Args: { p_aset_id: string }; Returns: Json }
       fn_inventarisasi_tolak: {
         Args: { p_catatan: string; p_id: string }
         Returns: undefined
       }
+      fn_inventarisasi_transaksi_sesudah: {
+        Args: { p_aset_id: string; p_trx_id_batas: number }
+        Returns: Json
+      }
       fn_inventarisasi_validasi: { Args: { p_ids: string[] }; Returns: Json }
+      fn_ipa_hitung_otomatis: {
+        Args: { p_skpd_id: number; p_tahun: number }
+        Returns: {
+          indikator: string
+          pembilang: number
+          penyebut: number
+          rincian: Json
+        }[]
+      }
+      fn_ipa_kendaraan: {
+        Args: { p_skpd_id: number; p_tahun: number }
+        Returns: {
+          aset_id: string
+          bukti_paths: string[]
+          catatan_verifikator: string
+          kode: string
+          merek_tipe: string
+          nama_barang: string
+          nibar: string
+          no_polisi: string
+          pajak_id: string
+          skpd_id: number
+          status: string
+          tanggal_bayar: string
+          uraian_barang: string
+        }[]
+      }
       fn_ipa_role: { Args: never; Returns: string }
+      fn_ipa_scope: { Args: { p_skpd_id: number }; Returns: number[] }
+      fn_ipa_simpan_otomatis: {
+        Args: { p_skpd_id: number; p_tahun: number }
+        Returns: number
+      }
       fn_is_admin: { Args: never; Returns: boolean }
       fn_is_pengurus_barang_atas: {
         Args: { p_skpd_id: number }
@@ -2990,14 +4764,73 @@ export type Database = {
         Args: { p_skpd_ids?: number[]; p_tahun: number }
         Returns: {
           bulan: number
+          golongan: string
           grup: string
           nilai: number
+          skpd_id: number
         }[]
       }
       fn_my_pernah_dikelola_aset: { Args: never; Returns: string[] }
       fn_my_skpd_ids: { Args: never; Returns: number[] }
       fn_my_skpd_path: { Args: never; Returns: unknown }
       fn_my_skpd_scope: { Args: never; Returns: number[] }
+      fn_pengalihan_baris_terkunci: {
+        Args: { p_header_id: string }
+        Returns: {
+          aset_id: string
+          jenis_penghalang: string
+          periode_penghalang: string
+          terkunci: boolean
+        }[]
+      }
+      fn_penyusutan: {
+        Args: {
+          p_golongan?: string
+          p_komptabel?: string
+          p_limit?: number
+          p_offset?: number
+          p_periode: string
+          p_search?: string
+          p_skpd_ids?: number[]
+        }
+        Returns: {
+          alamat_detail: string
+          id: string
+          intra_ekstra: string
+          kode_barang: string
+          kode_register: string
+          merek_tipe: string
+          nama_barang: string
+          nibar: string
+          nilai_perolehan: number
+          owner_skpd: number
+          p_akumulasi: number
+          p_beban: number
+          p_masa_manfaat_tahun: number
+          p_nilai_buku_akhir: number
+          p_nilai_perolehan: number
+          p_sisa_semester: number
+          skpd_id: number
+          tgl_perolehan: string
+        }[]
+      }
+      fn_penyusutan_rekap: {
+        Args: {
+          p_golongan?: string
+          p_komptabel?: string
+          p_periode: string
+          p_search?: string
+          p_skpd_ids?: number[]
+        }
+        Returns: {
+          jumlah_baris: number
+          tanpa_hasil_engine: number
+          total_akumulasi: number
+          total_beban: number
+          total_nilai_buku: number
+          total_perolehan: number
+        }[]
+      }
       fn_periode_dari_tanggal: { Args: { d: string }; Returns: string }
       fn_prefix_kode_register: {
         Args: {
@@ -3042,6 +4875,43 @@ export type Database = {
           skpd_id: number
         }[]
       }
+      fn_rekon_pos: {
+        Args: {
+          p_aset_ids?: string[]
+          p_periode: string
+          p_skpd_ids?: number[]
+        }
+        Returns: {
+          akumulasi: number
+          aset_id: string
+          beban: number
+          golongan: string
+          komptabel: string
+          nilai_buku: number
+          perolehan: number
+        }[]
+      }
+      fn_rekon_rekap: {
+        Args: {
+          p_periode: string
+          p_periode_awal: string
+          p_skpd_ids?: number[]
+        }
+        Returns: {
+          akhir_akumulasi: number
+          akhir_beban: number
+          akhir_jumlah: number
+          akhir_nilai_buku: number
+          akhir_perolehan: number
+          awal_akumulasi: number
+          awal_jumlah: number
+          awal_nilai_buku: number
+          awal_perolehan: number
+          beban_saldo_awal: number
+          golongan: string
+          komptabel: string
+        }[]
+      }
       fn_rkbmd_standar_simpan: {
         Args: {
           p_harga: number
@@ -3081,6 +4951,7 @@ export type Database = {
         Args: { p_catatan?: string; p_tahun: number }
         Returns: number
       }
+      fn_wilayah_label: { Args: { p_kode: string }; Returns: string }
       match_regulasi: {
         Args: {
           match_count?: number
@@ -3164,12 +5035,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3193,11 +5064,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3218,11 +5089,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3243,11 +5114,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3260,11 +5131,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }

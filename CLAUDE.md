@@ -7411,3 +7411,73 @@ ke P&M **sudah tidak berlaku** — yang berlaku ini:
     urutan deploy-ordering di CLAUDE.md.
   - Jalan di terminal user, BUKAN dijalankan Claude — commit/push tetap
     keputusan user.
+
+## IPA LIMA ASPEK — menggantikan IPA versi Kepmen (migrasi 20260925_03, keputusan user 2026-09-25)
+
+Kerangka dari berkas kerja **Simulasi_IPA_Kabupaten_Kediri.xlsx**: 5 aspek
+(Integritas · Kepatuhan · Akuntabilitas & TL · Legalitas · Ekonomi) × 11
+indikator, bobot aspek BERBEDA per klaster SKPD (A Kewilayahan · B Pelayanan
+aset besar · C Konstruksi · D Administratif), skor 0–100 → **Indeks 1–4**
+(`1 + skor/100 × 3`), kategori **Sangat Baik ≥3,55 · Baik ≥3,10 · Buruk
+≥2,65 · Sangat Buruk**. Klaster & bobot awal = Excel apa adanya; bisa diubah
+Admin di IPA → Pengaturan. IPA versi Kepmen (ST1–ST4, `lib/ipaEngine.ts`,
+`FormPenilaian`) DICABUT; tabel lamanya (kosong) dibuang migrasi
+**20260925_04 — jalankan SESUDAH deploy**.
+
+Berkas: `lib/ipa.ts` (mesin murni, dikunci `lib/ipa.test.ts` — termasuk uji
+"sama dgn Excel" atas baris PENGELOLA BARANG: skor 82,23 / indeks 3,47) ·
+`lib/ipaData.ts` · `components/ipa/*` · rute `/dashboard/ipa`,
+`/skpd/[id]`, `/capaian`, `/verifikasi`, `/pengaturan`.
+
+- **TIGA beda dari Excel, semuanya disengaja:** (a) **"belum diisi" ≠ N/A** —
+  di Excel penyebut kosong = N/A → bobot dialihkan, jadi SKPD yang TIDAK
+  mengisi malah untung. Di sini yang belum diisi/diverifikasi tetap tak
+  dihitung, TAPI SKPD-nya ditandai belum lengkap & **keluar dari ranking**. N/A
+  cuma dari data yang memang nol (tak punya tanah, tak ada BAST) atau
+  pernyataan eksplisit "tidak ada temuan". (b) Ekonomi: rasio **≥ target = 100**
+  (Excel menghukum yang melebihi target). (c) Skor indikator **dibatasi 100**.
+- **CAKUPAN DATA = SKPD INDUK SAJA**, kecuali Sekretariat Daerah (26) & Kec.
+  Pare (48) yang asetnya tinggal di Bagian/Kelurahan — diatur per SKPD lewat
+  `ipa_skpd.sertakan_turunan` (`fn_ipa_scope`), BUKAN di-hardcode di fungsi.
+  ⚠️ Menyalakannya untuk Dinas Pendidikan berarti ±520rb aset per hitung.
+- **Sembilan indikator dihitung `fn_ipa_hitung_otomatis`** (SECURITY DEFINER,
+  `work_mem 64MB`; terukur Diknas 600 ms, RSUD 94 ms dgn RLS aktif) lalu
+  DISIMPAN sbg snapshot bulanan `ipa_otomatis` (tahun, bulan, skpd,
+  indikator) lewat `fn_ipa_simpan_otomatis` — dashboard membaca snapshot, bukan
+  menghitung tiap dibuka. Bulan tanpa hitung ulang memakai snapshot bulan
+  sebelumnya (`snapshotTerakhir`). Waktu hitung terakhir SELALU ditampilkan.
+  Hanya **TL BPK & TL Inspektorat** yang murni isian (`ipa_isian`, append,
+  bertanggal; skor = capaian TERVERIFIKASI terakhir s.d. akhir bulan dilihat).
+- **Definisi indikator otomatis** (rincian di komentar fungsi):
+  Kelengkapan = kolom spesifikasi terisi ÷ wajib per golongan (nama, spek
+  lainnya, wilayah, alamat, koordinat, kondisi, penggunaan, keterangan, foto;
+  + merek utk 1.3.2/1.3.5/1.3.6/1.5.3/1.5.4; + luas utk 1.3.1/1.3.3/1.3.4;
+  + nopol/rangka/mesin/BPKB HANYA kendaraan bermotor 1.3.2.02.01.* — kursi tak
+  boleh dituntut punya nomor polisi). RKBMD = jenis RKBMD **TA+1** versi murni
+  diajukan ≤ 7 Juni (penyebut 5 jenis sesudah batas lewat). Entry = kartu
+  Pengadaan dientry ≤ 30 hari dari `payload.tgl_bast`. TL RB = aset RB (kondisi
+  atau kode 1.5.4.01.01.01) yang **diusulkan di RKBMD Penghapusan atau dihapus**
+  tahun itu. ⚠️ **Reklas ke Aset Lain-Lain RB SENGAJA tidak dihitung**: diukur,
+  SELURUH 6.710 aset berkondisi RB sudah berkode itu — menghitungnya membuat
+  indikator 100% di semua SKPD. Realisasi = Σ pengadaan+termin KDP ÷ RKBMD
+  Pengadaan TA itu yang disetujui. Tanah = bidang bersertifikat ÷ bidang (tanah
+  tanpa bidang = 1 bidang, dokumen register). Pajak = kendaraan bermotor ber-
+  bukti terverifikasi ÷ seluruh kendaraan bermotor. Rekon = periode (Admin)
+  yang batasnya lewat, dilaksanakan ≤ batas & terverifikasi. Ekonomi = Σ
+  (nilai pemanfaatan ÷ masa tahun) atas perjanjian berpendapatan yang memuat
+  **aset idle = kode 1.5.4.01.01.02.*** ÷ nilai perolehan aset idle —
+  penetapan aset idle diturunkan dari kodefikasi, tanpa menu tersendiri
+  (sampai kodefikasi properti investasi terbit).
+- **Satu pintu verifikasi**: trigger `fn_ipa_isian_guard` (SECURITY
+  **INVOKER** — di DEFINER `current_user` salah baca) memaksa isian SKPD selalu
+  `diajukan`; hanya admin yang mengubah status; baris terverifikasi beku &
+  tak bisa dihapus SKPD. `fn_ipa_pajak_cek_aset` menolak bukti pajak untuk
+  barang yang bukan kendaraan bermotor SKPD itu. `ipa_otomatis` tanpa GRANT
+  tulis — hanya lewat RPC. Semua diuji ke produksi dgn RLS aktif (rollback).
+- ⚠️ **Angka awal 2026 memang rendah & itu JUJUR, bukan bug**: RKBMD 0/300
+  (tak ada RKBMD 2027 yang diajukan ≤ 7 Juni — modul RKBMD baru hidup Agustus),
+  Entry 0/113 (BAST Jan–Jun baru dientry sejak aplikasi dipakai), Realisasi N/A
+  (tak ada RKBMD TA 2026 di aplikasi), Pajak 0/1.775 (belum ada bukti).
+- ⚠️ **Bobot TIDAK berversi per tahun** — mengubahnya menggeser skor tahun lampau
+  saat dibuka ulang. Kalau kelak perlu "IPA 2026 ditetapkan", yang dibutuhkan
+  tabel penetapan beku, bukan versi bobot.

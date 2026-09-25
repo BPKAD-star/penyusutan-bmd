@@ -166,7 +166,9 @@ const navTree: NavNode[] = [
   {
     type: 'group', label: 'IPA', icon: ICON.ipa, children: [
       { type: 'leaf', href: '/dashboard/ipa', label: 'Dashboard IPA' },
-      { type: 'leaf', href: '/dashboard/ipa/penilaian', label: 'Input Penilaian' },
+      { type: 'leaf', href: '/dashboard/ipa/capaian', label: 'Capaian SKPD' },
+      { type: 'leaf', href: '/dashboard/ipa/verifikasi', label: 'Verifikasi' },
+      { type: 'leaf', href: '/dashboard/ipa/pengaturan', label: 'Pengaturan' },
     ],
   },
   {
