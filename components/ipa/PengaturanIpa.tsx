@@ -56,7 +56,7 @@ export default function PengaturanIpa() {
             <div className="p-4 border-b border-gray-100 flex items-end justify-between gap-4">
               <div>
                 <p className="font-semibold text-gray-900">Periode rekonsiliasi</p>
-                <p className="text-xs text-gray-500">Penyebut indikator Ketepatan Waktu Rekonsiliasi = periode yang batasnya sudah lewat.</p>
+                <p className="text-xs text-gray-500">Penyebut indikator Ketepatan Waktu Rekonsiliasi = periode yang batasnya sudah lewat. Batas boleh jatuh di tahun berikutnya (mis. rekon Desember dilaksanakan Januari) — periodenya tetap dinilai di tahun ini.</p>
               </div>
               <PilihTahunBulan tahun={tahun} onTahun={setTahun} />
             </div>
@@ -205,7 +205,14 @@ function PeriodeRekonEditor({ tahun, periode, tulis, onSimpan }: { tahun: number
   const [batas, setBatas] = useState('')
   async function tambah() {
     if (!nama.trim() || !batas) return
-    if (!batas.startsWith(String(tahun))) { await konfirmasiGagal(konfirmasi, `Batas tanggal harus di tahun ${tahun}.`, 'Tanggal tidak sah'); return }
+    // Batas boleh jatuh di tahun BERIKUTNYA (keputusan user 2026-09-25): rekon
+    // bulan Desember baru bisa dilaksanakan Januari. Periodenya tetap milik
+    // tahun penilaian ini — `ipa_rekon_periode.tahun` yang menentukan, bukan
+    // tahun batasnya — jadi indikatornya ikut terhitung di IPA tahun ini begitu
+    // batasnya lewat.
+    if (batas < `${tahun}-01-01` || batas > `${tahun + 1}-12-31`) {
+      await konfirmasiGagal(konfirmasi, `Batas tanggal harus di tahun ${tahun} atau ${tahun + 1}.`, 'Tanggal tidak sah'); return
+    }
     if (await tulis(() => supabase.from('ipa_rekon_periode').insert({ tahun, nama: nama.trim(), batas_tanggal: batas }))) {
       setNama(''); setBatas(''); onSimpan()
     }
@@ -236,7 +243,7 @@ function PeriodeRekonEditor({ tahun, periode, tulis, onSimpan }: { tahun: number
           <input className="select-filter block mt-1 w-64" placeholder="mis. Rekonsiliasi Semester I" value={nama} onChange={e => setNama(e.target.value)} />
         </label>
         <label className="text-xs text-gray-500">Batas tanggal
-          <input type="date" className="select-filter block mt-1" value={batas} min={`${tahun}-01-01`} max={`${tahun}-12-31`} onChange={e => setBatas(e.target.value)} />
+          <input type="date" className="select-filter block mt-1" value={batas} min={`${tahun}-01-01`} max={`${tahun + 1}-12-31`} onChange={e => setBatas(e.target.value)} />
         </label>
         <button className="btn-primary disabled:opacity-50" disabled={!nama.trim() || !batas} onClick={tambah}>+ Tambah periode</button>
       </div>
