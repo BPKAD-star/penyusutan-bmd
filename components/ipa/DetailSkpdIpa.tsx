@@ -13,14 +13,17 @@ import {
   LABEL_SUMBER, NAMA_BULAN, hitungSkpd, type HasilSkpd,
 } from '@/lib/ipa'
 import {
-  hitungUlangOtomatis, muatIsian, muatOtomatisMentah, muatReferensi, snapshotTerakhir, susunNilai,
+  hitungUlangOtomatis, muatIsian, muatOtomatisMentah, muatReferensi, skpdBolehIsi, snapshotTerakhir, susunNilai,
   type BarisOtomatis, type Isian, type Referensi,
 } from '@/lib/ipaData'
 import {
   BULAN_INI, KategoriPill, KeadaanNilai, PesanError, PilihTahunBulan, SkorBar, TAHUN_INI, fmtIndeks, fmtSkor,
 } from '@/components/ipa/ipaUi'
 
-type Muatan = { ref: Referensi; otomatis: BarisOtomatis[]; isian: Isian[] }
+// `bolehIsi` = SKPD ini ada di cakupan pengguna (admin: semua). Cuma mengatur
+// tombol — penjaga sesungguhnya RLS `ipa_isian`/`fn_ipa_simpan_otomatis`
+// (`fn_skpd_visible`), yang menolak SKPD di luar cakupan apa pun tombolnya.
+type Muatan = { ref: Referensi; otomatis: BarisOtomatis[]; isian: Isian[]; bolehIsi: boolean }
 
 const LABEL_RINCIAN: Record<string, string> = {
   jumlah_barang: 'Jumlah barang aktif', batas: 'Batas waktu', ta_rkbmd: 'TA RKBMD dinilai',
@@ -51,6 +54,7 @@ export default function DetailSkpdIpa({ skpdId, tahunAwal, bulanAwal }: { skpdId
   const maksBulan = tahun === TAHUN_INI ? BULAN_INI : 12
 
   useEffect(() => {
+    if (role == null) return
     void run(async () => {
       const [ref, otomatis, isian] = await Promise.all([
         muatReferensi(supabase),
@@ -58,9 +62,10 @@ export default function DetailSkpdIpa({ skpdId, tahunAwal, bulanAwal }: { skpdId
         muatOtomatisMentah(supabase, tahun, maksBulan, skpdId),
         muatIsian(supabase, tahun, { skpdId }),
       ])
-      return { ref, otomatis, isian }
+      const bolehIsi = (await skpdBolehIsi(supabase, ref.skpd, role)).some(s => s.skpd_id === skpdId)
+      return { ref, otomatis, isian, bolehIsi }
     })
-  }, [tahun, muatKe, skpdId, run]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tahun, muatKe, skpdId, role, run]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const skpd = data?.ref.skpd.find(s => s.skpd_id === skpdId)
 
@@ -78,7 +83,7 @@ export default function DetailSkpdIpa({ skpdId, tahunAwal, bulanAwal }: { skpdId
     () => new Map(snapshotTerakhir(data?.otomatis ?? [], bulan).map(o => [o.indikator, o])),
     [data, bulan])
 
-  const bolehHitung = role === 'admin' || role === 'pengurus_barang'
+  const bolehIsi = data?.bolehIsi ?? false
 
   async function hitungUlang() {
     try {
@@ -106,8 +111,8 @@ export default function DetailSkpdIpa({ skpdId, tahunAwal, bulanAwal }: { skpdId
         </div>
         <div className="flex items-end gap-2">
           <PilihTahunBulan tahun={tahun} bulan={bulan} onTahun={t => { setTahun(t); setBulan(t === TAHUN_INI ? BULAN_INI : 12) }} onBulan={setBulan} />
-          {bolehHitung && <button className="btn-secondary" onClick={hitungUlang}>↻ Hitung ulang</button>}
-          <Link href={`/dashboard/ipa/capaian?skpd=${skpdId}`} className="btn-primary">Isi Capaian</Link>
+          {bolehIsi && <button className="btn-secondary" onClick={hitungUlang}>↻ Hitung ulang</button>}
+          {bolehIsi && <Link href={`/dashboard/ipa/capaian?skpd=${skpdId}`} className="btn-primary">Isi Capaian</Link>}
         </div>
       </div>
 

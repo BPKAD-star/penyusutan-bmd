@@ -7465,7 +7465,7 @@ Berkas: `lib/ipa.ts` (mesin murni, dikunci `lib/ipa.test.ts` — termasuk uji
   bukti terverifikasi ÷ seluruh kendaraan bermotor. Rekon = periode (Admin)
   yang batasnya lewat, dilaksanakan ≤ batas & terverifikasi. Ekonomi = Σ
   (nilai pemanfaatan ÷ masa tahun) atas perjanjian berpendapatan yang memuat
-  **aset idle = kode 1.5.4.01.01.02.*** ÷ nilai perolehan aset idle —
+  **aset idle = kode 1.5.4.01.01.02.001 (Tanah) & .003 (Gedung) saja** (migrasi 20260925_05) ÷ nilai perolehan aset idle —
   penetapan aset idle diturunkan dari kodefikasi, tanpa menu tersendiri
   (sampai kodefikasi properti investasi terbit).
 - **Satu pintu verifikasi**: trigger `fn_ipa_isian_guard` (SECURITY
@@ -7492,3 +7492,10 @@ Berkas: `lib/ipa.ts` (mesin murni, dikunci `lib/ipa.test.ts` — termasuk uji
   mustahil benar untuknya. Nilai `null` → jarum tak digambar, bukan indeks 1.
   Gagal memuat → kotak itu saja yang merah, seksi lain tetap tampil.
   ⚠️ Sempat dipasang di Dashboard IPA (salah tempat) lalu dicabut di hari sama.
+- **Siapa mengisi IPA SKPD mana** (dipertanyakan user 2026-09-25): MELIHAT
+  penilaian seluruh SKPD boleh untuk semua pengguna (ranking terbuka), tapi
+  MENGISI capaian & menghitung ulang hanya SKPD dalam cakupan pengguna — dijaga
+  RLS `ipa_isian`/`ipa_rekon_pelaksanaan`/`ipa_pajak_kendaraan` & guard
+  `fn_ipa_simpan_otomatis` (`fn_skpd_visible`). Tombol "Isi Capaian"/"Hitung
+  ulang" di rincian SKPD kini ikut disembunyikan untuk SKPD di luar cakupan
+  (`skpdBolehIsi`); dulu tampil & baru ditolak DB saat ditekan.
