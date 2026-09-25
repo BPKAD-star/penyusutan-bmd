@@ -16,6 +16,7 @@ import {
   verifikasi, type AntrianPajak, type Isian, type PelaksanaanRekon, type PeriodeRekon, type Referensi, type TabelIsian,
 } from '@/lib/ipaData'
 import { BuktiLinks, PesanError, PilihTahunBulan, TAHUN_INI, fmtAngka } from '@/components/ipa/ipaUi'
+import type { StatusIsian } from '@/lib/ipa'
 
 type Muatan = {
   ref: Referensi; isian: Isian[]; periode: PeriodeRekon[]; rekon: PelaksanaanRekon[]; pajak: AntrianPajak[]
@@ -28,6 +29,11 @@ export default function VerifikasiIpa() {
   const { role } = useProfilRole()
   const [tahun, setTahun] = useState(TAHUN_INI)
   const [tab, setTab] = useState<Tab>('isian')
+  // 'diajukan' = antrean menunggu (perilaku lama); 'diverifikasi' = arsip yang
+  // sudah disahkan, tempat tombol Batal Verifikasi berada (permintaan user
+  // 2026-09-25 — sebelum ini yang sudah diverifikasi tak bisa dilihat/dibatalkan
+  // sama sekali di menu ini).
+  const [statusLihat, setStatusLihat] = useState<StatusIsian>('diajukan')
   const [muatKe, setMuatKe] = useState(0)
   const [pilih, setPilih] = useState<Set<string>>(new Set())
   const { data, error, loading, run } = useAsyncData<Muatan>()
@@ -35,14 +41,14 @@ export default function VerifikasiIpa() {
   useEffect(() => {
     void run(async () => {
       const [ref, isian, periode, pajak] = await Promise.all([
-        muatReferensi(supabase), muatIsian(supabase, tahun, { status: 'diajukan' }),
-        muatPeriodeRekon(supabase, tahun), muatAntrianPajak(supabase, tahun, 'diajukan'),
+        muatReferensi(supabase), muatIsian(supabase, tahun, { status: statusLihat }),
+        muatPeriodeRekon(supabase, tahun), muatAntrianPajak(supabase, tahun, statusLihat),
       ])
-      const rekon = await muatPelaksanaanRekon(supabase, periode.map(p => p.id), { status: 'diajukan' })
+      const rekon = await muatPelaksanaanRekon(supabase, periode.map(p => p.id), { status: statusLihat })
       return { ref, isian, periode, rekon, pajak }
     })
     setPilih(new Set())
-  }, [tahun, muatKe, run]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tahun, statusLihat, muatKe, run]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const nama = useMemo(() => new Map((data?.ref.skpd ?? []).map(s => [s.skpd_id, s.nama])), [data])
   const namaInd = useMemo(() => new Map((data?.ref.indikator ?? []).map(i => [i.kode, i.nama])), [data])
@@ -51,16 +57,25 @@ export default function VerifikasiIpa() {
     return <div className="p-6"><div className="card p-6 text-sm text-gray-600">Verifikasi capaian IPA hanya untuk Pengelola Barang (Admin Pemda).</div></div>
   }
 
-  async function putuskan(tabel: TabelIsian, ids: string[], skpdIds: number[], status: 'diverifikasi' | 'ditolak') {
+  // `status: 'diajukan'` = BATAL VERIFIKASI (permintaan user 2026-09-25) —
+  // mengembalikan isian yang sudah disahkan ke antrean menunggu; trigger DB
+  // yang menetralkan `verified_by`/`verified_at` (lihat lib/ipaData.ts). Nada
+  // AMBER, bukan merah: ini MEMBATALKAN KEADAAN yang sudah berlaku (pola
+  // "Buka Kunci"/"Batal transaksi" di CODING-STANDARD §4.5), bukan MEMBUANG
+  // seperti Tolak.
+  async function putuskan(tabel: TabelIsian, ids: string[], skpdIds: number[], status: 'diverifikasi' | 'ditolak' | 'diajukan') {
     if (ids.length === 0) return
+    const judulAksi = status === 'diverifikasi' ? 'Verifikasi' : status === 'ditolak' ? 'Tolak' : 'Batal Verifikasi'
     try {
       const hasil = await konfirmasi({
-        judul: status === 'diverifikasi' ? `Verifikasi ${ids.length} isian?` : `Tolak ${ids.length} isian?`,
-        nada: status === 'diverifikasi' ? 'teal' : 'merah',
-        labelYa: status === 'diverifikasi' ? 'Verifikasi' : 'Tolak',
+        judul: `${judulAksi} ${ids.length} isian?`,
+        nada: status === 'diverifikasi' ? 'teal' : status === 'ditolak' ? 'merah' : 'amber',
+        labelYa: judulAksi,
         isi: status === 'diverifikasi'
           ? 'Isian yang diverifikasi langsung ikut dihitung dalam IPA dan tidak bisa diubah SKPD lagi.'
-          : 'SKPD akan melihat catatan ini dan bisa memperbaiki isiannya.',
+          : status === 'ditolak'
+          ? 'SKPD akan melihat catatan ini dan bisa memperbaiki isiannya.'
+          : 'Isian kembali ke antrean "Menunggu" & SKPD boleh menyuntingnya lagi. Kalau indikator ini otomatis dihitung dari isian (Rekonsiliasi/Pajak Kendaraan), angka IPA-nya ikut turun setelah dihitung ulang.',
         catatan: status === 'ditolak'
           ? { label: 'Alasan penolakan (wajib)', petunjuk: 'Dibaca SKPD — jelaskan apa yang harus diperbaiki.' }
           : undefined,
@@ -85,18 +100,35 @@ export default function VerifikasiIpa() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Verifikasi Capaian IPA</h1>
-          <p className="text-gray-500 text-sm mt-1">Antrean isian SKPD yang menunggu verifikasi Pengelola Barang.</p>
+          <p className="text-gray-500 text-sm mt-1">
+            {statusLihat === 'diajukan'
+              ? 'Antrean isian SKPD yang menunggu verifikasi Pengelola Barang.'
+              : 'Isian yang sudah diverifikasi — bisa dibatalkan kalau salah centang / bukti keliru.'}
+          </p>
         </div>
         <PilihTahunBulan tahun={tahun} onTahun={setTahun} />
       </div>
       <PesanError pesan={error} />
-      <div className="mb-4 flex gap-2">
-        {([['isian', 'TL BPK / Inspektorat'], ['rekon', 'Rekonsiliasi'], ['pajak', 'Pajak Kendaraan']] as [Tab, string][]).map(([k, l]) => (
-          <button key={k} onClick={() => { setTab(k); setPilih(new Set()) }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === k ? 'bg-teal text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
-            {l} <span className="ml-1 text-xs opacity-80">({jumlah[k]})</span>
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          {([['isian', 'TL BPK / Inspektorat'], ['rekon', 'Rekonsiliasi'], ['pajak', 'Pajak Kendaraan']] as [Tab, string][]).map(([k, l]) => (
+            <button key={k} onClick={() => { setTab(k); setPilih(new Set()) }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tab === k ? 'bg-teal text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
+              {l} <span className="ml-1 text-xs opacity-80">({jumlah[k]})</span>
+            </button>
+          ))}
+        </div>
+        {/* Toggle Menunggu/Terverifikasi — berlaku utk KETIGA tab sekaligus,
+            bukan per-tab, supaya perpindahannya tak perlu diingat ulang tiap
+            ganti jenis isian. */}
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          {([['diajukan', 'Menunggu'], ['diverifikasi', 'Terverifikasi']] as [StatusIsian, string][]).map(([s, l]) => (
+            <button key={s} onClick={() => { setStatusLihat(s); setPilih(new Set()) }}
+              className={`px-3 py-1 rounded-md text-xs font-medium ${statusLihat === s ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
       {loading && !data && <p className="text-sm text-gray-400">Memuat…</p>}
 
@@ -120,8 +152,14 @@ export default function VerifikasiIpa() {
                   </td>
                   <td className="table-td"><BuktiLinks paths={i.bukti_paths} /></td>
                   <td className="table-td whitespace-nowrap text-right space-x-2">
-                    <button className="text-xs text-emerald-700 font-medium hover:underline" onClick={() => putuskan('ipa_isian', [i.id], [i.skpd_id], 'diverifikasi')}>Verifikasi</button>
-                    <button className="text-xs text-red-600 hover:underline" onClick={() => putuskan('ipa_isian', [i.id], [i.skpd_id], 'ditolak')}>Tolak</button>
+                    {statusLihat === 'diajukan' ? (
+                      <>
+                        <button className="text-xs text-emerald-700 font-medium hover:underline" onClick={() => putuskan('ipa_isian', [i.id], [i.skpd_id], 'diverifikasi')}>Verifikasi</button>
+                        <button className="text-xs text-red-600 hover:underline" onClick={() => putuskan('ipa_isian', [i.id], [i.skpd_id], 'ditolak')}>Tolak</button>
+                      </>
+                    ) : (
+                      <button className="text-xs text-amber-700 font-medium hover:underline" onClick={() => putuskan('ipa_isian', [i.id], [i.skpd_id], 'diajukan')}>↩ Batal Verifikasi</button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -150,8 +188,14 @@ export default function VerifikasiIpa() {
                     <td className={`table-td whitespace-nowrap ${telat ? 'text-amber-700' : ''}`}>{r.tanggal_pelaksanaan}{telat && ' (terlambat)'}</td>
                     <td className="table-td"><BuktiLinks paths={r.bukti_paths} /></td>
                     <td className="table-td whitespace-nowrap text-right space-x-2">
-                      <button className="text-xs text-emerald-700 font-medium hover:underline" onClick={() => putuskan('ipa_rekon_pelaksanaan', [r.id], [r.skpd_id], 'diverifikasi')}>Verifikasi</button>
-                      <button className="text-xs text-red-600 hover:underline" onClick={() => putuskan('ipa_rekon_pelaksanaan', [r.id], [r.skpd_id], 'ditolak')}>Tolak</button>
+                      {statusLihat === 'diajukan' ? (
+                        <>
+                          <button className="text-xs text-emerald-700 font-medium hover:underline" onClick={() => putuskan('ipa_rekon_pelaksanaan', [r.id], [r.skpd_id], 'diverifikasi')}>Verifikasi</button>
+                          <button className="text-xs text-red-600 hover:underline" onClick={() => putuskan('ipa_rekon_pelaksanaan', [r.id], [r.skpd_id], 'ditolak')}>Tolak</button>
+                        </>
+                      ) : (
+                        <button className="text-xs text-amber-700 font-medium hover:underline" onClick={() => putuskan('ipa_rekon_pelaksanaan', [r.id], [r.skpd_id], 'diajukan')}>↩ Batal Verifikasi</button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -165,14 +209,23 @@ export default function VerifikasiIpa() {
         <div className="card overflow-x-auto">
           <div className="p-3 flex items-center gap-2 border-b border-gray-100">
             <span className="text-xs text-gray-500">{pilih.size} dicentang</span>
-            <button className="btn-primary py-1.5 text-xs disabled:opacity-50" disabled={pilih.size === 0}
-              onClick={() => putuskan('ipa_pajak_kendaraan', [...pilih], data.pajak.filter(p => pilih.has(p.id)).map(p => p.skpd_id), 'diverifikasi')}>
-              Verifikasi yang dicentang
-            </button>
-            <button className="btn-secondary py-1.5 text-xs text-red-600 disabled:opacity-50" disabled={pilih.size === 0}
-              onClick={() => putuskan('ipa_pajak_kendaraan', [...pilih], data.pajak.filter(p => pilih.has(p.id)).map(p => p.skpd_id), 'ditolak')}>
-              Tolak yang dicentang
-            </button>
+            {statusLihat === 'diajukan' ? (
+              <>
+                <button className="btn-primary py-1.5 text-xs disabled:opacity-50" disabled={pilih.size === 0}
+                  onClick={() => putuskan('ipa_pajak_kendaraan', [...pilih], data.pajak.filter(p => pilih.has(p.id)).map(p => p.skpd_id), 'diverifikasi')}>
+                  Verifikasi yang dicentang
+                </button>
+                <button className="btn-secondary py-1.5 text-xs text-red-600 disabled:opacity-50" disabled={pilih.size === 0}
+                  onClick={() => putuskan('ipa_pajak_kendaraan', [...pilih], data.pajak.filter(p => pilih.has(p.id)).map(p => p.skpd_id), 'ditolak')}>
+                  Tolak yang dicentang
+                </button>
+              </>
+            ) : (
+              <button className="btn-secondary py-1.5 text-xs text-amber-700 disabled:opacity-50" disabled={pilih.size === 0}
+                onClick={() => putuskan('ipa_pajak_kendaraan', [...pilih], data.pajak.filter(p => pilih.has(p.id)).map(p => p.skpd_id), 'diajukan')}>
+                ↩ Batal Verifikasi yang dicentang
+              </button>
+            )}
           </div>
           <table className="w-full text-sm">
             <thead className="bg-gray-50"><tr>

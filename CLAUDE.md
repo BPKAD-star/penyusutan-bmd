@@ -7499,3 +7499,31 @@ Berkas: `lib/ipa.ts` (mesin murni, dikunci `lib/ipa.test.ts` — termasuk uji
   `fn_ipa_simpan_otomatis` (`fn_skpd_visible`). Tombol "Isi Capaian"/"Hitung
   ulang" di rincian SKPD kini ikut disembunyikan untuk SKPD di luar cakupan
   (`skpdBolehIsi`); dulu tampil & baru ditolak DB saat ditekan.
+- **Batal Verifikasi** (`components/ipa/VerifikasiIpa.tsx`, permintaan user
+  2026-09-25: "Untuk yang udah verifikasi, ndak bisa di batal verifikasi
+  bang?"). Sebelumnya sekali `diverifikasi`, isian TL BPK/Inspektorat,
+  Rekonsiliasi, & Pajak Kendaraan tak bisa dilihat lagi di menu ini sama
+  sekali — apalagi dibatalkan; verifikator yang salah centang atau baru sadar
+  buktinya keliru tak punya jalan mundur.
+  - **Tak butuh migrasi baru** — trigger `fn_ipa_isian_guard` (20260925_03)
+    SUDAH menangani transisi admin balik ke `'diajukan'`: mengosongkan
+    `verified_by`/`verified_at` otomatis. Yang kurang cuma jalur klien; DB-nya
+    sudah siap sejak awal.
+  - **Toggle "Menunggu / Terverifikasi"** di header, berlaku utk KETIGA tab
+    sekaligus (bukan per-tab — supaya berpindah jenis isian tak perlu
+    mengulang pilihan). `muatIsian`/`muatPelaksanaanRekon`/`muatAntrianPajak`
+    kini disaring `statusLihat`, bukan hardcode `'diajukan'`.
+  - **Tombolnya BERGANTI, bukan ditambah**: view "Menunggu" tetap
+    Verifikasi/Tolak; view "Terverifikasi" HANYA "↩ Batal Verifikasi" —
+    Verifikasi lagi (sudah terverifikasi, tak berarti) & Tolak (itu untuk
+    yang belum disahkan, bukan pembatalan) tak masuk akal di situ.
+  - **Nada AMBER, bukan merah.** Batal Verifikasi = membatalkan KEADAAN yang
+    sudah berlaku (pola "Buka Kunci"/"Batal transaksi" di seluruh aplikasi),
+    beda dari Tolak yang MEMBUANG usulan yang belum disahkan. Isi pop-up
+    menyebut konsekuensi konkret: isian kembali ke antrean & boleh disunting
+    SKPD lagi, dan untuk indikator otomatis (Rekon/Pajak) skor IPA-nya ikut
+    turun setelah hitung ulang berikutnya — bukan cuma "batalkan?" generik.
+  - `verifikasi()` (lib/ipaData.ts) diperlebar menerima `'diajukan'` sbg
+    status ketiga (dari 2: `'diverifikasi'|'ditolak'`); `catatan_verifikator`
+    tetap `null` di jalur ini (bukan `'ditolak'`), supaya pop-up Tolak yang
+    lama tak ikut tampil di isian yang cuma dibatalkan verifikasinya.

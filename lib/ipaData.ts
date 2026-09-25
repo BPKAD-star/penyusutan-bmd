@@ -229,7 +229,12 @@ export async function muatAntrianPajak(sb: SupabaseClient, tahun: number, status
 // ── Verifikasi (Admin) ──────────────────────────────────────────────────────
 export type TabelIsian = 'ipa_isian' | 'ipa_rekon_pelaksanaan' | 'ipa_pajak_kendaraan'
 
-export async function verifikasi(sb: SupabaseClient, tabel: TabelIsian, ids: string[], status: 'diverifikasi' | 'ditolak', catatan: string | null): Promise<void> {
+// `status: 'diajukan'` = BATAL VERIFIKASI — mengembalikan isian yang sudah
+// diverifikasi ke antrean (trigger `fn_ipa_isian_guard` yang mengosongkan
+// `verified_by/verified_at` saat admin menyetel balik ke 'diajukan'; lihat
+// migrasi 20260925_03). Dipakai saat verifikator salah centang atau bukti
+// sebenarnya keliru — bukan status baru, cuma arah mundur dari 'diverifikasi'.
+export async function verifikasi(sb: SupabaseClient, tabel: TabelIsian, ids: string[], status: 'diverifikasi' | 'ditolak' | 'diajukan', catatan: string | null): Promise<void> {
   if (ids.length === 0) return
   const { error } = await sb.from(tabel)
     .update({ status, catatan_verifikator: status === 'ditolak' ? catatan : null })
