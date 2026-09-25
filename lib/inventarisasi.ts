@@ -17,6 +17,7 @@
 //   (mis. kondisi berubah DAN tercatat ganda).
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import { KIBAR_JENIS_LABEL } from '@/lib/kibarJenis'
+import { GOLONGAN_FIELDS, type FieldKey } from '@/lib/asetFields'
 
 // ── Status per barang ───────────────────────────────────────────────────────
 /** Status yang TERSIMPAN. "Belum" bukan status — ia berarti belum ada barisnya. */
@@ -224,18 +225,54 @@ export type LkiConfig = {
   tanahMilik: boolean
   /** Judul bagian N, beda per format ("Gedung dan Bangunan"/"Jalan" di atas…). */
   tanahMilikLabel?: string
-  /** Titik koordinat (Tanah, GB, JIJ). */
+  /** Titik koordinat. */
   titikKoordinat: boolean
+  /** Bagian I — biaya atribusi/menambah kapasitas manfaat (keputusan user
+   *  2026-09-25): hanya golongan yang lazim menerima rehab/upgrade yang
+   *  DIGABUNG ke induk lewat menu Kapitalisasi — Peralatan & Mesin, Gedung &
+   *  Bangunan, JIJ, & Aset Tidak Berwujud (mis. modul baru pada aplikasi induk).
+   *  Tanah/ATL/KDP/Aset Lain-Lain TIDAK punya konsep ini. */
+  atribusi: boolean
 }
 
-const DEFAULT_CONFIG: Omit<LkiConfig, 'format' | 'label'> = {
-  merekTipe: false, nomorKendaraan: false, jijTeknis: false,
-  hilangVsTidakDitemukan: false, pemakaiRumahNegara: false, tanahMilik: false,
-  titikKoordinat: true,
+// merekTipe, nomorKendaraan, & titikKoordinat DITURUNKAN dari `GOLONGAN_FIELDS`
+// (lib/asetFields.ts) — field spesifikasi yang SAMA yang dipakai Edit
+// Spesifikasi/Koreksi (keputusan user 2026-09-25), bukan daftar boolean yang
+// dijaga manual di sini. Konsekuensinya `titikKoordinat` kini true untuk
+// SEMUA golongan (P&M/ATL/KDP/ATB/Aset Lain-Lain kini IKUT — dulu sengaja
+// dimatikan "ikut format apa adanya", tapi register mereka MEMANG punya kolom
+// `latitude`/`longitude` yang bisa dikoreksi lewat Edit Spesifikasi, jadi LKI
+// yang tak pernah menanyakannya adalah celah, bukan kesengajaan yang benar).
+// `jijTeknis`/`pemakaiRumahNegara`/`tanahMilik`/`hilangVsTidakDitemukan` TETAP
+// manual — murni struktur survei Permendagri, tak ada kolom `aset` padanannya.
+const NOMOR_KENDARAAN_KEYS: FieldKey[] = ['no_polisi', 'no_rangka', 'no_mesin', 'no_bpkb']
+const punyaField = (golongan: string, ...keys: FieldKey[]): boolean => {
+  const fields = GOLONGAN_FIELDS[golongan] || []
+  return keys.some(k => fields.includes(k))
+}
+const ATRIBUSI_GOLONGAN = new Set(['1.3.2', '1.3.3', '1.3.4', '1.5.3'])
+
+type OverrideConfig = Partial<
+  Pick<LkiConfig, 'jijTeknis' | 'hilangVsTidakDitemukan' | 'pemakaiRumahNegara' | 'tanahMilik' | 'tanahMilikLabel'>
+>
+
+function konfig(golongan: string, format: string, label: string, override: OverrideConfig = {}): LkiConfig {
+  return {
+    format, label,
+    merekTipe: punyaField(golongan, 'merek_tipe'),
+    nomorKendaraan: punyaField(golongan, ...NOMOR_KENDARAAN_KEYS),
+    titikKoordinat: punyaField(golongan, 'latitude'),
+    atribusi: ATRIBUSI_GOLONGAN.has(golongan),
+    jijTeknis: false, hilangVsTidakDitemukan: false, pemakaiRumahNegara: false, tanahMilik: false,
+    ...override,
+  }
 }
 
 // Konfigurasi di bawah SUDAH diverifikasi baris-per-baris terhadap Lampiran
 // Permendagri 47/2021 (Format III.A.1–III.A.6), termasuk hal. 7–12 (2026-07-28).
+// Yang manual di sini HANYA bagian yang tak ada padanan kolom `aset` (lihat
+// komentar di atas `konfig()`); merekTipe/nomorKendaraan/titikKoordinat/
+// atribusi diturunkan otomatis, tak perlu ditulis di sini.
 //
 // Catatan penting hasil verifikasi:
 // - III.A.4 (JIJ) punya bagian N "Jalan di atas tanah milik" — sama seperti GB,
@@ -243,50 +280,30 @@ const DEFAULT_CONFIG: Omit<LkiConfig, 'format' | 'label'> = {
 //   jenis bahan struktur jembatan, no. ruas jalan, no. jaringan irigasi).
 // - III.A.5 (ATL) & III.A.6 (ATB) BERBENTUK SAMA PERSIS satu sama lain: keduanya
 //   punya "Merek/Tipe/spesifikasi lainnya" dan Keberadaan yang pecah jadi
-//   Hilang vs Tidak ditemukan; keduanya TANPA titik koordinat & tanpa bagian N.
+//   Hilang vs Tidak ditemukan; keduanya tanpa bagian N.
 // - KDP (1.3.6) & Aset Lain-Lain (1.5.4) TIDAK punya format sendiri di
-//   Permendagri. Dipetakan ke bentuk III.A.6 PERSIS, termasuk TANPA titik
-//   koordinat (keputusan user 2026-07-28: ikut format apa adanya, jangan
-//   menambah isian yang tak diminta aturan). Kalau nanti lokasi KDP/1.5.4
-//   perlu dipetakan, tempatnya di menu GIS/spesifikasi aset — bukan di LKI.
+//   Permendagri. Dipetakan ke bentuk III.A.6 PERSIS.
 export const LKI_CONFIG: Record<string, LkiConfig> = {
-  '1.3.1': { format: 'III.A.1', label: 'Tanah', ...DEFAULT_CONFIG },
-  '1.3.2': {
-    format: 'III.A.2', label: 'Peralatan dan Mesin', ...DEFAULT_CONFIG,
-    merekTipe: true, nomorKendaraan: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
-  },
-  '1.3.3': {
-    format: 'III.A.3', label: 'Gedung dan Bangunan', ...DEFAULT_CONFIG,
+  '1.3.1': konfig('1.3.1', 'III.A.1', 'Tanah'),
+  '1.3.2': konfig('1.3.2', 'III.A.2', 'Peralatan dan Mesin', { hilangVsTidakDitemukan: true }),
+  '1.3.3': konfig('1.3.3', 'III.A.3', 'Gedung dan Bangunan', {
     pemakaiRumahNegara: true, tanahMilik: true,
     tanahMilikLabel: 'Gedung dan Bangunan di atas tanah milik',
-  },
-  '1.3.4': {
-    format: 'III.A.4', label: 'Jalan, Jaringan dan Irigasi', ...DEFAULT_CONFIG,
+  }),
+  '1.3.4': konfig('1.3.4', 'III.A.4', 'Jalan, Jaringan dan Irigasi', {
     jijTeknis: true, tanahMilik: true, tanahMilikLabel: 'Jalan di atas tanah milik',
-  },
-  '1.3.5': {
-    format: 'III.A.5', label: 'Aset Tetap Lainnya', ...DEFAULT_CONFIG,
-    merekTipe: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
-  },
-  '1.3.6': {
-    format: 'III.A.6', label: 'Konstruksi Dalam Pengerjaan', ...DEFAULT_CONFIG,
-    merekTipe: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
-  },
-  '1.5.3': {
-    format: 'III.A.6', label: 'Aset Tidak Berwujud', ...DEFAULT_CONFIG,
-    merekTipe: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
-  },
-  '1.5.4': {
-    format: 'III.A.6', label: 'Aset Lain-Lain', ...DEFAULT_CONFIG,
-    merekTipe: true, hilangVsTidakDitemukan: true, titikKoordinat: false,
-  },
+  }),
+  '1.3.5': konfig('1.3.5', 'III.A.5', 'Aset Tetap Lainnya', { hilangVsTidakDitemukan: true }),
+  '1.3.6': konfig('1.3.6', 'III.A.6', 'Konstruksi Dalam Pengerjaan', { hilangVsTidakDitemukan: true }),
+  '1.5.3': konfig('1.5.3', 'III.A.6', 'Aset Tidak Berwujud', { hilangVsTidakDitemukan: true }),
+  '1.5.4': konfig('1.5.4', 'III.A.6', 'Aset Lain-Lain', { hilangVsTidakDitemukan: true }),
 }
 
 /** Format III.A.7 — BMD Belum Tercatat (berdiri sendiri, tak terikat golongan). */
 export const FORMAT_BELUM_TERCATAT = 'III.A.7'
 
 export const konfigLki = (golongan: string): LkiConfig =>
-  LKI_CONFIG[golongan] || { format: 'III.A.6', label: golongan, ...DEFAULT_CONFIG }
+  LKI_CONFIG[golongan] || konfig(golongan, 'III.A.6', golongan)
 
 /** Golongan yang boleh diinventarisasi — ikut daftar rekap BMD yang sudah ada. */
 export const GOLONGAN_OPSI = GOLONGAN_REKAP.map(g => ({

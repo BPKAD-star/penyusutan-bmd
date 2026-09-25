@@ -7243,6 +7243,73 @@ kewenangannya memang berpindah tangan.
   tabel & pola wewenang yang sudah ada. 1843 test tetap hijau, 0 error
   typecheck, 0 lint warning.
 
+## LKI: atribusi digerbang per golongan, field diturunkan dari GOLONGAN_FIELDS (2026-09-25)
+
+Keputusan user: bagian I ("Apakah nilai perolehan merupakan biaya atribusi /
+menambah kapasitas manfaat?") dulu tampil ke SEMUA golongan tanpa syarat —
+padahal Tanah tak punya konsep itu. Bareng itu, `merekTipe`/`nomorKendaraan`/
+`titikKoordinat` di `LkiConfig` yang tadinya boolean tulis-tangan kini
+**diturunkan dari `GOLONGAN_FIELDS`** (lib/asetFields.ts) — sumber yang sama
+yang dipakai Edit Spesifikasi/Koreksi — supaya LKI tak lagi punya daftar
+sendiri yang bisa menyimpang dari field yang sungguh ada di register.
+
+- **Atribusi kini cuma tampil untuk golongan yang lazim direhab/upgrade dan
+  DIGABUNG ke induk lewat menu Kapitalisasi**: Peralatan & Mesin (1.3.2),
+  Gedung & Bangunan (1.3.3), Jalan/Jaringan/Irigasi (1.3.4), **Aset Tidak
+  Berwujud (1.5.3)** — user eksplisit menyebut ATB lazim dapat penambahan
+  modul/fitur di tahun berikutnya yang digabung ke aplikasi induknya, pola
+  atribusi yang sama persis. Tanah, ATL, KDP, & Aset Lain-Lain TIDAK — dua yang
+  terakhir tebakan (golongan "sisa"/campuran, jarang ada konsep upgrade), KDP
+  karena barangnya sendiri belum jadi ("belum ada yang bisa ditambah
+  manfaatnya"), dikonfirmasi user.
+  ⚠️ Gerbangnya MURNI di UI (`{config.atribusi && (...)}`) — `klasifikasiLhi()`
+  & `kekuranganLki()` tak perlu disentuh, karena `jawaban.atribusi` memang
+  tak pernah terisi untuk golongan yang gerbangnya tertutup (field-nya cuma
+  gak dirender, bukan dipaksa kosong).
+- **`merekTipe`/`nomorKendaraan`/`titikKoordinat` DITURUNKAN**, bukan lagi
+  ditulis manual per golongan: `konfig()` (fungsi baru) mengecek keanggotaan
+  `GOLONGAN_FIELDS[golongan]` — `merekTipe` ↔ field `merek_tipe` ada,
+  `nomorKendaraan` ↔ salah satu dari `no_polisi`/`no_rangka`/`no_mesin`/
+  `no_bpkb` ada, `titikKoordinat` ↔ field `latitude` ada.
+  ⚠️ **Konsekuensi yang DISENGAJA, bukan efek samping**: `titikKoordinat` kini
+  **`true` untuk SEMUA 8 golongan** — sebelumnya sengaja `false` untuk P&M/ATL/
+  KDP/ATB/Aset Lain-Lain ("ikut format apa adanya", keputusan 2026-07-28).
+  Register kelima golongan itu MEMANG punya kolom `latitude`/`longitude` yang
+  bisa dikoreksi lewat Edit Spesifikasi (ada di `TEMPLATE_PERALATAN_MESIN` &
+  `TEMPLATE_ASET_LAINNYA`) — jadi LKI yang tak pernah menanyakannya itu celah
+  (gak pernah bisa nemuin "titik koordinat salah" utk golongan itu), bukan
+  kesengajaan yang masih berlaku. `merekTipe`/`nomorKendaraan` TIDAK berubah
+  nilainya (diverifikasi test) — cuma cara ngitungnya yang berubah dari
+  hardcode ke turunan.
+- **`jijTeknis`/`pemakaiRumahNegara`/`tanahMilik`/`hilangVsTidakDitemukan`
+  TETAP manual** — keempatnya struktur survei Permendagri yang gak punya
+  padanan kolom `aset` sama sekali (mis. "BAST Pemakaian ada/tidak" itu murni
+  pertanyaan LKI, bukan field di register), jadi gak bisa diturunkan dari
+  `GOLONGAN_FIELDS`.
+- **No. BPKB, Titik Koordinat (5 golongan baru), & Spesifikasi Lainnya**
+  (field `aset.spesifikasi_lainnya`, ada di SEMUA 8 golongan tapi belum jadi
+  checklist tersendiri di LKI — saat ini nyempil di jawaban bebas "Merek/Tipe/
+  Spesifikasi Lainnya" untuk golongan tanpa nomor kendaraan) **BELUM
+  ditambahkan sbg field checklist baru** — itu butuh migrasi (`fn_inventarisasi_
+  snapshot` & `fn_inventarisasi_lembar` belum membawa `no_bpkb`/
+  `spesifikasi_lainnya` ke jsonb snapshot) + field baru di `InvJawaban` +
+  update `klasifikasiLhi`/`kekuranganLki`, sengaja belum dikerjakan di putaran
+  ini karena user cuma minta "gerbang atribusi + narik field dari
+  GOLONGAN_FIELDS" — bukan permintaan tambahan field checklist baru.
+- **Titik Koordinat pindah posisi** (permintaan user hari yang sama, terpisah
+  dari perubahan gerbang di atas): di form pengisian, sekarang duduk TEPAT
+  setelah bagian J "Alamat" (dulu di akhir, setelah bagian N "Tanah Milik").
+  Murni geser posisi JSX, kode huruf (O) TIDAK diganti — itu cuma rujukan ke
+  Format Permendagri resmi, dan lembar CETAK (`app/cetak/inventarisasi-lki/
+  page.tsx`) komponen TERPISAH dgn urutannya sendiri, jadi geser di form
+  pengisian tak mengubah susunan lembar yang ditandatangani.
+- **Tak ada migrasi** — murni logika klien; `inventarisasi_barang` & RPC-nya
+  tak disentuh. Dikunci lib/inventarisasi.test.ts (4 test baru: atribusi per
+  golongan, titik koordinat semua golongan, regresi merekTipe/nomorKendaraan,
+  regresi field manual). 1847 test tetap hijau, 0 error typecheck, 0 lint
+  warning baru (1 warning max-lines pre-existing di LkiForm.tsx, sudah ada
+  sebelum perubahan ini).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

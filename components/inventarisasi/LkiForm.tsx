@@ -499,45 +499,47 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                 <Tampilan nilai={formatRupiah2(s.nilai_perolehan || 0)} />
               </Seksi>
 
-              <Seksi kode="I" judul="Apakah nilai perolehan merupakan biaya atribusi / menambah kapasitas manfaat?">
-                <div className="space-y-2 text-xs">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" checked={atribusiVal === 'ya_induk_diketahui'} disabled={readOnly}
-                      onChange={() => set('atribusi', 'ya_induk_diketahui')} />
-                    Ya — data awal/induknya <b>diketahui</b>
-                  </label>
-                  {atribusiVal === 'ya_induk_diketahui' && (
-                    <div className="ml-5 space-y-1.5">
-                      <p className="text-[11px] text-gray-500">
-                        Induk dicari <b>hanya di SKPD lembar ini</b> dan golongan <b>{golongan}</b>.
-                      </p>
-                      <AsetPicker selected={induk} skpdId={skpdId} kodePrefix={golongan}
-                        onSelect={a => {
-                          if (a && a.id === baris.aset_id) { setErr('Induk tidak boleh barang ini sendiri.'); return }
-                          setErr('')
-                          setInduk(a)
-                          set('induk', a ? {
-                            aset_id: a.id, nibar: a.nibar || '', kode_barang: a.kode,
-                            nama_barang: a.nama_barang || '',
-                          } : {})
-                        }} />
-                      {j.induk?.nibar && (
-                        <p className="text-[11px] text-teal">Induk: {j.induk.nibar} — {j.induk.nama_barang}</p>
-                      )}
-                    </div>
-                  )}
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" checked={atribusiVal === 'ya_induk_tidak_diketahui'} disabled={readOnly}
-                      onChange={() => set('atribusi', 'ya_induk_tidak_diketahui')} />
-                    Ya — data awal/induknya <b>tidak diketahui</b>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" checked={atribusiVal === 'bukan'} disabled={readOnly}
-                      onChange={() => set('atribusi', 'bukan')} />
-                    Bukan biaya atribusi / tidak menambah kapasitas manfaat
-                  </label>
-                </div>
-              </Seksi>
+              {config.atribusi && (
+                <Seksi kode="I" judul="Apakah nilai perolehan merupakan biaya atribusi / menambah kapasitas manfaat?">
+                  <div className="space-y-2 text-xs">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" checked={atribusiVal === 'ya_induk_diketahui'} disabled={readOnly}
+                        onChange={() => set('atribusi', 'ya_induk_diketahui')} />
+                      Ya — data awal/induknya <b>diketahui</b>
+                    </label>
+                    {atribusiVal === 'ya_induk_diketahui' && (
+                      <div className="ml-5 space-y-1.5">
+                        <p className="text-[11px] text-gray-500">
+                          Induk dicari <b>hanya di SKPD lembar ini</b> dan golongan <b>{golongan}</b>.
+                        </p>
+                        <AsetPicker selected={induk} skpdId={skpdId} kodePrefix={golongan}
+                          onSelect={a => {
+                            if (a && a.id === baris.aset_id) { setErr('Induk tidak boleh barang ini sendiri.'); return }
+                            setErr('')
+                            setInduk(a)
+                            set('induk', a ? {
+                              aset_id: a.id, nibar: a.nibar || '', kode_barang: a.kode,
+                              nama_barang: a.nama_barang || '',
+                            } : {})
+                          }} />
+                        {j.induk?.nibar && (
+                          <p className="text-[11px] text-teal">Induk: {j.induk.nibar} — {j.induk.nama_barang}</p>
+                        )}
+                      </div>
+                    )}
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" checked={atribusiVal === 'ya_induk_tidak_diketahui'} disabled={readOnly}
+                        onChange={() => set('atribusi', 'ya_induk_tidak_diketahui')} />
+                      Ya — data awal/induknya <b>tidak diketahui</b>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" checked={atribusiVal === 'bukan'} disabled={readOnly}
+                        onChange={() => set('atribusi', 'bukan')} />
+                      Bukan biaya atribusi / tidak menambah kapasitas manfaat
+                    </label>
+                  </div>
+                </Seksi>
+              )}
 
               <Seksi kode="J" judul="Alamat">
                 <SesuaiRadio
@@ -558,6 +560,29 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                   </div>
                 </SesuaiRadio>
               </Seksi>
+
+              {config.titikKoordinat && (
+                <Seksi kode="O" judul="Titik Koordinat">
+                  <div className="space-y-2">
+                    <KotakTercatat
+                      nilai={s.latitude != null && s.longitude != null ? `${s.latitude}, ${s.longitude}` : null}
+                    />
+                    <MapPicker
+                      latitude={latTampil != null ? String(latTampil) : ''}
+                      longitude={lngTampil != null ? String(lngTampil) : ''}
+                      onChange={(lat, lng) => setJ(p => ({
+                        ...p,
+                        latitude: lat === '' ? null : Number(lat),
+                        longitude: lng === '' ? null : Number(lng),
+                      }))}
+                    />
+                    <p className="text-[11px] text-gray-400">
+                      Peta terisi titik yang sudah tercatat — klik untuk menandai ulang, atau ketik
+                      koordinatnya langsung.
+                    </p>
+                  </div>
+                </Seksi>
+              )}
 
               <Seksi kode="K" judul="Kondisi Barang">
                 <p className="text-[11px] text-gray-400 mb-1">
@@ -727,29 +752,6 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                       <input className="select-filter w-full" disabled={readOnly} placeholder="Sebutkan pemilik tanah"
                         value={j.tanah_milik_nama || ''} onChange={e => set('tanah_milik_nama', e.target.value)} />
                     )}
-                  </div>
-                </Seksi>
-              )}
-
-              {config.titikKoordinat && (
-                <Seksi kode="O" judul="Titik Koordinat">
-                  <div className="space-y-2">
-                    <KotakTercatat
-                      nilai={s.latitude != null && s.longitude != null ? `${s.latitude}, ${s.longitude}` : null}
-                    />
-                    <MapPicker
-                      latitude={latTampil != null ? String(latTampil) : ''}
-                      longitude={lngTampil != null ? String(lngTampil) : ''}
-                      onChange={(lat, lng) => setJ(p => ({
-                        ...p,
-                        latitude: lat === '' ? null : Number(lat),
-                        longitude: lng === '' ? null : Number(lng),
-                      }))}
-                    />
-                    <p className="text-[11px] text-gray-400">
-                      Peta terisi titik yang sudah tercatat — klik untuk menandai ulang, atau ketik
-                      koordinatnya langsung.
-                    </p>
                   </div>
                 </Seksi>
               )}

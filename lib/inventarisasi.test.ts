@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  kekuranganLki, klasifikasiLhi, labelPosisi, labelTransaksi, type InvBaris, type InvJawaban,
+  kekuranganLki, klasifikasiLhi, konfigLki, labelPosisi, labelTransaksi, type InvBaris, type InvJawaban,
 } from './inventarisasi'
 import { belumDiinventarisasi } from './inventarisasiData'
 
@@ -86,6 +86,50 @@ describe('belumDiinventarisasi — hitungan dari ringkasan server', () => {
 
   it('tak pernah negatif', () => {
     expect(belumDiinventarisasi({ total_aset: 1, menunggu: 5, divalidasi: 0, berubah: 0, belum_tercatat: 0 })).toBe(0)
+  })
+})
+
+describe('konfigLki — atribusi digerbang, merekTipe/nomorKendaraan/titikKoordinat diturunkan dari GOLONGAN_FIELDS (2026-09-25)', () => {
+  it('atribusi hanya untuk golongan yang lazim direhab/upgrade & digabung ke induk', () => {
+    expect(konfigLki('1.3.2').atribusi).toBe(true) // Peralatan & Mesin
+    expect(konfigLki('1.3.3').atribusi).toBe(true) // Gedung & Bangunan
+    expect(konfigLki('1.3.4').atribusi).toBe(true) // Jalan, Jaringan & Irigasi
+    expect(konfigLki('1.5.3').atribusi).toBe(true) // Aset Tidak Berwujud
+    expect(konfigLki('1.3.1').atribusi).toBe(false) // Tanah
+    expect(konfigLki('1.3.5').atribusi).toBe(false) // Aset Tetap Lainnya
+    expect(konfigLki('1.3.6').atribusi).toBe(false) // KDP
+    expect(konfigLki('1.5.4').atribusi).toBe(false) // Aset Lain-Lain
+  })
+
+  it('titik koordinat kini true untuk SEMUA golongan — register semuanya punya latitude/longitude', () => {
+    for (const g of ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
+      expect(konfigLki(g).titikKoordinat).toBe(true)
+    }
+  })
+
+  it('merekTipe & nomorKendaraan tetap sama seperti sebelum diturunkan dari GOLONGAN_FIELDS', () => {
+    expect(konfigLki('1.3.2').merekTipe).toBe(true)
+    expect(konfigLki('1.3.5').merekTipe).toBe(true)
+    expect(konfigLki('1.3.6').merekTipe).toBe(true)
+    expect(konfigLki('1.5.3').merekTipe).toBe(true)
+    expect(konfigLki('1.5.4').merekTipe).toBe(true)
+    expect(konfigLki('1.3.1').merekTipe).toBe(false)
+    expect(konfigLki('1.3.3').merekTipe).toBe(false)
+    expect(konfigLki('1.3.4').merekTipe).toBe(false)
+
+    expect(konfigLki('1.3.2').nomorKendaraan).toBe(true)
+    for (const g of ['1.3.1', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
+      expect(konfigLki(g).nomorKendaraan).toBe(false)
+    }
+  })
+
+  it('golongan manual (jijTeknis/pemakaiRumahNegara/tanahMilik/hilangVsTidakDitemukan) tak berubah', () => {
+    expect(konfigLki('1.3.4').jijTeknis).toBe(true)
+    expect(konfigLki('1.3.3').pemakaiRumahNegara).toBe(true)
+    expect(konfigLki('1.3.3').tanahMilik).toBe(true)
+    expect(konfigLki('1.3.4').tanahMilik).toBe(true)
+    expect(konfigLki('1.3.2').hilangVsTidakDitemukan).toBe(true)
+    expect(konfigLki('1.3.1').hilangVsTidakDitemukan).toBe(false)
   })
 })
 
