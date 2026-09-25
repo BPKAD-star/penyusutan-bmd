@@ -101,14 +101,6 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
   useEffect(() => { if (siap) void muat() }, [siap, muat])
   useEffect(() => { if (siap) muatRingkasan() }, [siap, muatRingkasan])
 
-  const hitungTab = (v: FilterHasil): number | null => {
-    if (!ringkas) return null
-    if (v === 'menunggu') return ringkas.menunggu
-    if (v === 'divalidasi') return ringkas.divalidasi
-    if (v === 'berubah') return ringkas.berubah
-    return ringkas.menunggu + ringkas.divalidasi + ringkas.berubah
-  }
-
   const bisaDivalidasi = (r: BarisHasil) => pengelola && r.status === 'diisi' && !r.posisi
   const bisaDitolak = (r: BarisHasil) => pengelola && r.status === 'diisi' && !r.posisi
   const bisaDibatalkan = (r: BarisHasil) => pengelola && r.status === 'divalidasi' && !r.posisi
@@ -197,40 +189,58 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
       msg={msg}
     >
       <div className="card p-4 mb-4 space-y-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">SKPD / Unit</label>
-          <SkpdCombobox lockToOperator allowClear
-            onChangeSelection={sel => { setSkpdIds(sel.descendantIds); setHal(0); setSiap(true) }}
-            placeholder="Semua SKPD — atau ketik nama SKPD / unit..." />
-        </div>
-        <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Tahun</label>
-            <select className="select-filter" value={tahun} onChange={e => { setTahun(Number(e.target.value)); setHal(0) }}>
-              {[TAHUN_INI, TAHUN_INI - 1, TAHUN_INI - 2].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+        {/* Grid 2 kolom KEMBAR dgn Lembar Kerja Inventarisasi (LembarKerjaInventarisasi.tsx)
+            — permintaan user 2026-09-25: dua menu yang dipakai berurutan (isi lalu
+            validasi) sebaiknya terasa satu keluarga, bukan dua tata letak berbeda. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+          <div className="min-w-0">
+            <label className="block text-xs text-gray-500 mb-1">SKPD / Unit</label>
+            <SkpdCombobox lockToOperator allowClear
+              onChangeSelection={sel => { setSkpdIds(sel.descendantIds); setHal(0); setSiap(true) }}
+              placeholder="Semua SKPD — atau ketik nama SKPD / unit..." />
           </div>
-          <form className="flex gap-2 items-end flex-1 min-w-[280px]"
-            onSubmit={e => { e.preventDefault(); setCari(cariKetik); setHal(0) }}>
-            <div className="flex-1">
-              <label className="block text-xs text-gray-500 mb-1">Cari</label>
-              <input className="select-filter w-full" value={cariKetik} onChange={e => setCariKetik(e.target.value)}
-                placeholder="Nama barang, NIBAR, kode barang, kode register..." />
+          <div className="flex gap-2 items-end min-w-0">
+            <form className="flex gap-2 items-end flex-1 min-w-0"
+              onSubmit={e => { e.preventDefault(); setCari(cariKetik); setHal(0) }}>
+              <div className="flex-1 min-w-0">
+                <label className="block text-xs text-gray-500 mb-1">Cari</label>
+                <input className="select-filter w-full" value={cariKetik} onChange={e => setCariKetik(e.target.value)}
+                  placeholder="Nama barang, NIBAR, kode barang, kode register..." />
+              </div>
+              <button type="submit" className="btn-secondary text-sm">Cari</button>
+            </form>
+            <div className="flex-shrink-0">
+              <label className="block text-xs text-gray-500 mb-1">Tahun</label>
+              <select className="select-filter" value={tahun} onChange={e => { setTahun(Number(e.target.value)); setHal(0) }}>
+                {[TAHUN_INI, TAHUN_INI - 1, TAHUN_INI - 2].map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
             </div>
-            <button type="submit" className="btn-secondary text-sm">Cari</button>
-          </form>
+            <div className="flex-shrink-0">
+              <label className="block text-xs text-gray-500 mb-1">Status</label>
+              <select className="select-filter" value={filter}
+                onChange={e => { setFilter(e.target.value as FilterHasil); setHal(0) }}>
+                {TAB.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {TAB.map(t => {
-            const n = hitungTab(t.v)
-            return (
-              <button key={t.v} onClick={() => { setFilter(t.v); setHal(0) }}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border ${filter === t.v
-                  ? 'bg-teal text-white border-teal' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
-                {t.l}{n != null ? ` (${n.toLocaleString('id-ID')})` : ''}
-              </button>
-            )
-          })}
+
+        {/* Rekap ringkas — angka yang dulu nempel di label pill, sekarang satu baris
+            kembar dgn rekap Lembar Kerja. Sengaja BUKAN di dalam <select>: opsi
+            berhitung akan berubah tiap ringkas dimuat ulang, dan itu membuat dropdown
+            "melompat" saat sedang dibuka. */}
+        <div className="text-xs text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+          {ringkas ? (
+            <>
+              <span className="text-amber-700">{ringkas.menunggu.toLocaleString('id-ID')} menunggu validasi</span>
+              <span className="text-teal">{ringkas.divalidasi.toLocaleString('id-ID')} divalidasi</span>
+              {ringkas.berubah > 0 && (
+                <span className="text-gray-500">{ringkas.berubah.toLocaleString('id-ID')} posisi berubah</span>
+              )}
+            </>
+          ) : (
+            <span className="text-gray-400">menghitung jumlah…</span>
+          )}
         </div>
         {filter === 'berubah' && (
           <p className="text-[11px] text-gray-500">
