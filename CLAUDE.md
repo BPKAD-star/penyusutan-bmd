@@ -7481,10 +7481,14 @@ Berkas: `lib/ipa.ts` (mesin murni, dikunci `lib/ipa.test.ts` — termasuk uji
 - ⚠️ **Bobot TIDAK berversi per tahun** — mengubahnya menggeser skor tahun lampau
   saat dibuka ulang. Kalau kelak perlu "IPA 2026 ditetapkan", yang dibutuhkan
   tabel penetapan beku, bukan versi bobot.
-- **Gauge Indeks di Dashboard IPA** (`components/ipa/GaugeIndeks.tsx`,
-  2026-09-25): setengah lingkaran 4 pita = 4 kategori (ambang 2,65/3,10/3,55,
-  kembar dgn `kategoriDariSkor`), jarum menunjuk indeks, angka di tengah.
-  Admin & pengawas → rata-rata KABUPATEN (dari skor rata-rata, lalu diturunkan
-  ke indeks & kategori); pengurus SKPD → indeks SKPD INDUK-nya sendiri
-  (`rootOf` dari `useSkpdTree`, karena `ipa_skpd` cuma memuat SKPD level-1).
-  Nilai `null` → jarum tak digambar & tertulis "Belum dapat dihitung", bukan 1.
+- **Kotak Indeks IPA di Dashboard UTAMA** (`components/ipa/GaugeIndeks.tsx`
+  + `KartuIpa` di app/dashboard/page.tsx, 2026-09-25): kolom kanan sejajar
+  seksi Cara Perolehan/Mutasi/Penghapusan (di bawah `xl` turun ke bawah).
+  Setengah lingkaran 4 pita = 4 kategori (ambang 2,65/3,10/3,55, kembar dgn
+  `kategoriDariSkor`), jarum menunjuk indeks, angka di tengah. Admin &
+  pengawas → se-KABUPATEN (`ringkasKabupaten`: rata-rata SKOR lalu diturunkan);
+  pengurus SKPD → SKPD INDUK-nya (segmen pertama `admin_skpd.path`), karena RLS
+  `ipa_isian` cuma menampakkan isian SKPD sendiri sehingga angka kabupaten
+  mustahil benar untuknya. Nilai `null` → jarum tak digambar, bukan indeks 1.
+  Gagal memuat → kotak itu saja yang merah, seksi lain tetap tampil.
+  ⚠️ Sempat dipasang di Dashboard IPA (salah tempat) lalu dicabut di hari sama.

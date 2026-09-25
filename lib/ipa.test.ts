@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  akhirBulan, beriPeringkat, hitungSkpd, indeksDariSkor, kategoriDariSkor, nilaiDariAngka,
+  akhirBulan, beriPeringkat, hitungSkpd, indeksDariSkor, kategoriDariSkor, nilaiDariAngka, ringkasKabupaten,
   nilaiIsianPada, skorIndikator, totalBobot,
   type BarisIsian, type BobotAspek, type Indikator, type NilaiIndikator,
 } from './ipa'
@@ -184,5 +184,24 @@ describe('nilaiIsianPada — capaian bulanan', () => {
 describe('totalBobot', () => {
   it('seed tiap klaster = 100%', () => {
     for (const k of ['A', 'B', 'C', 'D'] as const) expect(totalBobot(Object.values(BOBOT[k]))).toBe(1)
+  })
+})
+
+describe('ringkasKabupaten', () => {
+  const buat = (id: number, skorInt: number | null) => hitungSkpd({
+    skpdId: id, klaster: 'D', indikator: INDIKATOR, bobotAspek: BOBOT, parameter: PARAM,
+    nilai: skorInt == null ? {} : { ...PB, INT_KELENGKAPAN: a(skorInt, 100) },
+  })
+  it('rata-rata skor SKPD yang punya skor; SKPD tanpa data tak ikut dirata-rata', () => {
+    const h = [buat(1, 100), buat(2, 0), buat(3, null)]
+    const r = ringkasKabupaten(h)
+    const skorRata = (h[0].skor! + h[1].skor!) / 2
+    expect(r.indeks).toBeCloseTo(indeksDariSkor(skorRata), 9)
+    expect(r.kategori).toBe(kategoriDariSkor(skorRata))
+    expect(r.total).toBe(3)
+    expect(r.lengkap).toBe(2)
+  })
+  it('tak satu pun berskor → null, bukan indeks 1', () => {
+    expect(ringkasKabupaten([buat(1, null)])).toMatchObject({ indeks: null, kategori: null })
   })
 })

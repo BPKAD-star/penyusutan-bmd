@@ -7,6 +7,9 @@ import CaraPerolehanCards from '@/components/dashboard/CaraPerolehanCards'
 import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
 import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/PenghapusanCards'
 import { rpcUlangJikaTimeout } from '@/lib/rpcUlang'
+import Link from 'next/link'
+import { GaugeIndeks } from '@/components/ipa/GaugeIndeks'
+import { muatIndeksDashboard, type IndeksDashboard } from '@/lib/ipaData'
 
 // ⚠️ Dashboard WAJIB mencerminkan ledger HIDUP. `@supabase/ssr` tak menyetel
 // `cache: 'no-store'`, jadi query `.from(...).select(...)` (GET) — Penghapusan &
@@ -298,23 +301,70 @@ export default function DashboardHome() {
         <SectionJenis />
       </Suspense>
 
-      {/* Perolehan */}
-      <Section title="Total Barang per Cara Perolehan">
-        <Suspense fallback={<CardsSkeleton n={5} kolom={5} />}>
-          <SeksiCaraPerolehan />
-        </Suspense>
-      </Section>
+      {/* Tiga seksi bawah di kolom kiri, kotak Indeks IPA di kolom kanan
+          (mockup user 2026-09-25). Di bawah xl kotaknya turun ke bawah —
+          lima kartu per baris tak muat kalau dijepit kolom 300 px di layar
+          sempit. `minmax(0,1fr)`, bukan `1fr`: tanpanya kolom kiri ikut melar
+          mengikuti isi terlebar & mendorong kotak IPA keluar layar. */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] gap-4">
+        <div>
+          {/* Perolehan */}
+          <Section title="Total Barang per Cara Perolehan">
+            <Suspense fallback={<CardsSkeleton n={5} kolom={5} />}>
+              <SeksiCaraPerolehan />
+            </Suspense>
+          </Section>
 
-      {/* Mutasi & transfer */}
-      <Suspense fallback={<SectionSkeleton title="Mutasi & Transfer" sub="Memuat riwayat perpindahan…" n={4} kolom={4} />}>
-        <SectionMutasi />
-      </Suspense>
+          {/* Mutasi & transfer */}
+          <Suspense fallback={<SectionSkeleton title="Mutasi & Transfer" sub="Memuat riwayat perpindahan…" n={4} kolom={4} />}>
+            <SectionMutasi />
+          </Suspense>
 
-      {/* Penghapusan */}
-      <Suspense fallback={<SectionSkeleton title="Penghapusan Barang" sub="Memuat riwayat penghapusan…" n={5} kolom={5} />}>
-        <SectionPenghapusan />
-      </Suspense>
+          {/* Penghapusan */}
+          <Suspense fallback={<SectionSkeleton title="Penghapusan Barang" sub="Memuat riwayat penghapusan…" n={5} kolom={5} />}>
+            <SectionPenghapusan />
+          </Suspense>
+        </div>
+
+        <div className="flex flex-col">
+          <div className="mb-2">
+            <h2 className="text-base font-semibold text-gray-800">Indeks Pengelolaan Aset</h2>
+          </div>
+          <Suspense fallback={<div className="card flex-1 p-4 animate-pulse min-h-[16rem]" aria-hidden="true" />}>
+            <KartuIpa />
+          </Suspense>
+        </div>
+      </div>
     </div>
+  )
+}
+
+// Kotak Indeks IPA: admin & pengawas melihat se-kabupaten, pengurus SKPD
+// melihat SKPD induknya (lib/ipaData.ts `muatIndeksDashboard`). Angkanya dari
+// snapshot bulanan `ipa_otomatis` + isian terverifikasi — murah, tak menghitung
+// ulang apa pun. Gagal → kotak ini saja yang menampilkan pesannya; seksi lain
+// dashboard tak ikut jatuh.
+async function KartuIpa() {
+  const sekarang = new Date()
+  const tahun = sekarang.getFullYear()
+  const bulan = sekarang.getMonth() + 1
+  let data: IndeksDashboard | null = null
+  let err = ''
+  try { data = await muatIndeksDashboard(createClient(), tahun, bulan) }
+  catch (e) { err = (e as Error).message }
+  if (!data) {
+    return (
+      <div role="alert" className="card flex-1 p-4 text-sm text-red-700 bg-red-50 border border-red-200">
+        Indeks IPA gagal dimuat — {err}
+      </div>
+    )
+  }
+  return (
+    <Link href={data.href} className="card flex-1 p-4 flex flex-col items-center justify-center hover:shadow-md transition-shadow">
+      <GaugeIndeks nilai={data.nilai} kategori={data.kategori} label={data.judul} ukuran={240} />
+      <p className="text-xs text-gray-500 mt-2 text-center">{data.keterangan}</p>
+      <p className="text-[11px] text-gray-400 mt-1">Tahun {tahun} · lihat rincian →</p>
+    </Link>
   )
 }
 

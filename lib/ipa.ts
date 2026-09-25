@@ -263,3 +263,22 @@ export const LABEL_SUMBER: Record<SumberIndikator, string> = {
 export function totalBobot(nilai: number[]): number {
   return Math.round(nilai.reduce((s, x) => s + x, 0) * 10000) / 10000
 }
+
+/**
+ * Indeks se-KABUPATEN: rata-rata SKOR SKPD yang skornya ada, lalu diturunkan ke
+ * indeks & kategori. Linear, jadi hasilnya sama dgn merata-ratakan indeks — tapi
+ * lewat skor supaya kategorinya memakai ambang `kategoriDariSkor` yang SAMA
+ * dgn tiap baris tabel, bukan dibandingkan pada indeks yang sudah dibulatkan.
+ */
+export function ringkasKabupaten(hasil: HasilSkpd[]): {
+  indeks: number | null; kategori: KategoriIndeks | null; lengkap: number; total: number
+} {
+  const ber = hasil.filter(h => h.skor != null)
+  const skor = ber.length ? ber.reduce((s, h) => s + h.skor!, 0) / ber.length : null
+  return {
+    indeks: skor == null ? null : indeksDariSkor(skor),
+    kategori: skor == null ? null : kategoriDariSkor(skor),
+    lengkap: hasil.filter(h => h.layakRanking).length,
+    total: hasil.length,
+  }
+}

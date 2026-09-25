@@ -4,8 +4,8 @@
 // tidak.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
-  akhirBulan, beriPeringkat, hitungSkpd, nilaiDariAngka, nilaiIsianPada,
-  type Aspek, type BarisIsian, type BobotAspek, type HasilSkpd, type Indikator,
+  akhirBulan, beriPeringkat, hitungSkpd, nilaiDariAngka, nilaiIsianPada, ringkasKabupaten,
+  type Aspek, type BarisIsian, type BobotAspek, type HasilSkpd, type Indikator, type KategoriIndeks,
   type KodeAspek, type KodeKlaster, type NilaiIndikator, type Parameter, type StatusIsian,
 } from '@/lib/ipa'
 
@@ -311,4 +311,53 @@ export async function skpdBolehIsi(sb: SupabaseClient, semua: SkpdIpa[], role: s
   if (error) throw new Error(`gagal membaca cakupan SKPD: ${error.message}`)
   const scope = new Set(((data as number[] | null) ?? []).map(Number))
   return semua.filter(s => scope.has(s.skpd_id))
+}
+
+// ── Kotak Indeks IPA di Dashboard utama ─────────────────────────────────────
+export type IndeksDashboard = {
+  nilai: number | null
+  kategori: KategoriIndeks | null
+  judul: string
+  keterangan: string
+  href: string
+}
+
+/**
+ * Admin & pengawas → indeks se-KABUPATEN; pengurus SKPD → indeks SKPD INDUK-nya
+ * (`ipa_skpd` cuma memuat SKPD level-1, jadi akun sub-unit dinaikkan lewat
+ * segmen pertama `admin_skpd.path` — sama dgn `fn_skpd_root`).
+ * ⚠️ Untuk pengurus SKPD, RLS `ipa_isian` cuma menampakkan isian SKPD-nya
+ * sendiri — karena itu angka kabupaten SENGAJA tak pernah dihitung untuknya.
+ */
+export async function muatIndeksDashboard(sb: SupabaseClient, tahun: number, bulan: number): Promise<IndeksDashboard> {
+  const auth = await sb.auth.getUser()
+  if (auth.error || !auth.data.user) throw new Error('sesi login tak ditemukan')
+  const user = auth.data.user
+  const prof = await sb.from('admin_profiles').select('role,skpd_id').eq('id', user.id).maybeSingle()
+  if (prof.error) throw new Error(`gagal membaca profil: ${prof.error.message}`)
+  const role = (prof.data as { role: string | null } | null)?.role ?? null
+  const skpdId = (prof.data as { skpd_id: number | null } | null)?.skpd_id ?? null
+  const penilaian = await muatPenilaian(sb, tahun, bulan)
+
+  if (role === 'admin' || role === 'pengawas' || skpdId == null) {
+    const r = ringkasKabupaten(penilaian.hasil)
+    return {
+      nilai: r.indeks, kategori: r.kategori, judul: 'Kabupaten Kediri',
+      keterangan: `${r.lengkap} dari ${r.total} SKPD lengkap & ikut ranking`,
+      href: '/dashboard/ipa',
+    }
+  }
+  const sk = await sb.from('admin_skpd').select('path').eq('id', skpdId).maybeSingle()
+  if (sk.error) throw new Error(`gagal membaca SKPD: ${sk.error.message}`)
+  const path = String((sk.data as { path: string | null } | null)?.path ?? '')
+  const rootId = Number(path.split('.')[0]) || skpdId
+  const nama = penilaian.ref.skpd.find(s => s.skpd_id === rootId)?.nama ?? 'SKPD Anda'
+  const h = penilaian.hasil.find(x => x.skpdId === rootId)
+  if (!h) return { nilai: null, kategori: null, judul: nama, keterangan: 'SKPD ini belum masuk daftar penilaian IPA.', href: '/dashboard/ipa' }
+  return {
+    nilai: h.indeks, kategori: h.kategori, judul: nama,
+    keterangan: h.jumlahBelum > 0 ? `${h.jumlahBelum} indikator belum diisi/dihitung`
+      : h.layakRanking ? `Peringkat ${h.peringkat} di klaster ${h.klaster}` : 'Bobot berlaku di bawah ambang',
+    href: `/dashboard/ipa/skpd/${rootId}?tahun=${tahun}&bulan=${bulan}`,
+  }
 }
