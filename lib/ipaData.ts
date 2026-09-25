@@ -33,7 +33,10 @@ export async function muatReferensi(sb: SupabaseClient): Promise<Referensi> {
     sb.from('ipa_aspek').select('kode,nama,urut').order('urut'),
     sb.from('ipa_indikator').select('*').order('urut'),
     sb.from('ipa_bobot_aspek').select('klaster,aspek,bobot'),
-    sb.from('ipa_skpd').select('skpd_id,klaster,sertakan_turunan,skpd:skpd_id(nama)').order('skpd_id'),
+    // ⚠️ FK DISEBUT EKSPLISIT: `skpd_id` di ipa_skpd menunjuk admin_skpd, tapi
+    // ipa_isian/ipa_otomatis/dst. juga punya `skpd_id` yang menunjuk BALIK ke
+    // ipa_skpd — `skpd:skpd_id(nama)` jadi ambigu & PostgREST menolak (PGRST201).
+    sb.from('ipa_skpd').select('skpd_id,klaster,sertakan_turunan,skpd:admin_skpd!ipa_skpd_skpd_id_fkey(nama)').order('skpd_id'),
     sb.from('ipa_parameter').select('kunci,nilai,keterangan').order('kunci'),
   ])
   const bobotAspek = { A: {}, B: {}, C: {}, D: {} } as BobotAspek
@@ -218,7 +221,7 @@ export type AntrianPajak = {
 }
 export async function muatAntrianPajak(sb: SupabaseClient, tahun: number, status: StatusIsian): Promise<AntrianPajak[]> {
   const rows = cek(await sb.from('ipa_pajak_kendaraan')
-    .select('id,tahun,aset_id,skpd_id,tanggal_bayar,bukti_paths,status,created_at,aset:aset_id(nibar,nama_barang,no_polisi,merek_tipe)')
+    .select('id,tahun,aset_id,skpd_id,tanggal_bayar,bukti_paths,status,created_at,aset:aset!ipa_pajak_kendaraan_aset_id_fkey(nibar,nama_barang,no_polisi,merek_tipe)')
     .eq('tahun', tahun).eq('status', status).order('created_at').limit(3000), 'antrean pajak kendaraan') as unknown as (Omit<AntrianPajak, 'aset'> & { aset: AntrianPajak['aset'] | AntrianPajak['aset'][] })[]
   return rows.map(r => ({ ...r, aset: Array.isArray(r.aset) ? r.aset[0] ?? null : r.aset }))
 }
