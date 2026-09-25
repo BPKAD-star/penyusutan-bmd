@@ -36,6 +36,7 @@ import { luasBidangSah, luasEfektif, ringkasDaftarBidang } from '@/lib/luasBidan
 import KelolaBidangPanel from '@/components/gis/KelolaBidangPanel'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import type { GisMarker } from '@/components/gis/GisMap'
+import { IkonTitikAda } from '@/shared/ui/TitikKoordinat'
 
 const GisMap = dynamic(() => import('@/components/gis/GisMap'), {
   ssr: false, loading: () => <div className="absolute inset-0 bg-gray-100 animate-pulse" />,
@@ -330,7 +331,12 @@ export default function GisPage() {
                     lihat catatan di panel kanan. */}
                 <div className="flex items-center gap-3 mt-1 text-gray-500">
                   <span>{formatRupiah2(r.nilai_perolehan)}</span>
-                  {r.latitude == null && <span className="text-gray-300">Blm titik</span>}
+                  {/* Ikon SAMA dgn kolom Lokasi Daftar Barang/Daftar Barang Awal
+                      (permintaan user 2026-09-25) — cuma dipakai utk sisi "sudah
+                      bertitik"; sisi "belum" tetap teks lama, tak diubah. */}
+                  {r.latitude != null
+                    ? <span className="flex items-center gap-1 text-teal-600"><IkonTitikAda />Bertitik</span>
+                    : <span className="text-gray-300">Blm titik</span>}
                 </div>
               </button>
             )

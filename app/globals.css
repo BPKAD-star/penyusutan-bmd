@@ -57,3 +57,12 @@
     background-color: rgb(148 163 184);
   }
 }
+
+/* GIS Tanah — kontrol pilih lapisan peta (Jalan/Satelit) digeser ke kiri-bawah
+   (permintaan user 2026-09-25, semula kanan-atas), disandingkan dgn kotak
+   ringkasan panel kiri (`w-[340px] left-4` di app/dashboard/gis/page.tsx).
+   Diskop ke `.gis-map-container` (className di GisMap.tsx) supaya TIDAK ikut
+   menggeser peta lain yang juga pakai Leaflet (mis. MapPicker, 1 titik). */
+.gis-map-container .leaflet-bottom.leaflet-left {
+  left: 364px; /* lebar panel (340px) + jarak kiri (16px) + jarak antar kotak (8px) */
+}

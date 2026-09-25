@@ -16,6 +16,11 @@ export type Row = {
   // Identitas kendaraan — cuma dipakai kolom Peralatan & Mesin (1.3.2).
   no_polisi: string | null; no_rangka: string | null; no_mesin: string | null; no_bpkb: string | null
   alamat_detail: string | null; wilayah_kode: string | null
+  // Titik koordinat register (2026-09-23, TANAH disederhanakan) — dipakai
+  // indikator kecil di kolom Lokasi (permintaan user 2026-09-25), BUKAN untuk
+  // menghitung Luas (lihat lib/luasBidang.ts, halaman ini sengaja tak lagi
+  // ikut Σ bidang GIS).
+  latitude: number | null; longitude: number | null
   luas: number | null; jenis_hak: string | null
   // Dokumen kepemilikan — dipakai kolom Tanah-like DAN Aset Lain-Lain (1.5.4).
   nomor_dokumen_kepemilikan: string | null

@@ -7527,3 +7527,63 @@ Berkas: `lib/ipa.ts` (mesin murni, dikunci `lib/ipa.test.ts` — termasuk uji
     status ketiga (dari 2: `'diverifikasi'|'ditolak'`); `catatan_verifikator`
     tetap `null` di jalur ini (bukan `'ditolak'`), supaya pop-up Tolak yang
     lama tak ikut tampil di isian yang cuma dibatalkan verifikasinya.
+
+## Indikator titik koordinat: kolom Lokasi & GIS Tanah (2026-09-25, migrasi 20260925_06)
+
+Permintaan user: kolom Lokasi di Daftar Barang & Daftar Barang Awal diberi
+ikon kecil "sudah/belum ada titik koordinat di GIS" sebelum teks alamat, biar
+operator bisa menyisir Tanah yang belum dititik tanpa membuka satu-satu.
+Sebaliknya, daftar register di GIS Tanah diberi ikon yang SAMA saat register
+itu SUDAH bertitik (sebelumnya cuma menandai yang belum, lewat teks "Blm
+titik"). Sekalian, kontrol pilih lapisan peta (Jalan/Satelit) dipindah dari
+kanan-atas ke kiri-bawah, disandingkan dgn kotak ringkasan.
+
+- **Satu komponen untuk ketiganya**: `shared/ui/TitikKoordinat.tsx`
+  (`IkonTitikAda` — pin SVG teal kecil, `IkonTitikTiada` — titik merah,
+  `IkonTitikKoordinat` — pembungkus `ada ? IkonTitikAda : IkonTitikTiada`).
+  Permintaan user eksplisit "icon map yang sama" antar Daftar Barang & GIS —
+  tiga SVG yang disalin sendiri-sendiri akan gampang menyimpang begitu salah
+  satu diubah.
+- **Daftar Barang Awal (`aset_awal_2026`) TAK BUTUH migrasi** — kolom
+  `latitude`/`longitude` sudah ada sejak "TANAH disederhanakan" (2026-09-23,
+  GRANT UPDATE per-kolom migrasi 20260728_01 sudah memuatnya). Tinggal
+  ditambahkan ke `COLS` & `Row` (tipe.ts), lalu dirender di `cellContent`
+  case `'lokasi'`.
+- **Daftar Barang (register HIDUP) BUTUH migrasi** — sejak paginasi pindah ke
+  server (20260814_05..08), layarnya membaca `fn_daftar_barang`, bukan
+  `select` langsung ke `aset`. Kolom yang tak ada di `RETURNS TABLE`-nya
+  mustahil ditampilkan di layar, seberapa pun kodenya disunting (pelajaran
+  20260908_01/20260923_02). `SELECT_COLS` (jalur MENTAH Export Audit) TIDAK
+  butuh migrasi — itu `select` langsung ke `aset`, yang kolomnya sudah ada.
+  ⚠️ **Migrasi 20260925_06 text-surgery, pola SAMA dgn 20260923_02** — anchor
+  di akhir `pengamanan`/`u.pengamanan`/`a.pengamanan` (kolom terakhir yang
+  disisipkan migrasi itu), DROP + CREATE ulang, GRANT & seluruh penjaga
+  (`kodereg`, `fn_aset_teks_cari`, `plan_cache_mode`, `pemanfaatan`/
+  `pengamanan`) diperiksa ulang.
+- ⚠️ **RISIKO LEBIH RENDAH dari migrasi RPC lain di sini, dan itu disengaja
+  dicatat**: kalau migrasi ini belum jalan, `r.latitude`/`r.longitude` di
+  klien cuma `undefined` — `Row` type-nya karena itu `latitude?: number |
+  null` (opsional), dan kode klien memperlakukan `undefined` SAMA dengan
+  `null` (tampil sbg "belum ada titik"). Beda dari migrasi RPC lain yang bisa
+  bikin filter salah atau baris hilang, di sini urutan deploy yang terbalik
+  cuma bikin indikatornya telat muncul — bukan salah data.
+- **GIS Tanah**: kartu register di panel kiri (`app/dashboard/gis/page.tsx`)
+  sudah lama punya `r.latitude` (untuk marker peta) tapi cuma dipakai
+  menandai KETIADAAN ("Blm titik"). Sisi "sudah ada" kini ikut ditandai
+  (`IkonTitikAda` + "Bertitik") — sisi "belum" SENGAJA tetap teks lama, tak
+  diminta berubah.
+- **Kontrol layer peta digeser ke `bottomleft`** (`components/gis/GisMap.tsx`,
+  semula `topright`) + `className="gis-map-container"` di `<MapContainer>`
+  supaya `app/globals.css` bisa menggeser `.leaflet-bottom.leaflet-left` ke
+  KANAN kotak ringkasan panel kiri (`left: 364px` = lebar panel 340px + jarak
+  kiri 16px + jarak antar kotak 8px) TANPA menimpanya.
+  ⚠️ **Diskop ke `.gis-map-container`, BUKAN selector Leaflet global** — repo
+  ini juga punya `MapPicker` (Leaflet 1 titik, dipakai Edit Spesifikasi) yang
+  memakai library Leaflet yang sama; selector global akan ikut menggeser
+  kontrolnya walau `MapPicker` tak punya `LayersControl` sama sekali.
+- **Tak ada precedent `<style jsx>` di repo ini** — CSS overlay Leaflet
+  ditaruh di `app/globals.css` (satu-satunya stylesheet di repo), bukan
+  memperkenalkan pola scoped-CSS baru untuk satu halaman.
+- **Tak ada perubahan skema** (kolom `latitude`/`longitude` sudah lama ada di
+  `aset` & `aset_awal_2026`) — migrasi 20260925_06 murni menambah OUTPUT
+  RPC. 1869 test tetap hijau, 0 error typecheck, 0 lint warning baru.

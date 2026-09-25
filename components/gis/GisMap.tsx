@@ -11,6 +11,11 @@
 // Full-bleed (ngisi 100% parent, BUKAN tinggi tetap px) — dipakai sbg layer
 // dasar halaman GIS yang sekarang full-frame, panel kiri/kanan overlay di
 // atasnya. Zoom control digeser ke bottomright biar gak numpuk panel kiri.
+//
+// LayersControl (Jalan/Satelit) digeser ke bottomleft (permintaan user
+// 2026-09-25, semula topright) — disandingkan dgn kotak ringkasan panel kiri
+// lewat aturan `.gis-map-container` di app/globals.css yang menggeser
+// `.leaflet-bottom.leaflet-left` ke KANAN kotak itu, bukan menimpanya.
 import { useEffect, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, ZoomControl, LayersControl, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -67,8 +72,9 @@ export default function GisMap({ markers, onSelect }: { markers: GisMarker[]; on
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- cuma posisi AWAL; re-center berikutnya via FocusActive
 
   return (
-    <MapContainer center={initialCenter} zoom={markers.length > 0 ? 13 : 11} zoomControl={false} style={{ height: '100%', width: '100%' }}>
-      <LayersControl position="topright">
+    <MapContainer center={initialCenter} zoom={markers.length > 0 ? 13 : 11} zoomControl={false}
+      className="gis-map-container" style={{ height: '100%', width: '100%' }}>
+      <LayersControl position="bottomleft">
         <LayersControl.BaseLayer checked name="Jalan">
           <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         </LayersControl.BaseLayer>

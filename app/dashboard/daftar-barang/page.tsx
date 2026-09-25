@@ -37,6 +37,7 @@ import { useFilterDaftarBarang, type Applied } from './useFilterDaftarBarang'
 import { useReferensiDaftarBarang } from './useReferensiDaftarBarang'
 import { orCari } from '@/lib/cariBarang'
 import { rpcUlangJikaTimeout } from '@/lib/rpcUlang'
+import { IkonTitikKoordinat } from '@/shared/ui/TitikKoordinat'
 
 // Baris per halaman. Sejak paginasi pindah ke server (migrasi 20260814_05..08)
 // angka ini menentukan `p_limit` RPC, bukan besar potongan array di memori —
@@ -56,7 +57,7 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 // dua-duanya mengisi `Row` yang SAMA. Kolom yang cuma ditambahkan di salah satu
 // bikin berkas Audit (untuk BPK) kekurangan kolom yang ada di layar, tanpa satu
 // pun error.
-const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb,pemanfaatan,pengamanan'
+const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb,pemanfaatan,pengamanan,latitude,longitude'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -102,6 +103,11 @@ type Row = {
   // lib/penggunaanTampil.ts.
   pemanfaatan: string | null
   pengamanan: string | null
+  // Titik koordinat register — indikator kecil di kolom Lokasi (2026-09-25,
+  // migrasi 20260925_06 utk RETURNS TABLE fn_daftar_barang). `undefined` kalau
+  // migrasinya belum jalan — diperlakukan sama dgn `null` (belum ada titik).
+  latitude?: number | null
+  longitude?: number | null
 }
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
@@ -984,7 +990,12 @@ export default function DaftarBarangPage() {
       case 'uraian': return uraianMap[r.kode] || '-'
       case 'merek': return r.merek_tipe || '-'
       case 'spesifikasi': return r.spesifikasi_lainnya || '-'
-      case 'lokasi': return r.alamat_detail || '-'
+      case 'lokasi': {
+        // Indikator kecil "sudah/belum ada titik koordinat di GIS" (2026-09-25)
+        // — sama komponen dgn Daftar Barang Awal & daftar GIS Tanah.
+        const adaTitik = r.latitude != null && r.longitude != null
+        return <span className="inline-flex items-center gap-1"><IkonTitikKoordinat ada={adaTitik} />{r.alamat_detail || '-'}</span>
+      }
       case 'komptabel': return r.intra_ekstra || '-'
       case 'tgl': return r.tgl_perolehan || '-'
       case 'nilai': return angka(r.nilai_perolehan)

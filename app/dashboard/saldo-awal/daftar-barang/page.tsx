@@ -63,6 +63,7 @@ import KomptabelRadio from '@/components/KomptabelRadio'
 import EditSpesifikasiModal from '@/components/pengelolaan/EditSpesifikasiModal'
 import { useIsViewer } from '@/components/useIsViewer'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { IkonTitikKoordinat } from '@/shared/ui/TitikKoordinat'
 
 const PAGE_SIZE = 50
 const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
@@ -74,7 +75,7 @@ const COLS = [
   'akumulasi_2025', 'sisa_masa_manfaat_smt', 'nilai_buku_awal', 'masa_manfaat_smt',
   'beban_penyusutan_per_smt', 'foto_paths',
   'merek_tipe', 'spesifikasi_lainnya', 'no_polisi', 'no_rangka', 'no_mesin', 'no_bpkb',
-  'alamat_detail', 'wilayah_kode', 'luas', 'jenis_hak',
+  'alamat_detail', 'wilayah_kode', 'latitude', 'longitude', 'luas', 'jenis_hak',
   'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
   'asal_usul', 'penggunaan_pengamanan',
 ].join(',')
@@ -657,10 +658,13 @@ export default function Page() {
     )
     if (key === 'lokasi') {
       const { alamat, wilayah } = lokasiOf(r)
-      if (!alamat && !wilayah) return <span className="text-gray-300">-</span>
+      const adaTitik = r.latitude != null && r.longitude != null
+      if (!alamat && !wilayah) return (
+        <span className="inline-flex items-center gap-1 text-gray-300"><IkonTitikKoordinat ada={adaTitik} />-</span>
+      )
       return (
         <>
-          <p className="text-xs text-gray-600">{alamat || '-'}</p>
+          <p className="text-xs text-gray-600 flex items-center gap-1"><IkonTitikKoordinat ada={adaTitik} />{alamat || '-'}</p>
           {wilayah && <p className="text-gray-400 text-xs mt-0.5">{wilayah}</p>}
         </>
       )
