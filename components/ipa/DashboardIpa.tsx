@@ -9,20 +9,23 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useAsyncData } from '@/shared/ui/useAsyncData'
 import { useProfilRole } from '@/components/useProfilRole'
+import { useSkpdTree } from '@/components/useSkpdTree'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
-import { ASPEK_URUT, KLASTER_URUT, NAMA_BULAN, type KategoriIndeks, type KodeKlaster } from '@/lib/ipa'
+import { ASPEK_URUT, KLASTER_URUT, NAMA_BULAN, kategoriDariSkor, type KategoriIndeks, type KodeKlaster } from '@/lib/ipa'
 import { hitungUlangOtomatis, muatPenilaian, type DataPenilaian } from '@/lib/ipaData'
 import {
   BULAN_INI, KategoriPill, PesanError, PilihTahunBulan, SkorBar, TAHUN_INI, fmtIndeks, fmtSkor,
 } from '@/components/ipa/ipaUi'
+import { GaugeIndeks } from '@/components/ipa/GaugeIndeks'
 
 const KATEGORI: KategoriIndeks[] = ['Sangat Baik', 'Baik', 'Buruk', 'Sangat Buruk']
 
 export default function DashboardIpa() {
   const supabase = createClient()
-  const { role } = useProfilRole()
+  const { role, skpdId: profilSkpdId } = useProfilRole()
   const isAdmin = role === 'admin'
+  const { rootOf, loaded: skpdTreeLoaded } = useSkpdTree()
   const [tahun, setTahun] = useState(TAHUN_INI)
   const [bulan, setBulan] = useState(BULAN_INI)
   const [klaster, setKlaster] = useState<KodeKlaster | ''>('')
@@ -52,11 +55,38 @@ export default function DashboardIpa() {
 
   const ringkas = useMemo(() => {
     const ber = (data?.hasil ?? []).filter(h => h.skor != null)
-    const rata = ber.length ? ber.reduce((s, h) => s + h.indeks!, 0) / ber.length : null
+    // Skor rata-rata dulu, baru diturunkan ke indeks & kategori (linear —
+    // hasilnya sama dgn merata-ratakan indeks langsung) supaya gauge kabupaten
+    // & tabel selalu sepakat pada kategori yang SAMA untuk angka yang sama.
+    const skorRata = ber.length ? ber.reduce((s, h) => s + h.skor!, 0) / ber.length : null
+    const rata = skorRata == null ? null : 1 + (skorRata / 100) * 3
+    const kategoriRata = skorRata == null ? null : kategoriDariSkor(skorRata)
     const perKat = Object.fromEntries(KATEGORI.map(k => [k, ber.filter(h => h.kategori === k).length])) as Record<KategoriIndeks, number>
     const lengkap = (data?.hasil ?? []).filter(h => h.layakRanking).length
-    return { rata, perKat, lengkap, total: data?.hasil.length ?? 0 }
+    return { rata, kategoriRata, perKat, lengkap, total: data?.hasil.length ?? 0 }
   }, [data])
+
+  // Gauge: admin/pengawas melihat kabupaten; SKPD (pengurus_barang/pembantu)
+  // melihat SKPD-nya SENDIRI — dicari lewat SKPD INDUK (`ipa_skpd` cuma
+  // memuat SKPD level-1, jadi sub-unit dinaikkan dulu lewat `rootOf`).
+  const gauge = useMemo(() => {
+    const lihatKabupaten = role === 'admin' || role === 'pengawas' || profilSkpdId == null
+    if (lihatKabupaten) {
+      return {
+        nilai: ringkas.rata, kategori: ringkas.kategoriRata, label: 'Indeks IPA Kabupaten Kediri',
+        keterangan: `${ringkas.lengkap} dari ${ringkas.total} SKPD lengkap & ikut ranking`,
+      }
+    }
+    if (!skpdTreeLoaded || !data) return { nilai: null, kategori: null, label: 'Memuat…', keterangan: '' }
+    const rootId = rootOf(profilSkpdId)?.id ?? profilSkpdId
+    const h = data.hasil.find(x => x.skpdId === rootId)
+    const label = `Indeks IPA ${namaSkpd.get(rootId) ?? 'SKPD Anda'}`
+    if (!h) return { nilai: null, kategori: null, label, keterangan: 'SKPD ini belum termasuk daftar penilaian IPA.' }
+    const keterangan = h.jumlahBelum > 0
+      ? `${h.jumlahBelum} indikator belum diisi/dihitung`
+      : h.layakRanking ? `Ikut ranking klaster ${h.klaster}` : 'Bobot berlaku di bawah ambang'
+    return { nilai: h.indeks, kategori: h.kategori, label, keterangan }
+  }, [role, profilSkpdId, skpdTreeLoaded, rootOf, data, ringkas, namaSkpd])
 
   async function hitungSemua() {
     if (!data) return
@@ -136,13 +166,12 @@ export default function DashboardIpa() {
       </p>
 
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
-        <div className="card p-4 lg:col-span-2">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Rata-rata Indeks Kabupaten</p>
-          <p className="text-3xl font-bold text-gray-900 mt-1">{fmtIndeks(ringkas.rata)}</p>
-          <p className="text-xs text-gray-500 mt-1">{ringkas.lengkap} dari {ringkas.total} SKPD lengkap & ikut ranking</p>
+        <div className="card p-4 lg:col-span-2 lg:row-span-2 flex flex-col items-center justify-center">
+          <GaugeIndeks nilai={gauge.nilai} kategori={gauge.kategori} label={gauge.label} ukuran={220} />
+          {gauge.keterangan && <p className="text-xs text-gray-500 mt-2 text-center">{gauge.keterangan}</p>}
         </div>
         {KATEGORI.map(k => (
-          <div key={k} className="card p-4">
+          <div key={k} className="card p-4 lg:col-span-2">
             <KategoriPill k={k} />
             <p className="text-2xl font-bold text-gray-900 mt-2">{ringkas.perKat[k] ?? 0}</p>
             <p className="text-xs text-gray-500">SKPD</p>
