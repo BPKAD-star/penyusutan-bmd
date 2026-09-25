@@ -7587,3 +7587,62 @@ kanan-atas ke kiri-bawah, disandingkan dgn kotak ringkasan.
 - **Tak ada perubahan skema** (kolom `latitude`/`longitude` sudah lama ada di
   `aset` & `aset_awal_2026`) — migrasi 20260925_06 murni menambah OUTPUT
   RPC. 1869 test tetap hijau, 0 error typecheck, 0 lint warning baru.
+
+## GIS Tanah: sub-menu sidebar DICABUT — Peta & Daftar Bidang jadi TAB dalam satu halaman (2026-09-26)
+
+Keputusan user, MEMBALIK sub-menu sidebar yang dibuat 2026-09-11 ("GIS Tanah ▸
+Peta ▸ Daftar Bidang"). Alasannya murni sidebar: dua entri top-level dianggap
+terlalu banyak sub-menu untuk satu fitur. Sidebar sekarang **satu baris**
+"GIS Tanah" → `/dashboard/gis`; pemilihan Peta/Daftar Bidang pindah **ke dalam
+halaman itu sendiri**, lewat tab kecil di pojok kiri-atas (persis usul user:
+"di bagian kiri atas, diatas kotak GIS Tanah") — tepat di atas kotak "GIS
+Tanah" untuk tab Peta, di atas judul untuk tab Daftar Bidang.
+
+- **Pembagian tugas TIDAK berubah** — cuma letaknya yang menyatu. Peta
+  (`components/gis/PetaView.tsx`, diekstrak dari `app/dashboard/gis/page.tsx`
+  APA ADANYA) tetap satu-satunya penulis `aset_bidang_tanah`
+  (`KelolaBidangPanel`). Daftar Bidang (`components/gis/DaftarBidangTanah.tsx`)
+  tetap murni lihat+Export, tanpa satu pun jalan tulis.
+- **`app/dashboard/gis/page.tsx` jadi orkestrator tipis**: `useState<'peta'|
+  'daftar-bidang'>`, merender `PetaView` atau `DaftarBidangTanah` sesuai state,
+  keduanya menerima tab-bar yang sama sbg prop (`tabBar`/`tabs`) supaya
+  operator selalu bisa berpindah dari kedua sisi. Ganti tab **BUKAN navigasi
+  Next.js** (bukan dua rute berbeda lagi) — murni `useState`, jadi tak ada
+  remount router & tak ada kedip "Memuat...".
+  ⚠️ `PetaView`/`DaftarBidangTanah` sendiri TETAP remount PENUH tiap tab
+  diganti (React membongkar cabang yang tak dirender, jadi data & filter
+  masing-masing hilang begitu balik ke tab itu) — itu ongkos yang SAMA dgn
+  dulu (waktu keduanya route terpisah, pindah tab = full page nav = remount
+  juga), jadi BUKAN regresi. Kalau kelak dikeluhkan ("kok filter/scroll-nya
+  reset tiap pindah tab"), obatnya menaikkan state (rows/filter) ke
+  orkestrator — belum dikerjakan karena belum diminta.
+- **`DaftarBidangTanah` tak lagi tahu apa pun soal routing.** Dua pintu keluar
+  yang dulu `<Link href="/dashboard/gis">`/`<Link href="/dashboard/gis?cari=…">`
+  sekarang props wajib: `tabs: React.ReactNode` (dirender persis di atas judul)
+  & `onBukaPeta: (cari?: string) => void` (dipanggil oleh kalimat pengantar
+  "buka tab Peta" MAUPUN tombol "Buka →" per baris). Orkestrator yang
+  menerjemahkannya jadi `setCariUntukPeta(cari) + setView('peta')` — satu
+  fungsi, satu makna, tak ada lagi navigasi tersembunyi di komponen anak.
+- **Rute lama `/dashboard/gis/daftar-bidang` DIBIARKAN HIDUP sbg `redirect()`**
+  ke `/dashboard/gis?view=daftar-bidang` (pola SSH/HSPK: rute yang dipindah
+  tak pernah dihapus, cuma dialihkan) — bookmark/riwayat yang terlanjur
+  tersebar tidak mati. Orkestrator membaca `?view=daftar-bidang` SEKALI saat
+  mount (`bacaViewAwal()`) untuk langsung membuka tab yang benar.
+  ⚠️ **`?cari=<kata>` TETAP dibaca juga** (`bacaCariAwal()`) — dipakai
+  `app/dashboard/daftar-barang/page.tsx` & tempat lain yang menautkan langsung
+  ke satu bidang tanah di peta (`lib/gisTanah.ts`); deep-link ini datang lewat
+  navigasi Next.js biasa (`<Link href="/dashboard/gis?cari=…">`), bukan tombol
+  di dalam halaman, jadi tetap harus dibaca dari URL saat mount, terpisah dari
+  jalur `onBukaPeta` yang internal.
+- **`components/Sidebar.tsx`**: node "GIS Tanah" balik jadi `type:'leaf'`
+  (dari `type:'group'`) — `iconFor()` dapat kembali cabang `if (label ===
+  'GIS Tanah') return ICON.gis` yang sempat dicabut sbg "kode mati" 2026-09-11
+  waktu ia jadi grup (groups mengambil ikon dari `node.icon`, leaf top-level
+  dari `iconFor()`). Posisi tak berubah: di bawah Inventarisasi, di atas
+  Kendaraan.
+- **Tak ada migrasi** — murni struktur navigasi & komponen di klien; DB/RPC/
+  ledger tak disentuh. Diverifikasi: tsc 0 error, 1869 test tetap hijau, 0
+  lint warning baru (3 warning pre-existing ikut terbawa apa adanya saat
+  `PetaView`/`DaftarBidangTanah` disunting — `no-floating-promises` &
+  `assertOk` di jalur `lihatSertifikat`/loader, sudah ada sebelum perubahan
+  ini, bukan hasilnya).

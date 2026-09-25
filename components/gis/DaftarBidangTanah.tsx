@@ -2,23 +2,21 @@
 // Daftar Bidang Tanah — daftar SEMUA bidang (aset_bidang_tanah) untuk DILIHAT &
 // DIUNDUH, TANPA kemampuan ubah (permintaan user 2026-09-11: "fungsinya cuman
 // ngelihat daftar bidang aja"). Pengerjaan (tambah/ubah/hapus bidang) TETAP di
-// tab Peta (app/dashboard/gis) — halaman itu satu-satunya penulis
-// aset_bidang_tanah, di sini murni baca.
+// tab Peta (`PetaView`) — komponen itu satu-satunya penulis aset_bidang_tanah,
+// di sini murni baca.
 //
-// Sub-menu GIS Tanah (Peta · Daftar Bidang) — keputusan user 2026-09-11,
-// membatalkan letak awal (Pelaporan → Daftar Bidang Tanah) yang sempat
-// dikerjakan sejam sebelumnya. Alasannya tetap sama dgn preseden KIR
-// (Pembukuan → KIR kerja, Pelaporan → KIR daftar+Export): "tempat mengerjakan"
-// terpisah dari "tempat melihat & mengunduh" — bedanya di sini keduanya
-// dikelompokkan jadi SATU submenu GIS Tanah, bukan dua menu top-level yang
-// jauh terpisah di sidebar.
+// Tab GIS Tanah (Peta · Daftar Bidang) — keputusan user 2026-09-11, dipindah
+// dari SUB-MENU SIDEBAR jadi TAB DI DALAM SATU HALAMAN 2026-09-26 (alasan
+// lengkap di app/dashboard/gis/page.tsx). `tabs` & `onBukaPeta` dioper dari
+// orkestrator itu — komponen ini TAK LAGI tahu apa pun soal routing
+// (`next/link`), murni menerima "render tab-bar ini" & "panggil ini kalau
+// operator mau pindah ke tab Peta".
 //
 // Cakupan (permintaan user, pola `lockToOperator` yg sudah dipakai LaporanKir
 // dkk): pengurus barang → SKPD dia (+ turunannya); admin pemda → se-kabupaten
 // (kosongkan filter). RLS `abt_select`/`aset_select` tetap penjaga akhir; ini
 // murni UX supaya operator non-admin tak melihat SKPD lain.
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -45,7 +43,7 @@ const fmtTgl = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID',
 // unitnya sendiri di teksnya.
 const fmtLuas = (v: number | null) => v == null ? '-' : new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(v)
 
-export default function DaftarBidangTanah() {
+export default function DaftarBidangTanah({ tabs, onBukaPeta }: { tabs: React.ReactNode; onBukaPeta: (cari?: string) => void }) {
   const supabase = createClient()
   const namaSkpd = useNamaSkpd()
   const [skpdId, setSkpdId] = useState<number | null>(null)
@@ -153,12 +151,14 @@ export default function DaftarBidangTanah() {
 
   return (
     <div className="p-6">
+      {tabs}
       <div className="flex items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Daftar Bidang Tanah</h1>
           <p className="text-gray-500 text-sm mt-1">
             Daftar bidang (sertifikat/hamparan) Tanah untuk dilihat & diunduh. Kosongkan SKPD untuk se-kabupaten.
-            {' '}Untuk menambah/mengubah bidang, buka tab <Link href="/dashboard/gis" className="text-teal hover:underline">Peta</Link>.
+            {' '}Untuk menambah/mengubah bidang, buka tab{' '}
+            <button onClick={() => onBukaPeta()} className="text-teal hover:underline font-medium">Peta</button>.
           </p>
         </div>
         <button onClick={handleExport} disabled={exporting || shown.length === 0} className="btn-primary flex-shrink-0">
@@ -240,7 +240,7 @@ export default function DaftarBidangTanah() {
                     {r.sertifikat_path ? <button onClick={() => lihatSertifikat(r.sertifikat_path!)} className="text-teal hover:underline">Lihat</button> : <span className="text-gray-300">-</span>}
                   </td>
                   <td className="table-td text-xs">
-                    <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar || r.namaTanah)}`} className="text-teal hover:underline">Buka →</Link>
+                    <button onClick={() => onBukaPeta(r.nibar || r.namaTanah)} className="text-teal hover:underline">Buka →</button>
                   </td>
                 </tr>
               ))}

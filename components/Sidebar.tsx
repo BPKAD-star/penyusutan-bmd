@@ -147,19 +147,13 @@ const navTree: NavNode[] = [
       { type: 'leaf', href: '/dashboard/inventarisasi/tindak-lanjut', label: 'Tindak Lanjut' },
     ],
   },
-  {
-    // Sub-menu (keputusan user 2026-09-11): "Peta" = satu-satunya penulis
-    // aset_bidang_tanah (KelolaBidangPanel); "Daftar Bidang" = murni
-    // lihat+Export (pola KIR "kerja vs lihat", tapi dikelompokkan jadi SATU
-    // grup di sini, bukan dua entri top-level terpisah — permintaan eksplisit
-    // user, membatalkan letak awal "Pelaporan → Daftar Bidang Tanah").
-    // Posisi (2026-09-23, permintaan user): di bawah Inventarisasi, di atas
-    // Daftar Barang — bukan lagi sesudah Penyusutan.
-    type: 'group', label: 'GIS Tanah', icon: ICON.gis, children: [
-      { type: 'leaf', href: '/dashboard/gis', label: 'Peta' },
-      { type: 'leaf', href: '/dashboard/gis/daftar-bidang', label: 'Daftar Bidang' },
-    ],
-  },
+  // GIS Tanah balik jadi SATU menu (keputusan user 2026-09-26, membatalkan
+  // sub-menu 2026-09-11): "Peta" & "Daftar Bidang" sekarang tab DI DALAM
+  // halaman itu sendiri (lihat app/dashboard/gis/page.tsx) — permintaan
+  // eksplisit user supaya sidebar tak punya banyak sub-menu untuk satu fitur.
+  // Rute lama `/dashboard/gis/daftar-bidang` dibiarkan hidup sbg pengalih.
+  // Posisi tetap (2026-09-23): di bawah Inventarisasi, di atas Kendaraan.
+  { type: 'leaf', href: '/dashboard/gis', label: 'GIS Tanah' },
   { type: 'leaf', href: '/dashboard/kendaraan', label: 'Kendaraan' },
   { type: 'leaf', href: '/dashboard/daftar-barang', label: 'Daftar Barang' },
   { type: 'leaf', href: '/dashboard/penyusutan', label: 'Penyusutan' },
@@ -254,6 +248,9 @@ const iconFor = (label: string): React.ReactNode => {
   if (label === 'Dashboard') return ICON.dashboard
   if (label === 'RKBMD') return ICON.pelaporan
   if (label === 'Inventarisasi') return ICON.daftar
+  // GIS Tanah balik jadi leaf top-level 2026-09-26 (dulu group, icon-nya
+  // otomatis dari `node.icon` — sekarang leaf-top-level ambil dari sini).
+  if (label === 'GIS Tanah') return ICON.gis
   return null
 }
 
