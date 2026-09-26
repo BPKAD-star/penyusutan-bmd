@@ -1,27 +1,39 @@
 'use client'
-// Dashboard IPA lima aspek — ranking seluruh SKPD penilaian per klaster.
+// Dashboard IPA lima aspek — ranking seluruh SKPD penilaian.
 // Angka otomatis dibaca dari snapshot bulanan (`ipa_otomatis`), bukan dihitung
 // ulang tiap halaman dibuka: 60 SKPD × 9 indikator terlalu mahal untuk setiap
 // kunjungan. Admin memperbaruinya lewat "Hitung Ulang"; waktu hitung terakhir
 // selalu ditampilkan supaya angka basi tak terbaca sebagai angka hari ini.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useAsyncData } from '@/shared/ui/useAsyncData'
 import { useProfilRole } from '@/components/useProfilRole'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
-import { ASPEK_URUT, KLASTER_URUT, NAMA_BULAN, type KodeAspek, type KategoriIndeks, type KodeKlaster } from '@/lib/ipa'
+import { ASPEK_URUT, NAMA_BULAN, type KodeAspek, type KategoriIndeks } from '@/lib/ipa'
 import { hitungUlangOtomatis, muatPenilaian, skpdBolehIsi, type DataPenilaian } from '@/lib/ipaData'
 import {
   BULAN_INI, KategoriPill, PesanError, PilihTahunBulan, SkorBar, TAHUN_INI, fmtIndeks, fmtSkor,
 } from '@/components/ipa/ipaUi'
 
 const KATEGORI: KategoriIndeks[] = ['Sangat Baik', 'Baik', 'Buruk', 'Sangat Buruk']
-// 'klaster' = bawaan (peringkat per klaster); 'abjad' = nama SKPD A→Z;
-// kode aspek = skor aspek itu tertinggi dulu — jawaban langsung atas
-// "SKPD mana paling tinggi di aspek X" tanpa perlu menyisir manual.
-type Urutan = 'klaster' | 'abjad' | KodeAspek
+// Ranking Sangat Baik→Sangat Buruk, dipakai buat sortir kolom Kategori —
+// "ascending" di sini artinya urutan performa (terbaik dulu), bukan abjad
+// ("Baik" < "Buruk" < "Sangat Baik" secara alfabet tak berguna di sini).
+const RANK_KATEGORI: Record<KategoriIndeks, number> = { 'Sangat Baik': 0, 'Baik': 1, Buruk: 2, 'Sangat Buruk': 3 }
+
+// Klik header kolom = sortir gaya Excel: klik pertama ascending, klik lagi
+// pada kolom yang sama membalik arah. `null` = urutan bawaan (klaster →
+// peringkat dlm klaster → skor desc → nama), sama seperti sebelum kolom ini
+// bisa diklik.
+type KunciUrut = 'nama' | 'klaster' | 'bobot' | 'skor' | 'indeks' | 'kategori' | KodeAspek
+
+// Label kolom aspek KHUSUS tabel ranking ini — "Akuntabilitas & Tindak
+// Lanjut" kepanjangan utk lebar kolom sesempit ini (permintaan user
+// 2026-09-26). Nama lengkap dari `ipa_aspek.nama` tetap dipakai apa adanya
+// di Capaian SKPD (kartu per-aspek, lebih lega) & Export Excel.
+const LABEL_KOLOM_ASPEK: Partial<Record<KodeAspek, string>> = { AKT: 'Akuntabilitas' }
 
 export default function DashboardIpa() {
   const supabase = createClient()
@@ -37,8 +49,8 @@ export default function DashboardIpa() {
   const [bolehBuka, setBolehBuka] = useState<Set<number> | null>(null)
   const [tahun, setTahun] = useState(TAHUN_INI)
   const [bulan, setBulan] = useState(BULAN_INI)
-  const [klaster, setKlaster] = useState<KodeKlaster | ''>('')
-  const [urutan, setUrutan] = useState<Urutan>('klaster')
+  const [urutKunci, setUrutKunci] = useState<KunciUrut | null>(null)
+  const [urutArah, setUrutArah] = useState<'asc' | 'desc'>('asc')
   const [cari, setCari] = useState('')
   const [muatKe, setMuatKe] = useState(0)
   const [progres, setProgres] = useState<{ selesai: number; total: number; gagal: string[] } | null>(null)
@@ -63,6 +75,7 @@ export default function DashboardIpa() {
 
   const namaSkpd = useMemo(() => new Map((data?.ref.skpd ?? []).map(s => [s.skpd_id, s.nama])), [data])
   const namaAspek = useMemo(() => new Map((data?.ref.aspek ?? []).map(a => [a.kode, a.nama])), [data])
+  const labelAspek = (a: KodeAspek) => LABEL_KOLOM_ASPEK[a] ?? namaAspek.get(a) ?? a
   const bisaBukaSemua = isAdmin || role === 'pengawas'
   const bisaBuka = (skpdId: number) => bisaBukaSemua || (bolehBuka?.has(skpdId) ?? false)
   const terakhirHitung = useMemo(() => {
@@ -70,29 +83,48 @@ export default function DashboardIpa() {
     return t[t.length - 1] ?? null
   }, [data])
 
+  function klikUrut(kunci: KunciUrut) {
+    if (urutKunci === kunci) setUrutArah(a => (a === 'asc' ? 'desc' : 'asc'))
+    else { setUrutKunci(kunci); setUrutArah('asc') }
+  }
+
   const baris = useMemo(() => {
     const q = cari.trim().toLowerCase()
     const daftar = data?.hasil ?? []
-    const skor = (h: (typeof daftar)[number]) => h.aspek.find(x => x.kode === urutan)?.skor ?? null
-    return daftar
-      .filter(h => !klaster || h.klaster === klaster)
-      .filter(h => !q || (namaSkpd.get(h.skpdId) ?? '').toLowerCase().includes(q))
-      .sort((a, b) => {
-        if (urutan === 'abjad') return (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
-        if (urutan !== 'klaster') {
-          const sa = skor(a)
-          const sb = skor(b)
-          if (sa == null && sb == null) return (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
-          if (sa == null) return 1 // N/A selalu di bawah — bukan "nol", cuma tak bisa dinilai
-          if (sb == null) return -1
-          return sb - sa || (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
-        }
-        return a.klaster.localeCompare(b.klaster)
-          || (a.peringkat ?? 9999) - (b.peringkat ?? 9999)
-          || (b.skor ?? -1) - (a.skor ?? -1)
-          || (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
-      })
-  }, [data, klaster, cari, namaSkpd, urutan])
+    const byNama = (a: (typeof daftar)[number], b: (typeof daftar)[number]) =>
+      (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
+    // Nilai mentah kolom yang sedang jadi kunci sortir — null = tak bisa
+    // dinilai (N/A / belum dihitung), SELALU jatuh ke bawah apa pun arahnya
+    // (pola sel kosong Excel), bukan disamakan dgn 0 yg justru berarti "nilai
+    // terendah yg sungguh terukur".
+    const nilai = (h: (typeof daftar)[number], k: KunciUrut): number | string | null => {
+      if (k === 'nama') return namaSkpd.get(h.skpdId) ?? ''
+      if (k === 'klaster') return h.klaster
+      if (k === 'bobot') return h.bobotBerlaku
+      if (k === 'skor') return h.skor
+      if (k === 'indeks') return h.indeks
+      if (k === 'kategori') return h.kategori == null ? null : RANK_KATEGORI[h.kategori]
+      return h.aspek.find(x => x.kode === k)?.skor ?? null
+    }
+    const filtered = daftar.filter(h => !q || (namaSkpd.get(h.skpdId) ?? '').toLowerCase().includes(q))
+    if (urutKunci == null) {
+      // Bawaan (sebelum kolom bisa diklik): klaster → peringkat dlm klaster → skor desc → nama.
+      return filtered.sort((a, b) => a.klaster.localeCompare(b.klaster)
+        || (a.peringkat ?? 9999) - (b.peringkat ?? 9999)
+        || (b.skor ?? -1) - (a.skor ?? -1)
+        || byNama(a, b))
+    }
+    const arah = urutArah === 'asc' ? 1 : -1
+    return filtered.sort((a, b) => {
+      const va = nilai(a, urutKunci)
+      const vb = nilai(b, urutKunci)
+      if (va == null && vb == null) return byNama(a, b)
+      if (va == null) return 1
+      if (vb == null) return -1
+      const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : va - (vb as number)
+      return arah * cmp || byNama(a, b)
+    })
+  }, [data, cari, namaSkpd, urutKunci, urutArah])
 
   const ringkas = useMemo(() => {
     const ber = (data?.hasil ?? []).filter(h => h.skor != null)
@@ -142,13 +174,24 @@ export default function DashboardIpa() {
     exportToExcel(rows, namaBerkasLaporan({ laporan: 'IPA', periode: tahun, skpd: null, akhiran: [`sd ${NAMA_BULAN[bulan - 1]}`] }), 'IPA')
   }
 
+  // Header kolom yang bisa diklik utk sortir — panah ▲/▼ hanya di kolom aktif.
+  function Th({ kunci, children, align, title }: { kunci: KunciUrut; children: ReactNode; align?: 'right'; title?: string }) {
+    const aktif = urutKunci === kunci
+    return (
+      <th className={`table-th cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap ${align === 'right' ? 'text-right' : ''}`}
+        title={title} onClick={() => klikUrut(kunci)}>
+        {children}{aktif ? (urutArah === 'asc' ? ' ▲' : ' ▼') : ''}
+      </th>
+    )
+  }
+
   return (
     <div className="p-6">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Indeks Pengelolaan Aset</h1>
           <p className="text-gray-500 text-sm mt-1">
-            5 aspek · 11 indikator · peringkat per klaster · Indeks 1–4
+            5 aspek · 11 indikator · Indeks 1–4 · klik header kolom utk mengurutkan
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -196,48 +239,28 @@ export default function DashboardIpa() {
 
       <div className="card">
         <div className="p-4 flex flex-wrap items-center gap-2 border-b border-gray-100">
-          <div className="flex gap-1">
-            <button onClick={() => setKlaster('')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${klaster === '' ? 'bg-teal text-white' : 'bg-gray-100 text-gray-600'}`}>Semua</button>
-            {KLASTER_URUT.map(k => (
-              <button key={k} onClick={() => setKlaster(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${klaster === k ? 'bg-teal text-white' : 'bg-gray-100 text-gray-600'}`}>
-                Klaster {k}
-              </button>
-            ))}
-          </div>
-          <label className="text-xs text-gray-500 flex items-center gap-1.5">
-            Urutkan
-            <select className="select-filter" value={urutan} onChange={e => setUrutan(e.target.value as Urutan)}>
-              <option value="klaster">Peringkat per Klaster (bawaan)</option>
-              <option value="abjad">Abjad Nama SKPD (A–Z)</option>
-              <optgroup label="Skor tertinggi per aspek">
-                {ASPEK_URUT.map(a => <option key={a} value={a}>{namaAspek.get(a) ?? a}</option>)}
-              </optgroup>
-            </select>
-          </label>
           <input className="select-filter ml-auto w-64" placeholder="Cari SKPD…" value={cari} onChange={e => setCari(e.target.value)} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="table-th" title={urutan === 'klaster' ? 'Peringkat dalam klaster' : 'Nomor urut tampilan saat ini'}>
-                  {urutan === 'klaster' ? 'Rank' : 'No.'}
-                </th>
-                <th className="table-th">SKPD</th>
-                <th className="table-th">Kl.</th>
-                {ASPEK_URUT.map(a => <th key={a} className="table-th text-right whitespace-nowrap">{namaAspek.get(a) ?? a}</th>)}
-                <th className="table-th text-right" title="Bobot aspek yang benar-benar terhitung">Bobot</th>
-                <th className="table-th">Skor</th>
-                <th className="table-th text-right">Indeks</th>
-                <th className="table-th">Kategori</th>
+                <th className="table-th" title="Peringkat dalam klaster (urutan bawaan)">Rank</th>
+                <Th kunci="nama">SKPD</Th>
+                <Th kunci="klaster">Kl.</Th>
+                {ASPEK_URUT.map(a => <Th key={a} kunci={a} align="right">{labelAspek(a)}</Th>)}
+                <Th kunci="bobot" align="right" title="Bobot aspek yang benar-benar terhitung">Bobot</Th>
+                <Th kunci="skor">Skor</Th>
+                <Th kunci="indeks" align="right">Indeks</Th>
+                <Th kunci="kategori">Kategori</Th>
               </tr>
             </thead>
             <tbody>
               {loading && !data && <tr><td colSpan={12} className="table-td text-center text-gray-400 py-10">Memuat…</td></tr>}
               {data && baris.length === 0 && <tr><td colSpan={12} className="table-td text-center text-gray-400 py-10">Tak ada SKPD yang cocok.</td></tr>}
-              {baris.map((h, i) => (
+              {baris.map(h => (
                 <tr key={h.skpdId} className="border-t border-gray-50 hover:bg-gray-50">
-                  <td className="table-td font-semibold text-gray-900">{urutan === 'klaster' ? (h.peringkat ?? '—') : i + 1}</td>
+                  <td className="table-td font-semibold text-gray-900">{h.peringkat ?? '—'}</td>
                   <td className="table-td">
                     {bisaBuka(h.skpdId)
                       ? (
@@ -255,7 +278,7 @@ export default function DashboardIpa() {
                   </td>
                   <td className="table-td">{h.klaster}</td>
                   {h.aspek.map(a => (
-                    <td key={a.kode} className={`table-td text-right tabular-nums ${a.skor == null ? 'text-gray-300' : ''} ${urutan === a.kode ? 'font-semibold bg-teal/5' : ''}`}>
+                    <td key={a.kode} className={`table-td text-right tabular-nums ${a.skor == null ? 'text-gray-300' : ''} ${urutKunci === a.kode ? 'font-semibold bg-teal/5' : ''}`}>
                       {a.skor == null ? 'N/A' : a.skor.toFixed(1)}
                     </td>
                   ))}
@@ -274,7 +297,7 @@ export default function DashboardIpa() {
       </div>
       <p className="text-xs text-gray-400 mt-3">
         Indeks = 1 + Skor/100 × 3. Sangat Baik ≥ 3,55 · Baik ≥ 3,10 · Buruk ≥ 2,65 · Sangat Buruk &lt; 2,65.
-        Peringkat hanya untuk SKPD yang seluruh indikatornya sudah terisi & bobot berlaku ≥ ambang.
+        Kolom "Rank" tetap peringkat dalam klaster — tak ikut berubah walau tabelnya diurutkan kolom lain.
       </p>
     </div>
   )

@@ -7568,10 +7568,13 @@ TL Inspektorat / Rekon / Pajak) jadi **pop-up per indikator**. `DetailSkpdIpa`
   cuma pop-up 👁 indikator otomatis (pesan error tampil di pop-up); skor,
   jejak, & pop-up isian tetap jalan.
 
-### Dashboard IPA: nama SKPD lain bukan link untuk pengurus SKPD, aspek dieja, urutan tambahan (2026-09-26)
+### Dashboard IPA: nama SKPD lain bukan link, aspek dieja, sortir gaya Excel di header (2026-09-26)
 
-Tiga keluhan user atas tabel ranking `/dashboard/ipa`. **Tak ada migrasi** —
-murni tampilan & sortir di klien, `components/ipa/DashboardIpa.tsx`.
+Empat keluhan user atas tabel ranking `/dashboard/ipa`, putaran KEDUA — putaran
+pertama sempat memakai kontrol `<select>` "Urutkan" & filter tombol Klaster
+tetap ada; user membalikkan dua-duanya begitu melihat hasilnya ("ndak perlu ada
+pilihan gitu ... ilangin aja deh filtering semua, Klaster A-D itu"). **Tak ada
+migrasi** — murni tampilan & sortir di klien, `components/ipa/DashboardIpa.tsx`.
 
 - **Nama SKPD di baris ranking cuma jadi TAUTAN kalau pengguna memang boleh
   membukanya** — dicek lewat `skpdBolehIsi()` yang sama yang dipakai
@@ -7600,23 +7603,40 @@ murni tampilan & sortir di klien, `components/ipa/DashboardIpa.tsx`.
   (`ASPEK_URUT`) tetap dipakai sbg KUNCI iterasi & pencocokan skor — cuma
   LABEL yang diambil dari nama lengkap, supaya kalau nama aspek diubah admin
   (`ipa_aspek`, tabel referensi) labelnya ikut, bukan disalin manual di sini.
-- **Kontrol "Urutkan" baru**, terpisah dari filter Klaster yang sudah ada
-  (dua-duanya bisa dipakai BERSAMAAN — mis. "dalam Klaster B, siapa tertinggi
-  di Ekonomi"): *Peringkat per Klaster* (bawaan, perilaku lama persis) ·
-  *Abjad Nama SKPD (A–Z)* · *Skor tertinggi per aspek* (lima pilihan, satu per
-  aspek) — inilah jawaban langsung atas "SKPD mana paling tinggi di aspek X"
-  tanpa menyisir manual. Kolom skor aspek yang sedang dipakai mengurutkan
-  ditandai (latar teal muda + tebal) supaya jelas aspek mana yang aktif.
-  ⚠️ **SKPD ber-N/A di aspek itu SELALU di bawah**, bukan dianggap 0 — N/A
-  berarti "tak berlaku" (bobotnya dialihkan ke aspek lain), bukan "nilainya
-  nol"; menyamakannya akan menaruh SKPD yang justru TAK DINILAI di puncak
-  daftar seolah ia yang terbaik.
-- **Kolom "Rank" ikut arti sortirnya**: mode Klaster tetap `h.peringkat`
-  (peringkat DI DALAM klaster, dari `beriPeringkat`, tak berubah). Mode Abjad
-  & per-aspek menampilkan nomor urut TAMPILAN (`i+1` dari daftar yang sudah
-  disortir) — memakai `h.peringkat` di situ akan menampilkan angka peringkat
-  klaster yang tak nyambung dgn urutan baris yang terlihat mata.
-- Export Excel **mengikuti `baris` (urutan & filter yang sedang aktif)**,
+  ⚠️ **Kecuali "Akuntabilitas & Tindak Lanjut" → dipangkas "Akuntabilitas"
+  KHUSUS di tabel ini** (`LABEL_KOLOM_ASPEK`, permintaan user: kolomnya
+  kesempitan) — nama lengkapnya tetap dipakai apa adanya di kartu per-aspek
+  Capaian SKPD (lebih lega) & Export Excel. Satu override kecil, bukan
+  mengganti `ipa_aspek.nama` di DB — itu akan ikut memendekkan judul di layar
+  lain yang justru punya ruang.
+- ⚠️ **DIBATALKAN dari putaran pertama, JANGAN dipasang lagi**: kontrol
+  `<select>` "Urutkan" & baris tombol filter "Semua/Klaster A/B/C/D" DICABUT
+  total. User menilai dropdown itu berlebihan ("ndak perlu ada pilihan gitu")
+  begitu melihatnya hidup — yang diminta justru interaksi yang lebih langsung.
+- **Sortirnya sekarang KLIK HEADER KOLOM, gaya spreadsheet** ("kyk di excel
+  gitu bang"): klik pertama pada sebuah kolom → ascending, klik lagi pada
+  kolom yang SAMA → membalik ke descending, panah ▲/▼ nempel di kolom yang
+  sedang aktif. Kolom yang bisa diklik: SKPD (abjad), Kl. (klaster), tiap
+  aspek (skor), Bobot, Skor, Indeks, Kategori — inilah jawaban langsung
+  utk "SKPD mana paling tinggi di aspek X" (klik header aspek itu, klik lagi
+  kalau maunya dari yang TERENDAH) tanpa kontrol terpisah.
+  ⚠️ **Nilai `null` (N/A / belum dihitung) SELALU jatuh ke bawah, TERLEPAS
+  dari arah panahnya** — pola sel kosong Excel, bukan disamakan dgn 0: SKPD
+  yang aspeknya justru TAK DINILAI tak boleh nangkring di puncak (ascending)
+  maupun dasar (descending) seolah ia entah yang terbaik/terburuk.
+  ⚠️ **Kategori diurutkan menurut PERINGKAT PERFORMANYA** (`RANK_KATEGORI`:
+  Sangat Baik→Baik→Buruk→Sangat Buruk), BUKAN alfabet — "Baik" < "Buruk" <
+  "Sangat Baik" secara alfabet tak berguna sama sekali di kolom peringkat.
+  Kebetulan urutan performa ini SAMA dgn urutan ascending yg diharapkan, jadi
+  klik pertama pada "Kategori" sudah langsung menampilkan yang terbaik dulu.
+- **Belum ada kolom yang diklik = urutan BAWAAN, PERSIS sebelum kolom bisa
+  diklik**: klaster → peringkat dlm klaster → skor desc → nama. Kolom "Rank"
+  karena itu SELALU `h.peringkat` (peringkat DI DALAM klaster dari
+  `beriPeringkat`) apa pun kolom yang sedang jadi kunci sortir tampilan —
+  beda dari putaran pertama yang sempat menukarnya jadi nomor urut tampilan;
+  sekarang cukup dikatakan di catatan kaki tabel bahwa "Rank" itu tetap
+  peringkat klaster, tak ikut berubah walau tabelnya diurutkan kolom lain.
+- Export Excel **mengikuti `baris` (urutan & filter Cari yang sedang aktif)**,
   bukan urutan mentah dari `data.hasil` — berkas yang diunduh sama persis
   dengan yang terlihat di layar saat tombol ditekan.
 
