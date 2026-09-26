@@ -11,21 +11,34 @@ import { useAsyncData } from '@/shared/ui/useAsyncData'
 import { useProfilRole } from '@/components/useProfilRole'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
-import { ASPEK_URUT, KLASTER_URUT, NAMA_BULAN, type KategoriIndeks, type KodeKlaster } from '@/lib/ipa'
-import { hitungUlangOtomatis, muatPenilaian, type DataPenilaian } from '@/lib/ipaData'
+import { ASPEK_URUT, KLASTER_URUT, NAMA_BULAN, type KodeAspek, type KategoriIndeks, type KodeKlaster } from '@/lib/ipa'
+import { hitungUlangOtomatis, muatPenilaian, skpdBolehIsi, type DataPenilaian } from '@/lib/ipaData'
 import {
   BULAN_INI, KategoriPill, PesanError, PilihTahunBulan, SkorBar, TAHUN_INI, fmtIndeks, fmtSkor,
 } from '@/components/ipa/ipaUi'
 
 const KATEGORI: KategoriIndeks[] = ['Sangat Baik', 'Baik', 'Buruk', 'Sangat Buruk']
+// 'klaster' = bawaan (peringkat per klaster); 'abjad' = nama SKPD A→Z;
+// kode aspek = skor aspek itu tertinggi dulu — jawaban langsung atas
+// "SKPD mana paling tinggi di aspek X" tanpa perlu menyisir manual.
+type Urutan = 'klaster' | 'abjad' | KodeAspek
 
 export default function DashboardIpa() {
   const supabase = createClient()
   const { role } = useProfilRole()
   const isAdmin = role === 'admin'
+  // Admin & pengawas melihat SEMUA SKPD (pengawas view-only lintas SKPD —
+  // migrasi 20260714_04); pengurus_barang/pengurus_pembantu cuma SKPD dalam
+  // `fn_my_skpd_scope()`-nya sendiri, sama gerbang yg dipakai CapaianSkpdIpa
+  // utk menentukan siapa boleh MEMBUKA rincian. Nama SKPD di luar itu jadi
+  // teks biasa (bukan link) — mengklik cuma akan dilempar balik ke SKPD
+  // sendiri disertai catatan, jadi lebih jujur kalau dari awal tak terlihat
+  // bisa diklik.
+  const [bolehBuka, setBolehBuka] = useState<Set<number> | null>(null)
   const [tahun, setTahun] = useState(TAHUN_INI)
   const [bulan, setBulan] = useState(BULAN_INI)
   const [klaster, setKlaster] = useState<KodeKlaster | ''>('')
+  const [urutan, setUrutan] = useState<Urutan>('klaster')
   const [cari, setCari] = useState('')
   const [muatKe, setMuatKe] = useState(0)
   const [progres, setProgres] = useState<{ selesai: number; total: number; gagal: string[] } | null>(null)
@@ -33,7 +46,25 @@ export default function DashboardIpa() {
 
   useEffect(() => { void run(() => muatPenilaian(supabase, tahun, bulan)) }, [tahun, bulan, muatKe, run]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!data || !role) return
+    let alive = true
+    ;(async () => {
+      try {
+        const list = await skpdBolehIsi(supabase, data.ref.skpd, role)
+        if (alive) setBolehBuka(new Set(list.map(s => s.skpd_id)))
+      } catch {
+        // Fail-closed: gagal membaca cakupan → jangan tampilkan sbg link sama sekali.
+        if (alive) setBolehBuka(new Set())
+      }
+    })()
+    return () => { alive = false }
+  }, [data, role, supabase])
+
   const namaSkpd = useMemo(() => new Map((data?.ref.skpd ?? []).map(s => [s.skpd_id, s.nama])), [data])
+  const namaAspek = useMemo(() => new Map((data?.ref.aspek ?? []).map(a => [a.kode, a.nama])), [data])
+  const bisaBukaSemua = isAdmin || role === 'pengawas'
+  const bisaBuka = (skpdId: number) => bisaBukaSemua || (bolehBuka?.has(skpdId) ?? false)
   const terakhirHitung = useMemo(() => {
     const t = (data?.otomatis ?? []).map(o => o.dihitung_at).sort()
     return t[t.length - 1] ?? null
@@ -41,14 +72,27 @@ export default function DashboardIpa() {
 
   const baris = useMemo(() => {
     const q = cari.trim().toLowerCase()
-    return (data?.hasil ?? [])
+    const daftar = data?.hasil ?? []
+    const skor = (h: (typeof daftar)[number]) => h.aspek.find(x => x.kode === urutan)?.skor ?? null
+    return daftar
       .filter(h => !klaster || h.klaster === klaster)
       .filter(h => !q || (namaSkpd.get(h.skpdId) ?? '').toLowerCase().includes(q))
-      .sort((a, b) => a.klaster.localeCompare(b.klaster)
-        || (a.peringkat ?? 9999) - (b.peringkat ?? 9999)
-        || (b.skor ?? -1) - (a.skor ?? -1)
-        || (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? ''))
-  }, [data, klaster, cari, namaSkpd])
+      .sort((a, b) => {
+        if (urutan === 'abjad') return (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
+        if (urutan !== 'klaster') {
+          const sa = skor(a)
+          const sb = skor(b)
+          if (sa == null && sb == null) return (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
+          if (sa == null) return 1 // N/A selalu di bawah — bukan "nol", cuma tak bisa dinilai
+          if (sb == null) return -1
+          return sb - sa || (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
+        }
+        return a.klaster.localeCompare(b.klaster)
+          || (a.peringkat ?? 9999) - (b.peringkat ?? 9999)
+          || (b.skor ?? -1) - (a.skor ?? -1)
+          || (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
+      })
+  }, [data, klaster, cari, namaSkpd, urutan])
 
   const ringkas = useMemo(() => {
     const ber = (data?.hasil ?? []).filter(h => h.skor != null)
@@ -160,16 +204,28 @@ export default function DashboardIpa() {
               </button>
             ))}
           </div>
+          <label className="text-xs text-gray-500 flex items-center gap-1.5">
+            Urutkan
+            <select className="select-filter" value={urutan} onChange={e => setUrutan(e.target.value as Urutan)}>
+              <option value="klaster">Peringkat per Klaster (bawaan)</option>
+              <option value="abjad">Abjad Nama SKPD (A–Z)</option>
+              <optgroup label="Skor tertinggi per aspek">
+                {ASPEK_URUT.map(a => <option key={a} value={a}>{namaAspek.get(a) ?? a}</option>)}
+              </optgroup>
+            </select>
+          </label>
           <input className="select-filter ml-auto w-64" placeholder="Cari SKPD…" value={cari} onChange={e => setCari(e.target.value)} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="table-th">Rank</th>
+                <th className="table-th" title={urutan === 'klaster' ? 'Peringkat dalam klaster' : 'Nomor urut tampilan saat ini'}>
+                  {urutan === 'klaster' ? 'Rank' : 'No.'}
+                </th>
                 <th className="table-th">SKPD</th>
                 <th className="table-th">Kl.</th>
-                {ASPEK_URUT.map(a => <th key={a} className="table-th text-right">{a}</th>)}
+                {ASPEK_URUT.map(a => <th key={a} className="table-th text-right whitespace-nowrap">{namaAspek.get(a) ?? a}</th>)}
                 <th className="table-th text-right" title="Bobot aspek yang benar-benar terhitung">Bobot</th>
                 <th className="table-th">Skor</th>
                 <th className="table-th text-right">Indeks</th>
@@ -179,19 +235,27 @@ export default function DashboardIpa() {
             <tbody>
               {loading && !data && <tr><td colSpan={12} className="table-td text-center text-gray-400 py-10">Memuat…</td></tr>}
               {data && baris.length === 0 && <tr><td colSpan={12} className="table-td text-center text-gray-400 py-10">Tak ada SKPD yang cocok.</td></tr>}
-              {baris.map(h => (
+              {baris.map((h, i) => (
                 <tr key={h.skpdId} className="border-t border-gray-50 hover:bg-gray-50">
-                  <td className="table-td font-semibold text-gray-900">{h.peringkat ?? '—'}</td>
+                  <td className="table-td font-semibold text-gray-900">{urutan === 'klaster' ? (h.peringkat ?? '—') : i + 1}</td>
                   <td className="table-td">
-                    <Link href={`/dashboard/ipa/capaian?skpd=${h.skpdId}&tahun=${tahun}&bulan=${bulan}`} className="text-teal hover:underline font-medium">
-                      {namaSkpd.get(h.skpdId)}
-                    </Link>
+                    {bisaBuka(h.skpdId)
+                      ? (
+                        <Link href={`/dashboard/ipa/capaian?skpd=${h.skpdId}&tahun=${tahun}&bulan=${bulan}`} className="text-teal hover:underline font-medium">
+                          {namaSkpd.get(h.skpdId)}
+                        </Link>
+                        )
+                      : (
+                        <span className="font-medium text-gray-700" title="Rincian SKPD lain hanya bisa dibuka Pengelola Barang & pengawas">
+                          {namaSkpd.get(h.skpdId)}
+                        </span>
+                        )}
                     {h.jumlahBelum > 0 && <p className="text-xs text-amber-600">{h.jumlahBelum} indikator belum diisi/dihitung</p>}
                     {h.jumlahBelum === 0 && !h.layakRanking && h.skor != null && <p className="text-xs text-amber-600">Bobot berlaku di bawah ambang</p>}
                   </td>
                   <td className="table-td">{h.klaster}</td>
                   {h.aspek.map(a => (
-                    <td key={a.kode} className={`table-td text-right tabular-nums ${a.skor == null ? 'text-gray-300' : ''}`}>
+                    <td key={a.kode} className={`table-td text-right tabular-nums ${a.skor == null ? 'text-gray-300' : ''} ${urutan === a.kode ? 'font-semibold bg-teal/5' : ''}`}>
                       {a.skor == null ? 'N/A' : a.skor.toFixed(1)}
                     </td>
                   ))}

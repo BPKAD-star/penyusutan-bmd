@@ -7568,6 +7568,58 @@ TL Inspektorat / Rekon / Pajak) jadi **pop-up per indikator**. `DetailSkpdIpa`
   cuma pop-up 👁 indikator otomatis (pesan error tampil di pop-up); skor,
   jejak, & pop-up isian tetap jalan.
 
+### Dashboard IPA: nama SKPD lain bukan link untuk pengurus SKPD, aspek dieja, urutan tambahan (2026-09-26)
+
+Tiga keluhan user atas tabel ranking `/dashboard/ipa`. **Tak ada migrasi** —
+murni tampilan & sortir di klien, `components/ipa/DashboardIpa.tsx`.
+
+- **Nama SKPD di baris ranking cuma jadi TAUTAN kalau pengguna memang boleh
+  membukanya** — dicek lewat `skpdBolehIsi()` yang sama yang dipakai
+  `CapaianSkpdIpa.tsx` memutuskan SKPD mana yang boleh dipilih di pemilihnya.
+  Admin & pengawas → semua baris tetap link (keduanya memang boleh membuka
+  SKPD mana pun). Pengurus Barang/Pembantu → HANYA baris SKPD-nya sendiri yang
+  link; SKPD lain jadi teks biasa ber-`title` menjelaskan sebabnya. Sebelum
+  ini SEMUA nama tampil sbg link teal bergaris bawah, tapi mengklik nama SKPD
+  lain diam-diam dilempar balik ke SKPD sendiri (`CapaianSkpdIpa` sudah punya
+  fallback ini sejak awal) — tautan yang tak benar-benar menuju ke sana lebih
+  menyesatkan daripada teks polos yang jujur soal batasnya.
+  ⚠️ **Pendapat, bukan aturan yang ditegakkan kode**: pengurus SKPD SEBAIKNYA
+  tetap TIDAK bisa membuka capaian SKPD lain. Alasannya sama dengan kenapa
+  angka kabupaten sengaja tak dihitung untuk mereka (`muatIndeksDashboard`,
+  lib/ipaData.ts) — RLS `ipa_isian`/`ipa_rekon_pelaksanaan`/
+  `ipa_pajak_kendaraan` cuma menampakkan isian SKPD sendiri, jadi kalaupun
+  layarnya dibuka, indikator isian SKPD lain akan tampil "Belum" walau
+  sebenarnya sudah diisi & diverifikasi — bukan privasi datanya yang jadi
+  masalah (ranking & skor akhir sudah terbuka untuk semua di tabel ini), tapi
+  RINCIANNYA akan SALAH BACA kalau ditampilkan lewat mata SKPD lain. Kalau
+  suatu saat memang diminta dibuka, itu perlu jalur baca terpisah (mis. RPC
+  read-only lintas SKPD), bukan sekadar melonggarkan `skpdBolehIsi`.
+- **Header kolom aspek dieja penuh** ("Integritas", "Kepatuhan", dst., dari
+  `ipa_aspek.nama` lewat `data.ref.aspek`), bukan lagi kode singkat
+  `ASPEK_URUT` ("INT"/"KEP"/"AKT"/"LEG"/"EKO") apa adanya. Kode kolomnya
+  (`ASPEK_URUT`) tetap dipakai sbg KUNCI iterasi & pencocokan skor — cuma
+  LABEL yang diambil dari nama lengkap, supaya kalau nama aspek diubah admin
+  (`ipa_aspek`, tabel referensi) labelnya ikut, bukan disalin manual di sini.
+- **Kontrol "Urutkan" baru**, terpisah dari filter Klaster yang sudah ada
+  (dua-duanya bisa dipakai BERSAMAAN — mis. "dalam Klaster B, siapa tertinggi
+  di Ekonomi"): *Peringkat per Klaster* (bawaan, perilaku lama persis) ·
+  *Abjad Nama SKPD (A–Z)* · *Skor tertinggi per aspek* (lima pilihan, satu per
+  aspek) — inilah jawaban langsung atas "SKPD mana paling tinggi di aspek X"
+  tanpa menyisir manual. Kolom skor aspek yang sedang dipakai mengurutkan
+  ditandai (latar teal muda + tebal) supaya jelas aspek mana yang aktif.
+  ⚠️ **SKPD ber-N/A di aspek itu SELALU di bawah**, bukan dianggap 0 — N/A
+  berarti "tak berlaku" (bobotnya dialihkan ke aspek lain), bukan "nilainya
+  nol"; menyamakannya akan menaruh SKPD yang justru TAK DINILAI di puncak
+  daftar seolah ia yang terbaik.
+- **Kolom "Rank" ikut arti sortirnya**: mode Klaster tetap `h.peringkat`
+  (peringkat DI DALAM klaster, dari `beriPeringkat`, tak berubah). Mode Abjad
+  & per-aspek menampilkan nomor urut TAMPILAN (`i+1` dari daftar yang sudah
+  disortir) — memakai `h.peringkat` di situ akan menampilkan angka peringkat
+  klaster yang tak nyambung dgn urutan baris yang terlihat mata.
+- Export Excel **mengikuti `baris` (urutan & filter yang sedang aktif)**,
+  bukan urutan mentah dari `data.hasil` — berkas yang diunduh sama persis
+  dengan yang terlihat di layar saat tombol ditekan.
+
 ## Indikator titik koordinat: kolom Lokasi & GIS Tanah (2026-09-25, migrasi 20260925_06)
 
 Permintaan user: kolom Lokasi di Daftar Barang & Daftar Barang Awal diberi
