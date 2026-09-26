@@ -7746,3 +7746,49 @@ aturan double-write & 🔒 pengecekan kuncinya identik.
 - **Tak ada migrasi lagi.** Diverifikasi: tsc 0 error, 1869 test tetap hijau,
   0 lint warning baru (satu warning pre-existing yang sama, `no-floating-
   promises` pada IIFE loader, tak berubah dari sebelumnya).
+
+### "Cuma ngeblur sidebar/topbar" — modal konfirmasi tertimpa peta (2026-09-27)
+
+User mengklik "🗑 Hapus" & melaporkan: layar cuma menggelap di sidebar/topbar,
+tak ada kotak konfirmasi yang kelihatan sama sekali.
+
+- **Bukan gagal terbuka — dialognya ADA, cuma tersembunyi DI BAWAH peta.**
+  Sebabnya skala z-index yang bentrok: panel kiri/kanan `PetaView` dipasang
+  `z-[1000]` (memang perlu — Leaflet punya layer internal sampai z-index 700:
+  `tilePane`/`markerPane`/`popupPane`, jadi panel di atasnya wajib lebih
+  tinggi dari itu). Sementara **seluruh modal aplikasi** (`KonfirmasiModal`,
+  `BroadcastPopup`, popup foto di `FotoBarang.tsx`) satu skala di `z-50`/
+  `z-[60]` — jauh di bawah 1000. `KonfirmasiProvider` dipasang SEKALI di
+  `DashboardChrome` sbg **SIBLING** `<main>{children}</main>`, BUKAN portal ke
+  `document.body` (`{children}` dan `<KonfirmasiModal>` sama-sama anak
+  langsung `<Ctx.Provider>`) — jadi modalnya ikut dibandingkan di stacking
+  context ROOT dokumen. Tanpa penyekat, `z-[1000]` GIS **bocor** ke context
+  itu & mengalahkan `z-[60]` modal: backdrop `fixed inset-0`-nya tetap
+  menggelapkan seisi layar (termasuk sidebar/topbar yang z-index-nya rendah),
+  tapi kotak dialognya sendiri — sama-sama `z-[60]` — tercetak DI BAWAH panel
+  GIS yang `z-[1000]`, jadi tak kelihatan.
+- **Obatnya `isolate` (CSS `isolation: isolate`)** di div pembungkus terluar
+  `PetaView` (`<div className="relative h-full w-full overflow-hidden
+  isolate">`). Ini membuat div itu SELALU membentuk stacking context baru
+  (beda dari sekadar `position:relative`, yang cuma membentuk context KALAU
+  disertai z-index) — jadi `z-[1000]` di dalamnya tetap menang atas peta
+  Leaflet SECARA LOKAL, tapi tak pernah bocor ke luar div ini. Dari sudut
+  pandang `<main>` (& modal yang sejajar dengannya), seluruh isi PetaView
+  jadi satu blok normal ber-z-index efektif "auto" — modal `z-[60]` menang
+  telak.
+  ⚠️ **Bukan diperbaiki dengan menurunkan `z-[1000]` atau menaikkan angka
+  modal** — dua-duanya salah arah: `z-[1000]` GIS tak boleh turun di bawah
+  700 (kalah dari Leaflet lagi), dan skala modal (`z-50`/`z-[60]`) dipakai
+  SELURUH aplikasi (KonfirmasiModal/BroadcastPopup/FotoBarang) — menaikkannya
+  cuma untuk kasus ini akan menyimpang dari skala bersama tanpa menutup akar
+  masalahnya (halaman lain yang kelak butuh z-index tinggi bisa mengalami
+  bug yang sama persis).
+- **`KelolaBidangPanel` (form tambah bidang) TIDAK terdampak** — diverifikasi
+  tak punya `fixed inset-0`/modal sama sekali, formnya inline DI DALAM panel
+  kanan yang sama, jadi `isolate` tak mengubah tampilannya.
+- **Pelajaran umum untuk halaman lain yang butuh z-index tinggi (di atas
+  Leaflet, atau library pihak ketiga lain yang punya skala z-index sendiri):
+  BUNGKUS dgn `isolate` di titik masuknya**, jangan biarkan angkanya bocor ke
+  context root & bentrok dgn skala modal aplikasi (`z-50`/`z-[60]`).
+- **Tak ada migrasi.** Murni satu kelas CSS. Diverifikasi: tsc 0 error, 1869
+  test tetap hijau, 0 lint warning baru.

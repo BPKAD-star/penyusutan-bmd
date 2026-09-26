@@ -410,7 +410,22 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   }, [filtered, bidangByAset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
+    // `isolate` (CSS `isolation: isolate`) — WAJIB, bukan hiasan. Panel kiri/
+    // kanan di bawah pakai `z-[1000]` supaya selalu di atas layer internal
+    // Leaflet (tilePane/markerPane/popupPane, sampai z-index 700) — tapi tanpa
+    // `isolate`, angka itu BOCOR ke stacking context ROOT & mengalahkan modal
+    // konfirmasi aplikasi (`KonfirmasiModal`, cuma z-[60], dipasang sbg SIBLING
+    // `<main>` di DashboardChrome — lihat shared/ui/konfirmasi.tsx). Gejalanya
+    // persis yang dilaporkan user 2026-09-27: klik "Hapus Titik" → backdrop
+    // modal menggelapkan sidebar/topbar (mereka z-index rendah, tertimpa
+    // normal), tapi kotak dialognya sendiri malah tercetak DI BAWAH panel GIS
+    // — jadi kelihatan seperti "cuma ngeblur", padahal dialognya ada, cuma
+    // tersembunyi. `isolate` mengunci z-[1000] itu supaya cuma berlaku LOKAL
+    // (menang atas peta, kalah dari apa pun di luar div ini) — tanpa perlu
+    // menurunkan angkanya (yang tetap harus lebih besar dari 700 milik
+    // Leaflet) atau menaikkan angka modal (yang harus tetap satu skala dgn
+    // seluruh modal lain di aplikasi, z-50/z-[60]).
+    <div className="relative h-full w-full overflow-hidden isolate">
       <div className="absolute inset-0">
         {loading ? (
           <div className="h-full w-full bg-gray-100 animate-pulse flex items-center justify-center text-sm text-gray-400">Memuat peta...</div>
