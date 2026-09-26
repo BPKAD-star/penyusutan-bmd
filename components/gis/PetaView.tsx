@@ -257,6 +257,18 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
 
   const selected = rows.find(r => r.id === selectedId) || null
   const ringkasSel = ringkasDaftarBidang(selected ? bidangByAset[selected.id] || [] : [])
+  // Ada TITIK apa pun yang tampil di peta utk tanah ini SEKARANG — register
+  // ATAU cadangan bidang (lihat markers useMemo & catatan "TANAH
+  // disederhanakan"). Dipakai menampilkan tombol "🗑 Hapus" — permintaan
+  // user 2026-09-27: register-nya BISA saja sudah kosong (tak pernah
+  // dititik) padahal pin masih muncul dari titik LAMA yang tersimpan di
+  // bidang; kalau tombolnya digerbangi `selected.latitude != null` saja,
+  // kasus paling umum justru tak kebagian tombol sama sekali. `applyTitik`
+  // sendiri sudah benar menangani ini (selalu membersihkan bidang saat
+  // menghapus) — yang kurang cuma syarat TAMPILnya.
+  const adaTitikTampil = !!(selected && (
+    selected.latitude != null || (bidangByAset[selected.id] || []).some(b => b.latitude != null || b.longitude != null)
+  ))
 
   function batalPick() {
     setPickMode(false); setDraftPoint(null)
@@ -632,15 +644,25 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
                   <button onClick={batalPick} className="text-xs text-gray-500 hover:underline">Batal</button>
                 </div>
               ) : (
-                <div className="flex gap-2">
-                  <button onClick={() => { setPickMode(true); setDraftPoint(null); setTitikMsg('') }}
-                    className="btn-secondary text-xs flex-1">
-                    {selected.latitude != null ? '✎ Ubah Titik Koordinat' : '📍 Set Titik Koordinat'}
-                  </button>
-                  {selected.latitude != null && (
-                    <button onClick={hapusTitik} className="text-xs text-rose-600 hover:underline px-2 flex-shrink-0">
-                      🗑 Hapus
+                <div className="space-y-1">
+                  <div className="flex gap-2">
+                    <button onClick={() => { setPickMode(true); setDraftPoint(null); setTitikMsg('') }}
+                      className="btn-secondary text-xs flex-1">
+                      {selected.latitude != null ? '✎ Ubah Titik Koordinat' : '📍 Set Titik Koordinat'}
                     </button>
+                    {adaTitikTampil && (
+                      <button onClick={hapusTitik} className="text-xs text-rose-600 hover:underline px-2 flex-shrink-0">
+                        🗑 Hapus
+                      </button>
+                    )}
+                  </div>
+                  {/* Register kosong tapi "🗑 Hapus" tetap tampil (permintaan
+                      user 2026-09-27) — cuma bisa berarti pin di peta datang
+                      dari cadangan bidang, jangan biarkan tanpa keterangan:
+                      operator bisa bingung kenapa "Set" & "Hapus" tampil
+                      berbarengan. */}
+                  {selected.latitude == null && adaTitikTampil && (
+                    <p className="text-[10px] text-amber-600">⚠ Titik yang tampil di peta berasal dari data bidang LAMA, bukan register.</p>
                   )}
                 </div>
               )}

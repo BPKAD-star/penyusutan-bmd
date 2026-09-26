@@ -7844,3 +7844,35 @@ marker-nya masih nangkring di peta**, bahkan di lokasi yang sama sekali salah
 - **Tak ada migrasi** — murni UPDATE tambahan ke tabel yang sudah ada, GRANT-
   nya sudah lama dipakai `KelolaBidangPanel`. Diverifikasi: tsc 0 error, 1869
   test tetap hijau, 0 lint warning baru.
+
+### "Tombol Hapus-nya sudah ngga ada" — untuk tanah yang REGISTER-nya belum pernah dititik (2026-09-27)
+
+Lanjutan langsung dari perbaikan di atas. User menemukan kasus yang JUSTRU
+lebih umum: tanah yang register-nya BELUM PERNAH dititik sama sekali (tombol
+sudah berbunyi "📍 Set Titik Koordinat", bukan "✎ Ubah") — tapi peta TETAP
+menampilkan pin (dari cadangan bidang, kasus persis yang baru dijelaskan di
+atas) — dan tombol **"🗑 Hapus" TIDAK MUNCUL** untuk kasus ini, sehingga tak
+ada jalan membersihkannya dari UI.
+
+- **Sebabnya gerbang tombolnya salah sasaran.** `applyTitik(null)` sendiri
+  SUDAH BENAR sejak perbaikan sebelumnya (selalu membersihkan
+  `aset_bidang_tanah` saat menghapus, apa pun keadaan register) — yang
+  KURANG cuma SYARAT TAMPIL tombolnya, yang masih `selected.latitude !=
+  null` (menyaring semata dari REGISTER). Padahal justru kasus yang paling
+  sering muncul justru REGISTER kosong TAPI ada pin dari bidang — dan di
+  situ tombolnya malah hilang.
+- **Obatnya `adaTitikTampil`** — boolean baru: ada titik REGISTER **atau**
+  ada bidang aset itu yang masih bertitik. Tombol "🗑 Hapus" digerbangi
+  ini, bukan lagi `selected.latitude != null` semata.
+- **Konsekuensi tampilan yang disengaja dikatakan, bukan didiamkan**: begitu
+  register kosong tapi bidang masih bertitik, layar menampilkan "📍 Set
+  Titik Koordinat" DAN "🗑 Hapus" berdampingan — kombinasi yang sekilas
+  kontradiktif (kalau "belum ada", kenapa ada "Hapus"?). Ditambah keterangan
+  amber di bawahnya: "⚠ Titik yang tampil di peta berasal dari data bidang
+  LAMA, bukan register." — supaya operator paham DUA tombol itu menyasar DUA
+  hal berbeda (Set = tulis titik baru ke register; Hapus = bersihkan pin
+  yang SEDANG tampil, dari sumber mana pun ia berasal).
+- **Tak ada migrasi.** Murni gerbang tampilan; `applyTitik`/`hapusTitik`
+  (logika tulisnya) tak disentuh sama sekali — sudah benar sejak perbaikan
+  sebelumnya. Diverifikasi: tsc 0 error, 1869 test tetap hijau, 0 lint
+  warning baru.
