@@ -283,6 +283,38 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
     if (eAset) throw new Error(`Gagal ${nilai ? 'menyimpan' : 'menghapus'} titik: ${eAset.message}`)
     if (!dAset || dAset.length === 0) throw new Error('Titik ditolak database — barang ini di luar wewenang SKPD-mu.')
 
+    // (1b) HAPUS SAJA: bersihkan juga titik LAMA milik BIDANG tanah ini
+    // (`aset_bidang_tanah.latitude/longitude`). Ketahuan dari laporan user
+    // 2026-09-27: sesudah Hapus, register kosong tapi PIN LAMA MASIH MUNCUL
+    // di peta (kadang di lokasi ngawur) — sebabnya `markers` (di bawah)
+    // sengaja JATUH KE TITIK BIDANG sbg CADANGAN begitu register-nya kosong
+    // (keputusan "TANAH disederhanakan" 2026-09-23, dibuat utk tanah yang
+    // MEMANG belum pernah dititik di register). Kalau operator baru saja
+    // menekan Hapus, maksudnya jelas "jangan tampilkan titik apa pun utk
+    // tanah ini" — membiarkan cadangan lama (yang sering justru DATA USANG,
+    // kolom itu sudah dicabut dari form bidang sejak 2026-09-23) menghidupkan
+    // lagi pin yang baru saja dihapus adalah kebalikan dari maksud tombolnya.
+    // TIDAK digerbangi status 🔒 apa pun — bidang bukan bagian dari pasangan
+    // aset/aset_awal_2026 yang dikunci, ia tabel GIS sendiri (`abt_update`,
+    // policy `authenticated` biasa, sama yg dipakai KelolaBidangPanel).
+    let pesanBidang = ''
+    if (!nilai) {
+      const punyaTitikLama = (bidangByAset[selected.id] || []).some(b => b.latitude != null || b.longitude != null)
+      if (punyaTitikLama) {
+        const { data: dBidang, error: eBidang } = await supabase.from('aset_bidang_tanah')
+          .update({ latitude: null, longitude: null }).eq('aset_id', selected.id).select('id')
+        if (eBidang) {
+          pesanBidang = `Titik lama pada data bidang GAGAL ikut dihapus (${eBidang.message}) — kalau masih muncul di peta, itu sebabnya.`
+        } else {
+          pesanBidang = `Titik lama pada ${dBidang?.length || 0} bidang ikut dihapus.`
+          setBidangByAset(prev => ({
+            ...prev,
+            [selected.id]: (prev[selected.id] || []).map(b => ({ ...b, latitude: null, longitude: null })),
+          }))
+        }
+      }
+    }
+
     // (2) BASELINE `aset_awal_2026` — cuma kalau NIBAR-nya BELUM 🔒 terkunci.
     // Baris hadir di `fn_aset_awal_2026_terkunci_batch` = terkunci (lihat
     // migrasi 20260918_01: WHERE ... AND (empat kondisi kunci)); tak ada
@@ -311,7 +343,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
     }
 
     setRows(prev => prev.map(r => (r.id === selected.id ? { ...r, latitude: patch.latitude, longitude: patch.longitude } : r)))
-    return `Titik koordinat live ${aksi}. ${pesanBaseline}`
+    return [`Titik koordinat live ${aksi}.`, pesanBidang, pesanBaseline].filter(Boolean).join(' ')
   }
 
   async function simpanTitik() {
@@ -336,7 +368,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
       const hasil = await konfirmasi({
         nada: 'merah',
         judul: `Hapus titik koordinat "${selected.nama_barang || selected.nibar || 'tanah ini'}"?`,
-        isi: 'Titik di register LIVE akan dihapus. Baseline (Daftar Barang Awal) ikut dihapus HANYA kalau belum 🔒 terkunci — kalau barangnya sudah bergerak, baseline dibiarkan apa adanya.',
+        isi: 'Titik di register LIVE akan dihapus, berikut titik LAMA yang tersimpan di data bidang (kalau ada — supaya tak muncul lagi sbg cadangan di peta). Baseline (Daftar Barang Awal) ikut dihapus HANYA kalau belum 🔒 terkunci — kalau barangnya sudah bergerak, baseline dibiarkan apa adanya.',
         labelYa: 'Hapus Titik',
         kerjakan: async () => { setTitikMsg(await applyTitik(null)) },
       })

@@ -7792,3 +7792,55 @@ tak ada kotak konfirmasi yang kelihatan sama sekali.
   context root & bentrok dgn skala modal aplikasi (`z-50`/`z-[60]`).
 - **Tak ada migrasi.** Murni satu kelas CSS. Diverifikasi: tsc 0 error, 1869
   test tetap hijau, 0 lint warning baru.
+
+### "Titik masih muncul di laut sesudah Hapus" — cadangan bidang tak ikut dibersihkan (2026-09-27)
+
+Sesudah `isolate` di atas dijalankan & Hapus Titik akhirnya berhasil dipakai:
+user menghapus titik "Tanah Jalan Mastrip", panel kanan sudah kosong
+("📍 Set Titik Koordinat" muncul lagi, tanda register bersih) — **tapi
+marker-nya masih nangkring di peta**, bahkan di lokasi yang sama sekali salah
+(lepas pantai Afrika, dekat São Tomé).
+
+- **Bukan bug penghapusan — itu CADANGAN yang memang disengaja, ketiban data
+  usang.** `markers` (useMemo di `PetaView.tsx`) sengaja JATUH KE TITIK
+  BIDANG (`aset_bidang_tanah.latitude/longitude`) begitu titik REGISTER
+  kosong — aturan ini dari "TANAH disederhanakan" (2026-09-23): "titik lama
+  milik bidang tetap dipakai sbg CADANGAN untuk tanah yang registernya belum
+  bertitik ... tanpa cadangan itu, tanah yang cuma bertitik di bidangnya
+  lenyap dari peta tanpa satu pun tanda." Aturan itu benar untuk tanah yang
+  MEMANG BELUM PERNAH dititik di register (bidang-nya satu-satunya sumber).
+  Tapi **Hapus Titik yang BARU dipakai membuat kondisinya sama persis**
+  (register kosong) — sehingga cadangan yang sama ikut aktif, dan kalau
+  cadangan itu KEBETULAN data usang/salah (kolom titik koordinat sudah
+  dicabut dari FORM bidang sejak 2026-09-23, tapi baris LAMA yang sudah
+  terlanjur berisi nilai itu tak pernah dibersihkan), pin salah itu HIDUP
+  LAGI tepat sesudah operator menekan Hapus — kebalikan persis dari maksud
+  tombolnya.
+- **Obatnya: Hapus Titik SEKARANG JUGA membersihkan `aset_bidang_tanah.
+  latitude/longitude`** untuk SEMUA bidang aset itu (bagian baru `(1b)` di
+  `applyTitik`), bukan cuma `aset`/`aset_awal_2026`. Dipicu HANYA saat
+  `nilai === null` (menghapus) — Simpan/Ubah tak perlu menyentuhnya sama
+  sekali, karena begitu register punya titik, `markers` `continue` sebelum
+  sempat melihat bidang sama sekali (cadangan itu memang tak pernah dibaca).
+  ⚠️ **TIDAK digerbangi status 🔒** — beda dari baseline `aset_awal_2026`:
+  `aset_bidang_tanah` bukan bagian dari pasangan yang dikunci "TANAH
+  disederhanakan", ia tabel GIS independen dgn policy `abt_update` biasa
+  (`authenticated`, sama yang dipakai `KelolaBidangPanel`), jadi tak perlu
+  RPC pengecekan kunci apa pun untuk menulisnya.
+  ⚠️ **Hanya dijalankan kalau memang ADA bidang bertitik** (dicek dulu dari
+  `bidangByAset` yang sudah dimuat) — supaya Hapus Titik untuk tanah yang
+  bidangnya memang tak pernah bertitik tak menembak query UPDATE percuma.
+  Pesan hasilnya menyebut berapa bidang ikut dibersihkan (atau kalau gagal,
+  bilang jelas "kalau masih muncul di peta, itu sebabnya" — supaya operator
+  yang lihat pin masih nongol tahu ke mana harus curiga, bukan menyimpulkan
+  fiturnya rusak).
+  ⚠️ **Pop-up konfirmasi diperbarui menyebut ini eksplisit** — operator perlu
+  tahu SEBELUM menekan Hapus bahwa titik bidang lama ikut tersapu, bukan
+  cuma titik register.
+- **Kompatibel mundur**: tanah yang registernya BELUM PERNAH dititik sama
+  sekali (belum pernah pakai Set/Hapus di sini) tetap mendapat cadangan
+  bidangnya seperti biasa — jalur ini cuma aktif SESUDAH operator benar²
+  menekan tombol Hapus.
+- **Tak ada migrasi** — murni UPDATE tambahan ke tabel yang sudah ada, GRANT-
+  nya sudah lama dipakai `KelolaBidangPanel`. Diverifikasi: tsc 0 error, 1869
+  test tetap hijau, 0 lint warning baru.
