@@ -7636,9 +7636,19 @@ migrasi** — murni tampilan & sortir di klien, `components/ipa/DashboardIpa.tsx
   beda dari putaran pertama yang sempat menukarnya jadi nomor urut tampilan;
   sekarang cukup dikatakan di catatan kaki tabel bahwa "Rank" itu tetap
   peringkat klaster, tak ikut berubah walau tabelnya diurutkan kolom lain.
-- Export Excel **mengikuti `baris` (urutan & filter Cari yang sedang aktif)**,
+- Export Excel **mengikuti `baris` (urutan yang sedang aktif)**,
   bukan urutan mentah dari `data.hasil` — berkas yang diunduh sama persis
   dengan yang terlihat di layar saat tombol ditekan.
+- ⚠️ **Kotak "Cari SKPD…" DICABUT juga** (putaran ketiga, hari yang sama) —
+  60 baris muat sekali pandang tanpa filter apa pun, & begitu kolom SKPD bisa
+  disortir abjad lewat headernya sendiri, kotak cari jadi kontrol kedua untuk
+  masalah yang sama (pelajaran yg sama dgn kontrol "Urutkan" yang dicabut di
+  atas). Toolbar `border-b` yang tadinya menaungi kotak itu ikut dibuang —
+  tanpa isi, ia cuma jadi bilah kosong di atas tabel.
+  ⚠️ **KONSEKUENSI: `baris` yang kosong sekarang HANYA berarti "belum ada SKPD
+  penilaian sama sekali"** (`ipa_skpd` kosong), bukan lagi "tak ada yang cocok
+  dgn kata kunci" — pesannya diubah jadi "Belum ada SKPD penilaian." supaya
+  tak menyesatkan seolah masih ada filter yang menyaring apa pun.
 
 ## Indikator titik koordinat: kolom Lokasi & GIS Tanah (2026-09-25, migrasi 20260925_06)
 

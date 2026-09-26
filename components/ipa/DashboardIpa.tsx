@@ -51,7 +51,6 @@ export default function DashboardIpa() {
   const [bulan, setBulan] = useState(BULAN_INI)
   const [urutKunci, setUrutKunci] = useState<KunciUrut | null>(null)
   const [urutArah, setUrutArah] = useState<'asc' | 'desc'>('asc')
-  const [cari, setCari] = useState('')
   const [muatKe, setMuatKe] = useState(0)
   const [progres, setProgres] = useState<{ selesai: number; total: number; gagal: string[] } | null>(null)
   const { data, loading, error, run } = useAsyncData<DataPenilaian>()
@@ -89,7 +88,6 @@ export default function DashboardIpa() {
   }
 
   const baris = useMemo(() => {
-    const q = cari.trim().toLowerCase()
     const daftar = data?.hasil ?? []
     const byNama = (a: (typeof daftar)[number], b: (typeof daftar)[number]) =>
       (namaSkpd.get(a.skpdId) ?? '').localeCompare(namaSkpd.get(b.skpdId) ?? '')
@@ -106,16 +104,15 @@ export default function DashboardIpa() {
       if (k === 'kategori') return h.kategori == null ? null : RANK_KATEGORI[h.kategori]
       return h.aspek.find(x => x.kode === k)?.skor ?? null
     }
-    const filtered = daftar.filter(h => !q || (namaSkpd.get(h.skpdId) ?? '').toLowerCase().includes(q))
     if (urutKunci == null) {
       // Bawaan (sebelum kolom bisa diklik): klaster → peringkat dlm klaster → skor desc → nama.
-      return filtered.sort((a, b) => a.klaster.localeCompare(b.klaster)
+      return [...daftar].sort((a, b) => a.klaster.localeCompare(b.klaster)
         || (a.peringkat ?? 9999) - (b.peringkat ?? 9999)
         || (b.skor ?? -1) - (a.skor ?? -1)
         || byNama(a, b))
     }
     const arah = urutArah === 'asc' ? 1 : -1
-    return filtered.sort((a, b) => {
+    return [...daftar].sort((a, b) => {
       const va = nilai(a, urutKunci)
       const vb = nilai(b, urutKunci)
       if (va == null && vb == null) return byNama(a, b)
@@ -124,7 +121,7 @@ export default function DashboardIpa() {
       const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : va - (vb as number)
       return arah * cmp || byNama(a, b)
     })
-  }, [data, cari, namaSkpd, urutKunci, urutArah])
+  }, [data, namaSkpd, urutKunci, urutArah])
 
   const ringkas = useMemo(() => {
     const ber = (data?.hasil ?? []).filter(h => h.skor != null)
@@ -238,9 +235,6 @@ export default function DashboardIpa() {
       </div>
 
       <div className="card">
-        <div className="p-4 flex flex-wrap items-center gap-2 border-b border-gray-100">
-          <input className="select-filter ml-auto w-64" placeholder="Cari SKPD…" value={cari} onChange={e => setCari(e.target.value)} />
-        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
@@ -257,7 +251,7 @@ export default function DashboardIpa() {
             </thead>
             <tbody>
               {loading && !data && <tr><td colSpan={12} className="table-td text-center text-gray-400 py-10">Memuat…</td></tr>}
-              {data && baris.length === 0 && <tr><td colSpan={12} className="table-td text-center text-gray-400 py-10">Tak ada SKPD yang cocok.</td></tr>}
+              {data && baris.length === 0 && <tr><td colSpan={12} className="table-td text-center text-gray-400 py-10">Belum ada SKPD penilaian.</td></tr>}
               {baris.map(h => (
                 <tr key={h.skpdId} className="border-t border-gray-50 hover:bg-gray-50">
                   <td className="table-td font-semibold text-gray-900">{h.peringkat ?? '—'}</td>
