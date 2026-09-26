@@ -7650,6 +7650,56 @@ migrasi** — murni tampilan & sortir di klien, `components/ipa/DashboardIpa.tsx
   dgn kata kunci" — pesannya diubah jadi "Belum ada SKPD penilaian." supaya
   tak menyesatkan seolah masih ada filter yang menyaring apa pun.
 
+## IPA — KDP wajib Merek/Tipe ↔ Luas ditukar (2026-09-26, migrasi 20260926_02)
+
+Ditemukan lewat percakapan langsung, bukan gejala di layar: user menyandingkan
+tabel "field per jenis aset" bikinannya dgn skor Integritas yang jalan, minta
+ditinjau. Dibaca dari `lib/asetFields.ts` (bukan ditebak dari tabelnya) —
+`KDP_KONSTRUKSI_FIELDS` (form Pekerjaan Konstruksi, tempat barang KDP
+sungguhan dibuat) = `TEMPLATE_TANAH` minus dokumen kepemilikan: **punya Luas,
+TAK PERNAH punya Merek/Tipe**. Sementara `INT_KELENGKAPAN` (`fn_ipa_hitung_
+otomatis`) mewajibkan sebaliknya untuk golongan 1.3.6: `g.merek` memuat
+`'1.3.6'` (mewajibkan Merek/Tipe), `g.luas` TIDAK (tak pernah menagih Luas).
+Akibatnya **barang KDP mustahil mencapai 100% Kelengkapan Data** — dihukum
+karena kolom yang memang tak pernah muncul di form-nya — sementara kolom yang
+justru diminta form itu tak pernah dihitung.
+
+- **Obatnya tukar keanggotaan golongan 1.3.6**: keluar dari `g.merek`, masuk
+  ke `g.luas`. Golongan LAIN (Tanah/PM/Gedung/JIJ/ATL/ATB/Aset Lain-Lain)
+  tidak disentuh — swap ini KHUSUS 1.3.6.
+- **Text-surgery atas definisi HIDUP** (pola 20260914_03/20260925_05), BUKAN
+  menyalin ulang dari berkas migrasi sumbernya — dan itu bukan kehati-hatian
+  kosong: `20260925_03_ipa_lima_aspek.sql` di repo **sudah terbukti BASI**
+  begitu 20260925_05 mem-patch `fn_ipa_hitung_otomatis` lewat text-surgery
+  (aset idle `1.5.4.01.01.02.%` → daftar IN eksplisit) — menyalin ulang dari
+  file itu apa adanya akan MENGEMBALIKAN patch itu ke bentuk lama tanpa satu
+  pun error. `pg_get_functiondef` membawa `SET work_mem` & seluruh patch
+  sebelumnya apa adanya, jadi hanya itu yang aman dijadikan sumber.
+- **Dua fungsi diubah BERSAMAAN** — `fn_ipa_hitung_otomatis` (skor) &
+  `fn_ipa_rincian` (daftar per-barang di pop-up 👁, 20260926_01) — predikat
+  `g.merek`/`g.luas`/`g.kend`-nya sengaja "kembar" sejak awal.
+  ⚠️ Guard di migrasinya memeriksa pola LAMA & BARU muncul TEPAT sesuai
+  harapan (1 kali sebelum, 0 sesudah, plus `work_mem` tetap terpasang) di
+  KEDUA fungsi — kalau salah satu sudah sempat diubah manual di luar jalur
+  migrasi ini, migrasinya GAGAL KERAS, bukan diam-diam menyimpang.
+- **`ipa_indikator.keterangan` untuk `INT_KELENGKAPAN` ikut diperbarui** —
+  teks lama bilang "luas (tanah/gedung/jalan)" & tak menyebut golongan mana
+  yang wajib Merek/Tipe; keterangan ini tampil apa adanya di Capaian SKPD di
+  bawah nama indikator, jadi teks yang basi ikut menyesatkan pembaca.
+- ⚠️ **Keterbatasan yang DIKETAHUI, sengaja BELUM ditutup**: barang bekas
+  kendaraan yang sudah direklas ke Aset Lain-Lain (1.5.4) — yang menurut
+  migrasi 20260908_01 memang bisa punya No. Polisi/Rangka/Mesin/BPKB terisi
+  — tak pernah ditagih field itu oleh `g.kend` (`kode LIKE '1.3.2.02.01.%'`,
+  yang mustahil cocok begitu kodenya sudah `1.5.4...`). Belum ada cara murah
+  membedakan "1.5.4 barang biasa" dari "1.5.4 bekas kendaraan" tanpa menyisir
+  riwayat `aset_kode_register` — dibiarkan dulu sampai diminta.
+- **Sesudah migrasi jalan: admin tekan "Hitung Ulang Otomatis" di Dashboard
+  IPA** supaya snapshot bulan berjalan memakai definisi baru — snapshot lama
+  tetap memakai definisi lama sampai dihitung ulang (pola yang sama dgn
+  20260925_05, bukan bug).
+- **Tanda tangan kedua fungsi TAK BERUBAH** (RETURNS TABLE sama persis) →
+  boleh dijalankan kapan saja, tidak ada deploy-ordering.
+
 ## Indikator titik koordinat: kolom Lokasi & GIS Tanah (2026-09-25, migrasi 20260925_06)
 
 Permintaan user: kolom Lokasi di Daftar Barang & Daftar Barang Awal diberi
