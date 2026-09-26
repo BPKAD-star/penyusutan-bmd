@@ -183,7 +183,7 @@ export default function DashboardIpa() {
                 <tr key={h.skpdId} className="border-t border-gray-50 hover:bg-gray-50">
                   <td className="table-td font-semibold text-gray-900">{h.peringkat ?? '—'}</td>
                   <td className="table-td">
-                    <Link href={`/dashboard/ipa/skpd/${h.skpdId}?tahun=${tahun}&bulan=${bulan}`} className="text-teal hover:underline font-medium">
+                    <Link href={`/dashboard/ipa/capaian?skpd=${h.skpdId}&tahun=${tahun}&bulan=${bulan}`} className="text-teal hover:underline font-medium">
                       {namaSkpd.get(h.skpdId)}
                     </Link>
                     {h.jumlahBelum > 0 && <p className="text-xs text-amber-600">{h.jumlahBelum} indikator belum diisi/dihitung</p>}

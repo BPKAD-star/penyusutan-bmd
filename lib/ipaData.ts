@@ -119,6 +119,37 @@ export async function hitungUlangOtomatis(sb: SupabaseClient, tahun: number, skp
   if (error) throw new Error(`gagal menghitung IPA SKPD ${skpdId}: ${error.message}`)
 }
 
+// ── Rincian indikator otomatis (tombol 👁, migrasi 20260926_01) ─────────────
+/** `ok` = terpenuhi · `kurang` = perlu ditindaklanjuti · `info` = keterangan (tak dinilai). */
+export type KeadaanRincian = 'ok' | 'kurang' | 'info'
+export type BarisRincian = {
+  keadaan: KeadaanRincian
+  judul: string
+  sub: string | null
+  ket: string | null
+  nilai: number | null
+  nibar: string | null
+}
+/** Batas baris yang ditarik; kalau hasilnya persis sebanyak ini, layar wajib bilang terpotong. */
+export const BATAS_RINCIAN = 2000
+
+/**
+ * Daftar barang/dokumen di balik SATU indikator otomatis — dihitung HIDUP dari
+ * register (bukan dari snapshot), jadi bisa berbeda sedikit dari angka skor
+ * kalau datanya berubah sesudah snapshot terakhir. Indikator isian → [].
+ */
+export async function muatRincian(sb: SupabaseClient, tahun: number, skpdId: number, indikator: string): Promise<BarisRincian[]> {
+  const { data, error } = await sb.rpc('fn_ipa_rincian', {
+    p_tahun: tahun, p_skpd_id: skpdId, p_indikator: indikator, p_limit: BATAS_RINCIAN,
+  })
+  if (error) throw new Error(`gagal memuat rincian indikator: ${error.message}`)
+  type Raw = { o_keadaan: KeadaanRincian; o_judul: string; o_sub: string | null; o_ket: string | null; o_nilai: number | string | null; o_ref: string | null }
+  return ((data as Raw[] | null) ?? []).map(r => ({
+    keadaan: r.o_keadaan, judul: r.o_judul, sub: r.o_sub, ket: r.o_ket,
+    nilai: r.o_nilai == null ? null : Number(r.o_nilai), nibar: r.o_ref,
+  }))
+}
+
 // ── Isian SKPD (TL BPK / TL Inspektorat) ────────────────────────────────────
 export type Isian = BarisIsian & {
   id: string
@@ -363,6 +394,6 @@ export async function muatIndeksDashboard(sb: SupabaseClient, tahun: number, bul
     nilai: h.indeks, kategori: h.kategori, judul: nama,
     keterangan: h.jumlahBelum > 0 ? `${h.jumlahBelum} indikator belum diisi/dihitung`
       : h.layakRanking ? `Peringkat ${h.peringkat} di klaster ${h.klaster}` : 'Bobot berlaku di bawah ambang',
-    href: `/dashboard/ipa/skpd/${rootId}?tahun=${tahun}&bulan=${bulan}`,
+    href: `/dashboard/ipa/capaian?skpd=${rootId}&tahun=${tahun}&bulan=${bulan}`,
   }
 }

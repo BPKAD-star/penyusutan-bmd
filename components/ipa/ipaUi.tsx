@@ -1,5 +1,6 @@
 'use client'
 // Potongan tampilan yang dipakai bersama layar-layar IPA.
+import { useEffect, type ReactNode } from 'react'
 import { WARNA_KATEGORI, NAMA_BULAN, type KategoriIndeks, type NilaiIndikator } from '@/lib/ipa'
 import type { StatusIsian } from '@/lib/ipa'
 import { bukaDokumen, namaFile } from '@/components/pengelolaan/DokumenBastField'
@@ -87,6 +88,36 @@ export function PilihTahunBulan({ tahun, bulan, onTahun, onBulan }: {
           </select>
         </label>
       )}
+    </div>
+  )
+}
+
+/**
+ * Pop-up lebar untuk isian & rincian indikator. z-50 — SENGAJA di bawah
+ * `KonfirmasiModal` (z-[60]) supaya pop-up konfirmasi/gagal dari dalam form
+ * tetap tampil di atasnya. Tutup lewat ×, Esc, atau klik latar.
+ */
+export function ModalIpa({ judul, sub, onTutup, children }: {
+  judul: string; sub?: string; onTutup: () => void; children: ReactNode
+}) {
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => { if (e.key === 'Escape') onTutup() }
+    window.addEventListener('keydown', f)
+    return () => window.removeEventListener('keydown', f)
+  }, [onTutup])
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto" onClick={onTutup}>
+      <div role="dialog" aria-modal="true" className="bg-gray-50 rounded-xl shadow-xl w-full max-w-6xl my-6"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-start gap-4 p-4 border-b border-gray-200 bg-white rounded-t-xl">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-gray-900">{judul}</p>
+            {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
+          </div>
+          <button type="button" onClick={onTutup} className="text-gray-400 hover:text-gray-700 text-xl leading-none" aria-label="Tutup">×</button>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
     </div>
   )
 }

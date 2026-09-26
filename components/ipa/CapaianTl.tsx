@@ -1,6 +1,9 @@
 'use client'
 // Isian TL Temuan BPK / Inspektorat. Tiap capaian = baris baru bertanggal;
 // yang dihitung adalah capaian TERVERIFIKASI terakhir s.d. bulan yang dilihat.
+// Dibuka sbg pop-up dari halaman Capaian SKPD. `readOnly` (SKPD di luar
+// cakupan pengguna / akun pengawas) → form & tombol Hapus disembunyikan,
+// riwayat tetap tampil. Bukan penjaga — RLS `ipa_isian` yang menolak tulis.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAsyncData } from '@/shared/ui/useAsyncData'
@@ -12,7 +15,7 @@ import { BuktiLinks, PesanError, StatusPill, fmtAngka } from '@/components/ipa/i
 
 const HARI_INI = new Date().toISOString().slice(0, 10)
 
-export default function CapaianTl({ indikator, skpdId, tahun }: { indikator: Indikator; skpdId: number; tahun: number }) {
+export default function CapaianTl({ indikator, skpdId, tahun, readOnly = false }: { indikator: Indikator; skpdId: number; tahun: number; readOnly?: boolean }) {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
   const { data, error, run } = useAsyncData<Isian[]>()
@@ -78,7 +81,7 @@ export default function CapaianTl({ indikator, skpdId, tahun }: { indikator: Ind
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
-      <div className="card p-5 xl:col-span-2 space-y-3">
+      {!readOnly && <div className="card p-5 xl:col-span-2 space-y-3">
         <p className="font-semibold text-gray-900">Tambah capaian {indikator.nama}</p>
         <p className="text-xs text-gray-500">
           Isi posisi TERKINI setiap kali ada kemajuan tindak lanjut. Skor memakai capaian terverifikasi terakhir.
@@ -112,9 +115,9 @@ export default function CapaianTl({ indikator, skpdId, tahun }: { indikator: Ind
         <button className="btn-primary w-full disabled:opacity-60" onClick={simpan} disabled={saving || uploading}>
           {saving ? 'Menyimpan…' : 'Ajukan capaian'}
         </button>
-      </div>
+      </div>}
 
-      <div className="card xl:col-span-3">
+      <div className={`card ${readOnly ? 'xl:col-span-5' : 'xl:col-span-3'}`}>
         <div className="p-4 border-b border-gray-100 font-semibold text-gray-900">Riwayat capaian {tahun}</div>
         <PesanError pesan={error} />
         <table className="w-full text-sm">
@@ -138,7 +141,7 @@ export default function CapaianTl({ indikator, skpdId, tahun }: { indikator: Ind
                   {i.status === 'ditolak' && i.catatan_verifikator && <p className="text-xs text-red-600 mt-1">{i.catatan_verifikator}</p>}
                 </td>
                 <td className="table-td text-right">
-                  {i.status !== 'diverifikasi' && <button className="text-xs text-red-600 hover:underline" onClick={() => hapus(i)}>Hapus</button>}
+                  {!readOnly && i.status !== 'diverifikasi' && <button className="text-xs text-red-600 hover:underline" onClick={() => hapus(i)}>Hapus</button>}
                 </td>
               </tr>
             ))}

@@ -7528,6 +7528,46 @@ Berkas: `lib/ipa.ts` (mesin murni, dikunci `lib/ipa.test.ts` — termasuk uji
     tetap `null` di jalur ini (bukan `'ditolak'`), supaya pop-up Tolak yang
     lama tak ikut tampil di isian yang cuma dibatalkan verifikasinya.
 
+### Capaian SKPD = halaman per SKPD, isian jadi pop-up (2026-09-26, migrasi 20260926_01)
+
+Keputusan user: rincian IPA per SKPD (`/ipa/skpd/[id]`, dibuka dari Dashboard
+IPA tapi tak punya menu sendiri — "kenapa di dalam dashboard ada page lagi")
+DILEBUR ke menu **Capaian SKPD** (`/dashboard/ipa/capaian?skpd=&tahun=&bulan=`,
+`components/ipa/CapaianSkpdIpa.tsx`). Isi menu Capaian SKPD lama (tab TL BPK /
+TL Inspektorat / Rekon / Pajak) jadi **pop-up per indikator**. `DetailSkpdIpa`
+& `CapaianIpa` DIHAPUS; `/ipa/skpd/[id]` tinggal `redirect()`.
+
+- **Aksi di baris indikator, bukan di kanan atas.** Sumber `isian`/`rekon`/
+  `pajak` → "Isi Capaian" (pop-up form `CapaianTl`/`CapaianRekon`/
+  `CapaianPajak`); di luar cakupan / pengawas → "👁 Lihat" dgn prop
+  `readOnly` (form & Hapus disembunyikan — bukan penjaga, RLS tetap penjaga).
+  Sumber `otomatis` → "👁 Lihat" = daftar barang/dokumen di baliknya, dipisah
+  **Perlu ditindaklanjuti / Sudah terpenuhi / Semua** (`RincianIndikator.tsx`).
+- **`fn_ipa_rincian(tahun, skpd, indikator, limit)`** (SECURITY DEFINER,
+  wewenang sama dgn `fn_ipa_hitung_otomatis`) — ⚠️ **predikatnya KEMBAR dgn
+  `fn_ipa_hitung_otomatis`** (+ kode aset idle 20260925_05). Ubah satu, ubah
+  dua-duanya; kueri pemeriksaan silang ada di kaki berkas migrasinya. Daftarnya
+  dihitung HIDUP sementara skor dari SNAPSHOT — beda kecil itu dikatakan di
+  pop-up, jangan disembunyikan. Pagu 2.000 baris (diurut yang "kurang" dulu) &
+  terpotongnya disebut di layar. Keluaran berawalan `o_` (nama kolom
+  RETURNS TABLE jadi variabel plpgsql; `status`/`keterangan` bentrok).
+  EKO_IDLE: `o_nilai` per aset bisa dobel kalau satu perjanjian memuat banyak
+  aset idle — untuk ditelusuri, bukan dijumlah.
+- **Tombol "↻ Hitung ulang" DICABUT; diganti penyegar otomatis**: saat halaman
+  dibuka oleh pengguna yang berwenang atas SKPD itu, tahun berjalan, snapshot
+  bulan ini belum ada / belum dihitung HARI INI → `fn_ipa_simpan_otomatis`
+  dipanggil sekali (per sesi per SKPD×tahun). Gagal = strip amber, halaman
+  tetap jalan dgn snapshot lama. Waktu hitung terakhir selalu tampil. Admin
+  tetap punya "Hitung Ulang Otomatis" seluruh SKPD di Dashboard IPA.
+- **Pemilih SKPD**: admin & pengawas → semua SKPD penilaian; pengurus SKPD →
+  hanya SKPD-nya. ⚠️ Bukan cuma kesopanan: RLS `ipa_isian` menyembunyikan isian
+  SKPD lain, jadi skor SKPD lain di layar pengurus akan SALAH (TL tampil
+  "belum"), & `fn_ipa_rincian` menolaknya. Tautan ranking Dashboard IPA ke SKPD
+  lain → jatuh ke SKPD sendiri + strip amber yang mengatakannya.
+- ⚠️ **Deploy-ordering: migrasi 20260926_01 dulu.** Kalau terbalik yang mati
+  cuma pop-up 👁 indikator otomatis (pesan error tampil di pop-up); skor,
+  jejak, & pop-up isian tetap jalan.
+
 ## Indikator titik koordinat: kolom Lokasi & GIS Tanah (2026-09-25, migrasi 20260925_06)
 
 Permintaan user: kolom Lokasi di Daftar Barang & Daftar Barang Awal diberi

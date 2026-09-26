@@ -3,6 +3,7 @@
 // Penyebutnya SELURUH kendaraan bermotor aktif SKPD (register, kode
 // 1.3.2.02.01.*), jadi kendaraan tanpa bukti otomatis menurunkan skor —
 // bukan dianggap "belum diisi".
+// `readOnly` → tanggal & bukti tampil apa adanya tanpa tombol unggah.
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAsyncData } from '@/shared/ui/useAsyncData'
@@ -12,7 +13,7 @@ import { BuktiLinks, PesanError, StatusPill } from '@/components/ipa/ipaUi'
 
 const HARI_INI = new Date().toISOString().slice(0, 10)
 
-export default function CapaianPajak({ skpd, tahun }: { skpd: SkpdIpa; tahun: number }) {
+export default function CapaianPajak({ skpd, tahun, readOnly = false }: { skpd: SkpdIpa; tahun: number; readOnly?: boolean }) {
   const supabase = createClient()
   const { data, error, loading, run } = useAsyncData<KendaraanPajak[]>()
   const [muatKe, setMuatKe] = useState(0)
@@ -48,7 +49,7 @@ export default function CapaianPajak({ skpd, tahun }: { skpd: SkpdIpa; tahun: nu
             {loading && !data && <tr><td colSpan={4} className="table-td text-center text-gray-400 py-8">Memuat…</td></tr>}
             {data && rows.length === 0 && <tr><td colSpan={4} className="table-td text-center text-gray-400 py-8">Tak ada kendaraan bermotor.</td></tr>}
             {rows.map(k => (
-              <BarisKendaraan key={k.aset_id} k={k} tahun={tahun} skpdId={skpd.skpd_id} onBerubah={() => setMuatKe(x => x + 1)} />
+              <BarisKendaraan key={k.aset_id} k={k} tahun={tahun} skpdId={skpd.skpd_id} readOnly={readOnly} onBerubah={() => setMuatKe(x => x + 1)} />
             ))}
           </tbody>
         </table>
@@ -57,7 +58,7 @@ export default function CapaianPajak({ skpd, tahun }: { skpd: SkpdIpa; tahun: nu
   )
 }
 
-function BarisKendaraan({ k, tahun, skpdId, onBerubah }: { k: KendaraanPajak; tahun: number; skpdId: number; onBerubah: () => void }) {
+function BarisKendaraan({ k, tahun, skpdId, readOnly, onBerubah }: { k: KendaraanPajak; tahun: number; skpdId: number; readOnly: boolean; onBerubah: () => void }) {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
   const [tanggal, setTanggal] = useState(k.tanggal_bayar ?? '')
@@ -93,8 +94,10 @@ function BarisKendaraan({ k, tahun, skpdId, onBerubah }: { k: KendaraanPajak; ta
         {k.status === 'ditolak' && k.catatan_verifikator && <p className="text-xs text-red-600 mt-1">{k.catatan_verifikator}</p>}
       </td>
       <td className="table-td">
-        {beku ? (
-          <div className="text-xs text-gray-600">Dibayar {k.tanggal_bayar} <BuktiLinks paths={k.bukti_paths} /></div>
+        {beku || readOnly ? (
+          k.tanggal_bayar || (k.bukti_paths?.length ?? 0) > 0
+            ? <div className="text-xs text-gray-600">Dibayar {k.tanggal_bayar ?? '-'} <BuktiLinks paths={k.bukti_paths} /></div>
+            : <span className="text-xs text-gray-400">Belum ada bukti.</span>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <input type="date" className="select-filter py-1 text-xs" value={tanggal} max={HARI_INI} onChange={e => setTanggal(e.target.value)} />

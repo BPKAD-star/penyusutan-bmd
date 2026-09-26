@@ -3,6 +3,7 @@
 // periode × SKPD; tepat waktu bila tanggal pelaksanaan ≤ batas periode.
 // Sementara sampai "snapshot rekonsiliasi" dibangun — begitu ada, pelaksanaan
 // cukup diturunkan dari snapshot periode itu & isian ini bisa dipensiunkan.
+// `readOnly` → tiap periode tampil apa adanya tanpa form (lihat CapaianTl).
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAsyncData } from '@/shared/ui/useAsyncData'
@@ -17,7 +18,7 @@ import { BuktiLinks, PesanError, StatusPill } from '@/components/ipa/ipaUi'
 const HARI_INI = new Date().toISOString().slice(0, 10)
 type Muatan = { periode: PeriodeRekon[]; pelaksanaan: PelaksanaanRekon[] }
 
-export default function CapaianRekon({ skpdId, tahun }: { skpdId: number; tahun: number }) {
+export default function CapaianRekon({ skpdId, tahun, readOnly = false }: { skpdId: number; tahun: number; readOnly?: boolean }) {
   const supabase = createClient()
   const { data, error, run } = useAsyncData<Muatan>()
   const [muatKe, setMuatKe] = useState(0)
@@ -40,7 +41,7 @@ export default function CapaianRekon({ skpdId, tahun }: { skpdId: number; tahun:
       {data?.periode.length === 0 && <p className="p-6 text-sm text-gray-400">Belum ada periode rekonsiliasi untuk tahun {tahun}.</p>}
       <div className="divide-y divide-gray-50">
         {data?.periode.map(p => (
-          <BarisPeriode key={p.id} periode={p} skpdId={skpdId}
+          <BarisPeriode key={p.id} periode={p} skpdId={skpdId} readOnly={readOnly}
             pelaksanaan={data.pelaksanaan.find(x => x.periode_id === p.id) ?? null}
             onBerubah={() => setMuatKe(k => k + 1)} />
         ))}
@@ -49,8 +50,8 @@ export default function CapaianRekon({ skpdId, tahun }: { skpdId: number; tahun:
   )
 }
 
-function BarisPeriode({ periode, pelaksanaan, skpdId, onBerubah }: {
-  periode: PeriodeRekon; pelaksanaan: PelaksanaanRekon | null; skpdId: number; onBerubah: () => void
+function BarisPeriode({ periode, pelaksanaan, skpdId, readOnly, onBerubah }: {
+  periode: PeriodeRekon; pelaksanaan: PelaksanaanRekon | null; skpdId: number; readOnly: boolean; onBerubah: () => void
 }) {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
@@ -93,9 +94,11 @@ function BarisPeriode({ periode, pelaksanaan, skpdId, onBerubah }: {
         <div className="mt-2"><StatusPill s={pelaksanaan?.status ?? null} /></div>
         {pelaksanaan?.status === 'ditolak' && pelaksanaan.catatan_verifikator && <p className="text-xs text-red-600 mt-1">{pelaksanaan.catatan_verifikator}</p>}
       </div>
-      {beku ? (
+      {beku || readOnly ? (
         <div className="lg:col-span-3 text-sm text-gray-600">
-          Dilaksanakan {pelaksanaan!.tanggal_pelaksanaan} <BuktiLinks paths={pelaksanaan!.bukti_paths} />
+          {pelaksanaan
+            ? <>Dilaksanakan {pelaksanaan.tanggal_pelaksanaan} <BuktiLinks paths={pelaksanaan.bukti_paths} /></>
+            : <span className="text-gray-400">Belum ada pelaksanaan tercatat.</span>}
         </div>
       ) : (
         <>
