@@ -45,6 +45,7 @@ import KelolaBidangPanel from '@/components/gis/KelolaBidangPanel'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import type { GisMarker } from '@/components/gis/GisMap'
 import { IkonTitikAda } from '@/shared/ui/TitikKoordinat'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 
 const GisMap = dynamic(() => import('@/components/gis/GisMap'), {
   ssr: false, loading: () => <div className="absolute inset-0 bg-gray-100 animate-pulse" />,
@@ -83,6 +84,7 @@ const STATUS_BADGE: Record<Status, { label: string; cls: string; dot: string }> 
 
 export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode; cariAwal: string }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const [skpdSel, setSkpdSel] = useState<{ skpdId: number | null; descendantIds: number[] | null }>({ skpdId: null, descendantIds: null })
   // Bawaan FALSE (beda dari Daftar Barang/Penyusutan) — permintaan user
   // 2026-09-22: memilih "Dinas Pendidikan" di GIS mestinya cuma menampilkan
@@ -105,7 +107,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // query baru.
   const [titikFilter, setTitikFilter] = useState<TitikFilter>('semua')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('semua')
-  // ── Set Titik Koordinat langsung dari peta ─────────────────────────────
+  // ── Set/Hapus Titik Koordinat langsung dari peta ───────────────────────
   // Menggeser SEBAGIAN kecil "Edit Spesifikasi" (Daftar Barang Awal/Koreksi)
   // ke sini — KHUSUS titik koordinat, tak ada field lain. Pola & alasan
   // double-write-nya SAMA PERSIS dgn useEditSpekAwal.ts `simpanSpek`: tulis
@@ -113,12 +115,13 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // sudah pindah) TANPA syarat, lalu `aset_awal_2026` (BASELINE) HANYA kalau
   // NIBAR-nya belum 🔒 terkunci (lihat migrasi 20260918_01). Kalau terkunci,
   // baseline SENGAJA tak disentuh — barang yang sudah bergerak cuma dapat
-  // titik di register live, Daftar Barang Awal tetap beku apa adanya.
+  // titik di register live, Daftar Barang Awal tetap beku apa adanya. Hapus
+  // (permintaan user 2026-09-26, "kalau aman dua-duanya ikut berubah") pakai
+  // ATURAN & FUNGSI YANG SAMA — cuma nilainya `null`, bukan koordinat baru.
   const [pickMode, setPickMode] = useState(false)
   const [draftPoint, setDraftPoint] = useState<{ lat: number; lng: number } | null>(null)
   const [savingTitik, setSavingTitik] = useState(false)
   const [titikMsg, setTitikMsg] = useState('')
-  const [titikErr, setTitikErr] = useState('')
 
   useEffect(() => {
     ;(async () => {
@@ -249,7 +252,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // berjalan. Draft pin yang nyangkut ke tanah lama akan membingungkan kalau
   // dibiarkan hidup begitu operator pindah ke tanah lain.
   useEffect(() => {
-    setPickMode(false); setDraftPoint(null); setTitikMsg(''); setTitikErr('')
+    setPickMode(false); setDraftPoint(null); setTitikMsg('')
   }, [selectedId])
 
   const selected = rows.find(r => r.id === selectedId) || null
@@ -259,19 +262,26 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
     setPickMode(false); setDraftPoint(null)
   }
 
-  async function simpanTitik() {
-    if (!selected || !draftPoint) return
-    setSavingTitik(true); setTitikErr(''); setTitikMsg('')
-    const { lat, lng } = draftPoint
+  // Mesin bersama Simpan (nilai baru) & Hapus (nilai `null`) — perilakunya
+  // IDENTIK, cuma nilai yang ditulis beda. Melempar `Error` kalau tulis ke
+  // `aset` sendiri gagal/ditolak (fail-closed, ditangkap pemanggil lewat
+  // `konfirmasiGagal` — pola "Kegagalan menulis: pop-up bertema", 2026-09-24).
+  // Kegagalan cek-kunci/tulis-baseline TIDAK melempar: register LIVE-nya
+  // tetap berhasil, jadi itu dilaporkan sbg BAGIAN pesan sukses, bukan gagal
+  // total.
+  async function applyTitik(nilai: { lat: number; lng: number } | null): Promise<string> {
+    if (!selected) throw new Error('Tidak ada tanah terpilih.')
+    const patch = nilai ? { latitude: nilai.lat, longitude: nilai.lng } : { latitude: null, longitude: null }
+    const aksi = nilai ? 'diperbarui' : 'dihapus'
 
     // (1) LIVE `aset` — SELALU ditulis, di mana pun tanah itu sekarang berada
     // (termasuk kalau sudah pindah SKPD). `.select()` WAJIB (pola
     // useEditSpekAwal.ts `simpanSpek`): UPDATE yang ditolak RLS tak melempar
     // error, cuma mengembalikan 0 baris.
     const { data: dAset, error: eAset } = await supabase.from('aset')
-      .update({ latitude: lat, longitude: lng }).eq('id', selected.id).select('id')
-    if (eAset) { setTitikErr(`Gagal menyimpan titik: ${eAset.message}`); setSavingTitik(false); return }
-    if (!dAset || dAset.length === 0) { setTitikErr('Titik ditolak database — barang ini di luar wewenang SKPD-mu.'); setSavingTitik(false); return }
+      .update(patch).eq('id', selected.id).select('id')
+    if (eAset) throw new Error(`Gagal ${nilai ? 'menyimpan' : 'menghapus'} titik: ${eAset.message}`)
+    if (!dAset || dAset.length === 0) throw new Error('Titik ditolak database — barang ini di luar wewenang SKPD-mu.')
 
     // (2) BASELINE `aset_awal_2026` — cuma kalau NIBAR-nya BELUM 🔒 terkunci.
     // Baris hadir di `fn_aset_awal_2026_terkunci_batch` = terkunci (lihat
@@ -288,21 +298,52 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
         const info = ((kunciRows || [])[0] as Terkunci | undefined)
         if (info) {
           pesanBaseline = info.jenis_terakhir
-            ? `Baseline (Daftar Barang Awal) TIDAK diperbarui — barang ini sudah bergerak (🔒 ${info.jenis_terakhir}, ${info.periode_terakhir || '-'}).`
-            : 'Baseline (Daftar Barang Awal) TIDAK diperbarui — barang ini sudah bergerak (🔒).'
+            ? `Baseline (Daftar Barang Awal) TIDAK ikut ${aksi} — barang ini sudah bergerak (🔒 ${info.jenis_terakhir}, ${info.periode_terakhir || '-'}).`
+            : `Baseline (Daftar Barang Awal) TIDAK ikut ${aksi} — barang ini sudah bergerak (🔒).`
         } else {
           const { data: dBaseline, error: eBaseline } = await supabase.from('aset_awal_2026')
-            .update({ latitude: lat, longitude: lng }).eq('nibar', selected.nibar).select('nibar')
-          if (eBaseline) pesanBaseline = `Baseline gagal diperbarui: ${eBaseline.message}.`
+            .update(patch).eq('nibar', selected.nibar).select('nibar')
+          if (eBaseline) pesanBaseline = `Baseline gagal ${aksi}: ${eBaseline.message}.`
           else if (!dBaseline || dBaseline.length === 0) pesanBaseline = 'Baseline tidak punya baris pasangan di Daftar Barang Awal (barang mungkin tak pernah termigrasi).'
-          else pesanBaseline = 'Baseline (Daftar Barang Awal) ikut diperbarui.'
+          else pesanBaseline = `Baseline (Daftar Barang Awal) ikut ${aksi}.`
         }
       }
     }
 
-    setRows(prev => prev.map(r => (r.id === selected.id ? { ...r, latitude: lat, longitude: lng } : r)))
-    setTitikMsg(`Titik koordinat live tersimpan. ${pesanBaseline}`)
-    setPickMode(false); setDraftPoint(null); setSavingTitik(false)
+    setRows(prev => prev.map(r => (r.id === selected.id ? { ...r, latitude: patch.latitude, longitude: patch.longitude } : r)))
+    return `Titik koordinat live ${aksi}. ${pesanBaseline}`
+  }
+
+  async function simpanTitik() {
+    if (!draftPoint) return
+    setSavingTitik(true); setTitikMsg('')
+    try {
+      setTitikMsg(await applyTitik(draftPoint))
+      setPickMode(false); setDraftPoint(null)
+    } catch (e) {
+      await konfirmasiGagal(konfirmasi, e instanceof Error ? e.message : 'Gagal menyimpan titik koordinat.')
+    } finally {
+      setSavingTitik(false)
+    }
+  }
+
+  // Konfirmasi WAJIB (CODING-STANDARD §4.5: confirm() dilarang) — menghapus
+  // titik bukan hal yang bisa dibatalkan lewat "Batal" biasa (beda dari Set/
+  // Ubah, yang draft-pin-nya sendiri sudah jadi langkah konfirmasi).
+  async function hapusTitik() {
+    if (!selected) return
+    try {
+      const hasil = await konfirmasi({
+        nada: 'merah',
+        judul: `Hapus titik koordinat "${selected.nama_barang || selected.nibar || 'tanah ini'}"?`,
+        isi: 'Titik di register LIVE akan dihapus. Baseline (Daftar Barang Awal) ikut dihapus HANYA kalau belum 🔒 terkunci — kalau barangnya sudah bergerak, baseline dibiarkan apa adanya.',
+        labelYa: 'Hapus Titik',
+        kerjakan: async () => { setTitikMsg(await applyTitik(null)) },
+      })
+      if (hasil.ya) { setPickMode(false); setDraftPoint(null) }
+    } catch (e) {
+      await konfirmasiGagal(konfirmasi, e instanceof Error ? e.message : 'Gagal menghapus titik koordinat.')
+    }
   }
 
   // Titik lokasi milik REGISTER (keputusan user 2026-09-23, "cukup register
@@ -544,13 +585,19 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
                   <button onClick={batalPick} className="text-xs text-gray-500 hover:underline">Batal</button>
                 </div>
               ) : (
-                <button onClick={() => { setPickMode(true); setDraftPoint(null); setTitikMsg(''); setTitikErr('') }}
-                  className="btn-secondary text-xs w-full">
-                  {selected.latitude != null ? '✎ Ubah Titik Koordinat' : '📍 Set Titik Koordinat'}
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => { setPickMode(true); setDraftPoint(null); setTitikMsg('') }}
+                    className="btn-secondary text-xs flex-1">
+                    {selected.latitude != null ? '✎ Ubah Titik Koordinat' : '📍 Set Titik Koordinat'}
+                  </button>
+                  {selected.latitude != null && (
+                    <button onClick={hapusTitik} className="text-xs text-rose-600 hover:underline px-2 flex-shrink-0">
+                      🗑 Hapus
+                    </button>
+                  )}
+                </div>
               )}
               {titikMsg && <p className="text-[11px] text-teal mt-1.5">{titikMsg}</p>}
-              {titikErr && <p className="text-[11px] text-rose-600 mt-1.5">{titikErr}</p>}
             </div>
           </div>
           <KelolaBidangPanel asetId={selected.id}

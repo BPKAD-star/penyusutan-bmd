@@ -7709,3 +7709,40 @@ Lanjutan permintaan user di atas, hari yang sama. Dua tambahan ke `PetaView`:
   migrasi 20260728_01) serta RPC (`fn_aset_awal_2026_terkunci_batch`, migrasi
   20260918_01) sudah ada, murni dipakai ulang. Diverifikasi: tsc 0 error, 1869
   test tetap hijau, 0 lint warning baru.
+
+### "Hapus Titik" — pertanyaan lanjutan user, ADA migrasinya?
+
+Dua pertanyaan lanjutan hari yang sama. **Jawaban pertama: TIDAK ada migrasi**
+untuk seluruh fitur GIS Tanah 2026-09-26 (filter + Set/Hapus Titik) — sudah
+ditulis di bagian atas & tetap berlaku, tak ada yang berubah.
+
+**Jawaban kedua: bisa, dan perilakunya memang SAMA** (permintaan user: "kalo
+dia udah kelock ya di daftar barang ngga perlu didelete, tapi kalo aman, dua-
+duanya ikut berubah"). Simpan (nilai baru) & Hapus (nilai `null`) sekarang
+berbagi SATU fungsi `applyTitik(nilai)` — cuma nilai yang ditulis beda,
+aturan double-write & 🔒 pengecekan kuncinya identik.
+
+- **`applyTitik` MELEMPAR `Error`** kalau tulis ke `aset` sendiri gagal/
+  ditolak (fail-closed) — beda dari versi pertama fitur ini yang menyetel
+  state `titikErr` inline. Ditangkap pemanggil lewat **`konfirmasiGagal`**
+  (pola "Kegagalan menulis: pop-up bertema", 2026-09-24) — supaya kedua aksi
+  (Simpan & Hapus) di panel yang sama tak menampilkan DUA gaya error berbeda.
+  Kegagalan cek-kunci/tulis-baseline TIDAK melempar (register live-nya tetap
+  berhasil), tetap dilaporkan sbg bagian pesan sukses seperti sebelumnya.
+- **"🗑 Hapus" WAJIB dikonfirmasi** (CODING-STANDARD §4.5: `confirm()`
+  dilarang) — beda dari Simpan yang draft-pin-nya sendiri sudah jadi langkah
+  konfirmasi visual, Hapus langsung menghilangkan titik tanpa pratinjau apa
+  pun, jadi butuh `useKonfirmasi()` (nada `merah`) yang menyebutkan eksplisit
+  di kalimatnya: baseline ikut terhapus HANYA kalau belum terkunci.
+  ⚠️ `kerjakan` di dalam `konfirmasi()` MELEMPAR (bukan memanggil popup lain)
+  — pola yang sama dgn `approve()` KonstruksiPengadaan & seluruh 11 komponen
+  Cara Perolehan/Pengelolaan 2026-09-24: `konfirmasi()` kedua selagi yang
+  pertama `busy` akan membatalkan promise pertama, jadi `konfirmasiGagal`
+  dipanggil di `catch` DI LUAR, sesudah `konfirmasi()` yang pertama selesai.
+- **Tombol "🗑 Hapus" cuma tampil kalau `selected.latitude != null`** — tak
+  ada apa pun untuk dihapus kalau belum bertitik. Disembunyikan selama
+  `pickMode` aktif (Simpan/Batal saja yang tampil saat itu, supaya tak ada
+  dua aksi yang bisa saling tabrakan di layar yang sama).
+- **Tak ada migrasi lagi.** Diverifikasi: tsc 0 error, 1869 test tetap hijau,
+  0 lint warning baru (satu warning pre-existing yang sama, `no-floating-
+  promises` pada IIFE loader, tak berubah dari sebelumnya).
