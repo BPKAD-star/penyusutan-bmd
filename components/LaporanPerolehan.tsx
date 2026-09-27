@@ -2,10 +2,19 @@
 // Laporan Cara Perolehan (Pengadaan/Hibah/Tukar Menukar/Hasil Inventarisasi/
 // Perolehan Lainnya) — kolom detail spesifikasi barang, BEDA dari
 // LaporanTransaksi generik (SUDAH DIHAPUS 2026-09-07; dulu dipakai menu spt
-// Reklasifikasi/Koreksi yang gak butuh kolom sedetail ini). Kolom (kiri→kanan):
-// [Pihak, kalau ada] Kode Barang, Uraian Barang, Spesifikasi Nama Barang+NIBAR,
-// Merk/Tipe, Spesifikasi Lainnya, Komptabel, Nomor Dokumen Sumber, Tanggal
-// Perolehan (BAST), Nilai Perolehan, Keterangan.
+// Reklasifikasi/Koreksi yang gak butuh kolom sedetail ini).
+//
+// Kolom tab "Daftar Transaksi" (standarisasi 2026-09-27, permintaan user —
+// disamakan susunannya dgn seluruh menu Pelaporan lain), kiri→kanan: SKPD ·
+// Kode Barang+Uraian · Nama Barang+NIBAR · Merk/Tipe · Spesifikasi Lainnya ·
+// Luas · [Pihak, kalau ada] · [No Kontrak+Tgl Kontrak (Pengadaan) ATAU No
+// Dokumen (keempat manual)] · [No BAST+Tgl BAST+Semester (Pengadaan) ATAU
+// Tanggal+Semester (keempat manual)] · [Nama Penyedia, Pengadaan saja] ·
+// [Kode Rekening+Uraian, Kode Sub Kegiatan+Uraian, Pengadaan saja] · Nilai
+// Perolehan+Komptabel · Keterangan.
+// ⚠️ Pengadaan BEDA STRUKTUR dari keempat manual — Pengadaan py DUA dokumen
+// (kontrak & BAST, `PUNYA_KONTRAK`/`adaKontrak`), keempat manual cuma py SATU
+// (No/Tgl Dokumen). Jangan disamakan jadi satu kolom generik.
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
@@ -50,12 +59,23 @@ type Trx = {
    * Sintaks arrow di dalam embedded resource sudah diuji ke API proyek ini
    * (HTTP 200; bentuk yang sengaja dirusak dibalas PGRST100), bukan diasumsikan.
    */
-  header: { no_sk: string; nama_penyedia: string | null; sub_kegiatan: string | null } | null
+  /**
+   * ⚠️ `tanggal`/`no_bast` di HEADER — HANYA berarti sesuatu utk `pengadaan`.
+   * Di sana `jurnal_header.no_sk`/`tanggal` = No/Tgl KONTRAK (beda dari BAST),
+   * sementara `payload.no_bast` = Nomor BAST-nya sendiri (`tgl_bast` TIDAK
+   * ikut ditarik — `r.tanggal` di baris ledger inilah tanggal BAST EFEKTIF,
+   * `perolehanDate = payload.tgl_bast || tanggal` yang sudah dibekukan saat
+   * approve, jadi tak perlu field kedua). Keempat menu manual (Hibah dkk)
+   * cuma py SATU dokumen (`no_sk`/`tanggal` di header = No/Tgl Dokumen itu
+   * sendiri) — `no_bast` di sana selalu kosong, jangan dibaca.
+   */
+  header: { no_sk: string; tanggal: string; nama_penyedia: string | null; sub_kegiatan: string | null; no_bast: string | null } | null
   skpd_tujuan: number | null
   aset_id: string | null
   aset: {
     kode: string; uraian_barang: string | null; nama_barang: string | null; nibar: string | null
     merek_tipe: string | null; spesifikasi_lainnya: string | null; intra_ekstra: string | null; status: string
+    luas: number | string | null
     /**
      * ⚠️ Keterangan yang DIISI OPERATOR per barang (field spesifikasi) —
      * `transaksi_bmd.keterangan` (baris ledger perolehan) memang SELALU
@@ -98,6 +118,18 @@ const PUNYA_PENYEDIA = new Set(['pengadaan'])
  * menu Perolehan berikutnya akan kehilangan kolomnya DIAM-DIAM.
  */
 const PUNYA_ANGGARAN = new Set(['pengadaan'])
+
+/**
+ * Cara perolehan yang membedakan KONTRAK dari BAST — cuma `pengadaan`.
+ * Keempat menu manual (Hibah dkk) cuma py SATU dokumen (No/Tgl Dokumen di
+ * header), jadi kolom dokumennya cuma SATU pasang, bukan dua.
+ */
+const PUNYA_KONTRAK = new Set(['pengadaan'])
+
+/** Label kolom tanggal dokumen — permintaan user 2026-09-27, beda per jenis
+ *  (Hibah menyebut "BAST", tiga lainnya "Dokumen") padahal field sumbernya
+ *  sama (`r.tanggal`/`r.periode`). Cuma label, bukan sumber data kedua. */
+const labelTglDokumen = (jenis: string) => jenis === 'hibah_masuk' ? 'Tanggal BAST' : 'Tanggal Dokumen'
 
 export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, pihakLabel }: {
   judul: string
@@ -221,7 +253,9 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
   const buildQuery = useCallback(() => {
     let q = supabase.from('transaksi_bmd')
-      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,header:header_id(no_sk,nama_penyedia:payload->>nama_penyedia,sub_kegiatan:payload->>sub_kegiatan),aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status,keterangan)')
+      .select('id,periode,tanggal,nilai,keterangan,payload,skpd_tujuan,aset_id,' +
+        'header:header_id(no_sk,tanggal,nama_penyedia:payload->>nama_penyedia,sub_kegiatan:payload->>sub_kegiatan,no_bast:payload->>no_bast),' +
+        'aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,intra_ekstra,status,luas,keterangan)')
       .eq('jenis', jenis)
       .order('id', { ascending: false })
     // ⚠️ `periode` bisa bernilai TAHUN saja (mis. `2026` = Akhir Tahun) —
@@ -302,6 +336,8 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const penyediaNama = (r: Trx) => r.header?.nama_penyedia || ''
   const adaPenyedia = PUNYA_PENYEDIA.has(jenis)
   const adaAnggaran = PUNYA_ANGGARAN.has(jenis)
+  const adaKontrak = PUNYA_KONTRAK.has(jenis)
+  const labelTgl = labelTglDokumen(jenis)
 
   // ── Sandaran anggaran ────────────────────────────────────────────────────
   const rekKode = (r: Trx) => r.payload?.kode_rekening || ''
@@ -340,7 +376,11 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // ⚠️ DIHITUNG, bukan ditulis tangan. Dulu `pihakLabel ? 11 : 10`, dan angka
   // seperti itu diam-diam meleset begitu ada kolom baru — baris "Tidak ada
   // transaksi" jadi tak selebar tabelnya & tak ada yang gagal.
-  const nKolom = 9 + 1 + (pihakLabel ? 1 : 0) + (adaPenyedia ? 1 : 0) + (adaAnggaran ? 2 : 0)
+  // Basis (2026-09-27, kolom disamakan lintas menu Cara Perolehan): SKPD ·
+  // Kode Barang/Uraian · Nama Barang/NIBAR · Merk/Tipe · Spesifikasi Lainnya ·
+  // Luas · [No Kontrak/Tgl Kontrak +] No Dokumen/Tgl+Semester (2 kolom, isi
+  // beda per adaKontrak) · Nilai Perolehan/Komptabel · Keterangan = 10.
+  const nKolom = 10 + (pihakLabel ? 1 : 0) + (adaPenyedia ? 1 : 0) + (adaAnggaran ? 2 : 0)
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
@@ -424,32 +464,39 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     const uraianEx = adaAnggaran
       ? await fetchUraianRekening(supabase, hasil.map(rekKode).filter(Boolean))
       : new Map<string, string>()
+    // Susunan kolom disamakan dgn layar (2026-09-27, standarisasi Daftar
+    // Transaksi lintas menu Pelaporan) — sel tumpuk di layar jadi kolom
+    // TERPISAH di sini: berkas kerja dipivot & disortir per kolom, dan kode
+    // yang menempel pada uraiannya tak bisa dipakai sbg kunci.
     exportToExcel(hasil.sort(urutSkpd).map(r => ({
       // SKPD paling kiri: berkas ini dibaca & dipivot per SKPD.
       'SKPD': unitNama(r),
       'SKPD Induk': indukNama(r),
-      ...(pihakLabel ? { [pihakLabel]: r.payload?.pihak || '' } : {}),
       'Kode Barang': r.aset?.kode || '',
       'Uraian Barang': r.aset?.uraian_barang || '',
       'Spesifikasi Nama Barang': r.aset?.nama_barang || '',
       'NIBAR': r.aset?.nibar || '',
       'Merk/Tipe': r.aset?.merek_tipe || '',
       'Spesifikasi Lainnya': r.aset?.spesifikasi_lainnya || '',
-      'Komptabel': (r.aset?.intra_ekstra || '').toUpperCase(),
-      'Nomor Dokumen Sumber': r.header?.no_sk || '',
+      'Luas': r.aset?.luas ?? '',
+      ...(pihakLabel ? { [pihakLabel]: r.payload?.pihak || '' } : {}),
+      ...(adaKontrak
+        ? { 'No Kontrak': r.header?.no_sk || '', 'Tanggal Kontrak': r.header?.tanggal || '' }
+        : { 'No Dokumen': r.header?.no_sk || '' }),
+      ...(adaKontrak
+        ? { 'No BAST': r.header?.no_bast || '' }
+        : {}),
+      [adaKontrak ? 'Tanggal BAST' : labelTgl]: r.tanggal,
+      'Semester': r.periode,
       ...(adaPenyedia ? { 'Nama Penyedia': penyediaNama(r) } : {}),
-      // Empat kolom TERPISAH di berkas (bukan ditumpuk seperti di layar):
-      // berkas kerja dipivot & disortir per kolom, dan kode yang menempel pada
-      // uraiannya tak bisa dipakai sbg kunci.
       ...(adaAnggaran ? {
         'Kode Rekening': rekKode(r),
         'Uraian Belanja': uraianEx.get(rekKode(r)) || '',
         'Kode Sub Kegiatan': subKeg(r)[0],
         'Uraian Sub Kegiatan': subKeg(r)[1],
       } : {}),
-      'Tanggal Perolehan (BAST)': r.tanggal,
-      'Periode': r.periode,
       'Nilai Perolehan (Rp)': r.nilai,
+      'Komptabel': (r.aset?.intra_ekstra || '').toUpperCase(),
       // aset.keterangan = diisi operator lewat field spesifikasi;
       // transaksi_bmd.keterangan (ledger perolehan) selalu kosong, cadangan saja.
       'Keterangan': r.aset?.keterangan || r.keterangan || '',
@@ -604,18 +651,22 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
                     <th className="table-th">SKPD</th>
-                    {pihakLabel && <th className="table-th">{pihakLabel}</th>}
-                    <th className="table-th">Kode Barang</th>
-                    <th className="table-th">Spesifikasi Nama Barang / NIBAR</th>
+                    <th className="table-th">Kode Barang / Uraian Barang</th>
+                    <th className="table-th">Nama Barang / NIBAR</th>
                     <th className="table-th">Merk/Tipe</th>
                     <th className="table-th">Spesifikasi Lainnya</th>
-                    <th className="table-th">Komptabel</th>
-                    <th className="table-th">No. Dokumen Sumber</th>
+                    <th className="table-th text-right">Luas</th>
+                    {pihakLabel && <th className="table-th">{pihakLabel}</th>}
+                    {adaKontrak
+                      ? <th className="table-th">No Kontrak / Tgl Kontrak</th>
+                      : <th className="table-th">No Dokumen</th>}
+                    {adaKontrak
+                      ? <th className="table-th">No BAST / Tgl BAST / Semester</th>
+                      : <th className="table-th">{labelTgl} / Semester</th>}
                     {adaPenyedia && <th className="table-th">Nama Penyedia</th>}
-                    {adaAnggaran && <th className="table-th">Kode Rekening</th>}
-                    {adaAnggaran && <th className="table-th">Sub Kegiatan</th>}
-                    <th className="table-th">Tgl Perolehan (BAST)</th>
-                    <th className="table-th text-right">Nilai Perolehan</th>
+                    {adaAnggaran && <th className="table-th">Kode Rekening Belanja / Uraian</th>}
+                    {adaAnggaran && <th className="table-th">Kode Sub Kegiatan / Uraian</th>}
+                    <th className="table-th text-right">Nilai Perolehan / Komptabel</th>
                     <th className="table-th">Keterangan</th>
                   </tr>
                 </thead>
@@ -626,39 +677,57 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                     <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
                   ) : rowsUrut.map(r => (
                     <tr key={r.id}>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">
                         <p className="font-medium">{unitNama(r)}</p>
                         {indukNama(r) && <p className="text-gray-400">{indukNama(r)}</p>}
                       </td>
-                      {pihakLabel && <td className="table-td text-xs">{r.payload?.pihak || '-'}</td>}
                       <td className="table-td text-xs align-top">
                         <p className="font-medium">{r.aset?.kode || '-'}</p>
                         <p className="text-gray-400 mt-0.5">{r.aset?.uraian_barang || '-'}</p>
                       </td>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">
                         <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
                         <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
                       </td>
-                      <td className="table-td text-xs">{r.aset?.merek_tipe || '-'}</td>
-                      <td className="table-td text-xs">{r.aset?.spesifikasi_lainnya || '-'}</td>
-                      <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
-                      <td className="table-td text-xs">{r.header?.no_sk || '-'}</td>
-                      {adaPenyedia && <td className="table-td text-xs">{penyediaNama(r) || '-'}</td>}
+                      <td className="table-td text-xs align-top">{r.aset?.merek_tipe || '-'}</td>
+                      <td className="table-td text-xs align-top">{r.aset?.spesifikasi_lainnya || '-'}</td>
+                      <td className="table-td text-xs text-right align-top">{r.aset?.luas ?? '-'}</td>
+                      {pihakLabel && <td className="table-td text-xs align-top">{r.payload?.pihak || '-'}</td>}
+                      {adaKontrak ? (
+                        <td className="table-td text-xs align-top">
+                          <p className="font-medium">{r.header?.no_sk || '-'}</p>
+                          <p className="text-gray-400">{r.header?.tanggal || '-'}</p>
+                        </td>
+                      ) : (
+                        <td className="table-td text-xs align-top">{r.header?.no_sk || '-'}</td>
+                      )}
+                      {adaKontrak ? (
+                        <td className="table-td text-xs align-top">
+                          <p className="font-medium">{r.header?.no_bast || '-'}</p>
+                          <p className="text-gray-400">{r.tanggal}</p>
+                          <p className="text-gray-400">{r.periode}</p>
+                        </td>
+                      ) : (
+                        <td className="table-td text-xs align-top">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
+                      )}
+                      {adaPenyedia && <td className="table-td text-xs align-top">{penyediaNama(r) || '-'}</td>}
                       {adaAnggaran && (
-                        <td className="table-td text-xs">
+                        <td className="table-td text-xs align-top">
                           <p className="font-medium whitespace-nowrap">{rekKode(r) || '-'}</p>
                           {rekUraian(r) && <p className="text-gray-400">{rekUraian(r)}</p>}
                         </td>
                       )}
                       {adaAnggaran && (
-                        <td className="table-td text-xs">
+                        <td className="table-td text-xs align-top">
                           <p className="font-medium whitespace-nowrap">{subKeg(r)[0] || '-'}</p>
                           {subKeg(r)[1] && <p className="text-gray-400">{subKeg(r)[1]}</p>}
                         </td>
                       )}
-                      <td className="table-td text-xs">{r.tanggal}<br /><span className="text-gray-400">{r.periode}</span></td>
-                      <td className="table-td text-xs text-right">{formatRupiah2(r.nilai)}</td>
-                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.aset?.keterangan || r.keterangan || '-'}</td>
+                      <td className="table-td text-xs text-right align-top">
+                        <p className="font-medium">{formatRupiah2(r.nilai)}</p>
+                        <p className="text-gray-400">{(r.aset?.intra_ekstra || '-').toUpperCase()}</p>
+                      </td>
+                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate align-top">{r.aset?.keterangan || r.keterangan || '-'}</td>
                     </tr>
                   ))}
                 </tbody>

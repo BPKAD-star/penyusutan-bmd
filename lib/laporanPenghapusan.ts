@@ -129,6 +129,8 @@ export type BarisPenghapusan = {
     harga_satuan: number | null; tgl_perolehan: string | null; keterangan: string | null
     intra_ekstra: string | null; alamat_detail: string | null; skpd_id: number | null
     asal_usul: string | null; cara_perolehan: string | null
+    merek_tipe: string | null; no_polisi: string | null; no_rangka: string | null
+    no_mesin: string | null; luas: number | string | null
   } | null
 
   // ── Dilengkapi sesudah query ────────────────────────────────────────────
@@ -154,7 +156,8 @@ const SEL =
   'id,tanggal,periode,nilai,keterangan,aset_id,skpd_asal,skpd_tujuan,payload,'
   + 'header:header_id(no_sk,tanggal,jenis,sub_jenis,keterangan),'
   + 'aset:aset_id(kode,nama_barang,uraian_barang,nibar,spesifikasi_lainnya,satuan,jumlah,'
-  + 'harga_satuan,tgl_perolehan,keterangan,intra_ekstra,alamat_detail,skpd_id,asal_usul,cara_perolehan)'
+  + 'harga_satuan,tgl_perolehan,keterangan,intra_ekstra,alamat_detail,skpd_id,asal_usul,cara_perolehan,'
+  + 'merek_tipe,no_polisi,no_rangka,no_mesin,luas)'
 
 type SkpdRow = { id: number; parent_id: number | null; nama: string; kode_skpd: string | null }
 

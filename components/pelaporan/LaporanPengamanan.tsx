@@ -20,6 +20,13 @@
 // jadi kolom "Nilai" menampilkan **Rp0 untuk SETIAP barang** tanpa satu pun
 // error, dan angka nol itu terbaca operator sebagai "barangnya memang tak
 // bernilai". Rekap per SKPD mustahil berarti apa-apa di atasnya.
+//
+// ⚠️ Kolom tab "Daftar" DISTANDARKAN 2026-09-27 (permintaan user, lintas menu
+// Pelaporan): Merk/Tipe · Spesifikasi Lainnya · No. Polisi/Rangka/Mesin · Luas
+// ditambahkan sesudah Nama Barang/NIBAR. Kolom **Status** DIPERTAHANKAN
+// (Diamankan/Dikembalikan) walau tak disebut eksplisit di spesifikasi kolom —
+// menghapusnya akan menyembunyikan satu-satunya keterangan apakah barang itu
+// masih dalam kustodi.
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -40,6 +47,8 @@ type Row = {
   pegawai: string; identitas: string; statusPenghuni: string; jabatan: string
   bastNo: string; bastTgl: string; paktaNo: string; paktaTgl: string
   nibar: string; kode: string; nama: string; status: string; nilai: number
+  merekTipe: string; spesifikasiLainnya: string
+  noPolisi: string; noRangka: string; noMesin: string; luas: number | string | null
 }
 
 export default function LaporanPengamanan() {
@@ -82,16 +91,29 @@ export default function LaporanPengamanan() {
     // ⚠️ `kode` & `nilai_perolehan` ikut ditarik — keduanya milik REGISTER, tak
     // ada di baris ledger: kode menentukan kolom jenis aset di Rekap per SKPD,
     // nilai perolehan menggantikan `transaksi_bmd.nilai` yang selalu 0.
+    // Merk/Tipe · Spesifikasi Lainnya · No. Polisi/Rangka/Mesin · Luas ikut
+    // ditarik utk standarisasi kolom "informasi barang" 2026-09-27.
     const { data: led } = await supabase.from('transaksi_bmd')
-      .select('id,header_id,jenis,aset:aset_id(id,nibar,nama_barang,kode,nilai_perolehan,skpd_id)')
+      .select('id,header_id,jenis,aset:aset_id(id,nibar,nama_barang,kode,nilai_perolehan,skpd_id,'
+        + 'merek_tipe,spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,luas)')
       .in('jenis', ['pengamanan', 'pengembalian_pengamanan', 'batal_pengamanan'] as never)
       .in('header_id', hs.map(h => h.id)).order('id', { ascending: true })
     const ledRows = (led || []) as unknown as {
       id: number; header_id: string; jenis: string
-      aset: { id: string; nibar: string | null; nama_barang: string | null; kode: string; nilai_perolehan: number | null; skpd_id: number | null } | null
+      aset: {
+        id: string; nibar: string | null; nama_barang: string | null; kode: string
+        nilai_perolehan: number | null; skpd_id: number | null
+        merek_tipe: string | null; spesifikasi_lainnya: string | null
+        no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
+        luas: number | string | null
+      } | null
     }[]
 
-    type Acc = { nibar: string; kode: string; nama: string; nilai: number; dikembalikan: boolean; headerId: string }
+    type Acc = {
+      nibar: string; kode: string; nama: string; nilai: number; dikembalikan: boolean; headerId: string
+      merekTipe: string; spesifikasiLainnya: string
+      noPolisi: string; noRangka: string; noMesin: string; luas: number | string | null
+    }
     const acc = new Map<string, Acc>()
     for (const r of ledRows) {
       if (!r.aset || !hById.has(r.header_id)) continue
@@ -100,6 +122,9 @@ export default function LaporanPengamanan() {
         acc.set(key, {
           nibar: r.aset.nibar || '-', kode: r.aset.kode || '', nama: r.aset.nama_barang || '-',
           nilai: r.aset.nilai_perolehan || 0, dikembalikan: false, headerId: r.header_id,
+          merekTipe: r.aset.merek_tipe || '-', spesifikasiLainnya: r.aset.spesifikasi_lainnya || '-',
+          noPolisi: r.aset.no_polisi || '-', noRangka: r.aset.no_rangka || '-', noMesin: r.aset.no_mesin || '-',
+          luas: r.aset.luas,
         })
       } else if (r.jenis === 'pengembalian_pengamanan') {
         const cur = acc.get(key); if (cur) cur.dikembalikan = true
@@ -120,6 +145,8 @@ export default function LaporanPengamanan() {
         paktaNo: p.pakta_no || '-', paktaTgl: p.pakta_tgl || '-',
         nibar: v.nibar, kode: v.kode, nama: v.nama,
         status: v.dikembalikan ? 'Dikembalikan' : 'Diamankan', nilai: v.nilai,
+        merekTipe: v.merekTipe, spesifikasiLainnya: v.spesifikasiLainnya,
+        noPolisi: v.noPolisi, noRangka: v.noRangka, noMesin: v.noMesin, luas: v.luas,
       })
     }
     return status ? out.filter(r => r.status === status) : out
@@ -161,7 +188,10 @@ export default function LaporanPengamanan() {
       'SKPD': r.skpd, 'Nama Pegawai': r.pegawai, 'Nomor Identitas': r.identitas,
       'Status Penghuni/Pemakai': r.statusPenghuni, 'Jabatan': r.jabatan,
       'No. BAST': r.bastNo, 'Tgl BAST': r.bastTgl, 'No. Pakta': r.paktaNo, 'Tgl Pakta': r.paktaTgl,
-      'NIBAR': r.nibar, 'Kode Barang': r.kode, 'Nama Barang': r.nama,
+      'Kode Barang': r.kode, 'Nama Barang': r.nama, 'NIBAR': r.nibar,
+      'Merk/Tipe': r.merekTipe, 'Spesifikasi Lainnya': r.spesifikasiLainnya,
+      'No. Polisi': r.noPolisi, 'No. Rangka': r.noRangka, 'No. Mesin': r.noMesin,
+      'Luas (m²)': r.luas ?? '',
       'Status': r.status, 'Nilai Perolehan (Rp)': r.nilai,
     })), namaBerkas(), 'Pengamanan')
     setExporting(false)
@@ -289,25 +319,47 @@ export default function LaporanPengamanan() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
-                <th className="table-th">SKPD</th><th className="table-th">Penghuni / Pemakai</th><th className="table-th">BAST</th>
-                <th className="table-th">Pakta Integritas</th><th className="table-th">Barang</th>
-                <th className="table-th text-center">Status</th><th className="table-th text-right">Nilai</th>
+                <th className="table-th">SKPD</th>
+                <th className="table-th">Nama Pemakai / NIP</th>
+                <th className="table-th">No. BAST / Tanggal</th>
+                <th className="table-th">Pakta Integritas / Tanggal</th>
+                <th className="table-th">Nama Barang / NIBAR</th>
+                <th className="table-th">Merk/Tipe</th>
+                <th className="table-th">Spesifikasi Lainnya</th>
+                <th className="table-th">No. Polisi</th>
+                <th className="table-th">No. Rangka</th>
+                <th className="table-th">No. Mesin</th>
+                <th className="table-th">Luas</th>
+                <th className="table-th text-center">Status</th>
+                <th className="table-th text-right">Nilai</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                <tr><td colSpan={13} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={7} className="table-td text-center py-12 text-gray-400">Tidak ada data pengamanan</td></tr>
+                <tr><td colSpan={13} className="table-td text-center py-12 text-gray-400">Tidak ada data pengamanan</td></tr>
               ) : rows.map(r => (
                 <tr key={r.key}>
-                  <td className="table-td text-xs">{r.skpd}</td>
-                  <td className="table-td text-xs"><p className="font-medium">{r.pegawai}</p><p className="text-gray-400">{r.identitas} · {r.statusPenghuni}{r.jabatan !== '-' ? ` · ${r.jabatan}` : ''}</p></td>
-                  <td className="table-td text-xs">{r.bastNo}<br /><span className="text-gray-400">{r.bastTgl}</span></td>
-                  <td className="table-td text-xs">{r.paktaNo}<br /><span className="text-gray-400">{r.paktaTgl}</span></td>
-                  <td className="table-td text-xs"><p className="font-medium">{r.nama}</p><p className="text-gray-400">{r.nibar}</p></td>
-                  <td className="table-td text-center text-xs">{r.status}</td>
-                  <td className="table-td text-right text-xs">{formatRupiah2(r.nilai)}</td>
+                  <td className="table-td text-xs align-top">{r.skpd}</td>
+                  <td className="table-td text-xs align-top">
+                    <p className="font-medium">{r.pegawai}</p>
+                    <p className="text-gray-400">{r.identitas}</p>
+                    {(r.statusPenghuni !== '-' || r.jabatan !== '-') && (
+                      <p className="text-gray-400">{r.statusPenghuni}{r.jabatan !== '-' ? ` · ${r.jabatan}` : ''}</p>
+                    )}
+                  </td>
+                  <td className="table-td text-xs align-top">{r.bastNo}<br /><span className="text-gray-400">{r.bastTgl}</span></td>
+                  <td className="table-td text-xs align-top">{r.paktaNo}<br /><span className="text-gray-400">{r.paktaTgl}</span></td>
+                  <td className="table-td text-xs align-top"><p className="font-medium">{r.nama}</p><p className="text-gray-400">{r.nibar}</p></td>
+                  <td className="table-td text-xs align-top">{r.merekTipe}</td>
+                  <td className="table-td text-xs align-top max-w-[160px]">{r.spesifikasiLainnya}</td>
+                  <td className="table-td text-xs align-top">{r.noPolisi}</td>
+                  <td className="table-td text-xs align-top">{r.noRangka}</td>
+                  <td className="table-td text-xs align-top">{r.noMesin}</td>
+                  <td className="table-td text-xs align-top">{r.luas ?? '-'}</td>
+                  <td className="table-td text-center text-xs align-top">{r.status}</td>
+                  <td className="table-td text-right text-xs align-top">{formatRupiah2(r.nilai)}</td>
                 </tr>
               ))}
             </tbody>

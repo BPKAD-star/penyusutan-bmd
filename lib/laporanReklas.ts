@@ -100,6 +100,7 @@ export type BarisReklas = {
     kode: string; nama_barang: string | null; uraian_barang: string | null; nibar: string | null
     satuan: string | null; jumlah: number | null
     keterangan: string | null; intra_ekstra: string | null; skpd_id: number | null
+    merek_tipe: string | null; spesifikasi_lainnya: string | null
   } | null
 
   // ── Dilengkapi sesudah query ────────────────────────────────────────────
@@ -177,7 +178,7 @@ const SEL =
   'id,tanggal,periode,nilai,keterangan,aset_id,jenis,payload,'
   + 'header:header_id(no_sk,tanggal,jenis,keterangan,skpd_id),'
   + 'aset:aset_id(kode,nama_barang,uraian_barang,nibar,satuan,jumlah,'
-  + 'keterangan,intra_ekstra,skpd_id)'
+  + 'keterangan,intra_ekstra,skpd_id,merek_tipe,spesifikasi_lainnya)'
 
 type SkpdRow = { id: number; parent_id: number | null; nama: string; kode_skpd: string | null }
 

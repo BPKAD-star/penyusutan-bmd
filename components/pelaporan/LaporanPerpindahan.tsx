@@ -4,6 +4,13 @@
 //
 //   Pelaporan → Pengelolaan → Penggunaan          (`pengalihan_status`, IV.B.1)
 //   Pelaporan → Pengelolaan → Penerimaan Internal (`mutasi_internal`,  IV.C)
+//   Pelaporan → Pengelolaan → Pengeluaran Internal(`mutasi_internal`,  IV.D)
+//
+// Kolom tab "Daftar Transaksi" (standarisasi 2026-09-27, permintaan user):
+// Dari SKPD · Ke SKPD · Kode Barang+Uraian · Nama Barang+NIBAR · Merk/Tipe ·
+// Spesifikasi Lainnya · No. Polisi · No. Rangka · No. Mesin · Luas · No.
+// Dokumen Sumber+Tgl+Semester · Nilai+Komptabel · Keterangan. Satu perubahan
+// di sini berlaku untuk ketiga menu sekaligus.
 //
 // Tiga tab, pola yang SAMA dengan Laporan Perolehan (Hibah dkk.):
 //
@@ -70,13 +77,17 @@ type Trx = {
   tujuan: { nama: string } | null
   aset: {
     kode: string; uraian_barang: string | null; nama_barang: string | null; nibar: string | null
+    merek_tipe: string | null; spesifikasi_lainnya: string | null
+    no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
+    luas: number | string | null
     intra_ekstra: string | null
   } | null
 }
 
 const SEL = 'id,periode,tanggal,nilai,keterangan,payload,skpd_asal,skpd_tujuan,aset_id,'
   + 'header:header_id(no_sk,tanggal),asal:skpd_asal(nama),tujuan:skpd_tujuan(nama),'
-  + 'aset:aset_id(kode,uraian_barang,nama_barang,nibar,intra_ekstra)'
+  + 'aset:aset_id(kode,uraian_barang,nama_barang,nibar,merek_tipe,spesifikasi_lainnya,'
+  + 'no_polisi,no_rangka,no_mesin,luas,intra_ekstra)'
 
 /** Arah perpindahan relatif SKPD yang dipilih. */
 type Arah = 'semua' | 'masuk' | 'keluar'
@@ -293,6 +304,9 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
       // tanpa saringan pembatalan tak punya satu pun tanda bahwa isinya salah.
       setErr(pesanGagal(e as Error)); setExporting(false); return
     }
+    // Susunan kolom disamakan dgn layar (2026-09-27, standarisasi Daftar
+    // Transaksi lintas menu Pelaporan) — sel tumpuk di layar jadi kolom
+    // TERPISAH di sini.
     exportToExcel(hasil.map(r => ({
       'SKPD Asal (menyerahkan)': r.asal?.nama || '',
       'SKPD Tujuan (menerima)': r.tujuan?.nama || '',
@@ -300,12 +314,17 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
       'Uraian Barang': r.aset?.uraian_barang || '',
       'Spesifikasi Nama Barang': r.aset?.nama_barang || '',
       'NIBAR': r.aset?.nibar || '',
-      'Komptabel': (r.aset?.intra_ekstra || '').toUpperCase(),
+      'Merk/Tipe': r.aset?.merek_tipe || '',
+      'Spesifikasi Lainnya': r.aset?.spesifikasi_lainnya || '',
+      'No. Polisi': r.aset?.no_polisi || '',
+      'No. Rangka': r.aset?.no_rangka || '',
+      'No. Mesin': r.aset?.no_mesin || '',
+      'Luas': r.aset?.luas ?? '',
       'No. Dokumen': r.header?.no_sk || r.payload?.no_sk || '',
       'Tgl Dokumen': r.header?.tanggal || r.payload?.tgl_dokumen_sumber || '',
-      'Tgl Tercatat': r.tanggal,
-      'Periode': r.periode,
+      'Semester': r.periode,
       'Nilai (Rp)': r.nilai,
+      'Komptabel': (r.aset?.intra_ekstra || '').toUpperCase(),
       'Pengembalian': r.payload?.reversal ? 'Ya' : '',
       'Keterangan': r.keterangan || '',
     })), namaBerkasLaporan({ laporan: p.filePrefix, periode, skpd: namaSkpd.nama }), 'Laporan')
@@ -444,25 +463,28 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
                   <tr>
                     <th className="table-th">Dari SKPD</th>
                     <th className="table-th">Ke SKPD</th>
-                    <th className="table-th">Kode Barang</th>
-                    <th className="table-th">Uraian Barang</th>
-                    <th className="table-th">Spesifikasi Nama Barang / NIBAR</th>
-                    <th className="table-th">Komptabel</th>
-                    <th className="table-th">No. Dokumen</th>
-                    <th className="table-th">Tgl Dokumen</th>
-                    <th className="table-th text-right">Nilai</th>
+                    <th className="table-th">Kode Barang / Uraian Barang</th>
+                    <th className="table-th">Nama Barang / NIBAR</th>
+                    <th className="table-th">Merk/Tipe</th>
+                    <th className="table-th">Spesifikasi Lainnya</th>
+                    <th className="table-th">No. Polisi</th>
+                    <th className="table-th">No. Rangka</th>
+                    <th className="table-th">No. Mesin</th>
+                    <th className="table-th text-right">Luas</th>
+                    <th className="table-th">No. Dokumen Sumber / Tgl / Semester</th>
+                    <th className="table-th text-right">Nilai / Komptabel</th>
                     <th className="table-th">Keterangan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {loading ? (
-                    <tr><td colSpan={10} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                    <tr><td colSpan={13} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={10} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
+                    <tr><td colSpan={13} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
                   ) : rows.map(r => (
                     <tr key={r.id}>
-                      <td className="table-td text-xs">{r.asal?.nama || '-'}</td>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">{r.asal?.nama || '-'}</td>
+                      <td className="table-td text-xs align-top">
                         {r.tujuan?.nama || '-'}
                         {/* Baris pengembalian (mekanik "Kembalikan" yang sudah
                             DICABUT 2026-08-12) menukar asal↔tujuan. Ditandai
@@ -473,20 +495,30 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
                           <span className="ml-1 text-[10px] text-amber-600">(pengembalian)</span>
                         )}
                       </td>
-                      <td className="table-td text-xs">{r.aset?.kode || '-'}</td>
-                      <td className="table-td text-xs">{r.aset?.uraian_barang || '-'}</td>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">
+                        <p className="font-medium">{r.aset?.kode || '-'}</p>
+                        <p className="text-gray-400 mt-0.5">{r.aset?.uraian_barang || '-'}</p>
+                      </td>
+                      <td className="table-td text-xs align-top">
                         <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
                         <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
                       </td>
-                      <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
-                      <td className="table-td text-xs">{r.header?.no_sk || r.payload?.no_sk || '-'}</td>
-                      <td className="table-td text-xs">
-                        {r.header?.tanggal || r.payload?.tgl_dokumen_sumber || '-'}
-                        <br /><span className="text-gray-400">{r.periode}</span>
+                      <td className="table-td text-xs align-top">{r.aset?.merek_tipe || '-'}</td>
+                      <td className="table-td text-xs align-top">{r.aset?.spesifikasi_lainnya || '-'}</td>
+                      <td className="table-td text-xs align-top whitespace-nowrap">{r.aset?.no_polisi || '-'}</td>
+                      <td className="table-td text-xs align-top whitespace-nowrap">{r.aset?.no_rangka || '-'}</td>
+                      <td className="table-td text-xs align-top whitespace-nowrap">{r.aset?.no_mesin || '-'}</td>
+                      <td className="table-td text-xs text-right align-top">{r.aset?.luas ?? '-'}</td>
+                      <td className="table-td text-xs align-top">
+                        <p className="font-medium">{r.header?.no_sk || r.payload?.no_sk || '-'}</p>
+                        <p className="text-gray-400">{r.header?.tanggal || r.payload?.tgl_dokumen_sumber || '-'}</p>
+                        <p className="text-gray-400">{r.periode}</p>
                       </td>
-                      <td className="table-td text-xs text-right">{formatRupiah2(r.nilai)}</td>
-                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">{r.keterangan || '-'}</td>
+                      <td className="table-td text-xs text-right align-top">
+                        <p className="font-medium">{formatRupiah2(r.nilai)}</p>
+                        <p className="text-gray-400">{(r.aset?.intra_ekstra || '-').toUpperCase()}</p>
+                      </td>
+                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate align-top">{r.keterangan || '-'}</td>
                     </tr>
                   ))}
                 </tbody>

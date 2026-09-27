@@ -28,6 +28,17 @@
 // menyaring `batal_penghapusan` lewat `fetchBatalTargets` yang TERSCOPE, yang
 // menjawab pertanyaan yang sama dengan cara yang sepakat dgn seluruh modul
 // pelaporan lain.
+//
+// ⚠️ Kolom tab "Daftar Transaksi" DISTANDARKAN 2026-09-27 (permintaan user,
+// lintas menu Pelaporan): Kode Barang/Uraian ditumpuk, Merk/Tipe · Spesifikasi
+// Lainnya · No. Polisi/Rangka/Mesin · Luas ditambahkan. Kolom kelima
+// (cara/penerima) tetap SATU kolom yang labelnya berganti per cabang — untuk
+// **Sebab Lain** (`f.scope==='aset'`, sama seperti Pemindahtanganan) labelnya
+// jatuh ke "Cara Pemindahtanganan" & isinya kosong ("-"), karena spesifikasi
+// user cuma menyebut dua varian (Pemindahtanganan & Pengalihan Status) —
+// interpretasi ini, bukan permintaan eksplisit. Komptabel & Nilai Buku
+// DIPERTAHANKAN walau tak disebut literal di spesifikasi — dua-duanya info
+// yang sudah ada & berguna, menghapusnya jadi regresi tanpa alasan.
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -147,21 +158,27 @@ export default function LaporanPenghapusan() {
     // yang di layar.
     exportToExcel(rows.map(r => ({
       'SKPD': r.skpdNama || '',
-      'NIBAR': r.aset?.nibar || '',
       'Kode Barang': r.aset?.kode || '',
       'Nama Barang': r.aset?.uraian_barang || '',
       'Spesifikasi Nama Barang': r.aset?.nama_barang || '',
+      'NIBAR': r.aset?.nibar || '',
+      'Merk/Tipe': r.aset?.merek_tipe || '',
+      'Spesifikasi Lainnya': r.aset?.spesifikasi_lainnya || '',
+      'No. Polisi': r.aset?.no_polisi || '',
+      'No. Rangka': r.aset?.no_rangka || '',
+      'No. Mesin': r.aset?.no_mesin || '',
+      'Luas (m²)': r.aset?.luas ?? '',
       'Jumlah': r.aset?.jumlah ?? 1,
       'Satuan': r.aset?.satuan || '',
       'Komptabel': (r.aset?.intra_ekstra || '').toUpperCase(),
-      'Jumlah Total (Rp)': r.nilai,
-      'Akumulasi (Rp)': r.akumulasi ?? 0,
-      'Nilai Buku (Rp)': r.nilaiBuku ?? 0,
       'Cara Pemindahtanganan': r.caraPemindahtanganan,
-      'Penerima Penyerahan': r.penerima || '',
+      'Penerima Pemindahtanganan': r.penerima || '',
       'No. SK Penghapusan': r.header?.no_sk || '',
       'Tgl SK Penghapusan': r.header?.tanggal || r.tanggal,
       'Periode': r.periode,
+      'Nilai Perolehan (Rp)': r.nilai,
+      'Akumulasi (Rp)': r.akumulasi ?? 0,
+      'Nilai Buku (Rp)': r.nilaiBuku ?? 0,
       'Keterangan': r.keterangan || r.aset?.keterangan || '',
     })), namaBerkas(), 'Laporan')
   }
@@ -296,44 +313,59 @@ export default function LaporanPenghapusan() {
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
                     <th className="table-th">SKPD</th>
-                    <th className="table-th">Barang</th>
-                    <th className="table-th">Kode Barang</th>
+                    <th className="table-th">Kode Barang / Uraian Barang</th>
+                    <th className="table-th">Nama Barang / NIBAR</th>
+                    <th className="table-th">Merk/Tipe</th>
+                    <th className="table-th">Spesifikasi Lainnya</th>
+                    <th className="table-th">No. Polisi</th>
+                    <th className="table-th">No. Rangka</th>
+                    <th className="table-th">No. Mesin</th>
+                    <th className="table-th">Luas</th>
                     <th className="table-th">Komptabel</th>
                     <th className="table-th">
-                      {f.scope === 'asal' ? 'Penerima Penyerahan' : 'Cara Pemindahtanganan'}
+                      {f.scope === 'asal' ? 'Penerima Pemindahtanganan' : 'Cara Pemindahtanganan'}
                     </th>
-                    <th className="table-th">SK Penghapusan</th>
-                    <th className="table-th text-right">Nilai</th>
+                    <th className="table-th">SK Penghapusan / Tanggal</th>
+                    <th className="table-th text-right">Nilai Perolehan</th>
                     <th className="table-th text-right">Nilai Buku</th>
                     <th className="table-th">Keterangan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {loading ? (
-                    <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                    <tr><td colSpan={15} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
+                    <tr><td colSpan={15} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
                   ) : rows.slice(0, 500).map(r => (
                     <tr key={r.id}>
-                      <td className="table-td text-xs">{r.skpdNama || '-'}</td>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">{r.skpdNama || '-'}</td>
+                      <td className="table-td text-xs align-top">
+                        <p className="font-medium">{r.aset?.kode || '-'}</p>
+                        <p className="text-gray-400">{r.aset?.uraian_barang || '-'}</p>
+                      </td>
+                      <td className="table-td text-xs align-top">
                         <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
                         <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
                       </td>
-                      <td className="table-td text-xs">{r.aset?.kode || '-'}</td>
-                      <td className="table-td text-xs">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">{r.aset?.merek_tipe || '-'}</td>
+                      <td className="table-td text-xs align-top max-w-[160px]">{r.aset?.spesifikasi_lainnya || '-'}</td>
+                      <td className="table-td text-xs align-top">{r.aset?.no_polisi || '-'}</td>
+                      <td className="table-td text-xs align-top">{r.aset?.no_rangka || '-'}</td>
+                      <td className="table-td text-xs align-top">{r.aset?.no_mesin || '-'}</td>
+                      <td className="table-td text-xs align-top">{r.aset?.luas ?? '-'}</td>
+                      <td className="table-td text-xs align-top">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
+                      <td className="table-td text-xs align-top">
                         {(f.scope === 'asal' ? r.penerima : r.caraPemindahtanganan) || '-'}
                       </td>
-                      <td className="table-td text-xs">
-                        {r.header?.no_sk || '-'}
-                        <br /><span className="text-gray-400">{r.header?.tanggal || r.tanggal}</span>
+                      <td className="table-td text-xs align-top">
+                        <p>{r.header?.no_sk || '-'}</p>
+                        <p className="text-gray-400">{r.header?.tanggal || r.tanggal}</p>
                       </td>
-                      <td className="table-td text-xs text-right">{formatRupiah2(r.nilai)}</td>
-                      <td className="table-td text-xs text-right">
+                      <td className="table-td text-xs text-right align-top">{formatRupiah2(r.nilai)}</td>
+                      <td className="table-td text-xs text-right align-top">
                         {r.tanpaPenyusutan ? <span className="text-gray-400">…</span> : formatRupiah2(r.nilaiBuku ?? 0)}
                       </td>
-                      <td className="table-td text-xs text-gray-500 max-w-[200px] truncate">
+                      <td className="table-td text-xs text-gray-500 max-w-[200px] align-top">
                         {r.keterangan || r.aset?.keterangan || '-'}
                       </td>
                     </tr>

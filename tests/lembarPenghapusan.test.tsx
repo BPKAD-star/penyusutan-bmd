@@ -53,6 +53,7 @@ function baris(kode: string, nilai: number): BarisPenghapusan {
       harga_satuan: nilai, tgl_perolehan: '2020-05-13', keterangan: null,
       intra_ekstra: 'intra', alamat_detail: 'Jl. Contoh', skpd_id: 7,
       asal_usul: null, cara_perolehan: 'pengadaan',
+      merek_tipe: null, no_polisi: null, no_rangka: null, no_mesin: null, luas: null,
     },
     skpdNama: 'Sekretariat Daerah',
     penerima: 'Bagian Umum',

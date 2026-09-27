@@ -21,12 +21,17 @@ type HeaderPayload = {
   mulai?: string; berakhir?: string; peruntukan?: string; nilai_pemanfaatan?: number
 }
 type Row = {
-  key: string; skpd: string; jenis: string; jenisRaw: string; mitra: string; nibar: string; nama: string
+  key: string; skpd: string; jenis: string; jenisRaw: string; mitra: string
+  kode: string; uraianBarang: string; nibar: string; nama: string
+  merekTipe: string; spesifikasiLainnya: string
+  noPolisi: string; noRangka: string; noMesin: string
+  luas: number | string | null
   lingkup: string; mulai: string; berakhir: string; status: string
   // null = tak berlaku (Pinjam Pakai, non-profit) — beda dari 0 (berpendapatan
   // tapi belum diisi angkanya).
   nilai: number | null
   noDok: string
+  tglDok: string
   persen: number | null
   band: BandPemanfaatan | null
 }
@@ -77,22 +82,37 @@ export default function LaporanPemanfaatan() {
     const hById = new Map(hs.map(h => [h.id, h]))
 
     const { data: led } = await supabase.from('transaksi_bmd')
-      .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,nibar,nama_barang)')
+      .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,kode,uraian_barang,nibar,nama_barang,' +
+        'merek_tipe,spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,luas)')
       .in('jenis', ['pemanfaatan', 'pemanfaatan_selesai', 'batal_pemanfaatan'] as never)
       .in('header_id', hs.map(h => h.id)).order('id', { ascending: true })
     const ledRows = (led || []) as unknown as {
       id: number; header_id: string; jenis: string; nilai: number
       payload: { lingkup?: string; bagian?: string | null } | null
-      aset: { id: string; nibar: string | null; nama_barang: string | null } | null
+      aset: {
+        id: string; kode: string; uraian_barang: string | null; nibar: string | null; nama_barang: string | null
+        merek_tipe: string | null; spesifikasi_lainnya: string | null
+        no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
+        luas: number | string | null
+      } | null
     }[]
 
-    const acc = new Map<string, { nibar: string; nama: string; lingkup: string; selesai: boolean; headerId: string }>()
+    const acc = new Map<string, {
+      kode: string; uraianBarang: string; nibar: string; nama: string
+      merekTipe: string; spesifikasiLainnya: string
+      noPolisi: string; noRangka: string; noMesin: string; luas: number | string | null
+      lingkup: string; selesai: boolean; headerId: string
+    }>()
     for (const r of ledRows) {
       if (!r.aset || !hById.has(r.header_id)) continue
       const key = `${r.header_id}|${r.aset.id}`
       if (r.jenis === 'pemanfaatan') {
         acc.set(key, {
+          kode: r.aset.kode || '-', uraianBarang: r.aset.uraian_barang || '-',
           nibar: r.aset.nibar || '-', nama: r.aset.nama_barang || '-',
+          merekTipe: r.aset.merek_tipe || '-', spesifikasiLainnya: r.aset.spesifikasi_lainnya || '-',
+          noPolisi: r.aset.no_polisi || '-', noRangka: r.aset.no_rangka || '-', noMesin: r.aset.no_mesin || '-',
+          luas: r.aset.luas,
           lingkup: r.payload?.lingkup === 'sebagian' ? `Sebagian${r.payload?.bagian ? ` — ${r.payload.bagian}` : ''}` : 'Seluruhnya',
           selesai: false, headerId: r.header_id,
         })
@@ -117,10 +137,14 @@ export default function LaporanPemanfaatan() {
       // mungkin belum diisi.
       out.push({
         key, skpd: skpdNama[h.skpd_id] || '-', jenis: JENIS_PEMANFAATAN_LABEL[jenisRaw] || (jenisRaw || '-'), jenisRaw,
-        mitra: p.mitra || '-', nibar: v.nibar, nama: v.nama, lingkup: v.lingkup,
+        mitra: p.mitra || '-',
+        kode: v.kode, uraianBarang: v.uraianBarang, nibar: v.nibar, nama: v.nama,
+        merekTipe: v.merekTipe, spesifikasiLainnya: v.spesifikasiLainnya,
+        noPolisi: v.noPolisi, noRangka: v.noRangka, noMesin: v.noMesin, luas: v.luas,
+        lingkup: v.lingkup,
         mulai, berakhir, status,
         nilai: perluNilaiPemanfaatan(jenisRaw) ? (p.nilai_pemanfaatan ?? 0) : null,
-        noDok: h.no_sk, persen, band: persen == null ? null : bandPemanfaatan(persen),
+        noDok: h.no_sk, tglDok: h.tanggal, persen, band: persen == null ? null : bandPemanfaatan(persen),
       })
     }
     return out
@@ -133,13 +157,21 @@ export default function LaporanPemanfaatan() {
 
   async function handleExport() {
     setExporting(true)
+    // Susunan kolom disamakan dgn layar (2026-09-27, standarisasi Daftar
+    // Transaksi lintas menu Pelaporan) — sel tumpuk di layar jadi kolom
+    // TERPISAH di sini.
     exportToExcel(rows.map(r => ({
-      'SKPD': r.skpd, 'Jenis Pemanfaatan': r.jenis, 'Mitra': r.mitra, 'NIBAR': r.nibar, 'Nama Barang': r.nama,
+      'SKPD': r.skpd, 'Jenis Pemanfaatan': r.jenis, 'Mitra': r.mitra,
+      'Kode Barang': r.kode, 'Uraian Barang': r.uraianBarang,
+      'Spesifikasi Nama Barang': r.nama, 'NIBAR': r.nibar,
+      'Merk/Tipe': r.merekTipe, 'Spesifikasi Lainnya': r.spesifikasiLainnya,
+      'No. Polisi': r.noPolisi, 'No. Rangka': r.noRangka, 'No. Mesin': r.noMesin,
+      'Luas': r.luas ?? '',
+      'No. Dokumen Pemanfaatan': r.noDok, 'Tanggal Dokumen': r.tglDok,
       'Lingkup': r.lingkup, 'Mulai': r.mulai, 'Berakhir': r.berakhir,
       'Persentase Masa Berlangsung': r.persen == null ? '-' : `${Math.round(r.persen)}%`,
       'Status': r.status,
       'Nilai Pemanfaatan (Rp)': r.nilai == null ? '-' : r.nilai,
-      'No. Dokumen': r.noDok,
     })), namaBerkasLaporan({
       laporan: 'Laporan Pemanfaatan', skpd: skpdNama, akhiran: [jenis],
     }), 'Pemanfaatan')
@@ -215,7 +247,19 @@ export default function LaporanPemanfaatan() {
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <th className="table-th">SKPD</th><th className="table-th">Jenis</th><th className="table-th">Mitra</th>
-                <th className="table-th">Barang - NIBAR</th><th className="table-th">Lingkup</th>
+                <th className="table-th">Kode Barang / Uraian Barang</th>
+                <th className="table-th">Nama Barang / NIBAR</th>
+                <th className="table-th">Merk/Tipe</th>
+                <th className="table-th">Spesifikasi Lainnya</th>
+                <th className="table-th">No. Polisi</th>
+                <th className="table-th">No. Rangka</th>
+                <th className="table-th">No. Mesin</th>
+                <th className="table-th text-right">Luas</th>
+                <th className="table-th">No. Dokumen / Tanggal</th>
+                <th className="table-th">Lingkup</th>
+                {/* ⚠️ JAGA — permintaan user 2026-09-27: visualisasi bar ini
+                    sudah bagus, jangan diubah, cuma kolom sekitarnya yang
+                    disesuaikan. */}
                 <th className="table-th">Mulai s.d. Berakhir</th>
                 <th className="table-th text-center">Persentase</th>
                 <th className="table-th text-center">Status</th><th className="table-th text-right">Nilai</th>
@@ -223,23 +267,37 @@ export default function LaporanPemanfaatan() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                <tr><td colSpan={16} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Tidak ada data pemanfaatan</td></tr>
+                <tr><td colSpan={16} className="table-td text-center py-12 text-gray-400">Tidak ada data pemanfaatan</td></tr>
               ) : rows.map(r => (
                 <tr key={r.key}>
-                  <td className="table-td text-xs">{r.skpd}</td>
-                  <td className="table-td text-xs">{r.jenis}</td>
-                  <td className="table-td text-xs">{r.mitra}</td>
-                  <td className="table-td text-xs"><p className="font-medium">{r.nama}</p><p className="text-gray-400">{r.nibar}</p></td>
-                  <td className="table-td text-xs">{r.lingkup}</td>
-                  <td className="table-td text-xs">
+                  <td className="table-td text-xs align-top">{r.skpd}</td>
+                  <td className="table-td text-xs align-top">{r.jenis}</td>
+                  <td className="table-td text-xs align-top">{r.mitra}</td>
+                  <td className="table-td text-xs align-top">
+                    <p className="font-medium">{r.kode}</p>
+                    <p className="text-gray-400 mt-0.5">{r.uraianBarang}</p>
+                  </td>
+                  <td className="table-td text-xs align-top"><p className="font-medium">{r.nama}</p><p className="text-gray-400">{r.nibar}</p></td>
+                  <td className="table-td text-xs align-top">{r.merekTipe}</td>
+                  <td className="table-td text-xs align-top">{r.spesifikasiLainnya}</td>
+                  <td className="table-td text-xs align-top whitespace-nowrap">{r.noPolisi}</td>
+                  <td className="table-td text-xs align-top whitespace-nowrap">{r.noRangka}</td>
+                  <td className="table-td text-xs align-top whitespace-nowrap">{r.noMesin}</td>
+                  <td className="table-td text-xs text-right align-top">{r.luas ?? '-'}</td>
+                  <td className="table-td text-xs align-top">
+                    <p className="font-medium">{r.noDok}</p>
+                    <p className="text-gray-400">{r.tglDok || '-'}</p>
+                  </td>
+                  <td className="table-td text-xs align-top">{r.lingkup}</td>
+                  <td className="table-td text-xs align-top">
                     <p>{r.mulai || '-'} s.d. {r.berakhir || '-'}</p>
                     <div className="mt-1"><BarMasaPemanfaatan persen={r.persen} band={r.band} /></div>
                   </td>
-                  <td className="table-td text-center text-xs">{r.persen == null ? '-' : `${Math.round(r.persen)}%`}</td>
-                  <td className="table-td text-center text-xs">{r.status}</td>
-                  <td className="table-td text-right text-xs">{r.nilai == null ? '-' : formatRupiah2(r.nilai)}</td>
+                  <td className="table-td text-center text-xs align-top">{r.persen == null ? '-' : `${Math.round(r.persen)}%`}</td>
+                  <td className="table-td text-center text-xs align-top">{r.status}</td>
+                  <td className="table-td text-right text-xs align-top">{r.nilai == null ? '-' : formatRupiah2(r.nilai)}</td>
                 </tr>
               ))}
             </tbody>

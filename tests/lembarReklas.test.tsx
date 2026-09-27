@@ -71,6 +71,7 @@ function baris(
     aset: {
       kode: kodeBaru, nama_barang: nama, uraian_barang: 'Uraian', nibar: '1'.repeat(45),
       satuan: 'Unit', jumlah: 1, keterangan: null, intra_ekstra: 'intra', skpd_id: 1,
+      merek_tipe: null, spesifikasi_lainnya: null,
     },
     ...sisiReklas(arah, { kodeLama, kodeBaru, namaAset: nama }),
     kodeLama, kodeBaru,

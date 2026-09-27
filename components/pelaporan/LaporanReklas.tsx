@@ -34,6 +34,11 @@
 // `skpd_asal`/`skpd_tujuan`, yang di ledger reklas SELALU NULL — jadi memilih
 // SKPD di menu lama menghasilkan **0 transaksi** yang kelihatan sah. Di sini
 // SKPD disaring lewat `aset.skpd_id` (lihat lib/laporanReklas.ts).
+//
+// ⚠️ Kolom "Daftar Transaksi" DISTANDARKAN 2026-09-27 (permintaan user, lintas
+// menu Pelaporan): Merk/Tipe & Spesifikasi Lainnya ditambahkan sesudah
+// Spesifikasi Nama Barang/NIBAR; No. Dokumen/Tanggal/Semester ditumpuk satu
+// sel. Kolom "Sebelum/Sesudah Reklas" TIDAK disentuh — itu inti keluarga ini.
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -216,6 +221,8 @@ export default function LaporanReklas() {
       'SKPD Induk': indukNama(r),
       'NIBAR': r.aset?.nibar || '',
       'Spesifikasi Nama Barang': r.aset?.nama_barang || '',
+      'Merk/Tipe': r.aset?.merek_tipe || '',
+      'Spesifikasi Lainnya': r.aset?.spesifikasi_lainnya || '',
       'Kode Barang Sebelum': r.kodeLama,
       'Uraian Sebelum': namaTingkat.get(r.kodeLama) || '',
       'Kode Barang Sesudah': r.kodeBaru,
@@ -374,49 +381,54 @@ export default function LaporanReklas() {
                   <tr>
                     <th className="table-th">SKPD</th>
                     <th className="table-th">Spesifikasi Nama Barang / NIBAR</th>
+                    <th className="table-th">Merk/Tipe</th>
+                    <th className="table-th">Spesifikasi Lainnya</th>
                     {/* Inti permintaan user: "sebelumnya apa lalu jadi apa". */}
                     <th className="table-th">Sebelum Reklas</th>
                     <th className="table-th">Sesudah Reklas</th>
                     <th className="table-th">Penyebab</th>
-                    <th className="table-th">No. Dokumen</th>
-                    <th className="table-th">Tgl Dokumen</th>
+                    <th className="table-th">No. Dokumen / Tanggal / Semester</th>
                     <th className="table-th text-right">Nilai</th>
                     <th className="table-th">Keterangan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {loading ? (
-                    <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                    <tr><td colSpan={10} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={9} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
+                    <tr><td colSpan={10} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
                   ) : rowsUrut.map(r => (
                     <tr key={r.id}>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">
                         <p>{unitNama(r)}</p>
                         {indukNama(r) && <p className="text-gray-400">{indukNama(r)}</p>}
                       </td>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">
                         <p className="font-medium">{r.aset?.nama_barang || '-'}</p>
                         <p className="text-gray-400">{r.aset?.nibar || '-'}</p>
                       </td>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">{r.aset?.merek_tipe || '-'}</td>
+                      <td className="table-td text-xs align-top max-w-[160px]">
+                        {r.aset?.spesifikasi_lainnya || '-'}
+                      </td>
+                      <td className="table-td text-xs align-top">
                         <SisiReklas kode={r.kodeLama} nama={namaTingkat.get(r.kodeLama) || ''}
                           komptabel={r.payload?.intra_ekstra_lama}
                           namaBarang={r.payload?.nama_lama} />
                       </td>
-                      <td className="table-td text-xs">
+                      <td className="table-td text-xs align-top">
                         <SisiReklas kode={r.kodeBaru} nama={namaTingkat.get(r.kodeBaru) || ''}
                           komptabel={r.payload?.intra_ekstra}
                           namaBarang={r.payload?.nama_baru} penekanan />
                       </td>
-                      <td className="table-td text-xs">{r.penyebab || '-'}</td>
-                      <td className="table-td text-xs">{r.header?.no_sk || '-'}</td>
-                      <td className="table-td text-xs">
-                        {r.header?.tanggal || r.tanggal}
-                        <br /><span className="text-gray-400">{r.periode}</span>
+                      <td className="table-td text-xs align-top">{r.penyebab || '-'}</td>
+                      <td className="table-td text-xs align-top">
+                        <p>{r.header?.no_sk || '-'}</p>
+                        <p>{r.header?.tanggal || r.tanggal}</p>
+                        <p className="text-gray-400">{r.periode}</p>
                       </td>
-                      <td className="table-td text-xs text-right">{formatRupiah2(r.nilai)}</td>
-                      <td className="table-td text-xs text-gray-500 max-w-[200px]">
+                      <td className="table-td text-xs text-right align-top">{formatRupiah2(r.nilai)}</td>
+                      <td className="table-td text-xs text-gray-500 max-w-[200px] align-top">
                         {r.keterangan || r.aset?.keterangan || r.header?.keterangan || '-'}
                       </td>
                     </tr>

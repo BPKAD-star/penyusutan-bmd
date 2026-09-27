@@ -8128,3 +8128,109 @@ objek/jenis) dicentang manual kalau memang dibutuhkan.
 - **Tak ada migrasi** — murni nilai awal `useState` di lima komponen React;
   DB/RPC/ledger tak disentuh. Diverifikasi: tsc 0 error, 1869 test tetap
   hijau, 0 lint warning baru di kelima berkas yang disunting.
+
+## Kolom "Daftar Transaksi" (bukan Format Permendagri) DISTANDARKAN lintas menu Pelaporan (2026-09-27)
+
+Permintaan user, terpisah dari perubahan checkbox bawaan di atas — kali ini
+tab **Daftar Transaksi** (bukan lembar cetak Permendagri) di enam berkas
+Pelaporan Cara Perolehan & Pengelolaan. **Tak ada migrasi** — murni JSX +
+perluasan `select()` klien (semua kolom aset yang ditambahkan sudah ada di
+`aset` sejak lama: `merek_tipe`/`spesifikasi_lainnya` sejak awal aplikasi,
+`no_polisi`/`no_rangka`/`no_mesin`/`luas` sejak `lib/asetFields.ts`).
+
+**Enam berkas disunting, mengikuti tata letak yang diminta user
+persis** (dash-separated = tumpuk dua/tiga baris dalam satu sel, pola yang
+sudah lama dianut repo ini):
+
+- **`components/LaporanPerolehan.tsx`** (Pengadaan · Hibah · Tukar Menukar ·
+  Hasil Inventarisasi · Perolehan Lainnya, satu komponen bersama): SKPD ·
+  Kode Barang/Uraian Barang · Nama Barang/NIBAR · Merk/Tipe · Spesifikasi
+  Lainnya · Luas · [Pihak — hanya 4 menu manual] · [No. Kontrak/Tgl Kontrak —
+  hanya Pengadaan] · No. BAST/Tgl BAST/Semester (tumpuk 3 baris, Pengadaan)
+  ATAU No. Dokumen/Tanggal/Semester (3 menu manual lain) · [Nama Penyedia —
+  hanya Pengadaan] · [Kode Rekening/Uraian + Kode Sub Kegiatan/Uraian — hanya
+  Pengadaan] · Nilai Perolehan/Komptabel (tumpuk) · Keterangan.
+  ⚠️ `header:header_id(...,nama_penyedia:payload->>nama_penyedia,
+  sub_kegiatan:payload->>sub_kegiatan,no_bast:payload->>no_bast)` — ruas
+  TUNGGAL lewat `->>`, BUKAN `payload` utuh (pelajaran 2026-09-08: join
+  `payload` mentah = 53 MB JSON per query, pernah mematikan Laporan Hibah
+  sehari).
+- **`components/pelaporan/LaporanPerpindahan.tsx`** (dipakai BERSAMA
+  Penggunaan · Penerimaan Internal · Pengeluaran Internal — dikonfirmasi lewat
+  `page.tsx` ketiga menu, satu edit menutup tiga baris permintaan user): Dari
+  SKPD · Ke SKPD · Kode Barang/Uraian Barang · Nama Barang/NIBAR · Merk/Tipe ·
+  Spesifikasi Lainnya · No. Polisi · No. Rangka · No. Mesin · Luas · No.
+  Dokumen Sumber/Tgl/Semester (tumpuk) · Nilai/Komptabel (tumpuk) ·
+  Keterangan.
+- **`components/pelaporan/LaporanPemanfaatan.tsx`**: SKPD · Jenis · Mitra ·
+  Kode Barang/Uraian Barang · Nama Barang/NIBAR · Merk/Tipe · Spesifikasi
+  Lainnya · No. Polisi · No. Rangka · No. Mesin · Luas · No. Dokumen/Tanggal
+  (tumpuk, BARU) · Lingkup · **Mulai s.d. Berakhir (bar visualisasi) — SENGAJA
+  TIDAK DISENTUH, permintaan user eksplisit** ("udah bagus itu, jangan diubah,
+  cuma kolom sekitarnya") · Persentase · Nilai. Kolom **Status DIPERTAHANKAN**
+  walau tak disebut literal — pola yang sama dipakai konsisten di seluruh
+  putaran ini: info fungsional yang sudah ada tak dibuang demi mengikuti
+  daftar secara harfiah kalau membuangnya jadi regresi murni.
+- **`components/pelaporan/LaporanReklas.tsx`**: SKPD · Spesifikasi Nama
+  Barang/NIBAR · **Merk/Tipe · Spesifikasi Lainnya (BARU)** · Sebelum Reklas ·
+  Sesudah Reklas (dua kolom ini TIDAK disentuh — itu inti keluarga IV.F,
+  `SisiReklas`) · Penyebab · No. Dokumen/Tanggal/Semester (tumpuk) · Nilai ·
+  Keterangan. `lib/laporanReklas.ts` `SEL`/`BarisReklas.aset` diperluas
+  `merek_tipe,spesifikasi_lainnya`.
+- **`components/pelaporan/LaporanPengamanan.tsx`**: SKPD · Nama Pemakai/NIP
+  (tumpuk) · No. BAST/Tanggal (tumpuk) · Pakta Integritas/Tanggal (tumpuk) ·
+  Nama Barang/NIBAR · Merk/Tipe · Spesifikasi Lainnya · No. Polisi · No.
+  Rangka · No. Mesin · Luas · Status (dipertahankan, alasan sama dgn
+  Pemanfaatan) · Nilai. Query `transaksi_bmd→aset` diperluas.
+- **`components/pelaporan/LaporanPenghapusan.tsx`**: SKPD · Kode
+  Barang/Uraian Barang (tumpuk, BARU — dulu kode tanpa uraian) · Nama
+  Barang/NIBAR · Merk/Tipe · Spesifikasi Lainnya · No. Polisi · No. Rangka ·
+  No. Mesin · Luas · Komptabel (dipertahankan) · **Cara Pemindahtanganan**
+  (cabang `pemindahtanganan` & `sebab_lain`, scope `'aset'`) ATAU **Penerima
+  Pemindahtanganan** (cabang `pengalihan`, scope `'asal'`) — SATU kolom yang
+  labelnya berganti per cabang, kode lama sudah begitu (`f.scope==='asal' ?
+  ... : ...`), cuma label & urutan disamakan ke spesifikasi. SK
+  Penghapusan/Tanggal (tumpuk) · Nilai Perolehan · Nilai Buku (dipertahankan).
+  `lib/laporanPenghapusan.ts` `SEL`/`BarisPenghapusan.aset` diperluas
+  `merek_tipe,no_polisi,no_rangka,no_mesin,luas` (`spesifikasi_lainnya`
+  sudah ada).
+
+**Interpretasi atas permintaan yang tak sepenuhnya eksplisit** (user meminta
+eksekusi penuh sambil pergi makan, jadi diputuskan sendiri & dicatat di sini
+untuk dikonfirmasi):
+
+- ⚠️ **Koreksi & Kapitalisasi TIDAK disentuh** — user menulis "posisi saat ini
+  saja" untuk keduanya, dibaca sebagai "biarkan seperti sekarang, jangan ubah
+  kolomnya". `components/pelaporan/LaporanKoreksi.tsx` &
+  `LaporanKapitalisasi.tsx` tak disunting sama sekali di putaran ini.
+- ⚠️ **Cabang "Sebab Lain" Penghapusan** tak disebut eksplisit di spesifikasi
+  (yang diberi hanya varian Pemindahtanganan & Pengalihan Status). Kolom
+  kelimanya (Cara/Penerima) tetap dirender dengan label "Cara
+  Pemindahtanganan" (sama seperti cabang Pemindahtanganan, karena
+  `f.scope==='aset'` di dua-duanya) — nilainya akan tampil "-" untuk seluruh
+  baris Sebab Lain karena `caraPemindahtanganan` cuma terisi dari
+  `sub_jenis` kartu `penghapusan_pemindahtanganan`. Kalau ini bukan yang
+  dimaksud, kolom itu perlu disembunyikan khusus utk cabang `sebab_lain`.
+- ⚠️ **Kolom yang "dipertahankan" (Status di Pemanfaatan/Pengamanan;
+  Komptabel & Nilai Buku di Penghapusan)** tak disebut di spesifikasi kolom
+  user — diputuskan tetap ditampilkan karena menghapusnya adalah regresi
+  fungsional murni (kehilangan info yang sudah berguna) tanpa alasan yang
+  diberikan utk membuangnya. Kalau memang harus dibuang biar strict sesuai
+  daftar, tinggal cabut sel & header-nya.
+- **Excel export TETAP RATA (flat), tak ikut ditumpuk** di keenam berkas —
+  konsisten dgn konvensi repo yang sudah berkali-kali ditulis di CLAUDE.md
+  ("berkas kerja dipivot & disortir per kolom, kode yang menempel pada
+  uraiannya tak bisa dipakai sbg kunci"). Kolom baru ditambahkan ke posisi
+  yang sepadan dgn urutan tampilan layar.
+- **`align-top` ditambahkan** ke sel-sel yang kini bertumpuk 2–3 baris di
+  seluruh tabel yang disunting — tanpa itu kolom tumpuk "melayang" di tengah
+  vertikal dibanding kolom satu-baris di baris yang sama (kelas bug yang
+  sudah tercatat di bagian "Daftar Barang: badge... sel angka diratakan
+  atas").
+
+**Diverifikasi**: `npx tsc --noEmit -p tsconfig.json` 0 error; `npx vitest
+run` 92 berkas / 1869 test hijau; `npx eslint` — 17 warning, SAMA PERSIS
+jumlahnya (dibandingkan lewat `git stash` ke keadaan sebelum edit) sebelum &
+sesudah, jadi 0 warning baru. Fixture `tests/lembarReklas.test.tsx` &
+`tests/lembarPenghapusan.test.tsx` disesuaikan (field baru wajib di tipe
+`BarisReklas.aset`/`BarisPenghapusan.aset`).
