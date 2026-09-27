@@ -19,11 +19,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {
   FORMAT_PENGHAPUSAN, URUT_PENGHAPUSAN, TANGGA_REKAP_PENGHAPUSAN,
-  SEG_MIN_REKAP_PENGHAPUSAN, SEL_KODE_PENGHAPUSAN,
-  kolomLembarPenghapusan, lebarKodePenghapusan, judulRekapPenghapusan,
+  SEG_MIN_REKAP_PENGHAPUSAN, KOLOM_DIJUMLAH_PENGHAPUSAN, judulRekapPenghapusan,
   type IdPenghapusan,
 } from './formatPenghapusan'
-import { SEG_SUBTOTAL, susunRinci, susunRekap, sisaLebar, type ItemLaporan } from './formatPermendagri'
+import { susunRinci, susunRekap, type ItemLaporan } from './formatPermendagri'
 import { SUBJENIS_OPT, SUBJENIS_LABEL, JENIS_PENGHAPUSAN } from './penghapusan'
 import { periodePosisiPenghapusan, penghapusanEfektif } from './laporanPenghapusan'
 
@@ -89,179 +88,60 @@ describe('registry IV.K', () => {
   })
 })
 
+// ── Lembar RINCI: susunan kolom keputusan user (2026-09-28) ─────────────────
 describe('kolom lembar rinci', () => {
-  it('kunci kolom unik di tiap cabang', () => {
-    for (const [id, f] of tiapCabang) {
-      const k = kolomLembarPenghapusan(f).map(x => x.key)
-      expect(new Set(k).size, `${id}: kunci kembar`).toBe(k.length)
-    }
+  const kunci = (id: IdPenghapusan) => FORMAT_PENGHAPUSAN[id].kolom.map(k => k.key)
+
+  it('urutan kolom PERSIS seperti yang ditetapkan user — tiap cabang', () => {
+    // Urutan kolom lembar bertanda tangan itu aturan integritas: pemeriksa
+    // mencocokkannya kolom per kolom dgn contoh yang disetujui.
+    const awal = ['nibar', 'kode', 'nama', 'merek', 'no_polisi', 'jumlah',
+      'harga_satuan', 'nilai_perolehan', 'akumulasi', 'nilai_buku']
+    const akhir = ['dok_nomor', 'dok_tanggal', 'keterangan']
+    expect(kunci('pemindahtanganan')).toEqual([...awal, 'lokasi', 'cara_pemindahtanganan', ...akhir])
+    expect(kunci('pengalihan')).toEqual([...awal, 'tgl_perolehan', 'cara_perolehan', 'lokasi', 'penerima', ...akhir])
+    expect(kunci('sebab_lain')).toEqual([...awal, 'lokasi', 'sebab', ...akhir])
   })
 
-  it('penomoran berurut & TEPAT melompati satu nomor untuk blok Kode Barang', () => {
-    for (const [id, f] of tiapCabang) {
-      const n = kolomLembarPenghapusan(f).map(x => x.nomor)
-      expect(n[0], `${id}: NIBAR kolom (8)`).toBe(8)
-      expect(n[0] + 2, `${id}: Nama Barang harus melompat satu nomor (blok kode)`).toBe(n[1])
-      for (let i = 2; i < n.length; i++) {
-        expect(n[i], `${id}: nomor kolom ke-${i} tidak berurut`).toBe(n[i - 1] + 1)
-      }
-    }
-  })
-
-  it('NIBAR berdiri DI LUAR blok kode & jadi kolom paling kiri', () => {
-    for (const [id, f] of tiapCabang) expect(f.kolomKiri.key, id).toBe('nibar')
-  })
-
-  it('penanda subtotal & kaki MENYAMBUNG tepat sesudah kolom terakhir', () => {
-    // Kolom yang ditambah/dibuang tanpa menggeser penomoran adalah kesalahan
-    // yang TIDAK bersuara — ini yang menangkapnya.
-    for (const [id, f] of tiapCabang) {
-      const n = kolomLembarPenghapusan(f).map(x => x.nomor)
-      expect(f.subtotal[0], `${id}: subtotal pertama`).toBe(n[n.length - 1] + 1)
-      expect(f.kaki.tanggal, `${id}: kaki.tanggal`).toBe(f.subtotal[3] + 1)
-      expect(f.kaki.jabatan, id).toBe(f.kaki.tanggal + 1)
-      expect(f.kaki.nama, id).toBe(f.kaki.jabatan + 1)
-    }
-  })
-
-  it('subtotal SEJAJAR dengan SEG_SUBTOTAL [6,5,4,3]', () => {
-    for (const [id, f] of tiapCabang) {
-      expect(f.subtotal.length, id).toBe(SEG_SUBTOTAL.length)
-      for (let i = 1; i < f.subtotal.length; i++) {
-        expect(f.subtotal[i], `${id}: subtotal harus menaik`).toBe(f.subtotal[i - 1] + 1)
-      }
-    }
-  })
-
-  it('sepuluh kolom pertama IDENTIK di ketiga cabang', () => {
-    // ⚠️ Itu yang membuat satu registry & satu penyaji sah. Kalau salah satu
-    // cabang menyimpang di blok ini, penyajinya diam-diam mencetak susunan yang
-    // berbeda dari kembarannya.
-    const kunci = (id: IdPenghapusan) =>
-      kolomLembarPenghapusan(FORMAT_PENGHAPUSAN[id]).slice(0, 10).map(k => k.key)
-    expect(kunci('pengalihan')).toEqual(kunci('pemindahtanganan'))
-    expect(kunci('sebab_lain')).toEqual(kunci('pemindahtanganan'))
-    expect(kunci('pemindahtanganan')).toEqual([
-      'nibar', 'nama', 'spek_nama', 'spek_lain', 'jumlah', 'satuan',
-      'harga_satuan', 'jumlah_total', 'akumulasi', 'nilai_buku',
-    ])
-  })
-
-  it('blok SK Penghapusan + Keterangan menutup KETIGA cabang', () => {
-    for (const [id, f] of tiapCabang) {
-      const k = kolomLembarPenghapusan(f).map(x => x.key)
-      expect(k.slice(-3), `${id}: tiga kolom terakhir`).toEqual(['sk_tanggal', 'sk_nomor', 'keterangan'])
-    }
+  it('Sebab Lain berjudul "Sebab Penghapusan" — kembar K.1 minus Cara Pemindahtanganan', () => {
+    const k = FORMAT_PENGHAPUSAN.sebab_lain.kolom.find(x => x.key === 'sebab')!
+    expect(k.judul).toBe('Sebab Penghapusan')
+    expect(kunci('sebab_lain')).not.toContain('cara_pemindahtanganan')
   })
 
   it('kolom khas cabang tak menular ke cabang lain', () => {
-    const k = (id: IdPenghapusan) => kolomLembarPenghapusan(FORMAT_PENGHAPUSAN[id]).map(x => x.key)
-    // "Cara Pemindahtanganan" HANYA di IV.K.1 — satu-satunya kolom yang
-    // membedakan hibah, penjualan, tukar-menukar, & penyertaan modal.
-    expect(k('pemindahtanganan')).toContain('cara_pemindahtanganan')
-    expect(k('pengalihan')).not.toContain('cara_pemindahtanganan')
-    expect(k('sebab_lain')).not.toContain('cara_pemindahtanganan')
-    // "Penerima Penyerahan", "Tgl Perolehan", & "Cara Perolehan" HANYA di IV.K.2.
-    for (const key of ['penerima', 'tgl_perolehan', 'cara_perolehan']) {
-      expect(k('pengalihan'), key).toContain(key)
-      expect(k('pemindahtanganan'), key).not.toContain(key)
-      expect(k('sebab_lain'), key).not.toContain(key)
-    }
-    // Lokasi ada di KETIGANYA.
-    for (const id of URUT_PENGHAPUSAN) expect(k(id), id).toContain('lokasi')
+    expect(kunci('pemindahtanganan')).not.toContain('penerima')
+    expect(kunci('sebab_lain')).not.toContain('penerima')
+    expect(kunci('pengalihan')).not.toContain('cara_pemindahtanganan')
+    expect(kunci('pengalihan')).not.toContain('sebab')
   })
 
-  it('jumlah kolom menyusut sesuai yang dibuang tiap cabang', () => {
-    const n = (id: IdPenghapusan) => kolomLembarPenghapusan(FORMAT_PENGHAPUSAN[id]).length
-    // K.2 paling lebar (4 kolom lebih dari K.1); K.6 paling ramping.
-    expect(n('pengalihan')).toBe(n('pemindahtanganan') + 2)
-    expect(n('sebab_lain')).toBe(n('pemindahtanganan') - 1)
+  it('ketiga cabang TIDAK berbagi objek kolom yang sama', () => {
+    expect(FORMAT_PENGHAPUSAN.pemindahtanganan.kolom).not.toBe(FORMAT_PENGHAPUSAN.sebab_lain.kolom)
   })
 
-  it('kolom bergrup berdampingan — grup tak boleh terpotong kolom lain', () => {
-    // Kepala tabel merakit grup dgn menyusuri kolom berurutan; grup yang
-    // terpotong menghasilkan DUA kepala bernama sama & colSpan yang salah.
-    for (const [id, f] of tiapCabang) {
-      const terlihat = new Set<string>()
-      let lalu = ''
-      for (const g of f.kolom.map(k => k.grup ?? '')) {
-        if (g && g !== lalu) {
-          expect(terlihat.has(g), `${id}: grup '${g}' terpotong`).toBe(false)
-          terlihat.add(g)
-        }
-        lalu = g
-      }
-    }
-  })
-})
-
-describe('lebar kolom — "fit to window", tak boros ke samping', () => {
-  it('total lebar kolom + blok kode = 100 PERSIS di tiap cabang', () => {
-    for (const [id, f] of tiapCabang) {
-      const jumlah = kolomLembarPenghapusan(f).reduce((s, k) => s + k.lebar, 0)
-      expect(Number((jumlah + lebarKodePenghapusan(f)).toFixed(6)), id).toBe(100)
-      expect(sisaLebar(kolomLembarPenghapusan(f)), id).toBe(lebarKodePenghapusan(f))
-    }
+  it.each(tiapCabang)('%s — total lebar 100 PERSIS & tiap kolom positif', (id, f) => {
+    const total = f.kolom.reduce((a, x) => a + x.lebar, 0)
+    expect(Math.round(total * 100) / 100, id).toBe(100)
+    for (const x of f.kolom) expect(x.lebar, `${id}.${x.key}`).toBeGreaterThan(0)
   })
 
-  it('blok kode cukup lebar untuk 7 sel segmen — tapi tak boros', () => {
-    // ⚠️ DUA arah sekaligus (permintaan user 2026-09-07: "rapi & fit to window,
-    // jangan boros ke sampingnya"). Terlalu sempit → segmen 3 karakter ("001")
-    // membungkus; terlalu lebar → ruang yang mestinya jadi jatah kolom teks
-    // panjang, yang justru penentu TINGGI baris.
-    for (const [id, f] of tiapCabang) {
-      const perSel = lebarKodePenghapusan(f) / SEL_KODE_PENGHAPUSAN
-      expect(perSel, `${id}: sel kode terlalu sempit`).toBeGreaterThan(1.4)
-      expect(perSel, `${id}: sel kode boros — beri ke kolom teks`).toBeLessThan(2.0)
-    }
+  it.each(tiapCabang)('%s — NIBAR dapat jatah terbesar (≥ 10%)', (_id, f) => {
+    const nibar = f.kolom.find(x => x.key === 'nibar')!.lebar
+    expect(nibar).toBeGreaterThanOrEqual(10)
+    for (const x of f.kolom) expect(x.lebar).toBeLessThanOrEqual(nibar)
   })
 
-  it('kolom teks panjang dapat porsi lebih besar dari kolom angka pendek', () => {
-    // Penjaga ARAH, bukan angka pasti: yang menentukan tinggi baris adalah
-    // kolom teks yang membungkus (pelajaran lembar IV.F, 2026-09-07).
-    for (const [id, f] of tiapCabang) {
-      const l = (k: string) => kolomLembarPenghapusan(f).find(x => x.key === k)!.lebar
-      expect(l('nama'), `${id}: Nama Barang (nomenklatur, terpanjang)`).toBeGreaterThan(l('jumlah_total'))
-      expect(l('spek_nama'), `${id}: Spesifikasi Nama Barang`).toBeGreaterThan(l('satuan'))
-      expect(l('jumlah'), `${id}: kolom Jumlah tak perlu lebar`).toBeLessThan(3)
-    }
+  it.each(tiapCabang)('%s — kolom uang dijumlah BERURUTAN, Harga Satuan tidak', (_id, f) => {
+    const idx = KOLOM_DIJUMLAH_PENGHAPUSAN.map(key => f.kolom.findIndex(x => x.key === key))
+    expect(idx.every(i => i >= 0)).toBe(true)
+    expect(idx).toEqual(idx.map((_, j) => idx[0] + j))
+    expect(KOLOM_DIJUMLAH_PENGHAPUSAN).not.toContain('harga_satuan')
   })
 
-  it('NIBAR tak boleh dipersempit — 45 digit dipenggal DUA baris, bukan tiga', () => {
-    for (const [id, f] of tiapCabang) {
-      expect(f.kolomKiri.lebar, `${id}: kolom NIBAR`).toBeGreaterThanOrEqual(7.5)
-    }
-  })
-
-  it('kolom bertanggal punya batas bawah keras — ia dirender nowrap', () => {
-    // "13/05/2020" @7,5px ≈ 42 px + padding ≈ 46 px; 4,0% dari lebar cetak F4
-    // lanskap (±1.200 px) = 48 px. Di bawah itu tanggalnya meluber ke sel
-    // sebelah DI SETIAP BARIS, dan `table-fixed` menyembunyikannya sampai
-    // kertasnya keluar.
-    for (const [id, f] of tiapCabang) {
-      for (const k of kolomLembarPenghapusan(f).filter(x => x.rata === 'tengah' && x.key.includes('tgl') === false && x.key.includes('tanggal'))) {
-        expect(k.lebar, `${id}.${k.key}`).toBeGreaterThanOrEqual(4.0)
-      }
-      const tglPerolehan = kolomLembarPenghapusan(f).find(x => x.key === 'tgl_perolehan')
-      if (tglPerolehan) expect(tglPerolehan.lebar, `${id}.tgl_perolehan`).toBeGreaterThanOrEqual(4.0)
-    }
-  })
-
-  it('tiap kolom punya lebar positif', () => {
-    for (const [id, f] of tiapCabang) {
-      for (const k of kolomLembarPenghapusan(f)) expect(k.lebar, `${id}.${k.key}`).toBeGreaterThan(0)
-    }
-  })
-
-  it('lembar rekap berjudul REKAPITULASI, lembar rinci LAPORAN', () => {
-    for (const [id, f] of tiapCabang) {
-      expect(f.judul.startsWith('LAPORAN '), id).toBe(true)
-      expect(judulRekapPenghapusan(f).startsWith('REKAPITULASI '), id).toBe(true)
-      // Sisanya WAJIB sama persis — kalau tidak, dua lembar dalam satu berkas
-      // mengaku memuat hal yang berbeda.
-      expect(judulRekapPenghapusan(f).replace(/^REKAPITULASI /, ''))
-        .toBe(f.judul.replace(/^LAPORAN /, ''))
-    }
+  it.each(tiapCabang)('%s — lembar rekap REKAPITULASI, lembar rinci LAPORAN', (_id, f) => {
+    expect(f.judul.startsWith('LAPORAN ')).toBe(true)
+    expect(judulRekapPenghapusan(f).startsWith('REKAPITULASI ')).toBe(true)
   })
 })
 
@@ -285,7 +165,7 @@ describe('tangga rekap .3–.6', () => {
   it('rekap TERDALAM = subtotal lembar rinci, angka per angka', () => {
     // Lembar rinci & keempat rekapnya terbit dalam SATU berkas bertanda tangan.
     const items = contoh()
-    const rinci = susunRinci(items, FORMAT_PENGHAPUSAN.pemindahtanganan.subtotal)
+    const rinci = susunRinci(items, [24, 25, 26, 27] as const)
       .filter(b => b.tipe === 'grup' && b.seg === 6)
     const rekap = susunRekap(items, 6, SEG_MIN_REKAP_PENGHAPUSAN).filter(b => b.seg === 6)
     expect(rekap.length).toBe(rinci.length)

@@ -1,36 +1,32 @@
-// Penjaga format lembar REKLASIFIKASI Permendagri 47/2021 — IV.F.2–F.6.
+// Penjaga format lembar REKLASIFIKASI Permendagri 47/2021 — keluarga IV.F.
 //
 // Yang dijaga di sini semuanya kelas kegagalan SENYAP — tak satu pun
 // menghasilkan error saat aplikasi dijalankan, dan semuanya baru ketahuan
 // SESUDAH lembarnya dicetak & ditandatangani:
 //
-//   · kolom ditambah/dibuang tanpa menggeser penomoran   → lembar tak cocok
-//     saat pemeriksa mencocokkannya kolom per kolom
-//   · total lebar ≠ 100                                  → kolom melar & keluar
-//     halaman (pelajaran lembar RKBMD & /cetak/perolehan)
-//   · `segMin` rekap diseragamkan                        → baris kelompok yang
+//   · kolom ditambah/dibuang tanpa menggeser urutan       → lembar tak cocok
+//     dgn contoh yang disetujui user, kolom per kolom
+//   · total lebar ≠ 100                                   → kolom melar &
+//     keluar halaman (pelajaran lembar RKBMD & /cetak/perolehan)
+//   · `segMin` rekap diseragamkan                         → baris kelompok yang
 //     TIDAK ADA (atau hilang) di format aslinya, dan angkanya tetap menjumlah
 //     dengan benar sehingga tak ada uji aritmetika yang berteriak
-//   · rekap ≠ subtotal lembar rinci                      → satu berkas
+//   · "Total <jenis>" ≠ subtotal lembar rekap              → satu berkas
 //     bertanda tangan memuat dua angka berbeda
-//   · blok "Reklasifikasi dari" berhenti bersegmen       → colSpan kepala tabel
-//     tak lagi cocok dgn sel isinya & SELURUH kolom di kanannya bergeser
+//   · sisiReklas() tertukar                                → lembar penambahan
+//     mengelompokkan barang menurut golongan ASALNYA, tanpa satu pun error
 //
 // SENGAJA TIDAK menguji JSX apa pun di berkas ini — TESTING.md §10 menolak
-// snapshot JSX. Yang diuji: registry, aritmetika mesin subtotal, & sifat
-// penyajinya yang bisa dinilai dari sumbernya.
+// snapshot JSX; struktur tabelnya diuji tersendiri di tests/lembarReklas.
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  FORMAT_REKLAS, TANGGA_REKAP_REKLAS, SEL_KODE_REKLAS,
-  lembarRekapReklas, akhiranLembarReklas, sisiReklas,
-  kolomLembarReklas, lebarKodeReklas, judulRekapReklas,
-  type IdReklas, type FormatReklas,
+  FORMAT_REKLAS, TANGGA_REKAP_REKLAS, KOLOM_RINCI_REKLAS, KOLOM_DIJUMLAH_REKLAS,
+  lembarRekapReklas, akhiranLembarReklas, sisiReklas, judulRekapReklas,
+  type IdReklas,
 } from './formatReklas'
-import {
-  SEG_SUBTOTAL, susunRinci, susunRekap, sisaLebar, type ItemLaporan,
-} from './formatPermendagri'
+import { susunRinci, susunRekap, type ItemLaporan } from './formatPermendagri'
 import { periodePosisiReklas } from './laporanReklas'
 import { ALASAN_OPT, ALASAN_LABEL, LEDGER_JENIS, JENIS_REKLAS } from './reklas'
 
@@ -63,26 +59,6 @@ describe('registry IV.F', () => {
     expect(akhiranLembarReklas(FORMAT_REKLAS.pengurangan)).toEqual([12, 13, 14, 15, 16])
   })
 
-  it('kedua cabang berkolom IDENTIK — pembedanya cuma judul & judul blok lawan', () => {
-    // ⚠️ Inilah yang menjaga `kolomRinciReklas()` tetap satu pabrik. Kalau suatu
-    // saat seseorang menyalin daftarnya per cabang lalu menyunting salah
-    // satunya, uji ini yang berteriak — lembar yang beda susunan dari
-    // kembarannya tak menghasilkan satu pun error.
-    const a = FORMAT_REKLAS.penambahan
-    const b = FORMAT_REKLAS.pengurangan
-    expect(kolomLembarReklas(b)).toEqual(kolomLembarReklas(a))
-    expect(b.subtotal).toEqual(a.subtotal)
-    expect(b.kaki).toEqual(a.kaki)
-    expect(b.judul).not.toBe(a.judul)
-    expect(b.grupLawan).not.toBe(a.grupLawan)
-  })
-
-  it('kedua cabang TIDAK berbagi objek kolom yang sama', () => {
-    // Daftar yang dipakai bersama gampang tersunting di tempat oleh pemakai yang
-    // mengira ia salinannya sendiri — dan efeknya menular ke cabang seberang.
-    expect(FORMAT_REKLAS.penambahan.kolom).not.toBe(FORMAT_REKLAS.pengurangan.kolom)
-  })
-
   it.each(tiapCabang)('%s — kode & awalan berbentuk nomor lampiran', (id, f) => {
     expect(f.kode, `${id}.kode`).toMatch(/^IV\.[A-Z](\.\d+)+$/)
     expect(f.kode.startsWith(f.awalan + '.'), `${id}: kode harus di bawah awalan`).toBe(true)
@@ -112,13 +88,18 @@ describe('registry IV.F', () => {
     }
   })
 
-  it('judul blok lawan sejalan dgn arahnya — "dari" vs "ke"', () => {
-    // Blok itu memuat identitas barang di sisi SEBERANG. Untuk lembar
-    // penambahan, seberangnya adalah asalnya ("Reklasifikasi dari"); untuk
-    // pengurangan, tujuannya ("Reklasifikasi ke"). Tertukar = lembar menunjuk
-    // arah yang salah dan tetap terisi penuh — tanpa satu pun error.
-    expect(FORMAT_REKLAS.penambahan.grupLawan).toBe('Reklasifikasi dari')
-    expect(FORMAT_REKLAS.pengurangan.grupLawan).toBe('Reklasifikasi ke')
+  it('kolom lawan sejalan dgn arahnya — "Awal" vs "Tujuan"', () => {
+    // Kolom itu memuat identitas barang di sisi SEBERANG. Untuk lembar
+    // penambahan, seberangnya adalah asalnya ("...Awal"); untuk pengurangan,
+    // tujuannya ("...Tujuan"). Tertukar = lembar menunjuk arah yang salah dan
+    // tetap terisi penuh — tanpa satu pun error.
+    expect(FORMAT_REKLAS.penambahan.kolomLawan).toBe('Kode Barang - Uraian Barang Awal')
+    expect(FORMAT_REKLAS.pengurangan.kolomLawan).toBe('Kode Barang - Uraian Barang Tujuan')
+  })
+
+  it('kalimat baris kosong menyatakan arahnya', () => {
+    expect(FORMAT_REKLAS.penambahan.kosong).toContain('penambahan')
+    expect(FORMAT_REKLAS.pengurangan.kosong).toContain('pengurangan')
   })
 })
 
@@ -130,9 +111,9 @@ describe('sisiReklas — pemetaan sisi (aturan inti keluarga IV.F)', () => {
 
   it('penambahan: dikelompokkan menurut kode TUJUAN, lawan = kode ASAL', () => {
     // ⚠️ Kalau tertukar, lembar PENAMBAHAN mengelompokkan barang menurut
-    // golongan ASALNYA & blok "Reklasifikasi dari"-nya menunjuk balik ke
-    // tujuan. Karena kedua lembar membaca baris yang SAMA, hasilnya tetap
-    // terisi penuh & footing-nya tetap benar — tak ada yang berteriak.
+    // golongan ASALNYA & kolom lawannya menunjuk balik ke tujuan. Karena kedua
+    // lembar membaca baris yang SAMA, hasilnya tetap terisi penuh & footing-nya
+    // tetap benar — tak ada yang berteriak.
     expect(sisiReklas('penambahan', P)).toEqual({
       kodeUtama: P.kodeBaru, kodeLawan: P.kodeLama, namaSpek: P.namaBaru,
     })
@@ -177,167 +158,41 @@ describe('sisiReklas — pemetaan sisi (aturan inti keluarga IV.F)', () => {
   })
 })
 
-describe('kolom lembar rinci', () => {
-  it('kunci kolom unik', () => {
-    for (const [id, f] of tiapCabang) {
-      const k = kolomLembarReklas(f).map(x => x.key)
-      expect(new Set(k).size, `${id}: kunci kembar`).toBe(k.length)
-    }
+// ── Lembar RINCI: susunan kolom keputusan user (2026-09-27/28) ──────────────
+describe('lembar rinci — satu susunan kolom untuk kedua cabang', () => {
+  const k = KOLOM_RINCI_REKLAS
+
+  it('urutan kolom PERSIS seperti yang ditetapkan user', () => {
+    // Urutan kolom lembar bertanda tangan itu aturan integritas: pemeriksa
+    // mencocokkannya kolom per kolom dgn contoh yang disetujui.
+    expect(k.map(x => x.key)).toEqual([
+      'nibar', 'kode', 'nama', 'jumlah', 'harga_satuan', 'nilai_perolehan',
+      'akumulasi', 'nilai_buku', 'lawan', 'penyebab', 'dok_nomor', 'dok_tanggal',
+      'keterangan',
+    ])
   })
 
-  it('penomoran berurut & TEPAT melompati satu nomor untuk blok Kode Barang', () => {
-    // Blok "Kode Barang" (7 sel) punya nomornya sendiri di lembar asli, jadi
-    // ada tepat SATU lompatan antara kolom paling kiri & Nama Barang.
-    for (const [id, f] of tiapCabang) {
-      const n = kolomLembarReklas(f).map(x => x.nomor)
-      expect(n[0] + 2, `${id}: Nama Barang harus melompat satu nomor (blok kode)`).toBe(n[1])
-      // Mulai dari indeks 2: lompatan satu-satunya sudah diperiksa di atas.
-      for (let i = 2; i < n.length; i++) {
-        expect(n[i], `${id}: nomor kolom ke-${i} tidak berurut`).toBe(n[i - 1] + 1)
-      }
-    }
+  it('total lebar 100 PERSIS — "fit to window" di table-fixed', () => {
+    const total = k.reduce((a, x) => a + x.lebar, 0)
+    expect(Math.round(total * 100) / 100).toBe(100)
+    for (const x of k) expect(x.lebar, x.key).toBeGreaterThan(0)
   })
 
-  it('NIBAR berdiri DI LUAR blok kode & jadi kolom paling kiri', () => {
-    for (const [id, f] of tiapCabang) expect(f.kolomKiri.key, id).toBe('nibar')
+  it('NIBAR dapat jatah TERBESAR — 45 digit dipenggal dua baris, muat lega', () => {
+    // ⚠️ Permintaan user 2026-09-27 sesudah ronde sebelumnya (huruf tabel
+    // 7,5px→10px) lupa menaikkan sel NIBAR-nya sendiri. Ambangnya dinaikkan
+    // dari 8 (Perpindahan) ke 10, sejalan dgn kolom yang memang dianggarkan
+    // 12% di sini.
+    expect(k.find(x => x.key === 'nibar')!.lebar).toBeGreaterThanOrEqual(10)
   })
 
-  it('Nama Barang duduk DI DALAM blok Penggolongan, sesudah sel kode', () => {
-    for (const [id, f] of tiapCabang) expect(f.kolomNama.key, id).toBe('nama')
-  })
-
-  it('SATU kolom nilai — TAK ADA "Harga Satuan"/"Jumlah Total" milik IV.B/IV.C', () => {
-    // ⚠️ Keluarga IV.F cuma punya "Nilai Perolehan (Rp)". Menambah dua kolom itu
-    // "biar seragam dgn lembar perpindahan" membuat lembarnya tak cocok waktu
-    // pemeriksa mencocokkan kolom per kolom.
-    for (const [id, f] of tiapCabang) {
-      const k = kolomLembarReklas(f).map(x => x.key)
-      expect(k, `${id}`).toContain('nilai_perolehan')
-      expect(k, `${id}: harga_satuan bukan kolom IV.F`).not.toContain('harga_satuan')
-      expect(k, `${id}: jumlah_total bukan kolom IV.F`).not.toContain('jumlah_total')
-    }
-  })
-
-  it('punya Akumulasi Penyusutan, Nilai Buku, Penyebab, & blok Dokumen Sumber', () => {
-    for (const [id, f] of tiapCabang) {
-      const k = kolomLembarReklas(f).map(x => x.key)
-      for (const wajib of ['akumulasi', 'nilai_buku', 'penyebab',
-        'lawan_kode', 'lawan_nama', 'dok_nama', 'dok_nomor', 'dok_tanggal', 'keterangan']) {
-        expect(k, `${id}: kolom '${wajib}' hilang`).toContain(wajib)
-      }
-    }
-  })
-
-  it('penanda subtotal & kaki MENYAMBUNG tepat sesudah kolom terakhir', () => {
-    // Kolom yang ditambah/dibuang tanpa menggeser penomoran adalah kesalahan
-    // yang TIDAK bersuara — ini yang menangkapnya.
-    for (const [id, f] of tiapCabang) {
-      const n = kolomLembarReklas(f).map(x => x.nomor)
-      const akhir = n[n.length - 1]
-      expect(f.subtotal[0], `${id}: subtotal pertama`).toBe(akhir + 1)
-      expect(f.kaki.tanggal, `${id}: kaki.tanggal`).toBe(f.subtotal[3] + 1)
-      expect(f.kaki.jabatan, `${id}`).toBe(f.kaki.tanggal + 1)
-      expect(f.kaki.nama, `${id}`).toBe(f.kaki.jabatan + 1)
-    }
-  })
-
-  it('subtotal SEJAJAR dengan SEG_SUBTOTAL [6,5,4,3]', () => {
-    expect(SEG_SUBTOTAL.length).toBe(4)
-    for (const [id, f] of tiapCabang) {
-      expect(f.subtotal.length, id).toBe(SEG_SUBTOTAL.length)
-      for (let i = 1; i < f.subtotal.length; i++) {
-        expect(f.subtotal[i], `${id}: subtotal harus menaik`).toBe(f.subtotal[i - 1] + 1)
-      }
-    }
-  })
-
-  it('kolom bergrup berdampingan — grup tak boleh terpotong kolom lain', () => {
-    // Kepala tabel merakit grup dgn menyusuri kolom berurutan; grup yang
-    // terpotong menghasilkan DUA kepala bernama sama & colSpan yang salah.
-    for (const [id, f] of tiapCabang) {
-      const urut = f.kolom.map(k => k.grup ?? '')
-      const terlihat = new Set<string>()
-      let lalu = ''
-      for (const g of urut) {
-        if (g && g !== lalu) {
-          expect(terlihat.has(g), `${id}: grup '${g}' terpotong`).toBe(false)
-          terlihat.add(g)
-        }
-        lalu = g
-      }
-    }
-  })
-})
-
-describe('lebar kolom', () => {
-  it('total lebar kolom + blok kode = 100 PERSIS', () => {
-    // Inilah yang membuat lembarnya "fit to window" di `table-fixed`. Lebih
-    // dari 100 → kolom kanan keluar halaman; kurang → sisa ruang menganggur.
-    for (const [id, f] of tiapCabang) {
-      const jumlah = kolomLembarReklas(f).reduce((s, k) => s + k.lebar, 0)
-      expect(Number((jumlah + lebarKodeReklas(f)).toFixed(6)), `${id}`).toBe(100)
-      expect(lebarKodeReklas(f), `${id}: blok kode kehabisan ruang`).toBeGreaterThan(0)
-      expect(sisaLebar(kolomLembarReklas(f)), `${id}`).toBe(lebarKodeReklas(f))
-    }
-  })
-
-  it('KEDUA blok kode cukup lebar untuk 7 sel segmen', () => {
-    // ⚠️ Keluarga ini punya DUA blok bersegmen (kolom tujuan & "Reklasifikasi
-    // dari"), dan keduanya sama-sama dibagi 7. Blok yang terlalu sempit membuat
-    // segmen 3 karakter ("121") membungkus jadi tiga baris.
-    for (const [id, f] of tiapCabang) {
-      const lawan = f.kolom.find(k => k.key === 'lawan_kode')!
-      for (const [nama, lebar] of [['kode tujuan', lebarKodeReklas(f)], ['lawan_kode', lawan.lebar]] as const) {
-        expect(lebar / SEL_KODE_REKLAS, `${id}: sel ${nama} terlalu sempit`).toBeGreaterThan(1.4)
-      }
-    }
-  })
-
-  it('NIBAR tak boleh dipersempit — 45 digit dipenggal DUA baris, bukan tiga', () => {
-    // Potongan PERTAMA 26 digit wajib muat SEBARIS; kalau tidak, ia membungkus
-    // sendiri lebih dulu & `pecahNibar()` menghasilkan tiga baris.
-    for (const [id, f] of tiapCabang) {
-      expect(f.kolomKiri.lebar, `${id}: kolom NIBAR`).toBeGreaterThanOrEqual(7.5)
-    }
-  })
-
-  it('kolom bertanggal punya BATAS BAWAH KERAS — ia tak boleh membungkus', () => {
-    // ⚠️ `dok_tanggal` dirender `whitespace-nowrap` (memecah "19/07/2026" di
-    // tengah bikin tak terbaca), jadi lebarnyalah yang harus menyesuaikan.
-    // 10 karakter @7,5px ≈ 42 px + padding ≈ 46 px; 4,0% dari lebar cetak F4
-    // lanskap (±1.200 px) = 48 px. Di bawah itu tanggalnya meluber ke sel
-    // sebelah DI SETIAP BARIS, dan `table-fixed` menyembunyikannya sampai
-    // kertasnya keluar.
-    for (const [id, f] of tiapCabang) {
-      const tgl = f.kolom.find(k => k.key === 'dok_tanggal')!
-      expect(tgl.rata, `${id}: kolom tanggal wajib rata tengah (yang dirender nowrap)`).toBe('tengah')
-      expect(tgl.lebar, `${id}: kolom tanggal terlalu sempit`).toBeGreaterThanOrEqual(4.0)
-    }
-  })
-
-  it('kolom teks panjang dapat porsi lebih besar dari kolom angka pendek', () => {
-    // ⚠️ Penjaga arah, bukan angka pasti: yang menentukan TINGGI baris lembar
-    // ini adalah kolom teks yang membungkus. Kalau suatu saat `nama` kembali
-    // lebih sempit dari kolom rupiah, barisnya melar lagi jadi 4 baris & yang
-    // "hemat" cuma kolom angka yang isinya memang pendek.
-    for (const [id, f] of tiapCabang) {
-      const l = (k: string) =>
-        kolomLembarReklas(f).find(x => x.key === k)!.lebar
-      expect(l('nama'), `${id}: Nama Barang (nomenklatur, terpanjang di lembar)`)
-        .toBeGreaterThan(l('nilai_perolehan'))
-      expect(l('spek_nama'), `${id}: Spesifikasi Nama Barang`).toBeGreaterThan(l('nilai_perolehan'))
-      // "Nama Dokumen" SELALU kosong — ia tak berhak atas ruang sebanyak kolom
-      // yang benar-benar berisi.
-      expect(l('dok_nama'), `${id}: dok_nama selalu kosong`).toBeLessThan(l('keterangan'))
-    }
-  })
-
-  it('tiap kolom punya lebar positif', () => {
-    for (const [id, f] of tiapCabang) {
-      for (const k of kolomLembarReklas(f)) {
-        expect(k.lebar, `${id}.${k.key}`).toBeGreaterThan(0)
-      }
-    }
+  it('kolom uang yang dijumlah BERURUTAN & Harga Satuan TIDAK ikut dijumlah', () => {
+    // Baris total merender label ber-colSpan lalu tiga angka beruntun; kalau
+    // kolomnya tak bersebelahan, angkanya jatuh di kolom yang salah.
+    const idx = KOLOM_DIJUMLAH_REKLAS.map(key => k.findIndex(x => x.key === key))
+    expect(idx.every(i => i >= 0)).toBe(true)
+    expect(idx).toEqual(idx.map((_, j) => idx[0] + j))
+    expect(KOLOM_DIJUMLAH_REKLAS).not.toContain('harga_satuan')
   })
 
   it('lembar rekap berjudul REKAPITULASI, lembar rinci LAPORAN', () => {
@@ -384,12 +239,12 @@ describe('tangga rekap IV.F.3–F.6 & IV.F.13–F.16', () => {
     }
   })
 
-  it('rekap TERDALAM = subtotal lembar rinci, angka per angka', () => {
-    // Lembar rinci & keempat rekapnya terbit dalam SATU berkas bertanda tangan.
-    // Dua jalan menuju angka yang sama yang menyimpang = satu berkas memuat dua
-    // kebenaran, tanpa satu pun yang berteriak.
+  it('rekap TERDALAM sama persis dgn susunRinci yang lama, angka per angka', () => {
+    // Mesin subtotal (`susunRekap`) dipakai bersama SELURUH cabang Permendagri —
+    // dua jalan menuju angka yang sama yang menyimpang berarti satu berkas
+    // memuat dua kebenaran, tanpa satu pun yang berteriak.
     const items = contoh()
-    const rinci = susunRinci(items, FORMAT_REKLAS.penambahan.subtotal)
+    const rinci = susunRinci(items, [24, 25, 26, 27] as const)
       .filter(b => b.tipe === 'grup' && b.seg === 6)
     const rekap = susunRekap(items, 6, 3).filter(b => b.seg === 6)
     expect(rekap.length).toBe(rinci.length)
@@ -397,6 +252,14 @@ describe('tangga rekap IV.F.3–F.6 & IV.F.13–F.16', () => {
       expect(rekap[i].kode).toBe((rinci[i] as { kode: string }).kode)
       expect(rekap[i].nilai).toBe((rinci[i] as { nilai: number }).nilai)
     }
+  })
+
+  it('"Total <jenis>" lembar rinci = rekap 3 segmen — satu mesin, satu angka', () => {
+    // Lembar rinci baru mengambil totalnya dari `susunRekap(items, 3, 3)` yang
+    // SAMA dgn rekap .6/.16 (menurut jenis).
+    const items = contoh()
+    const jenis = susunRekap(items, 3, 3).filter(g => g.seg === 3)
+    expect(jenis.reduce((a, g) => a + g.nilai, 0)).toBe(items.reduce((a, x) => a + x.nilai, 0))
   })
 
   it('akumulasi & nilai buku IKUT dijumlah di tiap kedalaman', () => {
@@ -436,7 +299,7 @@ describe('penyaji', () => {
     expect(fs.readFileSync(berkas, 'utf8').length).toBeGreaterThan(2000)
   })
 
-  it('memakai segMin dari TANGGA_REKAP_REKLAS, bukan bawaan susunRekap', () => {
+  it('memakai segMin dari TANGGA_REKAP_REKLAS (via lembarRekapReklas), bukan bawaan susunRekap', () => {
     // ⚠️ `susunRekap(items, seg)` tanpa argumen ketiga memakai `SEG_MIN_REKAP`
     // (2) milik cabang IV.A. Untuk IV.F.3/F.4 itu MENAMBAHKAN baris yang tak ada
     // di formatnya — dan angkanya tetap menjumlah dengan benar, jadi tak satu
@@ -447,12 +310,11 @@ describe('penyaji', () => {
       .toContain('lembarRekapReklas(f)')
   })
 
-  it('blok "Reklasifikasi dari" dirender BERSEGMEN, colSpan-nya dihitung', () => {
-    // ⚠️ `lawan_kode` = SATU kolom di registry tapi TUJUH sel di tabel. Kepala
-    // tabel yang memakai `g.kolom.length` apa adanya akan ber-colSpan 2 di atas
-    // 8 sel → SELURUH kolom di kanannya bergeser, tanpa satu pun error.
+  it('grup jenis aset lembar rinci mengambil angka dari susunRekap, bukan menjumlah sendiri', () => {
+    // Baris "Total <jenis>" & "TOTAL" WAJIB dari mesin subtotal bersama — kalau
+    // penyaji menjumlah manual, ia bisa menyimpang dari rekap .6/.16 tanpa error.
     const isi = fs.readFileSync(berkas, 'utf8')
-    expect(isi).toContain("k.key === 'lawan_kode' ? SEL_KODE_REKLAS : 1")
+    expect(isi).toContain('susunRekap(items, SEG_JENIS_RINCI, SEG_JENIS_RINCI)')
   })
 
   it('lembar rekap TIDAK memakai kolom "Jumlah Barang" milik IV.B/IV.C/IV.D', () => {

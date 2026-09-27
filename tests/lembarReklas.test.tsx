@@ -1,29 +1,18 @@
 // @vitest-environment jsdom
 // ============================================================================
-// Uji STRUKTUR tabel lembar REKLASIFIKASI — IV.F.2–F.6.
+// Uji STRUKTUR tabel lembar REKLASIFIKASI — IV.F.2/F.12 (rinci baru, keputusan
+// user 2026-09-27/28) & IV.F.3–F.6/F.13–F.16 (rekap, tak berubah).
 //
-// TESTING.md §10 menolak snapshot JSX — "nyaris selalu jadi stempel karet" —
-// dan yang di sini bukan snapshot: ia mengunci INVARIAN yang kalau patah tak
-// menghasilkan satu pun error, dan baru ketahuan sesudah lembarnya DICETAK:
-//
-//   · jumlah sel tiap baris ≠ jumlah kolom kepala  → tabel bergeser sendiri,
-//     angka jatuh di kolom yang salah, dan `table-fixed` menyembunyikannya
-//     dengan rapi sampai kertasnya keluar
-//   · `colSpan` blok "Reklasifikasi dari" salah    → SELURUH kolom di kanannya
-//     bergeser. ⚠️ Ini risiko KHAS keluarga IV.F: blok itu SATU kolom di
-//     registry tapi TUJUH sel di tabel, jadi `g.kolom.length` apa adanya
-//     menjanjikan 2 kolom di atas 8 sel. Keluarga IV.B/IV.C/IV.D tak punya
-//     jebakan ini karena blok "Asal Barang"-nya kolom teks biasa.
-//   · baris subtotal hilang di salah satu tingkat  → lembar tanpa subtotal yang
-//     diminta format, tanpa keterangan apa pun
-//   · rekap memancarkan kedalaman yang salah       → baris kelompok yang tak ada
-//     (atau hilang) di formatnya, dgn angka yang tetap menjumlah benar
+// TESTING.md §10 menolak snapshot JSX — yang di sini bukan snapshot: ia
+// mengunci INVARIAN yang kalau patah tak menghasilkan satu pun error, dan baru
+// ketahuan sesudah lembarnya DICETAK (jumlah sel ≠ kepala, colSpan salah
+// hitung, subtotal hilang di satu tingkat, dst).
 // ============================================================================
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import LembarReklasPermendagri from '@/components/pelaporan/LembarReklasPermendagri'
 import {
-  FORMAT_REKLAS, SEL_KODE_REKLAS, lembarRekapReklas, kolomLembarReklas, sisiReklas,
+  FORMAT_REKLAS, KOLOM_RINCI_REKLAS, lembarRekapReklas, sisiReklas,
   type IdReklas, type FormatReklas,
 } from '@/lib/formatReklas'
 import type { ItemLaporan } from '@/lib/formatPermendagri'
@@ -31,34 +20,9 @@ import type { BarisReklas } from '@/lib/laporanReklas'
 
 afterEach(cleanup)
 
-/**
- * Jumlah SEL yang diharapkan, ditulis eksplisit.
- *
- * ⚠️ Bukan sekadar `kolom.length`: blok "Reklasifikasi dari" menyumbang TUJUH
- * sel dari satu entri registry. Angka pastinya ditulis di sini supaya kolom yang
- * hilang tak lolos berdua (registry & penyaji sama-sama bergeser).
- *   1 NIBAR + 7 sel kode tujuan + 1 Nama Barang + 13 kolom lain
- *   (yang salah satunya, `lawan_kode`, memekar dari 1 jadi 7 sel)
- *   = 1 + 7 + 1 + 12 + 7 = 28
- *
- * ⚠️ SAMA di kedua cabang — IV.F.2 & IV.F.12 memang berkolom identik; yang
- * berbeda cuma judul lembar & judul blok lawan. Angka yang berbeda di sini
- * berarti salah satunya sudah menyimpang.
- */
-const HARAP: Record<IdReklas, number> = { penambahan: 28, pengurangan: 28 }
+/** Lembar rinci: 13 kolom datar, SAMA di kedua cabang (keputusan user 2026-09-27/28). */
+const N_RINCI = 13
 
-/** Sel tabel = kolom registry, tapi `lawan_kode` memekar jadi 7. */
-const nSel = (f: FormatReklas) =>
-  SEL_KODE_REKLAS + kolomLembarReklas(f).length + (SEL_KODE_REKLAS - 1)
-
-/**
- * Satu baris ledger reklas + turunan sisinya.
- *
- * ⚠️ `kodeUtama`/`kodeLawan`/`namaSpek` DITURUNKAN lewat `sisiReklas()`, tak
- * ditulis tangan — kalau fixture-nya memaku sisi penambahan, uji atas cabang
- * PENGURANGAN akan merender data yang tak pernah dihasilkan pemuatnya & lolos
- * tanpa membuktikan apa pun.
- */
 function baris(
   arah: 'penambahan' | 'pengurangan',
   id: number, kodeBaru: string, kodeLama: string, nama: string, nilai: number,
@@ -67,10 +31,10 @@ function baris(
     id, tanggal: '2026-07-05', periode: '2026-S2', nilai, keterangan: null,
     aset_id: `a${id}`, jenis: 'reklas_golongan',
     payload: { kode_lama: kodeLama, kode_baru: kodeBaru },
-    header: { no_sk: 'SK-1', tanggal: '2026-06-30', jenis: 'golongan', keterangan: null, skpd_id: 1 },
+    header: { no_sk: 'SK-1', tanggal: '2026-06-30', jenis: 'golongan', keterangan: 'Catatan kartu', skpd_id: 1 },
     aset: {
       kode: kodeBaru, nama_barang: nama, uraian_barang: 'Uraian', nibar: '1'.repeat(45),
-      satuan: 'Unit', jumlah: 1, keterangan: null, intra_ekstra: 'intra', skpd_id: 1,
+      satuan: 'Unit', jumlah: 1, harga_satuan: nilai, keterangan: null, intra_ekstra: 'intra', skpd_id: 1,
       merek_tipe: null, spesifikasi_lainnya: null,
     },
     ...sisiReklas(arah, { kodeLama, kodeBaru, namaAset: nama }),
@@ -110,9 +74,9 @@ function sajikan(f: FormatReklas, lembar: number[], items = itemsUntuk(f)) {
     <LembarReklasPermendagri
       f={f} items={items}
       namaTingkat={new Map([
-        ['1.3.2', 'PERALATAN DAN MESIN'],
-        ['1.3.3', 'GEDUNG DAN BANGUNAN'],
-        ['1.3.6', 'KONSTRUKSI DALAM PENGERJAAN'],
+        ['1.3.2', 'Peralatan dan Mesin'],
+        ['1.3.3', 'Gedung dan Bangunan'],
+        ['1.3.6', 'Konstruksi Dalam Pengerjaan'],
       ])}
       skpd={{ kode: '01', nama: 'Badan Keuangan dan Aset Daerah' }}
       berupa="ASET TETAP" labelKomptabel="INTRAKOMPTABEL"
@@ -122,8 +86,8 @@ function sajikan(f: FormatReklas, lembar: number[], items = itemsUntuk(f)) {
 }
 
 /** Total kolom yang dijanjikan kepala tabel = Σ colSpan baris pertamanya. */
-function kolomKepala(tabel: HTMLTableElement, barisKe = 0): number {
-  const tr = tabel.querySelectorAll('thead tr')[barisKe]
+function kolomKepala(tabel: HTMLTableElement): number {
+  const tr = tabel.querySelectorAll('thead tr')[0]
   return [...tr.querySelectorAll('th')]
     .reduce((a, th) => a + (Number(th.getAttribute('colspan')) || 1), 0)
 }
@@ -134,146 +98,89 @@ const CABANG = (Object.keys(FORMAT_REKLAS) as IdReklas[])
   .map(id => [id, FORMAT_REKLAS[id]] as const)
 
 describe.each(CABANG)('%s — lembar rinci', (id, f) => {
-  const n = nSel(f)
+  const tbody = (c: HTMLElement) => [...tabelDari(c).querySelectorAll('tbody tr')]
+  const lebar = (tr: Element) => [...tr.querySelectorAll('td')]
+    .reduce((a, td) => a + (Number(td.getAttribute('colspan')) || 1), 0)
 
-  const RINCI = [f.akhiranRinci]
-
-  it(`kepala tabel menjanjikan tepat ${HARAP[id]} sel`, () => {
-    const { container } = sajikan(f, RINCI)
-    const tabel = tabelDari(container)
-    expect(tabel).toBeTruthy()
-    expect(kolomKepala(tabel)).toBe(n)
-    expect(n, 'registry bergeser dari jumlah kolom format aslinya').toBe(HARAP[id])
+  it(`kepala & <colgroup> tepat ${N_RINCI} kolom`, () => {
+    const { container } = sajikan(f, [f.akhiranRinci])
+    expect(KOLOM_RINCI_REKLAS.length).toBe(N_RINCI)
+    expect(kolomKepala(tabelDari(container))).toBe(N_RINCI)
+    expect(tabelDari(container).querySelectorAll('colgroup col').length).toBe(N_RINCI)
   })
 
-  it('BARIS KEDUA kepala menjanjikan sel yang sama banyaknya', () => {
-    // ⚠️ Inilah yang menangkap `colSpan` blok "Reklasifikasi dari" yang salah
-    // hitung: baris pertama memuat judul grupnya (7+1 sel), baris kedua memuat
-    // sub-judulnya. Kalau salah satunya memakai `g.kolom.length` apa adanya,
-    // keduanya tak lagi sama & seluruh kolom di kanannya bergeser.
-    const { container } = sajikan(f, RINCI)
-    const tabel = tabelDari(container)
-    // Baris ke-2 tak memuat kolom ber-`rowSpan` dari baris ke-1, jadi
-    // selisihnya = banyaknya kolom ber-rowSpan.
-    const rowspan = [...tabel.querySelectorAll('thead tr')[0].querySelectorAll('th')]
-      .filter(th => th.getAttribute('rowspan')).length
-    expect(kolomKepala(tabel, 1) + rowspan).toBe(n)
+  it('SETIAP baris (jenis, barang, total) selebar tabel — Σ colSpan', () => {
+    const { container } = sajikan(f, [f.akhiranRinci])
+    tbody(container).forEach((tr, i) => expect(lebar(tr), `baris ke-${i}`).toBe(N_RINCI))
   })
 
-  it('<colgroup> menyediakan sebanyak sel yang dijanjikan kepala', () => {
-    // Kalau timpang, `table-fixed` membagi sisanya sendiri & seluruh lebar yang
-    // sudah dianggarkan jadi tak berlaku — tanpa satu pun error.
-    const { container } = sajikan(f, RINCI)
-    expect(tabelDari(container).querySelectorAll('colgroup col').length).toBe(n)
+  it('kelompok = JENIS ASET yang ada di transaksi saja, masing-masing ditutup Total', () => {
+    const { container } = sajikan(f, [f.akhiranRinci])
+    const teks = tbody(container).map(tr => tr.textContent || '')
+    // ⚠️ Cabang berbeda: penambahan mengelompokkan kode BARU (tujuan reklas),
+    // pengurangan kode LAMA (asal reklas). Fixture-nya sengaja lintas golongan
+    // (semua asal 1.3.6, tujuan beda-beda), jadi kelompok yang muncul BEDA.
+    if (f.arah === 'penambahan') {
+      expect(teks.some(t => t.startsWith('1.3.2'))).toBe(true)
+      expect(teks.some(t => t.startsWith('1.3.3'))).toBe(true)
+      expect(teks.some(t => t.startsWith('Total Peralatan dan Mesin'))).toBe(true)
+    } else {
+      expect(teks.some(t => t.startsWith('1.3.6'))).toBe(true)
+      expect(teks.some(t => t.startsWith('1.3.2'))).toBe(false)
+    }
   })
 
-  it('SETIAP baris isi & baris subtotal punya sel sebanyak kolomnya', () => {
-    const { container } = sajikan(f, RINCI)
-    const trs = [...tabelDari(container).querySelectorAll('tbody tr')]
-    expect(trs.length).toBeGreaterThan(MENTAH.length)
-    trs.forEach((tr, i) => {
-      expect(tr.querySelectorAll('td').length, `baris ke-${i}`).toBe(n)
-    })
+  it('nominal 2 angka di belakang koma & TOTAL menjumlah seluruh jenis', () => {
+    const { container } = sajikan(f, [f.akhiranRinci])
+    const trs = tbody(container)
+    const akhir = trs[trs.length - 1]
+    expect(akhir.textContent).toContain('TOTAL')
+    // 1.000 + 2.000 + 9.000 = 12.000; akumulasi 250+500+2.250 = 3.000; nilai
+    // buku 9.000 — sama di kedua cabang, karena keduanya membaca baris yang sama.
+    expect(akhir.textContent).toContain('12.000,00')
+    expect(akhir.textContent).toContain('3.000,00')
+    expect(akhir.textContent).toContain('9.000,00')
   })
 
-  it(`blok "${f.grupLawan}" TERISI kode seberangnya & bersegmen`, () => {
-    // Inti lembar ini. Kalau kosong/tak bersegmen, pembaca tak bisa tahu barang
-    // itu datang dari / pergi ke mana — dan justru itu satu-satunya alasan
-    // lembarnya ada.
-    // ⚠️ Harapannya DITURUNKAN dari data, bukan dipaku: cabang penambahan
-    // menampilkan kode asal & pengurangan kode tujuan, jadi angka yang ditulis
-    // tangan akan benar untuk salah satunya saja.
-    const items = itemsUntuk(f)
-    const { container } = sajikan(f, RINCI, items)
-    const geser = 1 + SEL_KODE_REKLAS + 1 // NIBAR + sel kode utama + Nama Barang
-    const iLawan = f.kolom.findIndex(k => k.key === 'lawan_kode')
-    const barang = [...tabelDari(container).querySelectorAll('tbody tr')]
-      .filter(tr => !tr.className.includes('italic'))
-    expect(barang.length).toBe(MENTAH.length)
-    barang.forEach((tr, i) => {
-      const td = [...tr.querySelectorAll('td')]
-      expect(td.slice(geser + iLawan, geser + iLawan + SEL_KODE_REKLAS).map(x => x.textContent))
-        .toEqual(items[i].data.kodeLawan.split('.'))
-    })
-    expect(container.textContent).toContain(f.grupLawan)
+  it('Keterangan diambil dari KARTU (header), Penyebab dari alasannya', () => {
+    const { container } = sajikan(f, [f.akhiranRinci])
+    expect(container.textContent).toContain('Catatan kartu')
+    expect(container.textContent).toContain('Perubahan Fungsi BMD')
   })
 
-  it('blok utama & blok lawan menampilkan kode yang BERBEDA', () => {
-    // ⚠️ Penjaga paling murah untuk sisi yang tertukar: kalau `kodeUtama` &
-    // `kodeLawan` sama-sama diisi kode yang sama, lembarnya tetap terisi penuh
-    // & foot dengan benar (lihat `sisiReklas`). Fixture-nya memang reklas
-    // lintas golongan, jadi keduanya WAJIB beda.
+  it('kolom lawan berjudul & berisi sesuai cabangnya', () => {
+    const { container } = sajikan(f, [f.akhiranRinci])
+    const kepala = [...tabelDari(container).querySelectorAll('thead th')].map(th => th.textContent)
+    expect(kepala).toContain(f.kolomLawan)
     const items = itemsUntuk(f)
     for (const it of items) {
       expect(it.data.kodeUtama, 'sisi tertukar / tak dibedakan').not.toBe(it.data.kodeLawan)
     }
   })
 
-  it('baris SUBTOTAL mengosongkan blok lawan — satu kelompok bisa banyak asal', () => {
-    const { container } = sajikan(f, RINCI)
-    const geser = 1 + SEL_KODE_REKLAS + 1
-    const iLawan = f.kolom.findIndex(k => k.key === 'lawan_kode')
-    const grup = [...tabelDari(container).querySelectorAll('tbody tr')]
-      .filter(tr => tr.className.includes('italic'))
-    expect(grup.length).toBeGreaterThanOrEqual(4)
-    for (const tr of grup) {
-      const td = [...tr.querySelectorAll('td')]
-      for (let i = 0; i < SEL_KODE_REKLAS; i++) {
-        expect(td[geser + iLawan + i].textContent, 'blok lawan di baris kelompok').toBe('')
-      }
-    }
-  })
-
-  it('kolom "Nama Dokumen" dicetak KOSONG, tak diisi tebakan', () => {
-    // ⚠️ Aplikasi ini tak menyimpan jenis/nama dokumen sumber reklasifikasi di
-    // mana pun. Mengisinya dgn nama berkas unggahan atau label alasan (yang
-    // sudah tercetak di kolom Penyebab) berarti menaruh keterangan yang bukan
-    // itu di lembar bertanda tangan.
-    const { container } = sajikan(f, RINCI)
-    const geser = 1 + SEL_KODE_REKLAS + 1
-    const iLawan = f.kolom.findIndex(k => k.key === 'lawan_kode')
-    const iDok = f.kolom.findIndex(k => k.key === 'dok_nama')
-    // Kolom sesudah `lawan_kode` bergeser +6 karena ia memekar jadi 7 sel.
-    const pos = geser + iDok + (iDok > iLawan ? SEL_KODE_REKLAS - 1 : 0)
-    const barang = [...tabelDari(container).querySelectorAll('tbody tr')]
-      .filter(tr => !tr.className.includes('italic'))
-    for (const tr of barang) {
-      expect(tr.querySelectorAll('td')[pos].textContent).toBe('')
-    }
-  })
-
-  it('kolom Penyebab Reklasifikasi TERISI label alasannya', () => {
-    const { container } = sajikan(f, RINCI)
-    expect(container.textContent).toContain('Perubahan Fungsi BMD')
-  })
-
-  it('TIDAK memuat kolom Harga Satuan / Jumlah Total milik IV.B/IV.C/IV.D', () => {
-    const { container } = sajikan(f, RINCI)
-    expect(container.textContent).not.toContain('Harga Satuan')
-    expect(container.textContent).not.toContain('Total Nilai Barang')
-  })
-
-  it('mencetak catatan kaki *) — ia yang menjelaskan kolom penyusutan kosong', () => {
-    const { container } = sajikan(f, RINCI)
-    expect(container.textContent).toContain('hanya diisi untuk BMD yang dilakukan Penyusutan')
-  })
-
-  it('daftar kosong → satu baris keterangan selebar tabel, bukan tabel hampa', () => {
-    const { container } = sajikan(f, RINCI, [])
-    const td = tabelDari(container).querySelector('tbody tr td') as HTMLTableCellElement
-    expect(Number(td.getAttribute('colspan'))).toBe(n)
-    expect(td.textContent).toContain('Tidak ada penambahan')
+  it('daftar kosong → satu baris keterangan selebar tabel & TANPA baris TOTAL', () => {
+    const { container } = sajikan(f, [f.akhiranRinci], [])
+    const trs = tbody(container)
+    expect(trs.length).toBe(1)
+    const td = trs[0].querySelector('td') as HTMLTableCellElement
+    expect(Number(td.getAttribute('colspan'))).toBe(N_RINCI)
+    expect(td.textContent).toBe(f.kosong)
   })
 })
 
-describe.each(CABANG)('%s — lembar rekap IV.F.3–F.6', (_id, f) => {
+it('kolom lawan Penambahan "...Awal", Pengurangan "...Tujuan"', () => {
+  expect(FORMAT_REKLAS.penambahan.kolomLawan).toBe('Kode Barang - Uraian Barang Awal')
+  expect(FORMAT_REKLAS.pengurangan.kolomLawan).toBe('Kode Barang - Uraian Barang Tujuan')
+})
+
+describe.each(CABANG)('%s — lembar rekap', (_id, f) => {
   it.each(lembarRekapReklas(f).map(t => [t.akhiran, t.seg] as const))(
     'rekap .%i menyediakan %i sel kode + 4 kolom, konsisten kepala & isi',
     (akhiran, seg) => {
       const { container } = sajikan(f, [akhiran])
       const tabel = tabelDari(container)
       // ⚠️ EMPAT, bukan lima: rekap IV.F tak punya "Jumlah Barang".
-      const n = seg + 4 // sel kode + Nama · Nilai Perolehan · Akumulasi · Nilai Buku
+      const n = seg + 4
       expect(kolomKepala(tabel), 'kepala').toBe(n)
       expect(tabel.querySelectorAll('colgroup col').length, 'colgroup').toBe(n)
       for (const tr of tabel.querySelectorAll('tbody tr')) {
@@ -292,10 +199,6 @@ describe.each(CABANG)('%s — lembar rekap IV.F.3–F.6', (_id, f) => {
   it.each(lembarRekapReklas(f).map(t => [t.akhiran, t.segMin] as const))(
     'rekap .%i membuka di %i segmen — persis gambar formatnya',
     (akhiran, segMin) => {
-      // ⚠️ Tiga lembar terdalam membuka di 3 segmen, yang terdangkal
-      // ("MENURUT JENIS") di 2 — kelompok neraca `1 . 3`. Menyeragamkannya
-      // TIDAK mengubah satu pun angka, jadi uji inilah satu-satunya yang akan
-      // berteriak.
       cleanup()
       const { container } = sajikan(f, [akhiran])
       const tr1 = tabelDari(container).querySelector('tbody tr') as HTMLTableRowElement
@@ -303,4 +206,26 @@ describe.each(CABANG)('%s — lembar rekap IV.F.3–F.6', (_id, f) => {
         .filter(td => (td.textContent || '').trim() !== '' && td.className.includes('text-center'))
       expect(terisi.length, `${f.awalan}.${akhiran}: kedalaman baris pertama`).toBe(segMin)
     })
+
+  it('nominal rekap 2 angka di belakang koma', () => {
+    const { container } = sajikan(f, [f.akhiranRekap[3]])
+    // Kolom "Total <jenis>" 3.750,00/8.250,00 sudah diuji di lembar rinci;
+    // rekap terdangkal (3 segmen) menjumlah SELURUH baris jadi satu, jadi
+    // yang diperiksa cukup formatnya (koma + 2 desimal), bukan angka pastinya.
+    expect(container.textContent).toMatch(/\d\.\d{3},\d{2}/)
+  })
+})
+
+describe.each(CABANG)('%s — berkas gabungan', (_id, f) => {
+  it('lima lembar (rinci + 4 rekap) terangkai dengan page-break antar lembar', () => {
+    const { container } = sajikan(f, [f.akhiranRinci, ...f.akhiranRekap])
+    expect(container.querySelectorAll('section').length).toBe(5)
+    expect(container.querySelectorAll('.break-before-page').length).toBe(4)
+    expect(container.querySelector('section')!.className).not.toContain('break-before-page')
+  })
+
+  it('kop mencetak kode format cabangnya sendiri', () => {
+    const { container } = sajikan(f, [f.akhiranRinci])
+    expect(container.textContent).toContain(`Format ${f.kode}`)
+  })
 })

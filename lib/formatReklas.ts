@@ -1,11 +1,13 @@
 // ============================================================================
 // Format lembar REKLASIFIKASI Permendagri 47/2021 — keluarga IV.F
 //
-//   IV.F.2      LAPORAN PENAMBAHAN AKIBAT REKLASIFIKASI BMD (rinci per barang)
-//   IV.F.3–F.6  REKAPITULASI-nya, empat kedalaman kodefikasi
+//   IV.F.2       LAPORAN PENAMBAHAN akibat reklasifikasi BMD (rinci per barang)
+//   IV.F.3–F.6   REKAPITULASI-nya, empat kedalaman kodefikasi
+//   IV.F.12      LAPORAN PENGURANGAN akibat reklasifikasi BMD (rinci per barang)
+//   IV.F.13–F.16 REKAPITULASI-nya
 //
 // Sumbernya ledger reklasifikasi (`reklas_kode` · `reklas_golongan` ·
-// `reklas_komptabel`) — tabel yang SAMA yang dibaca lembar PENGURANGAN nanti.
+// `reklas_komptabel`) — tabel yang SAMA yang dibaca lembar pengurangan.
 //
 // ── SATU BARIS LEDGER = DUA SISI, dan itu inti keluarga ini ─────────────────
 // Sebuah reklas kode/golongan memindahkan satu barang dari `payload.kode_lama`
@@ -19,39 +21,28 @@
 // lembar akan memuat baris yang persis sama & sama-sama mengaku benar — tanpa
 // satu pun error. Yang membedakan keduanya SELURUHNYA di sini:
 //   · kode yang jadi kunci pengelompokan (`kode_baru` vs `kode_lama`)
-//   · isi blok "Reklasifikasi dari" (vs "Reklasifikasi ke")
+//   · isi kolom lawan ("...Awal" vs "...Tujuan")
 //
-// ⚠️ **PENGURANGAN BELUM DIBANGUN** (2026-09-07) — formatnya belum diserahkan
-// user. Registry ini sengaja sudah bertipe `Record<IdReklas, …>` dengan `arah`
-// sebagai anggota tipe supaya cabang kedua cuma menambah SATU entri; JANGAN
-// menghapus `arah` "karena cuma ada satu cabang", itu justru penjaga yang bikin
-// cabang kedua tak bisa lahir sebagai kembaran senyap.
+// ── LEMBAR RINCI: SUSUNAN KOLOM KEPUTUSAN USER (2026-09-27/28) ──────────────
+// Sama seperti keluarga perpindahan (lib/formatPerpindahan.ts), lembar rinci
+// SENGAJA MENYIMPANG dari lembar asli Permendagri (yang punya DUA blok 7 sel
+// segmen kode + blok "Nama Dokumen" yang selalu kosong). User menyerahkan
+// susunan isiannya sendiri — SATU tabel datar 13 kolom, dikelompokkan per
+// JENIS ASET (golongan `kodeUtama`) yang benar-benar ada di transaksinya,
+// tiap kelompok ditutup "Total <jenis>", seluruhnya ditutup "TOTAL". Nominal
+// 2 desimal.
 //
-// ── Beda struktural dari keluarga IV.B/IV.C/IV.D, jangan disamakan ──────────
-// 1. **DUA blok kode bersegmen** — kolom (9) Kode Barang tujuan DAN kolom (17)
-//    "Reklasifikasi dari → Kode Barang". Keluarga perpindahan cuma punya satu
-//    (blok "Asal Barang"-nya kolom teks biasa, karena perpindahan tak mengubah
-//    kodefikasi). Ini yang membuat penyajinya berdiri sendiri.
-// 2. **Tak ada Harga Satuan & Jumlah Total** — cuma satu kolom "Nilai
-//    Perolehan (Rp)". Barangnya tidak sedang dibeli; nilainya dibawa apa adanya.
-// 3. **Lembar rekapnya LIMA kolom** (Kode · Nama · Nilai Perolehan · Akumulasi
-//    · Nilai Buku) — TANPA "Jumlah Barang" yang ada di rekap IV.B/IV.C/IV.D.
-// 4. **Kedalaman terdangkal rekapnya BEDA PER LEMBAR** — lihat
-//    `TANGGA_REKAP_REKLAS`.
+// ⚠️ KEDUA CABANG BERKOLOM IDENTIK kecuali SATU: kolom lawan. Penambahan
+// mencetak "Kode Barang - Uraian Barang Awal" (`kodeLawan` = kode ASAL),
+// Pengurangan mencetak "...Tujuan" (`kodeLawan` = kode TUJUAN). Itu DATA di
+// registry (`kolomLawan`), bukan cabang `if` di penyaji — pola PERSIS
+// `kolomPihak` di keluarga perpindahan.
 //
-// ⚠️ MESIN SUBTOTALNYA dari lib/formatPermendagri.ts — dipakai bersama seluruh
-// cabang Permendagri di aplikasi ini. Yang ada di sini cuma susunan kolomnya.
-//
-// ⚠️ PENOMORAN KOLOM DITULIS, BUKAN DIHITUNG — alasannya sama persis dengan
-// yang tertulis di kepala lib/formatPermendagri.ts. Nomornya TIDAK dicetak di
-// lembar (keputusan user 2026-08-30); yang tersisa dua gunanya: tautan balik ke
-// lembar asli, dan penjaga struktur kolom lewat test.
+// ⚠️ LEMBAR REKAP (.3–.6 / .13–.16) TIDAK berubah — tetap bentuk Permendagri
+// (kode bersegmen, lima kolom, kedalaman terdangkal beda per lembar). Mesin
+// subtotalnya dari lib/formatPermendagri.ts, dipakai juga oleh baris "Total
+// <jenis>" di lembar rinci, jadi keduanya mustahil menjumlah berbeda.
 // ============================================================================
-
-import { sisaLebar, type Kolom } from './formatPermendagri'
-
-/** Banyaknya sel segmen kode — berlaku untuk KEDUA blok kode (kode penuh = 7). */
-export const SEL_KODE_REKLAS = 7
 
 /**
  * Bentuk tangga lembar REKAP — kedalaman & judulnya.
@@ -91,19 +82,59 @@ export const TANGGA_REKAP_REKLAS = [
   { seg: 3, segMin: 2, menurut: 'JENIS' },
 ] as const
 
-// ── Kolom ───────────────────────────────────────────────────────────────────
+// ── Kolom lembar rinci ──────────────────────────────────────────────────────
 
 export type KolomReklas =
-  | 'nibar'
-  | 'nama' | 'spek_nama'
-  | 'jumlah' | 'satuan'
-  | 'nilai_perolehan' | 'akumulasi' | 'nilai_buku'
-  | 'lawan_kode' | 'lawan_nama'
-  | 'penyebab'
-  | 'dok_nama' | 'dok_nomor' | 'dok_tanggal'
-  | 'keterangan'
+  | 'nibar' | 'kode' | 'nama'
+  | 'jumlah' | 'harga_satuan' | 'nilai_perolehan' | 'akumulasi' | 'nilai_buku'
+  | 'lawan' | 'penyebab' | 'dok_nomor' | 'dok_tanggal' | 'keterangan'
 
-export type KolomLembarReklas = Kolom<KolomReklas>
+export type KolomRinciReklas = {
+  key: KolomReklas
+  judul: string
+  /** Persen lebar. Totalnya WAJIB 100 persis — dikunci test. */
+  lebar: number
+  rata: 'kiri' | 'kanan' | 'tengah'
+}
+
+/**
+ * Kolom lembar rinci, kiri→kanan, dipakai KEDUA cabang.
+ *
+ * ⚠️ Judul kolom `lawan` di sini cuma penampung — yang dicetak
+ * `f.kolomLawan` milik cabangnya. Kalau judul ini yang tercetak, lembar
+ * Pengurangan menyebut "...Awal" padahal isinya kode TUJUAN.
+ *
+ * ⚠️ LEBAR: totalnya 100 PERSIS (`table-fixed`, "fit to window"), pola & huruf
+ * yang sama dgn `KOLOM_RINCI_PERPINDAHAN` (lib/formatPerpindahan.ts) — 10px,
+ * NIBAR dapat jatah terbesar (12%) berhuruf 9px sendiri supaya potongan
+ * pertama `pecahNibar()` (26 digit) muat sebaris (permintaan user 2026-09-27:
+ * "nibar jangan lupa diperhatikan ukurannya, buat yang proporsional pas").
+ * Kolom uang dianggarkan untuk rupiah 2 desimal SEBARIS — jangan dipersempit.
+ */
+export const KOLOM_RINCI_REKLAS: readonly KolomRinciReklas[] = [
+  { key: 'nibar', judul: 'NIBAR', lebar: 12, rata: 'kiri' },
+  { key: 'kode', judul: 'Kode Barang - Uraian Barang', lebar: 9.5, rata: 'kiri' },
+  { key: 'nama', judul: 'Nama Barang', lebar: 8.5, rata: 'kiri' },
+  { key: 'jumlah', judul: 'Jumlah - Satuan', lebar: 4, rata: 'kiri' },
+  { key: 'harga_satuan', judul: 'Harga Satuan', lebar: 7.5, rata: 'kanan' },
+  { key: 'nilai_perolehan', judul: 'Nilai Perolehan', lebar: 8.5, rata: 'kanan' },
+  { key: 'akumulasi', judul: 'Akumulasi Penyusutan', lebar: 8, rata: 'kanan' },
+  { key: 'nilai_buku', judul: 'Nilai Buku', lebar: 8.5, rata: 'kanan' },
+  { key: 'lawan', judul: '(kode lawan — lihat kolomLawan)', lebar: 10, rata: 'kiri' },
+  { key: 'penyebab', judul: 'Penyebab Reklasifikasi', lebar: 7.5, rata: 'kiri' },
+  { key: 'dok_nomor', judul: 'Nomor Dokumen', lebar: 6, rata: 'kiri' },
+  { key: 'dok_tanggal', judul: 'Tanggal Dokumen', lebar: 4.8, rata: 'tengah' },
+  { key: 'keterangan', judul: 'Keterangan', lebar: 5.2, rata: 'kiri' },
+]
+
+/**
+ * Kolom yang dijumlah di baris "Total <jenis>" & "TOTAL".
+ *
+ * ⚠️ Harga Satuan SENGAJA TIDAK — menjumlahkan harga satuan barang yang
+ * berbeda menghasilkan angka tak berarti, dan begitu tercetak ia dikutip orang.
+ * Pola & alasan yang sama dgn `KOLOM_DIJUMLAH_PERPINDAHAN`.
+ */
+export const KOLOM_DIJUMLAH_REKLAS: readonly KolomReklas[] = ['nilai_perolehan', 'akumulasi', 'nilai_buku']
 
 /** Identitas cabang. Dipakai URL halaman cetak & kunci ingatan penanda tangan. */
 export type IdReklas = 'penambahan' | 'pengurangan'
@@ -111,10 +142,10 @@ export type IdReklas = 'penambahan' | 'pengurangan'
 /**
  * Sisi yang didaftar lembar ini.
  *
- * `penambahan` → dikelompokkan menurut `payload.kode_baru`; blok lawan berisi
- *                kode ASAL ("Reklasifikasi dari").
- * `pengurangan` → dikelompokkan menurut `payload.kode_lama`; blok lawan berisi
- *                kode TUJUAN ("Reklasifikasi ke").
+ * `penambahan` → dikelompokkan menurut `payload.kode_baru`; kolom lawan berisi
+ *                kode ASAL ("...Awal").
+ * `pengurangan` → dikelompokkan menurut `payload.kode_lama`; kolom lawan berisi
+ *                kode TUJUAN ("...Tujuan").
  *
  * ⚠️ Sengaja identik dengan `IdReklas`, dan itu BUKAN keduanya-boleh-dipakai-
  * bergantian: `IdReklas` menjawab "lembar yang mana", `ArahReklas` menjawab
@@ -146,131 +177,23 @@ export type FormatReklas = {
   arah: ArahReklas
   /** Baris 1 judul, tanpa isian "BERUPA…(1)" yang diisi jenis asetnya. */
   judul: string
-  /** Judul blok kode lawan — "Reklasifikasi dari" / "Reklasifikasi ke". */
-  grupLawan: string
   /**
-   * Kolom PALING KIRI, di luar blok "Penggolongan dan Kodefikasi Barang".
-   * Di keluarga ini selalu NIBAR.
+   * Judul kolom lawan di lembar RINCI — satu-satunya kolom yang beda antar
+   * cabang. ⚠️ Kalau tertukar, lembar Penambahan mencetak "...Tujuan" padahal
+   * isinya kode ASAL — terisi penuh, tanpa satu pun error. Pola PERSIS
+   * `kolomPihak` di lib/formatPerpindahan.ts.
    */
-  kolomKiri: KolomLembarReklas
-  /** Kolom yang duduk DI DALAM blok Penggolongan, tepat sesudah sel-sel kode. */
-  kolomNama: KolomLembarReklas
-  /** Sisa kolom, kiri→kanan sesudah blok Penggolongan. */
-  kolom: KolomLembarReklas[]
-  /** Penanda subtotal sejajar `SEG_SUBTOTAL` = [6seg, 5seg, 4seg, 3seg]. */
-  subtotal: readonly [number, number, number, number]
-  /** Nomor isian di kaki lembar. */
-  kaki: { tanggal: number; jabatan: number; nama: number }
+  kolomLawan: string
+  /** Kalimat baris kosong ("Tidak ada penambahan/pengurangan pada periode ini."). */
+  kosong: string
 }
 
 /**
- * ⚠️ LEBAR: totalnya + `sisaLebar` = 100 PERSIS, dan itu yang membuat lembarnya
- * "fit to window" di `table-fixed`. Di sini ada DUA blok bersegmen (7 sel
- * masing-masing, 14 sel total) — jadi keduanya dianggarkan bersamaan:
- * `lawan_kode` ~13% dan sisanya (blok kode tujuan) juga ~13%, ≈1,86% per sel.
- * Itu sudah lebih lega daripada IV.B (1,46%/sel) yang terbukti terbaca.
- *
- * ⚠️ NIBAR tak bisa ikut dipepet: 45 digit, dipenggal dua baris di batas segmen
- * oleh `pecahNibar()`, dan potongan pertama 26 digit wajib muat SEBARIS — kalau
- * tidak ia membungkus sendiri lebih dulu & hasilnya tiga baris. Selnya karena
- * itu memakai font sendiri yang lebih kecil.
- */
-/**
- * Susunan kolom lembar rinci — IDENTIK di kedua cabang.
- *
- * ⚠️ SATU pabrik, bukan dua daftar yang disalin. IV.F.2 (penambahan) & IV.F.12
- * (pengurangan) sama persis sampai ke penomorannya (8)–(23), penanda subtotal
- * (24)–(27), & kaki (28)(29)(30); yang berbeda **hanya judul lembar dan judul
- * blok lawan** ("Reklasifikasi dari" vs "…ke"). Dua salinan berarti dua tempat
- * yang harus disunting tiap satu kolom bergeser — dan yang terlewat TIDAK
- * menghasilkan error, ia cuma mencetak satu lembar yang beda susunan dari
- * kembarannya (CODING-STANDARD §1.2).
- *
- * Fungsi, bukan konstanta bersama, supaya kedua entri registry tak berbagi
- * OBJEK yang sama — daftar yang dipakai bersama gampang tersunting di tempat
- * oleh pemakai yang mengira ia salinannya sendiri.
- */
-function kolomRinciReklas(): KolomLembarReklas[] {
-  return [
-    { key: 'spek_nama', judul: 'Spesifikasi Nama Barang', nomor: 11, lebar: 7.5, rata: 'kiri' },
-    { key: 'jumlah', judul: 'Jumlah', nomor: 12, lebar: 2.3, rata: 'kanan' },
-    { key: 'satuan', judul: 'Satuan', nomor: 13, lebar: 2.6, rata: 'tengah' },
-    // ⚠️ SATU kolom nilai saja — keluarga IV.F tak punya "Harga Satuan" &
-    // "Jumlah Total" seperti IV.B/IV.C/IV.D. Menambahkannya "biar seragam"
-    // membuat lembarnya tak cocok waktu pemeriksa mencocokkan kolom per kolom.
-    { key: 'nilai_perolehan', judul: 'Nilai Perolehan (Rp)', nomor: 14, lebar: 5.2, rata: 'kanan' },
-    { key: 'akumulasi', judul: 'Nilai Akumulasi Penyusutan atau Amortisasi (Rp)', nomor: 15, lebar: 5.2, rata: 'kanan' },
-    { key: 'nilai_buku', judul: 'Nilai Buku (Rp)', nomor: 16, lebar: 5.2, rata: 'kanan' },
-    // ── Blok lawan: identitas barang di sisi SEBERANG reklasifikasi ─────────
-    // ⚠️ `lawan_kode` itu BLOK BERSEGMEN (7 sel), bukan kolom teks — lebarnya
-    // dibagi rata di penyaji. Jangan diperlakukan seperti `asal_kode` di
-    // keluarga perpindahan, yang memang satu sel teks.
-    // ⚠️ `grup: 'lawan'` itu PENANDA, bukan judul: judul sebenarnya ikut cabang
-    // (`grupLawan`) & dirakit penyaji. Menuliskan judulnya di sini berarti
-    // pabrik ini harus tahu sedang membuat cabang yang mana.
-    { key: 'lawan_kode', judul: 'Kode Barang', nomor: 17, grup: 'lawan', lebar: 11.0, rata: 'tengah' },
-    { key: 'lawan_nama', judul: 'Nama Barang', nomor: 18, grup: 'lawan', lebar: 7.5, rata: 'kiri' },
-    { key: 'penyebab', judul: 'Penyebab Reklasifikasi', nomor: 19, lebar: 6.8, rata: 'kiri' },
-    // ⚠️ "Nama Dokumen" SENGAJA SELALU KOSONG — aplikasi ini tak menyimpan
-    // JENIS/nama dokumen sumber reklasifikasi di mana pun (`jurnal_header`
-    // cuma punya `no_sk`, `tanggal`, `keterangan`, & `payload.dokumen_paths`
-    // yang isinya path berkas, bukan nama dokumen). Diisi tebakan — nama
-    // berkas unggahan ("scan001.pdf") atau label alasan yang sudah tercetak
-    // di kolom (19) — berarti menaruh keterangan yang bukan itu di lembar
-    // bertanda tangan. Kolomnya tetap dicetak supaya lembarnya cocok
-    // kolom-per-kolom saat diperiksa. Pola & alasan yang sama dgn
-    // `sk_tanggal`/`sk_nomor` di IV.B.1.2 dan `dok_nama` di IV.A.
-    { key: 'dok_nama', judul: 'Nama Dokumen', nomor: 20, grup: 'Dokumen Sumber', lebar: 3.2, rata: 'kiri' },
-    { key: 'dok_nomor', judul: 'Nomor', nomor: 21, grup: 'Dokumen Sumber', lebar: 4.2, rata: 'kiri' },
-    { key: 'dok_tanggal', judul: 'Tanggal', nomor: 22, grup: 'Dokumen Sumber', lebar: 4.2, rata: 'tengah' },
-    { key: 'keterangan', judul: 'Keterangan', nomor: 23, lebar: 6.6, rata: 'kiri' },
-  ]
-}
-
-const KOLOM_KIRI: KolomLembarReklas =
-  { key: 'nibar', judul: 'NIBAR', nomor: 8, lebar: 7.6, rata: 'kiri' }
-const KOLOM_NAMA: KolomLembarReklas =
-  { key: 'nama', judul: 'Nama Barang', nomor: 10, lebar: 9.5, rata: 'kiri' }
-
-/**
- * ⚠️ LEBAR: totalnya + `sisaLebar` = 100 PERSIS, dan itu yang membuat lembarnya
- * "fit to window" di `table-fixed`.
- *
- * ⚠️ **DISETEL ULANG 2026-09-07** (user: "gabisa lebih ramping kah? biar lebih
- * efisien baris ke bawahnya"). Yang mahal di lembar ini bukan lebar, tapi
- * TINGGI: kolom teks yang sempit membuat tiap baris barang membungkus 3–4 baris
- * — "Aset Tetap Tanah Yang Tidak Digunakan Dalam Operasional Pemerintah" (65
- * karakter) di kolom 6% praktis mustahil muat kurang dari empat baris. Jadi
- * ruang DIPINDAH dari kolom yang isinya pendek & seragam ke kolom teks panjang:
- *
- *   nama          6,0 → 9,5   ·  spek_nama   6,0 → 7,5
- *   lawan_nama    5,5 → 7,5   ·  keterangan  5,0 → 6,6
- *   penyebab      6,0 → 6,8
- *   ← diambil dari: kedua blok kode (13,0 → 11,4 & 11,0), ketiga kolom rupiah
- *     (5,8 → 5,2), `dok_nama` (5,0 → 3,2 — memang SELALU kosong), `dok_nomor`
- *     (5,5 → 4,2), `jumlah`/`satuan`, & NIBAR (8,0 → 7,6).
- *
- * Sel kode jadi 1,63%/sel (≈19 px pada lebar cetak F4 lanskap ±1.200 px) —
- * masih lebih lega daripada IV.B (1,46%/sel) yang terbukti terbaca, dan segmen
- * terpanjangnya cuma 3 karakter.
- *
- * ⚠️ `dok_tanggal` PUNYA BATAS BAWAH KERAS 4,0%. Ia `whitespace-nowrap` (memecah
- * "19/07/2026" di tengah bikin tak terbaca), jadi lebarnya yang harus
- * menyesuaikan: 10 karakter @7,5px ≈ 42 px + padding ≈ 46 px, sementara 4,0%
- * dari ±1.200 px = 48 px. Mempersempitnya membuat tanggalnya meluber ke sel
- * sebelah DI SETIAP BARIS — dan `table-fixed` menyembunyikannya sampai
- * kertasnya keluar. Dikunci lib/formatReklas.test.ts.
- *
- * ⚠️ NIBAR tak bisa ikut dipepet: 45 digit, dipenggal dua baris di batas segmen
- * oleh `pecahNibar()`, dan potongan pertama 26 digit wajib muat SEBARIS — kalau
- * tidak ia membungkus sendiri lebih dulu & hasilnya tiga baris. Selnya karena
- * itu memakai font sendiri yang lebih kecil.
- *
- * ⚠️ **Penanda subtotal & kaki SAMA PERSIS di kedua cabang** — lembar aslinya
- * memang begitu, termasuk salah ketiknya: nama penanda tangan DAN NIP-nya
- * sama-sama (30). Diikuti apa adanya, seperti "(14) dua kali" di IV.A.2.2 &
- * "(36) dua kali" di IV.B.1.2. Jangan "dirapikan": lembar resmi dicocokkan
- * pemeriksa kolom per kolom, jadi merapikannya justru membuatnya tak cocok.
+ * ⚠️ Penanda subtotal SAMA PERSIS di kedua cabang — lembar aslinya memang
+ * begitu. Dipakai `susunRinci` untuk baris kelompok versi LAMA (blok
+ * bersegmen) — TIDAK dipakai lagi oleh lembar rinci baru, yang subtotalnya
+ * lewat `susunRekap(items, 3, segMin)` (kelompok jenis aset). Dipertahankan
+ * murni sebagai rujukan nomor kolom asli & tak dibaca penyaji baru.
  */
 export const FORMAT_REKLAS: Record<IdReklas, FormatReklas> = {
   penambahan: {
@@ -280,18 +203,14 @@ export const FORMAT_REKLAS: Record<IdReklas, FormatReklas> = {
     akhiranRekap: [3, 4, 5, 6],
     arah: 'penambahan',
     judul: 'LAPORAN PENAMBAHAN AKIBAT REKLASIFIKASI BMD BERUPA',
-    grupLawan: 'Reklasifikasi dari',
-    kolomKiri: KOLOM_KIRI,
-    kolomNama: KOLOM_NAMA,
-    kolom: kolomRinciReklas(),
-    subtotal: [24, 25, 26, 27],
-    kaki: { tanggal: 28, jabatan: 29, nama: 30 },
+    kolomLawan: 'Kode Barang - Uraian Barang Awal',
+    kosong: 'Tidak ada penambahan akibat reklasifikasi pada periode ini.',
   },
 
   // ── IV.F.12–F.16 — sisi PENGURANGAN ──────────────────────────────────────
   //
   // Ledger yang SAMA dengan penambahan, dibaca dari sisi sebaliknya: barangnya
-  // dikelompokkan menurut kode ASAL, dan blok lawannya berisi kode TUJUAN.
+  // dikelompokkan menurut kode ASAL, dan kolom lawannya berisi kode TUJUAN.
   //
   // ⚠️ Nomor lembarnya MELOMPAT ke 12–16, bukan menyambung 7–11. Itu memang
   // begitu di lampiran Permendagri (7–11 milik hal lain), jadi jangan
@@ -304,12 +223,8 @@ export const FORMAT_REKLAS: Record<IdReklas, FormatReklas> = {
     akhiranRekap: [13, 14, 15, 16],
     arah: 'pengurangan',
     judul: 'LAPORAN PENGURANGAN AKIBAT REKLASIFIKASI BMD BERUPA',
-    grupLawan: 'Reklasifikasi ke',
-    kolomKiri: KOLOM_KIRI,
-    kolomNama: KOLOM_NAMA,
-    kolom: kolomRinciReklas(),
-    subtotal: [24, 25, 26, 27],
-    kaki: { tanggal: 28, jabatan: 29, nama: 30 },
+    kolomLawan: 'Kode Barang - Uraian Barang Tujuan',
+    kosong: 'Tidak ada pengurangan akibat reklasifikasi pada periode ini.',
   },
 }
 
@@ -372,16 +287,6 @@ export function lembarRekapReklas(f: FormatReklas): LembarRekapReklas[] {
  */
 export function akhiranLembarReklas(f: FormatReklas): number[] {
   return [f.akhiranRinci, ...f.akhiranRekap]
-}
-
-/** Seluruh kolom lembar rinci, kiri→kanan (tanpa sel segmen blok kode tujuan). */
-export function kolomLembarReklas(f: FormatReklas): KolomLembarReklas[] {
-  return [f.kolomKiri, f.kolomNama, ...f.kolom]
-}
-
-/** Lebar blok "Kode Barang" tujuan (persen) = sisa dari 100 setelah kolom lain. */
-export function lebarKodeReklas(f: FormatReklas): number {
-  return sisaLebar(kolomLembarReklas(f))
 }
 
 /**

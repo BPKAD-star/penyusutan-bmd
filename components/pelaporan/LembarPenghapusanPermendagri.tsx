@@ -26,43 +26,28 @@
 // melayani tiga lembar lain (CODING-STANDARD §1.5). Yang DIPAKAI BERSAMA justru
 // bagian yang berbahaya kalau menyimpang: mesin subtotal & peta nama tingkat.
 // ============================================================================
-import { formatRupiah } from '@/lib/export'
+import { Fragment } from 'react'
+import { formatRupiah2 } from '@/lib/export'
 import { pecahNibar } from '@/lib/kodeRegister'
-import { asalUsulTampil } from '@/lib/bmd'
+import { asalUsulTampil, GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 import { tglPanjang } from '@/lib/beritaAcaraRekon'
-import { segmenKode, susunRinci, susunRekap, type ItemLaporan } from '@/lib/formatPermendagri'
+import { segmenKode, susunRekap, type ItemLaporan } from '@/lib/formatPermendagri'
 import {
-  SEG_MIN_REKAP_PENGHAPUSAN, SEL_KODE_PENGHAPUSAN, TANGGA_REKAP_PENGHAPUSAN,
-  kolomLembarPenghapusan, lebarKodePenghapusan, judulRekapPenghapusan,
-  type FormatPenghapusan, type KolomLembarPenghapusan,
+  SEG_MIN_REKAP_PENGHAPUSAN, TANGGA_REKAP_PENGHAPUSAN, KOLOM_DIJUMLAH_PENGHAPUSAN,
+  judulRekapPenghapusan,
+  type FormatPenghapusan, type KolomRinciPenghapusan,
 } from '@/lib/formatPenghapusan'
 import type { BarisPenghapusan } from '@/lib/laporanPenghapusan'
+
+/** Pembungkus berkunci untuk sekelompok baris `<tr>` (satu jenis aset). */
+const FragmenJenis = Fragment
+
+/** Kedalaman grup jenis aset di lembar RINCI baru — pola keluarga perpindahan. */
+const SEG_JENIS_RINCI = 3
 
 const KABUPATEN = 'Kediri'
 const PROVINSI = 'Jawa Timur'
 
-/**
- * Kelas sel KEPALA.
- *
- * ⚠️ `[overflow-wrap:anywhere]`, BUKAN `break-words` — keduanya beda tepat di
- * kasus yang menggigit: `break-word` tak memecah kata yang sudah berdiri
- * sendirian di barisnya, jadi "Pemindahtanganan" di sel sempit MELUBER menimpa
- * sel tetangga & `table-fixed` menyembunyikannya sampai kertasnya keluar.
- * `px-0.5` (2 px) bukan `px-1`: di lembar 21–24 sel, 4 px padding kiri-kanan
- * itu sepertiga lebar sel kode.
- */
-const WRAP = 'border border-black px-0.5 py-1 [overflow-wrap:anywhere]'
-
-/**
- * Kelas sel ISI lembar RINCI.
- *
- * ⚠️ `px-0.5` + `py-px` + `leading-[1.15]` — permintaan user 2026-09-07 ("rapi
- * & fit to window, jangan boros ke sampingnya"). Yang mahal di lembar sepadat
- * ini bukan lebar melainkan TINGGI: satu baris barang bisa membungkus 3–4 baris
- * teks, jadi tiap 1 px tinggi baris terkali empat. Pelajaran yang sama dgn
- * lembar IV.F.
- */
-const SEL_ISI = 'border border-black px-0.5 py-px'
 
 const tglID = (s: string | null | undefined) => {
   if (!s) return ''
@@ -178,9 +163,14 @@ export default function LembarPenghapusanPermendagri(p: PropLembarPenghapusan) {
   const { f, items, skpd, berupa, labelKomptabel, judulPeriode, tahun, sebutan, ttd, tglTtd } = p
   const nama = (kode: string) => p.namaTingkat.get(kode) || ''
   const tampil = (akhiran: number) => !p.lembar || p.lembar.includes(akhiran)
-  const nKolom = SEL_KODE_PENGHAPUSAN + kolomLembarPenghapusan(f).length
+  const kolom = f.kolom
+  const nKolom = kolom.length
+  /** Letak kolom uang pertama — label baris total menempati semua kolom di kirinya. */
+  const iUang = kolom.findIndex(k => k.key === KOLOM_DIJUMLAH_PENGHAPUSAN[0])
+  const nUang = KOLOM_DIJUMLAH_PENGHAPUSAN.length
+  const nSisa = nKolom - iUang - nUang
 
-  const isiKolom = (k: KolomLembarPenghapusan, r: BarisPenghapusan): React.ReactNode => {
+  const isiKolom = (k: KolomRinciPenghapusan, r: BarisPenghapusan): React.ReactNode => {
     const a = r.aset!
     switch (k.key) {
       case 'nibar': {
@@ -189,144 +179,122 @@ export default function LembarPenghapusanPermendagri(p: PropLembarPenghapusan) {
         const pc = pecahNibar(a.nibar)
         return pc ? <>{pc[0]}<br />{pc[1]}</> : (a.nibar || '')
       }
-      // ⚠️ "Nama Barang" = NOMENKLATUR BAKU dari kodefikasi, bukan yang diketik
-      // operator; "Spesifikasi Nama Barang" yang diketik. Jangan ditukar.
-      case 'nama': return nama(a.kode) || a.uraian_barang || ''
-      case 'spek_nama': return a.nama_barang || ''
-      case 'spek_lain': return a.spesifikasi_lainnya || ''
-      case 'jumlah': return a.jumlah ?? 1
-      case 'satuan': return a.satuan || ''
-      case 'harga_satuan': return formatRupiah(a.harga_satuan ?? r.nilai)
-      case 'jumlah_total': return formatRupiah(r.nilai)
+      // Uraian = NOMENKLATUR BAKU kodefikasi (ikut kodefikasi terkini).
+      case 'kode': return <>{a.kode || ''}<br />{nama(a.kode) || a.uraian_barang || ''}</>
+      // "Nama Barang" = spesifikasi nama yang diketik operator.
+      case 'nama': return a.nama_barang || ''
+      case 'merek': return a.merek_tipe || ''
+      case 'no_polisi': return a.no_polisi || ''
+      case 'jumlah': return <>{a.jumlah ?? 1}<br />{a.satuan || ''}</>
+      case 'harga_satuan': return formatRupiah2(a.harga_satuan ?? r.nilai)
+      case 'nilai_perolehan': return formatRupiah2(r.nilai)
       // ⚠️ Posisi yang TAK KETEMU dicetak titik-titik, BUKAN 0 — nol berarti
       // "memang belum tersusut", tak-ketemu berarti "engine belum dijalankan".
-      case 'akumulasi': return r.tanpaPenyusutan ? '…' : formatRupiah(r.akumulasi ?? 0)
-      case 'nilai_buku': return r.tanpaPenyusutan ? '…' : formatRupiah(r.nilaiBuku ?? 0)
+      case 'akumulasi': return r.tanpaPenyusutan ? '…' : formatRupiah2(r.akumulasi ?? 0)
+      case 'nilai_buku': return r.tanpaPenyusutan ? '…' : formatRupiah2(r.nilaiBuku ?? 0)
       // ⚠️ Tanggal Perolehan = kapan barang DIPEROLEH pemkab, BUKAN tanggal
-      // penghapusannya. Yang terakhir itu blok SK Penghapusan.
+      // penghapusannya (itu kolom Tanggal Dokumen).
       case 'tgl_perolehan': return tglID(a.tgl_perolehan)
-      // Isian operator menang; kosong jatuh ke label cara perolehan. Satu
-      // sumber dgn Daftar Barang & Export — `asalUsulTampil` (lib/bmd.ts).
       case 'cara_perolehan': return asalUsulTampil(a.asal_usul, a.cara_perolehan).teks
       case 'lokasi': return a.alamat_detail || ''
-      // ⚠️ HANYA di IV.K.1.2 — satu-satunya kolom yang membedakan hibah,
-      // penjualan, tukar-menukar, & penyertaan modal. Aman: kolom yang tak
-      // terdaftar di registry cabangnya tak pernah dirender.
+      // HANYA di IV.K.1.2 — hibah / penjualan / tukar-menukar / penyertaan modal.
       case 'cara_pemindahtanganan': return r.caraPemindahtanganan
-      // ⚠️ HANYA di IV.K.2.2 — SKPD seberang baris pengalihannya.
+      // HANYA di IV.K.6.2 — ledgernya tak punya sub-jenis, isinya memang tetap
+      // (keputusan user 2026-09-28).
+      case 'sebab': return 'Sebab Lain'
+      // HANYA di IV.K.2.2 — SKPD seberang baris pengalihannya.
       case 'penerima': return r.penerima || ''
-      // ⚠️ BEDA dari IV.B.1.2 yang kolom SK-nya SELALU kosong: di sini SK
-      // Penghapusannya justru kartu jurnal ini sendiri, jadi ia memang berisi.
-      case 'sk_tanggal': return tglID(r.header?.tanggal || r.payload?.tgl_dokumen_sumber || r.tanggal)
-      case 'sk_nomor': return r.header?.no_sk || r.payload?.no_sk || ''
-      case 'keterangan': return r.keterangan || a.keterangan || r.header?.keterangan || ''
+      // SK Penghapusan = kartu jurnal penghapusan itu sendiri.
+      case 'dok_nomor': return r.header?.no_sk || r.payload?.no_sk || ''
+      case 'dok_tanggal': return tglID(r.header?.tanggal || r.payload?.tgl_dokumen_sumber || r.tanggal)
+      // Keterangan = isian kotak Keterangan di KARTU (kartu menang, pola yang
+      // sama dgn keluarga perpindahan & reklasifikasi 2026-09-27).
+      case 'keterangan': return r.header?.keterangan || r.keterangan || a.keterangan || ''
       default: return ''
     }
   }
 
-  const rata = (k: KolomLembarPenghapusan) =>
+  const rata = (k: KolomRinciPenghapusan) =>
     k.rata === 'kanan' ? 'text-right' : k.rata === 'tengah' ? 'text-center' : ''
 
-  /**
-   * Kepala tabel.
-   *
-   * ⚠️ `WRAP` di tiap `<th>` bukan hiasan: judul kolom lembar ini memuat kata
-   * tunggal yang lebih lebar dari selnya sendiri ("Pemindahtanganan",
-   * "Spesifikasi", "Keterangan"). Tanpa `overflow-wrap: anywhere` kata itu
-   * MELUBER menimpa sel tetangga (pelajaran ronde IV.B/IV.C, 2026-08-31).
-   */
-  function Thead() {
-    const grup: { judul: string | undefined; kolom: KolomLembarPenghapusan[] }[] = []
-    for (const k of f.kolom) {
-      const t = grup[grup.length - 1]
-      if (t && t.judul && t.judul === k.grup) t.kolom.push(k)
-      else grup.push({ judul: k.grup, kolom: [k] })
-    }
-    return (
-      <thead>
-        <tr className="text-center font-semibold">
-          <th className={WRAP} rowSpan={2}>{f.kolomKiri.judul}</th>
-          <th className={WRAP} colSpan={SEL_KODE_PENGHAPUSAN + 1}>
-            Penggolongan dan Kodefikasi Barang
-          </th>
-          {grup.map((g, i) => g.judul
-            ? <th key={i} className={WRAP} colSpan={g.kolom.length}>{g.judul}</th>
-            : <th key={i} className={WRAP} rowSpan={2}>{g.kolom[0].judul}</th>)}
-        </tr>
-        <tr className="text-center font-semibold">
-          <th className={WRAP} colSpan={SEL_KODE_PENGHAPUSAN}>Kode Barang</th>
-          <th className={WRAP}>{f.kolomNama.judul}</th>
-          {grup.filter(g => g.judul).flatMap(g =>
-            g.kolom.map(k => <th key={k.key} className={WRAP}>{k.judul}</th>))}
-        </tr>
-      </thead>
-    )
-  }
-
   // ── Lembar RINCI IV.K.<n>.2 ───────────────────────────────────────────────
+  //
+  // ⚠️ BENTUK DITENTUKAN USER (2026-09-28), sengaja menyimpang dari lembar asli
+  // Permendagri — pola, huruf, & warna PERSIS keluarga perpindahan &
+  // reklasifikasi. Angka "Total <jenis>" dari MESIN SUBTOTAL BERSAMA
+  // (`susunRekap` 3 segmen) — yang sama yang mengisi rekap .6.
   function LembarRinci() {
-    const baris = susunRinci(items, f.subtotal)
+    const totalJenis = susunRekap(items, SEG_JENIS_RINCI, SEG_JENIS_RINCI)
+      .filter(g => g.seg === SEG_JENIS_RINCI)
+    const perJenis = new Map<string, ItemLaporan<BarisPenghapusan>[]>()
+    for (const it of items) {
+      const g = kodeLevel3(it.kode)
+      perJenis.set(g, [...(perJenis.get(g) ?? []), it])
+    }
+    const namaJenis = (g: string) =>
+      GOLONGAN_REKAP.find(x => x.kode === g)?.uraian || nama(g) || g
+    const total = totalJenis.reduce(
+      (t, g) => ({ nilai: t.nilai + g.nilai, akumulasi: t.akumulasi + g.akumulasi, nilaiBuku: t.nilaiBuku + g.nilaiBuku }),
+      { nilai: 0, akumulasi: 0, nilaiBuku: 0 })
+    const SEL = 'border border-black px-1.5 py-1'
+    const CETAK_WARNA = '[print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
+
+    const BarisTotal = ({ label, v, kelas }: {
+      label: string; v: { nilai: number; akumulasi: number; nilaiBuku: number }; kelas: string
+    }) => (
+      <tr className={kelas}>
+        <td className={`${SEL} text-right`} colSpan={iUang}>{label}</td>
+        <td className={`${SEL} text-right [overflow-wrap:anywhere]`}>{formatRupiah2(v.nilai)}</td>
+        <td className={`${SEL} text-right [overflow-wrap:anywhere]`}>{formatRupiah2(v.akumulasi)}</td>
+        <td className={`${SEL} text-right [overflow-wrap:anywhere]`}>{formatRupiah2(v.nilaiBuku)}</td>
+        <td className={SEL} colSpan={nSisa} />
+      </tr>
+    )
+
     return (
       <section className="lembar-rinci">
         <p className="text-right text-[12px] mb-1">Format {f.kode}</p>
         <KopLembar judul={f.judul} judulLanjut={f.judulLanjut} berupa={berupa}
           komptabel={labelKomptabel} sebutan={sebutan} skpd={skpd}
           periode={judulPeriode} tahun={tahun} />
-        <table className="w-full table-fixed border-collapse text-[7.5px] leading-[1.15]">
+        <table className="w-full table-fixed border-collapse text-[10px] leading-snug">
           <colgroup>
-            <col style={{ width: `${f.kolomKiri.lebar}%` }} />
-            {Array.from({ length: SEL_KODE_PENGHAPUSAN }, (_, i) => (
-              <col key={i} style={{ width: `${lebarKodePenghapusan(f) / SEL_KODE_PENGHAPUSAN}%` }} />
-            ))}
-            <col style={{ width: `${f.kolomNama.lebar}%` }} />
-            {f.kolom.map(k => <col key={k.key} style={{ width: `${k.lebar}%` }} />)}
+            {kolom.map(k => <col key={k.key} style={{ width: `${k.lebar}%` }} />)}
           </colgroup>
-          <Thead />
+          <thead>
+            <tr className={`text-center font-semibold bg-gray-50 ${CETAK_WARNA}`}>
+              {kolom.map(k => (
+                <th key={k.key} className={`${SEL} [overflow-wrap:anywhere]`}>{k.judul}</th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
-            {baris.map((b, i) => b.tipe === 'grup' ? (
-              // Baris kelompok: NIBAR kosong (kelompok tak ber-NIBAR), kode
-              // sedalam tingkatnya, namanya, lalu HANYA kolom uang yang berisi —
-              // begitu bentuk lembar aslinya.
-              <tr key={`g${i}`} className="font-bold italic">
-                <td className={SEL_ISI} />
-                <SelKode kode={b.kode} sampai={b.seg} n={SEL_KODE_PENGHAPUSAN} tebal />
-                <td className={`${SEL_ISI} break-words`}>{nama(b.kode) || b.kode}</td>
-                {f.kolom.map(k => (
-                  // ⚠️ `anywhere` di sini juga — baris SUBTOTAL justru memuat
-                  // angka TERBESAR di lembar, jadi kalau yang dibungkus cuma
-                  // baris barangnya, yang meluber ke sel sebelah malah angka
-                  // yang paling diperhatikan pemeriksa.
-                  <td key={k.key} className={`${SEL_ISI} ${rata(k)} [overflow-wrap:anywhere]`}>
-                    {k.key === 'jumlah_total' ? formatRupiah(b.nilai)
-                      : k.key === 'akumulasi' ? formatRupiah(b.akumulasi)
-                        : k.key === 'nilai_buku' ? formatRupiah(b.nilaiBuku)
-                          : ''}
-                  </td>
+            {totalJenis.map(g => (
+              <FragmenJenis key={g.kode}>
+                <tr className={`font-semibold bg-teal/5 ${CETAK_WARNA}`}>
+                  <td className={SEL} colSpan={nKolom}>{g.kode} — {namaJenis(g.kode)}</td>
+                </tr>
+                {(perJenis.get(g.kode) ?? []).map(it => (
+                  <tr key={`i${it.data.id}`} className="align-top">
+                    {kolom.map(k => (
+                      <td key={k.key}
+                        // NIBAR 9px (pola keluarga perpindahan) supaya potongan 26
+                        // digitnya muat sebaris; kolom bertanggal & uang tak dipecah.
+                        className={`${SEL} ${rata(k)} ${
+                          k.key === 'nibar' ? 'break-all tracking-tighter text-[9px]'
+                            : k.rata === 'tengah' || k.rata === 'kanan' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
+                        {isiKolom(k, it.data)}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ) : (
-              <tr key={`i${b.data.id}`} className="align-top">
-                <td className={`${SEL_ISI} break-all tracking-tighter text-[6px]`}>
-                  {isiKolom(f.kolomKiri, b.data)}
-                </td>
-                <SelKode kode={b.kode} sampai={SEL_KODE_PENGHAPUSAN} n={SEL_KODE_PENGHAPUSAN} />
-                <td className={`${SEL_ISI} break-words`}>{isiKolom(f.kolomNama, b.data)}</td>
-                {f.kolom.map(k => (
-                  <td key={k.key}
-                    // Kolom bertanggal dikecualikan dari pembungkusan: memecah
-                    // "12/08/2026" di tengah justru bikin tak terbaca, dan
-                    // lebarnya memang sudah dianggarkan muat.
-                    className={`${SEL_ISI} ${rata(k)} ${
-                      k.rata === 'tengah' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
-                    {isiKolom(k, b.data)}
-                  </td>
-                ))}
-              </tr>
+                <BarisTotal label={`Total ${namaJenis(g.kode)}`} v={g} kelas={`font-semibold bg-gray-100 ${CETAK_WARNA}`} />
+              </FragmenJenis>
             ))}
-            {items.length === 0 && (
-              <tr><td colSpan={nKolom} className="border border-black px-0.5 py-3 text-center">
-                Tidak ada penghapusan pada periode ini.
-              </td></tr>
+            {items.length === 0 ? (
+              <tr><td colSpan={nKolom} className={`${SEL} py-3 text-center`}>{f.kosong}</td></tr>
+            ) : (
+              <BarisTotal label="TOTAL" v={total} kelas={`font-bold bg-gray-200 ${CETAK_WARNA}`} />
             )}
           </tbody>
         </table>
@@ -388,14 +356,14 @@ export default function LembarPenghapusanPermendagri(p: PropLembarPenghapusan) {
               <tr key={i} className={b.seg <= SEG_MIN_REKAP_PENGHAPUSAN ? 'font-bold' : ''}>
                 <SelKode kode={b.kode} sampai={b.seg} n={nSel} />
                 <td className="border border-black px-1 py-0.5 break-words">{nama(b.kode) || b.kode}</td>
-                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(b.nilai)}</td>
-                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(b.akumulasi)}</td>
-                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(b.nilaiBuku)}</td>
+                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah2(b.nilai)}</td>
+                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah2(b.akumulasi)}</td>
+                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah2(b.nilaiBuku)}</td>
               </tr>
             ))}
             {baris.length === 0 && (
               <tr><td colSpan={nSel + 4} className="border border-black px-1 py-3 text-center">
-                Tidak ada penghapusan pada periode ini.
+                {f.kosong}
               </td></tr>
             )}
           </tbody>

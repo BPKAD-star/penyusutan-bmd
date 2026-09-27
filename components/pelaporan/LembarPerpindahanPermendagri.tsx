@@ -323,11 +323,13 @@ export default function LembarPerpindahanPermendagri(p: PropLembarPerpindahan) {
                     {kolom.map(k => (
                       <td key={k.key}
                         // ⚠️ `anywhere` di sel isi — nilai rupiah panjang & nama
-                        // tanpa spasi bisa melebihi selnya. NIBAR berfont lebih
-                        // kecil supaya potongan 26 digitnya muat sebaris; kolom
+                        // tanpa spasi bisa melebihi selnya. NIBAR 9px (kolom 12%,
+                        // dinaikkan dari 7,5px/10% — permintaan user 2026-09-27,
+                        // lihat komentar `KOLOM_RINCI_PERPINDAHAN`) supaya potongan
+                        // 26 digitnya tetap muat sebaris tapi lebih terbaca; kolom
                         // bertanggal tak dipecah (tak terbaca kalau dipecah).
                         className={`${SEL} ${rata(k)} ${
-                          k.key === 'nibar' ? 'break-all tracking-tighter text-[7.5px]'
+                          k.key === 'nibar' ? 'break-all tracking-tighter text-[9px]'
                             : k.rata === 'tengah' || k.rata === 'kanan' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
                         {isiKolom(k, it.data)}
                       </td>

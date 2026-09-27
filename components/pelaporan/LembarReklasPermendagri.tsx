@@ -2,8 +2,10 @@
 // ============================================================================
 // PENYAJI lembar REKLASIFIKASI format Permendagri 47/2021 — keluarga IV.F.
 //
-//   IV.F.2      Laporan PENAMBAHAN akibat reklasifikasi BMD (rinci per barang)
-//   IV.F.3–F.6  Rekapitulasinya, empat kedalaman kodefikasi
+//   IV.F.2      LAPORAN PENAMBAHAN akibat reklasifikasi BMD (rinci per barang)
+//   IV.F.3–F.6  REKAPITULASI-nya, empat kedalaman kodefikasi
+//   IV.F.12     LAPORAN PENGURANGAN akibat reklasifikasi BMD (rinci per barang)
+//   IV.F.13–F.16 REKAPITULASI-nya
 //
 // Murni tampilan — nol query, nol state. Angkanya dirakit `muatLaporanReklas`
 // (lib/laporanReklas.ts), susunan & penomoran kolomnya datang dari
@@ -16,28 +18,44 @@
 //
 // ⚠️ TAK ADA SATU PUN CABANG `if` PER FORMAT di berkas ini — pembeda cabang
 // (penambahan vs pengurangan) seluruhnya data di `FORMAT_REKLAS`: judulnya,
-// judul blok lawan, dan `arah` yang sudah dipakai pemuat untuk memutuskan kode
-// mana yang jadi `kodeUtama`. Itu memang syaratnya: begitu penyaji harus tahu
-// sedang merender sisi yang mana, cabang kedua akan menambah cabang lagi.
+// judul kolom lawan (`kolomLawan`), dan `arah` yang sudah dipakai pemuat untuk
+// memutuskan kode mana yang jadi `kodeUtama`. Itu memang syaratnya: begitu
+// penyaji harus tahu sedang merender sisi yang mana, cabang kedua akan
+// menambah cabang lagi.
 //
-// ⚠️ SENGAJA BUKAN `LembarPerpindahanPermendagri` yang di-prop-kan. Empat hal
-// berbeda secara struktural (lihat kepala lib/formatReklas.ts) — terutama DUA
-// blok kode bersegmen, yang di keluarga perpindahan cuma satu — jadi
-// menyatukannya berarti komponen ber-belasan prop boolean yang melanggar
-// CODING-STANDARD §1.5. Yang DIPAKAI BERSAMA justru bagian yang berbahaya kalau
-// menyimpang: mesin subtotal & peta nama tingkat (lib/formatPermendagri.ts).
+// ⚠️ LEMBAR RINCI BERBENTUK KEPUTUSAN USER (2026-09-27/28), pola & huruf PERSIS
+// `LembarPerpindahanPermendagri`: 13 kolom datar, dikelompokkan per jenis aset
+// yang ada di transaksinya, ditutup "Total <jenis>" & "TOTAL", nominal 2
+// desimal. Sengaja menyimpang dari lembar asli Permendagri (dua blok segmen
+// kode + blok "Nama Dokumen" yang selalu kosong). Lembar REKAP (.3–.6/.13–.16)
+// TIDAK berubah — tetap bentuk Permendagri, kode bersegmen. Susunan kolom
+// rinci di `KOLOM_RINCI_REKLAS` (lib/formatReklas.ts).
+//
+// ⚠️ SENGAJA BUKAN `LembarPerpindahanPermendagri` yang di-prop-kan meski lembar
+// rincinya mirip — lembar REKAP-nya berbeda (5 kolom vs 6, `segMin` per-tangga
+// vs konstanta tunggal), jadi menyatukannya berarti komponen ber-belasan prop
+// boolean yang melanggar CODING-STANDARD §1.5. Yang DIPAKAI BERSAMA justru
+// bagian yang berbahaya kalau menyimpang: mesin subtotal & peta nama tingkat
+// (lib/formatPermendagri.ts).
 // ============================================================================
-import { formatRupiah } from '@/lib/export'
+import { Fragment } from 'react'
+import { formatRupiah2 } from '@/lib/export'
 import { pecahNibar } from '@/lib/kodeRegister'
+import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
 // Dipakai bersama lembar BA Rekon, Perolehan, & Perpindahan — sengaja diimpor.
 import { tglPanjang } from '@/lib/beritaAcaraRekon'
-import { segmenKode, susunRinci, susunRekap, type ItemLaporan } from '@/lib/formatPermendagri'
+import { segmenKode, susunRekap, type ItemLaporan } from '@/lib/formatPermendagri'
 import {
-  SEL_KODE_REKLAS, lembarRekapReklas,
-  kolomLembarReklas, lebarKodeReklas, judulRekapReklas,
-  type FormatReklas, type KolomLembarReklas,
+  KOLOM_RINCI_REKLAS, KOLOM_DIJUMLAH_REKLAS, lembarRekapReklas, judulRekapReklas,
+  type FormatReklas, type KolomRinciReklas,
 } from '@/lib/formatReklas'
 import type { BarisReklas } from '@/lib/laporanReklas'
+
+/** Pembungkus berkunci untuk sekelompok baris `<tr>` (satu jenis aset). */
+const FragmenJenis = Fragment
+
+/** Kedalaman grup jenis aset di lembar RINCI baru — lihat `LembarPerpindahanPermendagri`. */
+const SEG_JENIS_RINCI = 3
 
 const KABUPATEN = 'Kediri'
 const PROVINSI = 'Jawa Timur'
@@ -45,31 +63,11 @@ const PROVINSI = 'Jawa Timur'
 /**
  * Kelas sel KEPALA tabel.
  *
- * ⚠️ `[overflow-wrap:anywhere]`, BUKAN `break-words`. Keduanya beda tepat di
- * kasus yang menggigit di lembar sepadat ini: `break-word` tak memecah kata yang
- * sudah berdiri sendirian di barisnya, jadi "Keterangan" di sel sempit tetap
- * MELUBER menimpa sel tetangga — dan `table-fixed` menyembunyikannya dengan rapi
- * sampai kertasnya keluar. `px-0.5` (2 px) bukan `px-1`: di lembar 23 kolom + 14
- * sel segmen, 4 px padding itu sepertiga lebar sel kode.
+ * ⚠️ `[overflow-wrap:anywhere]`, BUKAN `break-words` — sama alasan dgn label
+ * lembar BA Rekon/Perolehan/Perpindahan: `break-word` tak memecah kata yang
+ * sudah berdiri sendirian di barisnya.
  */
 const WRAP = 'border border-black px-0.5 py-1 [overflow-wrap:anywhere]'
-
-/**
- * Kelas sel ISI lembar RINCI.
- *
- * ⚠️ `px-0.5` (2 px), BUKAN `px-1` seperti keluarga perpindahan — dan itu bukan
- * penyeragaman, melainkan pilihan yang diukur. Lembar ini punya **28 sel** per
- * baris; padding kiri-kanan 4 px di 14 sel non-kode memakan ±56 px, sekitar
- * 4,7% lebar cetak F4 lanskap. Ruang itu jauh lebih berguna dipakai kolom teks
- * panjang ("Aset Tetap Tanah Yang Tidak Digunakan Dalam Operasional
- * Pemerintah", 65 karakter) yang tiap barisnya membungkus 3–4 baris.
- *
- * ⚠️ `py-px` + `leading-[1.15]` menekan TINGGI baris, yang di lembar ini justru
- * pengeluaran terbesar: satu barisnya bisa 4 baris teks, jadi tiap 1 px tinggi
- * baris terkali empat. Jangan dikembalikan ke `py-0.5`/`leading-tight` tanpa
- * mengukur ulang berapa baris yang muat sehalaman.
- */
-const SEL_ISI = 'border border-black px-0.5 py-px'
 
 const tglID = (s: string | null | undefined) => {
   if (!s) return ''
@@ -77,17 +75,15 @@ const tglID = (s: string | null | undefined) => {
   return y && m && d ? `${d}/${m}/${y}` : s
 }
 
-// ── Potongan tampilan ───────────────────────────────────────────────────────
+// ── Potongan tampilan (lembar REKAP lama, tetap bentuk Permendagri) ─────────
 
 /** Sel-sel segmen kode. `sampai` = berapa segmen yang diisi (sisanya kosong). */
-function SelKode({ kode, sampai, n, tebal }: {
-  kode: string; sampai: number; n: number; tebal?: boolean
-}) {
+function SelKode({ kode, sampai, n }: { kode: string; sampai: number; n: number }) {
   const seg = segmenKode(kode)
   return (
     <>
       {Array.from({ length: n }, (_, i) => (
-        <td key={i} className={`border border-black px-0.5 py-px text-center ${tebal ? 'font-bold' : ''}`}>
+        <td key={i} className="border border-black px-0.5 py-0.5 text-center">
           {i < sampai ? (seg[i] ?? '') : ''}
         </td>
       ))}
@@ -101,13 +97,10 @@ function SelKode({ kode, sampai, n, tebal }: {
  * ⚠️ Penanda `(1)`…`(7)` TIDAK dicetak — angka dalam kurung di lembar
  * Permendagri itu rujukan ke "petunjuk pengisian", penanda TEMPLATE KOSONG.
  * Keputusan user 2026-08-30, berlaku untuk seluruh lembar Permendagri di
- * aplikasi ini. Nomornya tetap hidup di `FORMAT_REKLAS` sebagai tautan balik ke
- * format aslinya & penjaga struktur kolom lewat test.
+ * aplikasi ini.
  *
  * ⚠️ Sebutan pejabat & nama SKPD dicetak DUA BARIS walaupun lembar aslinya
- * menyatukannya jadi satu isian ("KUASA PENGGUNA BARANG, PENGGUNA BARANG ATAU
- * PENGELOLA BARANG…..(3)"). Berdempetan dalam satu baris terbaca sebagai satu
- * nama jabatan yang tak pernah ada. Sama dgn keluarga IV.B/IV.C/IV.D.
+ * menyatukannya jadi satu isian. Sama dgn keluarga IV.B/IV.C/IV.D/Perpindahan.
  */
 function KopLembar({ judul, berupa, komptabel, sebutan, skpd, periode, tahun, tambahan }: {
   judul: string; berupa: string; komptabel: string; sebutan: string
@@ -116,8 +109,6 @@ function KopLembar({ judul, berupa, komptabel, sebutan, skpd, periode, tahun, ta
 }) {
   return (
     <>
-      {/* Logo kiri + spacer kanan selebar sama (permintaan user 2026-09-10) —
-          pola sama dgn KOP KIBAR & keluarga IV.A (Perolehan). */}
       <div className="flex items-start gap-2 mb-2">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-kab-kediri.png" alt="Logo Kabupaten Kediri" className="w-11 h-auto flex-shrink-0" />
@@ -148,13 +139,9 @@ function BlokTtd({ sebutan, nama, nip, tgl }: {
   return (
     <div className="flex justify-end mt-8 text-[10px]">
       <div className="text-center w-80">
-        {/* Tempat DITULIS, bukan titik-titik — lembarnya memang selalu terbit
-            di Kediri (keputusan yang sama dengan lembar Perolehan). */}
         <p>{KABUPATEN}, {tglPanjang(tgl)}</p>
         <p>{sebutan}</p>
         <div className="h-14" />
-        {/* Yang belum dipilih DIBIARKAN bertitik-titik — mengarang nama di
-            dokumen yang akan ditandatangani jauh lebih berbahaya. */}
         <p className="font-semibold">{nama || '…………………………………'}</p>
         <p>NIP. {nip || '……………………'}</p>
       </div>
@@ -162,14 +149,12 @@ function BlokTtd({ sebutan, nama, nip, tgl }: {
   )
 }
 
-/**
- * Catatan kaki lembar aslinya. ⚠️ Dicetak apa adanya — ia yang menjelaskan
- * kenapa kolom Akumulasi & Nilai Buku kosong untuk Tanah/KDP/ATL.
- */
+/** Catatan kaki lembar aslinya — menjelaskan kenapa Akumulasi & Nilai Buku
+ *  kosong untuk Tanah/KDP/ATL. Dicetak apa adanya di kedua bentuk lembar. */
 const CATATAN_KAKI = '*) hanya diisi untuk BMD yang dilakukan Penyusutan atau Amortisasi.'
 
 export type PropLembarReklas = {
-  /** Registry cabangnya — `FORMAT_REKLAS.penambahan`. */
+  /** Registry cabangnya — `FORMAT_REKLAS.penambahan`/`.pengurangan`. */
   f: FormatReklas
   items: ItemLaporan<BarisReklas>[]
   /** Awalan kode → nama tingkat (lihat `petaNamaTingkat`). */
@@ -190,10 +175,6 @@ export type PropLembarReklas = {
    *
    * ⚠️ Angkanya BEDA per cabang (2–6 vs 12–16), jadi jangan menuliskan rentang
    * di sini maupun di pemanggil; pakai `akhiranLembarReklas(f)`.
-   *
-   * ⚠️ Yang dicentang operator menentukan APA YANG DICETAK, jadi ia menyaring
-   * di SINI — bukan disembunyikan lewat CSS. Lembar tersembunyi tetap ikut ke
-   * berkas PDF dan operator tak punya cara tahu.
    */
   lembar?: number[]
 }
@@ -203,18 +184,14 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
   const nama = (kode: string) => p.namaTingkat.get(kode) || ''
   const tampil = (akhiran: number) => !p.lembar || p.lembar.includes(akhiran)
 
-  // Blok lawan ("Reklasifikasi dari") juga bersegmen → satu kolom di registry,
-  // TUJUH sel di tabel. Ini yang membedakan jumlah sel dari jumlah kolom.
-  const lebarSelLawan = f.kolom.find(k => k.key === 'lawan_kode')!.lebar / SEL_KODE_REKLAS
-  // ⚠️ `- 1`: `lawan_kode` sudah TERHITUNG sebagai satu kolom di
-  // `kolomLembarReklas`, lalu memekar jadi `SEL_KODE_REKLAS` sel — jadi yang
-  // ditambahkan cuma SELISIHNYA. Tanpa `- 1`, baris "tidak ada data" ber-colSpan
-  // satu sel lebih lebar dari tabelnya & barisnya melar sendiri.
-  // Dikunci tests/lembarReklas.test.tsx (uji ini menangkapnya di percobaan
-  // pertama, sebelum lembarnya pernah dicetak).
-  const nKolom = SEL_KODE_REKLAS * 2 + kolomLembarReklas(f).length - 1
+  const kolom = KOLOM_RINCI_REKLAS
+  const nKolom = kolom.length
+  /** Letak kolom uang pertama — label baris total menempati semua kolom di kirinya. */
+  const iUang = kolom.findIndex(k => k.key === KOLOM_DIJUMLAH_REKLAS[0])
+  const nUang = KOLOM_DIJUMLAH_REKLAS.length
+  const nSisa = nKolom - iUang - nUang
 
-  const isiKolom = (k: KolomLembarReklas, r: BarisReklas): React.ReactNode => {
+  const isiKolom = (k: KolomRinciReklas, r: BarisReklas): React.ReactNode => {
     const a = r.aset!
     switch (k.key) {
       case 'nibar': {
@@ -223,184 +200,133 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
         const pc = pecahNibar(a.nibar)
         return pc ? <>{pc[0]}<br />{pc[1]}</> : (a.nibar || '')
       }
-      // ⚠️ "Nama Barang" = NOMENKLATUR BAKU dari kodefikasi kode TUJUAN, bukan
-      // yang diketik operator; "Spesifikasi Nama Barang" yang diketik. Dua hal
-      // berbeda — pola yang sama dipakai Daftar Barang, Penyusutan, & lembar
-      // RKBMD. Jangan ditukar.
-      // ⚠️ `uraian_barang` di `aset` cuma CADANGAN: ia salinan yang dibuat saat
-      // barang lahir, jadi untuk barang yang baru direklas ia masih memuat
-      // uraian kode LAMA.
-      case 'nama': return nama(r.kodeUtama) || a.uraian_barang || ''
-      // ⚠️ Reklas boleh sekalian mengganti nama barang, jadi yang dicetak nama
-      // di SISI yang dilaporkan — sudah diputuskan pemuatnya (`namaSpek`),
-      // BUKAN di sini. Lihat catatannya di lib/laporanReklas.ts.
-      case 'spek_nama': return r.namaSpek || a.nama_barang || ''
-      case 'jumlah': return a.jumlah ?? 1
-      case 'satuan': return a.satuan || ''
-      case 'nilai_perolehan': return formatRupiah(r.nilai)
+      // Uraian = NOMENKLATUR BAKU kode SESUDAH sisi ini (`kodeUtama`), ikut
+      // kodefikasi terkini — bukan yang diketik operator. `uraian_barang` di
+      // `aset` cuma cadangan (salinan lama, masih kode SEBELUM reklas).
+      case 'kode': return <>{r.kodeUtama}<br />{nama(r.kodeUtama) || a.uraian_barang || ''}</>
+      // "Nama Barang" = spesifikasi yang diketik operator, DI SISI yang
+      // dilaporkan (`namaSpek`, sudah diputuskan pemuatnya) — reklas boleh
+      // sekalian mengganti nama, jadi lembar penambahan memuat nama SESUDAH &
+      // pengurangan nama SEBELUM.
+      case 'nama': return r.namaSpek || a.nama_barang || ''
+      case 'jumlah': return <>{a.jumlah ?? 1}<br />{a.satuan || ''}</>
+      case 'harga_satuan': return formatRupiah2(a.harga_satuan ?? r.nilai)
+      case 'nilai_perolehan': return formatRupiah2(r.nilai)
       // ⚠️ Sel yang posisinya TAK KETEMU di `penyusutan_semester` dicetak
       // titik-titik, BUKAN 0 — nol berarti "memang belum tersusut", tak-ketemu
-      // berarti "engine belum dijalankan". Di lembar bertanda tangan kedua
-      // keadaan itu tak boleh terlihat sama.
-      case 'akumulasi': return r.tanpaPenyusutan ? '…' : formatRupiah(r.akumulasi ?? 0)
-      case 'nilai_buku': return r.tanpaPenyusutan ? '…' : formatRupiah(r.nilaiBuku ?? 0)
-      // `lawan_kode` dirender sebagai SEL SEGMEN, bukan lewat fungsi ini.
-      case 'lawan_kode': return ''
-      case 'lawan_nama': return nama(r.kodeLawan) || ''
+      // berarti "engine belum dijalankan".
+      case 'akumulasi': return r.tanpaPenyusutan ? '…' : formatRupiah2(r.akumulasi ?? 0)
+      case 'nilai_buku': return r.tanpaPenyusutan ? '…' : formatRupiah2(r.nilaiBuku ?? 0)
+      // Kode & uraian di sisi LAWAN — judul kolomnya sendiri ikut cabang
+      // (`f.kolomLawan`: "...Awal" utk penambahan, "...Tujuan" utk pengurangan).
+      case 'lawan': return <>{r.kodeLawan}<br />{nama(r.kodeLawan) || ''}</>
       case 'penyebab': return r.penyebab
-      // ⚠️ SELALU KOSONG — lihat alasannya di lib/formatReklas.ts. Jangan diisi
-      // nama berkas unggahan atau label alasan yang sudah tercetak di kolom (19).
-      case 'dok_nama': return ''
       case 'dok_nomor': return r.header?.no_sk || ''
       case 'dok_tanggal': return tglID(r.header?.tanggal || r.tanggal)
-      case 'keterangan': return r.keterangan || a.keterangan || r.header?.keterangan || ''
+      // Keterangan = isian kotak Keterangan di KARTU reklasifikasi (kartu
+      // menang, pola yang sama dgn keluarga perpindahan 2026-09-27), lalu
+      // cadangan baris ledger & spesifikasi barang.
+      case 'keterangan': return r.header?.keterangan || r.keterangan || a.keterangan || ''
       default: return ''
     }
   }
 
-  const rata = (k: KolomLembarReklas) =>
+  const rata = (k: KolomRinciReklas) =>
     k.rata === 'kanan' ? 'text-right' : k.rata === 'tengah' ? 'text-center' : ''
 
-  /**
-   * Kepala tabel.
-   *
-   * ⚠️ `WRAP` di tiap `<th>` bukan hiasan — judul kolom di lembar ini memuat
-   * kata tunggal yang lebih lebar dari selnya sendiri ("Spesifikasi",
-   * "Keterangan", "Reklasifikasi"). Tanpa `overflow-wrap: anywhere` kata itu
-   * MELUBER menimpa sel tetangga dan `table-fixed` menyembunyikannya sampai
-   * kertasnya keluar (pelajaran ronde IV.B/IV.C, 2026-08-31).
-   *
-   * ⚠️ `lawan_kode` menempati TUJUH sel, jadi `colSpan` grupnya dihitung, bukan
-   * `g.kolom.length`. Salah hitung di sini menggeser SELURUH kolom di kanannya
-   * tanpa satu pun error.
-   */
-  function Thead() {
-    const grup: { judul: string | undefined; kolom: KolomLembarReklas[] }[] = []
-    for (const k of f.kolom) {
-      const t = grup[grup.length - 1]
-      if (t && t.judul && t.judul === k.grup) t.kolom.push(k)
-      else grup.push({ judul: k.grup, kolom: [k] })
-    }
-    const selGrup = (g: { kolom: KolomLembarReklas[] }) =>
-      g.kolom.reduce((n, k) => n + (k.key === 'lawan_kode' ? SEL_KODE_REKLAS : 1), 0)
-    // `grup: 'lawan'` itu PENANDA, bukan judul — judul sebenarnya ikut cabang
-    // (`Reklasifikasi dari` / `…ke`) & disimpan di registry.
-    const judulGrup = (j: string) => j === 'lawan' ? f.grupLawan : j
-    return (
-      <thead>
-        <tr className="text-center font-semibold">
-          <th className={WRAP} rowSpan={2}>{f.kolomKiri.judul}</th>
-          <th className={WRAP} colSpan={SEL_KODE_REKLAS + 1}>
-            Penggolongan dan Kodefikasi Barang
-          </th>
-          {grup.map((g, i) => g.judul
-            ? <th key={i} className={WRAP} colSpan={selGrup(g)}>{judulGrup(g.judul)}</th>
-            : <th key={i} className={WRAP} rowSpan={2}>{g.kolom[0].judul}</th>)}
-        </tr>
-        <tr className="text-center font-semibold">
-          <th className={WRAP} colSpan={SEL_KODE_REKLAS}>Kode Barang</th>
-          <th className={WRAP}>{f.kolomNama.judul}</th>
-          {grup.filter(g => g.judul).flatMap(g =>
-            g.kolom.map(k => (
-              <th key={k.key} className={WRAP}
-                colSpan={k.key === 'lawan_kode' ? SEL_KODE_REKLAS : 1}>{k.judul}</th>
-            )))}
-        </tr>
-      </thead>
-    )
-  }
-
-  /** `<col>` untuk semua kolom sesudah blok Penggolongan (lawan_kode → 7 sel). */
-  function ColsKanan() {
-    return (
-      <>
-        {f.kolom.flatMap(k => k.key === 'lawan_kode'
-          ? Array.from({ length: SEL_KODE_REKLAS }, (_, i) => (
-            <col key={`${k.key}${i}`} style={{ width: `${lebarSelLawan}%` }} />
-          ))
-          : [<col key={k.key} style={{ width: `${k.lebar}%` }} />])}
-      </>
-    )
-  }
-
-  // ── Lembar RINCI IV.F.2 ───────────────────────────────────────────────────
+  // ── Lembar RINCI (IV.F.2 / IV.F.12) ───────────────────────────────────────
+  //
+  // ⚠️ BENTUK DITENTUKAN USER (2026-09-27/28), sengaja menyimpang dari lembar
+  // asli Permendagri — lihat kepala lib/formatReklas.ts. Datar, dikelompokkan
+  // per JENIS ASET (golongan `kodeUtama`) yang benar-benar ada di transaksinya,
+  // tiap kelompok ditutup "Total <jenis>", seluruhnya ditutup "TOTAL".
+  //
+  // ⚠️ Angka baris "Total <jenis>" diambil dari MESIN SUBTOTAL BERSAMA
+  // (`susunRekap` pada 3 segmen) — yang SAMA yang mengisi lembar rekap .6/.16
+  // (menurut jenis) di berkas yang sama. Menjumlah sendiri di sini membuka
+  // celah dua angka berbeda untuk jenis yang sama dalam satu berkas bertanda
+  // tangan.
   function LembarRinci() {
-    const baris = susunRinci(items, f.subtotal)
+    const totalJenis = susunRekap(items, SEG_JENIS_RINCI, SEG_JENIS_RINCI)
+      .filter(g => g.seg === SEG_JENIS_RINCI)
+    const perJenis = new Map<string, ItemLaporan<BarisReklas>[]>()
+    for (const it of items) {
+      const g = kodeLevel3(it.kode)
+      perJenis.set(g, [...(perJenis.get(g) ?? []), it])
+    }
+    const namaJenis = (g: string) =>
+      GOLONGAN_REKAP.find(x => x.kode === g)?.uraian || nama(g) || g
+    const total = totalJenis.reduce(
+      (t, g) => ({ nilai: t.nilai + g.nilai, akumulasi: t.akumulasi + g.akumulasi, nilaiBuku: t.nilaiBuku + g.nilaiBuku }),
+      { nilai: 0, akumulasi: 0, nilaiBuku: 0 })
+    // Kerapatan & warna disamakan dgn tabel Laporan Pengadaan & Perpindahan
+    // (permintaan user 2026-09-27): padding lega, kelompok teal pucat, subtotal
+    // abu muda.
+    const SEL = 'border border-black px-1.5 py-1'
+    // Warna latar ikut tercetak — tanpa `print-color-adjust` peramban
+    // membuangnya di PDF & baris kelompok tak lagi terbedakan dari baris barang.
+    const CETAK_WARNA = '[print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
+
+    const BarisTotal = ({ label, v, kelas }: {
+      label: string; v: { nilai: number; akumulasi: number; nilaiBuku: number }; kelas: string
+    }) => (
+      <tr className={kelas}>
+        <td className={`${SEL} text-right`} colSpan={iUang}>{label}</td>
+        <td className={`${SEL} text-right [overflow-wrap:anywhere]`}>{formatRupiah2(v.nilai)}</td>
+        <td className={`${SEL} text-right [overflow-wrap:anywhere]`}>{formatRupiah2(v.akumulasi)}</td>
+        <td className={`${SEL} text-right [overflow-wrap:anywhere]`}>{formatRupiah2(v.nilaiBuku)}</td>
+        <td className={SEL} colSpan={nSisa} />
+      </tr>
+    )
+
     return (
       <section className="lembar-rinci">
         <p className="text-right text-[12px] mb-1">Format {f.kode}</p>
         <KopLembar judul={f.judul} berupa={berupa} komptabel={labelKomptabel}
           sebutan={sebutan} skpd={skpd} periode={judulPeriode} tahun={tahun} />
-        <table className="w-full table-fixed border-collapse text-[7.5px] leading-[1.15]">
+        <table className="w-full table-fixed border-collapse text-[10px] leading-snug">
           <colgroup>
-            <col style={{ width: `${f.kolomKiri.lebar}%` }} />
-            {Array.from({ length: SEL_KODE_REKLAS }, (_, i) => (
-              <col key={i} style={{ width: `${lebarKodeReklas(f) / SEL_KODE_REKLAS}%` }} />
-            ))}
-            <col style={{ width: `${f.kolomNama.lebar}%` }} />
-            <ColsKanan />
+            {kolom.map(k => <col key={k.key} style={{ width: `${k.lebar}%` }} />)}
           </colgroup>
-          <Thead />
+          <thead>
+            <tr className={`text-center font-semibold bg-gray-50 ${CETAK_WARNA}`}>
+              {kolom.map(k => (
+                <th key={k.key} className={`${SEL} [overflow-wrap:anywhere]`}>
+                  {k.key === 'lawan' ? f.kolomLawan : k.judul}
+                </th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
-            {baris.map((b, i) => b.tipe === 'grup' ? (
-              // Baris kelompok: kolom NIBAR kosong (kelompok tak ber-NIBAR),
-              // kode sedalam tingkatnya, namanya, lalu HANYA ketiga kolom uang
-              // yang berisi — begitu bentuk lembar aslinya.
-              <tr key={`g${i}`} className="font-bold italic">
-                <td className={SEL_ISI} />
-                <SelKode kode={b.kode} sampai={b.seg} n={SEL_KODE_REKLAS} tebal />
-                <td className={`${SEL_ISI} break-words`}>{nama(b.kode) || b.kode}</td>
-                {f.kolom.flatMap(k => k.key === 'lawan_kode'
-                  // Blok lawan dikosongkan di baris kelompok: satu kelompok kode
-                  // tujuan bisa berasal dari BANYAK kode asal yang berbeda, jadi
-                  // mengisinya berarti menunjuk salah satunya seolah mewakili
-                  // semuanya.
-                  ? Array.from({ length: SEL_KODE_REKLAS }, (_, j) => (
-                    <td key={`${k.key}${j}`} className={SEL_ISI} />
-                  ))
-                  : [(
-                    // ⚠️ `anywhere` di sini juga — baris SUBTOTAL justru memuat
-                    // angka TERBESAR di lembar (jumlah se-golongan), jadi kalau
-                    // yang dibungkus cuma baris barangnya, yang meluber ke sel
-                    // sebelah malah angka yang paling diperhatikan pemeriksa.
-                    <td key={k.key}
-                      className={`${SEL_ISI} ${rata(k)} [overflow-wrap:anywhere]`}>
-                      {k.key === 'nilai_perolehan' ? formatRupiah(b.nilai)
-                        : k.key === 'akumulasi' ? formatRupiah(b.akumulasi)
-                          : k.key === 'nilai_buku' ? formatRupiah(b.nilaiBuku)
-                            : ''}
-                    </td>
-                  )])}
-              </tr>
-            ) : (
-              <tr key={`i${b.data.id}`} className="align-top">
-                <td className={`${SEL_ISI} break-all tracking-tighter text-[6px]`}>
-                  {isiKolom(f.kolomKiri, b.data)}
-                </td>
-                <SelKode kode={b.kode} sampai={SEL_KODE_REKLAS} n={SEL_KODE_REKLAS} />
-                <td className={`${SEL_ISI} break-words`}>
-                  {isiKolom(f.kolomNama, b.data)}
-                </td>
-                {f.kolom.flatMap(k => k.key === 'lawan_kode'
-                  ? [<SelKode key={k.key} kode={b.data.kodeLawan} sampai={SEL_KODE_REKLAS} n={SEL_KODE_REKLAS} />]
-                  : [(
-                    <td key={k.key}
-                      // ⚠️ `anywhere` di sel isi juga — nilai rupiah panjang
-                      // ("3.794.734.725") & nama barang tanpa spasi sama-sama
-                      // bisa melebihi selnya. Kolom bertanggal dikecualikan:
-                      // memecah "12/08/2026" di tengah bikin tak terbaca, dan
-                      // lebarnya memang sudah dianggarkan muat.
-                      className={`${SEL_ISI} ${rata(k)} ${
-                        k.rata === 'tengah' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
-                      {isiKolom(k, b.data)}
-                    </td>
-                  )])}
-              </tr>
+            {totalJenis.map(g => (
+              <FragmenJenis key={g.kode}>
+                <tr className={`font-semibold bg-teal/5 ${CETAK_WARNA}`}>
+                  <td className={SEL} colSpan={nKolom}>{g.kode} — {namaJenis(g.kode)}</td>
+                </tr>
+                {(perJenis.get(g.kode) ?? []).map(it => (
+                  <tr key={`i${it.data.id}`} className="align-top">
+                    {kolom.map(k => (
+                      <td key={k.key}
+                        // ⚠️ `anywhere` di sel isi — nilai rupiah panjang & nama
+                        // tanpa spasi bisa melebihi selnya. NIBAR 9px (kolom
+                        // 12%, pola PERSIS keluarga perpindahan) supaya potongan
+                        // 26 digitnya muat sebaris; kolom bertanggal tak
+                        // dipecah (tak terbaca kalau dipecah).
+                        className={`${SEL} ${rata(k)} ${
+                          k.key === 'nibar' ? 'break-all tracking-tighter text-[9px]'
+                            : k.rata === 'tengah' || k.rata === 'kanan' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
+                        {isiKolom(k, it.data)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                <BarisTotal label={`Total ${namaJenis(g.kode)}`} v={g} kelas={`font-semibold bg-gray-100 ${CETAK_WARNA}`} />
+              </FragmenJenis>
             ))}
-            {items.length === 0 && (
-              <tr><td colSpan={nKolom} className="border border-black px-0.5 py-3 text-center">
-                Tidak ada penambahan akibat reklasifikasi pada periode ini.
-              </td></tr>
+            {items.length === 0 ? (
+              <tr><td colSpan={nKolom} className={`${SEL} py-3 text-center`}>{f.kosong}</td></tr>
+            ) : (
+              <BarisTotal label="TOTAL" v={total} kelas={`font-bold bg-gray-200 ${CETAK_WARNA}`} />
             )}
           </tbody>
         </table>
@@ -410,7 +336,7 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
     )
   }
 
-  // ── Lembar REKAP (IV.F.3–F.6) ─────────────────────────────────────────────
+  // ── Lembar REKAP (IV.F.3–F.6 / IV.F.13–F.16) — TIDAK berubah ──────────────
   //
   // ⚠️ LIMA kolom — TANPA "Jumlah Barang" yang ada di rekap IV.B/IV.C/IV.D.
   //    Diikuti apa adanya dari lembar aslinya; menambahkannya "biar seragam"
@@ -445,18 +371,18 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
           </colgroup>
           <thead>
             <tr className="text-center font-semibold">
-              <th className="border border-black px-1 py-1" colSpan={nSel + 1}>
+              <th className={WRAP} colSpan={nSel + 1}>
                 Penggolongan dan Kodefikasi Barang
               </th>
-              <th className="border border-black px-1 py-1" rowSpan={2}>Nilai Perolehan (Rp)</th>
-              <th className="border border-black px-1 py-1" rowSpan={2}>
+              <th className={WRAP} rowSpan={2}>Nilai Perolehan (Rp)</th>
+              <th className={WRAP} rowSpan={2}>
                 Nilai Akumulasi Penyusutan atau Amortisasi (Rp)*
               </th>
-              <th className="border border-black px-1 py-1" rowSpan={2}>Nilai Buku (Rp)*</th>
+              <th className={WRAP} rowSpan={2}>Nilai Buku (Rp)*</th>
             </tr>
             <tr className="text-center font-semibold">
-              <th className="border border-black px-1 py-1" colSpan={nSel}>Kode Barang</th>
-              <th className="border border-black px-1 py-1">Nama Barang</th>
+              <th className={WRAP} colSpan={nSel}>Kode Barang</th>
+              <th className={WRAP}>Nama Barang</th>
             </tr>
           </thead>
           <tbody>
@@ -464,14 +390,14 @@ export default function LembarReklasPermendagri(p: PropLembarReklas) {
               <tr key={i} className={b.seg <= segMin ? 'font-bold' : ''}>
                 <SelKode kode={b.kode} sampai={b.seg} n={nSel} />
                 <td className="border border-black px-1 py-0.5 break-words">{nama(b.kode) || b.kode}</td>
-                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(b.nilai)}</td>
-                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(b.akumulasi)}</td>
-                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah(b.nilaiBuku)}</td>
+                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah2(b.nilai)}</td>
+                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah2(b.akumulasi)}</td>
+                <td className="border border-black px-1 py-0.5 text-right">{formatRupiah2(b.nilaiBuku)}</td>
               </tr>
             ))}
             {baris.length === 0 && (
               <tr><td colSpan={nSel + 4} className="border border-black px-1 py-3 text-center">
-                Tidak ada penambahan akibat reklasifikasi pada periode ini.
+                {f.kosong}
               </td></tr>
             )}
           </tbody>

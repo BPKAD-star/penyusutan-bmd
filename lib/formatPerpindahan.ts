@@ -74,11 +74,20 @@ export type KolomRinci = {
  * untuk huruf 10px di F4 lanskap (±1.157 px). Kolom angka dianggarkan untuk
  * rupiah 2 desimal SEBARIS ("1.103.554.446,97" ≈ 90 px) — jangan dipersempit.
  * ⚠️ 11px (ukuran tabel Laporan Pengadaan) TIDAK muat 16 kolom ini: totalnya
- * butuh ±107%, jadi angka terpaksa membungkus. NIBAR berhuruf 7,5px sendiri
- * supaya potongan 26 digitnya tetap sebaris.
+ * butuh ±107%, jadi angka terpaksa membungkus.
+ * ⚠️ **NIBAR sengaja dapat jatah TERBESAR (12%)** — permintaan user 2026-09-27
+ * ("kecil banget masihan") sesudah ronde sebelumnya cuma menaikkan huruf tabel
+ * 7,5px→10px tapi lupa sel NIBAR-nya sendiri, yang saat itu masih 10% & huruf
+ * 7,5px. Sekarang huruf NIBAR 9px (lihat `text-[9px]` di penyaji) di kolom
+ * 12% (±139 px di F4 lanskap) — potongan pertama `pecahNibar()` (26 digit)
+ * @9px ≈ 117 px, muat sebaris dgn ruang lebih dari ronde sebelumnya. Selisih
+ * 2% diambil dari empat kolom teks pendek yang paling tak krusial dibaca
+ * sekilas (`alamat`, `cara_perolehan`, `dok_nomor`, `keterangan` — masing²
+ * −0,5), BUKAN dari kolom uang (sudah dianggarkan pas) atau `kode`/`nama`
+ * (isinya bisa panjang & wajib terbaca penuh).
  */
 export const KOLOM_RINCI_PERPINDAHAN: readonly KolomRinci[] = [
-  { key: 'nibar', judul: 'NIBAR', lebar: 10, rata: 'kiri' },
+  { key: 'nibar', judul: 'NIBAR', lebar: 12, rata: 'kiri' },
   { key: 'kode', judul: 'Kode Barang - Uraian Barang', lebar: 7.5, rata: 'kiri' },
   { key: 'nama', judul: 'Nama Barang', lebar: 7, rata: 'kiri' },
   { key: 'merek', judul: 'Merk/Tipe', lebar: 5, rata: 'kiri' },
@@ -88,12 +97,12 @@ export const KOLOM_RINCI_PERPINDAHAN: readonly KolomRinci[] = [
   { key: 'akumulasi', judul: 'Akumulasi Penyusutan', lebar: 7.5, rata: 'kanan' },
   { key: 'nilai_buku', judul: 'Nilai Buku', lebar: 8, rata: 'kanan' },
   { key: 'tgl_perolehan', judul: 'Tanggal Perolehan', lebar: 4.8, rata: 'tengah' },
-  { key: 'cara_perolehan', judul: 'Cara Perolehan', lebar: 5, rata: 'kiri' },
-  { key: 'alamat', judul: 'Alamat', lebar: 6, rata: 'kiri' },
+  { key: 'cara_perolehan', judul: 'Cara Perolehan', lebar: 4.5, rata: 'kiri' },
+  { key: 'alamat', judul: 'Alamat', lebar: 5.5, rata: 'kiri' },
   { key: 'pihak', judul: '(pihak lawan — lihat kolomPihak)', lebar: 5.5, rata: 'kiri' },
-  { key: 'dok_nomor', judul: 'Nomor Dokumen', lebar: 5.5, rata: 'kiri' },
+  { key: 'dok_nomor', judul: 'Nomor Dokumen', lebar: 5, rata: 'kiri' },
   { key: 'tgl_bast', judul: 'Tanggal BAST', lebar: 4.8, rata: 'tengah' },
-  { key: 'keterangan', judul: 'Keterangan', lebar: 4.9, rata: 'kiri' },
+  { key: 'keterangan', judul: 'Keterangan', lebar: 4.4, rata: 'kiri' },
 ]
 
 /**

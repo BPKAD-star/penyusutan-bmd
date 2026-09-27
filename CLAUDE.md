@@ -8315,3 +8315,36 @@ dicabut.
   tapi kerapatan barisnya perlu dicek sekali saat cetak pertama.
 - **Tak ada migrasi.** tsc 0 error, 1834 test hijau, lint bersih.
 
+
+## Lembar rinci Reklasifikasi (IV.F.2/F.12) & Penghapusan (IV.K.1.2/K.2.2/K.6.2) ikut bentuk user (2026-09-28)
+
+Lanjutan keluarga Perpindahan di atas — pola, warna, & huruf SAMA PERSIS: tabel
+datar dikelompokkan per jenis aset yang ADA di transaksinya, "Total <jenis>" +
+"TOTAL" dari `susunRekap(items, 3, 3)` (mesin subtotal bersama), nominal 2
+desimal. **Lembar rekap .3–.6 TIDAK berubah bentuk** (cuma ikut 2 desimal).
+**Tak ada migrasi.**
+
+- **Reklas (13 kolom, `KOLOM_RINCI_REKLAS`)**: NIBAR · Kode-Uraian (`kodeUtama`)
+  · Nama Barang (`namaSpek`, sisi-aware) · Jumlah-Satuan · Harga Satuan · Nilai
+  Perolehan · Akumulasi · Nilai Buku · **kolom lawan** · Penyebab · Nomor &
+  Tanggal Dokumen · Keterangan. Satu-satunya beda cabang = `kolomLawan`:
+  "Kode Barang - Uraian Barang **Awal**" (penambahan) / "**Tujuan**"
+  (pengurangan) — DATA di registry, pola `kolomPihak`. `sisiReklas()` tak
+  disentuh. `laporanReklas` kini menarik `aset.harga_satuan`. Kolom "Nama
+  Dokumen" (selalu kosong) & kedua blok segmen kode DICABUT. `kosong` per cabang
+  (dulu "penambahan" tercetak juga di lembar pengurangan).
+- **Penghapusan (`f.kolom` per cabang)**: 10 kolom awal kembar (NIBAR · Kode ·
+  Nama · Merk/Tipe · No Polisi · Jumlah-Satuan · Harga Satuan · Nilai
+  Perolehan · Akumulasi · Nilai Buku), 3 penutup kembar (Nomor & Tanggal
+  Dokumen · Keterangan). Blok tengah: K.1 Lokasi · Cara Pemindahtanganan (15) ·
+  K.2 Tgl Perolehan · Cara Perolehan · Lokasi · Pihak Penerima (17) · K.6 Lokasi
+  · **Sebab Penghapusan** berisi literal "Sebab Lain" (15, keputusan user).
+  `SEL_KODE_PENGHAPUSAN`, `kolomLembarPenghapusan`, `lebarKodePenghapusan`,
+  `subtotal`, `kaki` dicabut.
+- **Keterangan = kartu dulu** (`header.keterangan` → baris ledger → aset) di
+  kedua keluarga, sama dgn Perpindahan.
+- **NIBAR 9px & jatah kolom terbesar** di ketiga keluarga (Perpindahan 10→12%,
+  Reklas 12%, Penghapusan 11–11,5%) — permintaan user "kecil banget masihan".
+  Diambil dari kolom teks pendek, bukan kolom uang. ⛔ Belum diukur di
+  peramban; kalau potongan 26 digit NIBAR membungkus jadi 3 baris di K.2 (11%),
+  naikkan NIBAR-nya dulu.
