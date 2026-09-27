@@ -8203,14 +8203,11 @@ untuk dikonfirmasi):
   saja" untuk keduanya, dibaca sebagai "biarkan seperti sekarang, jangan ubah
   kolomnya". `components/pelaporan/LaporanKoreksi.tsx` &
   `LaporanKapitalisasi.tsx` tak disunting sama sekali di putaran ini.
-- ⚠️ **Cabang "Sebab Lain" Penghapusan** tak disebut eksplisit di spesifikasi
-  (yang diberi hanya varian Pemindahtanganan & Pengalihan Status). Kolom
-  kelimanya (Cara/Penerima) tetap dirender dengan label "Cara
-  Pemindahtanganan" (sama seperti cabang Pemindahtanganan, karena
-  `f.scope==='aset'` di dua-duanya) — nilainya akan tampil "-" untuk seluruh
-  baris Sebab Lain karena `caraPemindahtanganan` cuma terisi dari
-  `sub_jenis` kartu `penghapusan_pemindahtanganan`. Kalau ini bukan yang
-  dimaksud, kolom itu perlu disembunyikan khusus utk cabang `sebab_lain`.
+- ✅ **Cabang "Sebab Lain" Penghapusan: kolom Cara Pemindahtanganan TIDAK
+  ditampilkan** (dikonfirmasi user hari yang sama — isinya di cabang itu
+  selalu kosong). `adaKolomCara`/`nKolom` di LaporanPenghapusan.tsx; Export
+  juga cuma membawa "Cara Pemindahtanganan" di cabang Pemindahtanganan &
+  "Penerima Pemindahtanganan" di cabang Pengalihan Status.
 - ⚠️ **Kolom yang "dipertahankan" (Status di Pemanfaatan/Pengamanan;
   Komptabel & Nilai Buku di Penghapusan)** tak disebut di spesifikasi kolom
   user — diputuskan tetap ditampilkan karena menghapusnya adalah regresi
@@ -8234,3 +8231,39 @@ jumlahnya (dibandingkan lewat `git stash` ke keadaan sebelum edit) sebelum &
 sesudah, jadi 0 warning baru. Fixture `tests/lembarReklas.test.tsx` &
 `tests/lembarPenghapusan.test.tsx` disesuaikan (field baru wajib di tipe
 `BarisReklas.aset`/`BarisPenghapusan.aset`).
+
+## Laporan Perolehan: dipotong 500 & tertahan "Memuat data..." (2026-09-27)
+
+Dua laporan user sesudah standarisasi kolom di atas ter-deploy:
+**Laporan Hibah** menampilkan **498 transaksi / Rp2,9 M** sementara Dashboard
+**1.247 barang / Rp333,7 M**, dan **Laporan Pengadaan** tertahan "Memuat
+data..." dengan beberapa permintaan `transaksi_bmd?select=aset_id…` (pemeriksaan
+pembatalan) berstatus *pending* di tab Network. Keduanya di
+`components/LaporanPerolehan.tsx` (dipakai kelima menu).
+
+- **Pagu `.limit(500)` DICABUT.** Kartu total & tabel menjumlah POTONGAN 500
+  baris terbaru, jadi angkanya salah tanpa terlihat terpotong (teks "maks. 500
+  ditampilkan" tak menolong kartu totalnya). Sekarang SELURUH baris ditarik
+  keyset (`.lt('id', terakhir)`, urut id turun, per 1.000 — dilayani
+  `idx_trx_perolehan_id`), lalu tabelnya dipaginasi DI TAMPILAN saja
+  (`PER_HAL` 200). Rekap per SKPD kini diturunkan (`useMemo`) dari baris yang
+  sama & Export memakai baris yang sama — dulu keduanya menarik ulang lewat
+  OFFSET (`.range()`), tiga jalur untuk satu angka.
+  ⚠️ Angka laporan ≠ Dashboard dan itu bukan bug: laporan menjumlah baris
+  LEDGER perolehan yang tak dianulir (termasuk barang yang kelak dihapus/
+  dipindah), Dashboard menjumlah aset `aktif` per `cara_perolehan` saat ini.
+- **Pemeriksaan pembatalan (`saringVoid`) kini HANYA menanyakan aset yang
+  statusnya BUKAN `aktif`.** Semua jalan menuju void menonaktifkan asetnya
+  (`batal_*` → `dihapus`, Buka Kunci → `draft`, `koreksi_pencatatan_ganda` →
+  `dihapus`), dan satu-satunya jalan balik (`batal_koreksi_pencatatan_ganda`)
+  sekaligus meng-un-void-nya — jadi aset `aktif` pasti tak ter-void. Ini
+  memangkas permintaan per-200-aset yang tertahan pending di mesin DB yang
+  sedang sesak (lihat "REKAP yang gagal…", 2026-09-22). Aset yang tak terbaca
+  (`aset` null) tetap ditanyakan — fail-closed.
+  ⚠️ **Tak bisa diukur ke DB dari sesi ini** (tak ada akses MCP) — sebab pasti
+  lambatnya permintaan pending itu belum dibuktikan; yang dikerjakan
+  mengurangi jumlahnya secara drastis. Kalau sesudah deploy masih tertahan,
+  ukur `fetchVoidedAsetIds` terscope dgn RLS aktif sbg langkah berikutnya.
+- **Tak ada migrasi.** tsc 0 error, 1869 test hijau, warning lint berkas ini
+  turun 4 → 3.
+

@@ -15,7 +15,7 @@
 // ⚠️ Pengadaan BEDA STRUKTUR dari keempat manual — Pengadaan py DUA dokumen
 // (kontrak & BAST, `PUNYA_KONTRAK`/`adaKontrak`), keempat manual cuma py SATU
 // (No/Tgl Dokumen). Jangan disamakan jadi satu kolom generik.
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -125,6 +125,8 @@ const PUNYA_ANGGARAN = new Set(['pengadaan'])
  * header), jadi kolom dokumennya cuma SATU pasang, bukan dua.
  */
 const PUNYA_KONTRAK = new Set(['pengadaan'])
+/** Baris per halaman TAMPILAN tab Daftar Transaksi (data tetap dimuat semua). */
+const PER_HAL = 200
 
 /** Label kolom tanggal dokumen — permintaan user 2026-09-27, beda per jenis
  *  (Hibah menyebut "BAST", tiga lainnya "Dokumen") padahal field sumbernya
@@ -174,8 +176,9 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const [selSkpdId, setSelSkpdId] = useState<number | null>(null) // SKPD terpilih (utk footer lembar Permendagri)
   // Rekap per SKPD: matriks per SKPD (root) x per golongan — dibangun lazy saat view dipindah.
   const [view, setView] = useState<'list' | 'matrix' | 'permendagri'>('list')
-  const [matrix, setMatrix] = useState<MatrixRow[]>([])
-  const [matrixLoading, setMatrixLoading] = useState(false)
+  // Paginasi TAMPILAN saja (2026-09-27) — barisnya sudah dimuat SEMUA, yang
+  // dipotong cuma berapa yang dirender sekaligus supaya DOM tetap ringan.
+  const [hal, setHal] = useState(0)
 
   useEffect(() => {
     // ⚠️ `order('id')`, BUKAN `order('periode')` — `jenis` (ENUM) tak bisa jadi
@@ -228,9 +231,24 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // Berlaku ke KELIMA menu Laporan Perolehan sekaligus (Pengadaan, Hibah,
   // Tukar Menukar, Hasil Inventarisasi, Perolehan Lainnya) — komponen ini
   // dipakai bersama.
-  const saringVoid = useCallback(async <T extends { aset_id: string | null }>(baris: T[]): Promise<T[]> => {
-    const voided = await fetchVoidedAsetIds(
-      supabase, [], baris.map(r => r.aset_id).filter((id): id is string => !!id))
+  //
+  // ⚠️ HANYA aset yang statusnya BUKAN `aktif` yang ditanyakan (2026-09-27).
+  // Tiap jalan menuju "void" menonaktifkan asetnya: `batal_*` cara perolehan
+  // me-soft-delete (`dihapus`), Buka Kunci mengembalikannya ke `draft`,
+  // `koreksi_pencatatan_ganda` → `dihapus`; dan satu-satunya jalan balik
+  // (`batal_koreksi_pencatatan_ganda`) menghidupkannya lagi sekaligus
+  // meng-un-void-nya. Jadi aset `aktif` PASTI tak ter-void, dan menanyakan
+  // ribuan aset aktif per 200 cuma menambah permintaan yang — di mesin DB yang
+  // sedang sesak — membuat Laporan Pengadaan tertahan "Memuat data..." dgn
+  // permintaan pemeriksaan pembatalan yang tak kunjung pulang.
+  // Aset yang tak terbaca (`aset` null) tetap ditanyakan — fail-closed.
+  const saringVoid = useCallback(async <T extends { aset_id: string | null; aset: { status: string } | null }>(
+    baris: T[],
+  ): Promise<T[]> => {
+    const perluDicek = baris.filter(r => r.aset_id && r.aset?.status !== 'aktif')
+      .map(r => r.aset_id as string)
+    if (perluDicek.length === 0) return baris
+    const voided = await fetchVoidedAsetIds(supabase, [], perluDicek)
     return baris.filter(r => !(r.aset_id && voided.has(r.aset_id)))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -272,26 +290,48 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     return q
   }, [periode, descIds, jenis]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ⚠️ SELURUH baris ditarik, TIDAK dipotong 500 lagi (2026-09-27). Pagu lama
+  // `.limit(500)` membuat Laporan Hibah menampilkan 498 transaksi / Rp2,9 M
+  // sementara Dashboard 1.247 barang / Rp333,7 M — kartu totalnya menjumlah
+  // potongan, jadi angkanya salah tanpa terlihat terpotong. Keyset
+  // (`.lt('id', terakhir)`, urut id turun) dilayani `idx_trx_perolehan_id`,
+  // biayanya rata di halaman ke berapa pun (CLAUDE.md, aturan kolektor).
+  // Hasilnya dipakai BERSAMA tab Daftar Transaksi, Rekap per SKPD, & Export —
+  // satu tarikan, jadi ketiganya mustahil beda angka.
   useEffect(() => {
+    let batal = false
     ;(async () => {
-      setLoading(true); setVoidedErr('')
+      setLoading(true); setVoidedErr(''); setHal(0)
       try {
-        // `error` WAJIB dibaca: `const { data } = await` bikin query yang gagal
-        // terbaca sebagai "datanya memang kosong" — 0 transaksi yang kelihatan
-        // sah padahal query-nya tumbang.
-        const { data, error } = await buildQuery().limit(500)
-        if (error) throw new Error(error.message)
-        setRows(await saringVoid((data as never as Trx[]) || []))
+        const semua: Trx[] = []
+        let terakhir: number | null = null
+        for (;;) {
+          let q = buildQuery()
+          if (terakhir != null) q = q.lt('id', terakhir)
+          // `error` WAJIB dibaca: `const { data } = await` bikin query yang
+          // gagal terbaca sebagai "datanya memang kosong".
+          const { data, error } = await q.limit(1000)
+          if (error) throw new Error(error.message)
+          const baris = (data as never as Trx[]) || []
+          if (baris.length === 0) break
+          semua.push(...baris)
+          terakhir = baris[baris.length - 1].id
+          if (batal) return
+          if (baris.length < 1000) break
+        }
+        const hidup = await saringVoid(semua)
+        if (!batal) setRows(hidup)
       } catch (e) {
         // Fail-closed (CLAUDE.md): modul pelaporan lebih baik menolak tampil
         // daripada menyajikan angka kurang-sebagian yang kelihatan sah.
-        setVoidedErr(pesanGagal(e as Error)); setRows([])
+        if (!batal) { setVoidedErr(pesanGagal(e as Error)); setRows([]) }
       } finally {
         // Di `finally`, BUKAN di akhir jalur sukses — kalau tidak, satu query
         // yang melempar meninggalkan tabel "Memuat data..." SELAMANYA.
-        setLoading(false)
+        if (!batal) setLoading(false)
       }
     })()
+    return () => { batal = true }
   }, [buildQuery, saringVoid])
 
   // ── Pilihan periode ────────────────────────────────────────────────────────
@@ -361,9 +401,6 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // ⚠️ Pemecah seri `id` WAJIB: satu dokumen berisi banyak barang ber-SKPD &
   // tanggal SAMA, dan tanpa urutan TOTAL isinya bisa bergeser tiap render
   // (`Array.prototype.sort` tak dijamin stabil di semua mesin).
-  // ⚠️ Ini TIDAK menggeser baris mana yang tampil: pagu 500 dipasang di QUERY
-  // (`.limit(500)` ber-`order('id')`), jadi yang 500 itu tetap "terbaru" —
-  // pengurutan ini cuma menata ulang yang sudah tertarik.
   const urutSkpd = (a: Trx, b: Trx) => {
     const ia = indukNama(a) || unitNama(a), ib = indukNama(b) || unitNama(b)
     if (ia !== ib) return ia.localeCompare(ib, 'id')
@@ -372,7 +409,8 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
     if (a.tanggal !== b.tanggal) return a.tanggal < b.tanggal ? 1 : -1
     return b.id - a.id
   }
-  const rowsUrut = [...rows].sort(urutSkpd)
+  const rowsUrut = useMemo(() => [...rows].sort(urutSkpd), [rows, skpdById]) // eslint-disable-line react-hooks/exhaustive-deps
+  const nHal = Math.max(1, Math.ceil(rowsUrut.length / PER_HAL))
   // ⚠️ DIHITUNG, bukan ditulis tangan. Dulu `pihakLabel ? 11 : 10`, dan angka
   // seperti itu diam-diam meleset begitu ada kolom baru — baris "Tidak ada
   // transaksi" jadi tak selebar tabelnya & tak ada yang gagal.
@@ -385,42 +423,28 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
 
   // Rekap per SKPD: dikumpulkan per SKPD PERSIS (leaf, bukan root lagi) lalu
-  // disusun berjenjang oleh `bangunPohonRekap` (2026-09-10) — dibangun full
-  // (tak dibatasi 500 spt daftar transaksi).
-  useEffect(() => {
-    if (view !== 'matrix' || !skpdLoaded) return
-    ;(async () => {
-      setMatrixLoading(true); setVoidedErr('')
-      try {
-      const leaf = new Map<number, LeafRekap>()
-      for (let from = 0; ; from += 1000) {
-        const { data, error } = await buildQuery().range(from, from + 999)
-        if (error) throw new Error(error.message)
-        if (!data || data.length === 0) break
-        // Disaring PER HALAMAN — daftar aset yang ditanya ikut kecil, jadi
-        // biayanya datar berapa pun besar ledgernya.
-        for (const r of await saringVoid((data as never as Trx[]))) {
-          if (!r.skpd_tujuan) continue
-          const nama = skpdById.get(r.skpd_tujuan)?.nama ?? `SKPD #${r.skpd_tujuan}`
-          const g = kodeLevel3(r.aset?.kode || '')
-          const l = leaf.get(r.skpd_tujuan) ?? { nama, cells: {} }
-          const c = (l.cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
-          c.perolehan += r.nilai || 0
-          leaf.set(r.skpd_tujuan, l)
-        }
-        if (data.length < 1000) break
-      }
-      // Akar pohon: admin lihat SEMUA induk (level-1) yang punya data; yang
-      // lain cuma lihat SKPD-nya sendiri (berapa pun levelnya) sbg akar.
-      const akarIds = isAdmin
-        ? [...new Set([...leaf.keys()].map(id => rootOf(id)?.id ?? id))]
-        : (myScopeId != null ? [myScopeId] : [])
-      setMatrix(bangunPohonRekap(leaf, skpdById, akarIds))
-      } catch (e) {
-        setVoidedErr(pesanGagal(e as Error)); setMatrix([])
-      } finally { setMatrixLoading(false) }
-    })()
-  }, [view, buildQuery, skpdLoaded, saringVoid, isAdmin, myScopeId, skpdById, rootOf]) // eslint-disable-line react-hooks/exhaustive-deps
+  // disusun berjenjang oleh `bangunPohonRekap` (2026-09-10). Sejak 2026-09-27
+  // DITURUNKAN dari `rows` yang sudah dimuat (seluruhnya) — dulu ia menarik
+  // ulang lewat OFFSET, dua jalur untuk angka yang sama.
+  const matrix: MatrixRow[] = useMemo(() => {
+    if (!skpdLoaded) return []
+    const leaf = new Map<number, LeafRekap>()
+    for (const r of rows) {
+      if (!r.skpd_tujuan) continue
+      const nama = skpdById.get(r.skpd_tujuan)?.nama ?? `SKPD #${r.skpd_tujuan}`
+      const g = kodeLevel3(r.aset?.kode || '')
+      const l = leaf.get(r.skpd_tujuan) ?? { nama, cells: {} }
+      const c = (l.cells[g] ??= { perolehan: 0, akumulasi: 0, beban: 0, nilaiBuku: 0 })
+      c.perolehan += r.nilai || 0
+      leaf.set(r.skpd_tujuan, l)
+    }
+    // Akar pohon: admin lihat SEMUA induk (level-1) yang punya data; yang
+    // lain cuma lihat SKPD-nya sendiri (berapa pun levelnya) sbg akar.
+    const akarIds = isAdmin
+      ? [...new Set([...leaf.keys()].map(id => rootOf(id)?.id ?? id))]
+      : (myScopeId != null ? [myScopeId] : [])
+    return bangunPohonRekap(leaf, skpdById, akarIds)
+  }, [rows, skpdLoaded, isAdmin, myScopeId, skpdById, rootOf])
 
   function handleExportMatrix() {
     // Seluruh jenjang diratakan (bukan cuma baris teratas) — berkas Excel
@@ -439,28 +463,15 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   }
 
   async function handleExport() {
-    setExporting(true); setVoidedErr('')
-    // ⚠️ Dulu barisnya disaring dgn `voided?.has(...)`. Optional chaining itu
-    // berarti set yang GAGAL dimuat (null) menghasilkan berkas Excel TANPA
-    // saringan sama sekali — dan berkas yang sudah terunduh tak punya satu pun
-    // tanda bahwa isinya salah. Sekarang kegagalan MEMBATALKAN exportnya.
-    const hasil: Trx[] = []
-    try {
-      for (let from = 0; ; from += 1000) {
-        const { data, error } = await buildQuery().range(from, from + 999)
-        if (error) throw new Error(error.message)
-        if (!data || data.length === 0) break
-        hasil.push(...await saringVoid((data as never as Trx[])))
-        if (data.length < 1000) break
-      }
-    } catch (e) {
-      setVoidedErr(pesanGagal(e as Error)); setExporting(false); return
-    }
-    // ⚠️ Dilookup ULANG untuk himpunan EXPORT, bukan memakai `uraianRek` milik
-    // layar: layar dibatasi 500 baris terbaru sementara berkas ini memuat
-    // SEMUANYA, jadi memakai peta layar akan mengosongkan kolom uraian untuk
-    // baris ke-501 dan seterusnya — kekosongan yang di Excel terbaca sbg
-    // "rekening ini memang tak punya nama".
+    if (loading || voidedErr) return
+    setExporting(true)
+    // Sejak 2026-09-27 layar memuat SELURUH baris (sudah tersaring void), jadi
+    // export memakai baris yang SAMA — tak ada tarikan kedua yang bisa
+    // menghasilkan berkas berbeda dari yang tampil. Kegagalan memuat sudah
+    // ditolak di loader (tombolnya mati selama `loading`/ada error).
+    const hasil: Trx[] = [...rows]
+    // Uraian belanja dilookup sekali lagi supaya berkas tak bergantung pada
+    // efek layar yang mungkin belum selesai saat tombol ditekan.
     const uraianEx = adaAnggaran
       ? await fetchUraianRekening(supabase, hasil.map(rekKode).filter(Boolean))
       : new Map<string, string>()
@@ -557,7 +568,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           )}
           {view !== 'permendagri' && (
             <button onClick={view === 'list' ? handleExport : handleExportMatrix}
-              disabled={view === 'list' ? exporting : matrix.length === 0} className="btn-primary">
+              disabled={view === 'list' ? (exporting || loading || !!voidedErr) : matrix.length === 0} className="btn-primary">
               {view === 'list' ? (exporting ? 'Mengekspor...' : 'Export Excel') : 'Export Excel'}
             </button>
           )}
@@ -633,7 +644,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           : <LaporanPengadaanPermendagri periode={periode}
               skpdId={selSkpdId} namaSkpd={namaSkpd.nama} descIds={descIds} />
       ) : view === 'matrix' ? (
-        <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={matrixLoading} />
+        <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={loading} />
       ) : (
         <>
           <div className="card p-4 mb-4 max-w-xs">
@@ -644,7 +655,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
 
           <div className="card overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100">
-              <span className="text-sm text-gray-500">{rows.length} transaksi (maks. 500 ditampilkan — export untuk semua)</span>
+              <span className="text-sm text-gray-500">{rows.length.toLocaleString('id-ID')} transaksi</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -675,7 +686,7 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                     <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
                     <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-                  ) : rowsUrut.map(r => (
+                  ) : rowsUrut.slice(hal * PER_HAL, (hal + 1) * PER_HAL).map(r => (
                     <tr key={r.id}>
                       <td className="table-td text-xs align-top">
                         <p className="font-medium">{unitNama(r)}</p>
@@ -733,6 +744,20 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
                 </tbody>
               </table>
             </div>
+            {/* Paginasi TAMPILAN — seluruh baris sudah dimuat & dijumlah di
+                kartu atas; yang dipecah cuma perendaran tabelnya. */}
+            {!loading && nHal > 1 && (
+              <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
+                <span>
+                  Baris {(hal * PER_HAL + 1).toLocaleString('id-ID')}–{Math.min((hal + 1) * PER_HAL, rowsUrut.length).toLocaleString('id-ID')} dari {rowsUrut.length.toLocaleString('id-ID')}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button className="btn-secondary" disabled={hal === 0} onClick={() => setHal(h => h - 1)}>← Sebelumnya</button>
+                  <span>{hal + 1} / {nHal}</span>
+                  <button className="btn-secondary" disabled={hal >= nHal - 1} onClick={() => setHal(h => h + 1)}>Berikutnya →</button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

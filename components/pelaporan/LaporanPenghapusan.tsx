@@ -32,11 +32,9 @@
 // ⚠️ Kolom tab "Daftar Transaksi" DISTANDARKAN 2026-09-27 (permintaan user,
 // lintas menu Pelaporan): Kode Barang/Uraian ditumpuk, Merk/Tipe · Spesifikasi
 // Lainnya · No. Polisi/Rangka/Mesin · Luas ditambahkan. Kolom kelima
-// (cara/penerima) tetap SATU kolom yang labelnya berganti per cabang — untuk
-// **Sebab Lain** (`f.scope==='aset'`, sama seperti Pemindahtanganan) labelnya
-// jatuh ke "Cara Pemindahtanganan" & isinya kosong ("-"), karena spesifikasi
-// user cuma menyebut dua varian (Pemindahtanganan & Pengalihan Status) —
-// interpretasi ini, bukan permintaan eksplisit. Komptabel & Nilai Buku
+// (cara/penerima) SATU kolom yang labelnya berganti per cabang, dan di cabang
+// **Sebab Lain** kolom itu TIDAK DITAMPILKAN sama sekali (keputusan user
+// 2026-09-27 — isinya di sana memang selalu kosong). Komptabel & Nilai Buku
 // DIPERTAHANKAN walau tak disebut literal di spesifikasi — dua-duanya info
 // yang sudah ada & berguna, menghapusnya jadi regresi tanpa alasan.
 // ============================================================================
@@ -171,8 +169,8 @@ export default function LaporanPenghapusan() {
       'Jumlah': r.aset?.jumlah ?? 1,
       'Satuan': r.aset?.satuan || '',
       'Komptabel': (r.aset?.intra_ekstra || '').toUpperCase(),
-      'Cara Pemindahtanganan': r.caraPemindahtanganan,
-      'Penerima Pemindahtanganan': r.penerima || '',
+      ...(id === 'pemindahtanganan' ? { 'Cara Pemindahtanganan': r.caraPemindahtanganan } : {}),
+      ...(id === 'pengalihan' ? { 'Penerima Pemindahtanganan': r.penerima || '' } : {}),
       'No. SK Penghapusan': r.header?.no_sk || '',
       'Tgl SK Penghapusan': r.header?.tanggal || r.tanggal,
       'Periode': r.periode,
@@ -194,6 +192,10 @@ export default function LaporanPenghapusan() {
   }
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
+  // Kolom Cara/Penerima Pemindahtanganan TIDAK ada di cabang Sebab Lain
+  // (keputusan user 2026-09-27) — di sana isinya selalu kosong.
+  const adaKolomCara = id !== 'sebab_lain'
+  const nKolom = adaKolomCara ? 15 : 14
 
   return (
     <div className="p-6">
@@ -322,9 +324,11 @@ export default function LaporanPenghapusan() {
                     <th className="table-th">No. Mesin</th>
                     <th className="table-th">Luas</th>
                     <th className="table-th">Komptabel</th>
-                    <th className="table-th">
-                      {f.scope === 'asal' ? 'Penerima Pemindahtanganan' : 'Cara Pemindahtanganan'}
-                    </th>
+                    {adaKolomCara && (
+                      <th className="table-th">
+                        {f.scope === 'asal' ? 'Penerima Pemindahtanganan' : 'Cara Pemindahtanganan'}
+                      </th>
+                    )}
                     <th className="table-th">SK Penghapusan / Tanggal</th>
                     <th className="table-th text-right">Nilai Perolehan</th>
                     <th className="table-th text-right">Nilai Buku</th>
@@ -333,9 +337,9 @@ export default function LaporanPenghapusan() {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {loading ? (
-                    <tr><td colSpan={15} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                    <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={15} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
+                    <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
                   ) : rows.slice(0, 500).map(r => (
                     <tr key={r.id}>
                       <td className="table-td text-xs align-top">{r.skpdNama || '-'}</td>
@@ -354,9 +358,11 @@ export default function LaporanPenghapusan() {
                       <td className="table-td text-xs align-top">{r.aset?.no_mesin || '-'}</td>
                       <td className="table-td text-xs align-top">{r.aset?.luas ?? '-'}</td>
                       <td className="table-td text-xs align-top">{(r.aset?.intra_ekstra || '-').toUpperCase()}</td>
-                      <td className="table-td text-xs align-top">
-                        {(f.scope === 'asal' ? r.penerima : r.caraPemindahtanganan) || '-'}
-                      </td>
+                      {adaKolomCara && (
+                        <td className="table-td text-xs align-top">
+                          {(f.scope === 'asal' ? r.penerima : r.caraPemindahtanganan) || '-'}
+                        </td>
+                      )}
                       <td className="table-td text-xs align-top">
                         <p>{r.header?.no_sk || '-'}</p>
                         <p className="text-gray-400">{r.header?.tanggal || r.tanggal}</p>
