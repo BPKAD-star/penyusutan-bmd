@@ -108,8 +108,8 @@ describe.each(CABANG)('%s — lembar rinci', (id, f) => {
   it('kelompok = JENIS ASET yang ada di transaksi saja, masing-masing ditutup Total', () => {
     const { container } = sajikan(f, [2])
     const teks = tbody(container).map(tr => tr.textContent || '')
-    expect(teks).toContain('1.3.2 Peralatan dan Mesin')
-    expect(teks).toContain('1.3.3 Gedung dan Bangunan')
+    expect(teks).toContain('1.3.2 — Peralatan dan Mesin')
+    expect(teks).toContain('1.3.3 — Gedung dan Bangunan')
     // Tak ada transaksi Tanah → kelompoknya tak boleh muncul.
     expect(teks.some(t => t.startsWith('1.3.1'))).toBe(false)
     expect(teks.some(t => t.startsWith('Total Peralatan dan Mesin'))).toBe(true)

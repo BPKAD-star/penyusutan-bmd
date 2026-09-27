@@ -8298,8 +8298,15 @@ dicabut.
   cadangan keterangan baris ledger), BUKAN `aset.keterangan`. Tanggal BAST =
   tanggal dokumen kartu. Pemuat (`lib/laporanPerpindahan.ts`) kini menarik
   `header.keterangan` & `aset.merek_tipe`.
-- Warna latar baris (abu kepala/TOTAL, hijau jenis) memakai
-  `print-color-adjust: exact` supaya ikut tercetak di PDF.
+- **Kerapatan & warna disamakan dgn tabel Laporan Pengadaan** (permintaan user
+  sore harinya): kepala abu muda, baris jenis teal pucat "1.3.2 — Peralatan dan
+  Mesin", subtotal abu muda, TOTAL abu; semuanya `print-color-adjust: exact`
+  supaya ikut tercetak. ⚠️ **Huruf 10px, BUKAN 11px seperti Pengadaan** — 16
+  kolom ber-4 kolom rupiah 2 desimal di F4 lanskap butuh ±107% lebar kalau
+  11px, jadi angkanya terpaksa membungkus. Kolom angka `whitespace-nowrap` &
+  dianggarkan untuk "1.103.554.446,97" sebaris; NIBAR berhuruf 7,5px sendiri.
+  Kalau kelak harus 11px, yang dibutuhkan membuang/menggabung kolom, bukan
+  menyempitkan kolom angka.
 - **Registry kolom lama DICABUT** (`kolomKiri`/`kolomNama`/`kolom`/`subtotal`/
   `kaki`, `SEL_KODE_PERPINDAHAN`, `kolomLembar`, `lebarKodePerpindahan`) & uji
   bentuk lamanya ikut diganti. **Lembar rekap .3–.6 & IV.D.7 TIDAK berubah

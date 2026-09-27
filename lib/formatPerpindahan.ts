@@ -70,27 +70,30 @@ export type KolomRinci = {
  * `f.kolomPihak.judul` milik cabangnya. Kalau judul ini yang tercetak, lembar
  * Pengeluaran menyebut "Pihak yang menyerahkan" padahal isinya SKPD tujuan.
  *
- * ⚠️ LEBAR: totalnya 100 PERSIS (`table-fixed`, "fit to window"). NIBAR tak
- * boleh dipersempit — 45 digit dipenggal DUA baris di batas segmen oleh
- * `pecahNibar()`, dan potongan pertama 26 digit wajib muat sebaris.
+ * ⚠️ LEBAR: totalnya 100 PERSIS (`table-fixed`, "fit to window"), dihitung
+ * untuk huruf 10px di F4 lanskap (±1.157 px). Kolom angka dianggarkan untuk
+ * rupiah 2 desimal SEBARIS ("1.103.554.446,97" ≈ 90 px) — jangan dipersempit.
+ * ⚠️ 11px (ukuran tabel Laporan Pengadaan) TIDAK muat 16 kolom ini: totalnya
+ * butuh ±107%, jadi angka terpaksa membungkus. NIBAR berhuruf 7,5px sendiri
+ * supaya potongan 26 digitnya tetap sebaris.
  */
 export const KOLOM_RINCI_PERPINDAHAN: readonly KolomRinci[] = [
-  { key: 'nibar', judul: 'NIBAR', lebar: 9.5, rata: 'kiri' },
-  { key: 'kode', judul: 'Kode Barang - Uraian Barang', lebar: 8, rata: 'kiri' },
+  { key: 'nibar', judul: 'NIBAR', lebar: 10, rata: 'kiri' },
+  { key: 'kode', judul: 'Kode Barang - Uraian Barang', lebar: 7.5, rata: 'kiri' },
   { key: 'nama', judul: 'Nama Barang', lebar: 7, rata: 'kiri' },
-  { key: 'merek', judul: 'Merk/Tipe', lebar: 6.5, rata: 'kiri' },
-  { key: 'jumlah', judul: 'Jumlah - Satuan', lebar: 4, rata: 'kiri' },
-  { key: 'harga_satuan', judul: 'Harga Satuan', lebar: 6.5, rata: 'kanan' },
-  { key: 'jumlah_total', judul: 'Jumlah total', lebar: 6.5, rata: 'kanan' },
-  { key: 'akumulasi', judul: 'Akumulasi Penyusutan', lebar: 6.5, rata: 'kanan' },
-  { key: 'nilai_buku', judul: 'Nilai Buku', lebar: 6.5, rata: 'kanan' },
-  { key: 'tgl_perolehan', judul: 'Tanggal Perolehan', lebar: 4.5, rata: 'tengah' },
-  { key: 'cara_perolehan', judul: 'Cara Perolehan', lebar: 5.5, rata: 'kiri' },
-  { key: 'alamat', judul: 'Alamat', lebar: 6.5, rata: 'kiri' },
-  { key: 'pihak', judul: '(pihak lawan — lihat kolomPihak)', lebar: 6.5, rata: 'kiri' },
-  { key: 'dok_nomor', judul: 'Nomor Dokumen', lebar: 6.5, rata: 'kiri' },
-  { key: 'tgl_bast', judul: 'Tanggal BAST', lebar: 4.5, rata: 'tengah' },
-  { key: 'keterangan', judul: 'Keterangan', lebar: 5, rata: 'kiri' },
+  { key: 'merek', judul: 'Merk/Tipe', lebar: 5, rata: 'kiri' },
+  { key: 'jumlah', judul: 'Jumlah - Satuan', lebar: 3.5, rata: 'kiri' },
+  { key: 'harga_satuan', judul: 'Harga Satuan', lebar: 7, rata: 'kanan' },
+  { key: 'jumlah_total', judul: 'Jumlah total', lebar: 8, rata: 'kanan' },
+  { key: 'akumulasi', judul: 'Akumulasi Penyusutan', lebar: 7.5, rata: 'kanan' },
+  { key: 'nilai_buku', judul: 'Nilai Buku', lebar: 8, rata: 'kanan' },
+  { key: 'tgl_perolehan', judul: 'Tanggal Perolehan', lebar: 4.8, rata: 'tengah' },
+  { key: 'cara_perolehan', judul: 'Cara Perolehan', lebar: 5, rata: 'kiri' },
+  { key: 'alamat', judul: 'Alamat', lebar: 6, rata: 'kiri' },
+  { key: 'pihak', judul: '(pihak lawan — lihat kolomPihak)', lebar: 5.5, rata: 'kiri' },
+  { key: 'dok_nomor', judul: 'Nomor Dokumen', lebar: 5.5, rata: 'kiri' },
+  { key: 'tgl_bast', judul: 'Tanggal BAST', lebar: 4.8, rata: 'tengah' },
+  { key: 'keterangan', judul: 'Keterangan', lebar: 4.9, rata: 'kiri' },
 ]
 
 /**

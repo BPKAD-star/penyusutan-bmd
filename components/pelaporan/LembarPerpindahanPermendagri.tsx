@@ -274,7 +274,9 @@ export default function LembarPerpindahanPermendagri(p: PropLembarPerpindahan) {
     const total = totalJenis.reduce(
       (t, g) => ({ nilai: t.nilai + g.nilai, akumulasi: t.akumulasi + g.akumulasi, nilaiBuku: t.nilaiBuku + g.nilaiBuku }),
       { nilai: 0, akumulasi: 0, nilaiBuku: 0 })
-    const SEL = 'border border-black px-1 py-0.5'
+    // Kerapatan & warna disamakan dgn tabel Laporan Pengadaan (permintaan user
+    // 2026-09-27): padding lega, kelompok teal pucat, subtotal abu muda.
+    const SEL = 'border border-black px-1.5 py-1'
     // Warna latar ikut tercetak — tanpa `print-color-adjust` peramban
     // membuangnya di PDF & baris kelompok tak lagi terbedakan dari baris barang.
     const CETAK_WARNA = '[print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
@@ -282,7 +284,7 @@ export default function LembarPerpindahanPermendagri(p: PropLembarPerpindahan) {
     const BarisTotal = ({ label, v, kelas }: {
       label: string; v: { nilai: number; akumulasi: number; nilaiBuku: number }; kelas: string
     }) => (
-      <tr className={`font-bold ${kelas}`}>
+      <tr className={kelas}>
         <td className={`${SEL} text-right`} colSpan={iUang}>{label}</td>
         <td className={`${SEL} text-right [overflow-wrap:anywhere]`}>{formatRupiah2(v.nilai)}</td>
         <td className={`${SEL} text-right [overflow-wrap:anywhere]`}>{formatRupiah2(v.akumulasi)}</td>
@@ -297,14 +299,14 @@ export default function LembarPerpindahanPermendagri(p: PropLembarPerpindahan) {
         <KopLembar judul={f.judul} judulLanjut={f.judulLanjut} berupa={berupa}
           komptabel={labelKomptabel} sebutan={sebutan} skpd={skpd}
           periode={judulPeriode} tahun={tahun} />
-        <table className="w-full table-fixed border-collapse text-[7.5px] leading-tight">
+        <table className="w-full table-fixed border-collapse text-[10px] leading-snug">
           <colgroup>
             {kolom.map(k => <col key={k.key} style={{ width: `${k.lebar}%` }} />)}
           </colgroup>
           <thead>
-            <tr className={`text-center font-semibold bg-gray-200 ${CETAK_WARNA}`}>
+            <tr className={`text-center font-semibold bg-gray-50 ${CETAK_WARNA}`}>
               {kolom.map(k => (
-                <th key={k.key} className={WRAP}>
+                <th key={k.key} className={`${SEL} [overflow-wrap:anywhere]`}>
                   {k.key === 'pihak' ? f.kolomPihak.judul : k.judul}
                 </th>
               ))}
@@ -313,8 +315,8 @@ export default function LembarPerpindahanPermendagri(p: PropLembarPerpindahan) {
           <tbody>
             {totalJenis.map(g => (
               <FragmenJenis key={g.kode}>
-                <tr className={`font-bold bg-green-100 ${CETAK_WARNA}`}>
-                  <td className={SEL} colSpan={nKolom}>{g.kode} {namaJenis(g.kode)}</td>
+                <tr className={`font-semibold bg-teal/5 ${CETAK_WARNA}`}>
+                  <td className={SEL} colSpan={nKolom}>{g.kode} — {namaJenis(g.kode)}</td>
                 </tr>
                 {(perJenis.get(g.kode) ?? []).map(it => (
                   <tr key={`i${it.data.id}`} className="align-top">
@@ -325,20 +327,20 @@ export default function LembarPerpindahanPermendagri(p: PropLembarPerpindahan) {
                         // kecil supaya potongan 26 digitnya muat sebaris; kolom
                         // bertanggal tak dipecah (tak terbaca kalau dipecah).
                         className={`${SEL} ${rata(k)} ${
-                          k.key === 'nibar' ? 'break-all tracking-tighter text-[6px]'
-                            : k.rata === 'tengah' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
+                          k.key === 'nibar' ? 'break-all tracking-tighter text-[7.5px]'
+                            : k.rata === 'tengah' || k.rata === 'kanan' ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}>
                         {isiKolom(k, it.data)}
                       </td>
                     ))}
                   </tr>
                 ))}
-                <BarisTotal label={`Total ${namaJenis(g.kode)}`} v={g} kelas="" />
+                <BarisTotal label={`Total ${namaJenis(g.kode)}`} v={g} kelas={`font-semibold bg-gray-100 ${CETAK_WARNA}`} />
               </FragmenJenis>
             ))}
             {items.length === 0 ? (
               <tr><td colSpan={nKolom} className={`${SEL} py-3 text-center`}>{f.kosong}</td></tr>
             ) : (
-              <BarisTotal label="TOTAL" v={total} kelas={`bg-gray-200 ${CETAK_WARNA}`} />
+              <BarisTotal label="TOTAL" v={total} kelas={`font-bold bg-gray-200 ${CETAK_WARNA}`} />
             )}
           </tbody>
         </table>
