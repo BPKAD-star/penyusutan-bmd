@@ -63,7 +63,10 @@ export default function PerpindahanFormatPermendagri({ id, skpdId, periode }: {
   // yang "di dalam".
   const [rowsGab, setRowsGab] = useState<BarisPerpindahan[]>([])
   const [komptabel, setKomptabel] = useState<Komptabel>('intra')
-  const [pilih, setPilih] = useState<number[]>(PILIHAN.map(p => p.akhiran))
+  // Bawaan: HANYA lembar rinci per barang yang tercentang (permintaan user
+  // 2026-09-27) — keempat rekapnya (+ IV.D.7 gabungan, sudah unchecked
+  // sejak awal) dicentang manual kalau dibutuhkan.
+  const [pilih, setPilih] = useState<number[]>([PILIHAN[0].akhiran])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 

@@ -46,7 +46,10 @@ export default function PerolehanFormatPermendagri({ jenis, skpdId, periode }: {
   const [skpd, setSkpd] = useState<{ kode: string; nama: string } | null>(null)
   const [sebutan, setSebutan] = useState('Pengguna Barang')
   const [komptabel, setKomptabel] = useState<Komptabel>('intra')
-  const [pilih, setPilih] = useState<number[]>(PILIHAN.map(p => p.akhiran))
+  // Bawaan: HANYA lembar rinci per barang yang tercentang (permintaan user
+  // 2026-09-27) — keempat rekapnya baru dicentang manual kalau memang
+  // dibutuhkan. `PILIHAN[0]` = akhiran 2, rinci, selalu entri pertama.
+  const [pilih, setPilih] = useState<number[]>([PILIHAN[0].akhiran])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   // Peran menentukan boleh-tidaknya kelompok SE-KABUPATEN — lihat

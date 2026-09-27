@@ -25,7 +25,7 @@ import {
   type ItemLaporan, type Komptabel,
 } from '@/lib/formatPermendagri'
 import {
-  FORMAT_REKLAS, lembarRekapReklas, akhiranLembarReklas,
+  FORMAT_REKLAS, lembarRekapReklas,
   type IdReklas, type ArahReklas, type FormatReklas,
 } from '@/lib/formatReklas'
 import { muatLaporanReklas, periodePosisiReklas, type BarisReklas } from '@/lib/laporanReklas'
@@ -81,9 +81,14 @@ export default function ReklasFormatPermendagri({ arah, skpdId, periode }: {
   // ⚠️ `f &&` bukan basa-basi: penginisialisasi `useState` jalan SEBELUM penjaga
   // `if (!f) return` di bawah, jadi sisi yang belum punya lembar akan
   // menjatuhkan komponennya di sini — bukan menampilkan keterangannya.
-  const [pilih, setPilih] = useState<number[]>(() => f ? akhiranLembarReklas(f) : [])
+  // Bawaan: HANYA lembar rinci (`f.akhiranRinci`) yang tercentang (permintaan
+  // user 2026-09-27) — keempat rekapnya dicentang manual kalau dibutuhkan.
+  // Reset di atas ikut memakai `f.akhiranRinci`, BUKAN `akhiranLembarReklas(f)`
+  // (yang mengembalikan rinci+rekap) — kalau tidak, ganti arah akan
+  // mencentang ulang semua rekap tiap kali.
+  const [pilih, setPilih] = useState<number[]>(() => f ? [f.akhiranRinci] : [])
   useEffect(() => {
-    if (f) setPilih(akhiranLembarReklas(f))
+    if (f) setPilih([f.akhiranRinci])
   }, [arah]) // eslint-disable-line react-hooks/exhaustive-deps
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')

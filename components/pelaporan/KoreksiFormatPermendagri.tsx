@@ -55,7 +55,9 @@ export default function KoreksiFormatPermendagri({ skpdId, periode }: {
   const [tanpaSnapshot, setTanpaSnapshot] = useState(0)
   const [tanpaPeny, setTanpaPeny] = useState(0)
   const [komptabel, setKomptabel] = useState<Komptabel>('intra')
-  const [pilih, setPilih] = useState<IdLembarKoreksi[]>([...URUT_LEMBAR])
+  // Bawaan: HANYA lembar rinci (IV.G.2) yang tercentang (permintaan user
+  // 2026-09-27) — kelima rekapnya (G.3–G.7) dicentang manual kalau dibutuhkan.
+  const [pilih, setPilih] = useState<IdLembarKoreksi[]>(['g2'])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 

@@ -8092,3 +8092,39 @@ ada jalan membersihkannya dari UI.
   (logika tulisnya) tak disentuh sama sekali — sudah benar sejak perbaikan
   sebelumnya. Diverifikasi: tsc 0 error, 1869 test tetap hijau, 0 lint
   warning baru.
+
+## Format Permendagri: bawaan centang HANYA lembar rinci, bukan semua lembar (2026-09-27)
+
+Permintaan user, berlaku di SEMUA tab "Format Permendagri" (Laporan Perolehan
+& seluruh Laporan Pengelolaan): dulu centang "Lembar yang disusun" defaultnya
+MENYALAKAN seluruh lembar (rinci per barang + 4–5 rekap sekaligus); sekarang
+bawaannya HANYA lembar rinci — rekapnya (sub rincian objek/rincian objek/
+objek/jenis) dicentang manual kalau memang dibutuhkan.
+
+- **LIMA berkas disunting** (satu `useState` per komponen tab, plus SATU efek
+  reset di Reklasifikasi):
+  - `PerolehanFormatPermendagri.tsx` (IV.A, keempat menu Laporan Perolehan
+    manual) — `[PILIHAN[0].akhiran]`.
+  - `PerpindahanFormatPermendagri.tsx` (IV.B.1 Penggunaan, IV.C Penerimaan
+    Internal, IV.D Pengeluaran Internal) — `[PILIHAN[0].akhiran]`. ⚠️ Checkbox
+    IV.D.7 "gabungan" **sudah unchecked sejak awal** (tak pernah masuk daftar
+    `PILIHAN`) — tak disentuh.
+  - `ReklasFormatPermendagri.tsx` (IV.F, kedua arah) — **DUA titik**: inisialisasi
+    `useState` DAN efek `useEffect` yang me-RESET `pilih` tiap ganti arah
+    (Penambahan↔Pengurangan). Keduanya diganti dari `akhiranLembarReklas(f)`
+    (rinci+rekap) jadi `[f.akhiranRinci]` (rinci saja) — kalau cuma
+    `useState`-nya yang diganti, ganti arah akan mencentang ulang semua rekap.
+  - `KoreksiFormatPermendagri.tsx` (IV.G) — `['g2']` (satu-satunya entri
+    `bentuk:'rinci'` di `TANGGA_KOREKSI`).
+  - `PenghapusanFormatPermendagri.tsx` (IV.K, ketiga alasan) — `[PILIHAN[0].
+    akhiran]`. Tak ada efek reset per alasan di sini — akhirannya sama persis
+    di ketiga cabang (2–6), jadi tak perlu.
+- **Pengamanan (IV.J) TIDAK disentuh** — menu itu tak punya checkbox rinci/
+  rekap sama sekali (cuma tombol pilih golongan, satu lembar per cabang).
+- **`akhiranLembarReklas` jadi tak terpakai** di ReklasFormatPermendagri.tsx
+  sesudah perubahan ini (fungsi lain, `lembarRekapReklas`, masih dipakai
+  merender daftar checkbox-nya) — dicabut dari import supaya tak jadi
+  peringatan lint.
+- **Tak ada migrasi** — murni nilai awal `useState` di lima komponen React;
+  DB/RPC/ledger tak disentuh. Diverifikasi: tsc 0 error, 1869 test tetap
+  hijau, 0 lint warning baru di kelima berkas yang disunting.

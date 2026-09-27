@@ -49,7 +49,9 @@ export default function PenghapusanFormatPermendagri({ id, skpdId, periode }: {
   const [sebutan, setSebutan] = useState('Pengguna Barang')
   const [tanpaPeny, setTanpaPeny] = useState(0)
   const [komptabel, setKomptabel] = useState<Komptabel>('intra')
-  const [pilih, setPilih] = useState<number[]>(PILIHAN.map(p => p.akhiran))
+  // Bawaan: HANYA lembar rinci per barang yang tercentang (permintaan user
+  // 2026-09-27) — keempat rekapnya dicentang manual kalau dibutuhkan.
+  const [pilih, setPilih] = useState<number[]>([PILIHAN[0].akhiran])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
