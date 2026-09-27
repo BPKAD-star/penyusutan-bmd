@@ -26,12 +26,12 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  FORMAT_PERPINDAHAN, SEG_MIN_REKAP_PERPINDAHAN, SEL_KODE_PERPINDAHAN,
-  kolomLembar, lebarKodePerpindahan, judulRekapPerpindahan,
-  type IdPerpindahan, type FormatPerpindahan,
+  FORMAT_PERPINDAHAN, SEG_MIN_REKAP_PERPINDAHAN, KOLOM_RINCI_PERPINDAHAN,
+  KOLOM_DIJUMLAH_PERPINDAHAN, judulRekapPerpindahan,
+  type IdPerpindahan,
 } from './formatPerpindahan'
 import {
-  SEG_SUBTOTAL, TANGGA_REKAP, susunRinci, susunRekap, sisaLebar,
+  TANGGA_REKAP, susunRekap,
   type ItemLaporan,
 } from './formatPermendagri'
 import { periodePosisi } from './laporanPerpindahan'
@@ -84,147 +84,57 @@ describe('registry kedua cabang', () => {
   })
 })
 
-describe.each(tiapCabang)('%s — susunan kolom', (id, f) => {
-  const semua = kolomLembar(f)
+// ── Lembar RINCI: susunan kolom keputusan user (2026-09-27) ─────────────────
+describe('lembar rinci — satu susunan kolom untuk ketiga cabang', () => {
+  const k = KOLOM_RINCI_PERPINDAHAN
 
-  it('kunci kolom unik', () => {
-    const k = semua.map(x => x.key)
-    expect(new Set(k).size, `kunci kembar: ${k.join(', ')}`).toBe(k.length)
+  it('urutan kolom PERSIS seperti yang ditetapkan user', () => {
+    // Urutan kolom lembar bertanda tangan itu aturan integritas: pemeriksa
+    // mencocokkannya kolom per kolom dgn contoh yang disetujui.
+    expect(k.map(x => x.key)).toEqual([
+      'nibar', 'kode', 'nama', 'merek', 'jumlah', 'harga_satuan', 'jumlah_total',
+      'akumulasi', 'nilai_buku', 'tgl_perolehan', 'cara_perolehan', 'alamat',
+      'pihak', 'dok_nomor', 'tgl_bast', 'keterangan',
+    ])
   })
 
-  it('penomoran berurut & TEPAT melompati satu nomor untuk blok Kode Barang', () => {
-    // Blok "Kode Barang" punya nomornya sendiri di lembar asli tapi tak punya
-    // entri kolom (ia sel segmen), jadi urutan yang benar: <awal>, lalu
-    // <awal+2> menaik satu-satu. Uji ini menangkap kolom yang ditambah/dibuang
-    // tanpa menggeser sisanya — kesalahan yang tak menghasilkan error apa pun.
-    const awal = f.kolomKiri.nomor
-    const sisa = [f.kolomNama, ...f.kolom].map(x => x.nomor)
-    expect(sisa).toEqual(sisa.map((_, i) => awal + 2 + i))
-  })
-
-  it('NIBAR berdiri DI LUAR blok kode & jadi kolom paling kiri', () => {
-    // Perbedaan struktural terpenting dari cabang IV.A (di sana NIBAR kolom 12,
-    // di tengah). Kalau ini bergeser, penyajinya ikut salah tanpa error.
-    expect(f.kolomKiri.key).toBe('nibar')
-  })
-
-  it('Nama Barang duduk DI DALAM blok Penggolongan, sesudah sel kode', () => {
-    expect(f.kolomNama.key).toBe('nama')
-  })
-
-  it('punya kolom Akumulasi Penyusutan & Nilai Buku — IV.A tak punya', () => {
-    const kunci = f.kolom.map(k => k.key)
-    expect(kunci).toContain('akumulasi')
-    expect(kunci).toContain('nilai_buku')
-  })
-
-  it('penanda subtotal & kaki MENYAMBUNG tepat sesudah kolom terakhir', () => {
-    const kolomTerakhir = Math.max(...semua.map(k => k.nomor))
-    expect(f.subtotal[0]).toBe(kolomTerakhir + 1)
-    expect(f.kaki.tanggal).toBe(f.subtotal[3] + 1)
-    expect(f.kaki.jabatan).toBe(f.kaki.tanggal + 1)
-    // ⚠️ Nama & NIP sama-sama satu nomor di lembar aslinya (salah ketik di
-    // sumbernya, diikuti apa adanya). Yang diuji cuma `nama` menyambung.
-    expect(f.kaki.nama).toBe(f.kaki.jabatan + 1)
-  })
-
-  it('subtotal SEJAJAR dengan SEG_SUBTOTAL [6,5,4,3]', () => {
-    // Kalau menyimpang, penanda subtotal di lembar rinci jatuh di tingkat yang
-    // salah — 6 segmen dapat penanda milik 3 segmen, dst.
-    expect(f.subtotal).toHaveLength(SEG_SUBTOTAL.length)
-    expect([...f.subtotal]).toEqual([0, 1, 2, 3].map(i => f.subtotal[0] + i))
-  })
-
-  it('kolom bergrup berdampingan — grup tak boleh terpotong kolom lain', () => {
-    // `Thead` merakit grup dengan menyusuri kolom berurut; grup yang terpecah
-    // menghasilkan dua kepala bertulisan sama, bukan satu yang melebar.
-    const terlihat = new Set<string>()
-    let sebelum: string | undefined
-    for (const g of f.kolom.map(k => k.grup)) {
-      if (g && g !== sebelum) {
-        expect(terlihat.has(g), `grup "${g}" terpotong kolom lain`).toBe(false)
-        terlihat.add(g)
-      }
-      sebelum = g
-    }
-  })
-
-  it('total lebar kolom + blok kode = 100 PERSIS', () => {
-    // Inilah yang membuat lembarnya "fit to window" di `table-fixed`: tanpa
-    // total tepat 100, ada kolom yang melar mengikuti isinya lalu mendorong
-    // yang lain keluar halaman.
-    const total = semua.reduce((a, k) => a + k.lebar, 0) + lebarKodePerpindahan(f)
+  it('total lebar 100 PERSIS — "fit to window" di table-fixed', () => {
+    const total = k.reduce((a, x) => a + x.lebar, 0)
     expect(Math.round(total * 100) / 100).toBe(100)
-    expect(lebarKodePerpindahan(f)).toBe(sisaLebar(semua))
+    for (const x of k) expect(x.lebar, x.key).toBeGreaterThan(0)
   })
 
-  it('blok kode cukup lebar untuk 7 sel segmen', () => {
-    // 7 sel berisi angka 1–3 digit. Di bawah ini mereka membungkus & tabelnya
-    // jadi dua kali lebih tinggi.
-    expect(lebarKodePerpindahan(f)).toBeGreaterThanOrEqual(8)
+  it('NIBAR tak dipersempit — 45 digit dipenggal DUA baris, bukan tiga', () => {
+    expect(k.find(x => x.key === 'nibar')!.lebar).toBeGreaterThanOrEqual(8)
   })
 
-  it('NIBAR tak boleh dipersempit — 45 digit dipenggal DUA baris, bukan tiga', () => {
-    // Potongan PERTAMA `pecahNibar()` 26 digit dan wajib muat SEBARIS. Diukur
-    // di peramban 2026-08-31: 8,5% dari lebar F4 lanskap = 98 px, potongannya
-    // 76 px. Aturan yang sama sudah dikunci untuk cabang IV.A.
-    expect(f.kolomKiri.lebar).toBeGreaterThanOrEqual(8)
-  })
-
-  it('tiap kolom punya lebar positif', () => {
-    for (const k of semua) expect(k.lebar, `${id}.${k.key}`).toBeGreaterThan(0)
-  })
-
-  it('lembar rekap berjudul REKAPITULASI, lembar rinci LAPORAN', () => {
-    // ⚠️ Keempatnya REKAPITULASI di keluarga ini — beda dari IV.A yang lembar
-    // `.7`-nya justru tetap berjudul LAPORAN.
-    expect(f.judul).toMatch(/^LAPORAN /)
-    expect(judulRekapPerpindahan(f)).toMatch(/^REKAPITULASI /)
-    expect(judulRekapPerpindahan(f)).not.toMatch(/^LAPORAN /)
+  it('kolom uang yang dijumlah BERURUTAN & Harga Satuan TIDAK ikut dijumlah', () => {
+    // Baris total merender label ber-colSpan lalu tiga angka beruntun; kalau
+    // kolomnya tak bersebelahan, angkanya jatuh di kolom yang salah.
+    const idx = KOLOM_DIJUMLAH_PERPINDAHAN.map(key => k.findIndex(x => x.key === key))
+    expect(idx.every(i => i >= 0)).toBe(true)
+    expect(idx).toEqual(idx.map((_, j) => idx[0] + j))
+    expect(KOLOM_DIJUMLAH_PERPINDAHAN).not.toContain('harga_satuan')
   })
 })
 
-describe('beda yang DISENGAJA antar cabang — jangan saling menular', () => {
-  const kunci = (f: FormatPerpindahan) => f.kolom.map(k => k.key)
-
-  it('Lokasi & SK Penghapusan HANYA di IV.B.1.2', () => {
-    // ⚠️ Uji terpenting soal pemisahan cabang. Menyalin ketiga kolom ini ke
-    // cabang lain "biar seragam" tak menghasilkan satu pun error — lembarnya
-    // cuma tak lagi cocok waktu pemeriksa mencocokkannya kolom per kolom.
-    for (const k of ['lokasi', 'sk_tanggal', 'sk_nomor']) {
-      expect(kunci(FORMAT_PERPINDAHAN.penggunaan), `IV.B wajib punya ${k}`).toContain(k)
-      for (const id of ['internal', 'pengeluaran'] as IdPerpindahan[]) {
-        expect(kunci(FORMAT_PERPINDAHAN[id]), `${id} TIDAK boleh punya ${k}`).not.toContain(k)
-      }
+describe('kolom pihak lawan — satu-satunya beda antar cabang', () => {
+  it('PENERIMAAN mencetak pihak yang MENYERAHKAN (skpd_asal)', () => {
+    // ⚠️ Kalau `sisi` tertukar, lembar Penerimaan mencetak SKPD itu SENDIRI
+    // sbg pihak yang menyerahkan — terisi penuh, tanpa satu pun error.
+    for (const id of ['penggunaan', 'internal'] as IdPerpindahan[]) {
+      expect(FORMAT_PERPINDAHAN[id].kolomPihak).toEqual({ judul: 'Pihak yang menyerahkan', sisi: 'asal' })
     }
   })
 
-  it('blok "Asal Barang" & "Spesifikasi Lainnya" TIDAK ada di IV.D', () => {
-    // ⚠️ Lembar PENGELUARAN memang tak menyebut pihak mana pun — bahkan "Pihak
-    // yang menerima" pun tak ada. Pasangan menyerahkan↔menerima adanya di rekap
-    // GABUNGAN IV.D.7.
-    for (const k of ['spek_lain', 'asal_pihak', 'asal_kode', 'asal_nama']) {
-      for (const id of ['penggunaan', 'internal'] as IdPerpindahan[]) {
-        expect(kunci(FORMAT_PERPINDAHAN[id]), `${id} wajib punya ${k}`).toContain(k)
-      }
-      expect(kunci(FORMAT_PERPINDAHAN.pengeluaran), `IV.D TIDAK boleh punya ${k}`).not.toContain(k)
+  it('PENGELUARAN mencetak "Tujuan SKPD" (skpd_tujuan)', () => {
+    expect(FORMAT_PERPINDAHAN.pengeluaran.kolomPihak).toEqual({ judul: 'Tujuan SKPD', sisi: 'tujuan' })
+  })
+
+  it('sisi pihak SEJALAN dgn arah lembar', () => {
+    for (const [id, f] of tiapCabang) {
+      expect(f.kolomPihak.sisi, id).toBe(f.arah === 'masuk' ? 'asal' : 'tujuan')
     }
-  })
-
-  it('jumlah kolom menyusut sesuai yang dibuang tiap cabang', () => {
-    const n = (id: IdPerpindahan) => kolomLembar(FORMAT_PERPINDAHAN[id]).length
-    expect(n('internal'), 'IV.C = IV.B tanpa Lokasi + 2 kolom SK').toBe(n('penggunaan') - 3)
-    expect(n('pengeluaran'), 'IV.D = IV.C tanpa Spesifikasi Lainnya + 3 kolom Asal Barang')
-      .toBe(n('internal') - 4)
-  })
-
-  it('penomoran IV.C & IV.D bergeser +1 karena kopnya punya isian SKPD sendiri', () => {
-    // IV.B menyatukan sebutan pejabat & nama SKPD jadi SATU isian (3) → 7 isian
-    // kop → kolom mulai (8). IV.C & IV.D memisahkannya jadi (3) & SKPD (4) →
-    // 8 isian → kolom mulai (9). Bukan kolom yang berbeda, cuma nomornya.
-    expect(FORMAT_PERPINDAHAN.penggunaan.kolomKiri.nomor).toBe(8)
-    expect(FORMAT_PERPINDAHAN.internal.kolomKiri.nomor).toBe(9)
-    expect(FORMAT_PERPINDAHAN.pengeluaran.kolomKiri.nomor).toBe(9)
   })
 
   it('hanya IV.B.1.x punya baris judul kedua', () => {
@@ -233,10 +143,9 @@ describe('beda yang DISENGAJA antar cabang — jangan saling menular', () => {
     expect(FORMAT_PERPINDAHAN.pengeluaran.judulLanjut).toBeUndefined()
   })
 
-  it('label grup "Asal Barang" memang beda & diikuti apa adanya', () => {
-    const grup = (f: FormatPerpindahan) => f.kolom.find(k => k.key === 'asal_pihak')!.grup
-    expect(grup(FORMAT_PERPINDAHAN.penggunaan)).toBe('Asal Barang/Penyerahan dari')
-    expect(grup(FORMAT_PERPINDAHAN.internal)).toBe('Asal Barang')
+  it.each(tiapCabang)('%s — lembar rekap REKAPITULASI, lembar rinci LAPORAN', (_id, f) => {
+    expect(f.judul).toMatch(/^LAPORAN /)
+    expect(judulRekapPerpindahan(f)).toMatch(/^REKAPITULASI /)
   })
 })
 
@@ -265,22 +174,13 @@ describe('lembar rekap (identik di kedua cabang)', () => {
     }
   })
 
-  it.each(TANGGA_REKAP.map(t => [t.akhiran, t.menurut] as const))(
-    'rekap .%i (menurut %s) sama persis dgn subtotal lembar rinci',
-    (akhiran) => {
-      // Lembar rinci & keempat rekapnya terbit dalam SATU berkas yang
-      // ditandatangani. Kalau angkanya bisa berbeda, tak ada yang akan berteriak.
-      const t = TANGGA_REKAP.find(x => x.akhiran === akhiran)!
-      const rinci = susunRinci(CONTOH, FORMAT_PERPINDAHAN.penggunaan.subtotal)
-      for (const r of susunRekap(CONTOH, t.seg, SEG_MIN_REKAP_PERPINDAHAN)) {
-        const g = rinci.find(b => b.tipe === 'grup' && b.seg === r.seg && b.kode === r.kode)
-        expect(g, `kelompok ${r.kode} (${r.seg} seg) hilang dari lembar rinci`).toBeDefined()
-        expect(g).toMatchObject({
-          jumlah: r.jumlah, nilai: r.nilai,
-          akumulasi: r.akumulasi, nilaiBuku: r.nilaiBuku,
-        })
-      }
-    })
+  it('"Total <jenis>" lembar rinci = rekap menurut jenis — satu mesin, satu angka', () => {
+    // Lembar rinci mengambil totalnya dari susunRekap 3 segmen yang SAMA dgn
+    // rekap .6; Σ semua jenis wajib = Σ seluruh barang.
+    const jenis = susunRekap(CONTOH, 3, SEG_MIN_REKAP_PERPINDAHAN).filter(g => g.seg === 3)
+    expect(jenis.map(g => g.kode)).toEqual(['1.3.2', '1.3.3'])
+    expect(jenis.reduce((a, g) => a + g.nilai, 0)).toBe(CONTOH.reduce((a, x) => a + x.nilai, 0))
+  })
 
   it('akumulasi & nilai buku IKUT dijumlah di tiap kedalaman', () => {
     // Kolom itu yang membedakan lembar ini dari IV.A. Kalau mesin subtotal cuma
@@ -308,9 +208,6 @@ describe('lembar rekap (identik di kedua cabang)', () => {
     expect(susunRekap([], 6, SEG_MIN_REKAP_PERPINDAHAN)).toEqual([])
   })
 
-  it('lembar rinci menyediakan 7 sel segmen (kode penuh)', () => {
-    expect(SEL_KODE_PERPINDAHAN).toBe(7)
-  })
 })
 
 // ── Penjaga SUMBER: penyaji & pemuat benar-benar generik ────────────────────

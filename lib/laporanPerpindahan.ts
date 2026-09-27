@@ -50,13 +50,14 @@ export type BarisPerpindahan = {
   skpd_asal: number | null
   skpd_tujuan: number | null
   payload: { no_sk?: string; reversal?: boolean; tgl_dokumen_sumber?: string } | null
-  header: { no_sk: string; tanggal: string } | null
+  /** `keterangan` = isian kotak Keterangan di KARTU perpindahannya — kolom Keterangan lembar rinci. */
+  header: { no_sk: string; tanggal: string; keterangan: string | null } | null
   aset: {
     kode: string; nama_barang: string | null; uraian_barang: string | null; nibar: string | null
     spesifikasi_lainnya: string | null; satuan: string | null; jumlah: number | null
     harga_satuan: number | null; tgl_perolehan: string | null; keterangan: string | null
     intra_ekstra: string | null; alamat_detail: string | null
-    asal_usul: string | null; cara_perolehan: string | null
+    asal_usul: string | null; cara_perolehan: string | null; merek_tipe: string | null
   } | null
   /** Nama SKPD/unit yang MENYERAHKAN. Dilengkapi sesudah query. */
   asal_nama?: string
@@ -83,9 +84,9 @@ export type BarisPerpindahan = {
 
 const SEL =
   'id,tanggal,periode,nilai,keterangan,aset_id,skpd_asal,skpd_tujuan,payload,'
-  + 'header:header_id(no_sk,tanggal),'
+  + 'header:header_id(no_sk,tanggal,keterangan),'
   + 'aset:aset_id(kode,nama_barang,uraian_barang,nibar,spesifikasi_lainnya,satuan,jumlah,'
-  + 'harga_satuan,tgl_perolehan,keterangan,intra_ekstra,alamat_detail,asal_usul,cara_perolehan)'
+  + 'harga_satuan,tgl_perolehan,keterangan,intra_ekstra,alamat_detail,asal_usul,cara_perolehan,merek_tipe)'
 
 type SkpdRow = { id: number; parent_id: number | null; nama: string; kode_skpd: string | null }
 

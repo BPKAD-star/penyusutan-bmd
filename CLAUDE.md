@@ -8267,3 +8267,44 @@ pembatalan) berstatus *pending* di tab Network. Keduanya di
 - **Tak ada migrasi.** tsc 0 error, 1869 test hijau, warning lint berkas ini
   turun 4 → 3.
 
+## Lembar rinci Perpindahan (IV.B.1.2 · IV.C.2 · IV.D.2) diganti bentuk user (2026-09-27)
+
+Permintaan user: tab Format Permendagri menu Penggunaan, Penerimaan Internal,
+& Pengeluaran Internal — tabel isian lembar RINCI-nya diganti contoh yang ia
+serahkan. **Sengaja MENYIMPANG dari lembar asli Permendagri** (keputusan user,
+sama kelasnya dgn penyimpangan IV.J Pengamanan): blok 7 sel segmen kode, "Asal
+Barang", "Surat Keputusan Penghapusan", "Spesifikasi Lainnya", & "Lokasi"
+dicabut.
+
+- **16 kolom datar, SAMA di ketiga cabang** (`KOLOM_RINCI_PERPINDAHAN`,
+  lib/formatPerpindahan.ts): NIBAR · Kode Barang-Uraian (tumpuk) · Nama Barang ·
+  Merk/Tipe · Jumlah-Satuan (tumpuk) · Harga Satuan · Jumlah total · Akumulasi
+  Penyusutan · Nilai Buku · Tanggal Perolehan · Cara Perolehan · Alamat ·
+  **pihak lawan** · Nomor Dokumen · Tanggal BAST · Keterangan.
+- ⚠️ **Satu-satunya beda antar cabang = kolom pihak lawan**, DATA di registry
+  (`kolomPihak`): Penerimaan (IV.B.1 & IV.C) → "Pihak yang menyerahkan"
+  (`skpd_asal`); Pengeluaran (IV.D) → "Tujuan SKPD" (`skpd_tujuan`). Sisi yang
+  tertukar mencetak SKPD itu sendiri sbg lawannya tanpa satu pun error —
+  dikunci lib/formatPerpindahan.test.ts (diuji merah dulu dgn menukarnya).
+- **Dikelompokkan per JENIS ASET (3 segmen) yang BENAR-BENAR ADA di
+  transaksinya** — baris hijau "1.3.2 Peralatan dan Mesin", lalu barangnya, lalu
+  "Total <jenis>"; ditutup baris "TOTAL". Nama jenis dari `GOLONGAN_REKAP`.
+  Angka total jenis diambil dari MESIN SUBTOTAL BERSAMA (`susunRekap` 3 segmen)
+  — yang sama yang mengisi rekap .6 di berkas yang sama, jadi keduanya mustahil
+  beda. Harga Satuan tak dijumlah.
+- **Nominal 2 desimal** (`formatRupiah2`) di lembar rinci DAN keempat rekap
+  keluarga ini — satu berkas bertanda tangan tak boleh campur format angka.
+- **Keterangan = isian kotak Keterangan di KARTU** (`jurnal_header.keterangan`,
+  cadangan keterangan baris ledger), BUKAN `aset.keterangan`. Tanggal BAST =
+  tanggal dokumen kartu. Pemuat (`lib/laporanPerpindahan.ts`) kini menarik
+  `header.keterangan` & `aset.merek_tipe`.
+- Warna latar baris (abu kepala/TOTAL, hijau jenis) memakai
+  `print-color-adjust: exact` supaya ikut tercetak di PDF.
+- **Registry kolom lama DICABUT** (`kolomKiri`/`kolomNama`/`kolom`/`subtotal`/
+  `kaki`, `SEL_KODE_PERPINDAHAN`, `kolomLembar`, `lebarKodePerpindahan`) & uji
+  bentuk lamanya ikut diganti. **Lembar rekap .3–.6 & IV.D.7 TIDAK berubah
+  bentuk.**
+- ⛔ Belum dilihat di peramban (F4 lanskap) — Σ lebar dikunci 100 oleh test,
+  tapi kerapatan barisnya perlu dicek sekali saat cetak pertama.
+- **Tak ada migrasi.** tsc 0 error, 1834 test hijau, lint bersih.
+

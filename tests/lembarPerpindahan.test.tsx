@@ -23,7 +23,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import LembarPerpindahanPermendagri from '@/components/pelaporan/LembarPerpindahanPermendagri'
 import {
-  FORMAT_PERPINDAHAN, SEL_KODE_PERPINDAHAN, kolomLembar,
+  FORMAT_PERPINDAHAN, KOLOM_RINCI_PERPINDAHAN,
   type IdPerpindahan, type FormatPerpindahan,
 } from '@/lib/formatPerpindahan'
 import LembarGabunganInternal from '@/components/pelaporan/LembarGabunganInternal'
@@ -33,27 +33,21 @@ import type { BarisPerpindahan } from '@/lib/laporanPerpindahan'
 
 afterEach(cleanup)
 
-/** Jumlah kolom yang DIHARAPKAN, ditulis eksplisit — lihat catatan di atas. */
-const HARAP: Record<IdPerpindahan, number> = {
-  penggunaan: 28, // 1 NIBAR + 7 sel kode + 20 kolom
-  internal: 25, // idem, tanpa Lokasi & blok SK Penghapusan
-  pengeluaran: 21, // idem, juga tanpa Spesifikasi Lainnya & blok Asal Barang
-}
-
-const nKolom = (f: FormatPerpindahan) => SEL_KODE_PERPINDAHAN + kolomLembar(f).length
+/** Lembar rinci: 16 kolom datar, SAMA di ketiga cabang (keputusan user 2026-09-27). */
+const N_RINCI = 16
 
 function baris(id: number, kode: string, nama: string, nilai: number): BarisPerpindahan {
   return {
     id, tanggal: '2026-07-05', periode: '2026-S2', nilai, keterangan: null,
     aset_id: `a${id}`, skpd_asal: 7, skpd_tujuan: 1,
     payload: { no_sk: 'SK-1' },
-    header: { no_sk: 'SK-1', tanggal: '2026-06-30' },
+    header: { no_sk: 'SK-1', tanggal: '2026-06-30', keterangan: 'Catatan kartu' },
     aset: {
       kode, nama_barang: nama, uraian_barang: 'Uraian', nibar: '1'.repeat(45),
       spesifikasi_lainnya: null, satuan: 'Unit', jumlah: 1,
       harga_satuan: nilai, tgl_perolehan: '2020-05-13', keterangan: null,
       intra_ekstra: 'intra', alamat_detail: 'Jl. Contoh',
-      asal_usul: null, cara_perolehan: 'pengadaan',
+      asal_usul: null, cara_perolehan: 'pengadaan', merek_tipe: 'Mitsubishi Xpander',
     },
     asal_nama: 'Sekretariat Daerah',
     tujuan_nama: 'Bagian Umum',
@@ -92,104 +86,80 @@ const CABANG = (Object.keys(FORMAT_PERPINDAHAN) as IdPerpindahan[])
   .map(id => [id, FORMAT_PERPINDAHAN[id]] as const)
 
 describe.each(CABANG)('%s — lembar rinci', (id, f) => {
-  const n = nKolom(f)
+  const tbody = (c: HTMLElement) => [...tabelDari(c).querySelectorAll('tbody tr')]
+  const lebar = (tr: Element) => [...tr.querySelectorAll('td')]
+    .reduce((a, td) => a + (Number(td.getAttribute('colspan')) || 1), 0)
 
-  it(`kepala tabel menjanjikan tepat ${HARAP[id]} kolom`, () => {
+  it(`kepala & <colgroup> tepat ${N_RINCI} kolom`, () => {
     const { container } = sajikan(f, [2])
-    const tabel = tabelDari(container)
-    expect(tabel).toBeTruthy()
-    expect(kolomKepala(tabel)).toBe(n)
-    expect(n, 'registry bergeser dari jumlah kolom format aslinya').toBe(HARAP[id])
+    expect(KOLOM_RINCI_PERPINDAHAN.length).toBe(N_RINCI)
+    expect(kolomKepala(tabelDari(container))).toBe(N_RINCI)
+    expect(tabelDari(container).querySelectorAll('colgroup col').length).toBe(N_RINCI)
   })
 
-  it('<colgroup> menyediakan sebanyak kolom yang dijanjikan kepala', () => {
-    // Kalau timpang, `table-fixed` membagi sisanya sendiri & seluruh lebar yang
-    // sudah dianggarkan jadi tak berlaku — tanpa satu pun error.
+  it('SETIAP baris (jenis, barang, total) selebar tabel — Σ colSpan', () => {
+    // Baris total memuat label ber-colSpan + 3 angka + sisa ber-colSpan; kalau
+    // meleset, angka totalnya jatuh di kolom yang salah & table-fixed
+    // menyembunyikannya sampai kertasnya keluar.
     const { container } = sajikan(f, [2])
-    expect(tabelDari(container).querySelectorAll('colgroup col').length).toBe(n)
+    tbody(container).forEach((tr, i) => expect(lebar(tr), `baris ke-${i}`).toBe(N_RINCI))
   })
 
-  it('SETIAP baris isi & baris subtotal punya sel sebanyak kolomnya', () => {
+  it('kelompok = JENIS ASET yang ada di transaksi saja, masing-masing ditutup Total', () => {
     const { container } = sajikan(f, [2])
-    const trs = [...tabelDari(container).querySelectorAll('tbody tr')]
-    expect(trs.length).toBeGreaterThan(ITEMS.length)
-    trs.forEach((tr, i) => {
-      expect(tr.querySelectorAll('td').length, `baris ke-${i}`).toBe(n)
-    })
+    const teks = tbody(container).map(tr => tr.textContent || '')
+    expect(teks).toContain('1.3.2 Peralatan dan Mesin')
+    expect(teks).toContain('1.3.3 Gedung dan Bangunan')
+    // Tak ada transaksi Tanah → kelompoknya tak boleh muncul.
+    expect(teks.some(t => t.startsWith('1.3.1'))).toBe(false)
+    expect(teks.some(t => t.startsWith('Total Peralatan dan Mesin'))).toBe(true)
+    expect(teks.some(t => t.startsWith('Total Gedung dan Bangunan'))).toBe(true)
   })
 
-  it('memancarkan baris subtotal 3–6 segmen di atas barangnya', () => {
+  it('nominal 2 angka di belakang koma & TOTAL menjumlah seluruh jenis', () => {
     const { container } = sajikan(f, [2])
-    const trs = [...tabelDari(container).querySelectorAll('tbody tr')]
-    // Baris kelompok ditandai italic+bold oleh penyajinya.
-    const grup = trs.filter(tr => tr.className.includes('italic'))
-    expect(grup.length).toBeGreaterThanOrEqual(4)
-    // Baris kelompok PERTAMA wajib mendahului baris barang pertama.
-    expect(trs.indexOf(grup[0])).toBe(0)
+    const trs = tbody(container)
+    const akhir = trs[trs.length - 1]
+    expect(akhir.textContent).toContain('TOTAL')
+    // 1.000 + 2.000 + 9.000 = 12.000; akumulasi 3.750; nilai buku 8.250.
+    expect(akhir.textContent).toContain('12.000,00')
+    expect(akhir.textContent).toContain('3.750,00')
+    expect(akhir.textContent).toContain('8.250,00')
+    const pm = trs.find(tr => tr.textContent?.startsWith('Total Peralatan dan Mesin'))!
+    expect(pm.textContent).toContain('3.000,00')
   })
 
-  it('daftar kosong → satu baris keterangan selebar tabel, bukan tabel hampa', () => {
+  it('Keterangan diambil dari KARTU, Merk/Tipe dari barang', () => {
+    const { container } = sajikan(f, [2])
+    expect(container.textContent).toContain('Catatan kartu')
+    expect(container.textContent).toContain('Mitsubishi Xpander')
+  })
+
+  it('kolom pihak berjudul & berisi sesuai cabangnya', () => {
+    const { container } = sajikan(f, [2])
+    const kepala = [...tabelDari(container).querySelectorAll('thead th')].map(th => th.textContent)
+    expect(kepala).toContain(f.kolomPihak.judul)
+    // Fixture: asal "Sekretariat Daerah", tujuan "Bagian Umum".
+    const harus = f.kolomPihak.sisi === 'asal' ? 'Sekretariat Daerah' : 'Bagian Umum'
+    const bukan = f.kolomPihak.sisi === 'asal' ? 'Bagian Umum' : 'Sekretariat Daerah'
+    expect(container.textContent, id).toContain(harus)
+    expect(container.textContent, id).not.toContain(bukan)
+  })
+
+  it('daftar kosong → satu baris keterangan selebar tabel & TANPA baris TOTAL', () => {
     const { container } = sajikan(f, [2], [])
-    const td = tabelDari(container).querySelector('tbody tr td') as HTMLTableCellElement
-    expect(Number(td.getAttribute('colspan'))).toBe(n)
-    expect(td.textContent).toContain('Tidak ada penerimaan')
+    const trs = tbody(container)
+    expect(trs.length).toBe(1)
+    const td = trs[0].querySelector('td') as HTMLTableCellElement
+    expect(Number(td.getAttribute('colspan'))).toBe(N_RINCI)
+    expect(td.textContent).toBe(f.kosong)
   })
 })
 
-describe('IV.B.1.2 — kolom yang hanya ada di sana', () => {
-  const f = FORMAT_PERPINDAHAN.penggunaan
-  const geser = SEL_KODE_PERPINDAHAN + 2 // NIBAR + sel kode + Nama Barang
-
-  it('kolom SK Penghapusan dicetak KOSONG, tak diisi no. dokumen pengalihan', () => {
-    // ⚠️ Aplikasi ini tak menyimpan SK Penghapusan sisi SKPD yang menyerahkan.
-    // Mengisinya dengan `no_sk` kartu pengalihan (yang artinya lain) berarti
-    // menaruh nomor dokumen yang salah di lembar bertanda tangan.
-    const { container } = sajikan(f, [2])
-    const iSk = f.kolom.findIndex(k => k.key === 'sk_nomor')
-    const barisBarang = [...tabelDari(container).querySelectorAll('tbody tr')]
-      .filter(tr => !tr.className.includes('italic'))
-    expect(barisBarang.length).toBe(ITEMS.length)
-    for (const tr of barisBarang) {
-      expect(tr.querySelectorAll('td')[geser + iSk].textContent).toBe('')
-    }
-  })
-
-  it('kolom Lokasi TERISI di IV.B & tak dirender sama sekali di cabang lain', () => {
-    const { container } = sajikan(f, [2])
-    const iLok = f.kolom.findIndex(k => k.key === 'lokasi')
-    const tr = [...tabelDari(container).querySelectorAll('tbody tr')]
-      .find(x => !x.className.includes('italic'))!
-    expect(tr.querySelectorAll('td')[geser + iLok].textContent).toBe('Jl. Contoh')
-
-    for (const id of ['internal', 'pengeluaran'] as IdPerpindahan[]) {
-      cleanup()
-      const { container: c2 } = sajikan(FORMAT_PERPINDAHAN[id], [2])
-      expect(c2.textContent, `${id} tak boleh merender Lokasi`).not.toContain('Jl. Contoh')
-    }
-  })
-})
-
-describe('IV.D.2 — lembar PENGELUARAN', () => {
-  const f = FORMAT_PERPINDAHAN.pengeluaran
-
-  it('TIDAK menyebut pihak mana pun — tak ada "menyerahkan" maupun "menerima"', () => {
-    // ⚠️ Itu memang bentuk lembar aslinya, dan sengaja TIDAK ditambal:
-    // menyisipkan kolom yang tak ada di format resmi membuatnya tak cocok waktu
-    // pemeriksa mencocokkannya kolom per kolom. Pasangan "menyerahkan ↔
-    // menerima" adanya di rekap GABUNGAN IV.D.7.
-    const { container } = sajikan(f, [2])
-    expect(container.textContent).not.toContain('menyerahkan')
-    expect(container.textContent).not.toContain('menerima')
-    expect(container.textContent).not.toContain('Sekretariat Daerah')
-  })
-
-  it('TIDAK punya Spesifikasi Lainnya (IV.B & IV.C punya)', () => {
-    const kunci = f.kolom.map(k => k.key)
-    expect(kunci).not.toContain('spek_lain')
-    for (const id of ['penggunaan', 'internal'] as IdPerpindahan[]) {
-      expect(FORMAT_PERPINDAHAN[id].kolom.map(k => k.key)).toContain('spek_lain')
-    }
-  })
+it('Pengeluaran berjudul "Tujuan SKPD", Penerimaan "Pihak yang menyerahkan"', () => {
+  expect(FORMAT_PERPINDAHAN.pengeluaran.kolomPihak.judul).toBe('Tujuan SKPD')
+  expect(FORMAT_PERPINDAHAN.penggunaan.kolomPihak.judul).toBe('Pihak yang menyerahkan')
+  expect(FORMAT_PERPINDAHAN.internal.kolomPihak.judul).toBe('Pihak yang menyerahkan')
 })
 
 describe.each(CABANG)('%s — lembar rekap', (_id, f) => {
