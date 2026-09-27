@@ -7354,6 +7354,50 @@ ke P&M **sudah tidak berlaku** — yang berlaku ini:
   diserahkan. **Tindak Lanjut** (pemisahan Kode Barang → Surat Usulan Reklas
   vs data lain → Koreksi) juga belum dibangun.
 
+## Pemanfaatan & Pengamanan MENYUSUL ke standar kolom & kotak Cari (2026-09-27)
+
+Permintaan user: kotak "Pilih Barang" & tabel barang di menu Pemanfaatan dan
+Pengamanan disamakan dgn Penghapusan. Ini **MEMBALIK** pengecualian yang
+tertulis 2026-09-23 di `lib/kolomBarangTransaksi.ts` ("LIMA MENU SENGAJA TIDAK
+IKUT: Pemanfaatan … Pengamanan") — komentar kepala berkas itu sudah diperbarui,
+jangan biarkan catatan lama membingungkan pembaca berikutnya.
+
+- **Kotak Cari diperluas**: dulu cuma `nama_barang`/`nibar`/`kode` (prefix);
+  kini + `no_polisi`/`no_rangka`/`no_mesin`, pola PERSIS
+  `usePemilihBarangLengkap.ts` (Penghapusan/Pengeluaran Internal). Placeholder-
+  nya ikut disamakan: "Nama / NIBAR / kode / no. polisi / rangka / mesin...".
+- **Tabel barang (kartu jurnal MAUPUN pemilih) kini memakai
+  `<ColgroupBarang/>`/`<KolomBarangHead/>`/`<KolomBarangCells/>`** — 12 kolom
+  standar (Kode Barang+Uraian · Spesifikasi Nama Barang+NIBAR · Merk/Tipe ·
+  Spesifikasi Lainnya · No. Polisi · No. Rangka · No. Mesin · Luas · Alamat
+  Detail · Tgl Perolehan · Jumlah+Satuan · Nilai), bukan lagi tabel ringkas
+  5 kolom lama. Kolom yang KHAS tiap menu (Lingkup + Status di Pemanfaatan,
+  Status di Pengamanan) tetap ada, lewat `sebelum`/`sesudah` di
+  `<ColgroupBarang/>` — **tak disisipkan di TENGAH 12 kolom kanonik**, pola yang
+  sama dgn Kode Rekening/Komptabel/Foto di menu lain.
+  ⚠️ Status Selesai/Diamankan-Dikembalikan dulu ditempel sbg teks kecil di
+  dalam sel nama (`"(selesai)"`) — sekarang jadi kolom **Status** tersendiri
+  (badge, pola yang sama dgn Penghapusan), supaya sel Spesifikasi Nama Barang
+  tak perlu tahu urusan status.
+- **`uraianMap` (lookup `admin_kodefikasi_bmd` TERKINI) ditambahkan di
+  KEDUANYA**, kartu jurnal maupun pemilih — pola & alasan yang sama dgn
+  Penghapusan/Penerimaan Internal: `aset.uraian_barang` cuma salinan yang basi
+  begitu barang direklas, dan kolom Uraian Barang wajib ikut kodefikasi
+  terkini. Gagal memuatnya cuma menurunkan kolom itu ke cadangan/"-", TIDAK
+  menjatuhkan tabelnya.
+- **`BarangForm.tampilkan()` (Pemanfaatan) SEKALIAN dibungkus try/catch/finally**
+  — sebelumnya fungsi ini tak memeriksa `error` sama sekali (query gagal =
+  daftar kosong yang terbaca operator sbg "tak ada barang eligible", kelas
+  INS-06). Query yang sama sekarang di Pengamanan (`usePemilihBarangPengamanan`)
+  sudah lebih dulu benar; Pemanfaatan disamakan sekalian karena fungsinya
+  ditulis ulang untuk menambah `fetchUraian`.
+- **Tak ada migrasi** — murni query klien (kolom yang ditarik & kotak Cari) +
+  tampilan; `aset`/`transaksi_bmd` sudah lama punya kolom-kolom ini (dipakai
+  menu lain sejak 2026-09-23).
+- Dikunci `components/pengelolaan/pengamanan/usePemilihBarang.test.tsx`
+  (kotak Cari diperluas, diuji merah dulu dgn substring per ruas — bukan
+  exact-match string yang gampang basi kalau urutan `.or()` berubah).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

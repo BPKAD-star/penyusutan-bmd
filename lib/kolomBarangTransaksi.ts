@@ -1,24 +1,32 @@
 // ============================================================================
 // STANDAR kolom "informasi barang" untuk kartu TRANSAKSI (keputusan user
-// 2026-09-23) — SATU urutan, SATU set label, dipakai di SEMBILAN menu:
+// 2026-09-23) — SATU urutan, SATU set label, dipakai di SEBELAS menu:
 //
 //   Cara Perolehan: Pengadaan · Hibah · Tukar Menukar · Hasil Inventarisasi ·
 //                    Perolehan Lainnya      (2 komponen: Pengadaan.tsx,
 //                    PerolehanManual.tsx — yang kedua melayani 4 kategori)
 //   Pengelolaan:    Penggunaan · Penerimaan Internal · Pengeluaran Internal ·
-//                    Penghapusan            (4 komponen)
+//                    Penghapusan · Pemanfaatan · Pengamanan (6 komponen)
 //
-// Sebelum ini keenam komponen itu masing-masing menulis daftar kolomnya
+// Sebelum ini keenam komponen semula (Cara Perolehan + Penggunaan/Penerimaan/
+// Pengeluaran Internal/Penghapusan) masing-masing menulis daftar kolomnya
 // sendiri — beda urutan, beda label ("Merk/Tipe" vs "Merek / Tipe"), beda
 // kolom yang ikut (PenggunaanMasuk/PenerimaanInternal tak pernah menampilkan
 // No. Polisi/Rangka/Mesin/Luas/Alamat sama sekali, padahal datanya ADA di
 // `fields`). Operator yang membuka dua menu berurutan melihat susunan barang
 // yang berbeda-beda tanpa pola.
 //
-// ⚠️ LIMA MENU SENGAJA TIDAK IKUT (permintaan user): Pemanfaatan,
-// Reklasifikasi, Koreksi, Kapitalisasi, Pengamanan. Bentuknya beda — barang di
-// situ tunggal per baris ledger (bukan daftar barang per dokumen/kontrak) atau
-// sudah punya tata letak sendiri yang belum diminta diseragamkan.
+// ✅ Pemanfaatan & Pengamanan MENYUSUL 2026-09-27 (permintaan user — kotak Cari
+// & tabel barangnya "disamakan kyk yang ada di Penghapusan"), MEMBALIK
+// pengecualian yang tertulis di sini sebelumnya. Keduanya tetap punya kolom
+// EKSTRA di luar 12 kanonik (Pemanfaatan: Lingkup + Status; Pengamanan:
+// Status) lewat `sebelum`/`sesudah` di `<ColgroupBarang/>` — pola yang sama
+// dgn Kode Rekening/Komptabel/Foto di menu lain, bukan disisipkan di tengah.
+//
+// ⚠️ TIGA MENU SENGAJA TIDAK IKUT (permintaan user): Reklasifikasi, Koreksi,
+// Kapitalisasi. Bentuknya beda — barang di situ tunggal per baris ledger
+// (bukan daftar barang per dokumen/kontrak) atau sudah punya tata letak
+// sendiri yang belum diminta diseragamkan.
 //
 // ⚠️ KEDUA BELAS KOLOM SELALU TAMPIL, urutan TETAP, isi '-' kalau field-nya
 // tak berlaku utk golongan barang itu (mis. Luas kosong utk Peralatan &

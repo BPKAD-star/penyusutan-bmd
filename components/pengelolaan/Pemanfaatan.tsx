@@ -35,7 +35,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { periodeDariTanggal, kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
+import { periodeDariTanggal, GOLONGAN_REKAP } from '@/lib/bmd'
 import { formatRupiah2 } from '@/lib/export'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -48,9 +48,10 @@ import {
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks } from './DokumenBastField'
+import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
+import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
-const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
 type PemPayload = {
@@ -68,18 +69,47 @@ type Header = {
 }
 type Line = {
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
-  merek_tipe: string | null; jumlah: number; satuan: string | null
+  uraian_barang: string | null; merek_tipe: string | null; spesifikasi_lainnya: string | null
+  no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
+  luas: number | string | null; alamat_detail: string | null; tgl_perolehan: string | null
+  jumlah: number; satuan: string | null
   nilai: number; lingkup: Lingkup; bagian: string | null; selesai: boolean
 }
 type Jurnal = Header & { lines: Line[] }
 
 type Barang = {
   id: string; nibar: string | null; kode: string; nama_barang: string | null
-  merek_tipe: string | null; jumlah: number; satuan: string | null; nilai_perolehan: number; skpd_id: number | null
+  uraian_barang: string | null; merek_tipe: string | null; spesifikasi_lainnya: string | null
+  no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
+  luas: number | string | null; alamat_detail: string | null; tgl_perolehan: string | null
+  jumlah: number; satuan: string | null; nilai_perolehan: number; skpd_id: number | null
 }
 type SelItem = { b: Barang; lingkup: Lingkup; bagian: string }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,keterangan,payload'
+
+// Standar kolom barang (lib/kolomBarangTransaksi.ts, permintaan user
+// 2026-09-27 — disamakan dgn Penghapusan/Pengeluaran Internal). `uraian`
+// dioper terpisah (lookup kodefikasi TERKINI) krn ia wajib menang atas
+// `uraian_barang` tersimpan yang bisa basi sesudah reklas.
+function barangDariLine(l: Line, uraian: string | null): BarangTransaksi {
+  return {
+    kode: l.kode, uraianBarang: uraian || l.uraian_barang, nibar: l.nibar,
+    namaBarang: l.nama_barang, merekTipe: l.merek_tipe, spesifikasiLainnya: l.spesifikasi_lainnya,
+    noPolisi: l.no_polisi, noMesin: l.no_mesin, noRangka: l.no_rangka,
+    luas: l.luas, alamatDetail: l.alamat_detail, tglPerolehan: l.tgl_perolehan,
+    jumlah: l.jumlah, satuan: l.satuan, nilai: l.nilai,
+  }
+}
+function barangDariPicker(b: Barang, uraian: string | null): BarangTransaksi {
+  return {
+    kode: b.kode, uraianBarang: uraian || b.uraian_barang, nibar: b.nibar,
+    namaBarang: b.nama_barang, merekTipe: b.merek_tipe, spesifikasiLainnya: b.spesifikasi_lainnya,
+    noPolisi: b.no_polisi, noMesin: b.no_mesin, noRangka: b.no_rangka,
+    luas: b.luas, alamatDetail: b.alamat_detail, tglPerolehan: b.tgl_perolehan,
+    jumlah: b.jumlah, satuan: b.satuan, nilai: b.nilai_perolehan,
+  }
+}
 
 function statusBadge(h: Header): { txt: string; cls: string } {
   const berakhir = h.payload?.berakhir
@@ -99,6 +129,10 @@ export default function Pemanfaatan() {
   const [skpd, setSkpd] = useState('')
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
+  // Uraian baku (kodefikasi TERKINI) per kode barang — pola sama dgn
+  // Penghapusan/Penggunaan/Reklasifikasi. `aset.uraian_barang` cuma disalin
+  // SEKALI saat barang dibuat & basi begitu barang direklas.
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [addTo, setAddTo] = useState<Header | null>(null)
@@ -139,14 +173,18 @@ export default function Pemanfaatan() {
 
     if (hs.length > 0) {
       const { data } = await supabase.from('transaksi_bmd')
-        .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan)')
+        // Kolom standar (lib/kolomBarangTransaksi.ts, 2026-09-27) ikut ditarik
+        // supaya kartu ini bisa memakai `<KolomBarangCells/>` yang sama dgn
+        // Penghapusan/Pengeluaran Internal.
+        .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,nibar,nama_barang,uraian_barang,kode,' +
+          'merek_tipe,spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,luas,alamat_detail,tgl_perolehan,jumlah,satuan)')
         .in('jenis', ['pemanfaatan', 'pemanfaatan_selesai', 'batal_pemanfaatan'] as never)
         .in('header_id', hs.map(h => h.id))
         .order('id', { ascending: true })
       const rows = (data || []) as unknown as {
         id: number; header_id: string; jenis: string; nilai: number
         payload: { lingkup?: Lingkup; bagian?: string | null } | null
-        aset: Omit<Barang, 'nilai_perolehan'> | null
+        aset: Omit<Barang, 'nilai_perolehan' | 'skpd_id'> | null
       }[]
       // Akumulasi kronologis per (header, aset), baris terakhir menentukan:
       //   'pemanfaatan'         → set lingkup/bagian, selesai=false
@@ -161,7 +199,11 @@ export default function Pemanfaatan() {
         if (r.jenis === 'pemanfaatan') {
           acc.set(key, {
             aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
-            merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
+            uraian_barang: r.aset.uraian_barang, merek_tipe: r.aset.merek_tipe,
+            spesifikasi_lainnya: r.aset.spesifikasi_lainnya,
+            no_polisi: r.aset.no_polisi, no_rangka: r.aset.no_rangka, no_mesin: r.aset.no_mesin,
+            luas: r.aset.luas, alamat_detail: r.aset.alamat_detail, tgl_perolehan: r.aset.tgl_perolehan,
+            jumlah: r.aset.jumlah, satuan: r.aset.satuan, nilai: r.nilai,
             lingkup: (r.payload?.lingkup as Lingkup) || 'seluruh', bagian: r.payload?.bagian ?? null, selesai: false,
           })
         } else if (r.jenis === 'pemanfaatan_selesai') {
@@ -176,7 +218,31 @@ export default function Pemanfaatan() {
         jmap.get(headerId)?.lines.push(line)
       }
     }
-    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
+    const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
+    setJurnals(hasil)
+
+    // Uraian baku (kodefikasi TERKINI) — pola sama dgn Penghapusan/Penggunaan.
+    // Gagalnya cuma menurunkan kolom Uraian ke cadangan/"-", TIDAK menjatuhkan
+    // tabelnya.
+    const kodeSet = new Set<string>()
+    for (const j of hasil) for (const l of j.lines) if (l.kode) kodeSet.add(l.kode)
+    if (kodeSet.size > 0) {
+      try {
+        const uniq = [...kodeSet]
+        const map: Record<string, string> = {}
+        for (let i = 0; i < uniq.length; i += 200) {
+          const { data: kf, error: kfErr } = await supabase.from('admin_kodefikasi_bmd')
+            .select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+          if (kfErr) throw new Error(kfErr.message)
+          for (const r of kf || []) if (r.uraian) map[r.kode] = r.uraian
+        }
+        setUraianMap(map)
+      } catch {
+        setUraianMap({})
+      }
+    } else {
+      setUraianMap({})
+    }
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -335,14 +401,17 @@ export default function Pemanfaatan() {
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                      Penghapusan/Pengeluaran Internal (lib/kolomBarangTransaksi.ts). */}
+                  <table className="w-full table-fixed">
+                    <ColgroupBarang sebelum={[{ key: 'aksi', berat: 3 }]}
+                      sesudah={[{ key: 'lingkup', berat: 8 }, { key: 'status', berat: 4 }]} />
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        <th className="table-th w-20 text-center">Aksi</th>
-                        <th className="table-th">Kode Register / Nama Barang</th>
+                        <th className="table-th text-center">Aksi</th>
+                        <KolomBarangHead />
                         <th className="table-th">Lingkup</th>
-                        <th className="table-th text-center">Jumlah</th>
-                        <th className="table-th text-right">Nilai Perolehan</th>
+                        <th className="table-th text-center">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -359,15 +428,15 @@ export default function Pemanfaatan() {
                                 className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
                             </div>
                           </td>
-                          <td className="table-td">
-                            <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}{l.selesai && <span className="ml-2 text-[10px] text-gray-400">(selesai)</span>}</p>
-                            <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode} · {golLabel(l.kode)}</p>
-                          </td>
+                          <KolomBarangCells barang={barangDariLine(l, uraianMap[l.kode] || null)} />
                           <td className="table-td text-xs text-gray-600">
                             {l.lingkup === 'sebagian' ? `Sebagian${l.bagian ? ` — ${l.bagian}` : ''}` : 'Seluruhnya'}
                           </td>
-                          <td className="table-td text-center text-xs">{l.jumlah} {l.satuan || ''}</td>
-                          <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
+                          <td className="table-td text-center">
+                            {l.selesai
+                              ? <span className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-500">Selesai</span>
+                              : <span className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-green-100 text-green-700">Aktif</span>}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -559,6 +628,9 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
   const [sel, setSel] = useState<Record<string, SelItem>>({})
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  // Uraian baku (kodefikasi TERKINI) per kode barang — pola sama dgn
+  // usePemilihBarangLengkap.ts.
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   const masaNum = Number(masa)
   const berakhir = hitungBerakhir(mulai, masaNum)
@@ -579,19 +651,45 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
     setDokPaths(prev => prev.filter(p => p !== path))
   }
 
+  async function fetchUraian(kodes: string[]) {
+    const uniq = [...new Set(kodes)]
+    const map: Record<string, string> = {}
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data, error } = await supabase.from('admin_kodefikasi_bmd').select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+      if (error) throw new Error(`gagal membaca uraian kodefikasi: ${error.message}`)
+      for (const r of data || []) if (r.uraian) map[r.kode] = r.uraian
+    }
+    return map
+  }
+
   async function tampilkan() {
     setLoading(true)
-    let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,merek_tipe,jumlah,satuan,nilai_perolehan,skpd_id')
-      .eq('status', 'aktif').eq('skpd_id', skpdId).is('pemanfaatan', null)
-    if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
-    else q = q.or(PEMANFAATAN_ELIGIBLE_GOLONGAN.map(g => `kode.like.${g}.%`).join(','))
-    if (fSearch) q = q.or(`nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%`)
-    const { data } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
-    // Belt & suspenders: buang yang tak eligible (mis. kalau filter lolos).
-    setRows(((data as unknown as Barang[]) || []).filter(b => isPemanfaatanEligible(b.kode)))
-    setLoaded(true)
-    setLoading(false)
+    try {
+      let q = supabase.from('aset')
+        // Kolom standar (lib/kolomBarangTransaksi.ts, 2026-09-27) ikut ditarik.
+        .select('id,nibar,kode,nama_barang,uraian_barang,merek_tipe,spesifikasi_lainnya,' +
+          'no_polisi,no_rangka,no_mesin,luas,alamat_detail,tgl_perolehan,jumlah,satuan,nilai_perolehan,skpd_id')
+        .eq('status', 'aktif').eq('skpd_id', skpdId).is('pemanfaatan', null)
+      if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
+      else q = q.or(PEMANFAATAN_ELIGIBLE_GOLONGAN.map(g => `kode.like.${g}.%`).join(','))
+      // Cari: nama barang / NIBAR / kode (prefix) + nomor kendaraan (polisi /
+      // rangka / mesin) — disamakan dgn Penghapusan/Pengeluaran Internal
+      // (permintaan user 2026-09-27).
+      if (fSearch) q = q.or(
+        `nama_barang.ilike.%${fSearch}%,nibar.ilike.%${fSearch}%,kode.ilike.${fSearch}%,` +
+        `no_polisi.ilike.%${fSearch}%,no_rangka.ilike.%${fSearch}%,no_mesin.ilike.%${fSearch}%`)
+      const { data, error } = await q.order('nilai_perolehan', { ascending: false }).limit(500)
+      if (error) throw new Error(`gagal memuat daftar barang: ${error.message}`)
+      // Belt & suspenders: buang yang tak eligible (mis. kalau filter lolos).
+      const list = ((data as unknown as Barang[]) || []).filter(b => isPemanfaatanEligible(b.kode))
+      setRows(list)
+      setUraianMap(await fetchUraian(list.map(b => b.kode)))
+      setLoaded(true)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))   // `loaded` tetap false
+    } finally {
+      setLoading(false)   // di `finally`, bukan jalur sukses (INS-10)
+    }
   }
 
   function toggle(b: Barang) {
@@ -765,7 +863,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
           </div>
           <div className="flex-1 min-w-[180px]">
             <label className="block text-xs text-gray-500 mb-1">Cari</label>
-            <input className="select-filter w-full" placeholder="Nama barang / NIBAR / kode..."
+            <input className="select-filter w-full" placeholder="Nama / NIBAR / kode / no. polisi / rangka / mesin..."
               value={fSearch} onChange={e => setFSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
           </div>
@@ -777,18 +875,20 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
         ) : (
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-              <table className="w-full">
+              {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                  kartu jurnal di atas & Penghapusan (lib/kolomBarangTransaksi.ts). */}
+              <table className="w-full table-fixed">
+                <ColgroupBarang sebelum={[{ key: 'chk', berat: 3 }]} sesudah={[{ key: 'lingkup', berat: 12 }]} />
                 <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
                   <tr>
                     <th className="table-th w-10 text-center">Pilih</th>
-                    <th className="table-th">Barang</th>
-                    <th className="table-th w-64">Lingkup Pemanfaatan</th>
-                    <th className="table-th text-right">Nilai Perolehan</th>
+                    <KolomBarangHead />
+                    <th className="table-th">Lingkup Pemanfaatan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {rows.length === 0 ? (
-                    <tr><td colSpan={4} className="table-td text-center py-10 text-gray-400">Tidak ada barang eligible untuk filter ini.</td></tr>
+                    <tr><td colSpan={14} className="table-td text-center py-10 text-gray-400">Tidak ada barang eligible untuk filter ini.</td></tr>
                   ) : rows.map(b => {
                     const s = sel[b.id]
                     return (
@@ -796,10 +896,7 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
                         <td className="table-td text-center">
                           <input type="checkbox" checked={!!s} onChange={() => toggle(b)} />
                         </td>
-                        <td className="table-td">
-                          <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
-                          <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode} · {golLabel(b.kode)}</p>
-                        </td>
+                        <KolomBarangCells barang={barangDariPicker(b, uraianMap[b.kode] || null)} />
                         <td className="table-td">
                           {s ? (
                             <div className="space-y-1">
@@ -813,7 +910,6 @@ function BarangForm({ skpdId, skpdNama, header, onCancel, onSaved }: {
                             </div>
                           ) : <span className="text-gray-300 text-xs">—</span>}
                         </td>
-                        <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
                       </tr>
                     )
                   })}

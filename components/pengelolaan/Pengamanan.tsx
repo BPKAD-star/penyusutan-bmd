@@ -24,8 +24,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
-import { periodeDariTanggal, kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
-import { formatRupiah2 } from '@/lib/export'
+import { periodeDariTanggal, GOLONGAN_REKAP } from '@/lib/bmd'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -34,10 +33,11 @@ import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks, bukaDokumen } from './DokumenBastField'
 import { useDokumenBast } from './pengamanan/useDokumenBast'
-import { usePemilihBarangPengamanan, type BarangPengamanan } from './pengamanan/usePemilihBarang'
+import { usePemilihBarangPengamanan, barangDariPengamanan, type BarangPengamanan } from './pengamanan/usePemilihBarang'
+import { ColgroupBarang, KolomBarangHead, KolomBarangCells } from '@/shared/ui/TabelBarangTransaksi'
+import type { BarangTransaksi } from '@/lib/kolomBarangTransaksi'
 
 const GOL_LABEL: Record<string, string> = Object.fromEntries(GOLONGAN_REKAP.map(g => [g.kode, g.uraian]))
-const golLabel = (kode: string) => GOL_LABEL[kodeLevel3(kode)] || kodeLevel3(kode)
 const todayStr = () => new Date().toISOString().slice(0, 10)
 
 type PengPayload = {
@@ -51,7 +51,10 @@ type Header = {
 }
 type Line = {
   aset_id: string; nibar: string | null; kode: string; nama_barang: string | null
-  merek_tipe: string | null; jumlah: number; satuan: string | null; nilai: number; dikembalikan: boolean
+  uraian_barang: string | null; merek_tipe: string | null; spesifikasi_lainnya: string | null
+  no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
+  luas: number | string | null; alamat_detail: string | null; tgl_perolehan: string | null
+  jumlah: number; satuan: string | null; nilai: number; dikembalikan: boolean
 }
 type Jurnal = Header & { lines: Line[] }
 
@@ -61,6 +64,20 @@ type Jurnal = Header & { lines: Line[] }
 // — dan pelanggarannya di sini tak menghasilkan satu pun error, cuma kolom
 // yang diam-diam tak terbaca.
 type Barang = BarangPengamanan
+
+// Standar kolom barang (lib/kolomBarangTransaksi.ts, permintaan user
+// 2026-09-27 — disamakan dgn Penghapusan/Pengeluaran Internal). `uraianMap`
+// (kodefikasi TERKINI) menang atas `uraian_barang` tersimpan yang bisa basi
+// sesudah reklas.
+function barangDariLine(l: Line, uraian: string | null): BarangTransaksi {
+  return {
+    kode: l.kode, uraianBarang: uraian || l.uraian_barang, nibar: l.nibar,
+    namaBarang: l.nama_barang, merekTipe: l.merek_tipe, spesifikasiLainnya: l.spesifikasi_lainnya,
+    noPolisi: l.no_polisi, noMesin: l.no_mesin, noRangka: l.no_rangka,
+    luas: l.luas, alamatDetail: l.alamat_detail, tglPerolehan: l.tgl_perolehan,
+    jumlah: l.jumlah, satuan: l.satuan, nilai: l.nilai,
+  }
+}
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,keterangan,payload'
 
@@ -76,6 +93,10 @@ export default function Pengamanan() {
   const [skpd, setSkpd] = useState('')
   const [jurnals, setJurnals] = useState<Jurnal[]>([])
   const [loadingJurnal, setLoadingJurnal] = useState(false)
+  // Uraian baku (kodefikasi TERKINI) per kode barang — pola sama dgn
+  // Penghapusan/Penggunaan/Reklasifikasi. `aset.uraian_barang` cuma disalin
+  // SEKALI saat barang dibuat & basi begitu barang direklas.
+  const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
 
   const [mode, setMode] = useState<'list' | 'tambah'>('list')
   const [editing, setEditing] = useState<Header | null>(null)
@@ -120,7 +141,11 @@ export default function Pengamanan() {
         // (lihat `kembalikanBarang`/`simpan` di bawah) — membaca kolom itu apa
         // adanya membuat kolom Nilai kartu ini menampilkan Rp0 untuk SETIAP
         // barang, tanpa satu pun error.
-        .select('id,header_id,jenis,aset:aset_id(id,nibar,nama_barang,kode,merek_tipe,jumlah,satuan,nilai_perolehan)')
+        // Kolom standar (lib/kolomBarangTransaksi.ts, 2026-09-27) ikut ditarik
+        // supaya kartu ini bisa memakai `<KolomBarangCells/>` yang sama dgn
+        // Penghapusan/Pengeluaran Internal.
+        .select('id,header_id,jenis,aset:aset_id(id,nibar,nama_barang,uraian_barang,kode,merek_tipe,' +
+          'spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,luas,alamat_detail,tgl_perolehan,jumlah,satuan,nilai_perolehan)')
         .in('jenis', ['pengamanan', 'pengembalian_pengamanan', 'batal_pengamanan'] as never)
         .in('header_id', hs.map(h => h.id))
         .order('id', { ascending: true })
@@ -139,7 +164,11 @@ export default function Pengamanan() {
         if (r.jenis === 'pengamanan') {
           acc.set(key, {
             aset_id: r.aset.id, nibar: r.aset.nibar, kode: r.aset.kode, nama_barang: r.aset.nama_barang,
-            merek_tipe: r.aset.merek_tipe, jumlah: r.aset.jumlah, satuan: r.aset.satuan,
+            uraian_barang: r.aset.uraian_barang, merek_tipe: r.aset.merek_tipe,
+            spesifikasi_lainnya: r.aset.spesifikasi_lainnya,
+            no_polisi: r.aset.no_polisi, no_rangka: r.aset.no_rangka, no_mesin: r.aset.no_mesin,
+            luas: r.aset.luas, alamat_detail: r.aset.alamat_detail, tgl_perolehan: r.aset.tgl_perolehan,
+            jumlah: r.aset.jumlah, satuan: r.aset.satuan,
             nilai: r.aset.nilai_perolehan || 0, dikembalikan: false,
           })
         } else if (r.jenis === 'pengembalian_pengamanan') {
@@ -150,7 +179,31 @@ export default function Pengamanan() {
       }
       for (const [key, line] of acc) jmap.get(key.split('|')[0])?.lines.push(line)
     }
-    setJurnals([...jmap.values()].filter(j => j.lines.length > 0))
+    const hasil = [...jmap.values()].filter(j => j.lines.length > 0)
+    setJurnals(hasil)
+
+    // Uraian baku (kodefikasi TERKINI) — pola sama dgn Penghapusan/Penggunaan.
+    // Gagalnya cuma menurunkan kolom Uraian ke cadangan/"-", TIDAK menjatuhkan
+    // tabelnya.
+    const kodeSet = new Set<string>()
+    for (const j of hasil) for (const l of j.lines) if (l.kode) kodeSet.add(l.kode)
+    if (kodeSet.size > 0) {
+      try {
+        const uniq = [...kodeSet]
+        const map: Record<string, string> = {}
+        for (let i = 0; i < uniq.length; i += 200) {
+          const { data: kf, error: kfErr } = await supabase.from('admin_kodefikasi_bmd')
+            .select('kode,uraian').in('kode', uniq.slice(i, i + 200))
+          if (kfErr) throw new Error(kfErr.message)
+          for (const r of kf || []) if (r.uraian) map[r.kode] = r.uraian
+        }
+        setUraianMap(map)
+      } catch {
+        setUraianMap({})
+      }
+    } else {
+      setUraianMap({})
+    }
     setLoadingJurnal(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -284,14 +337,15 @@ export default function Pengamanan() {
                   </div>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                      Penghapusan/Pengeluaran Internal (lib/kolomBarangTransaksi.ts). */}
+                  <table className="w-full table-fixed">
+                    <ColgroupBarang sebelum={[{ key: 'aksi', berat: 3 }]} sesudah={[{ key: 'status', berat: 4 }]} />
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        <th className="table-th w-20 text-center">Aksi</th>
-                        <th className="table-th">Kode Register / Nama Barang</th>
-                        <th className="table-th">Merek / Tipe</th>
+                        <th className="table-th text-center">Aksi</th>
+                        <KolomBarangHead />
                         <th className="table-th text-center">Status</th>
-                        <th className="table-th text-right">Nilai Perolehan</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -308,17 +362,12 @@ export default function Pengamanan() {
                                 className="inline-flex items-center justify-center w-7 h-7 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
                             </div>
                           </td>
-                          <td className="table-td">
-                            <p className="font-medium text-gray-800 text-xs">{l.nama_barang || '-'}</p>
-                            <p className="text-gray-400 text-xs mt-0.5">{l.nibar || '-'} · {l.kode} · {golLabel(l.kode)}</p>
-                          </td>
-                          <td className="table-td text-xs text-gray-600">{l.merek_tipe || '-'}</td>
-                          <td className="table-td text-center text-xs">
+                          <KolomBarangCells barang={barangDariLine(l, uraianMap[l.kode] || null)} />
+                          <td className="table-td text-center">
                             {l.dikembalikan
                               ? <span className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-500">Dikembalikan</span>
                               : <span className="inline-block px-2 py-0.5 rounded-full text-[11px] bg-green-100 text-green-700">Diamankan</span>}
                           </td>
-                          <td className="table-td text-right text-xs">{formatRupiah2(l.nilai)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -530,7 +579,7 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
 
   const {
     fGolongan, setFGolongan, fSearch, setFSearch, rows, loaded, loading, tampilkan,
-    sel, selList, allSelected, toggle, toggleAll,
+    sel, selList, allSelected, toggle, toggleAll, uraianMap: uraianMapPicker,
   } = usePemilihBarangPengamanan(skpdId, setErr)
 
   async function simpan() {
@@ -684,7 +733,7 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
           </div>
           <div className="flex-1 min-w-[180px]">
             <label className="block text-xs text-gray-500 mb-1">Cari</label>
-            <input className="select-filter w-full" placeholder="Nama barang / NIBAR / kode..."
+            <input className="select-filter w-full" placeholder="Nama / NIBAR / kode / no. polisi / rangka / mesin..."
               value={fSearch} onChange={e => setFSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') tampilkan() }} />
           </div>
           <button className="btn-primary" onClick={tampilkan} disabled={loading}>{loading ? 'Memuat...' : 'Tampilkan'}</button>
@@ -695,29 +744,23 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
         ) : (
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
-              <table className="w-full">
+              {/* table-fixed + colgroup: standar 12 kolom barang, kembar dgn
+                  kartu jurnal di atas & Penghapusan (lib/kolomBarangTransaksi.ts). */}
+              <table className="w-full table-fixed">
+                <ColgroupBarang sebelum={[{ key: 'chk', berat: 3 }]} />
                 <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
                   <tr>
                     <th className="table-th w-10 text-center"><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
-                    <th className="table-th">Barang</th>
-                    <th className="table-th">Merek / Tipe</th>
-                    <th className="table-th text-center">Jumlah</th>
-                    <th className="table-th text-right">Nilai Perolehan</th>
+                    <KolomBarangHead />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {rows.length === 0 ? (
-                    <tr><td colSpan={5} className="table-td text-center py-10 text-gray-400">Tidak ada barang eligible untuk filter ini.</td></tr>
+                    <tr><td colSpan={13} className="table-td text-center py-10 text-gray-400">Tidak ada barang eligible untuk filter ini.</td></tr>
                   ) : rows.map(b => (
                     <tr key={b.id} className={sel[b.id] ? 'bg-teal/5' : ''}>
                       <td className="table-td text-center"><input type="checkbox" checked={!!sel[b.id]} onChange={() => toggle(b)} /></td>
-                      <td className="table-td">
-                        <p className="font-medium text-gray-800 text-xs">{b.nama_barang || '-'}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">{b.nibar || '-'} · {b.kode} · {golLabel(b.kode)}</p>
-                      </td>
-                      <td className="table-td text-xs text-gray-600">{b.merek_tipe || '-'}</td>
-                      <td className="table-td text-center text-xs">{b.jumlah} {b.satuan || ''}</td>
-                      <td className="table-td text-right text-xs">{formatRupiah2(b.nilai_perolehan)}</td>
+                      <KolomBarangCells barang={barangDariPengamanan(b, uraianMapPicker[b.kode] || null)} />
                     </tr>
                   ))}
                 </tbody>

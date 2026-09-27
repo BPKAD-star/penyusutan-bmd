@@ -20,10 +20,21 @@ let asetRows: unknown[] = []
 let qErr: { message: string } | null = null
 let qThrow = false
 let q: { eq: Record<string, unknown>; is: Record<string, unknown>; like?: string; or: string[] } | null = null
+// Uraian baku (admin_kodefikasi_bmd) — dipanggil sesudah tiap `tampilkan()`
+// (pola dari usePemilihBarangLengkap.test.tsx). Tak ada test di sini yang
+// MENGUJI isinya, cuma memastikan panggilannya tak gagal (kalau gagal,
+// `tampilkan()` MELEMPAR & `loaded` tetap false).
+let kodeErr: { message: string } | null = null
+let kodefikasi: { kode: string; uraian: string | null }[] = []
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
-    from: () => {
+    from: (t: string) => {
+      if (t === 'admin_kodefikasi_bmd') {
+        const kq: Record<string, unknown> = {}
+        Object.assign(kq, { select: () => kq, in: async () => ({ data: kodefikasi, error: kodeErr }) })
+        return kq
+      }
       const call: NonNullable<typeof q> = { eq: {}, is: {}, or: [] }
       q = call
       const b: Record<string, unknown> = {}
@@ -47,14 +58,16 @@ vi.mock('@/lib/supabase/client', () => ({
 import { usePemilihBarangPengamanan, type BarangPengamanan } from './usePemilihBarang'
 
 const br = (over: Partial<BarangPengamanan> = {}): BarangPengamanan => ({
-  id: 'b1', nibar: null, kode: '1.3.2.01.01.01.001', nama_barang: 'Laptop',
-  merek_tipe: null, jumlah: 1, satuan: 'unit', nilai_perolehan: 10_000_000, skpd_id: 3, ...over,
+  id: 'b1', nibar: null, kode: '1.3.2.01.01.01.001', nama_barang: 'Laptop', uraian_barang: null,
+  merek_tipe: null, spesifikasi_lainnya: null, no_polisi: null, no_rangka: null, no_mesin: null,
+  luas: null, alamat_detail: null, tgl_perolehan: '2020-01-01',
+  jumlah: 1, satuan: 'unit', nilai_perolehan: 10_000_000, skpd_id: 3, ...over,
 })
 
 let errs: string[] = []
 const onErr = (m: string) => { errs.push(m) }
 
-beforeEach(() => { asetRows = []; q = null; errs = []; qErr = null; qThrow = false })
+beforeEach(() => { asetRows = []; q = null; errs = []; qErr = null; qThrow = false; kodefikasi = []; kodeErr = null })
 afterEach(cleanup)
 
 const isi = async (rows: BarangPengamanan[]) => {
@@ -91,12 +104,16 @@ describe('query', () => {
     expect(q?.or).toEqual([])
   })
 
-  it('kata kunci menyisir nama barang, NIBAR, dan kode (prefix)', async () => {
+  it('kata kunci menyisir nama barang, NIBAR, kode (prefix), DAN nomor kendaraan — disamakan dgn Penghapusan', async () => {
     const h = renderHook(() => usePemilihBarangPengamanan(3, onErr))
     act(() => h.result.current.setFSearch('laptop'))
     await act(async () => { await h.result.current.tampilkan() })
     const cari = q?.or.find(o => o.includes('nama_barang'))
-    expect(cari).toBe('nama_barang.ilike.%laptop%,nibar.ilike.%laptop%,kode.ilike.laptop%')
+    expect(cari).toBeDefined()
+    for (const ruas of ['nama_barang.ilike.%laptop%', 'nibar.ilike.%laptop%', 'kode.ilike.laptop%',
+      'no_polisi.ilike.%laptop%', 'no_rangka.ilike.%laptop%', 'no_mesin.ilike.%laptop%']) {
+      expect(cari).toContain(ruas)
+    }
   })
 })
 
