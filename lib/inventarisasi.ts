@@ -132,9 +132,12 @@ export type InvJawaban = {
     nibar?: string; kode_barang?: string; kode_lokasi?: string
     kode_register?: string; nama_barang?: string; spesifikasi?: string
   }
-  // J — alamat berjenjang (admin_wilayah) + detail jalan, pola sama dgn
-  // spesifikasi barang di menu lain.
-  alamat?: SesuaiField & { wilayah_kode?: string; alamat_detail?: string }
+  // J — Wilayah (admin_wilayah, berjenjang) & Alamat Detail: DUA form
+  // terpisah (keputusan user 2026-09-28) — satu barang bisa saja wilayahnya
+  // sudah benar sementara cuma nomor jalannya yang perlu dikoreksi, atau
+  // sebaliknya. Dulu satu field `alamat` gabungan.
+  wilayah?: SesuaiField & { wilayah_kode?: string }
+  alamat_detail?: SesuaiField
   // K
   kondisi?: KondisiFisik
   // L — Penggunaan Barang. `null` = eksplisit "Digunakan sendiri" (bedanya dgn
@@ -178,7 +181,13 @@ export type InvJawaban = {
   keterangan_barang?: SesuaiField
   // R — Foto barang. Tidak Sesuai → foto baru WAJIB diunggah ke lembar ini.
   foto_barang?: { sesuai: boolean }
+  /** LEGACY (P. Lainnya) — digabung ke `keterangan` sbg "Catatan Inventarisasi"
+   *  (keputusan user 2026-09-28). Dipertahankan di tipe utk kompat mundur baris
+   *  lama, TAK LAGI DIRENDER — jangan hidupkan lagi, satu kolom catatan cukup. */
   lainnya?: string
+  /** Catatan Inventarisasi — catatan bebas PETUGAS tentang PROSES inventarisasi
+   *  ini, BUKAN perbandingan terhadap `aset.keterangan` (itu `keterangan_barang`
+   *  di bawah). Judul Seksi di form: "Catatan Inventarisasi". */
   keterangan?: string
   // Merek/Tipe — P&M (III.A.2) dan juga ATL (III.A.5) & ATB (III.A.6),
   // di dua format terakhir judulnya "Merek/Tipe/spesifikasi lainnya".
@@ -458,7 +467,7 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
   // Jumlah & nilai perolehan TIDAK bisa diubah lewat LKI, jadi tak dibandingkan.
   if (
     tidakSesuai(j.kode_barang) || tidakSesuai(j.spesifikasi) || tidakSesuai(j.satuan) ||
-    tidakSesuai(j.alamat) || tidakSesuai(j.merek_tipe) ||
+    tidakSesuai(j.wilayah) || tidakSesuai(j.alamat_detail) || tidakSesuai(j.merek_tipe) ||
     tidakSesuai(j.no_polisi) || tidakSesuai(j.no_rangka) || tidakSesuai(j.no_mesin) ||
     tidakSesuai(j.no_bpkb) || tidakSesuai(j.spesifikasi_lainnya) || tidakSesuai(j.luas) ||
     tidakSesuai(j.keterangan_barang) || j.koordinat?.sesuai === false || j.foto_barang?.sesuai === false ||
@@ -509,15 +518,13 @@ export function kekuranganLki(
   // "(kosong)" di kolom Setelah Inventarisasi. Itu bukan temuan, itu isian
   // yang tertinggal.
   if (j.kode_barang?.sesuai === false && !j.kode_barang.kode_baru) kurang.push('Kode Barang yang seharusnya (B–C)')
-  if (j.alamat?.sesuai === false && !j.alamat.wilayah_kode && !(j.alamat.alamat_detail || '').trim()) {
-    kurang.push('Alamat yang seharusnya (J)')
-  }
+  if (j.wilayah?.sesuai === false && !j.wilayah.wilayah_kode) kurang.push('Wilayah yang seharusnya (J)')
   const teks: [keyof InvJawaban, string][] = [
     ['spesifikasi', 'Nama Spesifikasi Barang (D)'], ['satuan', 'Satuan Barang (F)'],
     ['merek_tipe', 'Merek / Tipe'], ['no_polisi', 'Nomor Polisi'],
     ['no_rangka', 'Nomor Rangka'], ['no_mesin', 'Nomor Mesin'], ['no_bpkb', 'Nomor BPKB'],
     ['spesifikasi_lainnya', 'Spesifikasi Lainnya'], ['luas', 'Luas'],
-    ['keterangan_barang', 'Keterangan (Q)'],
+    ['alamat_detail', 'Alamat Detail (J)'], ['keterangan_barang', 'Keterangan Barang (Q)'],
     ['jenis_perkerasan', 'Jenis Perkerasan Jalan'], ['jenis_bahan_jembatan', 'Jenis Bahan Struktur Jembatan'],
     ['no_ruas_jalan', 'Nomor Ruas Jalan'], ['no_jaringan_irigasi', 'Nomor Jaringan Irigasi'],
   ]

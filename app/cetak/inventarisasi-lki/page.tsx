@@ -30,6 +30,13 @@ function jawabSesuai(f: SesuaiField | undefined, semula: string | null | undefin
   return <>☒ Tidak Sesuai — seharusnya: <b>{f.seharusnya || '(kosong)'}</b></>
 }
 
+/** Sama dgn `jawabSesuai`, khusus Wilayah — bentuknya `wilayah_kode`, bukan `seharusnya`. */
+function jawabWilayah(f: { sesuai: boolean; wilayah_kode?: string } | undefined, semula: string | null | undefined) {
+  if (!f) return <span className="text-gray-400">—</span>
+  if (f.sesuai !== false) return <>☑ Sesuai <span className="text-gray-500">({semula || '—'})</span></>
+  return <>☒ Tidak Sesuai — seharusnya kode wilayah: <b>{f.wilayah_kode || '(kosong)'}</b></>
+}
+
 function Baris({ kode, label, children }: { kode: string; label: string; children: React.ReactNode }) {
   return (
     <tr>
@@ -132,7 +139,8 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
                 ) : j.atribusi === 'ya_induk_tidak_diketahui' ? '☑ Ya — data awal/induk TIDAK diketahui'
                   : '☑ Bukan biaya atribusi'}
               </Baris>
-              <Baris kode="J" label="Alamat">{jawabSesuai(j.alamat, s.alamat)}</Baris>
+              <Baris kode="J" label="Wilayah (Prov/Kab/Kec/Desa)">{jawabWilayah(j.wilayah, s.wilayah)}</Baris>
+              <Baris kode="J" label="Alamat Detail">{jawabSesuai(j.alamat_detail, s.alamat)}</Baris>
               <Baris kode="K" label="Kondisi Barang">
                 {j.kondisi || '—'} <span className="text-gray-500">(sebelum: {normalKondisi(s.kondisi) || '—'})</span>
               </Baris>
@@ -182,8 +190,7 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
               )}
             </>
           )}
-          <Baris kode="P" label="Lainnya">{j.lainnya || '—'}</Baris>
-          <Baris kode="Q" label="Keterangan">{j.keterangan || '—'}</Baris>
+          <Baris kode="Q" label="Catatan Inventarisasi">{j.keterangan || '—'}</Baris>
           <Baris kode="R" label="Foto / Denah">
             {b.foto_paths?.length ? `${b.foto_paths.length} berkas terlampir` : '—'}
           </Baris>

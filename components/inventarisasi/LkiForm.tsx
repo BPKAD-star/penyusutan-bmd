@@ -1,18 +1,27 @@
 'use client'
 // Form Lembar Kerja Inventarisasi (LKI) — SATU komponen untuk semua golongan,
-// dikendalikan `LKI_CONFIG` (lib/inventarisasi.ts). Format III.A.1–III.A.6
-// isinya ±90% sama; yang berbeda cuma bagian opsional (Merek/Tipe, nomor
-// kendaraan, pemakai rumah negara, "di atas tanah milik", titik koordinat).
+// dikendalikan `LKI_CONFIG`/`LKI_MATRIX` (lib/inventarisasi.ts). Format
+// III.A.1–III.A.6 isinya ±90% sama; yang berbeda cuma bagian opsional
+// (Merek/Tipe, spesifikasi lainnya, nomor kendaraan, data teknis JIJ, pemakai
+// rumah negara, "di atas tanah milik", atribusi/kapitalisasi).
 //
 // PRINSIP ISIAN (koreksi user 2026-07-27):
-//   * Yang TIDAK boleh diubah lewat LKI: NIBAR, Jumlah, Nilai Perolehan —
-//     ditampilkan apa adanya. Mengubahnya urusan menu Koreksi, bukan
-//     inventarisasi.
+//   * Yang TIDAK boleh diubah lewat LKI: NIBAR — ditampilkan apa adanya.
+//     Mengubahnya urusan menu Koreksi, bukan inventarisasi. Jumlah & Nilai
+//     Perolehan juga begitu, tapi sejak 2026-09-28 TAK LAGI DITAMPILKAN sama
+//     sekali (keputusan user) — dua-duanya cuma angka register yang tak bisa
+//     dikoreksi di sini, jadi tak perlu memakan baris form.
 //   * Yang dikoreksi TIDAK diketik bebas, tapi dipilih dari master:
 //     kode barang → KodefikasiPicker (DIKUNCI ke golongan lembar ini),
-//     satuan → admin_satuan_bmd, alamat → admin_wilayah (berjenjang),
+//     satuan → admin_satuan_bmd, wilayah → admin_wilayah (berjenjang, form
+//     TERPISAH dari Alamat Detail — keputusan user 2026-09-28),
 //     induk & pasangan-ganda → AsetPicker (DIKUNCI ke SKPD lembar ini).
 //   * Kode Barang & Nama Barang digabung: cukup pilih kodenya, uraian ikut.
+//   * URUTAN bagian mengikuti berkas kerja user "Alur Inventarisasi.xlsx"
+//     (2026-09-25/28) — TIDAK mengikuti urutan huruf Permendagri A–R. Kode
+//     huruf di tiap `Seksi` cuma rujukan ke Format resmi (boleh terulang, spt
+//     D/F/L/Q di sini) & TIDAK dipakai lembar CETAK, yang punya urutannya
+//     sendiri.
 //
 // Baris "BMD Belum Tercatat" (Format III.A.7, aset_id NULL) memakai layout
 // BERBEDA: barangnya belum ada di sistem, jadi semua data diketik manual.
@@ -22,7 +31,6 @@ import { createClient } from '@/lib/supabase/client'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import WilayahPicker from '@/components/WilayahPicker'
-import { formatRupiah2 } from '@/lib/export'
 import NominalInput from '@/shared/ui/NominalInput'
 import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
@@ -215,13 +223,12 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   const latTampil = j.latitude !== undefined ? j.latitude : (s.latitude ?? null)
   const lngTampil = j.longitude !== undefined ? j.longitude : (s.longitude ?? null)
   const titikTercatat = s.latitude != null && s.longitude != null ? `${s.latitude}, ${s.longitude}` : null
-  const alamatTercatat = [s.wilayah, s.alamat].filter(Boolean).join(' — ') || null
   const fotoReg = s.foto_paths || []
   const fotoThumbs = useFotoThumbs(fotoReg.slice(0, 1))
 
   /** Satu isian teks Sesuai/Tidak Sesuai — bentuk yang sama dipakai banyak bagian. */
   const isianTeks = (
-    key: 'spesifikasi_lainnya' | 'luas' | 'merek_tipe' | 'no_polisi' | 'no_rangka' | 'no_mesin' | 'no_bpkb' | 'keterangan_barang',
+    key: 'spesifikasi_lainnya' | 'luas' | 'merek_tipe' | 'no_polisi' | 'no_rangka' | 'no_mesin' | 'no_bpkb' | 'keterangan_barang' | 'alamat_detail',
     lama: string | number | null | undefined,
     opsi: { angka?: boolean } = {},
   ) => (
@@ -269,7 +276,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
 
           {belumTercatat ? (
             // ── Format III.A.7 — BMD Belum Tercatat ───────────────────────────
-            // 19 isian sesuai lampiran (butir 17–19 Lainnya/Keterangan/Foto
+            // 19 isian sesuai lampiran (butir 17–18 Catatan Inventarisasi/Foto
             // dipakai bersama lembar biasa, ada di bawah). Meski Permendagri
             // memberi SATU format utk semua golongan, isiannya di sini tetap
             // memakai master data yang sama dgn lembar biasa — kalau di sini
@@ -435,17 +442,43 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                 </SesuaiRadio>
               </Seksi>
 
+              {config.merekTipe && (
+                <Seksi kode="L" judul="Merek / Tipe">
+                  {isianTeks('merek_tipe', s.merek_tipe)}
+                </Seksi>
+              )}
+
               {config.spesifikasiLainnya && (
                 <Seksi kode="D" judul="Spesifikasi Lainnya">
                   {isianTeks('spesifikasi_lainnya', s.spesifikasi_lainnya)}
                 </Seksi>
               )}
 
-              {/* Format III.A.4 menyisipkan 4 isian teknis di sini, SEBELUM
-                  Jumlah Barang. Di dokumen aslinya huruf E–H terpakai dua kali;
-                  di layar dipendekkan jadi satu blok supaya tak membingungkan.
-                  Keempatnya belum punya kolom di `aset`, jadi "Tercatat" kosong
-                  — petugas mengisi keadaan sebenarnya di lapangan. */}
+              {config.nomorKendaraan && (
+                <Seksi kode="M–O" judul="Nomor Polisi / Rangka / Mesin / BPKB (kendaraan)">
+                  <p className="text-[11px] text-gray-400 mb-2">Bukan kendaraan? Cukup pilih Sesuai.</p>
+                  <div className="space-y-3">
+                    {([
+                      ['no_polisi', 'Nomor Polisi', s.no_polisi],
+                      ['no_rangka', 'Nomor Rangka', s.no_rangka],
+                      ['no_mesin', 'Nomor Mesin', s.no_mesin],
+                      ['no_bpkb', 'Nomor BPKB', s.no_bpkb],
+                    ] as const).map(([key, label, lama]) => (
+                      <div key={key}>
+                        <p className="text-[11px] font-medium text-gray-600 mb-1">{label}</p>
+                        {isianTeks(key, lama)}
+                      </div>
+                    ))}
+                  </div>
+                </Seksi>
+              )}
+
+              {/* Format III.A.4 — empat isian teknis khas JIJ. Di luar matriks
+                  golongan (tak ada kolomnya di spreadsheet), ditempatkan di
+                  sini krn JIJ tak punya merekTipe/spesifikasiLainnya/
+                  nomorKendaraan — posisi alaminya sebelum Luas. Keempatnya
+                  belum punya kolom di `aset`, jadi "Tercatat" kosong —
+                  petugas mengisi keadaan sebenarnya di lapangan. */}
               {config.jijTeknis && (
                 <Seksi kode="E–H" judul="Data Teknis Jalan / Jaringan / Irigasi">
                   <div className="space-y-3">
@@ -472,9 +505,63 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                 </Seksi>
               )}
 
-              <Seksi kode="E" judul="Jumlah Barang">
-                <Tampilan nilai={s.jumlah ?? '—'} />
+              {config.luas && (
+                <Seksi kode="F" judul="Luas (m²)">
+                  {isianTeks('luas', s.luas, { angka: true })}
+                </Seksi>
+              )}
+
+              {/* J — Wilayah & Alamat Detail: DUA form terpisah (keputusan
+                  user 2026-09-28), bukan satu blok seperti sebelumnya — satu
+                  barang bisa saja wilayahnya sudah benar sementara cuma nomor
+                  jalannya yang perlu dikoreksi, atau sebaliknya. */}
+              <Seksi kode="J" judul="Wilayah (Provinsi / Kabupaten / Kecamatan / Desa)">
+                <SesuaiRadio
+                  nilaiLama={s.wilayah}
+                  sesuai={sesuaiTampil(j.wilayah, isBaru)}
+                  disabled={readOnly}
+                  onSesuai={v => set('wilayah', v ? { sesuai: true } : { sesuai: false, wilayah_kode: j.wilayah?.wilayah_kode || '' })}
+                >
+                  <WilayahPicker
+                    value={j.wilayah?.wilayah_kode || ''}
+                    onChange={kode => set('wilayah', { sesuai: false, wilayah_kode: kode })}
+                  />
+                </SesuaiRadio>
               </Seksi>
+
+              <Seksi kode="J" judul="Alamat Detail">
+                {isianTeks('alamat_detail', s.alamat)}
+              </Seksi>
+
+              {config.titikKoordinat && (
+                <Seksi kode="O" judul="Titik Koordinat">
+                  <SesuaiRadio
+                    nilaiLama={titikTercatat}
+                    sesuai={j.koordinat?.sesuai ?? (isBaru ? undefined : true)}
+                    disabled={readOnly}
+                    onSesuai={v => setJ(p => v
+                      // Sesuai → buang titik koreksi supaya tak ada titik "seharusnya" yatim.
+                      ? { ...p, koordinat: { sesuai: true }, latitude: undefined, longitude: undefined }
+                      : { ...p, koordinat: { sesuai: false } })}
+                  >
+                  <div className="space-y-2">
+                    <MapPicker
+                      latitude={latTampil != null ? String(latTampil) : ''}
+                      longitude={lngTampil != null ? String(lngTampil) : ''}
+                      onChange={(lat, lng) => setJ(p => ({
+                        ...p,
+                        latitude: lat === '' ? null : Number(lat),
+                        longitude: lng === '' ? null : Number(lng),
+                      }))}
+                    />
+                    <p className="text-[11px] text-gray-400">
+                      Peta berangkat dari titik yang tercatat — klik untuk menandai titik yang
+                      seharusnya, atau ketik koordinatnya langsung.
+                    </p>
+                  </div>
+                  </SesuaiRadio>
+                </Seksi>
+              )}
 
               <Seksi kode="F" judul="Satuan Barang">
                 <SesuaiRadio
@@ -492,12 +579,6 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                   <p className="text-[11px] text-gray-400 mt-1">Daftar dari menu Admin → Daftar Satuan.</p>
                 </SesuaiRadio>
               </Seksi>
-
-              {config.luas && (
-                <Seksi kode="F" judul="Luas (m²)">
-                  {isianTeks('luas', s.luas, { angka: true })}
-                </Seksi>
-              )}
 
               <Seksi kode="G" judul="Keberadaan Barang">
                 <div className="flex flex-wrap gap-4 text-xs">
@@ -529,10 +610,6 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                     </>
                   )}
                 </div>
-              </Seksi>
-
-              <Seksi kode="H" judul="Nilai Perolehan Barang">
-                <Tampilan nilai={formatRupiah2(s.nilai_perolehan || 0)} />
               </Seksi>
 
               {config.atribusi && (
@@ -577,56 +654,6 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                 </Seksi>
               )}
 
-              <Seksi kode="J" judul="Alamat">
-                <SesuaiRadio
-                  nilaiLama={alamatTercatat}
-                  sesuai={sesuaiTampil(j.alamat, isBaru)}
-                  disabled={readOnly}
-                  onSesuai={v => set('alamat', v ? { sesuai: true } : { sesuai: false })}
-                >
-                  <div className="space-y-2">
-                    <WilayahPicker
-                      value={j.alamat?.wilayah_kode || ''}
-                      onChange={kode => set('alamat', { ...(j.alamat || { sesuai: false }), sesuai: false, wilayah_kode: kode })}
-                    />
-                    <input className="select-filter w-full" disabled={readOnly}
-                      placeholder="Detail alamat (jalan, nomor, RT/RW)..."
-                      value={j.alamat?.alamat_detail || ''}
-                      onChange={e => set('alamat', { ...(j.alamat || { sesuai: false }), sesuai: false, alamat_detail: e.target.value })} />
-                  </div>
-                </SesuaiRadio>
-              </Seksi>
-
-              {config.titikKoordinat && (
-                <Seksi kode="O" judul="Titik Koordinat">
-                  <SesuaiRadio
-                    nilaiLama={titikTercatat}
-                    sesuai={j.koordinat?.sesuai ?? (isBaru ? undefined : true)}
-                    disabled={readOnly}
-                    onSesuai={v => setJ(p => v
-                      // Sesuai → buang titik koreksi supaya tak ada titik "seharusnya" yatim.
-                      ? { ...p, koordinat: { sesuai: true }, latitude: undefined, longitude: undefined }
-                      : { ...p, koordinat: { sesuai: false } })}
-                  >
-                  <div className="space-y-2">
-                    <MapPicker
-                      latitude={latTampil != null ? String(latTampil) : ''}
-                      longitude={lngTampil != null ? String(lngTampil) : ''}
-                      onChange={(lat, lng) => setJ(p => ({
-                        ...p,
-                        latitude: lat === '' ? null : Number(lat),
-                        longitude: lng === '' ? null : Number(lng),
-                      }))}
-                    />
-                    <p className="text-[11px] text-gray-400">
-                      Peta berangkat dari titik yang tercatat — klik untuk menandai titik yang
-                      seharusnya, atau ketik koordinatnya langsung.
-                    </p>
-                  </div>
-                  </SesuaiRadio>
-                </Seksi>
-              )}
-
               <Seksi kode="K" judul="Kondisi Barang">
                 <p className="text-[11px] text-gray-400 mb-1">
                   Sebelum inventarisasi: <b>{normalKondisi(s.kondisi) || '—'}</b> {s.kondisi ? `(${s.kondisi})` : ''}
@@ -640,31 +667,6 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                   ))}
                 </div>
               </Seksi>
-
-              {config.merekTipe && (
-                <Seksi kode="L" judul="Merek / Tipe">
-                  {isianTeks('merek_tipe', s.merek_tipe)}
-                </Seksi>
-              )}
-
-              {config.nomorKendaraan && (
-                <Seksi kode="M–O" judul="Nomor Polisi / Rangka / Mesin / BPKB (kendaraan)">
-                  <p className="text-[11px] text-gray-400 mb-2">Bukan kendaraan? Cukup pilih Sesuai.</p>
-                  <div className="space-y-3">
-                    {([
-                      ['no_polisi', 'Nomor Polisi', s.no_polisi],
-                      ['no_rangka', 'Nomor Rangka', s.no_rangka],
-                      ['no_mesin', 'Nomor Mesin', s.no_mesin],
-                      ['no_bpkb', 'Nomor BPKB', s.no_bpkb],
-                    ] as const).map(([key, label, lama]) => (
-                      <div key={key}>
-                        <p className="text-[11px] font-medium text-gray-600 mb-1">{label}</p>
-                        {isianTeks(key, lama)}
-                      </div>
-                    ))}
-                  </div>
-                </Seksi>
-              )}
 
               <Seksi kode="L" judul="Penggunaan Barang">
                 <div className="space-y-2 text-xs">
@@ -782,20 +784,23 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                   </div>
                 </Seksi>
               )}
+
+              <Seksi kode="Q" judul="Keterangan Barang">
+                {isianTeks('keterangan_barang', s.keterangan)}
+              </Seksi>
             </>
           )}
 
-          <Seksi kode="P" judul="Lainnya">
-            <input className="select-filter w-full" disabled={readOnly} placeholder="Catatan lain..."
-              value={j.lainnya || ''} onChange={e => set('lainnya', e.target.value)} />
-          </Seksi>
-
-          <Seksi kode="Q" judul="Keterangan">
-            {!belumTercatat && (
-              <div className="mb-2">{isianTeks('keterangan_barang', s.keterangan)}</div>
-            )}
+          {/* Q — Catatan Inventarisasi: SATU catatan bebas petugas tentang
+              PROSES inventarisasi ini (keputusan user 2026-09-28), BUKAN
+              perbandingan terhadap `aset.keterangan` (itu Seksi "Keterangan
+              Barang" di atas) — jadi tak ada Sesuai/Tidak Sesuai di sini,
+              hanya ketikan bebas. Menggantikan "P. Lainnya" + "Q. Keterangan"
+              yang dulu dua kolom terpisah tapi maksudnya sama-sama catatan
+              petugas. */}
+          <Seksi kode="Q" judul="Catatan Inventarisasi">
             <textarea className="select-filter w-full" rows={2} disabled={readOnly}
-              placeholder={belumTercatat ? 'Keterangan...' : 'Catatan petugas inventarisasi (tidak mengubah keterangan barang)...'}
+              placeholder="Catatan petugas tentang inventarisasi ini..."
               value={j.keterangan || ''} onChange={e => set('keterangan', e.target.value)} />
           </Seksi>
 

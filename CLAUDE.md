@@ -7354,6 +7354,55 @@ ke P&M **sudah tidak berlaku** — yang berlaku ini:
   diserahkan. **Tindak Lanjut** (pemisahan Kode Barang → Surat Usulan Reklas
   vs data lain → Koreksi) juga belum dibangun.
 
+### LKI: form entry diurut ulang sesuai spreadsheet, Jumlah/Nilai dicabut, P+Q digabung, Wilayah dipisah dari Alamat Detail (2026-09-28)
+
+Empat permintaan user dari gambar spreadsheet "Alur Inventarisasi.xlsx" yang
+**sempat kepotong sesi Jumat** dan baru sekarang benar-benar dikerjakan — di
+antaranya rombakan `LKI_MATRIX` (20260925_02) sudah landing duluan lewat sesi
+lain, jadi ini MELANJUTKAN di atas kode itu, bukan menimpanya. Murni tampilan
+form + satu turunan tipe; **tak ada migrasi**.
+
+- **Urutan Seksi `LkiForm.tsx` diurut ulang** mengikuti spreadsheet: NIBAR →
+  Kode Barang & Nama Barang → Spesifikasi Nama Barang → Merek/Tipe →
+  Spesifikasi Lainnya → No. Polisi/Rangka/Mesin/BPKB → (Data Teknis JIJ,
+  khusus 1.3.4) → Luas → Wilayah → Alamat Detail → Titik Koordinat → Satuan
+  Barang → Keberadaan Barang → Atribusi → Kondisi Barang → Penggunaan Barang →
+  Tercatat Ganda → Tanah Milik → Keterangan Barang → Catatan Inventarisasi →
+  Foto. **TIDAK mengikuti urutan huruf Permendagri A–R** — kode huruf di tiap
+  `Seksi` cuma rujukan format resmi & boleh terulang (D/F/L/Q dipakai lebih
+  dari sekali). Lembar CETAK (`app/cetak/inventarisasi-lki`) TETAP urutan
+  aslinya — sudah dari awal dinyatakan komponen terpisah, geser di form entry
+  tak menggeser lembar yang ditandatangani.
+- **"Jumlah Barang" & "Nilai Perolehan Barang" (Tampilan-only) DICABUT** dari
+  form entry — dua-duanya cuma angka register yang tak bisa dikoreksi lewat
+  LKI, jadi tak perlu memakan baris form. `formatRupiah2` ikut dicabut dari
+  import (tak ada pemakai lain di berkas itu).
+- **"P. Lainnya" + "Q. Keterangan" DIGABUNG jadi "Catatan Inventarisasi"**
+  (kode Q) — satu textarea bebas terikat `jawaban.keterangan`, murni catatan
+  petugas tentang PROSES inventarisasi, BUKAN perbandingan terhadap
+  `aset.keterangan`. `jawaban.lainnya` DIPERTAHANKAN di tipe (kompat mundur
+  baris lama) tapi TAK LAGI DIRENDER — jangan dihidupkan lagi.
+  ⚠️ `keterangan_barang` (checklist Sesuai/Tidak Sesuai vs `aset.keterangan`,
+  bagian dari `LKI_MATRIX` 20260925_02) BUKAN bagian yang digabung — itu tetap
+  Seksi tersendiri berjudul "Keterangan Barang", ditempatkan di ujung blok
+  golongan-conditional (sebelum "Catatan Inventarisasi").
+- **`jawaban.alamat` (gabungan `SesuaiField & {wilayah_kode, alamat_detail}`)
+  DIPECAH jadi DUA field**: `wilayah?: SesuaiField & {wilayah_kode}` dan
+  `alamat_detail?: SesuaiField` — satu barang bisa saja wilayahnya sudah benar
+  sementara cuma nomor jalannya yang perlu dikoreksi, atau sebaliknya.
+  `klasifikasiLhi` (III.B.8) & `kekuranganLki` disesuaikan ("Wilayah yang
+  seharusnya (J)" / "Alamat Detail (J) yang seharusnya" — dua pesan kekurangan
+  terpisah, bukan satu "Alamat yang seharusnya" seperti dulu).
+  `lib/inventarisasiLaporan.ts` (`alamatEfektif` di `nilaiBarisLhi`, dipakai
+  Export/tabel LHI III.B.8) & `app/cetak/inventarisasi-lki/page.tsx` (Baris
+  "J" jadi DUA baris — Wilayah pakai helper baru `jawabWilayah`, Alamat Detail
+  pakai `jawabSesuai` yang sudah ada) ikut disesuaikan.
+- **Dikunci lib/inventarisasi.test.ts** (3 test baru/diperbarui: pesan
+  kekurangan Wilayah vs dulu "Alamat", `alamat_detail` sbg field terpisah,
+  keduanya ikut III.B.8). tsc 0 error, 1814 test hijau, 0 lint warning baru
+  (2 warning pre-existing di kedua berkas — `max-lines` LkiForm.tsx &
+  `no-floating-promises` cetak page — sama persis sebelum & sesudah).
+
 ## Pemanfaatan & Pengamanan MENYUSUL ke standar kolom & kotak Cari (2026-09-27)
 
 Permintaan user: kotak "Pilih Barang" & tabel barang di menu Pemanfaatan dan

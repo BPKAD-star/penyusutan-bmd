@@ -24,12 +24,12 @@ describe('kekuranganLki — barang tercatat', () => {
       keberadaan: 'ada', kondisi: 'B',
       spesifikasi: { sesuai: false, seharusnya: '  ' },
       kode_barang: { sesuai: false },
-      alamat: { sesuai: false },
+      wilayah: { sesuai: false },
       no_rangka: { sesuai: false, seharusnya: 'MH1JB' },
     }))
     expect(k).toContain('Nama Spesifikasi Barang (D) yang seharusnya')
     expect(k).toContain('Kode Barang yang seharusnya (B–C)')
-    expect(k).toContain('Alamat yang seharusnya (J)')
+    expect(k).toContain('Wilayah yang seharusnya (J)')
     expect(k.some(x => x.startsWith('Nomor Rangka'))).toBe(false)
   })
 
@@ -122,11 +122,13 @@ describe('konfigLki — matriks isian dari "Alur Inventarisasi.xlsx" (2026-09-25
 describe('isian matriks baru ikut LHI III.B.8 & kekurangan', () => {
   const b = (jawaban: InvJawaban): InvBaris => ({ id: 'x', aset_id: 'a', snapshot: {}, jawaban, foto_paths: [] })
 
-  it('BPKB/luas/spesifikasi lainnya/keterangan/koordinat/foto Tidak Sesuai → III.B.8', () => {
+  it('BPKB/luas/spesifikasi lainnya/wilayah/alamat detail/keterangan/koordinat/foto Tidak Sesuai → III.B.8', () => {
     const kasus: InvJawaban[] = [
       { no_bpkb: { sesuai: false, seharusnya: 'X' } },
       { luas: { sesuai: false, seharusnya: '100' } },
       { spesifikasi_lainnya: { sesuai: false, seharusnya: 'x' } },
+      { wilayah: { sesuai: false, wilayah_kode: '35.06.01.1001' } },
+      { alamat_detail: { sesuai: false, seharusnya: 'Jl. Baru' } },
       { keterangan_barang: { sesuai: false, seharusnya: 'x' } },
       { koordinat: { sesuai: false }, latitude: -7.8, longitude: 112 },
       { foto_barang: { sesuai: false } },
@@ -143,6 +145,18 @@ describe('isian matriks baru ikut LHI III.B.8 & kekurangan', () => {
     expect(kekuranganLki(aset({ ...dasar, luas: { sesuai: false, seharusnya: 'abc' } })))
       .toEqual(['Luas yang seharusnya harus berupa angka > 0'])
     expect(kekuranganLki(aset({ ...dasar, no_bpkb: { sesuai: false } }))).toEqual(['Nomor BPKB yang seharusnya'])
+  })
+
+  it('Wilayah & Alamat Detail — dua form terpisah, masing-masing kekurangannya sendiri', () => {
+    const dasar: InvJawaban = { keberadaan: 'ada', kondisi: 'B' }
+    expect(kekuranganLki(aset({ ...dasar, wilayah: { sesuai: false } })))
+      .toEqual(['Wilayah yang seharusnya (J)'])
+    expect(kekuranganLki(aset({ ...dasar, wilayah: { sesuai: false, wilayah_kode: '35.06.01.1001' } })))
+      .toEqual([])
+    expect(kekuranganLki(aset({ ...dasar, alamat_detail: { sesuai: false } })))
+      .toEqual(['Alamat Detail (J) yang seharusnya'])
+    expect(kekuranganLki(aset({ ...dasar, alamat_detail: { sesuai: false, seharusnya: 'Jl. Baru' } })))
+      .toEqual([])
   })
 })
 

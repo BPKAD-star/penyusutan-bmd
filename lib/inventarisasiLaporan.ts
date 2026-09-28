@@ -319,9 +319,14 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
   const uraianEfektif = j.kode_barang?.sesuai === false
     ? (j.kode_barang.uraian_baru || '(kosong)')
     : (s.uraian_barang || '')
-  const alamatEfektif = j.alamat?.sesuai === false
-    ? [j.alamat.alamat_detail, j.alamat.wilayah_kode].filter(Boolean).join(' · ') || '(kosong)'
-    : (s.alamat || '')
+  // Wilayah & Alamat Detail kini DUA field terpisah (keputusan user
+  // 2026-09-28) — digabung SATU string di sini seperti sebelumnya, murni
+  // supaya kolom LHI yang cuma punya satu "Alamat" tak perlu dipecah dua.
+  const wilayahEfektif = j.wilayah?.sesuai === false
+    ? (j.wilayah.wilayah_kode || '(kosong)') : (s.wilayah || '')
+  const alamatDetailEfektif = j.alamat_detail?.sesuai === false
+    ? (j.alamat_detail.seharusnya || '(kosong)') : (s.alamat || '')
+  const alamatEfektif = [alamatDetailEfektif, wilayahEfektif].filter(Boolean).join(' · ')
 
   const inti = {
     no,
