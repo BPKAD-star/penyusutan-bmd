@@ -2,7 +2,6 @@
 //
 // Yang dijaga semuanya kelas kegagalan SENYAP:
 //   · total lebar ≠ 100              → kolom melar & keluar halaman
-//   · urutan blok identitas berubah   → form isian & lembar tak lagi sejalan
 //   · SIP / "Dokumen Pendukung" balik → kolom yang datanya tak ada, selalu kosong
 //   · replay kustodi salah            → barang yang sudah dikembalikan tetap
 //     tercetak sbg masih dipakai, tanpa satu pun error
@@ -10,7 +9,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  FORMAT_PENGAMANAN, URUT_PENGAMANAN, grupKolomPengamanan, type IdPengamanan,
+  FORMAT_PENGAMANAN, URUT_PENGAMANAN, type IdPengamanan,
 } from './formatPengamanan'
 import { pengamananBerlaku, JENIS_PENGAMANAN } from './laporanPengamanan'
 import { identitasPengamanan, PENGAMANAN_ELIGIBLE_GOLONGAN } from './pengamanan'
@@ -48,23 +47,27 @@ describe('registry IV.J', () => {
     expect(FORMAT_PENGAMANAN.rumah_negara.judul).toContain('RUMAH NEGARA')
     expect(FORMAT_PENGAMANAN.rumah_negara.grupOrang).toBe('Penghuni')
   })
+
+  it('kalimat baris kosong menyebut golongannya', () => {
+    expect(FORMAT_PENGAMANAN.peralatan_mesin.kosong).toContain('Peralatan dan Mesin')
+    expect(FORMAT_PENGAMANAN.rumah_negara.kosong).toContain('Gedung dan Bangunan')
+  })
 })
 
-describe('kolom', () => {
-  it('kunci kolom unik & penomoran berurut mulai (6)', () => {
+// ── Lembar RINCI: susunan kolom keputusan user (2026-09-28) ─────────────────
+describe('kolom lembar rinci', () => {
+  it('urutan kolom PERSIS seperti yang ditetapkan user — kedua cabang', () => {
     for (const [id, f] of tiapCabang) {
-      const k = f.kolom.map(x => x.key)
-      expect(new Set(k).size, `${id}: kunci kembar`).toBe(k.length)
-      const n = f.kolom.map(x => x.nomor)
-      expect(n[0], `${id}: kolom pertama`).toBe(6)
-      for (let i = 1; i < n.length; i++) {
-        expect(n[i], `${id}: nomor kolom ke-${i} tidak berurut`).toBe(n[i - 1] + 1)
-      }
+      expect(f.kolom.map(k => k.key), id).toEqual([
+        'nibar', 'kode', 'nama', 'merek', 'no_polisi', 'nilai_perolehan',
+        'p_nama', 'p_status', 'p_identitas', 'p_jabatan',
+        'bast_nomor', 'bast_tanggal', 'pakta_nomor', 'pakta_tanggal', 'keterangan',
+      ])
     }
   })
 
   it('SUSUNAN KOLOM kedua cabang IDENTIK — keputusan user "disamakan aja"', () => {
-    // Yang berbeda cuma JUDUL kolom identitasnya (Pemakai vs Penghuni).
+    // Yang berbeda cuma JUDUL kolom identitas orangnya (Pemakai vs Penghuni).
     expect(FORMAT_PENGAMANAN.rumah_negara.kolom.map(k => k.key))
       .toEqual(FORMAT_PENGAMANAN.peralatan_mesin.kolom.map(k => k.key))
   })
@@ -75,22 +78,19 @@ describe('kolom', () => {
     expect(FORMAT_PENGAMANAN.peralatan_mesin.kolom).not.toBe(FORMAT_PENGAMANAN.rumah_negara.kolom)
   })
 
-  it('URUTAN blok identitas: Nama → Nomor Identitas → Status → Jabatan → Alamat', () => {
-    // ⚠️ Ditentukan user 2026-09-08 & SENGAJA sama dgn form isian menu
-    // Pengamanan. Lembar aslinya menaruh Nomor Identitas SESUDAH Jabatan;
-    // menukarnya balik membuat operator mengisi form dalam urutan yang berbeda
-    // dari lembar yang ia salin — dan tak ada satu pun error yang memberitahu.
-    for (const [id, f] of tiapCabang) {
-      expect(f.kolom.filter(k => k.key.startsWith('p_')).map(k => k.key), id)
-        .toEqual(['p_nama', 'p_identitas', 'p_status', 'p_jabatan', 'p_alamat'])
-    }
+  it('judul blok identitas ikut grupOrang cabangnya', () => {
+    expect(FORMAT_PENGAMANAN.peralatan_mesin.kolom.find(k => k.key === 'p_nama')!.judul)
+      .toBe('Nama Pemakai')
+    expect(FORMAT_PENGAMANAN.rumah_negara.kolom.find(k => k.key === 'p_nama')!.judul)
+      .toBe('Nama Penghuni')
   })
 
-  it('Dokumen Sumber = BAST + Pakta Integritas; SIP & Dokumen Pendukung DIBUANG', () => {
-    // ⚠️ Penyimpangan SENGAJA dari lembar aslinya (keputusan user): keduanya tak
-    // tersimpan di aplikasi ini, jadi kolomnya akan SELALU kosong. Kalau kelak
-    // diminta kembali, yang perlu ditambah `sip_*` & `dukung_*` PLUS tempat
-    // menyimpannya di kartu — bukan cuma kolomnya.
+  it('Dokumen Sumber = BAST + Pakta Integritas; SIP & Dokumen Pendukung & Alamat DIBUANG', () => {
+    // ⚠️ Penyimpangan SENGAJA dari lembar aslinya (keputusan user): SIP &
+    // Dokumen Pendukung tak tersimpan di aplikasi ini, jadi kolomnya akan
+    // SELALU kosong. Alamat dibuang mengikuti contoh susunan kolom baru
+    // (2026-09-28). Kalau kelak diminta kembali, yang perlu ditambah `sip_*`,
+    // `dukung_*`, & `p_alamat` PLUS tempat menyimpannya di kartu.
     for (const [id, f] of tiapCabang) {
       const k = f.kolom.map(x => x.key)
       expect(k, id).toContain('bast_nomor')
@@ -99,45 +99,27 @@ describe('kolom', () => {
       expect(k, id).toContain('pakta_tanggal')
       expect(k.some(x => x.startsWith('sip')), `${id}: kolom SIP muncul lagi`).toBe(false)
       expect(k.some(x => x.startsWith('dukung')), `${id}: Dokumen Pendukung muncul lagi`).toBe(false)
+      expect(k, id).not.toContain('p_alamat')
+      expect(k, id).not.toContain('lokasi')
     }
   })
 
-  it('kolom Kode Barang SATU kolom teks, BUKAN blok bersegmen', () => {
-    // ⚠️ Beda mendasar dari SELURUH keluarga lembar lain. Kalau dipecah jadi sel
-    // segmen, susunan kolomnya berbeda dari lembar resmi yang dicocokkan
-    // pemeriksa kolom per kolom.
+  it('kolom Kode Barang tumpuk kode+uraian — bukan sel bersegmen', () => {
+    // ⚠️ Sama seperti Perpindahan/Reklas/Penghapusan: satu kolom teks yang
+    // menumpuk kode & nomenklatur baku, BUKAN blok tujuh sel segmen.
     for (const [id, f] of tiapCabang) {
       const kode = f.kolom.find(k => k.key === 'kode')
       expect(kode, `${id}: kolom kode`).toBeTruthy()
-      expect(kode!.judul, id).toBe('Kode Barang')
-    }
-  })
-
-  it('punya kolom No. — lembar ini BERNOMOR & datar', () => {
-    for (const [id, f] of tiapCabang) expect(f.kolom[0].key, id).toBe('no')
-  })
-
-  it('kolom bergrup berdampingan — grup tak boleh terpotong kolom lain', () => {
-    for (const [id, f] of tiapCabang) {
-      const terlihat = new Set<string>()
-      let lalu = ''
-      for (const g of f.kolom.map(k => k.grup ?? '')) {
-        if (g && g !== lalu) {
-          expect(terlihat.has(g), `${id}: grup '${g}' terpotong`).toBe(false)
-          terlihat.add(g)
-        }
-        lalu = g
-      }
-      // Tiga blok bergrup: identitas orang, BAST, Pakta.
-      expect(grupKolomPengamanan(f).filter(g => g.judul).length, `${id}: jumlah blok`).toBe(3)
+      expect(kode!.judul, id).toBe('Kode Barang - Uraian Barang')
     }
   })
 })
 
 describe('lebar kolom — "fit to window", tak boros ke samping', () => {
-  it('total lebar = 100 PERSIS di tiap cabang', () => {
+  it('total lebar 100 PERSIS — "fit to window" di table-fixed', () => {
     for (const [id, f] of tiapCabang) {
-      expect(Number(f.kolom.reduce((s, k) => s + k.lebar, 0).toFixed(6)), id).toBe(100)
+      const total = f.kolom.reduce((s, k) => s + k.lebar, 0)
+      expect(Math.round(total * 100) / 100, id).toBe(100)
     }
   })
 
@@ -147,9 +129,13 @@ describe('lebar kolom — "fit to window", tak boros ke samping', () => {
     }
   })
 
-  it('NIBAR tak boleh dipersempit — 45 digit dipenggal DUA baris, bukan tiga', () => {
+  it('NIBAR dapat jatah TERBESAR — 45 digit dipenggal dua baris, muat lega', () => {
+    // ⚠️ Permintaan user 2026-09-27/28, pola yang sama dgn Perpindahan/Reklas/
+    // Penghapusan — ambangnya dinaikkan dari lembar lama (yang cuma 9,0%).
     for (const [id, f] of tiapCabang) {
-      expect(f.kolom.find(k => k.key === 'nibar')!.lebar, `${id}: NIBAR`).toBeGreaterThanOrEqual(8.5)
+      const nibar = f.kolom.find(k => k.key === 'nibar')!.lebar
+      expect(nibar, `${id}: NIBAR`).toBeGreaterThanOrEqual(10)
+      for (const k of f.kolom) expect(k.lebar, `${id}.${k.key}`).toBeLessThanOrEqual(nibar)
     }
   })
 
@@ -160,15 +146,6 @@ describe('lebar kolom — "fit to window", tak boros ke samping', () => {
       for (const k of f.kolom.filter(x => x.key.endsWith('_tanggal'))) {
         expect(k.lebar, `${id}.${k.key}`).toBeGreaterThanOrEqual(4.0)
       }
-    }
-  })
-
-  it('kolom teks panjang dapat porsi lebih besar dari kolom pendek', () => {
-    for (const [id, f] of tiapCabang) {
-      const l = (k: string) => f.kolom.find(x => x.key === k)!.lebar
-      expect(l('nama'), `${id}: Nama Barang`).toBeGreaterThan(l('no'))
-      expect(l('spek_nama'), `${id}: Spesifikasi`).toBeGreaterThan(l('bast_tanggal'))
-      expect(l('no'), `${id}: kolom No. tak perlu lebar`).toBeLessThan(3)
     }
   })
 })
@@ -198,8 +175,6 @@ describe('pengamananBerlaku — replay "peristiwa terakhir menang"', () => {
   })
 
   it('amankan → kembalikan → amankan lagi: HANYA yang terakhir', () => {
-    // Kalau keduanya ikut, satu barang tercetak DUA KALI di lembar bernomor —
-    // dan nomor barisnya ikut bergeser.
     expect([...pengamananBerlaku([
       ev(1, 'a', 'pengamanan'),
       ev(2, 'a', 'pengembalian_pengamanan'),
@@ -269,16 +244,10 @@ describe('penyaji', () => {
     expect(fs.readFileSync(berkas, 'utf8').length).toBeGreaterThan(2000)
   })
 
-  it('TIDAK memakai mesin subtotal — lembar ini datar & bernomor', () => {
-    const isi = fs.readFileSync(berkas, 'utf8')
-    expect(isi).not.toContain('susunRinci')
-    expect(isi).not.toContain('susunRekap')
-  })
-
   it('TIDAK bercabang per format — pembedanya seluruhnya data', () => {
     const isi = fs.readFileSync(berkas, 'utf8')
     const kode = isi.split('\n').filter(b => !b.trim().startsWith('//')).join('\n')
-    for (const id of URUT_PENGAMANAN) {
+    for (const id of URUT_PENGAMANAN as readonly IdPengamanan[]) {
       expect(kode, `penyaji bercabang pada '${id}'`).not.toMatch(new RegExp(`===\\s*'${id}'`))
     }
     expect(kode).not.toMatch(/f\.(kode|golongan)\s*===/)

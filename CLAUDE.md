@@ -8515,3 +8515,39 @@ desimal. **Lembar rekap .3–.6 TIDAK berubah bentuk** (cuma ikut 2 desimal).
   Diambil dari kolom teks pendek, bukan kolom uang. ⛔ Belum diukur di
   peramban; kalau potongan 26 digit NIBAR membungkus jadi 3 baris di K.2 (11%),
   naikkan NIBAR-nya dulu.
+
+## Pengamanan (IV.J): timeout ditutup, lembar rinci ikut bentuk user (2026-09-28)
+
+Dua keluhan sekaligus: tab Format Permendagri gagal dgn strip merah "gagal
+membaca transaksi pengamanan: canceling statement due to statement timeout",
+dan permintaan untuk mengganti bentuk tabelnya jadi seperti keluarga
+Perpindahan/Reklas/Penghapusan.
+
+- **Timeout**: `muatLaporanPengamanan` menyapu `transaksi_bmd` lewat
+  `.in('jenis', [...]).gt('id', N).order('id').limit(1000)` TANPA partial
+  index — persis pola timeout yang sudah berkali-kali dicatat di dokumen ini
+  (`jenis` ENUM tak bisa jadi index-cond di bawah RLS). Ditutup migrasi
+  **20260928_01** — `idx_trx_pengamanan_id ON transaksi_bmd (id) WHERE jenis
+  IN ('pengamanan','pengembalian_pengamanan','batal_pengamanan')`, pola yang
+  sama dgn partial index keluarga lain.
+  ⚠️ **Jangan sebut nama index KELUARGA LAIN secara literal di komentar
+  migrasi baru** — `lib/sinkronisasiRpc.test.ts` §6 memindai migrasi lewat
+  substring nama index & memilih kemunculan TERAKHIR; migrasi baru yang cuma
+  MENYEBUT nama index lama di komentarnya ikut tertangkap sbg "migrasi
+  terakhir" lalu membuat test itu mencari `CREATE INDEX` di berkas yang salah.
+  Kejadian nyata saat menulis migrasi ini.
+- **Bentuk lembar DIBALIK** (2026-09-28, membatalkan catatan lama "SATU-
+  SATUNYA keluarga yang sengaja datar & bernomor tanpa subtotal"). Sekarang
+  pola SAMA PERSIS dgn Perpindahan/Reklas/Penghapusan: 15 kolom datar —
+  NIBAR · Kode-Uraian (tumpuk) · Nama Barang · Merk/Tipe · No Polisi · Nilai
+  Perolehan · Nama Pemakai/Penghuni · Status · Nomor Identitas · Jabatan ·
+  Nomor & Tanggal BAST · Nomor & Tanggal Pakta Integritas · Keterangan.
+  ⚠️ **Kelompoknya SELALU cuma SATU** — `muatLaporanPengamanan` sudah
+  menyaring satu golongan tunggal per cabang (`f.golongan`), jadi baris
+  kelompok teal di sini murni LABEL, bukan mesin subtotal `susunRekap` yang
+  dipakai tiga keluarga lain (yang memang punya banyak jenis aset sekaligus).
+  Kolom "No." bernomor, Lokasi/Alamat, & Alamat Penghuni DICABUT (tak ada di
+  contoh susunan baru). Keterangan = kartu dulu (`header.keterangan ||
+  a.keterangan`), sama dgn tiga keluarga lain. NIBAR 9px, jatah kolom
+  terbesar (11,5%).
+- **Tak ada migrasi lain** selain index di atas.

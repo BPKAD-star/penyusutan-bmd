@@ -39,12 +39,13 @@ export type BarisPengamanan = {
   aset_id: string
   /** Nomor & tanggal BAST + identitas penghuni — dari `jurnal_header`. */
   header: {
-    no_sk: string | null; tanggal: string | null
+    no_sk: string | null; tanggal: string | null; keterangan: string | null
     skpd_id: number | null; payload: PayloadPengamanan | null
   } | null
   aset: {
     kode: string; nama_barang: string | null; uraian_barang: string | null
-    nibar: string | null; alamat_detail: string | null
+    nibar: string | null; merek_tipe: string | null; no_polisi: string | null
+    nilai_perolehan: number | null
     keterangan: string | null; skpd_id: number | null
   } | null
 }
@@ -99,8 +100,9 @@ async function semuaSkpdRows(supabase: SupabaseClient): Promise<SkpdRow[]> {
 
 const SEL =
   'id,tanggal,periode,jenis,aset_id,'
-  + 'header:header_id(no_sk,tanggal,skpd_id,payload),'
-  + 'aset:aset_id(kode,nama_barang,uraian_barang,nibar,alamat_detail,keterangan,skpd_id)'
+  + 'header:header_id(no_sk,tanggal,keterangan,skpd_id,payload),'
+  + 'aset:aset_id(kode,nama_barang,uraian_barang,nibar,merek_tipe,no_polisi,'
+  + 'nilai_perolehan,keterangan,skpd_id)'
 
 /**
  * Muat baris lembar IV.J untuk satu golongan.
