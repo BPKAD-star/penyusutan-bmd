@@ -10,10 +10,13 @@
 // Keterangan berlaku semua golongan tanpa kecuali, termasuk tautan Pemanfaatan/
 // Pengamanan yang tetap hidup di dalam sel Penggunaan). Kolom **Kondisi**
 // (disingkat: B/RR/RB/H/TD, lihat `KONDISI_SINGKAT`) ditambahkan tepat setelah
-// Asal Usul. Urutan kolom kiri→kanan disamakan dgn spreadsheet user: identitas
-// → deskriptif → tgl → asal usul → kondisi → nilai+komptabel →
-// penggunaan+keterangan. Export TETAP flat (EXPORT_COLS, utk BPK) — Komptabel,
-// Keterangan, & Kondisi (teks penuh, TANPA singkatan) jadi kolom Excel sendiri.
+// Asal Usul. **Tahun Pengadaan ditumpuk di bawah Tgl Perolehan** (kolom
+// `tgl`) — kelewat saat urutan disamakan, ditambahkan susulan; Export TETAP
+// kolom `tgl` polos (tak ikut, sama spt Daftar Barang Awal). Urutan kolom
+// kiri→kanan disamakan dgn spreadsheet user: identitas → deskriptif → tgl →
+// asal usul → kondisi → nilai+komptabel → penggunaan+keterangan. Export TETAP
+// flat (EXPORT_COLS, utk BPK) — Komptabel, Keterangan, & Kondisi (teks penuh,
+// TANPA singkatan) jadi kolom Excel sendiri.
 // Tanah/Gedung/Jalan/KDP/Aset Lain-Lain + Spesifikasi Lainnya & Lokasi
 // (alamat_detail) setelah nama. Tanah: dokumen kepemilikan TIDAK di layar (per
 // bidang di GIS — badge "N bidang"), tetap ada di Export (EXPORT_COLS, utk BPK).
@@ -71,7 +74,7 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 // dua-duanya mengisi `Row` yang SAMA. Kolom yang cuma ditambahkan di salah satu
 // bikin berkas Audit (untuk BPK) kekurangan kolom yang ada di layar, tanpa satu
 // pun error.
-const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb,pemanfaatan,pengamanan,latitude,longitude,kondisi_barang'
+const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb,pemanfaatan,pengamanan,latitude,longitude,kondisi_barang,tahun_pengadaan'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -126,6 +129,11 @@ type Row = {
   // fn_daftar_barang). `undefined` kalau migrasinya belum jalan — diperlakukan
   // sama dgn `null` (kolom tampil "-").
   kondisi_barang?: string | null
+  // Tahun barang MASUK ke pemda (bisa beda jauh dari tgl_perolehan utk barang
+  // bekas: tgl_perolehan = tahun barang DIBUAT). Ditumpuk di bawah Tgl
+  // Perolehan — migrasi 20260928_04 utk RETURNS TABLE fn_daftar_barang.
+  // `undefined` kalau migrasinya belum jalan — sub-baris ini cuma tak dirender.
+  tahun_pengadaan?: number | null
 }
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
@@ -330,6 +338,15 @@ function thContent(key: string, golongan?: string): React.ReactNode {
     <>
       Nilai Perolehan
       <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">Komptabel</span>
+    </>
+  )
+  // Tahun Pengadaan DITUMPUK di bawah Tgl Perolehan (permintaan user
+  // 2026-09-28, ketahuan dari spreadsheet yg sama dipakai utk urutan kolom —
+  // pola ini sudah lama ada di Daftar Barang Awal, kelewat di sini).
+  if (key === 'tgl') return (
+    <>
+      Tgl Perolehan
+      <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">Tahun Pengadaan</span>
     </>
   )
   // Keterangan DILEBUR ke sel Penggunaan (permintaan user 2026-09-28) —
@@ -1039,7 +1056,20 @@ export default function DaftarBarangPage() {
         const adaTitik = r.latitude != null && r.longitude != null
         return <span className="inline-flex items-center gap-1"><IkonTitikKoordinat ada={adaTitik} />{r.alamat_detail || '-'}</span>
       }
-      case 'tgl': return r.tgl_perolehan || '-'
+      // Tahun Pengadaan DILEBUR ke sini (permintaan user 2026-09-28) — pola
+      // yang sama dgn Daftar Barang Awal (tgl_perolehan bisa jauh beda dari
+      // tahun_pengadaan utk barang bekas: tgl_perolehan = tahun barang DIBUAT,
+      // tahun_pengadaan = tahun masuk ke pemda ini). Export tetap kolom tgl
+      // polos (tak diminta ikut, sama spt Daftar Barang Awal).
+      case 'tgl': {
+        if (!r.tgl_perolehan) return <span className="text-gray-300">-</span>
+        return (
+          <>
+            <p className="whitespace-nowrap">{r.tgl_perolehan}</p>
+            {r.tahun_pengadaan != null && <p className="text-gray-400 mt-0.5">{r.tahun_pengadaan}</p>}
+          </>
+        )
+      }
       // Komptabel DILEBUR ke sini (permintaan user 2026-09-28, berlaku semua
       // golongan) — ditumpuk di bawah Nilai Perolehan, bukan kolom sendiri
       // lagi. Tanah tak punya Komptabel (`adaKomptabel` → false), jadi cuma
