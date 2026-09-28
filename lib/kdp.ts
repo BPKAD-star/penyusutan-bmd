@@ -19,7 +19,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // tanpa pernah dipakai, dan import mati semacam itu membuat pembaca mengira
 // modul ini mengklasifikasi — padahal tidak. Kalau suatu saat KDP memang perlu
 // diklasifikasi, ubah baris `intra_ekstra` di bawah, jangan cuma impornya.
-import { periodeDariTanggal } from '@/lib/bmd'
+import { periodeDariTanggal, ASAL_USUL_AWAL } from '@/lib/bmd'
 import { generateNibars } from '@/lib/nibar'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
@@ -150,6 +150,8 @@ export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerI
       uraian_barang: b.nama, nama_barang: b.nama,
       jumlah: 1, nilai_perolehan: total, tgl_perolehan: tglBarang(b), skpd_id: h.skpd_id,
       intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: b.foto || [],
+      // Nilai awal, permintaan user 2026-09-28 — lihat ASAL_USUL_AWAL, lib/bmd.ts.
+      asal_usul: ASAL_USUL_AWAL.pengadaan,
     }
     for (const k of ASET_FIELD_COLS) {
       const v = b.spec?.[k]

@@ -199,16 +199,20 @@ export const JENIS_TRANSAKSI_LABEL: Record<string, string> = {
  * nilai CHECK-nya; nambah cara perolehan baru = tambah di CHECK, di sini, dan
  * di menunya.
  *
- * ⚠️ Ini BUKAN pengganti `aset.asal_usul`. Dua kolom beda maksud dan sengaja
- * TIDAK disinkronkan: `cara_perolehan` = fakta dari menu (dijamin benar, tak
- * pernah diedit tangan), `asal_usul` = teks bebas warisan e-BMD yang lebih
- * rinci ("Pengadaan APBD" — menyebut sumber dana) & boleh dikoreksi operator
- * lewat Koreksi → Spesifikasi. Menu Cara Perolehan **tidak menulis
- * `asal_usul`** (keputusan user 2026-07-30): dua penulis untuk satu kolom =
- * dua sumber kebenaran yang bisa saling bertentangan tanpa aturan siapa
- * menang — cacat yang sudah terbukti bikin repot di cache `aset.pemanfaatan`.
- * Yang dilakukan cuma MENAMPILKAN label ini sbg cadangan kalau `asal_usul`
- * kosong (lihat `asalUsulTampil`), jadi nol tulis & berlaku surut.
+ * `aset.asal_usul` beda maksud: teks bebas warisan e-BMD yang lebih rinci
+ * ("Pengadaan APBD" — menyebut sumber dana) & boleh dikoreksi operator lewat
+ * Koreksi → Spesifikasi. Dipakai sbg cadangan tampilan kalau `asal_usul`
+ * kosong (lihat `asalUsulTampil` di bawah) — untuk barang LAMA yang memang
+ * terlanjur kosong (kelewat migrasi/impor).
+ *
+ * ✅ Sejak 2026-09-28 keputusan "Menu Cara Perolehan JANGAN menulis asal_usul"
+ * (2026-07-30) DIBALIK, khusus untuk barang BARU — lihat `ASAL_USUL_AWAL` di
+ * bawah. Alasan lama (dua penulis = dua sumber kebenaran bertentangan) TETAP
+ * benar sbg kekhawatiran umum, tapi tak berlaku di sini: `asal_usul` MUSTAHIL
+ * sudah terisi operator saat approve (kolom itu cuma muncul di form Koreksi,
+ * bukan di form Pengadaan/Hibah/dkk), jadi menuliskannya sekali saat approve
+ * bukan "berebut" dgn siapa pun — persis pola `uraian_barang` yang diisi dari
+ * kodefikasi saat approve lalu tetap bisa dikoreksi belakangan.
  */
 export const CARA_PEROLEHAN_LABEL: Record<string, string> = {
   saldo_awal: 'Saldo Awal',
@@ -220,9 +224,37 @@ export const CARA_PEROLEHAN_LABEL: Record<string, string> = {
 }
 
 /**
+ * Nilai AWAL `asal_usul` yang ditulis SEKALI saat barang pertama kali
+ * disetujui di kelima menu Cara Perolehan (permintaan user 2026-09-28) —
+ * dipakai Pengadaan.tsx, PerolehanManual.tsx, & lib/kdp.ts.
+ *
+ * ⚠️ `pengadaan` SENGAJA BEDA dari `CARA_PEROLEHAN_LABEL.pengadaan` ("Pengadaan"
+ * saja) — "Pengadaan APBD" menyebut sumber dana, gaya yang sama dgn e-BMD lama
+ * & migrasi 20260928_06 yang mengisi KDP lama. Keempat lainnya SENGAJA sama
+ * persis dgn `CARA_PEROLEHAN_LABEL` — tak ada info tambahan yang bisa
+ * ditambahkan di sana tanpa mengarang (mis. pihak pemberi Hibah sudah py
+ * kolom sendiri di header, bukan urusan `asal_usul`).
+ *
+ * ⚠️ Data LAMA yang sudah kosong TIDAK ikut disentuh (kelewat migrasi lama
+ * diisi manual lewat migrasi data terpisah, mis. 20260928_02/03/06) —
+ * konstanta ini hanya berlaku ke depan, sesuai keputusan user "yang
+ * kosong-kosong bisa kita isi berkala".
+ */
+export const ASAL_USUL_AWAL: Record<string, string> = {
+  pengadaan: 'Pengadaan APBD',
+  hibah_masuk: 'Hibah',
+  tukar_menukar: 'Tukar Menukar',
+  hasil_inventarisasi: 'Hasil Inventarisasi',
+  perolehan_lainnya: 'Perolehan Lainnya',
+}
+
+/**
  * Asal Usul yang DITAMPILKAN: isian operator kalau ada, kalau kosong jatuh ke
  * label cara perolehan. `turunan` menandai hasilnya cadangan (dipakai layar
  * buat merendahkan warnanya — di Excel tak ada bedanya, cuma teks).
+ * ⚠️ Sejak `ASAL_USUL_AWAL` terpasang (2026-09-28), barang BARU akan selalu
+ * py `asal_usul` terisi sungguhan (turunan=false) — cabang `turunan=true` di
+ * sini sekarang murni utk barang LAMA yang belum sempat dikoreksi/dimigrasi.
  */
 export function asalUsulTampil(
   asalUsul: string | null | undefined,

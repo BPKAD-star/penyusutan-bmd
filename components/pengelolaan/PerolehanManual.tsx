@@ -21,7 +21,7 @@ import { catatTransaksi } from '@/lib/transaksi'
 import {
   periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, fetchBatasKapitalisasi,
   klasifikasiKomptabel, fetchMasaManfaat, comparePeriode, periodeRange,
-  previousPeriode, parsePeriode, formatPeriode,
+  previousPeriode, parsePeriode, formatPeriode, ASAL_USUL_AWAL,
 } from '@/lib/bmd'
 import { entryFieldsForKode, allSameGolongan, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 import { generateNibars } from '@/lib/nibar'
@@ -494,6 +494,10 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
         satuan: it.satuan.trim() || null, harga_satuan: toNum(it.harga), nilai_perolehan: toNum(it.harga),
         tgl_perolehan: it.tglPerolehan, skpd_id: Number(skpd), intra_ekstra: it.intraEkstra,
         cara_perolehan: kategori, status: 'aktif', foto_paths: it.foto,
+        // Nilai awal, permintaan user 2026-09-28 — lihat ASAL_USUL_AWAL,
+        // lib/bmd.ts. Bukan dua penulis: kolom ini mustahil sudah terisi di
+        // sini (belum ada form yg bisa mengisinya sebelum approve).
+        asal_usul: ASAL_USUL_AWAL[kategori],
       }
       for (const k of ASET_FIELD_COLS) {
         const v = it.fields[k]
