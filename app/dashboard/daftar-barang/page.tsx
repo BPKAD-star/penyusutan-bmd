@@ -3,8 +3,14 @@
 // SKPD → Jenis Aset (WAJIB pilih satu) → Komptabel → Cari → klik Tampilkan.
 //
 // Kolom menyesuaikan jenis aset (KIB) memakai field yang tersedia di DB. Layar
-// DIRINGKAS (lihat `kolomGolongan`, lib/kolomBarang.ts): `uraian` ditumpuk di bawah `kode`, `nibar` di bawah
-// `nama`. Tanah/Gedung/Jalan/KDP/Aset Lain-Lain + Spesifikasi Lainnya & Lokasi
+// DIRINGKAS (lihat `kolomLayar`, lib/kolomBarang.ts): `uraian` ditumpuk di bawah `kode`, `nibar` di bawah
+// `nama`, dan sejak 2026-09-28 **Komptabel ditumpuk di bawah Nilai Perolehan**
+// (permintaan user, berlaku SEMUA golongan yang punya Komptabel — Tanah
+// dikecualikan, lihat `adaKomptabel`). Urutan kolom kiri→kanan disamakan
+// dgn spreadsheet user: identitas → deskriptif → tgl → asal usul →
+// nilai+komptabel → penggunaan+keterangan. Export TETAP flat (EXPORT_COLS,
+// utk BPK) — Komptabel jadi kolom Excel sendiri di sana.
+// Tanah/Gedung/Jalan/KDP/Aset Lain-Lain + Spesifikasi Lainnya & Lokasi
 // (alamat_detail) setelah nama. Tanah: dokumen kepemilikan TIDAK di layar (per
 // bidang di GIS — badge "N bidang"), tetap ada di Export (EXPORT_COLS, utk BPK).
 //   - Tanah (1.3.1): tanpa kolom Komptabel (semua intrakomptabel); + Luas & Jenis Hak
@@ -20,7 +26,7 @@
 // Tampilan: kalau hasil filter ≤ SHOW_ALL_MAX baris → tampilkan SEMUA (tanpa
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
 // selalu menjumlahkan nilai perolehan SELURUH hasil filter. Angka tanpa "Rp".
-import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
+import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomLayar, adaKomptabel } from '@/lib/kolomBarang'
 import { useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -172,8 +178,11 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 //
 // ✅ Sejak 2026-09-28 kolom 1.3.2 di sini sama persis dgn Daftar Barang Awal
 // (No. Polisi/Rangka/Mesin/BPKB + Lokasi ikut) — lihat catatan "kendaraanPM
-// DICABUT" di kepala lib/kolomBarang.ts.
-const colsFor = (golongan: string) => kolomGolongan(golongan)
+// DICABUT" di kepala lib/kolomBarang.ts. Urutan kolom & peleburan Komptabel
+// ke sel Nilai Perolehan (permintaan user 2026-09-28, sama utk SEMUA golongan)
+// — pakai `kolomLayar`, BUKAN `kolomGolongan` polos, supaya Komptabel tak
+// dobel dgn yang ditumpuk di cellContent('nilai').
+const colsFor = (golongan: string) => kolomLayar(golongan)
 
 // ── Kolom EKSPOR (Excel/BPK) — TETAP flat & lengkap: `uraian` jadi kolom
 // sendiri, dan Tanah tetap membawa Dokumen Kepemilikan (no/tgl/atas nama).
@@ -278,8 +287,9 @@ function thClass(key: string) {
 function tdClass(key: string, striped?: boolean) {
   if (key === 'nama') return `table-td align-top sticky left-0 z-10 border-r border-gray-200 ${striped ? 'bg-gray-50/50' : 'bg-white'}`
   if (key === 'kode') return 'table-td align-top'
+  // 'komptabel' TAK PERNAH lagi kolom sendiri di layar — dileburkan ke sel
+  // Nilai Perolehan (lihat cellContent('nilai') & `kolomLayar`).
   if (key === 'nilai' || key === 'luas') return 'table-td text-right text-xs align-top'
-  if (key === 'komptabel') return 'table-td text-center text-xs capitalize align-top'
   return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
 }
 
@@ -290,7 +300,9 @@ function tdClass(key: string, striped?: boolean) {
 // (di sana Uraian/NIBAR/Kode Register sudah kolom Excel SENDIRI — lihat
 // EXPORT_ORDER), jadi menumpuk labelnya di situ akan menulis ulang judul
 // berkas Excel, bukan cuma kepala tabel layar.
-function thContent(key: string): React.ReactNode {
+// `golongan` cuma dipakai kolom 'nilai' — Tanah tak punya Komptabel, jadi
+// headernya tak boleh ikut menyebut "Komptabel" (lihat `adaKomptabel`).
+function thContent(key: string, golongan?: string): React.ReactNode {
   if (key === 'kode') return (
     <>
       Kode Barang
@@ -302,6 +314,12 @@ function thContent(key: string): React.ReactNode {
       Nama Barang
       <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">NIBAR</span>
       <span className="block normal-case font-normal tracking-normal text-gray-400">Kode Register</span>
+    </>
+  )
+  if (key === 'nilai' && adaKomptabel(golongan ?? '')) return (
+    <>
+      Nilai Perolehan
+      <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">Komptabel</span>
     </>
   )
   return COL_META[key].header
@@ -999,9 +1017,19 @@ export default function DaftarBarangPage() {
         const adaTitik = r.latitude != null && r.longitude != null
         return <span className="inline-flex items-center gap-1"><IkonTitikKoordinat ada={adaTitik} />{r.alamat_detail || '-'}</span>
       }
-      case 'komptabel': return r.intra_ekstra || '-'
       case 'tgl': return r.tgl_perolehan || '-'
-      case 'nilai': return angka(r.nilai_perolehan)
+      // Komptabel DILEBUR ke sini (permintaan user 2026-09-28, berlaku semua
+      // golongan) — ditumpuk di bawah Nilai Perolehan, bukan kolom sendiri
+      // lagi. Tanah tak punya Komptabel (`adaKomptabel` → false), jadi cuma
+      // menampilkan nilainya sendirian.
+      case 'nilai': return (
+        <>
+          <p>{angka(r.nilai_perolehan)}</p>
+          {adaKomptabel(applied?.golongan ?? '') && (
+            <p className="text-gray-400 mt-0.5 capitalize">{r.intra_ekstra || '-'}</p>
+          )}
+        </>
+      )
       case 'asal_usul': {
         // Isian operator menang; kalau kosong pakai label cara perolehan.
         // Yang turunan dibuat lebih redup + ber-tooltip supaya operator tahu
@@ -1220,7 +1248,7 @@ export default function DaftarBarangPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>{cols.map(k => <th key={k} className={thClass(k)}>{thContent(k)}</th>)}</tr>
+                <tr>{cols.map(k => <th key={k} className={thClass(k)}>{thContent(k, applied?.golongan)}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (

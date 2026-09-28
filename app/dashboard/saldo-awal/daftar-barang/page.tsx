@@ -45,7 +45,7 @@
 // spesifikasi, reklas kode/golongan, atau pindah SKPD ditandai 🔒 dan centangnya
 // mati — koreksinya wajib lewat menu Koreksi. Penegaknya trigger DB (migrasi
 // 20260728_01 bagian 3); 🔒 di sini cuma biar operator tak klik lalu kena error.
-import { KOLOM_META, NOWRAP_KEYS, kolomGolongan } from '@/lib/kolomBarang'
+import { KOLOM_META, NOWRAP_KEYS, kolomGolongan, adaKomptabel } from '@/lib/kolomBarang'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { useEffect, useState } from 'react'
@@ -221,6 +221,13 @@ function colsFor(golongan: string): string[] {
  * penggunaan+keterangan. Alasannya bukan lebar — kolomnya sama banyak — murni
  * supaya Asal Usul terbaca sendiri tanpa harus membedah sel gabungan.
  *
+ * ⚠️ PASANGAN KETIGA ditambah 2026-09-28 (permintaan user, berlaku SEMUA
+ * golongan yang punya Komptabel): `komptabel` ditumpuk di bawah `nilai`
+ * (lihat cellContent('nilai')), pola & alasan yang SAMA persis dgn Daftar
+ * Barang (lib/kolomBarang.ts `adaKomptabel`/`kolomLayar`) — bedanya di sini
+ * mekanismenya lewat `colsLayar`, bukan `kolomLayar`, krn halaman ini sudah
+ * punya mesin peleburan generik sendiri.
+ *
  * ⚠️ EXPORT TIDAK IKUT DIGABUNG — `handleExport` tetap memakai `colsFor`.
  * Di berkas kerja orang menyortir & mem-pivot per kolom; "100 / 88" dalam satu
  * sel mematikan itu, dan Excel tak punya batas lebar yang perlu dihormati.
@@ -232,7 +239,7 @@ function colsLayar(golongan: string): string[] {
   for (const k of colsFor(golongan)) {
     if (k === 'mm') out.push('mmsisa')
     else if (k === 'penggunaan') out.push('gunaket')
-    else if (k === 'sisa' || k === 'keterangan') continue // sudah ikut pasangannya
+    else if (k === 'sisa' || k === 'keterangan' || k === 'komptabel') continue // sudah ikut pasangannya
     else out.push(k)
   }
   return out
@@ -253,9 +260,11 @@ function thClass(key: string) {
 }
 function tdClass(key: string) {
   if (key === 'nama' || key === 'kode') return 'table-td align-top'
+  // 'komptabel' TAK PERNAH lagi kolom sendiri di layar — dileburkan ke sel
+  // Nilai Perolehan (lihat cellContent('nilai') & `colsLayar`).
   const a = COL_META[key]?.align
   if (a === 'right') return 'table-td text-right text-xs align-top'
-  if (a === 'center') return 'table-td text-center text-xs align-top' + (key === 'komptabel' ? ' capitalize' : '')
+  if (a === 'center') return 'table-td text-center text-xs align-top'
   return `table-td text-xs text-gray-600 align-top${NOWRAP_KEYS.has(key) ? ' whitespace-nowrap' : ''}`
 }
 
@@ -263,7 +272,9 @@ function tdClass(key: string) {
 // pola sama dgn Daftar Barang (2026-09-17). Beda dari sana: sel Nama di sini
 // cuma dua baris (nama + NIBAR), TANPA Kode Register — tabel ini snapshot
 // `aset_awal_2026`, yang tak punya kolom itu sama sekali.
-function thContent(key: string): React.ReactNode {
+// `golongan` cuma dipakai kolom 'nilai' — Tanah tak punya Komptabel, jadi
+// headernya tak boleh ikut menyebut "Komptabel" (lihat `adaKomptabel`).
+function thContent(key: string, golongan?: string): React.ReactNode {
   if (key === 'kode') return (
     <>
       Kode Barang
@@ -274,6 +285,12 @@ function thContent(key: string): React.ReactNode {
     <>
       Nama Barang
       <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">NIBAR</span>
+    </>
+  )
+  if (key === 'nilai' && adaKomptabel(golongan ?? '')) return (
+    <>
+      Nilai Perolehan
+      <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">Komptabel</span>
     </>
   )
   return COL_META[key].header
@@ -692,6 +709,17 @@ export default function Page() {
         ? <p className="text-xs text-gray-600">{angkaLuas(r.luas)}</p>
         : <span className="text-gray-300">-</span>
     }
+    // Komptabel DILEBUR ke sini (permintaan user 2026-09-28, berlaku semua
+    // golongan) — ditumpuk di bawah Nilai Perolehan, bukan kolom sendiri lagi
+    // (lihat `colsLayar`). Tanah tak punya Komptabel (`adaKomptabel` → false).
+    if (key === 'nilai') return (
+      <>
+        <p className="text-xs">{angka(r.nilai_perolehan)}</p>
+        {adaKomptabel(applied?.golongan ?? '') && (
+          <p className="text-gray-400 text-xs mt-0.5 capitalize">{r.intra_ekstra || '-'}</p>
+        )}
+      </>
+    )
     const v = cellValue(key, r)
     if (v === '' || v == null) return <span className="text-gray-300">-</span>
     if (typeof v === 'number' && TOTAL_KEYS.has(key)) return angka(v)
@@ -910,7 +938,7 @@ export default function Page() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {!isViewer && <th className="table-th w-8" />}
-                  {cols.map(k => <th key={k} className={thClass(k)}>{thContent(k)}</th>)}
+                  {cols.map(k => <th key={k} className={thClass(k)}>{thContent(k, applied?.golongan)}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
