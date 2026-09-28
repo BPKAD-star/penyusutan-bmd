@@ -89,7 +89,11 @@ export const KOLOM_GOLONGAN: Record<string, string[]> = {
   '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.5.3': ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // ATB (1.5.3): + Merek/Tipe (permintaan user 2026-09-28) — software/lisensi
+  // sering diidentifikasi lewat merek/vendornya, persis alasan yang sama dgn
+  // 1.3.5. Datanya sudah lama ada (`merek_tipe`, TEMPLATE_ASET_LAINNYA di
+  // lib/asetFields.ts); yang baru cuma ditampilkan di kolom ini.
+  '1.5.3': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   // Aset Lain-Lain — SATU-SATUNYA golongan yang kolomnya GABUNGAN semua
   // template (permintaan user 2026-09-08), dan itu bukan kelonggaran: 1.5.4
   // diisi barang hasil reklasifikasi dari SEMUA golongan lain, jadi satu tabel
