@@ -8,7 +8,11 @@
 // (alamat_detail) setelah nama. Tanah: dokumen kepemilikan TIDAK di layar (per
 // bidang di GIS — badge "N bidang"), tetap ada di Export (EXPORT_COLS, utk BPK).
 //   - Tanah (1.3.1): tanpa kolom Komptabel (semua intrakomptabel); + Luas & Jenis Hak
-//   - Peralatan & Mesin (1.3.2): + Merek/Tipe + Spesifikasi
+//   - Peralatan & Mesin (1.3.2): + Merek/Tipe + Spesifikasi + No. Polisi/
+//     Rangka/Mesin/BPKB + Lokasi (2026-09-28, sama persis dgn Daftar Barang Awal
+//     — lihat catatan "kendaraanPM DICABUT" di lib/kolomBarang.ts)
+//   - Gedung & Bangunan (1.3.3) / Jalan-Jaringan-Irigasi (1.3.4) / KDP (1.3.6):
+//     + Luas (2026-09-28)
 //   - Aset Lain-Lain (1.5.4): SEMUA kolom sekaligus (2026-09-08) — luas, jenis
 //     hak, dokumen kepemilikan, DAN no. polisi/rangka/mesin/BPKB. Lihat
 //     KOLOM_GOLONGAN['1.5.4']; tabelnya memang jadi lebar & digeser horizontal.
@@ -166,13 +170,9 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
 // kelupaan di salah satu sisi tak menghasilkan error apa pun, cuma dua menu
 // yang menampilkan barang sama dgn isi berbeda.
 //
-// ⚠️ `kendaraanPM` SENGAJA tak disetel di sini: Peralatan & Mesin (1.3.2) di
-// halaman ini belum membawa No. Polisi/Rangka/Mesin/BPKB, sementara Daftar
-// Barang Awal membawa (permintaan user 2026-07-30). Kalau kelak halaman ini
-// mau ikut, setel benderanya jadi `true` — JANGAN menyalin empat kuncinya ke
-// daftar terpisah, itu mengembalikan kekembaran yang baru saja dicabut.
-// Golongan 1.5.4 tak terpengaruh bendera itu: isinya campuran hasil
-// reklasifikasi semua golongan, jadi kendaraan memang selalu ikut.
+// ✅ Sejak 2026-09-28 kolom 1.3.2 di sini sama persis dgn Daftar Barang Awal
+// (No. Polisi/Rangka/Mesin/BPKB + Lokasi ikut) — lihat catatan "kendaraanPM
+// DICABUT" di kepala lib/kolomBarang.ts.
 const colsFor = (golongan: string) => kolomGolongan(golongan)
 
 // ── Kolom EKSPOR (Excel/BPK) — TETAP flat & lengkap: `uraian` jadi kolom
@@ -207,11 +207,14 @@ const EXPORT_ORDER = [
 const EXPORT_ALWAYS = ['nibar', 'kode_register']
 const EXPORT_COLS: Record<string, string[]> = {
   '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'tgl', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel (spt layar)
-  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // + No. Polisi/Rangka/Mesin/BPKB + Lokasi (2026-09-28, sama dgn layar).
+  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // + Luas, Spesifikasi Lainnya DICABUT (2026-09-28, sama dgn layar — lihat
+  // catatan KOLOM_GOLONGAN['1.3.3'] di lib/kolomBarang.ts).
+  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   // Aset Lain-Lain: berkasnya membawa kolom yang SAMA dgn layar (lihat
   // KOLOM_GOLONGAN['1.5.4']) — Excel yang lebih miskin dari layar bikin operator yang

@@ -15,15 +15,14 @@
 // menampilkan barang yang sama dengan isi yang berbeda, dan operator yang
 // menyandingkan berkasnya mengira datanya yang hilang.
 //
-// ⚠️ SATU PENYIMPANGAN YANG DISENGAJA, dan sekarang ia PUNYA NAMA.
-// Peralatan & Mesin (1.3.2) di Daftar Barang **Awal** membawa No. Polisi /
-// Rangka / Mesin / BPKB, sementara Daftar Barang belum (permintaan user
-// 2026-07-30: identitas kendaraan itu yang paling sering dicocokkan saat
-// menelusuri baseline 2025). Dulu itu hidup sbg SELISIH DIAM-DIAM antara dua
-// daftar yang sepintas kembar; sekarang ia satu bendera bernama
-// (`kendaraanPM`), jadi bedanya disengaja & terbaca, bukan ditemukan.
-// Kalau kelak Daftar Barang mau ikut: ubah `kendaraanPM` di halaman itu jadi
-// true — bukan menyalin empat kunci ke daftar kedua.
+// ✅ PENYIMPANGAN "kendaraanPM" DICABUT 2026-09-28 (permintaan user, atas
+// spreadsheet kolom yang sama diminta utk KEDUA menu). Peralatan & Mesin
+// (1.3.2) di Daftar Barang **Awal** dulu satu-satunya yang membawa No. Polisi/
+// Rangka/Mesin/BPKB (+ kini Lokasi, juga baru); sekarang keduanya identik —
+// tak ada lagi opsi/bendera yang membedakan kolom kedua menu ini. Kalau kelak
+// ada golongan lain yang perlu beda kolom sungguhan antar menu, jangan pakai
+// pola opt-in seperti dulu tanpa alasan kuat — bedanya gampang basi begitu
+// salah satu menu diminta menyusul.
 //
 // ⛔ Yang SENGAJA tidak diangkat ke sini:
 //   · `EXPORT_ORDER` / `EXPORT_COLS` — cuma ada di Daftar Barang (Daftar Barang
@@ -68,27 +67,28 @@ export const KOLOM_META: Record<string, MetaKolom> = {
 }
 
 /**
- * Empat kolom identitas kendaraan — penyimpangan yang disengaja, lihat kepala
- * berkas. Disisipkan sesudah `spesifikasi` di golongan 1.3.2.
- */
-export const KENDARAAN_PM = ['nopol', 'rangka', 'mesin', 'bpkb'] as const
-
-/**
- * Kolom per jenis aset, TANPA kolom kendaraan 1.3.2 (itu lewat `opts`).
- * Urutan di dalam array = urutan kiri→kanan di layar.
+ * Kolom per jenis aset. Urutan di dalam array = urutan kiri→kanan di layar.
  */
 export const KOLOM_GOLONGAN: Record<string, string[]> = {
   // Tanah — TANPA komptabel. Dokumen kepemilikan sengaja tak di layar: satu
   // register bisa punya banyak bidang & dokumennya dikelola per-bidang di GIS.
   '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'luas', 'hak', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  // Gedung & Bangunan: + Spesifikasi Lainnya (permintaan user 2026-09-08).
-  // Golongan ini tak punya Merek/Tipe — yang menerangkan barangnya justru
-  // Spesifikasi Lainnya.
-  '1.3.3': ['skpd', 'kode', 'nama', 'spesifikasi', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // Peralatan & Mesin: + No. Polisi/Rangka/Mesin/BPKB + Lokasi (permintaan
+  // user 2026-09-28, di KEDUA menu — lihat catatan kepala berkas). Datanya
+  // sudah lama ada (`TEMPLATE_PERALATAN_MESIN`, lib/asetFields.ts), yang baru
+  // cuma ditampilkan.
+  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // Gedung & Bangunan: + Luas (permintaan user 2026-09-28). Spesifikasi
+  // Lainnya yang sempat ditambahkan 2026-09-08 DICABUT LAGI hari yang sama
+  // (keputusan user eksplisit, mengoreksi keputusan sebelumnya) — golongan ini
+  // kini disamakan dgn JIJ/KDP: lokasi+luas, tanpa spesifikasi/merek.
+  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // Jalan/Jaringan/Irigasi: + Luas (permintaan user 2026-09-28).
+  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  // KDP: + Luas (permintaan user 2026-09-28) — datanya sudah lama ada lewat
+  // `KDP_KONSTRUKSI_FIELDS` (lib/asetFields.ts), yang baru cuma ditampilkan.
+  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
   // ATB (1.5.3): + Merek/Tipe (permintaan user 2026-09-28) — software/lisensi
   // sering diidentifikasi lewat merek/vendornya, persis alasan yang sama dgn
   // 1.3.5. Datanya sudah lama ada (`merek_tipe`, TEMPLATE_ASET_LAINNYA di
@@ -121,20 +121,10 @@ export const KOLOM_DEFAULT = ['skpd', 'kode', 'nama', 'tgl', 'komptabel', 'nilai
  */
 export const NOWRAP_KEYS = new Set(['nopol', 'rangka', 'mesin', 'bpkb', 'tgl', 'tgl_sertifikat'])
 
-/**
- * @param kendaraanPM Peralatan & Mesin (1.3.2) ikut membawa No. Polisi /
- *   Rangka / Mesin / BPKB. `true` di Daftar Barang Awal, `false` di Daftar
- *   Barang — lihat kepala berkas. Golongan LAIN tak terpengaruh: 1.5.4 sudah
- *   memuat keempatnya secara tetap karena isinya campuran semua golongan.
- */
-export function kolomGolongan(golongan: string, opts: { kendaraanPM?: boolean } = {}): string[] {
+/** Kolom kiri→kanan untuk sebuah golongan, sama persis di KEDUA menu. */
+export function kolomGolongan(golongan: string): string[] {
   const dasar = KOLOM_GOLONGAN[golongan]
-  if (!dasar) return [...KOLOM_DEFAULT]
-  if (golongan !== '1.3.2' || !opts.kendaraanPM) return [...dasar]
-  // Disisipkan tepat sesudah `spesifikasi`, bukan ditempel di ujung — identitas
-  // kendaraan dibaca bersama merek & spesifikasinya.
-  const i = dasar.indexOf('spesifikasi')
-  return [...dasar.slice(0, i + 1), ...KENDARAAN_PM, ...dasar.slice(i + 1)]
+  return dasar ? [...dasar] : [...KOLOM_DEFAULT]
 }
 
 /**

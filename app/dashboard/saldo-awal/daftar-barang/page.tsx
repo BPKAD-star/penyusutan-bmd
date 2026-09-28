@@ -174,28 +174,13 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   gunaket: { header: 'Penggunaan / Keterangan' },
 }
 
-// SALINAN kolom layar Daftar Barang (app/dashboard/daftar-barang/page.tsx →
-// COLS). Kalau di sana berubah, samakan di sini — dua menu ini memang sengaja
-// menampilkan barang yang sama dgn kolom yang sama, bedanya cuma posisi waktu.
-// ⚠️ SATU penyimpangan yang DISENGAJA (permintaan user 2026-07-30): Peralatan &
-// Mesin di sini membawa No. Polisi/Rangka/Mesin/BPKB sesudah Spesifikasi
-// Lainnya, sementara Daftar Barang belum. Identitas kendaraan itu yang paling
-// sering dicocokkan saat menelusuri baseline 2025; kalau nanti Daftar Barang
-// mau ikut, tinggal salin empat kunci ini ke sana.
-// (Sejak 2026-09-08 Daftar Barang SUDAH membawa keempatnya — tapi khusus di
-// golongan 1.5.4, yang di kedua menu ini kolomnya memang sengaja disamakan.)
 // Kolom per jenis aset → **lib/kolomBarang.ts**, dipakai BERSAMA dgn Daftar
 // Barang (REFACTOR-PLAN §5 butir 2.3). Sebelum 2026-09-15 daftarnya ditulis dua
 // kali & cuma dijaga komentar "ubah satu, samakan yang lain".
 //
-// ⚠️ `kendaraanPM: true` = SATU-SATUNYA penyimpangan yang disengaja dari Daftar
-// Barang: Peralatan & Mesin (1.3.2) di sini membawa No. Polisi/Rangka/Mesin/
-// BPKB sesudah Spesifikasi Lainnya (permintaan user 2026-07-30 — identitas
-// kendaraan itu yang paling sering dicocokkan saat menelusuri baseline 2025).
-// Dulu bedanya hidup sbg selisih diam-diam antara dua daftar yang sepintas
-// kembar; sekarang ia satu bendera bernama, dan `lib/kolomBarang.test.ts`
-// menjaga bahwa TAK ADA beda lain yang menyelinap.
-const BASE_KENDARAAN_PM = true
+// ✅ Sejak 2026-09-28 kolom golongan KEDUA menu identik penuh (tak ada lagi
+// opsi/bendera pembeda) — lihat catatan "kendaraanPM DICABUT" di kepala
+// lib/kolomBarang.ts.
 
 // Kolom penyusutan baseline — disisipkan mengapit Nilai Perolehan.
 const SUSUT_SEBELUM = ['mm']
@@ -208,7 +193,7 @@ const disusutkan = (golongan: string) =>
 
 /** Kolom LOGIS — satu kolom = satu kolom di Excel. Dipakai Export. */
 function colsFor(golongan: string): string[] {
-  const base = kolomGolongan(golongan, { kendaraanPM: BASE_KENDARAAN_PM })
+  const base = kolomGolongan(golongan)
   if (!disusutkan(golongan)) return base
   const out: string[] = []
   for (const k of base) {
