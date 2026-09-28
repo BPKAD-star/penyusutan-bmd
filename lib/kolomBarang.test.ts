@@ -32,20 +32,20 @@ const GOLONGAN = ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3',
 // sesudah putaran 2026-09-28: Merek/Tipe ATB, No. Polisi/Rangka/Mesin/BPKB +
 // Lokasi utk Peralatan & Mesin, Luas utk Gedung & Bangunan/JIJ/KDP,
 // Spesifikasi Lainnya dicabut dari Gedung & Bangunan, urutan disamakan dgn
-// spreadsheet user (identitas → deskriptif → tgl → asal usul → komptabel →
-// nilai → penggunaan → keterangan). Kalau satu kolom bergeser/hilang saat
-// halaman diubah, test ini merah — bukan operator yang menemukannya.
+// spreadsheet user (identitas → deskriptif → tgl → asal usul → kondisi →
+// komptabel → nilai → penggunaan → keterangan). Kalau satu kolom bergeser/
+// hilang saat halaman diubah, test ini merah — bukan operator yang menemukannya.
 const KOLOM_HARAPAN: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'hak', 'tgl', 'asal_usul', 'nilai', 'penggunaan', 'keterangan'],
-  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
-  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
-  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
-  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
-  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
-  '1.5.3': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'hak', 'tgl', 'asal_usul', 'kondisi', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.5.3': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
   '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
     'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
-    'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+    'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
 }
 
 // Golongan yang komptabel-nya seharusnya TIDAK ada sama sekali — cuma Tanah.
@@ -63,6 +63,12 @@ describe('kolom sama persis dgn harapan, di SATU sumber untuk KEDUA menu', () =>
   })
   it('1.5.4 tetap memuat keempat kolom kendaraan (golongan campuran)', () => {
     for (const k of ['nopol', 'rangka', 'mesin', 'bpkb']) expect(kolomGolongan('1.5.4')).toContain(k)
+  })
+  it('Kondisi SELALU tepat sesudah Asal Usul, di SEMUA golongan (permintaan user 2026-09-28)', () => {
+    for (const g of GOLONGAN) {
+      const kolom = kolomGolongan(g)
+      expect(kolom.indexOf('kondisi'), g).toBe(kolom.indexOf('asal_usul') + 1)
+    }
   })
 })
 
@@ -96,22 +102,28 @@ describe('(2) 1.5.4 kembar dgn ASET_LAIN_LAIN_EXTRA (lib/asetFields.ts)', () => 
   })
 })
 
-describe('(3) Komptabel dilebur ke Nilai Perolehan di layar (permintaan user 2026-09-28)', () => {
+describe('(3) Komptabel & Keterangan dilebur di layar (permintaan user 2026-09-28)', () => {
   it('adaKomptabel FALSE hanya utk Tanah, TRUE utk sisanya (termasuk default)', () => {
     for (const g of GOLONGAN) expect(adaKomptabel(g), g).toBe(!TANPA_KOMPTABEL.has(g))
     expect(adaKomptabel('')).toBe(true) // KOLOM_DEFAULT punya komptabel
     expect(adaKomptabel('9.9.9')).toBe(true)
   })
-  it('kolomLayar = kolomGolongan MINUS komptabel, urutan sisanya tak bergeser', () => {
+  it('kolomLayar = kolomGolongan MINUS komptabel & keterangan, urutan sisanya tak bergeser', () => {
     for (const g of GOLONGAN) {
       const layar = kolomLayar(g)
       const penuh = kolomGolongan(g)
-      expect(layar).toEqual(penuh.filter(k => k !== 'komptabel'))
+      expect(layar).toEqual(penuh.filter(k => k !== 'komptabel' && k !== 'keterangan'))
       expect(layar).not.toContain('komptabel')
+      expect(layar).not.toContain('keterangan')
     }
   })
-  it('golongan tanpa Komptabel (Tanah) tak berubah sama sekali oleh kolomLayar', () => {
-    expect(kolomLayar('1.3.1')).toEqual(kolomGolongan('1.3.1'))
+  it('keterangan dilebur di SEMUA golongan tanpa kecuali, termasuk Tanah', () => {
+    // Beda dgn Komptabel (Tanah dikecualikan) — peleburan Keterangan ke
+    // Penggunaan berlaku universal, tak ada golongan yang dikecualikan.
+    for (const g of GOLONGAN) expect(kolomLayar(g)).not.toContain('keterangan')
+  })
+  it('golongan tanpa Komptabel (Tanah) TETAP kehilangan keterangan lewat kolomLayar', () => {
+    expect(kolomLayar('1.3.1')).toEqual(kolomGolongan('1.3.1').filter(k => k !== 'keterangan'))
   })
 })
 

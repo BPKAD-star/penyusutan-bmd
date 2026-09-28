@@ -27,4 +27,7 @@ export type Row = {
   tanggal_dokumen_kepemilikan: string | null
   nama_dokumen_kepemilikan: string | null
   asal_usul: string | null; penggunaan_pengamanan: string | null
+  // Kondisi fisik barang (permintaan user 2026-09-28) — disingkat di layar,
+  // lihat `KONDISI_SINGKAT` di lib/kolomBarang.ts.
+  kondisi_barang: string | null
 }

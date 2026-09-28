@@ -59,6 +59,8 @@ export const KOLOM_META: Record<string, MetaKolom> = {
   tgl_sertifikat: { header: 'Tanggal Dokumen Kepemilikan' },
   atas_nama: { header: 'Nama Dokumen Kepemilikan' },
   tgl: { header: 'Tgl Perolehan' },
+  // Disingkat di layar (permintaan user 2026-09-28) — lihat `KONDISI_SINGKAT`.
+  kondisi: { header: 'Kondisi', align: 'center' },
   komptabel: { header: 'Komptabel', align: 'center' },
   nilai: { header: 'Nilai Perolehan', align: 'right' },
   asal_usul: { header: 'Asal Usul' },
@@ -83,28 +85,28 @@ export const KOLOM_META: Record<string, MetaKolom> = {
 export const KOLOM_GOLONGAN: Record<string, string[]> = {
   // Tanah — TANPA komptabel. Dokumen kepemilikan sengaja tak di layar: satu
   // register bisa punya banyak bidang & dokumennya dikelola per-bidang di GIS.
-  '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'hak', 'tgl', 'asal_usul', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.1': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'hak', 'tgl', 'asal_usul', 'kondisi', 'nilai', 'penggunaan', 'keterangan'],
   // Peralatan & Mesin: + No. Polisi/Rangka/Mesin/BPKB + Lokasi (permintaan
   // user 2026-09-28, di KEDUA menu — lihat catatan kepala berkas). Datanya
   // sudah lama ada (`TEMPLATE_PERALATAN_MESIN`, lib/asetFields.ts), yang baru
   // cuma ditampilkan.
-  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.2': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
   // Gedung & Bangunan: + Luas (permintaan user 2026-09-28). Spesifikasi
   // Lainnya yang sempat ditambahkan 2026-09-08 DICABUT LAGI hari yang sama
   // (keputusan user eksplisit, mengoreksi keputusan sebelumnya) — golongan ini
   // kini disamakan dgn JIJ/KDP: lokasi+luas, tanpa spesifikasi/merek.
-  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.3': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
   // Jalan/Jaringan/Irigasi: + Luas (permintaan user 2026-09-28).
-  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
-  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.4': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.5': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
   // KDP: + Luas (permintaan user 2026-09-28) — datanya sudah lama ada lewat
   // `KDP_KONSTRUKSI_FIELDS` (lib/asetFields.ts), yang baru cuma ditampilkan.
-  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.3.6': ['skpd', 'kode', 'nama', 'lokasi', 'luas', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
   // ATB (1.5.3): + Merek/Tipe (permintaan user 2026-09-28) — software/lisensi
   // sering diidentifikasi lewat merek/vendornya, persis alasan yang sama dgn
   // 1.3.5. Datanya sudah lama ada (`merek_tipe`, TEMPLATE_ASET_LAINNYA di
   // lib/asetFields.ts); yang baru cuma ditampilkan di kolom ini.
-  '1.5.3': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+  '1.5.3': ['skpd', 'kode', 'nama', 'merek', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
   // Aset Lain-Lain — SATU-SATUNYA golongan yang kolomnya GABUNGAN semua
   // template (permintaan user 2026-09-08), dan itu bukan kelonggaran: 1.5.4
   // diisi barang hasil reklasifikasi dari SEMUA golongan lain, jadi satu tabel
@@ -119,11 +121,27 @@ export const KOLOM_GOLONGAN: Record<string, string[]> = {
   // sebaliknya) adalah keadaan paling membingungkan dari dua-duanya.
   '1.5.4': ['skpd', 'kode', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
     'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
-    'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+    'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan'],
+}
+
+/**
+ * Kondisi barang disingkat di layar (permintaan user 2026-09-28) — kolom itu
+ * sempit & nilai penuhnya ("Tidak Ditemukan") tak muat. Nilai penuh tetap yang
+ * disimpan (`aset.kondisi_barang` / `aset_awal_2026.kondisi_barang`, lihat
+ * `FIELD_OPTIONS.kondisi_barang` di lib/asetFields.ts) — ini murni tampilan,
+ * bukan kolom kedua. Export TETAP FULL TEXT (bukan singkatan) — dokumen resmi
+ * tak boleh memaksa pembacanya menghafal singkatan.
+ */
+export const KONDISI_SINGKAT: Record<string, string> = {
+  'Baik': 'B',
+  'Rusak Ringan': 'RR',
+  'Rusak Berat': 'RB',
+  'Hilang': 'H',
+  'Tidak Ditemukan': 'TD',
 }
 
 /** Golongan di luar daftar (mis. "Semua Jenis Aset") — kolom paling umum. */
-export const KOLOM_DEFAULT = ['skpd', 'kode', 'nama', 'tgl', 'asal_usul', 'komptabel', 'nilai', 'penggunaan', 'keterangan']
+export const KOLOM_DEFAULT = ['skpd', 'kode', 'nama', 'tgl', 'asal_usul', 'kondisi', 'komptabel', 'nilai', 'penggunaan', 'keterangan']
 
 /**
  * Kolom yang isinya SATU nomor utuh — dipaksa satu baris. Tanpa ini
@@ -149,15 +167,20 @@ export function adaKomptabel(golongan: string): boolean {
 }
 
 /**
- * Kolom LAYAR — sama seperti `kolomGolongan`, tapi Komptabel DILEBUR ke dalam
- * sel Nilai Perolehan (ditumpuk di bawahnya, permintaan user 2026-09-28) —
- * pola yang sama dgn Kode+Uraian & Nama+NIBAR yang sudah lebih dulu digabung
- * di kedua menu. Export tetap FLAT (Daftar Barang lewat `EXPORT_COLS`
- * sendiri, Daftar Barang Awal lewat `kolomGolongan` polos) — Komptabel tetap
- * kolom Excel tersendiri, cuma di layar yang diringkas.
+ * Kolom LAYAR — sama seperti `kolomGolongan`, tapi DUA pasang DILEBUR jadi
+ * satu sel (permintaan user 2026-09-28): Komptabel ditumpuk di bawah Nilai
+ * Perolehan, Keterangan ditumpuk di bawah Penggunaan — pola yang sama dgn
+ * Kode+Uraian & Nama+NIBAR yang sudah lebih dulu digabung di kedua menu.
+ * ⚠️ Dipakai HANYA oleh Daftar Barang (live) — Daftar Barang Awal punya
+ * mesin peleburan generiknya sendiri (`colsLayar` di halamannya, dua pasang
+ * lain: Masa Manfaat+Sisa & Penggunaan+Keterangan) krn ia juga menyisipkan
+ * kolom penyusutan baseline yang tak dipunyai Daftar Barang.
+ * Export tetap FLAT (Daftar Barang lewat `EXPORT_COLS` sendiri, Daftar Barang
+ * Awal lewat `kolomGolongan` polos) — Komptabel & Keterangan tetap kolom
+ * Excel tersendiri, cuma di layar yang diringkas.
  */
 export function kolomLayar(golongan: string): string[] {
-  return kolomGolongan(golongan).filter(k => k !== 'komptabel')
+  return kolomGolongan(golongan).filter(k => k !== 'komptabel' && k !== 'keterangan')
 }
 
 /**

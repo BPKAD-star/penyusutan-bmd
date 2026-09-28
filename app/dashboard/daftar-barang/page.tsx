@@ -5,11 +5,15 @@
 // Kolom menyesuaikan jenis aset (KIB) memakai field yang tersedia di DB. Layar
 // DIRINGKAS (lihat `kolomLayar`, lib/kolomBarang.ts): `uraian` ditumpuk di bawah `kode`, `nibar` di bawah
 // `nama`, dan sejak 2026-09-28 **Komptabel ditumpuk di bawah Nilai Perolehan**
-// (permintaan user, berlaku SEMUA golongan yang punya Komptabel — Tanah
-// dikecualikan, lihat `adaKomptabel`). Urutan kolom kiri→kanan disamakan
-// dgn spreadsheet user: identitas → deskriptif → tgl → asal usul →
-// nilai+komptabel → penggunaan+keterangan. Export TETAP flat (EXPORT_COLS,
-// utk BPK) — Komptabel jadi kolom Excel sendiri di sana.
+// & **Keterangan ditumpuk di bawah Penggunaan** (permintaan user, berlaku
+// SEMUA golongan — Komptabel dikecualikan utk Tanah, lihat `adaKomptabel`;
+// Keterangan berlaku semua golongan tanpa kecuali, termasuk tautan Pemanfaatan/
+// Pengamanan yang tetap hidup di dalam sel Penggunaan). Kolom **Kondisi**
+// (disingkat: B/RR/RB/H/TD, lihat `KONDISI_SINGKAT`) ditambahkan tepat setelah
+// Asal Usul. Urutan kolom kiri→kanan disamakan dgn spreadsheet user: identitas
+// → deskriptif → tgl → asal usul → kondisi → nilai+komptabel →
+// penggunaan+keterangan. Export TETAP flat (EXPORT_COLS, utk BPK) — Komptabel,
+// Keterangan, & Kondisi (teks penuh, TANPA singkatan) jadi kolom Excel sendiri.
 // Tanah/Gedung/Jalan/KDP/Aset Lain-Lain + Spesifikasi Lainnya & Lokasi
 // (alamat_detail) setelah nama. Tanah: dokumen kepemilikan TIDAK di layar (per
 // bidang di GIS — badge "N bidang"), tetap ada di Export (EXPORT_COLS, utk BPK).
@@ -26,7 +30,7 @@
 // Tampilan: kalau hasil filter ≤ SHOW_ALL_MAX baris → tampilkan SEMUA (tanpa
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
 // selalu menjumlahkan nilai perolehan SELURUH hasil filter. Angka tanpa "Rp".
-import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomLayar, adaKomptabel } from '@/lib/kolomBarang'
+import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomLayar, adaKomptabel, KONDISI_SINGKAT } from '@/lib/kolomBarang'
 import { useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -67,7 +71,7 @@ const SHOW_ALL_MAX = 3000 // di bawah ini → render semua baris tanpa halaman
 // dua-duanya mengisi `Row` yang SAMA. Kolom yang cuma ditambahkan di salah satu
 // bikin berkas Audit (untuk BPK) kekurangan kolom yang ada di layar, tanpa satu
 // pun error.
-const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb,pemanfaatan,pengamanan,latitude,longitude'
+const SELECT_COLS = 'id,nibar,kode_register,kode,nama_barang,spesifikasi_lainnya,alamat_detail,merek_tipe,nilai_perolehan,tgl_perolehan,intra_ekstra,asal_usul,cara_perolehan,penggunaan_pengamanan,keterangan,status,skpd_id,luas,nomor_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,nama_dokumen_kepemilikan,jenis_hak,no_polisi,no_rangka,no_mesin,no_bpkb,pemanfaatan,pengamanan,latitude,longitude,kondisi_barang'
 
 type Row = {
   id: string          // = aset.id → dipakai cocokkan event sembunyi di transaksi_bmd
@@ -118,6 +122,10 @@ type Row = {
   // migrasinya belum jalan — diperlakukan sama dgn `null` (belum ada titik).
   latitude?: number | null
   longitude?: number | null
+  // Kondisi fisik barang (migrasi 20260928_01 utk RETURNS TABLE
+  // fn_daftar_barang). `undefined` kalau migrasinya belum jalan — diperlakukan
+  // sama dgn `null` (kolom tampil "-").
+  kondisi_barang?: string | null
 }
 // Jejak penghapusan (dari ledger + jurnal_header) — dipakai mode export Audit.
 type HapusInfo = { tgl: string | null; no_sk: string | null; jenis: string | null; ket: string | null }
@@ -209,30 +217,32 @@ const EXPORT_ORDER = [
   'skpd', 'kode', 'uraian', 'nibar', 'kode_register', 'nama',
   'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
   'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
-  'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan',
+  'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan',
 ]
 // Dua kolom identitas ini SELALU ikut, apa pun golongannya — sengaja di luar
 // daftar per-golongan supaya tak bisa kelupaan di salah satu entri.
 const EXPORT_ALWAYS = ['nibar', 'kode_register']
+// Kondisi (2026-09-28) ditambahkan ke SEMUA golongan — kolom itu berlaku
+// universal, sama seperti di layar (`KOLOM_GOLONGAN`, lib/kolomBarang.ts).
 const EXPORT_COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'tgl', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel (spt layar)
+  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'tgl', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel (spt layar)
   // + No. Polisi/Rangka/Mesin/BPKB + Lokasi (2026-09-28, sama dgn layar).
-  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
   // + Luas, Spesifikasi Lainnya DICABUT (2026-09-28, sama dgn layar — lihat
   // catatan KOLOM_GOLONGAN['1.3.3'] di lib/kolomBarang.ts).
-  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
-  '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+  '1.3.3': ['skpd', 'kode', 'uraian', 'nama', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
+  '1.3.4': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
+  '1.3.5': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
+  '1.3.6': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
+  '1.5.3': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
   // Aset Lain-Lain: berkasnya membawa kolom yang SAMA dgn layar (lihat
   // KOLOM_GOLONGAN['1.5.4']) — Excel yang lebih miskin dari layar bikin operator yang
   // sudah melihat nomor rangkanya di aplikasi menganggap datanya hilang.
   '1.5.4': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
     'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
-    'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan'],
+    'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
 }
-const EXPORT_DEFAULT = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'penggunaan', 'keterangan']
+const EXPORT_DEFAULT = ['skpd', 'kode', 'uraian', 'nama', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan']
 // Himpunan kolom golongan + yang selalu ikut, DIURUTKAN oleh EXPORT_ORDER.
 const exportColsFor = (golongan: string) => {
   const pilih = new Set([...(EXPORT_COLS[golongan] || EXPORT_DEFAULT), ...EXPORT_ALWAYS])
@@ -320,6 +330,14 @@ function thContent(key: string, golongan?: string): React.ReactNode {
     <>
       Nilai Perolehan
       <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">Komptabel</span>
+    </>
+  )
+  // Keterangan DILEBUR ke sel Penggunaan (permintaan user 2026-09-28) —
+  // headernya ikut menyebut keduanya, sama pola dgn Nilai Perolehan/Komptabel.
+  if (key === 'penggunaan') return (
+    <>
+      Penggunaan
+      <span className="block normal-case font-normal tracking-normal text-gray-400 mt-0.5">Keterangan</span>
     </>
   )
   return COL_META[key].header
@@ -845,6 +863,9 @@ export default function DaftarBarangPage() {
           // ini). Di Excel tak ditandai apa-apa: bagi pembaca berkas keduanya
           // sama-sama "asal usul barang", dan penandaan cuma bikin bingung.
           case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
+          // Kondisi Export tetap TEKS PENUH (bukan singkatan layar) — dokumen
+          // resmi tak boleh memaksa pembacanya menghafal B/RR/RB/H/TD.
+          case 'kondisi': return r.kondisi_barang || ''
           case 'penggunaan': { const t = penggunaanTampil(r); return [t.pengamanan, t.pemanfaatan].filter(Boolean).join(' · ') || t.dasar || '' }
           case 'keterangan': return r.keterangan || ''
           case 'luas': return luasOf(r, bidangEx) ?? ''
@@ -926,6 +947,7 @@ export default function DaftarBarangPage() {
           // ini). Di Excel tak ditandai apa-apa: bagi pembaca berkas keduanya
           // sama-sama "asal usul barang", dan penandaan cuma bikin bingung.
           case 'asal_usul': return asalUsulTampil(r.asal_usul, r.cara_perolehan).teks
+          case 'kondisi': return r.kondisi_barang || ''
           case 'penggunaan': { const t = penggunaanTampil(r); return [t.pengamanan, t.pemanfaatan].filter(Boolean).join(' · ') || t.dasar || '' }
           case 'keterangan': return r.keterangan || ''
           case 'luas': return luasOf(r, bidangEx) ?? ''
@@ -1044,13 +1066,25 @@ export default function DaftarBarangPage() {
           </span>
         )
       }
+      // Kondisi disingkat (permintaan user 2026-09-28) — lihat KONDISI_SINGKAT.
+      // Nilai penuh masih di `title` supaya tak hilang sama sekali dari layar.
+      case 'kondisi': {
+        const v = r.kondisi_barang
+        if (!v) return <span className="text-gray-300">-</span>
+        return <span title={v}>{KONDISI_SINGKAT[v] || v}</span>
+      }
       case 'penggunaan': {
         // Pemanfaatan/Pengamanan aktif MENDUDUKI teks baseline (permintaan
         // user 2026-09-23) — pola persis Σ luas bidang vs luas register.
         // ⚠️ Gedung & Bangunan bisa punya KEDUANYA sekaligus (satu ruang
         // dikustodi, ruang lain disewakan) → ditumpuk, bukan salah satu dibuang.
+        // Keterangan DILEBUR ke sini (permintaan user 2026-09-28) — ditumpuk
+        // paling bawah, tautan Pengamanan/Pemanfaatan tetap hidup di atasnya.
+        // `kolomLayar` (lib/kolomBarang.ts) yang membuang 'keterangan' dari
+        // daftar kolom layar; kolomnya sendiri TETAP kolom Excel terpisah.
         const t = penggunaanTampil(r)
-        if (!t.pengamanan && !t.pemanfaatan) return t.dasar || '-'
+        const ket = r.keterangan || ''
+        if (!t.pengamanan && !t.pemanfaatan && !t.dasar && !ket) return <span className="text-gray-300">-</span>
         return (
           <>
             {t.pengamanan && (
@@ -1076,10 +1110,13 @@ export default function DaftarBarangPage() {
                 {t.pemanfaatan}
               </Link>
             )}
+            {!t.pengamanan && !t.pemanfaatan && t.dasar && (
+              <p className="text-xs text-gray-600">{t.dasar}</p>
+            )}
+            {ket && <p className="text-gray-400 text-xs mt-0.5">{ket}</p>}
           </>
         )
       }
-      case 'keterangan': return r.keterangan || '-'
       case 'luas': { const v = luasOf(r); return v != null ? angkaLuas(v) : '-' }
       case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || '-'
       case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || '-'

@@ -14,6 +14,10 @@
 // "Lokasi" di sini = `alamat_detail` + rantai wilayah (`wilayah_kode` → Desa,
 // Kec., Kabupaten), sementara Daftar Barang baru menampilkan alamat_detail saja.
 //
+// Kolom **Kondisi** ditambahkan 2026-09-28 (permintaan user, berlaku SEMUA
+// jenis aset), tepat setelah Asal Usul — disingkat di layar (B/RR/RB/H/TD,
+// lihat `KONDISI_SINGKAT` di lib/kolomBarang.ts), teks penuh di Export.
+//
 // TANAH — Luas di sini SELALU kolom snapshot sendiri (`aset_awal_2026.luas`,
 // diisi lewat Edit Spesifikasi), TIDAK ikut Σ bidang GIS lagi (keputusan user
 // 2026-09-23). Alasannya: baseline ini "beku" (foto posisi akhir 2025) sementara
@@ -45,7 +49,7 @@
 // spesifikasi, reklas kode/golongan, atau pindah SKPD ditandai 🔒 dan centangnya
 // mati — koreksinya wajib lewat menu Koreksi. Penegaknya trigger DB (migrasi
 // 20260728_01 bagian 3); 🔒 di sini cuma biar operator tak klik lalu kena error.
-import { KOLOM_META, NOWRAP_KEYS, kolomGolongan, adaKomptabel } from '@/lib/kolomBarang'
+import { KOLOM_META, NOWRAP_KEYS, kolomGolongan, adaKomptabel, KONDISI_SINGKAT } from '@/lib/kolomBarang'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { useEffect, useState } from 'react'
@@ -77,7 +81,7 @@ const COLS = [
   'merek_tipe', 'spesifikasi_lainnya', 'no_polisi', 'no_rangka', 'no_mesin', 'no_bpkb',
   'alamat_detail', 'wilayah_kode', 'latitude', 'longitude', 'luas', 'jenis_hak',
   'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
-  'asal_usul', 'penggunaan_pengamanan',
+  'asal_usul', 'penggunaan_pengamanan', 'kondisi_barang',
 ].join(',')
 
 // Angka RUPIAH polos bergaya id-ID tanpa "Rp" — SELALU 2 desimal sejak
@@ -633,6 +637,9 @@ export default function Page() {
       case 'buku': return r.nilai_buku_awal
       case 'sisa': return r.sisa_masa_manfaat_smt
       case 'asal_usul': return r.asal_usul || ''
+      // Export tetap TEKS PENUH (bukan singkatan layar) — dokumen resmi tak
+      // boleh memaksa pembacanya menghafal B/RR/RB/H/TD.
+      case 'kondisi': return r.kondisi_barang || ''
       case 'penggunaan': return r.penggunaan_pengamanan || ''
       case 'keterangan': return ketMap[r.nibar] || ''
       default: return ''
@@ -720,6 +727,12 @@ export default function Page() {
         )}
       </>
     )
+    // Kondisi disingkat (permintaan user 2026-09-28) — lihat KONDISI_SINGKAT.
+    // Nilai penuh masih di `title` supaya tak hilang sama sekali dari layar.
+    if (key === 'kondisi') {
+      const kv = r.kondisi_barang
+      return kv ? <span title={kv}>{KONDISI_SINGKAT[kv] || kv}</span> : <span className="text-gray-300">-</span>
+    }
     const v = cellValue(key, r)
     if (v === '' || v == null) return <span className="text-gray-300">-</span>
     if (typeof v === 'number' && TOTAL_KEYS.has(key)) return angka(v)
