@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { CHAT_SYSTEM_PROMPT } from '@/lib/chatbot/prompt'
 import { TOOL_DEFS, jalankanTool } from '@/lib/chatbot/tools'
+import { bersihkanPath, panduanUntuk } from '@/lib/chatbot/panduan'
 
 // Chat AI (ChatWidget opsi "Asisten AI") — proxy ke Anthropic Messages API.
 // API key HARUS server-side (process.env.ANTHROPIC_API_KEY, tanpa prefix
@@ -64,9 +65,16 @@ const SYSTEM_BLOCKS = [
  *  halaman/tiap user — cache_read_input_tokens jatuh ke 0 utk SEMUA orang,
  *  bukan cuma yang pindah-pindah halaman. Blok kedua yang kecil & tak
  *  di-cache ini jauh lebih murah drpd itu. */
-function buatSystemBlocks(halaman: string) {
-  if (!halaman) return SYSTEM_BLOCKS
-  return [...SYSTEM_BLOCKS, { type: 'text' as const, text: `Halaman yang sedang dibuka pengguna: ${halaman}` }]
+function buatSystemBlocks(halaman: string, pertanyaan: string) {
+  // Panduan langkah (lib/chatbot/panduan.ts) dipilih dari pathname polos —
+  // `halaman` bisa memuat ekor " · nibar=…" dari useParams, dan teks bebas dari
+  // klien tak boleh ikut memilih panduan. Ikut di blok KEDUA yang sama, jadi
+  // blok statis di atasnya tetap ter-cache.
+  const panduan = panduanUntuk(bersihkanPath(halaman), pertanyaan)
+  const dinamis = [halaman ? `Halaman yang sedang dibuka pengguna: ${halaman}` : '', panduan]
+    .filter(Boolean).join('\n\n')
+  if (!dinamis) return SYSTEM_BLOCKS
+  return [...SYSTEM_BLOCKS, { type: 'text' as const, text: dinamis }]
 }
 
 export async function POST(req: Request) {
@@ -112,7 +120,7 @@ export async function POST(req: Request) {
   // permintaan, jadi skema `chat_messages_ai` tak berubah (tanpa migrasi) dan
   // giliran berikutnya tak menyeret ulang hasil query yang mungkin sudah basi.
   let reply = '(AI tidak memberi jawaban.)'
-  const systemBlocks = buatSystemBlocks(halaman)
+  const systemBlocks = buatSystemBlocks(halaman, content)
   try {
     let putaran = 0
     for (;;) {
