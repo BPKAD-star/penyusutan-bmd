@@ -20,6 +20,7 @@
 //      jejak ledger permanen (append-only) → tak bisa dihapus penuh; hanya
 //      draft murni (belum pernah disetujui) yang bisa dihapus.
 import { useEffect, useState, useCallback, useRef } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
@@ -82,6 +83,15 @@ type HeaderPayload = {
   no_bast?: string; tgl_bast?: string; ket_bast?: string
   dokumen_paths?: string[]
   draft_items?: DraftItem[]
+  // Identitas PPK & Pengurus Barang, DIBEKUKAN saat approve (2026-09-29) untuk
+  // cetak "Surat Pernyataan Pengadaan" — lihat snapshotIdentitasSurat() di
+  // bawah. `ppk_id`/`pengurus_id` sengaja jadi PENANDA "sudah dibekukan":
+  // kontrak yang disetujui SEBELUM perubahan ini tidak punya kunci-kunci ini
+  // sama sekali, dan halaman cetak jatuh ke lookup live yang lama utk mereka.
+  ppk_id?: string; ppk_nip?: string | null; ppk_pangkat?: string | null
+  ppk_golongan?: string | null; ppk_jabatan?: string | null
+  pengurus_id?: string; pengurus_nama?: string; pengurus_nip?: string | null
+  pengurus_pangkat?: string | null; pengurus_golongan?: string | null; pengurus_jabatan?: string | null
 }
 // 'ditolak' = LEGACY (fitur Tolak sudah dihapus) — baris lama tetap ditangani
 // (disaring dari tampilan) supaya tak error, tapi tak pernah dibuat baru.
@@ -189,6 +199,75 @@ function remapFieldKeys(fields: Record<string, string>): Record<string, string> 
   for (const [k, v] of Object.entries(fields || {})) out[FIELD_KEY_RENAME[k] || k] = v
   return out
 }
+/**
+ * Identitas LENGKAP PPK & Pengurus Barang, dibekukan SAAT APPROVE — bukan
+ * diresolve ulang tiap kali "Surat Pernyataan Pengadaan" dicetak.
+ *
+ * Sebelum ini `app/cetak/surat-pernyataan-pengadaan/page.tsx` mencari
+ * Pengurus Barang 100% LIVE (".eq('role_bmd', ...).eq('skpd_id', ...)", tanpa
+ * syarat lain sama sekali) — ganti Pengurus Barang SKPD itu, SEMUA surat lama
+ * yang dicetak ulang ikut berganti nama, walau kontraknya dicatat orang yang
+ * berbeda. NIP/pangkat/jabatan PPK juga ikut mengambang krn di-lookup ulang
+ * by nama ke data pegawai HARI INI, bukan posisinya waktu tanda tangan.
+ * Kelas bug yang sama sudah pernah ditutup utk KIR (pj_nama/pj_nip/
+ * pj_jabatan, dibekukan saat PJ ruangan ditetapkan) — di sini dibekukan di
+ * titik kejadian yang setara: APPROVE, bukan PRINT.
+ *
+ * ⚠️ Rantai SKPD utk mencocokkan nama PPK sengaja SAMA SCOPE dgn picker "Nama
+ * PPK" (usePegawaiSkpd — SKPD terpilih + induk-induknya), bukan `skpd_id`
+ * telanjang, supaya pencocokan nama tak nyasar ke pegawai lain yang kebetulan
+ * sama nama tapi di luar lingkup SKPD ini.
+ *
+ * ⚠️ FAIL-SOFT SENGAJA — surat pernyataan cuma turunan cetak, bukan syarat
+ * sahnya kontrak. Kolom yg gagal ditemukan dibiarkan kosong (halaman cetaknya
+ * sendiri sudah fail-soft ke titik-titik sejak awal); gagal MEMBEKUKAN tak
+ * boleh sampai menggagalkan approve.
+ */
+async function snapshotIdentitasSurat(
+  supabase: SupabaseClient, skpdId: number, namaPpk: string,
+): Promise<Partial<HeaderPayload>> {
+  const out: Partial<HeaderPayload> = {}
+  try {
+    const rantai: number[] = []
+    const dilihat = new Set<number>()
+    let cur: number | null = skpdId
+    let level = 0
+    while (cur != null && !dilihat.has(cur)) {
+      dilihat.add(cur)
+      const { data } = await supabase.from('admin_skpd').select('id,parent_id,level').eq('id', cur).single()
+      if (!data) break
+      rantai.push(data.id)
+      if (data.id === skpdId) level = data.level
+      cur = data.parent_id
+    }
+
+    const ppkTrim = namaPpk.trim()
+    if (ppkTrim && rantai.length > 0) {
+      const { data: ppkRows } = await supabase.from('admin_pegawai')
+        .select('id,nip,pangkat,golongan,jabatan').eq('nama', ppkTrim).in('skpd_id', rantai).limit(1)
+      const p = ppkRows?.[0] as { id: string; nip: string | null; pangkat: string | null; golongan: string | null; jabatan: string | null } | undefined
+      if (p) {
+        out.ppk_id = p.id; out.ppk_nip = p.nip; out.ppk_pangkat = p.pangkat
+        out.ppk_golongan = p.golongan; out.ppk_jabatan = p.jabatan
+      }
+    }
+
+    // Level 1 = SKPD induk → Pengurus Barang; level 2/3 = sub-OPD → Pengurus
+    // Barang Pembantu. Pola sama dgn halaman cetaknya sendiri.
+    const roleBmd = level <= 1 ? 'pengurus_barang' : 'pengurus_barang_pembantu'
+    const { data: pgw } = await supabase.from('admin_pegawai')
+      .select('id,nama,nip,pangkat,golongan,jabatan').eq('skpd_id', skpdId).eq('role_bmd', roleBmd).order('nama').limit(1)
+    const g = pgw?.[0] as { id: string; nama: string; nip: string | null; pangkat: string | null; golongan: string | null; jabatan: string | null } | undefined
+    if (g) {
+      out.pengurus_id = g.id; out.pengurus_nama = g.nama; out.pengurus_nip = g.nip
+      out.pengurus_pangkat = g.pangkat; out.pengurus_golongan = g.golongan; out.pengurus_jabatan = g.jabatan
+    }
+  } catch {
+    // Fail-soft — lihat komentar fungsi. `out` yang sudah terisi sebagian tetap dipakai.
+  }
+  return out
+}
+
 function normalizeDraftItems(raw: unknown): DraftItem[] {
   if (!Array.isArray(raw)) return []
   const out: DraftItem[] = []
@@ -753,8 +832,15 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     }
 
     const { data: { user } } = await supabase.auth.getUser()
+    const identitasSurat = await snapshotIdentitasSurat(supabase, skpdId, j.payload.nama_ppk || '')
     const { error: appErr } = await supabase.from('jurnal_header')
-      .update({ approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString() })
+      .update({
+        approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString(),
+        // Spread payload LAMA dulu — menimpanya polos akan MEMBUANG draft_items
+        // & field lain yang masih dipakai kartu ini (pola yg berkali-kali
+        // dicatat di CLAUDE.md: "update payload wajib men-spread yang lama").
+        payload: { ...j.payload, ...identitasSurat },
+      })
       .eq('id', j.id)
     if (appErr) { await gagalSetujui(`Barang sudah tercatat, tapi status approval gagal diupdate: ${appErr.message} — cek Daftar Barang, kontrak ini mungkin perlu di-\u201cSetujui\u201d ulang manual.`, 'amber'); setBusy(false); onChanged(); return }
 

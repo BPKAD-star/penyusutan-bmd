@@ -7447,6 +7447,73 @@ jangan biarkan catatan lama membingungkan pembaca berikutnya.
   (kotak Cari diperluas, diuji merah dulu dgn substring per ruas — bukan
   exact-match string yang gampang basi kalau urutan `.or()` berubah).
 
+## Picker "Nama PPK": Kepala yang MERANGKAP kini ikut kebaca (2026-09-29)
+
+`usePegawaiSkpd` (dipakai kolom "Nama PPK" di Pengadaan & Pekerjaan
+Konstruksi) cuma menaiki `parent_id` SKPD terpilih buat mencari daftar
+pegawai. Rangkap Pengguna Barang (`admin_pegawai_penugasan`) itu antar-SKPD
+**BERSEBELAHAN**, bukan induk-anak (mis. Kepala Dinas PU merangkap Kepala
+Dinas Perumahan — dua Dinas yang sama-sama level teratas), jadi tak pernah
+bisa ketemu lewat `parent_id`. Akibatnya Kepala yang merangkap **selalu**
+hilang dari dropdown PPK di SKPD yang ia rangkap, walau datanya sudah ada &
+kelihatan di Daftar Pegawai ("+ Rangkap: ...").
+
+Kelas bug yang SAMA sudah ditutup 2026-08-16 untuk pemilih penanda tangan
+lembar cetak (`fetchCalonTtd`, lib/penandaTangan.ts) — picker PPK ini punya
+hook sendiri yang tak pernah ikut dibenahi.
+
+**Obatnya**: `usePegawaiSkpd` sekarang JUGA query `admin_pegawai_penugasan`
+(pola sama dgn `fetchCalonTtd`) dan menggabungkan hasilnya ke daftar, ditandai
+"Merangkap dari <SKPD asal>" di sub-label dropdown. ⚠️ Beda dari
+`fetchCalonTtd`: hook ini TIDAK menerima peta SKPD penuh dari pemanggil, jadi
+nama SKPD asal pegawai rangkap (bisa di luar rantai induk yang sudah dimuat)
+dicari lewat query tambahan sendiri — bukan disatukan jadi satu fungsi,
+keduanya melayani bentuk pemanggil yang berbeda. **Tak ada migrasi.**
+
+## Surat Pernyataan Pengadaan: PPK & Pengurus Barang dibekukan saat approve (2026-09-29)
+
+Ditemukan user saat menguji: Kepala DPMPTSP berganti → kontrak Pengadaan
+**LAMA** yang dicetak ulang ("Surat Pernyataan Pengadaan") ikut menampilkan
+nama Kepala/Pengurus Barang yang **BARU**, bukan yang mencatat kontrak itu
+waktu itu.
+
+- **Sebabnya**: `app/cetak/surat-pernyataan-pengadaan/page.tsx` mencari
+  Pengurus Barang **100% LIVE** — `.eq('skpd_id', kartu.skpd_id).eq('role_bmd',
+  'pengurus_barang')`, tanpa syarat lain — nanya "siapa yang SEKARANG pegang
+  jabatan ini", bukan "siapa yang megang jabatan ini WAKTU kontrak dicatat".
+  Ganti Pengurus Barang → SEMUA surat lama SKPD itu ikut ganti nama tanpa
+  terkecuali. NIP/pangkat/jabatan PPK juga ikut mengambang krn di-lookup ulang
+  by nama ke data pegawai HARI INI (namanya sendiri aman — `payload.nama_ppk`
+  sudah lama jadi string beku, cuma detail identitasnya yang bocor).
+- **Kelas bug yang sama sudah ditutup untuk KIR** (`pj_nama`/`pj_nip`/
+  `pj_jabatan`, dibekukan ke kolom sendiri saat PJ ruangan ditetapkan) —
+  Surat Pernyataan Pengadaan kelewat ikut pola itu.
+- **Obatnya `snapshotIdentitasSurat()`** (Pengadaan.tsx, module-level):
+  dipanggil SEKALI di `approveHeader()`, membekukan identitas LENGKAP
+  (nip/pangkat/golongan/jabatan) PPK **dan** Pengurus Barang/Pembantu ke
+  `jurnal_header.payload` (`ppk_id`/`ppk_nip`/… & `pengurus_id`/
+  `pengurus_nama`/…). Halaman cetak membaca field beku ini DULU;
+  `ppk_id`/`pengurus_id` sengaja jadi **penanda** "kontrak ini sudah
+  dibekukan" — absen → kontrak lama dari sebelum perbaikan ini, jatuh ke
+  lookup live yang lama (fail-soft, sama persis perilaku sebelumnya: tak
+  ketemu → titik-titik). **Kompat mundur penuh**, tak ada backfill data lama.
+- ⚠️ Rantai SKPD utk mencocokkan nama PPK sengaja SAMA SCOPE dgn picker "Nama
+  PPK" (`usePegawaiSkpd` — SKPD terpilih + induk-induknya), supaya pencocokan
+  nama tak nyasar ke pegawai lain yang kebetulan sama nama di luar lingkup.
+- ⚠️ **Fail-soft disengaja** — surat pernyataan cuma turunan cetak, bukan
+  syarat sahnya kontrak; gagal membekukan (query gagal, PPK tak ketemu, dst.)
+  TIDAK boleh menggagalkan approve. Kolom yg gagal ditemukan dibiarkan kosong.
+- **Cakupan CUMA Pengadaan (non-konstruksi)** — Surat Pernyataan ini
+  satu-satunya cetak yang menampilkan blok tanda tangan Pengurus Barang tanpa
+  operator memilih sendiri (beda dari RKBMD/Laporan Perolehan/BA Rekon yang
+  pakai `fetchCalonTtd`, operator re-pick tiap cetak — itu SENGAJA tak
+  disnapshot krn memang dipilih ulang tiap kali). KDP/Hibah/Tukar
+  Menukar/dll tak punya lembar serupa. **KIR SENGAJA TIDAK disentuh** — blok
+  Pengurus Barang KIR memang didokumentasikan LIVE (kartu ruangan itu catatan
+  administratif yang terus hidup, bukan dokumen legal sekali-cetak spt Surat
+  Pernyataan).
+- **Tak ada migrasi** — murni `jurnal_header.payload` (jsonb).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

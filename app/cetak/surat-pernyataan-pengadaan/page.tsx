@@ -63,6 +63,13 @@ const tglID = (s: string | null | undefined) => {
 type HeaderPayload = {
   sub_kegiatan?: string; nama_penyedia?: string; nama_ppk?: string
   no_bast?: string; tgl_bast?: string
+  // Identitas PPK & Pengurus Barang DIBEKUKAN saat approve sejak 2026-09-29
+  // (Pengadaan.tsx, snapshotIdentitasSurat) — lihat catatan di bawah. Kontrak
+  // yang disetujui SEBELUM ini tidak punya kunci-kunci ini sama sekali.
+  ppk_id?: string; ppk_nip?: string | null; ppk_pangkat?: string | null
+  ppk_golongan?: string | null; ppk_jabatan?: string | null
+  pengurus_id?: string; pengurus_nama?: string; pengurus_nip?: string | null
+  pengurus_pangkat?: string | null; pengurus_golongan?: string | null; pengurus_jabatan?: string | null
 }
 type Header = {
   id: string; no_sk: string; tanggal: string; jenis: string; skpd_id: number
@@ -119,22 +126,43 @@ export default function CetakSuratPernyataanPengadaanPage() {
         setSkpd(ini)
         const rantai = rantaiKeAtas(h.skpd_id, byId)
 
-        // ── Pengurus Barang / Pengurus Barang Pembantu (di SKPD kartu ini
-        // SENDIRI, bukan rantai) — level 1 ("SKPD") → pengurus_barang; level
-        // 2/3 ("sub OPD") → pengurus_barang_pembantu. Tak ketemu → dibiarkan
-        // bertitik-titik, pola yang sama dgn lembar cetak lain di repo ini. ──
-        const roleBmd = ini.level <= 1 ? 'pengurus_barang' : 'pengurus_barang_pembantu'
-        const { data: pgw } = await supabase.from('admin_pegawai')
-          .select('nama,nip,pangkat,golongan,jabatan,skpd_id')
-          .eq('skpd_id', h.skpd_id).eq('role_bmd', roleBmd).order('nama').limit(1)
-        setPengurus((pgw?.[0] as Pegawai) || null)
+        const payload = h.payload as HeaderPayload
 
-        // ── PPK: NIP-nya tak tersimpan di payload (cuma nama), jadi dicari
-        // lewat nama di rantai SKPD yang sama dgn picker saat kontrak dibuat
-        // (usePegawaiSkpd). Tak ketemu/dobel nama → NIP dibiarkan kosong,
+        // ── Pengurus Barang / Pengurus Barang Pembantu ──────────────────────
+        // ⚠️ WAJIB baca identitas BEKU (payload.pengurus_*) dulu, JANGAN
+        // di-lookup live lagi — itu justru bug yang ditutup di sini (2026-09-29,
+        // insiden Kepala DPMPTSP berganti → surat LAMA ikut berganti nama).
+        // `pengurus_id` = penanda "kontrak ini sudah dibekukan saat approve";
+        // absen → kontrak lama dari sebelum pembekuan ada, jatuh ke lookup
+        // lama (fail-soft, sama seperti sebelumnya: tak ketemu → titik-titik).
+        if (payload.pengurus_id) {
+          setPengurus({
+            nama: payload.pengurus_nama || '', nip: payload.pengurus_nip ?? null,
+            pangkat: payload.pengurus_pangkat ?? null, golongan: payload.pengurus_golongan ?? null,
+            jabatan: payload.pengurus_jabatan ?? null, skpd_id: h.skpd_id,
+          })
+        } else {
+          const roleBmd = ini.level <= 1 ? 'pengurus_barang' : 'pengurus_barang_pembantu'
+          const { data: pgw } = await supabase.from('admin_pegawai')
+            .select('nama,nip,pangkat,golongan,jabatan,skpd_id')
+            .eq('skpd_id', h.skpd_id).eq('role_bmd', roleBmd).order('nama').limit(1)
+          setPengurus((pgw?.[0] as Pegawai) || null)
+        }
+
+        // ── PPK ──────────────────────────────────────────────────────────────
+        // Namanya SELALU dari payload.nama_ppk (beku sejak awal, lihat
+        // Pengadaan.tsx). NIP/pangkat/golongan/jabatan: sejak 2026-09-29 beku
+        // BARENGAN (`ppk_id` sbg penanda); kontrak lama jatuh ke lookup lama
+        // by nama, di rantai SKPD yang sama dgn picker saat kontrak dibuat
+        // (usePegawaiSkpd) — tak ketemu/dobel nama → NIP dibiarkan kosong,
         // bukan ditebak. ──
-        const namaPpk = (h.payload as HeaderPayload)?.nama_ppk || ''
-        if (namaPpk && rantai.length > 0) {
+        const namaPpk = payload.nama_ppk || ''
+        if (payload.ppk_id) {
+          setPpk({
+            nama: namaPpk, nip: payload.ppk_nip ?? null, pangkat: payload.ppk_pangkat ?? null,
+            golongan: payload.ppk_golongan ?? null, jabatan: payload.ppk_jabatan ?? null, skpd_id: h.skpd_id,
+          })
+        } else if (namaPpk && rantai.length > 0) {
           const { data: ppkRows } = await supabase.from('admin_pegawai')
             .select('nama,nip,pangkat,golongan,jabatan,skpd_id')
             .eq('nama', namaPpk).in('skpd_id', rantai).limit(1)
