@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { CHAT_SYSTEM_PROMPT } from '@/lib/chatbot/prompt'
 import { TOOL_DEFS, jalankanTool } from '@/lib/chatbot/tools'
 import { bersihkanPath, panduanUntuk } from '@/lib/chatbot/panduan'
+import { penggunaIstimewa } from '@/lib/chatbot/istimewa'
+import { TOOL_DEFS_ADMIN, NAMA_TOOL_ADMIN, jalankanToolAdmin } from '@/lib/chatbot/toolsAdmin'
 
 // Chat AI (ChatWidget opsi "Asisten AI") — proxy ke Anthropic Messages API.
 // API key HARUS server-side (process.env.ANTHROPIC_API_KEY, tanpa prefix
@@ -13,6 +15,20 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 const MODEL = 'claude-haiku-4-5'
+// Jalur istimewa (lib/chatbot/istimewa.ts) memakai model yang lebih kuat: alat
+// baca-nya lebih banyak & pertanyaannya lebih bertahap, dan Haiku lebih sering
+// menyimpang dari aturan. Jumlah penggunanya kecil, jadi biayanya terkendali.
+const MODEL_ISTIMEWA = 'claude-sonnet-5-5'
+
+const CATATAN_ISTIMEWA = `PENGGUNA ISTIMEWA (admin, terverifikasi di server): kamu punya alat baca TAMBAHAN — cari_skpd, rekap_bmd_skpd, kartu_pending, status_tahun_buku, status_rkbmd — dengan cakupan SE-KABUPATEN (mengikuti peran admin akun ini). Tetap HANYA-BACA: kamu tidak bisa mencatat, menyetujui, atau mengubah apa pun. Untuk rekap per SKPD: cari_skpd dulu untuk mendapat skpd_id, baru rekap_bmd_skpd. Sebut angka persis dari hasil alat. Untuk akun ini, larangan "jangan ungkap data SKPD lain" TIDAK berlaku (admin memang berwenang atas seluruh SKPD) — tapi jangan pernah mengarang angka di luar hasil alat.`
+
+/** Peran admin dibaca dari DB lewat sesi si penanya — allowlist env saja tidak
+ *  cukup: akun yang perannya sudah dicabut tak boleh tetap dapat alat admin.
+ *  ⚠️ Fail-closed: query gagal = BUKAN admin. */
+async function adalahAdmin(sb: ReturnType<typeof createClient>, userId: string): Promise<boolean> {
+  const { data, error } = await sb.from('admin_profiles').select('role').eq('id', userId).maybeSingle()
+  return !error && (data as { role?: string } | null)?.role === 'admin'
+}
 // System prompt + basis pengetahuan (grounding) ada di lib/chatbot/prompt.ts —
 // TANPA ini model mengarang dari pengetahuan umum (SAKTI/SIMAK-BMN dll).
 const SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT
@@ -65,13 +81,13 @@ const SYSTEM_BLOCKS = [
  *  halaman/tiap user — cache_read_input_tokens jatuh ke 0 utk SEMUA orang,
  *  bukan cuma yang pindah-pindah halaman. Blok kedua yang kecil & tak
  *  di-cache ini jauh lebih murah drpd itu. */
-function buatSystemBlocks(halaman: string, pertanyaan: string) {
+function buatSystemBlocks(halaman: string, pertanyaan: string, istimewa: boolean) {
   // Panduan langkah (lib/chatbot/panduan.ts) dipilih dari pathname polos —
   // `halaman` bisa memuat ekor " · nibar=…" dari useParams, dan teks bebas dari
   // klien tak boleh ikut memilih panduan. Ikut di blok KEDUA yang sama, jadi
   // blok statis di atasnya tetap ter-cache.
   const panduan = panduanUntuk(bersihkanPath(halaman), pertanyaan)
-  const dinamis = [halaman ? `Halaman yang sedang dibuka pengguna: ${halaman}` : '', panduan]
+  const dinamis = [halaman ? `Halaman yang sedang dibuka pengguna: ${halaman}` : '', istimewa ? CATATAN_ISTIMEWA : '', panduan]
     .filter(Boolean).join('\n\n')
   if (!dinamis) return SYSTEM_BLOCKS
   return [...SYSTEM_BLOCKS, { type: 'text' as const, text: dinamis }]
@@ -91,6 +107,8 @@ export async function POST(req: Request) {
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Dua syarat sekaligus: id akun ada di allowlist env DAN perannya masih admin.
+  const istimewa = penggunaIstimewa(user.id) && await adalahAdmin(supabase, user.id)
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'ANTHROPIC_API_KEY belum diset di server (env Vercel).' }, { status: 500 })
@@ -120,7 +138,8 @@ export async function POST(req: Request) {
   // permintaan, jadi skema `chat_messages_ai` tak berubah (tanpa migrasi) dan
   // giliran berikutnya tak menyeret ulang hasil query yang mungkin sudah basi.
   let reply = '(AI tidak memberi jawaban.)'
-  const systemBlocks = buatSystemBlocks(halaman, content)
+  const systemBlocks = buatSystemBlocks(halaman, content, istimewa)
+  const daftarTool = istimewa ? [...TOOL_DEFS, ...TOOL_DEFS_ADMIN] : TOOL_DEFS
   try {
     let putaran = 0
     for (;;) {
@@ -132,10 +151,10 @@ export async function POST(req: Request) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: MODEL,
+          model: istimewa ? MODEL_ISTIMEWA : MODEL,
           max_tokens: MAX_TOKENS,
           system: systemBlocks,
-          tools: TOOL_DEFS,
+          tools: daftarTool,
           messages: msgs,
         }),
       })
@@ -166,7 +185,13 @@ export async function POST(req: Request) {
       const hasil = await Promise.all(diminta.map(async t => ({
         type: 'tool_result' as const,
         tool_use_id: t.id,
-        content: await jalankanTool(supabase, t.name, t.input || {}),
+        // Gerbang di DISPATCH juga, bukan cuma di daftar alat: model yang
+        // "mengingat" nama alat admin dari percakapan lain tetap ditolak di sini.
+        content: NAMA_TOOL_ADMIN.has(t.name) && !istimewa
+          ? `GAGAL: alat "${t.name}" tidak tersedia untuk akun ini.`
+          : NAMA_TOOL_ADMIN.has(t.name)
+            ? await jalankanToolAdmin(supabase, t.name, t.input || {})
+            : await jalankanTool(supabase, t.name, t.input || {}),
       })))
       msgs.push({ role: 'assistant', content: blok })
       msgs.push({ role: 'user', content: hasil })
