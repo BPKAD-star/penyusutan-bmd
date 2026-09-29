@@ -96,6 +96,7 @@ export default function ChatWidget() {
   const [lastRead, setLastRead] = useState<Record<string, number>>({}) // room_key -> last_read_id
   const [activeRoom, setActiveRoom] = useState<'public' | string | null>(null) // null = list view
   const [search, setSearch] = useState('')
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set())
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -208,6 +209,24 @@ export default function ChatWidget() {
     return () => { supabase.removeChannel(channel) }
   }, [myId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Siapa yang sedang online — Supabase Realtime Presence (di memori server
+  // Realtime, tanpa tabel & tanpa query, jadi tak menyentuh RLS/statement
+  // timeout). Definisi "online" = widget ini sedang terbuka di sebuah tab,
+  // bukan berarti orangnya sedang aktif mengetik. Channel-nya SENGAJA terpisah
+  // dari `chat_messages_rt` supaya pesan tak terganggu kalau presence bermasalah.
+  useEffect(() => {
+    if (!myId) return
+    const channel = supabase.channel('online_users', { config: { presence: { key: myId } } })
+      .on('presence', { event: 'sync' }, () => {
+        // Kunci state presence = `key` di atas = user id, jadi cukup Object.keys.
+        setOnlineIds(new Set(Object.keys(channel.presenceState())))
+      })
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') void channel.track({ online_at: new Date().toISOString() })
+      })
+    return () => { supabase.removeChannel(channel) }
+  }, [myId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [publicMsgs.length, dmMsgs.length, aiMsgs.length, aiBusy, activeRoom])
 
   // Tandai room aktif sudah dibaca sampai pesan terakhir yang terlihat.
@@ -240,15 +259,18 @@ export default function ChatWidget() {
         const msgs = dmByPeer[p.id] || []
         const last = msgs[msgs.length - 1]
         const unread = msgs.filter(m => m.id > (lastRead[p.id] || 0) && m.sender_id !== myId).length
-        return { ...p, last, unread }
+        return { ...p, last, unread, online: onlineIds.has(p.id) }
       })
       .sort((a, b) => {
+        // Yang online di atas; di dalam tiap kelompok urutan lama (obrolan
+        // terbaru dulu, lalu abjad) tetap berlaku.
+        if (a.online !== b.online) return a.online ? -1 : 1
         if (a.last && b.last) return b.last.id - a.last.id
         if (a.last) return -1
         if (b.last) return 1
         return a.nama.localeCompare(b.nama)
       })
-  }, [profiles, search, myId, dmByPeer, lastRead])
+  }, [profiles, search, myId, dmByPeer, lastRead, onlineIds])
 
   const unreadPublic = publicMsgs.filter(m => m.id > (lastRead.public || 0) && m.sender_id !== myId).length
   const unreadTotal = unreadPublic + kontakList.reduce((sum, k) => sum + k.unread, 0)
@@ -429,7 +451,13 @@ export default function ChatWidget() {
                 </svg>
               </button>
             )}
-            <h3 className="font-semibold text-sm flex-1 truncate">{activeRoom === null ? 'Chat' : threadTitle}</h3>
+            <h3 className="font-semibold text-sm flex-1 truncate">
+              {activeRoom === null ? 'Chat' : threadTitle}
+              {activeRoom !== null && activeRoom !== 'ai' && activeRoom !== 'public' && (
+                <span className={`ml-2 inline-block w-2 h-2 rounded-full align-middle ${onlineIds.has(activeRoom) ? 'bg-green-400' : 'bg-white/30'}`}
+                  title={onlineIds.has(activeRoom) ? 'Online' : 'Offline'} />
+              )}
+            </h3>
             <button onClick={() => { setOpen(false); setActiveRoom(null) }} className="text-white/70 hover:text-white text-xl leading-none">×</button>
           </div>
 
@@ -473,8 +501,10 @@ export default function ChatWidget() {
               {kontakList.map(k => (
                 <button key={k.id} onClick={() => setActiveRoom(k.id)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50">
-                  <div className="w-9 h-9 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0 text-sm font-semibold">
+                  <div className="relative w-9 h-9 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0 text-sm font-semibold">
                     {k.nama.charAt(0).toUpperCase()}
+                    <span title={k.online ? 'Online' : 'Offline'}
+                      className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${k.online ? 'bg-green-500' : 'bg-gray-300'}`} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{k.nama}</p>
