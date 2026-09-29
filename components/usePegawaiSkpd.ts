@@ -14,8 +14,10 @@
 // TIDAK menerima teks bebas (nilai wajib salah satu opsi), jadi kolomnya jadi
 // mustahil diisi, bukan sekadar merepotkan.
 //
-// Pegawai SKPD induk tetap dibedakan: `asalSkpd` terisi (ditampilkan sbg baris
-// kecil di bawah namanya) dan mereka diurutkan SESUDAH pegawai SKPD terpilih.
+// Pegawai SKPD induk & pemegang rangkap Pengguna Barang (admin_pegawai_
+// penugasan, lihat catatan di usePegawaiSkpd) tetap dibedakan: `asalSkpd`
+// terisi (ditampilkan sbg baris kecil di bawah namanya) dan mereka diurutkan
+// SESUDAH pegawai SKPD terpilih.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { SSOption } from '@/components/SearchSelect'
@@ -26,12 +28,30 @@ export type PegawaiOpt = {
   nip: string | null
   jabatan: string | null
   skpd_id: number | null
-  /** Nama SKPD asal — HANYA diisi kalau pegawai ini datang dari SKPD induk,
-   *  bukan dari SKPD yang sedang dipilih. Kosong = pegawai SKPD itu sendiri. */
+  /** Keterangan asal — diisi kalau pegawai ini BUKAN pegawai pokok SKPD yang
+   *  sedang dipilih: datang dari SKPD induk ("Dinas X") atau merangkap Pengguna
+   *  Barang dari SKPD lain ("Merangkap dari Dinas Y"). Kosong = pegawai SKPD
+   *  itu sendiri. */
   asalSkpd?: string
 }
 
-/** Pegawai SKPD terpilih + SKPD induk di atasnya, urut: SKPD sendiri dulu, lalu A→Z. */
+/**
+ * Pegawai SKPD terpilih + SKPD induk di atasnya + Kepala yang MERANGKAP
+ * mengampu SKPD ini/induknya, urut: SKPD sendiri dulu, lalu A→Z.
+ *
+ * ⚠️ Rangkap (`admin_pegawai_penugasan`, khusus Pengguna Barang) TIDAK IKUT
+ * `rantai`-nya sendiri sendiri: rangkap itu antar-SKPD BERSEBELAHAN (mis.
+ * Kepala Dinas PU merangkap Kepala Dinas Perumahan — dua Dinas yang sama-sama
+ * level teratas, bukan satu anak-induk yang lain), jadi tak akan pernah
+ * ketemu lewat `parent_id`. Sebelum ini picker "Nama PPK" cuma menaiki
+ * `parent_id`, jadi Kepala yang rangkap SELALU hilang dari dropdown SKPD yang
+ * ia rangkap — persis kelas bug yang sudah ditutup utk pemilih penanda tangan
+ * cetak lewat `fetchCalonTtd` (lib/penandaTangan.ts, 2026-08-16); di sini
+ * ditutup ulang khusus utk hook ini krn hook ini TIDAK menerima peta SKPD
+ * penuh dari pemanggil (beda dari `fetchCalonTtd`), jadi nama SKPD asal
+ * pegawai rangkap perlu query tambahan sendiri — bukan disatukan jadi satu
+ * fungsi, keduanya melayani bentuk pemanggil yang berbeda.
+ */
 export function usePegawaiSkpd(skpdId: number | string | null | undefined): PegawaiOpt[] {
   const supabase = createClient()
   const [list, setList] = useState<PegawaiOpt[]>([])
@@ -57,13 +77,44 @@ export function usePegawaiSkpd(skpdId: number | string | null | undefined): Pega
       if (rantai.length === 0) { if (!batal) setList([]); return }
 
       const namaSkpd = new Map(rantai.map(s => [s.id, s.nama]))
-      const { data } = await supabase.from('admin_pegawai')
-        .select('id,nama,nip,jabatan,skpd_id')
-        .in('skpd_id', rantai.map(s => s.id))
-        .order('nama')
+      const idRantai = rantai.map(s => s.id)
+
+      const [{ data }, { data: rangkapData }] = await Promise.all([
+        supabase.from('admin_pegawai')
+          .select('id,nama,nip,jabatan,skpd_id')
+          .in('skpd_id', idRantai)
+          .order('nama'),
+        // Skema: admin_pegawai_penugasan.skpd_id = SKPD yang DIAMPU (rangkap
+        // masuk), pegawai:admin_pegawai(...) = pegawai POKOKnya (rangkap dari
+        // mana). Pola query sama dgn fetchCalonTtd (lib/penandaTangan.ts).
+        supabase.from('admin_pegawai_penugasan')
+          .select('pegawai:admin_pegawai(id,nama,nip,jabatan,skpd_id)')
+          .in('skpd_id', idRantai)
+          .eq('aktif', true),
+      ])
 
       const rows = ((data || []) as PegawaiOpt[]).map(p =>
         p.skpd_id === id ? p : { ...p, asalSkpd: namaSkpd.get(p.skpd_id ?? -1) })
+
+      // ⚠️ `pegawai:admin_pegawai(...)` di sini SATU OBJEK, bukan array — arah FK
+      // dari `admin_pegawai_penugasan` (anak) ke `admin_pegawai` (induk) selalu
+      // begitu, beda dari embed kebalikannya. Rumah pegawai rangkap (`p.skpd_id`)
+      // bisa SAJA di luar `rantai` (justru itu intinya), jadi nama SKPD asalnya
+      // dicari terpisah — cuma utk yang belum ketemu di `namaSkpd`.
+      type PenugasanRow = { pegawai: PegawaiOpt | null }
+      const rangkap = ((rangkapData || []) as unknown as PenugasanRow[])
+        .map(r => r.pegawai)
+        .filter((p): p is PegawaiOpt => !!p && p.skpd_id !== id) // rangkap di SKPD sendiri bukan rangkap
+
+      const idAsalBelumDikenal = [...new Set(rangkap.map(p => p.skpd_id).filter((x): x is number => x != null))]
+        .filter(x => !namaSkpd.has(x))
+      if (idAsalBelumDikenal.length > 0) {
+        const { data: skpdAsal } = await supabase.from('admin_skpd').select('id,nama').in('id', idAsalBelumDikenal)
+        for (const s of (skpdAsal || []) as { id: number; nama: string }[]) namaSkpd.set(s.id, s.nama)
+      }
+
+      for (const p of rangkap) rows.push({ ...p, asalSkpd: `Merangkap dari ${namaSkpd.get(p.skpd_id ?? -1) || 'SKPD lain'}` })
+
       rows.sort((a, b) => (a.asalSkpd ? 1 : 0) - (b.asalSkpd ? 1 : 0) || a.nama.localeCompare(b.nama))
 
       // Dedup by NAMA: yang tersimpan di payload cuma string nama (bukan id),
