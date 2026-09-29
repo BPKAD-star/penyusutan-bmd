@@ -22,6 +22,27 @@ const MODEL_ISTIMEWA = 'claude-sonnet-5-5'
 
 const CATATAN_ISTIMEWA = `PENGGUNA ISTIMEWA (admin, terverifikasi di server): kamu punya alat baca TAMBAHAN — cari_skpd, rekap_bmd_skpd, kartu_pending, status_tahun_buku, status_rkbmd — dengan cakupan SE-KABUPATEN (mengikuti peran admin akun ini). Tetap HANYA-BACA: kamu tidak bisa mencatat, menyetujui, atau mengubah apa pun. Untuk rekap per SKPD: cari_skpd dulu untuk mendapat skpd_id, baru rekap_bmd_skpd. Sebut angka persis dari hasil alat. Untuk akun ini, larangan "jangan ungkap data SKPD lain" TIDAK berlaku (admin memang berwenang atas seluruh SKPD) — tapi jangan pernah mengarang angka di luar hasil alat.`
 
+/** Anggaran total < maxDuration (60 dtk), menyisakan ruang menyimpan balasan. */
+const BATAS_TOTAL_MS = 52_000
+/** Satu alat baca paling lama segini. */
+const BATAS_ALAT_MS = 25_000
+/** Waktu minimum yang harus tersisa untuk satu panggilan model lagi. */
+const MIN_SISA_UNTUK_MODEL_MS = 12_000
+
+/** Hasil alat, atau "GAGAL:" kalau waktunya habis. Query-nya sendiri tak
+ *  dibatalkan (supabase-js tak punya pembatal), tapi kita berhenti menunggunya —
+ *  dan "GAGAL:" membuat model melapor jujur, bukan menebak angka. */
+function denganBatasWaktu(janji: Promise<string>, ms: number): Promise<string> {
+  if (ms <= 0) return Promise.resolve('GAGAL: waktu habis sebelum data sempat dibaca (database sedang lambat).')
+  return Promise.race([
+    janji,
+    new Promise<string>(r => setTimeout(
+      () => r(`GAGAL: data tidak selesai dibaca dalam ${Math.round(ms / 1000)} detik — database sedang lambat. Sarankan mencoba lagi atau mempersempit pertanyaan (mis. satu SKPD).`),
+      ms,
+    )),
+  ])
+}
+
 /** Peran admin dibaca dari DB lewat sesi si penanya — allowlist env saja tidak
  *  cukup: akun yang perannya sudah dicabut tak boleh tetap dapat alat admin.
  *  ⚠️ Fail-closed: query gagal = BUKAN admin. */
@@ -140,10 +161,25 @@ export async function POST(req: Request) {
   let reply = '(AI tidak memberi jawaban.)'
   const systemBlocks = buatSystemBlocks(halaman, content, istimewa)
   const daftarTool = istimewa ? [...TOOL_DEFS, ...TOOL_DEFS_ADMIN] : TOOL_DEFS
+  // ── Anggaran waktu ────────────────────────────────────────────────────────
+  // `maxDuration` 60 dtk. Kalau terlewati, Vercel MEMUTUS koneksi tanpa respons
+  // dan peramban cuma bilang "Load failed" (Safari) / "Failed to fetch" —
+  // pengguna tak tahu sebabnya. Insiden 2026-09-29: fn_rekap_bmd se-kab terukur
+  // 39 dtk, dashboard_rekap 8–11 dtk, ditambah dua putaran model → lewat 60.
+  // Jadi: tiap alat dibatasi, dan kalau anggaran menipis kita BERHENTI dengan
+  // jawaban jujur, bukan menunggu dibunuh.
+  const mulai = Date.now()
+  const sisa = () => BATAS_TOTAL_MS - (Date.now() - mulai)
   try {
     let putaran = 0
     for (;;) {
+      if (sisa() < MIN_SISA_UNTUK_MODEL_MS) {
+        reply = 'Maaf, database sedang lambat sehingga data belum selesai dibaca dalam batas waktu. '
+          + 'Coba lagi sebentar lagi, persempit pertanyaannya (mis. satu SKPD), atau lihat langsung di menunya.'
+        break
+      }
       const res = await fetch('https://api.anthropic.com/v1/messages', {
+        signal: AbortSignal.timeout(Math.max(5_000, sisa() - 3_000)),
         method: 'POST',
         headers: {
           'x-api-key': apiKey,
@@ -189,9 +225,12 @@ export async function POST(req: Request) {
         // "mengingat" nama alat admin dari percakapan lain tetap ditolak di sini.
         content: NAMA_TOOL_ADMIN.has(t.name) && !istimewa
           ? `GAGAL: alat "${t.name}" tidak tersedia untuk akun ini.`
-          : NAMA_TOOL_ADMIN.has(t.name)
-            ? await jalankanToolAdmin(supabase, t.name, t.input || {})
-            : await jalankanTool(supabase, t.name, t.input || {}),
+          : await denganBatasWaktu(
+            NAMA_TOOL_ADMIN.has(t.name)
+              ? jalankanToolAdmin(supabase, t.name, t.input || {})
+              : jalankanTool(supabase, t.name, t.input || {}),
+            Math.min(BATAS_ALAT_MS, sisa() - MIN_SISA_UNTUK_MODEL_MS),
+          ),
       })))
       msgs.push({ role: 'assistant', content: blok })
       msgs.push({ role: 'user', content: hasil })

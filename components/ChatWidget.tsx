@@ -326,11 +326,22 @@ export default function ChatWidget() {
       const res = await fetch('/api/ai-chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content, context }),
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || 'Gagal menghubungi AI.')
+      // Kalau server kehabisan waktu, Vercel membalas halaman error (bukan JSON)
+      // atau memutus koneksi — dua-duanya dulu tampil sbg pesan teknis mentah
+      // ("Load failed", "The string did not match…").
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json) {
+        throw new Error(json?.error || (res.status === 504
+          ? 'server kehabisan waktu (database sedang lambat). Coba lagi, atau persempit pertanyaannya.'
+          : `server membalas ${res.status}.`))
+      }
       setAiMsgs(prev => [...prev, json.message as AiMsg])
     } catch (e) {
-      setAiMsgs(prev => [...prev, { id: -Date.now(), role: 'assistant', content: `Maaf, gagal menghubungi AI: ${e instanceof Error ? e.message : String(e)}`, created_at: new Date().toISOString() }])
+      // TypeError dari fetch = koneksi putus sebelum ada balasan (Safari: "Load failed").
+      const pesan = e instanceof TypeError
+        ? 'koneksi terputus sebelum AI selesai menjawab — biasanya karena prosesnya terlalu lama. Coba lagi, atau persempit pertanyaannya.'
+        : e instanceof Error ? e.message : String(e)
+      setAiMsgs(prev => [...prev, { id: -Date.now(), role: 'assistant', content: `Maaf, gagal menghubungi AI: ${pesan}`, created_at: new Date().toISOString() }])
     }
     setAiBusy(false)
   }

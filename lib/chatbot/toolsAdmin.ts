@@ -41,7 +41,10 @@ export const TOOL_DEFS_ADMIN = [
     description:
       'Rekap Laporan BMD per golongan (jumlah unit, nilai perolehan, akumulasi penyusutan, beban semester, nilai buku) '
       + 'pada SATU periode, untuk satu SKPD BERIKUT seluruh unit di bawahnya — atau se-kabupaten kalau skpd_id dikosongkan. '
-      + 'Angka yang sama dgn menu Pelaporan → Laporan BMD. Butuh skpd_id dari cari_skpd.',
+      + 'Angka yang sama dgn menu Pelaporan → Laporan BMD. Butuh skpd_id dari cari_skpd. '
+      + '⚠️ BERAT (belasan s.d. puluhan detik, se-kabupaten paling lama). Pakai HANYA kalau ditanya angka '
+      + 'PENYUSUTAN (akumulasi/beban/nilai buku) atau periode tertentu. Untuk sekadar jumlah unit & nilai perolehan '
+      + 'per jenis/golongan saat ini, pakai rekap_aset (jauh lebih cepat).',
     input_schema: {
       type: 'object' as const,
       properties: {
