@@ -56,6 +56,19 @@ export const TOOL_DEFS_ADMIN = [
     },
   },
   {
+    name: 'sebaran_golongan',
+    description:
+      'SKPD MANA SAJA yang memiliki aset AKTIF suatu golongan, berikut jumlah unit & nilai perolehan per SKPD induk '
+      + '(unit di bawahnya digabung ke induk). Cepat. Pakai untuk "berapa SKPD yang punya ATB / apa saja / berapa nilainya per SKPD". '
+      + 'Cocok untuk golongan kecil (mis. 1.5.3 ATB, 1.3.6 KDP, 1.5.4 Aset Lain-Lain); golongan raksasa seperti '
+      + '1.3.2 Peralatan & Mesin (±219 rb aset) DITOLAK — untuk itu pakai rekap_bmd_skpd per SKPD.',
+    input_schema: {
+      type: 'object' as const,
+      properties: { golongan: { type: 'string', description: 'Kode golongan level-3, mis. "1.5.3".' } },
+      required: ['golongan'],
+    },
+  },
+  {
     name: 'kartu_pending',
     description:
       'Kartu jurnal yang MENUNGGU PERSETUJUAN (status pending) se-kabupaten: jumlah per kategori (pengadaan, konstruksi, dst.) '
@@ -91,6 +104,7 @@ export async function jalankanToolAdmin(sb: SupabaseClient, nama: string, input:
     switch (nama) {
       case 'cari_skpd': return await cariSkpd(sb, teks(input.kata_kunci))
       case 'rekap_bmd_skpd': return await rekapBmdSkpd(sb, teks(input.periode), input.skpd_id, teks(input.komptabel))
+      case 'sebaran_golongan': return await sebaranGolongan(sb, teks(input.golongan))
       case 'kartu_pending': return await kartuPending(sb)
       case 'status_tahun_buku': return await statusTahunBuku(sb)
       case 'status_rkbmd': return await statusRkbmd(sb, Number(input.tahun_anggaran), teks(input.jenis))
@@ -173,6 +187,53 @@ async function rekapBmdSkpd(sb: SupabaseClient, periode: string, skpdId: unknown
     `TOTAL: ${fmtN(tot.kuantitas)} unit · perolehan Rp${rp(tot.perolehan)} · akumulasi Rp${rp(tot.akumulasi)} · beban Rp${rp(tot.beban)} · nilai buku Rp${rp(tot.nilaiBuku)}`,
     'Catatan: golongan yang tidak disusutkan (Tanah, ATL, KDP) nilai bukunya = nilai perolehan.',
   ].join('\n')
+}
+
+/** Batas baris yang boleh ditarik. Golongan di atas ini DITOLAK, bukan dipotong:
+ *  jumlah per SKPD dari potongan baris akan tampak sah tapi kurang. */
+const MAKS_BARIS_SEBARAN = 3000
+
+async function sebaranGolongan(sb: SupabaseClient, golongan: string): Promise<string> {
+  if (!/^1\.\d\.\d$/.test(golongan)) return 'GAGAL: golongan harus berformat level-3, mis. 1.5.3.'
+  // `.eq('golongan')`, BUKAN `.like('kode', 'gol.%')` — LIKE tak pernah jadi
+  // index-cond di bawah RLS (CLAUDE.md, empat ronde timeout); `golongan` kolom
+  // GENERATED yang setara menurut definisi & terindeks.
+  const rows: { skpd_id: number; nilai_perolehan: number }[] = []
+  let kursor: string | null = null
+  for (let halaman = 0; halaman < 3; halaman++) {
+    let q = sb.from('aset').select('id,skpd_id,nilai_perolehan').eq('golongan', golongan).eq('status', 'aktif')
+    if (kursor) q = q.gt('id', kursor)
+    const { data, error } = await q.order('id').limit(1000)
+    if (error) return `GAGAL membaca aset golongan ${golongan}: ${error.message}`
+    const b = (data || []) as unknown as { id: string; skpd_id: number; nilai_perolehan: number }[]
+    rows.push(...b)
+    if (b.length < 1000) { kursor = null; break }
+    kursor = b[b.length - 1].id
+  }
+  if (kursor) return `GAGAL: golongan ${golongan} terlalu besar (>${MAKS_BARIS_SEBARAN} aset) untuk dirinci per SKPD lewat alat ini. Pakai rekap_bmd_skpd untuk satu SKPD.`
+  if (rows.length === 0) return `Tidak ada aset aktif golongan ${golongan} (${GOL_URAIAN[golongan] || '-'}) di lingkup akun ini.`
+
+  const skpd = await muatSkpd(sb)
+  const byId = new Map(skpd.map(s => [s.id, s]))
+  const akar = (id: number): SkpdRow | undefined => {
+    let s = byId.get(id)
+    for (let i = 0; s && s.parent_id != null && i < 10; i++) s = byId.get(s.parent_id)
+    return s
+  }
+  const per = new Map<number, { n: number; nilai: number }>()
+  for (const r of rows) {
+    const a = akar(r.skpd_id)?.id ?? r.skpd_id
+    const c = per.get(a) || { n: 0, nilai: 0 }
+    c.n += 1; c.nilai += Number(r.nilai_perolehan) || 0
+    per.set(a, c)
+  }
+  const urut = [...per.entries()].sort((a, b) => b[1].nilai - a[1].nilai)
+  const totRp = rows.reduce((s, r) => s + (Number(r.nilai_perolehan) || 0), 0)
+  return [
+    `Golongan ${golongan} ${GOL_URAIAN[golongan] || ''}: ${fmtN(rows.length)} aset aktif di ${urut.length} SKPD induk (${new Set(rows.map(r => r.skpd_id)).size} unit), total nilai perolehan Rp${rp(totRp)}.`,
+    ...urut.slice(0, MAKS_BARIS).map(([id, c]) => `- ${byId.get(id)?.nama || `SKPD ${id}`}: ${fmtN(c.n)} aset · Rp${rp(c.nilai)}`),
+    urut.length > MAKS_BARIS ? `(Terpotong di ${MAKS_BARIS} SKPD — masih ada ${urut.length - MAKS_BARIS} lainnya.)` : '',
+  ].filter(Boolean).join('\n')
 }
 
 async function kartuPending(sb: SupabaseClient): Promise<string> {
