@@ -5,10 +5,10 @@
 // 20260710_15_chat_dm.sql). Realtime via Postgres Changes, satu channel utk
 // semua room — RLS chat_select yang menyaring mana row yang boleh saya lihat.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { usePathname, useParams } from 'next/navigation'
 import { paginate } from '@/shared/db/paginate'
 import { createClient } from '@/lib/supabase/client'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
-import { usePathname, useRouter } from 'next/navigation'
 
 type Msg = { id: number; sender_id: string; recipient_id: string | null; content: string; created_at: string }
 type AiMsg = { id: number; role: 'user' | 'assistant'; content: string; created_at: string }
@@ -38,7 +38,7 @@ const SISA_TEPI = 48
 type Ukuran = { w: number; h: number }
 
 /** Isi localStorage itu data dari luar program — cacat karena versi lama atau
- *  suntingan manual cukup berarti \"pakai ukuran bawaan\", jangan sampai
+ *  suntingan manual cukup berarti "pakai ukuran bawaan", jangan sampai
  *  menjatuhkan widget-nya. */
 function bacaUkuran(): Ukuran {
   try {
@@ -59,7 +59,7 @@ function bacaUkuran(): Ukuran {
 //
 // Prompt-nya SUDAH melarang Markdown & tetap dilanggar — melarang lewat kalimat
 // itu taruhan yang kalah terus. Jadi yang menyesuaikan renderer-nya; prompt
-// diubah jadi MENGIZINKAN tebal & daftar \"-\" saja (lib/chatbot/prompt.ts),
+// diubah jadi MENGIZINKAN tebal & daftar "-" saja (lib/chatbot/prompt.ts),
 // supaya yang diminta ke model persis yang bisa ditampilkan layar.
 //
 // ⚠️ SENGAJA subset paling kecil — tebal saja, TANPA `dangerouslySetInnerHTML`.
@@ -69,12 +69,12 @@ function bacaUkuran(): Ukuran {
 // `**` yang tak berpasangan dibiarkan apa adanya, bukan dibuang.
 function tebalkan(teks: string): ReactNode[] {
   const out: ReactNode[] = []
-  const pola = /\\*\\*([^*]+)\\*\\*/g
+  const pola = /\*\*([^*]+)\*\*/g
   let akhir = 0
   let m: RegExpExecArray | null
   while ((m = pola.exec(teks)) !== null) {
     if (m.index > akhir) out.push(teks.slice(akhir, m.index))
-    out.push(<strong key={m.index} className=\"font-semibold\">{m[1]}</strong>)
+    out.push(<strong key={m.index} className="font-semibold">{m[1]}</strong>)
     akhir = m.index + m[0].length
   }
   if (akhir < teks.length) out.push(teks.slice(akhir))
@@ -106,11 +106,20 @@ export default function ChatWidget() {
   const [ukuran, setUkuran] = useState<Ukuran>(UKURAN_BAWAAN)
   useEffect(() => { setUkuran(bacaUkuran()) }, [])
 
-  // Next.js navigation hooks for context
+  // ── Konteks halaman (App Router) ────────────────────────────────────────
+  // `useParams()`, BUKAN `router.query` — itu API Pages Router lama dan tidak
+  // ada di `next/navigation`. Nama parameternya beda-beda per rute (nibar,
+  // golongan, id, dst — lihat app/**/[..]), jadi dibaca generik apa adanya,
+  // bukan diasumsikan satu nama tertentu.
   const pathname = usePathname()
-  const router = useRouter()
-  const { id } = router.query as { id?: string }
-  const context = pathname + (id ? `, Aset ID: ${id}` : '')
+  const params = useParams<Record<string, string | string[]>>()
+  const context = useMemo(() => {
+    const entries = Object.entries(params || {})
+    const ekor = entries.length > 0
+      ? ' · ' + entries.map(([k, v]) => `${k}=${Array.isArray(v) ? v.join('/') : v}`).join(', ')
+      : ''
+    return `${pathname}${ekor}`
+  }, [pathname, params])
 
   useEffect(() => {
     ;(async () => {
@@ -129,10 +138,10 @@ export default function ChatWidget() {
       let semua: { id: string }[] = []
       try {
         semua = await paginate<string, { id: string }>('daftar pengguna', kursor => {
-          let q = supabase.from('admin_profiles')
-            .select('id,email,pegawai:admin_pegawai(nama),skpd:admin_skpd(nama)')
-            if (kursor !== null) q = q.gt('id', kursor)
-            return q.order('id').limit(1000)
+        let q = supabase.from('admin_profiles')
+          .select('id,email,pegawai:admin_pegawai(nama),skpd:admin_skpd(nama)')
+          if (kursor !== null) q = q.gt('id', kursor)
+          return q.order('id').limit(1000)
         })
       } catch (e) {
         console.error('Daftar pengguna gagal dimuat:', e)
@@ -367,12 +376,12 @@ export default function ChatWidget() {
     <>
       {!open && (
         <button onClick={() => setOpen(true)}
-          className=\"fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-teal text-white shadow-xl flex items-center justify-center hover:brightness-110 transition\">
-          <svg className=\"w-7 h-7\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\">
-            <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d={ICON_CHAT} />
+          className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-teal text-white shadow-xl flex items-center justify-center hover:brightness-110 transition">
+          <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={ICON_CHAT} />
           </svg>
           {unreadTotal > 0 && (
-            <span className=\"absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-semibold flex items-center justify-center\">
+            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-semibold flex items-center justify-center">
               {unreadTotal > 99 ? '99+' : unreadTotal}
             </span>
           )}
@@ -387,7 +396,7 @@ export default function ChatWidget() {
         // jendela peramban diperkecil setelah panelnya dibesarkan, panel ikut
         // menyusut sendiri tanpa perlu pendengar resize.
         <div
-          className=\"fixed bottom-6 right-6 z-50\"
+          className="fixed bottom-6 right-6 z-50"
           style={{
             width: ukuran.w,
             height: ukuran.h,
@@ -398,112 +407,112 @@ export default function ChatWidget() {
           <button
             onPointerDown={mulaiResize}
             onDoubleClick={resetUkuran}
-            title=\"Seret untuk mengubah ukuran · klik ganda untuk kembali ke ukuran semula\"
-            aria-label=\"Ubah ukuran kotak chat\"
+            title="Seret untuk mengubah ukuran · klik ganda untuk kembali ke ukuran semula"
+            aria-label="Ubah ukuran kotak chat"
             // `touch-none` (touch-action: none) WAJIB — tanpa itu, di layar
             // sentuh gerakan jari ditafsirkan sebagai menggulir halaman dan
             // seretannya tak pernah sampai ke pointermove.
-            className=\"absolute -top-2 -left-2 z-10 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:text-teal hover:border-teal/40 cursor-nwse-resize touch-none\"
+            className="absolute -top-2 -left-2 z-10 w-6 h-6 rounded-full bg-white border border-gray-200 shadow-md flex items-center justify-center text-gray-400 hover:text-teal hover:border-teal/40 cursor-nwse-resize touch-none"
           >
-            <svg className=\"w-3 h-3\" viewBox=\"0 0 12 12\" fill=\"none\" stroke=\"currentColor\" strokeWidth={1.6} strokeLinecap=\"round\">
-              <path d=\"M10.5 1.5 1.5 10.5\" />
-              <path d=\"M6.5 1.5 1.5 6.5\" />
+            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
+              <path d="M10.5 1.5 1.5 10.5" />
+              <path d="M6.5 1.5 1.5 6.5" />
             </svg>
           </button>
 
-          <div className=\"w-full h-full bg-white rounded-xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden\">
-          <div className=\"px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0 bg-navy text-white\">
+          <div className="w-full h-full bg-white rounded-xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2 flex-shrink-0 bg-navy text-white">
             {activeRoom !== null && (
-              <button onClick={() => setActiveRoom(null)} className=\"text-white/70 hover:text-white\">
-                <svg className=\"w-5 h-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\">
-                  <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M15 19l-7-7 7-7\" />
+              <button onClick={() => setActiveRoom(null)} className="text-white/70 hover:text-white">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
             )}
-            <h3 className=\"font-semibold text-sm flex-1 truncate\">{activeRoom === null ? 'Chat' : threadTitle}</h3>
-            <button onClick={() => { setOpen(false); setActiveRoom(null) }} className=\"text-white/70 hover:text-white text-xl leading-none\">×</button>
+            <h3 className="font-semibold text-sm flex-1 truncate">{activeRoom === null ? 'Chat' : threadTitle}</h3>
+            <button onClick={() => { setOpen(false); setActiveRoom(null) }} className="text-white/70 hover:text-white text-xl leading-none">×</button>
           </div>
 
           {activeRoom === null ? (
-            <div className=\"flex-1 overflow-y-auto min-h-0\">
-              <div className=\"p-2 border-b border-gray-100 sticky top-0 bg-white\">
-                <input className=\"select-filter w-full text-sm\" placeholder=\"Cari user / SKPD...\"
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="p-2 border-b border-gray-100 sticky top-0 bg-white">
+                <input className="select-filter w-full text-sm" placeholder="Cari user / SKPD..."
                   value={search} onChange={e => setSearch(e.target.value)} />
               </div>
               <button onClick={() => setActiveRoom('ai')}
-                className=\"w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50\">
-                <div className=\"w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center flex-shrink-0\">
-                  <svg className=\"w-5 h-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\">
-                    <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d={ICON_AI} />
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50">
+                <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={ICON_AI} />
                   </svg>
                 </div>
-                <div className=\"flex-1 min-w-0\">
-                  <p className=\"text-sm font-medium text-gray-800\">Asisten AI</p>
-                  <p className=\"text-xs text-gray-400 truncate\">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800">Asisten AI</p>
+                  <p className="text-xs text-gray-400 truncate">
                     {aiMsgs.length > 0 ? aiMsgs[aiMsgs.length - 1].content : 'Tanya apa saja'}
                   </p>
                 </div>
               </button>
               <button onClick={() => setActiveRoom('public')}
-                className=\"w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50\">
-                <div className=\"w-9 h-9 rounded-full bg-teal/10 text-teal flex items-center justify-center flex-shrink-0\">
-                  <svg className=\"w-5 h-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\">
-                    <path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={2} d=\"M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 100-8 4 4 0 000 8zm6 3v-1a4 4 0 00-3-3.87\" />
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50">
+                <div className="w-9 h-9 rounded-full bg-teal/10 text-teal flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 100-8 4 4 0 000 8zm6 3v-1a4 4 0 00-3-3.87" />
                   </svg>
                 </div>
-                <div className=\"flex-1 min-w-0\">
-                  <p className=\"text-sm font-medium text-gray-800\">Publik / Chat Grup</p>
-                  <p className=\"text-xs text-gray-400 truncate\">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800">Publik / Chat Grup</p>
+                  <p className="text-xs text-gray-400 truncate">
                     {publicMsgs.length > 0 ? publicMsgs[publicMsgs.length - 1].content : 'Obrolan bareng semua user'}
                   </p>
                 </div>
                 {unreadPublic > 0 && (
-                  <span className=\"min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center flex-shrink-0\">{unreadPublic}</span>
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center flex-shrink-0">{unreadPublic}</span>
                 )}
               </button>
               {kontakList.map(k => (
                 <button key={k.id} onClick={() => setActiveRoom(k.id)}
-                  className=\"w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50\">
-                  <div className=\"w-9 h-9 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0 text-sm font-semibold\">
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b border-gray-50">
+                  <div className="w-9 h-9 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0 text-sm font-semibold">
                     {k.nama.charAt(0).toUpperCase()}
                   </div>
-                  <div className=\"flex-1 min-w-0\">
-                    <p className=\"text-sm font-medium text-gray-800 truncate\">{k.nama}</p>
-                    <p className=\"text-xs text-gray-400 truncate\">{k.last ? k.last.content : (k.skpd || '—')}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{k.nama}</p>
+                    <p className="text-xs text-gray-400 truncate">{k.last ? k.last.content : (k.skpd || '—')}</p>
                   </div>
                   {k.unread > 0 && (
-                    <span className=\"min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center flex-shrink-0\">{k.unread}</span>
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center flex-shrink-0">{k.unread}</span>
                   )}
                 </button>
               ))}
               {kontakList.length === 0 && search && (
-                <p className=\"text-xs text-gray-400 text-center py-6\">Tidak ada user yang cocok.</p>
+                <p className="text-xs text-gray-400 text-center py-6">Tidak ada user yang cocok.</p>
               )}
             </div>
           ) : activeRoom === 'ai' ? (
             <>
-              <div className=\"flex-1 overflow-y-auto p-4 space-y-3 min-h-0\">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                 {aiMsgs.length === 0 ? (
-                  <p className=\"text-xs text-gray-400 text-center py-8\">Belum ada percakapan. Tanya apa saja ke Asisten AI!</p>
+                  <p className="text-xs text-gray-400 text-center py-8">Belum ada percakapan. Tanya apa saja ke Asisten AI!</p>
                 ) : aiMsgs.map((m, i) => {
                   const mine = m.role === 'user'
                   const prev = aiMsgs[i - 1]
                   const tglBaru = !prev || fmtTgl(prev.created_at) !== fmtTgl(m.created_at)
                   return (
                     <div key={m.id}>
-                      {tglBaru && <p className=\"text-center text-[11px] text-gray-400 my-3\">{fmtTgl(m.created_at)}</p>}
+                      {tglBaru && <p className="text-center text-[11px] text-gray-400 my-3">{fmtTgl(m.created_at)}</p>}
                       <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`group max-w-[75%] rounded-lg px-3 py-2 text-sm relative ${mine ? 'bg-teal text-white' : 'bg-indigo-50 text-gray-800'`}>
-                          {!mine && <p className=\"text-[11px] font-medium text-indigo-600 mb-0.5\">Asisten AI</p>}
+                        <div className={`group max-w-[75%] rounded-lg px-3 py-2 text-sm relative ${mine ? 'bg-teal text-white' : 'bg-indigo-50 text-gray-800'}`}>
+                          {!mine && <p className="text-[11px] font-medium text-indigo-600 mb-0.5">Asisten AI</p>}
                           {/* Hanya balasan AI yang dirender ber-tebal. Pesan yang
                               DIKETIK MANUSIA (chat publik & DM) tetap teks polos —
                               di sana `**` yang diketik orang memang bermaksud
                               bintang, bukan penanda format. */}
-                          <p className=\"whitespace-pre-wrap break-words\">{mine ? m.content : tebalkan(m.content)}</p>
-                          <div className=\"flex items-center gap-2 mt-1\">
-                            <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-gray-400'`}>{fmtJam(m.created_at)}</p>
+                          <p className="whitespace-pre-wrap break-words">{mine ? m.content : tebalkan(m.content)}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>{fmtJam(m.created_at)}</p>
                             <button onClick={() => hapusAi(m.id)}
-                              className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${mine ? 'text-white/70 hover:text-white' : 'text-gray-400 hover:text-gray-600'`}>
+                              className={`text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${mine ? 'text-white/70 hover:text-white' : 'text-gray-400 hover:text-gray-600'}`}>
                               Hapus
                             </button>
                           </div>
@@ -513,56 +522,56 @@ export default function ChatWidget() {
                   )
                 })}
                 {aiBusy && (
-                  <div className=\"flex justify-start\">
-                    <div className=\"bg-indigo-50 text-gray-500 rounded-lg px-3 py-2 text-sm italic\">Asisten AI sedang mengetik...</div>
+                  <div className="flex justify-start">
+                    <div className="bg-indigo-50 text-gray-500 rounded-lg px-3 py-2 text-sm italic">Asisten AI sedang mengetik...</div>
                   </div>
                 )}
                 <div ref={bottomRef} />
               </div>
-              <form onSubmit={e => { e.preventDefault(); kirimAi() }} className=\"border-t border-gray-100 p-2 flex gap-2 flex-shrink-0\">
-                <input className=\"select-filter flex-1 text-sm\" placeholder=\"Tanya sesuatu ke AI...\" value={text}
+              <form onSubmit={e => { e.preventDefault(); kirimAi() }} className="border-t border-gray-100 p-2 flex gap-2 flex-shrink-0">
+                <input className="select-filter flex-1 text-sm" placeholder="Tanya sesuatu ke AI..." value={text}
                   onChange={e => setText(e.target.value)} maxLength={4000} disabled={aiBusy} />
-                <button type=\"submit\" disabled={aiBusy || !text.trim()} className=\"btn-primary text-sm px-3\">Kirim</button>
+                <button type="submit" disabled={aiBusy || !text.trim()} className="btn-primary text-sm px-3">Kirim</button>
               </form>
             </>
           ) : (
             <>
-              <div className=\"flex-1 overflow-y-auto p-4 space-y-3 min-h-0\">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                 {threadMsgs.length === 0 ? (
-                  <p className=\"text-xs text-gray-400 text-center py-8\">Belum ada pesan. Mulai obrolan!</p>
+                  <p className="text-xs text-gray-400 text-center py-8">Belum ada pesan. Mulai obrolan!</p>
                 ) : threadMsgs.map((m, i) => {
                   const mine = m.sender_id === myId
                   const prev = threadMsgs[i - 1]
                   const tglBaru = !prev || fmtTgl(prev.created_at) !== fmtTgl(m.created_at)
                   return (
                     <div key={m.id}>
-                      {tglBaru && <p className=\"text-center text-[11px] text-gray-400 my-3\">{fmtTgl(m.created_at)}</p>}
+                      {tglBaru && <p className="text-center text-[11px] text-gray-400 my-3">{fmtTgl(m.created_at)}</p>}
                       <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`group max-w-[75%] rounded-lg px-3 py-2 text-sm relative ${mine ? 'bg-teal text-white' : 'bg-gray-100 text-gray-800'`}>
+                        <div className={`group max-w-[75%] rounded-lg px-3 py-2 text-sm relative ${mine ? 'bg-teal text-white' : 'bg-gray-100 text-gray-800'}`}>
                           {!mine && activeRoom === 'public' && (
-                            <p className=\"text-[11px] font-medium text-teal mb-0.5\">{profiles[m.sender_id]?.nama || 'User'}</p>
+                            <p className="text-[11px] font-medium text-teal mb-0.5">{profiles[m.sender_id]?.nama || 'User'}</p>
                           )}
-                          <p className=\"whitespace-pre-wrap break-words\">{m.content}</p>
-                          <div className=\"flex items-center gap-2 mt-1\">
-                            <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-gray-400'`}>{fmtJam(m.created_at)}</p>
+                          <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-gray-400'}`}>{fmtJam(m.created_at)}</p>
                             {mine && (
                               <button onClick={() => hapus(m.id)}
-                                className=\"text-[10px] text-white/70 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity\">
-                                  Hapus
-                                </button>
+                                className="text-[10px] text-white/70 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                Hapus
+                              </button>
                             )}
                           </div>
                         </div>
                       </div>
                     </div>
-                  )}
-                )}
+                  )
+                })}
                 <div ref={bottomRef} />
               </div>
-              <form onSubmit={e => { e.preventDefault(); kirim() }} className=\"border-t border-gray-100 p-2 flex gap-2 flex-shrink-0\">
-                <input className=\"select-filter flex-1 text-sm\" placeholder=\"Ketik pesan...\" value={text}
+              <form onSubmit={e => { e.preventDefault(); kirim() }} className="border-t border-gray-100 p-2 flex gap-2 flex-shrink-0">
+                <input className="select-filter flex-1 text-sm" placeholder="Ketik pesan..." value={text}
                   onChange={e => setText(e.target.value)} maxLength={4000} />
-                <button type=\"submit\" disabled={sending || !text.trim()} className=\"btn-primary text-sm px-3\">Kirim</button>
+                <button type="submit" disabled={sending || !text.trim()} className="btn-primary text-sm px-3">Kirim</button>
               </form>
             </>
           )}
