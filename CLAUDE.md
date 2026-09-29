@@ -7549,13 +7549,15 @@ disentuh.
   tanggalnya lebih tua dari termin lain) selalu jatuh di AKHIR daftar, bukan
   di posisi kronologisnya — membingungkan saat menelusuri riwayat termin.
 - **Pratinjau foto ditambahkan** (`FotoSel`+`useFotoThumbs`,
-  `shared/ui/FotoBarang.tsx`) di header kartu barang KDP — sebelum ini upload
-  foto lewat "Edit Spesifikasi" (popup `EditSpesifikasiModal`, yang SUDAH
-  lama menampilkan pratinjau di DALAM popup-nya sendiri) tak meninggalkan
-  jejak visual apa pun begitu popup ditutup; kartu cuma menampilkan baris
-  teks (Spesifikasi Nama Barang, Lokasi, dst.) tanpa penanda foto sama sekali
-  — beda dari kartu Pengadaan/PerolehanManual yang sudah lama punya kolom
-  FOTO di tabelnya.
+  `shared/ui/FotoBarang.tsx`), **di kolom kanan tepat di bawah "Nilai (Σ
+  termin)"** (posisi diminta susulan hari yang sama — versi pertama sempat
+  ditaruh di kolom kiri, dekat header) — sebelum ini upload foto lewat "Edit
+  Spesifikasi" (popup `EditSpesifikasiModal`, yang SUDAH lama menampilkan
+  pratinjau di DALAM popup-nya sendiri) tak meninggalkan jejak visual apa pun
+  begitu popup ditutup; kartu cuma menampilkan baris teks (Spesifikasi Nama
+  Barang, Lokasi, dst.) & angka nilai tanpa penanda foto sama sekali — beda
+  dari kartu Pengadaan/PerolehanManual yang sudah lama punya kolom FOTO di
+  tabelnya.
 - ⛔ **Wajib foto sebelum approve TERNYATA SUDAH ADA** — diverifikasi
   langsung ke `lib/kdp.ts → approveKontrakKonstruksi()`, bukan diasumsikan
   dari catatan lama: baris `if (!b.foto || b.foto.length === 0) return {

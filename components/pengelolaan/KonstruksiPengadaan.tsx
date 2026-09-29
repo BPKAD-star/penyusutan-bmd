@@ -855,13 +855,6 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
               (TambahBarangPanel meng-auto-isi nama dari `k.uraian` bila kosong). */}
           <p className="text-sm font-bold text-gray-800">{barang.kode} - {barang.nama}</p>
           <div className="mt-1 space-y-0.5">
-            {/* Foto — pratinjau kecil kyk entry non-konstruksi (permintaan user
-                2026-09-29). Sebelum ini upload lewat "Edit Spesifikasi" (di
-                bawah) tak meninggalkan jejak visual apa pun di kartu ini. */}
-            <div className="flex text-xs leading-relaxed items-center">
-              <span className="text-gray-400 flex-shrink-0 whitespace-nowrap w-44">Foto Barang</span>
-              <span className="text-gray-700 min-w-0 flex items-center gap-2">: <FotoSel paths={fotoPaths} thumbUrl={fotoThumbs[fotoPaths[0] || '']} judul={barang.nama} /></span>
-            </div>
             <Baris lebar="w-44" label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
             <Baris lebar="w-44" label="Lokasi" value={barang.spec?.alamat_detail} />
             <Baris lebar="w-44" label="Keterangan" value={barang.spec?.keterangan} />
@@ -884,6 +877,13 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
           <div className="text-right">
             <p className="text-[11px] text-gray-400">Nilai (Σ termin)</p>
             <p className="font-semibold text-gray-800">{formatRupiah2(total)}</p>
+            {/* Foto — pratinjau kecil kyk entry non-konstruksi (permintaan user
+                2026-09-29, dipindah ke bawah "Nilai" sesuai permintaan susulan
+                hari yang sama). Sebelum ini upload lewat "Edit Spesifikasi" (di
+                bawah) tak meninggalkan jejak visual apa pun di kartu ini. */}
+            <div className="mt-1.5 flex justify-end">
+              <FotoSel paths={fotoPaths} thumbUrl={fotoThumbs[fotoPaths[0] || '']} judul={barang.nama} />
+            </div>
           </div>
           {/* Tombol berkotak & SAMA LEBAR (w-36) — dulu tiga tautan bergaris
               bawah dgn panjang berbeda-beda sehingga tepinya tak rata. Warna
