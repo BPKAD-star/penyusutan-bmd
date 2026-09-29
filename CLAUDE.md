@@ -7514,6 +7514,55 @@ waktu itu.
   Pernyataan).
 - **Tak ada migrasi** — murni `jurnal_header.payload` (jsonb).
 
+## Pekerjaan Konstruksi (KDP): rincian rapi + kode/foto lebih terlihat (2026-09-29)
+
+Enam permintaan tampilan sekaligus di kartu KDP (`KonstruksiPengadaan.tsx`),
+diminta bersamaan lewat satu pesan berikut tangkapan layar. **Tak ada
+migrasi** — seluruhnya JSX/turunan di klien; `lib/kdp.ts` (materialisasi) tak
+disentuh.
+
+- **Notif "dokumen BAST wajib" jadi pop-up** (`gagalTambahRincian`, pola
+  `gagalSetujui` di `KontrakDetail`) — sebelumnya strip merah `err` di bawah
+  tombol "+ Tambah Rincian", gampang luput di kartu berisi banyak termin.
+  Validasi LAIN (tgl/nominal kosong, tgl BAST < tgl kontrak) TETAP inline —
+  user cuma minta yang BAST-nya.
+- **Header barang KDP: kode + nama SEMUA BOLD**, format `"<kode> - <nama>"`
+  (dulu `nama` semibold besar & `kode` kecil abu-abu, urutan kebalik). Cocok
+  krn `nama` sering memang uraian kodefikasi — `TambahBarangPanel` sudah lama
+  meng-auto-isi `nama` dari `k.uraian` kalau kolomnya masih kosong saat kode
+  dipilih.
+- **Tabel termin: "Dokumen" + "Tgl" DIGABUNG** jadi satu kolom "Dokumen dan
+  Tanggal BAST" (tautan dokumen di atas, tanggal abu-abu di bawah) — kolom
+  berkurang dari 7/8 jadi 6/7 (`colSpan` baris kosong ikut disesuaikan).
+- **Kolom "Rekening" kini kode + uraian bertumpuk** (kode di atas, uraian abu
+  di bawah) lewat `useRekeningUraian()` — duplikasi kecil dari hook privat
+  bernama sama di `Pengadaan.tsx` (tak diekspor dari sana, jadi tak bisa
+  diimpor; pola & sifat SAMA: sengaja **tidak fail-closed**, uraian itu hiasan
+  di atas kode yang sudah benar). ⚠️ Bentuk INPUT-nya (RekeningPicker) sudah
+  lama menampilkan kode+uraian bertumpuk begitu kode dipilih — yang belum
+  begini cuma tabel HASILNYA.
+- **Rincian/pembayaran diurutkan TANGGAL DOKUMEN (`tgl_bast`)** — murni
+  tampilan (`pembayaranUrut`, diturunkan tiap render, array tersimpan di
+  payload TAK diurutkan ulang). `_i` menyimpan indeks asli supaya tombol
+  Hapus tetap membidik baris yang benar di array yang sesungguhnya tersimpan.
+  Tanpa ini: hapus satu termin lalu tambah lagi (mis. "Perencanaan" yang
+  tanggalnya lebih tua dari termin lain) selalu jatuh di AKHIR daftar, bukan
+  di posisi kronologisnya — membingungkan saat menelusuri riwayat termin.
+- **Pratinjau foto ditambahkan** (`FotoSel`+`useFotoThumbs`,
+  `shared/ui/FotoBarang.tsx`) di header kartu barang KDP — sebelum ini upload
+  foto lewat "Edit Spesifikasi" (popup `EditSpesifikasiModal`, yang SUDAH
+  lama menampilkan pratinjau di DALAM popup-nya sendiri) tak meninggalkan
+  jejak visual apa pun begitu popup ditutup; kartu cuma menampilkan baris
+  teks (Spesifikasi Nama Barang, Lokasi, dst.) tanpa penanda foto sama sekali
+  — beda dari kartu Pengadaan/PerolehanManual yang sudah lama punya kolom
+  FOTO di tabelnya.
+- ⛔ **Wajib foto sebelum approve TERNYATA SUDAH ADA** — diverifikasi
+  langsung ke `lib/kdp.ts → approveKontrakKonstruksi()`, bukan diasumsikan
+  dari catatan lama: baris `if (!b.foto || b.foto.length === 0) return {
+  error: ... }` sudah terpasang sejak 2026-09-22 (lihat bagian "Foto WAJIB
+  sebelum disetujui" di atas) dan mencakup KDP. **Tak ada kode baru untuk
+  ini** — permintaan user sudah terpenuhi oleh fitur yang sudah ada.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

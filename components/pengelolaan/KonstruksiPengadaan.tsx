@@ -33,6 +33,8 @@ import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurna
 import { BENTUK_KONTRAK_KONSTRUKSI, bentukKontrakLabel } from '@/lib/bentukKontrak'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
+import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
+import { fetchUraianRekening } from '@/lib/rkbmdStandar'
 
 // created_by: pemisahan tugas — pembuat kartu tak boleh menyetujui sendiri.
 export type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload; created_by: string | null }
@@ -43,6 +45,24 @@ const KOMPONEN = [
 const komponenLabel = (v: string) => KOMPONEN.find(k => k.value === v)?.label || v
 const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
 const newKey = () => Math.random().toString(36).slice(2)
+// Uraian Kode Rekening (lib/rkbmdStandar.ts) — dipakai kolom "Rekening" tabel
+// termin, supaya operator tak perlu membuka RekeningPicker lagi utk tahu itu
+// belanja apa. Duplikasi kecil dari `useRekeningUraian` privat di Pengadaan.tsx
+// (tak diekspor dari sana, jadi tak bisa diimpor) — pola & alasan SAMA: sengaja
+// TIDAK fail-closed, uraian itu hiasan di atas kode yang sudah benar.
+function useRekeningUraian(kodes: (string | null | undefined)[]): Record<string, string> {
+  const supabase = createClient()
+  const [map, setMap] = useState<Record<string, string>>({})
+  const key = [...new Set(kodes.filter((k): k is string => !!k))].sort().join('|')
+  useEffect(() => {
+    if (!key) { setMap({}); return }
+    (async () => {
+      const m = await fetchUraianRekening(supabase, key.split('|'))
+      setMap(Object.fromEntries(m))
+    })()
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  return map
+}
 // ⚠️ Sampai 2026-08-27 ini `GOLONGAN_FIELDS['1.3.1']` (template Tanah), jadi
 // popup spesifikasi KDP menawarkan Jenis Hak & tiga kolom dokumen kepemilikan —
 // padahal sertifikat/IMB baru terbit SESUDAH pekerjaan selesai & direklas ke
@@ -734,6 +754,17 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
   const bounds = useDateBounds()
   const pembayaran = barang.pembayaran || []
   const total = barangTotal(barang)
+  const fotoPaths = barang.foto || []
+  const fotoThumbs = useFotoThumbs(fotoPaths.slice(0, 1))
+  const rekeningUraian = useRekeningUraian(pembayaran.map(x => x.kode_rekening))
+  // Diurutkan berdasarkan TANGGAL DOKUMEN (permintaan user 2026-09-29) — murni
+  // utk TAMPILAN, `_i` menyimpan indeks aslinya supaya Hapus tetap membidik
+  // baris yang benar di `barang.pembayaran` (array tersimpan TAK diurutkan
+  // ulang). Tanpa ini, menghapus lalu menambah lagi satu rincian (mis.
+  // Perencanaan) selalu jatuh di akhir array, bukan di posisi kronologisnya.
+  const pembayaranUrut = pembayaran
+    .map((b, i) => ({ ...b, _i: i }))
+    .sort((a, c) => (a.tgl_bast || '').localeCompare(c.tgl_bast || ''))
   const [komponen, setKomponen] = useState('fisik')
   const [noBast, setNoBast] = useState('')
   const [tgl, setTgl] = useState('')
@@ -771,10 +802,22 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
     setDokPaths(prev => prev.filter(p => p !== path))
   }
 
-  function submitTermin(e: React.FormEvent) {
+  // Pengganti strip merah inline (CODING-STANDARD §4.5 & pola `gagalSetujui`
+  // di KontrakDetail) khusus utk "dokumen BAST wajib" (permintaan user
+  // 2026-09-29) — form ini di dalam kartu yang bisa berisi banyak barang &
+  // banyak termin sekaligus, jadi strip di bawah tombol gampang luput.
+  async function gagalTambahRincian(pesan: string) {
+    await konfirmasi({ nada: 'amber', ikon: '⚠', judul: 'Belum bisa ditambahkan', isi: pesan, labelYa: 'Mengerti', tanpaBatal: true })
+  }
+
+  async function submitTermin(e: React.FormEvent) {
     e.preventDefault()
     if (!tgl || !nominal) { setErr('Tgl BAST & nominal wajib diisi.'); return }
-    if (dokPaths.length === 0) { setErr('Dokumen BAST termin ini wajib diunggah sebelum rincian bisa ditambahkan.'); return }
+    if (dokPaths.length === 0) {
+      setErr('')
+      await gagalTambahRincian(`Dokumen BAST termin "${komponenLabel(komponen)}" ini wajib diunggah sebelum rincian bisa ditambahkan.`)
+      return
+    }
     if (tglKontrak && tgl < tglKontrak) { setErr(`Tgl BAST (${tgl}) tidak boleh lebih tua dari tgl kontrak (${tglKontrak}).`); return }
     setErr('')
     // Peringatan kode rekening — pola & teks SAMA dgn Pengadaan non-fisik
@@ -806,8 +849,19 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
     <div className="border-t border-gray-100">
       <div className="px-5 py-3 bg-gray-50/60 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-800">{barang.nama} <span className="text-[11px] text-gray-400 font-normal">· {barang.kode}</span></p>
+          {/* Kode + uraian/nama SEMUA BOLD (permintaan user 2026-09-29) — dulu
+              `nama` semibold & `kode` kecil abu-abu, urutannya kebalik. Format
+              "kode - nama" cocok krn `nama` sering memang uraian kodefikasi
+              (TambahBarangPanel meng-auto-isi nama dari `k.uraian` bila kosong). */}
+          <p className="text-sm font-bold text-gray-800">{barang.kode} - {barang.nama}</p>
           <div className="mt-1 space-y-0.5">
+            {/* Foto — pratinjau kecil kyk entry non-konstruksi (permintaan user
+                2026-09-29). Sebelum ini upload lewat "Edit Spesifikasi" (di
+                bawah) tak meninggalkan jejak visual apa pun di kartu ini. */}
+            <div className="flex text-xs leading-relaxed items-center">
+              <span className="text-gray-400 flex-shrink-0 whitespace-nowrap w-44">Foto Barang</span>
+              <span className="text-gray-700 min-w-0 flex items-center gap-2">: <FotoSel paths={fotoPaths} thumbUrl={fotoThumbs[fotoPaths[0] || '']} judul={barang.nama} /></span>
+            </div>
             <Baris lebar="w-44" label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
             <Baris lebar="w-44" label="Lokasi" value={barang.spec?.alamat_detail} />
             <Baris lebar="w-44" label="Keterangan" value={barang.spec?.keterangan} />
@@ -886,12 +940,12 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-100"><tr>
-            <th className="table-th">Komponen</th><th className="table-th">No BAST</th><th className="table-th">Dokumen</th><th className="table-th">Tgl</th><th className="table-th">Rekening</th><th className="table-th">Keterangan</th><th className="table-th text-right">Nominal</th>{pending && <th className="table-th"></th>}
+            <th className="table-th">Komponen</th><th className="table-th">No BAST</th><th className="table-th">Dokumen dan Tanggal BAST</th><th className="table-th">Rekening</th><th className="table-th">Keterangan</th><th className="table-th text-right">Nominal</th>{pending && <th className="table-th"></th>}
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
-            {pembayaran.length === 0 ? <tr><td colSpan={pending ? 8 : 7} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada pembayaran.</td></tr>
-              : pembayaran.map((b, i) => (
-                <tr key={i}>
+            {pembayaranUrut.length === 0 ? <tr><td colSpan={pending ? 7 : 6} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada pembayaran.</td></tr>
+              : pembayaranUrut.map(b => (
+                <tr key={b._i}>
                   <td className="table-td text-xs">{komponenLabel(b.komponen)}</td>
                   <td className="table-td text-xs text-gray-500">{b.no_bast || '—'}</td>
                   <td className="table-td text-xs">
@@ -901,12 +955,16 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
                         <button key={p} onClick={() => bukaDokumen(p)}
                           className="underline text-teal hover:opacity-80 block text-left">{namaFile(p)}</button>
                       ))}
+                    <span className="block text-gray-400 mt-0.5">{b.tgl_bast}</span>
                   </td>
-                  <td className="table-td text-xs text-gray-500">{b.tgl_bast}</td>
-                  <td className="table-td text-xs text-gray-500">{b.kode_rekening || '—'}</td>
+                  <td className="table-td text-xs text-gray-500">
+                    {b.kode_rekening
+                      ? <><span className="block text-gray-700">{b.kode_rekening}</span><span className="block text-gray-400">{rekeningUraian[b.kode_rekening] || ''}</span></>
+                      : '—'}
+                  </td>
                   <td className="table-td text-xs text-gray-600">{b.keterangan || '—'}</td>
                   <td className="table-td text-xs text-right">{formatRupiah2(b.nominal)}</td>
-                  {pending && <td className="table-td text-right"><button className="text-red-500 hover:text-red-700 text-xs" onClick={() => onHapusTermin(i)}>Hapus</button></td>}
+                  {pending && <td className="table-td text-right"><button className="text-red-500 hover:text-red-700 text-xs" onClick={() => onHapusTermin(b._i)}>Hapus</button></td>}
                 </tr>
               ))}
           </tbody>
