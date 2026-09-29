@@ -14,15 +14,15 @@ export const maxDuration = 60
 const MODEL = 'claude-haiku-4-5'
 // System prompt + basis pengetahuan (grounding) ada di lib/chatbot/prompt.ts —
 // TANPA ini model mengarang dari pengetahuan umum (SAKTI/SIMAK-BMN dll).
-let SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT
+const SYSTEM_PROMPT = CHAT_SYSTEM_PROMPT
 const HISTORY_LIMIT = 20
 const MAX_TOKENS = 2048
 
 /** Berapa kali model boleh meminta data sebelum WAJIB menjawab. Cukup untuk
- *  rantai wajar \"cari NIBAR-nya dulu, baru lihat penyusutannya\" (2 langkah) plus
+ *  rantai wajar "cari NIBAR-nya dulu, baru lihat penyusutannya" (2 langkah) plus
  *  sedikit ruang. Batas ini bukan hiasan: tanpa ambang, model yang bingung bisa
  *  memanggil tool berulang-ulang sampai `maxDuration` 60 dtk habis, dan
- *  pengguna cuma melihat \"Asisten AI sedang mengetik...\" sampai gagal. */
+ *  pengguna cuma melihat "Asisten AI sedang mengetik..." sampai gagal. */
 const MAKS_PUTARAN_TOOL = 4
 
 type BlokIsi =
@@ -35,10 +35,14 @@ type PesanApi = { role: 'user' | 'assistant'; content: string | unknown[] }
 // Awalan permintaan yang statis (definisi tool + system prompt) disimpan di
 // sisi Anthropic dan dipakai ulang, jadi tidak dibayar penuh tiap giliran.
 //
- // Kenapa sekarang: basis pengetahuan baru saja diperluas berkali lipat dan ia
+// Kenapa sekarang: basis pengetahuan baru saja diperluas berkali lipat dan ia
 // dikirim ULANG pada SETIAP pesan — tanpa caching, memperkaya pengetahuan
 // chatbot berarti menaikkan biaya tiap percakapan secara permanen. Dengan
 // caching, memperkayanya nyaris gratis, dan itu mengubah arah trade-off-nya.
+//
+// Penanda ditaruh di blok system TERAKHIR. Urutan awalan yang di-cache adalah
+// tools → system → messages, jadi satu penanda di ujung system ikut mencakup
+// definisi tool di depannya.
 //
 // ⚠️ Cache-nya PER ORGANISASI & dicocokkan dari awalan yang SAMA PERSIS. Untung
 // besarnya justru di aplikasi seperti ini: system prompt-nya identik untuk
@@ -46,29 +50,35 @@ type PesanApi = { role: 'user' | 'assistant'; content: string | unknown[] }
 // masing-masing memanaskan cache sendiri.
 //
 // ⚠️ Kalau awalannya lebih pendek dari ambang minimum model, caching DIABAIKAN
-// DIAM-DIAM (tak ada error). Jadi jangan pernah \"merapikan\" system prompt jadi
+// DIAM-DIAM (tak ada error). Jadi jangan pernah "merapikan" system prompt jadi
 // jauh lebih ringkas lalu menganggap caching tetap bekerja — periksa
 // `usage.cache_read_input_tokens` di respons kalau ragu.
 const SYSTEM_BLOCKS = [
   { type: 'text' as const, text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' as const } },
 ]
 
-export async function POST(req: Request) {
-  // Expect JSON: { message: string, context?: string }
-  const body = await req.json().catch(() => null)
-  const userMessage = String(body?.message || '').trim()
-  const context = String(body?.context || '').trim()
-  if (!userMessage) return NextResponse.json({ error: 'Pesan kosong.' }, { status: 400 })
-  if (userMessage.length > 4000) return NextResponse.json({ error: 'Pesan maksimal 4000 karakter.' }, { status: 400 })
+/** Blok `system` per-permintaan: SYSTEM_BLOCKS (cached, tak pernah disentuh)
+ *  + satu blok TAMBAHAN berisi halaman yang sedang dibuka user, TANPA
+ *  `cache_control`. ⚠️ Kalau konteks halaman disambung ke DALAM teks yang
+ *  di-cache (mis. `${SYSTEM_PROMPT}\n${halaman}`), awalannya jadi beda tiap
+ *  halaman/tiap user — cache_read_input_tokens jatuh ke 0 utk SEMUA orang,
+ *  bukan cuma yang pindah-pindah halaman. Blok kedua yang kecil & tak
+ *  di-cache ini jauh lebih murah drpd itu. */
+function buatSystemBlocks(halaman: string) {
+  if (!halaman) return SYSTEM_BLOCKS
+  return [...SYSTEM_BLOCKS, { type: 'text' as const, text: `Halaman yang sedang dibuka pengguna: ${halaman}` }]
+}
 
-  // Update system prompt with page context if provided
-  let effectiveSystemPrompt = SYSTEM_PROMPT
-  if (context) {
-    effectiveSystemPrompt = `${SYSTEM_PROMPT}\nKonteks halaman saat ini: ${context}.`
-  }
-  const systemBlocks = [
-    { type: 'text' as const, text: effectiveSystemPrompt, cache_control: { type: 'ephemeral' as const } },
-  ]
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => null)
+  const content = String(body?.message || '').trim()
+  if (!content) return NextResponse.json({ error: 'Pesan kosong.' }, { status: 400 })
+  if (content.length > 4000) return NextResponse.json({ error: 'Pesan maksimal 4000 karakter.' }, { status: 400 })
+  // Halaman yang sedang dibuka user (dikirim ChatWidget, dari usePathname()+
+  // useParams()) — cuma dipangkas biar tak jadi jalan bagi pesan raksasa,
+  // bukan divalidasi bentuknya. BUKAN gerbang keamanan: RLS di tools.ts yang
+  // tetap membatasi data, ini cuma petunjuk "user lagi di halaman apa".
+  const halaman = String(body?.context || '').trim().slice(0, 200)
 
   const supabase = createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -77,7 +87,7 @@ export async function POST(req: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'ANTHROPIC_API_KEY belum diset di server (env Vercel).' }, { status: 500 })
 
-  const { error: insErr } = await supabase.from('chat_messages_ai').insert({ user_id: user.id, role: 'user', content: userMessage })
+  const { error: insErr } = await supabase.from('chat_messages_ai').insert({ user_id: user.id, role: 'user', content })
   if (insErr) return NextResponse.json({ error: `Gagal menyimpan pesan: ${insErr.message}` }, { status: 500 })
 
   const { data: history } = await supabase.from('chat_messages_ai')
@@ -102,6 +112,7 @@ export async function POST(req: Request) {
   // permintaan, jadi skema `chat_messages_ai` tak berubah (tanpa migrasi) dan
   // giliran berikutnya tak menyeret ulang hasil query yang mungkin sudah basi.
   let reply = '(AI tidak memberi jawaban.)'
+  const systemBlocks = buatSystemBlocks(halaman)
   try {
     let putaran = 0
     for (;;) {
@@ -154,7 +165,7 @@ export async function POST(req: Request) {
     }
   } catch (e) {
     // ⚠️ Kegagalan TIDAK disimpan sebagai balasan asisten. Sampai 2026-08-19
-    // teks \"Maaf, AI sedang bermasalah: ...\" di-INSERT ke chat_messages_ai
+    // teks "Maaf, AI sedang bermasalah: ..." di-INSERT ke chat_messages_ai
     // dengan role 'assistant' — akibatnya ia ikut jadi riwayat, dan giliran
     // berikutnya model membaca pesan error dirinya sendiri sebagai konteks
     // percakapan. Sekarang errornya dikembalikan ke klien saja; ChatWidget
