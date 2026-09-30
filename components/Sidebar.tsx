@@ -207,22 +207,23 @@ const navTree: NavNode[] = [
 
 const adminGroup: NavNode = {
   type: 'group', label: 'Admin', icon: ICON.user, children: [
-    { type: 'leaf', href: '/dashboard/admin/skpd', label: 'SKPD' },
+    // Urutan ditetapkan user 2026-10-01. SSH & SBSK pindah ke RKBMD > Standar
+    // Harga (2026-08-10).
     { type: 'leaf', href: '/dashboard/admin/usulan-pengurus', label: 'Usulan Pengurus Barang' },
     { type: 'leaf', href: '/dashboard/admin/pegawai', label: 'Daftar Pegawai' },
     { type: 'leaf', href: '/dashboard/admin/user', label: 'Daftar User' },
     { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
+    { type: 'leaf', href: '/dashboard/admin/skpd', label: 'SKPD' },
     { type: 'leaf', href: '/dashboard/admin/kodefikasi', label: 'Kodefikasi BMD' },
     { type: 'leaf', href: '/dashboard/admin/overhaul', label: 'Overhaul Band' },
-    // SSH & SBSK pindah ke RKBMD > Standar Harga (2026-08-10).
     { type: 'leaf', href: '/dashboard/dokumen-sumber', label: 'Dokumen Sumber' },
-    { type: 'leaf', href: '/dashboard/admin/tutup-tahun', label: 'Tutup Tahun' },
-    { type: 'leaf', href: '/dashboard/admin/broadcast', label: 'Broadcast' },
-    // Paling bawah, sengaja (permintaan user 2026-08-16): Notes bukan menu
-    // kerja harian. Ia ada di KEDUA grup Admin — siapa pun boleh menulis
-    // masukan; yang membedakan cuma isinya (admin melihat semua SKPD, yang
-    // lain catatannya sendiri), dan itu ditegakkan RLS, bukan oleh menu ini.
+    // Notes ada di KEDUA grup Admin — siapa pun boleh menulis masukan; yang
+    // membedakan cuma isinya (admin melihat semua SKPD, yang lain catatannya
+    // sendiri), dan itu ditegakkan RLS, bukan oleh menu ini. (Dulu paling
+    // bawah; digeser ke atas Broadcast & Tutup Tahun atas permintaan user.)
     { type: 'leaf', href: '/dashboard/admin/notes', label: 'Notes' },
+    { type: 'leaf', href: '/dashboard/admin/broadcast', label: 'Broadcast' },
+    { type: 'leaf', href: '/dashboard/admin/tutup-tahun', label: 'Tutup Tahun' },
   ],
 }
 
