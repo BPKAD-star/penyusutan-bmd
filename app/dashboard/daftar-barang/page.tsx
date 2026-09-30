@@ -37,7 +37,12 @@ import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomLayar, adaKomptabel, KONDI
 import { useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { luasEfektif } from '@/lib/luasBidang'
+import { luasEfektif, type RingkasBidang } from '@/lib/luasBidang'
+import { jenisHakTampil, teksJenisHak, tambahBidangHak, type RingkasHak } from '@/lib/jenisHakBidang'
+
+// Ringkasan bidang per register: Σ luas (luasBidang.ts) + jenis hak per bidang
+// (jenisHakBidang.ts). Dua aturan yang bersaudara, satu tarikan query.
+type BidangAgg = RingkasBidang & RingkasHak
 
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
@@ -381,7 +386,7 @@ export default function DaftarBarangPage() {
   const [data, setData] = useState<Row[]>([])          // baris yang tampil (halaman aktif / semua)
   const [allVisible, setAllVisible] = useState<Row[]>([]) // seluruh baris visible di periode (utk paginasi & export)
   const [uraianMap, setUraianMap] = useState<Record<string, string>>({})
-  const [bidangCount, setBidangCount] = useState<Record<string, { n: number; nLuas: number; luas: number | null }>>({}) // aset_id → jumlah bidang & Σ luas (Tanah, dari aset_bidang_tanah)
+  const [bidangCount, setBidangCount] = useState<Record<string, BidangAgg>>({}) // aset_id → jumlah bidang, Σ luas & jenis hak per bidang (Tanah, dari aset_bidang_tanah)
   const [posisiOverride, setPosisiOverride] = useState<Map<string, PosisiPeriode>>(new Map()) // aset_id → SKPD pemilik + tahun masuk, period-aware
   // ⚠️ `null` = TAK TERHITUNG (rekap gagal/timeout), sengaja DIBEDAKAN dari 0.
   // "0 barang" itu pernyataan tentang data; "tak terhitung" pernyataan tentang
@@ -495,13 +500,13 @@ export default function DaftarBarangPage() {
   // sebagian yang diisi, jumlahnya lebih kecil dari luas sebenarnya. Per
   // 2026-07-28 itu justru keadaan normal: dari 529 bidang, baru 4 yang berluas.
   const fetchBidangCount = useCallback(async (ids: string[]) => {
-    const cnt: Record<string, { n: number; nLuas: number; luas: number | null }> = {}
+    const cnt: Record<string, BidangAgg> = {}
     for (let i = 0; i < ids.length; i += 200) {
-      const { data, error } = await supabase.from('aset_bidang_tanah').select('aset_id,luas').in('aset_id', ids.slice(i, i + 200))
+      const { data, error } = await supabase.from('aset_bidang_tanah').select('aset_id,luas,jenis_hak').in('aset_id', ids.slice(i, i + 200))
       if (error) throw new Error(`gagal membaca bidang tanah: ${error.message}`)
-      for (const b of (data || []) as { aset_id: string; luas: number | null }[]) {
-        const a = cnt[b.aset_id] || (cnt[b.aset_id] = { n: 0, nLuas: 0, luas: null })
-        a.n++
+      for (const b of (data || []) as { aset_id: string; luas: number | null; jenis_hak: string | null }[]) {
+        const a = cnt[b.aset_id] || (cnt[b.aset_id] = { n: 0, nLuas: 0, luas: null, hak: {} })
+        tambahBidangHak(a, b.jenis_hak) // menaikkan `n` & menghitung jenis hak
         if (b.luas != null) { a.nLuas++; a.luas = (a.luas ?? 0) + Number(b.luas) }
       }
     }
@@ -838,8 +843,15 @@ export default function DaftarBarangPage() {
   // petanya sendiri atas baris yang benar-benar diekspor.
   // Aturannya (Σ hanya sah kalau SEMUA bidang berluas) → lib/luasBidang.ts.
   // Diangkat 2026-09-15 di kemunculan KETIGA; jangan ditulis ulang di sini.
-  function luasOf(r: Row, bc: Record<string, { n: number; nLuas: number; luas: number | null }> = bidangCount): number | null {
+  function luasOf(r: Row, bc: Record<string, BidangAgg> = bidangCount): number | null {
     return luasEfektif(bc[r.id], r.luas)
+  }
+
+  // Jenis Hak: sama seperti luas — bidang (GIS) menang, register cadangan; kalau
+  // bidangnya berjenis hak berbeda semuanya disebut. Aturan → lib/jenisHakBidang.ts.
+  // ⚠️ `bc` WAJIB dilewatkan oleh Export (alasan sama dgn `luasOf`).
+  function hakOf(r: Row, bc: Record<string, BidangAgg> = bidangCount) {
+    return jenisHakTampil(bc[r.id], r.jenis_hak)
   }
 
   async function handleExport() {
@@ -889,7 +901,7 @@ export default function DaftarBarangPage() {
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
           case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
           case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
-          case 'hak': return r.jenis_hak || ''
+          case 'hak': return teksJenisHak(hakOf(r, bidangEx))
           case 'nopol': return r.no_polisi || ''
           case 'rangka': return r.no_rangka || ''
           case 'mesin': return r.no_mesin || ''
@@ -971,7 +983,7 @@ export default function DaftarBarangPage() {
           case 'no_sertifikat': return r.nomor_dokumen_kepemilikan || ''
           case 'tgl_sertifikat': return r.tanggal_dokumen_kepemilikan || ''
           case 'atas_nama': return r.nama_dokumen_kepemilikan || ''
-          case 'hak': return r.jenis_hak || ''
+          case 'hak': return teksJenisHak(hakOf(r, bidangEx))
           case 'nopol': return r.no_polisi || ''
           case 'rangka': return r.no_rangka || ''
           case 'mesin': return r.no_mesin || ''
@@ -1153,9 +1165,23 @@ export default function DaftarBarangPage() {
       case 'atas_nama': return r.nama_dokumen_kepemilikan || '-'
       case 'hak': {
         const b = bidangCount[r.id]
+        const h = hakOf(r)
+        // Satu jenis yang mencakup SEMUA bidang (atau dari register) → namanya
+        // saja, seperti sebelumnya. Beberapa jenis / ada yang belum diisi →
+        // tiap jenis satu baris dgn jumlah bidangnya.
+        const ringkas = h.dariRegister || (h.baris.length === 1 && h.belumDiisi === 0)
         return (
           <>
-            <p className="text-xs text-gray-600">{r.jenis_hak || '-'}</p>
+            {h.baris.length === 0 ? <p className="text-xs text-gray-600">-</p>
+              : ringkas ? <p className="text-xs text-gray-600">{h.baris[0].hak}</p>
+              : h.baris.map(x => (
+                <p key={x.hak} className="text-xs text-gray-600 whitespace-nowrap">{x.hak} <span className="text-gray-400">· {x.n} bidang</span></p>
+              ))}
+            {!ringkas && h.belumDiisi > 0 && (
+              <p className="text-[11px] text-amber-600 whitespace-nowrap" title="Jenis hak bidang ini belum diisi di GIS Tanah">
+                {h.belumDiisi} bidang belum diisi
+              </p>
+            )}
             {(b?.n || 0) > 0 && (
               <Link href={`/dashboard/gis?cari=${encodeURIComponent(r.nibar || '')}`}
                 className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-teal hover:underline"
