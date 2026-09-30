@@ -238,7 +238,12 @@ const EXPORT_ALWAYS = ['nibar', 'kode_register']
 // Kondisi (2026-09-28) ditambahkan ke SEMUA golongan — kolom itu berlaku
 // universal, sama seperti di layar (`KOLOM_GOLONGAN`, lib/kolomBarang.ts).
 const EXPORT_COLS: Record<string, string[]> = {
-  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama', 'tgl', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'], // Tanah — tanpa komptabel (spt layar)
+  // Tanah — tanpa komptabel (spt layar). TANPA nomor/tanggal/nama dokumen
+  // kepemilikan (2026-09-30): kolom itu cuma memuat SATU nilai per register
+  // sementara satu tanah bisa punya banyak sertifikat, dan yang lengkap per
+  // bidang sudah ada di GIS Tanah → Daftar Bidang (+ Export-nya). Golongan
+  // lain (mis. 1.5.4) tetap membawanya.
+  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'hak', 'tgl', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
   // + No. Polisi/Rangka/Mesin/BPKB + Lokasi (2026-09-28, sama dgn layar).
   '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
   // + Luas, Spesifikasi Lainnya DICABUT (2026-09-28, sama dgn layar — lihat
