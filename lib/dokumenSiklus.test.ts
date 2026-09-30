@@ -3,7 +3,12 @@
 // tab yang selamanya kosong — dan operator membacanya sebagai "dokumennya belum
 // diunggah", bukan "aplikasinya salah cari".
 import { describe, it, expect } from 'vitest'
-import { DAFTAR_SIKLUS, PEMINDAHTANGANAN_SUBJENIS, dokumenMasihLive, type PullKelompok, type BarisHeader } from './dokumenSiklus'
+import fs from 'node:fs'
+import path from 'node:path'
+import {
+  DAFTAR_SIKLUS, DAFTAR_PERATURAN, PEMINDAHTANGANAN_SUBJENIS, dokumenMasihLive, judulPeraturan, tahunPeraturanSah,
+  type PullKelompok, type BarisHeader,
+} from './dokumenSiklus'
 import { JENIS_PEMANFAATAN } from './pemanfaatan'
 
 const pullDari = (key: string): PullKelompok[] => {
@@ -132,5 +137,58 @@ describe('dokumenMasihLive — arsip (`ditolak`) tak boleh muncul lagi (insiden 
 
   it('null (kategori tanpa alur approval sama sekali) tetap lolos', () => {
     expect(dokumenMasihLive(null)).toBe(true)
+  })
+})
+
+describe('Peraturan — empat kotak & judul baku', () => {
+  it('Perpres · Permendagri · Perda · Perbup, urutannya tetap', () => {
+    expect(DAFTAR_PERATURAN.map(p => p.label)).toEqual(['Perpres', 'Permendagri', 'Perda', 'Perbup'])
+  })
+
+  it('judul dirakit seragam, spasi tepi nomor dibuang', () => {
+    expect(judulPeraturan('Permendagri', ' 47 ', 2021)).toBe('Permendagri Nomor 47 Tahun 2021')
+  })
+
+  it('tahun peraturan: 4 angka, 1945 s.d. tahun berjalan', () => {
+    expect(tahunPeraturanSah('2021', 2026)).toBe(2021)
+    expect(tahunPeraturanSah(' 2014 ', 2026)).toBe(2014)
+    expect(tahunPeraturanSah('2027', 2026)).toBeNull()
+    expect(tahunPeraturanSah('1900', 2026)).toBeNull()
+    expect(tahunPeraturanSah('21', 2026)).toBeNull()
+    expect(tahunPeraturanSah('dua ribu', 2026)).toBeNull()
+  })
+})
+
+describe('dbSiklus KEMBAR dgn CHECK constraint admin_dokumen.siklus', () => {
+  // Nilai yang tak ada di CHECK tidak menghasilkan error apa pun saat MEMBACA —
+  // kotaknya cuma kosong selamanya — dan baru ditolak Postgres (23514) saat
+  // admin menekan Simpan. Yang dibaca: migrasi TERAKHIR yang menulis constraint.
+  const dir = path.resolve(__dirname, '../supabase/migrations')
+  const berkas = fs.readdirSync(dir).filter(f => f.endsWith('.sql')).sort()
+    .filter(f => fs.readFileSync(path.join(dir, f), 'utf8').includes('ADD CONSTRAINT admin_dokumen_siklus_check'))
+  const sql = fs.readFileSync(path.join(dir, berkas[berkas.length - 1]), 'utf8')
+  const blok = sql.slice(sql.indexOf('ADD CONSTRAINT admin_dokumen_siklus_check'))
+  const sah = new Set([...blok.slice(0, blok.indexOf('));')).matchAll(/'([a-z_]+)'/g)].map(m => m[1]))
+
+  it('pemindainya benar-benar membaca daftar (bukan lulus hampa)', () => {
+    expect(sah.size).toBeGreaterThanOrEqual(14)
+    expect(sah.has('sk_pengelolaan_bmd')).toBe(true)
+  })
+
+  it('keempat peraturan terdaftar', () => {
+    for (const p of DAFTAR_PERATURAN) expect(sah.has(p.dbSiklus), p.dbSiklus).toBe(true)
+  })
+
+  it('seluruh siklus generik terdaftar', () => {
+    for (const s of DAFTAR_SIKLUS) {
+      for (const sm of s.sumber) {
+        if (sm.tipe === 'generic') expect(sah.has(sm.dbSiklus), `${s.key}: ${sm.dbSiklus}`).toBe(true)
+      }
+    }
+  })
+
+  it('dbSiklus peraturan tak bertabrakan dgn siklus generik', () => {
+    const generik = DAFTAR_SIKLUS.flatMap(s => s.sumber).flatMap(sm => (sm.tipe === 'generic' ? [sm.dbSiklus] : []))
+    for (const p of DAFTAR_PERATURAN) expect(generik.includes(p.dbSiklus), p.dbSiklus).toBe(false)
   })
 })

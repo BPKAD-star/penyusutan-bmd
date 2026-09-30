@@ -1,11 +1,17 @@
 'use client'
-// Dokumen Sumber — arsip dokumen legal (SK, BAST, perjanjian) per Tahun x
-// Siklus BMD (lihat lib/dokumenSiklus.ts utk daftar 11 siklus). Drill-down:
-// kartu Tahun -> kartu Siklus -> isi (pull read-only dari modul lain, upload
-// generik, atau placeholder kosong). Role 3 tingkat diturunkan dari struktur
-// SKPD (lihat migrasi 20260710_01_dokumen_siklus.sql, di-rename ke
-// admin_dokumen oleh migrasi 20260710_02):
-//   - Super Admin (BKAD)            -> upload semua siklus generik.
+// Dokumen Sumber — tiga bagian (permintaan user 2026-09-30):
+//   1. PERATURAN — empat kotak (Perpres · Permendagri · Perda · Perbup), berlaku
+//      lintas tahun; isinya components/dashboard/dokumen/PeraturanSection.tsx.
+//   2. SIKLUS    — arsip dokumen legal (SK, BAST, perjanjian) per Tahun x Siklus
+//      BMD (lib/dokumenSiklus.ts `DAFTAR_SIKLUS`). Drill-down: Tahun -> Siklus
+//      -> isi (pull read-only dari modul lain, upload generik, atau placeholder).
+//   3. MATERI    — paparan Bidang Pengelolaan BMD (lib/materi.ts); tiap kotak
+//      membuka halaman presentasi `/materi/<slug>` yang bisa di-Export PDF.
+//
+// Role 3 tingkat diturunkan dari struktur SKPD (lihat migrasi
+// 20260710_01_dokumen_siklus.sql, di-rename ke admin_dokumen oleh migrasi
+// 20260710_02):
+//   - Super Admin (BKAD)            -> upload semua siklus generik + peraturan.
 //   - Admin SKPD induk (py sub-OPD) -> upload HANYA siklus Pengamanan, subtree sendiri.
 //   - Non-admin                     -> lihat & download saja.
 import { useEffect, useState, useCallback } from 'react'
@@ -15,7 +21,10 @@ import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { tahunAwal } from '@/lib/tahunKerja'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { fetchApprovalScope } from '@/lib/roles'
-import { DAFTAR_SIKLUS, SiklusConfig, SumberDokumen, dokumenMasihLive } from '@/lib/dokumenSiklus'
+import { SiklusConfig, SumberDokumen, PeraturanConfig, dokumenMasihLive } from '@/lib/dokumenSiklus'
+import { hitungPeraturan } from '@/lib/dokumenPeraturanData'
+import PeraturanSection from '@/components/dashboard/dokumen/PeraturanSection'
+import BerandaDokumen from '@/components/dashboard/dokumen/BerandaDokumen'
 import { uploadDokumenSiklus, hapusFileDokumen, bukaDokumenSumber, namaFileDariPath } from '@/lib/dokumenStorage'
 import { fetchBatalTargets, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
@@ -32,6 +41,11 @@ export default function DokumenSumber() {
 
   const [tahun, setTahun] = useState<number | null>(null)
   const [siklus, setSiklus] = useState<SiklusConfig | null>(null)
+  const [peraturan, setPeraturan] = useState<PeraturanConfig | null>(null)
+  // `null` = belum/tak terhitung (mis. migrasi 20260930_01 belum jalan atau
+  // query gagal) — angkanya hiasan di kotak, jadi cukup tidak ditampilkan;
+  // kegagalan yang sungguhan tetap terbaca begitu kotaknya dibuka.
+  const [jumlahPeraturan, setJumlahPeraturan] = useState<Record<string, number> | null>(null)
 
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminInduk, setAdminInduk] = useState(false)
@@ -61,59 +75,49 @@ export default function DokumenSumber() {
     ;(async () => {
       setSkpdMap(mapNamaSkpd(await fetchDaftarSkpd(supabase)))
     })()
+    void muatJumlahPeraturan()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function muatJumlahPeraturan() {
+    try { setJumlahPeraturan(await hitungPeraturan(supabase)) } catch { setJumlahPeraturan(null) }
+  }
+  const keBeranda = () => { setSiklus(null); setPeraturan(null) }
 
   return (
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Dokumen Sumber</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Arsip dokumen legal (SK, BAST, perjanjian) per tahun & siklus pengelolaan BMD.
+          Peraturan, arsip dokumen legal per siklus pengelolaan BMD, dan materi paparan.
         </p>
       </div>
 
-      <div className="flex items-center gap-2 text-sm mb-4">
-        <button onClick={() => setSiklus(null)}
-          className={!siklus ? 'font-semibold text-gray-800' : 'text-gray-400 hover:underline'}>
-          Tahun {tahun ?? '...'}
-        </button>
-        {siklus && <><span className="text-gray-300">/</span><span className="font-semibold text-gray-800">{siklus.label}</span></>}
-      </div>
+      {(siklus || peraturan) && (
+        <div className="flex items-center gap-2 text-sm mb-4">
+          <button onClick={keBeranda} className="text-gray-400 hover:underline">Dokumen Sumber</button>
+          <span className="text-gray-300">/</span>
+          <span className="text-gray-400">{peraturan ? 'Peraturan' : `Siklus · Tahun ${tahun ?? '...'}`}</span>
+          <span className="text-gray-300">/</span>
+          <span className="font-semibold text-gray-800">{peraturan ? peraturan.label : siklus?.label}</span>
+        </div>
+      )}
 
-      {tahunList.length === 0 ? (
-        <div className="card p-12 text-center text-gray-400 text-sm">Belum ada tahun buku terdaftar.</div>
-      ) : tahun === null ? (
-        <div className="card p-12 text-center text-gray-400 text-sm">Memuat...</div>
-      ) : !siklus ? (
-        <>
-          <div className="flex flex-wrap gap-2 mb-6">
-            {tahunList.map(t => (
-              <button key={t} onClick={() => setTahun(t)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                  t === tahun ? 'bg-teal text-white border-teal' : 'bg-white text-gray-600 border-gray-200 hover:border-teal'
-                }`}>
-                {t} {tahunMap[t] === 'terkunci' && <span className="ml-1 opacity-70" title="Tahun terkunci">🔒</span>}
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {DAFTAR_SIKLUS.map(s => (
-              <button key={s.key} onClick={() => setSiklus(s)}
-                className="card p-4 text-left hover:border-teal border border-transparent transition-colors">
-                <p className="font-semibold text-gray-800 text-sm">{s.label}</p>
-                <p className="text-xs text-gray-400 mt-1 line-clamp-2">{s.sumber.map(x => x.label).join(' · ')}</p>
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
+      {peraturan ? (
         <div className="space-y-4">
-          <button className="btn-secondary text-xs" onClick={() => setSiklus(null)}>← Kembali ke Siklus</button>
+          <button className="btn-secondary text-xs" onClick={keBeranda}>← Kembali</button>
+          <PeraturanSection peraturan={peraturan} isAdmin={isAdmin} onBerubah={muatJumlahPeraturan} />
+        </div>
+      ) : siklus && tahun !== null ? (
+        <div className="space-y-4">
+          <button className="btn-secondary text-xs" onClick={keBeranda}>← Kembali</button>
           {siklus.sumber.map((sm, i) => (
             <SumberSection key={i} tahun={tahun} sumber={sm}
               isAdmin={isAdmin} adminInduk={adminInduk} mySkpdId={mySkpdId} skpdMap={skpdMap} />
           ))}
         </div>
+      ) : (
+        <BerandaDokumen tahunList={tahunList} tahunMap={tahunMap} tahun={tahun} onTahun={setTahun}
+          jumlahPeraturan={jumlahPeraturan} onPeraturan={setPeraturan} onSiklus={setSiklus} />
       )}
     </div>
   )

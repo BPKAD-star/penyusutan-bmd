@@ -8551,3 +8551,80 @@ Perpindahan/Reklas/Penghapusan.
   a.keterangan`), sama dgn tiga keluarga lain. NIBAR 9px, jatah kolom
   terbesar (11,5%).
 - **Tak ada migrasi lain** selain index di atas.
+
+## Dokumen Sumber: tiga bagian — Peraturan · Siklus · Materi (2026-09-30, migrasi 20260930_01)
+
+Permintaan user. Halaman Dokumen Sumber kini tiga bagian bernomor
+(`components/dashboard/dokumen/BerandaDokumen.tsx`, murni tampilan):
+
+1. **Peraturan** — empat kotak: Perpres · Permendagri · Perda · Perbup
+   (`DAFTAR_PERATURAN`, lib/dokumenSiklus.ts). Disimpan di `admin_dokumen` yang
+   sudah ada (scope global, unggah admin, semua boleh lihat) dgn empat nilai
+   `siklus` baru: `peraturan_perpres|permendagri|perda|perbup`. RLS tak diubah.
+   - ⚠️ **TIDAK ikut pemilih tahun** — pemilih tahun kini milik bagian Siklus
+     saja. Kolom `tahun` baris peraturan = TAHUN PERATURAN (2021 untuk
+     Permendagri 47/2021), bukan tahun buku; daftarnya diurut dari situ.
+   - Judul dirakit `judulPeraturan()` ("Permendagri Nomor 47 Tahun 2021") dari
+     isian Nomor + Tahun, bukan diketik bebas — supaya satu kotak tak berisi
+     tiga ejaan. "Tentang" masuk `keterangan`.
+   - ⚠️ `dbSiklus` (peraturan MAUPUN siklus generik) **KEMBAR dgn CHECK
+     `admin_dokumen_siklus_check`** — dikunci lib/dokumenSiklus.test.ts, yang
+     membaca migrasi TERAKHIR yang menulis constraint itu. Wadah generik baru =
+     migrasi baru yang menulis ulang SELURUH daftarnya.
+   - ⚠️ Pagu berkas 10 MB (bucket `dokumen-sumber`). Peraturan berlampiran
+     tebal bisa lebih besar — ditolak di klien dgn pesan; menaikkan pagu bucket
+     BELUM dikerjakan (menyangkut disk Supabase, keputusan user).
+   - Lapisan datanya `lib/dokumenPeraturanData.ts` (semuanya MELEMPAR);
+     angka "N dokumen" di kotak cuma hiasan → gagal menghitung = tak ditampilkan.
+2. **Siklus** — 12 kotak lama, tak berubah isinya.
+3. **Materi** — paparan Bidang Pengelolaan BMD. **Bukan berkas unggahan**: tiap
+   materi adalah halaman `/materi/<slug>` yang dibangun sbg komponen React
+   ber-animasi. Menambah materi = entri di `lib/materi.ts` + komponen slide di
+   `components/materi/<nama>/` + didaftarkan di `ISI_MATERI`
+   (components/materi/isiMateri.tsx); dikunci lib/materi.test.ts (entri tanpa
+   isi & `jumlahSlide` yang tak cocok = merah).
+
+**Mesin presentasi** (`components/materi/Deck.tsx` + `app/materi/materi.css`):
+
+- Panggung **1280×720 px tetap**, diskalakan utuh ke jendela (`--mt-skala`).
+  Isi slide ditulis dalam px, jadi tata letaknya identik di laptop, proyektor,
+  & PDF. Navigasi: ←/→/Spasi/PageUp/PageDown/Home/End, `F` layar penuh, klik
+  tepi kiri/kanan, nomor slide ikut di URL (`#5`).
+- **Export PDF = `window.print()` atas halaman itu sendiri** (pola Rekonsiliasi
+  & BA Rekon): SEMUA slide selalu ada di DOM, di layar cuma yang aktif, saat
+  dicetak semuanya tampil — `@page { size: 1280px 720px; margin: 0 }`, satu
+  slide satu halaman 16:9. Margin 0 = header/footer peramban tak ikut.
+  Diverifikasi headless: 16 halaman, MediaBox 960×540 pt.
+- ⚠️ **KEADAAN AKHIR = GAYA BIASA.** Tiap animasi masuk (`mt-up`, `mt-pop`,
+  `mt-gambar`, …) hanya menulis keyframe `from`; saat dicetak semua animasi
+  dimatikan dan yang tercetak otomatis keadaan akhirnya. Animasi yang keadaan
+  akhirnya cuma hidup di `to`/`forwards` akan tercetak KOSONG tanpa satu pun
+  error. Ornamen yang berulang & tak punya keadaan akhir yang pantas (titik
+  berjalan, garis pindai, riak) diberi `mt-tak-cetak`.
+- ⚠️ `id` SVG (`<pattern>`, `<clipPath>`) WAJIB unik per slide (`useId`): semua
+  slide ada di DOM sekaligus, dan definisi milik slide yang sedang
+  `display:none` tak bisa dirujuk slide lain.
+- ⚠️ Nomor slide di URL baru DITULIS sesudah hash awal TERBACA
+  (`hashTerbaca`) — kalau tidak, efek tulis di render pertama menimpanya jadi
+  `#1` (terlihat di dev/StrictMode: muat ulang selalu balik ke sampul).
+- Nama berkas PDF = judul tab dari `generateMetadata` (app/materi/[slug]),
+  BUKAN `document.title` — materi bukan laporan ber-periode/ber-SKPD, jadi
+  sengaja di luar `namaBerkasLaporan` (& di luar pemindainya).
+- `/materi/*` di luar `/dashboard` → TIDAK dijaga middleware; penjaganya
+  `app/materi/layout.tsx` (getUser → redirect `/login`, gagal memeriksa =
+  dianggap belum login).
+
+**Materi pertama: "Perkenalan Aplikasi SMART Asset"** (16 slide,
+`components/materi/perkenalan/`): sampul · tujuan · siklus · peta menu · yang
+bisa dikerjakan · alur pencatatan · fitur unggulan · keluaran laporan ·
+pembatas · titik koordinat tanah · spesifikasi barang · nama profil · IPA
+(cara menemukan yang belum lengkap) · aturan main · tindak lanjut · penutup.
+⚠️ Nama menu/tombol/tab di slide DISALIN dari layarnya ("⚠ Belum Titik",
+"📍 Set Titik Koordinat", "👁 Lihat", "Perlu ditindaklanjuti") — kalau label
+di aplikasi diganti, materinya ikut disesuaikan. Gauge IPA di slide 13
+ILUSTRASI (jarumnya tak menunjuk nilai SKPD mana pun); batas pitanya kembar
+dgn ambang kategori IPA.
+
+⚠️ **Deploy-ordering: migrasi 20260930_01 dulu.** Kalau terbalik halaman tetap
+terbuka & Materi jalan; kotak Peraturan tampil kosong dan Simpan-nya ditolak
+Postgres (23514) — pesannya tampil, tak ada yang tertulis.

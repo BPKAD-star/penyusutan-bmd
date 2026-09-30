@@ -1,0 +1,102 @@
+/* Materi paparan (/materi/<slug>) — panggung 1280×720 yang diskalakan ke layar,
+   animasi masuk per elemen, dan aturan CETAK yang menjadikannya PDF 16:9.
+
+   DUA ATURAN yang menjaga Export PDF tetap benar — jangan dilanggar saat
+   menambah animasi baru:
+
+   1. KEADAAN AKHIR = GAYA BIASA. Tiap animasi masuk hanya menulis `from`, jadi
+      ia bergerak MENUJU gaya elemen apa adanya. Saat dicetak semua animasi
+      dimatikan, dan yang tercetak otomatis keadaan akhirnya. Animasi yang
+      keadaan akhirnya cuma hidup di `to`/`forwards` akan tercetak KOSONG
+      (opacity 0) tanpa satu pun error.
+   2. Semuanya diskop ke `.mt-root` — berkas ini dimuat lewat app/materi/layout
+      dan tak boleh menyentuh halaman lain. */
+
+.mt-root {
+  position: fixed; inset: 0; overflow: hidden;
+  background: #070f1c;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.mt-panggung {
+  position: absolute; left: 50%; top: 50%;
+  width: 1280px; height: 720px; margin: -360px 0 0 -640px;
+  transform: scale(var(--mt-skala, 1)); transform-origin: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+}
+.mt-slide { position: absolute; inset: 0; overflow: hidden; display: none; }
+.mt-slide[data-aktif='true'] { display: block; animation: mt-ganti .4s ease both; }
+
+/* ── Animasi MASUK (sekali, saat slide tampil). Jeda lewat --d. ───────────── */
+.mt-up, .mt-in, .mt-pop, .mt-kiri, .mt-kanan, .mt-lebar, .mt-tinggi, .mt-gambar, .mt-jarum, .mt-jatuh {
+  animation-duration: .7s; animation-timing-function: cubic-bezier(.2, .7, .2, 1);
+  animation-fill-mode: both; animation-delay: var(--d, 0ms);
+}
+.mt-up     { animation-name: mt-up; }
+.mt-in     { animation-name: mt-in; }
+.mt-pop    { animation-name: mt-pop; animation-timing-function: cubic-bezier(.34, 1.56, .64, 1); animation-duration: .55s; }
+.mt-kiri   { animation-name: mt-kiri; }
+.mt-kanan  { animation-name: mt-kanan; }
+.mt-lebar  { animation-name: mt-lebar; transform-origin: left center; animation-duration: .9s; }
+.mt-tinggi { animation-name: mt-tinggi; transform-origin: center bottom; animation-duration: .9s; }
+.mt-jatuh  { animation-name: mt-jatuh; animation-timing-function: cubic-bezier(.34, 1.4, .64, 1); animation-duration: .6s; }
+/* Garis SVG yang "digambar": pasang pathLength="1" di elemennya. */
+.mt-gambar { stroke-dasharray: 1; stroke-dashoffset: 0; animation-name: mt-gambar; animation-duration: 1.3s; animation-timing-function: ease-in-out; }
+/* Jarum gauge: sudut akhirnya ditulis di style elemennya (transform: rotate). */
+.mt-jarum  { animation-name: mt-jarum; animation-duration: 1.6s; animation-timing-function: cubic-bezier(.3, 1.3, .5, 1); }
+
+@keyframes mt-ganti  { from { opacity: 0; } }
+@keyframes mt-up     { from { opacity: 0; transform: translateY(26px); } }
+@keyframes mt-in     { from { opacity: 0; } }
+@keyframes mt-pop    { from { opacity: 0; transform: scale(.6); } }
+@keyframes mt-kiri   { from { opacity: 0; transform: translateX(-40px); } }
+@keyframes mt-kanan  { from { opacity: 0; transform: translateX(40px); } }
+@keyframes mt-lebar  { from { transform: scaleX(0); } }
+@keyframes mt-tinggi { from { transform: scaleY(0); } }
+@keyframes mt-jatuh  { from { opacity: 0; transform: translateY(-46px); } }
+@keyframes mt-gambar { from { stroke-dashoffset: 1; } }
+@keyframes mt-jarum  { from { transform: rotate(-90deg); } }
+
+/* ── Gerak LATAR (berulang). Tak punya keadaan akhir → aman dicetak. ─────── */
+.mt-apung   { animation: mt-apung 6s ease-in-out infinite; animation-delay: var(--d, 0ms); }
+.mt-putar   { animation: mt-putar var(--lama, 40s) linear infinite; }
+.mt-putar-balik { animation: mt-putar var(--lama, 40s) linear infinite reverse; }
+.mt-riak    { animation: mt-riak 2.4s ease-out infinite; animation-delay: var(--d, 0ms); }
+.mt-alir    { stroke-dasharray: 6 10; animation: mt-alir 1.2s linear infinite; }
+.mt-kedip   { animation: mt-kedip 1.6s ease-in-out infinite; animation-delay: var(--d, 0ms); }
+.mt-pindai  { animation: mt-pindai 2.6s ease-in-out infinite; }
+.mt-jalan   { animation: mt-jalan var(--lama, 4s) linear infinite; animation-delay: var(--d, 0ms); }
+
+@keyframes mt-apung  { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+@keyframes mt-putar  { to { transform: rotate(360deg); } }
+@keyframes mt-riak   { 0% { transform: scale(.4); opacity: .7; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes mt-alir   { to { stroke-dashoffset: -16; } }
+@keyframes mt-kedip  { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes mt-pindai { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(var(--jarak, 120px)); } }
+@keyframes mt-jalan  { 0% { offset-distance: 0%; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+
+/* Bilah kendali: muncul saat kursor bergerak, lalu menepi sendiri. */
+.mt-kendali { transition: opacity .3s ease, transform .3s ease; }
+.mt-kendali[data-sembunyi='true'] { opacity: 0; transform: translateY(12px); pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mt-root *, .mt-root *::before, .mt-root *::after { animation: none !important; transition: none !important; }
+}
+
+/* ── CETAK = Export PDF. Satu slide = satu halaman 16:9, keadaan akhir. ──── */
+@media print {
+  @page { size: 1280px 720px; margin: 0; }
+  html, body { background: #fff !important; margin: 0 !important; }
+  .mt-root { position: static; overflow: visible; background: none; }
+  .mt-panggung {
+    position: static; margin: 0; width: 1280px; height: auto;
+    transform: none !important; box-shadow: none;
+  }
+  .mt-slide {
+    display: block !important; position: relative; inset: auto;
+    width: 1280px; height: 720px;
+    break-after: page; page-break-after: always; break-inside: avoid;
+  }
+  .mt-slide:last-child { break-after: auto; page-break-after: auto; }
+  .mt-root *, .mt-root *::before, .mt-root *::after { animation: none !important; transition: none !important; }
+  .mt-tak-cetak { display: none !important; }
+}

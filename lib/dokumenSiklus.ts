@@ -256,3 +256,45 @@ export const DAFTAR_SIKLUS: SiklusConfig[] = [
     }],
   },
 ]
+
+// ── PERATURAN (permintaan user 2026-09-30) ──────────────────────────────────
+// Bagian paling atas halaman Dokumen Sumber: empat kotak peraturan BMD.
+// Disimpan di `admin_dokumen` (scope global, unggah admin saja) dgn empat nilai
+// `siklus` sendiri — migrasi 20260930_01.
+//
+// ⚠️ TIDAK ikut pemilih tahun di halaman itu: peraturan berlaku lintas tahun.
+// Kolom `tahun` barisnya = TAHUN PERATURAN (2021 untuk Permendagri 47/2021),
+// bukan tahun buku, dan daftarnya diurut dari situ.
+export type PeraturanConfig = {
+  key: string
+  /** Sebutan singkat — jadi judul kotak & awalan judul dokumen. */
+  label: string
+  panjang: string
+  /** Harus cocok dgn CHECK constraint admin_dokumen.siklus (dikunci test). */
+  dbSiklus: string
+}
+
+export const DAFTAR_PERATURAN: PeraturanConfig[] = [
+  { key: 'perpres', label: 'Perpres', panjang: 'Peraturan Presiden', dbSiklus: 'peraturan_perpres' },
+  { key: 'permendagri', label: 'Permendagri', panjang: 'Peraturan Menteri Dalam Negeri', dbSiklus: 'peraturan_permendagri' },
+  { key: 'perda', label: 'Perda', panjang: 'Peraturan Daerah', dbSiklus: 'peraturan_perda' },
+  { key: 'perbup', label: 'Perbup', panjang: 'Peraturan Bupati', dbSiklus: 'peraturan_perbup' },
+]
+
+/**
+ * Judul baku satu peraturan: "Permendagri Nomor 47 Tahun 2021".
+ *
+ * Dirakit di SATU tempat supaya daftarnya seragam — kalau judulnya diketik
+ * bebas, satu kotak berisi "Permendagri 47/2021", "PMDN No.19 Th 2016", dan
+ * "permendagri nomor 7 tahun 2024" sekaligus, dan tak bisa diurut maupun dicari.
+ */
+export function judulPeraturan(label: string, nomor: string, tahun: number): string {
+  return `${label} Nomor ${nomor.trim()} Tahun ${tahun}`
+}
+
+/** Tahun peraturan yang masuk akal: 1945 s.d. tahun berjalan. `null` = ditolak. */
+export function tahunPeraturanSah(teks: string, tahunIni: number): number | null {
+  if (!/^\d{4}$/.test(teks.trim())) return null
+  const t = Number(teks.trim())
+  return t >= 1945 && t <= tahunIni ? t : null
+}
