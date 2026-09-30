@@ -8869,3 +8869,29 @@ di URL menang. Rute lama `/inventarisasi/jenis/<kode>` & `/validasi/<kode>` jadi
 - Angka di pemilih = ringkasan 8 jenis (`muatRingkasSemua`, paralel, di latar, tak
   ikut `jenis` jadi berpindah jenis tak menghitung ulang). Total "Semua jenis" lewat
   `jumlahRingkas` — satu jenis gagal → total TAK TERHITUNG, bukan total yang kurang.
+
+## Profil Pengguna + Nomor HP pegawai (2026-10-01, migrasi 20261001_02)
+
+Halaman `/dashboard/profil`, dibuka dari menu akun di TopBar ("Profil Saya").
+Tiga bagian, wewenangnya SENGAJA beda:
+- **Data pegawai** (nama, NIP, pangkat/golongan, jabatan, JK) — HANYA DIBACA dari
+  `admin_pegawai` lewat `admin_profiles.pegawai_id`. Itu data yang tercetak di lembar
+  bertanda tangan; penyuntingnya admin (Daftar Pegawai). `pegawai_update` tetap admin-only.
+- **Nomor HP** — kolom baru `admin_pegawai.no_hp`, bentuk tersimpan SELALU `62…`
+  (CHECK `^62[0-9]{8,13}$`) + UNIQUE parsial (chatbot kelak mengenali pengirim dari
+  nomornya). Pemilik akun menulisnya lewat RPC `fn_profil_simpan_hp` (SECURITY DEFINER,
+  cuma kolom `no_hp` pegawainya sendiri). Normalisasi ketikan SATU tempat: `lib/noHp.ts`
+  (Profil & form Daftar Pegawai). Diuji di produksi (transaksi+ROLLBACK): simpan ✓,
+  nomor milik pegawai lain ditolak dgn namanya, format ngawur ditolak, UPDATE langsung
+  ke `admin_pegawai` tetap 0 baris.
+  ⚠️ **Nomornya BELUM TERVERIFIKASI** — siapa pun yang login bisa mengetik nomor apa
+  saja. Sebelum chatbot memakai nomor ini sbg identitas, wajib ada verifikasi sekali
+  (OTP ke nomor itu); tanpa itu orang bisa "menjadi" pengurus lain lewat WhatsApp.
+- **Ganti password** — verifikasi password lama (`signInWithPassword`) → `updateUser` →
+  keluarkan sesi di perangkat lain (`signOut({scope:'others'})`). Min. 8 karakter.
+- ⚠️ **Lupa password: reset lewat EMAIL MUSTAHIL** — 73 dari 74 akun memakai email
+  sintetis `@pengguna.bmd.internal` (lib/authIdentifier.ts). Jalur resminya admin mereset
+  di Admin → Daftar User (`/api/admin/reset-password`); halaman login kini menyebutnya.
+- `EyeToggleButton` diangkat ke `shared/ui/` (dipakai Daftar User & Profil). Daftar
+  Pegawai berhenti menyalin `GOLONGAN_PANGKAT` — kini import dari lib/usulanPengurus.ts
+  (isinya identik).

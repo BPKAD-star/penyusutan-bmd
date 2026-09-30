@@ -113,6 +113,12 @@ export default function LoginPage() {
             >
               {loading ? 'Memproses...' : 'Masuk'}
             </button>
+            {/* Akun di sini (73 dari 74 per 2026-10-01) memakai email sintetis
+                @pengguna.bmd.internal — tautan reset lewat email mustahil sampai.
+                Jalur resminya admin mereset di Admin → Daftar User. */}
+            <p className="text-center text-xs text-gray-400">
+              Lupa password? Hubungi Pengelola Barang (Bidang BMD BKAD) untuk direset.
+            </p>
           </form>
         </div>
 

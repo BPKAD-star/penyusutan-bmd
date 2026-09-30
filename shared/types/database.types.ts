@@ -273,6 +273,7 @@ export type Database = {
           jenis_kelamin: string | null
           nama: string
           nip: string | null
+          no_hp: string | null
           pangkat: string | null
           role_bmd: string
           skpd_id: number | null
@@ -286,6 +287,7 @@ export type Database = {
           jenis_kelamin?: string | null
           nama: string
           nip?: string | null
+          no_hp?: string | null
           pangkat?: string | null
           role_bmd?: string
           skpd_id?: number | null
@@ -299,6 +301,7 @@ export type Database = {
           jenis_kelamin?: string | null
           nama?: string
           nip?: string | null
+          no_hp?: string | null
           pangkat?: string | null
           role_bmd?: string
           skpd_id?: number | null
@@ -4611,6 +4614,10 @@ export type Database = {
       fn_inventarisasi_hapus_isian: {
         Args: { p_id: string }
         Returns: undefined
+      }
+      fn_profil_simpan_hp: {
+        Args: { p_no_hp: string | null }
+        Returns: string | null
       }
       fn_inventarisasi_hasil: {
         Args: {

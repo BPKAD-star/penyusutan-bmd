@@ -12,6 +12,8 @@ import { cocokCari } from '@/lib/cari'
 import { jkDariNip } from '@/lib/usulanPengurus'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import type { BarisImportPegawai } from '@/lib/importPegawai'
+import { normalNoHp, tampilNoHp } from '@/lib/noHp'
+import { GOLONGAN_PANGKAT, pangkatDariGolongan } from '@/lib/usulanPengurus'
 import { useImportPegawai } from './useImportPegawai'
 
 type Pegawai = {
@@ -22,6 +24,7 @@ type Pegawai = {
   golongan: string | null
   jabatan: string | null
   jenis_kelamin: string | null
+  no_hp: string | null
   role_bmd: string
   skpd_id: number | null
   skpd: { nama: string } | null
@@ -73,28 +76,8 @@ function buildSkpdOrder(rows: SkpdTreeRow[]): Map<number, number> {
   return order
 }
 
-// Pangkat & golongan/ruang PNS baku (PP 11/2017 jo. PP 99/2000). Pangkat
-// otomatis mengikuti golongan yang dipilih — operator tidak isi manual lagi.
-const GOLONGAN_PANGKAT: { golongan: string; pangkat: string }[] = [
-  { golongan: 'I/a',   pangkat: 'Juru Muda' },
-  { golongan: 'I/b',   pangkat: 'Juru Muda Tingkat I' },
-  { golongan: 'I/c',   pangkat: 'Juru' },
-  { golongan: 'I/d',   pangkat: 'Juru Tingkat I' },
-  { golongan: 'II/a',  pangkat: 'Pengatur Muda' },
-  { golongan: 'II/b',  pangkat: 'Pengatur Muda Tingkat I' },
-  { golongan: 'II/c',  pangkat: 'Pengatur' },
-  { golongan: 'II/d',  pangkat: 'Pengatur Tingkat I' },
-  { golongan: 'III/a', pangkat: 'Penata Muda' },
-  { golongan: 'III/b', pangkat: 'Penata Muda Tingkat I' },
-  { golongan: 'III/c', pangkat: 'Penata' },
-  { golongan: 'III/d', pangkat: 'Penata Tingkat I' },
-  { golongan: 'IV/a',  pangkat: 'Pembina' },
-  { golongan: 'IV/b',  pangkat: 'Pembina Tingkat I' },
-  { golongan: 'IV/c',  pangkat: 'Pembina Utama Muda' },
-  { golongan: 'IV/d',  pangkat: 'Pembina Utama Madya' },
-  { golongan: 'IV/e',  pangkat: 'Pembina Utama' },
-]
-const pangkatDariGolongan = (g: string) => GOLONGAN_PANGKAT.find(x => x.golongan === g)?.pangkat || ''
+// Pangkat & golongan/ruang PNS baku (PP 11/2017 jo. PP 99/2000) — SATU tabel,
+// di lib/usulanPengurus.ts (dulu disalin di sini, isinya identik).
 
 // Golongan PPPK (angka Romawi, tanpa pangkat gaya PNS). Disimpan apa adanya di
 // kolom `golongan`; `pangkat` dikosongkan untuk PPPK. Tidak bentrok dgn golongan
@@ -110,7 +93,7 @@ function normalisasiGolongan(g: string): string {
 }
 
 const FORM_KOSONG = {
-  nip: '', nama: '', golongan: '', jabatan: '', jenis_kelamin: '',
+  nip: '', nama: '', golongan: '', jabatan: '', jenis_kelamin: '', no_hp: '',
   role_bmd: 'pengurus_barang', skpd_id: '', non_asn: false,
 }
 
@@ -249,7 +232,7 @@ export default function AdminPegawaiPage() {
       nip: p.nip || '', nama: p.nama,
       golongan: GOLONGAN_PANGKAT.some(g => g.golongan === golonganNormal) ? golonganNormal
         : isGolonganPppk(p.golongan || '') ? (p.golongan || '').trim() : '',
-      jabatan: p.jabatan || '', jenis_kelamin: p.jenis_kelamin || '',
+      jabatan: p.jabatan || '', jenis_kelamin: p.jenis_kelamin || '', no_hp: tampilNoHp(p.no_hp),
       role_bmd: p.role_bmd, skpd_id: p.skpd_id != null ? String(p.skpd_id) : '',
       non_asn: !p.nip,  // pegawai tersimpan tanpa NIP = non-ASN
     })
@@ -266,13 +249,15 @@ export default function AdminPegawaiPage() {
     if (!nonAsn && !/^\d{18}$/.test(form.nip)) {
       setMsg('NIP harus tepat 18 angka, tanpa spasi.'); return
     }
+    let noHp: string | null
+    try { noHp = normalNoHp(form.no_hp) } catch (er) { setMsg(`Error: ${(er as Error).message}`); return }
     setSaving(true)
     setMsg('')
 
     const payload = {
       nip: nonAsn ? null : form.nip, nama: form.nama,
       pangkat: pangkatDariGolongan(form.golongan) || null, golongan: form.golongan || null,
-      jabatan: form.jabatan || null, jenis_kelamin: form.jenis_kelamin || null,
+      jabatan: form.jabatan || null, jenis_kelamin: form.jenis_kelamin || null, no_hp: noHp,
       role_bmd: form.role_bmd, skpd_id: skpdNum,
     }
 
@@ -469,6 +454,9 @@ export default function AdminPegawaiPage() {
                   <p className="text-[11px] text-amber-600 mt-1">⚠ Menurut NIP (digit ke-15 = {form.nip[14]}), harusnya <b>{jkDariNip(form.nip) === 'L' ? 'Laki-laki' : 'Perempuan'}</b>.</p>
                 )}
               </div>
+              <div><label className="block text-xs text-gray-500 mb-1">Nomor HP (WhatsApp, boleh kosong)</label>
+                <input className="select-filter w-full" value={form.no_hp} inputMode="tel" placeholder="0812-3456-7890"
+                  onChange={e => setForm(f => ({ ...f, no_hp: e.target.value }))} /></div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Role BMD</label>
                 <select className="select-filter w-full" value={form.role_bmd}
@@ -503,6 +491,7 @@ export default function AdminPegawaiPage() {
                 <th className="table-th whitespace-nowrap">Pangkat</th>
                 <th className="table-th whitespace-nowrap">Jabatan</th>
                 <th className="table-th whitespace-nowrap">Gender</th>
+                <th className="table-th whitespace-nowrap">No. HP</th>
                 <th className="table-th whitespace-nowrap">Role BMD</th>
                 <th className="table-th whitespace-nowrap">Edit</th>
                 <th className="table-th whitespace-nowrap">Hapus</th>
@@ -510,9 +499,9 @@ export default function AdminPegawaiPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+                <tr><td colSpan={11} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
               ) : tampilList.length === 0 ? (
-                <tr><td colSpan={10} className="table-td text-center py-8 text-gray-400">
+                <tr><td colSpan={11} className="table-td text-center py-8 text-gray-400">
                   {/* Dibedakan: "belum ada" vs "tak ada yang cocok" — kalau
                       disamakan, operator mengira datanya hilang. */}
                   {sortedList.length === 0 ? 'Belum ada pegawai.' : `Tidak ada pegawai yang cocok dengan "${cari}".`}
@@ -548,6 +537,7 @@ export default function AdminPegawaiPage() {
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.pangkat || '—'}</td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.jabatan || '—'}</td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{p.jenis_kelamin === 'L' ? 'Laki-laki' : p.jenis_kelamin === 'P' ? 'Perempuan' : '—'}</td>
+                  <td className="table-td whitespace-nowrap text-xs text-gray-500">{tampilNoHp(p.no_hp) || '—'}</td>
                   <td className="table-td whitespace-nowrap text-xs text-gray-500">{ROLE_BMD.find(r => r.value === p.role_bmd)?.label || p.role_bmd}</td>
                   <td className="table-td whitespace-nowrap">
                     <button onClick={() => openEdit(p)} className="text-teal hover:underline text-xs font-medium">Edit</button>
