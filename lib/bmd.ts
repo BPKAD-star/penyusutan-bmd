@@ -78,6 +78,17 @@ export function perlakuanKode(kode: string): Perlakuan {
   }
 }
 
+/**
+ * Golongan yang TIDAK PERNAH menghasilkan beban/akumulasi di engine: Tanah,
+ * ATL, KDP (`tidak`) dan Aset Lain-Lain (`lain_lain`, beku). Dipakai layar
+ * yang menampilkan angka penyusutan supaya tak memamerkan hitungan yang
+ * tak akan pernah terjadi (mis. preview Kapitalisasi Tanah).
+ */
+export function tanpaPenyusutan(kode: string): boolean {
+  const p = perlakuanKode(kode)
+  return p === 'tidak' || p === 'lain_lain'
+}
+
 /** Golongan yang tampil di Daftar Barang (PLAN §8) — label diambil dari data. */
 export const GOLONGAN_DAFTAR_BARANG = ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']
 

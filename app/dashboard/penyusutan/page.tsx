@@ -17,7 +17,7 @@ import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
-import { GOLONGAN_REKAP, perlakuanKode } from '@/lib/bmd'
+import { GOLONGAN_REKAP, perlakuanKode, tanpaPenyusutan } from '@/lib/bmd'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
@@ -229,7 +229,7 @@ export default function PenyusutanPage() {
 
   // Kapitalisasi per NIBAR induk (buang yang dibatalkan), urut tertua→termuda.
   async function fetchKap(f: Applied) {
-    let kq = supabase.from('transaksi_bmd').select('id,tanggal,keterangan,payload,aset:aset_id(nibar)').eq('jenis', 'kapitalisasi')
+    let kq = supabase.from('transaksi_bmd').select('id,tanggal,keterangan,payload,aset:aset_id(nibar,kode)').eq('jenis', 'kapitalisasi')
     let bq = supabase.from('transaksi_bmd').select('payload').eq('jenis', 'batal_kapitalisasi')
     if (f.org.descendantIds) { kq = kq.in('skpd_asal', f.org.descendantIds); bq = bq.in('skpd_asal', f.org.descendantIds) }
     const [{ data: kap }, { data: batal }] = await Promise.all([kq.order('id', { ascending: true }), bq])
@@ -238,10 +238,10 @@ export default function PenyusutanPage() {
     const map: Record<string, KapItem[]> = {}
     for (const r of (kap || []) as unknown as {
       id: number; tanggal: string; keterangan: string | null
-      payload: { no_dokumen?: string; anak?: KapItem['anak']; snapshot?: KapItem['snapshot'] }; aset: { nibar: string | null } | null
+      payload: { no_dokumen?: string; anak?: KapItem['anak']; snapshot?: KapItem['snapshot'] }; aset: { nibar: string | null; kode: string | null } | null
     }[]) {
       if (cancelled.has(r.id) || !r.aset?.nibar) continue
-      ;(map[r.aset.nibar] ||= []).push({ no_dokumen: r.payload?.no_dokumen || '(tanpa no. dok)', tanggal: r.tanggal, keterangan: r.keterangan, snapshot: r.payload?.snapshot || null, anak: r.payload?.anak || [] })
+      ;(map[r.aset.nibar] ||= []).push({ no_dokumen: r.payload?.no_dokumen || '(tanpa no. dok)', tanggal: r.tanggal, keterangan: r.keterangan, snapshot: r.payload?.snapshot || null, anak: r.payload?.anak || [], tanpaPenyusutan: !!r.aset.kode && tanpaPenyusutan(r.aset.kode) })
     }
     return map
   }

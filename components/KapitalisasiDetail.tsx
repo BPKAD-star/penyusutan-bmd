@@ -27,7 +27,14 @@ export type KapAnak = {
    *  induk. Opsional: baris lama tak menyimpannya. */
   akum?: number
 }
-export type KapItem = { no_dokumen: string; tanggal: string; keterangan?: string | null; snapshot: KapSnapshot | null; anak: KapAnak[] }
+export type KapItem = {
+  no_dokumen: string; tanggal: string; keterangan?: string | null; snapshot: KapSnapshot | null; anak: KapAnak[]
+  /** Golongan induk tak disusutkan (Tanah/ATL/KDP/Aset Lain-Lain): blok
+   *  penyusutan disembunyikan — angkanya di snapshot cuma hasil rumus umum
+   *  (minimal 1 smt) dan tak pernah dijalankan engine. Opsional: tak diisi
+   *  = tampil seperti biasa. */
+  tanpaPenyusutan?: boolean
+}
 
 function Row({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
   return (
@@ -40,6 +47,7 @@ function Row({ label, value, strong }: { label: string; value: React.ReactNode; 
 
 export function KapitalisasiRincian({ item }: { item: KapItem }) {
   const s = item.snapshot
+  const tanpa = item.tanpaPenyusutan === true
   return (
     <div className="space-y-4">
       <div className="text-sm">
@@ -57,11 +65,15 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
               Induk — Sebelum{s.periode_dasar ? <span className="normal-case font-normal text-gray-400"> · posisi akhir {s.periode_dasar}</span> : null}
             </p>
             <Row label="Nilai perolehan induk" value={formatRupiah2(s.np_lama)} />
-            <Row label="Beban penyusutan / smt" value={formatRupiah2(s.beban_lama)} />
-            <Row label="Akumulasi penyusutan" value={formatRupiah2(s.akum_lama)} />
-            <Row label="Nilai buku induk" value={formatRupiah2(s.nb_lama)} />
-            <Row label="Sisa masa manfaat" value={`${s.sisa_lama_smt} smt`} />
-            {s.masa_maks_tahun != null && <Row label="Masa manfaat maks (kode)" value={`${s.masa_maks_tahun} th`} />}
+            {!tanpa && (
+              <>
+                <Row label="Beban penyusutan / smt" value={formatRupiah2(s.beban_lama)} />
+                <Row label="Akumulasi penyusutan" value={formatRupiah2(s.akum_lama)} />
+                <Row label="Nilai buku induk" value={formatRupiah2(s.nb_lama)} />
+                <Row label="Sisa masa manfaat" value={`${s.sisa_lama_smt} smt`} />
+                {s.masa_maks_tahun != null && <Row label="Masa manfaat maks (kode)" value={`${s.masa_maks_tahun} th`} />}
+              </>
+            )}
           </div>
 
           {/* Penambahan */}
@@ -77,7 +89,7 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
                   {/* Akumulasi anak ditampilkan PER BARANG, bukan cuma totalnya:
                       inilah angka yang berpindah ke induk, dan operator perlu
                       bisa mencocokkannya satu per satu sebelum menyimpan. */}
-                  {a.akum != null && (
+                  {!tanpa && a.akum != null && (
                     <div className="flex justify-between gap-3 min-w-0 text-gray-400">
                       <span>akumulasi ikut pindah</span>
                       <span className="tabular-nums whitespace-nowrap flex-shrink-0">{formatRupiah2(a.akum)}</span>
@@ -87,11 +99,11 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
               ))}
             </ul>
             <Row label="Total nilai anak (rehab)" value={formatRupiah2(s.rehab)} strong />
-            {s.akum_diserap != null && (
+            {!tanpa && s.akum_diserap != null && (
               <Row label="Akumulasi anak yang diserap" value={formatRupiah2(s.akum_diserap)} strong />
             )}
             <Row label="Persentase thd nilai induk" value={`${s.persen.toFixed(2)}%`} />
-            <Row label="Tambahan masa manfaat" value={`+${s.tambahan_tahun} th`} />
+            {!tanpa && <Row label="Tambahan masa manfaat" value={`+${s.tambahan_tahun} th`} />}
           </div>
 
           {/* Sesudah */}
@@ -100,11 +112,20 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
               Induk — Sesudah{s.periode_kap ? <span className="normal-case font-normal text-gray-400"> · saat kapitalisasi</span> : null}
             </p>
             <Row label="Nilai perolehan baru" value={formatRupiah2(s.np_baru)} strong />
-            <Row label="Nilai buku baru" value={formatRupiah2(s.nb_baru)} strong />
-            <Row label="Masa manfaat baru" value={`${s.masa_baru_tahun} th (${s.sisa_baru_smt} smt)`} strong />
-            <Row label="Beban penyusutan / smt baru" value={formatRupiah2(s.beban_baru)} strong />
-            <Row label="Akumulasi penyusutan" value={formatRupiah2(s.akum_baru)} />
-            <Row label="Sisa masa manfaat baru" value={`${s.sisa_baru_smt} smt`} strong />
+            {tanpa ? (
+              <p className="mt-2 text-[11px] leading-snug text-gray-600 bg-white/70 border border-teal/30 rounded px-2 py-1.5">
+                Golongan ini <b>tidak disusutkan</b>: tidak ada beban, akumulasi, maupun masa manfaat.
+                Nilai buku sama dengan nilai perolehan baru, dan engine tidak perlu dijalankan ulang.
+              </p>
+            ) : (
+              <>
+                <Row label="Nilai buku baru" value={formatRupiah2(s.nb_baru)} strong />
+                <Row label="Masa manfaat baru" value={`${s.masa_baru_tahun} th (${s.sisa_baru_smt} smt)`} strong />
+                <Row label="Beban penyusutan / smt baru" value={formatRupiah2(s.beban_baru)} strong />
+                <Row label="Akumulasi penyusutan" value={formatRupiah2(s.akum_baru)} />
+                <Row label="Sisa masa manfaat baru" value={`${s.sisa_baru_smt} smt`} strong />
+              </>
+            )}
             {/* ── Jembatan ke menu Penyusutan ────────────────────────────────
                 Kolom di atas adalah posisi TEPAT SAAT kapitalisasi — beban
                 semester berjalan belum dibebankan. Menu Penyusutan & Laporan
@@ -113,7 +134,7 @@ export function KapitalisasiRincian({ item }: { item: KapItem }) {
                 bertambah". Dua baris ini yang menutup jaraknya, supaya
                 pratinjau bisa ditelusuri langsung ke laporan (permintaan user
                 2026-08-27: "biar kalau BPK tanya, auto kejawab lewat sini"). */}
-            {s.periode_kap && (
+            {!tanpa && s.periode_kap && (
               <div className="mt-2 pt-2 border-t border-teal/30">
                 <p className="text-[11px] text-gray-500 mb-1">Setelah beban {s.periode_kap} dibebankan:</p>
                 <Row label={`Akumulasi s.d. akhir ${s.periode_kap}`} value={formatRupiah2(s.akum_baru + s.beban_baru)} />

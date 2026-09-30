@@ -14,7 +14,7 @@ import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah2 } from '@/lib/export'
-import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, parsePeriode, previousPeriode, formatPeriode } from '@/lib/bmd'
+import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, parsePeriode, previousPeriode, formatPeriode, tanpaPenyusutan } from '@/lib/bmd'
 import { cariBand, type BandOverhaul } from '@/lib/engine/penyusutan'
 import { KapitalisasiRincian, KapitalisasiDetailModal, type KapSnapshot, type KapAnak, type KapItem } from '@/components/KapitalisasiDetail'
 import FormShell from './FormShell'
@@ -314,7 +314,7 @@ export default function Kapitalisasi() {
                     <p className="font-semibold text-gray-800">{formatRupiah2(j.nilai)}</p>
                   </div>
                   <button title="Lihat rincian penambahan masa manfaat"
-                    onClick={() => setDetail([{ no_dokumen: j.no_dokumen, tanggal: j.tanggal, keterangan: j.keterangan, snapshot: j.snapshot, anak: j.anak }])}
+                    onClick={() => setDetail([{ no_dokumen: j.no_dokumen, tanggal: j.tanggal, keterangan: j.keterangan, snapshot: j.snapshot, anak: j.anak, tanpaPenyusutan: !!j.induk && tanpaPenyusutan(j.induk.kode) }])}
                     className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">👁</button>
                   {/* Amber = membatalkan keadaan yang sudah berlaku (nada yang
                       sama dgn Buka Kunci di KonfirmasiModal) — Ubah memang
@@ -632,7 +632,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
           disusutkan), tapi kalau sebabnya cuma "engine belum dijalankan untuk
           periode itu", angka 0 tadi ikut permanen. Karena itu diberitahukan —
           bukan diblokir: memblokir akan mematikan alur KDP yang sah. */}
-      {anakTanpaBaris.length > 0 && (
+      {anakTanpaBaris.length > 0 && !(induk && tanpaPenyusutan(induk.kode)) && (
         <div className="max-w-3xl rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
           <b>{anakTanpaBaris.length} barang anak belum punya hasil penyusutan</b> pada periode{' '}
           {formatPeriode(previousPeriode(parsePeriode(periodeDariTanggal(tgl))))} — akumulasi yang ikut pindah ke
@@ -646,7 +646,7 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
       {snap && (
         <div className="card p-5 max-w-4xl">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Preview Perhitungan · Acuan periode {periodeDariTanggal(tgl)}</p>
-          <KapitalisasiRincian item={{ no_dokumen: noDok || '(belum diisi)', tanggal: tgl, keterangan: ket, snapshot: snap, anak: anakInfo() }} />
+          <KapitalisasiRincian item={{ no_dokumen: noDok || '(belum diisi)', tanggal: tgl, keterangan: ket, snapshot: snap, anak: anakInfo(), tanpaPenyusutan: !!induk && tanpaPenyusutan(induk.kode) }} />
         </div>
       )}
 
