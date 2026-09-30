@@ -8895,3 +8895,14 @@ Tiga bagian, wewenangnya SENGAJA beda:
 - `EyeToggleButton` diangkat ke `shared/ui/` (dipakai Daftar User & Profil). Daftar
   Pegawai berhenti menyalin `GOLONGAN_PANGKAT` — kini import dari lib/usulanPengurus.ts
   (isinya identik).
+
+### Pesan galat password berbahasa Indonesia (2026-10-01)
+Ganti password di Profil dijawab Supabase dgn teks Inggris ("Password is known to be weak
+and easy to guess"). Itu **`weak_password` dgn `reasons`** (`length`/`characters`/`pwned`):
+proteksi password bocor (HaveIBeenPwned) **AKTIF** di proyek ini, jadi password yang cukup
+panjang pun ditolak kalau pernah bocor (mis. "@dimas04"). Terjemahannya SATU tempat:
+`lib/pesanAuth.ts` (`pesanAuthID`, `ATURAN_PASSWORD`), dipakai Profil + API admin
+`create-user` & `reset-password`. Pesan tak dikenal TIDAK membuang teks aslinya (ditaruh
+dalam kurung). Form admin & API reset dinaikkan 6 → 8 karakter supaya sama dgn Profil.
+⚠️ Aturan `characters` (huruf besar/kecil/angka/simbol) hidup di pengaturan Auth Supabase,
+TAK terbaca dari kode/MCP — petunjuknya disengaja berbunyi "sebaiknya", bukan "wajib".

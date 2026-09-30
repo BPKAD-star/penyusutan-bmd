@@ -2,6 +2,7 @@ import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { toAuthEmail } from '@/lib/authIdentifier'
 import { ROLE_VALUES } from '@/lib/roles'
 import { NextResponse } from 'next/server'
+import { pesanAuthID } from '@/lib/pesanAuth'
 
 export async function POST(req: Request) {
   const { email: rawIdentifier, password, pegawai_id, role, ipa_role } = await req.json()
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
     email_confirm: true,
   })
 
-  if (error) return NextResponse.json({ error: error.message })
+  if (error) return NextResponse.json({ error: pesanAuthID(error as { message?: string; code?: string; status?: number; reasons?: string[] }, 'Gagal membuat akun.') })
 
   const { error: profileError } = await supabase.from('admin_profiles').insert({
     id: data.user.id,

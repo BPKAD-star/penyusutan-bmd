@@ -7,6 +7,7 @@ import SearchSelect from '@/components/SearchSelect'
 import { cocokCari } from '@/lib/cari'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import EyeToggleButton from '@/shared/ui/EyeToggleButton'
+import { ATURAN_PASSWORD } from '@/lib/pesanAuth'
 
 type Profile = {
   id: string
@@ -236,11 +237,12 @@ export default function AdminUserPage() {
             <div>
               <label className="block text-xs text-gray-500 mb-1">Password</label>
               <div className="relative">
-                <input type={showPassword ? 'text' : 'password'} required minLength={6}
+                <input type={showPassword ? 'text' : 'password'} required minLength={8}
                   className="select-filter w-full pr-9" value={form.password}
                   onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
                 <EyeToggleButton shown={showPassword} onClick={() => setShowPassword(v => !v)} />
               </div>
+              <p className="text-[11px] text-gray-400 mt-1">{ATURAN_PASSWORD}</p>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Role</label>
@@ -348,11 +350,12 @@ export default function AdminUserPage() {
             <form onSubmit={handleResetPassword}>
               <label className="block text-xs text-gray-500 mb-1">Password Baru</label>
               <div className="relative mb-4">
-                <input type={showResetPassword ? 'text' : 'password'} required minLength={6} autoFocus
+                <input type={showResetPassword ? 'text' : 'password'} required minLength={8} autoFocus
                   className="select-filter w-full pr-9" value={resetPassword}
                   onChange={e => setResetPassword(e.target.value)} />
                 <EyeToggleButton shown={showResetPassword} onClick={() => setShowResetPassword(v => !v)} />
               </div>
+              <p className="text-[11px] text-gray-400 -mt-3 mb-4">{ATURAN_PASSWORD}</p>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setResetTarget(null)}
                   className="text-xs font-medium text-gray-500 hover:text-gray-700 px-3 py-2">

@@ -15,6 +15,7 @@ import AvatarPegawai, { jkPegawai } from '@/components/AvatarPegawai'
 import EyeToggleButton from '@/shared/ui/EyeToggleButton'
 import { ROLE_LABEL } from '@/lib/roles'
 import { normalNoHp, tampilNoHp } from '@/lib/noHp'
+import { ATURAN_PASSWORD, pesanAuthID, type GalatAuth } from '@/lib/pesanAuth'
 
 type Pegawai = {
   id: string; nama: string; nip: string | null; pangkat: string | null; golongan: string | null
@@ -122,15 +123,15 @@ export default function ProfilPage() {
       // Verifikasi password lama dulu: sesi yang tertinggal terbuka di komputer
       // bersama tak boleh cukup untuk mengambil alih akun.
       const { error: el } = await supabase.auth.signInWithPassword({ email: akun.email, password: pwLama })
-      if (el) throw new Error('Password lama salah.')
+      if (el) throw new Error(pesanAuthID(el as GalatAuth, 'Password lama tidak dapat diverifikasi.'))
       const { error: eu } = await supabase.auth.updateUser({ password: pwBaru })
-      if (eu) throw new Error(eu.message)
+      if (eu) throw new Error(pesanAuthID(eu as GalatAuth, 'Gagal mengganti password.'))
       // Keluarkan sesi di perangkat lain — gunanya ganti password justru itu.
       await supabase.auth.signOut({ scope: 'others' }).catch(() => undefined)
       setPwLama(''); setPwBaru(''); setPwUlang('')
       setPwMsg('Password berhasil diganti. Sesi di perangkat lain sudah dikeluarkan.')
     } catch (er) {
-      setPwMsg(`Error: ${(er as Error).message}`)
+      setPwMsg(`Error: ${pesanAuthID(er as GalatAuth, 'Gagal mengganti password.')}`)
     } finally {
       setPwBusy(false)
     }
@@ -206,10 +207,21 @@ export default function ProfilPage() {
             <form onSubmit={gantiPassword} className="card p-5 space-y-3">
               <p className="text-sm font-semibold text-gray-800">Ganti Password</p>
               <InputPassword label="Password lama" value={pwLama} onChange={setPwLama} autoComplete="current-password" />
-              <InputPassword label={`Password baru (min. ${PW_MIN} karakter)`} value={pwBaru} onChange={setPwBaru} autoComplete="new-password" />
+              <InputPassword label="Password baru" value={pwBaru} onChange={setPwBaru} autoComplete="new-password" />
               <InputPassword label="Ulangi password baru" value={pwUlang} onChange={setPwUlang} autoComplete="new-password" />
+              <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 text-[11px] text-gray-600 space-y-1">
+                <p className="font-medium text-gray-700">Syarat password baru</p>
+                <p className={pwBaru.length >= PW_MIN ? 'text-green-700' : ''}>{pwBaru.length >= PW_MIN ? '✓' : '○'} Minimal {PW_MIN} karakter</p>
+                <p className={pwBaru && pwBaru !== pwLama ? 'text-green-700' : ''}>{pwBaru && pwBaru !== pwLama ? '✓' : '○'} Berbeda dari password lama</p>
+                <p className={pwBaru && pwBaru === pwUlang ? 'text-green-700' : ''}>{pwBaru && pwBaru === pwUlang ? '✓' : '○'} Pengulangan sama dengan password baru</p>
+                <p className="text-gray-500 pt-1">
+                  Sebaiknya memadukan huruf besar, huruf kecil, angka, dan simbol. Jangan memakai password umum,
+                  nama, NIP, atau tanggal lahir. Password yang pernah bocor di internet akan ditolak sistem
+                  walaupun panjangnya cukup.
+                </p>
+              </div>
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] text-gray-400">Lupa password? Minta admin mereset lewat Admin → Daftar User.</p>
+                <p className="text-[11px] text-gray-400">Lupa password? Hubungi admin untuk direset (Admin → Daftar User).</p>
                 <button type="submit" className="btn-primary text-sm flex-shrink-0" disabled={pwBusy}>
                   {pwBusy ? 'Memproses…' : 'Ganti Password'}
                 </button>
