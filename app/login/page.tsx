@@ -4,12 +4,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { setTahunKerjaTersimpan, getTahunKerjaTersimpan } from '@/lib/tahunKerja'
 import { toAuthEmail } from '@/lib/authIdentifier'
+import EyeToggleButton from '@/shared/ui/EyeToggleButton'
 
 type TahunRow = { tahun: number; status: 'terbuka' | 'terkunci' }
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [tampilPassword, setTampilPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [tahunList, setTahunList] = useState<TahunRow[]>([])
@@ -77,14 +79,17 @@ export default function LoginPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal/30"
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <input
+                  type={tampilPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-teal/30"
+                  placeholder="••••••••"
+                />
+                <EyeToggleButton shown={tampilPassword} onClick={() => setTampilPassword(v => !v)} />
+              </div>
             </div>
             {tahunList.length > 0 && (
               <div>
