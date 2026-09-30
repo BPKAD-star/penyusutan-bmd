@@ -1,6 +1,10 @@
 'use client'
-// Validasi Inventarisasi — SATU jenis aset (route
-// /dashboard/inventarisasi/validasi/<golongan>).
+// Validasi Inventarisasi (route /dashboard/inventarisasi/validasi).
+//
+// Jenis aset dipilih DI HALAMAN, kembar dgn Lembar Kerja (keputusan user
+// 2026-10-01): halaman dibuka polos, daftar dimuat setelah jenis dipilih —
+// termasuk "Semua jenis". Lembar tiap isian dibuka dgn format jenis ISIANNYA
+// sendiri (`r.golongan`), bukan jenis yang dipilih di atas.
 //
 // Daftar ini dibaca dari ISIAN yang tersimpan (`fn_inventarisasi_hasil`), BUKAN
 // dari register hidup: barang yang sudah pindah SKPD, direklas, atau keluar dari
@@ -16,15 +20,17 @@ import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import LkiForm from '@/components/inventarisasi/LkiForm'
 import TransaksiSesudah from '@/components/inventarisasi/TransaksiSesudah'
+import PemilihJenis, { useJenisTerpilih } from '@/components/inventarisasi/PemilihJenis'
 import { fetchApprovalScope, SCOPE_KOSONG, type ApprovalScope } from '@/lib/roles'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import {
-  LHI_LABEL, STATUS_BADGE, STATUS_LABEL, labelSebab, klasifikasiLhi, konfigLki, normalKondisi,
+  LHI_LABEL, STATUS_BADGE, STATUS_LABEL, JENIS_INVENTARISASI, JENIS_SEMUA,
+  labelSebab, klasifikasiLhi, konfigLki, normalKondisi,
   type InvBaris,
 } from '@/lib/inventarisasi'
 import {
-  barisDariHasil, muatHasil, muatRingkas,
-  type BarisHasil, type FilterHasil, type Ringkas,
+  barisDariHasil, jumlahRingkas, muatHasil, muatRingkasSemua,
+  type BarisHasil, type FilterHasil, type RingkasPerJenis,
 } from '@/lib/inventarisasiData'
 
 const TAHUN_INI = new Date().getFullYear()
@@ -37,13 +43,17 @@ const TAB: { v: FilterHasil; l: string }[] = [
   { v: 'semua', l: 'Semua' },
 ]
 
+const SEMUA_KODE = JENIS_INVENTARISASI.map(j => j.kode)
+
 const tglID = (s: string | null) =>
   s ? new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
-export default function ValidasiInventarisasi({ golongan }: { golongan: string }) {
+export default function ValidasiInventarisasi() {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
-  const config = konfigLki(golongan)
+  const [jenis, setJenisRaw, jenisSiap] = useJenisTerpilih('bmd_inv_validasi_jenis')
+  const golongan = jenis && jenis !== JENIS_SEMUA ? jenis : null
+  const config = golongan ? konfigLki(golongan) : null
 
   const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
   const [siap, setSiap] = useState(false)
@@ -59,9 +69,9 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const [msg, setMsg] = useState('')
-  const [ringkas, setRingkas] = useState<Ringkas | null>(null)
+  const [ringkasPer, setRingkasPer] = useState<RingkasPerJenis | null>(null)
   const [dicentang, setDicentang] = useState<Set<string>>(new Set())
-  const [lihat, setLihat] = useState<{ baris: InvBaris; skpdId: number; pesan: string } | null>(null)
+  const [lihat, setLihat] = useState<{ baris: InvBaris; skpdId: number; golongan: string; pesan: string } | null>(null)
   const seq = useRef(0)
 
   const pengelola = scope.isAdmin
@@ -73,7 +83,10 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const setJenis = (v: string) => { setJenisRaw(v); setHal(0) }
+
   const muat = useCallback(async () => {
+    if (!jenis) return
     const saya = ++seq.current
     setLoading(true); setErr(''); setDicentang(new Set())
     try {
@@ -90,13 +103,15 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
     } finally {
       if (saya === seq.current) setLoading(false)
     }
-  }, [tahun, golongan, skpdIds, filter, cari, hal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [jenis, tahun, golongan, skpdIds, filter, cari, hal]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Ringkasan KEDELAPAN jenis — di latar & boleh gagal (angkanya cuma hilang,
+  // daftarnya tetap). Tak ikut `jenis`, jadi berpindah jenis tak menghitung ulang.
   const muatRingkasan = useCallback(() => {
-    setRingkas(null)
-    // Di latar & boleh gagal — hitungan tab cuma hilang, daftarnya tetap.
-    muatRingkas(supabase, { tahun, golongan, skpdIds }).then(setRingkas).catch(() => setRingkas(null))
-  }, [tahun, golongan, skpdIds]) // eslint-disable-line react-hooks/exhaustive-deps
+    setRingkasPer(null)
+    muatRingkasSemua(supabase, { tahun, golongan: SEMUA_KODE, skpdIds })
+      .then(setRingkasPer).catch(() => setRingkasPer(null))
+  }, [tahun, skpdIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (siap) void muat() }, [siap, muat])
   useEffect(() => { if (siap) muatRingkasan() }, [siap, muatRingkasan])
@@ -172,22 +187,33 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
 
   function bukaLihat(r: BarisHasil) {
     setLihat({
-      baris: barisDariHasil(r), skpdId: r.skpd_id,
+      baris: barisDariHasil(r), skpdId: r.skpd_id, golongan: r.golongan,
       pesan: r.posisi ? 'Barang ini sudah berpindah/keluar sejak diinventarisasi — hasilnya terkunci.'
         : 'Lembar dibuka untuk ditelaah. Isian diubah oleh SKPD di Lembar Kerja.',
     })
   }
 
   const semuaDicentang = calon.length > 0 && calon.every(r => dicentang.has(r.id))
+  const ringkas = !ringkasPer || !jenis ? null
+    : golongan ? ringkasPer[golongan] ?? null
+    : jumlahRingkas(SEMUA_KODE.map(k => ringkasPer[k] ?? null))
+  // Angka di pemilih jenis: berapa isian yang MENUNGGU validasi per jenis.
+  const hitungJenis: Record<string, number | null> = {}
+  if (ringkasPer) {
+    for (const k of SEMUA_KODE) hitungJenis[k] = ringkasPer[k]?.menunggu ?? null
+    hitungJenis[JENIS_SEMUA] = jumlahRingkas(SEMUA_KODE.map(k => ringkasPer[k] ?? null))?.menunggu ?? null
+  }
 
   return (
     <FormShell
-      judul={`Validasi Inventarisasi — ${config.label}`}
+      judul={`Validasi Inventarisasi${config ? ` — ${config.label}` : jenis === JENIS_SEMUA ? ' — Semua Jenis Aset' : ''}`}
       deskripsi={pengelola
         ? 'Telaah isian lembar kerja per barang lalu validasi. Bisa dicicil — tak perlu menunggu seluruh barang SKPD selesai diisi.'
         : 'Status validasi isian inventarisasi SKPD Anda. Validasi dilakukan Pengelola Barang.'}
       msg={msg}
     >
+      <PemilihJenis value={jenis} onChange={setJenis} hitung={hitungJenis} labelHitung="isian menunggu validasi" />
+
       <div className="card p-4 mb-4 space-y-3">
         {/* Grid 2 kolom KEMBAR dgn Lembar Kerja Inventarisasi (LembarKerjaInventarisasi.tsx)
             — permintaan user 2026-09-25: dua menu yang dipakai berurutan (isi lalu
@@ -238,9 +264,9 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
                 <span className="text-gray-500">{ringkas.berubah.toLocaleString('id-ID')} posisi berubah</span>
               )}
             </>
-          ) : (
+          ) : jenis ? (
             <span className="text-gray-400">menghitung jumlah…</span>
-          )}
+          ) : null}
         </div>
         {filter === 'berubah' && (
           <p className="text-[11px] text-gray-500">
@@ -253,7 +279,7 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
 
       {err && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
 
-      {pengelola && calon.length > 0 && (
+      {pengelola && jenis && calon.length > 0 && (
         <div className="mb-3 flex items-center gap-3">
           <button className="btn-primary text-sm" disabled={dicentang.size === 0}
             onClick={() => validasi([...dicentang], `Validasi ${dicentang.size} barang yang dicentang?`)}>
@@ -284,7 +310,13 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {!siap || loading ? (
+              {!jenisSiap ? (
+                <tr><td colSpan={8} className="table-td text-center py-10 text-gray-400">Memuat...</td></tr>
+              ) : !jenis ? (
+                <tr><td colSpan={8} className="table-td text-center py-10 text-gray-500">
+                  Pilih jenis aset di atas untuk menampilkan isian inventarisasi.
+                </td></tr>
+              ) : !siap || loading ? (
                 <tr><td colSpan={8} className="table-td text-center py-10 text-gray-400">Memuat...</td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={8} className="table-td text-center py-10 text-gray-400">
@@ -377,8 +409,8 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
         <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
           <span>Halaman {hal + 1}</span>
           <div className="flex gap-2">
-            <button className="btn-secondary text-xs" disabled={hal === 0 || loading} onClick={() => setHal(h => h - 1)}>← Sebelumnya</button>
-            <button className="btn-secondary text-xs" disabled={!adaLagi || loading} onClick={() => setHal(h => h + 1)}>Berikutnya →</button>
+            <button className="btn-secondary text-xs" disabled={!jenis || hal === 0 || loading} onClick={() => setHal(h => h - 1)}>← Sebelumnya</button>
+            <button className="btn-secondary text-xs" disabled={!jenis || !adaLagi || loading} onClick={() => setHal(h => h + 1)}>Berikutnya →</button>
           </div>
         </div>
       </div>
@@ -386,8 +418,8 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
       {lihat && (
         <LkiForm
           baris={lihat.baris}
-          config={config}
-          golongan={golongan}
+          config={konfigLki(lihat.golongan)}
+          golongan={lihat.golongan}
           skpdId={lihat.skpdId}
           readOnly
           pesanReadOnly={lihat.pesan}

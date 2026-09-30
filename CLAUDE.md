@@ -8845,3 +8845,27 @@ di menu Koreksi). Opsi "Lainnya" sempat ada & DICABUT (keputusan user). "Hilang 
 - Di III.B.3, sebab *rehab* menjadikan barang ini SENDIRI sbg induk & anaknya
   ditulis di Keterangan; sebab *digabung* memakai pilihan petugas sbg induk.
 - Dikunci lib/inventarisasi.test.ts. Golongan lain belum ikut — cukup nyalakan `sebabTidakAda` + `sebabNoun`/`sebabNama` di `LKI_CONFIG`.
+
+## Inventarisasi: jenis aset dipilih DI HALAMAN, bukan 16 sub-menu (2026-10-01, migrasi 20261001_01)
+
+Sidebar Inventarisasi kini cuma **Lembar Kerja (LKI)** (`/dashboard/inventarisasi/lembar-kerja`)
+& **Validasi** (`/dashboard/inventarisasi/validasi`); jenis aset dipilih lewat
+`PemilihJenis` di atas halaman, termasuk **"Semua jenis"**. Halaman dibuka POLOS —
+daftar baru dimuat setelah jenis dipilih (keputusan user). Pilihan terakhir diingat
+per menu di perangkat (`bmd_inv_lki_jenis` / `bmd_inv_validasi_jenis`); `?jenis=`
+di URL menang. Rute lama `/inventarisasi/jenis/<kode>` & `/validasi/<kode>` jadi
+`redirect()`.
+- **Terukur ke produksi (cache hangat, RLS aktif):** halaman 1 semua jenis Diknas
+  (729.233 aset) 43 ms, admin se-kab 9 ms; cari tanpa hasil Diknas 711 ms; ringkasan
+  8 jenis Diknas 344 ms. Daftar tetap 50 baris/halaman. Saat cache dingin bisa 10–20×.
+- **Migrasi 20261001_01** melonggarkan `fn_inventarisasi_lembar` & `_hasil`: jenis NULL
+  = semua (bedah teks atas definisi HIDUP, tiap pola dihitung dulu). Tanda tangan tak
+  berubah. Diuji di produksi dlm transaksi + ROLLBACK. **Deploy-ordering aman dua
+  arah**: sebelum migrasi, memilih "Semua jenis" cuma memunculkan pesan "Jenis aset
+  wajib dipilih", satu jenis tetap jalan.
+- ⚠️ **Format LKI tiap barang ikut jenis BARANGNYA** (`golonganDariKode(r.kode)` /
+  `r.golongan`), bukan jenis yang dipilih — di mode "Semua jenis" keduanya berbeda.
+  "+ Tambah temuan" (III.A.7) di mode itu jadi pilihan jenis dulu.
+- Angka di pemilih = ringkasan 8 jenis (`muatRingkasSemua`, paralel, di latar, tak
+  ikut `jenis` jadi berpindah jenis tak menghitung ulang). Total "Semua jenis" lewat
+  `jumlahRingkas` — satu jenis gagal → total TAK TERHITUNG, bukan total yang kurang.

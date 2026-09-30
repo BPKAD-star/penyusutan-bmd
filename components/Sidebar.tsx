@@ -30,21 +30,6 @@ const ICON = {
 // Penyusutan · IPA · Pelaporan · (Admin, ditempel terpisah di bawah — lihat
 // `menuTree`). Murni urutan tampil, sama sekali tak menyentuh struktur di
 // dalam tiap grup — jangan disusun ulang lagi tanpa permintaan baru.
-// Delapan jenis aset inventarisasi — SATU daftar untuk dua sub-menu (Lembar
-// Kerja & Validasi) supaya keduanya tak bisa menyimpang urutan/labelnya.
-function menuJenisInventarisasi(bagian: 'jenis' | 'validasi'): NavNode[] {
-  return ([
-    ['1.3.1', 'Tanah'],
-    ['1.3.2', 'Peralatan dan Mesin'],
-    ['1.3.3', 'Gedung dan Bangunan'],
-    ['1.3.4', 'Jalan, Jaringan dan Irigasi'],
-    ['1.3.5', 'Aset Tetap Lainnya'],
-    ['1.3.6', 'Konstruksi Dalam Pengerjaan'],
-    ['1.5.3', 'Aset Tidak Berwujud'],
-    ['1.5.4', 'Aset Lain-Lain'],
-  ] as const).map(([kode, label]) => ({ type: 'leaf' as const, href: `/dashboard/inventarisasi/${bagian}/${kode}`, label }))
-}
-
 const navTree: NavNode[] = [
   { type: 'leaf', href: '/dashboard', label: 'Dashboard' },
   {
@@ -133,16 +118,11 @@ const navTree: NavNode[] = [
     // LHI di sini BEDA dgn "Laporan Hasil Inventarisasi" di grup Pelaporan —
     // yang itu laporan cara perolehan (ledger `hasil_inventarisasi`).
     type: 'group', label: 'Inventarisasi', icon: ICON.pembukuan, children: [
-      {
-        // Satu menu per jenis aset — tiap jenis punya format LKI sendiri
-        // (III.A.1–III.A.6). Pakai segmen path, bukan ?golongan=, supaya
-        // penanda menu aktif (yang membandingkan pathname) tidak menyala
-        // di kedelapan menu sekaligus.
-        type: 'group', label: 'Lembar Kerja (LKI)', children: menuJenisInventarisasi('jenis'),
-      },
-      // Validasi ikut per jenis aset (keputusan user 2026-09-23) — kembar dgn
-      // Lembar Kerja di atasnya, satu sumber daftar lewat menuJenisInventarisasi.
-      { type: 'group', label: 'Validasi', children: menuJenisInventarisasi('validasi') },
+      // Jenis aset dipilih DI DALAM halaman (keputusan user 2026-10-01) — dulu
+      // 8 sub-menu per jenis × 2 menu. Rute lama /jenis/<kode> & /validasi/<kode>
+      // tetap hidup sbg pengalih.
+      { type: 'leaf', href: '/dashboard/inventarisasi/lembar-kerja', label: 'Lembar Kerja (LKI)' },
+      { type: 'leaf', href: '/dashboard/inventarisasi/validasi', label: 'Validasi' },
       { type: 'leaf', href: '/dashboard/inventarisasi/laporan', label: 'Laporan Hasil (LHI)' },
       { type: 'leaf', href: '/dashboard/inventarisasi/tindak-lanjut', label: 'Tindak Lanjut' },
     ],

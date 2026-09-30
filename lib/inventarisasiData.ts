@@ -50,7 +50,8 @@ export type FilterLembar = 'semua' | 'belum' | 'diisi' | 'divalidasi'
 
 export async function muatLembar(
   supabase: SupabaseClient,
-  f: { golongan: string; skpdIds: number[] | null; status: FilterLembar; cari: string; limit: number; offset: number },
+  /** `golongan` null = seluruh jenis aset (migrasi 20261001_01). */
+  f: { golongan: string | null; skpdIds: number[] | null; status: FilterLembar; cari: string; limit: number; offset: number },
 ): Promise<BarisLembar[]> {
   const { data, error } = await supabase.rpc('fn_inventarisasi_lembar', {
     p_golongan: f.golongan,
@@ -89,7 +90,8 @@ export type FilterHasil = 'menunggu' | 'divalidasi' | 'berubah' | 'semua'
 
 export async function muatHasil(
   supabase: SupabaseClient,
-  f: { tahun: number; golongan: string; skpdIds: number[] | null; filter: FilterHasil; cari: string; limit: number; offset: number },
+  /** `golongan` null = seluruh jenis aset (migrasi 20261001_01). */
+  f: { tahun: number; golongan: string | null; skpdIds: number[] | null; filter: FilterHasil; cari: string; limit: number; offset: number },
 ): Promise<BarisHasil[]> {
   const { data, error } = await supabase.rpc('fn_inventarisasi_hasil', {
     p_tahun: f.tahun,
@@ -140,15 +142,18 @@ export async function muatIsian(supabase: SupabaseClient, id: string): Promise<I
   return data as InvBaris
 }
 
-/** Lembar "BMD Belum Tercatat" milik SATU unit untuk tahun & jenis aset ini. */
+/** Lembar "BMD Belum Tercatat" milik SATU unit untuk tahun & jenis aset ini
+ *  (`golongan` null = seluruh jenis). Membawa `golongan` tiap lembar — di mode
+ *  "Semua jenis" itulah yang menentukan format LKI-nya. */
 export async function muatBelumTercatat(
-  supabase: SupabaseClient, f: { tahun: number; golongan: string; skpdId: number },
-): Promise<InvBaris[]> {
-  const { data, error } = await supabase.from('inventarisasi_barang').select(KOLOM_ISIAN)
-    .eq('tahun', f.tahun).eq('golongan', f.golongan).eq('skpd_id', f.skpdId)
-    .is('aset_id', null).order('created_at')
+  supabase: SupabaseClient, f: { tahun: number; golongan: string | null; skpdId: number },
+): Promise<(InvBaris & { golongan: string })[]> {
+  let q = supabase.from('inventarisasi_barang').select(`${KOLOM_ISIAN},golongan`)
+    .eq('tahun', f.tahun).eq('skpd_id', f.skpdId).is('aset_id', null)
+  if (f.golongan) q = q.eq('golongan', f.golongan)
+  const { data, error } = await q.order('created_at')
   if (error) throw new Error(`gagal membaca BMD Belum Tercatat: ${error.message}`)
-  return (data || []) as InvBaris[]
+  return (data || []) as unknown as (InvBaris & { golongan: string })[]
 }
 
 export async function simpanIsian(
@@ -194,6 +199,38 @@ export async function muatRingkas(
 export function belumDiinventarisasi(r: Ringkas): number {
   const sudah = r.menunggu + r.divalidasi - r.belum_tercatat
   return Math.max(0, r.total_aset - sudah)
+}
+
+/** Ringkasan per jenis aset — `null` = jenis itu gagal dihitung. */
+export type RingkasPerJenis = Record<string, Ringkas | null>
+
+/**
+ * Ringkasan KEDELAPAN jenis sekaligus (dipakai angka di pemilih jenis & baris
+ * ringkasan "Semua jenis"). Satu RPC per jenis, paralel; yang gagal jadi `null`
+ * tanpa menjatuhkan yang lain. Terukur 2026-10-01: 8 jenis Dinas Pendidikan
+ * 344 ms (cache hangat).
+ */
+export async function muatRingkasSemua(
+  supabase: SupabaseClient, f: { tahun: number; golongan: string[]; skpdIds: number[] | null },
+): Promise<RingkasPerJenis> {
+  const hasil = await Promise.allSettled(f.golongan.map(g => muatRingkas(supabase, { ...f, golongan: g })))
+  const out: RingkasPerJenis = {}
+  f.golongan.forEach((g, i) => {
+    const h = hasil[i]
+    out[g] = h.status === 'fulfilled' ? h.value : null
+  })
+  return out
+}
+
+/** Jumlahkan ringkasan beberapa jenis; `null` kalau SATU pun tak terhitung —
+ *  total yang diam-diam kurang sebagian lebih menyesatkan daripada "tak terhitung". */
+export function jumlahRingkas(rs: (Ringkas | null)[]): Ringkas | null {
+  if (rs.length === 0 || rs.some(r => r == null)) return null
+  return (rs as Ringkas[]).reduce((a, r) => ({
+    total_aset: a.total_aset + r.total_aset, menunggu: a.menunggu + r.menunggu,
+    divalidasi: a.divalidasi + r.divalidasi, berubah: a.berubah + r.berubah,
+    belum_tercatat: a.belum_tercatat + r.belum_tercatat,
+  }), { total_aset: 0, menunggu: 0, divalidasi: 0, berubah: 0, belum_tercatat: 0 })
 }
 
 // ── Tim pelaksana (per SKPD × tahun) ────────────────────────────────────────

@@ -62,7 +62,7 @@ export default function LaporanInventarisasiPage() {
       msg=""
       headerRight={
         <div className="flex items-center gap-2">
-          <Link href={`/dashboard/inventarisasi/jenis/${golongan}`} className="btn-secondary text-sm">← Lembar Kerja</Link>
+          <Link href={`/dashboard/inventarisasi/lembar-kerja?jenis=${golongan}`} className="btn-secondary text-sm">← Lembar Kerja</Link>
           <a href={cetakUrl} target="_blank" rel="noopener noreferrer"
             className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
             🖨 Cetak / PDF

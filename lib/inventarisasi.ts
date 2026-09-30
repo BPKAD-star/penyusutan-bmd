@@ -397,6 +397,21 @@ export const GOLONGAN_OPSI = GOLONGAN_REKAP.map(g => ({
   label: `${g.kode} — ${LKI_CONFIG[g.kode]?.label || g.uraian}`,
 }))
 
+/**
+ * Delapan jenis aset yang diinventarisasi — SATU daftar untuk pemilih jenis di
+ * Lembar Kerja & Validasi (dulu 16 sub-menu Sidebar; dilebur keputusan user
+ * 2026-10-01). `JENIS_SEMUA` = pilihan "Semua jenis".
+ */
+export const JENIS_INVENTARISASI = GOLONGAN_REKAP.map(g => ({
+  kode: g.kode,
+  label: LKI_CONFIG[g.kode]?.label || g.uraian,
+}))
+export const JENIS_SEMUA = 'semua'
+
+/** Jenis aset (3 segmen kode) sebuah barang — kembar dgn kolom `aset.golongan`. */
+export const golonganDariKode = (kode: string | null | undefined) =>
+  (kode || '').split('.').slice(0, 3).join('.')
+
 // ── Klasifikasi LHI (Format III.B.1–III.B.11) ───────────────────────────────
 export type LhiKode =
   | 'III.B.1' | 'III.B.2' | 'III.B.3' | 'III.B.4' | 'III.B.5' | 'III.B.6'

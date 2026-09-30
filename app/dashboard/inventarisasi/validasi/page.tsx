@@ -1,8 +1,8 @@
-import { redirect } from 'next/navigation'
+'use client'
+// Validasi Inventarisasi — SATU halaman untuk seluruh jenis aset; jenisnya
+// dipilih di dalam halaman, kembar dgn Lembar Kerja (keputusan user 2026-10-01).
+import ValidasiInventarisasi from '@/components/inventarisasi/ValidasiInventarisasi'
 
-// Validasi kini per jenis aset (/dashboard/inventarisasi/validasi/<golongan>),
-// sejalan dgn Lembar Kerja. Rute lama dipertahankan sbg pengalih supaya
-// pranala yang terlanjur tersebar tidak mati.
 export default function Page() {
-  redirect('/dashboard/inventarisasi/validasi/1.3.1')
+  return <ValidasiInventarisasi />
 }

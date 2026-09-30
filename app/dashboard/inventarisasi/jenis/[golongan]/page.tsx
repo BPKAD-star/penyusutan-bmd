@@ -1,15 +1,8 @@
-'use client'
-// Lembar Kerja Inventarisasi untuk SATU jenis aset — ditautkan dari submenu
-// Sidebar (Inventarisasi > Lembar Kerja > Tanah / Peralatan dan Mesin / …).
-// Segmen path dipakai (bukan query string) supaya penanda menu aktif di Sidebar
-// — yang membandingkan `pathname` — hanya menyala di satu menu.
-import { useParams } from 'next/navigation'
-import LembarKerjaInventarisasi from '@/components/inventarisasi/LembarKerjaInventarisasi'
+import { redirect } from 'next/navigation'
 
-export default function Page() {
-  const params = useParams<{ golongan: string }>()
-  const golongan = decodeURIComponent((params?.golongan as string) || '')
-  // `key` memaksa komponen dibangun ulang saat pindah jenis aset — kalau tidak,
-  // filter & halaman milik jenis sebelumnya ikut terbawa diam-diam.
-  return <LembarKerjaInventarisasi key={golongan} golongan={golongan} />
+// Rute lama (satu sub-menu per jenis aset) — kini pengalih ke halaman Lembar
+// Kerja tunggal dgn jenisnya terpilih, supaya pranala yang terlanjur tersebar
+// (termasuk bookmark petugas) tak mati.
+export default function Page({ params }: { params: { golongan: string } }) {
+  redirect(`/dashboard/inventarisasi/lembar-kerja?jenis=${encodeURIComponent(decodeURIComponent(params.golongan))}`)
 }

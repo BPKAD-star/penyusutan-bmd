@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   kekuranganLki, klasifikasiLhi, konfigLki, labelPosisi, labelTransaksi, type InvBaris, type InvJawaban,
 } from './inventarisasi'
-import { belumDiinventarisasi } from './inventarisasiData'
+import { belumDiinventarisasi, jumlahRingkas } from './inventarisasiData'
+import { JENIS_INVENTARISASI, golonganDariKode } from './inventarisasi'
 
 const aset = (jawaban: InvJawaban) => ({ aset_id: 'a-1', jawaban })
 const baru = (jawaban: InvJawaban) => ({ aset_id: null, jawaban })
@@ -229,5 +230,27 @@ describe('G — "Tidak ada karena..." (Gedung & Bangunan, 2026-10-01)', () => {
       .toEqual(['Jalan/jaringan/irigasi induk tempat digabung (G)'])
     // golongan lain: tak ditanya
     expect(kekuranganLki(aset({ keberadaan: 'tidak_ditemukan' }))).toEqual([])
+  })
+})
+
+describe('pemilih jenis — "Semua jenis" (2026-10-01)', () => {
+  const r = (n: number) => ({ total_aset: n, menunggu: 1, divalidasi: 2, berubah: 0, belum_tercatat: 0 })
+
+  it('delapan jenis, urutan rekap BMD', () => {
+    expect(JENIS_INVENTARISASI.map(j => j.kode)).toEqual(['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4'])
+  })
+
+  it('jumlahRingkas menjumlah per kolom', () => {
+    expect(jumlahRingkas([r(10), r(5)])).toEqual({ total_aset: 15, menunggu: 2, divalidasi: 4, berubah: 0, belum_tercatat: 0 })
+  })
+
+  it('satu jenis tak terhitung → total TAK TERHITUNG, bukan total yang kurang sebagian', () => {
+    expect(jumlahRingkas([r(10), null])).toBeNull()
+    expect(jumlahRingkas([])).toBeNull()
+  })
+
+  it('golonganDariKode = 3 segmen pertama', () => {
+    expect(golonganDariKode('1.3.3.01.01.01.001')).toBe('1.3.3')
+    expect(golonganDariKode(null)).toBe('')
   })
 })
