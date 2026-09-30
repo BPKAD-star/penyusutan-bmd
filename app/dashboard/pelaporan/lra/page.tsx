@@ -16,7 +16,7 @@
 // Tabel **Persilangan** di bawahnya yang MENJELASKAN pergeseran itu baris per
 // baris. Lihat docs/lra-plan.md.
 import { useCallback, useEffect, useState } from 'react'
-import { paginate } from '@/shared/db/paginate'
+import { fetchLraData } from '@/lib/lraData'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -37,47 +37,6 @@ import { useProfilRole } from '@/components/useProfilRole'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { tahunAwal } from '@/lib/tahunKerja'
 import { fetchApprovalScope } from '@/lib/roles'
-
-const LRA_COLS = 'id,skpd_id,tanggal,bulan,no_bukti,kode_rekening,kode_grup3,kelompok,uraian,keterangan,debit,klasifikasi,jenis_tujuan'
-
-/**
- * Tarik baris LRA + Entryan Aplikasi utk satu (tahun, scope SKPD). Diekstrak
- * 2026-09-11 supaya bisa dipanggil dari DUA jalur independen: `proses()`
- * (tab Daftar Transaksi LRA, manual via tombol Proses, terikat filter SKPD) &
- * effect auto-muat tab Rekap per SKPD (2026-09-11, permintaan user: "tanpa
- * perlu klik rekap, auto nampilin datanya" — SELALU `desc=null`, scope
- * SELURUHNYA yang boleh dibaca RLS, supaya pohonnya bisa direkursi sampai ke
- * bawah tanpa bergantung pilihan SKPD tab sebelah).
- */
-async function fetchLraData(
-  supabase: ReturnType<typeof createClient>, tahunVal: string, desc: number[] | null,
-): Promise<{ lra: LraRow[]; appRows: AppRow[] }> {
-  const lra = await paginate<number, LraRow>('realisasi LRA', kursor => {
-    let q = supabase.from('lra_realisasi').select(LRA_COLS)
-      .eq('tahun', Number(tahunVal))
-    if (desc) q = q.in('skpd_id', desc)
-    if (kursor !== null) q = q.gt('id', kursor)
-    return q.order('id').limit(1000)
-  }) as LraRow[]
-
-  // Belanja modal sisi aplikasi (ledger `pengadaan`) — DIAGREGASI DI SERVER.
-  // Dulu ditarik mentah ke browser → RLS aset per-baris + ~227rb aset bikin
-  // statement timeout 8s. Sekarang lewat RPC (SECURITY DEFINER, scope RLS
-  // direplikasi): balikannya maks 5 jenis × 12 bulan × jumlah SKPD berdata.
-  const { data: appData, error: appErr } = await supabase.rpc('fn_lra_belanja_modal', {
-    p_tahun: Number(tahunVal), p_skpd_ids: desc,
-  })
-  if (appErr) throw new Error(appErr.message)
-  // ⚠️ `golongan` baru ada sejak migrasi 20260909_01, `skpd_id` sejak
-  // 20260910_05. Kalau migrasinya belum jalan keduanya `undefined` →
-  // dinormalisasi jadi `null` ("tak bisa dinilai" / "tak diketahui SKPD-nya"),
-  // dan halaman MENGATAKANNYA (strip amber) alih-alih diam-diam menampilkan
-  // matriks/rekap kosong yang terbaca "memang tak ada apa-apa".
-  const appRows: AppRow[] = ((appData || []) as { skpd_id?: number | null; grup: string | null; golongan?: string | null; bulan: number; nilai: number }[])
-    .map(d => ({ skpd_id: d.skpd_id ?? null, grup: d.grup, golongan: d.golongan ?? null, bulan: Number(d.bulan), nilai: Number(d.nilai || 0) }))
-
-  return { lra, appRows }
-}
 
 export default function LraPage() {
   const supabase = createClient()

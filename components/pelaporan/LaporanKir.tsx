@@ -10,12 +10,10 @@ import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
 import SkpdCombobox from '@/components/SkpdCombobox'
-import {
-  tahunPerolehan, toIsiRuangan, RUANGAN_COLS, ASET_JOIN_COLS,
-  type IsiRuangan, type Ruangan,
-} from '@/lib/kir'
+import { tahunPerolehan } from '@/lib/kir'
+import { muatKartuKir, type KartuKir } from '@/lib/kirData'
 
-type Kartu = Ruangan & { skpdNama: string; isi: IsiRuangan[] }
+type Kartu = KartuKir
 
 export default function LaporanKir() {
   const supabase = createClient()
@@ -25,38 +23,32 @@ export default function LaporanKir() {
   const namaSkpd = useNamaSkpd()
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [cari, setCari] = useState('')
+  const [err, setErr] = useState('')
   const [buka, setBuka] = useState<Set<string>>(new Set())
 
-  const build = useCallback(async (): Promise<Kartu[]> => {
-    let q = supabase.from('kir_ruangan').select(RUANGAN_COLS)
-    if (descIds && descIds.length > 0) q = q.in('skpd_id', descIds)
-    const { data: rs } = await q.order('nama')
-    const rows = (rs as unknown as Ruangan[]) || []
-    if (rows.length === 0) return []
+  // Pemuatnya di lib/kirData.ts (dipakai bersama alat baca Asisten AI).
+  const build = useCallback(
+    (): Promise<Kartu[]> => muatKartuKir(supabase, descIds),
+    [descIds], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
-    const skpdIds = [...new Set(rows.map(r => r.skpd_id))]
-    const { data: skpdRows } = await supabase.from('admin_skpd').select('id,nama').in('id', skpdIds)
-    const skpdNama: Record<number, string> = Object.fromEntries((skpdRows || []).map(s => [s.id, s.nama]))
-
-    const list: Kartu[] = rows.map(r => ({ ...r, skpdNama: skpdNama[r.skpd_id] || `SKPD #${r.skpd_id}`, isi: [] }))
-    const byId = new Map(list.map(r => [r.id, r]))
-
-    // Isi ruangan diambil berbatch (daftar ruangan bisa panjang kalau se-kabupaten).
-    const ids = list.map(r => r.id)
-    for (let i = 0; i < ids.length; i += 100) {
-      const { data: isi } = await supabase.from('kir_ruangan_aset')
-        .select(`id,ruangan_id,aset_id,keterangan,aset:aset_id(${ASET_JOIN_COLS})`)
-        .in('ruangan_id', ids.slice(i, i + 100))
-      for (const row of (isi || []) as unknown as (Parameters<typeof toIsiRuangan>[0] & { ruangan_id: string })[]) {
-        const baris = toIsiRuangan(row)
-        if (baris) byId.get(row.ruangan_id)?.isi.push(baris)
+  // try/catch/finally WAJIB: pemuatnya melempar saat query gagal, dan tanpa
+  // penangkap halaman ini membeku di "Memuat..." selamanya.
+  useEffect(() => {
+    let batal = false
+    void (async () => {
+      setLoading(true); setErr('')
+      try {
+        const hasil = await build()
+        if (!batal) setKartu(hasil)
+      } catch (e) {
+        if (!batal) { setErr(`Gagal memuat laporan: ${(e as Error).message}`); setKartu([]) }
+      } finally {
+        if (!batal) setLoading(false)
       }
-    }
-    for (const r of list) r.isi.sort((a, b) => (a.nibar || '').localeCompare(b.nibar || ''))
-    return list
-  }, [descIds]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => { (async () => { setLoading(true); setKartu(await build()); setLoading(false) })() }, [build])
+    })()
+    return () => { batal = true }
+  }, [build])
 
   const q = cari.trim().toLowerCase()
   const shown = q
@@ -117,6 +109,10 @@ export default function LaporanKir() {
         <div className="card p-4"><p className="text-xs text-gray-500">Barang Tercatat</p><p className="text-lg font-bold text-gray-900 mt-1">{totalBarang.toLocaleString('id-ID')}</p></div>
         <div className="card p-4"><p className="text-xs text-gray-500">Nilai Perolehan</p><p className="text-lg font-bold text-gray-900 mt-1">{formatRupiah2(totalNilai)}</p></div>
       </div>
+
+      {err && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{err}</div>
+      )}
 
       {loading ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Memuat data...</div>

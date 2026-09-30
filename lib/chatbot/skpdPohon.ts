@@ -30,3 +30,36 @@ export function turunanSkpd(semua: SkpdRow[], akar: number): number[] {
   }
   return ids
 }
+
+export type LingkupSkpd = {
+  semua: SkpdRow[]
+  skpdId: number | null
+  /** SKPD itu beserta turunannya; null = se-kabupaten. */
+  desc: number[] | null
+  label: string
+}
+
+/**
+ * Terjemahkan masukan `skpd_id` dari model jadi lingkup. Mengembalikan
+ * `{ galat }` (teks berawalan "GAGAL:") kalau masukannya tak sah — SATU tempat,
+ * supaya semua alat menolak masukan ngawur dgn cara & kalimat yang sama.
+ */
+export async function lingkupDari(sb: SupabaseClient, skpdId: unknown): Promise<LingkupSkpd | { galat: string }> {
+  const kosong = skpdId == null || skpdId === ''
+  const akar = kosong ? null : Number(skpdId)
+  if (akar !== null && !Number.isInteger(akar)) return { galat: 'GAGAL: skpd_id harus angka bulat (ambil dari cari_skpd).' }
+  const semua = await muatSkpd(sb)
+  if (akar === null) return { semua, skpdId: null, desc: null, label: 'SELURUH KABUPATEN' }
+  const ada = semua.find(x => x.id === akar)
+  if (!ada) return { galat: `GAGAL: SKPD dengan id ${akar} tidak ditemukan.` }
+  const desc = turunanSkpd(semua, akar)
+  return { semua, skpdId: akar, desc, label: `${ada.nama}${desc.length > 1 ? ` beserta ${desc.length - 1} unit di bawahnya` : ''}` }
+}
+
+/** SKPD induk (tingkat teratas) dari sebuah unit. */
+export function indukSkpd(semua: SkpdRow[], id: number): number {
+  const byId = new Map(semua.map(s => [s.id, s]))
+  let s = byId.get(id)
+  for (let i = 0; s && s.parent_id != null && i < 10; i++) s = byId.get(s.parent_id)
+  return s ? s.id : id
+}

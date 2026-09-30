@@ -8782,3 +8782,49 @@ kapitalisasi, pengamanan, penghapusan. **Tanpa migrasi.** LRA & KIR menyusul.
 - `toolsAdmin.ts` dipecah (menembus 500 baris): `skpdPohon.ts` (pohon SKPD
   bersama) & `perolehan.ts` (`rekap_perolehan`). Pemindai HANYA-BACA kini
   menyapu keempat berkas alat istimewa.
+
+### Asisten AI: alat LRA & KIR untuk pengguna istimewa (2026-09-30)
+
+`rekap_lra` · `daftar_lra` · `rekap_kir` — `lib/chatbot/lraKir.ts`. **Tanpa
+migrasi.** Dengan ini urutan yang diminta user selesai: Cara Perolehan →
+Pengelolaan → LRA → KIR.
+
+- **Tak ada rumus kedua.** Baris LRA & entry aplikasi ditarik `fetchLraData`
+  (**dipindah dari halaman LRA ke `lib/lraData.ts`**, halaman kini memakainya);
+  matriks, Check, & persilangan dihitung fungsi `lib/lra.ts` yang sama dgn
+  halamannya. Kartu ruangan lewat `muatKartuKir` (**dipindah dari
+  `LaporanKir.tsx` ke `lib/kirData.ts`**). Pemuat KIR sekaligus berhenti menelan
+  `error` (tiga `const { data } = await` telanjang) & halamannya dapat
+  try/catch/finally + strip error.
+- **`fetchLraData(…, cakupan)`**: `'semua'` (halaman — perilaku lama) atau
+  `'rekap'` = hanya belanja modal 5.2 + baris yang SUDAH ditandai. Setara untuk
+  `rekapModal`/`rekapKapitalisasi`/`rekapReklas`/`leafLra` (keempatnya memang
+  cuma membaca baris itu), tapi 2026 cuma ±333 baris, bukan 32.292 (belanja
+  barang/jasa tak ditandai tak pernah masuk rekap). Alat AI memakai `'rekap'`.
+- `rekap_lra`: per jenis 5.2.01–05 — LRA, +kapitalisasi, −reklas, entry
+  aplikasi (dasar kode rekening), selisih berikut artinya; nilai di luar lima
+  jenis DISEBUT (tak hilang diam-diam); persilangan rekening × kode barang
+  berikut kombinasinya; opsional per bulan & per SKPD (urut selisih terbesar).
+  Golongan tak tersedia → "tidak bisa dinilai", bukan "tidak ada persilangan".
+  ⚠️ Rekening 5.1 → barang aset tetap ikut terhitung SILANG (`statusSilang`),
+  sama dgn tabel Persilangan di halaman.
+- `daftar_lra`: transaksi LRA (maks 30 terbaru + hitungan total); bawaan
+  belanja modal, `kelompok` barjas/semua untuk 5.1; saring kata kunci, jenis,
+  bulan, ditandai. Terukur (RLS aktif): pencarian ILIKE atas 32 rb baris 131–246 ms.
+- `rekap_kir`: posisi terkini — ruangan, penanggung jawab, jumlah & nilai, isi;
+  `kata_kunci` mencari di ruangan DAN barang ("barang X di ruangan mana" /
+  "ruangan Y isinya apa"). Hanya barang yang sudah ditempatkan ke ruangan.
+- `lingkupDari()` (lib/chatbot/skpdPohon.ts) — penerjemah `skpd_id` → lingkup,
+  SATU tempat untuk alat Pengelolaan, LRA, & KIR. Definisi alatnya ikut di
+  `lraKir.ts` (`TOOL_DEFS_LRA_KIR`) supaya `toolsAdmin.ts` tetap < 500 baris.
+- **Rujukan 2026 se-kabupaten (SQL, 2026-09-30):** LRA belanja modal
+  Rp21.193.259.357 (330 transaksi: 5.2.02 Rp10.667.761.538 · 5.2.03
+  Rp3.965.789.627 · 5.2.04 Rp5.568.486.517 · 5.2.05 Rp991.221.675) ·
+  kapitalisasi ditandai Rp11.961.200 (3 baris → 5.2.02) · reklas 0 · entry
+  aplikasi 5.2.02 Rp5.568.122.704 + 5.2.03 Rp56.658.732, di luar jenis
+  Rp40.263.703 · selisih total Rp15.580.439.121 · persilangan Rp60.218.703 di 2
+  kombinasi (5.2.03→1.3.2 Rp19.955.000; 5.1.02→1.3.2 Rp40.263.703) · KIR 4
+  ruangan / 5 barang / Rp44.130.350.
+  ⛔ Seperti alat Pengelolaan: jalur TS belum dijalankan terhadap produksi.
+- Dikunci lib/chatbot/lraKir.test.ts (17 test, klien palsu yang menghormati
+  filter; diuji merah dgn mematikan baris "di luar jenis").

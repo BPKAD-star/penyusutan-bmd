@@ -15,7 +15,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { GOLONGAN_REKAP, JENIS_PEROLEHAN } from '@/lib/bmd'
 import { formatRupiah2 } from '@/lib/export'
 import { rekapPerGolongan, zeroRekap, type RekapRpcRow } from '@/lib/rekapBmd'
-import { muatSkpd, turunanSkpd, type SkpdRow } from './skpdPohon'
+import { muatSkpd, turunanSkpd, lingkupDari, type SkpdRow } from './skpdPohon'
+import { TOOL_DEFS_LRA_KIR, NAMA_TOOL_LRA_KIR, jalankanLraKir } from './lraKir'
 import { rekapPerolehan } from './perolehan'
 import {
   MENU_PENGELOLAAN, rekapPengelolaan, daftarPengelolaan,
@@ -186,12 +187,14 @@ export const TOOL_DEFS_ADMIN = [
       required: ['tahun_anggaran'],
     },
   },
+  ...TOOL_DEFS_LRA_KIR,
 ]
 
 export const NAMA_TOOL_ADMIN = new Set(TOOL_DEFS_ADMIN.map(t => t.name))
 
 export async function jalankanToolAdmin(sb: SupabaseClient, nama: string, input: Record<string, unknown>): Promise<string> {
   try {
+    if (NAMA_TOOL_LRA_KIR.has(nama)) return await jalankanLraKir(sb, nama, input, hariIniWib())
     switch (nama) {
       case 'cari_skpd': return await cariSkpd(sb, teks(input.kata_kunci))
       case 'rekap_bmd_skpd': return await rekapBmdSkpd(sb, teks(input.periode), input.skpd_id, teks(input.komptabel))
@@ -275,17 +278,10 @@ async function alatPengelolaan(sb: SupabaseClient, mode: 'rekap' | 'daftar', inp
   }
   if (mode === 'daftar' && !menu) return `GAGAL: sebutkan menu-nya (${MENU_PENGELOLAAN.join(', ')}).`
 
-  const semua = await muatSkpd(sb)
-  const namaSkpd = new Map(semua.map(x => [x.id, x.nama]))
-  let lingkup: KonteksPengelolaan['lingkup'] = { skpdId: null, desc: null, label: 'SELURUH KABUPATEN' }
-  if (input.skpd_id != null && input.skpd_id !== '') {
-    const akar = Number(input.skpd_id)
-    if (!Number.isInteger(akar)) return 'GAGAL: skpd_id harus angka bulat (ambil dari cari_skpd).'
-    const ada = semua.find(x => x.id === akar)
-    if (!ada) return `GAGAL: SKPD dengan id ${akar} tidak ditemukan.`
-    const desc = turunanSkpd(semua, akar)
-    lingkup = { skpdId: akar, desc, label: `${ada.nama}${desc.length > 1 ? ` beserta ${desc.length - 1} unit di bawahnya` : ''}` }
-  }
+  const l = await lingkupDari(sb, input.skpd_id)
+  if ('galat' in l) return l.galat
+  const namaSkpd = new Map(l.semua.map(x => [x.id, x.nama]))
+  const lingkup: KonteksPengelolaan['lingkup'] = { skpdId: l.skpdId, desc: l.desc, label: l.label }
   const k: KonteksPengelolaan = { lingkup, periode, hariIni, namaSkpd }
   return mode === 'rekap'
     ? rekapPengelolaan(sb, k, (menu || null) as MenuPengelolaan | null)

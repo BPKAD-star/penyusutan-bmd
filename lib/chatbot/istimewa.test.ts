@@ -43,7 +43,7 @@ describe('alat admin', () => {
     // SELURUH berkas alat istimewa, bukan cuma toolsAdmin.ts — alatnya kini
     // tersebar di beberapa berkas, dan berkas baru yang lolos dari pemindai ini
     // bisa menulis tanpa ada yang memerahkan.
-    for (const f of ['toolsAdmin.ts', 'perolehan.ts', 'pengelolaan.ts', 'skpdPohon.ts']) {
+    for (const f of ['toolsAdmin.ts', 'perolehan.ts', 'pengelolaan.ts', 'skpdPohon.ts', 'lraKir.ts']) {
       expect(readFileSync(join(__dirname, f), 'utf8'), f).not.toMatch(/\.(insert|update|upsert|delete)\(/)
     }
     const src = readFileSync(join(__dirname, 'toolsAdmin.ts'), 'utf8')
