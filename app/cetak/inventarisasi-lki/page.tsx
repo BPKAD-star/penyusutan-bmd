@@ -130,9 +130,9 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
                     <>☒ Tidak ada — Tidak ditemukan
                       {j.sebab_tidak_ada && (
                         <div className="ml-3">
-                          Karena: {j.sebab_tidak_ada === 'lainnya'
-                            ? (j.sebab_lainnya || 'Lainnya')
-                            : SEBAB_TIDAK_ADA.find(o => o.v === j.sebab_tidak_ada)?.l}
+                          Karena: {SEBAB_TIDAK_ADA.find(o => o.v === j.sebab_tidak_ada)?.l}
+                          {j.sebab_tidak_ada === 'beberapa_register' && (j.sebab_pecahan || []).filter(Boolean).length > 0 &&
+                            <> — {(j.sebab_pecahan || []).filter(Boolean).join('; ')}</>}
                           {j.sebab_relasi?.nibar && <> — NIBAR {j.sebab_relasi.nibar} · {j.sebab_relasi.nama_barang || '—'}</>}
                         </div>
                       )}

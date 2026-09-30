@@ -324,8 +324,8 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
                           )}
                           {r.jawaban?.keberadaan === 'tidak_ditemukan' && r.jawaban.sebab_tidak_ada && (
                             <p className="text-red-500">
-                              {r.jawaban.sebab_tidak_ada === 'lainnya' ? (r.jawaban.sebab_lainnya || 'Lainnya')
-                                : SEBAB_TIDAK_ADA.find(o => o.v === r.jawaban.sebab_tidak_ada)?.l}
+                              {SEBAB_TIDAK_ADA.find(o => o.v === r.jawaban.sebab_tidak_ada)?.l}
+                              {r.jawaban.sebab_tidak_ada === 'beberapa_register' && ` (${(r.jawaban.sebab_pecahan || []).length} register)`}
                             </p>
                           )}
                         </>

@@ -8834,10 +8834,11 @@ Pengelolaan → LRA → KIR.
 Bagian G (Keberadaan) untuk **1.3.3 saja** (`LkiConfig.sebabTidakAda`) menanyakan
 sebab begitu "Tidak ada / tidak ditemukan" dipilih. Sebab menentukan LHI
 (`SEBAB_TIDAK_ADA`, satu sumber, `lhiTidakAda()`): force majeure · dibongkar total
-& sudah ada bangunan baru · lainnya → **III.B.2**; direhab jadi bangunan baru ·
+& sudah ada bangunan baru → **III.B.2**; direhab jadi bangunan baru ·
 digabung dgn bangunan lain → **III.B.3** (pilih bangunan anak / induk, disimpan
-`sebab_relasi`); seharusnya beberapa register → **III.B.8** (tindak lanjut
-Pemecahan Barang di menu Koreksi). "Hilang (kecurian)" tetap III.B.1.
+`sebab_relasi`); seharusnya beberapa register → **III.B.8** (petugas mengisi daftar nama
+bangunan hasil pemecahan, min. 2, `sebab_pecahan`; tindak lanjut Pemecahan Barang
+di menu Koreksi). Opsi "Lainnya" sempat ada & DICABUT (keputusan user). "Hilang (kecurian)" tetap III.B.1.
 - **Tak ada migrasi** — `jawaban` itu jsonb. Lembar lama tanpa sebab = III.B.2 persis
   seperti dulu; sebab baru **wajib** hanya saat lembar disimpan ulang (`kekuranganLki`).
 - Di III.B.3, sebab *rehab* menjadikan barang ini SENDIRI sbg induk & anaknya

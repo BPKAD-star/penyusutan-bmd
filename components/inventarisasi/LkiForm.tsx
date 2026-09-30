@@ -168,9 +168,14 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   const setKeberadaan = (v: NonNullable<InvJawaban['keberadaan']>) =>
     setJ(p => v === 'tidak_ditemukan'
       ? { ...p, keberadaan: v }
-      : { ...p, keberadaan: v, sebab_tidak_ada: undefined, sebab_relasi: undefined, sebab_lainnya: undefined })
+      : { ...p, keberadaan: v, sebab_tidak_ada: undefined, sebab_relasi: undefined, sebab_pecahan: undefined })
   const setSebab = (v: SebabTidakAda) =>
-    setJ(p => ({ ...p, sebab_tidak_ada: v, sebab_relasi: undefined, sebab_lainnya: undefined }))
+    setJ(p => ({
+      ...p, sebab_tidak_ada: v, sebab_relasi: undefined,
+      sebab_pecahan: v === 'beberapa_register' ? ['', ''] : undefined,
+    }))
+  const setPecahan = (fn: (a: string[]) => string[]) =>
+    setJ(p => ({ ...p, sebab_pecahan: fn(p.sebab_pecahan || []) }))
   const setBaru = (k: string, v: unknown) => setJ(p => ({ ...p, baru: { ...(p.baru || {}), [k]: v } }))
 
   /** Jumlah & Harga Satuan sekaligus menghitung ulang Nilai Perolehan
@@ -655,16 +660,31 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                             )}
                           </div>
                         )}
-                        {j.sebab_tidak_ada === o.v && o.v === 'lainnya' && (
-                          <input className="select-filter w-full ml-5 mt-1.5 max-w-md" disabled={readOnly}
-                            placeholder="Sebutkan sebabnya"
-                            value={j.sebab_lainnya || ''}
-                            onChange={e => set('sebab_lainnya', e.target.value)} />
-                        )}
                         {j.sebab_tidak_ada === o.v && o.v === 'beberapa_register' && (
-                          <p className="ml-5 mt-1 text-[11px] text-gray-500">
-                            Tindak lanjut: Pembukuan → Koreksi → Pemecahan Barang.
-                          </p>
+                          <div className="ml-5 mt-1.5 space-y-1.5">
+                            <p className="text-[11px] text-gray-500">
+                              Isi nama tiap bangunan yang seharusnya tercatat sendiri. Tindak lanjut:
+                              Pembukuan → Koreksi → Pemecahan Barang.
+                            </p>
+                            {(j.sebab_pecahan || []).map((n, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <input className="select-filter w-full max-w-md" disabled={readOnly}
+                                  placeholder={`Nama Gedung Bangunan ${i + 1}`}
+                                  value={n}
+                                  onChange={e => setPecahan(a => a.map((x, ix) => ix === i ? e.target.value : x))} />
+                                {!readOnly && (j.sebab_pecahan || []).length > 2 && (
+                                  <button type="button" className="text-red-500 text-[11px] hover:underline"
+                                    onClick={() => setPecahan(a => a.filter((_, ix) => ix !== i))}>Hapus</button>
+                                )}
+                              </div>
+                            ))}
+                            {!readOnly && (
+                              <button type="button" className="text-teal text-[11px] font-medium hover:underline"
+                                onClick={() => setPecahan(a => [...a, ''])}>
+                                + Tambah Gedung Bangunan
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     ))}

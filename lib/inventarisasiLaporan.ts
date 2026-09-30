@@ -443,7 +443,7 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
         nilai: s.nilai_perolehan ?? '',
         keterangan: [
           j.keberadaan === 'tidak_ditemukan' && j.sebab_tidak_ada === 'beberapa_register'
-            ? 'Seharusnya ada beberapa register — tindak lanjut Pemecahan Barang' : '',
+            ? `Seharusnya ${(j.sebab_pecahan || []).length || 'beberapa'} register (${(j.sebab_pecahan || []).filter(Boolean).join('; ')}) — tindak lanjut Pemecahan Barang` : '',
           ekstra, j.keterangan,
         ].filter(Boolean).join(' — '),
       }
@@ -487,5 +487,5 @@ export function totalNilaiLhi(rows: Record<string, string | number>[]): number {
 function sebabTeks(j: InvJawaban): string {
   const x = SEBAB_TIDAK_ADA.find(o => o.v === j.sebab_tidak_ada)
   if (!x) return ''
-  return x.v === 'lainnya' ? `Tidak ada: ${j.sebab_lainnya || 'lainnya'}` : `Tidak ada: ${x.l}`
+  return `Tidak ada: ${x.l}`
 }

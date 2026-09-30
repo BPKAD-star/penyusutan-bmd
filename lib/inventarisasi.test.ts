@@ -188,10 +188,9 @@ describe('G — "Tidak ada karena..." (Gedung & Bangunan, 2026-10-01)', () => {
     }
   })
 
-  it('force majeure / dibongkar / lainnya → III.B.2', () => {
+  it('force majeure / dibongkar → III.B.2', () => {
     expect(klasifikasiLhi(brs(tdk('force_majeure')))).toEqual(['III.B.2'])
     expect(klasifikasiLhi(brs(tdk('dibongkar_baru')))).toEqual(['III.B.2'])
-    expect(klasifikasiLhi(brs(tdk('lainnya', { sebab_lainnya: 'x' })))).toEqual(['III.B.2'])
   })
 
   it('direhab jadi bangunan baru & digabung → III.B.3 (bukan III.B.2)', () => {
@@ -220,7 +219,9 @@ describe('G — "Tidak ada karena..." (Gedung & Bangunan, 2026-10-01)', () => {
     expect(a(tdk('digabung'))).toEqual(['Bangunan induk tempat digabung (G)'])
     expect(a(tdk('rehab_bangunan_baru'))).toEqual(['Bangunan baru hasil rehab (G)'])
     expect(a(tdk('digabung', { sebab_relasi: { aset_id: 'b-2' } }))).toEqual([])
-    expect(a(tdk('lainnya'))).toEqual(['Sebutkan sebab tidak ada (G)'])
+    expect(a(tdk('beberapa_register'))).toEqual(['Minimal 2 bangunan hasil pemecahan (G)'])
+    expect(a(tdk('beberapa_register', { sebab_pecahan: ['A', ''] }))).toEqual(['Nama bangunan hasil pemecahan (G) ada yang kosong'])
+    expect(a(tdk('beberapa_register', { sebab_pecahan: ['A', 'B'] }))).toEqual([])
     // golongan lain: tak ditanya
     expect(kekuranganLki(aset({ keberadaan: 'tidak_ditemukan' }))).toEqual([])
   })

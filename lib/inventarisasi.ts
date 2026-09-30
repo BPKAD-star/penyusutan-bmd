@@ -107,7 +107,7 @@ export type SesuaiField = { sesuai: boolean; seharusnya?: string }
 /** Alasan barang "Tidak ada" (Gedung & Bangunan) — keputusan user 2026-10-01. */
 export type SebabTidakAda =
   | 'force_majeure' | 'dibongkar_baru' | 'rehab_bangunan_baru'
-  | 'digabung' | 'beberapa_register' | 'lainnya'
+  | 'digabung' | 'beberapa_register'
 
 export const SEBAB_TIDAK_ADA: { v: SebabTidakAda; l: string; lhi: string }[] = [
   { v: 'force_majeure', l: 'Force majeure (bencana, kebakaran, dsb.)', lhi: 'III.B.2' },
@@ -115,7 +115,6 @@ export const SEBAB_TIDAK_ADA: { v: SebabTidakAda; l: string; lhi: string }[] = [
   { v: 'rehab_bangunan_baru', l: 'Direhab dan jadi bangunan baru', lhi: 'III.B.3' },
   { v: 'digabung', l: 'Digabung dengan bangunan lain', lhi: 'III.B.3' },
   { v: 'beberapa_register', l: 'Seharusnya ada beberapa register', lhi: 'III.B.8' },
-  { v: 'lainnya', l: 'Lainnya', lhi: 'III.B.2' },
 ]
 
 /** Sebab yang mewajibkan memilih barang lain (anak / induk). */
@@ -146,7 +145,9 @@ export type InvJawaban = {
   // (digabung), dipilih dari SKPD & golongan lembar ini sendiri.
   sebab_tidak_ada?: SebabTidakAda
   sebab_relasi?: { aset_id?: string | null; nibar?: string; kode_barang?: string; nama_barang?: string }
-  sebab_lainnya?: string
+  /** Sebab `beberapa_register`: nama tiap bangunan hasil pemecahan
+   *  ("Gedung Bangunan 1", "2", ...) — bahan Pemecahan Barang di menu Koreksi. */
+  sebab_pecahan?: string[]
   // H — nilai perolehan TIDAK bisa diubah lewat LKI (tampilan saja).
   // I — biaya atribusi / menambah kapasitas manfaat (kapitalisasi).
   // Induk WAJIB dipilih dari barang milik SKPD lembar ini sendiri.
@@ -554,8 +555,10 @@ export function kekuranganLki(
     if (!j.sebab_tidak_ada) kurang.push('Sebab barang tidak ada (G)')
     else if (SEBAB_BUTUH_RELASI.includes(j.sebab_tidak_ada) && !j.sebab_relasi?.aset_id) {
       kurang.push(j.sebab_tidak_ada === 'digabung' ? 'Bangunan induk tempat digabung (G)' : 'Bangunan baru hasil rehab (G)')
-    } else if (j.sebab_tidak_ada === 'lainnya' && !(j.sebab_lainnya || '').trim()) {
-      kurang.push('Sebutkan sebab tidak ada (G)')
+    } else if (j.sebab_tidak_ada === 'beberapa_register') {
+      const nama = (j.sebab_pecahan || []).map(n => n.trim())
+      if (nama.length < 2) kurang.push('Minimal 2 bangunan hasil pemecahan (G)')
+      else if (nama.some(n => !n)) kurang.push('Nama bangunan hasil pemecahan (G) ada yang kosong')
     }
   }
 
