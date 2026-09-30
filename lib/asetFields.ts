@@ -67,8 +67,32 @@ export const FIELD_OPTIONS: Partial<Record<FieldKey, string[]>> = {
   // "Sengketa" = status lahan bermasalah/red zone, ditambahkan atas permintaan
   // user. Daftar ini satu sumber utk GIS, Edit Spesifikasi, & Koreksi; kolomnya
   // teks bebas tanpa CHECK, jadi tak butuh migrasi.
-  jenis_hak: ['Hak Milik', 'Hak Pengelolaan', 'Hak Pakai', 'Hak Guna Usaha', 'Hak Guna Bangunan', 'Lainnya', 'Sengketa'],
+  // URUTAN DITENTUKAN USER (2026-09-30) & bermakna: dua yang pertama = tanah
+  // yang sedang/sudah jadi Hak Pakai; sisanya hak lain yang perlu ditinjau,
+  // Sengketa terakhir. "Proses" = sertifikat sedang diurus. Pilihan kosong "-"
+  // duduk di urutan ke-3 (lihat `POSISI_KOSONG`). Status GIS diturunkan dari
+  // nilai-nilai ini oleh lib/statusTanah.ts — menambah/mengganti nama opsi
+  // berarti menyentuh file itu juga (nilai di luar daftarnya jatuh ke "Tinjau").
+  jenis_hak: ['Hak Pakai', 'Proses', 'Hak Pengelolaan', 'Hak Guna Bangunan', 'Hak Guna Usaha', 'Hak Milik', 'Lainnya', 'Sengketa'],
   kondisi_barang: ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang', 'Tidak Ditemukan'],
+}
+
+/**
+ * Posisi pilihan KOSONG ("-") di dropdown, per field. Bawaannya di paling atas
+ * (indeks 0); jenis hak menaruhnya di urutan ke-3 atas permintaan user.
+ */
+const POSISI_KOSONG: Partial<Record<FieldKey, number>> = { jenis_hak: 2 }
+
+/**
+ * Daftar opsi dropdown LENGKAP dengan pilihan kosong pada posisinya — dipakai
+ * SEMUA pemilik dropdown (Edit Spesifikasi, form bidang GIS) supaya urutannya
+ * tak bisa menyimpang antar layar.
+ */
+export function opsiDenganKosong(k: FieldKey): { value: string; label: string }[] {
+  const opsi = (FIELD_OPTIONS[k] || []).map(o => ({ value: o, label: o }))
+  const pos = Math.min(POSISI_KOSONG[k] ?? 0, opsi.length)
+  opsi.splice(pos, 0, { value: '', label: '-' })
+  return opsi
 }
 
 // ── 3 template field, dipetakan ke 8 golongan (lib/bmd GOLONGAN_REKAP) ──────

@@ -41,6 +41,7 @@ import { formatRupiah2 } from '@/lib/export'
 import { GIS_TANAH_KODE_FILTER } from '@/lib/gisTanah'
 import { idsKonsolidasi } from '@/lib/konsolidasiSkpd'
 import { luasBidangSah, luasEfektif, ringkasDaftarBidang } from '@/lib/luasBidang'
+import { statusJenisHak, statusRegister, type StatusTanah } from '@/lib/statusTanah'
 import KelolaBidangPanel from '@/components/gis/KelolaBidangPanel'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import type { GisMarker } from '@/components/gis/GisMap'
@@ -67,7 +68,7 @@ type AsetRow = {
 }
 type BidangRingkas = { aset_id: string; jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null; luas: number | null; latitude: number | null; longitude: number | null }
 const BIDANG_COLS = 'aset_id,jenis_hak,nomor_dokumen_kepemilikan,luas,latitude,longitude'
-type Status = 'sengketa' | 'proses' | 'bersertifikat'
+type Status = StatusTanah
 type TitikFilter = 'semua' | 'bertitik' | 'belum'
 type StatusFilter = 'semua' | Status
 type Terkunci = { nibar: string; jenis_terakhir: string | null; periode_terakhir: string | null }
@@ -76,10 +77,14 @@ const SELECT_COLS = 'id,nibar,kode,nama_barang,uraian_barang,spesifikasi_lainnya
 const fmtTgl = (s: string | null) => s ? new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
 const fmtLuas = (v: number | null) => v == null ? '-' : `${new Intl.NumberFormat('id-ID').format(v)} m²`
 
-const STATUS_BADGE: Record<Status, { label: string; cls: string; dot: string }> = {
-  sengketa: { label: 'Sengketa', cls: 'bg-rose-50 text-rose-700', dot: 'bg-rose-600' },
-  proses: { label: 'Proses', cls: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' },
-  bersertifikat: { label: 'Bersertifikat', cls: 'bg-teal/10 text-teal', dot: 'bg-teal' },
+// Kelas Tailwind ditulis UTUH per baris (jangan dirakit runtime — tak akan ikut
+// terpindai saat build). Aturan status → lib/statusTanah.ts.
+const STATUS_BADGE: Record<Status, { label: string; cls: string; dot: string; pin: GisMarker['color'] }> = {
+  bersertifikat: { label: 'Bersertifikat', cls: 'bg-teal/10 text-teal', dot: 'bg-teal', pin: 'teal' },
+  proses: { label: 'Proses', cls: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500', pin: 'amber' },
+  belum: { label: 'Belum Sertifikat', cls: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400', pin: 'slate' },
+  tinjau: { label: 'Tinjau', cls: 'bg-violet-50 text-violet-700', dot: 'bg-violet-600', pin: 'violet' },
+  sengketa: { label: 'Sengketa', cls: 'bg-rose-50 text-rose-700', dot: 'bg-rose-600', pin: 'red' },
 }
 
 export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode; cariAwal: string }) {
@@ -219,11 +224,11 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Status dibaca dari JENIS HAK bidang (keputusan user 2026-09-30) — tak lagi
+  // dari ada-tidaknya nomor dokumen. Register = bidang yang paling belum tuntas;
+  // tanpa bidang jatuh ke jenis hak register. Aturan & alasannya: lib/statusTanah.ts.
   function statusOf(r: AsetRow): Status {
-    const bidangList = bidangByAset[r.id] || []
-    if (r.jenis_hak === 'Sengketa' || bidangList.some(b => b.jenis_hak === 'Sengketa')) return 'sengketa'
-    if (r.nomor_dokumen_kepemilikan || bidangList.some(b => b.nomor_dokumen_kepemilikan)) return 'bersertifikat'
-    return 'proses'
+    return statusRegister((bidangByAset[r.id] || []).map(b => b.jenis_hak), r.jenis_hak)
   }
 
   // Filter INSTAN di client (SKPD + cari) — dataset sudah dimuat sekali di atas.
@@ -402,15 +407,14 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
     for (const r of filtered) {
       if (r.latitude != null && r.longitude != null) {
         const st = statusOf(r)
-        const color: GisMarker['color'] = st === 'sengketa' ? 'red' : st === 'bersertifikat' ? 'teal' : 'amber'
-        out.push({ id: r.id, lat: r.latitude, lng: r.longitude, color, title: r.nama_barang || '-', sub: r.nibar || '-', active: r.id === selectedId })
+        out.push({ id: r.id, lat: r.latitude, lng: r.longitude, color: STATUS_BADGE[st].pin, title: r.nama_barang || '-', sub: r.nibar || '-', active: r.id === selectedId })
         continue
       }
       // Cadangan: titik lama milik bidang (lihat catatan di atas).
       for (const b of bidangByAset[r.id] || []) {
         if (b.latitude == null || b.longitude == null) continue
-        const bColor: GisMarker['color'] = b.jenis_hak === 'Sengketa' ? 'red' : b.nomor_dokumen_kepemilikan ? 'teal' : 'amber'
-        out.push({ id: r.id, lat: b.latitude, lng: b.longitude, color: bColor, title: r.nama_barang || '-', sub: `${r.nibar || '-'} (bidang)`, active: r.id === selectedId })
+        // Warna cadangan mengikuti status BIDANG-nya sendiri (bukan register).
+        out.push({ id: r.id, lat: b.latitude, lng: b.longitude, color: STATUS_BADGE[statusJenisHak(b.jenis_hak)].pin, title: r.nama_barang || '-', sub: `${r.nibar || '-'} (bidang)`, active: r.id === selectedId })
       }
     }
     return out
@@ -431,7 +435,8 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // GIS, yang memang itu gunanya di halaman peta.
   // Duduk perkara dua sumber luas & tiga arah penyelesaiannya: REFACTOR-PLAN §5.
   const stats = useMemo(() => {
-    let luasBidang = 0, nilai = 0, bersertifikat = 0, proses = 0, sengketa = 0
+    let luasBidang = 0, nilai = 0
+    const perStatus: Record<Status, number> = { bersertifikat: 0, proses: 0, belum: 0, tinjau: 0, sengketa: 0 }
     let bidang = 0, bidangBerluas = 0, registerBerbidang = 0
     for (const r of filtered) {
       nilai += r.nilai_perolehan || 0
@@ -443,14 +448,11 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
         bidangBerluas++
         luasBidang += b.luas
       }
-      const st = statusOf(r)
-      if (st === 'bersertifikat') bersertifikat++
-      else if (st === 'sengketa') sengketa++
-      else proses++
+      perStatus[statusOf(r)]++
     }
     const total = filtered.length
-    const persen = total > 0 ? Math.round((bersertifikat / total) * 100) : 0
-    return { total, bidang, bidangBerluas, registerBerbidang, luasBidang, nilai, bersertifikat, proses, sengketa, persen }
+    const persen = total > 0 ? Math.round((perStatus.bersertifikat / total) * 100) : 0
+    return { total, bidang, bidangBerluas, registerBerbidang, luasBidang, nilai, perStatus, persen }
   }, [filtered, bidangByAset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -514,7 +516,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
               ))}
             </div>
             <div className="flex flex-wrap gap-1">
-              {([['semua', 'Semua Status'], ['bersertifikat', 'Bersertifikat'], ['proses', 'Proses'], ['sengketa', 'Sengketa']] as [StatusFilter, string][]).map(([v, l]) => (
+              {([['semua', 'Semua Status'], ['bersertifikat', 'Bersertifikat'], ['proses', 'Proses'], ['belum', 'Belum Sertifikat'], ['tinjau', 'Tinjau'], ['sengketa', 'Sengketa']] as [StatusFilter, string][]).map(([v, l]) => (
                 <button key={v} onClick={() => setStatusFilter(v)}
                   className={`px-2 py-1 rounded-full text-[10px] font-medium border transition-colors ${statusFilter === v ? 'bg-teal text-white border-teal' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
                   {l}
@@ -578,9 +580,11 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
             </p>
           </div>
           <div className="flex justify-between"><span className="text-gray-400">Nilai perolehan</span><span className="font-semibold text-gray-800">{formatRupiah2(stats.nilai)}</span></div>
-          <div className="flex justify-between pt-1 border-t border-gray-100"><span className="text-gray-400">Bersertifikat</span><span className="font-semibold text-teal">{stats.bersertifikat.toLocaleString('id-ID')} ({stats.persen}%)</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Proses sertifikat</span><span className="font-semibold text-amber-600">{stats.proses.toLocaleString('id-ID')}</span></div>
-          <div className="flex justify-between"><span className="text-gray-400">Dalam sengketa</span><span className="font-semibold text-rose-600">{stats.sengketa.toLocaleString('id-ID')}</span></div>
+          <div className="flex justify-between pt-1 border-t border-gray-100"><span className="text-gray-400">Bersertifikat</span><span className="font-semibold text-teal">{stats.perStatus.bersertifikat.toLocaleString('id-ID')} ({stats.persen}%)</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Proses sertifikat</span><span className="font-semibold text-amber-600">{stats.perStatus.proses.toLocaleString('id-ID')}</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Belum sertifikat</span><span className="font-semibold text-slate-600">{stats.perStatus.belum.toLocaleString('id-ID')}</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Perlu ditinjau</span><span className="font-semibold text-violet-700">{stats.perStatus.tinjau.toLocaleString('id-ID')}</span></div>
+          <div className="flex justify-between"><span className="text-gray-400">Dalam sengketa</span><span className="font-semibold text-rose-600">{stats.perStatus.sengketa.toLocaleString('id-ID')}</span></div>
         </div>
       </div>
 

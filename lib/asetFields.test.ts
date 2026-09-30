@@ -7,7 +7,7 @@
 // pinggiran, itu SELURUH data koordinat aplikasi ini.
 // ============================================================================
 import { describe, it, expect } from 'vitest'
-import { angkaKolomAset, ASET_NUM_COLS } from './asetFields'
+import { angkaKolomAset, ASET_NUM_COLS, opsiDenganKosong } from './asetFields'
 
 // Persis `toNum` yang dulu dipakai ketiga menu Cara Perolehan. Disalin ke sini
 // sebagai PEMBANDING supaya bedanya terbaca hitam-putih, bukan cuma diceritakan
@@ -68,5 +68,24 @@ describe('ASET_NUM_COLS', () => {
     // numeric → ditolak Postgres saat approve; yang MASUK tanpa alasan akan
     // dipaksa jadi angka. Dua-duanya lebih baik ketahuan di sini.
     expect([...ASET_NUM_COLS].sort()).toEqual(['latitude', 'longitude', 'luas'])
+  })
+})
+
+describe('opsiDenganKosong — urutan dropdown Jenis Hak', () => {
+  it('urutan PERSIS permintaan user, pilihan kosong "-" di urutan ke-3', () => {
+    expect(opsiDenganKosong('jenis_hak').map(o => o.label)).toEqual([
+      'Hak Pakai', 'Proses', '-', 'Hak Pengelolaan', 'Hak Guna Bangunan',
+      'Hak Guna Usaha', 'Hak Milik', 'Lainnya', 'Sengketa',
+    ])
+  })
+
+  it('pilihan kosong bernilai string kosong (bukan tanda hubung), supaya tersimpan sbg tak diisi', () => {
+    expect(opsiDenganKosong('jenis_hak').find(o => o.label === '-')?.value).toBe('')
+  })
+
+  it('field lain tetap punya pilihan kosong di paling atas', () => {
+    const o = opsiDenganKosong('kondisi_barang')
+    expect(o[0]).toEqual({ value: '', label: '-' })
+    expect(o).toHaveLength(6)
   })
 })

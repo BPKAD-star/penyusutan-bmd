@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { luasBidangSah, ringkasDaftarBidang } from '@/lib/luasBidang'
 
-import { FIELD_OPTIONS } from '@/lib/asetFields'
+import { opsiDenganKosong } from '@/lib/asetFields'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 type Bidang = {
@@ -330,8 +330,7 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
             <div>
               <label className="block text-xs text-gray-500 mb-1">Jenis Hak</label>
               <select className="select-filter w-full" value={form.jenis_hak} onChange={e => setForm(f => ({ ...f, jenis_hak: e.target.value }))}>
-                <option value="">-</option>
-                {(FIELD_OPTIONS.jenis_hak || []).map(o => <option key={o} value={o}>{o}</option>)}
+                {opsiDenganKosong('jenis_hak').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div>

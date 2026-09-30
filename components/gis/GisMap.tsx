@@ -37,13 +37,15 @@ export type GisMarker = {
   id: string
   lat: number
   lng: number
-  color: 'red' | 'amber' | 'teal'
+  // Satu warna per status sertifikasi (lib/statusTanah.ts): teal bersertifikat ·
+  // amber proses · slate belum sertifikat · violet tinjau · red sengketa.
+  color: 'red' | 'amber' | 'teal' | 'slate' | 'violet'
   title: string
   sub: string
   active: boolean
 }
 
-const COLOR_HEX: Record<GisMarker['color'], string> = { red: '#e11d48', amber: '#f59e0b', teal: '#0d9488' }
+const COLOR_HEX: Record<GisMarker['color'], string> = { red: '#e11d48', amber: '#f59e0b', teal: '#0d9488', slate: '#94a3b8', violet: '#7c3aed' }
 
 function dotIcon(color: GisMarker['color'], active: boolean) {
   const hex = COLOR_HEX[color]
@@ -57,7 +59,7 @@ function dotIcon(color: GisMarker['color'], active: boolean) {
 }
 
 // Marker DRAFT (titik belum disimpan) — biru & bergaris putus-putus, sengaja
-// beda dari ketiga warna status (merah/amber/teal) supaya tak tertukar dengan
+// beda dari kelima warna status (merah/amber/teal/slate/ungu) supaya tak tertukar dengan
 // tanah sungguhan mana pun. `animate-pulse` (Tailwind) menandakan ia "belum
 // final", persis penanda draft di tempat lain aplikasi ini.
 const DRAFT_ICON = L.divIcon({

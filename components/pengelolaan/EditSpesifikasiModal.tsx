@@ -10,7 +10,7 @@
 //                  barang yang dicentang, tanpa menghapus foto lama masing-masing.
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { FIELD_LABEL, FIELD_TYPE, FIELD_OPTIONS, type FieldKey } from '@/lib/asetFields'
+import { FIELD_LABEL, FIELD_TYPE, opsiDenganKosong, type FieldKey } from '@/lib/asetFields'
 import dynamic from 'next/dynamic'
 import WilayahPicker from '@/components/WilayahPicker'
 import { backdropClose } from '@/components/backdropClose'
@@ -121,8 +121,7 @@ export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, 
                 <div key={k}>
                   <label className="block text-xs text-gray-500 mb-1">{FIELD_LABEL[k as FieldKey]}</label>
                   <select className="select-filter w-full" value={values[k] || ''} onChange={e => setValues({ ...values, [k]: e.target.value })}>
-                    <option value="">-</option>
-                    {(FIELD_OPTIONS[k as FieldKey] || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    {opsiDenganKosong(k as FieldKey).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
               )
