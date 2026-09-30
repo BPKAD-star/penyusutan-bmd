@@ -8,7 +8,10 @@
 // satu pun error.
 // ============================================================================
 import { describe, it, expect } from 'vitest'
-import { pecahNibar, prefixNibar, POTONG_NIBAR_CETAK, PANJANG_NIBAR_PENUH } from './kodeRegister'
+import {
+  pecahNibar, prefixNibar, POTONG_NIBAR_CETAK, PANJANG_NIBAR_PENUH,
+  kelasKodeRegister, teksKodeRegister, titleKodeRegister,
+} from './kodeRegister'
 
 // Data hidup 2026-08-20 — Tanah Jalan Road Diversion 1, hibah SDHI ke Dinas PU.
 //   [12][01][3506] [05000000000000] [2024] | [131010307003] [0000042]
@@ -56,5 +59,29 @@ describe('pecahNibar — menolak yang tak bisa dinilai', () => {
     for (const v of [NIBAR_KITA, NIBAR_EBMD, '', 'abc']) {
       expect(pecahNibar(v) !== null, `nilai ${JSON.stringify(v)}`).toBe(prefixNibar(v) !== null)
     }
+  })
+})
+
+describe('penampilan baris REG di layar', () => {
+  it('bergeser → biru + ikon info, BUKAN amber/oranye/peringatan', () => {
+    // Bergeser dari NIBAR itu keadaan normal (pernah pindah/reklas): oranye + ⚠
+    // membuatnya terbaca "mencurigakan" (permintaan user 2026-09-30).
+    expect(kelasKodeRegister(true)).toContain('text-blue-')
+    expect(kelasKodeRegister(true)).not.toMatch(/amber|orange|red/)
+    expect(teksKodeRegister('KODE123', true)).toBe('REG KODE123 ⓘ')
+    expect(teksKodeRegister('KODE123', true)).not.toContain('⚠')
+  })
+
+  it('tidak bergeser & tak bisa dinilai (null) → TIDAK ditandai apa pun', () => {
+    for (const b of [false, null]) {
+      expect(kelasKodeRegister(b)).toBe('text-gray-300')
+      expect(teksKodeRegister('KODE123', b)).toBe('REG KODE123')
+    }
+  })
+
+  it('kode kosong → "REG —", dan tooltip menyebut bahwa ini normal', () => {
+    expect(teksKodeRegister(null, true)).toBe('REG —')
+    expect(titleKodeRegister(true)).toMatch(/normal/)
+    expect(titleKodeRegister(false)).not.toMatch(/normal/)
   })
 })

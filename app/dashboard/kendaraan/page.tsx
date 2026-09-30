@@ -31,7 +31,7 @@ import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
-import { bergeserDariNibar } from '@/lib/kodeRegister'
+import { bergeserDariNibar, kelasKodeRegister, teksKodeRegister, titleKodeRegister } from '@/lib/kodeRegister'
 import { penggunaanTampil } from '@/lib/penggunaanTampil'
 
 const PREFIX_ALAT_ANGKUTAN = '1.3.2.02.'
@@ -340,11 +340,8 @@ export default function KendaraanPage() {
                         <td className="table-td text-xs min-w-[200px]">
                           <div className="text-gray-800 font-medium">{teks(r.nama_barang)}</div>
                           <div className="text-gray-400 mt-0.5 whitespace-nowrap">{teks(r.nibar)}</div>
-                          <div className={`text-[11px] mt-0.5 whitespace-nowrap ${bergeser ? 'text-amber-600 font-medium' : 'text-gray-300'}`}
-                            title={bergeser
-                              ? 'Kode register: posisi barang ini sudah bergeser dari NIBAR-nya (pernah pindah unit / reklas)'
-                              : 'Kode register (posisi terakhir barang)'}>
-                            {r.kode_register ? `REG ${r.kode_register}${bergeser ? ' ⚠' : ''}` : 'REG —'}
+                          <div className={`text-[11px] mt-0.5 whitespace-nowrap ${kelasKodeRegister(bergeser)}`} title={titleKodeRegister(bergeser)}>
+                            {teksKodeRegister(r.kode_register, bergeser)}
                           </div>
                           {belumLengkap && (
                             <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-50 text-amber-700 whitespace-nowrap"

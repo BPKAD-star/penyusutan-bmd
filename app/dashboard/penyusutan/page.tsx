@@ -23,7 +23,7 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import { KapitalisasiDetailModal, type KapItem } from '@/components/KapitalisasiDetail'
 import { fetchOwnerOverrides, partitionByPeriodOwner } from '@/lib/pengalihan'
 import { fetchRiwayatKodeRegister, kodeRegisterPada } from '@/lib/kodeRegisterRiwayat'
-import { bergeserDariNibar } from '@/lib/kodeRegister'
+import { bergeserDariNibar, kelasKodeRegister, teksKodeRegister, titleKodeRegister } from '@/lib/kodeRegister'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { useFilterPenyusutan, type Applied } from './useFilterPenyusutan'
@@ -737,11 +737,8 @@ export default function PenyusutanPage() {
                             kalau bergeser dari NIBAR; `bergeser === null` (NIBAR
                             warisan e-BMD yang susunannya beda) sengaja tak ditandai
                             apa-apa — pola & alasan sama dgn Daftar Barang. */}
-                        <p className={`text-[11px] mt-0.5 ${bergeser ? 'text-amber-600 font-medium' : 'text-gray-300'}`}
-                          title={bergeser
-                            ? 'Kode register: posisi barang ini sudah bergeser dari NIBAR-nya (pernah pindah unit / reklas)'
-                            : 'Kode register (posisi terakhir barang)'}>
-                          {r.kode_register ? `REG ${r.kode_register}${bergeser ? ' ⚠' : ''}` : 'REG —'}
+                        <p className={`text-[11px] mt-0.5 ${kelasKodeRegister(bergeser)}`} title={titleKodeRegister(bergeser)}>
+                          {teksKodeRegister(r.kode_register, bergeser)}
                         </p>
                       </td>
                       {showMerek && <td className="table-td text-xs text-gray-600">{r.merek_tipe || '-'}</td>}

@@ -50,7 +50,7 @@ import { GOLONGAN_DAFTAR_BARANG, asalUsulTampil } from '@/lib/bmd'
 import { penggunaanTampil } from '@/lib/penggunaanTampil'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_DAFTAR_BARANG } from '@/lib/visibilitas'
 import { fetchPosisiOverrides, partitionByPeriodOwner, type PosisiPeriode } from '@/lib/pengalihan'
-import { bergeserDariNibar } from '@/lib/kodeRegister'
+import { bergeserDariNibar, kelasKodeRegister, teksKodeRegister, titleKodeRegister } from '@/lib/kodeRegister'
 import { fetchRiwayatKodeRegister, kodeRegisterPada } from '@/lib/kodeRegisterRiwayat'
 import { ambilSemuaKeyset, halamanDuaCabang, tandaKursorKode, type CabangKeyset, type KursorKode } from '@/lib/keyset'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -1044,11 +1044,8 @@ export default function DaftarBarangPage() {
               NIBAR. `bergeser === null` (NIBAR kosong / warisan e-BMD yang
               layoutnya beda) sengaja tidak ditandai apa-apa: menandai 150rb
               barang warisan bikin 148 yang benar-benar bergeser tenggelam. */}
-          <p className={`text-[11px] mt-0.5 ${bergeser ? 'text-amber-600 font-medium' : 'text-gray-300'}`}
-            title={bergeser
-              ? 'Kode register: posisi barang ini sudah bergeser dari NIBAR-nya (pernah pindah unit / reklas)'
-              : 'Kode register (posisi terakhir barang)'}>
-            {r.kode_register ? `REG ${r.kode_register}${bergeser ? ' ⚠' : ''}` : 'REG —'}
+          <p className={`text-[11px] mt-0.5 ${kelasKodeRegister(bergeser)}`} title={titleKodeRegister(bergeser)}>
+            {teksKodeRegister(r.kode_register, bergeser)}
           </p>
         </>
         )

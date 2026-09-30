@@ -145,6 +145,32 @@ export function bergeserDariNibar(nibar: string | null, kodeRegister: string | n
   return pn !== pr
 }
 
+// ── Penampilan baris "REG …" di layar (Daftar Barang, Penyusutan, Kendaraan) ──
+// SATU sumber, sebelumnya disalin identik di tiga halaman (kelas warna, ikon,
+// tooltip) — "ubah satu, samakan yang lain", dan tak ada yang menjaganya.
+//
+// Warnanya BIRU, bukan amber/oranye (permintaan user 2026-09-30): bergeser dari
+// NIBAR itu keadaan NORMAL — barang pernah pindah unit atau direklas, dan kode
+// register memang dirancang mengikuti posisi terakhir. Oranye + ⚠ membuatnya
+// terbaca sbg "ada yang mencurigakan", padahal ia informasi. Peringatan sungguhan
+// (mis. data belum lengkap) tetap amber. Ikonnya ⓘ, bukan segitiga peringatan.
+//
+// ⚠️ `bergeser === null` (NIBAR kosong / layout warisan yang beda) TETAP tak
+// ditandai apa-apa — lihat catatan `bergeserDariNibar`.
+export function kelasKodeRegister(bergeser: boolean | null): string {
+  return bergeser ? 'text-blue-600 font-medium' : 'text-gray-300'
+}
+
+export function teksKodeRegister(kodeRegister: string | null, bergeser: boolean | null): string {
+  return kodeRegister ? `REG ${kodeRegister}${bergeser ? ' ⓘ' : ''}` : 'REG —'
+}
+
+export function titleKodeRegister(bergeser: boolean | null): string {
+  return bergeser
+    ? 'Kode register mengikuti posisi terakhir barang. Kodenya berbeda dari NIBAR karena barang ini pernah pindah unit atau direklas — ini normal.'
+    : 'Kode register (posisi terakhir barang)'
+}
+
 // Tahun untuk segmen ke-5. `tahunMasuk` datang dari posisiAt() (lib/pengalihan.ts)
 // dan hanya terisi kalau barangnya PERNAH pindah pada/sebelum periode yang
 // dilihat; kalau belum pernah, "tahun berada di SKPD tersebut" ya tahun ia lahir
