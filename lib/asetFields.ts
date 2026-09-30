@@ -58,9 +58,16 @@ export const FIELD_TYPE: Partial<Record<FieldKey, 'date' | 'number' | 'textarea'
 }
 
 export const FIELD_OPTIONS: Partial<Record<FieldKey, string[]>> = {
-  // BMD milik pemda — tidak ada "Hak Milik" (itu utk perseorangan). "Sengketa"
-  // = status lahan bermasalah/red zone, ditambahkan atas permintaan user.
-  jenis_hak: ['Hak Pengelolaan', 'Hak Pakai', 'Hak Guna Usaha', 'Hak Guna Bangunan', 'Lainnya', 'Sengketa'],
+  // "Hak Milik" ditambahkan 2026-09-30 (permintaan user). Dulu sengaja tak ada
+  // krn Hak Milik itu hak perseorangan, tapi kasus nyatanya: pemda membeli
+  // sebidang area yang terdiri dari beberapa sertifikat Hak Milik, dan sebagian
+  // BELUM dibalik nama atas nama pemda — jadi statusnya memang masih Hak Milik
+  // (atas nama penjual) & harus bisa dicatat apa adanya di GIS, berdampingan
+  // dgn bidang lain yang sudah Hak Pakai (lihat lib/jenisHakBidang.ts).
+  // "Sengketa" = status lahan bermasalah/red zone, ditambahkan atas permintaan
+  // user. Daftar ini satu sumber utk GIS, Edit Spesifikasi, & Koreksi; kolomnya
+  // teks bebas tanpa CHECK, jadi tak butuh migrasi.
+  jenis_hak: ['Hak Milik', 'Hak Pengelolaan', 'Hak Pakai', 'Hak Guna Usaha', 'Hak Guna Bangunan', 'Lainnya', 'Sengketa'],
   kondisi_barang: ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang', 'Tidak Ditemukan'],
 }
 
