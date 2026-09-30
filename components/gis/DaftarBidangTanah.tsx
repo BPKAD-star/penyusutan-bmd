@@ -132,14 +132,22 @@ export default function DaftarBidangTanah({ tabs, onBukaPeta }: { tabs: React.Re
   async function handleExport() {
     setExporting(true)
     try {
+      // ⚠️ Kolom & URUTANNYA = tabel di layar (permintaan user 2026-09-30:
+      // "export harus sama dengan yang ditampilkan"). Urutan properti objek =
+      // urutan kolom Excel. Yang beda cuma bentuk: "Nama Tanah / NIBAR" (dua
+      // baris di satu sel layar) jadi dua kolom bersebelahan — berkas kerja
+      // disortir per kolom — dan tombol "Peta" tak ikut (itu tautan, bukan
+      // data). Nambah kolom di tabel → tambahkan di sini pada posisi yg sama.
+      // Lokasi & titik koordinat milik REGISTER sejak 2026-09-23, bukan bidang.
       const baris = shown.map(r => ({
-        'SKPD': r.skpdNama, 'Nama Tanah': r.namaTanah, 'NIBAR': r.nibar || '-', 'Kode Barang': r.kode,
+        'SKPD': r.skpdNama, 'Nama Tanah': r.namaTanah, 'NIBAR': r.nibar || '-',
         'Nama Bidang': r.nama_bidang || '-', 'Jenis Hak': r.jenis_hak || '-',
-        'Nomor Dokumen': r.nomor_dokumen_kepemilikan || '-', 'Nama Dokumen': r.nama_dokumen_kepemilikan || '-',
-        'Tanggal Terbit': fmtTgl(r.tanggal_dokumen_kepemilikan), 'Tanggal Berakhir Hak': fmtTgl(r.tanggal_berakhir_hak),
-        // Lokasi & titik koordinat milik REGISTER sejak 2026-09-23, bukan bidang.
+        'Nomor Dokumen': r.nomor_dokumen_kepemilikan || '-',
+        'Tanggal Terbit': fmtTgl(r.tanggal_dokumen_kepemilikan),
+        'Nama Dalam Dokumen': r.nama_dokumen_kepemilikan || '-',
         'Luas (m²)': r.luas ?? '-',
-        'Sertifikat': r.sertifikat_path ? 'Ada' : 'Tidak ada', 'Keterangan': r.keterangan || '-',
+        'Sertifikat': r.sertifikat_path ? 'Ada' : 'Tidak ada',
+        'Keterangan': r.keterangan || '-',
       }))
       // Tanpa `periode`: posisi TERKINI, bukan rentang periode — pola sama dgn
       // KIR/Pengamanan (lib/namaBerkas.ts). Bidang tak punya dimensi waktu.
@@ -218,9 +226,11 @@ export default function DaftarBidangTanah({ tabs, onBukaPeta }: { tabs: React.Re
                 <th className="table-th">Jenis Hak</th>
                 <th className="table-th">Nomor Dokumen</th>
                 <th className="table-th">Tanggal Terbit</th>
+                <th className="table-th">Nama Dalam Dokumen</th>
                 <th className="table-th text-right">Luas (m²)</th>
                 <th className="table-th">Sertifikat</th>
                 <th className="table-th">Peta</th>
+                <th className="table-th">Keterangan</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -235,6 +245,7 @@ export default function DaftarBidangTanah({ tabs, onBukaPeta }: { tabs: React.Re
                   <td className="table-td text-xs">{r.jenis_hak || '-'}</td>
                   <td className="table-td text-xs">{r.nomor_dokumen_kepemilikan || '-'}</td>
                   <td className="table-td text-xs">{fmtTgl(r.tanggal_dokumen_kepemilikan)}</td>
+                  <td className="table-td text-xs">{r.nama_dokumen_kepemilikan || '-'}</td>
                   <td className={`table-td text-right text-xs tabular-nums ${r.luas == null ? 'text-gray-300' : ''}`}>{fmtLuas(r.luas)}</td>
                   <td className="table-td text-xs">
                     {r.sertifikat_path ? <button onClick={() => lihatSertifikat(r.sertifikat_path!)} className="text-teal hover:underline">Lihat</button> : <span className="text-gray-300">-</span>}
@@ -242,6 +253,8 @@ export default function DaftarBidangTanah({ tabs, onBukaPeta }: { tabs: React.Re
                   <td className="table-td text-xs">
                     <button onClick={() => onBukaPeta(r.nibar || r.namaTanah)} className="text-teal hover:underline">Buka →</button>
                   </td>
+                  {/* Teks bebas & bisa panjang: dibungkus, tak dipangkas. */}
+                  <td className="table-td text-xs text-gray-600 min-w-[180px] whitespace-normal break-words">{r.keterangan || '-'}</td>
                 </tr>
               ))}
             </tbody>
