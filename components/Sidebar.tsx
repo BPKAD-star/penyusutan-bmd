@@ -193,12 +193,12 @@ const navTree: NavNode[] = [
       },
       { type: 'leaf', href: '/dashboard/pelaporan/bmd', label: 'Laporan BMD' },
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi', label: 'Rekonsiliasi BMD' },
-      // Tepat di bawah Rekonsiliasi, sengaja: alurnya "lihat Selisih → cek
-      // laporan mana yang tak sepakat". BUKAN di menu Validasi mana pun —
-      // inventarisasi/validasi & rkbmd/validasi keduanya soal penelaahan
-      // usulan, bukan pemeriksaan angka.
-      { type: 'leaf', href: '/dashboard/pelaporan/konsistensi', label: 'Uji Konsistensi' },
+      // Urutan ditetapkan user 2026-10-01: Rincian Transaksi tepat di bawah
+      // Rekonsiliasi (bukti dukung selisihnya), baru Uji Konsistensi. Uji
+      // Konsistensi BUKAN di menu Validasi mana pun — inventarisasi/validasi &
+      // rkbmd/validasi keduanya soal penelaahan usulan, bukan pemeriksaan angka.
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi/rincian', label: 'Rincian Transaksi (Bukti Dukung)' },
+      { type: 'leaf', href: '/dashboard/pelaporan/konsistensi', label: 'Uji Konsistensi' },
       { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
       { type: 'leaf', href: '/dashboard/pelaporan/kir', label: 'KIR' },
     ],
