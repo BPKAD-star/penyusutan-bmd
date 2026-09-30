@@ -121,3 +121,98 @@ describe('alat admin', () => {
     }
   })
 })
+
+// ── rekap_perolehan ─────────────────────────────────────────────────────────
+// Klien palsu yang MENGHORMATI filter (eq/in/gt) — supaya yang diuji benar-benar
+// logika alatnya (saringan void, periode, SKPD, pengelompokan), bukan sekadar
+// bentuk panggilannya.
+type Kondisi = { eq: Record<string, unknown>; in: Record<string, unknown[]>; gt: Record<string, number> }
+function klienPerolehan(ledger: Record<string, unknown>[], skpd: Record<string, unknown>[]) {
+  const dibangun = (tabel: string) => {
+    const k: Kondisi = { eq: {}, in: {}, gt: {} }
+    const b: Record<string, unknown> = {
+      select: () => b, order: () => b, limit: () => b,
+      eq: (c: string, v: unknown) => { k.eq[c] = v; return b },
+      in: (c: string, v: unknown[]) => { k.in[c] = v; return b },
+      gt: (c: string, v: number) => { k.gt[c] = v; return b },
+      then: (ok: (v: unknown) => unknown) => {
+        if (tabel === 'admin_skpd') return Promise.resolve({ data: skpd, error: null }).then(ok)
+        let rows = ledger.filter(r =>
+          Object.entries(k.eq).every(([c, v]) => r[c] === v)
+          && Object.entries(k.in).every(([c, v]) => v.includes(r[c]))
+          && Object.entries(k.gt).every(([c, v]) => (r[c] as number) > v))
+        rows = rows.sort((a, c) => (a.id as number) - (c.id as number)).slice(0, 1000)
+        return Promise.resolve({ data: rows, error: null }).then(ok)
+      },
+    }
+    return b
+  }
+  return { from: dibangun } as never
+}
+const SKPD = [
+  { id: 28, nama: 'BKAD', parent_id: null, level: 1 },
+  { id: 29, nama: 'Bidang Aset', parent_id: 28, level: 2 },
+  { id: 50, nama: 'Dinas Lain', parent_id: null, level: 1 },
+]
+const AKTIF = { status: 'aktif', kode: '1.3.2.10.01.02.002' }
+const TANAH = { status: 'aktif', kode: '1.3.1.01.01.01.001' }
+const LEDGER = [
+  { id: 1, jenis: 'hibah_masuk', periode: '2026-S1', nilai: 100, skpd_tujuan: 28, aset_id: 'a1', aset: AKTIF },
+  { id: 2, jenis: 'hibah_masuk', periode: '2026-S2', nilai: 200, skpd_tujuan: 29, aset_id: 'a2', aset: TANAH },
+  { id: 3, jenis: 'hibah_masuk', periode: '2026-S2', nilai: 400, skpd_tujuan: 50, aset_id: 'a3', aset: AKTIF },
+  // Dibatalkan (asetnya non-aktif + ada batal_hibah_masuk) — HARUS dibuang.
+  { id: 4, jenis: 'hibah_masuk', periode: '2026-S1', nilai: 9000, skpd_tujuan: 28, aset_id: 'a4', aset: { status: 'dihapus', kode: '1.3.2.10.01.02.002' } },
+  { id: 5, jenis: 'pengadaan', periode: '2026-S1', nilai: 50, skpd_tujuan: 28, aset_id: 'a5', aset: AKTIF },
+  // Baris pembatal itu sendiri (dibaca alat void lewat in('jenis', VOID_JENIS)).
+  { id: 6, jenis: 'batal_hibah_masuk', periode: '2026-S1', nilai: 0, skpd_tujuan: null, aset_id: 'a4', aset: null },
+]
+
+describe('rekap_perolehan', () => {
+  it('menjumlah per cara & membuang transaksi yang dibatalkan (aturan Laporan Perolehan)', async () => {
+    const r = await jalankanToolAdmin(klienPerolehan(LEDGER, SKPD), 'rekap_perolehan', { periode: '2026' })
+    expect(r).toContain('Hibah: 3 barang · Rp700')          // 100+200+400, BUKAN +9000
+    expect(r).toContain('Pengadaan: 1 barang · Rp50')
+    expect(r).toContain('TOTAL: 4 barang · Rp750')
+    expect(r).toContain('1 transaksi sudah dibuang karena dibatalkan/duplikat')
+  })
+  it('periode tahun = S1+S2; satu semester = hanya semester itu', async () => {
+    const s1 = await jalankanToolAdmin(klienPerolehan(LEDGER, SKPD), 'rekap_perolehan', { periode: '2026-S1', cara: 'hibah_masuk' })
+    expect(s1).toContain('Hibah: 1 barang · Rp100')
+  })
+  it('skpd_id membawa sub-unitnya', async () => {
+    const r = await jalankanToolAdmin(klienPerolehan(LEDGER, SKPD), 'rekap_perolehan', { periode: '2026', cara: 'hibah_masuk', skpd_id: 28 })
+    expect(r).toContain('beserta 1 unit di bawahnya')
+    expect(r).toContain('Hibah: 2 barang · Rp300')          // a1 (BKAD) + a2 (Bidang Aset), tanpa Dinas Lain
+  })
+  it('per_skpd se-kabupaten menggabungkan unit ke induk, urut nilai terbesar', async () => {
+    const r = await jalankanToolAdmin(klienPerolehan(LEDGER, SKPD), 'rekap_perolehan', { periode: '2026', cara: 'hibah_masuk', per_skpd: true })
+    expect(r).toMatch(/- Dinas Lain: 1 barang · Rp400[\s\S]*- BKAD: 2 barang · Rp300/)
+    expect(r).not.toContain('Bidang Aset')
+  })
+  it('per_golongan mengelompokkan ke level-3 dari kode aset', async () => {
+    const r = await jalankanToolAdmin(klienPerolehan(LEDGER, SKPD), 'rekap_perolehan', { periode: '2026', cara: 'hibah_masuk', per_golongan: true })
+    expect(r).toMatch(/- 1\.3\.2 .*: 2 barang · Rp500/)
+    expect(r).toMatch(/- 1\.3\.1 .*: 1 barang · Rp200/)
+  })
+  it('masukan ngawur ditolak sebelum menyentuh DB', async () => {
+    const boom = new Proxy({}, { get() { throw new Error('DB tersentuh') } }) as never
+    expect(await jalankanToolAdmin(boom, 'rekap_perolehan', { periode: 'tahun ini' })).toMatch(/^GAGAL:/)
+    expect(await jalankanToolAdmin(boom, 'rekap_perolehan', { cara: 'penghapusan_sebab_lain' })).toMatch(/^GAGAL:/)
+    expect(await jalankanToolAdmin(boom, 'rekap_perolehan', { skpd_id: 'x' })).toMatch(/^GAGAL:/)
+  })
+  it('kegagalan database menjadi GAGAL:, BUKAN "tidak ada perolehan"', async () => {
+    const rusak = { from: () => { const b: Record<string, unknown> = {}; for (const m of ['select', 'eq', 'in', 'gt', 'order', 'limit']) b[m] = () => b
+      b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: null, error: { message: 'statement timeout' } }).then(ok); return b } } as never
+    const r = await jalankanToolAdmin(rusak, 'rekap_perolehan', { periode: '2026' })
+    expect(r).toMatch(/^GAGAL:/)
+    expect(r).toContain('statement timeout')
+  })
+  it('hasil kosong dinyatakan kosong', async () => {
+    expect(await jalankanToolAdmin(klienPerolehan([], SKPD), 'rekap_perolehan', { periode: '2030' })).toMatch(/^Tidak ada perolehan/)
+  })
+  it('memakai JENIS_PEROLEHAN dari lib/bmd (satu sumber), bukan daftar sendiri', () => {
+    const src = readFileSync(join(__dirname, 'toolsAdmin.ts'), 'utf8')
+    expect(src).toMatch(/JENIS_PEROLEHAN/)
+    expect(src).not.toMatch(/'hasil_inventarisasi'/)
+  })
+})

@@ -12,9 +12,12 @@
 // Gerbang SESUNGGUHNYA ada di route (penggunaIstimewa + peran admin) dan di
 // dispatch-nya; alat-alat ini tak memeriksa siapa pemanggilnya.
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { GOLONGAN_REKAP } from '@/lib/bmd'
+import { GOLONGAN_REKAP, JENIS_PEROLEHAN, CARA_PEROLEHAN_LABEL } from '@/lib/bmd'
 import { formatRupiah2 } from '@/lib/export'
 import { rekapPerGolongan, zeroRekap, type RekapRpcRow } from '@/lib/rekapBmd'
+import { paginate } from '@/shared/db/paginate'
+import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 
 const MAKS_BARIS = 30
 const rp = (n: number | null | undefined) => formatRupiah2(n)
@@ -77,6 +80,29 @@ export const TOOL_DEFS_ADMIN = [
     },
   },
   {
+    name: 'rekap_perolehan',
+    description:
+      'Rekap PEROLEHAN barang per CARA PEROLEHAN (Pengadaan, Hibah, Tukar Menukar, Hasil Inventarisasi, Perolehan Lainnya) '
+      + 'pada satu periode: jumlah barang & total nilai perolehan, opsional dirinci per SKPD dan/atau per golongan. '
+      + 'Dibaca dari transaksi perolehan (ledger) dgn aturan YANG SAMA persis dgn menu Pelaporan → Laporan Perolehan '
+      + '(transaksi yang dibatalkan/duplikat sudah dibuang), jadi angkanya sama dgn laporan resmi. '
+      + 'Pakai untuk "berapa nilai hibah 2026", "pengadaan tahun ini berapa", "SKPD mana yang paling banyak menerima hibah", '
+      + '"hibah berupa apa saja". Tanpa `cara` = keempat-lima cara sekaligus. '
+      + 'BEDA dari rekap_aset (posisi aset aktif HARI INI per golongan): barang hibah yang kemudian dihapus tetap tercatat sbg perolehan di sini. '
+      + 'Termin pekerjaan konstruksi (KDP) TIDAK termasuk. Untuk SKPD tertentu: cari_skpd dulu.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        periode: { type: 'string', description: 'TAHUN ("2026" = S1+S2) atau semester ("2026-S1"). Kosongkan untuk semua periode yang ada.' },
+        cara: { type: 'string', description: `Opsional. Salah satu: ${JENIS_PEROLEHAN.join(', ')}. Kosongkan untuk semua cara.` },
+        skpd_id: { type: 'number', description: 'Opsional. Batasi ke satu SKPD beserta unit di bawahnya (ambil dari cari_skpd).' },
+        per_skpd: { type: 'boolean', description: 'Opsional. true = rincikan per SKPD (se-kabupaten: SKPD induk; dengan skpd_id: per unit).' },
+        per_golongan: { type: 'boolean', description: 'Opsional. true = rincikan per golongan barang (Tanah, Gedung, dst.).' },
+      },
+      required: [] as string[],
+    },
+  },
+  {
     name: 'sebaran_golongan',
     description:
       'SKPD MANA SAJA yang memiliki aset AKTIF suatu golongan, berikut jumlah unit & nilai perolehan per SKPD induk '
@@ -126,6 +152,7 @@ export async function jalankanToolAdmin(sb: SupabaseClient, nama: string, input:
       case 'cari_skpd': return await cariSkpd(sb, teks(input.kata_kunci))
       case 'rekap_bmd_skpd': return await rekapBmdSkpd(sb, teks(input.periode), input.skpd_id, teks(input.komptabel))
       case 'hitung_barang': return await hitungBarang(sb, teks(input.kata_kunci), teks(input.kode), input.skpd_id, input.per_skpd === true)
+      case 'rekap_perolehan': return await rekapPerolehan(sb, teks(input.periode), teks(input.cara), input.skpd_id, input.per_skpd === true, input.per_golongan === true)
       case 'sebaran_golongan': return await sebaranGolongan(sb, teks(input.golongan))
       case 'kartu_pending': return await kartuPending(sb)
       case 'status_tahun_buku': return await statusTahunBuku(sb)
@@ -215,6 +242,142 @@ async function rekapBmdSkpd(sb: SupabaseClient, periode: string, skpdId: unknown
     `TOTAL: ${fmtN(tot.kuantitas)} unit · perolehan Rp${rp(tot.perolehan)} · akumulasi Rp${rp(tot.akumulasi)} · beban Rp${rp(tot.beban)} · nilai buku Rp${rp(tot.nilaiBuku)}`,
     'Catatan: golongan yang tidak disusutkan (Tanah, ATL, KDP) nilai bukunya = nilai perolehan.',
   ].join('\n')
+}
+
+type BarisPerolehan = {
+  id: number; jenis: string; nilai: number | null; skpd_tujuan: number | null; aset_id: string | null
+  aset: { status: string; kode: string } | null
+}
+
+/** Jaring pengaman: jumlah baris ledger perolehan satu permintaan. 1 tahun ≈ 2 rb
+ *  baris hari ini; tembus angka ini = jangan menjumlah potongan, tolak. */
+const MAKS_BARIS_PEROLEHAN = 30_000
+
+async function rekapPerolehan(
+  sb: SupabaseClient, periode: string, cara: string, skpdId: unknown, perSkpd: boolean, perGolongan: boolean,
+): Promise<string> {
+  if (periode && !/^\d{4}(-S[12])?$/.test(periode)) return 'GAGAL: periode harus berformat TAHUN (2026) atau TAHUN-S1 / TAHUN-S2 (2026-S1).'
+  if (cara && !(JENIS_PEROLEHAN as readonly string[]).includes(cara)) {
+    return `GAGAL: cara harus salah satu dari ${JENIS_PEROLEHAN.join(', ')}.`
+  }
+  const jenisList: string[] = cara ? [cara] : [...JENIS_PEROLEHAN]
+
+  let scope: Set<number> | null = null
+  let semua: SkpdRow[] = []
+  let label = 'SELURUH KABUPATEN'
+  const punyaSkpd = skpdId != null && skpdId !== ''
+  if (punyaSkpd) {
+    const akar = Number(skpdId)
+    if (!Number.isInteger(akar)) return 'GAGAL: skpd_id harus angka bulat (ambil dari cari_skpd).'
+    semua = await muatSkpd(sb)
+    const ada = semua.find(x => x.id === akar)
+    if (!ada) return `GAGAL: SKPD dengan id ${akar} tidak ditemukan.`
+    const ids = turunanSkpd(semua, akar)
+    scope = new Set(ids)
+    label = `${ada.nama}${ids.length > 1 ? ` beserta ${ids.length - 1} unit di bawahnya` : ''}`
+  } else if (perSkpd) {
+    semua = await muatSkpd(sb)
+  }
+
+  // ── Tarik baris ledger, per jenis, keyset ──────────────────────────────────
+  // Bentuk query SAMA dgn LaporanPerolehan (`jenis` = eq + urut id) supaya ikut
+  // dilayani partial index idx_trx_perolehan_id (20260820_03). SKPD & golongan
+  // disaring di MEMORI: barisnya hanya ribuan, dan menyaring di server lewat
+  // `skpd_tujuan.in.(…694 id…)` adalah bentuk yang berkali-kali jadi sebab timeout.
+  const per = periodeDiminta(periode)
+  const baris: BarisPerolehan[] = []
+  for (const jenis of jenisList) {
+    const dapat = await paginate<number, BarisPerolehan>(`transaksi ${jenis}`, kursor => {
+      let q = sb.from('transaksi_bmd')
+        .select('id,jenis,nilai,skpd_tujuan,aset_id,aset:aset_id(status,kode)')
+        .eq('jenis', jenis)
+      if (per.length === 1) q = q.eq('periode', per[0])
+      else if (per.length > 1) q = q.in('periode', per)
+      if (kursor !== null) q = q.gt('id', kursor)
+      return q.order('id').limit(1000) as unknown as PromiseLike<{ data: BarisPerolehan[] | null; error: { message: string } | null }>
+    })
+    baris.push(...dapat)
+    if (baris.length > MAKS_BARIS_PEROLEHAN) {
+      return `GAGAL: perolehan yang cocok lebih dari ${MAKS_BARIS_PEROLEHAN} transaksi — persempit periode atau cara agar angkanya tidak terpotong.`
+    }
+  }
+
+  // ── Buang yang dibatalkan/duplikat — aturan Laporan Perolehan ─────────────
+  // Aset berstatus `aktif` PASTI tak ter-void (lihat komentar di LaporanPerolehan),
+  // jadi hanya yang non-aktif yang perlu ditanyakan. `aset` null (tak terbaca)
+  // tetap ditanyakan: fail-closed. fetchVoidedAsetIds MELEMPAR kalau gagal →
+  // jatuh ke "GAGAL:", TIDAK ke angka tanpa saringan.
+  const perluDicek = [...new Set(baris.filter(r => r.aset_id && r.aset?.status !== 'aktif').map(r => r.aset_id as string))]
+  const voided = perluDicek.length ? await fetchVoidedAsetIds(sb, [], perluDicek) : new Set<string>()
+  const hidup = baris.filter(r => !(r.aset_id && voided.has(r.aset_id)))
+  const dibuang = baris.length - hidup.length
+
+  const dalam = scope ? hidup.filter(r => r.skpd_tujuan != null && scope.has(r.skpd_tujuan)) : hidup
+  const cari = `${periode || 'semua periode'}${cara ? ` · ${CARA_PEROLEHAN_LABEL[cara] || cara}` : ''}`
+  if (dalam.length === 0) {
+    return `Tidak ada perolehan (${cari}) di ${label}${dibuang ? ` (${dibuang} transaksi dibuang karena dibatalkan/duplikat)` : ''}.`
+  }
+
+  const nilai = (r: BarisPerolehan) => Number(r.nilai) || 0
+  const totN = dalam.length
+  const totRp = dalam.reduce((t, r) => t + nilai(r), 0)
+
+  const perCara = new Map<string, { n: number; rp: number }>()
+  for (const r of dalam) {
+    const c = perCara.get(r.jenis) || { n: 0, rp: 0 }
+    c.n += 1; c.rp += nilai(r)
+    perCara.set(r.jenis, c)
+  }
+  const keluar: string[] = [
+    `Perolehan BMD · ${cari} · ${label} (sumber sama dgn Laporan Perolehan):`,
+    ...JENIS_PEROLEHAN.filter(j => perCara.has(j)).map(j => {
+      const c = perCara.get(j) as { n: number; rp: number }
+      return `- ${CARA_PEROLEHAN_LABEL[j] || j}: ${fmtN(c.n)} barang · Rp${rp(c.rp)}`
+    }),
+    perCara.size > 1 ? `TOTAL: ${fmtN(totN)} barang · Rp${rp(totRp)}` : '',
+  ]
+
+  if (perGolongan) {
+    const g = new Map<string, { n: number; rp: number }>()
+    for (const r of dalam) {
+      const kd = r.aset?.kode ? r.aset.kode.split('.').slice(0, 3).join('.') : '(kode tak terbaca)'
+      const c = g.get(kd) || { n: 0, rp: 0 }
+      c.n += 1; c.rp += nilai(r)
+      g.set(kd, c)
+    }
+    keluar.push('Per golongan:', ...[...g.entries()].sort((a, b) => b[1].rp - a[1].rp)
+      .map(([kd, c]) => `- ${kd} ${GOL_URAIAN[kd] || ''}: ${fmtN(c.n)} barang · Rp${rp(c.rp)}`))
+  }
+
+  if (perSkpd) {
+    const byId = new Map(semua.map(x => [x.id, x]))
+    const kunci = (id: number): number => {
+      if (punyaSkpd) return id
+      let s = byId.get(id)
+      for (let i = 0; s && s.parent_id != null && i < 10; i++) s = byId.get(s.parent_id)
+      return s ? s.id : id
+    }
+    const ps = new Map<number, { n: number; rp: number }>()
+    for (const r of dalam) {
+      if (r.skpd_tujuan == null) continue
+      const k = kunci(r.skpd_tujuan)
+      const c = ps.get(k) || { n: 0, rp: 0 }
+      c.n += 1; c.rp += nilai(r)
+      ps.set(k, c)
+    }
+    const urut = [...ps.entries()].sort((a, b) => b[1].rp - a[1].rp)
+    keluar.push(
+      `Per ${punyaSkpd ? 'unit' : 'SKPD induk'} (${urut.length} SKPD, urut nilai terbesar):`,
+      ...urut.slice(0, MAKS_BARIS).map(([id, c]) => `- ${byId.get(id)?.nama || `SKPD ${id}`}: ${fmtN(c.n)} barang · Rp${rp(c.rp)}`),
+      urut.length > MAKS_BARIS ? `(Terpotong di ${MAKS_BARIS} — masih ada ${urut.length - MAKS_BARIS} lainnya.)` : '',
+    )
+  }
+
+  keluar.push(
+    `Catatan: satu transaksi = satu barang; nilai = nilai perolehan saat dicatat. ${dibuang ? `${dibuang} transaksi sudah dibuang karena dibatalkan/duplikat. ` : ''}`
+    + 'Angka ini BEDA dari Dashboard/rekap_aset (aset aktif hari ini): barang yang kelak dihapus tetap terhitung di sini. Termin konstruksi (KDP) tidak termasuk.',
+  )
+  return keluar.filter(Boolean).join('\n')
 }
 
 type BarisHitung = { kode: string; uraian: string | null; skpd_id: number | null; jumlah: number; nilai_perolehan: number }

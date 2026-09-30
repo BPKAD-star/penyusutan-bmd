@@ -8674,3 +8674,36 @@ akun, bukan id pegawai; env baru hanya berlaku sesudah redeploy.)
 - **Deploy-ordering bebas** (fungsi baru; tanpa migrasi alat cuma mengembalikan
   `GAGAL:`). ⛔ Belum ada alat serupa untuk pengguna NON-istimewa — `cari_barang`
   mereka tetap maksimal 30 baris.
+
+### Asisten AI: alat `rekap_perolehan` — SEMUA cara perolehan (2026-09-30)
+
+Lanjutan `hitung_barang`. Pemicu: "total nilai perolehan hibah 2026?" ditolak
+karena tak ada alat yang menyaring cara perolehan. Permintaan user: semua cara
+perolehan dulu; **Pengelolaan, LRA, KIR menyusul** (belum dikerjakan).
+
+- **Sumbernya LEDGER (`transaksi_bmd`), bukan `aset`** — aturan yang sama dgn
+  Laporan Perolehan: lima jenis dari `JENIS_PEROLEHAN` (lib/bmd.ts, satu sumber),
+  per periode, lalu transaksi yang dibatalkan/duplikat DIBUANG lewat
+  `fetchVoidedAsetIds` (dipakai ULANG, bukan disalin ke SQL — salinan ketiga aturan
+  void adalah tempat bug berikutnya). Tanpa saringan void, hibah 2026 = Rp1,75 T;
+  yang benar Rp333,7 M. Pasangan `aset.status='aktif'` (Dashboard) BEDA definisi:
+  barang hibah yang kelak dihapus tetap perolehan di sini — jawaban alat
+  menyebut ini terang-terangan supaya dua angka tak dikira bug.
+- **Diverifikasi ke DB dgn aturan void yang sama:** hibah 2026 = 1.247 barang /
+  Rp333.697.597.020 (= kartu Dashboard); pengadaan 463 / Rp5.665.045.138 (=
+  kartu Dashboard); hasil inventarisasi 1 / Rp62.283.593.657. Baris mentah sebelum
+  void: 1.325 / 525 / 5.
+- **Tanpa RPC/migrasi baru.** Volume ±1.900 baris ledger per tahun → ditarik keyset
+  (`paginate`, bentuk query sama dgn LaporanPerolehan sehingga ikut
+  `idx_trx_perolehan_id`), SKPD & golongan disaring/dikelompokkan di MEMORI
+  (menyaring `skpd_tujuan.in.(…694 id…)` di server adalah bentuk yang berkali-kali
+  jadi sebab timeout). Tembus 30.000 baris → DITOLAK, bukan dipotong.
+- `skpd_tujuan` = SKPD penerima (terisi 100% di ketiga jenis yang ada datanya).
+  `per_skpd`: se-kab digabung ke SKPD induk; dengan `skpd_id` dirinci per unit.
+  `per_golongan`: tiga segmen pertama `aset.kode` (posisi TERKINI barang, bukan
+  saat diperoleh).
+- **Termin konstruksi (`akumulasi_kdp`) TIDAK ikut**, sama dgn Laporan Perolehan
+  (yang membaca satu `jenis` per menu). Di Rekonsiliasi termin KDP dihitung
+  sbg Pengadaan — kalau pertanyaan "total pengadaan" perlu KDP, itu alat lain.
+- Dikunci lib/chatbot/istimewa.test.ts dgn klien palsu yang MENGHORMATI filter;
+  **diuji merah dulu** (saringan void dimatikan → 5 tes gagal).
