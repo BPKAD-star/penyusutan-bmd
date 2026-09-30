@@ -104,18 +104,24 @@ export type InvSnapshot = {
 /** Bagian A–D & J: "Sesuai" atau "Tidak Sesuai, sebutkan yang seharusnya". */
 export type SesuaiField = { sesuai: boolean; seharusnya?: string }
 
-/** Alasan barang "Tidak ada" (Gedung & Bangunan) — keputusan user 2026-10-01. */
+/** Alasan barang "Tidak ada" (Gedung & Bangunan, JIJ) — keputusan user 2026-10-01. */
 export type SebabTidakAda =
   | 'force_majeure' | 'dibongkar_baru' | 'rehab_bangunan_baru'
   | 'digabung' | 'beberapa_register'
 
-export const SEBAB_TIDAK_ADA: { v: SebabTidakAda; l: string; lhi: string }[] = [
-  { v: 'force_majeure', l: 'Force majeure (bencana, kebakaran, dsb.)', lhi: 'III.B.2' },
-  { v: 'dibongkar_baru', l: 'Dibongkar total dan sudah ada bangunan baru', lhi: 'III.B.2' },
-  { v: 'rehab_bangunan_baru', l: 'Direhab dan jadi bangunan baru', lhi: 'III.B.3' },
-  { v: 'digabung', l: 'Digabung dengan bangunan lain', lhi: 'III.B.3' },
-  { v: 'beberapa_register', l: 'Seharusnya ada beberapa register', lhi: 'III.B.8' },
+/** `l(noun)` — label mengikuti jenis barangnya (Gedung: "bangunan"; JIJ:
+ *  "jalan/jaringan/irigasi"), lihat `LkiConfig.sebabNoun`. */
+export const SEBAB_TIDAK_ADA: { v: SebabTidakAda; l: (noun: string) => string; lhi: string }[] = [
+  { v: 'force_majeure', l: () => 'Force majeure (bencana, kebakaran, dsb.)', lhi: 'III.B.2' },
+  { v: 'dibongkar_baru', l: n => `Dibongkar total dan sudah ada ${n} baru`, lhi: 'III.B.2' },
+  { v: 'rehab_bangunan_baru', l: n => `Direhab dan jadi ${n} baru`, lhi: 'III.B.3' },
+  { v: 'digabung', l: n => `Digabung dengan ${n} lain`, lhi: 'III.B.3' },
+  { v: 'beberapa_register', l: () => 'Seharusnya ada beberapa register', lhi: 'III.B.8' },
 ]
+
+/** Label satu sebab; `noun` bawaan "bangunan" (Gedung & Bangunan). */
+export const labelSebab = (v: SebabTidakAda | undefined, noun = 'bangunan') =>
+  SEBAB_TIDAK_ADA.find(o => o.v === v)?.l(noun)
 
 /** Sebab yang mewajibkan memilih barang lain (anak / induk). */
 export const SEBAB_BUTUH_RELASI: SebabTidakAda[] = ['rehab_bangunan_baru', 'digabung']
@@ -272,8 +278,12 @@ export type LkiConfig = {
   /** G pecah jadi Hilang vs Tidak ditemukan (P&M, ATL, ATB); selain itu digabung. */
   hilangVsTidakDitemukan: boolean
   /** G: "Tidak ada" ditanyai sebabnya (force majeure, dibongkar, direhab, dst.)
-   *  — Gedung & Bangunan saja. Lihat `SEBAB_TIDAK_ADA`. */
+   *  — Gedung & Bangunan dan JIJ. Lihat `SEBAB_TIDAK_ADA`. */
   sebabTidakAda: boolean
+  /** Kata benda utk label sebab & pesan ("bangunan" / "jalan/jaringan/irigasi"). */
+  sebabNoun: string
+  /** Awalan kotak nama pecahan ("Gedung Bangunan" → "Nama Gedung Bangunan 1"). */
+  sebabNama: string
   /** Nama pemakai + BAST pemakaian + SIP (rumah negara — Gedung & Bangunan). */
   pemakaiRumahNegara: boolean
   /** Bagian N "berdiri di atas tanah milik" — Gedung & Bangunan dan JIJ. */
@@ -322,7 +332,7 @@ export const LKI_MATRIX = {
 const ada = (daftar: readonly string[], golongan: string) => daftar.includes(golongan)
 
 type OverrideConfig = Partial<
-  Pick<LkiConfig, 'jijTeknis' | 'hilangVsTidakDitemukan' | 'pemakaiRumahNegara' | 'tanahMilikLabel' | 'sebabTidakAda'>
+  Pick<LkiConfig, 'jijTeknis' | 'hilangVsTidakDitemukan' | 'pemakaiRumahNegara' | 'tanahMilikLabel' | 'sebabTidakAda' | 'sebabNoun' | 'sebabNama'>
 >
 
 function konfig(golongan: string, format: string, label: string, override: OverrideConfig = {}): LkiConfig {
@@ -337,6 +347,7 @@ function konfig(golongan: string, format: string, label: string, override: Overr
     tanahMilikLabel: 'Barang di atas tanah milik',
     titikKoordinat: true,
     jijTeknis: false, hilangVsTidakDitemukan: false, pemakaiRumahNegara: false, sebabTidakAda: false,
+    sebabNoun: 'bangunan', sebabNama: 'Gedung Bangunan',
     ...override,
   }
 }
@@ -364,7 +375,9 @@ export const LKI_CONFIG: Record<string, LkiConfig> = {
     tanahMilikLabel: 'Gedung dan Bangunan di atas tanah milik',
   }),
   '1.3.4': konfig('1.3.4', 'III.A.4', 'Jalan, Jaringan dan Irigasi', {
-    jijTeknis: true, tanahMilikLabel: 'Jalan di atas tanah milik',
+    jijTeknis: true, sebabTidakAda: true,
+    sebabNoun: 'jalan/jaringan/irigasi', sebabNama: 'Jalan/Jaringan/Irigasi',
+    tanahMilikLabel: 'Jalan di atas tanah milik',
   }),
   '1.3.5': konfig('1.3.5', 'III.A.5', 'Aset Tetap Lainnya', { hilangVsTidakDitemukan: true }),
   '1.3.6': konfig('1.3.6', 'III.A.6', 'Konstruksi Dalam Pengerjaan', { hilangVsTidakDitemukan: true }),
@@ -460,6 +473,7 @@ export function lhiTidakAda(sebab: SebabTidakAda | undefined): LhiKode {
   return (SEBAB_TIDAK_ADA.find(x => x.v === sebab)?.lhi as LhiKode | undefined) ?? 'III.B.2'
 }
 
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const tidakSesuai = (f: SesuaiField | undefined) => f != null && f.sesuai === false
 
 /**
@@ -535,7 +549,7 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
  * Dipakai form (pesan hidup) DAN penjaga tombol Simpan — satu aturan, dua pintu.
  */
 export function kekuranganLki(
-  b: Pick<InvBaris, 'aset_id' | 'jawaban'> & { foto_paths?: string[]; sebabTidakAda?: boolean },
+  b: Pick<InvBaris, 'aset_id' | 'jawaban'> & { foto_paths?: string[]; sebabTidakAda?: boolean; sebabNoun?: string },
 ): string[] {
   const j = b.jawaban || {}
   const kurang: string[] = []
@@ -554,11 +568,12 @@ export function kekuranganLki(
   if (j.keberadaan === 'tidak_ditemukan' && b.sebabTidakAda) {
     if (!j.sebab_tidak_ada) kurang.push('Sebab barang tidak ada (G)')
     else if (SEBAB_BUTUH_RELASI.includes(j.sebab_tidak_ada) && !j.sebab_relasi?.aset_id) {
-      kurang.push(j.sebab_tidak_ada === 'digabung' ? 'Bangunan induk tempat digabung (G)' : 'Bangunan baru hasil rehab (G)')
+      const n = cap(b.sebabNoun || 'bangunan')
+      kurang.push(j.sebab_tidak_ada === 'digabung' ? `${n} induk tempat digabung (G)` : `${n} baru hasil rehab (G)`)
     } else if (j.sebab_tidak_ada === 'beberapa_register') {
       const nama = (j.sebab_pecahan || []).map(n => n.trim())
-      if (nama.length < 2) kurang.push('Minimal 2 bangunan hasil pemecahan (G)')
-      else if (nama.some(n => !n)) kurang.push('Nama bangunan hasil pemecahan (G) ada yang kosong')
+      if (nama.length < 2) kurang.push(`Minimal 2 ${b.sebabNoun || 'bangunan'} hasil pemecahan (G)`)
+      else if (nama.some(n => !n)) kurang.push(`Nama ${b.sebabNoun || 'bangunan'} hasil pemecahan (G) ada yang kosong`)
     }
   }
 

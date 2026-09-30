@@ -9,7 +9,7 @@
 // berkelompok (mis. "Data Awal/Induk", "Sebelum/Setelah Inventarisasi"), yang
 // dirender sbg header dua baris lewat properti `grup`.
 import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventarisasi'
-import { normalKondisi, SEBAB_TIDAK_ADA } from '@/lib/inventarisasi'
+import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
 
 export type KolomLhi = {
   key: string
@@ -290,6 +290,8 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
   const s = b.snapshot || {}
   const j = b.jawaban || {}
   const baru = j.baru || {}
+  // Kata benda utk teks sebab "tidak ada" — ikut golongan barangnya.
+  const noun = konfigLki((s.kode || '').split('.').slice(0, 3).join('.')).sebabNoun
 
   // Format III.B.11 — barang belum tercatat: seluruh data dari input manual.
   if (k === 'III.B.11') {
@@ -357,8 +359,8 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
       const indukNibar = indukDigabung ? (indukDigabung.nibar || '') : rehab ? (s.nibar || '') : (j.induk?.nibar || '')
       const indukKode = indukDigabung ? (indukDigabung.kode_barang || '') : rehab ? (s.kode || '') : (j.induk?.kode_barang || '')
       const indukNama = indukDigabung ? (indukDigabung.nama_barang || '') : rehab ? (s.uraian_barang || '') : (j.induk?.nama_barang || '')
-      const catatSebab = dariSebab === 'digabung' ? 'Tidak ada: digabung dengan bangunan lain'
-        : rehab ? `Tidak ada: direhab jadi bangunan baru — anak: ${rel?.nibar || '—'} ${rel?.nama_barang || ''}`.trim()
+      const catatSebab = dariSebab === 'digabung' ? `Tidak ada: ${labelSebab('digabung', noun)}`
+        : rehab ? `Tidak ada: ${labelSebab('rehab_bangunan_baru', noun)} — anak: ${rel?.nibar || '—'} ${rel?.nama_barang || ''}`.trim()
         : ''
       return {
         ...inti,
@@ -472,7 +474,7 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
       return {
         ...inti,
         keterangan: [
-          j.keberadaan === 'tidak_ditemukan' ? sebabTeks(j) : '', j.keterangan,
+          j.keberadaan === 'tidak_ditemukan' ? sebabTeks(j, noun) : '', j.keterangan,
         ].filter(Boolean).join(' — '),
       }
   }
@@ -484,8 +486,7 @@ export function totalNilaiLhi(rows: Record<string, string | number>[]): number {
 }
 
 /** Teks sebab "tidak ada" utk kolom Keterangan III.B.2 (kosong utk lembar lama). */
-function sebabTeks(j: InvJawaban): string {
-  const x = SEBAB_TIDAK_ADA.find(o => o.v === j.sebab_tidak_ada)
-  if (!x) return ''
-  return `Tidak ada: ${x.l}`
+function sebabTeks(j: InvJawaban, noun: string): string {
+  const l = labelSebab(j.sebab_tidak_ada, noun)
+  return l ? `Tidak ada: ${l}` : ''
 }

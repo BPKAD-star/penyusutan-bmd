@@ -218,7 +218,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
     // Penjaga SAMA dgn daftar kekurangan di bawah form — satu aturan
     // (`kekuranganLki`), dua pintu. Tombolnya sengaja TIDAK dimatikan: tombol
     // mati tanpa keterangan adalah kegagalan senyap.
-    const k = kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto, sebabTidakAda: config.sebabTidakAda })
+    const k = kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto, sebabTidakAda: config.sebabTidakAda, sebabNoun: config.sebabNoun })
     if (k.length > 0) { setErr(`Belum lengkap: ${k.join(', ')}.`); return }
     setSaving(true); setErr('')
     try { await onSimpan(j, foto); onTutup() }
@@ -229,7 +229,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   // Pratinjau LHI: fungsi klasifikasi yang SAMA dgn laporan, jadi isi laporan
   // tak mungkin berbeda dari yang terlihat di sini.
   const lhi = klasifikasiLhi({ ...baris, jawaban: j })
-  const kurang = readOnly ? [] : kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto, sebabTidakAda: config.sebabTidakAda })
+  const kurang = readOnly ? [] : kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto, sebabTidakAda: config.sebabTidakAda, sebabNoun: config.sebabNoun })
   const atribusiVal = atribusiTampil(j.atribusi, isBaru)
   const digunakanSendiri = digunakanSendiriTampil(j.penggunaan, isBaru)
   // Titik Koordinat (O): peta di dalam "Tidak Sesuai" berangkat dari titik
@@ -632,20 +632,20 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                         <label className="flex items-center gap-1.5 cursor-pointer">
                           <input type="radio" checked={j.sebab_tidak_ada === o.v} disabled={readOnly}
                             onChange={() => setSebab(o.v)} />
-                          {o.l}
+                          {o.l(config.sebabNoun)}
                           <span className="text-[10px] text-gray-400">→ {o.lhi}</span>
                         </label>
                         {j.sebab_tidak_ada === o.v && SEBAB_BUTUH_RELASI.includes(o.v) && (
                           <div className="ml-5 mt-1.5 space-y-1.5">
                             <p className="text-[11px] text-gray-500">
                               {o.v === 'digabung'
-                                ? <>Pilih <b>bangunan induk</b> tempat barang ini digabung.</>
-                                : <>Pilih <b>bangunan baru (anak)</b> hasil rehab barang ini.</>}
+                                ? <>Pilih <b>{config.sebabNoun} induk</b> tempat barang ini digabung.</>
+                                : <>Pilih <b>{config.sebabNoun} baru (anak)</b> hasil rehab barang ini.</>}
                               {' '}Dicari <b>hanya di SKPD lembar ini</b>, golongan <b>{golongan}</b>.
                             </p>
                             <AsetPicker selected={relasiAset} skpdId={skpdId} kodePrefix={golongan}
                               onSelect={a => {
-                                if (a && a.id === baris.aset_id) { setErr('Bangunan yang dipilih tidak boleh barang ini sendiri.'); return }
+                                if (a && a.id === baris.aset_id) { setErr('Barang yang dipilih tidak boleh barang ini sendiri.'); return }
                                 setErr('')
                                 setRelasiAset(a)
                                 set('sebab_relasi', a ? {
@@ -663,13 +663,13 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                         {j.sebab_tidak_ada === o.v && o.v === 'beberapa_register' && (
                           <div className="ml-5 mt-1.5 space-y-1.5">
                             <p className="text-[11px] text-gray-500">
-                              Isi nama tiap bangunan yang seharusnya tercatat sendiri. Tindak lanjut:
+                              Isi nama tiap {config.sebabNoun} yang seharusnya tercatat sendiri. Tindak lanjut:
                               Pembukuan → Koreksi → Pemecahan Barang.
                             </p>
                             {(j.sebab_pecahan || []).map((n, i) => (
                               <div key={i} className="flex items-center gap-2">
                                 <input className="select-filter w-full max-w-md" disabled={readOnly}
-                                  placeholder={`Nama Gedung Bangunan ${i + 1}`}
+                                  placeholder={`Nama ${config.sebabNama} ${i + 1}`}
                                   value={n}
                                   onChange={e => setPecahan(a => a.map((x, ix) => ix === i ? e.target.value : x))} />
                                 {!readOnly && (j.sebab_pecahan || []).length > 2 && (
@@ -681,7 +681,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                             {!readOnly && (
                               <button type="button" className="text-teal text-[11px] font-medium hover:underline"
                                 onClick={() => setPecahan(a => [...a, ''])}>
-                                + Tambah Gedung Bangunan
+                                + Tambah {config.sebabNama}
                               </button>
                             )}
                           </div>

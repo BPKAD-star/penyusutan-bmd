@@ -8831,7 +8831,8 @@ Pengelolaan → LRA → KIR.
 
 ## LKI Gedung & Bangunan: "Tidak ada karena..." menentukan laporan LHI (2026-10-01)
 
-Bagian G (Keberadaan) untuk **1.3.3 saja** (`LkiConfig.sebabTidakAda`) menanyakan
+Bagian G (Keberadaan) untuk **1.3.3 & 1.3.4 (JIJ)** (`LkiConfig.sebabTidakAda`;
+label & pesan mengikuti `sebabNoun`: "bangunan" / "jalan/jaringan/irigasi") menanyakan
 sebab begitu "Tidak ada / tidak ditemukan" dipilih. Sebab menentukan LHI
 (`SEBAB_TIDAK_ADA`, satu sumber, `lhiTidakAda()`): force majeure · dibongkar total
 & sudah ada bangunan baru → **III.B.2**; direhab jadi bangunan baru ·
@@ -8843,4 +8844,4 @@ di menu Koreksi). Opsi "Lainnya" sempat ada & DICABUT (keputusan user). "Hilang 
   seperti dulu; sebab baru **wajib** hanya saat lembar disimpan ulang (`kekuranganLki`).
 - Di III.B.3, sebab *rehab* menjadikan barang ini SENDIRI sbg induk & anaknya
   ditulis di Keterangan; sebab *digabung* memakai pilihan petugas sbg induk.
-- Dikunci lib/inventarisasi.test.ts. Golongan lain (mis. JIJ) belum ikut.
+- Dikunci lib/inventarisasi.test.ts. Golongan lain belum ikut — cukup nyalakan `sebabTidakAda` + `sebabNoun`/`sebabNama` di `LKI_CONFIG`.

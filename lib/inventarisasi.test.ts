@@ -181,9 +181,11 @@ describe('G — "Tidak ada karena..." (Gedung & Bangunan, 2026-10-01)', () => {
   const tdk = (sebab: InvJawaban['sebab_tidak_ada'], x: Partial<InvJawaban> = {}): InvJawaban =>
     ({ keberadaan: 'tidak_ditemukan', sebab_tidak_ada: sebab, ...x })
 
-  it('hanya Gedung & Bangunan yang menanyakan sebab', () => {
+  it('hanya Gedung & Bangunan dan JIJ yang menanyakan sebab', () => {
     expect(konfigLki('1.3.3').sebabTidakAda).toBe(true)
-    for (const g of ['1.3.1', '1.3.2', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
+    expect(konfigLki('1.3.4').sebabTidakAda).toBe(true)
+    expect(konfigLki('1.3.4').sebabNoun).toBe('jalan/jaringan/irigasi')
+    for (const g of ['1.3.1', '1.3.2', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
       expect(konfigLki(g).sebabTidakAda).toBe(false)
     }
   })
@@ -222,6 +224,9 @@ describe('G — "Tidak ada karena..." (Gedung & Bangunan, 2026-10-01)', () => {
     expect(a(tdk('beberapa_register'))).toEqual(['Minimal 2 bangunan hasil pemecahan (G)'])
     expect(a(tdk('beberapa_register', { sebab_pecahan: ['A', ''] }))).toEqual(['Nama bangunan hasil pemecahan (G) ada yang kosong'])
     expect(a(tdk('beberapa_register', { sebab_pecahan: ['A', 'B'] }))).toEqual([])
+    // JIJ: pesan memakai kata bendanya
+    expect(kekuranganLki({ ...aset(tdk('digabung')), sebabTidakAda: true, sebabNoun: 'jalan/jaringan/irigasi' }))
+      .toEqual(['Jalan/jaringan/irigasi induk tempat digabung (G)'])
     // golongan lain: tak ditanya
     expect(kekuranganLki(aset({ keberadaan: 'tidak_ditemukan' }))).toEqual([])
   })
