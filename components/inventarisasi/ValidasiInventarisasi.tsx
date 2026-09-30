@@ -19,7 +19,7 @@ import TransaksiSesudah from '@/components/inventarisasi/TransaksiSesudah'
 import { fetchApprovalScope, SCOPE_KOSONG, type ApprovalScope } from '@/lib/roles'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import {
-  LHI_LABEL, STATUS_BADGE, STATUS_LABEL, klasifikasiLhi, konfigLki, normalKondisi,
+  LHI_LABEL, STATUS_BADGE, STATUS_LABEL, SEBAB_TIDAK_ADA, klasifikasiLhi, konfigLki, normalKondisi,
   type InvBaris,
 } from '@/lib/inventarisasi'
 import {
@@ -321,6 +321,12 @@ export default function ValidasiInventarisasi({ golongan }: { golongan: string }
                           {sebelum || '—'} → <b className={sesudah && sebelum && sesudah !== sebelum ? 'text-amber-700' : ''}>{sesudah || '—'}</b>
                           {r.jawaban?.keberadaan && r.jawaban.keberadaan !== 'ada' && (
                             <p className="text-red-600">{r.jawaban.keberadaan === 'hilang' ? 'Hilang' : 'Tidak ditemukan'}</p>
+                          )}
+                          {r.jawaban?.keberadaan === 'tidak_ditemukan' && r.jawaban.sebab_tidak_ada && (
+                            <p className="text-red-500">
+                              {r.jawaban.sebab_tidak_ada === 'lainnya' ? (r.jawaban.sebab_lainnya || 'Lainnya')
+                                : SEBAB_TIDAK_ADA.find(o => o.v === r.jawaban.sebab_tidak_ada)?.l}
+                            </p>
                           )}
                         </>
                       ) : (sesudah || '—')}

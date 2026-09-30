@@ -173,3 +173,55 @@ describe('klasifikasiLhi tetap bekerja atas bentuk baris baru', () => {
     expect(klasifikasiLhi(b)).toEqual(['III.B.7'])
   })
 })
+
+describe('G — "Tidak ada karena..." (Gedung & Bangunan, 2026-10-01)', () => {
+  const brs = (jawaban: InvJawaban): InvBaris => ({
+    aset_id: 'a-1', snapshot: {}, jawaban, foto_paths: [],
+  } as unknown as InvBaris)
+  const tdk = (sebab: InvJawaban['sebab_tidak_ada'], x: Partial<InvJawaban> = {}): InvJawaban =>
+    ({ keberadaan: 'tidak_ditemukan', sebab_tidak_ada: sebab, ...x })
+
+  it('hanya Gedung & Bangunan yang menanyakan sebab', () => {
+    expect(konfigLki('1.3.3').sebabTidakAda).toBe(true)
+    for (const g of ['1.3.1', '1.3.2', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
+      expect(konfigLki(g).sebabTidakAda).toBe(false)
+    }
+  })
+
+  it('force majeure / dibongkar / lainnya → III.B.2', () => {
+    expect(klasifikasiLhi(brs(tdk('force_majeure')))).toEqual(['III.B.2'])
+    expect(klasifikasiLhi(brs(tdk('dibongkar_baru')))).toEqual(['III.B.2'])
+    expect(klasifikasiLhi(brs(tdk('lainnya', { sebab_lainnya: 'x' })))).toEqual(['III.B.2'])
+  })
+
+  it('direhab jadi bangunan baru & digabung → III.B.3 (bukan III.B.2)', () => {
+    expect(klasifikasiLhi(brs(tdk('rehab_bangunan_baru')))).toEqual(['III.B.3'])
+    expect(klasifikasiLhi(brs(tdk('digabung')))).toEqual(['III.B.3'])
+  })
+
+  it('seharusnya beberapa register → III.B.8 (koreksi)', () => {
+    expect(klasifikasiLhi(brs(tdk('beberapa_register')))).toEqual(['III.B.8'])
+  })
+
+  it('lembar lama tanpa sebab tetap III.B.2; hilang tetap III.B.1', () => {
+    expect(klasifikasiLhi(brs({ keberadaan: 'tidak_ditemukan' }))).toEqual(['III.B.2'])
+    expect(klasifikasiLhi(brs({ keberadaan: 'hilang', sebab_tidak_ada: 'digabung' }))).toEqual(['III.B.1'])
+  })
+
+  it('III.B.3 tak dobel kalau atribusi juga dicentang', () => {
+    const k = klasifikasiLhi(brs(tdk('digabung', { atribusi: 'ya_induk_diketahui' })))
+    expect(k.filter(x => x === 'III.B.3')).toHaveLength(1)
+  })
+
+  it('sebab wajib & relasi wajib bila dipilih — hanya utk golongan ber-sebabTidakAda', () => {
+    const a = (j: InvJawaban) => kekuranganLki({ ...aset(j), sebabTidakAda: true })
+    expect(a({ keberadaan: 'tidak_ditemukan' })).toEqual(['Sebab barang tidak ada (G)'])
+    expect(a(tdk('force_majeure'))).toEqual([])
+    expect(a(tdk('digabung'))).toEqual(['Bangunan induk tempat digabung (G)'])
+    expect(a(tdk('rehab_bangunan_baru'))).toEqual(['Bangunan baru hasil rehab (G)'])
+    expect(a(tdk('digabung', { sebab_relasi: { aset_id: 'b-2' } }))).toEqual([])
+    expect(a(tdk('lainnya'))).toEqual(['Sebutkan sebab tidak ada (G)'])
+    // golongan lain: tak ditanya
+    expect(kekuranganLki(aset({ keberadaan: 'tidak_ditemukan' }))).toEqual([])
+  })
+})

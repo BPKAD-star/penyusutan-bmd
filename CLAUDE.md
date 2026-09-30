@@ -8828,3 +8828,18 @@ Pengelolaan → LRA → KIR.
   ⛔ Seperti alat Pengelolaan: jalur TS belum dijalankan terhadap produksi.
 - Dikunci lib/chatbot/lraKir.test.ts (17 test, klien palsu yang menghormati
   filter; diuji merah dgn mematikan baris "di luar jenis").
+
+## LKI Gedung & Bangunan: "Tidak ada karena..." menentukan laporan LHI (2026-10-01)
+
+Bagian G (Keberadaan) untuk **1.3.3 saja** (`LkiConfig.sebabTidakAda`) menanyakan
+sebab begitu "Tidak ada / tidak ditemukan" dipilih. Sebab menentukan LHI
+(`SEBAB_TIDAK_ADA`, satu sumber, `lhiTidakAda()`): force majeure · dibongkar total
+& sudah ada bangunan baru · lainnya → **III.B.2**; direhab jadi bangunan baru ·
+digabung dgn bangunan lain → **III.B.3** (pilih bangunan anak / induk, disimpan
+`sebab_relasi`); seharusnya beberapa register → **III.B.8** (tindak lanjut
+Pemecahan Barang di menu Koreksi). "Hilang (kecurian)" tetap III.B.1.
+- **Tak ada migrasi** — `jawaban` itu jsonb. Lembar lama tanpa sebab = III.B.2 persis
+  seperti dulu; sebab baru **wajib** hanya saat lembar disimpan ulang (`kekuranganLki`).
+- Di III.B.3, sebab *rehab* menjadikan barang ini SENDIRI sbg induk & anaknya
+  ditulis di Keterangan; sebab *digabung* memakai pilihan petugas sbg induk.
+- Dikunci lib/inventarisasi.test.ts. Golongan lain (mis. JIJ) belum ikut.

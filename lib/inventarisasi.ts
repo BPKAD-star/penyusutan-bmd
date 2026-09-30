@@ -104,6 +104,23 @@ export type InvSnapshot = {
 /** Bagian A–D & J: "Sesuai" atau "Tidak Sesuai, sebutkan yang seharusnya". */
 export type SesuaiField = { sesuai: boolean; seharusnya?: string }
 
+/** Alasan barang "Tidak ada" (Gedung & Bangunan) — keputusan user 2026-10-01. */
+export type SebabTidakAda =
+  | 'force_majeure' | 'dibongkar_baru' | 'rehab_bangunan_baru'
+  | 'digabung' | 'beberapa_register' | 'lainnya'
+
+export const SEBAB_TIDAK_ADA: { v: SebabTidakAda; l: string; lhi: string }[] = [
+  { v: 'force_majeure', l: 'Force majeure (bencana, kebakaran, dsb.)', lhi: 'III.B.2' },
+  { v: 'dibongkar_baru', l: 'Dibongkar total dan sudah ada bangunan baru', lhi: 'III.B.2' },
+  { v: 'rehab_bangunan_baru', l: 'Direhab dan jadi bangunan baru', lhi: 'III.B.3' },
+  { v: 'digabung', l: 'Digabung dengan bangunan lain', lhi: 'III.B.3' },
+  { v: 'beberapa_register', l: 'Seharusnya ada beberapa register', lhi: 'III.B.8' },
+  { v: 'lainnya', l: 'Lainnya', lhi: 'III.B.2' },
+]
+
+/** Sebab yang mewajibkan memilih barang lain (anak / induk). */
+export const SEBAB_BUTUH_RELASI: SebabTidakAda[] = ['rehab_bangunan_baru', 'digabung']
+
 export type PihakPengguna = 'pemda' | 'pempus' | 'pemda_lain' | 'pihak_lain'
 export type KondisiFisik = 'B' | 'RR' | 'RB'
 
@@ -123,6 +140,13 @@ export type InvJawaban = {
   // G — Keberadaan Barang
   keberadaan?: 'ada' | 'hilang' | 'tidak_ditemukan'
   jumlah_tidak_ada?: number
+  // G-lanjutan — "Tidak ada karena ..." (khusus golongan ber-`sebabTidakAda`,
+  // kini Gedung & Bangunan). Menentukan LAPORAN mana yang memuat barangnya:
+  // lihat `klasifikasiLhi`. `sebab_relasi` = barang anak (rehab) / barang induk
+  // (digabung), dipilih dari SKPD & golongan lembar ini sendiri.
+  sebab_tidak_ada?: SebabTidakAda
+  sebab_relasi?: { aset_id?: string | null; nibar?: string; kode_barang?: string; nama_barang?: string }
+  sebab_lainnya?: string
   // H — nilai perolehan TIDAK bisa diubah lewat LKI (tampilan saja).
   // I — biaya atribusi / menambah kapasitas manfaat (kapitalisasi).
   // Induk WAJIB dipilih dari barang milik SKPD lembar ini sendiri.
@@ -246,6 +270,9 @@ export type LkiConfig = {
   jijTeknis: boolean
   /** G pecah jadi Hilang vs Tidak ditemukan (P&M, ATL, ATB); selain itu digabung. */
   hilangVsTidakDitemukan: boolean
+  /** G: "Tidak ada" ditanyai sebabnya (force majeure, dibongkar, direhab, dst.)
+   *  — Gedung & Bangunan saja. Lihat `SEBAB_TIDAK_ADA`. */
+  sebabTidakAda: boolean
   /** Nama pemakai + BAST pemakaian + SIP (rumah negara — Gedung & Bangunan). */
   pemakaiRumahNegara: boolean
   /** Bagian N "berdiri di atas tanah milik" — Gedung & Bangunan dan JIJ. */
@@ -294,7 +321,7 @@ export const LKI_MATRIX = {
 const ada = (daftar: readonly string[], golongan: string) => daftar.includes(golongan)
 
 type OverrideConfig = Partial<
-  Pick<LkiConfig, 'jijTeknis' | 'hilangVsTidakDitemukan' | 'pemakaiRumahNegara' | 'tanahMilikLabel'>
+  Pick<LkiConfig, 'jijTeknis' | 'hilangVsTidakDitemukan' | 'pemakaiRumahNegara' | 'tanahMilikLabel' | 'sebabTidakAda'>
 >
 
 function konfig(golongan: string, format: string, label: string, override: OverrideConfig = {}): LkiConfig {
@@ -308,7 +335,7 @@ function konfig(golongan: string, format: string, label: string, override: Overr
     tanahMilik: ada(LKI_MATRIX.tanah_milik, golongan),
     tanahMilikLabel: 'Barang di atas tanah milik',
     titikKoordinat: true,
-    jijTeknis: false, hilangVsTidakDitemukan: false, pemakaiRumahNegara: false,
+    jijTeknis: false, hilangVsTidakDitemukan: false, pemakaiRumahNegara: false, sebabTidakAda: false,
     ...override,
   }
 }
@@ -332,7 +359,8 @@ export const LKI_CONFIG: Record<string, LkiConfig> = {
   '1.3.1': konfig('1.3.1', 'III.A.1', 'Tanah'),
   '1.3.2': konfig('1.3.2', 'III.A.2', 'Peralatan dan Mesin', { hilangVsTidakDitemukan: true }),
   '1.3.3': konfig('1.3.3', 'III.A.3', 'Gedung dan Bangunan', {
-    pemakaiRumahNegara: true, tanahMilikLabel: 'Gedung dan Bangunan di atas tanah milik',
+    pemakaiRumahNegara: true, sebabTidakAda: true,
+    tanahMilikLabel: 'Gedung dan Bangunan di atas tanah milik',
   }),
   '1.3.4': konfig('1.3.4', 'III.A.4', 'Jalan, Jaringan dan Irigasi', {
     jijTeknis: true, tanahMilikLabel: 'Jalan di atas tanah milik',
@@ -423,6 +451,14 @@ export function digunakanSendiriTampil(p: InvJawaban['penggunaan'], isBaru: bool
   return !isBaru
 }
 
+/**
+ * Laporan LHI untuk barang "Tidak ada" (bukan hilang kecurian). Tanpa sebab
+ * (lembar lama / golongan tanpa pertanyaan sebab) = III.B.2 persis seperti dulu.
+ */
+export function lhiTidakAda(sebab: SebabTidakAda | undefined): LhiKode {
+  return (SEBAB_TIDAK_ADA.find(x => x.v === sebab)?.lhi as LhiKode | undefined) ?? 'III.B.2'
+}
+
 const tidakSesuai = (f: SesuaiField | undefined) => f != null && f.sesuai === false
 
 /**
@@ -433,6 +469,7 @@ const tidakSesuai = (f: SesuaiField | undefined) => f != null && f.sesuai === fa
  */
 export function klasifikasiLhi(b: InvBaris): LhiKode[] {
   const out: LhiKode[] = []
+  const tambah = (k: LhiKode) => { if (!out.includes(k)) out.push(k) }
   const j = b.jawaban || {}
 
   // III.B.11 — barang belum tercatat (Format III.A.7, tanpa aset_id/NIBAR).
@@ -440,12 +477,12 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
   if (!b.aset_id) return ['III.B.11']
 
   // G — keberadaan
-  if (j.keberadaan === 'hilang') out.push('III.B.1')
-  if (j.keberadaan === 'tidak_ditemukan') out.push('III.B.2')
+  if (j.keberadaan === 'hilang') tambah('III.B.1')
+  if (j.keberadaan === 'tidak_ditemukan') tambah(lhiTidakAda(j.sebab_tidak_ada))
 
   // I — biaya atribusi belum dikapitalisasi
-  if (j.atribusi === 'ya_induk_diketahui') out.push('III.B.3')
-  if (j.atribusi === 'ya_induk_tidak_diketahui') out.push('III.B.4')
+  if (j.atribusi === 'ya_induk_diketahui') tambah('III.B.3')
+  if (j.atribusi === 'ya_induk_tidak_diketahui') tambah('III.B.4')
 
   // L — penggunaan oleh pihak lain
   if (j.penggunaan) {
@@ -473,7 +510,7 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
     tidakSesuai(j.keterangan_barang) || j.koordinat?.sesuai === false || j.foto_barang?.sesuai === false ||
     tidakSesuai(j.jenis_perkerasan) || tidakSesuai(j.jenis_bahan_jembatan) ||
     tidakSesuai(j.no_ruas_jalan) || tidakSesuai(j.no_jaringan_irigasi)
-  ) out.push('III.B.8')
+  ) tambah('III.B.8')
 
   // M — tercatat ganda
   if (j.ganda) out.push('III.B.9')
@@ -497,7 +534,7 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
  * Dipakai form (pesan hidup) DAN penjaga tombol Simpan — satu aturan, dua pintu.
  */
 export function kekuranganLki(
-  b: Pick<InvBaris, 'aset_id' | 'jawaban'> & { foto_paths?: string[] },
+  b: Pick<InvBaris, 'aset_id' | 'jawaban'> & { foto_paths?: string[]; sebabTidakAda?: boolean },
 ): string[] {
   const j = b.jawaban || {}
   const kurang: string[] = []
@@ -513,6 +550,14 @@ export function kekuranganLki(
 
   if (!j.keberadaan) kurang.push('Keberadaan Barang (G)')
   if (j.keberadaan === 'ada' && !j.kondisi) kurang.push('Kondisi Barang (K)')
+  if (j.keberadaan === 'tidak_ditemukan' && b.sebabTidakAda) {
+    if (!j.sebab_tidak_ada) kurang.push('Sebab barang tidak ada (G)')
+    else if (SEBAB_BUTUH_RELASI.includes(j.sebab_tidak_ada) && !j.sebab_relasi?.aset_id) {
+      kurang.push(j.sebab_tidak_ada === 'digabung' ? 'Bangunan induk tempat digabung (G)' : 'Bangunan baru hasil rehab (G)')
+    } else if (j.sebab_tidak_ada === 'lainnya' && !(j.sebab_lainnya || '').trim()) {
+      kurang.push('Sebutkan sebab tidak ada (G)')
+    }
+  }
 
   // "Tidak Sesuai" tanpa menyebut yang seharusnya → LHI III.B.8 mencetak
   // "(kosong)" di kolom Setelah Inventarisasi. Itu bukan temuan, itu isian
@@ -558,7 +603,7 @@ export const REKOMENDASI: Record<LhiKode, { menu: string; saran: string }> = {
   'III.B.5': { menu: 'Pengamanan', saran: 'Terbitkan BAST Pengamanan agar kustodi pegawai tercatat resmi.' },
   'III.B.6': { menu: 'Pemanfaatan', saran: 'Bila ada dokumen penguasaan, catat sebagai Pemanfaatan. Bila tidak, tempuh penertiban.' },
   'III.B.7': { menu: 'Koreksi', saran: 'Perbarui kondisi barang lewat Koreksi Spesifikasi.' },
-  'III.B.8': { menu: 'Koreksi / Reklasifikasi', saran: 'Perubahan spesifikasi → Koreksi Spesifikasi. Perubahan Kode Barang → Reklasifikasi Kesalahan Kodefikasi.' },
+  'III.B.8': { menu: 'Koreksi / Reklasifikasi', saran: 'Perubahan spesifikasi → Koreksi Spesifikasi. Perubahan Kode Barang → Reklasifikasi Kesalahan Kodefikasi. Seharusnya beberapa register → Koreksi lalu tindak lanjuti lewat Pemecahan Barang.' },
   'III.B.9': { menu: 'Koreksi', saran: 'Gabungkan lewat Koreksi Pencatatan Ganda.' },
   'III.B.10': { menu: '—', saran: 'Perlu penyelesaian status tanah dengan pemilik lahan.' },
   'III.B.11': { menu: 'Hasil Inventarisasi', saran: 'Catat sebagai perolehan lewat menu Cara Perolehan → Hasil Inventarisasi.' },

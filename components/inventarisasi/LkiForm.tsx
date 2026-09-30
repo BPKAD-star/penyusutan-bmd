@@ -35,6 +35,7 @@ import NominalInput from '@/shared/ui/NominalInput'
 import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
   normalKondisi, klasifikasiLhi, kekuranganLki, LHI_LABEL,
+  SEBAB_TIDAK_ADA, SEBAB_BUTUH_RELASI, type SebabTidakAda,
   sesuaiTampil, atribusiTampil, digunakanSendiriTampil,
   type InvBaris, type InvJawaban, type LkiConfig,
   type KondisiFisik, type PihakPengguna,
@@ -143,6 +144,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   const [j, setJ] = useState<InvJawaban>(() => ({ ...(baris.jawaban || {}) }))
   const [foto, setFoto] = useState<string[]>(baris.foto_paths || [])
   const [induk, setInduk] = useState<AsetRingkas | null>(null)
+  const [relasiAset, setRelasiAset] = useState<AsetRingkas | null>(null)
   const [gandaAset, setGandaAset] = useState<AsetRingkas | null>(null)
   // Seed dari jawaban tersimpan supaya lembar yang dibuka ulang tetap
   // menampilkan kode yang sudah dipilih, bukan picker kosong.
@@ -162,6 +164,13 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   const [err, setErr] = useState('')
 
   const set = <K extends keyof InvJawaban>(k: K, v: InvJawaban[K]) => setJ(p => ({ ...p, [k]: v }))
+  /** Ganti keberadaan; sebab "tidak ada" hanya hidup selama "tidak ditemukan". */
+  const setKeberadaan = (v: NonNullable<InvJawaban['keberadaan']>) =>
+    setJ(p => v === 'tidak_ditemukan'
+      ? { ...p, keberadaan: v }
+      : { ...p, keberadaan: v, sebab_tidak_ada: undefined, sebab_relasi: undefined, sebab_lainnya: undefined })
+  const setSebab = (v: SebabTidakAda) =>
+    setJ(p => ({ ...p, sebab_tidak_ada: v, sebab_relasi: undefined, sebab_lainnya: undefined }))
   const setBaru = (k: string, v: unknown) => setJ(p => ({ ...p, baru: { ...(p.baru || {}), [k]: v } }))
 
   /** Jumlah & Harga Satuan sekaligus menghitung ulang Nilai Perolehan
@@ -204,7 +213,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
     // Penjaga SAMA dgn daftar kekurangan di bawah form — satu aturan
     // (`kekuranganLki`), dua pintu. Tombolnya sengaja TIDAK dimatikan: tombol
     // mati tanpa keterangan adalah kegagalan senyap.
-    const k = kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto })
+    const k = kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto, sebabTidakAda: config.sebabTidakAda })
     if (k.length > 0) { setErr(`Belum lengkap: ${k.join(', ')}.`); return }
     setSaving(true); setErr('')
     try { await onSimpan(j, foto); onTutup() }
@@ -215,7 +224,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   // Pratinjau LHI: fungsi klasifikasi yang SAMA dgn laporan, jadi isi laporan
   // tak mungkin berbeda dari yang terlihat di sini.
   const lhi = klasifikasiLhi({ ...baris, jawaban: j })
-  const kurang = readOnly ? [] : kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto })
+  const kurang = readOnly ? [] : kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto, sebabTidakAda: config.sebabTidakAda })
   const atribusiVal = atribusiTampil(j.atribusi, isBaru)
   const digunakanSendiri = digunakanSendiriTampil(j.penggunaan, isBaru)
   // Titik Koordinat (O): peta di dalam "Tidak Sesuai" berangkat dari titik
@@ -584,32 +593,83 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                 <div className="flex flex-wrap gap-4 text-xs">
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input type="radio" checked={j.keberadaan === 'ada'} disabled={readOnly}
-                      onChange={() => set('keberadaan', 'ada')} />Ada
+                      onChange={() => setKeberadaan('ada')} />Ada
                   </label>
                   {config.hilangVsTidakDitemukan ? (
                     <>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input type="radio" checked={j.keberadaan === 'hilang'} disabled={readOnly}
-                          onChange={() => set('keberadaan', 'hilang')} />Tidak ada — Hilang (kecurian)
+                          onChange={() => setKeberadaan('hilang')} />Tidak ada — Hilang (kecurian)
                       </label>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input type="radio" checked={j.keberadaan === 'tidak_ditemukan'} disabled={readOnly}
-                          onChange={() => set('keberadaan', 'tidak_ditemukan')} />Tidak ada — Tidak ditemukan
+                          onChange={() => setKeberadaan('tidak_ditemukan')} />Tidak ada — Tidak ditemukan
                       </label>
                     </>
                   ) : (
                     <>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input type="radio" checked={j.keberadaan === 'tidak_ditemukan'} disabled={readOnly}
-                          onChange={() => set('keberadaan', 'tidak_ditemukan')} />Tidak ada / tidak ditemukan
+                          onChange={() => setKeberadaan('tidak_ditemukan')} />Tidak ada / tidak ditemukan
                       </label>
                       <label className="flex items-center gap-1.5 cursor-pointer">
                         <input type="radio" checked={j.keberadaan === 'hilang'} disabled={readOnly}
-                          onChange={() => set('keberadaan', 'hilang')} />Hilang karena kecurian
+                          onChange={() => setKeberadaan('hilang')} />Hilang karena kecurian
                       </label>
                     </>
                   )}
                 </div>
+                {config.sebabTidakAda && j.keberadaan === 'tidak_ditemukan' && (
+                  <div className="mt-3 ml-1 pl-3 border-l-2 border-amber-300 space-y-2 text-xs">
+                    <p className="font-medium text-gray-700">Tidak ada karena...</p>
+                    {SEBAB_TIDAK_ADA.map(o => (
+                      <div key={o.v}>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input type="radio" checked={j.sebab_tidak_ada === o.v} disabled={readOnly}
+                            onChange={() => setSebab(o.v)} />
+                          {o.l}
+                          <span className="text-[10px] text-gray-400">→ {o.lhi}</span>
+                        </label>
+                        {j.sebab_tidak_ada === o.v && SEBAB_BUTUH_RELASI.includes(o.v) && (
+                          <div className="ml-5 mt-1.5 space-y-1.5">
+                            <p className="text-[11px] text-gray-500">
+                              {o.v === 'digabung'
+                                ? <>Pilih <b>bangunan induk</b> tempat barang ini digabung.</>
+                                : <>Pilih <b>bangunan baru (anak)</b> hasil rehab barang ini.</>}
+                              {' '}Dicari <b>hanya di SKPD lembar ini</b>, golongan <b>{golongan}</b>.
+                            </p>
+                            <AsetPicker selected={relasiAset} skpdId={skpdId} kodePrefix={golongan}
+                              onSelect={a => {
+                                if (a && a.id === baris.aset_id) { setErr('Bangunan yang dipilih tidak boleh barang ini sendiri.'); return }
+                                setErr('')
+                                setRelasiAset(a)
+                                set('sebab_relasi', a ? {
+                                  aset_id: a.id, nibar: a.nibar || '', kode_barang: a.kode,
+                                  nama_barang: a.nama_barang || '',
+                                } : undefined)
+                              }} />
+                            {j.sebab_relasi?.nibar && (
+                              <p className="text-[11px] text-teal">
+                                {o.v === 'digabung' ? 'Induk' : 'Anak'}: {j.sebab_relasi.nibar} — {j.sebab_relasi.nama_barang}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {j.sebab_tidak_ada === o.v && o.v === 'lainnya' && (
+                          <input className="select-filter w-full ml-5 mt-1.5 max-w-md" disabled={readOnly}
+                            placeholder="Sebutkan sebabnya"
+                            value={j.sebab_lainnya || ''}
+                            onChange={e => set('sebab_lainnya', e.target.value)} />
+                        )}
+                        {j.sebab_tidak_ada === o.v && o.v === 'beberapa_register' && (
+                          <p className="ml-5 mt-1 text-[11px] text-gray-500">
+                            Tindak lanjut: Pembukuan → Koreksi → Pemecahan Barang.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </Seksi>
 
               {config.atribusi && (

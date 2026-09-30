@@ -8,8 +8,8 @@
 // Keterangan); tiap format menambah kolom khasnya sendiri — sebagian
 // berkelompok (mis. "Data Awal/Induk", "Sebelum/Setelah Inventarisasi"), yang
 // dirender sbg header dua baris lewat properti `grup`.
-import type { InvBaris, LhiKode, SesuaiField } from '@/lib/inventarisasi'
-import { normalKondisi } from '@/lib/inventarisasi'
+import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventarisasi'
+import { normalKondisi, SEBAB_TIDAK_ADA } from '@/lib/inventarisasi'
 
 export type KolomLhi = {
   key: string
@@ -345,13 +345,31 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
   }
 
   switch (k) {
-    case 'III.B.3':
+    case 'III.B.3': {
+      // Dari bagian G ("tidak ada karena ..."): digabung → induk = pilihan
+      // petugas; direhab jadi bangunan baru → barang ini SENDIRI induknya &
+      // bangunan baru (anak) disebut di Keterangan, supaya kolom induk tak
+      // menunjuk barang yang salah.
+      const rel = j.sebab_relasi
+      const dariSebab = j.keberadaan === 'tidak_ditemukan' ? j.sebab_tidak_ada : undefined
+      const indukDigabung = dariSebab === 'digabung' ? rel : undefined
+      const rehab = dariSebab === 'rehab_bangunan_baru'
+      const indukNibar = indukDigabung ? (indukDigabung.nibar || '') : rehab ? (s.nibar || '') : (j.induk?.nibar || '')
+      const indukKode = indukDigabung ? (indukDigabung.kode_barang || '') : rehab ? (s.kode || '') : (j.induk?.kode_barang || '')
+      const indukNama = indukDigabung ? (indukDigabung.nama_barang || '') : rehab ? (s.uraian_barang || '') : (j.induk?.nama_barang || '')
+      const catatSebab = dariSebab === 'digabung' ? 'Tidak ada: digabung dengan bangunan lain'
+        : rehab ? `Tidak ada: direhab jadi bangunan baru — anak: ${rel?.nibar || '—'} ${rel?.nama_barang || ''}`.trim()
+        : ''
       return {
         ...inti,
-        induk_nibar: j.induk?.nibar || '', induk_kode_barang: j.induk?.kode_barang || '',
-        induk_kode_lokasi: j.induk?.kode_lokasi || '', induk_kode_register: j.induk?.kode_register || '',
-        induk_nama_barang: j.induk?.nama_barang || '', induk_spesifikasi: j.induk?.spesifikasi || '',
+        keterangan: [catatSebab, j.keterangan].filter(Boolean).join(' — '),
+        induk_nibar: indukNibar, induk_kode_barang: indukKode,
+        induk_kode_lokasi: indukDigabung || rehab ? '' : (j.induk?.kode_lokasi || ''),
+        induk_kode_register: rehab ? (s.kode_register || '') : indukDigabung ? (indukDigabung.nibar || '') : (j.induk?.kode_register || ''),
+        induk_nama_barang: indukNama,
+        induk_spesifikasi: rehab ? (s.nama_barang || '') : indukDigabung ? '' : (j.induk?.spesifikasi || ''),
       }
+    }
     case 'III.B.5':
       return {
         ...inti,
@@ -423,7 +441,11 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
         st_alamat: alamatEfektif,
         satuan: efektif(j.satuan, s.satuan),
         nilai: s.nilai_perolehan ?? '',
-        keterangan: [ekstra, j.keterangan].filter(Boolean).join(' — '),
+        keterangan: [
+          j.keberadaan === 'tidak_ditemukan' && j.sebab_tidak_ada === 'beberapa_register'
+            ? 'Seharusnya ada beberapa register — tindak lanjut Pemecahan Barang' : '',
+          ekstra, j.keterangan,
+        ].filter(Boolean).join(' — '),
       }
     }
     case 'III.B.9': {
@@ -447,11 +469,23 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
       }
     }
     default: // III.B.1 & III.B.2
-      return inti
+      return {
+        ...inti,
+        keterangan: [
+          j.keberadaan === 'tidak_ditemukan' ? sebabTeks(j) : '', j.keterangan,
+        ].filter(Boolean).join(' — '),
+      }
   }
 }
 
 /** Total nilai perolehan (baris "Jumlah (Rp)" di kaki tiap format). */
 export function totalNilaiLhi(rows: Record<string, string | number>[]): number {
   return rows.reduce((s, r) => s + (typeof r.nilai === 'number' ? r.nilai : 0), 0)
+}
+
+/** Teks sebab "tidak ada" utk kolom Keterangan III.B.2 (kosong utk lembar lama). */
+function sebabTeks(j: InvJawaban): string {
+  const x = SEBAB_TIDAK_ADA.find(o => o.v === j.sebab_tidak_ada)
+  if (!x) return ''
+  return x.v === 'lainnya' ? `Tidak ada: ${j.sebab_lainnya || 'lainnya'}` : `Tidak ada: ${x.l}`
 }

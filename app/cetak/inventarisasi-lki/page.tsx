@@ -15,6 +15,7 @@ import { formatRupiah } from '@/lib/export'
 import {
   konfigLki, normalKondisi, STATUS_LABEL,
   type InvBaris, type LkiConfig, type Petugas, type SesuaiField,
+  SEBAB_TIDAK_ADA,
 } from '@/lib/inventarisasi'
 import { muatTimUntukCetak } from '@/lib/inventarisasiData'
 
@@ -125,7 +126,18 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
               <Baris kode="G" label="Keberadaan Barang">
                 {j.keberadaan === 'ada' ? '☑ Ada'
                   : j.keberadaan === 'hilang' ? '☒ Tidak ada — Hilang (kecurian)'
-                  : j.keberadaan === 'tidak_ditemukan' ? '☒ Tidak ada — Tidak ditemukan'
+                  : j.keberadaan === 'tidak_ditemukan' ? (
+                    <>☒ Tidak ada — Tidak ditemukan
+                      {j.sebab_tidak_ada && (
+                        <div className="ml-3">
+                          Karena: {j.sebab_tidak_ada === 'lainnya'
+                            ? (j.sebab_lainnya || 'Lainnya')
+                            : SEBAB_TIDAK_ADA.find(o => o.v === j.sebab_tidak_ada)?.l}
+                          {j.sebab_relasi?.nibar && <> — NIBAR {j.sebab_relasi.nibar} · {j.sebab_relasi.nama_barang || '—'}</>}
+                        </div>
+                      )}
+                    </>
+                  )
                   : <span className="text-gray-400">—</span>}
               </Baris>
               <Baris kode="H" label="Nilai Perolehan Barang">
