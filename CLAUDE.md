@@ -8707,3 +8707,78 @@ perolehan dulu; **Pengelolaan, LRA, KIR menyusul** (belum dikerjakan).
   sbg Pengadaan — kalau pertanyaan "total pengadaan" perlu KDP, itu alat lain.
 - Dikunci lib/chatbot/istimewa.test.ts dgn klien palsu yang MENGHORMATI filter;
   **diuji merah dulu** (saringan void dimatikan → 5 tes gagal).
+
+### Asisten AI: `cari_barang` timeout untuk admin — KODE, bukan server (2026-09-30, migrasi 20260930_03)
+
+Admin bertanya "sepeda motor nopol AG 3837 GP ada di SKPD mana?" → "canceling
+statement due to statement timeout". Pertanyaan user: limit hardware atau kode?
+**Kode.** Diukur ke produksi dgn RLS aktif:
+
+- Alat lama menembak PostgREST `nama_barang ILIKE '%q%' OR nibar ILIKE '%q%' OR
+  kode ILIKE 'q%'` — tak satu pun bisa dilayani index → **Seq Scan, Rows Removed
+  by Filter: 906.802, 7.728 ms** (pagu 8.000 ms). Pengurus SKPD tak merasakannya
+  (RLS menyempitkan dulu ke SKPD-nya); admin melihat se-kabupaten. Dan nomor
+  polisi memang TAK ikut dicari — seandainya selesai pun hasilnya 0 baris.
+- Index yang tepat **sudah ada** (`idx_aset_teks_cari_trgm`, GIN trigram atas
+  `fn_aset_teks_cari`, memuat no. polisi/rangka/mesin) tapi tak terpakai lewat
+  PostgREST: `ILIKE` tidak leakproof → di bawah RLS tak pernah jadi index-cond
+  (predikat yang sama lewat RLS: Seq Scan 14.897 ms; tanpa RLS: 165 ms).
+- **Obat: `fn_chatbot_cari_barang`** — SECURITY DEFINER + cakupan ditegakkan
+  sendiri (admin/pengawas semua; lainnya `skpd_id = ANY(fn_my_skpd_scope())`),
+  pola `fn_daftar_barang`. Terukur: **7.728 ms → 68 ms**, ketemu (Sepeda Motor,
+  BKAD); pengurus Dinas Pendidikan mencari nopol itu → 0 baris (cakupan utuh).
+  Kata kunci < 3 karakter ditolak (trigram tak terpakai → sapu tabel lagi).
+  ⚠️ Ekspresi `fn_aset_teks_cari(…)` di fungsi KEMBAR dgn definisi index-nya.
+- Berlaku untuk SEMUA pengguna (alat dasar). Kode jatuh ke query lama kalau
+  fungsinya belum terpasang (`PGRST202`), jadi urutan deploy terbalik tak
+  mematikan alatnya. Mesin DB yang kekecilan (lihat 2026-09-22) mempersempit
+  margin, tapi bukan sebabnya: query yang bisa pakai index tetap 68 ms di mesin
+  yang sama.
+
+### Asisten AI: alat PENGELOLAAN untuk pengguna istimewa (2026-09-30)
+
+`rekap_pengelolaan` (angka per menu + sub-kelompok) & `daftar_pengelolaan`
+(rincian per barang, maks 30, bisa disaring kata kunci) —
+`lib/chatbot/pengelolaan.ts`. Delapan menu: penggunaan, mutasi_internal
+(Penerimaan & Pengeluaran Internal), pemanfaatan, reklasifikasi, koreksi,
+kapitalisasi, pengamanan, penghapusan. **Tanpa migrasi.** LRA & KIR menyusul.
+
+- **Tiap menu dibaca lewat PEMUAT LAPORANNYA SENDIRI** — `muatLembarPerpindahan`,
+  `muatLaporanReklas`, `muatLaporanPenghapusan`, `muatLaporanPengamanan`,
+  `muatKapitalisasi`, `muatPemanfaatan`. Aturan "mana yang sudah dibatalkan"
+  beda per menu (target_trx_id · replay peristiwa-terakhir · keanggotaan kartu)
+  dan tiap salinannya pernah jadi angka salah yang senyap.
+  - `muatLembarPerpindahan` kini menerima `skpdId: null` (se-kabupaten).
+  - **Kapitalisasi & Pemanfaatan DIANGKAT dari komponennya** ke
+    `lib/laporanKapitalisasi.ts` / `lib/laporanPemanfaatan.ts`; halaman
+    laporannya kini memakai pemuat yang sama. Pemuat Pemanfaatan sekaligus
+    berhenti menelan `error` (tiga `const { data } = await` telanjang) &
+    halamannya dapat try/catch/finally + strip error. Pemindai
+    sinkronisasiRpc §7 untuk Kapitalisasi ikut pindah ke berkas lib-nya.
+  - ⚠️ **Satu-satunya salinan: Koreksi** (`muatKoreksi` ↔ LaporanKoreksi.tsx,
+    komponen `'use client'`). Daftar jenisnya dikunci test; utangnya di
+    REFACTOR-PLAN §5 butir 2.7.
+- **Arti "nilai" BEDA tiap menu** (nilai perolehan / selisih koreksi / nilai
+  pemanfaatan per perjanjian / nilai yang dikapitalisasi) — disebut di tiap
+  baris jawaban, dan model dilarang menjumlah lintas menu. Pemanfaatan dijumlah
+  SEKALI per perjanjian (`kunciNilai`), bukan per barang.
+- Pemanfaatan & Pengamanan = **POSISI**, bukan arus periode (dikatakan di
+  jawaban). Dengan `skpd_id`, perpindahan dipisah Masuk / Keluar / antar-unit.
+  Penghapusan = pemindahtanganan + sebab lain; yang keluar karena pengalihan
+  status ada di menu penggunaan (tak dihitung dua kali).
+- Koreksi mengikuti bawaan Laporan Koreksi: baris perbaikan data admin
+  (`created_by IS NULL`) tak dihitung, tapi JUMLAHNYA disebut.
+- `Promise.allSettled`: satu menu gagal tak menghapus yang lain, dan ditulis
+  "GAGAL dibaca — JANGAN anggap nol", tak pernah "tidak ada".
+- **Rujukan 2026 se-kabupaten (dihitung SQL dgn aturan yang sama, 2026-09-30):**
+  penggunaan 123 / Rp27.482.072.163 · mutasi internal 47 / Rp6.740.614.814 ·
+  reklasifikasi 33 / Rp15.041.433.000 · penghapusan pemindahtanganan 11 /
+  Rp4.373.035.231 + sebab lain 5 / Rp559.004.000 · kapitalisasi 0 (ketiganya
+  sudah dibatalkan) · pengamanan berlaku 1 · koreksi lewat menu: pemecahan
+  keluar 6, pemecahan masuk 31.
+  ⛔ Jalur TS-nya BELUM dijalankan terhadap produksi (tak ada kredensial sesi di
+  lingkungan kerja) — yang teruji: unit test dgn klien palsu + angka rujukan di
+  atas untuk dicocokkan sesudah deploy.
+- `toolsAdmin.ts` dipecah (menembus 500 baris): `skpdPohon.ts` (pohon SKPD
+  bersama) & `perolehan.ts` (`rekap_perolehan`). Pemindai HANYA-BACA kini
+  menyapu keempat berkas alat istimewa.

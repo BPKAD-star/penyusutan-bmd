@@ -449,10 +449,16 @@ describe('§7 Menu Pengelolaan — tiap jenis ledgernya tercakup index (id) pars
   // ujiannya beda dari §7 di atas: bukan "jenisList dari prop", tapi "kedua
   // literal jenis di source-nya tercakup index yang sama".
   it('LaporanKapitalisasi tercakup index (id) WHERE jenis IN (…) & mengurut by id', () => {
-    const f = path.join(AKAR, 'components/pelaporan/LaporanKapitalisasi.tsx')
-    expect(fs.existsSync(f), 'components/pelaporan/LaporanKapitalisasi.tsx tak ditemukan').toBe(true)
+    // ⚠️ Pemuatnya pindah ke lib/laporanKapitalisasi.ts 2026-09-30 (dipakai
+    // bersama alat baca Asisten AI), jadi yang dipindai berkas ITU — dan
+    // komponennya wajib benar-benar memakainya, bukan menulis query sendiri lagi.
+    const f = path.join(AKAR, 'lib/laporanKapitalisasi.ts')
+    expect(fs.existsSync(f), 'lib/laporanKapitalisasi.ts tak ditemukan').toBe(true)
     const isi = fs.readFileSync(f, 'utf8')
-    expect(isi, 'LaporanKapitalisasi tak mengurutkan by id').toContain("order('id'")
+    expect(isi, 'pemuat kapitalisasi tak mengurutkan by id').toContain("order('id'")
+    const komponen = fs.readFileSync(path.join(AKAR, 'components/pelaporan/LaporanKapitalisasi.tsx'), 'utf8')
+    expect(komponen, 'LaporanKapitalisasi tak memakai muatKapitalisasi').toContain('muatKapitalisasi(')
+    expect(komponen, 'LaporanKapitalisasi menulis query ledger sendiri lagi').not.toContain(".from('transaksi_bmd').select(SELECT_COLS)")
 
     const halamanKap = path.join(DIR_HAL, 'kapitalisasi', 'page.tsx')
     expect(fs.existsSync(halamanKap), 'halaman kapitalisasi tak ditemukan').toBe(true)

@@ -101,8 +101,9 @@ export type PermintaanPerpindahan = {
    * `semua`  → salah satu sisi ada di scope (rekap GABUNGAN IV.D.7)
    */
   arah: ArahLembar | 'semua'
-  /** SKPD yang jadi sudut pandang lembar. */
-  skpdId: number
+  /** SKPD yang jadi sudut pandang lembar. `null` = se-kabupaten (hanya dipakai
+   *  alat baca Asisten AI; lembar cetak selalu per-SKPD). */
+  skpdId: number | null
   /** `'2026-S1'` atau `'2026'` (AKHIR TAHUN = S1+S2). Kosong tak dilayani. */
   periode: string
 }
@@ -168,9 +169,11 @@ export async function muatLembarPerpindahan(
   supabase: SupabaseClient, p: PermintaanPerpindahan,
 ): Promise<HasilPerpindahan> {
   const semua = await semuaSkpdRows(supabase)
-  const ini = semua.find(x => x.id === p.skpdId)
-  if (!ini) throw new Error(`SKPD #${p.skpdId} tidak ditemukan.`)
-  const desc = descendantsOf(semua, p.skpdId)
+  // `skpdId` null = se-kabupaten (tanpa saringan SKPD) — dipakai alat baca
+  // Asisten AI (lib/chatbot/pengelolaan.ts). Lembar cetak selalu mengirim angka.
+  const ini = p.skpdId != null ? semua.find(x => x.id === p.skpdId) : undefined
+  if (p.skpdId != null && !ini) throw new Error(`SKPD #${p.skpdId} tidak ditemukan.`)
+  const desc = p.skpdId != null ? descendantsOf(semua, p.skpdId) : []
 
   // ⚠️ `.order('id')`, BUKAN `.order('periode')`/`('tanggal')`: `jenis` bertipe
   // ENUM tak pernah bisa jadi index-cond di bawah RLS (CLAUDE.md "ronde 3"),
@@ -265,8 +268,10 @@ export async function muatLembarPerpindahan(
   return {
     rows,
     namaTingkat,
-    skpd: { kode: ini.kode_skpd || '', nama: ini.nama },
-    sebutan: sebutanPejabat(levelSkpd(p.skpdId, new Map(semua.map(s => [s.id, s.parent_id])))),
+    skpd: { kode: ini?.kode_skpd || '', nama: ini?.nama || 'Seluruh Kabupaten' },
+    sebutan: p.skpdId != null
+      ? sebutanPejabat(levelSkpd(p.skpdId, new Map(semua.map(s => [s.id, s.parent_id]))))
+      : 'Pengguna Barang',
     semuaSkpd: semua,
     tanpaPenyusutan,
   }

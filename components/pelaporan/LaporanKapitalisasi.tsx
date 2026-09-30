@@ -20,75 +20,9 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
-import { idTarget, type BatalPayload } from '@/lib/voidedAset'
+import { muatKapitalisasi, bangunBaris, bangunRekap, type RowKap } from '@/lib/laporanKapitalisasi'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
-
-type Snapshot = {
-  np_lama?: number; beban_lama?: number; akum_lama?: number; nb_lama?: number
-  np_baru?: number; beban_baru?: number; akum_baru?: number; nb_baru?: number
-}
-type Anak = { id: string; nibar: string | null; nama: string | null; nilai: number; akum?: number }
-type Payload = BatalPayload & { no_dokumen?: string; snapshot?: Snapshot | null; anak?: Anak[] }
-type Row = {
-  id: number; jenis: string; tanggal: string; periode: string; skpd_asal: number | null
-  payload: Payload
-  aset: { nibar: string | null; nama_barang: string | null; kode: string } | null
-  skpd: { nama: string } | null
-}
-
-// Satu baris tabel/Excel PER ANAK — supaya tiap barang yang diserap tetap bisa
-// ditelusuri sendiri-sendiri, bukan ditumpuk jadi satu sel "3 barang".
-type Baris = {
-  tanggal: string; periode: string; noDok: string; skpdNama: string
-  indukNibar: string; indukNama: string; indukKode: string
-  anakNibar: string; anakNama: string; anakNilai: number; anakAkum: number
-  npAwal: number; bebanAwal: number; akumAwal: number; nbAwal: number
-  npAkhir: number; bebanAkhir: number; akumAkhir: number; nbAkhir: number
-}
-type RekapSkpd = { skpd: string; dokumen: number; anak: number; rehab: number }
-
-function bangunBaris(valid: Row[]): Baris[] {
-  const out: Baris[] = []
-  for (const r of valid) {
-    const s = r.payload.snapshot
-    const base = {
-      tanggal: r.tanggal, periode: r.periode, noDok: r.payload.no_dokumen || '-',
-      skpdNama: r.skpd?.nama || '(SKPD tidak diketahui)',
-      indukNibar: r.aset?.nibar || '-', indukNama: r.aset?.nama_barang || '-', indukKode: r.aset?.kode || '-',
-      npAwal: s?.np_lama ?? 0, bebanAwal: s?.beban_lama ?? 0, akumAwal: s?.akum_lama ?? 0, nbAwal: s?.nb_lama ?? 0,
-      npAkhir: s?.np_baru ?? 0, bebanAkhir: s?.beban_baru ?? 0, akumAkhir: s?.akum_baru ?? 0, nbAkhir: s?.nb_baru ?? 0,
-    }
-    const anakList = r.payload.anak || []
-    if (anakList.length === 0) {
-      out.push({ ...base, anakNibar: '-', anakNama: '-', anakNilai: 0, anakAkum: 0 })
-    } else {
-      for (const a of anakList) {
-        out.push({ ...base, anakNibar: a.nibar || '-', anakNama: a.nama || '-', anakNilai: a.nilai || 0, anakAkum: a.akum || 0 })
-      }
-    }
-  }
-  return out
-}
-
-function bangunRekap(valid: Row[]): RekapSkpd[] {
-  const map = new Map<string, RekapSkpd>()
-  for (const r of valid) {
-    const nama = r.skpd?.nama || '(SKPD tidak diketahui)'
-    const cur = map.get(nama) || { skpd: nama, dokumen: 0, anak: 0, rehab: 0 }
-    cur.dokumen += 1
-    const anakList = r.payload.anak || []
-    cur.anak += anakList.length
-    cur.rehab += r.payload.snapshot?.np_baru != null && r.payload.snapshot?.np_lama != null
-      ? r.payload.snapshot.np_baru - r.payload.snapshot.np_lama
-      : anakList.reduce((s, a) => s + (a.nilai || 0), 0)
-    map.set(nama, cur)
-  }
-  return [...map.values()].sort((a, b) => b.rehab - a.rehab)
-}
-
-const JENIS = ['kapitalisasi', 'batal_kapitalisasi']
-const SELECT_COLS = 'id,jenis,tanggal,periode,skpd_asal,payload,aset:aset_id(nibar,nama_barang,kode),skpd:skpd_asal(nama)'
 
 export default function LaporanKapitalisasi() {
   const supabase = createClient()
@@ -97,7 +31,7 @@ export default function LaporanKapitalisasi() {
   const [periode, setPeriode] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [skpdNama, setSkpdNama] = useState('')
-  const [valid, setValid] = useState<Row[]>([])
+  const [valid, setValid] = useState<RowKap[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [exporting, setExporting] = useState(false)
@@ -109,40 +43,21 @@ export default function LaporanKapitalisasi() {
       .then(({ data }) => setPeriodeList([...new Set((data || []).map(r => r.periode))].sort().reverse()))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const buildQuery = useCallback(() => {
-    let q = supabase.from('transaksi_bmd').select(SELECT_COLS).in('jenis', JENIS as never).order('id', { ascending: true })
-    if (periode) q = q.eq('periode', periode)
-    if (descIds && descIds.length > 0) q = q.in('skpd_asal', descIds)
-    return q
-  }, [periode, descIds]) // eslint-disable-line react-hooks/exhaustive-deps
-
+  // Pemuatnya di lib/laporanKapitalisasi.ts (dipakai bersama alat baca Asisten
+  // AI) — termasuk saringan kapitalisasi yang sudah dibatalkan.
   const muat = useCallback(async () => {
     setLoading(true); setErr('')
     try {
-      const all: Row[] = []
-      for (let from = 0; ; from += 1000) {
-        const { data, error } = await buildQuery().range(from, from + 999)
-        if (error) throw new Error(error.message)
-        if (!data || data.length === 0) break
-        all.push(...(data as unknown as Row[]))
-        if (data.length < 1000) break
-      }
-      // ⚠️ Dibatalkan lewat `payload.target_trx_id` pada baris `batal_kapitalisasi`
-      // DI INDUK — baris `batal_kapitalisasi` di tiap ANAK tak ber-target_trx_id
-      // (lihat batalkanKapitalisasi di Kapitalisasi.tsx), jadi `idTarget` sudah
-      // otomatis mengabaikannya & tak perlu dibedakan di sini.
-      const dibatalkan = new Set<number>()
-      for (const r of all) if (r.jenis === 'batal_kapitalisasi') for (const t of idTarget(r.payload)) dibatalkan.add(t)
-      setValid(all.filter(r => r.jenis === 'kapitalisasi' && !dibatalkan.has(r.id)))
+      setValid(await muatKapitalisasi(supabase, { periode, descIds }))
     } catch (e) {
       setErr(`Gagal memuat data kapitalisasi: ${(e as Error).message}`)
       setValid([])
     } finally {
       setLoading(false)
     }
-  }, [buildQuery])
+  }, [periode, descIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { muat() }, [muat])
+  useEffect(() => { void muat() }, [muat])
 
   const baris = bangunBaris(valid)
   const rekap = bangunRekap(valid)

@@ -66,13 +66,15 @@ export const TOOL_DEFS = [
   {
     name: 'cari_barang',
     description:
-      `Cari barang di register berdasarkan nama, NIBAR, atau kode barang. Maksimal ${MAKS_BARIS} hasil, `
-      + 'terbatas lingkup SKPD pengguna. Pakai untuk "barang apa saja yang...", atau untuk menemukan NIBAR '
-      + 'sebelum memanggil posisi_penyusutan.',
+      `Cari barang AKTIF di register. Kata kunci dicocokkan ke: nama barang, NIBAR, kode barang, kode register, merek/tipe, `
+      + `NOMOR POLISI, nomor rangka, nomor mesin, alamat, dan keterangan — jadi "AG 3837 GP" atau nomor rangka bisa langsung dicari. `
+      + `Maksimal ${MAKS_BARIS} hasil, terbatas lingkup SKPD pengguna; tiap hasil menyebut SKPD pemiliknya. Kata kunci minimal 3 karakter. `
+      + 'Pakai untuk "barang apa saja yang...", "kendaraan nopol X ada di mana", atau untuk menemukan NIBAR '
+      + 'sebelum memanggil posisi_penyusutan. Untuk MENGHITUNG jumlah jangan pakai alat ini (hasilnya dipotong).',
     input_schema: {
       type: 'object' as const,
       properties: {
-        kata_kunci: { type: 'string', description: 'Nama barang, NIBAR, atau awalan kode barang.' },
+        kata_kunci: { type: 'string', description: 'Nama barang, NIBAR, kode barang, nomor polisi/rangka/mesin, merek, atau alamat.' },
         golongan: { type: 'string', description: 'Opsional, kode golongan level-3 mis. "1.3.2".' },
       },
       required: ['kata_kunci'],
@@ -192,7 +194,59 @@ async function rekapAset(sb: SupabaseClient, golongan: string): Promise<string> 
 }
 
 // ── cari_barang ─────────────────────────────────────────────────────────────
+// Lewat `fn_chatbot_cari_barang` (migrasi 20260930_03), BUKAN `.or(ilike…)` ke
+// tabel `aset`. Bentuk lama tak bisa dilayani index mana pun, jadi untuk admin
+// (cakupan se-kabupaten) ia menyapu 906 rb baris: terukur 7,7 dtk dari pagu 8
+// dtk → "statement timeout". Fungsinya memakai index trigram yang sudah ada
+// (68 ms) dan ikut mencari nomor polisi/rangka/mesin, yang dulu tak tercakup.
+type BarisCari = {
+  nibar: string | null; kode: string; nama_barang: string | null; uraian_barang: string | null
+  merek_tipe: string | null; no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
+  nilai_perolehan: number; tgl_perolehan: string | null
+  intra_ekstra: string | null; kondisi_barang: string | null; skpd_nama: string | null
+}
+
 async function cariBarang(sb: SupabaseClient, kata: string, golongan: string): Promise<string> {
+  if (!kata) return 'GAGAL: kata kunci pencarian kosong.'
+  if (kata.length < 3) return 'GAGAL: kata kunci minimal 3 karakter.'
+  if (golongan && !/^1\.\d\.\d$/.test(golongan)) return 'GAGAL: golongan harus berformat level-3, mis. 1.3.2.'
+
+  const { data, error } = await sb.rpc('fn_chatbot_cari_barang', {
+    p_kata: kata, p_golongan: golongan || null, p_limit: MAKS_BARIS,
+  })
+  // Migrasi 20260930_03 belum jalan → fungsi belum dikenal PostgREST. Jatuh ke
+  // query LAMA (perilaku sebelum migrasi), bukan gagal total: alat ini dipakai
+  // seluruh pengguna, dan urutan deploy yang terbalik tak boleh mematikannya.
+  if (error && (error.code === 'PGRST202' || error.code === '42883')) return cariBarangLama(sb, kata, golongan)
+  if (error) return `GAGAL mencari barang: ${error.message}`
+  const rows = (data || []) as unknown as BarisCari[]
+  if (rows.length === 0) return `Tidak ada barang aktif yang cocok dengan "${kata}" di lingkup SKPD pengguna.`
+
+  return [
+    `Hasil pencarian "${kata}" (maksimal ${MAKS_BARIS} baris, lingkup SKPD pengguna):`,
+    ...rows.map(r => [
+      `- ${r.nama_barang || r.uraian_barang || '(tanpa nama)'}`,
+      `NIBAR ${r.nibar || '-'}`,
+      `kode ${r.kode}${r.uraian_barang ? ` (${r.uraian_barang})` : ''}`,
+      r.merek_tipe ? `merek ${r.merek_tipe}` : null,
+      r.no_polisi ? `no. polisi ${r.no_polisi}` : null,
+      r.no_rangka ? `no. rangka ${r.no_rangka}` : null,
+      r.no_mesin ? `no. mesin ${r.no_mesin}` : null,
+      `nilai Rp${rp(r.nilai_perolehan)}`,
+      r.tgl_perolehan ? `perolehan ${r.tgl_perolehan}` : null,
+      r.intra_ekstra ? `${r.intra_ekstra}komptabel` : null,
+      r.kondisi_barang ? `kondisi ${r.kondisi_barang}` : null,
+      `SKPD ${r.skpd_nama || '-'}`,
+    ].filter(Boolean).join(' · ')),
+    rows.length === MAKS_BARIS
+      ? `(Terpotong di ${MAKS_BARIS} baris — masih mungkin ada yang lain. Untuk daftar lengkap, arahkan pengguna ke menu Daftar Barang.)`
+      : '',
+  ].filter(Boolean).join('\n')
+}
+
+/** Jalur cadangan: query sebelum migrasi 20260930_03. Lambat untuk admin & tak
+ *  mencari nomor polisi — dipakai HANYA kalau fungsinya belum terpasang. */
+async function cariBarangLama(sb: SupabaseClient, kata: string, golongan: string): Promise<string> {
   if (!kata) return 'GAGAL: kata kunci pencarian kosong.'
   // Tanda koma/persen sengaja dibuang: keduanya memecah sintaks `or=` PostgREST
   // di tengah jalan & membuat seluruh filter ditolak (pelajaran yang sama sudah

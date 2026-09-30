@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { daftarIstimewa, penggunaIstimewa } from './istimewa'
 import { TOOL_DEFS_ADMIN, NAMA_TOOL_ADMIN, jalankanToolAdmin } from './toolsAdmin'
-import { TOOL_DEFS } from './tools'
+import { TOOL_DEFS, jalankanTool } from './tools'
 
 const ID = 'fa915199-3df2-4c79-807f-54aad3c8381e'
 
@@ -40,8 +40,13 @@ describe('alat admin', () => {
     for (const n of NAMA_TOOL_ADMIN) expect(biasa.has(n)).toBe(false)
   })
   it('HANYA-BACA: berkas tak memanggil insert/update/upsert/delete', () => {
+    // SELURUH berkas alat istimewa, bukan cuma toolsAdmin.ts — alatnya kini
+    // tersebar di beberapa berkas, dan berkas baru yang lolos dari pemindai ini
+    // bisa menulis tanpa ada yang memerahkan.
+    for (const f of ['toolsAdmin.ts', 'perolehan.ts', 'pengelolaan.ts', 'skpdPohon.ts']) {
+      expect(readFileSync(join(__dirname, f), 'utf8'), f).not.toMatch(/\.(insert|update|upsert|delete)\(/)
+    }
     const src = readFileSync(join(__dirname, 'toolsAdmin.ts'), 'utf8')
-    expect(src).not.toMatch(/\.(insert|update|upsert|delete)\(/)
     // rpc hanya boleh fungsi baca yang dikenal
     const rpc = [...src.matchAll(/\.rpc\('([a-z_]+)'/g)].map(m => m[1])
     expect(rpc).toEqual(['fn_rekap_bmd', 'fn_chatbot_hitung_barang'])
@@ -211,8 +216,47 @@ describe('rekap_perolehan', () => {
     expect(await jalankanToolAdmin(klienPerolehan([], SKPD), 'rekap_perolehan', { periode: '2030' })).toMatch(/^Tidak ada perolehan/)
   })
   it('memakai JENIS_PEROLEHAN dari lib/bmd (satu sumber), bukan daftar sendiri', () => {
-    const src = readFileSync(join(__dirname, 'toolsAdmin.ts'), 'utf8')
+    const src = readFileSync(join(__dirname, 'perolehan.ts'), 'utf8')
     expect(src).toMatch(/JENIS_PEROLEHAN/)
     expect(src).not.toMatch(/'hasil_inventarisasi'/)
+  })
+})
+
+// ── cari_barang (alat dasar, dipakai SEMUA pengguna) ────────────────────────
+describe('cari_barang lewat fn_chatbot_cari_barang', () => {
+  const baris = { nibar: 'N1', kode: '1.3.2.02.01.04.001', nama_barang: 'Sepeda Motor', uraian_barang: 'Sepeda Motor',
+    merek_tipe: 'Honda', no_polisi: 'AG 3837 GP', no_rangka: 'MH1', no_mesin: 'JF1', nilai_perolehan: 15000000,
+    tgl_perolehan: '2019-01-01', intra_ekstra: 'intra', kondisi_barang: 'Baik', skpd_nama: 'BKAD' }
+
+  it('memanggil fungsinya & menampilkan nomor polisi + SKPD pemilik', async () => {
+    let dikirim: unknown = null
+    const sb = { rpc: async (fn: string, a: unknown) => { expect(fn).toBe('fn_chatbot_cari_barang'); dikirim = a; return { data: [baris], error: null } } } as never
+    const r = await jalankanTool(sb, 'cari_barang', { kata_kunci: 'AG 3837 GP' })
+    expect(dikirim).toMatchObject({ p_kata: 'AG 3837 GP', p_golongan: null })
+    expect(r).toContain('no. polisi AG 3837 GP')
+    expect(r).toContain('SKPD BKAD')
+  })
+  it('kata kunci < 3 karakter ditolak sebelum menyentuh DB (trigram tak terpakai → sapu seluruh tabel)', async () => {
+    const boom = new Proxy({}, { get() { throw new Error('DB tersentuh') } }) as never
+    expect(await jalankanTool(boom, 'cari_barang', { kata_kunci: 'AG' })).toMatch(/^GAGAL:/)
+  })
+  it('timeout/galat database → GAGAL, bukan "tidak ada barang"', async () => {
+    const sb = { rpc: async () => ({ data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } }) } as never
+    const r = await jalankanTool(sb, 'cari_barang', { kata_kunci: 'motor' })
+    expect(r).toMatch(/^GAGAL/)
+    expect(r).toContain('statement timeout')
+  })
+  it('fungsi belum terpasang (migrasi telat) → jatuh ke query lama, bukan mati', async () => {
+    let lewatTabel = false
+    const b: Record<string, unknown> = {}
+    for (const m of ['select', 'eq', 'or', 'like', 'limit']) b[m] = () => b
+    b.then = (ok: (v: unknown) => unknown) => Promise.resolve({ data: [baris], error: null }).then(ok)
+    const sb = {
+      rpc: async () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function' } }),
+      from: () => { lewatTabel = true; return b },
+    } as never
+    const r = await jalankanTool(sb, 'cari_barang', { kata_kunci: 'motor' })
+    expect(lewatTabel).toBe(true)
+    expect(r).toContain('Sepeda Motor')
   })
 })

@@ -11,30 +11,12 @@ import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { GayaCetakLaporan, KopCetak, TombolCetak, useKonfirmasiCetak } from '@/components/pelaporan/CetakLaporan'
 import {
-  JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL, perluNilaiPemanfaatan,
-  persenMasaPemanfaatan, bandPemanfaatan, perluPeringatanPenarikan, WARNA_BAND_PEMANFAATAN,
+  JENIS_PEMANFAATAN, JENIS_PEMANFAATAN_LABEL, perluPeringatanPenarikan, WARNA_BAND_PEMANFAATAN,
   type BandPemanfaatan,
 } from '@/lib/pemanfaatan'
+import { muatPemanfaatan, type BarisPemanfaatan } from '@/lib/laporanPemanfaatan'
 
-type HeaderPayload = {
-  jenis_pemanfaatan?: string; mitra?: string; alamat_mitra?: string
-  mulai?: string; berakhir?: string; peruntukan?: string; nilai_pemanfaatan?: number
-}
-type Row = {
-  key: string; skpd: string; jenis: string; jenisRaw: string; mitra: string
-  kode: string; uraianBarang: string; nibar: string; nama: string
-  merekTipe: string; spesifikasiLainnya: string
-  noPolisi: string; noRangka: string; noMesin: string
-  luas: number | string | null
-  lingkup: string; mulai: string; berakhir: string; status: string
-  // null = tak berlaku (Pinjam Pakai, non-profit) — beda dari 0 (berpendapatan
-  // tapi belum diisi angkanya).
-  nilai: number | null
-  noDok: string
-  tglDok: string
-  persen: number | null
-  band: BandPemanfaatan | null
-}
+type Row = BarisPemanfaatan
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
@@ -66,91 +48,31 @@ export default function LaporanPemanfaatan() {
   const [jenis, setJenis] = useState('')
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [skpdNama, setSkpdNama] = useState('')
+  const [err, setErr] = useState('')
 
-  const build = useCallback(async (): Promise<Row[]> => {
-    let hq = supabase.from('jurnal_header')
-      .select('id,no_sk,tanggal,skpd_id,payload').eq('kategori', 'pemanfaatan')
-    if (descIds && descIds.length > 0) hq = hq.in('skpd_id', descIds)
-    const { data: headers } = await hq.order('tanggal', { ascending: false })
-    let hs = (headers || []) as unknown as { id: string; no_sk: string; tanggal: string; skpd_id: number; payload: HeaderPayload | null }[]
-    if (jenis) hs = hs.filter(h => (h.payload?.jenis_pemanfaatan || '') === jenis)
-    if (hs.length === 0) return []
+  // Pemuatnya di lib/laporanPemanfaatan.ts (dipakai bersama alat baca Asisten AI).
+  const build = useCallback(
+    (): Promise<Row[]> => muatPemanfaatan(supabase, { descIds, jenis, hariIni: todayISO() }),
+    [descIds, jenis], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
-    const skpdIds = [...new Set(hs.map(h => h.skpd_id))]
-    const { data: skpdRows } = await supabase.from('admin_skpd').select('id,nama').in('id', skpdIds)
-    const skpdNama: Record<number, string> = Object.fromEntries((skpdRows || []).map(s => [s.id, s.nama]))
-    const hById = new Map(hs.map(h => [h.id, h]))
-
-    const { data: led } = await supabase.from('transaksi_bmd')
-      .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,kode,uraian_barang,nibar,nama_barang,' +
-        'merek_tipe,spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,luas)')
-      .in('jenis', ['pemanfaatan', 'pemanfaatan_selesai', 'batal_pemanfaatan'] as never)
-      .in('header_id', hs.map(h => h.id)).order('id', { ascending: true })
-    const ledRows = (led || []) as unknown as {
-      id: number; header_id: string; jenis: string; nilai: number
-      payload: { lingkup?: string; bagian?: string | null } | null
-      aset: {
-        id: string; kode: string; uraian_barang: string | null; nibar: string | null; nama_barang: string | null
-        merek_tipe: string | null; spesifikasi_lainnya: string | null
-        no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
-        luas: number | string | null
-      } | null
-    }[]
-
-    const acc = new Map<string, {
-      kode: string; uraianBarang: string; nibar: string; nama: string
-      merekTipe: string; spesifikasiLainnya: string
-      noPolisi: string; noRangka: string; noMesin: string; luas: number | string | null
-      lingkup: string; selesai: boolean; headerId: string
-    }>()
-    for (const r of ledRows) {
-      if (!r.aset || !hById.has(r.header_id)) continue
-      const key = `${r.header_id}|${r.aset.id}`
-      if (r.jenis === 'pemanfaatan') {
-        acc.set(key, {
-          kode: r.aset.kode || '-', uraianBarang: r.aset.uraian_barang || '-',
-          nibar: r.aset.nibar || '-', nama: r.aset.nama_barang || '-',
-          merekTipe: r.aset.merek_tipe || '-', spesifikasiLainnya: r.aset.spesifikasi_lainnya || '-',
-          noPolisi: r.aset.no_polisi || '-', noRangka: r.aset.no_rangka || '-', noMesin: r.aset.no_mesin || '-',
-          luas: r.aset.luas,
-          lingkup: r.payload?.lingkup === 'sebagian' ? `Sebagian${r.payload?.bagian ? ` — ${r.payload.bagian}` : ''}` : 'Seluruhnya',
-          selesai: false, headerId: r.header_id,
-        })
-      } else if (r.jenis === 'pemanfaatan_selesai') {
-        const cur = acc.get(key); if (cur) cur.selesai = true
-      } else { acc.delete(key) }
-    }
-    const today = todayISO()
-    const out: Row[] = []
-    for (const [key, v] of acc) {
-      const h = hById.get(v.headerId)!
-      const p = h.payload || {}
-      const jenisRaw = p.jenis_pemanfaatan || ''
-      const status = v.selesai ? 'Selesai' : (p.berakhir && today > p.berakhir ? 'Berakhir' : 'Aktif')
-      const mulai = p.mulai || ''
-      const berakhir = p.berakhir || ''
-      const persen = persenMasaPemanfaatan(mulai, berakhir, today)
-      // Nilai TIDAK datang dari `transaksi_bmd.nilai` (baris pemanfaatan SELALU
-      // 0 — event netral) melainkan dari nominal yang dientri di header
-      // (jurnal_header.payload.nilai_pemanfaatan). null = jenisnya memang tak
-      // berpendapatan (Pinjam Pakai); angka (termasuk 0) = berpendapatan tapi
-      // mungkin belum diisi.
-      out.push({
-        key, skpd: skpdNama[h.skpd_id] || '-', jenis: JENIS_PEMANFAATAN_LABEL[jenisRaw] || (jenisRaw || '-'), jenisRaw,
-        mitra: p.mitra || '-',
-        kode: v.kode, uraianBarang: v.uraianBarang, nibar: v.nibar, nama: v.nama,
-        merekTipe: v.merekTipe, spesifikasiLainnya: v.spesifikasiLainnya,
-        noPolisi: v.noPolisi, noRangka: v.noRangka, noMesin: v.noMesin, luas: v.luas,
-        lingkup: v.lingkup,
-        mulai, berakhir, status,
-        nilai: perluNilaiPemanfaatan(jenisRaw) ? (p.nilai_pemanfaatan ?? 0) : null,
-        noDok: h.no_sk, tglDok: h.tanggal, persen, band: persen == null ? null : bandPemanfaatan(persen),
-      })
-    }
-    return out
-  }, [descIds, jenis]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => { (async () => { setLoading(true); setRows(await build()); setLoading(false) })() }, [build])
+  // try/catch/finally WAJIB: pemuatnya kini melempar saat query gagal, dan tanpa
+  // penangkap halaman ini akan membeku di "Memuat..." selamanya.
+  useEffect(() => {
+    let batal = false
+    void (async () => {
+      setLoading(true); setErr('')
+      try {
+        const hasil = await build()
+        if (!batal) setRows(hasil)
+      } catch (e) {
+        if (!batal) { setErr(`Gagal memuat laporan: ${(e as Error).message}`); setRows([]) }
+      } finally {
+        if (!batal) setLoading(false)
+      }
+    })()
+    return () => { batal = true }
+  }, [build])
 
   const rekap = new Map<string, number>()
   for (const r of rows) rekap.set(r.jenis, (rekap.get(r.jenis) || 0) + 1)
@@ -226,6 +148,10 @@ export default function LaporanPemanfaatan() {
             }} />
         </div>
       </div>
+
+      {err && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 no-print" role="alert">{err}</div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4 no-print">
         <div className="card p-4">
