@@ -56,6 +56,27 @@ export const TOOL_DEFS_ADMIN = [
     },
   },
   {
+    name: 'hitung_barang',
+    description:
+      'HITUNG berapa barang AKTIF per KODE BARANG (jumlah unit + total nilai perolehan), opsional dibatasi satu SKPD '
+      + '(berikut seluruh unit di bawahnya) dan opsional dipecah per SKPD. Pencarian lewat URAIAN KODEFIKASI, jadi '
+      + '"laptop" menemukan kode "Lap Top" DAN "Laptop" sekaligus — dilaporkan terpisah per kode, jangan digabung diam-diam. '
+      + 'Pakai untuk "berapa Laptop di BKAD", "berapa kendaraan roda dua se-kabupaten", "SKPD mana saja yang punya Proyektor". '
+      + 'Cepat (<1 dtk untuk pertanyaan wajar). Untuk SKPD tertentu: cari_skpd dulu untuk mendapat skpd_id. '
+      + 'Hanya jumlah & nilai perolehan — TIDAK memuat penyusutan (pakai posisi_penyusutan / rekap_bmd_skpd). '
+      + 'Kata yang terlalu umum ("meja", "alat") ditolak karena cocok dengan puluhan kode; persempit atau pakai awalan kode.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        kata_kunci: { type: 'string', description: 'Sebagian uraian kode barang, mis. "laptop", "lap top", "printer".' },
+        kode: { type: 'string', description: 'Opsional. Awalan kode barang, mis. "1.3.2.10.01". Boleh dipakai TANPA kata_kunci.' },
+        skpd_id: { type: 'number', description: 'Opsional. Kosongkan untuk se-kabupaten. Ambil dari cari_skpd.' },
+        per_skpd: { type: 'boolean', description: 'Opsional. true = rincikan per SKPD (se-kabupaten: per SKPD induk; dengan skpd_id: per unit).' },
+      },
+      required: [] as string[],
+    },
+  },
+  {
     name: 'sebaran_golongan',
     description:
       'SKPD MANA SAJA yang memiliki aset AKTIF suatu golongan, berikut jumlah unit & nilai perolehan per SKPD induk '
@@ -104,6 +125,7 @@ export async function jalankanToolAdmin(sb: SupabaseClient, nama: string, input:
     switch (nama) {
       case 'cari_skpd': return await cariSkpd(sb, teks(input.kata_kunci))
       case 'rekap_bmd_skpd': return await rekapBmdSkpd(sb, teks(input.periode), input.skpd_id, teks(input.komptabel))
+      case 'hitung_barang': return await hitungBarang(sb, teks(input.kata_kunci), teks(input.kode), input.skpd_id, input.per_skpd === true)
       case 'sebaran_golongan': return await sebaranGolongan(sb, teks(input.golongan))
       case 'kartu_pending': return await kartuPending(sb)
       case 'status_tahun_buku': return await statusTahunBuku(sb)
@@ -126,6 +148,22 @@ async function muatSkpd(sb: SupabaseClient): Promise<SkpdRow[]> {
   const rows = (data || []) as unknown as SkpdRow[]
   if (rows.length >= 1000) throw new Error('daftar SKPD melebihi 1.000 baris & mungkin terpotong — alat ini perlu diperbarui.')
   return rows
+}
+
+/** SKPD `akar` BERIKUT seluruh turunannya (sub-unit ikut, sama dgn descendantIds
+ *  yang dipakai halaman Laporan BMD). Dipakai rekap_bmd_skpd & hitung_barang —
+ *  dua alat yang harus sepakat soal "apa saja yang termasuk SKPD ini". */
+function turunanSkpd(semua: SkpdRow[], akar: number): number[] {
+  const anak = new Map<number, number[]>()
+  for (const s of semua) if (s.parent_id != null) anak.set(s.parent_id, [...(anak.get(s.parent_id) || []), s.id])
+  const ids: number[] = []
+  const antre = [akar]
+  while (antre.length) {
+    const id = antre.pop() as number
+    ids.push(id)
+    antre.push(...(anak.get(id) || []))
+  }
+  return ids
 }
 
 async function cariSkpd(sb: SupabaseClient, kata: string): Promise<string> {
@@ -154,17 +192,7 @@ async function rekapBmdSkpd(sb: SupabaseClient, periode: string, skpdId: unknown
     const semua = await muatSkpd(sb)
     const ada = semua.find(s => s.id === akar)
     if (!ada) return `GAGAL: SKPD dengan id ${akar} tidak ditemukan.`
-    // Sub-unit ikut: rekap SKPD induk = dirinya + seluruh turunannya (sama dgn
-    // descendantIds yang dipakai halaman Laporan BMD).
-    const anak = new Map<number, number[]>()
-    for (const s of semua) if (s.parent_id != null) anak.set(s.parent_id, [...(anak.get(s.parent_id) || []), s.id])
-    ids = []
-    const antre = [akar]
-    while (antre.length) {
-      const id = antre.pop() as number
-      ids.push(id)
-      antre.push(...(anak.get(id) || []))
-    }
+    ids = turunanSkpd(semua, akar)
     label = `${ada.nama} beserta ${ids.length - 1} unit di bawahnya`
   }
 
@@ -187,6 +215,89 @@ async function rekapBmdSkpd(sb: SupabaseClient, periode: string, skpdId: unknown
     `TOTAL: ${fmtN(tot.kuantitas)} unit · perolehan Rp${rp(tot.perolehan)} · akumulasi Rp${rp(tot.akumulasi)} · beban Rp${rp(tot.beban)} · nilai buku Rp${rp(tot.nilaiBuku)}`,
     'Catatan: golongan yang tidak disusutkan (Tanah, ATL, KDP) nilai bukunya = nilai perolehan.',
   ].join('\n')
+}
+
+type BarisHitung = { kode: string; uraian: string | null; skpd_id: number | null; jumlah: number; nilai_perolehan: number }
+
+async function hitungBarang(sb: SupabaseClient, kata: string, kode: string, skpdId: unknown, perSkpd: boolean): Promise<string> {
+  if (!kata && !kode) return 'GAGAL: isi kata_kunci (mis. "laptop") atau kode (awalan kode barang).'
+  if (kode && !/^[0-9.]+$/.test(kode)) return 'GAGAL: kode harus berupa awalan angka & titik, mis. 1.3.2.10.01.'
+
+  let ids: number[] | null = null
+  let semua: SkpdRow[] = []
+  let label = 'SELURUH KABUPATEN'
+  const punyaSkpd = skpdId != null && skpdId !== ''
+  if (punyaSkpd) {
+    const akar = Number(skpdId)
+    if (!Number.isInteger(akar)) return 'GAGAL: skpd_id harus angka bulat (ambil dari cari_skpd).'
+    semua = await muatSkpd(sb)
+    const ada = semua.find(s => s.id === akar)
+    if (!ada) return `GAGAL: SKPD dengan id ${akar} tidak ditemukan.`
+    ids = turunanSkpd(semua, akar)
+    label = `${ada.nama}${ids.length > 1 ? ` beserta ${ids.length - 1} unit di bawahnya` : ''}`
+  } else if (perSkpd) {
+    semua = await muatSkpd(sb)
+  }
+
+  const { data, error } = await sb.rpc('fn_chatbot_hitung_barang', {
+    p_kata: kata || null, p_kode: kode || null, p_skpd_ids: ids, p_per_skpd: perSkpd,
+  })
+  // ⚠️ Pesan penolakan "terlalu umum" datang dari fungsinya & sengaja diteruskan
+  // apa adanya: model harus tahu ia perlu mempersempit, bukan menyimpulkan "0".
+  if (error) return `GAGAL menghitung barang: ${error.message}`
+  const rows = ((data || []) as unknown as BarisHitung[]).map(r => ({
+    ...r, jumlah: Number(r.jumlah), nilai_perolehan: Number(r.nilai_perolehan),
+  }))
+  const cari = [kata && `"${kata}"`, kode && `kode ${kode}*`].filter(Boolean).join(' + ')
+  if (rows.length === 0) {
+    return `Tidak ada barang aktif yang cocok dengan ${cari} di ${label}. `
+      + '(Bisa karena tidak ada kode barang dengan uraian itu, atau kodenya ada tapi belum ada asetnya.)'
+  }
+
+  // Ringkasan per KODE (dijumlah lintas SKPD kalau dipecah per SKPD).
+  const perKode = new Map<string, { uraian: string | null; n: number; rp: number }>()
+  for (const r of rows) {
+    const c = perKode.get(r.kode) || { uraian: r.uraian, n: 0, rp: 0 }
+    c.n += r.jumlah; c.rp += r.nilai_perolehan
+    perKode.set(r.kode, c)
+  }
+  const totN = rows.reduce((t, r) => t + r.jumlah, 0)
+  const totRp = rows.reduce((t, r) => t + r.nilai_perolehan, 0)
+  const baris = [...perKode.entries()].sort((a, b) => b[1].n - a[1].n)
+    .map(([k, c]) => `- ${k} · ${c.uraian || '(uraian tidak ada di kodefikasi)'}: ${fmtN(c.n)} unit · Rp${rp(c.rp)}`)
+
+  const keluar = [
+    `Barang AKTIF yang cocok dengan ${cari} di ${label}:`,
+    ...baris,
+    perKode.size > 1 ? `TOTAL: ${fmtN(totN)} unit · Rp${rp(totRp)}` : '',
+  ]
+
+  if (perSkpd) {
+    const byId = new Map(semua.map(s => [s.id, s]))
+    // Se-kabupaten: unit digabung ke SKPD induknya. Dengan skpd_id: per unit itu sendiri.
+    const kunci = (id: number): number => {
+      if (punyaSkpd) return id
+      let s = byId.get(id)
+      for (let i = 0; s && s.parent_id != null && i < 10; i++) s = byId.get(s.parent_id)
+      return s ? s.id : id
+    }
+    const per = new Map<number, { n: number; rp: number }>()
+    for (const r of rows) {
+      if (r.skpd_id == null) continue
+      const k = kunci(r.skpd_id)
+      const c = per.get(k) || { n: 0, rp: 0 }
+      c.n += r.jumlah; c.rp += r.nilai_perolehan
+      per.set(k, c)
+    }
+    const urut = [...per.entries()].sort((a, b) => b[1].n - a[1].n)
+    keluar.push(
+      `Rincian per ${punyaSkpd ? 'unit' : 'SKPD induk'} (${urut.length} yang punya, semua kode di atas dijumlah):`,
+      ...urut.slice(0, MAKS_BARIS).map(([id, c]) => `- ${byId.get(id)?.nama || `SKPD ${id}`}: ${fmtN(c.n)} unit · Rp${rp(c.rp)}`),
+      urut.length > MAKS_BARIS ? `(Terpotong di ${MAKS_BARIS} — masih ada ${urut.length - MAKS_BARIS} lainnya.)` : '',
+    )
+  }
+  keluar.push('Catatan: hanya aset berstatus aktif; nilai = nilai perolehan (bukan nilai buku).')
+  return keluar.filter(Boolean).join('\n')
 }
 
 /** Batas baris yang boleh ditarik. Golongan di atas ini DITOLAK, bukan dipotong:

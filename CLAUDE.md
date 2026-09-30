@@ -8628,3 +8628,49 @@ dgn ambang kategori IPA.
 ⚠️ **Deploy-ordering: migrasi 20260930_01 dulu.** Kalau terbalik halaman tetap
 terbuka & Materi jalan; kotak Peraturan tampil kosong dan Simpan-nya ditolak
 Postgres (23514) — pesannya tampil, tak ada yang tertulis.
+
+## Asisten AI: alat `hitung_barang` untuk pengguna istimewa (2026-09-30, migrasi 20260930_02)
+
+Pertanyaan pemicu: "ada berapa Laptop di BKAD?" — sebelumnya tak terjawab; alat
+yang ada cuma merekap per GOLONGAN (`rekap_bmd_skpd`) atau mencari maksimal 30
+barang tanpa saringan SKPD (`cari_barang`). Jawaban AI yang menolak itu benar
+untuk alatnya, bukan halusinasi. (Terpisah: akun pemilik pertanyaan itu awalnya
+jatuh ke jalur AI biasa karena env `CHATBOT_USER_ISTIMEWA` belum diset — id
+akun, bukan id pegawai; env baru hanya berlaku sesudah redeploy.)
+
+- **Fungsi SQL `fn_chatbot_hitung_barang(p_kata, p_kode, p_skpd_ids, p_per_skpd)`**,
+  bukan query PostgREST + hitung di JavaScript: barang umum puluhan-ribu baris,
+  dan batas 1.000 baris PostgREST memotong diam-diam → jumlah tampak sah tapi
+  KURANG. SECURITY INVOKER **sengaja** — RLS `aset_select` tetap berlaku atas
+  pemanggil; jangan diubah jadi DEFINER. `SET work_mem 64MB`.
+- **Pencarian lewat URAIAN KODEFIKASI, bukan `nama_barang` bebas.** "Lap Top"
+  (1.3.2.10.01.02.002, 9.136 aset) dan "Laptop" (1.3.2.05.01.05.094, 26 aset)
+  adalah DUA kode berbeda di master; nama_barang diketik operator dan tak
+  seragam. Hasilnya dilaporkan **per kode**, tak digabung diam-diam. Spasi di
+  kata kunci dilonggarkan (`lap top` ≈ `lap%top`), metakarakter LIKE dari
+  pengguna dibuang, dan kata yang cocok dengan >60 kode ("meja", "%") **DITOLAK**
+  (`terlalu umum`) — menjumlah ratusan jenis jadi satu angka tak berarti apa-apa.
+- Aset dicocokkan `kode = ANY(kode-kode)` (dilayani `idx_aset_kode`), **bukan**
+  `kode LIKE` — LIKE tak pernah jadi index-cond di bawah RLS. Awalan kode dari
+  pengguna hanya dipakai pada master (15 rb baris).
+- ⚠️ **Agregasi DULU, uraian ditempel SESUDAH** (CTE `g` + LEFT JOIN). Versi
+  pertama menaruh subquery uraian di select list yang sama dgn GROUP BY:
+  "kursi" se-kabupaten (133.721 baris) **13,7 dtk** vs **2,8 dtk** sesudah
+  diperbaiki — pagunya 8 dtk. Ditemukan lewat pengukuran, bukan dugaan: query
+  polos yang sama 0,45 dtk.
+- **Terukur dgn RLS aktif (uid admin, `SET LOCAL role authenticated`):** Lap Top
+  BKAD 26 ms · Lap Top per SKPD se-kab (792 baris) 320 ms · awalan 1.3.2.10.01
+  se-kab 75 ms · kasus terberat (kursi, 60 kode) 2,8 dtk.
+- Sisi TS (`hitungBarang`, lib/chatbot/toolsAdmin.ts): SKPD beserta anaknya lewat
+  `turunanSkpd()` — **diangkat dari `rekapBmdSkpd`** (kemunculan kedua) supaya
+  dua alat sepakat soal "apa saja yang termasuk SKPD ini". `per_skpd`: se-kab
+  digabung ke SKPD INDUK, dengan `skpd_id` dirinci per UNIT. Error database
+  (termasuk penolakan "terlalu umum") diteruskan sebagai `GAGAL:`, TIDAK
+  pernah jadi "tidak ada barang".
+- Dikunci lib/chatbot/istimewa.test.ts (daftar `.rpc()` yang diizinkan alat
+  admin kini `fn_rekap_bmd` + `fn_chatbot_hitung_barang`). Catatan istimewa di
+  app/api/ai-chat/route.ts menyebut alat baru + `sebaran_golongan` yang
+  sebelumnya belum tercantum.
+- **Deploy-ordering bebas** (fungsi baru; tanpa migrasi alat cuma mengembalikan
+  `GAGAL:`). ⛔ Belum ada alat serupa untuk pengguna NON-istimewa — `cari_barang`
+  mereka tetap maksimal 30 baris.
