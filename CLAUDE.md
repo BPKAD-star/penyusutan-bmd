@@ -3092,14 +3092,14 @@ Berkasnya: `lib/formatPengamanan.ts` (+ test) · `lib/laporanPengamanan.ts` ·
 ## Laporan Pemanfaatan — tab Format Permendagri (2026-10-01)
 
 Cabang KESEMBILAN modul Pelaporan Permendagri. Menu Pelaporan → Pengelolaan →
-**Pemanfaatan** kini bertab: **Daftar** (keadaan terkini, tanpa periode) &
-**Format Permendagri** (lembar bertanda tangan, per-SKPD & berperiode). Bentuknya
+**Pemanfaatan** kini bertiga tab: **Daftar Transaksi** (keadaan terkini, tanpa
+periode) · **Rekap per SKPD** · **Format Permendagri** (lembar bertanda tangan,
+per-SKPD & berperiode). Bentuknya
 tabel 15 kolom dari contoh user (NIBAR · Kode-Uraian · Nama · Merk/Tipe · No
 Polisi · Lokasi · Nilai Perolehan · Jenis Pemanfaatan · Mitra · Jangka Waktu ·
 Mulai · Berakhir · No Dokumen Sumber · Tanggal Dokumen Sumber · Keterangan),
 dikelompokkan per golongan yang ADA di data, "Total <jenis>" + "TOTAL", pola
-sama dgn Penghapusan/Pengamanan. **Tak ada migrasi.** Rekap per SKPD belum ada
-untuk menu ini (belum diminta).
+sama dgn Penghapusan/Pengamanan. **Tak ada migrasi.**
 
 Berkasnya: `lib/formatPemanfaatan.ts` · `lib/laporanPemanfaatanPermendagri.ts` ·
 `components/pelaporan/LembarPemanfaatanPermendagri.tsx` ·
@@ -3134,6 +3134,16 @@ Dikunci lib/formatPemanfaatan.test.ts + tests/lembarPemanfaatan.test.tsx.
   disewakan padahal cuma satu ruang. (Tak ada kolom Lingkup di contoh user; kalau
   awalan ini tak diinginkan, cabut di `keteranganPemanfaatan`.)
 - Lokasi = `aset.alamat_detail` saja (rantai wilayah belum ikut).
+- **Rekap per SKPD** (`lib/rekapPemanfaatan.ts`): matriks SKPD induk × jenis aset,
+  diturunkan dari baris tab Daftar Transaksi (tak ada query kedua), mengikuti
+  penyaring Jenis Pemanfaatan. ⚠️ **HANYA perjanjian berstatus Aktif** — yang
+  Selesai/Berakhir tak dihitung, kalau tidak "barang yang sedang dimanfaatkan"
+  menggelembung oleh perjanjian yang sudah tak berjalan (dikatakan di layar). Satu
+  barang dihitung SEKALI per SKPD. Dikelompokkan ke SKPD PENCATAT
+  (`jurnal_header.skpd_id`). Tab ini hanya untuk admin / SKPD yang punya anak
+  (`bolehRekap`, sama dgn Pengamanan). `BarisPemanfaatan` dapat `skpdId`,
+  `asetId`, `nilaiPerolehan` (alat baca Asisten AI tak terpengaruh — hanya
+  menambah field).
 
 ## Laporan Penghapusan — Format IV.K.1 · IV.K.2 · IV.K.6 (2026-09-07)
 

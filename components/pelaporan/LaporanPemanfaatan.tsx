@@ -5,10 +5,10 @@
 // kategori 'pemanfaatan' + ledger (keanggotaan per header+aset, baris terakhir
 // menentukan; batal_pemanfaatan dibuang). Export Excel.
 //
-// Dua tab, susunan yang sama dgn Pengamanan/Reklasifikasi/Koreksi/Penghapusan:
-//   Daftar             — keadaan TERKINI, tanpa periode
+// Tiga tab, susunan yang sama dgn Pengamanan/Reklasifikasi/Koreksi/Penghapusan:
+//   Daftar Transaksi   — keadaan TERKINI, tanpa periode
+//   Rekap per SKPD     — matriks SKPD × jenis aset (hanya perjanjian Aktif)
 //   Format Permendagri — lembar bertanda tangan, per-SKPD & berperiode
-// (Rekap per SKPD belum ada untuk menu ini — belum diminta.)
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
@@ -21,6 +21,12 @@ import {
 } from '@/lib/pemanfaatan'
 import { muatPemanfaatan, type BarisPemanfaatan } from '@/lib/laporanPemanfaatan'
 import PemanfaatanFormatPermendagri from './PemanfaatanFormatPermendagri'
+import { GOLONGAN_REKAP } from '@/lib/bmd'
+import { useProfilRole } from '@/components/useProfilRole'
+import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
+import { bangunPohonRekap, ratakanPohon } from '@/lib/rekapPohon'
+import { useSkpdTree } from '@/components/useSkpdTree'
+import { leafRekapPemanfaatan } from '@/lib/rekapPemanfaatan'
 
 type Row = BarisPemanfaatan
 
@@ -48,6 +54,12 @@ function BarMasaPemanfaatan({ persen, band }: { persen: number | null; band: Ban
 export default function LaporanPemanfaatan() {
   const supabase = createClient()
   const konfirmasiCetak = useKonfirmasiCetak()
+  const { role, skpdId: myScopeId } = useProfilRole()
+  const isAdmin = role === 'admin'
+  const { byId: skpdById, childrenOf, rootOf, loaded: skpdLoaded } = useSkpdTree()
+  // Rekap per SKPD = admin ATAU siapa pun yang punya anak SKPD di bawahnya
+  // (keputusan user 2026-09-10) — sama dgn LaporanPengamanan/LaporanPerolehan.
+  const bolehRekap = isAdmin || (myScopeId != null && (childrenOf.get(myScopeId)?.length ?? 0) > 0)
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
@@ -55,7 +67,7 @@ export default function LaporanPemanfaatan() {
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [skpdNama, setSkpdNama] = useState('')
   const [err, setErr] = useState('')
-  const [tab, setTab] = useState<'daftar' | 'permendagri'>('daftar')
+  const [tab, setTab] = useState<'daftar' | 'matrix' | 'permendagri'>('daftar')
   // ⚠️ `skpdId` DIPISAH dari `descIds`: tab Daftar menyaring se-subtree
   // (`descendantIds`), sementara lembar bertanda tangan per-SKPD & memuat
   // identitas SKPD itu di kopnya — satu nilai untuk dua maksud membuat lembar
@@ -89,6 +101,28 @@ export default function LaporanPemanfaatan() {
 
   const rekap = new Map<string, number>()
   for (const r of rows) rekap.set(r.jenis, (rekap.get(r.jenis) || 0) + 1)
+
+  // Rekap per SKPD diturunkan dari baris yang SUDAH dimuat — tak ada query
+  // kedua, jadi mustahil beda dari tab Daftar Transaksi (termasuk saat Jenis
+  // disaring). Hanya perjanjian Aktif; satu barang sekali per SKPD.
+  const matrix: MatrixRow[] = (() => {
+    if (!skpdLoaded) return []
+    const leaf = leafRekapPemanfaatan(rows, (id, cadangan) => skpdById.get(id)?.nama ?? cadangan)
+    const akarIds = isAdmin
+      ? [...new Set([...leaf.keys()].map(id => rootOf(id)?.id ?? id))]
+      : (myScopeId != null ? [myScopeId] : [])
+    return bangunPohonRekap(leaf, skpdById, akarIds)
+  })()
+
+  function handleExportMatrix() {
+    exportToExcel(ratakanPohon(matrix).map(({ row: r, namaBerindentasi }) => {
+      const row: Record<string, unknown> = { SKPD: namaBerindentasi }
+      let total = 0
+      for (const g of GOLONGAN_REKAP) { const v = r.cells[g.kode]?.perolehan || 0; row[g.uraian] = v; total += v }
+      row['Total'] = total
+      return row
+    }), namaBerkasLaporan({ laporan: 'Laporan Pemanfaatan', skpd: skpdNama, akhiran: [jenis, 'per SKPD'] }), 'Rekap per SKPD')
+  }
 
   async function handleExport() {
     setExporting(true)
@@ -141,10 +175,15 @@ export default function LaporanPemanfaatan() {
             <TombolCetak onClick={handleCetak} disabled={loading || rows.length === 0} />
           </div>
         )}
+        {tab === 'matrix' && (
+          <button onClick={handleExportMatrix} disabled={matrix.length === 0} className="btn-primary">Export Excel</button>
+        )}
       </div>
 
       <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm no-print">
-        {([['daftar', 'Daftar'] as const, ['permendagri', 'Format Permendagri'] as const]).map(([v, label]) => (
+        {([['daftar', 'Daftar Transaksi'] as const,
+          ...(bolehRekap ? [['matrix', 'Rekap per SKPD'] as const] : []),
+          ['permendagri', 'Format Permendagri'] as const] as const).map(([v, label]) => (
           <button key={v} onClick={() => setTab(v)}
             className={`px-4 py-1.5 rounded-md transition-colors ${tab === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
             {label}
@@ -153,7 +192,7 @@ export default function LaporanPemanfaatan() {
       </div>
 
       <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end no-print">
-        {tab === 'daftar' ? (
+        {tab !== 'permendagri' ? (
           <div>
             <label className="block text-xs text-gray-500 mb-1">Jenis Pemanfaatan</label>
             <select className="select-filter" value={jenis} onChange={e => setJenis(e.target.value)}>
@@ -192,6 +231,19 @@ export default function LaporanPemanfaatan() {
 
       {tab === 'permendagri' ? (
         <PemanfaatanFormatPermendagri skpdId={skpdId} periode={periode} />
+      ) : tab === 'matrix' ? (
+        <>
+          {err && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 no-print" role="alert">{err}</div>
+          )}
+          <p className="text-xs text-gray-500 mb-2">
+            Nilai perolehan <b>barang yang sedang dimanfaatkan</b> (perjanjian berstatus <b>Aktif</b>;
+            yang Selesai/Berakhir tidak dihitung), dikelompokkan per <b>SKPD induk</b> × jenis aset.
+            Satu barang dihitung sekali. Mengikuti penyaring <b>Jenis Pemanfaatan</b> di atas
+            {jenis ? <> — sekarang hanya <b>{JENIS_PEMANFAATAN_LABEL[jenis] || jenis}</b></> : <> — sekarang <b>semua jenis</b></>}.
+          </p>
+          <RekapMatrixTable rows={matrix} golongan={GOLONGAN_REKAP} metric="perolehan" loading={loading} />
+        </>
       ) : (
         <>
       {err && (

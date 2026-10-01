@@ -23,6 +23,11 @@ type HeaderPayload = {
   mulai?: string; berakhir?: string; peruntukan?: string; nilai_pemanfaatan?: number
 }
 export type BarisPemanfaatan = {
+  // `skpdId` = SKPD yang MENCATAT perjanjian (jurnal_header.skpd_id, terkunci) &
+  // `nilaiPerolehan` = nilai BARANG di register — dua-duanya dipakai tab Rekap per
+  // SKPD (matriks SKPD × jenis aset). `asetId` supaya barang yang sama di dua
+  // perjanjian tak dijumlah dua kali.
+  skpdId: number; asetId: string; nilaiPerolehan: number
   key: string; skpd: string; jenis: string; jenisRaw: string; mitra: string
   kode: string; uraianBarang: string; nibar: string; nama: string
   merekTipe: string; spesifikasiLainnya: string
@@ -46,7 +51,7 @@ type Led = {
     id: string; kode: string; uraian_barang: string | null; nibar: string | null; nama_barang: string | null
     merek_tipe: string | null; spesifikasi_lainnya: string | null
     no_polisi: string | null; no_rangka: string | null; no_mesin: string | null
-    luas: number | string | null
+    luas: number | string | null; nilai_perolehan: number | null
   } | null
 }
 
@@ -78,7 +83,7 @@ export async function muatPemanfaatan(
 
   const { data: led, error: lErr } = await supabase.from('transaksi_bmd')
     .select('id,header_id,jenis,nilai,payload,aset:aset_id(id,kode,uraian_barang,nibar,nama_barang,' +
-      'merek_tipe,spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,luas)')
+      'merek_tipe,spesifikasi_lainnya,no_polisi,no_rangka,no_mesin,luas,nilai_perolehan)')
     .in('jenis', ['pemanfaatan', 'pemanfaatan_selesai', 'batal_pemanfaatan'] as never)
     .in('header_id', hs.map(h => h.id)).order('id', { ascending: true })
   if (lErr) throw new Error(`gagal membaca transaksi pemanfaatan: ${lErr.message}`)
@@ -89,6 +94,7 @@ export async function muatPemanfaatan(
     merekTipe: string; spesifikasiLainnya: string
     noPolisi: string; noRangka: string; noMesin: string; luas: number | string | null
     lingkup: string; selesai: boolean; headerId: string
+    asetId: string; nilaiPerolehan: number
   }>()
   for (const r of ledRows) {
     if (!r.aset || !hById.has(r.header_id)) continue
@@ -102,6 +108,7 @@ export async function muatPemanfaatan(
         luas: r.aset.luas,
         lingkup: r.payload?.lingkup === 'sebagian' ? `Sebagian${r.payload?.bagian ? ` — ${r.payload.bagian}` : ''}` : 'Seluruhnya',
         selesai: false, headerId: r.header_id,
+        asetId: r.aset.id, nilaiPerolehan: r.aset.nilai_perolehan ?? 0,
       })
     } else if (r.jenis === 'pemanfaatan_selesai') {
       const cur = acc.get(key); if (cur) cur.selesai = true
@@ -123,6 +130,7 @@ export async function muatPemanfaatan(
     // berpendapatan (Pinjam Pakai); angka (termasuk 0) = berpendapatan tapi
     // mungkin belum diisi.
     out.push({
+      skpdId: h.skpd_id, asetId: v.asetId, nilaiPerolehan: v.nilaiPerolehan,
       key, skpd: skpdNama[h.skpd_id] || '-', jenis: JENIS_PEMANFAATAN_LABEL[jenisRaw] || (jenisRaw || '-'), jenisRaw,
       mitra: pl.mitra || '-',
       kode: v.kode, uraianBarang: v.uraianBarang, nibar: v.nibar, nama: v.nama,
