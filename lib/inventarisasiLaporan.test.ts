@@ -579,3 +579,39 @@ describe('III.B.5 — tabel baru (2026-10-02), disusun dari pola III.B.6', () =>
     })
   })
 })
+
+describe('III.B.9 — tabel baru (2026-10-02)', () => {
+  const b: InvBaris = {
+    id: 'x', aset_id: 'a', foto_paths: [],
+    jawaban: { ganda: true, keterangan: 'Dobel entri 2021', ganda_data: { aset_id: 'k1', nibar: 'N2', nama_barang: 'Laptop Asus', nilai_perolehan: 7_000_000, tgl_perolehan: '2021-04-05' } },
+    snapshot: { nibar: 'N1', kode: '1.3.2.10', uraian_barang: 'Laptop', nama_barang: 'Laptop Asus', merek_tipe: 'Asus',
+      spesifikasi_lainnya: 'i5', tgl_perolehan: '2021-04-05', nilai_perolehan: 7_000_000, jumlah: 1, satuan: 'Unit' },
+  }
+  const row = nilaiBarisLhi('III.B.9', b, 1)
+
+  it('urutan kolom = permintaan user; blok "Tercatat Ganda Dengan" berisi nama/NIBAR, tanggal, nilai', () => {
+    const k = kolomLhiTampil('III.B.9', false)
+    expect(k.map(x => x.key)).toEqual(['no', 'kode', 'nama', 'merek_tipe', 'spek_lain', 'jumlah', 'tgl', 'nilai', 'g_nama', 'g_tgl', 'g_nilai', 'catatan'])
+    expect(k.filter(x => x.grup === 'Tercatat Ganda Dengan').map(x => x.key)).toEqual(['g_nama', 'g_tgl', 'g_nilai'])
+    expect(k.find(x => x.key === 'g_nama')?.tumpuk).toEqual(['g_nibar'])
+  })
+
+  it('setiap kolom (layar & Excel) punya padanan di baris', () => {
+    for (const k of [...kolomLhiTampil('III.B.9', false), ...kolomLhi('III.B.9')]) {
+      expect(row, k.key).toHaveProperty(k.key)
+      for (const t of k.tumpuk || []) expect(row, `tumpuk ${t}`).toHaveProperty(t)
+    }
+  })
+
+  it('isi baris: data kembaran & catatan', () => {
+    expect(row).toMatchObject({ g_nama: 'Laptop Asus', g_nibar: 'N2', g_tgl: '05/04/2021', g_nilai: 7_000_000, catatan: 'Dobel entri 2021' })
+  })
+
+  it('isian lama tanpa tanggal kembaran → dibaca dari register; kebutuhannya dilaporkan', () => {
+    const lama: InvBaris = { ...b, jawaban: { ...b.jawaban, ganda_data: { aset_id: 'k1', nibar: 'N2', nama_barang: 'X' } } }
+    expect(kebutuhanIndukLive([lama])).toEqual(['k1'])
+    expect(kebutuhanIndukLive([b])).toEqual([])
+    const r = nilaiBarisLhi('III.B.9', lama, 1, { k1: { uraian_barang: null, tgl_perolehan: '2020-01-02', nilai_perolehan: 9 } })
+    expect(r).toMatchObject({ g_tgl: '02/01/2020', g_nilai: 9 })
+  })
+})

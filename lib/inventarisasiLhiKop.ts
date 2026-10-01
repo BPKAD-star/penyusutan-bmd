@@ -63,7 +63,7 @@ export function tglLhi(s: string | null | undefined): string {
 
 /**
  * id aset induk yang datanya (uraian/tanggal/nilai) TIDAK ikut dibekukan di isian
- * — yaitu isian yang dibuat sebelum 2026-10-01. Hanya untuk isian ini laporan
+ * — yaitu isian yang dibuat sebelum 2026-10-01 (induk) / 2026-10-02 (tanggal kembaran III.B.9). Hanya untuk isian ini laporan
  * perlu membaca register.
  */
 export function kebutuhanIndukLive(baris: Pick<InvBaris, 'jawaban'>[]): string[] {
@@ -74,6 +74,9 @@ export function kebutuhanIndukLive(baris: Pick<InvBaris, 'jawaban'>[]): string[]
     for (const p of calon) {
       if (p?.aset_id && (p.nilai_perolehan == null || !p.tgl_perolehan || !p.uraian)) ids.add(p.aset_id)
     }
+    // III.B.9: tanggal perolehan kembaran baru dibekukan sejak 2026-10-02.
+    const g = j.ganda ? j.ganda_data : undefined
+    if (g?.aset_id && !g.tgl_perolehan) ids.add(g.aset_id)
   }
   return [...ids]
 }

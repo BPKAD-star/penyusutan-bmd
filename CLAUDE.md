@@ -7840,6 +7840,15 @@ Penghunian** memunculkan kotak **nomornya** (`penggunaan.bast_nomor` / `sip_nomo
 (`kekuranganLki`). Mencabut centang membuang nomornya. LHI III.B.5 kini punya kolom **Nomor BAST** & **Nomor SIP** di
 samping Ada/Tidak ada (kosong bila Tidak ada); cetak LKI mencantumkannya. Tanpa migrasi (jsonb).
 
+#### LHI III.B.9 — tabel baru (2026-10-02, susunan dari user)
+
+No · Kode/Uraian (ditumpuk) · Nama/NIBAR (ditumpuk) · Merk/Tipe · Spesifikasi Lainnya · Jumlah/Satuan (ditumpuk) · Tanggal ·
+Nilai · blok **Tercatat Ganda Dengan** (Nama/NIBAR ditumpuk · Tanggal Perolehan · Nilai Perolehan) · Catatan Inventarisasi. Tanpa
+alamat; kolom "Pengelola/Pengguna Barang Lainnya" tak lagi tampil di laporan (kotaknya di form LKI bagian M tetap ada &
+tetap tersimpan — belum ada pemakainya). ⚠️ **Tanggal perolehan barang kembaran baru DIBEKUKAN** sejak hari ini
+(`ganda_data.tgl_perolehan`, dari AsetPicker); isian lama tak membawanya → dibaca dari register lewat mekanisme induk
+(`kebutuhanIndukLive`/`muatIndukLive`, fail-closed). **Yang masih format lama tinggal III.B.10.** Tanpa migrasi.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

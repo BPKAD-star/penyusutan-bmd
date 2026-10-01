@@ -791,6 +791,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                           ...(j.ganda_data || {}),
                           aset_id: a.id, nibar: a.nibar || '', kode_barang: a.kode,
                           nama_barang: a.nama_barang || '', nilai_perolehan: a.nilai_perolehan,
+                          tgl_perolehan: a.tgl_perolehan || '',
                         } : {})
                       }} />
                     {j.ganda_data?.nibar && (

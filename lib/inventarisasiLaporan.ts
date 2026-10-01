@@ -12,7 +12,7 @@ import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventari
 import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
 import { tglLhi, type IndukLive } from '@/lib/inventarisasiLhiKop'
 import { KOLOM_UBAH, alamatLhi, barisUbah, efektif } from '@/lib/inventarisasiLhiUbah'
-import { GRUP_GUNA, GRUP_INDUK, TAMPIL_TETAP, kolomBelumTercatat, kolomPegawai } from '@/lib/inventarisasiLhiTampil'
+import { GRUP_GUNA, GRUP_INDUK, TAMPIL_TETAP, GRUP_GANDA, kolomBelumTercatat, kolomPegawai } from '@/lib/inventarisasiLhiTampil'
 
 export type KolomLhi = {
   key: string
@@ -263,20 +263,24 @@ export function kolomLhi(k: LhiKode, golongan = ''): KolomLhi[] {
         { key: 'catatan', label: 'Catatan' },
       ]
     case 'III.B.9':
+      // Datar (Excel). Susunan yang DILIHAT = `TAMPIL_III_B_9`.
       return [
-        ...INTI(),
-        { key: 'tgl_perolehan', label: 'Tanggal, Bulan, Tahun Perolehan' },
-        { key: 'alamat', label: 'Alamat' },
-        { key: 'g_nibar', label: 'NIBAR', grup: 'Data Pencatatan Ganda' },
-        { key: 'g_kode_barang', label: 'Kode Barang', grup: 'Data Pencatatan Ganda' },
-        { key: 'g_nama_barang', label: 'Nama Barang', grup: 'Data Pencatatan Ganda' },
-        { key: 'g_spesifikasi', label: 'Nama Spesifikasi Barang', grup: 'Data Pencatatan Ganda' },
-        { key: 'g_jumlah', label: 'Jumlah', grup: 'Data Pencatatan Ganda', angka: true },
-        { key: 'g_satuan', label: 'Satuan Barang', grup: 'Data Pencatatan Ganda' },
-        { key: 'g_nilai', label: 'Nilai Perolehan Barang', grup: 'Data Pencatatan Ganda', angka: true },
-        { key: 'g_tgl', label: 'Tgl/Bln/Th Perolehan', grup: 'Data Pencatatan Ganda' },
-        { key: 'g_pemegang', label: 'Pengelola/Pengguna Barang Lainnya', grup: 'Data Pencatatan Ganda' },
-        KET,
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+        { key: 'jumlah', label: 'Jumlah', angka: true },
+        { key: 'satuan', label: 'Satuan' },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'g_nama', label: 'Nama Barang', grup: GRUP_GANDA },
+        { key: 'g_nibar', label: 'NIBAR', grup: GRUP_GANDA },
+        { key: 'g_tgl', label: 'Tanggal Perolehan', grup: GRUP_GANDA },
+        { key: 'g_nilai', label: 'Nilai Perolehan', grup: GRUP_GANDA, angka: true },
+        { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.10':
       return [
@@ -520,11 +524,18 @@ export function nilaiBarisLhi(
       return barisUbah(b, no, wilayahLabel)
     case 'III.B.9': {
       const g = j.ganda_data || {}
+      // Tanggal kembaran dibekukan sejak 2026-10-02; isian lama → baca register.
+      const live = g.aset_id ? indukLive[g.aset_id] : undefined
       return {
-        ...inti,
-        g_nibar: g.nibar || '', g_kode_barang: g.kode_barang || '', g_nama_barang: g.nama_barang || '',
-        g_spesifikasi: g.spesifikasi || '', g_jumlah: g.jumlah ?? '', g_satuan: g.satuan || '',
-        g_nilai: g.nilai_perolehan ?? '', g_tgl: g.tgl_perolehan || '', g_pemegang: g.pemegang || '',
+        no, kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar, merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        jumlah: inti.jumlah, satuan: inti.satuan,
+        tgl: tglLhi(s.tgl_perolehan), nilai: inti.nilai,
+        g_nama: g.nama_barang || '', g_nibar: g.nibar || '',
+        g_tgl: tglLhi(g.tgl_perolehan || live?.tgl_perolehan),
+        g_nilai: g.nilai_perolehan ?? live?.nilai_perolehan ?? '',
+        catatan: j.keterangan || '',
       }
     }
     case 'III.B.10': {

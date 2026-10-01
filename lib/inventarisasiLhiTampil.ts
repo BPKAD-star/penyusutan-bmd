@@ -1,5 +1,5 @@
 // Susunan kolom tabel LHI yang DILIHAT (layar & cetak) untuk format yang sudah
-// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 4, 6, 7, 8, 12, 13
+// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 4, 6, 7, 8, 9, 12, 13
 // (+ III.B.5 & III.B.11 sejak 2026-10-02, bergantung golongan — `kolomPegawai`/`kolomBelumTercatat`).
 // Dipisah dari inventarisasiLaporan.ts supaya berkas itu tak membengkak. Excel TIDAK
 // memakai susunan ini — ia tetap datar lewat `kolomLhi()` (satu kolom per data).
@@ -50,6 +50,29 @@ const TAMPIL_III_B_4: KolomLhi[] = [
   { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
   { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
   { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+  { key: 'catatan', label: 'Catatan Inventarisasi' },
+]
+
+/**
+ * III.B.9 — BMD Tercatat Ganda (2026-10-02, contoh susunan user): identitas barang
+ * (Kode/Uraian, Nama/NIBAR, Merk/Tipe, Spesifikasi Lainnya, Jumlah/Satuan, Tanggal,
+ * Nilai) lalu blok "Tercatat Ganda Dengan" berisi barang KEMBARANNYA — Nama/NIBAR
+ * (ditumpuk), Tanggal Perolehan, Nilai Perolehan — dan Catatan Inventarisasi.
+ * "Pengelola/Pengguna Barang Lainnya" & kolom lama lain tak ditampilkan lagi. Excel datar.
+ */
+export const GRUP_GANDA = 'Tercatat Ganda Dengan'
+const TAMPIL_III_B_9: KolomLhi[] = [
+  { key: 'no', label: 'No' },
+  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
+  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
+  { key: 'merek_tipe', label: 'Merk/Tipe' },
+  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+  { key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] },
+  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
+  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+  { key: 'g_nama', label: 'Nama Barang / NIBAR', grup: GRUP_GANDA, tumpuk: ['g_nibar'] },
+  { key: 'g_tgl', label: 'Tanggal Perolehan', grup: GRUP_GANDA, angka: true },
+  { key: 'g_nilai', label: 'Nilai Perolehan', grup: GRUP_GANDA, angka: true },
   { key: 'catatan', label: 'Catatan Inventarisasi' },
 ]
 
@@ -276,6 +299,7 @@ export const TAMPIL_TETAP: Partial<Record<LhiKode, KolomLhi[]>> = {
   'III.B.6': TAMPIL_III_B_6,
   'III.B.7': TAMPIL_III_B_7,
   'III.B.8': TAMPIL_III_B_8,
+  'III.B.9': TAMPIL_III_B_9,
   'III.B.12': TAMPIL_III_B_12,
   'III.B.13': TAMPIL_III_B_13,
 }
