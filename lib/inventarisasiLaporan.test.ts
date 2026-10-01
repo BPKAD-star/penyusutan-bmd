@@ -534,3 +534,48 @@ describe('III.B.4 — tabel baru (2026-10-02), saudara III.B.3 tanpa data induk'
     expect(row).toMatchObject({ nibar: 'N1', nama: 'Rehab Atap', tgl: '03/02/2021', nilai: 5_000_000, catatan: 'Induk tak ditemukan' })
   })
 })
+
+describe('III.B.5 — tabel baru (2026-10-02), disusun dari pola III.B.6', () => {
+  const b: InvBaris = {
+    id: 'x', aset_id: 'a', foto_paths: [],
+    jawaban: { keberadaan: 'ada', keterangan: 'Dipakai sejak 2022',
+      penggunaan: { pihak: 'pemda', nama: 'Dinas B', nama_pemakai: 'Budi', status_pemakai: 'ASN', bast_pemakaian: true, sip: false } },
+    snapshot: { nibar: 'N1', kode: '1.3.3.01', uraian_barang: 'Rumah Negara', nama_barang: 'Rumah Dinas', merek_tipe: '',
+      spesifikasi_lainnya: 'Tipe 45', tgl_perolehan: '2019-01-02', nilai_perolehan: 90_000_000, jumlah: 1, satuan: 'Unit',
+      wilayah_kode: '3506010001', alamat: 'Jl. Melati 3' },
+  }
+  const wil = (k: string | null | undefined) => (k === '3506010001' ? 'Jawa Timur, Kediri, Pare, Pare' : k || '')
+  const row = nilaiBarisLhi('III.B.5', b, 1, {}, wil)
+
+  it('BAST & SIP hanya utk golongan yang menanyakannya (Gedung = rumah negara); petak centang tak ada lagi', () => {
+    const keys = (g: string) => kolomLhiTampil('III.B.5', true, g).map(k => k.key)
+    expect(keys('1.3.3')).toEqual(expect.arrayContaining(['pemakai_bast', 'pemakai_sip']))
+    expect(keys('1.3.2')).not.toContain('pemakai_bast')
+    expect(kolomLhiTampil('III.B.5', true, '1.3.3').some(k => k.tanda)).toBe(false)
+  })
+
+  it('blok Pemakai, alamat lengkap, Catatan Inventarisasi di ujung', () => {
+    const k = kolomLhiTampil('III.B.5', false, '1.3.3')
+    expect(k.filter(x => x.grup === 'Pemakai').map(x => x.key))
+      .toEqual(['pemakai_pengguna', 'pemakai_nama', 'pemakai_status', 'pemakai_bast', 'pemakai_sip'])
+    expect(k[k.length - 1].key).toBe('catatan')
+    expect(k.find(x => x.key === 'kode')?.tumpuk).toEqual(['uraian'])
+  })
+
+  it('setiap kolom (layar & Excel, semua golongan) punya padanan di baris', () => {
+    for (const g of ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
+      for (const k of [...kolomLhiTampil('III.B.5', false, g), ...kolomLhi('III.B.5', g)]) {
+        expect(row, `${g} ${k.key}`).toHaveProperty(k.key)
+        for (const t of k.tumpuk || []) expect(row, `tumpuk ${t}`).toHaveProperty(t)
+      }
+    }
+  })
+
+  it('isi baris', () => {
+    expect(row).toMatchObject({
+      pemakai_nama: 'Budi', pemakai_status: 'ASN', pemakai_pengguna: 'Dinas B',
+      pemakai_bast: 'Ada', pemakai_sip: 'Tidak ada', catatan: 'Dipakai sejak 2022',
+      alamat: 'Jawa Timur, Kediri, Pare, Pare · Jl. Melati 3',
+    })
+  })
+})

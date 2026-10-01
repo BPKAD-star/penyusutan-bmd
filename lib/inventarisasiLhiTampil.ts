@@ -1,6 +1,6 @@
 // Susunan kolom tabel LHI yang DILIHAT (layar & cetak) untuk format yang sudah
 // memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 4, 6, 7, 8, 12, 13
-// (+ III.B.11 sejak 2026-10-02, bergantung golongan — `kolomBelumTercatat`).
+// (+ III.B.5 & III.B.11 sejak 2026-10-02, bergantung golongan — `kolomPegawai`/`kolomBelumTercatat`).
 // Dipisah dari inventarisasiLaporan.ts supaya berkas itu tak membengkak. Excel TIDAK
 // memakai susunan ini — ia tetap datar lewat `kolomLhi()` (satu kolom per data).
 //
@@ -9,6 +9,7 @@ import type { KolomLhi } from '@/lib/inventarisasiLaporan'
 import type { LhiKode } from '@/lib/inventarisasi'
 import { KOLOM_UBAH } from '@/lib/inventarisasiLhiUbah'
 import { fieldBaru } from '@/lib/inventarisasiBaru'
+import { konfigLki } from '@/lib/inventarisasi'
 
 const KET: KolomLhi = { key: 'keterangan', label: 'Keterangan' }
 
@@ -171,6 +172,44 @@ const TAMPIL_III_B_8: KolomLhi[] = [
   ...KOLOM_UBAH.map(k => ({ key: k.key, label: k.label, dua: true })),
   { key: 'catatan', label: 'Catatan' },
 ]
+
+/**
+ * III.B.5 — BMD Digunakan oleh Pegawai Pemda / Pengguna Barang lainnya (2026-10-02).
+ * Dipicu pilihan "Pegawai / Pengguna Barang lainnya" di bagian L LKI. Mengikuti
+ * III.B.6: identitas barang + Alamat lengkap + blok "Pemakai" + Catatan Inventarisasi;
+ * petak centang BAST/SIP yang lama DIGANTI kolom "Ada/Tidak ada". BAST Pemakaian &
+ * Surat Ijin Penghunian hanya utk golongan yang menanyakannya (`pemakaiRumahNegara`
+ * — rumah negara, Gedung & Bangunan), jadi kolomnya ikut golongan seperti III.B.11.
+ * Tanpa contoh tabel user; disusun dari pola III.B.6. `tumpuk` false = Excel datar.
+ */
+export const GRUP_PEMAKAI = 'Pemakai'
+export function kolomPegawai(golongan: string, tumpuk: boolean): KolomLhi[] {
+  const rumahNegara = konfigLki(golongan).pemakaiRumahNegara
+  return [
+    { key: 'no', label: 'No' },
+    ...(tumpuk
+      ? [{ key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
+         { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] }]
+      : [{ key: 'kode', label: 'Kode Barang' }, { key: 'uraian', label: 'Uraian Barang' },
+         { key: 'nama', label: 'Nama Barang' }, { key: 'nibar', label: 'NIBAR' }]),
+    { key: 'merek_tipe', label: 'Merk/Tipe' },
+    { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+    { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
+    ...(tumpuk
+      ? [{ key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] }]
+      : [{ key: 'jumlah', label: 'Jumlah', angka: true }, { key: 'satuan', label: 'Satuan' }]),
+    { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+    { key: 'alamat', label: 'Alamat' },
+    { key: 'pemakai_pengguna', label: 'Pengguna Barang Lainnya', grup: GRUP_PEMAKAI },
+    { key: 'pemakai_nama', label: 'Nama Pemakai', grup: GRUP_PEMAKAI },
+    { key: 'pemakai_status', label: 'Status Pemakai', grup: GRUP_PEMAKAI },
+    ...(rumahNegara
+      ? [{ key: 'pemakai_bast', label: 'BAST Pemakaian', grup: GRUP_PEMAKAI },
+         { key: 'pemakai_sip', label: 'Surat Ijin Penghunian', grup: GRUP_PEMAKAI }]
+      : []),
+    { key: 'catatan', label: 'Catatan Inventarisasi' },
+  ]
+}
 
 /**
  * III.B.11 — BMD Belum Tercatat (2026-10-02). Isinya = isian form LKI III.A.7

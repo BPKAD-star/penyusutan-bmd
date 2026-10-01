@@ -394,3 +394,37 @@ describe('semua isian WAJIB dijawab eksplisit (2026-10-01)', () => {
     expect(digunakanSendiriTampil(null)).toBe(true)
   })
 })
+
+describe('Penggunaan Barang (L) → LHI (keputusan user 2026-10-02)', () => {
+  const b = (penggunaan: InvJawaban['penggunaan']): InvBaris => ({
+    id: 'x', aset_id: 'a', snapshot: {}, jawaban: { keberadaan: 'ada', penggunaan }, foto_paths: [],
+  })
+
+  it('Operasional / Tidak ada pihak lain (null) aman — tak keluar ke LHI', () => {
+    expect(klasifikasiLhi(b(null))).toEqual([])
+    expect(klasifikasiLhi(b(undefined))).toEqual([])
+  })
+
+  it('Pegawai / Pengguna Barang lainnya → III.B.5, SELALU (tanpa nama pun)', () => {
+    expect(klasifikasiLhi(b({ pihak: 'pemda' }))).toEqual(['III.B.5'])
+    expect(klasifikasiLhi(b({ pihak: 'pemda', nama_pemakai: 'Budi' }))).toEqual(['III.B.5'])
+  })
+
+  it('Pemerintah Pusat / Pemda Lainnya / Pihak Lain → III.B.6, bukan III.B.5', () => {
+    for (const pihak of ['pempus', 'pemda_lain', 'pihak_lain'] as const) {
+      expect(klasifikasiLhi(b({ pihak })), pihak).toEqual(['III.B.6'])
+    }
+  })
+
+  it('pilihan Pegawai mewajibkan Nama & Status Pemakai (laporan tak boleh memuat baris tanpa pemakai)', () => {
+    const lembar = (penggunaan: InvJawaban['penggunaan']) => kekuranganLki({
+      aset_id: 'a', jawaban: { keberadaan: 'ada', kondisi: 'B', penggunaan }, foto_register: 1, config: konfigLki('1.3.5'),
+    })
+    const kurang = lembar({ pihak: 'pemda' })
+    expect(kurang).toEqual(expect.arrayContaining(['Nama Pemakai (L)', 'Status Pemakai (L)']))
+    const sisa = lembar({ pihak: 'pemda', nama_pemakai: 'Budi', status_pemakai: 'ASN' })
+    expect(sisa).not.toContain('Nama Pemakai (L)')
+    expect(sisa).not.toContain('Status Pemakai (L)')
+    expect(lembar({ pihak: 'pempus' })).not.toContain('Nama Pemakai (L)')
+  })
+})

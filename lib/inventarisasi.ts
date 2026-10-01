@@ -182,7 +182,7 @@ export type InvJawaban = {
   alamat_detail?: SesuaiField
   // K
   kondisi?: KondisiFisik
-  // L — Penggunaan Barang. `null` = eksplisit "Digunakan sendiri" (bedanya dgn
+  // L — Penggunaan Barang. `null` = eksplisit "Operasional / Tidak ada pihak lain" (bedanya dgn
   // `undefined` — "belum dijawab" — lihat `digunakanSendiriTampil` di bawah).
   penggunaan?: {
     pihak: PihakPengguna
@@ -545,12 +545,11 @@ export function klasifikasiLhi(
 
   // L — penggunaan oleh pihak lain
   if (j.penggunaan) {
-    if (j.penggunaan.pihak === 'pemda') {
-      // Hanya jadi temuan kalau memang ada pemakainya (pegawai/pengguna lain).
-      if ((j.penggunaan.nama_pemakai || '').trim() || (j.penggunaan.nama || '').trim()) out.push('III.B.5')
-    } else {
-      out.push('III.B.6')
-    }
+    // Keputusan user 2026-10-02: "Operasional / Tidak ada pihak lain" (`null`) aman,
+    // tak keluar ke LHI. Pegawai/Pengguna Barang lainnya → III.B.5 SELALU (dulu hanya
+    // kalau nama pemakai/pengguna terisi, jadi pilihan tanpa nama tak pernah muncul
+    // di laporan mana pun). Pusat / Pemda Lainnya / Pihak Lain → III.B.6.
+    out.push(j.penggunaan.pihak === 'pemda' ? 'III.B.5' : 'III.B.6')
   }
 
   // K — perubahan kondisi fisik (bandingkan dgn snapshot "sebelum")
@@ -667,6 +666,12 @@ export function kekuranganLki(
     for (const [f, label] of jawab) if (belum(f)) kurang.push(pilih(label))
     if (c.atribusi && !j.atribusi) kurang.push('Biaya atribusi (I) — belum dipilih')
     if (j.penggunaan === undefined) kurang.push('Penggunaan Barang (L) — belum dipilih')
+    // Pilihan Pegawai/Pengguna Barang lainnya kini SELALU jadi temuan III.B.5, jadi
+    // kolom pemakainya wajib (laporan tak boleh memuat baris tanpa pemakai).
+    if (j.penggunaan?.pihak === 'pemda') {
+      if (!(j.penggunaan.nama_pemakai || '').trim()) kurang.push('Nama Pemakai (L)')
+      if (!(j.penggunaan.status_pemakai || '').trim()) kurang.push('Status Pemakai (L)')
+    }
     if (c.tanahMilik && !j.tanah_milik) kurang.push('Berdiri di atas tanah milik (N) — belum dipilih')
   }
   if (j.keberadaan === 'tidak_ditemukan' && b.sebabTidakAda) {

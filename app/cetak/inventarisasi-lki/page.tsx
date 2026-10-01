@@ -173,7 +173,7 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
               <Baris kode="L" label="Penggunaan Barang">
                 {j.penggunaan ? (
                   <>
-                    {j.penggunaan.pihak === 'pemda' ? 'Pemerintah Daerah'
+                    {j.penggunaan.pihak === 'pemda' ? 'Pegawai / Pengguna Barang lainnya'
                       : j.penggunaan.pihak === 'pempus' ? 'Pemerintah Pusat'
                       : j.penggunaan.pihak === 'pemda_lain' ? 'Pemerintah Daerah Lainnya' : 'Pihak Lain'}
                     {j.penggunaan.nama ? ` — ${j.penggunaan.nama}` : ''}
@@ -182,7 +182,7 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
                       ? ` · BAST: ${j.penggunaan.bast_pemakaian ? 'Ada' : 'Tidak ada'} · SIP: ${j.penggunaan.sip ? 'Ada' : 'Tidak ada'}`
                       : ` · Dasar penguasaan: ${j.penggunaan.dasar_ada ? `Ada (${j.penggunaan.nama_dokumen || '-'})` : 'Tidak ada'}`}
                   </>
-                ) : 'Digunakan sendiri'}
+                ) : 'Operasional / Tidak ada pihak lain'}
               </Baris>
               <Baris kode="M" label="Data Barang Tercatat Ganda">
                 {j.ganda

@@ -15,7 +15,7 @@ export const JUDUL_KOLOM_LHI: Record<LhiKode, string> = {
   'III.B.2': 'Tidak Ditemukan',
   'III.B.3': 'Belum Dikapitalisasi (Induk Diketahui)',
   'III.B.4': 'Belum Dikapitalisasi (Induk Tidak Diketahui)',
-  'III.B.5': 'Digunakan Pegawai Pemda',
+  'III.B.5': 'Digunakan Pegawai / Pengguna Lain',
   'III.B.6': 'Digunakan Pihak Lain',
   'III.B.7': 'Perubahan Kondisi',
   'III.B.8': 'Perubahan Data',

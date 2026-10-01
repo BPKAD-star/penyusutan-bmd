@@ -12,7 +12,7 @@ import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventari
 import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
 import { tglLhi, type IndukLive } from '@/lib/inventarisasiLhiKop'
 import { KOLOM_UBAH, alamatLhi, barisUbah, efektif } from '@/lib/inventarisasiLhiUbah'
-import { GRUP_GUNA, GRUP_INDUK, TAMPIL_TETAP, kolomBelumTercatat } from '@/lib/inventarisasiLhiTampil'
+import { GRUP_GUNA, GRUP_INDUK, TAMPIL_TETAP, kolomBelumTercatat, kolomPegawai } from '@/lib/inventarisasiLhiTampil'
 
 export type KolomLhi = {
   key: string
@@ -65,35 +65,10 @@ const KET: KolomLhi = { key: 'keterangan', label: 'Keterangan' }
 const LABEL_KONDISI: Record<string, string> = { B: 'Baik', RR: 'Rusak Ringan', RB: 'Rusak Berat' }
 
 // ── Bentuk CETAK ────────────────────────────────────────────────────────────
-// Satu format menggambar sebagian kolomnya sbg petak centang bertingkat:
-// III.B.5 (BAST & SIP → Ada|Tidak ada). (III.B.11 tadinya ikut; sejak 2026-10-02
-// memakai tabel `kolomBelumTercatat`.)
-// (III.B.6 tadinya ikut; sejak 2026-10-01 memakai tabel `TAMPIL_III_B_6`.)
-//
-// Pemekaran ini SENGAJA cuma dipakai halaman cetak (keputusan user
-// 2026-07-28). Tabel di layar & export Excel tetap memakai `kolomLhi()` yang
-// datar — kalau Excel ikut dipecah, nilainya tersebar ke beberapa kolom dan
-// tak bisa lagi disaring/di-pivot. Baris datanya SATU sumber (`nilaiBarisLhi`,
-// versi datar); kolom cetak menariknya lewat `sumber`/`syarat`/`tanda`,
-// sehingga isi cetak & Excel mustahil berbeda.
-/** Kolom versi CETAK — sama dgn `kolomLhi()` kecuali III.B.5 yang bercentang. */
-export function kolomLhiCetak(k: LhiKode): KolomLhi[] {
-  switch (k) {
-    case 'III.B.5':
-      return [
-        ...INTI(), { key: 'alamat', label: 'Alamat' },
-        { key: 'pemakai_nama', label: 'Nama Pemakai', grup: 'Pemakai' },
-        { key: 'pemakai_status', label: 'Status Pemakai', grup: 'Pemakai' },
-        { key: 'bast_ada', label: 'Ada', grup: ['Pemakai', 'BAST Pemakaian'], tanda: { key: 'pemakai_bast', sama: 'Ada' } },
-        { key: 'bast_tidak', label: 'Tidak ada', grup: ['Pemakai', 'BAST Pemakaian'], tanda: { key: 'pemakai_bast', sama: 'Tidak ada' } },
-        { key: 'sip_ada', label: 'Ada', grup: ['Pemakai', 'Surat Ijin Penghunian'], tanda: { key: 'pemakai_sip', sama: 'Ada' } },
-        { key: 'sip_tidak', label: 'Tidak ada', grup: ['Pemakai', 'Surat Ijin Penghunian'], tanda: { key: 'pemakai_sip', sama: 'Tidak ada' } },
-        KET,
-      ]
-    default:
-      return kolomLhi(k)
-  }
-}
+// Sejak 2026-10-02 TAK ADA lagi format yang menggambar petak centang bertingkat
+// (III.B.5 & III.B.11 terakhir yang memakainya): layar, cetak, & Excel membaca
+// kolom yang sama. `tanda`/`syarat`/`sumber` di `KolomLhi` dipertahankan hanya
+// sebagai kemampuan penyaji (`nilaiSelCetak`).
 
 /** Isi satu sel cetak. Baris tetap yang dari `nilaiBarisLhi`. */
 export function nilaiSelCetak(k: KolomLhi, r: Record<string, string | number>): string | number {
@@ -116,12 +91,13 @@ export const CATATAN_KAKI: Partial<Record<LhiKode, string[]>> = {
 }
 
 /** Kolom untuk tabel layar & cetak. Excel memakai `kolomLhi()` (datar). */
-export function kolomLhiTampil(k: LhiKode, cetak: boolean, golongan = ''): KolomLhi[] {
-  // III.B.11 bergantung golongan (spesifikasi yang ditanyakan form LKI).
+export function kolomLhiTampil(k: LhiKode, _cetak: boolean, golongan = ''): KolomLhi[] {
+  // III.B.5 & III.B.11 bergantung golongan (BAST/SIP rumah negara; spesifikasi form LKI).
+  if (k === 'III.B.5') return kolomPegawai(golongan, true)
   if (k === 'III.B.11') return kolomBelumTercatat(golongan, true)
   const tetap = TAMPIL_TETAP[k]
   if (tetap) return tetap
-  return cetak ? kolomLhiCetak(k) : kolomLhi(k)
+  return kolomLhi(k, golongan)
 }
 
 // Kop lampiran & data induk: lib/inventarisasiLhiKop.ts (diekspor ulang di sini).
@@ -237,14 +213,8 @@ export function kolomLhi(k: LhiKode, golongan = ''): KolomLhi[] {
         { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.5':
-      return [
-        ...INTI(), { key: 'alamat', label: 'Alamat' },
-        { key: 'pemakai_nama', label: 'Nama Pemakai', grup: 'Pemakai' },
-        { key: 'pemakai_status', label: 'Status Pemakai', grup: 'Pemakai' },
-        { key: 'pemakai_bast', label: 'BAST Pemakaian', grup: 'Pemakai' },
-        { key: 'pemakai_sip', label: 'Surat Ijin Penghunian', grup: 'Pemakai' },
-        KET,
-      ]
+      // Datar (Excel); susunan yang DILIHAT sama kolomnya, sel ditumpuk.
+      return kolomPegawai(golongan, false)
     case 'III.B.6':
       // Datar (Excel): satu kolom per data. Susunan yang DILIHAT = `TAMPIL_III_B_6`.
       return [
@@ -495,14 +465,21 @@ export function nilaiBarisLhi(
         // yang bisa diubah di tempat; lihat REKOMENDASI).
         keterangan: ['Perlu di Reklas', j.keterangan].filter(Boolean).join(' — '),
       }
-    case 'III.B.5':
+    case 'III.B.5': {
+      const p = j.penggunaan
       return {
-        ...inti,
-        pemakai_nama: j.penggunaan?.nama_pemakai || j.penggunaan?.nama || '',
-        pemakai_status: j.penggunaan?.status_pemakai || '',
-        pemakai_bast: YATIDAK(j.penggunaan?.bast_pemakaian),
-        pemakai_sip: YATIDAK(j.penggunaan?.sip),
+        no, kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar, merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        tgl: tglLhi(s.tgl_perolehan), jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
+        // Alamat lengkap Provinsi→Desa + detail (keadaan SESUDAH), sama dgn III.B.6.
+        alamat: alamatLhi(s, j, wilayahLabel).st,
+        pemakai_pengguna: p?.nama || '',
+        pemakai_nama: p?.nama_pemakai || '', pemakai_status: p?.status_pemakai || '',
+        pemakai_bast: YATIDAK(p?.bast_pemakaian), pemakai_sip: YATIDAK(p?.sip),
+        catatan: j.keterangan || '',
       }
+    }
     case 'III.B.6': {
       const p = j.penggunaan
       const label: Record<string, string> = {

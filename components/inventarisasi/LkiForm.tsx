@@ -51,7 +51,7 @@ const KONDISI: { v: KondisiFisik; l: string }[] = [
   { v: 'B', l: 'Baik' }, { v: 'RR', l: 'Rusak Ringan' }, { v: 'RB', l: 'Rusak Berat' },
 ]
 const PIHAK: { v: PihakPengguna; l: string }[] = [
-  { v: 'pemda', l: 'Pemerintah Daerah (pegawai/pengguna barang lainnya)' },
+  { v: 'pemda', l: 'Pegawai / Pengguna Barang lainnya' },
   { v: 'pempus', l: 'Pemerintah Pusat' },
   { v: 'pemda_lain', l: 'Pemerintah Daerah Lainnya' },
   { v: 'pihak_lain', l: 'Pihak Lain' },
@@ -698,7 +698,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input type="radio" checked={digunakanSendiri} disabled={readOnly}
                       onChange={() => set('penggunaan', null)} />
-                    Digunakan sendiri (tidak ada pihak lain)
+                    Operasional / Tidak ada pihak lain
                   </label>
                   {PIHAK.map(p => (
                     <div key={p.v}>
@@ -714,10 +714,10 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                             onChange={e => set('penggunaan', { ...j.penggunaan!, nama: e.target.value })} />
                           {p.v === 'pemda' && (
                             <div className="grid grid-cols-2 gap-2">
-                              <input className="select-filter" disabled={readOnly} placeholder="Nama Pemakai"
+                              <input className="select-filter" disabled={readOnly} placeholder="Nama Pemakai *"
                                 value={j.penggunaan.nama_pemakai || ''}
                                 onChange={e => set('penggunaan', { ...j.penggunaan!, nama_pemakai: e.target.value })} />
-                              <input className="select-filter" disabled={readOnly} placeholder="Status Pemakai"
+                              <input className="select-filter" disabled={readOnly} placeholder="Status Pemakai *"
                                 value={j.penggunaan.status_pemakai || ''}
                                 onChange={e => set('penggunaan', { ...j.penggunaan!, status_pemakai: e.target.value })} />
                               {config.pemakaiRumahNegara && (

@@ -7816,6 +7816,23 @@ diketahui) dan tanpa Jumlah/Satuan (mengikuti III.B.3 yang dibuat dari contoh us
 sendiri; kalau Jumlah/Satuan diinginkan, tambahkan satu baris di `TAMPIL_III_B_4`. Dikunci uji "sama dgn III.B.3
 tanpa induk". **Yang masih format lama kini tinggal III.B.5, III.B.9, III.B.10.** Tanpa migrasi.
 
+#### LKI bagian L (Penggunaan Barang) → III.B.5 / III.B.6; III.B.5 tabel baru (2026-10-02)
+
+Keputusan user. Lima pilihan: **Operasional / Tidak ada pihak lain** (`null`) → aman, tak keluar ke LHI ·
+**Pegawai / Pengguna Barang lainnya** → III.B.5 · **Pemerintah Pusat / Pemda Lainnya / Pihak Lain** → III.B.6.
+⚠️ Dulu pilihan Pegawai hanya jadi III.B.5 kalau nama pemakai/pengguna terisi — pilihan tanpa nama tak muncul di
+laporan mana pun ("belum ngelink ke format 5"). Kini SELALU III.B.5, jadi **Nama Pemakai & Status Pemakai WAJIB**
+(`kekuranganLki`; keputusan saya, bukan eksplisit user — laporan tak boleh memuat baris tanpa pemakai). Isian
+lembar lama yang memilih Pegawai tanpa nama kini muncul di III.B.5 dgn kolom pemakai kosong sampai dilengkapi.
+Pilihan Pusat/Pemda Lain/Pihak Lain tak ditambah kewajiban baru (Nama Instansi, dokumen) — belum diminta.
+
+**III.B.5 (tanpa contoh tabel user; dari pola III.B.6):** No · Kode/Uraian · Nama/NIBAR · Merk/Tipe · Spesifikasi Lainnya ·
+Tanggal · Jumlah/Satuan · Nilai · Alamat lengkap · blok **Pemakai** (Pengguna Barang Lainnya · Nama Pemakai · Status
+Pemakai · [BAST Pemakaian · Surat Ijin Penghunian]) · Catatan Inventarisasi. BAST/SIP hanya utk golongan rumah negara
+(`konfigLki().pemakaiRumahNegara`, Gedung & Bangunan) — kolom ikut golongan seperti III.B.11 (`kolomPegawai`). Petak
+centang cetak DIHAPUS: `kolomLhiCetak` dicabut, layar/cetak/Excel kini membaca kolom yang sama. **Yang masih format
+lama tinggal III.B.9 & III.B.10.** Tanpa migrasi (`jawaban.penggunaan` jsonb, bentuknya tak berubah).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
