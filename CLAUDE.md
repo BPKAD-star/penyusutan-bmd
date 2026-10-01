@@ -7697,6 +7697,14 @@ Dokumen Penguasaan · Nama Dokumen) · Catatan Inventarisasi. **Tak ada migrasi.
 - Catatan kaki "**) Hanya diisi dalam hal digunakan oleh pemerintah pusat…" ikut dicabut (kolom
   yang diterangkannya sudah tak ada); tinggal catatan Merk/Tipe.
 
+### LHI III.B.1: tabel Hilang disederhanakan (2026-10-01)
+
+Contoh tabel user: No · Kode Barang/Uraian (ditumpuk) · Nama Barang/NIBAR (ditumpuk) ·
+Merk/Tipe · Spesifikasi Lainnya · Tanggal Perolehan · Jumlah/Satuan (ditumpuk) · Nilai
+Perolehan · Catatan Inventarisasi (`TAMPIL_III_B_1`). Tanpa alamat/penggunaan. Layar & cetak
+satu susunan; Excel datar. **III.B.2 SENGAJA belum ikut** — masih format lama (kolom
+Keterangan memuat sebab "tidak ada"); bentuknya mirip, tinggal diminta. Tanpa migrasi.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

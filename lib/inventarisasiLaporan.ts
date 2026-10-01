@@ -218,6 +218,23 @@ const TAMPIL_III_B_6: KolomLhi[] = [
 ]
 
 /**
+ * III.B.1 — BMD Hilang Karena Kecurian (2026-10-01, contoh tabel user): bentuk
+ * paling ringkas — identitas barang + Catatan Inventarisasi, tanpa alamat/penggunaan.
+ * Layar & cetak satu susunan; Excel datar (`kolomLhi`).
+ */
+const TAMPIL_III_B_1: KolomLhi[] = [
+  { key: 'no', label: 'No' },
+  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
+  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
+  { key: 'merek_tipe', label: 'Merk/Tipe' },
+  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
+  { key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] },
+  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+  { key: 'catatan', label: 'Catatan Inventarisasi' },
+]
+
+/**
  * III.B.8 — Terjadi Perubahan Data (2026-10-01, contoh tabel user): NIBAR lalu
  * tiap atribut sbg pasangan sebelum/sesudah (`dua`). Kode barang TIDAK ikut —
  * perubahan kodefikasi punya laporan sendiri (III.B.12). Excel tidak memakai
@@ -236,6 +253,7 @@ export function kolomLhiTampil(k: LhiKode, cetak: boolean): KolomLhi[] {
   if (k === 'III.B.12') return TAMPIL_III_B_12
   if (k === 'III.B.8') return TAMPIL_III_B_8
   if (k === 'III.B.6') return TAMPIL_III_B_6
+  if (k === 'III.B.1') return TAMPIL_III_B_1
   return cetak ? kolomLhiCetak(k) : kolomLhi(k)
 }
 
@@ -285,6 +303,22 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
         { key: 'kode_baru', label: 'Kode Barang Baru' },
         { key: 'uraian_baru', label: 'Uraian Barang Baru' },
         KET,
+      ]
+    case 'III.B.1':
+      // Datar (Excel). Susunan yang DILIHAT = `TAMPIL_III_B_1`.
+      return [
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'jumlah', label: 'Jumlah', angka: true },
+        { key: 'satuan', label: 'Satuan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.4':
       return [...INTI({ merek: false }), KET]
@@ -382,7 +416,7 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
         { key: 'kondisi_setelah', label: 'Kondisi Barang (B/RR/RB)' },
         KET,
       ]
-    default: // III.B.1 & III.B.2
+    default: // III.B.2 (III.B.1 punya tabel sendiri)
       return [...INTI(), KET]
   }
 }
@@ -496,6 +530,14 @@ export function nilaiBarisLhi(
         keterangan: [catatSebab, j.keterangan].filter(Boolean).join(' — '),
       }
     }
+    case 'III.B.1':
+      return {
+        no, kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar, merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        tgl: tglLhi(s.tgl_perolehan), jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
+        catatan: j.keterangan || '',
+      }
     case 'III.B.12':
       // Kode LAMA = yang tercatat di register (snapshot "sebelum"); kode BARU =
       // jawaban petugas di bagian B–C. `kodeEfektif`/`uraianEfektif` sudah
@@ -569,7 +611,7 @@ export function nilaiBarisLhi(
         tanah_milik: t ? `${label[t] || t}${j.tanah_milik_nama ? ` — ${j.tanah_milik_nama}` : ''}` : '',
       }
     }
-    default: // III.B.1 & III.B.2
+    default: // III.B.2 (III.B.1 punya tabel sendiri)
       return {
         ...inti,
         keterangan: [

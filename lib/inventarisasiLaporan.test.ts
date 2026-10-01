@@ -335,3 +335,29 @@ describe('III.B.6 — tabel baru (Penggunaan)', () => {
     for (const k of kolomLhi('III.B.6')) expect(r, k.key).toHaveProperty(k.key)
   })
 })
+
+describe('III.B.1 — tabel baru (Hilang)', () => {
+  const r = nilaiBarisLhi('III.B.1', brs({ keberadaan: 'hilang', keterangan: 'Dicuri 12 Mei' }, { satuan: 'Unit', jumlah: 1 }), 1)
+
+  it('mengikuti contoh user: identitas + Catatan Inventarisasi', () => {
+    expect(r).toMatchObject({ no: 1, kode: '1.3.3.01.01.01.001', uraian: 'Bangunan Gedung Kantor Permanen', catatan: 'Dicuri 12 Mei', jumlah: 1, satuan: 'Unit' })
+    expect(kolomLhiTampil('III.B.1', false).map(k => k.label)).toEqual([
+      'No', 'Kode Barang / Uraian Barang', 'Nama Barang / NIBAR', 'Merk/Tipe', 'Spesifikasi Lainnya',
+      'Tanggal Perolehan', 'Jumlah / Satuan', 'Nilai Perolehan', 'Catatan Inventarisasi',
+    ])
+  })
+
+  it('layar & cetak satu susunan; tiap kolom (& sel tumpuk) punya padanan di baris', () => {
+    const t = kolomLhiTampil('III.B.1', false)
+    expect(kolomLhiTampil('III.B.1', true)).toBe(t)
+    for (const k of t) {
+      expect(r, k.key).toHaveProperty(k.key)
+      for (const x of k.tumpuk || []) expect(r, x).toHaveProperty(x)
+    }
+    for (const k of kolomLhi('III.B.1')) expect(r, k.key).toHaveProperty(k.key)
+  })
+
+  it('III.B.2 TIDAK ikut berubah (masih format lama)', () => {
+    expect(kolomLhiTampil('III.B.2', false).some(k => k.key === 'keterangan')).toBe(true)
+  })
+})
