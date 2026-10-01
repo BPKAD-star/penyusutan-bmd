@@ -173,6 +173,9 @@ export const kunciTtdPengamanan = (
   lap: 'peralatan_mesin' | 'rumah_negara', skpdId: number,
 ) => `bmd_pengamanan_${lap}_ttd_skpd_${skpdId}`
 
+/** Lembar PEMANFAATAN — satu lembar per SKPD (tak ada cabang). */
+export const kunciTtdPemanfaatan = (skpdId: number) => `bmd_pemanfaatan_ttd_skpd_${skpdId}`
+
 /** RKBMD — lembar per-SKPD & lembar se-Kabupaten (yang se-kab bermuatan TEKS). */
 /** Lembar se-Kabupaten Perolehan (IV.A.<n>.7–10) — penanda tangannya "Pejabat
  *  Penatausahaan Barang", dipilih bebas & TIDAK terikat SKPD mana pun. */

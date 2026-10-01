@@ -3089,6 +3089,52 @@ Berkasnya: `lib/formatPengamanan.ts` (+ test) · `lib/laporanPengamanan.ts` ·
   `bast_paths`/`pakta_paths`; menulis objek polos akan MEMBUANG berkas
   unggahannya tanpa satu pun error.
 
+## Laporan Pemanfaatan — tab Format Permendagri (2026-10-01)
+
+Cabang KESEMBILAN modul Pelaporan Permendagri. Menu Pelaporan → Pengelolaan →
+**Pemanfaatan** kini bertab: **Daftar** (keadaan terkini, tanpa periode) &
+**Format Permendagri** (lembar bertanda tangan, per-SKPD & berperiode). Bentuknya
+tabel 15 kolom dari contoh user (NIBAR · Kode-Uraian · Nama · Merk/Tipe · No
+Polisi · Lokasi · Nilai Perolehan · Jenis Pemanfaatan · Mitra · Jangka Waktu ·
+Mulai · Berakhir · No Dokumen Sumber · Tanggal Dokumen Sumber · Keterangan),
+dikelompokkan per golongan yang ADA di data, "Total <jenis>" + "TOTAL", pola
+sama dgn Penghapusan/Pengamanan. **Tak ada migrasi.** Rekap per SKPD belum ada
+untuk menu ini (belum diminta).
+
+Berkasnya: `lib/formatPemanfaatan.ts` · `lib/laporanPemanfaatanPermendagri.ts` ·
+`components/pelaporan/LembarPemanfaatanPermendagri.tsx` ·
+`PemanfaatanFormatPermendagri.tsx` · `app/cetak/pemanfaatan-permendagri/page.tsx`.
+Dikunci lib/formatPemanfaatan.test.ts + tests/lembarPemanfaatan.test.tsx.
+
+- ⚠️ **NOMOR FORMAT PERMENDAGRI-NYA BELUM DIKETAHUI.** Contoh dari user tak
+  memuat kop maupun nomor, dan aplikasi tak punya gambar resminya. `kode` di
+  `FORMAT_PEMANFAATAN` DIKOSONGKAN & lembar tak mencetak "Format IV.x" — dikunci
+  test. Isi `kode` begitu gambarnya ada; tak ada tempat lain yang perlu disunting.
+- ⚠️ **YANG DIDAFTAR = PERJANJIAN YANG BERLAKU PADA PERIODE** (masa efektifnya
+  beririsan dgn semester/tahun), BUKAN posisi akhir periode seperti Pengamanan.
+  Perjanjian yang berjalan Januari–Maret lalu di-Akhiri harus tetap muncul di
+  Semester I; dgn posisi akhir periode ia tak pernah muncul di laporan mana pun.
+  Masa efektif = `mulai` s.d. yang lebih awal antara `berakhir` & hari di-Akhiri
+  (`pemanfaatan_selesai`). Tanggal kosong dibaca "tak terbatas" — tak bisa
+  dinilai ≠ tak berlaku.
+- **Peristiwa berlaku SEJAK periodenya, tidak surut**: replay dipotong
+  `periode <= batas`, jadi perjanjian yang dibatalkan di semester berikutnya tetap
+  ada di laporan semester lamanya. Ini yang membedakannya dari tab Daftar
+  (`muatPemanfaatan`), yang jumlahnya bisa berbeda — dikatakan di layar.
+- **Wewenang atas baris = `jurnal_header.skpd_id`** (terkunci permanen), BUKAN
+  `aset.skpd_id` — pelajaran Laporan Reklasifikasi 2026-09-17. Dikunci test.
+- ⚠️ **Nilai Perolehan = nilai BARANG di register**, bukan nominal sewa
+  (`payload.nilai_pemanfaatan`, yang tak punya kolom di lembar ini). **Total
+  dijumlah SEKALI per barang**: dua perjanjian beririsan di periode yang sama
+  (A diakhiri Februari, B dimulai April) memunculkan barang yang sama di dua
+  baris, dan menjumlahnya per baris melipatgandakan nilainya di lembar bertanda
+  tangan tanpa satu pun error. Catatan kecil dicetak kalau itu terjadi.
+- **Keterangan = kartu dulu**, lalu `aset.keterangan`. Pemanfaatan **Sebagian**
+  diberi awalan "Sebagian: <bagian>" — tanpa itu lembar menyatakan seluruh gedung
+  disewakan padahal cuma satu ruang. (Tak ada kolom Lingkup di contoh user; kalau
+  awalan ini tak diinginkan, cabut di `keteranganPemanfaatan`.)
+- Lokasi = `aset.alamat_detail` saja (rantai wilayah belum ikut).
+
 ## Laporan Penghapusan — Format IV.K.1 · IV.K.2 · IV.K.6 (2026-09-07)
 
 Cabang KETUJUH — dan TERAKHIR — modul Pelaporan Permendagri untuk menu

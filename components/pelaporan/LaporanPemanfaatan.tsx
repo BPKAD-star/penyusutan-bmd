@@ -4,6 +4,11 @@
 // (kosong = se-kabupaten; pilih = per-SKPD/turunannya). Sumber = jurnal_header
 // kategori 'pemanfaatan' + ledger (keanggotaan per header+aset, baris terakhir
 // menentukan; batal_pemanfaatan dibuang). Export Excel.
+//
+// Dua tab, susunan yang sama dgn Pengamanan/Reklasifikasi/Koreksi/Penghapusan:
+//   Daftar             — keadaan TERKINI, tanpa periode
+//   Format Permendagri — lembar bertanda tangan, per-SKPD & berperiode
+// (Rekap per SKPD belum ada untuk menu ini — belum diminta.)
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
@@ -15,6 +20,7 @@ import {
   type BandPemanfaatan,
 } from '@/lib/pemanfaatan'
 import { muatPemanfaatan, type BarisPemanfaatan } from '@/lib/laporanPemanfaatan'
+import PemanfaatanFormatPermendagri from './PemanfaatanFormatPermendagri'
 
 type Row = BarisPemanfaatan
 
@@ -49,6 +55,13 @@ export default function LaporanPemanfaatan() {
   const [descIds, setDescIds] = useState<number[] | null>(null)
   const [skpdNama, setSkpdNama] = useState('')
   const [err, setErr] = useState('')
+  const [tab, setTab] = useState<'daftar' | 'permendagri'>('daftar')
+  // ⚠️ `skpdId` DIPISAH dari `descIds`: tab Daftar menyaring se-subtree
+  // (`descendantIds`), sementara lembar bertanda tangan per-SKPD & memuat
+  // identitas SKPD itu di kopnya — satu nilai untuk dua maksud membuat lembar
+  // berkop satu SKPD berisi perjanjian seluruh subtree-nya.
+  const [skpdId, setSkpdId] = useState<number | null>(null)
+  const [periode, setPeriode] = useState('')
 
   // Pemuatnya di lib/laporanPemanfaatan.ts (dipakai bersama alat baca Asisten AI).
   const build = useCallback(
@@ -122,26 +135,54 @@ export default function LaporanPemanfaatan() {
           <h1 className="text-2xl font-bold text-gray-900">Laporan Pemanfaatan</h1>
           <p className="text-gray-500 text-sm mt-1">Rekap barang yang dimanfaatkan (sewa/pinjam pakai/KSP/BGS-BSG/KSPI). Kosongkan SKPD untuk se-kabupaten.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-primary">{exporting ? 'Mengekspor...' : 'Export Excel'}</button>
-          <TombolCetak onClick={handleCetak} disabled={loading || rows.length === 0} />
-        </div>
+        {tab === 'daftar' && (
+          <div className="flex items-center gap-2">
+            <button onClick={handleExport} disabled={exporting || rows.length === 0} className="btn-primary">{exporting ? 'Mengekspor...' : 'Export Excel'}</button>
+            <TombolCetak onClick={handleCetak} disabled={loading || rows.length === 0} />
+          </div>
+        )}
+      </div>
+
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm no-print">
+        {([['daftar', 'Daftar'] as const, ['permendagri', 'Format Permendagri'] as const]).map(([v, label]) => (
+          <button key={v} onClick={() => setTab(v)}
+            className={`px-4 py-1.5 rounded-md transition-colors ${tab === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="card p-4 mb-4 flex flex-wrap gap-3 items-end no-print">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Jenis Pemanfaatan</label>
-          <select className="select-filter" value={jenis} onChange={e => setJenis(e.target.value)}>
-            <option value="">Semua Jenis</option>
-            {JENIS_PEMANFAATAN.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
+        {tab === 'daftar' ? (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Jenis Pemanfaatan</label>
+            <select className="select-filter" value={jenis} onChange={e => setJenis(e.target.value)}>
+              <option value="">Semua Jenis</option>
+              {JENIS_PEMANFAATAN.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+        ) : (
+          // Periode cuma dipakai lembar Permendagri — tab Daftar menampilkan
+          // keadaan TERKINI & memang tak punya dimensi waktu.
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Periode</label>
+            <select className="select-filter" value={periode} onChange={e => setPeriode(e.target.value)}>
+              <option value="">— pilih —</option>
+              {[String(new Date().getFullYear()), String(new Date().getFullYear() - 1)].flatMap(t => [
+                <option key={`${t}-S1`} value={`${t}-S1`}>{t} — Semester I</option>,
+                <option key={`${t}-S2`} value={`${t}-S2`}>{t} — Semester II</option>,
+                <option key={t} value={t}>{t} — Akhir Tahun</option>,
+              ])}
+            </select>
+          </div>
+        )}
         <div className="min-w-[280px]">
           <label className="block text-xs text-gray-500 mb-1">SKPD / Lokasi</label>
           <SkpdCombobox lockToOperator allowClear
             placeholder="Semua SKPD — atau ketik SKPD / Sub OPD / Lokasi..."
             onChangeSelection={async sel => {
               setDescIds(sel.descendantIds)
+              setSkpdId(sel.skpdId)
               if (sel.skpdId == null) { setSkpdNama(''); return }
               const { data } = await supabase.from('admin_skpd').select('nama').eq('id', sel.skpdId).maybeSingle()
               setSkpdNama((data as { nama: string } | null)?.nama || '')
@@ -149,6 +190,10 @@ export default function LaporanPemanfaatan() {
         </div>
       </div>
 
+      {tab === 'permendagri' ? (
+        <PemanfaatanFormatPermendagri skpdId={skpdId} periode={periode} />
+      ) : (
+        <>
       {err && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 no-print" role="alert">{err}</div>
       )}
@@ -230,6 +275,8 @@ export default function LaporanPemanfaatan() {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

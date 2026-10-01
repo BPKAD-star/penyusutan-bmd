@@ -93,7 +93,7 @@ bukan membangun ulang. Jangan diasumsikan — konfirmasi dulu.
 | Laporan Koreksi | `LaporanKoreksi` | ✔ daftar · rekap | `/cetak/koreksi-permendagri` | C | ✅ **IV.G.2–G.7** (koreksi nilai) · ➖ empat alasan lain |
 | Laporan Kapitalisasi | `LaporanKapitalisasi` | ✔ | kop generik | A | ⬜ |
 | Laporan Penghapusan | `LaporanPenghapusan` | ✔ daftar · rekap | `/cetak/penghapusan-permendagri` | C | ✅ **IV.K.1 · IV.K.2 · IV.K.6** |
-| Laporan Pemanfaatan | `LaporanPemanfaatan` | ✔ | kop generik | A | ⬜ |
+| Laporan Pemanfaatan | `LaporanPemanfaatan` | ✔ | `/cetak/pemanfaatan-permendagri` | A + C | ✅ tabel 15 kolom — ⚠️ **nomor format BELUM diketahui** (dikosongkan, bukan dikarang) |
 | Laporan Pengamanan | `LaporanPengamanan` | ✔ | `/cetak/pengamanan-permendagri` | A + C | ✅ **IV.J.1.2 · IV.J.2.2** |
 
 ⚠️ **Catatan ini sudah TERJAWAB & dikerjakan (Agustus–September 2026).** Dulu
@@ -106,8 +106,8 @@ sendiri, jadi ketujuhnya dikerjakan satu per satu dan `LaporanTransaksi`
 akhirnya DIHAPUS (2026-09-07) karena tak lagi dipakai siapa pun. Yang berhasil
 dipakai bersama justru lapisan di bawahnya: mesin subtotal, peta nama tingkat,
 `berupaAset`, & mekanik cetak — semuanya di `lib/formatPermendagri.ts`.
-Sisa yang belum punya lembar resmi tinggal **Kapitalisasi, Pemanfaatan, &
-Pengamanan**.
+Sisa yang belum punya lembar resmi tinggal **Kapitalisasi** (Pemanfaatan & Pengamanan
+sudah punya lembar; nomor format Pemanfaatan masih menunggu gambar resminya).
 
 ### 3.3 Laporan lainnya (7)
 
