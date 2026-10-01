@@ -167,7 +167,7 @@ export default function CetakLhiPage() {
         ) : (
           <>
             <LhiTabel kode={kode} rows={rows} identitas={identitas} cetak
-              periodeLabel={`${konfigLki(golongan).label} — Tahun ${tahun}`} />
+              jenisAset={konfigLki(golongan).label} tahun={tahun} />
 
             <div className="mt-8 flex justify-between text-[11px]">
               <div>

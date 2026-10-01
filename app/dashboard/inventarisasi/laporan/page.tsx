@@ -80,7 +80,6 @@ export default function LaporanInventarisasiPage() {
   }
 
   const cetakUrl = `/cetak/inventarisasi-lhi?tahun=${tahun}&golongan=${golongan}&kode=${encodeURIComponent(kode)}${skpdId ? `&skpd=${skpdId}` : ''}`
-  const periodeLabel = `${konfigLki(golongan).label} — Tahun ${tahun}`
 
   return (
     <FormShell
@@ -168,7 +167,7 @@ export default function LaporanInventarisasiPage() {
             Belum ada isian inventarisasi {konfigLki(golongan).label} tahun {tahun} yang divalidasi.
           </p>
         ) : (
-          <LhiTabel kode={kode} rows={rows} periodeLabel={periodeLabel} identitas={identitas} />
+          <LhiTabel kode={kode} rows={rows} jenisAset={konfigLki(golongan).label} tahun={tahun} identitas={identitas} />
         )}
       </div>
       </>)}

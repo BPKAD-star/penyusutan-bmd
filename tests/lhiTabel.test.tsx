@@ -150,3 +150,25 @@ describe('LhiTabel III.B.12', () => {
     expect(container.textContent).toContain('Format III.B.12')
   })
 })
+
+describe('LhiTabel — kop judul (2026-10-01)', () => {
+  it('judul · rekapitulasi · jenis aset langsung · tahun anggaran; tanpa baris Provinsi/Kabupaten & "BMD berupa"', () => {
+    const { container } = render(<LhiTabel kode="III.B.3" rows={[baris()]} jenisAset="Gedung dan Bangunan" tahun={2026} />)
+    const t = container.textContent || ''
+    expect(t).toContain('Laporan Hasil Inventarisasi')
+    expect(t).not.toContain('(LHI)')
+    expect(t).toContain('Gedung dan Bangunan')
+    expect(t).toContain('Tahun Anggaran 2026')
+    expect(t).not.toMatch(/Provinsi Jawa Timur/i)
+    expect(t).not.toMatch(/BMD berupa/i)
+  })
+
+  it('"Format III.B.x" di KANAN ATAS kop', () => {
+    const { container } = render(<LhiTabel kode="III.B.3" rows={[baris()]} tahun={2026} />)
+    const f = Array.from(container.querySelectorAll('p')).find(p => /^Format III\.B\.3$/.test(p.textContent || ''))
+    expect(f).toBeTruthy()
+    expect(f!.className).toMatch(/absolute/)
+    expect(f!.className).toMatch(/right-0/)
+    expect(f!.className).toMatch(/top-0/)
+  })
+})

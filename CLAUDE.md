@@ -7761,6 +7761,13 @@ III.B.8 (atas = sebelum, bawah = sesudah, hijau = berubah), yang kita buat sendi
 serupa di lembar Permendagri LAIN (`LembarReklas/Koreksi/PenghapusanPermendagri`: "*) hanya diisi untuk BMD
 yang dilakukan Penyusutan…") TIDAK disentuh — di luar permintaan.
 
+### LHI: kop judul disederhanakan (2026-10-01)
+
+Kop tabel LHI (layar & cetak, `LhiTabel`): **LAPORAN HASIL INVENTARISASI** (tanpa "(LHI)") ·
+**Rekapitulasi <nama format>** · **<Jenis Aset>** langsung (tanpa "BMD berupa") · **Tahun Anggaran <tahun>**.
+Baris "Provinsi Jawa Timur, Kabupaten Kediri" dicabut; **"Format III.B.x" di kanan atas**. Prop `periodeLabel`
+diganti `jenisAset` + `tahun`. Butir Kuasa PB / PB / Pengelola tak berubah.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

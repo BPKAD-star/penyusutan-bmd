@@ -17,10 +17,13 @@ import {
 // (Badan Keuangan dan Aset Daerah); dua lainnya diisi `identitasLhi()`.
 export type { IdentitasLhi }
 
-export default function LhiTabel({ kode, rows, periodeLabel, identitas, cetak }: {
+export default function LhiTabel({ kode, rows, jenisAset, tahun, identitas, cetak }: {
   kode: LhiKode
   rows: Record<string, string | number>[]
-  periodeLabel?: string
+  /** Jenis aset langsung ("Gedung dan Bangunan") — tanpa awalan "BMD berupa". */
+  jenisAset?: string
+  /** Tahun anggaran. */
+  tahun?: number
   identitas?: IdentitasLhi
   /** Pakai bentuk kolom lampiran (petak centang bertingkat). Halaman cetak
    *  saja — tabel di layar & Excel tetap datar supaya bisa disaring. */
@@ -65,12 +68,15 @@ export default function LhiTabel({ kode, rows, periodeLabel, identitas, cetak }:
     <div className="text-[11px] text-gray-900">
       <style>{`.brd{border:1px solid #9ca3af}`}</style>
 
-      <div className="text-center mb-3">
-        <p className="font-bold uppercase text-[13px]">Laporan Hasil Inventarisasi (LHI)</p>
+      {/* Kop (permintaan user 2026-10-01): judul · rekapitulasi format · jenis aset ·
+          tahun anggaran. Tanpa "Provinsi Jawa Timur, Kabupaten Kediri"; nomor format
+          di KANAN ATAS. */}
+      <div className="relative text-center mb-3">
+        <p className="absolute right-0 top-0 text-[11px] text-gray-500">Format {kode}</p>
+        <p className="font-bold uppercase text-[13px]">Laporan Hasil Inventarisasi</p>
         <p className="font-semibold uppercase">Rekapitulasi {LHI_LABEL[kode]}</p>
-        {periodeLabel && <p className="font-semibold uppercase">BMD Berupa {periodeLabel}</p>}
-        <p className="font-semibold uppercase">Provinsi Jawa Timur, Kabupaten Kediri</p>
-        <p className="text-[11px] text-gray-500">Format {kode}</p>
+        {jenisAset && <p className="font-semibold uppercase">{jenisAset}</p>}
+        {tahun != null && <p className="font-semibold uppercase">Tahun Anggaran {tahun}</p>}
       </div>
 
       {/* Butir (3)–(5) lampiran. Selalu dicetak ketiganya, walau kosong. */}
