@@ -7713,7 +7713,7 @@ Satu putaran permintaan user. **Tak ada migrasi** (`jawaban` itu jsonb).
   (`sebab_penjelasan`, wajib) · *dibongkar total & sudah ada bangunan baru* → **pilih bangunan baru**
   (pencari, `sebab_relasi` — kini ikut `SEBAB_BUTUH_RELASI`) · rehab / digabung → tetap pilih anak / induk ·
   *seharusnya beberapa register* → daftar nama (min. 2) dan **kini masuk III.B.13**, BUKAN III.B.8.
-  III.B.2 membawa penjelasan force majeure / bangunan pengganti di kolom Keterangan (`sebabTeks`).
+  III.B.2 membawa penjelasan force majeure / bangunan pengganti di kolom **Alasan Tidak Ada** (lihat bawah).
 - **Pratinjau "Akan muncul di laporan" TIDAK menyimpulkan apa pun sebelum sebab dipilih**
   (`klasifikasiLhi(b, { tungguSebab: true })`, hanya form). ⚠️ **Laporan TIDAK memakai opsi itu** —
   lembar lama tanpa sebab tetap III.B.2. Panah "→ III.B.x" di tiap pilihan sebab DICABUT.
@@ -7738,6 +7738,13 @@ Satu putaran permintaan user. **Tak ada migrasi** (`jawaban` itu jsonb).
   jabatan).
 - `lib/inventarisasiLhiTampil.ts` (baru): susunan kolom tabel baru III.B.1/3/6/8/12/13, dipisah dari
   inventarisasiLaporan.ts (batas 500 baris).
+
+### LHI III.B.2: tabel + kolom "Alasan Tidak Ada" (2026-10-01)
+
+= III.B.1 + satu kolom **Alasan Tidak Ada** sebelum Catatan Inventarisasi (`TAMPIL_III_B_2`; Excel datar).
+Isi: "Force majeure : <cerita petugas>", "Dibongkar total dan sudah ada bangunan baru : <NIBAR nama>",
+dst. **Kosong untuk golongan yang tak menanyakan sebab & lembar lama** (bukan "Tidak ditemukan" karangan).
+Catatan = catatan petugas saja (dulu sebab ikut di Keterangan). III.B.4 masih memakai bentuk lama.
 
 ## Lingkungan kerja
 

@@ -1,5 +1,5 @@
 // Susunan kolom tabel LHI yang DILIHAT (layar & cetak) untuk format yang sudah
-// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 3, 6, 8, 12, 13.
+// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 6, 8, 12, 13.
 // Dipisah dari inventarisasiLaporan.ts supaya berkas itu tak membengkak. Excel TIDAK
 // memakai susunan ini — ia tetap datar lewat `kolomLhi()` (satu kolom per data).
 //
@@ -116,6 +116,18 @@ const TAMPIL_III_B_13: KolomLhi[] = [
 ]
 
 /**
+ * III.B.2 — BMD Tidak Ada Karena Tidak Diketemukan (2026-10-01, contoh tabel user):
+ * sama dgn III.B.1 + kolom "Alasan Tidak Ada" ("Force majeure : <cerita>", atau
+ * bangunan pengganti / induk). Kosong utk golongan yang tak menanyakan sebab &
+ * lembar lama. Excel datar (`kolomLhi`).
+ */
+const TAMPIL_III_B_2: KolomLhi[] = [
+  ...TAMPIL_III_B_1.slice(0, -1),
+  { key: 'alasan', label: 'Alasan Tidak Ada' },
+  TAMPIL_III_B_1[TAMPIL_III_B_1.length - 1],
+]
+
+/**
  * III.B.8 — Terjadi Perubahan Data (2026-10-01, contoh tabel user): NIBAR lalu
  * tiap atribut sbg pasangan sebelum/sesudah (`dua`). Kode barang TIDAK ikut —
  * perubahan kodefikasi punya laporan sendiri (III.B.12). Excel tidak memakai
@@ -131,6 +143,7 @@ const TAMPIL_III_B_8: KolomLhi[] = [
 /** Format → susunan tabel baru. Dibaca `kolomLhiTampil`. */
 export const TAMPIL_TETAP: Partial<Record<LhiKode, KolomLhi[]>> = {
   'III.B.1': TAMPIL_III_B_1,
+  'III.B.2': TAMPIL_III_B_2,
   'III.B.3': TAMPIL_III_B_3,
   'III.B.6': TAMPIL_III_B_6,
   'III.B.8': TAMPIL_III_B_8,

@@ -242,6 +242,23 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
         { key: 'pecahan', label: 'Nama Barang Hasil Pemecahan' },
         { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
+    case 'III.B.2':
+      // Datar (Excel). Susunan yang DILIHAT = `TAMPIL_III_B_2`.
+      return [
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'jumlah', label: 'Jumlah', angka: true },
+        { key: 'satuan', label: 'Satuan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'alasan', label: 'Alasan Tidak Ada' },
+        { key: 'catatan', label: 'Catatan Inventarisasi' },
+      ]
     case 'III.B.4':
       return [...INTI({ merek: false }), KET]
     case 'III.B.5':
@@ -460,6 +477,14 @@ export function nilaiBarisLhi(
         tgl: tglLhi(s.tgl_perolehan), jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
         catatan: j.keterangan || '',
       }
+    case 'III.B.2':
+      return {
+        no, kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar, merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        tgl: tglLhi(s.tgl_perolehan), jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
+        alasan: alasanTidakAda(j, noun), catatan: j.keterangan || '',
+      }
     case 'III.B.13':
       return {
         no, kode: kodeEfektif, uraian: uraianEfektif,
@@ -559,15 +584,22 @@ export function totalNilaiLhi(rows: Record<string, string | number>[]): number {
 }
 
 /**
- * Teks sebab "tidak ada" utk kolom Keterangan III.B.2 (kosong utk lembar lama):
- * force majeure memuat penjelasan petugas, dibongkar memuat bangunan penggantinya.
+ * Kolom "Alasan Tidak Ada" III.B.2: "<sebab> : <keterangan>" — force majeure memuat
+ * cerita petugas, dibongkar memuat bangunan penggantinya. Kosong utk lembar lama /
+ * golongan yang tak menanyakan sebab.
  */
-function sebabTeks(j: InvJawaban, noun: string): string {
-  const l = labelSebab(j.sebab_tidak_ada, noun)
+function alasanTidakAda(j: InvJawaban, noun: string): string {
+  const v = j.sebab_tidak_ada
+  const l = v === 'force_majeure' ? 'Force majeure' : labelSebab(v, noun)
   if (!l) return ''
   const rel = j.sebab_relasi
-  const tambahan = j.sebab_tidak_ada === 'force_majeure' ? (j.sebab_penjelasan || '').trim()
-    : j.sebab_tidak_ada === 'dibongkar_baru' && rel
-      ? `${noun} baru: ${rel.nibar || '—'} ${rel.nama_barang || ''}`.trim() : ''
-  return `Tidak ada: ${l}${tambahan ? ` — ${tambahan}` : ''}`
+  const tambahan = v === 'force_majeure' ? (j.sebab_penjelasan || '').trim()
+    : v === 'dibongkar_baru' && rel ? `${rel.nibar || '—'} ${rel.nama_barang || ''}`.trim() : ''
+  return tambahan ? `${l} : ${tambahan}` : l
+}
+
+/** Teks sebab "tidak ada" utk kolom Keterangan format yang belum punya kolom Alasan (III.B.4). */
+function sebabTeks(j: InvJawaban, noun: string): string {
+  const l = labelSebab(j.sebab_tidak_ada, noun)
+  return l ? `Tidak ada: ${l}` : ''
 }

@@ -357,8 +357,20 @@ describe('III.B.1 — tabel baru (Hilang)', () => {
     for (const k of kolomLhi('III.B.1')) expect(r, k.key).toHaveProperty(k.key)
   })
 
-  it('III.B.2 TIDAK ikut berubah (masih format lama)', () => {
-    expect(kolomLhiTampil('III.B.2', false).some(k => k.key === 'keterangan')).toBe(true)
+  it('III.B.2 = III.B.1 + kolom "Alasan Tidak Ada" sebelum Catatan', () => {
+    const l = kolomLhiTampil('III.B.2', false).map(k => k.label)
+    expect(l.slice(-2)).toEqual(['Alasan Tidak Ada', 'Catatan Inventarisasi'])
+    expect(l.slice(0, -2)).toEqual(kolomLhiTampil('III.B.1', false).map(k => k.label).slice(0, -1))
+  })
+
+  it('III.B.2: tiap kolom punya padanan di baris; lembar lama tanpa sebab → alasan kosong', () => {
+    const b = nilaiBarisLhi('III.B.2', brs({ keberadaan: 'tidak_ditemukan' }), 1)
+    expect(b.alasan).toBe('')
+    for (const k of kolomLhiTampil('III.B.2', false)) {
+      expect(b, k.key).toHaveProperty(k.key)
+      for (const x of k.tumpuk || []) expect(b, x).toHaveProperty(x)
+    }
+    for (const k of kolomLhi('III.B.2')) expect(b, k.key).toHaveProperty(k.key)
   })
 })
 
@@ -388,10 +400,10 @@ describe('III.B.13 — Perubahan Kuantitas (beberapa register)', () => {
     for (const k of kolomLhi('III.B.13')) expect(r, k.key).toHaveProperty(k.key)
   })
 
-  it('III.B.2 memuat penjelasan force majeure & bangunan pengganti', () => {
+  it('III.B.2 memuat penjelasan force majeure & bangunan pengganti di "Alasan Tidak Ada"', () => {
     const fm = nilaiBarisLhi('III.B.2', brs({ keberadaan: 'tidak_ditemukan', sebab_tidak_ada: 'force_majeure', sebab_penjelasan: 'Terbakar 12 Mei' }), 1)
-    expect(fm.keterangan).toMatch(/Force majeure.*— Terbakar 12 Mei/)
+    expect(fm.alasan).toBe('Force majeure : Terbakar 12 Mei')
     const db = nilaiBarisLhi('III.B.2', brs({ keberadaan: 'tidak_ditemukan', sebab_tidak_ada: 'dibongkar_baru', sebab_relasi: { aset_id: 'b', nibar: '99', nama_barang: 'Gedung Baru' } }), 1)
-    expect(db.keterangan).toMatch(/bangunan baru: 99 Gedung Baru/)
+    expect(db.alasan).toMatch(/Dibongkar total dan sudah ada bangunan baru : 99 Gedung Baru/)
   })
 })
