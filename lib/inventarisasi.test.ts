@@ -8,7 +8,13 @@ import { JENIS_INVENTARISASI, golonganDariKode, sesuaiTampil, atribusiTampil, di
 // Bawaan: register SUDAH punya foto & lembar baru membawa satu unggahan — supaya
 // uji lain tak terganggu aturan FOTO WAJIB; aturan itu diuji sendiri di bawah.
 const aset = (jawaban: InvJawaban) => ({ aset_id: 'a-1', jawaban, foto_register: 1 })
-const baru = (jawaban: InvJawaban) => ({ aset_id: null, jawaban, foto_paths: ['p'] })
+// Isian BMD Belum Tercatat yang LENGKAP untuk golongan 1.3.5 (Aset Tetap Lainnya).
+const BARU_LENGKAP_ATL = {
+  kode_barang: '1.3.5.01.01.01.001', satuan: 'Unit', jumlah: 2, harga_satuan: 500000, tgl_perolehan: '2024-01-15',
+  spesifikasi: 'Rak arsip', merek_tipe: 'Brother', spesifikasi_lainnya: 'Besi', wilayah_kode: '3506010001',
+  alamat_detail: 'Jl. Mawar 1', latitude: -7.8, longitude: 111.9, kondisi: 'B' as const,
+  penggunaan: 'Kantor', keterangan: 'Temuan', asal_usul: 'Hibah',
+}
 
 describe('kekuranganLki — barang tercatat', () => {
   it('lembar kosong → keberadaan wajib', () => {
@@ -43,17 +49,6 @@ describe('kekuranganLki — barang tercatat', () => {
 
   it('mengembalikan SELURUH kekurangan sekaligus, bukan yang pertama saja', () => {
     expect(kekuranganLki(aset({ keberadaan: 'ada', satuan: { sesuai: false } })).length).toBe(2)
-  })
-})
-
-describe('kekuranganLki — BMD Belum Tercatat (III.A.7)', () => {
-  it('kode, jumlah, satuan, kondisi wajib', () => {
-    expect(kekuranganLki(baru({}))).toEqual(['Kode Barang', 'Jumlah', 'Satuan Barang', 'Kondisi Barang'])
-    expect(kekuranganLki(baru({ baru: { kode_barang: '1.3.2.01', jumlah: 1, satuan: 'Unit', kondisi: 'B' } }))).toEqual([])
-  })
-
-  it('jumlah 0 / negatif tak sah', () => {
-    expect(kekuranganLki(baru({ baru: { kode_barang: 'x', jumlah: 0, satuan: 'Unit', kondisi: 'B' } }))).toEqual(['Jumlah'])
   })
 })
 
@@ -92,9 +87,10 @@ describe('kekuranganLki — FOTO WAJIB (2026-10-01)', () => {
   })
 
   it('BMD Belum Tercatat: tak punya foto register, jadi wajib unggah', () => {
-    const lengkap: InvJawaban = { baru: { kode_barang: '1.3.2.01', jumlah: 1, satuan: 'Unit', kondisi: 'B' } }
-    expect(kekuranganLki({ aset_id: null, jawaban: lengkap })).toEqual([PESAN_FOTO_LKI])
-    expect(kekuranganLki({ aset_id: null, jawaban: lengkap, foto_paths: ['p'] })).toEqual([])
+    const lengkap: InvJawaban = { keterangan: 'ok', baru: { ...BARU_LENGKAP_ATL } }
+    const arg = { aset_id: null, jawaban: lengkap, golongan: '1.3.5' }
+    expect(kekuranganLki(arg)).toEqual([PESAN_FOTO_LKI])
+    expect(kekuranganLki({ ...arg, foto_paths: ['p'] })).toEqual([])
   })
 })
 

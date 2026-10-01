@@ -12,6 +12,8 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { paginate } from '@/shared/db/paginate'
 import { formatRupiah } from '@/lib/export'
+import { FIELD_LABEL } from '@/lib/asetFields'
+import { fieldBaru, kunciBaru } from '@/lib/inventarisasiBaru'
 import {
   konfigLki, normalKondisi, STATUS_LABEL,
   type InvBaris, type LkiConfig, type Petugas, type SesuaiField,
@@ -53,6 +55,7 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
   const j = b.jawaban || {}
   const belumTercatat = !b.aset_id
   const baru = j.baru || {}
+  const golongan = b.golongan
 
   return (
     <div className="bg-white p-8 shadow print:shadow-none print:p-0 mb-6 print:mb-0 print:break-after-page text-[11px] text-gray-900">
@@ -79,29 +82,28 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
         <tbody>
           {belumTercatat ? (
             <>
-              {/* Penomoran 1–16 mengikuti lampiran Format III.A.7 apa adanya.
-                  Butir 6–8 (nomor kendaraan) SELALU dicetak walau kosong —
-                  di formulir kertas barisnya memang ada, cuma diberi catatan
-                  "hanya diisi untuk kendaraan dinas". Butir 17–19 (Lainnya,
-                  Keterangan, Foto) dipakai bersama lembar biasa, di bawah. */}
+              {/* Isian BMD Belum Tercatat ditetapkan user 2026-10-02 (bukan lagi
+                  penomoran lampiran 1–16): kode, satuan, kuantitas, nilai per item,
+                  tanggal perolehan, lalu spesifikasi sesuai golongan. Baris yang
+                  tak berlaku utk golongannya tak dicetak. Butir Catatan & Foto
+                  dipakai bersama lembar biasa, di bawah. */}
               <Baris kode="1" label="Kode Barang">{baru.kode_barang || '—'}</Baris>
               <Baris kode="2" label="Nama Barang">{baru.nama_barang || '—'}</Baris>
-              <Baris kode="3" label="Nama Spesifikasi Barang">{baru.spesifikasi || '—'}</Baris>
-              <Baris kode="4" label="Kode Register">{baru.kode_register || '—'}</Baris>
-              <Baris kode="5" label="Merek / Tipe">{baru.merek_tipe || '—'}</Baris>
-              <Baris kode="6" label="Nomor Polisi">{baru.no_polisi || '—'}</Baris>
-              <Baris kode="7" label="Nomor Rangka">{baru.no_rangka || '—'}</Baris>
-              <Baris kode="8" label="Nomor Mesin">{baru.no_mesin || '—'}</Baris>
-              <Baris kode="9" label="Jumlah">{baru.jumlah ?? '—'}</Baris>
-              <Baris kode="10" label="Satuan Barang">{baru.satuan || '—'}</Baris>
-              <Baris kode="11" label="Harga Satuan Barang">{formatRupiah(baru.harga_satuan || 0)}</Baris>
-              <Baris kode="12" label="Nilai Perolehan Barang">{formatRupiah(baru.nilai_perolehan || 0)}</Baris>
-              <Baris kode="13" label="Tanggal, Bulan, Tahun Perolehan">{baru.tgl_perolehan || '—'}</Baris>
-              <Baris kode="14" label="Alamat">
-                {[baru.alamat_detail, baru.wilayah_kode].filter(Boolean).join(' · ') || baru.alamat || '—'}
-              </Baris>
-              <Baris kode="15" label="Dasar Pencatatan">{baru.dasar_pencatatan || '—'}</Baris>
-              <Baris kode="16" label="Kondisi Barang">{baru.kondisi || '—'}</Baris>
+              <Baris kode="3" label="Satuan Barang">{baru.satuan || '—'}</Baris>
+              <Baris kode="4" label="Kuantitas">{baru.jumlah ?? '—'}</Baris>
+              <Baris kode="5" label="Nilai per item">{formatRupiah(baru.harga_satuan || 0)}</Baris>
+              <Baris kode="6" label="Nilai Perolehan (kuantitas × nilai per item)">{formatRupiah(baru.nilai_perolehan || 0)}</Baris>
+              <Baris kode="7" label="Tanggal Perolehan">{baru.tgl_perolehan || '—'}</Baris>
+              {fieldBaru(golongan).map((k, i) => (
+                <Baris key={k} kode={String(8 + i)} label={k === 'latitude' ? 'Titik Koordinat' : FIELD_LABEL[k]}>
+                  {k === 'latitude'
+                    ? (baru.latitude != null && baru.longitude != null ? `${baru.latitude}, ${baru.longitude}` : '—')
+                    : k === 'kondisi_barang'
+                      ? ({ B: 'Baik', RR: 'Rusak Ringan', RB: 'Rusak Berat' } as Record<string, string>)[baru.kondisi || ''] || '—'
+                      : k === 'wilayah_kode' ? (baru.wilayah_kode || baru.alamat || '—')
+                      : String(baru[kunciBaru(k)] ?? '') || '—'}
+                </Baris>
+              ))}
             </>
           ) : (
             <>

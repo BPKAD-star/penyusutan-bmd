@@ -7778,6 +7778,23 @@ berganti, dan tak menimpa format terpilih yang sudah berisi; pilihan manual ke f
 dilompati balik. Angka per jenis aset yang dipilih, bukan seluruh jenis. **Tak ada migrasi.**
 Tombol "Cetak semua yang ada temuan" sengaja ditunda sampai format III.B.4/5/9/10/11 ikut disesuaikan.
 
+### LKI: BMD Belum Tercatat (III.A.7) — isian dirombak, SEMUA wajib (2026-10-02)
+
+Keputusan user. Urutan isian: Kode Barang → Satuan → Kuantitas → **Nilai per item** → **Tanggal Perolehan**
+(dasar penyusutan, seperti Cara Perolehan → Hasil Inventarisasi) → spesifikasi lengkap → Catatan Inventarisasi → Foto.
+Form di `components/inventarisasi/BelumTercatatForm.tsx`, aturan wajib SATU sumber di `lib/inventarisasiBaru.ts`
+(`kekuranganBaru`, dipakai `kekuranganLki`). **Tak ada migrasi** (`jawaban.baru` itu jsonb).
+- ⚠️ **Spesifikasi mengikuti GOLONGAN lembar** (`entryFieldsForKode` + Asal Usul) — nomor polisi/rangka/mesin/BPKB
+  tak dituntut untuk Tanah, jenis hak & dokumen kepemilikan tak untuk Gedung/JIJ (sama dgn Edit Spesifikasi di
+  Hasil Inventarisasi). Menuntut kolom yang tak berlaku membuat lembar mustahil disimpan. **Nomor Dokumen Kepemilikan
+  ikut dituntut** (ada di template Tanah) walau tak disebut user — cabut dari `URUTAN` kalau tak diinginkan.
+- `baru.harga_satuan` kini = **"nilai per item"**; `nilai_perolehan` = kuantitas × itu (tak lagi bisa ditimpa
+  manual). Titik koordinat butuh latitude & longitude (0 sah). Tanggal perolehan tak boleh di masa depan.
+- Dicabut dari form: Kode Register (barangnya belum punya) & Dasar Pencatatan — tetap ada di tipe utk baris lama.
+- Baris lama yang dibuka ulang wajib dilengkapi sebelum bisa disimpan lagi. Lembar CETAK LKI (`/cetak/inventarisasi-lki`)
+  ikut mencetak isian baru. ⛔ **LHI III.B.11 BELUM disesuaikan** (menyusul, permintaan user): masih membaca
+  kolom lama; field baru (BPKB, titik koordinat, luas, jenis hak, asal usul, dst.) belum tampil di sana.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

@@ -17,6 +17,7 @@
 //   (mis. kondisi berubah DAN tercatat ganda).
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import { KIBAR_JENIS_LABEL } from '@/lib/kibarJenis'
+import { kekuranganBaru } from '@/lib/inventarisasiBaru'
 
 // ── Status per barang ───────────────────────────────────────────────────────
 /** Status yang TERSIMPAN. "Belum" bukan status — ia berarti belum ada barisnya. */
@@ -258,6 +259,13 @@ export type InvJawaban = {
     wilayah_kode?: string; alamat_detail?: string
     dasar_pencatatan?: string
     kondisi?: KondisiFisik
+    // ── Ditambah 2026-10-02: spesifikasi lengkap sesuai golongan (lib/inventarisasiBaru.ts).
+    // `harga_satuan` kini berarti "nilai per item"; `nilai_perolehan` = jumlah × itu.
+    spesifikasi_lainnya?: string; no_bpkb?: string
+    latitude?: number | null; longitude?: number | null
+    penggunaan?: string; keterangan?: string; asal_usul?: string
+    jenis_hak?: string; luas?: number
+    nomor_dokumen_kepemilikan?: string; tanggal_dokumen_kepemilikan?: string; nama_dokumen_kepemilikan?: string
   }
 }
 
@@ -612,17 +620,17 @@ export function kekuranganLki(
      */
     config?: Pick<LkiConfig, 'merekTipe' | 'spesifikasiLainnya' | 'nomorKendaraan' | 'jijTeknis'
       | 'luas' | 'titikKoordinat' | 'atribusi' | 'tanahMilik'>
+    /** Golongan lembar — menentukan spesifikasi mana yang wajib pada BMD Belum Tercatat. */
+    golongan?: string
   },
 ): string[] {
   const j = b.jawaban || {}
   const kurang: string[] = []
 
   if (!b.aset_id) {
-    const baru = j.baru || {}
-    if (!baru.kode_barang) kurang.push('Kode Barang')
-    if (!(Number(baru.jumlah) > 0)) kurang.push('Jumlah')
-    if (!baru.satuan) kurang.push('Satuan Barang')
-    if (!baru.kondisi) kurang.push('Kondisi Barang')
+    kurang.push(...kekuranganBaru(j.baru || {}, b.golongan || ''))
+    // Catatan Inventarisasi juga wajib di lembar ini (keputusan user 2026-10-02).
+    if (!(j.keterangan || '').trim()) kurang.push('Catatan Inventarisasi')
     // Barang temuan tak punya foto di register — satu-satunya sumbernya unggahan.
     if (!(b.foto_paths || []).length) kurang.push(PESAN_FOTO_LKI)
     return kurang

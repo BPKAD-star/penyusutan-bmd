@@ -31,6 +31,7 @@ import { createClient } from '@/lib/supabase/client'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
 import WilayahPicker from '@/components/WilayahPicker'
+import BelumTercatatForm from '@/components/inventarisasi/BelumTercatatForm'
 import NominalInput from '@/shared/ui/NominalInput'
 import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
@@ -222,6 +223,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
     // Hanya lembar barang TERCATAT yang wajib dijawab lengkap; `kekuranganLki`
     // sendiri melewati barang hilang / tak ditemukan.
     config: belumTercatat ? undefined : config,
+    golongan,
   })
 
   async function simpan() {
@@ -322,123 +324,18 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
 
           {belumTercatat ? (
             // ── Format III.A.7 — BMD Belum Tercatat ───────────────────────────
-            // 19 isian sesuai lampiran (butir 17–18 Catatan Inventarisasi/Foto
-            // dipakai bersama lembar biasa, ada di bawah). Meski Permendagri
-            // memberi SATU format utk semua golongan, isiannya di sini tetap
-            // memakai master data yang sama dgn lembar biasa — kalau di sini
-            // boleh ketik bebas, barang temuan bakal masuk dgn kode/satuan/
-            // alamat yang tak cocok dgn barang yang sudah tercatat.
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Kode Barang &amp; Nama Barang</label>
-                <KodefikasiPicker
-                  picked={kodefikasi}
-                  golonganTetap={golongan}
-                  onPick={r => {
-                    setKodefikasi(r)
-                    setJ(p => ({
-                      ...p,
-                      baru: { ...(p.baru || {}), kode_barang: r?.kode || '', nama_barang: r?.uraian || '' },
-                    }))
-                  }}
-                />
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Nama Barang otomatis dari uraian kodefikasi. Pilihan dibatasi golongan <b>{golongan}</b>.
-                </p>
-              </div>
-              {([
-                ['spesifikasi', 'Nama Spesifikasi Barang'], ['kode_register', 'Kode Register'],
-              ] as [string, string][]).map(([k, label]) => (
-                <div key={k}>
-                  <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                  <input className="select-filter w-full" disabled={readOnly}
-                    value={(j.baru?.[k as keyof typeof j.baru] as string) || ''}
-                    onChange={e => setBaru(k, e.target.value)} />
-                </div>
-              ))}
-              {config.merekTipe && (
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    {config.nomorKendaraan ? 'Merek / Tipe' : 'Merek / Tipe / Spesifikasi Lainnya'}
-                  </label>
-                  <input className="select-filter w-full" disabled={readOnly}
-                    value={j.baru?.merek_tipe || ''} onChange={e => setBaru('merek_tipe', e.target.value)} />
-                </div>
-              )}
-              {/* Butir 6–8 bertanda **) di lampiran: "hanya diisi untuk
-                  kendaraan dinas" — jadi ikut config, bukan selalu tampil. */}
-              {config.nomorKendaraan && ([
-                ['no_polisi', 'Nomor Polisi'], ['no_rangka', 'Nomor Rangka'], ['no_mesin', 'Nomor Mesin'],
-              ] as [string, string][]).map(([k, label]) => (
-                <div key={k}>
-                  <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                  <input className="select-filter w-full" disabled={readOnly}
-                    value={(j.baru?.[k as keyof typeof j.baru] as string) || ''}
-                    onChange={e => setBaru(k, e.target.value)} />
-                </div>
-              ))}
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Jumlah</label>
-                <input type="number" className="select-filter w-full" disabled={readOnly}
-                  value={j.baru?.jumlah ?? ''} onChange={e => setJumlahHarga('jumlah', e.target.value)} />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Satuan Barang</label>
-                <select className="select-filter w-full" disabled={readOnly}
-                  value={j.baru?.satuan || ''} onChange={e => setBaru('satuan', e.target.value)}>
-                  <option value="">— pilih satuan —</option>
-                  {satuanOpsi.map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-                <p className="text-[11px] text-gray-400 mt-1">Daftar dari menu Admin → Daftar Satuan.</p>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Harga Satuan (Rp)</label>
-                <NominalInput className="select-filter w-full" disabled={readOnly}
-                  value={String(j.baru?.harga_satuan ?? '')} onChange={v => setJumlahHarga('harga_satuan', v)} />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Nilai Perolehan (Rp)</label>
-                <NominalInput className="select-filter w-full" disabled={readOnly}
-                  value={String(j.baru?.nilai_perolehan ?? '')} onChange={v => setBaru('nilai_perolehan', Number(v))} />
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Terisi otomatis dari Jumlah × Harga Satuan; boleh ditimpa manual.
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Tanggal Perolehan</label>
-                <input type="date" className="select-filter w-full" disabled={readOnly}
-                  value={j.baru?.tgl_perolehan || ''} onChange={e => setBaru('tgl_perolehan', e.target.value)} />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Alamat</label>
-                <div className="space-y-2">
-                  <WilayahPicker
-                    value={j.baru?.wilayah_kode || ''}
-                    onChange={kode => setBaru('wilayah_kode', kode)}
-                  />
-                  <input className="select-filter w-full" disabled={readOnly}
-                    placeholder="Detail alamat (jalan, nomor, RT/RW)..."
-                    value={j.baru?.alamat_detail || ''}
-                    onChange={e => setBaru('alamat_detail', e.target.value)} />
-                </div>
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Dasar Pencatatan</label>
-                <input className="select-filter w-full" disabled={readOnly}
-                  value={j.baru?.dasar_pencatatan || ''} onChange={e => setBaru('dasar_pencatatan', e.target.value)} />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Kondisi Barang</label>
-                <div className="flex gap-4 text-xs">
-                  {KONDISI.map(k => (
-                    <label key={k.v} className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="radio" checked={j.baru?.kondisi === k.v} disabled={readOnly}
-                        onChange={() => setBaru('kondisi', k.v)} />{k.l}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
+            // Isian & urutannya ditetapkan user 2026-10-02 (components/inventarisasi/
+            // BelumTercatatForm.tsx); semuanya wajib (lib/inventarisasiBaru.ts).
+            // Catatan Inventarisasi & Foto dipakai bersama lembar biasa, di bawah.
+            <BelumTercatatForm
+              baru={j.baru || {}} golongan={golongan} kodefikasi={kodefikasi}
+              satuanOpsi={satuanOpsi} readOnly={readOnly}
+              setBaru={setBaru} setJumlahHarga={setJumlahHarga}
+              onPickKode={r => {
+                setKodefikasi(r)
+                setJ(p => ({ ...p, baru: { ...(p.baru || {}), kode_barang: r?.kode || '', nama_barang: r?.uraian || '' } }))
+              }}
+            />
           ) : (
             <>
               <Seksi kode="A" judul="NIBAR">
