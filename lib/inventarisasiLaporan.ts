@@ -117,35 +117,15 @@ export function nilaiSelCetak(k: KolomLhi, r: Record<string, string | number>): 
 }
 
 // ── Catatan kaki ────────────────────────────────────────────────────────────
-// Tiap format di lampiran punya catatan kaki bertanda *) **) dst. yang
-// menjelaskan kolom mana yang kondisional. Hanya dicantumkan untuk format yang
-// memang merender kolom bersangkutan — di lampiran, III.B.8 masih membawa
-// catatan "*) merek/tipe" padahal tabelnya tak punya kolom itu (sisa salin
-// dari format sebelumnya), jadi tak diikutkan.
-const CATATAN_MEREK = '*) Hanya diisi untuk BMD yang ada merek/tipe.'
-
+// Catatan bertanda *) **) ***) dari lampiran Permendagri ("Hanya diisi untuk BMD yang
+// ada merek/tipe", dst.) SENGAJA TIDAK dicetak (permintaan user 2026-10-01) — itu
+// keterangan cara mengisi formulir, bukan isi laporan. Yang tersisa hanya KETERANGAN
+// MEMBACA tabel yang kita buat sendiri (III.B.8: atas = sebelum, bawah = sesudah, hijau
+// = berubah), karena tanpa itu pembaca tak tahu apa arti dua baris dalam satu sel.
+// Jangan menambahkan lagi catatan salinan lampiran di sini.
 export const CATATAN_KAKI: Partial<Record<LhiKode, string[]>> = {
-  'III.B.1': [CATATAN_MEREK],
-  'III.B.2': [CATATAN_MEREK],
-  'III.B.3': [CATATAN_MEREK],
-  'III.B.5': [
-    CATATAN_MEREK,
-    '**) Hanya diisi apabila digunakan oleh pengguna barang lainnya atau PNS pemerintah daerah yang bersangkutan.',
-    '***) Hanya diisi untuk rumah negara.',
-  ],
-  'III.B.6': [CATATAN_MEREK],
-  'III.B.7': [CATATAN_MEREK],
   'III.B.8': [
     'Tiap kolom: baris ATAS = sebelum inventarisasi (data register), baris BAWAH = setelah inventarisasi. Tulisan hijau tebal = data berubah.',
-  ],
-  'III.B.9': [
-    CATATAN_MEREK,
-    '**) Hanya diisi untuk BMD yang tercatat ganda.',
-    '***) Hanya diisi dalam hal tercatat ganda dengan pengguna barang lainnya.',
-  ],
-  'III.B.11': [
-    CATATAN_MEREK,
-    '**) Hanya diisi untuk kendaraan dinas.',
   ],
 }
 

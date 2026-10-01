@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   identitasLhi, PENGELOLA_BARANG_LHI, kolomLhi, kolomLhiTampil, nilaiBarisLhi,
-  kebutuhanIndukLive, tglLhi,
+  kebutuhanIndukLive, tglLhi, CATATAN_KAKI,
 } from './inventarisasiLaporan'
 import type { InvBaris, InvJawaban } from './inventarisasi'
 
@@ -432,5 +432,17 @@ describe('III.B.7 — tabel baru (kondisi fisik)', () => {
 
   it('kondisi snapshot yang tak dikenal tampil apa adanya, bukan kosong', () => {
     expect(nilaiBarisLhi('III.B.7', brs({ kondisi: 'RB' }, { kondisi: 'Sedang' }), 1).kondisi_sebelum).toBe('Sedang')
+  })
+})
+
+describe('catatan kaki LHI', () => {
+  it('TIDAK ada salinan catatan bertanda *) **) ***) dari lampiran Permendagri', () => {
+    for (const [k, daftar] of Object.entries(CATATAN_KAKI)) {
+      for (const c of daftar || []) expect(c, k).not.toMatch(/^\*+\)/)
+    }
+  })
+
+  it('keterangan membaca III.B.8 (kita buat sendiri) tetap ada', () => {
+    expect((CATATAN_KAKI['III.B.8'] || []).join(' ')).toMatch(/baris ATAS = sebelum/)
   })
 })

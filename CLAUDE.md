@@ -7753,6 +7753,14 @@ KATA PENUH ("Baik", "Rusak Berat") — bukan B/RR/RB; petak centang bertingkat l
 Inventarisasi ditambahkan di ujung (contoh user tak memilikinya). Excel datar. Kini hanya III.B.5 & III.B.11
 yang masih memakai petak centang (`kolomLhiCetak`). Tanpa migrasi.
 
+### LHI: catatan kaki *) **) ***) dari lampiran Permendagri DICABUT (2026-10-01)
+
+"*) Hanya diisi untuk BMD yang ada merek/tipe", "**) Hanya diisi apabila digunakan oleh…", dst. (III.B.1–3, 5–7, 9,
+11) — itu petunjuk MENGISI formulir, bukan isi laporan. `CATATAN_KAKI` tinggal satu entri: keterangan membaca
+III.B.8 (atas = sebelum, bawah = sesudah, hijau = berubah), yang kita buat sendiri. Dikunci test. ⛔ Catatan
+serupa di lembar Permendagri LAIN (`LembarReklas/Koreksi/PenghapusanPermendagri`: "*) hanya diisi untuk BMD
+yang dilakukan Penyusutan…") TIDAK disentuh — di luar permintaan.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
