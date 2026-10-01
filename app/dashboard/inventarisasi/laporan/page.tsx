@@ -77,7 +77,7 @@ export default function LaporanInventarisasiPage() {
   )
 
   function handleExport() {
-    const kolom = kolomLhi(kode)
+    const kolom = kolomLhi(kode, golongan)
     exportToExcel(
       // III.B.8: dua baris per barang (Sebelum/Sesudah) + "Kolom yang berubah" —
       // warna font tak bisa dibuat di Excel, jadi perubahannya dinyatakan sbg kolom.
@@ -192,7 +192,7 @@ export default function LaporanInventarisasiPage() {
             Belum ada isian inventarisasi {konfigLki(golongan).label} tahun {tahun} yang divalidasi.
           </p>
         ) : (
-          <LhiTabel kode={kode} rows={rows} jenisAset={konfigLki(golongan).label} tahun={tahun} identitas={identitas} />
+          <LhiTabel kode={kode} rows={rows} golongan={golongan} jenisAset={konfigLki(golongan).label} tahun={tahun} identitas={identitas} />
         )}
       </div>
       </>)}

@@ -17,8 +17,10 @@ import {
 // (Badan Keuangan dan Aset Daerah); dua lainnya diisi `identitasLhi()`.
 export type { IdentitasLhi }
 
-export default function LhiTabel({ kode, rows, jenisAset, tahun, identitas, cetak }: {
+export default function LhiTabel({ kode, rows, jenisAset, tahun, identitas, cetak, golongan }: {
   kode: LhiKode
+  /** Jenis aset (kode golongan) — III.B.11 memilih kolom spesifikasinya darinya. */
+  golongan?: string
   rows: Record<string, string | number>[]
   /** Jenis aset langsung ("Gedung dan Bangunan") — tanpa awalan "BMD berupa". */
   jenisAset?: string
@@ -29,7 +31,7 @@ export default function LhiTabel({ kode, rows, jenisAset, tahun, identitas, ceta
    *  saja — tabel di layar & Excel tetap datar supaya bisa disaring. */
   cetak?: boolean
 }) {
-  const kolom = useMemo(() => kolomLhiTampil(kode, !!cetak), [kode, cetak])
+  const kolom = useMemo(() => kolomLhiTampil(kode, !!cetak, golongan), [kode, cetak, golongan])
   const total = useMemo(() => totalNilaiLhi(rows), [rows])
 
   // Susun header bertingkat. Lampiran III.B.6 punya 3 tingkat grup di atas

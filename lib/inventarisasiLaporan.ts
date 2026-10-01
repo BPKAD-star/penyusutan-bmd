@@ -12,7 +12,7 @@ import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventari
 import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
 import { tglLhi, type IndukLive } from '@/lib/inventarisasiLhiKop'
 import { KOLOM_UBAH, alamatLhi, barisUbah, efektif } from '@/lib/inventarisasiLhiUbah'
-import { GRUP_GUNA, GRUP_INDUK, TAMPIL_TETAP } from '@/lib/inventarisasiLhiTampil'
+import { GRUP_GUNA, GRUP_INDUK, TAMPIL_TETAP, kolomBelumTercatat } from '@/lib/inventarisasiLhiTampil'
 
 export type KolomLhi = {
   key: string
@@ -65,8 +65,9 @@ const KET: KolomLhi = { key: 'keterangan', label: 'Keterangan' }
 const LABEL_KONDISI: Record<string, string> = { B: 'Baik', RR: 'Rusak Ringan', RB: 'Rusak Berat' }
 
 // ── Bentuk CETAK ────────────────────────────────────────────────────────────
-// Dua format menggambar sebagian kolomnya sbg petak centang bertingkat:
-// III.B.5 (BAST & SIP → Ada|Tidak ada) & III.B.11 (Kondisi → B|RR|RB).
+// Satu format menggambar sebagian kolomnya sbg petak centang bertingkat:
+// III.B.5 (BAST & SIP → Ada|Tidak ada). (III.B.11 tadinya ikut; sejak 2026-10-02
+// memakai tabel `kolomBelumTercatat`.)
 // (III.B.6 tadinya ikut; sejak 2026-10-01 memakai tabel `TAMPIL_III_B_6`.)
 //
 // Pemekaran ini SENGAJA cuma dipakai halaman cetak (keputusan user
@@ -75,13 +76,7 @@ const LABEL_KONDISI: Record<string, string> = { B: 'Baik', RR: 'Rusak Ringan', R
 // tak bisa lagi disaring/di-pivot. Baris datanya SATU sumber (`nilaiBarisLhi`,
 // versi datar); kolom cetak menariknya lewat `sumber`/`syarat`/`tanda`,
 // sehingga isi cetak & Excel mustahil berbeda.
-const KONDISI_CENTANG = (dari: string, grup: string | string[]): KolomLhi[] => [
-  { key: `${dari}_b`, label: 'Baik (B)', grup, tanda: { key: dari, sama: 'B' } },
-  { key: `${dari}_rr`, label: 'Rusak Ringan (RR)', grup, tanda: { key: dari, sama: 'RR' } },
-  { key: `${dari}_rb`, label: 'Rusak Berat (RB)', grup, tanda: { key: dari, sama: 'RB' } },
-]
-
-/** Kolom versi CETAK — sama dgn `kolomLhi()` kecuali dua format bercentang. */
+/** Kolom versi CETAK — sama dgn `kolomLhi()` kecuali III.B.5 yang bercentang. */
 export function kolomLhiCetak(k: LhiKode): KolomLhi[] {
   switch (k) {
     case 'III.B.5':
@@ -95,15 +90,6 @@ export function kolomLhiCetak(k: LhiKode): KolomLhi[] {
         { key: 'sip_tidak', label: 'Tidak ada', grup: ['Pemakai', 'Surat Ijin Penghunian'], tanda: { key: 'pemakai_sip', sama: 'Tidak ada' } },
         KET,
       ]
-    case 'III.B.11': {
-      const dasar = kolomLhi(k)
-      const i = dasar.findIndex(c => c.key === 'kondisi_setelah')
-      return [
-        ...dasar.slice(0, i),
-        ...KONDISI_CENTANG('kondisi_setelah', 'Kondisi Barang'),
-        ...dasar.slice(i + 1),
-      ]
-    }
     default:
       return kolomLhi(k)
   }
@@ -130,7 +116,9 @@ export const CATATAN_KAKI: Partial<Record<LhiKode, string[]>> = {
 }
 
 /** Kolom untuk tabel layar & cetak. Excel memakai `kolomLhi()` (datar). */
-export function kolomLhiTampil(k: LhiKode, cetak: boolean): KolomLhi[] {
+export function kolomLhiTampil(k: LhiKode, cetak: boolean, golongan = ''): KolomLhi[] {
+  // III.B.11 bergantung golongan (spesifikasi yang ditanyakan form LKI).
+  if (k === 'III.B.11') return kolomBelumTercatat(golongan, true)
   const tetap = TAMPIL_TETAP[k]
   if (tetap) return tetap
   return cetak ? kolomLhiCetak(k) : kolomLhi(k)
@@ -142,7 +130,7 @@ export {
   type IdentitasLhi, type IndukLive,
 } from '@/lib/inventarisasiLhiKop'
 
-export function kolomLhi(k: LhiKode): KolomLhi[] {
+export function kolomLhi(k: LhiKode, golongan = ''): KolomLhi[] {
   switch (k) {
     case 'III.B.3':
       // Datar (Excel): satu kolom per data supaya bisa disaring/di-pivot. Susunan
@@ -317,30 +305,8 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
         KET,
       ]
     case 'III.B.11':
-      // Urutan kolom di lampiran BEDA dari format lain — tanpa NIBAR (barang
-      // belum tercatat), Kode Register di posisi 5 (bukan 2), nomor kendaraan
-      // menempel di belakang Merek/Tipe, dan Harga Satuan mendahului Nilai
-      // Perolehan. Jangan disamakan dgn INTI().
-      return [
-        { key: 'no', label: 'No.' },
-        { key: 'kode_barang', label: 'Kode Barang' },
-        { key: 'nama_barang', label: 'Nama Barang' },
-        { key: 'spesifikasi', label: 'Nama Spesifikasi Barang' },
-        { key: 'kode_register', label: 'Kode Register' },
-        { key: 'merek_tipe', label: 'Merek/Tipe' },
-        { key: 'no_polisi', label: 'Nomor Polisi' },
-        { key: 'no_rangka', label: 'No. Rangka' },
-        { key: 'no_mesin', label: 'No. Mesin' },
-        { key: 'jumlah', label: 'Jumlah', angka: true },
-        { key: 'satuan', label: 'Satuan Barang' },
-        { key: 'harga_satuan', label: 'Harga Satuan Barang (Rp)', angka: true },
-        { key: 'nilai', label: 'Nilai Perolehan Barang (Rp)', angka: true },
-        { key: 'tgl_perolehan', label: 'Tanggal, Bulan, Tahun Perolehan' },
-        { key: 'alamat', label: 'Alamat' },
-        { key: 'dasar_pencatatan', label: 'Dasar pencatatan' },
-        { key: 'kondisi_setelah', label: 'Kondisi Barang (B/RR/RB)' },
-        KET,
-      ]
+      // Datar (Excel); susunan yang DILIHAT sama kolomnya, hanya sel ditumpuk.
+      return kolomBelumTercatat(golongan, false)
     default: // III.B.2 (III.B.1 punya tabel sendiri)
       return [...INTI(), KET]
   }
@@ -362,18 +328,32 @@ export function nilaiBarisLhi(
 
   // Format III.B.11 — barang belum tercatat: seluruh data dari input manual.
   if (k === 'III.B.11') {
+    // Kunci lama (kode_barang, nama_barang, spesifikasi, ...) dipertahankan; yang
+    // dipakai tabel baru: kode/uraian/nama/spek_lain/tgl/titik/kondisi/dok_*/catatan.
+    // `keterangan` = Keterangan spesifikasi barang; `catatan` = Catatan Inventarisasi.
+    const nilaiTotal = baru.nilai_perolehan ?? (Number(baru.jumlah) > 0 && Number(baru.harga_satuan) > 0
+      ? Number(baru.jumlah) * Number(baru.harga_satuan) : '')
     return {
       no, kode_register: baru.kode_register || '', kode_barang: baru.kode_barang || '',
-      nama_barang: baru.nama_barang || '', spesifikasi: baru.spesifikasi || '',
-      merek_tipe: baru.merek_tipe || '', jumlah: baru.jumlah ?? '', satuan: baru.satuan || '',
-      nilai: baru.nilai_perolehan ?? '', no_polisi: baru.no_polisi || '',
-      no_rangka: baru.no_rangka || '', no_mesin: baru.no_mesin || '',
-      harga_satuan: baru.harga_satuan ?? '', tgl_perolehan: baru.tgl_perolehan || '',
-      // Alamat kini berjenjang (admin_wilayah) + detail; `baru.alamat` teks
+      kode: baru.kode_barang || '', uraian: baru.nama_barang || '',
+      nama_barang: baru.nama_barang || '', spesifikasi: baru.spesifikasi || '', nama: baru.spesifikasi || '',
+      merek_tipe: baru.merek_tipe || '', spek_lain: baru.spesifikasi_lainnya || '',
+      jumlah: baru.jumlah ?? '', satuan: baru.satuan || '',
+      nilai: nilaiTotal, harga_satuan: baru.harga_satuan ?? '',
+      no_polisi: baru.no_polisi || '', no_rangka: baru.no_rangka || '', no_mesin: baru.no_mesin || '',
+      no_bpkb: baru.no_bpkb || '',
+      tgl_perolehan: baru.tgl_perolehan || '', tgl: tglLhi(baru.tgl_perolehan),
+      // Alamat berjenjang Provinsi→Desa (admin_wilayah) + detail; `baru.alamat` teks
       // lepas dipertahankan sbg cadangan utk baris lama.
       alamat: [baru.wilayah_kode ? wilayahLabel(baru.wilayah_kode) : '', baru.alamat_detail].filter(Boolean).join(' · ') || baru.alamat || '',
-      dasar_pencatatan: baru.dasar_pencatatan || '',
-      kondisi_setelah: baru.kondisi || '', keterangan: j.keterangan || '',
+      titik: baru.latitude != null && baru.longitude != null ? `${baru.latitude}, ${baru.longitude}` : '',
+      kondisi: LABEL_KONDISI[baru.kondisi || ''] || '', kondisi_setelah: baru.kondisi || '',
+      penggunaan: baru.penggunaan || '', keterangan: baru.keterangan || '',
+      luas: baru.luas ?? '', jenis_hak: baru.jenis_hak || '',
+      dok_nomor: baru.nomor_dokumen_kepemilikan || '', dok_tgl: tglLhi(baru.tanggal_dokumen_kepemilikan),
+      dok_nama: baru.nama_dokumen_kepemilikan || '',
+      asal_usul: baru.asal_usul || '', dasar_pencatatan: baru.dasar_pencatatan || '',
+      catatan: j.keterangan || '',
     }
   }
 

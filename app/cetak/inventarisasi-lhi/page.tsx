@@ -166,7 +166,7 @@ export default function CetakLhiPage() {
           <p className="py-8 text-center text-gray-400 text-sm">Memuat…</p>
         ) : (
           <>
-            <LhiTabel kode={kode} rows={rows} identitas={identitas} cetak
+            <LhiTabel kode={kode} rows={rows} golongan={golongan} identitas={identitas} cetak
               jenisAset={konfigLki(golongan).label} tahun={tahun} />
 
             <div className="mt-8 flex justify-between text-[11px]">

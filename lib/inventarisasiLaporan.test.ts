@@ -446,3 +446,64 @@ describe('catatan kaki LHI', () => {
     expect((CATATAN_KAKI['III.B.8'] || []).join(' ')).toMatch(/baris ATAS = sebelum/)
   })
 })
+
+describe('III.B.11 — BMD Belum Tercatat (2026-10-02): kolom ikut golongan', () => {
+  const baruLengkap = {
+    kode_barang: '1.3.2.02.01.01.001', nama_barang: 'Sepeda Motor', spesifikasi: 'Honda Beat', merek_tipe: 'Honda',
+    spesifikasi_lainnya: '110 cc', no_polisi: 'AG 1 A', no_rangka: 'R1', no_mesin: 'M1', no_bpkb: 'B1',
+    satuan: 'Unit', jumlah: 2, harga_satuan: 10_000_000, tgl_perolehan: '2020-05-13',
+    wilayah_kode: '3506010001', alamat_detail: 'Jl. Mawar 1', latitude: -7.8, longitude: 111.9,
+    kondisi: 'RB' as const, penggunaan: 'Operasional', keterangan: 'Temuan gudang', asal_usul: 'Hibah',
+  }
+  const b: InvBaris = { id: 'x', aset_id: null, snapshot: {}, jawaban: { keterangan: 'Ditemukan saat sensus', baru: baruLengkap }, foto_paths: ['p'] }
+  const wil = (k: string | null | undefined) => (k === '3506010001' ? 'Jawa Timur, Kediri, Pare, Pare' : k || '')
+  const row = nilaiBarisLhi('III.B.11', b, 1, {}, wil)
+  const keys = (g: string, cetak = false) => kolomLhiTampil('III.B.11', cetak, g).map(k => k.key)
+
+  it('Peralatan & Mesin memuat nomor kendaraan; Tanah tidak, tapi memuat Luas & dokumen kepemilikan', () => {
+    expect(keys('1.3.2')).toEqual(expect.arrayContaining(['no_polisi', 'no_rangka', 'no_mesin', 'no_bpkb']))
+    expect(keys('1.3.1')).not.toContain('no_polisi')
+    expect(keys('1.3.1')).toEqual(expect.arrayContaining(['luas', 'jenis_hak', 'dok_nomor', 'dok_tgl', 'dok_nama']))
+    expect(keys('1.3.2')).not.toContain('luas')
+  })
+
+  it('tanpa NIBAR & tanpa petak centang kondisi (kata penuh); kode/uraian dan jumlah/satuan ditumpuk', () => {
+    const k = kolomLhiTampil('III.B.11', true, '1.3.2')
+    expect(k.map(x => x.key)).not.toContain('nibar')
+    expect(k.some(x => x.tanda)).toBe(false)
+    expect(k.find(x => x.key === 'kode')?.tumpuk).toEqual(['uraian'])
+    expect(k.find(x => x.key === 'jumlah')?.tumpuk).toEqual(['satuan'])
+  })
+
+  it('Catatan Inventarisasi di ujung; Keterangan spesifikasi terpisah darinya', () => {
+    const k = keys('1.3.2')
+    expect(k[k.length - 1]).toBe('catatan')
+    expect(k).toContain('keterangan')
+    expect(row.catatan).toBe('Ditemukan saat sensus')
+    expect(row.keterangan).toBe('Temuan gudang')
+  })
+
+  it('SETIAP kolom (layar & Excel, semua golongan) punya padanan di baris — tak ada sel kosong senyap', () => {
+    for (const g of ['1.3.1', '1.3.2', '1.3.3', '1.3.4', '1.3.5', '1.3.6', '1.5.3', '1.5.4']) {
+      for (const k of [...kolomLhiTampil('III.B.11', false, g), ...kolomLhi('III.B.11', g)]) {
+        expect(row, `${g} ${k.key}`).toHaveProperty(k.key)
+        for (const t of k.tumpuk || []) expect(row, `${g} tumpuk ${t}`).toHaveProperty(t)
+      }
+    }
+  })
+
+  it('isi baris: nilai total = jumlah × nilai per item, alamat Provinsi→Desa, titik & kondisi kata penuh', () => {
+    expect(row.nilai).toBe(20_000_000)
+    expect(row.harga_satuan).toBe(10_000_000)
+    expect(row.alamat).toBe('Jawa Timur, Kediri, Pare, Pare · Jl. Mawar 1')
+    expect(row.titik).toBe('-7.8, 111.9')
+    expect(row.kondisi).toBe('Rusak Berat')
+    expect(row.tgl).toBe('13/05/2020')
+  })
+
+  it('Excel datar: kode dan uraian dua kolom terpisah, tak ada sel tumpuk', () => {
+    const k = kolomLhi('III.B.11', '1.3.2')
+    expect(k.map(x => x.key)).toEqual(expect.arrayContaining(['kode', 'uraian', 'jumlah', 'satuan']))
+    expect(k.some(x => x.tumpuk)).toBe(false)
+  })
+})

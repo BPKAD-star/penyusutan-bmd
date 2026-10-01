@@ -7792,8 +7792,21 @@ Form di `components/inventarisasi/BelumTercatatForm.tsx`, aturan wajib SATU sumb
   manual). Titik koordinat butuh latitude & longitude (0 sah). Tanggal perolehan tak boleh di masa depan.
 - Dicabut dari form: Kode Register (barangnya belum punya) & Dasar Pencatatan — tetap ada di tipe utk baris lama.
 - Baris lama yang dibuka ulang wajib dilengkapi sebelum bisa disimpan lagi. Lembar CETAK LKI (`/cetak/inventarisasi-lki`)
-  ikut mencetak isian baru. ⛔ **LHI III.B.11 BELUM disesuaikan** (menyusul, permintaan user): masih membaca
-  kolom lama; field baru (BPKB, titik koordinat, luas, jenis hak, asal usul, dst.) belum tampil di sana.
+  ikut mencetak isian baru. LHI III.B.11 menyusul di bagian bawah ini.
+
+#### LHI III.B.11 mengikuti isian baru (2026-10-02)
+
+Tabel **tanpa NIBAR**: No · Kode/Uraian (ditumpuk) · Spesifikasi Nama Barang · Merk/Tipe · Spesifikasi Lainnya ·
+[No Polisi · No Rangka · No Mesin · No BPKB] · Tanggal Perolehan · Jumlah/Satuan (ditumpuk) · Nilai per Item · Nilai
+Perolehan · Alamat (Provinsi→Desa + detail) · Titik Koordinat · Kondisi (kata penuh) · Penggunaan · Keterangan ·
+[Luas · Jenis Hak · blok Dokumen Kepemilikan] · Asal Usul · Catatan Inventarisasi. Petak centang kondisi B/RR/RB
+DICABUT (kini hanya III.B.5 yang masih bercentang). Excel datar (`kolomLhi('III.B.11', golongan)`).
+⚠️ **Kolom IKUT GOLONGAN** (`kolomBelumTercatat`, lib/inventarisasiLhiTampil.ts, memakai `fieldBaru` yang sama dgn form
+LKI) — makanya `kolomLhi`/`kolomLhiTampil`/`LhiTabel` kini menerima `golongan`; format lain mengabaikannya. Dikunci
+uji "setiap kolom punya padanan di baris" untuk kedelapan golongan. `keterangan` = Keterangan spesifikasi barang,
+`catatan` = Catatan Inventarisasi (dulu `keterangan` memuat catatan; baris lama jadi Catatan, Keterangan kosong).
+Kode Register & Dasar Pencatatan tak lagi tampil. **Tanpa contoh tabel user** — disusun dari pola III.B.1/3/6/8;
+koreksi kalau susunannya beda dari maksud. Tanpa migrasi.
 
 ## Lingkungan kerja
 

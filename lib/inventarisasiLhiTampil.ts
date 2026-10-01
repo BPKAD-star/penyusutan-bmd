@@ -1,5 +1,6 @@
 // Susunan kolom tabel LHI yang DILIHAT (layar & cetak) untuk format yang sudah
-// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 6, 7, 8, 12, 13.
+// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 6, 7, 8, 12, 13
+// (+ III.B.11 sejak 2026-10-02, bergantung golongan — `kolomBelumTercatat`).
 // Dipisah dari inventarisasiLaporan.ts supaya berkas itu tak membengkak. Excel TIDAK
 // memakai susunan ini — ia tetap datar lewat `kolomLhi()` (satu kolom per data).
 //
@@ -7,6 +8,7 @@
 import type { KolomLhi } from '@/lib/inventarisasiLaporan'
 import type { LhiKode } from '@/lib/inventarisasi'
 import { KOLOM_UBAH } from '@/lib/inventarisasiLhiUbah'
+import { fieldBaru } from '@/lib/inventarisasiBaru'
 
 const KET: KolomLhi = { key: 'keterangan', label: 'Keterangan' }
 
@@ -152,6 +154,60 @@ const TAMPIL_III_B_8: KolomLhi[] = [
   ...KOLOM_UBAH.map(k => ({ key: k.key, label: k.label, dua: true })),
   { key: 'catatan', label: 'Catatan' },
 ]
+
+/**
+ * III.B.11 — BMD Belum Tercatat (2026-10-02). Isinya = isian form LKI III.A.7
+ * (components/inventarisasi/BelumTercatatForm), jadi kolom spesifikasinya IKUT
+ * GOLONGAN lewat `fieldBaru` yang sama dgn form: laporan Peralatan & Mesin memuat
+ * No Polisi/Rangka/Mesin/BPKB, laporan Tanah memuat Luas & dokumen kepemilikan,
+ * dst. Tanpa NIBAR (barangnya belum ada di register). `tumpuk` true = layar &
+ * cetak (kode/uraian & jumlah/satuan ditumpuk); false = Excel datar.
+ * Pola sama dgn III.B.1/3/6/8: nama & spesifikasi lengkap, alamat Provinsi→Desa
+ * + detail, "Catatan Inventarisasi" di ujung, petak centang kondisi DICABUT
+ * (kata penuh "Baik"/"Rusak Berat").
+ */
+export const GRUP_DOK_KEPEMILIKAN = 'Dokumen Kepemilikan'
+export function kolomBelumTercatat(golongan: string, tumpuk: boolean): KolomLhi[] {
+  const ada = new Set(fieldBaru(golongan))
+  const kolom: KolomLhi[] = [
+    { key: 'no', label: 'No' },
+    ...(tumpuk
+      ? [{ key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] }]
+      : [{ key: 'kode', label: 'Kode Barang' }, { key: 'uraian', label: 'Uraian Barang' }]),
+    { key: 'nama', label: 'Spesifikasi Nama Barang' },
+  ]
+  const opsi = (k: Parameters<typeof ada.has>[0], c: KolomLhi) => { if (ada.has(k)) kolom.push(c) }
+  opsi('merek_tipe', { key: 'merek_tipe', label: 'Merk/Tipe' })
+  opsi('spesifikasi_lainnya', { key: 'spek_lain', label: 'Spesifikasi Lainnya' })
+  opsi('no_polisi', { key: 'no_polisi', label: 'No Polisi' })
+  opsi('no_rangka', { key: 'no_rangka', label: 'No Rangka' })
+  opsi('no_mesin', { key: 'no_mesin', label: 'No Mesin' })
+  opsi('no_bpkb', { key: 'no_bpkb', label: 'No BPKB' })
+  kolom.push({ key: 'tgl', label: 'Tanggal Perolehan', angka: true })
+  kolom.push(tumpuk
+    ? { key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] }
+    : { key: 'jumlah', label: 'Jumlah', angka: true })
+  if (!tumpuk) kolom.push({ key: 'satuan', label: 'Satuan' })
+  kolom.push({ key: 'harga_satuan', label: 'Nilai per Item', angka: true })
+  kolom.push({ key: 'nilai', label: 'Nilai Perolehan', angka: true })
+  opsi('wilayah_kode', { key: 'alamat', label: 'Alamat' })
+  opsi('latitude', { key: 'titik', label: 'Titik Koordinat' })
+  opsi('kondisi_barang', { key: 'kondisi', label: 'Kondisi' })
+  opsi('penggunaan_pengamanan', { key: 'penggunaan', label: 'Penggunaan' })
+  opsi('keterangan', { key: 'keterangan', label: 'Keterangan' })
+  opsi('luas', { key: 'luas', label: 'Luas', angka: true })
+  opsi('jenis_hak', { key: 'jenis_hak', label: 'Jenis Hak' })
+  if (ada.has('nomor_dokumen_kepemilikan')) {
+    kolom.push(
+      { key: 'dok_nomor', label: 'Nomor', grup: GRUP_DOK_KEPEMILIKAN },
+      { key: 'dok_tgl', label: 'Tanggal', grup: GRUP_DOK_KEPEMILIKAN },
+      { key: 'dok_nama', label: 'Nama Dokumen', grup: GRUP_DOK_KEPEMILIKAN },
+    )
+  }
+  opsi('asal_usul', { key: 'asal_usul', label: 'Asal Usul' })
+  kolom.push({ key: 'catatan', label: 'Catatan Inventarisasi' })
+  return kolom
+}
 
 /** Format → susunan tabel baru. Dibaca `kolomLhiTampil`. */
 export const TAMPIL_TETAP: Partial<Record<LhiKode, KolomLhi[]>> = {
