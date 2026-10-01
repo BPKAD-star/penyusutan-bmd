@@ -7746,6 +7746,13 @@ Isi: "Force majeure : <cerita petugas>", "Dibongkar total dan sudah ada bangunan
 dst. **Kosong untuk golongan yang tak menanyakan sebab & lembar lama** (bukan "Tidak ditemukan" karangan).
 Catatan = catatan petugas saja (dulu sebab ikut di Keterangan). III.B.4 masih memakai bentuk lama.
 
+### LHI III.B.7: tabel kondisi fisik (2026-10-01)
+
+Identitas barang seperti III.B.1 + **Kondisi Fisik Sebelum / Setelah Inventarisasi** (`TAMPIL_III_B_7`) berisi
+KATA PENUH ("Baik", "Rusak Berat") — bukan B/RR/RB; petak centang bertingkat lama (cetak) DICABUT. Catatan
+Inventarisasi ditambahkan di ujung (contoh user tak memilikinya). Excel datar. Kini hanya III.B.5 & III.B.11
+yang masih memakai petak centang (`kolomLhiCetak`). Tanpa migrasi.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

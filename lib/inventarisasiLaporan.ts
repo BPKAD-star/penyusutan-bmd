@@ -61,10 +61,12 @@ const INTI = (opts?: { merek?: boolean; nibar?: boolean }): KolomLhi[] => [
   { key: 'nilai', label: 'Nilai Perolehan Barang (Rp)', angka: true },
 ]
 const KET: KolomLhi = { key: 'keterangan', label: 'Keterangan' }
+/** Kode kondisi → kata penuh utk tabel III.B.7. */
+const LABEL_KONDISI: Record<string, string> = { B: 'Baik', RR: 'Rusak Ringan', RB: 'Rusak Berat' }
 
 // ── Bentuk CETAK ────────────────────────────────────────────────────────────
-// Tiga format menggambar sebagian kolomnya sbg petak centang bertingkat:
-// III.B.5 (BAST & SIP → Ada|Tidak ada), III.B.7 & III.B.11 (Kondisi → B|RR|RB).
+// Dua format menggambar sebagian kolomnya sbg petak centang bertingkat:
+// III.B.5 (BAST & SIP → Ada|Tidak ada) & III.B.11 (Kondisi → B|RR|RB).
 // (III.B.6 tadinya ikut; sejak 2026-10-01 memakai tabel `TAMPIL_III_B_6`.)
 //
 // Pemekaran ini SENGAJA cuma dipakai halaman cetak (keputusan user
@@ -79,7 +81,7 @@ const KONDISI_CENTANG = (dari: string, grup: string | string[]): KolomLhi[] => [
   { key: `${dari}_rb`, label: 'Rusak Berat (RB)', grup, tanda: { key: dari, sama: 'RB' } },
 ]
 
-/** Kolom versi CETAK — sama dgn `kolomLhi()` kecuali tiga format bercentang. */
+/** Kolom versi CETAK — sama dgn `kolomLhi()` kecuali dua format bercentang. */
 export function kolomLhiCetak(k: LhiKode): KolomLhi[] {
   switch (k) {
     case 'III.B.5':
@@ -91,13 +93,6 @@ export function kolomLhiCetak(k: LhiKode): KolomLhi[] {
         { key: 'bast_tidak', label: 'Tidak ada', grup: ['Pemakai', 'BAST Pemakaian'], tanda: { key: 'pemakai_bast', sama: 'Tidak ada' } },
         { key: 'sip_ada', label: 'Ada', grup: ['Pemakai', 'Surat Ijin Penghunian'], tanda: { key: 'pemakai_sip', sama: 'Ada' } },
         { key: 'sip_tidak', label: 'Tidak ada', grup: ['Pemakai', 'Surat Ijin Penghunian'], tanda: { key: 'pemakai_sip', sama: 'Tidak ada' } },
-        KET,
-      ]
-    case 'III.B.7':
-      return [
-        ...INTI(),
-        ...KONDISI_CENTANG('kondisi_sebelum', 'Kondisi Fisik Sebelum Inventarisasi (√)'),
-        ...KONDISI_CENTANG('kondisi_setelah', 'Kondisi Fisik Setelah Inventarisasi (√)'),
         KET,
       ]
     case 'III.B.11': {
@@ -292,11 +287,22 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
         { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.7':
+      // Datar (Excel). Susunan yang DILIHAT = `TAMPIL_III_B_7`.
       return [
-        ...INTI(),
-        { key: 'kondisi_sebelum', label: 'B / RR / RB', grup: 'Kondisi Fisik Sebelum Inventarisasi' },
-        { key: 'kondisi_setelah', label: 'B / RR / RB', grup: 'Kondisi Fisik Setelah Inventarisasi' },
-        KET,
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'jumlah', label: 'Jumlah', angka: true },
+        { key: 'satuan', label: 'Satuan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'kondisi_sebelum', label: 'Kondisi Fisik Sebelum Inventarisasi' },
+        { key: 'kondisi_setelah', label: 'Kondisi Fisik Setelah Inventarisasi' },
+        { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.8':
       // Datar & hanya keadaan SESUDAH — dipakai pemeriksa tipe/uji. Excel sungguhan
@@ -540,12 +546,18 @@ export function nilaiBarisLhi(
         catatan: j.keterangan || '',
       }
     }
-    case 'III.B.7':
+    case 'III.B.7': {
+      const kata = (v: string | null | undefined) => LABEL_KONDISI[normalKondisi(v) || ''] || v || ''
       return {
-        ...inti,
-        kondisi_sebelum: normalKondisi(s.kondisi) || '',
-        kondisi_setelah: j.kondisi || '',
+        no, kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar, merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        tgl: tglLhi(s.tgl_perolehan), jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
+        // Kata penuh ("Baik"), bukan B/RR/RB — snapshot menyimpan 'Baik'/'Rusak Ringan'/…
+        kondisi_sebelum: kata(s.kondisi), kondisi_setelah: kata(j.kondisi),
+        catatan: j.keterangan || '',
       }
+    }
     case 'III.B.8':
       return barisUbah(b, no, wilayahLabel)
     case 'III.B.9': {

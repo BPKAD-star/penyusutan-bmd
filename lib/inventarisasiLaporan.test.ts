@@ -407,3 +407,30 @@ describe('III.B.13 — Perubahan Kuantitas (beberapa register)', () => {
     expect(db.alasan).toMatch(/Dibongkar total dan sudah ada bangunan baru : 99 Gedung Baru/)
   })
 })
+
+describe('III.B.7 — tabel baru (kondisi fisik)', () => {
+  const r = nilaiBarisLhi('III.B.7', brs({ kondisi: 'RB', keterangan: 'atap roboh' }, { kondisi: 'Baik', satuan: 'Unit', jumlah: 1 }), 1)
+
+  it('kondisi sebelum/setelah = KATA PENUH, bukan B/RR/RB', () => {
+    expect(r.kondisi_sebelum).toBe('Baik')
+    expect(r.kondisi_setelah).toBe('Rusak Berat')
+    expect(r.catatan).toBe('atap roboh')
+  })
+
+  it('susunan = III.B.1 + dua kolom kondisi sebelum Catatan; tiap kolom punya padanan; layar = cetak', () => {
+    const t = kolomLhiTampil('III.B.7', false)
+    expect(kolomLhiTampil('III.B.7', true)).toBe(t)
+    expect(t.slice(-3).map(k => k.label)).toEqual([
+      'Kondisi Fisik Sebelum Inventarisasi', 'Kondisi Fisik Setelah Inventarisasi', 'Catatan Inventarisasi'])
+    expect(t.slice(0, -3).map(k => k.label)).toEqual(kolomLhiTampil('III.B.1', false).map(k => k.label).slice(0, -1))
+    for (const k of t) {
+      expect(r, k.key).toHaveProperty(k.key)
+      for (const x of k.tumpuk || []) expect(r, x).toHaveProperty(x)
+    }
+    for (const k of kolomLhi('III.B.7')) expect(r, k.key).toHaveProperty(k.key)
+  })
+
+  it('kondisi snapshot yang tak dikenal tampil apa adanya, bukan kosong', () => {
+    expect(nilaiBarisLhi('III.B.7', brs({ kondisi: 'RB' }, { kondisi: 'Sedang' }), 1).kondisi_sebelum).toBe('Sedang')
+  })
+})

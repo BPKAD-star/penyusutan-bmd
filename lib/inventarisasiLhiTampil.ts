@@ -1,5 +1,5 @@
 // Susunan kolom tabel LHI yang DILIHAT (layar & cetak) untuk format yang sudah
-// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 6, 8, 12, 13.
+// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 6, 7, 8, 12, 13.
 // Dipisah dari inventarisasiLaporan.ts supaya berkas itu tak membengkak. Excel TIDAK
 // memakai susunan ini — ia tetap datar lewat `kolomLhi()` (satu kolom per data).
 //
@@ -128,6 +128,19 @@ const TAMPIL_III_B_2: KolomLhi[] = [
 ]
 
 /**
+ * III.B.7 — Terjadi Perubahan Kondisi Fisik Barang (2026-10-01, contoh tabel user):
+ * identitas barang (sama dgn III.B.1) + Kondisi Fisik Sebelum / Setelah Inventarisasi
+ * dgn KATA PENUH ("Baik", "Rusak Berat"), bukan B/RR/RB, dan petak centang lama
+ * dicabut. Excel datar.
+ */
+const TAMPIL_III_B_7: KolomLhi[] = [
+  ...TAMPIL_III_B_1.slice(0, -1),
+  { key: 'kondisi_sebelum', label: 'Kondisi Fisik Sebelum Inventarisasi' },
+  { key: 'kondisi_setelah', label: 'Kondisi Fisik Setelah Inventarisasi' },
+  TAMPIL_III_B_1[TAMPIL_III_B_1.length - 1],
+]
+
+/**
  * III.B.8 — Terjadi Perubahan Data (2026-10-01, contoh tabel user): NIBAR lalu
  * tiap atribut sbg pasangan sebelum/sesudah (`dua`). Kode barang TIDAK ikut —
  * perubahan kodefikasi punya laporan sendiri (III.B.12). Excel tidak memakai
@@ -146,6 +159,7 @@ export const TAMPIL_TETAP: Partial<Record<LhiKode, KolomLhi[]>> = {
   'III.B.2': TAMPIL_III_B_2,
   'III.B.3': TAMPIL_III_B_3,
   'III.B.6': TAMPIL_III_B_6,
+  'III.B.7': TAMPIL_III_B_7,
   'III.B.8': TAMPIL_III_B_8,
   'III.B.12': TAMPIL_III_B_12,
   'III.B.13': TAMPIL_III_B_13,
