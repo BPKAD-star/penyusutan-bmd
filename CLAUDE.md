@@ -7808,6 +7808,14 @@ uji "setiap kolom punya padanan di baris" untuk kedelapan golongan. `keterangan`
 Kode Register & Dasar Pencatatan tak lagi tampil. **Tanpa contoh tabel user** — disusun dari pola III.B.1/3/6/8;
 koreksi kalau susunannya beda dari maksud. Tanpa migrasi.
 
+#### LHI III.B.4 — tabel baru (2026-10-02)
+
+Saudara III.B.3: No · Kode/Uraian (ditumpuk) · Nama/NIBAR (ditumpuk) · Merk/Tipe · Spesifikasi Lainnya · Tanggal
+Perolehan · Nilai Perolehan · **Catatan Inventarisasi** — tanpa blok "Data Awal Induk" (justru itu yang tak
+diketahui) dan tanpa Jumlah/Satuan (mengikuti III.B.3 yang dibuat dari contoh user). Tanpa contoh tabel untuk B.4
+sendiri; kalau Jumlah/Satuan diinginkan, tambahkan satu baris di `TAMPIL_III_B_4`. Dikunci uji "sama dgn III.B.3
+tanpa induk". **Yang masih format lama kini tinggal III.B.5, III.B.9, III.B.10.** Tanpa migrasi.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

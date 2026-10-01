@@ -507,3 +507,30 @@ describe('III.B.11 — BMD Belum Tercatat (2026-10-02): kolom ikut golongan', ()
     expect(k.some(x => x.tumpuk)).toBe(false)
   })
 })
+
+describe('III.B.4 — tabel baru (2026-10-02), saudara III.B.3 tanpa data induk', () => {
+  const b: InvBaris = {
+    id: 'x', aset_id: 'a', jawaban: { atribusi: 'ya_induk_tidak_diketahui', keterangan: 'Induk tak ditemukan' }, foto_paths: [],
+    snapshot: { nibar: 'N1', kode: '1.3.3.01', uraian_barang: 'Gedung', nama_barang: 'Rehab Atap', merek_tipe: 'X',
+      spesifikasi_lainnya: 'Baja', tgl_perolehan: '2021-02-03', nilai_perolehan: 5_000_000 },
+  }
+  const row = nilaiBarisLhi('III.B.4', b, 1)
+
+  it('sama dgn III.B.3 tanpa blok Data Awal Induk; penutupnya Catatan Inventarisasi', () => {
+    const k3 = kolomLhiTampil('III.B.3', false).map(k => k.key)
+    const k4 = kolomLhiTampil('III.B.4', false).map(k => k.key)
+    expect(k4.some(k => k.startsWith('induk_'))).toBe(false)
+    expect(k4).toEqual(k3.filter(k => !k.startsWith('induk_') && k !== 'keterangan').concat('catatan'))
+  })
+
+  it('setiap kolom (layar & Excel) punya padanan di baris', () => {
+    for (const k of [...kolomLhiTampil('III.B.4', false), ...kolomLhi('III.B.4')]) {
+      expect(row, k.key).toHaveProperty(k.key)
+      for (const t of k.tumpuk || []) expect(row, `tumpuk ${t}`).toHaveProperty(t)
+    }
+  })
+
+  it('isi baris', () => {
+    expect(row).toMatchObject({ nibar: 'N1', nama: 'Rehab Atap', tgl: '03/02/2021', nilai: 5_000_000, catatan: 'Induk tak ditemukan' })
+  })
+})

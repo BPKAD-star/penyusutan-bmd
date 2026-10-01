@@ -1,5 +1,5 @@
 // Susunan kolom tabel LHI yang DILIHAT (layar & cetak) untuk format yang sudah
-// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 6, 7, 8, 12, 13
+// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 4, 6, 7, 8, 12, 13
 // (+ III.B.11 sejak 2026-10-02, bergantung golongan — `kolomBelumTercatat`).
 // Dipisah dari inventarisasiLaporan.ts supaya berkas itu tak membengkak. Excel TIDAK
 // memakai susunan ini — ia tetap datar lewat `kolomLhi()` (satu kolom per data).
@@ -33,6 +33,23 @@ const TAMPIL_III_B_3: KolomLhi[] = [
   { key: 'induk_tgl', label: 'Tanggal Perolehan', grup: GRUP_INDUK, angka: true },
   { key: 'induk_nilai', label: 'Nilai Perolehan', grup: GRUP_INDUK, angka: true },
   KET,
+]
+
+/**
+ * III.B.4 — BMD Belum Dikapitalisasi dan Tidak Diketahui Data Awal/Induknya
+ * (2026-10-02). Saudara III.B.3 (yang induknya diketahui): susunannya SAMA tanpa blok
+ * "Data Awal Induk" — justru itu yang tak diketahui — dan kolom penutupnya Catatan
+ * Inventarisasi. Tanpa contoh tabel dari user; mengikuti III.B.3. Excel datar.
+ */
+const TAMPIL_III_B_4: KolomLhi[] = [
+  { key: 'no', label: 'No' },
+  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
+  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
+  { key: 'merek_tipe', label: 'Merk/Tipe' },
+  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
+  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+  { key: 'catatan', label: 'Catatan Inventarisasi' },
 ]
 
 /**
@@ -214,6 +231,7 @@ export const TAMPIL_TETAP: Partial<Record<LhiKode, KolomLhi[]>> = {
   'III.B.1': TAMPIL_III_B_1,
   'III.B.2': TAMPIL_III_B_2,
   'III.B.3': TAMPIL_III_B_3,
+  'III.B.4': TAMPIL_III_B_4,
   'III.B.6': TAMPIL_III_B_6,
   'III.B.7': TAMPIL_III_B_7,
   'III.B.8': TAMPIL_III_B_8,

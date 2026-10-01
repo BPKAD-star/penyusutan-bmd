@@ -223,7 +223,19 @@ export function kolomLhi(k: LhiKode, golongan = ''): KolomLhi[] {
         { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.4':
-      return [...INTI({ merek: false }), KET]
+      // Datar (Excel). Susunan yang DILIHAT = `TAMPIL_III_B_4`.
+      return [
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'catatan', label: 'Catatan Inventarisasi' },
+      ]
     case 'III.B.5':
       return [
         ...INTI(), { key: 'alamat', label: 'Alamat' },
@@ -451,6 +463,14 @@ export function nilaiBarisLhi(
         tgl: tglLhi(s.tgl_perolehan), jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
         alasan: alasanTidakAda(j, noun), catatan: j.keterangan || '',
       }
+    case 'III.B.4':
+      return {
+        no, kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar, merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        tgl: tglLhi(s.tgl_perolehan), nilai: inti.nilai,
+        catatan: j.keterangan || '',
+      }
     case 'III.B.13':
       return {
         no, kode: kodeEfektif, uraian: uraianEfektif,
@@ -570,7 +590,7 @@ function alasanTidakAda(j: InvJawaban, noun: string): string {
   return tambahan ? `${l} : ${tambahan}` : l
 }
 
-/** Teks sebab "tidak ada" utk kolom Keterangan format yang belum punya kolom Alasan (III.B.4). */
+/** Teks sebab "tidak ada" utk kolom Keterangan format lama (kini hanya default III.B.5/9/10). */
 function sebabTeks(j: InvJawaban, noun: string): string {
   const l = labelSebab(j.sebab_tidak_ada, noun)
   return l ? `Tidak ada: ${l}` : ''
