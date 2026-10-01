@@ -11,6 +11,7 @@
 import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventarisasi'
 import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
 import { tglLhi, type IndukLive } from '@/lib/inventarisasiLhiKop'
+import { KOLOM_UBAH, barisUbah, efektif } from '@/lib/inventarisasiLhiUbah'
 
 export type KolomLhi = {
   key: string
@@ -30,18 +31,17 @@ export type KolomLhi = {
    *  (mis. Kode Barang di atas, Uraian Barang di bawahnya). Dipakai tabel layar
    *  & cetak; Excel memakai `kolomLhi()` yang tetap datar (satu kolom per data). */
   tumpuk?: string[]
+  /** III.B.8: sel berisi DUA baris — `${key}_sb` (sebelum) di atas, `${key}_st`
+   *  (sesudah) di bawah; yang kedua hijau tebal bila `${key}_beda`. */
+  dua?: boolean
+  /** Boleh dipatahkan di mana pun (NIBAR 45 digit tanpa spasi). */
+  pecah?: boolean
 }
 
 export const jalurGrup = (k: KolomLhi): string[] =>
   k.grup == null ? [] : Array.isArray(k.grup) ? k.grup : [k.grup]
 
 const YATIDAK = (v: boolean | undefined) => (v ? 'Ada' : 'Tidak ada')
-
-/** Nilai SETELAH inventarisasi: pakai "seharusnya" bila dinyatakan Tidak Sesuai. */
-function efektif(f: SesuaiField | undefined, semula: string | null | undefined): string {
-  if (f && f.sesuai === false) return (f.seharusnya || '').trim() || '(kosong)'
-  return semula || ''
-}
 
 // ── Kolom inti ──────────────────────────────────────────────────────────────
 const INTI = (opts?: { merek?: boolean; nibar?: boolean }): KolomLhi[] => [
@@ -166,6 +166,9 @@ export const CATATAN_KAKI: Partial<Record<LhiKode, string[]>> = {
     '****) Hanya diisi dalam hal digunakan oleh pihak lain.',
   ],
   'III.B.7': [CATATAN_MEREK],
+  'III.B.8': [
+    'Tiap kolom: baris ATAS = sebelum inventarisasi (data register), baris BAWAH = setelah inventarisasi. Tulisan hijau tebal = data berubah.',
+  ],
   'III.B.9': [
     CATATAN_MEREK,
     '**) Hanya diisi untuk BMD yang tercatat ganda.',
@@ -218,10 +221,24 @@ const TAMPIL_III_B_12: KolomLhi[] = [
   KET,
 ]
 
+/**
+ * III.B.8 — Terjadi Perubahan Data (2026-10-01, contoh tabel user): NIBAR lalu
+ * tiap atribut sbg pasangan sebelum/sesudah (`dua`). Kode barang TIDAK ikut —
+ * perubahan kodefikasi punya laporan sendiri (III.B.12). Excel tidak memakai
+ * susunan ini: `barisExcelUbah` (dua baris per barang).
+ */
+const TAMPIL_III_B_8: KolomLhi[] = [
+  { key: 'no', label: 'No' },
+  { key: 'nibar', label: 'NIBAR', pecah: true },
+  ...KOLOM_UBAH.map(k => ({ key: k.key, label: k.label, dua: true })),
+  { key: 'catatan', label: 'Catatan' },
+]
+
 /** Kolom untuk tabel layar & cetak. Excel memakai `kolomLhi()` (datar). */
 export function kolomLhiTampil(k: LhiKode, cetak: boolean): KolomLhi[] {
   if (k === 'III.B.3') return TAMPIL_III_B_3
   if (k === 'III.B.12') return TAMPIL_III_B_12
+  if (k === 'III.B.8') return TAMPIL_III_B_8
   return cetak ? kolomLhiCetak(k) : kolomLhi(k)
 }
 
@@ -300,23 +317,12 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
         KET,
       ]
     case 'III.B.8':
+      // Datar & hanya keadaan SESUDAH — dipakai pemeriksa tipe/uji. Excel sungguhan
+      // = `barisExcelUbah` (dua baris per barang), tabel = `TAMPIL_III_B_8`.
       return [
-        { key: 'no', label: 'No.' }, { key: 'nibar', label: 'NIBAR' },
-        { key: 'sb_kode_barang', label: 'Kode Barang', grup: 'Sebelum Inventarisasi' },
-        { key: 'sb_nama_barang', label: 'Nama Barang', grup: 'Sebelum Inventarisasi' },
-        { key: 'sb_kode_register', label: 'Kode Register', grup: 'Sebelum Inventarisasi' },
-        { key: 'sb_spesifikasi', label: 'Spesifikasi Nama Barang', grup: 'Sebelum Inventarisasi' },
-        { key: 'sb_jumlah', label: 'Jumlah', grup: 'Sebelum Inventarisasi', angka: true },
-        { key: 'sb_alamat', label: 'Alamat', grup: 'Sebelum Inventarisasi' },
-        { key: 'st_kode_barang', label: 'Kode Barang', grup: 'Setelah Inventarisasi' },
-        { key: 'st_nama_barang', label: 'Nama Barang', grup: 'Setelah Inventarisasi' },
-        { key: 'st_kode_register', label: 'Kode Register', grup: 'Setelah Inventarisasi' },
-        { key: 'st_spesifikasi', label: 'Spesifikasi Nama Barang', grup: 'Setelah Inventarisasi' },
-        { key: 'st_jumlah', label: 'Jumlah', grup: 'Setelah Inventarisasi', angka: true },
-        { key: 'st_alamat', label: 'Alamat', grup: 'Setelah Inventarisasi' },
-        { key: 'satuan', label: 'Satuan Barang' },
-        { key: 'nilai', label: 'Nilai Perolehan Barang (Rp)', angka: true },
-        KET,
+        { key: 'no', label: 'No' }, { key: 'nibar', label: 'NIBAR' },
+        ...KOLOM_UBAH.map(k => ({ key: `${k.key}_st`, label: k.label })),
+        { key: 'catatan', label: 'Catatan' },
       ]
     case 'III.B.9':
       return [
@@ -377,6 +383,8 @@ export function nilaiBarisLhi(
   k: LhiKode, b: InvBaris, no: number,
   /** Data induk dari register — HANYA untuk isian lama yang tak membekukannya. */
   indukLive: IndukLive = {},
+  /** Kode wilayah (desa) → nama Provinsi→Desa. Tanpa itu kode ditampilkan apa adanya. */
+  wilayahLabel: (kode: string | null | undefined) => string = kode => kode || '',
 ): Record<string, string | number> {
   const s = b.snapshot || {}
   const j = b.jawaban || {}
@@ -395,7 +403,7 @@ export function nilaiBarisLhi(
       harga_satuan: baru.harga_satuan ?? '', tgl_perolehan: baru.tgl_perolehan || '',
       // Alamat kini berjenjang (admin_wilayah) + detail; `baru.alamat` teks
       // lepas dipertahankan sbg cadangan utk baris lama.
-      alamat: [baru.alamat_detail, baru.wilayah_kode].filter(Boolean).join(' · ') || baru.alamat || '',
+      alamat: [baru.wilayah_kode ? wilayahLabel(baru.wilayah_kode) : '', baru.alamat_detail].filter(Boolean).join(' · ') || baru.alamat || '',
       dasar_pencatatan: baru.dasar_pencatatan || '',
       kondisi_setelah: baru.kondisi || '', keterangan: j.keterangan || '',
     }
@@ -530,47 +538,8 @@ export function nilaiBarisLhi(
         kondisi_sebelum: normalKondisi(s.kondisi) || '',
         kondisi_setelah: j.kondisi || '',
       }
-    case 'III.B.8': {
-      // Format III.B.8 hanya menyediakan kolom Kode/Nama/Register/Spesifikasi/
-      // Jumlah/Alamat. Atribut lain yang juga bisa dikoreksi lewat LKI —
-      // Merek/Tipe (III.A.2/5/6), nomor kendaraan (III.A.2), data teknis JIJ
-      // (III.A.4) — tak punya kolomnya, jadi dirangkum ke Keterangan supaya
-      // barang yang HANYA berubah di situ tak tampil sebagai baris kosong.
-      const ekstra = ([
-        [j.merek_tipe, 'Merek/Tipe'],
-        [j.no_polisi, 'No. Polisi'],
-        [j.no_rangka, 'No. Rangka'],
-        [j.no_mesin, 'No. Mesin'],
-        [j.jenis_perkerasan, 'Jenis Perkerasan Jalan'],
-        [j.jenis_bahan_jembatan, 'Jenis Bahan Struktur Jembatan'],
-        [j.no_ruas_jalan, 'No. Ruas Jalan'],
-        [j.no_jaringan_irigasi, 'No. Jaringan Irigasi'],
-      ] as const)
-        .filter(([f]) => f?.sesuai === false)
-        .map(([f, label]) => `${label} → ${f?.seharusnya || '(kosong)'}`)
-        .join('; ')
-
-      return {
-        no, nibar: s.nibar || '',
-        sb_kode_barang: s.kode || '', sb_nama_barang: s.uraian_barang || '',
-        sb_kode_register: s.kode_register || '', sb_spesifikasi: s.nama_barang || '',
-        sb_jumlah: s.jumlah ?? '', sb_alamat: s.alamat || '',
-        st_kode_barang: kodeEfektif,
-        st_nama_barang: uraianEfektif,
-        st_kode_register: s.kode_register || '',
-        st_spesifikasi: efektif(j.spesifikasi, s.nama_barang),
-        // Jumlah tak bisa diubah lewat LKI → sebelum = sesudah.
-        st_jumlah: s.jumlah ?? '',
-        st_alamat: alamatEfektif,
-        satuan: efektif(j.satuan, s.satuan),
-        nilai: s.nilai_perolehan ?? '',
-        keterangan: [
-          j.keberadaan === 'tidak_ditemukan' && j.sebab_tidak_ada === 'beberapa_register'
-            ? `Seharusnya ${(j.sebab_pecahan || []).length || 'beberapa'} register (${(j.sebab_pecahan || []).filter(Boolean).join('; ')}) — tindak lanjut Pemecahan Barang` : '',
-          ekstra, j.keterangan,
-        ].filter(Boolean).join(' — '),
-      }
-    }
+    case 'III.B.8':
+      return barisUbah(b, no, wilayahLabel)
     case 'III.B.9': {
       const g = j.ganda_data || {}
       return {

@@ -70,10 +70,10 @@ export default function CetakLhiPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { loading, err, barisUntuk, indukLive } = useLhiData({ tahun, golongan, skpdIds })
+  const { loading, err, barisUntuk, indukLive, wilayahLabel } = useLhiData({ tahun, golongan, skpdIds })
   const rows = useMemo(
-    () => (siap ? barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1, indukLive)) : []),
-    [siap, barisUntuk, kode, indukLive],
+    () => (siap ? barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1, indukLive, wilayahLabel)) : []),
+    [siap, barisUntuk, kode, indukLive, wilayahLabel],
   )
   const namaSkpd = skpdId ? skpdRows.find(r => r.id === skpdId)?.nama : undefined
 

@@ -23,6 +23,7 @@ import {
   GOLONGAN_OPSI, LHI_LABEL, LHI_URUT, REKOMENDASI, konfigLki, type LhiKode,
 } from '@/lib/inventarisasi'
 import { identitasLhi, kolomLhi, nilaiBarisLhi } from '@/lib/inventarisasiLaporan'
+import { barisExcelUbah } from '@/lib/inventarisasiLhiUbah'
 
 const TAHUN_INI = new Date().getFullYear()
 
@@ -53,20 +54,22 @@ export default function LaporanInventarisasiPage() {
     setSkpdId(myScopeId); void pilihNamaSkpd(myScopeId)
   }, [sendirian, myScopeId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { baris, loading, err, barisUntuk, hitungPerFormat, indukLive } = useLhiData({ tahun, golongan, skpdIds, aktif: tab === 'format' && role !== null })
+  const { baris, loading, err, barisUntuk, hitungPerFormat, indukLive, wilayahLabel } = useLhiData({ tahun, golongan, skpdIds, aktif: tab === 'format' && role !== null })
   // Butir (3)–(5) kop: Kuasa PB / PB dari SKPD yang dipilih, Pengelola = BKAD.
   const identitas = useMemo(() => identitasLhi(skpdId, [...pohonSkpd.values()]), [skpdId, pohonSkpd])
   const hitung = useMemo(() => hitungPerFormat(), [hitungPerFormat])
 
   const rows = useMemo(
-    () => barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1, indukLive)),
-    [barisUntuk, kode, indukLive],
+    () => barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1, indukLive, wilayahLabel)),
+    [barisUntuk, kode, indukLive, wilayahLabel],
   )
 
   function handleExport() {
     const kolom = kolomLhi(kode)
     exportToExcel(
-      rows.map(r => {
+      // III.B.8: dua baris per barang (Sebelum/Sesudah) + "Kolom yang berubah" —
+      // warna font tak bisa dibuat di Excel, jadi perubahannya dinyatakan sbg kolom.
+      kode === 'III.B.8' ? barisExcelUbah(rows) : rows.map(r => {
         const o: Record<string, unknown> = {}
         for (const k of kolom) o[k.grup ? `${k.grup} — ${k.label}` : k.label] = r[k.key] ?? ''
         return o

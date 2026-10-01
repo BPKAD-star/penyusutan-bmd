@@ -15,6 +15,7 @@ import { createClient } from '@/lib/supabase/client'
 import { klasifikasiLhi, type InvBaris, type LhiKode } from '@/lib/inventarisasi'
 import { kebutuhanIndukLive, type IndukLive } from '@/lib/inventarisasiLaporan'
 import { muatIndukLive } from '@/lib/inventarisasiData'
+import { muatLabelWilayah } from '@/lib/wilayahLabel'
 
 export type FilterLhi = {
   tahun: number
@@ -29,6 +30,8 @@ export function useLhiData(f: FilterLhi) {
   const [baris, setBaris] = useState<InvBaris[]>([])
   // Data induk dari register — hanya untuk isian lama (lihat `kebutuhanIndukLive`).
   const [indukLive, setIndukLive] = useState<IndukLive>({})
+  // Nama wilayah Provinsi→Desa (alamat III.B.8 & III.B.11) — kode desa tak terbaca manusia.
+  const [wilayah, setWilayah] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   // Fail-closed: kegagalan ditampilkan & laporannya ditolak, bukan terbaca
   // sebagai "inventarisasinya memang belum ada".
@@ -54,11 +57,15 @@ export function useLhiData(f: FilterLhi) {
       const hasil = rows as never as InvBaris[]
       // Di DALAM try yang sama: gagal membaca induk = laporan ditolak (fail-closed),
       // bukan kolom "Data Awal Induk" yang diam-diam kosong.
-      setIndukLive(await muatIndukLive(supabase, kebutuhanIndukLive(hasil)))
+      const [induk, wil] = await Promise.all([
+        muatIndukLive(supabase, kebutuhanIndukLive(hasil)),
+        muatLabelWilayah(supabase),
+      ])
+      setIndukLive(induk); setWilayah(wil)
       setBaris(hasil)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
-      setBaris([]); setIndukLive({})
+      setBaris([]); setIndukLive({}); setWilayah({})
     } finally {
       setLoading(false)
     }
@@ -79,5 +86,10 @@ export function useLhiData(f: FilterLhi) {
     return c
   }, [baris])
 
-  return { baris, loading, err, barisUntuk, hitungPerFormat, indukLive, reload: load }
+  /** Kode desa → "Provinsi, Kab., Kec., Desa"; kode yang tak dikenal tampil apa adanya. */
+  const wilayahLabel = useCallback(
+    (kode: string | null | undefined) => (kode ? wilayah[kode] || kode : ''), [wilayah],
+  )
+
+  return { baris, loading, err, barisUntuk, hitungPerFormat, indukLive, wilayahLabel, reload: load }
 }

@@ -7652,6 +7652,36 @@ Halaman `/dashboard/inventarisasi/laporan` kini dua tab untuk **admin & pengawas
   dibatasi RLS); kalau punya unit, pemilihnya TETAP ada. Tahun/Jenis/Format dipertahankan —
   tanpa itu tabel tak bisa dipilih.
 
+## LHI III.B.8: tabel sebelum/sesudah, hijau bila berubah (2026-10-01)
+
+Permintaan user (contoh tabel Excel). **Tak ada migrasi.** Tabel III.B.8 diganti: NIBAR
+lalu 13 atribut — Nama Barang · Merk/Tipe · Spesifikasi Lainnya · No Polisi · No Rangka ·
+No Mesin · No BPKB · Luas · Alamat · Titik Koordinat · Satuan · Keterangan · Foto — masing-
+masing SATU sel berisi DUA baris (atas = sebelum/register, bawah = sesudah), + kolom Catatan.
+Berkas: `lib/inventarisasiLhiUbah.ts` (+ test), `lib/wilayahLabel.ts` (+ test).
+
+- ⚠️ **Hijau/tebal DIHITUNG dari nilainya, bukan dari centang "Tidak Sesuai"** — petugas bisa
+  mencentang lalu mengetik nilai yang sama; yang berubah harus yang benar-benar berbeda
+  (luas dibandingkan sbg ANGKA: "100,00" = 100). Hijau **+ tebal**: cetak hitam-putih tak
+  menyisakan warna. Baris datanya `${f}_sb` / `${f}_st` / `${f}_beda`; kolom ber-`dua`.
+- **Kode barang TIDAK ikut** — perubahan kodefikasi punya laporan sendiri (III.B.12).
+  Jumlah & nilai perolehan juga tidak (tak bisa diubah lewat LKI) → **baris "Jumlah (Rp)"
+  tak lagi dicetak** untuk format ini (`LhiTabel` hanya menampilkannya bila ada kolom `nilai`).
+- **Alamat = wilayah Provinsi→Kab→Kec→Desa + alamat detail**, wilayah & detail dinilai
+  terpisah. Nama wilayah disusun di klien dari `admin_wilayah` (`susunLabelWilayah`, ±400 baris,
+  dimuat SEKALI di `useLhiData` — gagal = laporan ditolak, fail-closed). ⚠️ **Urutannya
+  BERLAWANAN & memuat provinsi** dibanding `fn_wilayah_label`/kolom Lokasi Daftar Barang Awal
+  (Desa, Kec., Kab.) — sengaja, jangan disatukan. III.B.11 ikut memakainya (dulu mencetak
+  KODE desa mentah). Isian lama tanpa `wilayah_kode` jatuh ke teks `wilayah` yang dibekukan.
+- **Foto tidak ditempel**: "Ada (n)" / "Tidak ada". Sesudah = ada bila register punya ATAU
+  petugas mengunggah. Berubah (hijau) bila sebelumnya tak ada lalu ada, atau LKI dijawab
+  "Tidak Sesuai" ("Ada (n terbaru)").
+- **Excel**: warna font tak bisa dibuat (xlsx biasa), jadi DUA baris per barang
+  (Keadaan = Sebelum/Sesudah) + kolom **"Kolom yang berubah"** (`barisExcelUbah`); kolom
+  Catatan di baris Sesudah. Layar & cetak SATU susunan (`TAMPIL_III_B_8`).
+- ⛔ Belum dilihat di peramban (A4 lanskap, 16 kolom, alamat panjang membungkus): kalau
+  terlalu sesak, naikkan ke F4 / kecilkan huruf di cetak.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

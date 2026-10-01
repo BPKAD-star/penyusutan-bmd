@@ -114,8 +114,17 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
                     const rupiah = k.key === 'nilai' || k.key === 'harga_satuan' || k.key === 'g_nilai' || k.key === 'induk_nilai'
                     return (
                       <td key={k.key}
-                        className={`brd px-2 py-1 align-top ${k.tanda ? 'text-center' : ''} ${k.angka ? 'text-right whitespace-nowrap' : ''}`}>
-                        {k.tumpuk
+                        className={`brd px-2 py-1 align-top ${k.tanda ? 'text-center' : ''} ${k.angka ? 'text-right whitespace-nowrap' : ''} ${k.pecah ? '[overflow-wrap:anywhere]' : ''}`}>
+                        {k.dua
+                          // III.B.8: sebelum di atas, sesudah di bawah — hijau tebal kalau
+                          // berubah. Warna saja tak cukup di cetak hitam-putih, jadi juga tebal.
+                          ? [
+                            <div key="sb" className="[overflow-wrap:anywhere]">{r[`${k.key}_sb`] || '-'}</div>,
+                            <div key="st" className={`[overflow-wrap:anywhere] border-t border-dotted border-gray-300 mt-0.5 pt-0.5 ${r[`${k.key}_beda`] === '1' ? 'text-green-700 font-bold' : ''}`}>
+                              {r[`${k.key}_st`] || '-'}
+                            </div>,
+                          ]
+                          : k.tumpuk
                           // Sel bertumpuk (mis. Kode Barang di atas, Uraian di bawah).
                           // `anywhere`: NIBAR 45 digit tanpa spasi satu kata & memaksa
                           // kolomnya melebar kalau tak boleh dipatahkan.
@@ -128,13 +137,15 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
                   })}
                 </tr>
               ))}
-              <tr className="bg-gray-100 font-semibold">
-                <td className="brd px-2 py-1 text-right" colSpan={kolom.findIndex(k => k.key === 'nilai') || 1}>
-                  Jumlah (Rp)
-                </td>
-                <td className="brd px-2 py-1 text-right whitespace-nowrap">{formatRupiah2(total)}</td>
-                <td className="brd px-2 py-1" colSpan={Math.max(0, kolom.length - (kolom.findIndex(k => k.key === 'nilai') + 1))}></td>
-              </tr>
+              {kolom.some(k => k.key === 'nilai') && (
+                <tr className="bg-gray-100 font-semibold">
+                  <td className="brd px-2 py-1 text-right" colSpan={kolom.findIndex(k => k.key === 'nilai') || 1}>
+                    Jumlah (Rp)
+                  </td>
+                  <td className="brd px-2 py-1 text-right whitespace-nowrap">{formatRupiah2(total)}</td>
+                  <td className="brd px-2 py-1" colSpan={Math.max(0, kolom.length - (kolom.findIndex(k => k.key === 'nilai') + 1))}></td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
