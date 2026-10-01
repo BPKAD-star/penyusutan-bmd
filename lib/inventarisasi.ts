@@ -12,7 +12,7 @@
 // KONSEP INTI — LKI SUMBER, LHI TURUNAN:
 //   Lembar Kerja Inventarisasi (LKI, Format III.A.1–III.A.7) = form PER-BARANG
 //   berisi checklist bagian A–R. Laporan Hasil Inventarisasi (LHI, Format
-//   III.B.1–III.B.11) TIDAK diinput terpisah — semuanya diturunkan dari jawaban
+//   III.B.1–III.B.12) TIDAK diinput terpisah — semuanya diturunkan dari jawaban
 //   LKI lewat `klasifikasiLhi()`. Satu baris boleh masuk BEBERAPA LHI sekaligus
 //   (mis. kondisi berubah DAN tercatat ganda).
 import { GOLONGAN_REKAP } from '@/lib/bmd'
@@ -428,10 +428,10 @@ export const BUCKET_FOTO_INVENTARISASI = 'dokumen-sumber'
 export const golonganDariKode = (kode: string | null | undefined) =>
   (kode || '').split('.').slice(0, 3).join('.')
 
-// ── Klasifikasi LHI (Format III.B.1–III.B.11) ───────────────────────────────
+// ── Klasifikasi LHI (Format III.B.1–III.B.12) ───────────────────────────────
 export type LhiKode =
   | 'III.B.1' | 'III.B.2' | 'III.B.3' | 'III.B.4' | 'III.B.5' | 'III.B.6'
-  | 'III.B.7' | 'III.B.8' | 'III.B.9' | 'III.B.10' | 'III.B.11'
+  | 'III.B.7' | 'III.B.8' | 'III.B.9' | 'III.B.10' | 'III.B.11' | 'III.B.12'
 
 export const LHI_LABEL: Record<LhiKode, string> = {
   'III.B.1': 'BMD Hilang Karena Kecurian',
@@ -445,11 +445,12 @@ export const LHI_LABEL: Record<LhiKode, string> = {
   'III.B.9': 'BMD Tercatat Ganda',
   'III.B.10': 'BMD Berdiri di Atas Tanah Bukan Milik Pemerintah Daerah',
   'III.B.11': 'BMD Belum Tercatat',
+  'III.B.12': 'BMD Terjadi Perubahan Kodefikasi Barang',
 }
 
 export const LHI_URUT: LhiKode[] = [
   'III.B.1', 'III.B.2', 'III.B.3', 'III.B.4', 'III.B.5', 'III.B.6',
-  'III.B.7', 'III.B.8', 'III.B.9', 'III.B.10', 'III.B.11',
+  'III.B.7', 'III.B.8', 'III.B.9', 'III.B.10', 'III.B.11', 'III.B.12',
 ]
 
 /** Samakan 'Baik' / 'Rusak Ringan' / 'Rusak Berat' (aset.kondisi_barang) ke B/RR/RB. */
@@ -544,12 +545,19 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
   const sebelum = normalKondisi(b.snapshot?.kondisi)
   if (j.kondisi && sebelum && j.kondisi !== sebelum) out.push('III.B.7')
 
-  // B–D / F / J — perubahan data. Format III.B.8 lebih luas dari sekadar
-  // spesifikasi: Kode Barang (sekaligus Nama Barang, karena digabung), Satuan,
-  // Alamat, atribut kendaraan (III.A.2), dan atribut teknis JIJ (III.A.4).
+  // B–C — Kode Barang / Uraian Barang tidak sesuai → III.B.12 (format KHUSUS
+  // kodefikasi, 2026-10-01). ⚠️ SENGAJA tak ikut memicu III.B.8: temuan yang sama
+  // tak boleh dilaporkan di dua format. Barang yang kodenya DAN atribut lain
+  // (merek, alamat, ...) berubah tetap masuk keduanya — masing-masing untuk
+  // bagiannya sendiri.
+  if (tidakSesuai(j.kode_barang)) tambah('III.B.12')
+
+  // D / F / J — perubahan data. Format III.B.8 lebih luas dari sekadar
+  // spesifikasi: Satuan, Alamat, atribut kendaraan (III.A.2), dan atribut teknis
+  // JIJ (III.A.4). Kode Barang TIDAK termasuk (lihat III.B.12 di atas).
   // Jumlah & nilai perolehan TIDAK bisa diubah lewat LKI, jadi tak dibandingkan.
   if (
-    tidakSesuai(j.kode_barang) || tidakSesuai(j.spesifikasi) || tidakSesuai(j.satuan) ||
+    tidakSesuai(j.spesifikasi) || tidakSesuai(j.satuan) ||
     tidakSesuai(j.wilayah) || tidakSesuai(j.alamat_detail) || tidakSesuai(j.merek_tipe) ||
     tidakSesuai(j.no_polisi) || tidakSesuai(j.no_rangka) || tidakSesuai(j.no_mesin) ||
     tidakSesuai(j.no_bpkb) || tidakSesuai(j.spesifikasi_lainnya) || tidakSesuai(j.luas) ||
@@ -622,8 +630,8 @@ export function kekuranganLki(
     }
   }
 
-  // "Tidak Sesuai" tanpa menyebut yang seharusnya → LHI III.B.8 mencetak
-  // "(kosong)" di kolom Setelah Inventarisasi. Itu bukan temuan, itu isian
+  // "Tidak Sesuai" tanpa menyebut yang seharusnya → LHI (III.B.12 untuk kode,
+  // III.B.8 untuk lainnya) mencetak "(kosong)" di kolom "sesudah". Itu bukan temuan, itu isian
   // yang tertinggal.
   if (j.kode_barang?.sesuai === false && !j.kode_barang.kode_baru) kurang.push('Kode Barang yang seharusnya (B–C)')
   if (j.wilayah?.sesuai === false && !j.wilayah.wilayah_kode) kurang.push('Wilayah yang seharusnya (J)')
@@ -679,8 +687,9 @@ export const REKOMENDASI: Record<LhiKode, { menu: string; saran: string }> = {
   'III.B.5': { menu: 'Pengamanan', saran: 'Terbitkan BAST Pengamanan agar kustodi pegawai tercatat resmi.' },
   'III.B.6': { menu: 'Pemanfaatan', saran: 'Bila ada dokumen penguasaan, catat sebagai Pemanfaatan. Bila tidak, tempuh penertiban.' },
   'III.B.7': { menu: 'Koreksi', saran: 'Perbarui kondisi barang lewat Koreksi Spesifikasi.' },
-  'III.B.8': { menu: 'Koreksi / Reklasifikasi', saran: 'Perubahan spesifikasi → Koreksi Spesifikasi. Perubahan Kode Barang → Reklasifikasi Kesalahan Kodefikasi. Seharusnya beberapa register → Koreksi lalu tindak lanjuti lewat Pemecahan Barang.' },
+  'III.B.8': { menu: 'Koreksi / Reklasifikasi', saran: 'Perubahan spesifikasi → Koreksi Spesifikasi. Seharusnya beberapa register → Koreksi lalu tindak lanjuti lewat Pemecahan Barang. (Perubahan Kode Barang dilaporkan di III.B.12.)' },
   'III.B.9': { menu: 'Koreksi', saran: 'Gabungkan lewat Koreksi Pencatatan Ganda.' },
   'III.B.10': { menu: '—', saran: 'Perlu penyelesaian status tanah dengan pemilik lahan.' },
   'III.B.11': { menu: 'Hasil Inventarisasi', saran: 'Catat sebagai perolehan lewat menu Cara Perolehan → Hasil Inventarisasi.' },
+  'III.B.12': { menu: 'Reklasifikasi', saran: 'Ajukan Reklasifikasi Kesalahan Kodefikasi agar kode barang di register disesuaikan dengan hasil inventarisasi.' },
 }

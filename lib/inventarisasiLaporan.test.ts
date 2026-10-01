@@ -232,3 +232,68 @@ describe('kebutuhanIndukLive', () => {
     ])).toEqual(['x'])
   })
 })
+
+describe('III.B.12 — perubahan kodefikasi', () => {
+  const j: InvJawaban = {
+    kode_barang: { sesuai: false, kode_baru: '1.3.3.02.01.01.001', uraian_baru: 'Bangunan Gedung Kantor Semi Permanen' },
+    keterangan: 'Salah kodefikasi saat impor',
+  }
+  const b = brs(j, { jumlah: 1, satuan: 'Unit', spesifikasi_lainnya: 'Beton' })
+  const r = nilaiBarisLhi('III.B.12', b, 3)
+
+  it('kode LAMA dari register (snapshot), kode BARU dari jawaban petugas', () => {
+    expect(r).toMatchObject({
+      no: 3,
+      kode_lama: '1.3.3.01.01.01.001', uraian_lama: 'Bangunan Gedung Kantor Permanen',
+      kode_baru: '1.3.3.02.01.01.001', uraian_baru: 'Bangunan Gedung Kantor Semi Permanen',
+    })
+  })
+
+  it('identitas barang: nama, NIBAR, tanggal dd/mm/yyyy, jumlah, satuan, nilai, spesifikasi lainnya', () => {
+    expect(r).toMatchObject({
+      nama: 'Rehab Kantor KPU', nibar: '1'.repeat(45), tgl: '01/01/2026',
+      jumlah: 1, satuan: 'Unit', nilai: 169_028_031, spek_lain: 'Beton',
+    })
+  })
+
+  it('Keterangan diawali "Perlu di Reklas" (tindak lanjutnya Reklasifikasi), catatan petugas menyusul', () => {
+    expect(r.keterangan).toBe('Perlu di Reklas — Salah kodefikasi saat impor')
+    expect(nilaiBarisLhi('III.B.12', brs({ kode_barang: { sesuai: false } }), 1).keterangan).toBe('Perlu di Reklas')
+  })
+
+  it('kode baru lupa diisi → "(kosong)", bukan sel kosong yang terbaca "tak berubah"', () => {
+    const k = nilaiBarisLhi('III.B.12', brs({ kode_barang: { sesuai: false } }), 1)
+    expect(k.kode_baru).toBe('(kosong)')
+    expect(k.uraian_baru).toBe('(kosong)')
+  })
+
+  it('susunan tampilan = contoh user (10 kolom), layar & cetak SAMA', () => {
+    const t = kolomLhiTampil('III.B.12', false)
+    expect(t.map(k => k.label)).toEqual([
+      'No', 'Nama Barang / NIBAR', 'Merk/Tipe', 'Spesifikasi Lainnya', 'Tanggal Perolehan',
+      'Jumlah / Satuan', 'Nilai Perolehan',
+      'Kode Barang Lama / Uraian Barang Lama', 'Kode Barang Baru / Uraian Barang Baru', 'Keterangan',
+    ])
+    expect(kolomLhiTampil('III.B.12', true)).toBe(t)
+  })
+
+  it('SETIAP key tampilan (termasuk yang ditumpuk) & key Excel ada di baris', () => {
+    for (const k of kolomLhiTampil('III.B.12', false)) {
+      expect(r, k.key).toHaveProperty(k.key)
+      for (const x of k.tumpuk || []) expect(r, x).toHaveProperty(x)
+    }
+    for (const k of kolomLhi('III.B.12')) expect(r, k.key).toHaveProperty(k.key)
+  })
+
+  it('Excel tetap DATAR: kode & uraian, lama & baru, masing-masing kolom sendiri', () => {
+    const d = kolomLhi('III.B.12')
+    expect(d.some(k => k.tumpuk)).toBe(false)
+    expect(d.map(k => k.label)).toEqual(expect.arrayContaining([
+      'Kode Barang Lama', 'Uraian Barang Lama', 'Kode Barang Baru', 'Uraian Barang Baru', 'Jumlah', 'Satuan',
+    ]))
+  })
+
+  it('kolom "nilai" ada (baris Jumlah (Rp) mencarinya)', () => {
+    expect(kolomLhiTampil('III.B.12', false).some(k => k.key === 'nilai')).toBe(true)
+  })
+})

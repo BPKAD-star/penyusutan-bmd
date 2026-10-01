@@ -1,5 +1,5 @@
 'use client'
-// Cetak Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.11.
+// Cetak Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.12.
 // Standalone (tanpa sidebar), A4 landscape. Query:
 //   ?tahun=2026&golongan=1.3.3&kode=III.B.7[&skpd=<id>]
 // Subtree SKPD dihitung ulang di sini (URL ringkas, tak membawa daftar id) —

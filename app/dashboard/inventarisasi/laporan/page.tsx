@@ -1,5 +1,5 @@
 'use client'
-// Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.11.
+// Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.12.
 // LHI TIDAK diinput terpisah: seluruh isinya diturunkan dari jawaban Lembar
 // Kerja (LKI) lewat klasifikasiLhi(). Satu barang bisa muncul di beberapa
 // format sekaligus (mis. kondisi berubah DAN tercatat ganda).
@@ -62,7 +62,7 @@ export default function LaporanInventarisasiPage() {
   return (
     <FormShell
       judul="Laporan Hasil Inventarisasi (LHI)"
-      deskripsi="Format III.B.1–III.B.11 (Permendagri 47/2021). Isi laporan diturunkan otomatis dari Lembar Kerja Inventarisasi."
+      deskripsi="Format III.B.1–III.B.12 (Permendagri 47/2021). Isi laporan diturunkan otomatis dari Lembar Kerja Inventarisasi."
       msg=""
       headerRight={
         <div className="flex items-center gap-2">

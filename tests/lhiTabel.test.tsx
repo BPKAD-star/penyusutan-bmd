@@ -107,3 +107,46 @@ describe('LhiTabel — kop identitas', () => {
     expect(kop(container)['Pengelola Barang']).toBe(PENGELOLA_BARANG_LHI)
   })
 })
+
+describe('LhiTabel III.B.12', () => {
+  const b12 = (o: Record<string, string | number> = {}) => ({
+    no: 1, nama: 'Rehab Kantor KPU', nibar: '1'.repeat(45), merek_tipe: '', spek_lain: '',
+    tgl: '01/01/2026', jumlah: 1, satuan: 'Unit', nilai: 169_028_031,
+    kode_lama: '1.3.3.01.01.01.001', uraian_lama: 'Bangunan Gedung Kantor Permanen',
+    kode_baru: '1.3.3.02.01.01.001', uraian_baru: 'Bangunan Gedung Kantor Semi Permanen',
+    keterangan: 'Perlu di Reklas', ...o,
+  })
+
+  it('10 kolom, kepala SATU tingkat (tak ada blok grup)', () => {
+    const { container } = render(<LhiTabel kode="III.B.12" rows={[b12()]} />)
+    expect(tabelData(container).querySelectorAll('thead tr')).toHaveLength(1)
+    expect(tabelData(container).querySelectorAll('thead th')).toHaveLength(10)
+    expect(tabelData(container).querySelectorAll('tbody tr')[0].querySelectorAll('td')).toHaveLength(10)
+  })
+
+  it('sel bertumpuk: nama/NIBAR, jumlah/satuan, kode lama/uraian, kode baru/uraian', () => {
+    const { container } = render(<LhiTabel kode="III.B.12" rows={[b12()]} />)
+    const td = tabelData(container).querySelectorAll('tbody tr')[0].querySelectorAll('td')
+    expect(td[1].querySelectorAll('div')[1].textContent).toBe('1'.repeat(45))
+    expect([...td[5].querySelectorAll('div')].map(d => d.textContent)).toEqual(['1', 'Unit'])
+    expect([...td[7].querySelectorAll('div')].map(d => d.textContent))
+      .toEqual(['1.3.3.01.01.01.001', 'Bangunan Gedung Kantor Permanen'])
+    expect([...td[8].querySelectorAll('div')].map(d => d.textContent))
+      .toEqual(['1.3.3.02.01.01.001', 'Bangunan Gedung Kantor Semi Permanen'])
+  })
+
+  it('Nilai Perolehan 2 desimal; baris Jumlah selebar tabel & menjumlah nilai', () => {
+    const { container } = render(<LhiTabel kode="III.B.12" rows={[b12(), b12({ no: 2 })]} />)
+    const trs = [...tabelData(container).querySelectorAll('tbody tr')]
+    expect(trs[0].querySelectorAll('td')[6].textContent).toBe('169.028.031,00')
+    const jumlah = trs[trs.length - 1]
+    expect(lebar(jumlah)).toBe(10)
+    expect(jumlah.textContent).toContain('338.056.062,00')
+  })
+
+  it('judul memuat nama format & nomornya', () => {
+    const { container } = render(<LhiTabel kode="III.B.12" rows={[b12()]} />)
+    expect(container.textContent).toContain('BMD Terjadi Perubahan Kodefikasi Barang')
+    expect(container.textContent).toContain('Format III.B.12')
+  })
+})

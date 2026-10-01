@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  kekuranganLki, PESAN_FOTO_LKI, klasifikasiLhi, konfigLki, labelPosisi, labelTransaksi, type InvBaris, type InvJawaban,
+  kekuranganLki, PESAN_FOTO_LKI, klasifikasiLhi, LHI_URUT, LHI_LABEL, REKOMENDASI, konfigLki, labelPosisi, labelTransaksi, type InvBaris, type InvJawaban,
 } from './inventarisasi'
 import { belumDiinventarisasi, jumlahRingkas } from './inventarisasiData'
 import { JENIS_INVENTARISASI, golonganDariKode } from './inventarisasi'
@@ -295,5 +295,40 @@ describe('pemilih jenis — "Semua jenis" (2026-10-01)', () => {
   it('golonganDariKode = 3 segmen pertama', () => {
     expect(golonganDariKode('1.3.3.01.01.01.001')).toBe('1.3.3')
     expect(golonganDariKode(null)).toBe('')
+  })
+})
+
+describe('klasifikasiLhi — III.B.12 (perubahan kodefikasi)', () => {
+  const brs = (jawaban: InvJawaban): InvBaris => ({
+    id: 'x', aset_id: 'a', snapshot: { kondisi: 'Baik' }, jawaban, foto_paths: [],
+  })
+
+  it('Kode Barang "Tidak Sesuai" → III.B.12', () => {
+    expect(klasifikasiLhi(brs({ kode_barang: { sesuai: false, kode_baru: '1.3.3.02.01' } }))).toEqual(['III.B.12'])
+  })
+
+  it('SENGAJA tak ikut memicu III.B.8 — satu temuan tak boleh dilaporkan di dua format', () => {
+    expect(klasifikasiLhi(brs({ kode_barang: { sesuai: false } }))).not.toContain('III.B.8')
+  })
+
+  it('kode DAN atribut lain berubah → masuk keduanya, masing-masing untuk bagiannya', () => {
+    const k = klasifikasiLhi(brs({ kode_barang: { sesuai: false }, merek_tipe: { sesuai: false, seharusnya: 'X' } }))
+    expect(k).toEqual(expect.arrayContaining(['III.B.8', 'III.B.12']))
+  })
+
+  it('kode sesuai → tak masuk III.B.12', () => {
+    expect(klasifikasiLhi(brs({ kode_barang: { sesuai: true } }))).not.toContain('III.B.12')
+    expect(klasifikasiLhi(brs({}))).not.toContain('III.B.12')
+  })
+
+  it('perubahan NON-kode tetap III.B.8 persis seperti dulu', () => {
+    expect(klasifikasiLhi(brs({ spesifikasi: { sesuai: false, seharusnya: 'X' } }))).toEqual(['III.B.8'])
+  })
+
+  it('terdaftar di label, urutan, & rekomendasi', () => {
+    expect(LHI_URUT).toContain('III.B.12')
+    expect(LHI_URUT[LHI_URUT.length - 1]).toBe('III.B.12')
+    expect(LHI_LABEL['III.B.12']).toBe('BMD Terjadi Perubahan Kodefikasi Barang')
+    expect(REKOMENDASI['III.B.12'].menu).toBe('Reklasifikasi')
   })
 })

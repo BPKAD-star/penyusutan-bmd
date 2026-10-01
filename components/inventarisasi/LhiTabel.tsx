@@ -1,5 +1,5 @@
 'use client'
-// Tabel Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.11.
+// Tabel Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.12.
 // Dipakai bersama halaman laporan & halaman cetak. Header bisa dua baris:
 // kolom ber-`grup` (mis. "Data Awal/Induk", "Sebelum/Setelah Inventarisasi")
 // digabung jadi satu sel span di baris pertama.

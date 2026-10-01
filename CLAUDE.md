@@ -8964,7 +8964,24 @@ Permintaan user. **Tak ada migrasi.**
   register, termasuk nilai 0.
 - Kasus rehab ("direhab jadi bangunan baru"): induk = barang itu SENDIRI (dari
   snapshot), anak disebut di Keterangan — tak berubah dari sebelumnya.
-- Dikunci lib/inventarisasiLaporan.test.ts + tests/lhiTabel.test.tsx.
+- **Format BARU III.B.12 — "BMD Terjadi Perubahan Kodefikasi Barang"** (2026-10-01,
+  contoh tabel user). Pemicunya: bagian **B–C (Kode Barang / Uraian Barang) di LKI
+  dijawab "Tidak Sesuai"**. Kolom: No · Nama/NIBAR · Merk/Tipe · Spesifikasi Lainnya ·
+  Tanggal Perolehan · Jumlah/Satuan · Nilai Perolehan · **Kode/Uraian LAMA** (register,
+  snapshot "sebelum") · **Kode/Uraian BARU** (jawaban petugas) · Keterangan. Keterangan
+  otomatis diawali **"Perlu di Reklas"** (tindak lanjutnya menu Reklasifikasi →
+  Kesalahan Kodefikasi), catatan petugas menyusul. Kode baru yang lupa diisi tercetak
+  "(kosong)", bukan sel kosong yang terbaca "tak berubah". Layar & cetak satu
+  susunan; Excel datar.
+- ⚠️ **Kode barang TIDAK LAGI memicu III.B.8** (keputusan saya, bukan eksplisit user
+  — satu temuan tak boleh dilaporkan di dua format). Barang yang kodenya DAN
+  atribut lain (merek, alamat, dst.) berubah masuk KEDUANYA, masing-masing untuk
+  bagiannya. Akibat pada data lama: isian tervalidasi yang HANYA kodenya berubah
+  kini tampil di III.B.12, tak lagi di III.B.8. Kembalikan dgn menambah
+  `tidakSesuai(j.kode_barang)` ke kondisi III.B.8 di `klasifikasiLhi` kalau tak
+  diinginkan. Kolom kode sebelum/sesudah di tabel III.B.8 tetap ada.
+- Dikunci lib/inventarisasiLaporan.test.ts + lib/inventarisasi.test.ts +
+  tests/lhiTabel.test.tsx.
 
 ## Inventarisasi: jenis aset dipilih DI HALAMAN, bukan 16 sub-menu (2026-10-01, migrasi 20261001_01)
 
