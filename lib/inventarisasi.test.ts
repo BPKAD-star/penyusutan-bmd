@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
-  kekuranganLki, klasifikasiLhi, konfigLki, labelPosisi, labelTransaksi, type InvBaris, type InvJawaban,
+  kekuranganLki, PESAN_FOTO_LKI, klasifikasiLhi, konfigLki, labelPosisi, labelTransaksi, type InvBaris, type InvJawaban,
 } from './inventarisasi'
 import { belumDiinventarisasi, jumlahRingkas } from './inventarisasiData'
 import { JENIS_INVENTARISASI, golonganDariKode } from './inventarisasi'
 
-const aset = (jawaban: InvJawaban) => ({ aset_id: 'a-1', jawaban })
-const baru = (jawaban: InvJawaban) => ({ aset_id: null, jawaban })
+// Bawaan: register SUDAH punya foto & lembar baru membawa satu unggahan — supaya
+// uji lain tak terganggu aturan FOTO WAJIB; aturan itu diuji sendiri di bawah.
+const aset = (jawaban: InvJawaban) => ({ aset_id: 'a-1', jawaban, foto_register: 1 })
+const baru = (jawaban: InvJawaban) => ({ aset_id: null, jawaban, foto_paths: ['p'] })
 
 describe('kekuranganLki — barang tercatat', () => {
   it('lembar kosong → keberadaan wajib', () => {
@@ -52,6 +54,47 @@ describe('kekuranganLki — BMD Belum Tercatat (III.A.7)', () => {
 
   it('jumlah 0 / negatif tak sah', () => {
     expect(kekuranganLki(baru({ baru: { kode_barang: 'x', jumlah: 0, satuan: 'Unit', kondisi: 'B' } }))).toEqual(['Jumlah'])
+  })
+})
+
+describe('kekuranganLki — FOTO WAJIB (2026-10-01)', () => {
+  const ada = { keberadaan: 'ada' as const, kondisi: 'B' as const }
+
+  it('barang ada, register TANPA foto & tanpa unggahan → ditolak', () => {
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: ada })).toEqual([PESAN_FOTO_LKI])
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: ada, foto_register: 0, foto_paths: [] })).toEqual([PESAN_FOTO_LKI])
+  })
+
+  it('cukup SATU sumber: unggahan petugas ATAU foto yang sudah di register', () => {
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: ada, foto_paths: ['p'] })).toEqual([])
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: ada, foto_register: 2 })).toEqual([])
+  })
+
+  it('"Tidak Sesuai" menuntut foto TERBARU — foto lama di register tak menolong', () => {
+    const j = { ...ada, foto_barang: { sesuai: false } }
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: j, foto_register: 3 })).toEqual(['Foto barang terbaru (R)'])
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: j, foto_register: 3, foto_paths: ['p'] })).toEqual([])
+  })
+
+  it('tak muncul DUA pesan foto sekaligus', () => {
+    const k = kekuranganLki({ aset_id: 'a-1', jawaban: { ...ada, foto_barang: { sesuai: false } } })
+    expect(k.filter(x => /foto/i.test(x)).length).toBe(1)
+  })
+
+  it('barang HILANG / tak ditemukan dikecualikan — tak ada yang bisa difoto', () => {
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: { keberadaan: 'hilang' } })).toEqual([])
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: { keberadaan: 'tidak_ditemukan' } })).toEqual([])
+  })
+
+  it('keberadaan BELUM dipilih → foto tetap dituntut (semua kekurangan muncul sekaligus)', () => {
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: {} }))
+      .toEqual(['Keberadaan Barang (G)', PESAN_FOTO_LKI])
+  })
+
+  it('BMD Belum Tercatat: tak punya foto register, jadi wajib unggah', () => {
+    const lengkap: InvJawaban = { baru: { kode_barang: '1.3.2.01', jumlah: 1, satuan: 'Unit', kondisi: 'B' } }
+    expect(kekuranganLki({ aset_id: null, jawaban: lengkap })).toEqual([PESAN_FOTO_LKI])
+    expect(kekuranganLki({ aset_id: null, jawaban: lengkap, foto_paths: ['p'] })).toEqual([])
   })
 })
 

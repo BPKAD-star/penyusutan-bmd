@@ -563,8 +563,20 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
  *
  * Dipakai form (pesan hidup) DAN penjaga tombol Simpan — satu aturan, dua pintu.
  */
+/**
+ * Pesan kekurangan foto (R). Diekspor supaya form bisa MENGENALI kekurangan ini
+ * (menandai bagian Foto) tanpa mencocokkan teks yang diketik ulang.
+ */
+export const PESAN_FOTO_LKI = 'Foto barang (R) — sertakan minimal satu foto'
+
 export function kekuranganLki(
-  b: Pick<InvBaris, 'aset_id' | 'jawaban'> & { foto_paths?: string[]; sebabTidakAda?: boolean; sebabNoun?: string },
+  b: Pick<InvBaris, 'aset_id' | 'jawaban'> & {
+    /** Foto yang DIUNGGAH petugas di lembar ini. */
+    foto_paths?: string[]
+    /** Jumlah foto barang yang SUDAH ada di register (`aset.foto_paths`). */
+    foto_register?: number
+    sebabTidakAda?: boolean; sebabNoun?: string
+  },
 ): string[] {
   const j = b.jawaban || {}
   const kurang: string[] = []
@@ -575,6 +587,8 @@ export function kekuranganLki(
     if (!(Number(baru.jumlah) > 0)) kurang.push('Jumlah')
     if (!baru.satuan) kurang.push('Satuan Barang')
     if (!baru.kondisi) kurang.push('Kondisi Barang')
+    // Barang temuan tak punya foto di register — satu-satunya sumbernya unggahan.
+    if (!(b.foto_paths || []).length) kurang.push(PESAN_FOTO_LKI)
     return kurang
   }
 
@@ -617,7 +631,20 @@ export function kekuranganLki(
   if (j.koordinat?.sesuai === false && (j.latitude == null || j.longitude == null)) {
     kurang.push('Titik Koordinat yang seharusnya (O)')
   }
-  if (j.foto_barang?.sesuai === false && !(b.foto_paths || []).length) kurang.push('Foto barang terbaru (R)')
+  // FOTO WAJIB (keputusan user 2026-10-01): lembar tak boleh disimpan tanpa foto.
+  // Cukup SATU dari dua sumber — unggahan petugas, atau foto yang sudah ada di
+  // register (kalau petugas menyatakan "Sesuai"). "Tidak Sesuai" tetap menuntut
+  // foto TERBARU hasil unggahan, jadi foto lama di register tak menolong di situ.
+  // ⚠️ Barang yang HILANG / tak ditemukan dikecualikan — tak ada yang bisa difoto;
+  // menuntutnya mengurung petugas di lembar yang tak mungkin dilengkapi. Keberadaan
+  // yang belum dipilih TETAP dituntut fotonya, supaya semua kekurangan muncul
+  // sekaligus (bukan berantai satu per penolakan).
+  const fotoBaru = (b.foto_paths || []).length
+  if (j.foto_barang?.sesuai === false && !fotoBaru) kurang.push('Foto barang terbaru (R)')
+  else if (
+    j.keberadaan !== 'hilang' && j.keberadaan !== 'tidak_ditemukan'
+    && !fotoBaru && !((b.foto_register ?? 0) > 0)
+  ) kurang.push(PESAN_FOTO_LKI)
 
   if (j.atribusi === 'ya_induk_diketahui' && !j.induk?.aset_id) kurang.push('Barang induk (I)')
   if (j.ganda && !j.ganda_data?.aset_id) kurang.push('Barang kembaran yang tercatat ganda (M)')

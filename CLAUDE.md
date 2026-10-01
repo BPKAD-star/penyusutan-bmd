@@ -8902,6 +8902,29 @@ di menu Koreksi). Opsi "Lainnya" sempat ada & DICABUT (keputusan user). "Hilang 
   ditulis di Keterangan; sebab *digabung* memakai pilihan petugas sbg induk.
 - Dikunci lib/inventarisasi.test.ts. Golongan lain belum ikut — cukup nyalakan `sebabTidakAda` + `sebabNoun`/`sebabNama` di `LKI_CONFIG`.
 
+## LKI: FOTO WAJIB & penolakan Simpan berupa POP-UP (2026-10-01)
+
+Keputusan user. Lembar Kerja Inventarisasi tak bisa disimpan tanpa foto, dan
+semua kekurangan isian kini ditampilkan lewat pop-up. **Tak ada migrasi.**
+
+- **Aturan di `kekuranganLki`** (lib/inventarisasi.ts, satu sumber untuk daftar di
+  kaki form & penjaga Simpan): foto cukup dari SATU sumber — unggahan petugas
+  (`foto_paths`) ATAU foto yang sudah ada di register (`foto_register`, jumlah
+  `aset.foto_paths`). "Tidak Sesuai" tetap menuntut foto TERBARU hasil unggahan.
+  BMD Belum Tercatat wajib unggah (tak punya foto register).
+- ⚠️ **Barang HILANG / tak ditemukan dikecualikan** — tak ada yang bisa difoto;
+  menuntutnya mengurung petugas di lembar yang tak mungkin dilengkapi. Keberadaan
+  yang belum dipilih TETAP dituntut fotonya, supaya semua kekurangan muncul
+  sekaligus. Konstanta `PESAN_FOTO_LKI` diekspor supaya form mengenali kekurangan
+  foto tanpa mencocokkan teks ketikan ulang.
+- ⚠️ **Dulu penolakannya banner di PUNCAK modal** — modal ini panjang & petugas
+  biasanya di bagian bawah, jadi banner itu tak pernah terlihat dan Simpan tampak
+  "tak bereaksi". Kini `useKonfirmasi` (nada amber, satu tombol) memuat seluruh
+  daftar; bagian Foto dapat petunjuk amber "Wajib" hidup selagi kosong.
+  Tombol Simpan tetap TIDAK dimatikan (tombol mati tanpa keterangan = kegagalan senyap).
+- Lembar yang SUDAH tersimpan sebelum aturan ini tak diubah; aturan baru baru
+  terasa saat ia disimpan ulang.
+
 ## Inventarisasi: jenis aset dipilih DI HALAMAN, bukan 16 sub-menu (2026-10-01, migrasi 20261001_01)
 
 Sidebar Inventarisasi kini cuma **Lembar Kerja (LKI)** (`/dashboard/inventarisasi/lembar-kerja`)

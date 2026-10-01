@@ -34,13 +34,14 @@ import WilayahPicker from '@/components/WilayahPicker'
 import NominalInput from '@/shared/ui/NominalInput'
 import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
-  normalKondisi, klasifikasiLhi, kekuranganLki, LHI_LABEL,
+  normalKondisi, klasifikasiLhi, kekuranganLki, LHI_LABEL, PESAN_FOTO_LKI,
   SEBAB_TIDAK_ADA, SEBAB_BUTUH_RELASI, type SebabTidakAda,
   sesuaiTampil, atribusiTampil, digunakanSendiriTampil,
   type InvBaris, type InvJawaban, type LkiConfig,
   type KondisiFisik, type PihakPengguna,
 } from '@/lib/inventarisasi'
 import { backdropClose } from '@/components/backdropClose'
+import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 
 // MapPicker butuh `window` (Leaflet) → WAJIB dynamic tanpa SSR (aturan CLAUDE.md).
 const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false })
@@ -135,6 +136,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   onTutup: () => void
 }) {
   const supabase = createClient()
+  const konfirmasi = useKonfirmasi()
   const belumTercatat = !baris.aset_id
   // Lembar yang BELUM PERNAH disimpan — dipakai tri-state radio (Sesuai/
   // Tidak Sesuai, atribusi, Penggunaan Barang) supaya defaultnya polos, tak
@@ -214,12 +216,41 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
     setFoto(prev => prev.filter(p => p !== path))
   }
 
+  /** Satu aturan (`kekuranganLki`) untuk dua pintu: daftar di kaki form & penjaga Simpan. */
+  const hitungKurang = () => kekuranganLki({
+    aset_id: baris.aset_id, jawaban: j, foto_paths: foto,
+    foto_register: (s.foto_paths || []).length,
+    sebabTidakAda: config.sebabTidakAda, sebabNoun: config.sebabNoun,
+  })
+
   async function simpan() {
-    // Penjaga SAMA dgn daftar kekurangan di bawah form — satu aturan
-    // (`kekuranganLki`), dua pintu. Tombolnya sengaja TIDAK dimatikan: tombol
-    // mati tanpa keterangan adalah kegagalan senyap.
-    const k = kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto, sebabTidakAda: config.sebabTidakAda, sebabNoun: config.sebabNoun })
-    if (k.length > 0) { setErr(`Belum lengkap: ${k.join(', ')}.`); return }
+    // Tombolnya sengaja TIDAK dimatikan: tombol mati tanpa keterangan adalah
+    // kegagalan senyap. Penolakannya berupa POP-UP, bukan banner di puncak modal —
+    // modal ini panjang & petugas biasanya sedang di bagian bawah, jadi banner di
+    // atas tak pernah terlihat (keluhan user 2026-10-01).
+    const k = hitungKurang()
+    if (k.length > 0) {
+      const fotoKurang = k.includes(PESAN_FOTO_LKI)
+      await konfirmasi({
+        nada: 'amber', ikon: fotoKurang ? '📷' : '⚠',
+        judul: fotoKurang ? 'Foto barang belum disertakan' : 'Isian belum lengkap',
+        subjudul: 'Lembar belum bisa disimpan.',
+        isi: (
+          <div className="text-sm text-gray-700 space-y-2">
+            {fotoKurang && (
+              <p>Sertakan <b>minimal satu foto</b> barang di bagian <b>R. Foto / Denah</b> sebelum menyimpan.</p>
+            )}
+            <p>{fotoKurang && k.length > 1 ? 'Isian lain yang juga masih kurang:' : 'Lengkapi isian berikut:'}</p>
+            <ul className="list-disc pl-5 space-y-0.5">
+              {k.filter(x => x !== PESAN_FOTO_LKI).map(x => <li key={x}>{x}</li>)}
+              {fotoKurang && <li>{PESAN_FOTO_LKI}</li>}
+            </ul>
+          </div>
+        ),
+        labelYa: 'Mengerti', tanpaBatal: true,
+      })
+      return
+    }
     setSaving(true); setErr('')
     try { await onSimpan(j, foto); onTutup() }
     catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
@@ -229,7 +260,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   // Pratinjau LHI: fungsi klasifikasi yang SAMA dgn laporan, jadi isi laporan
   // tak mungkin berbeda dari yang terlihat di sini.
   const lhi = klasifikasiLhi({ ...baris, jawaban: j })
-  const kurang = readOnly ? [] : kekuranganLki({ aset_id: baris.aset_id, jawaban: j, foto_paths: foto, sebabTidakAda: config.sebabTidakAda, sebabNoun: config.sebabNoun })
+  const kurang = readOnly ? [] : hitungKurang()
   const atribusiVal = atribusiTampil(j.atribusi, isBaru)
   const digunakanSendiri = digunakanSendiriTampil(j.penggunaan, isBaru)
   // Titik Koordinat (O): peta di dalam "Tidak Sesuai" berangkat dari titik
@@ -907,6 +938,11 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                   </label>
                 </div>
               </div>
+            )}
+            {!readOnly && kurang.includes(PESAN_FOTO_LKI) && (
+              <p className="mb-1.5 text-xs text-amber-700">
+                ⚠ Wajib — sertakan minimal satu foto barang sebelum lembar ini bisa disimpan.
+              </p>
             )}
             {!readOnly && (
               <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
