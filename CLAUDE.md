@@ -7776,7 +7776,7 @@ ada keterangan "N dari 13 format ada temuan", dan **format yang terbuka otomatis
 berisi** (dulu selalu III.B.7 yang sering kosong). ⚠️ Pemilihan otomatis hanya jalan saat DATA
 berganti, dan tak menimpa format terpilih yang sudah berisi; pilihan manual ke format kosong tak
 dilompati balik. Angka per jenis aset yang dipilih, bukan seluruh jenis. **Tak ada migrasi.**
-Tombol "Cetak semua yang ada temuan" sengaja ditunda sampai format III.B.4/5/9/10/11 ikut disesuaikan.
+Tombol "Cetak semua yang ada temuan" ditunda sampai format lama disesuaikan — sudah dibuat 2026-10-02 (lihat bawah).
 
 ### LKI: BMD Belum Tercatat (III.A.7) — isian dirombak, SEMUA wajib (2026-10-02)
 
@@ -7857,6 +7857,15 @@ pemilik) · Catatan Inventarisasi. Luas = register, atau "seharusnya" bila LKI m
 Dgn ini **ketiga belas format sudah tabel baru** → bentuk lama dibuang: `INTI()`, `sebabTeks`, dan cabang `default` di
 `kolomLhi`/`nilaiBarisLhi` (kolom `kode_register`/`Keterangan` lama tak ada lagi di format mana pun; dikunci uji
 "semua format"). Uji per format baru dipindah ke `lib/inventarisasiLhiBaru.test.ts`. Tanpa migrasi.
+
+#### LHI: "Cetak semua yang ada temuan" (2026-10-02)
+
+Tombol di tab Format Permendagri (`🖨 Cetak semua yang ada temuan (N)`, nonaktif bila N=0) → `/cetak/inventarisasi-lhi?...&kode=semua`:
+satu berkas, **satu format per halaman**, hanya format yang ADA temuannya (`LHI_URUT.filter(barisUntuk>0)`), dgn jenis aset &
+SKPD yang dipilih. Penanda tangan & tanggal dipilih **sekali** (tersimpan per SKPD seperti biasa) tapi blok tanda tangan &
+petugas dicetak **di akhir TIAP format** — tiap format adalah laporan tersendiri yang ditandatangani. ⚠️ Cakupannya SATU
+jenis aset (data LHI dimuat per jenis aset); berkas lintas jenis aset belum ada. Format kosong dilewati (bukan lembar NIHIL —
+keputusan soal lembar nihil belum diambil). Tanpa migrasi; belum dilihat di peramban (kontrol page-break cetak).
 
 ## Lingkungan kerja
 

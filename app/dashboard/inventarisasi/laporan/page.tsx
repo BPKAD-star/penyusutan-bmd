@@ -91,7 +91,10 @@ export default function LaporanInventarisasiPage() {
     )
   }
 
-  const cetakUrl = `/cetak/inventarisasi-lhi?tahun=${tahun}&golongan=${golongan}&kode=${encodeURIComponent(kode)}${skpdId ? `&skpd=${skpdId}` : ''}`
+  const cetakDasar = `/cetak/inventarisasi-lhi?tahun=${tahun}&golongan=${golongan}${skpdId ? `&skpd=${skpdId}` : ''}`
+  const cetakUrl = `${cetakDasar}&kode=${encodeURIComponent(kode)}`
+  // Satu berkas, satu format per halaman, hanya yang ada temuan (jenis aset yang dipilih).
+  const cetakSemuaUrl = `${cetakDasar}&kode=semua`
 
   return (
     <FormShell
@@ -105,6 +108,16 @@ export default function LaporanInventarisasiPage() {
             className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
             🖨 Cetak / PDF
           </a>}
+          {tab === 'format' && (nFormatBerisi > 0
+            ? <a href={cetakSemuaUrl} target="_blank" rel="noopener noreferrer"
+                title="Satu berkas PDF: tiap format yang ada temuan di jenis aset ini, satu format per halaman"
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-teal text-teal hover:bg-teal/5">
+                🖨 Cetak semua yang ada temuan ({nFormatBerisi})
+              </a>
+            : <span title="Tidak ada format yang memiliki temuan pada jenis aset ini"
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-300 cursor-not-allowed">
+                🖨 Cetak semua yang ada temuan (0)
+              </span>)}
           {tab === 'format' && <button onClick={handleExport} disabled={rows.length === 0} className="btn-primary">Export Excel</button>}
         </div>
       }

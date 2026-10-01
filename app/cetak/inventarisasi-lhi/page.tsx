@@ -2,6 +2,8 @@
 // Cetak Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.13.
 // Standalone (tanpa sidebar), A4 landscape. Query:
 //   ?tahun=2026&golongan=1.3.3&kode=III.B.7[&skpd=<id>]
+//   kode=semua → SEMUA format yang ada temuannya pada jenis aset itu, satu format
+//   per halaman (format kosong dilewati). Penanda tangan & tanggal dipilih SEKALI.
 // Subtree SKPD dihitung ulang di sini (URL ringkas, tak membawa daftar id) —
 // pola sama dgn app/cetak/laporan-pengadaan/page.tsx.
 import { useEffect, useMemo, useState } from 'react'
@@ -9,7 +11,7 @@ import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
-import { konfigLki, type LhiKode, type Petugas } from '@/lib/inventarisasi'
+import { konfigLki, LHI_URUT, type LhiKode, type Petugas } from '@/lib/inventarisasi'
 import { fetchCalonTtd, calonTtdAwal, labelAsalTtd, type CalonTtd } from '@/lib/penandaTangan'
 import { sebutanPejabat, levelSkpd } from '@/lib/formatPermendagri'
 import { tglPanjang } from '@/lib/beritaAcaraRekon'
@@ -51,7 +53,7 @@ export default function CetakLhiPage() {
   const [siap, setSiap] = useState(false)
   const [tahun, setTahun] = useState(new Date().getFullYear())
   const [golongan, setGolongan] = useState('1.3.3')
-  const [kode, setKode] = useState<LhiKode>('III.B.7')
+  const [kode, setKode] = useState<LhiKode | 'semua'>('III.B.7')
   const [skpdId, setSkpdId] = useState<number | null>(null)
   const [skpdIds, setSkpdIds] = useState<number[] | null>(null)
   const [skpdRows, setSkpdRows] = useState<SkpdRow[]>([])
@@ -66,7 +68,7 @@ export default function CetakLhiPage() {
       const q = new URLSearchParams(window.location.search)
       const t = Number(q.get('tahun')) || new Date().getFullYear()
       const g = q.get('golongan') || '1.3.3'
-      const k = (q.get('kode') as LhiKode) || 'III.B.7'
+      const k = (q.get('kode') as LhiKode | 'semua') || 'III.B.7'
       const sk = q.get('skpd') ? Number(q.get('skpd')) : null
       setTahun(t); setGolongan(g); setKode(k); setSkpdId(sk)
 
@@ -97,10 +99,16 @@ export default function CetakLhiPage() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { loading, err, barisUntuk, indukLive, wilayahLabel } = useLhiData({ tahun, golongan, skpdIds })
-  const rows = useMemo(
-    () => (siap ? barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1, indukLive, wilayahLabel)) : []),
-    [siap, barisUntuk, kode, indukLive, wilayahLabel],
-  )
+  // Daftar format yang dicetak: satu format, atau (kode=semua) hanya yang ADA temuannya.
+  // Tiap format membentuk barisnya sendiri dgn nomor urut 1..n.
+  const lembar = useMemo(() => {
+    if (!siap) return []
+    const daftar: LhiKode[] = kode === 'semua' ? LHI_URUT.filter(k => barisUntuk(k).length > 0) : [kode]
+    return daftar.map(k => ({
+      kode: k,
+      rows: barisUntuk(k).map((b, i) => nilaiBarisLhi(k, b, i + 1, indukLive, wilayahLabel)),
+    }))
+  }, [siap, barisUntuk, kode, indukLive, wilayahLabel])
   const namaSkpd = skpdId ? skpdRows.find(r => r.id === skpdId)?.nama : undefined
 
   // Butir (3)–(5) kop lampiran — `identitasLhi` (lib/inventarisasiLaporan.ts),
@@ -165,31 +173,36 @@ export default function CetakLhiPage() {
         {!siap || loading ? (
           <p className="py-8 text-center text-gray-400 text-sm">Memuat…</p>
         ) : (
-          <>
-            <LhiTabel kode={kode} rows={rows} golongan={golongan} identitas={identitas} cetak
-              jenisAset={konfigLki(golongan).label} tahun={tahun} />
+          lembar.length === 0 ? (
+            <p className="py-8 text-center text-gray-400 text-sm">Tidak ada format yang memiliki temuan.</p>
+          ) : lembar.map((l, i) => (
+            // Satu format = satu (atau lebih) halaman; format kosong sudah dilewati di `lembar`.
+            <section key={l.kode} className={i < lembar.length - 1 ? 'print:break-after-page mb-10 print:mb-0' : ''}>
+              <LhiTabel kode={l.kode} rows={l.rows} golongan={golongan} identitas={identitas} cetak
+                jenisAset={konfigLki(golongan).label} tahun={tahun} />
 
-            <div className="mt-8 flex justify-between text-[11px]">
-              <div>
-                {petugas.length > 0 && (
-                  <>
-                    <p className="font-semibold mb-1">Pelaksana / Petugas Inventarisasi</p>
-                    <ol className="list-decimal ml-4 space-y-0.5">
-                      {petugas.map(p => <li key={p.pegawai_id}>{p.nama}{p.nip ? ` — NIP. ${p.nip}` : ''}</li>)}
-                    </ol>
-                  </>
-                )}
+              <div className="mt-8 flex justify-between text-[11px]">
+                <div>
+                  {petugas.length > 0 && (
+                    <>
+                      <p className="font-semibold mb-1">Pelaksana / Petugas Inventarisasi</p>
+                      <ol className="list-decimal ml-4 space-y-0.5">
+                        {petugas.map(p => <li key={p.pegawai_id}>{p.nama}{p.nip ? ` — NIP. ${p.nip}` : ''}</li>)}
+                      </ol>
+                    </>
+                  )}
+                </div>
+                <div className="text-center">
+                  <p>Kediri, {tglPanjang(tglTtd)}</p>
+                  <p>{sebutan}</p>
+                  <div className="h-16" />
+                  {/* Belum dipilih → tetap bertitik-titik. JANGAN diisi nama lain. */}
+                  <p className="font-semibold underline">{ttd ? ttd.nama : '(………………………………)'}</p>
+                  <p>NIP. {ttd?.nip || '……………………………'}</p>
+                </div>
               </div>
-              <div className="text-center">
-                <p>Kediri, {tglPanjang(tglTtd)}</p>
-                <p>{sebutan}</p>
-                <div className="h-16" />
-                {/* Belum dipilih → tetap bertitik-titik. JANGAN diisi nama lain. */}
-                <p className="font-semibold underline">{ttd ? ttd.nama : '(………………………………)'}</p>
-                <p>NIP. {ttd?.nip || '……………………………'}</p>
-              </div>
-            </div>
-          </>
+            </section>
+          ))
         )}
       </div>
     </div>
