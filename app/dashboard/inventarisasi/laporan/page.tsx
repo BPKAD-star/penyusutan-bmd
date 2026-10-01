@@ -7,13 +7,15 @@
 // ⚠️ Jangan tertukar dgn menu Pelaporan → Laporan Perolehan → "Laporan Hasil
 // Inventarisasi" — yang itu laporan CARA PEROLEHAN (jenis ledger
 // `hasil_inventarisasi`), beda hal.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
+import RekapLhiPanel from '@/components/inventarisasi/RekapLhiPanel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
+import { useProfilRole } from '@/components/useProfilRole'
 import { useSkpdTree } from '@/components/useSkpdTree'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -32,9 +34,27 @@ export default function LaporanInventarisasiPage() {
   const { nama: skpdNama, pilih: pilihNamaSkpd } = useNamaSkpd()
   const [kode, setKode] = useState<LhiKode>('III.B.7')
 
-  const { baris, loading, err, barisUntuk, hitungPerFormat, indukLive } = useLhiData({ tahun, golongan, skpdIds })
+  // Admin pemda & auditor (pengawas) mendapat dua tab — Rekap per SKPD (halaman
+  // awal) dan Format Permendagri. Pengurus Barang langsung Format Permendagri,
+  // tanpa pemilih tab (keputusan user 2026-10-01).
+  const { role, skpdId: myScopeId } = useProfilRole()
+  const { byId: pohonSkpd, childrenOf, loaded: skpdLoaded } = useSkpdTree()
+  const bolehRekap = role === 'admin' || role === 'pengawas'
+  const [tabPilih, setTabPilih] = useState<'rekap' | 'format' | null>(null)
+  const tab = bolehRekap ? (tabPilih ?? 'rekap') : 'format'
+  // Pemilih SKPD hanya untuk admin/auditor, atau pengurus yang SKPD-nya punya
+  // unit di bawahnya. Pengurus tanpa unit bawahan: cakupannya sudah SKPD-nya
+  // sendiri (dibatasi RLS), jadi pemilihnya hanya kotak yang tak punya pilihan.
+  const punyaAnak = myScopeId != null && (childrenOf.get(myScopeId)?.length ?? 0) > 0
+  const tampilPemilihSkpd = bolehRekap || punyaAnak
+  const sendirian = role !== null && skpdLoaded && !tampilPemilihSkpd
+  useEffect(() => {
+    if (!sendirian || myScopeId == null) return
+    setSkpdId(myScopeId); void pilihNamaSkpd(myScopeId)
+  }, [sendirian, myScopeId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { baris, loading, err, barisUntuk, hitungPerFormat, indukLive } = useLhiData({ tahun, golongan, skpdIds, aktif: tab === 'format' && role !== null })
   // Butir (3)–(5) kop: Kuasa PB / PB dari SKPD yang dipilih, Pengelola = BKAD.
-  const { byId: pohonSkpd } = useSkpdTree()
   const identitas = useMemo(() => identitasLhi(skpdId, [...pohonSkpd.values()]), [skpdId, pohonSkpd])
   const hitung = useMemo(() => hitungPerFormat(), [hitungPerFormat])
 
@@ -67,14 +87,25 @@ export default function LaporanInventarisasiPage() {
       headerRight={
         <div className="flex items-center gap-2">
           <Link href={`/dashboard/inventarisasi/lembar-kerja?jenis=${golongan}`} className="btn-secondary text-sm">← Lembar Kerja</Link>
-          <a href={cetakUrl} target="_blank" rel="noopener noreferrer"
+          {tab === 'format' && <a href={cetakUrl} target="_blank" rel="noopener noreferrer"
             className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50">
             🖨 Cetak / PDF
-          </a>
-          <button onClick={handleExport} disabled={rows.length === 0} className="btn-primary">Export Excel</button>
+          </a>}
+          {tab === 'format' && <button onClick={handleExport} disabled={rows.length === 0} className="btn-primary">Export Excel</button>}
         </div>
       }
     >
+      {bolehRekap && (
+        <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
+          {([['rekap', 'Rekap per SKPD'], ['format', 'Format Permendagri']] as const).map(([v, label]) => (
+            <button key={v} onClick={() => setTabPilih(v)}
+              className={`px-4 py-1.5 rounded-md transition-colors ${tab === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {tab === 'rekap' ? <RekapLhiPanel /> : (<>
       {err && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {err} — laporan TIDAK ditampilkan supaya tak ada yang terbaca sebagai lengkap padahal sebagian gagal dimuat.
@@ -85,12 +116,14 @@ export default function LaporanInventarisasiPage() {
           bikin halaman ramai & sulit dibaca; jumlah temuan tetap ditampilkan
           di tiap opsi supaya operator tahu mana yang berisi. */}
       <div className="card p-4 mb-4 space-y-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">SKPD</label>
-          <SkpdCombobox lockToOperator allowClear
-            onChangeSelection={sel => { setSkpdIds(sel.descendantIds); setSkpdId(sel.skpdId); pilihNamaSkpd(sel.skpdId) }}
-            placeholder="Semua SKPD — atau ketik nama SKPD..." />
-        </div>
+        {tampilPemilihSkpd && (
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">SKPD</label>
+            <SkpdCombobox lockToOperator allowClear
+              onChangeSelection={sel => { setSkpdIds(sel.descendantIds); setSkpdId(sel.skpdId); pilihNamaSkpd(sel.skpdId) }}
+              placeholder="Semua SKPD — atau ketik nama SKPD..." />
+          </div>
+        )}
         <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Tahun</label>
@@ -136,6 +169,7 @@ export default function LaporanInventarisasiPage() {
             judulSkpd={skpdId ? (skpdNama || undefined) : undefined} />
         )}
       </div>
+      </>)}
     </FormShell>
   )
 }

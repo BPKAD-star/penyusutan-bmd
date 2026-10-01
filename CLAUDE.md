@@ -7621,6 +7621,37 @@ disentuh.
   sebelum disetujui" di atas) dan mencakup KDP. **Tak ada kode baru untuk
   ini** — permintaan user sudah terpenuhi oleh fitur yang sudah ada.
 
+## LHI: tab "Rekap per SKPD" untuk admin pemda & auditor (2026-10-01)
+
+Halaman `/dashboard/inventarisasi/laporan` kini dua tab untuk **admin & pengawas
+(auditor)**: **Rekap per SKPD** (halaman awal) dan **Format Permendagri** (isi lama).
+**Pengurus Barang** tanpa pemilih tab — langsung Format Permendagri. **Tak ada migrasi.**
+
+- **Matriks**: baris SKPD × kolom III.B.1–III.B.12, sel = JUMLAH BARANG
+  (`lib/rekapLhi.ts`, `components/inventarisasi/RekapLhi{Table,Panel}.tsx`,
+  `useRekapLhi.ts`; dikunci lib/rekapLhi.test.ts + tests/rekapLhiTable.test.tsx).
+  SKPD yang punya anak punya panah ▸ (buka/tutup), pola `RekapMatrixTable`.
+- ⚠️ **Pengklasifikasinya `klasifikasiLhi`** — SAMA dgn lembar LHI & form LKI, bukan
+  rumus kedua. Satu barang bisa masuk beberapa format, jadi **menjumlah kolom ke samping
+  BUKAN jumlah barang**; karena itu tak ada kolom "Total" per baris, tapi **Barang Ada
+  Temuan** (barang berbeda yang punya ≥ 1 temuan). Dikatakan di layar.
+- ⚠️ **Pohon KUMULATIF** (angka induk = dirinya + seluruh unitnya, tak berubah saat
+  dibuka); **TOTAL dari baris teratas saja** — menjumlah anak yang ikut terbuka =
+  hitung dua kali (diuji).
+- Hanya isian **divalidasi**, dikelompokkan ke `inventarisasi_barang.skpd_id`
+  (SKPD pencatat isian). Filter: Tahun & Jenis Aset (bawaan **Semua jenis aset**) —
+  rekap lintas SKPD, jadi tak ada pemilih SKPD. Export Excel membawa seluruh rincian anak.
+- `useRekapLhi` hanya menarik `skpd_id, aset_id, jawaban, snapshot->>kondisi` (bukan
+  snapshot utuh & foto). ⚠️ **Pagu 50.000 baris → MELEMPAR** dgn anjuran memilih satu
+  jenis aset, bukan memotong diam-diam. ⛔ Belum diukur ke produksi (volume isian
+  divalidasi se-kabupaten belum diketahui); kalau lambat/menembus pagu, obatnya RPC agregat
+  `GROUP BY skpd_id` — jangan menaikkan pagu.
+- Tab Format Permendagri berhenti memuat selama tab Rekap aktif (`aktif` di `useLhiData`).
+- **"Tanpa filtering itu" untuk Pengurus Barang** ditafsirkan: **kotak pemilih SKPD
+  disembunyikan** kalau SKPD-nya tak punya unit bawahan (cakupannya sudah SKPD-nya,
+  dibatasi RLS); kalau punya unit, pemilihnya TETAP ada. Tahun/Jenis/Format dipertahankan —
+  tanpa itu tabel tak bisa dipilih.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

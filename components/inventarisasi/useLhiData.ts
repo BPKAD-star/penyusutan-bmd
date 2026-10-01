@@ -20,6 +20,8 @@ export type FilterLhi = {
   tahun: number
   golongan: string
   skpdIds: number[] | null   // null = semua SKPD (se-kabupaten, dibatasi RLS)
+  /** false = jangan memuat (mis. tab Rekap per SKPD sedang aktif). Bawaan true. */
+  aktif?: boolean
 }
 
 export function useLhiData(f: FilterLhi) {
@@ -31,9 +33,11 @@ export function useLhiData(f: FilterLhi) {
   // Fail-closed: kegagalan ditampilkan & laporannya ditolak, bukan terbaca
   // sebagai "inventarisasinya memang belum ada".
   const [err, setErr] = useState('')
-  const key = `${f.tahun}|${f.golongan}|${(f.skpdIds || []).join(',')}`
+  const aktif = f.aktif !== false
+  const key = `${aktif}|${f.tahun}|${f.golongan}|${(f.skpdIds || []).join(',')}`
 
   const load = useCallback(async () => {
+    if (!aktif) { setLoading(false); return }
     setLoading(true); setErr('')
     // ⚠️ SELURUH badan di dalam try & `setLoading(false)` di `finally`
     // (INS-10): `paginate` MELEMPAR, dan tanpa penangkap satu query yang gagal
