@@ -53,6 +53,26 @@ const titik = (lat: unknown, lng: unknown): string => {
 /** Alamat = wilayah berjenjang (Provinsi→Desa) lalu alamat detail. */
 const alamat = (wilayah: string, detail: string): string => [wilayah, detail].filter(Boolean).join(' · ')
 
+/**
+ * Alamat sebelum & sesudah: wilayah Provinsi→Desa lalu alamat detail. Wilayah &
+ * detail dinilai sendiri-sendiri (bisa salah satunya saja yang dikoreksi). Kode
+ * lama dari snapshot — isian sebelum 2026-09-25 tak punya kode → jatuh ke teks
+ * `wilayah` yang dibekukan saat itu. Dipakai III.B.8 (keduanya) & III.B.6 (sesudah).
+ */
+export function alamatLhi(
+  s: NonNullable<InvBaris['snapshot']>, j: InvBaris['jawaban'],
+  wilayahLabel: (kode: string | null | undefined) => string,
+): { sb: string; st: string } {
+  const kodeSb = s.wilayah_kode || ''
+  const wilSb = (kodeSb && wilayahLabel(kodeSb)) || s.wilayah || ''
+  const wilBerubah = j.wilayah?.sesuai === false
+  const kodeSt = wilBerubah ? (j.wilayah?.wilayah_kode || '') : kodeSb
+  const wilSt = wilBerubah ? (kodeSt ? wilayahLabel(kodeSt) : '(kosong)') : wilSb
+  const detSb = s.alamat || ''
+  const detSt = j.alamat_detail?.sesuai === false ? (j.alamat_detail.seharusnya || '').trim() || '(kosong)' : detSb
+  return { sb: alamat(wilSb, detSb), st: alamat(wilSt, detSt) }
+}
+
 export function barisUbah(
   b: InvBaris, no: number, wilayahLabel: (kode: string | null | undefined) => string,
 ): Baris {
@@ -83,17 +103,8 @@ export function barisUbah(
   const luasSt = j.luas?.sesuai === false ? angka((j.luas.seharusnya || '').replace(',', '.')) || '(kosong)' : luasSb
   pasang('luas', luasSb, luasSt)
 
-  // Wilayah: kode lama dari snapshot (isian sebelum 2026-09-25 tak punya kode →
-  // jatuh ke teks `wilayah` yang dibekukan saat itu). Sesudah = pilihan petugas.
-  const kodeSb = s.wilayah_kode || ''
-  const wilSb = (kodeSb && wilayahLabel(kodeSb)) || s.wilayah || ''
-  const kodeSt = j.wilayah?.sesuai === false ? (j.wilayah.wilayah_kode || '') : kodeSb
-  const wilSt = j.wilayah?.sesuai === false
-    ? (kodeSt ? wilayahLabel(kodeSt) : '(kosong)')
-    : wilSb
-  const detSb = s.alamat || ''
-  const detSt = j.alamat_detail?.sesuai === false ? (j.alamat_detail.seharusnya || '').trim() || '(kosong)' : detSb
-  pasang('alamat', alamat(wilSb, detSb), alamat(wilSt, detSt))
+  const al = alamatLhi(s, j, wilayahLabel)
+  pasang('alamat', al.sb, al.st)
 
   // Koordinat: j.latitude/longitude baru dipakai bila petugas menyatakan tidak sesuai.
   const koorSb = titik(s.latitude, s.longitude)

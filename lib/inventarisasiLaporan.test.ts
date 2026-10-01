@@ -297,3 +297,41 @@ describe('III.B.12 — perubahan kodefikasi', () => {
     expect(kolomLhiTampil('III.B.12', false).some(k => k.key === 'nilai')).toBe(true)
   })
 })
+
+describe('III.B.6 — tabel baru (Penggunaan)', () => {
+  const wil = (k: string | null | undefined) => (k === 'W1' ? 'Jawa Timur, Kediri, Kec. Mojo, Tamanan' : k || '')
+  const j: InvJawaban = {
+    penggunaan: { pihak: 'pempus', nama: 'KPU Kab Kediri', dasar_ada: true, nama_dokumen: 'Perjanjian Pinjam Pakai' },
+    keterangan: 'Perlu digabung ke induk tahun 2008',
+  }
+  const r = nilaiBarisLhi('III.B.6', brs(j, { wilayah_kode: 'W1', alamat: 'Jl. Anu 1', satuan: 'Unit', jumlah: 1 }), 1, {}, wil)
+
+  it('mengikuti contoh user: pihak, instansi, dokumen penguasaan, nama dokumen, catatan', () => {
+    expect(r).toMatchObject({
+      guna_pihak: 'Pemerintah Pusat', guna_nama: 'KPU Kab Kediri', guna_dasar: 'Ada',
+      guna_dokumen: 'Perjanjian Pinjam Pakai', catatan: 'Perlu digabung ke induk tahun 2008',
+      alamat: 'Jawa Timur, Kediri, Kec. Mojo, Tamanan · Jl. Anu 1',
+    })
+  })
+
+  it('tanpa dokumen penguasaan → "Tidak ada"', () => {
+    const t = nilaiBarisLhi('III.B.6', brs({ penggunaan: { pihak: 'pihak_lain', nama: 'X', dasar_ada: false } }), 1)
+    expect(t.guna_dasar).toBe('Tidak ada')
+    expect(t.guna_pihak).toBe('Pihak Lain')
+  })
+
+  it('layar & cetak SATU susunan, blok Penggunaan 4 kolom, tiap kolom punya padanan di baris', () => {
+    const t = kolomLhiTampil('III.B.6', false)
+    expect(kolomLhiTampil('III.B.6', true)).toBe(t)
+    expect(t.filter(k => k.grup === 'Penggunaan').map(k => k.label)).toEqual(
+      ['Pihak', 'Nama Instansi / Pihak', 'Dokumen Penguasaan', 'Nama Dokumen'])
+    for (const k of t) {
+      expect(r, k.key).toHaveProperty(k.key)
+      for (const x of k.tumpuk || []) expect(r, x).toHaveProperty(x)
+    }
+  })
+
+  it('Excel (kolomLhi) datar & seluruh kuncinya ada di baris', () => {
+    for (const k of kolomLhi('III.B.6')) expect(r, k.key).toHaveProperty(k.key)
+  })
+})

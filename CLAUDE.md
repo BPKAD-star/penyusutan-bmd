@@ -7682,6 +7682,21 @@ Berkas: `lib/inventarisasiLhiUbah.ts` (+ test), `lib/wilayahLabel.ts` (+ test).
 - ⛔ Belum dilihat di peramban (A4 lanskap, 16 kolom, alamat panjang membungkus): kalau
   terlalu sesak, naikkan ke F4 / kecilkan huruf di cetak.
 
+### LHI III.B.6: tabel Penggunaan baru (2026-10-01)
+
+Permintaan user (contoh tabel). Kolom: No · Kode Barang/Uraian (ditumpuk) · Nama Barang/NIBAR
+(ditumpuk) · Merk/Tipe · Spesifikasi Lainnya · Tanggal Perolehan · Jumlah/Satuan (ditumpuk) ·
+Nilai Perolehan · **Alamat lengkap** · blok **Penggunaan** (Pihak · Nama Instansi/Pihak ·
+Dokumen Penguasaan · Nama Dokumen) · Catatan Inventarisasi. **Tak ada migrasi.**
+- Petak centang bertingkat lama (tiga pihak × Ada/Tidak ada) **DICABUT** — diganti satu kolom
+  "Dokumen Penguasaan" (Ada / Tidak ada; dulu "Tidak ada dokumen penguasaan"). Layar & cetak
+  satu susunan (`TAMPIL_III_B_6`); Excel datar (`kolomLhi`, satu kolom per data).
+- Alamat = wilayah Provinsi→Desa + alamat detail, keadaan SESUDAH (`alamatLhi`, dibagi dgn
+  III.B.8). ⚠️ **Format LHI lain (III.B.5/9/10) SENGAJA belum ikut** — masih memakai
+  `alamatEfektif` lama (detail · Desa, Kec., Kab); samakan saat gilirannya tiba.
+- Catatan kaki "**) Hanya diisi dalam hal digunakan oleh pemerintah pusat…" ikut dicabut (kolom
+  yang diterangkannya sudah tak ada); tinggal catatan Merk/Tipe.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

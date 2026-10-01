@@ -11,7 +11,7 @@
 import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventarisasi'
 import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
 import { tglLhi, type IndukLive } from '@/lib/inventarisasiLhiKop'
-import { KOLOM_UBAH, barisUbah, efektif } from '@/lib/inventarisasiLhiUbah'
+import { KOLOM_UBAH, alamatLhi, barisUbah, efektif } from '@/lib/inventarisasiLhiUbah'
 
 export type KolomLhi = {
   key: string
@@ -59,10 +59,9 @@ const INTI = (opts?: { merek?: boolean; nibar?: boolean }): KolomLhi[] => [
 const KET: KolomLhi = { key: 'keterangan', label: 'Keterangan' }
 
 // ── Bentuk CETAK ────────────────────────────────────────────────────────────
-// Empat format menggambar sebagian kolomnya sbg petak centang bertingkat:
-// III.B.5 (BAST & SIP → Ada|Tidak ada), III.B.6 (Penggunaan → 3 pihak → Ada
-// {Nama Instansi, Nama Dokumen} | Tidak ada dokumen penguasaan), III.B.7 &
-// III.B.11 (Kondisi → B|RR|RB).
+// Tiga format menggambar sebagian kolomnya sbg petak centang bertingkat:
+// III.B.5 (BAST & SIP → Ada|Tidak ada), III.B.7 & III.B.11 (Kondisi → B|RR|RB).
+// (III.B.6 tadinya ikut; sejak 2026-10-01 memakai tabel `TAMPIL_III_B_6`.)
 //
 // Pemekaran ini SENGAJA cuma dipakai halaman cetak (keputusan user
 // 2026-07-28). Tabel di layar & export Excel tetap memakai `kolomLhi()` yang
@@ -76,23 +75,7 @@ const KONDISI_CENTANG = (dari: string, grup: string | string[]): KolomLhi[] => [
   { key: `${dari}_rb`, label: 'Rusak Berat (RB)', grup, tanda: { key: dari, sama: 'RB' } },
 ]
 
-/** Satu blok pihak di III.B.6: Ada {Nama Instansi, Nama Dokumen} | Tidak ada. */
-const PIHAK_GUNA = (id: string, judul: string, labelNama: string): KolomLhi[] => [
-  {
-    key: `${id}_nama`, label: labelNama, grup: ['Penggunaan', judul, 'Ada'],
-    sumber: 'guna_nama', syarat: { key: 'guna_pihak', sama: judul },
-  },
-  {
-    key: `${id}_dok`, label: 'Nama Dokumen', grup: ['Penggunaan', judul, 'Ada'],
-    sumber: 'guna_dokumen', syarat: { key: 'guna_pihak', sama: judul },
-  },
-  {
-    key: `${id}_tidak`, label: 'Tidak ada dokumen penguasaan', grup: ['Penggunaan', judul],
-    tanda: { key: `${id}_flag_tidak`, sama: 'ya' },
-  },
-]
-
-/** Kolom versi CETAK — sama dgn `kolomLhi()` kecuali empat format bercentang. */
+/** Kolom versi CETAK — sama dgn `kolomLhi()` kecuali tiga format bercentang. */
 export function kolomLhiCetak(k: LhiKode): KolomLhi[] {
   switch (k) {
     case 'III.B.5':
@@ -104,14 +87,6 @@ export function kolomLhiCetak(k: LhiKode): KolomLhi[] {
         { key: 'bast_tidak', label: 'Tidak ada', grup: ['Pemakai', 'BAST Pemakaian'], tanda: { key: 'pemakai_bast', sama: 'Tidak ada' } },
         { key: 'sip_ada', label: 'Ada', grup: ['Pemakai', 'Surat Ijin Penghunian'], tanda: { key: 'pemakai_sip', sama: 'Ada' } },
         { key: 'sip_tidak', label: 'Tidak ada', grup: ['Pemakai', 'Surat Ijin Penghunian'], tanda: { key: 'pemakai_sip', sama: 'Tidak ada' } },
-        KET,
-      ]
-    case 'III.B.6':
-      return [
-        ...INTI(), { key: 'alamat', label: 'Alamat' },
-        ...PIHAK_GUNA('pp', 'Pemerintah Pusat', 'Nama Instansi'),
-        ...PIHAK_GUNA('pd', 'Pemerintah Daerah Lainnya', 'Nama Instansi'),
-        ...PIHAK_GUNA('pl', 'Pihak Lain', 'Nama Pihak Lain'),
         KET,
       ]
     case 'III.B.7':
@@ -159,12 +134,7 @@ export const CATATAN_KAKI: Partial<Record<LhiKode, string[]>> = {
     '**) Hanya diisi apabila digunakan oleh pengguna barang lainnya atau PNS pemerintah daerah yang bersangkutan.',
     '***) Hanya diisi untuk rumah negara.',
   ],
-  'III.B.6': [
-    CATATAN_MEREK,
-    '**) Hanya diisi dalam hal digunakan oleh pemerintah pusat.',
-    '***) Hanya diisi dalam hal digunakan oleh pemerintah daerah lainnya.',
-    '****) Hanya diisi dalam hal digunakan oleh pihak lain.',
-  ],
+  'III.B.6': [CATATAN_MEREK],
   'III.B.7': [CATATAN_MEREK],
   'III.B.8': [
     'Tiap kolom: baris ATAS = sebelum inventarisasi (data register), baris BAWAH = setelah inventarisasi. Tulisan hijau tebal = data berubah.',
@@ -222,6 +192,32 @@ const TAMPIL_III_B_12: KolomLhi[] = [
 ]
 
 /**
+ * III.B.6 — Digunakan Pemerintah Pusat/Daerah Lainnya/Pihak Lain (2026-10-01,
+ * contoh tabel user): Kode/Uraian, Nama/NIBAR & Jumlah/Satuan ditumpuk, Alamat
+ * lengkap (wilayah Provinsi→Desa + alamat detail), blok "Penggunaan" berisi
+ * Pihak · Nama Instansi/Pihak · Dokumen Penguasaan · Nama Dokumen, lalu Catatan.
+ * Petak centang "Ada/Tidak ada dokumen penguasaan" yang lama DIGANTI satu kolom
+ * "Dokumen Penguasaan". Layar & cetak satu susunan; Excel datar (`kolomLhi`).
+ */
+const GRUP_GUNA = 'Penggunaan'
+const TAMPIL_III_B_6: KolomLhi[] = [
+  { key: 'no', label: 'No' },
+  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
+  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
+  { key: 'merek_tipe', label: 'Merk/Tipe' },
+  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
+  { key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] },
+  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+  { key: 'alamat', label: 'Alamat' },
+  { key: 'guna_pihak', label: 'Pihak', grup: GRUP_GUNA },
+  { key: 'guna_nama', label: 'Nama Instansi / Pihak', grup: GRUP_GUNA },
+  { key: 'guna_dasar', label: 'Dokumen Penguasaan', grup: GRUP_GUNA },
+  { key: 'guna_dokumen', label: 'Nama Dokumen', grup: GRUP_GUNA },
+  { key: 'catatan', label: 'Catatan Inventarisasi' },
+]
+
+/**
  * III.B.8 — Terjadi Perubahan Data (2026-10-01, contoh tabel user): NIBAR lalu
  * tiap atribut sbg pasangan sebelum/sesudah (`dua`). Kode barang TIDAK ikut —
  * perubahan kodefikasi punya laporan sendiri (III.B.12). Excel tidak memakai
@@ -239,6 +235,7 @@ export function kolomLhiTampil(k: LhiKode, cetak: boolean): KolomLhi[] {
   if (k === 'III.B.3') return TAMPIL_III_B_3
   if (k === 'III.B.12') return TAMPIL_III_B_12
   if (k === 'III.B.8') return TAMPIL_III_B_8
+  if (k === 'III.B.6') return TAMPIL_III_B_6
   return cetak ? kolomLhiCetak(k) : kolomLhi(k)
 }
 
@@ -301,13 +298,25 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
         KET,
       ]
     case 'III.B.6':
+      // Datar (Excel): satu kolom per data. Susunan yang DILIHAT = `TAMPIL_III_B_6`.
       return [
-        ...INTI(), { key: 'alamat', label: 'Alamat' },
-        { key: 'guna_pihak', label: 'Pihak', grup: 'Penggunaan' },
-        { key: 'guna_nama', label: 'Nama Instansi/Pihak', grup: 'Penggunaan' },
-        { key: 'guna_dokumen', label: 'Nama Dokumen', grup: 'Penggunaan' },
-        { key: 'guna_dasar', label: 'Dokumen Penguasaan', grup: 'Penggunaan' },
-        KET,
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'jumlah', label: 'Jumlah', angka: true },
+        { key: 'satuan', label: 'Satuan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'alamat', label: 'Alamat' },
+        { key: 'guna_pihak', label: 'Pihak', grup: GRUP_GUNA },
+        { key: 'guna_nama', label: 'Nama Instansi / Pihak', grup: GRUP_GUNA },
+        { key: 'guna_dasar', label: 'Dokumen Penguasaan', grup: GRUP_GUNA },
+        { key: 'guna_dokumen', label: 'Nama Dokumen', grup: GRUP_GUNA },
+        { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.7':
       return [
@@ -515,21 +524,21 @@ export function nilaiBarisLhi(
         pempus: 'Pemerintah Pusat', pemda_lain: 'Pemerintah Daerah Lainnya',
         pihak_lain: 'Pihak Lain', pemda: 'Pemerintah Daerah',
       }
-      const pihak = p ? (label[p.pihak] || p.pihak) : ''
-      // Penanda utk kolom centang "Tidak ada dokumen penguasaan" di versi
-      // cetak — perlu dua syarat sekaligus (pihaknya siapa DAN dokumennya tak
-      // ada), sedangkan `tanda` cuma membandingkan satu key. Diabaikan oleh
-      // tabel layar & Excel karena kolomnya tak terdaftar di `kolomLhi()`.
-      const takAdaDok = !!p && !p.dasar_ada
       return {
-        ...inti,
-        guna_pihak: pihak,
+        no,
+        kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar,
+        merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        tgl: tglLhi(s.tgl_perolehan),
+        jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
+        // Alamat lengkap: wilayah Provinsi→Desa + alamat detail (keadaan SESUDAH).
+        alamat: alamatLhi(s, j, wilayahLabel).st,
+        guna_pihak: p ? (label[p.pihak] || p.pihak) : '',
         guna_nama: p?.nama || '',
+        guna_dasar: p ? (p.dasar_ada ? 'Ada' : 'Tidak ada') : '',
         guna_dokumen: p?.nama_dokumen || '',
-        guna_dasar: p?.dasar_ada ? 'Ada' : 'Tidak ada dokumen penguasaan',
-        pp_flag_tidak: takAdaDok && pihak === 'Pemerintah Pusat' ? 'ya' : '',
-        pd_flag_tidak: takAdaDok && pihak === 'Pemerintah Daerah Lainnya' ? 'ya' : '',
-        pl_flag_tidak: takAdaDok && pihak === 'Pihak Lain' ? 'ya' : '',
+        catatan: j.keterangan || '',
       }
     }
     case 'III.B.7':
