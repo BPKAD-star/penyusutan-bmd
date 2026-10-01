@@ -58,6 +58,18 @@ export default function LaporanInventarisasiPage() {
   // Butir (3)–(5) kop: Kuasa PB / PB dari SKPD yang dipilih, Pengelola = BKAD.
   const identitas = useMemo(() => identitasLhi(skpdId, [...pohonSkpd.values()]), [skpdId, pohonSkpd])
   const hitung = useMemo(() => hitungPerFormat(), [hitungPerFormat])
+  const nFormatBerisi = LHI_URUT.filter(k => (hitung[k] || 0) > 0).length
+
+  // Format yang dibuka otomatis = yang pertama punya temuan. Hanya dijalankan
+  // saat DATA berganti (filter diubah / selesai memuat), bukan saat operator
+  // memilih format — pilihan manual ke format kosong tak boleh dilompati balik.
+  // Format yang sedang terpilih tetap dipertahankan kalau ia sudah berisi.
+  useEffect(() => {
+    if (loading || err || baris.length === 0) return
+    if ((hitung[kode] || 0) > 0) return
+    const pertama = LHI_URUT.find(k => (hitung[k] || 0) > 0)
+    if (pertama) setKode(pertama)
+  }, [baris, loading, err]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = useMemo(
     () => barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1, indukLive, wilayahLabel)),
@@ -142,10 +154,23 @@ export default function LaporanInventarisasiPage() {
           <div className="flex-1 min-w-[320px]">
             <label className="block text-xs text-gray-500 mb-1">Format Laporan</label>
             <select className="select-filter w-full" value={kode} onChange={e => setKode(e.target.value as LhiKode)}>
-              {LHI_URUT.map(k => (
-                <option key={k} value={k}>{k} — {LHI_LABEL[k]} ({hitung[k] || 0})</option>
-              ))}
+              {LHI_URUT.map(k => {
+                const n = hitung[k] || 0
+                // Format tanpa temuan diabu-abukan: tak perlu dicetak. Tetap bisa dipilih.
+                return (
+                  <option key={k} value={k} style={n === 0 ? { color: '#9ca3af' } : { fontWeight: 600 }}>
+                    {k} — {LHI_LABEL[k]} ({n})
+                  </option>
+                )
+              })}
             </select>
+            {!loading && !err && baris.length > 0 && (
+              <p className="text-[11px] text-gray-400 mt-1">
+                {nFormatBerisi === 0
+                  ? 'Tidak ada temuan pada jenis aset ini — tidak ada format yang perlu dicetak.'
+                  : `${nFormatBerisi} dari ${LHI_URUT.length} format ada temuan (angka dalam kurung = jumlah barang); format berwarna abu-abu tidak ada temuan.`}
+              </p>
+            )}
           </div>
         </div>
       </div>

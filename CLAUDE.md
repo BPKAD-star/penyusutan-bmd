@@ -7768,6 +7768,16 @@ Kop tabel LHI (layar & cetak, `LhiTabel`): **LAPORAN HASIL INVENTARISASI** (tanp
 Baris "Provinsi Jawa Timur, Kabupaten Kediri" dicabut; **"Format III.B.x" di kanan atas**. Prop `periodeLabel`
 diganti `jenisAset` + `tahun`. Butir Kuasa PB / PB / Pengelola tak berubah.
 
+### LHI: dropdown Format Laporan menandai yang berisi (2026-10-02)
+
+Pengurus barang tak perlu menebak format mana yang harus dicetak. Di tab Format Permendagri:
+format **tanpa temuan diabu-abukan**, yang berisi ditebalkan (jumlah barang tetap di kurung),
+ada keterangan "N dari 13 format ada temuan", dan **format yang terbuka otomatis = yang pertama
+berisi** (dulu selalu III.B.7 yang sering kosong). ⚠️ Pemilihan otomatis hanya jalan saat DATA
+berganti, dan tak menimpa format terpilih yang sudah berisi; pilihan manual ke format kosong tak
+dilompati balik. Angka per jenis aset yang dipilih, bukan seluruh jenis. **Tak ada migrasi.**
+Tombol "Cetak semua yang ada temuan" sengaja ditunda sampai format III.B.4/5/9/10/11 ikut disesuaikan.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
