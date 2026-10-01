@@ -408,6 +408,14 @@ export const JENIS_INVENTARISASI = GOLONGAN_REKAP.map(g => ({
 }))
 export const JENIS_SEMUA = 'semua'
 
+/**
+ * Bucket foto/dokumen yang DIUNGGAH saat inventarisasi (privat → signed URL).
+ * ⚠️ BEDA dari foto register (`aset.foto_paths` → bucket `aset-foto`): menandatangani
+ * path inventarisasi ke bucket yang salah mengembalikan "object not found" untuk
+ * SEMUA fotonya, & operator mengira fotonya hilang.
+ */
+export const BUCKET_FOTO_INVENTARISASI = 'dokumen-sumber'
+
 /** Jenis aset (3 segmen kode) sebuah barang — kembar dgn kolom `aset.golongan`. */
 export const golonganDariKode = (kode: string | null | undefined) =>
   (kode || '').split('.').slice(0, 3).join('.')

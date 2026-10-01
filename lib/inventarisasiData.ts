@@ -278,3 +278,24 @@ export async function muatTimUntukCetak(
   }
   return { petugas: [], dariSkpdId: null }
 }
+
+/**
+ * Foto yang DIUNGGAH petugas pada isian-isian ini (`inventarisasi_barang.foto_paths`),
+ * dipetakan `id isian → daftar path`. Dipakai kolom "Foto Inventarisasi" di Lembar
+ * Kerja: RPC `fn_inventarisasi_lembar` hanya membawa foto REGISTER, bukan foto
+ * isian — dan menambahnya ke RPC berarti migrasi atas fungsi yang rapuh,
+ * sementara `ids` di sini paling banyak satu halaman (50) dilayani primary key.
+ *
+ * MELEMPAR saat gagal; PEMANGGIL memutuskan akibatnya (kolom ini hiasan — tabelnya
+ * tak boleh ikut jatuh).
+ */
+export async function muatFotoIsian(
+  supabase: SupabaseClient, ids: string[],
+): Promise<Record<string, string[]>> {
+  if (ids.length === 0) return {}
+  const { data, error } = await supabase.from('inventarisasi_barang').select('id,foto_paths').in('id', ids)
+  if (error) throw new Error(`gagal membaca foto inventarisasi: ${error.message}`)
+  const out: Record<string, string[]> = {}
+  for (const r of (data || []) as { id: string; foto_paths: string[] | null }[]) out[r.id] = r.foto_paths || []
+  return out
+}

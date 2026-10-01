@@ -23,9 +23,10 @@ import TransaksiSesudah from '@/components/inventarisasi/TransaksiSesudah'
 import PemilihJenis, { useJenisTerpilih } from '@/components/inventarisasi/PemilihJenis'
 import { fetchApprovalScope, SCOPE_KOSONG, type ApprovalScope } from '@/lib/roles'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { FotoSel, fotoMini, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
   LHI_LABEL, STATUS_BADGE, STATUS_LABEL, JENIS_INVENTARISASI, JENIS_SEMUA,
-  labelSebab, klasifikasiLhi, konfigLki, normalKondisi,
+  labelSebab, klasifikasiLhi, konfigLki, normalKondisi, BUCKET_FOTO_INVENTARISASI,
   type InvBaris,
 } from '@/lib/inventarisasi'
 import {
@@ -65,6 +66,9 @@ export default function ValidasiInventarisasi() {
   const [hal, setHal] = useState(0)
 
   const [rows, setRows] = useState<BarisHasil[]>([])
+  // Foto isian SUDAH ada di baris hasil (`foto_paths`) — tak perlu query tambahan.
+  const thumbs = useFotoThumbs(
+    rows.map(r => fotoMini(r.foto_paths)).filter((x): x is string => !!x), BUCKET_FOTO_INVENTARISASI)
   const [adaLagi, setAdaLagi] = useState(false)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -303,6 +307,7 @@ export default function ValidasiInventarisasi() {
                 <th className="table-th">SKPD</th>
                 <th className="table-th">Barang</th>
                 <th className="table-th whitespace-nowrap">Kondisi</th>
+                <th className="table-th whitespace-nowrap text-center">Foto</th>
                 <th className="table-th">Masuk Laporan (LHI)</th>
                 <th className="table-th whitespace-nowrap">Diisi</th>
                 <th className="table-th">Status</th>
@@ -311,15 +316,15 @@ export default function ValidasiInventarisasi() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {!jenisSiap ? (
-                <tr><td colSpan={8} className="table-td text-center py-10 text-gray-400">Memuat...</td></tr>
+                <tr><td colSpan={9} className="table-td text-center py-10 text-gray-400">Memuat...</td></tr>
               ) : !jenis ? (
-                <tr><td colSpan={8} className="table-td text-center py-10 text-gray-500">
+                <tr><td colSpan={9} className="table-td text-center py-10 text-gray-500">
                   Pilih jenis aset di atas untuk menampilkan isian inventarisasi.
                 </td></tr>
               ) : !siap || loading ? (
-                <tr><td colSpan={8} className="table-td text-center py-10 text-gray-400">Memuat...</td></tr>
+                <tr><td colSpan={9} className="table-td text-center py-10 text-gray-400">Memuat...</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="table-td text-center py-10 text-gray-400">
+                <tr><td colSpan={9} className="table-td text-center py-10 text-gray-400">
                   {err ? 'Daftar tidak bisa dimuat.' : 'Tidak ada isian untuk filter ini.'}
                 </td></tr>
               ) : rows.map(r => {
@@ -362,6 +367,11 @@ export default function ValidasiInventarisasi() {
                           )}
                         </>
                       ) : (sesudah || '—')}
+                    </td>
+                    <td className="table-td text-center">
+                      <FotoSel besar bucket={BUCKET_FOTO_INVENTARISASI} judul={namaBarang(r)}
+                        paths={r.foto_paths || []}
+                        thumbUrl={(() => { const m = fotoMini(r.foto_paths); return m ? thumbs[m] : undefined })()} />
                     </td>
                     <td className="table-td text-xs">
                       <div className="flex flex-wrap gap-1">

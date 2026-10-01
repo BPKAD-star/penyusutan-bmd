@@ -8924,6 +8924,17 @@ semua kekurangan isian kini ditampilkan lewat pop-up. **Tak ada migrasi.**
   Tombol Simpan tetap TIDAK dimatikan (tombol mati tanpa keterangan = kegagalan senyap).
 - Lembar yang SUDAH tersimpan sebelum aturan ini tak diubah; aturan baru baru
   terasa saat ia disimpan ulang.
+- **Kolom "Foto Inventarisasi"** di Lembar Kerja (antara Kondisi Tercatat & Status)
+  & kolom "Foto" di Validasi: gambar mini 48 px dari foto yang DIUNGGAH petugas;
+  diklik → pop-up, klik gambar lagi → ukuran asli (bisa digulir). ⚠️ **Dua bucket
+  berbeda**: foto register di `aset-foto`, foto inventarisasi di `dokumen-sumber`
+  (`BUCKET_FOTO_INVENTARISASI`) — salah bucket = "object not found" untuk SEMUA
+  fotonya. `FotoSel`/`useFotoThumbs` menerima `bucket` (bawaan `aset-foto`).
+  RPC `fn_inventarisasi_lembar` hanya membawa foto REGISTER, jadi Lembar Kerja
+  mengambil foto isian lewat satu query kecil per halaman (`muatFotoIsian`, by
+  primary key) — tanpa migrasi; gagal memuat cuma jadi peringatan amber, tabelnya
+  tak ikut jatuh. Validasi tak butuh query tambahan (`foto_paths` sudah di baris).
+  PDF (LKI menerimanya) tak jadi gambar mini & dimuat lewat <iframe> di pop-up.
 
 ## Inventarisasi: jenis aset dipilih DI HALAMAN, bukan 16 sub-menu (2026-10-01, migrasi 20261001_01)
 

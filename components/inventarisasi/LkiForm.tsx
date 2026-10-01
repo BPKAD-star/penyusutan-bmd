@@ -34,7 +34,7 @@ import WilayahPicker from '@/components/WilayahPicker'
 import NominalInput from '@/shared/ui/NominalInput'
 import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
-  normalKondisi, klasifikasiLhi, kekuranganLki, LHI_LABEL, PESAN_FOTO_LKI,
+  normalKondisi, klasifikasiLhi, kekuranganLki, LHI_LABEL, PESAN_FOTO_LKI, BUCKET_FOTO_INVENTARISASI,
   SEBAB_TIDAK_ADA, SEBAB_BUTUH_RELASI, type SebabTidakAda,
   sesuaiTampil, atribusiTampil, digunakanSendiriTampil,
   type InvBaris, type InvJawaban, type LkiConfig,
@@ -205,14 +205,14 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
     setUploading(true); setErr('')
     for (const file of Array.from(files)) {
       const path = `inventarisasi/${crypto.randomUUID()}/${file.name}`
-      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
+      const { error } = await supabase.storage.from(BUCKET_FOTO_INVENTARISASI).upload(path, file)
       if (error) { setErr(`Gagal upload "${file.name}": ${error.message}`); continue }
       setFoto(prev => [...prev, path])
     }
     setUploading(false)
   }
   async function hapusFoto(path: string) {
-    await supabase.storage.from('dokumen-sumber').remove([path])
+    await supabase.storage.from(BUCKET_FOTO_INVENTARISASI).remove([path])
     setFoto(prev => prev.filter(p => p !== path))
   }
 

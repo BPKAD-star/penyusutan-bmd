@@ -29,18 +29,21 @@ import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-libra
 import { renderHook } from '@testing-library/react'
 
 const createSignedUrls = vi.fn()
+// Mencatat bucket yang diminta — foto register ('aset-foto') & foto inventarisasi
+// ('dokumen-sumber') ada di bucket BERBEDA; salah bucket = "object not found".
+const dariBucket = vi.fn((_bucket: string) => ({ createSignedUrls }))
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({ storage: { from: () => ({ createSignedUrls }) } }),
+  createClient: () => ({ storage: { from: (b: string) => dariBucket(b) } }),
 }))
 
-import { FotoSel, useFotoThumbs } from './FotoBarang'
+import { FotoSel, useFotoThumbs, adalahPdf, fotoMini } from './FotoBarang'
 
 const sukses = (paths: string[]) => ({
   data: paths.map(p => ({ path: p, signedUrl: `https://sig/${p}?t=1` })),
   error: null,
 })
 
-beforeEach(() => { createSignedUrls.mockReset(); createSignedUrls.mockResolvedValue(sukses([])) })
+beforeEach(() => { createSignedUrls.mockReset(); createSignedUrls.mockResolvedValue(sukses([])); dariBucket.mockClear() })
 afterEach(cleanup)
 
 describe('useFotoThumbs', () => {
@@ -235,5 +238,127 @@ describe('pop-up penampil foto', () => {
     createSignedUrls.mockResolvedValue(sukses(['a/1.jpg']))
     await buka(['a/1.jpg'])
     expect(screen.getByRole('dialog').className).toContain('z-[60]')
+  })
+})
+
+describe('bucket bisa dipilih (foto inventarisasi di `dokumen-sumber`)', () => {
+  it('bawaannya `aset-foto` — pemakai lama tak berubah', async () => {
+    createSignedUrls.mockResolvedValue(sukses(['a/1.jpg']))
+    const { result } = renderHook(() => useFotoThumbs(['a/1.jpg']))
+    await waitFor(() => expect(Object.keys(result.current)).toHaveLength(1))
+    expect(dariBucket).toHaveBeenCalledWith('aset-foto')
+  })
+
+  it('useFotoThumbs memakai bucket yang diminta', async () => {
+    createSignedUrls.mockResolvedValue(sukses(['inventarisasi/x/1.jpg']))
+    const { result } = renderHook(() => useFotoThumbs(['inventarisasi/x/1.jpg'], 'dokumen-sumber'))
+    await waitFor(() => expect(Object.keys(result.current)).toHaveLength(1))
+    expect(dariBucket).toHaveBeenCalledWith('dokumen-sumber')
+    expect(dariBucket).not.toHaveBeenCalledWith('aset-foto')
+  })
+
+  it('bucket berganti dgn path yang SAMA → menandatangani ulang (kuncinya memuat bucket)', async () => {
+    createSignedUrls.mockResolvedValue(sukses(['a/1.jpg']))
+    const { rerender } = renderHook(({ b }) => useFotoThumbs(['a/1.jpg'], b), { initialProps: { b: 'aset-foto' } })
+    await waitFor(() => expect(createSignedUrls).toHaveBeenCalledTimes(1))
+    rerender({ b: 'dokumen-sumber' })
+    await waitFor(() => expect(createSignedUrls).toHaveBeenCalledTimes(2))
+  })
+
+  it('pop-up memakai bucket yang sama dgn selnya', async () => {
+    createSignedUrls.mockResolvedValue(sukses(['inventarisasi/x/1.jpg']))
+    render(<FotoSel paths={['inventarisasi/x/1.jpg']} bucket="dokumen-sumber" judul="Kursi" />)
+    await act(async () => { fireEvent.click(screen.getByRole('button')) })
+    await waitFor(() => expect(createSignedUrls).toHaveBeenCalled())
+    expect(dariBucket).toHaveBeenCalledWith('dokumen-sumber')
+    expect(dariBucket).not.toHaveBeenCalledWith('aset-foto')
+  })
+})
+
+describe('PDF di samping gambar', () => {
+  it('adalahPdf mengenali ekstensi tanpa peduli huruf besar', () => {
+    expect(adalahPdf('a/b.pdf')).toBe(true)
+    expect(adalahPdf('a/b.PDF')).toBe(true)
+    expect(adalahPdf('a/b.jpg')).toBe(false)
+    expect(adalahPdf('a/pdf.jpg')).toBe(false)
+  })
+
+  it('fotoMini: gambar PERTAMA yang bukan PDF; semua PDF → undefined', () => {
+    expect(fotoMini(['a/1.pdf', 'a/2.jpg', 'a/3.png'])).toBe('a/2.jpg')
+    expect(fotoMini(['a/1.pdf'])).toBeUndefined()
+    expect(fotoMini([])).toBeUndefined()
+    expect(fotoMini(null)).toBeUndefined()
+  })
+
+  it('sel yang isinya PDF semua → penanda 📄, tetap bisa diklik', () => {
+    render(<FotoSel paths={['a/1.pdf', 'a/2.pdf']} judul="Berkas" />)
+    expect(screen.getByText('2📄')).toBeTruthy()
+    expect(screen.getByRole('button')).toBeTruthy()
+  })
+
+  it('pop-up memuat PDF lewat <iframe>, bukan <img> (img tak bisa menampilkannya)', async () => {
+    createSignedUrls.mockResolvedValue(sukses(['a/1.pdf']))
+    render(<FotoSel paths={['a/1.pdf']} judul="Berkas" />)
+    await act(async () => { fireEvent.click(screen.getByRole('button')) })
+    await waitFor(() => expect(document.querySelector('iframe')).not.toBeNull())
+    expect(document.querySelector('img')).toBeNull()
+  })
+})
+
+describe('ukuran asli di pop-up', () => {
+  it('klik gambar → ukuran asli; klik lagi → muat layar', async () => {
+    createSignedUrls.mockResolvedValue(sukses(['a/1.jpg']))
+    render(<FotoSel paths={['a/1.jpg']} judul="Kursi" />)
+    await act(async () => { fireEvent.click(screen.getByRole('button')) })
+    const img = await waitFor(() => {
+      const el = document.querySelector('img') as HTMLImageElement
+      expect(el).toBeTruthy(); return el
+    })
+    expect(img.className).toContain('max-h-[75vh]')
+    expect(screen.getByText(/Klik gambar untuk melihat ukuran asli/)).toBeTruthy()
+
+    fireEvent.click(img)
+    const asli = document.querySelector('img') as HTMLImageElement
+    expect(asli.className).toContain('max-w-none')
+    expect(asli.className).not.toContain('max-h-[75vh]')
+    expect(screen.getByText(/Ukuran asli/)).toBeTruthy()
+
+    fireEvent.click(asli)
+    expect((document.querySelector('img') as HTMLImageElement).className).toContain('max-h-[75vh]')
+  })
+
+  it('klik gambar TIDAK menutup pop-up', async () => {
+    createSignedUrls.mockResolvedValue(sukses(['a/1.jpg']))
+    render(<FotoSel paths={['a/1.jpg']} judul="Kursi" />)
+    await act(async () => { fireEvent.click(screen.getByRole('button')) })
+    const img = await waitFor(() => {
+      const el = document.querySelector('img') as HTMLImageElement
+      expect(el).toBeTruthy(); return el
+    })
+    fireEvent.click(img)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('berganti foto → kembali ke "muat layar"', async () => {
+    const paths = ['a/1.jpg', 'a/2.jpg']
+    createSignedUrls.mockResolvedValue(sukses(paths))
+    render(<FotoSel paths={paths} judul="Kursi" />)
+    await act(async () => { fireEvent.click(screen.getByRole('button')) })
+    await screen.findByText(/Foto 1 dari 2/)
+    fireEvent.click(document.querySelector('img') as HTMLImageElement)
+    expect((document.querySelector('img') as HTMLImageElement).className).toContain('max-w-none')
+    fireEvent.click(screen.getByLabelText('Foto berikutnya'))
+    await screen.findByText(/Foto 2 dari 2/)
+    expect((document.querySelector('img') as HTMLImageElement).className).toContain('max-h-[75vh]')
+  })
+})
+
+describe('FotoSel besar', () => {
+  it('besar → gambar mini 48 px; bawaan 32 px', () => {
+    const { unmount } = render(<FotoSel paths={['a/1.jpg']} thumbUrl="https://sig/a" />)
+    expect((document.querySelector('img') as HTMLImageElement).className).toContain('w-8')
+    unmount()
+    render(<FotoSel besar paths={['a/1.jpg']} thumbUrl="https://sig/a" />)
+    expect((document.querySelector('img') as HTMLImageElement).className).toContain('w-12')
   })
 })

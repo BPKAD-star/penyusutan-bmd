@@ -28,12 +28,14 @@ import PemilihJenis, { useJenisTerpilih } from '@/components/inventarisasi/Pemil
 import { fetchApprovalScope, SCOPE_KOSONG, type ApprovalScope } from '@/lib/roles'
 import { formatRupiah2 } from '@/lib/export'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import { FotoSel, fotoMini, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
   STATUS_BADGE, STATUS_LABEL, JENIS_INVENTARISASI, JENIS_SEMUA, golonganDariKode, konfigLki, normalKondisi,
+  BUCKET_FOTO_INVENTARISASI,
   type InvBaris, type InvJawaban, type StatusTampil,
 } from '@/lib/inventarisasi'
 import {
-  belumDiinventarisasi, jumlahRingkas, muatBelumTercatat, muatIsian, muatLembar, muatRingkasSemua, simpanIsian,
+  belumDiinventarisasi, jumlahRingkas, muatBelumTercatat, muatFotoIsian, muatIsian, muatLembar, muatRingkasSemua, simpanIsian,
   snapshotDariLembar, type BarisLembar, type FilterLembar, type RingkasPerJenis,
 } from '@/lib/inventarisasiData'
 
@@ -128,6 +130,24 @@ export default function LembarKerjaInventarisasi() {
 
   const muatSamping = useCallback(() => { muatRingkasan(); muatBelum() }, [muatRingkasan, muatBelum])
 
+  // Foto yang DIUNGGAH saat inventarisasi (kolom "Foto Inventarisasi") — satu
+  // query kecil atas isian di halaman ini. Hiasan: gagal memuat cuma jadi
+  // peringatan, tabelnya tetap tampil (pola `useFotoThumbs`).
+  const [fotoIsian, setFotoIsian] = useState<Record<string, string[]>>({})
+  const [fotoErr, setFotoErr] = useState('')
+  useEffect(() => {
+    const ids = rows.map(r => r.inv_id).filter((x): x is string => !!x)
+    if (ids.length === 0) { setFotoIsian({}); setFotoErr(''); return }
+    let batal = false
+    muatFotoIsian(supabase, ids)
+      .then(m => { if (!batal) { setFotoIsian(m); setFotoErr('') } })
+      .catch(e => { if (!batal) { setFotoIsian({}); setFotoErr(e instanceof Error ? e.message : String(e)) } })
+    return () => { batal = true }
+  }, [rows]) // eslint-disable-line react-hooks/exhaustive-deps
+  const thumbs = useFotoThumbs(
+    rows.map(r => fotoMini(r.inv_id ? fotoIsian[r.inv_id] : undefined)).filter((x): x is string => !!x),
+    BUCKET_FOTO_INVENTARISASI)
+
   useEffect(() => { if (skpdSiap) void muat() }, [skpdSiap, muat])
   useEffect(() => { if (skpdSiap) muatRingkasan() }, [skpdSiap, muatRingkasan])
   useEffect(() => { if (skpdSiap) muatBelum() }, [skpdSiap, muatBelum])
@@ -220,7 +240,7 @@ export default function LembarKerjaInventarisasi() {
     hitungJenis[JENIS_SEMUA] = tot ? belumDiinventarisasi(tot) : null
   }
   const tampilMerek = !config || config.merekTipe
-  const nKolom = tampilMerek ? 8 : 7
+  const nKolom = tampilMerek ? 9 : 8
 
   return (
     <FormShell
@@ -353,6 +373,11 @@ export default function LembarKerjaInventarisasi() {
       {err && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>
       )}
+      {fotoErr && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          Foto inventarisasi tidak bisa dimuat ({fotoErr}). Daftar barangnya tetap benar.
+        </div>
+      )}
 
       <div className="card overflow-hidden mb-4">
         <div className="overflow-x-auto">
@@ -365,6 +390,7 @@ export default function LembarKerjaInventarisasi() {
                 <th className="table-th whitespace-nowrap">Tgl Perolehan</th>
                 <th className="table-th whitespace-nowrap text-right">Nilai Perolehan</th>
                 <th className="table-th whitespace-nowrap">Kondisi Tercatat</th>
+                <th className="table-th whitespace-nowrap text-center">Foto Inventarisasi</th>
                 <th className="table-th">Status Inventarisasi</th>
                 <th className="table-th whitespace-nowrap text-right">Aksi</th>
               </tr>
@@ -400,6 +426,14 @@ export default function LembarKerjaInventarisasi() {
                     <td className="table-td text-xs text-gray-500 whitespace-nowrap">{r.tgl_perolehan || '—'}</td>
                     <td className="table-td text-xs text-right whitespace-nowrap">{formatRupiah2(r.nilai_perolehan || 0)}</td>
                     <td className="table-td text-xs text-gray-500">{normalKondisi(r.kondisi_barang) || '—'}</td>
+                    <td className="table-td text-center">
+                      {/* Foto yang DIUNGGAH petugas saat inventarisasi — bukan foto
+                          register. Barang yang belum diinventarisasi tak punya
+                          isian, jadi selnya "-". Klik → ukuran asli. */}
+                      <FotoSel besar bucket={BUCKET_FOTO_INVENTARISASI} judul={r.nama_barang}
+                        paths={r.inv_id ? (fotoIsian[r.inv_id] || []) : []}
+                        thumbUrl={(() => { const m = fotoMini(r.inv_id ? fotoIsian[r.inv_id] : undefined); return m ? thumbs[m] : undefined })()} />
+                    </td>
                     <td className="table-td text-xs">
                       <span className={`inline-block text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_BADGE[st]}`}>
                         {STATUS_LABEL[st]}

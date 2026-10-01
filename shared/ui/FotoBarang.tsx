@@ -18,6 +18,14 @@
 //
 // ⚠️ BUCKET `aset-foto` PRIVAT — gambarnya WAJIB lewat signed URL
 // (`createSignedUrls`), bukan public URL. Lihat CLAUDE.md bagian Foto barang.
+//
+// BUCKET BISA DIPILIH (2026-10-01): foto yang diunggah saat INVENTARISASI
+// disimpan di `dokumen-sumber` (privat juga), bukan `aset-foto`. Parameter
+// `bucket` bawaannya `aset-foto`, jadi pemakai lama tak berubah.
+//
+// PDF: lembar inventarisasi menerima PDF di samping gambar. `<img>` tak bisa
+// menampilkannya, jadi PDF tak dipakai sbg gambar mini & pop-upnya memuatnya
+// lewat <iframe>.
 // ============================================================================
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -35,17 +43,23 @@ import { backdropClose } from '@/components/backdropClose'
  * i.foto[0]).filter(Boolean)`) supaya semuanya ditandatangani dalam SATU
  * permintaan, bukan satu permintaan per baris.
  */
-export function useFotoThumbs(paths: string[]) {
+export const adalahPdf = (path: string) => /\.pdf$/i.test(path)
+
+/** Path yang layak jadi gambar mini: yang pertama BUKAN PDF (`undefined` kalau semuanya PDF). */
+export const fotoMini = (paths: string[] | null | undefined): string | undefined =>
+  (paths || []).find(p => !adalahPdf(p))
+
+export function useFotoThumbs(paths: string[], bucket = 'aset-foto') {
   const supabase = createClient()
   const [urls, setUrls] = useState<Record<string, string>>({})
   // Kunci efek = isi daftarnya, bukan identitas arraynya. `paths` dirakit ulang
   // tiap render oleh pemanggil (`.map().filter()`), jadi memakai `paths` sbg
   // dependensi akan menandatangani ulang di SETIAP render.
-  const key = paths.join('|')
+  const key = `${bucket}|${paths.join('|')}`
   useEffect(() => {
     if (paths.length === 0) { setUrls({}); return }
     (async () => {
-      const { data, error } = await supabase.storage.from('aset-foto').createSignedUrls(paths, 3600)
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrls(paths, 3600)
       // ⚠️ SENGAJA TIDAK MELEMPAR, dan ini satu-satunya tempat di modul ini yang
       // begitu. Aturan fail-closed repo (rules.md §2.1) melindungi ANGKA yang
       // dilaporkan; yang ini gambar mini 32 px murni hiasan, dan menjatuhkan
@@ -72,19 +86,23 @@ const namaFile = (path: string) => path.split('/').pop() || path
  * jadi ia tak bergantung pada URL gambar mini (yang cuma memuat foto pertama)
  * dan URL-nya selalu segar, bukan sisa tanda tangan sejam lalu.
  */
-function FotoLightbox({ paths, judul, onClose }: {
-  paths: string[]; judul?: string | null; onClose: () => void
+function FotoLightbox({ paths, judul, bucket, onClose }: {
+  paths: string[]; judul?: string | null; bucket: string; onClose: () => void
 }) {
   const supabase = createClient()
   const [urls, setUrls] = useState<string[] | null>(null)   // null = masih memuat
   const [gagal, setGagal] = useState('')
   const [i, setI] = useState(0)
+  // Ukuran ASLI berkas yang diunggah (bukan gambar yang diciutkan muat layar) —
+  // diklik untuk berpindah. Kembali ke "muat layar" tiap berganti foto.
+  const [asli, setAsli] = useState(false)
+  useEffect(() => { setAsli(false) }, [i])
 
-  const key = paths.join('|')
+  const key = `${bucket}|${paths.join('|')}`
   useEffect(() => {
     let batal = false
     ;(async () => {
-      const { data, error } = await supabase.storage.from('aset-foto').createSignedUrls(paths, 3600)
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrls(paths, 3600)
       if (batal) return
       // `error` dibaca, tidak ditelan: tanpa ini kegagalan tanda tangan tampil
       // sebagai pop-up kosong melompong & operator mengira fotonya yang hilang.
@@ -149,10 +167,19 @@ function FotoLightbox({ paths, judul, onClose }: {
           <p className="text-red-200 text-sm py-20 text-center px-6">Gagal memuat foto: {gagal}</p>
         ) : n === 0 ? (
           <p className="text-white/70 text-sm py-20">Fotonya tidak ditemukan di penyimpanan.</p>
+        ) : adalahPdf(paths[i] || '') ? (
+          <iframe src={urls[i]} title={judul || 'Dokumen'}
+            className="w-full h-[75vh] rounded-lg shadow-2xl bg-white" />
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={urls[i]} alt={judul || 'Foto barang'}
-            className="max-h-[75vh] max-w-full object-contain rounded-lg shadow-2xl bg-white" />
+          <div className={asli ? 'overflow-auto max-h-[75vh] max-w-full rounded-lg shadow-2xl bg-white' : 'flex'}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={urls[i]} alt={judul || 'Foto barang'}
+              onClick={() => setAsli(v => !v)}
+              title={asli ? 'Klik untuk muat ke layar' : 'Klik untuk ukuran asli'}
+              className={asli
+                ? 'max-w-none max-h-none cursor-zoom-out'
+                : 'max-h-[75vh] max-w-full object-contain rounded-lg shadow-2xl bg-white cursor-zoom-in'} />
+          </div>
         )}
 
         {n > 1 && (
@@ -166,10 +193,15 @@ function FotoLightbox({ paths, judul, onClose }: {
       {n > 0 && urls && (
         // Foto barang sering perlu diperbesar lagi (nomor rangka/mesin di badan
         // barang). Tab baru menyerahkannya ke penampil gambar peramban.
-        <a href={urls[i]} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-          className="mt-3 text-xs text-white/70 hover:text-white underline">
-          Buka ukuran penuh di tab baru ↗
-        </a>
+        <div className="mt-3 flex items-center gap-4 text-xs text-white/70">
+          {!adalahPdf(paths[i] || '') && (
+            <span>{asli ? 'Ukuran asli — klik gambar untuk muat ke layar' : 'Klik gambar untuk melihat ukuran asli'}</span>
+          )}
+          <a href={urls[i]} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+            className="hover:text-white underline">
+            Buka ukuran penuh di tab baru ↗
+          </a>
+        </div>
       )}
     </div>
   )
@@ -186,8 +218,12 @@ function FotoLightbox({ paths, judul, onClose }: {
  *   sendiri.
  * @param judul nama barang, dipakai sbg judul pop-up & teks alt.
  */
-export function FotoSel({ paths, thumbUrl, judul }: {
+export function FotoSel({ paths, thumbUrl, judul, bucket = 'aset-foto', besar = false }: {
   paths: string[]; thumbUrl?: string; judul?: string | null
+  /** Bucket penyimpanan fotonya. Foto inventarisasi: `dokumen-sumber`. */
+  bucket?: string
+  /** Gambar mini 48 px (bawaan 32 px) — untuk tabel yang fotonya jadi isi utama. */
+  besar?: boolean
 }) {
   const [buka, setBuka] = useState(false)
   if (!paths || paths.length === 0) return <span className="text-[10px] text-gray-300">-</span>
@@ -202,7 +238,7 @@ export function FotoSel({ paths, thumbUrl, judul }: {
           <span className="relative block">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={thumbUrl} alt=""
-              className="w-8 h-8 object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity" />
+              className={`${besar ? 'w-12 h-12' : 'w-8 h-8'} object-cover rounded border border-gray-200 hover:opacity-80 transition-opacity`} />
             {paths.length > 1 && (
               <span className="absolute -top-1 -right-1 rounded-full bg-navy text-white text-[9px] leading-none px-1 py-0.5">
                 {paths.length}
@@ -213,10 +249,12 @@ export function FotoSel({ paths, thumbUrl, judul }: {
           // Gambar mininya belum/ tak bisa ditandatangani — tetap dibuat tombol,
           // jangan teks mati: pop-upnya punya jalur tanda tangannya sendiri, jadi
           // fotonya masih bisa dibuka.
-          <span className="text-[10px] text-gray-400 underline hover:text-teal">{paths.length}📷</span>
+          <span className="text-[10px] text-gray-400 underline hover:text-teal">
+            {paths.length}{paths.every(adalahPdf) ? '📄' : '📷'}
+          </span>
         )}
       </button>
-      {buka && <FotoLightbox paths={paths} judul={judul} onClose={() => setBuka(false)} />}
+      {buka && <FotoLightbox paths={paths} judul={judul} bucket={bucket} onClose={() => setBuka(false)} />}
     </>
   )
 }
