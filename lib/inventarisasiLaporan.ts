@@ -10,6 +10,7 @@
 // dirender sbg header dua baris lewat properti `grup`.
 import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventarisasi'
 import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
+import { levelSkpd } from '@/lib/formatPermendagri'
 
 export type KolomLhi = {
   key: string
@@ -25,6 +26,10 @@ export type KolomLhi = {
   syarat?: { key: string; sama: string }
   /** CETAK-ONLY — tampilkan tanda √ bila baris[key] === sama. */
   tanda?: { key: string; sama: string }
+  /** Key baris lain yang ditumpuk DI BAWAH nilai kolom ini dalam satu sel
+   *  (mis. Kode Barang di atas, Uraian Barang di bawahnya). Dipakai tabel layar
+   *  & cetak; Excel memakai `kolomLhi()` yang tetap datar (satu kolom per data). */
+  tumpuk?: string[]
 }
 
 export const jalurGrup = (k: KolomLhi): string[] =>
@@ -172,17 +177,131 @@ export const CATATAN_KAKI: Partial<Record<LhiKode, string[]>> = {
   ],
 }
 
+const GRUP_INDUK = 'Data Awal Induk'
+
+/**
+ * Susunan III.B.3 yang DILIHAT (layar & cetak) — mengikuti contoh tabel user
+ * (2026-10-01): Kode Barang/Uraian Barang & Nama Barang/NIBAR ditumpuk dalam
+ * satu sel, lalu blok "Data Awal Induk" berisi empat kolom yang sama (tanpa
+ * Kode Lokasi / Kode Register yang dulu ada). Excel tetap datar (`kolomLhi`).
+ */
+const TAMPIL_III_B_3: KolomLhi[] = [
+  { key: 'no', label: 'No' },
+  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
+  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
+  { key: 'merek_tipe', label: 'Merk/Tipe' },
+  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
+  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+  { key: 'induk_kode', label: 'Kode Barang / Uraian Barang', grup: GRUP_INDUK, tumpuk: ['induk_uraian'] },
+  { key: 'induk_nama', label: 'Nama Barang / NIBAR', grup: GRUP_INDUK, tumpuk: ['induk_nibar'] },
+  { key: 'induk_tgl', label: 'Tanggal Perolehan', grup: GRUP_INDUK, angka: true },
+  { key: 'induk_nilai', label: 'Nilai Perolehan', grup: GRUP_INDUK, angka: true },
+  KET,
+]
+
+/** Kolom untuk tabel layar & cetak. Excel memakai `kolomLhi()` (datar). */
+export function kolomLhiTampil(k: LhiKode, cetak: boolean): KolomLhi[] {
+  if (k === 'III.B.3') return TAMPIL_III_B_3
+  return cetak ? kolomLhiCetak(k) : kolomLhi(k)
+}
+
+// ── Kop lampiran: butir (3) Kuasa PB · (4) PB · (5) Pengelola Barang ────────
+/**
+ * Pengelola Barang = Badan Keuangan dan Aset Daerah, TETAP untuk semua LHI
+ * (keputusan user 2026-10-01). Beda dari `sebutanPejabat` (kaki lembar lain), yang
+ * sengaja tak pernah menebak Pengelola Barang.
+ */
+export const PENGELOLA_BARANG_LHI = 'Badan Keuangan dan Aset Daerah'
+
+/** Tiga baris identitas di kop lampiran. Yang tak diketahui dibiarkan bertitik-titik. */
+export type IdentitasLhi = { kuasa?: string; pengguna?: string; pengelola?: string }
+
+/**
+ * Isi butir (3)–(5) dari SKPD yang dipilih (keputusan user 2026-10-01):
+ *
+ *   SKPD level 1 (Pengguna Barang) → Kuasa PB = SKPD itu sendiri, PB = SKPD itu
+ *   SKPD level 2+ (sub unit)       → Kuasa PB = SKPD itu, PB = SKPD INDUK (akar)
+ *   Pengelola Barang               → selalu Badan Keuangan dan Aset Daerah
+ *
+ * Tanpa SKPD (se-kabupaten) Kuasa & Pengguna dibiarkan bertitik-titik — tak ada
+ * satu unit pun yang bisa disebut — tapi Pengelola tetap terisi.
+ * ⚠️ Level 3 (sub kuasa) ikut aturan "sub unit" (sebutan lembar lain,
+ * `sebutanPejabat`, juga tak membedakan level 2 dari 3).
+ */
+export function identitasLhi(
+  skpdId: number | null | undefined,
+  skpd: { id: number; parent_id: number | null; nama: string }[],
+): IdentitasLhi {
+  const pengelola = PENGELOLA_BARANG_LHI
+  if (skpdId == null) return { pengelola }
+  const byId = new Map(skpd.map(x => [x.id, x]))
+  const ini = byId.get(skpdId)
+  if (!ini) return { pengelola }
+  if (levelSkpd(skpdId, new Map(skpd.map(x => [x.id, x.parent_id]))) <= 1) {
+    return { kuasa: ini.nama, pengguna: ini.nama, pengelola }
+  }
+  // Naik ke akar. Dibatasi 20 langkah (pola `levelSkpd`): pohon yang memuat
+  // lingkaran tak boleh membekukan lembar cetak.
+  let akar = ini
+  for (let i = 0; i < 20 && akar.parent_id != null; i++) {
+    const atas = byId.get(akar.parent_id)
+    if (!atas) break
+    akar = atas
+  }
+  return { kuasa: ini.nama, pengguna: akar.id === ini.id ? undefined : akar.nama, pengelola }
+}
+
+// ── Data induk (LHI III.B.3) ────────────────────────────────────────────────
+export type IndukLive = Record<string, {
+  uraian_barang: string | null; tgl_perolehan: string | null; nilai_perolehan: number | null
+}>
+
+/** `YYYY-MM-DD` → `dd/mm/yyyy` (tanggal diurai manual, bukan `new Date` — geser zona waktu). */
+export function tglLhi(s: string | null | undefined): string {
+  if (!s) return ''
+  const [y, m, d] = s.slice(0, 10).split('-')
+  return y && m && d ? `${d}/${m}/${y}` : s
+}
+
+/**
+ * id aset induk yang datanya (uraian/tanggal/nilai) TIDAK ikut dibekukan di isian
+ * — yaitu isian yang dibuat sebelum 2026-10-01. Hanya untuk isian ini laporan
+ * perlu membaca register.
+ */
+export function kebutuhanIndukLive(baris: Pick<InvBaris, 'jawaban'>[]): string[] {
+  const ids = new Set<string>()
+  for (const b of baris) {
+    const j = b.jawaban || {}
+    const calon = [j.induk, j.sebab_tidak_ada === 'digabung' ? j.sebab_relasi : undefined]
+    for (const p of calon) {
+      if (p?.aset_id && (p.nilai_perolehan == null || !p.tgl_perolehan || !p.uraian)) ids.add(p.aset_id)
+    }
+  }
+  return [...ids]
+}
+
 export function kolomLhi(k: LhiKode): KolomLhi[] {
   switch (k) {
     case 'III.B.3':
+      // Datar (Excel): satu kolom per data supaya bisa disaring/di-pivot. Susunan
+      // yang DILIHAT (sel bertumpuk) ada di `TAMPIL_III_B_3`.
       return [
-        ...INTI(),
-        { key: 'induk_nibar', label: 'NIBAR', grup: 'Data Awal/Induk' },
-        { key: 'induk_kode_barang', label: 'Kode Barang', grup: 'Data Awal/Induk' },
-        { key: 'induk_kode_lokasi', label: 'Kode Lokasi', grup: 'Data Awal/Induk' },
-        { key: 'induk_kode_register', label: 'Kode Register', grup: 'Data Awal/Induk' },
-        { key: 'induk_nama_barang', label: 'Nama Barang', grup: 'Data Awal/Induk' },
-        { key: 'induk_spesifikasi', label: 'Spesifikasi Nama Barang', grup: 'Data Awal/Induk' },
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'induk_kode', label: 'Kode Barang', grup: GRUP_INDUK },
+        { key: 'induk_uraian', label: 'Uraian Barang', grup: GRUP_INDUK },
+        { key: 'induk_nama', label: 'Nama Barang', grup: GRUP_INDUK },
+        { key: 'induk_nibar', label: 'NIBAR', grup: GRUP_INDUK },
+        { key: 'induk_tgl', label: 'Tanggal Perolehan', grup: GRUP_INDUK },
+        { key: 'induk_nilai', label: 'Nilai Perolehan', grup: GRUP_INDUK, angka: true },
         KET,
       ]
     case 'III.B.4':
@@ -286,7 +405,11 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
 }
 
 /** Bentuk satu baris laporan sesuai format. Key-nya cocok dgn `kolomLhi`. */
-export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<string, string | number> {
+export function nilaiBarisLhi(
+  k: LhiKode, b: InvBaris, no: number,
+  /** Data induk dari register — HANYA untuk isian lama yang tak membekukannya. */
+  indukLive: IndukLive = {},
+): Record<string, string | number> {
   const s = b.snapshot || {}
   const j = b.jawaban || {}
   const baru = j.baru || {}
@@ -351,25 +474,41 @@ export function nilaiBarisLhi(k: LhiKode, b: InvBaris, no: number): Record<strin
       // Dari bagian G ("tidak ada karena ..."): digabung → induk = pilihan
       // petugas; direhab jadi bangunan baru → barang ini SENDIRI induknya &
       // bangunan baru (anak) disebut di Keterangan, supaya kolom induk tak
-      // menunjuk barang yang salah.
+      // menunjuk barang yang salah. Bagian I (atribusi) → induk pilihan petugas.
       const rel = j.sebab_relasi
       const dariSebab = j.keberadaan === 'tidak_ditemukan' ? j.sebab_tidak_ada : undefined
       const indukDigabung = dariSebab === 'digabung' ? rel : undefined
       const rehab = dariSebab === 'rehab_bangunan_baru'
-      const indukNibar = indukDigabung ? (indukDigabung.nibar || '') : rehab ? (s.nibar || '') : (j.induk?.nibar || '')
-      const indukKode = indukDigabung ? (indukDigabung.kode_barang || '') : rehab ? (s.kode || '') : (j.induk?.kode_barang || '')
-      const indukNama = indukDigabung ? (indukDigabung.nama_barang || '') : rehab ? (s.uraian_barang || '') : (j.induk?.nama_barang || '')
+      const pilih = indukDigabung ?? (rehab ? undefined : j.induk)
+      // "Data Awal Induk" = yang DIBEKUKAN saat induk dipilih; isian lama jatuh
+      // ke register (kurang tepat bila induknya sudah berubah, tapi lebih baik
+      // daripada sel kosong di lembar bertanda tangan).
+      const live = pilih?.aset_id ? indukLive[pilih.aset_id] : undefined
+      const induk = rehab
+        ? {
+          kode: s.kode || '', uraian: s.uraian_barang || '', nama: s.nama_barang || '',
+          nibar: s.nibar || '', tgl: s.tgl_perolehan || '', nilai: s.nilai_perolehan ?? '',
+        }
+        : {
+          kode: pilih?.kode_barang || '', uraian: pilih?.uraian || live?.uraian_barang || '',
+          nama: pilih?.nama_barang || '', nibar: pilih?.nibar || '',
+          tgl: pilih?.tgl_perolehan || live?.tgl_perolehan || '',
+          nilai: pilih?.nilai_perolehan ?? live?.nilai_perolehan ?? '',
+        }
       const catatSebab = dariSebab === 'digabung' ? `Tidak ada: ${labelSebab('digabung', noun)}`
         : rehab ? `Tidak ada: ${labelSebab('rehab_bangunan_baru', noun)} — anak: ${rel?.nibar || '—'} ${rel?.nama_barang || ''}`.trim()
         : ''
       return {
-        ...inti,
+        no,
+        kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar,
+        merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        tgl: tglLhi(s.tgl_perolehan), nilai: inti.nilai,
+        induk_kode: induk.kode, induk_uraian: induk.uraian,
+        induk_nama: induk.nama, induk_nibar: induk.nibar,
+        induk_tgl: tglLhi(induk.tgl), induk_nilai: induk.nilai,
         keterangan: [catatSebab, j.keterangan].filter(Boolean).join(' — '),
-        induk_nibar: indukNibar, induk_kode_barang: indukKode,
-        induk_kode_lokasi: indukDigabung || rehab ? '' : (j.induk?.kode_lokasi || ''),
-        induk_kode_register: rehab ? (s.kode_register || '') : indukDigabung ? (indukDigabung.nibar || '') : (j.induk?.kode_register || ''),
-        induk_nama_barang: indukNama,
-        induk_spesifikasi: rehab ? (s.nama_barang || '') : indukDigabung ? '' : (j.induk?.spesifikasi || ''),
       }
     }
     case 'III.B.5':

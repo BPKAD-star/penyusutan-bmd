@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/client'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
 import { konfigLki, type LhiKode, type Petugas } from '@/lib/inventarisasi'
-import { nilaiBarisLhi } from '@/lib/inventarisasiLaporan'
+import { identitasLhi, nilaiBarisLhi } from '@/lib/inventarisasiLaporan'
 import { muatTimUntukCetak } from '@/lib/inventarisasiData'
 
 type SkpdRow = { id: number; parent_id: number | null; nama: string }
@@ -70,21 +70,17 @@ export default function CetakLhiPage() {
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { loading, err, barisUntuk } = useLhiData({ tahun, golongan, skpdIds })
+  const { loading, err, barisUntuk, indukLive } = useLhiData({ tahun, golongan, skpdIds })
   const rows = useMemo(
-    () => (siap ? barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1)) : []),
-    [siap, barisUntuk, kode],
+    () => (siap ? barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1, indukLive)) : []),
+    [siap, barisUntuk, kode, indukLive],
   )
   const namaSkpd = skpdId ? skpdRows.find(r => r.id === skpdId)?.nama : undefined
 
-  // Butir (3)–(5) kop lampiran. SKPD induk = Pengguna Barang, sub-unit =
-  // Kuasa Pengguna Barang. Pengelola Barang (BPKAD) tidak ada di data modul
-  // ini, jadi dibiarkan kosong untuk diisi tangan — bukan ditebak.
-  const identitas = useMemo(() => {
-    if (!skpdId || !namaSkpd) return undefined
-    const punyaInduk = skpdRows.find(r => r.id === skpdId)?.parent_id != null
-    return punyaInduk ? { kuasa: namaSkpd } : { pengguna: namaSkpd }
-  }, [skpdId, namaSkpd, skpdRows])
+  // Butir (3)–(5) kop lampiran — `identitasLhi` (lib/inventarisasiLaporan.ts),
+  // SATU sumber dgn tabel di layar: Kuasa PB / PB dari SKPD yang dipilih,
+  // Pengelola Barang = Badan Keuangan dan Aset Daerah.
+  const identitas = useMemo(() => identitasLhi(skpdId, skpdRows), [skpdId, skpdRows])
 
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">

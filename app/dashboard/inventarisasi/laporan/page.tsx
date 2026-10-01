@@ -14,12 +14,13 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
 import { useNamaSkpd } from '@/components/useNamaSkpd'
+import { useSkpdTree } from '@/components/useSkpdTree'
 import { exportToExcel } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
 import {
   GOLONGAN_OPSI, LHI_LABEL, LHI_URUT, REKOMENDASI, konfigLki, type LhiKode,
 } from '@/lib/inventarisasi'
-import { kolomLhi, nilaiBarisLhi } from '@/lib/inventarisasiLaporan'
+import { identitasLhi, kolomLhi, nilaiBarisLhi } from '@/lib/inventarisasiLaporan'
 
 const TAHUN_INI = new Date().getFullYear()
 
@@ -31,12 +32,15 @@ export default function LaporanInventarisasiPage() {
   const { nama: skpdNama, pilih: pilihNamaSkpd } = useNamaSkpd()
   const [kode, setKode] = useState<LhiKode>('III.B.7')
 
-  const { baris, loading, err, barisUntuk, hitungPerFormat } = useLhiData({ tahun, golongan, skpdIds })
+  const { baris, loading, err, barisUntuk, hitungPerFormat, indukLive } = useLhiData({ tahun, golongan, skpdIds })
+  // Butir (3)–(5) kop: Kuasa PB / PB dari SKPD yang dipilih, Pengelola = BKAD.
+  const { byId: pohonSkpd } = useSkpdTree()
+  const identitas = useMemo(() => identitasLhi(skpdId, [...pohonSkpd.values()]), [skpdId, pohonSkpd])
   const hitung = useMemo(() => hitungPerFormat(), [hitungPerFormat])
 
   const rows = useMemo(
-    () => barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1)),
-    [barisUntuk, kode],
+    () => barisUntuk(kode).map((b, i) => nilaiBarisLhi(kode, b, i + 1, indukLive)),
+    [barisUntuk, kode, indukLive],
   )
 
   function handleExport() {
@@ -128,7 +132,7 @@ export default function LaporanInventarisasiPage() {
             Belum ada isian inventarisasi {konfigLki(golongan).label} tahun {tahun} yang divalidasi.
           </p>
         ) : (
-          <LhiTabel kode={kode} rows={rows} periodeLabel={periodeLabel}
+          <LhiTabel kode={kode} rows={rows} periodeLabel={periodeLabel} identitas={identitas}
             judulSkpd={skpdId ? (skpdNama || undefined) : undefined} />
         )}
       </div>

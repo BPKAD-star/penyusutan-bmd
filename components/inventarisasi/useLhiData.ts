@@ -13,6 +13,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { paginate } from '@/shared/db/paginate'
 import { createClient } from '@/lib/supabase/client'
 import { klasifikasiLhi, type InvBaris, type LhiKode } from '@/lib/inventarisasi'
+import { kebutuhanIndukLive, type IndukLive } from '@/lib/inventarisasiLaporan'
+import { muatIndukLive } from '@/lib/inventarisasiData'
 
 export type FilterLhi = {
   tahun: number
@@ -23,6 +25,8 @@ export type FilterLhi = {
 export function useLhiData(f: FilterLhi) {
   const supabase = createClient()
   const [baris, setBaris] = useState<InvBaris[]>([])
+  // Data induk dari register — hanya untuk isian lama (lihat `kebutuhanIndukLive`).
+  const [indukLive, setIndukLive] = useState<IndukLive>({})
   const [loading, setLoading] = useState(true)
   // Fail-closed: kegagalan ditampilkan & laporannya ditolak, bukan terbaca
   // sebagai "inventarisasinya memang belum ada".
@@ -43,10 +47,14 @@ export function useLhiData(f: FilterLhi) {
         if (kursor !== null) q = q.gt('id', kursor)
         return q.order('id').limit(1000)
       })
-      setBaris(rows as never as InvBaris[])
+      const hasil = rows as never as InvBaris[]
+      // Di DALAM try yang sama: gagal membaca induk = laporan ditolak (fail-closed),
+      // bukan kolom "Data Awal Induk" yang diam-diam kosong.
+      setIndukLive(await muatIndukLive(supabase, kebutuhanIndukLive(hasil)))
+      setBaris(hasil)
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
-      setBaris([])
+      setBaris([]); setIndukLive({})
     } finally {
       setLoading(false)
     }
@@ -67,5 +75,5 @@ export function useLhiData(f: FilterLhi) {
     return c
   }, [baris])
 
-  return { baris, loading, err, barisUntuk, hitungPerFormat, reload: load }
+  return { baris, loading, err, barisUntuk, hitungPerFormat, indukLive, reload: load }
 }

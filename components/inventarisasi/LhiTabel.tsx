@@ -7,13 +7,15 @@ import { useMemo } from 'react'
 import { formatRupiah2 } from '@/lib/export'
 import { LHI_LABEL, type LhiKode } from '@/lib/inventarisasi'
 import {
-  CATATAN_KAKI, jalurGrup, kolomLhi, kolomLhiCetak, nilaiSelCetak, totalNilaiLhi,
+  CATATAN_KAKI, PENGELOLA_BARANG_LHI, jalurGrup, kolomLhiTampil, nilaiSelCetak, totalNilaiLhi,
+  type IdentitasLhi,
 } from '@/lib/inventarisasiLaporan'
 
-/** Tiga baris identitas di kop lampiran — butir (3), (4), (5) tiap format.
- *  Yang tak diketahui sengaja dibiarkan bertitik-titik utk diisi tangan,
- *  BUKAN ditebak: ini dokumen yang ditandatangani. */
-export type IdentitasLhi = { kuasa?: string; pengguna?: string; pengelola?: string }
+// Tiga baris identitas di kop lampiran — butir (3), (4), (5) tiap format. Yang
+// tak diketahui sengaja dibiarkan bertitik-titik utk diisi tangan, BUKAN
+// ditebak: ini dokumen yang ditandatangani. Pengelola Barang selalu terisi
+// (Badan Keuangan dan Aset Daerah); dua lainnya diisi `identitasLhi()`.
+export type { IdentitasLhi }
 
 export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identitas, cetak }: {
   kode: LhiKode
@@ -25,7 +27,7 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
    *  saja — tabel di layar & Excel tetap datar supaya bisa disaring. */
   cetak?: boolean
 }) {
-  const kolom = useMemo(() => (cetak ? kolomLhiCetak(kode) : kolomLhi(kode)), [kode, cetak])
+  const kolom = useMemo(() => kolomLhiTampil(kode, !!cetak), [kode, cetak])
   const total = useMemo(() => totalNilaiLhi(rows), [rows])
 
   // Susun header bertingkat. Lampiran III.B.6 punya 3 tingkat grup di atas
@@ -78,7 +80,7 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
           {([
             ['Kuasa Pengguna Barang', identitas?.kuasa],
             ['Pengguna Barang', identitas?.pengguna],
-            ['Pengelola Barang', identitas?.pengelola],
+            ['Pengelola Barang', identitas?.pengelola ?? PENGELOLA_BARANG_LHI],
           ] as [string, string | undefined][]).map(([label, isi]) => (
             <tr key={label}>
               <td className="pr-3 align-top">{label}</td>
@@ -109,11 +111,18 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
                 <tr key={i}>
                   {kolom.map(k => {
                     const v = cetak ? nilaiSelCetak(k, r) : (r[k.key] ?? '')
-                    const rupiah = k.key === 'nilai' || k.key === 'harga_satuan' || k.key === 'g_nilai'
+                    const rupiah = k.key === 'nilai' || k.key === 'harga_satuan' || k.key === 'g_nilai' || k.key === 'induk_nilai'
                     return (
                       <td key={k.key}
                         className={`brd px-2 py-1 align-top ${k.tanda ? 'text-center' : ''} ${k.angka ? 'text-right whitespace-nowrap' : ''}`}>
-                        {rupiah ? (typeof v === 'number' ? formatRupiah2(v) : '') : v}
+                        {k.tumpuk
+                          // Sel bertumpuk (mis. Kode Barang di atas, Uraian di bawah).
+                          // `anywhere`: NIBAR 45 digit tanpa spasi satu kata & memaksa
+                          // kolomnya melebar kalau tak boleh dipatahkan.
+                          ? [v, ...k.tumpuk.map(t => r[t] ?? '')].map((x, ix) => (
+                            <div key={ix} className="[overflow-wrap:anywhere]">{x}</div>
+                          ))
+                          : rupiah ? (typeof v === 'number' ? formatRupiah2(v) : '') : v}
                       </td>
                     )
                   })}

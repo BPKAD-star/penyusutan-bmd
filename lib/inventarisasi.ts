@@ -150,7 +150,13 @@ export type InvJawaban = {
   // lihat `klasifikasiLhi`. `sebab_relasi` = barang anak (rehab) / barang induk
   // (digabung), dipilih dari SKPD & golongan lembar ini sendiri.
   sebab_tidak_ada?: SebabTidakAda
-  sebab_relasi?: { aset_id?: string | null; nibar?: string; kode_barang?: string; nama_barang?: string }
+  sebab_relasi?: {
+    aset_id?: string | null; nibar?: string; kode_barang?: string; nama_barang?: string
+    // DIBEKUKAN saat dipilih (2026-10-01) — LHI III.B.3 mencetak "Data Awal Induk"
+    // (uraian, tanggal & nilai perolehan SAAT ITU). Isian lama tak punya ketiganya;
+    // laporannya menyusul membaca register (`indukLive`).
+    uraian?: string; tgl_perolehan?: string | null; nilai_perolehan?: number
+  }
   /** Sebab `beberapa_register`: nama tiap bangunan hasil pemecahan
    *  ("Gedung Bangunan 1", "2", ...) — bahan Pemecahan Barang di menu Koreksi. */
   sebab_pecahan?: string[]
@@ -162,6 +168,8 @@ export type InvJawaban = {
     aset_id?: string | null
     nibar?: string; kode_barang?: string; kode_lokasi?: string
     kode_register?: string; nama_barang?: string; spesifikasi?: string
+    // Dibekukan saat dipilih — lihat catatan di `sebab_relasi`.
+    uraian?: string; tgl_perolehan?: string | null; nilai_perolehan?: number
   }
   // J — Wilayah (admin_wilayah, berjenjang) & Alamat Detail: DUA form
   // terpisah (keputusan user 2026-09-28) — satu barang bisa saja wilayahnya

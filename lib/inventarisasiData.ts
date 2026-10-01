@@ -299,3 +299,23 @@ export async function muatFotoIsian(
   for (const r of (data || []) as { id: string; foto_paths: string[] | null }[]) out[r.id] = r.foto_paths || []
   return out
 }
+
+/**
+ * Data induk dari REGISTER untuk isian LAMA yang tak membekukannya (lihat
+ * `kebutuhanIndukLive`). Dipotong 200 id per permintaan. MELEMPAR saat gagal:
+ * kolom "Data Awal Induk" di lembar bertanda tangan tak boleh kosong diam-diam.
+ */
+export async function muatIndukLive(
+  supabase: SupabaseClient, ids: string[],
+): Promise<Record<string, { uraian_barang: string | null; tgl_perolehan: string | null; nilai_perolehan: number | null }>> {
+  const out: Record<string, { uraian_barang: string | null; tgl_perolehan: string | null; nilai_perolehan: number | null }> = {}
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase.from('aset')
+      .select('id,uraian_barang,tgl_perolehan,nilai_perolehan').in('id', ids.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca data induk: ${error.message}`)
+    for (const r of (data || []) as { id: string; uraian_barang: string | null; tgl_perolehan: string | null; nilai_perolehan: number | null }[]) {
+      out[r.id] = { uraian_barang: r.uraian_barang, tgl_perolehan: r.tgl_perolehan, nilai_perolehan: r.nilai_perolehan }
+    }
+  }
+  return out
+}

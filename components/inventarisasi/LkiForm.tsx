@@ -682,6 +682,9 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                                 set('sebab_relasi', a ? {
                                   aset_id: a.id, nibar: a.nibar || '', kode_barang: a.kode,
                                   nama_barang: a.nama_barang || '',
+                                  // Dibekukan: LHI III.B.3 mencetak "Data Awal Induk".
+                                  uraian: a.uraian_barang || '', tgl_perolehan: a.tgl_perolehan || null,
+                                  nilai_perolehan: a.nilai_perolehan,
                                 } : undefined)
                               }} />
                             {j.sebab_relasi?.nibar && (
@@ -744,6 +747,9 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                             set('induk', a ? {
                               aset_id: a.id, nibar: a.nibar || '', kode_barang: a.kode,
                               nama_barang: a.nama_barang || '',
+                              // Dibekukan: LHI III.B.3 mencetak "Data Awal Induk".
+                              uraian: a.uraian_barang || '', tgl_perolehan: a.tgl_perolehan || null,
+                              nilai_perolehan: a.nilai_perolehan,
                             } : {})
                           }} />
                         {j.induk?.nibar && (

@@ -8936,6 +8936,36 @@ semua kekurangan isian kini ditampilkan lewat pop-up. **Tak ada migrasi.**
   tak ikut jatuh. Validasi tak butuh query tambahan (`foto_paths` sudah di baris).
   PDF (LKI menerimanya) tak jadi gambar mini & dimuat lewat <iframe> di pop-up.
 
+## LHI: kop Kuasa PB / PB / Pengelola terisi & tabel III.B.3 baru (2026-10-01)
+
+Permintaan user. **Tak ada migrasi.**
+
+- **Kop butir (3)–(5) di SEMUA format LHI** (`identitasLhi`, lib/inventarisasiLaporan.ts —
+  satu sumber untuk tabel di layar & halaman cetak; dulu cuma halaman cetak yang
+  mengisi, dan itu pun setengah): SKPD level 1 → Kuasa PB & PB = SKPD itu; sub unit
+  (level 2+) → Kuasa PB = unit itu, PB = SKPD INDUK (akar); **Pengelola Barang =
+  Badan Keuangan dan Aset Daerah, tetap** (`PENGELOLA_BARANG_LHI`, juga jadi
+  bawaan `LhiTabel`). Se-kabupaten → Kuasa & PB bertitik-titik, Pengelola tetap
+  terisi. ⚠️ Ini BEDA dari `sebutanPejabat` (kaki lembar lain), yang sengaja tak
+  pernah menebak Pengelola Barang — di LHI user memintanya eksplisit.
+- **Tabel III.B.3** mengikuti contoh user: No · Kode/Uraian (ditumpuk) · Nama/NIBAR
+  (ditumpuk) · Merk/Tipe · Spesifikasi Lainnya · Tanggal Perolehan · Nilai Perolehan ·
+  blok **"Data Awal Induk"** (Kode/Uraian · Nama/NIBAR · Tanggal · Nilai) · Keterangan.
+  Kode Lokasi & Kode Register dulu ada, kini dicabut. Sel bertumpuk lewat
+  `KolomLhi.tumpuk`; `kolomLhiTampil()` untuk layar & cetak, sedangkan **Excel tetap
+  DATAR** (`kolomLhi`, satu kolom per data — kode yang menempel pada uraiannya tak
+  bisa di-pivot).
+- ⚠️ **"Data Awal Induk" DIBEKUKAN saat induk dipilih** (`induk`/`sebab_relasi` di
+  jawaban kini membawa `uraian`, `tgl_perolehan`, `nilai_perolehan`) — itu data
+  AWAL, dan nilai induk bisa bergerak sesudahnya (kapitalisasi, koreksi). Isian yang
+  dibuat sebelum 2026-10-01 tak membekukannya → laporan membaca register
+  (`kebutuhanIndukLive` + `muatIndukLive`, di dalam try yang sama dgn pemuat LHI:
+  gagal = laporan ditolak, bukan kolom kosong diam-diam). Yang beku MENANG atas
+  register, termasuk nilai 0.
+- Kasus rehab ("direhab jadi bangunan baru"): induk = barang itu SENDIRI (dari
+  snapshot), anak disebut di Keterangan — tak berubah dari sebelumnya.
+- Dikunci lib/inventarisasiLaporan.test.ts + tests/lhiTabel.test.tsx.
+
 ## Inventarisasi: jenis aset dipilih DI HALAMAN, bukan 16 sub-menu (2026-10-01, migrasi 20261001_01)
 
 Sidebar Inventarisasi kini cuma **Lembar Kerja (LKI)** (`/dashboard/inventarisasi/lembar-kerja`)
