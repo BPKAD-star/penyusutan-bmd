@@ -1,5 +1,5 @@
 // Susunan kolom tabel LHI yang DILIHAT (layar & cetak) untuk format yang sudah
-// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 4, 6, 7, 8, 9, 12, 13
+// memakai bentuk tabel baru dari contoh user (2026-10-01): III.B.1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 13
 // (+ III.B.5 & III.B.11 sejak 2026-10-02, bergantung golongan — `kolomPegawai`/`kolomBelumTercatat`).
 // Dipisah dari inventarisasiLaporan.ts supaya berkas itu tak membengkak. Excel TIDAK
 // memakai susunan ini — ia tetap datar lewat `kolomLhi()` (satu kolom per data).
@@ -73,6 +73,27 @@ const TAMPIL_III_B_9: KolomLhi[] = [
   { key: 'g_nama', label: 'Nama Barang / NIBAR', grup: GRUP_GANDA, tumpuk: ['g_nibar'] },
   { key: 'g_tgl', label: 'Tanggal Perolehan', grup: GRUP_GANDA, angka: true },
   { key: 'g_nilai', label: 'Nilai Perolehan', grup: GRUP_GANDA, angka: true },
+  { key: 'catatan', label: 'Catatan Inventarisasi' },
+]
+
+/**
+ * III.B.10 — BMD Berdiri di Atas Tanah Bukan Milik Pemda (2026-10-02, susunan user):
+ * Kode/Uraian, Nama/NIBAR, Merk/Tipe, Spesifikasi Lainnya, Alamat lengkap (wilayah
+ * Provinsi→Desa + detail), Luas, Jumlah/Satuan, Tanggal, Nilai, "Dibangun di atas
+ * tanah milik" (pihak + nama pemilik), Catatan Inventarisasi. Excel datar.
+ */
+const TAMPIL_III_B_10: KolomLhi[] = [
+  { key: 'no', label: 'No' },
+  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
+  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
+  { key: 'merek_tipe', label: 'Merk/Tipe' },
+  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+  { key: 'alamat', label: 'Alamat' },
+  { key: 'luas', label: 'Luas', angka: true },
+  { key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] },
+  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
+  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+  { key: 'tanah_milik', label: 'Dibangun di Atas Tanah Milik' },
   { key: 'catatan', label: 'Catatan Inventarisasi' },
 ]
 
@@ -300,6 +321,7 @@ export const TAMPIL_TETAP: Partial<Record<LhiKode, KolomLhi[]>> = {
   'III.B.7': TAMPIL_III_B_7,
   'III.B.8': TAMPIL_III_B_8,
   'III.B.9': TAMPIL_III_B_9,
+  'III.B.10': TAMPIL_III_B_10,
   'III.B.12': TAMPIL_III_B_12,
   'III.B.13': TAMPIL_III_B_13,
 }

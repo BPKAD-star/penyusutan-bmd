@@ -7849,6 +7849,15 @@ tetap tersimpan — belum ada pemakainya). ⚠️ **Tanggal perolehan barang kem
 (`ganda_data.tgl_perolehan`, dari AsetPicker); isian lama tak membawanya → dibaca dari register lewat mekanisme induk
 (`kebutuhanIndukLive`/`muatIndukLive`, fail-closed). **Yang masih format lama tinggal III.B.10.** Tanpa migrasi.
 
+#### LHI III.B.10 — tabel baru; SEMUA format LHI kini tabel baru (2026-10-02)
+
+III.B.10 (susunan dari user): No · Kode/Uraian · Nama/NIBAR · Merk/Tipe · Spesifikasi Lainnya · **Alamat lengkap**
+(Provinsi→Desa + detail) · **Luas** · Jumlah/Satuan · Tanggal · Nilai · **Dibangun di Atas Tanah Milik** (pihak — nama
+pemilik) · Catatan Inventarisasi. Luas = register, atau "seharusnya" bila LKI menjawab Tidak Sesuai. Excel datar.
+Dgn ini **ketiga belas format sudah tabel baru** → bentuk lama dibuang: `INTI()`, `sebabTeks`, dan cabang `default` di
+`kolomLhi`/`nilaiBarisLhi` (kolom `kode_register`/`Keterangan` lama tak ada lagi di format mana pun; dikunci uji
+"semua format"). Uji per format baru dipindah ke `lib/inventarisasiLhiBaru.test.ts`. Tanpa migrasi.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

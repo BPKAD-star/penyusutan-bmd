@@ -3,11 +3,11 @@
 // oleh tabel di layar, export Excel, dan halaman cetak — supaya ketiganya tak
 // pernah beda isi.
 //
-// Kolom INTI sama di hampir semua format (No, NIBAR, Kode Register, Kode Barang,
-// Nama Barang, Nama Spesifikasi, Merek/Tipe, Jumlah, Satuan, Nilai Perolehan,
-// Keterangan); tiap format menambah kolom khasnya sendiri — sebagian
-// berkelompok (mis. "Data Awal/Induk", "Sebelum/Setelah Inventarisasi"), yang
-// dirender sbg header dua baris lewat properti `grup`.
+// Sejak 2026-10-02 SEMUA format (III.B.1–III.B.13) memakai tabel baru dari susunan user:
+// kode/uraian & nama/NIBAR & jumlah/satuan ditumpuk, lalu kolom khas tiap format, ditutup
+// Catatan Inventarisasi. Susunan yang DILIHAT ada di `lib/inventarisasiLhiTampil.ts`
+// (`TAMPIL_*`, `kolomPegawai`, `kolomBelumTercatat`); `kolomLhi()` di sini = versi DATAR
+// utk Excel. Kolom ber-`grup` dirender sbg header bertingkat.
 import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventarisasi'
 import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
 import { tglLhi, type IndukLive } from '@/lib/inventarisasiLhiKop'
@@ -47,19 +47,6 @@ export const jalurGrup = (k: KolomLhi): string[] =>
 
 const YATIDAK = (v: boolean | undefined) => (v ? 'Ada' : 'Tidak ada')
 
-// ── Kolom inti ──────────────────────────────────────────────────────────────
-const INTI = (opts?: { merek?: boolean; nibar?: boolean }): KolomLhi[] => [
-  { key: 'no', label: 'No.' },
-  ...(opts?.nibar === false ? [] : [{ key: 'nibar', label: 'NIBAR' }]),
-  { key: 'kode_register', label: 'Kode Register' },
-  { key: 'kode_barang', label: 'Kode Barang' },
-  { key: 'nama_barang', label: 'Nama Barang' },
-  { key: 'spesifikasi', label: 'Nama Spesifikasi Barang' },
-  ...(opts?.merek === false ? [] : [{ key: 'merek_tipe', label: 'Merek/Tipe' }]),
-  { key: 'jumlah', label: 'Jumlah', angka: true },
-  { key: 'satuan', label: 'Satuan Barang' },
-  { key: 'nilai', label: 'Nilai Perolehan Barang (Rp)', angka: true },
-]
 const KET: KolomLhi = { key: 'keterangan', label: 'Keterangan' }
 /** Kode kondisi → kata penuh utk tabel III.B.7. */
 const LABEL_KONDISI: Record<string, string> = { B: 'Baik', RR: 'Rusak Ringan', RB: 'Rusak Berat' }
@@ -283,18 +270,27 @@ export function kolomLhi(k: LhiKode, golongan = ''): KolomLhi[] {
         { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.10':
+      // Datar (Excel). Susunan yang DILIHAT = `TAMPIL_III_B_10`.
       return [
-        ...INTI({ merek: false }),
-        { key: 'tgl_perolehan', label: 'Tanggal, Bulan, Tahun Perolehan' },
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
         { key: 'alamat', label: 'Alamat' },
-        { key: 'tanah_milik', label: 'Dibangun di atas tanah milik' },
-        KET,
+        { key: 'luas', label: 'Luas', angka: true },
+        { key: 'jumlah', label: 'Jumlah', angka: true },
+        { key: 'satuan', label: 'Satuan' },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'tanah_milik', label: 'Dibangun di Atas Tanah Milik' },
+        { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.11':
       // Datar (Excel); susunan yang DILIHAT sama kolomnya, hanya sel ditumpuk.
       return kolomBelumTercatat(golongan, false)
-    default: // III.B.2 (III.B.1 punya tabel sendiri)
-      return [...INTI(), KET]
   }
 }
 
@@ -545,17 +541,18 @@ export function nilaiBarisLhi(
       }
       const t = j.tanah_milik
       return {
-        ...inti,
+        no, kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar, merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        // Alamat lengkap Provinsi→Desa + detail (keadaan SESUDAH), sama dgn III.B.5/6.
+        alamat: alamatLhi(s, j, wilayahLabel).st,
+        luas: j.luas?.sesuai === false ? (j.luas.seharusnya || '').trim() || '(kosong)' : (s.luas ?? ''),
+        jumlah: inti.jumlah, satuan: inti.satuan,
+        tgl: tglLhi(s.tgl_perolehan), nilai: inti.nilai,
         tanah_milik: t ? `${label[t] || t}${j.tanah_milik_nama ? ` — ${j.tanah_milik_nama}` : ''}` : '',
+        catatan: j.keterangan || '',
       }
     }
-    default: // III.B.2 (III.B.1 punya tabel sendiri)
-      return {
-        ...inti,
-        keterangan: [
-          j.keberadaan === 'tidak_ditemukan' ? sebabTeks(j, noun) : '', j.keterangan,
-        ].filter(Boolean).join(' — '),
-      }
   }
 }
 
@@ -579,8 +576,3 @@ function alasanTidakAda(j: InvJawaban, noun: string): string {
   return tambahan ? `${l} : ${tambahan}` : l
 }
 
-/** Teks sebab "tidak ada" utk kolom Keterangan format lama (kini hanya default III.B.5/9/10). */
-function sebabTeks(j: InvJawaban, noun: string): string {
-  const l = labelSebab(j.sebab_tidak_ada, noun)
-  return l ? `Tidak ada: ${l}` : ''
-}
