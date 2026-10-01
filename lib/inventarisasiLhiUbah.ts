@@ -127,11 +127,7 @@ export function barisUbah(
   // Kolom daftar yang berubah — bahan kolom Excel "Kolom yang berubah".
   r.berubah = KOLOM_UBAH.filter(k => r[`${k.key}_beda`] === '1').map(k => k.label).join('; ')
 
-  r.catatan = [
-    j.keberadaan === 'tidak_ditemukan' && j.sebab_tidak_ada === 'beberapa_register'
-      ? `Seharusnya ${(j.sebab_pecahan || []).length || 'beberapa'} register (${(j.sebab_pecahan || []).filter(Boolean).join('; ')}) — tindak lanjut Pemecahan Barang` : '',
-    j.keterangan,
-  ].filter(Boolean).join(' — ')
+  r.catatan = j.keterangan || ''
   return r
 }
 

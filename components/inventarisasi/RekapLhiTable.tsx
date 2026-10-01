@@ -1,5 +1,5 @@
 'use client'
-// Tabel Rekap per SKPD LHI: baris SKPD × kolom III.B.1–III.B.12, sel = jumlah
+// Tabel Rekap per SKPD LHI: baris SKPD × kolom III.B.1–III.B.13, sel = jumlah
 // barang. SKPD yang punya anak punya panah buka/tutup (permintaan user
 // 2026-10-01). Presentasional — angka sudah dihitung lib/rekapLhi.ts.
 //
@@ -23,6 +23,7 @@ export const JUDUL_KOLOM_LHI: Record<LhiKode, string> = {
   'III.B.10': 'Berdiri di Tanah Bukan Milik Pemda',
   'III.B.11': 'Belum Tercatat',
   'III.B.12': 'Perubahan Kodefikasi',
+  'III.B.13': 'Perubahan Kuantitas',
 }
 
 export default function RekapLhiTable({ rows, loading }: { rows: NodeLhi[]; loading: boolean }) {

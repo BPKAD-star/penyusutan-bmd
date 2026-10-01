@@ -78,7 +78,7 @@ describe('bangunPohonLhi', () => {
     expect(rata.map(r => r.namaBerindentasi)).toEqual(['Dinas A', '— UPTD A1', 'Dinas B'])
   })
 
-  it('hitungKosong memuat 12 kode bernilai 0', () => {
-    expect(Object.keys(hitungKosong())).toHaveLength(12)
+  it('hitungKosong memuat 13 kode bernilai 0', () => {
+    expect(Object.keys(hitungKosong())).toHaveLength(13)
   })
 })

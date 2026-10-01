@@ -361,3 +361,37 @@ describe('III.B.1 — tabel baru (Hilang)', () => {
     expect(kolomLhiTampil('III.B.2', false).some(k => k.key === 'keterangan')).toBe(true)
   })
 })
+
+describe('III.B.13 — Perubahan Kuantitas (beberapa register)', () => {
+  const r = nilaiBarisLhi('III.B.13', brs({
+    keberadaan: 'tidak_ditemukan', sebab_tidak_ada: 'beberapa_register',
+    sebab_pecahan: ['Gudang sisi barat', ' Gudang sisi selatan ', ''], keterangan: 'cek',
+  }, { luas: 150, satuan: 'Unit', jumlah: 1 }), 1)
+
+  it('nama hasil pemecahan satu per baris (kosong dibuang), luas dari register', () => {
+    expect(r.pecahan).toBe('Gudang sisi barat\nGudang sisi selatan')
+    expect(r.luas).toBe(150)
+    expect(r.catatan).toBe('cek')
+  })
+
+  it('susunan mengikuti contoh user & tiap kolom punya padanan di baris', () => {
+    const t = kolomLhiTampil('III.B.13', false)
+    expect(kolomLhiTampil('III.B.13', true)).toBe(t)
+    expect(t.map(k => k.label)).toEqual([
+      'No', 'Kode Barang / Uraian Barang', 'Nama Barang / NIBAR', 'Merk/Tipe', 'Spesifikasi Lainnya', 'Luas',
+      'Tanggal Perolehan', 'Jumlah / Satuan', 'Nilai Perolehan', 'Nama Barang Hasil Pemecahan', 'Catatan Inventarisasi',
+    ])
+    for (const k of t) {
+      expect(r, k.key).toHaveProperty(k.key)
+      for (const x of k.tumpuk || []) expect(r, x).toHaveProperty(x)
+    }
+    for (const k of kolomLhi('III.B.13')) expect(r, k.key).toHaveProperty(k.key)
+  })
+
+  it('III.B.2 memuat penjelasan force majeure & bangunan pengganti', () => {
+    const fm = nilaiBarisLhi('III.B.2', brs({ keberadaan: 'tidak_ditemukan', sebab_tidak_ada: 'force_majeure', sebab_penjelasan: 'Terbakar 12 Mei' }), 1)
+    expect(fm.keterangan).toMatch(/Force majeure.*— Terbakar 12 Mei/)
+    const db = nilaiBarisLhi('III.B.2', brs({ keberadaan: 'tidak_ditemukan', sebab_tidak_ada: 'dibongkar_baru', sebab_relasi: { aset_id: 'b', nibar: '99', nama_barang: 'Gedung Baru' } }), 1)
+    expect(db.keterangan).toMatch(/bangunan baru: 99 Gedung Baru/)
+  })
+})

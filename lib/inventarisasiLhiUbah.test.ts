@@ -111,8 +111,8 @@ describe('susunan tabel & Excel', () => {
     expect(x[1]['Kolom yang berubah']).toBe('Nama Barang')
   })
 
-  it('catatan: sebab beberapa register + catatan petugas', () => {
-    const c = barisUbah(brs({ keberadaan: 'tidak_ditemukan', sebab_tidak_ada: 'beberapa_register', sebab_pecahan: ['G1', 'G2'], keterangan: 'cek' }), 1, wil)
-    expect(c.catatan).toBe('Seharusnya 2 register (G1; G2) — tindak lanjut Pemecahan Barang — cek')
+  it('catatan = catatan petugas (sebab beberapa register kini di III.B.13)', () => {
+    const c = barisUbah(brs({ keterangan: 'cek' }), 1, wil)
+    expect(c.catatan).toBe('cek')
   })
 })

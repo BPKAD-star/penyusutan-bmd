@@ -3,7 +3,7 @@ import {
   kekuranganLki, PESAN_FOTO_LKI, klasifikasiLhi, LHI_URUT, LHI_LABEL, REKOMENDASI, konfigLki, labelPosisi, labelTransaksi, type InvBaris, type InvJawaban,
 } from './inventarisasi'
 import { belumDiinventarisasi, jumlahRingkas } from './inventarisasiData'
-import { JENIS_INVENTARISASI, golonganDariKode } from './inventarisasi'
+import { JENIS_INVENTARISASI, golonganDariKode, sesuaiTampil, atribusiTampil, digunakanSendiriTampil } from './inventarisasi'
 
 // Bawaan: register SUDAH punya foto & lembar baru membawa satu unggahan — supaya
 // uji lain tak terganggu aturan FOTO WAJIB; aturan itu diuji sendiri di bawah.
@@ -244,8 +244,16 @@ describe('G — "Tidak ada karena..." (Gedung & Bangunan, 2026-10-01)', () => {
     expect(klasifikasiLhi(brs(tdk('digabung')))).toEqual(['III.B.3'])
   })
 
-  it('seharusnya beberapa register → III.B.8 (koreksi)', () => {
-    expect(klasifikasiLhi(brs(tdk('beberapa_register')))).toEqual(['III.B.8'])
+  it('seharusnya beberapa register → III.B.13 (perubahan kuantitas), BUKAN III.B.8', () => {
+    expect(klasifikasiLhi(brs(tdk('beberapa_register')))).toEqual(['III.B.13'])
+  })
+
+  it('PRATINJAU form: "Tidak ada" belum disimpulkan sebelum sebabnya dipilih', () => {
+    const b = brs({ keberadaan: 'tidak_ditemukan' })
+    expect(klasifikasiLhi(b, { tungguSebab: true })).toEqual([])
+    // laporan TIDAK memakai opsi itu — lembar lama tanpa sebab tetap III.B.2
+    expect(klasifikasiLhi(b)).toEqual(['III.B.2'])
+    expect(klasifikasiLhi(brs(tdk('force_majeure')), { tungguSebab: true })).toEqual(['III.B.2'])
   })
 
   it('lembar lama tanpa sebab tetap III.B.2; hilang tetap III.B.1', () => {
@@ -261,7 +269,11 @@ describe('G — "Tidak ada karena..." (Gedung & Bangunan, 2026-10-01)', () => {
   it('sebab wajib & relasi wajib bila dipilih — hanya utk golongan ber-sebabTidakAda', () => {
     const a = (j: InvJawaban) => kekuranganLki({ ...aset(j), sebabTidakAda: true })
     expect(a({ keberadaan: 'tidak_ditemukan' })).toEqual(['Sebab barang tidak ada (G)'])
-    expect(a(tdk('force_majeure'))).toEqual([])
+    expect(a(tdk('force_majeure'))).toEqual(['Penjelasan force majeure (G)'])
+    expect(a(tdk('force_majeure', { sebab_penjelasan: ' ' }))).toEqual(['Penjelasan force majeure (G)'])
+    expect(a(tdk('force_majeure', { sebab_penjelasan: 'Terbakar 12 Mei' }))).toEqual([])
+    expect(a(tdk('dibongkar_baru'))).toEqual(['Bangunan baru pengganti yang dibongkar (G)'])
+    expect(a(tdk('dibongkar_baru', { sebab_relasi: { aset_id: 'b-9' } }))).toEqual([])
     expect(a(tdk('digabung'))).toEqual(['Bangunan induk tempat digabung (G)'])
     expect(a(tdk('rehab_bangunan_baru'))).toEqual(['Bangunan baru hasil rehab (G)'])
     expect(a(tdk('digabung', { sebab_relasi: { aset_id: 'b-2' } }))).toEqual([])
@@ -327,8 +339,62 @@ describe('klasifikasiLhi — III.B.12 (perubahan kodefikasi)', () => {
 
   it('terdaftar di label, urutan, & rekomendasi', () => {
     expect(LHI_URUT).toContain('III.B.12')
-    expect(LHI_URUT[LHI_URUT.length - 1]).toBe('III.B.12')
+    expect(LHI_URUT[LHI_URUT.length - 1]).toBe('III.B.13')
     expect(LHI_LABEL['III.B.12']).toBe('BMD Terjadi Perubahan Kodefikasi Barang')
     expect(REKOMENDASI['III.B.12'].menu).toBe('Reklasifikasi')
+  })
+})
+
+describe('semua isian WAJIB dijawab eksplisit (2026-10-01)', () => {
+  const cfg = konfigLki('1.3.3')
+  const penuh = (): InvJawaban => ({
+    keberadaan: 'ada', kondisi: 'B',
+    kode_barang: { sesuai: true }, spesifikasi: { sesuai: true },
+    luas: { sesuai: true }, wilayah: { sesuai: true }, alamat_detail: { sesuai: true },
+    koordinat: { sesuai: true }, satuan: { sesuai: true }, keterangan_barang: { sesuai: true },
+    foto_barang: { sesuai: true }, atribusi: 'bukan', penggunaan: null, tanah_milik: 'pemda',
+  })
+  const k = (j: InvJawaban) => kekuranganLki({ aset_id: 'a-1', jawaban: j, foto_register: 1, config: cfg })
+
+  it('lembar kosong → SEMUA yang belum dijawab disebut sekaligus', () => {
+    const r = kekuranganLki({ aset_id: 'a-1', jawaban: {}, foto_register: 1, config: cfg })
+    expect(r.filter(x => /pilih Sesuai atau Tidak Sesuai/.test(x))).toHaveLength(9)
+    expect(r.join('|')).toMatch(/Penggunaan Barang \(L\)/)
+    expect(r.join('|')).toMatch(/atribusi \(I\)/)
+    expect(r.join('|')).toMatch(/tanah milik \(N\)/)
+  })
+
+  it('semuanya dijawab → lolos', () => {
+    expect(k(penuh())).toEqual([])
+  })
+
+  it('SATU saja yang belum dijawab → ditolak, dan menyebut yang mana', () => {
+    for (const f of ['kode_barang', 'spesifikasi', 'luas', 'wilayah', 'alamat_detail', 'koordinat', 'satuan', 'keterangan_barang', 'foto_barang'] as const) {
+      const j = penuh(); delete (j as Record<string, unknown>)[f]
+      expect(k(j), f).toHaveLength(1)
+    }
+    const j = penuh(); delete j.penggunaan
+    expect(k(j)).toEqual(['Penggunaan Barang (L) — belum dipilih'])
+  })
+
+  it('isian yang tak ditanyakan golongannya tak dituntut (Gedung tak punya Merek/Tipe)', () => {
+    expect(cfg.merekTipe).toBe(false)
+    expect(k(penuh())).toEqual([])
+  })
+
+  it('barang HILANG / tak ditemukan: cukup keberadaan, rinciannya tak dituntut', () => {
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: { keberadaan: 'hilang' }, config: cfg })).toEqual([])
+  })
+
+  it('tanpa `config` aturan ini tak diperiksa (pemanggil lama tetap jalan)', () => {
+    expect(kekuranganLki({ aset_id: 'a-1', jawaban: { keberadaan: 'ada', kondisi: 'B' }, foto_register: 1 })).toEqual([])
+  })
+
+  it('radio TAK PERNAH tercentang sendiri — termasuk lembar yang sudah pernah disimpan', () => {
+    expect(sesuaiTampil(undefined)).toBeUndefined()
+    expect(sesuaiTampil({ sesuai: false })).toBe(false)
+    expect(atribusiTampil(undefined)).toBeUndefined()
+    expect(digunakanSendiriTampil(undefined)).toBe(false)
+    expect(digunakanSendiriTampil(null)).toBe(true)
   })
 })

@@ -7705,6 +7705,40 @@ Perolehan · Catatan Inventarisasi (`TAMPIL_III_B_1`). Tanpa alamat/penggunaan. 
 satu susunan; Excel datar. **III.B.2 SENGAJA belum ikut** — masih format lama (kolom
 Keterangan memuat sebab "tidak ada"); bentuknya mirip, tinggal diminta. Tanpa migrasi.
 
+### LKI: sebab "Tidak ada" dirombak, semua isian WAJIB dijawab, III.B.13, penanda tangan LHI (2026-10-01)
+
+Satu putaran permintaan user. **Tak ada migrasi** (`jawaban` itu jsonb).
+
+- **Sebab "Tidak ada karena..." (Gedung & JIJ)**: *force majeure* → kotak **penjelasan bebas**
+  (`sebab_penjelasan`, wajib) · *dibongkar total & sudah ada bangunan baru* → **pilih bangunan baru**
+  (pencari, `sebab_relasi` — kini ikut `SEBAB_BUTUH_RELASI`) · rehab / digabung → tetap pilih anak / induk ·
+  *seharusnya beberapa register* → daftar nama (min. 2) dan **kini masuk III.B.13**, BUKAN III.B.8.
+  III.B.2 membawa penjelasan force majeure / bangunan pengganti di kolom Keterangan (`sebabTeks`).
+- **Pratinjau "Akan muncul di laporan" TIDAK menyimpulkan apa pun sebelum sebab dipilih**
+  (`klasifikasiLhi(b, { tungguSebab: true })`, hanya form). ⚠️ **Laporan TIDAK memakai opsi itu** —
+  lembar lama tanpa sebab tetap III.B.2. Panah "→ III.B.x" di tiap pilihan sebab DICABUT.
+- **Format BARU III.B.13 "Terjadi Perubahan Kuantitas Barang"** (`TAMPIL_III_B_13`): Kode/Uraian ·
+  Nama/NIBAR · Merk/Tipe · Spek Lainnya · **Luas** · Tgl · Jumlah/Satuan · Nilai · **Nama Barang Hasil
+  Pemecahan** (satu nama per baris, `KolomLhi.baris`) · Catatan. Tindak lanjut: Koreksi → Pemecahan
+  Barang. `LhiKode`/`LHI_URUT`/rekap per SKPD ikut 13 kolom. Catatan "seharusnya N register" tak lagi
+  di Catatan III.B.8.
+- ⚠️ **SEMUA isian Sesuai/Tidak Sesuai WAJIB dijawab eksplisit sebelum Simpan** (`kekuranganLki`
+  menerima `config`). Dulu lembar kosong boleh disimpan dan terbaca "Sesuai" tersirat; kini yang
+  ditanyakan golongan itu (Kode, Spesifikasi, Merek, Spek Lainnya, nomor kendaraan, data JIJ, Luas,
+  Wilayah, Alamat Detail, Koordinat, Satuan, Keterangan, Foto) + Atribusi, Penggunaan, Tanah milik harus
+  dipilih. **Hanya bila barangnya "Ada"** (atau keberadaan belum dipilih, supaya semua kekurangan muncul
+  sekaligus): barang hilang / tak ditemukan tak bisa diperiksa spesifikasinya. `sesuaiTampil` dkk
+  kehilangan parameter `isBaru` — **lembar lama yang dibuka ulang pun polos**, jadi menyimpannya
+  kembali menuntut dijawab. "Tercatat ganda" tetap kotak centang (tak bisa dibedakan "belum" vs "tidak").
+- **LHI: baris "SKPD: …" di atas tabel DICABUT** (`LhiTabel.judulSkpd`) — sudah ada Kuasa PB/PB/Pengelola.
+- **Halaman cetak LHI punya pemilih penanda tangan** + tanggal (`kunciTtdLhi`, per SKPD, disimpan di
+  perangkat; `?ttd=&tgl=` memaksa). Sebutan di kaki lembar mengikuti LEVEL SKPD (`sebutanPejabat`):
+  level 1 → Pengguna Barang, di bawahnya → Kuasa Pengguna Barang; se-kabupaten → Pengelola Barang (tanpa
+  pemilih). Calon dari `fetchCalonTtd`; belum dipilih → tetap bertitik-titik. ⚠️ Tanpa Plt (peran, bukan
+  jabatan).
+- `lib/inventarisasiLhiTampil.ts` (baru): susunan kolom tabel baru III.B.1/3/6/8/12/13, dipisah dari
+  inventarisasiLaporan.ts (batas 500 baris).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

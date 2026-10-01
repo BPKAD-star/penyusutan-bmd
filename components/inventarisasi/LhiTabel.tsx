@@ -1,5 +1,5 @@
 'use client'
-// Tabel Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.12.
+// Tabel Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.13.
 // Dipakai bersama halaman laporan & halaman cetak. Header bisa dua baris:
 // kolom ber-`grup` (mis. "Data Awal/Induk", "Sebelum/Setelah Inventarisasi")
 // digabung jadi satu sel span di baris pertama.
@@ -17,10 +17,9 @@ import {
 // (Badan Keuangan dan Aset Daerah); dua lainnya diisi `identitasLhi()`.
 export type { IdentitasLhi }
 
-export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identitas, cetak }: {
+export default function LhiTabel({ kode, rows, periodeLabel, identitas, cetak }: {
   kode: LhiKode
   rows: Record<string, string | number>[]
-  judulSkpd?: string
   periodeLabel?: string
   identitas?: IdentitasLhi
   /** Pakai bentuk kolom lampiran (petak centang bertingkat). Halaman cetak
@@ -90,7 +89,6 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
           ))}
         </tbody>
       </table>
-      {judulSkpd && <p className="mb-2 font-semibold">SKPD: {judulSkpd}</p>}
 
       {rows.length === 0 ? (
         <p className="py-8 text-center text-gray-400">Tidak ada temuan untuk format ini.</p>
@@ -124,6 +122,11 @@ export default function LhiTabel({ kode, rows, judulSkpd, periodeLabel, identita
                               {r[`${k.key}_st`] || '-'}
                             </div>,
                           ]
+                          : k.baris
+                            // Beberapa baris dalam satu sel (nama hasil pemecahan, dst.)
+                            ? String(v).split('\n').filter(Boolean).map((x, ix) => (
+                              <div key={ix} className="[overflow-wrap:anywhere]">{x}</div>
+                            ))
                           : k.tumpuk
                           // Sel bertumpuk (mis. Kode Barang di atas, Uraian di bawah).
                           // `anywhere`: NIBAR 45 digit tanpa spasi satu kata & memaksa

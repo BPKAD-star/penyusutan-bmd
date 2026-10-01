@@ -12,7 +12,7 @@
 // KONSEP INTI — LKI SUMBER, LHI TURUNAN:
 //   Lembar Kerja Inventarisasi (LKI, Format III.A.1–III.A.7) = form PER-BARANG
 //   berisi checklist bagian A–R. Laporan Hasil Inventarisasi (LHI, Format
-//   III.B.1–III.B.12) TIDAK diinput terpisah — semuanya diturunkan dari jawaban
+//   III.B.1–III.B.13) TIDAK diinput terpisah — semuanya diturunkan dari jawaban
 //   LKI lewat `klasifikasiLhi()`. Satu baris boleh masuk BEBERAPA LHI sekaligus
 //   (mis. kondisi berubah DAN tercatat ganda).
 import { GOLONGAN_REKAP } from '@/lib/bmd'
@@ -116,15 +116,15 @@ export const SEBAB_TIDAK_ADA: { v: SebabTidakAda; l: (noun: string) => string; l
   { v: 'dibongkar_baru', l: n => `Dibongkar total dan sudah ada ${n} baru`, lhi: 'III.B.2' },
   { v: 'rehab_bangunan_baru', l: n => `Direhab dan jadi ${n} baru`, lhi: 'III.B.3' },
   { v: 'digabung', l: n => `Digabung dengan ${n} lain`, lhi: 'III.B.3' },
-  { v: 'beberapa_register', l: () => 'Seharusnya ada beberapa register', lhi: 'III.B.8' },
+  { v: 'beberapa_register', l: () => 'Seharusnya ada beberapa register', lhi: 'III.B.13' },
 ]
 
 /** Label satu sebab; `noun` bawaan "bangunan" (Gedung & Bangunan). */
 export const labelSebab = (v: SebabTidakAda | undefined, noun = 'bangunan') =>
   SEBAB_TIDAK_ADA.find(o => o.v === v)?.l(noun)
 
-/** Sebab yang mewajibkan memilih barang lain (anak / induk). */
-export const SEBAB_BUTUH_RELASI: SebabTidakAda[] = ['rehab_bangunan_baru', 'digabung']
+/** Sebab yang mewajibkan memilih barang lain (baru / anak / induk). */
+export const SEBAB_BUTUH_RELASI: SebabTidakAda[] = ['dibongkar_baru', 'rehab_bangunan_baru', 'digabung']
 
 export type PihakPengguna = 'pemda' | 'pempus' | 'pemda_lain' | 'pihak_lain'
 export type KondisiFisik = 'B' | 'RR' | 'RB'
@@ -160,6 +160,8 @@ export type InvJawaban = {
   /** Sebab `beberapa_register`: nama tiap bangunan hasil pemecahan
    *  ("Gedung Bangunan 1", "2", ...) — bahan Pemecahan Barang di menu Koreksi. */
   sebab_pecahan?: string[]
+  /** Sebab `force_majeure`: penjelasan bebas petugas (2026-10-01). */
+  sebab_penjelasan?: string
   // H — nilai perolehan TIDAK bisa diubah lewat LKI (tampilan saja).
   // I — biaya atribusi / menambah kapasitas manfaat (kapitalisasi).
   // Induk WAJIB dipilih dari barang milik SKPD lembar ini sendiri.
@@ -428,10 +430,10 @@ export const BUCKET_FOTO_INVENTARISASI = 'dokumen-sumber'
 export const golonganDariKode = (kode: string | null | undefined) =>
   (kode || '').split('.').slice(0, 3).join('.')
 
-// ── Klasifikasi LHI (Format III.B.1–III.B.12) ───────────────────────────────
+// ── Klasifikasi LHI (Format III.B.1–III.B.13) ───────────────────────────────
 export type LhiKode =
   | 'III.B.1' | 'III.B.2' | 'III.B.3' | 'III.B.4' | 'III.B.5' | 'III.B.6'
-  | 'III.B.7' | 'III.B.8' | 'III.B.9' | 'III.B.10' | 'III.B.11' | 'III.B.12'
+  | 'III.B.7' | 'III.B.8' | 'III.B.9' | 'III.B.10' | 'III.B.11' | 'III.B.12' | 'III.B.13'
 
 export const LHI_LABEL: Record<LhiKode, string> = {
   'III.B.1': 'BMD Hilang Karena Kecurian',
@@ -446,11 +448,12 @@ export const LHI_LABEL: Record<LhiKode, string> = {
   'III.B.10': 'BMD Berdiri di Atas Tanah Bukan Milik Pemerintah Daerah',
   'III.B.11': 'BMD Belum Tercatat',
   'III.B.12': 'BMD Terjadi Perubahan Kodefikasi Barang',
+  'III.B.13': 'BMD Terjadi Perubahan Kuantitas Barang',
 }
 
 export const LHI_URUT: LhiKode[] = [
   'III.B.1', 'III.B.2', 'III.B.3', 'III.B.4', 'III.B.5', 'III.B.6',
-  'III.B.7', 'III.B.8', 'III.B.9', 'III.B.10', 'III.B.11', 'III.B.12',
+  'III.B.7', 'III.B.8', 'III.B.9', 'III.B.10', 'III.B.11', 'III.B.12', 'III.B.13',
 ]
 
 /** Samakan 'Baik' / 'Rusak Ringan' / 'Rusak Berat' (aset.kondisi_barang) ke B/RR/RB. */
@@ -463,38 +466,30 @@ export function normalKondisi(v: string | null | undefined): KondisiFisik | null
   return null
 }
 
-// ── Nilai TAMPILAN radio (keputusan user 2026-09-24) ────────────────────────
-// Lembar yang BELUM PERNAH disimpan (`isBaru`) sengaja polos — tak satu pun
-// radio tercentang sampai user benar-benar mengklik, supaya form tidak diam-
-// diam "menjawab sendiri" sebelum disentuh. Lembar yang SUDAH pernah disimpan
-// tetap memakai bacaan LAMA (kosong = tersirat jawaban default) supaya isian
-// lama tak berubah tampilannya begitu dibuka ulang. Nilai yang TERSIMPAN sama
-// sekali tak berubah oleh ketiga fungsi ini — murni bagaimana ia dirender.
+// ── Nilai TAMPILAN radio ────────────────────────────────────────────────────
+// SEMUA jawaban wajib EKSPLISIT (keputusan user 2026-10-01): tak satu pun radio
+// tercentang sampai petugas benar-benar mengklik, dan lembar tak bisa disimpan
+// sebelum seluruhnya dijawab (`kekuranganLki`). Dulu lembar yang SUDAH pernah
+// disimpan membaca jawaban kosong sbg "Sesuai" tersirat — itulah yang membuat
+// isian yang tak diisi seolah-olah sudah dijawab sesuai. Nilai yang TERSIMPAN
+// tak berubah oleh ketiga fungsi ini — murni bagaimana ia dirender.
 
-/** Sesuai/Tidak Sesuai (bagian B–D, F, J, L, M–O jij/kendaraan). */
-export function sesuaiTampil(f: SesuaiField | undefined, isBaru: boolean): boolean | undefined {
-  if (f?.sesuai != null) return f.sesuai
-  return isBaru ? undefined : true
+/** Sesuai/Tidak Sesuai (bagian B–D, F, J, L, M–O jij/kendaraan). `undefined` = belum dijawab. */
+export function sesuaiTampil(f: SesuaiField | undefined): boolean | undefined {
+  return f?.sesuai ?? undefined
 }
 
-/** Bagian I — biaya atribusi / kapitalisasi. */
-export function atribusiTampil(
-  v: InvJawaban['atribusi'], isBaru: boolean,
-): InvJawaban['atribusi'] {
-  if (v) return v
-  return isBaru ? undefined : 'bukan'
+/** Bagian I — biaya atribusi / kapitalisasi. `undefined` = belum dijawab. */
+export function atribusiTampil(v: InvJawaban['atribusi']): InvJawaban['atribusi'] {
+  return v || undefined
 }
 
 /**
- * Bagian L — "Digunakan sendiri" dikodekan sbg `penggunaan` KOSONG, yang sama
- * persis dgn "belum dijawab". `null` (baru) = eksplisit dipilih; `undefined`
- * pada lembar LAMA = tersirat "sendiri" (perilaku sebelum 2026-09-24);
- * `undefined` pada lembar BARU = belum dijawab sama sekali.
+ * Bagian L — "Digunakan sendiri" dikodekan `null` (eksplisit dipilih), BEDA dari
+ * `undefined` (belum dijawab) — itu sebabnya tipenya `| null`.
  */
-export function digunakanSendiriTampil(p: InvJawaban['penggunaan'], isBaru: boolean): boolean {
-  if (p) return false
-  if (p === null) return true
-  return !isBaru
+export function digunakanSendiriTampil(p: InvJawaban['penggunaan']): boolean {
+  return p === null
 }
 
 /**
@@ -514,7 +509,16 @@ const tidakSesuai = (f: SesuaiField | undefined) => f != null && f.sesuai === fa
  * kondisinya berubah sekaligus tercatat ganda masuk III.B.7 DAN III.B.9.
  * Fungsi MURNI: dihitung saat render, tidak disimpan, jadi tak bisa drift.
  */
-export function klasifikasiLhi(b: InvBaris): LhiKode[] {
+export function klasifikasiLhi(
+  b: InvBaris,
+  /**
+   * `tungguSebab` — hanya untuk PRATINJAU di form (golongan yang menanyakan sebab
+   * "tidak ada"): sebelum sebabnya dipilih, "Tidak ada" belum disimpulkan masuk
+   * laporan mana pun (keputusan user 2026-10-01). Laporan sendiri TIDAK memakainya —
+   * lembar lama tanpa sebab tetap III.B.2.
+   */
+  opsi: { tungguSebab?: boolean } = {},
+): LhiKode[] {
   const out: LhiKode[] = []
   const tambah = (k: LhiKode) => { if (!out.includes(k)) out.push(k) }
   const j = b.jawaban || {}
@@ -525,7 +529,7 @@ export function klasifikasiLhi(b: InvBaris): LhiKode[] {
 
   // G — keberadaan
   if (j.keberadaan === 'hilang') tambah('III.B.1')
-  if (j.keberadaan === 'tidak_ditemukan') tambah(lhiTidakAda(j.sebab_tidak_ada))
+  if (j.keberadaan === 'tidak_ditemukan' && !(opsi.tungguSebab && !j.sebab_tidak_ada)) tambah(lhiTidakAda(j.sebab_tidak_ada))
 
   // I — biaya atribusi belum dikapitalisasi
   if (j.atribusi === 'ya_induk_diketahui') tambah('III.B.3')
@@ -600,6 +604,14 @@ export function kekuranganLki(
     /** Jumlah foto barang yang SUDAH ada di register (`aset.foto_paths`). */
     foto_register?: number
     sebabTidakAda?: boolean; sebabNoun?: string
+    /**
+     * Isian yang DITANYAKAN di lembar ini (ikut golongan). Diberikan → SEMUA bagian
+     * Sesuai/Tidak Sesuai wajib dijawab eksplisit sebelum disimpan (keputusan user
+     * 2026-10-01): dulu yang kosong terbaca "Sesuai" tersirat. Tanpa ini aturan itu
+     * tak diperiksa (pemanggil lama/uji).
+     */
+    config?: Pick<LkiConfig, 'merekTipe' | 'spesifikasiLainnya' | 'nomorKendaraan' | 'jijTeknis'
+      | 'luas' | 'titikKoordinat' | 'atribusi' | 'tanahMilik'>
   },
 ): string[] {
   const j = b.jawaban || {}
@@ -618,11 +630,46 @@ export function kekuranganLki(
 
   if (!j.keberadaan) kurang.push('Keberadaan Barang (G)')
   if (j.keberadaan === 'ada' && !j.kondisi) kurang.push('Kondisi Barang (K)')
+
+  // WAJIB DIJAWAB EKSPLISIT — hanya bila barangnya ADA (atau keberadaan belum dipilih,
+  // supaya seluruh kekurangan muncul sekaligus). Barang hilang / tak ditemukan tak bisa
+  // diperiksa spesifikasinya, jadi cukup keberadaan + sebabnya.
+  const c = b.config
+  if (c && (j.keberadaan === 'ada' || !j.keberadaan)) {
+    const belum = (f: SesuaiField | undefined) => f?.sesuai == null
+    const pilih = (label: string) => `${label} — pilih Sesuai atau Tidak Sesuai`
+    const jawab: [SesuaiField | undefined, string][] = [
+      [j.kode_barang, 'Kode Barang & Nama Barang (B–C)'], [j.spesifikasi, 'Nama Spesifikasi Barang (D)'],
+      ...(c.merekTipe ? [[j.merek_tipe, 'Merek / Tipe'] as [SesuaiField | undefined, string]] : []),
+      ...(c.spesifikasiLainnya ? [[j.spesifikasi_lainnya, 'Spesifikasi Lainnya'] as [SesuaiField | undefined, string]] : []),
+      ...(c.nomorKendaraan ? [
+        [j.no_polisi, 'Nomor Polisi'], [j.no_rangka, 'Nomor Rangka'],
+        [j.no_mesin, 'Nomor Mesin'], [j.no_bpkb, 'Nomor BPKB'],
+      ] as [SesuaiField | undefined, string][] : []),
+      ...(c.jijTeknis ? [
+        [j.jenis_perkerasan, 'Jenis Perkerasan Jalan'], [j.jenis_bahan_jembatan, 'Jenis Bahan Struktur Jembatan'],
+        [j.no_ruas_jalan, 'Nomor Ruas Jalan'], [j.no_jaringan_irigasi, 'Nomor Jaringan Irigasi'],
+      ] as [SesuaiField | undefined, string][] : []),
+      ...(c.luas ? [[j.luas, 'Luas'] as [SesuaiField | undefined, string]] : []),
+      [j.wilayah, 'Wilayah (J)'], [j.alamat_detail, 'Alamat Detail (J)'],
+      ...(c.titikKoordinat ? [[j.koordinat as SesuaiField | undefined, 'Titik Koordinat (O)'] as [SesuaiField | undefined, string]] : []),
+      [j.satuan, 'Satuan Barang (F)'], [j.keterangan_barang, 'Keterangan Barang (Q)'],
+      [j.foto_barang, 'Foto Barang (R)'],
+    ]
+    for (const [f, label] of jawab) if (belum(f)) kurang.push(pilih(label))
+    if (c.atribusi && !j.atribusi) kurang.push('Biaya atribusi (I) — belum dipilih')
+    if (j.penggunaan === undefined) kurang.push('Penggunaan Barang (L) — belum dipilih')
+    if (c.tanahMilik && !j.tanah_milik) kurang.push('Berdiri di atas tanah milik (N) — belum dipilih')
+  }
   if (j.keberadaan === 'tidak_ditemukan' && b.sebabTidakAda) {
     if (!j.sebab_tidak_ada) kurang.push('Sebab barang tidak ada (G)')
-    else if (SEBAB_BUTUH_RELASI.includes(j.sebab_tidak_ada) && !j.sebab_relasi?.aset_id) {
+    else if (j.sebab_tidak_ada === 'force_majeure' && !(j.sebab_penjelasan || '').trim()) {
+      kurang.push('Penjelasan force majeure (G)')
+    } else if (SEBAB_BUTUH_RELASI.includes(j.sebab_tidak_ada) && !j.sebab_relasi?.aset_id) {
       const n = cap(b.sebabNoun || 'bangunan')
-      kurang.push(j.sebab_tidak_ada === 'digabung' ? `${n} induk tempat digabung (G)` : `${n} baru hasil rehab (G)`)
+      kurang.push(j.sebab_tidak_ada === 'digabung' ? `${n} induk tempat digabung (G)`
+        : j.sebab_tidak_ada === 'dibongkar_baru' ? `${n} baru pengganti yang dibongkar (G)`
+        : `${n} baru hasil rehab (G)`)
     } else if (j.sebab_tidak_ada === 'beberapa_register') {
       const nama = (j.sebab_pecahan || []).map(n => n.trim())
       if (nama.length < 2) kurang.push(`Minimal 2 ${b.sebabNoun || 'bangunan'} hasil pemecahan (G)`)
@@ -687,9 +734,10 @@ export const REKOMENDASI: Record<LhiKode, { menu: string; saran: string }> = {
   'III.B.5': { menu: 'Pengamanan', saran: 'Terbitkan BAST Pengamanan agar kustodi pegawai tercatat resmi.' },
   'III.B.6': { menu: 'Pemanfaatan', saran: 'Bila ada dokumen penguasaan, catat sebagai Pemanfaatan. Bila tidak, tempuh penertiban.' },
   'III.B.7': { menu: 'Koreksi', saran: 'Perbarui kondisi barang lewat Koreksi Spesifikasi.' },
-  'III.B.8': { menu: 'Koreksi / Reklasifikasi', saran: 'Perubahan spesifikasi → Koreksi Spesifikasi. Seharusnya beberapa register → Koreksi lalu tindak lanjuti lewat Pemecahan Barang. (Perubahan Kode Barang dilaporkan di III.B.12.)' },
+  'III.B.8': { menu: 'Koreksi / Reklasifikasi', saran: 'Perubahan spesifikasi → Koreksi Spesifikasi. (Perubahan Kode Barang dilaporkan di III.B.12; seharusnya beberapa register di III.B.13.)' },
   'III.B.9': { menu: 'Koreksi', saran: 'Gabungkan lewat Koreksi Pencatatan Ganda.' },
   'III.B.10': { menu: '—', saran: 'Perlu penyelesaian status tanah dengan pemilik lahan.' },
   'III.B.11': { menu: 'Hasil Inventarisasi', saran: 'Catat sebagai perolehan lewat menu Cara Perolehan → Hasil Inventarisasi.' },
   'III.B.12': { menu: 'Reklasifikasi', saran: 'Ajukan Reklasifikasi Kesalahan Kodefikasi agar kode barang di register disesuaikan dengan hasil inventarisasi.' },
+  'III.B.13': { menu: 'Koreksi', saran: 'Seharusnya beberapa register → Koreksi lalu tindak lanjuti lewat Pemecahan Barang.' },
 }

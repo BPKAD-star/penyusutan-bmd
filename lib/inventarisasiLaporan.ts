@@ -1,5 +1,5 @@
 // Definisi kolom & pembentukan baris untuk Laporan Hasil Inventarisasi (LHI)
-// Format III.B.1–III.B.12 (Permendagri 47/2021). SATU sumber dipakai bersama
+// Format III.B.1–III.B.13 (Permendagri 47/2021). SATU sumber dipakai bersama
 // oleh tabel di layar, export Excel, dan halaman cetak — supaya ketiganya tak
 // pernah beda isi.
 //
@@ -12,6 +12,7 @@ import type { InvBaris, InvJawaban, LhiKode, SesuaiField } from '@/lib/inventari
 import { normalKondisi, labelSebab, konfigLki } from '@/lib/inventarisasi'
 import { tglLhi, type IndukLive } from '@/lib/inventarisasiLhiKop'
 import { KOLOM_UBAH, alamatLhi, barisUbah, efektif } from '@/lib/inventarisasiLhiUbah'
+import { GRUP_GUNA, GRUP_INDUK, TAMPIL_TETAP } from '@/lib/inventarisasiLhiTampil'
 
 export type KolomLhi = {
   key: string
@@ -36,6 +37,9 @@ export type KolomLhi = {
   dua?: boolean
   /** Boleh dipatahkan di mana pun (NIBAR 45 digit tanpa spasi). */
   pecah?: boolean
+  /** Isi sel = beberapa baris dipisah "\n" (mis. nama barang hasil pemecahan) —
+   *  tiap baris dirender sendiri, jumlahnya bebas. */
+  baris?: boolean
 }
 
 export const jalurGrup = (k: KolomLhi): string[] =>
@@ -150,110 +154,10 @@ export const CATATAN_KAKI: Partial<Record<LhiKode, string[]>> = {
   ],
 }
 
-const GRUP_INDUK = 'Data Awal Induk'
-
-/**
- * Susunan III.B.3 yang DILIHAT (layar & cetak) — mengikuti contoh tabel user
- * (2026-10-01): Kode Barang/Uraian Barang & Nama Barang/NIBAR ditumpuk dalam
- * satu sel, lalu blok "Data Awal Induk" berisi empat kolom yang sama (tanpa
- * Kode Lokasi / Kode Register yang dulu ada). Excel tetap datar (`kolomLhi`).
- */
-const TAMPIL_III_B_3: KolomLhi[] = [
-  { key: 'no', label: 'No' },
-  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
-  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
-  { key: 'merek_tipe', label: 'Merk/Tipe' },
-  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
-  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
-  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
-  { key: 'induk_kode', label: 'Kode Barang / Uraian Barang', grup: GRUP_INDUK, tumpuk: ['induk_uraian'] },
-  { key: 'induk_nama', label: 'Nama Barang / NIBAR', grup: GRUP_INDUK, tumpuk: ['induk_nibar'] },
-  { key: 'induk_tgl', label: 'Tanggal Perolehan', grup: GRUP_INDUK, angka: true },
-  { key: 'induk_nilai', label: 'Nilai Perolehan', grup: GRUP_INDUK, angka: true },
-  KET,
-]
-
-/**
- * III.B.12 — Terjadi Perubahan Kodefikasi Barang (2026-10-01, contoh tabel user):
- * Nama Barang/NIBAR & Jumlah/Satuan ditumpuk; kode LAMA (register) dan kode BARU
- * (hasil inventarisasi) berdampingan masing-masing dgn uraiannya.
- */
-const TAMPIL_III_B_12: KolomLhi[] = [
-  { key: 'no', label: 'No' },
-  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
-  { key: 'merek_tipe', label: 'Merk/Tipe' },
-  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
-  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
-  { key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] },
-  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
-  { key: 'kode_lama', label: 'Kode Barang Lama / Uraian Barang Lama', tumpuk: ['uraian_lama'] },
-  { key: 'kode_baru', label: 'Kode Barang Baru / Uraian Barang Baru', tumpuk: ['uraian_baru'] },
-  KET,
-]
-
-/**
- * III.B.6 — Digunakan Pemerintah Pusat/Daerah Lainnya/Pihak Lain (2026-10-01,
- * contoh tabel user): Kode/Uraian, Nama/NIBAR & Jumlah/Satuan ditumpuk, Alamat
- * lengkap (wilayah Provinsi→Desa + alamat detail), blok "Penggunaan" berisi
- * Pihak · Nama Instansi/Pihak · Dokumen Penguasaan · Nama Dokumen, lalu Catatan.
- * Petak centang "Ada/Tidak ada dokumen penguasaan" yang lama DIGANTI satu kolom
- * "Dokumen Penguasaan". Layar & cetak satu susunan; Excel datar (`kolomLhi`).
- */
-const GRUP_GUNA = 'Penggunaan'
-const TAMPIL_III_B_6: KolomLhi[] = [
-  { key: 'no', label: 'No' },
-  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
-  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
-  { key: 'merek_tipe', label: 'Merk/Tipe' },
-  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
-  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
-  { key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] },
-  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
-  { key: 'alamat', label: 'Alamat' },
-  { key: 'guna_pihak', label: 'Pihak', grup: GRUP_GUNA },
-  { key: 'guna_nama', label: 'Nama Instansi / Pihak', grup: GRUP_GUNA },
-  { key: 'guna_dasar', label: 'Dokumen Penguasaan', grup: GRUP_GUNA },
-  { key: 'guna_dokumen', label: 'Nama Dokumen', grup: GRUP_GUNA },
-  { key: 'catatan', label: 'Catatan Inventarisasi' },
-]
-
-/**
- * III.B.1 — BMD Hilang Karena Kecurian (2026-10-01, contoh tabel user): bentuk
- * paling ringkas — identitas barang + Catatan Inventarisasi, tanpa alamat/penggunaan.
- * Layar & cetak satu susunan; Excel datar (`kolomLhi`).
- */
-const TAMPIL_III_B_1: KolomLhi[] = [
-  { key: 'no', label: 'No' },
-  { key: 'kode', label: 'Kode Barang / Uraian Barang', tumpuk: ['uraian'] },
-  { key: 'nama', label: 'Nama Barang / NIBAR', tumpuk: ['nibar'] },
-  { key: 'merek_tipe', label: 'Merk/Tipe' },
-  { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
-  { key: 'tgl', label: 'Tanggal Perolehan', angka: true },
-  { key: 'jumlah', label: 'Jumlah / Satuan', tumpuk: ['satuan'] },
-  { key: 'nilai', label: 'Nilai Perolehan', angka: true },
-  { key: 'catatan', label: 'Catatan Inventarisasi' },
-]
-
-/**
- * III.B.8 — Terjadi Perubahan Data (2026-10-01, contoh tabel user): NIBAR lalu
- * tiap atribut sbg pasangan sebelum/sesudah (`dua`). Kode barang TIDAK ikut —
- * perubahan kodefikasi punya laporan sendiri (III.B.12). Excel tidak memakai
- * susunan ini: `barisExcelUbah` (dua baris per barang).
- */
-const TAMPIL_III_B_8: KolomLhi[] = [
-  { key: 'no', label: 'No' },
-  { key: 'nibar', label: 'NIBAR', pecah: true },
-  ...KOLOM_UBAH.map(k => ({ key: k.key, label: k.label, dua: true })),
-  { key: 'catatan', label: 'Catatan' },
-]
-
 /** Kolom untuk tabel layar & cetak. Excel memakai `kolomLhi()` (datar). */
 export function kolomLhiTampil(k: LhiKode, cetak: boolean): KolomLhi[] {
-  if (k === 'III.B.3') return TAMPIL_III_B_3
-  if (k === 'III.B.12') return TAMPIL_III_B_12
-  if (k === 'III.B.8') return TAMPIL_III_B_8
-  if (k === 'III.B.6') return TAMPIL_III_B_6
-  if (k === 'III.B.1') return TAMPIL_III_B_1
+  const tetap = TAMPIL_TETAP[k]
+  if (tetap) return tetap
   return cetak ? kolomLhiCetak(k) : kolomLhi(k)
 }
 
@@ -318,6 +222,24 @@ export function kolomLhi(k: LhiKode): KolomLhi[] {
         { key: 'jumlah', label: 'Jumlah', angka: true },
         { key: 'satuan', label: 'Satuan' },
         { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'catatan', label: 'Catatan Inventarisasi' },
+      ]
+    case 'III.B.13':
+      // Datar (Excel). Susunan yang DILIHAT = `TAMPIL_III_B_13`.
+      return [
+        { key: 'no', label: 'No' },
+        { key: 'kode', label: 'Kode Barang' },
+        { key: 'uraian', label: 'Uraian Barang' },
+        { key: 'nama', label: 'Nama Barang' },
+        { key: 'nibar', label: 'NIBAR' },
+        { key: 'merek_tipe', label: 'Merk/Tipe' },
+        { key: 'spek_lain', label: 'Spesifikasi Lainnya' },
+        { key: 'luas', label: 'Luas', angka: true },
+        { key: 'tgl', label: 'Tanggal Perolehan' },
+        { key: 'jumlah', label: 'Jumlah', angka: true },
+        { key: 'satuan', label: 'Satuan' },
+        { key: 'nilai', label: 'Nilai Perolehan', angka: true },
+        { key: 'pecahan', label: 'Nama Barang Hasil Pemecahan' },
         { key: 'catatan', label: 'Catatan Inventarisasi' },
       ]
     case 'III.B.4':
@@ -538,6 +460,16 @@ export function nilaiBarisLhi(
         tgl: tglLhi(s.tgl_perolehan), jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
         catatan: j.keterangan || '',
       }
+    case 'III.B.13':
+      return {
+        no, kode: kodeEfektif, uraian: uraianEfektif,
+        nama: inti.spesifikasi, nibar: inti.nibar, merek_tipe: inti.merek_tipe,
+        spek_lain: efektif(j.spesifikasi_lainnya, s.spesifikasi_lainnya),
+        luas: s.luas ?? '', tgl: tglLhi(s.tgl_perolehan),
+        jumlah: inti.jumlah, satuan: inti.satuan, nilai: inti.nilai,
+        pecahan: (j.sebab_pecahan || []).map(n => n.trim()).filter(Boolean).join('\n'),
+        catatan: j.keterangan || '',
+      }
     case 'III.B.12':
       // Kode LAMA = yang tercatat di register (snapshot "sebelum"); kode BARU =
       // jawaban petugas di bagian B–C. `kodeEfektif`/`uraianEfektif` sudah
@@ -626,8 +558,16 @@ export function totalNilaiLhi(rows: Record<string, string | number>[]): number {
   return rows.reduce((s, r) => s + (typeof r.nilai === 'number' ? r.nilai : 0), 0)
 }
 
-/** Teks sebab "tidak ada" utk kolom Keterangan III.B.2 (kosong utk lembar lama). */
+/**
+ * Teks sebab "tidak ada" utk kolom Keterangan III.B.2 (kosong utk lembar lama):
+ * force majeure memuat penjelasan petugas, dibongkar memuat bangunan penggantinya.
+ */
 function sebabTeks(j: InvJawaban, noun: string): string {
   const l = labelSebab(j.sebab_tidak_ada, noun)
-  return l ? `Tidak ada: ${l}` : ''
+  if (!l) return ''
+  const rel = j.sebab_relasi
+  const tambahan = j.sebab_tidak_ada === 'force_majeure' ? (j.sebab_penjelasan || '').trim()
+    : j.sebab_tidak_ada === 'dibongkar_baru' && rel
+      ? `${noun} baru: ${rel.nibar || '—'} ${rel.nama_barang || ''}`.trim() : ''
+  return `Tidak ada: ${l}${tambahan ? ` — ${tambahan}` : ''}`
 }

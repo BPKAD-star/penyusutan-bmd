@@ -138,10 +138,8 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
   const belumTercatat = !baris.aset_id
-  // Lembar yang BELUM PERNAH disimpan — dipakai tri-state radio (Sesuai/
-  // Tidak Sesuai, atribusi, Penggunaan Barang) supaya defaultnya polos, tak
-  // ada yang tercentang sebelum user mengklik (keputusan user 2026-09-24).
-  const isBaru = !baris.id
+  // SEMUA jawaban Sesuai/Tidak Sesuai polos sampai diklik & wajib dijawab sebelum
+  // Simpan (keputusan user 2026-10-01) — tak ada lagi bacaan "Sesuai" tersirat.
   const s = baris.snapshot || {}
   const [j, setJ] = useState<InvJawaban>(() => ({ ...(baris.jawaban || {}) }))
   const [foto, setFoto] = useState<string[]>(baris.foto_paths || [])
@@ -170,10 +168,10 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   const setKeberadaan = (v: NonNullable<InvJawaban['keberadaan']>) =>
     setJ(p => v === 'tidak_ditemukan'
       ? { ...p, keberadaan: v }
-      : { ...p, keberadaan: v, sebab_tidak_ada: undefined, sebab_relasi: undefined, sebab_pecahan: undefined })
+      : { ...p, keberadaan: v, sebab_tidak_ada: undefined, sebab_relasi: undefined, sebab_pecahan: undefined, sebab_penjelasan: undefined })
   const setSebab = (v: SebabTidakAda) =>
     setJ(p => ({
-      ...p, sebab_tidak_ada: v, sebab_relasi: undefined,
+      ...p, sebab_tidak_ada: v, sebab_relasi: undefined, sebab_penjelasan: undefined,
       sebab_pecahan: v === 'beberapa_register' ? ['', ''] : undefined,
     }))
   const setPecahan = (fn: (a: string[]) => string[]) =>
@@ -221,6 +219,9 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
     aset_id: baris.aset_id, jawaban: j, foto_paths: foto,
     foto_register: (s.foto_paths || []).length,
     sebabTidakAda: config.sebabTidakAda, sebabNoun: config.sebabNoun,
+    // Hanya lembar barang TERCATAT yang wajib dijawab lengkap; `kekuranganLki`
+    // sendiri melewati barang hilang / tak ditemukan.
+    config: belumTercatat ? undefined : config,
   })
 
   async function simpan() {
@@ -259,10 +260,10 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
 
   // Pratinjau LHI: fungsi klasifikasi yang SAMA dgn laporan, jadi isi laporan
   // tak mungkin berbeda dari yang terlihat di sini.
-  const lhi = klasifikasiLhi({ ...baris, jawaban: j })
+  const lhi = klasifikasiLhi({ ...baris, jawaban: j }, { tungguSebab: config.sebabTidakAda })
   const kurang = readOnly ? [] : hitungKurang()
-  const atribusiVal = atribusiTampil(j.atribusi, isBaru)
-  const digunakanSendiri = digunakanSendiriTampil(j.penggunaan, isBaru)
+  const atribusiVal = atribusiTampil(j.atribusi)
+  const digunakanSendiri = digunakanSendiriTampil(j.penggunaan)
   // Titik Koordinat (O): peta di dalam "Tidak Sesuai" berangkat dari titik
   // register, lalu yang diklik/diketik menang (termasuk `null` kalau dihapus).
   const latTampil = j.latitude !== undefined ? j.latitude : (s.latitude ?? null)
@@ -279,7 +280,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
   ) => (
     <SesuaiRadio
       nilaiLama={lama == null || lama === '' ? null : String(lama)}
-      sesuai={sesuaiTampil(j[key], isBaru)}
+      sesuai={sesuaiTampil(j[key])}
       disabled={readOnly}
       onSesuai={v => set(key, v ? { sesuai: true } : { sesuai: false, seharusnya: j[key]?.seharusnya || '' })}
     >
@@ -447,7 +448,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
               <Seksi kode="B–C" judul="Kode Barang & Nama Barang">
                 <SesuaiRadio
                   nilaiLama={`${s.kode || '—'} · ${s.uraian_barang || '—'}`}
-                  sesuai={sesuaiTampil(j.kode_barang, isBaru)}
+                  sesuai={sesuaiTampil(j.kode_barang)}
                   disabled={readOnly}
                   onSesuai={v => set('kode_barang', v ? { sesuai: true } : { sesuai: false })}
                 >
@@ -476,7 +477,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
               <Seksi kode="D" judul="Nama Spesifikasi Barang">
                 <SesuaiRadio
                   nilaiLama={s.nama_barang}
-                  sesuai={sesuaiTampil(j.spesifikasi, isBaru)}
+                  sesuai={sesuaiTampil(j.spesifikasi)}
                   disabled={readOnly}
                   onSesuai={v => set('spesifikasi', v ? { sesuai: true } : { sesuai: false, seharusnya: j.spesifikasi?.seharusnya || '' })}
                 >
@@ -536,7 +537,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                       <div key={key}>
                         <p className="text-[11px] font-medium text-gray-600 mb-1">{label}</p>
                         <SesuaiRadio
-                          sesuai={sesuaiTampil(j[key], isBaru)}
+                          sesuai={sesuaiTampil(j[key])}
                           disabled={readOnly}
                           onSesuai={v => set(key, v ? { sesuai: true } : { sesuai: false, seharusnya: j[key]?.seharusnya || '' })}
                         >
@@ -563,7 +564,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
               <Seksi kode="J" judul="Wilayah (Provinsi / Kabupaten / Kecamatan / Desa)">
                 <SesuaiRadio
                   nilaiLama={s.wilayah}
-                  sesuai={sesuaiTampil(j.wilayah, isBaru)}
+                  sesuai={sesuaiTampil(j.wilayah)}
                   disabled={readOnly}
                   onSesuai={v => set('wilayah', v ? { sesuai: true } : { sesuai: false, wilayah_kode: j.wilayah?.wilayah_kode || '' })}
                 >
@@ -582,7 +583,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                 <Seksi kode="O" judul="Titik Koordinat">
                   <SesuaiRadio
                     nilaiLama={titikTercatat}
-                    sesuai={j.koordinat?.sesuai ?? (isBaru ? undefined : true)}
+                    sesuai={j.koordinat?.sesuai}
                     disabled={readOnly}
                     onSesuai={v => setJ(p => v
                       // Sesuai → buang titik koreksi supaya tak ada titik "seharusnya" yatim.
@@ -611,7 +612,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
               <Seksi kode="F" judul="Satuan Barang">
                 <SesuaiRadio
                   nilaiLama={s.satuan}
-                  sesuai={sesuaiTampil(j.satuan, isBaru)}
+                  sesuai={sesuaiTampil(j.satuan)}
                   disabled={readOnly}
                   onSesuai={v => set('satuan', v ? { sesuai: true } : { sesuai: false, seharusnya: j.satuan?.seharusnya || '' })}
                 >
@@ -664,14 +665,24 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                           <input type="radio" checked={j.sebab_tidak_ada === o.v} disabled={readOnly}
                             onChange={() => setSebab(o.v)} />
                           {o.l(config.sebabNoun)}
-                          <span className="text-[10px] text-gray-400">→ {o.lhi}</span>
                         </label>
+                        {j.sebab_tidak_ada === o.v && o.v === 'force_majeure' && (
+                          <div className="ml-5 mt-1.5 space-y-1">
+                            <p className="text-[11px] text-gray-500">Jelaskan kejadiannya (bebas diketik).</p>
+                            <textarea className="select-filter w-full" rows={2} disabled={readOnly}
+                              placeholder="Contoh: terbakar pada 12 Mei 2026 akibat korsleting listrik..."
+                              value={j.sebab_penjelasan || ''}
+                              onChange={e => set('sebab_penjelasan', e.target.value)} />
+                          </div>
+                        )}
                         {j.sebab_tidak_ada === o.v && SEBAB_BUTUH_RELASI.includes(o.v) && (
                           <div className="ml-5 mt-1.5 space-y-1.5">
                             <p className="text-[11px] text-gray-500">
                               {o.v === 'digabung'
                                 ? <>Pilih <b>{config.sebabNoun} induk</b> tempat barang ini digabung.</>
-                                : <>Pilih <b>{config.sebabNoun} baru (anak)</b> hasil rehab barang ini.</>}
+                                : o.v === 'dibongkar_baru'
+                                  ? <>Pilih <b>{config.sebabNoun} baru</b> pengganti yang sudah dibangun.</>
+                                  : <>Pilih <b>{config.sebabNoun} baru (anak)</b> hasil rehab barang ini.</>}
                               {' '}Dicari <b>hanya di SKPD lembar ini</b>, golongan <b>{golongan}</b>.
                             </p>
                             <AsetPicker selected={relasiAset} skpdId={skpdId} kodePrefix={golongan}
@@ -689,7 +700,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                               }} />
                             {j.sebab_relasi?.nibar && (
                               <p className="text-[11px] text-teal">
-                                {o.v === 'digabung' ? 'Induk' : 'Anak'}: {j.sebab_relasi.nibar} — {j.sebab_relasi.nama_barang}
+                                {o.v === 'digabung' ? 'Induk' : o.v === 'dibongkar_baru' ? `${config.sebabNoun} baru` : 'Anak'}: {j.sebab_relasi.nibar} — {j.sebab_relasi.nama_barang}
                               </p>
                             )}
                           </div>
@@ -933,7 +944,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                 <div className="flex flex-wrap items-center gap-4 text-xs">
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input type="radio" disabled={readOnly}
-                      checked={(j.foto_barang?.sesuai ?? (isBaru ? undefined : true)) === true}
+                      checked={j.foto_barang?.sesuai === true}
                       onChange={() => set('foto_barang', { sesuai: true })} />
                     Sesuai
                   </label>

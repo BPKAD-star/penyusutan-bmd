@@ -86,7 +86,7 @@ export const LEMBAR_PERMENDAGRI: Record<IdLembar, LembarPermendagri> = {
     berkas: 'app/cetak/inventarisasi-lki/page.tsx',
   },
   'inventarisasi-lhi': {
-    kode: 'III.B.1–III.B.12',
+    kode: 'III.B.1–III.B.13',
     judul: 'Laporan Hasil Inventarisasi (LHI)',
     kertas: 'A4 lanskap',
     berkas: 'app/cetak/inventarisasi-lhi/page.tsx',

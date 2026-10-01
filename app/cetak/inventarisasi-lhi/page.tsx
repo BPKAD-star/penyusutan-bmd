@@ -1,5 +1,5 @@
 'use client'
-// Cetak Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.12.
+// Cetak Laporan Hasil Inventarisasi (LHI) — Format III.B.1–III.B.13.
 // Standalone (tanpa sidebar), A4 landscape. Query:
 //   ?tahun=2026&golongan=1.3.3&kode=III.B.7[&skpd=<id>]
 // Subtree SKPD dihitung ulang di sini (URL ringkas, tak membawa daftar id) —
@@ -10,6 +10,10 @@ import { createClient } from '@/lib/supabase/client'
 import LhiTabel from '@/components/inventarisasi/LhiTabel'
 import { useLhiData } from '@/components/inventarisasi/useLhiData'
 import { konfigLki, type LhiKode, type Petugas } from '@/lib/inventarisasi'
+import { fetchCalonTtd, calonTtdAwal, labelAsalTtd, type CalonTtd } from '@/lib/penandaTangan'
+import { sebutanPejabat, levelSkpd } from '@/lib/formatPermendagri'
+import { tglPanjang } from '@/lib/beritaAcaraRekon'
+import { ingatanCetak, kunciTtdLhi } from '@/lib/ingatanCetak'
 import { identitasLhi, nilaiBarisLhi } from '@/lib/inventarisasiLaporan'
 import { muatTimUntukCetak } from '@/lib/inventarisasiData'
 
@@ -33,7 +37,14 @@ function descendantsOf(all: SkpdRow[], root: number): number[] {
   return out
 }
 
-const tglID = () => new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+const hariIni = () => {
+  const t = new Date()
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+}
+
+/** ⚠️ TANPA Plt — kaki lembar ini mencetak PERAN (Pengguna / Kuasa Pengguna Barang),
+ *  bukan jabatan struktural; "Plt. Pengguna Barang" bukan sebutan yang ada. */
+type TtdTersimpan = { id?: string; tgl?: string }
 
 export default function CetakLhiPage() {
   const supabase = createClient()
@@ -46,6 +57,9 @@ export default function CetakLhiPage() {
   const [skpdRows, setSkpdRows] = useState<SkpdRow[]>([])
   const [petugas, setPetugas] = useState<Petugas[]>([])
   const [timErr, setTimErr] = useState('')
+  const [calon, setCalon] = useState<CalonTtd[]>([])
+  const [ttdId, setTtdId] = useState('')
+  const [tglTtd, setTglTtd] = useState(hariIni())
 
   useEffect(() => {
     (async () => {
@@ -65,6 +79,18 @@ export default function CetakLhiPage() {
         // itu DIKATAKAN di layar, bukan disembunyikan.
         try { setPetugas((await muatTimUntukCetak(supabase, sk, t)).petugas) }
         catch (e) { setTimErr(e instanceof Error ? e.message : String(e)) }
+
+        // Calon penanda tangan — WAJIB `fetchCalonTtd` (dari 816 SKPD hanya 57 yang
+        // punya pegawai berjabatan "Kepala"; yang merangkap pun harus ikut). Gagal
+        // memuatnya tak menjatuhkan lembar — blok tanda tangan tinggal bertitik-titik.
+        let daftar: CalonTtd[] = []
+        try {
+          daftar = await fetchCalonTtd(supabase, sk, new Map(all.map(x => [x.id, { id: x.id, nama: x.nama, parent_id: x.parent_id }])))
+        } catch { daftar = [] }
+        setCalon(daftar)
+        const simpan = ingatanCetak<TtdTersimpan>(kunciTtdLhi(sk)).baca()
+        setTtdId(q.get('ttd') || simpan?.id || calonTtdAwal(daftar)?.id || '')
+        setTglTtd(q.get('tgl') || simpan?.tgl || hariIni())
       }
       setSiap(true)
     })()
@@ -82,6 +108,20 @@ export default function CetakLhiPage() {
   // Pengelola Barang = Badan Keuangan dan Aset Daerah.
   const identitas = useMemo(() => identitasLhi(skpdId, skpdRows), [skpdId, skpdRows])
 
+  // Sebutan penanda tangan mengikuti LEVEL SKPD yang dilaporkan: level pengguna
+  // barang → Pengguna Barang, di bawahnya → Kuasa Pengguna Barang. Se-kabupaten
+  // (tanpa SKPD) ditandatangani Pengelola Barang. Dipakai `sebutanPejabat` yang
+  // sama dgn lembar Permendagri lain, supaya sebutannya tak menyimpang.
+  const sebutan = useMemo(() => {
+    if (!skpdId) return 'Pengelola Barang'
+    return sebutanPejabat(levelSkpd(skpdId, new Map(skpdRows.map(r => [r.id, r.parent_id]))))
+  }, [skpdId, skpdRows])
+  const ttd = calon.find(c => c.id === ttdId) || null
+  function simpanTtd(next: Partial<TtdTersimpan>) {
+    if (skpdId == null) return
+    ingatanCetak<TtdTersimpan>(kunciTtdLhi(skpdId)).simpan({ id: ttdId, tgl: tglTtd, ...next })
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 py-6 print:bg-white print:py-0">
       {err && (
@@ -96,7 +136,28 @@ export default function CetakLhiPage() {
       )}
       <style>{`@media print { .no-print { display: none !important; } @page { size: A4 landscape; margin: 1cm; } body { background: white; } }`}</style>
 
-      <div className="max-w-[1400px] mx-auto mb-3 flex justify-end no-print px-4">
+      <div className="max-w-[1400px] mx-auto mb-3 flex flex-wrap items-center justify-end gap-3 no-print px-4">
+        {siap && skpdId != null && (
+          <>
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Tanggal:
+              <input type="date" className="select-filter text-sm" value={tglTtd}
+                onChange={e => { setTglTtd(e.target.value); simpanTtd({ tgl: e.target.value }) }} />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              Penanda tangan ({sebutan}):
+              <select className="select-filter text-sm max-w-sm" value={ttdId}
+                onChange={e => { setTtdId(e.target.value); simpanTtd({ id: e.target.value }) }}>
+                <option value="">— belum dipilih (dibiarkan bertitik-titik) —</option>
+                {calon.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.nama}{c.jabatan ? ` — ${c.jabatan}` : ''}{labelAsalTtd(c)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
         <button onClick={() => window.print()} className="btn-primary text-sm">🖨 Cetak / Simpan PDF</button>
       </div>
 
@@ -106,8 +167,7 @@ export default function CetakLhiPage() {
         ) : (
           <>
             <LhiTabel kode={kode} rows={rows} identitas={identitas} cetak
-              periodeLabel={`${konfigLki(golongan).label} — Tahun ${tahun}`}
-              judulSkpd={namaSkpd || (skpdId ? `#${skpdId}` : 'Seluruh Kabupaten')} />
+              periodeLabel={`${konfigLki(golongan).label} — Tahun ${tahun}`} />
 
             <div className="mt-8 flex justify-between text-[11px]">
               <div>
@@ -121,11 +181,12 @@ export default function CetakLhiPage() {
                 )}
               </div>
               <div className="text-center">
-                <p>Kediri, {tglID()}</p>
-                <p>Kuasa Pengguna Barang, Pengguna Barang atau Pengelola Barang</p>
+                <p>Kediri, {tglPanjang(tglTtd)}</p>
+                <p>{sebutan}</p>
                 <div className="h-16" />
-                <p className="font-semibold underline">(………………………………)</p>
-                <p>NIP. ……………………………</p>
+                {/* Belum dipilih → tetap bertitik-titik. JANGAN diisi nama lain. */}
+                <p className="font-semibold underline">{ttd ? ttd.nama : '(………………………………)'}</p>
+                <p>NIP. {ttd?.nip || '……………………………'}</p>
               </div>
             </div>
           </>

@@ -1,4 +1,4 @@
-// Rekap per SKPD untuk LHI — matriks SKPD (baris) × format III.B.1–III.B.12
+// Rekap per SKPD untuk LHI — matriks SKPD (baris) × format III.B.1–III.B.13
 // (kolom), isi sel = JUMLAH BARANG (permintaan user 2026-10-01, untuk admin
 // pemda & auditor). Fungsi MURNI: menghitung & menyusun pohon, tak tahu soal
 // Supabase/peran.
