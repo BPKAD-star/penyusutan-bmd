@@ -427,4 +427,19 @@ describe('Penggunaan Barang (L) → LHI (keputusan user 2026-10-02)', () => {
     expect(sisa).not.toContain('Status Pemakai (L)')
     expect(lembar({ pihak: 'pempus' })).not.toContain('Nama Pemakai (L)')
   })
+
+  it('BAST / SIP dicentang → nomornya wajib (hanya golongan rumah negara)', () => {
+    const lembar = (penggunaan: InvJawaban['penggunaan'], gol = '1.3.3') => kekuranganLki({
+      aset_id: 'a', jawaban: { keberadaan: 'ada', kondisi: 'B', penggunaan }, foto_register: 1, config: konfigLki(gol),
+    })
+    const dasar = { pihak: 'pemda' as const, nama_pemakai: 'Budi', status_pemakai: 'ASN' }
+    expect(lembar({ ...dasar, bast_pemakaian: true, sip: true }))
+      .toEqual(expect.arrayContaining(['Nomor BAST Pemakaian (L)', 'Nomor Surat Ijin Penghunian (L)']))
+    const ok = lembar({ ...dasar, bast_pemakaian: true, bast_nomor: '1', sip: true, sip_nomor: '2' })
+    expect(ok).not.toContain('Nomor BAST Pemakaian (L)')
+    expect(ok).not.toContain('Nomor Surat Ijin Penghunian (L)')
+    // tak dicentang → tak dituntut; golongan non-rumah-negara tak ditanya sama sekali
+    expect(lembar(dasar)).not.toContain('Nomor BAST Pemakaian (L)')
+    expect(lembar({ ...dasar, bast_pemakaian: true }, '1.3.5')).not.toContain('Nomor BAST Pemakaian (L)')
+  })
 })

@@ -179,7 +179,7 @@ function Lembar({ b, petugas, config, no }: { b: Isian; petugas: Petugas[]; conf
                     {j.penggunaan.nama ? ` — ${j.penggunaan.nama}` : ''}
                     {j.penggunaan.nama_pemakai ? ` · Pemakai: ${j.penggunaan.nama_pemakai}` : ''}
                     {j.penggunaan.pihak === 'pemda'
-                      ? ` · BAST: ${j.penggunaan.bast_pemakaian ? 'Ada' : 'Tidak ada'} · SIP: ${j.penggunaan.sip ? 'Ada' : 'Tidak ada'}`
+                      ? ` · BAST: ${j.penggunaan.bast_pemakaian ? `Ada${j.penggunaan.bast_nomor ? ` (No. ${j.penggunaan.bast_nomor})` : ''}` : 'Tidak ada'} · SIP: ${j.penggunaan.sip ? `Ada${j.penggunaan.sip_nomor ? ` (No. ${j.penggunaan.sip_nomor})` : ''}` : 'Tidak ada'}`
                       : ` · Dasar penguasaan: ${j.penggunaan.dasar_ada ? `Ada (${j.penggunaan.nama_dokumen || '-'})` : 'Tidak ada'}`}
                   </>
                 ) : 'Operasional / Tidak ada pihak lain'}

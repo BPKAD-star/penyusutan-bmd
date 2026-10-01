@@ -539,7 +539,7 @@ describe('III.B.5 — tabel baru (2026-10-02), disusun dari pola III.B.6', () =>
   const b: InvBaris = {
     id: 'x', aset_id: 'a', foto_paths: [],
     jawaban: { keberadaan: 'ada', keterangan: 'Dipakai sejak 2022',
-      penggunaan: { pihak: 'pemda', nama: 'Dinas B', nama_pemakai: 'Budi', status_pemakai: 'ASN', bast_pemakaian: true, sip: false } },
+      penggunaan: { pihak: 'pemda', nama: 'Dinas B', nama_pemakai: 'Budi', status_pemakai: 'ASN', bast_pemakaian: true, bast_nomor: '12/BAST/2022', sip: false } },
     snapshot: { nibar: 'N1', kode: '1.3.3.01', uraian_barang: 'Rumah Negara', nama_barang: 'Rumah Dinas', merek_tipe: '',
       spesifikasi_lainnya: 'Tipe 45', tgl_perolehan: '2019-01-02', nilai_perolehan: 90_000_000, jumlah: 1, satuan: 'Unit',
       wilayah_kode: '3506010001', alamat: 'Jl. Melati 3' },
@@ -557,7 +557,7 @@ describe('III.B.5 — tabel baru (2026-10-02), disusun dari pola III.B.6', () =>
   it('blok Pemakai, alamat lengkap, Catatan Inventarisasi di ujung', () => {
     const k = kolomLhiTampil('III.B.5', false, '1.3.3')
     expect(k.filter(x => x.grup === 'Pemakai').map(x => x.key))
-      .toEqual(['pemakai_pengguna', 'pemakai_nama', 'pemakai_status', 'pemakai_bast', 'pemakai_sip'])
+      .toEqual(['pemakai_pengguna', 'pemakai_nama', 'pemakai_status', 'pemakai_bast', 'pemakai_bast_nomor', 'pemakai_sip', 'pemakai_sip_nomor'])
     expect(k[k.length - 1].key).toBe('catatan')
     expect(k.find(x => x.key === 'kode')?.tumpuk).toEqual(['uraian'])
   })
@@ -574,7 +574,7 @@ describe('III.B.5 — tabel baru (2026-10-02), disusun dari pola III.B.6', () =>
   it('isi baris', () => {
     expect(row).toMatchObject({
       pemakai_nama: 'Budi', pemakai_status: 'ASN', pemakai_pengguna: 'Dinas B',
-      pemakai_bast: 'Ada', pemakai_sip: 'Tidak ada', catatan: 'Dipakai sejak 2022',
+      pemakai_bast: 'Ada', pemakai_bast_nomor: '12/BAST/2022', pemakai_sip: 'Tidak ada', pemakai_sip_nomor: '', catatan: 'Dipakai sejak 2022',
       alamat: 'Jawa Timur, Kediri, Pare, Pare · Jl. Melati 3',
     })
   })

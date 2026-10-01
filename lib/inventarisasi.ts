@@ -191,7 +191,9 @@ export type InvJawaban = {
     nama_pemakai?: string
     status_pemakai?: string
     bast_pemakaian?: boolean
+    bast_nomor?: string        // wajib bila BAST dicentang (2026-10-02)
     sip?: boolean
+    sip_nomor?: string         // wajib bila SIP dicentang
     // khusus pempus / pemda_lain / pihak_lain
     dasar_ada?: boolean        // ada dokumen penguasaan?
     nama_dokumen?: string
@@ -618,7 +620,7 @@ export function kekuranganLki(
      * tak diperiksa (pemanggil lama/uji).
      */
     config?: Pick<LkiConfig, 'merekTipe' | 'spesifikasiLainnya' | 'nomorKendaraan' | 'jijTeknis'
-      | 'luas' | 'titikKoordinat' | 'atribusi' | 'tanahMilik'>
+      | 'luas' | 'titikKoordinat' | 'atribusi' | 'tanahMilik' | 'pemakaiRumahNegara'>
     /** Golongan lembar — menentukan spesifikasi mana yang wajib pada BMD Belum Tercatat. */
     golongan?: string
   },
@@ -671,6 +673,12 @@ export function kekuranganLki(
     if (j.penggunaan?.pihak === 'pemda') {
       if (!(j.penggunaan.nama_pemakai || '').trim()) kurang.push('Nama Pemakai (L)')
       if (!(j.penggunaan.status_pemakai || '').trim()) kurang.push('Status Pemakai (L)')
+      // BAST/SIP dicentang → nomornya wajib (keputusan user 2026-10-02). Hanya golongan
+      // rumah negara yang menanyakannya, jadi hanya itu yang diperiksa.
+      if (c.pemakaiRumahNegara) {
+        if (j.penggunaan.bast_pemakaian && !(j.penggunaan.bast_nomor || '').trim()) kurang.push('Nomor BAST Pemakaian (L)')
+        if (j.penggunaan.sip && !(j.penggunaan.sip_nomor || '').trim()) kurang.push('Nomor Surat Ijin Penghunian (L)')
+      }
     }
     if (c.tanahMilik && !j.tanah_milik) kurang.push('Berdiri di atas tanah milik (N) — belum dipilih')
   }

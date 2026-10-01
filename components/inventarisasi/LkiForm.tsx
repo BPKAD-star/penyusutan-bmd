@@ -722,16 +722,30 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                                 onChange={e => set('penggunaan', { ...j.penggunaan!, status_pemakai: e.target.value })} />
                               {config.pemakaiRumahNegara && (
                                 <>
-                                  <label className="flex items-center gap-1.5 cursor-pointer">
-                                    <input type="checkbox" checked={!!j.penggunaan.bast_pemakaian} disabled={readOnly}
-                                      onChange={e => set('penggunaan', { ...j.penggunaan!, bast_pemakaian: e.target.checked })} />
-                                    Ada BAST Pemakaian
-                                  </label>
-                                  <label className="flex items-center gap-1.5 cursor-pointer">
-                                    <input type="checkbox" checked={!!j.penggunaan.sip} disabled={readOnly}
-                                      onChange={e => set('penggunaan', { ...j.penggunaan!, sip: e.target.checked })} />
-                                    Ada Surat Ijin Penghunian (rumah negara)
-                                  </label>
+                                  <div className="space-y-1.5">
+                                    <label className="flex items-center gap-1.5 cursor-pointer">
+                                      <input type="checkbox" checked={!!j.penggunaan.bast_pemakaian} disabled={readOnly}
+                                        onChange={e => set('penggunaan', { ...j.penggunaan!, bast_pemakaian: e.target.checked, bast_nomor: e.target.checked ? j.penggunaan!.bast_nomor : undefined })} />
+                                      Ada BAST Pemakaian
+                                    </label>
+                                    {j.penggunaan.bast_pemakaian && (
+                                      <input className="select-filter w-full" disabled={readOnly} placeholder="Nomor BAST Pemakaian *"
+                                        value={j.penggunaan.bast_nomor || ''}
+                                        onChange={e => set('penggunaan', { ...j.penggunaan!, bast_nomor: e.target.value })} />
+                                    )}
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <label className="flex items-center gap-1.5 cursor-pointer">
+                                      <input type="checkbox" checked={!!j.penggunaan.sip} disabled={readOnly}
+                                        onChange={e => set('penggunaan', { ...j.penggunaan!, sip: e.target.checked, sip_nomor: e.target.checked ? j.penggunaan!.sip_nomor : undefined })} />
+                                      Ada Surat Ijin Penghunian (rumah negara)
+                                    </label>
+                                    {j.penggunaan.sip && (
+                                      <input className="select-filter w-full" disabled={readOnly} placeholder="Nomor Surat Ijin Penghunian *"
+                                        value={j.penggunaan.sip_nomor || ''}
+                                        onChange={e => set('penggunaan', { ...j.penggunaan!, sip_nomor: e.target.value })} />
+                                    )}
+                                  </div>
                                 </>
                               )}
                             </div>

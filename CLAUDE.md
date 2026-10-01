@@ -7833,6 +7833,13 @@ Pemakai · [BAST Pemakaian · Surat Ijin Penghunian]) · Catatan Inventarisasi. 
 centang cetak DIHAPUS: `kolomLhiCetak` dicabut, layar/cetak/Excel kini membaca kolom yang sama. **Yang masih format
 lama tinggal III.B.9 & III.B.10.** Tanpa migrasi (`jawaban.penggunaan` jsonb, bentuknya tak berubah).
 
+##### Nomor BAST & Surat Ijin Penghunian (2026-10-02)
+
+Di bagian L (Pegawai / Pengguna Barang lainnya, golongan rumah negara): centang **Ada BAST Pemakaian** / **Ada Surat Ijin
+Penghunian** memunculkan kotak **nomornya** (`penggunaan.bast_nomor` / `sip_nomor`), **WAJIB bila dicentang**
+(`kekuranganLki`). Mencabut centang membuang nomornya. LHI III.B.5 kini punya kolom **Nomor BAST** & **Nomor SIP** di
+samping Ada/Tidak ada (kosong bila Tidak ada); cetak LKI mencantumkannya. Tanpa migrasi (jsonb).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

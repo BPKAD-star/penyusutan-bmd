@@ -205,7 +205,9 @@ export function kolomPegawai(golongan: string, tumpuk: boolean): KolomLhi[] {
     { key: 'pemakai_status', label: 'Status Pemakai', grup: GRUP_PEMAKAI },
     ...(rumahNegara
       ? [{ key: 'pemakai_bast', label: 'BAST Pemakaian', grup: GRUP_PEMAKAI },
-         { key: 'pemakai_sip', label: 'Surat Ijin Penghunian', grup: GRUP_PEMAKAI }]
+         { key: 'pemakai_bast_nomor', label: 'Nomor BAST', grup: GRUP_PEMAKAI },
+         { key: 'pemakai_sip', label: 'Surat Ijin Penghunian', grup: GRUP_PEMAKAI },
+         { key: 'pemakai_sip_nomor', label: 'Nomor SIP', grup: GRUP_PEMAKAI }]
       : []),
     { key: 'catatan', label: 'Catatan Inventarisasi' },
   ]

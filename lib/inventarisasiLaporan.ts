@@ -476,7 +476,8 @@ export function nilaiBarisLhi(
         alamat: alamatLhi(s, j, wilayahLabel).st,
         pemakai_pengguna: p?.nama || '',
         pemakai_nama: p?.nama_pemakai || '', pemakai_status: p?.status_pemakai || '',
-        pemakai_bast: YATIDAK(p?.bast_pemakaian), pemakai_sip: YATIDAK(p?.sip),
+        pemakai_bast: YATIDAK(p?.bast_pemakaian), pemakai_bast_nomor: p?.bast_pemakaian ? (p.bast_nomor || '') : '',
+        pemakai_sip: YATIDAK(p?.sip), pemakai_sip_nomor: p?.sip ? (p.sip_nomor || '') : '',
         catatan: j.keterangan || '',
       }
     }
