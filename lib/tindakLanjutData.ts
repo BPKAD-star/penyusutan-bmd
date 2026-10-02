@@ -8,7 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { paginate, perPotongan } from '@/shared/db/paginate'
 import {
   JENIS_PENENTU_STATUS, asetDibutuhkan, temuanDariIsian,
-  type AsetKini, type IsianTL, type KonteksTL, type TemuanTL,
+  type AsetKini, type IsianTL, type KonteksTL, type TandaManual, type TemuanTL,
 } from '@/lib/tindakLanjut'
 
 const ASET_COLS = 'id,kode,status,nama_barang,kondisi_barang,satuan,wilayah_kode,alamat_detail,merek_tipe,' +
@@ -36,7 +36,7 @@ export async function muatTindakLanjut(
   const ids = asetDibutuhkan(isian)
   // III.B.11: kartu Hasil Inventarisasi yang dibuat DARI isian tsb (Fase 2).
   const isianBaru = isian.filter(s => !s.aset_id).map(s => s.id)
-  const [aset, ledger, usul, kartuHasil] = await Promise.all([
+  const [aset, ledger, usul, kartuHasil, tanda] = await Promise.all([
     perPotongan<AsetKini, string>('keadaan barang', ids, pot =>
       sb.from('aset').select(ASET_COLS).in('id', pot) as unknown as PromiseLike<{ data: AsetKini[] | null; error: { message: string } | null }>),
     // Baris penentu status per aset itu cuma segelintir (hapus/pecah/serap +
@@ -55,6 +55,10 @@ export async function muatTindakLanjut(
       sb.from('jurnal_header').select('isian:payload->>inv_isian_id,approval_status')
         .eq('kategori', 'hasil_inventarisasi').in('payload->>inv_isian_id', pot).neq('approval_status', 'ditolak') as unknown as
         PromiseLike<{ data: { isian: string; approval_status: string }[] | null; error: { message: string } | null }>),
+    // Tanda selesai manual (Fase 3, migrasi 20261002_02).
+    perPotongan<TandaManual & { isian_id: string; lhi: string }, string>('tanda selesai manual', isian.map(s => s.id), pot =>
+      sb.from('inventarisasi_tindak_lanjut').select('id,isian_id,lhi,catatan,dokumen_paths,ditandai_at').in('isian_id', pot) as unknown as
+        PromiseLike<{ data: (TandaManual & { isian_id: string; lhi: string })[] | null; error: { message: string } | null }>),
   ])
   const draftHasilInv = new Map<string, 'pending' | 'disetujui'>()
   for (const k of kartuHasil) {
@@ -69,9 +73,32 @@ export async function muatTindakLanjut(
     jenisTerakhir,
     usulHapus: new Set(usul.map(u => u.aset_id)),
     draftHasilInv,
+    manual: new Map(tanda.map(t => [`${t.isian_id}|${t.lhi}`,
+      { id: t.id, catatan: t.catatan, dokumen_paths: t.dokumen_paths || [], ditandai_at: t.ditandai_at }])),
   }
 
   return isian.flatMap(s => temuanDariIsian(s, ctx).map(t => ({
     ...t, skpdId: s.skpd_id, golongan: s.golongan, snapshot: s.snapshot,
   })))
+}
+
+/**
+ * Tandai satu temuan selesai MANUAL. `skpd_id` & penandanya diisi trigger DB,
+ * bukan dari sini. MELEMPAR saat gagal (pemanggil menampilkan pop-up).
+ */
+export async function tandaiSelesaiManual(
+  sb: SupabaseClient, isianId: string, lhi: string, catatan: string, dokumen: string[],
+): Promise<void> {
+  if (!catatan.trim()) throw new Error('Catatan tindak lanjut wajib diisi.')
+  const { error } = await sb.from('inventarisasi_tindak_lanjut')
+    .insert({ isian_id: isianId, lhi, catatan: catatan.trim(), dokumen_paths: dokumen })
+  if (error) throw new Error(`Gagal menandai selesai: ${error.message}`)
+}
+
+/** Batalkan tanda manual — baris non-ledger, cukup dihapus. `.select()` WAJIB:
+ *  DELETE yang ditolak RLS tak melempar error, cuma 0 baris. */
+export async function batalkanTandaManual(sb: SupabaseClient, id: string): Promise<void> {
+  const { data, error } = await sb.from('inventarisasi_tindak_lanjut').delete().eq('id', id).select('id')
+  if (error) throw new Error(`Gagal membatalkan tanda: ${error.message}`)
+  if (!data || data.length === 0) throw new Error('Tanda ditolak database — di luar wewenang SKPD Anda.')
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  KODE_ASET_HILANG, KODE_DALAM_PENELUSURAN, asetDibutuhkan, kodePinjamPakai, kodeRusakBerat,
+  KODE_ASET_HILANG, KODE_DALAM_PENELUSURAN, asetDibutuhkan, kodePinjamPakai, kodeRusakBerat, rekapTindakLanjut,
   kodeTidakOperasional, temuanDariIsian, type AsetKini, type IsianTL, type KonteksTL,
 } from '@/lib/tindakLanjut'
 import type { InvJawaban } from '@/lib/inventarisasi'
@@ -187,6 +187,52 @@ describe('status dilacak dari KEADAAN barang', () => {
     expect(satu(isian({ kode_barang: { sesuai: false, kode_baru: 'x' } }), ctx(), 'III.B.12').alasanReklas).toBe('kode')
     expect(satu(isian({ kondisi: 'RB' }), ctx(), 'III.B.7').alasanReklas).toBe('golongan')
     expect(satu(isian({ ganda: true, ganda_data: { aset_id: 'D' } }), ctx(), 'III.B.9').relasi).toEqual({ kembar: 'D' })
+  })
+
+  describe('tanda selesai manual (Fase 3)', () => {
+    const tanda = { id: 'T', catatan: 'Sudah berkoordinasi dgn pemilik lahan', dokumen_paths: [], ditandai_at: '2026-10-02T03:00:00Z' }
+    const dgn = (kunci: string) => ({ ...ctx(), manual: new Map([[kunci, tanda]]) })
+
+    it('III.B.10 & III.B.4: boleh ditandai, tanda membuat Selesai + catatannya tampil', () => {
+      const s = isian({ tanah_milik: 'pihak_lain' })
+      expect(satu(s, ctx(), 'III.B.10')).toMatchObject({ status: 'manual', bolehManual: true })
+      const t = satu(s, dgn('I1|III.B.10'), 'III.B.10')
+      expect(t.status).toBe('selesai')
+      expect(t.tandaManual).toEqual(tanda)
+      expect(t.tahap.at(-1)?.label).toContain('Sudah berkoordinasi')
+      expect(satu(isian({ atribusi: 'ya_induk_tidak_diketahui' }), ctx(), 'III.B.4').bolehManual).toBe(true)
+    })
+
+    it('format yang terlacak otomatis TIDAK boleh ditandai & tanda nyasar diabaikan', () => {
+      const s = isian({ kode_barang: { sesuai: false, kode_baru: 'x' } })
+      expect(satu(s, ctx(), 'III.B.12').bolehManual).toBe(false)
+      expect(satu(s, dgn('I1|III.B.12'), 'III.B.12').status).toBe('belum')
+    })
+
+    it('III.B.5: hanya untuk jenis barang di luar menu Pengamanan', () => {
+      const s = isian({ penggunaan: { pihak: 'pemda', nama_pemakai: 'B', status_pemakai: 'PNS' } })
+      expect(satu(s, ctx(), 'III.B.5').bolehManual).toBe(false)              // Gedung → Pengamanan
+      expect(satu(s, dgn('I1|III.B.5'), 'III.B.5').status).toBe('belum')
+      const tanah = [{ ...ASET, kode: '1.3.1.01.01.01.001' }]
+      expect(satu(s, { ...ctx(tanah) }, 'III.B.5').bolehManual).toBe(true)
+      expect(satu(s, { ...ctx(tanah), manual: new Map([['I1|III.B.5', tanda]]) }, 'III.B.5').status).toBe('selesai')
+    })
+
+    it('III.B.9 boleh ditandai (tumpang tindih sebagian) selama belum selesai otomatis', () => {
+      const s = isian({ ganda: true, ganda_data: { aset_id: 'D' } })
+      expect(satu(s, ctx([ASET, { ...ASET, id: 'D' }]), 'III.B.9').bolehManual).toBe(true)
+      expect(satu(s, ctx([ASET, { ...ASET, id: 'D', status: 'dihapus' }], { D: 'koreksi_pencatatan_ganda' }), 'III.B.9').bolehManual).toBe(false)
+    })
+  })
+
+  it('rekapTindakLanjut: dikelompokkan, yang paling tertinggal di atas', () => {
+    const t = (skpdId: number, status: 'belum' | 'proses' | 'selesai' | 'manual') => ({ skpdId, status })
+    const r = rekapTindakLanjut([t(11, 'selesai'), t(12, 'belum'), t(21, 'belum'), t(21, 'selesai')], id => Math.floor(id / 10))
+    expect(r).toEqual([
+      { kunci: 1, temuan: 2, belum: 1, proses: 0, selesai: 1, manual: 0 },
+      { kunci: 2, temuan: 2, belum: 1, proses: 0, selesai: 1, manual: 0 },
+    ])
+    expect(rekapTindakLanjut([t(1, 'selesai'), t(2, 'belum')], x => x).map(x => x.kunci)).toEqual([2, 1])
   })
 
   it('barang yang tak terbaca (RLS/terhapus dari cakupan) tak pernah dianggap selesai', () => {

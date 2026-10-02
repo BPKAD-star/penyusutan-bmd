@@ -5,16 +5,25 @@
 // tidak mengubah register maupun ledger. Pekerjaannya dikerjakan SKPD di menu
 // terkait lewat tombol "Kerjakan →"; begitu disimpan di sana, statusnya di sini
 // berubah sendiri saat dimuat ulang.
-import { useEffect, useMemo, useState } from 'react'
+//
+// Fase 3: temuan yang tak terlacak otomatis bisa DITANDAI SELESAI MANUAL dgn
+// catatan wajib (tabel `inventarisasi_tindak_lanjut`), dan admin/auditor dapat
+// tab Rekap per SKPD.
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import FormShell from '@/components/pengelolaan/FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useSkpdTree } from '@/components/useSkpdTree'
+import { useProfilRole } from '@/components/useProfilRole'
+import { DokumenLinks } from '@/components/pengelolaan/DokumenBastField'
+import TandaManualModal from '@/components/inventarisasi/TandaManualModal'
+import RekapTindakLanjut from '@/components/inventarisasi/RekapTindakLanjut'
 import { createClient } from '@/lib/supabase/client'
 import { LHI_LABEL, LHI_URUT, type LhiKode } from '@/lib/inventarisasi'
 import { STATUS_TL_LABEL, type MenuTL, type StatusTL } from '@/lib/tindakLanjut'
-import { muatTindakLanjut, type TemuanTLMuat } from '@/lib/tindakLanjutData'
+import { batalkanTandaManual, muatTindakLanjut, type TemuanTLMuat } from '@/lib/tindakLanjutData'
 import { useAsyncData } from '@/shared/ui/useAsyncData'
+import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 
 const TAHUN_INI = new Date().getFullYear()
 
@@ -49,7 +58,16 @@ const bisaDiusulkan = (t: TemuanTLMuat) => !!t.perluReklas
 
 export default function TindakLanjut() {
   const supabase = createClient()
-  const { byId } = useSkpdTree()
+  const konfirmasi = useKonfirmasi()
+  const { byId, rootOf } = useSkpdTree()
+  const { role } = useProfilRole()
+  // Rekap per SKPD untuk Pengelola (admin) & auditor — pola LHI. Auditor cuma
+  // MEMBACA: tombol tandai disembunyikan (RLS tetap penjaga akhirnya).
+  const bolehRekap = role === 'admin' || role === 'pengawas'
+  const bolehTulis = role !== null && role !== 'pengawas'
+  const [tab, setTab] = useState<'daftar' | 'rekap'>('daftar')
+  const [menandai, setMenandai] = useState<TemuanTLMuat | null>(null)
+  const kelompokInduk = useCallback((id: number) => rootOf(id)?.id ?? id, [rootOf])
   const [tahun, setTahun] = useState(TAHUN_INI)
   const [skpdIds, setSkpdIds] = useState<number[] | null>(null)
   const [fStatus, setFStatus] = useState<StatusTL | 'semua'>('semua')
@@ -72,7 +90,28 @@ export default function TindakLanjut() {
     ? `/cetak/usulan-reklas?${qs({ skpd: usulSkpd[0], tahun, ids: usulList.map(t => t.id).join(',') })}`
     : null
 
+  const muatUlang = () => void run(() => muatTindakLanjut(supabase, { tahun, skpdIds }))
+
+  async function batalkanTanda(t: TemuanTLMuat) {
+    if (!t.tandaManual) return
+    const id = t.tandaManual.id
+    try {
+      const h = await konfirmasi({
+        nada: 'amber', ikon: '↩', judul: 'Batalkan tanda selesai?',
+        subjudul: `${t.snapshot?.nama_barang || '-'} · ${t.lhi}`,
+        isi: <>Temuan ini kembali berstatus <b>Tandai manual</b>. Catatan &amp; dokumen pendukungnya dihapus dari tanda ini.</>,
+        labelYa: 'Ya, batalkan tanda',
+        kerjakan: async () => { await batalkanTandaManual(supabase, id) },
+      })
+      if (h.ya) muatUlang()
+    } catch (e) {
+      await konfirmasiGagal(konfirmasi, e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const semua = data || []
+  // Rekap mengikuti Format LHI (bukan Status — rekap justru menghitung status).
+  const untukRekap = useMemo(() => semua.filter(t => fLhi === 'semua' || t.lhi === fLhi), [semua, fLhi])
   const hitung = useMemo(() => {
     const c: Record<StatusTL, number> = { belum: 0, proses: 0, selesai: 0, manual: 0 }
     for (const t of semua) c[t.status]++
@@ -94,9 +133,19 @@ export default function TindakLanjut() {
             ? <a href={hrefSurat} target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">🖨 Surat Usulan Reklas ({usulList.length})</a>
             : <span title="Satu surat untuk satu SKPD — centang temuan dari SKPD yang sama"
                 className="px-4 py-2 rounded-lg text-sm border border-gray-200 text-gray-400 cursor-not-allowed">🖨 Surat Usulan Reklas — pilih satu SKPD saja</span>)}
-          <button onClick={() => void run(() => muatTindakLanjut(supabase, { tahun, skpdIds }))} className="btn-secondary text-sm">↻ Muat ulang</button>
+          <button onClick={muatUlang} className="btn-secondary text-sm">↻ Muat ulang</button>
         </div>
       }>
+      {bolehRekap && (
+        <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm">
+          {([['daftar', 'Daftar Temuan'], ['rekap', 'Rekap per SKPD']] as const).map(([v, l]) => (
+            <button key={v} onClick={() => setTab(v)}
+              className={`px-4 py-1.5 rounded-md transition-colors ${tab === v ? 'bg-white shadow-sm font-medium text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="card p-4 mb-4 space-y-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">SKPD</label>
@@ -137,7 +186,9 @@ export default function TindakLanjut() {
       <div className="card p-4 overflow-x-auto">
         {loading ? (
           <p className="py-8 text-center text-sm text-gray-400">Memuat temuan...</p>
-        ) : error ? null : semua.length === 0 ? (
+        ) : error ? null : tab === 'rekap' && bolehRekap ? (
+          <RekapTindakLanjut temuan={untukRekap} byId={byId} rootOf={kelompokInduk} tahun={tahun} />
+        ) : semua.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-400">Belum ada temuan dari isian inventarisasi tahun {tahun} yang sudah divalidasi.</p>
         ) : baris.length === 0 ? (
           <p className="py-8 text-center text-sm text-gray-400">Tidak ada temuan yang cocok dengan penyaring.</p>
@@ -184,7 +235,8 @@ export default function TindakLanjut() {
                         ))}
                       </ul>
                     )}
-                    {t.catatan && <p className="mt-1 text-[10px] text-gray-400">{t.catatan}</p>}
+                    {t.catatan && !t.tandaManual && <p className="mt-1 text-[10px] text-gray-400">{t.catatan}</p>}
+                    {t.tandaManual && <DokumenLinks paths={t.tandaManual.dokumen_paths} label="Dokumen tanda" />}
                   </td>
                   <td className="py-2 pr-3">
                     <span className={`inline-block px-2 py-0.5 rounded border text-[11px] font-medium ${BADGE[t.status]}`}>{STATUS_TL_LABEL[t.status]}</span>
@@ -194,6 +246,12 @@ export default function TindakLanjut() {
                       {t.status !== 'selesai' && t.menu.map(m => (
                         <Link key={m} href={MENU[m].href(t)} className="text-teal hover:underline whitespace-nowrap">{MENU[m].label} →</Link>
                       ))}
+                      {bolehTulis && t.bolehManual && !t.tandaManual && (
+                        <button onClick={() => setMenandai(t)} className="text-left text-gray-700 hover:underline whitespace-nowrap">✓ Tandai selesai</button>
+                      )}
+                      {bolehTulis && t.tandaManual && (
+                        <button onClick={() => void batalkanTanda(t)} className="text-left text-amber-700 hover:underline whitespace-nowrap">↩ Batalkan tanda</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -204,9 +262,14 @@ export default function TindakLanjut() {
         <p className="mt-3 text-[11px] text-gray-400">
           Kode tujuan reklas yang tertulis hanya <b>usulan</b> — kode barang di register baru berubah setelah SKPD menyimpan Reklasifikasi
           (dengan surat usulan sebagai dokumen sumber). Centang kolom <b>Usul</b> lalu cetak <b>Surat Usulan Reklas</b> (satu SKPD per
-          surat). Tombol Kerjakan membuka menunya dengan isian dari LKI sudah terisi; halaman ini sendiri tidak mengubah data apa pun.
+          surat). Tombol Kerjakan membuka menunya dengan isian dari LKI sudah terisi. Temuan yang tak bisa dilacak otomatis
+          (status <b>Tandai manual</b>) ditandai selesai di sini dengan catatan; selebihnya halaman ini tidak mengubah data apa pun.
         </p>
       </div>
+      {menandai && (
+        <TandaManualModal temuan={menandai} onClose={() => setMenandai(null)}
+          onSaved={() => { setMenandai(null); muatUlang() }} />
+      )}
     </FormShell>
   )
 }

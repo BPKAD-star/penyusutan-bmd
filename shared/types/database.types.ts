@@ -1644,6 +1644,47 @@ export type Database = {
           },
         ]
       }
+      inventarisasi_tindak_lanjut: {
+        Row: {
+          catatan: string
+          ditandai_at: string
+          ditandai_by: string | null
+          dokumen_paths: string[]
+          id: string
+          isian_id: string
+          lhi: string
+          skpd_id: number | null
+        }
+        Insert: {
+          catatan: string
+          ditandai_at?: string
+          ditandai_by?: string | null
+          dokumen_paths?: string[]
+          id?: string
+          isian_id: string
+          lhi: string
+          skpd_id?: number | null
+        }
+        Update: {
+          catatan?: string
+          ditandai_at?: string
+          ditandai_by?: string | null
+          dokumen_paths?: string[]
+          id?: string
+          isian_id?: string
+          lhi?: string
+          skpd_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventarisasi_tindak_lanjut_isian_id_fkey"
+            columns: ["isian_id"]
+            isOneToOne: false
+            referencedRelation: "inventarisasi_barang"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ipa_aspek: {
         Row: {
           kode: string

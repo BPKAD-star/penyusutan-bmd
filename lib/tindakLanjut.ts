@@ -76,7 +76,22 @@ export type KonteksTL = {
   /** isian (III.B.11) → status kartu Hasil Inventarisasi yang dibuat darinya
    *  (`jurnal_header.payload.inv_isian_id`, Fase 2). Tak ada = belum dibuat. */
   draftHasilInv?: Map<string, 'pending' | 'disetujui'>
+  /** Tanda selesai MANUAL (Fase 3, tabel `inventarisasi_tindak_lanjut`),
+   *  kunci `${isianId}|${lhi}`. */
+  manual?: Map<string, TandaManual>
 }
+
+/** Satu tanda "selesai" yang dibuat SKPD sendiri, dgn catatan wajib. */
+export type TandaManual = { id: string; catatan: string; dokumen_paths: string[]; ditandai_at: string }
+
+/**
+ * Format yang BOLEH ditandai selesai manual — KEMBAR dgn CHECK `lhi` di tabel
+ * `inventarisasi_tindak_lanjut` (migrasi 20261002_02). Hanya yang tak punya jejak
+ * di register. Yang dilacak dari keadaan register SENGAJA tak boleh: tanda manual
+ * tak pulih sendiri kalau tindakannya dibatalkan. III.B.9 boleh sbg jalan kedua —
+ * tumpang tindih SEBAGIAN diselesaikan lewat koreksi luas/nilai, bukan Pencatatan Ganda.
+ */
+export const BOLEH_TANDAI_MANUAL: readonly LhiKode[] = ['III.B.4', 'III.B.5', 'III.B.9', 'III.B.10']
 
 /** Barang nonaktif KARENA jenis ledger tertentu (yang terakhir & belum dibatalkan). */
 function nonaktifKarena(ctx: KonteksTL, asetId: string | null | undefined, jenis: readonly string[]): boolean {
@@ -116,6 +131,10 @@ export type TemuanTL = {
   /** Barang lain yang terlibat — untuk isian otomatis Kapitalisasi & Pencatatan Ganda. */
   relasi?: { induk?: string | null; anak?: string | null; kembar?: string | null }
   catatan?: string
+  /** Boleh ditandai selesai manual (Fase 3). */
+  bolehManual?: boolean
+  /** Tanda selesai manual yang berlaku — membuat status "Selesai". */
+  tandaManual?: TandaManual
 }
 
 export type IsianTL = Pick<InvBaris, 'id' | 'aset_id' | 'snapshot' | 'jawaban'> & { golongan: string }
@@ -201,12 +220,27 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
   const gol = s.golongan
   const kodes = klasifikasiLhi({ ...s, foto_paths: [] } as InvBaris)
   const out: TemuanTL[] = []
-  const tambah = (lhi: LhiKode, t: Omit<TemuanTL, 'id' | 'isianId' | 'asetId' | 'lhi' | 'status' | 'perluReklas'>) =>
+  const tambah = (lhi: LhiKode, t: Omit<TemuanTL, 'id' | 'isianId' | 'asetId' | 'lhi' | 'status' | 'perluReklas' | 'bolehManual' | 'tandaManual'>) => {
+    const tid = `${s.id}|${lhi}`
+    let status = statusDari(t.tahap)
+    // Tanda manual hanya diakui untuk format yang memang boleh ditandai, dan
+    // hanya selama yang otomatis BELUM selesai sendiri.
+    // III.B.5 cuma untuk barang di luar menu Pengamanan (yang di dalamnya terlacak
+    // dari kustodian, jadi tak boleh dipintas dgn tanda manual).
+    const formatBoleh = BOLEH_TANDAI_MANUAL.includes(lhi) && (lhi !== 'III.B.5' || status === 'manual')
+    const bolehManual = formatBoleh && status !== 'selesai'
+    const tanda = formatBoleh ? ctx.manual?.get(tid) : undefined
+    const tahap = tanda
+      ? [...t.tahap, { label: `Ditandai selesai manual (${tanda.ditandai_at.slice(0, 10)}): ${tanda.catatan}`, selesai: true }]
+      : t.tahap
+    if (tanda) status = 'selesai'
     out.push({
-      id: `${s.id}|${lhi}`, isianId: s.id, asetId: id, lhi, status: statusDari(t.tahap),
+      id: tid, isianId: s.id, asetId: id, lhi, status,
       perluReklas: !!t.kodeTujuan && !!a && a.status === 'aktif' && a.kode !== t.kodeTujuan,
-      ...t,
+      bolehManual: bolehManual || !!tanda, tandaManual: tanda,
+      ...t, tahap,
     })
+  }
 
   for (const lhi of kodes) {
     switch (lhi) {
@@ -353,6 +387,28 @@ export function asetDibutuhkan(isian: IsianTL[]): string[] {
     if (g) ids.add(g)
   }
   return [...ids]
+}
+
+/** Satu baris rekap per SKPD (Fase 3). `kunci` = id SKPD pengelompokan. */
+export type RekapTL = { kunci: number; temuan: number } & Record<StatusTL, number>
+
+/**
+ * Rekap jumlah temuan per SKPD (biasanya SKPD INDUK, lewat `kelompok`). Satu
+ * temuan = satu baris (barang × format LHI) — sama dgn daftar di layar, jadi
+ * angkanya bisa dicocokkan. Diurut % selesai menaik (yang paling tertinggal di atas).
+ */
+export function rekapTindakLanjut<T extends { skpdId: number; status: StatusTL }>(
+  temuan: readonly T[], kelompok: (skpdId: number) => number,
+): RekapTL[] {
+  const m = new Map<number, RekapTL>()
+  for (const t of temuan) {
+    const k = kelompok(t.skpdId)
+    const r = m.get(k) || { kunci: k, temuan: 0, belum: 0, proses: 0, selesai: 0, manual: 0 }
+    r.temuan++; r[t.status]++
+    m.set(k, r)
+  }
+  const pct = (r: RekapTL) => (r.temuan ? r.selesai / r.temuan : 0)
+  return [...m.values()].sort((a, b) => pct(a) - pct(b) || b.temuan - a.temuan || a.kunci - b.kunci)
 }
 
 export const STATUS_TL_LABEL: Record<StatusTL, string> = {

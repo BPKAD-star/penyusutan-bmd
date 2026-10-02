@@ -7885,7 +7885,20 @@ HANYA dari isian **divalidasi** (sumber sama dgn LHI, `klasifikasiLhi`). **Murni
   sebab "direhab" → anaknya bangunan BARU); B.5 = kustodian Pengamanan (hanya golongan Pengamanan); B.6 = reklas + perjanjian
   Pemanfaatan; B.7 non-RB = kondisi register; B.8 = per kolom (foto: register punya foto yang belum ada saat diinventarisasi);
   B.9 = salah satu kembaran dinonaktifkan (Pencatatan Ganda/Penggabungan); B.12 = kode register = kode baru; B.13 = dipecah.
-- **"Tandai manual"** (belum dilacak): B.4, B.10, B.5 golongan non-Pengamanan. Fase 3: penandaan manual + rekap per SKPD.
+- **"Tandai manual"** (tak terlacak otomatis): B.4, B.10, B.5 golongan non-Pengamanan — ditandai lewat Fase 3 di bawah.
+
+### Tindak Lanjut — Fase 3: tandai selesai manual & rekap per SKPD (migrasi 20261002_02)
+- Tabel **`inventarisasi_tindak_lanjut`** (NON-LEDGER, pola KIR): satu tanda per (isian, format), catatan WAJIB, dokumen
+  opsional (`dokumen-sumber/tindak-lanjut/`). `skpd_id` & `ditandai_by` DIISI TRIGGER dari isiannya (isian tak terlihat →
+  ditolak; isian belum divalidasi → ditolak). RLS pola KIR (InitPlan); auditor baca saja. Batalkan tanda = DELETE.
+- **Hanya format tak terlacak** — `BOLEH_TANDAI_MANUAL` (lib/tindakLanjut.ts) **KEMBAR dgn CHECK `lhi` tabelnya**: III.B.4,
+  III.B.10, III.B.5 di luar golongan Pengamanan, & III.B.9 (jalan kedua utk tumpang tindih SEBAGIAN, selama belum selesai
+  otomatis). Format yang dilacak dari register SENGAJA tak boleh ditandai (tanda manual tak pulih sendiri saat tindakannya
+  dibatalkan); tanda nyasar untuk format itu DIABAIKAN. Tanda → status Selesai + catatan tampil di tahapan.
+- **Tab Rekap per SKPD** (admin & auditor, pola LHI): per SKPD INDUK (`rootOf`), dari baris yang SAMA dgn tab Daftar
+  (mengikuti filter Tahun/SKPD/Format, bukan Status), diurut % selesai menaik + Export Excel (`rekapTindakLanjut`).
+- ⚠️ **Deploy-ordering: migrasi WAJIB jalan sebelum deploy kode** — pemuat menu Tindak Lanjut membaca tabelnya & fail-closed;
+  tanpa tabel itu seluruh menu menampilkan pesan error.
 
 ### Tindak Lanjut — Fase 2: isian otomatis & Surat Usulan Reklas (2026-10-02, tanpa migrasi)
 Tombol **Kerjakan →** membawa parameter URL; menu tujuan membaca SEKALI (`useParamTindakLanjut`) lalu membuka form yang
