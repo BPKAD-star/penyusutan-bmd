@@ -123,6 +123,8 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // titik di register live, Daftar Barang Awal tetap beku apa adanya. Hapus
   // (permintaan user 2026-09-26, "kalau aman dua-duanya ikut berubah") pakai
   // ATURAN & FUNGSI YANG SAMA — cuma nilainya `null`, bukan koordinat baru.
+  const [panelKiriBuka, setPanelKiriBuka] = useState(true)
+  useEffect(() => { if (window.innerWidth < 768) setPanelKiriBuka(false) }, [])
   const [pickMode, setPickMode] = useState(false)
   const [draftPoint, setDraftPoint] = useState<{ lat: number; lng: number } | null>(null)
   const [savingTitik, setSavingTitik] = useState(false)
@@ -493,8 +495,25 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
       </div>
 
       {/* Panel kiri: tab + filter + list register (card) + statistik — mengambang di atas peta */}
-      <div className="absolute top-4 left-4 bottom-4 w-[340px] z-[1000] flex flex-col gap-3 pointer-events-none">
-        {tabBar}
+      {/* Bisa disembunyikan (permintaan user 2026-10-02): di HP panel 340px
+          menutup hampir seluruh layar. Tertutup → tinggal satu tombol kecil
+          (wrapper tak lagi `bottom-4`, jadi sisa layar murni peta yang bisa
+          diseret). Bawaan: terbuka di layar lebar, tertutup di bawah 768px —
+          ditentukan SEKALI saat mount, sesudah itu pilihan operator yang
+          menang. Tab Peta/Daftar Bidang ikut di dalam panel; membuka panel
+          dulu kalau mau pindah tab. */}
+      <div className={`absolute top-4 left-4 w-[340px] max-w-[calc(100%-2rem)] z-[1000] flex flex-col gap-3 pointer-events-none ${panelKiriBuka ? 'bottom-4' : ''}`}>
+        {!panelKiriBuka ? (
+          <button onClick={() => setPanelKiriBuka(true)} aria-label="Tampilkan panel daftar & filter"
+            className="pointer-events-auto self-start card px-3 py-2 shadow-lg text-xs font-medium text-gray-700 hover:bg-gray-50">
+            ☰ Daftar &amp; Filter
+          </button>
+        ) : (<>
+        <div className="flex items-stretch gap-2 pointer-events-auto">
+          <div className="flex-1 min-w-0">{tabBar}</div>
+          <button onClick={() => setPanelKiriBuka(false)} aria-label="Sembunyikan panel" title="Sembunyikan panel"
+            className="card px-3 shadow-lg text-gray-500 hover:bg-gray-50 text-base leading-none flex-shrink-0">‹</button>
+        </div>
 
         <div className="card p-3 shadow-lg pointer-events-auto">
           <p className="text-sm font-semibold text-gray-800 mb-2">GIS Tanah</p>
@@ -550,7 +569,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
             const st = statusOf(r)
             const badge = STATUS_BADGE[st]
             return (
-              <button key={r.id} onClick={() => setSelectedId(r.id)}
+              <button key={r.id} onClick={() => { setSelectedId(r.id); if (window.innerWidth < 768) setPanelKiriBuka(false) }}
                 className={`card w-full text-left px-3 py-2.5 text-xs shadow-sm hover:shadow-md transition-shadow ${selectedId === r.id ? 'ring-2 ring-teal' : ''}`}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-medium text-gray-800 truncate">{r.nama_barang || '-'}</p>
@@ -596,6 +615,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
           <div className="flex justify-between"><span className="text-gray-400">Perlu ditinjau</span><span className="font-semibold text-violet-700">{stats.perStatus.tinjau.toLocaleString('id-ID')}</span></div>
           <div className="flex justify-between"><span className="text-gray-400">Dalam sengketa</span><span className="font-semibold text-rose-600">{stats.perStatus.sengketa.toLocaleString('id-ID')}</span></div>
         </div>
+        </>)}
       </div>
 
       {/* Panel kanan: identitas + kelola bidang register terpilih — mengambang di atas peta.
@@ -605,7 +625,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
           digeser dari tengah). Kalau isinya lebih tinggi dari layar, ia tetap
           bisa digulir. */}
       {selected && (
-        <div className="absolute top-4 right-4 w-[480px] max-h-[calc(100%-2rem)] z-[1000] overflow-y-auto scrollbar-thin space-y-3">
+        <div className="absolute top-4 right-4 w-[480px] max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] z-[1000] overflow-y-auto scrollbar-thin space-y-3">
           <div className="card p-4 shadow-lg">
             <div className="flex items-start justify-between mb-3">
               <div>
