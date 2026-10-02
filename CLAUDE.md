@@ -7867,6 +7867,27 @@ petugas dicetak **di akhir TIAP format** — tiap format adalah laporan tersendi
 jenis aset (data LHI dimuat per jenis aset); berkas lintas jenis aset belum ada. Format kosong dilewati (bukan lembar NIHIL —
 keputusan soal lembar nihil belum diambil). Tanpa migrasi; belum dilihat di peramban (kontrol page-break cetak).
 
+## Tindak Lanjut Inventarisasi — Fase 1: status OTOMATIS (2026-10-02)
+
+Menu Inventarisasi → Tindak Lanjut (`components/inventarisasi/TindakLanjut.tsx`, `lib/tindakLanjut.ts` murni +
+`lib/tindakLanjutData.ts` pemuat; dikunci lib/tindakLanjut.test.ts). Satu baris = satu temuan (isian × format LHI),
+HANYA dari isian **divalidasi** (sumber sama dgn LHI, `klasifikasiLhi`). **Murni baca, tanpa migrasi.**
+- ⚠️ **Status dari KEADAAN barang, bukan "ada transaksi sesudah inventarisasi"**: kode register = kode tujuan, kolom
+  register = nilai "seharusnya", ada kustodian Pengamanan / perjanjian Pemanfaatan, masuk RKBMD Penghapusan
+  (diajukan/disetujui), atau nonaktif KARENA jenis ledger tertentu (baris terakhir di `JENIS_PENENTU_STATUS`). Tindakan yang
+  dibatalkan → status kembali "Belum" sendiri. Barang yang tak terbaca tak pernah dianggap selesai.
+- **Kode tujuan reklas = USULAN, tak pernah diterapkan otomatis** (keputusan user): kode baru berubah hanya saat SKPD
+  menyimpan Reklasifikasi (dgn surat usulan sbg dokumen sumber; tanpa persetujuan Pengelola). Peta kodenya (master
+  kodefikasi, disepakati user): RB → 1.5.4.01.01.01.001–005 · Pinjam Pakai (Pusat/Pemda lain) → .03.009–013 · pihak lain →
+  .02.001–006 · Hilang → .03.003 Aset Hilang · Tidak ditemukan tanpa sebab → .03.002 Aset Dalam Penelusuran (sebab force
+  majeure/dibongkar → langsung usulan penghapusan). KDP/ATB tak punya kode RB → tahap reklas dilewati.
+- Tahapan per format: B.1/B.2/B.7-RB = [reklas] → RKBMD Penghapusan → dihapus; B.3 = anak diserap (kapitalisasi/penggabungan;
+  sebab "direhab" → anaknya bangunan BARU); B.5 = kustodian Pengamanan (hanya golongan Pengamanan); B.6 = reklas + perjanjian
+  Pemanfaatan; B.7 non-RB = kondisi register; B.8 = per kolom (foto: register punya foto yang belum ada saat diinventarisasi);
+  B.9 = salah satu kembaran dinonaktifkan (Pencatatan Ganda/Penggabungan); B.12 = kode register = kode baru; B.13 = dipecah.
+- **"Tandai manual"** (belum dilacak): B.4, B.10, B.11, B.5 golongan non-Pengamanan, & 4 kolom teknis JIJ (belum ada kolomnya
+  di `aset`). Fase berikutnya: isian otomatis ke menu tujuan + cetak Surat Usulan Reklas (lampiran LHI) + penandaan manual.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
