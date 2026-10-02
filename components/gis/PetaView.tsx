@@ -275,6 +275,16 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
     selected.latitude != null || (bidangByAset[selected.id] || []).some(b => b.latitude != null || b.longitude != null)
   ))
 
+  // Titik yang SAMA dgn yang digambar di peta (register dulu, baru cadangan
+  // bidang — lihat `markers`), dipakai tombol Navigasi & Street View di panel
+  // kanan (permintaan user 2026-10-02: cek lokasi tanpa buka Maps manual).
+  const titikSel = (() => {
+    if (!selected) return null
+    if (selected.latitude != null && selected.longitude != null) return { lat: selected.latitude, lng: selected.longitude }
+    const b = (bidangByAset[selected.id] || []).find(x => x.latitude != null && x.longitude != null)
+    return b ? { lat: b.latitude as number, lng: b.longitude as number } : null
+  })()
+
   function batalPick() {
     setPickMode(false); setDraftPoint(null)
   }
@@ -588,9 +598,14 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
         </div>
       </div>
 
-      {/* Panel kanan: identitas + kelola bidang register terpilih — mengambang di atas peta */}
+      {/* Panel kanan: identitas + kelola bidang register terpilih — mengambang di atas peta.
+          Tinggi mengikuti ISI (`max-h`), BUKAN `bottom-4`: dengan `bottom-4` kolom ini
+          selalu setinggi layar, jadi ruang kosong di bawah kartu terakhir tetap
+          "padat" & menelan drag peta (laporan user 2026-10-02: peta cuma bisa
+          digeser dari tengah). Kalau isinya lebih tinggi dari layar, ia tetap
+          bisa digulir. */}
       {selected && (
-        <div className="absolute top-4 right-4 bottom-4 w-[480px] z-[1000] overflow-y-auto scrollbar-thin space-y-3">
+        <div className="absolute top-4 right-4 w-[480px] max-h-[calc(100%-2rem)] z-[1000] overflow-y-auto scrollbar-thin space-y-3">
           <div className="card p-4 shadow-lg">
             <div className="flex items-start justify-between mb-3">
               <div>
@@ -649,6 +664,21 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
                 </div>
               ) : (
                 <div className="space-y-1">
+                  {/* Tautan resmi Google Maps (tanpa API key/billing). Street
+                      View HANYA menampilkan citra kalau jalannya terjangkau —
+                      lahan kosong/gang sering tidak; Maps sendiri yang akan
+                      memberi tahu. Titik ini sama dgn pin di peta, jadi ia
+                      seakurat titik yang tersimpan, bukan batas bidangnya. */}
+                  {titikSel && (
+                    <div className="flex gap-2 mb-1">
+                      <a href={`https://www.google.com/maps/dir/?api=1&destination=${titikSel.lat},${titikSel.lng}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="btn-secondary text-xs flex-1 text-center">🧭 Navigasi</a>
+                      <a href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${titikSel.lat},${titikSel.lng}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="btn-secondary text-xs flex-1 text-center">👁 Street View</a>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button onClick={() => { setPickMode(true); setDraftPoint(null); setTitikMsg('') }}
                       className="btn-secondary text-xs flex-1">
