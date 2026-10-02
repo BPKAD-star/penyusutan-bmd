@@ -24,8 +24,11 @@ import {
   type JurnalLine, type Jurnal, type PemecahanHeader, type PemecahanRow, type PemecahanJurnal,
   type PenggabunganHeader, type PenggabunganRow, type PenggabunganJurnal,
 } from './koreksi/tipe'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useParamTindakLanjut } from './useParamTindakLanjut'
+import { muatIsian } from '@/lib/inventarisasiData'
+import { namaPecahanDariLki, spekDariLki } from '@/lib/tindakLanjutIsi'
 import { catatTransaksi } from '@/lib/transaksi'
 import { formatRupiah2 } from '@/lib/export'
 import { periodeDariTanggal, GOLONGAN_DAFTAR_BARANG, kodeLevel3, perlakuanKode, parsePeriode, previousPeriode, formatPeriode, fetchBatasKapitalisasi, klasifikasiKomptabel } from '@/lib/bmd'
@@ -40,6 +43,27 @@ import FormShell from './FormShell'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import NominalInput from '@/shared/ui/NominalInput'
+
+/**
+ * Form Koreksi yang dibuka sudah terisi — dari "✎ Spesifikasi" kartu Pemecahan,
+ * atau dari tombol Kerjakan di menu Tindak Lanjut Inventarisasi (Fase 2,
+ * 2026-10-02). Dibaca SEKALI sbg nilai awal; tak ada yang tersimpan sampai Simpan.
+ */
+type PresetKoreksi = {
+  barang: Barang
+  asal: string
+  sumber?: 'pemecahan' | 'inventarisasi'
+  /** Alasan yang dibuka. Kosong = Spesifikasi Barang (perilaku lama). */
+  alasan?: Alasan
+  /** Nilai "seharusnya" dari LKI → edit tersusun Spesifikasi Barang. */
+  spek?: Record<string, string>
+  /** Nama pecahan dari LKI (sebab "seharusnya beberapa register"). */
+  namaPecahan?: string[]
+  /** Barang + kembarannya (Pencatatan Ganda). */
+  kandidat?: Kandidat[]
+}
+
+const KANDIDAT_COLS_TL = 'id,nibar,kode,nama_barang,spesifikasi_lainnya,nilai_perolehan,tgl_perolehan'
 
 // Field alasan "Spesifikasi Barang" (golongan-aware, + atribut satuan/asal usul/
 // tahun/kondisi) kini tinggal di lib/asetFields.ts sbg `koreksiFieldKeys` —
@@ -118,7 +142,7 @@ function KoreksiTransaksi() {
   const [batalId, setBatalId] = useState<string | null>(null)
   // "✎ Spesifikasi" di baris pecahan — CADANGAN saja: dipakai HANYA kalau
   // pecahannya sudah pernah kena koreksi_spesifikasi (lihat bukaSpekPecahan).
-  const [presetSpek, setPresetSpek] = useState<{ barang: Barang; asal: string } | null>(null)
+  const [presetSpek, setPresetSpek] = useState<PresetKoreksi | null>(null)
   const [presetBusy, setPresetBusy] = useState<string | null>(null)
   // Jalur UTAMA "✎ Spesifikasi" pecahan: pop-up langsung, tanpa jurnal baru.
   const [spekPecah, setSpekPecah] = useState<{
@@ -148,6 +172,47 @@ function KoreksiTransaksi() {
 
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null); setSelBatal({}); setPresetSpek(null) }, [skpd, loadJurnals])
+
+  // ── Isian otomatis dari Tindak Lanjut Inventarisasi (Fase 2) ────────────────
+  // `?skpd=&tl=<id isian>&lhi=<format>` → isiannya dibaca ulang (SATU sumber,
+  // bukan disalin lewat URL), lalu form dibuka di alasan yang cocok:
+  // III.B.8/III.B.7 → Spesifikasi Barang · III.B.13 → Pemecahan · III.B.9 →
+  // Pencatatan Ganda. Dideklarasikan SESUDAH efek reset di atas supaya reset
+  // saat SKPD berganti tak menimpa form yang baru dibuka.
+  const tlParam = useParamTindakLanjut('tl')
+  const tlDipakai = useRef(false)
+  useEffect(() => { if (tlParam) setSkpd(tlParam.skpd) }, [tlParam])
+  useEffect(() => {
+    if (!tlParam || tlDipakai.current || skpd !== tlParam.skpd) return
+    tlDipakai.current = true
+    void (async () => {
+      try {
+        const isian = await muatIsian(supabase, tlParam.tl)
+        if (!isian.aset_id) throw new Error('isian ini bukan barang tercatat')
+        const j = isian.jawaban || {}
+        const ids = [isian.aset_id, ...(tlParam.lhi === 'III.B.9' && j.ganda_data?.aset_id ? [j.ganda_data.aset_id] : [])]
+        const { data, error } = await supabase.from('aset').select(BARANG_COLS).in('id', ids).eq('status', 'aktif')
+        if (error) throw new Error(error.message)
+        const rows = (data || []) as unknown as Barang[]
+        const barang = rows.find(r => r.id === isian.aset_id)
+        if (!barang) throw new Error('barangnya tidak ditemukan / sudah tidak aktif di SKPD ini')
+        const asal = 'Lembar Kerja Inventarisasi'
+        if (tlParam.lhi === 'III.B.13') {
+          setPresetSpek({ barang, asal, sumber: 'inventarisasi', alasan: 'pemecahan', namaPecahan: namaPecahanDariLki(j) })
+        } else if (tlParam.lhi === 'III.B.9') {
+          const { data: kd, error: ke } = await supabase.from('aset').select(KANDIDAT_COLS_TL).in('id', rows.map(r => r.id))
+          if (ke) throw new Error(ke.message)
+          const kandidat = ((kd || []) as unknown as Kandidat[]).sort((a, b) => (a.id === barang.id ? -1 : b.id === barang.id ? 1 : 0))
+          setPresetSpek({ barang, asal, sumber: 'inventarisasi', alasan: 'pencatatan_ganda', kandidat })
+        } else {
+          setPresetSpek({ barang, asal, sumber: 'inventarisasi', alasan: 'spesifikasi', spek: spekDariLki(j) })
+        }
+        setAddTo(null); setMode('tambah')
+      } catch (e) {
+        setMsg(`Error: gagal membuka isian dari Tindak Lanjut — ${e instanceof Error ? e.message : String(e)}`)
+      }
+    })()
+  }, [skpd, tlParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
 
@@ -685,16 +750,21 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: HeaderEditable;
 function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCancel, onSaved }: {
   skpdId: number; skpdNama: string; golonganLabels: Record<string, string>
   header: Header | null
-  /** Datang dari "✎ Spesifikasi" di kartu Pemecahan: alasan dipaku ke
-   *  Spesifikasi Barang & pecahannya sudah tercentang. */
-  preset?: { barang: Barang; asal: string } | null
+  /** Datang dari "✎ Spesifikasi" di kartu Pemecahan (alasan dipaku ke
+   *  Spesifikasi Barang & pecahannya tercentang), atau dari Tindak Lanjut
+   *  Inventarisasi (alasan & isiannya dari LKI). */
+  preset?: PresetKoreksi | null
   onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
 
-  const [alasan, setAlasan] = useState<Alasan>(header?.jenis || (preset ? 'spesifikasi' : 'nilai_perolehan'))
+  const alasanPreset: Alasan | null = preset ? (preset.alasan || 'spesifikasi') : null
+  const [alasan, setAlasan] = useState<Alasan>(header?.jenis || alasanPreset || 'nilai_perolehan')
+  // Preset barang hanya diteruskan ke pemilih & Spesifikasi kalau alasannya memang
+  // Spesifikasi — Pemecahan & Pencatatan Ganda punya pemilihnya sendiri.
+  const presetSpekSaja = alasanPreset === 'spesifikasi' ? preset : null
   const [noSk, setNoSk] = useState('')
   const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
   const [ket, setKet] = useState('')
@@ -713,7 +783,7 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
   const {
     fGolongan, setFGolongan, fSearch, setFSearch, rows, setRows, loaded, setLoaded,
     loading, uraianMap, tampilkan, fetchUraian, reset: resetPilih,
-  } = usePemilihBarang(skpdId, alasan, preset, setErr)
+  } = usePemilihBarang(skpdId, alasan, presetSpekSaja, setErr)
 
   // ── Pencatatan Ganda & Spesifikasi ──────────────────────────────────────────
   // State & penyuntingnya → ./koreksi/usePencatatanGanda.ts & ./useSpesifikasi.ts
@@ -729,8 +799,8 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     sel: selSpek, setSel: setSelSpek, list: selSpekList, sameGol: spekSameGol, toggle: toggleSpek,
     modalOpen: spekModalOpen, setModalOpen: setSpekModalOpen, openModal: openSpekModal,
     initFields: spekInitFields, initFoto: spekInitFoto, prefix: spekPrefix,
-    edit: spekEdit, setEdit: setSpekEdit, reset: resetSpek,
-  } = useSpesifikasi(preset, setErr)
+    edit: spekEdit, setEdit: setSpekEdit, reset: resetSpek, isiDariLki: isiSpekDariLki,
+  } = useSpesifikasi(presetSpekSaja, setErr)
 
   // ── Penggabungan: N barang → 1 induk (kebalikan pemecahan) ──────────────────
   // State, efek basis, pencarian, & daftar sejenisnya → ./koreksi/usePenggabungan.ts
@@ -760,8 +830,16 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
     alokasi: alokasiPecah, totalNPInduk, sumNPPecah, balance: balancePecah, semuaValid: semuaPecahValid,
   } = usePemecahan(tgl, setErr)
 
-
-
+  // Isian otomatis dari Tindak Lanjut Inventarisasi — dijalankan SEKALI saat
+  // form dibuka. Pemecahan: induk + nama pecahan dari LKI; Pencatatan Ganda:
+  // barang & kembarannya (barang ini bertahan, operator bisa menukarnya);
+  // Spesifikasi: nilai "seharusnya" jadi edit tersusun.
+  useEffect(() => {
+    if (!preset || preset.sumber !== 'inventarisasi') return
+    if (alasanPreset === 'pemecahan') void pilihInduk(preset.barang, preset.namaPecahan || [])
+    else if (alasanPreset === 'pencatatan_ganda') for (const k of preset.kandidat || []) tambahKandidat(k)
+    else if (preset.spek && Object.keys(preset.spek).length > 0) void isiSpekDariLki(preset.barang, preset.spek)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function uploadDokumen(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -1285,7 +1363,19 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
           persis di saat paling dibutuhkan: operator menekan ✎ Spesifikasi lalu
           mendarat di layar "upload dokumen dulu" tanpa satu pun keterangan
           kenapa ia ada di situ. */}
-      {preset && (
+      {preset?.sumber === 'inventarisasi' && (
+        <div className="text-xs text-teal-800 bg-teal/5 border border-teal/30 rounded-lg px-3 py-2.5 space-y-1">
+          <p>
+            Dari <span className="font-medium">Tindak Lanjut Inventarisasi</span>: barang{' '}
+            <span className="font-medium">{preset.barang.nama_barang || preset.barang.nibar || '-'}</span>
+            {alasanPreset === 'pemecahan' && <> sudah dipilih sbg induk{preset.namaPecahan?.length ? <> dgn {preset.namaPecahan.length} nama pecahan dari LKI</> : null} — isi nilai tiap pecahan.</>}
+            {alasanPreset === 'pencatatan_ganda' && <> dan kembarannya sudah ditambahkan — periksa barang mana yang <span className="font-medium">bertahan</span>.</>}
+            {alasanPreset === 'spesifikasi' && <> sudah dicentang &amp; nilai &ldquo;seharusnya&rdquo; dari LKI sudah tersusun — periksa lewat ✎ Ubah Field.</>}
+          </p>
+          <p>Isi No. Dokumen Koreksi &amp; tanggal, unggah dokumen sumbernya, lalu Simpan. Register baru berubah saat Simpan ditekan.</p>
+        </div>
+      )}
+      {preset && preset.sumber !== 'inventarisasi' && (
         <div className="text-xs text-teal-800 bg-teal/5 border border-teal/30 rounded-lg px-3 py-2.5 space-y-1">
           <p>
             Barang pecahan <span className="font-medium">{preset.barang.nama_barang || preset.barang.nibar || '-'}</span> dari
@@ -1893,8 +1983,10 @@ function KoreksiForm({ skpdId, skpdNama, golonganLabels, header, preset, onCance
             : `${selSpekList.length} barang — ${golonganLabels[kodeLevel3(selSpekList[0].kode)] || kodeLevel3(selSpekList[0].kode)}`}
           fieldKeys={koreksiFieldKeys(selSpekList[0].kode)}
           storagePrefix={spekPrefix}
-          initialFields={spekInitFields}
-          initialFoto={spekInitFoto}
+          // Edit yang sudah tersusun (mis. isian dari LKI) ditampilkan kembali,
+          // bukan nilai register — kalau tidak, membuka popup menghapusnya.
+          initialFields={spekEdit && selSpekList.length === 1 ? spekEdit.fields : spekInitFields}
+          initialFoto={spekEdit?.foto.replace && selSpekList.length === 1 ? spekEdit.foto.replace : spekInitFoto}
           single={selSpekList.length === 1}
           onSave={(fields, foto) => { setSpekEdit({ fields, foto }); setSpekModalOpen(false) }}
           onClose={() => setSpekModalOpen(false)}

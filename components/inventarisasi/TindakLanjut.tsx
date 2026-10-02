@@ -26,16 +26,26 @@ const BADGE: Record<StatusTL, string> = {
   manual: 'bg-gray-50 text-gray-500 border-gray-200',
 }
 
+// Tautan "Kerjakan →" membawa parameter ISIAN OTOMATIS (Fase 2): menu tujuan
+// membuka form dgn barang, kode tujuan, atau nilai "seharusnya" dari LKI sudah
+// terisi. Tak ada yang tersimpan sampai operator menekan Simpan di sana.
+const P = '/dashboard/pembukuan/pengelolaan'
+const qs = (o: Record<string, string | number | null | undefined>) =>
+  new URLSearchParams(Object.entries(o).filter(([, v]) => v != null && v !== '').map(([k, v]) => [k, String(v)])).toString()
+
 const MENU: Record<MenuTL, { label: string; href: (t: TemuanTLMuat) => string }> = {
-  reklasifikasi: { label: 'Reklasifikasi', href: () => '/dashboard/pembukuan/pengelolaan/reklasifikasi' },
-  koreksi: { label: 'Koreksi', href: () => '/dashboard/pembukuan/pengelolaan/koreksi' },
-  kapitalisasi: { label: 'Kapitalisasi', href: () => '/dashboard/pembukuan/pengelolaan/kapitalisasi' },
-  penghapusan: { label: 'Penghapusan', href: () => '/dashboard/pembukuan/pengelolaan/penghapusan' },
+  reklasifikasi: { label: 'Reklasifikasi', href: t => `${P}/reklasifikasi?${qs({ skpd: t.skpdId, aset: t.asetId, kode: t.kodeTujuan, alasan: t.alasanReklas })}` },
+  koreksi: { label: 'Koreksi', href: t => `${P}/koreksi?${qs({ skpd: t.skpdId, tl: t.isianId, lhi: t.lhi })}` },
+  kapitalisasi: { label: 'Kapitalisasi', href: t => `${P}/kapitalisasi?${qs({ skpd: t.skpdId, induk: t.relasi?.induk, anak: t.relasi?.anak })}` },
+  penghapusan: { label: 'Penghapusan', href: () => `${P}/penghapusan` },
   rkbmd_penghapusan: { label: 'RKBMD Penghapusan', href: () => '/dashboard/rkbmd/usulan' },
-  pengamanan: { label: 'Pengamanan', href: t => `/dashboard/pembukuan/pengelolaan/pengamanan?skpd=${t.skpdId}&nibar=${t.snapshot?.nibar || ''}` },
-  pemanfaatan: { label: 'Pemanfaatan', href: t => `/dashboard/pembukuan/pengelolaan/pemanfaatan?skpd=${t.skpdId}&nibar=${t.snapshot?.nibar || ''}` },
-  hasil_inventarisasi: { label: 'Hasil Inventarisasi', href: () => '/dashboard/pembukuan/perolehan/inventarisasi' },
+  pengamanan: { label: 'Pengamanan', href: t => `${P}/pengamanan?${qs({ skpd: t.skpdId, nibar: t.snapshot?.nibar })}` },
+  pemanfaatan: { label: 'Pemanfaatan', href: t => `${P}/pemanfaatan?${qs({ skpd: t.skpdId, nibar: t.snapshot?.nibar })}` },
+  hasil_inventarisasi: { label: 'Hasil Inventarisasi', href: t => `/dashboard/pembukuan/perolehan/inventarisasi?${qs({ skpd: t.skpdId, tl: t.isianId })}` },
 }
+
+/** Temuan yang bisa masuk Surat Usulan Reklasifikasi — ada kode tujuannya & belum direklas. */
+const bisaDiusulkan = (t: TemuanTLMuat) => !!t.perluReklas
 
 export default function TindakLanjut() {
   const supabase = createClient()
@@ -46,8 +56,21 @@ export default function TindakLanjut() {
   const [fLhi, setFLhi] = useState<LhiKode | 'semua'>('semua')
   const { data, loading, error, run } = useAsyncData<TemuanTLMuat[]>()
   const kunci = `${tahun}|${(skpdIds || []).join(',')}`
+  // Centang untuk Surat Usulan Reklasifikasi — SATU SKPD per surat.
+  const [usul, setUsul] = useState<Record<string, TemuanTLMuat>>({})
 
-  useEffect(() => { void run(() => muatTindakLanjut(supabase, { tahun, skpdIds })) }, [kunci, run]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setUsul({}); void run(() => muatTindakLanjut(supabase, { tahun, skpdIds })) }, [kunci, run]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const usulList = Object.values(usul)
+  const usulSkpd = [...new Set(usulList.map(t => t.skpdId))]
+  const toggleUsul = (t: TemuanTLMuat) => setUsul(p => {
+    const n = { ...p }
+    if (n[t.id]) delete n[t.id]; else n[t.id] = t
+    return n
+  })
+  const hrefSurat = usulSkpd.length === 1
+    ? `/cetak/usulan-reklas?${qs({ skpd: usulSkpd[0], tahun, ids: usulList.map(t => t.id).join(',') })}`
+    : null
 
   const semua = data || []
   const hitung = useMemo(() => {
@@ -65,7 +88,15 @@ export default function TindakLanjut() {
     <FormShell judul="Tindak Lanjut Inventarisasi"
       deskripsi="Temuan dari LHI yang sudah divalidasi. Status dilacak otomatis dari keadaan barang di register — kerjakan lewat menu terkait, statusnya menyesuaikan sendiri."
       msg=""
-      headerRight={<button onClick={() => void run(() => muatTindakLanjut(supabase, { tahun, skpdIds }))} className="btn-secondary text-sm">↻ Muat ulang</button>}>
+      headerRight={
+        <div className="flex items-center gap-2">
+          {usulList.length > 0 && (hrefSurat
+            ? <a href={hrefSurat} target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">🖨 Surat Usulan Reklas ({usulList.length})</a>
+            : <span title="Satu surat untuk satu SKPD — centang temuan dari SKPD yang sama"
+                className="px-4 py-2 rounded-lg text-sm border border-gray-200 text-gray-400 cursor-not-allowed">🖨 Surat Usulan Reklas — pilih satu SKPD saja</span>)}
+          <button onClick={() => void run(() => muatTindakLanjut(supabase, { tahun, skpdIds }))} className="btn-secondary text-sm">↻ Muat ulang</button>
+        </div>
+      }>
       <div className="card p-4 mb-4 space-y-3">
         <div>
           <label className="block text-xs text-gray-500 mb-1">SKPD</label>
@@ -114,6 +145,7 @@ export default function TindakLanjut() {
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-gray-500 border-b border-gray-200">
+                <th className="py-2 pr-2 font-medium" title="Centang untuk Surat Usulan Reklasifikasi">Usul</th>
                 <th className="py-2 pr-3 font-medium">SKPD</th>
                 <th className="py-2 pr-3 font-medium">Barang</th>
                 <th className="py-2 pr-3 font-medium">Temuan</th>
@@ -125,6 +157,12 @@ export default function TindakLanjut() {
             <tbody>
               {baris.map(t => (
                 <tr key={t.id} className="border-b border-gray-100 align-top">
+                  <td className="py-2 pr-2">
+                    {bisaDiusulkan(t) && (
+                      <input type="checkbox" checked={!!usul[t.id]} onChange={() => toggleUsul(t)}
+                        title="Masukkan ke Surat Usulan Reklasifikasi" />
+                    )}
+                  </td>
                   <td className="py-2 pr-3 text-gray-700">{byId.get(t.skpdId)?.nama || t.skpdId}</td>
                   <td className="py-2 pr-3">
                     <p className="text-gray-800">{t.snapshot?.nama_barang || t.snapshot?.uraian_barang || '(belum tercatat)'}</p>
@@ -165,7 +203,8 @@ export default function TindakLanjut() {
         )}
         <p className="mt-3 text-[11px] text-gray-400">
           Kode tujuan reklas yang tertulis hanya <b>usulan</b> — kode barang di register baru berubah setelah SKPD menyimpan Reklasifikasi
-          (dengan surat usulan sebagai dokumen sumber). Halaman ini tidak mengubah data apa pun.
+          (dengan surat usulan sebagai dokumen sumber). Centang kolom <b>Usul</b> lalu cetak <b>Surat Usulan Reklas</b> (satu SKPD per
+          surat). Tombol Kerjakan membuka menunya dengan isian dari LKI sudah terisi; halaman ini sendiri tidak mengubah data apa pun.
         </p>
       </div>
     </FormShell>

@@ -8,7 +8,10 @@
 //     bisa backdate ke tahun lama; penyusutannya di-restate mundur otomatis
 //     oleh engine saat "Jalankan Engine" dijalankan ulang (lihat migrasi
 //     20260707_02 yg membuka whitelist tahun_buku utk jenis-jenis ini).
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { useParamTindakLanjut } from './useParamTindakLanjut'
+import { muatIsian } from '@/lib/inventarisasiData'
+import { draftDariBaru } from '@/lib/tindakLanjutIsi'
 import { fetchSkpd } from '@/lib/skpdMaster'
 import { createClient } from '@/lib/supabase/client'
 import { cekBolehBatal } from '@/lib/guardPembatalan'
@@ -115,7 +118,13 @@ type KodefikasiHasil = {
 // = satu sumber dana. Karena `payload` bertipe jsonb, menambah kunci ini TIDAK
 // butuh migrasi sama sekali — dan kartu yang sudah terlanjur dibuat cukup
 // disunting lewat "Edit", tanpa entry ulang barangnya.
-type HeaderPayload = { pihak?: string; sumber_dana?: string; dokumen_paths?: string[]; draft_items?: DraftItem[] }
+type HeaderPayload = {
+  pihak?: string; sumber_dana?: string; dokumen_paths?: string[]; draft_items?: DraftItem[]
+  /** Isian LKI asal (BMD Belum Tercatat) — kartu dibuat dari Tindak Lanjut. */
+  inv_isian_id?: string
+}
+/** Barang draft dari isian LKI "BMD Belum Tercatat" (Tindak Lanjut, Fase 2). */
+type PrefillLki = { isianId: string; items: DraftItem[]; catatan: string }
 type ApprovalStatus = 'pending' | 'disetujui' | 'ditolak'
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string
@@ -304,6 +313,34 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   }, [kategori]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setEditing(null) }, [skpd, loadJurnals])
+
+  // ── Isian otomatis dari Tindak Lanjut Inventarisasi (Fase 2, III.B.11) ──────
+  // `?skpd=&tl=<id isian>` (hanya menu Hasil Inventarisasi) → form dokumen baru
+  // terbuka dgn barang dari "BMD Belum Tercatat" sudah tersusun sbg draft.
+  // Operator tinggal mengisi No. Dokumen & mengunggah dokumen sumbernya. Kartu
+  // yang lahir membawa `payload.inv_isian_id` — itu yang dilacak menu Tindak
+  // Lanjut. SESUDAH efek reset di atas, supaya reset tak menimpa form ini.
+  const tlParam = useParamTindakLanjut('tl')
+  const [prefillLki, setPrefillLki] = useState<PrefillLki | null>(null)
+  const tlDipakai = useRef(false)
+  useEffect(() => { if (tlParam && kategori === 'hasil_inventarisasi') setSkpd(tlParam.skpd) }, [tlParam]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!tlParam || kategori !== 'hasil_inventarisasi' || tlDipakai.current || skpd !== tlParam.skpd) return
+    tlDipakai.current = true
+    void (async () => {
+      try {
+        const isian = await muatIsian(supabase, tlParam.tl)
+        if (isian.aset_id) throw new Error('isian ini bukan BMD Belum Tercatat')
+        const gol = kodeLevel3(isian.jawaban?.baru?.kode_barang || '')
+        const items = draftDariBaru(isian.jawaban || {}, gol).map(d => ({ ...d, key: newKey() }))
+        if (items.length === 0) throw new Error('isian LKI-nya belum punya kode barang')
+        setPrefillLki({ isianId: isian.id, items, catatan: isian.jawaban?.keterangan || '' })
+        setMode('baru')
+      } catch (e) {
+        setMsg(`Error: gagal membuka isian dari Tindak Lanjut — ${e instanceof Error ? e.message : String(e)}`)
+      }
+    })()
+  }, [skpd, tlParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const skpdNama = skpd ? skpdPathMap[Number(skpd)] : undefined
 
@@ -656,15 +693,21 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       ) : mode === 'baru' ? (
         <DokumenForm judul={judul} pihakLabel={pihakLabel} skpdNama={skpdNama || ''}
           cekNomorDipakai={cekNomorDipakai}
-          kategori={kategori} skpdId={Number(skpd)}
-          onCancel={() => setMode('list')}
-          onSaved={() => { setMode('list'); setMsg('Dokumen tersimpan sbg draft — lengkapi barang lalu tunggu persetujuan admin.'); loadJurnals(skpd) }}
+          kategori={kategori} skpdId={Number(skpd)} prefillLki={prefillLki}
+          onCancel={() => { setMode('list'); setPrefillLki(null) }}
+          onSaved={() => {
+            setMode('list')
+            setMsg(prefillLki
+              ? 'Dokumen tersimpan sbg draft dgn barang dari Lembar Kerja Inventarisasi — unggah FOTO tiap barang lewat ✎ Edit Spesifikasi (wajib sebelum disetujui), lalu tunggu persetujuan.'
+              : 'Dokumen tersimpan sbg draft — lengkapi barang lalu tunggu persetujuan admin.')
+            setPrefillLki(null); loadJurnals(skpd)
+          }}
         />
       ) : (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} dokumen {judul.toLowerCase()}</span>
-            <button className="btn-primary" onClick={() => { setMsg(''); setMode('baru') }}>+ Tambah {judul}</button>
+            <button className="btn-primary" onClick={() => { setMsg(''); setPrefillLki(null); setMode('baru') }}>+ Tambah {judul}</button>
           </div>
 
           {loadingJurnal ? (
@@ -1104,9 +1147,11 @@ function ApprovedCard({ j, isAdmin, busy, pihakLabel, onUnapprove }: {
 }
 
 // ── Form dokumen baru — HANYA header, tanpa barang ──────────────────────────
-function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDipakai, onCancel, onSaved }: {
+function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDipakai, prefillLki, onCancel, onSaved }: {
   kategori: KategoriPerolehan; skpdId: number; skpdNama: string; judul: string; pihakLabel: string | null
   cekNomorDipakai: (noSk: string, excludeId?: string) => Promise<string | null>
+  /** Barang draft dari BMD Belum Tercatat (Tindak Lanjut Inventarisasi, Fase 2). */
+  prefillLki?: PrefillLki | null
   onCancel: () => void; onSaved: () => void
 }) {
   const supabase = createClient()
@@ -1116,7 +1161,7 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
   const [tglDok, setTglDok] = useState(todayStr())
   const [pihak, setPihak] = useState('')
   const [sumberDana, setSumberDana] = useState('')
-  const [ket, setKet] = useState('')
+  const [ket, setKet] = useState(prefillLki ? `Hasil inventarisasi — BMD belum tercatat${prefillLki.catatan ? `: ${prefillLki.catatan}` : ''}` : '')
   const [dokPaths, setDokPaths] = useState<string[]>([])
   const [dokUploading, setDokUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1145,7 +1190,12 @@ function DokumenForm({ kategori, skpdId, skpdNama, judul, pihakLabel, cekNomorDi
     setErr(''); setSaving(true)
     const dup = await cekNomorDipakai(noDok.trim())
     if (dup) { setErr(dup); setSaving(false); return }
-    const payload: HeaderPayload = { pihak: pihak.trim() || undefined, sumber_dana: sumberDana.trim() || undefined, dokumen_paths: dokPaths, draft_items: [] }
+    const payload: HeaderPayload = {
+      pihak: pihak.trim() || undefined, sumber_dana: sumberDana.trim() || undefined, dokumen_paths: dokPaths,
+      draft_items: prefillLki ? prefillLki.items : [],
+      // Jejak ke isian LKI asal — dibaca menu Tindak Lanjut (III.B.11).
+      ...(prefillLki ? { inv_isian_id: prefillLki.isianId } : {}),
+    }
     const { error } = await supabase.from('jurnal_header').insert({
       skpd_id: skpdId, kategori, jenis: null, sub_jenis: null,
       no_sk: noDok.trim(), tanggal: tglDok, keterangan: ket.trim() || null,

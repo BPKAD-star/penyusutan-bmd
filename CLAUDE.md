@@ -7885,8 +7885,26 @@ HANYA dari isian **divalidasi** (sumber sama dgn LHI, `klasifikasiLhi`). **Murni
   sebab "direhab" → anaknya bangunan BARU); B.5 = kustodian Pengamanan (hanya golongan Pengamanan); B.6 = reklas + perjanjian
   Pemanfaatan; B.7 non-RB = kondisi register; B.8 = per kolom (foto: register punya foto yang belum ada saat diinventarisasi);
   B.9 = salah satu kembaran dinonaktifkan (Pencatatan Ganda/Penggabungan); B.12 = kode register = kode baru; B.13 = dipecah.
-- **"Tandai manual"** (belum dilacak): B.4, B.10, B.11, B.5 golongan non-Pengamanan. Fase berikutnya: isian otomatis ke menu
-  tujuan + cetak Surat Usulan Reklas (lampiran LHI) + penandaan manual.
+- **"Tandai manual"** (belum dilacak): B.4, B.10, B.5 golongan non-Pengamanan. Fase 3: penandaan manual + rekap per SKPD.
+
+### Tindak Lanjut — Fase 2: isian otomatis & Surat Usulan Reklas (2026-10-02, tanpa migrasi)
+Tombol **Kerjakan →** membawa parameter URL; menu tujuan membaca SEKALI (`useParamTindakLanjut`) lalu membuka form yang
+sudah terisi. **Tak ada yang tersimpan sampai operator menekan Simpan** (dokumen sumber & seluruh penjaga menu tetap berlaku).
+- **Koreksi** `?skpd&tl=<isian>&lhi=` — isiannya DIBACA ULANG (`muatIsian`), bukan dititipkan lewat URL: B.8/B.7(non-RB) →
+  Spesifikasi Barang, nilai "seharusnya" (`spekDariLki`) dipasang sbg **EDIT TERSUSUN** lewat `isiDariLki`, BUKAN ditimpakan
+  ke nilai awal popup — ⚠️ Simpan mengukur perubahan terhadap nilai awal, jadi menimpanya membuat isian LKI terbaca "tidak
+  berubah" & tak pernah tersimpan. Popup kini dibuka dgn edit tersusun (kalau ada). B.13 → Pemecahan (`pilihInduk(b, nama)`,
+  jumlah & nama pecahan dari LKI, min. 2). B.9 → Pencatatan Ganda (barang + kembaran; yang pertama bertahan, bisa ditukar).
+- **Reklasifikasi** `?skpd&aset&kode&alasan` — barang tercentang, alasan (`kode` utk B.12, `golongan` utk ke Aset Lain-Lain)
+  & kode tujuan USULAN terpilih. **Kapitalisasi** `?skpd&induk&anak`.
+- **Hasil Inventarisasi** `?skpd&tl` (B.11) — form dokumen baru dgn draft barang dari `jawaban.baru` (`draftDariBaru`:
+  kuantitas N → N barang per unit, hanya kolom `ASET_FIELD_COLS`); kartu membawa **`payload.inv_isian_id`**, yang dilacak
+  Tindak Lanjut (draft = Sebagian, disetujui = Selesai; arsip `ditolak` diabaikan). ⚠️ Foto TIDAK ikut (bucket beda) — foto
+  wajib sebelum Setujui, jadi operator mengunggahnya lewat ✎ Edit Spesifikasi; pesannya mengatakan itu.
+- **Surat Usulan Reklasifikasi** `/cetak/usulan-reklas?skpd&tahun&ids` — centang kolom **Usul** (hanya `perluReklas`: barang
+  aktif yang kodenya belum kode tujuan), satu SKPD per surat. Isi dibaca ulang lewat `muatTindakLanjut` (surat = layar),
+  fail-closed. Kepada Kepala BKAD selaku Pengelola, lampiran LHI, kolom Kode Semula → Kode Usulan + format LHI. Penanda tangan
+  `fetchCalonTtd` + Definitif/Plt, nomor & tanggal disimpan `kunciTtdUsulanReklas`; nomor kosong = bertitik-titik.
 
 ### Kolom teknis JIJ di register & Saldo Awal (migrasi 20261002_01)
 Jenis Perkerasan Jalan · Jenis Bahan Struktur Jembatan · Nomor Ruas Jalan · Nomor Jaringan Irigasi kini kolom `aset` DAN

@@ -73,6 +73,9 @@ export type KonteksTL = {
   jenisTerakhir: Map<string, string>
   /** aset_id yang masuk RKBMD Penghapusan berstatus diajukan / disetujui. */
   usulHapus: Set<string>
+  /** isian (III.B.11) → status kartu Hasil Inventarisasi yang dibuat darinya
+   *  (`jurnal_header.payload.inv_isian_id`, Fase 2). Tak ada = belum dibuat. */
+  draftHasilInv?: Map<string, 'pending' | 'disetujui'>
 }
 
 /** Barang nonaktif KARENA jenis ledger tertentu (yang terakhir & belum dibatalkan). */
@@ -104,6 +107,14 @@ export type TemuanTL = {
   menu: MenuTL[]
   /** Usulan kode tujuan reklas — USULAN, tidak pernah diterapkan otomatis. */
   kodeTujuan?: string | null
+  /** Alasan Reklasifikasi yang cocok: 'kode' (kodefikasi, satu jenis aset) atau
+   *  'golongan' (pindah jenis — ke Aset Lain-Lain). Dipakai isian otomatis. */
+  alasanReklas?: 'kode' | 'golongan'
+  /** Masih perlu direklas ke `kodeTujuan` (barang aktif & kodenya belum itu) —
+   *  syarat masuk Surat Usulan Reklasifikasi. */
+  perluReklas?: boolean
+  /** Barang lain yang terlibat — untuk isian otomatis Kapitalisasi & Pencatatan Ganda. */
+  relasi?: { induk?: string | null; anak?: string | null; kembar?: string | null }
   catatan?: string
 }
 
@@ -190,8 +201,12 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
   const gol = s.golongan
   const kodes = klasifikasiLhi({ ...s, foto_paths: [] } as InvBaris)
   const out: TemuanTL[] = []
-  const tambah = (lhi: LhiKode, t: Omit<TemuanTL, 'id' | 'isianId' | 'asetId' | 'lhi' | 'status'>) =>
-    out.push({ id: `${s.id}|${lhi}`, isianId: s.id, asetId: id, lhi, status: statusDari(t.tahap), ...t })
+  const tambah = (lhi: LhiKode, t: Omit<TemuanTL, 'id' | 'isianId' | 'asetId' | 'lhi' | 'status' | 'perluReklas'>) =>
+    out.push({
+      id: `${s.id}|${lhi}`, isianId: s.id, asetId: id, lhi, status: statusDari(t.tahap),
+      perluReklas: !!t.kodeTujuan && !!a && a.status === 'aktif' && a.kode !== t.kodeTujuan,
+      ...t,
+    })
 
   for (const lhi of kodes) {
     switch (lhi) {
@@ -199,7 +214,7 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
         tambah(lhi, {
           tindakan: 'Reklas ke Aset Hilang, lalu usulan penghapusan',
           tahap: tahapHapus(ctx, id!, tahapReklas(a, KODE_ASET_HILANG, 'Reklas ke Aset Hilang')),
-          menu: ['reklasifikasi', 'rkbmd_penghapusan', 'penghapusan'], kodeTujuan: KODE_ASET_HILANG,
+          menu: ['reklasifikasi', 'rkbmd_penghapusan', 'penghapusan'], kodeTujuan: KODE_ASET_HILANG, alasanReklas: 'golongan',
         })
         break
       case 'III.B.2': {
@@ -212,7 +227,7 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
         } : {
           tindakan: 'Reklas ke Aset Dalam Penelusuran, lalu usulan penghapusan',
           tahap: tahapHapus(ctx, id!, tahapReklas(a, KODE_DALAM_PENELUSURAN, 'Reklas ke Aset Dalam Penelusuran')),
-          menu: ['reklasifikasi', 'rkbmd_penghapusan', 'penghapusan'], kodeTujuan: KODE_DALAM_PENELUSURAN,
+          menu: ['reklasifikasi', 'rkbmd_penghapusan', 'penghapusan'], kodeTujuan: KODE_DALAM_PENELUSURAN, alasanReklas: 'golongan',
         })
         break
       }
@@ -221,11 +236,12 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
         // bangunan baru": barang INI induknya, anaknya bangunan baru itu.
         const rehab = j.sebab_tidak_ada === 'rehab_bangunan_baru'
         const anak = rehab ? j.sebab_relasi?.aset_id : id
+        const indukId = rehab ? id : (j.atribusi === 'ya_induk_diketahui' ? j.induk?.aset_id : j.sebab_relasi?.aset_id)
         const induk = rehab ? s.snapshot?.nama_barang : (j.induk?.nama_barang || j.sebab_relasi?.nama_barang)
         tambah(lhi, {
           tindakan: `Kapitalisasi ke induk${induk ? ` "${induk}"` : ''}`,
           tahap: [{ label: 'Diserap ke induk (menu Kapitalisasi)', selesai: anak ? nonaktifKarena(ctx, anak, ['kapitalisasi_serap', 'penggabungan_keluar']) : null }],
-          menu: ['kapitalisasi'],
+          menu: ['kapitalisasi'], relasi: { induk: indukId || null, anak: anak || null },
         })
         break
       }
@@ -252,7 +268,7 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
             tahapReklas(a, tujuan, label),
             { label: 'Perjanjian tercatat di menu Pemanfaatan', selesai: !!a?.pemanfaatan },
           ],
-          menu: ['reklasifikasi', 'pemanfaatan'], kodeTujuan: tujuan,
+          menu: ['reklasifikasi', 'pemanfaatan'], kodeTujuan: tujuan, alasanReklas: 'golongan',
         })
         break
       }
@@ -263,6 +279,7 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
             tindakan: 'Reklas ke Aset Rusak Berat, lalu usulan penghapusan',
             tahap: tahapHapus(ctx, id!, tujuan ? tahapReklas(a, tujuan, 'Reklas ke Aset Rusak Berat') : undefined),
             menu: [...(tujuan ? ['reklasifikasi' as const] : []), 'rkbmd_penghapusan', 'penghapusan'], kodeTujuan: tujuan,
+            alasanReklas: 'golongan',
           })
         } else {
           tambah(lhi, {
@@ -282,7 +299,7 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
         tambah(lhi, {
           tindakan: 'Koreksi Pencatatan Ganda',
           tahap: [{ label: 'Salah satu dinonaktifkan (Pencatatan Ganda / Penggabungan)', selesai: ok }],
-          menu: ['koreksi'],
+          menu: ['koreksi'], relasi: { kembar: kembar || null },
           catatan: 'Kalau barangnya hanya tumpang tindih sebagian, koreksi luas/nilai-nya saja — penandaan manual menyusul.',
         })
         break
@@ -290,15 +307,26 @@ export function temuanDariIsian(s: IsianTL, ctx: KonteksTL): TemuanTL[] {
       case 'III.B.10':
         tambah(lhi, { tindakan: 'Penyelesaian status tanah dengan pemiliknya', tahap: [], menu: [], catatan: 'Belum bisa dilacak otomatis — penandaan manual menyusul.' })
         break
-      case 'III.B.11':
-        tambah(lhi, { tindakan: 'Catat lewat Cara Perolehan → Hasil Inventarisasi', tahap: [], menu: ['hasil_inventarisasi'], catatan: 'Pelacakan otomatis menyusul (draft dari isian LKI).' })
+      case 'III.B.11': {
+        // Dilacak lewat kartu Hasil Inventarisasi yang dibuat DARI isian ini
+        // (`payload.inv_isian_id`). Tanpa konteksnya → tak bisa dinilai.
+        const st = ctx.draftHasilInv?.get(s.id)
+        tambah(lhi, {
+          tindakan: 'Catat lewat Cara Perolehan → Hasil Inventarisasi',
+          tahap: ctx.draftHasilInv ? [
+            { label: 'Kartu draft dibuat dari isian LKI', selesai: !!st },
+            { label: 'Disetujui (barang masuk register)', selesai: st === 'disetujui' },
+          ] : [],
+          menu: ['hasil_inventarisasi'],
+        })
         break
+      }
       case 'III.B.12': {
         const baru = j.kode_barang?.kode_baru || null
         tambah(lhi, {
           tindakan: 'Surat usulan reklas, lalu Reklasifikasi Kesalahan Kodefikasi',
           tahap: [tahapReklas(a, baru, 'Kode register sudah diubah')],
-          menu: ['reklasifikasi'], kodeTujuan: baru,
+          menu: ['reklasifikasi'], kodeTujuan: baru, alasanReklas: 'kode',
         })
         break
       }

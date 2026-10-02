@@ -8,7 +8,8 @@
 //   5. Preview rinci (BPK-friendly) lalu Simpan → kapitalisasi di induk + anak
 //      diserap ('kapitalisasi_serap'). Batal → 'batal_kapitalisasi' (kembali semula).
 // Perhitungan final tetap di engine (overhaul_band); snapshot disimpan di payload.
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { useParamTindakLanjut } from './useParamTindakLanjut'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
@@ -189,6 +190,20 @@ export default function Kapitalisasi() {
 
   useEffect(() => { loadList(skpd); setMode('list') }, [skpd, loadList])
 
+  // ── Isian otomatis dari Tindak Lanjut Inventarisasi (Fase 2) ────────────────
+  // `?skpd=&induk=&anak=` → form terbuka dgn induk & anak dari LKI terpilih.
+  // SESUDAH efek reset di atas, supaya reset `mode` tak menimpa form ini.
+  const tlParam = useParamTindakLanjut('anak')
+  const [prefill, setPrefill] = useState<{ induk: string | null; anak: string } | null>(null)
+  const tlDipakai = useRef(false)
+  useEffect(() => { if (tlParam) setSkpd(tlParam.skpd) }, [tlParam])
+  useEffect(() => {
+    if (!tlParam || tlDipakai.current || skpd !== tlParam.skpd) return
+    tlDipakai.current = true
+    setPrefill({ induk: tlParam.induk || null, anak: tlParam.anak })
+    setUbah(null); setMode('tambah')
+  }, [skpd, tlParam])
+
   async function batal(j: Jurnal) {
     if (!(await konfirmasi({
       nada: 'amber', ikon: '↩', judul: 'Batalkan kapitalisasi ini?',
@@ -275,7 +290,9 @@ export default function Kapitalisasi() {
         <TambahKapitalisasi
           skpdId={Number(skpd)} skpdNama={skpdNama || ''} bands={bands} golonganLabels={golonganLabels}
           ubah={ubah}
+          prefill={ubah ? null : prefill}
           onCancel={() => {
+            setPrefill(null)
             // Saat mengubah, kapitalisasi lamanya SUDAH batal (lihat mulaiUbah).
             // Katakan apa adanya — kalau tidak, operator mengira "Kembali" =
             // membatalkan penyuntingan, padahal datanya memang sudah terbalik.
@@ -285,7 +302,7 @@ export default function Kapitalisasi() {
             setUbah(null); setMode('list'); loadList(skpd)
           }}
           onSaved={(n) => {
-            setMode('list')
+            setMode('list'); setPrefill(null)
             setMsg(`${ubah ? 'Kapitalisasi diperbarui' : 'Kapitalisasi tersimpan'} — ${n} barang anak diserap ke induk. Jalankan engine untuk memperbarui penyusutan.`)
             setUbah(null); loadList(skpd)
           }}
@@ -352,11 +369,13 @@ export default function Kapitalisasi() {
 }
 
 // ── Form tambah ─────────────────────────────────────────────────────────────
-function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onCancel, onSaved }: {
+function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, prefill, onCancel, onSaved }: {
   skpdId: number; skpdNama: string; bands: BandOverhaul[]; golonganLabels: Record<string, string>
   /** Transaksi yang sedang diubah — SUDAH dibatalkan sebelum form ini dibuka.
    *  null = membuat transaksi baru. */
   ubah?: Jurnal | null
+  /** Dari Tindak Lanjut Inventarisasi: id induk & anak dari LKI (Fase 2). */
+  prefill?: { induk: string | null; anak: string } | null
   onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
@@ -389,6 +408,24 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
       setAnak(ubah.anak.map(a => rows.find(r => r.id === a.id)).filter((b): b is Barang => !!b))
     })()
   }, [ubah]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Isian dari Tindak Lanjut: induk & anak dibaca dari register (aktif saja) —
+  // syarat kapitalisasi (golongan, komptabel, tanggal) tetap diperiksa form ini.
+  const [errPrefill, setErrPrefill] = useState('')
+  useEffect(() => {
+    if (!prefill) return
+    void (async () => {
+      const ids = [prefill.anak, ...(prefill.induk ? [prefill.induk] : [])]
+      const { data, error } = await supabase.from('aset').select(BARANG_COLS).in('id', ids).eq('status', 'aktif')
+      if (error) { setErrPrefill(`Gagal memuat barang dari Tindak Lanjut — ${error.message}`); return }
+      const rows = (data || []) as Barang[]
+      const i = prefill.induk ? rows.find(r => r.id === prefill.induk) : undefined
+      const a = rows.find(r => r.id === prefill.anak)
+      if (i) setInduk(i)
+      if (a) setAnak([a])
+      if (!i || !a) setErrPrefill('Sebagian barang dari Tindak Lanjut tidak ditemukan / sudah tidak aktif — pilih manual.')
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Posisi induk SEBELUM kapitalisasi = posisi pada AKHIR periode sebelum
   // tanggal dokumen — yaitu keadaan pembuka periode kapitalisasi, persis state
@@ -650,6 +687,13 @@ function TambahKapitalisasi({ skpdId, skpdNama, bands, golonganLabels, ubah, onC
         </div>
       )}
 
+      {prefill && (
+        <p className="text-xs text-teal-800 bg-teal/5 border border-teal/30 rounded-lg px-3 py-2.5 max-w-3xl">
+          Dari <span className="font-medium">Tindak Lanjut Inventarisasi</span>: induk &amp; barang anak dari LKI sudah terpilih.
+          Isi No. Dokumen &amp; tanggal, periksa pratinjaunya, lalu Simpan.
+        </p>
+      )}
+      {errPrefill && <p className="text-sm text-amber-700 max-w-3xl">{errPrefill}</p>}
       {err && <p className="text-sm text-red-600 max-w-3xl">{err}</p>}
       <div className="max-w-3xl">
         <button className="btn-primary" onClick={simpan} disabled={saving || !induk || anak.length === 0}>

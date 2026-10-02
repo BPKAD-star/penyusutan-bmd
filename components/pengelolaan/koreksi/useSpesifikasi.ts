@@ -24,6 +24,7 @@ export type Spesifikasi = {
   modalOpen: boolean
   setModalOpen: (v: boolean) => void
   openModal: () => Promise<void>
+  isiDariLki: (b: Barang, spek: Record<string, string>) => Promise<void>
   initFields: Record<string, string>
   initFoto: string[]
   prefix: string
@@ -88,7 +89,29 @@ export function useSpesifikasi(preset: { barang: Barang } | null | undefined, on
     setModalOpen(true)
   }
 
+  /**
+   * Isian otomatis dari Tindak Lanjut Inventarisasi (Fase 2): nilai register
+   * dimuat sbg nilai AWAL, lalu nilai "seharusnya" dari LKI dipasang sbg EDIT
+   * TERSUSUN — bukan ditimpakan ke nilai awal. Simpan mengukur perubahan
+   * terhadap nilai awal, jadi menimpanya di sana membuat isian LKI terbaca
+   * "tidak berubah" & tak pernah tersimpan.
+   */
+  async function isiDariLki(b: Barang, spek: Record<string, string>) {
+    setPrefix(`draft/koreksi-spek/${b.id}`)
+    const keys = koreksiFieldKeys(b.kode)
+    const { data, error } = await supabase.from('aset').select([...keys, 'foto_paths'].join(',')).eq('id', b.id).single()
+    if (error) { onErr(`gagal memuat spesifikasi barang: ${error.message}`); return }
+    const row = (data || {}) as Record<string, unknown>
+    const f: Record<string, string> = {}
+    for (const k of keys) { const v = row[k]; if (v != null) f[k] = String(v) }
+    const foto = Array.isArray(row.foto_paths) ? (row.foto_paths as string[]) : []
+    setInitFields(f); setInitFoto(foto)
+    const dariLki: Record<string, string> = {}
+    for (const [k, v] of Object.entries(spek)) if ((keys as string[]).includes(k)) dariLki[k] = v
+    setEdit({ fields: { ...f, ...dariLki }, foto: { replace: foto } })
+  }
+
   function reset() { setSel({}); setEdit(null); setModalOpen(false) }
 
-  return { sel, setSel, list, sameGol, toggle, modalOpen, setModalOpen, openModal, initFields, initFoto, prefix, edit, setEdit, reset }
+  return { sel, setSel, list, sameGol, toggle, modalOpen, setModalOpen, openModal, isiDariLki, initFields, initFoto, prefix, edit, setEdit, reset }
 }

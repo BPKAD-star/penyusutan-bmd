@@ -24,7 +24,8 @@
 // sini masih berbunyi "belum ada mekanisme batal/reversal" sampai 2026-08-27 —
 // basi, dan komentar yang bertentangan dgn kodenya lebih berbahaya daripada tak
 // ada komentar sama sekali.
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { useParamTindakLanjut } from './useParamTindakLanjut'
 import PeringatanNamaSkpd from '@/components/PeringatanNamaSkpd'
 import { useNamaSkpdMap } from '@/components/useNamaSkpdMap'
 import { createClient } from '@/lib/supabase/client'
@@ -101,6 +102,11 @@ type JurnalLine = {
 type Jurnal = Header & { lines: JurnalLine[]; total: number }
 
 const HEADER_COLS = 'id,no_sk,tanggal,periode,jenis,keterangan,kategori,payload'
+// Kolom `aset` untuk tabel pilih barang — dipakai `tampilkan()` & isian otomatis.
+const BARANG_COLS = 'id,nibar,kode,nama_barang,uraian_barang,tgl_perolehan,merek_tipe,jumlah,satuan,nilai_perolehan,intra_ekstra,skpd_id'
+
+/** Isian otomatis dari menu Tindak Lanjut Inventarisasi (Fase 2). */
+type ReklasPrefill = { barang: Barang; alasan: Alasan; kodeTujuan: KodefikasiHasil | null }
 
 // Kode SEBELUM/SESUDAH reklas per baris. Untuk `reklas_komptabel` (kode tak
 // berubah, cuma keranjang intra/ekstra) dua-duanya jatuh ke `l.kode` — sengaja,
@@ -390,6 +396,37 @@ export default function Reklasifikasi() {
 
   useEffect(() => { loadJurnals(skpd); setMode('list'); setAddTo(null); setEditing(null) }, [skpd, loadJurnals])
 
+  // ── Isian otomatis dari Tindak Lanjut Inventarisasi (Fase 2) ────────────────
+  // `?skpd=&aset=&kode=&alasan=` → form Tambah Jurnal terbuka dgn barangnya
+  // tercentang & kode tujuan usulan terpilih. Efek ini SENGAJA dideklarasikan
+  // SESUDAH efek reset di atas, supaya reset `mode` saat SKPD berganti tak
+  // menimpa form yang baru dibuka.
+  const tlParam = useParamTindakLanjut('aset')
+  const [prefill, setPrefill] = useState<ReklasPrefill | null>(null)
+  const prefillDipakai = useRef(false)
+  useEffect(() => { if (tlParam) setSkpd(tlParam.skpd) }, [tlParam])
+  useEffect(() => {
+    if (!tlParam || prefillDipakai.current || skpd !== tlParam.skpd) return
+    prefillDipakai.current = true
+    void (async () => {
+      const [b, k] = await Promise.all([
+        supabase.from('aset').select(BARANG_COLS).eq('id', tlParam.aset).eq('status', 'aktif').maybeSingle(),
+        tlParam.kode
+          ? supabase.from('admin_kodefikasi_bmd').select('kode,uraian').eq('kode', tlParam.kode).maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+      ])
+      if (b.error || k.error) { setMsg(`Error: gagal memuat isian dari Tindak Lanjut — ${(b.error || k.error)!.message}`); return }
+      if (!b.data) { setMsg('Error: barang dari Tindak Lanjut tidak ditemukan di SKPD ini (mungkin sudah tidak aktif atau pindah SKPD).'); return }
+      const kd = k.data as { kode: string; uraian: string | null } | null
+      setPrefill({
+        barang: b.data as unknown as Barang,
+        alasan: tlParam.alasan === 'kode' ? 'kode' : 'golongan',
+        kodeTujuan: kd ? { kode: kd.kode, uraian: kd.uraian || '', nama_objek: null, nama_rincian: null, nama_sub_rincian: null, masa_manfaat_tahun: null, batas_kapitalisasi: null } : null,
+      })
+      setAddTo(null); setMode('tambah')
+    })()
+  }, [skpd, tlParam]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const skpdNama = skpdList.find(s => String(s.id) === skpd)?.nama
 
   return (
@@ -411,8 +448,9 @@ export default function Reklasifikasi() {
       ) : mode === 'tambah' ? (
         <ReklasForm
           skpdId={Number(skpd)} skpdNama={skpdNama || ''} golonganLabels={golonganLabels} header={null}
-          onCancel={() => setMode('list')}
-          onSaved={n => { setMode('list'); setMsg(`Jurnal tersimpan — ${n} barang direklasifikasi.`); loadJurnals(skpd) }}
+          prefill={prefill}
+          onCancel={() => { setMode('list'); setPrefill(null) }}
+          onSaved={n => { setMode('list'); setPrefill(null); setMsg(`Jurnal tersimpan — ${n} barang direklasifikasi.`); loadJurnals(skpd) }}
         />
       ) : addTo ? (
         <ReklasForm
@@ -424,7 +462,7 @@ export default function Reklasifikasi() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-500">{skpdNama} — {jurnals.length} jurnal</span>
-            <button className="btn-primary" onClick={() => { setMsg(''); setMode('tambah') }}>+ Tambah Jurnal</button>
+            <button className="btn-primary" onClick={() => { setMsg(''); setPrefill(null); setMode('tambah') }}>+ Tambah Jurnal</button>
           </div>
 
           {loadingJurnal ? (
@@ -675,15 +713,19 @@ function EditHeaderModal({ header, onClose, onSaved }: {
 
 // ── Sub-view: dokumen → pilih barang → reklas jadi apa → nama barang ────────
 // Urutan SENGAJA: barang dulu BARU target ("barang INI jadi INI"), lalu nama.
-function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSaved }: {
+function ReklasForm({ skpdId, skpdNama, golonganLabels, header, prefill, onCancel, onSaved }: {
   skpdId: number; skpdNama: string; golonganLabels: Record<string, string>
-  header: Header | null; onCancel: () => void; onSaved: (n: number) => void
+  header: Header | null
+  /** Dari Tindak Lanjut Inventarisasi: alasan, kode tujuan USULAN, & barangnya
+   *  sudah terpilih. Dibaca SEKALI sbg nilai awal — operator tetap bebas mengubah. */
+  prefill?: ReklasPrefill | null
+  onCancel: () => void; onSaved: (n: number) => void
 }) {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
   const dateBounds = useDateBounds()
 
-  const [alasan, setAlasan] = useState<Alasan>(header?.jenis || 'komptabel_ke_ekstra')
+  const [alasan, setAlasan] = useState<Alasan>(header?.jenis || prefill?.alasan || 'komptabel_ke_ekstra')
   const [noSk, setNoSk] = useState('')
   const [tgl, setTgl] = useState(new Date().toISOString().slice(0, 10))
   const [ket, setKet] = useState('')
@@ -698,13 +740,13 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
     header?.payload?.kode_tujuan
       ? { kode: header.payload.kode_tujuan, uraian: header.payload.uraian_tujuan || '',
           nama_objek: null, nama_rincian: null, nama_sub_rincian: null, masa_manfaat_tahun: null, batas_kapitalisasi: null }
-      : null
+      : (prefill?.kodeTujuan ?? null)
   )
 
   const [fGolongan, setFGolongan] = useState('')
   const [fSearch, setFSearch] = useState('')
-  const [rows, setRows] = useState<Barang[]>([])
-  const [loaded, setLoaded] = useState(false)
+  const [rows, setRows] = useState<Barang[]>(prefill ? [prefill.barang] : [])
+  const [loaded, setLoaded] = useState(!!prefill)
   const [loading, setLoading] = useState(false)
 
   // Edit nama barang — per-barang, opt-in (centang dulu baru muncul field).
@@ -721,7 +763,7 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   async function tampilkan() {
     setLoading(true)
     let q = supabase.from('aset')
-      .select('id,nibar,kode,nama_barang,uraian_barang,tgl_perolehan,merek_tipe,jumlah,satuan,nilai_perolehan,intra_ekstra,skpd_id')
+      .select(BARANG_COLS)
       .eq('status', 'aktif').eq('skpd_id', skpdId)
     if (fGolongan) q = q.like('kode', `${fGolongan}.%`)
     if (filterAwal) q = q.eq('intra_ekstra', filterAwal)
@@ -751,6 +793,10 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
   // akan mengunci operator.
   const { sel, setSel, selList, allSelected, toggle, toggleAll } =
     useSeleksiBarang<Barang>(rows, b => !invalidReason(b))
+  // Barang dari Tindak Lanjut langsung tercentang (sekali, saat form dibuka).
+  useEffect(() => {
+    if (prefill) setSel({ [prefill.barang.id]: prefill.barang })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selTotal = selList.reduce((s, b) => s + b.nilai_perolehan, 0)
   const invalidSel = selList.filter(b => invalidReason(b))
@@ -860,6 +906,15 @@ function ReklasForm({ skpdId, skpdNama, golonganLabels, header, onCancel, onSave
 
   return (
     <div className="space-y-4">
+      {prefill && !header && (
+        <div className="text-xs text-teal-800 bg-teal/5 border border-teal/30 rounded-lg px-3 py-2.5">
+          Dari <span className="font-medium">Tindak Lanjut Inventarisasi</span>: barang{' '}
+          <span className="font-medium">{prefill.barang.nama_barang || prefill.barang.nibar || '-'}</span> sudah dicentang
+          {prefill.kodeTujuan && <> dan kode tujuan <span className="font-medium">{prefill.kodeTujuan.kode}</span> (usulan) sudah dipilih</>}.
+          Isi No. Dokumen &amp; tanggal, unggah <span className="font-medium">surat usulan reklasifikasi</span> sebagai dokumen
+          sumber, lalu Simpan. Kode di register baru berubah saat Simpan ditekan.
+        </div>
+      )}
       {/* 1. Dokumen sumber (alasan + no/tgl/ket). Kalau tambah ke jurnal ada → ringkasan. */}
       <div className="card p-5">
         <div className="flex items-center justify-between mb-4">

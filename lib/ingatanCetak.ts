@@ -176,6 +176,9 @@ export const kunciTtdPengamanan = (
 /** LHI (Laporan Hasil Inventarisasi) — satu pilihan per SKPD, dipakai ke-13 format. */
 export const kunciTtdLhi = (skpdId: number) => `bmd_lhi_ttd_skpd_${skpdId}`
 
+/** Surat Usulan Reklasifikasi dari Tindak Lanjut Inventarisasi (per SKPD). */
+export const kunciTtdUsulanReklas = (skpdId: number) => `bmd_usulan_reklas_ttd_skpd_${skpdId}`
+
 /** Lembar PEMANFAATAN — satu lembar per SKPD (tak ada cabang). */
 export const kunciTtdPemanfaatan = (skpdId: number) => `bmd_pemanfaatan_ttd_skpd_${skpdId}`
 

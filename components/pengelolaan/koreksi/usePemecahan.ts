@@ -43,7 +43,7 @@ export type Pemecahan = {
   editIdx: number | null
   setEditIdx: (i: number | null) => void
   setPecahan: React.Dispatch<React.SetStateAction<PecahanItem[]>>
-  pilihInduk: (b: Barang) => Promise<void>
+  pilihInduk: (b: Barang, namaPecahan?: string[]) => Promise<void>
   setPecah: (key: string, patch: Partial<PecahanItem>) => void
   addPecah: () => void
   removePecah: (key: string) => void
@@ -104,7 +104,10 @@ export function usePemecahan(tgl: string, onErr: (msg: string) => void): Pemecah
   }, [induk, tgl]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pilih induk → warisi field spesifikasi induk sbg titik awal tiap pecahan.
-  async function pilihInduk(b: Barang) {
+  // `namaPecahan` (opsional, dari Tindak Lanjut Inventarisasi — sebab "seharusnya
+  // beberapa register"): jumlah & Spesifikasi Nama Barang tiap pecahan diambil
+  // dari nama yang ditulis petugas di LKI. Minimal tetap DUA pecahan.
+  async function pilihInduk(b: Barang, namaPecahan: string[] = []) {
     setInduk(b)
     const { data, error } = await supabase.from('aset').select(ASET_FIELD_COLS.join(',')).eq('id', b.id).single()
     // ⚠️ Berhenti sebelum `setPecahan`: kalau diteruskan, KEDUA pecahan lahir
@@ -119,10 +122,12 @@ export function usePemecahan(tgl: string, onErr: (msg: string) => void): Pemecah
     setIndukFields(f)
     // Dua baris kosong: pemecahan yang sah minimal 2 pecahan, jadi bentuk awalnya
     // sudah bentuk yang sah — operator mengisi, bukan menambah dulu baru mengisi.
-    setPecahan([
-      { key: newKey(), jumlah: '1', nilai: '', fields: { ...f }, foto: [] },
-      { key: newKey(), jumlah: '1', nilai: '', fields: { ...f }, foto: [] },
-    ])
+    const n = Math.max(2, namaPecahan.length)
+    setPecahan(Array.from({ length: n }, (_, i) => ({
+      key: newKey(), jumlah: '1', nilai: '',
+      fields: namaPecahan[i] ? { ...f, nama_barang: namaPecahan[i] } : { ...f },
+      foto: [],
+    })))
   }
 
   function setPecah(key: string, patch: Partial<PecahanItem>) {

@@ -34,7 +34,9 @@ export async function muatTindakLanjut(
   })
 
   const ids = asetDibutuhkan(isian)
-  const [aset, ledger, usul] = await Promise.all([
+  // III.B.11: kartu Hasil Inventarisasi yang dibuat DARI isian tsb (Fase 2).
+  const isianBaru = isian.filter(s => !s.aset_id).map(s => s.id)
+  const [aset, ledger, usul, kartuHasil] = await Promise.all([
     perPotongan<AsetKini, string>('keadaan barang', ids, pot =>
       sb.from('aset').select(ASET_COLS).in('id', pot) as unknown as PromiseLike<{ data: AsetKini[] | null; error: { message: string } | null }>),
     // Baris penentu status per aset itu cuma segelintir (hapus/pecah/serap +
@@ -48,7 +50,17 @@ export async function muatTindakLanjut(
       sb.from('rkbmd_item').select('aset_id,rkbmd:rkbmd_id!inner(jenis,status)')
         .in('aset_id', pot).eq('rkbmd.jenis', 'penghapusan').in('rkbmd.status', ['diajukan', 'disetujui']) as unknown as
         PromiseLike<{ data: { aset_id: string }[] | null; error: { message: string } | null }>),
+    // Kartu yang diarsipkan (`ditolak`) bukan tindak lanjut yang berlaku.
+    perPotongan<{ isian: string; approval_status: string }, string>('kartu Hasil Inventarisasi dari isian', isianBaru, pot =>
+      sb.from('jurnal_header').select('isian:payload->>inv_isian_id,approval_status')
+        .eq('kategori', 'hasil_inventarisasi').in('payload->>inv_isian_id', pot).neq('approval_status', 'ditolak') as unknown as
+        PromiseLike<{ data: { isian: string; approval_status: string }[] | null; error: { message: string } | null }>),
   ])
+  const draftHasilInv = new Map<string, 'pending' | 'disetujui'>()
+  for (const k of kartuHasil) {
+    // Satu isian bisa (tak sengaja) melahirkan dua kartu — yang disetujui menang.
+    if (draftHasilInv.get(k.isian) !== 'disetujui') draftHasilInv.set(k.isian, k.approval_status === 'disetujui' ? 'disetujui' : 'pending')
+  }
 
   const jenisTerakhir = new Map<string, string>()
   for (const r of [...ledger].sort((x, y) => x.id - y.id)) jenisTerakhir.set(r.aset_id, r.jenis)
@@ -56,6 +68,7 @@ export async function muatTindakLanjut(
     aset: new Map(aset.map(a => [a.id, a])),
     jenisTerakhir,
     usulHapus: new Set(usul.map(u => u.aset_id)),
+    draftHasilInv,
   }
 
   return isian.flatMap(s => temuanDariIsian(s, ctx).map(t => ({

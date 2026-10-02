@@ -163,6 +163,32 @@ describe('status dilacak dari KEADAAN barang', () => {
     expect(satu(isian({ baru: { kode_barang: '1.3.3.01.01.10.001' } }, { aset_id: null }), ctx(), 'III.B.11').status).toBe('manual')
   })
 
+  it('III.B.11 dilacak dari kartu Hasil Inventarisasi yang dibuat dari isiannya', () => {
+    const s = isian({ baru: { kode_barang: '1.3.3.01.01.10.001' } }, { aset_id: null })
+    const dgn = (m: Map<string, 'pending' | 'disetujui'>) => ({ ...ctx(), draftHasilInv: m })
+    expect(satu(s, dgn(new Map()), 'III.B.11').status).toBe('belum')
+    expect(satu(s, dgn(new Map([['I1', 'pending']])), 'III.B.11').status).toBe('proses')
+    expect(satu(s, dgn(new Map([['I1', 'disetujui']])), 'III.B.11').status).toBe('selesai')
+  })
+
+  it('perluReklas: hanya barang AKTIF yang kodenya belum kode tujuan', () => {
+    const s = isian({ kondisi: 'RB' })
+    expect(satu(s, ctx(), 'III.B.7').perluReklas).toBe(true)
+    expect(satu(s, ctx([{ ...ASET, kode: '1.5.4.01.01.01.003' }]), 'III.B.7').perluReklas).toBe(false)
+    expect(satu(s, ctx([{ ...ASET, status: 'dihapus' }]), 'III.B.7').perluReklas).toBe(false)
+    expect(satu(isian({ kondisi: 'RR' }), ctx(), 'III.B.7').perluReklas).toBe(false) // tak ada kode tujuan
+  })
+
+  it('relasi & alasan reklas dibawa untuk isian otomatis', () => {
+    const b3 = satu(isian({ atribusi: 'ya_induk_diketahui', induk: { aset_id: 'B' } }), ctx(), 'III.B.3')
+    expect(b3.relasi).toEqual({ induk: 'B', anak: 'A' })
+    const rehab = satu(isian({ keberadaan: 'tidak_ditemukan', sebab_tidak_ada: 'rehab_bangunan_baru', sebab_relasi: { aset_id: 'C' } }), ctx(), 'III.B.3')
+    expect(rehab.relasi).toEqual({ induk: 'A', anak: 'C' })
+    expect(satu(isian({ kode_barang: { sesuai: false, kode_baru: 'x' } }), ctx(), 'III.B.12').alasanReklas).toBe('kode')
+    expect(satu(isian({ kondisi: 'RB' }), ctx(), 'III.B.7').alasanReklas).toBe('golongan')
+    expect(satu(isian({ ganda: true, ganda_data: { aset_id: 'D' } }), ctx(), 'III.B.9').relasi).toEqual({ kembar: 'D' })
+  })
+
   it('barang yang tak terbaca (RLS/terhapus dari cakupan) tak pernah dianggap selesai', () => {
     const s = isian({ kode_barang: { sesuai: false, kode_baru: '1.3.3.01.01.02.004' }, alamat_detail: { sesuai: false, seharusnya: 'x' } })
     const t = temuanDariIsian(s, ctx([]))
