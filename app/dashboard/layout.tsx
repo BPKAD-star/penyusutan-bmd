@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import DashboardChrome from '@/components/DashboardChrome'
 import { jkPegawai } from '@/components/AvatarPegawai'
+import { urlFotoProfil } from '@/lib/profilData'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient()
@@ -14,18 +15,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // untuk sebagian besar pengguna dan fiturnya nyaris tak terasa.
   const { data: profile } = await supabase
     .from('admin_profiles')
-    .select('role, pegawai:admin_pegawai(nama, nip, jenis_kelamin)')
+    .select('role, pegawai:admin_pegawai(nama, nip, jenis_kelamin, foto_path)')
     .eq('id', user.id)
     .single()
 
   const pegawai = profile?.pegawai as
-    { nama?: string; nip?: string | null; jenis_kelamin?: string | null } | null
+    { nama?: string; nip?: string | null; jenis_kelamin?: string | null; foto_path?: string | null } | null
+
+  // Foto profil (2026-10-02): bucket privat → signed URL. Gagal menandatangani
+  // cukup jatuh ke avatar bawaan; hiasan tak boleh menjatuhkan seluruh dashboard.
+  const fotoUrl = await urlFotoProfil(supabase, pegawai?.foto_path ?? null)
 
   return (
     <DashboardChrome
       userName={pegawai?.nama || user.email || ''}
       userRole={profile?.role || 'user'}
       userJk={jkPegawai(pegawai?.jenis_kelamin, pegawai?.nip)}
+      userFotoUrl={fotoUrl}
     >
       {children}
     </DashboardChrome>

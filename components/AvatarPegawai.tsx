@@ -26,12 +26,20 @@ export function jkPegawai(jenisKelamin?: string | null, nip?: string | null): Je
   return dariNip === 'L' || dariNip === 'P' ? dariNip : ''
 }
 
-export default function AvatarPegawai({ jk, nama, className = 'w-7 h-7' }: {
+export default function AvatarPegawai({ jk, nama, className = 'w-7 h-7', fotoUrl }: {
   jk: JenisKelamin
   /** Dipakai untuk huruf awal saat jenis kelamin tak diketahui. */
   nama: string
   className?: string
+  /** Foto yang diunggah pemilik akun (2026-10-02) — MENANG atas ilustrasi kartun. */
+  fotoUrl?: string | null
 }) {
+  if (fotoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={fotoUrl} alt={`Foto ${nama}`} className={`${className} rounded-full object-cover flex-shrink-0`} />
+    )
+  }
   if (jk !== 'L' && jk !== 'P') {
     return (
       <span className={`${className} rounded-full bg-navy text-white text-xs font-bold flex items-center justify-center flex-shrink-0`}>

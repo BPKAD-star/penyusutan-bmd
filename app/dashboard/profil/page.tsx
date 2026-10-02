@@ -1,234 +1,53 @@
 'use client'
-// Profil Pengguna (permintaan user 2026-10-01) — dibuka dari menu akun di
-// TopBar. Tiga bagian dgn wewenang BERBEDA, dan bedanya disengaja:
+// Profil Pengguna (permintaan user 2026-10-01; satu kotak sejak 2026-10-02) —
+// dibuka dari menu akun di TopBar. Bagian-bagiannya punya wewenang BERBEDA:
 //
-// 1. Data pegawai (nama, NIP, pangkat/golongan, jabatan, JK) — HANYA DIBACA.
-//    Itu data kepegawaian yang dicetak di lembar bertanda tangan (KIR, BA Rekon,
-//    Surat Pernyataan); penyuntingnya admin di Daftar Pegawai, bukan pemilik akun.
-// 2. Nomor HP — disunting pemilik akun SENDIRI lewat RPC `fn_profil_simpan_hp`
-//    (migrasi 20261001_02), yang hanya menyentuh kolom `no_hp` pegawainya.
+// 1. Foto profil & Nomor HP — diubah pemilik akun SENDIRI, langsung tersimpan.
+// 2. Nama, pangkat/golongan, jabatan — DIAJUKAN, admin yang menyetujui
+//    (dicetak di lembar bertanda tangan; lihat lib/profil.ts).
 // 3. Ganti password — lewat Supabase Auth, dgn memverifikasi password lama dulu.
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from '@/components/pengelolaan/FormShell'
-import AvatarPegawai, { jkPegawai } from '@/components/AvatarPegawai'
-import EyeToggleButton from '@/shared/ui/EyeToggleButton'
-import { ROLE_LABEL } from '@/lib/roles'
-import { normalNoHp, tampilNoHp } from '@/lib/noHp'
-import { ATURAN_PASSWORD, pesanAuthID, type GalatAuth } from '@/lib/pesanAuth'
-
-type Pegawai = {
-  id: string; nama: string; nip: string | null; pangkat: string | null; golongan: string | null
-  jabatan: string | null; jenis_kelamin: string | null; no_hp: string | null
-}
-type Akun = { email: string; role: string; skpdNama: string | null; pegawai: Pegawai | null }
+import KepalaProfil from '@/components/profil/KepalaProfil'
+import BagianDataPegawai from '@/components/profil/BagianDataPegawai'
+import BagianNoHp from '@/components/profil/BagianNoHp'
+import BagianPassword from '@/components/profil/BagianPassword'
+import { muatAkun, type Akun } from '@/lib/profilData'
 
 const DOMAIN_SINTETIS = '@pengguna.bmd.internal'
-const PW_MIN = 8
-
-function Baris({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-xs text-gray-400">{label}</p>
-      <p className="text-sm text-gray-800 mt-0.5">{children || <span className="text-gray-300">—</span>}</p>
-    </div>
-  )
-}
-
-function InputPassword({ label, value, onChange, autoComplete }: {
-  label: string; value: string; onChange: (v: string) => void; autoComplete: string
-}) {
-  const [tampil, setTampil] = useState(false)
-  return (
-    <div>
-      <label className="block text-xs text-gray-500 mb-1">{label}</label>
-      <div className="relative">
-        <input type={tampil ? 'text' : 'password'} className="select-filter w-full pr-9" value={value}
-          autoComplete={autoComplete} onChange={e => onChange(e.target.value)} />
-        <EyeToggleButton shown={tampil} onClick={() => setTampil(v => !v)} />
-      </div>
-    </div>
-  )
-}
 
 export default function ProfilPage() {
-  const supabase = createClient()
   const [akun, setAkun] = useState<Akun | null>(null)
   const [errMuat, setErrMuat] = useState('')
 
-  const [hp, setHp] = useState('')
-  const [hpBusy, setHpBusy] = useState(false)
-  const [hpMsg, setHpMsg] = useState('')
-
-  const [pwLama, setPwLama] = useState('')
-  const [pwBaru, setPwBaru] = useState('')
-  const [pwUlang, setPwUlang] = useState('')
-  const [pwBusy, setPwBusy] = useState(false)
-  const [pwMsg, setPwMsg] = useState('')
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const { data: { user }, error: eu } = await supabase.auth.getUser()
-        if (eu || !user) throw new Error(eu?.message || 'belum login')
-        const { data: p, error: ep } = await supabase.from('admin_profiles')
-          .select('role, pegawai_id, skpd:admin_skpd(nama)').eq('id', user.id).maybeSingle()
-        if (ep) throw new Error(ep.message)
-        const prof = p as unknown as { role: string; pegawai_id: string | null; skpd: { nama: string } | null } | null
-        let pegawai: Pegawai | null = null
-        if (prof?.pegawai_id) {
-          const { data: pg, error: eg } = await supabase.from('admin_pegawai')
-            .select('id,nama,nip,pangkat,golongan,jabatan,jenis_kelamin,no_hp').eq('id', prof.pegawai_id).maybeSingle()
-          if (eg) throw new Error(eg.message)
-          pegawai = pg as Pegawai | null
-        }
-        setAkun({ email: user.email || '', role: prof?.role || '', skpdNama: prof?.skpd?.nama || null, pegawai })
-        setHp(tampilNoHp(pegawai?.no_hp))
-      } catch (e) {
-        setErrMuat(e instanceof Error ? e.message : String(e))
-      }
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function simpanHp(e: React.FormEvent) {
-    e.preventDefault()
-    setHpMsg('')
-    let nilai: string | null
-    try { nilai = normalNoHp(hp) } catch (er) { setHpMsg(`Error: ${(er as Error).message}`); return }
-    setHpBusy(true)
+  // Dipakai juga sebagai "muat ulang" sesudah tiap aksi: TIDAK menyalakan gerbang
+  // "Memuat..." — gerbang di atas komponen anak ber-state akan membongkar form
+  // yang sedang diisi (CLAUDE.md 2026-08-14).
+  const muat = useCallback(async () => {
     try {
-      const { data, error } = await supabase.rpc('fn_profil_simpan_hp', { p_no_hp: nilai })
-      if (error) throw new Error(error.message)
-      const tersimpan = (data as string | null) ?? null
-      setAkun(a => a && a.pegawai ? { ...a, pegawai: { ...a.pegawai, no_hp: tersimpan } } : a)
-      setHp(tampilNoHp(tersimpan))
-      setHpMsg(tersimpan ? 'Nomor HP tersimpan.' : 'Nomor HP dihapus.')
-    } catch (er) {
-      setHpMsg(`Error: ${(er as Error).message}`)
-    } finally {
-      setHpBusy(false)
+      setAkun(await muatAkun(createClient()))
+      setErrMuat('')
+    } catch (e) {
+      setErrMuat(e instanceof Error ? e.message : String(e))
     }
-  }
+  }, [])
 
-  async function gantiPassword(e: React.FormEvent) {
-    e.preventDefault()
-    setPwMsg('')
-    if (!pwLama) { setPwMsg('Error: isi password lama.'); return }
-    if (pwBaru.length < PW_MIN) { setPwMsg(`Error: password baru minimal ${PW_MIN} karakter.`); return }
-    if (pwBaru === pwLama) { setPwMsg('Error: password baru harus berbeda dari yang lama.'); return }
-    if (pwBaru !== pwUlang) { setPwMsg('Error: ulangi password baru — keduanya belum sama.'); return }
-    if (!akun?.email) { setPwMsg('Error: akun tidak terbaca, muat ulang halaman.'); return }
-    setPwBusy(true)
-    try {
-      // Verifikasi password lama dulu: sesi yang tertinggal terbuka di komputer
-      // bersama tak boleh cukup untuk mengambil alih akun.
-      const { error: el } = await supabase.auth.signInWithPassword({ email: akun.email, password: pwLama })
-      if (el) throw new Error(pesanAuthID(el as GalatAuth, 'Password lama tidak dapat diverifikasi.'))
-      const { error: eu } = await supabase.auth.updateUser({ password: pwBaru })
-      if (eu) throw new Error(pesanAuthID(eu as GalatAuth, 'Gagal mengganti password.'))
-      // Keluarkan sesi di perangkat lain — gunanya ganti password justru itu.
-      await supabase.auth.signOut({ scope: 'others' }).catch(() => undefined)
-      setPwLama(''); setPwBaru(''); setPwUlang('')
-      setPwMsg('Password berhasil diganti. Sesi di perangkat lain sudah dikeluarkan.')
-    } catch (er) {
-      setPwMsg(`Error: ${pesanAuthID(er as GalatAuth, 'Gagal mengganti password.')}`)
-    } finally {
-      setPwBusy(false)
-    }
-  }
+  useEffect(() => { void muat() }, [muat])
 
-  const pg = akun?.pegawai
-  const username = akun?.email.endsWith(DOMAIN_SINTETIS) ? akun.email.slice(0, -DOMAIN_SINTETIS.length) : akun?.email
-  const pesan = (m: string) => m && (
-    <p className={`text-xs mt-2 ${m.startsWith('Error') ? 'text-red-600' : 'text-green-700'}`}>{m}</p>
-  )
+  const username = akun?.email.endsWith(DOMAIN_SINTETIS) ? akun.email.slice(0, -DOMAIN_SINTETIS.length) : akun?.email || ''
 
   return (
-    <FormShell judul="Profil Saya" deskripsi="Data diri, nomor HP, dan password akun Anda." msg="">
+    <FormShell judul="Profil Saya" deskripsi="Foto, data diri, nomor HP, dan password akun Anda." msg="">
       {errMuat && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Gagal memuat profil: {errMuat}</div>}
       {!akun && !errMuat && <p className="text-sm text-gray-400">Memuat...</p>}
 
       {akun && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-5xl">
-          <div className="card p-5 lg:col-span-2 flex items-center gap-4">
-            <AvatarPegawai jk={jkPegawai(pg?.jenis_kelamin, pg?.nip)} nama={pg?.nama || username || ''} />
-            <div className="min-w-0">
-              <p className="text-lg font-semibold text-gray-900 truncate">{pg?.nama || username}</p>
-              <p className="text-xs text-gray-500">
-                {ROLE_LABEL[akun.role] || akun.role || '—'}{akun.skpdNama ? ` · ${akun.skpdNama}` : ''}
-              </p>
-              <p className="text-xs text-gray-400">Username: {username}</p>
-            </div>
-          </div>
-
-          <div className="card p-5">
-            <p className="text-sm font-semibold text-gray-800 mb-3">Data Pegawai</p>
-            {pg ? (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <Baris label="Nama">{pg.nama}</Baris>
-                  <Baris label="NIP">{pg.nip || 'Non-ASN'}</Baris>
-                  <Baris label="Pangkat / Golongan">
-                    {[pg.pangkat, pg.golongan].filter(Boolean).join(' — ')}
-                  </Baris>
-                  <Baris label="Jenis Kelamin">
-                    {pg.jenis_kelamin === 'L' ? 'Laki-laki' : pg.jenis_kelamin === 'P' ? 'Perempuan' : ''}
-                  </Baris>
-                  <div className="col-span-2"><Baris label="Jabatan">{pg.jabatan}</Baris></div>
-                </div>
-                <p className="text-[11px] text-gray-400 mt-4">
-                  Data kepegawaian dikelola Pengelola Barang di Admin → Daftar Pegawai. Kalau ada yang keliru,
-                  hubungi admin — data ini ikut tercetak di dokumen bertanda tangan.
-                </p>
-              </>
-            ) : (
-              <p className="text-xs text-amber-700">
-                Akun ini belum ditautkan ke data pegawai. Minta admin menautkannya di Admin → Daftar User.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            <form onSubmit={simpanHp} className="card p-5">
-              <p className="text-sm font-semibold text-gray-800">Nomor HP (WhatsApp)</p>
-              <p className="text-[11px] text-gray-400 mb-3">
-                Dipakai untuk menghubungi Anda terkait BMD. Satu nomor hanya untuk satu pegawai.
-              </p>
-              <div className="flex gap-2">
-                <input className="select-filter flex-1" value={hp} inputMode="tel" placeholder="0812-3456-7890"
-                  disabled={!pg || hpBusy} onChange={e => setHp(e.target.value)} />
-                <button type="submit" className="btn-primary text-sm" disabled={!pg || hpBusy}>
-                  {hpBusy ? 'Menyimpan…' : 'Simpan'}
-                </button>
-              </div>
-              {pesan(hpMsg)}
-            </form>
-
-            <form onSubmit={gantiPassword} className="card p-5 space-y-3">
-              <p className="text-sm font-semibold text-gray-800">Ganti Password</p>
-              <InputPassword label="Password lama" value={pwLama} onChange={setPwLama} autoComplete="current-password" />
-              <InputPassword label="Password baru" value={pwBaru} onChange={setPwBaru} autoComplete="new-password" />
-              <InputPassword label="Ulangi password baru" value={pwUlang} onChange={setPwUlang} autoComplete="new-password" />
-              <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 text-[11px] text-gray-600 space-y-1">
-                <p className="font-medium text-gray-700">Syarat password baru</p>
-                <p className={pwBaru.length >= PW_MIN ? 'text-green-700' : ''}>{pwBaru.length >= PW_MIN ? '✓' : '○'} Minimal {PW_MIN} karakter</p>
-                <p className={pwBaru && pwBaru !== pwLama ? 'text-green-700' : ''}>{pwBaru && pwBaru !== pwLama ? '✓' : '○'} Berbeda dari password lama</p>
-                <p className={pwBaru && pwBaru === pwUlang ? 'text-green-700' : ''}>{pwBaru && pwBaru === pwUlang ? '✓' : '○'} Pengulangan sama dengan password baru</p>
-                <p className="text-gray-500 pt-1">
-                  Sebaiknya memadukan huruf besar, huruf kecil, angka, dan simbol. Jangan memakai password umum,
-                  nama, NIP, atau tanggal lahir. Password yang pernah bocor di internet akan ditolak sistem
-                  walaupun panjangnya cukup.
-                </p>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] text-gray-400">Lupa password? Hubungi admin untuk direset (Admin → Daftar User).</p>
-                <button type="submit" className="btn-primary text-sm flex-shrink-0" disabled={pwBusy}>
-                  {pwBusy ? 'Memproses…' : 'Ganti Password'}
-                </button>
-              </div>
-              {pesan(pwMsg)}
-            </form>
-          </div>
+        <div className="card p-6 max-w-3xl divide-y divide-gray-100 [&>*]:py-6 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+          <KepalaProfil akun={akun} username={username} onUbah={muat} />
+          <BagianDataPegawai akun={akun} onUbah={muat} />
+          <BagianNoHp pegawai={akun.pegawai} onUbah={muat} />
+          <BagianPassword email={akun.email} />
         </div>
       )}
     </FormShell>

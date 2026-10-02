@@ -191,6 +191,7 @@ const adminGroup: NavNode = {
     // Harga (2026-08-10).
     { type: 'leaf', href: '/dashboard/admin/usulan-pengurus', label: 'Usulan Pengurus Barang' },
     { type: 'leaf', href: '/dashboard/admin/pegawai', label: 'Daftar Pegawai' },
+    { type: 'leaf', href: '/dashboard/admin/pengajuan-profil', label: 'Pengajuan Profil' },
     { type: 'leaf', href: '/dashboard/admin/user', label: 'Daftar User' },
     { type: 'leaf', href: '/dashboard/admin/satuan', label: 'Daftar Satuan' },
     { type: 'leaf', href: '/dashboard/admin/skpd', label: 'SKPD' },

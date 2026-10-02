@@ -267,6 +267,7 @@ export type Database = {
       admin_pegawai: {
         Row: {
           created_at: string
+          foto_path: string | null
           golongan: string | null
           id: string
           jabatan: string | null
@@ -281,6 +282,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          foto_path?: string | null
           golongan?: string | null
           id?: string
           jabatan?: string | null
@@ -295,6 +297,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          foto_path?: string | null
           golongan?: string | null
           id?: string
           jabatan?: string | null
@@ -313,6 +316,71 @@ export type Database = {
             columns: ["skpd_id"]
             isOneToOne: false
             referencedRelation: "admin_skpd"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      admin_pegawai_pengajuan: {
+        Row: {
+          catatan_admin: string | null
+          created_at: string
+          diajukan_oleh: string | null
+          diputuskan_at: string | null
+          diputuskan_by: string | null
+          golongan: string | null
+          golongan_lama: string | null
+          id: string
+          jabatan: string | null
+          jabatan_lama: string | null
+          nama: string
+          nama_lama: string | null
+          pangkat: string | null
+          pangkat_lama: string | null
+          pegawai_id: string
+          status: string
+        }
+        Insert: {
+          catatan_admin?: string | null
+          created_at?: string
+          diajukan_oleh?: string | null
+          diputuskan_at?: string | null
+          diputuskan_by?: string | null
+          golongan?: string | null
+          golongan_lama?: string | null
+          id?: string
+          jabatan?: string | null
+          jabatan_lama?: string | null
+          nama: string
+          nama_lama?: string | null
+          pangkat?: string | null
+          pangkat_lama?: string | null
+          pegawai_id: string
+          status?: string
+        }
+        Update: {
+          catatan_admin?: string | null
+          created_at?: string
+          diajukan_oleh?: string | null
+          diputuskan_at?: string | null
+          diputuskan_by?: string | null
+          golongan?: string | null
+          golongan_lama?: string | null
+          id?: string
+          jabatan?: string | null
+          jabatan_lama?: string | null
+          nama?: string
+          nama_lama?: string | null
+          pangkat?: string | null
+          pangkat_lama?: string | null
+          pegawai_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_pegawai_pengajuan_pegawai_id_fkey"
+            columns: ["pegawai_id"]
+            isOneToOne: false
+            referencedRelation: "admin_pegawai"
             referencedColumns: ["id"]
           },
         ]
@@ -4659,6 +4727,22 @@ export type Database = {
       fn_profil_simpan_hp: {
         Args: { p_no_hp: string | null }
         Returns: string | null
+      }
+      fn_profil_simpan_foto: {
+        Args: { p_path: string | null }
+        Returns: string | null
+      }
+      fn_profil_ajukan_ubah: {
+        Args: { p_nama: string; p_golongan: string | null; p_pangkat: string | null; p_jabatan: string | null }
+        Returns: string
+      }
+      fn_profil_tarik_ajuan: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      fn_profil_putuskan_ubah: {
+        Args: { p_id: string; p_setuju: boolean; p_catatan: string | null }
+        Returns: undefined
       }
       fn_inventarisasi_hasil: {
         Args: {

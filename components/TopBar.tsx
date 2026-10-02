@@ -7,9 +7,10 @@ import TahunKerjaBadge from './TahunKerjaBadge'
 import { useIsViewer } from './useIsViewer'
 import AvatarPegawai, { type JenisKelamin } from './AvatarPegawai'
 
-export default function TopBar({ userName, userJk, onToggleSidebar }: {
+export default function TopBar({ userName, userJk, userFotoUrl, onToggleSidebar }: {
   userName: string
   userJk: JenisKelamin
+  userFotoUrl: string | null
   onToggleSidebar: () => void
 }) {
   const router = useRouter()
@@ -55,7 +56,7 @@ export default function TopBar({ userName, userJk, onToggleSidebar }: {
         <div className="relative">
           <button onClick={() => setMenuOpen(v => !v)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-            <AvatarPegawai jk={userJk} nama={userName} />
+            <AvatarPegawai jk={userJk} nama={userName} fotoUrl={userFotoUrl} />
             <span className="hidden sm:inline text-sm text-gray-700">Welcome, <span className="font-medium">{userName}</span></span>
             <svg className={`w-4 h-4 text-gray-400 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor">
