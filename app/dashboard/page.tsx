@@ -8,6 +8,7 @@ import MutasiTransferCards from '@/components/dashboard/MutasiTransferCards'
 import PenghapusanCards, { type PenghapusanData } from '@/components/dashboard/PenghapusanCards'
 import { rpcUlangJikaTimeout } from '@/lib/rpcUlang'
 import Link from 'next/link'
+import FitLayar from '@/components/dashboard/FitLayar'
 import { GaugeIndeks } from '@/components/ipa/GaugeIndeks'
 import { muatIndeksDashboard, type IndeksDashboard } from '@/lib/ipaData'
 
@@ -285,6 +286,10 @@ export default function DashboardHome() {
     // `p-6` polos, TANPA `max-w-6xl mx-auto`: semua halaman lain di dashboard
     // memakai lebar penuh, jadi yang lama membuat Dashboard menjorok masuk ~250px
     // di kiri & kanan dan terasa tak sejajar dengan menu di sebelahnya.
+    // `FitLayar`: zoom otomatis supaya muat satu layar tanpa scroll di setiap
+    // ukuran jendela (lihat komponennya) — menggantikan tinggi-tinggi px yang
+    // dulu disetel untuk satu kombinasi layar saja.
+    <FitLayar>
     <div className="px-6 py-4">
       <div className="mb-4 flex items-start justify-between gap-4 flex-wrap">
         <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
@@ -336,6 +341,7 @@ export default function DashboardHome() {
         </div>
       </div>
     </div>
+    </FitLayar>
   )
 }
 
