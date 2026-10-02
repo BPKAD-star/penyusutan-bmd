@@ -100,7 +100,16 @@ export type InvSnapshot = {
   latitude?: number | null
   longitude?: number | null
   skpd_id?: number | null
+  /** Data teknis JIJ — kolom `aset` sejak 20261002_01. Isian & lembar dari
+   *  sebelum itu tak membawanya (`undefined` ≠ `null` kosong di register). */
+  jenis_perkerasan?: string | null
+  jenis_bahan_jembatan?: string | null
+  no_ruas_jalan?: string | null
+  no_jaringan_irigasi?: string | null
 }
+
+/** Data teknis JIJ (III.A.4) — nama kunci jawaban = nama kolom `aset` (20261002_01). */
+export const JIJ_TEKNIS_KEYS = ['jenis_perkerasan', 'jenis_bahan_jembatan', 'no_ruas_jalan', 'no_jaringan_irigasi'] as const
 
 /** Bagian A–D & J: "Sesuai" atau "Tidak Sesuai, sebutkan yang seharusnya". */
 export type SesuaiField = { sesuai: boolean; seharusnya?: string }

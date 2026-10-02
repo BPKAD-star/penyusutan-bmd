@@ -49,6 +49,9 @@ export type AsetKini = {
   spesifikasi_lainnya: string | null; luas: number | null; keterangan: string | null
   latitude: number | null; longitude: number | null; foto_paths: string[] | null
   pengamanan: string | null; pemanfaatan: string | null
+  // Data teknis JIJ (20261002_01). Opsional: dari klien yang belum memuatnya → tak terlacak.
+  jenis_perkerasan?: string | null; jenis_bahan_jembatan?: string | null
+  no_ruas_jalan?: string | null; no_jaringan_irigasi?: string | null
 }
 
 /**
@@ -134,8 +137,11 @@ function tahapHapus(ctx: KonteksTL, id: string, reklas?: TahapTL): TahapTL[] {
   return out
 }
 
-// Kolom III.B.8 yang dibandingkan dgn register. JIJ teknis (perkerasan, dst.)
-// BELUM punya kolom di `aset` → tak bisa dilacak (selesai: null).
+// Kolom III.B.8 yang dibandingkan dgn register. Data teknis JIJ punya kolom di
+// `aset` sejak 20261002_01; kalau kolomnya tak termuat (`undefined`) → tak bisa
+// dilacak (selesai: null), bukan "belum".
+const cekJij = (k: 'jenis_perkerasan' | 'jenis_bahan_jembatan' | 'no_ruas_jalan' | 'no_jaringan_irigasi') =>
+  (a: AsetKini, s: IsianTL) => a[k] === undefined ? null : samaTeks(a[k], s.jawaban[k]?.seharusnya)
 type KolomUbah = { label: string; cek: (a: AsetKini, s: IsianTL) => boolean | null }
 const KOLOM_UBAH: { key: keyof InvBaris['jawaban']; kolom: KolomUbah }[] = [
   { key: 'spesifikasi', kolom: { label: 'Spesifikasi Nama Barang', cek: (a, s) => samaTeks(a.nama_barang, s.jawaban.spesifikasi?.seharusnya) } },
@@ -150,10 +156,10 @@ const KOLOM_UBAH: { key: keyof InvBaris['jawaban']; kolom: KolomUbah }[] = [
   { key: 'alamat_detail', kolom: { label: 'Alamat Detail', cek: (a, s) => samaTeks(a.alamat_detail, s.jawaban.alamat_detail?.seharusnya) } },
   { key: 'satuan', kolom: { label: 'Satuan', cek: (a, s) => samaTeks(a.satuan, s.jawaban.satuan?.seharusnya) } },
   { key: 'keterangan_barang', kolom: { label: 'Keterangan', cek: (a, s) => samaTeks(a.keterangan, s.jawaban.keterangan_barang?.seharusnya) } },
-  { key: 'jenis_perkerasan', kolom: { label: 'Jenis Perkerasan', cek: () => null } },
-  { key: 'jenis_bahan_jembatan', kolom: { label: 'Jenis Bahan Jembatan', cek: () => null } },
-  { key: 'no_ruas_jalan', kolom: { label: 'No. Ruas Jalan', cek: () => null } },
-  { key: 'no_jaringan_irigasi', kolom: { label: 'No. Jaringan Irigasi', cek: () => null } },
+  { key: 'jenis_perkerasan', kolom: { label: 'Jenis Perkerasan', cek: cekJij('jenis_perkerasan') } },
+  { key: 'jenis_bahan_jembatan', kolom: { label: 'Jenis Bahan Jembatan', cek: cekJij('jenis_bahan_jembatan') } },
+  { key: 'no_ruas_jalan', kolom: { label: 'No. Ruas Jalan', cek: cekJij('no_ruas_jalan') } },
+  { key: 'no_jaringan_irigasi', kolom: { label: 'No. Jaringan Irigasi', cek: cekJij('no_jaringan_irigasi') } },
 ]
 
 function tahapUbahData(a: AsetKini | undefined, s: IsianTL): TahapTL[] {

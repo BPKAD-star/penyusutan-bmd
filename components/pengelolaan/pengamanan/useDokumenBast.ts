@@ -22,7 +22,9 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-export type TargetDokumen = 'bast' | 'pakta'
+// 'sip' = Surat Izin Penghunian (Gedung & Bangunan / rumah negara), 2026-10-02.
+// Wajib-tidaknya Pakta & SIP diputuskan isi kartu (`dokumenWajibPengamanan`).
+export type TargetDokumen = 'bast' | 'pakta' | 'sip'
 
 export type DokumenBast = {
   noSk: string
@@ -33,12 +35,18 @@ export type DokumenBast = {
   setPaktaNo: (v: string) => void
   paktaTgl: string
   setPaktaTgl: (v: string) => void
+  sipNo: string
+  setSipNo: (v: string) => void
+  sipTgl: string
+  setSipTgl: (v: string) => void
   bastPaths: string[]
   paktaPaths: string[]
+  sipPaths: string[]
   uploading: boolean
   upload: (files: FileList | null, target: TargetDokumen) => Promise<void>
   hapusDok: (path: string, target: TargetDokumen) => Promise<void>
-  /** Kedua berkas sudah ada — dipakai layar, BUKAN sebagai penegak. */
+  /** BAST + Pakta sudah ada (bentuk kartu Peralatan & Mesin) — dipakai layar,
+   *  BUKAN penegak. Kewajiban per isi kartu: `dokumenWajibPengamanan`. */
   lengkap: boolean
 }
 
@@ -58,9 +66,13 @@ export function useDokumenBast(tglAwal: string, onErr: (msg: string) => void): D
   const [paktaTgl, setPaktaTgl] = useState('')
   const [bastPaths, setBastPaths] = useState<string[]>([])
   const [paktaPaths, setPaktaPaths] = useState<string[]>([])
+  const [sipNo, setSipNo] = useState('')
+  const [sipTgl, setSipTgl] = useState('')
+  const [sipPaths, setSipPaths] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
 
-  const setPaths = (target: TargetDokumen) => (target === 'bast' ? setBastPaths : setPaktaPaths)
+  const setPaths = (target: TargetDokumen) =>
+    (target === 'bast' ? setBastPaths : target === 'pakta' ? setPaktaPaths : setSipPaths)
 
   async function upload(files: FileList | null, target: TargetDokumen) {
     if (!files || files.length === 0) return
@@ -95,7 +107,8 @@ export function useDokumenBast(tglAwal: string, onErr: (msg: string) => void): D
 
   return {
     noSk, setNoSk, tgl, setTgl, paktaNo, setPaktaNo, paktaTgl, setPaktaTgl,
-    bastPaths, paktaPaths, uploading, upload, hapusDok,
+    sipNo, setSipNo, sipTgl, setSipTgl,
+    bastPaths, paktaPaths, sipPaths, uploading, upload, hapusDok,
     lengkap: bastPaths.length > 0 && paktaPaths.length > 0,
   }
 }

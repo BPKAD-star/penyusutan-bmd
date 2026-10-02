@@ -52,6 +52,7 @@ const KOREKSI_SPEK_COLS = new Set([
   'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin', 'asal_usul', 'kondisi_barang',
   'wilayah_kode', 'alamat_detail', 'penggunaan_pengamanan', 'keterangan',
   'luas', 'tahun_pengadaan', 'latitude', 'longitude', 'foto_paths',
+  'jenis_perkerasan', 'jenis_bahan_jembatan', 'no_ruas_jalan', 'no_jaringan_irigasi',
 ])
 
 // Ambil field spesifikasi dari sub-payload (`spek` / `spek_prev`) dgn whitelist

@@ -28,7 +28,7 @@ import { periodeDariTanggal, GOLONGAN_REKAP } from '@/lib/bmd'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
-import { identitasPengamanan, PENGAMANAN_ELIGIBLE_GOLONGAN, pengamananCache } from '@/lib/pengamanan'
+import { dokumenWajibPengamanan, identitasPengamanan, PENGAMANAN_ELIGIBLE_GOLONGAN, pengamananCache } from '@/lib/pengamanan'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import { DokumenBastField, DokumenLinks, bukaDokumen } from './DokumenBastField'
@@ -44,6 +44,7 @@ type PengPayload = {
   nama_pegawai?: string; nip?: string; pangkat_golongan?: string; jabatan?: string
   nomor_identitas?: string; status_penghuni?: string; alamat?: string
   pakta_no?: string; pakta_tgl?: string; bast_paths?: string[]; pakta_paths?: string[]
+  sip_no?: string; sip_tgl?: string; sip_paths?: string[]
 }
 type Header = {
   id: string; no_sk: string; tanggal: string; periode: string
@@ -326,6 +327,8 @@ export default function Pengamanan() {
                       {(p.pakta_no || p.pakta_tgl) && <p className="text-xs text-gray-500">Pakta Integritas: {p.pakta_no || '-'}{p.pakta_tgl ? ` · ${p.pakta_tgl}` : ''}</p>}
                       <DokumenLinks paths={p.bast_paths || []} label="BAST" />
                       <DokumenLinks paths={p.pakta_paths || []} label="Pakta Integritas" />
+                      {(p.sip_no || p.sip_tgl) && <p className="text-xs text-gray-500">Surat Izin Penghunian: {p.sip_no || '-'}{p.sip_tgl ? ` · ${p.sip_tgl}` : ''}</p>}
+                      <DokumenLinks paths={p.sip_paths || []} label="Surat Izin Penghunian" />
                       {j.keterangan && <p className="text-xs text-gray-500">Keterangan: {j.keterangan}</p>}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
@@ -405,6 +408,8 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
   const [tgl, setTgl] = useState(header.tanggal)
   const [paktaNo, setPaktaNo] = useState(p.pakta_no || '')
   const [paktaTgl, setPaktaTgl] = useState(p.pakta_tgl || '')
+  const [sipNo, setSipNo] = useState(p.sip_no || '')
+  const [sipTgl, setSipTgl] = useState(p.sip_tgl || '')
   const [ket, setKet] = useState(header.keterangan || '')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -427,6 +432,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
       jabatan: jabatan.trim() || undefined,
       alamat: alamat.trim() || undefined,
       pakta_no: paktaNo.trim() || undefined, pakta_tgl: paktaTgl || undefined,
+      sip_no: sipNo.trim() || undefined, sip_tgl: sipTgl || undefined,
     }
     const { error } = await supabase.from('jurnal_header')
       .update({ no_sk: noSk.trim(), tanggal: tgl, keterangan: ket.trim() || null, payload }).eq('id', header.id)
@@ -505,7 +511,7 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
         {/* ── Dokumen: satu blok per dokumen, berdampingan ────────────────────
             Tiap blok berdiri sendiri (Nomor · Tanggal), jadi operator menyalin
             satu lembar dokumen tanpa berpindah kolom. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="rounded-lg border border-gray-200 p-4 space-y-3">
             <p className="text-xs font-semibold text-gray-700">Berita Acara Serah Terima (BAST)</p>
             <div>
@@ -531,10 +537,21 @@ function EditHeaderModal({ header, onClose, onSaved }: { header: Header; onClose
               <input type="date" className="select-filter w-full" max={dateBounds.max} value={paktaTgl} onChange={e => setPaktaTgl(e.target.value)} />
             </div>
           </div>
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-700">Surat Izin Penghunian</p>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">No. Surat Izin Penghunian</label>
+              <input className="select-filter w-full" value={sipNo} onChange={e => setSipNo(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Tanggal Surat Izin Penghunian</label>
+              <input type="date" className="select-filter w-full" max={dateBounds.max} value={sipTgl} onChange={e => setSipTgl(e.target.value)} />
+            </div>
+          </div>
         </div>
 
         {err && <p className="text-sm text-red-600">{err}</p>}
-        <p className="text-xs text-gray-400">Catatan: berkas PDF BAST/Pakta diatur saat pembuatan BAST. Untuk mengganti berkas, batalkan &amp; buat BAST baru.</p>
+        <p className="text-xs text-gray-400">Catatan: berkas PDF BAST/Pakta/SIP diatur saat pembuatan BAST. Untuk mengganti berkas, batalkan &amp; buat BAST baru.</p>
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white">
           <button className="btn-secondary" onClick={onClose}>Batal</button>
@@ -574,7 +591,8 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
   // diverifikasi lewat `git diff` alih-alih dipercaya.
   const {
     noSk, setNoSk, tgl, setTgl, paktaNo, setPaktaNo, paktaTgl, setPaktaTgl,
-    bastPaths, paktaPaths, uploading, upload, hapusDok,
+    sipNo, setSipNo, sipTgl, setSipTgl,
+    bastPaths, paktaPaths, sipPaths, uploading, upload, hapusDok,
   } = useDokumenBast(todayStr(), setErr)
 
   const {
@@ -586,8 +604,11 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
     if (!nama.trim()) { setErr('Nama pegawai wajib diisi.'); return }
     if (!noSk.trim()) { setErr('No. BAST wajib diisi.'); return }
     if (bastPaths.length === 0) { setErr('Berkas BAST (Berita Acara Penyerahan) wajib diunggah.'); return }
-    if (paktaPaths.length === 0) { setErr('Berkas Pakta Integritas wajib diunggah.'); return }
     if (selList.length === 0) { setErr('Centang minimal satu barang.'); return }
+    // Dokumen kedua ditentukan isi kartu (keputusan user 2026-10-02).
+    const wajib = dokumenWajibPengamanan(selList.map(b => b.kode))
+    if (wajib.pakta && paktaPaths.length === 0) { setErr('Kartu ini memuat Peralatan & Mesin — berkas Pakta Integritas wajib diunggah.'); return }
+    if (wajib.sip && sipPaths.length === 0) { setErr('Kartu ini memuat Gedung & Bangunan — berkas Surat Izin Penghunian wajib diunggah.'); return }
     setErr(''); setSaving(true)
 
     const payload: PengPayload = {
@@ -597,7 +618,8 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
       jabatan: jabatan.trim() || undefined,
       alamat: alamat.trim() || undefined,
       pakta_no: paktaNo.trim() || undefined, pakta_tgl: paktaTgl || undefined,
-      bast_paths: bastPaths, pakta_paths: paktaPaths,
+      sip_no: sipNo.trim() || undefined, sip_tgl: sipTgl || undefined,
+      bast_paths: bastPaths, pakta_paths: paktaPaths, sip_paths: sipPaths,
     }
     const { data, error } = await supabase.from('jurnal_header').insert({
       skpd_id: skpdId, kategori: 'pengamanan', jenis: 'pengamanan',
@@ -682,7 +704,10 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
               jadi operator menyalin satu lembar tanpa berpindah kolom — dan
               peringatan "wajib diunggah" berdiri tepat di bawah dokumen yang
               dimaksudnya, bukan di seberang halaman. */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Tiga kotak (2026-10-02): BAST selalu wajib; Pakta wajib bila kartu
+              memuat Peralatan & Mesin; SIP wajib bila memuat Gedung & Bangunan —
+              kartu campuran wajib keduanya (`dokumenWajibPengamanan`). */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="rounded-lg border border-gray-200 p-4 space-y-3">
               <p className="text-xs font-semibold text-gray-700">Berita Acara Serah Terima (BAST)</p>
               <div>
@@ -700,7 +725,7 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
                 kosongText="Belum ada berkas BAST — wajib diunggah sebelum bisa disimpan." />
             </div>
             <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-              <p className="text-xs font-semibold text-gray-700">Pakta Integritas</p>
+              <p className="text-xs font-semibold text-gray-700">Pakta Integritas <span className="font-normal text-gray-400">(wajib bila ada Peralatan & Mesin)</span></p>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">No. Pakta Integritas</label>
                 <input className="select-filter w-full" value={paktaNo} onChange={e => setPaktaNo(e.target.value)} />
@@ -712,7 +737,22 @@ function BarangForm({ skpdId, skpdNama, onCancel, onSaved }: {
               <DokumenBastField paths={paktaPaths} uploading={uploading} onUpload={f => upload(f, 'pakta')} onHapus={p => hapusDok(p, 'pakta')}
                 judul="Berkas Pakta Integritas" labelTombol="Upload Pakta Integritas"
                 hint="foto / PDF, bisa lebih dari satu"
-                kosongText="Belum ada berkas Pakta Integritas — wajib diunggah sebelum bisa disimpan." />
+                kosongText="Belum ada berkas Pakta Integritas — wajib bila kartu memuat Peralatan & Mesin." />
+            </div>
+            <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+              <p className="text-xs font-semibold text-gray-700">Surat Izin Penghunian <span className="font-normal text-gray-400">(wajib bila ada Gedung & Bangunan)</span></p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">No. Surat Izin Penghunian</label>
+                <input className="select-filter w-full" value={sipNo} onChange={e => setSipNo(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Tanggal Surat Izin Penghunian</label>
+                <input type="date" className="select-filter w-full" max={dateBounds.max} value={sipTgl} onChange={e => setSipTgl(e.target.value)} />
+              </div>
+              <DokumenBastField paths={sipPaths} uploading={uploading} onUpload={f => upload(f, 'sip')} onHapus={p => hapusDok(p, 'sip')}
+                judul="Berkas Surat Izin Penghunian" labelTombol="Upload SIP"
+                hint="foto / PDF, bisa lebih dari satu"
+                kosongText="Belum ada berkas SIP — wajib bila kartu memuat Gedung & Bangunan (rumah negara)." />
             </div>
           </div>
 

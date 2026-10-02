@@ -25,9 +25,10 @@
 // Lembar aslinya berbeda antara IV.J.1.2 & IV.J.2.2; user memutuskan
 // **disamakan**, dengan dua kolom dibuang & satu blok diganti:
 //
-//   · **Surat Ijin Penghunian (SIP)** — hanya ada di IV.J.2.2 — DIBUANG.
-//     Aplikasi ini tak menyimpannya di mana pun, jadi kolomnya akan selalu
-//     kosong di lembar bertanda tangan.
+//   · **Surat Ijin Penghunian (SIP)** — hanya ada di IV.J.2.2 — sempat DIBUANG
+//     (tak tersimpan di mana pun), lalu DIKEMBALIKAN 2026-10-02: kartu
+//     Pengamanan kini menyimpan SIP (wajib untuk Gedung & Bangunan). Di
+//     IV.J.2.2 ia MENGGANTIKAN kolom Pakta Integritas; IV.J.1.2 tetap Pakta.
 //   · **Dokumen Pendukung Lainnya** (Nama · Nomor · Tanggal) — ada di
 //     keduanya — DIBUANG, alasan yang sama.
 //   · **Dokumen Sumber Penggunaan** diisi apa yang memang dimiliki aplikasi
@@ -37,16 +38,16 @@
 //     memuatnya sama sekali.
 //
 // ⚠️ Ini masih SATU-SATUNYA keluarga lembar di aplikasi ini yang sengaja
-// MENYIMPANG dari susunan kolom aslinya (SIP/Dokumen Pendukung/Alamat
-// dibuang). Kalau kelak diminta kembali ke bentuk aslinya, yang perlu
-// ditambah: `sip_nomor`, `sip_tanggal`, `dukung_*`, & `p_alamat`, plus tempat
-// menyimpannya di kartu.
+// MENYIMPANG dari susunan kolom aslinya (Dokumen Pendukung/Alamat dibuang).
+// Kalau kelak diminta kembali ke bentuk aslinya, yang perlu ditambah:
+// `dukung_*` & `p_alamat`, plus tempat menyimpannya di kartu.
 // ============================================================================
 
 export type KolomPengamanan =
   | 'nibar' | 'kode' | 'nama' | 'merek' | 'no_polisi' | 'nilai_perolehan'
   | 'p_nama' | 'p_identitas' | 'p_status' | 'p_jabatan'
   | 'bast_nomor' | 'bast_tanggal' | 'pakta_nomor' | 'pakta_tanggal'
+  | 'sip_nomor' | 'sip_tanggal'
   | 'keterangan'
 
 export type KolomRinciPengamanan = {
@@ -75,7 +76,8 @@ export type FormatPengamanan = {
 }
 
 /**
- * Kolom kedua cabang — IDENTIK, sesuai keputusan user "disamakan aja".
+ * Kolom kedua cabang — IDENTIK ("disamakan aja"), KECUALI dokumen keduanya
+ * (2026-10-02): IV.J.1.2 Pakta Integritas, IV.J.2.2 Surat Izin Penghunian.
  *
  * ⚠️ Fungsi, bukan konstanta bersama, supaya kedua entri registry tak berbagi
  * OBJEK yang sama — daftar yang dipakai bersama gampang tersunting di tempat
@@ -87,7 +89,16 @@ export type FormatPengamanan = {
  * identitas barang → Nilai Perolehan → identitas orang → dua dokumen sumber
  * → Keterangan.
  */
-function kolomPengamanan(grup: string): KolomRinciPengamanan[] {
+function kolomPengamanan(grup: string, dok2: 'pakta' | 'sip'): KolomRinciPengamanan[] {
+  const dokKedua: KolomRinciPengamanan[] = dok2 === 'pakta'
+    ? [
+        { key: 'pakta_nomor', judul: 'Nomor Pakta Integritas', lebar: 5.8, rata: 'kiri' },
+        { key: 'pakta_tanggal', judul: 'Tanggal Pakta Integritas', lebar: 4.4, rata: 'tengah' },
+      ]
+    : [
+        { key: 'sip_nomor', judul: 'Nomor Surat Izin Penghunian', lebar: 5.8, rata: 'kiri' },
+        { key: 'sip_tanggal', judul: 'Tanggal Surat Izin Penghunian', lebar: 4.4, rata: 'tengah' },
+      ]
   return [
     { key: 'nibar', judul: 'NIBAR', lebar: 11.5, rata: 'kiri' },
     { key: 'kode', judul: 'Kode Barang - Uraian Barang', lebar: 8.5, rata: 'kiri' },
@@ -101,8 +112,7 @@ function kolomPengamanan(grup: string): KolomRinciPengamanan[] {
     { key: 'p_jabatan', judul: 'Jabatan', lebar: 7.0, rata: 'kiri' },
     { key: 'bast_nomor', judul: 'Nomor BAST', lebar: 5.8, rata: 'kiri' },
     { key: 'bast_tanggal', judul: 'Tanggal BAST', lebar: 4.4, rata: 'tengah' },
-    { key: 'pakta_nomor', judul: 'Nomor Pakta Integritas', lebar: 5.8, rata: 'kiri' },
-    { key: 'pakta_tanggal', judul: 'Tanggal Pakta Integritas', lebar: 4.4, rata: 'tengah' },
+    ...dokKedua,
     { key: 'keterangan', judul: 'Keterangan', lebar: 8.6, rata: 'kiri' },
   ]
 }
@@ -114,7 +124,7 @@ export const FORMAT_PENGAMANAN: Record<IdPengamanan, FormatPengamanan> = {
     label: 'Peralatan & Mesin',
     judul: 'LAPORAN PENGGUNAAN/PEMAKAIAN BMD PERALATAN DAN MESIN',
     grupOrang: 'Pemakai',
-    kolom: kolomPengamanan('Pemakai'),
+    kolom: kolomPengamanan('Pemakai', 'pakta'),
     kosong: 'Tidak ada kustodi Peralatan dan Mesin yang berlaku pada periode ini.',
   },
   rumah_negara: {
@@ -123,7 +133,7 @@ export const FORMAT_PENGAMANAN: Record<IdPengamanan, FormatPengamanan> = {
     label: 'Gedung & Bangunan (Rumah Negara)',
     judul: 'LAPORAN PENGGUNAAN/PEMAKAIAN BMD GEDUNG DAN BANGUNAN BERUPA RUMAH NEGARA',
     grupOrang: 'Penghuni',
-    kolom: kolomPengamanan('Penghuni'),
+    kolom: kolomPengamanan('Penghuni', 'sip'),
     kosong: 'Tidak ada kustodi Gedung dan Bangunan (Rumah Negara) yang berlaku pada periode ini.',
   },
 }

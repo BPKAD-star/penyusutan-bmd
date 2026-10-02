@@ -12,6 +12,7 @@ export type FieldKey =
   | 'luas' | 'nomor_dokumen_kepemilikan' | 'tanggal_dokumen_kepemilikan' | 'nama_dokumen_kepemilikan' | 'jenis_hak'
   | 'wilayah_kode' | 'alamat_detail' | 'latitude' | 'longitude' | 'penggunaan_pengamanan' | 'keterangan'
   | 'satuan' | 'asal_usul' | 'tahun_pengadaan' | 'kondisi_barang'
+  | 'jenis_perkerasan' | 'jenis_bahan_jembatan' | 'no_ruas_jalan' | 'no_jaringan_irigasi'
 
 export const FIELD_LABEL: Record<FieldKey, string> = {
   nama_barang: 'Spesifikasi Nama Barang',
@@ -39,6 +40,12 @@ export const FIELD_LABEL: Record<FieldKey, string> = {
   asal_usul: 'Asal Usul',
   tahun_pengadaan: 'Tahun Pengadaan',
   kondisi_barang: 'Kondisi Barang',
+  // Data teknis Jalan/Jaringan/Irigasi — kolomnya lahir 20261002_01 (ditanyakan
+  // LKI Format III.A.4). Hanya di TEMPLATE_JIJ.
+  jenis_perkerasan: 'Jenis Perkerasan Jalan',
+  jenis_bahan_jembatan: 'Jenis Bahan Struktur Jembatan',
+  no_ruas_jalan: 'Nomor Ruas Jalan',
+  no_jaringan_irigasi: 'Nomor Jaringan Irigasi',
 }
 
 // Tipe field khusus — 'select' butuh FIELD_OPTIONS; 'wilayah' & 'latlong' dirender
@@ -107,6 +114,17 @@ const TEMPLATE_TANAH: FieldKey[] = [
   'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
   'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan',
 ]
+// JALAN, JARINGAN & IRIGASI: template Tanah + empat data teknis yang ditanyakan
+// LKI III.A.4 (migrasi 20261002_01). Sengaja template SENDIRI, bukan menambah
+// TEMPLATE_TANAH — template itu dipakai Tanah & Gedung, yang tak punya ruas
+// jalan maupun jembatan. KDP_KONSTRUKSI_FIELDS tetap diturunkan dari
+// TEMPLATE_TANAH (tak berubah).
+const TEMPLATE_JIJ: FieldKey[] = [
+  'nama_barang', 'spesifikasi_lainnya', 'jenis_hak', 'luas',
+  'jenis_perkerasan', 'jenis_bahan_jembatan', 'no_ruas_jalan', 'no_jaringan_irigasi',
+  'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan',
+  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan',
+]
 // PERALATAN & MESIN: kendaraan dkk (nomor rangka/mesin/polisi/BPKB) + lokasi.
 const TEMPLATE_PERALATAN_MESIN: FieldKey[] = [
   'nama_barang', 'merek_tipe', 'no_bpkb', 'no_rangka', 'no_mesin', 'no_polisi', 'spesifikasi_lainnya',
@@ -123,7 +141,7 @@ export const GOLONGAN_FIELDS: Record<string, FieldKey[]> = {
   '1.3.1': TEMPLATE_TANAH,             // Tanah
   '1.3.2': TEMPLATE_PERALATAN_MESIN,   // Peralatan dan Mesin
   '1.3.3': TEMPLATE_TANAH,             // Gedung dan Bangunan
-  '1.3.4': TEMPLATE_TANAH,             // Jalan, Jaringan dan Irigasi
+  '1.3.4': TEMPLATE_JIJ,               // Jalan, Jaringan dan Irigasi
   '1.3.5': TEMPLATE_ASET_LAINNYA,      // Aset Tetap Lainnya
   '1.3.6': TEMPLATE_ASET_LAINNYA,      // Konstruksi Dalam Pengerjaan
   '1.5.3': TEMPLATE_ASET_LAINNYA,      // Aset Tidak Berwujud
@@ -232,7 +250,10 @@ export function allSameGolongan(kodes: string[]): boolean {
 // 20260709_04) — sama persis dgn FIELD_OPTIONS.kondisi_barang di atas.
 export const ASET_FIELD_COLS = ['nama_barang', 'spesifikasi_lainnya', 'merek_tipe', 'no_polisi', 'no_bpkb', 'no_rangka', 'no_mesin',
   'luas', 'nomor_dokumen_kepemilikan', 'tanggal_dokumen_kepemilikan', 'nama_dokumen_kepemilikan', 'jenis_hak',
-  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan'] as const
+  'wilayah_kode', 'alamat_detail', 'latitude', 'longitude', 'kondisi_barang', 'penggunaan_pengamanan', 'keterangan',
+  // ⚠️ Kolom ini lahir 20261002_01 — migrasi itu WAJIB jalan lebih dulu: daftar
+  // ini ikut di-select kartu Pengadaan/Hibah dkk., jadi tanpa kolomnya query gagal.
+  'jenis_perkerasan', 'jenis_bahan_jembatan', 'no_ruas_jalan', 'no_jaringan_irigasi'] as const
 // Kolom spesifikasi yang bertipe numeric di DB → di-cast saat materialize.
 export const ASET_NUM_COLS = new Set(['luas', 'latitude', 'longitude'])
 

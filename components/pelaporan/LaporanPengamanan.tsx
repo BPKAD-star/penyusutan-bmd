@@ -46,6 +46,8 @@ type Row = {
   key: string; skpdId: number; skpd: string
   pegawai: string; identitas: string; statusPenghuni: string; jabatan: string
   bastNo: string; bastTgl: string; paktaNo: string; paktaTgl: string
+  /** Surat Izin Penghunian (Gedung & Bangunan), sejak 2026-10-02. Kosong = tak ada. */
+  sipNo: string; sipTgl: string
   nibar: string; kode: string; nama: string; status: string; nilai: number
   merekTipe: string; spesifikasiLainnya: string
   noPolisi: string; noRangka: string; noMesin: string; luas: number | string | null
@@ -143,6 +145,7 @@ export default function LaporanPengamanan() {
         statusPenghuni: p.status_penghuni || '-', jabatan: p.jabatan || '-',
         bastNo: h.no_sk, bastTgl: h.tanggal,
         paktaNo: p.pakta_no || '-', paktaTgl: p.pakta_tgl || '-',
+        sipNo: p.sip_no || '', sipTgl: p.sip_tgl || '',
         nibar: v.nibar, kode: v.kode, nama: v.nama,
         status: v.dikembalikan ? 'Dikembalikan' : 'Diamankan', nilai: v.nilai,
         merekTipe: v.merekTipe, spesifikasiLainnya: v.spesifikasiLainnya,
@@ -188,6 +191,7 @@ export default function LaporanPengamanan() {
       'SKPD': r.skpd, 'Nama Pegawai': r.pegawai, 'Nomor Identitas': r.identitas,
       'Status Penghuni/Pemakai': r.statusPenghuni, 'Jabatan': r.jabatan,
       'No. BAST': r.bastNo, 'Tgl BAST': r.bastTgl, 'No. Pakta': r.paktaNo, 'Tgl Pakta': r.paktaTgl,
+      'No. SIP': r.sipNo || '-', 'Tgl SIP': r.sipTgl || '-',
       'Kode Barang': r.kode, 'Nama Barang': r.nama, 'NIBAR': r.nibar,
       'Merk/Tipe': r.merekTipe, 'Spesifikasi Lainnya': r.spesifikasiLainnya,
       'No. Polisi': r.noPolisi, 'No. Rangka': r.noRangka, 'No. Mesin': r.noMesin,
@@ -322,7 +326,7 @@ export default function LaporanPengamanan() {
                 <th className="table-th">SKPD</th>
                 <th className="table-th">Nama Pemakai / NIP</th>
                 <th className="table-th">No. BAST / Tanggal</th>
-                <th className="table-th">Pakta Integritas / Tanggal</th>
+                <th className="table-th">Pakta Integritas / SIP</th>
                 <th className="table-th">Nama Barang / NIBAR</th>
                 <th className="table-th">Merk/Tipe</th>
                 <th className="table-th">Spesifikasi Lainnya</th>
@@ -350,7 +354,10 @@ export default function LaporanPengamanan() {
                     )}
                   </td>
                   <td className="table-td text-xs align-top">{r.bastNo}<br /><span className="text-gray-400">{r.bastTgl}</span></td>
-                  <td className="table-td text-xs align-top">{r.paktaNo}<br /><span className="text-gray-400">{r.paktaTgl}</span></td>
+                  <td className="table-td text-xs align-top">
+                    {r.paktaNo}<br /><span className="text-gray-400">{r.paktaTgl}</span>
+                    {r.sipNo && <><br /><span className="text-gray-500">SIP {r.sipNo}</span>{r.sipTgl && <span className="text-gray-400"> · {r.sipTgl}</span>}</>}
+                  </td>
                   <td className="table-td text-xs align-top"><p className="font-medium">{r.nama}</p><p className="text-gray-400">{r.nibar}</p></td>
                   <td className="table-td text-xs align-top">{r.merekTipe}</td>
                   <td className="table-td text-xs align-top max-w-[160px]">{r.spesifikasiLainnya}</td>

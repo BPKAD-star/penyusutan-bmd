@@ -56,20 +56,19 @@ describe('registry IV.J', () => {
 
 // ── Lembar RINCI: susunan kolom keputusan user (2026-09-28) ─────────────────
 describe('kolom lembar rinci', () => {
-  it('urutan kolom PERSIS seperti yang ditetapkan user — kedua cabang', () => {
-    for (const [id, f] of tiapCabang) {
-      expect(f.kolom.map(k => k.key), id).toEqual([
-        'nibar', 'kode', 'nama', 'merek', 'no_polisi', 'nilai_perolehan',
-        'p_nama', 'p_status', 'p_identitas', 'p_jabatan',
-        'bast_nomor', 'bast_tanggal', 'pakta_nomor', 'pakta_tanggal', 'keterangan',
-      ])
-    }
+  it('urutan kolom PERSIS seperti yang ditetapkan user — dokumen kedua beda per cabang', () => {
+    const awal = ['nibar', 'kode', 'nama', 'merek', 'no_polisi', 'nilai_perolehan',
+      'p_nama', 'p_status', 'p_identitas', 'p_jabatan', 'bast_nomor', 'bast_tanggal']
+    expect(FORMAT_PENGAMANAN.peralatan_mesin.kolom.map(k => k.key))
+      .toEqual([...awal, 'pakta_nomor', 'pakta_tanggal', 'keterangan'])
+    expect(FORMAT_PENGAMANAN.rumah_negara.kolom.map(k => k.key))
+      .toEqual([...awal, 'sip_nomor', 'sip_tanggal', 'keterangan'])
   })
 
-  it('SUSUNAN KOLOM kedua cabang IDENTIK — keputusan user "disamakan aja"', () => {
-    // Yang berbeda cuma JUDUL kolom identitas orangnya (Pemakai vs Penghuni).
-    expect(FORMAT_PENGAMANAN.rumah_negara.kolom.map(k => k.key))
-      .toEqual(FORMAT_PENGAMANAN.peralatan_mesin.kolom.map(k => k.key))
+  it('SELAIN dokumen kedua, susunan kedua cabang IDENTIK ("disamakan aja")', () => {
+    const tanpaDok2 = (f: typeof FORMAT_PENGAMANAN.peralatan_mesin) =>
+      f.kolom.map(k => k.key).filter(k => !k.startsWith('pakta') && !k.startsWith('sip'))
+    expect(tanpaDok2(FORMAT_PENGAMANAN.rumah_negara)).toEqual(tanpaDok2(FORMAT_PENGAMANAN.peralatan_mesin))
   })
 
   it('kedua cabang TIDAK berbagi objek kolom yang sama', () => {
@@ -85,19 +84,18 @@ describe('kolom lembar rinci', () => {
       .toBe('Nama Penghuni')
   })
 
-  it('Dokumen Sumber = BAST + Pakta Integritas; SIP & Dokumen Pendukung & Alamat DIBUANG', () => {
-    // ⚠️ Penyimpangan SENGAJA dari lembar aslinya (keputusan user): SIP &
-    // Dokumen Pendukung tak tersimpan di aplikasi ini, jadi kolomnya akan
-    // SELALU kosong. Alamat dibuang mengikuti contoh susunan kolom baru
-    // (2026-09-28). Kalau kelak diminta kembali, yang perlu ditambah `sip_*`,
-    // `dukung_*`, & `p_alamat` PLUS tempat menyimpannya di kartu.
+  it('Dokumen Sumber = BAST + (Pakta untuk PM | SIP untuk Rumah Negara); Dokumen Pendukung & Alamat DIBUANG', () => {
+    // SIP dikembalikan 2026-10-02 (kartu kini menyimpannya). Dokumen Pendukung
+    // & Alamat tetap dibuang (penyimpangan SENGAJA, keputusan user).
+    const pm = FORMAT_PENGAMANAN.peralatan_mesin.kolom.map(x => x.key)
+    const rn = FORMAT_PENGAMANAN.rumah_negara.kolom.map(x => x.key)
+    expect(pm.some(x => x.startsWith('sip'))).toBe(false)
+    expect(rn.some(x => x.startsWith('pakta'))).toBe(false)
+    expect(rn).toContain('sip_nomor')
     for (const [id, f] of tiapCabang) {
       const k = f.kolom.map(x => x.key)
       expect(k, id).toContain('bast_nomor')
       expect(k, id).toContain('bast_tanggal')
-      expect(k, id).toContain('pakta_nomor')
-      expect(k, id).toContain('pakta_tanggal')
-      expect(k.some(x => x.startsWith('sip')), `${id}: kolom SIP muncul lagi`).toBe(false)
       expect(k.some(x => x.startsWith('dukung')), `${id}: Dokumen Pendukung muncul lagi`).toBe(false)
       expect(k, id).not.toContain('p_alamat')
       expect(k, id).not.toContain('lokasi')

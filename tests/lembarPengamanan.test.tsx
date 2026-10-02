@@ -29,6 +29,7 @@ function baris(kode: string, nilai: number, opts: { lama?: boolean } = {}): Bari
         : {
           nama_pegawai: 'Budi', nomor_identitas: '3506010101', status_penghuni: 'PNS',
           jabatan: 'Staf', alamat: 'Jl. Melati 3', pakta_no: 'PI-9/2026', pakta_tgl: '2026-07-02',
+          sip_no: 'SIP-4/2026', sip_tgl: '2026-07-03',
         },
     },
     aset: {
@@ -96,12 +97,19 @@ describe.each(URUT_PENGAMANAN.map(id => [id] as const))('%s — lembar rinci', i
     expect(container.textContent).toContain('Lenovo Thinkpad')
   })
 
-  it('BAST & Pakta Integritas terisi; SIP / Dokumen Pendukung TIDAK dicetak', () => {
+  it('BAST terisi; dokumen kedua ikut cabang (PM: Pakta, Rumah Negara: SIP); Dokumen Pendukung TIDAK dicetak', () => {
     const { container } = sajikan(id)
-    expect(container.textContent).toContain('BAST-7/2026')
-    expect(container.textContent).toContain('PI-9/2026')
-    expect(container.textContent).not.toContain('Surat Ijin')
-    expect(container.textContent).not.toContain('Dokumen Pendukung')
+    const t = container.textContent || ''
+    expect(t).toContain('BAST-7/2026')
+    if (id === 'rumah_negara') {
+      expect(t).toContain('SIP-4/2026')
+      expect(t).toContain('Surat Izin Penghunian')
+      expect(t).not.toContain('PI-9/2026')
+    } else {
+      expect(t).toContain('PI-9/2026')
+      expect(t).not.toContain('SIP-4/2026')
+    }
+    expect(t).not.toContain('Dokumen Pendukung')
   })
 
   it('kartu LAMA tetap mencetak nomor identitasnya (dari `nip`)', () => {

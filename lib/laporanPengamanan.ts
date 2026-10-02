@@ -195,5 +195,7 @@ export function orangPengamanan(r: BarisPengamanan) {
     alamat: p?.alamat || '',
     paktaNo: p?.pakta_no || '',
     paktaTgl: p?.pakta_tgl || '',
+    sipNo: p?.sip_no || '',
+    sipTgl: p?.sip_tgl || '',
   }
 }

@@ -37,7 +37,7 @@ import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
 import {
   normalKondisi, klasifikasiLhi, kekuranganLki, LHI_LABEL, PESAN_FOTO_LKI, BUCKET_FOTO_INVENTARISASI,
   SEBAB_TIDAK_ADA, SEBAB_BUTUH_RELASI, type SebabTidakAda,
-  sesuaiTampil, atribusiTampil, digunakanSendiriTampil,
+  sesuaiTampil, atribusiTampil, digunakanSendiriTampil, JIJ_TEKNIS_KEYS,
   type InvBaris, type InvJawaban, type LkiConfig,
   type KondisiFisik, type PihakPengguna,
 } from '@/lib/inventarisasi'
@@ -198,6 +198,20 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
     supabase.from('admin_satuan_bmd').select('nama').order('nama')
       .then(({ data }) => setSatuanOpsi(((data || []) as { nama: string }[]).map(r => r.nama)))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Data teknis JIJ "Tercatat" (kolom `aset` sejak 20261002_01). Isian yang
+  // tersimpan membawanya di snapshot; lembar yang BELUM disimpan dibangun dari
+  // `fn_inventarisasi_lembar` yang tak memuatnya, jadi nilai register dibaca
+  // langsung untuk barang ini saja. Gagal → "(gagal dimuat)", bukan kosong yang
+  // terbaca "register memang kosong".
+  const [jijReg, setJijReg] = useState<Record<string, string | null> | 'gagal' | null>(null)
+  useEffect(() => {
+    if (!config.jijTeknis || !baris.aset_id || s.jenis_perkerasan !== undefined) return
+    void supabase.from('aset').select(JIJ_TEKNIS_KEYS.join(',')).eq('id', baris.aset_id).maybeSingle()
+      .then(({ data, error }) => setJijReg(error ? 'gagal' : ((data || {}) as unknown as Record<string, string | null>)))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const jijTercatat = (k: typeof JIJ_TEKNIS_KEYS[number]): string | null =>
+    s[k] !== undefined ? (s[k] ?? null) : jijReg === 'gagal' ? '(gagal dimuat)' : (jijReg?.[k] ?? null)
 
   async function upload(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -419,9 +433,9 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
               {/* Format III.A.4 — empat isian teknis khas JIJ. Di luar matriks
                   golongan (tak ada kolomnya di spreadsheet), ditempatkan di
                   sini krn JIJ tak punya merekTipe/spesifikasiLainnya/
-                  nomorKendaraan — posisi alaminya sebelum Luas. Keempatnya
-                  belum punya kolom di `aset`, jadi "Tercatat" kosong —
-                  petugas mengisi keadaan sebenarnya di lapangan. */}
+                  nomorKendaraan — posisi alaminya sebelum Luas. Sejak
+                  20261002_01 keempatnya punya kolom di `aset`, jadi "Tercatat"
+                  menampilkan nilai register (lihat `jijTercatat`). */}
               {config.jijTeknis && (
                 <Seksi kode="E–H" judul="Data Teknis Jalan / Jaringan / Irigasi">
                   <div className="space-y-3">
@@ -434,6 +448,7 @@ export default function LkiForm({ baris, config, golongan, skpdId, readOnly, pes
                       <div key={key}>
                         <p className="text-[11px] font-medium text-gray-600 mb-1">{label}</p>
                         <SesuaiRadio
+                          nilaiLama={jijTercatat(key)}
                           sesuai={sesuaiTampil(j[key])}
                           disabled={readOnly}
                           onSesuai={v => set(key, v ? { sesuai: true } : { sesuai: false, seharusnya: j[key]?.seharusnya || '' })}

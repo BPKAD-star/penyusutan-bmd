@@ -133,6 +133,8 @@ export default function LembarPengamananPermendagri(p: PropLembarPengamanan) {
       case 'bast_tanggal': return tglID(r.header?.tanggal || r.tanggal)
       case 'pakta_nomor': return o.paktaNo
       case 'pakta_tanggal': return tglID(o.paktaTgl)
+      case 'sip_nomor': return o.sipNo
+      case 'sip_tanggal': return tglID(o.sipTgl)
       // Keterangan = isian kotak Keterangan di KARTU dulu (kartu menang, pola
       // yang sama dgn Perpindahan/Reklas/Penghapusan 2026-09-27/28).
       case 'keterangan': return r.header?.keterangan || a.keterangan || ''

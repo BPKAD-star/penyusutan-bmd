@@ -37,10 +37,29 @@ export type PayloadPengamanan = {
   pakta_tgl?: string
   bast_paths?: string[]
   pakta_paths?: string[]
+  /** Surat Izin Penghunian — WAJIB bila kartu memuat Gedung & Bangunan (rumah
+   *  negara), keputusan user 2026-10-02. Pakta Integritas wajib bila memuat
+   *  Peralatan & Mesin; kartu campuran wajib keduanya (`dokumenWajibPengamanan`). */
+  sip_no?: string
+  sip_tgl?: string
+  sip_paths?: string[]
   /** ⚠️ WARISAN — form sebelum 2026-09-08. Dibaca, tak lagi ditulis. */
   nip?: string
   /** ⚠️ WARISAN — idem. */
   pangkat_golongan?: string
+}
+
+/**
+ * Dokumen kedua yang WAJIB untuk kartu berisi barang-barang ini (keputusan user
+ * 2026-10-02): Peralatan & Mesin → Pakta Integritas; Gedung & Bangunan (rumah
+ * negara) → Surat Izin Penghunian; kartu campuran → keduanya. BAST selalu wajib
+ * dan diperiksa terpisah.
+ */
+export function dokumenWajibPengamanan(kodeBarang: readonly string[]): { pakta: boolean; sip: boolean } {
+  return {
+    pakta: kodeBarang.some(k => k.startsWith('1.3.2.')),
+    sip: kodeBarang.some(k => k.startsWith('1.3.3.')),
+  }
 }
 
 /**

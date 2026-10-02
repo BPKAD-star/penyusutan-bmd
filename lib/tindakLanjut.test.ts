@@ -71,9 +71,11 @@ describe('status dilacak dari KEADAAN barang', () => {
     expect(satu(s, ctx([{ ...ASET, foto_paths: ['f1.jpg', 'f2.jpg'] }]), 'III.B.8').status).toBe('selesai')
   })
 
-  it('III.B.8 data teknis JIJ belum punya kolom register → tak bisa dilacak', () => {
+  it('III.B.8 data teknis JIJ dilacak dari kolom register (tak termuat → tandai manual)', () => {
     const s = isian({ jenis_perkerasan: { sesuai: false, seharusnya: 'Aspal' } }, { golongan: '1.3.4' })
     expect(satu(s, ctx(), 'III.B.8').status).toBe('manual')
+    expect(satu(s, ctx([{ ...ASET, jenis_perkerasan: null }]), 'III.B.8').status).toBe('belum')
+    expect(satu(s, ctx([{ ...ASET, jenis_perkerasan: 'aspal' }]), 'III.B.8').status).toBe('selesai')
   })
 
   it('III.B.7 Rusak Berat: reklas → usulan → dihapus, bertahap', () => {

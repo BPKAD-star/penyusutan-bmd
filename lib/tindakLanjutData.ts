@@ -12,7 +12,9 @@ import {
 } from '@/lib/tindakLanjut'
 
 const ASET_COLS = 'id,kode,status,nama_barang,kondisi_barang,satuan,wilayah_kode,alamat_detail,merek_tipe,' +
-  'no_polisi,no_rangka,no_mesin,no_bpkb,spesifikasi_lainnya,luas,keterangan,latitude,longitude,foto_paths,pengamanan,pemanfaatan'
+  'no_polisi,no_rangka,no_mesin,no_bpkb,spesifikasi_lainnya,luas,keterangan,latitude,longitude,foto_paths,pengamanan,pemanfaatan,' +
+  // Kolom teknis JIJ — migrasi 20261002_01 WAJIB jalan lebih dulu.
+  'jenis_perkerasan,jenis_bahan_jembatan,no_ruas_jalan,no_jaringan_irigasi'
 
 export type IsianTLMuat = IsianTL & { skpd_id: number }
 export type TemuanTLMuat = TemuanTL & { skpdId: number; golongan: string; snapshot: IsianTL['snapshot'] }

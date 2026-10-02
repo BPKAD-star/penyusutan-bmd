@@ -7885,8 +7885,24 @@ HANYA dari isian **divalidasi** (sumber sama dgn LHI, `klasifikasiLhi`). **Murni
   sebab "direhab" → anaknya bangunan BARU); B.5 = kustodian Pengamanan (hanya golongan Pengamanan); B.6 = reklas + perjanjian
   Pemanfaatan; B.7 non-RB = kondisi register; B.8 = per kolom (foto: register punya foto yang belum ada saat diinventarisasi);
   B.9 = salah satu kembaran dinonaktifkan (Pencatatan Ganda/Penggabungan); B.12 = kode register = kode baru; B.13 = dipecah.
-- **"Tandai manual"** (belum dilacak): B.4, B.10, B.11, B.5 golongan non-Pengamanan, & 4 kolom teknis JIJ (belum ada kolomnya
-  di `aset`). Fase berikutnya: isian otomatis ke menu tujuan + cetak Surat Usulan Reklas (lampiran LHI) + penandaan manual.
+- **"Tandai manual"** (belum dilacak): B.4, B.10, B.11, B.5 golongan non-Pengamanan. Fase berikutnya: isian otomatis ke menu
+  tujuan + cetak Surat Usulan Reklas (lampiran LHI) + penandaan manual.
+
+### Kolom teknis JIJ di register & Saldo Awal (migrasi 20261002_01)
+Jenis Perkerasan Jalan · Jenis Bahan Struktur Jembatan · Nomor Ruas Jalan · Nomor Jaringan Irigasi kini kolom `aset` DAN
+`aset_awal_2026` (+ GRANT UPDATE per kolom di snapshot). Ditawarkan HANYA untuk 1.3.4 lewat `TEMPLATE_JIJ` (lib/asetFields.ts) —
+entry Pengadaan/Hibah dkk., Koreksi → Spesifikasi, & Saldo Awal → Edit Spesifikasi; KDP tak berubah. Ikut `ASET_FIELD_COLS`
+& `KOREKSI_SPEK_COLS`. LKI menampilkan nilai register sbg "Tercatat" (snapshot `fn_inventarisasi_snapshot`; lembar belum
+disimpan dibaca langsung per barang) & Tindak Lanjut melacaknya (`JIJ_TEKNIS_KEYS`). ⚠️ **Deploy-ordering: migrasi WAJIB
+jalan sebelum deploy kode** — `ASET_FIELD_COLS` ikut di-select kartu Pengadaan/Hibah dkk.; tanpa kolomnya query gagal.
+
+### Pengamanan: Surat Izin Penghunian untuk Gedung & Bangunan (2026-10-02, tanpa migrasi)
+Kartu Pengamanan kini punya tiga dokumen: **BAST selalu wajib; Pakta Integritas wajib bila kartu memuat Peralatan & Mesin;
+SIP wajib bila memuat Gedung & Bangunan** (kartu campuran → keduanya), aturannya `dokumenWajibPengamanan` (lib/pengamanan.ts).
+Payload `sip_no`/`sip_tgl`/`sip_paths` (berkas prefix `pengamanan-sip/`). Lembar IV.J.2.2 (Rumah Negara) mencetak kolom SIP
+MENGGANTIKAN Pakta — membalik keputusan "SIP dibuang" 2026-09-08; IV.J.1.2 tetap Pakta. Daftar Transaksi: kolom
+"Pakta Integritas / SIP", Excel + No./Tgl SIP. Kartu lama tetap terbaca; berkas SIP hanya bisa diunggah saat membuat BAST
+(Edit Header cuma nomor & tanggal, sama dgn Pakta).
 
 ## Lingkungan kerja
 
