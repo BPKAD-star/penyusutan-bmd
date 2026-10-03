@@ -7957,6 +7957,17 @@ Rp215.155.360). **Tak ada migrasi.**
   Diverifikasi ke produksi: `batal_kapitalisasi` 4 ber-target (induk) + 4 tanpa
   target (sisi anak — KIBAR tak membacanya); `batal_penghapusan` 14/14 &
   `batal_pemanfaatan` 2/2 memang tanpa target.
+- **DUA MODE riwayat (permintaan user 2026-10-03):** **Mode Laporan (BAWAAN)** —
+  riwayat hanya peristiwa yang berlaku (`riwayatLaporan`: yang dianulir DAN baris
+  pembatalnya sama-sama disembunyikan), untuk lampiran administrasi/cetak;
+  **Mode Audit** (`?mode=audit`) — seluruh ledger, yang dianulir dicoret + badge.
+  Bagian I–XII identik di kedua mode; yang berbeda hanya daftar riwayat di dasar
+  kartu. Tombol pengalih `kibar-no-print`; cetak mengikuti mode yang sedang
+  tampil. Bawaannya laporan karena kartu ini yang dipindai dari QR.
+  ⚠️ `batal_*` yang tak menganulir apa pun yang dikenali (mis. `batal_pengadaan`:
+  barang ditarik dari register) **TETAP tampil di mode laporan** — maknanya tak
+  tertangkap di tempat lain. Mekanik keempat ditambahkan untuk pemecahan,
+  pengamanan (per `header_id`) & sisi anak kapitalisasi (urutan).
 - **"14. Transaksi Terakhir" kini peristiwa terakhir yang BERLAKU, bukan baris
   `batal_*`** — pembatal itu penganulir, bukan peristiwa pada barang.
 - Blok Pemanfaatan di halaman tetap memakai replay `pemMap` miliknya (setara,

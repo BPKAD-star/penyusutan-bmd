@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { petaDianulir, trxBerlaku, type TrxStatus } from './kibarAktif'
+import { petaDianulir, trxBerlaku, riwayatLaporan, type TrxStatus } from './kibarAktif'
 
 const t = (
   id: number, jenis: string, extra: Partial<TrxStatus> = {},
@@ -45,12 +45,8 @@ describe('petaDianulir — mekanik 1: payload.target_trx_id(s)', () => {
     expect(hidup).toContain(30)
   })
 
-  it('batal_kapitalisasi sisi ANAK (tanpa target) tidak menganulir apa pun', () => {
-    // Sisi anak hanya membawa {induk_id, no_dokumen}; KIBAR tak membacanya.
-    const trx = [
-      t(40, 'kapitalisasi_serap'),
-      t(41, 'batal_kapitalisasi', { payload: { induk_id: 'x', no_dokumen: '01' } }),
-    ]
+  it('batal_kapitalisasi tanpa target tanpa pasangan serap tidak menganulir apa pun', () => {
+    const trx = [t(41, 'batal_kapitalisasi', { payload: { induk_id: 'x', no_dokumen: '01' } })]
     expect(petaDianulir(trx).size).toBe(0)
   })
 
@@ -125,4 +121,56 @@ it('rantai KIBAR nyata (8 baris) — hanya yang dibatalkan yang dianulir', () =>
   ]
   const dianulir = [...petaDianulir(trx).keys()].sort((a, b) => a - b)
   expect(dianulir).toEqual([2, 3, 5, 7])
+})
+
+describe('sisi anak kapitalisasi, pengamanan, pemecahan', () => {
+  it('batal_kapitalisasi (tanpa target) menganulir kapitalisasi_serap terdekat — serap, batal, serap lagi', () => {
+    const trx = [
+      t(40, 'kapitalisasi_serap'), t(41, 'batal_kapitalisasi', { payload: { induk_id: 'x' } }),
+      t(42, 'kapitalisasi_serap'),
+    ]
+    const m = petaDianulir(trx)
+    expect(m.get(40)).toBe(41)
+    expect(m.has(42)).toBe(false)
+  })
+
+  it('batal_pengamanan menganulir pengamanan + pengembalian satu header', () => {
+    const trx = [
+      t(90, 'pengamanan', { header_id: 'P' }), t(91, 'pengembalian_pengamanan', { header_id: 'P' }),
+      t(92, 'batal_pengamanan', { header_id: 'P' }),
+    ]
+    expect([...petaDianulir(trx).keys()].sort()).toEqual([90, 91])
+  })
+
+  it('batal_pemecahan / batal_pemecahan_masuk menganulir pasangannya per header', () => {
+    const trx = [
+      t(100, 'pemecahan_keluar', { header_id: 'K' }), t(101, 'batal_pemecahan', { header_id: 'K' }),
+      t(102, 'pemecahan_masuk', { header_id: 'K' }), t(103, 'batal_pemecahan_masuk', { header_id: 'K' }),
+    ]
+    expect(petaDianulir(trx).get(100)).toBe(101)
+    expect(petaDianulir(trx).get(102)).toBe(103)
+  })
+})
+
+describe('riwayatLaporan — mode laporan', () => {
+  it('menyembunyikan yang dianulir DAN pembatalnya; yang berlaku tetap', () => {
+    const trx = [
+      t(1, 'saldo_awal', { periode: '2025-S2' }),
+      t(2, 'pengalihan_status'), t(3, 'batal_pengalihan', { payload: { target_trx_ids: [2] } }),
+      t(5, 'kapitalisasi'), t(6, 'batal_kapitalisasi', { payload: { target_trx_id: 5 } }),
+      t(7, 'pemanfaatan', { header_id: 'H' }), t(8, 'batal_pemanfaatan', { header_id: 'H' }),
+      t(9, 'koreksi_nilai'),
+    ]
+    expect(riwayatLaporan(trx).map(x => x.id)).toEqual([1, 9])
+  })
+
+  it('batal_* yang tak menganulir apa pun yang dikenali (batal_pengadaan) TETAP tampil', () => {
+    const trx = [t(1, 'pengadaan'), t(2, 'batal_pengadaan')]
+    expect(riwayatLaporan(trx).map(x => x.id)).toEqual([1, 2])
+  })
+
+  it('barang tanpa pembatalan: laporan == audit', () => {
+    const trx = [t(1, 'saldo_awal'), t(2, 'koreksi_nilai')]
+    expect(riwayatLaporan(trx)).toHaveLength(2)
+  })
 })

@@ -23,7 +23,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { fieldsForKode, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { KIBAR_JENIS_LABEL, kibarDetail } from '@/lib/kibarJenis'
-import { petaDianulir } from '@/lib/kibarAktif'
+import { petaDianulir, riwayatLaporan } from '@/lib/kibarAktif'
 import { JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
 import { formatRupiah2 } from '@/lib/export'
 import PrintLabelButton from '@/components/kibar/PrintLabelButton'
@@ -129,7 +129,10 @@ function Empty() {
   return <p className="text-sm text-gray-400 italic">Belum ada.</p>
 }
 
-export default async function KibarPage({ params }: { params: { nibar: string } }) {
+export default async function KibarPage({ params, searchParams }: {
+  params: { nibar: string }
+  searchParams?: { mode?: string }
+}) {
   const admin = createAdminClient()
   const { data: aset } = await admin.from('aset').select('*').eq('nibar', params.nibar).maybeSingle()
 
@@ -196,6 +199,14 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   // Aturannya satu tempat: lib/kibarAktif.ts (dikunci test-nya).
   const dianulir = petaDianulir(trx)
   const berlaku = trx.filter(t => !dianulir.has(t.id))
+  // Dua pembaca kartu ini, dua kebutuhan (permintaan user 2026-10-03):
+  //   • LAPORAN (bawaan) — lampiran administrasi: riwayat hanya peristiwa yang
+  //     masih berlaku; percobaan yang sudah dibatalkan tak perlu dibaca pemeriksa.
+  //   • AUDIT (?mode=audit) — seluruh catatan ledger, yang dianulir dicoret.
+  // Bagian I–XII IDENTIK di kedua mode; hanya daftar riwayat di dasar kartu yang
+  // berbeda. Bawaannya laporan karena kartu ini yang dipindai dari QR & dicetak.
+  const modeAudit = searchParams?.mode === 'audit'
+  const riwayat = modeAudit ? trx : riwayatLaporan(trx)
   const firstOf = (pred: (j: string) => boolean) => berlaku.find(t => pred(t.jenis)) || null
   const lastOf = (pred: (j: string) => boolean) => {
     for (let i = berlaku.length - 1; i >= 0; i--) if (pred(berlaku[i].jenis)) return berlaku[i]
@@ -508,12 +519,32 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
         )}
 
         {/* Riwayat lengkap (lampiran audit) */}
-        <Section num="—" title={`Riwayat Transaksi Lengkap (${trx.length})`}>
-          {trx.length === 0 ? (
+        <Section
+          num="—"
+          title={modeAudit ? `Riwayat Transaksi Lengkap — Mode Audit (${trx.length})` : `Riwayat Transaksi (${riwayat.length})`}
+        >
+          <div id="riwayat" className="kibar-no-print flex flex-wrap items-center gap-2 mb-3 text-xs">
+            <a href="?mode=laporan#riwayat"
+              className={`rounded-full px-3 py-1 border ${!modeAudit ? 'bg-teal text-white border-teal' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+              Mode Laporan
+            </a>
+            <a href="?mode=audit#riwayat"
+              className={`rounded-full px-3 py-1 border ${modeAudit ? 'bg-teal text-white border-teal' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+              Mode Audit
+            </a>
+            <span className="text-gray-500">
+              {modeAudit
+                ? 'Seluruh catatan ledger, termasuk yang dibatalkan.'
+                : trx.length > riwayat.length
+                  ? `${trx.length - riwayat.length} catatan percobaan/pembatalan disembunyikan — lihat Mode Audit.`
+                  : 'Hanya transaksi yang berlaku.'}
+            </span>
+          </div>
+          {riwayat.length === 0 ? (
             <p className="text-sm text-gray-400">Belum ada transaksi tercatat.</p>
           ) : (
             <>
-            {dianulir.size > 0 && (
+            {modeAudit && dianulir.size > 0 && (
               <p className="text-xs text-gray-500 mb-3">
                 Riwayat ini memuat seluruh catatan ledger, termasuk {dianulir.size} transaksi yang sudah{' '}
                 <span className="font-medium">dibatalkan</span> (dicoret) — transaksi itu dianggap tidak pernah
@@ -521,8 +552,8 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
               </p>
             )}
             <ol className="space-y-3">
-              {trx.map(t => {
-                const pembatal = dianulir.get(t.id)
+              {riwayat.map(t => {
+                const pembatal = modeAudit ? dianulir.get(t.id) : undefined
                 const batal = pembatal != null ? trx.find(x => x.id === pembatal) : null
                 const meta = KIBAR_JENIS_LABEL[t.jenis] || { label: t.jenis, tone: 'netral' as const }
                 const dotColor = meta.tone === 'masuk' ? 'bg-teal' : meta.tone === 'keluar' ? 'bg-rose-500' : 'bg-amber-400'
