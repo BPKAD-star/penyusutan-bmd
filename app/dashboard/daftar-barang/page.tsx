@@ -34,7 +34,7 @@
 // halaman); kalau lebih → pakai halaman biar browser tetap enteng. Baris TOTAL
 // selalu menjumlahkan nilai perolehan SELURUH hasil filter. Angka tanpa "Rp".
 import { KOLOM_DEFAULT, KOLOM_META, NOWRAP_KEYS, kolomLayar, adaKomptabel, KONDISI_SINGKAT } from '@/lib/kolomBarang'
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { luasEfektif, type RingkasBidang } from '@/lib/luasBidang'
@@ -60,6 +60,9 @@ import { useReferensiDaftarBarang } from './useReferensiDaftarBarang'
 import { orCari } from '@/lib/cariBarang'
 import { rpcUlangJikaTimeout } from '@/lib/rpcUlang'
 import { IkonTitikKoordinat } from '@/shared/ui/TitikKoordinat'
+import LabelSheet from '@/components/kibar/LabelSheet'
+import { KolomKibarHead, KolomKibarCell } from '@/components/kibar/KolomKibar'
+import { useSeleksiLabel, MAKS_LABEL, type KandidatLabel } from '@/components/kibar/useSeleksiLabel'
 
 // Baris per halaman. Sejak paginasi pindah ke server (migrasi 20260814_05..08)
 // angka ini menentukan `p_limit` RPC, bukan besar potongan array di memori —
@@ -432,6 +435,16 @@ export default function DaftarBarangPage() {
   // tombol "Mengekspor..." yang diam terbaca operator sbg macet, dan halaman
   // ini sudah pernah benar-benar macet di situ — jadi bedanya harus kelihatan.
   const [progres, setProgres] = useState(0)
+
+  // KIBAR & Cetak Label (dipindah dari Pelaporan → KIBAR, 2026-10-03): ikon dokumen
+  // membuka KIBAR, kotak centang di bawahnya memilih barang untuk label QR.
+  // Seleksi bertahan lintas halaman, dan DIKOSONGKAN begitu filter diterapkan
+  // ulang — centang yang tertinggal dari hasil filter lain tak terlihat di layar
+  // tapi tetap ikut tercetak.
+  const seleksiLabel = useSeleksiLabel()
+  const [labelTerbuka, setLabelTerbuka] = useState(false)
+  const { reset: resetLabel } = seleksiLabel
+  useEffect(() => { resetLabel() }, [applied, resetLabel])
 
 
   // Filter dipisah agar dipakai bareng query utama & export. Sumber = tabel utama
@@ -1032,6 +1045,25 @@ export default function DaftarBarangPage() {
   // pernah dialihkan; kalau tidak, pakai skpd_id terkini.
   const ownerSkpd = (r: Row): number | null => posisiOverride.get(r.id)?.skpd ?? r.skpd_id
 
+  // Isi label = POSISI TERKINI barang (`r.skpd_id`), BUKAN `ownerSkpd(r)`: label
+  // ditempel di barangnya sekarang, sedangkan `ownerSkpd` menjawab "siapa
+  // pemegangnya pada semester yang sedang dilihat" — beda begitu operator membuka
+  // semester lampau. Nama barang jatuh ke uraian kodefikasi kalau kosong
+  // (pola yang sama dgn menu KIBAR yang digantikan).
+  const kandidatLabel = (r: Row): KandidatLabel | null => r.nibar ? {
+    id: r.id,
+    item: {
+      nibar: r.nibar,
+      namaBarang: r.nama_barang || uraianMap[r.kode] || '-',
+      merekTipe: r.merek_tipe,
+      skpdNama: skpdMap[r.skpd_id ?? -1] || '-',
+      tglPerolehan: r.tgl_perolehan,
+    },
+  } : null
+  const kandidatHalaman = data.map(kandidatLabel).filter((k): k is KandidatLabel => k !== null)
+  const semuaHalamanTerpilih = kandidatHalaman.length > 0 && kandidatHalaman.every(k => seleksiLabel.dipilih.has(k.id))
+  const sebagianTerpilih = kandidatHalaman.some(k => seleksiLabel.dipilih.has(k.id))
+
   function cellContent(key: string, r: Row): React.ReactNode {
     switch (key) {
       case 'skpd': return skpdMap[ownerSkpd(r) ?? -1] || '-'
@@ -1330,6 +1362,13 @@ export default function DaftarBarangPage() {
               {/* Penyebut disembunyikan kalau totalnya tak terhitung — "/ 2"
                   yang dikarang dari "halaman ini penuh" akan berbohong. */}
               {!showAll && <span className="text-sm text-gray-500">Hal. {page + 1}{total == null ? '' : ` / ${totalPages || 1}`}</span>}
+              {seleksiLabel.jumlah > 0 && (
+                <button onClick={() => setLabelTerbuka(true)}
+                  className="inline-flex items-center rounded-lg bg-yellow-400 px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-yellow-500"
+                  title={seleksiLabel.penuh ? `Batas ${MAKS_LABEL} label per cetak tercapai` : 'Cetak label QR untuk barang yang dicentang'}>
+                  Cetak Label ({seleksiLabel.jumlah}{seleksiLabel.penuh ? ` — maks ${MAKS_LABEL}` : ''})
+                </button>
+              )}
               <button onClick={handleExport} disabled={exporting || total === 0} className="btn-secondary text-xs"
                 title={`Posisi barang pada ${applied.periode} (sesuai filter semester)`}>
                 {exporting ? `Mengekspor${progres ? ` ${progres.toLocaleString('id-ID')} baris` : ''}...` : 'Export Excel'}
@@ -1343,15 +1382,22 @@ export default function DaftarBarangPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>{cols.map(k => <th key={k} className={thClass(k)}>{thContent(k, applied?.golongan)}</th>)}</tr>
+                <tr>
+                  <KolomKibarHead semua={semuaHalamanTerpilih} sebagian={sebagianTerpilih}
+                    disabled={kandidatHalaman.length === 0} onToggle={() => seleksiLabel.toggleHalaman(kandidatHalaman)} />
+                  {cols.map(k => <th key={k} className={thClass(k)}>{thContent(k, applied?.golongan)}</th>)}
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
-                  <tr><td colSpan={cols.length} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
+                  <tr><td colSpan={cols.length + 1} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                 ) : data.length === 0 ? (
-                  <tr><td colSpan={cols.length} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={cols.length + 1} className="table-td text-center py-12 text-gray-400">Tidak ada data untuk filter ini</td></tr>
                 ) : data.map((row, i) => (
                   <tr key={row.id} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                    <KolomKibarCell nibar={row.nibar} striped={i % 2 !== 0}
+                      checked={seleksiLabel.dipilih.has(row.id)}
+                      onToggle={() => { const k = kandidatLabel(row); if (k) seleksiLabel.toggle(k) }} />
                     {cols.map(k => <td key={k} className={tdClass(k, i % 2 !== 0)}>{cellContent(k, row)}</td>)}
                   </tr>
                 ))}
@@ -1362,7 +1408,7 @@ export default function DaftarBarangPage() {
                     {/* Tak terhitung → katakan TERUS TERANG. Angka nol atau
                         jumlah halaman berjalan di baris TOTAL akan dibaca sbg
                         total SELURUH hasil filter, dan itu berbohong. */}
-                    <td className="table-td text-xs" colSpan={nilaiIdx}>
+                    <td className="table-td text-xs" colSpan={nilaiIdx + 1}>
                       TOTAL ({total == null ? (rekapJalan ? 'menghitung jumlah…' : 'jumlah tak terhitung') : `${total.toLocaleString('id-ID')} barang`})
                     </td>
                     <td className="table-td text-right text-xs">{grandTotal == null ? (rekapJalan ? 'menghitung…' : 'tak terhitung') : grandTotal ? angka(grandTotal) : '…'}</td>
@@ -1381,6 +1427,7 @@ export default function DaftarBarangPage() {
         </div>
         </>
       )}
+      {labelTerbuka && <LabelSheet items={[...seleksiLabel.dipilih.values()]} onClose={() => setLabelTerbuka(false)} />}
     </div>
   )
 }

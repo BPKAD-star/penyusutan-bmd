@@ -179,7 +179,8 @@ const navTree: NavNode[] = [
       // rkbmd/validasi keduanya soal penelaahan usulan, bukan pemeriksaan angka.
       { type: 'leaf', href: '/dashboard/pelaporan/rekonsiliasi/rincian', label: 'Rincian Transaksi (Bukti Dukung)' },
       { type: 'leaf', href: '/dashboard/pelaporan/konsistensi', label: 'Uji Konsistensi' },
-      { type: 'leaf', href: '/dashboard/pelaporan/kibar', label: 'KIBAR' },
+      // KIBAR tak lagi punya menu sendiri (2026-10-03): buka KIBAR & Cetak Label
+      // pindah ke Daftar Barang (kolom paling kiri). Rutenya dialihkan ke sana.
       { type: 'leaf', href: '/dashboard/pelaporan/kir', label: 'KIR' },
     ],
   },

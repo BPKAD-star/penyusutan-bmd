@@ -7982,6 +7982,33 @@ Rp215.155.360). **Tak ada migrasi.**
   tak disentuh). **Menu batal baru ber-target otomatis tertangani**; yang tak
   ber-target (pola `batal_penghapusan`) WAJIB ditambahkan di `petaDianulir`.
 
+## KIBAR & Cetak Label pindah ke Daftar Barang (2026-10-03)
+
+Permintaan user: daripada pindah halaman (lihat barang di Daftar Barang → buka
+Pelaporan → KIBAR untuk kartu & label), keduanya kini di **kolom paling kiri
+Daftar Barang**: ikon dokumen = buka `/kibar/<nibar>` (tab baru), kotak centang di
+bawahnya = pilih untuk label; begitu ada yang dicentang, tombol **kuning "Cetak
+Label (N)"** muncul di kiri Export Excel. Isi KIBAR & `LabelSheet` TIDAK berubah.
+**Tak ada migrasi.** Sidebar Pelaporan → KIBAR dicabut; rutenya `redirect()` ke
+Daftar Barang (pranala lama tak mati).
+
+- `components/kibar/KolomKibar.tsx` (kepala + sel) & `useSeleksiLabel.ts`
+  (dikunci test). Kolomnya **di luar `cols`** — `cols` menentukan susunan data per
+  jenis aset & ikut aturan kolom bersama (lib/kolomBarang.ts); ini kolom AKSI.
+  `colSpan` baris kosong & TOTAL ikut +1. Export TIDAK berubah.
+- Seleksi menyimpan `LabelItem` jadi, jadi **bertahan lintas halaman**
+  (paginasi server), dan **dikosongkan tiap filter diterapkan ulang** (centang
+  dari hasil filter lain tak terlihat tapi tetap ikut tercetak).
+- ⚠️ Isi label = **POSISI TERKINI** (`r.skpd_id`), BUKAN `ownerSkpd(r)` yang
+  period-aware: label ditempel di barangnya sekarang, sedangkan layar bisa
+  sedang menampilkan semester lampau.
+- **Pagu `MAKS_LABEL` 500**: QR dibangkitkan di peramban, centang-semua pada mode
+  "tampilkan semua" (≤ 3.000) tanpa batas membekukan tab. Tercapai → tombol
+  menyebut "maks 500", bukan membuang diam-diam.
+- Barang tanpa NIBAR: ikon abu & centang mati (tak punya KIBAR/QR).
+- Bonus: menu lama menarik `aset` langsung (`.like('kode')` + `.limit(100)`, error
+  ditelan); Daftar Barang lewat `fn_daftar_barang` yang terindeks & period-aware.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
