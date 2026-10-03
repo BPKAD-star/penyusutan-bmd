@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { hapusSemuaCache } from '@/components/dashboard/cacheDashboard'
 
 type NavNode =
   | { type: 'leaf'; href: string; label: string; external?: boolean }
@@ -248,6 +249,9 @@ export default function Sidebar({ userName, userRole }: { userName: string; user
   const [open, setOpen] = useState<Record<string, boolean>>({})
 
   async function handleLogout() {
+    // Angka Dashboard tersimpan di browser ini milik pengguna yang keluar —
+    // dibuang sebelum orang lain login di komputer yang sama.
+    hapusSemuaCache(window.sessionStorage)
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()

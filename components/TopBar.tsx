@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { hapusSemuaCache } from '@/components/dashboard/cacheDashboard'
 import TahunKerjaBadge from './TahunKerjaBadge'
 import { useIsViewer } from './useIsViewer'
 import AvatarPegawai, { type JenisKelamin } from './AvatarPegawai'
@@ -19,6 +20,9 @@ export default function TopBar({ userName, userJk, userFotoUrl, onToggleSidebar 
   const isViewer = useIsViewer()
 
   async function handleLogout() {
+    // Angka Dashboard tersimpan di browser ini milik pengguna yang keluar —
+    // dibuang sebelum orang lain login di komputer yang sama.
+    hapusSemuaCache(window.sessionStorage)
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()

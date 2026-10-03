@@ -8036,6 +8036,36 @@ dirender sbg **kertas A4**: label dibagi ke halaman 210×297 mm (2 kolom × 8 ba
   berkas itu (`LABEL_PER_HALAMAN` harus cocok dgn grid 2×8).
 - Dikunci components/kibar/LabelSheet.test.tsx.
 
+## Dashboard: angka tersimpan di browser sbg pengganti skeleton (2026-10-03)
+
+Permintaan user (dicoba dulu, umur **10 menit**). **Tak ada migrasi.**
+Berkas: `components/dashboard/cacheDashboard.ts` (aturan + test),
+`CadanganDashboard.tsx` (sisi browser), `DashboardView.tsx` (tampilan seksi yang
+dipakai server & browser — dipindah apa adanya dari app/dashboard/page.tsx).
+
+- ⚠️ **BUKAN cache yang melewati query.** Server TETAP menghitung ulang setiap
+  kali; angka tersimpan hanya menggantikan skeleton selama angka baru belum tiba,
+  lalu ditimpa. Beban DB TIDAK berkurang (sempat saya sebut sbg manfaat — keliru
+  untuk desain ini). Melewati query = angka lama disajikan sbg angka resmi →
+  ditolak (Lapis 1/inspektorat).
+- **Tiga penjagaan wajib:** `sessionStorage` (hilang saat tab ditutup, komputer
+  kantor dipakai bergantian) · kunci memuat `uid` (angka per cakupan SKPD) +
+  dihapus saat logout (TopBar & Sidebar `handleLogout`) · kunci memuat
+  `VERSI_CACHE` + isi diperiksa bentuknya. Hanya hasil SUKSES yang disimpan.
+- **Yang ikut:** Total Nilai BMD, Total Aset per Jenis, Penghapusan. **Yang
+  SENGAJA tidak:** Cara Perolehan & Mutasi — kartunya menghitung "menunggu" di
+  browser, versi tersimpannya akan tampil "0 menunggu · 100%" yang tampak sah.
+- Versi tersimpan **redup + "Angka tersimpan pukul HH:MM — memuat angka
+  terbaru…"** & **tak bisa diklik** (pop-up rincian akan lenyap saat diganti).
+  ⚠️ Peredupan lewat PROP di view, BUKAN div pembungkus — pembungkus menggeser
+  `last:mb-0` seksi & kartunya melompat 20 px saat angka baru tiba.
+- ⚠️ **Terasa di navigasi DALAM aplikasi** (klik Dashboard di sidebar). Pada muat
+  ulang penuh (F5), React tak meng-hydrate fallback Suspense yang masih tertunda,
+  jadi kemungkinan tetap skeleton seperti dulu. Belum dilihat di peramban.
+- Kapan dicabut: kalau sesudah pindah server Dashboard sudah cepat sendiri, cache
+  ini cuma tambahan yang harus dijaga — hapus `Cadangan*`/`SimpanCacheDashboard`
+  dari page.tsx, view-nya tetap dipakai.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
