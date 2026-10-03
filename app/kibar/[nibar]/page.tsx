@@ -21,7 +21,7 @@ import { headers } from 'next/headers'
 import QRCode from 'qrcode'
 import { createAdminClient } from '@/lib/supabase/server'
 import { fieldsForKode, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
-import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
+import { kodeLevel3, GOLONGAN_REKAP, asalUsulTampil } from '@/lib/bmd'
 import { KIBAR_JENIS_LABEL, kibarDetail } from '@/lib/kibarJenis'
 import { petaDianulir, riwayatLaporan } from '@/lib/kibarAktif'
 import { JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
@@ -374,7 +374,12 @@ export default async function KibarPage({ params, searchParams }: {
 
         {/* III. Informasi Penerimaan Awal Barang */}
         <Section num="III" title="Informasi Penerimaan Awal Barang">
-          <Row label="1. Cara Perolehan" value={KIBAR_JENIS_LABEL[aset.cara_perolehan]?.label || dash(aset.cara_perolehan)} />
+          {/* Cara Perolehan = `asal_usul` (teks yang dibaca manusia, mis. "Pengadaan APBD"),
+              jatuh ke label `cara_perolehan` kalau kosong — aturan yang SAMA dgn kolom
+              Asal Usul di Daftar Barang (`asalUsulTampil`). Bukan label ledger
+              "Saldo Awal (Baseline e-BMD 2025)": itu istilah teknis migrasi, bukan
+              cara barang itu sungguh diperoleh. */}
+          <Row label="1. Cara Perolehan" value={dash(asalUsulTampil(aset.asal_usul, aset.cara_perolehan).teks)} />
           <Row label="2. Tanggal Perolehan" value={fmtTgl(aset.tgl_perolehan)} />
           <Row label="3. Luas" value={aset.luas != null ? String(aset.luas) : '-'} />
           <Row label="4. Satuan Barang" value={dash(aset.satuan)} />

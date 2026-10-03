@@ -7968,6 +7968,14 @@ Rp215.155.360). **Tak ada migrasi.**
   barang ditarik dari register) **TETAP tampil di mode laporan** — maknanya tak
   tertangkap di tempat lain. Mekanik keempat ditambahkan untuk pemecahan,
   pengamanan (per `header_id`) & sisi anak kapitalisasi (urutan).
+- **"III.1 Cara Perolehan" memakai `asalUsulTampil(asal_usul, cara_perolehan)`**
+  (2026-10-03), bukan label ledger. Sebelumnya barang baseline e-BMD tampil
+  "Saldo Awal (Baseline e-BMD 2025)" — istilah teknis migrasi — padahal
+  `asal_usul`-nya "Pengadaan APBD". Aturan sama dgn kolom Asal Usul Daftar Barang:
+  isian `asal_usul` menang, kosong → label `cara_perolehan`. Kedua kolom TETAP
+  tak saling mengisi di DB (lihat `cara_perolehan` vs `asal_usul`); label ledger
+  teknis tetap dipakai di Riwayat Transaksi & "14. Transaksi Terakhir".
+
 - **"14. Transaksi Terakhir" kini peristiwa terakhir yang BERLAKU, bukan baris
   `batal_*`** — pembatal itu penganulir, bukan peristiwa pada barang.
 - Blok Pemanfaatan di halaman tetap memakai replay `pemMap` miliknya (setara,
