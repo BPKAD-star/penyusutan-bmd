@@ -23,6 +23,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { fieldsForKode, FIELD_LABEL, type FieldKey } from '@/lib/asetFields'
 import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { KIBAR_JENIS_LABEL, kibarDetail } from '@/lib/kibarJenis'
+import { petaDianulir } from '@/lib/kibarAktif'
 import { JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
 import { formatRupiah2 } from '@/lib/export'
 import PrintLabelButton from '@/components/kibar/PrintLabelButton'
@@ -187,27 +188,27 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
   const qrSvg = await QRCode.toString(kibarUrl, { type: 'svg', margin: 1, width: 140 })
 
   // ── Turunan per-bagian dari ledger ────────────────────────────────────────
-  const firstOf = (pred: (j: string) => boolean) => trx.find(t => pred(t.jenis)) || null
+  // ⚠️ Bagian I–XII dibaca dari baris yang MASIH BERLAKU (`berlaku`), bukan dari
+  // `trx` mentah. Ledger append-only: transaksi yang dibatalkan tetap ada di
+  // `trx` & tetap tampil di Riwayat Lengkap (ditandai), tapi kartu yang DICETAK
+  // tak boleh memuat peristiwa yang dianggap tak pernah terjadi — dulu kapitalisasi
+  // yang sudah dibatalkan tetap mengisi bagian X dgn nilai perolehan hasil rehab.
+  // Aturannya satu tempat: lib/kibarAktif.ts (dikunci test-nya).
+  const dianulir = petaDianulir(trx)
+  const berlaku = trx.filter(t => !dianulir.has(t.id))
+  const firstOf = (pred: (j: string) => boolean) => berlaku.find(t => pred(t.jenis)) || null
   const lastOf = (pred: (j: string) => boolean) => {
-    for (let i = trx.length - 1; i >= 0; i--) if (pred(trx[i].jenis)) return trx[i]
+    for (let i = berlaku.length - 1; i >= 0; i--) if (pred(berlaku[i].jenis)) return berlaku[i]
     return null
   }
   const asal = firstOf(j => PEROLEHAN.has(j))
-  const trxTerakhir = trx.length ? trx[trx.length - 1] : null
-  // Pengalihan yang DIBATALKAN (`batal_pengalihan` menganulir lewat
-  // `payload.target_trx_ids`, bisa beberapa baris sekaligus) tak boleh mengisi
-  // bagian Penggunaan — ini kartu barang yang DICETAK, jadi jangan sampai
-  // memuat perpindahan yang dianggap tak pernah terjadi. Diturunkan dari `trx`
-  // yang memang sudah memuat seluruh baris ledger aset ini, tanpa query baru.
-  const pengalihanDibatalkan = new Set<number>()
-  for (const t of trx) {
-    if (t.jenis !== 'batal_pengalihan') continue
-    for (const v of (t.payload?.target_trx_ids as unknown[] | undefined) || []) {
-      const n = Number(v)
-      if (Number.isFinite(n)) pengalihanDibatalkan.add(n)
-    }
-  }
-  const pengalihanSah = trx.filter(t => t.jenis === 'pengalihan_status' && !pengalihanDibatalkan.has(t.id))
+  // Transaksi terakhir = peristiwa terakhir yang berlaku, BUKAN baris pembatalnya
+  // (`batal_*` itu penganulir, bukan peristiwa pada barang).
+  const trxTerakhir = (() => {
+    for (let i = berlaku.length - 1; i >= 0; i--) if (!berlaku[i].jenis.startsWith('batal_')) return berlaku[i]
+    return null
+  })()
+  const pengalihanSah = berlaku.filter(t => t.jenis === 'pengalihan_status')
   const penggunaan = pengalihanSah.length ? pengalihanSah[pengalihanSah.length - 1] : null
   const mutasi = lastOf(j => j === 'mutasi_internal')
   const reklas = firstOf(j => REKLAS.has(j))
@@ -511,8 +512,18 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
           {trx.length === 0 ? (
             <p className="text-sm text-gray-400">Belum ada transaksi tercatat.</p>
           ) : (
+            <>
+            {dianulir.size > 0 && (
+              <p className="text-xs text-gray-500 mb-3">
+                Riwayat ini memuat seluruh catatan ledger, termasuk {dianulir.size} transaksi yang sudah{' '}
+                <span className="font-medium">dibatalkan</span> (dicoret) — transaksi itu dianggap tidak pernah
+                terjadi dan tidak mengisi bagian I–XII di atas.
+              </p>
+            )}
             <ol className="space-y-3">
               {trx.map(t => {
+                const pembatal = dianulir.get(t.id)
+                const batal = pembatal != null ? trx.find(x => x.id === pembatal) : null
                 const meta = KIBAR_JENIS_LABEL[t.jenis] || { label: t.jenis, tone: 'netral' as const }
                 const dotColor = meta.tone === 'masuk' ? 'bg-teal' : meta.tone === 'keluar' ? 'bg-rose-500' : 'bg-amber-400'
                 const detail = kibarDetail(t.jenis, t.payload, t.skpd_asal ? skpdNama[t.skpd_asal] : null, t.skpd_tujuan ? skpdNama[t.skpd_tujuan] : null, t.jurnal_header?.sub_jenis)
@@ -523,7 +534,14 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
                     </div>
                     <div className="min-w-0 flex-1 border-b border-gray-100 pb-3">
                       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                        <p className="text-sm font-medium text-gray-800">{meta.label}</p>
+                        <p className={`text-sm font-medium ${batal ? 'text-gray-400' : 'text-gray-800'}`}>
+                          <span className={batal ? 'line-through' : ''}>{meta.label}</span>
+                          {batal && (
+                            <span className="ml-2 inline-block align-middle rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">
+                              Dibatalkan {fmtTgl(batal.tanggal)}
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xs text-gray-400">{fmtTgl(t.tanggal)} · {t.periode}</p>
                       </div>
                       {detail && <p className="text-xs text-gray-600 mt-0.5">{detail}</p>}
@@ -534,6 +552,7 @@ export default async function KibarPage({ params }: { params: { nibar: string } 
                 )
               })}
             </ol>
+            </>
           )}
         </Section>
 

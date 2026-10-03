@@ -7935,6 +7935,34 @@ MENGGANTIKAN Pakta — membalik keputusan "SIP dibuang" 2026-09-08; IV.J.1.2 tet
 "Pakta Integritas / SIP", Excel + No./Tgl SIP. Kartu lama tetap terbaca; berkas SIP hanya bisa diunggah saat membuat BAST
 (Edit Header cuma nomor & tanggal, sama dgn Pakta).
 
+## KIBAR menampilkan transaksi yang SUDAH DIBATALKAN di bagian I–XII (2026-10-03)
+
+User menguji beberapa transaksi pada satu barang lalu membatalkan semuanya, tapi
+kartu KIBAR-nya masih memuat hasilnya: bagian **X (Kapitalisasi)** menampilkan
+Rp550.155.360 (nilai sesudah rehab yang sudah dibatalkan; posisi sebenarnya
+Rp215.155.360). **Tak ada migrasi.**
+
+- **Sebabnya:** hanya Penggunaan (pengalihan) & Pemanfaatan yang menyaring
+  pembatalan; Kapitalisasi, Koreksi Nilai, Reklasifikasi, Mutasi Internal, &
+  Penghapusan memakai `lastOf`/`firstOf` atas ledger mentah.
+- **Riwayat Transaksi Lengkap SENGAJA tetap memuat semuanya** (lampiran audit,
+  ledger append-only). Yang berubah: baris yang dianulir **dicoret + badge
+  "Dibatalkan <tanggal>"**, dan ada satu kalimat penjelas. Status aktif tak
+  disimpan di mana pun — **dihitung saat baca** oleh `petaDianulir()`
+  (lib/kibarAktif.ts, dikunci lib/kibarAktif.test.ts).
+- ⚠️ **Tiga mekanik pembatalan, jangan disamakan:** (1) `payload.target_trx_id(s)`
+  lewat `idTarget` (dipakai bersama voidedAset & guard) — kapitalisasi sisi induk,
+  reklas, koreksi, pengalihan/mutasi; (2) `batal_penghapusan` payload `{}` →
+  replay "peristiwa terakhir menang"; (3) `batal_pemanfaatan` → per `header_id`.
+  Diverifikasi ke produksi: `batal_kapitalisasi` 4 ber-target (induk) + 4 tanpa
+  target (sisi anak — KIBAR tak membacanya); `batal_penghapusan` 14/14 &
+  `batal_pemanfaatan` 2/2 memang tanpa target.
+- **"14. Transaksi Terakhir" kini peristiwa terakhir yang BERLAKU, bukan baris
+  `batal_*`** — pembatal itu penganulir, bukan peristiwa pada barang.
+- Blok Pemanfaatan di halaman tetap memakai replay `pemMap` miliknya (setara,
+  tak disentuh). **Menu batal baru ber-target otomatis tertangani**; yang tak
+  ber-target (pola `batal_penghapusan`) WAJIB ditambahkan di `petaDianulir`.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
