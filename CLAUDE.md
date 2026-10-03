@@ -8009,6 +8009,33 @@ Daftar Barang (pranala lama tak mati).
 - Bonus: menu lama menarik `aset` langsung (`.like('kode')` + `.limit(100)`, error
   ditelan); Daftar Barang lewat `fn_daftar_barang` yang terindeks & period-aware.
 
+### Pop-up Cetak Label = halaman A4 sungguhan (2026-10-03)
+
+Lembar label (`components/kibar/LabelSheet.tsx`) sebelumnya tampil **transparan**
+di Daftar Barang — kartu label menumpuk di atas tabel. Diganti pop-up yang
+dirender sbg **kertas A4**: label dibagi ke halaman 210×297 mm (2 kolom × 8 baris
+= **16 label/halaman**), pratinjau di pop-up = persis yang tercetak. Tombol
+**"Cetak / Simpan PDF"** membuka dialog cetak peramban (pilih printer ATAU
+"Simpan sebagai PDF"). Dipakai juga oleh tombol Cetak Label di halaman publik
+`/kibar/[nibar]` (1 label = 1 halaman). **Tak ada migrasi.**
+
+- ⚠️ **Dirender lewat PORTAL ke `document.body` + latar INLINE style**, bukan
+  kelas Tailwind di dalam pohon halaman. Sebab pasti transparannya versi lama
+  TIDAK dipastikan; portal membuatnya kebal terhadap stacking context/overflow
+  halaman mana pun (kelas insiden yang sama dgn GIS `isolate` & KonfirmasiModal).
+- CSS cetak: semua anak `body` selain pop-up `display:none` (BUKAN
+  `visibility:hidden` — itu tetap memakan tata letak & menyisakan halaman kosong).
+  `@page { size: A4; margin: 0 }` → header/footer peramban tak ikut tercetak.
+  ⚠️ `height: 296mm` (bukan 297) supaya pembulatan tak melahirkan halaman kosong
+  di ujung.
+- `document.title` disetel `namaBerkasKibar('Label', 'N barang')` utk nama bawaan
+  PDF & dipulihkan `afterprint` (pemindai lib/namaBerkas.test.ts mensyaratkannya).
+- Kunci efek QR = daftar NIBAR (bukan identitas array) — pemanggil merakit `items`
+  baru tiap render, & QR 500 label tak boleh dibangkitkan ulang tiap itu. QR 240px
+  (160px kasar di printer 300 dpi). Ukuran kertas satu sumber: konstanta CSS di
+  berkas itu (`LABEL_PER_HALAMAN` harus cocok dgn grid 2×8).
+- Dikunci components/kibar/LabelSheet.test.tsx.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

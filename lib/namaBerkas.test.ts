@@ -102,7 +102,9 @@ describe('seluruh Export Excel & lembar cetak memakai namaBerkasLaporan', () => 
     for (const e of fs.readdirSync(path.join(AKAR, dir), { withFileTypes: true })) {
       const rel = path.join(dir, e.name)
       if (e.isDirectory()) berkasTsx(rel, out)
-      else if (e.name.endsWith('.tsx')) out.push(rel)
+      // Berkas test bukan menu penghasil berkas: ia boleh menyetel `document.title`
+      // sbg bagian skenario (mis. components/kibar/LabelSheet.test.tsx).
+      else if (e.name.endsWith('.tsx') && !e.name.endsWith('.test.tsx')) out.push(rel)
     }
     return out
   }
