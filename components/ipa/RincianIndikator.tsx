@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAsyncData } from '@/shared/ui/useAsyncData'
-import { muatRincianHalaman, RINCIAN_PER_HALAMAN, type HalamanRincian, type KeadaanRincian } from '@/lib/ipaData'
+import { muatRincianHalaman, persenTerisi, RINCIAN_PER_HALAMAN, type HalamanRincian, type KeadaanRincian } from '@/lib/ipaData'
 import { GOLONGAN_REKAP } from '@/lib/bmd'
 import { PesanError } from '@/components/ipa/ipaUi'
 
@@ -26,6 +26,7 @@ const PILL: Record<KeadaanRincian, { label: string; kelas: string }> = {
 }
 const rupiah = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 0 })
 const angka = (n: number) => n.toLocaleString('id-ID')
+const persenLabel = (p: number | null) => (p == null ? '' : `${p.toFixed(1).replace('.', ',')}%`)
 const namaGolongan = (kode: string) => GOLONGAN_REKAP.find(g => g.kode === kode)?.uraian ?? kode
 
 // Penyaringan, penghitungan & pemotongan halaman dikerjakan SERVER
@@ -106,7 +107,7 @@ export default function RincianIndikator({ tahun, skpdId, indikator }: { tahun: 
           <select className="select-filter" value={golongan} aria-label="Jenis aset"
             onChange={e => { setGolongan(e.target.value); setHalaman(0) }}>
             <option value="">Semua jenis aset ({angka(golonganAda.reduce((s, g) => s + g.n, 0))})</option>
-            {golonganAda.map(g => <option key={g.kode} value={g.kode}>{g.kode} {namaGolongan(g.kode)} ({angka(g.n)})</option>)}
+            {golonganAda.map(g => <option key={g.kode} value={g.kode}>{g.kode} {namaGolongan(g.kode)} ({angka(g.n)}){persenLabel(persenTerisi(g)) && ` · ${persenLabel(persenTerisi(g))} terisi`}</option>)}
           </select>
         )}
         {(['kurang', 'ok', 'semua'] as Tab[]).map(t => (
@@ -123,6 +124,13 @@ export default function RincianIndikator({ tahun, skpdId, indikator }: { tahun: 
         Daftar ini dibaca langsung dari data terkini; skor di halaman memakai angka yang terakhir dihitung, jadi
         jumlahnya bisa berbeda sedikit kalau data berubah sesudahnya.
       </p>
+      {data?.terisi && persenTerisi(data.terisi) != null && (
+        <p className="px-4 pt-2 text-sm text-gray-700">
+          Kolom terisi{golongan ? ` (${namaGolongan(golongan)})` : ''}: {angka(data.terisi.isi)} dari {angka(data.terisi.req)}
+          {' · '}<b>{persenLabel(persenTerisi(data.terisi))}</b>
+          <span className="text-xs text-gray-500"> — angka yang sama dengan pembilang/penyebut skor; tiap kolom bernilai sama, jadi jenis aset yang barangnya banyak otomatis lebih berbobot.</span>
+        </p>
+      )}
       {totalInfo && (
         <p className="px-4 pt-2 text-sm text-gray-700">
           Rencana Rp{rupiah(totalInfo.rencana)} · Realisasi Rp{rupiah(totalInfo.realisasi)}

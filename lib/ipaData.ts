@@ -140,9 +140,17 @@ export type HalamanRincian = {
   /** Jumlah per keadaan SETELAH filter jenis aset & cari. */
   n: { kurang: number; ok: number; semua: number }
   /** Jenis aset yang ada (setelah filter cari, sebelum filter jenis aset). */
-  golongan: { kode: string; n: number }[]
+  golongan: { kode: string; n: number; isi?: number | null; req?: number | null }[]
+  /** Kolom terisi / kolom wajib untuk jenis aset yang dipilih — HANYA Kelengkapan Data (INT_KELENGKAPAN). */
+  terisi: { isi: number; req: number } | null
 }
 export const RINCIAN_PER_HALAMAN = 250
+
+/** Persen kolom terisi (0–100), atau null kalau tak ada penyebut. Dibulatkan 1 desimal di tampilan. */
+export function persenTerisi(t: { isi?: number | null; req?: number | null } | null | undefined): number | null {
+  if (!t || t.isi == null || t.req == null || Number(t.req) <= 0) return null
+  return (Number(t.isi) / Number(t.req)) * 100
+}
 
 /**
  * Satu halaman rincian indikator otomatis — dihitung HIDUP dari register, bukan
@@ -169,12 +177,18 @@ export async function muatRincianHalaman(
   type Raw = {
     rows: { keadaan: KeadaanRincian; judul: string; sub: string | null; ket: string | null; nilai: number | string | null; nibar: string | null; uraian: string | null }[]
     total: number; n: HalamanRincian['n']; golongan: HalamanRincian['golongan']
+    terisi?: { isi: number | string; req: number | string } | null
   }
   const r = data as Raw | null
   if (!r) throw new Error('gagal memuat rincian indikator: respons kosong')
   return {
     rows: (r.rows ?? []).map(x => ({ ...x, nilai: x.nilai == null ? null : Number(x.nilai) })),
-    total: Number(r.total), n: r.n, golongan: r.golongan ?? [],
+    total: Number(r.total), n: r.n,
+    golongan: (r.golongan ?? []).map(g => ({
+      ...g, isi: g.isi == null ? null : Number(g.isi), req: g.req == null ? null : Number(g.req),
+    })),
+    // Kosong sebelum migrasi 20261004_02 jalan / untuk indikator selain Kelengkapan Data.
+    terisi: r.terisi ? { isi: Number(r.terisi.isi), req: Number(r.terisi.req) } : null,
   }
 }
 
