@@ -41,6 +41,7 @@ import { formatRupiah2 } from '@/lib/export'
 import { GIS_TANAH_KODE_FILTER } from '@/lib/gisTanah'
 import { idsKonsolidasi } from '@/lib/konsolidasiSkpd'
 import { luasBidangSah, luasEfektif, ringkasDaftarBidang } from '@/lib/luasBidang'
+import { useStreetView } from '@/components/gis/useStreetView'
 import { statusJenisHak, statusRegister, type StatusTanah } from '@/lib/statusTanah'
 import KelolaBidangPanel from '@/components/gis/KelolaBidangPanel'
 import SkpdCombobox from '@/components/SkpdCombobox'
@@ -265,8 +266,8 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // berjalan. Draft pin yang nyangkut ke tanah lama akan membingungkan kalau
   // dibiarkan hidup begitu operator pindah ke tanah lain.
   useEffect(() => {
-    setPickMode(false); setDraftPoint(null); setTitikMsg('')
-  }, [selectedId])
+    setPickMode(false); setDraftPoint(null); setTitikMsg(''); sv.reset()
+  }, [selectedId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = rows.find(r => r.id === selectedId) || null
   const ringkasSel = ringkasDaftarBidang(selected ? bidangByAset[selected.id] || [] : [])
@@ -292,6 +293,8 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
     const b = (bidangByAset[selected.id] || []).find(x => x.latitude != null && x.longitude != null)
     return b ? { lat: b.latitude as number, lng: b.longitude as number } : null
   })()
+
+  const sv = useStreetView(titikSel)
 
   function batalPick() {
     setPickMode(false); setDraftPoint(null)
@@ -705,11 +708,13 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
                       <a href={`https://www.google.com/maps/dir/?api=1&destination=${titikSel.lat},${titikSel.lng}`}
                         target="_blank" rel="noopener noreferrer"
                         className="btn-secondary text-xs flex-1 text-center">🧭 Navigasi</a>
-                      <a href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${titikSel.lat},${titikSel.lng}`}
-                        target="_blank" rel="noopener noreferrer"
-                        className="btn-secondary text-xs flex-1 text-center">👁 Street View</a>
+                      <button type="button" onClick={() => void sv.buka()} disabled={sv.mencari}
+                        className="btn-secondary text-xs flex-1 text-center disabled:opacity-60">
+                        {sv.mencari ? 'Mencari jalan…' : '👁 Street View'}
+                      </button>
                     </div>
                   )}
+                  {sv.info && <p className="text-[10px] text-gray-500 mb-1">{sv.info}</p>}
                   {basi && (
                     <p className="text-[10px] text-amber-700">Masih menampilkan data tersimpan — tunggu data terbaru sebelum mengubah titik atau bidang.</p>
                   )}
