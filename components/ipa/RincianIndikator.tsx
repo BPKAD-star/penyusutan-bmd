@@ -24,6 +24,10 @@ const PILL: Record<KeadaanRincian, { label: string; kelas: string }> = {
   ok: { label: 'Terpenuhi', kelas: 'bg-emerald-100 text-emerald-700' },
   info: { label: 'Keterangan', kelas: 'bg-gray-100 text-gray-600' },
 }
+/** Kode barang di baris `sub` ("NIBAR · 1.3.2.02.01.04.001"). NIBAR murni digit
+ *  tanpa titik, jadi pola ≥5 segmen bertitik hanya kena kode barang. */
+const KODE_RE = /\d+(?:\.\d+){4,}/
+const kodeDariSub = (sub: string | null) => sub?.match(KODE_RE)?.[0] ?? null
 const rupiah = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 0 })
 
 export default function RincianIndikator({ tahun, skpdId, indikator }: { tahun: number; skpdId: number; indikator: string }) {
@@ -34,6 +38,29 @@ export default function RincianIndikator({ tahun, skpdId, indikator }: { tahun: 
   const [tampil, setTampil] = useState(PER_HALAMAN)
 
   useEffect(() => { void run(() => muatRincian(supabase, tahun, skpdId, indikator)) }, [run, tahun, skpdId, indikator]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Uraian barang (nomenklatur baku) per kode — dilookup ke master kodefikasi,
+  // BUKAN aset.uraian_barang (salinan yang bisa basi; pola Daftar Barang).
+  // Sengaja TIDAK fail-closed: uraian cuma tambahan untuk pencarian & tampilan,
+  // gagal memuatnya cukup berarti kotak Cari tak menemukan lewat uraian.
+  const [uraianKode, setUraianKode] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    const kode = [...new Set((data ?? []).map(r => kodeDariSub(r.sub)).filter((k): k is string => !!k))]
+    if (kode.length === 0) { setUraianKode(new Map()); return }
+    let hidup = true
+    void (async () => {
+      const m = new Map<string, string>()
+      for (let i = 0; i < kode.length; i += 300) {
+        const { data: kd, error: e } = await supabase.from('admin_kodefikasi_bmd')
+          .select('kode,uraian').in('kode', kode.slice(i, i + 300))
+        if (e) return
+        for (const k of (kd || []) as { kode: string; uraian: string | null }[]) if (k.uraian) m.set(k.kode, k.uraian)
+      }
+      if (hidup) setUraianKode(m)
+    })()
+    return () => { hidup = false }
+  }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
+  const uraianBaris = (r: BarisRincian) => { const k = kodeDariSub(r.sub); return (k && uraianKode.get(k)) || '' }
 
   const n = useMemo(() => ({
     kurang: (data ?? []).filter(r => r.keadaan === 'kurang').length,
@@ -47,8 +74,8 @@ export default function RincianIndikator({ tahun, skpdId, indikator }: { tahun: 
     const q = cari.trim().toLowerCase()
     return (data ?? []).filter(r =>
       (tabAktif === 'semua' || r.keadaan === tabAktif)
-      && (!q || [r.judul, r.sub, r.ket].some(v => (v ?? '').toLowerCase().includes(q))))
-  }, [data, tabAktif, cari])
+      && (!q || [r.judul, r.sub, r.ket, uraianBaris(r)].some(v => (v ?? '').toLowerCase().includes(q))))
+  }, [data, tabAktif, cari, uraianKode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rupiahKolom = NILAI_RUPIAH.has(indikator)
   const totalInfo = indikator === 'AKT_REALISASI' && data
@@ -67,7 +94,7 @@ export default function RincianIndikator({ tahun, skpdId, indikator }: { tahun: 
             {t === 'kurang' ? 'Perlu ditindaklanjuti' : t === 'ok' ? 'Sudah terpenuhi' : 'Semua'} ({n[t].toLocaleString('id-ID')})
           </button>
         ))}
-        <input className="select-filter ml-auto w-64" placeholder="Cari nama / NIBAR / keterangan…" value={cari}
+        <input className="select-filter ml-auto w-80" placeholder="Cari kode / uraian / nama / NIBAR / ket…" value={cari}
           onChange={e => { setCari(e.target.value); setTampil(PER_HALAMAN) }} />
       </div>
       <PesanError pesan={error} />
@@ -110,6 +137,7 @@ export default function RincianIndikator({ tahun, skpdId, indikator }: { tahun: 
                     ? <a href={`/kibar/${r.nibar}`} target="_blank" rel="noopener noreferrer" className="font-medium text-teal hover:underline">{r.judul}</a>
                     : <p className="font-medium text-gray-800">{r.judul}</p>}
                   {r.sub && <p className="text-xs text-gray-500 break-all">{r.sub}</p>}
+                  {uraianBaris(r) && <p className="text-xs text-gray-400">{uraianBaris(r)}</p>}
                 </td>
                 <td className={`table-td text-xs ${r.keadaan === 'kurang' ? 'text-red-700' : 'text-gray-600'}`}>{r.ket}</td>
                 {rupiahKolom && <td className="table-td text-right tabular-nums">{r.nilai == null ? '-' : rupiah(r.nilai)}</td>}
