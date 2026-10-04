@@ -170,7 +170,10 @@ export default function Kapitalisasi() {
     const [{ data: kap }, { data: batal }] = await Promise.all([
       supabase.from('transaksi_bmd')
         .select('id,aset_id,tanggal,keterangan,nilai,payload,aset:aset_id(nibar,nama_barang,kode)')
-        .eq('jenis', 'kapitalisasi').eq('skpd_asal', Number(skpdId)).order('id', { ascending: true }),
+        .eq('jenis', 'kapitalisasi').eq('skpd_asal', Number(skpdId))
+        // Terbaru dulu menurut tanggal dokumen, id sbg pemecah seri — sama dgn menu Pengelolaan lain
+        // (dulu id naik = yang paling lama di atas).
+        .order('tanggal', { ascending: false }).order('id', { ascending: false }),
       supabase.from('transaksi_bmd').select('payload').eq('jenis', 'batal_kapitalisasi').eq('skpd_asal', Number(skpdId)),
     ])
     const cancelled = new Set<number>()
