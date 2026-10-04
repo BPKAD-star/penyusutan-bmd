@@ -26,7 +26,7 @@ import NominalInput from '@/shared/ui/NominalInput'
 import { DokumenBastField, bukaDokumen, namaFile } from './DokumenBastField'
 import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import {
-  approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList,
+  approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList, namaBarangKdp, kekuranganNamaKdp,
   type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
 } from '@/lib/kdp'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
@@ -361,7 +361,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
     const nTermin = (b?.pembayaran || []).length
     if (!(await konfirmasi({
       nada: 'merah', ikon: '🗑', judul: 'Hapus barang KDP ini dari draft?',
-      subjudul: b?.nama || b?.kode || undefined,
+      subjudul: b ? namaBarangKdp(b) : undefined,
       rincian: [
         { label: 'Termin ikut terhapus', nilai: `${nTermin} termin` },
         { label: 'Nilai barang', nilai: formatRupiah2(b ? barangTotal(b) : 0) },
@@ -393,7 +393,12 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
       if (ASET_NUM_COLS.has(k)) { const n = angkaKolomAset(v); if (n !== null) spec[k] = String(n) }
       else spec[k] = v
     }
-    await saveBarang(barangs.map(b => b.key === key ? { ...b, spec, foto: foto.replace ?? b.foto ?? [] } : b))
+    const calon = barangs.map(b => b.key === key ? { ...b, spec, foto: foto.replace ?? b.foto ?? [] } : b)
+    // Nama wajib & tak boleh kembar — diperiksa di sini supaya operator tahu SAAT mengisi,
+    // bukan baru ketika menekan Setujui (approve tetap penegak terakhir).
+    const kurangNama = kekuranganNamaKdp(calon.filter(b => b.key === key || b.spec?.nama_barang?.trim()))
+    if (kurangNama) { await konfirmasiGagal(konfirmasi, kurangNama); return }
+    await saveBarang(calon)
     setSpecBarang(null); onMsg('Spesifikasi disimpan.')
   }
 
@@ -582,7 +587,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
       </div>
 
       {specBarang && (
-        <EditSpesifikasiModal title={`Spesifikasi — ${specBarang.nama}`} fieldKeys={FIELDS_KDP}
+        <EditSpesifikasiModal title={`Spesifikasi — ${namaBarangKdp(specBarang)}`} fieldKeys={FIELDS_KDP}
           storagePrefix={`draft/konstruksi/${kontrak.id}/${specBarang.key}`} initialFields={specBarang.spec || {}} initialFoto={specBarang.foto || []}
           single onSave={(fields, foto) => saveSpec(specBarang.key, fields, foto)} onClose={() => setSpecBarang(null)} />
       )}
@@ -720,21 +725,21 @@ function TambahBarangPanel({ skpdId, onTambah, onCancel, onErr }: {
   onTambah: (kode: string, nama: string, kapInfo: KapInfo | null) => void; onCancel: () => void; onErr: (m: string) => void
 }) {
   const [kode, setKode] = useState<KodefikasiHasil | null>(null)
-  const [nama, setNama] = useState('')
   const [kapInfo, setKapInfo] = useState<KapInfo | null>(null)
   return (
     <div className="space-y-3 max-w-2xl">
       <h3 className="text-sm font-semibold text-gray-800">Tambah Barang KDP</h3>
       <div><label className="block text-xs text-gray-500 mb-1">Kode Barang (jenis KDP — golongan 1.3.6)</label>
-        <KodefikasiPicker picked={kode} onPick={k => { setKode(k); if (!nama) setNama(k?.uraian || '') }} golonganTetap="1.3.6" /></div>
-      <div><label className="block text-xs text-gray-500 mb-1">Nama Barang KDP</label>
-        <input className="select-filter w-full" value={nama} onChange={e => setNama(e.target.value)} placeholder="mis. Rehab ruas jalan A" /></div>
+        <KodefikasiPicker picked={kode} onPick={setKode} golonganTetap="1.3.6" /></div>
+      <p className="text-xs text-gray-500">
+        Nama spesifik barang (mis. “Rehab ruas jalan A”) diisi di <b>Edit Spesifikasi</b> → Spesifikasi Nama Barang
+        — wajib &amp; tidak boleh kembar sebelum kontrak disetujui.
+      </p>
       <KapInfoPicker skpdId={skpdId} value={kapInfo} onChange={setKapInfo} />
       <div className="flex gap-2">
         <button className="btn-primary text-sm" onClick={() => {
           if (!kode) { onErr('Error: pilih kode barang KDP dulu.'); return }
-          if (!nama.trim()) { onErr('Error: nama barang KDP wajib.'); return }
-          onTambah(kode.kode, nama.trim(), kapInfo)
+          onTambah(kode.kode, kode.uraian || kode.kode, kapInfo)
         }}>+ Tambah</button>
         <button className="btn-secondary text-sm" onClick={onCancel}>Batal</button>
       </div>
@@ -853,7 +858,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
               `nama` semibold & `kode` kecil abu-abu, urutannya kebalik. Format
               "kode - nama" cocok krn `nama` sering memang uraian kodefikasi
               (TambahBarangPanel meng-auto-isi nama dari `k.uraian` bila kosong). */}
-          <p className="text-sm font-bold text-gray-800">{barang.kode} - {barang.nama}</p>
+          <p className="text-sm font-bold text-gray-800">{barang.kode} - {namaBarangKdp(barang)}</p>
           <div className="mt-1 space-y-0.5">
             <Baris lebar="w-44" label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
             <Baris lebar="w-44" label="Lokasi" value={barang.spec?.alamat_detail} />
@@ -882,7 +887,7 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
                 hari yang sama). Sebelum ini upload lewat "Edit Spesifikasi" (di
                 bawah) tak meninggalkan jejak visual apa pun di kartu ini. */}
             <div className="mt-1.5 flex justify-end">
-              <FotoSel paths={fotoPaths} thumbUrl={fotoThumbs[fotoPaths[0] || '']} judul={barang.nama} />
+              <FotoSel paths={fotoPaths} thumbUrl={fotoThumbs[fotoPaths[0] || '']} judul={namaBarangKdp(barang)} />
             </div>
           </div>
           {/* Tombol berkotak & SAMA LEBAR (w-36) — dulu tiga tautan bergaris

@@ -84,6 +84,33 @@ export function barangKdpList(p: KontrakKonstruksiPayload): BarangKdp[] {
   return []
 }
 
+/** Nama yang ditampilkan untuk satu barang KDP: Spesifikasi Nama Barang kalau sudah diisi,
+ *  kalau belum jatuh ke `nama` (sejak 2026-10-04 diisi uraian kodefikasi saat barang ditambah). */
+export const namaBarangKdp = (b: Pick<BarangKdp, 'nama' | 'kode' | 'spec'>): string =>
+  b.spec?.nama_barang?.trim() || b.nama || b.kode
+
+const normNama = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
+
+/**
+ * Aturan nama barang KDP (keputusan user 2026-10-04): "Spesifikasi Nama Barang" WAJIB diisi
+ * dan TIDAK BOLEH kembar di dalam satu kontrak — tiap barang KDP = satu aset, jadi dua kartu
+ * bernama sama tak bisa dibedakan di register. Pembanding tak peduli huruf besar/kecil & spasi
+ * ganda. Mengembalikan pesan kekurangan, atau null kalau lolos. Satu sumber untuk penyimpanan
+ * spesifikasi DAN approve (approve penegak terakhir).
+ */
+export function kekuranganNamaKdp(barangs: Pick<BarangKdp, 'nama' | 'kode' | 'spec'>[]): string | null {
+  const lihat = new Map<string, string>()
+  for (const b of barangs) {
+    const nama = b.spec?.nama_barang?.trim()
+    const label = b.nama || b.kode
+    if (!nama) return `Barang "${label}" belum punya Spesifikasi Nama Barang — isi dulu lewat Edit Spesifikasi.`
+    const k = normNama(nama)
+    if (lihat.has(k)) return `Spesifikasi Nama Barang "${nama}" kembar di kontrak ini (${lihat.get(k)} & ${label}) — tiap barang KDP harus punya nama yang berbeda.`
+    lihat.set(k, label)
+  }
+  return null
+}
+
 // Payload tanpa field legacy singleton (dipakai saat menulis ulang payload versi
 // baru supaya tak ada dua sumber kebenaran yang ambigu).
 function stripLegacy(p: KontrakKonstruksiPayload): KontrakKonstruksiPayload {
@@ -115,16 +142,25 @@ export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerI
   const p = h.payload
   const barangs = barangKdpList(p)
   if (barangs.length === 0) return { error: 'Belum ada barang KDP — tambahkan dulu.' }
+  const kurangNama = kekuranganNamaKdp(barangs)
+  if (kurangNama) return { error: kurangNama }
   for (const b of barangs) {
     if (!b.kode) return { error: 'Ada barang tanpa kode KDP.' }
     const bayar = b.pembayaran || []
     const total = bayar.reduce((s, x) => s + Number(x.nominal || 0), 0)
-    if (bayar.length === 0 || total <= 0) return { error: `Barang "${b.nama || b.kode}" belum ada pembayaran (nilai 0) — lengkapi atau hapus dulu.` }
+    if (bayar.length === 0 || total <= 0) return { error: `Barang "${namaBarangKdp(b)}" belum ada pembayaran (nilai 0) — lengkapi atau hapus dulu.` }
     // Wajib foto per barang (permintaan user 2026-09-22, berlaku utk approval
     // SELANJUTNYA saja) — pola & titik penegakan kembar dgn Pengadaan.tsx &
     // PerolehanManual.tsx: di sinilah SATU-SATUNYA jalur approve KDP bertemu.
-    if (!b.foto || b.foto.length === 0) return { error: `Barang "${b.nama || b.kode}" belum ada foto — lengkapi dulu sebelum kontrak ini disetujui.` }
+    if (!b.foto || b.foto.length === 0) return { error: `Barang "${namaBarangKdp(b)}" belum ada foto — lengkapi dulu sebelum kontrak ini disetujui.` }
   }
+
+  // `uraian_barang` = uraian BAKU kodefikasi (sama dgn Pengadaan biasa), BUKAN ketikan operator:
+  // KIR, Kendaraan & kartu membaca kolom tersimpan ini. Gagal membaca → ditolak (fail-closed).
+  const { data: kodefRows, error: kodefErr } = await supabase.from('admin_kodefikasi_bmd')
+    .select('kode,uraian').in('kode', [...new Set(barangs.map(b => b.kode))])
+  if (kodefErr) return { error: `Gagal membaca kodefikasi barang: ${kodefErr.message}` }
+  const uraianByKode = new Map(((kodefRows || []) as { kode: string; uraian: string }[]).map(r => [r.kode, r.uraian]))
 
   const kodeSkpd = await skpdKode(supabase, h.skpd_id)
   // tgl_perolehan KDP = tgl BAST TERAKHIR (termin paling akhir) — keputusan user
@@ -147,7 +183,7 @@ export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerI
     const total = (b.pembayaran || []).reduce((s, x) => s + Number(x.nominal || 0), 0)
     const asetRow: Record<string, unknown> = {
       nibar: nibarMap.get(b.key) || null, kode: b.kode,
-      uraian_barang: b.nama, nama_barang: b.nama,
+      uraian_barang: uraianByKode.get(b.kode) || b.nama, nama_barang: b.spec?.nama_barang?.trim() || b.nama,
       jumlah: 1, nilai_perolehan: total, tgl_perolehan: tglBarang(b), skpd_id: h.skpd_id,
       intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: b.foto || [],
       // Nilai awal, permintaan user 2026-09-28 — lihat ASAL_USUL_AWAL, lib/bmd.ts.

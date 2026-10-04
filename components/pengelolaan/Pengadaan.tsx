@@ -719,6 +719,14 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     }
     for (const it of items) {
       if (!it.kode) { await gagalSetujui('Ada barang draft tanpa kode.'); return }
+      // Spesifikasi Nama Barang WAJIB (keputusan user 2026-10-04, berlaku utk approval
+      // selanjutnya) — alur Pengadaan konstruksi & non-konstruksi disamakan. Duplikat antar
+      // unit SENGAJA tidak dilarang di sini: kuantitas dipecah per unit, jadi 5 unit barang
+      // yang sama wajar bernama sama (beda dari KDP, yang satu barang = satu kartu).
+      if (!it.fields.nama_barang?.trim()) {
+        await gagalSetujui(`Barang ${it.kode} belum punya Spesifikasi Nama Barang — lengkapi dulu (✎ Edit Spesifikasi) sebelum kontrak ini disetujui.`)
+        return
+      }
       if (toNum(it.harga) <= 0) { await gagalSetujui(`Harga "${it.fields.nama_barang || it.kode}" harus > 0.`); return }
       // Wajib foto per barang (permintaan user 2026-09-22, berlaku utk approval
       // SELANJUTNYA — kartu yang SUDAH disetujui sebelum ini tak disentuh &
