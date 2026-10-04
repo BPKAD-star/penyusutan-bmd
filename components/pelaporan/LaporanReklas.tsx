@@ -51,7 +51,7 @@ import { useProfilRole } from '@/components/useProfilRole'
 import RekapMatrixTable, { type MatrixRow } from '@/components/RekapMatrixTable'
 import { bangunPohonRekap, ratakanPohon, type LeafRekap } from '@/lib/rekapPohon'
 import { useSkpdTree } from '@/components/useSkpdTree'
-import { urutPerSkpd } from '@/lib/urutSkpd'
+import { urutLaporan } from '@/lib/urutSkpd'
 import { useTahunBukuMap } from '@/components/useTahunBuku'
 import { LEMBAR_PERMENDAGRI, type IdLembar } from '@/lib/permendagriFormat'
 import { FORMAT_REKLAS, type ArahReklas, type IdReklas, type FormatReklas } from '@/lib/formatReklas'
@@ -159,7 +159,11 @@ export default function LaporanReklas() {
   // ℹ️ Beda dari Laporan Koreksi: di sini TAK ADA pemotongan 500 baris yang
   // perlu diumumkan — pemuatnya menyapu penuh lewat keyset & MELEMPAR di
   // `BATAS_SAPU`, jadi urutan per SKPD tak bisa membuang baris diam-diam.
-  const rowsUrut = urutPerSkpd(rows, { unit: unitNama, induk: indukNama })
+  // Satu SKPD dipilih → terbaru di atas (sama dgn menu entry); se-kab tetap per SKPD.
+  const rowsUrut = urutLaporan(rows, {
+    terfilter: skpdId != null, tgl: r => r.tanggal, seri: r => r.id,
+    nama: { unit: unitNama, induk: indukNama },
+  })
 
   // Rekap per SKPD: matriks SKPD (root) × jenis aset, diturunkan dari baris yang
   // SUDAH dimuat — tak ada query kedua, jadi mustahil beda dari tab sebelah.

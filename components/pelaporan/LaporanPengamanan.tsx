@@ -29,6 +29,7 @@
 // masih dalam kustodi.
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
+import { urutLaporan } from '@/lib/urutSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -157,6 +158,11 @@ export default function LaporanPengamanan() {
 
   useEffect(() => { (async () => { setLoading(true); setRows(await build()); setLoading(false) })() }, [build])
 
+  // Terbaru di atas menurut tanggal BAST (sama dgn menu entry, keputusan user 2026-10-04);
+  // dulu urutan CATAT ledger (yang paling lama di atas).
+  const rowsUrut = urutLaporan(rows, {
+    terfilter: !!(descIds && descIds.length > 0), tgl: r => r.bastTgl, seri: r => r.key,
+  })
   const nDiamankan = rows.filter(r => r.status === 'Diamankan').length
   const nKembali = rows.filter(r => r.status === 'Dikembalikan').length
   const totalNilai = rows.reduce((s, r) => s + r.nilai, 0)
@@ -187,7 +193,7 @@ export default function LaporanPengamanan() {
 
   async function handleExport() {
     setExporting(true)
-    exportToExcel(rows.map(r => ({
+    exportToExcel(rowsUrut.map(r => ({
       'SKPD': r.skpd, 'Nama Pegawai': r.pegawai, 'Nomor Identitas': r.identitas,
       'Status Penghuni/Pemakai': r.statusPenghuni, 'Jabatan': r.jabatan,
       'No. BAST': r.bastNo, 'Tgl BAST': r.bastTgl, 'No. Pakta': r.paktaNo, 'Tgl Pakta': r.paktaTgl,
@@ -343,7 +349,7 @@ export default function LaporanPengamanan() {
                 <tr><td colSpan={13} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={13} className="table-td text-center py-12 text-gray-400">Tidak ada data pengamanan</td></tr>
-              ) : rows.map(r => (
+              ) : rowsUrut.map(r => (
                 <tr key={r.key}>
                   <td className="table-td text-xs align-top">{r.skpd}</td>
                   <td className="table-td text-xs align-top">

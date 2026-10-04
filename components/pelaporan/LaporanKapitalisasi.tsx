@@ -17,6 +17,7 @@
 // `kapitalisasi` itu sendiri (diisi Kapitalisasi.tsx) — tabel transaksi datar
 // generik tak bisa menampilkannya tanpa mengarang kolom per-jenis lagi.
 import { useEffect, useState, useCallback } from 'react'
+import { urutLaporan } from '@/lib/urutSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -59,7 +60,11 @@ export default function LaporanKapitalisasi() {
 
   useEffect(() => { void muat() }, [muat])
 
-  const baris = bangunBaris(valid)
+  // Terbaru di atas menurut tanggal dokumen (sama dgn menu entry, keputusan user
+  // 2026-10-04); barang anak satu dokumen tetap berkelompok krn diurut per DOKUMEN.
+  const baris = bangunBaris(urutLaporan(valid, {
+    terfilter: !!(descIds && descIds.length > 0), tgl: r => r.tanggal, seri: r => r.id,
+  }))
   const rekap = bangunRekap(valid)
   const totalRehab = rekap.reduce((s, r) => s + r.rehab, 0)
   const totalAnak = rekap.reduce((s, r) => s + r.anak, 0)

@@ -39,6 +39,7 @@
 // yang sudah ada & berguna, menghapusnya jadi regresi tanpa alasan.
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
+import { urutLaporan } from '@/lib/urutSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -154,7 +155,7 @@ export default function LaporanPenghapusan() {
     // Tak ada paginasi & tak ada `await`: barisnya sudah lengkap di memori
     // (pemuatnya menyapu penuh dgn keyset), jadi export tak bisa berbeda dari
     // yang di layar.
-    exportToExcel(rows.map(r => ({
+    exportToExcel(rowsUrut.map(r => ({
       'SKPD': r.skpdNama || '',
       'Kode Barang': r.aset?.kode || '',
       'Nama Barang': r.aset?.uraian_barang || '',
@@ -192,6 +193,12 @@ export default function LaporanPenghapusan() {
   }
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
+  // Terbaru di atas menurut tanggal dokumen (sama dgn menu entry, keputusan user
+  // 2026-10-04). Wajib SEBELUM `slice(0, 500)` di tabel: dulu urutan id naik, jadi kalau
+  // barisnya > 500 yang terpotong justru yang TERBARU.
+  const rowsUrut = urutLaporan(rows, {
+    terfilter: skpdId != null, tgl: r => r.header?.tanggal || r.tanggal, seri: r => r.id,
+  })
   // Kolom Cara/Penerima Pemindahtanganan TIDAK ada di cabang Sebab Lain
   // (keputusan user 2026-09-27) — di sana isinya selalu kosong.
   const adaKolomCara = id !== 'sebab_lain'
@@ -340,7 +347,7 @@ export default function LaporanPenghapusan() {
                     <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
                     <tr><td colSpan={nKolom} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-                  ) : rows.slice(0, 500).map(r => (
+                  ) : rowsUrut.slice(0, 500).map(r => (
                     <tr key={r.id}>
                       <td className="table-td text-xs align-top">{r.skpdNama || '-'}</td>
                       <td className="table-td text-xs align-top">

@@ -44,3 +44,40 @@ export function urutPerSkpd<T extends { tanggal: string; id: number }>(
     return b.id - a.id
   })
 }
+
+// ── Urutan Daftar Transaksi laporan (keputusan user 2026-10-04) ─────────────
+//
+// Dipilih SATU SKPD → urutannya sama dgn menu entry: TERBARU di atas, yang paling
+// tua di bawah (tanggal turun, lalu pemecah seri turun). Belum dipilih (se-kabupaten)
+// → bebas; laporan yang dulu mengelompokkan per SKPD tetap begitu (`nama` diisi),
+// yang tidak cukup tanggal terbaru dulu.
+//
+// ⚠️ Pemecah seri WAJIB (alasan di atas): `Array.prototype.sort` tak dijamin stabil
+// & satu SKPD bisa punya puluhan baris bertanggal sama.
+
+export type OpsiUrutLaporan<T> = {
+  /** True bila SATU SKPD sudah dipilih (cakupan bukan se-kabupaten). */
+  terfilter: boolean
+  tgl: (r: T) => string
+  /** Pemecah seri — id ledger / kunci baris. */
+  seri: (r: T) => number | string
+  /** Diisi → saat se-kabupaten dikelompokkan per SKPD (induk → unit) dulu. */
+  nama?: NamaSkpdBaris<T>
+}
+
+const banding = (a: number | string, b: number | string) =>
+  typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), 'id', { numeric: true })
+
+export function urutLaporan<T>(rows: readonly T[], o: OpsiUrutLaporan<T>): T[] {
+  return [...rows].sort((a, b) => {
+    if (!o.terfilter && o.nama) {
+      const ia = o.nama.induk(a) || o.nama.unit(a), ib = o.nama.induk(b) || o.nama.unit(b)
+      if (ia !== ib) return ia.localeCompare(ib, 'id')
+      const ua = o.nama.unit(a), ub = o.nama.unit(b)
+      if (ua !== ub) return ua.localeCompare(ub, 'id')
+    }
+    const ta = o.tgl(a) || '', tb = o.tgl(b) || ''
+    if (ta !== tb) return ta < tb ? 1 : -1
+    return banding(o.seri(b), o.seri(a))
+  })
+}

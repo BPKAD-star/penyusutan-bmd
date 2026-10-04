@@ -406,15 +406,20 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
   // ⚠️ Pemecah seri `id` WAJIB: satu dokumen berisi banyak barang ber-SKPD &
   // tanggal SAMA, dan tanpa urutan TOTAL isinya bisa bergeser tiap render
   // (`Array.prototype.sort` tak dijamin stabil di semua mesin).
+  // Satu SKPD dipilih → murni tanggal BAST terbaru di atas (sama dgn menu entry,
+  // keputusan user 2026-10-04); se-kabupaten tetap dikelompokkan per SKPD.
+  const terfilter = !!(descIds && descIds.length > 0)
   const urutSkpd = (a: Trx, b: Trx) => {
-    const ia = indukNama(a) || unitNama(a), ib = indukNama(b) || unitNama(b)
-    if (ia !== ib) return ia.localeCompare(ib, 'id')
-    const ua = unitNama(a), ub = unitNama(b)
-    if (ua !== ub) return ua.localeCompare(ub, 'id')
+    if (!terfilter) {
+      const ia = indukNama(a) || unitNama(a), ib = indukNama(b) || unitNama(b)
+      if (ia !== ib) return ia.localeCompare(ib, 'id')
+      const ua = unitNama(a), ub = unitNama(b)
+      if (ua !== ub) return ua.localeCompare(ub, 'id')
+    }
     if (a.tanggal !== b.tanggal) return a.tanggal < b.tanggal ? 1 : -1
     return b.id - a.id
   }
-  const rowsUrut = useMemo(() => [...rows].sort(urutSkpd), [rows, skpdById]) // eslint-disable-line react-hooks/exhaustive-deps
+  const rowsUrut = useMemo(() => [...rows].sort(urutSkpd), [rows, skpdById, terfilter]) // eslint-disable-line react-hooks/exhaustive-deps
   const nHal = Math.max(1, Math.ceil(rowsUrut.length / PER_HAL))
   // ⚠️ DIHITUNG, bukan ditulis tangan. Dulu `pihakLabel ? 11 : 10`, dan angka
   // seperti itu diam-diam meleset begitu ada kolom baru — baris "Tidak ada

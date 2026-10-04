@@ -45,6 +45,7 @@
 // menu sudah berbeda cukup jauh untuk dipisah lagi (CODING-STANDARD §1.5).
 // ============================================================================
 import { useEffect, useState, useCallback } from 'react'
+import { urutLaporan } from '@/lib/urutSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -307,7 +308,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
     // Susunan kolom disamakan dgn layar (2026-09-27, standarisasi Daftar
     // Transaksi lintas menu Pelaporan) — sel tumpuk di layar jadi kolom
     // TERPISAH di sini.
-    exportToExcel(hasil.map(r => ({
+    exportToExcel(urutTrx(hasil).map(r => ({
       'SKPD Asal (menyerahkan)': r.asal?.nama || '',
       'SKPD Tujuan (menerima)': r.tujuan?.nama || '',
       'Kode Barang': r.aset?.kode || '',
@@ -332,6 +333,12 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
   }
 
   const totalNilai = rows.reduce((s, r) => s + (r.nilai || 0), 0)
+  // Terbaru di atas menurut tanggal dokumen, id sbg pemecah seri — sama dgn menu entry
+  // (keputusan user 2026-10-04). Dulu urutan CATAT (id) yang tampil apa adanya.
+  const urutTrx = (xs: Trx[]) => urutLaporan(xs, {
+    terfilter: !!(descIds && descIds.length > 0), tgl: r => r.tanggal, seri: r => r.id,
+  })
+  const rowsUrut = urutTrx(rows)
 
   return (
     <div className="p-6">
@@ -481,7 +488,7 @@ export default function LaporanPerpindahan(p: PropLaporanPerpindahan) {
                     <tr><td colSpan={13} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
                     <tr><td colSpan={13} className="table-td text-center py-12 text-gray-400">Tidak ada transaksi</td></tr>
-                  ) : rows.map(r => (
+                  ) : rowsUrut.map(r => (
                     <tr key={r.id}>
                       <td className="table-td text-xs align-top">{r.asal?.nama || '-'}</td>
                       <td className="table-td text-xs align-top">

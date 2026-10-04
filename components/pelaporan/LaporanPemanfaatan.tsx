@@ -10,6 +10,7 @@
 //   Rekap per SKPD     — matriks SKPD × jenis aset (hanya perjanjian Aktif)
 //   Format Permendagri — lembar bertanda tangan, per-SKPD & berperiode
 import { useEffect, useState, useCallback } from 'react'
+import { urutLaporan } from '@/lib/urutSkpd'
 import { createClient } from '@/lib/supabase/client'
 import { exportToExcel, formatRupiah2 } from '@/lib/export'
 import { namaBerkasLaporan } from '@/lib/namaBerkas'
@@ -99,6 +100,12 @@ export default function LaporanPemanfaatan() {
     return () => { batal = true }
   }, [build])
 
+  // Terbaru di atas menurut tanggal dokumen perjanjian (sama dgn menu entry, keputusan
+  // user 2026-10-04); dulu urutan CATAT ledger (yang paling lama di atas).
+  const rowsUrut = urutLaporan(rows, {
+    terfilter: !!(descIds && descIds.length > 0), tgl: r => r.tglDok, seri: r => r.key,
+  })
+
   const rekap = new Map<string, number>()
   for (const r of rows) rekap.set(r.jenis, (rekap.get(r.jenis) || 0) + 1)
 
@@ -129,7 +136,7 @@ export default function LaporanPemanfaatan() {
     // Susunan kolom disamakan dgn layar (2026-09-27, standarisasi Daftar
     // Transaksi lintas menu Pelaporan) — sel tumpuk di layar jadi kolom
     // TERPISAH di sini.
-    exportToExcel(rows.map(r => ({
+    exportToExcel(rowsUrut.map(r => ({
       'SKPD': r.skpd, 'Jenis Pemanfaatan': r.jenis, 'Mitra': r.mitra,
       'Kode Barang': r.kode, 'Uraian Barang': r.uraianBarang,
       'Spesifikasi Nama Barang': r.nama, 'NIBAR': r.nibar,
@@ -293,7 +300,7 @@ export default function LaporanPemanfaatan() {
                 <tr><td colSpan={16} className="table-td text-center py-12 text-gray-400">Memuat data...</td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={16} className="table-td text-center py-12 text-gray-400">Tidak ada data pemanfaatan</td></tr>
-              ) : rows.map(r => (
+              ) : rowsUrut.map(r => (
                 <tr key={r.key}>
                   <td className="table-td text-xs align-top">{r.skpd}</td>
                   <td className="table-td text-xs align-top">{r.jenis}</td>
