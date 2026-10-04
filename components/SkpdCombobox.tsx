@@ -12,7 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 type SkpdRow = { id: number; nama: string; level: number; parent_id: number | null }
 export type SkpdSelection = { skpdId: number | null; descendantIds: number[] | null }
 
-export default function SkpdCombobox({ value, onChange, onChangeSelection, placeholder, allowClear, rootOnly, lockToOperator }: {
+export default function SkpdCombobox({ value, onChange, onChangeSelection, placeholder, allowClear, rootOnly, lockToOperator, hanyaId }: {
   value?: string
   onChange?: (id: string) => void
   onChangeSelection?: (sel: SkpdSelection) => void
@@ -37,6 +37,14 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
   // Pengecualian: `rootOnly` tidak pernah masuk mode subtree (memang harus SKPD
   // induk), dan node tanpa turunan tetap tampil terkunci mati.
   lockToOperator?: boolean
+  // Batasi pilihan ke DAFTAR id tertentu (bukan seluruh pohon SKPD). Dipakai
+  // IPA → Capaian SKPD, yang pilihannya cuma SKPD penilaian (`ipa_skpd`, level
+  // induk) dan, bagi pengurus, hanya SKPD miliknya — daftar itu datang dari
+  // luar, bukan dari pohon + penguncian operator. Semua perilaku ketik/panah/
+  // Enter/sorotan-terpilih ikut komponen ini, jadi pemilih tak perlu ditulis
+  // ulang (dulu <select> biasa tanpa pencarian). Murni penyempit tampilan:
+  // yang menjaga akses tetap RLS & penjaga di sisi pemanggil.
+  hanyaId?: number[]
 }) {
   const supabase = createClient()
   const [all, setAll] = useState<SkpdRow[]>([])
@@ -121,14 +129,20 @@ export default function SkpdCombobox({ value, onChange, onChangeSelection, place
   const subtreeMode = lockDescIds != null && !rootOnly && lockDescIds.length > 1
   const subtreeIds = useMemo(() => (subtreeMode ? new Set(lockDescIds!) : null), [subtreeMode, lockDescIds])
 
+  // Kunci memo = ISI daftar, bukan identitas array: pemanggil lazim merakit
+  // `hanyaId` baru tiap render, dan itu tak boleh membangun ulang `options`.
+  const hanyaKunci = hanyaId ? hanyaId.join(',') : null
+  const hanyaSet = useMemo(() => (hanyaKunci == null ? null : new Set(hanyaId)), [hanyaKunci]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const options = useMemo(
     // Di mode filter, node user sendiri sengaja TIDAK masuk daftar — sudah
     // diwakili baris "— Semua unit di X —", supaya tak ada dua entri yang sama
     // artinya. Di mode form node itu justru pilihan sah (barang milik induk).
     () => all.filter(s => (!rootOnly || s.parent_id == null)
+      && (!hanyaSet || hanyaSet.has(s.id))
       && (!subtreeIds || (subtreeIds.has(s.id) && !(modeFilter && s.id === lockSkpd))))
       .map(s => ({ id: s.id, label: pathOf(s.id) })).sort((a, b) => a.label.localeCompare(b.label)),
-    [all, byId, rootOnly, subtreeIds, lockSkpd, modeFilter] // eslint-disable-line react-hooks/exhaustive-deps
+    [all, byId, rootOnly, subtreeIds, lockSkpd, modeFilter, hanyaSet] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   useEffect(() => {

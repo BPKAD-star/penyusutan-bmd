@@ -21,6 +21,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useProfilRole } from '@/components/useProfilRole'
+import SkpdCombobox from '@/components/SkpdCombobox'
 import { LABEL_SUMBER, NAMA_BULAN, hitungSkpd, type HasilSkpd, type Indikator } from '@/lib/ipa'
 import {
   hitungUlangOtomatis, muatIsian, muatOtomatisMentah, muatReferensi, skpdBolehIsi, snapshotTerakhir, susunNilai,
@@ -192,12 +193,16 @@ export default function CapaianSkpdIpa({ skpdAwal, tahunAwal, bulanAwal }: { skp
         </div>
         <div className="flex items-end gap-2">
           {opsiSkpd.length > 1 && (
-            <label className="text-xs text-gray-500">
+            <div className="text-xs text-gray-500">
               SKPD
-              <select className="select-filter block mt-1 w-80" value={skpdId ?? ''} onChange={e => gantiSkpd(Number(e.target.value))}>
-                {opsiSkpd.map(s => <option key={s.skpd_id} value={s.skpd_id}>{s.nama}</option>)}
-              </select>
-            </label>
+              <div className="mt-1 w-80">
+                {/* Combobox yang sama dgn seluruh menu lain (ketik untuk mencari),
+                    dibatasi ke SKPD yang boleh dipilih pengguna ini. */}
+                <SkpdCombobox value={skpdId != null ? String(skpdId) : ''} hanyaId={opsiSkpd.map(s => s.skpd_id)}
+                  placeholder="Ketik nama SKPD..."
+                  onChange={id => { if (id) gantiSkpd(Number(id)) }} />
+              </div>
+            </div>
           )}
           <PilihTahunBulan tahun={tahun} bulan={bulanTampil}
             onTahun={t => { setTahun(t); setBulan(t === TAHUN_INI ? BULAN_INI : 12); setSegar(null) }} onBulan={setBulan} />
