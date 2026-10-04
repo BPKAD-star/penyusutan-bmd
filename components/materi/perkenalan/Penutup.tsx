@@ -1,36 +1,10 @@
 'use client'
-// Materi "Perkenalan Aplikasi SMART Asset" — slide 14–16: aturan main saat
-// mencatat, langkah sesudah paparan, penutup.
-import { SlideGelap, SlideTerang, Merek, Ikon, d, type NamaIkon } from '../bagian'
+// Materi "Perkenalan Aplikasi SMART Asset" — slide terakhir: langkah sesudah
+// paparan & penutup (dengan QR menuju aplikasi). Slide "Aturan main" dicabut
+// 2026-10-04 (tak ada di rekapan user).
+import QRCode from 'qrcode'
+import { SlideBersih, SlideTerang, Merek, Ikon, d } from '../bagian'
 import { MATERI } from './Pembuka'
-
-const ATURAN: { ikon: NamaIkon; judul: string; isi: string }[] = [
-  { ikon: 'dokumen', judul: 'Dokumen dasar wajib', isi: 'BAST, SK, atau perjanjian diunggah saat transaksi dicatat.' },
-  { ikon: 'kamera', judul: 'Foto barang wajib', isi: 'Perolehan baru tidak bisa disetujui tanpa foto barangnya.' },
-  { ikon: 'kalender', judul: 'Pakai tanggal dokumen', isi: 'Bukan tanggal yang akan datang, bukan tahun yang sudah ditutup.' },
-  { ikon: 'ulang', judul: 'Salah catat → Batal / Koreksi', isi: 'Tidak ada hapus diam-diam; riwayat barang tetap utuh.' },
-  { ikon: 'tukar', judul: 'Pindah SKPD perlu diterima', isi: 'Barang baru berpindah setelah SKPD tujuan menekan Terima.' },
-  { ikon: 'gembok', judul: 'Tahun yang ditutup terkunci', isi: 'Angka yang sudah dilaporkan tidak berubah lagi.' },
-]
-
-export function AturanMain() {
-  return (
-    <SlideTerang materi={MATERI} label="Aturan main" judul="Yang perlu diingat saat mencatat">
-      <div className="grid grid-cols-3 gap-5">
-        {ATURAN.map((a, i) => (
-          <div key={a.judul} className="mt-up relative rounded-2xl border border-gray-200 bg-white shadow-md p-6 h-[218px] overflow-hidden" style={d(200 + i * 120)}>
-            <span className="absolute right-4 top-2 text-[64px] font-bold text-navy/[0.06] leading-none select-none">{i + 1}</span>
-            <div className="mt-pop w-14 h-14 rounded-xl bg-navy text-white flex items-center justify-center" style={d(380 + i * 120)}>
-              <Ikon nama={a.ikon} ukuran={28} />
-            </div>
-            <p className="mt-4 text-[21px] font-bold text-navy leading-tight">{a.judul}</p>
-            <p className="mt-2 text-[16px] text-gray-600 leading-snug">{a.isi}</p>
-          </div>
-        ))}
-      </div>
-    </SlideTerang>
-  )
-}
 
 const TINDAK = [
   ['Login & periksa nama profil', 'pojok kanan atas layar'],
@@ -90,27 +64,50 @@ export function Tindak() {
   )
 }
 
+const ALAMAT = 'https://bmdlastgame.vercel.app'
+
+/** QR dirakit SINKRON dari matriks modul (`QRCode.create`) jadi SVG — tanpa
+ *  efek/async, sehingga ikut tercetak ke PDF & tak bergantung pada peramban. */
+function KodeQr({ teks, ukuran }: { teks: string; ukuran: number }) {
+  const qr = QRCode.create(teks, { errorCorrectionLevel: 'M' })
+  const n = qr.modules.size
+  const sel: string[] = []
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.modules.get(y, x)) sel.push(`M${x + 2} ${y + 2}h1v1h-1z`)
+  return (
+    <svg width={ukuran} height={ukuran} viewBox={`0 0 ${n + 4} ${n + 4}`} shapeRendering="crispEdges" role="img" aria-label={`QR code menuju ${teks}`}>
+      <rect width={n + 4} height={n + 4} fill="#fff" />
+      <path d={sel.join('')} fill="#1e3a5f" />
+    </svg>
+  )
+}
+
 export function Penutup() {
   return (
-    <SlideGelap materi={MATERI} tanpaKaki>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <div className="relative w-[150px] h-[150px]">
-          <span className="mt-riak mt-tak-cetak absolute inset-0 rounded-full border-2 border-teal-light/60" />
-          <span className="mt-riak mt-tak-cetak absolute inset-0 rounded-full border-2 border-teal-light/60" style={d(1200)} />
-          <div className="mt-pop absolute inset-0 rounded-full bg-white shadow-2xl flex items-center justify-center">
+    <SlideBersih materi={MATERI} tanpaKaki>
+      <div className="absolute left-20 top-1/2 -translate-y-1/2 w-[700px]">
+        <div className="relative w-[120px] h-[120px]">
+          <span className="mt-riak mt-tak-cetak absolute inset-0 rounded-full border-2 border-teal/50" />
+          <div className="mt-pop absolute inset-0 rounded-full bg-white shadow-xl border border-gray-200 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-kab-kediri.png" alt="Logo Kabupaten Kediri" className="w-[94px] h-[94px] object-contain" />
+            <img src="/logo-kab-kediri.png" alt="Logo Kabupaten Kediri" className="w-[76px] h-[76px] object-contain" />
           </div>
         </div>
-        <h2 className="mt-up mt-9 text-[76px] font-bold leading-none" style={d(250)}>Terima kasih</h2>
-        <div className="mt-lebar mt-7 w-28 h-1.5 rounded-full bg-amber-400" style={{ ...d(500), transformOrigin: 'center' }} />
-        <p className="mt-up mt-7 text-[26px] font-medium text-white/[0.85]" style={d(650)}>
-          Data lengkap <span className="text-amber-300 mx-2">·</span> Laporan terpercaya <span className="text-amber-300 mx-2">·</span> Aset terjaga
+        <h2 className="mt-up mt-7 text-[76px] font-bold leading-none text-navy" style={d(250)}>Terima kasih</h2>
+        <div className="mt-lebar mt-6 w-28 h-1.5 rounded-full bg-amber-400" style={d(500)} />
+        <p className="mt-up mt-6 text-[22px] font-medium text-gray-600" style={d(650)}>
+          Data lengkap <span className="text-amber-500 mx-2">·</span> Laporan terpercaya <span className="text-amber-500 mx-2">·</span> Aset terjaga
         </p>
-        <p className="mt-in mt-10 text-[17px] text-white/60" style={d(950)}>
-          <Merek gelap /> <span className="mx-2">—</span> Badan Keuangan dan Aset Daerah Kabupaten Kediri
+        <p className="mt-in mt-9 text-[19px] text-gray-500" style={d(950)}>
+          <Merek kelas="text-[24px]" /> <span className="mx-1.5">–</span> Badan Keuangan dan Aset Daerah Kabupaten Kediri
         </p>
       </div>
-    </SlideGelap>
+
+      <div className="mt-kanan absolute right-20 top-1/2 -translate-y-1/2 w-[360px] rounded-3xl border border-gray-200 bg-white shadow-2xl p-8 text-center" style={d(500)}>
+        <p className="text-[15px] font-semibold tracking-[0.18em] uppercase text-teal">Buka aplikasi</p>
+        <div className="mt-pop mx-auto mt-5 w-[260px] h-[260px]" style={d(900)}><KodeQr teks={ALAMAT} ukuran={260} /></div>
+        <p className="mt-5 text-[22px] font-bold text-navy">bmdlastgame.vercel.app</p>
+        <p className="mt-1 text-[14px] text-gray-500">Pindai dengan kamera ponsel</p>
+      </div>
+    </SlideBersih>
   )
 }

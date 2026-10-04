@@ -8,42 +8,42 @@
 // aplikasi, materi ini ikut disesuaikan — peserta mencari tulisan yang sama
 // persis dengan yang ditunjukkan di paparan.
 import type { ReactNode } from 'react'
-import { SlideGelap, SlideTerang, Ikon, Nomor, Jejak, d, type NamaIkon } from '../bagian'
+import { SlideBersih, SlideTerang, Ikon, Nomor, Jejak, Tbl, Catatan, d, type NamaIkon } from '../bagian'
 import { MATERI } from './Pembuka'
 
 const DICEK: { ikon: NamaIkon; judul: string; isi: string }[] = [
-  { ikon: 'pin', judul: 'Titik koordinat tanah', isi: 'Setiap tanah punya titik di peta' },
-  { ikon: 'periksa', judul: 'Spesifikasi barang', isi: 'Merk, nomor, luas, kondisi, foto' },
   { ikon: 'orang', judul: 'Nama profil pengguna', isi: 'Akun memakai nama yang benar' },
+  { ikon: 'periksa', judul: 'Spesifikasi data barang', isi: 'Merk, nomor, luas, kondisi, foto' },
+  { ikon: 'pin', judul: 'Titik koordinat tanah + sertipikat', isi: 'Titik di peta, bidang, dan sertipikatnya' },
 ]
 
 export function Pembatas() {
   return (
-    <SlideGelap materi={MATERI}>
+    <SlideBersih materi={MATERI}>
       <div className="absolute left-20 right-20 top-[110px]">
-        <p className="mt-in flex items-center gap-3 text-[15px] font-semibold tracking-[0.2em] uppercase text-amber-300">
-          <span className="mt-lebar inline-block w-10 h-[3px] bg-amber-300 rounded-full" />Tindak lanjut
+        <p className="mt-in flex items-center gap-3 text-[15px] font-semibold tracking-[0.2em] uppercase text-teal">
+          <span className="mt-lebar inline-block w-10 h-[3px] bg-teal rounded-full" />Tindak lanjut
         </p>
-        <h2 className="mt-up mt-4 text-[54px] leading-[1.1] font-bold" style={d(120)}>
+        <h2 className="mt-up mt-4 text-[54px] leading-[1.1] font-bold text-navy" style={d(120)}>
           Yang perlu dicek<br />oleh Pengurus Barang
         </h2>
-        <p className="mt-up mt-5 text-[21px] text-white/70" style={d(300)}>
+        <p className="mt-up mt-5 text-[21px] text-gray-500" style={d(300)}>
           Data yang lengkap adalah dasar laporan yang bisa dipertanggungjawabkan.
         </p>
       </div>
       <div className="absolute left-20 right-20 bottom-[92px] grid grid-cols-3 gap-6">
         {DICEK.map((c, i) => (
-          <div key={c.judul} className="mt-up rounded-2xl bg-white/10 border border-white/20 backdrop-blur p-6" style={d(550 + i * 200)}>
+          <div key={c.judul} className="mt-up rounded-2xl bg-white border border-gray-200 shadow-lg p-6" style={d(550 + i * 200)}>
             <div className="flex items-center gap-4">
-              <Nomor n={i + 1} gelap />
-              <Ikon nama={c.ikon} ukuran={30} className="text-amber-300" />
+              <Nomor n={i + 1} />
+              <Ikon nama={c.ikon} ukuran={30} className="text-teal" />
             </div>
-            <p className="mt-4 text-[24px] font-bold leading-tight">{c.judul}</p>
-            <p className="mt-1.5 text-[16px] text-white/[0.65]">{c.isi}</p>
+            <p className="mt-4 text-[24px] font-bold leading-tight text-navy">{c.judul}</p>
+            <p className="mt-1.5 text-[16px] text-gray-500">{c.isi}</p>
           </div>
         ))}
       </div>
-    </SlideGelap>
+    </SlideBersih>
   )
 }
 
@@ -56,11 +56,7 @@ function Langkah({ n, jeda, children }: { n: number; jeda: number; children: Rea
   )
 }
 
-const Tbl = ({ children }: { children: ReactNode }) => (
-  <span className="px-2 py-0.5 rounded-md bg-teal/10 text-teal font-semibold whitespace-nowrap">{children}</span>
-)
-
-function PetaBesar() {
+export function PetaBesar() {
   const sudah: [number, number][] = [[118, 120], [250, 84], [392, 150], [206, 232], [420, 300], [96, 306]]
   return (
     <svg viewBox="0 0 520 400" className="w-full h-full" aria-hidden>
@@ -93,16 +89,18 @@ function PetaBesar() {
 
 export function Koordinat() {
   return (
-    <SlideTerang materi={MATERI} label="Cek kelengkapan · 1" judul="Titik koordinat tanah">
+    <SlideTerang materi={MATERI} label="Cek kelengkapan · 3" judul="Titik koordinat tanah">
       <div className="absolute left-0 top-0 w-[560px] space-y-5">
         <Langkah n={1} jeda={250}>Buka menu <Tbl>GIS Tanah</Tbl>, tab <b>Peta</b>.</Langkah>
         <Langkah n={2} jeda={450}>Saring <Tbl>⚠ Belum Titik</Tbl> untuk melihat tanah yang belum dititik.</Langkah>
         <Langkah n={3} jeda={650}>Pilih tanahnya, tekan <Tbl>📍 Set Titik Koordinat</Tbl>, lalu klik lokasinya di peta.</Langkah>
         <Langkah n={4} jeda={850}>Periksa posisi pin-nya, lalu <Tbl>Simpan</Tbl>.</Langkah>
-        <div className="mt-up flex gap-3 rounded-xl bg-amber-50 border border-amber-200 px-5 py-4 text-[16.5px] text-amber-900 leading-snug" style={d(1150)}>
-          <Ikon nama="lampu" className="text-amber-500 flex-shrink-0 mt-0.5" />
-          <p>Ganti lapisan peta ke <b>Satelit</b> supaya lokasinya mudah dikenali. Di <b>Daftar Barang</b>, kolom Lokasi menandai tanah yang sudah bertitik.</p>
-        </div>
+        <Catatan jeda={1150} nada="teal" ikon="dokumen">
+          <b>Sudah ada bidang &amp; sertipikatnya?</b> Kalau belum dan tanahnya memang sudah bersertipikat, tambahkan di panel bidang. Datanya diambil dari <b>e-Simbada</b>.
+        </Catatan>
+        <p className="mt-in inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-navy text-white text-[15px] font-semibold" style={d(1400)}>
+          <Ikon nama="bola" ukuran={18} className="text-amber-300" /> Berpengaruh terhadap nilai IPA
+        </p>
       </div>
       <div className="mt-kanan absolute right-0 top-0 w-[548px] h-[422px] rounded-[20px] shadow-2xl border border-gray-200 bg-white p-2" style={d(300)}>
         <div className="relative w-full h-full">
@@ -132,7 +130,7 @@ export function Spesifikasi() {
       <div className="absolute left-0 top-0 w-[690px]">
         <div className="rounded-2xl border border-gray-200 bg-white shadow-md overflow-hidden">
           {SPEK.map(([jenis, isi], i) => (
-            <div key={jenis} className={`mt-kiri flex items-center gap-4 px-5 py-3.5 ${i ? 'border-t border-gray-100' : ''}`} style={d(250 + i * 160)}>
+            <div key={jenis} className={`mt-kiri flex items-center gap-4 px-5 py-2 ${i ? 'border-t border-gray-100' : ''}`} style={d(250 + i * 160)}>
               <p className="w-[190px] flex-shrink-0 text-[17px] font-bold text-navy leading-tight">{jenis}</p>
               <div className="flex flex-wrap gap-2">
                 {isi.map(x => <span key={x} className="px-3 py-1 rounded-md bg-teal/10 text-teal text-[15.5px] font-semibold">{x}</span>)}
@@ -140,15 +138,18 @@ export function Spesifikasi() {
             </div>
           ))}
         </div>
-        <p className="mt-in mt-5 text-[16px] font-semibold text-gray-500 uppercase tracking-wider" style={d(1000)}>Melengkapinya lewat</p>
-        <div className="mt-up mt-2.5" style={d(1100)}>
+        <p className="mt-in mt-3 text-[15px] font-semibold text-gray-500 uppercase tracking-wider" style={d(1000)}>Melengkapinya lewat</p>
+        <div className="mt-up mt-2" style={d(1100)}>
           <Jejak langkah={['Saldo Awal', 'Daftar Barang Awal', 'centang barang', 'Edit Spesifikasi']} />
           <p className="text-[14.5px] text-gray-500 mt-1">untuk barang saldo awal yang belum pernah bertransaksi</p>
         </div>
-        <div className="mt-up mt-3" style={d(1250)}>
+        <div className="mt-up mt-2" style={d(1250)}>
           <Jejak langkah={['Pembukuan', 'Pengelolaan', 'Koreksi', 'Spesifikasi Barang']} />
           <p className="text-[14.5px] text-gray-500 mt-1">untuk barang lainnya — disertai dokumen dasar</p>
         </div>
+        <p className="mt-up mt-3 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-navy text-white text-[15px] font-semibold" style={d(1450)}>
+          <Ikon nama="bola" ukuran={18} className="text-amber-300" /> Berpengaruh terhadap nilai IPA
+        </p>
       </div>
 
       <div className="mt-kanan absolute right-0 top-0 w-[420px] rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden" style={d(350)}>
@@ -182,7 +183,7 @@ export function Spesifikasi() {
 
 export function Profil() {
   return (
-    <SlideTerang materi={MATERI} label="Cek kelengkapan · 3" judul="Nama profil pengguna">
+    <SlideTerang materi={MATERI} label="Cek kelengkapan · 1" judul="Nama profil pengguna">
       <div className="absolute left-0 top-0 w-[610px]">
         <p className="mt-in text-[18px] text-gray-600" style={d(200)}>Setelah login, lihat <b className="text-navy">pojok kanan atas</b> layar:</p>
         <div className="mt-up mt-4 flex items-center justify-between rounded-xl border border-gray-200 bg-white shadow-xl px-5 h-[76px]" style={d(350)}>
@@ -202,18 +203,12 @@ export function Profil() {
           {[
             'Nama lengkap dan gelar sudah benar — bukan alamat email.',
             'Akun dipakai oleh orangnya sendiri, tidak bergantian.',
-            'Data pengurus barang tahun ini sudah diusulkan.',
           ].map((t, i) => (
             <div key={t} className="mt-kiri flex items-center gap-3.5" style={d(750 + i * 200)}>
               <span className="w-8 h-8 rounded-full bg-teal text-white flex items-center justify-center flex-shrink-0"><Ikon nama="centang" ukuran={18} tebal={3} /></span>
               <span className="text-[18.5px] text-gray-700">{t}</span>
             </div>
           ))}
-        </div>
-        <div className="mt-up mt-6 rounded-xl bg-navy/[0.05] border border-navy/10 px-5 py-4" style={d(1450)}>
-          <p className="text-[16px] font-bold text-navy mb-2">Belum sesuai?</p>
-          <Jejak langkah={['Admin', 'Usulan Pengurus Barang']} />
-          <p className="text-[15px] text-gray-500 mt-2">atau sampaikan ke admin BKAD lewat chat di aplikasi.</p>
         </div>
       </div>
 

@@ -11,23 +11,23 @@ export const d = (ms: number): CSSProperties => ({ ['--d' as string]: `${ms}ms` 
 
 const MERAH = '#f44141'
 
-export function Merek({ gelap, besar }: { gelap?: boolean; besar?: boolean }) {
+export function Merek({ besar, kelas }: { besar?: boolean; kelas?: string }) {
   return (
-    <span className={`font-bold leading-none ${besar ? 'text-[92px] tracking-tight' : 'text-[15px]'}`}>
-      <span style={{ color: gelap ? '#ffffff' : '#264c7d' }}>SMART</span>{' '}
-      <span style={{ color: gelap ? '#ff6b6b' : MERAH }}>Asset</span>
+    <span className={`font-bold leading-none ${kelas ?? (besar ? 'text-[92px] tracking-tight' : 'text-[15px]')}`}>
+      <span style={{ color: '#264c7d' }}>SMART</span>{' '}
+      <span style={{ color: MERAH }}>Asset</span>
     </span>
   )
 }
 
-function Kaki({ gelap, materi }: { gelap?: boolean; materi: string }) {
+function Kaki({ materi }: { materi: string }) {
   const { no, total } = useContext(KonteksSlide)
   return (
-    <div className={`absolute left-16 right-16 bottom-7 flex items-center justify-between text-[13px] ${gelap ? 'text-white/50' : 'text-gray-400'}`}>
+    <div className="absolute left-16 right-16 bottom-7 flex items-center justify-between text-[13px] text-gray-400">
       <div className="flex items-center gap-2.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-kab-kediri.png" alt="" className="w-6 h-6 object-contain" />
-        <Merek gelap={gelap} />
+        <Merek />
         <span className="opacity-60">·</span>
         <span>{materi}</span>
       </div>
@@ -36,7 +36,7 @@ function Kaki({ gelap, materi }: { gelap?: boolean; materi: string }) {
   )
 }
 
-/** Slide isi (latar terang): label kecil + judul di atas, isi di bawahnya. */
+/** Slide isi: label kecil + judul di atas, isi di bawahnya. */
 export function SlideTerang({ label, judul, materi, children }: {
   label: string; judul: ReactNode; materi: string; children: ReactNode
 }) {
@@ -57,27 +57,33 @@ export function SlideTerang({ label, judul, materi, children }: {
   )
 }
 
-/** Slide sampul / pembatas bagian / penutup (latar navy, ornamen bergerak). */
-export function SlideGelap({ materi, children, tanpaKaki }: {
+/**
+ * Slide sampul / pembatas bagian / penutup. SENGAJA putih seperti slide isi
+ * (keputusan user 2026-10-04: tak ada lagi slide biru gelap) — bedanya hanya
+ * ornamen yang lebih besar & tanpa kepala judul, supaya tetap terbaca sbg
+ * pembuka/penutup.
+ */
+export function SlideBersih({ materi, children, tanpaKaki }: {
   materi: string; children: ReactNode; tanpaKaki?: boolean
 }) {
   // id pola WAJIB unik per slide: semua slide ada di DOM sekaligus, dan pola
   // milik slide yang sedang `display:none` tak bisa dirujuk slide lain.
   const kisi = `mt-kisi-${useId().replace(/:/g, '')}`
   return (
-    <div className="absolute inset-0 text-white" style={{ background: 'linear-gradient(135deg, #0f2038 0%, #1e3a5f 52%, #0d5f66 100%)' }}>
-      <div className="mt-apung absolute -top-32 -left-24 w-[420px] h-[420px] rounded-full bg-teal-light/10 blur-2xl" />
-      <div className="mt-apung absolute -bottom-40 right-40 w-[480px] h-[480px] rounded-full bg-sky-400/10 blur-2xl" style={d(1800)} />
-      <svg className="absolute inset-0 w-full h-full opacity-[0.07]" aria-hidden>
+    <div className="absolute inset-0 bg-white text-gray-800">
+      <div className="mt-apung absolute -top-44 -right-32 w-[560px] h-[560px] rounded-full bg-teal/[0.08]" />
+      <div className="mt-apung absolute -bottom-56 -left-32 w-[520px] h-[520px] rounded-full bg-navy/[0.06]" style={d(1800)} />
+      <svg className="absolute inset-0 w-full h-full opacity-[0.5]" aria-hidden>
         <defs>
           <pattern id={kisi} width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M40 0H0V40" fill="none" stroke="#fff" strokeWidth="1" />
+            <path d="M40 0H0V40" fill="none" stroke="#1e3a5f" strokeOpacity="0.045" strokeWidth="1" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill={`url(#${kisi})`} />
       </svg>
+      <div className="absolute left-0 top-0 h-full w-2 bg-gradient-to-b from-teal to-navy" />
       {children}
-      {!tanpaKaki && <Kaki gelap materi={materi} />}
+      {!tanpaKaki && <Kaki materi={materi} />}
     </div>
   )
 }
@@ -129,10 +135,9 @@ export function Ikon({ nama, ukuran = 24, className, tebal = 1.8 }: {
 }
 
 /** Bulatan bernomor untuk langkah-langkah. */
-export function Nomor({ n, gelap }: { n: number; gelap?: boolean }) {
+export function Nomor({ n }: { n: number }) {
   return (
-    <span className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-[18px] font-bold ${
-      gelap ? 'bg-white text-navy' : 'bg-navy text-white'}`}>{n}</span>
+    <span className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-[18px] font-bold bg-navy text-white">{n}</span>
   )
 }
 
@@ -147,5 +152,80 @@ export function Jejak({ langkah }: { langkah: string[] }) {
         </span>
       ))}
     </span>
+  )
+}
+
+/** Butir berpetak centang. */
+export function Poin({ jeda, children, ikon = 'centang' }: { jeda: number; children: ReactNode; ikon?: NamaIkon }) {
+  return (
+    <div className="mt-kiri flex items-start gap-3.5" style={d(jeda)}>
+      <span className="mt-0.5 w-8 h-8 rounded-full bg-teal text-white flex items-center justify-center flex-shrink-0">
+        <Ikon nama={ikon} ukuran={ikon === 'centang' ? 18 : 17} tebal={ikon === 'centang' ? 3 : 2} />
+      </span>
+      <div className="text-[19px] leading-snug text-gray-700 pt-[3px]">{children}</div>
+    </div>
+  )
+}
+
+/** Nama menu/tombol di dalam kalimat. */
+export const Tbl = ({ children }: { children: ReactNode }) => (
+  <span className="px-2 py-0.5 rounded-md bg-teal/10 text-teal font-semibold whitespace-nowrap">{children}</span>
+)
+
+/** Catatan berlatar: nada `amber` (perhatian) atau `teal` (informasi). */
+export function Catatan({ jeda, nada = 'amber', ikon = 'lampu', children }: {
+  jeda: number; nada?: 'amber' | 'teal'; ikon?: NamaIkon; children: ReactNode
+}) {
+  const gaya = nada === 'amber'
+    ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-teal/10 border-teal/30 text-gray-700'
+  return (
+    <div className={`mt-up flex gap-3 rounded-xl border px-5 py-4 text-[17px] leading-snug ${gaya}`} style={d(jeda)}>
+      <Ikon nama={ikon} className={`flex-shrink-0 mt-0.5 ${nada === 'amber' ? 'text-amber-500' : 'text-teal'}`} />
+      <div>{children}</div>
+    </div>
+  )
+}
+
+/** Bingkai jendela aplikasi (tiga titik + alamat) untuk menaruh gambaran layar. */
+export function Jendela({ alamat = 'bmdlastgame.vercel.app', className = '', jeda = 300, children }: {
+  alamat?: string; className?: string; jeda?: number; children: ReactNode
+}) {
+  return (
+    <div className={`mt-kanan rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden ${className}`} style={d(jeda)}>
+      <div className="flex items-center gap-2 px-4 h-9 bg-gray-100 border-b border-gray-200">
+        <span className="w-2.5 h-2.5 rounded-full bg-red-400" /><span className="w-2.5 h-2.5 rounded-full bg-amber-400" /><span className="w-2.5 h-2.5 rounded-full bg-green-400" />
+        <span className="ml-3 flex-1 h-5 rounded bg-white border border-gray-200 text-[11px] text-gray-400 flex items-center px-2.5">{alamat}</span>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/** Rangkaian langkah mendatar: kotak-kotak bertanda panah. `tekan` = indeks yang disorot. */
+export function AlurLangkah({ langkah, jeda, tekan }: { langkah: string[]; jeda: number; tekan?: number }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {langkah.map((l, i) => (
+        <span key={l} className="mt-pop inline-flex items-center gap-2" style={d(jeda + i * 150)}>
+          {i > 0 && <span className="text-teal font-bold">›</span>}
+          <span className={`px-3.5 py-2 rounded-lg text-[16px] font-semibold ${tekan === i ? 'bg-teal text-white shadow-md' : 'bg-navy/[0.07] text-navy'}`}>{l}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/** Kartu ikon + judul + keterangan (dipakai bersama slide-slide menu). */
+export function KartuMenu({ ikon, judul, isi, jeda, tinggi = '', sorot }: {
+  ikon: NamaIkon; judul: string; isi?: ReactNode; jeda: number; tinggi?: string; sorot?: boolean
+}) {
+  return (
+    <div className={`mt-pop rounded-xl border bg-white shadow-md px-4 py-3.5 ${sorot ? 'border-teal ring-2 ring-teal/30' : 'border-gray-200'} ${tinggi}`} style={d(jeda)}>
+      <div className="flex items-center gap-3">
+        <span className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${sorot ? 'bg-teal text-white' : 'bg-teal/10 text-teal'}`}><Ikon nama={ikon} ukuran={22} /></span>
+        <p className="text-[18.5px] font-bold text-navy leading-tight">{judul}</p>
+      </div>
+      {isi && <p className="mt-2 text-[14.5px] text-gray-500 leading-snug">{isi}</p>}
+    </div>
   )
 }

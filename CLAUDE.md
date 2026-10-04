@@ -9150,6 +9150,22 @@ di aplikasi diganti, materinya ikut disesuaikan. Gauge IPA di slide 13
 ILUSTRASI (jarumnya tak menunjuk nilai SKPD mana pun); batas pitanya kembar
 dgn ambang kategori IPA.
 
+**Disusun ulang 2026-10-04 (rekapan user): 16 → 29 slide, SEMUA putih.**
+`SlideGelap` (latar navy) DIHAPUS, diganti `SlideBersih` (putih + ornamen) untuk
+sampul/pembatas/penutup — jangan hidupkan lagi slide biru penuh. Urutan: sampul
+(gambaran layar Dashboard) · konteks segitiga E-Simbada·E-BMD·AI dgn otak di tengah
+· siklus (judul Permendagri 19/2016; menu disusun 47/2021, RKBMD/Penyusutan/GIS/IPA
+berwarna biru, sisanya hitam — **arti warna belum ditulis di slide**) · peta menu ·
+era AI + tampilan chatbot · 17 slide penjelasan per menu sidebar
+(`perkenalan/Menu1..3.tsx`) · alur LKI→LHI→Tindak Lanjut · penutup dgn **QR**.
+Slide "Aturan main" dicabut (tak ada di rekapan). Bahan bersama `Poin`, `Catatan`,
+`Jendela`, `AlurLangkah`, `KartuMenu`, `Tbl` ada di `bagian.tsx`.
+⚠️ Gambar bermerek "Ilustrasi tampilan" (Dashboard, LRA, KIR, Kendaraan, Daftar Barang,
+chat) memakai angka/nama karangan — SENGAJA diberi keterangan itu; jangan diganti
+angka produksi tanpa izin. QR penutup dirakit sinkron dari `QRCode.create` (SVG,
+ikut tercetak) dan sudah diuji dekode → `https://bmdlastgame.vercel.app`.
+Dikunci lib/materi.test.ts (`jumlahSlide` = 29).
+
 ⚠️ **Deploy-ordering: migrasi 20260930_01 dulu.** Kalau terbalik halaman tetap
 terbuka & Materi jalan; kotak Peraturan tampil kosong dan Simpan-nya ditolak
 Postgres (23514) — pesannya tampil, tak ada yang tertulis.

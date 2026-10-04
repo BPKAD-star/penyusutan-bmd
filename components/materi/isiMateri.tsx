@@ -6,16 +6,24 @@
 // ⚠️ Panjang tiap daftar WAJIB sama dgn `jumlahSlide` di lib/materi.ts, dan
 // tiap slug di sana wajib punya isinya di sini — dikunci lib/materi.test.ts.
 import type { ComponentType } from 'react'
-import { Sampul, Tujuan, Siklus, PetaMenu } from './perkenalan/Pembuka'
-import { BisaDikerjakan, Alur, Unggulan, Laporan } from './perkenalan/Fitur'
+import { Sampul, Konteks, Siklus, PetaMenu } from './perkenalan/Pembuka'
+import { Ai } from './perkenalan/Ai'
+import { Dashboard, SaldoAwal, Rkbmd, Pembukuan, CaraPerolehan, Pengelolaan } from './perkenalan/Menu1'
+import { Lra, Kir, Inventarisasi, AlurLki, GisTanah, Kendaraan } from './perkenalan/Menu2'
+import { DaftarBarang, Penyusutan, IpaAspek, Pelaporan, Admin } from './perkenalan/Menu3'
 import { Pembatas, Koordinat, Spesifikasi, Profil, Ipa } from './perkenalan/Kelengkapan'
-import { AturanMain, Tindak, Penutup } from './perkenalan/Penutup'
+import { Tindak, Penutup } from './perkenalan/Penutup'
 
 export const ISI_MATERI: Record<string, ComponentType[]> = {
   'perkenalan-smart-asset': [
-    Sampul, Tujuan, Siklus, PetaMenu,
-    BisaDikerjakan, Alur, Unggulan, Laporan,
-    Pembatas, Koordinat, Spesifikasi, Profil, Ipa,
-    AturanMain, Tindak, Penutup,
+    // Pembuka
+    Sampul, Konteks, Siklus, PetaMenu, Ai,
+    // Penjelasan per menu sidebar
+    Dashboard, SaldoAwal, Rkbmd, Pembukuan, CaraPerolehan, Pengelolaan, Lra, Kir,
+    Inventarisasi, AlurLki, GisTanah, Kendaraan, DaftarBarang, Penyusutan, IpaAspek, Pelaporan, Admin,
+    // Yang perlu dicek pengurus barang
+    Pembatas, Profil, Spesifikasi, Koordinat, Ipa,
+    // Penutup
+    Tindak, Penutup,
   ],
 }
