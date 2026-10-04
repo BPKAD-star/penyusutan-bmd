@@ -9165,6 +9165,13 @@ chat) memakai angka/nama karangan — SENGAJA diberi keterangan itu; jangan diga
 angka produksi tanpa izin. QR penutup dirakit sinkron dari `QRCode.create` (SVG,
 ikut tercetak) dan sudah diuji dekode → `https://bmdlastgame.vercel.app`.
 Dikunci lib/materi.test.ts (`jumlahSlide` = 29).
+**Slide 6–22 dibingkai sbg SIDEBAR aplikasi** (`components/materi/SidebarMock.tsx`,
+`SlideSidebar`): pohon menu DISALIN dari components/Sidebar.tsx (tampilan pengurus
+barang), menu yang dibahas menyala via `aktif="Pembukuan/Pengelolaan"`. ⚠️ Kalau menu
+di Sidebar.tsx berganti nama/urutan, `NAV` di berkas itu ikut diubah — tak ada test yang
+menjaganya. Area isi slide-sidebar ±952×474 (kolom kiri 450, kanan 470).
+Susunan slide 2: AI di puncak, E-Simbada kiri bawah, E-BMD kanan bawah, otak + SMART Asset
+di dalam lingkaran tengah.
 
 ⚠️ **Deploy-ordering: migrasi 20260930_01 dulu.** Kalau terbalik halaman tetap
 terbuka & Materi jalan; kotak Peraturan tampil kosong dan Simpan-nya ditolak

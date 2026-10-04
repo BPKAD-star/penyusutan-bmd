@@ -20,10 +20,10 @@ export function Merek({ besar, kelas }: { besar?: boolean; kelas?: string }) {
   )
 }
 
-function Kaki({ materi }: { materi: string }) {
+export function Kaki({ materi, kiri = 64 }: { materi: string; kiri?: number }) {
   const { no, total } = useContext(KonteksSlide)
   return (
-    <div className="absolute left-16 right-16 bottom-7 flex items-center justify-between text-[13px] text-gray-400">
+    <div className="absolute right-16 bottom-7 flex items-center justify-between text-[13px] text-gray-400" style={{ left: kiri }}>
       <div className="flex items-center gap-2.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-kab-kediri.png" alt="" className="w-6 h-6 object-contain" />
@@ -159,10 +159,10 @@ export function Jejak({ langkah }: { langkah: string[] }) {
 export function Poin({ jeda, children, ikon = 'centang' }: { jeda: number; children: ReactNode; ikon?: NamaIkon }) {
   return (
     <div className="mt-kiri flex items-start gap-3.5" style={d(jeda)}>
-      <span className="mt-0.5 w-8 h-8 rounded-full bg-teal text-white flex items-center justify-center flex-shrink-0">
+      <span className="mt-0.5 w-7 h-7 rounded-full bg-teal text-white flex items-center justify-center flex-shrink-0">
         <Ikon nama={ikon} ukuran={ikon === 'centang' ? 18 : 17} tebal={ikon === 'centang' ? 3 : 2} />
       </span>
-      <div className="text-[19px] leading-snug text-gray-700 pt-[3px]">{children}</div>
+      <div className="text-[17.5px] leading-snug text-gray-700 pt-[3px]">{children}</div>
     </div>
   )
 }
@@ -202,13 +202,13 @@ export function Jendela({ alamat = 'bmdlastgame.vercel.app', className = '', jed
 }
 
 /** Rangkaian langkah mendatar: kotak-kotak bertanda panah. `tekan` = indeks yang disorot. */
-export function AlurLangkah({ langkah, jeda, tekan }: { langkah: string[]; jeda: number; tekan?: number }) {
+export function AlurLangkah({ langkah, jeda, tekan, kecil }: { langkah: string[]; jeda: number; tekan?: number; kecil?: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {langkah.map((l, i) => (
         <span key={l} className="mt-pop inline-flex items-center gap-2" style={d(jeda + i * 150)}>
           {i > 0 && <span className="text-teal font-bold">›</span>}
-          <span className={`px-3.5 py-2 rounded-lg text-[16px] font-semibold ${tekan === i ? 'bg-teal text-white shadow-md' : 'bg-navy/[0.07] text-navy'}`}>{l}</span>
+          <span className={`rounded-lg font-semibold ${kecil ? 'px-2.5 py-1.5 text-[14.5px]' : 'px-3.5 py-2 text-[16px]'} ${tekan === i ? 'bg-teal text-white shadow-md' : 'bg-navy/[0.07] text-navy'}`}>{l}</span>
         </span>
       ))}
     </div>

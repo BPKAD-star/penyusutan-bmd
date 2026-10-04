@@ -1,15 +1,16 @@
 'use client'
 // Materi "Perkenalan Aplikasi SMART Asset" — penjelasan per menu sidebar (2/3):
 // LRA, KIR, Inventarisasi, alur LKI→LHI→Tindak Lanjut, GIS Tanah, Kendaraan.
-import { SlideTerang, Poin, Catatan, Tbl, Ikon, d, type NamaIkon } from '../bagian'
+import { SlideSidebar } from '../SidebarMock'
+import { Poin, Catatan, Tbl, Ikon, d, type NamaIkon } from '../bagian'
 import { MATERI } from './Pembuka'
 import { PetaBesar } from './Kelengkapan'
 
 // ── LRA ─────────────────────────────────────────────────────────────────────
 export function Lra() {
   return (
-    <SlideTerang materi={MATERI} label="Pembukuan · LRA" judul="LRA — belanja modal lawan entry">
-      <div className="absolute left-0 top-0 w-[590px] space-y-5">
+    <SlideSidebar aktif="Pembukuan/LRA" materi={MATERI} label="Pembukuan · LRA" judul="Belanja modal lawan entry">
+      <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Catatan jeda={250} ikon="lampu">
           <b>Posisi saat ini:</b> data belanja masih berupa <b>impor</b>, belum terintegrasi (<i>not integrated yet</i>).
         </Catatan>
@@ -17,7 +18,7 @@ export function Lra() {
         <Poin jeda={700}>Lihat <b>total entry yang sudah disetujui</b> di aplikasi.</Poin>
         <Poin jeda={900}>Selisih keduanya langsung terbaca — petunjuk entry mana yang belum dibukukan.</Poin>
       </div>
-      <div className="mt-kanan absolute right-0 top-0 w-[520px] rounded-2xl border border-gray-200 bg-white shadow-2xl p-6" style={d(350)}>
+      <div className="mt-kanan absolute right-0 top-0 w-[470px] rounded-2xl border border-gray-200 bg-white shadow-2xl p-6" style={d(350)}>
         <p className="text-[16px] font-bold text-navy">Belanja modal per jenis</p>
         <div className="mt-5 space-y-4">
           {[['Peralatan & Mesin', 92, 80], ['Gedung & Bangunan', 70, 66], ['Jalan, Jaringan & Irigasi', 55, 30], ['Aset Tetap Lainnya', 24, 24]].map(([nama, lra, entry], i) => (
@@ -36,7 +37,7 @@ export function Lra() {
         </div>
         <p className="mt-3 text-[12px] text-gray-400">Ilustrasi tampilan — angka bukan data sungguhan.</p>
       </div>
-    </SlideTerang>
+    </SlideSidebar>
   )
 }
 
@@ -48,14 +49,14 @@ const RUANGAN: [string, string[]][] = [
 
 export function Kir() {
   return (
-    <SlideTerang materi={MATERI} label="Pembukuan · KIR" judul="KIR — ruangan apa, isi barangnya apa saja">
-      <div className="absolute left-0 top-0 w-[560px] space-y-5">
+    <SlideSidebar aktif="Pembukuan/KIR" materi={MATERI} label="Pembukuan · KIR" judul="Ruangan apa, isi barangnya apa saja">
+      <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Poin jeda={250}>Daftar <b>ruangan per SKPD</b>, lengkap dengan penanggung jawab ruangan.</Poin>
         <Poin jeda={450}>Isi tiap ruangan: <b>barang apa saja</b> yang ada di dalamnya.</Poin>
         <Poin jeda={650}>Satu barang hanya berada di <b>satu ruangan</b>.</Poin>
         <Poin jeda={850}>Bisa dicetak sebagai <b>Kartu Inventaris Ruangan</b>.</Poin>
       </div>
-      <div className="absolute right-0 top-0 w-[530px] space-y-4">
+      <div className="absolute right-0 top-0 w-[470px] space-y-4">
         {RUANGAN.map(([nama, isi], i) => (
           <div key={nama} className="mt-kanan rounded-2xl border border-gray-200 bg-white shadow-xl p-5" style={d(400 + i * 250)}>
             <div className="flex items-center gap-3">
@@ -72,7 +73,7 @@ export function Kir() {
         ))}
         <p className="text-[12px] text-gray-400">Ilustrasi tampilan — isi ruangan bukan data sungguhan.</p>
       </div>
-    </SlideTerang>
+    </SlideSidebar>
   )
 }
 
@@ -86,7 +87,7 @@ const TAHAP_INV: { ikon: NamaIkon; judul: string; isi: string; sorot?: boolean }
 
 export function Inventarisasi() {
   return (
-    <SlideTerang materi={MATERI} label="Menu · Inventarisasi" judul="Inventarisasi — dari lembar kerja sampai tindak lanjut">
+    <SlideSidebar aktif="Inventarisasi" materi={MATERI} label="Menu · Inventarisasi" judul="Dari lembar kerja sampai tindak lanjut">
       <div className="grid grid-cols-4 gap-4 mt-2">
         {TAHAP_INV.map((t, i) => (
           <div key={t.judul} className={`mt-up relative rounded-2xl border bg-white shadow-lg p-6 h-[250px] ${t.sorot ? 'border-teal ring-2 ring-teal/30' : 'border-gray-200'}`} style={d(250 + i * 200)}>
@@ -102,7 +103,7 @@ export function Inventarisasi() {
           Menu <b>Tindak Lanjut</b> kita kembangkan agar proses inventarisasi ini <b>berjalan secara maksimal</b> — temuan tidak berhenti di laporan, tapi diikuti sampai selesai.
         </Catatan>
       </div>
-    </SlideTerang>
+    </SlideSidebar>
   )
 }
 
@@ -123,7 +124,7 @@ const ALUR_LKI: [string, string, string][] = [
 
 export function AlurLki() {
   return (
-    <SlideTerang materi={MATERI} label="Inventarisasi · Alur" judul="Temuan di LKI → masuk laporan mana → tindak lanjutnya">
+    <SlideSidebar aktif="Inventarisasi/Tindak Lanjut" materi={MATERI} label="Inventarisasi · Alur" judul="Temuan LKI → laporan LHI → tindak lanjut">
       <div className="mt-up rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden" style={d(250)}>
         <div className="grid grid-cols-[250px_120px_1fr] bg-navy text-white text-[14px] font-semibold tracking-wide uppercase px-5 py-2.5">
           <span>Temuan di LKI</span><span>Laporan (LHI)</span><span>Tindak lanjut</span>
@@ -136,15 +137,15 @@ export function AlurLki() {
           </div>
         ))}
       </div>
-    </SlideTerang>
+    </SlideSidebar>
   )
 }
 
 // ── GIS Tanah ───────────────────────────────────────────────────────────────
 export function GisTanah() {
   return (
-    <SlideTerang materi={MATERI} label="Menu · GIS Tanah" judul="GIS Tanah — satu tanah, satu titik di peta">
-      <div className="absolute left-0 top-0 w-[580px] space-y-4">
+    <SlideSidebar aktif="GIS Tanah" materi={MATERI} label="Menu · GIS Tanah" judul="Satu tanah, satu titik di peta">
+      <div className="absolute left-0 top-0 w-[450px] space-y-4">
         <Poin jeda={250} ikon="daftar"><b>Register tanah</b> apa yang ada di SKPD.</Poin>
         <Poin jeda={420} ikon="pin"><b>Titik koordinatnya</b> di mana.</Poin>
         <Poin jeda={590} ikon="map"><b>Bidangnya</b> ada berapa.</Poin>
@@ -152,14 +153,14 @@ export function GisTanah() {
         <Poin jeda={930} ikon="tukar"><b>Rute</b> menuju titik tersebut (Google Maps).</Poin>
         <Poin jeda={1100} ikon="kamera">Lihat kondisi terbaru lewat <b>Street View</b>.</Poin>
       </div>
-      <div className="mt-kanan absolute right-0 top-0 w-[500px]" style={d(300)}>
+      <div className="mt-kanan absolute right-0 top-0 w-[470px]" style={d(300)}>
         <div className="h-[330px] rounded-[20px] shadow-2xl border border-gray-200 bg-white p-2"><PetaBesar /></div>
         <div className="mt-up mt-4 flex gap-3" style={d(1200)}>
           <span className="flex-1 text-center px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-[15px] font-semibold text-gray-700 shadow-sm">🧭 Navigasi</span>
           <span className="flex-1 text-center px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-[15px] font-semibold text-gray-700 shadow-sm">👁 Street View</span>
         </div>
       </div>
-    </SlideTerang>
+    </SlideSidebar>
   )
 }
 
@@ -168,8 +169,8 @@ const CARI = ['Merk / Tipe', 'No. Polisi', 'No. Rangka', 'No. Mesin', 'No. BPKB'
 
 export function Kendaraan() {
   return (
-    <SlideTerang materi={MATERI} label="Menu · Kendaraan" judul="Kendaraan — cari dengan identitas apa saja">
-      <div className="absolute left-0 top-0 w-[560px] space-y-5">
+    <SlideSidebar aktif="Kendaraan" materi={MATERI} label="Menu · Kendaraan" judul="Cari dengan identitas apa saja">
+      <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <p className="mt-in text-[19px] text-gray-600" style={d(250)}>Cari kendaraan dinas lewat:</p>
         <div className="mt-up flex flex-wrap gap-2.5" style={d(350)}>
           {CARI.map(c => <span key={c} className="px-3.5 py-2 rounded-lg bg-navy/[0.07] text-navy text-[17px] font-semibold">{c}</span>)}
@@ -177,7 +178,7 @@ export function Kendaraan() {
         <Poin jeda={650}>Menunjukkan <b>siapa penggunanya</b> — jika di menu <Tbl>Pengamanan</Tbl> sudah dibuatkan <b>BAST</b> dan <b>Pakta Integritas</b>.</Poin>
         <Poin jeda={850}>Satu halaman memuat merk, nomor-nomor identitas, nilai, kondisi, dan keterangan.</Poin>
       </div>
-      <div className="absolute right-0 top-0 w-[530px]">
+      <div className="absolute right-0 top-0 w-[470px]">
         <div className="mt-kanan rounded-2xl border border-gray-200 bg-white shadow-2xl p-5" style={d(400)}>
           <div className="h-11 rounded-lg border border-gray-200 bg-gray-50 flex items-center gap-3 px-4 text-[15px] text-gray-400"><Ikon nama="cari" ukuran={20} />Ketik merk, nomor polisi, rangka, mesin…</div>
           <div className="mt-4 rounded-xl border border-teal/40 bg-teal/[0.05] p-4">
@@ -195,6 +196,6 @@ export function Kendaraan() {
           <p className="mt-3 text-[12px] text-gray-400">Ilustrasi tampilan — bukan data sungguhan.</p>
         </div>
       </div>
-    </SlideTerang>
+    </SlideSidebar>
   )
 }

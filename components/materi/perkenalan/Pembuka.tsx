@@ -101,12 +101,13 @@ function Otak({ className = '' }: { className?: string }) {
 }
 
 // Koordinat di dalam area isi slide (1152×474): titik pusat tiap kartu sudut.
+// Susunan (keputusan user 2026-10-04): AI di puncak, E-Simbada kiri bawah, E-BMD kanan bawah.
 const SUDUT: { nama: string; isi: string; ikon: NamaIkon; x: number; y: number }[] = [
-  { nama: 'E-Simbada', isi: 'Sumber data sertipikat & aset', ikon: 'gedung', x: 576, y: 50 },
-  { nama: 'E-BMD', isi: 'Sumber saldo awal barang', ikon: 'daftar', x: 250, y: 380 },
-  { nama: 'AI', isi: 'Asisten yang menjawab dari data', ikon: 'obrolan', x: 902, y: 380 },
+  { nama: 'AI', isi: 'Asisten yang menjawab dari data', ikon: 'obrolan', x: 576, y: 50 },
+  { nama: 'E-Simbada', isi: 'Sumber data sertipikat & aset', ikon: 'gedung', x: 250, y: 380 },
+  { nama: 'E-BMD', isi: 'Sumber saldo awal barang', ikon: 'daftar', x: 902, y: 380 },
 ]
-const PUSAT = { x: 576, y: 262 }
+const PUSAT = { x: 576, y: 258 }
 
 export function Konteks() {
   return (
@@ -129,15 +130,16 @@ export function Konteks() {
           </div>
         </div>
       ))}
-      <div className="absolute" style={{ left: PUSAT.x - 78, top: PUSAT.y - 78 }}>
-        <div className="relative w-[156px] h-[156px]">
+      {/* Pusat: otak + merek DI DALAM lingkaran. */}
+      <div className="absolute" style={{ left: PUSAT.x - 100, top: PUSAT.y - 100 }}>
+        <div className="relative w-[200px] h-[200px]">
           <span className="mt-riak mt-tak-cetak absolute inset-0 rounded-full border-2 border-teal/50" />
           <span className="mt-riak mt-tak-cetak absolute inset-0 rounded-full border-2 border-teal/50" style={d(1200)} />
-          <div className="mt-pop absolute inset-0 rounded-full bg-white shadow-2xl border border-gray-200 flex items-center justify-center" style={d(900)}>
-            <Otak className="w-[108px] h-[90px]" />
+          <div className="mt-pop absolute inset-0 rounded-full bg-white shadow-2xl border border-gray-200 flex flex-col items-center justify-center gap-2" style={d(900)}>
+            <Otak className="w-[104px] h-[87px]" />
+            <Merek kelas="text-[25px]" />
           </div>
         </div>
-        <p className="mt-up mt-2 text-center whitespace-nowrap" style={{ ...d(1300), marginLeft: -40, marginRight: -40 }}><span className="bg-white px-2"><Merek kelas="text-[28px]" /></span></p>
       </div>
       <p className="mt-in absolute left-0 right-0 bottom-0 text-center text-[17px] text-gray-500" style={d(1500)}>
         Tiga sumber digabung menjadi satu <b className="text-navy">otak</b> pengelolaan aset daerah — itulah SMART Asset.
