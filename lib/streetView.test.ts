@@ -56,27 +56,41 @@ describe('urlStreetView & queryJalan', () => {
 describe('cariTitikStreetView', () => {
   const ok = (elements: unknown) => vi.fn(async () => ({ ok: true, json: async () => ({ elements }) })) as unknown as typeof fetch
   it('mengembalikan titik jalan dari jawaban layanan', async () => {
-    const r = await cariTitikStreetView(T, { fetcher: ok([jalanUtara]) })
+    const r = await cariTitikStreetView(T, { fetcher: ok([jalanUtara]), tanpaSimpanan: true })
     expect(r?.jarak).toBeGreaterThan(100)
   })
   it('layanan gagal / respons tidak ok / jaringan putus → null, TIDAK melempar', async () => {
-    expect(await cariTitikStreetView(T, { fetcher: vi.fn(async () => ({ ok: false })) as unknown as typeof fetch })).toBeNull()
-    expect(await cariTitikStreetView(T, { fetcher: vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch })).toBeNull()
+    expect(await cariTitikStreetView(T, { fetcher: vi.fn(async () => ({ ok: false })) as unknown as typeof fetch, tanpaSimpanan: true })).toBeNull()
+    expect(await cariTitikStreetView(T, { fetcher: vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch, tanpaSimpanan: true })).toBeNull()
   })
-  it('layanan pertama gagal → mencoba layanan kedua', async () => {
+  it('satu layanan gagal, yang lain menjawab → hasil tetap didapat (ditanya serentak)', async () => {
     const f = vi.fn()
-      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce({ ok: false, status: 503 })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ elements: [jalanUtara] }) })
-    const r = await cariTitikStreetView(T, { fetcher: f as unknown as typeof fetch, layanan: ['a', 'b'] })
+    const r = await cariTitikStreetView(T, { fetcher: f as unknown as typeof fetch, layanan: ['a', 'b'], tanpaSimpanan: true })
     expect(r?.jarak).toBeGreaterThan(100)
     expect(f).toHaveBeenCalledTimes(2)
   })
-  it('layanan menjawab "tak ada jalan" → berhenti (tak menanyakan layanan lain)', async () => {
+  it('jawaban sah "tak ada jalan" dihormati sebagai null', async () => {
     const f = vi.fn(async () => ({ ok: true, json: async () => ({ elements: [] }) }))
-    expect(await cariTitikStreetView(T, { fetcher: f as unknown as typeof fetch, layanan: ['a', 'b'] })).toBeNull()
+    expect(await cariTitikStreetView(T, { fetcher: f as unknown as typeof fetch, layanan: ['a', 'b'], tanpaSimpanan: true })).toBeNull()
+  })
+  it('hasil disimpan per titik: pemanggilan kedua tidak menembak layanan lagi', async () => {
+    const f = ok([jalanUtara])
+    const titik = { lat: -7.8123, lng: 112.0456 }
+    const a1 = await cariTitikStreetView(titik, { fetcher: f, layanan: ['a'] })
+    const a2 = await cariTitikStreetView(titik, { fetcher: f, layanan: ['a'] })
+    expect(a2).toEqual(a1)
     expect(f).toHaveBeenCalledTimes(1)
   })
+  it('semua layanan gagal TIDAK disimpan (klik berikutnya boleh mencoba lagi)', async () => {
+    const titik = { lat: -7.8999, lng: 112.0999 }
+    const gagal = vi.fn(async () => { throw new Error('offline') })
+    expect(await cariTitikStreetView(titik, { fetcher: gagal as unknown as typeof fetch, layanan: ['a'] })).toBeNull()
+    const f = ok([jalanUtara])
+    expect(await cariTitikStreetView(titik, { fetcher: f, layanan: ['a'] })).not.toBeNull()
+  })
   it('tak ada jalan dalam radius → null', async () => {
-    expect(await cariTitikStreetView(T, { fetcher: ok([]) })).toBeNull()
+    expect(await cariTitikStreetView(T, { fetcher: ok([]), tanpaSimpanan: true })).toBeNull()
   })
 })

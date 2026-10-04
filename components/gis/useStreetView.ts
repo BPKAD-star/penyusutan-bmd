@@ -17,6 +17,10 @@ export function useStreetView(titik: Titik | null) {
   const buka = useCallback(async () => {
     if (!titik || mencari) return
     const tab = window.open('about:blank', '_blank')
+    // Tab kosong putih selama mencari terbaca sbg "macet" — beri tahu apa yang terjadi.
+    try {
+      tab?.document.write('<title>Street View…</title><body style="font:16px system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#475569"><p>Mencari jalan terdekat untuk Street View…</p>')
+    } catch { /* tab tak bisa ditulisi — biarkan kosong */ }
     setMencari(true); setInfo(null)
     try {
       const j = await cariTitikStreetView(titik)

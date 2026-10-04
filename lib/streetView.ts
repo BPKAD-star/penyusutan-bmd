@@ -67,39 +67,54 @@ export function urlStreetView(titik: Titik, heading?: number): string {
 export const BUKAN_JALAN = 'footway|path|steps|cycleway|pedestrian|bridleway|corridor|proposed|construction|elevator|platform|raceway|bus_guideway'
 
 export const RADIUS_CARI_JALAN = 500
-const TUNGGU_MS = 7000
-/** Layanan Overpass publik; dicoba berurutan — satu mati/lambat tak mematikan fitur. */
+/** Batas tunggu TOTAL — pengguna menunggu di tab kosong, jadi jangan lama. */
+const TUNGGU_MS = 5000
+/** Layanan Overpass publik; ditanya SERENTAK, yang menjawab duluan dipakai. */
 export const LAYANAN_OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
 
 export function queryJalan(t: Titik, radius = RADIUS_CARI_JALAN): string {
   return `[out:json][timeout:8];way(around:${radius},${t.lat},${t.lng})[highway][highway!~"^(${BUKAN_JALAN})$"];out geom;`
 }
 
+// Hasil per titik disimpan selama halaman terbuka: klik kedua pada tanah yang sama instan.
+const simpanan = new Map<string, TitikJalan | null>()
+const kunci = (t: Titik, r: number) => `${t.lat.toFixed(5)},${t.lng.toFixed(5)},${r}`
+
 /**
  * Cari titik jalan terdekat dalam `radius` meter. MENGEMBALIKAN null (bukan
  * melempar) kalau layanan gagal/lambat/tak ada jalan — pemanggil punya
  * cadangan, dan bantuan tampilan tak boleh membuat tombol macet.
+ *
+ * Kedua layanan ditanya SERENTAK (bukan berurutan): berurutan, layanan pertama
+ * yang mati menghabiskan seluruh batas tunggu dulu sebelum yang kedua dicoba,
+ * dan pengguna menatap tab kosong selama itu.
  */
 export async function cariTitikStreetView(
   tanah: Titik,
-  opsi: { fetcher?: typeof fetch; radius?: number; tunggu?: number; layanan?: string[] } = {},
+  opsi: { fetcher?: typeof fetch; radius?: number; tunggu?: number; layanan?: string[]; tanpaSimpanan?: boolean } = {},
 ): Promise<TitikJalan | null> {
+  const radius = opsi.radius ?? RADIUS_CARI_JALAN
+  const k = kunci(tanah, radius)
+  if (!opsi.tanpaSimpanan && simpanan.has(k)) return simpanan.get(k)!
   const f = opsi.fetcher ?? fetch
-  const data = encodeURIComponent(queryJalan(tanah, opsi.radius))
-  for (const url of opsi.layanan ?? LAYANAN_OVERPASS) {
-    const ctl = new AbortController()
-    const timer = setTimeout(() => ctl.abort(), opsi.tunggu ?? TUNGGU_MS)
-    try {
-      const res = await f(`${url}?data=${data}`, { signal: ctl.signal })
-      if (!res.ok) continue
-      const json = (await res.json()) as { elements?: Way[] }
-      // Layanan menjawab tapi tak ada jalan = jawaban sah; jangan lanjut ke layanan lain.
-      return titikJalanTerdekat(tanah, json.elements || [])
-    } catch {
-      continue
-    } finally {
-      clearTimeout(timer)
-    }
+  const data = encodeURIComponent(queryJalan(tanah, radius))
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), opsi.tunggu ?? TUNGGU_MS)
+  const tanya = async (url: string): Promise<TitikJalan | null> => {
+    const res = await f(`${url}?data=${data}`, { signal: ctl.signal })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = (await res.json()) as { elements?: Way[] }
+    return titikJalanTerdekat(tanah, json.elements || [])
   }
-  return null
+  try {
+    // Jawaban sah "tak ada jalan" (null) juga dihitung — yang gagal hanya yang melempar.
+    const hasil = await Promise.any((opsi.layanan ?? LAYANAN_OVERPASS).map(tanya))
+    if (!opsi.tanpaSimpanan) simpanan.set(k, hasil)
+    return hasil
+  } catch {
+    return null // semua layanan gagal/lambat — TIDAK disimpan, klik berikutnya boleh mencoba lagi
+  } finally {
+    clearTimeout(timer)
+    ctl.abort() // batalkan layanan yang kalah
+  }
 }
