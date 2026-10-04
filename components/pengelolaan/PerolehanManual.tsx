@@ -31,6 +31,7 @@ import { generateNibars } from '@/lib/nibar'
 import { formatRupiah2 } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import FormShell from './FormShell'
+import { TotalPerolehan, hitungBarangJurnal } from './TotalPerolehan'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
@@ -673,10 +674,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     <FormShell judul={judul} msg={msg}
       deskripsi="Pilih SKPD, buat dokumen (draft), lengkapi barang, lalu tunggu persetujuan admin."
       headerRight={skpd ? (
-        <div className="text-right flex-shrink-0">
-          <p className="text-xs text-gray-400">Total {judul} ({skpdNama})</p>
-          <p className="text-lg font-bold text-gray-900">{formatRupiah2(totalSemua)}</p>
-        </div>
+        <TotalPerolehan label={`Total ${judul} (${skpdNama})`} nilai={totalSemua} {...hitungBarangJurnal(jurnals)} />
       ) : undefined}>
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">

@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
+import { TotalPerolehan, hitungBarangJurnal } from './TotalPerolehan'
+import { barangKdpList } from '@/lib/kdp'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { formatRupiah2 } from '@/lib/export'
 import Pengadaan, { PengadaanCard, fetchPengadaanJurnals, useGolonganLabels, draftTotal, type Jurnal } from './Pengadaan'
@@ -99,10 +101,8 @@ export default function PengadaanEntry() {
     <FormShell judul="Pengadaan" msg=""
       deskripsi="Pilih SKPD — semua pengadaan (Non Konstruksi & Konstruksi) tampil dalam satu daftar, diurutkan berdasarkan tanggal dokumen kontrak."
       headerRight={skpd ? (
-        <div className="text-right flex-shrink-0">
-          <p className="text-xs text-gray-400">Total Pengadaan</p>
-          <p className="text-lg font-bold text-gray-900">{formatRupiah2(total)}</p>
-        </div>
+        <TotalPerolehan label="Total Pengadaan" nilai={total} {...hitungBarangJurnal(nfJurnals)}
+          kdp={kKontraks.filter(k => k.approval_status !== 'ditolak').reduce((s, k) => s + barangKdpList(k.payload).length, 0)} />
       ) : undefined}>
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">

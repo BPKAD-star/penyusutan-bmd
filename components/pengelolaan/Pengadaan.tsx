@@ -39,6 +39,7 @@ import { cekBolehBatal } from '@/lib/guardPembatalan'
 import { formatRupiah2 } from '@/lib/export'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 import FormShell from './FormShell'
+import { TotalPerolehan, hitungBarangJurnal } from './TotalPerolehan'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekeningPicker from '@/components/RekeningPicker'
@@ -577,10 +578,7 @@ export default function Pengadaan({ skpdProp, embedded, startCreate, openId, onE
     <FormShell judul="Pengadaan" msg={msg}
       deskripsi="Pilih SKPD, buat kontrak (draft), lengkapi barang, lalu tunggu persetujuan admin."
       headerRight={skpd ? (
-        <div className="text-right flex-shrink-0">
-          <p className="text-xs text-gray-400">Total Pengadaan ({skpdNama})</p>
-          <p className="text-lg font-bold text-gray-900">{formatRupiah2(totalSemua)}</p>
-        </div>
+        <TotalPerolehan label={`Total Pengadaan (${skpdNama})`} nilai={totalSemua} {...hitungBarangJurnal(jurnals)} />
       ) : undefined}>{body}</FormShell>
   )
 }
