@@ -91,6 +91,19 @@ export default function PengadaanEntry() {
     nfJurnals.reduce((s, j) => s + (j.approval_status === 'disetujui' ? j.total : draftTotal(j.payload.draft_items || [])), 0) +
     kKontraks.reduce((s, k) => s + kontrakTotal(k.payload), 0)
 
+  // Kuantitas barang: non-konstruksi dari kartu, KDP dari barang di kontrak.
+  // Barang KDP ikut Laporan Pengadaan (1 baris per barang), jadi dihitung
+  // bersama "disetujui"/"draft" menurut status kontraknya.
+  const barangPengadaan = (() => {
+    const r = hitungBarangJurnal(nfJurnals)
+    for (const k of kKontraks) {
+      const n = barangKdpList(k.payload).length
+      if (k.approval_status === 'disetujui') r.disetujui += n
+      else if (k.approval_status === 'pending') r.draft += n
+    }
+    return r
+  })()
+
   // Satu daftar, diurutkan by tanggal dokumen kontrak (terbaru dulu).
   const merged: MergedItem[] = [
     ...nfJurnals.map((j): MergedItem => ({ type: 'nonfisik', id: j.id, tanggal: j.tanggal, j })),
@@ -101,8 +114,7 @@ export default function PengadaanEntry() {
     <FormShell judul="Pengadaan" msg=""
       deskripsi="Pilih SKPD — semua pengadaan (Non Konstruksi & Konstruksi) tampil dalam satu daftar, diurutkan berdasarkan tanggal dokumen kontrak."
       headerRight={skpd ? (
-        <TotalPerolehan label="Total Pengadaan" nilai={total} {...hitungBarangJurnal(nfJurnals)}
-          kdp={kKontraks.filter(k => k.approval_status !== 'ditolak').reduce((s, k) => s + barangKdpList(k.payload).length, 0)} />
+        <TotalPerolehan label="Total Pengadaan" nilai={total} {...barangPengadaan} />
       ) : undefined}>
       <div className="card p-5 mb-4">
         <div className="flex items-center gap-3">

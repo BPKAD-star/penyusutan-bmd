@@ -35,6 +35,7 @@ import { FORMAT_PEROLEHAN } from '@/lib/formatPermendagri'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 import { splitKodeUraian } from '@/lib/laporanPengadaan'
 import { fetchUraianRekening } from '@/lib/rkbmdStandar'
+import { muatTerminKdp } from '@/lib/laporanKdpTrx'
 
 type Trx = {
   id: number
@@ -320,7 +321,11 @@ export default function LaporanPerolehan({ judul, deskripsi, jenis, filePrefix, 
           if (baris.length < 1000) break
         }
         const hidup = await saringVoid(semua)
-        if (!batal) setRows(hidup)
+        // Pengadaan juga memuat barang KDP (Pekerjaan Konstruksi) — satu baris
+        // per barang, sama dgn tab Format Permendagri. Gagal membaca = laporan
+        // DITOLAK (fail-closed), bukan tampil tanpa KDP. Lihat lib/laporanKdpTrx.ts.
+        const kdp = jenis === 'pengadaan' ? await muatTerminKdp(supabase, { periode, descIds }) : []
+        if (!batal) setRows([...hidup, ...kdp])
       } catch (e) {
         // Fail-closed (CLAUDE.md): modul pelaporan lebih baik menolak tampil
         // daripada menyajikan angka kurang-sebagian yang kelihatan sah.

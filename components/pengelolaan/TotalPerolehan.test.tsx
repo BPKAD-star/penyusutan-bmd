@@ -15,13 +15,10 @@ describe('hitungBarangJurnal', () => {
 })
 
 describe('TotalPerolehan', () => {
-  it('menampilkan total barang beserta rinciannya; KDP hanya bila ada', () => {
-    const { rerender } = render(<TotalPerolehan label="Total" nilai={1000} disetujui={150} draft={10} />)
+  it('menampilkan total barang beserta rinciannya', () => {
+    render(<TotalPerolehan label="Total" nilai={1000} disetujui={150} draft={10} />)
     expect(screen.getByText('160 barang')).toBeTruthy()
     expect(screen.getByText('150 disetujui')).toBeTruthy()
-    expect(screen.queryByText(/KDP/)).toBeNull()
-    rerender(<TotalPerolehan label="Total" nilai={1000} disetujui={150} draft={10} kdp={2} />)
-    expect(screen.getByText('162 barang')).toBeTruthy()
-    expect(screen.getByText('2 KDP')).toBeTruthy()
+    expect(screen.getByText('10 draft')).toBeTruthy()
   })
 })

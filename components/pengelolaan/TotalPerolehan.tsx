@@ -6,22 +6,19 @@
 //
 // ⚠️ Yang sebanding dengan Laporan Perolehan ("N transaksi") HANYA angka
 // DISETUJUI — satu barang disetujui = satu baris ledger. Draft belum ada di
-// ledger. Termin KDP (Pekerjaan Konstruksi) sengaja dihitung TERPISAH: Laporan
-// Pengadaan tidak memuatnya, jadi menjumlahkannya ke "disetujui" membuat angka
-// ini tak pernah cocok dengan laporan.
+// ledger. Barang KDP (Pekerjaan Konstruksi) ikut dihitung per BARANG (bukan per
+// termin), sama dgn Laporan Pengadaan sejak 2026-10-04 (lib/laporanKdpTrx.ts).
 import { formatRupiah2 } from '@/lib/export'
 
-export function TotalPerolehan({ label, nilai, disetujui, draft, kdp = 0 }: {
+export function TotalPerolehan({ label, nilai, disetujui, draft }: {
   label: string
   nilai: number
   /** Barang berstatus disetujui (= baris ledger di Laporan Perolehan). */
   disetujui: number
   /** Barang di kartu draft/pending (belum masuk ledger). */
   draft: number
-  /** Barang KDP kontrak konstruksi (semua status) — di luar Laporan Pengadaan. */
-  kdp?: number
 }) {
-  const total = disetujui + draft + kdp
+  const total = disetujui + draft
   return (
     <div className="text-right flex-shrink-0">
       <p className="text-xs text-gray-400">{label}</p>
@@ -31,7 +28,6 @@ export function TotalPerolehan({ label, nilai, disetujui, draft, kdp = 0 }: {
         <span className="font-semibold text-gray-700">{total.toLocaleString('id-ID')} barang</span>
         {' · '}<span className="text-teal">{disetujui.toLocaleString('id-ID')} disetujui</span>
         {' · '}<span className="text-amber-600">{draft.toLocaleString('id-ID')} draft</span>
-        {kdp > 0 && <>{' · '}<span className="text-indigo-600">{kdp.toLocaleString('id-ID')} KDP</span></>}
       </p>
     </div>
   )
