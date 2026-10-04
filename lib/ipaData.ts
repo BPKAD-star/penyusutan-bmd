@@ -119,7 +119,7 @@ export async function hitungUlangOtomatis(sb: SupabaseClient, tahun: number, skp
   if (error) throw new Error(`gagal menghitung IPA SKPD ${skpdId}: ${error.message}`)
 }
 
-// ── Rincian indikator otomatis (tombol 👁, migrasi 20260926_01) ─────────────
+// ── Rincian indikator otomatis (tombol 👁, migrasi 20260926_01 + 20261004_01) ─
 /** `ok` = terpenuhi · `kurang` = perlu ditindaklanjuti · `info` = keterangan (tak dinilai). */
 export type KeadaanRincian = 'ok' | 'kurang' | 'info'
 export type BarisRincian = {
@@ -129,25 +129,53 @@ export type BarisRincian = {
   ket: string | null
   nilai: number | null
   nibar: string | null
+  /** Uraian barang baku dari master kodefikasi (null kalau barisnya bukan barang). */
+  uraian: string | null
 }
-/** Batas baris yang ditarik; kalau hasilnya persis sebanyak ini, layar wajib bilang terpotong. */
-export const BATAS_RINCIAN = 2000
+/** Satu halaman rincian + hitungan seluruhnya, semua dihitung di SERVER. */
+export type HalamanRincian = {
+  rows: BarisRincian[]
+  /** Jumlah baris untuk keadaan yang dipilih (dasar paginasi). */
+  total: number
+  /** Jumlah per keadaan SETELAH filter jenis aset & cari. */
+  n: { kurang: number; ok: number; semua: number }
+  /** Jenis aset yang ada (setelah filter cari, sebelum filter jenis aset). */
+  golongan: { kode: string; n: number }[]
+}
+export const RINCIAN_PER_HALAMAN = 250
 
 /**
- * Daftar barang/dokumen di balik SATU indikator otomatis — dihitung HIDUP dari
- * register (bukan dari snapshot), jadi bisa berbeda sedikit dari angka skor
- * kalau datanya berubah sesudah snapshot terakhir. Indikator isian → [].
+ * Satu halaman rincian indikator otomatis — dihitung HIDUP dari register, bukan
+ * dari snapshot, jadi bisa berbeda sedikit dari angka skor.
+ *
+ * ⚠️ Penyaringan, penghitungan & pemotongan halaman WAJIB di server
+ * (`fn_ipa_rincian_halaman`). Versi lama menarik `fn_ipa_rincian` apa adanya,
+ * dan hasilnya terpotong DIAM-DIAM di 1.000 baris (batas max_rows PostgREST):
+ * BKAD tampil "Semua (1.000)" padahal 1.296 barang, dan tab "Sudah terpenuhi"
+ * tampil 0 padahal ada barang lengkap yang ikut terpotong. SKPD terbesar IPA
+ * punya 23.214 barang, jadi menaikkan batas tak pernah cukup.
  */
-export async function muatRincian(sb: SupabaseClient, tahun: number, skpdId: number, indikator: string): Promise<BarisRincian[]> {
-  const { data, error } = await sb.rpc('fn_ipa_rincian', {
-    p_tahun: tahun, p_skpd_id: skpdId, p_indikator: indikator, p_limit: BATAS_RINCIAN,
+export async function muatRincianHalaman(
+  sb: SupabaseClient, tahun: number, skpdId: number, indikator: string,
+  opsi: { keadaan?: 'kurang' | 'ok' | null; golongan?: string | null; cari?: string; halaman?: number } = {},
+): Promise<HalamanRincian> {
+  const { data, error } = await sb.rpc('fn_ipa_rincian_halaman', {
+    p_tahun: tahun, p_skpd_id: skpdId, p_indikator: indikator,
+    p_keadaan: opsi.keadaan ?? null, p_golongan: opsi.golongan || null,
+    p_cari: opsi.cari?.trim() || null,
+    p_offset: (opsi.halaman ?? 0) * RINCIAN_PER_HALAMAN, p_limit: RINCIAN_PER_HALAMAN,
   })
   if (error) throw new Error(`gagal memuat rincian indikator: ${error.message}`)
-  type Raw = { o_keadaan: KeadaanRincian; o_judul: string; o_sub: string | null; o_ket: string | null; o_nilai: number | string | null; o_ref: string | null }
-  return ((data as Raw[] | null) ?? []).map(r => ({
-    keadaan: r.o_keadaan, judul: r.o_judul, sub: r.o_sub, ket: r.o_ket,
-    nilai: r.o_nilai == null ? null : Number(r.o_nilai), nibar: r.o_ref,
-  }))
+  type Raw = {
+    rows: { keadaan: KeadaanRincian; judul: string; sub: string | null; ket: string | null; nilai: number | string | null; nibar: string | null; uraian: string | null }[]
+    total: number; n: HalamanRincian['n']; golongan: HalamanRincian['golongan']
+  }
+  const r = data as Raw | null
+  if (!r) throw new Error('gagal memuat rincian indikator: respons kosong')
+  return {
+    rows: (r.rows ?? []).map(x => ({ ...x, nilai: x.nilai == null ? null : Number(x.nilai) })),
+    total: Number(r.total), n: r.n, golongan: r.golongan ?? [],
+  }
 }
 
 // ── Isian SKPD (TL BPK / TL Inspektorat) ────────────────────────────────────
