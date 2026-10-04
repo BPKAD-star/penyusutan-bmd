@@ -47,26 +47,20 @@ import SkpdCombobox from '@/components/SkpdCombobox'
 import type { GisMarker } from '@/components/gis/GisMap'
 import { IkonTitikAda } from '@/shared/ui/TitikKoordinat'
 import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
+import { jamCache } from '@/components/dashboard/cacheDashboard'
+import type { AsetGis, BidangGis } from '@/components/gis/cacheGis'
+import { useCacheGis } from '@/components/gis/useCacheGis'
 
 const GisMap = dynamic(() => import('@/components/gis/GisMap'), {
   ssr: false, loading: () => <div className="absolute inset-0 bg-gray-100 animate-pulse" />,
 })
 
-type AsetRow = {
-  id: string; nibar: string | null; kode: string; nama_barang: string | null; uraian_barang: string | null
-  spesifikasi_lainnya: string | null; jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null
-  nama_dokumen_kepemilikan: string | null; tanggal_dokumen_kepemilikan: string | null
-  tgl_perolehan: string | null; nilai_perolehan: number
-  // Masih ikut di-select tapi SENGAJA tak ditampilkan di halaman ini sejak
-  // 2026-08-05 — luas di GIS bersumber dari bidang. Jangan dihapus dari
-  // SELECT_COLS: kalau nanti `aset.luas` yang diputuskan otoritatif
-  // (REFACTOR-PLAN §5), ia tinggal dipasang lagi.
-  luas: number | null
-  alamat_detail: string | null
-  latitude: number | null; longitude: number | null
-  skpd_id: number | null; skpd: { nama: string } | null
-}
-type BidangRingkas = { aset_id: string; jenis_hak: string | null; nomor_dokumen_kepemilikan: string | null; luas: number | null; latitude: number | null; longitude: number | null }
+// Bentuknya tinggal di cacheGis.ts (dipakai juga pemadat cache). `luas` masih
+// ikut di-select tapi SENGAJA tak dipakai sbg luas tampil sejak 2026-08-05 —
+// luas di GIS bersumber dari bidang (lihat lib/luasBidang.ts). Jangan dihapus
+// dari SELECT_COLS: ia cadangan saat bidang belum lengkap.
+type AsetRow = AsetGis
+type BidangRingkas = BidangGis
 const BIDANG_COLS = 'aset_id,jenis_hak,nomor_dokumen_kepemilikan,luas,latitude,longitude'
 type Status = StatusTanah
 type TitikFilter = 'semua' | 'bertitik' | 'belum'
@@ -129,6 +123,12 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   const [draftPoint, setDraftPoint] = useState<{ lat: number; lng: number } | null>(null)
   const [savingTitik, setSavingTitik] = useState(false)
   const [titikMsg, setTitikMsg] = useState('')
+  // Cache di browser (2026-10-04) — aturan & alasannya di cacheGis.ts.
+  // Selama `basi` (masih data tersimpan) seluruh aksi tulis dimatikan.
+  const { tersimpanPada, basi, tandaiSegar } = useCacheGis({
+    rows, bidangByAset, loading, error,
+    pulihkan: (r, b) => { setRows(r); setBidangByAset(b) },
+  })
 
   useEffect(() => {
     ;(async () => {
@@ -148,6 +148,9 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
       const { data: scope, error: scopeErr } = await supabase.rpc('fn_my_skpd_scope')
       if (scopeErr) {
         setError(`Gagal membaca scope SKPD (fn_my_skpd_scope): ${scopeErr.message}`)
+        // Data tersimpan yang mungkin sedang tampil ikut dibuang — peta tanpa
+        // label "tersimpan" di samping pesan gagal akan terbaca sbg data sah.
+        setRows([]); setBidangByAset({}); tandaiSegar()
         setLoading(false)
         return
       }
@@ -181,7 +184,6 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
         all.push(...(data as unknown as AsetRow[]))
         if (data.length < 1000) break
       }
-      setRows(all)
 
       // Bidang ditarik SEKALI untuk semua register, bukan 200 id per permintaan.
       // Dulu: 2.733 id dibagi 200 = 14 permintaan BERURUTAN demi 665 baris —
@@ -221,7 +223,11 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
         bidangTerakhir = batch[batch.length - 1].id
         if (batch.length < 1000) break
       }
+      // Register & bidang dipasang BERSAMAAN (dulu register lebih dulu) supaya
+      // tak ada saat register segar duduk di atas bidang milik data tersimpan.
+      setRows(all)
       setBidangByAset(bidangMap)
+      tandaiSegar()
       setLoading(false)
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -485,7 +491,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
     // seluruh modal lain di aplikasi, z-50/z-[60]).
     <div className="relative h-full w-full overflow-hidden isolate">
       <div className="absolute inset-0">
-        {loading ? (
+        {loading && !basi ? (
           <div className="h-full w-full bg-gray-100 animate-pulse flex items-center justify-center text-sm text-gray-400">Memuat peta...</div>
         ) : (
           <GisMap markers={markers} onSelect={setSelectedId}
@@ -517,6 +523,11 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
 
         <div className="card p-3 shadow-lg pointer-events-auto">
           <p className="text-sm font-semibold text-gray-800 mb-2">GIS Tanah</p>
+          {basi && (
+            <p className="text-[10px] text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2">
+              Data tersimpan pukul {jamCache(tersimpanPada)} — memuat data terbaru…
+            </p>
+          )}
           <input className="select-filter w-full text-sm mb-2" placeholder="Cari nama / NIBAR / kode..."
             value={search} onChange={e => setSearch(e.target.value)} />
           <SkpdCombobox lockToOperator onChangeSelection={sel => setSkpdSel({ skpdId: sel.skpdId, descendantIds: sel.descendantIds })} allowClear
@@ -556,7 +567,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-hide pointer-events-auto space-y-2 pr-0.5">
-          {loading ? (
+          {loading && !basi ? (
             <p className="text-xs text-gray-400 text-center py-8 bg-white/90 rounded-lg">Memuat...</p>
           ) : error ? (
             <div className="text-center py-6 px-3 bg-white/95 rounded-lg">
@@ -699,12 +710,15 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
                         className="btn-secondary text-xs flex-1 text-center">👁 Street View</a>
                     </div>
                   )}
+                  {basi && (
+                    <p className="text-[10px] text-amber-700">Masih menampilkan data tersimpan — tunggu data terbaru sebelum mengubah titik atau bidang.</p>
+                  )}
                   <div className="flex gap-2">
-                    <button onClick={() => { setPickMode(true); setDraftPoint(null); setTitikMsg('') }}
-                      className="btn-secondary text-xs flex-1">
+                    <button onClick={() => { setPickMode(true); setDraftPoint(null); setTitikMsg('') }} disabled={basi}
+                      className="btn-secondary text-xs flex-1 disabled:opacity-50">
                       {selected.latitude != null ? '✎ Ubah Titik Koordinat' : '📍 Set Titik Koordinat'}
                     </button>
-                    {adaTitikTampil && (
+                    {adaTitikTampil && !basi && (
                       <button onClick={hapusTitik} className="text-xs text-rose-600 hover:underline px-2 flex-shrink-0">
                         🗑 Hapus
                       </button>
@@ -723,7 +737,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
               {titikMsg && <p className="text-[11px] text-teal mt-1.5">{titikMsg}</p>}
             </div>
           </div>
-          <KelolaBidangPanel asetId={selected.id}
+          {!basi && <KelolaBidangPanel asetId={selected.id}
             asetDokumen={{ jenis_hak: selected.jenis_hak, nomor_dokumen_kepemilikan: selected.nomor_dokumen_kepemilikan, nama_dokumen_kepemilikan: selected.nama_dokumen_kepemilikan, tanggal_dokumen_kepemilikan: selected.tanggal_dokumen_kepemilikan }}
             onChanged={() => {
               supabase.from('aset_bidang_tanah').select(BIDANG_COLS).eq('aset_id', selected.id)
@@ -732,7 +746,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
               // supaya panel kanan & peta tak menampilkan data basi.
               supabase.from('aset').select(SELECT_COLS).eq('id', selected.id).single()
                 .then(({ data }) => { if (data) setRows(prev => prev.map(r => (r.id === selected.id ? (data as unknown as AsetRow) : r))) })
-            }} />
+            }} />}
         </div>
       )}
     </div>

@@ -19,7 +19,8 @@ import {
 } from './cacheDashboard'
 import { ViewTotalNilai, ViewJenis, ViewHapus, SectionSkeleton } from './DashboardView'
 
-async function uidSesi(): Promise<string | null> {
+// Diekspor: dipakai juga cache peta GIS Tanah (components/gis/PetaView.tsx).
+export async function uidSesi(): Promise<string | null> {
   try {
     // Gagal membaca sesi = cache tak dipakai (skeleton biasa), bukan error yang
     // perlu ditampilkan — cache ini cuma kenyamanan.

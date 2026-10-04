@@ -83,4 +83,14 @@ describe('cache Dashboard', () => {
     expect(bacaCache(rusak, 'u1', 'scan', sahScan)).toBeNull()
     expect(() => hapusSemuaCache(rusak)).not.toThrow()
   })
+
+  it('gagal menyimpan (kuota penuh) → salinan LAMA dibuang, bukan tertinggal', () => {
+    const s = penyimpan()
+    tulisCache(s, 'u1', 'scan', scan, T0)
+    const setAsli = s.setItem
+    s.setItem = () => { throw new Error('QuotaExceededError') }
+    tulisCache(s, 'u1', 'scan', { ...scan, caraNilai: { pengadaan: 1 } }, T0 + 1000)
+    s.setItem = setAsli
+    expect(bacaCache(s, 'u1', 'scan', sahScan, T0 + 2000)).toBeNull()
+  })
 })

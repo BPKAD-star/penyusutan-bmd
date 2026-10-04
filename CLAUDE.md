@@ -8066,6 +8066,30 @@ dipakai server & browser — dipindah apa adanya dari app/dashboard/page.tsx).
   ini cuma tambahan yang harus dijaga — hapus `Cadangan*`/`SimpanCacheDashboard`
   dari page.tsx, view-nya tetap dipakai.
 
+## GIS Tanah: data peta tersimpan di browser (2026-10-04)
+
+Pola SAMA dgn cache Dashboard di atas (sessionStorage, kunci per uid + versi, umur 10 menit,
+dihapus saat logout — kunci `'gis'` menumpang `cacheDashboard.ts`). **Tak ada migrasi.**
+Berkas: `components/gis/cacheGis.ts` (pemadat + pemeriksa bentuk, dikunci cacheGis.test.ts) ·
+`components/gis/useCacheGis.ts` (sisi browser) · `PetaView.tsx`.
+
+- Peta TETAP memuat ulang dari server tiap kali dibuka; data tersimpan hanya mengisi peta & daftar
+  selama ±2 detik itu, dgn label amber **"Data tersimpan pukul HH:MM — memuat data terbaru…"**.
+  Karena GIS komponen klien, ini terasa juga saat F5 (beda dgn Dashboard).
+- ⚠️ **Selama data tersimpan tampil, aksi TULIS dimatikan** (Set/Hapus Titik, Kelola Bidang) —
+  tulisan optimistis di atas baris lama bisa tertimpa data segar yang tiba sesudahnya.
+  `tandaiSegar()` dipanggil pemuat (sukses MAUPUN gagal); pembacaan cache yang selesai belakangan
+  tak boleh menimpa data segar (`segarRef`).
+- Cache diperbarui OTOMATIS tiap `rows`/`bidangByAset` berubah sesudah data segar tiba (efek di
+  hook), jadi seluruh jalur tulis ikut tanpa disunting satu-satu. Hasil gagal tak pernah disimpan.
+- ⚠️ **DIPADATKAN jadi tuple** — JSON berkunci admin se-kab ±4,8 MB di sessionStorage (UTF-16),
+  mepet kuota ±5 MB. Tuple: terukur produksi 2.792 register + 3.710 bidang = ±1,31 jt karakter
+  (±2,6 MB). Urutan tuple ↔ `VERSI_PAK_GIS` — ubah urutan/isi = naikkan versinya. Uji round-trip
+  membandingkan objek UTUH (sudah menangkap `tgl_perolehan` yang terlewat saat ditulis).
+- `tulisCache` kini MEMBUANG salinan lama kalau penyimpanan gagal (kuota), supaya yang tertinggal
+  tak lebih tua dari keadaan yang gagal disimpan — berlaku juga untuk Dashboard.
+- Register & bidang dari server kini dipasang BERSAMAAN (dulu register lebih dulu).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

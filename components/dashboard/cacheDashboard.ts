@@ -27,14 +27,22 @@ const AWALAN = 'bmd_dashboard_cache'
 // Hanya seksi yang digambar MURNI dari angka server. Cara Perolehan & Mutasi
 // sengaja tak ikut: kartunya menghitung "menunggu" sendiri di browser, jadi
 // versi tersimpannya akan menampilkan "0 menunggu · 100%" yang tampak sah.
-export type KunciCache = 'scan' | 'hapus'
+// `gis` = data peta GIS Tanah (components/gis/cacheGis.ts) — menumpang mesin &
+// penjagaan yang sama, termasuk dihapus saat logout.
+export type KunciCache = 'scan' | 'hapus' | 'gis'
 
 type Penyimpan = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>
 
 export const kunciStorage = (uid: string, k: KunciCache) => `${AWALAN}:${VERSI_CACHE}:${uid}:${k}`
 
 export function tulisCache(s: Penyimpan, uid: string, k: KunciCache, data: unknown, sekarang = Date.now()): void {
-  try { s.setItem(kunciStorage(uid, k), JSON.stringify({ t: sekarang, data })) } catch { /* penuh / diblokir: cache cuma kenyamanan */ }
+  try {
+    s.setItem(kunciStorage(uid, k), JSON.stringify({ t: sekarang, data }))
+  } catch {
+    // Penuh / diblokir: cache cuma kenyamanan. Salinan LAMA dibuang supaya yang
+    // tertinggal tak lebih tua dari keadaan yang baru saja gagal disimpan.
+    try { s.removeItem(kunciStorage(uid, k)) } catch { /* diblokir */ }
+  }
 }
 
 export function bacaCache<T>(
