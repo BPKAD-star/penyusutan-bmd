@@ -8090,6 +8090,31 @@ Berkas: `components/gis/cacheGis.ts` (pemadat + pemeriksa bentuk, dikunci cacheG
   tak lebih tua dari keadaan yang gagal disimpan — berlaku juga untuk Dashboard.
 - Register & bidang dari server kini dipasang BERSAMAAN (dulu register lebih dulu).
 
+## Materi kedua: "Entry Belanja Modal · Pengadaan" (2026-10-05, tanpa migrasi)
+
+Bagian Materi di Dokumen Sumber bertambah satu paparan (`entry-belanja-modal-pengadaan`, 19 slide,
+`components/materi/pengadaan/`): sampul · peta alur · tiga penekanan (BAST, foto, kodefikasi) ·
+jalur Non Konstruksi (kontrak → BAST → tambah barang → draft → foto → pratinjau/setujui) ·
+tiga slide Kodefikasi · jalur Konstruksi/KDP (alur, kartu barang & termin, tiga penjaga, kode KDP) ·
+salah entri · daftar periksa · penutup. Layar aplikasi **ditiru** di `pengadaan/bahan.tsx`
+(`KartuApp`, `Isian`, `Tombol`, `Lencana`, `FotoMini`); labelnya disalin dari Pengadaan.tsx /
+KonstruksiPengadaan.tsx / DokumenBastField.tsx — kalau label di aplikasi berganti, sesuaikan di sini.
+Slide bergambar layar diberi keterangan "Ilustrasi tampilan — data contoh" (`Contoh`); slide yang
+memuat data master sungguhan (kode KDP, Lap Top vs Laptop) tidak.
+
+- ⚠️ **Temuan saat menyusun: pencekalan kode tanpa masa manfaat BELUM menyeluruh.** Diukur ke
+  `admin_kodefikasi_bmd` 2026-10-05: kode AKTIF ber-`masa_manfaat_tahun` 0/NULL — Tanah 249, ATL 322,
+  KDP 5 (wajar); **Peralatan & Mesin 394** (1.3.2.09.04 Alat Persenjataan 343 · 1.3.2.06.04 30 ·
+  1.3.2.02.05 21); Gedung & JIJ **0**. 1.274 aset aktif 1.3.2 sudah berkode demikian → tidak disusutkan.
+  Tak ada kode yang menolaknya saat entry (`Pengadaan.tsx` cuma menampilkan "0 tahun"/"-" di panel
+  hasil), jadi satu-satunya penjaga = admin menonaktifkan kodenya (`aktif=false`) + ketelitian operator.
+  Slide "Periksa Masa Manfaat" menyebut angkanya BERTANGGAL — ukur ulang kalau materi dipakai lama sesudahnya.
+  Belum diputuskan: menonaktifkan ke-394 kode itu / menolak masa manfaat 0 di golongan 1.3.2–1.3.4.
+- Contoh "Lap Top" (1.3.2.10.01.02.002: aktif, 4 th, Rp1.500.000) vs "Laptop" (1.3.2.05.01.05.094:
+  NONAKTIF, 5 th, Rp500.000) dipakai karena nyata & menunjukkan bahwa nama mirip ≠ kode sama.
+- Memakai mesin yang sama dgn materi pertama (Export PDF = `window.print()`); didaftarkan di
+  `lib/materi.ts` + `components/materi/isiMateri.tsx`, dikunci lib/materi.test.ts (`jumlahSlide` 19).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

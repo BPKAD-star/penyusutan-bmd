@@ -13,6 +13,11 @@ import { Lra, Kir, Inventarisasi, AlurLki, GisTanah, Kendaraan } from './perkena
 import { DaftarBarang, Penyusutan, IpaAspek, Pelaporan, Admin } from './perkenalan/Menu3'
 import { Pembatas, Koordinat, Spesifikasi, Profil, Ipa } from './perkenalan/Kelengkapan'
 import { Tindak, Penutup } from './perkenalan/Penutup'
+import { Sampul as SampulPengadaan, PetaAlur, Penekanan } from './pengadaan/Pembuka'
+import { Kontrak, Bast, TambahBarang, Draft, Foto, Setujui } from './pengadaan/NonKonstruksi'
+import { KodeMenentukan, KodeMasaManfaat, KodeRekening } from './pengadaan/Kodefikasi'
+import { AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp } from './pengadaan/Konstruksi'
+import { TerlanjurSalah, DaftarPeriksa, TutupPengadaan } from './pengadaan/Penutup'
 
 export const ISI_MATERI: Record<string, ComponentType[]> = {
   'perkenalan-smart-asset': [
@@ -25,5 +30,15 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     Pembatas, Profil, Spesifikasi, Koordinat, Ipa,
     // Penutup
     Tindak, Penutup,
+  ],
+  'entry-belanja-modal-pengadaan': [
+    // Pembuka
+    SampulPengadaan, PetaAlur, Penekanan,
+    // Non Konstruksi: kontrak → BAST → barang (+ kodefikasi) → draft → foto → setujui
+    Kontrak, Bast, TambahBarang, KodeMenentukan, KodeMasaManfaat, KodeRekening, Draft, Foto, Setujui,
+    // Pekerjaan Konstruksi (KDP)
+    AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp,
+    // Penutup
+    TerlanjurSalah, DaftarPeriksa, TutupPengadaan,
   ],
 }

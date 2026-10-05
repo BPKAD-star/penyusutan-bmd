@@ -29,6 +29,13 @@ export const DAFTAR_MATERI: MateriConfig[] = [
     tanggal: '2026-10-04',
     jumlahSlide: 29,
   },
+  {
+    slug: 'entry-belanja-modal-pengadaan',
+    judul: 'Entry Belanja Modal: Cara Perolehan › Pengadaan',
+    ringkas: 'Entry Pengadaan Non Konstruksi dan Pekerjaan Konstruksi — BAST dan foto wajib diunggah, serta ketelitian memilih kodefikasi BMD.',
+    tanggal: '2026-10-05',
+    jumlahSlide: 19,
+  },
 ]
 
 export const cariMateri = (slug: string): MateriConfig | undefined =>
