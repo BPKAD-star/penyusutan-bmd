@@ -669,8 +669,6 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
             </div>
             <div className="space-y-2 text-xs">
               <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">SKPD</span><span className="text-gray-700 text-right">{selected.skpd?.nama || '-'}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Kode Barang</span><span className="text-gray-700 text-right">{selected.kode}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-gray-400 flex-shrink-0">Uraian Barang</span><span className="text-gray-700 text-right">{selected.uraian_barang || '-'}</span></div>
               {/* `whitespace-nowrap`: NIBAR 45 digit sengaja TIDAK dibiarkan
                   membungkus (permintaan user 2026-08-21) — panel sudah
                   dilebarkan ke 480px supaya muat sebaris. */}
