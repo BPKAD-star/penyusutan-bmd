@@ -66,7 +66,7 @@ const BIDANG_COLS = 'aset_id,jenis_hak,nomor_dokumen_kepemilikan,luas,latitude,l
 type Status = StatusTanah
 type TitikFilter = 'semua' | 'bertitik' | 'belum'
 type StatusFilter = 'semua' | Status
-type BidangFilter = 'semua' | 'berbidang' | 'belum'
+type LuasFilter = 'semua' | 'berluas' | 'belum'
 type Terkunci = { nibar: string; jenis_terakhir: string | null; periode_terakhir: string | null }
 
 const SELECT_COLS = 'id,nibar,kode,nama_barang,uraian_barang,spesifikasi_lainnya,alamat_detail,jenis_hak,nomor_dokumen_kepemilikan,nama_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,tgl_perolehan,nilai_perolehan,luas,latitude,longitude,skpd_id,skpd:skpd_id(nama)'
@@ -108,9 +108,11 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // query baru.
   const [titikFilter, setTitikFilter] = useState<TitikFilter>('semua')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('semua')
-  // "Belum berbidang" (2026-10-05): ada-tidaknya bidang, BEDA dari status
-  // "Belum Sertifikat" (dibaca dari jenis hak). Murni filter atas bidangByAset.
-  const [bidangFilter, setBidangFilter] = useState<BidangFilter>('semua')
+  // "Berluas / Belum berluas" (2026-10-05, ganti filter berbidang: bidang sudah
+  // terisi semua, tersisa luasnya). Aturan SAH sama dgn luas di GIS/Daftar Barang
+  // (lib/luasBidang.ts): ada bidang DAN semua bidangnya berluas. Tanpa bidang /
+  // sebagian bidang kosong luasnya = belum berluas. Murni filter atas bidangByAset.
+  const [luasFilter, setLuasFilter] = useState<LuasFilter>('semua')
   // ── Set/Hapus Titik Koordinat langsung dari peta ───────────────────────
   // Menggeser SEBAGIAN kecil "Edit Spesifikasi" (Daftar Barang Awal/Koreksi)
   // ke sini — KHUSUS titik koordinat, tak ada field lain. Pola & alasan
@@ -257,13 +259,13 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
       if (titikFilter === 'bertitik' && r.latitude == null) return false
       if (titikFilter === 'belum' && r.latitude != null) return false
       if (statusFilter !== 'semua' && statusOf(r) !== statusFilter) return false
-      if (bidangFilter !== 'semua') {
-        const punyaBidang = (bidangByAset[r.id] || []).length > 0
-        if (bidangFilter === 'berbidang' ? !punyaBidang : punyaBidang) return false
+      if (luasFilter !== 'semua') {
+        const berluas = luasBidangSah(ringkasDaftarBidang(bidangByAset[r.id] || []))
+        if (luasFilter === 'berluas' ? !berluas : berluas) return false
       }
       return true
     })
-  }, [rows, skpdSel, konsolidasi, search, titikFilter, statusFilter, bidangFilter, bidangByAset]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, skpdSel, konsolidasi, search, titikFilter, statusFilter, luasFilter, bidangByAset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-pilih kalau hasil pencarian (mis. dari deep-link) tepat 1 aset.
   useEffect(() => {
@@ -567,9 +569,9 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
               ))}
             </div>
             <div className="flex flex-wrap gap-1">
-              {([['semua', 'Semua Bidang'], ['berbidang', '🗺 Sudah Berbidang'], ['belum', '⚠ Belum Berbidang']] as [BidangFilter, string][]).map(([v, l]) => (
-                <button key={v} onClick={() => setBidangFilter(v)}
-                  className={`px-2 py-1 rounded-full text-[10px] font-medium border transition-colors ${bidangFilter === v ? 'bg-teal text-white border-teal' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+              {([['semua', 'Semua Luas'], ['berluas', '✓ Berluas'], ['belum', '⚠ Belum Berluas']] as [LuasFilter, string][]).map(([v, l]) => (
+                <button key={v} onClick={() => setLuasFilter(v)}
+                  className={`px-2 py-1 rounded-full text-[10px] font-medium border transition-colors ${luasFilter === v ? 'bg-teal text-white border-teal' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
                   {l}
                 </button>
               ))}
@@ -616,7 +618,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
                   {r.latitude != null
                     ? <span className="flex items-center gap-1 text-teal-600"><IkonTitikAda />Bertitik</span>
                     : <span className="text-gray-300">Blm titik</span>}
-                  {(bidangByAset[r.id] || []).length === 0 && <span className="text-amber-600">Blm berbidang</span>}
+                  {!luasBidangSah(ringkasDaftarBidang(bidangByAset[r.id] || [])) && <span className="text-amber-600">Blm berluas</span>}
                 </div>
               </button>
             )
