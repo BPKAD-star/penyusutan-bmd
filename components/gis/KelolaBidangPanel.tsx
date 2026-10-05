@@ -54,7 +54,17 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
   async function load() {
     setLoading(true)
     const { data } = await supabase.from('aset_bidang_tanah').select('*').eq('aset_id', asetId).order('created_at', { ascending: true })
-    setRows((data as Bidang[]) || [])
+    // Tanggal terbit TERBARU di atas, yang paling tua di bawah (permintaan user
+    // 2026-10-05). Tanpa tanggal → paling bawah. Tanggal 'YYYY-MM-DD' jadi
+    // bandingan teks sah; sort stabil menjaga urutan created_at untuk yang kembar.
+    const urut = [...((data as Bidang[]) || [])].sort((a, b) => {
+      const ta = a.tanggal_dokumen_kepemilikan, tb = b.tanggal_dokumen_kepemilikan
+      if (ta === tb) return 0
+      if (!ta) return 1
+      if (!tb) return -1
+      return ta < tb ? 1 : -1
+    })
+    setRows(urut)
     setLoading(false)
   }
 
