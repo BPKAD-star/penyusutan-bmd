@@ -15,6 +15,7 @@ import { luasBidangSah, ringkasDaftarBidang } from '@/lib/luasBidang'
 
 import { opsiDenganKosong } from '@/lib/asetFields'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import NominalInput from '@/shared/ui/NominalInput'
 
 type Bidang = {
   id: string; aset_id: string; nama_bidang: string | null; luas: number | null; jenis_hak: string | null
@@ -334,8 +335,12 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Luas (m²)</label>
-              <input type="number" min="0" step="0.01" className="select-filter w-full" value={form.luas}
-                onChange={e => setForm(f => ({ ...f, luas: e.target.value }))} />
+              {/* NominalInput, bukan <input type="number">: number menolak titik ribuan
+                  ("4.452" → "isi nilai valid"), operator terpaksa menghapus titiknya.
+                  Tampilan 4.452,5 (titik = ribuan, koma = desimal); state tetap string
+                  polos "4452.5" yang aman untuk parseFloat saat simpan. */}
+              <NominalInput className="select-filter w-full" value={form.luas}
+                onChange={luas => setForm(f => ({ ...f, luas }))} />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Jenis Hak</label>

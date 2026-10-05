@@ -8115,6 +8115,16 @@ memuat data master sungguhan (kode KDP, Lap Top vs Laptop) tidak.
 - Memakai mesin yang sama dgn materi pertama (Export PDF = `window.print()`); didaftarkan di
   `lib/materi.ts` + `components/materi/isiMateri.tsx`, dikunci lib/materi.test.ts (`jumlahSlide` 19).
 
+### Form bidang GIS: Luas memakai `NominalInput` (2026-10-05, tanpa migrasi)
+
+Operator mengetik "4.452" (titik = ribuan) di kolom **Luas (m²)** form bidang
+(`KelolaBidangPanel`) dan ditolak browser ("isi nilai valid, 4,45 atau 4,46") —
+`<input type="number" step="0.01">` menganggap titik sbg desimal & tak menerima
+format id-ID, sehingga titiknya harus dihapus manual. Kini `NominalInput`
+(shared/ui): tampilan "4.452,5" (titik ribuan, koma desimal, maks 2 desimal),
+state tetap string polos "4452.5" → `parseFloat` saat simpan & `String(b.luas)`
+saat edit tak berubah. Hanya Luas yang angka di form itu.
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`
