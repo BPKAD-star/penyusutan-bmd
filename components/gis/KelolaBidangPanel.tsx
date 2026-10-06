@@ -57,13 +57,25 @@ export default function KelolaBidangPanel({ asetId, asetDokumen, onChanged }: {
     const { data } = await supabase.from('aset_bidang_tanah').select('*').eq('aset_id', asetId).order('created_at', { ascending: true })
     // Tanggal terbit TERBARU di atas, yang paling tua di bawah (permintaan user
     // 2026-10-05). Tanpa tanggal → paling bawah. Tanggal 'YYYY-MM-DD' jadi
-    // bandingan teks sah; sort stabil menjaga urutan created_at untuk yang kembar.
+    // bandingan teks sah. Tanggal kembar → NOMOR sertipikat, Z/terbesar di atas
+    // & A/terkecil di bawah (permintaan user 2026-10-06); nomor teks bebas jadi
+    // dibandingkan numeric-aware ("66" di atas "9"), nomor kosong paling bawah.
+    // Pemecah seri terakhir `id` supaya urutannya total (sort tak dijamin stabil).
     const urut = [...((data as Bidang[]) || [])].sort((a, b) => {
       const ta = a.tanggal_dokumen_kepemilikan, tb = b.tanggal_dokumen_kepemilikan
-      if (ta === tb) return 0
-      if (!ta) return 1
-      if (!tb) return -1
-      return ta < tb ? 1 : -1
+      if (ta !== tb) {
+        if (!ta) return 1
+        if (!tb) return -1
+        return ta < tb ? 1 : -1
+      }
+      const na = (a.nomor_dokumen_kepemilikan || '').trim(), nb = (b.nomor_dokumen_kepemilikan || '').trim()
+      if (na !== nb) {
+        if (!na) return 1
+        if (!nb) return -1
+        const c = nb.localeCompare(na, undefined, { numeric: true, sensitivity: 'base' })
+        if (c !== 0) return c
+      }
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
     })
     setRows(urut)
     setLoading(false)

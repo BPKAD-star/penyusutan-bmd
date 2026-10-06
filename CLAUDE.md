@@ -8138,6 +8138,15 @@ format id-ID, sehingga titiknya harus dihapus manual. Kini `NominalInput`
 state tetap string polos "4452.5" → `parseFloat` saat simpan & `String(b.luas)`
 saat edit tak berubah. Hanya Luas yang angka di form itu.
 
+### Urutan "Dokumen Kepemilikan" di panel bidang GIS (2026-10-06, tanpa migrasi)
+
+Tabel sertipikat di panel kanan GIS (`KelolaBidangPanel.load`) diurut: **tanggal terbit
+terbaru di atas** → tanggal kembar: **nomor sertipikat Z/terbesar di atas, A/terkecil di
+bawah** → pemecah seri `id`. Nomor itu teks bebas, jadi dibandingkan numeric-aware
+(`localeCompare(..., {numeric:true})`: "66" di atas "9"); tanggal/nomor kosong selalu paling
+bawah. Pemecah seri `id` wajib — `Array.prototype.sort` tak dijamin stabil. Hanya tampilan;
+tab Daftar Bidang (urut SKPD → nama tanah → nama bidang) tak diubah (belum diminta).
+
 ## GIS Tanah: klik kecamatan → terang + filter titik (2026-10-06, tanpa migrasi)
 
 Permintaan user: garis batas 26 kecamatan di peta ternyata cuma gambar tile OSM
