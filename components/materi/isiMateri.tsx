@@ -8,7 +8,7 @@
 import type { ComponentType } from 'react'
 import { Sampul, Konteks, Siklus, PetaMenu } from './perkenalan/Pembuka'
 import { Ai } from './perkenalan/Ai'
-import { Dashboard, SaldoAwal, Rkbmd, Pembukuan, CaraPerolehan, Pengelolaan } from './perkenalan/Menu1'
+import { Dashboard, SaldoAwal, RekapSaldoAwal, Rkbmd, Pembukuan, CaraPerolehan, Pengelolaan } from './perkenalan/Menu1'
 import { Lra, Kir, Inventarisasi, AlurLki, GisTanah, Kendaraan } from './perkenalan/Menu2'
 import { DaftarBarang, Penyusutan, IpaAspek, Pelaporan, Admin } from './perkenalan/Menu3'
 import { Pembatas, Koordinat, Spesifikasi, Profil, Ipa } from './perkenalan/Kelengkapan'
@@ -26,7 +26,7 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     // Pembuka
     Sampul, Konteks, Siklus, PetaMenu, Ai,
     // Penjelasan per menu sidebar
-    Dashboard, SaldoAwal, Rkbmd, Pembukuan, CaraPerolehan, Pengelolaan, Lra, Kir,
+    Dashboard, SaldoAwal, RekapSaldoAwal, Rkbmd, Pembukuan, CaraPerolehan, Pengelolaan, Lra, Kir,
     Inventarisasi, AlurLki, GisTanah, Kendaraan, DaftarBarang, Penyusutan, IpaAspek, Pelaporan, Admin,
     // Yang perlu dicek pengurus barang
     Pembatas, Profil, Spesifikasi, Koordinat, Ipa,

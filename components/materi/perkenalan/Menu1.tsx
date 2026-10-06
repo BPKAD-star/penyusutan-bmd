@@ -5,41 +5,16 @@
 import { SlideSidebar } from '../SidebarMock'
 import { Poin, Catatan, Jejak, AlurLangkah, KartuMenu, Ikon, d } from '../bagian'
 import { MATERI } from './Pembuka'
+import { DashboardMock } from './DashboardMock'
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
-const RINGKAS: [string, number, number][] = [
-  ['Pengadaan', 70, 18], ['Hibah', 46, 10], ['Tukar Menukar', 12, 5], ['Hasil Inventarisasi', 24, 8], ['Perolehan Lainnya', 18, 6],
-]
-
+// Isi slide = tiruan layar Dashboard hidup (DashboardMock) — susunannya sama
+// dgn app/dashboard/page.tsx; penjelasannya ditaruh di judul seksi layarnya.
 export function Dashboard() {
   return (
-    <SlideSidebar masuk aktif="Dashboard" materi={MATERI} label="Menu · Dashboard" judul="Ringkasan sekilas">
-      <div className="absolute left-0 top-0 w-[450px] space-y-5">
-        <Poin jeda={250}>Ringkasan <b>jenis aset</b>: jumlah unit dan nilainya.</Poin>
-        <Poin jeda={450}><b>Cara perolehan</b>: pengadaan, hibah, dan lainnya.</Poin>
-        <Poin jeda={650}><b>Pengelolaan</b>: mutasi dan transfer yang sedang berjalan.</Poin>
-        <Poin jeda={850}><b>Penghapusan</b>: per sebab, lengkap dengan jumlah dan nilai.</Poin>
-        <Poin jeda={1050}>Semuanya dibaca <b>mulai dari statusnya sampai nilainya</b> — disetujui atau masih menunggu.</Poin>
-      </div>
-      <div className="mt-kanan absolute right-0 top-0 w-[470px] rounded-2xl border border-gray-200 bg-white shadow-2xl p-6" style={d(350)}>
-        <p className="text-[16px] font-bold text-navy">Cara Perolehan</p>
-        <div className="mt-4 space-y-3.5">
-          {RINGKAS.map(([nama, setuju, tunggu], i) => (
-            <div key={nama}>
-              <div className="flex justify-between text-[14px] text-gray-600 mb-1"><span>{nama}</span><span className="text-gray-400">nilai</span></div>
-              <div className="flex h-3.5 rounded-full bg-gray-100 overflow-hidden">
-                <div className="mt-lebar h-full bg-teal" style={{ width: `${setuju}%`, ...d(700 + i * 120) }} />
-                <div className="mt-lebar h-full bg-amber-400" style={{ width: `${tunggu}%`, ...d(900 + i * 120) }} />
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 flex gap-5 text-[13.5px] text-gray-500">
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-teal" />Disetujui</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400" />Menunggu persetujuan</span>
-        </div>
-        <p className="mt-4 text-[12px] text-gray-400">Ilustrasi tampilan — angka bukan data sungguhan.</p>
-      </div>
+    <SlideSidebar masuk aktif="Dashboard" materi={MATERI} label="Menu Aplikasi" judul="1. Dashboard (Ringkasan Sekilas)">
+      <DashboardMock />
+      <p className="absolute right-0 -bottom-5 text-[11px] text-gray-400">Ilustrasi tampilan — angka contoh, bukan data sungguhan.</p>
     </SlideSidebar>
   )
 }
@@ -47,11 +22,11 @@ export function Dashboard() {
 // ── Saldo Awal ──────────────────────────────────────────────────────────────
 export function SaldoAwal() {
   return (
-    <SlideSidebar aktif="Saldo Awal" materi={MATERI} label="Menu · Saldo Awal" judul="Titik awal register">
+    <SlideSidebar aktif="Saldo Awal" materi={MATERI} label="Menu Aplikasi" judul="2. Saldo Awal (titik awal register)">
       <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Poin jeda={250}><b>Rekapitulasi</b>: posisi barang akhir 2025 per jenis aset.</Poin>
         <Poin jeda={450}><b>Daftar Barang Awal</b>: barang saldo awal satu per satu.</Poin>
-        <Poin jeda={650}>Kelengkapan <b>spesifikasi barang tahun 2025 ke bawah</b> dilengkapi di Daftar Barang Awal.</Poin>
+        <Poin jeda={650}>Jika <b>belum terkunci</b> (tidak ada pengelolaan data barang di 2026), kelengkapan <b>spesifikasi barang tahun 2025 ke bawah</b> dilengkapi di Daftar Barang Awal.</Poin>
         <div className="mt-up pl-11" style={d(850)}><Jejak langkah={['Saldo Awal', 'Daftar Barang Awal', 'centang barang', 'Edit Spesifikasi']} /></div>
         <Catatan jeda={1100} ikon="grafik">
           <b>Harap diperhatikan</b> — kelengkapan data ini masuk komponen penilaian <b>IPA</b>.
@@ -69,10 +44,63 @@ export function SaldoAwal() {
   )
 }
 
+// ── Saldo Awal: rekapitulasi total ──────────────────────────────────────────
+// ANGKA STATIS dari layar Saldo Awal › Rekapitulasi (Rekap per Golongan, semua
+// SKPD, semua komptabel) — disalin user 2026-10-06. Sengaja BUKAN tarikan DB:
+// saldo awal itu foto BEKU akhir 2025 (aset_awal_2026), jadi angkanya memang
+// tak akan bergeser; dan tarikan DB per-pengguna cuma menampilkan cakupan SKPD
+// si pembuka paparan, bukan total se-kabupaten.
+const REKAP_SALDO: [string, string, string, string, string, string, string][] = [
+  ['1.3.1', 'Tanah', '2.732', '1.156.309.715.727,16', '–', '–', '1.156.309.715.727,16'],
+  ['1.3.2', 'Peralatan dan Mesin', '660.470', '1.405.199.655.505,97', '1.153.374.148.816,37', '130.723.851.936,86', '251.825.506.705,55'],
+  ['1.3.3', 'Gedung dan Bangunan', '8.350', '2.134.344.993.957,62', '449.825.289.390,70', '20.246.760.329,56', '1.684.519.704.566,93'],
+  ['1.3.4', 'Jalan, Jaringan dan Irigasi', '8.127', '3.778.566.895.300,36', '2.441.033.217.008,63', '103.741.394.607,50', '1.337.533.678.291,94'],
+  ['1.3.5', 'Aset Tetap Lainnya', '173.929', '173.260.204.231,82', '–', '–', '173.260.204.231,82'],
+  ['1.3.6', 'Konstruksi Dalam Pengerjaan', '233', '195.710.710.149,00', '–', '–', '195.710.710.149,00'],
+  ['1.5.3', 'Aset Tidak Berwujud', '120', '17.239.249.988,00', '10.100.715.667,93', '1.246.543.175,63', '7.138.534.320,07'],
+  ['1.5.4', 'Aset Lain-Lain', '50.479', '124.500.266.399,63', '19.064.330.821,04', '187.458.607,59', '105.435.935.578,59'],
+]
+const TOTAL_SALDO = ['904.440', '8.985.131.691.259,56', '4.073.397.701.704,67', '256.146.008.657,14', '4.911.733.989.571,06']
+const KOLOM_SALDO = ['Kode Jenis', 'Uraian', 'Kuantitas', 'Harga Perolehan', 'Akumulasi Penyusutan (Saldo Awal)', 'Beban Penyusutan / Smt', 'Nilai Buku']
+
+export function RekapSaldoAwal() {
+  return (
+    <SlideSidebar aktif="Saldo Awal/Rekapitulasi" materi={MATERI} label="Saldo Awal" judul="Rekapitulasi saldo awal 2026">
+      <div className="mt-up rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden" style={d(250)}>
+        <div className="px-4 py-2 border-b border-gray-100 bg-gray-50 flex items-center gap-3 text-[12px] text-gray-500">
+          <span className="px-2.5 py-1 rounded-md bg-white border border-gray-200 font-semibold text-gray-700">Rekap per Golongan</span>
+          Posisi saldo awal 2026 (baseline e-BMD / akhir 2025) · semua SKPD · semua komptabel
+        </div>
+        <table className="w-full text-[11px] tabular-nums">
+          <thead>
+            <tr className="border-b border-gray-100 text-[9.5px] uppercase tracking-wide text-gray-500">
+              {KOLOM_SALDO.map((k, i) => <th key={k} className={`px-2 py-2 font-semibold ${i < 2 ? 'text-left' : 'text-right'}`}>{k}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {REKAP_SALDO.map((r, i) => (
+              <tr key={r[0]} className="mt-in border-b border-gray-50" style={d(450 + i * 90)}>
+                {r.map((c, j) => <td key={j} className={`px-2 py-2 ${j < 2 ? 'text-left text-gray-700' : 'text-right text-gray-800'} ${c === '–' ? 'text-gray-300' : ''}`}>{c}</td>)}
+              </tr>
+            ))}
+            <tr className="mt-in bg-gray-50 font-bold text-gray-900" style={d(1300)}>
+              <td className="px-2 py-2 text-left text-[10px]">TOTAL</td><td />
+              {TOTAL_SALDO.map((c, j) => <td key={j} className={`px-2 py-2 text-right ${j === 4 ? 'text-teal' : ''}`}>{c}</td>)}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-in mt-3 text-[14px] text-gray-500 leading-snug" style={d(1500)}>
+        <b className="text-navy">Foto beku akhir 2025</b> — tidak bergeser oleh transaksi 2026. Dari sini seluruh perjalanan barang di 2026 dimulai.
+      </p>
+    </SlideSidebar>
+  )
+}
+
 // ── RKBMD ───────────────────────────────────────────────────────────────────
 export function Rkbmd() {
   return (
-    <SlideSidebar aktif="RKBMD" materi={MATERI} label="Menu · RKBMD" judul="Standar harga dan perencanaan">
+    <SlideSidebar aktif="RKBMD" materi={MATERI} label="Menu Aplikasi" judul="3. RKBMD (Standar harga dan perencanaan)">
       <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Poin jeda={250}><b>Standar Harga</b>: SSH, HSPK, ASB, SBU, dan SBSK — diusulkan SKPD, ditelaah, lalu jadi acuan bersama.</Poin>
         <Poin jeda={450}><b>Perencanaan</b> (RKBMD): usulan kebutuhan pengadaan, pemeliharaan, pemanfaatan, pemindahtanganan, dan penghapusan.</Poin>
@@ -102,7 +130,7 @@ export function Rkbmd() {
 // ── Pembukuan ───────────────────────────────────────────────────────────────
 export function Pembukuan() {
   return (
-    <SlideSidebar aktif="Pembukuan" materi={MATERI} label="Menu · Pembukuan" judul="Menu utama aplikasi">
+    <SlideSidebar aktif="Pembukuan" materi={MATERI} label="Menu Aplikasi" judul="4. Pembukuan (hidangan utama aplikasi)">
       <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Poin jeda={250}>Tempat <b>semua peristiwa barang dicatat</b>: masuk, dipakai, dipindah, dikoreksi, dihapus.</Poin>
         <Poin jeda={450}>Tiap catatan <b>berdokumen</b> (BAST/SK) dan tercatat siapa yang mengentrinya.</Poin>
@@ -122,7 +150,7 @@ export function Pembukuan() {
 // ── Cara Perolehan ──────────────────────────────────────────────────────────
 export function CaraPerolehan() {
   return (
-    <SlideSidebar aktif="Pembukuan/Cara Perolehan" materi={MATERI} label="Pembukuan · Cara Perolehan" judul="Barang masuk ke register">
+    <SlideSidebar aktif="Pembukuan/Cara Perolehan" materi={MATERI} label="Pembukuan" judul="Cara Perolehan (Barang masuk ke register)">
       <div className="absolute left-0 top-0 w-[450px] space-y-4">
         <Poin jeda={250}>Lima menu: <b>Pengadaan, Hibah, Tukar Menukar, Hasil Inventarisasi, Perolehan Lainnya</b>.</Poin>
         <Poin jeda={450}><b>Wajib melampirkan dokumen sumber (BAST)</b> dan <b>foto barang</b> sebelum disetujui.</Poin>
@@ -157,7 +185,7 @@ const PENGELOLAAN = ['Penggunaan', 'Penerimaan Internal', 'Pengeluaran Internal'
 
 export function Pengelolaan() {
   return (
-    <SlideSidebar aktif="Pembukuan/Pengelolaan" materi={MATERI} label="Pembukuan · Pengelolaan" judul="Menu utama pengelolaan BMD">
+    <SlideSidebar aktif="Pembukuan/Pengelolaan" materi={MATERI} label="Pembukuan" judul="Pengelolaan (tempat pusingnya pengurus barang)">
       <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Poin jeda={250}>Pengurus barang <b>bisa melaksanakannya sendiri</b>, dengan pantauan dari admin.</Poin>
         <Poin jeda={450}>Tiap peristiwa dicatat dengan dokumen dasarnya, lalu otomatis menggerakkan <b>Daftar Barang, Penyusutan, dan Laporan</b>.</Poin>

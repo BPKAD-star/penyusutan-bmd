@@ -9,7 +9,7 @@ import { PetaBesar } from './Kelengkapan'
 // ── LRA ─────────────────────────────────────────────────────────────────────
 export function Lra() {
   return (
-    <SlideSidebar aktif="Pembukuan/LRA" materi={MATERI} label="Pembukuan · LRA" judul="Belanja modal lawan entry">
+    <SlideSidebar aktif="Pembukuan/LRA" materi={MATERI} label="Pembukuan" judul="LRA - Belanja Modal vs Entry BMD">
       <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Catatan jeda={250} ikon="lampu">
           <b>Posisi saat ini:</b> data belanja masih berupa <b>impor</b>, belum terintegrasi (<i>not integrated yet</i>).
@@ -49,7 +49,7 @@ const RUANGAN: [string, string[]][] = [
 
 export function Kir() {
   return (
-    <SlideSidebar aktif="Pembukuan/KIR" materi={MATERI} label="Pembukuan · KIR" judul="Ruangan apa, isi barangnya apa saja">
+    <SlideSidebar aktif="Pembukuan/KIR" materi={MATERI} label="Pembukuan" judul="KIR - Ruangan apa, isi barangnya apa aja">
       <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Poin jeda={250}>Daftar <b>ruangan per SKPD</b>, lengkap dengan penanggung jawab ruangan.</Poin>
         <Poin jeda={450}>Isi tiap ruangan: <b>barang apa saja</b> yang ada di dalamnya.</Poin>
@@ -87,7 +87,7 @@ const TAHAP_INV: { ikon: NamaIkon; judul: string; isi: string; sorot?: boolean }
 
 export function Inventarisasi() {
   return (
-    <SlideSidebar aktif="Inventarisasi" materi={MATERI} label="Menu · Inventarisasi" judul="Dari lembar kerja sampai tindak lanjut">
+    <SlideSidebar aktif="Inventarisasi" materi={MATERI} label="Menu Aplikasi" judul="5. Inventarisasi - LKI sampai Tindak Lanjut">
       <div className="grid grid-cols-4 gap-4 mt-2">
         {TAHAP_INV.map((t, i) => (
           <div key={t.judul} className={`mt-up relative rounded-2xl border bg-white shadow-lg p-6 h-[250px] ${t.sorot ? 'border-teal ring-2 ring-teal/30' : 'border-gray-200'}`} style={d(250 + i * 200)}>
@@ -144,7 +144,7 @@ export function AlurLki() {
 // ── GIS Tanah ───────────────────────────────────────────────────────────────
 export function GisTanah() {
   return (
-    <SlideSidebar aktif="GIS Tanah" materi={MATERI} label="Menu · GIS Tanah" judul="Satu tanah, satu titik di peta">
+    <SlideSidebar aktif="GIS Tanah" materi={MATERI} label="Menu Aplikasi" judul="6. GIS - satu data tanah">
       <div className="absolute left-0 top-0 w-[450px] space-y-4">
         <Poin jeda={250} ikon="daftar"><b>Register tanah</b> apa yang ada di SKPD.</Poin>
         <Poin jeda={420} ikon="pin"><b>Titik koordinatnya</b> di mana.</Poin>
@@ -169,7 +169,7 @@ const CARI = ['Merk / Tipe', 'No. Polisi', 'No. Rangka', 'No. Mesin', 'No. BPKB'
 
 export function Kendaraan() {
   return (
-    <SlideSidebar aktif="Kendaraan" materi={MATERI} label="Menu · Kendaraan" judul="Cari dengan identitas apa saja">
+    <SlideSidebar aktif="Kendaraan" materi={MATERI} label="Menu Aplikasi" judul="7. Kendaraan - satu data kendaraan">
       <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <p className="mt-in text-[19px] text-gray-600" style={d(250)}>Cari kendaraan dinas lewat:</p>
         <div className="mt-up flex flex-wrap gap-2.5" style={d(350)}>
