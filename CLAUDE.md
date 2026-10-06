@@ -5903,6 +5903,15 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   awal. Tak butuh index baru di ketiganya: sort node-nya memang sudah ada (tak
   ada index yang melayani `nilai_perolehan`), jadi nambah kunci di sort yang
   sama ~gratis.
+- **Export Daftar Barang TANAH (1.3.1) membawa kolom "Titik Koordinat"** (permintaan
+  user 2026-10-06), tepat sesudah Lokasi & sebelum Luas, **hanya di Excel** — layar
+  tak berubah (di layar tetap ikon titik di sel Lokasi). Posisinya di `EXPORT_ORDER`,
+  keanggotaan cuma di `EXPORT_COLS['1.3.1']`, isinya di KEDUA closure `cell()` (Export
+  biasa & Export Audit) lewat `teksKoordinat()`: teks `"lat, lng"` dari
+  `aset.latitude/longitude` register (tanda minus latitude Kediri utuh), kosong kalau
+  salah satunya tak ada. Titik cadangan dari bidang GIS SENGAJA tak ikut — kolom ini
+  menyatakan titik REGISTER. Tanpa migrasi (`fn_daftar_barang` sudah membawa kolomnya
+  sejak 20260925_06; belum jalan → sel kosong, bukan error).
 - **Menu Kendaraan juga urut KODE BARANG A→Z** (permintaan user 2026-10-06), sama
   dgn Daftar Barang/Penyusutan: kode → nilai perolehan turun → `id`. Diurutkan di
   KLIEN sesudah semua halaman terkumpul; query server TETAP `nilai_perolehan, id`

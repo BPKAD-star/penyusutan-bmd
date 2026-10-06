@@ -174,6 +174,9 @@ const COL_META: Record<string, { header: string; align?: 'right' | 'center' }> =
   // NIBAR & kode register ditumpuk di sel Nama Barang). Ada di sini supaya ikut
   // satu sistem urutan yang sama dgn kolom lain (EXPORT_ORDER).
   nibar: { header: 'NIBAR' }, kode_register: { header: 'Kode Register' },
+  // EXPORT-ONLY & hanya Tanah (1.3.1) — permintaan user 2026-10-06: titik
+  // koordinat register di Excel, tidak di layar (layar cuma ikon di sel Lokasi).
+  koordinat: { header: 'Titik Koordinat' },
 }
 // ── Kolom TAMPILAN LAYAR (diringkas 2026-07-19) ─────────────────────────────
 // - `uraian` TIDAK jadi kolom sendiri lagi → ditumpuk di bawah `kode` (spt nibar
@@ -232,12 +235,16 @@ const colsFor = (golongan: string) => kolomLayar(golongan)
 const EXPORT_ORDER = [
   'skpd', 'kode', 'uraian', 'nibar', 'kode_register', 'nama',
   'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb',
-  'lokasi', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
+  'lokasi', 'koordinat', 'luas', 'hak', 'no_sertifikat', 'tgl_sertifikat', 'atas_nama',
   'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan',
 ]
 // Dua kolom identitas ini SELALU ikut, apa pun golongannya — sengaja di luar
 // daftar per-golongan supaya tak bisa kelupaan di salah satu entri.
 const EXPORT_ALWAYS = ['nibar', 'kode_register']
+// "lat, lng" sbg TEKS (tanda minus latitude Kediri ≈ −7,8 harus utuh; sel angka
+// juga tak punya tempat untuk dua nilai). Kosong kalau salah satunya tak ada.
+const teksKoordinat = (r: { latitude?: number | null; longitude?: number | null }) =>
+  r.latitude != null && r.longitude != null ? `${r.latitude}, ${r.longitude}` : ''
 // Kondisi (2026-09-28) ditambahkan ke SEMUA golongan — kolom itu berlaku
 // universal, sama seperti di layar (`KOLOM_GOLONGAN`, lib/kolomBarang.ts).
 const EXPORT_COLS: Record<string, string[]> = {
@@ -246,7 +253,7 @@ const EXPORT_COLS: Record<string, string[]> = {
   // sementara satu tanah bisa punya banyak sertifikat, dan yang lengkap per
   // bidang sudah ada di GIS Tanah → Daftar Bidang (+ Export-nya). Golongan
   // lain (mis. 1.5.4) tetap membawanya.
-  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'luas', 'hak', 'tgl', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
+  '1.3.1': ['skpd', 'kode', 'uraian', 'nama', 'spesifikasi', 'lokasi', 'koordinat', 'luas', 'hak', 'tgl', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
   // + No. Polisi/Rangka/Mesin/BPKB + Lokasi (2026-09-28, sama dgn layar).
   '1.3.2': ['skpd', 'kode', 'uraian', 'nama', 'merek', 'spesifikasi', 'nopol', 'rangka', 'mesin', 'bpkb', 'lokasi', 'tgl', 'komptabel', 'nilai', 'asal_usul', 'kondisi', 'penggunaan', 'keterangan'],
   // + Luas, Spesifikasi Lainnya DICABUT (2026-09-28, sama dgn layar — lihat
@@ -903,6 +910,7 @@ export default function DaftarBarangPage() {
           case 'merek': return r.merek_tipe || ''
           case 'spesifikasi': return r.spesifikasi_lainnya || ''
           case 'lokasi': return r.alamat_detail || ''
+          case 'koordinat': return teksKoordinat(r)
           case 'komptabel': return r.intra_ekstra || ''
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
@@ -987,6 +995,7 @@ export default function DaftarBarangPage() {
           case 'merek': return r.merek_tipe || ''
           case 'spesifikasi': return r.spesifikasi_lainnya || ''
           case 'lokasi': return r.alamat_detail || ''
+          case 'koordinat': return teksKoordinat(r)
           case 'komptabel': return r.intra_ekstra || ''
           case 'tgl': return r.tgl_perolehan || ''
           case 'nilai': return r.nilai_perolehan
