@@ -28,6 +28,7 @@ import { JENIS_PEMANFAATAN_LABEL } from '@/lib/pemanfaatan'
 import { formatRupiah2 } from '@/lib/export'
 import PrintLabelButton from '@/components/kibar/PrintLabelButton'
 import PrintPageButton from '@/components/kibar/PrintPageButton'
+import { BannerPengganti, headerBukaKunci } from '@/components/kibar/BannerPengganti'
 
 export const dynamic = 'force-dynamic'
 // ⚠️ `force-dynamic` SAJA TIDAK CUKUP — sudah terbukti di produksi 2026-09-11:
@@ -205,6 +206,8 @@ export default async function KibarPage({ params, searchParams }: {
   //   • AUDIT (?mode=audit) — seluruh catatan ledger, yang dianulir dicoret.
   // Bagian I–XII IDENTIK di kedua mode; hanya daftar riwayat di dasar kartu yang
   // berbeda. Bawaannya laporan karena kartu ini yang dipindai dari QR & dicetak.
+  // Kartu tempat barang ini dibatalkan lewat Buka Kunci (lib/kibarPengganti.ts).
+  const headerBukaKunciAset = headerBukaKunci(trx)
   const modeAudit = searchParams?.mode === 'audit'
   const riwayat = modeAudit ? trx : riwayatLaporan(trx)
   const firstOf = (pred: (j: string) => boolean) => berlaku.find(t => pred(t.jenis)) || null
@@ -307,6 +310,12 @@ export default async function KibarPage({ params, searchParams }: {
         }} />
         <PrintPageButton nibar={aset.nibar || ''} namaBarang={aset.nama_barang || uraianBarang || null} />
       </div>
+
+      {/* Barang yang dibatalkan lewat Buka Kunci → tunjuk penggantinya (NIBAR
+          baru hasil setujui ulang). Hanya untuk barang yang sudah tak aktif. */}
+      {aset.status !== 'aktif' && headerBukaKunciAset && (
+        <BannerPengganti admin={admin} asetId={aset.id} headerId={headerBukaKunciAset} />
+      )}
 
       <div id="kibar-print-area" className="max-w-3xl mx-auto bg-white border border-gray-300 rounded-lg overflow-hidden">
 

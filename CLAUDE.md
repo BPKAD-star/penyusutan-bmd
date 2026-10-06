@@ -9636,3 +9636,23 @@ panjang pun ditolak kalau pernah bocor (mis. "@dimas04"). Terjemahannya SATU tem
 dalam kurung). Form admin & API reset dinaikkan 6 → 8 karakter supaya sama dgn Profil.
 ⚠️ Aturan `characters` (huruf besar/kecil/angka/simbol) hidup di pengaturan Auth Supabase,
 TAK terbaca dari kode/MCP — petunjuknya disengaja berbunyi "sebaiknya", bukan "wajib".
+
+## KIBAR barang yang dibuka kuncinya menunjuk PENGGANTINYA (2026-10-06)
+
+Keputusan user ("jalan tengah"): Buka Kunci → Setujui ulang di Cara Perolehan
+TETAP menerbitkan barang & NIBAR BARU (audit utuh, satu aturan). Yang ditambal
+cuma kerugian nyatanya: label QR / KIBAR yang sudah tercetak menunjuk barang mati.
+KIBAR barang ber-status bukan `aktif` yang dibatalkan lewat `batal_<jenis>` Buka
+Kunci kini menampilkan banner amber (layar saja, tak tercetak) berisi NIBAR baru.
+**Tak ada migrasi, tak menulis apa pun.**
+
+- `lib/kibarPengganti.ts` (`cariPengganti`, dikunci test) + `components/kibar/BannerPengganti.tsx`.
+- Pencocokan lewat KARTU yang sama (`header_id`): ledger kartu dipotong jadi blok
+  batal (satu Buka Kunci) & blok terbit (satu Setujui); pengganti = blok terbit
+  PERTAMA sesudah blok batal barang itu. Rantai beberapa kali buka kunci tersambung
+  lewat tautan KIBAR berikutnya, tak dikejar sekaligus.
+- **"Pasti" hanya bila jumlah barang berkode sama tak berubah** — dipasangkan
+  menurut urutan NIBAR. Jumlah/kode berubah saat dibuka kunci → daftar kandidat,
+  TIDAK menebak. KDP: banyak baris termin per barang dihitung satu barang.
+- `JENIS_TERBIT`/`JENIS_BUKA_KUNCI` mencakup kelima Cara Perolehan + `akumulasi_kdp`.
+  Menu Cara Perolehan baru yang punya Buka Kunci → tambahkan jenisnya di sana.
