@@ -51,6 +51,8 @@ import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
 import { jamCache } from '@/components/dashboard/cacheDashboard'
 import type { AsetGis, BidangGis } from '@/components/gis/cacheGis'
 import { useCacheGis } from '@/components/gis/useCacheGis'
+import { useKecamatan } from '@/components/gis/useKecamatan'
+import { KODE_LUAR_BATAS } from '@/lib/gisKecamatan'
 
 const GisMap = dynamic(() => import('@/components/gis/GisMap'), {
   ssr: false, loading: () => <div className="absolute inset-0 bg-gray-100 animate-pulse" />,
@@ -249,7 +251,7 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // Filter INSTAN di client (SKPD + cari) — dataset sudah dimuat sekali di atas.
   // `idsKonsolidasi` mempersempit balik ke SATU SKPD saat centang Konsolidasi
   // dimatikan — lihat lib/konsolidasiSkpd.ts.
-  const filtered = useMemo(() => {
+  const filteredDasar = useMemo(() => {
     const ids = idsKonsolidasi(skpdSel.skpdId, skpdSel.descendantIds, konsolidasi)
     const scope = ids ? new Set(ids) : null
     const q = search.trim().toLowerCase()
@@ -266,6 +268,29 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
       return true
     })
   }, [rows, skpdSel, konsolidasi, search, titikFilter, statusFilter, luasFilter, bidangByAset]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Kecamatan (2026-10-06): kecamatan dari TITIK di peta (useKecamatan). Sengaja
+  // diterapkan SESUDAH filter lain supaya angka per kecamatan di pemilih mengikuti
+  // filter yang sedang aktif. Register tanpa titik tak punya kecamatan → ikut
+  // tersaring begitu kecamatan dipilih (tak bisa dinilai ≠ boleh lolos).
+  const { fc: kecFc, galat: kecGalat, terpilih: kecSel, setTerpilih: setKecSel, kecOf } = useKecamatan(rows, bidangByAset)
+  // Ganti kecamatan → lepas tanah terpilih: KecamatanLayer terbang ke kecamatan,
+  // sedangkan FocusActive terbang ke tanah aktif — dua-duanya sekaligus, yang
+  // terakhir menang & peta melompat ke tanah yang tak diminta.
+  const pilihKecamatan = (k: string | null) => { setKecSel(k); setSelectedId(null) }
+  const cacahKec = useMemo(() => {
+    const c: Record<string, number> = {}
+    for (const r of filteredDasar) {
+      if (!kecOf.has(r.id)) continue
+      const k = kecOf.get(r.id) ?? KODE_LUAR_BATAS
+      c[k] = (c[k] || 0) + 1
+    }
+    return c
+  }, [filteredDasar, kecOf])
+  const filtered = useMemo(() => {
+    if (!kecSel) return filteredDasar
+    return filteredDasar.filter(r => kecOf.has(r.id) && (kecOf.get(r.id) ?? KODE_LUAR_BATAS) === kecSel)
+  }, [filteredDasar, kecSel, kecOf])
 
   // Auto-pilih kalau hasil pencarian (mis. dari deep-link) tepat 1 aset.
   useEffect(() => {
@@ -509,7 +534,8 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
         ) : (
           <GisMap markers={markers} onSelect={setSelectedId}
             pickMode={pickMode} draftPoint={draftPoint}
-            onPick={pickMode ? (lat, lng) => setDraftPoint({ lat, lng }) : undefined} />
+            onPick={pickMode ? (lat, lng) => setDraftPoint({ lat, lng }) : undefined}
+            kecamatan={kecFc} kecTerpilih={kecSel === KODE_LUAR_BATAS ? null : kecSel} onKecamatan={pilihKecamatan} />
         )}
       </div>
 
@@ -554,6 +580,22 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
               Konsolidasi (+ seluruh unit di bawahnya)
             </label>
           )}
+
+          {/* Kecamatan (2026-10-06): sama dgn klik batas kecamatan di peta —
+              pemilih ini jalan keluar bagi HP & cara membatalkan pilihan. */}
+          {kecFc && (
+            <div className="mt-2">
+              <select className="select-filter w-full text-sm" value={kecSel ?? ''} onChange={e => pilihKecamatan(e.target.value || null)}>
+                <option value="">Semua kecamatan</option>
+                {kecFc.features.map(f => (
+                  <option key={f.properties.kode} value={f.properties.kode}>{f.properties.nama} ({cacahKec[f.properties.kode] || 0})</option>
+                ))}
+                <option value={KODE_LUAR_BATAS}>⚠ Titik di luar batas kecamatan ({cacahKec[KODE_LUAR_BATAS] || 0})</option>
+              </select>
+              {kecSel && <p className="text-[10px] text-gray-500 mt-1">Hanya tanah yang sudah bertitik; yang belum bertitik tak ikut terfilter per kecamatan.</p>}
+            </div>
+          )}
+          {kecGalat && <p className="text-[10px] text-amber-700 mt-1">Batas kecamatan gagal dimuat ({kecGalat}) — peta tetap berfungsi tanpa filter kecamatan.</p>}
 
           {/* Filter titik & status (permintaan user 2026-09-26) — murni filter
               di data yang sudah dimuat, bukan query baru. "Belum titik" utk

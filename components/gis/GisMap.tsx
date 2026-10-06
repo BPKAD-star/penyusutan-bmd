@@ -30,6 +30,8 @@ import { useEffect, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, ZoomControl, LayersControl, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import KecamatanLayer from '@/components/gis/KecamatanLayer'
+import type { KoleksiKecamatan } from '@/lib/gisKecamatan'
 
 const DEFAULT_CENTER: [number, number] = [-7.82, 111.94] // sekitar Kab. Kediri
 
@@ -91,7 +93,7 @@ function FocusActive({ markers }: { markers: GisMarker[] }) {
   return null
 }
 
-export default function GisMap({ markers, onSelect, pickMode = false, draftPoint = null, onPick }: {
+export default function GisMap({ markers, onSelect, pickMode = false, draftPoint = null, onPick, kecamatan = null, kecTerpilih = null, onKecamatan }: {
   markers: GisMarker[]
   onSelect: (id: string) => void
   // Ketiganya opsional & dipakai BERSAMA utk fitur "Set Titik Koordinat" —
@@ -100,6 +102,11 @@ export default function GisMap({ markers, onSelect, pickMode = false, draftPoint
   pickMode?: boolean
   draftPoint?: { lat: number; lng: number } | null
   onPick?: (lat: number, lng: number) => void
+  // Lapisan batas kecamatan (2026-10-06) — opsional; tanpa `onKecamatan` layer
+  // tak digambar. Dimatikan interaksinya selama `pickMode` (klik = menaruh titik).
+  kecamatan?: KoleksiKecamatan | null
+  kecTerpilih?: string | null
+  onKecamatan?: (kode: string | null) => void
 }) {
   const initialCenter = useMemo<[number, number]>(() => {
     const active = markers.find(m => m.active)
@@ -122,6 +129,9 @@ export default function GisMap({ markers, onSelect, pickMode = false, draftPoint
         </LayersControl.BaseLayer>
       </LayersControl>
       <ZoomControl position="bottomright" />
+      {kecamatan && onKecamatan && (
+        <KecamatanLayer fc={kecamatan} terpilih={kecTerpilih} onPilih={onKecamatan} interaktif={!pickMode} />
+      )}
       {markers.map((m, i) => (
         // `bubblingMouseEvents={false}`: Leaflet Marker default-nya MENERUSKAN
         // klik ke peta juga (bukan cuma marker-nya) — tanpa ini, mengklik

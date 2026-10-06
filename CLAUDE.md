@@ -8125,6 +8125,39 @@ format id-ID, sehingga titiknya harus dihapus manual. Kini `NominalInput`
 state tetap string polos "4452.5" → `parseFloat` saat simpan & `String(b.luas)`
 saat edit tak berubah. Hanya Luas yang angka di form itu.
 
+## GIS Tanah: klik kecamatan → terang + filter titik (2026-10-06, tanpa migrasi)
+
+Permintaan user: garis batas 26 kecamatan di peta ternyata cuma gambar tile OSM
+(tak bisa diklik). Kini ada lapisan poligon sungguhan: klik satu kecamatan →
+ia terang, wilayah lain digelapkan (topeng 45%), label nama kecamatan tampil,
+dan titik, daftar kiri, & statistik terfilter ke kecamatan itu. Klik lagi /
+pilih "Semua kecamatan" di panel kiri → kembali. Berkas: `lib/gisKecamatan.ts`
+(PIP + topeng, dikunci lib/gisKecamatan.test.ts), `components/gis/
+KecamatanLayer.tsx` (gambar + klik), `useKecamatan.ts` (muat + kecamatan per
+tanah), `public/gis/kecamatan-kediri.geojson`.
+
+- **Data = Batas Administrasi Kemendagri/BIG 2023** (repo Alf-Anas/batas-
+  administrasi-indonesia, `Kecamatan SHP`), disaring `KODE_KK=35.06`: **TEPAT 26**
+  (35.06.01–26), sama dgn daftar user — dikunci test. Disederhanakan 0,0002°
+  (≈ 20 m), 5 desimal: 133 KB dari ±2,2 MB, dimuat lazy lewat fetch (bukan
+  di-bundle). ⚠️ Simplifikasi 20 m cukup untuk "tanah ini di kecamatan mana",
+  TAK cukup untuk sengketa batas — jangan dipakai menilai tanah persis di garis.
+- ⚠️ **Kecamatan sebuah tanah = POLIGON × TITIK DI PETA**, bukan `wilayah_kode`
+  (sering kosong/tak sejalan dgn titiknya). Titik yang dipakai sama dgn yang
+  digambar (register dulu, cadangan titik bidang). Register TANPA titik tak
+  punya kecamatan → ikut tersaring begitu kecamatan dipilih (dikatakan di
+  layar). Titik di luar semua poligon = `null`, dan pemilih punya pilihan
+  **"⚠ Titik di luar batas kecamatan"** — alat menyisir koordinat ngawur
+  (kelas pin di laut insiden 2026-09-27).
+- Ganti kecamatan **melepas tanah terpilih** (`pilihKecamatan`): KecamatanLayer
+  terbang ke kecamatan, `FocusActive` terbang ke tanah aktif — keduanya
+  sekaligus, yang terakhir menang dan peta melompat ke tanah yang tak diminta.
+- Layer dimatikan interaksinya saat mode "Set Titik Koordinat" (klik = menaruh
+  titik). Topengnya `interactive:false` supaya kecamatan lain tetap bisa diklik.
+- Angka di pemilih ("Pare (123)") mengikuti filter lain yang aktif. Tab Daftar
+  Bidang & cache sessionStorage GIS TIDAK berubah (filter kecamatan dihitung
+  di klien dari data yang sama).
+
 ## Lingkungan kerja
 
 - **Node 22+ WAJIB** — `jsdom@30` (`^22.22.2 || ^24.15.0 || >=26`) & `undici@8`

@@ -66,3 +66,15 @@
 .gis-map-container .leaflet-bottom.leaflet-left {
   left: 364px; /* lebar panel (340px) + jarak kiri (16px) + jarak antar kotak (8px) */
 }
+
+/* Label nama kecamatan di peta GIS (components/gis/KecamatanLayer.tsx).
+   Tooltip permanen Leaflet bawaannya kotak putih ber-panah; di sini cuma teks
+   berhalo supaya terbaca di atas peta jalan MAUPUN satelit. `pointer-events:none`
+   supaya klik menembus ke poligon kecamatan di bawahnya. */
+.gis-map-container .gis-kec-label {
+  background: transparent; border: 0; box-shadow: none; pointer-events: none;
+  font-size: 10px; font-weight: 600; color: #334155;
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff;
+}
+.gis-map-container .gis-kec-label::before { display: none; }
+.gis-map-container .gis-kec-label-aktif { font-size: 13px; font-weight: 700; color: #0f766e; }
