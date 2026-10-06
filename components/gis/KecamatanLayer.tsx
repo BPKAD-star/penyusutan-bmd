@@ -49,7 +49,8 @@ export default function KecamatanLayer({ fc, terpilih, onPilih, interaktif }: {
         data={fc as unknown as GeoJSON.GeoJsonObject}
         style={feature => {
           const sel = feature?.properties?.kode === terpilih
-          return { color: sel ? '#0f766e' : '#475569', weight: sel ? 3 : 1.5, fillColor: '#0f172a', fillOpacity: 0, interactive: interaktif }
+          // Garis tipis (permintaan user 2026-10-06): batas cuma penunjuk, jangan menenggelamkan titik.
+          return { color: sel ? '#0f766e' : '#475569', weight: sel ? 2 : 0.8, opacity: sel ? 1 : 0.6, fillColor: '#0f172a', fillOpacity: 0, interactive: interaktif }
         }}
         onEachFeature={(feature, layer) => {
           const { kode, nama } = feature.properties as { kode: string; nama: string }
@@ -61,8 +62,8 @@ export default function KecamatanLayer({ fc, terpilih, onPilih, interaktif }: {
           if (!interaktif) return
           layer.on({
             click: () => pilihRef.current(sel ? null : kode),
-            mouseover: () => { if (!sel) (layer as L.Path).setStyle({ weight: 3, color: '#0d9488' }) },
-            mouseout: () => { if (!sel) (layer as L.Path).setStyle({ weight: 1.5, color: '#475569' }) },
+            mouseover: () => { if (!sel) (layer as L.Path).setStyle({ weight: 1.5, color: '#0d9488', opacity: 1 }) },
+            mouseout: () => { if (!sel) (layer as L.Path).setStyle({ weight: 0.8, color: '#475569', opacity: 0.6 }) },
           })
         }}
       />

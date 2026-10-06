@@ -68,7 +68,6 @@ const BIDANG_COLS = 'aset_id,jenis_hak,nomor_dokumen_kepemilikan,luas,latitude,l
 type Status = StatusTanah
 type TitikFilter = 'semua' | 'bertitik' | 'belum'
 type StatusFilter = 'semua' | Status
-type LuasFilter = 'semua' | 'berluas' | 'belum'
 type Terkunci = { nibar: string; jenis_terakhir: string | null; periode_terakhir: string | null }
 
 const SELECT_COLS = 'id,nibar,kode,nama_barang,uraian_barang,spesifikasi_lainnya,alamat_detail,jenis_hak,nomor_dokumen_kepemilikan,nama_dokumen_kepemilikan,tanggal_dokumen_kepemilikan,tgl_perolehan,nilai_perolehan,luas,latitude,longitude,skpd_id,skpd:skpd_id(nama)'
@@ -110,11 +109,6 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
   // query baru.
   const [titikFilter, setTitikFilter] = useState<TitikFilter>('semua')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('semua')
-  // "Berluas / Belum berluas" (2026-10-05, ganti filter berbidang: bidang sudah
-  // terisi semua, tersisa luasnya). Aturan SAH sama dgn luas di GIS/Daftar Barang
-  // (lib/luasBidang.ts): ada bidang DAN semua bidangnya berluas. Tanpa bidang /
-  // sebagian bidang kosong luasnya = belum berluas. Murni filter atas bidangByAset.
-  const [luasFilter, setLuasFilter] = useState<LuasFilter>('semua')
   // ── Set/Hapus Titik Koordinat langsung dari peta ───────────────────────
   // Menggeser SEBAGIAN kecil "Edit Spesifikasi" (Daftar Barang Awal/Koreksi)
   // ke sini — KHUSUS titik koordinat, tak ada field lain. Pola & alasan
@@ -261,13 +255,9 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
       if (titikFilter === 'bertitik' && r.latitude == null) return false
       if (titikFilter === 'belum' && r.latitude != null) return false
       if (statusFilter !== 'semua' && statusOf(r) !== statusFilter) return false
-      if (luasFilter !== 'semua') {
-        const berluas = luasBidangSah(ringkasDaftarBidang(bidangByAset[r.id] || []))
-        if (luasFilter === 'berluas' ? !berluas : berluas) return false
-      }
       return true
     })
-  }, [rows, skpdSel, konsolidasi, search, titikFilter, statusFilter, luasFilter, bidangByAset]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, skpdSel, konsolidasi, search, titikFilter, statusFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Kecamatan (2026-10-06): kecamatan dari TITIK di peta (useKecamatan). Sengaja
   // diterapkan SESUDAH filter lain supaya angka per kecamatan di pemilih mengikuti
@@ -606,14 +596,6 @@ export default function PetaView({ tabBar, cariAwal }: { tabBar: React.ReactNode
               {([['semua', 'Semua Titik'], ['bertitik', '📍 Bertitik'], ['belum', '⚠ Belum Titik']] as [TitikFilter, string][]).map(([v, l]) => (
                 <button key={v} onClick={() => setTitikFilter(v)}
                   className={`px-2 py-1 rounded-full text-[10px] font-medium border transition-colors ${titikFilter === v ? 'bg-teal text-white border-teal' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {([['semua', 'Semua Luas'], ['berluas', '✓ Berluas'], ['belum', '⚠ Belum Berluas']] as [LuasFilter, string][]).map(([v, l]) => (
-                <button key={v} onClick={() => setLuasFilter(v)}
-                  className={`px-2 py-1 rounded-full text-[10px] font-medium border transition-colors ${luasFilter === v ? 'bg-teal text-white border-teal' : 'text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
                   {l}
                 </button>
               ))}

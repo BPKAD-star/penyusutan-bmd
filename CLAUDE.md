@@ -8138,6 +8138,17 @@ format id-ID, sehingga titiknya harus dihapus manual. Kini `NominalInput`
 state tetap string polos "4452.5" → `parseFloat` saat simpan & `String(b.luas)`
 saat edit tak berubah. Hanya Luas yang angka di form itu.
 
+### Impor bidang 49 register + filter luas GIS dicabut (2026-10-06, tanpa migrasi)
+
+589 bidang dari berkas "49 Register perlu diisikan ke bidangnya" dimasukkan ke
+`aset_bidang_tanah` (dicocokkan NIBAR, 49/49 tunggal & aktif; 112 bidang lama tanpa
+luas hasil "Auto-split" diganti — tanpa berkas, titiknya sudah ada di register).
+Hasil: seluruh 2.792 register GIS (2.741 Tanah + 51 tanah idle 1.5.4) berbidang &
+berluas. 8 register Σ bidang ≠ `aset.luas` dibiarkan (terbesar Tanah Jalan Sambi -
+Bedali +20.453 m²). Karena itu filter "Semua/Berluas/Belum Berluas" di peta DICABUT
+(label "Blm berluas" di kartu tetap). Garis batas kecamatan ditipiskan (0,8 px,
+opasitas 0,6; terpilih 2 px).
+
 ### Urutan "Dokumen Kepemilikan" di panel bidang GIS (2026-10-06, tanpa migrasi)
 
 Tabel sertipikat di panel kanan GIS (`KelolaBidangPanel.load`) diurut: **tanggal terbit
