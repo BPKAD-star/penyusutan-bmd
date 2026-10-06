@@ -36,6 +36,13 @@ export const DAFTAR_MATERI: MateriConfig[] = [
     tanggal: '2026-10-06',
     jumlahSlide: 22,
   },
+  {
+    slug: 'entry-hibah',
+    judul: 'Entry Hibah: Cara Perolehan › Hibah',
+    ringkas: 'Entry barang hibah — dokumen BAST, pihak pemberi dan sumber dana, tanggal perolehan, serta foto yang wajib diunggah.',
+    tanggal: '2026-10-06',
+    jumlahSlide: 11,
+  },
 ]
 
 export const cariMateri = (slug: string): MateriConfig | undefined =>

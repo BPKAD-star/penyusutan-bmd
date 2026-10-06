@@ -18,6 +18,7 @@ import { Kontrak, Bast, TambahBarang, Draft, Foto, Setujui } from './pengadaan/N
 import { KodeMenentukan, KodeMasaManfaat, KodeRekening } from './pengadaan/Kodefikasi'
 import { AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp } from './pengadaan/Konstruksi'
 import { LraTujuan, LraDuaArah, LraCara } from './pengadaan/Lra'
+import * as H from './hibah/Hibah'
 import { TerlanjurSalah, DaftarPeriksa, TutupPengadaan } from './pengadaan/Penutup'
 
 export const ISI_MATERI: Record<string, ComponentType[]> = {
@@ -43,5 +44,12 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     LraTujuan, LraDuaArah, LraCara,
     // Penutup
     TerlanjurSalah, DaftarPeriksa, TutupPengadaan,
+  ],
+  'entry-hibah': [
+    H.Sampul, H.PetaAlur, H.Penekanan,
+    // Dokumen → barang → tanggal → spesifikasi & foto → setujui
+    H.Dokumen, H.Barang, H.DuaTanggal, H.SpekFoto, H.Setujui,
+    // Penutup
+    H.Perbaikan, H.DaftarPeriksa, H.Tutup,
   ],
 }
