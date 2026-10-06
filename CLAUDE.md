@@ -9183,7 +9183,7 @@ Perpindahan/Reklas/Penghapusan.
 Permintaan user. Halaman Dokumen Sumber kini tiga bagian bernomor
 (`components/dashboard/dokumen/BerandaDokumen.tsx`, murni tampilan):
 
-1. **Peraturan** — empat kotak: Perpres · Permendagri · Perda · Perbup
+1. **Peraturan** — empat kotak: PP (Peraturan Pemerintah — sempat salah ditulis Perpres, 2026-10-06; `key`/`dbSiklus` tetap `perpres`/`peraturan_perpres`) · Permendagri · Perda · Perbup
    (`DAFTAR_PERATURAN`, lib/dokumenSiklus.ts). Disimpan di `admin_dokumen` yang
    sudah ada (scope global, unggah admin, semua boleh lihat) dgn empat nilai
    `siklus` baru: `peraturan_perpres|permendagri|perda|perbup`. RLS tak diubah.

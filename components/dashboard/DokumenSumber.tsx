@@ -1,6 +1,6 @@
 'use client'
 // Dokumen Sumber — tiga bagian (permintaan user 2026-09-30):
-//   1. PERATURAN — empat kotak (Perpres · Permendagri · Perda · Perbup), berlaku
+//   1. PERATURAN — empat kotak (PP · Permendagri · Perda · Perbup), berlaku
 //      lintas tahun; isinya components/dashboard/dokumen/PeraturanSection.tsx.
 //   2. SIKLUS    — arsip dokumen legal (SK, BAST, perjanjian) per Tahun x Siklus
 //      BMD (lib/dokumenSiklus.ts `DAFTAR_SIKLUS`). Drill-down: Tahun -> Siklus

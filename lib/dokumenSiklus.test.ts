@@ -141,8 +141,8 @@ describe('dokumenMasihLive — arsip (`ditolak`) tak boleh muncul lagi (insiden 
 })
 
 describe('Peraturan — empat kotak & judul baku', () => {
-  it('Perpres · Permendagri · Perda · Perbup, urutannya tetap', () => {
-    expect(DAFTAR_PERATURAN.map(p => p.label)).toEqual(['Perpres', 'Permendagri', 'Perda', 'Perbup'])
+  it('PP · Permendagri · Perda · Perbup, urutannya tetap', () => {
+    expect(DAFTAR_PERATURAN.map(p => p.label)).toEqual(['PP', 'Permendagri', 'Perda', 'Perbup'])
   })
 
   it('judul dirakit seragam, spasi tepi nomor dibuang', () => {

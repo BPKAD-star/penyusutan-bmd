@@ -1,5 +1,5 @@
 'use client'
-// Isi satu kotak PERATURAN (Perpres · Permendagri · Perda · Perbup) di halaman
+// Isi satu kotak PERATURAN (PP · Permendagri · Perda · Perbup) di halaman
 // Dokumen Sumber. Bentuk & alasannya: lib/dokumenSiklus.ts `DAFTAR_PERATURAN`.
 // Unggah & hapus hanya admin (ditegakkan RLS `ds_insert`/`ds_delete`; tombolnya
 // di sini cuma cerminan), semua pengguna boleh membuka berkasnya.

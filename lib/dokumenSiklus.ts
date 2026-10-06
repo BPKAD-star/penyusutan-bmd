@@ -275,7 +275,11 @@ export type PeraturanConfig = {
 }
 
 export const DAFTAR_PERATURAN: PeraturanConfig[] = [
-  { key: 'perpres', label: 'Perpres', panjang: 'Peraturan Presiden', dbSiklus: 'peraturan_perpres' },
+  // ⚠️ Kotak ini PP (Peraturan Pemerintah), BUKAN Perpres — sempat salah nama
+  // 2026-10-06. `key` & `dbSiklus` SENGAJA tetap `perpres`/`peraturan_perpres`:
+  // itu nilai yang sudah tersimpan di admin_dokumen & dikunci CHECK constraint,
+  // dan mengganti namanya butuh migrasi data tanpa menambah manfaat apa pun.
+  { key: 'perpres', label: 'PP', panjang: 'Peraturan Pemerintah', dbSiklus: 'peraturan_perpres' },
   { key: 'permendagri', label: 'Permendagri', panjang: 'Peraturan Menteri Dalam Negeri', dbSiklus: 'peraturan_permendagri' },
   { key: 'perda', label: 'Perda', panjang: 'Peraturan Daerah', dbSiklus: 'peraturan_perda' },
   { key: 'perbup', label: 'Perbup', panjang: 'Peraturan Bupati', dbSiklus: 'peraturan_perbup' },
