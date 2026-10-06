@@ -17,6 +17,7 @@ import { Sampul as SampulPengadaan, PetaAlur, Penekanan } from './pengadaan/Pemb
 import { Kontrak, Bast, TambahBarang, Draft, Foto, Setujui } from './pengadaan/NonKonstruksi'
 import { KodeMenentukan, KodeMasaManfaat, KodeRekening } from './pengadaan/Kodefikasi'
 import { AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp } from './pengadaan/Konstruksi'
+import { PerencanaanDulu, PerencanaanGelondongan } from './pengadaan/KdpKhusus'
 import { LraTujuan, LraDuaArah, LraCara } from './pengadaan/Lra'
 import * as H from './hibah/Hibah'
 import { TerlanjurSalah, DaftarPeriksa, TutupPengadaan } from './pengadaan/Penutup'
@@ -40,6 +41,8 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     Kontrak, Bast, TambahBarang, KodeMenentukan, KodeMasaManfaat, KodeRekening, Draft, Foto, Setujui,
     // Pekerjaan Konstruksi (KDP)
     AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp,
+    // Kasus khusus konstruksi: perencanaan dulu / gelondongan
+    PerencanaanDulu, PerencanaanGelondongan,
     // Rekonsiliasi dengan LRA
     LraTujuan, LraDuaArah, LraCara,
     // Penutup
