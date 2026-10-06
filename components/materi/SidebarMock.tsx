@@ -4,6 +4,11 @@
 // 2026-10-04). Pohon menunya DISALIN dari components/Sidebar.tsx (tampilan
 // pengurus barang) — kalau menu di aplikasi berganti nama/urutan, ubah di sini
 // juga (tak ada kode yang menjaganya selain pembacaan manual).
+//
+// GERAK (permintaan user 2026-10-06): sidebar HANYA meluncur masuk di slide
+// pembuka kelompok (`masuk`, slide Dashboard). Di slide sesudahnya sidebar diam
+// — yang bergerak cuma sub-menu yang MEMANG dibuka untuk menu yang dibahas,
+// dengan efek dropdown (`mt-buka`, materi.css). Menu tanpa anak = tak ada gerak.
 import type { ReactNode } from 'react'
 import { Ikon, Kaki, d, type NamaIkon } from './bagian'
 
@@ -49,33 +54,46 @@ export const NAV: Nav[] = [
 export const LEBAR_SIDEBAR = 236
 
 /** Baris menu; `aktif` = jalur menu yang menyala, mis. "Pembukuan/Pengelolaan". */
-function Baris({ n, jalur, aktif, depth, urut }: { n: Nav; jalur: string; aktif: string; depth: number; urut: { i: number } }) {
+function Baris({ n, jalur, aktif, depth, urut, masuk }: {
+  n: Nav; jalur: string; aktif: string; depth: number; urut: { i: number }; masuk: boolean
+}) {
   const sama = jalur === aktif
   const leluhur = aktif.startsWith(jalur + '/')
   const terbuka = !!n.k && (sama || leluhur)
   const cls = sama ? 'bg-teal text-white font-medium' : leluhur ? 'bg-white/10 text-white font-medium' : 'text-white/60'
   const jeda = 150 + urut.i++ * 25
+  // Dropdown berurutan menurut kedalaman: induk dibuka dulu, lalu anaknya.
+  const jedaBuka = 450 + depth * 450
   return (
     <>
-      <div className={`mt-kiri flex items-center gap-2.5 pr-2.5 h-[25px] rounded-md text-[13px] leading-none ${cls}`}
-        style={{ paddingLeft: `${0.55 + depth * 0.8}rem`, ...d(jeda) }}>
+      <div className={`${masuk ? 'mt-kiri ' : ''}flex items-center gap-2.5 pr-2.5 h-[25px] rounded-md text-[13px] leading-none ${cls}`}
+        style={{ paddingLeft: `${0.55 + depth * 0.8}rem`, ...(masuk ? d(jeda) : {}) }}>
         {n.ikon
           ? <Ikon nama={n.ikon} ukuran={15} className="flex-shrink-0" />
           : <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sama ? 'bg-white' : 'bg-white/30'}`} />}
         <span className="truncate">{n.l}</span>
-        {n.k && <span className={`ml-auto inline-block text-[11px] opacity-70 ${terbuka ? 'rotate-90' : ''}`}>›</span>}
+        {n.k && (
+          <span className={`ml-auto inline-block text-[11px] opacity-70 ${terbuka ? `rotate-90${masuk ? '' : ' mt-panah-buka'}` : ''}`}
+            style={!masuk && terbuka ? d(jedaBuka) : undefined}>›</span>
+        )}
       </div>
-      {terbuka && n.k!.map(c => <Baris key={c.l} n={c} jalur={`${jalur}/${c.l}`} aktif={aktif} depth={depth + 1} urut={urut} />)}
+      {terbuka && (
+        <div className={masuk ? undefined : 'mt-buka'} style={masuk ? undefined : d(jedaBuka)}>
+          <div className={`${masuk ? '' : 'mt-buka-isi '}space-y-px`}>
+            {n.k!.map(c => <Baris key={c.l} n={c} jalur={`${jalur}/${c.l}`} aktif={aktif} depth={depth + 1} urut={urut} masuk={masuk} />)}
+          </div>
+        </div>
+      )}
     </>
   )
 }
 
-export function SidebarMock({ aktif }: { aktif: string }) {
+export function SidebarMock({ aktif, masuk = false }: { aktif: string; masuk?: boolean }) {
   const urut = { i: 0 }
   return (
     <div className="absolute left-2 top-0 bottom-0 bg-gradient-to-b from-navy-dark via-navy to-navy-light px-2.5 pt-4 space-y-px" style={{ width: LEBAR_SIDEBAR - 8 }}>
       <p className="text-white/30 text-[10.5px] font-semibold uppercase tracking-wider px-2 mb-1.5">Menu</p>
-      {NAV.map(n => <Baris key={n.l} n={n} jalur={n.l} aktif={aktif} depth={0} urut={urut} />)}
+      {NAV.map(n => <Baris key={n.l} n={n} jalur={n.l} aktif={aktif} depth={0} urut={urut} masuk={masuk} />)}
     </div>
   )
 }
@@ -84,14 +102,16 @@ export function SidebarMock({ aktif }: { aktif: string }) {
  * Kerangka slide penjelasan menu: sidebar di kiri (menu yang dibahas menyala),
  * judul & isi di kanannya. Area isi = ±952×474 px.
  */
-export function SlideSidebar({ aktif, label, judul, materi, children }: {
-  aktif: string; label: string; judul: ReactNode; materi: string; children: ReactNode
+export function SlideSidebar({ aktif, label, judul, materi, masuk, children }: {
+  aktif: string; label: string; judul: ReactNode; materi: string
+  /** true = sidebar meluncur masuk (slide pembuka kelompok); bawaan: diam + dropdown sub-menu. */
+  masuk?: boolean; children: ReactNode
 }) {
   return (
     <div className="absolute inset-0 bg-white text-gray-800">
       <div className="absolute -top-40 -right-40 w-[520px] h-[520px] rounded-full bg-teal/[0.07]" />
       <div className="absolute left-0 top-0 h-full w-2 bg-gradient-to-b from-teal to-navy" />
-      <SidebarMock aktif={aktif} />
+      <SidebarMock aktif={aktif} masuk={masuk} />
       <div className="absolute right-14 top-12" style={{ left: LEBAR_SIDEBAR + 40 }}>
         <p className="mt-in flex items-center gap-3 text-[13px] font-semibold tracking-[0.18em] uppercase text-teal">
           <span className="mt-lebar inline-block w-10 h-[3px] bg-teal rounded-full" />{label}

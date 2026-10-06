@@ -39,6 +39,12 @@
 .mt-lebar  { animation-name: mt-lebar; transform-origin: left center; animation-duration: .9s; }
 .mt-tinggi { animation-name: mt-tinggi; transform-origin: center bottom; animation-duration: .9s; }
 .mt-jatuh  { animation-name: mt-jatuh; animation-timing-function: cubic-bezier(.34, 1.4, .64, 1); animation-duration: .6s; }
+/* Dropdown sub-menu di SidebarMock: tinggi 0 → penuh. Pembungkusnya grid satu baris
+   (1fr), anak langsungnya `.mt-buka-isi` (min-height 0 + overflow hidden) yang
+   mengecil. Keadaan akhir = gaya biasa (1fr), jadi tercetak terbuka. */
+.mt-buka { display: grid; grid-template-rows: 1fr; animation: mt-buka .55s cubic-bezier(.2, .7, .2, 1) both; animation-delay: var(--d, 0ms); }
+.mt-buka-isi { min-height: 0; overflow: hidden; }
+.mt-panah-buka { animation: mt-panah-buka .4s ease both; animation-delay: var(--d, 0ms); }
 /* Garis SVG yang "digambar": pasang pathLength="1" di elemennya. */
 .mt-gambar { stroke-dasharray: 1; stroke-dashoffset: 0; animation-name: mt-gambar; animation-duration: 1.3s; animation-timing-function: ease-in-out; }
 /* Jarum gauge: sudut akhirnya ditulis di style elemennya (transform: rotate). */
@@ -55,6 +61,8 @@
 @keyframes mt-jatuh  { from { opacity: 0; transform: translateY(-46px); } }
 @keyframes mt-gambar { from { stroke-dashoffset: 1; } }
 @keyframes mt-jarum  { from { transform: rotate(-90deg); } }
+@keyframes mt-buka   { from { grid-template-rows: 0fr; opacity: 0; } }
+@keyframes mt-panah-buka { from { transform: rotate(0deg); } }
 
 /* ── Gerak LATAR (berulang). Tak punya keadaan akhir → aman dicetak. ─────── */
 .mt-apung   { animation: mt-apung 6s ease-in-out infinite; animation-delay: var(--d, 0ms); }

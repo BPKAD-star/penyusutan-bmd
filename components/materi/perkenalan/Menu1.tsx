@@ -13,7 +13,7 @@ const RINGKAS: [string, number, number][] = [
 
 export function Dashboard() {
   return (
-    <SlideSidebar aktif="Dashboard" materi={MATERI} label="Menu · Dashboard" judul="Ringkasan sekilas">
+    <SlideSidebar masuk aktif="Dashboard" materi={MATERI} label="Menu · Dashboard" judul="Ringkasan sekilas">
       <div className="absolute left-0 top-0 w-[450px] space-y-5">
         <Poin jeda={250}>Ringkasan <b>jenis aset</b>: jumlah unit dan nilainya.</Poin>
         <Poin jeda={450}><b>Cara perolehan</b>: pengadaan, hibah, dan lainnya.</Poin>
