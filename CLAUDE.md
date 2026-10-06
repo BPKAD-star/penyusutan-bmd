@@ -5903,6 +5903,10 @@ Yang dipakai: **draft dulu, ledger ditulis saat approve**:
   awal. Tak butuh index baru di ketiganya: sort node-nya memang sudah ada (tak
   ada index yang melayani `nilai_perolehan`), jadi nambah kunci di sort yang
   sama ~gratis.
+- **Menu Kendaraan juga urut KODE BARANG A→Z** (permintaan user 2026-10-06), sama
+  dgn Daftar Barang/Penyusutan: kode → nilai perolehan turun → `id`. Diurutkan di
+  KLIEN sesudah semua halaman terkumpul; query server TETAP `nilai_perolehan, id`
+  (pemecah seri paginasi `.range()` — jangan dicopot).
 - **Menu Kendaraan: kolomnya ditata ulang & TIDAK BOLEH ada `truncate`**
   (permintaan user 2026-07-30). Susunannya: SKPD · Kode Barang + Uraian Barang
   (ditumpuk) · Nama Barang + NIBAR + Kode Register (ditumpuk tiga) · Merek/Tipe ·

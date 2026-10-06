@@ -149,6 +149,17 @@ export default function KendaraanPage() {
       all.push(...(data as unknown as Row[]))
       if (data.length < 1000) break
     }
+    // Urutan TAMPIL = kode barang A→Z (permintaan user 2026-10-06), lalu nilai
+    // perolehan terbesar, lalu id sbg pemecah seri — urutan total yang sama dgn
+    // Daftar Barang & Penyusutan. Sengaja di KLIEN sesudah semua halaman terkumpul,
+    // bukan mengganti `.order()` di atas: urutan server tetap `nilai_perolehan, id`
+    // (pemecah seri paginasi), dan `ORDER BY kode` di bawah RLS menambah node Sort
+    // atas ribuan baris. Perbandingan string POLOS, bukan localeCompare — segmen
+    // kode e-BMD zero-padded, jadi leksikografis = urutan nomor.
+    all.sort((a, b) =>
+      a.kode < b.kode ? -1 : a.kode > b.kode ? 1
+        : (b.nilai_perolehan || 0) - (a.nilai_perolehan || 0)
+        || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     setRows(all)
     setLoaded(true)
     setLoading(false)
