@@ -1,43 +1,11 @@
 'use client'
 // Materi "Entry Belanja Modal · Pengadaan" — jalur PEKERJAAN KONSTRUKSI (KDP).
 // Mock layarnya meniru components/pengelolaan/KonstruksiPengadaan.tsx.
-import { SlideTerang, Poin, Catatan, Tbl, Ikon, d, type NamaIkon } from '../bagian'
-import { MATERI, KartuApp, Isian, Tombol, Lencana, Th, FotoMini, Tunjuk, Contoh } from './bahan'
+import { SlideTerang, Poin, Catatan, Tbl, Ikon, d } from '../bagian'
+import { MATERI, KartuApp, Tombol, Lencana, Th, FotoMini, Tunjuk, Contoh } from './bahan'
 
 const KIRI = 'absolute left-0 top-0 w-[440px] space-y-4'
 const KANAN = 'absolute right-0 top-0 w-[660px]'
-
-const LANGKAH: { ikon: NamaIkon; judul: string; isi: string; tanda?: string }[] = [
-  { ikon: 'dokumen', judul: 'Buat kontrak', isi: 'Tekan + Buat Kontrak: nama pekerjaan, No. & Tgl Kontrak, bentuk kontrak (SPK / Surat Perjanjian), PPK.' },
-  { ikon: 'gedung', judul: 'Tambah barang KDP', isi: 'Satu kontrak bisa memuat beberapa barang (mis. beberapa ruas jalan). Kode hanya golongan 1.3.6.' },
-  { ikon: 'hitung', judul: 'Rincian per termin', isi: 'Perencanaan, Fisik, Biaya Umum, Pengawasan — tiap termin bertanggal BAST dan bernilai.', tanda: 'BAST per termin' },
-  { ikon: 'kamera', judul: 'Spesifikasi & foto', isi: 'Nama barang (tak boleh kembar), lokasi, dan foto tiap barang KDP.', tanda: 'Foto wajib' },
-  { ikon: 'centang', judul: 'Pratinjau & setujui', isi: 'Disetujui sekaligus satu kontrak: seluruh barang & termin tercatat dalam satu langkah.' },
-]
-
-export function AlurKonstruksi() {
-  return (
-    <SlideTerang materi={MATERI} label="Pekerjaan Konstruksi · 1" judul="Alur entry konstruksi (KDP)">
-      <div className="absolute inset-x-0 top-0 grid grid-cols-5 gap-4">
-        {LANGKAH.map((l, i) => (
-          <div key={l.judul} className="mt-up relative rounded-2xl border border-gray-200 bg-white shadow-lg p-5 h-[268px]" style={d(250 + i * 200)}>
-            <div className="flex items-center justify-between">
-              <span className="w-11 h-11 rounded-xl bg-teal text-white flex items-center justify-center"><Ikon nama={l.ikon} ukuran={24} /></span>
-              <span className="text-[34px] font-bold text-navy/15 leading-none">{i + 1}</span>
-            </div>
-            <p className="mt-4 text-[20px] font-bold text-navy leading-tight">{l.judul}</p>
-            <p className="mt-2 text-[14.5px] text-gray-500 leading-snug">{l.isi}</p>
-            {l.tanda && <span className="absolute left-5 bottom-4"><Lencana nada="wajib">{l.tanda}</Lencana></span>}
-          </div>
-        ))}
-      </div>
-      <div className="absolute inset-x-0 bottom-0 grid grid-cols-2 gap-5">
-        <Catatan jeda={1500} nada="teal" ikon="lampu">Nilai tiap barang = <b>jumlah seluruh termin</b>-nya. Komptabelnya <b>Intra</b>; golongan 1.3.6 tidak disusutkan sampai direklas.</Catatan>
-        <Catatan jeda={1700} nada="amber" ikon="dokumen">Beda dengan Non Konstruksi: BAST <b>diunggah per termin</b>, bukan satu untuk seluruh kontrak.</Catatan>
-      </div>
-    </SlideTerang>
-  )
-}
 
 const TERMIN: [string, string, string, string][] = [
   ['Perencanaan', 'BAST-PRC-01.pdf', '02 Sep 2026', 'Rp 45.000.000'],

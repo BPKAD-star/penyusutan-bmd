@@ -11,7 +11,7 @@ const KANAN = 'absolute right-0 top-0 w-[660px]'
 // ── 1. Kontrak ──────────────────────────────────────────────────────────────
 export function Kontrak() {
   return (
-    <SlideTerang materi={MATERI} label="Non Konstruksi · Langkah 1" judul="Buat kontrak">
+    <SlideTerang materi={MATERI} label="Non Konstruksi" judul="1. Buat Kontrak">
       <div className={KIRI}>
         <Poin jeda={250}>Tekan <Tbl>+ Tambah Pengadaan</Tbl>, lalu isi dua kartu: <b>Kontrak</b> dan <b>BAST</b>.</Poin>
         <Poin jeda={450}><b>Sumber Pengadaan</b> mengikuti nilai belanja: Bukti Pembelian → Kwitansi → Surat Pesanan / SPK → Surat Perjanjian.</Poin>
@@ -37,7 +37,7 @@ export function Kontrak() {
 // ── 2. BAST ─────────────────────────────────────────────────────────────────
 export function Bast() {
   return (
-    <SlideTerang materi={MATERI} label="Non Konstruksi · Langkah 2" judul="Kartu BAST — dokumen wajib diunggah">
+    <SlideTerang materi={MATERI} label="Non Konstruksi" judul="2. Isi dan Upload BAST">
       <div className={KIRI}>
         <Poin jeda={250}><b>Tanpa dokumen BAST, kontrak tidak bisa disimpan</b> — dan kartu tidak bisa disetujui.</Poin>
         <Poin jeda={450}><b>Tgl BAST = tanggal perolehan barang</b>: bukan tanggal kontrak, bukan tanggal disetujui.</Poin>
@@ -78,7 +78,7 @@ export function Bast() {
 // ── 3. Tambah barang ────────────────────────────────────────────────────────
 export function TambahBarang() {
   return (
-    <SlideTerang materi={MATERI} label="Non Konstruksi · Langkah 3" judul="Tambah barang ke kontrak">
+    <SlideTerang materi={MATERI} label="Non Konstruksi" judul="3. Tambah Barang">
       <div className={KIRI}>
         <Poin jeda={250}>Di kartu <b>Menunggu Persetujuan</b>, tekan <Tbl>+ Tambah Barang</Tbl>.</Poin>
         <Poin jeda={450}>Urutannya: <b>kode rekening belanja</b> → <b>Jenis BMD</b> → <b>Cari</b> kode → pilih dari hasil.</Poin>
@@ -123,7 +123,7 @@ const BARIS: [string, string, boolean][] = [
 
 export function Draft() {
   return (
-    <SlideTerang materi={MATERI} label="Non Konstruksi · Langkah 4" judul="Draft barang & ✎ Edit Spesifikasi">
+    <SlideTerang materi={MATERI} label="Non Konstruksi" judul="4. Edit Spesifikasi Data Barang">
       <div className={KIRI}>
         <Poin jeda={250}>Tiap unit jadi <b>satu baris draft</b>. Centang barang, lalu tekan <Tbl>✎ Edit Spesifikasi</Tbl>.</Poin>
         <Poin jeda={450}><b>Spesifikasi Nama Barang wajib diisi</b> — itu nama yang tampil di Daftar Barang, bukan sekadar uraian baku.</Poin>
@@ -169,7 +169,7 @@ export function Draft() {
 // ── 5. Foto wajib ───────────────────────────────────────────────────────────
 export function Foto() {
   return (
-    <SlideTerang materi={MATERI} label="Non Konstruksi · Langkah 5" judul="Foto barang — wajib sebelum disetujui">
+    <SlideTerang materi={MATERI} label="Non Konstruksi · Catatan" judul="Foto barang — wajib sebelum disetujui">
       <div className="absolute left-0 top-0 w-[440px] space-y-3.5">
         <Poin jeda={250} ikon="kamera"><b>Setiap barang punya foto sendiri</b> — dicek per unit, bukan per kontrak.</Poin>
         <Poin jeda={450} ikon="kamera">Foto harus <b>menunjukkan barangnya</b>: bentuk, merek, dan nomor seri / rangka yang terbaca.</Poin>
@@ -218,7 +218,7 @@ const ISI_PRATINJAU: (string | null)[][] = [
 
 export function Setujui() {
   return (
-    <SlideTerang materi={MATERI} label="Non Konstruksi · Langkah 6" judul="Pratinjau, lalu disetujui">
+    <SlideTerang materi={MATERI} label="Non Konstruksi · Catatan" judul="Pratinjau, lalu disetujui">
       <div className={KIRI}>
         <Poin jeda={250}><Tbl>🔍 Pratinjau</Tbl> menampilkan <b>seluruh isian</b> tiap barang; yang <b>kosong ditandai amber</b>.</Poin>
         <Poin jeda={450}>Pratinjau bisa dibuka <b>operator SKPD</b> — periksa dulu sebelum menunggu admin.</Poin>

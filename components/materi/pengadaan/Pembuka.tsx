@@ -41,7 +41,7 @@ export function Sampul() {
         <p className="mt-kiri inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-teal/10 border border-teal/30 text-[15px] font-semibold text-teal tracking-wide">
           <span className="mt-kedip w-2 h-2 rounded-full bg-amber-400" /> Materi Paparan · Bidang Pengelolaan BMD
         </p>
-        <h1 className="mt-up mt-7 text-[50px] leading-[1.05] font-bold text-navy" style={d(200)}>Entry Belanja Modal</h1>
+        <h1 className="mt-up mt-7 text-[50px] leading-[1.05] font-bold text-navy" style={d(200)}>Belanja Modal 1.01</h1>
         <div className="mt-lebar mt-5 w-28 h-1.5 rounded-full bg-amber-400" style={d(450)} />
         <p className="mt-up mt-5 text-[28px] leading-snug font-semibold text-navy" style={d(550)}>
           Cara Perolehan › Pengadaan
@@ -68,12 +68,12 @@ export function PetaAlur() {
         <div className="mt-kanan rounded-2xl border border-gray-200 bg-white shadow-xl p-5" style={d(400)}>
           <p className="text-[14px] font-bold tracking-wide text-teal uppercase">Non Konstruksi</p>
           <p className="mt-1 text-[14px] text-gray-500">Laptop, kendaraan, meja, alat — barang yang langsung jadi.</p>
-          <div className="mt-3"><AlurLangkah kecil langkah={['Kontrak', 'BAST', 'Barang', 'Foto', 'Setujui']} jeda={700} /></div>
+          <div className="mt-3"><AlurLangkah kecil akhirBiru langkah={['Kontrak', 'BAST', 'Barang', 'Foto', 'Setujui']} jeda={700} /></div>
         </div>
         <div className="mt-kanan rounded-2xl border border-gray-200 bg-white shadow-xl p-5" style={d(650)}>
           <p className="text-[14px] font-bold tracking-wide text-teal uppercase">Pekerjaan Konstruksi (KDP)</p>
           <p className="mt-1 text-[14px] text-gray-500">Gedung, jalan, jaringan — dibayar per termin selama dikerjakan.</p>
-          <div className="mt-3"><AlurLangkah kecil langkah={['Kontrak', 'Barang KDP', 'BAST per termin', 'Foto', 'Setujui']} jeda={1000} /></div>
+          <div className="mt-3"><AlurLangkah kecil akhirBiru langkah={['Kontrak', 'Barang KDP', 'BAST per termin', 'Foto', 'Setujui']} jeda={1000} /></div>
         </div>
         <Catatan jeda={1400} nada="teal" ikon="lampu">
           Keduanya memakai <b>pola yang sama</b>: isi draft → lengkapi dokumen &amp; foto → <b>Pratinjau</b> → disetujui.

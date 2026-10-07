@@ -201,14 +201,14 @@ export function Jendela({ alamat = 'bmdlastgame.vercel.app', className = '', jed
   )
 }
 
-/** Rangkaian langkah mendatar: kotak-kotak bertanda panah. `tekan` = indeks yang disorot. */
-export function AlurLangkah({ langkah, jeda, tekan, kecil }: { langkah: string[]; jeda: number; tekan?: number; kecil?: boolean }) {
+/** Rangkaian langkah mendatar: kotak-kotak bertanda panah. `tekan` = indeks yang disorot; `akhirBiru` = langkah terakhir (mis. Setujui) berlatar biru tua, huruf putih. */
+export function AlurLangkah({ langkah, jeda, tekan, kecil, akhirBiru }: { langkah: string[]; jeda: number; tekan?: number; kecil?: boolean; akhirBiru?: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {langkah.map((l, i) => (
         <span key={l} className="mt-pop inline-flex items-center gap-2" style={d(jeda + i * 150)}>
           {i > 0 && <span className="text-teal font-bold">›</span>}
-          <span className={`rounded-lg font-semibold ${kecil ? 'px-2.5 py-1.5 text-[14.5px]' : 'px-3.5 py-2 text-[16px]'} ${tekan === i ? 'bg-teal text-white shadow-md' : 'bg-navy/[0.07] text-navy'}`}>{l}</span>
+          <span className={`rounded-lg font-semibold ${kecil ? 'px-2.5 py-1.5 text-[14.5px]' : 'px-3.5 py-2 text-[16px]'} ${tekan === i ? 'bg-teal text-white shadow-md' : akhirBiru && i === langkah.length - 1 ? 'bg-navy text-white shadow-md' : 'bg-navy/[0.07] text-navy'}`}>{l}</span>
         </span>
       ))}
     </div>

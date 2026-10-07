@@ -61,7 +61,7 @@ const ARAH: { judul: string; ikon: 'dokumen' | 'daftar'; tanda: string; arti: st
   {
     judul: 'Sudah masuk aset, belum diposting di keuangan', ikon: 'daftar', tanda: 'Selisih negatif — Entry lebih besar',
     arti: 'Barang sudah ada BAST dan tercatat di BMD, tetapi realisasinya belum terlihat di LRA.',
-    sebab: ['Pembayaran / posting di keuangan belum dilakukan', 'Belanja barang-jasa yang jadi aset belum ditandai Kapitalisasi', 'Realisasi tercatat di SKPD lain / di periode lain'],
+    sebab: ['Pembayaran / posting di keuangan belum dilakukan', 'Belanja barang-jasa yang jadi aset belum ditandai Kapitalisasi'],
   },
 ]
 

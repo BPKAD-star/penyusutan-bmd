@@ -1,0 +1,79 @@
+'use client'
+// Materi "Entry Belanja Modal · Pengadaan" — dua slide alur entry berbentuk
+// EMPAT kartu (permintaan user 2026-10-07): Non Konstruksi dan Konstruksi.
+// Keduanya sengaja satu bentuk & satu komponen, karena isinya empat langkah
+// yang SAMA dengan urutan sedikit dibolak-balik:
+//   Non Konstruksi : Kontrak → BAST → Barang → Spesifikasi
+//   Konstruksi     : Kontrak → Barang KDP → BAST per termin → Spesifikasi
+// Pembatasnya: yang ditampilkan HANYA pekerjaan pengurus barang — Pratinjau &
+// Setujui (dikerjakan sesudahnya) tidak ikut.
+import type { ReactNode } from 'react'
+import { SlideTerang, Catatan, Ikon, d, type NamaIkon } from '../bagian'
+import { MATERI, Lencana } from './bahan'
+
+type Langkah = { ikon: NamaIkon; judul: string; isi: string; tanda?: string }
+
+function EmpatKartu({ langkah }: { langkah: Langkah[] }) {
+  return (
+    <div className="absolute inset-x-0 top-0 grid grid-cols-4 gap-5">
+      {langkah.map((l, i) => (
+        <div key={l.judul} className="mt-up relative rounded-2xl border border-gray-200 bg-white shadow-lg p-6 h-[268px]" style={d(250 + i * 200)}>
+          <div className="flex items-center justify-between">
+            <span className="w-12 h-12 rounded-xl bg-teal text-white flex items-center justify-center"><Ikon nama={l.ikon} ukuran={26} /></span>
+            <span className="text-[38px] font-bold text-navy/15 leading-none">{i + 1}</span>
+          </div>
+          <p className="mt-4 text-[22px] font-bold text-navy leading-tight">{l.judul}</p>
+          <p className="mt-2 text-[15.5px] text-gray-500 leading-snug">{l.isi}</p>
+          {l.tanda && <span className="absolute left-6 bottom-5"><Lencana nada="wajib">{l.tanda}</Lencana></span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DuaCatatan({ kiri, kanan }: { kiri: ReactNode; kanan: ReactNode }) {
+  return (
+    <div className="absolute inset-x-0 bottom-0 grid grid-cols-2 gap-5">
+      <Catatan jeda={1500} nada="teal" ikon="lampu">{kiri}</Catatan>
+      <Catatan jeda={1700} nada="amber" ikon="dokumen">{kanan}</Catatan>
+    </div>
+  )
+}
+
+const NON_KONSTRUKSI: Langkah[] = [
+  { ikon: 'dokumen', judul: 'Buat Kontrak', isi: 'Tekan + Tambah Pengadaan: sumber pengadaan, No. & Tgl Kontrak, penyedia, Program / Kegiatan / Sub Kegiatan, PPK.' },
+  { ikon: 'dokumen', judul: 'Isi dan Upload BAST', isi: 'No. dan Tgl BAST (= tanggal perolehan), lalu unggah dokumen BAST — foto atau PDF.', tanda: 'BAST wajib' },
+  { ikon: 'keranjang', judul: 'Tambah Barang', isi: 'Pilih kode rekening → Jenis BMD → kode barang, lalu isi satuan, kuantitas, harga. Kuantitas > 1 dipecah per unit.' },
+  { ikon: 'kamera', judul: 'Edit Spesifikasi Barang', isi: 'Spesifikasi Nama Barang, merek, nomor seri, kondisi — dan foto tiap unit.', tanda: 'Foto wajib' },
+]
+
+export function AlurNonKonstruksi() {
+  return (
+    <SlideTerang materi={MATERI} label="Non Konstruksi" judul="Alur entry non konstruksi">
+      <EmpatKartu langkah={NON_KONSTRUKSI} />
+      <DuaCatatan
+        kiri={<>Empat langkah ini <b>pekerjaan pengurus barang</b>. <b>Pratinjau &amp; Setujui</b> dikerjakan sesudahnya.</>}
+        kanan={<>BAST <b>satu untuk seluruh kontrak</b>, diunggah di awal — sebelum barang ditambahkan.</>}
+      />
+    </SlideTerang>
+  )
+}
+
+const KONSTRUKSI: Langkah[] = [
+  { ikon: 'dokumen', judul: 'Buat Kontrak', isi: 'Tekan + Buat Kontrak: nama pekerjaan, No. & Tgl Kontrak, bentuk kontrak (SPK / Surat Perjanjian), PPK.' },
+  { ikon: 'gedung', judul: 'Tambah Barang KDP', isi: 'Satu kontrak bisa memuat beberapa barang (mis. beberapa ruas jalan). Kode hanya golongan 1.3.6.' },
+  { ikon: 'hitung', judul: 'Isi dan Upload BAST per Termin', isi: 'Perencanaan, Fisik, Biaya Umum, Pengawasan — tiap termin bertanggal BAST, bernilai, dan berdokumen.', tanda: 'BAST per termin' },
+  { ikon: 'kamera', judul: 'Edit Spesifikasi Barang', isi: 'Nama barang (tak boleh kembar), lokasi, dan foto tiap barang KDP.', tanda: 'Foto wajib' },
+]
+
+export function AlurKonstruksi() {
+  return (
+    <SlideTerang materi={MATERI} label="Pekerjaan Konstruksi" judul="Alur entry konstruksi (KDP)">
+      <EmpatKartu langkah={KONSTRUKSI} />
+      <DuaCatatan
+        kiri={<>Nilai tiap barang = <b>jumlah seluruh termin</b>-nya. Komptabelnya <b>Intra</b>; golongan 1.3.6 tidak disusutkan sampai direklas.</>}
+        kanan={<>Beda dengan Non Konstruksi: BAST <b>diunggah per termin</b>, sesudah barang KDP ditambahkan — urutan langkah 2 dan 3 <b>dibalik</b>.</>}
+      />
+    </SlideTerang>
+  )
+}

@@ -38,7 +38,7 @@ function Tahap({ no, x, y, h = T_UTAMA, nada, jeda, children }: {
 function Pelaku({ x, y, jeda, children }: { x: number; y: number; jeda: number; children: ReactNode }) {
   return (
     <div className="mt-pop absolute" style={{ left: x, top: y, width: LEBAR, height: 50, ...d(jeda) }}>
-      <div className="w-full h-full rounded-full border border-navy/25 bg-navy/[0.07] flex items-center justify-center gap-2 text-[16px] font-semibold text-navy">
+      <div className="w-full h-full rounded-full border border-navy/25 bg-navy/[0.07] flex items-center justify-center gap-2 px-2 text-[15px] leading-tight font-semibold text-navy">
         <Ikon nama="orang" ukuran={18} className="flex-shrink-0" />{children}
       </div>
     </div>
@@ -66,7 +66,7 @@ export function AlurBelanjaModal() {
       markerEnd={`url(#${m})`} className="mt-in" style={d(jeda)} />
   )
   return (
-    <SlideTerang materi={MATERI} label="Gambaran besar" judul="Dari kontrak sampai neraca">
+    <SlideTerang materi={MATERI} label="Gambaran besar" judul="The Flow">
       <div className="absolute inset-0">
         <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1152 474" aria-hidden>
           <defs>
@@ -84,7 +84,7 @@ export function AlurBelanjaModal() {
           {panah('M1073,281 L1073,316', 1550)}
         </svg>
 
-        <Pelaku x={X[0]} y={0} jeda={200}>PPK / Keuangan</Pelaku>
+        <Pelaku x={X[0]} y={0} jeda={200}>Pejabat Pengadaan</Pelaku>
         <Pelaku x={X[4]} y={0} jeda={1100}>Bendahara</Pelaku>
         <Pelaku x={X[2]} y={215} jeda={800}>Pengurus Barang</Pelaku>
 
