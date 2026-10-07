@@ -152,7 +152,13 @@ export function BarangKdpCard({ barang, payload, kontraks, tahunKartu, skpdId, b
     if (termin.length === 0) return <p className="pl-10 pr-5 py-2 text-xs text-gray-400">Belum ada BAST untuk barang ini.</p>
     return (
       <div className="overflow-x-auto pl-8">
-        <table className="w-full">
+        {/* table-fixed + lebar tetap: tabel tiap kontrak SEJAJAR kolomnya
+            (tanpa ini lebar kolom ikut isi tiap tabel & bergeser antar kontrak). */}
+        <table className="w-full table-fixed">
+          <colgroup>
+            <col style={{ width: '18%' }} /><col style={{ width: '16%' }} /><col style={{ width: '23%' }} />
+            <col style={{ width: '14%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} />
+          </colgroup>
           <thead className="border-b border-gray-100"><tr>
             <th className="table-th">No BAST</th><th className="table-th">Dokumen dan Tanggal BAST</th><th className="table-th">Rekening</th>
             <th className="table-th">Keterangan</th><th className="table-th text-right">Nominal</th><th className="table-th">Status</th><th className="table-th"></th>
@@ -162,21 +168,21 @@ export function BarangKdpCard({ barang, payload, kontraks, tahunKartu, skpdId, b
               const setuju = statusTermin(t) === 'disetujui'
               return (
                 <tr key={t.id || i}>
-                  <td className="table-td text-xs text-gray-600 align-top"><span className="text-gray-300 mr-1">↳</span>{t.no_bast || '—'}
+                  <td className="table-td text-xs text-gray-600 align-top break-words"><span className="text-gray-300 mr-1">↳</span>{t.no_bast || '—'}
                     {!t.kontrak_id && t.komponen !== 'biaya_umum' && <span className="block text-amber-600">⚠ {komponenLabelKdp(t.komponen)} belum menunjuk kontrak</span>}
                     {t.kontrak_id && !kontrakById.has(t.kontrak_id) && <span className="block text-amber-600">⚠ kontraknya sudah tidak ada</span>}
                   </td>
-                  <td className="table-td text-xs align-top">
+                  <td className="table-td text-xs align-top break-words">
                     {(t.dokumen_paths || []).length === 0 ? <span className="text-amber-600">—</span>
                       : (t.dokumen_paths || []).map(p => (
                         <button key={p} onClick={() => bukaDokumen(p)} className="underline text-teal hover:opacity-80 block text-left">{namaFile(p)}</button>
                       ))}
                     <span className="block text-gray-400 mt-0.5">{t.tgl_bast}</span>
                   </td>
-                  <td className="table-td text-xs text-gray-500 align-top">
+                  <td className="table-td text-xs text-gray-500 align-top break-words">
                     {t.kode_rekening ? <><span className="block text-gray-700">{t.kode_rekening}</span><span className="block text-gray-400">{rekeningUraian[t.kode_rekening] || ''}</span></> : '—'}
                   </td>
-                  <td className="table-td text-xs text-gray-600 align-top">{t.keterangan || '—'}</td>
+                  <td className="table-td text-xs text-gray-600 align-top break-words">{t.keterangan || '—'}</td>
                   <td className="table-td text-xs text-right align-top">{formatRupiah2(t.nominal)}</td>
                   <td className="table-td text-xs align-top">
                     {setuju ? <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal/10 text-teal">Disetujui</span>
