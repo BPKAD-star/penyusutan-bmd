@@ -51,6 +51,12 @@ export default function DokumenSumber() {
   const [adminInduk, setAdminInduk] = useState(false)
   const [mySkpdId, setMySkpdId] = useState<number | null>(null)
   const [skpdMap, setSkpdMap] = useState<Map<number, string>>(new Map())
+  // Penyaring SKPD di bagian Siklus (admin saja, permintaan user 2026-10-07).
+  // `null` = semua SKPD; berisi = SKPD terpilih BESERTA turunannya (pola
+  // onChangeSelection laporan). Murni penyaring tampilan atas baris yang sudah
+  // termuat — RLS tetap penjaga siapa boleh membaca apa.
+  const [filterSkpd, setFilterSkpd] = useState<Set<number> | null>(null)
+  const [filterSkpdId, setFilterSkpdId] = useState('')
 
   useEffect(() => {
     if (tahun === null && tahunList.length > 0) {
@@ -81,7 +87,7 @@ export default function DokumenSumber() {
   async function muatJumlahPeraturan() {
     try { setJumlahPeraturan(await hitungPeraturan(supabase)) } catch { setJumlahPeraturan(null) }
   }
-  const keBeranda = () => { setSiklus(null); setPeraturan(null) }
+  const keBeranda = () => { setSiklus(null); setPeraturan(null); setFilterSkpd(null); setFilterSkpdId('') }
 
   return (
     <div className="p-6">
@@ -110,8 +116,21 @@ export default function DokumenSumber() {
       ) : siklus && tahun !== null ? (
         <div className="space-y-4">
           <button className="btn-secondary text-xs" onClick={keBeranda}>← Kembali</button>
+          {isAdmin && (
+            <div className="card p-4">
+              <label className="block text-xs text-gray-500 mb-1">Saring per SKPD</label>
+              <SkpdCombobox allowClear value={filterSkpdId} onChange={setFilterSkpdId}
+                onChangeSelection={sel => setFilterSkpd(sel.descendantIds ? new Set(sel.descendantIds) : null)}
+                placeholder="Semua SKPD — atau ketik SKPD / Sub OPD..." />
+              {filterSkpd && (
+                <p className="text-[11px] text-gray-400 mt-1.5">
+                  Menampilkan dokumen SKPD terpilih beserta unit di bawahnya.
+                </p>
+              )}
+            </div>
+          )}
           {siklus.sumber.map((sm, i) => (
-            <SumberSection key={i} tahun={tahun} sumber={sm}
+            <SumberSection key={i} tahun={tahun} sumber={sm} filterSkpd={filterSkpd}
               isAdmin={isAdmin} adminInduk={adminInduk} mySkpdId={mySkpdId} skpdMap={skpdMap} />
           ))}
         </div>
@@ -123,8 +142,8 @@ export default function DokumenSumber() {
   )
 }
 
-function SumberSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap }: {
-  tahun: number; sumber: SumberDokumen
+function SumberSection({ tahun, sumber, filterSkpd, isAdmin, adminInduk, mySkpdId, skpdMap }: {
+  tahun: number; sumber: SumberDokumen; filterSkpd: Set<number> | null
   isAdmin: boolean; adminInduk: boolean; mySkpdId: number | null; skpdMap: Map<number, string>
 }) {
   if (sumber.tipe === 'kosong') {
@@ -135,10 +154,10 @@ function SumberSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap }
   if (sumber.tipe === 'generic') {
     return (
       <GenericSection tahun={tahun} sumber={sumber} isAdmin={isAdmin} adminInduk={adminInduk}
-        mySkpdId={mySkpdId} skpdMap={skpdMap} />
+        mySkpdId={mySkpdId} skpdMap={skpdMap} filterSkpd={filterSkpd} />
     )
   }
-  return <PullSection tahun={tahun} sumber={sumber} skpdMap={skpdMap} />
+  return <PullSection tahun={tahun} sumber={sumber} skpdMap={skpdMap} filterSkpd={filterSkpd} />
 }
 
 // Baris `jurnal_header` apa adanya — `payload` sengaja dibiarkan mentah supaya
@@ -206,10 +225,11 @@ function BarisDokumen({ r, dokumen, tujuan, skpdMap }: {
 // Jumlah `jurnal_header` per tahun itu ratusan, bukan ratusan ribu — memecahnya
 // jadi satu query per tab justru membuat halaman menembak 5x lebih sering
 // hanya untuk memindah tab.
-function PullSection({ tahun, sumber, skpdMap }: {
+function PullSection({ tahun, sumber, skpdMap, filterSkpd }: {
   tahun: number
   sumber: Extract<SumberDokumen, { tipe: 'pull' }>
   skpdMap: Map<number, string>
+  filterSkpd: Set<number> | null
 }) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
@@ -299,6 +319,9 @@ function PullSection({ tahun, sumber, skpdMap }: {
       .filter(r => r.kategori === k.kategori)
       .filter(r => dokumenMasihLive(r.approval_status))
       .filter(r => !headerTanpaBarisLive.has(r.id))
+      // Penyaring SKPD (admin): `skpd_id` = SKPD pencatat — untuk siklus
+      // Penggunaan itu SKPD yang MENGELUARKAN, sama dgn pengelompokan di bawah.
+      .filter(r => !filterSkpd || filterSkpd.has(r.skpd_id))
       .filter(r => !k.perluApproval || r.approval_status === 'disetujui')
       .filter(r => !k.cocok || k.cocok(r))
       .map(r => ({ r, dokumen: berkasDari(r.payload, keys) }))
@@ -352,7 +375,9 @@ function PullSection({ tahun, sumber, skpdMap }: {
         ) : err ? (
           <p className="text-xs text-red-600">{err}</p>
         ) : perSkpd.length === 0 ? (
-          <p className="text-xs text-gray-400">Belum ada dokumen untuk tahun {tahun}.</p>
+          <p className="text-xs text-gray-400">
+            Belum ada dokumen untuk tahun {tahun}{filterSkpd ? ' pada SKPD yang dipilih' : ''}.
+          </p>
         ) : (
           <div className="space-y-4">
             {perSkpd.map(([skpdId, baris]) => (
@@ -375,10 +400,11 @@ function PullSection({ tahun, sumber, skpdMap }: {
   )
 }
 // ── Sumber generik: upload baru ke tabel admin_dokumen ──────────────────────
-function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap }: {
+function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap, filterSkpd }: {
   tahun: number
   sumber: Extract<SumberDokumen, { tipe: 'generic' }>
   isAdmin: boolean; adminInduk: boolean; mySkpdId: number | null; skpdMap: Map<number, string>
+  filterSkpd: Set<number> | null
 }) {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
@@ -394,6 +420,11 @@ function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap 
   const [err, setErr] = useState('')
 
   const canUpload = isAdmin || (sumber.scope === 'per_skpd' && adminInduk)
+  // Penyaring SKPD hanya bermakna untuk dokumen per-SKPD; dokumen tingkat
+  // kabupaten (scope global) tak punya SKPD & tetap tampil apa adanya.
+  const tampil = filterSkpd && sumber.scope === 'per_skpd'
+    ? docs.filter(d => d.skpd_id != null && filterSkpd.has(d.skpd_id))
+    : docs
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -490,11 +521,13 @@ function GenericSection({ tahun, sumber, isAdmin, adminInduk, mySkpdId, skpdMap 
 
       {loading ? (
         <p className="text-xs text-gray-400">Memuat...</p>
-      ) : docs.length === 0 ? (
-        <p className="text-xs text-gray-400">Belum ada dokumen untuk tahun {tahun}.</p>
+      ) : tampil.length === 0 ? (
+        <p className="text-xs text-gray-400">
+          Belum ada dokumen untuk tahun {tahun}{tampil !== docs ? ' pada SKPD yang dipilih' : ''}.
+        </p>
       ) : (
         <div className="space-y-2">
-          {docs.map(d => (
+          {tampil.map(d => (
             <div key={d.id} className="border border-gray-100 rounded-lg p-3 flex items-start justify-between gap-3">
               <div className="text-xs text-gray-600">
                 <p className="font-medium text-gray-800">
