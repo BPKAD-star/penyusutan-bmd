@@ -38,6 +38,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { luasEfektif, type RingkasBidang } from '@/lib/luasBidang'
+import { punyaBidangTanah } from '@/lib/gisTanah'
 import { jenisHakTampil, teksJenisHak, tambahBidangHak, type RingkasHak } from '@/lib/jenisHakBidang'
 
 // Ringkasan bidang per register: Σ luas (luasBidang.ts) + jenis hak per bidang
@@ -524,15 +525,32 @@ export default function DaftarBarangPage() {
   // Σ HANYA sah kalau SEMUA bidang punya luas (nLuas === n) — kalau baru
   // sebagian yang diisi, jumlahnya lebih kecil dari luas sebenarnya. Per
   // 2026-07-28 itu justru keadaan normal: dari 529 bidang, baru 4 yang berluas.
-  const fetchBidangCount = useCallback(async (ids: string[]) => {
+  // ⚠️ KEYSET per `id`, jangan satu permintaan per 200 aset: PostgREST memotong
+  // hasil di 1.000 baris, dan 200 register tanah bisa memuat >1.000 bidang
+  // (terukur 1.204 di satu kelompok). Baris yang terpotong membuat register
+  // kehilangan sebagian/seluruh bidangnya & luasnya jatuh ke `aset.luas` atau
+  // lebih kecil — TANPA error. Insiden 2026-10-07: Export 1.3.1 selisih
+  // +26.011,02 m² dari GIS. Hanya barang bidang-sah (`punyaBidangTanah`) yang
+  // ditanyakan, jadi ekspor 1.5.4 tak menyapu 8.660 baris.
+  const fetchBidangCount = useCallback(async (rows: { id: string; kode: string }[]) => {
+    const ids = rows.filter(r => punyaBidangTanah(r.kode)).map(r => r.id)
     const cnt: Record<string, BidangAgg> = {}
     for (let i = 0; i < ids.length; i += 200) {
-      const { data, error } = await supabase.from('aset_bidang_tanah').select('aset_id,luas,jenis_hak').in('aset_id', ids.slice(i, i + 200))
-      if (error) throw new Error(`gagal membaca bidang tanah: ${error.message}`)
-      for (const b of (data || []) as { aset_id: string; luas: number | null; jenis_hak: string | null }[]) {
-        const a = cnt[b.aset_id] || (cnt[b.aset_id] = { n: 0, nLuas: 0, luas: null, hak: {} })
-        tambahBidangHak(a, b.jenis_hak) // menaikkan `n` & menghitung jenis hak
-        if (b.luas != null) { a.nLuas++; a.luas = (a.luas ?? 0) + Number(b.luas) }
+      const chunk = ids.slice(i, i + 200)
+      let terakhir: string | null = null
+      for (;;) {
+        let q = supabase.from('aset_bidang_tanah').select('id,aset_id,luas,jenis_hak').in('aset_id', chunk).order('id').limit(1000)
+        if (terakhir != null) q = q.gt('id', terakhir)
+        const { data, error } = await q
+        if (error) throw new Error(`gagal membaca bidang tanah: ${error.message}`)
+        const page = (data || []) as { id: string; aset_id: string; luas: number | null; jenis_hak: string | null }[]
+        for (const b of page) {
+          const a = cnt[b.aset_id] || (cnt[b.aset_id] = { n: 0, nLuas: 0, luas: null, hak: {} })
+          tambahBidangHak(a, b.jenis_hak) // menaikkan `n` & menghitung jenis hak
+          if (b.luas != null) { a.nLuas++; a.luas = (a.luas ?? 0) + Number(b.luas) }
+        }
+        if (page.length < 1000) break
+        terakhir = page[page.length - 1].id
       }
     }
     return cnt
@@ -701,7 +719,9 @@ export default function DaftarBarangPage() {
   // 50 baris yang benar-benar tampil, jadi praktis gratis.
   const lengkapiHalaman = useCallback(async (rows: Row[], golongan: string) => {
     setUraianMap(await fetchUraian(rows.map(r => r.kode)))
-    setBidangCount(golongan === '1.3.1' ? await fetchBidangCount(rows.map(r => r.id)) : {})
+    // Gerbangnya per BARANG (`punyaBidangTanah`), bukan per golongan: tanah idle
+    // 1.5.4 ikut punya bidang & luasnya wajib Σ bidang seperti di GIS.
+    setBidangCount(golongan === '1.3.1' || golongan === '1.5.4' ? await fetchBidangCount(rows) : {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -894,7 +914,7 @@ export default function DaftarBarangPage() {
     setProgres(0)
     const uraian = await fetchUraian(all.map(r => r.kode))
     // Peta bidang khusus baris yang diekspor — lihat catatan di `luasOf`.
-    const bidangEx = applied.golongan === '1.3.1' ? await fetchBidangCount(all.map(r => r.id)) : {}
+    const bidangEx = applied.golongan === '1.3.1' || applied.golongan === '1.5.4' ? await fetchBidangCount(all) : {}
     const keys = exportColsFor(applied.golongan)
     exportToExcel(all.map(r => {
       const cell = (key: string): string | number => {
@@ -978,7 +998,7 @@ export default function DaftarBarangPage() {
     const uraian = await fetchUraian(all.map(r => r.kode))
     // Peta bidang khusus baris yang diekspor — `bidangCount` di state cuma
     // memuat halaman yang sedang tampil sejak paginasi pindah ke server.
-    const bidangEx = applied.golongan === '1.3.1' ? await fetchBidangCount(all.map(r => r.id)) : {}
+    const bidangEx = applied.golongan === '1.3.1' || applied.golongan === '1.5.4' ? await fetchBidangCount(all) : {}
     const hapus = await fetchHapusInfo(all.filter(r => r.status !== 'aktif').map(r => r.id))
     const keys = exportColsFor(applied.golongan)
     exportToExcel(all.map(r => {

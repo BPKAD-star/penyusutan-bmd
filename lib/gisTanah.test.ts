@@ -4,7 +4,20 @@
 // migrasinya, planner tak bisa membuktikan implikasi predikat & GIS Tanah
 // timeout lagi — persis riwayat yang sudah dua kali terjadi (CLAUDE.md).
 import { describe, it, expect } from 'vitest'
-import { KODE_TANAH_IDLE, GIS_TANAH_KODE_FILTER } from './gisTanah'
+import { KODE_TANAH_IDLE, GIS_TANAH_KODE_FILTER, punyaBidangTanah } from './gisTanah'
+
+describe('punyaBidangTanah — himpunan yang sama dgn filter GIS (2026-10-07)', () => {
+  it('Tanah 1.3.1 dan tanah idle 1.5.4 ikut', () => {
+    expect(punyaBidangTanah('1.3.1.01.01.01.001')).toBe(true)
+    expect(punyaBidangTanah(KODE_TANAH_IDLE)).toBe(true)
+  })
+  it('tetangga idle (.002/.003) & golongan lain TIDAK ikut', () => {
+    expect(punyaBidangTanah('1.5.4.01.01.02.002')).toBe(false)
+    expect(punyaBidangTanah('1.5.4.01.01.02.003')).toBe(false)
+    expect(punyaBidangTanah('1.3.2.02.01.01.001')).toBe(false)
+    expect(punyaBidangTanah('1.3.10.01')).toBe(false)
+  })
+})
 
 describe('GIS Tanah — cakupan kode (2026-09-18)', () => {
   it('KODE_TANAH_IDLE persis kode idle land, bukan tetangganya di kelompok yang sama', () => {

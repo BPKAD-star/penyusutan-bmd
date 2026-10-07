@@ -34,3 +34,13 @@ export const KODE_TANAH_IDLE = '1.5.4.01.01.02.001'
  * berhenti bisa membuktikan implikasi predikat index & GIS timeout lagi.
  */
 export const GIS_TANAH_KODE_FILTER = `kode.like.1.3.1.%,kode.eq.${KODE_TANAH_IDLE}`
+
+/**
+ * Barang dengan kode ini boleh punya bidang di `aset_bidang_tanah` — himpunan
+ * yang SAMA dengan filter GIS di atas (Tanah 1.3.1 + tanah idle 1.5.4), versi
+ * per-baris untuk sisi klien. Dipakai Daftar Barang & ekspornya supaya luas
+ * tanah idle ikut Σ bidang seperti di GIS, bukan jatuh ke `aset.luas` register
+ * (selisih 2026-10-07: ekspor 1.5.4 tak pernah memuat bidang).
+ */
+export const punyaBidangTanah = (kode: string): boolean =>
+  kode.startsWith('1.3.1.') || kode === KODE_TANAH_IDLE
