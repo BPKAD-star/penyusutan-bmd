@@ -84,6 +84,50 @@ export function barangKdpList(p: KontrakKonstruksiPayload): BarangKdp[] {
   return []
 }
 
+/**
+ * Aturan TANGGAL BAST termin terhadap tanggal kontrak (keputusan user 2026-10-07).
+ *
+ * Umumnya BAST tak boleh lebih tua dari kontraknya. PENGECUALIAN satu-satunya:
+ * termin **perencanaan** boleh lebih tua, asal masih di **TAHUN yang sama**
+ * dengan kontrak. Itu yang memungkinkan alur "perencanaan cair dulu (dicatat
+ * sbg kartu sendiri supaya rekon cocok) → fisik datang → kartu perencanaan
+ * dibuka kunci → perencanaannya dimasukkan sbg termin di kartu fisik".
+ * Lintas tahun SENGAJA ditolak: tahun lamanya sudah/akan ditutup, jadi baik
+ * Buka Kunci maupun termin bertanggal tahun itu akan ditolak guard tahun buku —
+ * kasus itu lewat Kapitalisasi KDP. Fisik/biaya umum/pengawasan tetap aturan lama.
+ * Mengembalikan pesan penolakan, atau null kalau sah.
+ */
+export function cekTanggalTermin(
+  komponen: PembayaranKdp['komponen'] | string, tglBast: string, tglKontrak: string | null | undefined,
+): string | null {
+  if (!tglKontrak || !tglBast || tglBast >= tglKontrak) return null
+  if (komponen !== 'perencanaan') {
+    return `Tgl BAST (${tglBast}) tidak boleh lebih tua dari tgl kontrak (${tglKontrak}). `
+      + 'Yang boleh lebih tua hanya termin Perencanaan.'
+  }
+  if (tglBast.slice(0, 4) !== tglKontrak.slice(0, 4)) {
+    return `Tgl BAST perencanaan (${tglBast}) boleh lebih tua dari tgl kontrak, tapi wajib di tahun yang sama `
+      + `(${tglKontrak.slice(0, 4)}). Perencanaan dari tahun sebelumnya disatukan lewat Kapitalisasi KDP.`
+  }
+  return null
+}
+
+/** Batas bawah `<input type="date">` termin: perencanaan boleh mundur sampai awal tahun kontrak. */
+export function minTglTermin(komponen: string, tglKontrak: string | null | undefined): string | undefined {
+  if (!tglKontrak) return undefined
+  return komponen === 'perencanaan' ? `${tglKontrak.slice(0, 4)}-01-01` : tglKontrak
+}
+
+/**
+ * Tanggal termin paling awal yang MENGIKAT tanggal kontrak (dipakai form Edit
+ * Kontrak: tgl kontrak tak boleh lebih baru dari ini). Termin perencanaan tak
+ * ikut — ia memang boleh lebih tua dari kontraknya (lihat `cekTanggalTermin`).
+ */
+export function terminPengikatTerawal(p: KontrakKonstruksiPayload): string | undefined {
+  return barangKdpList(p).flatMap(b => (b.pembayaran || []))
+    .filter(x => x.komponen !== 'perencanaan').map(x => x.tgl_bast).filter(Boolean).sort()[0]
+}
+
 /** Nama yang ditampilkan untuk satu barang KDP: Spesifikasi Nama Barang kalau sudah diisi,
  *  kalau belum jatuh ke `nama` (sejak 2026-10-04 diisi uraian kodefikasi saat barang ditambah). */
 export const namaBarangKdp = (b: Pick<BarangKdp, 'nama' | 'kode' | 'spec'>): string =>

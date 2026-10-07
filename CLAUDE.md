@@ -9656,3 +9656,25 @@ Kunci kini menampilkan banner amber (layar saja, tak tercetak) berisi NIBAR baru
   TIDAK menebak. KDP: banyak baris termin per barang dihitung satu barang.
 - `JENIS_TERBIT`/`JENIS_BUKA_KUNCI` mencakup kelima Cara Perolehan + `akumulasi_kdp`.
   Menu Cara Perolehan baru yang punya Buka Kunci → tambahkan jenisnya di sana.
+
+## KDP: termin PERENCANAAN boleh lebih tua dari tgl kontrak, asal satu tahun (2026-10-07, tanpa migrasi)
+
+Keputusan user. Alur baru untuk "perencanaan cair dulu, fisik menyusul" DI TAHUN YANG SAMA:
+perencanaan dicatat sbg kartu KDP sendiri & disetujui saat cair (rekon cocok) → kontrak fisik
+datang → kartu perencanaan di-Buka Kunci → perencanaannya dientry ulang sbg termin di kartu
+fisik dgn tanggal BAST aslinya. Satu kartu satu barang, tanpa Kapitalisasi.
+
+- Aturannya SATU tempat: `cekTanggalTermin` / `minTglTermin` / `terminPengikatTerawal`
+  (lib/kdp.ts, dikunci lib/kdpTanggalTermin.test.ts). Fisik/biaya umum/pengawasan tetap
+  ≥ tgl kontrak. Edit Kontrak tak lagi menganggap termin perencanaan sbg pengikat tgl kontrak.
+- **Lintas tahun DITOLAK** (diarahkan ke Kapitalisasi KDP) — Buka Kunci & termin bertanggal tahun
+  yang sudah ditutup akan ditolak guard tahun buku. Perencanaan gelondongan tetap Pemecahan →
+  Kapitalisasi.
+- ⚠️ Konsekuensi yang DITERIMA user: Buka Kunci menulis `batal_akumulasi_kdp` bertanggal termin
+  aslinya & barang lama jadi `draft` di semua periode, jadi komposisi NIBAR di semester lampau
+  berganti (totalnya tetap); KIBAR lama tak menunjuk barang penggantinya (penunjuk pengganti
+  hanya bekerja di kartu yang sama) — cukup info di pop-up Buka Kunci.
+- Buka Kunci KDP yang terhalang transaksi lebih baru kini benar-benar tampil sbg pop-up: dulu
+  `konfirmasiGagal` dipanggil dari DALAM `kerjakan` (pop-up bisa tertimpa & lenyap); kini
+  `kerjakan` melempar & pop-up dibuka di luar. Pesan penghalang (`cekBolehBatal`) menyebut nama
+  jenis yang terbaca (`KIBAR_JENIS_LABEL`) + kode & periodenya — berlaku semua menu batal.

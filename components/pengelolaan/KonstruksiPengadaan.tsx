@@ -26,7 +26,7 @@ import NominalInput from '@/shared/ui/NominalInput'
 import { DokumenBastField, bukaDokumen, namaFile } from './DokumenBastField'
 import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import {
-  approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList, namaBarangKdp, kekuranganNamaKdp,
+  approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList, cekTanggalTermin, minTglTermin, terminPengikatTerawal, namaBarangKdp, kekuranganNamaKdp,
   type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
 } from '@/lib/kdp'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
@@ -445,23 +445,35 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
     }
   }
   async function unapprove() {
-    await konfirmasi({
-      nada: 'amber', ikon: '🔓', judul: 'Buka kunci kontrak konstruksi ini?',
-      subjudul: `Kontrak ${kontrak.no_sk}`,
-      rincian: [{ label: 'Barang KDP terdampak', nilai: `${barangs.length} barang` }],
-      isi: <><b>SEMUA</b> barang KDP-nya disembunyikan dari Daftar Barang &amp; seluruh terminnya
-        dibalik, lalu kontrak kembali draft sampai disetujui ulang.</>,
-      peringatan: <>Berlaku satu paket — kalau 10 barang, kesepuluhnya ikut hilang, bukan yang
-        dipilih saja.</>,
-      labelYa: 'Ya, buka kunci',
-      kerjakan: async () => {
-        setBusy(true); onMsg('')
-        const { error } = await unapproveKontrakKonstruksi(supabase, kontrak.id)
-        setBusy(false)
-        if (error) { await konfirmasiGagal(konfirmasi, String(error), 'Belum bisa dibuka kunci'); return }
-        onMsg('Kontrak dibuka kunci — semua barang KDP kembali draft.'); onChanged()
-      },
-    })
+    // ⚠️ `kerjakan` MELEMPAR, pop-up gagalnya dibuka DI LUAR `konfirmasi()`.
+    // Versi lama memanggil `konfirmasiGagal` dari DALAM `kerjakan` — padahal
+    // KonfirmasiProvider cuma satu modal, jadi pop-up kedua menimpa yang
+    // pertama lalu ikut tertutup begitu `kerjakan` selesai: pesan "barang ini
+    // punya transaksi lebih baru" bisa lenyap sebelum terbaca (pola approve()).
+    try {
+      await konfirmasi({
+        nada: 'amber', ikon: '🔓', judul: 'Buka kunci kontrak konstruksi ini?',
+        subjudul: `Kontrak ${kontrak.no_sk}`,
+        rincian: [{ label: 'Barang KDP terdampak', nilai: `${barangs.length} barang` }],
+        isi: <><b>SEMUA</b> barang KDP-nya disembunyikan dari Daftar Barang &amp; seluruh terminnya
+          dibalik, lalu kontrak kembali draft sampai disetujui ulang.</>,
+        peringatan: <>Berlaku satu paket — kalau 10 barang, kesepuluhnya ikut hilang, bukan yang
+          dipilih saja. NIBAR barang ini berhenti berlaku; kalau terminnya dipindah ke kartu
+          kontrak lain (mis. perencanaan masuk ke kartu fisik), barangnya terbit dgn NIBAR baru
+          & KIBAR lama tak menunjuk ke sana.</>,
+        labelYa: 'Ya, buka kunci',
+        kerjakan: async () => {
+          setBusy(true); onMsg('')
+          try {
+            const { error } = await unapproveKontrakKonstruksi(supabase, kontrak.id)
+            if (error) throw new Error(String(error))
+          } finally { setBusy(false) }
+          onMsg('Kontrak dibuka kunci — semua barang KDP kembali draft.'); onChanged()
+        },
+      })
+    } catch (e) {
+      await konfirmasiGagal(konfirmasi, (e as Error).message, 'Belum bisa dibuka kunci')
+    }
   }
   async function hapus() {
     // Kontrak yg PERNAH disetujui punya jejak ledger (akumulasi_kdp/batal_ yg
@@ -648,14 +660,17 @@ function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
 
   const periodeAsli = periodeDariTanggal(kontrak.tanggal)
   const pindahSemester = periodeDariTanggal(tgl) !== periodeAsli
-  // Termin paling awal — tgl kontrak baru tak boleh lebih baru dari ini.
-  const terminTerawal = barangKdpList(p).flatMap(b => (b.pembayaran || []).map(x => x.tgl_bast)).sort()[0]
+  // Termin paling awal — tgl kontrak baru tak boleh lebih baru dari ini. Termin
+  // PERENCANAAN tak ikut mengikat: ia boleh lebih tua dari kontraknya asal satu
+  // tahun (cekTanggalTermin), dan tahunnya sudah terjaga karena tgl kontrak tak
+  // boleh pindah semester.
+  const terminTerawal = terminPengikatTerawal(p)
 
   async function simpan() {
     if (!nama.trim()) { setErr('Nama pekerjaan wajib diisi.'); return }
     if (!noKontrak.trim() || !tgl) { setErr('No. & Tgl Kontrak wajib diisi.'); return }
     if (pindahSemester) { setErr(`Tanggal masuk ${periodeDariTanggal(tgl)}, sedangkan kontrak ini di ${periodeAsli}. Pindah semester tidak diizinkan — batalkan & buat kontrak baru.`); return }
-    if (terminTerawal && tgl > terminTerawal) { setErr(`Tgl kontrak (${tgl}) tidak boleh lebih baru dari termin paling awal (${terminTerawal}) — sesuaikan termin dulu.`); return }
+    if (terminTerawal && tgl > terminTerawal) { setErr(`Tgl kontrak (${tgl}) tidak boleh lebih baru dari termin paling awal (${terminTerawal}) — sesuaikan termin dulu (termin Perencanaan dikecualikan).`); return }
     setErr(''); setSaving(true)
     const payload: KontrakKonstruksiPayload = {
       ...p, nama_pekerjaan: nama.trim(), sumber,
@@ -783,8 +798,10 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
   const [showForm, setShowForm] = useState(false)
   const [showKapInfo, setShowKapInfo] = useState(false)
   const [draftKapInfo, setDraftKapInfo] = useState<KapInfo | null>(barang.kap_info ?? null)
-  // Tgl BAST tak boleh lebih tua dari tgl kontrak (juga hormati batas tahun buku).
-  const minTgl = [bounds.min, tglKontrak].filter(Boolean).sort().slice(-1)[0]
+  // Tgl BAST tak boleh lebih tua dari tgl kontrak — KECUALI termin perencanaan,
+  // yang boleh mundur sampai awal tahun kontrak (cekTanggalTermin, lib/kdp.ts).
+  // Batas tahun buku tetap dihormati.
+  const minTgl = [bounds.min, minTglTermin(komponen, tglKontrak)].filter(Boolean).sort().slice(-1)[0]
 
   // ⚠️ Dokumen BAST WAJIB PER TERMIN (keputusan user 2026-09-05) — beda dari
   // Pengadaan non-konstruksi yang satu dokumen utk seluruh kontrak. Di sini
@@ -823,7 +840,8 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
       await gagalTambahRincian(`Dokumen BAST termin "${komponenLabel(komponen)}" ini wajib diunggah sebelum rincian bisa ditambahkan.`)
       return
     }
-    if (tglKontrak && tgl < tglKontrak) { setErr(`Tgl BAST (${tgl}) tidak boleh lebih tua dari tgl kontrak (${tglKontrak}).`); return }
+    const salahTgl = cekTanggalTermin(komponen, tgl, tglKontrak)
+    if (salahTgl) { setErr(salahTgl); return }
     setErr('')
     // Peringatan kode rekening — pola & teks SAMA dgn Pengadaan non-fisik
     // (permintaan user 2026-08-27). Bukan blokir: termin biaya umum/pengawasan
@@ -985,7 +1003,9 @@ function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEdit
                 <div><label className="block text-xs text-gray-500 mb-1">Komponen</label>
                   <select className="select-filter w-full text-sm" value={komponen} onChange={e => setKomponen(e.target.value)}>{KOMPONEN.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}</select></div>
                 <div><label className="block text-xs text-gray-500 mb-1">Nomor BAST</label><input className="select-filter w-full text-sm" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST <span className="text-gray-400">(≥ tgl kontrak {tglKontrak})</span></label><input type="date" min={minTgl} max={bounds.max} className="select-filter w-full text-sm" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
+                <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST <span className="text-gray-400">{komponen === 'perencanaan'
+                  ? `(boleh sebelum tgl kontrak, asal tahun ${(tglKontrak || '').slice(0, 4)})`
+                  : `(≥ tgl kontrak ${tglKontrak})`}</span></label><input type="date" min={minTgl} max={bounds.max} className="select-filter w-full text-sm" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
                 <div className="col-span-2 sm:col-span-3">
                   <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
                     hint={`wajib sebelum rincian "${komponenLabel(komponen)}" ini bisa ditambahkan (foto / PDF, bisa lebih dari satu)`}

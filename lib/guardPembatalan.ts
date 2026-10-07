@@ -14,6 +14,14 @@
 // CLAUDE.md). Jadi fungsi inilah satu-satunya penjaga. Perlakukan begitu.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { idTarget, type BatalPayload } from '@/lib/voidedAset'
+import { KIBAR_JENIS_LABEL } from '@/lib/kibarJenis'
+
+/** Penghalang yang terbaca manusia: "Label" (kode_jenis, periode). Kode mentah tetap
+ *  disebut supaya bisa dicari; jenis tanpa label cukup "kode" (periode). */
+const sebutPenghalang = (jenis: string, periode: string): string => {
+  const l = KIBAR_JENIS_LABEL[jenis]?.label
+  return l ? `"${l}" (${jenis}, ${periode})` : `"${jenis}" (${periode})`
+}
 
 /** Satu baris yang hendak dibatalkan. */
 export type ItemBatal = {
@@ -207,7 +215,7 @@ export async function cekBolehBatal(
       return {
         boleh: false,
         pesan: `Batal diblokir: "${sebut(it)}" punya transaksi LEBIH BARU setelah ${konteks} — `
-          + `"${r.penghalang.jenis}" (${r.penghalang.periode}). Batalkan yang itu dulu. `
+          + `${sebutPenghalang(r.penghalang.jenis, r.penghalang.periode)}. Batalkan yang itu dulu. `
           + 'Transaksi yang sudah dibatalkan tidak lagi menghalangi.',
       }
     }
