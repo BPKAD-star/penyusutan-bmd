@@ -50,17 +50,20 @@ export function SaldoAwal() {
 // saldo awal itu foto BEKU akhir 2025 (aset_awal_2026), jadi angkanya memang
 // tak akan bergeser; dan tarikan DB per-pengguna cuma menampilkan cakupan SKPD
 // si pembuka paparan, bukan total se-kabupaten.
+// Diperbarui 2026-10-07 (sesudah import ATL Diknas perolehan 2025, +17.771 barang,
+// +Rp11.217.056.855): hanya baris 1.3.5 & TOTAL yang berubah. Kolom akumulasi &
+// beban tak bergeser — ATL tidak disusutkan.
 const REKAP_SALDO: [string, string, string, string, string, string, string][] = [
   ['1.3.1', 'Tanah', '2.732', '1.156.309.715.727,16', '–', '–', '1.156.309.715.727,16'],
   ['1.3.2', 'Peralatan dan Mesin', '660.470', '1.405.199.655.505,97', '1.153.374.148.816,37', '130.723.851.936,86', '251.825.506.705,55'],
   ['1.3.3', 'Gedung dan Bangunan', '8.350', '2.134.344.993.957,62', '449.825.289.390,70', '20.246.760.329,56', '1.684.519.704.566,93'],
   ['1.3.4', 'Jalan, Jaringan dan Irigasi', '8.127', '3.778.566.895.300,36', '2.441.033.217.008,63', '103.741.394.607,50', '1.337.533.678.291,94'],
-  ['1.3.5', 'Aset Tetap Lainnya', '173.929', '173.260.204.231,82', '–', '–', '173.260.204.231,82'],
+  ['1.3.5', 'Aset Tetap Lainnya', '191.700', '184.477.261.086,82', '–', '–', '184.477.261.086,82'],
   ['1.3.6', 'Konstruksi Dalam Pengerjaan', '233', '195.710.710.149,00', '–', '–', '195.710.710.149,00'],
   ['1.5.3', 'Aset Tidak Berwujud', '120', '17.239.249.988,00', '10.100.715.667,93', '1.246.543.175,63', '7.138.534.320,07'],
   ['1.5.4', 'Aset Lain-Lain', '50.479', '124.500.266.399,63', '19.064.330.821,04', '187.458.607,59', '105.435.935.578,59'],
 ]
-const TOTAL_SALDO = ['904.440', '8.985.131.691.259,56', '4.073.397.701.704,67', '256.146.008.657,14', '4.911.733.989.571,06']
+const TOTAL_SALDO = ['922.211', '8.996.348.748.114,56', '4.073.397.701.704,67', '256.146.008.657,14', '4.922.951.046.426,06']
 const KOLOM_SALDO = ['Kode Jenis', 'Uraian', 'Kuantitas', 'Harga Perolehan', 'Akumulasi Penyusutan (Saldo Awal)', 'Beban Penyusutan / Smt', 'Nilai Buku']
 
 export function RekapSaldoAwal() {

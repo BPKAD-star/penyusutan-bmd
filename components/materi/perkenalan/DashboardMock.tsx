@@ -19,7 +19,7 @@ const JENIS: [string, string, string, string, string][] = [
   ['1.3.2', 'Peralatan dan Mesin', '1.405.199.655.505,97', '660.470', 'aset-1-3-2'],
   ['1.3.3', 'Gedung dan Bangunan', '2.134.344.993.957,62', '8.350', 'aset-1-3-3'],
   ['1.3.4', 'Jalan, Jaringan dan Irigasi', '3.778.566.895.300,36', '8.127', 'aset-1-3-4'],
-  ['1.3.5', 'Aset Tetap Lainnya', '173.260.204.231,82', '173.929', 'aset-1-3-5'],
+  ['1.3.5', 'Aset Tetap Lainnya', '184.477.261.086,82', '191.700', 'aset-1-3-5'],
   ['1.3.6', 'Konstruksi Dalam Pengerjaan', '195.710.710.149,00', '233', 'aset-1-3-6'],
   ['1.5.3', 'Aset Tidak Berwujud', '17.239.249.988,00', '120', 'aset-1-5-3'],
   ['1.5.4', 'Aset Lain-Lain', '124.500.266.399,63', '50.479', 'aset-1-5-4'],
@@ -93,8 +93,8 @@ export function DashboardMock() {
         <p className="text-[20px] font-bold text-gray-900 leading-none">Dashboard</p>
         <div className="text-right leading-tight">
           <p className="text-[8.5px] text-gray-400">Total Nilai BMD</p>
-          <p className="text-[13px] font-bold text-teal">Rp8.985.131.691.259,56</p>
-          <p className="text-[8.5px] text-gray-400">904.440 aset</p>
+          <p className="text-[13px] font-bold text-teal">Rp8.996.348.748.114,56</p>
+          <p className="text-[8.5px] text-gray-400">922.211 aset</p>
         </div>
       </div>
 
