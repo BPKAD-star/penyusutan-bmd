@@ -113,6 +113,8 @@ export type BarangTransaksi = {
   luas: number | string | null
   alamatDetail: string | null
   tglPerolehan: string | null
+  /** Opsional: kalau diisi, sel Tgl Perolehan menumpuk tanggal (atas) + "Thn <tahun>" (bawah). */
+  tahunPengadaan?: number | null
   jumlah: number | null
   satuan: string | null
   nilai: number | null

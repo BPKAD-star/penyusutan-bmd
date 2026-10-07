@@ -82,7 +82,14 @@ export function KolomBarangCells({ barang: b }: { barang: BarangTransaksi }) {
       {cell(b.noMesin, 'whitespace-nowrap')}
       {cell(b.luas == null || b.luas === '' ? null : b.luas, 'text-right')}
       {cell(b.alamatDetail)}
-      {cell(b.tglPerolehan, 'text-center whitespace-nowrap')}
+      {b.tahunPengadaan === undefined
+        ? cell(b.tglPerolehan, 'text-center whitespace-nowrap')
+        : (
+          <td className="table-td text-center whitespace-nowrap">
+            <p className="text-xs text-gray-600">{b.tglPerolehan || kosong}</p>
+            <p className="text-[11px] text-gray-400">{b.tahunPengadaan ?? kosong}</p>
+          </td>
+        )}
       <td className="table-td text-center">
         <p className="text-xs text-gray-700">{b.jumlah ?? 1}</p>
         <p className="text-[11px] text-gray-400">{b.satuan || kosong}</p>

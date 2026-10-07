@@ -97,6 +97,7 @@ export function barangDariPilihan(b: BarangLengkap, uraian: string | null): Bara
     namaBarang: b.nama_barang, merekTipe: b.merek_tipe, spesifikasiLainnya: b.spesifikasi_lainnya,
     noPolisi: b.no_polisi, noMesin: b.no_mesin, noRangka: b.no_rangka,
     luas: b.luas, alamatDetail: b.alamat_detail, tglPerolehan: b.tgl_perolehan,
+    tahunPengadaan: b.tahun_pengadaan,
     jumlah: b.jumlah, satuan: b.satuan, nilai: b.nilai_perolehan,
   }
 }
