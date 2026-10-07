@@ -47,6 +47,7 @@ sisanya sesuai kebutuhan.
 | [docs/lra-plan.md](docs/lra-plan.md) | rencana modul LRA |
 | [docs/pelaporan-permendagri-plan.md](docs/pelaporan-permendagri-plan.md) | **papan kerja format laporan Permendagri 47/2021** (`IV.x`/`V.x`) — daftar format, keputusan yang sudah diambil, & cara menyerahkan format baru |
 | [docs/rekonsiliasi-bmd-plan.md](docs/rekonsiliasi-bmd-plan.md) | rencana modul Rekonsiliasi |
+| [docs/kdp-per-termin-plan.md](docs/kdp-per-termin-plan.md) | **rancangan** Pekerjaan Konstruksi: kartu = paket, kontrak per komponen, setujui & batal per termin (belum dikerjakan) |
 | [docs/PLAN-period-lock.md](docs/PLAN-period-lock.md) | rencana kunci periode |
 
 **Sumbu pemisahnya:** root = dokumen yang selalu berlaku dan dibaca berulang;
