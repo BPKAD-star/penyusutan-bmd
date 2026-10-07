@@ -60,10 +60,10 @@ export function AlurNonKonstruksi() {
 }
 
 const KONSTRUKSI: Langkah[] = [
-  { ikon: 'dokumen', judul: 'Buat Kontrak', isi: 'Tekan + Buat Kontrak: nama pekerjaan, No. & Tgl Kontrak, bentuk kontrak (SPK / Surat Perjanjian), PPK.' },
-  { ikon: 'gedung', judul: 'Tambah Barang KDP', isi: 'Satu kontrak bisa memuat beberapa barang (mis. beberapa ruas jalan). Kode hanya golongan 1.3.6.' },
-  { ikon: 'hitung', judul: 'Isi dan Upload BAST per Termin', isi: 'Perencanaan, Fisik, Biaya Umum, Pengawasan — tiap termin bertanggal BAST, bernilai, dan berdokumen.', tanda: 'BAST per termin' },
-  { ikon: 'kamera', judul: 'Edit Spesifikasi Barang', isi: 'Nama barang (tak boleh kembar), lokasi, dan foto tiap barang KDP.', tanda: 'Foto wajib' },
+  { ikon: 'dokumen', judul: 'Buat Kartu Paket', isi: 'Tekan + Buat Kartu Paket: nama paket pekerjaan, tahun anggaran, program / kegiatan / sub kegiatan. Satu kartu = satu tahun.' },
+  { ikon: 'gedung', judul: 'Kontrak & Barang KDP', isi: 'Tambah kontrak tiap komponen (perencanaan, fisik, pengawasan; biaya umum boleh tanpa kontrak), lalu barang KDP golongan 1.3.6.' },
+  { ikon: 'hitung', judul: 'Isi Termin + Upload BAST', isi: 'Tiap termin menunjuk kontraknya, bertanggal BAST, bernilai & berdokumen. Masuk berstatus Menunggu.', tanda: 'BAST per termin' },
+  { ikon: 'kamera', judul: 'Spesifikasi & Persetujuan', isi: 'Nama barang (tak boleh kembar), lokasi, foto. Admin pemda menyetujui per termin.', tanda: 'Foto wajib' },
 ]
 
 export function AlurKonstruksi() {
@@ -71,8 +71,8 @@ export function AlurKonstruksi() {
     <SlideTerang materi={MATERI} label="Pekerjaan Konstruksi" judul="Alur entry konstruksi (KDP)">
       <EmpatKartu langkah={KONSTRUKSI} />
       <DuaCatatan
-        kiri={<>Nilai tiap barang = <b>jumlah seluruh termin</b>-nya. Komptabelnya <b>Intra</b>; golongan 1.3.6 tidak disusutkan sampai direklas.</>}
-        kanan={<>Beda dengan Non Konstruksi: BAST <b>diunggah per termin</b>, sesudah barang KDP ditambahkan — urutan langkah 2 dan 3 <b>dibalik</b>.</>}
+        kiri={<>Termin <b>pertama</b> yang disetujui menerbitkan barangnya; termin berikutnya <b>menambah nilai</b> — NIBAR tetap. Nilai barang = jumlah termin <b>disetujui</b>.</>}
+        kanan={<>Salah catat? Admin <b>membatalkan termin itu saja</b> — kartu tak pernah dibuka kunci seluruhnya. Termin yang masih <b>Menunggu</b> bebas diubah / dihapus.</>}
       />
     </SlideTerang>
   )

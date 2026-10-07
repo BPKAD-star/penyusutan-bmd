@@ -7,21 +7,21 @@ import { MATERI, KartuApp, Tombol, Lencana, Th, FotoMini, Tunjuk, Contoh } from 
 const KIRI = 'absolute left-0 top-0 w-[440px] space-y-4'
 const KANAN = 'absolute right-0 top-0 w-[660px]'
 
-const TERMIN: [string, string, string, string][] = [
-  ['Perencanaan', 'BAST-PRC-01.pdf', '02 Sep 2026', 'Rp 45.000.000'],
-  ['Fisik — Termin 1', 'BAST-FSK-01.pdf', '30 Okt 2026', 'Rp 380.000.000'],
-  ['Pengawasan', 'BAST-PWS-01.pdf', '30 Okt 2026', 'Rp 22.500.000'],
+const TERMIN: [string, string, string, string, string, boolean][] = [
+  ['Perencanaan', '027/PRC/2026', 'BAST-PRC-01.pdf', '02 Sep 2026', 'Rp 45.000.000', true],
+  ['Fisik', '027/SPK/2026', 'BAST-FSK-01.pdf', '30 Okt 2026', 'Rp 380.000.000', true],
+  ['Pengawasan', '027/PWS/2026', 'BAST-PWS-01.pdf', '30 Okt 2026', 'Rp 22.500.000', false],
 ]
 
 export function KartuKdp() {
   return (
     <SlideTerang materi={MATERI} label="Pekerjaan Konstruksi · 2" judul="Kartu barang KDP & rincian termin">
       <div className={KIRI}>
-        <Poin jeda={250}>Tiap barang KDP punya <b>tabel termin</b>: komponen, <b>dokumen &amp; tanggal BAST</b>, rekening, nilai.</Poin>
+        <Poin jeda={250}>Tiap barang KDP punya <b>tabel termin</b>: komponen, <b>kontraknya</b>, dokumen &amp; tanggal BAST, nilai, <b>status</b>.</Poin>
         <Poin jeda={450}><Tbl>+ Tambah Rincian</Tbl> <b>ditolak</b> bila dokumen BAST termin itu belum diunggah.</Poin>
-        <Poin jeda={650}>Tgl BAST termin <b>tidak boleh lebih tua</b> dari tgl kontrak. Daftar otomatis <b>urut tanggal</b>.</Poin>
+        <Poin jeda={650}>Tgl BAST <b>tidak boleh lebih tua</b> dari tgl kontrak <b>termin itu sendiri</b>, dan wajib di tahun kartu.</Poin>
         <Poin jeda={850}>Selesai satu termin, <b>kode rekening &amp; tanggal BAST dikosongkan</b> — supaya termin berikut tak mewarisi isian lama.</Poin>
-        <Poin jeda={1050}>Foto barang tampil di bawah <b>Nilai</b>; belum ada foto = belum bisa disetujui.</Poin>
+        <Poin jeda={1050}>Admin menekan <Tbl>✓ Setujui</Tbl> <b>per termin</b>; yang keliru cukup <Tbl>↩ Batal</Tbl> termin itu.</Poin>
       </div>
       <div className={KANAN}>
         <KartuApp jeda={300} judul={<span><b>1.3.6.01.01.01.003 - Gedung dan Bangunan Dalam Pengerjaan</b></span>}>
@@ -32,21 +32,23 @@ export function KartuKdp() {
               <span className="text-gray-400">Komptabel</span><span className="text-gray-700">Intra</span>
             </div>
             <div className="text-right">
-              <p className="text-[11px] text-gray-400">Nilai (Σ termin)</p>
-              <p className="text-[19px] font-bold text-navy">Rp 447.500.000</p>
+              <p className="text-[11px] text-gray-400">Disetujui</p>
+              <p className="text-[19px] font-bold text-navy">Rp 425.000.000</p>
+              <p className="text-[10.5px] text-amber-600">+ Rp 22.500.000 menunggu</p>
               <div className="mt-1 flex justify-end"><FotoMini /></div>
             </div>
           </div>
           <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
             <table className="w-full text-[12px]">
-              <thead className="bg-gray-50 border-b border-gray-100"><tr><Th>Komponen</Th><Th>Dokumen dan Tanggal BAST</Th><Th>Rekening</Th><Th>Nilai</Th></tr></thead>
+              <thead className="bg-gray-50 border-b border-gray-100"><tr><Th>Komponen</Th><Th>Kontrak</Th><Th>Dokumen dan Tanggal BAST</Th><Th>Nilai</Th><Th>Status</Th></tr></thead>
               <tbody>
-                {TERMIN.map(([k, f, t, n], i) => (
+                {TERMIN.map(([k, kt, f, t, n, ok], i) => (
                   <tr key={k} className="mt-up border-b border-gray-50 last:border-0" style={d(700 + i * 150)}>
                     <td className="px-2.5 py-2 font-medium text-gray-700">{k}</td>
+                    <td className="px-2.5 py-2 text-gray-700">{kt}</td>
                     <td className="px-2.5 py-2"><p className="text-teal">📎 {f}</p><p className="text-[10.5px] text-gray-400">{t}</p></td>
-                    <td className="px-2.5 py-2"><p className="text-gray-700">5.2.03.01.001.00001</p><p className="text-[10.5px] text-gray-400">Belanja Modal Gedung</p></td>
                     <td className="px-2.5 py-2 text-gray-700">{n}</td>
+                    <td className="px-2.5 py-2">{ok ? <Lencana nada="ok">DISETUJUI</Lencana> : <Lencana nada="amber">MENUNGGU</Lencana>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -54,7 +56,7 @@ export function KartuKdp() {
           </div>
           <div className="relative mt-3 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
             <Tombol gaya="utama">+ Tambah Rincian</Tombol>
-            <span className="text-[12px] text-amber-800">Komponen: Fisik · Termin 2 — <b>📎 dokumen BAST termin ini wajib</b></span>
+            <span className="text-[12px] text-amber-800">Fisik · kontrak 027/SPK/2026 — <b>📎 dokumen BAST termin ini wajib</b></span>
             <Tunjuk className="right-3 -top-1.5" jeda={1800} />
           </div>
         </KartuApp>
@@ -83,7 +85,7 @@ export function AturanKonstruksi() {
           <p className="mt-1.5 text-[14.5px] text-gray-500 leading-snug">Diunggah lewat <b>✎ Edit Spesifikasi</b>. Gunakan foto <b>kondisi pekerjaan</b> di lapangan.</p>
           <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3.5">
             <p className="text-[13.5px] font-bold text-red-700">⚠ Belum bisa disetujui</p>
-            <p className="mt-1 text-[12.5px] leading-snug text-red-900">Barang &ldquo;Pembangunan Gedung Kantor&rdquo; belum ada foto — lengkapi dulu sebelum kontrak ini disetujui.</p>
+            <p className="mt-1 text-[12.5px] leading-snug text-red-900">Barang &ldquo;Pembangunan Gedung Kantor&rdquo; belum ada foto — lengkapi dulu lewat Edit Spesifikasi.</p>
           </div>
         </div>
         <div className="mt-up rounded-2xl border border-gray-200 bg-white shadow-lg p-5" style={d(690)}>

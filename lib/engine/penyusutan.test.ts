@@ -639,6 +639,79 @@ describe('hitungJadwalAset — reklasifikasi', () => {
 })
 
 // ════════════════════════════════════════════════════════════════════════════
+// Barang yang LAHIR dari termin Pekerjaan Konstruksi (2026-10-07, setujui per
+// termin — docs/kdp-per-termin-plan.md §6). Dulu barang ini tak punya titik
+// mulai → `return []`: KDP yang direklas ke Gedung tak pernah disusutkan, dan
+// Laporan BMD membaca nilai KDP dari register hari ini.
+describe('hitungJadwalAset — barang lahir dari termin KDP', () => {
+  const termin = (id: number, periode: string, nilai: number, tanggal?: string) =>
+    trx({ id, jenis: 'akumulasi_kdp', periode, nilai, ...(tanggal ? { tanggal } : {}) })
+  const batal = (id: number, periode: string, payload: Record<string, unknown>) =>
+    trx({ id, jenis: 'batal_akumulasi_kdp', periode, payload })
+  const kdp = aset({ kode: KODE_KDP, nilai_perolehan: 0 })
+
+  it('menulis baris per semester (beban 0) dgn nilai per PERIODE, bukan nilai register', () => {
+    const h = jalankan(kdp, [termin(1, '2026-S1', 90_000_000), termin(2, '2026-S2', 480_000_000)], new Map(), '2026-S2')
+    expect(h.map(r => [r.periode, r.nilai_perolehan, r.beban, r.metode])).toEqual([
+      ['2026-S1', 90_000_000, 0, 'tidak'],
+      ['2026-S2', 570_000_000, 0, 'tidak'],
+    ])
+    expect(h.every(r => r.akumulasi === 0 && r.nilai_buku_akhir === r.nilai_perolehan)).toBe(true)
+  })
+
+  it('termin yang dibatalkan PER BARIS diabaikan; termin lain barang itu tetap berlaku', () => {
+    const h = jalankan(kdp, [
+      termin(1, '2026-S1', 90_000_000), termin(2, '2026-S2', 500_000_000),
+      batal(3, '2026-S2', { target_trx_id: 2 }), termin(4, '2026-S2', 450_000_000),
+    ], new Map(), '2026-S2')
+    expect(h.map(r => r.nilai_perolehan)).toEqual([90_000_000, 540_000_000])
+  })
+
+  it('semua termin batal → baris tetap ditulis bernilai 0 (menimpa angka lama)', () => {
+    const h = jalankan(kdp, [
+      termin(1, '2026-S1', 90_000_000), batal(2, '2026-S1', { target_trx_id: 1 }),
+    ], new Map(), '2026-S2')
+    expect(h.map(r => r.nilai_perolehan)).toEqual([0, 0])
+  })
+
+  it('pembatalan warisan `{}` membatalkan seluruh termin barang itu yang lebih tua', () => {
+    const h = jalankan(kdp, [
+      termin(1, '2026-S1', 90_000_000), termin(2, '2026-S1', 10_000_000), batal(3, '2026-S1', {}),
+    ], new Map(), '2026-S1')
+    expect(h[0].nilai_perolehan).toBe(0)
+  })
+
+  it('reklas ke Gedung: mulai disusutkan di semester reklas dari nilai KDP saat itu (masa penuh)', () => {
+    const h = jalankan(aset({ kode: KODE_GEDUNG }), [
+      termin(1, '2026-S1', 100_000_000),
+      termin(2, '2026-S2', 300_000_000, '2026-08-01'),
+      trx({ id: 3, jenis: 'reklas_golongan', periode: '2026-S2', tanggal: '2026-11-01',
+            payload: { kode_lama: KODE_KDP, kode_baru: KODE_GEDUNG } }),
+    ], masa(KODE_GEDUNG, 20), '2027-S1')
+    expect(h[0]).toMatchObject({ periode: '2026-S1', nilai_perolehan: 100_000_000, beban: 0, metode: 'tidak' })
+    expect(h[1]).toMatchObject({ periode: '2026-S2', nilai_perolehan: 400_000_000, metode: 'penyusutan',
+      beban: Math.round(400_000_000 / 40), sisa_semester: 39 })
+    expect(h[2].beban).toBe(Math.round(400_000_000 / 40))
+  })
+
+  it('sesudah Tutup Tahun: reklas sebelum checkpoint tetap terbaca Gedung (terus disusutkan)', () => {
+    const h = jalankan(aset({ kode: KODE_GEDUNG }), [
+      termin(1, '2026-S1', 400_000_000),
+      trx({ id: 2, jenis: 'reklas_golongan', periode: '2026-S1', tanggal: '2026-05-01',
+            payload: { kode_lama: KODE_KDP, kode_baru: KODE_GEDUNG } }),
+      baseline({ jenis: 'saldo_awal_checkpoint', periode: '2026-S2', nilaiPerolehan: 400_000_000,
+                 nilaiBuku: 380_000_000, akumulasi: 20_000_000, sisaSmt: 38, masaSmt: 40, bebanSmt: 10_000_000 }),
+    ], masa(KODE_GEDUNG, 20), '2027-S1')
+    expect(h).toHaveLength(1)
+    expect(h[0]).toMatchObject({ periode: '2027-S1', metode: 'penyusutan', beban: 10_000_000, akumulasi: 30_000_000 })
+  })
+
+  it('KDP tanpa termin sama sekali tetap tak menghasilkan baris', () => {
+    expect(jalankan(kdp, [], new Map(), '2026-S2')).toEqual([])
+  })
+})
+
+// ════════════════════════════════════════════════════════════════════════════
 // Penggabungan Barang — kebalikan pemecahan (keputusan user 2026-08-11).
 //
 // Kasus nyatanya: "Pagar Besi" UPTD SMPN 2 Mojo tercatat 35 baris @ Rp721.500

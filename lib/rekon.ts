@@ -9,7 +9,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { kodeLevel3, perlakuanKode } from '@/lib/bmd'
 import { fetchPindahEvents, ownersAt, partitionByPeriodOwner, type PindahEvents } from '@/lib/pengalihan'
-import { fetchVoidedAsetIds, fetchBatalTargets, fetchPemecahanBatal, kunciPemecahan, BATAL_TARGET_JENIS } from '@/lib/voidedAset'
+import { fetchVoidedAsetIds, fetchBatalTargets, fetchPemecahanBatal, kunciPemecahan, BATAL_TARGET_JENIS, fetchTerminKdpBatal } from '@/lib/voidedAset'
 import { fetchHiddenIds, belumAdaPada, SEMBUNYI_PENYUSUTAN } from '@/lib/visibilitas'
 import { fetchReklasEvents, kodeAt, kodePada, type ReklasEvents } from '@/lib/reklasKode'
 
@@ -381,11 +381,13 @@ async function fetchLed(supabase: SupabaseClient, jenisList: string[], periode: 
 // Kumpulan aset_id yg PERNAH kena void (semua periode — batal_* retroaktif).
 // Implementasinya dipindah ke lib/voidedAset.ts (dipakai bersama laporan
 // perolehan) — VOID_JENIS-nya identik, dulu diduplikasi di sini & di
-// app/dashboard/pelaporan/bmd/page.tsx. 'batal_akumulasi_kdp' ditambahkan:
-// kontrak konstruksi yang dibuka kunci membalik SEMUA terminnya, jadi aset KDP
-// itu tak boleh dihitung sbg penambahan.
+// app/dashboard/pelaporan/bmd/page.tsx.
+// ⚠️ 'batal_akumulasi_kdp' SENGAJA TIDAK di sini lagi (2026-10-07): sejak termin
+// konstruksi disetujui & dibatalkan PER TERMIN, satu pembatalan tak boleh
+// menghapus seluruh termin barang itu. Termin dibaca per baris lewat
+// `fetchTerminKdpBatal` di computeMutasiLines.
 const fetchVoided = (supabase: SupabaseClient, asetIds: string[]) =>
-  fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'], asetIds)
+  fetchVoidedAsetIds(supabase, [], asetIds)
 
 // target_trx_id yg dibatalkan (kapitalisasi/koreksi/reklas) — implementasi
 // dipindah ke lib/voidedAset.ts, dipakai bersama Laporan Pengelolaan.
@@ -564,7 +566,7 @@ async function computeMutasiLines(
 
   // Tahap 2 — SEMUA terscope ke aset yang muncul di tahap 1. Tidak ada lagi
   // satu pun query di fungsi ini yang menyapu seluruh ledger.
-  const [kapBatal, netSerap, korBatal, reklasBatal, alihBatal, internalBatal, voided, netRemoved, pecahBatal, gabungBatal] = await Promise.all([
+  const [kapBatal, netSerap, korBatal, reklasBatal, alihBatal, internalBatal, voided, netRemoved, pecahBatal, gabungBatal, kdpBatal] = await Promise.all([
     fetchBatalTargets(supabase, ['batal_kapitalisasi'], kap.map(r => r.aset_id)),
     fetchNetSerap(supabase, serap.map(r => r.aset_id)),
     fetchBatalTargets(supabase, ['batal_koreksi_nilai'], kor.map(r => r.aset_id)),
@@ -586,12 +588,16 @@ async function computeMutasiLines(
     // target_trx_id), bukan per (kartu, aset) spt pemecahan — jenis batalnya
     // memang membawa target_trx_id, jadi cukup fetchBatalTargets.
     fetchBatalTargets(supabase, BATAL_TARGET_JENIS.penggabungan, gabung.map(r => r.aset_id)),
+    // Termin konstruksi yang dibatalkan — PER BARIS (target_trx_id), warisan
+    // `{}` membatalkan seluruh termin barang itu yang lebih tua.
+    fetchTerminKdpBatal(supabase, cara.filter(r => r.jenis === 'akumulasi_kdp').map(r => r.aset_id)),
   ])
 
   // Cara Perolehan (+ split Belanja Jasa 5.1). jenis dari ledger.
   const caraKey: Record<string, MutasiKey> = { hibah_masuk: 'hibah', tukar_menukar: 'tukar', hasil_inventarisasi: 'inventarisasi', perolehan_lainnya: 'lainnya' }
   for (const r of cara) {
     if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id)) continue
+    if (r.jenis === 'akumulasi_kdp' && kdpBatal.has(r.id)) continue
     const gol = golPada(r), komp = kompOf(r.aset.intra_ekstra)
     // ⚠️ `akumulasi_kdp` (termin kontrak konstruksi) diperlakukan PERSIS seperti
     // `pengadaan` sejak 2026-08-27 — dulu ia punya kategori `kdp` sendiri.

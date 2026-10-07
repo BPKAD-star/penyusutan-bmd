@@ -11,7 +11,7 @@ import type { createClient } from '@/lib/supabase/client'
 import { paginate } from '@/shared/db/paginate'
 import { kodeLevel3, GOLONGAN_REKAP } from '@/lib/bmd'
 import { bentukKontrakLabel } from '@/lib/bentukKontrak'
-import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { fetchVoidedAsetIds, fetchTerminKdpBatal } from '@/lib/voidedAset'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
 
 type Supabase = ReturnType<typeof createClient>
@@ -43,7 +43,7 @@ export type PengadaanRow = {
 type Raw = {
   id: number; periode: string; tanggal: string; nilai: number
   keterangan: string | null; jenis: string
-  payload: { kode_rekening?: string } | null
+  payload: { kode_rekening?: string; no_kontrak?: string | null; penyedia?: string | null; bentuk_kontrak?: string | null } | null
   aset_id: string | null
   header: {
     id: string; no_sk: string | null; jenis: string | null
@@ -115,11 +115,17 @@ export async function fetchLaporanPengadaan(
   // Dibatasi ke aset yang memang ada di `raws` — menyapu seluruh ledger cuma
   // untuk menanyakan status segelintir aset itu yang bikin timeout beruntun
   // (2026-07-28). Lihat catatan param `asetIds` di lib/voidedAset.ts.
-  const voided = await fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'],
-    raws.map(r => r.aset_id).filter((id): id is string => !!id))
+  // ⚠️ Termin KDP dibatalkan PER BARIS (2026-10-07, setujui/batal per termin) —
+  // 'batal_akumulasi_kdp' tak lagi ikut daftar void level aset.
+  const [voided, kdpBatal] = await Promise.all([
+    fetchVoidedAsetIds(supabase, [], raws.map(r => r.aset_id).filter((id): id is string => !!id)),
+    fetchTerminKdpBatal(supabase, raws.filter(r => r.jenis === 'akumulasi_kdp')
+      .map(r => r.aset_id).filter((id): id is string => !!id)),
+  ])
   const descSet = opts.descIds && opts.descIds.length > 0 ? new Set(opts.descIds) : null
   const rows = raws.filter(r =>
     r.aset && !(r.aset_id && voided.has(r.aset_id)) &&
+    !(r.jenis === 'akumulasi_kdp' && kdpBatal.has(r.id)) &&
     (!descSet || descSet.has(r.aset.skpd_id)))
 
   // Uraian rekening: payload.kode_rekening = kode_sub_rincian → lookup admin_rekening.
@@ -150,9 +156,11 @@ export async function fetchLaporanPengadaan(
       kodeRekening,
       uraianBelanja: rekMap.get(kodeRekening) || '',
       tanggal: r.tanggal,
-      bentukKontrak: isKdp ? bentukKontrakLabel(r.header?.payload?.sumber) : bentukKontrakLabel(r.header?.jenis),
-      namaPenyedia: (isKdp ? r.header?.payload?.penyedia : r.header?.payload?.nama_penyedia) || '',
-      nomor: r.header?.no_sk || '',
+      // KDP: kontrak termin ini (dibekukan di payload baris sejak 2026-10-07),
+      // cadangan kontrak tingkat kartu untuk baris lama.
+      bentukKontrak: isKdp ? bentukKontrakLabel(r.payload?.bentuk_kontrak || r.header?.payload?.sumber) : bentukKontrakLabel(r.header?.jenis),
+      namaPenyedia: (isKdp ? (r.payload?.penyedia || r.header?.payload?.penyedia) : r.header?.payload?.nama_penyedia) || '',
+      nomor: (isKdp ? (r.payload?.no_kontrak || r.header?.no_sk) : r.header?.no_sk) || '',
       keterangan: r.aset!.keterangan || r.keterangan || '',
     }
   }
@@ -168,6 +176,12 @@ export async function fetchLaporanPengadaan(
       ? `kdp|${r.aset_id}`
       : [r.header?.id, base.kode, base.spesifikasi, base.merekTipe, base.kodeRekening, r.nilai].join('|')
     const g = grouped.get(key)
+    if (g && isKdp) {
+      // Satu barang KDP bisa dibayar atas beberapa kontrak — semuanya disebut.
+      const tambah = (a: string, b: string) => !b || a.split(', ').includes(b) ? a : (a ? `${a}, ${b}` : b)
+      g.base.nomor = tambah(g.base.nomor, base.nomor)
+      g.base.namaPenyedia = tambah(g.base.namaPenyedia, base.namaPenyedia)
+    }
     if (g) { g.total += r.nilai || 0; if (!isKdp) g.jumlah += 1 }
     else grouped.set(key, { base, jumlah: 1, total: r.nilai || 0 })
   }

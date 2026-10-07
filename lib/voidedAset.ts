@@ -92,9 +92,9 @@ async function collectAsetIds(supabase: Supabase, jenisList: string[], asetIds?:
 
 /**
  * Set aset_id yang PERNAH kena void (semua periode — event-nya retroaktif).
- * @param extraVoidJenis jenis void tambahan, mis. ['batal_akumulasi_kdp'] utk
- *   laporan yang ikut menarik KDP (unapprove kontrak konstruksi membalik semua
- *   termin & menyembunyikan asetnya).
+ * @param extraVoidJenis jenis void tambahan. ⚠️ JANGAN isi 'batal_akumulasi_kdp'
+ *   — termin konstruksi dibatalkan PER BARIS sejak 2026-10-07; pakai
+ *   `fetchTerminKdpBatal` di bawah.
  * @param asetIds BATASI ke aset ini saja — ISI KALAU BISA. Pemanggil laporan
  *   umumnya sudah punya daftar asetnya, dan menanyakan status void hanya untuk
  *   mereka jauh lebih murah daripada menyapu seluruh ledger (yang biayanya
@@ -230,3 +230,55 @@ export async function fetchPemecahanBatal(supabase: SupabaseClient, asetIds: str
 }
 
 export const kunciPemecahan = (headerId: string | null, asetId: string) => `${headerId ?? ''}|${asetId}`
+
+// ── Pembatalan TERMIN KDP (akumulasi_kdp) — level BARIS ─────────────────────
+// Sejak 2026-10-07 termin konstruksi disetujui & dibatalkan SATU PER SATU
+// (lib/kdp.ts, docs/kdp-per-termin-plan.md). `batal_akumulasi_kdp` dipakai
+// dalam dua bentuk, dan keduanya WAJIB dibaca:
+//   · ber-`payload.target_trx_id` (model per termin) → membatalkan BARIS ITU
+//     SAJA; termin lain barang yang sama tetap berlaku;
+//   · TANPA target (`{}`, warisan "Buka Kunci kartu" — 4 barang di produksi)
+//     → membatalkan SELURUH termin barang itu yang LEBIH TUA dari pembatalnya.
+// ⚠️ Membacanya di level ASET (`fetchVoidedAsetIds(['batal_akumulasi_kdp'])`,
+// pola lama) membuat satu termin yang dibatalkan menghapus SELURUH termin
+// barang itu dari laporan, tanpa satu pun error.
+// ⚠️ KEMBAR dgn `fn_kdp_termin_batal` (SQL, dipakai LRA & IPA) — diuji
+// berdampingan atas fixture yang sama (lib/voidedAset.test.ts).
+export type BarisLedgerKdp = { id?: number; aset_id?: string | null; jenis: string; payload?: unknown }
+
+/** id baris `akumulasi_kdp` yang sudah dibatalkan, dari sekumpulan baris ledger. */
+export function terminKdpDibatalkan(rows: readonly BarisLedgerKdp[]): Set<number> {
+  const out = new Set<number>()
+  const warisan: { aset: string; id: number }[] = []
+  for (const r of rows) {
+    if (r.jenis !== 'batal_akumulasi_kdp') continue
+    const t = idTarget((r.payload ?? null) as BatalPayload)
+    if (t.length > 0) { for (const x of t) out.add(x); continue }
+    if (r.aset_id && r.id != null) warisan.push({ aset: r.aset_id, id: r.id })
+  }
+  if (warisan.length > 0) {
+    for (const r of rows) {
+      if (r.jenis !== 'akumulasi_kdp' || r.id == null || !r.aset_id) continue
+      if (warisan.some(w => w.aset === r.aset_id && r.id! < w.id)) out.add(r.id)
+    }
+  }
+  return out
+}
+
+/**
+ * id baris `akumulasi_kdp` yang dibatalkan, TERSCOPE ke aset yang ditanya.
+ * Fail-closed: query gagal → MELEMPAR (set kosong = "tak ada yang batal").
+ */
+export async function fetchTerminKdpBatal(supabase: Supabase, asetIds: string[]): Promise<Set<number>> {
+  const rows: BarisLedgerKdp[] = []
+  const uniq = [...new Set(asetIds)]
+  for (let i = 0; i < uniq.length; i += 200) {
+    const { data, error } = await supabase.from('transaksi_bmd')
+      .select('id,aset_id,jenis,payload')
+      .in('jenis', ['akumulasi_kdp', 'batal_akumulasi_kdp'] as never)
+      .in('aset_id', uniq.slice(i, i + 200))
+    if (error) throw new Error(`gagal membaca pembatalan termin konstruksi: ${error.message}`)
+    rows.push(...((data || []) as BarisLedgerKdp[]))
+  }
+  return terminKdpDibatalkan(rows)
+}

@@ -18,13 +18,16 @@
 // konstruksi yang disetujui (tabel kecil, `idx_jh_kategori`) → baris ledger
 // lewat `idx_trx_header`. Diukur 35 ms. Tanpa migrasi.
 //
-// ⚠️ Header `disetujui` TIDAK cukup untuk membuang yang dianulir: Buka Kunci →
-// setujui ulang membuat aset BARU, sementara termin aset lama tetap menggantung
-// pada header yang sama (di produksi: 4 dari 5 aset KDP berstatus `draft`).
-// Itu dibuang lewat fetchVoidedAsetIds(['batal_akumulasi_kdp']).
+// ⚠️ Header `disetujui` TIDAK cukup untuk membuang yang dianulir: sejak
+// 2026-10-07 termin disetujui & dibatalkan SATU PER SATU, jadi kartu disetujui
+// bisa memuat termin yang sudah batal. Dibuang PER BARIS lewat
+// fetchTerminKdpBatal (warisan Buka Kunci `{}` ikut terbaca di sana).
+//
+// No/Tgl Kontrak & Penyedia diambil dari PAYLOAD BARIS (dibekukan saat termin
+// disetujui — model kontrak per komponen); kartu lama jatuh ke header.
 import type { createClient } from '@/lib/supabase/client'
 import { periodeDiminta } from '@/lib/laporanPerolehanPermendagri'
-import { fetchVoidedAsetIds } from '@/lib/voidedAset'
+import { fetchTerminKdpBatal } from '@/lib/voidedAset'
 
 type Supabase = ReturnType<typeof createClient>
 
@@ -46,12 +49,20 @@ export type BarisKdp = {
 type Mentah = {
   id: number; periode: string; tanggal: string; nilai: number
   keterangan: string | null
-  payload: { kode_rekening?: string; no_bast?: string | null } | null
+  payload: {
+    kode_rekening?: string; no_bast?: string | null
+    no_kontrak?: string | null; tgl_kontrak?: string | null; penyedia?: string | null
+  } | null
   skpd_tujuan: number | null
   aset_id: string | null
   header: BarisKdp['header']
   aset: (NonNullable<BarisKdp['aset']> & { skpd_id: number }) | null
 }
+
+// Barang KDP bisa dibayar atas beberapa kontrak (perencanaan, fisik, …) —
+// semuanya disebut, urut kemunculan, tanpa kembar.
+const unik = (xs: (string | null | undefined)[]) =>
+  [...new Set(xs.map(x => (x || '').trim()).filter(Boolean))].join(', ')
 
 /** Satu baris per aset: Σ nilai termin, identitas dari termin TERAKHIR. */
 export function gabungPerAset(termin: Mentah[]): BarisKdp[] {
@@ -73,7 +84,13 @@ export function gabungPerAset(termin: Mentah[]): BarisKdp[] {
       nilai: list.reduce((s, t) => s + (t.nilai || 0), 0),
       keterangan: `[KDP · Σ ${list.length} termin]${ket ? ' ' + ket : ''}`,
       payload: { kode_rekening: akhir.payload?.kode_rekening },
-      header: akhir.header ? { ...akhir.header, no_bast: akhir.payload?.no_bast ?? null } : null,
+      header: akhir.header ? {
+        ...akhir.header,
+        no_sk: unik(list.map(t => t.payload?.no_kontrak)) || akhir.header.no_sk,
+        tanggal: akhir.payload?.tgl_kontrak || akhir.header.tanggal,
+        nama_penyedia: unik(list.map(t => t.payload?.penyedia)) || akhir.header.nama_penyedia,
+        no_bast: akhir.payload?.no_bast ?? null,
+      } : null,
       skpd_tujuan: akhir.skpd_tujuan ?? akhir.aset?.skpd_id ?? null,
       aset_id: akhir.aset_id,
       aset: akhir.aset,
@@ -118,13 +135,11 @@ export async function muatTerminKdp(
     termin.push(...((data as never as Mentah[]) || []))
   }
 
-  // 3) Buang aset yang dianulir. Yang `aktif` pasti tak ter-void (Buka Kunci
-  //    membuat aset baru), jadi hanya sisanya yang ditanyakan.
-  const perluDicek = [...new Set(termin.filter(t => t.aset_id && t.aset?.status !== 'aktif').map(t => t.aset_id as string))]
-  const voided = perluDicek.length > 0
-    ? await fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'], perluDicek) : new Set<string>()
+  // 3) Buang termin yang dibatalkan — PER BARIS.
+  const asetIds = [...new Set(termin.map(t => t.aset_id).filter((x): x is string => !!x))]
+  const batal = asetIds.length > 0 ? await fetchTerminKdpBatal(supabase, asetIds) : new Set<number>()
   const desc = opts.descIds && opts.descIds.length > 0 ? new Set(opts.descIds) : null
-  const hidup = termin.filter(t => t.aset && !(t.aset_id && voided.has(t.aset_id)) &&
+  const hidup = termin.filter(t => t.aset && !batal.has(t.id) &&
     (!desc || desc.has(t.skpd_tujuan ?? t.aset.skpd_id)))
   return gabungPerAset(hidup)
 }

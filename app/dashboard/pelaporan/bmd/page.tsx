@@ -25,7 +25,7 @@ import TahunTerkunciNote from '@/components/TahunTerkunciNote'
 import { useFilterLaporanBmd, type TabBmd } from './useFilterLaporanBmd'
 import { useLembarMutasi } from './useLembarMutasi'
 import type { SemesterBmd } from '@/lib/periodeLaporanBmd'
-import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecahanBatal, kunciPemecahan } from '@/lib/voidedAset'
+import { fetchVoidedAsetIds, fetchBatalTargets, BATAL_TARGET_JENIS, fetchPemecahanBatal, kunciPemecahan, fetchTerminKdpBatal } from '@/lib/voidedAset'
 import { fetchReklasEvents, kodePada, JENIS_REKLAS_KODE } from '@/lib/reklasKode'
 import { rekapPerGolongan, nilaiBukuSel, zeroRekap, type RekapRpcRow } from '@/lib/rekapBmd'
 import { assertOk } from '@/shared/db/query'
@@ -320,10 +320,9 @@ export default function LaporanBmdPage() {
   }
 
   // (fetchVoidedAsetIds lokal dipindah ke lib/voidedAset.ts — dipakai bersama
-  // Rekonsiliasi & Laporan Perolehan. 'batal_akumulasi_kdp' disertakan saat
-  // dipanggil karena Model 3 kini ikut menghitung termin KDP: kontrak
-  // konstruksi yang dibuka kunci membalik SEMUA terminnya, jadi tak boleh
-  // dihitung sbg Penambahan.)
+  // Rekonsiliasi & Laporan Perolehan. Termin KDP yang dibatalkan dibaca PER
+  // BARIS lewat fetchTerminKdpBatal — sejak 2026-10-07 satu termin bisa batal
+  // sementara termin lain barang yang sama tetap berlaku.)
 
   // (`fetchReklasDibatalkan` lokal DIHAPUS 2026-08-10 — ia menyapu SELURUH
   // ledger `batal_reklas` sepanjang masa padahal yang ditanya cuma segelintir
@@ -474,10 +473,9 @@ export default function LaporanBmdPage() {
                           ...rowsAlih, ...rowsReklas, ...rowsKoreksi].map(r => r.aset_id)
 
     const tahap2 = await Promise.all([
-      // KDP: kontrak yang dibuka kunci membalik SEMUA terminnya, jadi asetnya
-      // tak boleh dihitung sbg Penambahan.
-      fetchVoidedAsetIds(supabase, ['batal_akumulasi_kdp'],
-        [...rowsCara, ...rowsKdp].map(r => r.aset_id)),
+      fetchVoidedAsetIds(supabase, [], [...rowsCara, ...rowsKdp].map(r => r.aset_id)),
+      // Termin KDP yang dibatalkan — PER BARIS (lib/voidedAset.ts).
+      fetchTerminKdpBatal(supabase, rowsKdp.map(r => r.aset_id)),
       // Pengalihan yang DIBATALKAN — kalau tidak disaring, perpindahan yang
       // sudah dianulir tetap muncul sbg mutasi masuk/keluar dan angkanya beda
       // dgn Daftar Barang & Rekonsiliasi.
@@ -497,7 +495,7 @@ export default function LaporanBmdPage() {
       fetchReklasEvents(supabase),
     ]).catch(gagal)
     if (!tahap2) { setLoading(false); return }
-    const [voided, pengalihanDibatalkan, reklasDibatalkan, penghapusanNetRemoved, pecahBatal,
+    const [voided, kdpBatal, pengalihanDibatalkan, reklasDibatalkan, penghapusanNetRemoved, pecahBatal,
            gabungBatal, koreksiDibatalkan, reklasEvents] = tahap2
 
     const tambah: Record<string, number> = {}
@@ -526,10 +524,9 @@ export default function LaporanBmdPage() {
 
     // Termin KDP → Penambahan (golongan 1.3.6). Kategori sendiri supaya kebeda
     // dari Cara Perolehan di rincian; nilai = nominal termin pada periode ini.
-    // Kontrak yang dibuka kunci sudah tersaring lewat `voided`
-    // (batal_akumulasi_kdp) — lihat pemanggilan fetchVoidedAsetIds di atas.
+    // Termin yang dibatalkan dibuang per baris (`kdpBatal`).
     for (const r of rowsKdp) {
-      if (!r.aset || voided.has(r.aset_id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
+      if (!r.aset || voided.has(r.aset_id) || kdpBatal.has(r.id) || !inScope(r.aset.skpd_id) || !lolosKomptabel(r.aset.intra_ekstra)) continue
       addLine(tambah, 'tambah', golPada(r), {
         kategori: 'Konstruksi Dalam Pengerjaan (termin)', tanggal: r.tanggal,
         skpdNama: skpdMap[r.aset.skpd_id] || '-',

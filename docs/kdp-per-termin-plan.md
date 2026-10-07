@@ -1,6 +1,6 @@
 # Rancangan: Pekerjaan Konstruksi (KDP) — kartu = paket, kontrak per komponen, setujui per termin
 
-Status: **RANCANGAN, belum dikerjakan** (disusun 2026-10-07, menunggu persetujuan user).
+Status: **DIKERJAKAN 2026-10-07** (migrasi 20261007_03 + kode; ringkasan di CLAUDE.md "Pekerjaan Konstruksi: kartu = paket"). Keputusan user §10 semuanya terjawab.
 Menggantikan pelonggaran "BAST perencanaan boleh lebih tua dari kontrak" yang dibuat
 hari yang sama (commit 4a613f2, sudah di `main`) — begitu rancangan ini jalan, pengecualian
 itu dicabut (§4.1). Pop-up penghalang Buka Kunci & nama jenis di `cekBolehBatal` dari commit
@@ -28,7 +28,7 @@ termin itu saja** — kartu tak pernah dibongkar seluruhnya, NIBAR tak pernah be
 | F2 | `batal_akumulasi_kdp` hari ini ber-payload **`{}`** dan semua pembacanya memperlakukannya sbg **pembatal SELURUH BARANG** (`fetchVoidedAsetIds(['batal_akumulasi_kdp'])`, `NOT EXISTS … batal_akumulasi_kdp` di LRA & IPA). | Batal per termin **tak bisa** memakai bentuk ini — satu termin dibatalkan, seluruh termin lain barang itu ikut lenyap dari laporan. Wajib pindah ke pembatalan **per baris** (`payload.target_trx_id`). |
 | F3 | **Laporan BMD & Rekonsiliasi membaca nilai KDP dari `aset.nilai_perolehan` HARI INI**, dan barangnya baru tampil kalau `tgl_perolehan` (= BAST termin **terakhir**) ≤ akhir periode (`fn_rekap_bmd`, `fn_rekon_pos`). | **Cacat yang sudah ada sekarang**: KDP dengan termin S1 + S2 hilang dari Laporan BMD S1, padahal Laporan Pengadaan S1 menampilkan termin S1-nya → Rekonsiliasi S1 tak tie-out. Dengan setujui per termin, cacat ini akan muncul di SETIAP paket. Wajib ditutup (lihat §6). |
 | F4 | **Engine tak punya titik mulai untuk barang yang lahir dari termin KDP** (`akumulasi_kdp` tak ada di daftar baseline `hitungJadwalAset`) → `return []`. | **Cacat yang sudah ada sekarang**: KDP yang direklas ke Gedung **tak pernah disusutkan**, tanpa satu pun error. Ditutup sekalian di §6. |
-| F5 | Tahun buku hanya dijaga saat INSERT baris (`fn_cek_tahun_buku`); payload kartu boleh diubah kapan saja. | Termin tahun depan **bisa** dimasukkan ke kartu tahun ini (barang KDP yang sama). Kasus "perencanaan 2026, fisik 2027" tak lagi wajib lewat Kapitalisasi — lihat §4.6. |
+| F5 | Tahun buku hanya dijaga saat INSERT baris (`fn_cek_tahun_buku`); payload kartu boleh diubah kapan saja. | Tanpa penjaga, termin tahun depan bisa masuk ke kartu tahun ini. **User memutuskan TIDAK boleh** (§4.6): satu kartu = satu tahun; lintas tahun = kartu baru + Kapitalisasi + Reklas. Wajib dijaga (§4.1). |
 
 ---
 
@@ -144,8 +144,12 @@ memuat pasangan-pasangan yang saling meniadakan — persis "tak pernah terjadi".
 
 ### 4.1 Aturan isian (ditolak dengan pesan, tombol tak dimatikan diam-diam)
 
-- Termin **wajib** menunjuk kontrak. Pengecualian yang diusulkan: komponen **biaya umum**
-  boleh tanpa kontrak (honor/ATK/perizinan umumnya tanpa kontrak) — *keputusan user, §10*.
+- Termin **wajib** menunjuk kontrak, KECUALI komponen **biaya umum**: kontraknya opsional
+  (pilihan "tanpa kontrak"), tapi isian kontraknya tetap tersedia untuk biaya umum yang
+  kebetulan berkontrak (keputusan user).
+- **Satu kartu = satu tahun anggaran**: BAST setiap termin wajib di tahun kartu
+  (`jurnal_header.tanggal`). Termin tahun berikutnya ditolak dgn pesan: *buat kartu baru
+  tahun ini, lalu satukan lewat Kapitalisasi & Reklas* (keputusan user, §4.6).
 - **Tgl BAST ≥ tgl kontrak termin itu sendiri.** Aturan "perencanaan boleh lebih tua"
   dicabut: perencanaan kini punya kontraknya sendiri.
 - Dokumen BAST wajib per termin (seperti sekarang).
@@ -154,8 +158,9 @@ memuat pasangan-pasangan yang saling meniadakan — persis "tak pernah terjadi".
 
 ### 4.2 Penjaga saat SETUJUI termin (RPC, satu transaksi)
 
-1. Wewenang: admin pemda / Pengurus Barang atasan (sama dgn sekarang), **dan bukan pembuat
-   termin itu** (pemisahan tugas pindah dari tingkat kartu ke tingkat termin).
+1. Wewenang: **admin pemda saja** (keputusan user). Pengurus Barang mana pun — termasuk
+   atasan — hanya mengisi & mengajukan; ia tak pernah menyetujui, jadi pemisahan tugas
+   tercapai dengan sendirinya.
 2. Tahun BAST masih terbuka (sudah dijaga `fn_cek_tahun_buku` saat INSERT).
 3. Barangnya **masih KDP** (`aset.kode` golongan 1.3.6) dan `status` aktif/draft — bukan
    sudah direklas, dikapitalisasi, dipecah, atau dihapus. Termin sesudah barang selesai
@@ -168,7 +173,7 @@ memuat pasangan-pasangan yang saling meniadakan — persis "tak pernah terjadi".
 
 ### 4.3 Penjaga saat BATAL termin (RPC, satu transaksi)
 
-1. Wewenang sama dengan Setujui (admin / Pengurus Barang atasan).
+1. Wewenang sama dengan Setujui (admin pemda saja).
 2. Tahun BAST termin itu masih terbuka — pembatalan bertanggal BAST aslinya.
 3. Barang **tak punya peristiwa non-KDP sesudah termin itu** (reklas, kapitalisasi,
    pemecahan, koreksi, penghapusan, pengalihan, …) yang masih berlaku → ditolak dgn pop-up
@@ -192,23 +197,21 @@ Tak berubah: menu Reklasifikasi. Sesudah reklas, kartu masih bisa dibuka & termi
 disetujui tetap tampil, tapi termin baru untuk barang itu ditolak (§4.2 butir 3). Retensi
 yang cair sesudah BAPP → Kapitalisasi ke barang Gedungnya, atau Batal reklas dulu.
 
-### 4.6 Lintas tahun
+### 4.6 Lintas tahun — kartu baru + Kapitalisasi + Reklas (keputusan user)
 
 Contoh: perencanaan cair 2026, fisik 2027.
-- 2026: kartu dibuat, P1 disetujui → barang KDP 90jt. Tutup Tahun 2026 → posisi KDP masuk
-  checkpoint (lihat §6).
-- 2027: **kartu yang sama** dibuka, kontrak fisik ditambah, termin fisik 2027 disetujui →
-  barang yang sama naik nilainya. **Tanpa Kapitalisasi.**
-- Yang tak bisa: membatalkan P1 di 2027 (tahun 2026 sudah dikunci) — benar, angka 2026 sudah
-  final.
-- Kartu tahun lalu yang masih punya kontrak/termin terbuka harus tetap muncul di daftar kartu
-  tahun berjalan (penyaring daftar kartu disesuaikan).
+- 2026: kartu A, P1 disetujui → barang KDP "Perencanaan Gedung X" 90jt. Tutup Tahun 2026 →
+  posisinya masuk checkpoint (§6), tahun 2026 final.
+- 2027: **kartu B baru** (kontrak fisik & pengawasan 2027) → barang KDP "Gedung X" terbit dari
+  termin pertamanya.
+- Satukan: **Kapitalisasi** dgn induk = KDP perencanaan (lebih tua), anak = KDP fisik — dua-duanya
+  1.3.6 intrakomptabel, jadi syarat golongan & komptabel terpenuhi.
+- Selesai (BAPP): **Reklasifikasi** induk ke Gedung & Bangunan → mulai disusutkan (§6).
+- Kartu A tak bisa ditambah termin 2027 (§4.1), dan termin 2026-nya tak bisa dibatalkan di 2027
+  (tahun terkunci) — benar, angka 2026 sudah final.
 
-Perencanaan **gelondongan** (satu kontrak perencanaan untuk beberapa paket fisik) tetap:
-satu kartu perencanaan → Pemecahan → Kapitalisasi ke masing-masing KDP fisik. Rancangan ini
-tak mengubahnya.
-
----
+Perencanaan **gelondongan** tetap: kartu perencanaan → Pemecahan → Kapitalisasi ke
+masing-masing KDP fisik.
 
 ## 5. Penegakan di DB (migrasi)
 
@@ -243,6 +246,10 @@ termin KDP**; tanah/ATL/barang lain tak tersentuh:
    → **mulai disusutkan**. Ini menutup F4.
 5. Tutup Tahun otomatis membuat checkpoint KDP (karena barisnya kini ada) → tahun berikutnya
    melanjutkan dari situ.
+6. **Tanggal perolehan ≠ mulai susut.** `tgl_perolehan` KDP = BAST termin pertama (pencatatan).
+   Penyusutan mulai di **semester reklas** ke Gedung/JIJ (peristiwa semester diproses sebelum
+   akrual semester itu), dengan masa manfaat penuh kode tujuan & basis = nilai KDP saat
+   reklas — bukan dihitung mundur dari tanggal perolehan. Aturan ini sudah ada di engine.
 
 Akibatnya `fn_rekap_bmd` & `fn_rekon_pos` — yang sudah memakai `penyusutan_semester` bila
 barisnya ada — **otomatis membaca nilai KDP per periode**. Tak ada perubahan di kedua fungsi
@@ -308,19 +315,16 @@ Setiap baris tabel ini jadi butir uji (§9).
 
 ---
 
-## 10. Keputusan yang dibutuhkan dari user
+## 10. Keputusan user (2026-10-07)
 
-1. **Biaya umum boleh tanpa kontrak?** Usul: ya (opsional); tiga komponen lain wajib.
-2. **Siapa menyetujui termin?** Usul: sama dgn sekarang — admin pemda & Pengurus Barang
-   atasan, bukan pembuat terminnya.
-3. **KDP tampil di menu Penyusutan** (beban 0)? Usul: disembunyikan dari layar Penyusutan,
-   tetap ada di tabelnya (dibutuhkan Laporan BMD & Rekonsiliasi).
-4. **Lintas tahun pakai kartu yang sama** (§4.6)? Usul: ya — Kapitalisasi hanya untuk
-   perencanaan gelondongan & termin sesudah reklas.
-5. **`tgl_perolehan` KDP = BAST termin pertama** (membalik keputusan 2026-07-13 "BAST
-   terakhir")? Usul: ya — tanpa itu barang lenyap dari laporan semester awal (F3).
-6. **Tombol Buka Kunci kartu dicabut**, diganti Batal per termin & "Batal Semua Termin"?
-   Usul: ya.
+1. **Biaya umum**: kontrak opsional, isian kontrak tetap tersedia. ✅
+2. **Yang menyetujui & membatalkan termin: admin pemda saja.** ✅
+3. **KDP di layar menu Penyusutan**: disembunyikan ✅ — ternyata sudah tampil "-" (golongan tak
+   disusutkan), jadi tak ada yang diubah; barisnya tetap dibaca Laporan BMD & Rekonsiliasi.
+4. **Lintas tahun: kartu baru + Kapitalisasi + Reklas**, kartu lama tak menerima termin tahun
+   berikutnya. ✅ (§4.6)
+5. **`tgl_perolehan` KDP = BAST termin pertama**; penyusutan mulai saat reklas ke GB/JIJ. ✅
+6. **Buka Kunci kartu dicabut**, diganti Batal per termin & "Batal Semua Termin". ✅
 
 ## 11. Urutan pengerjaan yang diusulkan
 

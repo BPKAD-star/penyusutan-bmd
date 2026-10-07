@@ -14,11 +14,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
 import { TotalPerolehan, hitungBarangJurnal } from './TotalPerolehan'
-import { barangKdpList } from '@/lib/kdp'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { formatRupiah2 } from '@/lib/export'
 import Pengadaan, { PengadaanCard, fetchPengadaanJurnals, useGolonganLabels, draftTotal, type Jurnal } from './Pengadaan'
-import KonstruksiPengadaan, { KontrakDetail, fetchKonstruksiKontraks, kontrakTotal, type Kontrak } from './KonstruksiPengadaan'
+import KonstruksiPengadaan, { KontrakDetail, fetchKonstruksiKontraks, kontrakTotal, hitungBarangKdp, type Kontrak } from './KonstruksiPengadaan'
 import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
 
 type Creating = null | 'nonfisik' | 'konstruksi'
@@ -73,11 +72,17 @@ export default function PengadaanEntry() {
 
   const reload = useCallback(async (skpdId: string) => {
     if (!skpdId) { setNfJurnals([]); setKKontraks([]); setSkpdTampil(''); return }
-    const [nf, k] = await Promise.all([
-      fetchPengadaanJurnals(supabase, skpdId),
-      fetchKonstruksiKontraks(supabase, skpdId),
-    ])
-    setNfJurnals(nf); setKKontraks(k); setSkpdTampil(skpdId)
+    try {
+      const [nf, k] = await Promise.all([
+        fetchPengadaanJurnals(supabase, skpdId),
+        fetchKonstruksiKontraks(supabase, skpdId),
+      ])
+      setNfJurnals(nf); setKKontraks(k)
+    } catch (e) {
+      // Loader konstruksi MELEMPAR (fail-closed) — daftar kosong tanpa pesan
+      // terbaca operator sbg "belum ada pengadaan".
+      setMsg(`Error: ${(e as Error).message}`)
+    } finally { setSkpdTampil(skpdId) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { reload(skpd); setCreating(null); setPickOpen(false); setMsg('') }, [skpd, reload])
@@ -96,10 +101,10 @@ export default function PengadaanEntry() {
   // bersama "disetujui"/"draft" menurut status kontraknya.
   const barangPengadaan = (() => {
     const r = hitungBarangJurnal(nfJurnals)
+    // Barang KDP "disetujui" begitu SATU terminnya disetujui (2026-10-07).
     for (const k of kKontraks) {
-      const n = barangKdpList(k.payload).length
-      if (k.approval_status === 'disetujui') r.disetujui += n
-      else if (k.approval_status === 'pending') r.draft += n
+      const n = hitungBarangKdp(k.payload)
+      r.disetujui += n.disetujui; r.draft += n.draft
     }
     return r
   })()
@@ -165,7 +170,8 @@ export default function PengadaanEntry() {
                     <PengadaanCard j={it.j} skpdId={Number(skpd)} golonganLabels={golonganLabels}
                       isAdmin={bolehACCKartu(it.j.created_by)} onChanged={refresh} onMsg={setMsg} />
                   ) : (
-                    <KontrakDetail inline kontrak={it.k} isAdmin={bolehACCKartu(it.k.created_by)}
+                    // Termin konstruksi disetujui ADMIN PEMDA saja (2026-10-07).
+                    <KontrakDetail inline kontrak={it.k} isAdmin={scope.isAdmin}
                       onBack={refresh} onChanged={refresh} onMsg={setMsg} />
                   )}
                 </div>

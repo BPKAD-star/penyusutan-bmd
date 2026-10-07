@@ -6,7 +6,7 @@
 // hanya boleh memuat peristiwa yang masih berlaku; "Riwayat Transaksi Lengkap"
 // tetap memuat semuanya sebagai lampiran audit, dengan baris yang dianulir ditandai.
 //
-// Empat mekanik pembatalan yang berbeda, dan menyamakannya adalah bugnya:
+// Lima mekanik pembatalan yang berbeda, dan menyamakannya adalah bugnya:
 //   1. ber-`payload.target_trx_id(s)` — kapitalisasi (sisi induk), reklas, koreksi
 //      (nilai/spesifikasi/ganda), pengalihan & mutasi internal, penggabungan.
 //      Dibaca lewat `idTarget` yang DIPAKAI BERSAMA lib/voidedAset.ts & guard.
@@ -15,6 +15,7 @@
 //   3. `batal_pemanfaatan`/`batal_pengamanan`/`batal_pemecahan*` — tanpa target,
 //      kuncinya `header_id` (satu perjanjian / BAST / kartu pemecahan).
 //   4. `batal_kapitalisasi` sisi ANAK — tanpa target & tanpa header, hanya urutan.
+//   5. `batal_akumulasi_kdp` warisan `{}` — seluruh termin KDP yang lebih tua.
 import { idTarget, type BatalPayload } from './voidedAset'
 
 export type TrxStatus = {
@@ -91,6 +92,17 @@ export function petaDianulir(trx: TrxStatus[]): Map<number, number> {
     else {
       const serap = antrian.pop()
       if (serap && !out.has(serap.id)) out.set(serap.id, x.id)
+    }
+  }
+
+  // (5) termin KDP warisan: `batal_akumulasi_kdp` TANPA target (model Buka
+  // Kunci kartu, sebelum 2026-10-07) menganulir SELURUH termin barang ini yang
+  // lebih tua. Yang ber-target sudah tertangani di (1). KEMBAR dgn
+  // `terminKdpDibatalkan` (lib/voidedAset.ts).
+  for (const b of trx) {
+    if (b.jenis !== 'batal_akumulasi_kdp' || idTarget(b.payload as BatalPayload).length > 0) continue
+    for (const t of trx) {
+      if (t.jenis === 'akumulasi_kdp' && t.id < b.id && !out.has(t.id)) out.set(t.id, b.id)
     }
   }
 

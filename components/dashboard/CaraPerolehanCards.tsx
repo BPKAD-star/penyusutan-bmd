@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { GOLONGAN_REKAP, kodeLevel3 } from '@/lib/bmd'
-import { barangKdpList, type KontrakKonstruksiPayload } from '@/lib/kdp'
+import { barangKdpList, ringkasBarangKdp, namaBarangKdp, type KontrakKonstruksiPayload } from '@/lib/kdp'
 import { backdropClose } from '@/components/backdropClose'
 import { formatRupiah2 } from '@/lib/export'
 
@@ -37,6 +37,9 @@ const CARA_LIST: CaraConfig[] = [
 ]
 
 const nf = (n: number) => n.toLocaleString('id-ID')
+// Kartu konstruksi berstatus 'disetujui' begitu SATU terminnya disetujui, jadi
+// termin lain yang masih menunggu ada di kartu 'disetujui' juga (2026-10-07).
+const FILTER_MENUNGGU = 'approval_status.eq.pending,and(kategori.eq.konstruksi,approval_status.eq.disetujui)'
 /** Golongan yang punya kolom sendiri di matriks popup "disetujui". */
 const KODE_GOL = new Set(GOLONGAN_REKAP.map(g => g.kode))
 
@@ -65,11 +68,11 @@ type ItemPending = { nama: string; kode: string; nilai: number }
  */
 function itemsPending(kategori: string, payload: PayloadLite): ItemPending[] {
   if (kategori === 'konstruksi') {
-    return barangKdpList(payload as KontrakKonstruksiPayload).map(b => ({
-      nama: b.nama || b.kode,
-      kode: b.kode,
-      nilai: (b.pembayaran || []).reduce((s, p) => s + Number(p.nominal || 0), 0),
-    }))
+    // Sejak 2026-10-07 termin disetujui SATU PER SATU: yang menunggu adalah
+    // barang yang masih punya termin berstatus menunggu, senilai termin itu saja.
+    return barangKdpList(payload as KontrakKonstruksiPayload)
+      .filter(b => ringkasBarangKdp(b).nMenunggu > 0)
+      .map(b => ({ nama: namaBarangKdp(b), kode: b.kode, nilai: ringkasBarangKdp(b).nilaiMenunggu }))
   }
   return (payload.draft_items || []).map(d => ({
     nama: d.nama || d.kode || '',
@@ -151,7 +154,7 @@ export default function CaraPerolehanCards({ approved, approvedNilai, errApprove
         // dari kenyataan (kartu yang belum disetujui justru jadi tak terlihat).
         for (;;) {
           let q = supabase.from('jurnal_header').select('id,kategori,payload')
-            .in('kategori', c.kategoriJurnal).eq('approval_status', 'pending')
+            .in('kategori', c.kategoriJurnal).or(FILTER_MENUNGGU)
             .order('id', { ascending: true }).limit(500)
           if (terakhir) q = q.gt('id', terakhir)
           const { data, error } = await q
@@ -473,11 +476,12 @@ function PendingDetailModal({ cara, onClose }: { cara: CaraConfig; onClose: () =
         const skpdMap = await fetchSkpdNama(supabase)
         const { data: headers, error } = await supabase.from('jurnal_header')
           .select('id,no_sk,tanggal,skpd_id,kategori,payload')
-          .in('kategori', cara.kategoriJurnal).eq('approval_status', 'pending')
+          .in('kategori', cara.kategoriJurnal).or(FILTER_MENUNGGU)
           .order('tanggal', { ascending: false })
         if (error) throw new Error(error.message)
         const grouped: Record<string, PendingHeaderLite[]> = {}
         for (const h of (headers || []) as PendingHeaderLite[]) {
+          if (itemsPending(h.kategori, h.payload || {}).length === 0) continue
           const nama = skpdMap[h.skpd_id] || `SKPD #${h.skpd_id}`
           ;(grouped[nama] ||= []).push({ ...h, payload: h.payload || {} })
         }

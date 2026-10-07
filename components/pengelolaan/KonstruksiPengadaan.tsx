@@ -1,113 +1,67 @@
 'use client'
-// Pekerjaan Fisik (Konstruksi) — sub-mode di Pengadaan Entry Manual.
-// MODEL MULTI-KDP (2026-07-13): 1 kontrak = 1 kartu jurnal_header (kategori
-// 'konstruksi') yang bisa berisi BEBERAPA barang KDP (mis. paket jalan →
-// beberapa ruas). Tiap barang = 1 aset KDP (1.3.6) dgn rincian termin sendiri;
-// nilai barang = total termin-nya. Approval PER KONTRAK (atomik): saat approve
-// SEMUA barang di-materialize sekaligus; saat unapprove SEMUA barang hilang dari
-// Daftar Barang sampai disetujui ulang. Semua data di payload JSON (no DDL).
+// Pekerjaan Konstruksi — sub-mode di Pengadaan Entry Manual.
+//
+// MODEL PAKET (keputusan user 2026-10-07; rancangan docs/kdp-per-termin-plan.md):
+// 1 kartu jurnal_header (kategori 'konstruksi') = SATU PAKET PEKERJAAN dalam
+// SATU tahun anggaran, berisi:
+//   · daftar KONTRAK per komponen (perencanaan/fisik/pengawasan/biaya umum),
+//   · barang KDP (1.3.6) — tiap barang = satu aset,
+//   · TERMIN per barang, tiap termin menunjuk satu kontrak & berstatus sendiri.
+// Termin DISETUJUI SATU PER SATU oleh admin pemda: termin pertama sebuah barang
+// menerbitkan barangnya (NIBAR terbit sekali), berikutnya menambah nilai. Salah
+// catat → BATAL termin itu saja. Tak ada lagi "Setujui Kontrak" / "Buka Kunci"
+// satu kartu penuh. Status kartu DITURUNKAN dari terminnya.
+// Penegak: RPC fn_kdp_setujui_termin/fn_kdp_batal_termin/fn_kdp_batal_semua +
+// trigger fn_kdp_kartu_guard (migrasi 20261007_03).
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import FormShell from './FormShell'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import KodefikasiPicker, { type KodefikasiHasil } from '@/components/KodefikasiPicker'
-import RekeningPicker from '@/components/RekeningPicker'
-import ProgramPicker from '@/components/ProgramPicker'
-import SearchSelect from '@/components/SearchSelect'
-import { usePegawaiSkpd, pegawaiOptions } from '@/components/usePegawaiSkpd'
 import AsetPicker, { type AsetRingkas } from '@/components/AsetPicker'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
 import PreviewKonstruksiModal from './PreviewKonstruksiModal'
-import { useDateBounds } from '@/components/useTahunBuku'
-import { periodeDariTanggal } from '@/lib/bmd'
 import { formatRupiah2 } from '@/lib/export'
 import { KDP_KONSTRUKSI_FIELDS, ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
-import NominalInput from '@/shared/ui/NominalInput'
-import { DokumenBastField, bukaDokumen, namaFile } from './DokumenBastField'
-import { cekWarningRekening } from '@/lib/rekeningBelanja'
 import {
-  approveKontrakKonstruksi, unapproveKontrakKonstruksi, barangKdpList, cekTanggalTermin, minTglTermin, terminPengikatTerawal, namaBarangKdp, kekuranganNamaKdp,
-  type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo,
+  barangKdpList, namaBarangKdp, kekuranganNamaKdp, ringkasBarangKdp, statusKartuKdp, adaTerminMenunggu,
+  normalisasiKartuKdp, tahunKartuKdp, komponenLabelKdp, newIdKdp,
+  type KontrakKonstruksiPayload, type PembayaranKdp, type BarangKdp, type KapInfo, type KontrakKdp,
 } from '@/lib/kdp'
-import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurnal } from '@/lib/roles'
-import { BENTUK_KONTRAK_KONSTRUKSI, bentukKontrakLabel } from '@/lib/bentukKontrak'
+import { setujuiTerminKdp, batalTerminKdp, batalSemuaTerminKdp } from '@/lib/kdpAksi'
+import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope } from '@/lib/roles'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi, konfirmasiGagal } from '@/shared/ui/konfirmasi'
-import { FotoSel, useFotoThumbs } from '@/shared/ui/FotoBarang'
-import { fetchUraianRekening } from '@/lib/rkbmdStandar'
+import { KontrakKdpSection } from './konstruksi/KontrakKdpSection'
+import { CreateKartu, EditKartuModal } from './konstruksi/KartuPaketForm'
+import { BarangKdpCard, Baris } from './konstruksi/BarangKdpCard'
 
-// created_by: pemisahan tugas — pembuat kartu tak boleh menyetujui sendiri.
 export type Kontrak = { id: string; skpd_id: number; no_sk: string; tanggal: string; approval_status: string; payload: KontrakKonstruksiPayload; created_by: string | null }
-const KOMPONEN = [
-  { value: 'perencanaan', label: 'Perencanaan' }, { value: 'fisik', label: 'Fisik' },
-  { value: 'biaya_umum', label: 'Biaya Umum' }, { value: 'pengawasan', label: 'Pengawasan' },
-]
-const komponenLabel = (v: string) => KOMPONEN.find(k => k.value === v)?.label || v
-const toNum = (s: string) => { const n = parseFloat(String(s).replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n }
-const newKey = () => Math.random().toString(36).slice(2)
-// Uraian Kode Rekening (lib/rkbmdStandar.ts) — dipakai kolom "Rekening" tabel
-// termin, supaya operator tak perlu membuka RekeningPicker lagi utk tahu itu
-// belanja apa. Duplikasi kecil dari `useRekeningUraian` privat di Pengadaan.tsx
-// (tak diekspor dari sana, jadi tak bisa diimpor) — pola & alasan SAMA: sengaja
-// TIDAK fail-closed, uraian itu hiasan di atas kode yang sudah benar.
-function useRekeningUraian(kodes: (string | null | undefined)[]): Record<string, string> {
-  const supabase = createClient()
-  const [map, setMap] = useState<Record<string, string>>({})
-  const key = [...new Set(kodes.filter((k): k is string => !!k))].sort().join('|')
-  useEffect(() => {
-    if (!key) { setMap({}); return }
-    (async () => {
-      const m = await fetchUraianRekening(supabase, key.split('|'))
-      setMap(Object.fromEntries(m))
-    })()
-  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
-  return map
-}
-// ⚠️ Sampai 2026-08-27 ini `GOLONGAN_FIELDS['1.3.1']` (template Tanah), jadi
-// popup spesifikasi KDP menawarkan Jenis Hak & tiga kolom dokumen kepemilikan —
-// padahal sertifikat/IMB baru terbit SESUDAH pekerjaan selesai & direklas ke
-// aset tetap. Alasan lengkapnya di lib/asetFields.ts.
+
 const FIELDS_KDP = KDP_KONSTRUKSI_FIELDS
-// Barang KDP selalu golongan 1.3.6 (dipaksa `golonganTetap` di TambahBarangPanel).
-const GOL_KDP = '1.3.6'
 const barangTotal = (b: BarangKdp) => (b.pembayaran || []).reduce((s, x) => s + Number(x.nominal || 0), 0)
+/** Σ seluruh termin kartu (menunggu + disetujui) — angka rencana paket. */
 export const kontrakTotal = (p: KontrakKonstruksiPayload) => barangKdpList(p).reduce((s, b) => s + barangTotal(b), 0)
 
-// Loader dipakai bersama: daftar internal komponen ini & daftar gabungan
-// (PengadaanEntry). 'ditolak' = kontrak diarsipkan → disembunyikan.
+// Loader bersama (daftar internal & PengadaanEntry). 'ditolak' = diarsipkan.
+// Kartu sebelum model paket dinormalisasi DI MEMORI (lib/kdp.ts) — tersimpan
+// begitu kartu itu disunting.
 export async function fetchKonstruksiKontraks(supabase: ReturnType<typeof createClient>, skpdId: string | number): Promise<Kontrak[]> {
   if (!skpdId) return []
-  const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload,created_by')
+  const { data, error } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload,created_by')
     .eq('kategori', 'konstruksi').eq('skpd_id', Number(skpdId)).order('created_at', { ascending: false })
+  if (error) throw new Error(`gagal membaca kartu Pekerjaan Konstruksi: ${error.message}`)
   return ((data || []) as Kontrak[]).filter(k => k.approval_status !== 'ditolak')
+    .map(k => ({ ...k, payload: normalisasiKartuKdp(k.payload || ({} as KontrakKonstruksiPayload), k).payload }))
 }
 
-// Baris label:value ringkas utk header kartu kontrak.
-// `lebar` = lebar kolom label. Bawaannya cukup untuk kartu kontrak ("Tanggal
-// Kontrak" dsb); kartu barang KDP mengoper yang lebih lebar karena
-// "Spesifikasi Nama Barang" tak muat di w-28 lalu MEMBUNGKUS jadi dua baris —
-// labelnya turun & barisnya jadi tak sejajar dgn baris lain (user 2026-08-27).
-// `whitespace-nowrap` menjaga label tetap sebaris berapa pun lebarnya.
-function Baris({ label, value, lebar = 'w-28' }: { label: string; value?: string | null; lebar?: string }) {
-  return (
-    <div className="flex text-xs leading-relaxed">
-      <span className={`text-gray-400 flex-shrink-0 whitespace-nowrap ${lebar}`}>{label}</span>
-      <span className="text-gray-700 min-w-0">: {value || '-'}</span>
-    </div>
-  )
-}
-
-// ── Picker "Menambah masa manfaat aset yang sudah tercatat?" — PER BARANG KDP.
-// Dipakai saat tambah barang (draft lokal) & saat ubah belakangan (langsung
-// tersimpan). Search AsetPicker sudah bisa browse semua barang di SKPD (query
-// kosong = tampilkan semua, dibatasi golongan GB/JIJ yg dipilih).
+// ── "Menambah masa manfaat aset yang sudah tercatat?" — INFO per barang KDP ──
 function KapInfoPicker({ skpdId, value, onChange }: {
   skpdId: number; value: KapInfo | null | undefined; onChange: (v: KapInfo | null) => void
 }) {
   const menambah = !!value?.menambah
   const [golongan, setGolongan] = useState('')
   const [target, setTarget] = useState<AsetRingkas | null>(null)
-
   return (
     <div>
       <label className="block text-xs text-gray-500 mb-1">Menambah masa manfaat aset yang sudah tercatat? <span className="text-gray-400">(info — reklas & kapitalisasi tetap manual nanti)</span></label>
@@ -145,71 +99,62 @@ function KapInfoPicker({ skpdId, value, onChange }: {
 export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, openId, onExit, onDataChange, hideAdd }: {
   skpdProp?: string; embedded?: boolean
   startCreate?: boolean; openId?: string; onExit?: () => void
-  onDataChange?: () => void // dipanggil tiap list berubah — utk refresh total induk (ref, stabil)
-  hideAdd?: boolean         // sembunyikan "+ Buat Kontrak" internal (induk yg sediakan tombol tambah)
+  onDataChange?: () => void
+  hideAdd?: boolean
 } = {}) {
   const supabase = createClient()
   const onDataChangeRef = useRef(onDataChange)
   onDataChangeRef.current = onDataChange
-  // Boleh approve kartu ini? admin = semua; pengurus_barang = hanya sub-OPD strict
-  // di bawah nodenya DAN bukan kartu buatannya sendiri (pemisahan tugas — sejak
-  // picker SKPD dibuka ke subtree). Penegak asli: trigger approval guard di DB.
+  // Setujui & batal termin = ADMIN PEMDA SAJA (keputusan user 2026-10-07).
   const [scope, setScope] = useState<ApprovalScope>(SCOPE_KOSONG)
   const [skpdInternal, setSkpdInternal] = useState('')
-  const skpd = skpdProp !== undefined ? skpdProp : skpdInternal // SKPD boleh dikontrol induk (satu tampilan Pengadaan)
-  const bolehACCKartu = (k: Kontrak) => bolehSetujuiJurnal(scope, skpd, k.created_by)
+  const skpd = skpdProp !== undefined ? skpdProp : skpdInternal
   const [list, setList] = useState<Kontrak[]>([])
   const [selected, setSelected] = useState<Kontrak | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [msg, setMsg] = useState('')
 
-  useEffect(() => {
-    (async () => {
-      setScope(await fetchApprovalScope(supabase))
-    })()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void (async () => setScope(await fetchApprovalScope(supabase)))() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async (skpdId: string) => {
     if (!skpdId) { setList([]); return }
-    setList(await fetchKonstruksiKontraks(supabase, skpdId))
+    try { setList(await fetchKonstruksiKontraks(supabase, skpdId)) }
+    catch (e) { setMsg(`Error: ${(e as Error).message}`) }
     onDataChangeRef.current?.()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { load(skpd); setSelected(null); setShowCreate(false) }, [skpd, load])
-  // Mode drill: buka kontrak yang diminta induk begitu daftar termuat.
+  useEffect(() => { void load(skpd); setSelected(null); setShowCreate(false) }, [skpd, load])
   useEffect(() => { if (openId) { const found = list.find(k => k.id === openId); if (found) setSelected(found) } }, [openId, list])
 
   const refreshSelected = async () => {
     if (!selected) return
-    const { data } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload').eq('id', selected.id).single()
-    if (data) setSelected(data as Kontrak)
+    const { data, error } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,approval_status,payload,created_by').eq('id', selected.id).single()
+    if (error) { setMsg(`Error: gagal memuat ulang kartu: ${error.message}`); return }
+    if (data) { const k = data as Kontrak; setSelected({ ...k, payload: normalisasiKartuKdp(k.payload, k).payload }) }
   }
 
-  // ── Mode drill (dipanggil dari daftar gabungan PengadaanEntry) ──────────────
   if (onExit) {
     return (
       <div className="space-y-4">
-        {msg && (
-          <div className={`p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
-        )}
+        {msg && <div className={`p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>}
         {selected ? (
-          <KontrakDetail kontrak={selected} isAdmin={bolehACCKartu(selected)} onBack={onExit}
-            onMsg={setMsg} onChanged={async () => { await refreshSelected(); load(skpd) }} />
+          <KontrakDetail kontrak={selected} isAdmin={scope.isAdmin} onBack={onExit}
+            onMsg={setMsg} onChanged={async () => { await refreshSelected(); void load(skpd) }} />
         ) : startCreate ? (
           <>
             <button onClick={onExit} className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>Kembali ke daftar
             </button>
-            <CreateKontrak skpdId={Number(skpd)} onSaved={() => { load(skpd); onExit() }} onErr={setMsg} />
+            <CreateKartu skpdId={Number(skpd)} onSaved={() => { void load(skpd); onExit() }} />
           </>
         ) : (
-          <div className="card p-8 text-center text-gray-400 text-sm">Memuat kontrak…</div>
+          <div className="card p-8 text-center text-gray-400 text-sm">Memuat kartu…</div>
         )}
       </div>
     )
   }
 
-  const pendingK = list.filter(k => k.approval_status !== 'disetujui')
-  const disetujuiK = list.filter(k => k.approval_status === 'disetujui')
+  const menungguK = list.filter(k => statusKartuKdp(k.payload) === 'pending' || adaTerminMenunggu(k.payload))
+  const selesaiK = list.filter(k => !menungguK.includes(k))
 
   const body = (
     <>
@@ -219,33 +164,30 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
           <SkpdCombobox lockToOperator value={skpd} onChange={id => { setSkpdInternal(id); setMsg('') }} placeholder="Ketik nama SKPD..." />
         </div>
       )}
-      {embedded && msg && (
-        <div className={`mb-4 p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>
-      )}
-
+      {embedded && msg && <div className={`mb-4 p-3 rounded-lg text-sm max-w-2xl ${msg.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>{msg}</div>}
       {!skpd ? (
         <div className="card p-12 text-center text-gray-400 text-sm">Pilih SKPD untuk mulai.</div>
       ) : (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-500">{list.length} kontrak konstruksi · {formatRupiah2(list.reduce((s, k) => s + kontrakTotal(k.payload), 0))}</span>
-            {!hideAdd && <button className="btn-primary" onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Batal' : '+ Buat Kontrak'}</button>}
+            <span className="text-sm text-gray-500">{list.length} paket konstruksi · {formatRupiah2(list.reduce((s, k) => s + kontrakTotal(k.payload), 0))}</span>
+            {!hideAdd && <button className="btn-primary" onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Batal' : '+ Buat Kartu Paket'}</button>}
           </div>
-          {!hideAdd && showCreate && <CreateKontrak skpdId={Number(skpd)} onSaved={() => { setShowCreate(false); load(skpd); setMsg('Kontrak dibuat (draft) — tambah barang KDP & rincian pembayaran lalu tunggu approval.') }} onErr={setMsg} />}
+          {!hideAdd && showCreate && <CreateKartu skpdId={Number(skpd)} onSaved={() => { setShowCreate(false); void load(skpd); setMsg('Kartu paket dibuat — tambah kontrak, barang KDP & termin.') }} />}
           {list.length === 0 ? (
-            <div className="card p-12 text-center text-gray-400 text-sm">Belum ada kontrak konstruksi untuk SKPD ini.</div>
+            <div className="card p-12 text-center text-gray-400 text-sm">Belum ada paket konstruksi untuk SKPD ini.</div>
           ) : (
             <>
-              {pendingK.length > 0 && (
+              {menungguK.length > 0 && (
                 <section className="space-y-3">
-                  <h3 className="text-sm font-semibold text-amber-700">⏳ Menunggu Persetujuan ({pendingK.length})</h3>
-                  {pendingK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={bolehACCKartu(k)} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
+                  <h3 className="text-sm font-semibold text-amber-700">⏳ Ada yang Menunggu ({menungguK.length})</h3>
+                  {menungguK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={scope.isAdmin} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
                 </section>
               )}
-              {disetujuiK.length > 0 && (
+              {selesaiK.length > 0 && (
                 <section className="space-y-3">
-                  <h3 className="text-sm font-semibold text-gray-600">✓ Disetujui ({disetujuiK.length})</h3>
-                  {disetujuiK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={bolehACCKartu(k)} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
+                  <h3 className="text-sm font-semibold text-gray-600">✓ Semua Termin Disetujui ({selesaiK.length})</h3>
+                  {selesaiK.map(k => <KontrakDetail key={k.id} inline kontrak={k} isAdmin={scope.isAdmin} onBack={() => load(skpd)} onMsg={setMsg} onChanged={() => load(skpd)} />)}
                 </section>
               )}
             </>
@@ -255,82 +197,14 @@ export default function KonstruksiPengadaan({ skpdProp, embedded, startCreate, o
     </>
   )
   return embedded ? body : (
-    <FormShell judul="Konstruksi" deskripsi="Kontrak konstruksi bisa berisi beberapa barang KDP; tiap barang punya termin sendiri. Approval per kontrak." msg={msg}>{body}</FormShell>
+    <FormShell judul="Konstruksi" deskripsi="Satu kartu = satu paket pekerjaan dalam satu tahun anggaran. Termin disetujui satu per satu oleh admin pemda." msg={msg}>{body}</FormShell>
   )
 }
 
-// ── Form buat kontrak (header saja — barang KDP ditambah di detail) ─────────
-function CreateKontrak({ skpdId, onSaved, onErr }: { skpdId: number; onSaved: (k: Kontrak) => void; onErr: (m: string) => void }) {
-  const supabase = createClient()
-  const konfirmasi = useKonfirmasi()
-  const bounds = useDateBounds()
-  const [f, setF] = useState({ nama: '', noKontrak: '', tglKontrak: '', program: '', kegiatan: '', subKeg: '', penyedia: '', nilaiKontrak: '', keterangan: '' })
-  const [sumber, setSumber] = useState<string>('spk')
-  const [ppk, setPpk] = useState('')
-  // PPK dibatasi ke pegawai SKPD kontrak ini (+ SKPD induk) — lihat usePegawaiSkpd.
-  const pegawai = usePegawaiSkpd(skpdId)
-  const [saving, setSaving] = useState(false)
-  const set = (k: keyof typeof f, v: string) => setF(s => ({ ...s, [k]: v }))
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!f.nama.trim()) { onErr('Error: nama pekerjaan wajib.'); return }
-    if (!f.noKontrak.trim() || !f.tglKontrak) { onErr('Error: No & Tgl Kontrak wajib.'); return }
-    setSaving(true)
-    const payload: KontrakKonstruksiPayload = {
-      nama_pekerjaan: f.nama, sumber,
-      program: f.program || null, kegiatan: f.kegiatan || null, sub_kegiatan: f.subKeg || null,
-      ppk: ppk || null, penyedia: f.penyedia || null, nilai_kontrak: f.nilaiKontrak ? Number(f.nilaiKontrak) : null,
-      keterangan: f.keterangan || null,
-      barang: [],
-    }
-    const { data, error } = await supabase.from('jurnal_header').insert({
-      skpd_id: skpdId, kategori: 'konstruksi', no_sk: f.noKontrak.trim(), tanggal: f.tglKontrak,
-      keterangan: f.keterangan || null, approval_status: 'pending', payload,
-    }).select('id,skpd_id,no_sk,tanggal,approval_status,payload').single()
-    setSaving(false)
-    if (error || !data) await konfirmasiGagal(konfirmasi, `Gagal menyimpan kontrak: ${error?.message || 'data kosong'}`)
-    else onSaved(data as Kontrak)
-  }
-
-  const fld = (label: string, k: keyof typeof f, type = 'text') => (
-    <div><label className="block text-xs text-gray-500 mb-1">{label}</label>
-      {type === 'number'
-        ? <NominalInput className="select-filter w-full" value={f[k]} onChange={v => set(k, v)} />
-        : <input type={type} className="select-filter w-full" value={f[k]} onChange={e => set(k, e.target.value)} />}
-    </div>
-  )
-  return (
-    <form onSubmit={submit} className="card p-5 mb-4 space-y-4 max-w-2xl">
-      {fld('Nama Pekerjaan', 'nama')}
-      <div><label className="block text-xs text-gray-500 mb-1">Bentuk Kontrak (Dokumen Sumber)</label>
-        <select className="select-filter w-full" value={sumber} onChange={e => setSumber(e.target.value)}>
-          {BENTUK_KONTRAK_KONSTRUKSI.map(v => <option key={v} value={v}>{bentukKontrakLabel(v)}</option>)}
-        </select></div>
-      {fld('No. Dokumen Kontrak', 'noKontrak')}
-      <div><label className="block text-xs text-gray-500 mb-1">Tgl Dokumen Kontrak</label>
-        <input type="date" min={bounds.min} max={bounds.max} className="select-filter w-full" value={f.tglKontrak} onChange={e => set('tglKontrak', e.target.value)} /></div>
-      <div>
-        <label className="block text-xs text-gray-500 mb-1">Program / Kegiatan / Sub Kegiatan</label>
-        <ProgramPicker program={f.program} kegiatan={f.kegiatan} subKeg={f.subKeg}
-          onChange={sel => setF(s => ({ ...s, program: sel.program, kegiatan: sel.kegiatan, subKeg: sel.sub_kegiatan }))} />
-      </div>
-      <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-        <SearchSelect value={ppk} options={pegawaiOptions(pegawai)} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
-        {pegawai.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada pegawai terdaftar di SKPD ini — daftarkan dulu di Daftar Pegawai (menu Admin).</p>}</div>
-      {fld('Nama Penyedia', 'penyedia')}
-      {fld('Nilai Kontrak Pekerjaan (Rp)', 'nilaiKontrak', 'number')}
-      {fld('Keterangan Kontrak', 'keterangan')}
-      <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Menyimpan...' : 'Simpan Kontrak'}</button>
-    </form>
-  )
-}
-
-// ── Detail kontrak: daftar barang KDP (tiap barang punya termin) + approval ──
-// Diekspor supaya bisa dipakai sbg kartu mandiri di daftar gabungan (PengadaanEntry).
+// ── Kartu paket: kontrak + barang KDP (termin per barang) ───────────────────
 export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inline }: {
   kontrak: Kontrak; isAdmin: boolean; onBack: () => void; onChanged: () => void; onMsg: (m: string) => void
-  inline?: boolean // dipakai di halaman gabungan (banyak kartu sekaligus) — sembunyikan tombol "Kembali"
+  inline?: boolean
 }) {
   const supabase = createClient()
   const konfirmasi = useKonfirmasi()
@@ -339,54 +213,48 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
   const [showEdit, setShowEdit] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [specBarang, setSpecBarang] = useState<BarangKdp | null>(null)
+  const [kapBarang, setKapBarang] = useState<BarangKdp | null>(null)
   const p = kontrak.payload || ({} as KontrakKonstruksiPayload)
   const barangs = barangKdpList(p)
-  const total = barangs.reduce((s, b) => s + barangTotal(b), 0)
-  const pending = kontrak.approval_status !== 'disetujui'
+  const kontraks = p.kontrak || []
+  const tahun = tahunKartuKdp(kontrak.tanggal)
+  const nDisetujui = barangs.reduce((s, b) => s + ringkasBarangKdp(b).nDisetujui, 0)
+  const nMenunggu = barangs.reduce((s, b) => s + ringkasBarangKdp(b).nMenunggu, 0)
+  const nilaiDisetujui = barangs.reduce((s, b) => s + ringkasBarangKdp(b).nilaiDisetujui, 0)
+  const nilaiMenunggu = barangs.reduce((s, b) => s + ringkasBarangKdp(b).nilaiMenunggu, 0)
+  const bolehUbah = kontrak.approval_status !== 'ditolak'
 
-  // Tulis ulang payload versi baru (barang[]) — buang field legacy singleton.
-  async function saveBarang(next: BarangKdp[]) {
-    const rest = { ...p }
-    delete (rest as Record<string, unknown>).kode_kdp; delete (rest as Record<string, unknown>).pembayaran
-    delete (rest as Record<string, unknown>).spec; delete (rest as Record<string, unknown>).foto; delete (rest as Record<string, unknown>).aset_id
-    const { error } = await supabase.from('jurnal_header').update({ payload: { ...rest, barang: next } }).eq('id', kontrak.id)
-    if (error) await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); else onChanged()
+  // Tulis payload utuh. Bagian yang sudah disetujui dijaga trigger DB — kalau
+  // layar ini basi (admin baru menyetujui di tab lain), simpan DITOLAK dgn pesan.
+  async function simpanPayload(next: KontrakKonstruksiPayload): Promise<boolean> {
+    const { error } = await supabase.from('jurnal_header').update({ payload: next }).eq('id', kontrak.id)
+    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); onChanged(); return false }
+    onChanged(); return true
   }
+  const saveBarang = (next: BarangKdp[]) => simpanPayload({ ...p, barang: next })
+
   async function tambahBarang(kode: string, nama: string, kapInfo: KapInfo | null) {
-    await saveBarang([...barangs, { key: newKey(), kode, nama, pembayaran: [], kap_info: kapInfo }])
-    setShowAddBarang(false)
+    if (await saveBarang([...barangs, { key: newIdKdp(), kode, nama, pembayaran: [], kap_info: kapInfo }])) setShowAddBarang(false)
   }
-  async function hapusBarang(key: string) {
-    const b = barangs.find(x => x.key === key)
-    const nTermin = (b?.pembayaran || []).length
+  async function hapusBarang(b: BarangKdp) {
     if (!(await konfirmasi({
-      nada: 'merah', ikon: '🗑', judul: 'Hapus barang KDP ini dari draft?',
-      subjudul: b ? namaBarangKdp(b) : undefined,
-      rincian: [
-        { label: 'Termin ikut terhapus', nilai: `${nTermin} termin` },
-        { label: 'Nilai barang', nilai: formatRupiah2(b ? barangTotal(b) : 0) },
-      ],
-      isi: <>Kontraknya masih draft, jadi belum ada aset KDP yang tercatat — yang dibuang cuma
-        rancangannya.</>,
+      nada: 'merah', ikon: '🗑', judul: 'Hapus barang KDP ini dari kartu?', subjudul: namaBarangKdp(b),
+      rincian: [{ label: 'Termin menunggu ikut terhapus', nilai: `${(b.pembayaran || []).length} termin` }],
+      isi: <>Barang ini belum punya termin disetujui, jadi belum tercatat di Daftar Barang — yang dibuang cuma rancangannya.</>,
       labelYa: 'Hapus barang',
     })).ya) return
-    await saveBarang(barangs.filter(b => b.key !== key))
-  }
-  async function ubahKapInfo(key: string, kapInfo: KapInfo | null) {
-    await saveBarang(barangs.map(b => b.key === key ? { ...b, kap_info: kapInfo } : b))
+    await saveBarang(barangs.filter(x => x.key !== b.key))
   }
   async function tambahTermin(key: string, item: PembayaranKdp) {
     await saveBarang(barangs.map(b => b.key === key ? { ...b, pembayaran: [...(b.pembayaran || []), item] } : b))
   }
-  async function hapusTermin(key: string, idx: number) {
-    await saveBarang(barangs.map(b => b.key === key ? { ...b, pembayaran: (b.pembayaran || []).filter((_, j) => j !== idx) } : b))
+  async function hapusTermin(key: string, id: string) {
+    await saveBarang(barangs.map(b => b.key === key ? { ...b, pembayaran: (b.pembayaran || []).filter(t => t.id !== id) } : b))
   }
   async function saveSpec(key: string, fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
     const spec: Record<string, string> = {}
-    // ⚠️ `angkaKolomAset`, BUKAN `toNum` — alasan sama dgn Pengadaan &
-    // PerolehanManual (insiden 2026-08-20): `toNum` membuang tanda minus, jadi
-    // latitude belahan selatan tersimpan positif. Yang tak terbaca sbg angka
-    // DILEWATI, bukan dijadikan 0. Lihat lib/asetFields.ts.
+    // `angkaKolomAset`, BUKAN pembaca rupiah — yang terakhir membuang tanda
+    // minus (latitude belahan selatan; insiden 2026-08-20).
     for (const k of ASET_FIELD_COLS) {
       const v = fields[k]
       if (!v) continue
@@ -394,207 +262,173 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
       else spec[k] = v
     }
     const calon = barangs.map(b => b.key === key ? { ...b, spec, foto: foto.replace ?? b.foto ?? [] } : b)
-    // Nama wajib & tak boleh kembar — diperiksa di sini supaya operator tahu SAAT mengisi,
-    // bukan baru ketika menekan Setujui (approve tetap penegak terakhir).
     const kurangNama = kekuranganNamaKdp(calon.filter(b => b.key === key || b.spec?.nama_barang?.trim()))
     if (kurangNama) { await konfirmasiGagal(konfirmasi, kurangNama); return }
-    await saveBarang(calon)
-    setSpecBarang(null); onMsg('Spesifikasi disimpan.')
+    if (await saveBarang(calon)) { setSpecBarang(null); onMsg('Spesifikasi disimpan.') }
+  }
+  async function simpanKontrak(k: KontrakKdp) {
+    const ada = kontraks.some(x => x.id === k.id)
+    await simpanPayload({ ...p, kontrak: ada ? kontraks.map(x => x.id === k.id ? k : x) : [...kontraks, k] })
+  }
+  async function hapusKontrak(k: KontrakKdp) {
+    if (!(await konfirmasi({ nada: 'merah', ikon: '🗑', judul: 'Hapus kontrak ini dari kartu?', subjudul: `${komponenLabelKdp(k.komponen)} · ${k.no_kontrak}`, labelYa: 'Hapus kontrak' })).ya) return
+    await simpanPayload({ ...p, kontrak: kontraks.filter(x => x.id !== k.id) })
   }
 
-  // Pengganti `alert()` (CODING-STANDARD §4.5) untuk kegagalan "Setujui" —
-  // pola & alasan kembar dgn Pengadaan.tsx/PerolehanManual.tsx: strip merah di
-  // ATAS halaman luput kalau kartunya di tengah daftar panjang; pop-up muncul
-  // TEPAT di tempat tombol Setujui ditekan.
-  async function gagalSetujui(pesan: string) {
-    await konfirmasi({ nada: 'merah', ikon: '⚠', judul: 'Belum bisa disetujui', isi: pesan, labelYa: 'Mengerti', tanpaBatal: true })
-  }
-
-  // Approve & unapprove KDP itu ATOMIK PER KONTRAK dan bisa menyentuh puluhan
-  // aset + seluruh terminnya sekaligus — jadi keduanya dijalankan lewat
-  // `kerjakan`, supaya pop-upnya tetap terbuka menampilkan "Memproses…".
-  // Dengan `confirm()` lama, layar cuma diam beberapa detik tanpa keterangan.
-  async function approve() {
-    // `kerjakan` MELEMPAR kalau gagal (bukan `onMsg`) — begitu ia melempar,
-    // pop-up "Setujui?" ini menutup & promise-nya ikut ditolak (lihat
-    // shared/ui/konfirmasi.tsx), lalu `catch` di bawah membuka pop-up KEDUA
-    // yang menyebut sebabnya. Sebelumnya kegagalan (mis. barang belum ada
-    // foto) cuma jadi `onMsg` — pop-up "Setujui?" tetap menutup seolah
-    // berhasil, dan errornya jadi strip merah biasa.
+  // Setujui / Batal termin: `kerjakan` MELEMPAR, pop-up gagalnya dibuka DI LUAR
+  // `konfirmasi()` (KonfirmasiProvider cuma satu modal — lihat konfirmasi.tsx).
+  async function setujui(b: BarangKdp, t: PembayaranKdp) {
+    const r = ringkasBarangKdp(b)
     try {
       await konfirmasi({
-        nada: 'teal', ikon: '✓', judul: 'Setujui kontrak konstruksi ini?',
-        subjudul: `Kontrak ${kontrak.no_sk}`,
-        rincian: [
-          { label: 'Barang KDP', nilai: `${barangs.length} barang` },
-          { label: 'Total nilai', nilai: formatRupiah2(total) },
-        ],
-        isi: <>Seluruh barang KDP <b>resmi tercatat</b> di Daftar Barang berikut akumulasi terminnya —
-          satu paket, tak ada yang bisa disetujui separuh.</>,
+        nada: 'teal', ikon: '✓', judul: 'Setujui termin ini?', subjudul: `${namaBarangKdp(b)} · ${komponenLabelKdp(t.komponen)}`,
+        rincian: [{ label: 'Tgl BAST', nilai: t.tgl_bast }, { label: 'Nominal', nilai: formatRupiah2(t.nominal) }],
+        isi: r.nDisetujui === 0
+          ? <>Ini termin <b>pertama</b> barang ini yang disetujui: barang KDP-nya <b>terbit di Daftar Barang</b> (NIBAR baru) senilai termin ini.</>
+          : <>Nilai barang KDP ini bertambah sebesar termin ini — barang & NIBAR-nya tetap.</>,
         labelYa: 'Ya, setujui',
         kerjakan: async () => {
-          setBusy(true); onMsg('')
-          const { error } = await approveKontrakKonstruksi(supabase, kontrak.id)
-          setBusy(false)
-          if (error) throw new Error(error)
-          onMsg('Kontrak disetujui — semua barang KDP resmi tercatat.'); onChanged()
+          setBusy(true)
+          try { await setujuiTerminKdp(supabase, kontrak.id, b.key, t.id!) } finally { setBusy(false) }
+          onMsg('Termin disetujui. Jalankan ulang engine supaya Laporan BMD & Rekonsiliasi ikut.'); onChanged()
         },
       })
     } catch (e) {
-      await gagalSetujui((e as Error).message)
+      await konfirmasi({ nada: 'merah', ikon: '⚠', judul: 'Belum bisa disetujui', isi: (e as Error).message, labelYa: 'Mengerti', tanpaBatal: true })
+      onChanged()
     }
   }
-  async function unapprove() {
-    // ⚠️ `kerjakan` MELEMPAR, pop-up gagalnya dibuka DI LUAR `konfirmasi()`.
-    // Versi lama memanggil `konfirmasiGagal` dari DALAM `kerjakan` — padahal
-    // KonfirmasiProvider cuma satu modal, jadi pop-up kedua menimpa yang
-    // pertama lalu ikut tertutup begitu `kerjakan` selesai: pesan "barang ini
-    // punya transaksi lebih baru" bisa lenyap sebelum terbaca (pola approve()).
+  async function batal(b: BarangKdp, t: PembayaranKdp) {
+    const sisa = ringkasBarangKdp(b).nDisetujui - 1
     try {
       await konfirmasi({
-        nada: 'amber', ikon: '🔓', judul: 'Buka kunci kontrak konstruksi ini?',
-        subjudul: `Kontrak ${kontrak.no_sk}`,
-        rincian: [{ label: 'Barang KDP terdampak', nilai: `${barangs.length} barang` }],
-        isi: <><b>SEMUA</b> barang KDP-nya disembunyikan dari Daftar Barang &amp; seluruh terminnya
-          dibalik, lalu kontrak kembali draft sampai disetujui ulang.</>,
-        peringatan: <>Berlaku satu paket — kalau 10 barang, kesepuluhnya ikut hilang, bukan yang
-          dipilih saja. NIBAR barang ini berhenti berlaku; kalau terminnya dipindah ke kartu
-          kontrak lain (mis. perencanaan masuk ke kartu fisik), barangnya terbit dgn NIBAR baru
-          & KIBAR lama tak menunjuk ke sana.</>,
-        labelYa: 'Ya, buka kunci',
+        nada: 'amber', ikon: '↩', judul: 'Batalkan persetujuan termin ini?', subjudul: `${namaBarangKdp(b)} · ${komponenLabelKdp(t.komponen)}`,
+        rincian: [{ label: 'Tgl BAST', nilai: t.tgl_bast }, { label: 'Nominal', nilai: formatRupiah2(t.nominal) }],
+        isi: <>Termin kembali <b>Menunggu</b> (isinya utuh — bisa diperbaiki lalu disetujui lagi, atau dihapus).
+          Pembatalannya tercatat mundur ke tanggal BAST-nya.</>,
+        peringatan: sisa === 0 ? <>Ini termin disetujui <b>terakhir</b> barang ini — barangnya hilang dari Daftar Barang sampai ada termin disetujui lagi (NIBAR-nya tetap disimpan).</> : undefined,
+        labelYa: 'Ya, batalkan',
         kerjakan: async () => {
-          setBusy(true); onMsg('')
-          try {
-            const { error } = await unapproveKontrakKonstruksi(supabase, kontrak.id)
-            if (error) throw new Error(String(error))
-          } finally { setBusy(false) }
-          onMsg('Kontrak dibuka kunci — semua barang KDP kembali draft.'); onChanged()
+          setBusy(true)
+          try { await batalTerminKdp(supabase, kontrak.id, t.id!) } finally { setBusy(false) }
+          onMsg('Persetujuan termin dibatalkan.'); onChanged()
         },
       })
     } catch (e) {
-      await konfirmasiGagal(konfirmasi, (e as Error).message, 'Belum bisa dibuka kunci')
+      await konfirmasiGagal(konfirmasi, (e as Error).message, 'Belum bisa dibatalkan')
+      onChanged()
+    }
+  }
+  async function batalSemua() {
+    try {
+      await konfirmasi({
+        nada: 'amber', ikon: '↩', judul: 'Batalkan SEMUA termin disetujui di kartu ini?', subjudul: kontrak.no_sk,
+        rincian: [{ label: 'Termin disetujui', nilai: `${nDisetujui} termin` }, { label: 'Nilai', nilai: formatRupiah2(nilaiDisetujui) }],
+        isi: <>Semua termin kembali <b>Menunggu</b>; barang KDP-nya hilang dari Daftar Barang (NIBAR tetap disimpan).
+          Sesudahnya kartu bisa disunting atau dihapus.</>,
+        labelYa: 'Ya, batalkan semua',
+        kerjakan: async () => {
+          setBusy(true)
+          try { await batalSemuaTerminKdp(supabase, kontrak.id) } finally { setBusy(false) }
+          onMsg('Semua termin dibatalkan.'); onChanged()
+        },
+      })
+    } catch (e) {
+      await konfirmasiGagal(konfirmasi, (e as Error).message, 'Belum bisa dibatalkan')
+      onChanged()
     }
   }
   async function hapus() {
-    // Kontrak yg PERNAH disetujui punya jejak ledger (akumulasi_kdp/batal_ yg
-    // ber-header_id) → hard-DELETE jurnal_header ditolak FK. Arsipkan saja
-    // (approval_status='ditolak'): ledger tetap utuh (append-only), kontrak
-    // hilang dari daftar, No. SPK bebas dipakai lagi. Draft murni (tanpa jejak
-    // ledger) → hapus biasa aman.
-    const { data: led } = await supabase.from('transaksi_bmd').select('id').eq('header_id', kontrak.id).limit(1)
-    const hasLedger = !!(led && led.length > 0)
-    if (hasLedger) {
+    if (nDisetujui > 0) { await konfirmasiGagal(konfirmasi, 'Kartu ini masih punya termin disetujui — batalkan semua termin dulu.'); return }
+    const { data: led, error: lErr } = await supabase.from('transaksi_bmd').select('id').eq('header_id', kontrak.id).limit(1)
+    if (lErr) { await konfirmasiGagal(konfirmasi, `Gagal memeriksa riwayat kartu: ${lErr.message}`); return }
+    if (led && led.length > 0) {
+      // Pernah punya termin disetujui → ledger append-only → arsipkan.
+      if (!isAdmin) { await konfirmasiGagal(konfirmasi, 'Kartu ini pernah punya termin disetujui — hanya admin pemda yang bisa mengarsipkannya.'); return }
       if (!(await konfirmasi({
-        nada: 'merah', ikon: '📦', judul: 'Arsipkan kontrak ini?',
-        subjudul: `Kontrak ${kontrak.no_sk}`,
-        isi: <>Kontrak ini <b>pernah disetujui</b>, jadi tidak bisa dihapus betulan. Ia diarsipkan:
-          hilang dari daftar, dan No. SPK-nya bebas dipakai lagi.</>,
-        peringatan: <>Riwayat ledgernya <b>tetap tersimpan</b> (append-only, tak bisa dihapus).
-          Tidak bisa dibatalkan.</>,
+        nada: 'merah', ikon: '📦', judul: 'Arsipkan kartu ini?', subjudul: kontrak.no_sk,
+        isi: <>Kartu ini <b>pernah punya termin disetujui</b>, jadi tak bisa dihapus betulan — ia diarsipkan & hilang dari daftar.</>,
+        peringatan: <>Riwayat ledgernya tetap tersimpan (append-only). Tidak bisa dibatalkan.</>,
         labelYa: 'Arsipkan',
       })).ya) return
       const { error } = await supabase.from('jurnal_header').update({ approval_status: 'ditolak' }).eq('id', kontrak.id)
-      if (error) { await konfirmasiGagal(konfirmasi, `Gagal mengarsipkan kontrak: ${error.message}`); return }
-      onMsg(`Kontrak ${kontrak.no_sk} diarsipkan — No. SPK bisa dipakai lagi.`)
-      onBack()
-      return
+      if (error) { await konfirmasiGagal(konfirmasi, `Gagal mengarsipkan: ${error.message}`); return }
+      onMsg('Kartu diarsipkan.'); onBack(); return
     }
     if (!(await konfirmasi({
-      nada: 'merah', ikon: '🗑', judul: 'Hapus kontrak draft ini?',
-      subjudul: `Kontrak ${kontrak.no_sk}`,
-      rincian: [{ label: 'Barang KDP', nilai: `${barangs.length} barang` }],
-      isi: <>Kontrak ini belum pernah disetujui, jadi belum menyentuh ledger — kontrak beserta
-        seluruh barang &amp; terminnya dihapus betulan.</>,
-      peringatan: <>Tidak bisa dibatalkan.</>,
-      labelYa: 'Hapus kontrak',
+      nada: 'merah', ikon: '🗑', judul: 'Hapus kartu ini?', subjudul: kontrak.no_sk,
+      rincian: [{ label: 'Kontrak', nilai: `${kontraks.length}` }, { label: 'Barang KDP', nilai: `${barangs.length}` }],
+      isi: <>Belum ada termin yang pernah disetujui — kartu beserta kontrak, barang & terminnya dihapus betulan.</>,
+      peringatan: <>Tidak bisa dibatalkan.</>, labelYa: 'Hapus kartu',
     })).ya) return
     const { error } = await supabase.from('jurnal_header').delete().eq('id', kontrak.id)
-    if (error) await konfirmasiGagal(konfirmasi, `Gagal menghapus kontrak: ${error.message}`); else onBack()
+    if (error) await konfirmasiGagal(konfirmasi, `Gagal menghapus kartu: ${error.message}`); else onBack()
   }
 
   return (
     <div className="space-y-4">
       {!inline && (
-        <button onClick={onBack} title="Kembali" className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-2 rounded-lg">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>Kembali
         </button>
       )}
-
       <div className="card overflow-hidden">
         <div className="p-5 border-b border-gray-100">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-semibold text-gray-800 mb-2">{p.nama_pekerjaan}</h2>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">{p.nama_pekerjaan || kontrak.no_sk}</h2>
               <div className="space-y-0.5">
-                <Baris label="Bentuk Kontrak" value={bentukKontrakLabel(p.sumber)} />
-                <Baris label="Nomor Kontrak" value={kontrak.no_sk} />
-                <Baris label="Tanggal Kontrak" value={kontrak.tanggal} />
+                <Baris label="Tahun Anggaran" value={tahun} />
                 <Baris label="Program" value={p.program} />
                 <Baris label="Kegiatan" value={p.kegiatan} />
                 <Baris label="Sub Kegiatan" value={p.sub_kegiatan} />
                 <Baris label="Keterangan" value={p.keterangan} />
-                <Baris label="Nama Penyedia" value={p.penyedia} />
-                <Baris label="Nama PPKom" value={p.ppk} />
               </div>
             </div>
             <div className="text-right flex-shrink-0">
-              <p className="text-xs text-gray-400">Total ({barangs.length} barang KDP) · {periodeDariTanggal(kontrak.tanggal)}</p>
-              <p className="text-lg font-bold text-navy">{formatRupiah2(total)}</p>
-              {p.nilai_kontrak ? <p className="text-[11px] text-gray-400">Nilai kontrak {formatRupiah2(p.nilai_kontrak)}</p> : null}
-              {pending && (
+              <p className="text-xs text-gray-400">Disetujui ({nDisetujui} termin)</p>
+              <p className="text-lg font-bold text-navy">{formatRupiah2(nilaiDisetujui)}</p>
+              {nMenunggu > 0 && <p className="text-[11px] text-amber-600">{nMenunggu} termin menunggu · {formatRupiah2(nilaiMenunggu)}</p>}
+              {bolehUbah && (
                 <div className="flex items-center justify-end gap-2 mt-2">
-                  <button title="Edit Kontrak" onClick={() => setShowEdit(true)}
-                    className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
-                  <button title="Hapus / arsipkan kontrak" onClick={hapus}
-                    className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+                  <button title="Edit kartu" onClick={() => setShowEdit(true)} className="inline-flex items-center justify-center w-8 h-8 rounded bg-gray-100 hover:bg-gray-200 text-gray-700">✎</button>
+                  {nDisetujui === 0 && (
+                    <button title="Hapus / arsipkan kartu" onClick={() => void hapus()} className="inline-flex items-center justify-center w-8 h-8 rounded bg-red-500 hover:bg-red-600 text-white">🗑</button>
+                  )}
                 </div>
               )}
             </div>
           </div>
-          {!pending && <p className="mt-2 text-sm text-teal">Disetujui — {barangs.length} barang KDP resmi tercatat di Daftar Barang.</p>}
         </div>
 
-        {barangs.length === 0 ? (
-          <div className="p-6 text-center text-gray-400 text-sm">Belum ada barang KDP. Tambahkan minimal satu barang untuk bisa disetujui.</div>
-        ) : (
-          barangs.map(b => (
-            <BarangCard key={b.key} barang={b} pending={pending} tglKontrak={kontrak.tanggal} skpdId={kontrak.skpd_id}
-              onHapusBarang={() => hapusBarang(b.key)}
-              onEditSpec={() => setSpecBarang(b)}
-              onTambahTermin={item => tambahTermin(b.key, item)}
-              onHapusTermin={idx => hapusTermin(b.key, idx)}
-              onUbahKapInfo={kapInfo => ubahKapInfo(b.key, kapInfo)} />
-          ))
-        )}
+        <KontrakKdpSection payload={p} tahunKartu={tahun} skpdId={kontrak.skpd_id} bolehUbah={bolehUbah}
+          onSimpan={simpanKontrak} onHapus={hapusKontrak} />
 
-        {pending && (
+        {barangs.length === 0 ? (
+          <div className="p-6 text-center text-gray-400 text-sm border-t border-gray-100">Belum ada barang KDP.</div>
+        ) : barangs.map(b => (
+          <BarangKdpCard key={b.key} barang={b} kontraks={kontraks} tahunKartu={tahun} bolehUbah={bolehUbah} isAdmin={isAdmin} busy={busy}
+            onHapusBarang={() => void hapusBarang(b)} onEditSpec={() => setSpecBarang(b)} onUbahKapInfo={() => setKapBarang(b)}
+            onTambahTermin={item => tambahTermin(b.key, item)} onHapusTermin={id => void hapusTermin(b.key, id)}
+            onSetujui={t => void setujui(b, t)} onBatal={t => void batal(b, t)} />
+        ))}
+
+        {bolehUbah && (
           <div className="p-4 border-t border-gray-100 bg-gray-50/40">
             {showAddBarang
-              ? <TambahBarangPanel skpdId={kontrak.skpd_id} onTambah={tambahBarang} onCancel={() => setShowAddBarang(false)} onErr={onMsg} />
-              // Teal = aksi utama, seragam dgn "+ Tambah Barang" di kartu draft
-              // Pengadaan & PerolehanManual (user 2026-09-01).
+              ? <TambahBarangPanel skpdId={kontrak.skpd_id} onTambah={(k, n, ki) => void tambahBarang(k, n, ki)} onCancel={() => setShowAddBarang(false)} />
               : <button className="btn-primary text-sm" onClick={() => setShowAddBarang(true)}>+ Tambah Barang KDP</button>}
           </div>
         )}
 
         <div className="p-4 border-t border-gray-100 flex justify-end items-center gap-3">
-          {/* Pratinjau SENGAJA di luar cabang `isAdmin` & hanya saat masih
-              pending — yang paling butuh memeriksa belanjanya justru operator
-              SKPD yang mengisinya, dan dialah satu-satunya yang tak punya
-              tombol apa pun di baris ini ("Menunggu tinjauan admin."). Ia cuma
-              membaca payload yang sudah di layar, jadi tak ada wewenang yang
-              dilonggarkan. Pola sama dgn 🔍 Pratinjau di kartu Pengadaan. */}
-          {pending && barangs.length > 0 && (
-            <button className="btn-secondary text-sm" onClick={() => setShowPreview(true)}
-              title="Lihat rincian & kelengkapan seluruh belanja (termin) di kontrak ini">
-              🔍 Pratinjau
-            </button>
+          {barangs.length > 0 && (
+            <button className="btn-secondary text-sm" onClick={() => setShowPreview(true)} title="Lihat rincian & kelengkapan seluruh termin di kartu ini">🔍 Pratinjau</button>
           )}
-          {pending && isAdmin && barangs.length > 0 && <button className="btn-primary" onClick={approve} disabled={busy}>{busy ? 'Memproses...' : '✓ Setujui Kontrak'}</button>}
-          {pending && isAdmin && barangs.length === 0 && <span className="text-xs text-gray-400">Tambah minimal 1 barang KDP untuk bisa disetujui.</span>}
-          {pending && !isAdmin && <span className="text-xs text-gray-400">Menunggu tinjauan admin.</span>}
-          {!pending && isAdmin && <button className="btn-secondary text-sm" onClick={unapprove} disabled={busy}>{busy ? 'Memproses...' : '🔓 Buka Kunci'}</button>}
-          {!pending && !isAdmin && <span className="text-[11px] text-gray-400">🔒 Terkunci</span>}
+          {isAdmin && nDisetujui > 0 && (
+            <button className="btn-secondary text-sm" onClick={() => void batalSemua()} disabled={busy}>{busy ? 'Memproses...' : '↩ Batal Semua Termin'}</button>
+          )}
+          {!isAdmin && nMenunggu > 0 && <span className="text-xs text-gray-400">{nMenunggu} termin menunggu persetujuan admin pemda.</span>}
         </div>
       </div>
 
@@ -603,144 +437,48 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
           storagePrefix={`draft/konstruksi/${kontrak.id}/${specBarang.key}`} initialFields={specBarang.spec || {}} initialFoto={specBarang.foto || []}
           single onSave={(fields, foto) => saveSpec(specBarang.key, fields, foto)} onClose={() => setSpecBarang(null)} />
       )}
+      {kapBarang && (
+        <KapInfoModal barang={kapBarang} skpdId={kontrak.skpd_id} onClose={() => setKapBarang(null)}
+          onSimpan={async ki => { if (await saveBarang(barangs.map(x => x.key === kapBarang.key ? { ...x, kap_info: ki } : x))) setKapBarang(null) }} />
+      )}
       {showEdit && (
-        <EditKontrakModal kontrak={kontrak}
-          onClose={() => setShowEdit(false)}
-          onSaved={() => { setShowEdit(false); onMsg('Header kontrak diperbarui.'); onChanged() }}
-          onErr={onMsg} />
+        <EditKartuModal kontrak={kontrak} onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); onMsg('Kartu diperbarui.'); onChanged() }} />
       )}
       {showPreview && (
-        <PreviewKonstruksiModal judul={kontrak.no_sk}
-          subjudul={`${p.nama_pekerjaan || 'Pekerjaan konstruksi'} · tgl ${kontrak.tanggal}`}
-          barangs={barangs}
-          // `FIELDS_KDP` — daftar yang SAMA yang dioper ke EditSpesifikasiModal
-          // di bawah. Wajib satu sumber: KDP berkode 1.3.6 tapi formnya memakai
-          // `KDP_KONSTRUKSI_FIELDS`, jadi pratinjau yang menurunkan sendiri dari
-          // kodenya akan memeriksa daftar yang berbeda.
-          fieldKeys={FIELDS_KDP}
+        <PreviewKonstruksiModal judul={p.nama_pekerjaan || kontrak.no_sk}
+          subjudul={`Tahun anggaran ${tahun} · ${kontraks.length} kontrak`} barangs={barangs} fieldKeys={FIELDS_KDP}
           onClose={() => setShowPreview(false)} />
       )}
     </div>
   )
 }
 
-// ── Modal edit header kontrak konstruksi (hanya saat draft) ─────────────────
-// Pola sama non-fisik: No SPK/tgl/dll boleh diubah selama tetap di semester yang
-// sama (fn_jurnal_header_guard); pindah semester → batalkan & buat baru. Tgl
-// kontrak tak boleh lebih baru dari termin paling awal (jaga aturan BAST ≥ tgl).
-function EditKontrakModal({ kontrak, onClose, onSaved, onErr }: {
-  kontrak: Kontrak; onClose: () => void; onSaved: () => void; onErr: (m: string) => void
+function KapInfoModal({ barang, skpdId, onClose, onSimpan }: {
+  barang: BarangKdp; skpdId: number; onClose: () => void; onSimpan: (ki: KapInfo | null) => Promise<void>
 }) {
-  const supabase = createClient()
-  const konfirmasi = useKonfirmasi()
-  const bounds = useDateBounds()
-  const p = kontrak.payload || ({} as KontrakKonstruksiPayload)
-  const [nama, setNama] = useState(p.nama_pekerjaan || '')
-  const [noKontrak, setNoKontrak] = useState(kontrak.no_sk)
-  const [tgl, setTgl] = useState(kontrak.tanggal)
-  const [program, setProgram] = useState(p.program || '')
-  const [kegiatan, setKegiatan] = useState(p.kegiatan || '')
-  const [subKeg, setSubKeg] = useState(p.sub_kegiatan || '')
-  const [sumber, setSumber] = useState<string>(p.sumber || 'spk')
-  const [penyedia, setPenyedia] = useState(p.penyedia || '')
-  const [ppk, setPpk] = useState(p.ppk || '')
-  const [nilaiKontrak, setNilaiKontrak] = useState(p.nilai_kontrak != null ? String(p.nilai_kontrak) : '')
-  // Dulu di sini ada cadangan `|| kontrak.keterangan`, TAPI ia tak pernah
-  // berfungsi: `Kontrak` tidak punya kolom itu dan `fetchKonstruksiKontraks`
-  // tidak men-select-nya, jadi nilainya SELALU undefined. Dibuang 2026-08-05 —
-  // perilakunya tidak berubah sedikit pun, yang hilang cuma ilusi punya
-  // cadangan. Kalau cadangan ke `jurnal_header.keterangan` memang diinginkan
-  // (kolomnya ada di DB), tambahkan di TYPE `Kontrak` **dan** di `.select()` —
-  // dua-duanya, kalau tidak ia balik jadi undefined tanpa suara.
-  const [keterangan, setKeterangan] = useState(p.keterangan || '')
-  // PPK dibatasi ke pegawai SKPD kontrak ini (+ SKPD induk) — lihat usePegawaiSkpd.
-  const pegawai = usePegawaiSkpd(kontrak.skpd_id)
-  const [saving, setSaving] = useState(false)
-  const [err, setErr] = useState('')
-
-  const periodeAsli = periodeDariTanggal(kontrak.tanggal)
-  const pindahSemester = periodeDariTanggal(tgl) !== periodeAsli
-  // Termin paling awal — tgl kontrak baru tak boleh lebih baru dari ini. Termin
-  // PERENCANAAN tak ikut mengikat: ia boleh lebih tua dari kontraknya asal satu
-  // tahun (cekTanggalTermin), dan tahunnya sudah terjaga karena tgl kontrak tak
-  // boleh pindah semester.
-  const terminTerawal = terminPengikatTerawal(p)
-
-  async function simpan() {
-    if (!nama.trim()) { setErr('Nama pekerjaan wajib diisi.'); return }
-    if (!noKontrak.trim() || !tgl) { setErr('No. & Tgl Kontrak wajib diisi.'); return }
-    if (pindahSemester) { setErr(`Tanggal masuk ${periodeDariTanggal(tgl)}, sedangkan kontrak ini di ${periodeAsli}. Pindah semester tidak diizinkan — batalkan & buat kontrak baru.`); return }
-    if (terminTerawal && tgl > terminTerawal) { setErr(`Tgl kontrak (${tgl}) tidak boleh lebih baru dari termin paling awal (${terminTerawal}) — sesuaikan termin dulu (termin Perencanaan dikecualikan).`); return }
-    setErr(''); setSaving(true)
-    const payload: KontrakKonstruksiPayload = {
-      ...p, nama_pekerjaan: nama.trim(), sumber,
-      program: program.trim() || null, kegiatan: kegiatan.trim() || null, sub_kegiatan: subKeg.trim() || null,
-      penyedia: penyedia.trim() || null, ppk: ppk || null,
-      nilai_kontrak: nilaiKontrak ? Number(nilaiKontrak) : null, keterangan: keterangan.trim() || null,
-    }
-    const { error } = await supabase.from('jurnal_header')
-      .update({ no_sk: noKontrak.trim(), tanggal: tgl, keterangan: keterangan.trim() || null, payload })
-      .eq('id', kontrak.id)
-    setSaving(false)
-    if (error) { await konfirmasiGagal(konfirmasi, `Gagal menyimpan: ${error.message}`); return }
-    onSaved()
-  }
-
-  const fld = (label: string, val: string, setVal: (v: string) => void, type = 'text') => (
-    <div><label className="block text-xs text-gray-500 mb-1">{label}</label>
-      {type === 'number'
-        ? <NominalInput className="select-filter w-full" value={val} onChange={setVal} />
-        : <input type={type} className="select-filter w-full" value={val} onChange={e => setVal(e.target.value)} />}
-    </div>
-  )
+  const [ki, setKi] = useState<KapInfo | null>(barang.kap_info ?? null)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(onClose)}>
-      <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
-          <h3 className="font-semibold text-gray-800">Edit Kontrak Konstruksi</h3>
-          <button className="text-gray-400 hover:text-gray-700 text-xl leading-none" onClick={onClose}>×</button>
-        </div>
-        <div className="p-5 space-y-4">
-          {fld('Nama Pekerjaan', nama, setNama)}
-          <div><label className="block text-xs text-gray-500 mb-1">Bentuk Kontrak (Dokumen Sumber)</label>
-            <select className="select-filter w-full" value={sumber} onChange={e => setSumber(e.target.value)}>
-              {BENTUK_KONTRAK_KONSTRUKSI.map(v => <option key={v} value={v}>{bentukKontrakLabel(v)}</option>)}
-            </select></div>
-          {fld('No. Kontrak', noKontrak, setNoKontrak)}
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Tgl Kontrak <span className="text-gray-400">(tetap di {periodeAsli})</span></label>
-            <input type="date" className="select-filter w-full sm:w-64" max={bounds.max} value={tgl} onChange={e => setTgl(e.target.value)} />
-            {pindahSemester && <p className="text-xs text-red-600 mt-1">Tanggal ini masuk {periodeDariTanggal(tgl)} — di luar semester kontrak.</p>}
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Program / Kegiatan / Sub Kegiatan</label>
-            <ProgramPicker program={program} kegiatan={kegiatan} subKeg={subKeg}
-              onChange={sel => { setProgram(sel.program); setKegiatan(sel.kegiatan); setSubKeg(sel.sub_kegiatan) }} />
-          </div>
-          <div><label className="block text-xs text-gray-500 mb-1">Nama PPK (Pejabat Pembuat Komitmen)</label>
-            <SearchSelect value={ppk} options={pegawaiOptions(pegawai)} placeholder="ketik untuk mencari pegawai..." onChange={setPpk} />
-            {pegawai.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada pegawai terdaftar di SKPD ini — daftarkan dulu di Daftar Pegawai (menu Admin).</p>}</div>
-          {fld('Nama Penyedia', penyedia, setPenyedia)}
-          {fld('Nilai Kontrak Pekerjaan (Rp)', nilaiKontrak, setNilaiKontrak, 'number')}
-          {fld('Keterangan Kontrak', keterangan, setKeterangan)}
-          {err && <p className="text-sm text-red-600">{err}</p>}
-        </div>
-        <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 sticky bottom-0 bg-white">
+      <div className="card w-full max-w-lg p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold text-gray-800">Induk aset — {namaBarangKdp(barang)}</h3>
+        <KapInfoPicker skpdId={skpdId} value={ki} onChange={setKi} />
+        <div className="flex justify-end gap-2">
           <button className="btn-secondary" onClick={onClose}>Batal</button>
-          <button className="btn-primary" onClick={simpan} disabled={saving || pindahSemester}>{saving ? 'Menyimpan...' : 'Simpan'}</button>
+          <button className="btn-primary" onClick={() => void onSimpan(ki)}>Simpan</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Panel tambah barang KDP (pilih kode 1.3.6 + nama + opsional induk aset) ─
-function TambahBarangPanel({ skpdId, onTambah, onCancel, onErr }: {
-  skpdId: number
-  onTambah: (kode: string, nama: string, kapInfo: KapInfo | null) => void; onCancel: () => void; onErr: (m: string) => void
+// ── Panel tambah barang KDP (kode 1.3.6 + opsional induk aset) ──────────────
+function TambahBarangPanel({ skpdId, onTambah, onCancel }: {
+  skpdId: number; onTambah: (kode: string, nama: string, kapInfo: KapInfo | null) => void; onCancel: () => void
 }) {
   const [kode, setKode] = useState<KodefikasiHasil | null>(null)
   const [kapInfo, setKapInfo] = useState<KapInfo | null>(null)
+  const [err, setErr] = useState('')
   return (
     <div className="space-y-3 max-w-2xl">
       <h3 className="text-sm font-semibold text-gray-800">Tambah Barang KDP</h3>
@@ -748,12 +486,13 @@ function TambahBarangPanel({ skpdId, onTambah, onCancel, onErr }: {
         <KodefikasiPicker picked={kode} onPick={setKode} golonganTetap="1.3.6" /></div>
       <p className="text-xs text-gray-500">
         Nama spesifik barang (mis. “Rehab ruas jalan A”) diisi di <b>Edit Spesifikasi</b> → Spesifikasi Nama Barang
-        — wajib &amp; tidak boleh kembar sebelum kontrak disetujui.
+        — wajib &amp; tidak boleh kembar sebelum termin pertamanya disetujui.
       </p>
       <KapInfoPicker skpdId={skpdId} value={kapInfo} onChange={setKapInfo} />
+      {err && <p className="text-xs text-red-600">{err}</p>}
       <div className="flex gap-2">
         <button className="btn-primary text-sm" onClick={() => {
-          if (!kode) { onErr('Error: pilih kode barang KDP dulu.'); return }
+          if (!kode) { setErr('Pilih kode barang KDP dulu.'); return }
           onTambah(kode.kode, kode.uraian || kode.kode, kapInfo)
         }}>+ Tambah</button>
         <button className="btn-secondary text-sm" onClick={onCancel}>Batal</button>
@@ -762,290 +501,9 @@ function TambahBarangPanel({ skpdId, onTambah, onCancel, onErr }: {
   )
 }
 
-// ── Kartu satu barang KDP: header + termin + (draft) form tambah termin ─────
-function BarangCard({ barang, pending, tglKontrak, skpdId, onHapusBarang, onEditSpec, onTambahTermin, onHapusTermin, onUbahKapInfo }: {
-  barang: BarangKdp; pending: boolean; tglKontrak: string; skpdId: number
-  onHapusBarang: () => void; onEditSpec: () => void
-  onTambahTermin: (item: PembayaranKdp) => void; onHapusTermin: (idx: number) => void
-  onUbahKapInfo: (kapInfo: KapInfo | null) => void
-}) {
-  const supabase = createClient()
-  const konfirmasi = useKonfirmasi()
-  const bounds = useDateBounds()
-  const pembayaran = barang.pembayaran || []
-  const total = barangTotal(barang)
-  const fotoPaths = barang.foto || []
-  const fotoThumbs = useFotoThumbs(fotoPaths.slice(0, 1))
-  const rekeningUraian = useRekeningUraian(pembayaran.map(x => x.kode_rekening))
-  // Diurutkan berdasarkan TANGGAL DOKUMEN (permintaan user 2026-09-29) — murni
-  // utk TAMPILAN, `_i` menyimpan indeks aslinya supaya Hapus tetap membidik
-  // baris yang benar di `barang.pembayaran` (array tersimpan TAK diurutkan
-  // ulang). Tanpa ini, menghapus lalu menambah lagi satu rincian (mis.
-  // Perencanaan) selalu jatuh di akhir array, bukan di posisi kronologisnya.
-  const pembayaranUrut = pembayaran
-    .map((b, i) => ({ ...b, _i: i }))
-    .sort((a, c) => (a.tgl_bast || '').localeCompare(c.tgl_bast || ''))
-  const [komponen, setKomponen] = useState('fisik')
-  const [noBast, setNoBast] = useState('')
-  const [tgl, setTgl] = useState('')
-  const [rekening, setRekening] = useState('')
-  const [nominal, setNominal] = useState('')
-  const [ket, setKet] = useState('')
-  const [dokPaths, setDokPaths] = useState<string[]>([])
-  const [dokUploading, setDokUploading] = useState(false)
-  const [err, setErr] = useState('')
-  const [warnings, setWarnings] = useState<string[] | null>(null)
-  const [showForm, setShowForm] = useState(false)
-  const [showKapInfo, setShowKapInfo] = useState(false)
-  const [draftKapInfo, setDraftKapInfo] = useState<KapInfo | null>(barang.kap_info ?? null)
-  // Tgl BAST tak boleh lebih tua dari tgl kontrak — KECUALI termin perencanaan,
-  // yang boleh mundur sampai awal tahun kontrak (cekTanggalTermin, lib/kdp.ts).
-  // Batas tahun buku tetap dihormati.
-  const minTgl = [bounds.min, minTglTermin(komponen, tglKontrak)].filter(Boolean).sort().slice(-1)[0]
-
-  // ⚠️ Dokumen BAST WAJIB PER TERMIN (keputusan user 2026-09-05) — beda dari
-  // Pengadaan non-konstruksi yang satu dokumen utk seluruh kontrak. Di sini
-  // Perencanaan/Fisik Termin 1/Fisik Termin 2/Pengawasan/Biaya Umum masing-
-  // masing dokumen sumbernya sendiri, jadi kotak upload & guard-nya ikut
-  // formulir SATU termin, bukan formulir kontrak.
-  async function uploadDokumen(files: FileList | null) {
-    if (!files || files.length === 0) return
-    setDokUploading(true)
-    for (const file of Array.from(files)) {
-      const path = `konstruksi-bast/${crypto.randomUUID()}/${file.name}`
-      const { error } = await supabase.storage.from('dokumen-sumber').upload(path, file)
-      if (error) { await konfirmasiGagal(konfirmasi, `Gagal upload "${file.name}": ${error.message}`); continue }
-      setDokPaths(prev => [...prev, path])
-    }
-    setDokUploading(false)
-  }
-  async function hapusDokumen(path: string) {
-    await supabase.storage.from('dokumen-sumber').remove([path])
-    setDokPaths(prev => prev.filter(p => p !== path))
-  }
-
-  // Pengganti strip merah inline (CODING-STANDARD §4.5 & pola `gagalSetujui`
-  // di KontrakDetail) khusus utk "dokumen BAST wajib" (permintaan user
-  // 2026-09-29) — form ini di dalam kartu yang bisa berisi banyak barang &
-  // banyak termin sekaligus, jadi strip di bawah tombol gampang luput.
-  async function gagalTambahRincian(pesan: string) {
-    await konfirmasi({ nada: 'amber', ikon: '⚠', judul: 'Belum bisa ditambahkan', isi: pesan, labelYa: 'Mengerti', tanpaBatal: true })
-  }
-
-  async function submitTermin(e: React.FormEvent) {
-    e.preventDefault()
-    if (!tgl || !nominal) { setErr('Tgl BAST & nominal wajib diisi.'); return }
-    if (dokPaths.length === 0) {
-      setErr('')
-      await gagalTambahRincian(`Dokumen BAST termin "${komponenLabel(komponen)}" ini wajib diunggah sebelum rincian bisa ditambahkan.`)
-      return
-    }
-    const salahTgl = cekTanggalTermin(komponen, tgl, tglKontrak)
-    if (salahTgl) { setErr(salahTgl); return }
-    setErr('')
-    // Peringatan kode rekening — pola & teks SAMA dgn Pengadaan non-fisik
-    // (permintaan user 2026-08-27). Bukan blokir: termin biaya umum/pengawasan
-    // kadang memang dibebankan ke rekening lain, jadi operator yang memutuskan.
-    const w = cekWarningRekening(rekening, GOL_KDP, 'Konstruksi Dalam Pengerjaan')
-    if (w.length > 0) { setWarnings(w); return }
-    doTambahTermin()
-  }
-
-  function doTambahTermin() {
-    setWarnings(null)
-    onTambahTermin({
-      komponen: komponen as PembayaranKdp['komponen'], no_bast: noBast || null, tgl_bast: tgl,
-      kode_rekening: rekening || null, nominal: Number(nominal), keterangan: ket || null, dokumen_paths: dokPaths,
-    })
-    // ⚠️ `rekening` & `tgl` IKUT DIKOSONGKAN (permintaan user 2026-08-27).
-    // Sebelumnya keduanya tertinggal dari termin sebelumnya, jadi termin
-    // berikutnya terisi rekening lama secara diam-diam — operator yang tak
-    // menyadarinya membukukan BAST ke kode rekening yang salah tanpa satu pun
-    // tanda. Biarkan diisi ulang; salah-karena-lupa lebih murah daripada
-    // salah-karena-terisi-sendiri. `dokPaths` ikut dikosongkan dgn alasan sama —
-    // dokumen termin SEBELUMNYA tak boleh menempel diam-diam ke termin berikutnya.
-    setNoBast(''); setNominal(''); setKet(''); setRekening(''); setTgl(''); setDokPaths([])
-    setShowForm(false)
-  }
-
-  return (
-    <div className="border-t border-gray-100">
-      <div className="px-5 py-3 bg-gray-50/60 flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          {/* Kode + uraian/nama SEMUA BOLD (permintaan user 2026-09-29) — dulu
-              `nama` semibold & `kode` kecil abu-abu, urutannya kebalik. Format
-              "kode - nama" cocok krn `nama` sering memang uraian kodefikasi
-              (TambahBarangPanel meng-auto-isi nama dari `k.uraian` bila kosong). */}
-          <p className="text-sm font-bold text-gray-800">{barang.kode} - {namaBarangKdp(barang)}</p>
-          <div className="mt-1 space-y-0.5">
-            <Baris lebar="w-44" label="Spesifikasi Nama Barang" value={barang.spec?.nama_barang} />
-            <Baris lebar="w-44" label="Lokasi" value={barang.spec?.alamat_detail} />
-            <Baris lebar="w-44" label="Keterangan" value={barang.spec?.keterangan} />
-            {/* ⚠️ DIPAKU "Intra", bukan dihitung — dan itu memang yang tercatat:
-                `approveKontrakKonstruksi` (lib/kdp.ts) menulis
-                `intra_ekstra: 'intra'` untuk SETIAP barang KDP, tanpa pernah
-                melihat batas kapitalisasi. Alasannya pekerjaan konstruksi itu
-                belanja modal atas barang yang sedang dikerjakan; klasifikasi
-                sesungguhnya baru relevan saat KDP direklas ke aset tetap.
-                Menampilkannya di sini SENGAJA: kartu ini dibaca berdampingan
-                dgn kartu Pengadaan non-konstruksi yang komptabelnya memang
-                berbeda-beda, jadi kolom yang absen bikin operator mengira
-                KDP belum diklasifikasi. Kalau kelak aturannya berubah, ubah
-                lib/kdp.ts DAN baris ini bersamaan. */}
-            <Baris lebar="w-44" label="Komptabel" value="Intra" />
-            {barang.kap_info?.menambah && <Baris lebar="w-44" label="Menambah Manfaat" value={barang.kap_info.target_nama || '(aset dipilih)'} />}
-          </div>
-        </div>
-        <div className="flex items-start gap-3 flex-shrink-0">
-          <div className="text-right">
-            <p className="text-[11px] text-gray-400">Nilai (Σ termin)</p>
-            <p className="font-semibold text-gray-800">{formatRupiah2(total)}</p>
-            {/* Foto — pratinjau kecil kyk entry non-konstruksi (permintaan user
-                2026-09-29, dipindah ke bawah "Nilai" sesuai permintaan susulan
-                hari yang sama). Sebelum ini upload lewat "Edit Spesifikasi" (di
-                bawah) tak meninggalkan jejak visual apa pun di kartu ini. */}
-            <div className="mt-1.5 flex justify-end">
-              <FotoSel paths={fotoPaths} thumbUrl={fotoThumbs[fotoPaths[0] || '']} judul={namaBarangKdp(barang)} />
-            </div>
-          </div>
-          {/* Tombol berkotak & SAMA LEBAR (w-36) — dulu tiga tautan bergaris
-              bawah dgn panjang berbeda-beda sehingga tepinya tak rata. Warna
-              mengikuti peran: hijau = menyunting isi, amber = mengubah
-              keterkaitan induk (pola nada KonfirmasiModal), merah = membuang.
-
-              ⚠️ "Edit Spesifikasi" HANYA saat draft (keputusan user 2026-08-27).
-              Bukan sekadar soal konsistensi kunci: `saveSpec` menulis ke
-              `jurnal_header.payload`, sedangkan spesifikasi baru mendarat di
-              kolom `aset` SAAT APPROVE (lib/kdp.ts). Jadi menyuntingnya sesudah
-              kontrak disetujui adalah NO-OP SENYAP — kartu berubah (kartu memang
-              membaca payload) sementara register tak bergerak sedikit pun, tanpa
-              satu pun pesan. Perbaikan spesifikasi barang yang SUDAH tercatat:
-              Pembukuan → Koreksi → Spesifikasi Barang (ada jejak ledgernya),
-              atau Buka Kunci → perbaiki → setujui ulang. */}
-          <div className="flex flex-col gap-1.5 items-end w-36">
-            {pending ? (
-              <button onClick={onEditSpec}
-                className="w-full inline-flex items-center justify-center bg-teal hover:bg-teal-light text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                Edit Spesifikasi
-              </button>
-            ) : (
-              <span title="Kontrak sudah disetujui — perbaikan spesifikasi lewat menu Koreksi, atau Buka Kunci dulu."
-                className="w-full inline-flex items-center justify-center bg-gray-100 text-gray-500 text-xs font-medium px-3 py-1.5 rounded-lg">
-                🔒 Terkunci
-              </span>
-            )}
-            {pending && (
-              <button onClick={() => { setDraftKapInfo(barang.kap_info ?? null); setShowKapInfo(v => !v) }}
-                className="w-full inline-flex items-center justify-center bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                Ubah Induk Aset
-              </button>
-            )}
-            {pending && (
-              <button onClick={onHapusBarang}
-                className="w-full inline-flex items-center justify-center bg-red-500 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                Hapus Barang
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {showKapInfo && (
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40 space-y-3">
-          <KapInfoPicker skpdId={skpdId} value={draftKapInfo} onChange={setDraftKapInfo} />
-          <div className="flex gap-2">
-            <button className="btn-primary text-sm py-1.5" onClick={() => { onUbahKapInfo(draftKapInfo); setShowKapInfo(false) }}>Simpan</button>
-            <button className="btn-secondary text-sm py-1.5" onClick={() => setShowKapInfo(false)}>Batal</button>
-          </div>
-        </div>
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-100"><tr>
-            <th className="table-th">Komponen</th><th className="table-th">No BAST</th><th className="table-th">Dokumen dan Tanggal BAST</th><th className="table-th">Rekening</th><th className="table-th">Keterangan</th><th className="table-th text-right">Nominal</th>{pending && <th className="table-th"></th>}
-          </tr></thead>
-          <tbody className="divide-y divide-gray-50">
-            {pembayaranUrut.length === 0 ? <tr><td colSpan={pending ? 7 : 6} className="table-td text-center py-6 text-gray-400 text-xs">Belum ada pembayaran.</td></tr>
-              : pembayaranUrut.map(b => (
-                <tr key={b._i}>
-                  <td className="table-td text-xs">{komponenLabel(b.komponen)}</td>
-                  <td className="table-td text-xs text-gray-500">{b.no_bast || '—'}</td>
-                  <td className="table-td text-xs">
-                    {(b.dokumen_paths || []).length === 0
-                      ? <span className="text-amber-600" title="Termin lama — belum ada dokumen tercatat">—</span>
-                      : (b.dokumen_paths || []).map(p => (
-                        <button key={p} onClick={() => bukaDokumen(p)}
-                          className="underline text-teal hover:opacity-80 block text-left">{namaFile(p)}</button>
-                      ))}
-                    <span className="block text-gray-400 mt-0.5">{b.tgl_bast}</span>
-                  </td>
-                  <td className="table-td text-xs text-gray-500">
-                    {b.kode_rekening
-                      ? <><span className="block text-gray-700">{b.kode_rekening}</span><span className="block text-gray-400">{rekeningUraian[b.kode_rekening] || ''}</span></>
-                      : '—'}
-                  </td>
-                  <td className="table-td text-xs text-gray-600">{b.keterangan || '—'}</td>
-                  <td className="table-td text-xs text-right">{formatRupiah2(b.nominal)}</td>
-                  {pending && <td className="table-td text-right"><button className="text-red-500 hover:text-red-700 text-xs" onClick={() => onHapusTermin(b._i)}>Hapus</button></td>}
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
-
-      {pending && (
-        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/40">
-          {showForm ? (
-            <form onSubmit={submitTermin} className="space-y-3">
-              <h4 className="text-xs font-semibold text-gray-700">Tambah Rincian / Pembayaran</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div><label className="block text-xs text-gray-500 mb-1">Komponen</label>
-                  <select className="select-filter w-full text-sm" value={komponen} onChange={e => setKomponen(e.target.value)}>{KOMPONEN.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}</select></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Nomor BAST</label><input className="select-filter w-full text-sm" value={noBast} onChange={e => setNoBast(e.target.value)} /></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Tanggal BAST <span className="text-gray-400">{komponen === 'perencanaan'
-                  ? `(boleh sebelum tgl kontrak, asal tahun ${(tglKontrak || '').slice(0, 4)})`
-                  : `(≥ tgl kontrak ${tglKontrak})`}</span></label><input type="date" min={minTgl} max={bounds.max} className="select-filter w-full text-sm" value={tgl} onChange={e => setTgl(e.target.value)} /></div>
-                <div className="col-span-2 sm:col-span-3">
-                  <DokumenBastField paths={dokPaths} uploading={dokUploading} onUpload={uploadDokumen} onHapus={hapusDokumen}
-                    hint={`wajib sebelum rincian "${komponenLabel(komponen)}" ini bisa ditambahkan (foto / PDF, bisa lebih dari satu)`}
-                    kosongText="Belum ada dokumen — wajib diunggah sebelum tombol + Tambah Rincian bisa dipakai." />
-                </div>
-                <div className="col-span-2 sm:col-span-3"><label className="block text-xs text-gray-500 mb-1">Kode Rekening Belanja <span className="text-gray-400">(cari & pilih sampai Sub Rincian Objek)</span></label><RekeningPicker value={rekening} onChange={setRekening} /></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Nominal (Rp)</label><NominalInput className="select-filter w-full text-sm" value={nominal} onChange={setNominal} /></div>
-                <div><label className="block text-xs text-gray-500 mb-1">Keterangan</label><input className="select-filter w-full text-sm" value={ket} onChange={e => setKet(e.target.value)} /></div>
-              </div>
-              {err && <p className="text-xs text-red-600">{err}</p>}
-              <div className="flex gap-2">
-                <button type="submit" className="btn-primary text-sm py-1.5">+ Tambah Rincian</button>
-                <button type="button" className="btn-secondary text-sm py-1.5" onClick={() => { setShowForm(false); setErr('') }}>Batal</button>
-              </div>
-            </form>
-          ) : (
-            <button className="btn-secondary text-xs" onClick={() => setShowForm(true)}>+ Tambah Rincian / Pembayaran</button>
-          )}
-        </div>
-      )}
-
-      {/* Konfirmasi kode rekening — bentuknya sengaja KEMBAR dgn Pengadaan
-          non-fisik supaya operator mengenali maksudnya seketika. */}
-      {warnings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdropClose(() => setWarnings(null))}>
-          <div className="card w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h3 className="font-semibold text-amber-700">⚠ Konfirmasi Kode Rekening</h3>
-            </div>
-            <div className="p-5 space-y-2">
-              {warnings.map((w, i) => <p key={i} className="text-sm text-gray-700">{w}</p>)}
-              <p className="text-xs text-gray-400">Kalau ini keliru, batalkan lalu perbaiki kode rekeningnya dulu. Kalau memang disengaja (mis. komponen biaya umum dibebankan ke rekening lain), silakan lanjutkan.</p>
-            </div>
-            <div className="px-5 py-3 border-t border-gray-100 flex justify-end gap-2">
-              <button className="btn-secondary text-sm" onClick={() => setWarnings(null)}>Batal, perbaiki dulu</button>
-              <button className="btn-primary text-sm" onClick={doTambahTermin}>Ya, tetap tambahkan</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
+// Dipakai PengadaanEntry untuk menghitung kuantitas barang per status.
+export function hitungBarangKdp(p: KontrakKonstruksiPayload) {
+  let disetujui = 0, draft = 0
+  for (const b of barangKdpList(p)) { if (ringkasBarangKdp(b).nDisetujui > 0) disetujui++; else draft++ }
+  return { disetujui, draft }
 }

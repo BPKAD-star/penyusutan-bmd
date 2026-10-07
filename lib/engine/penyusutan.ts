@@ -16,6 +16,7 @@
 //     direklas masuk. Akumulasi lama tetap tampil, beban baru = 0.
 // ============================================================================
 import { perlakuanKode, periodeRange, comparePeriode, kodeLevel3 } from '@/lib/bmd'
+import { terminKdpDibatalkan } from '@/lib/voidedAset'
 
 export type TrxLedger = {
   id?: number
@@ -141,6 +142,11 @@ export function hitungJadwalAset(
     if (Number.isFinite(tid)) penggabunganDibatalkan.add(tid)
   }
 
+  // Termin KDP yang dibatalkan (2026-10-07, setujui/batal per termin). Aturan
+  // bacanya SATU sumber (`terminKdpDibatalkan`, lib/voidedAset.ts): ber-target →
+  // baris itu saja; `{}` warisan → seluruh termin barang itu yang lebih tua.
+  const kdpDibatalkan = terminKdpDibatalkan(ledger.map(t => ({ ...t, aset_id: aset.id })))
+
   // CATATAN (2026-07-13): dulu ada bail-out `if (ekstra) return []` di sini —
   // DIHAPUS. Ekstrakomptabel ikut disusutkan dgn aturan sama; neraca disaring
   // intra di laporan. Konsekuensi: reklas_komptabel (flip intra↔ekstra) kini
@@ -159,10 +165,25 @@ export function hitungJadwalAset(
   // Exclude reklas_golongan yg DIBATALKAN dari seeding — supaya kode awal balik
   // ke aset.kode (yg sudah dikembalikan ke kode lama saat batal), bukan seed
   // dari kode_lama event yg sudah tak berlaku.
+  // (Dipindah ke sini 2026-10-07: titik mulai checkpoint dibutuhkan untuk
+  // menentukan kode awal di bawah.)
+  const saldoAwalKandidat = ledger.filter(t => t.jenis === 'saldo_awal' || t.jenis === 'saldo_awal_checkpoint')
+  const saldoAwal = saldoAwalKandidat.length > 0
+    ? saldoAwalKandidat.reduce((terbaru, t) => (comparePeriode(t.periode, terbaru.periode) > 0 ? t : terbaru))
+    : undefined
   const reklasGolonganEvents = ledger.filter(t =>
     t.jenis === 'reklas_golongan' && !(t.id != null && reklasDibatalkan.has(t.id)))
-  if (reklasGolonganEvents.length > 0) {
-    kode = String((reklasGolonganEvents[0].payload as Record<string, unknown>)?.kode_lama || aset.kode)
+  // ⚠️ Reklas yang terjadi SEBELUM/PADA checkpoint Tutup Tahun sudah tercermin
+  // di checkpoint itu (barisnya disalin dari engine posisi akhir tahun). Kode
+  // awalnya karena itu = kode SESUDAH reklas terakhir itu, bukan kode_lama
+  // reklas pertama — kalau tidak, KDP yang direklas ke Gedung tahun lalu
+  // kembali terbaca KDP & berhenti disusutkan di tahun berikutnya (2026-10-07).
+  const rgSudah = saldoAwal ? reklasGolonganEvents.filter(t => comparePeriode(t.periode, saldoAwal.periode) <= 0) : []
+  const rgBelum = saldoAwal ? reklasGolonganEvents.filter(t => comparePeriode(t.periode, saldoAwal.periode) > 0) : reklasGolonganEvents
+  if (rgSudah.length > 0) {
+    kode = String((rgSudah[rgSudah.length - 1].payload as Record<string, unknown>)?.kode_baru || aset.kode)
+  } else if (rgBelum.length > 0) {
+    kode = String((rgBelum[0].payload as Record<string, unknown>)?.kode_lama || aset.kode)
   }
   let perlakuan = perlakuanKode(kode)
   let nilaiPerolehan = 0
@@ -180,10 +201,6 @@ export function hitungJadwalAset(
   // yang berubah cuma cara MEMILIH baris mana + mulaiSetelah dari periode
   // baris itu sendiri (bukan konstanta PERIODE_BASELINE lagi), supaya replay
   // tahun yang sudah dikunci tidak diulang dari 2025 tiap kali.
-  const saldoAwalKandidat = ledger.filter(t => t.jenis === 'saldo_awal' || t.jenis === 'saldo_awal_checkpoint')
-  const saldoAwal = saldoAwalKandidat.length > 0
-    ? saldoAwalKandidat.reduce((terbaru, t) => (comparePeriode(t.periode, terbaru.periode) > 0 ? t : terbaru))
-    : undefined
   // ⚠️ SATU-SATUNYA daftar jenis yang bisa jadi TITIK MULAI penyusutan. Jenis
   // perolehan yang tidak terdaftar di sini → `hitungJadwalAset` tak menemukan
   // baseline → `return []` → barangnya TIDAK PERNAH DISUSUTKAN, tanpa satu pun
@@ -212,6 +229,16 @@ export function hitungJadwalAset(
   // berhenti di periode itu — tanpa gap/overlap). Kalah prioritas dari saldoAwal
   // (kalau pecahan sudah pernah lewat Tutup Tahun, checkpoint yg lebih baru menang).
   const pemecahanMasuk = ledger.find(t => t.jenis === 'pemecahan_masuk')
+
+  // Barang yang LAHIR dari termin Pekerjaan Konstruksi (2026-10-07). Dulu tak
+  // punya titik mulai sama sekali → `return []`, dan akibatnya dua: (1) KDP yang
+  // direklas ke Gedung/JIJ TAK PERNAH disusutkan, tanpa satu pun error; (2)
+  // Laporan BMD & Rekonsiliasi membaca nilai KDP dari register HARI INI, jadi
+  // termin semester berikutnya ikut terhitung di semester sebelumnya.
+  // Sekarang: mulai dari 0 di periode SEBELUM termin PERTAMA (termasuk yang
+  // kelak dibatalkan — supaya baris lama periode itu ikut tertimpa nol), lalu
+  // tiap termin yang berlaku menambah nilai di periodenya.
+  const kdpPertama = ledger.find(t => t.jenis === 'akumulasi_kdp')
 
   if (saldoAwal) {
     const p = saldoAwal.payload as Record<string, number | null>
@@ -290,6 +317,14 @@ export function hitungJadwalAset(
       const prev = comparePeriode(perolehan.periode, '2026-S1') <= 0 ? PERIODE_BASELINE : null
       mulaiSetelah = prev ?? prevPeriodeOf(perolehan.periode)
     }
+  } else if (kdpPertama) {
+    nilaiPerolehan = 0
+    nilaiBuku = 0
+    akumulasi = 0
+    sisaSmt = 0
+    beban = 0
+    masaTahun = null
+    mulaiSetelah = prevPeriodeOf(kdpPertama.periode)
   } else {
     return [] // tidak ada baseline — belum masuk ledger
   }
@@ -299,7 +334,12 @@ export function hitungJadwalAset(
   // pending yang nanti mengubahnya jadi disusutkan. Aset yang kode TERKINI-nya
   // masih golongan tak-disusutkan (Tanah/ATL/KDP tanpa reklas/dst) tetap benar
   // bail-out di sini seperti sebelumnya.
-  if (perlakuanKode(aset.kode) === 'tidak') return []
+  //
+  // ⚠️ KECUALI barang yang punya termin KDP: barisnya TETAP ditulis (beban 0)
+  // selama masih KDP — juga sesudah Tutup Tahun (titik mulainya checkpoint),
+  // supaya Laporan BMD & Rekonsiliasi membaca nilai KDP PER PERIODE dari
+  // `penyusutan_semester`, bukan nilai register hari ini.
+  if (perlakuanKode(aset.kode) === 'tidak' && !kdpPertama) return []
 
   // ── Replay maju per semester ──────────────────────────────────────────────
   const hasil: HasilSemester[] = []
@@ -311,6 +351,17 @@ export function hitungJadwalAset(
 
     for (const ev of events) {
       switch (ev.jenis) {
+        case 'akumulasi_kdp': {
+          // Termin konstruksi: nilai barang KDP naik. KDP tak disusutkan, jadi
+          // nilai buku ikut naik penuh. Untuk barang yang sudah punya baseline
+          // lain (data lama) event ini juga sah — termin cuma menambah nilai.
+          if (ev.id != null && kdpDibatalkan.has(ev.id)) break // dibatalkan → abaikan
+          const n = Number(ev.nilai || 0)
+          nilaiPerolehan += n
+          nilaiBuku += n
+          if (sisaSmt > 0) beban = Math.round(nilaiBuku / sisaSmt)
+          break
+        }
         case 'kapitalisasi': {
           if (ev.id != null && kapDibatalkan.has(ev.id)) break // dibatalkan → abaikan
           // §6.2 — CONFIRMED rules, ikuti persis.

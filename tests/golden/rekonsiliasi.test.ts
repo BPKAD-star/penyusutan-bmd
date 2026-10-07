@@ -470,3 +470,49 @@ describe('golden — fail-closed (rules.md §2)', () => {
     await expect(prepareSnapshotCtx(rusak, SCOPE)).rejects.toThrow(/gagal membaca daftar aset/)
   })
 })
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1c. Termin KDP disetujui & dibatalkan PER TERMIN (2026-10-07). Satu termin
+//     yang dibatalkan TIDAK boleh menghapus termin lain barang yang sama —
+//     pola lama (void level ASET lewat 'batal_akumulasi_kdp') menghapus
+//     seluruhnya, tanpa satu pun error. Pembatal warisan `{}` (model Buka Kunci
+//     kartu) tetap membatalkan seluruh termin yang lebih tua.
+// ════════════════════════════════════════════════════════════════════════════
+describe('golden — termin KDP dibatalkan per baris (2026-10-07)', () => {
+  const KDP = '1.3.6.01.01.01.001'
+  const termin = (id: number, aset: string, nilai: number, payload: Record<string, unknown> = {}) => ({
+    id, jenis: 'akumulasi_kdp', aset_id: aset, nilai, tanggal: '2026-03-15', periode: PERIODE,
+    skpd_asal: null, skpd_tujuan: SKPD_A, header_id: 'HK', payload: { kode_rekening: '5.2.03.01', ...payload },
+  })
+  const batal = (id: number, aset: string, nilai: number, payload: Record<string, unknown>) => ({
+    id, jenis: 'batal_akumulasi_kdp', aset_id: aset, nilai: -nilai, tanggal: '2026-03-15', periode: PERIODE,
+    skpd_asal: null, skpd_tujuan: null, header_id: 'HK', payload,
+  })
+  const db = () => fakeSupabase({
+    aset: [
+      { id: 'K1', kode: KDP, skpd_id: SKPD_A, intra_ekstra: 'intra', nibar: 'NB-K1', nama_barang: 'KDP baru', status: 'aktif' },
+      { id: 'K2', kode: KDP, skpd_id: SKPD_A, intra_ekstra: 'intra', nibar: 'NB-K2', nama_barang: 'KDP warisan', status: 'draft' },
+    ],
+    jurnal_header: [{ id: 'HK', skpd_id: SKPD_A }],
+    transaksi_bmd: [
+      termin(600, 'K1', 90_000_000),
+      termin(601, 'K1', 500_000_000),
+      batal(602, 'K1', 500_000_000, { target_trx_id: 601 }),
+      termin(603, 'K1', 450_000_000),
+      // Warisan: dua termin lalu satu pembatal `{}` → keduanya batal.
+      termin(610, 'K2', 10_000_000), termin(611, 'K2', 20_000_000),
+      batal(612, 'K2', 30_000_000, {}),
+    ],
+  }, EMBED)
+
+  it('hanya termin yang dibatalkan yang hilang: 90 + 450 = 540', async () => {
+    const lines = await fetchMutasiLines(db(), PERIODE, [SKPD_A])
+    expect(nilai(lines, '1.3.6', 'intra', 'pengadaan')).toBe(540_000_000)
+    expect(lines.filter(l => l.aset_id === 'K1').map(l => l.nilai).sort()).toEqual([450_000_000, 90_000_000].sort())
+  })
+
+  it('pembatal warisan `{}` membatalkan seluruh termin barangnya', async () => {
+    const lines = await fetchMutasiLines(db(), PERIODE, [SKPD_A])
+    expect(lines.some(l => l.aset_id === 'K2')).toBe(false)
+  })
+})

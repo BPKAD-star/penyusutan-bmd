@@ -15,22 +15,22 @@ const KANAN = 'absolute right-0 top-0 w-[620px]'
 
 // ── 1. Perencanaan dulu, fisik belakangan ───────────────────────────────────
 const ALUR: { kapan: string; ikon: NamaIkon; judul: string; isi: string; ok?: string }[] = [
-  { kapan: 'Maret', ikon: 'dokumen', judul: 'Perencanaan cair', isi: 'Kartu Pekerjaan Konstruksi dgn kontrak perencanaan → termin Perencanaan → langsung disetujui.', ok: 'Rekon April cocok' },
-  { kapan: 'Juni', ikon: 'gedung', judul: 'Kontrak fisik', isi: 'Kartu baru dgn kontrak fisik. Tiap pencairan termin fisik / pengawasan dientry & disetujui.', ok: 'Tiap rekon cocok' },
-  { kapan: 'Selesai', ikon: 'tukar', judul: 'Kapitalisasi', isi: 'Induk = KDP perencanaan (lebih tua), anak = KDP fisik → menjadi satu KDP.' },
+  { kapan: 'Maret', ikon: 'dokumen', judul: 'Perencanaan cair', isi: 'Kartu paket + kontrak perencanaan → termin Perencanaan → disetujui. Barang KDP terbit.', ok: 'Rekon April cocok' },
+  { kapan: 'Juni', ikon: 'gedung', judul: 'Kontrak fisik — kartu yang SAMA', isi: 'Tambah kontrak fisik & pengawasan di kartu itu. Tiap termin disetujui menambah nilai barang yang sama.', ok: 'NIBAR tetap' },
   { kapan: 'Selesai', ikon: 'ulang', judul: 'Reklasifikasi', isi: 'KDP → Gedung & Bangunan. Penyusutan mulai sejak direklas.' },
+  { kapan: 'Lintas tahun', ikon: 'tukar', judul: 'Kartu baru + Kapitalisasi', isi: 'Fisik tahun depan → kartu baru tahun itu. Selesai: Kapitalisasi (induk = KDP perencanaan) lalu Reklas.' },
 ]
 
 export function PerencanaanDulu() {
   return (
     <SlideTerang materi={MATERI} label="Kasus khusus · 1" judul="Perencanaan cair dulu, fisik menyusul">
       <div className={KIRI}>
-        <Poin jeda={250}>Perencanaan dicatat <b>saat cair</b>, di kartu kontrak perencanaannya sendiri — jangan menunggu kontrak fisik.</Poin>
-        <Poin jeda={450}>Check LRA hanya membaca entry yang <b>sudah disetujui</b>. Kartu yang masih draft tetap terbaca <b>selisih</b>.</Poin>
-        <Poin jeda={650}>Kontrak fisik dibuat <b>kartu sendiri</b>; tiap pencairan dientry sesuai BAST-nya.</Poin>
-        <Poin jeda={850}>Saat selesai, keduanya <b>disatukan lewat Kapitalisasi</b> — selagi masih KDP — lalu direklas ke Gedung.</Poin>
+        <Poin jeda={250}>Perencanaan dicatat <b>saat cair</b>: kartu paket + kontrak perencanaan, termin disetujui — jangan menunggu kontrak fisik.</Poin>
+        <Poin jeda={450}>Check LRA hanya membaca termin yang <b>sudah disetujui</b>. Termin yang masih menunggu tetap terbaca <b>selisih</b>.</Poin>
+        <Poin jeda={650}>Kontrak fisik tahun yang sama ditambahkan ke <b>kartu yang sama</b> — barangnya tetap satu, NIBAR tak berganti.</Poin>
+        <Poin jeda={850}>Selesai (BAPP) → <b>Reklasifikasi</b> ke Gedung; penyusutan mulai saat itu.</Poin>
         <Catatan jeda={1150} nada="amber" ikon="kalender">
-          Berlaku sama bila <b>fisiknya tahun depan</b>: kartu tahun lalu sudah terkunci tutup buku, jadi penyatuannya tetap lewat Kapitalisasi.
+          <b>Satu kartu = satu tahun.</b> Fisik tahun depan → kartu baru tahun itu, lalu disatukan lewat <b>Kapitalisasi</b> (induk = KDP perencanaan) sebelum direklas.
         </Catatan>
       </div>
       <div className={KANAN}>

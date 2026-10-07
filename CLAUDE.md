@@ -2651,6 +2651,61 @@ migrasi** — murni menyusun ulang angka yang sudah ada di layar.
   supaya cetak ulang menghasilkan lembar yang SAMA — berkas ini diteken lalu
   dipindai (pola `bmd_rkbmd_ttd_skpd_<id>`).
 
+## Pekerjaan Konstruksi: kartu = paket, SETUJUI PER TERMIN (2026-10-07, migrasi 20261007_03)
+
+Keputusan user. Rancangan lengkap + tabel langkah 1–12: **docs/kdp-per-termin-plan.md**.
+Menggantikan "Setujui Kontrak / 🔓 Buka Kunci" satu kartu penuh **dan** pelonggaran
+"BAST perencanaan boleh lebih tua dari kontrak" (4a613f2) — keduanya DICABUT.
+
+- **1 kartu = 1 paket pekerjaan dalam 1 tahun anggaran** (`jurnal_header.tanggal` =
+  awal tahun; `no_sk` = nama paket). Di `payload`: `kontrak[]` (per komponen —
+  perencanaan/fisik/pengawasan/biaya umum; boleh beberapa per komponen),
+  `barang[]` (aset KDP 1.3.6), `barang[].pembayaran[]` = termin ber-`id`,
+  `kontrak_id`, `status` `menunggu|disetujui`, `trx_id`. Kontrak **wajib** kecuali
+  biaya umum. Tgl BAST ≥ tgl kontrak termin itu sendiri & wajib di tahun kartu —
+  lintas tahun = **kartu baru + Kapitalisasi + Reklas**. Aturannya fungsi murni di
+  **lib/kdp.ts** (dikunci lib/kdp.test.ts), aksi tulis di **lib/kdpAksi.ts**.
+- **Termin disetujui SATU PER SATU, ADMIN PEMDA SAJA** (`fn_kdp_setujui_termin`).
+  Termin pertama sebuah barang menerbitkan barangnya (klien menyiapkan aset `draft`
+  + NIBAR dulu, RPC memverifikasi & menghidupkannya); berikutnya menambah nilai —
+  **NIBAR tak pernah berganti**. Salah catat → **↩ Batal termin itu saja**
+  (`fn_kdp_batal_termin`, baris `batal_akumulasi_kdp` ber-`target_trx_id`, bertanggal
+  BAST aslinya) → termin kembali Menunggu. **↩ Batal Semua Termin** per kartu.
+  Semua batal → aset `draft` nilai 0 (NIBAR disimpan, dipakai lagi kalau disetujui ulang).
+- **`approval_status` kartu DITURUNKAN**: `disetujui` begitu satu termin disetujui.
+  Trigger **`fn_kdp_kartu_guard`** menolak lewat UPDATE/DELETE biasa: termin disetujui,
+  barang yang sudah terbit, & kontrak yang dipakai termin disetujui BEKU; status hanya
+  boleh ke `ditolak` (arsip) kalau tak ada termin disetujui. Pengecualiannya cuma GUC
+  transaksi `app.kdp_via_rpc` (dinyalakan & **dimatikan lagi** oleh RPC — ketahuan saat
+  uji: kalau dibiarkan, UPDATE biasa sesudah RPC dalam transaksi yang sama lolos).
+- ⚠️ **`tgl_perolehan` KDP = BAST termin disetujui PALING AWAL** (dulu "terakhir");
+  penyusutan tetap baru mulai di semester reklas ke GB/JIJ.
+- ⚠️ **PEMBATALAN TERMIN DIBACA PER BARIS, JANGAN level aset lagi.**
+  `fetchVoidedAsetIds(['batal_akumulasi_kdp'])` & `NOT EXISTS … batal_akumulasi_kdp`
+  menghapus SELURUH termin barang begitu satu termin batal. Satu aturan, dua sisi
+  kembar: **`terminKdpDibatalkan`/`fetchTerminKdpBatal`** (lib/voidedAset.ts) &
+  **`fn_kdp_termin_batal`** (SQL). Ber-target → baris itu saja; warisan `{}` (Buka
+  Kunci lama) → seluruh termin barang itu yang lebih tua. Dipakai: engine,
+  lib/rekon.ts, Laporan BMD Model 3, lib/laporanKdpTrx.ts, lib/laporanPengadaan.ts,
+  KIBAR (mekanik 5), `fn_lra_belanja_modal`, `fn_ipa_hitung_otomatis`, `fn_ipa_rincian`.
+  Golden test `tests/golden/rekonsiliasi.test.ts` §1c (diuji merah dulu).
+- **Engine kini menulis baris `penyusutan_semester` untuk barang yang punya termin KDP**
+  (beban 0 selama masih KDP), mulai periode sebelum termin pertama → `fn_rekap_bmd` &
+  `fn_rekon_pos` membaca nilai KDP **per periode** (dulu nilai register hari ini, jadi
+  termin S2 ikut terhitung di S1). Sekaligus menutup bug lama: KDP yang direklas ke
+  Gedung tak pernah disusutkan (tak punya titik mulai). Bareng itu: kode awal replay
+  sesudah checkpoint Tutup Tahun = kode SESUDAH reklas_golongan sebelum checkpoint
+  (dulu kembali ke kode_lama reklas pertama → berhenti disusutkan). Engine WAJIB
+  dijalankan ulang sesudah termin disetujui/dibatalkan.
+- `fn_tutup_tahun` menolak selama ada termin Menunggu tahun itu. Laporan Pengadaan:
+  No/Tgl Kontrak & Penyedia dari payload baris (dibekukan saat disetujui), cadangan
+  header utk baris lama. Dashboard "menunggu" Pengadaan membaca termin menunggu.
+- Diuji ke produksi (transaksi + ROLLBACK, RLS aktif, uid admin): setujui 2 termin →
+  aset 590jt aktif berkode register; termin BAST < tgl kontrak ditolak; ubah termin
+  disetujui / setujui manual / ubah spesifikasi / ganti status lewat UPDATE ditolak;
+  batal F1 → 90jt & LRA ikut 90jt; batal semua → draft 0, kartu pending, LRA kosong.
+- ⚠️ **Deploy-ordering: migrasi 20261007_03 DULU, baru kode.**
+
 ## Pekerjaan Konstruksi (KDP) — perbaikan alur entry (2026-08-27)
 
 Hasil user menguji satu kontrak konstruksi dari nol sampai reklas ke Gedung &

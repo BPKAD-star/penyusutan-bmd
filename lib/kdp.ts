@@ -1,80 +1,108 @@
 // ============================================================================
-// KDP / Pengadaan Konstruksi — model MERGE-KE-PENGADAAN (final 2026-07-13).
+// KDP / Pekerjaan Konstruksi — model KARTU = PAKET, SETUJUI PER TERMIN
+// (keputusan user 2026-10-07, rancangan lengkap: docs/kdp-per-termin-plan.md).
 //
-// 1 kontrak konstruksi = 1 kartu jurnal_header (kategori 'konstruksi'), bisa
-// berisi BEBERAPA barang KDP (payload.barang[], multi-KDP) — semua di payload,
-// TANPA tabel proyek_* (tabel Opsi B lama di-drop migrasi 20260713_01; fungsi
-// yang memakainya sudah dihapus dari file ini 2026-07-13).
+// 1 kartu = 1 jurnal_header (kategori 'konstruksi') = SATU PAKET PEKERJAAN dalam
+// SATU tahun anggaran. Di dalamnya:
+//   · kontrak[]  — kontrak per komponen (perencanaan/fisik/pengawasan/biaya umum),
+//                  masing-masing bernomor, bertanggal, berpenyedia;
+//   · barang[]   — barang KDP (1.3.6), tiap barang = satu aset;
+//   · barang[].pembayaran[] — termin; tiap termin menunjuk satu kontrak & punya
+//                  status 'menunggu' / 'disetujui' SENDIRI.
 //
-// Tetap satu ledger (transaksi_bmd), append-only. Jenis event:
-//   akumulasi_kdp       : termin kontrak disetujui → nilai barang KDP naik
-//   batal_akumulasi_kdp : buka kunci kontrak (event balik)
-//   kdp_selesai_masuk / kdp_selesai_keluar : reklas KDP → aset tetap saat BAPP
-//   (enum sudah ada di DB; alur reklasnya belum dibangun ulang di model ini)
+// Termin disetujui SATU PER SATU (RPC fn_kdp_setujui_termin, admin pemda saja):
+// termin pertama sebuah barang menerbitkan barangnya (NIBAR terbit SEKALI),
+// termin berikutnya cuma menambah nilai barang yang sama. Salah catat → Batal
+// termin itu saja (fn_kdp_batal_termin) — kartu tak pernah dibongkar seluruhnya.
+//
+// Ledger (append-only):
+//   akumulasi_kdp       : termin disetujui → nilai barang KDP naik
+//   batal_akumulasi_kdp : termin dibatalkan. Ber-`payload.target_trx_id` →
+//                         membatalkan BARIS ITU SAJA. Tanpa target (warisan
+//                         model "Buka Kunci kartu", 4 barang di produksi) →
+//                         membatalkan seluruh termin barang itu yang lebih tua.
+//                         Aturan bacanya: `terminKdpDibatalkan` (lib/voidedAset.ts).
+//
+// Penegak: trigger fn_kdp_kartu_guard (termin disetujui beku, status kartu tak
+// bisa diubah lewat UPDATE biasa) + kedua RPC. File ini memuat aturan MURNI
+// yang dipakai layar; RPC mengulang aturan yang sama sbg penegak terakhir.
 // ============================================================================
-import type { SupabaseClient } from '@supabase/supabase-js'
-// ⚠️ `klasifikasiKomptabel`/`fetchBatasKapitalisasi` SENGAJA tidak diimpor di
-// sini: barang KDP SELALU intrakomptabel (`intra_ekstra: 'intra'` di bawah),
-// tak pernah dihitung dari batas kapitalisasi. Keduanya sempat ikut terimpor
-// tanpa pernah dipakai, dan import mati semacam itu membuat pembaca mengira
-// modul ini mengklasifikasi — padahal tidak. Kalau suatu saat KDP memang perlu
-// diklasifikasi, ubah baris `intra_ekstra` di bawah, jangan cuma impornya.
-import { periodeDariTanggal, ASAL_USUL_AWAL } from '@/lib/bmd'
-import { generateNibars } from '@/lib/nibar'
-import { cekBolehBatal } from '@/lib/guardPembatalan'
-import { ASET_FIELD_COLS, ASET_NUM_COLS, angkaKolomAset } from '@/lib/asetFields'
 
-// ── MODEL MERGE-KE-PENGADAAN: 1 kontrak konstruksi = 1 kartu jurnal_header ──
-// (kategori 'konstruksi'). Semua data di payload; aset KDP dibuat SAAT approve.
-export type PembayaranKdp = {
-  komponen: 'perencanaan' | 'fisik' | 'biaya_umum' | 'pengawasan'
-  no_bast?: string | null; tgl_bast: string; kode_rekening?: string | null; nominal: number; keterangan?: string | null
-  // Dokumen BAST termin ini (bucket `dokumen-sumber`) — WAJIB diisi sebelum
-  // rincian pembayaran bisa ditambahkan (keputusan user 2026-09-05, pola sama
-  // dgn `dokumen_paths` di Pengadaan non-konstruksi, tapi levelnya PER TERMIN:
-  // Perencanaan/Fisik Termin 1/Fisik Termin 2/Pengawasan/Biaya Umum masing-
-  // masing dokumen sumbernya sendiri, bukan satu dokumen utk seluruh kontrak).
-  // Termin LAMA (sebelum aturan ini) tak punya kunci ini sama sekali — dibaca
-  // sbg array kosong, tak diwajibkan retroaktif.
-  dokumen_paths?: string[]
+export type KomponenKdp = 'perencanaan' | 'fisik' | 'biaya_umum' | 'pengawasan'
+export type StatusTermin = 'menunggu' | 'disetujui'
+
+export const KOMPONEN_KDP: { value: KomponenKdp; label: string; kontrakWajib: boolean }[] = [
+  { value: 'perencanaan', label: 'Perencanaan', kontrakWajib: true },
+  { value: 'fisik', label: 'Fisik', kontrakWajib: true },
+  { value: 'pengawasan', label: 'Pengawasan', kontrakWajib: true },
+  // Keputusan user 2026-10-07: biaya umum (honor, ATK, perizinan) umumnya tanpa
+  // kontrak — boleh kosong, tapi isiannya tetap disediakan untuk yang berkontrak.
+  { value: 'biaya_umum', label: 'Biaya Umum', kontrakWajib: false },
+]
+export const komponenLabelKdp = (v: string) => KOMPONEN_KDP.find(k => k.value === v)?.label || v
+const kontrakWajib = (v: string) => KOMPONEN_KDP.find(k => k.value === v)?.kontrakWajib ?? true
+
+/** Satu kontrak di dalam kartu paket. Dipakai banyak termin, boleh lintas barang. */
+export type KontrakKdp = {
+  id: string
+  komponen: KomponenKdp
+  bentuk?: string | null              // bentuk dokumen kontrak (SPK/Surat Perjanjian/…)
+  no_kontrak: string
+  tgl_kontrak: string
+  penyedia?: string | null
+  ppk?: string | null
+  nilai_kontrak?: number | null
+  keterangan?: string | null
 }
-// Satu barang KDP dalam kontrak (redesign multi-KDP 2026-07-13): 1 kontrak
-// konstruksi bisa berisi BEBERAPA barang (mis. paket jalan → beberapa ruas),
-// tiap barang = 1 aset KDP (1.3.6) dgn rincian termin sendiri. Nilai barang =
-// TOTAL termin-nya. Approve/unapprove ATOMIK per kontrak (semua barang sekaligus).
-// Info "menambah masa manfaat aset existing" — INFO saja (bukan auto-kapitalisasi),
-// reklas & kapitalisasi tetap manual nanti (menu Reklasifikasi). PER-BARANG sejak
-// redesign 2026-07-13 (dulu per-kontrak): 1 kontrak bisa berisi banyak KDP, tiap
-// KDP bisa menambah manfaat aset induk yg BEDA (mis. 2 ruas jalan berbeda).
+
+export type PembayaranKdp = {
+  id?: string                         // id stabil termin (wajib utk kartu model baru)
+  kontrak_id?: string | null          // kontrak dasar pembayaran (boleh kosong hanya utk biaya umum)
+  komponen: KomponenKdp
+  no_bast?: string | null; tgl_bast: string; kode_rekening?: string | null; nominal: number; keterangan?: string | null
+  dokumen_paths?: string[]            // dokumen BAST termin ini — WAJIB (keputusan 2026-09-05)
+  status?: StatusTermin               // tak ada = 'menunggu'
+  trx_id?: number | null              // id baris akumulasi_kdp kalau disetujui
+  dibuat_oleh?: string | null
+  disetujui_oleh?: string | null
+  disetujui_at?: string | null
+}
+// Info "menambah masa manfaat aset existing" — INFO saja (bukan auto-kapitalisasi).
 export type KapInfo = { menambah: boolean; target_aset_id?: string | null; target_nama?: string | null }
 export type BarangKdp = {
   key: string
   kode: string                       // kode kodefikasi KDP (golongan 1.3.6)
-  nama: string                       // nama barang KDP
-  spec?: Record<string, string>      // spesifikasi (Tanah-like)
+  nama: string                       // uraian kodefikasi (cadangan nama tampil)
+  spec?: Record<string, string>
   foto?: string[]
-  pembayaran: PembayaranKdp[]        // termin/BAST barang ini
-  kap_info?: KapInfo | null          // aset induk (GB/JIJ) yg ditambah manfaatnya, kalau ada
-  aset_id?: string | null            // diisi saat approve (utk unapprove)
+  pembayaran: PembayaranKdp[]
+  kap_info?: KapInfo | null
+  aset_id?: string | null            // diisi saat barang disiapkan utk termin pertamanya
+  // true sejak termin pertamanya pernah disetujui (diset RPC). Sesudah itu
+  // spesifikasi barang hanya lewat menu Koreksi: barang sudah ada di register.
+  pernah_terbit?: boolean
 }
 export type KontrakKonstruksiPayload = {
-  nama_pekerjaan: string; sumber?: string
+  nama_pekerjaan: string
   program?: string | null; kegiatan?: string | null; sub_kegiatan?: string | null
-  ppk?: string | null; penyedia?: string | null; nilai_kontrak?: number | null
   keterangan?: string | null
-  barang?: BarangKdp[]               // MODEL BARU (multi-KDP)
-  // ── LEGACY single-KDP (payload versi lama) — dibaca utk kompat & migrasi-on-read ──
+  kontrak?: KontrakKdp[]             // MODEL PAKET (2026-10-07)
+  barang?: BarangKdp[]
+  // ── Kontrak tingkat kartu (model sebelum 2026-10-07) — dibaca utk kompat ──
+  sumber?: string; ppk?: string | null; penyedia?: string | null; nilai_kontrak?: number | null
+  // ── LEGACY single-KDP (payload versi 2026-07) ──
   kode_kdp?: string
   pembayaran?: PembayaranKdp[]
   spec?: Record<string, string>
   foto?: string[]
   aset_id?: string | null
-  kap_info?: KapInfo                 // legacy: dulu per-kontrak, sekarang per-barang (BarangKdp.kap_info)
+  kap_info?: KapInfo
 }
 
-// Normalisasi payload (lama/baru) → array barang. Payload lama (single-KDP:
-// kode_kdp + pembayaran flat) dipetakan jadi SATU barang implisit supaya kontrak
-// lama tetap tampil/diproses benar tanpa migrasi data.
+export const newIdKdp = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+  ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)
+
+// Normalisasi payload (lama/baru) → array barang.
 export function barangKdpList(p: KontrakKonstruksiPayload): BarangKdp[] {
   if (Array.isArray(p.barang)) return p.barang
   if (p.kode_kdp) return [{
@@ -84,48 +112,128 @@ export function barangKdpList(p: KontrakKonstruksiPayload): BarangKdp[] {
   return []
 }
 
+export const statusTermin = (t: Pick<PembayaranKdp, 'status'>): StatusTermin =>
+  t.status === 'disetujui' ? 'disetujui' : 'menunggu'
+
+/** Ringkasan satu barang dari termin-terminnya. */
+export function ringkasBarangKdp(b: Pick<BarangKdp, 'pembayaran'>) {
+  const ts = b.pembayaran || []
+  const setuju = ts.filter(t => statusTermin(t) === 'disetujui')
+  const tunggu = ts.filter(t => statusTermin(t) === 'menunggu')
+  const jml = (xs: PembayaranKdp[]) => xs.reduce((s, x) => s + Number(x.nominal || 0), 0)
+  return {
+    nilaiDisetujui: jml(setuju),
+    nilaiMenunggu: jml(tunggu),
+    nDisetujui: setuju.length,
+    nMenunggu: tunggu.length,
+    // Tanggal perolehan KDP = BAST termin disetujui PALING AWAL (keputusan user
+    // 2026-10-07, membalik "BAST terakhir" 2026-07-13). "Terakhir" terus bergeser
+    // selama termin disetujui bertahap & membuat barang lenyap dari laporan
+    // semester sebelumnya. Penyusutan sendiri baru mulai saat reklas ke GB/JIJ.
+    tglPerolehan: setuju.map(t => t.tgl_bast).filter(Boolean).sort()[0] || null,
+  }
+}
+
+/** Status kartu DITURUNKAN dari terminnya: 'disetujui' kalau minimal satu termin disetujui. */
+export function statusKartuKdp(p: KontrakKonstruksiPayload): 'pending' | 'disetujui' {
+  return barangKdpList(p).some(b => ringkasBarangKdp(b).nDisetujui > 0) ? 'disetujui' : 'pending'
+}
+export const adaTerminMenunggu = (p: KontrakKonstruksiPayload) => barangKdpList(p).some(b => ringkasBarangKdp(b).nMenunggu > 0)
+
+/** Satu kartu = satu tahun anggaran (keputusan user 2026-10-07) — tahunnya dari tanggal kartu. */
+export const tahunKartuKdp = (tanggalKartu: string) => (tanggalKartu || '').slice(0, 4)
+
+/** Kontrak dipakai termin mana saja di kartu ini. */
+export function pemakaianKontrak(p: KontrakKonstruksiPayload, kontrakId: string) {
+  let menunggu = 0, disetujui = 0
+  const tgl: string[] = []
+  for (const b of barangKdpList(p)) for (const t of b.pembayaran || []) {
+    if (t.kontrak_id !== kontrakId) continue
+    if (statusTermin(t) === 'disetujui') disetujui++; else menunggu++
+    if (t.tgl_bast) tgl.push(t.tgl_bast)
+  }
+  return { menunggu, disetujui, bastTerawal: tgl.sort()[0] || null }
+}
+
 /**
- * Aturan TANGGAL BAST termin terhadap tanggal kontrak (keputusan user 2026-10-07).
- *
- * Umumnya BAST tak boleh lebih tua dari kontraknya. PENGECUALIAN satu-satunya:
- * termin **perencanaan** boleh lebih tua, asal masih di **TAHUN yang sama**
- * dengan kontrak. Itu yang memungkinkan alur "perencanaan cair dulu (dicatat
- * sbg kartu sendiri supaya rekon cocok) → fisik datang → kartu perencanaan
- * dibuka kunci → perencanaannya dimasukkan sbg termin di kartu fisik".
- * Lintas tahun SENGAJA ditolak: tahun lamanya sudah/akan ditutup, jadi baik
- * Buka Kunci maupun termin bertanggal tahun itu akan ditolak guard tahun buku —
- * kasus itu lewat Kapitalisasi KDP. Fisik/biaya umum/pengawasan tetap aturan lama.
- * Mengembalikan pesan penolakan, atau null kalau sah.
+ * Aturan tanggal & kontrak sebuah termin. Mengembalikan pesan penolakan atau null.
+ * · komponen selain biaya umum WAJIB menunjuk kontrak berkomponen sama;
+ * · BAST tak boleh lebih tua dari tanggal kontraknya sendiri;
+ * · BAST wajib di tahun kartu — lintas tahun = kartu baru + Kapitalisasi + Reklas.
+ * ⚠️ KEMBAR dgn pemeriksaan di fn_kdp_setujui_termin (penegak terakhir).
  */
 export function cekTanggalTermin(
-  komponen: PembayaranKdp['komponen'] | string, tglBast: string, tglKontrak: string | null | undefined,
+  t: Pick<PembayaranKdp, 'komponen' | 'tgl_bast' | 'kontrak_id'>,
+  kontraks: KontrakKdp[], tahunKartu: string,
 ): string | null {
-  if (!tglKontrak || !tglBast || tglBast >= tglKontrak) return null
-  if (komponen !== 'perencanaan') {
-    return `Tgl BAST (${tglBast}) tidak boleh lebih tua dari tgl kontrak (${tglKontrak}). `
-      + 'Yang boleh lebih tua hanya termin Perencanaan.'
+  const k = t.kontrak_id ? kontraks.find(x => x.id === t.kontrak_id) : undefined
+  if (t.kontrak_id && !k) return 'Kontrak termin ini sudah tidak ada di kartu — pilih kontrak lagi.'
+  if (!k && kontrakWajib(t.komponen)) return `Termin ${komponenLabelKdp(t.komponen)} wajib menunjuk kontraknya — tambahkan kontrak ${komponenLabelKdp(t.komponen)} di kartu ini dulu.`
+  if (k && k.komponen !== t.komponen) return `Kontrak "${k.no_kontrak}" adalah kontrak ${komponenLabelKdp(k.komponen)}, bukan ${komponenLabelKdp(t.komponen)}.`
+  if (!t.tgl_bast) return 'Tanggal BAST wajib diisi.'
+  if (tahunKartu && t.tgl_bast.slice(0, 4) !== tahunKartu) {
+    return `BAST bertanggal ${t.tgl_bast} di luar tahun kartu ini (${tahunKartu}). Satu kartu = satu tahun anggaran — `
+      + 'buat kartu baru untuk tahun itu, lalu satukan barangnya lewat Kapitalisasi & Reklasifikasi.'
   }
-  if (tglBast.slice(0, 4) !== tglKontrak.slice(0, 4)) {
-    return `Tgl BAST perencanaan (${tglBast}) boleh lebih tua dari tgl kontrak, tapi wajib di tahun yang sama `
-      + `(${tglKontrak.slice(0, 4)}). Perencanaan dari tahun sebelumnya disatukan lewat Kapitalisasi KDP.`
-  }
+  if (k && t.tgl_bast < k.tgl_kontrak) return `Tgl BAST (${t.tgl_bast}) tidak boleh lebih tua dari tgl kontraknya (${k.tgl_kontrak}, No. ${k.no_kontrak}).`
   return null
 }
 
-/** Batas bawah `<input type="date">` termin: perencanaan boleh mundur sampai awal tahun kontrak. */
-export function minTglTermin(komponen: string, tglKontrak: string | null | undefined): string | undefined {
-  if (!tglKontrak) return undefined
-  return komponen === 'perencanaan' ? `${tglKontrak.slice(0, 4)}-01-01` : tglKontrak
+/** Seluruh kekurangan termin sebelum bisa disimpan/disetujui (semuanya sekaligus). */
+export function kekuranganTermin(
+  t: Pick<PembayaranKdp, 'komponen' | 'tgl_bast' | 'kontrak_id' | 'nominal' | 'dokumen_paths'>,
+  kontraks: KontrakKdp[], tahunKartu: string,
+): string[] {
+  const out: string[] = []
+  if (!(Number(t.nominal) > 0)) out.push('Nominal wajib lebih dari 0.')
+  if (!t.dokumen_paths || t.dokumen_paths.length === 0) out.push(`Dokumen BAST termin ${komponenLabelKdp(t.komponen)} wajib diunggah.`)
+  const tgl = cekTanggalTermin(t, kontraks, tahunKartu)
+  if (tgl) out.push(tgl)
+  return out
+}
+
+/** Tanggal kontrak baru tak boleh melewati BAST termin yang memakainya. */
+export function cekUbahTglKontrak(p: KontrakKonstruksiPayload, kontrakId: string, tglBaru: string, tahunKartu: string): string | null {
+  if (!tglBaru) return 'Tanggal kontrak wajib diisi.'
+  if (tahunKartu && tglBaru.slice(0, 4) > tahunKartu) return `Tgl kontrak (${tglBaru}) melewati tahun kartu (${tahunKartu}).`
+  const { bastTerawal } = pemakaianKontrak(p, kontrakId)
+  if (bastTerawal && tglBaru > bastTerawal) return `Tgl kontrak (${tglBaru}) lebih baru dari BAST termin yang memakainya (${bastTerawal}).`
+  return null
 }
 
 /**
- * Tanggal termin paling awal yang MENGIKAT tanggal kontrak (dipakai form Edit
- * Kontrak: tgl kontrak tak boleh lebih baru dari ini). Termin perencanaan tak
- * ikut — ia memang boleh lebih tua dari kontraknya (lihat `cekTanggalTermin`).
+ * Normalisasi kartu sebelum model paket (2026-10-07): termin tanpa `id` diberi id,
+ * kontrak tingkat kartu (no_sk/tanggal/penyedia/ppk) dijadikan SATU kontrak
+ * FISIK & termin fisik menunjuknya. Termin komponen lain sengaja tak dipasangkan
+ * — operator menambah kontraknya sendiri. `berubah=false` → tak perlu disimpan.
  */
-export function terminPengikatTerawal(p: KontrakKonstruksiPayload): string | undefined {
-  return barangKdpList(p).flatMap(b => (b.pembayaran || []))
-    .filter(x => x.komponen !== 'perencanaan').map(x => x.tgl_bast).filter(Boolean).sort()[0]
+export function normalisasiKartuKdp(
+  p: KontrakKonstruksiPayload, header: { no_sk: string; tanggal: string },
+): { payload: KontrakKonstruksiPayload; berubah: boolean } {
+  let berubah = false
+  let kontrak = p.kontrak
+  if (!Array.isArray(kontrak)) {
+    berubah = true
+    kontrak = (p.sumber || p.penyedia || p.ppk || p.nilai_kontrak) ? [{
+      id: newIdKdp(), komponen: 'fisik', bentuk: p.sumber ?? null, no_kontrak: header.no_sk, tgl_kontrak: header.tanggal,
+      penyedia: p.penyedia ?? null, ppk: p.ppk ?? null, nilai_kontrak: p.nilai_kontrak ?? null,
+    }] : []
+  }
+  const kontrakFisikLama = !Array.isArray(p.kontrak) ? kontrak[0]?.id : undefined
+  const barang = barangKdpList(p).map(b => ({
+    ...b,
+    pembayaran: (b.pembayaran || []).map(t => {
+      if (t.id && (t.kontrak_id !== undefined || !kontrakFisikLama)) return t
+      berubah = true
+      return {
+        ...t, id: t.id || newIdKdp(),
+        kontrak_id: t.kontrak_id ?? (kontrakFisikLama && t.komponen === 'fisik' ? kontrakFisikLama : null),
+      }
+    }),
+  }))
+  if (!Array.isArray(p.barang)) berubah = berubah || barang.length > 0
+  const { kode_kdp: _k, pembayaran: _p, spec: _s, foto: _f, aset_id: _a, kap_info: _ki, ...rest } = p
+  return { payload: { ...rest, kontrak, barang }, berubah }
 }
 
 /** Nama yang ditampilkan untuk satu barang KDP: Spesifikasi Nama Barang kalau sudah diisi,
@@ -137,10 +245,9 @@ const normNama = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
 
 /**
  * Aturan nama barang KDP (keputusan user 2026-10-04): "Spesifikasi Nama Barang" WAJIB diisi
- * dan TIDAK BOLEH kembar di dalam satu kontrak — tiap barang KDP = satu aset, jadi dua kartu
+ * dan TIDAK BOLEH kembar di dalam satu kartu — tiap barang KDP = satu aset, jadi dua kartu
  * bernama sama tak bisa dibedakan di register. Pembanding tak peduli huruf besar/kecil & spasi
- * ganda. Mengembalikan pesan kekurangan, atau null kalau lolos. Satu sumber untuk penyimpanan
- * spesifikasi DAN approve (approve penegak terakhir).
+ * ganda. Mengembalikan pesan kekurangan, atau null kalau lolos.
  */
 export function kekuranganNamaKdp(barangs: Pick<BarangKdp, 'nama' | 'kode' | 'spec'>[]): string | null {
   const lihat = new Map<string, string>()
@@ -149,176 +256,8 @@ export function kekuranganNamaKdp(barangs: Pick<BarangKdp, 'nama' | 'kode' | 'sp
     const label = b.nama || b.kode
     if (!nama) return `Barang "${label}" belum punya Spesifikasi Nama Barang — isi dulu lewat Edit Spesifikasi.`
     const k = normNama(nama)
-    if (lihat.has(k)) return `Spesifikasi Nama Barang "${nama}" kembar di kontrak ini (${lihat.get(k)} & ${label}) — tiap barang KDP harus punya nama yang berbeda.`
+    if (lihat.has(k)) return `Spesifikasi Nama Barang "${nama}" kembar di kartu ini (${lihat.get(k)} & ${label}) — tiap barang KDP harus punya nama yang berbeda.`
     lihat.set(k, label)
   }
   return null
-}
-
-// Payload tanpa field legacy singleton (dipakai saat menulis ulang payload versi
-// baru supaya tak ada dua sumber kebenaran yang ambigu).
-function stripLegacy(p: KontrakKonstruksiPayload): KontrakKonstruksiPayload {
-  const { kode_kdp: _k, pembayaran: _p, spec: _s, foto: _f, aset_id: _a, kap_info: _ki, ...rest } = p
-  return rest
-}
-
-// ⚠️ Pembaca angka kolom spesifikasi SENGAJA `angkaKolomAset`, bukan varian
-// `parseFloat(replace(/[^0-9.]/g,''))` yang dipakai di sini sampai 2026-08-27.
-// Regex itu dirancang untuk RUPIAH dan MEMBUANG TANDA MINUS: latitude Kabupaten
-// Kediri (≈ −7,8) tersimpan POSITIF, jadi titiknya melompat ke seberang
-// khatulistiwa — persis insiden 20260820_04, yang waktu itu diperbaiki di
-// Pengadaan/PerolehanManual tapi jalur KDP ini KELEWAT. `saveSpec` di
-// KonstruksiPengadaan sudah menyimpan "-7.774007" dengan benar; yang mencabut
-// minusnya justru materialisasi di bawah. Lihat lib/asetFields.ts.
-
-/**
- * Approve 1 kontrak konstruksi → materialize SEMUA barang KDP sekaligus (atomik):
- * tiap barang = 1 aset KDP (1.3.6) senilai total termin-nya + event akumulasi_kdp
- * per pembayaran. Aset dibuat dulu semua, lalu SELURUH event ledger di-insert
- * dalam satu batch (all-or-nothing) — kalau gagal, semua aset yg terlanjur dibuat
- * disembunyikan (status 'draft') & belum ada satu pun event ledger yg tertulis.
- */
-export async function approveKontrakKonstruksi(supabase: SupabaseClient, headerId: string): Promise<{ error?: string }> {
-  const { data: hRow } = await supabase.from('jurnal_header').select('id,skpd_id,no_sk,tanggal,payload,approval_status').eq('id', headerId).single()
-  const h = hRow as { id: string; skpd_id: number; no_sk: string; tanggal: string; payload: KontrakKonstruksiPayload; approval_status: string } | null
-  if (!h) return { error: 'Kontrak tidak ditemukan.' }
-  if (h.approval_status === 'disetujui') return { error: 'Kontrak sudah disetujui.' }
-  const p = h.payload
-  const barangs = barangKdpList(p)
-  if (barangs.length === 0) return { error: 'Belum ada barang KDP — tambahkan dulu.' }
-  const kurangNama = kekuranganNamaKdp(barangs)
-  if (kurangNama) return { error: kurangNama }
-  for (const b of barangs) {
-    if (!b.kode) return { error: 'Ada barang tanpa kode KDP.' }
-    const bayar = b.pembayaran || []
-    const total = bayar.reduce((s, x) => s + Number(x.nominal || 0), 0)
-    if (bayar.length === 0 || total <= 0) return { error: `Barang "${namaBarangKdp(b)}" belum ada pembayaran (nilai 0) — lengkapi atau hapus dulu.` }
-    // Wajib foto per barang (permintaan user 2026-09-22, berlaku utk approval
-    // SELANJUTNYA saja) — pola & titik penegakan kembar dgn Pengadaan.tsx &
-    // PerolehanManual.tsx: di sinilah SATU-SATUNYA jalur approve KDP bertemu.
-    if (!b.foto || b.foto.length === 0) return { error: `Barang "${namaBarangKdp(b)}" belum ada foto — lengkapi dulu sebelum kontrak ini disetujui.` }
-  }
-
-  // `uraian_barang` = uraian BAKU kodefikasi (sama dgn Pengadaan biasa), BUKAN ketikan operator:
-  // KIR, Kendaraan & kartu membaca kolom tersimpan ini. Gagal membaca → ditolak (fail-closed).
-  const { data: kodefRows, error: kodefErr } = await supabase.from('admin_kodefikasi_bmd')
-    .select('kode,uraian').in('kode', [...new Set(barangs.map(b => b.kode))])
-  if (kodefErr) return { error: `Gagal membaca kodefikasi barang: ${kodefErr.message}` }
-  const uraianByKode = new Map(((kodefRows || []) as { kode: string; uraian: string }[]).map(r => [r.kode, r.uraian]))
-
-  const kodeSkpd = await skpdKode(supabase, h.skpd_id)
-  // tgl_perolehan KDP = tgl BAST TERAKHIR (termin paling akhir) — keputusan user
-  // 2026-07-13. KDP tak disusutkan; ini murni pencatatan, baseline penyusutan
-  // sesungguhnya ditetapkan saat reklas ke aset tetap (tgl BAPP). Tahun NIBAR
-  // ikut tahun tgl ini juga.
-  const tglBarang = (b: BarangKdp) => (b.pembayaran || []).map(x => x.tgl_bast).sort().slice(-1)[0] || h.tanggal
-  const nibarInput = barangs.map(b => ({ key: b.key, kode: b.kode, intraEkstra: 'intra' as const, tahun: String(new Date(tglBarang(b)).getFullYear()) }))
-  let nibarMap: Map<string, string>
-  try {
-    nibarMap = await generateNibars(supabase as never, nibarInput, kodeSkpd)
-  } catch (e) {
-    return { error: (e as Error).message }
-  }
-
-  // Pass 1: buat semua aset KDP (belum ada ledger — aman kalau gagal di tengah).
-  const createdAsetIds: string[] = []
-  const asetIdByKey = new Map<string, string>()
-  for (const b of barangs) {
-    const total = (b.pembayaran || []).reduce((s, x) => s + Number(x.nominal || 0), 0)
-    const asetRow: Record<string, unknown> = {
-      nibar: nibarMap.get(b.key) || null, kode: b.kode,
-      uraian_barang: uraianByKode.get(b.kode) || b.nama, nama_barang: b.spec?.nama_barang?.trim() || b.nama,
-      jumlah: 1, nilai_perolehan: total, tgl_perolehan: tglBarang(b), skpd_id: h.skpd_id,
-      intra_ekstra: 'intra', cara_perolehan: 'pengadaan', status: 'aktif', foto_paths: b.foto || [],
-      // Nilai awal, permintaan user 2026-09-28 — lihat ASAL_USUL_AWAL, lib/bmd.ts.
-      asal_usul: ASAL_USUL_AWAL.pengadaan,
-    }
-    for (const k of ASET_FIELD_COLS) {
-      const v = b.spec?.[k]
-      if (!v) continue
-      // Yang tak terbaca sebagai angka DILEWATI, bukan dijadikan 0 — `0` itu
-      // koordinat yang SAH (Teluk Guinea) dan lolos semua validasi rentang.
-      if (ASET_NUM_COLS.has(k)) { const n = angkaKolomAset(v); if (n !== null) asetRow[k] = n }
-      else asetRow[k] = v
-    }
-    const { data: aset, error: aErr } = await supabase.from('aset').insert(asetRow).select('id').single()
-    if (aErr || !aset) {
-      if (createdAsetIds.length) await supabase.from('aset').update({ status: 'draft' }).in('id', createdAsetIds)
-      return { error: `Gagal membuat aset KDP "${b.nama}": ${aErr?.message}` }
-    }
-    const id = (aset as { id: string }).id
-    createdAsetIds.push(id); asetIdByKey.set(b.key, id)
-  }
-
-  // Pass 2: SEMUA event akumulasi_kdp dalam satu insert (all-or-nothing).
-  const trxRows = barangs.flatMap(b => (b.pembayaran || []).map(x => ({
-    aset_id: asetIdByKey.get(b.key), jenis: 'akumulasi_kdp', periode: periodeDariTanggal(x.tgl_bast), tanggal: x.tgl_bast,
-    nilai: Number(x.nominal || 0), skpd_tujuan: h.skpd_id, header_id: headerId,
-    payload: { komponen: x.komponen, no_bast: x.no_bast || null, kode_rekening: x.kode_rekening || null, dokumen_paths: x.dokumen_paths || [] },
-  })))
-  const { error: tErr } = await supabase.from('transaksi_bmd').insert(trxRows)
-  if (tErr) { await supabase.from('aset').update({ status: 'draft' }).in('id', createdAsetIds); return { error: `Gagal mencatat pembayaran: ${tErr.message}` } }
-
-  const barangOut: BarangKdp[] = barangs.map(b => ({ ...b, aset_id: asetIdByKey.get(b.key) || null }))
-  const { data: { user } } = await supabase.auth.getUser()
-  const { error: uErr } = await supabase.from('jurnal_header')
-    .update({ approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString(), payload: { ...stripLegacy(p), barang: barangOut } })
-    .eq('id', headerId)
-  if (uErr) return { error: `Aset tercatat, tapi status kontrak gagal: ${uErr.message}` }
-  return {}
-}
-
-/**
- * Buka kunci (unapprove) → untuk SEMUA barang KDP: balik tiap pembayaran
- * (batal_akumulasi_kdp) + sembunyikan asetnya (status 'draft'). Kalau kontrak
- * punya 10 barang, ke-10-nya hilang dari Daftar Barang/Penyusutan sampai
- * disetujui ulang. Kontrak → pending, aset_id tiap barang dikosongkan.
- */
-export async function unapproveKontrakKonstruksi(supabase: SupabaseClient, headerId: string): Promise<{ error?: string }> {
-  const { data: hRow } = await supabase.from('jurnal_header').select('id,payload,approval_status').eq('id', headerId).single()
-  const h = hRow as { id: string; payload: KontrakKonstruksiPayload; approval_status: string } | null
-  if (!h) return { error: 'Kontrak tidak ditemukan.' }
-  if (h.approval_status !== 'disetujui') return { error: 'Kontrak belum disetujui.' }
-  const barangs = barangKdpList(h.payload)
-  const asetIds = barangs.map(b => b.aset_id).filter((x): x is string => !!x)
-
-  if (asetIds.length) {
-    // Event balik per akumulasi (append-only), satu batch utk semua barang.
-    const { data: trxs } = await supabase.from('transaksi_bmd').select('id,aset_id,tanggal,nilai').in('aset_id', asetIds).eq('jenis', 'akumulasi_kdp')
-    const akum = (trxs || []) as { id: number; aset_id: string; tanggal: string; nilai: number }[]
-    // Guard rantai: kalau ada barang KDP yg sudah punya transaksi LEBIH BARU
-    // setelah akumulasi terakhirnya (mis. reklas ke aset jadi, koreksi, penghapusan),
-    // buka kunci DIBLOKIR — soft-delete di tengah rantai merusak replay engine.
-    // Batalkan transaksi yg lebih baru itu dulu.
-    const maxAkum = new Map<string, number>()
-    for (const t of akum) maxAkum.set(t.aset_id, Math.max(maxAkum.get(t.aset_id) ?? 0, t.id))
-    const namaByAset = new Map(barangs.filter(b => b.aset_id).map(b => [b.aset_id as string, b.nama]))
-    const guard = await cekBolehBatal(
-      supabase,
-      [...maxAkum].map(([aid, threshold]) => ({ aset_id: aid, trx_id: threshold, label: namaByAset.get(aid) })),
-      'akumulasi terakhirnya (mis. reklas/koreksi/penghapusan)',
-    )
-    if (!guard.boleh) return { error: guard.pesan }
-    const balik = akum.map(t => ({
-      aset_id: t.aset_id, jenis: 'batal_akumulasi_kdp', periode: periodeDariTanggal(t.tanggal), tanggal: t.tanggal,
-      nilai: -Number(t.nilai || 0), header_id: headerId, payload: {},
-    }))
-    if (balik.length) {
-      const { error: bErr } = await supabase.from('transaksi_bmd').insert(balik)
-      if (bErr) return { error: `Gagal mencatat pembatalan: ${bErr.message}` }
-    }
-    await supabase.from('aset').update({ status: 'draft', nilai_perolehan: 0 }).in('id', asetIds)
-  }
-
-  const barangCleared: BarangKdp[] = barangs.map(b => ({ ...b, aset_id: null }))
-  const { error } = await supabase.from('jurnal_header')
-    .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...stripLegacy(h.payload), barang: barangCleared } })
-    .eq('id', headerId)
-  if (error) return { error: `Gagal buka kunci: ${error.message}` }
-  return {}
-}
-
-async function skpdKode(supabase: SupabaseClient, skpdId: number): Promise<string> {
-  const { data } = await supabase.from('admin_skpd').select('kode_skpd').eq('id', skpdId).single()
-  return (data as { kode_skpd?: string } | null)?.kode_skpd || ''
 }
