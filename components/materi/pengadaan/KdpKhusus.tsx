@@ -15,8 +15,8 @@ const KANAN = 'absolute right-0 top-0 w-[620px]'
 
 // ── 1. Perencanaan dulu, fisik belakangan ───────────────────────────────────
 const ALUR: { kapan: string; ikon: NamaIkon; judul: string; isi: string; ok?: string }[] = [
-  { kapan: 'Maret', ikon: 'dokumen', judul: 'Perencanaan cair', isi: 'Kartu paket + kontrak perencanaan → termin Perencanaan → disetujui. Barang KDP terbit.', ok: 'Rekon April cocok' },
-  { kapan: 'Juni', ikon: 'gedung', judul: 'Kontrak fisik — kartu yang SAMA', isi: 'Tambah kontrak fisik & pengawasan di kartu itu. Tiap termin disetujui menambah nilai barang yang sama.', ok: 'NIBAR tetap' },
+  { kapan: 'Maret', ikon: 'dokumen', judul: 'Perencanaan cair', isi: 'Kartu paket → barang KDP → kontrak perencanaan → BAST perencanaan → disetujui. Barang KDP terbit.', ok: 'Rekon April cocok' },
+  { kapan: 'Juni', ikon: 'gedung', judul: 'Kontrak fisik — kartu yang SAMA', isi: 'Tambah kontrak fisik & pengawasan di bawah barang yang sama. Tiap BAST disetujui menambah nilainya.', ok: 'NIBAR tetap' },
   { kapan: 'Selesai', ikon: 'ulang', judul: 'Reklasifikasi', isi: 'KDP → Gedung & Bangunan. Penyusutan mulai sejak direklas.' },
   { kapan: 'Lintas tahun', ikon: 'tukar', judul: 'Kartu baru + Kapitalisasi', isi: 'Fisik tahun depan → kartu baru tahun itu. Selesai: Kapitalisasi (induk = KDP perencanaan) lalu Reklas.' },
 ]
@@ -25,8 +25,8 @@ export function PerencanaanDulu() {
   return (
     <SlideTerang materi={MATERI} label="Kasus khusus · 1" judul="Perencanaan cair dulu, fisik menyusul">
       <div className={KIRI}>
-        <Poin jeda={250}>Perencanaan dicatat <b>saat cair</b>: kartu paket + kontrak perencanaan, termin disetujui — jangan menunggu kontrak fisik.</Poin>
-        <Poin jeda={450}>Check LRA hanya membaca termin yang <b>sudah disetujui</b>. Termin yang masih menunggu tetap terbaca <b>selisih</b>.</Poin>
+        <Poin jeda={250}>Perencanaan dicatat <b>saat cair</b>: kartu paket → barang → kontrak perencanaan → BAST-nya disetujui — jangan menunggu kontrak fisik.</Poin>
+        <Poin jeda={450}>Check LRA hanya membaca BAST yang <b>sudah disetujui</b>. BAST yang masih menunggu tetap terbaca <b>selisih</b>.</Poin>
         <Poin jeda={650}>Kontrak fisik tahun yang sama ditambahkan ke <b>kartu yang sama</b> — barangnya tetap satu, NIBAR tak berganti.</Poin>
         <Poin jeda={850}>Selesai (BAPP) → <b>Reklasifikasi</b> ke Gedung; penyusutan mulai saat itu.</Poin>
         <Catatan jeda={1150} nada="amber" ikon="kalender">

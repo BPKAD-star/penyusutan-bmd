@@ -4,7 +4,7 @@
 // Keduanya sengaja satu bentuk & satu komponen, karena isinya empat langkah
 // yang SAMA dengan urutan sedikit dibolak-balik:
 //   Non Konstruksi : Kontrak → BAST → Barang → Spesifikasi
-//   Konstruksi     : Kontrak → Barang KDP → BAST per termin → Spesifikasi
+//   Konstruksi     : Kartu Paket → Barang KDP → Kontrak → BAST (2026-10-08)
 // Pembatasnya: yang ditampilkan HANYA pekerjaan pengurus barang — Pratinjau &
 // Setujui (dikerjakan sesudahnya) tidak ikut.
 import type { ReactNode } from 'react'
@@ -61,9 +61,9 @@ export function AlurNonKonstruksi() {
 
 const KONSTRUKSI: Langkah[] = [
   { ikon: 'dokumen', judul: 'Buat Kartu Paket', isi: 'Tekan + Buat Kartu Paket: nama paket pekerjaan, tahun anggaran, program / kegiatan / sub kegiatan. Satu kartu = satu tahun.' },
-  { ikon: 'gedung', judul: 'Kontrak & Barang KDP', isi: 'Tambah kontrak tiap komponen (perencanaan, fisik, pengawasan; biaya umum boleh tanpa kontrak), lalu barang KDP golongan 1.3.6.' },
-  { ikon: 'hitung', judul: 'Isi Termin + Upload BAST', isi: 'Tiap termin menunjuk kontraknya, bertanggal BAST, bernilai & berdokumen. Masuk berstatus Menunggu.', tanda: 'BAST per termin' },
-  { ikon: 'kamera', judul: 'Spesifikasi & Persetujuan', isi: 'Nama barang (tak boleh kembar), lokasi, foto. Admin pemda menyetujui per termin.', tanda: 'Foto wajib' },
+  { ikon: 'gedung', judul: 'Barang KDP + Spesifikasi', isi: 'Tambah barang KDP golongan 1.3.6, lalu ✎ Edit Spesifikasi: nama barang (tak boleh kembar), lokasi, foto.', tanda: 'Foto wajib' },
+  { ikon: 'dokumen', judul: 'Kontrak di bawah Barang', isi: 'Tambah kontrak tiap komponen: perencanaan, fisik, pengawasan. Biaya umum boleh tanpa kontrak.' },
+  { ikon: 'hitung', judul: 'BAST di bawah Kontrak', isi: '+ Tambah BAST di kontraknya: nomor, tanggal, nilai, dokumen. Masuk Menunggu, admin pemda menyetujui per BAST.', tanda: 'Dokumen BAST wajib' },
 ]
 
 export function AlurKonstruksi() {
@@ -71,8 +71,8 @@ export function AlurKonstruksi() {
     <SlideTerang materi={MATERI} label="Pekerjaan Konstruksi" judul="Alur entry konstruksi (KDP)">
       <EmpatKartu langkah={KONSTRUKSI} />
       <DuaCatatan
-        kiri={<>Termin <b>pertama</b> yang disetujui menerbitkan barangnya; termin berikutnya <b>menambah nilai</b> — NIBAR tetap. Nilai barang = jumlah termin <b>disetujui</b>.</>}
-        kanan={<>Salah catat? Admin <b>membatalkan termin itu saja</b> — kartu tak pernah dibuka kunci seluruhnya. Termin yang masih <b>Menunggu</b> bebas diubah / dihapus.</>}
+        kiri={<>BAST <b>pertama</b> yang disetujui menerbitkan barangnya; BAST berikutnya <b>menambah nilai</b> — NIBAR tetap. Nilai barang = jumlah BAST <b>disetujui</b>.</>}
+        kanan={<>Salah catat? Admin <b>membatalkan BAST itu saja</b> — kartu tak pernah dibuka kunci seluruhnya. BAST yang masih <b>Menunggu</b> bebas dihapus.</>}
       />
     </SlideTerang>
   )

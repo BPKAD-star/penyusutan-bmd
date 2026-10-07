@@ -7,57 +7,72 @@ import { MATERI, KartuApp, Tombol, Lencana, Th, FotoMini, Tunjuk, Contoh } from 
 const KIRI = 'absolute left-0 top-0 w-[440px] space-y-4'
 const KANAN = 'absolute right-0 top-0 w-[660px]'
 
-const TERMIN: [string, string, string, string, string, boolean][] = [
-  ['Perencanaan', '027/PRC/2026', 'BAST-PRC-01.pdf', '02 Sep 2026', 'Rp 45.000.000', true],
-  ['Fisik', '027/SPK/2026', 'BAST-FSK-01.pdf', '30 Okt 2026', 'Rp 380.000.000', true],
-  ['Pengawasan', '027/PWS/2026', 'BAST-PWS-01.pdf', '30 Okt 2026', 'Rp 22.500.000', false],
+// Susunan Kartu → Barang → Kontrak → BAST (sama dgn layar sejak 2026-10-08):
+// kontrak tampil di bawah barang, BAST-nya bertingkat di bawah kontraknya.
+type BastMock = { no: string; file: string; tgl: string; nilai: string; ok: boolean }
+const KONTRAK_MOCK: { komponen: string; no: string; tgl: string; info: string; bast: BastMock[] }[] = [
+  { komponen: 'Perencanaan', no: '027/PRC/2026', tgl: '03 Mar 2026', info: 'SPK · CV Rancang Bangun · Nilai Rp 50.000.000',
+    bast: [{ no: '027/BAST-PRC/2026', file: 'BAST-PRC-01.pdf', tgl: '02 Sep 2026', nilai: 'Rp 45.000.000', ok: true }] },
+  { komponen: 'Fisik', no: '027/SPK/2026', tgl: '04 Jun 2026', info: 'Surat Perjanjian · CV Karya Mandiri · Nilai Rp 400.000.000',
+    bast: [{ no: '027/BAST-FSK/2026', file: 'BAST-FSK-01.pdf', tgl: '30 Okt 2026', nilai: 'Rp 380.000.000', ok: true }] },
+  { komponen: 'Pengawasan', no: '027/PWS/2026', tgl: '04 Jun 2026', info: 'SPK · CV Awas Teliti · Nilai Rp 25.000.000',
+    bast: [{ no: '027/BAST-PWS/2026', file: 'BAST-PWS-01.pdf', tgl: '30 Okt 2026', nilai: 'Rp 22.500.000', ok: false }] },
 ]
+// Kolom BAST SEJAJAR antar kontrak — persis tabel di layar (table-fixed).
+const KOLOM_BAST = 'grid grid-cols-[1fr_150px_118px_92px] gap-2 items-start'
 
 export function KartuKdp() {
+  let n = 0
   return (
-    <SlideTerang materi={MATERI} label="Pekerjaan Konstruksi · 2" judul="Kartu barang KDP & rincian termin">
+    <SlideTerang materi={MATERI} label="Pekerjaan Konstruksi · 2" judul="Barang → Kontrak → BAST">
       <div className={KIRI}>
-        <Poin jeda={250}>Tiap barang KDP punya <b>tabel termin</b>: komponen, <b>kontraknya</b>, dokumen &amp; tanggal BAST, nilai, <b>status</b>.</Poin>
-        <Poin jeda={450}><Tbl>+ Tambah Rincian</Tbl> <b>ditolak</b> bila dokumen BAST termin itu belum diunggah.</Poin>
-        <Poin jeda={650}>Tgl BAST <b>tidak boleh lebih tua</b> dari tgl kontrak <b>termin itu sendiri</b>, dan wajib di tahun kartu.</Poin>
-        <Poin jeda={850}>Selesai satu termin, <b>kode rekening &amp; tanggal BAST dikosongkan</b> — supaya termin berikut tak mewarisi isian lama.</Poin>
-        <Poin jeda={1050}>Admin menekan <Tbl>✓ Setujui</Tbl> <b>per termin</b>; yang keliru cukup <Tbl>↩ Batal</Tbl> termin itu.</Poin>
+        <Poin jeda={250}>Di bawah <b>barang KDP</b> tampil <b>kontraknya</b> per komponen — perencanaan, fisik, pengawasan.</Poin>
+        <Poin jeda={450}>BAST ditambahkan <b>di bawah kontraknya</b> lewat <Tbl>+ Tambah BAST</Tbl> — kontrak &amp; komponennya sudah terisi sendiri.</Poin>
+        <Poin jeda={650}>Tgl BAST <b>tidak boleh lebih tua</b> dari tgl kontraknya, dan wajib di tahun kartu. Dokumen BAST <b>wajib</b> diunggah.</Poin>
+        <Poin jeda={850}>Biaya umum tanpa kontrak? <Tbl>+ BAST Biaya Umum (tanpa kontrak)</Tbl>.</Poin>
+        <Poin jeda={1050}>Admin menekan <Tbl>✓ Setujui</Tbl> <b>per BAST</b>; yang keliru cukup <Tbl>↩ Batal</Tbl> BAST itu.</Poin>
       </div>
       <div className={KANAN}>
         <KartuApp jeda={300} judul={<span><b>1.3.6.01.01.01.003 - Gedung dan Bangunan Dalam Pengerjaan</b></span>}>
-          <div className="grid grid-cols-[1fr_190px] gap-4">
-            <div className="grid grid-cols-[140px_1fr] gap-y-1 text-[12px] content-start">
-              <span className="text-gray-400">Spesifikasi Nama Barang</span><span className="text-gray-700">Pembangunan Gedung Kantor Kecamatan</span>
+          <div className="flex items-start justify-between gap-4 text-[12px]">
+            <div className="grid grid-cols-[150px_1fr] gap-y-0.5">
+              <span className="text-gray-400">Spesifikasi Nama Barang</span><span className="text-gray-700">Gedung Kantor Kecamatan</span>
               <span className="text-gray-400">Lokasi</span><span className="text-gray-700">Jl. Raya Kecamatan No. 1</span>
-              <span className="text-gray-400">Komptabel</span><span className="text-gray-700">Intra</span>
             </div>
-            <div className="text-right">
-              <p className="text-[11px] text-gray-400">Disetujui</p>
-              <p className="text-[19px] font-bold text-navy">Rp 425.000.000</p>
-              <p className="text-[10.5px] text-amber-600">+ Rp 22.500.000 menunggu</p>
-              <div className="mt-1 flex justify-end"><FotoMini /></div>
+            <div className="text-right flex items-start gap-2">
+              <div>
+                <p className="text-[10.5px] text-gray-400">Disetujui</p>
+                <p className="text-[16px] font-bold text-navy leading-tight">Rp 425.000.000</p>
+                <p className="text-[10px] text-amber-600">+ Rp 22.500.000 menunggu</p>
+              </div>
+              <FotoMini />
             </div>
           </div>
-          <div className="mt-3 rounded-lg border border-gray-200 overflow-hidden">
-            <table className="w-full text-[12px]">
-              <thead className="bg-gray-50 border-b border-gray-100"><tr><Th>Komponen</Th><Th>Kontrak</Th><Th>Dokumen dan Tanggal BAST</Th><Th>Nilai</Th><Th>Status</Th></tr></thead>
-              <tbody>
-                {TERMIN.map(([k, kt, f, t, n, ok], i) => (
-                  <tr key={k} className="mt-up border-b border-gray-50 last:border-0" style={d(700 + i * 150)}>
-                    <td className="px-2.5 py-2 font-medium text-gray-700">{k}</td>
-                    <td className="px-2.5 py-2 text-gray-700">{kt}</td>
-                    <td className="px-2.5 py-2"><p className="text-teal">📎 {f}</p><p className="text-[10.5px] text-gray-400">{t}</p></td>
-                    <td className="px-2.5 py-2 text-gray-700">{n}</td>
-                    <td className="px-2.5 py-2">{ok ? <Lencana nada="ok">DISETUJUI</Lencana> : <Lencana nada="amber">MENUNGGU</Lencana>}</td>
-                  </tr>
+          <div className="mt-2 rounded-lg border border-gray-200 divide-y divide-gray-100">
+            {KONTRAK_MOCK.map((k, ki) => (
+              <div key={k.no} className="px-3 py-1.5">
+                <div className="mt-up relative flex items-start justify-between gap-2" style={d(600 + (n++) * 150)}>
+                  <div className="text-[11.5px] min-w-0">
+                    <p className="font-semibold text-gray-800">Kontrak {k.komponen} <span className="font-normal text-gray-600">· {k.no} · {k.tgl}</span></p>
+                    <p className="text-[10.5px] text-gray-400 truncate">{k.info}</p>
+                  </div>
+                  <Tombol gaya="sekunder" className="!h-6 !px-2 !text-[11px]">+ Tambah BAST</Tombol>
+                  {ki === 1 && <Tunjuk className="right-1 -top-1" jeda={1900} />}
+                </div>
+                {k.bast.map(t => (
+                  <div key={t.no} className={`mt-up ${KOLOM_BAST} pl-5 pt-1 text-[11px]`} style={d(600 + (n++) * 150)}>
+                    <span className="text-gray-600 truncate"><span className="text-gray-300 mr-1">↳</span>{t.no}</span>
+                    <span><span className="text-teal">📎 {t.file}</span><span className="block text-[10px] text-gray-400">{t.tgl}</span></span>
+                    <span className="text-right text-gray-700">{t.nilai}</span>
+                    <span>{t.ok ? <Lencana nada="ok">DISETUJUI</Lencana> : <Lencana nada="amber">MENUNGGU</Lencana>}</span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            ))}
           </div>
-          <div className="relative mt-3 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
-            <Tombol gaya="utama">+ Tambah Rincian</Tombol>
-            <span className="text-[12px] text-amber-800">Fisik · kontrak 027/SPK/2026 — <b>📎 dokumen BAST termin ini wajib</b></span>
-            <Tunjuk className="right-3 -top-1.5" jeda={1800} />
+          <div className="mt-2 flex items-center gap-2">
+            <Tombol gaya="sekunder" className="!h-7 !text-[11.5px]">+ Tambah Kontrak</Tombol>
+            <Tombol gaya="sekunder" className="!h-7 !text-[11.5px]">+ BAST Biaya Umum (tanpa kontrak)</Tombol>
           </div>
         </KartuApp>
       </div>
@@ -72,11 +87,11 @@ export function AturanKonstruksi() {
       <div className="absolute inset-x-0 top-0 grid grid-cols-3 gap-6 items-start">
         <div className="mt-up rounded-2xl border border-gray-200 bg-white shadow-lg p-5" style={d(250)}>
           <span className="w-11 h-11 rounded-xl bg-teal text-white flex items-center justify-center"><Ikon nama="dokumen" ukuran={24} /></span>
-          <p className="mt-3 text-[21px] font-bold text-navy leading-tight">BAST tiap termin</p>
-          <p className="mt-1.5 text-[14.5px] text-gray-500 leading-snug">Rincian termin <b>tidak bisa ditambah</b> tanpa dokumennya.</p>
+          <p className="mt-3 text-[21px] font-bold text-navy leading-tight">Dokumen tiap BAST</p>
+          <p className="mt-1.5 text-[14.5px] text-gray-500 leading-snug">BAST <b>tidak bisa ditambah</b> di bawah kontraknya tanpa dokumennya.</p>
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
             <p className="text-[13.5px] font-bold text-amber-800">⚠ Belum bisa ditambahkan</p>
-            <p className="mt-1 text-[12.5px] leading-snug text-amber-900">Dokumen BAST termin &ldquo;Perencanaan&rdquo; ini wajib diunggah sebelum rincian bisa ditambahkan.</p>
+            <p className="mt-1 text-[12.5px] leading-snug text-amber-900">Dokumen BAST &ldquo;Perencanaan&rdquo; ini wajib diunggah sebelum BAST bisa ditambahkan.</p>
           </div>
         </div>
         <div className="mt-up rounded-2xl border border-gray-200 bg-white shadow-lg p-5" style={d(470)}>
@@ -91,7 +106,7 @@ export function AturanKonstruksi() {
         <div className="mt-up rounded-2xl border border-gray-200 bg-white shadow-lg p-5" style={d(690)}>
           <span className="w-11 h-11 rounded-xl bg-teal text-white flex items-center justify-center"><Ikon nama="periksa" ukuran={24} /></span>
           <p className="mt-3 text-[21px] font-bold text-navy leading-tight">Nama barang unik</p>
-          <p className="mt-1.5 text-[14.5px] text-gray-500 leading-snug"><b>Spesifikasi Nama Barang wajib</b> diisi dan <b>tidak boleh kembar</b> dalam kontrak.</p>
+          <p className="mt-1.5 text-[14.5px] text-gray-500 leading-snug"><b>Spesifikasi Nama Barang wajib</b> diisi dan <b>tidak boleh kembar</b> dalam satu kartu.</p>
           <div className="mt-4 space-y-2">
             {['Ruas Jalan Desa A – Desa B', 'Ruas Jalan Desa C – Desa D'].map(n => (
               <div key={n} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-[13px] text-gray-700">{n}<Lencana nada="ok">UNIK</Lencana></div>
