@@ -47,6 +47,8 @@ export function Baris({ label, value, lebar = 'w-28' }: { label: string; value?:
 }
 
 const UMUM = '__umum'
+// Tombol tambah berwarna hijau tipis (permintaan user 2026-10-08).
+const TOMBOL_HIJAU = 'inline-flex items-center rounded-lg border border-teal/30 bg-teal/10 hover:bg-teal/20 text-teal text-xs font-medium px-3 py-1'
 const urutKomponen = (k: string) => KOMPONEN_KDP.findIndex(x => x.value === k)
 
 export function BarangKdpCard({ barang, payload, kontraks, tahunKartu, skpdId, bolehUbah, isAdmin, busy,
@@ -149,41 +151,42 @@ export function BarangKdpCard({ barang, payload, kontraks, tahunKartu, skpdId, b
   }
 
   function TabelBast({ termin }: { termin: PembayaranKdp[] }) {
-    if (termin.length === 0) return <p className="pl-10 pr-5 py-2 text-xs text-gray-400">Belum ada BAST untuk barang ini.</p>
+    if (termin.length === 0) return <p className="px-3 py-2.5 text-xs text-gray-400">Belum ada BAST untuk barang ini.</p>
     return (
-      <div className="overflow-x-auto pl-8">
+      <div className="overflow-x-auto">
         {/* table-fixed + lebar tetap: tabel tiap kontrak SEJAJAR kolomnya
-            (tanpa ini lebar kolom ikut isi tiap tabel & bergeser antar kontrak). */}
+            (tanpa ini lebar kolom ikut isi tiap tabel & bergeser antar kontrak).
+            Urutan kolom ditetapkan user 2026-10-08. */}
         <table className="w-full table-fixed">
           <colgroup>
-            <col style={{ width: '18%' }} /><col style={{ width: '16%' }} /><col style={{ width: '23%' }} />
-            <col style={{ width: '14%' }} /><col style={{ width: '11%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} />
+            <col style={{ width: '18%' }} /><col style={{ width: '24%' }} /><col style={{ width: '17%' }} />
+            <col style={{ width: '10%' }} /><col style={{ width: '13%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} />
           </colgroup>
           <thead className="border-b border-gray-100"><tr>
-            <th className="table-th">No BAST</th><th className="table-th">Dokumen dan Tanggal BAST</th><th className="table-th">Rekening</th>
-            <th className="table-th">Keterangan</th><th className="table-th text-right">Nominal</th><th className="table-th">Status</th><th className="table-th"></th>
+            <th className="table-th">Keterangan</th><th className="table-th">Kode Rekening</th><th className="table-th">Nomor BAST</th>
+            <th className="table-th">Tanggal BAST</th><th className="table-th text-right">Nominal &amp; Lampiran</th><th className="table-th">Status</th><th className="table-th"></th>
           </tr></thead>
           <tbody className="divide-y divide-gray-50">
             {termin.map((t, i) => {
               const setuju = statusTermin(t) === 'disetujui'
               return (
                 <tr key={t.id || i}>
-                  <td className="table-td text-xs text-gray-600 align-top break-words"><span className="text-gray-300 mr-1">↳</span>{t.no_bast || '—'}
+                  <td className="table-td text-xs text-gray-700 align-top break-words">{t.keterangan || '—'}
                     {!t.kontrak_id && t.komponen !== 'biaya_umum' && <span className="block text-amber-600">⚠ {komponenLabelKdp(t.komponen)} belum menunjuk kontrak</span>}
                     {t.kontrak_id && !kontrakById.has(t.kontrak_id) && <span className="block text-amber-600">⚠ kontraknya sudah tidak ada</span>}
                   </td>
                   <td className="table-td text-xs align-top break-words">
-                    {(t.dokumen_paths || []).length === 0 ? <span className="text-amber-600">—</span>
-                      : (t.dokumen_paths || []).map(p => (
-                        <button key={p} onClick={() => bukaDokumen(p)} className="underline text-teal hover:opacity-80 block text-left">{namaFile(p)}</button>
-                      ))}
-                    <span className="block text-gray-400 mt-0.5">{t.tgl_bast}</span>
-                  </td>
-                  <td className="table-td text-xs text-gray-500 align-top break-words">
                     {t.kode_rekening ? <><span className="block text-gray-700">{t.kode_rekening}</span><span className="block text-gray-400">{rekeningUraian[t.kode_rekening] || ''}</span></> : '—'}
                   </td>
-                  <td className="table-td text-xs text-gray-600 align-top break-words">{t.keterangan || '—'}</td>
-                  <td className="table-td text-xs text-right align-top">{formatRupiah2(t.nominal)}</td>
+                  <td className="table-td text-xs text-gray-700 align-top break-words">{t.no_bast || '—'}</td>
+                  <td className="table-td text-xs text-gray-700 align-top whitespace-nowrap">{t.tgl_bast || '—'}</td>
+                  <td className="table-td text-xs text-right align-top break-words">
+                    <span className="block text-gray-800">{formatRupiah2(t.nominal)}</span>
+                    {(t.dokumen_paths || []).length === 0 ? <span className="block text-amber-600">⚠ tanpa lampiran</span>
+                      : (t.dokumen_paths || []).map(p => (
+                        <button key={p} onClick={() => bukaDokumen(p)} className="underline text-teal hover:opacity-80 block ml-auto text-right">{namaFile(p)}</button>
+                      ))}
+                  </td>
                   <td className="table-td text-xs align-top">
                     {setuju ? <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal/10 text-teal">Disetujui</span>
                       : <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700">Menunggu</span>}
@@ -193,10 +196,10 @@ export function BarangKdpCard({ barang, payload, kontraks, tahunKartu, skpdId, b
                       <button disabled={busy} className="text-xs text-teal font-medium hover:underline mr-3" onClick={() => onSetujui(t)}>✓ Setujui</button>
                     )}
                     {!setuju && bolehUbah && t.id && (
-                      <button className="text-xs text-red-500 hover:text-red-700" onClick={() => onHapusTermin(t.id!)}>Hapus</button>
+                      <button className="text-xs text-red-600 hover:text-red-700" onClick={() => onHapusTermin(t.id!)}>Hapus</button>
                     )}
                     {setuju && isAdmin && (
-                      <button disabled={busy} className="text-xs text-amber-700 font-medium hover:underline" onClick={() => onBatal(t)}>↩ Batal</button>
+                      <button disabled={busy} className="text-xs text-red-600 font-medium hover:underline" onClick={() => onBatal(t)}>↩ Batal</button>
                     )}
                     {setuju && !isAdmin && <span className="text-[11px] text-gray-400">🔒</span>}
                   </td>
@@ -211,7 +214,7 @@ export function BarangKdpCard({ barang, payload, kontraks, tahunKartu, skpdId, b
 
   function FormBast() {
     return (
-      <form onSubmit={submitTermin} className="ml-8 mr-5 my-2 p-3 rounded-lg border border-teal/30 bg-teal/5 space-y-3">
+      <form onSubmit={submitTermin} className="m-3 p-3 rounded-lg border border-teal/30 bg-teal/5 space-y-3">
         <h4 className="text-xs font-semibold text-gray-700">
           Tambah BAST {komponenLabelKdp(komponen)}{kontrakDipilih ? ` — kontrak ${kontrakDipilih.no_kontrak}` : ' (tanpa kontrak)'}
         </h4>
@@ -239,8 +242,10 @@ export function BarangKdpCard({ barang, payload, kontraks, tahunKartu, skpdId, b
   }
 
   return (
-    <div className="border-t border-gray-100">
-      <div className="px-5 py-3 bg-gray-50/60 flex items-start justify-between gap-3">
+    <div className="px-5 py-4 border-t border-gray-100">
+     {/* Kotak bersarang (user 2026-10-08): Kartu ⊃ Barang ⊃ Kontrak ⊃ BAST. */}
+     <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-4 py-3 bg-gray-50/60 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-gray-800">{barang.kode} - {namaBarangKdp(barang)}</p>
           <div className="mt-1 space-y-0.5">
@@ -278,54 +283,57 @@ export function BarangKdpCard({ barang, payload, kontraks, tahunKartu, skpdId, b
         </div>
       </div>
 
-      {kontrakUrut.length === 0 && tanpaKontrak.length === 0 && (
-        <p className="px-5 py-3 text-xs text-gray-400">
-          Belum ada kontrak. Tambahkan kontrak tiap komponen (perencanaan, fisik, pengawasan), lalu BAST-nya di bawah kontrak itu.
-          Biaya umum boleh tanpa kontrak.
-        </p>
-      )}
+      <div className="p-3 space-y-3 border-t border-gray-100">
+        {kontrakUrut.length === 0 && tanpaKontrak.length === 0 && formUntuk !== UMUM && (
+          <p className="px-1 text-xs text-gray-400">
+            Belum ada kontrak. Tambahkan kontrak tiap komponen (perencanaan, fisik, pengawasan), lalu BAST-nya di dalam kontrak itu.
+            Biaya umum boleh tanpa kontrak.
+          </p>
+        )}
 
-      {kontrakUrut.map(k => {
-        const pakai = pemakaianKontrak(payload, k.id)
-        return (
-          <div key={k.id} className="border-t border-gray-100">
-            <div className="px-5 py-2 flex items-start justify-between gap-3">
-              <div className="text-xs min-w-0">
-                <p className="font-semibold text-gray-800">Kontrak {komponenLabelKdp(k.komponen)}
-                  <span className="font-normal text-gray-600"> · {k.no_kontrak} · {k.tgl_kontrak}</span></p>
-                <p className="text-gray-400">
-                  {[k.bentuk ? bentukKontrakLabel(k.bentuk) : null, k.penyedia, k.ppk ? `PPK ${k.ppk}` : null,
-                    k.nilai_kontrak ? `Nilai ${formatRupiah2(k.nilai_kontrak)}` : null].filter(Boolean).join(' · ') || '—'}
-                </p>
+        {kontrakUrut.map(k => {
+          const pakai = pemakaianKontrak(payload, k.id)
+          return (
+            <div key={k.id} className="rounded-lg border border-gray-200 overflow-hidden">
+              <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-start justify-between gap-3">
+                <div className="text-xs min-w-0">
+                  <p className="font-semibold text-gray-800">Kontrak {komponenLabelKdp(k.komponen)}
+                    <span className="font-normal text-gray-600"> · {k.no_kontrak} · {k.tgl_kontrak}</span></p>
+                  <p className="text-gray-400">
+                    {[k.bentuk ? bentukKontrakLabel(k.bentuk) : null, k.penyedia, k.ppk ? `PPK ${k.ppk}` : null,
+                      k.nilai_kontrak ? `Nilai ${formatRupiah2(k.nilai_kontrak)}` : null].filter(Boolean).join(' · ') || '—'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0 whitespace-nowrap">
+                  {bolehUbah && pakai.disetujui === 0 && <button className="text-xs text-teal hover:underline" onClick={() => setEditKontrak(k)}>Ubah</button>}
+                  {bolehUbah && pakai.disetujui + pakai.menunggu === 0 && <button className="text-xs text-red-600 hover:text-red-700" onClick={() => onHapusKontrak(k)}>Hapus</button>}
+                  {pakai.disetujui > 0 && <span className="text-[11px] text-gray-400" title="Dipakai BAST yang sudah disetujui — batalkan BAST itu dulu untuk mengubah">🔒</span>}
+                  {bolehUbah && formUntuk !== k.id && <button className={TOMBOL_HIJAU} onClick={() => bukaForm(k.id)}>+ Tambah BAST</button>}
+                </div>
               </div>
-              <div className="flex items-center gap-3 flex-shrink-0 whitespace-nowrap">
-                {bolehUbah && pakai.disetujui === 0 && <button className="text-xs text-teal hover:underline" onClick={() => setEditKontrak(k)}>Ubah</button>}
-                {bolehUbah && pakai.disetujui + pakai.menunggu === 0 && <button className="text-xs text-red-500 hover:text-red-700" onClick={() => onHapusKontrak(k)}>Hapus</button>}
-                {pakai.disetujui > 0 && <span className="text-[11px] text-gray-400" title="Dipakai BAST yang sudah disetujui — batalkan BAST itu dulu untuk mengubah">🔒</span>}
-                {bolehUbah && formUntuk !== k.id && <button className="btn-secondary text-xs py-1" onClick={() => bukaForm(k.id)}>+ Tambah BAST</button>}
-              </div>
+              <TabelBast termin={urut.filter(t => t.kontrak_id === k.id)} />
+              {formUntuk === k.id && FormBast()}
             </div>
-            <TabelBast termin={urut.filter(t => t.kontrak_id === k.id)} />
-            {formUntuk === k.id && FormBast()}
+          )
+        })}
+
+        {(tanpaKontrak.length > 0 || formUntuk === UMUM) && (
+          <div className="rounded-lg border border-gray-200 overflow-hidden">
+            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-800">Tanpa Kontrak <span className="font-normal text-gray-400">(biaya umum)</span></div>
+            {tanpaKontrak.length > 0 && <TabelBast termin={tanpaKontrak} />}
+            {formUntuk === UMUM && FormBast()}
           </div>
-        )
-      })}
+        )}
 
-      {(tanpaKontrak.length > 0 || formUntuk === UMUM) && (
-        <div className="border-t border-gray-100">
-          <div className="px-5 py-2 text-xs font-semibold text-gray-800">Tanpa Kontrak <span className="font-normal text-gray-400">(biaya umum)</span></div>
-          {tanpaKontrak.length > 0 && <TabelBast termin={tanpaKontrak} />}
-          {formUntuk === UMUM && FormBast()}
-        </div>
-      )}
-
-      {bolehUbah && (
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/40 flex flex-wrap gap-2">
-          <button className="btn-secondary text-xs" onClick={() => setEditKontrak('baru')}>+ Tambah Kontrak</button>
-          {formUntuk !== UMUM && <button className="btn-secondary text-xs" onClick={() => bukaForm(UMUM)}>+ BAST Biaya Umum (tanpa kontrak)</button>}
-          {kontraks.length > 0 && <span className="text-[11px] text-gray-400 self-center">Kontrak berlaku untuk seluruh barang di kartu ini.</span>}
-        </div>
-      )}
+        {bolehUbah && (
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            <button className={TOMBOL_HIJAU} onClick={() => setEditKontrak('baru')}>+ Tambah Kontrak</button>
+            {formUntuk !== UMUM && <button className={TOMBOL_HIJAU} onClick={() => bukaForm(UMUM)}>+ BAST Biaya Umum (tanpa kontrak)</button>}
+            {kontraks.length > 0 && <span className="text-[11px] text-gray-400">Kontrak berlaku untuk seluruh barang di kartu ini.</span>}
+          </div>
+        )}
+      </div>
+     </div>
 
       {editKontrak && (
         <KontrakModal awal={editKontrak === 'baru' ? null : editKontrak} payload={payload} tahunKartu={tahunKartu} skpdId={skpdId}

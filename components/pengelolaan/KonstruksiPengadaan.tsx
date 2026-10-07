@@ -433,7 +433,7 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
             <button className="btn-secondary text-sm" onClick={() => setShowPreview(true)} title="Lihat rincian & kelengkapan seluruh termin di kartu ini">🔍 Pratinjau</button>
           )}
           {isAdmin && nDisetujui > 0 && (
-            <button className="btn-secondary text-sm" onClick={() => void batalSemua()} disabled={busy}>{busy ? 'Memproses...' : '↩ Batal Semua Termin'}</button>
+            <button className="btn-secondary text-sm !text-red-600" onClick={() => void batalSemua()} disabled={busy}>{busy ? 'Memproses...' : '↩ Batal Semua Termin'}</button>
           )}
           {!isAdmin && nMenunggu > 0 && <span className="text-xs text-gray-400">{nMenunggu} termin menunggu persetujuan admin pemda.</span>}
         </div>

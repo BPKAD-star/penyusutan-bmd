@@ -31,7 +31,7 @@ export function KontrakKdpSection({ payload, tahunKartu, skpdId, bolehUbah, onSi
     <div className="border-t border-gray-100">
       <div className="px-5 py-2.5 bg-gray-50/60 flex items-center justify-between">
         <p className="text-xs font-semibold text-gray-700">Kontrak ({kontrak.length})</p>
-        {bolehUbah && <button className="btn-secondary text-xs py-1" onClick={() => setEdit('baru')}>+ Tambah Kontrak</button>}
+        {bolehUbah && <button className="inline-flex items-center rounded-lg border border-teal/30 bg-teal/10 hover:bg-teal/20 text-teal text-xs font-medium px-3 py-1" onClick={() => setEdit('baru')}>+ Tambah Kontrak</button>}
       </div>
       {kontrak.length === 0 ? (
         <p className="px-5 py-3 text-xs text-gray-400">

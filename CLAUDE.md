@@ -2711,6 +2711,10 @@ Menggantikan "Setujui Kontrak / 🔓 Buka Kunci" satu kartu penuh **dan** pelong
   tingkat kartu (satu kontrak boleh membayar beberapa barang) — jadi tampil di
   bawah tiap barang & menyuntingnya berlaku untuk semua. Tabel kontrak terpisah
   hanya untuk kartu yang belum punya barang. Tanpa migrasi.
+  Bentuknya kotak BERSARANG (Kartu ⊃ Barang ⊃ Kontrak ⊃ BAST); kolom tabel BAST
+  (urutan user): Keterangan · Kode Rekening–Uraian · Nomor BAST · Tanggal BAST ·
+  Nominal–Lampiran · Status · aksi, table-fixed supaya sejajar antar kontrak.
+  Tombol tambah hijau tipis, Batal berhuruf merah.
 - ⚠️ **Deploy-ordering: migrasi 20261007_03 DULU, baru kode.**
 
 ## Pekerjaan Konstruksi (KDP) — perbaikan alur entry (2026-08-27)
