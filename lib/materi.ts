@@ -33,8 +33,8 @@ export const DAFTAR_MATERI: MateriConfig[] = [
     slug: 'entry-belanja-modal-pengadaan',
     judul: 'Entry Belanja Modal: Cara Perolehan › Pengadaan',
     ringkas: 'Entry Pengadaan Non Konstruksi dan Pekerjaan Konstruksi — BAST dan foto wajib diunggah, ketelitian memilih kodefikasi BMD, dan pencocokan dengan LRA.',
-    tanggal: '2026-10-06',
-    jumlahSlide: 24,
+    tanggal: '2026-10-07',
+    jumlahSlide: 25,
   },
   {
     slug: 'entry-hibah',

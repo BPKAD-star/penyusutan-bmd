@@ -14,6 +14,7 @@ import { DaftarBarang, Penyusutan, IpaAspek, Pelaporan, Admin } from './perkenal
 import { Pembatas, Koordinat, Spesifikasi, Profil, Ipa } from './perkenalan/Kelengkapan'
 import { Tindak, Penutup } from './perkenalan/Penutup'
 import { Sampul as SampulPengadaan, PetaAlur, Penekanan } from './pengadaan/Pembuka'
+import { AlurBelanjaModal } from './pengadaan/AlurBelanja'
 import { Kontrak, Bast, TambahBarang, Draft, Foto, Setujui } from './pengadaan/NonKonstruksi'
 import { KodeMenentukan, KodeMasaManfaat, KodeRekening } from './pengadaan/Kodefikasi'
 import { AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp } from './pengadaan/Konstruksi'
@@ -37,8 +38,8 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     Tindak, Penutup,
   ],
   'entry-belanja-modal-pengadaan': [
-    // Pembuka
-    SampulPengadaan, PetaAlur, Penekanan,
+    // Pembuka: sampul → gambaran besar (kontrak sampai neraca) → menu → penekanan
+    SampulPengadaan, AlurBelanjaModal, PetaAlur, Penekanan,
     // Non Konstruksi: kontrak → BAST → barang (+ kodefikasi) → draft → foto → setujui
     Kontrak, Bast, TambahBarang, KodeMenentukan, KodeMasaManfaat, KodeRekening, Draft, Foto, Setujui,
     // Pekerjaan Konstruksi (KDP)
