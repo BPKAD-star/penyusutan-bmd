@@ -26,15 +26,15 @@ export const DAFTAR_MATERI: MateriConfig[] = [
     slug: 'perkenalan-smart-asset',
     judul: 'Perkenalan Aplikasi SMART Asset',
     ringkas: 'Fitur aplikasi, apa saja yang bisa dikerjakan, dan kelengkapan data yang perlu dicek pengurus barang.',
-    tanggal: '2026-10-06',
-    jumlahSlide: 30,
+    tanggal: '2026-10-07',
+    jumlahSlide: 31,
   },
   {
     slug: 'entry-belanja-modal-pengadaan',
     judul: 'Entry Belanja Modal: Cara Perolehan › Pengadaan',
     ringkas: 'Entry Pengadaan Non Konstruksi dan Pekerjaan Konstruksi — BAST dan foto wajib diunggah, ketelitian memilih kodefikasi BMD, dan pencocokan dengan LRA.',
     tanggal: '2026-10-07',
-    jumlahSlide: 28,
+    jumlahSlide: 27,
   },
   {
     slug: 'entry-hibah',

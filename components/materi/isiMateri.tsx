@@ -13,11 +13,11 @@ import { Lra, Kir, Inventarisasi, AlurLki, GisTanah, Kendaraan } from './perkena
 import { DaftarBarang, Penyusutan, IpaAspek, Pelaporan, Admin } from './perkenalan/Menu3'
 import { Pembatas, Koordinat, Spesifikasi, Profil, Ipa } from './perkenalan/Kelengkapan'
 import { Tindak, Penutup } from './perkenalan/Penutup'
+import { LabelKibar } from './perkenalan/LabelKibar'
 import { Sampul as SampulPengadaan, PetaAlur, Penekanan } from './pengadaan/Pembuka'
 import { AlurBelanjaModal } from './pengadaan/AlurBelanja'
 import { AlurNonKonstruksi, AlurKonstruksi } from './pengadaan/AlurEntry'
 import { KontrakLengkap } from './pengadaan/KontrakLengkap'
-import { LabelKibar } from './pengadaan/LabelKibar'
 import { Kontrak, Bast, TambahBarang, Draft, Foto, Setujui } from './pengadaan/NonKonstruksi'
 import { KodeMenentukan, KodeMasaManfaat, KodeRekening } from './pengadaan/Kodefikasi'
 import { KartuKdp, AturanKonstruksi, KodeKdp } from './pengadaan/Konstruksi'
@@ -34,7 +34,7 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     Sampul, Konteks, Siklus, PetaMenu, Ai,
     // Penjelasan per menu sidebar
     Dashboard, SaldoAwal, RekapSaldoAwal, Rkbmd, Pembukuan, CaraPerolehan, Pengelolaan, Lra, Kir,
-    Inventarisasi, AlurLki, GisTanah, Kendaraan, DaftarBarang, Penyusutan, IpaAspek, Pelaporan, Admin,
+    Inventarisasi, AlurLki, GisTanah, Kendaraan, DaftarBarang, LabelKibar, Penyusutan, IpaAspek, Pelaporan, Admin,
     // Yang perlu dicek pengurus barang
     Pembatas, Profil, Spesifikasi, Koordinat, Ipa,
     // Penutup
@@ -48,8 +48,6 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     Kontrak, Bast, TambahBarang, KodeMenentukan, KodeMasaManfaat, KodeRekening, Draft, Foto, Setujui, KontrakLengkap,
     // Pekerjaan Konstruksi (KDP)
     AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp,
-    // Sesudah tercatat: label QR & KIBAR
-    LabelKibar,
     // Kasus khusus konstruksi: perencanaan dulu / gelondongan
     PerencanaanDulu, PerencanaanGelondongan,
     // Rekonsiliasi dengan LRA
