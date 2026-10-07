@@ -401,13 +401,20 @@ export function KontrakDetail({ kontrak, isAdmin, onBack, onChanged, onMsg, inli
           </div>
         </div>
 
-        <KontrakKdpSection payload={p} tahunKartu={tahun} skpdId={kontrak.skpd_id} bolehUbah={bolehUbah}
-          onSimpan={simpanKontrak} onHapus={hapusKontrak} />
+        {/* Susunan Kartu → Barang → Kontrak → BAST (user 2026-10-08): kontrak tampil
+            di bawah tiap barang. Tabel kontrak terpisah cuma untuk kartu yang sudah
+            berkontrak tapi belum punya barang. */}
+        {barangs.length === 0 && kontraks.length > 0 && (
+          <KontrakKdpSection payload={p} tahunKartu={tahun} skpdId={kontrak.skpd_id} bolehUbah={bolehUbah}
+            onSimpan={simpanKontrak} onHapus={hapusKontrak} />
+        )}
 
         {barangs.length === 0 ? (
-          <div className="p-6 text-center text-gray-400 text-sm border-t border-gray-100">Belum ada barang KDP.</div>
+          <div className="p-6 text-center text-gray-400 text-sm border-t border-gray-100">Belum ada barang KDP — tambahkan barang dulu, lalu kontrak & BAST-nya di bawah barang itu.</div>
         ) : barangs.map(b => (
-          <BarangKdpCard key={b.key} barang={b} kontraks={kontraks} tahunKartu={tahun} bolehUbah={bolehUbah} isAdmin={isAdmin} busy={busy}
+          <BarangKdpCard key={b.key} barang={b} payload={p} kontraks={kontraks} tahunKartu={tahun} skpdId={kontrak.skpd_id}
+            bolehUbah={bolehUbah} isAdmin={isAdmin} busy={busy}
+            onSimpanKontrak={simpanKontrak} onHapusKontrak={k => void hapusKontrak(k)}
             onHapusBarang={() => void hapusBarang(b)} onEditSpec={() => setSpecBarang(b)} onUbahKapInfo={() => setKapBarang(b)}
             onTambahTermin={item => tambahTermin(b.key, item)} onHapusTermin={id => void hapusTermin(b.key, id)}
             onSetujui={t => void setujui(b, t)} onBatal={t => void batal(b, t)} />

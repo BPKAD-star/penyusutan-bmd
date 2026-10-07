@@ -2704,6 +2704,13 @@ Menggantikan "Setujui Kontrak / 🔓 Buka Kunci" satu kartu penuh **dan** pelong
   aset 590jt aktif berkode register; termin BAST < tgl kontrak ditolak; ubah termin
   disetujui / setujui manual / ubah spesifikasi / ganti status lewat UPDATE ditolak;
   batal F1 → 90jt & LRA ikut 90jt; batal semua → draft 0, kartu pending, LRA kosong.
+- **Tampilan: Kartu → Barang → Kontrak → BAST** (permintaan user 2026-10-08):
+  tiap barang menampilkan kontrak-kontrak kartu (urut komponen) dgn BAST-nya di
+  bawahnya + "+ Tambah BAST" per kontrak (kontrak & komponen termin terisi dari
+  situ), lalu kelompok "Tanpa Kontrak (biaya umum)". Kontrak TETAP disimpan di
+  tingkat kartu (satu kontrak boleh membayar beberapa barang) — jadi tampil di
+  bawah tiap barang & menyuntingnya berlaku untuk semua. Tabel kontrak terpisah
+  hanya untuk kartu yang belum punya barang. Tanpa migrasi.
 - ⚠️ **Deploy-ordering: migrasi 20261007_03 DULU, baru kode.**
 
 ## Pekerjaan Konstruksi (KDP) — perbaikan alur entry (2026-08-27)

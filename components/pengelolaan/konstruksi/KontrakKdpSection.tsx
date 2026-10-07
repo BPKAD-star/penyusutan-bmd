@@ -1,5 +1,8 @@
 'use client'
-// Daftar KONTRAK di dalam satu kartu paket Pekerjaan Konstruksi (2026-10-07).
+// KONTRAK di dalam satu kartu paket Pekerjaan Konstruksi (2026-10-07).
+// Tampilan utamanya kini di BAWAH tiap barang (Kartu → Barang → Kontrak → BAST,
+// permintaan user 2026-10-08) lewat `KontrakModal`; tabel `KontrakKdpSection`
+// cuma dipakai kalau kartu belum punya barang tapi sudah punya kontrak.
 // Satu kartu bisa memuat beberapa kontrak — perencanaan, fisik, pengawasan,
 // biaya umum, juga addendum / dua konsultan untuk komponen yang sama — dan tiap
 // termin menunjuk SATU kontrak. Kontrak yang sudah dipakai termin disetujui BEKU
@@ -81,13 +84,13 @@ export function KontrakKdpSection({ payload, tahunKartu, skpdId, bolehUbah, onSi
   )
 }
 
-function KontrakModal({ awal, payload, tahunKartu, skpdId, onClose, onSimpan }: {
-  awal: KontrakKdp | null; payload: KontrakKonstruksiPayload; tahunKartu: string; skpdId: number
+export function KontrakModal({ awal, komponenAwal, payload, tahunKartu, skpdId, onClose, onSimpan }: {
+  awal: KontrakKdp | null; komponenAwal?: KomponenKdp; payload: KontrakKonstruksiPayload; tahunKartu: string; skpdId: number
   onClose: () => void; onSimpan: (k: KontrakKdp) => Promise<void>
 }) {
   const bounds = useDateBounds()
   const pegawai = usePegawaiSkpd(skpdId)
-  const [komponen, setKomponen] = useState<KomponenKdp>(awal?.komponen || 'fisik')
+  const [komponen, setKomponen] = useState<KomponenKdp>(awal?.komponen || komponenAwal || 'fisik')
   const [bentuk, setBentuk] = useState(awal?.bentuk || 'spk')
   const [no, setNo] = useState(awal?.no_kontrak || '')
   const [tgl, setTgl] = useState(awal?.tgl_kontrak || '')
