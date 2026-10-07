@@ -20,6 +20,8 @@ import { AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp } from './pengadaan
 import { PerencanaanDulu, PerencanaanGelondongan } from './pengadaan/KdpKhusus'
 import { LraTujuan, LraDuaArah, LraCara } from './pengadaan/Lra'
 import * as H from './hibah/Hibah'
+import * as IT from './inventarisasi/Tanah'
+import * as IG from './inventarisasi/Gedung'
 import { TerlanjurSalah, DaftarPeriksa, TutupPengadaan } from './pengadaan/Penutup'
 
 export const ISI_MATERI: Record<string, ComponentType[]> = {
@@ -54,5 +56,21 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     H.Dokumen, H.Barang, H.DuaTanggal, H.SpekFoto, H.Setujui,
     // Penutup
     H.Perbaikan, H.DaftarPeriksa, H.Tutup,
+  ],
+  'inventarisasi-tanah': [
+    IT.Sampul, IT.PetaAlur, IT.Penekanan,
+    // Lembar Kerja → isi form → lokasi → keadaan tanah → simpan
+    IT.LembarKerja, IT.FormTanah, IT.LuasTanah, IT.TemuanLapangan, IT.SimpanFoto,
+    // Sesudah disimpan, tanah yang belum tercatat, tindak lanjut
+    IT.SesudahSimpan, IT.BelumTercatat, IT.Temuan,
+    IT.DaftarPeriksa, IT.Tutup,
+  ],
+  'inventarisasi-gedung-bangunan': [
+    IG.Sampul, IG.PetaAlur, IG.Penekanan,
+    // Lembar Kerja → isi form → lokasi → keberadaan & sebab → atribusi → pemakai & tanah → simpan
+    IG.LembarKerja, IG.FormGedung, IG.LuasGedung, IG.SebabTidakAda, IG.Atribusi, IG.PenggunaanTanahMilik, IG.SimpanFoto,
+    // Sesudah disimpan, bangunan yang belum tercatat, tindak lanjut
+    IG.SesudahSimpan, IG.BelumTercatat, IG.Temuan,
+    IG.DaftarPeriksa, IG.Tutup,
   ],
 }

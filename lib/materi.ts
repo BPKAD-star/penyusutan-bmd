@@ -43,6 +43,20 @@ export const DAFTAR_MATERI: MateriConfig[] = [
     tanggal: '2026-10-06',
     jumlahSlide: 11,
   },
+  {
+    slug: 'inventarisasi-tanah',
+    judul: 'Inventarisasi Tanah',
+    ringkas: 'Mengisi Lembar Kerja Inventarisasi (LKI) untuk Tanah — luas, titik koordinat, foto wajib, hingga validasi dan tindak lanjutnya.',
+    tanggal: '2026-10-07',
+    jumlahSlide: 13,
+  },
+  {
+    slug: 'inventarisasi-gedung-bangunan',
+    judul: 'Inventarisasi Gedung dan Bangunan',
+    ringkas: 'Mengisi LKI untuk Gedung dan Bangunan — sebab bila tidak ada, biaya atribusi, rumah negara (BAST & SIP), serta tanah tempatnya berdiri.',
+    tanggal: '2026-10-07',
+    jumlahSlide: 15,
+  },
 ]
 
 export const cariMateri = (slug: string): MateriConfig | undefined =>
