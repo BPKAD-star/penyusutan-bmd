@@ -16,6 +16,7 @@ import { Tindak, Penutup } from './perkenalan/Penutup'
 import { Sampul as SampulPengadaan, PetaAlur, Penekanan } from './pengadaan/Pembuka'
 import { AlurBelanjaModal } from './pengadaan/AlurBelanja'
 import { AlurNonKonstruksi, AlurKonstruksi } from './pengadaan/AlurEntry'
+import { KontrakLengkap } from './pengadaan/KontrakLengkap'
 import { Kontrak, Bast, TambahBarang, Draft, Foto, Setujui } from './pengadaan/NonKonstruksi'
 import { KodeMenentukan, KodeMasaManfaat, KodeRekening } from './pengadaan/Kodefikasi'
 import { KartuKdp, AturanKonstruksi, KodeKdp } from './pengadaan/Konstruksi'
@@ -43,7 +44,7 @@ export const ISI_MATERI: Record<string, ComponentType[]> = {
     SampulPengadaan, AlurBelanjaModal, PetaAlur, Penekanan,
     // Non Konstruksi: ringkasan 4 langkah, lalu kontrak → BAST → barang (+ kodefikasi) → spesifikasi → catatan foto & setujui
     AlurNonKonstruksi,
-    Kontrak, Bast, TambahBarang, KodeMenentukan, KodeMasaManfaat, KodeRekening, Draft, Foto, Setujui,
+    Kontrak, Bast, TambahBarang, KodeMenentukan, KodeMasaManfaat, KodeRekening, Draft, Foto, Setujui, KontrakLengkap,
     // Pekerjaan Konstruksi (KDP)
     AlurKonstruksi, KartuKdp, AturanKonstruksi, KodeKdp,
     // Kasus khusus konstruksi: perencanaan dulu / gelondongan
