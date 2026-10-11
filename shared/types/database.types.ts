@@ -315,6 +315,8 @@ export type Database = {
           selesai_at: string | null
           skpd_id: number | null
           skpd_nama: string | null
+          tanggapan: string | null
+          tanggapan_oleh: string | null
           updated_at: string
         }
         Insert: {
@@ -327,6 +329,8 @@ export type Database = {
           selesai_at?: string | null
           skpd_id?: number | null
           skpd_nama?: string | null
+          tanggapan?: string | null
+          tanggapan_oleh?: string | null
           updated_at?: string
         }
         Update: {
@@ -339,6 +343,8 @@ export type Database = {
           selesai_at?: string | null
           skpd_id?: number | null
           skpd_nama?: string | null
+          tanggapan?: string | null
+          tanggapan_oleh?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -4649,7 +4655,7 @@ export type Database = {
     }
     Functions: {
       fn_admin_notes_tandai: {
-        Args: { p_id: string; p_selesai: boolean }
+        Args: { p_id: string; p_selesai: boolean; p_tanggapan?: string }
         Returns: {
           author_id: string | null
           created_at: string
@@ -4660,6 +4666,8 @@ export type Database = {
           selesai_at: string | null
           skpd_id: number | null
           skpd_nama: string | null
+          tanggapan: string | null
+          tanggapan_oleh: string | null
           updated_at: string
         }
         SetofOptions: {

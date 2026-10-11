@@ -32,9 +32,11 @@ type Note = {
   updated_at: string
   selesai: boolean
   selesai_at: string | null
+  tanggapan: string | null
+  tanggapan_oleh: string | null
 }
 
-const COLS = 'id,author_id,skpd_id,penulis,skpd_nama,isi,created_at,updated_at,selesai,selesai_at'
+const COLS = 'id,author_id,skpd_id,penulis,skpd_nama,isi,created_at,updated_at,selesai,selesai_at,tanggapan,tanggapan_oleh'
 
 // Saringan status (permintaan user 2026-09-05): satu daftar campuran jadi tak
 // terbaca begitu isinya puluhan. Bawaannya 'todo' — yang paling sering dicari
@@ -142,11 +144,53 @@ export default function NotesPage() {
   // "Selesai" itu status alur kerja ADMIN, bukan isi catatan, jadi jalannya
   // sendiri lewat RPC yang cuma menyentuh dua kolom ini & mengecek fn_is_admin()
   // di sisi server (bukan cuma disembunyikan di layar).
+  //
+  // Menandai SELESAI membuka pop-up tanggapan (opsional, permintaan user
+  // 2026-10-11): penulis catatan hanya melihat lencana "Ditangani", jadi
+  // tanggapan inilah satu-satunya cara ia tahu apa yang terjadi dgn masukannya.
+  // Dipakai juga utk MENYUNTING tanggapan catatan yang sudah selesai (kotaknya
+  // terisi tanggapan lama; tanggal penandaan pertama dipertahankan RPC-nya).
+  // ⚠️ `kerjakan` MELEMPAR, tak memanggil pop-up lain — pop-up kedua selagi yang
+  // pertama sibuk akan membatalkan yang pertama (shared/ui/konfirmasi.tsx).
   async function tandaiSelesai(n: Note, selesai: boolean) {
-    await jalankan(async () => {
-      const { error } = await supabase.rpc('fn_admin_notes_tandai', { p_id: n.id, p_selesai: selesai })
-      if (error) throw new Error(`gagal menandai status: ${error.message}`)
-    }, selesai ? 'Ditandai selesai.' : 'Tanda selesai dibatalkan.')
+    if (!selesai) {
+      if (n.tanggapan && !(await konfirmasi({
+        nada: 'amber', ikon: '↩', judul: 'Batalkan tanda selesai?',
+        subjudul: [n.penulis, n.skpd_nama].filter(Boolean).join(' · ') || undefined,
+        isi: <>Tanggapan yang sudah ditulis ikut <b>dihapus</b>, karena menjelaskan penanganan yang tak lagi berlaku.</>,
+        labelYa: 'Batalkan tanda selesai',
+      })).ya) return
+      await jalankan(async () => {
+        const { error } = await supabase.rpc('fn_admin_notes_tandai', { p_id: n.id, p_selesai: false })
+        if (error) throw new Error(`gagal menandai status: ${error.message}`)
+      }, 'Tanda selesai dibatalkan.')
+      return
+    }
+    setErr(''); setMsg('')
+    try {
+      const h = await konfirmasi({
+        nada: 'teal', ikon: '✓',
+        judul: n.selesai ? 'Ubah tanggapan' : 'Tandai catatan ini selesai?',
+        subjudul: [n.penulis, n.skpd_nama].filter(Boolean).join(' · ') || undefined,
+        rincian: [{ label: 'Catatan', nilai: <span className="whitespace-pre-wrap">{n.isi.length > 280 ? `${n.isi.slice(0, 280)}…` : n.isi}</span> }],
+        catatan: {
+          label: 'Tanggapan untuk penulis (opsional)',
+          placeholder: 'mis. Sudah ditambahkan di menu Laporan Persediaan, bisa dicoba setelah update berikutnya.',
+          petunjuk: <>Tampil di bawah catatan dan <b>terbaca oleh penulisnya</b>. Boleh dikosongkan — catatan tetap ditandai selesai.</>,
+          awal: n.tanggapan ?? '',
+        },
+        labelYa: n.selesai ? 'Simpan tanggapan' : 'Tandai selesai',
+        kerjakan: async (tanggapan) => {
+          const { error } = await supabase.rpc('fn_admin_notes_tandai', { p_id: n.id, p_selesai: true, p_tanggapan: tanggapan })
+          if (error) throw new Error(`gagal menandai status: ${error.message}`)
+        },
+      })
+      if (!h.ya) return
+      setMsg(n.selesai ? 'Tanggapan diperbarui.' : 'Ditandai selesai.')
+      await load()
+    } catch (e) {
+      setErr((e as Error).message)
+    }
   }
 
   async function hapus(n: Note) {
@@ -306,6 +350,18 @@ export default function NotesPage() {
                     {/* `whitespace-pre-wrap`: orang menulis masukan bernomor &
                         berparagraf; tanpa ini semuanya luruh jadi satu blok. */}
                     <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{n.isi}</p>
+                    {/* Tanggapan admin — terlihat oleh penulis & admin (RLS select
+                        sudah meloloskan barisnya). Sengaja kotak tersendiri, bukan
+                        lanjutan teks catatan: yang ini ditulis ORANG LAIN. */}
+                    {n.selesai && n.tanggapan && (
+                      <div className="mt-2.5 rounded-lg border border-teal/20 bg-teal/5 px-3.5 py-2.5">
+                        <p className="text-[11px] font-semibold text-teal mb-1">
+                          💬 Tanggapan{n.tanggapan_oleh ? ` · ${n.tanggapan_oleh}` : ' Pengelola Barang'}
+                          {n.selesai_at && <span className="font-normal text-gray-400"> · {waktu(n.selesai_at)}</span>}
+                        </p>
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{n.tanggapan}</p>
+                      </div>
+                    )}
                     <div className="flex gap-3 mt-2">
                       {milikSendiri(n) && (
                         <button className="text-xs text-gray-500 hover:text-gray-700" disabled={busy}
@@ -325,6 +381,12 @@ export default function NotesPage() {
                         <button className={`text-xs ${n.selesai ? 'text-gray-500 hover:text-gray-700' : 'text-teal hover:opacity-80'}`}
                           disabled={busy} onClick={() => tandaiSelesai(n, !n.selesai)}>
                           {n.selesai ? '↩ Batal Tertangani' : '✓ Tandai Selesai'}
+                        </button>
+                      )}
+                      {scope.isAdmin && n.selesai && (
+                        <button className="text-xs text-teal hover:opacity-80" disabled={busy}
+                          onClick={() => tandaiSelesai(n, true)}>
+                          {n.tanggapan ? '✎ Ubah Tanggapan' : '💬 Beri Tanggapan'}
                         </button>
                       )}
                     </div>
