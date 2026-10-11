@@ -94,7 +94,7 @@ export default function DokumenSumber() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Dokumen Sumber</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Peraturan, arsip dokumen legal per siklus pengelolaan BMD, dan materi paparan.
+          Peraturan, arsip dokumen legal per siklus pengelolaan BMD, materi paparan, dan event bidang.
         </p>
       </div>
 
@@ -135,7 +135,7 @@ export default function DokumenSumber() {
           ))}
         </div>
       ) : (
-        <BerandaDokumen tahunList={tahunList} tahunMap={tahunMap} tahun={tahun} onTahun={setTahun}
+        <BerandaDokumen isAdmin={isAdmin} tahunList={tahunList} tahunMap={tahunMap} tahun={tahun} onTahun={setTahun}
           jumlahPeraturan={jumlahPeraturan} onPeraturan={setPeraturan} onSiklus={setSiklus} />
       )}
     </div>

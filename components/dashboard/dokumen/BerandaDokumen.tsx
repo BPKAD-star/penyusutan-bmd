@@ -1,12 +1,15 @@
 'use client'
-// Halaman muka Dokumen Sumber: tiga bagian — Peraturan · Siklus · Materi
-// (permintaan user 2026-09-30). Murni tampilan: seluruh state & pemuatan ada di
+// Halaman muka Dokumen Sumber: empat bagian — Peraturan · Siklus · Materi · Event
+// (tiga pertama permintaan user 2026-09-30; Event 2026-10-11). Murni tampilan: seluruh state & pemuatan ada di
 // components/dashboard/DokumenSumber.tsx, berkas ini hanya menggambar kotaknya.
 import Link from 'next/link'
 import { DAFTAR_SIKLUS, DAFTAR_PERATURAN, type SiklusConfig, type PeraturanConfig } from '@/lib/dokumenSiklus'
 import { DAFTAR_MATERI } from '@/lib/materi'
+import EventSection from './EventSection'
 
-export default function BerandaDokumen({ tahunList, tahunMap, tahun, onTahun, jumlahPeraturan, onPeraturan, onSiklus }: {
+export default function BerandaDokumen({ isAdmin, tahunList, tahunMap, tahun, onTahun, jumlahPeraturan, onPeraturan, onSiklus }: {
+  /** Hanya admin yang melihat tombol tambah/ubah/hapus di bagian Event (RLS penegaknya). */
+  isAdmin: boolean
   tahunList: number[]
   tahunMap: Record<number, string>
   tahun: number | null
@@ -77,11 +80,17 @@ export default function BerandaDokumen({ tahunList, tahunMap, tahun, onTahun, ju
           ))}
         </div>
       </Bagian>
+
+      {/* 4. EVENT — arsip event Bidang Pengelolaan BMD: materi + tautan dokumentasi (Drive).
+          Tak ikut pemilih tahun Siklus: punya penyaring tahunnya sendiri. */}
+      <Bagian nomor={4} judul="Event" ket="Event yang diselenggarakan Bidang Pengelolaan BMD — materi dan tautan dokumentasinya.">
+        <EventSection isAdmin={isAdmin} />
+      </Bagian>
     </div>
   )
 }
 
-// Kepala satu bagian halaman (Peraturan · Siklus · Materi). `kanan` = kendali
+// Kepala satu bagian halaman (Peraturan · Siklus · Materi · Event). `kanan` = kendali
 // yang hanya milik bagian itu (pemilih tahun cuma berlaku untuk Siklus).
 function Bagian({ nomor, judul, ket, kanan, children }: {
   nomor: number; judul: string; ket: string; kanan?: React.ReactNode; children: React.ReactNode

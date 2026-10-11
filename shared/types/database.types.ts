@@ -14,6 +14,98 @@ export type Database = {
   }
   public: {
     Tables: {
+      bidang_event: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          keterangan: string | null
+          nama: string
+          tanggal: string
+          tempat: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          keterangan?: string | null
+          nama: string
+          tanggal: string
+          tempat?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          keterangan?: string | null
+          nama?: string
+          tanggal?: string
+          tempat?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidang_event_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admin_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bidang_event_berkas: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          event_id: string
+          file_path: string | null
+          id: string
+          jenis: string
+          judul: string
+          keterangan: string | null
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          event_id: string
+          file_path?: string | null
+          id?: string
+          jenis: string
+          judul: string
+          keterangan?: string | null
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          event_id?: string
+          file_path?: string | null
+          id?: string
+          jenis?: string
+          judul?: string
+          keterangan?: string | null
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bidang_event_berkas_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admin_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bidang_event_berkas_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "bidang_event"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       admin_broadcast: {
         Row: {
           aktif: boolean
