@@ -238,6 +238,22 @@ const iconFor = (label: string): React.ReactNode => {
   return null
 }
 
+/**
+ * href → label menu ("Pembukuan › Pengadaan"), diturunkan dari pohon menu yang
+ * SAMA dengan yang digambar sidebar — dipakai panel aktivitas di Daftar User
+ * supaya nama menu di sana tak jadi daftar kedua yang bisa basi. Label grup
+ * terdekat ikut karena "Validasi"/"Pelaporan" muncul di beberapa grup.
+ */
+export function petaLabelMenu(): Record<string, string> {
+  const out: Record<string, string> = {}
+  const jalan = (n: NavNode, induk: string | null) => {
+    if (n.type === 'leaf') { if (!out[n.href]) out[n.href] = induk ? `${induk} › ${n.label}` : n.label; return }
+    for (const c of n.children) jalan(c, n.label)
+  }
+  for (const n of [...navTree, adminGroup]) jalan(n, null)
+  return out
+}
+
 function leafHrefs(node: NavNode): string[] {
   return node.type === 'leaf' ? [node.href] : node.children.flatMap(leafHrefs)
 }

@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import ChatWidget from './ChatWidget'
 import BroadcastPopup from './BroadcastPopup'
+import AktivitasTracker from './AktivitasTracker'
 import { KonfirmasiProvider } from '@/shared/ui/konfirmasi'
 import type { JenisKelamin } from './AvatarPegawai'
 
@@ -32,6 +33,7 @@ export default function DashboardChrome({ userName, userRole, userJk, userFotoUr
         </div>
         <ChatWidget />
         <BroadcastPopup userRole={userRole} />
+        <AktivitasTracker />
       </div>
     </KonfirmasiProvider>
   )

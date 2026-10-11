@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      log_aktivitas: {
+        Row: {
+          halaman: string
+          jumlah: number
+          pertama: string
+          tanggal: string
+          terakhir: string
+          user_id: string
+        }
+        Insert: {
+          halaman: string
+          jumlah?: number
+          pertama?: string
+          tanggal: string
+          terakhir?: string
+          user_id: string
+        }
+        Update: {
+          halaman?: string
+          jumlah?: number
+          pertama?: string
+          tanggal?: string
+          terakhir?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "log_aktivitas_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "admin_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bidang_event: {
         Row: {
           created_at: string

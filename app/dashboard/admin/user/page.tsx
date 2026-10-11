@@ -8,6 +8,11 @@ import { cocokCari } from '@/lib/cari'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
 import EyeToggleButton from '@/shared/ui/EyeToggleButton'
 import { ATURAN_PASSWORD } from '@/lib/pesanAuth'
+import { useAsyncData } from '@/shared/ui/useAsyncData'
+import { muatAktivitas, type DataAktivitas } from '@/lib/aktivitasPenggunaData'
+import { PanelAktivitas, SelAktivitas, DetailAktivitas } from '@/components/admin/AktivitasPengguna'
+
+type Urutan = 'terdaftar' | 'aktif' | 'terakhir' | 'nama'
 
 type Profile = {
   id: string
@@ -49,14 +54,36 @@ export default function AdminUserPage() {
   const [resetSaving, setResetSaving] = useState(false)
   const [resetMsg, setResetMsg] = useState('')
   const [cari, setCari] = useState('')
+  // Aktivitas pengguna (2026-10-11). Gagal memuat = cuma panel & kolomnya yang
+  // berpesan error; tabel user tetap tampil & bisa dipakai.
+  const [rentang, setRentang] = useState(7)
+  const [urutan, setUrutan] = useState<Urutan>('terdaftar')
+  const [detail, setDetail] = useState<Profile | null>(null)
+  const akt = useAsyncData<DataAktivitas>()
+  useEffect(() => { void akt.run(() => muatAktivitas(supabase, rentang)) }, [rentang]) // eslint-disable-line react-hooks/exhaustive-deps
+  const aktOf = (id: string) => akt.data?.peta.get(id)
 
   // Kata kunci: nama · NIP · SKPD. Email sengaja TIDAK ikut — di sini email
   // pengguna memang dirakit dari NIP ("2001…@pengguna.bmd.internal"), jadi
   // menambahkannya tak menemukan apa pun yang baru, cuma memperbesar peluang
   // satu ketikan angka mencocoki baris yang tak dimaksud.
   const tampilProfiles = useMemo(
-    () => profiles.filter(p => cocokCari(cari, [p.pegawai?.nama, p.pegawai?.nip, p.skpd?.nama])),
-    [profiles, cari]
+    () => {
+      const hasil = profiles.filter(p => cocokCari(cari, [p.pegawai?.nama, p.pegawai?.nip, p.skpd?.nama]))
+      if (urutan === 'terdaftar') return hasil
+      const peta = akt.data?.peta
+      const nama = (p: Profile) => p.pegawai?.nama || p.email
+      return [...hasil].sort((a, b) => {
+        const x = peta?.get(a.id), y = peta?.get(b.id)
+        const beda = urutan === 'aktif'
+          ? (y?.hariAktif ?? 0) - (x?.hariAktif ?? 0) || (y?.totalKunjungan ?? 0) - (x?.totalKunjungan ?? 0)
+          : urutan === 'terakhir'
+            ? (y?.terakhir ?? '').localeCompare(x?.terakhir ?? '')
+            : 0
+        return beda || nama(a).localeCompare(nama(b), 'id')
+      })
+    },
+    [profiles, cari, urutan, akt.data]
   )
 
   async function loadProfiles() {
@@ -187,9 +214,23 @@ export default function AdminUserPage() {
         </button>
       </div>
 
-      <div className="mb-4">
-        <CariBox nilai={cari} onChange={setCari} jumlah={tampilProfiles.length} total={profiles.length}
-          satuan="user" placeholder="Cari nama, NIP, atau SKPD..." />
+      <PanelAktivitas data={akt.data} loading={akt.loading} error={akt.error} n={rentang} onN={setRentang}
+        jumlahUser={profiles.length} />
+
+      <div className="mb-4 flex flex-wrap items-start gap-3">
+        <div className="flex-1 min-w-[280px]">
+          <CariBox nilai={cari} onChange={setCari} jumlah={tampilProfiles.length} total={profiles.length}
+            satuan="user" placeholder="Cari nama, NIP, atau SKPD..." />
+        </div>
+        <label className="flex items-center gap-2 text-xs text-gray-500">
+          Urutkan
+          <select className="select-filter text-xs py-1.5" value={urutan} onChange={e => setUrutan(e.target.value as Urutan)}>
+            <option value="terdaftar">Waktu terdaftar</option>
+            <option value="aktif">Paling aktif ({rentang} hari)</option>
+            <option value="terakhir">Terakhir aktif</option>
+            <option value="nama">Nama (A–Z)</option>
+          </select>
+        </label>
       </div>
 
       {msg && (
@@ -274,6 +315,7 @@ export default function AdminUserPage() {
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <th className="table-th">Nama / NIP</th>
+                <th className="table-th">Aktivitas {rentang} hari</th>
                 <th className="table-th">Email</th>
                 <th className="table-th">SKPD</th>
                 <th className="table-th">Role</th>
@@ -283,9 +325,9 @@ export default function AdminUserPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
+                <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">Memuat...</td></tr>
               ) : tampilProfiles.length === 0 ? (
-                <tr><td colSpan={6} className="table-td text-center py-8 text-gray-400">
+                <tr><td colSpan={7} className="table-td text-center py-8 text-gray-400">
                   {profiles.length === 0 ? 'Belum ada user.' : `Tidak ada user yang cocok dengan "${cari}".`}
                 </td></tr>
               ) : tampilProfiles.map(p => (
@@ -295,6 +337,11 @@ export default function AdminUserPage() {
                     <p className="text-xs text-gray-400">
                       {p.pegawai?.nip || 'NIP -'}{p.pegawai?.jabatan ? ` · ${p.pegawai.jabatan}` : ''}
                     </p>
+                  </td>
+                  <td className="table-td">
+                    {akt.error ? <span className="text-[11px] text-red-500">gagal dimuat</span>
+                      : !akt.data ? <span className="text-[11px] text-gray-300">…</span>
+                      : <SelAktivitas a={aktOf(p.id)} n={rentang} onBuka={() => setDetail(p)} />}
                   </td>
                   <td className="table-td text-gray-500 text-xs">{p.email}<br />
                     <span className="text-gray-400">{p.username || ''}</span>
@@ -336,6 +383,11 @@ export default function AdminUserPage() {
           </table>
         </div>
       </div>
+
+      {detail && akt.data && (
+        <DetailAktivitas nama={detail.pegawai?.nama || detail.email} a={aktOf(detail.id)} n={rentang}
+          onTutup={() => setDetail(null)} />
+      )}
 
       {resetTarget && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
