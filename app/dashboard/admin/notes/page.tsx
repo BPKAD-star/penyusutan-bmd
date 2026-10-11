@@ -43,10 +43,22 @@ const COLS = 'id,author_id,skpd_id,penulis,skpd_nama,isi,created_at,updated_at,s
 // justru "apa yang BELUM dikerjakan"; 'semua' tetap disediakan supaya daftar
 // utuhnya tak hilang, dan 'done' jadi arsip yang bisa ditengok kalau perlu.
 type StatusFilter = 'todo' | 'done' | 'semua'
-const STATUS_OPT: { value: StatusFilter; label: string }[] = [
-  { value: 'todo', label: 'Belum Ditangani' },
-  { value: 'done', label: 'Sudah Ditangani' },
-  { value: 'semua', label: 'Semua' },
+// Warna per status (permintaan user 2026-10-11): Belum = oranye (butuh perhatian),
+// Sudah = hijau, Semua = biru. ⚠️ Kelas ditulis UTUH per status — `bg-${warna}-500`
+// yang dirakit saat jalan tak pernah ikut terpindai Tailwind & tombolnya tampil
+// TANPA warna sama sekali, tanpa satu pun error (CLAUDE.md, KonfirmasiModal 2026-08-19).
+// `aktif` = terpilih (isi penuh); `diam` = belum terpilih (garis & huruf berwarna,
+// supaya arti warnanya sudah terbaca sebelum diklik).
+const STATUS_OPT: { value: StatusFilter; label: string; aktif: string; diam: string; jumlahDiam: string }[] = [
+  { value: 'todo', label: 'Belum Ditangani',
+    aktif: 'bg-orange-500 text-white border-orange-500',
+    diam: 'bg-white text-orange-700 border-orange-200 hover:border-orange-500', jumlahDiam: 'text-orange-400' },
+  { value: 'done', label: 'Sudah Ditangani',
+    aktif: 'bg-green-600 text-white border-green-600',
+    diam: 'bg-white text-green-700 border-green-200 hover:border-green-600', jumlahDiam: 'text-green-500' },
+  { value: 'semua', label: 'Semua',
+    aktif: 'bg-blue-600 text-white border-blue-600',
+    diam: 'bg-white text-blue-700 border-blue-200 hover:border-blue-600', jumlahDiam: 'text-blue-400' },
 ]
 
 /** "16 Agu 2026, 14.05" — tanggal saja tak cukup, dalam satu hari bisa ada
@@ -291,11 +303,9 @@ export default function NotesPage() {
             {STATUS_OPT.map(o => (
               <button key={o.value} type="button" onClick={() => setStatus(o.value)}
                 className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  status === o.value
-                    ? 'bg-teal text-white border-teal'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-teal'
+                  status === o.value ? o.aktif : o.diam
                 }`}>
-                {o.label} <span className={status === o.value ? 'opacity-80' : 'text-gray-400'}>({jml[o.value]})</span>
+                {o.label} <span className={status === o.value ? 'opacity-80' : o.jumlahDiam}>({jml[o.value]})</span>
               </button>
             ))}
           </div>

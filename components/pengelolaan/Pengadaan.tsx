@@ -41,6 +41,9 @@ import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurna
 import FormShell from './FormShell'
 import { TotalPerolehan, hitungBarangJurnal } from './TotalPerolehan'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
+import { semuaBolehKir, tempatkanDiRuangan, ambilPenempatan, lepasDariRuangan } from '@/lib/kirOtomatis'
+import { isKirEligible } from '@/lib/kir'
+import { useRuanganKir } from './useRuanganKir'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import RekeningPicker from '@/components/RekeningPicker'
 import ProgramPicker from '@/components/ProgramPicker'
@@ -72,6 +75,8 @@ type DraftItem = {
   satuan: string; harga: string
   fields: Record<string, string>   // field spesifikasi sesuai golongan (lib/asetFields.ts), termasuk nama_barang
   foto: string[]                    // path di storage bucket aset-foto
+  /** Ruangan KIR tujuan (kir_ruangan.id) — ditulis ke kir_ruangan_aset SAAT APPROVE. Bukan kolom aset, jadi di luar `fields`. */
+  ruanganId?: string
 }
 type KodefikasiHasil = {
   kode: string; uraian: string | null
@@ -643,14 +648,14 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
   // foto.append (mode banyak barang) = TAMBAH foto baru ke tiap barang yg dicentang
   // (di-"split" ke semua yg dipilih, tanpa menghapus foto lama masing-masing).
   // Field: 1 barang → replace penuh; >1 → cuma terapkan field non-kosong.
-  async function applyDraftFields(keys: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
+  async function applyDraftFields(keys: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }, ruanganId: string) {
     const items = (j.payload.draft_items || []).map(i => {
       if (!keys.includes(i.key)) return i
-      if (keys.length === 1) return { ...i, fields: { ...fields }, foto: foto.replace ?? i.foto }
+      if (keys.length === 1) return { ...i, fields: { ...fields }, foto: foto.replace ?? i.foto, ruanganId: ruanganId || undefined }
       const nonEmpty: Record<string, string> = {}
       for (const [k, v] of Object.entries(fields)) if (v && v.trim()) nonEmpty[k] = v
       const foBaru = foto.append && foto.append.length > 0 ? [...i.foto, ...foto.append] : i.foto
-      return { ...i, fields: { ...i.fields, ...nonEmpty }, foto: foBaru }
+      return { ...i, fields: { ...i.fields, ...nonEmpty }, foto: foBaru, ruanganId: ruanganId || i.ruanganId }
     })
     if (await savePayload({ ...j.payload, draft_items: items })) onChanged()
   }
@@ -748,6 +753,7 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       rincian: [
         { label: 'Barang dicatat', nilai: `${items.length} barang` },
         { label: 'Tgl perolehan efektif', nilai: perolehanDate },
+        ...(items.some(i => i.ruanganId) ? [{ label: 'Otomatis masuk KIR', nilai: `${items.filter(i => i.ruanganId && isKirEligible(i.kode)).length} barang` }] : []),
       ],
       isi: <>Barangnya <b>resmi tercatat</b> di Daftar Barang, Penyusutan, &amp; laporan BMD, dan
         NIBAR-nya diterbitkan. Sesudah ini kartunya terkunci — mengubahnya harus lewat Buka Kunci.</>,
@@ -837,6 +843,14 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       await gagalSetujui(`Gagal mencatat transaksi: ${trxErr.message}`); setBusy(false); return
     }
 
+    // Penempatan KIR otomatis (2026-10-11) — NON-LEDGER & bukan penjaga approve:
+    // gagal di sini tak membatalkan barang yang sudah tercatat, cuma dilaporkan.
+    const pasanganKir = (inserted as { id: string }[])
+      .map((a, i) => ({ aset_id: a.id, ruangan_id: items[i]?.ruanganId || '', kode: items[i]?.kode || '' }))
+      .filter(p => p.ruangan_id && isKirEligible(p.kode))
+      .map(p => ({ aset_id: p.aset_id, ruangan_id: p.ruangan_id }))
+    const galatKir = await tempatkanDiRuangan(supabase, pasanganKir)
+
     const { data: { user } } = await supabase.auth.getUser()
     const identitasSurat = await snapshotIdentitasSurat(supabase, skpdId, j.payload.nama_ppk || '')
     const { error: appErr } = await supabase.from('jurnal_header')
@@ -850,9 +864,17 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       .eq('id', j.id)
     if (appErr) { await gagalSetujui(`Barang sudah tercatat, tapi status approval gagal diupdate: ${appErr.message} — cek Daftar Barang, kontrak ini mungkin perlu di-\u201cSetujui\u201d ulang manual.`, 'amber'); setBusy(false); onChanged(); return }
 
-    onMsg(`Kontrak ${j.no_sk} disetujui — ${asetRows.length} barang resmi tercatat (tgl perolehan ${perolehanDate}).`)
+    onMsg(`Kontrak ${j.no_sk} disetujui — ${asetRows.length} barang resmi tercatat (tgl perolehan ${perolehanDate})${pasanganKir.length > 0 && !galatKir ? `, ${pasanganKir.length} barang otomatis masuk KIR` : ''}.`)
     setBusy(false)
     onChanged()
+    if (galatKir) {
+      await konfirmasi({
+        nada: 'amber', ikon: '△', judul: 'Disetujui, tetapi penempatan KIR gagal',
+        isi: <>Kontrak sudah disetujui dan barangnya tercatat, namun <b>{pasanganKir.length} barang gagal
+          dimasukkan ke ruangan KIR</b>: {galatKir}. Tempatkan manual lewat menu <b>Pembukuan → KIR</b>.</>,
+        labelYa: 'Mengerti', tanpaBatal: true,
+      })
+    }
   }
 
   // Buka kunci (unapprove): kembalikan kontrak disetujui ke draft. Karena ledger
@@ -882,6 +904,12 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
       'pengadaan ini (mis. pengalihan/pemanfaatan/kapitalisasi)',
     )
     if (!guard.boleh) { setBusy(false); await konfirmasiGagal(konfirmasi, guard.pesan, 'Belum bisa dibuka kunci'); return }
+    // Penempatan KIR dibaca SEBELUM ledger ditulis: barang yang jadi draft tak boleh
+    // tertinggal di kartu ruangan, dan ruangannya dibawa ke draft supaya setuju ulang
+    // menempatkannya lagi. Gagal membaca = berhenti (fail-closed).
+    let kirAwal: Map<string, string>
+    try { kirAwal = await ambilPenempatan(supabase, j.lines.map(l => l.aset_id)) }
+    catch (e) { setBusy(false); await konfirmasiGagal(konfirmasi, (e as Error).message, 'Belum bisa dibuka kunci'); return }
     for (const l of j.lines) {
       const { error } = await catatTransaksi(supabase, {
         asetId: l.aset_id, jenis: 'batal_pengadaan', tanggal: l.tanggal, headerId: j.id,
@@ -892,7 +920,9 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     const draftItems: DraftItem[] = j.lines.map(l => ({
       key: newKey(), golongan: kodeLevel3(l.kode), kode: l.kode, uraianBarang: l.uraian_barang || '',
       rekening: l.rekening || '', satuan: l.satuan || '', harga: String(l.nilai), fields: l.fields || {}, foto: l.foto_paths || [],
+      ruanganId: kirAwal.get(l.aset_id),
     }))
+    const galatLepas = kirAwal.size > 0 ? await lepasDariRuangan(supabase, [...kirAwal.keys()]) : null
     const { error } = await supabase.from('jurnal_header')
       .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...j.payload, draft_items: draftItems } })
       .eq('id', j.id)
@@ -900,10 +930,14 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
     if (error) { await konfirmasiGagal(konfirmasi, `Gagal buka kunci: ${error.message}`); return }
     onMsg(`Kontrak ${j.no_sk} dibuka kunci — kembali ke draft. Edit lalu setujui ulang.`)
     onChanged()
+    if (galatLepas) await konfirmasiGagal(konfirmasi, `Kontrak dibuka kunci, tetapi barangnya gagal dilepas dari ruangan KIR: ${galatLepas}. Lepas manual lewat menu Pembukuan → KIR supaya barang draft tidak tampil di kartu ruangan.`, 'Perlu ditindaklanjuti')
   }
 
   const specItems = specKeys ? (j.payload.draft_items || []).filter(i => specKeys.includes(i.key)) : []
   const single = specItems.length === 1 ? specItems[0] : null
+  const ruanganKir = useRuanganKir(skpdId, specKeys !== null)
+  const pilihanRuangan = specItems.length > 0 && semuaBolehKir(specItems.map(i => i.kode))
+    ? { ...ruanganKir, awal: single?.ruanganId ?? '' } : undefined
 
   return (
     <>
@@ -932,9 +966,10 @@ export function PengadaanCard({ j, skpdId, golonganLabels, isAdmin, onChanged, o
           initialFields={single ? single.fields : {}}
           initialFoto={single ? single.foto : []}
           single={!!single}
+          ruangan={pilihanRuangan}
           storagePrefix={single ? `draft/${single.key}` : `draft/${j.id}`}
           onClose={() => setSpecKeys(null)}
-          onSave={async (fields, foto) => { await applyDraftFields(specKeys, fields, foto); setSpecKeys(null) }}
+          onSave={async (fields, foto, ruanganId) => { await applyDraftFields(specKeys, fields, foto, ruanganId); setSpecKeys(null) }}
         />
       )}
     </>

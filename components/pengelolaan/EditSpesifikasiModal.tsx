@@ -15,12 +15,23 @@ import dynamic from 'next/dynamic'
 import WilayahPicker from '@/components/WilayahPicker'
 import { backdropClose } from '@/components/backdropClose'
 import { useKonfirmasi } from '@/shared/ui/konfirmasi'
+import type { RuanganOpsi } from '@/lib/kirOtomatis'
 const MapPicker = dynamic(() => import('@/components/MapPicker'), { ssr: false, loading: () => <div className="h-[220px] bg-gray-50 rounded-lg animate-pulse" /> })
 
-export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, initialFoto, single, onSave, onClose }: {
+/**
+ * Pilihan ruangan KIR (2026-10-11). Hanya dikirim pemanggil kalau SEMUA barang
+ * yang diedit golongan KIR (lib/kir.ts) — selain itu bagian ini tak dirender.
+ * Nilainya BUKAN bagian `fields` (itu kolom `aset` 1:1), jadi dikembalikan lewat
+ * argumen ketiga `onSave`.
+ */
+export type PilihanRuangan = { opsi: RuanganOpsi[]; awal: string; memuat: boolean; galat: string }
+
+export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, initialFields, initialFoto, single, ruangan, onSave, onClose }: {
   title: string; fieldKeys: FieldKey[]; storagePrefix: string
   initialFields: Record<string, string>; initialFoto: string[]; single: boolean
-  onSave: (fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) => Promise<void> | void
+  ruangan?: PilihanRuangan
+  /** `ruanganId`: '' = tak ditempatkan / tak diubah (massal). Pemanggil lama boleh mengabaikannya. */
+  onSave: (fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }, ruanganId: string) => Promise<void> | void
   onClose: () => void
 }) {
   const supabase = createClient()
@@ -34,6 +45,7 @@ export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, 
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const [ruanganId, setRuanganId] = useState(ruangan?.awal ?? '')
 
   useEffect(() => {
     (async () => {
@@ -79,7 +91,7 @@ export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, 
 
   async function simpan() {
     setSaving(true)
-    await onSave(values, single ? { replace: fotoPaths } : { append: fotoPaths })
+    await onSave(values, single ? { replace: fotoPaths } : { append: fotoPaths }, ruanganId)
     setSaving(false)
   }
 
@@ -138,6 +150,31 @@ export default function EditSpesifikasiModal({ title, fieldKeys, storagePrefix, 
               </div>
             )
           })}
+          {ruangan && (
+            <div className="pt-2 border-t border-gray-100">
+              <label className="block text-xs text-gray-500 mb-1">Masuk ke ruangan (KIR)</label>
+              {ruangan.galat ? (
+                <p className="text-xs text-red-600" role="alert">Gagal memuat daftar ruangan: {ruangan.galat}</p>
+              ) : ruangan.memuat ? (
+                <p className="text-xs text-gray-400">Memuat ruangan...</p>
+              ) : ruangan.opsi.length === 0 ? (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                  SKPD ini belum punya ruangan di KIR. Tambahkan dulu di menu <b>Pembukuan → KIR</b>; setelah itu pilihannya muncul di sini.
+                </p>
+              ) : (
+                <select className="select-filter w-full" value={ruanganId} onChange={e => setRuanganId(e.target.value)}>
+                  <option value="">{single ? '— tidak ditempatkan —' : '— tidak diubah —'}</option>
+                  {ruangan.opsi.map(r => (
+                    <option key={r.id} value={r.id}>{r.nama}{r.pj_nama ? ` — PJ: ${r.pj_nama}` : ''}</option>
+                  ))}
+                </select>
+              )}
+              <p className="text-[11px] text-gray-400 mt-1">
+                Barang otomatis tercatat di KIR ruangan ini <b>begitu kartunya disetujui</b>.
+                {!single && ' Diterapkan ke semua barang dicentang; kosong tidak menimpa pilihan per barang.'}
+              </p>
+            </div>
+          )}
           <div className="pt-2 border-t border-gray-100">
             <label className="block text-xs text-gray-500 mb-2">
               Foto Barang (maks 10MB/foto){!single && <span className="text-gray-400"> — foto baru ditambahkan ke semua barang dicentang</span>}

@@ -33,6 +33,9 @@ import { type ApprovalScope, SCOPE_KOSONG, fetchApprovalScope, bolehSetujuiJurna
 import FormShell from './FormShell'
 import { TotalPerolehan, hitungBarangJurnal } from './TotalPerolehan'
 import EditSpesifikasiModal from './EditSpesifikasiModal'
+import { semuaBolehKir, tempatkanDiRuangan, ambilPenempatan, lepasDariRuangan } from '@/lib/kirOtomatis'
+import { isKirEligible } from '@/lib/kir'
+import { useRuanganKir } from './useRuanganKir'
 import SkpdCombobox from '@/components/SkpdCombobox'
 import { useDateBounds } from '@/components/useTahunBuku'
 import { backdropClose } from '@/components/backdropClose'
@@ -107,6 +110,8 @@ type DraftItem = {
   satuan: string; harga: string
   fields: Record<string, string>
   foto: string[]
+  /** Ruangan KIR tujuan (kir_ruangan.id) — ditulis ke kir_ruangan_aset SAAT APPROVE. Bukan kolom aset, jadi di luar `fields`. */
+  ruanganId?: string
 }
 type KodefikasiHasil = {
   kode: string; uraian: string | null
@@ -208,6 +213,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
   const [mode, setMode] = useState<'list' | 'baru'>('list')
   const [editing, setEditing] = useState<Header | null>(null)
   const [specEdit, setSpecEdit] = useState<{ header: Jurnal; keys: string[] } | null>(null)
+  const ruanganKir = useRuanganKir(skpd ? Number(skpd) : null, specEdit !== null)
   const [msg, setMsg] = useState('')
 
   useEffect(() => {
@@ -396,14 +402,14 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
   }
-  async function applyDraftFields(h: Jurnal, keys: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }) {
+  async function applyDraftFields(h: Jurnal, keys: string[], fields: Record<string, string>, foto: { replace?: string[]; append?: string[] }, ruanganId: string) {
     const items = (h.payload.draft_items || []).map(i => {
       if (!keys.includes(i.key)) return i
-      if (keys.length === 1) return { ...i, fields: { ...fields }, foto: foto.replace ?? i.foto }
+      if (keys.length === 1) return { ...i, fields: { ...fields }, foto: foto.replace ?? i.foto, ruanganId: ruanganId || undefined }
       const nonEmpty: Record<string, string> = {}
       for (const [k, v] of Object.entries(fields)) if (v && v.trim()) nonEmpty[k] = v
       const foBaru = foto.append && foto.append.length > 0 ? [...i.foto, ...foto.append] : i.foto
-      return { ...i, fields: { ...i.fields, ...nonEmpty }, foto: foBaru }
+      return { ...i, fields: { ...i.fields, ...nonEmpty }, foto: foBaru, ruanganId: ruanganId || i.ruanganId }
     })
     const ok = await savePayload(h.id, { ...h.payload, draft_items: items })
     if (ok) loadJurnals(skpd)
@@ -489,6 +495,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
         // ia disusutkan. Sebelum 2026-08-20 keduanya dianggap satu.
         { label: 'Masuk pada', nilai: `${h.tanggal} (${periodeDariTanggal(h.tanggal)})` },
         { label: 'Tgl perolehan barang', nilai: rentang },
+        ...(items.some(i => i.ruanganId) ? [{ label: 'Otomatis masuk KIR', nilai: `${items.filter(i => i.ruanganId && isKirEligible(i.kode)).length} barang` }] : []),
       ],
       isi: <>Barangnya <b>resmi tercatat</b> sejak periode BAST di atas, dan NIBAR-nya diterbitkan.
         Barang yang tanggal perolehannya <b>lebih tua</b> dari periode itu masuk dengan
@@ -603,15 +610,31 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       await gagalSetujui(`Gagal mencatat transaksi: ${trxErr.message}`); setBusyId(null); return
     }
 
+    // Penempatan KIR otomatis (2026-10-11) — NON-LEDGER & bukan penjaga approve:
+    // gagal di sini tak membatalkan barang yang sudah tercatat, cuma dilaporkan.
+    const pasanganKir = (inserted as { id: string }[])
+      .map((a, i) => ({ aset_id: a.id, ruangan_id: items[i]?.ruanganId || '', kode: items[i]?.kode || '' }))
+      .filter(p => p.ruangan_id && isKirEligible(p.kode))
+      .map(p => ({ aset_id: p.aset_id, ruangan_id: p.ruangan_id }))
+    const galatKir = await tempatkanDiRuangan(supabase, pasanganKir)
+
     const { data: { user } } = await supabase.auth.getUser()
     const { error: appErr } = await supabase.from('jurnal_header')
       .update({ approval_status: 'disetujui', approved_by: user?.id || null, approved_at: new Date().toISOString() })
       .eq('id', h.id)
     if (appErr) { await gagalSetujui(`Barang sudah tercatat, tapi status approval gagal diupdate: ${appErr.message} — cek Daftar Barang, dokumen ini mungkin perlu di-\u201cSetujui\u201d ulang manual.`, 'amber'); setBusyId(null); loadJurnals(skpd); return }
 
-    setMsg(`Dokumen ${h.no_sk} disetujui — ${asetRows.length} barang resmi tercatat.`)
+    setMsg(`Dokumen ${h.no_sk} disetujui — ${asetRows.length} barang resmi tercatat${pasanganKir.length > 0 && !galatKir ? `, ${pasanganKir.length} barang otomatis masuk KIR` : ''}.`)
     setBusyId(null)
     loadJurnals(skpd)
+    if (galatKir) {
+      await konfirmasi({
+        nada: 'amber', ikon: '△', judul: 'Disetujui, tetapi penempatan KIR gagal',
+        isi: <>Dokumen sudah disetujui dan barangnya tercatat, namun <b>{pasanganKir.length} barang gagal
+          dimasukkan ke ruangan KIR</b>: {galatKir}. Tempatkan manual lewat menu <b>Pembukuan → KIR</b>.</>,
+        labelYa: 'Mengerti', tanpaBatal: true,
+      })
+    }
   }
 
   async function unapproveHeader(j: Jurnal) {
@@ -638,6 +661,11 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       `${judul.toLowerCase()} ini (mis. pengalihan/pemanfaatan/kapitalisasi)`,
     )
     if (!guard.boleh) { setBusyId(null); await konfirmasiGagal(konfirmasi, guard.pesan, 'Belum bisa dibuka kunci'); return }
+    // Penempatan KIR dibaca SEBELUM ledger ditulis (alasan sama dgn Pengadaan): barang
+    // yang jadi draft tak boleh tertinggal di kartu ruangan; ruangannya dibawa ke draft.
+    let kirAwal: Map<string, string>
+    try { kirAwal = await ambilPenempatan(supabase, j.lines.map(l => l.aset_id)) }
+    catch (e) { setBusyId(null); await konfirmasiGagal(konfirmasi, (e as Error).message, 'Belum bisa dibuka kunci'); return }
     for (const l of j.lines) {
       const { error } = await catatTransaksi(supabase, {
         asetId: l.aset_id, jenis: `batal_${kategori}`, tanggal: l.tanggal, headerId: j.id,
@@ -657,7 +685,9 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
       // artinya AKUMULASI PENYUSUTAN BAWAAN 2024–2025 HILANG dan barangnya
       // masuk lagi seolah baru. Tanpa satu pun error.
       tglPerolehan: l.tgl_perolehan, satuan: l.satuan || '', harga: String(l.nilai), fields: l.fields || {}, foto: l.foto_paths || [],
+      ruanganId: kirAwal.get(l.aset_id),
     }))
+    const galatLepas = kirAwal.size > 0 ? await lepasDariRuangan(supabase, [...kirAwal.keys()]) : null
     const { error } = await supabase.from('jurnal_header')
       .update({ approval_status: 'pending', approved_by: null, approved_at: null, payload: { ...j.payload, draft_items: draftItems } })
       .eq('id', j.id)
@@ -665,6 +695,7 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
     if (error) { await konfirmasiGagal(konfirmasi, `Gagal buka kunci: ${error.message}`); return }
     setMsg(`Dokumen ${j.no_sk} dibuka kunci — kembali ke draft. Edit lalu setujui ulang.`)
     loadJurnals(skpd)
+    if (galatLepas) await konfirmasiGagal(konfirmasi, `Dokumen dibuka kunci, tetapi barangnya gagal dilepas dari ruangan KIR: ${galatLepas}. Lepas manual lewat menu Pembukuan → KIR supaya barang draft tidak tampil di kartu ruangan.`, 'Perlu ditindaklanjuti')
   }
 
   const pending = jurnals.filter(j => j.approval_status === 'pending')
@@ -761,10 +792,11 @@ export default function PerolehanManual({ kategori, judul, pihakLabel }: {
             initialFields={single ? single.fields : {}}
             initialFoto={single ? single.foto : []}
             single={!!single}
+            ruangan={items.length > 0 && semuaBolehKir(items.map(i => i.kode)) ? { ...ruanganKir, awal: single?.ruanganId ?? '' } : undefined}
             storagePrefix={single ? `draft/${single.key}` : `draft/${specEdit.header.id}`}
             onClose={() => setSpecEdit(null)}
-            onSave={async (fields, foto) => {
-              await applyDraftFields(specEdit.header, specEdit.keys, fields, foto)
+            onSave={async (fields, foto, ruanganId) => {
+              await applyDraftFields(specEdit.header, specEdit.keys, fields, foto, ruanganId)
               setSpecEdit(null)
             }}
           />
